@@ -5,16 +5,16 @@
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
-import { parseSize as bytes } from './_fileSize';
+import { recoveryAreaUsage } from '../storage/RecoveryArea';
 
 registerView({
   name: 'V$RECOVERY_FILE_DEST',
   comment: 'Fast recovery area configuration',
   query({ instance, runtime }) {
-    const dest = instance.getParameter('db_recovery_file_dest') ?? '';
-    const size = bytes(instance.getParameter('db_recovery_file_dest_size') ?? '4G');
-    const used = runtime.backups.reduce((s, b) => s + b.bytes, 0)
-      + runtime.archivedLogs.length * 1_048_576;
+    const usage = recoveryAreaUsage(
+      instance.getParameter('db_recovery_file_dest') ?? '',
+      instance.getParameter('db_recovery_file_dest_size'),
+      runtime);
     return queryResult(
       [
         col.str('NAME', 513),
@@ -23,8 +23,8 @@ registerView({
         col.num('SPACE_RECLAIMABLE'),
         col.num('NUMBER_OF_FILES'),
       ],
-      [[dest, size, used, Math.floor(used * 0.1),
-        runtime.backups.length + runtime.archivedLogs.length]]
+      [[usage.destination, usage.limitBytes, usage.usedBytes,
+        Math.floor(usage.usedBytes * 0.1), usage.fileCount]]
     );
   },
 });

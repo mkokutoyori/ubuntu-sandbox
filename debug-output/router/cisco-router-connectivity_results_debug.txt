@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-connectivity
-Generated: 2026-08-23T09:47:25.280Z
+Generated: 2026-09-10T16:24:41.253Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=routed data path: static/default/OSPF/RIP/DHCP/NAT + faults
 Total steps: 313
@@ -44,10 +44,11 @@ Total steps: 313
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller
      Physical Address. . . . . . . . . : 02-00-00-00-00-0D
      DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:d%2(Preferred)
      IPv4 Address. . . . . . . . . . . : 192.168.2.10(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 192.168.2.1
@@ -57,7 +58,7 @@ Total steps: 313
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #2
      Physical Address. . . . . . . . . : 02-00-00-00-00-0E
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -66,7 +67,7 @@ Total steps: 313
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #3
      Physical Address. . . . . . . . . : 02-00-00-00-00-0F
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -75,7 +76,7 @@ Total steps: 313
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #4
      Physical Address. . . . . . . . . : 02-00-00-00-00-10
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -84,10 +85,10 @@ Total steps: 313
 [8/313] win1 win1$ route print
   ===========================================================================
   Interface List
-     1...02 00 00 00 00 0d ......Intel(R) Ethernet Connection #1
-     2...02 00 00 00 00 0e ......Intel(R) Ethernet Connection #2
-     3...02 00 00 00 00 0f ......Intel(R) Ethernet Connection #3
-     4...02 00 00 00 00 10 ......Intel(R) Ethernet Connection #4
+     2...02 00 00 00 00 0d ......Intel(R) 82540EM Gigabit Ethernet Controller
+     3...02 00 00 00 00 0e ......Intel(R) 82540EM Gigabit Ethernet Controller #2
+     4...02 00 00 00 00 0f ......Intel(R) 82540EM Gigabit Ethernet Controller #3
+     5...02 00 00 00 00 10 ......Intel(R) 82540EM Gigabit Ethernet Controller #4
      1...........................Software Loopback Interface 1
   ===========================================================================
   
@@ -100,6 +101,16 @@ Total steps: 313
     127.255.255.255          255.255.255.255  On-link         127.0.0.1      331
     192.168.2.0              255.255.255.0    On-link         192.168.2.10   0
     0.0.0.0                  0.0.0.0          192.168.2.1     192.168.2.10   0
+  ===========================================================================
+  Persistent Routes:
+    None
+  
+  IPv6 Route Table
+  ===========================================================================
+  Active Routes:
+   If Metric Network Destination      Gateway
+     1    331 ::1/128                  On-link
+     2      0 fe80::/10                On-link
   ===========================================================================
   Persistent Routes:
     None
@@ -258,49 +269,49 @@ Total steps: 313
 
 [42/313] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=254 time=1.208 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.248 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.199 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=1.401 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.315 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.193 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.199/0.552/1.208/0.465 ms
+  rtt min/avg/max/mdev = 0.193/0.636/1.401/0.543 ms
 
 [43/313] linux1 linux1$ ping -c 3 10.0.0.2
   PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
-  64 bytes from 10.0.0.2: icmp_seq=1 ttl=253 time=1.641 ms
-  64 bytes from 10.0.0.2: icmp_seq=2 ttl=253 time=1.140 ms
-  64 bytes from 10.0.0.2: icmp_seq=3 ttl=253 time=0.766 ms
+  64 bytes from 10.0.0.2: icmp_seq=1 ttl=254 time=2.029 ms
+  64 bytes from 10.0.0.2: icmp_seq=2 ttl=254 time=1.165 ms
+  64 bytes from 10.0.0.2: icmp_seq=3 ttl=254 time=0.536 ms
   
   --- 10.0.0.2 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.766/1.182/1.641/0.358 ms
+  rtt min/avg/max/mdev = 0.536/1.244/2.029/0.612 ms
 
 [44/313] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
-  64 bytes from 192.168.2.1: icmp_seq=1 ttl=253 time=0.412 ms
-  64 bytes from 192.168.2.1: icmp_seq=2 ttl=253 time=0.278 ms
-  64 bytes from 192.168.2.1: icmp_seq=3 ttl=253 time=0.429 ms
+  64 bytes from 192.168.2.1: icmp_seq=1 ttl=254 time=0.611 ms
+  64 bytes from 192.168.2.1: icmp_seq=2 ttl=254 time=0.560 ms
+  64 bytes from 192.168.2.1: icmp_seq=3 ttl=254 time=0.509 ms
   
   --- 192.168.2.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.278/0.373/0.429/0.067 ms
+  rtt min/avg/max/mdev = 0.509/0.560/0.611/0.042 ms
 
 [45/313] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=3.520 ms
-  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.450 ms
-  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.272 ms
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=1.357 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.543 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.394 ms
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.272/1.414/3.520/1.491 ms
+  rtt min/avg/max/mdev = 0.394/0.765/1.357/0.423 ms
 
 [46/313] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.969 ms  0.394 ms  0.261 ms
-   2  10.0.0.2 (10.0.0.2)  0.387 ms  0.316 ms  0.269 ms
-   3  192.168.2.10 (192.168.2.10)  0.434 ms  0.424 ms  0.354 ms
+   1  192.168.1.1 (192.168.1.1)  0.908 ms  0.405 ms  0.369 ms
+   2  10.0.0.2 (10.0.0.2)  0.519 ms  0.363 ms  0.372 ms
+   3  192.168.2.10 (192.168.2.10)  0.495 ms  0.519 ms  0.398 ms
 
 [47/313] win1 win1$ ping 192.168.1.10
   
@@ -308,20 +319,20 @@ Total steps: 313
   Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
-  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=3ms TTL=62
   
   Ping statistics for 192.168.1.10:
       Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 0ms
+      Minimum = 0ms, Maximum = 3ms, Average = 1ms
 
 [48/313] win1 win1$ tracert 192.168.1.10
   
   Tracing route to 192.168.1.10 over a maximum of 30 hops:
   
-     1    <1 ms    <1 ms    <1 ms    192.168.2.1
+     1    6 ms     <1 ms    <1 ms    192.168.2.1
      2    <1 ms    <1 ms    <1 ms    10.0.0.1
-     3    <1 ms    <1 ms    <1 ms    192.168.1.10
+     3    <1 ms    4 ms     1 ms     192.168.1.10
   
   Trace complete.
 
@@ -432,54 +443,54 @@ Total steps: 313
 
 [65/313] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.163 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.170 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.088 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.212 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.107 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.086 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.088/0.140/0.170/0.037 ms
+  rtt min/avg/max/mdev = 0.086/0.135/0.212/0.055 ms
 
 [66/313] linux1 linux1$ ping -c 3 10.0.0.2
   PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
-  64 bytes from 10.0.0.2: icmp_seq=1 ttl=253 time=0.361 ms
-  64 bytes from 10.0.0.2: icmp_seq=2 ttl=253 time=0.264 ms
-  64 bytes from 10.0.0.2: icmp_seq=3 ttl=253 time=0.398 ms
+  64 bytes from 10.0.0.2: icmp_seq=1 ttl=254 time=0.335 ms
+  64 bytes from 10.0.0.2: icmp_seq=2 ttl=254 time=0.217 ms
+  64 bytes from 10.0.0.2: icmp_seq=3 ttl=254 time=0.403 ms
   
   --- 10.0.0.2 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.264/0.341/0.398/0.056 ms
+  rtt min/avg/max/mdev = 0.217/0.319/0.403/0.077 ms
 
 [67/313] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
-  64 bytes from 192.168.2.1: icmp_seq=1 ttl=253 time=0.253 ms
-  64 bytes from 192.168.2.1: icmp_seq=2 ttl=253 time=0.248 ms
-  64 bytes from 192.168.2.1: icmp_seq=3 ttl=253 time=0.204 ms
+  64 bytes from 192.168.2.1: icmp_seq=1 ttl=254 time=0.479 ms
+  64 bytes from 192.168.2.1: icmp_seq=2 ttl=254 time=0.245 ms
+  64 bytes from 192.168.2.1: icmp_seq=3 ttl=254 time=0.173 ms
   
   --- 192.168.2.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.204/0.235/0.253/0.022 ms
+  rtt min/avg/max/mdev = 0.173/0.299/0.479/0.131 ms
 
 [68/313] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.355 ms
-  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.370 ms
-  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.242 ms
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.461 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.277 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.275 ms
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.242/0.322/0.370/0.057 ms
+  rtt min/avg/max/mdev = 0.275/0.338/0.461/0.087 ms
 
 [69/313] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.208 ms  0.201 ms  0.181 ms
-   2  10.0.0.2 (10.0.0.2)  0.212 ms  0.176 ms  0.623 ms
-   3  192.168.2.10 (192.168.2.10)  0.331 ms  0.367 ms  0.218 ms
+   1  192.168.1.1 (192.168.1.1)  0.342 ms  0.249 ms  0.205 ms
+   2  10.0.0.2 (10.0.0.2)  0.235 ms  0.188 ms  2.005 ms
+   3  192.168.2.10 (192.168.2.10)  0.356 ms  0.383 ms  0.249 ms
 
 [70/313] win1 win1$ ping 192.168.1.10
   
   Pinging 192.168.1.10 with 32 bytes of data:
-  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=5ms TTL=62
   Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
@@ -487,7 +498,7 @@ Total steps: 313
   Ping statistics for 192.168.1.10:
       Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 0ms, Maximum = 5ms, Average = 1ms
 
 [71/313] win1 win1$ tracert 192.168.1.10
   
@@ -495,7 +506,7 @@ Total steps: 313
   
      1    <1 ms    <1 ms    <1 ms    192.168.2.1
      2    <1 ms    <1 ms    <1 ms    10.0.0.1
-     3    <1 ms    <1 ms    <1 ms    192.168.1.10
+     3    <1 ms    2 ms     1 ms     192.168.1.10
   
   Trace complete.
 
@@ -652,70 +663,70 @@ Total steps: 313
 
 [98/313] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.207 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.163 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.092 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.210 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.104 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.087 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.092/0.154/0.207/0.048 ms
+  rtt min/avg/max/mdev = 0.087/0.134/0.210/0.054 ms
 
 [99/313] linux1 linux1$ ping -c 3 10.0.0.2
   PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
-  64 bytes from 10.0.0.2: icmp_seq=1 ttl=253 time=0.383 ms
-  64 bytes from 10.0.0.2: icmp_seq=2 ttl=253 time=0.216 ms
-  64 bytes from 10.0.0.2: icmp_seq=3 ttl=253 time=1.384 ms
+  64 bytes from 10.0.0.2: icmp_seq=1 ttl=254 time=0.921 ms
+  64 bytes from 10.0.0.2: icmp_seq=2 ttl=254 time=0.766 ms
+  64 bytes from 10.0.0.2: icmp_seq=3 ttl=254 time=0.254 ms
   
   --- 10.0.0.2 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.216/0.661/1.384/0.516 ms
+  rtt min/avg/max/mdev = 0.254/0.647/0.921/0.285 ms
 
 [100/313] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
-  64 bytes from 192.168.2.1: icmp_seq=1 ttl=253 time=0.297 ms
-  64 bytes from 192.168.2.1: icmp_seq=2 ttl=253 time=0.246 ms
-  64 bytes from 192.168.2.1: icmp_seq=3 ttl=253 time=0.170 ms
+  64 bytes from 192.168.2.1: icmp_seq=1 ttl=254 time=1.999 ms
+  64 bytes from 192.168.2.1: icmp_seq=2 ttl=254 time=0.257 ms
+  64 bytes from 192.168.2.1: icmp_seq=3 ttl=254 time=0.223 ms
   
   --- 192.168.2.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.170/0.238/0.297/0.052 ms
+  rtt min/avg/max/mdev = 0.223/0.826/1.999/0.830 ms
 
 [101/313] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.313 ms
-  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.245 ms
-  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.305 ms
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=2.324 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.294 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.389 ms
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.245/0.288/0.313/0.031 ms
+  rtt min/avg/max/mdev = 0.294/1.003/2.324/0.935 ms
 
 [102/313] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.190 ms  0.119 ms  0.093 ms
-   2  10.0.0.2 (10.0.0.2)  0.230 ms  0.216 ms  0.162 ms
-   3  192.168.2.10 (192.168.2.10)  0.228 ms  0.188 ms  0.244 ms
+   1  192.168.1.1 (192.168.1.1)  0.355 ms  0.338 ms  0.130 ms
+   2  10.0.0.2 (10.0.0.2)  0.217 ms  0.197 ms  0.233 ms
+   3  192.168.2.10 (192.168.2.10)  0.295 ms  0.233 ms  0.253 ms
 
 [103/313] win1 win1$ ping 192.168.1.10
   
   Pinging 192.168.1.10 with 32 bytes of data:
   Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
-  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=4ms TTL=62
   Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   
   Ping statistics for 192.168.1.10:
       Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 0ms
+      Minimum = 0ms, Maximum = 4ms, Average = 1ms
 
 [104/313] win1 win1$ tracert 192.168.1.10
   
   Tracing route to 192.168.1.10 over a maximum of 30 hops:
   
      1    <1 ms    <1 ms    <1 ms    192.168.2.1
-     2    2 ms     <1 ms    <1 ms    10.0.0.1
-     3    <1 ms    <1 ms    <1 ms    192.168.1.10
+     2    <1 ms    <1 ms    <1 ms    10.0.0.1
+     3    1 ms     <1 ms    1 ms     192.168.1.10
   
   Trace complete.
 
@@ -843,7 +854,7 @@ Total steps: 313
   Type escape sequence to abort.
   Sending 5, 100-byte ICMP Echos to 10.0.0.2, timeout is 2 seconds:
   !!!!!
-  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/0 ms
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/0/1 ms
 
 [129/313] r1 R1# ping 192.168.2.1
   Type escape sequence to abort.
@@ -859,23 +870,23 @@ Total steps: 313
 
 [131/313] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.240 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.094 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.075 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.211 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.136 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.183 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.075/0.136/0.240/0.074 ms
+  rtt min/avg/max/mdev = 0.136/0.177/0.211/0.031 ms
 
 [132/313] linux1 linux1$ ping -c 3 10.0.0.2
   PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
-  64 bytes from 10.0.0.2: icmp_seq=1 ttl=253 time=0.346 ms
-  64 bytes from 10.0.0.2: icmp_seq=2 ttl=253 time=0.292 ms
-  64 bytes from 10.0.0.2: icmp_seq=3 ttl=253 time=0.226 ms
+  64 bytes from 10.0.0.2: icmp_seq=1 ttl=254 time=0.350 ms
+  64 bytes from 10.0.0.2: icmp_seq=2 ttl=254 time=0.196 ms
+  64 bytes from 10.0.0.2: icmp_seq=3 ttl=254 time=0.421 ms
   
   --- 10.0.0.2 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.226/0.288/0.346/0.049 ms
+  rtt min/avg/max/mdev = 0.196/0.322/0.421/0.094 ms
 
 [133/313] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
@@ -884,8 +895,7 @@ Total steps: 313
   From 192.168.1.1 icmp_seq=3 Destination Net Unreachable
   
   --- 192.168.2.1 ping statistics ---
-  3 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  3 packets transmitted, 0 received, +3 errors, 100% packet loss
 
 [134/313] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
@@ -894,13 +904,12 @@ Total steps: 313
   From 192.168.1.1 icmp_seq=3 Destination Net Unreachable
   
   --- 192.168.2.10 ping statistics ---
-  3 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  3 packets transmitted, 0 received, +3 errors, 100% packet loss
 
 [135/313] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.183 ms  0.162 ms  0.115 ms
-   2  192.168.1.1 (192.168.1.1)  0.109 ms !N (Net unreachable)  0.094 ms !N (Net unreachable)  0.100 ms !N (Net unreachable)
+   1  192.168.1.1 (192.168.1.1)  0.318 ms  0.136 ms  0.249 ms
+   2  192.168.1.1 (192.168.1.1)  0.196 ms !N (Net unreachable)  0.145 ms !N (Net unreachable)  0.149 ms !N (Net unreachable)
 
 [136/313] win1 win1$ ping 192.168.1.10
   
@@ -1002,13 +1011,13 @@ Total steps: 313
 
 [151/313] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.269 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.101 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.173 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.281 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.104 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=5.403 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.101/0.181/0.269/0.068 ms
+  rtt min/avg/max/mdev = 0.104/1.930/5.403/2.457 ms
 
 [152/313] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
@@ -1017,15 +1026,14 @@ Total steps: 313
   From 192.168.1.1 icmp_seq=3 Destination Net Unreachable
   
   --- 192.168.2.1 ping statistics ---
-  3 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  3 packets transmitted, 0 received, +3 errors, 100% packet loss
 
 [153/313] r1 R1# show ip dhcp binding
   Bindings from all pools not associated with VRF:
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  192.168.1.10        0102.0000.0000.09       24 Aug 2026 09:47:27    automatic
+  192.168.1.10        0102.0000.0000.09       11 Sep 2026 16:24:44    automatic
 
 [154/313] r1 R1# show ip dhcp pool
   Pool LAN1 :
@@ -1084,8 +1092,7 @@ Total steps: 313
   From 192.168.1.1 icmp_seq=3 Destination Net Unreachable
   
   --- 192.168.2.1 ping statistics ---
-  3 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  3 packets transmitted, 0 received, +3 errors, 100% packet loss
 
 [166/313] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
@@ -1094,8 +1101,7 @@ Total steps: 313
   From 192.168.1.1 icmp_seq=3 Destination Net Unreachable
   
   --- 192.168.2.10 ping statistics ---
-  3 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  3 packets transmitted, 0 received, +3 errors, 100% packet loss
 
 [167/313] r1 R1# show ip nat translations
   Pro  Inside global          Inside local           Outside local          Outside global
@@ -1149,8 +1155,7 @@ Total steps: 313
   From 192.168.1.1 icmp_seq=2 Destination Net Unreachable
   
   --- 192.168.2.10 ping statistics ---
-  2 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  2 packets transmitted, 0 received, +2 errors, 100% packet loss
 
 [175/313] r1 R1# show ip route
   Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
@@ -1195,8 +1200,7 @@ Total steps: 313
   From 192.168.1.1 icmp_seq=3 Destination Net Unreachable
   
   --- 192.168.2.10 ping statistics ---
-  3 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  3 packets transmitted, 0 received, +3 errors, 100% packet loss
 
 
 --- [182] § scenario 8: wrong mask ---
@@ -1224,8 +1228,7 @@ Total steps: 313
   From 192.168.1.1 icmp_seq=2 Destination Net Unreachable
   
   --- 192.168.2.10 ping statistics ---
-  2 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  2 packets transmitted, 0 received, +2 errors, 100% packet loss
 
 [188/313] r2 R2# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1246,27 +1249,26 @@ Total steps: 313
   From 192.168.1.1 icmp_seq=3 Destination Net Unreachable
   
   --- 192.168.2.10 ping statistics ---
-  3 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  3 packets transmitted, 0 received, +3 errors, 100% packet loss
 
 
 --- [193] § final state ---
 [193/313] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 1058 bytes
+  Current configuration : 1010 bytes
   !
-  ! Last configuration change at 09:47:27 UTC Sun Aug 23 2026 by console
+  ! Last configuration change at 16:24:44 UTC Thu Sep 10 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
   !
   hostname R1
   !
-  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   ip dhcp excluded-address 192.168.1.1 192.168.1.9
   !
@@ -1304,19 +1306,19 @@ Total steps: 313
 [194/313] r2 R2# show running-config
   Building configuration...
   
-  Current configuration : 760 bytes
+  Current configuration : 712 bytes
   !
-  ! Last configuration change at 09:47:27 UTC Sun Aug 23 2026 by console
+  ! Last configuration change at 16:24:44 UTC Thu Sep 10 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
   !
   hostname R2
   !
-  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   interface GigabitEthernet0/0
    ip address 192.168.2.1 255.255.255.0
@@ -1381,7 +1383,6 @@ Total steps: 313
       10.0.0.0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.0.2        120           00:00:00
     Distance: (default is 120)
 
 [198/313] r1 R1# show ip interface brief
@@ -1405,11 +1406,11 @@ Total steps: 313
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       303 packets input, 29192 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       301 packets input, 28674 bytes, 0 no buffer
+       Received 4 broadcasts (42 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       287 packets output, 26954 bytes, 0 underruns
+       287 packets output, 26666 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        1 input drops, 2 output drops
 
@@ -1423,17 +1424,17 @@ Total steps: 313
 
 [202/313] win1 win1$ arp -a
   
-  Interface: 192.168.2.10 --- 0x1
+  Interface: 192.168.2.10 --- 0x2
     Internet Address      Physical Address      Type
     192.168.2.1           02-00-00-00-00-05     dynamic
 
 [203/313] win1 win1$ netstat -rn
   ===========================================================================
   Interface List
-     1...02 00 00 00 00 0d ......Intel(R) Ethernet Connection #1
-     2...02 00 00 00 00 0e ......Intel(R) Ethernet Connection #2
-     3...02 00 00 00 00 0f ......Intel(R) Ethernet Connection #3
-     4...02 00 00 00 00 10 ......Intel(R) Ethernet Connection #4
+     2...02 00 00 00 00 0d ......Intel(R) 82540EM Gigabit Ethernet Controller
+     3...02 00 00 00 00 0e ......Intel(R) 82540EM Gigabit Ethernet Controller #2
+     4...02 00 00 00 00 0f ......Intel(R) 82540EM Gigabit Ethernet Controller #3
+     5...02 00 00 00 00 10 ......Intel(R) 82540EM Gigabit Ethernet Controller #4
      1...........................Software Loopback Interface 1
   ===========================================================================
   
@@ -1446,6 +1447,16 @@ Total steps: 313
     127.255.255.255          255.255.255.255  On-link         127.0.0.1      331
     192.168.2.0              255.255.255.0    On-link         192.168.2.10   0
     0.0.0.0                  0.0.0.0          192.168.2.1     192.168.2.10   0
+  ===========================================================================
+  Persistent Routes:
+    None
+  
+  IPv6 Route Table
+  ===========================================================================
+  Active Routes:
+   If Metric Network Destination      Gateway
+     1    331 ::1/128                  On-link
+     2      0 fe80::/10                On-link
   ===========================================================================
   Persistent Routes:
     None
@@ -1476,7 +1487,7 @@ Total steps: 313
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3420Q6F2
+  Processor board ID FTX4524GE93
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1486,19 +1497,19 @@ Total steps: 313
 [206/313] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 1058 bytes
+  Current configuration : 1010 bytes
   !
-  ! Last configuration change at 09:47:27 UTC Sun Aug 23 2026 by console
+  ! Last configuration change at 16:24:44 UTC Thu Sep 10 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
   !
   hostname R1
   !
-  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   ip dhcp excluded-address 192.168.1.1 192.168.1.9
   !
@@ -1557,11 +1568,11 @@ Total steps: 313
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       252 packets input, 22298 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       252 packets input, 21914 bytes, 0 no buffer
+       Received 4 broadcasts (5 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       304 packets output, 26610 bytes, 0 underruns
+       304 packets output, 26226 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
@@ -1577,11 +1588,11 @@ Total steps: 313
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       303 packets input, 29192 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       301 packets input, 28674 bytes, 0 no buffer
+       Received 4 broadcasts (42 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       287 packets output, 26954 bytes, 0 underruns
+       287 packets output, 26666 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        1 input drops, 2 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -1674,7 +1685,6 @@ Total steps: 313
       10.0.0.0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.0.2        120           00:00:00
     Distance: (default is 120)
 
 [213/313] r1 R1# show ip arp
@@ -1745,7 +1755,7 @@ Total steps: 313
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  192.168.1.10        0102.0000.0000.09       24 Aug 2026 09:47:27    automatic
+  192.168.1.10        0102.0000.0000.09       11 Sep 2026 16:24:44    automatic
 
 [227/313] r1 R1# show ip dhcp pool
   Pool LAN1 :
@@ -1827,23 +1837,23 @@ Total steps: 313
   
   Log Buffer (4096 bytes):
   
-  *Aug 23 09:47:25.276: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 23 09:47:25.276: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 23 09:47:25.278: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 09:47:25.278: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 09:47:25.316: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 09:47:25.392: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 09:47:25.440: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 09:47:25.450: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
-  *Aug 23 09:47:25.515: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 09:47:27.245: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 09:47:27.271: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 09:47:27.289: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
-  *Aug 23 09:47:27.289: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  *Aug 23 09:47:27.293: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 09:47:27.300: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 09:47:27.300: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 09:47:27.301: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:24:41.247: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 10 16:24:41.248: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 10 16:24:41.250: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:24:41.250: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:24:41.489: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:24:41.939: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:24:42.308: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:24:42.378: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
+  *Sep 10 16:24:42.612: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:24:44.541: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:24:44.693: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:24:44.742: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  *Sep 10 16:24:44.742: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Sep 10 16:24:44.744: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:24:44.786: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:24:44.786: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:24:44.787: %SYS-5-CONFIG_I: Configured from console by console
 
 [240/313] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1854,8 +1864,8 @@ Total steps: 313
 [241/313] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 200 (1/100 of seconds), resolution is 4001
-  reference time is EE35402F.6C49BA5E (09:47:27.423 UTC Sun Aug 23 2026)
+  ntp uptime is 400 (1/100 of seconds), resolution is 4001
+  reference time is EE4D584D.46E978D4 (16:24:45.277 UTC Thu Sep 10 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1866,7 +1876,7 @@ Total steps: 313
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [243/313] r1 R1# show clock
-  *09:47:27.000 UTC Sun Aug 23 2026
+  *16:24:45.000 UTC Thu Sep 10 2026
 
 [244/313] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1958,11 +1968,11 @@ Total steps: 313
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       252 packets input, 22298 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       252 packets input, 21914 bytes, 0 no buffer
+       Received 4 broadcasts (5 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       304 packets output, 26610 bytes, 0 underruns
+       304 packets output, 26226 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1980,11 +1990,11 @@ Total steps: 313
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       303 packets input, 29192 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       301 packets input, 28674 bytes, 0 no buffer
+       Received 4 broadcasts (42 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       287 packets output, 26954 bytes, 0 underruns
+       287 packets output, 26666 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        1 input drops, 2 output drops
 
@@ -2004,6 +2014,7 @@ Total steps: 313
     Split horizon is enabled
     ICMP redirects are always sent
     ICMP unreachables are always sent
+    ICMP mask replies are never sent
     IP fast switching is enabled
     IP CEF switching is enabled
 
@@ -2047,7 +2058,7 @@ Total steps: 313
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3420Q6F2
+  Processor board ID FTX4524GE93
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2057,19 +2068,19 @@ Total steps: 313
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 1058 bytes
+  Current configuration : 1010 bytes
   !
-  ! Last configuration change at 09:47:27 UTC Sun Aug 23 2026 by console
+  ! Last configuration change at 16:24:44 UTC Thu Sep 10 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
   !
   hostname R1
   !
-  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   ip dhcp excluded-address 192.168.1.1 192.168.1.9
   !
@@ -2145,11 +2156,11 @@ Total steps: 313
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       252 packets input, 22298 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       252 packets input, 21914 bytes, 0 no buffer
+       Received 4 broadcasts (5 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       304 packets output, 26610 bytes, 0 underruns
+       304 packets output, 26226 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
@@ -2165,11 +2176,11 @@ Total steps: 313
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       303 packets input, 29192 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       301 packets input, 28674 bytes, 0 no buffer
+       Received 4 broadcasts (42 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       287 packets output, 26954 bytes, 0 underruns
+       287 packets output, 26666 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        1 input drops, 2 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -2229,7 +2240,6 @@ Total steps: 313
       10.0.0.0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.0.2        120           00:00:00
     Distance: (default is 120)
   
   ------------------ show processes cpu ------------------
@@ -2275,7 +2285,7 @@ Total steps: 313
   ------------------ show ip dhcp binding ------------------
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  192.168.1.10     02:00:00:00:00:09       8/24/2026, 9:47:27 AM   automatic
+  192.168.1.10     02:00:00:00:00:09       9/11/2026, 4:24:44 PM   automatic
   
   ------------------ show logging ------------------
   Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
@@ -2300,27 +2310,27 @@ Total steps: 313
   
   Log Buffer (4096 bytes):
   
-  *Aug 23 09:47:25.276: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 23 09:47:25.276: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 23 09:47:25.278: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 09:47:25.278: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 09:47:25.316: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 09:47:25.392: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 09:47:25.440: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 09:47:25.450: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
-  *Aug 23 09:47:25.515: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 09:47:27.245: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 09:47:27.271: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 09:47:27.289: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
-  *Aug 23 09:47:27.289: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  *Aug 23 09:47:27.293: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 09:47:27.300: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 09:47:27.300: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 09:47:27.301: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:24:41.247: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 10 16:24:41.248: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 10 16:24:41.250: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:24:41.250: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:24:41.489: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:24:41.939: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:24:42.308: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:24:42.378: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
+  *Sep 10 16:24:42.612: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:24:44.541: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:24:44.693: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:24:44.742: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  *Sep 10 16:24:44.742: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Sep 10 16:24:44.744: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:24:44.786: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:24:44.786: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:24:44.787: %SYS-5-CONFIG_I: Configured from console by console
 
 [257/313] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX3420Q6F2
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX4524GE93
 
 [258/313] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2411,14 +2421,14 @@ Total steps: 313
 [270/313] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 1058 bytes
+  Current configuration : 1010 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
-  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   ip dhcp excluded-address 192.168.1.1 192.168.1.9
   ip dhcp pool LAN1
    network 192.168.1.0 255.255.255.0
@@ -2568,7 +2578,6 @@ Total steps: 313
       10.0.0.0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.0.2        120           00:00:00
     Distance: (default is 120)
 
 [301/313] r1 R1(config-router)# exit
@@ -2590,25 +2599,33 @@ Total steps: 313
 
 [306/313] r1 R1(config)# interface ?
     BVI              Bridge-Group Virtual Interface
+    BVI              Bridge-Group Virtual Interface
+    Ethernet         IEEE 802.3
     Ethernet         IEEE 802.3
     FastEthernet     FastEthernet IEEE 802.3u
+    FastEthernet     FastEthernet IEEE 802.3u
+    GigabitEthernet  GigabitEthernet IEEE 802.3z
     GigabitEthernet  GigabitEthernet IEEE 802.3z
     Loopback         Loopback interface
+    Loopback         Loopback interface
+    Port-channel     Ethernet Channel of interfaces
     Port-channel     Ethernet Channel of interfaces
     Serial           Serial
+    Serial           Serial
+    Tunnel           Tunnel interface
     Tunnel           Tunnel interface
 
 [307/313] r1 R1(config)# ip ?
-    access-list        Add an access list entry
-    as-path            BGP autonomous-system path filter
-    bootp              Bootstrap Protocol
-    cef                Enable CEF
-    classless          Accepted, default behaviour on IOS 12.0 and later
+    access-list        Create a named extended access list
+    as-path            Define BGP AS-path filter
+    bootp              Enable BOOTP server
+    cef                Enable Cisco Express Forwarding
+    classless          Follow classless routing forwarding rules
     community-list     Define BGP community list
-    default-network    Configure default-network
-    dhcp               Dynamic Host Configuration Protocol
-    dns                Domain Name System
-    domain             IP domain configuration
+    default-network    Configure default network
+    dhcp               Configure DHCP address pools
+    dns                Enable the DNS server
+    domain             Enable IP Domain Name System hostname translation
     domain-list        Define a list of default domain names
     domain-lookup      Enable IP Domain Name System hostname translation
     domain-name        Define the default domain name
@@ -2617,21 +2634,21 @@ Total steps: 313
     flow-export        Legacy NetFlow export
     gratuitous-arps    Send gratuitous ARP
     host               Add a host to the host table
-    http               Hypertext Transfer Protocol
-    local              Local settings
+    http               Enable HTTP server
+    local              Apply local PBR
     multicast-routing  Enable IP multicast routing
     name-server        Specify address of name server to use
-    nat                Network Address Translation
-    pim                Protocol Independent Multicast
+    nat                Wipe NAT configuration
+    pim                Configure static PIM RP address
     prefix-list        Build a prefix list
-    route              Establish static routes
+    route              Establish static routes in a VRF
     route-cache        Route cache
     routing            Enable IP routing
-    scp                SCP server config
+    scp                Enable the SCP server
     sla                Configure an IP SLAs operation
     source-route       Accept source-routed packets
-    ssh                SSH config
-    subnet-zero        Accepted, default behaviour on IOS 12.0 and later
+    ssh                SSH protocol version to accept
+    subnet-zero        Enable use of subnet zero
     vrf                Define a VRF instance
 
 [308/313] r1 R1(config)# router ?
@@ -2642,48 +2659,56 @@ Total steps: 313
 
 [309/313] r1 R1(config)# crypto ?
     dynamic-map  Define a dynamic crypto map
-    gdoi         Group Domain of Interpretation
-    ikev2        Internet Key Exchange version 2
-    ipsec        IP Security
-    isakmp       Internet Security Association and Key Management Protocol
-    key          Key management
+    gdoi         Define a GDOI GET-VPN group
+    ikev2        Define IKEv2 proposal
+    ipsec        Configure IPSec policy
+    isakmp       Define an IKE policy
+    key          Generate RSA key
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
-    pki          Public Key Infrastructure
+    pki          Declare a PKI trustpoint
     <cr>
 
 [310/313] r1 R1(config)# no ?
-    aaa            Disable AAA
+    aaa            Enable NEW access control commands and functions
     access-list    Remove an access list
     alias          Remove a command alias
-    arp            Remove ARP entry
+    arp            Add static ARP entry
     banner         Remove a banner
-    boot           Boot Commands
+    boot           Specify system image to load
     cdp            Enable CDP globally
-    clock          Set the system clock
-    crypto         Encryption and key management
-    enable         Modify enable password parameters
+    clock          Hardware calendar is a valid time source
+    crypto         Encryption module
+    enable         Set enable secret
     event          Embedded Event Manager
-    hostname       Reset hostname
+    hostname       Set system hostname
     interface      Remove a virtual interface
-    ip             Global IP configuration subcommands
+    ip             Enable IP routing
     ipv6           IPv6 interface subcommands
     key            Key management
-    line           Remove line configuration
+    line           Enter line configuration
     lldp           Enable LLDP globally
-    logging        line logging
-    login          line login
+    logging        Count every log message and timestamp last occurrence
+    login          Set the login blocking period
     ntp            Authenticate time sources
-    parser         Negate a parser command
-    privilege      Remove privilege command rule
-    radius-server  Remove legacy radius host
+    object-group   Configure object-group
+    parser         Define a CLI view
+    priority-list  Remove build a priority list
+    privilege      Configure command privilege levels
+    queue-list     Remove build a custom queue list
+    radius         RADIUS server configuration
+    radius-server  Specify a RADIUS server
     route-map      Remove a route-map
-    router         Enable a routing protocol
+    router         Enter RIP routing protocol configuration
     service        Disable a network based service
-    sntp           Configure SNTP
-    tacacs-server  Remove legacy tacacs host
+    snmp-server    Set community string and access privs
+    sntp           SNTP server (alias for ntp server)
+    tacacs         TACACS+ server configuration
+    tacacs-server  Specify a TACACS+ server
+    time-range     Remove a time range
     track          Remove a tracked object
     username       Remove a local user
+    vrf            Configure a VRF
 
 [311/313] r1 R1(config)# end
 <empty>

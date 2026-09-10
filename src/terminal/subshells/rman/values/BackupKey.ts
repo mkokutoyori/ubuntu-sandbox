@@ -24,6 +24,7 @@ export const BackupKey = {
       copy: 1,
     });
   },
+  peekBsKey(): number { return _bsCounter; },
   toString: (k: BackupKey): string => `BS:${k.bsKey}/BP:${k.bpKey}`,
   /** Test-only reset. */
   _reset(): void { _bsCounter = 1; _bpCounter = 1; },

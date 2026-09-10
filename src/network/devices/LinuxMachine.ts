@@ -4075,8 +4075,11 @@ export abstract class LinuxMachine extends EndHost
     const absPath = this.executor.vfs.normalizePath(path, this.executor.getCwd());
     const uid = this.executor.getCurrentUid();
     const gid = uid === 0 ? 0 : 1000;
-    return this.executor.vfs.writeFile(absPath, content, uid, gid, 0o022, false, declaredSizeBytes);
+    return this.executor.vfs.writeFile(
+      absPath, content, uid, gid, 0o022, false, declaredSizeBytes, false);
   }
+
+  freeDiskBytes(): number { return this.executor.vfs.freeBytes(); }
 
   installSystemFile(path: string, content: string, uid = 0, gid = 0): boolean {
     const absPath = this.executor.vfs.normalizePath(path, this.executor.getCwd());
@@ -4127,7 +4130,7 @@ export abstract class LinuxMachine extends EndHost
   }
 
   /** DAC-checked write as `oracle`; the created file is owned oracle:oinstall. */
-  writeFileAsOracle(path: string, content: string): boolean {
+  writeFileAsOracle(path: string, content: string, declaredSizeBytes?: number): boolean {
     const abs = this.executor.vfs.normalizePath(path, this.executor.getCwd());
     const a = this.oracleOsActor();
     const p = this.executor.vfs.path(abs, '/', a);
@@ -4142,7 +4145,27 @@ export abstract class LinuxMachine extends EndHost
       const parent = p.parent();
       if (!parent.isDirectory() || !parent.canWrite() || !parent.canExecute()) return false;
     }
-    return this.executor.vfs.writeFile(abs, content, a.uid, a.gid, 0o022);
+    return this.executor.vfs.writeFile(
+      abs, content, a.uid, a.gid, 0o022, false, declaredSizeBytes, false);
+  }
+
+  makeDirectoryAsOracle(path: string): boolean {
+    const abs = this.executor.vfs.normalizePath(path, this.executor.getCwd());
+    const a = this.oracleOsActor();
+    const missing: string[] = [];
+    let cursor = abs;
+    while (cursor !== '/' && cursor !== '' && !this.executor.vfs.exists(cursor)) {
+      missing.unshift(cursor);
+      cursor = cursor.slice(0, cursor.lastIndexOf('/')) || '/';
+    }
+    const anchor = this.executor.vfs.path(cursor || '/', '/', a);
+    if (!anchor.isDirectory()) return false;
+    if (missing.length === 0) return this.executor.vfs.path(abs, '/', a).isDirectory();
+    if (!anchor.canWrite() || !anchor.canExecute()) return false;
+    for (const dir of missing) {
+      if (!this.executor.vfs.mkdir(dir, 0o755, a.uid, a.gid)) return false;
+    }
+    return true;
   }
 
   /** DAC-checked unlink as `oracle`; needs write+search on the directory. */

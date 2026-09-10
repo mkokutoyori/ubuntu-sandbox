@@ -34,6 +34,7 @@ describe('debug — rman basics on a single Oracle Linux server', () => {
     const srv = new LinuxServer('linux-server', 'oracle-srv-A', 200, 200);
     // Boot Oracle to OPEN so CONNECT/BACKUP/RESTORE all succeed.
     getOracleDatabase(srv.id);
+    srv.executeShellCommandSync('mkdir -p /u01/backup && chown oracle:oinstall /u01/backup');
     const runner = createRmanRunner(srv);
 
     const lines: RmanDebugLine[] = [

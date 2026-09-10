@@ -36,10 +36,24 @@ describe('formatOracleDate', () => {
 });
 
 describe('generatePieceName', () => {
-  it('uses /u01/backup prefix and ends with .bkp', () => {
+  it('names an OMF backup piece under the recovery file destination', () => {
+    const tag = RmanTag.of('TAG20260506T143022');
+    const name = generatePieceName(
+      'ORCL', tag, '/u01/app/oracle/fast_recovery_area',
+      'datafile-full', new Date(2026, 4, 6, 14, 30, 22));
+    expect(name).toMatch(
+      /^\/u01\/app\/oracle\/fast_recovery_area\/ORCL\/backupset\/2026_05_06\/o1_mf_nnndf_TAG20260506T143022_[a-z0-9]{8}_\.bkp$/);
+  });
+
+  it('carries the OMF type code of the backup kind', () => {
     const tag = RmanTag.of('T');
-    const name = generatePieceName('ORCL', tag);
-    expect(name.startsWith('/u01/backup/ORCL_')).toBe(true);
-    expect(name.endsWith('.bkp')).toBe(true);
+    const at = new Date(2026, 4, 6);
+    const piece = (kind: Parameters<typeof generatePieceName>[3]) =>
+      generatePieceName('ORCL', tag, '/fra', kind, at);
+    expect(piece('datafile-incremental-0')).toContain('/o1_mf_nnnd0_T_');
+    expect(piece('datafile-incremental-1')).toContain('/o1_mf_nnnd1_T_');
+    expect(piece('archivelog')).toContain('/o1_mf_annnn_T_');
+    expect(piece('controlfile-spfile')).toContain('/o1_mf_ncsnf_T_');
+    expect(piece('autobackup')).toContain('/ORCL/autobackup/2026_05_06/o1_mf_s_T_');
   });
 });

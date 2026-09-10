@@ -55,11 +55,10 @@ export function cmdTouch(ctx: ShellContext, args: string[]): string {
     const path = ctx.vfs.normalizePath(arg, ctx.cwd);
     const existed = ctx.vfs.exists(path);
     ctx.vfs.touch(path, ctx.uid, ctx.gid, ctx.umask);
-    // A file that did not appear on a volume with no inodes left is the
-    // one refusal `touch` can hit here (docs/PRD-Pannes.md §F9.2) —
-    // permission cases are already reported by the caller.
-    if (!existed && !ctx.vfs.exists(path) && ctx.vfs.freeInodes() === 0) {
-      errors.push(`touch: cannot touch '${arg}': No space left on device`);
+    if (!existed && !ctx.vfs.exists(path)) {
+      errors.push(ctx.vfs.freeInodes() === 0
+        ? `touch: cannot touch '${arg}': No space left on device`
+        : `touch: cannot touch '${arg}': No such file or directory`);
     }
   }
   return errors.join('\n');

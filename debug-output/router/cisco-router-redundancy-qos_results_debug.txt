@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-redundancy-qos
-Generated: 2026-08-23T10:16:27.421Z
+Generated: 2026-09-10T16:29:57.545Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
 Total steps: 413
@@ -53,25 +53,29 @@ Total steps: 413
 <empty>
 
 [15/413] r1 R1(config-if)# standby 1 ip 192.168.1.101 secondary
-<empty>
+                                           ^
+  % Invalid input detected at '^' marker.
 
 [16/413] r1 R1(config-if)# standby 1 priority 110
 <empty>
 
 [17/413] r1 R1(config-if)# standby 1 preempt delay minimum 30 reload 60
-<empty>
+                                                   ^
+  % Invalid input detected at '^' marker.
 
 [18/413] r1 R1(config-if)# standby 1 timers 1 3
 <empty>
 
 [19/413] r1 R1(config-if)# standby 1 timers msec 200 msec 750
-<empty>
+                                 ^
+  % Invalid input detected at '^' marker.
 
 [20/413] r1 R1(config-if)# standby 1 authentication md5 key-string HsrpKey1
 <empty>
 
 [21/413] r1 R1(config-if)# standby 1 track GigabitEthernet0/1 30
-<empty>
+                                                   ^
+  % Invalid input detected at '^' marker.
 
 [22/413] r1 R1(config-if)# standby 1 track 1 decrement 20
 <empty>
@@ -80,7 +84,8 @@ Total steps: 413
 <empty>
 
 [24/413] r1 R1(config-if)# standby 1 mac-address 0000.0c07.ac01
-<empty>
+                          ^
+  % Invalid input detected at '^' marker.
 
 [25/413] r1 R1(config-if)# standby 1 follow HSRP-GRP-1
 <empty>
@@ -89,25 +94,29 @@ Total steps: 413
 <empty>
 
 [27/413] r1 R1(config-if)# standby 2 ip 192.168.1.102 secondary
-<empty>
+                                           ^
+  % Invalid input detected at '^' marker.
 
 [28/413] r1 R1(config-if)# standby 2 priority 120
 <empty>
 
 [29/413] r1 R1(config-if)# standby 2 preempt delay minimum 30 reload 60
-<empty>
+                                                   ^
+  % Invalid input detected at '^' marker.
 
 [30/413] r1 R1(config-if)# standby 2 timers 1 3
 <empty>
 
 [31/413] r1 R1(config-if)# standby 2 timers msec 200 msec 750
-<empty>
+                                 ^
+  % Invalid input detected at '^' marker.
 
 [32/413] r1 R1(config-if)# standby 2 authentication md5 key-string HsrpKey2
 <empty>
 
 [33/413] r1 R1(config-if)# standby 2 track GigabitEthernet0/1 30
-<empty>
+                                                   ^
+  % Invalid input detected at '^' marker.
 
 [34/413] r1 R1(config-if)# standby 2 track 1 decrement 20
 <empty>
@@ -116,7 +125,8 @@ Total steps: 413
 <empty>
 
 [36/413] r1 R1(config-if)# standby 2 mac-address 0000.0c07.ac02
-<empty>
+                          ^
+  % Invalid input detected at '^' marker.
 
 [37/413] r1 R1(config-if)# standby 2 follow HSRP-GRP-1
 <empty>
@@ -125,25 +135,29 @@ Total steps: 413
 <empty>
 
 [39/413] r1 R1(config-if)# standby 3 ip 192.168.1.103 secondary
-<empty>
+                                           ^
+  % Invalid input detected at '^' marker.
 
 [40/413] r1 R1(config-if)# standby 3 priority 130
 <empty>
 
 [41/413] r1 R1(config-if)# standby 3 preempt delay minimum 30 reload 60
-<empty>
+                                                   ^
+  % Invalid input detected at '^' marker.
 
 [42/413] r1 R1(config-if)# standby 3 timers 1 3
 <empty>
 
 [43/413] r1 R1(config-if)# standby 3 timers msec 200 msec 750
-<empty>
+                                 ^
+  % Invalid input detected at '^' marker.
 
 [44/413] r1 R1(config-if)# standby 3 authentication md5 key-string HsrpKey3
 <empty>
 
 [45/413] r1 R1(config-if)# standby 3 track GigabitEthernet0/1 30
-<empty>
+                                                   ^
+  % Invalid input detected at '^' marker.
 
 [46/413] r1 R1(config-if)# standby 3 track 1 decrement 20
 <empty>
@@ -152,7 +166,8 @@ Total steps: 413
 <empty>
 
 [48/413] r1 R1(config-if)# standby 3 mac-address 0000.0c07.ac03
-<empty>
+                          ^
+  % Invalid input detected at '^' marker.
 
 [49/413] r1 R1(config-if)# standby 3 follow HSRP-GRP-1
 <empty>
@@ -161,25 +176,29 @@ Total steps: 413
 <empty>
 
 [51/413] r1 R1(config-if)# standby 4 ip 192.168.1.104 secondary
-<empty>
+                                           ^
+  % Invalid input detected at '^' marker.
 
 [52/413] r1 R1(config-if)# standby 4 priority 140
 <empty>
 
 [53/413] r1 R1(config-if)# standby 4 preempt delay minimum 30 reload 60
-<empty>
+                                                   ^
+  % Invalid input detected at '^' marker.
 
 [54/413] r1 R1(config-if)# standby 4 timers 1 3
 <empty>
 
 [55/413] r1 R1(config-if)# standby 4 timers msec 200 msec 750
-<empty>
+                                 ^
+  % Invalid input detected at '^' marker.
 
 [56/413] r1 R1(config-if)# standby 4 authentication md5 key-string HsrpKey4
 <empty>
 
 [57/413] r1 R1(config-if)# standby 4 track GigabitEthernet0/1 30
-<empty>
+                                                   ^
+  % Invalid input detected at '^' marker.
 
 [58/413] r1 R1(config-if)# standby 4 track 1 decrement 20
 <empty>
@@ -188,7 +207,8 @@ Total steps: 413
 <empty>
 
 [60/413] r1 R1(config-if)# standby 4 mac-address 0000.0c07.ac04
-<empty>
+                          ^
+  % Invalid input detected at '^' marker.
 
 [61/413] r1 R1(config-if)# standby 4 follow HSRP-GRP-1
 <empty>
@@ -197,10 +217,12 @@ Total steps: 413
 <empty>
 
 [63/413] r1 R1(config-if)# standby use-bia
-<empty>
+                        ^
+  % Invalid input detected at '^' marker.
 
 [64/413] r1 R1(config-if)# standby delay minimum 30 reload 60
-<empty>
+                        ^
+  % Invalid input detected at '^' marker.
 
 [65/413] r1 R1(config-if)# exit
 <empty>
@@ -213,12 +235,11 @@ Total steps: 413
     State is Active
     Virtual IP address is 192.168.1.1
     Active virtual MAC address is 0000.0c9f.f001
-    Hello time 200 sec, hold time 750 sec
-    Preemption enabled, delay min 30 secs
+    Hello time 1 sec, hold time 3 sec
+    Preemption disabled
     Active router is local
     Standby router is unknown
     Priority 110 (configured 110)
-    Track object GigabitEthernet0/1 state decrement 10
     Track object 1 state decrement 20
     Group name is "HSRP-GRP-1" (cfgd)
     Following group HSRP-GRP-1
@@ -226,12 +247,11 @@ Total steps: 413
     State is Active
     Virtual IP address is 192.168.1.2
     Active virtual MAC address is 0000.0c9f.f002
-    Hello time 200 sec, hold time 750 sec
-    Preemption enabled, delay min 30 secs
+    Hello time 1 sec, hold time 3 sec
+    Preemption disabled
     Active router is local
     Standby router is unknown
     Priority 120 (configured 120)
-    Track object GigabitEthernet0/1 state decrement 10
     Track object 1 state decrement 20
     Group name is "HSRP-GRP-2" (cfgd)
     Following group HSRP-GRP-1
@@ -239,12 +259,11 @@ Total steps: 413
     State is Active
     Virtual IP address is 192.168.1.3
     Active virtual MAC address is 0000.0c9f.f003
-    Hello time 200 sec, hold time 750 sec
-    Preemption enabled, delay min 30 secs
+    Hello time 1 sec, hold time 3 sec
+    Preemption disabled
     Active router is local
     Standby router is unknown
     Priority 130 (configured 130)
-    Track object GigabitEthernet0/1 state decrement 10
     Track object 1 state decrement 20
     Group name is "HSRP-GRP-3" (cfgd)
     Following group HSRP-GRP-1
@@ -252,12 +271,11 @@ Total steps: 413
     State is Active
     Virtual IP address is 192.168.1.4
     Active virtual MAC address is 0000.0c9f.f004
-    Hello time 200 sec, hold time 750 sec
-    Preemption enabled, delay min 30 secs
+    Hello time 1 sec, hold time 3 sec
+    Preemption disabled
     Active router is local
     Standby router is unknown
     Priority 140 (configured 140)
-    Track object GigabitEthernet0/1 state decrement 10
     Track object 1 state decrement 20
     Group name is "HSRP-GRP-4" (cfgd)
     Following group HSRP-GRP-1
@@ -266,22 +284,21 @@ Total steps: 413
                        P indicates configured to preempt.
                        |
   Interface   Grp  Pri P State    Active          Standby         Virtual IP
-  Gi0/0       1    110 P Active   local           unknown         192.168.1.1
-  Gi0/0       2    120 P Active   local           unknown         192.168.1.2
-  Gi0/0       3    130 P Active   local           unknown         192.168.1.3
-  Gi0/0       4    140 P Active   local           unknown         192.168.1.4
+  Gi0/0       1    110   Active   local           unknown         192.168.1.1
+  Gi0/0       2    120   Active   local           unknown         192.168.1.2
+  Gi0/0       3    130   Active   local           unknown         192.168.1.3
+  Gi0/0       4    140   Active   local           unknown         192.168.1.4
 
 [69/413] r1 R1# show standby GigabitEthernet0/0
   GigabitEthernet0/0 - Group 1 (version 2)
     State is Active
     Virtual IP address is 192.168.1.1
     Active virtual MAC address is 0000.0c9f.f001
-    Hello time 200 sec, hold time 750 sec
-    Preemption enabled, delay min 30 secs
+    Hello time 1 sec, hold time 3 sec
+    Preemption disabled
     Active router is local
     Standby router is unknown
     Priority 110 (configured 110)
-    Track object GigabitEthernet0/1 state decrement 10
     Track object 1 state decrement 20
     Group name is "HSRP-GRP-1" (cfgd)
     Following group HSRP-GRP-1
@@ -289,12 +306,11 @@ Total steps: 413
     State is Active
     Virtual IP address is 192.168.1.2
     Active virtual MAC address is 0000.0c9f.f002
-    Hello time 200 sec, hold time 750 sec
-    Preemption enabled, delay min 30 secs
+    Hello time 1 sec, hold time 3 sec
+    Preemption disabled
     Active router is local
     Standby router is unknown
     Priority 120 (configured 120)
-    Track object GigabitEthernet0/1 state decrement 10
     Track object 1 state decrement 20
     Group name is "HSRP-GRP-2" (cfgd)
     Following group HSRP-GRP-1
@@ -302,12 +318,11 @@ Total steps: 413
     State is Active
     Virtual IP address is 192.168.1.3
     Active virtual MAC address is 0000.0c9f.f003
-    Hello time 200 sec, hold time 750 sec
-    Preemption enabled, delay min 30 secs
+    Hello time 1 sec, hold time 3 sec
+    Preemption disabled
     Active router is local
     Standby router is unknown
     Priority 130 (configured 130)
-    Track object GigabitEthernet0/1 state decrement 10
     Track object 1 state decrement 20
     Group name is "HSRP-GRP-3" (cfgd)
     Following group HSRP-GRP-1
@@ -315,12 +330,11 @@ Total steps: 413
     State is Active
     Virtual IP address is 192.168.1.4
     Active virtual MAC address is 0000.0c9f.f004
-    Hello time 200 sec, hold time 750 sec
-    Preemption enabled, delay min 30 secs
+    Hello time 1 sec, hold time 3 sec
+    Preemption disabled
     Active router is local
     Standby router is unknown
     Priority 140 (configured 140)
-    Track object GigabitEthernet0/1 state decrement 10
     Track object 1 state decrement 20
     Group name is "HSRP-GRP-4" (cfgd)
     Following group HSRP-GRP-1
@@ -330,53 +344,13 @@ Total steps: 413
     State is Active
     Virtual IP address is 192.168.1.1
     Active virtual MAC address is 0000.0c9f.f001
-    Hello time 200 sec, hold time 750 sec
-    Preemption enabled, delay min 30 secs
+    Hello time 1 sec, hold time 3 sec
+    Preemption disabled
     Active router is local
     Standby router is unknown
     Priority 110 (configured 110)
-    Track object GigabitEthernet0/1 state decrement 10
     Track object 1 state decrement 20
     Group name is "HSRP-GRP-1" (cfgd)
-    Following group HSRP-GRP-1
-  GigabitEthernet0/0 - Group 2 (version 2)
-    State is Active
-    Virtual IP address is 192.168.1.2
-    Active virtual MAC address is 0000.0c9f.f002
-    Hello time 200 sec, hold time 750 sec
-    Preemption enabled, delay min 30 secs
-    Active router is local
-    Standby router is unknown
-    Priority 120 (configured 120)
-    Track object GigabitEthernet0/1 state decrement 10
-    Track object 1 state decrement 20
-    Group name is "HSRP-GRP-2" (cfgd)
-    Following group HSRP-GRP-1
-  GigabitEthernet0/0 - Group 3 (version 2)
-    State is Active
-    Virtual IP address is 192.168.1.3
-    Active virtual MAC address is 0000.0c9f.f003
-    Hello time 200 sec, hold time 750 sec
-    Preemption enabled, delay min 30 secs
-    Active router is local
-    Standby router is unknown
-    Priority 130 (configured 130)
-    Track object GigabitEthernet0/1 state decrement 10
-    Track object 1 state decrement 20
-    Group name is "HSRP-GRP-3" (cfgd)
-    Following group HSRP-GRP-1
-  GigabitEthernet0/0 - Group 4 (version 2)
-    State is Active
-    Virtual IP address is 192.168.1.4
-    Active virtual MAC address is 0000.0c9f.f004
-    Hello time 200 sec, hold time 750 sec
-    Preemption enabled, delay min 30 secs
-    Active router is local
-    Standby router is unknown
-    Priority 140 (configured 140)
-    Track object GigabitEthernet0/1 state decrement 10
-    Track object 1 state decrement 20
-    Group name is "HSRP-GRP-4" (cfgd)
     Following group HSRP-GRP-1
 
 [71/413] r1 R1# show standby all
@@ -384,12 +358,11 @@ Total steps: 413
     State is Active
     Virtual IP address is 192.168.1.1
     Active virtual MAC address is 0000.0c9f.f001
-    Hello time 200 sec, hold time 750 sec
-    Preemption enabled, delay min 30 secs
+    Hello time 1 sec, hold time 3 sec
+    Preemption disabled
     Active router is local
     Standby router is unknown
     Priority 110 (configured 110)
-    Track object GigabitEthernet0/1 state decrement 10
     Track object 1 state decrement 20
     Group name is "HSRP-GRP-1" (cfgd)
     Following group HSRP-GRP-1
@@ -397,12 +370,11 @@ Total steps: 413
     State is Active
     Virtual IP address is 192.168.1.2
     Active virtual MAC address is 0000.0c9f.f002
-    Hello time 200 sec, hold time 750 sec
-    Preemption enabled, delay min 30 secs
+    Hello time 1 sec, hold time 3 sec
+    Preemption disabled
     Active router is local
     Standby router is unknown
     Priority 120 (configured 120)
-    Track object GigabitEthernet0/1 state decrement 10
     Track object 1 state decrement 20
     Group name is "HSRP-GRP-2" (cfgd)
     Following group HSRP-GRP-1
@@ -410,12 +382,11 @@ Total steps: 413
     State is Active
     Virtual IP address is 192.168.1.3
     Active virtual MAC address is 0000.0c9f.f003
-    Hello time 200 sec, hold time 750 sec
-    Preemption enabled, delay min 30 secs
+    Hello time 1 sec, hold time 3 sec
+    Preemption disabled
     Active router is local
     Standby router is unknown
     Priority 130 (configured 130)
-    Track object GigabitEthernet0/1 state decrement 10
     Track object 1 state decrement 20
     Group name is "HSRP-GRP-3" (cfgd)
     Following group HSRP-GRP-1
@@ -423,12 +394,11 @@ Total steps: 413
     State is Active
     Virtual IP address is 192.168.1.4
     Active virtual MAC address is 0000.0c9f.f004
-    Hello time 200 sec, hold time 750 sec
-    Preemption enabled, delay min 30 secs
+    Hello time 1 sec, hold time 3 sec
+    Preemption disabled
     Active router is local
     Standby router is unknown
     Priority 140 (configured 140)
-    Track object GigabitEthernet0/1 state decrement 10
     Track object 1 state decrement 20
     Group name is "HSRP-GRP-4" (cfgd)
     Following group HSRP-GRP-1
@@ -463,7 +433,8 @@ Total steps: 413
 <empty>
 
 [81/413] r1 R1(config-if)# vrrp 1 timers learn
-<empty>
+                              ^
+  % Invalid input detected at '^' marker.
 
 [82/413] r1 R1(config-if)# vrrp 1 authentication md5 key-string VrrpKey1
 <empty>
@@ -487,7 +458,8 @@ Total steps: 413
 <empty>
 
 [89/413] r1 R1(config-if)# vrrp 2 timers learn
-<empty>
+                              ^
+  % Invalid input detected at '^' marker.
 
 [90/413] r1 R1(config-if)# vrrp 2 authentication md5 key-string VrrpKey2
 <empty>
@@ -511,7 +483,8 @@ Total steps: 413
 <empty>
 
 [97/413] r1 R1(config-if)# vrrp 3 timers learn
-<empty>
+                              ^
+  % Invalid input detected at '^' marker.
 
 [98/413] r1 R1(config-if)# vrrp 3 authentication md5 key-string VrrpKey3
 <empty>
@@ -523,7 +496,8 @@ Total steps: 413
 <empty>
 
 [101/413] r1 R1(config-if)# vrrp 1 address-family ipv4
-<empty>
+                       ^
+  % Invalid input detected at '^' marker.
 
 [102/413] r1 R1(config-if)# exit
 <empty>
@@ -619,10 +593,12 @@ Total steps: 413
 <empty>
 
 [116/413] r1 R1(config-if)# glbp 1 timers 3 10
-<empty>
+                       ^
+  % Invalid input detected at '^' marker.
 
 [117/413] r1 R1(config-if)# glbp 1 timers redirect 600 7200
-<empty>
+                       ^
+  % Invalid input detected at '^' marker.
 
 [118/413] r1 R1(config-if)# glbp 1 authentication md5 key-string GlbpKey
 <empty>
@@ -643,7 +619,7 @@ Total steps: 413
   GigabitEthernet0/0 - Group 1
     State is Active
     Virtual IP address is 192.168.1.250
-    Hello time 600 sec, hold time 7200 sec
+    Hello time 3 sec, hold time 10 sec
     Preemption enabled
     Active is local
     Priority 150 (configured)
@@ -744,7 +720,8 @@ Total steps: 413
 <empty>
 
 [151/413] r1 R1(config-track)# threshold weight up 25 down 10
-<empty>
+                   ^
+  % Invalid input detected at '^' marker.
 
 [152/413] r1 R1(config-track)# exit
 <empty>
@@ -824,7 +801,7 @@ Total steps: 413
       Nobody
   Track 21
     List threshold weight
-    State is Down
+    State is Up
       0 changes, last change never
     Threshold weight is 10
       1 weight 10 Up
@@ -849,7 +826,7 @@ Total steps: 413
   11      ip sla 1                       reachability     Down       never
   12      ip sla 1                       state            Down       never
   20      list-boolean                   boolean          Down       never
-  21      list-threshold                 threshold        Down       never
+  21      list-threshold                 threshold        Up         never
   22      stub                           stub             Down       never
 
 [158/413] r1 R1# show track 1
@@ -1248,7 +1225,7 @@ Total steps: 413
   NeighAddr        LD/RD     RH/RS   Holdown(mult) State     Int
 
 [207/413] r1 R1# show bfd neighbors details
-<empty>
+  NeighAddr        LD/RD     RH/RS   Holdown(mult) State     Int
 
 [208/413] r1 R1# show bfd summary
    No BFD sessions configured.
@@ -1280,7 +1257,8 @@ Total steps: 413
 <empty>
 
 [217/413] r1 R1(config-cmap)# match ip dscp ef
-<empty>
+                  ^
+  % Invalid input detected at '^' marker.
 
 [218/413] r1 R1(config-cmap)# match access-group name VOICE
 <empty>
@@ -1295,7 +1273,8 @@ Total steps: 413
 <empty>
 
 [222/413] r1 R1(config-cmap)# match ip dscp af41
-<empty>
+                  ^
+  % Invalid input detected at '^' marker.
 
 [223/413] r1 R1(config-cmap)# match access-group name VIDEO
 <empty>
@@ -1313,7 +1292,8 @@ Total steps: 413
 <empty>
 
 [228/413] r1 R1(config-cmap)# match ip precedence 6
-<empty>
+                  ^
+  % Invalid input detected at '^' marker.
 
 [229/413] r1 R1(config-cmap)# exit
 <empty>
@@ -1388,7 +1368,7 @@ Total steps: 413
 <empty>
 
 [253/413] r1 R1(config-pmap-c)# random-detect
-<empty>
+  % Incomplete command.
 
 [254/413] r1 R1(config-pmap-c)# shape average 50000000
 <empty>
@@ -1466,19 +1446,18 @@ Total steps: 413
   Policy Map PM-WAN-OUT
     Class CM-VOICE
       priority percent 20
-      set-dscp ef
+      set dscp ef
     Class CM-VIDEO
       bandwidth percent 25
       random-detect dscp-based
-      set-dscp af41
+      set dscp af41
     Class CM-CRITICAL
       bandwidth percent 15
     Class CM-SCAVENGER
       bandwidth percent 1
-      set-dscp cs1
+      set dscp cs1
     Class class-default
       fair-queue
-      random-detect
       shape average 50000000
   Policy Map PM-SHAPER
     Class class-default
@@ -1494,19 +1473,18 @@ Total steps: 413
   Policy Map PM-WAN-OUT
     Class CM-VOICE
       priority percent 20
-      set-dscp ef
+      set dscp ef
     Class CM-VIDEO
       bandwidth percent 25
       random-detect dscp-based
-      set-dscp af41
+      set dscp af41
     Class CM-CRITICAL
       bandwidth percent 15
     Class CM-SCAVENGER
       bandwidth percent 1
-      set-dscp cs1
+      set dscp cs1
     Class class-default
       fair-queue
-      random-detect
       shape average 50000000
 
 [280/413] r1 R1# show policy-map interface GigabitEthernet0/1
@@ -1576,7 +1554,8 @@ Total steps: 413
 <empty>
 
 [297/413] r1 R1(config)# access-list rate-limit 10 5
-  % Invalid access-list number.
+                         ^
+  % Invalid input detected at '^' marker.
 
 [298/413] r1 R1(config)# end
 <empty>
@@ -1628,7 +1607,7 @@ Total steps: 413
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX83640DT6
+  Processor board ID FTX161750CK
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1638,19 +1617,19 @@ Total steps: 413
 [306/413] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 3272 bytes
+  Current configuration : 4938 bytes
   !
-  ! Last configuration change at 10:16:27 UTC Sun Aug 23 2026 by console
+  ! Last configuration change at 16:29:59 UTC Thu Sep 10 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
   !
   hostname R1
   !
-  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   track 1 interface GigabitEthernet0/1 line-protocol
    delay up 10 down 20
@@ -1678,12 +1657,61 @@ Total steps: 413
   track 21 list threshold weight
    object 1 weight 10
    object 10 weight 20
-   threshold weight up 25 down 10
   !
   track 22 stub-object
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.2 255.255.255.0
+   vrrp 1 ip 192.168.1.201
+   vrrp 1 priority 120
+   vrrp 1 preempt delay minimum 15
+   vrrp 1 authentication md5 key-string VrrpKey1
+   vrrp 1 description VRRP-GRP-1
+   vrrp 1 track 1 decrement 20
+   vrrp 2 ip 192.168.1.202
+   vrrp 2 priority 130
+   vrrp 2 preempt delay minimum 15
+   vrrp 2 authentication md5 key-string VrrpKey2
+   vrrp 2 description VRRP-GRP-2
+   vrrp 2 track 1 decrement 20
+   vrrp 3 ip 192.168.1.203
+   vrrp 3 priority 140
+   vrrp 3 preempt delay minimum 15
+   vrrp 3 authentication md5 key-string VrrpKey3
+   vrrp 3 description VRRP-GRP-3
+   vrrp 3 track 1 decrement 20
+   standby version 2
+   standby 1 ip 192.168.1.1
+   standby 1 priority 110
+   standby 1 timers 1 3
+   standby 1 authentication md5 key-string HsrpKey1
+   standby 1 name HSRP-GRP-1
+   standby 1 track 1 decrement 20
+   standby 2 ip 192.168.1.2
+   standby 2 priority 120
+   standby 2 timers 1 3
+   standby 2 authentication md5 key-string HsrpKey2
+   standby 2 name HSRP-GRP-2
+   standby 2 track 1 decrement 20
+   standby 3 ip 192.168.1.3
+   standby 3 priority 130
+   standby 3 timers 1 3
+   standby 3 authentication md5 key-string HsrpKey3
+   standby 3 name HSRP-GRP-3
+   standby 3 track 1 decrement 20
+   standby 4 ip 192.168.1.4
+   standby 4 priority 140
+   standby 4 timers 1 3
+   standby 4 authentication md5 key-string HsrpKey4
+   standby 4 name HSRP-GRP-4
+   standby 4 track 1 decrement 20
+   glbp 1 ip 192.168.1.250
+   glbp 1 priority 150
+   glbp 1 preempt delay minimum 30
+   glbp 1 weighting 100 lower 90 upper 95
+   glbp 1 authentication md5 key-string GlbpKey
+   glbp 1 name GLBP-GRP-1
+   glbp 1 weighting track 1
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
@@ -1696,6 +1724,7 @@ Total steps: 413
    custom-queue-list 1
    tx-ring-limit 3
    rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
+   no bfd echo
   !
   interface GigabitEthernet0/2
    no ip address
@@ -1761,16 +1790,25 @@ Total steps: 413
   !
   policy-map PM-WAN-OUT
    class CM-VOICE
+    priority percent 20
     set dscp ef
    class CM-VIDEO
+    bandwidth percent 25
+    random-detect dscp-based
     set dscp af41
    class CM-CRITICAL
+    bandwidth percent 15
    class CM-SCAVENGER
+    bandwidth percent 1
     set dscp cs1
    class class-default
+    fair-queue
+    shape average 50000000
   !
   policy-map PM-SHAPER
    class class-default
+    shape average 100000000 1000000
+    service-policy PM-WAN-OUT
   !
   policy-map PM-POLICE-IN
    class CM-SCAVENGER
@@ -1805,10 +1843,10 @@ Total steps: 413
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 160 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       42 packets output, 2898 bytes, 0 underruns
+       37 packets output, 2562 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
@@ -1825,7 +1863,7 @@ Total steps: 413
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 128 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
        6 packets output, 404 bytes, 0 underruns
@@ -2015,10 +2053,10 @@ Total steps: 413
                        P indicates configured to preempt.
                        |
   Interface   Grp  Pri P State    Active          Standby         Virtual IP
-  Gi0/0       1    110 P Active   local           unknown         192.168.1.1
-  Gi0/0       2    120 P Active   local           unknown         192.168.1.2
-  Gi0/0       3    130 P Active   local           unknown         192.168.1.3
-  Gi0/0       4    140 P Active   local           unknown         192.168.1.4
+  Gi0/0       1    110   Active   local           unknown         192.168.1.1
+  Gi0/0       2    120   Active   local           unknown         192.168.1.2
+  Gi0/0       3    130   Active   local           unknown         192.168.1.3
+  Gi0/0       4    140   Active   local           unknown         192.168.1.4
 
 [335/413] r1 R1# show vrrp brief
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
@@ -2092,7 +2130,7 @@ Total steps: 413
       Nobody
   Track 21
     List threshold weight
-    State is Down
+    State is Up
       0 changes, last change never
     Threshold weight is 10
       1 weight 10 Up
@@ -2155,35 +2193,35 @@ Total steps: 413
   
   Log Buffer (4096 bytes):
   
-  *Aug 23 10:16:27.416: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 23 10:16:27.417: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 23 10:16:27.418: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 10:16:27.418: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 10:16:27.456: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:27.461: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state init -> speak
-  *Aug 23 10:16:27.462: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state speak -> active
-  *Aug 23 10:16:27.463: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
-  *Aug 23 10:16:27.475: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state init -> speak
-  *Aug 23 10:16:27.476: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state speak -> active
-  *Aug 23 10:16:27.476: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
-  *Aug 23 10:16:27.487: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state init -> speak
-  *Aug 23 10:16:27.487: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state speak -> active
-  *Aug 23 10:16:27.487: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
-  *Aug 23 10:16:27.494: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state init -> speak
-  *Aug 23 10:16:27.494: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state speak -> active
-  *Aug 23 10:16:27.494: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
-  *Aug 23 10:16:27.501: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:27.520: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 1 state init -> master
-  *Aug 23 10:16:27.526: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 2 state init -> master
-  *Aug 23 10:16:27.531: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 3 state init -> master
-  *Aug 23 10:16:27.535: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:27.541: %GLBP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 AVG state init -> active
-  *Aug 23 10:16:27.547: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:27.562: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:27.589: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:27.621: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:27.656: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:27.694: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:57.539: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 10 16:29:57.540: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 10 16:29:57.542: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:29:57.542: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:29:57.740: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:57.778: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state init -> speak
+  *Sep 10 16:29:57.784: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state speak -> active
+  *Sep 10 16:29:57.785: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
+  *Sep 10 16:29:58.016: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state init -> speak
+  *Sep 10 16:29:58.017: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state speak -> active
+  *Sep 10 16:29:58.017: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
+  *Sep 10 16:29:58.119: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state init -> speak
+  *Sep 10 16:29:58.120: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state speak -> active
+  *Sep 10 16:29:58.120: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
+  *Sep 10 16:29:58.224: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state init -> speak
+  *Sep 10 16:29:58.224: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state speak -> active
+  *Sep 10 16:29:58.224: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
+  *Sep 10 16:29:58.354: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:58.433: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 1 state init -> master
+  *Sep 10 16:29:58.483: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 2 state init -> master
+  *Sep 10 16:29:58.522: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 3 state init -> master
+  *Sep 10 16:29:58.560: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:58.603: %GLBP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 AVG state init -> active
+  *Sep 10 16:29:58.658: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:58.816: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:59.220: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:59.438: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:59.792: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:59.870: %SYS-5-CONFIG_I: Configured from console by console
 
 [340/413] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -2194,8 +2232,8 @@ Total steps: 413
 [341/413] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE3546FB.CFDF3B64 (10:16:27.812 UTC Sun Aug 23 2026)
+  ntp uptime is 200 (1/100 of seconds), resolution is 4001
+  reference time is EE4D5988.23958106 (16:30:00.139 UTC Thu Sep 10 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -2206,14 +2244,14 @@ Total steps: 413
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [343/413] r1 R1# show clock
-  *10:16:27.000 UTC Sun Aug 23 2026
+  *16:30:00.000 UTC Thu Sep 10 2026
 
 [344/413] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  R2               Gig 0/1           180        R           Cisco 291 Gig 0/1
+  R2               Gig 0/1           178        R           Cisco 291 Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -2300,10 +2338,10 @@ Total steps: 413
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 160 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       42 packets output, 2898 bytes, 0 underruns
+       37 packets output, 2562 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2322,7 +2360,7 @@ Total steps: 413
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 128 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
        6 packets output, 404 bytes, 0 underruns
@@ -2345,6 +2383,7 @@ Total steps: 413
     Split horizon is enabled
     ICMP redirects are always sent
     ICMP unreachables are always sent
+    ICMP mask replies are never sent
     IP fast switching is enabled
     IP CEF switching is enabled
 
@@ -2388,7 +2427,7 @@ Total steps: 413
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX83640DT6
+  Processor board ID FTX161750CK
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2398,19 +2437,19 @@ Total steps: 413
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 3272 bytes
+  Current configuration : 4938 bytes
   !
-  ! Last configuration change at 10:16:27 UTC Sun Aug 23 2026 by console
+  ! Last configuration change at 16:29:59 UTC Thu Sep 10 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
   !
   hostname R1
   !
-  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   track 1 interface GigabitEthernet0/1 line-protocol
    delay up 10 down 20
@@ -2438,12 +2477,61 @@ Total steps: 413
   track 21 list threshold weight
    object 1 weight 10
    object 10 weight 20
-   threshold weight up 25 down 10
   !
   track 22 stub-object
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.2 255.255.255.0
+   vrrp 1 ip 192.168.1.201
+   vrrp 1 priority 120
+   vrrp 1 preempt delay minimum 15
+   vrrp 1 authentication md5 key-string VrrpKey1
+   vrrp 1 description VRRP-GRP-1
+   vrrp 1 track 1 decrement 20
+   vrrp 2 ip 192.168.1.202
+   vrrp 2 priority 130
+   vrrp 2 preempt delay minimum 15
+   vrrp 2 authentication md5 key-string VrrpKey2
+   vrrp 2 description VRRP-GRP-2
+   vrrp 2 track 1 decrement 20
+   vrrp 3 ip 192.168.1.203
+   vrrp 3 priority 140
+   vrrp 3 preempt delay minimum 15
+   vrrp 3 authentication md5 key-string VrrpKey3
+   vrrp 3 description VRRP-GRP-3
+   vrrp 3 track 1 decrement 20
+   standby version 2
+   standby 1 ip 192.168.1.1
+   standby 1 priority 110
+   standby 1 timers 1 3
+   standby 1 authentication md5 key-string HsrpKey1
+   standby 1 name HSRP-GRP-1
+   standby 1 track 1 decrement 20
+   standby 2 ip 192.168.1.2
+   standby 2 priority 120
+   standby 2 timers 1 3
+   standby 2 authentication md5 key-string HsrpKey2
+   standby 2 name HSRP-GRP-2
+   standby 2 track 1 decrement 20
+   standby 3 ip 192.168.1.3
+   standby 3 priority 130
+   standby 3 timers 1 3
+   standby 3 authentication md5 key-string HsrpKey3
+   standby 3 name HSRP-GRP-3
+   standby 3 track 1 decrement 20
+   standby 4 ip 192.168.1.4
+   standby 4 priority 140
+   standby 4 timers 1 3
+   standby 4 authentication md5 key-string HsrpKey4
+   standby 4 name HSRP-GRP-4
+   standby 4 track 1 decrement 20
+   glbp 1 ip 192.168.1.250
+   glbp 1 priority 150
+   glbp 1 preempt delay minimum 30
+   glbp 1 weighting 100 lower 90 upper 95
+   glbp 1 authentication md5 key-string GlbpKey
+   glbp 1 name GLBP-GRP-1
+   glbp 1 weighting track 1
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
@@ -2456,6 +2544,7 @@ Total steps: 413
    custom-queue-list 1
    tx-ring-limit 3
    rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
+   no bfd echo
   !
   interface GigabitEthernet0/2
    no ip address
@@ -2521,16 +2610,25 @@ Total steps: 413
   !
   policy-map PM-WAN-OUT
    class CM-VOICE
+    priority percent 20
     set dscp ef
    class CM-VIDEO
+    bandwidth percent 25
+    random-detect dscp-based
     set dscp af41
    class CM-CRITICAL
+    bandwidth percent 15
    class CM-SCAVENGER
+    bandwidth percent 1
     set dscp cs1
    class class-default
+    fair-queue
+    shape average 50000000
   !
   policy-map PM-SHAPER
    class class-default
+    shape average 100000000 1000000
+    service-policy PM-WAN-OUT
   !
   policy-map PM-POLICE-IN
    class CM-SCAVENGER
@@ -2583,10 +2681,10 @@ Total steps: 413
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 160 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       42 packets output, 2898 bytes, 0 underruns
+       37 packets output, 2562 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
@@ -2603,7 +2701,7 @@ Total steps: 413
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 128 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
        6 packets output, 404 bytes, 0 underruns
@@ -2727,39 +2825,39 @@ Total steps: 413
   
   Log Buffer (4096 bytes):
   
-  *Aug 23 10:16:27.416: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 23 10:16:27.417: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 23 10:16:27.418: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 10:16:27.418: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 10:16:27.456: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:27.461: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state init -> speak
-  *Aug 23 10:16:27.462: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state speak -> active
-  *Aug 23 10:16:27.463: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
-  *Aug 23 10:16:27.475: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state init -> speak
-  *Aug 23 10:16:27.476: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state speak -> active
-  *Aug 23 10:16:27.476: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
-  *Aug 23 10:16:27.487: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state init -> speak
-  *Aug 23 10:16:27.487: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state speak -> active
-  *Aug 23 10:16:27.487: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
-  *Aug 23 10:16:27.494: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state init -> speak
-  *Aug 23 10:16:27.494: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state speak -> active
-  *Aug 23 10:16:27.494: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
-  *Aug 23 10:16:27.501: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:27.520: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 1 state init -> master
-  *Aug 23 10:16:27.526: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 2 state init -> master
-  *Aug 23 10:16:27.531: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 3 state init -> master
-  *Aug 23 10:16:27.535: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:27.541: %GLBP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 AVG state init -> active
-  *Aug 23 10:16:27.547: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:27.562: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:27.589: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:27.621: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:27.656: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:27.694: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:57.539: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 10 16:29:57.540: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 10 16:29:57.542: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:29:57.542: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:29:57.740: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:57.778: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state init -> speak
+  *Sep 10 16:29:57.784: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state speak -> active
+  *Sep 10 16:29:57.785: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
+  *Sep 10 16:29:58.016: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state init -> speak
+  *Sep 10 16:29:58.017: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state speak -> active
+  *Sep 10 16:29:58.017: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
+  *Sep 10 16:29:58.119: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state init -> speak
+  *Sep 10 16:29:58.120: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state speak -> active
+  *Sep 10 16:29:58.120: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
+  *Sep 10 16:29:58.224: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state init -> speak
+  *Sep 10 16:29:58.224: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state speak -> active
+  *Sep 10 16:29:58.224: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
+  *Sep 10 16:29:58.354: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:58.433: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 1 state init -> master
+  *Sep 10 16:29:58.483: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 2 state init -> master
+  *Sep 10 16:29:58.522: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 3 state init -> master
+  *Sep 10 16:29:58.560: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:58.603: %GLBP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 AVG state init -> active
+  *Sep 10 16:29:58.658: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:58.816: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:59.220: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:59.438: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:59.792: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:59.870: %SYS-5-CONFIG_I: Configured from console by console
 
 [357/413] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX83640DT6
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX161750CK
 
 [358/413] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2844,6 +2942,56 @@ Total steps: 413
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.2 255.255.255.0
+   vrrp 1 ip 192.168.1.201
+   vrrp 1 priority 120
+   vrrp 1 preempt delay minimum 15
+   vrrp 1 authentication md5 key-string VrrpKey1
+   vrrp 1 description VRRP-GRP-1
+   vrrp 1 track 1 decrement 20
+   vrrp 2 ip 192.168.1.202
+   vrrp 2 priority 130
+   vrrp 2 preempt delay minimum 15
+   vrrp 2 authentication md5 key-string VrrpKey2
+   vrrp 2 description VRRP-GRP-2
+   vrrp 2 track 1 decrement 20
+   vrrp 3 ip 192.168.1.203
+   vrrp 3 priority 140
+   vrrp 3 preempt delay minimum 15
+   vrrp 3 authentication md5 key-string VrrpKey3
+   vrrp 3 description VRRP-GRP-3
+   vrrp 3 track 1 decrement 20
+   standby version 2
+   standby 1 ip 192.168.1.1
+   standby 1 priority 110
+   standby 1 timers 1 3
+   standby 1 authentication md5 key-string HsrpKey1
+   standby 1 name HSRP-GRP-1
+   standby 1 track 1 decrement 20
+   standby 2 ip 192.168.1.2
+   standby 2 priority 120
+   standby 2 timers 1 3
+   standby 2 authentication md5 key-string HsrpKey2
+   standby 2 name HSRP-GRP-2
+   standby 2 track 1 decrement 20
+   standby 3 ip 192.168.1.3
+   standby 3 priority 130
+   standby 3 timers 1 3
+   standby 3 authentication md5 key-string HsrpKey3
+   standby 3 name HSRP-GRP-3
+   standby 3 track 1 decrement 20
+   standby 4 ip 192.168.1.4
+   standby 4 priority 140
+   standby 4 timers 1 3
+   standby 4 authentication md5 key-string HsrpKey4
+   standby 4 name HSRP-GRP-4
+   standby 4 track 1 decrement 20
+   glbp 1 ip 192.168.1.250
+   glbp 1 priority 150
+   glbp 1 preempt delay minimum 30
+   glbp 1 weighting 100 lower 90 upper 95
+   glbp 1 authentication md5 key-string GlbpKey
+   glbp 1 name GLBP-GRP-1
+   glbp 1 weighting track 1
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
@@ -2856,6 +3004,7 @@ Total steps: 413
    custom-queue-list 1
    tx-ring-limit 3
    rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
+   no bfd echo
   !
   interface GigabitEthernet0/2
    no ip address
@@ -2891,12 +3040,61 @@ Total steps: 413
   track 21 list threshold weight
    object 1 weight 10
    object 10 weight 20
-   threshold weight up 25 down 10
   !
   track 22 stub-object
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.2 255.255.255.0
+   vrrp 1 ip 192.168.1.201
+   vrrp 1 priority 120
+   vrrp 1 preempt delay minimum 15
+   vrrp 1 authentication md5 key-string VrrpKey1
+   vrrp 1 description VRRP-GRP-1
+   vrrp 1 track 1 decrement 20
+   vrrp 2 ip 192.168.1.202
+   vrrp 2 priority 130
+   vrrp 2 preempt delay minimum 15
+   vrrp 2 authentication md5 key-string VrrpKey2
+   vrrp 2 description VRRP-GRP-2
+   vrrp 2 track 1 decrement 20
+   vrrp 3 ip 192.168.1.203
+   vrrp 3 priority 140
+   vrrp 3 preempt delay minimum 15
+   vrrp 3 authentication md5 key-string VrrpKey3
+   vrrp 3 description VRRP-GRP-3
+   vrrp 3 track 1 decrement 20
+   standby version 2
+   standby 1 ip 192.168.1.1
+   standby 1 priority 110
+   standby 1 timers 1 3
+   standby 1 authentication md5 key-string HsrpKey1
+   standby 1 name HSRP-GRP-1
+   standby 1 track 1 decrement 20
+   standby 2 ip 192.168.1.2
+   standby 2 priority 120
+   standby 2 timers 1 3
+   standby 2 authentication md5 key-string HsrpKey2
+   standby 2 name HSRP-GRP-2
+   standby 2 track 1 decrement 20
+   standby 3 ip 192.168.1.3
+   standby 3 priority 130
+   standby 3 timers 1 3
+   standby 3 authentication md5 key-string HsrpKey3
+   standby 3 name HSRP-GRP-3
+   standby 3 track 1 decrement 20
+   standby 4 ip 192.168.1.4
+   standby 4 priority 140
+   standby 4 timers 1 3
+   standby 4 authentication md5 key-string HsrpKey4
+   standby 4 name HSRP-GRP-4
+   standby 4 track 1 decrement 20
+   glbp 1 ip 192.168.1.250
+   glbp 1 priority 150
+   glbp 1 preempt delay minimum 30
+   glbp 1 weighting 100 lower 90 upper 95
+   glbp 1 authentication md5 key-string GlbpKey
+   glbp 1 name GLBP-GRP-1
+   glbp 1 weighting track 1
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
@@ -2909,6 +3107,7 @@ Total steps: 413
    custom-queue-list 1
    tx-ring-limit 3
    rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
+   no bfd echo
   !
   interface GigabitEthernet0/2
    no ip address
@@ -2974,16 +3173,25 @@ Total steps: 413
   !
   policy-map PM-WAN-OUT
    class CM-VOICE
+    priority percent 20
     set dscp ef
    class CM-VIDEO
+    bandwidth percent 25
+    random-detect dscp-based
     set dscp af41
    class CM-CRITICAL
+    bandwidth percent 15
    class CM-SCAVENGER
+    bandwidth percent 1
     set dscp cs1
    class class-default
+    fair-queue
+    shape average 50000000
   !
   policy-map PM-SHAPER
    class class-default
+    shape average 100000000 1000000
+    service-policy PM-WAN-OUT
   !
   policy-map PM-POLICE-IN
    class CM-SCAVENGER
@@ -2996,14 +3204,14 @@ Total steps: 413
 [370/413] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 3272 bytes
+  Current configuration : 4938 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
-  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   track 1 interface GigabitEthernet0/1 line-protocol
    delay up 10 down 20
   track 2 interface GigabitEthernet0/0 line-protocol
@@ -3023,10 +3231,59 @@ Total steps: 413
   track 21 list threshold weight
    object 1 weight 10
    object 10 weight 20
-   threshold weight up 25 down 10
   track 22 stub-object
   interface GigabitEthernet0/0
    ip address 192.168.1.2 255.255.255.0
+   vrrp 1 ip 192.168.1.201
+   vrrp 1 priority 120
+   vrrp 1 preempt delay minimum 15
+   vrrp 1 authentication md5 key-string VrrpKey1
+   vrrp 1 description VRRP-GRP-1
+   vrrp 1 track 1 decrement 20
+   vrrp 2 ip 192.168.1.202
+   vrrp 2 priority 130
+   vrrp 2 preempt delay minimum 15
+   vrrp 2 authentication md5 key-string VrrpKey2
+   vrrp 2 description VRRP-GRP-2
+   vrrp 2 track 1 decrement 20
+   vrrp 3 ip 192.168.1.203
+   vrrp 3 priority 140
+   vrrp 3 preempt delay minimum 15
+   vrrp 3 authentication md5 key-string VrrpKey3
+   vrrp 3 description VRRP-GRP-3
+   vrrp 3 track 1 decrement 20
+   standby version 2
+   standby 1 ip 192.168.1.1
+   standby 1 priority 110
+   standby 1 timers 1 3
+   standby 1 authentication md5 key-string HsrpKey1
+   standby 1 name HSRP-GRP-1
+   standby 1 track 1 decrement 20
+   standby 2 ip 192.168.1.2
+   standby 2 priority 120
+   standby 2 timers 1 3
+   standby 2 authentication md5 key-string HsrpKey2
+   standby 2 name HSRP-GRP-2
+   standby 2 track 1 decrement 20
+   standby 3 ip 192.168.1.3
+   standby 3 priority 130
+   standby 3 timers 1 3
+   standby 3 authentication md5 key-string HsrpKey3
+   standby 3 name HSRP-GRP-3
+   standby 3 track 1 decrement 20
+   standby 4 ip 192.168.1.4
+   standby 4 priority 140
+   standby 4 timers 1 3
+   standby 4 authentication md5 key-string HsrpKey4
+   standby 4 name HSRP-GRP-4
+   standby 4 track 1 decrement 20
+   glbp 1 ip 192.168.1.250
+   glbp 1 priority 150
+   glbp 1 preempt delay minimum 30
+   glbp 1 weighting 100 lower 90 upper 95
+   glbp 1 authentication md5 key-string GlbpKey
+   glbp 1 name GLBP-GRP-1
+   glbp 1 weighting track 1
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    bandwidth 100000
@@ -3038,6 +3295,7 @@ Total steps: 413
    custom-queue-list 1
    tx-ring-limit 3
    rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
+   no bfd echo
   interface GigabitEthernet0/2
    no ip address
   interface GigabitEthernet0/3
@@ -3085,15 +3343,24 @@ Total steps: 413
    match protocol napster
   policy-map PM-WAN-OUT
    class CM-VOICE
+    priority percent 20
     set dscp ef
    class CM-VIDEO
+    bandwidth percent 25
+    random-detect dscp-based
     set dscp af41
    class CM-CRITICAL
+    bandwidth percent 15
    class CM-SCAVENGER
+    bandwidth percent 1
     set dscp cs1
    class class-default
+    fair-queue
+    shape average 50000000
   policy-map PM-SHAPER
    class class-default
+    shape average 100000000 1000000
+    service-policy PM-WAN-OUT
   policy-map PM-POLICE-IN
    class CM-SCAVENGER
     police 1000000 conform-action transmit exceed-action drop
@@ -3228,25 +3495,33 @@ Total steps: 413
 
 [406/413] r1 R1(config)# interface ?
     BVI              Bridge-Group Virtual Interface
+    BVI              Bridge-Group Virtual Interface
+    Ethernet         IEEE 802.3
     Ethernet         IEEE 802.3
     FastEthernet     FastEthernet IEEE 802.3u
+    FastEthernet     FastEthernet IEEE 802.3u
+    GigabitEthernet  GigabitEthernet IEEE 802.3z
     GigabitEthernet  GigabitEthernet IEEE 802.3z
     Loopback         Loopback interface
+    Loopback         Loopback interface
+    Port-channel     Ethernet Channel of interfaces
     Port-channel     Ethernet Channel of interfaces
     Serial           Serial
+    Serial           Serial
+    Tunnel           Tunnel interface
     Tunnel           Tunnel interface
 
 [407/413] r1 R1(config)# ip ?
-    access-list        Add an access list entry
-    as-path            BGP autonomous-system path filter
-    bootp              Bootstrap Protocol
-    cef                Enable CEF
-    classless          Accepted, default behaviour on IOS 12.0 and later
+    access-list        Create a named extended access list
+    as-path            Define BGP AS-path filter
+    bootp              Enable BOOTP server
+    cef                Enable Cisco Express Forwarding
+    classless          Follow classless routing forwarding rules
     community-list     Define BGP community list
-    default-network    Configure default-network
-    dhcp               Dynamic Host Configuration Protocol
-    dns                Domain Name System
-    domain             IP domain configuration
+    default-network    Configure default network
+    dhcp               Configure DHCP address pools
+    dns                Enable the DNS server
+    domain             Enable IP Domain Name System hostname translation
     domain-list        Define a list of default domain names
     domain-lookup      Enable IP Domain Name System hostname translation
     domain-name        Define the default domain name
@@ -3255,21 +3530,21 @@ Total steps: 413
     flow-export        Legacy NetFlow export
     gratuitous-arps    Send gratuitous ARP
     host               Add a host to the host table
-    http               Hypertext Transfer Protocol
-    local              Local settings
+    http               Enable HTTP server
+    local              Apply local PBR
     multicast-routing  Enable IP multicast routing
     name-server        Specify address of name server to use
-    nat                Network Address Translation
-    pim                Protocol Independent Multicast
+    nat                Wipe NAT configuration
+    pim                Configure static PIM RP address
     prefix-list        Build a prefix list
-    route              Establish static routes
+    route              Establish static routes in a VRF
     route-cache        Route cache
     routing            Enable IP routing
-    scp                SCP server config
+    scp                Enable the SCP server
     sla                Configure an IP SLAs operation
     source-route       Accept source-routed packets
-    ssh                SSH config
-    subnet-zero        Accepted, default behaviour on IOS 12.0 and later
+    ssh                SSH protocol version to accept
+    subnet-zero        Enable use of subnet zero
     vrf                Define a VRF instance
 
 [408/413] r1 R1(config)# router ?
@@ -3280,48 +3555,56 @@ Total steps: 413
 
 [409/413] r1 R1(config)# crypto ?
     dynamic-map  Define a dynamic crypto map
-    gdoi         Group Domain of Interpretation
-    ikev2        Internet Key Exchange version 2
-    ipsec        IP Security
-    isakmp       Internet Security Association and Key Management Protocol
-    key          Key management
+    gdoi         Define a GDOI GET-VPN group
+    ikev2        Define IKEv2 proposal
+    ipsec        Configure IPSec policy
+    isakmp       Define an IKE policy
+    key          Generate RSA key
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
-    pki          Public Key Infrastructure
+    pki          Declare a PKI trustpoint
     <cr>
 
 [410/413] r1 R1(config)# no ?
-    aaa            Disable AAA
+    aaa            Enable NEW access control commands and functions
     access-list    Remove an access list
     alias          Remove a command alias
-    arp            Remove ARP entry
+    arp            Add static ARP entry
     banner         Remove a banner
-    boot           Boot Commands
+    boot           Specify system image to load
     cdp            Enable CDP globally
-    clock          Set the system clock
-    crypto         Encryption and key management
-    enable         Modify enable password parameters
+    clock          Hardware calendar is a valid time source
+    crypto         Encryption module
+    enable         Set enable secret
     event          Embedded Event Manager
-    hostname       Reset hostname
+    hostname       Set system hostname
     interface      Remove a virtual interface
-    ip             Global IP configuration subcommands
+    ip             Enable IP routing
     ipv6           IPv6 interface subcommands
     key            Key management
-    line           Remove line configuration
+    line           Enter line configuration
     lldp           Enable LLDP globally
-    logging        line logging
-    login          line login
+    logging        Count every log message and timestamp last occurrence
+    login          Set the login blocking period
     ntp            Authenticate time sources
-    parser         Negate a parser command
-    privilege      Remove privilege command rule
-    radius-server  Remove legacy radius host
+    object-group   Configure object-group
+    parser         Define a CLI view
+    priority-list  Remove build a priority list
+    privilege      Configure command privilege levels
+    queue-list     Remove build a custom queue list
+    radius         RADIUS server configuration
+    radius-server  Specify a RADIUS server
     route-map      Remove a route-map
-    router         Enable a routing protocol
+    router         Enter RIP routing protocol configuration
     service        Disable a network based service
-    sntp           Configure SNTP
-    tacacs-server  Remove legacy tacacs host
+    snmp-server    Set community string and access privs
+    sntp           SNTP server (alias for ntp server)
+    tacacs         TACACS+ server configuration
+    tacacs-server  Specify a TACACS+ server
+    time-range     Remove a time range
     track          Remove a tracked object
     username       Remove a local user
+    vrf            Configure a VRF
 
 [411/413] r1 R1(config)# end
 <empty>

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-isis-rip-bgp
-Generated: 2026-08-23T10:19:58.934Z
+Generated: 2026-09-10T16:30:57.033Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP RIP/IS-IS/BGP: peers, import-route, policy, display
 Total steps: 260
@@ -457,7 +457,9 @@ Total steps: 260
 <empty>
 
 [118/260] r1 [R1-bgp-65000] peer IBGP connect-interface LoopBack0
-<empty>
+  Error: Wrong parameter found at '^' position.
+  peer IBGP connect-interface LoopBack0
+       ^
 
 [119/260] r1 [R1-bgp-65000] peer 10.0.0.10 group IBGP
 <empty>
@@ -535,26 +537,24 @@ Total steps: 260
 [142/260] r1 <R1> display bgp peer
   BGP local router ID : 1.1.1.1
   Local AS number : 65000
-  Total number of peers : 7              Peers in established state : 1
+  Total number of peers : 6              Peers in established state : 1
     Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
     10.0.0.2         4    65002     0        0     0  00:00:00      Idle       0
     10.0.0.3         4    65003     0        0     0  00:00:00      Idle       0
     10.0.0.4         4    65004     0        0     0  00:00:00      Idle       0
     10.0.0.5         4    65005     0        0     0  00:00:00      Idle       0
-    IBGP             4    65000     0        0     0  00:00:00      Idle       0
     10.0.0.10        4    65000     0        0     0  00:00:00      Idle       0
     10.0.0.1         4    65000     0        0     0  0s            Established       0
 
 [143/260] r1 <R1> display bgp peer verbose
   BGP local router ID : 1.1.1.1
   Local AS number : 65000
-  Total number of peers : 7              Peers in established state : 1
+  Total number of peers : 6              Peers in established state : 1
     Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
     10.0.0.2         4    65002     0        0     0  00:00:00      Idle       0
     10.0.0.3         4    65003     0        0     0  00:00:00      Idle       0
     10.0.0.4         4    65004     0        0     0  00:00:00      Idle       0
     10.0.0.5         4    65005     0        0     0  00:00:00      Idle       0
-    IBGP             4    65000     0        0     0  00:00:00      Idle       0
     10.0.0.10        4    65000     0        0     0  00:00:00      Idle       0
     10.0.0.1         4    65000     0        0     0  0s            Established       0
 
@@ -687,46 +687,67 @@ Total steps: 260
    aggregate 192.168.0.0 255.255.0.0 detail-suppressed
    group IBGP internal
    peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 description PEER-1
+   peer 10.0.0.2 10.0.0.2 description PEER-1
    peer 10.0.0.2 connect-interface LoopBack0
    peer 10.0.0.2 ebgp-max-hop 2
-   peer 10.0.0.2 password cipher BgpKey1
+   peer 10.0.0.2 2
+   peer 10.0.0.2 password cipher
+   peer 10.0.0.2 BgpKey1
    peer 10.0.0.2 timer keepalive 10 hold 30
+   peer 10.0.0.2 keepalive 10 hold 30
+   peer 10.0.0.2 10 hold 30
+   peer 10.0.0.2 hold 30
+   peer 10.0.0.2 30
    peer 10.0.0.3 as-number 65003
-   peer 10.0.0.3 as-number 65003
-   peer 10.0.0.3 description PEER-2
+   peer 10.0.0.3 10.0.0.3 description PEER-2
    peer 10.0.0.3 connect-interface LoopBack0
    peer 10.0.0.3 ebgp-max-hop 2
-   peer 10.0.0.3 password cipher BgpKey2
+   peer 10.0.0.3 2
+   peer 10.0.0.3 password cipher
+   peer 10.0.0.3 BgpKey2
    peer 10.0.0.3 timer keepalive 10 hold 30
+   peer 10.0.0.3 keepalive 10 hold 30
+   peer 10.0.0.3 10 hold 30
+   peer 10.0.0.3 hold 30
+   peer 10.0.0.3 30
    peer 10.0.0.4 as-number 65004
-   peer 10.0.0.4 as-number 65004
-   peer 10.0.0.4 description PEER-3
+   peer 10.0.0.4 10.0.0.4 description PEER-3
    peer 10.0.0.4 connect-interface LoopBack0
    peer 10.0.0.4 ebgp-max-hop 2
-   peer 10.0.0.4 password cipher BgpKey3
+   peer 10.0.0.4 2
+   peer 10.0.0.4 password cipher
+   peer 10.0.0.4 BgpKey3
    peer 10.0.0.4 timer keepalive 10 hold 30
+   peer 10.0.0.4 keepalive 10 hold 30
+   peer 10.0.0.4 10 hold 30
+   peer 10.0.0.4 hold 30
+   peer 10.0.0.4 30
    peer 10.0.0.5 as-number 65005
-   peer 10.0.0.5 as-number 65005
-   peer 10.0.0.5 description PEER-4
+   peer 10.0.0.5 10.0.0.5 description PEER-4
    peer 10.0.0.5 connect-interface LoopBack0
    peer 10.0.0.5 ebgp-max-hop 2
-   peer 10.0.0.5 password cipher BgpKey4
+   peer 10.0.0.5 2
+   peer 10.0.0.5 password cipher
+   peer 10.0.0.5 BgpKey4
    peer 10.0.0.5 timer keepalive 10 hold 30
-   peer IBGP
-   peer IBGP connect-interface LoopBack0
-   peer 10.0.0.10 group IBGP
+   peer 10.0.0.5 keepalive 10 hold 30
+   peer 10.0.0.5 10 hold 30
+   peer 10.0.0.5 hold 30
+   peer 10.0.0.5 30
    peer 10.0.0.10 group IBGP
    peer 10.0.0.1
    peer 10.0.0.1 enable
    peer 10.0.0.1 next-hop-local
    peer 10.0.0.1 reflect-client
    peer 10.0.0.1 route-policy RP import
+   peer 10.0.0.1 RP import
+   peer 10.0.0.1 import
    peer 10.0.0.1 ip-prefix PL-IN import
+   peer 10.0.0.1 PL-IN import
    peer 10.0.0.1 advertise-community
    peer 10.0.0.1 default-route-advertise
    peer 10.0.0.1 route-limit 1000
+   peer 10.0.0.1 1000
    maximum load-balancing 4
    graceful-restart
    timer keepalive 10 hold 30
@@ -769,26 +790,66 @@ Total steps: 260
   Line protocol current state : UP
   Internet Address is 192.168.1.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  2 packets, 134 bytes
+    Unicast:                    0,  Multicast:                  1
+    Broadcast:                  1,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
   Internet Address is 10.0.0.1/30
   The Maximum Transmit Unit is 1500
-  Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+  Input:  2 packets, 160 bytes
+    Unicast:                    0,  Multicast:                  2
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  3 packets, 198 bytes
+    Unicast:                    0,  Multicast:                  1
+    Broadcast:                  2,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [162/260] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
@@ -871,13 +932,12 @@ Total steps: 260
 [173/260] r1 <R1> display bgp peer
   BGP local router ID : 1.1.1.1
   Local AS number : 65000
-  Total number of peers : 7              Peers in established state : 1
+  Total number of peers : 6              Peers in established state : 1
     Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
     10.0.0.2         4    65002     0        0     0  00:00:00      Idle       0
     10.0.0.3         4    65003     0        0     0  00:00:00      Idle       0
     10.0.0.4         4    65004     0        0     0  00:00:00      Idle       0
     10.0.0.5         4    65005     0        0     0  00:00:00      Idle       0
-    IBGP             4    65000     0        0     0  00:00:00      Idle       0
     10.0.0.10        4    65000     0        0     0  00:00:00      Idle       0
     10.0.0.1         4    65000     0        0     0  0s            Established       0
 
@@ -954,32 +1014,41 @@ Total steps: 260
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 10:19:59.028  Aug 23 2026(EE3547CF.072B020C)
+  Reference time: 16:30:57.165  Sep 10 2026(EE4D59C1.2A3D70A3)
 
 [190/260] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [191/260] r1 <R1> display clock
-  2026-08-23 10:19:59
-  Sunday
+  2026-09-10 16:30:57
+  Thursday
   Time Zone(UTC) : UTC
 
 [192/260] r1 <R1> display lldp neighbor
-  Info: No LLDP neighbor is found.
+  GigabitEthernet0/0/0 has 0 neighbors
+  
+  GigabitEthernet0/0/1 has 0 neighbors
+  
+  GigabitEthernet0/0/2 has 0 neighbors
+  
+  GigabitEthernet0/0/3 has 0 neighbors
+  
+  Total: 0
 
 [193/260] r1 <R1> display lldp neighbor brief
-  Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
+  Local Intf                Neighbor Dev    Neighbor Intf   Exptime(s)
+  Total: 0
 
 [194/260] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-23 10:19:59
+  CPU Usage Stat. Time : 2026-09-10 16:30:57
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [195/260] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-23 10:19:59
+  Memory utilization statistics at 2026-09-10 16:30:57
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1020,11 +1089,11 @@ Total steps: 260
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 5
-  2026-08-23 10:19:58 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-23 10:19:58 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-23 10:19:58 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-23 10:19:58 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-23 10:19:58 %01BGP/5/NOTIFICATIONS: neighbor 10.0.0.1 Up
+  2026-09-10 16:30:57 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-09-10 16:30:57 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-09-10 16:30:57 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-09-10 16:30:57 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-09-10 16:30:57 %01BGP/5/NOTIFICATIONS: neighbor 10.0.0.1 Up
 
 [200/260] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1084,20 +1153,36 @@ Total steps: 260
   Internet Address is 192.168.1.1/24
   Broadcast address : 192.168.1.255
   The Maximum Transmit Unit : 1500 bytes
-  Input bandwidth utilization  : 0%
-  Output bandwidth utilization : 0%
-      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
-      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
-      Input:  0 packets, 0 bytes
-      Output: 0 packets, 0 bytes
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+  Input:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  2 packets, 134 bytes
+    Unicast:                    0,  Multicast:                  1
+    Broadcast:                  1,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [208/260] r1 <R1> display interface GigabitEthernet0/0/0
   GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  2 packets, 134 bytes
+    Unicast:                    0,  Multicast:                  1
+    Broadcast:                  1,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [209/260] r1 <R1> display this
   #
@@ -1154,46 +1239,67 @@ Total steps: 260
    aggregate 192.168.0.0 255.255.0.0 detail-suppressed
    group IBGP internal
    peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 description PEER-1
+   peer 10.0.0.2 10.0.0.2 description PEER-1
    peer 10.0.0.2 connect-interface LoopBack0
    peer 10.0.0.2 ebgp-max-hop 2
-   peer 10.0.0.2 password cipher BgpKey1
+   peer 10.0.0.2 2
+   peer 10.0.0.2 password cipher
+   peer 10.0.0.2 BgpKey1
    peer 10.0.0.2 timer keepalive 10 hold 30
+   peer 10.0.0.2 keepalive 10 hold 30
+   peer 10.0.0.2 10 hold 30
+   peer 10.0.0.2 hold 30
+   peer 10.0.0.2 30
    peer 10.0.0.3 as-number 65003
-   peer 10.0.0.3 as-number 65003
-   peer 10.0.0.3 description PEER-2
+   peer 10.0.0.3 10.0.0.3 description PEER-2
    peer 10.0.0.3 connect-interface LoopBack0
    peer 10.0.0.3 ebgp-max-hop 2
-   peer 10.0.0.3 password cipher BgpKey2
+   peer 10.0.0.3 2
+   peer 10.0.0.3 password cipher
+   peer 10.0.0.3 BgpKey2
    peer 10.0.0.3 timer keepalive 10 hold 30
+   peer 10.0.0.3 keepalive 10 hold 30
+   peer 10.0.0.3 10 hold 30
+   peer 10.0.0.3 hold 30
+   peer 10.0.0.3 30
    peer 10.0.0.4 as-number 65004
-   peer 10.0.0.4 as-number 65004
-   peer 10.0.0.4 description PEER-3
+   peer 10.0.0.4 10.0.0.4 description PEER-3
    peer 10.0.0.4 connect-interface LoopBack0
    peer 10.0.0.4 ebgp-max-hop 2
-   peer 10.0.0.4 password cipher BgpKey3
+   peer 10.0.0.4 2
+   peer 10.0.0.4 password cipher
+   peer 10.0.0.4 BgpKey3
    peer 10.0.0.4 timer keepalive 10 hold 30
+   peer 10.0.0.4 keepalive 10 hold 30
+   peer 10.0.0.4 10 hold 30
+   peer 10.0.0.4 hold 30
+   peer 10.0.0.4 30
    peer 10.0.0.5 as-number 65005
-   peer 10.0.0.5 as-number 65005
-   peer 10.0.0.5 description PEER-4
+   peer 10.0.0.5 10.0.0.5 description PEER-4
    peer 10.0.0.5 connect-interface LoopBack0
    peer 10.0.0.5 ebgp-max-hop 2
-   peer 10.0.0.5 password cipher BgpKey4
+   peer 10.0.0.5 2
+   peer 10.0.0.5 password cipher
+   peer 10.0.0.5 BgpKey4
    peer 10.0.0.5 timer keepalive 10 hold 30
-   peer IBGP
-   peer IBGP connect-interface LoopBack0
-   peer 10.0.0.10 group IBGP
+   peer 10.0.0.5 keepalive 10 hold 30
+   peer 10.0.0.5 10 hold 30
+   peer 10.0.0.5 hold 30
+   peer 10.0.0.5 30
    peer 10.0.0.10 group IBGP
    peer 10.0.0.1
    peer 10.0.0.1 enable
    peer 10.0.0.1 next-hop-local
    peer 10.0.0.1 reflect-client
    peer 10.0.0.1 route-policy RP import
+   peer 10.0.0.1 RP import
+   peer 10.0.0.1 import
    peer 10.0.0.1 ip-prefix PL-IN import
+   peer 10.0.0.1 PL-IN import
    peer 10.0.0.1 advertise-community
    peer 10.0.0.1 default-route-advertise
    peer 10.0.0.1 route-limit 1000
+   peer 10.0.0.1 1000
    maximum load-balancing 4
    graceful-restart
    timer keepalive 10 hold 30
@@ -1311,46 +1417,67 @@ Total steps: 260
    aggregate 192.168.0.0 255.255.0.0 detail-suppressed
    group IBGP internal
    peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 description PEER-1
+   peer 10.0.0.2 10.0.0.2 description PEER-1
    peer 10.0.0.2 connect-interface LoopBack0
    peer 10.0.0.2 ebgp-max-hop 2
-   peer 10.0.0.2 password cipher BgpKey1
+   peer 10.0.0.2 2
+   peer 10.0.0.2 password cipher
+   peer 10.0.0.2 BgpKey1
    peer 10.0.0.2 timer keepalive 10 hold 30
+   peer 10.0.0.2 keepalive 10 hold 30
+   peer 10.0.0.2 10 hold 30
+   peer 10.0.0.2 hold 30
+   peer 10.0.0.2 30
    peer 10.0.0.3 as-number 65003
-   peer 10.0.0.3 as-number 65003
-   peer 10.0.0.3 description PEER-2
+   peer 10.0.0.3 10.0.0.3 description PEER-2
    peer 10.0.0.3 connect-interface LoopBack0
    peer 10.0.0.3 ebgp-max-hop 2
-   peer 10.0.0.3 password cipher BgpKey2
+   peer 10.0.0.3 2
+   peer 10.0.0.3 password cipher
+   peer 10.0.0.3 BgpKey2
    peer 10.0.0.3 timer keepalive 10 hold 30
+   peer 10.0.0.3 keepalive 10 hold 30
+   peer 10.0.0.3 10 hold 30
+   peer 10.0.0.3 hold 30
+   peer 10.0.0.3 30
    peer 10.0.0.4 as-number 65004
-   peer 10.0.0.4 as-number 65004
-   peer 10.0.0.4 description PEER-3
+   peer 10.0.0.4 10.0.0.4 description PEER-3
    peer 10.0.0.4 connect-interface LoopBack0
    peer 10.0.0.4 ebgp-max-hop 2
-   peer 10.0.0.4 password cipher BgpKey3
+   peer 10.0.0.4 2
+   peer 10.0.0.4 password cipher
+   peer 10.0.0.4 BgpKey3
    peer 10.0.0.4 timer keepalive 10 hold 30
+   peer 10.0.0.4 keepalive 10 hold 30
+   peer 10.0.0.4 10 hold 30
+   peer 10.0.0.4 hold 30
+   peer 10.0.0.4 30
    peer 10.0.0.5 as-number 65005
-   peer 10.0.0.5 as-number 65005
-   peer 10.0.0.5 description PEER-4
+   peer 10.0.0.5 10.0.0.5 description PEER-4
    peer 10.0.0.5 connect-interface LoopBack0
    peer 10.0.0.5 ebgp-max-hop 2
-   peer 10.0.0.5 password cipher BgpKey4
+   peer 10.0.0.5 2
+   peer 10.0.0.5 password cipher
+   peer 10.0.0.5 BgpKey4
    peer 10.0.0.5 timer keepalive 10 hold 30
-   peer IBGP
-   peer IBGP connect-interface LoopBack0
-   peer 10.0.0.10 group IBGP
+   peer 10.0.0.5 keepalive 10 hold 30
+   peer 10.0.0.5 10 hold 30
+   peer 10.0.0.5 hold 30
+   peer 10.0.0.5 30
    peer 10.0.0.10 group IBGP
    peer 10.0.0.1
    peer 10.0.0.1 enable
    peer 10.0.0.1 next-hop-local
    peer 10.0.0.1 reflect-client
    peer 10.0.0.1 route-policy RP import
+   peer 10.0.0.1 RP import
+   peer 10.0.0.1 import
    peer 10.0.0.1 ip-prefix PL-IN import
+   peer 10.0.0.1 PL-IN import
    peer 10.0.0.1 advertise-community
    peer 10.0.0.1 default-route-advertise
    peer 10.0.0.1 route-limit 1000
+   peer 10.0.0.1 1000
    maximum load-balancing 4
    graceful-restart
    timer keepalive 10 hold 30
@@ -1415,46 +1542,67 @@ Total steps: 260
    aggregate 192.168.0.0 255.255.0.0 detail-suppressed
    group IBGP internal
    peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 description PEER-1
+   peer 10.0.0.2 10.0.0.2 description PEER-1
    peer 10.0.0.2 connect-interface LoopBack0
    peer 10.0.0.2 ebgp-max-hop 2
-   peer 10.0.0.2 password cipher BgpKey1
+   peer 10.0.0.2 2
+   peer 10.0.0.2 password cipher
+   peer 10.0.0.2 BgpKey1
    peer 10.0.0.2 timer keepalive 10 hold 30
+   peer 10.0.0.2 keepalive 10 hold 30
+   peer 10.0.0.2 10 hold 30
+   peer 10.0.0.2 hold 30
+   peer 10.0.0.2 30
    peer 10.0.0.3 as-number 65003
-   peer 10.0.0.3 as-number 65003
-   peer 10.0.0.3 description PEER-2
+   peer 10.0.0.3 10.0.0.3 description PEER-2
    peer 10.0.0.3 connect-interface LoopBack0
    peer 10.0.0.3 ebgp-max-hop 2
-   peer 10.0.0.3 password cipher BgpKey2
+   peer 10.0.0.3 2
+   peer 10.0.0.3 password cipher
+   peer 10.0.0.3 BgpKey2
    peer 10.0.0.3 timer keepalive 10 hold 30
+   peer 10.0.0.3 keepalive 10 hold 30
+   peer 10.0.0.3 10 hold 30
+   peer 10.0.0.3 hold 30
+   peer 10.0.0.3 30
    peer 10.0.0.4 as-number 65004
-   peer 10.0.0.4 as-number 65004
-   peer 10.0.0.4 description PEER-3
+   peer 10.0.0.4 10.0.0.4 description PEER-3
    peer 10.0.0.4 connect-interface LoopBack0
    peer 10.0.0.4 ebgp-max-hop 2
-   peer 10.0.0.4 password cipher BgpKey3
+   peer 10.0.0.4 2
+   peer 10.0.0.4 password cipher
+   peer 10.0.0.4 BgpKey3
    peer 10.0.0.4 timer keepalive 10 hold 30
+   peer 10.0.0.4 keepalive 10 hold 30
+   peer 10.0.0.4 10 hold 30
+   peer 10.0.0.4 hold 30
+   peer 10.0.0.4 30
    peer 10.0.0.5 as-number 65005
-   peer 10.0.0.5 as-number 65005
-   peer 10.0.0.5 description PEER-4
+   peer 10.0.0.5 10.0.0.5 description PEER-4
    peer 10.0.0.5 connect-interface LoopBack0
    peer 10.0.0.5 ebgp-max-hop 2
-   peer 10.0.0.5 password cipher BgpKey4
+   peer 10.0.0.5 2
+   peer 10.0.0.5 password cipher
+   peer 10.0.0.5 BgpKey4
    peer 10.0.0.5 timer keepalive 10 hold 30
-   peer IBGP
-   peer IBGP connect-interface LoopBack0
-   peer 10.0.0.10 group IBGP
+   peer 10.0.0.5 keepalive 10 hold 30
+   peer 10.0.0.5 10 hold 30
+   peer 10.0.0.5 hold 30
+   peer 10.0.0.5 30
    peer 10.0.0.10 group IBGP
    peer 10.0.0.1
    peer 10.0.0.1 enable
    peer 10.0.0.1 next-hop-local
    peer 10.0.0.1 reflect-client
    peer 10.0.0.1 route-policy RP import
+   peer 10.0.0.1 RP import
+   peer 10.0.0.1 import
    peer 10.0.0.1 ip-prefix PL-IN import
+   peer 10.0.0.1 PL-IN import
    peer 10.0.0.1 advertise-community
    peer 10.0.0.1 default-route-advertise
    peer 10.0.0.1 route-limit 1000
+   peer 10.0.0.1 1000
    maximum load-balancing 4
    graceful-restart
    timer keepalive 10 hold 30
@@ -1621,7 +1769,7 @@ Total steps: 260
     ipsec          IP Security
     ipv6           Disable IPv6
     isis           Remove IS-IS
-    lldp           Disable LLDP
+    lldp           Link Layer Discovery Protocol
     local-user     Remove a local user
     multicast      Disable multicast routing
     nat            Network Address Translation
@@ -1633,17 +1781,16 @@ Total steps: 260
     route-policy   Remove a route-policy
     screen-length  Restore default screen length
     screen-width   Restore default screen width
+    snmp-agent     Remove SNMP agent configuration
     terminal       Set the terminal line characteristics
     time-range     Remove a time-range
     traffic        Display traffic statistics
-    <cr>
 
 [258/260] r1 [Huawei] acl ?
     advanced  Advanced ACL (3000-3999)
     basic     Basic ACL (2000-2999)
     name      Named ACL
     number    ACL number
-    <cr>
 
 [259/260] r1 [Huawei] return
 <empty>

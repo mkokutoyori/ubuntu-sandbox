@@ -70,6 +70,7 @@ describe('constat #9 — VFS piece size matches the RMAN catalog', () => {
 
   it('a backup with MAXPIECESIZE splits into several pieces, each matching its own on-disk size', () => {
     const srv = bootOracleServer('sz2');
+    sh(srv, 'mkdir -p /u01/backup && chown oracle:oinstall /u01/backup');
     const before = catalogSets(srv).length;
     const rman = ReactiveRmanSubShell.create(srv, ['target', '/']);
     rman.subShell.processLine('backup database format \'/u01/backup/piece_%U\' maxpiecesize 500K;');

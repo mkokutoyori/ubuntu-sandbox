@@ -325,7 +325,14 @@ function stripShebang(content: string): string {
 function buildIOContext(ctx: ShellContext): IOContext {
   return {
     writeFile(path: string, content: string, append: boolean) {
-      ctx.vfs.writeFile(path, content, ctx.uid, ctx.gid, ctx.umask, append);
+      const written = ctx.vfs.writeFile(
+        path, content, ctx.uid, ctx.gid, ctx.umask, append, undefined, false);
+      if (written) return;
+      const slash = path.lastIndexOf('/');
+      const parent = slash > 0 ? path.slice(0, slash) : '/';
+      if (!ctx.vfs.exists(parent)) {
+        throw new Error(`bash: ${path}: No such file or directory`);
+      }
     },
     readFile(path: string) {
       return ctx.vfs.readFile(path);

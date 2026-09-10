@@ -952,7 +952,7 @@ export class OracleInstance {
     p.set('archive_log_mode', this._archiveLogMode ? 'ENABLED' : 'DISABLED');
 
     // Recovery
-    p.set('db_recovery_file_dest', `${ORACLE_CONFIG.BASE}/fast_recovery_area`);
+    p.set('db_recovery_file_dest', ORACLE_CONFIG.FRA);
     p.set('db_recovery_file_dest_size', '4G');
 
     // Control files
