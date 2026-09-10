@@ -485,7 +485,7 @@ const LINE_ARGUMENTS: Readonly<Record<string, ArgumentSpec | readonly ArgumentSp
   rotary: { name: 'group', type: 'INT', description: 'Rotary group number', range: [1, 100] },
   autocommand: { name: 'command', type: 'REST', optional: true, description: 'Command to execute on connection' },
   password: { name: 'password', type: 'REST', literal: 'LINE', description: 'The UNENCRYPTED (cleartext) line password' },
-  'login-timeout': { name: 'seconds', type: 'INT', optional: true, range: [1, 300], description: 'Timeout in seconds' },
+  'login-timeout': { name: 'seconds', type: 'INT', range: [1, 300], description: 'Timeout in seconds' },
   speed: enumeration('bps', 'Transmit and receive speeds', [
     ['300', '300 bps'], ['1200', '1200 bps'], ['2400', '2400 bps'],
     ['4800', '4800 bps'], ['9600', '9600 bps'], ['19200', '19200 bps'],
@@ -516,16 +516,40 @@ const LINE_ARGUMENTS: Readonly<Record<string, ArgumentSpec | readonly ArgumentSp
       { keyword: 'soft', description: 'Use a soft escape character' },
     ],
   },
-  'exec-timeout': { name: 'minutes', type: 'REST', optional: true, literal: '<0-35791>', description: 'Timeout in minutes' },
+  'exec-timeout': [
+    { name: 'minutes', type: 'INT', range: [0, 35791], description: 'Timeout in minutes' },
+    { name: 'secondes', type: 'INT', range: [0, 2147483], optional: true, description: 'Timeout in seconds' },
+  ],
 };
 
-const LINE_KEYWORD_ARGUMENTS: Readonly<Record<string, ArgumentSpec>> = {
+const LISTE_DE_METHODES = (nom: string): ArgumentSpec => ({
+  name: nom, type: 'WORD', description: 'Method list name',
+  alternatives: [
+    { keyword: 'default', description: 'The default method list' },
+    { keyword: 'WORD', description: 'Method list name' },
+  ],
+});
+
+const LINE_KEYWORD_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
   'privilege level': { name: 'level', type: 'INT', optional: true, description: 'Privilege level', range: [0, 15] },
   'history size': { name: 'size', type: 'INT', optional: true, description: 'Size of history buffer', range: [0, 256] },
+  'login authentication': LISTE_DE_METHODES('authentification'),
+  'accounting commands': [
+    { name: 'niveau', type: 'INT', range: [0, 15], description: 'Privilege level' },
+    LISTE_DE_METHODES('comptes-commandes'),
+  ],
+  'accounting connection': LISTE_DE_METHODES('comptes-connexion'),
+  'accounting exec': LISTE_DE_METHODES('comptes-exec'),
+  'authorization commands': [
+    { name: 'niveau-autorisation', type: 'INT', range: [0, 15], description: 'Privilege level' },
+    LISTE_DE_METHODES('autorisation-commandes'),
+  ],
+  'authorization exec': LISTE_DE_METHODES('autorisation-exec'),
 };
 
 const LINE_TRANSPORT_PROTOCOLS: ArgumentSpec = {
-  name: 'protocol', type: 'ENUM', optional: true, description: 'Transport protocol',
+  name: 'protocol', type: 'ENUM', description: 'Transport protocol',
   values: [
     { keyword: 'all', description: 'All protocols' },
     { keyword: 'none', description: 'No protocols' },
@@ -5086,6 +5110,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   private registerLineCommands(t: CommandTrie): void {
     this.registerLineTransportCommands(t);
+    /*
+     * Trois mots-cles de ce mode ne SONT PAS des commandes : ils
+     * ouvrent une famille. `transport` demande une direction,
+     * `accounting` et `authorization` une sorte, et chacune sa liste de
+     * methodes. Les trois annoncaient `<cr>` et refusaient ensuite —
+     * ils gouvernent pourtant qui entre par cette ligne, donc valider
+     * sur la promesse de `?` laissait croire a une regle d'acces posee.
+     */
+    for (const kw of ['transport', 'accounting', 'authorization']) {
+      t.requireArgs(kw, 1);
+    }
     for (const kw of ['login', 'password',
       'logging', 'privilege', 'no', 'speed', 'stopbits', 'databits', 'parity',
       'flowcontrol', 'session-timeout', 'history', 'length', 'width', 'authorization',

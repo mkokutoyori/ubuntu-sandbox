@@ -141,6 +141,11 @@ describe('M6 — un `<cr>` annonce se valide vraiment', () => {
       ['configure terminal', 'ip access-list extended EL'], '');
     expect(f, f.join('\n')).toEqual([]);
   }, 300_000);
+
+  it('sur une ligne VTY', async () => {
+    const f = await crMensongers(['configure terminal', 'line vty 0 4'], '');
+    expect(f, f.join('\n')).toEqual([]);
+  }, 300_000);
 });
 
 describe('les cas nommes de l audit', () => {
