@@ -131,8 +131,9 @@ import {
   buildNamedStdACLCommands, buildNamedExtACLCommands,
   buildIPv6ACLGlobalCommands, buildIPv6ACLModeCommands,
   registerACLShowCommands, aclShowSpecs,
-  parseCiscoAce, texteDeRemarque, type NamedAclEditContext,
+  parseCiscoAce, texteDeRemarque, standardAclHost, type NamedAclEditContext,
 } from './cisco/CiscoAclCommands';
+import { aclStandardSpecs } from './cisco/aclStandardSpecs';
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import {
   registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
@@ -497,6 +498,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...keyChainKeySubmodeSpecs(this),
       ...routeMapSpecs(() => this.routeMapHost()),
       ...aclHeadSpecs(() => this.aclHeadHost()),
+      ...aclStandardSpecs(() => standardAclHost(this.namedAclEditContext())),
       ...prefixListSpecs(() => this.policy),
       ...routerSubmodeSpecs(this, this.routingCfg),
       ...bfdInterfaceSpecs({

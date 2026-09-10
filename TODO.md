@@ -2932,21 +2932,22 @@ Catalyst affiche pour ce sous-mode.
 serait pas un progres — la premiere se voit, la seconde se croit. A
 fermer des que la reference est atteignable.
 
-### [acl] `permit` et `deny` restent sur le trie dans les sous-modes de liste nommee
-Le sous-mode est desormais bati une seule fois pour les deux
-plateformes, mais ses deux verbes principaux sont encore des noeuds
-GLOUTONS, et leur aide se derive de leurs propres continuations.
-**Mesure**, liste STANDARD, sur les deux plateformes :
-`permit tcp ?` rend `any`, `host` et `<cr>` — alors qu'une liste
-standard n'a pas de protocole, que `permit tcp` seul est refuse, et que
-`host` n'est pas une suite de `tcp`. Le meme trio revient a toutes les
-profondeurs : `permit tcp any any eq ?` rend encore `host` et `<cr>`.
-**Report** : declarer `permit`/`deny` demande de porter au socle toute
-la grammaire d'un ACE — protocole, source, destination, ports, options
-— dont l'aide descend aujourd'hui jusqu'au port par des noeuds du trie
-qu'une place `REST` ferait disparaitre. C'est le lot suivant, pas un
-supplement a celui-ci.
-
+### [acl] `permit` et `deny` restent sur le trie dans une liste ETENDUE
+Le sous-mode STANDARD est declare place par place sur le socle. Celui
+d'une liste ETENDUE ne l'est pas : ses deux verbes sont encore des
+noeuds GLOUTONS, et leur aide se derive de leurs propres continuations.
+**Mesure**, liste ETENDUE, sur les deux plateformes :
+`permit host ?` rend `any` et `<cr>` — alors que `permit host` seul est
+refuse, et qu'`any` n'est pas une suite de `host`. `permit any ?` rend
+`host` et `<cr>`, la ou une liste etendue attend une DESTINATION.
+**Ce qui marche deja et qu'il ne faut pas perdre** : `permit tcp ?`
+descend correctement jusqu'aux formes de source, et `permit tcp any any
+eq ?` jusqu'aux ports nommes. Cette profondeur vient de noeuds du trie
+qu'une place `REST` ferait disparaitre.
+**Report** : declarer la grammaire d'un ACE etendu — protocole, source,
+destination, ports, options — est un lot en soi, et il doit rendre
+cette profondeur-la sans la perdre. Le lot standard a montre la voie :
+les places typees, la queue laissee au juge existant.
 ### [tests] `wan-vpn-tests` 15.09 tombe par intermittence dans un grand balayage
 `15.09 — Huawei BR3 routing should remain intact with VPN config` a
 rendu `expected '…' to contain '0% packet loss'` une fois sur deux
