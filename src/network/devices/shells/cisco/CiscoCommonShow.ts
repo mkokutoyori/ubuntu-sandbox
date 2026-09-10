@@ -21,7 +21,7 @@ import {
   type LigneTty, type ReglagesLigne, type SessionSurLigne,
 } from './CiscoLineViews';
 import { nomLoopfilterIos } from '@/network/ntp/discipline';
-import { C3560_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
+import { C2900_SOFTWARE, C3560_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
 import { lldpCapabilityLetters } from '@/network/lldp/types';
@@ -256,7 +256,7 @@ export const CISCO_HARDWARE_PROFILES: Record<CiscoChassisProfile, CiscoHardwareP
     ioMemoryKB: 32768,
     nvramKB: 256,
     nvramDisplayKB: 255,
-    flashImage: 'c2900-universalk9-mz.SPA.157-3.M5.bin',
+    flashImage: C2900_SOFTWARE.image,
     flashImageSize: 86234112,
     flashTotalBytes: 256016384,
     flashFreeBytes: 169782272,

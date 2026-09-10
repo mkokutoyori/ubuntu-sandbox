@@ -7,6 +7,7 @@
  *   - Boot sequence: Cisco IOS bootstrap
  */
 
+import { C2900_SOFTWARE, ciscoSoftwareDescriptor } from './shells/cisco/CiscoPlatform';
 import { Router } from './Router';
 import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import type { UdpSendRequest } from '../layers/transport/UdpEgress';
@@ -610,7 +611,7 @@ export class CiscoRouter extends Router {
       'System Bootstrap, Version 15.0(1r)M15, RELEASE SOFTWARE (fc1)',
       'Copyright (c) 2003-2025 by cisco Systems, Inc.',
       '',
-      `Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5, RELEASE SOFTWARE (fc1)`,
+      ciscoSoftwareDescriptor(C2900_SOFTWARE, 'RELEASE SOFTWARE (fc1)'),
       'Technical Support: http://www.cisco.com/techsupport',
       `Copyright (c) 1986-2025 by Cisco Systems, Inc.`,
       '',

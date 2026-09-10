@@ -57,6 +57,25 @@ ne le signale. Retire avec la refutation ci-dessus.
 
 ## Routeur Cisco (IOS)
 
+### [ssh] `~/.ssh/config` : quatre cas rouges, anterieurs et reproductibles
+`cross-equipment-ssh-suite.test.ts` echoue sur quatre cas — trois de
+`§12 — ~/.ssh/config Host blocks` (`Host alias resolves HostName and
+User`, `Per-host Port override is honoured`, `Wildcard Host * applies
+User and Stri...`) et un de `§13 — ProxyJump across heterogeneous hops`
+(`ProxyJump uses ~/.ssh/config Host alias`).
+
+**Mesure, trois fois** : dans un lot de 132 fichiers (4 rouges), dans un
+lot de 2 fichiers — donc quasiment sans charge — les MEMES 4 rouges, et
+enfin le fichier SEUL avec le lot « une seule version d'IOS » RETIRE :
+toujours les memes 4. Ce n'est donc ni la charge ni ce lot-la.
+
+**Ce qui n'a pas ete cherche** : la cause. Les quatre cas portent tous
+sur la lecture des blocs `Host` de `~/.ssh/config` — alias, `Port` par
+hote, joker `Host *`, et l'alias vu depuis `ProxyJump`. Le point commun
+designe l'analyse de ce fichier plutot que le transport ; c'est par la
+qu'il faut commencer.
+
+
 ### [cli] `probe-cli-help-parity-ratchet` depasse son propre budget de 120 s
 Deux cas de ce fichier expirent — `l'arbre parcouru est non vide`
 (routeur/config) et `un mot-cle sans description est compte, pas

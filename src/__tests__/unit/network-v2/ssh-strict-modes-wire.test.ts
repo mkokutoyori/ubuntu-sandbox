@@ -54,7 +54,7 @@ async function connectWithKeyOnly(lan: SshLan, targetIp: string, user: string) {
       .host(targetIp)
       .user(user)
       .port(22)
-      .addIdentityFile('/root/.ssh/id_rsa')
+      .addIdentityFile('/home/user/.ssh/id_rsa')
       .strictHostKeyChecking('accept-new')
       .build(),
   );
@@ -74,8 +74,8 @@ describe('SSH server (real wire) — StrictModes on public-key auth', () => {
   });
 
   it('accepts the key over the real wire when ~/.ssh and authorized_keys are safely permissioned', async () => {
-    await lan.pc1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
-    const pub = (await lan.pc1.executeCommand('cat /root/.ssh/id_rsa.pub')).trim();
+    await lan.pc1.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
+    const pub = (await lan.pc1.executeCommand('cat ~/.ssh/id_rsa.pub')).trim();
 
     const srv = pcInternals(lan.pc2);
     const uid = srv.userMgr.getUser('user')?.uid ?? 1000;
@@ -91,8 +91,8 @@ describe('SSH server (real wire) — StrictModes on public-key auth', () => {
   });
 
   it('refuses the same key over the real wire when authorized_keys is group/world writable', async () => {
-    await lan.pc1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
-    const pub = (await lan.pc1.executeCommand('cat /root/.ssh/id_rsa.pub')).trim();
+    await lan.pc1.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
+    const pub = (await lan.pc1.executeCommand('cat ~/.ssh/id_rsa.pub')).trim();
 
     const srv = pcInternals(lan.pc2);
     const uid = srv.userMgr.getUser('user')?.uid ?? 1000;

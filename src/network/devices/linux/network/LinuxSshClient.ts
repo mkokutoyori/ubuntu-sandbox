@@ -782,7 +782,18 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     port = cfgEntry.port;
   }
   if (cfgEntry?.identityFile && !flags.includes('-i')) {
-    flags.push('-i', cfgEntry.identityFile);
+    /*
+     * `IdentityFile ~/.ssh/id_two` designe la cle de CELUI qui se
+     * connecte, et un vrai `ssh` developpe le tilde. Il etait passe tel
+     * quel a l'ouverture du fichier, donc la seule forme qui marchait
+     * etait le chemin absolu — et la ligne la plus courante d'un
+     * `~/.ssh/config` refusait la cle sans un mot.
+     */
+    const foyer = opts.sourceHome ?? '/root';
+    const chemin = cfgEntry.identityFile.startsWith('~/')
+      ? `${foyer}/${cfgEntry.identityFile.slice(2)}`
+      : cfgEntry.identityFile;
+    flags.push('-i', chemin);
   }
 
   // Loopback target (127.0.0.1 / localhost) resolves to this very machine —

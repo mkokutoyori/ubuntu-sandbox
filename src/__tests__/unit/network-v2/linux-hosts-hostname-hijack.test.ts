@@ -130,7 +130,7 @@ describe('Scénario 3 — hijack /etc/hosts + SSH: TOFU détecte la redirection'
       'wonderland\n',
     );
     expect(out).not.toMatch(/Host key verification failed/i);
-    const kh = await client.executeCommand('cat /root/.ssh/known_hosts');
+    const kh = await client.executeCommand('cat ~/.ssh/known_hosts');
     expect(kh).toContain('serveur-legitime.domaine.local');
   });
 

@@ -10,7 +10,7 @@ import {
 import { MACAddress, type DeviceType, type EthernetFrame } from '../core/types';
 import type { LinkSendRequest } from '../layers/link/LinkLayer';
 import { Logger } from '../core/Logger';
-import { C2960_SOFTWARE } from '../devices/shells/cisco/CiscoPlatform';
+import { C2900_SOFTWARE, C2960_SOFTWARE } from '../devices/shells/cisco/CiscoPlatform';
 
 export interface LldpHost {
   readonly id: string;
@@ -463,7 +463,7 @@ export class LldpAgent extends ReactiveAgentBase {
   private systemDescription(): string {
     const t = this.host.getType();
     switch (t) {
-      case 'router-cisco':  return 'Cisco IOS Software, c2900 Software, Version 15.4(3)M';
+      case 'router-cisco':  return `Cisco IOS Software, C2900 Software, Version ${C2900_SOFTWARE.iosVersion}`;
       case 'switch-cisco':  return `Cisco IOS Software, C2960 Software, Version ${C2960_SOFTWARE.iosVersion}`;
       case 'router-huawei': return 'Huawei VRP Software, Version 5.160 (AR2200 V200R003C00)';
       case 'switch-huawei': return 'Huawei VRP Software, Version 5.170 (S5720 V200R010C00)';

@@ -141,8 +141,8 @@ describe('F7.4 — /etc/shadow deleted', () => {
 
   /** Publish CLI's public key into alice's authorized_keys on SRV. */
   async function trustKey({ cli, srv }: Lab): Promise<void> {
-    await run(cli, "ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519");
-    const pub = (await run(cli, 'cat /root/.ssh/id_ed25519.pub')).trim();
+    await run(cli, "ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519");
+    const pub = (await run(cli, 'cat ~/.ssh/id_ed25519.pub')).trim();
     await run(srv, 'mkdir -p /home/alice/.ssh');
     await run(srv, `sh -c "echo '${pub}' > /home/alice/.ssh/authorized_keys"`);
     await run(srv, 'chown -R alice:alice /home/alice/.ssh');
