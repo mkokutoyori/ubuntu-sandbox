@@ -146,6 +146,11 @@ describe('M6 — un `<cr>` annonce se valide vraiment', () => {
     const f = await crMensongers(['configure terminal', 'line vty 0 4'], '');
     expect(f, f.join('\n')).toEqual([]);
   }, 300_000);
+
+  it('dans un processus OSPF', async () => {
+    const f = await crMensongers(['configure terminal', 'router ospf 1'], '');
+    expect(f, f.join('\n')).toEqual([]);
+  }, 300_000);
 });
 
 describe('les cas nommes de l audit', () => {

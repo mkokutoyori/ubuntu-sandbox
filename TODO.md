@@ -2914,7 +2914,7 @@ defaut que la migration referme partout ailleurs. Le refus actuel dit
 la verite : la plateforme ne les porte pas. A rouvrir des que la
 reference est atteignable.
 
-### [cli] le garde-fou des `<cr>` n'entrait dans aucun sous-mode — 33 promesses menteuses y restent
+### [cli] le garde-fou des `<cr>` n'entrait dans aucun sous-mode — 13 promesses menteuses y restent
 `probe-aide-cr-tient-sa-promesse` balayait trois modes : `show` en EXEC
 privilegie, la configuration globale et celle d'interface. Aucun
 sous-mode. Promene dans huit d'entre eux, le meme balayage a trouve 77
@@ -2923,9 +2923,10 @@ sous-mode. Promene dans huit d'entre eux, le meme balayage a trouve 77
 empecher, dans les endroits ou il ne regardait pas.
 **Mesure** (routeur Cisco, profondeur 3, un materiel neuf par
 validation) :
-- `config-router-ospf` 20 : `area`, `area range`, `area stub`,
-  `area virtual-link`, `auto-cost`, `auto-cost reference-bandwidth`,
-  `capability`, `neighbor`, `passive-interface`, `no passive-interface`…
+- `config-router-ospf` 20 — FERMES, et le mode est desormais balaye.
+  Le balayage en avait compte VINGT-ET-UN, un de plus que la mesure
+  d'origine : `area filter-list`, annonce au rang de l'identifiant
+  d'aire.
 - `config-line` 13 — FERMES, et le mode est desormais balaye. Le trie
   y etait deja vide : les treize venaient de places DECLAREES
   facultatives (`exec-timeout`, `login-timeout`, le protocole de
