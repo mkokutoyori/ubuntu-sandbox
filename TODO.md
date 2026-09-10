@@ -2892,34 +2892,33 @@ moteur qui doit disparaitre. Chaque famille migree en ferme son lot,
 et le sous-mode entre alors dans le balayage — l'y faire entrer avant
 epinglerait le defaut au lieu de le mesurer.
 
-### [acl] les SOUS-MODES d'ACL divergent encore, et un commutateur accepte `evaluate` dans une liste STANDARD
-Les TETES (`access-list`, `ip access-list`) sont declarees une fois pour
-les deux plateformes. Leurs SOUS-MODES ne le sont pas : le routeur en a
-deux (`config-std-nacl`, `config-ext-nacl`), le commutateur un seul
-(`config-acl`), partage de surcroit avec `arp access-list`.
-**Mesure**, meme frappe des deux cotes, dans `ip access-list standard SL` :
-- `evaluate REFLEX` — routeur : `% Invalid input detected at '^' marker.`
-  Commutateur : ACCEPTE, et la ligne ` evaluate REFLEX` entre dans
-  `show running-config`. Une clause de liste REFLEXIVE dans une liste
-  standard n'existe pas ; la configuration exportee porte donc une
-  ligne que la machine a inventee, et qui sera rejouee a l'import.
-- `permit ?` — le commutateur propose `icmp`, `ip`, `tcp`, `udp`, qui
-  n'appartiennent qu'a une liste ETENDUE. Les quatre sont refuses si
-  on les tape : quatre mots annonces qui ne s'executent pas.
-- les descriptions du sous-mode sont derivees du MOT-CLE cote
-  commutateur — « ACL deny », « ACL permit », « ACL no », « ACL
-  evaluate » — la ou le routeur rend celles d'IOS (« Specify packets to
-  reject », « Remove an entry »…).
-- `sequence` : `?` annonce `<cr>` des deux cotes alors que la frappe
-  est incomplete ; le routeur y propose `permit`/`deny` sans jamais
-  annoncer le NUMERO qu'elle prend d'abord, le commutateur un `WORD`
-  pour un nombre. `sequence` seul rend `% Incomplete command.` sur le
-  routeur et `% Invalid sequence number.` sur le commutateur ;
-  `sequence 10` rend `% Incomplete command.` la et
-  `% Invalid input detected at '^' marker.` ici.
-**Report** : faire adopter au commutateur les deux sous-modes du
-routeur touche aussi `arp access-list`, qui vit dans le meme trie et
-n'a rien a voir avec les listes IP. C'est un lot a part, pas un
+### [acl] l'invite d'une ACL ARP emprunte celle d'une liste IP ETENDUE
+Les listes IP ont desormais leurs deux sous-modes des DEUX cotes
+(`config-std-nacl`, `config-ext-nacl`). Le mode `config-acl` du
+commutateur ne sert donc plus qu'a `arp access-list` — mais il rend
+toujours `{host}(config-ext-nacl)#`, l'invite d'une liste IP etendue.
+**Mesure** : `arp access-list AA` sur un Catalyst rend
+`SW1(config-ext-nacl)#`.
+**Ce qui a ete cherche** : cisco.com est BLOQUE par le mandataire de
+sortie de ce reseau, et rien d'atteignable ne donne le texte que
+Catalyst affiche pour ce sous-mode.
+**Report** : remplacer une invite fausse par une invite INVENTEE ne
+serait pas un progres — la premiere se voit, la seconde se croit. A
+fermer des que la reference est atteignable.
+
+### [acl] `permit` et `deny` restent sur le trie dans les sous-modes de liste nommee
+Le sous-mode est desormais bati une seule fois pour les deux
+plateformes, mais ses deux verbes principaux sont encore des noeuds
+GLOUTONS, et leur aide se derive de leurs propres continuations.
+**Mesure**, liste STANDARD, sur les deux plateformes :
+`permit tcp ?` rend `any`, `host` et `<cr>` — alors qu'une liste
+standard n'a pas de protocole, que `permit tcp` seul est refuse, et que
+`host` n'est pas une suite de `tcp`. Le meme trio revient a toutes les
+profondeurs : `permit tcp any any eq ?` rend encore `host` et `<cr>`.
+**Report** : declarer `permit`/`deny` demande de porter au socle toute
+la grammaire d'un ACE — protocole, source, destination, ports, options
+— dont l'aide descend aujourd'hui jusqu'au port par des noeuds du trie
+qu'une place `REST` ferait disparaitre. C'est le lot suivant, pas un
 supplement a celui-ci.
 
 ### [tests] `wan-vpn-tests` 15.09 tombe par intermittence dans un grand balayage
