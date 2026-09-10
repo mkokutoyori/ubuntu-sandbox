@@ -20,7 +20,7 @@ import type { NetRouteIdentity, NetRouteUpdate } from '@/network/devices/windows
 import type { NetFirewallRuleEntry } from '@/network/devices/windows/netFirewallRule';
 import type { NetAdapterEntry } from '@/network/devices/windows/netAdapter';
 import type { NetNeighborPlan, NetNeighborRow } from '@/network/devices/windows/netNeighbor';
-import type { DnsCacheRow } from '@/network/devices/windows/dnsClientCache';
+import type { DnsAnswerRow, DnsCacheRow } from '@/network/devices/windows/dnsClientCache';
 
 // ─── Entry types re-exported for cmdlet use ────────────────────────────────
 
@@ -1339,6 +1339,7 @@ export interface INetworkProvider {
   resolveDnsViaServer?(name: string, server: string): string[];
   /** Resolve-DnsName -Server, with each answer's real TTL (does not touch the client cache). */
   resolveDnsViaServerWithTtl?(name: string, server: string): Array<{ ip: string; ttl: number }>;
+  resolveDnsRecords?(name: string, type: string, server?: string): DnsAnswerRow[] | null;
   /** Get-DnsClientCache */
   getDnsClientCache?(): DnsCacheRow[];
   /** Clear-DnsClientCache */

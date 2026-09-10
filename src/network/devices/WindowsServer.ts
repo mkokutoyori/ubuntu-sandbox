@@ -33,6 +33,7 @@ import { WindowsWsusRole } from './windows/server/wsus/WsusRole';
 import { WindowsPrintServerRole } from './windows/server/print/PrintServerRole';
 import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
+import { locateDomainController } from './windows/domain/DcLocator';
 import { pullReplication, notifySyncNow } from './windows/server/ad/replication/ReplicationSession';
 import { createForest, joinForestAsChildDomain, getForestForDomain, type Forest } from './windows/server/ad/forest/Forest';
 import { getExchangeOrganization, getOrCreateExchangeOrganization, type ExchangeServerRecord } from './windows/server/exchange/ExchangeOrganization';
@@ -1295,6 +1296,12 @@ export class WindowsServer extends WindowsPC {
     if (this.directoryStore) {
       return { ok: false, message: 'Install-ADDSDomainController : This computer is already configured as a domain controller.' };
     }
+
+    const located = sourceDcAddress || locateDomainController(this, domainName)?.address.toString();
+    if (!located) {
+      return { ok: false, message: 'Install-ADDSDomainController : The specified domain either does not exist or could not be contacted.' };
+    }
+    sourceDcAddress = located;
 
     const conn = dialLdap(this.getTcpStack(), sourceDcAddress);
     if (!conn.ok || !conn.client) {

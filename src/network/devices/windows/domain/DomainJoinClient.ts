@@ -15,10 +15,8 @@
  * message a plaintext bind failure produced, so existing consumers see no
  * behavioural change.
  *
- * DC location: no DNS SRV `_ldap._tcp.dc._msdcs.<domain>` lookup yet
- * (depends on the DNS Server role, P7) — callers must resolve the DC's
- * address themselves (explicit `-Server`, or the domain name itself if it
- * happens to already resolve) and pass it in as `dcAddress`.
+ * DC location happens before this client is called; it receives the
+ * answer as `dcAddress`.
  */
 
 import type { TcpStack } from '@/network/tcp/TcpStack';

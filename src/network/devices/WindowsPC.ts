@@ -36,8 +36,8 @@ import { UDP_PORT_NTP } from '../ntp/types';
 import { W32TimeService } from './windows/W32TimeService';
 import { DnsCache } from '../dns/resolver/DnsCache';
 import { RRType } from '../dns/wire/RRType';
-import type { ARecordData, PtrRecordData } from '../dns/wire/ResourceRecord';
-import { ptrQName, resourceRecordToLegacyRecord } from '../dns/compat/DnsWireCompat';
+import type { ARecordData, PtrRecordData, ResourceRecord } from '../dns/wire/ResourceRecord';
+import { ptrQName, resourceRecordToLegacyRecord, rrTypeFromName } from '../dns/compat/DnsWireCompat';
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
 import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
@@ -2464,16 +2464,29 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   resolveDnsViaServerWithTtlSync(name: string, server: string): Array<{ ip: string; ttl: number }> {
-    let serverIP: IPAddress;
-    try { serverIP = new IPAddress(server); } catch { return []; }
-    for (const qname of this.dnsSearchCandidates(name)) {
-      const response = this.queryDnsServerSync(serverIP, qname, 'A');
-      const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
-      if (aRecords.length > 0) {
-        return aRecords.map((rr) => ({ ip: (rr.data as ARecordData).address.toString(), ttl: rr.ttl }));
+    return this.lookupDnsRecordsSync(name, 'A', server)
+      .map((rr) => ({ ip: (rr.data as ARecordData).address.toString(), ttl: rr.ttl }));
+  }
+
+  lookupDnsRecordsSync(name: string, qtype: string, server?: string): ResourceRecord[] | null {
+    const wanted = rrTypeFromName(qtype);
+    if (wanted === null) return null;
+    for (const attempt of this.typedDnsAttempts(name, server)) {
+      const response = this.queryDnsServerSync(attempt.server, attempt.qname, qtype);
+      const matching = response?.answers.filter((rr) => rr.data.type === wanted) ?? [];
+      if (matching.length > 0) {
+        if (server === undefined) this.dnsCache.storePositive(response!.answers, attempt.qname);
+        return matching;
       }
     }
     return [];
+  }
+
+  private typedDnsAttempts(name: string, server?: string): Array<{ server: IPAddress; qname: string }> {
+    if (server === undefined) return this.dnsResolutionAttempts(name);
+    const resolver = IPAddress.tryParse(server);
+    if (!resolver) return [];
+    return this.dnsSearchCandidates(name).map((qname) => ({ server: resolver, qname }));
   }
 
   private dhcpLease(ifName: string) {

@@ -1,4 +1,7 @@
 import type { DnsCacheRecordView } from '@/network/dns/resolver/DnsCache';
+import type { ResourceRecord } from '@/network/dns/wire/ResourceRecord';
+import { RRType } from '@/network/dns/wire/RRType';
+import { rrTypeName } from '@/network/dns/compat/DnsWireCompat';
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { applyCimCriteria, cimNotFound } from './cimQuery';
 import { matchEnumValue } from './netIpAddress';
@@ -108,6 +111,48 @@ export function dnsCacheRowsOf(views: readonly DnsCacheRecordView[]): DnsCacheRo
     dataLength: v.negative ? 0 : dnsRdataLength(v.type, v.data),
     data: v.data,
   }));
+}
+
+export interface DnsAnswerRow {
+  name: string;
+  type: string;
+  ttl: number;
+  section: DnsCacheSection;
+  fields: Record<string, string | number | readonly string[]>;
+}
+
+export function dnsAnswerRowOf(record: ResourceRecord): DnsAnswerRow {
+  const base = { name: record.name, type: rrTypeName(record.data.type), ttl: record.ttl, section: 'Answer' as const };
+  const data = record.data;
+  switch (data.type) {
+    case RRType.A:
+      return { ...base, fields: { IPAddress: data.address.toString(), IP4Address: data.address.toString() } };
+    case RRType.AAAA:
+      return { ...base, fields: { IPAddress: data.address.toString(), IP6Address: data.address.toString() } };
+    case RRType.SRV:
+      return { ...base, fields: { NameTarget: data.target, Priority: data.priority, Weight: data.weight, Port: data.port } };
+    case RRType.MX:
+      return { ...base, fields: { NameExchange: data.exchange, Preference: data.preference } };
+    case RRType.NS:
+      return { ...base, fields: { NameHost: data.nsdname } };
+    case RRType.CNAME:
+      return { ...base, fields: { NameHost: data.cname } };
+    case RRType.PTR:
+      return { ...base, fields: { NameHost: data.ptrdname } };
+    case RRType.TXT:
+      return { ...base, fields: { Strings: [...data.text] } };
+    case RRType.SOA:
+      return {
+        ...base,
+        fields: {
+          PrimaryServer: data.mname, NameAdministrator: data.rname, SerialNumber: data.serial,
+          TimeToZoneRefresh: data.refresh, TimeToZoneFailureRetry: data.retry,
+          TimeToExpiration: data.expire, DefaultTTL: data.minimum,
+        },
+      };
+    default:
+      return { ...base, fields: {} };
+  }
 }
 
 const DISPLAY_DNS_HEADER = 'Windows IP Configuration';

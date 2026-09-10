@@ -100,9 +100,11 @@ export function canonicalIpText(ip: string): string {
   try { return new IPv6Address(ip).withScopeId(null).toString(); } catch { return ip; }
 }
 
+const OPAQUE_PAYLOAD_SEQUENCE_UNITS = 1;
+
 export function segmentPayloadSize(seg: TcpSegment): number {
   if (seg.payload === undefined) return 0;
-  return isStreamPayload(seg.payload) ? seg.payload.length : 1;
+  return isStreamPayload(seg.payload) ? seg.payload.length : OPAQUE_PAYLOAD_SEQUENCE_UNITS;
 }
 
 export interface TcpHost {
@@ -207,7 +209,6 @@ export class TcpSocket {
 
   /** Peer's last-advertised receive window (PRD-TCP.md P3) — bounds how much unacked data we may have in flight. */
   peerWindow = TCP_DEFAULT_WINDOW;
-  /** Stream chunks queued because the peer's window couldn't take them yet, in send order. `psh` marks the chunk that ends its original write. */
   sendBacklog: Array<{ payload: StreamPayload; psh: boolean }> = [];
   /** Zero-window persist-probe timer (RFC 9293 §3.8.6.1). */
   persistTimer: symbol | null = null;
@@ -894,13 +895,10 @@ export class TcpStack {
     if (socket.state !== 'established' && socket.state !== 'close-wait') return;
 
     if (!isStreamPayload(data)) {
-      // An opaque object payload is not a byte stream: it occupies one
-      // unit of sequence space and is delivered verbatim, since nothing
-      // can slice it by MSS or splice two of them back together.
       const flags = noFlags(); flags.ack = true; flags.psh = true;
       const seq = socket.sendNext;
-      socket.sendNext = (seq + 1) >>> 0;
-      this.transmitTracked(socket, flags, seq, socket.recvNext, data, 1);
+      socket.sendNext = (seq + OPAQUE_PAYLOAD_SEQUENCE_UNITS) >>> 0;
+      this.transmitTracked(socket, flags, seq, socket.recvNext, data, OPAQUE_PAYLOAD_SEQUENCE_UNITS);
       return;
     }
 
@@ -1329,7 +1327,7 @@ export class TcpStack {
 
   private deliverData(socket: TcpSocket, seg: TcpSegment): void {
     const payload = seg.payload;
-    const chunkLen = isStreamPayload(payload) ? payload.length : 1;
+    const chunkLen = isStreamPayload(payload) ? payload.length : OPAQUE_PAYLOAD_SEQUENCE_UNITS;
     socket.recvNext = (seg.sequence + chunkLen) >>> 0;
     if (payload === undefined) return;
     if (isStreamPayload(payload)) {
