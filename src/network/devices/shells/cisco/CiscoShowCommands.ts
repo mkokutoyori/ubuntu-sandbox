@@ -5,6 +5,7 @@
  * Used by CiscoIOSShell for "show" commands in user and privileged modes.
  */
 
+import { C2900_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
 import type { Router } from '../../Router';
 import { iosClockConfigLines } from './CiscoCommonShow';
 import { getDeviceClock } from '@/network/equipment/RouterServiceCapabilities';
@@ -69,7 +70,7 @@ export function showVersion(
   const hw = CISCO_HARDWARE_PROFILES[profile];
   const uptimeMs = router._getUptimeMs?.() ?? 0;
   return [
-    `Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5`,
+    ciscoSoftwareDescriptor(C2900_SOFTWARE),
     `Copyright (c) 1986-2025 by Cisco Systems, Inc.`,
     '',
     `ROM: System Bootstrap, Version 15.0(1r)M15`,
