@@ -26,6 +26,7 @@ import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 export { isValidIosAclNumber } from './aclHeadSpecs';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import type { ACLEngine } from '../../router/ACLEngine';
+import type { AclStandardHost } from './aclStandardSpecs';
 
 // ─── Extended Shell Context for ACL modes ────────────────────────────
 
@@ -498,6 +499,45 @@ function parseStandardSource(args: string[]): { ip: IPAddress; wildcard: SubnetM
     return { ip: new IPAddress(args[0]), wildcard: new SubnetMask('0.0.0.0'), consumed: 1 };
   }
   return { ip: new IPAddress(args[0]), wildcard: new SubnetMask(args[1]), consumed: 2 };
+}
+
+/**
+ * Le port du sous-mode STANDARD, bati une fois pour les deux
+ * plateformes.
+ *
+ * Le socle a deja refuse tout ce qui n'est pas une adresse a sa place,
+ * avec le caret au bon mot ; `parseCiscoAce` ne voit donc plus que des
+ * lignes bien formees, et reste le SEUL a decider ce qu'elles valent.
+ */
+export function standardAclHost(ctx: NamedAclEditContext): AclStandardHost {
+  const rendu = (action: 'permit' | 'deny', mots: readonly string[]): string | null => {
+    const lu = parseCiscoAce([...mots], 'standard');
+    return 'error' in lu ? null : formatACLEntry('standard', asEntry(action, lu.opts));
+  };
+
+  return {
+    addEntry: (action, mots) => {
+      const nom = ctx.getSelectedACL();
+      if (!nom) return '% No ACL selected';
+      const lu = parseCiscoAce([...mots], 'standard');
+      if ('error' in lu) return lu.error;
+      ctx.engine().addNamedAccessListEntry(nom, 'standard', action, lu.opts);
+      return '';
+    },
+    removeEntry: (action, mots) => {
+      const nom = ctx.getSelectedACL();
+      if (!nom) return '% No ACL selected';
+      const cible = rendu(action, mots);
+      if (cible === null) return '% Incomplete command.';
+      const acl = ctx.engine().getAccessListsInternal().find(a => a.name === nom);
+      const rang = acl
+        ? acl.entries.findIndex(e => formatACLEntry('standard', e) === cible)
+        : -1;
+      if (rang === -1) return '% Access list entry does not exist.';
+      acl!.entries.splice(rang, 1);
+      return '';
+    },
+  };
 }
 
 // ─── Named Standard ACL Config Mode ──────────────────────────────────

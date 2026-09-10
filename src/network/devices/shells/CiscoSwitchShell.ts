@@ -80,12 +80,14 @@ import { etherChannelLimitFamily } from '@/cli/commands/aggregation/etherChannel
 import {
   parseCiscoAce, renderCiscoAce, formatCiscoAclEntry,
   showAccessListsFrom, isValidIosAclNumber,
-  buildNamedStdACLCommands, buildNamedExtACLCommands, type NamedAclEditContext,
+  buildNamedStdACLCommands, buildNamedExtACLCommands, standardAclHost,
+  type NamedAclEditContext,
   runningConfigACLFrom, runningConfigInterfaceACLFrom, IOS_REMARK_MAX,
 } from './cisco/CiscoAclCommands';
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import { aclHeadSpecs, type AclHeadHost, type AclKind } from './cisco/aclHeadSpecs';
 import { macAclSpecs, type MacAclHost } from './cisco/macAclSpecs';
+import { aclStandardSpecs } from './cisco/aclStandardSpecs';
 import { renderMacAce, type MacAce } from '../switch/MacAccessList';
 import { CISCO_ERRORS, resolveCiscoInterfaceName } from './cli-utils';
 import { estTypeSansNumero, typesInterfaceEnMotsCles } from './cisco/CiscoConfigCommands';
@@ -680,10 +682,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
    * deux arbres, batis par le meme code que ceux du routeur.
    */
   private configAclTrie = new CommandTrie();
-  private configStdAclTrie = new CommandTrie();
-  private configMacAclTrie = new CommandTrie();
+  private configStdNaclTrie = new CommandTrie();
+  private configExtMaclTrie = new CommandTrie();
   private selectedMacAcl: string | null = null;
-  private configExtAclTrie = new CommandTrie();
+  private configExtNaclTrie = new CommandTrie();
   private selectedAcl: string | null = null;
   private selectedAclType: 'standard' | 'extended' = 'extended';
   private selectedArpAcl: string | null = null;
@@ -906,9 +908,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       // existe, ne peut rien contenir, et dans laquelle on peut entrer.
       case 'config-view': return this.configViewTrie;
       case 'config-acl':  return this.configAclTrie;
-      case 'config-std-nacl': return this.configStdAclTrie;
-      case 'config-ext-macl': return this.configMacAclTrie;
-      case 'config-ext-nacl': return this.configExtAclTrie;
+      case 'config-std-nacl': return this.configStdNaclTrie;
+      case 'config-ext-macl': return this.configExtMaclTrie;
+      case 'config-ext-nacl': return this.configExtNaclTrie;
       case 'config-dhcp': return this.configDhcpTrie;
       case 'config-access-map': return this.configAccessMapTrie;
       case 'config-time-range': return this.configTimeRangeTrie;
@@ -1041,12 +1043,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       this.configAclTrie.registerGreedy(kw, `ARP ACL ${kw}`, (args) =>
         this.handleArpAclLine(kw, args));
     }
-    const editionAcl: NamedAclEditContext = {
-      engine: () => this.d().getVaclEngine(),
-      getSelectedACL: () => this.selectedAcl,
-    };
-    buildNamedStdACLCommands(this.configStdAclTrie, editionAcl);
-    buildNamedExtACLCommands(this.configExtAclTrie, editionAcl);
+    buildNamedStdACLCommands(this.configStdNaclTrie, this.namedAclEditContext());
+    buildNamedExtACLCommands(this.configExtNaclTrie, this.namedAclEditContext());
     this.registerL3Commands();
     for (const t of [this.userTrie, this.privilegedTrie]) {
       const vueAcl = (args: string[]): string =>
@@ -2280,6 +2278,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     };
   }
 
+  private namedAclEditContext(): NamedAclEditContext {
+    return {
+      engine: () => this.d().getVaclEngine(),
+      getSelectedACL: () => this.selectedAcl,
+    };
+  }
+
   private macAclHost(): MacAclHost {
     const listes = () => this.d()._getMacAccessLists();
     const courante = () => {
@@ -2368,6 +2373,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...super.socleSpecs(),
       ...trackEntrySpecs(() => this.trackEntryHost(), ['config']),
       ...aclHeadSpecs(() => this.aclHeadHost()),
+      ...aclStandardSpecs(() => standardAclHost(this.namedAclEditContext())),
       ...macAclSpecs(() => this.macAclHost()),
       ...switchPortPhysicalSpecs(() => this.portPhysiqueHost()),
       ...stpInterfaceSpecs(() => this.stpInterfaceHost()),
@@ -5351,8 +5357,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       configLine: this.configLineTrie,
       configDhcp: this.configDhcpTrie,
       privileged: this.privilegedTrie,
-      configStdNacl: this.configStdAclTrie,
-      configExtNacl: this.configExtAclTrie,
+      configStdNacl: this.configStdNaclTrie,
+      configExtNacl: this.configExtNaclTrie,
       configRouter: inutilise(),
       configRouterOspf: inutilise(),
       configRouteMap: inutilise(),

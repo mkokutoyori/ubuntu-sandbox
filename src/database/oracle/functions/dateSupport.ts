@@ -25,10 +25,11 @@ function resolveRRYear(twoDigit: number): number {
 export function coerceDateValue(value: unknown): Date | null {
   if (value instanceof Date) return new Date(value.getTime());
   if (typeof value !== 'string') return null;
-  if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(value)) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const zoned = value.trim().replace(/\s+([+-]\d{2}:\d{2})$/, '$1');
+  if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(zoned)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(zoned)) return null;
   }
-  const ms = Date.parse(value.replace(' ', 'T'));
+  const ms = Date.parse(zoned.replace(' ', 'T'));
   return Number.isNaN(ms) ? null : new Date(ms);
 }
 

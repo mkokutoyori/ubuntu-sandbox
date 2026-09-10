@@ -578,6 +578,27 @@ part entiere : la grammaire d'`aaa` a quatre niveaux, une liste nommee
 libre au milieu, et une suite de methodes de longueur variable dont
 `group` consomme le mot suivant.
 
+### [oracle] le FORMAT d'un `TIMESTAMP WITH TIME ZONE` n'est pas source
+Le lot T10 rend `SYSTIMESTAMP` et `CURRENT_TIMESTAMP` sous la forme
+`2026-09-10 14:50:30.507 +02:00`. Un vrai Oracle rend cette valeur selon
+`NLS_TIMESTAMP_TZ_FORMAT`, dont le defaut depend du territoire de la
+session — typiquement `DD-MON-RR HH.MI.SSXFF AM TZR`.
+
+**Mesure** : `docs.oracle.com` est bloque par le proxy de sortie de cet
+environnement. Ce qui EST etabli, par deux rendus secondaires
+concordants de la reference SQL : `CURRENT_TIMESTAMP` rend l'heure DANS
+le fuseau de la session et `SYSTIMESTAMP` celle du serveur ; `ORA-01882`
+est l'erreur d'une region inconnue. Le format d'affichage, lui, n'a pas
+pu etre lu.
+
+**Report** : la forme retenue PROLONGE celle que le depot employait deja
+(`toISOString`) en lui ajoutant le decalage, plutot que d'inventer une
+troisieme ecriture. Elle est coherente avec le rendu de `SYSDATE`, et
+`coerceDateValue` sait la relire — le moteur lit ce qu'il ecrit. La
+fermer demande soit l'acces a la reference, soit une transcription
+SQL*Plus, et entrainera `NLS_TIMESTAMP_TZ_FORMAT`, que ce lot ne touche
+pas.
+
 ### [horloge] 79 des 87 index de fuseau FortiOS ne sont pas implantes
 `set timezone 55` est un index VALIDE sur un vrai FortiGate. Ici, seuls
 huit index sont tabules (0, 1, 2, 3, 4, 12, 26, 27) ; les autres sont
@@ -2932,21 +2953,22 @@ Catalyst affiche pour ce sous-mode.
 serait pas un progres — la premiere se voit, la seconde se croit. A
 fermer des que la reference est atteignable.
 
-### [acl] `permit` et `deny` restent sur le trie dans les sous-modes de liste nommee
-Le sous-mode est desormais bati une seule fois pour les deux
-plateformes, mais ses deux verbes principaux sont encore des noeuds
-GLOUTONS, et leur aide se derive de leurs propres continuations.
-**Mesure**, liste STANDARD, sur les deux plateformes :
-`permit tcp ?` rend `any`, `host` et `<cr>` — alors qu'une liste
-standard n'a pas de protocole, que `permit tcp` seul est refuse, et que
-`host` n'est pas une suite de `tcp`. Le meme trio revient a toutes les
-profondeurs : `permit tcp any any eq ?` rend encore `host` et `<cr>`.
-**Report** : declarer `permit`/`deny` demande de porter au socle toute
-la grammaire d'un ACE — protocole, source, destination, ports, options
-— dont l'aide descend aujourd'hui jusqu'au port par des noeuds du trie
-qu'une place `REST` ferait disparaitre. C'est le lot suivant, pas un
-supplement a celui-ci.
-
+### [acl] `permit` et `deny` restent sur le trie dans une liste ETENDUE
+Le sous-mode STANDARD est declare place par place sur le socle. Celui
+d'une liste ETENDUE ne l'est pas : ses deux verbes sont encore des
+noeuds GLOUTONS, et leur aide se derive de leurs propres continuations.
+**Mesure**, liste ETENDUE, sur les deux plateformes :
+`permit host ?` rend `any` et `<cr>` — alors que `permit host` seul est
+refuse, et qu'`any` n'est pas une suite de `host`. `permit any ?` rend
+`host` et `<cr>`, la ou une liste etendue attend une DESTINATION.
+**Ce qui marche deja et qu'il ne faut pas perdre** : `permit tcp ?`
+descend correctement jusqu'aux formes de source, et `permit tcp any any
+eq ?` jusqu'aux ports nommes. Cette profondeur vient de noeuds du trie
+qu'une place `REST` ferait disparaitre.
+**Report** : declarer la grammaire d'un ACE etendu — protocole, source,
+destination, ports, options — est un lot en soi, et il doit rendre
+cette profondeur-la sans la perdre. Le lot standard a montre la voie :
+les places typees, la queue laissee au juge existant.
 ### [tests] `wan-vpn-tests` 15.09 tombe par intermittence dans un grand balayage
 `15.09 — Huawei BR3 routing should remain intact with VPN config` a
 rendu `expected '…' to contain '0% packet loss'` une fois sur deux
