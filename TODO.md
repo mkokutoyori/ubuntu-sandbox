@@ -1510,28 +1510,6 @@ ce depot passe son temps a defaire. Ce qui EST ferme depuis le lot
 qui n'est pas une adresse est refusee aux quatre portes.
 
 
-### [cli] `utilization mark high ?` annonce `<cr>` et `<0-100>`
-Deux infidelites d'AIDE, pas de comportement, laissees par le lot des
-seuils DHCP. **`<cr>`** : la place du pourcentage est declaree
-FACULTATIVE parce que c'est la seule facon, dans le socle, qu'un
-`no utilization mark high` — qui s'arrete au mot-cle, comme sur IOS —
-atteigne la commande ; `CommandTable.declare` ne pose une commande sur
-un noeud intermediaire que devant une place facultative. La forme
-positive refuse toujours `utilization mark high` seul, donc l'aide
-promet un `<cr>` que le gestionnaire refuse. **`<0-100>`** : une SEULE
-declaration sert les deux seuils, dont les plages reelles different
-(`<1-100>` pour le haut, `<0-100>` pour le bas), donc l'aide annonce
-leur union et le gestionnaire refuse `high 0`.
-**Mesure** : `utilization mark high ?` rend `<0-100>` puis `<cr>` ;
-`utilization mark high` seul rend `% Incomplete command.` ;
-`utilization mark high 0` rend le caret.
-**Report** : fermer le premier demande que le socle sache poser une
-commande sur un noeud pour sa seule forme NIEE (un `undoPath`, ou un
-`undoRequiresArgument` reellement lu) ; fermer le second demande qu'une
-plage puisse dependre du JETON precedent — `SessionParamRanges`, le
-port pose par le lot `standby version 2`, lit la session et non la
-ligne. Les deux touchent le socle CLI, pas la famille DHCP.
-
 ### [dhcp] Un pool sans adresse a distribuer ne franchit aucun seuil
 `utilization mark high|low` est applique, mais `poolLeasableTotal` rend
 zero quand le pool n'a pas de `network`, et l'evaluation SAUTE alors le
@@ -2914,7 +2892,7 @@ defaut que la migration referme partout ailleurs. Le refus actuel dit
 la verite : la plateforme ne les porte pas. A rouvrir des que la
 reference est atteignable.
 
-### [cli] le garde-fou des `<cr>` n'entrait dans aucun sous-mode — 13 promesses menteuses y restent
+### [cli] le garde-fou des `<cr>` n'entrait dans aucun sous-mode — TOUS FERMES
 `probe-aide-cr-tient-sa-promesse` balayait trois modes : `show` en EXEC
 privilegie, la configuration globale et celle d'interface. Aucun
 sous-mode. Promene dans huit d'entre eux, le meme balayage a trouve 77
@@ -2932,8 +2910,11 @@ validation) :
   facultatives (`exec-timeout`, `login-timeout`, le protocole de
   `transport`) et de trois mots-cles qui ouvrent une famille sans etre
   une commande (`transport`, `accounting`, `authorization`).
-- `config-router-eigrp` 6, `config-router-bgp` 5, `config-dhcp` 2
-  (`option ascii`, `option hex`) ;
+- `config-router-eigrp` 6, `config-router-bgp` 5, `config-dhcp` 2 —
+  FERMES. Le balayage en a compte VINGT dans ces modes plutot que
+  treize : RIP en portait cinq que la mesure d'origine n'avait pas
+  vus, et le pool DHCP deux de plus (`utilization mark high` et `low`).
+  Les huit sous-modes sont desormais balayes, et le compte est zero.
 - `config-view` 4, `config-route-map` 24 et `config-acl-ext` 3
   (`sequence`, `sequence deny`, `sequence permit`) — FERMES. Les quatre
   sous-modes correspondants sont desormais balayes : les deux vues, et

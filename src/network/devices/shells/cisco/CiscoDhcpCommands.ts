@@ -12,6 +12,7 @@ import { CommandTrie } from '../CommandTrie';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import { boundedInteger } from '@/cli/ArgumentTypes';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
@@ -166,6 +167,8 @@ export function buildConfigDhcpCommands(trie: CommandTrie, ctx: CiscoShellContex
     return '';
   });
 
+  /* `utilization mark` OUVRE une famille : il demande lequel des deux seuils. */
+  trie.requireArgs('utilization mark', 1);
   trie.registerGreedy('utilization mark', 'Configure the utilization threshold', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     const p = pool();
@@ -235,23 +238,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'hardware-address': { name: 'mac', type: 'MAC_ADDR', description: 'Client hardware address' },
   'client-identifier': { name: 'identifiant', type: 'WORD', description: 'Client identifier' },
   'client-identifier deny': { name: 'identifiant', type: 'WORD', description: 'Client identifier to deny' },
-  'utilization mark': [
-    {
-      name: 'seuil', type: 'ENUM', description: 'Utilization threshold to configure',
-      values: [
-        { keyword: 'high', description: 'Configure the high utilization mark' },
-        { keyword: 'low', description: 'Configure the low utilization mark' },
-      ],
-    },
-    {
-      name: 'pourcentage', type: 'INT', range: [0, 100], optional: true,
-      description: 'Percentage of the pool size',
-    },
-    {
-      name: 'journal', type: 'ENUM', optional: true, description: 'Enable the system message',
-      values: [{ keyword: 'log', description: 'Generate a system message when the mark is crossed' }],
-    },
-  ],
   'netbios-node-type': {
     name: 'type', type: 'ENUM', description: 'NetBIOS node type',
     values: [
@@ -263,12 +249,58 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   },
 };
 
+const JOURNAL_DU_SEUIL: ArgumentSpec = {
+  name: 'journal', type: 'ENUM', optional: true,
+  description: 'Enable the system message',
+  values: [{
+    keyword: 'log',
+    description: 'Generate a system message when the mark is crossed',
+  }],
+};
+
+/**
+ * Les deux seuils ont deux PLAGES : le haut refuse zero, le bas
+ * l'accepte (`DHCPServer.configurePoolUtilizationMark`). Une seule
+ * declaration annoncait leur union, donc `?` promettait `<0-100>` la ou
+ * la machine refuse `high 0`. Deux mots-cles, deux plages.
+ *
+ * `undoWithoutArgument` dit l'autre moitie : `no utilization mark high`
+ * s'arrete au mot-cle, comme sur IOS, alors que la forme positive exige
+ * son pourcentage. C'est ce qui permet a la place d'etre EXIGEE sans
+ * couper la negation — elle etait declaree facultative pour cette seule
+ * raison, et promettait donc un `<cr>` que le gestionnaire refuse.
+ */
+const SEUIL = (
+  keyword: 'high' | 'low', plancher: number, description: string,
+): AdapterKeyword => ({
+  keyword, description, undoWithoutArgument: true,
+  argument: [
+    {
+      name: `pourcentage-${keyword}`, type: 'INT', range: [plancher, 100],
+      description: 'Percentage of the pool size',
+    },
+    JOURNAL_DU_SEUIL,
+  ],
+});
+
 const DHCP_POOL_KEYWORDS:
-Readonly<Record<string, ReadonlyArray<{ keyword: string; description: string; argument?: null }>>> = {
+Readonly<Record<string, ReadonlyArray<AdapterKeyword>>> = {
   lease: [{ keyword: 'infinite', description: 'Infinite lease', argument: null }],
   option: [
-    { keyword: 'ascii', description: 'ASCII text' },
-    { keyword: 'hex', description: 'Hexadecimal' },
+    {
+      keyword: 'ascii', description: 'ASCII text',
+      argument: { name: 'texte', type: 'REST', literal: 'LINE',
+        description: 'ASCII string sent as the option value' },
+    },
+    {
+      keyword: 'hex', description: 'Hexadecimal',
+      argument: { name: 'octets', type: 'REST', literal: 'WORD',
+        description: 'Hexadecimal string sent as the option value' },
+    },
+  ],
+  'utilization mark': [
+    SEUIL('high', 1, 'Configure the high utilization mark'),
+    SEUIL('low', 0, 'Configure the low utilization mark'),
   ],
 };
 

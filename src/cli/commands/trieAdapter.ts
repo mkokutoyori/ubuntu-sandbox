@@ -539,6 +539,13 @@ export function specsFromTrieRegistrations(
           ...(cache ? { hidden: true } : {}),
           ...(sub.reachableWhen ? { reachableWhen: sub.reachableWhen }
             : contexte ? { reachableWhen: contexte } : {}),
+          /*
+           * Ce noeud n'existe QUE nie : `no utilization mark high`
+           * s'arrete au mot-cle, la forme positive exige sa valeur.
+           * Sans le dire, `?` y promettait `<cr>` — le gestionnaire
+           * repondait bien « % Incomplete command. », mais apres coup.
+           */
+          existsOnlyNegated: true,
           run: (() => '% Incomplete command.') as CommandSpec['run'],
           undo: ((_session: unknown) => {
             const argv = propre === undefined
