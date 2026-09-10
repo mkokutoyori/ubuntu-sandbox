@@ -191,6 +191,7 @@ export const CISCO_SWITCH_MODES: ModeHierarchy = {
   'config-acl':  { parent: 'config', clearOnExit: ['selectedAcl'] },
   'config-std-nacl': { parent: 'config', clearOnExit: ['selectedAcl'] },
   'config-ext-nacl': { parent: 'config', clearOnExit: ['selectedAcl'] },
+  'config-ext-macl': { parent: 'config', clearOnExit: ['selectedMacAcl'] },
   'config-dhcp': { parent: 'config', clearOnExit: ['selectedDhcpPool'] },
   'config-access-map': { parent: 'config', clearOnExit: ['selectedAccessMap'] },
   'config-time-range': { parent: 'config', clearOnExit: ['selectedTimeRange'] },

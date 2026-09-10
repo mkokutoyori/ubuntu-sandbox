@@ -85,6 +85,8 @@ import {
 } from './cisco/CiscoAclCommands';
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import { aclHeadSpecs, type AclHeadHost, type AclKind } from './cisco/aclHeadSpecs';
+import { macAclSpecs, type MacAclHost } from './cisco/macAclSpecs';
+import { renderMacAce, type MacAce } from '../switch/MacAccessList';
 import { CISCO_ERRORS, resolveCiscoInterfaceName } from './cli-utils';
 import { estTypeSansNumero, typesInterfaceEnMotsCles } from './cisco/CiscoConfigCommands';
 import { getNtpAgent, getSnmpService } from '../../equipment/RouterServiceCapabilities';
@@ -143,7 +145,7 @@ import { mstConfigDigest, vlansMappedToInstanceZero } from '@/network/stp/MstCon
 export type CLIMode =
   | 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan'
   | 'config-mst' | 'config-line' | 'config-acl' | 'config-dhcp'
-  | 'config-std-nacl' | 'config-ext-nacl'
+  | 'config-std-nacl' | 'config-ext-nacl' | 'config-ext-macl'
   | 'config-access-map' | 'config-archive' | 'config-archive-log'
   | 'config-time-range';
 
@@ -679,6 +681,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
    */
   private configAclTrie = new CommandTrie();
   private configStdAclTrie = new CommandTrie();
+  private configMacAclTrie = new CommandTrie();
+  private selectedMacAcl: string | null = null;
   private configExtAclTrie = new CommandTrie();
   private selectedAcl: string | null = null;
   private selectedAclType: 'standard' | 'extended' = 'extended';
@@ -903,6 +907,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       case 'config-view': return this.configViewTrie;
       case 'config-acl':  return this.configAclTrie;
       case 'config-std-nacl': return this.configStdAclTrie;
+      case 'config-ext-macl': return this.configMacAclTrie;
       case 'config-ext-nacl': return this.configExtAclTrie;
       case 'config-dhcp': return this.configDhcpTrie;
       case 'config-access-map': return this.configAccessMapTrie;
@@ -2275,6 +2280,53 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     };
   }
 
+  private macAclHost(): MacAclHost {
+    const listes = () => this.d()._getMacAccessLists();
+    const courante = () => {
+      const nom = this.selectedMacAcl;
+      return nom === null ? undefined : listes().get(nom);
+    };
+    return {
+      enterList: (nom) => {
+        if (!listes().has(nom)) listes().set(nom, { name: nom, entries: [] });
+        this.selectedMacAcl = nom;
+        this.mode = 'config-ext-macl';
+        return '';
+      },
+      removeList: (nom) => { listes().delete(nom); return ''; },
+      addEntry: (ace) => {
+        const liste = courante();
+        if (!liste) return '';
+        const texte = renderMacAce(ace);
+        if (!liste.entries.some((e: MacAce) => renderMacAce(e) === texte)) {
+          liste.entries.push(ace);
+        }
+        return '';
+      },
+      removeEntry: (ace) => {
+        const liste = courante();
+        if (!liste) return '';
+        const texte = renderMacAce(ace);
+        liste.entries = liste.entries.filter((e: MacAce) => renderMacAce(e) !== texte);
+        return '';
+      },
+      bind: (nom) => {
+        if (!listes().has(nom)) return `% ACL ${nom} not configured`;
+        const port = this.selectedInterface;
+        if (!port) return CISCO_ERRORS.INCOMPLETE;
+        this.d()._getMacAccessGroups().set(port, nom);
+        return '';
+      },
+      unbind: (nom) => {
+        const port = this.selectedInterface;
+        if (!port) return CISCO_ERRORS.INCOMPLETE;
+        const groupes = this.d()._getMacAccessGroups();
+        if (groupes.get(port) === nom) groupes.delete(port);
+        return '';
+      },
+    };
+  }
+
   private aclHeadHost(): AclHeadHost {
     const moteur = () => this.d().getVaclEngine();
     return {
@@ -2316,6 +2368,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...super.socleSpecs(),
       ...trackEntrySpecs(() => this.trackEntryHost(), ['config']),
       ...aclHeadSpecs(() => this.aclHeadHost()),
+      ...macAclSpecs(() => this.macAclHost()),
       ...switchPortPhysicalSpecs(() => this.portPhysiqueHost()),
       ...stpInterfaceSpecs(() => this.stpInterfaceHost()),
       ...this.dot1xPaeSpecs(),
@@ -4179,6 +4232,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       lines.push('!');
     }
 
+    // ── MAC ACLs ──
+    for (const [, liste] of sw._getMacAccessLists()) {
+      lines.push(`mac access-list extended ${liste.name}`);
+      for (const ace of liste.entries) lines.push(` ${renderMacAce(ace)}`);
+      lines.push('!');
+    }
+
     // ── ARP ACLs ──
     for (const [, acl] of sw._getArpAccessLists()) {
       lines.push(`arp access-list ${acl.name}`);
@@ -4290,6 +4350,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (sw.isPortProtected(portName)) lines.push(' switchport protected');
       lines.push(...runningConfigInterfaceACLFrom(
         sw.getVaclEngine().getInterfaceACLBindingsInternal(), portName));
+      const macGroup = sw._getMacAccessGroups().get(portName);
+      if (macGroup !== undefined) lines.push(` mac access-group ${macGroup} in`);
       for (const l of this.qosRunningConfigLines(cfg)) lines.push(l);
       for (const l of this.ifExtra.get(portName) ?? []) lines.push(` ${l}`);
       for (const l of this.ifStp.get(portName) ?? []) lines.push(` ${l}`);

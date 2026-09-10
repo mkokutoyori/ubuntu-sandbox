@@ -38,11 +38,14 @@ import { CiscoFileSystem } from './shells/cisco/CiscoFileSystem';
 import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { getSessionRegistry } from '../equipment/RouterServiceCapabilities';
-import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet,
+import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, ETHERTYPE_IPV6, IPv4Packet,
   ethernetFrameBytes,
 } from '../core/types';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { VlanSet } from './switch/VlanSet';
+import {
+  evaluateMacAcl, type MacAccessList,
+} from './switch/MacAccessList';
 import { RouterDhcpClient } from './router/RouterDhcpClient';
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
 import { ControlPlaneUdpEndpoint } from './udp/ControlPlaneUdpEndpoint';
@@ -489,6 +492,10 @@ export abstract class Switch extends Equipment {
   private arpTable: Map<string, ARPEntry> = new Map();
   private readonly arpStats = new ArpStats();
   private ipRoutingEnabled = false;
+
+  // ─── MAC access lists (filtrage NON-IP) ────────────────────────
+  private macAccessLists: Map<string, MacAccessList> = new Map();
+  private macAccessGroups: Map<string, string> = new Map();
 
   // ─── Dynamic ARP Inspection ────────────────────────────────────
   private arpInspection: ArpInspectionConfig = createDefaultArpInspectionConfig();
@@ -2142,6 +2149,12 @@ export abstract class Switch extends Equipment {
     // SPAN ingress copy must happen before any DAI/STP/VLAN drop.
     this.mirrorIngress(portName, frame);
 
+    if (!this.macAclPermits(portName, frame)) {
+      Logger.debug(this.id, 'switch:mac-acl-drop',
+        `${this.name}: inbound MAC ACL dropped frame on ${portName}`);
+      return;
+    }
+
     // ─── Port ACL (Huawei `traffic-filter inbound`) ─────────────
     if (!this.portAclPermits(portName, 'in', frame)) {
       Logger.debug(this.id, 'switch:port-acl-drop',
@@ -3609,6 +3622,26 @@ export abstract class Switch extends Equipment {
 
   _getArpInspectionConfig(): ArpInspectionConfig { return this.arpInspection; }
   _getArpAccessLists(): Map<string, ArpAccessList> { return this.arpAccessLists; }
+
+  _getMacAccessLists(): Map<string, MacAccessList> { return this.macAccessLists; }
+
+  _getMacAccessGroups(): Map<string, string> { return this.macAccessGroups; }
+
+  /**
+   * La liste MAC liee a ce port refuse-t-elle cette trame ?
+   *
+   * Une trame IP n'est JAMAIS soumise a une liste MAC — c'est la liste
+   * IP du meme port qui en repond. Les deux coexistent sur une
+   * interface, chacune sur son trafic.
+   */
+  private macAclPermits(portName: string, frame: EthernetFrame): boolean {
+    const nom = this.macAccessGroups.get(portName);
+    if (nom === undefined) return true;
+    if (frame.etherType === ETHERTYPE_IPV4 || frame.etherType === ETHERTYPE_IPV6) return true;
+    const liste = this.macAccessLists.get(nom);
+    if (!liste) return true;
+    return evaluateMacAcl(liste, frame.srcMAC, frame.dstMAC) !== 'deny';
+  }
   _getArpErrDisabledPorts(): Set<string> { return this.arpErrDisabledPorts; }
   _getArpInspectionStats() {
     return this.arpInspectionPipeline?.getStats() ?? new Map();
