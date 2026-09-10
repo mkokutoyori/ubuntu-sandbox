@@ -38,13 +38,13 @@ import { CiscoFileSystem } from './shells/cisco/CiscoFileSystem';
 import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { getSessionRegistry } from '../equipment/RouterServiceCapabilities';
-import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, ETHERTYPE_IPV6, IPv4Packet,
+import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet,
   ethernetFrameBytes,
 } from '../core/types';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { VlanSet } from './switch/VlanSet';
 import {
-  evaluateMacAcl, type MacAccessList,
+  evaluateMacAcl, isIpEtherType, type MacAccessList,
 } from './switch/MacAccessList';
 import { RouterDhcpClient } from './router/RouterDhcpClient';
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
@@ -205,19 +205,13 @@ export interface PrivateVlanPortConfig {
   mappedSecondaryVlans?: Set<number>;
 }
 
-export function vlanAccessMapActionText(rule: VlanAccessMapRule): string {
-  if (rule.action === 'forward') return rule.capture ? 'forward capture' : 'forward';
-  return rule.logDrop ? 'drop log' : 'drop';
-}
-
 // ─── VLAN Access Map (Cisco VACL) ───────────────────────────────────
 
 export interface VlanAccessMapRule {
   sequence: number;
   matchIpAcls?: string[];
+  matchMacAcls?: string[];
   action: 'forward' | 'drop';
-  capture?: boolean;
-  logDrop?: boolean;
 }
 
 // ─── MQC (Huawei traffic classifier/behavior/policy) ────────────────
@@ -1526,7 +1520,8 @@ export abstract class Switch extends Equipment {
       for (const rule of rules) {
         out.push(`vlan access-map ${name} ${rule.sequence}`);
         if (rule.matchIpAcls?.length) out.push(` match ip address ${rule.matchIpAcls.join(' ')}`);
-        out.push(` action ${vlanAccessMapActionText(rule)}`);
+        if (rule.matchMacAcls?.length) out.push(` match mac address ${rule.matchMacAcls.join(' ')}`);
+        out.push(` action ${rule.action}`);
       }
     }
     return out;
@@ -1617,17 +1612,44 @@ export abstract class Switch extends Equipment {
     if (!mapName) return true;
     const rules = this.vlanAccessMaps.get(mapName);
     if (!rules || rules.length === 0) return true;
-    if (frame.etherType !== ETHERTYPE_IPV4) return true;
-    const ip = frame.payload as IPv4Packet | undefined;
-    if (!ip || ip.type !== 'ipv4') return true;
-    for (const rule of rules) {
-      if (!rule.matchIpAcls?.length) return rule.action === 'forward';
-      const engine = this.getVaclEngine();
-      if (rule.matchIpAcls.some((name) => engine.evaluateACLByName(name, ip) === 'permit')) {
-        return rule.action === 'forward';
+
+    const isIp = isIpEtherType(frame.etherType);
+    const ip = isIp ? frame.payload as IPv4Packet | undefined : undefined;
+    if (isIp && frame.etherType !== ETHERTYPE_IPV4) return true;
+    if (isIp && (!ip || ip.type !== 'ipv4')) return true;
+
+    const clauseFor = (rule: VlanAccessMapRule): string[] | undefined =>
+      isIp ? rule.matchIpAcls : rule.matchMacAcls;
+    const otherClauseFor = (rule: VlanAccessMapRule): string[] | undefined =>
+      isIp ? rule.matchMacAcls : rule.matchIpAcls;
+
+    let sawClauseForThisType = false;
+    for (const rule of [...rules].sort((a, b) => a.sequence - b.sequence)) {
+      const mine = clauseFor(rule);
+      if (mine?.length) {
+        sawClauseForThisType = true;
+        if (this.vaclClauseMatches(mine, isIp, ip, frame)) return rule.action === 'forward';
+        continue;
       }
+      if (otherClauseFor(rule)?.length) continue;
+      return rule.action === 'forward';
     }
-    return false;
+    return !sawClauseForThisType;
+  }
+
+  private vaclClauseMatches(
+    names: string[], isIp: boolean, ip: IPv4Packet | undefined, frame: EthernetFrame,
+  ): boolean {
+    if (isIp) {
+      if (!ip) return false;
+      const engine = this.getVaclEngine();
+      return names.some((name) => engine.evaluateACLByName(name, ip) === 'permit');
+    }
+    return names.some((name) => {
+      const list = this.macAccessLists.get(name);
+      return list !== undefined
+        && evaluateMacAcl(list, frame.srcMAC, frame.dstMAC) === 'permit';
+    });
   }
 
   /** Huawei `traffic-filter inbound|outbound acl <N>` on a physical port. */
@@ -3663,7 +3685,7 @@ export abstract class Switch extends Equipment {
   private macAclPermits(portName: string, frame: EthernetFrame): boolean {
     const nom = this.macAccessGroups.get(portName);
     if (nom === undefined) return true;
-    if (frame.etherType === ETHERTYPE_IPV4 || frame.etherType === ETHERTYPE_IPV6) return true;
+    if (isIpEtherType(frame.etherType)) return true;
     const liste = this.macAccessLists.get(nom);
     if (!liste) return true;
     return evaluateMacAcl(liste, frame.srcMAC, frame.dstMAC) !== 'deny';

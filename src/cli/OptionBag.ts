@@ -23,6 +23,25 @@ export interface OptionSpec {
   readonly description: string;
   /** La valeur que ce mot-cle prend, s'il en prend une. */
   readonly argument?: ArgumentSpec;
+  readonly moreArguments?: readonly ArgumentSpec[];
+  readonly choices?: readonly OptionSpec[];
+}
+
+function placesOf(option: OptionSpec, choix?: OptionSpec): readonly ArgumentSpec[] {
+  const source = choix ?? option;
+  return [
+    ...(source.argument ? [source.argument] : []),
+    ...(source.moreArguments ?? []),
+  ];
+}
+
+function choiceArgument(option: OptionSpec): ArgumentSpec {
+  return {
+    name: option.keyword, type: 'ENUM', description: option.description,
+    values: (option.choices ?? []).map(choix => ({
+      keyword: choix.keyword, description: choix.description,
+    })),
+  };
 }
 
 export type OptionBagVerdict =
@@ -56,6 +75,24 @@ export function optionArgName(option: OptionSpec): string {
 }
 
 /**
+ * Une place cede-t-elle ce jeton au sac ?
+ *
+ * `permit icmp any any ttl lt 255` posait un TYPE de message ICMP :
+ * `ttl` abrege `ttl-exceeded`, que la place enumere, et la place est
+ * consultee avant le sac. La regle qui tranche est celle que le sac
+ * applique deja entre ses propres mots — un EXACT l'emporte sur un
+ * prefixe — et elle vaut aussi entre une place et une option.
+ */
+export function placeCedeAuSac(
+  place: ArgumentSpec, token: string, options: readonly OptionSpec[] | undefined,
+): boolean {
+  const bas = token.toLowerCase();
+  if (!options?.some(option => option.keyword.toLowerCase() === bas)) return false;
+  const resolu = resolveEnumValue(place, token);
+  return resolu !== undefined && resolu.toLowerCase() !== bas;
+}
+
+/**
  * Lit la queue de la frappe comme un sac d'options.
  *
  * Rend le rang ABSOLU du jeton fautif plutot qu'un booleen, pour que
@@ -72,30 +109,50 @@ export function consumeOptionBag(
     if (!option) return { kind: 'invalid', at: index };
     restantes = restantes.filter(autre => autre !== option);
 
-    if (!option.argument) {
-      args[optionArgName(option)] = option.keyword;
+    let choix: OptionSpec | undefined;
+    if (option.choices) {
+      const suivant = tokens[index + 1];
+      if (suivant === undefined) return { kind: 'incomplete' };
+      choix = resolveOption(option.choices, suivant);
+      if (!choix) return { kind: 'invalid', at: index + 1 };
+      args[option.keyword] = choix.keyword;
+      index++;
+    }
+
+    const places = placesOf(option, choix);
+    if (places.length === 0) {
+      if (!choix) args[optionArgName(option)] = option.keyword;
       continue;
     }
-    const brut = tokens[index + 1];
-    if (brut === undefined) return { kind: 'incomplete' };
-    /*
-     * Une valeur `REST` prend TOUTE la suite de la ligne et termine le
-     * sac : `username bob description chef de projet` decrit un chef de
-     * projet, pas une option `chef` suivie de deux mots inconnus. C'est
-     * la meme regle qu'une place `REST` dans un chemin — le sac ne
-     * savait pas la dire, si bien qu'une famille dont une option prend
-     * une phrase ne pouvait pas se declarer et restait glouton.
-     */
-    if (option.argument.type === 'REST') {
-      args[optionArgName(option)] = tokens.slice(index + 1).join(' ');
-      return { kind: 'ok', args };
+
+    let fini = false;
+    for (const place of places) {
+      const brut = tokens[index + 1];
+      if (brut === undefined) {
+        if (place.optional) break;
+        return { kind: 'incomplete' };
+      }
+      /*
+       * Une valeur `REST` prend TOUTE la suite de la ligne et termine le
+       * sac : `username bob description chef de projet` decrit un chef de
+       * projet, pas une option `chef` suivie de deux mots inconnus. C'est
+       * la meme regle qu'une place `REST` dans un chemin — le sac ne
+       * savait pas la dire, si bien qu'une famille dont une option prend
+       * une phrase ne pouvait pas se declarer et restait glouton.
+       */
+      if (place.type === 'REST') {
+        args[place.name] = tokens.slice(index + 1).join(' ');
+        fini = true;
+        break;
+      }
+      if (!argumentAccepts(place, brut)) {
+        if (place.optional) break;
+        return { kind: 'invalid', at: index + 1 };
+      }
+      args[place.name] = resolveEnumValue(place, brut) ?? brut;
+      index++;
     }
-    if (!argumentAccepts(option.argument, brut)) {
-      return { kind: 'invalid', at: index + 1 };
-    }
-    args[optionArgName(option)] =
-      resolveEnumValue(option.argument, brut) ?? brut;
-    index++;
+    if (fini) return { kind: 'ok', args };
   }
 
   return { kind: 'ok', args };
@@ -112,14 +169,33 @@ export function remainingOptions(
   options: readonly OptionSpec[], typed: readonly string[],
 ): OptionSpec[] {
   let restantes = [...options];
+  const facultatives: OptionSpec[] = [];
   for (let index = 0; index < typed.length; index++) {
     const option = resolveOption(restantes, typed[index]);
     if (!option) continue;
     restantes = restantes.filter(autre => autre !== option);
-    if (option.argument?.type === 'REST' && index + 1 < typed.length) return [];
-    if (option.argument) index++;
+
+    let choix: OptionSpec | undefined;
+    if (option.choices) {
+      choix = resolveOption(option.choices, typed[index + 1] ?? '');
+      index++;
+    }
+    for (const place of placesOf(option, choix)) {
+      if (place.type === 'REST' && index + 1 < typed.length) return [];
+      const brut = typed[index + 1];
+      if (brut === undefined) {
+        if (place.optional && place.values) {
+          facultatives.push(...place.values.map(valeur => ({
+            keyword: valeur.keyword, description: valeur.description,
+          })));
+        }
+        break;
+      }
+      if (place.optional && !argumentAccepts(place, brut)) break;
+      index++;
+    }
   }
-  return restantes;
+  return [...restantes, ...facultatives];
 }
 
 /**
@@ -138,9 +214,20 @@ export function pendingOptionArgument(
     const option = resolveOption(restantes, typed[index]);
     if (!option) continue;
     restantes = restantes.filter(autre => autre !== option);
-    if (!option.argument) continue;
-    if (index + 1 >= typed.length) return option.argument;
-    index++;
+
+    let choix: OptionSpec | undefined;
+    if (option.choices) {
+      if (index + 1 >= typed.length) return choiceArgument(option);
+      choix = resolveOption(option.choices, typed[index + 1]);
+      index++;
+      if (!choix) continue;
+    }
+    for (const place of placesOf(option, choix)) {
+      const brut = typed[index + 1];
+      if (brut === undefined) return place.optional ? undefined : place;
+      if (place.optional && !argumentAccepts(place, brut)) break;
+      index++;
+    }
   }
   return undefined;
 }

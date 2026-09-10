@@ -148,29 +148,20 @@ describe('VACL — non-regression', () => {
     expect([...device.getVlanFilterBindings()]).toEqual([]);
   });
 
-  it('W-04 `action forward capture` and `action drop log` are kept, not downgraded', async () => {
+  it('W-04 the modelled Catalyst accepts only `forward` and `drop`', async () => {
     const { device, out } = await switchOnly([
-      'enable', 'configure terminal',
-      'vlan access-map M 10', 'action forward capture', 'exit',
-      'vlan access-map M 20', 'action drop log', 'exit', 'end',
-    ]);
-    expect(out[3]).toBe('');
-    expect(out[6]).toBe('');
-    const rules = device.getVlanAccessMap('M')!;
-    expect(rules[0]).toMatchObject({ action: 'forward', capture: true });
-    expect(rules[1]).toMatchObject({ action: 'drop', logDrop: true });
-    const config = await device.executeCommand('show running-config');
-    expect(config).toContain(' action forward capture');
-    expect(config).toContain(' action drop log');
-  });
-
-  it('W-04 an unknown action qualifier is refused', async () => {
-    const { out } = await switchOnly([
       'enable', 'configure terminal', 'vlan access-map M 10',
-      'action forward zorglub', 'action drop zorglub',
+      'action forward capture', 'action drop log', 'action forward zorglub',
+      'action forward', 'end',
     ]);
     expect(out[3]).toContain('Invalid input');
     expect(out[4]).toContain('Invalid input');
+    expect(out[5]).toContain('Invalid input');
+    expect(out[6]).toBe('');
+    expect(device.getVlanAccessMap('M')![0].action).toBe('forward');
+    const config = await device.executeCommand('show running-config');
+    expect(config).toContain(' action forward');
+    expect(config).not.toContain('capture');
   });
 
   it('W-05 a sequence outside 0-65535 is refused', async () => {
@@ -194,7 +185,7 @@ describe('VACL — non-regression', () => {
 
   it('a VACL really drops, and unmatched traffic hits the implicit deny', async () => {
     const { device, left } = await lan('SWD', 'd1', 'd2');
-    expect(await left.executeCommand('ping -c 2 10.0.0.2')).toContain('0% packet loss');
+    expect(await left.executeCommand('ping -c 2 10.0.0.2')).toContain(', 0% packet loss');
     for (const c of FILTER_LAB) await device.executeCommand(c);
     expect(await left.executeCommand('ping -c 2 10.0.0.2')).toContain('100% packet loss');
 
@@ -217,6 +208,6 @@ describe('VACL — non-regression', () => {
       'vlan access-map M 20', 'action forward', 'exit',
       'vlan filter M vlan-list 10', 'end',
     ]) await device.executeCommand(c);
-    expect(await left.executeCommand('ping -c 2 10.0.0.2')).toContain('0% packet loss');
+    expect(await left.executeCommand('ping -c 2 10.0.0.2')).toContain(', 0% packet loss');
   }, 30000);
 });

@@ -37,7 +37,7 @@ import {
 import { matchEnumValue } from './netIpAddress';
 import { PortProxyRule, PORT_PROXY_FAMILIES, type PortProxyFamily } from './PortProxyRule';
 import { adapterDisplayName, resolveAdapterPortName } from './netAdapter';
-import { adapterIfIndex, withWindowsZone } from './WindowsInterfaceNaming';
+import { adapterIfIndex, withWindowsZone, LOOPBACK_IFINDEX } from './WindowsInterfaceNaming';
 import type { Port } from '../../hardware/Port';
 
 
@@ -769,15 +769,18 @@ function handleShowAddresses(ctx: NetshContext, ifFilter?: string): string {
 function handleShowIpInterfaces(ctx: NetshContext): string {
   const lines = ['', 'Idx     Met         MTU          State                Name',
     '---  ----------  ----------  ------------  ---------------------------'];
-  let idx = 1;
+  lines.push(
+    `${String(LOOPBACK_IFINDEX).padStart(3)}${String(75).padStart(12)}`
+    + `${String(4294967295).padStart(12)}${'connected'.padStart(14)}  Loopback Pseudo-Interface 1`,
+  );
+  const names = [...ctx.ports.keys()];
   for (const [name, port] of ctx.ports) {
     const displayName = adapterDisplayName(name, ctx.ports);
     const etat = port.isAdminDown() ? 'disabled' : (port.getIsUp() && port.hasCarrier() ? 'connected' : 'disconnected');
     lines.push(
-      `${String(idx).padStart(3)}${String(25).padStart(12)}${String(port.getMTU()).padStart(12)}`
-      + `${etat.padStart(14)}  ${displayName}`,
+      `${String(adapterIfIndex(names.indexOf(name))).padStart(3)}${String(25).padStart(12)}`
+      + `${String(port.getMTU()).padStart(12)}${etat.padStart(14)}  ${displayName}`,
     );
-    idx++;
   }
   lines.push('');
   return lines.join('\n');
@@ -1430,6 +1433,10 @@ To view help for a command, type the command, followed by a space, and then
         }
       }
       return lines.join('\n');
+    }
+
+    if (obj === 'interfaces' || obj === 'interface') {
+      return handleShowIpInterfaces(ctx);
     }
 
     if (obj === 'neighbors' || obj === 'neighbor') {

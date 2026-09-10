@@ -28,7 +28,7 @@ import {
   LOOPBACK_IFINDEX, toDisplayName, toPortName, formatLinkSpeedMbps, withWindowsZone,
 } from '@/network/devices/windows/WindowsInterfaceNaming';
 import { NO_MATCHING_INTERFACE } from '@/network/devices/windows/netIpAddress';
-import { type DnsCacheRow, dnsCacheRowsOf } from '@/network/devices/windows/dnsClientCache';
+import { type DnsAnswerRow, type DnsCacheRow, dnsAnswerRowOf, dnsCacheRowsOf } from '@/network/devices/windows/dnsClientCache';
 import { resolveAdapter, resolveAdapterPortName } from '@/network/devices/windows/netAdapter';
 import {
   memberFailureReason, memberStatus, normaliseAdminMode, normaliseLacpTimer,
@@ -39,6 +39,7 @@ import type { NetNeighborPlan, NetNeighborState } from '@/network/devices/window
 import { isValidIPv4 } from '@/network/core/ip';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { discoverDcHostname, rootDnOf } from '@/network/devices/windows/domain/DcHostnameDiscovery';
+import { locateDomainController } from '@/network/devices/windows/domain/DcLocator';
 import { dialLdap } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 
@@ -2242,6 +2243,10 @@ class WindowsNetworkAdapter implements INetworkProvider {
   resolveDnsViaServerWithTtl(name: string, server: string): Array<{ ip: string; ttl: number }> {
     return this.pc.resolveDnsViaServerWithTtlSync(name, server);
   }
+  resolveDnsRecords(name: string, type: string, server?: string): DnsAnswerRow[] | null {
+    const records = this.pc.lookupDnsRecordsSync(name, type, server);
+    return records === null ? null : records.map(dnsAnswerRowOf);
+  }
   getDnsClientCache(): DnsCacheRow[] {
     return dnsCacheRowsOf(this.pc.dnsCache.entries());
   }
@@ -2806,7 +2811,9 @@ class WindowsComputerAdapter implements IComputerProvider {
   private device(): JoinableDevice { return this.pc as unknown as JoinableDevice; }
 
   join(domainName: string, credential: { username: string; password: string }, server?: string, opts?: { ouPath?: string; newName?: string }): AdOpResult {
-    const dcAddress = server ?? this.pc.resolveHostnameSync(domainName)?.toString();
+    const dcAddress = server
+      ?? locateDomainController(this.pc, domainName)?.address.toString()
+      ?? this.pc.resolveHostnameSync(domainName)?.toString();
     if (!dcAddress) {
       return { ok: false, message: `Computer '${this.pc.getHostname()}' failed to join domain '${domainName}': The specified domain either does not exist or could not be contacted.` };
     }

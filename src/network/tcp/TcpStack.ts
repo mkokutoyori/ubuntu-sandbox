@@ -9,6 +9,7 @@ import {
   TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS, TCP_MIN_MSS,
 } from './types';
 import { bogusChecksum, payloadBytes } from '@/network/layers/transport/L4Checksum';
+import { type StreamPayload, isStreamPayload, sliceStream, appendStream } from './StreamPayload';
 import { fragmentIPv4, IPV4_FLAG_DF } from '@/network/core/Ipv4Fragmentation';
 import { PortNumber } from '@/network/core/ports/PortNumber';
 import {
@@ -99,9 +100,11 @@ export function canonicalIpText(ip: string): string {
   try { return new IPv6Address(ip).withScopeId(null).toString(); } catch { return ip; }
 }
 
+const OPAQUE_PAYLOAD_SEQUENCE_UNITS = 1;
+
 export function segmentPayloadSize(seg: TcpSegment): number {
   if (seg.payload === undefined) return 0;
-  return typeof seg.payload === 'string' ? seg.payload.length : 1;
+  return isStreamPayload(seg.payload) ? seg.payload.length : OPAQUE_PAYLOAD_SEQUENCE_UNITS;
 }
 
 export interface TcpHost {
@@ -188,7 +191,7 @@ export class TcpSocket {
   everEstablished = false;
   pendingSendQueue: unknown[] = [];
   closeAfterFlush = false;
-  recvBuffer = '';
+  recvBuffer: StreamPayload | null = null;
   /** 2MSL timer token while in TIME-WAIT (RFC 9293 §3.4.1). */
   timeWaitTimer: symbol | null = null;
   /**
@@ -206,8 +209,7 @@ export class TcpSocket {
 
   /** Peer's last-advertised receive window (PRD-TCP.md P3) — bounds how much unacked data we may have in flight. */
   peerWindow = TCP_DEFAULT_WINDOW;
-  /** String chunks queued because the peer's window couldn't take them yet, in send order. `psh` marks the chunk that ends its original write. */
-  sendBacklog: Array<{ payload: string; psh: boolean }> = [];
+  sendBacklog: Array<{ payload: StreamPayload; psh: boolean }> = [];
   /** Zero-window persist-probe timer (RFC 9293 §3.8.6.1). */
   persistTimer: symbol | null = null;
   persistBackoffMs = 0;
@@ -242,7 +244,7 @@ export class TcpSocket {
   /** Highest timestamp value seen from the peer — echoed back, and used for PAWS (RFC 7323 §5). */
   peerLastTsVal: number | null = null;
   /** Out-of-order segments buffered for reassembly instead of being dropped (PRD-TCP.md P6), bounded by `TCP_REASSEMBLY_MAX_BYTES`. */
-  reassemblyBuffer: Array<{ sequence: number; payload: string; psh: boolean }> = [];
+  reassemblyBuffer: Array<{ sequence: number; payload: StreamPayload; psh: boolean }> = [];
 
   /** PRD-TCP.md P8 (RFC 9293 §3.8.4, SO_KEEPALIVE) — optional idle-probe timer, off by default. */
   keepAliveEnabled = false;
@@ -733,15 +735,16 @@ export class TcpStack {
   private resegmentAndRetransmit(socket: TcpSocket, origSequence: number): void {
     const head = socket.unackedQueue[0];
     if (!head || head.sequence !== origSequence) return;
-    if (typeof head.payload !== 'string' || head.length <= socket.mss) return;
+    if (!isStreamPayload(head.payload) || head.length <= socket.mss) return;
+    const bounced = head.payload;
     socket.unackedQueue.shift();
     socket.sendNext = head.sequence;
-    const resegmented: Array<{ payload: string; psh: boolean }> = [];
+    const resegmented: Array<{ payload: StreamPayload; psh: boolean }> = [];
     let offset = 0;
-    while (offset < head.payload.length) {
-      const chunk = head.payload.slice(offset, offset + socket.mss);
+    while (offset < bounced.length) {
+      const chunk = sliceStream(bounced, offset, offset + socket.mss);
       offset += chunk.length;
-      resegmented.push({ payload: chunk, psh: head.flags.psh && offset >= head.payload.length });
+      resegmented.push({ payload: chunk, psh: head.flags.psh && offset >= bounced.length });
     }
     socket.sendBacklog.unshift(...resegmented);
     this.flushSendBacklog(socket);
@@ -891,24 +894,20 @@ export class TcpStack {
     }
     if (socket.state !== 'established' && socket.state !== 'close-wait') return;
 
-    if (typeof data !== 'string') {
-      // Object payloads keep the pre-P3 behaviour: a single, non-chunked
-      // segment that isn't subject to window-based backlogging — bulk
-      // flow control only matters for the string data this stack actually
-      // splits by MSS.
+    if (!isStreamPayload(data)) {
       const flags = noFlags(); flags.ack = true; flags.psh = true;
       const seq = socket.sendNext;
-      socket.sendNext = (seq + 1) >>> 0;
-      this.transmitTracked(socket, flags, seq, socket.recvNext, data, 1);
+      socket.sendNext = (seq + OPAQUE_PAYLOAD_SEQUENCE_UNITS) >>> 0;
+      this.transmitTracked(socket, flags, seq, socket.recvNext, data, OPAQUE_PAYLOAD_SEQUENCE_UNITS);
       return;
     }
 
     if (data.length === 0) {
-      socket.sendBacklog.push({ payload: '', psh: true });
+      socket.sendBacklog.push({ payload: sliceStream(data, 0, 0), psh: true });
     } else {
       let offset = 0;
       while (offset < data.length) {
-        const chunk = data.slice(offset, offset + socket.mss);
+        const chunk = sliceStream(data, offset, offset + socket.mss);
         offset += chunk.length;
         socket.sendBacklog.push({ payload: chunk, psh: offset >= data.length });
       }
@@ -941,8 +940,8 @@ export class TcpStack {
         if (available === 0) break;
         const next = socket.sendBacklog[0];
         const take = Math.min(available, next.payload.length);
-        const chunk = next.payload.slice(0, take);
-        const remainder = next.payload.slice(take);
+        const chunk = sliceStream(next.payload, 0, take);
+        const remainder = sliceStream(next.payload, take);
         socket.sendBacklog.shift();
         if (remainder.length > 0) {
           socket.sendBacklog.unshift({ payload: remainder, psh: next.psh });
@@ -986,8 +985,8 @@ export class TcpStack {
     if (socket.closed || socket.sendBacklog.length === 0) { socket.persistBackoffMs = 0; return; }
     const next = socket.sendBacklog[0];
     if (next.payload.length === 0) { this.maybeArmPersistTimer(socket); return; }
-    const probe = next.payload.slice(0, 1);
-    const remainder = next.payload.slice(1);
+    const probe = sliceStream(next.payload, 0, 1);
+    const remainder = sliceStream(next.payload, 1);
     socket.sendBacklog.shift();
     if (remainder.length > 0) {
       socket.sendBacklog.unshift({ payload: remainder, psh: next.psh });
@@ -1284,7 +1283,7 @@ export class TcpStack {
         return false;
       }
     }
-    if (socket.sackEnabled && typeof seg.payload === 'string' && seqLt(socket.recvNext, seg.sequence)) {
+    if (socket.sackEnabled && isStreamPayload(seg.payload) && seqLt(socket.recvNext, seg.sequence)) {
       this.bufferOutOfOrder(socket, seg);
     }
     const ackFlags = noFlags(); ackFlags.ack = true;
@@ -1294,11 +1293,12 @@ export class TcpStack {
 
   /** Buffer a genuinely out-of-order segment for reassembly (PRD-TCP.md P6), bounded by `TCP_REASSEMBLY_MAX_BYTES`. */
   private bufferOutOfOrder(socket: TcpSocket, seg: TcpSegment): void {
-    if (typeof seg.payload !== 'string') return;
+    const payload = seg.payload;
+    if (!isStreamPayload(payload)) return;
     if (socket.reassemblyBuffer.some((e) => e.sequence === seg.sequence)) return; // already buffered
     const bufferedBytes = socket.reassemblyBuffer.reduce((n, e) => n + e.payload.length, 0);
-    if (bufferedBytes + seg.payload.length > TCP_REASSEMBLY_MAX_BYTES) return; // over budget — drop, same as before P6
-    socket.reassemblyBuffer.push({ sequence: seg.sequence, payload: seg.payload, psh: seg.flags.psh });
+    if (bufferedBytes + payload.length > TCP_REASSEMBLY_MAX_BYTES) return; // over budget — drop, same as before P6
+    socket.reassemblyBuffer.push({ sequence: seg.sequence, payload, psh: seg.flags.psh });
   }
 
   /** Pull any now-contiguous buffered segments into recvBuffer/RCV.NXT (PRD-TCP.md P6). Returns true if any pulled-in segment carried PSH. */
@@ -1308,7 +1308,7 @@ export class TcpStack {
       const idx = socket.reassemblyBuffer.findIndex((e) => e.sequence === socket.recvNext);
       if (idx === -1) break;
       const [entry] = socket.reassemblyBuffer.splice(idx, 1);
-      socket.recvBuffer += entry.payload;
+      socket.recvBuffer = appendStream(socket.recvBuffer, entry.payload);
       socket.recvNext = (entry.sequence + entry.payload.length) >>> 0;
       if (entry.psh) pshSeen = true;
     }
@@ -1326,22 +1326,23 @@ export class TcpStack {
   }
 
   private deliverData(socket: TcpSocket, seg: TcpSegment): void {
-    const chunkLen = typeof seg.payload === 'string' ? seg.payload.length : 1;
+    const payload = seg.payload;
+    const chunkLen = isStreamPayload(payload) ? payload.length : OPAQUE_PAYLOAD_SEQUENCE_UNITS;
     socket.recvNext = (seg.sequence + chunkLen) >>> 0;
-    if (seg.payload === undefined) return;
-    if (typeof seg.payload === 'string') {
-      socket.recvBuffer += seg.payload;
+    if (payload === undefined) return;
+    if (isStreamPayload(payload)) {
+      socket.recvBuffer = appendStream(socket.recvBuffer, payload);
       // PRD-TCP.md P6 — filling this gap may make previously-buffered
       // out-of-order segments contiguous now; pull them in too before
       // deciding whether to flush to the application.
       const laterPsh = this.drainReassemblyBuffer(socket);
       if (!seg.flags.psh && !laterPsh) return;
-      const full = socket.recvBuffer;
-      socket.recvBuffer = '';
+      const full = socket.recvBuffer ?? payload;
+      socket.recvBuffer = null;
       try { socket._fireData(full); } catch (e) { Logger.warn(this.host.id, 'tcp:onData', String(e)); }
       return;
     }
-    try { socket._fireData(seg.payload); } catch (e) { Logger.warn(this.host.id, 'tcp:onData', String(e)); }
+    try { socket._fireData(payload); } catch (e) { Logger.warn(this.host.id, 'tcp:onData', String(e)); }
   }
 
   private handleIncomingFin(socket: TcpSocket): void {

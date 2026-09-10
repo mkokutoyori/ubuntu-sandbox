@@ -434,25 +434,32 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
   readonly name = 'resolve-dnsname';
   readonly displayName = 'Resolve-DnsName';
   readonly aliases = [] as const;
+  readonly parameters = ['Name', 'Type', 'Server', 'DnsOnly', 'LlmnrOnly', 'NoHostsFile', 'CacheOnly'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
     const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
     if (!name) { ctx.emitError('Resolve-DnsName requires -Name'); return null; }
 
-    // IPv4 → reverse PTR.
-    const ipv4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(name);
-    if (ipv4) {
-      const [, a, b, c, d] = ipv4;
-      const ptrName = `${d}.${c}.${b}.${a}.in-addr.arpa`;
-      if (a !== '127') { ctx.emitError(`${ptrName} : DNS name does not exist`); return null; }
-      return [{
-        Name: ptrName,
-        Type: 'PTR',
-        TTL: 300,
-        Section: 'Answer',
-        NameHost: 'localhost',
-      } as Record<string, PSValue>] as PSValue;
+    const reverse = IPAddress.tryParse(name);
+    if (reverse) {
+      const octets = reverse.getOctets();
+      const ptrName = `${[...octets].reverse().join('.')}.in-addr.arpa`;
+      if (octets[0] === 127) {
+        return [{
+          Name: ptrName,
+          Type: 'PTR',
+          TTL: 300,
+          Section: 'Answer',
+          NameHost: 'localhost',
+        } as Record<string, PSValue>] as PSValue;
+      }
+      const serveur = ctx.named['server'] !== undefined ? psValueToString(ctx.named['server']) : undefined;
+      const rows = net.resolveDnsRecords?.(name, 'PTR', serveur) ?? [];
+      if (rows === null || rows.length === 0) { ctx.emitError(`${ptrName} : DNS name does not exist`); return null; }
+      return rows.map(r => ({
+        Name: ptrName, Type: r.type, TTL: r.ttl, Section: r.section, ...r.fields,
+      } as Record<string, PSValue>)) as PSValue;
     }
 
     // Forward lookup — resolved exclusively through the device's own DNS
@@ -464,6 +471,23 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
     // bypassing the interface-configured servers — needed to compare a
     // forced lookup against the system default one.
     const server = ctx.named['server'] !== undefined ? psValueToString(ctx.named['server']) : null;
+
+    const askedType = ctx.named['type'] !== undefined ? psValueToString(ctx.named['type']).toUpperCase() : '';
+    if (askedType && askedType !== 'A' && askedType !== 'A_AAAA') {
+      if (!net.resolveDnsRecords) {
+        ctx.emitError(`Resolve-DnsName : -Type ${askedType} is not supported by this DNS client (no typed resolver on this machine)`);
+        return null;
+      }
+      const rows = net.resolveDnsRecords(name, askedType, server ?? undefined);
+      if (rows === null) {
+        ctx.emitError(`Resolve-DnsName : -Type ${askedType} is not a record type this DNS engine can encode`);
+        return null;
+      }
+      if (rows.length === 0) { ctx.emitError(`${name} : DNS name does not exist`); return null; }
+      return rows.map(r => ({
+        Name: r.name, Type: r.type, TTL: r.ttl, Section: r.section, ...r.fields,
+      } as Record<string, PSValue>)) as PSValue;
+    }
 
     if (server && net.resolveDnsViaServerWithTtl) {
       const records = net.resolveDnsViaServerWithTtl(name, server);

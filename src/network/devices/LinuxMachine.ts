@@ -1125,15 +1125,16 @@ export abstract class LinuxMachine extends EndHost
   private startCronTicker(): void {
     if (this.cronTimer !== null) return;
     this.cronTimer = this.hostTimers.setInterval(() => this.cronTick(), 60_000);
-    this.cronTick();
+    this.cronTick(this.executor.simulatedDate(), 'align');
   }
 
-  cronTick(at: Date = this.executor.simulatedDate()): void {
+  cronTick(at: Date = this.executor.simulatedDate(), tour: 'run' | 'align' = 'run'): void {
     const engine = this.getCronEngine();
     const active = this.isServiceActive('cron');
     if (active && !engine.isRunning) engine.start();
     else if (!active && engine.isRunning) engine.stop();
-    engine.tick(at);
+    if (tour === 'align') engine.alignTo(at);
+    else engine.tick(at);
     this.executor.serviceMgr.timerTick(at);
     // `atd` a son propre tour, mais il tombe à la même minute que cron.
     // Il ne vivait jusqu'ici que dans `advanceTime()`, si bien qu'une

@@ -47,7 +47,6 @@ import {
 } from './cisco/ciscoCounterTables';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
-import { vlanAccessMapActionText } from '../Switch';
 import { parseVlanId, VLAN_MIN, VLAN_MAX, type VlanSet } from '../switch/VlanSet';
 import {
   STORM_CONTROL_TYPES, parseStormControl, stormControlPercent,
@@ -81,7 +80,7 @@ import { etherChannelLimitFamily } from '@/cli/commands/aggregation/etherChannel
 import {
   parseCiscoAce, renderCiscoAce, formatCiscoAclEntry,
   showAccessListsFrom, isValidIosAclNumber,
-  buildNamedStdACLCommands, buildNamedExtACLCommands, standardAclHost,
+  buildNamedStdACLCommands, buildNamedExtACLCommands, standardAclHost, extendedAclHost,
   type NamedAclEditContext,
   runningConfigACLFrom, runningConfigInterfaceACLFrom, IOS_REMARK_MAX,
 } from './cisco/CiscoAclCommands';
@@ -89,6 +88,7 @@ import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import { aclHeadSpecs, type AclHeadHost, type AclKind } from './cisco/aclHeadSpecs';
 import { macAclSpecs, type MacAclHost } from './cisco/macAclSpecs';
 import { aclStandardSpecs } from './cisco/aclStandardSpecs';
+import { aclExtendedSpecs } from './cisco/aclExtendedSpecs';
 import { renderMacAce, type MacAce } from '../switch/MacAccessList';
 import { CISCO_ERRORS, resolveCiscoInterfaceName } from './cli-utils';
 import { estTypeSansNumero, typesInterfaceEnMotsCles } from './cisco/CiscoConfigCommands';
@@ -697,6 +697,34 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   constructor() {
     super();
     this.initializeCommands();
+    // IOS ne nomme pas ses arguments, il les TYPE. Cette table etait
+    // posee sur le seul shell du routeur, si bien qu'un Catalyst
+    // repondait `WORD  Set a banner` la ou IOS liste `motd`, `login`,
+    // `exec`, `incoming` — la commande marchait et ne se laissait pas
+    // decouvrir. Les tries qu'un commutateur n'a pas (processus de
+    // routage, route-map, time-range, track) recoivent des arbres
+    // jetables : decrire un argument sur un arbre que rien ne consulte
+    // ne coute rien et evite d'avoir DEUX tables a tenir.
+    const inutilise = () => new CommandTrie();
+    // Les suites d'un noeud glouton sont DECLAREES, plus derivees du
+    // texte source de son gestionnaire. Les arbres sont releves sur
+    // l'objet lui-meme : les nommer a la main en aurait oublie, et un
+    // arbre oublie est un mode entier prive de ses suites.
+    appliquerContinuations(this.tousLesArbres(), SOCLE, COMMUTATEUR_SEUL);
+    describeCiscoArguments({
+      config: this.configTrie,
+      configIf: this.configIfTrie,
+      configLine: this.configLineTrie,
+      configDhcp: this.configDhcpTrie,
+      privileged: this.privilegedTrie,
+      configStdNacl: this.configStdNaclTrie,
+      configExtNacl: this.configExtNaclTrie,
+      configRouter: inutilise(),
+      configRouterOspf: inutilise(),
+      configRouteMap: inutilise(),
+      configTrack: inutilise(),
+      configRouterOnly: inutilise(),
+    });
     describeCiscoSwitchArguments({
       config: this.configTrie,
       configIf: this.configIfTrie,
@@ -1021,20 +1049,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       rule.matchIpAcls = [...(rule.matchIpAcls ?? []), ...args];
       return '';
     });
+    this.configAccessMapTrie.registerGreedy('match mac address', 'Match a MAC ACL', (args) => {
+      if (!this.selectedAccessMap || !args[0]) return CISCO_ERRORS.INCOMPLETE;
+      const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
+      rule.matchMacAcls = [...(rule.matchMacAcls ?? []), ...args];
+      return '';
+    });
     this.configAccessMapTrie.registerGreedy('action', 'Set the access-map action', (args) => {
       if (!this.selectedAccessMap) return CISCO_ERRORS.INCOMPLETE;
       const a = args[0]?.toLowerCase();
       if (a !== 'forward' && a !== 'drop') return '% Invalid action';
-      const qualifier = args[1]?.toLowerCase();
-      if (args.length > 2) return CISCO_ERRORS.INVALID_INPUT;
-      if (qualifier !== undefined) {
-        if (a === 'forward' && qualifier !== 'capture') return CISCO_ERRORS.INVALID_INPUT;
-        if (a === 'drop' && qualifier !== 'log') return CISCO_ERRORS.INVALID_INPUT;
-      }
+      if (args.length > 1) return CISCO_ERRORS.INVALID_INPUT;
       const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
       rule.action = a;
-      rule.capture = a === 'forward' && qualifier === 'capture';
-      rule.logDrop = a === 'drop' && qualifier === 'log';
       return '';
     });
     this.registerDaiCommands({
@@ -2388,6 +2415,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...trackEntrySpecs(() => this.trackEntryHost(), ['config']),
       ...aclHeadSpecs(() => this.aclHeadHost()),
       ...aclStandardSpecs(() => standardAclHost(this.namedAclEditContext())),
+      ...aclExtendedSpecs(() => extendedAclHost(this.namedAclEditContext())),
       ...macAclSpecs(() => this.macAclHost()),
       ...switchPortPhysicalSpecs(() => this.portPhysiqueHost()),
       ...stpInterfaceSpecs(() => this.stpInterfaceHost()),
@@ -5301,8 +5329,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         if (regle.matchIpAcls?.length) {
           lines.push(`    ip  address: ${regle.matchIpAcls.join(' ')}`);
         }
+        if (regle.matchMacAcls?.length) {
+          lines.push(`    mac address: ${regle.matchMacAcls.join(' ')}`);
+        }
         lines.push('  Action:');
-        lines.push(`    ${vlanAccessMapActionText(regle)}`);
+        lines.push(`    ${regle.action}`);
       }
     }
     return lines.join('\n');
@@ -5360,35 +5391,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       this.configRadiusServerTrie, this.configTacacsServerTrie,
       this.configAaaGroupTrie, identityCtx,
     );
-
-    // IOS ne nomme pas ses arguments, il les TYPE. Cette table etait
-    // posee sur le seul shell du routeur, si bien qu'un Catalyst
-    // repondait `WORD  Set a banner` la ou IOS liste `motd`, `login`,
-    // `exec`, `incoming` — la commande marchait et ne se laissait pas
-    // decouvrir. Les tries qu'un commutateur n'a pas (processus de
-    // routage, route-map, time-range, track) recoivent des arbres
-    // jetables : decrire un argument sur un arbre que rien ne consulte
-    // ne coute rien et evite d'avoir DEUX tables a tenir.
-    const inutilise = () => new CommandTrie();
-    // Les suites d'un noeud glouton sont DECLAREES, plus derivees du
-    // texte source de son gestionnaire. Les arbres sont releves sur
-    // l'objet lui-meme : les nommer a la main en aurait oublie, et un
-    // arbre oublie est un mode entier prive de ses suites.
-    appliquerContinuations(this.tousLesArbres(), SOCLE, COMMUTATEUR_SEUL);
-    describeCiscoArguments({
-      config: this.configTrie,
-      configIf: this.configIfTrie,
-      configLine: this.configLineTrie,
-      configDhcp: this.configDhcpTrie,
-      privileged: this.privilegedTrie,
-      configStdNacl: this.configStdNaclTrie,
-      configExtNacl: this.configExtNaclTrie,
-      configRouter: inutilise(),
-      configRouterOspf: inutilise(),
-      configRouteMap: inutilise(),
-      configTrack: inutilise(),
-      configRouterOnly: inutilise(),
-    });
 
     // ── Show commands ──────────────────────────────────────────────
     for (const t of [this.userTrie, this.privilegedTrie]) {

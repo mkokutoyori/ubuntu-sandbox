@@ -71,7 +71,7 @@ silencieuse**.
 | W-03 | `vlan filter` **rendu nulle part** : le filtre disparaît au rechargement | 🔴 Bloquant | **✅ corrigé** |
 | W-02 | `no vlan access-map M 20` supprimait **la carte entière** et ses liaisons | 🔴 Bloquant | **✅ corrigé** |
 | W-01 | `match ip address A B` ne gardait que **la première** ACL | 🟠 Haut | **✅ corrigé** |
-| W-04 | `action forward capture` / `drop log` **silencieusement rabattus** | 🟡 Moyen | **✅ corrigé** |
+| W-04 | Un qualificatif après `action` était **avalé** (`forward capture` valait `forward`) | 🟡 Moyen | **✅ corrigé** |
 | W-05 | Séquence hors de la plage 0-65535 acceptée | 🟡 Moyen | **✅ corrigé** |
 | W-06 | Jeton surnuméraire après la séquence avalé | 🟡 Moyen | **✅ corrigé** |
 
@@ -107,17 +107,25 @@ ses liaisons. C'est la règle écrite chez le constructeur : *« Use the no
 keyword with a sequence number to remove a map sequence. Use the no
 keyword without a sequence number to remove the map. »*
 
-### `capture` et `log` sont gardés
+### `action` ne prend que ce que la plateforme modélisée prend
 
-`action forward capture` et `action drop log` sont **stockés et rendus**
-plutôt que refusés : l'action principale (`forward` / `drop`) est honorée
-pour de bon, et seul l'effet secondaire — copie vers un port de capture,
-journalisation — n'est pas modélisé. C'est la nuance de `CLAUDE.md` §6 :
-une commande qu'une vraie machine accepte et dont on honore l'essentiel
-est stockée, sans quoi un import de topologie la perdrait. Un qualificatif
-inconnu, lui, est refusé.
+`action forward capture` était **avalé** : le qualificatif partait à la
+poubelle et la règle valait `forward`. Il est désormais **refusé**, avec
+tout autre mot après `forward` ou `drop`.
 
----
+**Cette conclusion a d'abord été l'inverse, et la correction vaut d'être
+racontée.** La première version de ce lot ACCEPTAIT `forward capture` et
+`drop log`, en s'appuyant sur une page de documentation qui écrit bien
+`action {drop [log] | forward [capture | vlan <id>] | redirect ...}` —
+mais celle d'un **IR8340 sous IOS-XE 17.14**. Or ce shell modélise un
+C2960 sous 15.0(2)SE11 et un C3560 sous 12.2(55)SE12
+(`CiscoPlatform.ts`), dont la référence de commandes est sans
+ambiguïté : `action` y prend `drop` et `forward`, et *« Neither
+`capture` nor `log` are among the accepted keywords »*. Accepter ces
+deux mots ajoutait donc à la machine des commandes que le vrai matériel
+refuse — précisément le défaut que ces audits ferment, commis en le
+corrigeant. C'est `CLAUDE.md` §8 : choisir l'autorité **avant** de la
+citer, et une page d'une autre plateforme n'en est pas une.
 
 ## 4. Ce qui était juste — et trois fausses pistes
 
@@ -159,27 +167,51 @@ dit pas ce qu'il a écarté laisse croire qu'il a tout vu :
 
 ## 5. Ce qui reste
 
-- **`match mac address` et `match ipv6 address` sont refusés.** Ce sont de
-  vraies clauses d'IOS, et le refus est honnête plutôt que silencieux.
-  La moitié MAC vient de se réduire pendant ce lot : le commit
-  `0f9e7ebaa` d'un autre agent a apporté `switch/MacAccessList.ts` et
-  `evaluateMacAcl`, donc la brique existe. Ce qui reste est un **câblage**
-  et non une absence — cette évaluation est liée au **port**, pas au
-  VLAN, et `vaclPermits` sort par sa première ligne dès que la trame
-  n'est pas `ETHERTYPE_IPV4`, c'est-à-dire exactement pour les trames
-  qu'une liste MAC regarde. La sémantique est déjà établie par la
-  référence que ce commit cite — une liste IP ne filtre **que** l'IP, une
-  liste MAC **que** le non-IP — et l'inverser apprendrait le contraire
-  d'un vrai Catalyst. Côté IPv6 rien n'a bougé : les listes vivent sur le
-  routeur, le commutateur n'ayant pas de vue `ipv6 access-list`.
+- **`match mac address` est désormais implémentée** (voir le commit du
+  même nom). Elle a demandé bien plus que la clause : la référence
+  énonce une règle **par type de paquet** — *« If there is a match clause
+  for that type of packet (IP or MAC) in the VLAN map, the default action
+  is to drop […]. If there is no match clause for that type of packet,
+  the default is to forward »* — alors que `vaclPermits` finissait par un
+  `return false` inconditionnel. Juste tant qu'une carte portait une
+  clause IP ou une entrée sans clause ; **faux** dès qu'une carte ne
+  porte que des clauses MAC, l'IP y tombant dans un refus qu'aucune
+  clause ne prononce.
+- **`match ipv6 address` reste refusée, et c'est JUSTE** — vérifié après
+  coup, la première rédaction de ce rapport le présentant à tort comme
+  un manque. Les deux plateformes modélisées sont un C2960 sous
+  15.0(2)SE11 et un C3560 sous 12.2(55)SE12 (`CiscoPlatform.ts`), et le
+  guide de cette version tranche : *« You can configure VLAN maps to
+  match Layer 3 addresses for **IPv4** traffic »*, la clause `match` n'y
+  prenant que `ip address` et `mac address`. Les cartes de VLAN pour
+  IPv6 existent sur d'**autres** modèles (3560-CX / 2960-CX sous
+  15.2(7)E) et sont explicitement absentes des 2960-X et 2960-L.
+  L'implanter ici ferait diverger le simulateur du matériel qu'il
+  déclare être. La conséquence — une trame IPv6 traverse un VLAN filtré
+  sans être évaluée — est donc elle aussi le comportement du vrai
+  matériel, et non une limite à lever.
 - **`action redirect` est refusé** faute de pouvoir honorer l'action
   principale : rediriger vers un port n'est pas modélisé, et le rabattre
   sur `forward` serait plus faux que le refus.
 - **VRP n'a pas de `traffic-filter vlan <n> inbound`**, son équivalent de
   VACL. La commande est refusée (elle n'existe pas), donc honnête ;
   consignée dans `TODO.md`.
-- **`vlan filter <nom> interface <type> <n>`**, la seconde forme de la
-  liaison, n'est pas modélisée — seule `vlan-list` l'est.
+- **`vlan filter … interface` n'existe pas sur un Catalyst**, et je
+  l'avais d'abord listée comme « seconde forme non modélisée » — encore
+  d'après la page IR8340. Les guides Catalyst ne connaissent que
+  `vlan filter mapname vlan-list list` ; la forme par interface
+  appartient aux 7600/6500, où une carte d'accès peut se poser sur une
+  interface WAN.
+
+**Ces trois requalifications ont une seule cause**, et elle vaut d'être
+retenue : j'ai cadré le lot VACL sur une page de documentation
+commode — un IR8340 sous IOS-XE 17 — alors que ce shell déclare un
+C2960 sous 15.0(2)SE11 et un C3560 sous 12.2(55)SE12. Les détails de
+syntaxe d'une plateforme ne valent pas pour une autre, et trois des
+quatre « manques » que ce rapport listait n'en étaient pas. Les faits
+vérifiés sur une source Catalyst tiennent, eux : plage de séquence
+0-65535, `match {ip | mac} address {name | number} [name | number]`
+— donc plusieurs ACL par clause — et `action {drop | forward}`.
 
 ---
 

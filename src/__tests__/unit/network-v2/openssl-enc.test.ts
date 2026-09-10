@@ -44,11 +44,18 @@ describe('§P2 — enc: the round-trip', () => {
     expect((await srv.executeCommand('cat /tmp/c.b64')).trim()).toMatch(/^U2FsdGVkX1/);
   });
 
+  // The salt is PINNED with `-S`, as on a real openssl. Left random, this
+  // case measured luck rather than code: a wrong key yields random
+  // plaintext, and PKCS#7 accepts it whenever the last byte happens to be
+  // 0x01 — one run in 256, which is exactly how often it was seen failing
+  // in a full sweep. A real openssl is no better; the assertion was the
+  // thing that had to become deterministic.
   it('a WRONG password fails instead of returning noise', async () => {
     const srv = machine();
     await srv.executeCommand(`sh -c 'printf "secret message" > /tmp/s.txt'`);
     await srv.executeCommand(
-      'openssl enc -aes-256-cbc -pbkdf2 -a -k rightpw -in /tmp/s.txt -out /tmp/s.b64');
+      'openssl enc -aes-256-cbc -pbkdf2 -a -S 0011223344556677 -k rightpw'
+      + ' -in /tmp/s.txt -out /tmp/s.b64');
 
     const out = await srv.executeCommand(
       'openssl enc -aes-256-cbc -pbkdf2 -a -d -k wrongpw -in /tmp/s.b64');

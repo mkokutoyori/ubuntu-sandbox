@@ -5,9 +5,7 @@
  * the DC's own `sAMAccountName` (minus its trailing `$`) as `serviceName`
  * — ticket verification happens against that exact computer account's
  * secret (`KdcSession.ts`) — but callers here are only ever given
- * `dcAddress`, never a hostname (no DNS SRV `_ldap._tcp.dc._msdcs.<domain>`
- * discovery yet, same accepted limitation as domain join/logon's own
- * docblocks already state).
+ * `dcAddress`, never a hostname.
  *
  * Resolved via a genuine LDAP round trip — an anonymous simple bind (RFC
  * 4511 §5.1.2's `name=''`/`password=''` case, already served with zero new
