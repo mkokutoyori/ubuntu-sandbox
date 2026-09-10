@@ -35,6 +35,10 @@ export class CronEngine {
     this.fireReboot();
   }
 
+  alignTo(now: Date): void {
+    this.lastMinute = Math.floor(now.getTime() / 60_000);
+  }
+
   stop(): void {
     this.running = false;
   }
