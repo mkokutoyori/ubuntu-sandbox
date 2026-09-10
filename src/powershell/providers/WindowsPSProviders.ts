@@ -38,7 +38,7 @@ import { IPAddress, IPv6Address, MACAddress, SubnetMask } from '@/network/core/t
 import type { NetNeighborPlan, NetNeighborState } from '@/network/devices/windows/netNeighbor';
 import { isValidIPv4 } from '@/network/core/ip';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
-import { discoverDcHostname, rootDnOf } from '@/network/devices/windows/domain/DcHostnameDiscovery';
+import { discoverDc, rootDnOf } from '@/network/devices/windows/domain/DcHostnameDiscovery';
 import { locateDomainController } from '@/network/devices/windows/domain/DcLocator';
 import { dialLdap } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
@@ -2827,7 +2827,7 @@ class WindowsComputerAdapter implements IComputerProvider {
   discoverDomainController(): { hostName: string } | null {
     const membership = this.device().getDomainMembership();
     if (!membership) return null;
-    const hostname = discoverDcHostname(this.pc.getTcpStack(), membership.dcAddress, membership.dnsName);
+    const hostname = discoverDc(this.pc.getTcpStack(), membership.dcAddress, membership.dnsName)?.hostname ?? null;
     return hostname ? { hostName: `${hostname}.${membership.dnsName}` } : null;
   }
 

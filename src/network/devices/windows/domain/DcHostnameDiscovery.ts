@@ -21,8 +21,13 @@ export function rootDnOf(dnsName: string): string {
   return dnsName.split('.').map(p => `DC=${p}`).join(',');
 }
 
-/** Returns the discovered DC computer-account name (no trailing `$`), or `null` if the DC couldn't be reached or has no discoverable computer account. */
-export function discoverDcHostname(tcpStack: TcpStack, dcAddress: string, dnsName: string): string | null {
+export interface DiscoveredDc {
+  hostname: string;
+  site: string | null;
+}
+
+/** Returns the discovered DC computer-account name (no trailing `$`) and the site that account records, or `null` if the DC couldn't be reached or has no discoverable computer account. */
+export function discoverDc(tcpStack: TcpStack, dcAddress: string, dnsName: string): DiscoveredDc | null {
   const conn = dialLdap(tcpStack, dcAddress);
   if (!conn.ok || !conn.client) return null;
   const ldap = conn.client;
@@ -30,13 +35,40 @@ export function discoverDcHostname(tcpStack: TcpStack, dcAddress: string, dnsNam
   const bind = ldap.bind('', '');
   if (!bind.ok) { ldap.unbind(); return null; }
 
+  const rootDse = ldap.search('', 'base',
+    { kind: 'present', attr: 'objectClass' }, ['dnsHostName', 'serverName']);
+  const published = identityFromRootDse(rootDse.entries[0], dnsName);
+  if (published) { ldap.unbind(); return published; }
+
   const search = ldap.search(
     `OU=Domain Controllers,${rootDnOf(dnsName)}`, 'sub',
-    { kind: 'equalityMatch', attr: 'objectClass', value: 'computer' }, ['sAMAccountName'],
+    { kind: 'equalityMatch', attr: 'objectClass', value: 'computer' }, ['sAMAccountName', 'site'],
   );
   ldap.unbind();
 
-  const sam = search.entries[0]?.attributes.find(a => a.type.toLowerCase() === 'samaccountname')?.values[0];
+  const attributeOf = (name: string): string | undefined =>
+    search.entries[0]?.attributes.find(a => a.type.toLowerCase() === name)?.values[0];
+  const sam = attributeOf('samaccountname');
   if (!sam) return null;
-  return sam.endsWith('$') ? sam.slice(0, -1) : sam;
+  return {
+    hostname: sam.endsWith('$') ? sam.slice(0, -1) : sam,
+    site: attributeOf('site') ?? null,
+  };
+}
+
+function identityFromRootDse(
+  entry: { attributes: ReadonlyArray<{ type: string; values: string[] }> } | undefined,
+  dnsName: string,
+): DiscoveredDc | null {
+  const valueOf = (name: string): string | undefined =>
+    entry?.attributes.find(a => a.type.toLowerCase() === name)?.values[0];
+  const dnsHostName = valueOf('dnshostname');
+  if (!dnsHostName) return null;
+  const suffix = `.${dnsName.toLowerCase()}`;
+  const hostname = dnsHostName.toLowerCase().endsWith(suffix)
+    ? dnsHostName.slice(0, -suffix.length)
+    : dnsHostName;
+  const serverName = valueOf('servername');
+  const site = serverName ? /CN=Servers,CN=([^,]+),CN=Sites,/i.exec(serverName)?.[1] ?? null : null;
+  return { hostname, site };
 }

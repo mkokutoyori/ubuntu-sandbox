@@ -62,6 +62,8 @@ export interface LdapServerContext {
    * `searchResultReference` instead of an empty success.
    */
   otherForestDomainRoots?: () => string[];
+  /** This DC's own name and site, published in the rootDSE as `dnsHostName`/`serverName` — how a client learns WHICH DC answered it. */
+  serverIdentity?: () => { hostname: string; dnsName: string; site: string | null };
 }
 
 const MEMBER_ATTRIBUTE = 'member';
@@ -327,6 +329,13 @@ export class LdapServerHandler {
       { type: 'subschemaSubentry', values: [`CN=Aggregate,CN=Schema,${configuration}`] },
       { type: 'supportedLDAPVersion', values: ['3'] },
     ];
+    const identity = this.ctx.serverIdentity?.();
+    if (identity) {
+      all.push({ type: 'dnsHostName', values: [`${identity.hostname}.${identity.dnsName}`] });
+      if (identity.site) {
+        all.push({ type: 'serverName', values: [`CN=${identity.hostname},CN=Servers,CN=${identity.site},CN=Sites,${configuration}`] });
+      }
+    }
     if (requested.length === 0) return all;
     const wanted = new Set(requested.map(a => a.toLowerCase()));
     return wanted.has('*') ? all : all.filter(a => wanted.has(a.type.toLowerCase()));

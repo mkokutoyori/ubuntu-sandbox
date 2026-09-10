@@ -1321,21 +1321,9 @@ export class WindowsServer extends WindowsPC {
      * site topology yet to classify intra-/inter-site (this DC isn't
      * promoted until just below) — recorded as `intra-site`, matching
      * real DCPromo's own initial-sync step, which always targets a
-     * source DC the installer explicitly chose as reachable. Publishing
-     * only (no direct store write) — a `ReplicationSignalRefreshActor`
-     * subscribing on this device's bus feeds the `ReplicationSignalStore`.
+     * source DC the installer explicitly chose as reachable.
      */
-    this.getBus().publish(
-      sync.ok
-        ? {
-            topic: 'replication.pull.completed',
-            payload: { deviceId: this.getHostname(), invocationId: store.getInvocationId(), partnerAddress: sourceDcAddress, applied: sync.applied, siteRelation: 'intra-site' },
-          }
-        : {
-            topic: 'replication.pull.failed',
-            payload: { deviceId: this.getHostname(), invocationId: store.getInvocationId(), partnerAddress: sourceDcAddress, error: sync.error ?? 'unknown error', siteRelation: 'intra-site' },
-          },
-    );
+    this.recordReplicationCycle(sourceDcAddress, sync, store, 'intra-site');
     if (!sync.ok) {
       return { ok: false, message: `Install-ADDSDomainController : Initial synchronization with ${sourceDcAddress} failed: ${sync.error}` };
     }
@@ -1440,6 +1428,11 @@ export class WindowsServer extends WindowsPC {
     const dcTarget = `${hostname}.${domainName}`;
     dns.addSrvRecord(domainName, '_ldap._tcp.dc._msdcs', { priority: 0, weight: 100, port: 389, target: dcTarget });
     dns.addSrvRecord(domainName, '_kerberos._tcp.dc._msdcs', { priority: 0, weight: 100, port: 88, target: dcTarget });
+    const ownSite = this.getDirectoryStore()?.siteForDc(hostname);
+    if (ownSite) {
+      dns.addSrvRecord(domainName, `_ldap._tcp.${ownSite}._sites.dc._msdcs`, { priority: 0, weight: 100, port: 389, target: dcTarget });
+      dns.addSrvRecord(domainName, `_kerberos._tcp.${ownSite}._sites.dc._msdcs`, { priority: 0, weight: 100, port: 88, target: dcTarget });
+    }
     const mask = iface?.getSubnetMask() ?? null;
     if (ownIp && mask) {
       const octets = ownIp.getOctets();
