@@ -62,6 +62,7 @@ export class WriteHostCmdlet implements ICmdlet {
 export class WriteErrorCmdlet implements ICmdlet {
   readonly name = 'write-error';
   readonly aliases = [] as const;
+  readonly parameters = ['Message'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const msg = psValueToString(ctx.named['message'] ?? ctx.positional[0] ?? ctx.pipeInput ?? '');
@@ -123,6 +124,7 @@ export class OutNullCmdlet implements ICmdlet {
 export class OutStringCmdlet implements ICmdlet {
   readonly name = 'out-string';
   readonly aliases = [] as const;
+  readonly parameters = ['Stream'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const raw = ctx.pipeInput ?? ctx.positional[0] ?? null;

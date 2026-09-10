@@ -391,7 +391,7 @@ export class TestConnectionCmdlet implements ICmdlet {
   readonly name = 'test-connection';
   readonly displayName = 'Test-Connection';
   readonly aliases = [] as const;
-  readonly parameters = ['ComputerName', 'Count', 'Quiet', 'Delay'] as const;
+    readonly parameters = ['ComputerName', 'Count', 'Quiet', 'Delay', 'TargetName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -539,6 +539,7 @@ export class InvokeWebRequestCmdlet implements ICmdlet {
   readonly name = 'invoke-webrequest';
   readonly displayName = 'Invoke-WebRequest';
   readonly aliases = ['iwr'] as const;
+  readonly parameters = ['Uri'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -817,6 +818,7 @@ export class ClearNetNeighborCacheCmdlet implements ICmdlet {
   readonly name = 'clear-netneighborcache';
   readonly displayName = 'Clear-NetNeighborCache';
   readonly aliases = [] as const;
+  readonly parameters = ['InterfaceAlias'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ifAlias = ctx.named['interfacealias']
@@ -831,6 +833,7 @@ export class GetNetAdapterStatisticsCmdlet implements ICmdlet {
   readonly name = 'get-netadapterstatistics';
   readonly displayName = 'Get-NetAdapterStatistics';
   readonly aliases = [] as const;
+  readonly parameters = ['Name'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1708,6 +1711,7 @@ export class SetDnsClientServerAddressCmdlet implements ICmdlet {
   readonly name = 'set-dnsclientserveraddress';
   readonly displayName = 'Set-DnsClientServerAddress';
   readonly aliases = [] as const;
+  readonly parameters = ['InterfaceAlias', 'ServerAddresses'] as const;
   readonly description = 'Sets DNS server addresses associated with the TCP/IP properties on an interface.';
 
   execute(ctx: CmdletContext): PSValue {

@@ -61,6 +61,7 @@ export class GetEventLogCmdlet implements ICmdlet {
   readonly name = 'get-eventlog';
   readonly displayName = 'Get-EventLog';
   readonly aliases = [] as const;
+  readonly parameters = ['EntryType', 'List', 'LogName', 'Newest', 'Source'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const log = requireEventLog(ctx);
@@ -100,6 +101,7 @@ export class WriteEventLogCmdlet implements ICmdlet {
   readonly name = 'write-eventlog';
   readonly displayName = 'Write-EventLog';
   readonly aliases = [] as const;
+  readonly parameters = ['EntryType', 'EventId', 'LogName', 'Message', 'Source'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const log = requireEventLog(ctx);
@@ -123,6 +125,7 @@ export class ClearEventLogCmdlet implements ICmdlet {
   readonly name = 'clear-eventlog';
   readonly displayName = 'Clear-EventLog';
   readonly aliases = [] as const;
+  readonly parameters = ['LogName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const log = requireEventLog(ctx);
@@ -140,6 +143,7 @@ export class NewEventLogCmdlet implements ICmdlet {
   readonly name = 'new-eventlog';
   readonly displayName = 'New-EventLog';
   readonly aliases = [] as const;
+  readonly parameters = ['LogName', 'Source'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const log = requireEventLog(ctx);
@@ -161,6 +165,7 @@ export class LimitEventLogCmdlet implements ICmdlet {
   readonly name = 'limit-eventlog';
   readonly displayName = 'Limit-EventLog';
   readonly aliases = [] as const;
+  readonly parameters = ['LogName', 'MaximumSize'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const log = requireEventLog(ctx);

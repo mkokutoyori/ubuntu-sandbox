@@ -1,6 +1,7 @@
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { OptionSpec } from '@/cli/OptionBag';
+import { numeroDeSequence, type AclEntryHost } from './aclSubmodeSpecs';
 
 const MODE = ['config-std-nacl'] as const;
 
@@ -12,10 +13,6 @@ const MODE = ['config-std-nacl'] as const;
  * DECLARATION, pas la grammaire — les deux moteurs se contrediraient
  * sur la premiere adresse mal formee.
  */
-export interface AclStandardHost {
-  addEntry(action: 'permit' | 'deny', mots: readonly string[]): string;
-  removeEntry(action: 'permit' | 'deny', mots: readonly string[]): string;
-}
 
 const ADRESSE = (nom: string, description: string): ArgumentSpec =>
   ({ name: nom, type: 'IP_ADDR', description });
@@ -46,7 +43,7 @@ function suffixes(args: Record<string, string>): string[] {
   return mots;
 }
 
-export function aclStandardSpecs(ctx: () => AclStandardHost): CommandSpec[] {
+export function aclStandardSpecs(ctx: () => AclEntryHost): CommandSpec[] {
   const forme = (
     action: 'permit' | 'deny',
     suffixe: string,
@@ -59,7 +56,8 @@ export function aclStandardSpecs(ctx: () => AclStandardHost): CommandSpec[] {
       ? 'Specify packets to forward' : 'Specify packets to reject',
     modes: MODE, minPrivilege: 15,
     options: SUFFIXES,
-    run: (_s, args) => ctx().addEntry(action, [...source(args), ...suffixes(args)]),
+    run: (_s, args) => ctx().addEntry(
+      action, [...source(args), ...suffixes(args)], numeroDeSequence(args)),
     undo: (_s, args) => ctx().removeEntry(action, [...source(args), ...suffixes(args)]),
   });
 

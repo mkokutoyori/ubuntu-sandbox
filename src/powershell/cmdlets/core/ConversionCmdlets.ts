@@ -20,6 +20,7 @@ function toArray(val: PSValue): PSValue[] {
 export class ConvertToJsonCmdlet implements ICmdlet {
   readonly name = 'convertto-json';
   readonly aliases = [] as const;
+  readonly parameters = ['Compress', 'Depth'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const val    = ctx.pipeInput ?? ctx.positional[0] ?? null;
@@ -49,6 +50,7 @@ export class ConvertFromJsonCmdlet implements ICmdlet {
 export class ConvertToCsvCmdlet implements ICmdlet {
   readonly name = 'convertto-csv';
   readonly aliases = [] as const;
+  readonly parameters = ['Delimiter', 'NoTypeInformation'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const arr = toArray(ctx.pipeInput);
@@ -90,7 +92,7 @@ function serializeCsv(arr: PSValue[], delim: string, noTypeInfo: boolean): strin
 export class ExportCsvCmdlet implements ICmdlet {
   readonly name = 'export-csv';
   readonly displayName = 'Export-Csv';
-  readonly parameters = ['Path', 'LiteralPath', 'Delimiter', 'NoTypeInformation', 'Append', 'Encoding', 'Force'] as const;
+    readonly parameters = ['Path', 'LiteralPath', 'Delimiter', 'NoTypeInformation', 'Append', 'Encoding', 'Force', 'InputObject'] as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -166,6 +168,7 @@ export class ImportCsvCmdlet implements ICmdlet {
 export class ConvertFromCsvCmdlet implements ICmdlet {
   readonly name = 'convertfrom-csv';
   readonly aliases = [] as const;
+  readonly parameters = ['Delimiter', 'Header'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const delim = ctx.named['delimiter'] !== undefined

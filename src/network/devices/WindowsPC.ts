@@ -156,6 +156,7 @@ import { dialHttp as dialHttpClient, parseHttpUrl } from '@/network/http/HttpCli
 import { SmtpClientSession } from '@/network/smtp/SmtpClientSession';
 import type { GpoSettings } from './windows/server/ad/AdTypes';
 import { cmdNltest, cmdDcdiag, cmdKlist } from './windows/WinDomainDiag';
+import { discoverDc } from './windows/domain/DcHostnameDiscovery';
 import { cmdRepadmin, type RepadminContext } from './windows/WinRepadmin';
 import { cmdDnscmd } from './windows/WinDnscmd';
 import { cmdCertreq, cmdCertutil } from './windows/WinCertReq';
@@ -285,7 +286,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Real Kerberos ticket cache (PRD-Windows-Server-Advanced.md §5 P2) — populated by an actual AS exchange as a side effect of domain logon, backing `klist`. */
   private readonly kerberosTicketCache: KerberosTicketCache = new KerberosTicketCache();
   /** One entry per `replicateFrom` cycle, annotated intra-/inter-site (PRD-Windows-Server-Advanced.md §5 P6) — this simulator's minimal stand-in for a real replication event log (full observability arrives at §5 P12). */
-  private readonly replicationLog: ReplicationLogEntry[] = [];
   /** `repadmin /options` (PRD-Repadmin.md P8) — this DC's NTDS Settings flags. `DISABLE_OUTBOUND_REPL`/`DISABLE_INBOUND_REPL` have a real causal effect on `ReplicationServerHandler`/`replicateFrom`; `IS_GC`/`DISABLE_SPN_REGISTRATION` are declarative storage only (§2.1 P8). */
   private readonly ntdsOptions = new Set<NtdsOption>();
   /** This DC's own StartTLS identity (PRD-Windows-Server-Advanced.md §5 P11) — lazily created once and reused across connections, mirroring a real DC's stable machine certificate. */
@@ -856,6 +856,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           kerberos: serviceSecret !== null ? { realm: store.getRealm(), serviceSecret } : undefined,
           startTls: { serverCert: this.ldapStartTlsIdentity.cert, serverPrivateKey: this.ldapStartTlsIdentity.keyPair.privateKey },
           otherForestDomainRoots: () => otherDomainRoots,
+          serverIdentity: () => ({
+            hostname: this.getHostname(), dnsName: store.dnsName,
+            site: store.siteForDc(this.getHostname()),
+          }),
         }).register(socket);
       },
     });
@@ -1028,11 +1032,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const partnerSite = (partnerDcName ? store.siteForDc(partnerDcName) : null) ?? store.siteForIp(partnerIp);
     const siteRelation: 'intra-site' | 'inter-site' =
       ownSite !== null && partnerSite !== null && ownSite !== partnerSite ? 'inter-site' : 'intra-site';
-    const logEntry: ReplicationLogEntry = {
-      timestamp: Math.floor(Date.now() / 1000), partnerAddress: partnerIp, applied: result.applied, ok: result.ok, siteRelation, direction: 'inbound',
-      error: result.error, remoteInvocationId: result.responderInvocationId,
-    };
-    this.replicationLog.push(logEntry);
+    this.recordReplicationCycle(partnerIp, result, store, siteRelation);
+    return result;
+  }
+
+  protected recordReplicationCycle(
+    partnerIp: string, result: ReplicationPullResult,
+    store: import('./windows/server/ad/DirectoryStore').DirectoryStore,
+    siteRelation: 'intra-site' | 'inter-site',
+  ): void {
     this.getBus().publish(
       result.ok
         ? {
@@ -1050,11 +1058,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
             },
           },
     );
-    return result;
   }
 
   /** PRD-Windows-Server-Advanced.md §5 P6 — every past `replicateFrom` cycle, annotated intra-/inter-site. */
-  getReplicationLog(): readonly ReplicationLogEntry[] { return this.replicationLog; }
+  getReplicationLog(): readonly ReplicationLogEntry[] { return this.replicationSignals.log.get(); }
 
   /** PRD-Windows-Server-Advanced.md §5 P12 — observable read-models for this DC's Kerberos KDC and AD replication activity. */
   getKerberosSignals(): KerberosSignalStore { return this.kerberosSignals; }
@@ -2749,6 +2756,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'nltest':  return cmdNltest({
         domainMembership: this.domainMembership,
         probeDc: (address) => this.probeTcpReachable(address, 389),
+        discoverDc: (address, dnsName) => discoverDc(this.getTcpStack(), address, dnsName),
       }, args);
       case 'dcdiag': {
         const store = this.getDirectoryStore();

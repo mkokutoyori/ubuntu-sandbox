@@ -8,14 +8,14 @@
  *
  * Authentication is real Kerberos (PRD-Windows-Server-Advanced.md §5 P24):
  * an AS exchange, then a TGS exchange for the DC's own computer account
- * (discovered via `discoverDcHostname`), then an AP-REQ presented as a
+ * (discovered via `discoverDc`), then an AP-REQ presented as a
  * GSSAPI SASL bind — not the plaintext simple bind this used before. Every
  * failure point still surfaces the exact same observable message a
  * plaintext bind failure produced.
  */
 
 import type { TcpStack } from '@/network/tcp/TcpStack';
-import { discoverDcHostname, rootDnOf } from './DcHostnameDiscovery';
+import { discoverDc, rootDnOf } from './DcHostnameDiscovery';
 import type { DomainMembership, DomainSession } from './DomainTypes';
 import { bindLdapWithKerberos } from './KerberosLdapBind';
 
@@ -31,7 +31,7 @@ export function logonDomainUser(tcpStack: TcpStack, membership: DomainMembership
   const trustFailed: DomainLogonResult = { ok: false, message: 'The trust relationship between this workstation and the primary domain failed.' };
   const badCredential: DomainLogonResult = { ok: false, message: 'The user name or password is incorrect.' };
 
-  const dcHostname = discoverDcHostname(tcpStack, membership.dcAddress, membership.dnsName);
+  const dcHostname = discoverDc(tcpStack, membership.dcAddress, membership.dnsName)?.hostname ?? null;
   if (!dcHostname) return trustFailed;
 
   const session = bindLdapWithKerberos({

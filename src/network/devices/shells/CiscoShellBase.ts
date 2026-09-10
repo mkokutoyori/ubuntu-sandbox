@@ -485,7 +485,7 @@ const LINE_ARGUMENTS: Readonly<Record<string, ArgumentSpec | readonly ArgumentSp
   rotary: { name: 'group', type: 'INT', description: 'Rotary group number', range: [1, 100] },
   autocommand: { name: 'command', type: 'REST', optional: true, description: 'Command to execute on connection' },
   password: { name: 'password', type: 'REST', literal: 'LINE', description: 'The UNENCRYPTED (cleartext) line password' },
-  'login-timeout': { name: 'seconds', type: 'INT', optional: true, range: [1, 300], description: 'Timeout in seconds' },
+  'login-timeout': { name: 'seconds', type: 'INT', range: [1, 300], description: 'Timeout in seconds' },
   speed: enumeration('bps', 'Transmit and receive speeds', [
     ['300', '300 bps'], ['1200', '1200 bps'], ['2400', '2400 bps'],
     ['4800', '4800 bps'], ['9600', '9600 bps'], ['19200', '19200 bps'],
@@ -516,16 +516,40 @@ const LINE_ARGUMENTS: Readonly<Record<string, ArgumentSpec | readonly ArgumentSp
       { keyword: 'soft', description: 'Use a soft escape character' },
     ],
   },
-  'exec-timeout': { name: 'minutes', type: 'REST', optional: true, literal: '<0-35791>', description: 'Timeout in minutes' },
+  'exec-timeout': [
+    { name: 'minutes', type: 'INT', range: [0, 35791], description: 'Timeout in minutes' },
+    { name: 'secondes', type: 'INT', range: [0, 2147483], optional: true, description: 'Timeout in seconds' },
+  ],
 };
 
-const LINE_KEYWORD_ARGUMENTS: Readonly<Record<string, ArgumentSpec>> = {
+const LISTE_DE_METHODES = (nom: string): ArgumentSpec => ({
+  name: nom, type: 'WORD', description: 'Method list name',
+  alternatives: [
+    { keyword: 'default', description: 'The default method list' },
+    { keyword: 'WORD', description: 'Method list name' },
+  ],
+});
+
+const LINE_KEYWORD_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
   'privilege level': { name: 'level', type: 'INT', optional: true, description: 'Privilege level', range: [0, 15] },
   'history size': { name: 'size', type: 'INT', optional: true, description: 'Size of history buffer', range: [0, 256] },
+  'login authentication': LISTE_DE_METHODES('authentification'),
+  'accounting commands': [
+    { name: 'niveau', type: 'INT', range: [0, 15], description: 'Privilege level' },
+    LISTE_DE_METHODES('comptes-commandes'),
+  ],
+  'accounting connection': LISTE_DE_METHODES('comptes-connexion'),
+  'accounting exec': LISTE_DE_METHODES('comptes-exec'),
+  'authorization commands': [
+    { name: 'niveau-autorisation', type: 'INT', range: [0, 15], description: 'Privilege level' },
+    LISTE_DE_METHODES('autorisation-commandes'),
+  ],
+  'authorization exec': LISTE_DE_METHODES('autorisation-exec'),
 };
 
 const LINE_TRANSPORT_PROTOCOLS: ArgumentSpec = {
-  name: 'protocol', type: 'ENUM', optional: true, description: 'Transport protocol',
+  name: 'protocol', type: 'ENUM', description: 'Transport protocol',
   values: [
     { keyword: 'all', description: 'All protocols' },
     { keyword: 'none', description: 'No protocols' },
@@ -2874,7 +2898,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return applyPipeFilter(output, pipeFilter);
     }
 
-    if (this.isAclSubMode() && /^\d/.test(cmdPart)) {
+    if (this.numberedAceStillOnTrie() && /^\d/.test(cmdPart)) {
       const output = this.executeOnTrie('sequence ' + cmdPart);
       this.deviceRef = null;
       return applyPipeFilter(output, pipeFilter);
@@ -5086,6 +5110,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   private registerLineCommands(t: CommandTrie): void {
     this.registerLineTransportCommands(t);
+    /*
+     * Trois mots-cles de ce mode ne SONT PAS des commandes : ils
+     * ouvrent une famille. `transport` demande une direction,
+     * `accounting` et `authorization` une sorte, et chacune sa liste de
+     * methodes. Les trois annoncaient `<cr>` et refusaient ensuite —
+     * ils gouvernent pourtant qui entre par cette ligne, donc valider
+     * sur la promesse de `?` laissait croire a une regle d'acces posee.
+     */
+    for (const kw of ['transport', 'accounting', 'authorization']) {
+      t.requireArgs(kw, 1);
+    }
     for (const kw of ['login', 'password',
       'logging', 'privilege', 'no', 'speed', 'stopbits', 'databits', 'parity',
       'flowcontrol', 'session-timeout', 'history', 'length', 'width', 'authorization',
@@ -7064,9 +7099,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const table = this.socleTable();
     if (!table) return;
 
+    /*
+     * Les chemins migres sont indexes PAR MODE une seule fois. Ils
+     * l'etaient par ARBRE, donc autant de fois qu'il y a d'arbres — une
+     * quarantaine — et le chemin canonique de chaque spec etait
+     * recalcule a chacun. Le nombre de specs a double le jour ou chaque
+     * entree d'ACL a gagne sa forme numerotee, et le balayage de parite
+     * a depasse son delai : le cout etait quadratique, pas la
+     * declaration.
+     */
+    const parMode = new Map<string, string[]>();
+    for (const spec of table.specs()) {
+      const texte = CiscoShellBase.keywordPathOf(spec).join(' ');
+      for (const mode of spec.modes) {
+        const liste = parMode.get(mode) ?? [];
+        liste.push(texte);
+        if (spec.undo) liste.push(`no ${texte}`);
+        parMode.set(mode, liste);
+      }
+    }
+
     for (const [champ, valeur] of Object.entries(this as unknown as Record<string, unknown>)) {
       if (valeur instanceof CommandTrie) {
-        this.pruneUnTrie(table, valeur, modesDuTrie(champ));
+        this.pruneUnTrie(parMode, valeur, modesDuTrie(champ));
         continue;
       }
       /*
@@ -7080,21 +7135,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
        */
       if (valeur === null || typeof valeur !== 'object') continue;
       for (const [cle, enfant] of Object.entries(valeur as Record<string, unknown>)) {
-        if (enfant instanceof CommandTrie) this.pruneUnTrie(table, enfant, [cle]);
+        if (enfant instanceof CommandTrie) this.pruneUnTrie(parMode, enfant, [cle]);
       }
     }
   }
 
   private pruneUnTrie(
-    table: CommandTable, trie: CommandTrie, modes: readonly string[],
+    parMode: ReadonlyMap<string, string[]>, trie: CommandTrie,
+    modes: readonly string[],
   ): void {
-    const paths: string[] = [];
-    for (const spec of table.specs()) {
-      if (!modes.some(mode => spec.modes.includes(mode))) continue;
-      const texte = CiscoShellBase.keywordPathOf(spec).join(' ');
-      paths.push(texte);
-      if (spec.undo) paths.push(`no ${texte}`);
-    }
+    const paths = modes.length === 1
+      ? (parMode.get(modes[0]) ?? [])
+      : [...new Set(modes.flatMap(mode => parMode.get(mode) ?? []))];
     if (paths.length > 0) trie.prunePaths(paths);
     /*
      * Elaguer retire l'action d'un noeud EXISTANT. Une famille migree a
@@ -8328,6 +8380,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return this.mode === 'config-std-nacl'
       || this.mode === 'config-ext-nacl'
       || this.mode === 'config-ipv6-nacl';
+  }
+
+  /**
+   * Le numero de sequence NU se declare au socle, sous-mode par
+   * sous-mode. Tant qu'un sous-mode d'ACL est reste sur le trie, sa
+   * ligne numerotee est reecrite en `sequence <ligne>` ; celle d'un
+   * sous-mode migre ne l'est plus, sans quoi le socle ne la verrait
+   * jamais et `?` continuerait de taire la place du numero.
+   */
+  protected numberedAceStillOnTrie(): boolean {
+    return this.isAclSubMode()
+      && this.mode !== 'config-std-nacl' && this.mode !== 'config-ext-nacl';
   }
 
   private static readonly IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$/;

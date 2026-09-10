@@ -2895,7 +2895,7 @@ defaut que la migration referme partout ailleurs. Le refus actuel dit
 la verite : la plateforme ne les porte pas. A rouvrir des que la
 reference est atteignable.
 
-### [cli] le garde-fou des `<cr>` n'entrait dans aucun sous-mode — 49 promesses menteuses y restent
+### [cli] le garde-fou des `<cr>` n'entrait dans aucun sous-mode — 33 promesses menteuses y restent
 `probe-aide-cr-tient-sa-promesse` balayait trois modes : `show` en EXEC
 privilegie, la configuration globale et celle d'interface. Aucun
 sous-mode. Promene dans huit d'entre eux, le meme balayage a trouve 77
@@ -2907,13 +2907,19 @@ validation) :
 - `config-router-ospf` 20 : `area`, `area range`, `area stub`,
   `area virtual-link`, `auto-cost`, `auto-cost reference-bandwidth`,
   `capability`, `neighbor`, `passive-interface`, `no passive-interface`…
-- `config-line` 13 : `accounting`, `authorization`, `exec-timeout`,
-  `login-timeout`, `transport`, `transport input`, `transport output`…
-- `config-router-eigrp` 6, `config-router-bgp` 5, `config-acl-ext` 3
-  (`sequence`, `sequence deny`, `sequence permit`), `config-dhcp` 2
+- `config-line` 13 — FERMES, et le mode est desormais balaye. Le trie
+  y etait deja vide : les treize venaient de places DECLAREES
+  facultatives (`exec-timeout`, `login-timeout`, le protocole de
+  `transport`) et de trois mots-cles qui ouvrent une famille sans etre
+  une commande (`transport`, `accounting`, `authorization`).
+- `config-router-eigrp` 6, `config-router-bgp` 5, `config-dhcp` 2
   (`option ascii`, `option hex`) ;
-- `config-view` 4 et `config-route-map` 24 — FERMES, et les deux
-  sous-modes sont desormais balayes.
+- `config-view` 4, `config-route-map` 24 et `config-acl-ext` 3
+  (`sequence`, `sequence deny`, `sequence permit`) — FERMES. Les quatre
+  sous-modes correspondants sont desormais balayes : les deux vues, et
+  les deux sortes de liste d'acces nommee. Le mot-cle `sequence` n'a pas
+  ete corrige mais SUPPRIME — la documentation Cisco ne le donne pas
+  pour ce sous-mode, ou le numero s'ecrit nu en tete de l'entree.
 `config-class-map`, `config-policy-map`, `config-keychain` et
 `config-vrf` en comptent zero : ils sont deja declares sur le socle.
 **Cause** : un noeud du trie porte une action et aucun parametre

@@ -105,6 +105,21 @@ export function parseCommand(
   const all = decoupe.tokens;
   if (all.length === 0) return { status: 'empty' };
 
+  /*
+   * `no` SEUL est une commande incomplete, pas une commande inconnue.
+   * La machine rendait les deux selon le mode — `% Incomplete command.`
+   * en configuration globale et sur une interface, `% Invalid input` en
+   * `config-line`, en `config-route-map` et dans un sous-mode d'ACL —
+   * alors que c'est la MEME frappe et la meme reponse d'IOS. La
+   * condition dit ce qui la justifie : il y a bien quelque chose a
+   * defaire ici.
+   */
+  if (all.length === 1 && all[0].toLowerCase() === 'no'
+    && table.specs().some(spec => spec.undo
+      && spec.modes.includes(session.mode) && table.isReachable(spec, session))) {
+    return { status: 'incomplete', consumed: 1 };
+  }
+
   const negated = all[0].toLowerCase() === 'no' && all.length > 1;
   const tokens = negated ? all.slice(1) : all;
   const debuts = negated ? decoupe.starts.slice(1) : decoupe.starts;

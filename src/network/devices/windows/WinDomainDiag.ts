@@ -17,6 +17,8 @@ export interface NltestContext {
   domainMembership: DomainMembership | null;
   /** Real TCP/389 reachability probe against the DC address. */
   probeDc: (address: string) => boolean;
+  /** The DC's own name and site, read from its computer object over a real LDAP round trip. */
+  discoverDc: (address: string, dnsName: string) => { hostname: string; site: string | null } | null;
 }
 
 export function cmdNltest(ctx: NltestContext, args: string[]): string {
@@ -31,11 +33,13 @@ export function cmdNltest(ctx: NltestContext, args: string[]): string {
   if (!ctx.probeDc(ctx.domainMembership.dcAddress)) {
     return `Getting DC name failed: Status = 1722 0x6ba RPC_S_SERVER_UNAVAILABLE`;
   }
+  const discovered = ctx.discoverDc(ctx.domainMembership.dcAddress, ctx.domainMembership.dnsName);
+  const dcName = discovered ? `${discovered.hostname}.${ctx.domainMembership.dnsName}` : ctx.domainMembership.dcAddress;
   return [
-    `           DC: \\\\${ctx.domainMembership.dcAddress}`,
+    `           DC: \\\\${dcName}`,
     `      Address: \\\\${ctx.domainMembership.dcAddress}`,
     `     Dom Name: ${ctx.domainMembership.dnsName}`,
-    ` Dc Site Name: Default-First-Site-Name`,
+    ...(discovered?.site ? [` Dc Site Name: ${discovered.site}`] : []),
     `The command completed successfully`,
   ].join('\n');
 }

@@ -129,6 +129,23 @@ describe('M6 — un `<cr>` annonce se valide vraiment', () => {
     const f = await crMensongers(['configure terminal', 'route-map RM permit 10'], '');
     expect(f, f.join('\n')).toEqual([]);
   }, 240_000);
+
+  it('dans une liste d acces STANDARD nommee', async () => {
+    const f = await crMensongers(
+      ['configure terminal', 'ip access-list standard SL'], '');
+    expect(f, f.join('\n')).toEqual([]);
+  }, 240_000);
+
+  it('dans une liste d acces ETENDUE nommee', async () => {
+    const f = await crMensongers(
+      ['configure terminal', 'ip access-list extended EL'], '');
+    expect(f, f.join('\n')).toEqual([]);
+  }, 300_000);
+
+  it('sur une ligne VTY', async () => {
+    const f = await crMensongers(['configure terminal', 'line vty 0 4'], '');
+    expect(f, f.join('\n')).toEqual([]);
+  }, 300_000);
 });
 
 describe('les cas nommes de l audit', () => {

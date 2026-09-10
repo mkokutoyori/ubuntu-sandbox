@@ -135,6 +135,7 @@ import {
 } from './cisco/CiscoAclCommands';
 import { aclStandardSpecs } from './cisco/aclStandardSpecs';
 import { aclExtendedSpecs } from './cisco/aclExtendedSpecs';
+import { aclSubmodeSpecs, avecNumeroDeSequence } from './cisco/aclSubmodeSpecs';
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import {
   registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
@@ -499,8 +500,14 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...keyChainKeySubmodeSpecs(this),
       ...routeMapSpecs(() => this.routeMapHost()),
       ...aclHeadSpecs(() => this.aclHeadHost()),
-      ...aclStandardSpecs(() => standardAclHost(this.namedAclEditContext())),
-      ...aclExtendedSpecs(() => extendedAclHost(this.namedAclEditContext())),
+      ...avecNumeroDeSequence(
+        aclStandardSpecs(() => standardAclHost(this.namedAclEditContext()))),
+      ...avecNumeroDeSequence(
+        aclExtendedSpecs(() => extendedAclHost(this.namedAclEditContext()))),
+      ...aclSubmodeSpecs('config-std-nacl',
+        () => standardAclHost(this.namedAclEditContext())),
+      ...aclSubmodeSpecs('config-ext-nacl',
+        () => extendedAclHost(this.namedAclEditContext())),
       ...prefixListSpecs(() => this.policy),
       ...routerSubmodeSpecs(this, this.routingCfg),
       ...bfdInterfaceSpecs({

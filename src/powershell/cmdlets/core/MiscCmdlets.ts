@@ -258,6 +258,7 @@ export class GetHelpCmdlet implements ICmdlet {
       online:     ctx.named['online'] === true,
       showWindow: ctx.named['showwindow'] === true,
       parameter:  ctx.named['parameter'] !== undefined ? psValueToString(ctx.named['parameter']) : undefined,
+      declaredParameters: ctx.runtime.getCommandParameters(name),
     });
     if (rendered !== null) {
       ctx.emit(rendered);
@@ -452,6 +453,7 @@ function titleCaseCmdletName(raw: string): string {
 export class GetModuleCmdlet implements ICmdlet {
   readonly name = 'get-module';
   readonly aliases = [] as const;
+  readonly parameters = ['ListAvailable'] as const;
   execute(ctx: CmdletContext): PSValue {
     const listAvail = ctx.named['listavailable'] === true || ctx.named['listavailable'] === 'true';
     if (listAvail) {
@@ -560,6 +562,7 @@ function jobKey(ctx: CmdletContext): string | number | null {
 export class StartJobCmdlet implements ICmdlet {
   readonly name = 'start-job';
   readonly aliases = [] as const;
+  readonly parameters = ['Name', 'ScriptBlock'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const jobs = ctx.providers.jobs;
@@ -577,6 +580,7 @@ export class StartJobCmdlet implements ICmdlet {
 export class GetJobCmdlet implements ICmdlet {
   readonly name = 'get-job';
   readonly aliases = [] as const;
+  readonly parameters = ['Id', 'Name'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const jobs = ctx.providers.jobs;
@@ -610,6 +614,7 @@ export class ReceiveJobCmdlet implements ICmdlet {
 export class WaitJobCmdlet implements ICmdlet {
   readonly name = 'wait-job';
   readonly aliases = [] as const;
+  readonly parameters = ['Job'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const jobs = ctx.providers.jobs;
@@ -814,6 +819,7 @@ export class NewPSDriveCmdlet implements ICmdlet {
   readonly name = 'new-psdrive';
   readonly displayName = 'New-PSDrive';
   readonly aliases = [] as const;
+  readonly parameters = ['Name', 'Root'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
@@ -833,6 +839,7 @@ export class GetPSDriveCmdlet implements ICmdlet {
   readonly name = 'get-psdrive';
   readonly displayName = 'Get-PSDrive';
   readonly aliases = ['gdr'] as const;
+  readonly parameters = ['Name'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const nameFilter = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '').toLowerCase();
@@ -901,6 +908,7 @@ interface AliasEntry { Name: string; Definition: string; CommandType: string }
 export class GetAliasCmdlet implements ICmdlet {
   readonly name = 'get-alias';
   readonly aliases = ['gal'] as const;
+  readonly parameters = ['Name'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const filter = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '').trim();
@@ -929,6 +937,7 @@ export class GetPSProviderCmdlet implements ICmdlet {
   readonly name = 'get-psprovider';
   readonly displayName = 'Get-PSProvider';
   readonly aliases = [] as const;
+  readonly parameters = ['PSProvider'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const filter = psValueToString(ctx.named['psprovider'] ?? ctx.positional[0] ?? '').trim();
