@@ -16,7 +16,6 @@ import { DeleteCommand } from './DeleteCommand';
 import { ListBackupCommand } from './ListBackupCommand';
 import { ReportCommand } from './ReportCommand';
 import { ShowCommand } from './ShowCommand';
-import { ConnectCommand } from './ConnectCommand';
 import { HelpCommand } from './HelpCommand';
 import { ConfigureCommand } from './ConfigureCommand';
 import { AllocateChannelCommand } from './AllocateChannelCommand';
@@ -76,7 +75,6 @@ export class RmanCommandDispatcher {
 
   private _registerDefaults(): void {
     this._entries.push(
-      { pattern: /^CONNECT TARGET(.*)$/i,                          command: new ConnectCommand() },
       // Recovery-catalog DDL (in-memory no-ops)
       { pattern: /^CREATE CATALOG$/i,                                            command: new CreateCatalogCommand() },
       { pattern: /^CREATE VIRTUAL CATALOG (\S+)$/i,                              command: new CreateVirtualCatalogCommand() },

@@ -28,6 +28,10 @@ export interface VfsAdapter {
   availableBytes():                          number;
 }
 
+export type ConnectTargetOutcome =
+  | { readonly ok: true; readonly dbName: string; readonly dbId: number; readonly remote: boolean }
+  | { readonly ok: false; readonly error: string };
+
 export interface IRmanOracleContext {
   readonly dbId:    DbId;
   readonly dbName:  string;
@@ -41,4 +45,10 @@ export interface IRmanOracleContext {
   getControlFilePath?(): string;
   /** Optional: instance lifecycle state used to gate CONNECT/RESTORE/RECOVER. */
   getInstanceState?(): 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
+  /**
+   * Resolve a `user/pass@identifier` target through Oracle Net, opening
+   * the same TCP connection `sqlplus` opens. Absent on contexts with no
+   * device to dial from, in which case CONNECT stays local.
+   */
+  connectTarget?(identifier: string): ConnectTargetOutcome;
 }

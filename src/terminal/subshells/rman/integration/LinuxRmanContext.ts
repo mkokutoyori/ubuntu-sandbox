@@ -14,7 +14,11 @@
 
 import { DbId } from '../values/DbId';
 import { ok, err, type Result } from '../core/Result';
-import type { IRmanOracleContext, DatafileInfo, VfsAdapter } from './IRmanOracleContext';
+import type {
+  IRmanOracleContext, DatafileInfo, VfsAdapter, ConnectTargetOutcome,
+} from './IRmanOracleContext';
+import type { HostCapableDevice } from '@/network';
+import { resolveOracleConnectTarget } from '@/terminal/commands/oracleNet';
 import type { Equipment } from '@/network';
 import type { RmanError } from '../core/RmanError';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
@@ -46,6 +50,19 @@ export class LinuxRmanContext implements IRmanOracleContext {
     this.dbId   = _oracle ? DbId.of(_oracle.instance.getDbId(), sid) : DbId.DEFAULT;
     this.dbName = sid;
     this.vfs    = this._buildVfsAdapter();
+  }
+
+  connectTarget(identifier: string): ConnectTargetOutcome {
+    const local = this._device as unknown as HostCapableDevice;
+    const resolved = resolveOracleConnectTarget(
+      local, identifier, (id) => getRegisteredOracleDatabase(id) as OracleDatabase);
+    if (resolved.ok === false) return { ok: false, error: resolved.error };
+    return {
+      ok: true,
+      dbName: resolved.db.instance.config.sid,
+      dbId: resolved.db.instance.getDbId(),
+      remote: resolved.remote,
+    };
   }
 
   static forDevice(device: Equipment): LinuxRmanContext {

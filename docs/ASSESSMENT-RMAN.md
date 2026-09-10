@@ -158,6 +158,44 @@ la règle cardinale de ce dépôt. Un `rman-wan-disaster-recovery.debug.test.ts`
 existe et met en scène un site DR : la scène est jouée, aucune trame ne
 part.
 
+### 4.1 La mesure en infrastructure d'entreprise
+
+Le banc unitaire montrait le code ; un laboratoire d'entreprise montre
+la conséquence. Deux LAN, un FortiGate entre eux, un serveur de base et
+un serveur de sauvegarde
+(`src/__tests__/debug/rman/rman-infra-entreprise.debug.test.ts`) :
+
+| | mesure |
+|---|---|
+| **[A]** ping DB→BACKUP, aucune politique | `100% packet loss` |
+| **[B]** ping, politique **ACCEPT** | `0% packet loss` |
+| **[E]** ping, politique **DENY** | `100% packet loss` |
+| **[C]** `CONNECT TARGET sys/oracle@10.10.20.20:1521/BKPCAT`, pare-feu **ouvert** | `connected to target database: ORCL` |
+| **[F]** la même commande, pare-feu **FERMÉ** | `connected to target database: ORCL` |
+| **[D]** table de sessions du pare-feu | `4` avant RMAN, `4` après |
+| **[G]** `BACKUP … FORMAT '/mnt/backup_nfs/%U'` | `Finished backup`, `piece handle=/mnt/backup_nfs/ORCL_…` |
+| **[H]** ce chemin, vu du serveur de sauvegarde | `No such file or directory` |
+
+**[A]/[B]/[E] sont le témoin, et ils rendent le reste opposable.** Le
+pare-feu de ce laboratoire bloque réellement : sans politique il jette,
+avec `ACCEPT` il achemine, avec `DENY` il jette de nouveau. Que **[C]**
+et **[F]** rendent la MÊME réponse ne peut donc pas s'expliquer par un
+pare-feu inerte. La conclusion est plus simple et plus grave : *un
+pare-feu ne bloque pas ce qui ne traverse rien*.
+
+Et **[G]/[H]** disent la même chose du côté des données : une sauvegarde
+annoncée « terminée » vers un point de montage distant écrit en réalité
+dans le VFS **local**, à un chemin dont le nom suggère le contraire. Le
+serveur de sauvegarde n'a jamais rien reçu.
+
+> **Ce que cela change dans les priorités.** Dans la première rédaction
+> de ce document, la pile réseau était classée « fidélité additive »
+> (lots R7-R8, en fin de liste). C'était une erreur d'appréciation : en
+> décor d'entreprise, ce n'est pas un manque de fidélité mais un
+> **résultat faux** — un opérateur qui teste sa segmentation conclura
+> que sa règle ne protège pas sa base, alors qu'aucun flux n'existe. Les
+> lots réseau remontent (voir §5).
+
 Ce qui manque, par ordre de dépendance :
 
 1. **Résolution TNS** — `tnsnames.ora` est lu par `sqlplus` ; RMAN ne
@@ -185,8 +223,24 @@ L'ordre n'est pas négociable : chaque lot a besoin du précédent.
 | **R7** | `CONNECT TARGET …@tns` **sur le fil** | réseau | referme la violation du §4 |
 | **R8** | Catalogue distant, `DUPLICATE`, transfert des pièces entre sites | réseau | le laboratoire DR devient réel |
 
-**R1 + R2 forment le socle minimal** pour dire qu'on « a un RMAN ». Les
-autres sont de la fidélité, précieuse mais additive.
+### 5.1 Ordre révisé après la mesure en infrastructure (§4.1)
+
+Les deux pistes sont **indépendantes** — R7 n'a pas besoin que les
+fichiers de données aient un contenu — et elles ne répondent pas à la
+même question :
+
+- **R1 → R2** répond à « une sauvegarde restaure-t-elle ? ». C'est le
+  socle : sans lui, RMAN est une animation.
+- **R7 → R8** répond à « ce que je vois est-il vrai ? ». C'est plus
+  urgent qu'estimé : aujourd'hui un opérateur qui ferme son pare-feu et
+  voit RMAN se connecter quand même en tire une conclusion FAUSSE sur sa
+  segmentation, et c'est le genre d'erreur qu'un simulateur pédagogique
+  ne doit pas enseigner.
+
+**Recommandation : R7 d'abord, puis R1+R2.** R7 est petit — il s'agit de
+lire les arguments que `ConnectCommand` jette et de passer par la pile
+TNS qui existe déjà — et il supprime un résultat faux. R1+R2 sont plus
+gros et transforment RMAN en outil.
 
 ---
 

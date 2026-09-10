@@ -4,7 +4,9 @@
  * Adds tablespace management, DUAL table, and Oracle data file tracking.
  */
 
-import { BaseStorage, type TableMeta, type ColumnMeta } from '../engine/storage/BaseStorage';
+import {
+  BaseStorage, type TableMeta, type ColumnMeta, type CellValue,
+} from '../engine/storage/BaseStorage';
 import type { IndexValueSemantics } from '../engine/storage/RowIndexCache';
 import { oracleVarchar2 } from '../engine/catalog/DataType';
 import { ORACLE_CONFIG } from './OracleConfig';
@@ -73,6 +75,20 @@ export function normaliseTablespace(
     nextExtent: ts.nextExtent ?? 1048576,
     minExtentLength: ts.minExtentLength ?? 65536,
   };
+}
+
+const DICTIONARY_SCHEMAS: ReadonlySet<string> = new Set(['SYS', 'SYSTEM', 'XDB', 'OUTLN']);
+
+export interface SerializedTable {
+  readonly schema: string;
+  readonly table: string;
+  readonly columns: readonly string[];
+  readonly rows: ReadonlyArray<readonly CellValue[]>;
+}
+
+export interface TablespacePayload {
+  readonly tablespace: string;
+  readonly tables: readonly SerializedTable[];
 }
 
 export class OracleStorage extends BaseStorage {
@@ -154,6 +170,43 @@ export class OracleStorage extends BaseStorage {
       }
     }
     return out;
+  }
+
+  defaultTablespaceFor(schema: string): string {
+    return DICTIONARY_SCHEMAS.has(schema.toUpperCase()) ? 'SYSTEM' : 'USERS';
+  }
+
+  tablespaceOf(meta: TableMeta): string {
+    return (meta.tablespace ?? this.defaultTablespaceFor(meta.schema)).toUpperCase();
+  }
+
+  serializeTablespace(name: string): TablespacePayload {
+    const wanted = name.toUpperCase();
+    const tables: SerializedTable[] = [];
+    for (const [schema, bySchema] of this.tables) {
+      for (const [table, held] of bySchema) {
+        if (this.tablespaceOf(held.meta) !== wanted) continue;
+        tables.push({
+          schema, table,
+          columns: held.meta.columns.map((c) => c.name),
+          rows: held.rows.map((row) => [...row]),
+        });
+      }
+    }
+    return { tablespace: wanted, tables };
+  }
+
+  loadTablespace(payload: TablespacePayload): number {
+    let restored = 0;
+    for (const held of payload.tables) {
+      const bySchema = this.tables.get(held.schema.toUpperCase());
+      const target = bySchema?.get(held.table.toUpperCase());
+      if (!target) continue;
+      target.rows.splice(0, target.rows.length, ...held.rows.map((row) => [...row]));
+      target.meta.rowCount = target.rows.length;
+      restored++;
+    }
+    return restored;
   }
 
   tablespaceExists(name: string): boolean {

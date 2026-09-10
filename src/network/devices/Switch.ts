@@ -98,6 +98,7 @@ import { SwitchSecurityService } from './switch/SwitchSecurityService';
 import { CiscoHttpService } from './router/management/CiscoHttpService';
 import { SnmpService } from './router/management/SnmpService';
 import { PortMirror, type MirrorDirection, type MirrorSession } from './switch/PortMirror';
+import { compactVlanList } from './shells/cli/vlanList';
 import { ACLEngine } from './router/ACLEngine';
 import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
 import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
@@ -204,12 +205,19 @@ export interface PrivateVlanPortConfig {
   mappedSecondaryVlans?: Set<number>;
 }
 
+export function vlanAccessMapActionText(rule: VlanAccessMapRule): string {
+  if (rule.action === 'forward') return rule.capture ? 'forward capture' : 'forward';
+  return rule.logDrop ? 'drop log' : 'drop';
+}
+
 // ─── VLAN Access Map (Cisco VACL) ───────────────────────────────────
 
 export interface VlanAccessMapRule {
   sequence: number;
-  matchIpAcl?: string;
+  matchIpAcls?: string[];
   action: 'forward' | 'drop';
+  capture?: boolean;
+  logDrop?: boolean;
 }
 
 // ─── MQC (Huawei traffic classifier/behavior/policy) ────────────────
@@ -1517,9 +1525,17 @@ export abstract class Switch extends Equipment {
     for (const [name, rules] of this.vlanAccessMaps) {
       for (const rule of rules) {
         out.push(`vlan access-map ${name} ${rule.sequence}`);
-        if (rule.matchIpAcl) out.push(` match ip address ${rule.matchIpAcl}`);
-        out.push(` action ${rule.action}`);
+        if (rule.matchIpAcls?.length) out.push(` match ip address ${rule.matchIpAcls.join(' ')}`);
+        out.push(` action ${vlanAccessMapActionText(rule)}`);
       }
+    }
+    return out;
+  }
+
+  vlanFilterRunningConfigLines(): string[] {
+    const out: string[] = [];
+    for (const [name, vlans] of this.getVlanFilterBindings()) {
+      out.push(`vlan filter ${name} vlan-list ${compactVlanList(vlans)}`);
     }
     return out;
   }
@@ -1561,6 +1577,15 @@ export abstract class Switch extends Equipment {
     return parCarte;
   }
 
+  removeVlanAccessMapSequence(mapName: string, sequence: number): boolean {
+    const rules = this.vlanAccessMaps.get(mapName);
+    if (!rules) return false;
+    const index = rules.findIndex((r) => r.sequence === sequence);
+    if (index === -1) return false;
+    rules.splice(index, 1);
+    return true;
+  }
+
   removeVlanAccessMap(mapName: string): boolean {
     for (const [vlan, name] of this.vlanFilterBindings) {
       if (name === mapName) this.vlanFilterBindings.delete(vlan);
@@ -1596,8 +1621,9 @@ export abstract class Switch extends Equipment {
     const ip = frame.payload as IPv4Packet | undefined;
     if (!ip || ip.type !== 'ipv4') return true;
     for (const rule of rules) {
-      if (!rule.matchIpAcl) return rule.action === 'forward';
-      if (this.getVaclEngine().evaluateACLByName(rule.matchIpAcl, ip) === 'permit') {
+      if (!rule.matchIpAcls?.length) return rule.action === 'forward';
+      const engine = this.getVaclEngine();
+      if (rule.matchIpAcls.some((name) => engine.evaluateACLByName(name, ip) === 'permit')) {
         return rule.action === 'forward';
       }
     }
