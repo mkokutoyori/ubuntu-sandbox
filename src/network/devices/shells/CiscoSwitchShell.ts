@@ -1021,6 +1021,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       rule.matchIpAcls = [...(rule.matchIpAcls ?? []), ...args];
       return '';
     });
+    this.configAccessMapTrie.registerGreedy('match mac address', 'Match a MAC ACL', (args) => {
+      if (!this.selectedAccessMap || !args[0]) return CISCO_ERRORS.INCOMPLETE;
+      const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
+      rule.matchMacAcls = [...(rule.matchMacAcls ?? []), ...args];
+      return '';
+    });
     this.configAccessMapTrie.registerGreedy('action', 'Set the access-map action', (args) => {
       if (!this.selectedAccessMap) return CISCO_ERRORS.INCOMPLETE;
       const a = args[0]?.toLowerCase();
@@ -5300,6 +5306,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         lines.push('  Match clauses:');
         if (regle.matchIpAcls?.length) {
           lines.push(`    ip  address: ${regle.matchIpAcls.join(' ')}`);
+        }
+        if (regle.matchMacAcls?.length) {
+          lines.push(`    mac address: ${regle.matchMacAcls.join(' ')}`);
         }
         lines.push('  Action:');
         lines.push(`    ${vlanAccessMapActionText(regle)}`);

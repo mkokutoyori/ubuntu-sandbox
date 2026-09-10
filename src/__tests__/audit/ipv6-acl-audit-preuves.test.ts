@@ -358,6 +358,6 @@ describe('IPv6 access lists — non-regression', () => {
       'ipv6 access-list DROP', 'deny icmp any any echo-request', 'permit ipv6 any any', 'exit',
       'interface GigabitEthernet0/0', 'ipv6 traffic-filter DROP in', 'exit',
     ]);
-    expect(await left.executeCommand('ping ipv6 2001:db8:1::2')).toContain('0 percent');
+    expect(await left.executeCommand('ping ipv6 2001:db8:1::2')).toContain('is 0 percent');
   }, 30000);
 });

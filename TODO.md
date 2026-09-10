@@ -106,25 +106,21 @@ elles.
 
 ## Commutateur Cisco
 
-### [vacl] `match mac address` et `match ipv6 address` sont refuses
-Ce sont de vraies clauses d'une carte d'acces VLAN sur IOS ; seule
-`match ip address` existe ici. Le refus est explicite, pas silencieux.
-**Mesure** : `vlan access-map M 10` puis `match mac address MACL` et
-`match ipv6 address V6L` rendent tous deux
+### [vacl] `match ipv6 address` est refuse, et une trame IPv6 traverse
+`match mac address` est FERME (voir le commit du meme nom) ; la moitie
+IPv6 reste ouverte. `AccessList` du cote Cisco ne connait que `standard`
+et `extended`, et les listes IPv6 vivent sur le ROUTEUR — le commutateur
+n'a pas de vue `ipv6 access-list`.
+**Mesure** : `vlan access-map M 10` puis `match ipv6 address V6L` rend
 `% Invalid input detected at '^' marker.`
-**Ce qui manque, et la moitie MAC vient de se reduire** : `0f9e7ebaa` a
-apporte `switch/MacAccessList.ts` et `evaluateMacAcl`, donc la brique
-existe desormais — mais elle est liee au PORT (`macAclPermits(portName,
-frame)`) et non au VLAN, et `vaclPermits` sort par sa premiere ligne des
-que la trame n'est pas `ETHERTYPE_IPV4`, c'est-a-dire precisement pour
-les trames qu'une liste MAC regarde. C'est desormais un cablage borne et
-non une brique absente. La reference que ce meme commit a etablie decide
-la semantique et il ne faut pas l'inverser : une liste IP ne filtre QUE
-l'IP, une liste MAC QUE le non-IP ; il reste a verifier chez le
-constructeur ce que devient une trame non-IP dans une carte ne portant
-que des clauses IP (attendu : transmise) avant d'ecrire quoi que ce soit.
-Cote IPv6 en revanche rien n'a bouge : les listes vivent sur le routeur,
-le commutateur n'ayant pas de vue `ipv6 access-list`.
+**Consequence a connaitre, ecrite plutot que tue** : `vaclPermits`
+classe une trame IPv6 comme IP (donc AUCUNE clause MAC ne la regarde,
+ce qui est juste) puis la transmet sans l'evaluer, faute de clause IPv6
+et faute d'un moteur capable de la trancher. Une carte d'acces VLAN ne
+filtre donc PAS l'IPv6 aujourd'hui. La classer en non-IP pour la faire
+tomber sous les clauses MAC serait pire : cela contredirait la regle du
+constructeur que `MacAccessList.ts` cite, et le commutateur repondrait
+alors autrement que sa propre liste MAC de port sur la meme trame.
 
 ### [vacl] `action redirect` est refuse
 IOS ecrit `action {drop [log] | forward [capture | vlan <id>] |

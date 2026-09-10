@@ -159,19 +159,23 @@ dit pas ce qu'il a écarté laisse croire qu'il a tout vu :
 
 ## 5. Ce qui reste
 
-- **`match mac address` et `match ipv6 address` sont refusés.** Ce sont de
-  vraies clauses d'IOS, et le refus est honnête plutôt que silencieux.
-  La moitié MAC vient de se réduire pendant ce lot : le commit
-  `0f9e7ebaa` d'un autre agent a apporté `switch/MacAccessList.ts` et
-  `evaluateMacAcl`, donc la brique existe. Ce qui reste est un **câblage**
-  et non une absence — cette évaluation est liée au **port**, pas au
-  VLAN, et `vaclPermits` sort par sa première ligne dès que la trame
-  n'est pas `ETHERTYPE_IPV4`, c'est-à-dire exactement pour les trames
-  qu'une liste MAC regarde. La sémantique est déjà établie par la
-  référence que ce commit cite — une liste IP ne filtre **que** l'IP, une
-  liste MAC **que** le non-IP — et l'inverser apprendrait le contraire
-  d'un vrai Catalyst. Côté IPv6 rien n'a bougé : les listes vivent sur le
-  routeur, le commutateur n'ayant pas de vue `ipv6 access-list`.
+- **`match mac address` est désormais implémentée** (voir le commit du
+  même nom). Elle a demandé bien plus que la clause : la référence
+  énonce une règle **par type de paquet** — *« If there is a match clause
+  for that type of packet (IP or MAC) in the VLAN map, the default action
+  is to drop […]. If there is no match clause for that type of packet,
+  the default is to forward »* — alors que `vaclPermits` finissait par un
+  `return false` inconditionnel. Juste tant qu'une carte portait une
+  clause IP ou une entrée sans clause ; **faux** dès qu'une carte ne
+  porte que des clauses MAC, l'IP y tombant dans un refus qu'aucune
+  clause ne prononce.
+- **`match ipv6 address` reste refusée**, et la conséquence est écrite
+  dans `TODO.md` : une trame IPv6 est classée IP — donc aucune clause MAC
+  ne la regarde, ce qui est juste — puis transmise sans être évaluée. Une
+  carte d'accès VLAN ne filtre pas l'IPv6 aujourd'hui. La classer en
+  non-IP pour la soumettre aux clauses MAC serait pire : cela
+  contredirait la règle que `MacAccessList.ts` cite, et le commutateur
+  répondrait autrement que sa propre liste MAC de port sur la même trame.
 - **`action redirect` est refusé** faute de pouvoir honorer l'action
   principale : rediriger vers un port n'est pas modélisé, et le rabattre
   sur `forward` serait plus faux que le refus.

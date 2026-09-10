@@ -194,7 +194,7 @@ describe('VACL — non-regression', () => {
 
   it('a VACL really drops, and unmatched traffic hits the implicit deny', async () => {
     const { device, left } = await lan('SWD', 'd1', 'd2');
-    expect(await left.executeCommand('ping -c 2 10.0.0.2')).toContain('0% packet loss');
+    expect(await left.executeCommand('ping -c 2 10.0.0.2')).toContain(', 0% packet loss');
     for (const c of FILTER_LAB) await device.executeCommand(c);
     expect(await left.executeCommand('ping -c 2 10.0.0.2')).toContain('100% packet loss');
 
@@ -217,6 +217,6 @@ describe('VACL — non-regression', () => {
       'vlan access-map M 20', 'action forward', 'exit',
       'vlan filter M vlan-list 10', 'end',
     ]) await device.executeCommand(c);
-    expect(await left.executeCommand('ping -c 2 10.0.0.2')).toContain('0% packet loss');
+    expect(await left.executeCommand('ping -c 2 10.0.0.2')).toContain(', 0% packet loss');
   }, 30000);
 });
