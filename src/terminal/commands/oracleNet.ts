@@ -28,6 +28,7 @@ import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { findEquipmentByIp, findEquipmentByHostname } from '@/shell/hostResolution';
 import { isPathReachable } from '@/network/devices/linux/network/HostLookup';
+import { IPAddress } from '@/network/core/types';
 
 export interface TnsDescriptor {
   host: string;
@@ -216,6 +217,31 @@ function isLocalAddress(localDevice: HostCapableDevice, host: string): boolean {
 /** Resolve exactly one host/port/service against the topology — the
  *  single-address body `resolveOracleConnectTarget` used to run inline;
  *  factored out so an ADDRESS_LIST can retry it per address. */
+const WIRE_ERRORS: Readonly<Record<string, string>> = Object.freeze({
+  refused: 'ORA-12541: TNS:no listener',
+  prohibited: 'ORA-12541: TNS:no listener',
+  timeout: 'ORA-12170: TNS:Connect timeout occurred',
+  unreachable: 'ORA-12170: TNS:Connect timeout occurred',
+});
+
+function tnsWireVerdict(
+  localDevice: HostCapableDevice,
+  host: string,
+  target: Equipment | HostCapableDevice,
+  port: number,
+): string | null {
+  const dialer = localDevice as unknown as {
+    tcpConnectOutcome?: (ip: IPAddress, port: number) => string;
+  };
+  if (typeof dialer.tcpConnectOutcome !== 'function') return null;
+
+  const dst = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) ? host : primaryIpv4(target);
+  if (!dst) return null;
+
+  const outcome = dialer.tcpConnectOutcome(new IPAddress(dst), port);
+  return outcome === 'open' ? null : (WIRE_ERRORS[outcome] ?? null);
+}
+
 function resolveOneAddress(
   localDevice: HostCapableDevice,
   host: string,
@@ -274,6 +300,11 @@ function resolveOneAddress(
         return { ok: false, error: 'ORA-12541: TNS:no listener' };
       }
     }
+  }
+
+  if (remote) {
+    const verdict = tnsWireVerdict(localDevice, host, target, port);
+    if (verdict !== null) return { ok: false, error: verdict };
   }
 
   const db = getDb(target.getId());
