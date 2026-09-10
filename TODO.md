@@ -2981,22 +2981,3 @@ peuvent redonner a un equipement une adresse qu'un autre porte encore.
 mesure. Le stabiliser demande de trouver le fichier avec lequel il se
 couple, ce qui est un lot en soi — et il ne bloque aucun autre travail
 tant qu'il est nomme ici.
-
-### [arp] deux postes Linux se resolvent SANS qu'une trame ARP traverse le cable
-Le cache ARP d'un poste contient deja son voisin AVANT le moindre
-echange, et aucune trame ARP ne franchit le commutateur qui les separe.
-**Mesure** : deux `LinuxPC` cables a un Catalyst, adresses posees par
-`ip addr add`, rien d'autre. `arp -n` sur H1 rend deja
-`10.0.0.2 ether 02:00:00:00:00:0d C eth0`. Un `ping -c 1 10.0.0.2`,
-observe en interceptant `Switch.handleFrame`, ne fait passer que DEUX
-trames — l'echo et sa reponse, `etherType=0x800` — et aucune en
-`0x0806`.
-**Pourquoi cela compte** : c'est le raccourci que la regle 4 refuse.
-Un laboratoire ou l'on coupe l'ARP — liste MAC, DAI, port-security —
-continue de router, donc l'eleve n'observe pas la panne qu'il vient de
-provoquer. La sonde `probe-mac-access-list` a du pousser sa propre
-trame ARP sur le fil pour mesurer le filtrage, faute de pouvoir
-declencher une resolution reelle.
-**Report** : le lot suivant. Rendre la resolution reelle touche le
-chemin de trames de chaque hote et rejouera un grand nombre de
-laboratoires ; ce n'est pas un supplement au lot des listes MAC.

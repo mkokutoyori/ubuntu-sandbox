@@ -28,14 +28,16 @@
  * vraiment — mesuree par la difference entre le meme echange avec et
  * sans la liaison.
  *
- * Discriminee contre l'etat d'avant : 27 des 36 cas tombent — la
- * famille n'existait pas. Les 9 autres sont nommes ici plutot que
- * laisses a decouvrir : ce sont les REFUS et les INCOMPLETUDES, qui
- * passaient pour la mauvaise raison. `permit zorglub any` etait bien
- * refuse au caret, mais parce que `mac access-list` n'existait pas et
- * qu'on ne pouvait donc pas entrer dans la liste — le refus portait sur
- * la commande d'avant. Ils gardent aujourd'hui ce qu'ils pretendent
- * mesurer, et c'est la difference que le reste du fichier etablit.
+ * Discriminee contre l'etat d'avant : 28 des 38 cas tombaient — la
+ * famille n'existait pas. Les 10 autres sont nommes ici plutot que
+ * laisses a decouvrir : ce sont les REFUS, les INCOMPLETUDES et les
+ * deux TEMOINS. Les refus passaient pour la MAUVAISE raison — `permit
+ * zorglub any` etait bien refuse au caret, mais parce que `mac
+ * access-list` n'existait pas et qu'on ne pouvait donc pas entrer dans
+ * la liste : le refus portait sur la commande d'avant. Ils gardent
+ * aujourd'hui ce qu'ils pretendent mesurer. Les deux temoins, eux,
+ * doivent passer des deux cotes : sans eux, un simulateur qui aurait
+ * simplement casse le commutateur satisferait toute la sonde.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
@@ -317,7 +319,9 @@ describe('une liste MAC posee sur un port filtre vraiment', () => {
    * Une trame ARP REELLE, poussee sur le cable par le port de H1.
    *
    * C'est bien le fil qui la porte — `Port.sendFrame` la remet au cable,
-   * qui la remet au port d'en face. On observe si elle ATTEINT H2.
+   * qui la remet au port d'en face. On observe si elle ATTEINT H2. Ce
+   * chemin-la isole le filtre : il montre la trame arretee elle-meme,
+   * la ou le ping ci-dessous montre ce que l'operateur en subit.
    */
   async function arpTraverse(
     h1: LinuxPC, h2: LinuxPC, srcMac: MACAddress,
@@ -374,6 +378,11 @@ describe('une liste MAC posee sur un port filtre vraiment', () => {
    * passer l'IP, parce qu'une liste MAC ne filtre que le non-IP. Un
    * simulateur qui bloquerait le ping ici apprendrait le contraire de
    * ce que fait un vrai Catalyst.
+   *
+   * Le cache ARP de H1 est CHAUD : les deux postes se sont annonces en
+   * montant leur lien, comme le fait un hote reel. C'est ce qui rend ce
+   * cas lisible — l'echo part sans resolution a faire, donc ce qu'on
+   * observe est bien le sort du paquet IP et rien d'autre.
    */
   it('une liste qui refuse TOUT ne filtre pas l IP : le ping passe', async () => {
     const { sw, h1 } = await laboratoire();
@@ -382,5 +391,32 @@ describe('une liste MAC posee sur un port filtre vraiment', () => {
       h1 as unknown as Parameters<typeof pingOnSimulatedClock>[0],
       'ping -c 2 10.0.0.2');
     expect(out).toContain('0% packet loss');
+  });
+
+  /*
+   * Et le bout de la chaine, celui que l'operateur voit : cache VIDE,
+   * donc une resolution a faire. La liste arrete l'ARP, la resolution
+   * echoue, et le ping rend `Destination Host Unreachable` — pas une
+   * perte muette. C'est la difference entre les deux cas suivants qui
+   * mesure le filtre de bout en bout, pas le refus seul.
+   */
+  it('TEMOIN : cache vide et sans liste, la resolution aboutit', async () => {
+    const { h1 } = await laboratoire();
+    await h1.executeCommand('arp -d 10.0.0.2');
+    const out = await pingOnSimulatedClock(
+      h1 as unknown as Parameters<typeof pingOnSimulatedClock>[0],
+      'ping -c 1 10.0.0.2');
+    expect(out).toContain('0% packet loss');
+  });
+
+  it('cache vide, la liste arrete la resolution : hote INJOIGNABLE', async () => {
+    const { sw, h1, macH1 } = await laboratoire();
+    await poser(sw, 'BLOQUE', [`deny host ${enPointille(macH1)} any`, 'permit any any']);
+    await h1.executeCommand('arp -d 10.0.0.2');
+    const out = await pingOnSimulatedClock(
+      h1 as unknown as Parameters<typeof pingOnSimulatedClock>[0],
+      'ping -c 1 10.0.0.2');
+    expect(out).toContain('Destination Host Unreachable');
+    expect(out).toContain('100% packet loss');
   });
 });
