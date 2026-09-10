@@ -1363,6 +1363,10 @@ export class LoggingConfig {
         this.append('warnings', 'sec', p.message, true, 'IPACCESSLOGP');
         return;
       }
+      if (p.event === 'router:ipv6-acl-log') {
+        this.append('informational', 'ipv6_acl', p.message, true, 'ACCESSLOGP');
+        return;
+      }
       if (p.event.startsWith('router:acl-deny')) return;
       if (p.event === 'cdp:native-vlan-mismatch') return;
       const mnemonic = mnemonicFromEvent(p.event);

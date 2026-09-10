@@ -1,42 +1,41 @@
-/**
- * IPv6 access lists, EVALUATED.
- *
- * `ipv6 access-list` parsed into real structured entries and
- * `ipv6 traffic-filter` bound one to an interface — and nothing ever
- * read either. Measured on a live pair: a list whose first line is
- * `deny icmp any any`, applied inbound, let a ping through at 100 %.
- * A security feature that is accepted, displayed by
- * `show ipv6 access-list`, and filters nothing is worse than an absent
- * one, because it reads as protection.
- *
- * The one rule that is easy to miss and load-bearing: **IOS implicitly
- * permits Neighbor Discovery at the end of every IPv6 ACL**, before the
- * implicit deny —
- *
- *     permit icmp any any nd-na
- *     permit icmp any any nd-ns
- *     deny ipv6 any any
- *
- * — and without it, applying any IPv6 ACL kills NDP and takes the link
- * down with it. An implementation that stopped at "implicit deny" would
- * look correct in a review and destroy every lab that used it.
- */
-import type { IPv6Packet, ICMPv6Packet } from '../../core/types';
+import type { IPv6Packet, ICMPv6Packet, TCPPacket } from '../../core/types';
 import { IPv6Address } from '../../core/types';
 import type { IPv6ACL, IPv6ACLEntry } from '../Router';
+import type { AclPortSpec } from './acl/AclSyntax';
+import {
+  ipv6ProtocolMatches,
+  isIpv6TcpFlagName,
+  type Ipv6TcpFlagName,
+} from './acl/Ipv6AclSyntax';
 
-const IP_PROTO_TCP = 6;
-const IP_PROTO_UDP = 17;
 const IP_PROTO_ICMPV6 = 58;
+const IP_PROTO_TCP = 6;
 
-const PROTOCOL_NUMBERS: Readonly<Record<string, number>> = {
-  tcp: IP_PROTO_TCP,
-  udp: IP_PROTO_UDP,
-  icmp: IP_PROTO_ICMPV6,
-  ipv6: -1,
-};
+export interface Ipv6AclLogEvent {
+  listName: string;
+  action: 'permit' | 'deny';
+  protocol: string;
+  sourceIP: string;
+  sourcePort?: number;
+  destinationIP: string;
+  destinationPort?: number;
+}
 
-/** The ND messages every IPv6 ACL lets through whatever it says. */
+export function formatIpv6AclLogMessage(event: Ipv6AclLogEvent): string {
+  const verb = event.action === 'permit' ? 'permitted' : 'denied';
+  const src = event.sourcePort === undefined
+    ? event.sourceIP : `${event.sourceIP}(${event.sourcePort})`;
+  const dst = event.destinationPort === undefined
+    ? event.destinationIP : `${event.destinationIP}(${event.destinationPort})`;
+  return `list ${event.listName} ${verb} ${event.protocol} ${src} -> ${dst}, 1 packet`;
+}
+
+export interface Ipv6AclContext {
+  log?: (event: Ipv6AclLogEvent) => void;
+  timeRangeActive?: (name: string, now: Date) => boolean;
+  now?: () => number;
+}
+
 function isNeighborDiscovery(pkt: IPv6Packet): boolean {
   if (pkt.nextHeader !== IP_PROTO_ICMPV6) return false;
   const icmp = pkt.payload as ICMPv6Packet | undefined;
@@ -63,37 +62,135 @@ function portOf(pkt: IPv6Packet, which: 'source' | 'destination'): number | null
   return typeof port === 'number' ? port : null;
 }
 
-function matchesEntry(entry: IPv6ACLEntry, pkt: IPv6Packet): boolean {
-  if (entry.remark !== undefined) return false;
-  // A reflexive-list reference has no session table behind it here, so it
-  // matches nothing rather than everything — failing an unbacked clause
-  // CLOSED is the rule this repo already applies to `RoutePolicy`.
-  if (entry.evaluate !== undefined) return false;
+function portSpecMatches(port: number, spec: AclPortSpec): boolean {
+  switch (spec.op) {
+    case 'eq': return port === spec.port;
+    case 'neq': return port !== spec.port;
+    case 'gt': return port > spec.port;
+    case 'lt': return port < spec.port;
+    case 'range': return port >= spec.port && port <= (spec.endPort ?? spec.port);
+  }
+}
 
-  const wanted = PROTOCOL_NUMBERS[(entry.protocol ?? 'ipv6').toLowerCase()];
-  if (wanted === undefined) return false;
-  if (wanted >= 0 && pkt.nextHeader !== wanted) return false;
-
-  if (!matchesPrefix(pkt.sourceIP, entry.srcPrefix, entry.srcPrefixLength)) return false;
-  if (!matchesPrefix(pkt.destinationIP, entry.dstPrefix, entry.dstPrefixLength)) return false;
-
-  if (entry.dstPort !== undefined) {
+function portCriteriaMatch(entry: IPv6ACLEntry, pkt: IPv6Packet): boolean {
+  if (entry.srcPortSpec) {
+    const port = portOf(pkt, 'source');
+    if (port === null || !portSpecMatches(port, entry.srcPortSpec)) return false;
+  }
+  if (entry.dstPortSpec) {
     const port = portOf(pkt, 'destination');
-    if (port === null || String(port) !== entry.dstPort) return false;
+    if (port === null || !portSpecMatches(port, entry.dstPortSpec)) return false;
   }
   return true;
 }
 
-/**
- * The verdict of one list on one packet. An empty or unknown list
- * permits: on IOS an access list that does not exist filters nothing,
- * and a list bound before it is written is the normal configuration
- * order, not an error.
- */
-export function evaluateIpv6Acl(acl: IPv6ACL | undefined, pkt: IPv6Packet): 'permit' | 'deny' {
+function icmpCriteriaMatch(entry: IPv6ACLEntry, pkt: IPv6Packet): boolean {
+  if (entry.icmpType === undefined) return true;
+  const icmp = pkt.payload as ICMPv6Packet | undefined;
+  if (icmp?.type !== 'icmpv6') return false;
+  if (/^\d+$/.test(entry.icmpType)) {
+    const wanted = parseInt(entry.icmpType, 10);
+    const carried = icmpv6TypeNumberOf(icmp.icmpType);
+    if (carried === null || carried !== wanted) return false;
+  } else if (icmp.icmpType !== entry.icmpType) {
+    return false;
+  }
+  if (entry.icmpCode !== undefined && icmp.code !== entry.icmpCode) return false;
+  return true;
+}
+
+const ICMPV6_TYPE_NUMBERS: Readonly<Record<string, number>> = {
+  'destination-unreachable': 1,
+  'packet-too-big': 2,
+  'time-exceeded': 3,
+  'echo-request': 128,
+  'echo-reply': 129,
+  'router-solicitation': 133,
+  'router-advertisement': 134,
+  'neighbor-solicitation': 135,
+  'neighbor-advertisement': 136,
+};
+
+function icmpv6TypeNumberOf(name: string): number | null {
+  return ICMPV6_TYPE_NUMBERS[name] ?? null;
+}
+
+function tcpFlagsMatch(entry: IPv6ACLEntry, pkt: IPv6Packet): boolean {
+  if (!entry.tcpFlags && !entry.tcpEstablished) return true;
+  if (pkt.nextHeader !== IP_PROTO_TCP) return false;
+  const tcp = pkt.payload as TCPPacket | undefined;
+  const flags = tcp && tcp.type === 'tcp' ? tcp.flags : undefined;
+  if (!flags) return false;
+
+  if (entry.tcpEstablished && !(flags.ack || flags.rst)) return false;
+
+  if (entry.tcpFlags) {
+    for (const name of entry.tcpFlags) {
+      if (!isIpv6TcpFlagName(name)) return false;
+      if (!flags[name.toLowerCase() as Ipv6TcpFlagName]) return false;
+    }
+  }
+  return true;
+}
+
+function matchesEntry(entry: IPv6ACLEntry, pkt: IPv6Packet, ctx?: Ipv6AclContext): boolean {
+  if (entry.remark !== undefined) return false;
+  if (entry.evaluate !== undefined) return false;
+
+  if (!ipv6ProtocolMatches(entry.protocol ?? 'ipv6', pkt.nextHeader)) return false;
+
+  if (!matchesPrefix(pkt.sourceIP, entry.srcPrefix, entry.srcPrefixLength)) return false;
+  if (!matchesPrefix(pkt.destinationIP, entry.dstPrefix, entry.dstPrefixLength)) return false;
+
+  if (!portCriteriaMatch(entry, pkt)) return false;
+  if (!icmpCriteriaMatch(entry, pkt)) return false;
+  if (!tcpFlagsMatch(entry, pkt)) return false;
+
+  if (entry.dscp !== undefined) {
+    const carried = typeof pkt.trafficClass === 'number' ? pkt.trafficClass >> 2 : undefined;
+    if (carried === undefined || carried !== entry.dscp) return false;
+  }
+  if (entry.flowLabel !== undefined) {
+    if (typeof pkt.flowLabel !== 'number' || pkt.flowLabel !== entry.flowLabel) return false;
+  }
+  if (entry.fragments === true) return false;
+  if (entry.routing === true) return false;
+  if (entry.undeterminedTransport === true) return false;
+
+  if (entry.timeRange !== undefined) {
+    if (!ctx?.timeRangeActive) return false;
+    const now = new Date(ctx.now ? ctx.now() : Date.now());
+    if (!ctx.timeRangeActive(entry.timeRange, now)) return false;
+  }
+
+  return true;
+}
+
+export function ipv6EntriesInOrder(acl: IPv6ACL): IPv6ACLEntry[] {
+  return [...acl.entries].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
+}
+
+export function evaluateIpv6Acl(
+  acl: IPv6ACL | undefined,
+  pkt: IPv6Packet,
+  ctx?: Ipv6AclContext,
+): 'permit' | 'deny' {
   if (!acl || acl.entries.length === 0) return 'permit';
-  for (const entry of acl.entries) {
-    if (matchesEntry(entry, pkt)) return entry.action;
+  for (const entry of ipv6EntriesInOrder(acl)) {
+    if (!matchesEntry(entry, pkt, ctx)) continue;
+    entry.matchCount = (entry.matchCount ?? 0) + 1;
+    if ((entry.log || entry.logInput) && ctx?.log) {
+      ctx.log({
+        listName: acl.name,
+        action: entry.action,
+        protocol: entry.protocol ?? 'ipv6',
+        sourceIP: pkt.sourceIP.toString(),
+        sourcePort: portOf(pkt, 'source') ?? undefined,
+        destinationIP: pkt.destinationIP.toString(),
+        destinationPort: portOf(pkt, 'destination') ?? undefined,
+      });
+    }
+    return entry.action;
   }
   if (isNeighborDiscovery(pkt)) return 'permit';
   return 'deny';

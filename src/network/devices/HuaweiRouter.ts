@@ -106,6 +106,7 @@ export class HuaweiRouter extends Router {
         this.getLinkLayer().send(request),
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),
+      localClock: () => this.localClock(),
       getType: () => this.getType(),
       getPort: (n: string) => this.getPort(n),
       getPorts: () => this.getPorts(),

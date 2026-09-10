@@ -129,6 +129,7 @@ export const CISCO_SWITCH_PROMPTS: PromptMap = {
   'config-view': '{host}(config-view)#',
   'config-std-nacl': '{host}(config-std-nacl)#',
   'config-ext-nacl': '{host}(config-ext-nacl)#',
+  'config-ext-macl': '{host}(config-ext-macl)#',
   'config-acl':  '{host}(config-ext-nacl)#',
   'config-dhcp': '{host}(dhcp-config)#',
   'config-access-map': '{host}(config-access-map)#',

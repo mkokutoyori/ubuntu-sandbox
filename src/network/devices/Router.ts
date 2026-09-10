@@ -89,7 +89,7 @@ import {
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import { CiscoFileSystem } from './shells/cisco/CiscoFileSystem';
-import { evaluateIpv6Acl } from './router/Ipv6AclEngine';
+import { evaluateIpv6Acl, formatIpv6AclLogMessage } from './router/Ipv6AclEngine';
 
 /** One probe of one hop, as both traceroute implementations report it. */
 export interface TracerouteProbe {
@@ -278,11 +278,26 @@ export interface IPv6ACLEntry {
   protocol?: string;
   srcPrefix?: string;
   srcPrefixLength?: number;
+  srcPortSpec?: import('./router/acl/AclSyntax').AclPortSpec;
   dstPrefix?: string;
   dstPrefixLength?: number;
-  dstPort?: string;
+  dstPortSpec?: import('./router/acl/AclSyntax').AclPortSpec;
+  icmpType?: string;
+  icmpCode?: number;
+  tcpFlags?: string[];
+  tcpEstablished?: boolean;
+  dscp?: number;
+  flowLabel?: number;
+  fragments?: boolean;
+  routing?: boolean;
+  undeterminedTransport?: boolean;
   log?: boolean;
+  logInput?: boolean;
+  reflect?: string;
+  timeRange?: string;
   sequence?: number;
+  sequenceConfigured?: boolean;
+  matchCount?: number;
   remark?: string;
   evaluate?: string;
   prefix?: string;
@@ -2060,11 +2075,26 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return null;
   }
 
+  private ipv6AclContext(): import('./router/Ipv6AclEngine').Ipv6AclContext {
+    return {
+      log: (ev) => { Logger.info(this.id, 'router:ipv6-acl-log', formatIpv6AclLogMessage(ev)); },
+      now: () => this.getSystemClockMs(),
+      timeRangeActive: (name, now) => {
+        const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
+          Symbol.for('CiscoSecurityConfig')
+        ];
+        const tr = sec?.timeRanges.get(name);
+        if (!tr) return false;
+        return isTimeRangeActive(tr, now);
+      },
+    };
+  }
+
   private ipv6FilterPermits(iface: string, direction: 'in' | 'out', pkt: IPv6Packet): boolean {
     const binding = this.getIpv6TrafficFilter(iface);
     if (!binding || binding.direction !== direction) return true;
     const acl = this.ipv6AccessLists.find((a) => a.name === binding.name);
-    return evaluateIpv6Acl(acl, pkt) === 'permit';
+    return evaluateIpv6Acl(acl, pkt, this.ipv6AclContext()) === 'permit';
   }
 
   /** What the IPv6 data plane has actually counted. */
@@ -4645,6 +4675,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    */
   private _httpService: CiscoHttpService | null = null;
   getDeviceClock(): DeviceClockStore { return this.getManagementService().getClockStore(); }
+
+  localClock(): { localMs: number; offsetMin: number } {
+    const lecture = this.getDeviceClock().readingAt(this.getSystemClockMs());
+    return { localMs: lecture.localMs, offsetMin: lecture.offsetMin };
+  }
 
   getHttpService(): CiscoHttpService {
     if (!this._httpService) this._httpService = new CiscoHttpService();

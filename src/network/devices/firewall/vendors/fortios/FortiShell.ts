@@ -2073,6 +2073,10 @@ export class FortiShell {
       serial: this.serialNumber(),
       version: FORTIOS_PROFILE.defaultVersion,
       facility: 23,
+      localClock: (atMs: number) => ({
+        localMs: this.fw.localTimeOf(atMs),
+        offsetMin: (this.fw.localTimeOf(atMs) - atMs) / 60_000,
+      }),
     };
   }
 
