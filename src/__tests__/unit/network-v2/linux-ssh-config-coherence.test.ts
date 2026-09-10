@@ -68,8 +68,8 @@ describe('Scénario 4 — sshd_config: dérive fichier vs configuration en mémo
 describe('Scénario 4 — authorized_keys: permissions incorrectes ignorées silencieusement', () => {
   it('authorized_keys en 644 fait échouer l\'authentification par clé et journalise la cause', async () => {
     const { client, server } = buildLab();
-    await client.executeCommand("ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519");
-    await client.executeCommand('ssh-copy-id -i /root/.ssh/id_ed25519.pub alice@10.0.0.2', 'wonderland\n');
+    await client.executeCommand("ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519");
+    await client.executeCommand('ssh-copy-id -i ~/.ssh/id_ed25519.pub alice@10.0.0.2', 'wonderland\n');
     await server.executeCommand('chmod 644 /home/alice/.ssh/authorized_keys');
 
     await client.executeCommand('ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 "echo ok"');
@@ -82,8 +82,8 @@ describe('Scénario 4 — authorized_keys: permissions incorrectes ignorées sil
     const { client, server } = buildLab();
     const um = (server as unknown as { executor: { userMgr: { useradd: (u: string, o?: object) => void } } }).executor.userMgr;
     um.useradd('bob', { m: true, s: '/bin/bash' });
-    await client.executeCommand("ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519");
-    await client.executeCommand('ssh-copy-id -i /root/.ssh/id_ed25519.pub alice@10.0.0.2', 'wonderland\n');
+    await client.executeCommand("ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519");
+    await client.executeCommand('ssh-copy-id -i ~/.ssh/id_ed25519.pub alice@10.0.0.2', 'wonderland\n');
     await server.executeCommand('chown -R bob:bob /home/alice/.ssh');
 
     await client.executeCommand('ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 "echo ok"');
@@ -121,7 +121,7 @@ describe('Scénario 4 — known_hosts: détection et résolution d\'une entrée 
     const scanned = await client.executeCommand('ssh-keyscan 10.0.0.2');
     expect(scanned).toMatch(/^10\.0\.0\.2 ssh-(ed25519|rsa) /m);
 
-    await client.executeCommand(`sh -c 'ssh-keyscan 10.0.0.2 >> /root/.ssh/known_hosts'`);
+    await client.executeCommand(`sh -c 'ssh-keyscan 10.0.0.2 >> ~/.ssh/known_hosts'`);
     const out = await client.executeCommand('ssh alice@10.0.0.2 "echo second"', 'wonderland\n');
     expect(out).not.toMatch(/WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!/);
     expect(out).toContain('second');

@@ -1624,8 +1624,20 @@ export class LinuxCommandExecutor {
     return cfg.chrootDirectory;
   }
 
+  /**
+   * `ssh` lit le `~/.ssh` de CELUI QUI LE TAPE.
+   *
+   * Cette methode rendait le foyer de `root` quel que soit l'utilisateur
+   * courant : un compte non privilegie voyait donc sa propre
+   * configuration cliente ignoree, et obeissait a celle de root — sa
+   * cle d'identite, son `ProxyJump`, son `StrictHostKeyChecking`, et
+   * son `known_hosts`. C'est le raccourci que ce depot refuse : la
+   * privilegie s'y perdait sans un mot.
+   */
   private sshHomeDir(): string {
-    return this.userMgr.getUser('root')?.home ?? '/root';
+    const user = this.userMgr.currentUser;
+    return this.userMgr.getUser(user)?.home
+      ?? (user === 'root' ? '/root' : `/home/${user}`);
   }
 
   /** Build the standard SshClientOpts (used by `ssh` and ssh-transport). */
