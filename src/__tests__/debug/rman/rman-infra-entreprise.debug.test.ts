@@ -7,21 +7,30 @@
  * sert a MESURER ce que RMAN fait dans ce decor, et son releve est cite
  * dans `docs/ASSESSMENT-RMAN.md` §4.
  *
- * Le releve du 2026-09-10 :
+ * Le releve du 2026-09-10, APRES le lot R7 :
  *
  *   [A] ping sans politique        100% packet loss
  *   [B] ping, politique ACCEPT       0% packet loss
  *   [E] ping, politique DENY       100% packet loss     <- TEMOIN
  *   [C] RMAN @10.10.20.20, ouvert  connected to target database: ORCL
- *   [F] RMAN @10.10.20.20, FERME   connected to target database: ORCL
- *   [D] sessions du pare-feu       4 avant, 4 apres
+ *   [F] RMAN @10.10.20.20, FERME   RMAN-04006: error from target database:
+ *                                  ORA-12170: TNS:Connect timeout occurred
+ *   [D] sessions du pare-feu       4 avant, 5 apres
  *   [G] BACKUP vers /mnt/backup_nfs  Finished backup
  *   [H] cote serveur de sauvegarde   No such file or directory
  *
- * Ce que le TEMOIN [E] rend opposable : le pare-feu bloque REELLEMENT le
- * trafic de ce laboratoire. Que [C] et [F] rendent la MEME reponse ne
- * peut donc pas s'expliquer par un pare-feu inerte — la connexion RMAN
- * n'existe pas, et un pare-feu ne bloque pas ce qui ne traverse rien.
+ * [D] est la preuve que la connexion TRAVERSE : le pare-feu compte une
+ * session de plus apres le CONNECT. Et [F] montre qu'il la police —
+ * ferme, RMAN echoue dans les mots d'Oracle Net.
+ *
+ * Releve AVANT le lot R7, garde pour memoire : [C] et [F] rendaient la
+ * MEME reponse (« connected to target database: ORCL »), le pare-feu ne
+ * voyait aucune session (4 avant, 4 apres), et la cible etait la base
+ * LOCALE puisque `ConnectCommand` ignorait ses arguments.
+ *
+ * [G]/[H] restent OUVERTS : une sauvegarde annoncee vers un point de
+ * montage distant ecrit toujours dans le VFS local. C'est le lot R8.
+ *
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { writeFileSync } from 'node:fs';
@@ -87,21 +96,22 @@ describe('RMAN dans une infra d entreprise', () => {
     notes.push(`[B] ping apres politique ACCEPT : ${await perte()}`);
 
     SqlPlusSubShell.create(dbSrv, ['/', 'as', 'sysdba']).subShell.dispose();
+    SqlPlusSubShell.create(bkpSrv, ['/', 'as', 'sysdba']).subShell.dispose();
 
     const sessionsAvant = fw.getSessionTable?.()?.count?.() ?? -1;
-    const rmanDistant = sh(dbSrv, 'echo "CONNECT TARGET sys/oracle@10.10.20.20:1521/BKPCAT;" | rman');
+    const rmanDistant = sh(dbSrv, 'echo "CONNECT TARGET sys/oracle@10.10.20.20:1521/ORCL;" | rman');
     const sessionsApres = fw.getSessionTable?.()?.count?.() ?? -1;
     notes.push(`[C] RMAN vers une cible DISTANTE repond : ${
-      rmanDistant.split('\n').filter(l => l.trim()).slice(-2).join(' | ')}`);
+      rmanDistant.split('\n').filter((l) => /connected|RMAN-|ORA-/.test(l)).join(' | ')}`);
     notes.push(`[D] sessions vues par le pare-feu : avant=${sessionsAvant} apres=${sessionsApres}`);
 
     await jouer(fw, [
       'config firewall policy', 'edit 1', 'set action deny', 'next', 'end',
     ]);
     notes.push(`[E] TEMOIN — ping apres politique DENY : ${await perte()}`);
-    const rmanBloque = sh(dbSrv, 'echo "CONNECT TARGET sys/oracle@10.10.20.20:1521/BKPCAT;" | rman');
+    const rmanBloque = sh(dbSrv, 'echo "CONNECT TARGET sys/oracle@10.10.20.20:1521/ORCL;" | rman');
     notes.push(`[F] RMAN vers la MEME cible, pare-feu FERME : ${
-      rmanBloque.split('\n').filter(l => l.trim()).slice(-2).join(' | ')}`);
+      rmanBloque.split('\n').filter((l) => /connected|RMAN-04006|ORA-/.test(l)).join(' | ')}`);
 
     const backupDistant = sh(dbSrv,
       'echo "BACKUP DATABASE FORMAT \'/mnt/backup_nfs/%U\';" | rman target /');

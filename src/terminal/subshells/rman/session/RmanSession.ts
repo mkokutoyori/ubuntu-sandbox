@@ -165,9 +165,21 @@ export class RmanSession implements IRmanSession {
     }
 
     if (cleanedUpper.startsWith('CONNECT TARGET')) {
+      const identifier = /@(\S+)/.exec(cleaned)?.[1]?.replace(/;$/, '');
+      const outcome = identifier && this._ctx.connectTarget
+        ? this._ctx.connectTarget(identifier)
+        : null;
+      if (outcome && outcome.ok === false) {
+        return err({
+          code: 'RMAN_04006',
+          message: `error from target database: ${outcome.error}`,
+        });
+      }
       const r = this.connect(cleaned);
       if (!r.ok) return r as Result<string[], RmanError>;
-      return ok([`connected to target database: ${this._ctx.dbName} (DBID=${this._ctx.dbId.value})`]);
+      const name = outcome?.ok === true ? outcome.dbName : this._ctx.dbName;
+      const id = outcome?.ok === true ? outcome.dbId : this._ctx.dbId.value;
+      return ok([`connected to target database: ${name} (DBID=${id})`]);
     }
 
     if (this._state !== 'CONNECTED' && this._state !== 'RUNNING_JOB') {

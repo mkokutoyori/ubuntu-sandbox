@@ -65,7 +65,22 @@ simulateur qui n'aurait puni que l'intrus aurait enseigné le contraire.
 
 ---
 
-## 3. Ce qui N'APPLIQUE PAS — le trou, et il est unique
+## 3. Le trou qui était unique — REFERMÉ depuis
+
+> **Mise à jour.** Ce qui suit décrivait l'état au moment de l'audit. Le
+> lot R7 l'a refermé : `resolveOneAddress` compose désormais un vrai SYN
+> par `tcpConnectOutcome`, et `RmanSession` résout sa cible par la même
+> porte. Le relevé après correctif :
+>
+>     RMAN @10.10.20.20, pare-feu OUVERT   connected to target database: ORCL
+>     RMAN @10.10.20.20, pare-feu FERMÉ    RMAN-04006 / ORA-12170
+>     sessions du pare-feu                 4 avant, 5 après
+>
+> **[D] est la preuve que la connexion traverse** — le pare-feu compte
+> une session de plus. Reste ouvert : une sauvegarde vers un point de
+> montage distant écrit encore dans le VFS local (lot R8).
+
+### 3.1 L'état constaté à l'audit
 
 Un seul contrôle s'est révélé sans effet, et il n'est pas dans le
 réseau : **la connexion RMAN ne traverse rien**.
