@@ -237,6 +237,12 @@ export interface WinCommandContext {
   /** Dial a remote SMB share over the real network (`net use` add-form). */
   dialSmbShare(targetIp: string, shareName: string, username: string, password: string):
     import('./server/smb/SmbClient').SmbDialResult;
+  /** This machine's own registry — `net use` keeps its reconnect-at-logon default and its persistent mappings where Windows keeps them. */
+  registry?: import('./PSRegistryProvider').PSRegistryProvider;
+  /** Drive letters the local disks already hold, so `net use *` never picks one. */
+  localDrives?(): string[];
+  /** FSCTL_DFS_GET_REFERRALS against a namespace server — what a real client asks before giving up on `\\domain\namespace`. */
+  requestDfsReferral?(targetIp: string, path: string, username: string, password: string): string[];
 
   /** DHCP Server role (PRD-Windows-Server.md §5 P8) — null/undefined unless this is a `WindowsServer` with the `DHCP` feature installed. Backs `netsh dhcp server`. */
   dhcpServerRole?: import('./server/dhcp/WindowsDhcpServerRole').WindowsDhcpServerRole | null;

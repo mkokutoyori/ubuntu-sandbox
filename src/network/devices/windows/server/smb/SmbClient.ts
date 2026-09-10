@@ -48,6 +48,34 @@ const ERR_BAD_CREDENTIALS = { error: 'System error 1326 has occurred.\n\nThe use
 const ERR_ACCESS_DENIED = { error: 'System error 5 has occurred.\n\nAccess is denied.', code: 5 };
 const ERR_NAME_NOT_FOUND = { error: 'System error 67 has occurred.\n\nThe network name cannot be found.', code: 67 };
 
+/**
+ * FSCTL_DFS_GET_REFERRALS: ask a namespace server which share a
+ * `\\domain\namespace[\folder]` path actually lives on. Returns the
+ * targets it offers, most-preferred first, or an empty list when this
+ * server hosts no such namespace.
+ */
+export function requestDfsReferral(opts: {
+  tcpStack: TcpStack;
+  targetIp: string;
+  username: string;
+  password: string;
+  path: string;
+}): string[] {
+  const socket = opts.tcpStack.connect(opts.targetIp, 445);
+  if (!socket || socket.state !== 'established') return [];
+  try {
+    if (!roundTrip(socket, { op: 'negotiate' })?.ok) return [];
+    if (!roundTrip(socket, { op: 'session_setup', username: opts.username, password: opts.password })?.ok) return [];
+    const referral = roundTrip(socket, { op: 'dfs_referral', path: opts.path });
+    if (!referral?.ok) return [];
+    const targets = referral.targets;
+    return Array.isArray(targets) ? targets.map(String) : [];
+  } finally {
+    roundTrip(socket, { op: 'logoff' });
+    socket.close();
+  }
+}
+
 export function dialSmbShare(opts: {
   tcpStack: TcpStack;
   targetIp: string;

@@ -105,6 +105,7 @@ import { cmdTaskkill } from './windows/WinTaskkill';
 import { cmdSc } from './windows/WinSc';
 import { cmdNetStart, cmdNetStop } from './windows/WinNetStart';
 import { cmdNetUse, type NetUseEntry } from './windows/WinNetUse';
+import { requestDfsReferral } from './windows/server/smb/SmbClient';
 import { cmdNetShare } from './windows/WinNetShare';
 import { SmbShareTable } from './windows/server/smb/SmbShareTable';
 import { SmbSessionTable } from './windows/server/smb/SmbSessionTable';
@@ -1198,6 +1199,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       now: () => this.simulatedDate().getTime(),
       hostname: this.hostname,
       domainAuth: (u, p) => this.tryDomainAuth(u, p),
+      dfsNamespaces: () => this.getDfsNamespaceRole(),
     });
   }
 
@@ -1385,6 +1387,21 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   /** Domain-qualified credential check for inbound SMB/WinRM auth — real LDAP bind, not a topology shortcut. Returns null when unqualified/not domain-joined (caller should fall back to local auth). */
   tryDomainAuth(rawUser: string, password: string): { ok: boolean; sam: string; groups: string[] } | null {
+    // A domain controller holds the directory: it answers for its own
+    // domain accounts itself, exactly as a real DC does, instead of
+    // dialling out to find an authority it already is. A member machine
+    // has no such directory and must go to the wire below.
+    const ownDirectory = this.getDirectoryStore();
+    if (ownDirectory) {
+      const qualifier = rawUser.includes('\\') ? rawUser.slice(0, rawUser.indexOf('\\')) : '';
+      const sam = rawUser.includes('\\') ? rawUser.slice(rawUser.indexOf('\\') + 1) : rawUser.split('@')[0];
+      const known = qualifier === ''
+        || qualifier.toLowerCase() === ownDirectory.netbiosName.toLowerCase()
+        || qualifier.toLowerCase() === ownDirectory.dnsName.toLowerCase();
+      if (!known) return null;
+      if (!ownDirectory.getBindCheck().checkBind(sam, password)) return { ok: false, sam, groups: [] };
+      return { ok: true, sam, groups: ownDirectory.groupsForUser(sam).map(g => g.name) };
+    }
     if (!this.domainMembership) return null;
     const parsed = parseDomainQualifiedUser(rawUser, this.domainMembership);
     if (!parsed) return null;
@@ -3391,6 +3408,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       smbSessions: this.smbSessions,
       dialSmbShare: (targetIp: string, shareName: string, username: string, password: string) =>
         this.dialSmbShare(targetIp, shareName, username, password),
+      registry: this.registry,
+      localDrives: () => this.fs.listDrives(),
+      requestDfsReferral: (targetIp: string, path: string, username: string, password: string) =>
+        requestDfsReferral({ tcpStack: this.getTcpStack(), targetIp, path, username, password }),
       dhcpServerRole: this.getDhcpServerRole(),
       npsRole: this.getNpsRole(),
     };

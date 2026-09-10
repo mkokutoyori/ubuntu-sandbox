@@ -54,11 +54,13 @@ export interface SmbReadRequest { op: 'read'; treeId: number; path: string }
 export interface SmbWriteRequest { op: 'write'; treeId: number; path: string; content: string }
 export interface SmbListRequest { op: 'list'; treeId: number; path: string }
 export interface SmbLogoffRequest { op: 'logoff' }
+/** What a real client sends as FSCTL_DFS_GET_REFERRALS: asks this server which share a namespace path actually lives on. */
+export interface SmbDfsReferralRequest { op: 'dfs_referral'; path: string }
 
 export type SmbRequest =
   | SmbNegotiateRequest | SmbSessionSetupRequest | SmbTreeConnectRequest
   | SmbTreeDisconnectRequest | SmbReadRequest | SmbWriteRequest | SmbListRequest
-  | SmbLogoffRequest;
+  | SmbLogoffRequest | SmbDfsReferralRequest;
 
 // ── Wire PDUs (server → client) ──────────────────────────────────────────────
 
@@ -67,7 +69,8 @@ export interface SmbListEntry { name: string; isDirectory: boolean; size: number
 export interface SmbErrorResponse {
   ok: false;
   status: 'STATUS_LOGON_FAILURE' | 'STATUS_ACCESS_DENIED' | 'STATUS_BAD_NETWORK_NAME'
-    | 'STATUS_OBJECT_NAME_NOT_FOUND' | 'STATUS_NETWORK_NAME_DELETED' | 'STATUS_OBJECT_PATH_NOT_FOUND';
+    | 'STATUS_OBJECT_NAME_NOT_FOUND' | 'STATUS_NETWORK_NAME_DELETED' | 'STATUS_OBJECT_PATH_NOT_FOUND'
+    | 'STATUS_NOT_FOUND';
   message: string;
 }
 
@@ -78,4 +81,5 @@ export type SmbResponse =
   | { ok: true }
   | { ok: true; content: string }
   | { ok: true; entries: SmbListEntry[] }
+  | { ok: true; targets: string[] }
   | SmbErrorResponse;

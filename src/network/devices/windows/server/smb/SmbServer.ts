@@ -30,9 +30,32 @@ export interface SmbServerContext {
    * local auth would.
    */
   domainAuth?: (username: string, password: string) => { ok: boolean; sam: string; groups: string[] } | null;
+  /** DFS Namespaces role, when this server hosts one — answers `dfs_referral`. Absent on a server that hosts no namespace, which then refuses the referral. */
+  dfsNamespaces?: () => import('../dfs/DfsNamespace').DfsNamespaceRegistry | null;
 }
 
 interface TreeInfo { shareName: string }
+
+/**
+ * `\\domain\namespace` names a root; `\\domain\namespace\folder` names a
+ * link below it. A real referral answers with the shares the path actually
+ * lives on, most-preferred first — here, the order an admin declared.
+ */
+function referralTargetsFor(
+  namespaces: import('../dfs/DfsNamespace').DfsNamespaceRegistry, path: string,
+): string[] {
+  const trimmed = path.replace(/\\+$/, '');
+  const segments = trimmed.replace(/^\\\\/, '').split('\\').filter(Boolean);
+  if (segments.length < 2) return [];
+  const namespacePath = `\\\\${segments[0]}\\${segments[1]}`;
+  const asTarget = (t: { serverAddress: string; shareName: string }): string =>
+    `\\\\${t.serverAddress}\\${t.shareName}`;
+  if (segments.length === 2) {
+    return (namespaces.getRoot(namespacePath)?.targets ?? []).map(asTarget);
+  }
+  const folder = segments.slice(2).join('\\');
+  return (namespaces.resolve(namespacePath, folder) ?? []).map(asTarget);
+}
 
 /** Strips a `<hostname>\name` qualifier that refers to THIS server; leaves any other qualifier (a domain reference) or a bare name untouched. */
 function stripLocalQualifier(raw: string, hostname: string): string {
@@ -138,6 +161,18 @@ export class SmbServerHandler {
           if (sessionId !== null) { this.ctx.sessions.close(sessionId); sessionId = null; }
           user = null;
           reply({ ok: true });
+          break;
+        }
+
+        case 'dfs_referral': {
+          const namespaces = this.ctx.dfsNamespaces?.();
+          const asked = String(parsed.path ?? '');
+          const targets = namespaces ? referralTargetsFor(namespaces, asked) : [];
+          if (targets.length === 0) {
+            reply({ ok: false, status: 'STATUS_NOT_FOUND', message: 'The object was not found.' });
+            return;
+          }
+          reply({ ok: true, targets });
           break;
         }
 
