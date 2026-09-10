@@ -10,6 +10,7 @@
  */
 
 import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
+import { normalizeWindowsPath } from './windowsPath';
 import { HostsFile } from '../HostsFile';
 
 /**
@@ -439,46 +440,8 @@ export class WindowsFileSystem {
    * - If relative, resolve against cwd
    */
   normalizePath(path: string, cwd: string): string {
-    // Convert forward slashes
-    let p = path.replace(/\//g, '\\');
-
-    // Check if absolute (starts with drive letter)
-    const driveMatch = p.match(/^([A-Za-z]):\\/);
-    if (!driveMatch) {
-      // Check if just a drive letter like "C:"
-      const justDrive = p.match(/^([A-Za-z]):$/);
-      if (justDrive) {
-        return justDrive[1].toUpperCase() + ':\\';
-      }
-      // Relative path - prepend cwd
-      if (p.startsWith('\\')) {
-        // Root-relative on current drive
-        const cwdDrive = cwd.match(/^([A-Za-z]):/);
-        p = (cwdDrive ? cwdDrive[1].toUpperCase() : 'C') + ':' + p;
-      } else {
-        p = cwd + '\\' + p;
-      }
-    }
-
-    // Extract drive
-    const drive = p.substring(0, 2).toUpperCase();
-    let rest = p.substring(2);
-
-    // Split and resolve . and ..
-    const parts = rest.split('\\').filter(s => s !== '' && s !== '.');
-    const resolved: string[] = [];
-    for (const part of parts) {
-      if (part === '..') {
-        if (resolved.length > 0) resolved.pop();
-      } else {
-        resolved.push(part);
-      }
-    }
-
-    if (resolved.length === 0) return drive + '\\';
-    return drive + '\\' + resolved.join('\\');
+    return normalizeWindowsPath(path, cwd);
   }
-
   // ─── Resolution ──────────────────────────────────────────────────
 
   /**

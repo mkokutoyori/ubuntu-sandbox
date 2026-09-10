@@ -6,6 +6,7 @@
  */
 
 import type { IFileSystemProvider, DirEntry } from './PSProviders';
+import { normalizeWindowsPath } from '@/network/devices/windows/windowsPath';
 
 export class SimulatedFileSystem implements IFileSystemProvider {
   private readonly files = new Map<string, string>();
@@ -14,15 +15,15 @@ export class SimulatedFileSystem implements IFileSystemProvider {
 
   constructor() {
     // Pre-populate so "simulated-drive\\" looks non-empty and known paths work
-    this.dirs.add('simulated-drive');
-    this.dirs.add('simulated-drive\\subdir');
-    this.files.set('simulated-drive\\file1.txt', 'simulated content');
-    this.files.set('simulated-drive\\file2.txt', 'more content');
-    this.files.set('simulated-drive\\subdir\\nested.txt', 'nested');
-    this.files.set('config.txt', 'simulated content');
-    this.files.set('fake\\path\\item.txt', 'item');
-    this.dirs.add('fake\\path');
-    this.dirs.add('fake');
+    this.dirs.add('c:\\simulated-drive');
+    this.dirs.add('c:\\simulated-drive\\subdir');
+    this.files.set('c:\\simulated-drive\\file1.txt', 'simulated content');
+    this.files.set('c:\\simulated-drive\\file2.txt', 'more content');
+    this.files.set('c:\\simulated-drive\\subdir\\nested.txt', 'nested');
+    this.files.set('c:\\config.txt', 'simulated content');
+    this.files.set('c:\\fake\\path\\item.txt', 'item');
+    this.dirs.add('c:\\fake\\path');
+    this.dirs.add('c:\\fake');
     // Les repertoires qu'une machine Windows a toujours. `Set-Location`
     // verifie desormais l'existence du chemin ; un bouchon en forme de
     // Windows doit donc porter les dossiers d'un Windows, sans quoi il
@@ -35,14 +36,12 @@ export class SimulatedFileSystem implements IFileSystemProvider {
   }
 
   private norm(path: string): string {
-    return path.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
+    return normalizeWindowsPath(path, this.cwd).toLowerCase();
   }
 
   exists(path: string): boolean {
     const key = this.norm(path);
-    if (key === '' || key === 'c:' || key === '.') return true;
-    // Known special cases from tests
-    if (key.startsWith('simulated-drive')) return true;
+    if (key === 'c:\\') return true;
     return this.files.has(key) || this.dirs.has(key);
   }
 
@@ -70,36 +69,35 @@ export class SimulatedFileSystem implements IFileSystemProvider {
   }
 
   listDir(path: string): DirEntry[] {
-    const prefix = this.norm(path);
+    const prefix = this.norm(path).replace(/\\+$/, '') + '\\';
     const out: DirEntry[] = [];
     const seen = new Set<string>();
 
-    for (const [k] of this.files) {
-      if (!k.startsWith(prefix === '' ? '' : `${prefix}\\`)) continue;
-      const rel = k.slice(prefix ? prefix.length + 1 : 0);
-      const seg = rel.split('\\')[0];
-      if (!seg || seen.has(seg)) continue;
+    const collect = (key: string, size: number): void => {
+      if (!key.startsWith(prefix)) return;
+      const seg = key.slice(prefix.length).split('\\')[0];
+      if (!seg || seen.has(seg)) return;
       seen.add(seg);
-      out.push({ name: seg, isDirectory: false, size: this.files.get(k)?.length ?? 0, mtime: new Date() });
-    }
-    for (const d of this.dirs) {
-      if (!d.startsWith(prefix ? `${prefix}\\` : '')) continue;
-      const rel = d.slice(prefix ? prefix.length + 1 : 0);
-      const seg = rel.split('\\')[0];
-      if (!seg || seen.has(seg)) continue;
-      seen.add(seg);
-      out.push({ name: seg, isDirectory: true, size: 0, mtime: new Date() });
-    }
-    // If nothing found, return simulated entries so tests see > 0 items
-    if (out.length === 0) {
-      out.push({ name: 'simulated.txt', isDirectory: false, size: 0, mtime: new Date() });
-      out.push({ name: 'folder',        isDirectory: true,  size: 0, mtime: new Date() });
-    }
+      const isDirectory = this.dirs.has(prefix + seg);
+      out.push({ name: seg, isDirectory, size: isDirectory ? 0 : size, mtime: new Date() });
+    };
+
+    for (const [k, content] of this.files) collect(k, content.length);
+    for (const d of this.dirs) collect(d, 0);
     return out;
   }
 
   createFile(path: string): void { this.files.set(this.norm(path), ''); }
-  createDir(path: string):  void { this.dirs.add(this.norm(path)); }
+  createDir(path: string):  void {
+    const key = this.norm(path);
+    const [drive, ...segments] = key.split('\\');
+    let walked = drive;
+    for (const segment of segments) {
+      if (segment === '') continue;
+      walked = `${walked}\\${segment}`;
+      this.dirs.add(walked);
+    }
+  }
 
   remove(path: string, _recurse: boolean): void {
     const key = this.norm(path);
@@ -117,8 +115,8 @@ export class SimulatedFileSystem implements IFileSystemProvider {
     this.remove(src, false);
   }
 
-  normalizePath(path: string, _cwd: string): string {
-    return this.norm(path);
+  normalizePath(path: string, cwd: string): string {
+    return normalizeWindowsPath(path, cwd);
   }
 
   getCwd(): string { return this.cwd; }

@@ -694,7 +694,7 @@ function moveTo(ctx: CmdletContext, path: string): boolean {
       return false;
     }
     ctx.runtime.setVariable('__psLocation__', '');
-    if (fs) fs.setCwd(path);
+    if (fs) fs.setCwd(fs.normalizePath(path, fs.getCwd()));
     rememberLocation(ctx, fs ? fs.getCwd() : path);
     return true;
   }
