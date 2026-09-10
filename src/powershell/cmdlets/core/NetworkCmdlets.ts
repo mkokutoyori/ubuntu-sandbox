@@ -209,6 +209,7 @@ export class GetNetAdapterCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Gets the basic network adapter properties.';
   readonly parameters = NET_ADAPTER_FILTERS;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -248,6 +249,7 @@ export class GetNetIPAddressCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Gets the IP address configuration.';
   readonly parameters = NET_IP_FILTERS;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -312,6 +314,7 @@ export class GetNetIPInterfaceCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Gets the IP interface properties.';
   readonly parameters = NET_IP_INTERFACE_FILTERS;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -566,6 +569,7 @@ export class GetNetIPConfigurationCmdlet implements ICmdlet {
   readonly description = 'Gets IP network configuration.';
   readonly parameters = ['InterfaceAlias', 'InterfaceIndex', 'All', 'Detailed',
     'CimSession'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -702,6 +706,7 @@ export class GetNetRouteCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Gets the IP route information from the IP routing table.';
   readonly parameters = NET_ROUTE_FILTERS;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -806,6 +811,7 @@ export class GetNetNeighborCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Gets the neighbor cache entries.';
   readonly parameters = NET_NEIGHBOR_FILTERS;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex', InterfaceAlias: 'interfaceAlias', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const matched = selectedNeighbors(ctx, requireNetwork(ctx), this.displayName);
@@ -819,6 +825,7 @@ export class ClearNetNeighborCacheCmdlet implements ICmdlet {
   readonly displayName = 'Clear-NetNeighborCache';
   readonly aliases = [] as const;
   readonly parameters = ['InterfaceAlias'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ifAlias = ctx.named['interfacealias']
@@ -871,6 +878,7 @@ export class NewNetNeighborCmdlet implements ICmdlet {
   readonly displayName = 'New-NetNeighbor';
   readonly aliases = [] as const;
   readonly parameters = NET_NEIGHBOR_WRITE_PARAMS;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex', InterfaceAlias: 'interfaceAlias', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -906,6 +914,7 @@ export class RemoveNetNeighborCmdlet implements ICmdlet {
   readonly displayName = 'Remove-NetNeighbor';
   readonly aliases = [] as const;
   readonly parameters = NET_NEIGHBOR_WRITE_PARAMS;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex', InterfaceAlias: 'interfaceAlias', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -928,6 +937,7 @@ export class SetNetNeighborCmdlet implements ICmdlet {
   readonly displayName = 'Set-NetNeighbor';
   readonly aliases = [] as const;
   readonly parameters = NET_NEIGHBOR_WRITE_PARAMS;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex', InterfaceAlias: 'interfaceAlias', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1108,6 +1118,7 @@ export class NewNetIPAddressCmdlet implements ICmdlet {
   readonly parameters = ['IPAddress', 'InterfaceAlias', 'InterfaceIndex', 'DefaultGateway',
     'AddressFamily', 'Type', 'PrefixLength', 'ValidLifetime', 'PreferredLifetime',
     'SkipAsSource', 'PolicyStore', 'WhatIf', 'Confirm'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1156,6 +1167,7 @@ export class RemoveNetIPAddressCmdlet implements ICmdlet {
   readonly pipelineByPropertyName = true as const;
   readonly description = 'Removes an IP address and its configuration.';
   readonly parameters = [...NET_IP_FILTERS, 'DefaultGateway', 'PassThru', 'WhatIf', 'Confirm'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1202,6 +1214,7 @@ export class NewNetRouteCmdlet implements ICmdlet {
   readonly parameters = ['DestinationPrefix', 'InterfaceAlias', 'InterfaceIndex', 'NextHop',
     'AddressFamily', 'RouteMetric', 'Publish', 'Protocol', 'PolicyStore',
     'ValidLifetime', 'PreferredLifetime', 'WhatIf', 'Confirm'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1258,6 +1271,7 @@ export class RemoveNetRouteCmdlet implements ICmdlet {
   readonly pipelineByPropertyName = true as const;
   readonly description = 'Removes IP routes from the IP routing table.';
   readonly parameters = [...NET_ROUTE_FILTERS, 'PassThru', 'WhatIf', 'Confirm'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1299,6 +1313,7 @@ export class SetNetIPAddressCmdlet implements ICmdlet {
   readonly description = 'Modifies the configuration of an IP address.';
   readonly parameters = [...NET_IP_SET_FILTERS, 'PrefixLength', 'ValidLifetime',
     'PreferredLifetime', 'SkipAsSource', 'PassThru', 'WhatIf', 'Confirm'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1355,6 +1370,7 @@ export class SetNetRouteCmdlet implements ICmdlet {
   readonly description = 'Sets route information in the IP routing table.';
   readonly parameters = [...NET_ROUTE_SET_FILTERS, 'Publish', 'RouteMetric',
     'ValidLifetime', 'PreferredLifetime', 'PassThru', 'WhatIf', 'Confirm'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1521,6 +1537,7 @@ export class EnableNetAdapterCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Enables a network adapter.';
   readonly parameters = NET_ADAPTER_ACTION_PARAMS;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1539,6 +1556,7 @@ export class DisableNetAdapterCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Disables a network adapter.';
   readonly parameters = NET_ADAPTER_ACTION_PARAMS;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1557,6 +1575,7 @@ export class RestartNetAdapterCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Restarts a network adapter.';
   readonly parameters = NET_ADAPTER_ACTION_PARAMS;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1578,6 +1597,7 @@ export class RenameNetAdapterCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Renames a network adapter.';
   readonly parameters = [...NET_ADAPTER_ACTION_PARAMS, 'NewName'] as const;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1616,6 +1636,7 @@ export class SetNetAdapterCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Sets the basic network adapter properties.';
   readonly parameters = [...NET_ADAPTER_ACTION_PARAMS, 'MacAddress', 'NoRestart'] as const;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1660,6 +1681,7 @@ export class GetDnsClientServerAddressCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Gets the DNS server IP addresses of an interface.';
   readonly parameters = DNS_SERVER_FILTERS;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1712,6 +1734,7 @@ export class SetDnsClientServerAddressCmdlet implements ICmdlet {
   readonly displayName = 'Set-DnsClientServerAddress';
   readonly aliases = [] as const;
   readonly parameters = ['InterfaceAlias', 'ServerAddresses'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias' } as const;
   readonly description = 'Sets DNS server addresses associated with the TCP/IP properties on an interface.';
 
   execute(ctx: CmdletContext): PSValue {
@@ -2137,6 +2160,7 @@ export class GetNetConnectionProfileCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Gets a connection profile.';
   readonly parameters = NET_PROFILE_FILTERS;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const matched = matchedProfiles(ctx, requireNetwork(ctx), this.displayName,
@@ -2153,6 +2177,7 @@ export class SetNetConnectionProfileCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Changes the network category of a connection profile.';
   readonly parameters = NET_PROFILE_SET_PARAMS;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);

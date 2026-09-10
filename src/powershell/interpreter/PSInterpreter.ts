@@ -22,6 +22,7 @@ import type { PSProviders }          from '@/powershell/providers/PSProviders';
 import { registerCoreCmdlets }       from '@/powershell/cmdlets/core/index';
 import type { PSValue }              from '@/powershell/runtime/PSEnvironment';
 import type { PSScriptBlock }        from '@/powershell/parser/PSASTNode';
+import type { ParameterValueKind } from '@/powershell/cmdlets/ICmdlet';
 
 // Re-export PSRuntimeError so existing imports like
 // `import { PSRuntimeError } from '@/powershell/interpreter/PSInterpreter'`
@@ -102,6 +103,14 @@ export class PSInterpreter {
   }
 
   /** Declared parameters for a cmdlet/alias (for `-<Tab>`). */
+  getParameterValueKind(command: string, parameter: string): ParameterValueKind | null {
+    return this.runtime.getParameterValueKind(command, parameter);
+  }
+
+  getParameterValues(kind: ParameterValueKind): string[] {
+    return this.runtime.getParameterValues(kind);
+  }
+
   getCommandParameters(name: string): string[] {
     return this.runtime.getCommandParameters(name);
   }

@@ -93,6 +93,7 @@ export class ExportCsvCmdlet implements ICmdlet {
   readonly name = 'export-csv';
   readonly displayName = 'Export-Csv';
     readonly parameters = ['Path', 'LiteralPath', 'Delimiter', 'NoTypeInformation', 'Append', 'Encoding', 'Force', 'InputObject'] as const;
+    readonly parameterValues = { Path: 'path', LiteralPath: 'path' } as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -144,6 +145,7 @@ export class ImportCsvCmdlet implements ICmdlet {
   readonly name = 'import-csv';
   readonly displayName = 'Import-Csv';
   readonly parameters = ['Path', 'LiteralPath', 'Delimiter', 'Header', 'Encoding'] as const;
+  readonly parameterValues = { Path: 'path', LiteralPath: 'path' } as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {

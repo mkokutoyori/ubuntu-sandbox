@@ -79,6 +79,7 @@ export class NewSmbShareCmdlet implements ICmdlet {
   readonly name = 'new-smbshare';
   readonly aliases = [] as const;
   readonly parameters = ['Name', 'Path', 'Description', 'FullAccess', 'ChangeAccess', 'ReadAccess'] as const;
+  readonly parameterValues = { Path: 'path' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const smb = requireSmb(ctx);

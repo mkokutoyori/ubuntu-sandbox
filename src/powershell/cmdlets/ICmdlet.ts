@@ -9,6 +9,16 @@
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { CmdletContext } from './CmdletContext';
 
+/** Where a parameter's completions come from. `path` defers to the shell, which alone knows the session's current directory. */
+export type ParameterValueKind =
+  | 'path'
+  | 'interfaceAlias'
+  | 'interfaceIndex'
+  | 'addressFamily'
+  | 'serviceName'
+  | 'processName'
+  | 'localUser';
+
 export interface ICmdlet {
   /** Canonical lowercase name (e.g. 'get-content'). */
   readonly name: string;
@@ -54,6 +64,13 @@ export interface ICmdlet {
    * means only the common parameters complete.
    */
   readonly parameters?: readonly string[];
+  /**
+   * What a given parameter's VALUE is drawn from, so `-InterfaceAlias <Tab>`
+   * offers this machine's adapters instead of falling through to file names.
+   * Open/closed like `parameters`: a cmdlet opts in, and a parameter with no
+   * kind keeps the shell's default behaviour.
+   */
+  readonly parameterValues?: Readonly<Record<string, ParameterValueKind>>;
 
   readonly supportsShouldProcess?: true;
 

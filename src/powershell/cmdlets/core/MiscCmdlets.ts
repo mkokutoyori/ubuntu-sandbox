@@ -228,6 +228,7 @@ export class GetHelpCmdlet implements ICmdlet {
   readonly name = 'get-help';
   readonly description = 'Displays information about PowerShell commands and concepts.';
   readonly parameters = ['Name', 'Path', 'Category', 'Component', 'Functionality', 'Role', 'Detailed', 'Full', 'Examples', 'Parameter', 'Online', 'ShowWindow'] as const;
+  readonly parameterValues = { Path: 'path' } as const;
   readonly aliases = ['help', 'man'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -730,6 +731,7 @@ export class SetLocationCmdlet implements ICmdlet {
   readonly name = 'set-location';
   readonly displayName = 'Set-Location';
   readonly parameters = ['Path', 'LiteralPath', 'PassThru', 'StackName'] as const;
+  readonly parameterValues = { Path: 'path', LiteralPath: 'path' } as const;
   readonly aliases = ['cd', 'chdir', 'sl'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -744,6 +746,7 @@ export class PushLocationCmdlet implements ICmdlet {
   readonly name = 'push-location';
   readonly displayName = 'Push-Location';
   readonly parameters = ['Path', 'LiteralPath', 'PassThru', 'StackName'] as const;
+  readonly parameterValues = { Path: 'path', LiteralPath: 'path' } as const;
   readonly aliases = ['pushd'] as const;
 
   execute(ctx: CmdletContext): PSValue {

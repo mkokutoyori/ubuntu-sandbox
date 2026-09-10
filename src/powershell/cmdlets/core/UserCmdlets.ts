@@ -88,6 +88,7 @@ export class NewLocalUserCmdlet implements ICmdlet {
   readonly displayName = 'New-LocalUser';
   readonly aliases = [] as const;
   readonly parameters = ['Description', 'FullName', 'Name', 'Password'] as const;
+  readonly parameterValues = { Name: 'localUser' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const users = requireUsers(ctx);
@@ -113,6 +114,7 @@ export class SetLocalUserCmdlet implements ICmdlet {
   readonly displayName = 'Set-LocalUser';
   readonly aliases = [] as const;
   readonly parameters = ['Description', 'Enabled', 'FullName', 'Name', 'Password'] as const;
+  readonly parameterValues = { Name: 'localUser' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const users = requireUsers(ctx);
@@ -177,6 +179,7 @@ export class RenameLocalUserCmdlet implements ICmdlet {
   readonly displayName = 'Rename-LocalUser';
   readonly aliases = [] as const;
   readonly parameters = ['Name', 'NewName'] as const;
+  readonly parameterValues = { Name: 'localUser' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const users = requireUsers(ctx);
