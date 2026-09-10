@@ -354,7 +354,7 @@ export class TcpSocket {
 
   _fireData(data: unknown): void {
     if (this.dataHandlers.length === 0) {
-      const len = typeof data === 'string' ? data.length : 1;
+      const len = isStreamPayload(data) ? data.length : OPAQUE_PAYLOAD_SEQUENCE_UNITS;
       if (this.earlyDataBytes + len > this.windowSize) return;
       this.earlyData.push(data);
       this.earlyDataBytes += len;

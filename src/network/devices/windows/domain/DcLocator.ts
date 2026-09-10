@@ -5,7 +5,7 @@ import { IPAddress } from '@/network/core/types';
 export const DC_LOCATOR_SRV_PREFIX = '_ldap._tcp.dc._msdcs';
 
 export interface DnsRecordLookup {
-  lookupDnsRecordsSync(name: string, qtype: string, server?: string): ResourceRecord[] | null;
+  lookupDnsRecordsSync(name: string, qtype: string, server?: string): readonly ResourceRecord[] | null;
 }
 
 export interface LocatedDomainController {

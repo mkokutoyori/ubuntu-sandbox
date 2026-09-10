@@ -455,8 +455,8 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
         } as Record<string, PSValue>] as PSValue;
       }
       const serveur = ctx.named['server'] !== undefined ? psValueToString(ctx.named['server']) : undefined;
-      const rows = net.resolveDnsRecords?.(name, 'PTR', serveur) ?? [];
-      if (rows === null || rows.length === 0) { ctx.emitError(`${ptrName} : DNS name does not exist`); return null; }
+      const rows = net.resolveDnsRecords?.(name, 'PTR', serveur);
+      if (!rows || rows.length === 0) { ctx.emitError(`${ptrName} : DNS name does not exist`); return null; }
       return rows.map(r => ({
         Name: ptrName, Type: r.type, TTL: r.ttl, Section: r.section, ...r.fields,
       } as Record<string, PSValue>)) as PSValue;

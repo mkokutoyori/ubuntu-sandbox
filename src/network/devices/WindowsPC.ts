@@ -2468,12 +2468,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       .map((rr) => ({ ip: (rr.data as ARecordData).address.toString(), ttl: rr.ttl }));
   }
 
-  lookupDnsRecordsSync(name: string, qtype: string, server?: string): ResourceRecord[] | null {
+  lookupDnsRecordsSync(name: string, qtype: string, server?: string): readonly ResourceRecord[] | null {
     const wanted = rrTypeFromName(qtype);
     if (wanted === null) return null;
     for (const attempt of this.typedDnsAttempts(name, server)) {
       const response = this.queryDnsServerSync(attempt.server, attempt.qname, qtype);
-      const matching = response?.answers.filter((rr) => rr.data.type === wanted) ?? [];
+      const answers = response?.answers ?? [];
+      const matching = wanted === RRType.ANY ? answers : answers.filter((rr) => rr.data.type === wanted);
       if (matching.length > 0) {
         if (server === undefined) this.dnsCache.storePositive(response!.answers, attempt.qname);
         return matching;
