@@ -49,7 +49,7 @@ import {
   RealServerPool, type LdbMethod, type RealServer,
 } from './nat/RealServerPool';
 import { TimeZone } from '../../core/time/TimeZone';
-import { localMsAt, utcMsForLocal } from '../../core/time/TimeZoneRegistry';
+import { localMsAt, offsetMinutesAt, utcMsForLocal } from '../../core/time/TimeZoneRegistry';
 import { decryptFromTunnel, sealedLegs } from './vpn/IpsecDataPlane';
 import { ikeDatagram, ipsecHostFacts } from './vpn/FirewallIpsecHost';
 import { InterfaceTable, type InterfaceConfig } from './l3/InterfaceTable';
@@ -1219,6 +1219,14 @@ export class Firewall extends Equipment {
   getTimeZone(): TimeZone { return this.timezone; }
 
   localNow(): number { return this.localTimeOf(this.now()); }
+
+  localClock(): { localMs: number; offsetMin: number } {
+    const at = this.now();
+    return {
+      localMs: this.localTimeOf(at),
+      offsetMin: offsetMinutesAt(this.timezone, at),
+    };
+  }
   localTimeOf(at: number): number { return localMsAt(this.timezone, at); }
 
   setLocalClock(localMs: number): void {

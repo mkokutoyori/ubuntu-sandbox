@@ -330,6 +330,11 @@ export abstract class Switch extends Equipment {
   private readonly _deviceClock = new DeviceClockStore();
   getDeviceClock(): DeviceClockStore { return this._deviceClock; }
 
+  localClock(): { localMs: number; offsetMin: number } {
+    const lecture = this._deviceClock.readingAt(this.getSystemClockMs());
+    return { localMs: lecture.localMs, offsetMin: lecture.offsetMin };
+  }
+
   private macTable: Map<string, MACTableEntry> = new Map(); // key: "vlan:mac"
   private macLearningPorts = new Map<string, MacLearningAction>();
   private macLearningVlans = new Map<number, MacLearningAction>();

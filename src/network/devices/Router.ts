@@ -4676,6 +4676,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private _httpService: CiscoHttpService | null = null;
   getDeviceClock(): DeviceClockStore { return this.getManagementService().getClockStore(); }
 
+  localClock(): { localMs: number; offsetMin: number } {
+    const lecture = this.getDeviceClock().readingAt(this.getSystemClockMs());
+    return { localMs: lecture.localMs, offsetMin: lecture.offsetMin };
+  }
+
   getHttpService(): CiscoHttpService {
     if (!this._httpService) this._httpService = new CiscoHttpService();
     return this._httpService;
