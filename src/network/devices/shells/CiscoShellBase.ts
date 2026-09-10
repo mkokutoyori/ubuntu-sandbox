@@ -2874,7 +2874,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return applyPipeFilter(output, pipeFilter);
     }
 
-    if (this.isAclSubMode() && /^\d/.test(cmdPart)) {
+    if (this.numberedAceStillOnTrie() && /^\d/.test(cmdPart)) {
       const output = this.executeOnTrie('sequence ' + cmdPart);
       this.deviceRef = null;
       return applyPipeFilter(output, pipeFilter);
@@ -7064,9 +7064,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const table = this.socleTable();
     if (!table) return;
 
+    /*
+     * Les chemins migres sont indexes PAR MODE une seule fois. Ils
+     * l'etaient par ARBRE, donc autant de fois qu'il y a d'arbres — une
+     * quarantaine — et le chemin canonique de chaque spec etait
+     * recalcule a chacun. Le nombre de specs a double le jour ou chaque
+     * entree d'ACL a gagne sa forme numerotee, et le balayage de parite
+     * a depasse son delai : le cout etait quadratique, pas la
+     * declaration.
+     */
+    const parMode = new Map<string, string[]>();
+    for (const spec of table.specs()) {
+      const texte = CiscoShellBase.keywordPathOf(spec).join(' ');
+      for (const mode of spec.modes) {
+        const liste = parMode.get(mode) ?? [];
+        liste.push(texte);
+        if (spec.undo) liste.push(`no ${texte}`);
+        parMode.set(mode, liste);
+      }
+    }
+
     for (const [champ, valeur] of Object.entries(this as unknown as Record<string, unknown>)) {
       if (valeur instanceof CommandTrie) {
-        this.pruneUnTrie(table, valeur, modesDuTrie(champ));
+        this.pruneUnTrie(parMode, valeur, modesDuTrie(champ));
         continue;
       }
       /*
@@ -7080,21 +7100,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
        */
       if (valeur === null || typeof valeur !== 'object') continue;
       for (const [cle, enfant] of Object.entries(valeur as Record<string, unknown>)) {
-        if (enfant instanceof CommandTrie) this.pruneUnTrie(table, enfant, [cle]);
+        if (enfant instanceof CommandTrie) this.pruneUnTrie(parMode, enfant, [cle]);
       }
     }
   }
 
   private pruneUnTrie(
-    table: CommandTable, trie: CommandTrie, modes: readonly string[],
+    parMode: ReadonlyMap<string, string[]>, trie: CommandTrie,
+    modes: readonly string[],
   ): void {
-    const paths: string[] = [];
-    for (const spec of table.specs()) {
-      if (!modes.some(mode => spec.modes.includes(mode))) continue;
-      const texte = CiscoShellBase.keywordPathOf(spec).join(' ');
-      paths.push(texte);
-      if (spec.undo) paths.push(`no ${texte}`);
-    }
+    const paths = modes.length === 1
+      ? (parMode.get(modes[0]) ?? [])
+      : [...new Set(modes.flatMap(mode => parMode.get(mode) ?? []))];
     if (paths.length > 0) trie.prunePaths(paths);
     /*
      * Elaguer retire l'action d'un noeud EXISTANT. Une famille migree a
@@ -8328,6 +8345,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return this.mode === 'config-std-nacl'
       || this.mode === 'config-ext-nacl'
       || this.mode === 'config-ipv6-nacl';
+  }
+
+  /**
+   * Le numero de sequence NU se declare au socle, sous-mode par
+   * sous-mode. Tant qu'un sous-mode d'ACL est reste sur le trie, sa
+   * ligne numerotee est reecrite en `sequence <ligne>` ; celle d'un
+   * sous-mode migre ne l'est plus, sans quoi le socle ne la verrait
+   * jamais et `?` continuerait de taire la place du numero.
+   */
+  protected numberedAceStillOnTrie(): boolean {
+    return this.isAclSubMode()
+      && this.mode !== 'config-std-nacl' && this.mode !== 'config-ext-nacl';
   }
 
   private static readonly IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$/;

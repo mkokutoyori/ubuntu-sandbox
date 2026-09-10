@@ -1,6 +1,7 @@
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { OptionSpec } from '@/cli/OptionBag';
+import { numeroDeSequence, type AclEntryHost } from './aclSubmodeSpecs';
 import {
   ACL_PORT_OPERATORS, ICMP_TYPE_KEYWORDS, IP_PROTOCOL_KEYWORDS,
   PORT_KEYWORDS, protocolCarriesPorts,
@@ -12,10 +13,6 @@ import {
 
 const MODE = ['config-ext-nacl'] as const;
 
-export interface AclExtendedHost {
-  addEntry(action: 'permit' | 'deny', mots: readonly string[]): string;
-  removeEntry(action: 'permit' | 'deny', mots: readonly string[]): string;
-}
 
 const DESCRIPTION_PROTOCOLE: Readonly<Record<string, string>> = {
   ip: 'Any Internet Protocol', icmp: 'Internet Control Message Protocol',
@@ -320,7 +317,7 @@ function queue(places: readonly ArgumentSpec[], args: Record<string, string>): s
   return mots;
 }
 
-export function aclExtendedSpecs(ctx: () => AclExtendedHost): CommandSpec[] {
+export function aclExtendedSpecs(ctx: () => AclEntryHost): CommandSpec[] {
   const specs: CommandSpec[] = [];
 
   for (const action of ['permit', 'deny'] as const) {
@@ -347,7 +344,8 @@ export function aclExtendedSpecs(ctx: () => AclExtendedHost): CommandSpec[] {
                   ? 'Specify packets to forward' : 'Specify packets to reject',
                 modes: MODE, minPrivilege: 15,
                 options: sac,
-                run: (_s, args) => ctx().addEntry(action, mots(args)),
+                run: (_s, args) => ctx().addEntry(
+                  action, mots(args), numeroDeSequence(args)),
                 undo: (_s, args) => ctx().removeEntry(action, mots(args)),
               });
             }

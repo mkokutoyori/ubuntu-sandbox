@@ -31,9 +31,13 @@
  *     juste en cassant l'analyse serait un echange, pas une
  *     correction. `permit 10.0.0.5` rendu `permit host 10.0.0.5` en
  *     est le meilleur : il prouve que la place nue garde son sens ;
- *   - `no permit any` et `sequence 25 permit any` passaient, et le
- *     doivent : ce sont les VOISINS du chemin migre, et rien ne dit
- *     mieux qu'on ne les a pas emportes ;
+ *   - `no permit any` et la ligne NUMEROTEE passaient, et le doivent :
+ *     ce sont les VOISINS du chemin migre, et rien ne dit mieux qu'on ne
+ *     les a pas emportes. Le second s'ecrivait ici `sequence 25 permit
+ *     any` — un mot-cle que la documentation Cisco ne donne pas pour ce
+ *     sous-mode, ou le numero s'ecrit NU en tete de l'entree. Le cas est
+ *     passe a `25 permit any`, la forme qu'un vrai IOS accepte et que
+ *     `show running-config` rendait deja ;
  *   - `permit ?` annoncait deja ses trois formes et refusait deja
  *     `permit` seul. C'est APRES la source que tout se defaisait —
  *     l'arbre glouton reproposait ses deux mots-cles a chaque
@@ -202,9 +206,9 @@ for (const [plateforme, fabrique] of FABRIQUES) {
       expect(await conf(d)).not.toContain('permit any');
     });
 
-    it('`sequence <n> permit any` garde son rang — le TEMOIN du voisin', async () => {
+    it('`<n> permit any` garde son rang — le TEMOIN du voisin', async () => {
       const d = await standard(fabrique);
-      expect(await d.executeCommand('sequence 25 permit any'))
+      expect(await d.executeCommand('25 permit any'))
         .not.toMatch(/Invalid|Incomplete/);
       expect(await conf(d)).toContain('25 permit any');
     });
