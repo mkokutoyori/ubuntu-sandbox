@@ -100,9 +100,11 @@ describe('les vues NetTCPIP / NetConnection / DnsClient filtrent pour de bon', (
     expect(await ps('(Get-NetConnectionProfile).IPv4Connectivity')).toContain('Internet');
   });
 
-  it('une interface sans adresse IPv6 est Disconnected et non NoTraffic', async () => {
+  it('la connectivite IPv6 suit la meme regle que l IPv4 : lien-local seul = LocalNetwork', async () => {
     const { ps } = await lab();
-    expect(await ps('(Get-NetConnectionProfile).IPv6Connectivity')).toContain('Disconnected');
+    const v6 = await ps('(Get-NetIPAddress -InterfaceAlias "Ethernet 0" -AddressFamily IPv6).IPAddress');
+    expect(v6).toMatch(/fe80::/);
+    expect(await ps('(Get-NetConnectionProfile).IPv6Connectivity')).toContain('LocalNetwork');
   });
 
   it('la categorie DomainAuthenticated ne se POSE pas', async () => {
@@ -215,8 +217,12 @@ describe('les vues NetTCPIP / NetConnection / DnsClient filtrent pour de bon', (
 
   it('NON-REGRESSION : Get-NetIPAddress filtre toujours par interface', async () => {
     const { ps } = await lab();
-    const out = await ps('(Get-NetIPAddress -InterfaceAlias "Ethernet 0").IPAddress');
-    expect(out.trim()).toBe('10.0.0.1');
+    const rendues = (await ps('(Get-NetIPAddress -InterfaceAlias "Ethernet 0").IPAddress'))
+      .split('\n').map(l => l.trim()).filter(Boolean);
+    expect(rendues).toContain('10.0.0.1');
+    expect(rendues.every(a => a === '10.0.0.1' || a.startsWith('fe80::'))).toBe(true);
+    const autre = await ps('(Get-NetIPAddress -InterfaceAlias "Ethernet 1").IPAddress');
+    expect(autre).not.toContain('10.0.0.1');
   });
 
   it('NON-REGRESSION : Get-NetRoute filtre toujours par prefixe', async () => {

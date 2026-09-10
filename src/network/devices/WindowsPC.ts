@@ -2150,6 +2150,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const nics: NetworkAdapter[] = [];
     for (let i = 0; i < 4; i++) {
       const port = new Port(`eth${i}`, 'ethernet');
+      port.onLinkChange((state) => {
+        if (state === 'up' && !port.isIPv6Enabled()) this.enableIPv6(port.getName());
+      });
       this.addPort(port);
       nics.push(new NetworkAdapter({
         name: `eth${i}`,

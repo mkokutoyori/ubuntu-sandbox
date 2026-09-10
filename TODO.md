@@ -2685,23 +2685,6 @@ rendre.
 de la sortie — ce qui profiterait a toute cmdlet, pas seulement a
 celle-ci.
 
-### [nettcpip] une carte Windows n'a pas d'adresse IPv6 de lien-local
-
-**Mesure** : `Get-NetIPAddress -AddressFamily IPv6` sur un `WindowsPC` ne
-rend que `::1`. Une vraie machine Windows porte une adresse `fe80::/64`
-par carte, autoconfiguree au demarrage — c'est ce que `ipconfig` affiche
-en premier sous chaque adaptateur. Le moteur historique la FABRIQUAIT
-depuis l'adresse MAC au moment de l'affichage (`buildAllIPEntries`), donc
-elle n'existait nulle part : aucune trame ne pouvait la porter, et
-`New-NetIPAddress`/`Get-NetRoute` ne la voyaient pas. Ce moteur est
-supprime, donc la fiction disparait avec lui.
-
-**Non corrige ici** : la poser vraiment veut dire faire autoconfigurer
-IPv6 a `WindowsPC` comme `LinuxMachine` le fait (`enableIPv6`), ce qui
-change ce que rendent `ipconfig`, `route print`, `Get-NetIPInterface` et
-le plan de donnees IPv6 de chaque hote Windows du depot. C'est un lot a
-soi, avec sa propre mesure de ce qu'une vraie machine affiche.
-
 ### [nettcpip] `InterfaceMetric` est la constante 25
 
 **Mesure** : `Get-NetIPInterface` rend `InterfaceMetric : 25` pour chaque

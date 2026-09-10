@@ -25,7 +25,7 @@ import { RemoteAccessVpnClient } from '@/network/ipsec/RemoteAccessVpnClient';
 import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY } from '@/network/devices/windows/PSRegistryProvider';
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
 import {
-  LOOPBACK_IFINDEX, toDisplayName, toPortName, formatLinkSpeedMbps,
+  LOOPBACK_IFINDEX, toDisplayName, toPortName, formatLinkSpeedMbps, withWindowsZone,
 } from '@/network/devices/windows/WindowsInterfaceNaming';
 import { NO_MATCHING_INTERFACE } from '@/network/devices/windows/netIpAddress';
 import { type DnsCacheRow, dnsCacheRowsOf } from '@/network/devices/windows/dnsClientCache';
@@ -1846,6 +1846,11 @@ class WindowsNetworkAdapter implements INetworkProvider {
         getIPAddress: () => unknown;
         getSubnetMask?: () => { toCIDR?: () => number } | null;
         getIPv4Origin?: () => 'manual' | 'dhcp' | 'link-local';
+        getIPv6Addresses?: () => Array<{
+          address: { toString: () => string };
+          prefixLength: number;
+          origin: string;
+        }>;
       }>;
       getInterfaceLeaseLifetimes?: (ifName: string) => { validSeconds: number; preferredSeconds: number } | null;
     };
@@ -1872,6 +1877,20 @@ class WindowsNetworkAdapter implements INetworkProvider {
           addressFamily: ip.includes(':') ? 'IPv6' : 'IPv4',
           validLifetimeSeconds: lease?.validSeconds,
           preferredLifetimeSeconds: lease?.preferredSeconds,
+        });
+      }
+      const ifIndex = this.pc.adapterIfIndexOf(p.name);
+      for (const entry of p.getIPv6Addresses?.() ?? []) {
+        const rendered = withWindowsZone(entry.address, ifIndex);
+        const wellKnown = entry.origin === 'link-local';
+        out.push({
+          ipAddress: rendered,
+          prefixLength: entry.prefixLength,
+          ifAlias: toDisplayName(p.name),
+          ifIndex,
+          prefixOrigin: wellKnown ? 'WellKnown' : 'Manual',
+          suffixOrigin: wellKnown ? 'Link' : 'Manual',
+          addressFamily: 'IPv6',
         });
       }
     });
