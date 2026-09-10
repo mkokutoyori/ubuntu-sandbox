@@ -11,7 +11,7 @@
 
 import type { WinCommandContext } from './WinCommandExecutor';
 import { IPAddress, SubnetMask } from '../../core/types';
-import { WINDOWS_LOOPBACK_ROUTES, LOOPBACK_IPV4 } from './WindowsLoopbackRoutes';
+import { WINDOWS_LOOPBACK_ROUTES, WINDOWS_LOOPBACK_ROUTES_V6, LOOPBACK_IPV4 } from './WindowsLoopbackRoutes';
 import { LOOPBACK_IFINDEX } from './WindowsInterfaceNaming';
 
 const ROUTE_HELP = `
@@ -81,7 +81,13 @@ export function cmdRoute(ctx: WinCommandContext, args: string[]): string {
   }
 
   if (args.length === 0 || args[0].toLowerCase() === 'print') {
-    return showRoutePrint(ctx);
+    for (const later of args.slice(1)) {
+      if (later.startsWith('-')) flags.add(later.toLowerCase());
+    }
+    return showRoutePrint(ctx, {
+      ipv4: !flags.has('-6'),
+      ipv6: !flags.has('-4'),
+    });
   }
 
   const command = args[0].toLowerCase();
@@ -198,7 +204,10 @@ function routeDelete(ctx: WinCommandContext, args: string[]): string {
   }
 }
 
-export function showRoutePrint(ctx: WinCommandContext): string {
+export function showRoutePrint(
+  ctx: WinCommandContext,
+  families: { ipv4: boolean; ipv6: boolean } = { ipv4: true, ipv6: true },
+): string {
   const table = ctx.getRoutingTable();
   const lines = [
     '===========================================================================',
@@ -214,10 +223,11 @@ export function showRoutePrint(ctx: WinCommandContext): string {
   lines.push(`  ${String(LOOPBACK_IFINDEX).padStart(2)}...........................Software Loopback Interface 1`);
   lines.push('===========================================================================');
   lines.push('');
-  lines.push('IPv4 Route Table');
-  lines.push('===========================================================================');
-  lines.push('Active Routes:');
-  lines.push('Network Destination        Netmask          Gateway         Interface  Metric');
+  if (families.ipv4) {
+    lines.push('IPv4 Route Table');
+    lines.push('===========================================================================');
+    lines.push('Active Routes:');
+    lines.push('Network Destination        Netmask          Gateway         Interface  Metric');
 
   // Les routes de bouclage sont permanentes et viennent en tete, comme
   // sur une vraie machine : `Active Routes:` sortait vide sur un poste
@@ -236,8 +246,31 @@ export function showRoutePrint(ctx: WinCommandContext): string {
     lines.push(`  ${dest} ${mask} ${gw} ${iface} ${route.metric}`);
   }
 
-  lines.push('===========================================================================');
-  lines.push('Persistent Routes:');
-  lines.push('  None');
+    lines.push('===========================================================================');
+    lines.push('Persistent Routes:');
+    lines.push('  None');
+  }
+
+  if (families.ipv6) {
+    if (families.ipv4) lines.push('');
+    lines.push('IPv6 Route Table');
+    lines.push('===========================================================================');
+    lines.push('Active Routes:');
+    lines.push(' If Metric Network Destination      Gateway');
+    for (const lo of WINDOWS_LOOPBACK_ROUTES_V6) {
+      lines.push(`  ${String(LOOPBACK_IFINDEX).padStart(2)} ${String(lo.metric).padStart(6)} `
+        + `${`${lo.prefix}/${lo.prefixLength}`.padEnd(24)} On-link`);
+    }
+    for (const route of ctx.getIPv6RoutingTable()) {
+      const card = ctx.adapterIdentityOf(route.iface);
+      const destination = `${route.prefix.toString()}/${route.prefixLength}`;
+      const gateway = route.nextHop ? route.nextHop.toString() : 'On-link';
+      lines.push(`  ${String(card.ifIndex).padStart(2)} ${String(route.metric).padStart(6)} `
+        + `${destination.padEnd(24)} ${gateway}`);
+    }
+    lines.push('===========================================================================');
+    lines.push('Persistent Routes:');
+    lines.push('  None');
+  }
   return lines.join('\n');
 }

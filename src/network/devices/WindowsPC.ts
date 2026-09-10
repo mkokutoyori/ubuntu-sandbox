@@ -3230,6 +3230,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         this.addStaticRoute(network, mask, nextHop, metric),
       removeRoute: (dest: IPAddress, mask: SubnetMask) => this.removeRoute(dest, mask),
       getRoutingTable: () => this.getRoutingTable() as RouteEntry[],
+      getIPv6RoutingTable: () => this.getIPv6RoutingTable(),
 
       isDHCPConfigured: (ifName: string) => this.isDHCPConfigured(ifName),
       getDHCPState: (ifName: string) => this.dhcpClient.getState(ifName),

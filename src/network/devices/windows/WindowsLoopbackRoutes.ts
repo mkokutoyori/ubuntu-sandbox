@@ -35,3 +35,13 @@ export const WINDOWS_LOOPBACK_ROUTES: readonly WindowsLoopbackRoute[] = [
   { network: '127.0.0.1', mask: '255.255.255.255', prefixLength: 32, metric: 331 },
   { network: '127.255.255.255', mask: '255.255.255.255', prefixLength: 32, metric: 331 },
 ];
+
+export interface WindowsLoopbackRouteV6 {
+  readonly prefix: string;
+  readonly prefixLength: number;
+  readonly metric: number;
+}
+
+export const WINDOWS_LOOPBACK_ROUTES_V6: readonly WindowsLoopbackRouteV6[] = [
+  { prefix: '::1', prefixLength: 128, metric: 331 },
+];

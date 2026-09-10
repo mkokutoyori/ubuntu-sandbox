@@ -41,6 +41,14 @@ export interface TracerouteHop {
   probes: TracerouteProbe[];
 }
 
+export interface IPv6RouteEntry {
+  prefix: { toString(): string };
+  prefixLength: number;
+  nextHop: { toString(): string } | null;
+  iface: string;
+  metric: number;
+}
+
 /** Route entry from EndHost.getRoutingTable */
 export interface RouteEntry {
   network: IPAddress;
@@ -116,6 +124,7 @@ export interface WinCommandContext {
   addStaticRoute(network: IPAddress, mask: SubnetMask, nextHop: IPAddress, metric: number): boolean;
   removeRoute(dest: IPAddress, mask: SubnetMask): boolean;
   getRoutingTable(): RouteEntry[];
+  getIPv6RoutingTable(): IPv6RouteEntry[];
 
   // DHCP
   isDHCPConfigured(ifName: string): boolean;

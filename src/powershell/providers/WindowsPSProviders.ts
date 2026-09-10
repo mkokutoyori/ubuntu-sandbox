@@ -56,7 +56,7 @@ function mapV4Origin(origin: 'manual' | 'dhcp' | 'link-local'): { prefixOrigin: 
 }
 import { JobProvider } from '@/powershell/providers/JobProvider';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
-import { WINDOWS_LOOPBACK_ROUTES, LOOPBACK_IFALIAS } from '@/network/devices/windows/WindowsLoopbackRoutes';
+import { WINDOWS_LOOPBACK_ROUTES, WINDOWS_LOOPBACK_ROUTES_V6, LOOPBACK_IFALIAS } from '@/network/devices/windows/WindowsLoopbackRoutes';
 import type {
   PSProviders,
   IFileSystemProvider, IRegistryProvider, IServiceProvider,
@@ -2045,6 +2045,31 @@ class WindowsNetworkAdapter implements INetworkProvider {
         destinationPrefix: `${lo.network}/${lo.prefixLength}`,
         ifAlias: LOOPBACK_IFALIAS, nextHop: UNSPECIFIED_NEXT_HOP.IPv4, routeMetric: lo.metric,
       };
+      seen.add(netRouteKey(row));
+      out.push(row);
+    }
+    for (const lo of WINDOWS_LOOPBACK_ROUTES_V6) {
+      const row: RouteInfo = {
+        destinationPrefix: `${lo.prefix}/${lo.prefixLength}`,
+        ifAlias: LOOPBACK_IFALIAS, nextHop: UNSPECIFIED_NEXT_HOP.IPv6, routeMetric: lo.metric,
+      };
+      seen.add(netRouteKey(row));
+      out.push(row);
+    }
+    const v6 = (this.pc as unknown as {
+      getIPv6RoutingTable: () => Array<{
+        prefix: { toString(): string }; prefixLength: number;
+        nextHop: { toString(): string } | null; iface: string; metric: number;
+      }>;
+    }).getIPv6RoutingTable();
+    for (const r of v6) {
+      const row: RouteInfo = {
+        destinationPrefix: `${r.prefix.toString()}/${r.prefixLength}`,
+        ifAlias: toDisplayName(r.iface),
+        nextHop: r.nextHop ? r.nextHop.toString() : UNSPECIFIED_NEXT_HOP.IPv6,
+        routeMetric: r.metric,
+      };
+      if (seen.has(netRouteKey(row))) continue;
       seen.add(netRouteKey(row));
       out.push(row);
     }
