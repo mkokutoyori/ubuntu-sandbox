@@ -2664,6 +2664,7 @@ export class PSRuntime {
       getFunctionSource: (name) => self.functionSources.get(name.toLowerCase()) ?? null,
       listFunctions: () => [...self.functions.values()].map(f => f.declaredName),
       listHistory: () => self.listHistory(),
+      getCommandParameters: (name) => self.getCommandParameters(name),
     };
 
     return {

@@ -72,6 +72,8 @@ export interface IRuntimeRef {
   listFunctions(): readonly string[];
   /** The session's command history, newest last, for Get-History. */
   listHistory(): readonly string[];
+  /** A cmdlet's declared parameter names — the same list `-<Tab>` offers. */
+  getCommandParameters(name: string): string[];
 }
 
 export interface CmdletContext {

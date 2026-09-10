@@ -258,6 +258,7 @@ export class GetHelpCmdlet implements ICmdlet {
       online:     ctx.named['online'] === true,
       showWindow: ctx.named['showwindow'] === true,
       parameter:  ctx.named['parameter'] !== undefined ? psValueToString(ctx.named['parameter']) : undefined,
+      declaredParameters: ctx.runtime.getCommandParameters(name),
     });
     if (rendered !== null) {
       ctx.emit(rendered);

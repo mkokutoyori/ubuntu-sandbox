@@ -7,6 +7,8 @@ export interface HelpRenderOptions {
   parameter?: string;
   online?: boolean;
   showWindow?: boolean;
+  /** The cmdlet's declared parameter names, so help and `-<Tab>` answer from one list. */
+  declaredParameters?: readonly string[];
 }
 
 const TECHNET = 'https://go.microsoft.com/fwlink/?LinkID=107116';
@@ -42,7 +44,12 @@ export function renderCmdletHelp(topic: string, opts?: HelpRenderOptions): strin
     return `Opening online help for ${topic}... (simulated: no browser in simulator)`;
   }
   if (opts?.parameter) {
-    return `PARAMETER: -${opts.parameter}\n\nName: -${opts.parameter}\n    ${entry.parameters ?? '(no parameter info)'}`;
+    const asked = opts.parameter.replace(/^-/, '');
+    const match = (opts.declaredParameters ?? []).find(p => p.toLowerCase() === asked.toLowerCase());
+    if (!match) {
+      return `Get-Help : Cannot find parameter matching the name '${asked}' for the cmdlet ${topic}.`;
+    }
+    return `PARAMETER: -${match}\n\nName: -${match}\n    ${topic} accepts -${match}.`;
   }
 
   const lines: string[] = [
@@ -62,8 +69,9 @@ export function renderCmdletHelp(topic: string, opts?: HelpRenderOptions): strin
   if ((opts?.examples || opts?.detailed || opts?.full) && entry.examples) {
     lines.push('', 'EXAMPLES', `    ${entry.examples}`);
   }
-  if ((opts?.detailed || opts?.full) && entry.parameters) {
-    lines.push('', 'PARAMETERS', `    ${entry.parameters}`);
+  const declaredParameters = opts?.declaredParameters ?? [];
+  if ((opts?.detailed || opts?.full) && declaredParameters.length > 0) {
+    lines.push('', 'PARAMETERS', ...declaredParameters.map(p => `    -${p}`));
   }
   if (opts?.full) {
     lines.push('', 'INPUTS', `    None. You cannot pipe objects to ${topic}.`);
