@@ -132,131 +132,32 @@ IP — donc aucune clause MAC ne la regarde, la reference de
 sachant matcher que l'IPv4 fait aussi. Le seul changement qui rendrait
 cela faux serait de la classer non-IP pour la soumettre aux clauses MAC.
 
-### [vacl] `action` : seuls `forward` et `drop` existent sur ces plateformes
-Entree gardee comme garde-fou, elle ne demande rien. La reference de
-commandes du 3750-X/3560-X en 12.2(55)SE — la version modelisee — donne
-a `action` exactement deux mots-cles, `drop` et `forward` :
-« Neither `capture` nor `log` are among the accepted keywords ».
-`capture`, `log`, `redirect` et `forward vlan <id>` existent sur
-d'AUTRES plateformes (6500, IR8340 sous IOS-XE) et les accepter ici
-ferait diverger le simulateur du materiel qu'il declare etre. Ils sont
-donc refuses, et doivent le rester tant que `CiscoPlatform.ts` decrit
-ces deux chassis.
+### [vacl] `action` : `capture` et `log` refuses, et c'est VERSION-DEPENDANT
+Entree gardee comme garde-fou. La reference de commandes du
+3750-X/3560-X en 12.2(55)SE — l'une des deux versions modelisees — donne
+a `action` exactement deux mots-cles, `drop` et `forward` : « Neither
+`capture` nor `log` are among the accepted keywords ».
 
-### [vacl] `vlan filter <nom> interface <type> <n>` n'existe pas
-Seule la forme `vlan-list` est modelisee. La forme par interface est
-reelle sur IOS et n'a pas de liaison ici.
+**Nuance a ne pas aplatir** : `action drop log` EXISTE sur des versions
+Catalyst PLUS RECENTES (2960-XR sous 15.2(6)E le documente, pour la
+journalisation des paquets rejetes). Le refus est donc lie a la VERSION
+modelisee (`CiscoPlatform.ts` : C2960 en 15.0(2)SE11, C3560 en
+12.2(55)SE12) et non a une absence universelle. Si un jour ce fichier
+declare une version plus recente, `drop log` devra suivre — et
+`capture`, lui, reste un mecanisme de 6500/7600 qui n'a pas de port de
+capture ici.
+### [vacl] `vlan filter ... interface` : ABSENT du Catalyst, garde-fou
+Entree gardee comme garde-fou : elle ne demande rien. J'avais d'abord
+ecrit que cette forme « n'etait pas modelisee », en la tirant d'une page
+d'IR8340 sous IOS-XE 17. Les guides Catalyst ne connaissent qu'une
+forme :
 
+  « vlan filter mapname vlan-list list »
+    (Cisco, Catalyst 2960-XR, Configuring VLAN Access Control Lists)
 
-### [vrf] `address-family ipv4` sous `vrf definition` est refuse
-La forme MULTIPROTOCOLE d'IOS exige `address-family ipv4` pour activer
-une famille dans la VRF ; ici elle repond `% Invalid input detected`, et
-la configuration rendue n'ecrit donc que `vrf definition <nom>` + `rd` +
-`route-target`.
-**Mesure** : `vrf definition X` puis `address-family ipv4` est refuse sur
-le routeur comme sur le commutateur.
-**Report** : ce simulateur n'a AUCUNE notion de famille d'adresses par
-VRF — `_vrfs` ne porte pas la distinction et rien ne la lirait. Accepter
-la commande rangerait un critere que personne n'evalue, ce que
-`CLAUDE.md` interdit ; l'implanter veut dire porter la famille jusqu'au
-plan de donnees, ce qui est un chantier de routage et non de CLI.
-
-### [vrf] un Catalyst cree une VRF et ne peut pas la configurer
-`vrf definition <nom>` est accepte, retenu et desormais rendu sur le
-commutateur, mais `rd` et `route-target` y sont refuses — le sous-mode
-`config-vrf` n'est cable que sur le routeur (`registerVrfSubmodeOn` est
-une methode de `CiscoIOSShell`).
-**Mesure** : la meme sequence est acceptee de bout en bout sur le
-routeur et s'arrete au `rd` sur le commutateur.
-**Report** : meme forme que les deux notes voisines — un sous-systeme du
-routeur que le commutateur n'a pas. Le brancher demande de decider ce
-qu'une VRF fait sur un commutateur de niveau 3 (ses SVI, sa table), ce
-qui est une question de plan de donnees.
-
-### [track] un Catalyst ne suit qu'une INTERFACE, pas une route ni un IP SLA
-Le commutateur porte son propre `TrackObjectRegistry`, dont le type est
-`'line-protocol' | 'ip-routing'` : les formes `track <n> ip route …`,
-`track <n> ip sla …`, `track <n> list …` et `stub-object` y sont donc
-refusees, alors qu'un 3560 les connait et que le ROUTEUR les honore
-toutes par `TrackService`.
-**Mesure** : la meme frappe est acceptee sur le routeur et refusee sur le
-commutateur ; depuis le lot qui unifie la grammaire, le refus porte au
-moins le bon message au lieu de « commande incomplete ».
-**Report** : ce n'est pas un defaut d'analyse — la grammaire est
-desormais commune — mais un MAGASIN absent. Faire lire `TrackService` au
-commutateur touche ses consommateurs (FHRP, routes suivies) et non la
-CLI, et c'est le meme chantier que celui de la note ci-dessous sur
-`ip prefix-list` : un sous-systeme du routeur que le commutateur n'a pas.
-
-### [policy] `ip prefix-list` et `route-map` sont refuses sur un Catalyst
-Les deux familles sont declarees « router-only » (`CiscoPolicyCommands`
-n'est branche que sur le routeur), donc un Catalyst repond
-`% Invalid input detected` a `ip prefix-list PL permit 10.0.0.0/8` comme
-a `route-map RM permit 10`.
-**Mesure** : accepte et rendu sur le routeur, refuse sur le commutateur,
-pour la meme frappe.
-**Report** : un 3560 les connait, un 2960 non — la reponse depend du
-PROFIL de chassis, et ce depot en porte trois (`c2900`, `c2960`,
-`c3560`). Trancher demande de decider ce que ce simulateur modelise de
-cette difference, ce qui est une autre question que celle de savoir si
-la commande juge ses arguments. La brancher sans ce choix ferait
-apprendre a un 2960 une commande que la vraie machine refuse.
-
-### [snmp] le Catalyst RANGE sa configuration SNMP, mais rien n'ecoute sur 161
-`snmp-server community|host|contact|location|chassis-id` sont desormais
-retenus, servis par `show snmp`, `show snmp community`, `show snmp host`
-et rendus dans la configuration — mais `CiscoSwitch` n'instancie aucun
-`SnmpAgent`, la ou `CiscoRouter` en porte un et lui aiguille l'UDP 161.
-Un vrai `snmpget` vers un Catalyst n'obtient donc rien.
-**Mesure** : `show snmp` y rend `0 SNMP packets input` quoi qu'il arrive,
-ce qui est VRAI (aucun paquet ne peut arriver) et non un compteur mort.
-**Report** : `SnmpHost` demande `getSysDescr`, `getSysObjectId` et
-`sendUdpDatagram` en plus de la surface que `makeSwitchNtpHost` fournit
-deja ; le brancher est un travail de plan de donnees (aiguillage du 161
-dans `deliverLocalUdp`, enregistrement dans `agents`), distinct de la
-CLI que ce lot refermait.
-
----
-
-### [udld] `show udld neighbors` est refuse faute d'une mise en forme attestee
-**Constat.** C'est une vue reelle d'IOS. Elle etait lue comme un NOM DE
-PORT, donc ne trouvait aucun port et rendait la CHAINE VIDE — le silence,
-qui se lit comme une panne du terminal. Elle rend maintenant le caret, ce
-qui est honnete sans etre juste.
-
-**Pourquoi ce n'est pas ferme.** La matiere existe (`UdldAgent.getNeighborsFor`
-rend le nom, l'identifiant, le port distant et l'echo), c'est la MISE EN
-FORME qui manque : `ntc-templates`, le jeu de reference dont ce depot tire
-ses autres largeurs de colonnes, ne porte AUCUN gabarit `udld` — verifie
-dans son index, pas suppose — et aucune transcription n'est atteignable
-depuis ce reseau. Inventer des largeurs serait le decor que ce depot
-refuse.
-
-### [cli] Vingt-cinq commandes acceptent encore un mot qu'elles ne lisent pas
-**Constat.** Un balayage des deux plateformes — pour chaque mot que `?`
-propose, comparer `<commande>` et `<commande> zorglub` — a trouve 11
-chemins sur le routeur et 20 sur le commutateur ou les deux sorties sont
-IDENTIQUES, c'est-a-dire ou le mot de trop est jete en silence. Le lot
-UDLD en a ferme trois. Les autres, par famille :
-
-- `aaa local … zorglub` et `aaa group … zorglub` prennent encore le mot de
-  trop (`aaa new-model` et `aaa session-id` sont fermes).
-- `ntp source zorglub` est accepte ET RENDU tel quel dans la configuration,
-  alors que cette commande prend une INTERFACE ; `ntp source` nu est
-  accepte aussi. `radius server` nu — qui exige un nom — de meme.
-- `spanning-tree {backbonefast|uplinkfast} zorglub`, `spanning-tree mst
-  zorglub`.
-- `tunnel path-mtu-discovery zorglub`.
-- `tunnel path-mtu-discovery zorglub` est accepte et rendu comme la forme
-  nue : le mot de trop est jete. Cette commande n'est enregistree NULLE
-  PART — un glouton `tunnel` la sert, et `CiscoShowCommands` la rend
-  depuis `pending.tunnelPathMtuDiscovery` — donc la fermer demande
-  d'abord de lui donner une declaration. (Les familles `switchport voice
-  vlan` et `spanning-tree uplinkfast` sont fermees.)
-
-**Ce que le balayage ne voit pas.** Il ne descend qu'a un mot-cle de
-profondeur et ignore les commandes a texte libre (`description`,
-`banner`, `remark`), ou un mot de trop est legitime.
+La forme par interface appartient aux routeurs 7600/6500, ou une carte
+d'acces peut se poser sur une interface WAN. L'ajouter ici donnerait au
+commutateur une commande que son materiel n'a pas.
 
 ## Postes Linux
 

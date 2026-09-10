@@ -196,8 +196,22 @@ dit pas ce qu'il a écarté laisse croire qu'il a tout vu :
 - **VRP n'a pas de `traffic-filter vlan <n> inbound`**, son équivalent de
   VACL. La commande est refusée (elle n'existe pas), donc honnête ;
   consignée dans `TODO.md`.
-- **`vlan filter <nom> interface <type> <n>`**, la seconde forme de la
-  liaison, n'est pas modélisée — seule `vlan-list` l'est.
+- **`vlan filter … interface` n'existe pas sur un Catalyst**, et je
+  l'avais d'abord listée comme « seconde forme non modélisée » — encore
+  d'après la page IR8340. Les guides Catalyst ne connaissent que
+  `vlan filter mapname vlan-list list` ; la forme par interface
+  appartient aux 7600/6500, où une carte d'accès peut se poser sur une
+  interface WAN.
+
+**Ces trois requalifications ont une seule cause**, et elle vaut d'être
+retenue : j'ai cadré le lot VACL sur une page de documentation
+commode — un IR8340 sous IOS-XE 17 — alors que ce shell déclare un
+C2960 sous 15.0(2)SE11 et un C3560 sous 12.2(55)SE12. Les détails de
+syntaxe d'une plateforme ne valent pas pour une autre, et trois des
+quatre « manques » que ce rapport listait n'en étaient pas. Les faits
+vérifiés sur une source Catalyst tiennent, eux : plage de séquence
+0-65535, `match {ip | mac} address {name | number} [name | number]`
+— donc plusieurs ACL par clause — et `action {drop | forward}`.
 
 ---
 
