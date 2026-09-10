@@ -89,6 +89,7 @@ import { aclHeadSpecs, type AclHeadHost, type AclKind } from './cisco/aclHeadSpe
 import { macAclSpecs, type MacAclHost } from './cisco/macAclSpecs';
 import { aclStandardSpecs } from './cisco/aclStandardSpecs';
 import { aclExtendedSpecs } from './cisco/aclExtendedSpecs';
+import { aclSubmodeSpecs, avecNumeroDeSequence } from './cisco/aclSubmodeSpecs';
 import { renderMacAce, type MacAce } from '../switch/MacAccessList';
 import { CISCO_ERRORS, resolveCiscoInterfaceName } from './cli-utils';
 import { estTypeSansNumero, typesInterfaceEnMotsCles } from './cisco/CiscoConfigCommands';
@@ -2414,8 +2415,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...super.socleSpecs(),
       ...trackEntrySpecs(() => this.trackEntryHost(), ['config']),
       ...aclHeadSpecs(() => this.aclHeadHost()),
-      ...aclStandardSpecs(() => standardAclHost(this.namedAclEditContext())),
-      ...aclExtendedSpecs(() => extendedAclHost(this.namedAclEditContext())),
+      ...avecNumeroDeSequence(
+        aclStandardSpecs(() => standardAclHost(this.namedAclEditContext()))),
+      ...avecNumeroDeSequence(
+        aclExtendedSpecs(() => extendedAclHost(this.namedAclEditContext()))),
+      ...aclSubmodeSpecs('config-std-nacl',
+        () => standardAclHost(this.namedAclEditContext())),
+      ...aclSubmodeSpecs('config-ext-nacl',
+        () => extendedAclHost(this.namedAclEditContext())),
       ...macAclSpecs(() => this.macAclHost()),
       ...switchPortPhysicalSpecs(() => this.portPhysiqueHost()),
       ...stpInterfaceSpecs(() => this.stpInterfaceHost()),

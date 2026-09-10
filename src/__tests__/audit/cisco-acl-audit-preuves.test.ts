@@ -344,8 +344,8 @@ describe('ACL Cisco — non-régression des constats d\'audit', () => {
     const out = await cfg(r, [
       'enable', 'configure terminal',
       'ip access-list extended D',
-      'sequence 10 permit ip any any',
-      'sequence 10 deny ip any any',
+      '10 permit ip any any',
+      '10 deny ip any any',
     ]);
     expect(out[4]).toContain('Duplicate sequence number');
     expect(r.getAccessLists().find(a => a.name === 'D')?.entries.length).toBe(1);
