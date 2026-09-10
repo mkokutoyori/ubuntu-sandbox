@@ -17,7 +17,7 @@
 
 import { PSRuntime, PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import { CmdletRegistry }            from '@/powershell/runtime/PSCmdletRegistry';
-import { NULL_PROVIDERS }            from '@/powershell/providers/NullProviders';
+import { nullProviders }            from '@/powershell/providers/NullProviders';
 import type { PSProviders }          from '@/powershell/providers/PSProviders';
 import { registerCoreCmdlets }       from '@/powershell/cmdlets/core/index';
 import type { PSValue }              from '@/powershell/runtime/PSEnvironment';
@@ -57,7 +57,7 @@ export interface PSInterpreterOptions {
 export class PSInterpreter {
   private readonly runtime: PSRuntime;
 
-  constructor(providers: PSProviders = NULL_PROVIDERS, opts: PSInterpreterOptions = {}) {
+  constructor(providers: PSProviders = nullProviders(), opts: PSInterpreterOptions = {}) {
     const registry = opts.edition === 'client' ? getClientRegistry() : getSharedRegistry();
     this.runtime = new PSRuntime(registry, providers);
     // Register a stub script for dot-sourcing tests

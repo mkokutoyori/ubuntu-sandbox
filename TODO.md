@@ -2774,19 +2774,6 @@ touche tous les sous-contextes de `netsh` ; c'est un lot a soi. En
 attendant, le seul profil connu est declare comme tel plutot que
 d'accepter n'importe quel nom en pretendant l'avoir lu.
 
-### [powershell] `NULL_PROVIDERS` est un SINGLETON de module
-
-**Mesure** : `NullProviders.ts` construit `filesystem: new SimulatedFileSystem()`
-une fois pour tout le module. Deux `new PSInterpreter()` sans providers
-partagent donc UN systeme de fichiers : ce que l'un ecrit, l'autre le
-lit, et un `Set-Location` fait dans un test deplace le repertoire courant
-du suivant. Le defaut existait avant que `$PWD` en derive ; il est
-simplement devenu observable par une variable de plus.
-
-**Pourquoi ce n'est pas ferme ici** : `NULL_PROVIDERS` est passe par
-DEFAUT dans une trentaine de signatures ; en faire une fabrique
-(`nullProviders()`) est mecanique mais large, et se mesure a part.
-
 ### [powershell] la mise en page de `netsh winhttp` n'est pas verifiee sur transcription
 
 **Mesure** : deux ecritures de `netsh winhttp show proxy` coexistaient —

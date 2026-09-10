@@ -28,7 +28,7 @@ import {
 import { makeTimeSpan } from '@/powershell/cmdlets/core/DateTimeCmdlets';
 import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
-import { NULL_PROVIDERS } from '@/powershell/providers/NullProviders';
+import { nullProviders } from '@/powershell/providers/NullProviders';
 import { PSRuntimeError } from './PSRuntimeError';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { NativeCommandNeedsAsync, nativeArgv, isNativeProgramName } from '@/powershell/nativeAsync';
@@ -470,7 +470,7 @@ export class PSRuntime {
 
   constructor(
     registry: CmdletRegistry,
-    providers: PSProviders = NULL_PROVIDERS,
+    providers: PSProviders = nullProviders(),
     globalEnv?: PSEnvironment,
   ) {
     this.registry  = registry;
