@@ -578,6 +578,43 @@ part entiere : la grammaire d'`aaa` a quatre niveaux, une liste nommee
 libre au milieu, et une suite de methodes de longueur variable dont
 `group` consomme le mot suivant.
 
+### [rman] une connexion RMAN distante ne traverse RIEN
+`ConnectCommand.execute(_args, ...)` IGNORE ses arguments.
+`CONNECT TARGET sys/oracle@10.10.20.20:1521/BKPCAT` repond
+« connected to target database: ORCL » — la base LOCALE, sous un nom
+qu'on n'a pas demande.
+
+**Mesure**, en laboratoire d'entreprise
+(`src/__tests__/debug/rman/rman-infra-entreprise.debug.test.ts`) : deux
+LAN separes par un FortiGate.
+
+    ping sans politique      100% packet loss
+    ping politique ACCEPT      0% packet loss
+    ping politique DENY      100% packet loss     <- TEMOIN
+    RMAN @10.10.20.20 ouvert  connected to target database: ORCL
+    RMAN @10.10.20.20 FERME   connected to target database: ORCL
+    sessions du pare-feu      4 avant, 4 apres
+
+Le temoin rend le constat opposable : ce pare-feu bloque REELLEMENT. Que
+les deux connexions RMAN rendent la meme reponse ne s'explique donc pas
+par un pare-feu inerte, mais par une connexion qui n'existe pas — un
+pare-feu ne bloque pas ce qui ne traverse rien. C'est le §4 de
+`CLAUDE.md` (« anything sent between two machines MUST cross the
+simulated network as real frames »), qui est la regle cardinale du
+depot.
+
+Meme forme du cote des donnees : `BACKUP … FORMAT '/mnt/backup_nfs/%U'`
+annonce « Finished backup » et ecrit dans le VFS LOCAL, a un chemin dont
+le nom suggere un montage distant ; le serveur de sauvegarde repond
+`No such file or directory`.
+
+**Report** : c'est le lot R7 de `docs/ASSESSMENT-RMAN.md`, et la mesure
+ci-dessus l'a fait REMONTER dans l'ordre — ce n'est pas un manque de
+fidelite mais un resultat FAUX, qu'un operateur testant sa segmentation
+prendrait pour argent comptant. Le sous-systeme TNS existe
+(`oracle/listener/`, `oracle/network/`) : il faut l'atteindre, pas le
+reecrire.
+
 ### [oracle] le FORMAT d'un `TIMESTAMP WITH TIME ZONE` n'est pas source
 Le lot T10 rend `SYSTIMESTAMP` et `CURRENT_TIMESTAMP` sous la forme
 `2026-09-10 14:50:30.507 +02:00`. Un vrai Oracle rend cette valeur selon
