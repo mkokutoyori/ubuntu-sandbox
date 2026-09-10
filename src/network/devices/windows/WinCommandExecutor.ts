@@ -6,7 +6,7 @@
  */
 
 import { Port } from '../../hardware/Port';
-import { IPAddress, MACAddress, SubnetMask } from '../../core/types';
+import { IPAddress, MACAddress, SubnetMask, IPv6Address } from '../../core/types';
 import type { ARPEntry } from '../EndHost';
 import type { NetFirewallRuleEntry } from './netFirewallRule';
 import type { WindowsAdapterIdentity } from './netAdapter';
@@ -123,6 +123,10 @@ export interface WinCommandContext {
   clearDefaultGateway(): void;
   addStaticRoute(network: IPAddress, mask: SubnetMask, nextHop: IPAddress, metric: number): boolean;
   removeRoute(dest: IPAddress, mask: SubnetMask): boolean;
+  addIPv6StaticRoute(prefix: IPv6Address, prefixLength: number,
+    nextHop: IPv6Address | null, iface: string, metric?: number): void;
+  removeIPv6StaticRoute(prefix: IPv6Address, prefixLength: number,
+    nextHop?: IPv6Address | null): boolean;
   getRoutingTable(): RouteEntry[];
   getIPv6RoutingTable(): IPv6RouteEntry[];
 
