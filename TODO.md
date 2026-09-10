@@ -12,6 +12,20 @@ Format : `[famille] intitulé` puis constat / mesure / raison du report.
 
 ## Commutateur Huawei (VRP)
 
+### [acl] pas de `traffic-filter vlan <n> inbound`, l'equivalent VRP du VACL
+Un commutateur VRP filtre un VLAN entier par
+`traffic-filter vlan <n> inbound acl <n>` ; ici la commande n'existe pas.
+**Mesure** : `traffic-filter vlan 10 inbound acl 3000` rend
+`Error: Unrecognized command found at '^' position.` — refus honnete,
+mais un laboratoire VACL est infaisable sur VRP.
+**Ce qui manque** : `Switch.vaclPermits` est ecrit pour la carte d'acces
+de Cisco (`vlanAccessMaps` + `vlanFilterBindings`). VRP lie une ACL
+directement au VLAN, sans carte intermediaire, donc il faut une seconde
+liaison `vlan -> acl` et son point d'appel — et surtout NE PAS reutiliser
+`evaluateACLByName` telle quelle : la politique VRP pour un paquet non
+apparie est `permit`, ce que `evaluateForDataPlane` porte deja.
+
+
 ### [acl] VRP n'a pas d'ACL IPv6, et `acl ipv6` est refusee
 `acl ipv6 name <nom>` rangeait la liste dans le magasin **IPv4** avec le
 type `extended`, sous une invite annoncant `acl-adv-<nom>` — donc une
@@ -91,6 +105,39 @@ elles.
 ---
 
 ## Commutateur Cisco
+
+### [vacl] `match mac address` et `match ipv6 address` sont refuses
+Ce sont de vraies clauses d'une carte d'acces VLAN sur IOS ; seule
+`match ip address` existe ici. Le refus est explicite, pas silencieux.
+**Mesure** : `vlan access-map M 10` puis `match mac address MACL` et
+`match ipv6 address V6L` rendent tous deux
+`% Invalid input detected at '^' marker.`
+**Ce qui manque, et la moitie MAC vient de se reduire** : `0f9e7ebaa` a
+apporte `switch/MacAccessList.ts` et `evaluateMacAcl`, donc la brique
+existe desormais — mais elle est liee au PORT (`macAclPermits(portName,
+frame)`) et non au VLAN, et `vaclPermits` sort par sa premiere ligne des
+que la trame n'est pas `ETHERTYPE_IPV4`, c'est-a-dire precisement pour
+les trames qu'une liste MAC regarde. C'est desormais un cablage borne et
+non une brique absente. La reference que ce meme commit a etablie decide
+la semantique et il ne faut pas l'inverser : une liste IP ne filtre QUE
+l'IP, une liste MAC QUE le non-IP ; il reste a verifier chez le
+constructeur ce que devient une trame non-IP dans une carte ne portant
+que des clauses IP (attendu : transmise) avant d'ecrire quoi que ce soit.
+Cote IPv6 en revanche rien n'a bouge : les listes vivent sur le routeur,
+le commutateur n'ayant pas de vue `ipv6 access-list`.
+
+### [vacl] `action redirect` est refuse
+IOS ecrit `action {drop [log] | forward [capture | vlan <id>] |
+redirect <interface>}`. `drop log` et `forward capture` sont desormais
+gardes et rendus — leur action PRINCIPALE est honoree et seul l'effet
+secondaire manque. `redirect` est refuse parce que son action principale
+ne peut pas l'etre : rediriger vers un port n'est pas modelise, et le
+rabattre sur `forward` serait plus faux que le refus.
+
+### [vacl] `vlan filter <nom> interface <type> <n>` n'existe pas
+Seule la forme `vlan-list` est modelisee. La forme par interface est
+reelle sur IOS et n'a pas de liaison ici.
+
 
 ### [vrf] `address-family ipv4` sous `vrf definition` est refuse
 La forme MULTIPROTOCOLE d'IOS exige `address-family ipv4` pour activer

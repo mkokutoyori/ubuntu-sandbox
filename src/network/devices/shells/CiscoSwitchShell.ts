@@ -47,6 +47,7 @@ import {
 } from './cisco/ciscoCounterTables';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
+import { vlanAccessMapActionText } from '../Switch';
 import { parseVlanId, VLAN_MIN, VLAN_MAX, type VlanSet } from '../switch/VlanSet';
 import {
   STORM_CONTROL_TYPES, parseStormControl, stormControlPercent,
@@ -981,8 +982,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // ── VACL + DAI (switch-only) ──
     this.configTrie.registerGreedy('vlan access-map', 'Configure a VLAN access map', (args) => {
       if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
-      const seq = args[1] !== undefined ? parseInt(args[1], 10) : 10;
-      if (isNaN(seq)) return '% Invalid sequence number';
+      if (args.length > 2) return CISCO_ERRORS.INVALID_INPUT;
+      const seq = this.parseAccessMapSequence(args[1]);
+      if (seq === null) return '% Invalid sequence number';
       this.selectedAccessMap = { name: args[0], seq };
       this.d().setVlanAccessMapRule(args[0], seq);
       this.mode = 'config-access-map';
@@ -990,7 +992,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
     this.configTrie.registerGreedy('no vlan access-map', 'Remove a VLAN access map', (args) => {
       if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
-      this.d().removeVlanAccessMap(args[0]);
+      if (args.length > 2) return CISCO_ERRORS.INVALID_INPUT;
+      if (args[1] === undefined) { this.d().removeVlanAccessMap(args[0]); return ''; }
+      const seq = this.parseAccessMapSequence(args[1]);
+      if (seq === null) return '% Invalid sequence number';
+      this.d().removeVlanAccessMapSequence(args[0], seq);
       return '';
     });
     this.configTrie.registerGreedy('vlan filter', 'Apply a VLAN access map to VLANs', (args) => {
@@ -1012,15 +1018,23 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.configAccessMapTrie.registerGreedy('match ip address', 'Match an IP ACL', (args) => {
       if (!this.selectedAccessMap || !args[0]) return CISCO_ERRORS.INCOMPLETE;
       const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
-      rule.matchIpAcl = args[0];
+      rule.matchIpAcls = [...(rule.matchIpAcls ?? []), ...args];
       return '';
     });
     this.configAccessMapTrie.registerGreedy('action', 'Set the access-map action', (args) => {
       if (!this.selectedAccessMap) return CISCO_ERRORS.INCOMPLETE;
       const a = args[0]?.toLowerCase();
       if (a !== 'forward' && a !== 'drop') return '% Invalid action';
+      const qualifier = args[1]?.toLowerCase();
+      if (args.length > 2) return CISCO_ERRORS.INVALID_INPUT;
+      if (qualifier !== undefined) {
+        if (a === 'forward' && qualifier !== 'capture') return CISCO_ERRORS.INVALID_INPUT;
+        if (a === 'drop' && qualifier !== 'log') return CISCO_ERRORS.INVALID_INPUT;
+      }
       const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
       rule.action = a;
+      rule.capture = a === 'forward' && qualifier === 'capture';
+      rule.logDrop = a === 'drop' && qualifier === 'log';
       return '';
     });
     this.registerDaiCommands({
@@ -4077,6 +4091,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     out.push(...sw.getPortMirror().asRunningConfigLines());
     out.push(...runningConfigACLFrom(sw.getVaclEngine().getAccessListsInternal()));
     out.push(...sw.vlanAccessMapRunningConfigLines());
+    out.push(...sw.vlanFilterRunningConfigLines());
 
     return out;
   }
@@ -5267,6 +5282,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
    * puis les clauses et l'action. `ip  address:` porte deux blancs, la
    * colonne laissée à `mac`.
    */
+  private parseAccessMapSequence(token: string | undefined): number | null {
+    if (token === undefined) return 10;
+    if (!/^\d+$/.test(token)) return null;
+    const value = parseInt(token, 10);
+    return value >= 0 && value <= 65535 ? value : null;
+  }
+
   private showVlanAccessMap(nom?: string): string {
     const noms = this.d().getVlanAccessMapNames()
       .filter(n => !nom || n === nom);
@@ -5276,9 +5298,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       for (const regle of this.d().getVlanAccessMap(carte) ?? []) {
         lines.push(`Vlan access-map "${carte}"  ${regle.sequence}`);
         lines.push('  Match clauses:');
-        if (regle.matchIpAcl) lines.push(`    ip  address: ${regle.matchIpAcl}`);
+        if (regle.matchIpAcls?.length) {
+          lines.push(`    ip  address: ${regle.matchIpAcls.join(' ')}`);
+        }
         lines.push('  Action:');
-        lines.push(`    ${regle.action}`);
+        lines.push(`    ${vlanAccessMapActionText(regle)}`);
       }
     }
     return lines.join('\n');
