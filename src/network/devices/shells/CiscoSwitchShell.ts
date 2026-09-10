@@ -81,7 +81,7 @@ import { etherChannelLimitFamily } from '@/cli/commands/aggregation/etherChannel
 import {
   parseCiscoAce, renderCiscoAce, formatCiscoAclEntry,
   showAccessListsFrom, isValidIosAclNumber,
-  buildNamedStdACLCommands, buildNamedExtACLCommands, standardAclHost,
+  buildNamedStdACLCommands, buildNamedExtACLCommands, standardAclHost, extendedAclHost,
   type NamedAclEditContext,
   runningConfigACLFrom, runningConfigInterfaceACLFrom, IOS_REMARK_MAX,
 } from './cisco/CiscoAclCommands';
@@ -89,6 +89,7 @@ import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import { aclHeadSpecs, type AclHeadHost, type AclKind } from './cisco/aclHeadSpecs';
 import { macAclSpecs, type MacAclHost } from './cisco/macAclSpecs';
 import { aclStandardSpecs } from './cisco/aclStandardSpecs';
+import { aclExtendedSpecs } from './cisco/aclExtendedSpecs';
 import { renderMacAce, type MacAce } from '../switch/MacAccessList';
 import { CISCO_ERRORS, resolveCiscoInterfaceName } from './cli-utils';
 import { estTypeSansNumero, typesInterfaceEnMotsCles } from './cisco/CiscoConfigCommands';
@@ -697,6 +698,34 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   constructor() {
     super();
     this.initializeCommands();
+    // IOS ne nomme pas ses arguments, il les TYPE. Cette table etait
+    // posee sur le seul shell du routeur, si bien qu'un Catalyst
+    // repondait `WORD  Set a banner` la ou IOS liste `motd`, `login`,
+    // `exec`, `incoming` — la commande marchait et ne se laissait pas
+    // decouvrir. Les tries qu'un commutateur n'a pas (processus de
+    // routage, route-map, time-range, track) recoivent des arbres
+    // jetables : decrire un argument sur un arbre que rien ne consulte
+    // ne coute rien et evite d'avoir DEUX tables a tenir.
+    const inutilise = () => new CommandTrie();
+    // Les suites d'un noeud glouton sont DECLAREES, plus derivees du
+    // texte source de son gestionnaire. Les arbres sont releves sur
+    // l'objet lui-meme : les nommer a la main en aurait oublie, et un
+    // arbre oublie est un mode entier prive de ses suites.
+    appliquerContinuations(this.tousLesArbres(), SOCLE, COMMUTATEUR_SEUL);
+    describeCiscoArguments({
+      config: this.configTrie,
+      configIf: this.configIfTrie,
+      configLine: this.configLineTrie,
+      configDhcp: this.configDhcpTrie,
+      privileged: this.privilegedTrie,
+      configStdNacl: this.configStdNaclTrie,
+      configExtNacl: this.configExtNaclTrie,
+      configRouter: inutilise(),
+      configRouterOspf: inutilise(),
+      configRouteMap: inutilise(),
+      configTrack: inutilise(),
+      configRouterOnly: inutilise(),
+    });
     describeCiscoSwitchArguments({
       config: this.configTrie,
       configIf: this.configIfTrie,
@@ -2394,6 +2423,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...trackEntrySpecs(() => this.trackEntryHost(), ['config']),
       ...aclHeadSpecs(() => this.aclHeadHost()),
       ...aclStandardSpecs(() => standardAclHost(this.namedAclEditContext())),
+      ...aclExtendedSpecs(() => extendedAclHost(this.namedAclEditContext())),
       ...macAclSpecs(() => this.macAclHost()),
       ...switchPortPhysicalSpecs(() => this.portPhysiqueHost()),
       ...stpInterfaceSpecs(() => this.stpInterfaceHost()),
@@ -5369,35 +5399,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       this.configRadiusServerTrie, this.configTacacsServerTrie,
       this.configAaaGroupTrie, identityCtx,
     );
-
-    // IOS ne nomme pas ses arguments, il les TYPE. Cette table etait
-    // posee sur le seul shell du routeur, si bien qu'un Catalyst
-    // repondait `WORD  Set a banner` la ou IOS liste `motd`, `login`,
-    // `exec`, `incoming` — la commande marchait et ne se laissait pas
-    // decouvrir. Les tries qu'un commutateur n'a pas (processus de
-    // routage, route-map, time-range, track) recoivent des arbres
-    // jetables : decrire un argument sur un arbre que rien ne consulte
-    // ne coute rien et evite d'avoir DEUX tables a tenir.
-    const inutilise = () => new CommandTrie();
-    // Les suites d'un noeud glouton sont DECLAREES, plus derivees du
-    // texte source de son gestionnaire. Les arbres sont releves sur
-    // l'objet lui-meme : les nommer a la main en aurait oublie, et un
-    // arbre oublie est un mode entier prive de ses suites.
-    appliquerContinuations(this.tousLesArbres(), SOCLE, COMMUTATEUR_SEUL);
-    describeCiscoArguments({
-      config: this.configTrie,
-      configIf: this.configIfTrie,
-      configLine: this.configLineTrie,
-      configDhcp: this.configDhcpTrie,
-      privileged: this.privilegedTrie,
-      configStdNacl: this.configStdNaclTrie,
-      configExtNacl: this.configExtNaclTrie,
-      configRouter: inutilise(),
-      configRouterOspf: inutilise(),
-      configRouteMap: inutilise(),
-      configTrack: inutilise(),
-      configRouterOnly: inutilise(),
-    });
 
     // ── Show commands ──────────────────────────────────────────────
     for (const t of [this.userTrie, this.privilegedTrie]) {

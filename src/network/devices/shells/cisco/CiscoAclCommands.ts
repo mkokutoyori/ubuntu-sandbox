@@ -12,7 +12,7 @@
 import {
   parseIpProtocol, parseAclPortSpec, isDottedQuad, isAclPortOperator,
   protocolCarriesPorts,
-  PORT_KEYWORDS,
+  PORT_KEYWORDS, ICMP_TYPE_KEYWORDS,
 } from '../../router/acl/AclSyntax';
 import { parseIpv6Ace, ICMPV6_MESSAGE_KEYWORDS } from '../../router/acl/Ipv6AclSyntax';
 import { ipv6EntriesInOrder } from '../../router/Ipv6AclEngine';
@@ -27,6 +27,7 @@ export { isValidIosAclNumber } from './aclHeadSpecs';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import type { ACLEngine } from '../../router/ACLEngine';
 import type { AclStandardHost } from './aclStandardSpecs';
+import type { AclExtendedHost } from './aclExtendedSpecs';
 
 // ─── Extended Shell Context for ACL modes ────────────────────────────
 
@@ -103,15 +104,6 @@ function parseAddressWildcard(args: string[], offset: number): AdresseAnalysee |
 function parsePortSpec(args: string[], offset: number): { spec: import('../../router/ACLEngine').PortSpec; consumed: number } | null {
   return parseAclPortSpec(args, offset);
 }
-
-const ICMP_TYPE_KEYWORDS = new Set([
-  'echo', 'echo-reply', 'unreachable', 'time-exceeded', 'redirect',
-  'router-advertisement', 'router-solicitation', 'source-quench',
-  'mask-request', 'mask-reply', 'information-request', 'information-reply',
-  'timestamp-reply', 'timestamp-request', 'traceroute', 'administratively-prohibited',
-  'host-unreachable', 'net-unreachable', 'port-unreachable', 'protocol-unreachable',
-  'packet-too-big', 'parameter-problem', 'ttl-exceeded',
-]);
 
 /**
  * Le TYPE (et le CODE) numeriques vers le mot-cle qui les nomme.
@@ -540,6 +532,38 @@ export function standardAclHost(ctx: NamedAclEditContext): AclStandardHost {
   };
 }
 
+/** Le meme port, pour une liste ETENDUE. */
+export function extendedAclHost(ctx: NamedAclEditContext): AclExtendedHost {
+  const rendu = (action: 'permit' | 'deny', mots: readonly string[]): string | null => {
+    const lu = parseCiscoAce([...mots], 'extended');
+    return 'error' in lu ? null : formatACLEntry('extended', asEntry(action, lu.opts));
+  };
+
+  return {
+    addEntry: (action, mots) => {
+      const nom = ctx.getSelectedACL();
+      if (!nom) return '% No ACL selected';
+      const lu = parseCiscoAce([...mots], 'extended');
+      if ('error' in lu) return lu.error;
+      ctx.engine().addNamedAccessListEntry(nom, 'extended', action, lu.opts);
+      return '';
+    },
+    removeEntry: (action, mots) => {
+      const nom = ctx.getSelectedACL();
+      if (!nom) return '% No ACL selected';
+      const cible = rendu(action, mots);
+      if (cible === null) return '% Incomplete command.';
+      const acl = ctx.engine().getAccessListsInternal().find(a => a.name === nom);
+      const rang = acl
+        ? acl.entries.findIndex(e => formatACLEntry('extended', e) === cible)
+        : -1;
+      if (rang === -1) return '% Access list entry does not exist.';
+      acl!.entries.splice(rang, 1);
+      return '';
+    },
+  };
+}
+
 // ─── Named Standard ACL Config Mode ──────────────────────────────────
 
 export function buildNamedStdACLCommands(trie: CommandTrie, ctx: NamedAclEditContext): void {
@@ -557,7 +581,7 @@ export function buildNamedStdACLCommands(trie: CommandTrie, ctx: NamedAclEditCon
     const parsed = parseStd(args);
     return 'error' in parsed ? null : formatACLEntry('standard', asEntry(action, parsed.opts));
   };
-  trie.registerGreedy('permit', 'Specify packets to permit', (args) => handle('permit', args));
+  trie.registerGreedy('permit', 'Specify packets to forward', (args) => handle('permit', args));
   trie.registerGreedy('deny', 'Specify packets to reject', (args) => handle('deny', args));
   registerSequenceEdits(trie, ctx, 'standard', handle, renderStd);
   trie.registerGreedy('remark', 'ACL remark', (args) => {
@@ -639,7 +663,7 @@ export function buildNamedExtACLCommands(trie: CommandTrie, ctx: NamedAclEditCon
     return 'error' in parsed ? null : formatACLEntry('extended', asEntry(action, parsed.opts));
   };
 
-  trie.registerGreedy('permit', 'Specify packets to permit', (args) => addEntry('permit', args));
+  trie.registerGreedy('permit', 'Specify packets to forward', (args) => addEntry('permit', args));
   trie.registerGreedy('deny', 'Specify packets to reject', (args) => addEntry('deny', args));
   trie.registerGreedy('evaluate', 'Evaluate reflexive ACL', (args) => {
     const aclName = ctx.getSelectedACL();

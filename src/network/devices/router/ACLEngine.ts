@@ -17,9 +17,14 @@ export const DSCP_KEYWORD_TO_VALUE: Record<string, number> = {
   af31: 26, af32: 28, af33: 30, af41: 34, af42: 36, af43: 38, ef: 46,
 };
 
-const PRECEDENCE_KEYWORD_TO_VALUE: Record<string, number> = {
+export const PRECEDENCE_KEYWORD_TO_VALUE: Record<string, number> = {
   routine: 0, priority: 1, immediate: 2, flash: 3,
   'flash-override': 4, critical: 5, internet: 6, network: 7,
+};
+
+export const TOS_KEYWORD_TO_VALUE: Record<string, number> = {
+  normal: 0, 'min-monetary-cost': 1, 'max-reliability': 2,
+  'max-throughput': 4, 'min-delay': 8,
 };
 
 /**
@@ -59,7 +64,7 @@ const ACL_ICMP_KEYWORDS: Record<string, { type: string; code?: number }> = {
 
 // ─── Drapeaux TCP ───────────────────────────────────────────────
 
-const TCP_FLAG_NAMES = ['ack', 'fin', 'psh', 'rst', 'syn', 'urg'] as const;
+export const TCP_FLAG_NAMES = ['ack', 'fin', 'psh', 'rst', 'syn', 'urg'] as const;
 type TcpFlagName = typeof TCP_FLAG_NAMES[number];
 
 /**
@@ -851,7 +856,9 @@ export class ACLEngine {
     }
 
     if (entry.tos !== undefined) {
-      const want = /^\d+$/.test(entry.tos) ? parseInt(entry.tos, 10) : undefined;
+      const want = /^\d+$/.test(entry.tos)
+        ? parseInt(entry.tos, 10)
+        : TOS_KEYWORD_TO_VALUE[entry.tos.toLowerCase()];
       if (!ACLEngine.tosFieldMatches(ipPkt, want, 0, 0xff)) return false;
     }
 

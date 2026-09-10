@@ -4,7 +4,7 @@ import {
 import type { CliSession } from './CliSession';
 import type { ReachabilityOptions } from './CommandTable';
 import type { CommandSpec, CommandTable, TreeNode } from './CommandTable';
-import { consumeOptionBag } from './OptionBag';
+import { consumeOptionBag, placeCedeAuSac } from './OptionBag';
 
 export type ParseResult =
   | { readonly status: 'empty' }
@@ -139,6 +139,7 @@ export function parseCommand(
     // filtre, le glouton d'un sous-mode avalait le mot d'un autre mode
     // et rendait « incomplete » une frappe que celui-ci refuse.
     const argument = table.argumentAt(node, session);
+    const porteur = table.specAt(node, session);
     if (argument?.argument?.type === 'REST') {
       if (outsideEveryAnnouncedRange(token, argument.argument.alternatives ?? [])) {
         return { status: 'invalid', token, position: index, refusePar: 'argument' };
@@ -147,7 +148,8 @@ export function parseCommand(
       node = argument;
       break;
     }
-    if (argument?.argument && argumentAccepts(argument.argument, token)) {
+    if (argument?.argument && argumentAccepts(argument.argument, token)
+      && !placeCedeAuSac(argument.argument, token, porteur?.options)) {
       // La valeur RANGEE est la canonique : le gestionnaire recevrait
       // sinon `warn` la ou il attend `warnings`, et une abreviation
       // acceptee qui ne fait rien serait pire qu'un refus.
@@ -165,7 +167,6 @@ export function parseCommand(
      * `label` etait aussi un enfant — changerait de sens selon la
      * declaration.
      */
-    const porteur = table.specAt(node, session);
     if (porteur?.options) {
       const verdict = consumeOptionBag(porteur.options, tokens, index);
       if (verdict.kind === 'incomplete') {

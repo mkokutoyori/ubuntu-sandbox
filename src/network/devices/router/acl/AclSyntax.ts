@@ -91,12 +91,22 @@ export function parseAclPort(token: string | undefined): number | null {
     : null;
 }
 
-export type AclPortOperator = 'eq' | 'neq' | 'gt' | 'lt' | 'range';
+export const ACL_PORT_OPERATORS = ['eq', 'neq', 'gt', 'lt', 'range'] as const;
+
+export type AclPortOperator = typeof ACL_PORT_OPERATORS[number];
 
 export function isAclPortOperator(token: string): token is AclPortOperator {
-  return token === 'eq' || token === 'neq' || token === 'gt'
-    || token === 'lt' || token === 'range';
+  return (ACL_PORT_OPERATORS as readonly string[]).includes(token);
 }
+
+export const ICMP_TYPE_KEYWORDS: ReadonlySet<string> = new Set([
+  'echo', 'echo-reply', 'unreachable', 'time-exceeded', 'redirect',
+  'router-advertisement', 'router-solicitation', 'source-quench',
+  'mask-request', 'mask-reply', 'information-request', 'information-reply',
+  'timestamp-reply', 'timestamp-request', 'traceroute', 'administratively-prohibited',
+  'host-unreachable', 'net-unreachable', 'port-unreachable', 'protocol-unreachable',
+  'packet-too-big', 'parameter-problem', 'ttl-exceeded',
+]);
 
 export interface AclPortSpec {
   op: AclPortOperator;

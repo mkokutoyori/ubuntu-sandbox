@@ -2996,22 +2996,38 @@ Catalyst affiche pour ce sous-mode.
 serait pas un progres — la premiere se voit, la seconde se croit. A
 fermer des que la reference est atteignable.
 
-### [acl] `permit` et `deny` restent sur le trie dans une liste ETENDUE
-Le sous-mode STANDARD est declare place par place sur le socle. Celui
-d'une liste ETENDUE ne l'est pas : ses deux verbes sont encore des
-noeuds GLOUTONS, et leur aide se derive de leurs propres continuations.
-**Mesure**, liste ETENDUE, sur les deux plateformes :
-`permit host ?` rend `any` et `<cr>` — alors que `permit host` seul est
-refuse, et qu'`any` n'est pas une suite de `host`. `permit any ?` rend
-`host` et `<cr>`, la ou une liste etendue attend une DESTINATION.
-**Ce qui marche deja et qu'il ne faut pas perdre** : `permit tcp ?`
-descend correctement jusqu'aux formes de source, et `permit tcp any any
-eq ?` jusqu'aux ports nommes. Cette profondeur vient de noeuds du trie
-qu'une place `REST` ferait disparaitre.
-**Report** : declarer la grammaire d'un ACE etendu — protocole, source,
-destination, ports, options — est un lot en soi, et il doit rendre
-cette profondeur-la sans la perdre. Le lot standard a montre la voie :
-les places typees, la queue laissee au juge existant.
+### [tests] `cron-n-ecrit-pas-dans-history` compte DEUX lignes CRON dans un grand balayage
+`grep -c CRON /var/log/syslog` rend `2` la ou le cas attend `1`, apres
+un seul `tick(1)`.
+**Mesure** : tombe une fois dans un balayage de 1645 fichiers ; passe
+seul sur la branche comme sur la base, et n'etait pas tombe dans un
+balayage de 1027 fichiers joue sur la meme branche une heure plus tot.
+La deuxieme ligne est une execution de plus, donc un ORDONNANCEUR qui
+survit a un autre fichier : `setupGlobalState` remet a zero le bus et
+le planificateur par defaut, mais un service cron installe sur un
+equipement d'un fichier precedent n'appartient pas a ce lot-la.
+**Report** : c'est la meme famille que `wan-vpn-tests` 15.09 ci-dessous
+— trouver le fichier avec lequel il se couple est un lot en soi. Un cas
+qui tombe une fois sur deux ne dit pas ce qu'il mesure, et il ne bloque
+rien tant qu'il est nomme ici.
+
+### [tests] `openssl-enc` « a WRONG password fails » tombe une fois sur 256
+`openssl enc -d` avec un mauvais mot de passe rend un clair ALEATOIRE,
+et le test exige `bad decrypt` — c'est-a-dire un remplissage PKCS#7
+invalide. Le dernier octet d'un bloc aleatoire vaut `0x01` une fois sur
+256, et le remplissage est alors VALIDE : la commande reussit et rend
+du bruit, exactement comme un vrai `openssl`. Le cas n'a donc pas une
+reponse, il en a deux.
+**Mesure** : tombe une fois dans un balayage de 1646 fichiers ; passe
+seul sur la branche comme sur la base, et passe dans le meme balayage
+au tour suivant. Le sel est tire au hasard a chaque chiffrement, ce qui
+suffit a expliquer l'intermittence sans rien invoquer d'autre.
+**Report** : le rendre deterministe demande de fixer le sel — `-S`
+existe sur un vrai `openssl` et n'est pas encore lu ici — ou de changer
+ce que le cas exige (« ne rend pas le clair d'origine », vrai a tout
+coup). Les deux sont un lot sur `openssl enc`, pas sur la CLI Cisco ou
+il a ete vu.
+
 ### [tests] `wan-vpn-tests` 15.09 tombe par intermittence dans un grand balayage
 `15.09 — Huawei BR3 routing should remain intact with VPN config` a
 rendu `expected '…' to contain '0% packet loss'` une fois sur deux
