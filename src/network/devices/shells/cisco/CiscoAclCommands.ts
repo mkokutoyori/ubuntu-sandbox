@@ -12,7 +12,10 @@
 import {
   parseIpProtocol, parseAclPortSpec, isDottedQuad, isAclPortOperator,
   protocolCarriesPorts,
+  PORT_KEYWORDS,
 } from '../../router/acl/AclSyntax';
+import { parseIpv6Ace, ICMPV6_MESSAGE_KEYWORDS } from '../../router/acl/Ipv6AclSyntax';
+import { ipv6EntriesInOrder } from '../../router/Ipv6AclEngine';
 import { IPAddress, SubnetMask } from '../../../core/types';
 import { isValidIPv4 } from '../../../core/ip';
 import type { Router } from '../../Router';
@@ -927,6 +930,59 @@ export function aclShowSpecs(getRouter: () => Router): CommandSpec[] {
   );
 }
 
+export function formatIPv6AclEntry(entry: import('../../Router').IPv6ACLEntry): string {
+  if (entry.remark !== undefined) return `remark ${entry.remark}`;
+  if (entry.evaluate !== undefined) return `evaluate ${entry.evaluate}`;
+
+  const operand = (prefix?: string, length?: number): string => {
+    if (!prefix || prefix === 'any') return 'any';
+    if (length === undefined || length === 128) return `host ${prefix}`;
+    return `${prefix}/${length}`;
+  };
+  const portText = (spec?: import('../../router/acl/AclSyntax').AclPortSpec): string => {
+    if (!spec) return '';
+    const name = (port: number) => aclPortKeyword(port, entry.protocol);
+    return spec.op === 'range'
+      ? ` range ${name(spec.port)} ${name(spec.endPort ?? spec.port)}`
+      : ` ${spec.op} ${name(spec.port)}`;
+  };
+
+  let line = `${entry.action} ${entry.protocol ?? 'ipv6'}`;
+  line += ` ${operand(entry.srcPrefix, entry.srcPrefixLength)}${portText(entry.srcPortSpec)}`;
+  line += ` ${operand(entry.dstPrefix, entry.dstPrefixLength)}${portText(entry.dstPortSpec)}`;
+  if (entry.icmpType !== undefined) {
+    line += ` ${icmpv6MessageKeyword(entry.icmpType, entry.icmpCode)}`;
+  }
+  if (entry.tcpEstablished) line += ' established';
+  for (const flag of entry.tcpFlags ?? []) line += ` ${flag}`;
+  if (entry.dscp !== undefined) line += ` dscp ${entry.dscp}`;
+  if (entry.flowLabel !== undefined) line += ` flow-label ${entry.flowLabel}`;
+  if (entry.fragments) line += ' fragments';
+  if (entry.routing) line += ' routing';
+  if (entry.undeterminedTransport) line += ' undetermined-transport';
+  if (entry.reflect !== undefined) line += ` reflect ${entry.reflect}`;
+  if (entry.timeRange !== undefined) line += ` time-range ${entry.timeRange}`;
+  if (entry.log) line += ' log';
+  if (entry.logInput) line += ' log-input';
+  return line;
+}
+
+function aclPortKeyword(port: number, protocol?: string): string {
+  if (protocol !== 'tcp' && protocol !== 'udp') return String(port);
+  for (const [name, value] of Object.entries(PORT_KEYWORDS)) {
+    if (value === port && name !== 'http') return name;
+  }
+  return String(port);
+}
+
+function icmpv6MessageKeyword(type: string, code?: number): string {
+  for (const [name, spec] of Object.entries(ICMPV6_MESSAGE_KEYWORDS)) {
+    if (spec.type !== type) continue;
+    if (spec.code === code) return name;
+  }
+  return code === undefined ? type : `${type} ${code}`;
+}
+
 export function showIPv6AccessLists(router: Router, name?: string): string {
   const acls = router.getIpv6AccessLists();
   const filtered = name ? acls.filter((a) => a.name === name) : acls;
@@ -934,19 +990,27 @@ export function showIPv6AccessLists(router: Router, name?: string): string {
   const lines: string[] = [];
   for (const acl of filtered) {
     lines.push(`IPv6 access list ${acl.name}`);
-    for (const e of acl.entries) {
-      if (e.remark) { lines.push(`    remark ${e.remark}`); continue; }
-      if (e.evaluate) { lines.push(`    evaluate ${e.evaluate}`); continue; }
-      const proto = e.protocol ?? 'ipv6';
-      const src = e.srcPrefix === 'any' || !e.srcPrefix ? 'any' : (e.srcPrefixLength !== undefined ? `${e.srcPrefix}/${e.srcPrefixLength}` : e.srcPrefix);
-      const dst = e.dstPrefix === 'any' || !e.dstPrefix ? 'any' : (e.dstPrefixLength !== undefined ? `${e.dstPrefix}/${e.dstPrefixLength}` : e.dstPrefix);
-      let line = `    ${e.action} ${proto} ${src} ${dst}`;
-      if (e.dstPort) line += ` eq ${e.dstPort}`;
-      if (e.log) line += ' log';
-      lines.push(line);
+    for (const entry of ipv6EntriesInOrder(acl)) {
+      const matches = entry.matchCount
+        ? ` (${entry.matchCount} match${entry.matchCount === 1 ? '' : 'es'})` : '';
+      const seq = entry.sequence !== undefined ? ` sequence ${entry.sequence}` : '';
+      lines.push(`    ${formatIPv6AclEntry(entry)}${matches}${seq}`);
     }
   }
   return lines.join('\n');
+}
+
+export function runningConfigIPv6ACL(router: Router): string[] {
+  const lines: string[] = [];
+  for (const acl of router.getIpv6AccessLists()) {
+    lines.push(`ipv6 access-list ${acl.name}`);
+    for (const entry of ipv6EntriesInOrder(acl)) {
+      const seq = entry.sequenceConfigured && entry.sequence !== undefined
+        ? ` sequence ${entry.sequence}` : '';
+      lines.push(` ${formatIPv6AclEntry(entry)}${seq}`);
+    }
+  }
+  return lines;
 }
 
 // ─── IPv6 Named ACL Commands ──────────────────────────────────────────
@@ -975,57 +1039,123 @@ export function buildIPv6ACLGlobalCommands(configTrie: CommandTrie, ctx: CiscoAC
  * Register permit/deny commands for the config-ipv6-nacl mode trie.
  */
 export function buildIPv6ACLModeCommands(trie: CommandTrie, ctx: CiscoACLShellContext): void {
-  const handle = (action: 'permit' | 'deny', args: string[]): string => {
+  const listFor = (): import('../../Router').IPv6ACL | null => {
     const name = ctx.getSelectedACL();
-    if (!name) return '% No ACL selected';
-    if (args.length < 1) return '% Incomplete command.';
+    if (!name) return null;
     const acls = ctx.r().getIpv6AccessLists();
     let acl = acls.find((a) => a.name === name);
     if (!acl) { acl = { name, entries: [] }; acls.push(acl); }
-    const protocol = args[0].toLowerCase();
-    const isProtoFamily = protocol === 'ipv6' || protocol === 'tcp' || protocol === 'udp' || protocol === 'icmp';
-    const entry: import('../../Router').IPv6ACLEntry = { action, protocol };
-    let i = isProtoFamily ? 1 : 0;
-    if (args[i]?.toLowerCase() === 'any') { entry.srcPrefix = 'any'; i++; }
-    else if (args[i]?.toLowerCase() === 'host' && args[i + 1]) { entry.srcPrefix = args[i + 1]; i += 2; }
-    else if (args[i]) {
-      const slash = args[i].indexOf('/');
-      entry.srcPrefix = slash !== -1 ? args[i].substring(0, slash) : args[i];
-      entry.srcPrefixLength = slash !== -1 ? parseInt(args[i].substring(slash + 1), 10) : 128;
-      i++;
+    return acl;
+  };
+
+  const nextSequence = (acl: import('../../Router').IPv6ACL): number => {
+    let highest = 0;
+    for (const entry of acl.entries) {
+      if (entry.sequence !== undefined && entry.sequence > highest) highest = entry.sequence;
     }
-    if (args[i]?.toLowerCase() === 'any') { entry.dstPrefix = 'any'; i++; }
-    else if (args[i]?.toLowerCase() === 'host' && args[i + 1]) { entry.dstPrefix = args[i + 1]; i += 2; }
-    else if (args[i]) {
-      const slash = args[i].indexOf('/');
-      entry.dstPrefix = slash !== -1 ? args[i].substring(0, slash) : args[i];
-      entry.dstPrefixLength = slash !== -1 ? parseInt(args[i].substring(slash + 1), 10) : 128;
-      i++;
+    return highest + 10;
+  };
+
+  const handle = (action: 'permit' | 'deny', args: string[]): string => {
+    const acl = listFor();
+    if (!acl) return '% No ACL selected';
+    if (args.length < 1) return '% Incomplete command.';
+
+    const parsed = parseIpv6Ace(action, args);
+    if (parsed.status === 'refused') {
+      return parsed.incomplete ? '% Incomplete command.' : CISCO_INVALID_INPUT;
     }
-    while (i < args.length) {
-      const tok = args[i].toLowerCase();
-      if (tok === 'eq' && args[i + 1]) { entry.dstPort = args[i + 1]; i += 2; continue; }
-      if (tok === 'log') { entry.log = true; i++; continue; }
-      if (tok === 'sequence' && args[i + 1]) { entry.sequence = parseInt(args[i + 1], 10); i += 2; continue; }
-      i++;
-    }
-    acl.entries.push(entry);
+
+    const entry = parsed.opts as import('../../Router').IPv6ACLEntry;
+    if (entry.sequence === undefined) entry.sequence = nextSequence(acl);
+    const clash = acl.entries.findIndex((e) => e.sequence === entry.sequence);
+    if (clash !== -1) acl.entries[clash] = entry;
+    else acl.entries.push(entry);
     return '';
   };
+
   trie.registerGreedy('permit', 'Permit matching IPv6 packets', (args) => handle('permit', args));
   trie.registerGreedy('deny', 'Deny matching IPv6 packets', (args) => handle('deny', args));
-  trie.registerGreedy('evaluate', 'Evaluate reflexive ACL', (args) => {
-    const name = ctx.getSelectedACL();
-    if (!name || !args[0]) return '';
-    const acl = ctx.r().getIpv6AccessLists().find((a) => a.name === name);
-    if (acl) acl.entries.push({ action: 'permit', protocol: 'ipv6', evaluate: args[0] });
+
+  trie.registerGreedy('sequence', 'Sequence number for this entry', (args) => {
+    const acl = listFor();
+    if (!acl) return '% No ACL selected';
+    if (!args[0] || !/^\d+$/.test(args[0])) return CISCO_INVALID_INPUT;
+    const action = args[1]?.toLowerCase();
+    if (action !== 'permit' && action !== 'deny') {
+      return action === undefined ? '% Incomplete command.' : CISCO_INVALID_INPUT;
+    }
+    const parsed = parseIpv6Ace(action, args.slice(2), parseInt(args[0], 10));
+    if (parsed.status === 'refused') {
+      return parsed.incomplete ? '% Incomplete command.' : CISCO_INVALID_INPUT;
+    }
+    const entry = parsed.opts as import('../../Router').IPv6ACLEntry;
+    const clash = acl.entries.findIndex((e) => e.sequence === entry.sequence);
+    if (clash !== -1) acl.entries[clash] = entry;
+    else acl.entries.push(entry);
     return '';
   });
+
+  trie.registerGreedy('no', 'Remove an access list entry', (args) => {
+    const acl = listFor();
+    if (!acl) return '% No ACL selected';
+    if (args.length === 0) return '% Incomplete command.';
+
+    if (/^\d+$/.test(args[0]) && args.length === 1) {
+      const sequence = parseInt(args[0], 10);
+      const index = acl.entries.findIndex((e) => e.sequence === sequence);
+      if (index === -1) return '% Sequence number does not exist.';
+      acl.entries.splice(index, 1);
+      return '';
+    }
+
+    const head = args[0].toLowerCase();
+    if (head === 'remark') {
+      const text = texteDeRemarque(args.slice(1));
+      const index = acl.entries.findIndex((e) => e.remark !== undefined
+        && (text.length === 0 || e.remark === text));
+      if (index === -1) return '';
+      acl.entries.splice(index, 1);
+      return '';
+    }
+    if (head === 'sequence' && /^\d+$/.test(args[1] ?? '')) {
+      const sequence = parseInt(args[1], 10);
+      const index = acl.entries.findIndex((e) => e.sequence === sequence);
+      if (index === -1) return '% Sequence number does not exist.';
+      acl.entries.splice(index, 1);
+      return '';
+    }
+    if (head !== 'permit' && head !== 'deny') return CISCO_INVALID_INPUT;
+
+    const parsed = parseIpv6Ace(head, args.slice(1));
+    if (parsed.status === 'refused') {
+      return parsed.incomplete ? '% Incomplete command.' : CISCO_INVALID_INPUT;
+    }
+    const wanted = formatIPv6AclEntry(parsed.opts as import('../../Router').IPv6ACLEntry);
+    const index = acl.entries.findIndex((e) => formatIPv6AclEntry(e) === wanted);
+    if (index === -1) return '% Access list entry does not exist.';
+    acl.entries.splice(index, 1);
+    return '';
+  });
+
+  trie.registerGreedy('evaluate', 'Evaluate reflexive ACL', (args) => {
+    const acl = listFor();
+    if (!acl) return '% No ACL selected';
+    if (!args[0]) return '% Incomplete command.';
+    acl.entries.push({
+      action: 'permit', protocol: 'ipv6',
+      evaluate: args[0], sequence: nextSequence(acl),
+    });
+    return '';
+  });
+
   trie.registerGreedy('remark', 'ACL remark', (args) => {
-    const name = ctx.getSelectedACL();
-    if (!name) return '';
-    const acl = ctx.r().getIpv6AccessLists().find((a) => a.name === name);
-    if (acl) acl.entries.push({ action: 'permit', protocol: 'ipv6', remark: texteDeRemarque(args) });
+    const acl = listFor();
+    if (!acl) return '% No ACL selected';
+    acl.entries.push({
+      action: 'permit', protocol: 'ipv6',
+      remark: texteDeRemarque(args), sequence: nextSequence(acl),
+    });
     return '';
   });
 }

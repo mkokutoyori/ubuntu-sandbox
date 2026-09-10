@@ -12,6 +12,49 @@ Format : `[famille] intitulé` puis constat / mesure / raison du report.
 
 ## Commutateur Huawei (VRP)
 
+### [acl] VRP n'a pas d'ACL IPv6, et `acl ipv6` est refusee
+`acl ipv6 name <nom>` rangeait la liste dans le magasin **IPv4** avec le
+type `extended`, sous une invite annoncant `acl-adv-<nom>` — donc une
+ACL IPv6 qui n'en etait pas une. Elle ne pouvait meme pas recevoir de
+regle : l'analyseur de `rule` valide en IPv4 et refuse
+`2001:db8::/64`. La commande est desormais REFUSEE en nommant ce qui
+manque (`AUDIT-ACL-IPV6.md`, V-10).
+**Mesure** : `acl ipv6 name V6` puis `rule 5 permit tcp source any …`
+— la liste apparaissait dans `_aclFind('V6')` (magasin v4) et
+`getIpv6AccessLists()` restait vide.
+**Ce qui manque, dans cet ordre** : une liaison de plan de donnees
+(`HuaweiRouter` ne surcharge pas `getIpv6TrafficFilter`), puis
+`traffic-filter ipv6 inbound`, puis une table de regles ACL6 et son
+analyseur d'operandes IPv6, puis l'invite `acl6-basic-`/`acl6-adv-` et
+`display acl ipv6`. La liaison d'abord : construire la table en premier
+donnerait un magasin que personne ne lit, ce qui est le defaut que les
+cinq audits ACL referment.
+**Nuance assumee** (`CLAUDE.md` §6) : une commande qu'une vraie machine
+accepte peut etre STOCKEE plutot que refusee pour qu'un import de
+topologie ne la perde pas. Ici elle est refusee, parce qu'aucune regle
+ne pouvait etre stockee de toute facon — il n'y a donc pas de
+configuration a perdre, et l'accepter reconduirait le mensonge.
+
+### [acl] le drapeau `ipv6` de `analyserAcl` est supprime
+Il etait pose par la grammaire et lu par PERSONNE, ce qui est
+exactement comment `acl ipv6` a pu creer une liste IPv4 sans que rien
+ne le signale. Retire avec la refutation ci-dessus.
+
+
+## Routeur Cisco (IOS)
+
+### [logging] `%SEC-4-IPACCESSLOGP` porte la severite 4 la ou IOS ecrit 6
+`LoggingConfig` empile le journal d'ACL IPv4 dans le seau `warnings`,
+et `formatEntry` derive le chiffre du seau : la ligne sort donc en
+`%SEC-4-IPACCESSLOGP` alors qu'IOS ecrit `%SEC-6-IPACCESSLOGP`.
+**Mesure** : trouve en branchant le journal des ACL **IPv6**, qui a
+recu sa propre facilite `%IPV6_ACL-6-ACCESSLOGP` (severite 6, juste).
+Les deux ne s'accordent donc pas sur la severite d'un meme genre
+d'evenement.
+**Pourquoi ce n'est pas ferme ici** : le defaut est anterieur et propre
+a IPv4 ; le corriger dans un lot IPv6 melangerait deux sujets, et
+`show logging` filtre par severite — bouger le seau change ce que
+`logging buffered <niveau>` retient, ce qui demande sa propre mesure.
 
 ## Moteur L2 partagé (`Switch.ts`)
 
