@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-08-23T10:16:46.283Z
+Generated: 2026-09-10T16:23:58.511Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -9,11 +9,11 @@ Total steps: 366
 
 --- [1] § user EXEC help & prompt ---
 [1/366] sw1 SW1> ?
-    clear       Clear DHCP address bindings
+    clear       Clear the command history buffer
     delete      Delete a file
     dir         List files on a filesystem
     disconnect  Close an outgoing connection
-    enable      Enter privileged EXEC at a specific level
+    enable      Turn on privileged commands
     exit        Exit from the EXEC
     help        Description of the interactive help system
     mkdir       Create a directory
@@ -22,27 +22,29 @@ Total steps: 366
     pwd         Display current working directory
     resume      Resume an outgoing connection
     rmdir       Remove a directory
-    show        System hardware and software status
+    show        Time range
     squeeze     Squeeze a filesystem
     ssh         Open an SSH connection to a remote host
     telnet      Open a Telnet session
-    terminal    Set terminal parameters
+    terminal    Set number of lines on a screen
     verify      Verify a file
     where       List open outgoing connections
 
 [2/366] sw1 SW1> show ?
-    aaa            Display AAA servers
+    aaa            Display AAA state
     access-lists   Display ACLs
     accounting     Display accounting records
     adjacency      Display CEF adjacency table
     aliases        Display command aliases
-    arp            Display ARP ACLs
+    arp            Display ARP table
     buffers        Display buffer pools
     calendar       Display hardware calendar
     cdp            Display CDP information
     clock          Display the system clock
     controllers    Display controller status
+    crypto         Show RSA public keys
     current        Show current MST config
+    dhcp           DHCP client lease information
     dot1x          Display 802.1X state
     dtp            Display DTP information
     environment    Display environment
@@ -52,7 +54,7 @@ Total steps: 366
     glbp           Display GLBP groups on SVIs
     history        Display command history
     hosts          Display host cache
-    interfaces     Display interface information
+    interfaces     Interface status and configuration
     inventory      Display hardware inventory
     ip             DHCP pool information
     lacp           Display LACP state
@@ -82,7 +84,8 @@ Total steps: 366
     tacacs         Display TACACS
     tcp            Status of TCP connections
     terminal       Display terminal configuration parameters
-    track          Display tracked objects
+    time-range     Time range
+    track          Tracking information
     udld           Display UDLD state
     users          Display active lines
     version        System hardware and software status
@@ -93,18 +96,19 @@ Total steps: 366
     who            Display active lines
 
 [3/366] sw1 SW1> s?
-    show     System hardware and software status
+    show     Time range
     squeeze  Squeeze a filesystem
     ssh      Open an SSH connection to a remote host
 
 [4/366] sw1 SW1> sh?
-    show  System hardware and software status
+    show  Time range
 
 [5/366] sw1 SW1> en?
-    enable  Enter privileged EXEC at a specific level
+    enable  Turn on privileged commands
 
 [6/366] sw1 SW1> enable ?
-    view  Enter a command-line interface view
+    <0-15>  Enable level
+    view    Enter a command-line interface view
     <cr>
 
 [7/366] sw1 SW1> ping ?
@@ -112,12 +116,12 @@ Total steps: 366
     <cr>
 
 [8/366] sw1 SW1> terminal ?
+    LINE     Terminal parameter to set
     history  Enable and control the command history function
     length   Set number of lines on a screen
     monitor  Copy debug output to the current terminal line
     no       Negate a command or set its defaults
     width    Set width of the display terminal
-    <cr>
 
 [9/366] sw1 SW1> show version
   Cisco IOS Software, C3560 Software (C3560-IPSERVICESK9-M), Version 12.2(55)SE12, RELEASE SOFTWARE (fc3)
@@ -146,7 +150,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *10:16:46.000 UTC Sun Aug 23 2026
+  *16:23:58.000 UTC Thu Sep 10 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -214,10 +218,10 @@ Total steps: 366
 <empty>
 
 [18/366] sw1 SW1# ?
-    archive     Archive the configuration
-    clear       Clear DHCP address bindings
+    archive     Archive the running configuration
+    clear       Reset a terminal line
     clock       Set the system clock
-    configure   Enter configuration mode
+    configure   Replace the running configuration
     copy        Copy a file
     debug       Enable ARP debug
     delete      Delete a file
@@ -233,17 +237,18 @@ Total steps: 366
     no          Negate a command or set its defaults
     ping        Send echo messages
     pwd         Display current working directory
+    release     Release a DHCP lease
     reload      Reload the device
+    renew       Renew a DHCP lease
     resume      Resume an outgoing connection
     rmdir       Remove a directory
     send        Send a message to other tty lines
     setup       Run the initial configuration dialog
-    show        System hardware and software status
-    sntp        Configure SNTP
+    show        Time range
     squeeze     Squeeze a filesystem
     ssh         Open an SSH connection to a remote host
     telnet      Open a Telnet session
-    terminal    Set terminal parameters
+    terminal    Set number of lines on a screen
     test        Test subsystems, memory, and interfaces
     undebug     Disable debugging
     verify      Verify a file
@@ -252,13 +257,13 @@ Total steps: 366
     write       Write running configuration to memory
 
 [19/366] sw1 SW1# show ?
-    aaa             Display AAA servers
+    aaa             Display AAA state
     access-lists    Display ACLs
     accounting      Display accounting records
     adjacency       Display CEF adjacency table
     aliases         Display command aliases
     archive         Display archive status
-    arp             Display ARP ACLs
+    arp             Display ARP table
     boot            Display boot variables
     bootvar         Display boot variables
     buffers         Display buffer pools
@@ -267,8 +272,10 @@ Total steps: 366
     clock           Display the system clock
     configuration   Contents of startup configuration
     controllers     Display controller status
+    crypto          Show RSA public keys
     current         Show current MST config
     debugging       Display active debugging
+    dhcp            DHCP client lease information
     diag            Display chassis diagnostics
     dot1x           Display 802.1X state
     dtp             Display DTP information
@@ -280,7 +287,7 @@ Total steps: 366
     glbp            Display GLBP groups on SVIs
     history         Display command history
     hosts           Display host cache
-    interfaces      Display interface information
+    interfaces      Interface status and configuration
     inventory       Display hardware inventory
     ip              DHCP pool information
     lacp            Display LACP state
@@ -294,7 +301,7 @@ Total steps: 366
     monitor         Display SPAN sessions
     ntp             Display NTP status
     pagp            Display PAgP state
-    parser          Display parser information
+    parser          Display CLI view information
     pending         Show pending MST config
     platform        Display platform information
     port-security   Display port security
@@ -306,7 +313,7 @@ Total steps: 366
     reload          Display reload schedule
     running-config  Current operating configuration
     sessions        Display open outgoing connections
-    snmp            Display SNMP communities
+    snmp            Display SNMP status
     sntp            Display SNTP information
     sockets         Display open sockets
     spanning-tree   Display spanning tree state
@@ -318,7 +325,8 @@ Total steps: 366
     tacacs          Display TACACS
     tcp             Status of TCP connections
     terminal        Display terminal configuration parameters
-    track           Display tracked objects
+    time-range      Time range
+    track           Tracking information
     udld            Display UDLD state
     users           Display active lines
     version         System hardware and software status
@@ -330,13 +338,13 @@ Total steps: 366
 
 [20/366] sw1 SW1# configure ?
     replace   Replace the running configuration
-    terminal  Enter configuration mode
+    terminal  Configure from the terminal
 
 [21/366] sw1 SW1# clear ?
     aaa            Unlock a locally-locked-out user
     arp-cache      Clear the entire ARP cache
     counters       Clear interface counters
-    errdisable     Error-disable state
+    errdisable     Recover an err-disabled port
     history        Clear the command history buffer
     host           Delete entries from the host table
     ip             Clear DHCP address bindings
@@ -345,7 +353,7 @@ Total steps: 366
     mac            Clear MAC address table entries
     ntp            Clear NTP packet statistics
     port-security  Clear secure MAC entries
-    spanning-tree  Spanning trees
+    spanning-tree  Restart protocol migration
 
 [22/366] sw1 SW1# debug ?
     aaa                Debug AAA
@@ -363,7 +371,7 @@ Total steps: 366
     ipv6               Debug IPv6
     link-state         Enable link-state debugging
     lldp               Debug LLDP
-    mac                MAC configuration
+    mac                Enable MAC table debugging
     mac-address-table  Enable MAC table debugging
     ntp                Debug NTP
     port-security      Debug port security
@@ -399,7 +407,7 @@ Total steps: 366
 [26/366] sw1 SW1# show running-config
   Building configuration...
   
-  Current configuration : 950 bytes
+  Current configuration : 1013 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -464,6 +472,9 @@ Total steps: 366
    no ip address
    shutdown
   !
+  spanning-tree mode pvst
+  port-channel load-balance src-dst-ip
+  !
   end
 
 [27/366] sw1 SW1# show startup-config
@@ -497,7 +508,7 @@ Total steps: 366
 
 [29/366] sw1 SW1# show inventory
   NAME: "WS-C3560-24TS-S chassis", DESCR: "Cisco Catalyst 3560 Multilayer Switch"
-  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC2763P53K
+  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC1594W2P5
 
 [30/366] sw1 SW1# show flash:
   Directory of flash:/
@@ -634,10 +645,10 @@ Total steps: 366
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        3 packets input, 224 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       15 packets output, 1040 bytes, 0 underruns
+       20 packets output, 1470 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   FastEthernet0/2 is up, line protocol is up
@@ -652,11 +663,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 64 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       4 packets input, 316 bytes, 0 no buffer
+       Received 1 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       15 packets output, 1062 bytes, 0 underruns
+       17 packets output, 1240 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   FastEthernet0/3 is up, line protocol is up
@@ -672,10 +683,10 @@ Total steps: 366
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        3 packets input, 226 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       12 packets output, 836 bytes, 0 underruns
+       16 packets output, 1192 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   FastEthernet0/4 is down, line protocol is down (notconnect)
@@ -1089,11 +1100,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       11 packets input, 750 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       13 packets input, 928 bytes, 0 no buffer
+       Received 3 broadcasts (10 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       12 packets output, 814 bytes, 0 underruns
+       14 packets output, 992 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down (notconnect)
@@ -1159,33 +1170,61 @@ Total steps: 366
   Gi0/1       1
 
 [44/366] sw1 SW1# show interfaces counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/1                224             3        1040            15
-  Fa0/2                 64             1        1062            15
-  Fa0/3                226             3         836            12
-  Fa0/4                  0             0           0             0
-  Fa0/5                  0             0           0             0
-  Fa0/6                  0             0           0             0
-  Fa0/7                  0             0           0             0
-  Fa0/8                  0             0           0             0
-  Fa0/9                  0             0           0             0
-  Fa0/10                 0             0           0             0
-  Fa0/11                 0             0           0             0
-  Fa0/12                 0             0           0             0
-  Fa0/13                 0             0           0             0
-  Fa0/14                 0             0           0             0
-  Fa0/15                 0             0           0             0
-  Fa0/16                 0             0           0             0
-  Fa0/17                 0             0           0             0
-  Fa0/18                 0             0           0             0
-  Fa0/19                 0             0           0             0
-  Fa0/20                 0             0           0             0
-  Fa0/21                 0             0           0             0
-  Fa0/22                 0             0           0             0
-  Fa0/23                 0             0           0             0
-  Fa0/24                 0             0           0             0
-  Gi0/1                750            11         814            12
-  Gi0/2                  0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/1                    224              0              2              1
+  Fa0/2                    316              0              3              1
+  Fa0/3                    226              0              2              1
+  Fa0/4                      0              0              0              0
+  Fa0/5                      0              0              0              0
+  Fa0/6                      0              0              0              0
+  Fa0/7                      0              0              0              0
+  Fa0/8                      0              0              0              0
+  Fa0/9                      0              0              0              0
+  Fa0/10                     0              0              0              0
+  Fa0/11                     0              0              0              0
+  Fa0/12                     0              0              0              0
+  Fa0/13                     0              0              0              0
+  Fa0/14                     0              0              0              0
+  Fa0/15                     0              0              0              0
+  Fa0/16                     0              0              0              0
+  Fa0/17                     0              0              0              0
+  Fa0/18                     0              0              0              0
+  Fa0/19                     0              0              0              0
+  Fa0/20                     0              0              0              0
+  Fa0/21                     0              0              0              0
+  Fa0/22                     0              0              0              0
+  Fa0/23                     0              0              0              0
+  Fa0/24                     0              0              0              0
+  Gi0/1                    928              0             10              3
+  Gi0/2                      0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/1                   1470              0             15              5
+  Fa0/2                   1240              0             12              5
+  Fa0/3                   1192              0             11              5
+  Fa0/4                      0              0              0              0
+  Fa0/5                      0              0              0              0
+  Fa0/6                      0              0              0              0
+  Fa0/7                      0              0              0              0
+  Fa0/8                      0              0              0              0
+  Fa0/9                      0              0              0              0
+  Fa0/10                     0              0              0              0
+  Fa0/11                     0              0              0              0
+  Fa0/12                     0              0              0              0
+  Fa0/13                     0              0              0              0
+  Fa0/14                     0              0              0              0
+  Fa0/15                     0              0              0              0
+  Fa0/16                     0              0              0              0
+  Fa0/17                     0              0              0              0
+  Fa0/18                     0              0              0              0
+  Fa0/19                     0              0              0              0
+  Fa0/20                     0              0              0              0
+  Fa0/21                     0              0              0              0
+  Fa0/22                     0              0              0              0
+  Fa0/23                     0              0              0              0
+  Fa0/24                     0              0              0              0
+  Gi0/1                    992              0             11              3
+  Gi0/2                      0              0              0              0
 
 [45/366] sw1 SW1# show interfaces description
   Interface                      Status         Protocol Description
@@ -1261,7 +1300,7 @@ Total steps: 366
   Entry address(es):
   Platform: Cisco Catalyst 2960,  Capabilities: Switch
   Interface: GigabitEthernet0/1,  Port ID (outgoing port): GigabitEthernet0/1
-  Holdtime : 0 sec
+  Holdtime : 180 sec
   
   Version :
   Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11
@@ -1324,7 +1363,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *10:16:46.000 UTC Sun Aug 23 2026
+  *16:23:59.000 UTC Thu Sep 10 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1476,15 +1515,15 @@ Total steps: 366
   
   Log Buffer (4096 bytes):
   
-  *Aug 23 10:16:46.214: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Aug 23 10:16:46.215: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Aug 23 10:16:46.218: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Aug 23 10:16:46.218: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Aug 23 10:16:46.220: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Aug 23 10:16:46.220: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Aug 23 10:16:46.223: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 10:16:46.223: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 10:16:46.257: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:23:58.222: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Sep 10 16:23:58.222: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Sep 10 16:23:58.226: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Sep 10 16:23:58.226: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Sep 10 16:23:58.228: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Sep 10 16:23:58.228: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Sep 10 16:23:58.232: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:23:58.232: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:23:58.354: %SYS-5-CONFIG_I: Configured from console by console
 
 [60/366] sw1 SW1# show boot
   BOOT path-list      : 
@@ -1564,57 +1603,59 @@ Total steps: 366
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [74/366] sw1 SW1(config)# ?
-    aaa            AAA configuration
-    access-list    Numbered ACL entry
+    aaa            Enable NEW access control commands and functions
+    access-list    Add an access list entry
     alias          Create a command alias
     archive        Enter archive configuration
     arp            Add static ARP entry
-    banner         Set a banner
-    boot           Boot Commands
+    banner         Define a login banner
+    boot           Specify system image to load
     cdp            Enable CDP globally
-    clock          Set the system clock
-    configure      Enter configuration mode
-    crypto         Encryption module
+    clock          Hardware calendar is a valid time source
+    configure      Configure from the terminal
+    crypto         Generate RSA key
     default        Set a command to its defaults
     do             To run exec commands in config mode
-    dot1x          IEEE 802.1X port-based authentication
-    enable         Modify enable password parameters
+    dot1x          Enable 802.1X globally
+    enable         Set enable secret
     end            Exit from configure mode
-    errdisable     Error-disable recovery configuration
+    errdisable     Auto-recover DAI err-disabled ports
     exit           Exit from configure mode
     help           Description of the interactive help system
     hostname       Set system hostname
-    interface      Select an interface to configure
-    ip             Global IP configuration subcommands
-    lacp           Link Aggregation Control Protocol
+    interface      FastEthernet IEEE 802.3
+    ip             Enable IP routing
+    lacp           LACP system priority
     line           Enter line configuration
     lldp           Enable LLDP globally
-    logging        line logging
-    login          line login
-    mac            MAC address table configuration
-    monitor        Monitoring different system events
+    logging        Count every log message and timestamp last occurrence
+    login          Set the login blocking period
+    mac            Extended MAC access list
+    monitor        Configure SPAN session
     no             Negate a command or set its defaults
     ntp            Authenticate time sources
-    parser         Configure parser
-    port-channel   EtherChannel/PortChannel configuration
-    priority-list  Legacy PQ list
+    parser         Define a CLI view
+    port-channel   EtherChannel load-balancing
+    priority-list  Build a priority list
     privilege      Configure command privilege levels
-    queue-list     Legacy CQ list
-    radius         Radius configuration
-    radius-server  Legacy radius host
-    security       Security configuration
-    service        Modify use of network based services
+    queue-list     Build a custom queue list
+    radius         RADIUS server configuration
+    radius-server  Specify a RADIUS server
+    security       Minimum length of all user and enable passwords
+    service        Enable DHCP service
     snmp-server    Set community string and access privs
-    sntp           Configure SNTP
-    spanning-tree  Spanning Tree configuration
-    tacacs         TACACS+ configuration
-    tacacs-server  Legacy tacacs host
-    track          Tracked object registry
+    sntp           SNTP server (alias for ntp server)
+    spanning-tree  Enable portfast by default on access ports
+    tacacs         TACACS+ server configuration
+    tacacs-server  Specify a TACACS+ server
+    test           Simulate the load-balance decision for a flow
+    time-range     Define time range functions
+    track          Tracking configuration commands
     udld           UDLD global configuration
-    username       Local user
+    username       Establish User Name Authentication
     vlan           VLAN configuration
-    vrf            VRF configuration
-    vtp            VTP configuration
+    vrf            Configure a VRF
+    vtp            Set VTP domain
 
 [75/366] sw1 SW1(config)# hostname SW1-EDGE
 <empty>
@@ -1622,7 +1663,7 @@ Total steps: 366
 [76/366] sw1 SW1-EDGE(config)# do show running-config
   Building configuration...
   
-  Current configuration : 955 bytes
+  Current configuration : 1018 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1687,6 +1728,9 @@ Total steps: 366
    no ip address
    shutdown
   !
+  spanning-tree mode pvst
+  port-channel load-balance src-dst-ip
+  !
   end
 
 [77/366] sw1 SW1-EDGE(config)# no hostname
@@ -1713,39 +1757,41 @@ Total steps: 366
 <empty>
 
 [84/366] sw1 SW1(config-if)# ?
-    cdp                Enable CDP globally
+    cdp                Enable CDP on this interface
     channel-group      EtherChannel membership
-    channel-protocol   Interface channel-protocol
+    channel-protocol   Select the channel protocol (PAgP, LACP)
     default            Set a command to its defaults
     description        Interface description
     do                 To run exec commands in config mode
-    dot1x              IEEE 802.1X port-based authentication
+    dot1x              Set the PAE role of this interface
     duplex             Set interface duplex
     end                Exit from configure mode
     exit               Exit from this submode
-    glbp               GLBP group config
+    glbp               GLBP configuration
     help               Description of the interactive help system
-    interface          Select an interface to configure
-    ip                 Internet Protocol
+    interface          FastEthernet IEEE 802.3
+    ip                 Trust this interface for DHCP snooping
     l2protocol-tunnel  Tunnel a client L2 control protocol across the S-VLAN instead of terminating it locally
-    lacp               Link Aggregation Control Protocol
-    lldp               Enable LLDP globally
-    load-interval      Interface load-interval
-    mdix               Interface mdix
-    mls                Multilayer switching
-    mtu                Set MTU
+    lacp               LACPDU rate
+    lldp               Enable LLDP transmit on this interface
+    load-interval      Specify interval for load calculation for an interface
+    mac                Apply a MAC access list to the interface
+    mdix               Enable auto MDIX on the interface
+    mls                Reset the port to untrusted
+    mtu                Set the interface Maximum Transmission Unit (MTU)
     no                 Negate a command or set its defaults
-    power              Interface power
-    private-vlan       Configure private VLAN
+    port-channel       Minimum number of bundled ports before the channel comes up
+    power              Inline power configuration
+    private-vlan       Map secondary VLANs to this primary VLAN SVI
     shutdown           Disable interface
-    spanning-tree      Interface STP configuration
+    spanning-tree      Enable an interface to move directly to forwarding on link up
     speed              Set interface speed
     srr-queue          Interface srr-queue
-    standby            HSRP group config
+    standby            HSRP version
     storm-control      Interface storm-control
-    switchport         Set switching mode characteristics
-    udld               Configure UDLD protocol
-    vrrp               VRRP group config
+    switchport         Enable port-security
+    udld               UDLD per-port configuration
+    vrrp               VRRP configuration
 
 [85/366] sw1 SW1(config-if)# description LINK-TO-L1
 <empty>
@@ -1802,6 +1848,7 @@ Total steps: 366
     help              Description of the interactive help system
     history           line history
     length            line length
+    line              Enter line configuration
     logging           line logging
     login             line login
     login-timeout     Set login timeout
@@ -1874,7 +1921,7 @@ Total steps: 366
 [106/366] sw1 SW1# sh run
   Building configuration...
   
-  Current configuration : 1324 bytes
+  Current configuration : 1387 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1949,6 +1996,9 @@ Total steps: 366
   interface Vlan1
    no ip address
    shutdown
+  !
+  spanning-tree mode pvst
+  port-channel load-balance src-dst-ip
   !
   banner motd ^C
    Authorized access only 
@@ -2077,10 +2127,10 @@ Total steps: 366
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        3 packets input, 224 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       15 packets output, 1040 bytes, 0 underruns
+       20 packets output, 1470 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2093,6 +2143,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [124/366] sw1 SW1# show interfaces FastEthernet0/2
   FastEthernet0/2 is up, line protocol is up
@@ -2107,11 +2158,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 64 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       4 packets input, 316 bytes, 0 no buffer
+       Received 1 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       15 packets output, 1062 bytes, 0 underruns
+       17 packets output, 1240 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2124,6 +2175,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [126/366] sw1 SW1# show interfaces FastEthernet0/3
   FastEthernet0/3 is up, line protocol is up
@@ -2139,10 +2191,10 @@ Total steps: 366
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        3 packets input, 226 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       12 packets output, 836 bytes, 0 underruns
+       16 packets output, 1192 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2155,6 +2207,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [128/366] sw1 SW1# show interfaces FastEthernet0/4
   FastEthernet0/4 is administratively down, line protocol is down (disabled)
@@ -2187,6 +2240,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [130/366] sw1 SW1# show interfaces FastEthernet0/5
   FastEthernet0/5 is administratively down, line protocol is down (disabled)
@@ -2219,6 +2273,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [132/366] sw1 SW1# show interfaces FastEthernet0/6
   FastEthernet0/6 is administratively down, line protocol is down (disabled)
@@ -2251,6 +2306,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [134/366] sw1 SW1# show interfaces FastEthernet0/7
   FastEthernet0/7 is administratively down, line protocol is down (disabled)
@@ -2283,6 +2339,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [136/366] sw1 SW1# show interfaces FastEthernet0/8
   FastEthernet0/8 is administratively down, line protocol is down (disabled)
@@ -2315,6 +2372,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [138/366] sw1 SW1# show interfaces FastEthernet0/9
   FastEthernet0/9 is down, line protocol is down (notconnect)
@@ -2346,6 +2404,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [140/366] sw1 SW1# show interfaces FastEthernet0/10
   FastEthernet0/10 is down, line protocol is down (notconnect)
@@ -2377,6 +2436,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [142/366] sw1 SW1# show interfaces FastEthernet0/11
   FastEthernet0/11 is down, line protocol is down (notconnect)
@@ -2408,6 +2468,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [144/366] sw1 SW1# show interfaces FastEthernet0/12
   FastEthernet0/12 is down, line protocol is down (notconnect)
@@ -2439,6 +2500,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [146/366] sw1 SW1# show interfaces FastEthernet0/13
   FastEthernet0/13 is down, line protocol is down (notconnect)
@@ -2470,6 +2532,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [148/366] sw1 SW1# show interfaces FastEthernet0/14
   FastEthernet0/14 is down, line protocol is down (notconnect)
@@ -2501,6 +2564,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [150/366] sw1 SW1# show interfaces FastEthernet0/15
   FastEthernet0/15 is down, line protocol is down (notconnect)
@@ -2532,6 +2596,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [152/366] sw1 SW1# show interfaces FastEthernet0/16
   FastEthernet0/16 is down, line protocol is down (notconnect)
@@ -2563,6 +2628,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [154/366] sw1 SW1# show interfaces FastEthernet0/17
   FastEthernet0/17 is down, line protocol is down (notconnect)
@@ -2594,6 +2660,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [156/366] sw1 SW1# show interfaces FastEthernet0/18
   FastEthernet0/18 is down, line protocol is down (notconnect)
@@ -2625,6 +2692,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [158/366] sw1 SW1# show interfaces FastEthernet0/19
   FastEthernet0/19 is down, line protocol is down (notconnect)
@@ -2656,6 +2724,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [160/366] sw1 SW1# show interfaces FastEthernet0/20
   FastEthernet0/20 is down, line protocol is down (notconnect)
@@ -2687,6 +2756,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [162/366] sw1 SW1# show interfaces FastEthernet0/21
   FastEthernet0/21 is down, line protocol is down (notconnect)
@@ -2718,6 +2788,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [164/366] sw1 SW1# show interfaces FastEthernet0/22
   FastEthernet0/22 is down, line protocol is down (notconnect)
@@ -2749,6 +2820,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [166/366] sw1 SW1# show interfaces FastEthernet0/23
   FastEthernet0/23 is down, line protocol is down (notconnect)
@@ -2780,6 +2852,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [168/366] sw1 SW1# show interfaces GigabitEthernet0/0
                   ^
@@ -2798,11 +2871,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       11 packets input, 750 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       13 packets input, 928 bytes, 0 no buffer
+       Received 3 broadcasts (10 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       12 packets output, 814 bytes, 0 underruns
+       14 packets output, 992 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2815,6 +2888,7 @@ Total steps: 366
   Negotiation of Trunking: Off
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [171/366] sw1 SW1# show interfaces GigabitEthernet0/1 switchport
   Name: Gi0/1
@@ -2826,6 +2900,7 @@ Total steps: 366
   Access Mode VLAN: 1 (default)
   Trunking Native Mode VLAN: 1 (default)
   Trunking VLANs Enabled: ALL
+  Protected: false
 
 
 --- [172] § CORE & SW2 prompts ---
@@ -2974,7 +3049,7 @@ Total steps: 366
           inet 192.168.1.11  netmask 255.255.255.0  broadcast 192.168.1.255
           inet6 fe80::ff:fe00:4f%eth0  prefixlen 64  scopeid 0x20<link>
           ether 02:00:00:00:00:4f  txqueuelen 1000  (Ethernet)
-          RX packets 15  bytes 1040 (1.0 KiB)
+          RX packets 20  bytes 1470 (1.4 KiB)
           RX errors 0  dropped 0  overruns 0  frame 0
           TX packets 3  bytes 224 (0.2 KiB)
           TX errors 0  dropped 0  overruns 0  carrier 0  collisions 0
@@ -3000,6 +3075,7 @@ Total steps: 366
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : 
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:53%2
      IPv4 Address. . . . . . . . . . . : 192.168.1.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 
@@ -3032,10 +3108,11 @@ Total steps: 366
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller
      Physical Address. . . . . . . . . : 02-00-00-00-00-53
      DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:53%2(Preferred)
      IPv4 Address. . . . . . . . . . . : 192.168.1.12(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 
@@ -3045,7 +3122,7 @@ Total steps: 366
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #2
      Physical Address. . . . . . . . . : 02-00-00-00-00-54
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -3054,7 +3131,7 @@ Total steps: 366
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #3
      Physical Address. . . . . . . . . : 02-00-00-00-00-55
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -3063,7 +3140,7 @@ Total steps: 366
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #4
      Physical Address. . . . . . . . . : 02-00-00-00-00-56
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -3074,7 +3151,7 @@ Total steps: 366
 
 [190/366] w1 w1$ arp -a
   
-  Interface: 192.168.1.12 --- 0x1
+  Interface: 192.168.1.12 --- 0x2
     Internet Address      Physical Address      Type
     192.168.1.11          02-00-00-00-00-4f     dynamic
     192.168.1.13          02-00-00-00-00-57     dynamic
@@ -3085,10 +3162,10 @@ Total steps: 366
 [191/366] w1 w1$ route print
   ===========================================================================
   Interface List
-     1...02 00 00 00 00 53 ......Intel(R) Ethernet Connection #1
-     2...02 00 00 00 00 54 ......Intel(R) Ethernet Connection #2
-     3...02 00 00 00 00 55 ......Intel(R) Ethernet Connection #3
-     4...02 00 00 00 00 56 ......Intel(R) Ethernet Connection #4
+     2...02 00 00 00 00 53 ......Intel(R) 82540EM Gigabit Ethernet Controller
+     3...02 00 00 00 00 54 ......Intel(R) 82540EM Gigabit Ethernet Controller #2
+     4...02 00 00 00 00 55 ......Intel(R) 82540EM Gigabit Ethernet Controller #3
+     5...02 00 00 00 00 56 ......Intel(R) 82540EM Gigabit Ethernet Controller #4
      1...........................Software Loopback Interface 1
   ===========================================================================
   
@@ -3103,14 +3180,24 @@ Total steps: 366
   ===========================================================================
   Persistent Routes:
     None
+  
+  IPv6 Route Table
+  ===========================================================================
+  Active Routes:
+   If Metric Network Destination      Gateway
+     1    331 ::1/128                  On-link
+     2      0 fe80::/10                On-link
+  ===========================================================================
+  Persistent Routes:
+    None
 
 [192/366] w1 w1$ getmac
-  Physical Address  Transport Name          
-  ================= ========================
-  02-00-00-00-00-53 \Device\Tcpip_Ethernet_0
-  02-00-00-00-00-54 Media disconnected      
-  02-00-00-00-00-55 Media disconnected      
-  02-00-00-00-00-56 Media disconnected      
+  Physical Address  Transport Name                                      
+  ================= ====================================================
+  02-00-00-00-00-53 \Device\Tcpip_{4770F1E8-ECC2-E321-B975-5CC655DAF271}
+  02-00-00-00-00-54 Media disconnected                                  
+  02-00-00-00-00-55 Media disconnected                                  
+  02-00-00-00-00-56 Media disconnected                                  
 
 
 --- [193] § host inspection — SRV1 (Linux server) ---
@@ -3136,8 +3223,8 @@ Total steps: 366
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
   LISTEN     0       0        0.0.0.0:1521           0.0.0.0:*          users:(("tnslsnr",pid=2001,fd=3))
   LISTEN     0       0        [::]:1521              [::]:*             users:(("tnslsnr",pid=2001,fd=3))
-  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=985,fd=3))
-  LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=985,fd=3))
+  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=22,fd=3))
+  LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=22,fd=3))
   LISTEN     0       0        127.0.0.53:53          0.0.0.0:*          users:(("systemd-resolved",pid=29,fd=3))
   LISTEN     0       0        0.0.0.0:1812           0.0.0.0:*          users:(("freeradius",pid=40,fd=3))
 
@@ -3168,6 +3255,7 @@ Total steps: 366
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : 
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:5f%2
      IPv4 Address. . . . . . . . . . . : 192.168.1.22
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 
@@ -3199,8 +3287,11 @@ Total steps: 366
 
 --- [202] § per-interface counters & cdp loop ---
 [203/366] sw1 SW1# show interfaces FastEthernet0/1 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/1                224             3        1040            15
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/1                    224              0              2              1
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/1                   1470              0             15              5
 
 [204/366] sw1 SW1# show cdp interface FastEthernet0/1
   FastEthernet0/1 is up, line protocol is up
@@ -3209,8 +3300,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [205/366] sw1 SW1# show interfaces FastEthernet0/2 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/2                 64             1        1062            15
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/2                    316              0              3              1
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/2                   1240              0             12              5
 
 [206/366] sw1 SW1# show cdp interface FastEthernet0/2
   FastEthernet0/2 is up, line protocol is up
@@ -3219,8 +3313,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [207/366] sw1 SW1# show interfaces FastEthernet0/3 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/3                226             3         836            12
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/3                    226              0              2              1
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/3                   1192              0             11              5
 
 [208/366] sw1 SW1# show cdp interface FastEthernet0/3
   FastEthernet0/3 is up, line protocol is up
@@ -3229,8 +3326,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [209/366] sw1 SW1# show interfaces FastEthernet0/4 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/4                  0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/4                      0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/4                      0              0              0              0
 
 [210/366] sw1 SW1# show cdp interface FastEthernet0/4
   FastEthernet0/4 is administratively down, line protocol is down
@@ -3239,8 +3339,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [211/366] sw1 SW1# show interfaces FastEthernet0/5 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/5                  0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/5                      0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/5                      0              0              0              0
 
 [212/366] sw1 SW1# show cdp interface FastEthernet0/5
   FastEthernet0/5 is administratively down, line protocol is down
@@ -3249,8 +3352,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [213/366] sw1 SW1# show interfaces FastEthernet0/6 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/6                  0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/6                      0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/6                      0              0              0              0
 
 [214/366] sw1 SW1# show cdp interface FastEthernet0/6
   FastEthernet0/6 is administratively down, line protocol is down
@@ -3259,8 +3365,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [215/366] sw1 SW1# show interfaces FastEthernet0/7 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/7                  0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/7                      0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/7                      0              0              0              0
 
 [216/366] sw1 SW1# show cdp interface FastEthernet0/7
   FastEthernet0/7 is administratively down, line protocol is down
@@ -3269,8 +3378,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [217/366] sw1 SW1# show interfaces FastEthernet0/8 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/8                  0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/8                      0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/8                      0              0              0              0
 
 [218/366] sw1 SW1# show cdp interface FastEthernet0/8
   FastEthernet0/8 is administratively down, line protocol is down
@@ -3279,8 +3391,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [219/366] sw1 SW1# show interfaces FastEthernet0/9 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/9                  0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/9                      0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/9                      0              0              0              0
 
 [220/366] sw1 SW1# show cdp interface FastEthernet0/9
   FastEthernet0/9 is down, line protocol is down
@@ -3289,8 +3404,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [221/366] sw1 SW1# show interfaces FastEthernet0/10 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/10                 0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/10                     0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/10                     0              0              0              0
 
 [222/366] sw1 SW1# show cdp interface FastEthernet0/10
   FastEthernet0/10 is down, line protocol is down
@@ -3299,8 +3417,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [223/366] sw1 SW1# show interfaces FastEthernet0/11 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/11                 0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/11                     0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/11                     0              0              0              0
 
 [224/366] sw1 SW1# show cdp interface FastEthernet0/11
   FastEthernet0/11 is down, line protocol is down
@@ -3309,8 +3430,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [225/366] sw1 SW1# show interfaces FastEthernet0/12 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/12                 0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/12                     0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/12                     0              0              0              0
 
 [226/366] sw1 SW1# show cdp interface FastEthernet0/12
   FastEthernet0/12 is down, line protocol is down
@@ -3319,8 +3443,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [227/366] sw1 SW1# show interfaces FastEthernet0/13 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/13                 0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/13                     0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/13                     0              0              0              0
 
 [228/366] sw1 SW1# show cdp interface FastEthernet0/13
   FastEthernet0/13 is down, line protocol is down
@@ -3329,8 +3456,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [229/366] sw1 SW1# show interfaces FastEthernet0/14 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/14                 0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/14                     0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/14                     0              0              0              0
 
 [230/366] sw1 SW1# show cdp interface FastEthernet0/14
   FastEthernet0/14 is down, line protocol is down
@@ -3339,8 +3469,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [231/366] sw1 SW1# show interfaces FastEthernet0/15 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/15                 0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/15                     0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/15                     0              0              0              0
 
 [232/366] sw1 SW1# show cdp interface FastEthernet0/15
   FastEthernet0/15 is down, line protocol is down
@@ -3349,8 +3482,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [233/366] sw1 SW1# show interfaces FastEthernet0/16 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/16                 0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/16                     0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/16                     0              0              0              0
 
 [234/366] sw1 SW1# show cdp interface FastEthernet0/16
   FastEthernet0/16 is down, line protocol is down
@@ -3359,8 +3495,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [235/366] sw1 SW1# show interfaces FastEthernet0/17 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/17                 0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/17                     0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/17                     0              0              0              0
 
 [236/366] sw1 SW1# show cdp interface FastEthernet0/17
   FastEthernet0/17 is down, line protocol is down
@@ -3369,8 +3508,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [237/366] sw1 SW1# show interfaces FastEthernet0/18 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/18                 0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/18                     0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/18                     0              0              0              0
 
 [238/366] sw1 SW1# show cdp interface FastEthernet0/18
   FastEthernet0/18 is down, line protocol is down
@@ -3379,8 +3521,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [239/366] sw1 SW1# show interfaces FastEthernet0/19 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/19                 0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/19                     0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/19                     0              0              0              0
 
 [240/366] sw1 SW1# show cdp interface FastEthernet0/19
   FastEthernet0/19 is down, line protocol is down
@@ -3389,8 +3534,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [241/366] sw1 SW1# show interfaces FastEthernet0/20 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/20                 0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/20                     0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/20                     0              0              0              0
 
 [242/366] sw1 SW1# show cdp interface FastEthernet0/20
   FastEthernet0/20 is down, line protocol is down
@@ -3399,8 +3547,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [243/366] sw1 SW1# show interfaces FastEthernet0/21 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/21                 0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/21                     0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/21                     0              0              0              0
 
 [244/366] sw1 SW1# show cdp interface FastEthernet0/21
   FastEthernet0/21 is down, line protocol is down
@@ -3409,8 +3560,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [245/366] sw1 SW1# show interfaces FastEthernet0/22 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/22                 0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/22                     0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/22                     0              0              0              0
 
 [246/366] sw1 SW1# show cdp interface FastEthernet0/22
   FastEthernet0/22 is down, line protocol is down
@@ -3419,8 +3573,11 @@ Total steps: 366
     Holdtime is 180 seconds
 
 [247/366] sw1 SW1# show interfaces FastEthernet0/23 counters
-  Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/23                 0             0           0             0
+  Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts
+  Fa0/23                     0              0              0              0
+  
+  Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts
+  Fa0/23                     0              0              0              0
 
 [248/366] sw1 SW1# show cdp interface FastEthernet0/23
   FastEthernet0/23 is down, line protocol is down
@@ -3460,13 +3617,13 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   10:16:46 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   16:24:00 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [257/366] w1 w1$ hostname
   W1
 
 [258/366] w1 w1$ whoami
-  w1\User
+  W1\User
 
 [259/366] w1 w1$ ipconfig /all
   Windows IP Configuration
@@ -3480,10 +3637,11 @@ Total steps: 366
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller
      Physical Address. . . . . . . . . : 02-00-00-00-00-53
      DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:53%2(Preferred)
      IPv4 Address. . . . . . . . . . . : 192.168.1.12(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 
@@ -3493,7 +3651,7 @@ Total steps: 366
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #2
      Physical Address. . . . . . . . . : 02-00-00-00-00-54
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -3502,7 +3660,7 @@ Total steps: 366
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #3
      Physical Address. . . . . . . . . : 02-00-00-00-00-55
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -3511,7 +3669,7 @@ Total steps: 366
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #4
      Physical Address. . . . . . . . . : 02-00-00-00-00-56
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -3519,7 +3677,7 @@ Total steps: 366
 
 [260/366] w1 w1$ arp -a
   
-  Interface: 192.168.1.12 --- 0x1
+  Interface: 192.168.1.12 --- 0x2
     Internet Address      Physical Address      Type
     192.168.1.11          02-00-00-00-00-4f     dynamic
     192.168.1.13          02-00-00-00-00-57     dynamic
@@ -3530,10 +3688,10 @@ Total steps: 366
 [261/366] w1 w1$ netstat -rn
   ===========================================================================
   Interface List
-     1...02 00 00 00 00 53 ......Intel(R) Ethernet Connection #1
-     2...02 00 00 00 00 54 ......Intel(R) Ethernet Connection #2
-     3...02 00 00 00 00 55 ......Intel(R) Ethernet Connection #3
-     4...02 00 00 00 00 56 ......Intel(R) Ethernet Connection #4
+     2...02 00 00 00 00 53 ......Intel(R) 82540EM Gigabit Ethernet Controller
+     3...02 00 00 00 00 54 ......Intel(R) 82540EM Gigabit Ethernet Controller #2
+     4...02 00 00 00 00 55 ......Intel(R) 82540EM Gigabit Ethernet Controller #3
+     5...02 00 00 00 00 56 ......Intel(R) 82540EM Gigabit Ethernet Controller #4
      1...........................Software Loopback Interface 1
   ===========================================================================
   
@@ -3548,6 +3706,16 @@ Total steps: 366
   ===========================================================================
   Persistent Routes:
     None
+  
+  IPv6 Route Table
+  ===========================================================================
+  Active Routes:
+   If Metric Network Destination      Gateway
+     1    331 ::1/128                  On-link
+     2      0 fe80::/10                On-link
+  ===========================================================================
+  Persistent Routes:
+    None
 
 [262/366] w1 w1$ systeminfo
   Host Name:                 W1
@@ -3556,7 +3724,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          8/23/2026, 10:16:46 AM
+  System Boot Time:          9/10/2026, 4:23:58 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3567,18 +3735,18 @@ Total steps: 366
   Available Physical Memory: 2,460 MB
   Virtual Memory: Max Size:  5,936 MB
   Network Card(s):           4 NIC(s) Installed.
-                             [01]: Intel(R) Ethernet Connection
+                             [01]: Intel(R) 82540EM Gigabit Ethernet Controller
                                    Connection Name: Ethernet 0
                                    DHCP Enabled:    No
                                    IP address(es)
                                    [01]: 192.168.1.12
-                             [02]: Intel(R) Ethernet Connection
+                             [02]: Intel(R) 82540EM Gigabit Ethernet Controller #2
                                    Connection Name: Ethernet 1
                                    Status:          Media disconnected
-                             [03]: Intel(R) Ethernet Connection
+                             [03]: Intel(R) 82540EM Gigabit Ethernet Controller #3
                                    Connection Name: Ethernet 2
                                    Status:          Media disconnected
-                             [04]: Intel(R) Ethernet Connection
+                             [04]: Intel(R) 82540EM Gigabit Ethernet Controller #4
                                    Connection Name: Ethernet 3
                                    Status:          Media disconnected
 
@@ -3612,7 +3780,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   10:16:46 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   16:24:00 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -3644,13 +3812,13 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   10:16:46 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   16:24:00 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [277/366] w2 w2$ hostname
   W2
 
 [278/366] w2 w2$ whoami
-  w2\User
+  W2\User
 
 [279/366] w2 w2$ ipconfig /all
   Windows IP Configuration
@@ -3664,10 +3832,11 @@ Total steps: 366
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller
      Physical Address. . . . . . . . . : 02-00-00-00-00-5F
      DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:5f%2(Preferred)
      IPv4 Address. . . . . . . . . . . : 192.168.1.22(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 
@@ -3677,7 +3846,7 @@ Total steps: 366
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #2
      Physical Address. . . . . . . . . : 02-00-00-00-00-60
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -3686,7 +3855,7 @@ Total steps: 366
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #3
      Physical Address. . . . . . . . . : 02-00-00-00-00-61
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -3695,7 +3864,7 @@ Total steps: 366
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #4
      Physical Address. . . . . . . . . : 02-00-00-00-00-62
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -3703,7 +3872,7 @@ Total steps: 366
 
 [280/366] w2 w2$ arp -a
   
-  Interface: 192.168.1.22 --- 0x1
+  Interface: 192.168.1.22 --- 0x2
     Internet Address      Physical Address      Type
     192.168.1.11          02-00-00-00-00-4f     dynamic
     192.168.1.13          02-00-00-00-00-57     dynamic
@@ -3714,10 +3883,10 @@ Total steps: 366
 [281/366] w2 w2$ netstat -rn
   ===========================================================================
   Interface List
-     1...02 00 00 00 00 5f ......Intel(R) Ethernet Connection #1
-     2...02 00 00 00 00 60 ......Intel(R) Ethernet Connection #2
-     3...02 00 00 00 00 61 ......Intel(R) Ethernet Connection #3
-     4...02 00 00 00 00 62 ......Intel(R) Ethernet Connection #4
+     2...02 00 00 00 00 5f ......Intel(R) 82540EM Gigabit Ethernet Controller
+     3...02 00 00 00 00 60 ......Intel(R) 82540EM Gigabit Ethernet Controller #2
+     4...02 00 00 00 00 61 ......Intel(R) 82540EM Gigabit Ethernet Controller #3
+     5...02 00 00 00 00 62 ......Intel(R) 82540EM Gigabit Ethernet Controller #4
      1...........................Software Loopback Interface 1
   ===========================================================================
   
@@ -3732,6 +3901,16 @@ Total steps: 366
   ===========================================================================
   Persistent Routes:
     None
+  
+  IPv6 Route Table
+  ===========================================================================
+  Active Routes:
+   If Metric Network Destination      Gateway
+     1    331 ::1/128                  On-link
+     2      0 fe80::/10                On-link
+  ===========================================================================
+  Persistent Routes:
+    None
 
 [282/366] w2 w2$ systeminfo
   Host Name:                 W2
@@ -3740,7 +3919,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          8/23/2026, 10:16:46 AM
+  System Boot Time:          9/10/2026, 4:23:58 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3751,18 +3930,18 @@ Total steps: 366
   Available Physical Memory: 2,460 MB
   Virtual Memory: Max Size:  5,936 MB
   Network Card(s):           4 NIC(s) Installed.
-                             [01]: Intel(R) Ethernet Connection
+                             [01]: Intel(R) 82540EM Gigabit Ethernet Controller
                                    Connection Name: Ethernet 0
                                    DHCP Enabled:    No
                                    IP address(es)
                                    [01]: 192.168.1.22
-                             [02]: Intel(R) Ethernet Connection
+                             [02]: Intel(R) 82540EM Gigabit Ethernet Controller #2
                                    Connection Name: Ethernet 1
                                    Status:          Media disconnected
-                             [03]: Intel(R) Ethernet Connection
+                             [03]: Intel(R) 82540EM Gigabit Ethernet Controller #3
                                    Connection Name: Ethernet 2
                                    Status:          Media disconnected
-                             [04]: Intel(R) Ethernet Connection
+                             [04]: Intel(R) 82540EM Gigabit Ethernet Controller #4
                                    Connection Name: Ethernet 3
                                    Status:          Media disconnected
 
@@ -3796,27 +3975,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   10:16:46 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   16:24:00 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.372 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.252 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=11.120 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.703 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.252/1.812/2.372/0.560 ms
+  rtt min/avg/max/mdev = 0.703/5.911/11.120/5.208 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.146 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.357 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.058 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.648 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.146/1.251/1.357/0.106 ms
+  rtt min/avg/max/mdev = 0.648/0.853/1.058/0.205 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -3861,10 +4040,10 @@ Total steps: 366
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        7 packets input, 632 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       19 packets output, 1448 bytes, 0 underruns
+       24 packets output, 1878 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -3881,11 +4060,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 268 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       6 packets input, 520 bytes, 0 no buffer
+       Received 1 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       17 packets output, 1266 bytes, 0 underruns
+       19 packets output, 1444 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -3903,10 +4082,10 @@ Total steps: 366
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        3 packets input, 226 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       12 packets output, 836 bytes, 0 underruns
+       16 packets output, 1192 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4353,10 +4532,10 @@ Total steps: 366
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        5 packets input, 428 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       18 packets output, 1308 bytes, 0 underruns
+       23 packets output, 1738 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4373,11 +4552,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 64 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       4 packets input, 316 bytes, 0 no buffer
+       Received 1 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       16 packets output, 1126 bytes, 0 underruns
+       18 packets output, 1304 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4395,10 +4574,10 @@ Total steps: 366
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        3 packets input, 226 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       13 packets output, 900 bytes, 0 underruns
+       17 packets output, 1256 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-05-etherchannel
-Generated: 2026-08-23T10:19:25.763Z
+Generated: 2026-09-10T16:30:40.306Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=LACP/PAgP/static bundles, port-channel interfaces, load-balance, teardown
 Total steps: 340
@@ -24,10 +24,11 @@ Total steps: 340
   No EtherChannel groups configured
 
 [4/340] sw1 SW1# show etherchannel load-balance
-  EtherChannel: no detail
+  EtherChannel Load-Balancing Configuration:
+          src-dst-ip
 
 [5/340] sw1 SW1# show etherchannel port-channel
-  EtherChannel: no detail
+  No EtherChannel groups configured
 
 [6/340] sw1 SW1# show pagp neighbor
   % PAgP is not implemented: this switch aggregates with LACP only.
@@ -44,13 +45,14 @@ Total steps: 340
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [10/340] sw1 SW1(config)# port-channel load-balance src-dst-mac
-  % Load-balancing is not supported: a bundle here groups members for spanning tree, it does not distribute frames across them.
+<empty>
 
 [11/340] sw1 SW1(config)# do show etherchannel load-balance
-  EtherChannel: no detail
+  EtherChannel Load-Balancing Configuration:
+          src-dst-mac
 
 [12/340] sw1 SW1(config)# port-channel load-balance src-dst-ip
-  % Load-balancing is not supported: a bundle here groups members for spanning tree, it does not distribute frames across them.
+<empty>
 
 [13/340] sw1 SW1(config)# lacp system-priority 100
 <empty>
@@ -85,7 +87,7 @@ Total steps: 340
 <empty>
 
 [23/340] sw1 SW1(config-if)# switchport mode trunk
-  % Error
+<empty>
 
 [24/340] sw1 SW1(config-if)# exit
 <empty>
@@ -112,7 +114,7 @@ Total steps: 340
 <empty>
 
 [32/340] sw1 SW1(config-if)# switchport mode trunk
-  % Error
+<empty>
 
 [33/340] sw1 SW1(config-if)# exit
 <empty>
@@ -139,7 +141,7 @@ Total steps: 340
 <empty>
 
 [41/340] sw1 SW1(config-if)# switchport mode trunk
-  % Error
+<empty>
 
 [42/340] sw1 SW1(config-if)# exit
 <empty>
@@ -166,7 +168,7 @@ Total steps: 340
 <empty>
 
 [50/340] sw1 SW1(config-if)# switchport mode trunk
-  % Error
+<empty>
 
 [51/340] sw1 SW1(config-if)# exit
 <empty>
@@ -193,7 +195,7 @@ Total steps: 340
 <empty>
 
 [59/340] sw1 SW1(config-if)# switchport mode trunk
-  % Error
+<empty>
 
 [60/340] sw1 SW1(config-if)# exit
 <empty>
@@ -448,10 +450,12 @@ Total steps: 340
 <empty>
 
 [130/340] sw1 SW1(config-if)# channel-group 99 mode bogus
-  % Invalid channel-group id
+                ^
+  % Invalid input detected at '^' marker.
 
 [131/340] sw1 SW1(config-if)# channel-group abc mode active
-  % Invalid channel-group id
+                ^
+  % Invalid input detected at '^' marker.
 
 [132/340] sw1 SW1(config-if)# exit
 <empty>
@@ -480,7 +484,7 @@ Total steps: 340
 <empty>
 
 [140/340] core CORE(config-if)# switchport mode trunk
-  % Error
+<empty>
 
 [141/340] core CORE(config-if)# end
 <empty>
@@ -504,55 +508,109 @@ Total steps: 340
   EtherChannel: no detail
 
 [146/340] sw1 SW1# show etherchannel 1 port-channel
-  EtherChannel: no detail
+  Port-channels in the group:
+  ----------------------
+  
+  Port-channel: Port-channel1    (Primary Aggregator)
+  
+  Age of the Port-channel   = 0d:00h:00m:00s
+  Logical slot/port   = 16/1   Number of ports = 0
+  Port state          = Port-channel Ag-Inuse
+  Protocol            =   -
+  Port security       = Disabled
 
 [147/340] sw1 SW1# show etherchannel 2 summary
   EtherChannel: no detail
 
 [148/340] sw1 SW1# show etherchannel 2 port-channel
-  EtherChannel: no detail
+  Port-channels in the group:
+  ----------------------
+  
+  Port-channel: Port-channel2    (Primary Aggregator)
+  
+  Age of the Port-channel   = 0d:00h:00m:00s
+  Logical slot/port   = 16/2   Number of ports = 0
+  Port state          = Port-channel Ag-Inuse
+  Protocol            =   -
+  Port security       = Disabled
 
 [149/340] sw1 SW1# show etherchannel 3 summary
   EtherChannel: no detail
 
 [150/340] sw1 SW1# show etherchannel 3 port-channel
-  EtherChannel: no detail
+  Port-channels in the group:
+  ----------------------
+  
+  Port-channel: Port-channel3    (Primary Aggregator)
+  
+  Age of the Port-channel   = 0d:00h:00m:00s
+  Logical slot/port   = 16/3   Number of ports = 0
+  Port state          = Port-channel Ag-Inuse
+  Protocol            =   -
+  Port security       = Disabled
 
 [151/340] sw1 SW1# show etherchannel 4 summary
   EtherChannel: no detail
 
 [152/340] sw1 SW1# show etherchannel 4 port-channel
-  EtherChannel: no detail
+  Port-channels in the group:
+  ----------------------
+  
+  Port-channel: Port-channel4    (Primary Aggregator)
+  
+  Age of the Port-channel   = 0d:00h:00m:00s
+  Logical slot/port   = 16/4   Number of ports = 0
+  Port state          = Port-channel Ag-Inuse
+  Protocol            =   -
+  Port security       = Disabled
 
 [153/340] sw1 SW1# show etherchannel 5 summary
   EtherChannel: no detail
 
 [154/340] sw1 SW1# show etherchannel 5 port-channel
-  EtherChannel: no detail
+  Port-channels in the group:
+  ----------------------
+  
+  Port-channel: Port-channel5    (Primary Aggregator)
+  
+  Age of the Port-channel   = 0d:00h:00m:00s
+  Logical slot/port   = 16/5   Number of ports = 0
+  Port state          = Port-channel Ag-Inuse
+  Protocol            =   -
+  Port security       = Disabled
 
 [155/340] sw1 SW1# show etherchannel 6 summary
   EtherChannel: no detail
 
 [156/340] sw1 SW1# show etherchannel 6 port-channel
-  EtherChannel: no detail
+  No EtherChannel groups configured
 
 [157/340] sw1 SW1# show etherchannel 7 summary
   EtherChannel: no detail
 
 [158/340] sw1 SW1# show etherchannel 7 port-channel
-  EtherChannel: no detail
+  No EtherChannel groups configured
 
 [159/340] sw1 SW1# show etherchannel 8 summary
   EtherChannel: no detail
 
 [160/340] sw1 SW1# show etherchannel 8 port-channel
-  EtherChannel: no detail
+  No EtherChannel groups configured
 
 [161/340] sw1 SW1# show etherchannel 9 summary
   EtherChannel: no detail
 
 [162/340] sw1 SW1# show etherchannel 9 port-channel
-  EtherChannel: no detail
+  Port-channels in the group:
+  ----------------------
+  
+  Port-channel: Port-channel9    (Primary Aggregator)
+  
+  Age of the Port-channel   = 0d:00h:00m:00s
+  Logical slot/port   = 16/9   Number of ports = 0
+  Port state          = Port-channel Ag-Inuse
+  Protocol            =   -
+  Port security       = Disabled
 
 
 --- [163] § per-port-channel running-config loop ---
@@ -763,14 +821,15 @@ Total steps: 340
       Link: up
 
 [183/340] sw1 SW1# show etherchannel load-balance
-  EtherChannel: no detail
+  EtherChannel Load-Balancing Configuration:
+          src-dst-ip
 
 [184/340] sw1 SW1# show lacp neighbor
   Flags:  S - Device is requesting Slow LACPDUs  F - Device is requesting Fast LACPDUs
           A - Device is in Active mode           P - Device is in Passive mode
   
   Port      Partner System ID          Age  Flags  Port Pri.  Oper Key  Port Number
-  Fa0/22    none                       -    FP     0          0         0
+  Fa0/22    none                       -    SP     0          0         0
   Fa0/6     none                       -    FA     0          0         0
   Fa0/7     none                       -    FA     0          0         0
   Fa0/8     none                       -    FA     0          0         0
@@ -778,9 +837,9 @@ Total steps: 340
   Fa0/10    none                       -    FA     0          0         0
   Fa0/11    none                       -    FA     0          0         0
   Fa0/12    none                       -    FA     0          0         0
-  Fa0/13    none                       -    FA     0          0         0
-  Fa0/20    none                       -    FP     0          0         0
-  Fa0/21    none                       -    FP     0          0         0
+  Fa0/13    none                       -    SA     0          0         0
+  Fa0/20    none                       -    SP     0          0         0
+  Fa0/21    none                       -    SP     0          0         0
 
 [185/340] sw1 SW1# show lacp counters
                LACPDUs         Marker      Marker Response    LACPDUs
@@ -809,16 +868,16 @@ Total steps: 340
   Fa0/1                        connected    1          a-full  a-100 10/100BaseTX
   Fa0/2                        connected    1          a-full  a-100 10/100BaseTX
   Fa0/3                        connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                        notconnect   1            auto   auto 10/100BaseTX
-  Fa0/5                        notconnect   1            auto   auto 10/100BaseTX
-  Fa0/6                        notconnect   1            auto   auto 10/100BaseTX
-  Fa0/7                        notconnect   1            auto   auto 10/100BaseTX
-  Fa0/8                        notconnect   1            auto   auto 10/100BaseTX
-  Fa0/9                        notconnect   1            auto   auto 10/100BaseTX
-  Fa0/10                       notconnect   1            auto   auto 10/100BaseTX
-  Fa0/11                       notconnect   1            auto   auto 10/100BaseTX
-  Fa0/12                       notconnect   1            auto   auto 10/100BaseTX
-  Fa0/13                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/4                        notconnect   trunk        auto   auto 10/100BaseTX
+  Fa0/5                        notconnect   trunk        auto   auto 10/100BaseTX
+  Fa0/6                        notconnect   trunk        auto   auto 10/100BaseTX
+  Fa0/7                        notconnect   trunk        auto   auto 10/100BaseTX
+  Fa0/8                        notconnect   trunk        auto   auto 10/100BaseTX
+  Fa0/9                        notconnect   trunk        auto   auto 10/100BaseTX
+  Fa0/10                       notconnect   trunk        auto   auto 10/100BaseTX
+  Fa0/11                       notconnect   trunk        auto   auto 10/100BaseTX
+  Fa0/12                       notconnect   trunk        auto   auto 10/100BaseTX
+  Fa0/13                       notconnect   trunk        auto   auto 10/100BaseTX
   Fa0/14                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/15                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/16                       notconnect   1            auto   auto 10/100BaseTX
@@ -827,7 +886,7 @@ Total steps: 340
   Fa0/19                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/20                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/21                       notconnect   1            auto   auto 10/100BaseTX
-  Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/22                       notconnect   trunk        auto   auto 10/100BaseTX
   Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
   Gi0/1                        connected    trunk      a-full a-1000 1000BASE-T
@@ -972,7 +1031,7 @@ Total steps: 340
   Local information:
                               LACP port    Admin     Oper    Port
   Port      Flags   State     Priority     Key       Key     Number
-  Fa0/13    FA      standalone32768        5         5       13
+  Fa0/13    SA      standalone32768        5         5       13
   
   Partner information:
             No partner learned on this port
@@ -1005,7 +1064,7 @@ Total steps: 340
   Local information:
                               LACP port    Admin     Oper    Port
   Port      Flags   State     Priority     Key       Key     Number
-  Fa0/20    FP      standalone32768        9         9       20
+  Fa0/20    SP      standalone32768        9         9       20
   
   Partner information:
             No partner learned on this port
@@ -1020,7 +1079,7 @@ Total steps: 340
   Local information:
                               LACP port    Admin     Oper    Port
   Port      Flags   State     Priority     Key       Key     Number
-  Fa0/21    FP      standalone32768        9         9       21
+  Fa0/21    SP      standalone32768        9         9       21
   
   Partner information:
             No partner learned on this port
@@ -1030,114 +1089,121 @@ Total steps: 340
 [210/340] sw1 SW1# show running-config interface FastEthernet0/4
   Building configuration...
   
-  Current configuration : 76 bytes
+  Current configuration : 75 bytes
   !
   interface FastEthernet0/4
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
   end
 
 [211/340] sw1 SW1# show running-config interface FastEthernet0/5
   Building configuration...
   
-  Current configuration : 76 bytes
+  Current configuration : 75 bytes
   !
   interface FastEthernet0/5
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
   end
 
 [212/340] sw1 SW1# show running-config interface FastEthernet0/6
   Building configuration...
   
-  Current configuration : 129 bytes
+  Current configuration : 144 bytes
   !
   interface FastEthernet0/6
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
    channel-group 2 mode active
    lacp port-priority 700
+   lacp rate fast
   end
 
 [213/340] sw1 SW1# show running-config interface FastEthernet0/7
   Building configuration...
   
-  Current configuration : 129 bytes
+  Current configuration : 144 bytes
   !
   interface FastEthernet0/7
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
    channel-group 2 mode active
    lacp port-priority 800
+   lacp rate fast
   end
 
 [214/340] sw1 SW1# show running-config interface FastEthernet0/8
   Building configuration...
   
-  Current configuration : 129 bytes
+  Current configuration : 144 bytes
   !
   interface FastEthernet0/8
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
    channel-group 3 mode active
    lacp port-priority 100
+   lacp rate fast
   end
 
 [215/340] sw1 SW1# show running-config interface FastEthernet0/9
   Building configuration...
   
-  Current configuration : 129 bytes
+  Current configuration : 144 bytes
   !
   interface FastEthernet0/9
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
    channel-group 3 mode active
    lacp port-priority 200
+   lacp rate fast
   end
 
 [216/340] sw1 SW1# show running-config interface FastEthernet0/10
   Building configuration...
   
-  Current configuration : 130 bytes
+  Current configuration : 145 bytes
   !
   interface FastEthernet0/10
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
    channel-group 4 mode active
    lacp port-priority 300
+   lacp rate fast
   end
 
 [217/340] sw1 SW1# show running-config interface FastEthernet0/11
   Building configuration...
   
-  Current configuration : 130 bytes
+  Current configuration : 145 bytes
   !
   interface FastEthernet0/11
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
    channel-group 4 mode active
    lacp port-priority 400
+   lacp rate fast
   end
 
 [218/340] sw1 SW1# show running-config interface FastEthernet0/12
   Building configuration...
   
-  Current configuration : 130 bytes
+  Current configuration : 145 bytes
   !
   interface FastEthernet0/12
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
    channel-group 5 mode active
    lacp port-priority 500
+   lacp rate fast
   end
 
 [219/340] sw1 SW1# show running-config interface FastEthernet0/13
   Building configuration...
   
-  Current configuration : 106 bytes
+  Current configuration : 105 bytes
   !
   interface FastEthernet0/13
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
    channel-group 5 mode active
   end
@@ -1543,6 +1609,7 @@ Total steps: 340
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : 
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:53%2
      IPv4 Address. . . . . . . . . . . : 192.168.1.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 
@@ -1565,17 +1632,17 @@ Total steps: 340
 
 [266/340] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.688 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.840 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.910 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.680 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.840/1.764/2.688/0.924 ms
+  rtt min/avg/max/mdev = 0.680/1.795/2.910/1.115 ms
 
 [267/340] sw1 SW1# show running-config
   Building configuration...
   
-  Current configuration : 2272 bytes
+  Current configuration : 2599 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1589,57 +1656,64 @@ Total steps: 340
   interface FastEthernet0/3
   !
   interface FastEthernet0/4
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
   !
   interface FastEthernet0/5
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
   !
   interface FastEthernet0/6
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
    channel-group 2 mode active
    lacp port-priority 700
+   lacp rate fast
   !
   interface FastEthernet0/7
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
    channel-group 2 mode active
    lacp port-priority 800
+   lacp rate fast
   !
   interface FastEthernet0/8
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
    channel-group 3 mode active
    lacp port-priority 100
+   lacp rate fast
   !
   interface FastEthernet0/9
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
    channel-group 3 mode active
    lacp port-priority 200
+   lacp rate fast
   !
   interface FastEthernet0/10
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
    channel-group 4 mode active
    lacp port-priority 300
+   lacp rate fast
   !
   interface FastEthernet0/11
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
    channel-group 4 mode active
    lacp port-priority 400
+   lacp rate fast
   !
   interface FastEthernet0/12
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
    channel-group 5 mode active
    lacp port-priority 500
+   lacp rate fast
   !
   interface FastEthernet0/13
-   switchport mode access
+   switchport mode trunk
    channel-protocol lacp
    channel-group 5 mode active
   !
@@ -1676,6 +1750,7 @@ Total steps: 340
    channel-group 9 mode on
   !
   interface FastEthernet0/22
+   switchport mode trunk
    channel-group 1 mode passive
   !
   interface FastEthernet0/23
@@ -1688,12 +1763,25 @@ Total steps: 340
   !
   interface GigabitEthernet0/2
   !
+  interface Port-channel1
+  !
+  interface Port-channel2
+  !
+  interface Port-channel3
+  !
+  interface Port-channel4
+  !
+  interface Port-channel5
+  !
+  interface Port-channel9
+  !
   interface Vlan1
    no ip address
    shutdown
   !
+  spanning-tree mode pvst
   lacp system-priority 100
-  lacp rate fast
+  port-channel load-balance src-dst-ip
   !
   end
 
@@ -1717,10 +1805,10 @@ Total steps: 340
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        5 packets input, 428 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       17 packets output, 1244 bytes, 0 underruns
+       22 packets output, 1674 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1737,11 +1825,11 @@ Total steps: 340
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 64 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       4 packets input, 316 bytes, 0 no buffer
+       Received 1 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       15 packets output, 1062 bytes, 0 underruns
+       17 packets output, 1240 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1759,10 +1847,10 @@ Total steps: 340
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        5 packets input, 430 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       14 packets output, 1040 bytes, 0 underruns
+       18 packets output, 1396 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2204,10 +2292,10 @@ Total steps: 340
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        3 packets input, 224 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       16 packets output, 1104 bytes, 0 underruns
+       21 packets output, 1534 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2224,11 +2312,11 @@ Total steps: 340
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 64 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       4 packets input, 316 bytes, 0 no buffer
+       Received 1 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       16 packets output, 1126 bytes, 0 underruns
+       18 packets output, 1304 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2246,10 +2334,10 @@ Total steps: 340
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        3 packets input, 226 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       13 packets output, 900 bytes, 0 underruns
+       17 packets output, 1256 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

@@ -3971,12 +3971,22 @@ export class LinuxCommandExecutor {
           }
         } else {
           const parent = this.vfs.resolveInode(this.vfs.normalizePath(absPath + '/..', this.cwd));
-          if (parent && parent.type === 'directory' && !this.checkPermission(parent, 'w')) {
+          if (!parent) {
+            this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
+            throw new Error(`bash: ${path}: No such file or directory`);
+          }
+          if (parent.type !== 'directory') {
+            this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
+            throw new Error(`bash: ${path}: Not a directory`);
+          }
+          if (!this.checkPermission(parent, 'w')) {
             this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
             throw new Error(`bash: ${path}: Permission denied`);
           }
         }
-        this.vfs.writeFile(absPath, content, this.ctx().uid, this.ctx().gid, this.umask, append);
+        this.vfs.writeFile(
+          absPath, content, this.ctx().uid, this.ctx().gid, this.umask, append,
+          undefined, false);
         this.auditRules.onAccessIndirect(absPath, 'w', 'openat', this.snapshotActor());
       },
       readFile: (path: string) => {

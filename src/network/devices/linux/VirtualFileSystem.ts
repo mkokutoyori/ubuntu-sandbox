@@ -689,7 +689,7 @@ export class VirtualFileSystem {
    * whose true size can be gigabytes. `ls -l`/`du`/`stat` all read
    * `inode.size`, so this is the only override point needed.
    */
-  writeFile(path: string, content: string, uid: number, gid: number, umask: number, append = false, declaredSizeBytes?: number): boolean {
+  writeFile(path: string, content: string, uid: number, gid: number, umask: number, append = false, declaredSizeBytes?: number, createParents = true): boolean {
     // Handle special devices
     const inode = this.resolveInode(path);
     if (inode?.type === 'chardev') {
@@ -726,11 +726,11 @@ export class VirtualFileSystem {
 
     if (!inode) {
       if (this.isReadOnly(path)) return false;
-      // Ensure parent directories exist (auto-create like mkdir -p)
       const lastSlash = path.lastIndexOf('/');
       if (lastSlash > 0) {
         const parentDir = path.substring(0, lastSlash);
         if (!this.exists(parentDir)) {
+          if (!createParents) return false;
           this.mkdirp(parentDir, 0o755, uid, gid);
         }
       }

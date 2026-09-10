@@ -124,17 +124,70 @@ C'est la pile la plus prête, et c'est une bonne nouvelle.
 | Espace disque | `df -h /u01` → `100G / 16G utilisés / 84G dispo` **réel**, et la taille DÉCLARÉE d'une pièce consomme l'allocation (`/u01/backup` totalise 3 379 200 blocs) |
 | `availableBytes()` | présent dans `VfsAdapter` |
 
-**Trois écarts, tous petits :**
+**Trois écarts étaient relevés ici. Les trois sont fermés (lot R6).**
 
-1. **La pièce de sauvegarde appartient à `root:root`** alors que le
-   fichier de données appartient à `oracle:oinstall`. Un vrai RMAN écrit
-   sous l'utilisateur `oracle`. Défaut d'une ligne, mais c'est le genre
-   d'incohérence que le §3 de `CLAUDE.md` traque.
-2. **La FRA est vide** — la pièce part dans `/u01/backup` alors que
-   `db_recovery_file_dest` la désigne. `V$RECOVERY_FILE_DEST`, le quota
-   et `%U`/`%d_%T_%s` n'existent pas.
-3. **Pas de `chown`/permissions vérifiés à l'écriture** : rien ne dit
-   qu'un RMAN lancé par un utilisateur sans droit serait refusé.
+1. ~~**La pièce de sauvegarde appartient à `root:root`**~~ — elle est
+   désormais écrite par le processus serveur Oracle
+   (`writeFileAsOracle`), donc `oracle:oinstall` comme le fichier de
+   données.
+2. ~~**La FRA est vide**~~ — la destination par défaut est le
+   `db_recovery_file_dest` que l'instance déclare, et la pièce y porte
+   son nom OMF :
+   `/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T155615_w2wy71ly_.bkp`.
+   Le répertoire daté est créé par la base elle-même, comme la FRA est
+   par définition un espace géré par Oracle.
+3. ~~**Pas de permissions vérifiées à l'écriture**~~ — mesuré :
+
+   ```
+   mkdir -p /u01/backup_root                          (root:root)
+   BACKUP DATABASE FORMAT '/u01/backup_root/%U';
+     ORA-19504: failed to create file "/u01/backup_root/ORCL_ihtfdn05"
+     ORA-27040: file create error, unable to create file
+
+   mkdir -p /u01/backup_ora && chown oracle:oinstall /u01/backup_ora
+   BACKUP DATABASE FORMAT '/u01/backup_ora/%U';
+     Finished backup at 10-SEP-2026 15:56:15
+   ```
+
+   Une destination que le DBA crée sans la donner à `oracle` est refusée,
+   exactement comme sur une vraie machine.
+
+Deux écarts de plus, trouvés en fermant ceux-là, et fermés avec eux :
+
+4. **Le quota de la FRA n'était évalué nulle part.** Quatre sauvegardes
+   de 1,73 Go entraient dans une FRA de 4 Go sans un mot. Désormais :
+
+   ```
+   RMAN> BACKUP DATABASE;   (3e tour)
+     RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
+     ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
+   ```
+
+   Une pièce écrite HORS de la FRA (`FORMAT '/u01/hors/%U'`) ne consomme
+   pas ce quota — vérifié.
+
+5. **`oracle.backup.recorded` n'était émis par personne**, donc HUIT
+   vues V$ (`BACKUP_SET`, `BACKUP_PIECE`, `BACKUP_DATAFILE`,
+   `BACKUP_FILES`, `BACKUP_REDOLOG`, `RMAN_STATUS`, `RMAN_OUTPUT`,
+   `RECOVERY_AREA_USAGE`) restaient vides pendant que `LIST BACKUP`
+   montrait les pièces et que `ls` les trouvait sur le disque. Un moteur
+   sans porte, exactement la forme que le §3 traque. RMAN publie
+   désormais chaque pièce dans l'état d'exécution de l'instance ; le
+   calcul d'occupation de la FRA a une seule écriture
+   (`storage/RecoveryArea.ts`) que les deux vues et RMAN lisent.
+
+6. **Quatre variables de FORMAT sur huit n'étaient pas substituées** —
+   `%d`, `%t`, `%n`, `%I` traversaient le nom de fichier telles quelles,
+   et `%T` rendait le tag au lieu de la date :
+
+   ```
+   avant : %d_TAG20260910T160713_1_1_ORCL_71xyf4ig_%t_%n_%I.bkp
+   après : ORCL_20260910_1_1_01tl5p4p_1_1_1789056889_ORCLxxxx_3942207946.bkp
+   ```
+
+   Un critère accepté par le parseur et jamais évalué (§6). La table
+   complète (`%d %n %I %T %t %s %p %c %e %u %U %F`) vit maintenant dans
+   `rman/core/formatSpec.ts`.
 
 ---
 
@@ -219,7 +272,7 @@ L'ordre n'est pas négociable : chaque lot a besoin du précédent.
 | **R3** | `SHUTDOWN`/`STARTUP` **dans** RMAN | applicative | sans eux, R2 n'est pas jouable comme un vrai opérateur le joue |
 | **R4** | **ARCHIVELOG** : mode, écriture du redo, `V$ARCHIVED_LOG`, `LOG SWITCH` | applicative | ouvre le PITR, `BACKUP ARCHIVELOG`, `RECOVER UNTIL` |
 | **R5** | Fichier de contrôle réel + autobackup + `RESTORE CONTROLFILE` | applicative | ouvre la reprise depuis rien |
-| **R6** | FRA réelle : quota, `%U`, `V$RECOVERY_FILE_DEST`, propriété `oracle` | OS | petit lot, forte fidélité |
+| **R6** | ~~FRA réelle : `V$RECOVERY_FILE_DEST`, nom OMF, propriété `oracle`, quota, substitutions de FORMAT, vues V$ alimentées~~ **FAIT** | OS | petit lot, forte fidélité |
 | **R7** | `CONNECT TARGET …@tns` **sur le fil** | réseau | referme la violation du §4 |
 | **R8** | Catalogue distant, `DUPLICATE`, transfert des pièces entre sites | réseau | le laboratoire DR devient réel |
 

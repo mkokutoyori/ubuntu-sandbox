@@ -265,11 +265,11 @@ Total steps: 300
 
 [57/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=1.047 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=1.547 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.047/1.047/1.047/0.000 ms
+  rtt min/avg/max/mdev = 1.547/1.547/1.547/0.000 ms
 
 [58/300] whq whq$ ipconfig /release
   Windows IP Configuration
@@ -306,6 +306,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . : acme.example
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4b%2
      IPv4 Address. . . . . . . . . . . : 10.1.1.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
@@ -323,10 +324,11 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : acme.example
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller
      Physical Address. . . . . . . . . : 02-00-00-00-00-4B
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4b%2(Preferred)
      IPv4 Address. . . . . . . . . . . : 10.1.1.12(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Lease Obtained. . . . . . . . . . : Saturday, June 6, 2026 8:00:00 AM
@@ -341,7 +343,7 @@ Total steps: 300
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #2
      Physical Address. . . . . . . . . : 02-00-00-00-00-4C
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -350,7 +352,7 @@ Total steps: 300
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #3
      Physical Address. . . . . . . . . : 02-00-00-00-00-4D
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -359,7 +361,7 @@ Total steps: 300
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #4
      Physical Address. . . . . . . . . : 02-00-00-00-00-4E
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -368,7 +370,7 @@ Total steps: 300
 [61/300] whq whq$ ping -n 1 10.1.1.1
   
   Pinging 10.1.1.1 with 32 bytes of data:
-  Reply from 10.1.1.1: bytes=32 time=<1ms TTL=255
+  Reply from 10.1.1.1: bytes=32 time=1ms TTL=255
   
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
@@ -403,11 +405,11 @@ Total steps: 300
 
 [66/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.725 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.871 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.725/0.725/0.725/0.000 ms
+  rtt min/avg/max/mdev = 0.871/0.871/0.871/0.000 ms
 
 [67/300] wbr wbr$ ipconfig /release
   Windows IP Configuration
@@ -444,6 +446,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . :
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4f%2
      IPv4 Address. . . . . . . . . . . : 10.2.2.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.2.2.1
@@ -461,10 +464,11 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller
      Physical Address. . . . . . . . . : 02-00-00-00-00-4F
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4f%2(Preferred)
      IPv4 Address. . . . . . . . . . . : 10.2.2.12(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Lease Obtained. . . . . . . . . . : Saturday, June 6, 2026 8:00:00 AM
@@ -479,7 +483,7 @@ Total steps: 300
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #2
      Physical Address. . . . . . . . . : 02-00-00-00-00-50
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -488,7 +492,7 @@ Total steps: 300
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #3
      Physical Address. . . . . . . . . : 02-00-00-00-00-51
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -497,7 +501,7 @@ Total steps: 300
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #4
      Physical Address. . . . . . . . . : 02-00-00-00-00-52
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -511,7 +515,7 @@ Total steps: 300
   Ping statistics for 10.2.2.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [71/300] ldc ldc$ ip addr flush dev eth0
 <empty>
@@ -541,29 +545,29 @@ Total steps: 300
 
 [75/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.501 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.539 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.501/0.501/0.501/0.000 ms
+  rtt min/avg/max/mdev = 0.539/0.539/0.539/0.000 ms
 
 
 --- [76] § DHCP — joignabilité avec adresses obtenues ---
 [76/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.480 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.518 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.480/0.480/0.480/0.000 ms
+  rtt min/avg/max/mdev = 0.518/0.518/0.518/0.000 ms
 
 [77/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.919 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.049 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.919/0.919/0.919/0.000 ms
+  rtt min/avg/max/mdev = 1.049/1.049/1.049/0.000 ms
 
 [78/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -577,19 +581,19 @@ Total steps: 300
 
 [79/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=254 time=1.056 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=254 time=1.054 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.056/1.056/1.056/0.000 ms
+  rtt min/avg/max/mdev = 1.054/1.054/1.054/0.000 ms
 
 [80/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.038 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.417 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.038/1.038/1.038/0.000 ms
+  rtt min/avg/max/mdev = 1.417/1.417/1.417/0.000 ms
 
 [81/300] whq whq$ ping -n 1 10.2.2.1
   
@@ -791,6 +795,7 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : acme.example
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4b%2
      IPv4 Address. . . . . . . . . . . : 10.1.1.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
@@ -822,6 +827,7 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : 
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4f%2
      IPv4 Address. . . . . . . . . . . : 10.2.2.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.2.2.1
@@ -884,6 +890,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . : acme.example
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4b%2
      IPv4 Address. . . . . . . . . . . : 10.1.1.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
@@ -918,6 +925,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . :
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4f%2
      IPv4 Address. . . . . . . . . . . : 10.2.2.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.2.2.1
@@ -983,6 +991,7 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : 
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4b%2
      Default Gateway . . . . . . . . . : 
   
   Ethernet adapter Ethernet 1:
@@ -1035,6 +1044,7 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : 
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4f%2
      Default Gateway . . . . . . . . . : 
   
   Ethernet adapter Ethernet 1:
@@ -1116,6 +1126,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . : acme.example
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4b%2
      IPv4 Address. . . . . . . . . . . : 10.1.1.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
@@ -1167,6 +1178,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . :
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4f%2
      IPv4 Address. . . . . . . . . . . : 10.2.2.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.2.2.1
@@ -1402,7 +1414,7 @@ Total steps: 300
 <empty>
 
 [189/300] rdc R-DC# show ip interface GigabitEthernet0/0 | include Helper
-    Helper address is not set
+    Helper address is 172.16.13.1
 
 [190/300] rhq R-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1574,10 +1586,11 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : acme.example
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller
      Physical Address. . . . . . . . . : 02-00-00-00-00-4B
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4b%2(Preferred)
      IPv4 Address. . . . . . . . . . . : 10.1.1.12(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Lease Obtained. . . . . . . . . . : Saturday, June 6, 2026 8:00:00 AM
@@ -1592,7 +1605,7 @@ Total steps: 300
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #2
      Physical Address. . . . . . . . . : 02-00-00-00-00-4C
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -1601,7 +1614,7 @@ Total steps: 300
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #3
      Physical Address. . . . . . . . . : 02-00-00-00-00-4D
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -1610,7 +1623,7 @@ Total steps: 300
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #4
      Physical Address. . . . . . . . . : 02-00-00-00-00-4E
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -1626,45 +1639,45 @@ Total steps: 300
 
 [210/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.503 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=4.701 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.503/0.503/0.503/0.000 ms
+  rtt min/avg/max/mdev = 4.701/4.701/4.701/0.000 ms
 
 [211/300] lhq lhq$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=254 time=0.669 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=254 time=0.590 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.669/0.669/0.669/0.000 ms
+  rtt min/avg/max/mdev = 0.590/0.590/0.590/0.000 ms
 
 [212/300] lhq lhq$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=254 time=0.493 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=254 time=0.526 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.493/0.493/0.493/0.000 ms
+  rtt min/avg/max/mdev = 0.526/0.526/0.526/0.000 ms
 
 [213/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.719 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.804 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.719/0.719/0.719/0.000 ms
+  rtt min/avg/max/mdev = 0.804/0.804/0.804/0.000 ms
 
 [214/300] whq whq$ ping -n 1 10.1.1.1
   
   Pinging 10.1.1.1 with 32 bytes of data:
-  Reply from 10.1.1.1: bytes=32 time=<1ms TTL=255
+  Reply from 10.1.1.1: bytes=32 time=9ms TTL=255
   
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 9ms, Maximum = 9ms, Average = 9ms
 
 [215/300] whq whq$ ping -n 1 10.2.2.1
   
@@ -1689,44 +1702,44 @@ Total steps: 300
 [217/300] whq whq$ ping -n 1 10.3.3.10
   
   Pinging 10.3.3.10 with 32 bytes of data:
-  Reply from 10.3.3.10: bytes=32 time=3ms TTL=62
+  Reply from 10.3.3.10: bytes=32 time=<1ms TTL=62
   
   Ping statistics for 10.3.3.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 3ms, Maximum = 3ms, Average = 3ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [218/300] lbr lbr$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=254 time=0.855 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=254 time=4.883 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.855/0.855/0.855/0.000 ms
+  rtt min/avg/max/mdev = 4.883/4.883/4.883/0.000 ms
 
 [219/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.297 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.319 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.297/0.297/0.297/0.000 ms
+  rtt min/avg/max/mdev = 0.319/0.319/0.319/0.000 ms
 
 [220/300] lbr lbr$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=254 time=0.600 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=254 time=0.573 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.600/0.600/0.600/0.000 ms
+  rtt min/avg/max/mdev = 0.573/0.573/0.573/0.000 ms
 
 [221/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.863 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.855 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.863/0.863/0.863/0.000 ms
+  rtt min/avg/max/mdev = 0.855/0.855/0.855/0.000 ms
 
 [222/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -1736,17 +1749,17 @@ Total steps: 300
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [223/300] wbr wbr$ ping -n 1 10.2.2.1
   
   Pinging 10.2.2.1 with 32 bytes of data:
-  Reply from 10.2.2.1: bytes=32 time=<1ms TTL=255
+  Reply from 10.2.2.1: bytes=32 time=5ms TTL=255
   
   Ping statistics for 10.2.2.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 5ms, Maximum = 5ms, Average = 5ms
 
 [224/300] wbr wbr$ ping -n 1 10.3.3.1
   
@@ -1770,35 +1783,35 @@ Total steps: 300
 
 [226/300] ldc ldc$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=254 time=0.445 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=254 time=0.611 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.445/0.445/0.445/0.000 ms
+  rtt min/avg/max/mdev = 0.611/0.611/0.611/0.000 ms
 
 [227/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=254 time=0.466 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=254 time=5.456 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.466/0.466/0.466/0.000 ms
+  rtt min/avg/max/mdev = 5.456/5.456/5.456/0.000 ms
 
 [228/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.306 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.394 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.306/0.306/0.306/0.000 ms
+  rtt min/avg/max/mdev = 0.394/0.394/0.394/0.000 ms
 
 [229/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.296 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.367 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.296/0.296/0.296/0.000 ms
+  rtt min/avg/max/mdev = 0.367/0.367/0.367/0.000 ms
 
 
 --- [230] § DHCP — inspection détaillée des pools/baux ---
@@ -1968,6 +1981,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . : acme.example
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4b%2
      IPv4 Address. . . . . . . . . . . : 10.1.1.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
@@ -1985,10 +1999,11 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : acme.example
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller
      Physical Address. . . . . . . . . : 02-00-00-00-00-4B
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4b%2(Preferred)
      IPv4 Address. . . . . . . . . . . : 10.1.1.12(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Lease Obtained. . . . . . . . . . : Saturday, June 6, 2026 8:00:00 AM
@@ -2003,7 +2018,7 @@ Total steps: 300
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #2
      Physical Address. . . . . . . . . : 02-00-00-00-00-4C
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -2012,7 +2027,7 @@ Total steps: 300
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #3
      Physical Address. . . . . . . . . : 02-00-00-00-00-4D
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -2021,7 +2036,7 @@ Total steps: 300
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #4
      Physical Address. . . . . . . . . : 02-00-00-00-00-4E
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -2097,10 +2112,11 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : acme.example
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller
      Physical Address. . . . . . . . . : 02-00-00-00-00-4B
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4b%2(Preferred)
      IPv4 Address. . . . . . . . . . . : 10.1.1.12(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Lease Obtained. . . . . . . . . . : Saturday, June 6, 2026 8:00:00 AM
@@ -2115,7 +2131,7 @@ Total steps: 300
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #2
      Physical Address. . . . . . . . . : 02-00-00-00-00-4C
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -2124,7 +2140,7 @@ Total steps: 300
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #3
      Physical Address. . . . . . . . . : 02-00-00-00-00-4D
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -2133,7 +2149,7 @@ Total steps: 300
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #4
      Physical Address. . . . . . . . . : 02-00-00-00-00-4E
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -2292,6 +2308,7 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : acme.example
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4b%2
      IPv4 Address. . . . . . . . . . . : 10.1.1.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
@@ -2324,6 +2341,7 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : 
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4f%2
      IPv4 Address. . . . . . . . . . . : 10.2.2.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.2.2.1
@@ -2417,77 +2435,77 @@ Total steps: 300
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 65504CCC, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 55C49B7C, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.10 to 0200.0000.0047
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 65504CCC, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 55C49B7C, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 65504CCC, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 55C49B7C, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 65504CCC, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 55C49B7C, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid D3A8DBDC, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 8F93709, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.11 to 0200.0000.004b
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid D3A8DBDC, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.11, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 8F93709, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.11, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid D3A8DBDC, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 8F93709, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.004b
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid D3A8DBDC, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 8F93709, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid D3A8DBDC, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 8F93709, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid D3A8DBDC, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 8F93709, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 8D8883B8, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid B8891832, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 8D8883B8, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid B8891832, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 822FA6FC, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid A7A06357, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 822FA6FC, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid A7A06357, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 23568859, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid EAFC15EA, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 23568859, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid EAFC15EA, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid C9233217, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 253B2885, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.10 to 0200.0000.0047
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid C9233217, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 253B2885, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid C9233217, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 253B2885, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid C9233217, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 253B2885, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 8C3E231D, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 703B566A, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.004b
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 8C3E231D, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 703B566A, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 8C3E231D, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 703B566A, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 8C3E231D, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 703B566A, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.005b for 10.3.3.11
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid DED21DDD, chaddr 0200.0000.005b, ciaddr 10.3.3.11, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 55784F87, chaddr 0200.0000.005b, ciaddr 10.3.3.11, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.005b for 10.3.3.11
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid DED21DDD, chaddr 0200.0000.005b, ciaddr 0.0.0.0, yiaddr 10.3.3.11, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 55784F87, chaddr 0200.0000.005b, ciaddr 0.0.0.0, yiaddr 10.3.3.11, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 76DEF135, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid A4B6DFFA, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.10 to 0200.0000.0047
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 76DEF135, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid A4B6DFFA, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 76DEF135, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid A4B6DFFA, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.10
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 76DEF135, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid A4B6DFFA, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 5544F25, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 22E15BFB, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.004b
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 5544F25, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 22E15BFB, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 5544F25, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 22E15BFB, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 5544F25, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 22E15BFB, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
 

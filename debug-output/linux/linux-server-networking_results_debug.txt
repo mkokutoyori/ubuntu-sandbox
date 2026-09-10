@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-networking
-Generated: 2026-08-24T14:25:07.449Z
+Generated: 2026-09-10T16:21:30.855Z
 Engine: linux
 host=L-SRV-NET-DBG (linux-server) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -902,6 +902,7 @@ $ [146/302]> ss -l
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
   LISTEN     0       0        0.0.0.0:1521           0.0.0.0:*         
   LISTEN     0       0        [::]:1521              [::]:*            
+  UNCONN     0       0        0.0.0.0:ntp            0.0.0.0:*         
   LISTEN     0       0        0.0.0.0:ssh            0.0.0.0:*         
   LISTEN     0       0        [::]:ssh               [::]:*            
   UNCONN     0       0        127.0.0.53:domain      0.0.0.0:*         
@@ -923,6 +924,7 @@ $ [147/302]> ss -tln
 
 $ [148/302]> ss -uln
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  UNCONN     0       0        0.0.0.0:123            0.0.0.0:*         
   UNCONN     0       0        127.0.0.53:53          0.0.0.0:*         
   UNCONN     0       0        0.0.0.0:5355           0.0.0.0:*         
   UNCONN     0       0        0.0.0.0:1812           0.0.0.0:*         
@@ -933,8 +935,8 @@ $ [149/302]> ss -tlnp
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
   LISTEN     0       0        0.0.0.0:1521           0.0.0.0:*          users:(("tnslsnr",pid=2001,fd=3))
   LISTEN     0       0        [::]:1521              [::]:*             users:(("tnslsnr",pid=2001,fd=3))
-  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=985,fd=3))
-  LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=985,fd=3))
+  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=22,fd=3))
+  LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=22,fd=3))
   LISTEN     0       0        127.0.0.53:53          0.0.0.0:*          users:(("systemd-resolved",pid=29,fd=3))
   LISTEN     0       0        0.0.0.0:1812           0.0.0.0:*          users:(("freeradius",pid=40,fd=3))
 
@@ -942,6 +944,7 @@ $ [150/302]> ss -a
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
   LISTEN     0       0        0.0.0.0:1521           0.0.0.0:*         
   LISTEN     0       0        [::]:1521              [::]:*            
+  UNCONN     0       0        0.0.0.0:ntp            0.0.0.0:*         
   LISTEN     0       0        0.0.0.0:ssh            0.0.0.0:*         
   LISTEN     0       0        [::]:ssh               [::]:*            
   UNCONN     0       0        127.0.0.53:domain      0.0.0.0:*         
@@ -953,14 +956,14 @@ $ [150/302]> ss -a
   UNCONN     0       0        0.0.0.0:49999          0.0.0.0:*         
 
 $ [151/302]> ss -s
-  Total: 11
+  Total: 12
   TCP:   6 (estab 0, closed 0, orphaned 0, timewait 0)
   
   Transport Total     IP        IPv6
   RAW       0         0         0
-  UDP       5         5         0
+  UDP       6         6         0
   TCP       6         6         0
-  INET      11        11        0
+  INET      12        12        0
   FRAG      0         0         0
 
 $ [152/302]> ss -tn state established
@@ -983,6 +986,7 @@ $ [154/302]> netstat -tln
 $ [155/302]> netstat -uln
   Active Internet connections (only servers)
   Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
+  udp             0      0 0.0.0.0:123             0.0.0.0:*
   udp             0      0 127.0.0.53:53           0.0.0.0:*
   udp             0      0 0.0.0.0:5355            0.0.0.0:*
   udp             0      0 0.0.0.0:1812            0.0.0.0:*
@@ -994,8 +998,8 @@ $ [156/302]> netstat -tlnp
   Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
   tcp             0      0 0.0.0.0:1521            0.0.0.0:*               LISTEN      2001/tnslsnr
   tcp6            0      0 :::1521                 :::*                    LISTEN      2001/tnslsnr
-  tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      985/sshd
-  tcp6            0      0 :::22                   :::*                    LISTEN      985/sshd
+  tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      22/sshd
+  tcp6            0      0 :::22                   :::*                    LISTEN      22/sshd
   tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN      29/systemd-resolved
   tcp             0      0 0.0.0.0:1812            0.0.0.0:*               LISTEN      40/freeradius
 
@@ -1004,12 +1008,12 @@ $ [157/302]> netstat -an | head
   Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
   tcp             0      0 0.0.0.0:1521            0.0.0.0:*               LISTEN
   tcp6            0      0 :::1521                 :::*                    LISTEN
+  udp             0      0 0.0.0.0:123             0.0.0.0:*
   tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN
   tcp6            0      0 :::22                   :::*                    LISTEN
   udp             0      0 127.0.0.53:53           0.0.0.0:*
   tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN
   udp             0      0 0.0.0.0:5355            0.0.0.0:*
-  tcp             0      0 0.0.0.0:1812            0.0.0.0:*               LISTEN
 
 $ [158/302]> netstat -s | head
   Ip:
@@ -1041,8 +1045,8 @@ $ [160/302]> netstat -rn
 
 $ [161/302]> lsof -i :22
   COMMAND     PID   USER   FD    TYPE DEVICE SIZE/OFF NODE NAME
-  sshd         985  root     6u  IPv4 10000      0t0  TCP *:22 (LISTEN)
-  sshd         985  root     7u  IPv6 10001      0t0  TCP *:22 (LISTEN)
+  sshd          22  root     7u  IPv4 10000      0t0  TCP *:22 (LISTEN)
+  sshd          22  root     8u  IPv6 10001      0t0  TCP *:22 (LISTEN)
 
 $ [162/302]> ss -tln sport = :22
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
@@ -1078,18 +1082,18 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-08-24 14:25:10--  http://192.168.10.1
+  --2026-09-10 16:21:33--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [172/302]> wget -q http://192.168.10.1
 <empty>
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-08-24 14:25:10--  http://192.168.10.1
+  --2026-09-10 16:21:33--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-08-24 14:25:10--  http://192.168.10.99
+  --2026-09-10 16:21:33--  http://192.168.10.99
   Connecting to 192.168.10.99:80... failed: Connection refused.
 
 $ [175/302]> curl
@@ -1312,11 +1316,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 root root 77 Aug 24 14:25 /tmp/id_rsa
-  -rw-r--r-- 1 root root 41 Aug 24 14:25 /tmp/id_rsa.pub
+  -rw------- 1 root root 77 Sep 10 16:21 /tmp/id_rsa
+  -rw-r--r-- 1 root root 42 Sep 10 16:21 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAunq0hf8qcc root@linux-server
+  ssh-rsa AAAAe63ho16luma root@linux-server
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1325,13 +1329,13 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAAv1hssn35ij root@localhost
+  ssh-ed25519 AAAA3jnhischh2g root@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]
 
 $ [225/302]> ssh root@192.168.10.99
-  ssh: connect to host 192.168.10.99 port 22: No route to host
+  ssh: connect to host 192.168.10.99 port 22: Network is unreachable
 
 $ [226/302]> ssh-keyscan 192.168.10.1
   # 192.168.10.1 unknown host
@@ -1510,11 +1514,12 @@ $ [258/302]> ip -6 addr show eth0
          valid_lft forever preferred_lft forever
 
 $ [259/302]> ip -6 route add default via 2001:db8::1
-  Command "add" is unknown, try "ip route help".
+<empty>
 
 $ [260/302]> ip -6 route show
   fe80::/10 dev eth0 proto kernel metric 0 pref medium
   2001:db8::/64 dev eth0 proto kernel metric 0 pref medium
+  default via 2001:db8::1 dev eth0 proto static metric 0 pref medium
 
 $ [261/302]> ping6 -c 1 ::1
   PING ::1(::1) 56 data bytes
@@ -1587,19 +1592,19 @@ $ [271/302]> netstat -i
   lo           65536        0      0      0 0                0      0      0      0 LRU
 
 $ [272/302]> ss -s
-  Total: 11
+  Total: 12
   TCP:   6 (estab 0, closed 0, orphaned 0, timewait 0)
   
   Transport Total     IP        IPv6
   RAW       0         0         0
-  UDP       5         5         0
+  UDP       6         6         0
   TCP       6         6         0
-  INET      11        11        0
+  INET      12        12        0
   FRAG      0         0         0
 
 $ [273/302]> cat /proc/net/snmp | head
   Ip: Forwarding DefaultTTL InReceives InHdrErrors InAddrErrors ForwDatagrams InUnknownProtos InDiscards InDelivers OutRequests OutDiscards OutNoRoutes ReasmTimeout ReasmReqds ReasmOKs ReasmFails FragOKs FragFails FragCreates
-  Ip: 1 64 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+  Ip: 1 64 0 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0
   Icmp: InMsgs InErrors InCsumErrors InDestUnreachs InTimeExcds InParmProbs InSrcQuenchs InRedirects InEchos InEchoReps InTimestamps InTimestampReps InAddrMasks InAddrMaskReps OutMsgs OutErrors OutDestUnreachs OutTimeExcds OutParmProbs OutSrcQuenchs OutRedirects OutEchos OutEchoReps OutTimestamps OutTimestampReps OutAddrMasks OutAddrMaskReps
   Icmp: 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
   IcmpMsg: InType8 OutType0
@@ -1607,7 +1612,7 @@ $ [273/302]> cat /proc/net/snmp | head
   Tcp: RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts InCsumErrors
   Tcp: 1 200 120000 -1 0 0 0 0 0 0 0 0 0 0 0
   Udp: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti
-  Udp: 0 0 0 0 0 0 0 0
+  Udp: 0 48 0 2 0 0 0 0
 
 $ [274/302]> cat /proc/net/sockstat
   cat: /proc/net/sockstat: No such file or directory

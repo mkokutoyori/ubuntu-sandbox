@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-vrrp-qos
-Generated: 2026-08-23T10:20:02.955Z
+Generated: 2026-09-10T16:31:11.660Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP VRRP/BFD-for-VRRP + MQC QoS classifier/behavior/policy
 Total steps: 257
@@ -510,7 +510,9 @@ Total steps: 257
 <empty>
 
 [85/257] r1 [R1-classifier-VOICE] if-match 8021p 5
-<empty>
+  Error: Wrong parameter found at '^' position.
+  if-match 8021p 5
+           ^
 
 [86/257] r1 [R1-classifier-VOICE] quit
 <empty>
@@ -570,7 +572,9 @@ Total steps: 257
 <empty>
 
 [105/257] r1 [R1-behavior-B-CRIT] remark 8021p 6
-<empty>
+  Error: Wrong parameter found at '^' position.
+  remark 8021p 6
+         ^
 
 [106/257] r1 [R1-behavior-B-CRIT] queue af bandwidth pct 15
 <empty>
@@ -881,26 +885,66 @@ Total steps: 257
   Line protocol current state : UP
   Internet Address is 192.168.1.2/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  21 packets, 1344 bytes
+    Unicast:                    0,  Multicast:                 16
+    Broadcast:                  5,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
   Internet Address is 10.0.0.1/30
   The Maximum Transmit Unit is 1500
-  Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+  Input:  2 packets, 160 bytes
+    Unicast:                    0,  Multicast:                  2
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  1 packets, 64 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  1,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [159/257] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
@@ -1094,32 +1138,41 @@ Total steps: 257
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 10:20:03.036  Aug 23 2026(EE3547D3.09374BC6)
+  Reference time: 16:31:11.773  Sep 10 2026(EE4D59CF.C5E353F7)
 
 [187/257] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [188/257] r1 <R1> display clock
-  2026-08-23 10:20:03
-  Sunday
+  2026-09-10 16:31:11
+  Thursday
   Time Zone(UTC) : UTC
 
 [189/257] r1 <R1> display lldp neighbor
-  Info: No LLDP neighbor is found.
+  GigabitEthernet0/0/0 has 0 neighbors
+  
+  GigabitEthernet0/0/1 has 0 neighbors
+  
+  GigabitEthernet0/0/2 has 0 neighbors
+  
+  GigabitEthernet0/0/3 has 0 neighbors
+  
+  Total: 0
 
 [190/257] r1 <R1> display lldp neighbor brief
-  Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
+  Local Intf                Neighbor Dev    Neighbor Intf   Exptime(s)
+  Total: 0
 
 [191/257] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-23 10:20:03
+  CPU Usage Stat. Time : 2026-09-10 16:31:11
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [192/257] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-23 10:20:03
+  Memory utilization statistics at 2026-09-10 16:31:11
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1160,14 +1213,14 @@ Total steps: 257
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 8
-  2026-08-23 10:20:02 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-23 10:20:02 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-23 10:20:02 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-23 10:20:02 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-23 10:20:02 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 1 state init -> master
-  2026-08-23 10:20:02 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 2 state init -> master
-  2026-08-23 10:20:02 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 3 state init -> master
-  2026-08-23 10:20:02 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 4 state init -> master
+  2026-09-10 16:31:11 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-09-10 16:31:11 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-09-10 16:31:11 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-09-10 16:31:11 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-09-10 16:31:11 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 1 state init -> master
+  2026-09-10 16:31:11 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 2 state init -> master
+  2026-09-10 16:31:11 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 3 state init -> master
+  2026-09-10 16:31:11 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 4 state init -> master
 
 [197/257] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1227,20 +1280,36 @@ Total steps: 257
   Internet Address is 192.168.1.2/24
   Broadcast address : 192.168.1.255
   The Maximum Transmit Unit : 1500 bytes
-  Input bandwidth utilization  : 0%
-  Output bandwidth utilization : 0%
-      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
-      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
-      Input:  0 packets, 0 bytes
-      Output: 0 packets, 0 bytes
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+  Input:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  21 packets, 1344 bytes
+    Unicast:                    0,  Multicast:                 16
+    Broadcast:                  5,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [205/257] r1 <R1> display interface GigabitEthernet0/0/0
   GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.2/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  21 packets, 1344 bytes
+    Unicast:                    0,  Multicast:                 16
+    Broadcast:                  5,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [206/257] r1 <R1> display this
   #
@@ -1714,7 +1783,7 @@ Total steps: 257
     ipsec          IP Security
     ipv6           Disable IPv6
     isis           Remove IS-IS
-    lldp           Disable LLDP
+    lldp           Link Layer Discovery Protocol
     local-user     Remove a local user
     multicast      Disable multicast routing
     nat            Network Address Translation
@@ -1726,17 +1795,16 @@ Total steps: 257
     route-policy   Remove a route-policy
     screen-length  Restore default screen length
     screen-width   Restore default screen width
+    snmp-agent     Remove SNMP agent configuration
     terminal       Set the terminal line characteristics
     time-range     Remove a time-range
     traffic        Display traffic statistics
-    <cr>
 
 [255/257] r1 [Huawei] acl ?
     advanced  Advanced ACL (3000-3999)
     basic     Basic ACL (2000-2999)
     name      Named ACL
     number    ACL number
-    <cr>
 
 [256/257] r1 [Huawei] return
 <empty>

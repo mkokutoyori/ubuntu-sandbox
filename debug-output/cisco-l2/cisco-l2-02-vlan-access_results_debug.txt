@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-02-vlan-access
-Generated: 2026-08-23T10:19:34.320Z
+Generated: 2026-09-10T16:30:54.842Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=VLAN lifecycle/ranges, access ports, inter-switch trunks, VLAN isolation, voice VLAN
 Total steps: 360
@@ -793,13 +793,13 @@ Total steps: 360
 --- [213] § connectivity: same VLAN across switches ---
 [213/360] l1 l1$ ping -c 3 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=2.734 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.876 ms
-  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=0.674 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=4.452 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.385 ms
+  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=2.867 ms
   
   --- 192.168.1.21 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.674/1.428/2.734/0.927 ms
+  rtt min/avg/max/mdev = 1.385/2.901/4.452/1.252 ms
 
 [214/360] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -810,13 +810,13 @@ Total steps: 360
 
 [215/360] l2 l2$ ping -c 3 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.656 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.653 ms
-  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=0.408 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.830 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.937 ms
+  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=1.013 ms
   
   --- 192.168.1.11 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.408/0.572/0.656/0.116 ms
+  rtt min/avg/max/mdev = 0.830/0.927/1.013/0.075 ms
 
 [216/360] sw1 SW1# show mac address-table vlan 10
   Mac Address Table
@@ -864,7 +864,6 @@ Total steps: 360
   
   --- 192.168.1.12 ping statistics ---
   1 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
 
 [220/360] w1 w1$ ping -n 1 192.168.1.11
   
@@ -881,7 +880,6 @@ Total steps: 360
   
   --- 192.168.1.22 ping statistics ---
   1 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
 
 [222/360] w2 w2$ ping -n 1 192.168.1.11
   
@@ -917,12 +915,12 @@ Total steps: 360
 
 [228/360] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.503 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.445 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=2.467 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.935 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.445/0.474/0.503/0.029 ms
+  rtt min/avg/max/mdev = 0.935/1.701/2.467/0.766 ms
 
 
 --- [229] § voice VLAN ---
@@ -954,6 +952,7 @@ Total steps: 360
   Access Mode VLAN: 20 (VLAN_20)
   Trunking Native Mode VLAN: 1 (default)
   Voice VLAN: 50
+  Protected: false
 
 [236/360] sw1 SW1(config-if)# end
 <empty>
@@ -969,6 +968,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 10 (VLAN_10)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [239/360] sw1 SW1# show interfaces FastEthernet0/2 switchport
   Name: Fa0/2
@@ -980,6 +980,7 @@ Total steps: 360
   Access Mode VLAN: 20 (VLAN_20)
   Trunking Native Mode VLAN: 1 (default)
   Voice VLAN: 50
+  Protected: false
 
 [240/360] sw1 SW1# show interfaces FastEthernet0/3 switchport
   Name: Fa0/3
@@ -990,6 +991,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 40 (VLAN_40)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [241/360] sw1 SW1# show interfaces FastEthernet0/4 switchport
   Name: Fa0/4
@@ -1000,6 +1002,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 50 (VOICE)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [242/360] sw1 SW1# show interfaces FastEthernet0/5 switchport
   Name: Fa0/5
@@ -1010,6 +1013,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 10 (VLAN_10)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [243/360] sw1 SW1# show interfaces FastEthernet0/6 switchport
   Name: Fa0/6
@@ -1020,6 +1024,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 20 (VLAN_20)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [244/360] sw1 SW1# show interfaces FastEthernet0/7 switchport
   Name: Fa0/7
@@ -1030,6 +1035,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 30 (VLAN_30)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [245/360] sw1 SW1# show interfaces FastEthernet0/8 switchport
   Name: Fa0/8
@@ -1040,6 +1046,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 40 (VLAN_40)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [246/360] sw1 SW1# show interfaces FastEthernet0/9 switchport
   Name: Fa0/9
@@ -1050,6 +1057,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 50 (VOICE)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [247/360] sw1 SW1# show interfaces FastEthernet0/10 switchport
   Name: Fa0/10
@@ -1060,6 +1068,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 10 (VLAN_10)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [248/360] sw1 SW1# show interfaces FastEthernet0/11 switchport
   Name: Fa0/11
@@ -1070,6 +1079,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 20 (VLAN_20)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [249/360] sw1 SW1# show interfaces FastEthernet0/12 switchport
   Name: Fa0/12
@@ -1080,6 +1090,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 30 (VLAN_30)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [250/360] sw1 SW1# show interfaces FastEthernet0/13 switchport
   Name: Fa0/13
@@ -1090,6 +1101,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 40 (VLAN_40)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [251/360] sw1 SW1# show interfaces FastEthernet0/14 switchport
   Name: Fa0/14
@@ -1100,6 +1112,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 50 (VOICE)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [252/360] sw1 SW1# show interfaces FastEthernet0/15 switchport
   Name: Fa0/15
@@ -1110,6 +1123,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 10 (VLAN_10)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [253/360] sw1 SW1# show interfaces FastEthernet0/16 switchport
   Name: Fa0/16
@@ -1120,6 +1134,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 20 (VLAN_20)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [254/360] sw1 SW1# show interfaces FastEthernet0/17 switchport
   Name: Fa0/17
@@ -1130,6 +1145,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 30 (VLAN_30)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [255/360] sw1 SW1# show interfaces FastEthernet0/18 switchport
   Name: Fa0/18
@@ -1140,6 +1156,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 40 (VLAN_40)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [256/360] sw1 SW1# show interfaces FastEthernet0/19 switchport
   Name: Fa0/19
@@ -1150,6 +1167,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 50 (VOICE)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [257/360] sw1 SW1# show interfaces FastEthernet0/20 switchport
   Name: Fa0/20
@@ -1160,6 +1178,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 10 (VLAN_10)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [258/360] sw1 SW1# show interfaces FastEthernet0/21 switchport
   Name: Fa0/21
@@ -1170,6 +1189,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 20 (VLAN_20)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [259/360] sw1 SW1# show interfaces FastEthernet0/22 switchport
   Name: Fa0/22
@@ -1180,6 +1200,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 30 (VLAN_30)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 [260/360] sw1 SW1# show interfaces FastEthernet0/23 switchport
   Name: Fa0/23
@@ -1190,6 +1211,7 @@ Total steps: 360
   Negotiation of Trunking: Off
   Access Mode VLAN: 40 (VLAN_40)
   Trunking Native Mode VLAN: 1 (default)
+  Protected: false
 
 
 --- [261] § VLAN deletion & cleanup ---
@@ -1318,6 +1340,7 @@ Total steps: 360
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : 
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:53%2
      IPv4 Address. . . . . . . . . . . : 192.168.1.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 
@@ -1340,7 +1363,7 @@ Total steps: 360
 
 [284/360] w2 w2$ arp -a
   
-  Interface: 192.168.1.22 --- 0x1
+  Interface: 192.168.1.22 --- 0x2
     Internet Address      Physical Address      Type
     192.168.1.11          02-00-00-00-00-4f     dynamic
     192.168.1.13          02-00-00-00-00-57     dynamic
@@ -1393,7 +1416,7 @@ Total steps: 360
 [287/360] sw1 SW1# show running-config
   Building configuration...
   
-  Current configuration : 2645 bytes
+  Current configuration : 2708 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1565,6 +1588,9 @@ Total steps: 360
   vlan 999
    name MGMT
   !
+  spanning-tree mode pvst
+  port-channel load-balance src-dst-ip
+  !
   end
 
 
@@ -1586,11 +1612,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       14 packets input, 1346 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       14 packets input, 1322 bytes, 0 no buffer
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       24 packets output, 1958 bytes, 0 underruns
+       29 packets output, 2364 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1607,11 +1633,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       2 packets input, 166 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       5 packets input, 394 bytes, 0 no buffer
+       Received 1 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       16 packets output, 1164 bytes, 0 underruns
+       18 packets output, 1318 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1629,10 +1655,10 @@ Total steps: 360
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        3 packets input, 226 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       12 packets output, 836 bytes, 0 underruns
+       16 packets output, 1192 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2074,10 +2100,10 @@ Total steps: 360
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        9 packets input, 836 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       24 packets output, 1920 bytes, 0 underruns
+       29 packets output, 2350 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2094,11 +2120,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       5 packets input, 472 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       8 packets input, 676 bytes, 0 no buffer
+       Received 1 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       20 packets output, 1534 bytes, 0 underruns
+       22 packets output, 1664 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2116,10 +2142,10 @@ Total steps: 360
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        3 packets input, 226 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       13 packets output, 900 bytes, 0 underruns
+       17 packets output, 1256 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

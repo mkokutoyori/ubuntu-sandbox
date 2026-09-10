@@ -1400,7 +1400,7 @@ Total steps: 300
   Fa0/2               Altn BLK 19        128.2    P2p
 
 [184/300] dsw1 DSW-HQ-1(config)# no spanning-tree vlan 1 hello-time
-  *08:00:00: STP: VLAN0001 Fa0/2 -> forwarding
+  % Incomplete command.
 
 [185/300] dsw1 DSW-HQ-1(config)# end
 <empty>
@@ -1439,11 +1439,11 @@ Total steps: 300
 --- [193] § STP — convergence sur panne de lien (HQ) ---
 [193/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.935 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=1.166 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.935/0.935/0.935/0.000 ms
+  rtt min/avg/max/mdev = 1.166/1.166/1.166/0.000 ms
 
 [194/300] swhq SW-HQ# show spanning-tree blockedports
   Name                 Blocked Interfaces List
@@ -1500,21 +1500,21 @@ Total steps: 300
 
 [202/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.672 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.585 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.857 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.570 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.585/0.628/0.672/0.043 ms
+  rtt min/avg/max/mdev = 0.570/0.713/0.857/0.144 ms
 
 [203/300] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.012 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.858 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.553 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.911 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.858/0.935/1.012/0.077 ms
+  rtt min/avg/max/mdev = 0.911/1.232/1.553/0.321 ms
 
 [204/300] swhq SW-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1552,12 +1552,12 @@ Total steps: 300
 
 [209/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.420 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.416 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.541 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.502 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.416/0.418/0.420/0.002 ms
+  rtt min/avg/max/mdev = 0.502/0.522/0.541/0.020 ms
 
 
 --- [210] § STP — convergence sur panne de lien (BR Huawei) ---
@@ -2030,7 +2030,7 @@ Total steps: 300
   Root bridge for: none
                        Blocking Listening Learning Forwarding STP Active
   -------------------- -------- --------- -------- ---------- ----------
-  1 vlan               0        0         0        2          2
+  1 vlan               1        0         0        1          2
 
 [245/300] swbr <SW-BR> display stp topology-change
   CIST topology change information
@@ -2070,35 +2070,35 @@ Total steps: 300
 
 [251/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.441 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=2.595 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.441/0.441/0.441/0.000 ms
+  rtt min/avg/max/mdev = 2.595/2.595/2.595/0.000 ms
 
 [252/300] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.342 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.805 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.342/0.342/0.342/0.000 ms
+  rtt min/avg/max/mdev = 0.805/0.805/0.805/0.000 ms
 
 [253/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.372 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.382 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.372/0.372/0.372/0.000 ms
+  rtt min/avg/max/mdev = 0.382/0.382/0.382/0.000 ms
 
 [254/300] whq whq$ getmac
-  Physical Address  Transport Name          
-  ================= ========================
-  02-00-00-00-00-4B \Device\Tcpip_Ethernet_0
-  02-00-00-00-00-4C Media disconnected      
-  02-00-00-00-00-4D Media disconnected      
-  02-00-00-00-00-4E Media disconnected      
+  Physical Address  Transport Name                                      
+  ================= ====================================================
+  02-00-00-00-00-4B \Device\Tcpip_{325CE57B-ED2B-0015-7A32-87EF13476644}
+  02-00-00-00-00-4C Media disconnected                                  
+  02-00-00-00-00-4D Media disconnected                                  
+  02-00-00-00-00-4E Media disconnected                                  
 
 
 --- [255] § STP — détail des liens de la fabric (Cisco) ---
@@ -2160,7 +2160,7 @@ Total steps: 300
     Root ID    Priority    4097
                Address     0200.0000.005f
                Cost        57
-               Port        2 (FastEthernet0/2)
+               Port        1 (FastEthernet0/1)
                Hello Time   1 sec  Max Age 20 sec  Forward Delay 15 sec
   
     Bridge ID  Priority    24577  (priority 24576 sys-id-ext 1)
@@ -2170,8 +2170,8 @@ Total steps: 300
   
   Interface           Role Sts Cost      Prio.Nbr Type
   ------------------- ---- --- --------- -------- --------------------------------
-  Fa0/1               Desg FWD 19        128.1    P2p
-  Fa0/2               Root FWD 19        128.2    P2p
+  Fa0/1               Root FWD 19        128.1    P2p
+  Fa0/2               Altn BLK 19        128.2    P2p
 
 [264/300] dsw1 DSW-HQ-1# show spanning-tree bridge
                                                      Hello  Max  Fwd
@@ -2306,10 +2306,11 @@ Total steps: 300
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [276/300] swhq SW-HQ(config)# spanning-tree vlan 1 priority 5000
-<empty>
+  % Bridge Priority must be in increments of 4096.
 
 [277/300] swhq SW-HQ(config)# spanning-tree mode bidon
-<empty>
+                                  ^
+  % Invalid input detected at '^' marker.
 
 [278/300] swhq SW-HQ(config)# end
 <empty>
@@ -2357,8 +2358,8 @@ Total steps: 300
   Info: 1 debugging switch(es) have been turned off.
 
 [291/300] swhq SW-HQ# show spanning-tree summary
-  Switch is in bidon mode
-  Root bridge for: VLAN0001
+  Switch is in pvst mode
+  Root bridge for: none
   Extended system ID           is enabled
   Portfast Default             is enabled
   PortFast BPDU Guard Default  is enabled
@@ -2386,7 +2387,7 @@ Total steps: 300
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0          2          2
+  VLAN0001                      1         0        0          1          2
 
 [293/300] dsw2 DSW-HQ-2# show spanning-tree summary
   Switch is in pvst mode
@@ -2528,8 +2529,8 @@ Total steps: 300
 
 [300/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.893 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=6.154 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.893/0.893/0.893/0.000 ms
+  rtt min/avg/max/mdev = 6.154/6.154/6.154/0.000 ms
