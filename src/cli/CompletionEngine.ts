@@ -3,7 +3,7 @@ import type { ArgumentSpec } from './ArgumentTypes';
 import type { CliSession } from './CliSession';
 import type { CommandTable, TreeNode } from './CommandTable';
 import { subtreeReachable, tokenize, uniqueChild } from './CommandParser';
-import { pendingOptionArgument, remainingOptions } from './OptionBag';
+import { pendingOptionArgument, remainingOptions, placeCedeAuSac } from './OptionBag';
 
 export type CompletionTrigger = 'TAB' | 'QUESTION_MARK';
 
@@ -54,16 +54,18 @@ export function locateCursor(
     }
 
     const argument = table.argumentAt(node, session, AIDE);
+    const porteur = table.specAt(node, session, AIDE);
     if (argument?.argument?.type === 'REST') {
       return { node: argument, prefix, resolved: true, path, restWords: walked.slice(i) };
     }
-    if (argument?.argument && argumentAccepts(argument.argument, token)) {
+    if (argument?.argument && argumentAccepts(argument.argument, token)
+      && !placeCedeAuSac(argument.argument, token, porteur?.options)) {
       node = argument;
       continue;
     }
     // La commande atteinte porte-t-elle un sac d'options ? Alors la
     // suite de la frappe en est faite, et le curseur y reste.
-    if (table.specAt(node, session, AIDE)?.options) {
+    if (porteur?.options) {
       return {
         node, prefix, resolved: true, path, restWords: [],
         optionWords: walked.slice(i),
@@ -141,9 +143,15 @@ function suggestionsAt(
     }
   }
 
+  /*
+   * Une place DECLAREE est derriere nous des que le sac a commence :
+   * `permit icmp any any ttl lt 255 ?` reproposait le type de message
+   * ICMP, qui precede les options et que la meme frappe refuse ensuite.
+   */
+  const sacCommence = (cursor.optionWords?.length ?? 0) > 0;
   const declaree = enAttente ?? (cursor.node.argument?.type === 'REST'
     ? sansLesFormesDejaTapees(cursor.node.argument, cursor.restWords)
-    : table.argumentAt(cursor.node, session, AIDE)?.argument);
+    : (sacCommence ? undefined : table.argumentAt(cursor.node, session, AIDE)?.argument));
   /*
    * Une plage qui depend de l'etat est LUE, pas recopiee : sans cela
    * `standby ?` annoncait <0-4095> sur une interface en version 1, ou la
@@ -208,9 +216,14 @@ function suggestionsAt(
     }
   }
 
+  /*
+   * Une option a qui il MANQUE sa valeur ne laisse pas valider :
+   * `permit ip any any ttl ?` promettait `<cr>` pour une frappe que la
+   * meme machine declare incomplete.
+   */
   const ici = table.specAt(cursor.node, session, AIDE);
   if (trigger === 'QUESTION_MARK' && ici && cursor.prefix.length === 0
-    && !ici.existsOnlyNegated) {
+    && !enAttente && !ici.existsOnlyNegated) {
     out.push({ value: '<cr>', description: '', isArgument: true });
   }
 

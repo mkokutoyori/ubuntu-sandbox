@@ -1,4 +1,4 @@
-import { MACAddress } from '@/network/core/types';
+import { MACAddress, ETHERTYPE_IPV4, ETHERTYPE_IPV6 } from '@/network/core/types';
 
 /**
  * Une liste d'acces MAC, et ce qu'elle decide.
@@ -19,6 +19,12 @@ import { MACAddress } from '@/network/core/types';
  * liste IP du meme port qui en repond. Les deux peuvent coexister sur
  * une interface, chacune sur son trafic.
  */
+
+export const IP_ETHERTYPES: readonly number[] = [ETHERTYPE_IPV4, ETHERTYPE_IPV6];
+
+export function isIpEtherType(etherType: number): boolean {
+  return IP_ETHERTYPES.includes(etherType);
+}
 
 export type MacMatch =
   | { readonly kind: 'any' }

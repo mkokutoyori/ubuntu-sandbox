@@ -56,7 +56,7 @@ export function aclStandardSpecs(ctx: () => AclStandardHost): CommandSpec[] {
     id: `acl-std-${action}-${suffixe}`,
     path: [action, ...chemin],
     description: action === 'permit'
-      ? 'Specify packets to permit' : 'Specify packets to reject',
+      ? 'Specify packets to forward' : 'Specify packets to reject',
     modes: MODE, minPrivilege: 15,
     options: SUFFIXES,
     run: (_s, args) => ctx().addEntry(action, [...source(args), ...suffixes(args)]),

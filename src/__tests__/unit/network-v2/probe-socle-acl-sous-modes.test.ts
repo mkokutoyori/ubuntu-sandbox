@@ -43,6 +43,17 @@
  *     est le meme `parseCiscoAce` et les deux plateformes tiennent leurs
  *     listes dans le meme `ACLEngine`. Ce qui divergeait n'etait pas le
  *     moteur, mais ce que chaque shell declarait devant lui.
+ *
+ * CORRIGE DEPUIS : ce fichier EPINGLAIT un defaut. Il exigeait qu'une
+ * liste ETENDUE annonce, derriere `permit`, les protocoles ET `any` /
+ * `host` — les formes de source d'une liste STANDARD, que la meme
+ * machine refuse a cette place (`permit any any` n'a pas de protocole).
+ * L'exigence est devenue celle qui se verifie : les protocoles sont
+ * annonces, les deux formes de source ne le sont pas. La phrase attendue
+ * pour `permit` est passee de « Specify packets to permit » — que rien
+ * ne portait ailleurs dans le depot — a « Specify packets to forward »,
+ * celle qu'IOS ecrit et que `access-list`, la liste MAC et la route-map
+ * ecrivaient deja ici.
  */
 import { describe, it, expect } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -145,10 +156,14 @@ for (const [plateforme, fabrique] of FABRIQUES) {
   describe(`une liste ETENDUE est etendue, sur un ${plateforme}`, () => {
     const ext = () => entrer(fabrique(), 'ip access-list extended EL');
 
-    it('`permit ?` annonce les quatre protocoles ET les sources', async () => {
+    it('`permit ?` annonce les protocoles, et PAS les formes de source', async () => {
       const d = await ext();
-      expect(mots(d.cliHelp('permit ')))
-        .toEqual(expect.arrayContaining([...PROTOCOLES, ...SOURCES]));
+      const rendus = mots(d.cliHelp('permit '));
+      expect(rendus).toEqual(expect.arrayContaining([...PROTOCOLES]));
+      for (const forme of ['any', 'host']) {
+        expect(rendus, `permit ? offre ${forme}, qui n a pas de protocole`)
+          .not.toContain(forme);
+      }
     });
 
     it('annonce `evaluate`', async () => {
@@ -186,7 +201,7 @@ for (const [plateforme, fabrique] of FABRIQUES) {
       it(`dans une liste ${genre}`, async () => {
         const d = await entrer(fabrique(), liste);
         const aide = d.cliHelp('');
-        expect(aide).toContain('Specify packets to permit');
+        expect(aide).toContain('Specify packets to forward');
         expect(aide).toContain('Specify packets to reject');
         expect(aide).not.toMatch(/ACL (permit|deny|no|evaluate)\b/);
       });
