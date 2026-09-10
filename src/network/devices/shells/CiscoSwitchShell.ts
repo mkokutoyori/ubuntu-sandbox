@@ -47,7 +47,6 @@ import {
 } from './cisco/ciscoCounterTables';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
-import { vlanAccessMapActionText } from '../Switch';
 import { parseVlanId, VLAN_MIN, VLAN_MAX, type VlanSet } from '../switch/VlanSet';
 import {
   STORM_CONTROL_TYPES, parseStormControl, stormControlPercent,
@@ -1060,16 +1059,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (!this.selectedAccessMap) return CISCO_ERRORS.INCOMPLETE;
       const a = args[0]?.toLowerCase();
       if (a !== 'forward' && a !== 'drop') return '% Invalid action';
-      const qualifier = args[1]?.toLowerCase();
-      if (args.length > 2) return CISCO_ERRORS.INVALID_INPUT;
-      if (qualifier !== undefined) {
-        if (a === 'forward' && qualifier !== 'capture') return CISCO_ERRORS.INVALID_INPUT;
-        if (a === 'drop' && qualifier !== 'log') return CISCO_ERRORS.INVALID_INPUT;
-      }
+      if (args.length > 1) return CISCO_ERRORS.INVALID_INPUT;
       const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
       rule.action = a;
-      rule.capture = a === 'forward' && qualifier === 'capture';
-      rule.logDrop = a === 'drop' && qualifier === 'log';
       return '';
     });
     this.registerDaiCommands({
@@ -5341,7 +5333,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           lines.push(`    mac address: ${regle.matchMacAcls.join(' ')}`);
         }
         lines.push('  Action:');
-        lines.push(`    ${vlanAccessMapActionText(regle)}`);
+        lines.push(`    ${regle.action}`);
       }
     }
     return lines.join('\n');

@@ -205,11 +205,6 @@ export interface PrivateVlanPortConfig {
   mappedSecondaryVlans?: Set<number>;
 }
 
-export function vlanAccessMapActionText(rule: VlanAccessMapRule): string {
-  if (rule.action === 'forward') return rule.capture ? 'forward capture' : 'forward';
-  return rule.logDrop ? 'drop log' : 'drop';
-}
-
 // ─── VLAN Access Map (Cisco VACL) ───────────────────────────────────
 
 export interface VlanAccessMapRule {
@@ -217,8 +212,6 @@ export interface VlanAccessMapRule {
   matchIpAcls?: string[];
   matchMacAcls?: string[];
   action: 'forward' | 'drop';
-  capture?: boolean;
-  logDrop?: boolean;
 }
 
 // ─── MQC (Huawei traffic classifier/behavior/policy) ────────────────
@@ -1528,7 +1521,7 @@ export abstract class Switch extends Equipment {
         out.push(`vlan access-map ${name} ${rule.sequence}`);
         if (rule.matchIpAcls?.length) out.push(` match ip address ${rule.matchIpAcls.join(' ')}`);
         if (rule.matchMacAcls?.length) out.push(` match mac address ${rule.matchMacAcls.join(' ')}`);
-        out.push(` action ${vlanAccessMapActionText(rule)}`);
+        out.push(` action ${rule.action}`);
       }
     }
     return out;

@@ -71,7 +71,7 @@ silencieuse**.
 | W-03 | `vlan filter` **rendu nulle part** : le filtre disparaît au rechargement | 🔴 Bloquant | **✅ corrigé** |
 | W-02 | `no vlan access-map M 20` supprimait **la carte entière** et ses liaisons | 🔴 Bloquant | **✅ corrigé** |
 | W-01 | `match ip address A B` ne gardait que **la première** ACL | 🟠 Haut | **✅ corrigé** |
-| W-04 | `action forward capture` / `drop log` **silencieusement rabattus** | 🟡 Moyen | **✅ corrigé** |
+| W-04 | Un qualificatif après `action` était **avalé** (`forward capture` valait `forward`) | 🟡 Moyen | **✅ corrigé** |
 | W-05 | Séquence hors de la plage 0-65535 acceptée | 🟡 Moyen | **✅ corrigé** |
 | W-06 | Jeton surnuméraire après la séquence avalé | 🟡 Moyen | **✅ corrigé** |
 
@@ -107,17 +107,25 @@ ses liaisons. C'est la règle écrite chez le constructeur : *« Use the no
 keyword with a sequence number to remove a map sequence. Use the no
 keyword without a sequence number to remove the map. »*
 
-### `capture` et `log` sont gardés
+### `action` ne prend que ce que la plateforme modélisée prend
 
-`action forward capture` et `action drop log` sont **stockés et rendus**
-plutôt que refusés : l'action principale (`forward` / `drop`) est honorée
-pour de bon, et seul l'effet secondaire — copie vers un port de capture,
-journalisation — n'est pas modélisé. C'est la nuance de `CLAUDE.md` §6 :
-une commande qu'une vraie machine accepte et dont on honore l'essentiel
-est stockée, sans quoi un import de topologie la perdrait. Un qualificatif
-inconnu, lui, est refusé.
+`action forward capture` était **avalé** : le qualificatif partait à la
+poubelle et la règle valait `forward`. Il est désormais **refusé**, avec
+tout autre mot après `forward` ou `drop`.
 
----
+**Cette conclusion a d'abord été l'inverse, et la correction vaut d'être
+racontée.** La première version de ce lot ACCEPTAIT `forward capture` et
+`drop log`, en s'appuyant sur une page de documentation qui écrit bien
+`action {drop [log] | forward [capture | vlan <id>] | redirect ...}` —
+mais celle d'un **IR8340 sous IOS-XE 17.14**. Or ce shell modélise un
+C2960 sous 15.0(2)SE11 et un C3560 sous 12.2(55)SE12
+(`CiscoPlatform.ts`), dont la référence de commandes est sans
+ambiguïté : `action` y prend `drop` et `forward`, et *« Neither
+`capture` nor `log` are among the accepted keywords »*. Accepter ces
+deux mots ajoutait donc à la machine des commandes que le vrai matériel
+refuse — précisément le défaut que ces audits ferment, commis en le
+corrigeant. C'est `CLAUDE.md` §8 : choisir l'autorité **avant** de la
+citer, et une page d'une autre plateforme n'en est pas une.
 
 ## 4. Ce qui était juste — et trois fausses pistes
 
@@ -169,13 +177,19 @@ dit pas ce qu'il a écarté laisse croire qu'il a tout vu :
   clause IP ou une entrée sans clause ; **faux** dès qu'une carte ne
   porte que des clauses MAC, l'IP y tombant dans un refus qu'aucune
   clause ne prononce.
-- **`match ipv6 address` reste refusée**, et la conséquence est écrite
-  dans `TODO.md` : une trame IPv6 est classée IP — donc aucune clause MAC
-  ne la regarde, ce qui est juste — puis transmise sans être évaluée. Une
-  carte d'accès VLAN ne filtre pas l'IPv6 aujourd'hui. La classer en
-  non-IP pour la soumettre aux clauses MAC serait pire : cela
-  contredirait la règle que `MacAccessList.ts` cite, et le commutateur
-  répondrait autrement que sa propre liste MAC de port sur la même trame.
+- **`match ipv6 address` reste refusée, et c'est JUSTE** — vérifié après
+  coup, la première rédaction de ce rapport le présentant à tort comme
+  un manque. Les deux plateformes modélisées sont un C2960 sous
+  15.0(2)SE11 et un C3560 sous 12.2(55)SE12 (`CiscoPlatform.ts`), et le
+  guide de cette version tranche : *« You can configure VLAN maps to
+  match Layer 3 addresses for **IPv4** traffic »*, la clause `match` n'y
+  prenant que `ip address` et `mac address`. Les cartes de VLAN pour
+  IPv6 existent sur d'**autres** modèles (3560-CX / 2960-CX sous
+  15.2(7)E) et sont explicitement absentes des 2960-X et 2960-L.
+  L'implanter ici ferait diverger le simulateur du matériel qu'il
+  déclare être. La conséquence — une trame IPv6 traverse un VLAN filtré
+  sans être évaluée — est donc elle aussi le comportement du vrai
+  matériel, et non une limite à lever.
 - **`action redirect` est refusé** faute de pouvoir honorer l'action
   principale : rediriger vers un port n'est pas modélisé, et le rabattre
   sur `forward` serait plus faux que le refus.

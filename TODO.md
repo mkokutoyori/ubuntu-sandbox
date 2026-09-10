@@ -106,29 +106,42 @@ elles.
 
 ## Commutateur Cisco
 
-### [vacl] `match ipv6 address` est refuse, et une trame IPv6 traverse
-`match mac address` est FERME (voir le commit du meme nom) ; la moitie
-IPv6 reste ouverte. `AccessList` du cote Cisco ne connait que `standard`
-et `extended`, et les listes IPv6 vivent sur le ROUTEUR — le commutateur
-n'a pas de vue `ipv6 access-list`.
-**Mesure** : `vlan access-map M 10` puis `match ipv6 address V6L` rend
-`% Invalid input detected at '^' marker.`
-**Consequence a connaitre, ecrite plutot que tue** : `vaclPermits`
-classe une trame IPv6 comme IP (donc AUCUNE clause MAC ne la regarde,
-ce qui est juste) puis la transmet sans l'evaluer, faute de clause IPv6
-et faute d'un moteur capable de la trancher. Une carte d'acces VLAN ne
-filtre donc PAS l'IPv6 aujourd'hui. La classer en non-IP pour la faire
-tomber sous les clauses MAC serait pire : cela contredirait la regle du
-constructeur que `MacAccessList.ts` cite, et le commutateur repondrait
-alors autrement que sa propre liste MAC de port sur la meme trame.
+### [vacl] `match ipv6 address` : refus CORRECT, entree gardee comme garde-fou
+Cette entree ne demande RIEN. Elle est ecrite pour empecher qu'on
+« corrige » un refus qui est juste.
 
-### [vacl] `action redirect` est refuse
-IOS ecrit `action {drop [log] | forward [capture | vlan <id>] |
-redirect <interface>}`. `drop log` et `forward capture` sont desormais
-gardes et rendus — leur action PRINCIPALE est honoree et seul l'effet
-secondaire manque. `redirect` est refuse parce que son action principale
-ne peut pas l'etre : rediriger vers un port n'est pas modelise, et le
-rabattre sur `forward` serait plus faux que le refus.
+Les deux plateformes modelisees ici sont un C2960 sous 15.0(2)SE11 et
+un C3560 sous 12.2(55)SE12 (`CiscoPlatform.ts`). Le guide de cette
+version le dit sans ambiguite :
+
+  « You can configure VLAN maps to match Layer 3 addresses for IPv4
+    traffic. »
+    (Cisco, 3750-X/3560-X Software Configuration Guide, 12.2(55)SE,
+     Configuring Network Security with ACLs)
+
+La clause `match` y prend `ip address` et `mac address`, et rien
+d'autre. Le support des cartes de VLAN pour IPv6 apparait sur d'AUTRES
+modeles — 3560-CX / 2960-CX sous 15.2(7)E — et est explicitement ABSENT
+des 2960-X et 2960-L. L'implanter ici ferait diverger le simulateur du
+materiel qu'il declare etre.
+
+**Consequence, correcte elle aussi** : une trame IPv6 traversant un VLAN
+filtre n'est evaluee par aucune clause et passe. `vaclPermits` la classe
+IP — donc aucune clause MAC ne la regarde, la reference de
+`MacAccessList.ts` l'exigeant — puis la transmet, ce qu'une carte ne
+sachant matcher que l'IPv4 fait aussi. Le seul changement qui rendrait
+cela faux serait de la classer non-IP pour la soumettre aux clauses MAC.
+
+### [vacl] `action` : seuls `forward` et `drop` existent sur ces plateformes
+Entree gardee comme garde-fou, elle ne demande rien. La reference de
+commandes du 3750-X/3560-X en 12.2(55)SE — la version modelisee — donne
+a `action` exactement deux mots-cles, `drop` et `forward` :
+« Neither `capture` nor `log` are among the accepted keywords ».
+`capture`, `log`, `redirect` et `forward vlan <id>` existent sur
+d'AUTRES plateformes (6500, IR8340 sous IOS-XE) et les accepter ici
+ferait diverger le simulateur du materiel qu'il declare etre. Ils sont
+donc refuses, et doivent le rester tant que `CiscoPlatform.ts` decrit
+ces deux chassis.
 
 ### [vacl] `vlan filter <nom> interface <type> <n>` n'existe pas
 Seule la forme `vlan-list` est modelisee. La forme par interface est
