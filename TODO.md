@@ -578,6 +578,27 @@ part entiere : la grammaire d'`aaa` a quatre niveaux, une liste nommee
 libre au milieu, et une suite de methodes de longueur variable dont
 `group` consomme le mot suivant.
 
+### [oracle] le FORMAT d'un `TIMESTAMP WITH TIME ZONE` n'est pas source
+Le lot T10 rend `SYSTIMESTAMP` et `CURRENT_TIMESTAMP` sous la forme
+`2026-09-10 14:50:30.507 +02:00`. Un vrai Oracle rend cette valeur selon
+`NLS_TIMESTAMP_TZ_FORMAT`, dont le defaut depend du territoire de la
+session — typiquement `DD-MON-RR HH.MI.SSXFF AM TZR`.
+
+**Mesure** : `docs.oracle.com` est bloque par le proxy de sortie de cet
+environnement. Ce qui EST etabli, par deux rendus secondaires
+concordants de la reference SQL : `CURRENT_TIMESTAMP` rend l'heure DANS
+le fuseau de la session et `SYSTIMESTAMP` celle du serveur ; `ORA-01882`
+est l'erreur d'une region inconnue. Le format d'affichage, lui, n'a pas
+pu etre lu.
+
+**Report** : la forme retenue PROLONGE celle que le depot employait deja
+(`toISOString`) en lui ajoutant le decalage, plutot que d'inventer une
+troisieme ecriture. Elle est coherente avec le rendu de `SYSDATE`, et
+`coerceDateValue` sait la relire — le moteur lit ce qu'il ecrit. La
+fermer demande soit l'acces a la reference, soit une transcription
+SQL*Plus, et entrainera `NLS_TIMESTAMP_TZ_FORMAT`, que ce lot ne touche
+pas.
+
 ### [horloge] 79 des 87 index de fuseau FortiOS ne sont pas implantes
 `set timezone 55` est un index VALIDE sur un vrai FortiGate. Ici, seuls
 huit index sont tabules (0, 1, 2, 3, 4, 12, 26, 27) ; les autres sont

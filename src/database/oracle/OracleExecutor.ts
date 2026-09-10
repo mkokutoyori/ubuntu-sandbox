@@ -5,6 +5,10 @@
  */
 
 import { BaseExecutor, type ExecutionContext } from '../engine/executor/BaseExecutor';
+import {
+  oracleDateText, oracleOffsetMinutes, oracleTimestampText, oracleZoneLabel,
+  UTC_SPEC, type OracleTimeZoneSpec,
+} from './time/OracleTimeZone';
 import { ScalarFunctionEvaluator } from './functions/ScalarFunctionEvaluator';
 import { type ResultSet, emptyResult, queryResult, type ColumnMeta, type Row } from '../engine/executor/ResultSet';
 import type { Statement, SelectStatement, InsertStatement, UpdateStatement, DeleteStatement,
@@ -109,6 +113,32 @@ export class OracleExecutor extends BaseExecutor {
     readBfile: (dir, file) => this.readBfileContent(dir, file),
   });
   private _currentRowNum: number = 0;
+
+  private oracleClock(): {
+    sysdate: string; currentDate: string;
+    systimestamp: string; currentTimestamp: string;
+    dbTimeZone: string; sessionTimeZone: string;
+  } {
+    const at = Date.now();
+    const database = this.databaseTimeZone();
+    const session = (this.context.session as { timeZone?: OracleTimeZoneSpec } | undefined)
+      ?.timeZone ?? database;
+    const serverOffset = oracleOffsetMinutes(database, at);
+    const sessionOffset = oracleOffsetMinutes(session, at);
+    return {
+      sysdate: oracleDateText(at, serverOffset),
+      currentDate: oracleDateText(at, sessionOffset),
+      systimestamp: oracleTimestampText(at, serverOffset),
+      currentTimestamp: oracleTimestampText(at, sessionOffset),
+      dbTimeZone: oracleZoneLabel(database),
+      sessionTimeZone: oracleZoneLabel(session),
+    };
+  }
+
+  private databaseTimeZone(): OracleTimeZoneSpec {
+    const instance = (this.context as { instance?: { timeZone?: OracleTimeZoneSpec } }).instance;
+    return instance?.timeZone ?? UTC_SPEC;
+  }
   /** Implicit-transaction lifecycle (undo snapshots, savepoints, tx ids). */
   private readonly txn: TransactionManager;
   /** Centralized ORA-01031/00942/01917/01934 privilege decision rules. */
@@ -2628,7 +2658,7 @@ export class OracleExecutor extends BaseExecutor {
             projectedCols.push({ name: selCol.alias?.toUpperCase() || colName, dataType: result.columns[idx].dataType });
           } else {
             // ORA-00904: column not found in catalog view
-            const knownPseudo = ['SYSDATE', 'CURRENT_DATE', 'SYSTIMESTAMP', 'CURRENT_TIMESTAMP', 'USER', 'ROWNUM'].includes(colName);
+            const knownPseudo = ['SYSDATE', 'CURRENT_DATE', 'SYSTIMESTAMP', 'CURRENT_TIMESTAMP', 'DBTIMEZONE', 'SESSIONTIMEZONE', 'USER', 'ROWNUM'].includes(colName);
             if (!knownPseudo) {
               throw new OracleError(904, `"${colName}": invalid identifier`);
             }
@@ -4000,8 +4030,13 @@ export class OracleExecutor extends BaseExecutor {
           if (fn === 'GETLENGTH') return null;
         }
         // Oracle pseudo-columns
-        if (idName === 'SYSDATE' || idName === 'CURRENT_DATE') return new Date().toISOString().slice(0, 19).replace('T', ' ');
-        if (idName === 'SYSTIMESTAMP' || idName === 'CURRENT_TIMESTAMP') return new Date().toISOString();
+        const horlogeA = this.oracleClock();
+        if (idName === 'SYSDATE') return horlogeA.sysdate;
+        if (idName === 'CURRENT_DATE') return horlogeA.currentDate;
+        if (idName === 'SYSTIMESTAMP') return horlogeA.systimestamp;
+        if (idName === 'CURRENT_TIMESTAMP') return horlogeA.currentTimestamp;
+        if (idName === 'DBTIMEZONE') return horlogeA.dbTimeZone;
+        if (idName === 'SESSIONTIMEZONE') return horlogeA.sessionTimeZone;
         if (idName === 'USER') return this.context.currentUser;
         if (idName === 'ROWNUM') return this._currentRowNum || 1;
         // ORA-00904: invalid identifier — mirrors real Oracle behavior
@@ -4258,8 +4293,13 @@ export class OracleExecutor extends BaseExecutor {
         }
         // Pseudo-columns
         const name = (expr as IdentifierExpr).name.toUpperCase();
-        if (name === 'SYSDATE' || name === 'CURRENT_DATE') return new Date().toISOString().slice(0, 19).replace('T', ' ');
-        if (name === 'SYSTIMESTAMP' || name === 'CURRENT_TIMESTAMP') return new Date().toISOString();
+        const horlogeB = this.oracleClock();
+        if (name === 'SYSDATE') return horlogeB.sysdate;
+        if (name === 'CURRENT_DATE') return horlogeB.currentDate;
+        if (name === 'SYSTIMESTAMP') return horlogeB.systimestamp;
+        if (name === 'CURRENT_TIMESTAMP') return horlogeB.currentTimestamp;
+        if (name === 'DBTIMEZONE') return horlogeB.dbTimeZone;
+        if (name === 'SESSIONTIMEZONE') return horlogeB.sessionTimeZone;
         if (name === 'USER') return this.context.currentUser;
         if (name === 'ROWNUM') return this._currentRowNum || 1;
         // ORA-00904: invalid identifier — mirrors real Oracle behavior
@@ -4558,7 +4598,7 @@ export class OracleExecutor extends BaseExecutor {
           const name = item.expr.name.toUpperCase();
           const table = (item.expr as IdentifierExpr).table?.toUpperCase();
           // Check if it's a known pseudo-column or package reference
-          const knownPseudo = !table && ['SYSDATE', 'CURRENT_DATE', 'SYSTIMESTAMP', 'CURRENT_TIMESTAMP', 'USER', 'ROWNUM'].includes(name);
+          const knownPseudo = !table && ['SYSDATE', 'CURRENT_DATE', 'SYSTIMESTAMP', 'CURRENT_TIMESTAMP', 'DBTIMEZONE', 'SESSIONTIMEZONE', 'USER', 'ROWNUM'].includes(name);
           const knownPackage = !!table && ['DBMS_RANDOM', 'DBMS_UTILITY', 'DBMS_LOB'].includes(table);
           if (!knownPseudo && !knownPackage && columns.length > 0) {
             const displayName = table ? `${table}.${name}` : name;

@@ -10,6 +10,9 @@
  */
 
 import { OracleInstance } from './OracleInstance';
+import {
+  parseOracleTimeZone, type OracleTimeZoneSpec,
+} from './time/OracleTimeZone';
 import { OracleStorage } from './OracleStorage';
 import { OracleCatalog } from './OracleCatalog';
 import { OracleLexer } from './OracleLexer';
@@ -1047,6 +1050,13 @@ export class OracleDatabase implements SqlCommandHost {
         sess?.setCurrentSchema?.(stmt.value);
       } else if (stmt.param === 'CONTAINER') {
         return this.switchSessionContainer(ctx, stmt.value);
+      } else if (stmt.param === 'TIME_ZONE') {
+        const spec = parseOracleTimeZone(stmt.value);
+        if (spec === null) {
+          return emptyResult('ORA-01882: timezone region not found');
+        }
+        const sess = ctx.session as { timeZone?: OracleTimeZoneSpec } | undefined;
+        if (sess) sess.timeZone = spec;
       } else if (stmt.param === 'NLS_DATE_FORMAT') {
         const sess = ctx.session as { nlsDateFormat?: string } | undefined;
         if (sess) sess.nlsDateFormat = stmt.value;
