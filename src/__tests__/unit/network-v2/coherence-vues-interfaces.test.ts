@@ -1041,6 +1041,16 @@ describe('Windows — `netsh` voit les mêmes interfaces que PowerShell', () => 
     expect(n).toContain('Ethernet 0');
   }, 30_000);
 
+  it('`netsh` et `route print` donnent le MEME index a la meme carte', async () => {
+    const pc = windowsConfigure();
+    const n = await vue(pc as unknown as Cli, 'netsh interface ipv4 show interface');
+    const ligne = n.split('\n').find(l => l.trimEnd().endsWith('Ethernet 0')) ?? '';
+    const attendu = adapterIfIndex(0);
+    expect(Number(ligne.trim().split(/\s+/)[0])).toBe(attendu);
+    const r = await vue(pc as unknown as Cli, 'route print');
+    expect(r).toMatch(new RegExp(`^\\s+${attendu}\\.\\.\\.`, 'm'));
+  }, 30_000);
+
   it('`Get-NetIPInterface` existe et voit les mêmes cartes', async () => {
     const pc = windowsConfigure();
     const p = await vue(pc as unknown as Cli, 'powershell Get-NetIPInterface');
