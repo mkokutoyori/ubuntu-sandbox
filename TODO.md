@@ -12,6 +12,92 @@ Format : `[famille] intitulé` puis constat / mesure / raison du report.
 
 ## Commutateur Huawei (VRP)
 
+### [acl] pas de `traffic-filter vlan <n> inbound`, l'equivalent VRP du VACL
+Un commutateur VRP filtre un VLAN entier par
+`traffic-filter vlan <n> inbound acl <n>` ; ici la commande n'existe pas.
+**Mesure** : `traffic-filter vlan 10 inbound acl 3000` rend
+`Error: Unrecognized command found at '^' position.` — refus honnete,
+mais un laboratoire VACL est infaisable sur VRP.
+**Ce qui manque** : `Switch.vaclPermits` est ecrit pour la carte d'acces
+de Cisco (`vlanAccessMaps` + `vlanFilterBindings`). VRP lie une ACL
+directement au VLAN, sans carte intermediaire, donc il faut une seconde
+liaison `vlan -> acl` et son point d'appel — et surtout NE PAS reutiliser
+`evaluateACLByName` telle quelle : la politique VRP pour un paquet non
+apparie est `permit`, ce que `evaluateForDataPlane` porte deja.
+
+
+### [acl] VRP n'a pas d'ACL IPv6, et `acl ipv6` est refusee
+`acl ipv6 name <nom>` rangeait la liste dans le magasin **IPv4** avec le
+type `extended`, sous une invite annoncant `acl-adv-<nom>` — donc une
+ACL IPv6 qui n'en etait pas une. Elle ne pouvait meme pas recevoir de
+regle : l'analyseur de `rule` valide en IPv4 et refuse
+`2001:db8::/64`. La commande est desormais REFUSEE en nommant ce qui
+manque (`AUDIT-ACL-IPV6.md`, V-10).
+**Mesure** : `acl ipv6 name V6` puis `rule 5 permit tcp source any …`
+— la liste apparaissait dans `_aclFind('V6')` (magasin v4) et
+`getIpv6AccessLists()` restait vide.
+**Ce qui manque, dans cet ordre** : une liaison de plan de donnees
+(`HuaweiRouter` ne surcharge pas `getIpv6TrafficFilter`), puis
+`traffic-filter ipv6 inbound`, puis une table de regles ACL6 et son
+analyseur d'operandes IPv6, puis l'invite `acl6-basic-`/`acl6-adv-` et
+`display acl ipv6`. La liaison d'abord : construire la table en premier
+donnerait un magasin que personne ne lit, ce qui est le defaut que les
+cinq audits ACL referment.
+**Nuance assumee** (`CLAUDE.md` §6) : une commande qu'une vraie machine
+accepte peut etre STOCKEE plutot que refusee pour qu'un import de
+topologie ne la perde pas. Ici elle est refusee, parce qu'aucune regle
+ne pouvait etre stockee de toute facon — il n'y a donc pas de
+configuration a perdre, et l'accepter reconduirait le mensonge.
+
+### [acl] le drapeau `ipv6` de `analyserAcl` est supprime
+Il etait pose par la grammaire et lu par PERSONNE, ce qui est
+exactement comment `acl ipv6` a pu creer une liste IPv4 sans que rien
+ne le signale. Retire avec la refutation ci-dessus.
+
+
+## Routeur Cisco (IOS)
+
+### [cli] `probe-cli-help-parity-ratchet` depasse son propre budget de 120 s
+Deux cas de ce fichier expirent — `l'arbre parcouru est non vide`
+(routeur/config) et `un mot-cle sans description est compte, pas
+ignore`. Ce ne sont PAS des assertions fausses : ce sont des DEPASSEMENTS
+du `120_000` que le fichier se donne lui-meme.
+
+**Mesure, trois fois, et la premiere lecture etait fausse** :
+- sous un balayage de 520 fichiers (9 travailleurs) : 124,5 s et 130,7 s ;
+- SEUL sur une machine libre : 136,8 s et 143,4 s — donc PIRE a vide, ce
+  qui elimine l'explication par la charge que j'avais d'abord retenue ;
+- un seul cas, seul, avec les fichiers du lot VACL/MAC RAMENES a leur
+  etat d'avant (`Switch.ts`, `CiscoSwitchShell.ts`, `MacAccessList.ts`) :
+  122,6 s — il echoue donc SANS ces changements. Le defaut leur est
+  anterieur.
+
+**Pourquoi c'est instable plutot que faux** : 122,6 s pour un budget de
+120 s, c'est deux pour cent. Le meme cas passera sur une machine un peu
+plus rapide et tombera sur une plus lente, et le fichier entier demande
+468 s a lui seul. Le cliquet mesure quelque chose de reel ; c'est son
+COUT qui n'est pas tenable, et un budget qu'on releverait sans regarder
+ne ferait que deplacer la limite.
+
+**Ce qui n'a pas ete cherche** : d'ou vient le temps. `surveyOf` parcourt
+l'arbre en tapant chaque lettre de `PROBES` a chaque profondeur, donc le
+cout croit avec le vocabulaire — et le socle en a recu beaucoup
+recemment. Mesurer QUEL parcours coute, avant de toucher au budget, est
+le prealable.
+
+
+### [logging] `%SEC-4-IPACCESSLOGP` porte la severite 4 la ou IOS ecrit 6
+`LoggingConfig` empile le journal d'ACL IPv4 dans le seau `warnings`,
+et `formatEntry` derive le chiffre du seau : la ligne sort donc en
+`%SEC-4-IPACCESSLOGP` alors qu'IOS ecrit `%SEC-6-IPACCESSLOGP`.
+**Mesure** : trouve en branchant le journal des ACL **IPv6**, qui a
+recu sa propre facilite `%IPV6_ACL-6-ACCESSLOGP` (severite 6, juste).
+Les deux ne s'accordent donc pas sur la severite d'un meme genre
+d'evenement.
+**Pourquoi ce n'est pas ferme ici** : le defaut est anterieur et propre
+a IPv4 ; le corriger dans un lot IPv6 melangerait deux sujets, et
+`show logging` filtre par severite — bouger le seau change ce que
+`logging buffered <niveau>` retient, ce qui demande sa propre mesure.
 
 ## Moteur L2 partagé (`Switch.ts`)
 
@@ -49,115 +135,58 @@ elles.
 
 ## Commutateur Cisco
 
-### [vrf] `address-family ipv4` sous `vrf definition` est refuse
-La forme MULTIPROTOCOLE d'IOS exige `address-family ipv4` pour activer
-une famille dans la VRF ; ici elle repond `% Invalid input detected`, et
-la configuration rendue n'ecrit donc que `vrf definition <nom>` + `rd` +
-`route-target`.
-**Mesure** : `vrf definition X` puis `address-family ipv4` est refuse sur
-le routeur comme sur le commutateur.
-**Report** : ce simulateur n'a AUCUNE notion de famille d'adresses par
-VRF — `_vrfs` ne porte pas la distinction et rien ne la lirait. Accepter
-la commande rangerait un critere que personne n'evalue, ce que
-`CLAUDE.md` interdit ; l'implanter veut dire porter la famille jusqu'au
-plan de donnees, ce qui est un chantier de routage et non de CLI.
+### [vacl] `match ipv6 address` : refus CORRECT, entree gardee comme garde-fou
+Cette entree ne demande RIEN. Elle est ecrite pour empecher qu'on
+« corrige » un refus qui est juste.
 
-### [vrf] un Catalyst cree une VRF et ne peut pas la configurer
-`vrf definition <nom>` est accepte, retenu et desormais rendu sur le
-commutateur, mais `rd` et `route-target` y sont refuses — le sous-mode
-`config-vrf` n'est cable que sur le routeur (`registerVrfSubmodeOn` est
-une methode de `CiscoIOSShell`).
-**Mesure** : la meme sequence est acceptee de bout en bout sur le
-routeur et s'arrete au `rd` sur le commutateur.
-**Report** : meme forme que les deux notes voisines — un sous-systeme du
-routeur que le commutateur n'a pas. Le brancher demande de decider ce
-qu'une VRF fait sur un commutateur de niveau 3 (ses SVI, sa table), ce
-qui est une question de plan de donnees.
+Les deux plateformes modelisees ici sont un C2960 sous 15.0(2)SE11 et
+un C3560 sous 12.2(55)SE12 (`CiscoPlatform.ts`). Le guide de cette
+version le dit sans ambiguite :
 
-### [track] un Catalyst ne suit qu'une INTERFACE, pas une route ni un IP SLA
-Le commutateur porte son propre `TrackObjectRegistry`, dont le type est
-`'line-protocol' | 'ip-routing'` : les formes `track <n> ip route …`,
-`track <n> ip sla …`, `track <n> list …` et `stub-object` y sont donc
-refusees, alors qu'un 3560 les connait et que le ROUTEUR les honore
-toutes par `TrackService`.
-**Mesure** : la meme frappe est acceptee sur le routeur et refusee sur le
-commutateur ; depuis le lot qui unifie la grammaire, le refus porte au
-moins le bon message au lieu de « commande incomplete ».
-**Report** : ce n'est pas un defaut d'analyse — la grammaire est
-desormais commune — mais un MAGASIN absent. Faire lire `TrackService` au
-commutateur touche ses consommateurs (FHRP, routes suivies) et non la
-CLI, et c'est le meme chantier que celui de la note ci-dessous sur
-`ip prefix-list` : un sous-systeme du routeur que le commutateur n'a pas.
+  « You can configure VLAN maps to match Layer 3 addresses for IPv4
+    traffic. »
+    (Cisco, 3750-X/3560-X Software Configuration Guide, 12.2(55)SE,
+     Configuring Network Security with ACLs)
 
-### [policy] `ip prefix-list` et `route-map` sont refuses sur un Catalyst
-Les deux familles sont declarees « router-only » (`CiscoPolicyCommands`
-n'est branche que sur le routeur), donc un Catalyst repond
-`% Invalid input detected` a `ip prefix-list PL permit 10.0.0.0/8` comme
-a `route-map RM permit 10`.
-**Mesure** : accepte et rendu sur le routeur, refuse sur le commutateur,
-pour la meme frappe.
-**Report** : un 3560 les connait, un 2960 non — la reponse depend du
-PROFIL de chassis, et ce depot en porte trois (`c2900`, `c2960`,
-`c3560`). Trancher demande de decider ce que ce simulateur modelise de
-cette difference, ce qui est une autre question que celle de savoir si
-la commande juge ses arguments. La brancher sans ce choix ferait
-apprendre a un 2960 une commande que la vraie machine refuse.
+La clause `match` y prend `ip address` et `mac address`, et rien
+d'autre. Le support des cartes de VLAN pour IPv6 apparait sur d'AUTRES
+modeles — 3560-CX / 2960-CX sous 15.2(7)E — et est explicitement ABSENT
+des 2960-X et 2960-L. L'implanter ici ferait diverger le simulateur du
+materiel qu'il declare etre.
 
-### [snmp] le Catalyst RANGE sa configuration SNMP, mais rien n'ecoute sur 161
-`snmp-server community|host|contact|location|chassis-id` sont desormais
-retenus, servis par `show snmp`, `show snmp community`, `show snmp host`
-et rendus dans la configuration — mais `CiscoSwitch` n'instancie aucun
-`SnmpAgent`, la ou `CiscoRouter` en porte un et lui aiguille l'UDP 161.
-Un vrai `snmpget` vers un Catalyst n'obtient donc rien.
-**Mesure** : `show snmp` y rend `0 SNMP packets input` quoi qu'il arrive,
-ce qui est VRAI (aucun paquet ne peut arriver) et non un compteur mort.
-**Report** : `SnmpHost` demande `getSysDescr`, `getSysObjectId` et
-`sendUdpDatagram` en plus de la surface que `makeSwitchNtpHost` fournit
-deja ; le brancher est un travail de plan de donnees (aiguillage du 161
-dans `deliverLocalUdp`, enregistrement dans `agents`), distinct de la
-CLI que ce lot refermait.
+**Consequence, correcte elle aussi** : une trame IPv6 traversant un VLAN
+filtre n'est evaluee par aucune clause et passe. `vaclPermits` la classe
+IP — donc aucune clause MAC ne la regarde, la reference de
+`MacAccessList.ts` l'exigeant — puis la transmet, ce qu'une carte ne
+sachant matcher que l'IPv4 fait aussi. Le seul changement qui rendrait
+cela faux serait de la classer non-IP pour la soumettre aux clauses MAC.
 
----
+### [vacl] `action` : `capture` et `log` refuses, et c'est VERSION-DEPENDANT
+Entree gardee comme garde-fou. La reference de commandes du
+3750-X/3560-X en 12.2(55)SE — l'une des deux versions modelisees — donne
+a `action` exactement deux mots-cles, `drop` et `forward` : « Neither
+`capture` nor `log` are among the accepted keywords ».
 
-### [udld] `show udld neighbors` est refuse faute d'une mise en forme attestee
-**Constat.** C'est une vue reelle d'IOS. Elle etait lue comme un NOM DE
-PORT, donc ne trouvait aucun port et rendait la CHAINE VIDE — le silence,
-qui se lit comme une panne du terminal. Elle rend maintenant le caret, ce
-qui est honnete sans etre juste.
+**Nuance a ne pas aplatir** : `action drop log` EXISTE sur des versions
+Catalyst PLUS RECENTES (2960-XR sous 15.2(6)E le documente, pour la
+journalisation des paquets rejetes). Le refus est donc lie a la VERSION
+modelisee (`CiscoPlatform.ts` : C2960 en 15.0(2)SE11, C3560 en
+12.2(55)SE12) et non a une absence universelle. Si un jour ce fichier
+declare une version plus recente, `drop log` devra suivre — et
+`capture`, lui, reste un mecanisme de 6500/7600 qui n'a pas de port de
+capture ici.
+### [vacl] `vlan filter ... interface` : ABSENT du Catalyst, garde-fou
+Entree gardee comme garde-fou : elle ne demande rien. J'avais d'abord
+ecrit que cette forme « n'etait pas modelisee », en la tirant d'une page
+d'IR8340 sous IOS-XE 17. Les guides Catalyst ne connaissent qu'une
+forme :
 
-**Pourquoi ce n'est pas ferme.** La matiere existe (`UdldAgent.getNeighborsFor`
-rend le nom, l'identifiant, le port distant et l'echo), c'est la MISE EN
-FORME qui manque : `ntc-templates`, le jeu de reference dont ce depot tire
-ses autres largeurs de colonnes, ne porte AUCUN gabarit `udld` — verifie
-dans son index, pas suppose — et aucune transcription n'est atteignable
-depuis ce reseau. Inventer des largeurs serait le decor que ce depot
-refuse.
+  « vlan filter mapname vlan-list list »
+    (Cisco, Catalyst 2960-XR, Configuring VLAN Access Control Lists)
 
-### [cli] Vingt-cinq commandes acceptent encore un mot qu'elles ne lisent pas
-**Constat.** Un balayage des deux plateformes — pour chaque mot que `?`
-propose, comparer `<commande>` et `<commande> zorglub` — a trouve 11
-chemins sur le routeur et 20 sur le commutateur ou les deux sorties sont
-IDENTIQUES, c'est-a-dire ou le mot de trop est jete en silence. Le lot
-UDLD en a ferme trois. Les autres, par famille :
-
-- `aaa local … zorglub` et `aaa group … zorglub` prennent encore le mot de
-  trop (`aaa new-model` et `aaa session-id` sont fermes).
-- `ntp source zorglub` est accepte ET RENDU tel quel dans la configuration,
-  alors que cette commande prend une INTERFACE ; `ntp source` nu est
-  accepte aussi. `radius server` nu — qui exige un nom — de meme.
-- `spanning-tree {backbonefast|uplinkfast} zorglub`, `spanning-tree mst
-  zorglub`.
-- `tunnel path-mtu-discovery zorglub`.
-- `tunnel path-mtu-discovery zorglub` est accepte et rendu comme la forme
-  nue : le mot de trop est jete. Cette commande n'est enregistree NULLE
-  PART — un glouton `tunnel` la sert, et `CiscoShowCommands` la rend
-  depuis `pending.tunnelPathMtuDiscovery` — donc la fermer demande
-  d'abord de lui donner une declaration. (Les familles `switchport voice
-  vlan` et `spanning-tree uplinkfast` sont fermees.)
-
-**Ce que le balayage ne voit pas.** Il ne descend qu'a un mot-cle de
-profondeur et ignore les commandes a texte libre (`description`,
-`banner`, `remark`), ou un mot de trop est legitime.
+La forme par interface appartient aux routeurs 7600/6500, ou une carte
+d'acces peut se poser sur une interface WAN. L'ajouter ici donnerait au
+commutateur une commande que son materiel n'a pas.
 
 ## Postes Linux
 
@@ -535,22 +564,103 @@ part entiere : la grammaire d'`aaa` a quatre niveaux, une liste nommee
 libre au milieu, et une suite de methodes de longueur variable dont
 `group` consomme le mot suivant.
 
-### [horloge] la convention de BORD de `clock summer-time` n'est pas sourcee
-`core/time/DeviceClock` evalue une regle d'heure d'ete en comparant
-l'heure de DEBUT a l'heure standard locale et l'heure de FIN a l'heure
-d'ete locale — la convention de tzdata et des textes americains et
-europeens.
-**Mesure** : `cisco.com` et `support.huawei.com` sont tous deux
-injoignables depuis cet environnement (proxy de sortie), et aucune source
-secondaire atteignable ne tranche ce point. Ce qui EST etabli, par deux
-rendus concordants de la reference IOS : `recurring` sans parametres
-prend les regles americaines (1er dimanche d'avril 02:00 au dernier
-dimanche d'octobre 02:00) et le decalage par defaut vaut 60 minutes.
-**Report** : l'ecart ne porte que sur l'heure meme de la bascule, deux
-fois l'an. Le fermer demande une reference constructeur atteignable ou
-une transcription capturee sur un vrai equipement ; jusque-la, assumer
-la convention universelle vaut mieux que la deviner autrement, et le
-dire vaut mieux que de l'attribuer a Cisco.
+### [oracle] le FORMAT d'un `TIMESTAMP WITH TIME ZONE` n'est pas source
+Le lot T10 rend `SYSTIMESTAMP` et `CURRENT_TIMESTAMP` sous la forme
+`2026-09-10 14:50:30.507 +02:00`. Un vrai Oracle rend cette valeur selon
+`NLS_TIMESTAMP_TZ_FORMAT`, dont le defaut depend du territoire de la
+session — typiquement `DD-MON-RR HH.MI.SSXFF AM TZR`.
+
+**Mesure** : `docs.oracle.com` est bloque par le proxy de sortie de cet
+environnement. Ce qui EST etabli, par deux rendus secondaires
+concordants de la reference SQL : `CURRENT_TIMESTAMP` rend l'heure DANS
+le fuseau de la session et `SYSTIMESTAMP` celle du serveur ; `ORA-01882`
+est l'erreur d'une region inconnue. Le format d'affichage, lui, n'a pas
+pu etre lu.
+
+**Report** : la forme retenue PROLONGE celle que le depot employait deja
+(`toISOString`) en lui ajoutant le decalage, plutot que d'inventer une
+troisieme ecriture. Elle est coherente avec le rendu de `SYSDATE`, et
+`coerceDateValue` sait la relire — le moteur lit ce qu'il ecrit. La
+fermer demande soit l'acces a la reference, soit une transcription
+SQL*Plus, et entrainera `NLS_TIMESTAMP_TZ_FORMAT`, que ce lot ne touche
+pas.
+
+### [horloge] 79 des 87 index de fuseau FortiOS ne sont pas implantes
+`set timezone 55` est un index VALIDE sur un vrai FortiGate. Ici, seuls
+huit index sont tabules (0, 1, 2, 3, 4, 12, 26, 27) ; les autres sont
+desormais refuses par `unimplementedValues` — la porte que le depot
+emploie deja pour SIP, l'acceleration materielle ou les signatures
+FortiGuard — avec le message « exists on a real FortiGate », la ou ils
+etaient auparavant acceptes et valaient UTC en silence. Un index HORS
+plage garde l'autre refus, celui d'une vraie faute : deux causes, deux
+messages.
+
+**Mesure** : `resolveFortiTimezone` fabriquait
+`{ index, name: 'UTC', label: '(GMT) time zone 55' }` pour tout index de
+0 a 86 absent de la table. Le pare-feu affichait donc `set timezone 55`
+dans sa configuration pendant que son horloge, ses journaux et ses
+horaires de politique etaient a UTC — un fuseau annonce que rien ne
+soutenait (I-T4).
+
+**Pourquoi la table n'est pas remplie.** Il faut la correspondance
+index -> fuseau, et aucune source atteignable ne la donne :
+`docs.fortinet.com` et `registry.terraform.io` sont tous deux bloques
+par le proxy de sortie, et `official_docs/forti-cli-ref-60.txt`
+(l. 33538) donne la PLAGE (« from 00 to 86 ») en renvoyant a
+`set timezone ?` pour la liste, qu'il ne reproduit pas.
+
+Un resume de recherche a bien rendu une liste, et il ne faut PAS s'en
+servir : elle est decalee d'un cran par rapport aux huit lignes deja
+presentes ici (elle donne Midway/Samoa a l'index 01 la ou la table le
+met a 0), et elle melange des versions dont certaines vont jusqu'a 89 —
+FortiOS 7.4.2 ayant par ailleurs remplace l'entier par un nom IANA.
+Ecrire 87 lignes depuis cette source injecterait 87 faits non verifies,
+et l'ecart d'un cran dit qu'au moins une des deux numerotations est
+fausse. Laquelle, cette entree ne le sait pas.
+
+**Ce qui reste possible sans elle** : n'importe quel fuseau est
+atteignable par son nom IANA (`set timezone Europe/Paris`), chemin qui
+n'est pas borne par la table.
+
+**Ce qu'il faudrait pour fermer** : la sortie de `set timezone ?` sur un
+vrai FortiGate, ou l'acces a l'une des deux pages. La sonde
+`probe-fuseaux-fortios` verifie deja que chaque ligne AJOUTEE porte le
+decalage standard que son libelle annonce, de sorte qu'une ligne
+mal recopiee tombera au lieu de s'installer.
+
+### [horloge] la FORMULATION constructeur de `clock summer-time` n'est pas lue
+Ce qui manque ne porte plus que sur les MOTS des deux references, pas
+sur le comportement.
+
+**Ce qui est etabli, et garde par une sonde.** La regle
+`clock timezone CET 1` + `clock summer-time CEST recurring last Sun Mar
+2:00 last Sun Oct 3:00` decrit `Europe/Paris`. tzdata, lui, est
+joignable par `core/time/TimeZoneRegistry`. Les deux ont donc ete
+compares directement :
+
+    525 600 minutes comparees sur l'annee 2026 -> AUCUN ecart
+
+Bascules comprises : au printemps l'heure locale saute de 01:59 a 03:00
+et l'heure 02:00-02:59 n'existe pas ; a l'automne elle repasse de 02:59
+CEST a 02:00 CET, qui se produit donc deux fois. Les deux cas vivent
+dans `probe-horloge-suit-son-equipement.test.ts`, si bien qu'un
+retournement futur de la convention tomberait au lieu de passer
+inapercu. Etabli par ailleurs, par deux rendus concordants de la
+reference IOS : `recurring` sans parametres prend les regles
+americaines, et le decalage par defaut vaut 60 minutes.
+
+**Ce qui reste ouvert.** `cisco.com` et `support.huawei.com` sont tous
+deux bloques par le proxy de sortie de cet environnement, si bien que la
+phrase exacte par laquelle chaque constructeur decrit ses bornes n'a pas
+pu etre lue. La correspondance a tzdata rend un DESACCORD tres
+improbable — il faudrait que Cisco s'ecarte du fuseau que sa propre
+commande sert a decrire — mais elle ne remplace pas la lecture.
+
+**Ce qu'il faudrait pour fermer.** L'acces a l'une des deux pages, ou
+une transcription capturee sur un vrai equipement a l'heure meme de la
+bascule. Les formes que la grammaire VRP accepte et que
+`huaweiDaylightSaving` refuse aujourd'hui (les bornes datees d'un
+`repeating`) dependent de la meme lecture.
 
 ### [uniformite] `track <mot>` refuse avec DEUX messages selon la plateforme
 `track zorglub interface GigabitEthernet0/0 line-protocol` rend
@@ -885,6 +995,51 @@ le reseau simule comme de vraies trames.
 est le chantier d'unification des deux piles SSH que le depot documente
 deja comme large ; `transitTcpAclVerdict` a par ailleurs d'autres
 lecteurs (traceroute, sondes UDP) qui disparaitraient avec lui.
+
+**Mesure affinee (probe `nc-transit-acl-frame`).** On a cru pouvoir retirer
+le repli en s'appuyant sur `ctx.net.tcpConnectOutcome`, que `nc` appelle
+DEJA a cote du repli. Neutralise `transitTcpAclVerdict` a `permit`, la sonde
+reelle rend `succeeded` a travers un routeur `deny ip any any` : le chemin
+TCP-connect n'atteint PAS `evaluateForDataPlane` du routeur de transit. Donc
+le repli est PORTEUR, pas un doublon retirable, et le vrai correctif n'est
+pas de supprimer le repli mais de faire SUBIR les ACL de transit au chemin
+`tcpConnectOutcome`/`TcpStack` lui-meme. Le garde-fou `nc-transit-acl-frame`
+tient le verdict d'aujourd'hui et passera par le vrai plan de donnees le
+jour ou ce chemin traverse les ACL.
+
+**Le client reel canonique existe deja : `SshSession` (session/SshSession.ts).**
+Le serveur `SshServerHandler` est un vrai sshd sur TCP (ops JSON
+hello/auth/open_channel/exec sur la socket :22 acceptee) ; `SshSession` en est
+le CLIENT — banniere + host key (`known_hosts`, `strictHostKeyChecking`), auth
+negociee, puis `openExecChannel(cmd).execute()`, `openShellChannel()`,
+`openSftpChannel()`. Le lanceur `sshLauncher` (via `openWireSshConnection`)
+fait DEJA passer `ssh user@host cmd` par `SshSession.openExecChannel().execute()`
+— mesure `ssh-exec-runs-on-the-wire` : la commande coute ses propres trames et
+`whoami` rend l'utilisateur SSH, pas le root du peripherique. `runSshTransportAsync`
+fait DEJA passer scp/sftp avec mot de passe par `SshSession` + `SshSftpChannel`
+(`tryOpenWireSftpFs`). Les fixtures `ssh-lan-fixtures` (`openSshSession`,
+`sshExec`, `openSftpSession`) sont le point d'entree partage ; les gardes
+`ssh-wire-exec` / `ssh-journalctl-tcpdump-coherence` / `sftp-scp-wire-coherence`
+prouvent la coherence trois-vues (ssh/journalctl/tcpdump) et la subissance ACL
+de transit sur ce client.
+
+Un second client, `SshWireClient.sshWireExec`, avait ete ecrit a cote : il
+DOUBLONNAIT `SshSession` (meme protocole, meme serveur) en plus permissif (pas
+de host key, pas de negociation d'auth). Retire ; ses gardes rejouent desormais
+`SshSession` via les fixtures.
+
+**Ce qui reste : migrer `LinuxSshClient.runSshClient` (~1555 lignes) sur
+`SshSession`.** C'est le chemin god-mode SYNCHRONE encore appele par la commande
+bash `ssh` (`LinuxCommandExecutor`) et par les shells Cisco/Huawei : il retrouve
+le peripherique pair par `findHostByAddress` puis appelle ses methodes en memoire
+(`machine.executor.execute`, gates sshd re-derivees cote client). Mesure : 274
+fichiers de tests EPINGLENT ce comportement client (lignes `auth.log`,
+forced-command, port/env forwarding, banner, motd, `.bashrc`). Les faire passer
+par `SshServerHandler` deplace ces effets du client vers le serveur et doit
+reproduire chaque sortie a l'octet ; migration incrementale, famille par famille,
+validee lot par lot contre ces 274 fichiers — pas un remplacement d'un bloc. La
+barriere reelle est le passage synchrone->async : `runSshClient` rend un resultat
+synchrone la ou `SshSession.connect()`/`.execute()` sont `async`.
 
 ### [acl] GRE n'est pas eprouvable sur un routeur Cisco
 La matrice « chaque protocole a son transport » couvre OSPF, EIGRP, RIP,
@@ -2580,23 +2735,6 @@ rendre.
 de la sortie — ce qui profiterait a toute cmdlet, pas seulement a
 celle-ci.
 
-### [nettcpip] une carte Windows n'a pas d'adresse IPv6 de lien-local
-
-**Mesure** : `Get-NetIPAddress -AddressFamily IPv6` sur un `WindowsPC` ne
-rend que `::1`. Une vraie machine Windows porte une adresse `fe80::/64`
-par carte, autoconfiguree au demarrage — c'est ce que `ipconfig` affiche
-en premier sous chaque adaptateur. Le moteur historique la FABRIQUAIT
-depuis l'adresse MAC au moment de l'affichage (`buildAllIPEntries`), donc
-elle n'existait nulle part : aucune trame ne pouvait la porter, et
-`New-NetIPAddress`/`Get-NetRoute` ne la voyaient pas. Ce moteur est
-supprime, donc la fiction disparait avec lui.
-
-**Non corrige ici** : la poser vraiment veut dire faire autoconfigurer
-IPv6 a `WindowsPC` comme `LinuxMachine` le fait (`enableIPv6`), ce qui
-change ce que rendent `ipconfig`, `route print`, `Get-NetIPInterface` et
-le plan de donnees IPv6 de chaque hote Windows du depot. C'est un lot a
-soi, avec sa propre mesure de ce qu'une vraie machine affiche.
-
 ### [nettcpip] `InterfaceMetric` est la constante 25
 
 **Mesure** : `Get-NetIPInterface` rend `InterfaceMetric : 25` pour chaque
@@ -2626,26 +2764,16 @@ joint, ou Windows numerote les reseaux qu'il a vus (« Network 2 ») — un
 etat persistant qui n'existe pas ici. Inventer l'un des deux serait pire
 que la confusion actuelle, qui est au moins stable.
 
-### [nettcpip] `Test-Connection -Count N` sonde UNE fois et rend N lignes identiques
+### [nettcpip] `Test-Connection` : dix parametres declares et lus par personne
 
-**Mesure** : `TestConnectionCmdlet` appelle `net.testPingProbe(target)` une
-seule fois, puis recopie la meme ligne `count` fois dans une boucle — meme
-RTT, meme `Status`, meme adresse. Sur le fil, `Test-Connection -Count 4`
-emet donc UN echo la ou `ping -n 4` en emet quatre : les deux vues d'un
-meme geste ne mettent pas le meme trafic sur le cable, et un laboratoire
-qui compte les trames voit la difference. `-Delay`, `-BufferSize`,
-`-TimeoutSeconds`, `-Source`, `-IPv4`/`-IPv6`, `-ResolveDestination`,
-`-Repeat`, `-Traceroute`, `-MtuSize` et `-TcpPort` sont declares par la
-documentation de PowerShell 7 et lus par personne ; `Status` rend
-`Success`/`Failure` alors que le champ est un `IPStatus`, dont `Failure`
-n'est pas une valeur (`TimedOut`, `DestinationHostUnreachable`…).
+**Mesure** : `-Delay`, `-BufferSize`, `-TimeoutSeconds`, `-Source`,
+`-IPv4`/`-IPv6`, `-ResolveDestination`, `-Repeat`, `-Traceroute`,
+`-MtuSize` et `-TcpPort` sont declares par la documentation de PowerShell
+et lus par personne ; `Status` rend `Success`/`Failure` alors que le champ
+est un `IPStatus`, dont `Failure` n'est pas une valeur (`TimedOut`,
+`DestinationHostUnreachable`…).
 
-**Non corrige ici** : le lot en cours porte sur les vues NetNeighbor /
-DnsClient / NetUDPEndpoint. Faire emettre N sondes veut dire passer par
-`executePingSequence` — le chemin que `ping` emprunte deja, donc une
-reutilisation et non une reecriture — et decider ce que `-Quiet` rend
-quand une sonde sur quatre repond (la documentation dit `$true` des
-qu'une seule aboutit). Les quatre jeux de parametres (`DefaultPing`,
+**Non corrige ici** : les quatre jeux de parametres (`DefaultPing`,
 `RepeatPing`, `TraceRoute`, `MtuSizeDetect`, `TcpPort`) sont un lot a
 soi.
 
@@ -2678,19 +2806,6 @@ fichiers. Lire le XML demande d'y ajouter un port de lecture, ce qui
 touche tous les sous-contextes de `netsh` ; c'est un lot a soi. En
 attendant, le seul profil connu est declare comme tel plutot que
 d'accepter n'importe quel nom en pretendant l'avoir lu.
-
-### [powershell] `NULL_PROVIDERS` est un SINGLETON de module
-
-**Mesure** : `NullProviders.ts` construit `filesystem: new SimulatedFileSystem()`
-une fois pour tout le module. Deux `new PSInterpreter()` sans providers
-partagent donc UN systeme de fichiers : ce que l'un ecrit, l'autre le
-lit, et un `Set-Location` fait dans un test deplace le repertoire courant
-du suivant. Le defaut existait avant que `$PWD` en derive ; il est
-simplement devenu observable par une variable de plus.
-
-**Pourquoi ce n'est pas ferme ici** : `NULL_PROVIDERS` est passe par
-DEFAUT dans une trentaine de signatures ; en faire une fabrique
-(`nullProviders()`) est mecanique mais large, et se mesure a part.
 
 ### [powershell] la mise en page de `netsh winhttp` n'est pas verifiee sur transcription
 
@@ -2809,3 +2924,35 @@ ecrire une seconde fois ce que chaque gestionnaire sait deja, sur un
 moteur qui doit disparaitre. Chaque famille migree en ferme son lot,
 et le sous-mode entre alors dans le balayage — l'y faire entrer avant
 epinglerait le defaut au lieu de le mesurer.
+
+### [acl] l'invite d'une ACL ARP emprunte celle d'une liste IP ETENDUE
+Les listes IP ont desormais leurs deux sous-modes des DEUX cotes
+(`config-std-nacl`, `config-ext-nacl`). Le mode `config-acl` du
+commutateur ne sert donc plus qu'a `arp access-list` — mais il rend
+toujours `{host}(config-ext-nacl)#`, l'invite d'une liste IP etendue.
+**Mesure** : `arp access-list AA` sur un Catalyst rend
+`SW1(config-ext-nacl)#`.
+**Ce qui a ete cherche** : cisco.com est BLOQUE par le mandataire de
+sortie de ce reseau, et rien d'atteignable ne donne le texte que
+Catalyst affiche pour ce sous-mode.
+**Report** : remplacer une invite fausse par une invite INVENTEE ne
+serait pas un progres — la premiere se voit, la seconde se croit. A
+fermer des que la reference est atteignable.
+
+### [tests] `wan-vpn-tests` 15.09 tombe par intermittence dans un grand balayage
+`15.09 — Huawei BR3 routing should remain intact with VPN config` a
+rendu `expected '…' to contain '0% packet loss'` une fois sur deux
+passages du MEME jeu de 234 fichiers.
+**Mesure** : seul, il passe des deux cotes ; dans le grand balayage il
+est tombe au premier passage sur la branche, et pas au second, ni sur
+le meme jeu joue sur la base. Un `ping` qui perd des paquets n'est pas
+un depassement de delai — `pingOnSimulatedClock` lui prete deja une
+horloge virtuelle, et `advanceUntilSettled` est borne en TOURS, pas en
+secondes. La piste la plus probable est un etat partage entre fichiers
+d'un meme worker : `beforeEach` y remet a zero les generateurs de noms
+et de MAC, ce que `setupGlobalState` fait deja, et deux remises a zero
+peuvent redonner a un equipement une adresse qu'un autre porte encore.
+**Report** : un cas qui tombe une fois sur deux ne dit pas ce qu'il
+mesure. Le stabiliser demande de trouver le fichier avec lequel il se
+couple, ce qui est un lot en soi — et il ne bloque aucun autre travail
+tant qu'il est nomme ici.

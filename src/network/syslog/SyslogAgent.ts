@@ -20,6 +20,7 @@ export interface SyslogHost {
   readonly id: string;
   readonly name: string;
   getHostname(): string;
+  localClock?(): { localMs: number; offsetMin: number };
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
@@ -272,7 +273,7 @@ export class SyslogAgent {
       facility: facilityNum, severity: severityNum,
       hostname: this.host.getHostname(),
       tag, message,
-      timestamp: bsdTimestamp(Date.now()),
+      timestamp: bsdTimestamp(this.horloge().localMs),
     };
     const request: UdpSendRequest = {
       destination: new IPAddress(s.ip),
@@ -294,6 +295,10 @@ export class SyslogAgent {
     this.compter(s, severity, tag, message);
   }
 
+  private horloge(): { localMs: number; offsetMin: number } {
+    return this.host.localClock?.() ?? { localMs: Date.now(), offsetMin: 0 };
+  }
+
   private readonly liens = new Map<string, TcpLien>();
 
   /**
@@ -305,7 +310,8 @@ export class SyslogAgent {
   private ligneRfc3164(s: SyslogServer, severity: SyslogSeverityName,
                        tag: string, message: string): string {
     const pri = SYSLOG_FACILITY[s.facility] * 8 + SYSLOG_SEVERITY[severity];
-    return `<${pri}>${bsdTimestamp(Date.now())} ${this.host.getHostname()} ${tag} ${message}`;
+    return `<${pri}>${bsdTimestamp(this.horloge().localMs)}`
+      + ` ${this.host.getHostname()} ${tag} ${message}`;
   }
 
   /**

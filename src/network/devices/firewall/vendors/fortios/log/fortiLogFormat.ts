@@ -1,4 +1,5 @@
 import type { FirewallLogRecord } from '../../../logging/FirewallLogStore';
+import { rfc5424Timestamp } from '@/network/core/time/DeviceClock';
 
 export type FortiLogFormat = 'default' | 'csv' | 'cef' | 'rfc5424';
 
@@ -17,6 +18,7 @@ export interface FortiLogContext {
   readonly serial: string;
   readonly version: string;
   readonly facility: number;
+  readonly localClock?: (atMs: number) => { localMs: number; offsetMin: number };
 }
 
 export function formatLogRecord(
@@ -33,7 +35,7 @@ export function formatLogRecord(
 export function orderedFields(
   record: FirewallLogRecord, context: FortiLogContext,
 ): ReadonlyArray<readonly [string, string]> {
-  const stamp = new Date(record.at);
+  const stamp = new Date(context.localClock?.(record.at).localMs ?? record.at);
   const head: Array<readonly [string, string]> = [
     ['date', isoDate(stamp)],
     ['time', isoTime(stamp)],
@@ -74,7 +76,9 @@ function cefLine(record: FirewallLogRecord, context: FortiLogContext): string {
 
 function rfc5424Line(record: FirewallLogRecord, context: FortiLogContext): string {
   const priority = context.facility * 8 + (SYSLOG_SEVERITY[record.level] ?? 6);
-  const stamp = new Date(record.at).toISOString();
+  const lecture = context.localClock?.(record.at)
+    ?? { localMs: record.at, offsetMin: 0 };
+  const stamp = rfc5424Timestamp(lecture.localMs, lecture.offsetMin);
   const structured = orderedFields(record, context)
     .map(([name, value]) => `${name}="${value.replace(/(["\\\]])/g, '\\$1')}"`)
     .join(' ');

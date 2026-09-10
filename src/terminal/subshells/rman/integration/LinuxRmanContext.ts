@@ -14,22 +14,30 @@
 
 import { DbId } from '../values/DbId';
 import { ok, err, type Result } from '../core/Result';
-import type { IRmanOracleContext, DatafileInfo, VfsAdapter } from './IRmanOracleContext';
+import type {
+  IRmanOracleContext, DatafileInfo, VfsAdapter, ConnectTargetOutcome, RecordedBackupPiece,
+} from './IRmanOracleContext';
+import type { HostCapableDevice } from '@/network';
+import { resolveOracleConnectTarget } from '@/terminal/commands/oracleNet';
 import type { Equipment } from '@/network';
 import type { RmanError } from '../core/RmanError';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { getRegisteredOracleDatabase } from '@/terminal/commands/database';
+import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
+import { recoveryAreaUsage } from '@/database/oracle/storage/RecoveryArea';
 
 interface FsCapableEquipment {
   writeFileFromEditor(path: string, content: string, declaredSizeBytes?: number): boolean;
+  writeFileAsOracle?(path: string, content: string, declaredSizeBytes?: number): boolean;
+  freeDiskBytes?(): number;
   readFileForEditor?(path: string): string | null;
   readFile?(path: string): string | null;
   deleteFileFromEditor?(path: string): boolean;
   deleteFile?(path: string): boolean;
+  makeDirectoryAsOracle?(path: string): boolean;
 }
 
-const ORADATA_BASE = '/u01/app/oracle/oradata';
-const BACKUP_BASE  = '/u01/backup';
+const ORADATA_BASE = `${ORACLE_CONFIG.BASE}/oradata`;
 
 export class LinuxRmanContext implements IRmanOracleContext {
   readonly dbId: DbId;
@@ -46,6 +54,19 @@ export class LinuxRmanContext implements IRmanOracleContext {
     this.dbId   = _oracle ? DbId.of(_oracle.instance.getDbId(), sid) : DbId.DEFAULT;
     this.dbName = sid;
     this.vfs    = this._buildVfsAdapter();
+  }
+
+  connectTarget(identifier: string): ConnectTargetOutcome {
+    const local = this._device as unknown as HostCapableDevice;
+    const resolved = resolveOracleConnectTarget(
+      local, identifier, (id) => getRegisteredOracleDatabase(id) as OracleDatabase);
+    if (resolved.ok === false) return { ok: false, error: resolved.error };
+    return {
+      ok: true,
+      dbName: resolved.db.instance.config.sid,
+      dbId: resolved.db.instance.getDbId(),
+      remote: resolved.remote,
+    };
   }
 
   static forDevice(device: Equipment): LinuxRmanContext {
@@ -78,17 +99,49 @@ export class LinuxRmanContext implements IRmanOracleContext {
     ];
   }
 
+  recordBackupPiece(piece: RecordedBackupPiece): void {
+    const oracle = this._oracle;
+    if (!oracle) return;
+    oracle.instance.getBus().publish({
+      topic: 'oracle.backup.recorded',
+      payload: {
+        deviceId:    (this._device as { id?: string }).id ?? '',
+        sid:         oracle.instance.config.sid,
+        setId:       piece.setId,
+        pieceId:     piece.pieceId,
+        type:        piece.type,
+        handle:      piece.handle,
+        bytes:       piece.bytes,
+        startedAt:   piece.startedAt,
+        completedAt: piece.completedAt,
+        status:      'COMPLETED',
+      },
+    });
+  }
+
+  getRecoveryAreaUsedBytes(): number {
+    const oracle = this._oracle;
+    if (!oracle) return 0;
+    return recoveryAreaUsage(
+      oracle.instance.getParameter('db_recovery_file_dest') ?? ORACLE_CONFIG.FRA,
+      oracle.instance.getParameter('db_recovery_file_dest_size'),
+      oracle.instance.getRuntimeState()).usedBytes;
+  }
+
   getSpfileParam(name: string): string | undefined {
+    const key = name.toLowerCase();
+    const live = this._oracle?.instance.getParameter(key);
+    if (live !== undefined && live !== '') return live;
     const sid = this.dbName;
     const map: Record<string, string> = {
       db_name:               sid,
       db_unique_name:        sid,
       instance_name:         sid,
       service_names:         this._oracle?.instance.config.serviceName ?? sid,
-      db_recovery_file_dest: BACKUP_BASE,
+      db_recovery_file_dest: ORACLE_CONFIG.FRA,
       control_files:         `${ORADATA_BASE}/${sid}/control01.ctl`,
     };
-    return map[name.toLowerCase()];
+    return map[key];
   }
 
   /** Live instance state — falls back to OPEN when no Oracle is registered. */
@@ -105,7 +158,7 @@ export class LinuxRmanContext implements IRmanOracleContext {
       return this._oracle.instance.getRuntimeState().archivedLogs.map(l => l.name);
     }
     const sid = this.dbName;
-    return [1, 2, 3].map(seq => `${BACKUP_BASE}/archivelog/arch_1_${seq}_${sid}.arc`);
+    return [1, 2, 3].map(seq => `${ORACLE_CONFIG.ARCHIVELOG_DIR}/arch_1_${seq}_${sid}.arc`);
   }
 
   private _buildVfsAdapter(): VfsAdapter {
@@ -116,7 +169,18 @@ export class LinuxRmanContext implements IRmanOracleContext {
       writeFile: (path, _data, declaredSizeBytes): Result<void, RmanError> => {
         try {
           const size = declaredSizeBytes ?? _data.length;
-          dev.writeFileFromEditor(path, `[ORACLE RMAN BACKUP PIECE - ${size} bytes]`, size);
+          const body = `[ORACLE RMAN BACKUP PIECE - ${size} bytes]`;
+          const written = dev.writeFileAsOracle
+            ? dev.writeFileAsOracle(path, body, size)
+            : dev.writeFileFromEditor(path, body, size);
+          if (!written) {
+            return err({
+              code: 'VFS_WRITE_ERROR',
+              message: 'ORA-19504: failed to create file "' + path + '"\n'
+                + 'ORA-27040: file create error, unable to create file',
+              path,
+            });
+          }
           return ok(undefined);
         } catch (e) {
           return err({ code: 'VFS_WRITE_ERROR', message: String(e), path });
@@ -143,7 +207,17 @@ export class LinuxRmanContext implements IRmanOracleContext {
           return err({ code: 'VFS_WRITE_ERROR', message: String(e), path });
         }
       },
-      availableBytes: () => 10_737_418_240,
+      availableBytes: () => dev.freeDiskBytes?.() ?? 10_737_418_240,
+      ensureDirectory: (path): Result<void, RmanError> => {
+        if (!dev.makeDirectoryAsOracle) return ok(undefined);
+        if (dev.makeDirectoryAsOracle(path)) return ok(undefined);
+        return err({
+          code: 'VFS_WRITE_ERROR',
+          message: 'ORA-19504: failed to create file "' + path + '"\n'
+            + 'ORA-27040: file create error, unable to create file',
+          path,
+        });
+      },
     };
   }
 }

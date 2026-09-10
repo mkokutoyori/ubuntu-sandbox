@@ -5,6 +5,8 @@
  */
 
 import type { RmanTag } from '../values/RmanTag';
+import { omfBackupPiecePath } from '@/database/oracle/storage/OracleManagedFiles';
+import type { OmfBackupKind } from '@/database/oracle/storage/OracleManagedFiles';
 
 /** Format a duration in ms as HH:MM:SS. */
 export function formatElapsed(ms: number): string {
@@ -38,10 +40,14 @@ export function formatSize(bytes: number): string {
   return `${bytes}B`;
 }
 
-/** Generate an Oracle-style backup piece filename. */
-export function generatePieceName(dbName: string, _tag: RmanTag): string {
-  const rand = Math.random().toString(36).slice(2, 10);
-  return `/u01/backup/${dbName}_${rand}.bkp`;
+export function generatePieceName(
+  dbName: string,
+  tag: RmanTag,
+  recoveryFileDest: string,
+  kind: OmfBackupKind = 'datafile-full',
+  at: Date = new Date(),
+): string {
+  return omfBackupPiecePath(recoveryFileDest, dbName, kind, tag.label, at);
 }
 
 /** DD-MON-YYYY HH:MM:SS — the format RMAN prints. */

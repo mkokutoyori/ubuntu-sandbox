@@ -1125,15 +1125,16 @@ export abstract class LinuxMachine extends EndHost
   private startCronTicker(): void {
     if (this.cronTimer !== null) return;
     this.cronTimer = this.hostTimers.setInterval(() => this.cronTick(), 60_000);
-    this.cronTick();
+    this.cronTick(this.executor.simulatedDate(), 'align');
   }
 
-  cronTick(at: Date = this.executor.simulatedDate()): void {
+  cronTick(at: Date = this.executor.simulatedDate(), tour: 'run' | 'align' = 'run'): void {
     const engine = this.getCronEngine();
     const active = this.isServiceActive('cron');
     if (active && !engine.isRunning) engine.start();
     else if (!active && engine.isRunning) engine.stop();
-    engine.tick(at);
+    if (tour === 'align') engine.alignTo(at);
+    else engine.tick(at);
     this.executor.serviceMgr.timerTick(at);
     // `atd` a son propre tour, mais il tombe à la même minute que cron.
     // Il ne vivait jusqu'ici que dans `advanceTime()`, si bien qu'une
@@ -1607,17 +1608,15 @@ export abstract class LinuxMachine extends EndHost
   private initSshFiles(): void {
     this.getSshServerContext();
     const vfs = this.executor.vfs;
+    const id = this.executor.identity;
     if (!vfs.exists('/etc/motd')) {
-      vfs.writeFile(
-        '/etc/motd',
-        `Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)\n`,
-        0,
-        0,
-        0o022,
-      );
+      vfs.writeFile('/etc/motd', `${id.welcomeBanner()}\n`, 0, 0, 0o022);
+    }
+    if (!vfs.exists('/etc/issue')) {
+      vfs.writeFile('/etc/issue', id.toIssue(), 0, 0, 0o022);
     }
     if (!vfs.exists('/etc/issue.net')) {
-      vfs.writeFile('/etc/issue.net', 'Ubuntu 22.04.3 LTS\n', 0, 0, 0o022);
+      vfs.writeFile('/etc/issue.net', id.toIssueNet(), 0, 0, 0o022);
     }
   }
 
@@ -1682,8 +1681,18 @@ export abstract class LinuxMachine extends EndHost
   private static readonly SSHD_BANNER = SSH_SERVER_IDENTIFICATION_LINE;
   private static readonly SSHD_ADDRESSES = ['0.0.0.0', '::'] as const;
 
+  /**
+   * Le pid du demon sshd, lu dans la TABLE DES PROCESSUS. L'ecoute en
+   * portait une copie ecrite en dur, si bien que `ss -tlnp` annoncait
+   * un pid que ni `ps` ni `systemctl status ssh` ne connaissaient.
+   */
+  private sshdPid(): number {
+    return this.executor.processMgr.list({ comm: 'sshd' })[0]?.pid ?? LinuxMachine.SSHD_PID;
+  }
+
   private attachSshTcpListeners(): void {
     const stack = this.getTcpStack();
+    const pid = this.sshdPid();
     const desired = new Set(this.sshdPortsFromConfig());
     for (const port of this._sshdActivePorts) {
       if (!desired.has(port)) {
@@ -1697,12 +1706,12 @@ export abstract class LinuxMachine extends EndHost
         try {
           stack.listen(port, {
             identity: {
-              pid: LinuxMachine.SSHD_PID,
+              pid,
               processName: 'sshd',
               banner: LinuxMachine.SSHD_BANNER,
             },
             onAccept: (socket) => {
-              stack.setSocketOwner(socket, LinuxMachine.SSHD_PID);
+              stack.setSocketOwner(socket, pid);
               this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
             },
           }, addr);
@@ -1979,7 +1988,7 @@ export abstract class LinuxMachine extends EndHost
 
   sshBanner(): string {
     const issue = this.executor.vfs.readFile('/etc/issue.net') ?? '';
-    return issue.replace(/\n*$/, '') || `Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)`;
+    return issue.replace(/\n*$/, '') || this.executor.identity.welcomeBanner();
   }
 
   async runSshCommand(
@@ -2144,6 +2153,7 @@ export abstract class LinuxMachine extends EndHost
         table: this.sessionTable,
         utmp: this.utmpSync,
         bootDate: this.executor.lifecycle.bootedAt(),
+        kernelRelease: this.executor.identity.kernel.release,
         now: new Date(),
       }, argv.slice(1));
     }
@@ -4065,8 +4075,11 @@ export abstract class LinuxMachine extends EndHost
     const absPath = this.executor.vfs.normalizePath(path, this.executor.getCwd());
     const uid = this.executor.getCurrentUid();
     const gid = uid === 0 ? 0 : 1000;
-    return this.executor.vfs.writeFile(absPath, content, uid, gid, 0o022, false, declaredSizeBytes);
+    return this.executor.vfs.writeFile(
+      absPath, content, uid, gid, 0o022, false, declaredSizeBytes, false);
   }
+
+  freeDiskBytes(): number { return this.executor.vfs.freeBytes(); }
 
   installSystemFile(path: string, content: string, uid = 0, gid = 0): boolean {
     const absPath = this.executor.vfs.normalizePath(path, this.executor.getCwd());
@@ -4117,7 +4130,7 @@ export abstract class LinuxMachine extends EndHost
   }
 
   /** DAC-checked write as `oracle`; the created file is owned oracle:oinstall. */
-  writeFileAsOracle(path: string, content: string): boolean {
+  writeFileAsOracle(path: string, content: string, declaredSizeBytes?: number): boolean {
     const abs = this.executor.vfs.normalizePath(path, this.executor.getCwd());
     const a = this.oracleOsActor();
     const p = this.executor.vfs.path(abs, '/', a);
@@ -4132,7 +4145,27 @@ export abstract class LinuxMachine extends EndHost
       const parent = p.parent();
       if (!parent.isDirectory() || !parent.canWrite() || !parent.canExecute()) return false;
     }
-    return this.executor.vfs.writeFile(abs, content, a.uid, a.gid, 0o022);
+    return this.executor.vfs.writeFile(
+      abs, content, a.uid, a.gid, 0o022, false, declaredSizeBytes, false);
+  }
+
+  makeDirectoryAsOracle(path: string): boolean {
+    const abs = this.executor.vfs.normalizePath(path, this.executor.getCwd());
+    const a = this.oracleOsActor();
+    const missing: string[] = [];
+    let cursor = abs;
+    while (cursor !== '/' && cursor !== '' && !this.executor.vfs.exists(cursor)) {
+      missing.unshift(cursor);
+      cursor = cursor.slice(0, cursor.lastIndexOf('/')) || '/';
+    }
+    const anchor = this.executor.vfs.path(cursor || '/', '/', a);
+    if (!anchor.isDirectory()) return false;
+    if (missing.length === 0) return this.executor.vfs.path(abs, '/', a).isDirectory();
+    if (!anchor.canWrite() || !anchor.canExecute()) return false;
+    for (const dir of missing) {
+      if (!this.executor.vfs.mkdir(dir, 0o755, a.uid, a.gid)) return false;
+    }
+    return true;
   }
 
   /** DAC-checked unlink as `oracle`; needs write+search on the directory. */
@@ -4380,6 +4413,10 @@ export abstract class LinuxMachine extends EndHost
       env.set('USER', userName);
       env.set('LOGNAME', userName);
       env.set('SHELL', '/bin/bash');
+      // PAM exporte la locale du système à l'ouverture de session : sans
+      // elle, `locale` et `$LANG` répondaient `C` dans le terminal alors
+      // que `/etc/default/locale` et `localectl` disaient `en_US.UTF-8`.
+      env.set('LANG', this.executor.identity.locale);
     }
 
     const tty = this.tty.allocate();

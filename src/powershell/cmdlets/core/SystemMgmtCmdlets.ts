@@ -480,6 +480,48 @@ function gigabytes(bytes: number): string {
   return `${(bytes / 1_073_741_824).toFixed(2)} GB`;
 }
 
+/**
+ * `Get-Partition` rend les partitions telles que la table de partition
+ * les porte, groupees par disque — la vue par laquelle on lit un
+ * agencement sous Windows, et qui manquait alors que `Get-Disk` et
+ * `Get-Volume` existaient.
+ */
+export class GetPartitionCmdlet implements ICmdlet {
+  readonly name = 'get-partition';
+  readonly displayName = 'Get-Partition';
+  readonly parameters = ['DiskNumber', 'PartitionNumber', 'DriveLetter'] as const;
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const rows = requireDisks(ctx).listPartitions().map(p => ({
+      DiskNumber:      p.diskNumber,
+      PartitionNumber: p.partitionNumber,
+      DriveLetter:     p.driveLetter,
+      Offset:          p.offset,
+      Size:            gigabytes(p.size),
+      Type:            p.type,
+    } as Record<string, PSValue>));
+
+    const filters: Array<[string, string]> = [
+      ['DiskNumber', 'disknumber'], ['PartitionNumber', 'partitionnumber'],
+      ['DriveLetter', 'driveletter'],
+    ];
+    let kept = rows;
+    for (const [property, parameter] of filters) {
+      const asked = ctx.named[parameter]
+        ?? (parameter === 'disknumber' ? ctx.positional[0] : undefined);
+      if (asked === undefined || asked === null) continue;
+      const wanted = psValueToString(asked).replace(/^["']|["']$/g, '').replace(/:$/, '');
+      kept = kept.filter(r => psValueToString(r[property]).toLowerCase() === wanted.toLowerCase());
+      if (kept.length === 0) {
+        ctx.emitError(`Get-Partition : No MSFT_Partition objects found with ${property} = ${wanted}.`);
+        return null;
+      }
+    }
+    return kept as PSValue;
+  }
+}
+
 // ── Get-Volume ────────────────────────────────────────────────────────────
 
 export class GetVolumeCmdlet implements ICmdlet {
@@ -691,20 +733,27 @@ export class GetCimInstanceCmdlet implements ICmdlet {
       const membership = ctx.providers.computer?.getDomainInfo?.() ?? null;
       const registry = ctx.providers.registry;
       const values = registry?.getItemPropertyValues?.(CURRENT_VERSION_KEY) ?? {};
+      // Constructeur, modele, type et memoire viennent de l'inventaire
+      // materiel — le meme que lit `systeminfo`, qui annoncait « QEMU /
+      // Standard PC » quand cette classe repondait « Microsoft
+      // Corporation / Virtual Machine ». Seule l'appartenance au domaine
+      // reste ici : elle n'est pas du materiel.
+      const chassis = ctx.providers.wmi?.instances('Win32_ComputerSystem')?.[0] ?? {};
       return {
+        ...chassis,
         Name:                hostname,
         DNSHostName:         hostname,
         Domain:              membership?.dnsName ?? 'WORKGROUP',
         PartOfDomain:        membership !== null,
         Workgroup:           membership === null ? 'WORKGROUP' : null,
         DomainRole:          membership === null ? 0 : 1,
-        Manufacturer:        'Microsoft Corporation',
-        Model:               'Virtual Machine',
         PrimaryOwnerName:    String(values['RegisteredOwner'] ?? 'User'),
-        SystemType:          'x64-based PC',
-        TotalPhysicalMemory: 8589934592,
       } as Record<string, PSValue>;
     }
+    // Les classes adossees a l'inventaire materiel : une seule
+    // declaration les porte, et `wmic` la lit aussi.
+    const hardwareClass = ctx.providers.wmi?.instances(className);
+    if (hardwareClass) return hardwareClass as unknown as PSValue;
     if (className === 'win32_operatingsystem') {
       const registry = ctx.providers.registry;
       const values = registry?.getItemPropertyValues?.(CURRENT_VERSION_KEY) ?? {};

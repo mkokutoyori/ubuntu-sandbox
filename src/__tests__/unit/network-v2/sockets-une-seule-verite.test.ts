@@ -245,16 +245,23 @@ describe('§P2 — les entrées décoratives, une par une', () => {
 });
 
 describe('§P2b — sshd sur les deux familles, sans doublon', () => {
-  it('les lignes v4 et v6 du 22 viennent de l\'écoute, bannière comprise', () => {
+  it('les lignes v4 et v6 du 22 viennent de l\'écoute, bannière comprise', async () => {
     const srv = new LinuxServer('linux-server', 'SSHD');
     srv.powerOn();
 
     const lignes = srv.getSocketTable().getListening()
       .filter((e) => e.protocol === 'tcp' && e.localPort === 22);
+    // Le pid de l'écoute est celui du démon que `ps` liste, pas une
+    // constante : `ss -tlnp` annonçait 985 quand `ps` et
+    // `systemctl status ssh` disaient tout autre chose.
+    const parPs = Number(/^\s*(\d+)\s/.exec(
+      (await srv.executeCommand('ps -e')).split('\n').find((l) => l.includes('sshd')) ?? '',
+    )?.[1]);
+    expect(parPs).toBeGreaterThan(0);
     expect(lignes).toHaveLength(2);
     for (const l of lignes) {
       expect(l.processName).toBe('sshd');
-      expect(l.pid).toBe(985);
+      expect(l.pid).toBe(parPs);
       // La bannière est ce que lisent `nc`/`nmap` : elle voyage avec
       // l'écoute depuis §P2b, au lieu d'être réinscrite à côté.
       expect(l.banner).toContain('SSH-2.0');

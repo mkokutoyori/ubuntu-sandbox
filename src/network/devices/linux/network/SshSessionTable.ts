@@ -11,6 +11,7 @@
 
 import { SshSession, type SshSessionInit } from './SshSession';
 import type { UtmpSync } from './UtmpSync';
+import { IDLE_LOAD_AVERAGE } from '../system/LoadAverage';
 
 export class SshSessionTable {
   private active = new Map<string, SshSession>();
@@ -95,7 +96,7 @@ export class SshSessionTable {
   /** Render `w` — uptime/header line followed by one row per session. */
   renderW(): string {
     const header = ' ' + new Date().toUTCString().slice(5, 21) + '  up 0 min,  ' +
-      `${this.list().length} users,  load average: 0.00, 0.00, 0.00\n` +
+      `${this.list().length} users,  load average: ${IDLE_LOAD_AVERAGE}\n` +
       'USER     TTY       FROM             LOGIN@   IDLE   JCPU   PCPU WHAT';
     return [header, ...this.list().map(s => s.toWRow())].join('\n');
   }

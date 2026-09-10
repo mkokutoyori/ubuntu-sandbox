@@ -532,7 +532,7 @@ undo_tablespace          = UNDOTBS1
 undo_retention           = 900
 log_archive_dest_1       = 'LOCATION=${oracleBase}/archivelog'
 log_archive_format       = 'arch_%t_%s_%r.arc'
-db_recovery_file_dest    = '${oracleBase}/fast_recovery_area'
+db_recovery_file_dest    = '${ORACLE_CONFIG.FRA}'
 db_recovery_file_dest_size = 4G
 audit_file_dest          = '${oracleBase}/admin/${sid}/adump'
 audit_trail              = DB
@@ -560,7 +560,7 @@ remote_login_passwordfile = EXCLUSIVE
 *.undo_retention=900
 *.log_archive_dest_1='LOCATION=${oracleBase}/archivelog'
 *.log_archive_format='arch_%t_%s_%r.arc'
-*.db_recovery_file_dest='${oracleBase}/fast_recovery_area'
+*.db_recovery_file_dest='${ORACLE_CONFIG.FRA}'
 *.db_recovery_file_dest_size=4G
 *.audit_file_dest='${oracleBase}/admin/${sid}/adump'
 *.audit_trail='DB'
@@ -677,6 +677,7 @@ SELECT 'All objects recompiled successfully.' FROM DUAL;
     [`${oracleBase}/admin/${sid}/bdump/.keep`]: '',
     [`${oracleBase}/admin/${sid}/cdump/.keep`]: '',
     [`${oracleBase}/admin/${sid}/udump/.keep`]: '',
+    [`${oracleBase}/admin/${sid}/dpdump/.keep`]: '',
 
     // ── Diagnostic trace dir ──────────────────────────────────
     [`${ORACLE_CONFIG.DIAG_TRACE}/alert_${sid}.log`]:
@@ -712,7 +713,7 @@ Completed: ALTER DATABASE OPEN
     [`${oracleBase}/archivelog/.keep`]: '',
 
     // ── Fast Recovery Area ────────────────────────────────────
-    [`${oracleBase}/fast_recovery_area/.keep`]: '',
+    [`${ORACLE_CONFIG.FRA}/.keep`]: '',
   };
 
   const install = (device as unknown as {

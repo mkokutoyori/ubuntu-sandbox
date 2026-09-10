@@ -77,6 +77,10 @@ describe('Scenario 3 — RST on packets to a port whose service was killed', () 
     const serverStack = server.getTcpStack();
     const clientStack = client.getTcpStack();
     serverStack.listen(7001, { onAccept: () => undefined });
+
+    const pending = client.executeCommand('tcpdump -n -c 5 port 7001');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
     const clientSocket = clientStack.connect('10.0.0.2', 7001);
     expect(clientSocket!.state).toBe('established');
 
@@ -85,7 +89,8 @@ describe('Scenario 3 — RST on packets to a port whose service was killed', () 
     anyStack.sockets.clear();
 
     clientSocket!.write('data');
-    const cap = await client.executeCommand('tcpdump -n -c 30 port 7001');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const cap = await pending;
     expect(cap).toMatch(/10\.0\.0\.2\.7001 > 10\.0\.0\.1\.\d+: Flags \[R/);
   });
 

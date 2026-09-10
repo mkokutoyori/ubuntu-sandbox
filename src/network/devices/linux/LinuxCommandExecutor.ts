@@ -80,6 +80,7 @@ import { cmdIostat } from './system/Iostat';
 import { cmdPidstat } from './system/Pidstat';
 import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './system/Dstat';
 import { MountTable, MountEntry } from './MountTable';
+import { FSTAB_PATH, renderFstab } from './fs/FstabFile';
 import { SysfsTree } from './Sysfs';
 import { cmdNetstat, cmdWget } from './LinuxNetCommands';
 import { PACKAGE_DB, findPackage } from './packages/PackageDatabase';
@@ -104,6 +105,8 @@ import {
   STANDARD_BIN_PATHS, resolveExePath, checkCommandDependencies, canonicalBinPath,
 } from './service/CriticalFiles';
 import { PortsFilesystem } from './ports/PortsFilesystem';
+import { newProtocolCounters, type ProtocolCounters } from '@/network/layers/internet/ProtocolCounters';
+import type { KernelBootFacts } from './boot/KernelBootLog';
 import { ServicePortProjection } from './ports/ServicePortProjection';
 import type { ServiceSocketServer } from './ports/ServiceSocketServer';
 import type { NginxControl } from './http/nginx/LinuxNginxService';
@@ -121,6 +124,10 @@ import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress, isPathReachable, findReachableHost } from './network/HostLookup';
 import type { ProbedHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { runTruncate } from './commands/fs/Truncate';
+import { runDd } from './commands/fs/Dd';
+import { runFallocate } from './commands/fs/Fallocate';
+import { renderProcSwaps } from './commands/system/Swapon';
+import { loadSnapshot, renderProcLoadavg, renderProcStat } from './system/LoadAverage';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
 import { PermissionCheckingFSDecorator } from '../../protocols/ssh/sftp/PermissionCheckingFSDecorator';
 import { ChrootedSftpFileSystem } from '../../protocols/ssh/sftp/ChrootedSftpFileSystem';
@@ -183,6 +190,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'chown', 'chgrp', 'ln', 'find', 'grep', 'egrep', 'fgrep', 'head', 'tail',
   'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo',
   'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs', 'truncate',
+  'dd', 'fallocate', 'sync',
   'expr', 'seq', '[',
   'less', 'more', 'diff', 'cmp', 'patch',
   // Text streams
@@ -203,7 +211,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
   // System / processes / time
   'crontab', 'run-parts', 'at', 'atq', 'atrm', 'batch', 'anacron', 'systemd-analyze', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
-  'runlevel', 'hostnamectl', 'timedatectl',
+  'runlevel', 'hostnamectl', 'timedatectl', 'localectl',
   'exit', 'help', 'ps', 'top', 'htop', 'free', 'vmstat', 'mpstat', 'pidstat', 'iostat', 'dstat', 'df', 'du', 'mount', 'umount', 'findmnt',
   'pkill', 'pgrep', 'pidof', 'killall', 'pgid',
   'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
@@ -552,6 +560,9 @@ export class LinuxCommandExecutor {
     this.identity = identity ?? SystemIdentity.ubuntu();
     this.vfs = new VirtualFileSystem();
     this.mountTable = MountTable.fromHardware(this.hardware.storage);
+    const rootPartition = this.hardware.storage
+      .flatMap((d) => d.partitions).find((p) => p.mountPoint === '/');
+    if (rootPartition) this.vfs.setCapacityBytes(rootPartition.sizeBytes);
     this.vfs.setReadOnlyResolver((p) => this.mountTable.isReadOnly(p));
     this.seedSetuidBinaries();
     this.userMgr = new LinuxUserManager(this.vfs);
@@ -562,7 +573,7 @@ export class LinuxCommandExecutor {
     this.iptables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto));
     this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6 });
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables, this.ip6tables);
-    this.logMgr = new LinuxLogManager(this.vfs);
+    this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts());
     this.netConfig = new LinuxNetworkConfigManager(this.vfs, this.logMgr);
     this.auditLog = new LinuxAuditLog(this.vfs);
     this.auditRules = new LinuxAuditRules(this.auditLog, this.vfs);
@@ -603,6 +614,14 @@ export class LinuxCommandExecutor {
     if (this.vfs.readFile('/etc/protocols') == null) this.vfs.writeFile('/etc/protocols', ETC_PROTOCOLS, 0, 0, 0o022);
     if (this.vfs.readFile('/etc/networks')  == null) this.vfs.writeFile('/etc/networks',  ETC_NETWORKS,  0, 0, 0o022);
     if (this.vfs.readFile('/etc/rpc')       == null) this.vfs.writeFile('/etc/rpc',       ETC_RPC,       0, 0, 0o022);
+    if (this.vfs.readFile(FSTAB_PATH) == null) {
+      this.vfs.writeFile(FSTAB_PATH, renderFstab(this.hardware.storage), 0, 0, 0o022);
+    }
+    for (const chemin of this.kernelModules.allFilenames()) {
+      const dossier = chemin.slice(0, chemin.lastIndexOf('/'));
+      if (!this.vfs.exists(dossier)) this.vfs.mkdirp(dossier, 0o755, 0, 0);
+      if (this.vfs.readFile(chemin) == null) this.vfs.writeFile(chemin, '', 0, 0, 0o022);
+    }
     if (this.vfs.readFile('/etc/profile') == null) {
       this.vfs.writeFile('/etc/profile',
         '# /etc/profile: system-wide .profile file for the Bourne shell (sh(1))\n'
@@ -704,6 +723,21 @@ export class LinuxCommandExecutor {
     this.vfs.writeFile('/etc/machine-id', `${id.machineId}\n`, 0, 0, 0o022);
     this.vfs.writeFile('/etc/timezone', `${id.timezone}\n`, 0, 0, 0o022);
     this.vfs.writeFile('/etc/default/locale', id.toLocaleConf(), 0, 0, 0o022);
+    this.vfs.writeFile('/etc/default/keyboard', id.toKeyboardConf(), 0, 0, 0o022);
+    // PAM exporte `LANG` depuis `/etc/default/locale` a l'ouverture de
+    // session : sans cette ligne, `locale` et `$LANG` repondaient `C`
+    // sur une machine dont le fichier et l'identite disaient
+    // `en_US.UTF-8`.
+    this.env.set('LANG', id.locale);
+  }
+
+  /**
+   * Rejouer la projection de l'identite apres un changement — ce que
+   * `localectl` et `timedatectl` provoquent. Publique parce qu'elle est
+   * appelee depuis les commandes, qui n'ont que l'executeur.
+   */
+  projectIdentity(): void {
+    this.seedIdentityFiles();
   }
 
   /**
@@ -714,6 +748,7 @@ export class LinuxCommandExecutor {
     this.vfs.mkdirp('/proc/sys/kernel', 0o755, 0, 0);
     const k = () => this.identity.kernel;
     this.vfs.registerGeneratedFile('/proc/version', () => k().toProcVersion());
+    this.vfs.registerGeneratedFile('/proc/cmdline', () => `${this.logMgr.kernelCommandLine()}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/ostype', () => `${k().sysname}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/osrelease', () => `${k().release}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/version', () => `${k().version}\n`);
@@ -733,6 +768,8 @@ export class LinuxCommandExecutor {
         if (!info) return null;
         return { carrier: info.isConnected, operUp: info.isUp && info.isConnected };
       },
+      liveCounters: (iface) => this.ipNetworkCtx?.getInterfaceInfo(iface)?.counters ?? null,
+      liveIfIndex: (iface) => this.ipNetworkCtx?.getIfIndex(iface) ?? null,
     });
     for (const leaf of tree.leaves()) {
       const slash = leaf.path.lastIndexOf('/');
@@ -913,14 +950,18 @@ export class LinuxCommandExecutor {
           '',
         ].join('\n');
       });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/mounts`, () => this.mountTable.toProcMounts());
+      this.vfs.registerGeneratedFile(`/proc/${pid}/mountinfo`, () => this.mountTable.toMountInfo());
       this.materializeProcExe(pid);
       this.materializeProcFd(pid);
       this.materializedProcPids.add(pid);
     }
-    // Also expose /proc/self → /proc/<shellPid> symlink for convenience.
-    if (this.shellPid && !this.vfs.exists('/proc/self')) {
-      this.vfs.createSymlink('/proc/self', String(this.shellPid), 0, 0);
-    }
+    // `/proc/self` designe le processus COURANT, pas le shell de la
+    // session : un sous-shell ou l'enfant de `nice` doit s'y retrouver.
+    // Le lien etait pose une fois avec le PID du shell, et les fichiers
+    // enregistres sous `/proc/self/` ne resolvaient meme pas — c'est par
+    // `/proc/self` qu'un script lit son propre processus.
+    this.vfs.registerGeneratedSymlink('/proc/self', () => String(this.currentBashPid()), 0, 0);
   }
 
   /**
@@ -1036,14 +1077,18 @@ export class LinuxCommandExecutor {
   private registerHardwareProcFiles(): void {
     this.vfs.registerGeneratedFile('/proc/cpuinfo', () => this.hardware.cpu.toProcCpuinfo());
     this.vfs.registerGeneratedFile('/proc/meminfo', () => this.hardware.memory.toProcMeminfo());
+    this.vfs.registerGeneratedFile('/proc/swaps', () => renderProcSwaps(this.hardware.memory));
     this.vfs.registerGeneratedFile('/proc/mounts', () => this.mountTable.toProcMounts());
-    this.vfs.registerGeneratedFile('/proc/self/mounts', () => this.mountTable.toProcMounts());
-    this.vfs.registerGeneratedFile('/proc/self/mountinfo', () => this.mountTable.toMountInfo());
     this.vfs.registerGeneratedFile('/etc/mtab', () => this.mountTable.toProcMounts());
     this.vfs.registerGeneratedFile('/proc/uptime', () => {
       const up = this.lifecycle.uptimeSeconds();
       return `${up}.00 ${up}.00\n`;
     });
+    this.vfs.registerGeneratedFile('/proc/loadavg',
+      () => renderProcLoadavg(loadSnapshot(this.processMgr)));
+    this.vfs.registerGeneratedFile('/proc/stat', () => renderProcStat(
+      this.processMgr, this.hardware.cpu.logicalCpus,
+      this.lifecycle.uptimeSeconds(), this.lifecycle.bootedAt() ?? new Date()));
   }
 
   /**
@@ -2109,7 +2154,7 @@ export class LinuxCommandExecutor {
     // generated files that always reflect the live table. `/etc/services`
     // is seeded once at construction from the canonical SystemFiles list.
     const portsFs = new PortsFilesystem(this.vfs);
-    portsFs.registerProcNet(table);
+    portsFs.registerProcNet(table, () => this.protocolCounters());
   }
 
   /** The SSH port-forwarding table — `-R` listeners are bound here too. */
@@ -2148,6 +2193,40 @@ export class LinuxCommandExecutor {
    * (docs/PRD-Frame-Only-Refactor.md P6).
    */
   private localDevice: object | null = null;
+
+  /**
+   * Ce que le noyau a vu au demarrage, lu la ou chaque fait vit deja :
+   * l'identite pour la banniere et la version, le profil materiel pour
+   * le processeur, la memoire, le chassis, le disque racine et les
+   * cartes. `dmesg` en portait sa propre copie, qui contredisait
+   * `/proc/version`, `/proc/cpuinfo`, `/proc/meminfo` et `/sys/…/dmi`.
+   */
+  private bootFacts(): KernelBootFacts {
+    const hw = this.hardware;
+    const racine = hw.storage.flatMap((d) => d.partitions).find((p) => p.mountPoint === '/');
+    return {
+      procVersion: this.identity.kernel.toProcVersion().trim(),
+      kernelRelease: this.identity.kernel.release,
+      cpuModel: hw.cpu.modelName,
+      cpuFamily: hw.cpu.cpuFamily,
+      cpuModelId: hw.cpu.model,
+      cpuStepping: hw.cpu.stepping,
+      memTotalKib: hw.memory.totalKib,
+      installedKib: hw.memory.installedKib,
+      dmiVendor: hw.manufacturer,
+      dmiProduct: hw.productName,
+      biosVersion: hw.firmware.version,
+      biosDate: hw.firmware.releaseDate,
+      rootPartition: racine?.name ?? 'sda1',
+      rootFsType: racine?.fsType ?? 'ext4',
+      adapters: hw.adapters.map((a) => ({ name: a.name, driver: a.driver, busInfo: a.busInfo })),
+    };
+  }
+
+  protocolCounters(): ProtocolCounters {
+    const holder = this.localDevice as { getProtocolCounters?: () => ProtocolCounters } | null;
+    return holder?.getProtocolCounters?.() ?? newProtocolCounters();
+  }
   setLocalDevice(device: object): void { this.localDevice = device; }
   getLocalDevice(): object | null { return this.localDevice; }
 
@@ -2262,7 +2341,33 @@ export class LinuxCommandExecutor {
         const out = this.execute(cmd);
         return { output: out, exitCode: this.lastExitCode };
       },
+      runAsChild: (nice: number, cmd: string) => this.runAsChild(nice, cmd),
     };
+  }
+
+  /**
+   * Lance une commande dans un vrai processus enfant du shell, portant
+   * la priorite demandee, puis le reape. C'est le chemin de `nice` : le
+   * processus abaisse est l'enfant, pas le shell, et il disparait avec
+   * la commande.
+   */
+  private runAsChild(nice: number, cmd: string): { output: string; exitCode: number } {
+    const child = this.processMgr.spawn({
+      command: cmd,
+      user: this.userMgr.currentUser,
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+      ppid: this.currentBashPid(),
+      tty: 'pts/0',
+      nice,
+    });
+    try {
+      const out = this.withProcessIdentity(child.pid, () => this.execute(cmd));
+      return { output: out, exitCode: this.lastExitCode };
+    } finally {
+      this.processMgr.exit(child.pid, this.lastExitCode);
+      this.processMgr.reap(child.pid);
+    }
   }
 
   /** Context for job builtins (jobs/bg/fg/wait/disown/pstree). */
@@ -2350,8 +2455,8 @@ export class LinuxCommandExecutor {
     // real nice(1) execve()s over itself, so comm/cmdline should reflect
     // the wrapped command, not "nice" — see niceWrappedCommand().
     const niceInner = niceWrappedCommand(argv);
-    const spawnCommand = niceInner ? niceInner.join(' ') : cmdLine;
-    const spawnComm = basenameOf((niceInner ?? argv)[0]);
+    const spawnCommand = niceInner ? niceInner.argv.join(' ') : cmdLine;
+    const spawnComm = basenameOf((niceInner?.argv ?? argv)[0]);
     const proc = this.processMgr.spawn({
       command: spawnCommand,
       comm: spawnComm,
@@ -2361,6 +2466,7 @@ export class LinuxCommandExecutor {
       ppid: nohup ? 1 : this.currentBashPid(),
       tty: nohup ? '?' : 'pts/0',
       cwd: this.cwd,
+      nice: niceInner?.adjustment,
     });
     // §F5.7 — un accès à un montage réseau mort part en attente
     // ininterruptible et n'en revient pas. Le job est enregistré mais son
@@ -3865,12 +3971,22 @@ export class LinuxCommandExecutor {
           }
         } else {
           const parent = this.vfs.resolveInode(this.vfs.normalizePath(absPath + '/..', this.cwd));
-          if (parent && parent.type === 'directory' && !this.checkPermission(parent, 'w')) {
+          if (!parent) {
+            this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
+            throw new Error(`bash: ${path}: No such file or directory`);
+          }
+          if (parent.type !== 'directory') {
+            this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
+            throw new Error(`bash: ${path}: Not a directory`);
+          }
+          if (!this.checkPermission(parent, 'w')) {
             this.publishFsAccessOutcome(absPath, 'w', 'openat', false);
             throw new Error(`bash: ${path}: Permission denied`);
           }
         }
-        this.vfs.writeFile(absPath, content, this.ctx().uid, this.ctx().gid, this.umask, append);
+        this.vfs.writeFile(
+          absPath, content, this.ctx().uid, this.ctx().gid, this.umask, append,
+          undefined, false);
         this.auditRules.onAccessIndirect(absPath, 'w', 'openat', this.snapshotActor());
       },
       readFile: (path: string) => {
@@ -4558,6 +4674,7 @@ export class LinuxCommandExecutor {
             table: this.sessionTable,
             utmp: this.utmpSync,
             bootDate: this.lifecycle.bootedAt(),
+            kernelRelease: this.identity.kernel.release,
             now: new Date(),
           }, args);
           const exit = out.startsWith('last: ') ? 1 : 0;
@@ -4571,6 +4688,7 @@ export class LinuxCommandExecutor {
             table: this.sessionTable,
             utmp: this.utmpSync,
             bootDate: this.lifecycle.bootedAt(),
+            kernelRelease: this.identity.kernel.release,
             now: new Date(),
           }, args);
           const exit = out.startsWith('lastb: ') ? 1 : 0;
@@ -4885,6 +5003,9 @@ export class LinuxCommandExecutor {
       // `truncate` lives in `commands/fs/Truncate.ts` as a `LinuxCommand`;
       // this case only routes to it, so there is one implementation.
       case 'truncate': return runTruncate(this, args);
+      case 'dd': return runDd(this, args);
+      case 'fallocate': return runFallocate(this, args);
+      case 'sync': return { output: '', exitCode: 0 };
       // kill — send signal via process manager
       case 'kill': {
         this.publishSyscall('kill');
@@ -4974,7 +5095,13 @@ export class LinuxCommandExecutor {
         this.serviceMgr.rebootCycle();
         return { output: '', exitCode: 0 };
       }
-      case 'df': return { output: cmdDf(c, args), exitCode: 0 };
+      case 'df': return {
+        output: cmdDf(
+          { ...c, mounts: this.mountTable.list(), storage: this.hardware.storage },
+          args,
+        ),
+        exitCode: 0,
+      };
       case 'du': return { output: cmdDu(c, args), exitCode: 0 };
       case 'free': return { output: cmdFree(args, this.hardware.memory), exitCode: 0 };
       case 'vmstat': return cmdVmstat(args, { pm: this.processMgr, memory: this.hardware.memory });
@@ -5012,7 +5139,7 @@ export class LinuxCommandExecutor {
       // 05, constat A8). A `case` here used to shadow that hook with a
       // second, independently-drifted implementation that only a script
       // (`bash script.sh`) could reach.
-      case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr), (name) => this.processMgr.list({ comm: name })[0]?.pid), exitCode: 0 };
+      case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr), (name) => this.processMgr.list({ comm: name })[0]?.pid, this.protocolCounters()), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
       case 'dstat': {
         const parsed = parseDstatArgs(args);
@@ -7620,16 +7747,23 @@ function basenameOf(path: string): string {
   return i >= 0 ? path.slice(i + 1) : path;
 }
 
-/** For `nice [-n ADJ] realcmd…`, return the wrapped command's argv (or
- *  null if `argv` isn't that shape) — see call site for why. */
-function niceWrappedCommand(argv: string[]): string[] | null {
+/**
+ * For `nice [-n ADJ] realcmd…`, return the wrapped command's argv AND
+ * the adjustment it asks for (or null if `argv` isn't that shape). Le
+ * chiffre compte autant que la commande : c'est la priorite que le
+ * processus d'arriere-plan doit porter, `nice` ne pouvant plus la poser
+ * apres coup depuis un enfant qui n'existe pas dans ce chemin.
+ */
+function niceWrappedCommand(argv: string[]): { argv: string[]; adjustment: number } | null {
   if (argv[0] !== 'nice') return null;
   let i = 1;
-  if (argv[i] === '-n' || argv[i] === '--adjustment') i += 2;
-  else if (argv[i] && /^-n\d/.test(argv[i])) i += 1;
-  else if (argv[i] && /^--adjustment=/.test(argv[i])) i += 1;
-  else if (argv[i] && /^-\d+$/.test(argv[i])) i += 1;
-  return i < argv.length ? argv.slice(i) : null;
+  let adjustment = 10;
+  if (argv[i] === '-n' || argv[i] === '--adjustment') { adjustment = Number(argv[i + 1]); i += 2; }
+  else if (argv[i] && /^-n\d/.test(argv[i])) { adjustment = Number(argv[i].slice(2)); i += 1; }
+  else if (argv[i] && /^--adjustment=/.test(argv[i])) { adjustment = Number(argv[i].split('=')[1]); i += 1; }
+  else if (argv[i] && /^-\d+$/.test(argv[i])) { adjustment = Number(argv[i]); i += 1; }
+  if (i >= argv.length || Number.isNaN(adjustment)) return null;
+  return { argv: argv.slice(i), adjustment: Math.max(-20, Math.min(19, adjustment)) };
 }
 
 /**

@@ -199,3 +199,18 @@ export class DeviceClockStore {
     return clockReadingAt(this.config, atMs);
   }
 }
+
+export function rfc5424Timestamp(localMs: number, offsetMin: number): string {
+  const local = new Date(localMs);
+  const pad = (value: number, width = 2): string =>
+    String(value).padStart(width, '0');
+  const date = `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}`
+    + `-${pad(local.getUTCDate())}`;
+  const clock = `${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}`
+    + `:${pad(local.getUTCSeconds())}.${pad(local.getUTCMilliseconds(), 3)}`;
+  if (offsetMin === 0) return `${date}T${clock}Z`;
+
+  const sign = offsetMin < 0 ? '-' : '+';
+  const abs = Math.abs(offsetMin);
+  return `${date}T${clock}${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+}

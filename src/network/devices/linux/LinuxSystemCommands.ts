@@ -1,5 +1,11 @@
 import type { ShellContext } from './LinuxFileCommands';
-import type { MemoryProfile } from '../host/hardware';
+import type { MemoryProfile, StorageDevice } from '../host/hardware';
+import type { MountEntry } from './MountTable';
+
+export interface DfContext extends ShellContext {
+  mounts: readonly MountEntry[];
+  storage: readonly StorageDevice[];
+}
 
 
 /**
@@ -56,34 +62,103 @@ function formatBytesHuman(bytes: number): string {
   return formatKbHuman(Math.max(1, Math.round(bytes / 1024)));
 }
 
-interface DfEntry { fs: string; type: string; sizeKb: number; usedKb: number; availKb: number; usePct: number; mount: string; }
+interface DfEntry { fs: string; type: string; sizeKb: number; usedKb: number; availKb: number; usePct: number; mount: string; inodesTotal: number; inodesUsed: number; }
 
-function dfTable(ctx: ShellContext): DfEntry[] {
-  const capacityKb = rootCapacityKb(ctx);
-  const rootUsedBytes = ctx.vfs.usedBytes();
-  const rootUsedKb = Math.max(1, Math.ceil(rootUsedBytes / 1024));
-  const rootAvailKb = Math.max(0, capacityKb - rootUsedKb);
-  const rootUsePct = Math.min(100, Math.ceil((rootUsedKb / capacityKb) * 100));
-  return [
-    { fs: '/dev/sda1', type: 'ext4', sizeKb: capacityKb, usedKb: rootUsedKb, availKb: rootAvailKb, usePct: rootUsePct, mount: '/' },
-    { fs: 'tmpfs', type: 'tmpfs', sizeKb: 512000, usedKb: 0, availKb: 512000, usePct: 0, mount: '/dev/shm' },
-    { fs: 'tmpfs', type: 'tmpfs', sizeKb: 5120, usedKb: 4, availKb: 5116, usePct: 1, mount: '/run/lock' },
-    { fs: '/dev/sda2', type: 'ext4', sizeKb: 999424, usedKb: 148480, availKb: 782080, usePct: 16, mount: '/boot' },
-    { fs: '/dev/sdb1', type: 'ext4', sizeKb: 104857600, usedKb: 29360128, availKb: 71303168, usePct: 29, mount: '/u01' },
-  ];
+/**
+ * Les tailles declarees pour un systeme de fichiers pseudo. Un vrai `df`
+ * les rend a zero bloc, et c'est pour cela qu'il les cache sans `-a`.
+ */
+const TMPFS_SIZES_KB: Readonly<Record<string, number>> = {
+  '/dev/shm': 512000,
+  '/run/lock': 5120,
+};
+
+/**
+ * `mke2fs` alloue un inode tous les 16 Ko de systeme de fichiers
+ * (`bytes-per-inode` du profil `default`), tandis que `tmpfs` en alloue
+ * un par demi-page, soit un tous les 4 Ko. C'est ce rapport, et non une
+ * table de comptes ecrits a la main, qui donne la colonne `Inodes`.
+ */
+const EXT_BYTES_PER_INODE = 16384;
+const TMPFS_BYTES_PER_INODE = 4096;
+
+function inodeCapacityOf(fstype: string, sizeKb: number): number {
+  const perInode = fstype === 'tmpfs' ? TMPFS_BYTES_PER_INODE : EXT_BYTES_PER_INODE;
+  return Math.max(1, Math.floor((sizeKb * 1024) / perInode));
 }
 
-function dfTableAll(ctx: ShellContext): DfEntry[] {
-  return [
-    ...dfTable(ctx),
-    { fs: 'proc', type: 'proc', sizeKb: 0, usedKb: 0, availKb: 0, usePct: 0, mount: '/proc' },
-    { fs: 'sysfs', type: 'sysfs', sizeKb: 0, usedKb: 0, availKb: 0, usePct: 0, mount: '/sys' },
-    { fs: 'devpts', type: 'devpts', sizeKb: 0, usedKb: 0, availKb: 0, usePct: 0, mount: '/dev/pts' },
-    { fs: 'cgroup', type: 'cgroup2', sizeKb: 0, usedKb: 0, availKb: 0, usePct: 0, mount: '/sys/fs/cgroup' },
-  ];
+function dfRow(
+  ctx: DfContext, entry: MountEntry, partSizeKb: number | undefined,
+): DfEntry {
+  const base = { fs: entry.source, type: entry.fstype, mount: entry.target };
+  if (entry.target === '/') {
+    const sizeKb = rootCapacityKb(ctx);
+    const usedKb = Math.max(1, Math.ceil(ctx.vfs.usedBytes() / 1024));
+    const availKb = Math.max(0, sizeKb - usedKb);
+    return {
+      ...base, sizeKb, usedKb, availKb,
+      usePct: Math.min(100, Math.ceil((usedKb / Math.max(1, sizeKb)) * 100)),
+      inodesTotal: Math.max(1, ctx.vfs.getInodeCapacity()),
+      inodesUsed: ctx.vfs.usedInodes(),
+    };
+  }
+  const sizeKb = partSizeKb ?? TMPFS_SIZES_KB[entry.target] ?? 0;
+  const usedKb = partSizeKb !== undefined
+    ? Math.round(partSizeKb * DEFAULT_PARTITION_USE / 100)
+    : (entry.target === '/run/lock' && sizeKb > 0 ? 4 : 0);
+  const usePct = sizeKb === 0 ? 0 : Math.min(100, Math.ceil((usedKb / sizeKb) * 100));
+  const inodesTotal = inodeCapacityOf(entry.fstype, sizeKb);
+  return {
+    ...base, sizeKb, usedKb, availKb: Math.max(0, sizeKb - usedKb), usePct,
+    inodesTotal,
+    inodesUsed: usedKb === 0 ? 1 : Math.max(1, Math.round(inodesTotal * usePct / 100)),
+  };
 }
 
-export function cmdDf(ctx: ShellContext, args: string[]): string {
+/**
+ * L'occupation d'une partition qui n'est pas la racine. Le VFS ne
+ * modelise que l'arborescence de la racine, donc `/boot` et un disque de
+ * donnees n'ont aucun contenu a mesurer : la part occupee est une
+ * ILLUSTRATION, et elle est declaree ici plutot que dispersee en chiffres
+ * ecrits a la main.
+ */
+const DEFAULT_PARTITION_USE = 16;
+
+function partitionSizesKb(storage: readonly StorageDevice[]): Map<string, number> {
+  const byDevice = new Map<string, number>();
+  for (const disk of storage) {
+    for (const part of disk.partitions) {
+      byDevice.set(`/dev/${part.name}`, Math.floor(part.sizeBytes / 1024));
+    }
+  }
+  return byDevice;
+}
+
+/**
+ * Ce que `df` rend, DERIVE de la table de montage — celle que `mount`,
+ * `findmnt` et `/proc/mounts` lisent deja — et des tailles de partition
+ * de l'inventaire materiel, celui que `lsblk` et `blkid` lisent. Une
+ * machine n'a qu'un agencement de disques ; l'ecrire ici une seconde
+ * fois etait ce qui faisait annoncer par `df` un disque que la machine
+ * n'avait pas.
+ */
+function dfTable(ctx: DfContext): DfEntry[] {
+  const sizes = partitionSizesKb(ctx.storage);
+  return ctx.mounts
+    .filter((e) => !PSEUDO_FSTYPES.has(e.fstype))
+    .map((e) => dfRow(ctx, e, sizes.get(e.source)));
+}
+
+const PSEUDO_FSTYPES = new Set([
+  'proc', 'sysfs', 'devtmpfs', 'devpts', 'cgroup', 'cgroup2', 'securityfs',
+]);
+
+function dfTableAll(ctx: DfContext): DfEntry[] {
+  const sizes = partitionSizesKb(ctx.storage);
+  return ctx.mounts.map((e) => dfRow(ctx, e, sizes.get(e.source)));
+}
+
+export function cmdDf(ctx: DfContext, args: string[]): string {
   const human = args.includes('-h') || args.includes('--human-readable');
   const inodes = args.includes('-i');
   let showType = args.includes('-T') || args.includes('--print-type');
@@ -134,9 +209,6 @@ export function cmdDf(ctx: ShellContext, args: string[]): string {
     rows = annotated;
   }
 
-  // The `/` row's own figures come from `dfTable()` above; these four
-  // locals recomputed them and were read by nobody — dead since before
-  // this file stopped holding its own capacity constant.
   if (showType) {
     const header = human
       ? 'Filesystem     Type     Size  Used Avail Use% Mounted on'
@@ -149,16 +221,13 @@ export function cmdDf(ctx: ShellContext, args: string[]): string {
   }
 
   if (inodes) {
-    const rootInodes = ctx.vfs.usedInodes();
-    const rootInodeCap = Math.max(1, ctx.vfs.getInodeCapacity());
-    const rootInodeFree = Math.max(0, rootInodeCap - rootInodes);
-    const rootInodePct = Math.min(100, Math.ceil((rootInodes / rootInodeCap) * 100));
-    return [
-      'Filesystem      Inodes  IUsed   IFree IUse% Mounted on',
-      `/dev/sda1       ${String(rootInodeCap).padStart(6)}  ${String(rootInodes).padStart(5)}  ${String(rootInodeFree).padStart(6)}  ${String(rootInodePct).padStart(3)}% /`,
-      'tmpfs           127960      1  127959    1% /dev/shm',
-      '/dev/sda2       131072   2145  128927    2% /boot',
-    ].join('\n');
+    const header = 'Filesystem      Inodes  IUsed   IFree IUse% Mounted on';
+    const lines = rows.map((r) => {
+      const free = Math.max(0, r.inodesTotal - r.inodesUsed);
+      const pct = Math.min(100, Math.ceil((r.inodesUsed / Math.max(1, r.inodesTotal)) * 100));
+      return `${r.fs.padEnd(15)} ${String(r.inodesTotal).padStart(6)}  ${String(r.inodesUsed).padStart(5)}  ${String(free).padStart(6)}  ${String(pct).padStart(3)}% ${r.mount}`;
+    });
+    return [header, ...lines].join('\n');
   }
 
   const header = human
@@ -270,89 +339,3 @@ export function cmdFree(args: string[], memory: MemoryProfile): string {
   return memory.toFree(human, wide, unit, total);
 }
 
-export function cmdLsblk(args: string[]): string {
-  const all = args.includes('-a') || args.includes('--all');
-  const fs = args.includes('-f') || args.includes('--fs');
-
-  if (fs) {
-    return [
-      'NAME   FSTYPE FSVER LABEL UUID                                 FSAVAIL FSUSE% MOUNTPOINTS',
-      'sda                                                                           ',
-      '├─sda1 ext4   1.0         a1b2c3d4-e5f6-7890-abcd-ef1234567890   36G    25% /',
-      '└─sda2 ext4   1.0         11223344-5566-7788-99aa-bbccddeeff00  764M    16% /boot',
-      'sdb                                                                           ',
-      '└─sdb1 ext4   1.0         aabbccdd-eeff-0011-2233-445566778899   68G    29% /u01',
-    ].join('\n');
-  }
-
-  const lines = [
-    'NAME   MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS',
-    'sda      8:0    0    52G  0 disk ',
-    '├─sda1   8:1    0    50G  0 part /',
-    '└─sda2   8:2    0     1G  0 part /boot',
-    'sdb      8:16   0   100G  0 disk ',
-    '└─sdb1   8:17   0   100G  0 part /u01',
-  ];
-
-  if (all) {
-    lines.push('sr0     11:0    1  1024M  0 rom  ');
-  }
-
-  return lines.join('\n');
-}
-
-// ─── top (one-shot snapshot) ────────────────────────────────────────
-
-export function cmdTop(
-  args: string[],
-  currentUser: string,
-  systemProcesses: Map<number, { user: string; command: string }>,
-): string {
-  const batchMode = args.includes('-b');
-  const nArg = args.indexOf('-n');
-  // We always return one snapshot (non-interactive simulator)
-
-  const now = new Date();
-  const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
-  const procs = [
-    { pid: 1, user: 'root', pr: 20, ni: 0, virt: '169M', res: '13M', shr: '8M', s: 'S', cpu: 0.0, mem: 0.3, time: '0:01.24', cmd: 'systemd' },
-  ];
-
-  // Add registered system processes (Oracle, etc.)
-  for (const [pid, proc] of systemProcesses) {
-    procs.push({
-      pid, user: proc.user, pr: 20, ni: 0,
-      virt: `${Math.floor(Math.random() * 500) + 100}M`,
-      res: `${Math.floor(Math.random() * 200) + 20}M`,
-      shr: `${Math.floor(Math.random() * 30) + 5}M`,
-      s: 'S', cpu: Math.random() * 2, mem: Math.random() * 5,
-      time: '0:00.50', cmd: proc.command.split('/').pop()!.split(' ')[0],
-    });
-  }
-
-  // Current shell
-  procs.push({ pid: 9999, user: currentUser, pr: 20, ni: 0, virt: '10M', res: '4M', shr: '3M', s: 'S', cpu: 0.0, mem: 0.1, time: '0:00.02', cmd: 'bash' });
-
-  const totalMem = 3981;
-  const usedMem = 1258;
-  const freeMem = 1468;
-  const bufCache = 1254;
-
-  const header = [
-    `top - ${timeStr} up  0:05,  1 user,  load average: 0.08, 0.03, 0.01`,
-    `Tasks: ${procs.length} total,   0 running, ${procs.length} sleeping,   0 stopped,   0 zombie`,
-    `%Cpu(s):  1.2 us,  0.5 sy,  0.0 ni, 98.2 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st`,
-    `MiB Mem :  ${totalMem}.0 total,  ${freeMem}.0 free,  ${usedMem}.0 used,  ${bufCache}.0 buff/cache`,
-    `MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem`,
-    '',
-    '    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND',
-  ];
-
-  for (const p of procs) {
-    header.push(
-      `${String(p.pid).padStart(7)} ${p.user.padEnd(9)} ${String(p.pr).padStart(3)} ${String(p.ni).padStart(4)} ${p.virt.padStart(7)} ${p.res.padStart(6)} ${p.shr.padStart(6)} ${p.s}  ${p.cpu.toFixed(1).padStart(4)}  ${p.mem.toFixed(1).padStart(4)} ${p.time.padStart(9)} ${p.cmd}`
-    );
-  }
-
-  return header.join('\n');
-}

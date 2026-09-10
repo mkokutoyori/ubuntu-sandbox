@@ -25,7 +25,7 @@ registerView({
       runtime.flashbackHistory
         .filter(f => f.kind === 'logged')
         .map((f, idx) => [
-          `${ORACLE_CONFIG.BASE}/fast_recovery_area/flashback/o1_mf_${idx + 1}.flb`,
+          `${ORACLE_CONFIG.FRA}/flashback/o1_mf_${idx + 1}.flb`,
           idx + 1, 1, f.bytes,
           new Date(f.ts).toISOString(),
           f.scn,

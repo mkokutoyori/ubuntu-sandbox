@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-08-23T10:16:43.514Z
+Generated: 2026-09-10T16:29:55.282Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -358,7 +358,8 @@ Total steps: 311
 <empty>
 
 [84/311] r1 R1(config-if)# ip ospf dead-interval minimal hello-multiplier 4
-  % Invalid value
+                                      ^
+  % Invalid input detected at '^' marker.
 
 [85/311] r1 R1(config-if)# ip ospf retransmit-interval 10
 <empty>
@@ -470,7 +471,8 @@ Total steps: 311
 <empty>
 
 [115/311] r1 R1(config-router)# summary-address 172.17.0.0 255.255.0.0 not-advertise
-<empty>
+                    ^
+  % Invalid input detected at '^' marker.
 
 [116/311] r1 R1(config-router)# exit
 <empty>
@@ -507,7 +509,6 @@ Total steps: 311
    Log-Adjacency-Changes: enabled
    Summary address(es):
      172.16.0.0 255.255.0.0
-     172.17.0.0 255.255.0.0
   
       Area 1
           Number of interfaces in this area is 2
@@ -555,7 +556,8 @@ Total steps: 311
 <empty>
 
 [131/311] r1 R1(config-rtr)# redistribute connected
-<empty>
+                              ^
+  % Invalid input detected at '^' marker.
 
 [132/311] r1 R1(config-rtr)# exit
 <empty>
@@ -629,7 +631,6 @@ Total steps: 311
    Log-Adjacency-Changes: enabled
    Summary address(es):
      172.16.0.0 255.255.0.0
-     172.17.0.0 255.255.0.0
   
       Area 1
           Number of interfaces in this area is 2
@@ -855,7 +856,6 @@ Total steps: 311
 [163/311] r1 R1# show ip ospf summary-address
   OSPF Router with ID (1.1.1.1) (Process ID 1), Summary-address
     172.16.0.0 255.255.0.0
-    172.17.0.0 255.255.0.0
 
 [164/311] r1 R1# show ip ospf rib
   OSPF Router with ID (1.1.1.1) (Process ID 1)
@@ -1065,7 +1065,7 @@ Total steps: 311
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX8046LY2J
+  Processor board ID FTX3225AE1F
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1075,19 +1075,19 @@ Total steps: 311
 [204/311] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 2242 bytes
+  Current configuration : 2194 bytes
   !
-  ! Last configuration change at 10:16:43 UTC Sun Aug 23 2026 by console
+  ! Last configuration change at 16:29:57 UTC Thu Sep 10 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
   !
   hostname R1
   !
-  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
@@ -1199,7 +1199,7 @@ Total steps: 311
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 160 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
        9 packets output, 842 bytes, 0 underruns
@@ -1219,7 +1219,7 @@ Total steps: 311
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 128 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
        175 packets output, 19036 bytes, 0 underruns
@@ -1441,7 +1441,6 @@ Total steps: 311
    Log-Adjacency-Changes: enabled
    Summary address(es):
      172.16.0.0 255.255.0.0
-     172.17.0.0 255.255.0.0
   
       Area 1
           Number of interfaces in this area is 2
@@ -1619,17 +1618,17 @@ Total steps: 311
   
   Log Buffer (4096 bytes):
   
-  *Aug 23 10:16:43.510: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 23 10:16:43.511: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 23 10:16:43.512: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 10:16:43.512: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 10:16:43.553: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:43.599: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:43.612: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:43.645: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:43.664: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:43.681: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:43.786: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:55.277: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 10 16:29:55.277: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 10 16:29:55.279: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:29:55.279: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:29:55.555: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:55.798: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:55.948: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:56.418: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:56.577: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:56.686: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:57.450: %SYS-5-CONFIG_I: Configured from console by console
 
 [238/311] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1640,8 +1639,8 @@ Total steps: 311
 [239/311] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE35470B.E6666666 (10:16:43.900 UTC Sun Aug 23 2026)
+  ntp uptime is 300 (1/100 of seconds), resolution is 4001
+  reference time is EE4D5986.249BA5E3 (16:29:58.143 UTC Thu Sep 10 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1652,14 +1651,14 @@ Total steps: 311
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [241/311] r1 R1# show clock
-  *10:16:43.000 UTC Sun Aug 23 2026
+  *16:29:58.000 UTC Thu Sep 10 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  R2               Gig 0/1           180        R           Cisco 291 Gig 0/1
+  R2               Gig 0/1           178        R           Cisco 291 Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -1749,7 +1748,7 @@ Total steps: 311
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 160 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
        9 packets output, 842 bytes, 0 underruns
@@ -1771,7 +1770,7 @@ Total steps: 311
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 128 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
        205 packets output, 22396 bytes, 0 underruns
@@ -1794,6 +1793,7 @@ Total steps: 311
     Split horizon is enabled
     ICMP redirects are always sent
     ICMP unreachables are always sent
+    ICMP mask replies are never sent
     IP fast switching is enabled
     IP CEF switching is enabled
 
@@ -1837,7 +1837,7 @@ Total steps: 311
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX8046LY2J
+  Processor board ID FTX3225AE1F
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1847,19 +1847,19 @@ Total steps: 311
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 2242 bytes
+  Current configuration : 2194 bytes
   !
-  ! Last configuration change at 10:16:43 UTC Sun Aug 23 2026 by console
+  ! Last configuration change at 16:29:57 UTC Thu Sep 10 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
   !
   hostname R1
   !
-  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
@@ -1996,7 +1996,7 @@ Total steps: 311
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 160 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
        9 packets output, 842 bytes, 0 underruns
@@ -2016,7 +2016,7 @@ Total steps: 311
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 128 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
        205 packets output, 22396 bytes, 0 underruns
@@ -2246,21 +2246,21 @@ Total steps: 311
   
   Log Buffer (4096 bytes):
   
-  *Aug 23 10:16:43.510: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 23 10:16:43.511: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 23 10:16:43.512: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 10:16:43.512: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 10:16:43.553: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:43.599: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:43.612: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:43.645: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:43.664: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:43.681: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 23 10:16:43.786: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:55.277: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 10 16:29:55.277: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 10 16:29:55.279: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:29:55.279: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:29:55.555: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:55.798: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:55.948: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:56.418: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:56.577: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:56.686: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 10 16:29:57.450: %SYS-5-CONFIG_I: Configured from console by console
 
 [255/311] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX8046LY2J
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX3225AE1F
 
 [256/311] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2385,14 +2385,14 @@ Total steps: 311
 [268/311] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 2242 bytes
+  Current configuration : 2194 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
-  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
   interface GigabitEthernet0/1
@@ -2615,25 +2615,33 @@ Total steps: 311
 
 [304/311] r1 R1(config)# interface ?
     BVI              Bridge-Group Virtual Interface
+    BVI              Bridge-Group Virtual Interface
+    Ethernet         IEEE 802.3
     Ethernet         IEEE 802.3
     FastEthernet     FastEthernet IEEE 802.3u
+    FastEthernet     FastEthernet IEEE 802.3u
+    GigabitEthernet  GigabitEthernet IEEE 802.3z
     GigabitEthernet  GigabitEthernet IEEE 802.3z
     Loopback         Loopback interface
+    Loopback         Loopback interface
+    Port-channel     Ethernet Channel of interfaces
     Port-channel     Ethernet Channel of interfaces
     Serial           Serial
+    Serial           Serial
+    Tunnel           Tunnel interface
     Tunnel           Tunnel interface
 
 [305/311] r1 R1(config)# ip ?
-    access-list        Add an access list entry
-    as-path            BGP autonomous-system path filter
-    bootp              Bootstrap Protocol
-    cef                Enable CEF
-    classless          Accepted, default behaviour on IOS 12.0 and later
+    access-list        Create a named extended access list
+    as-path            Define BGP AS-path filter
+    bootp              Enable BOOTP server
+    cef                Enable Cisco Express Forwarding
+    classless          Follow classless routing forwarding rules
     community-list     Define BGP community list
-    default-network    Configure default-network
-    dhcp               Dynamic Host Configuration Protocol
-    dns                Domain Name System
-    domain             IP domain configuration
+    default-network    Configure default network
+    dhcp               Configure DHCP address pools
+    dns                Enable the DNS server
+    domain             Enable IP Domain Name System hostname translation
     domain-list        Define a list of default domain names
     domain-lookup      Enable IP Domain Name System hostname translation
     domain-name        Define the default domain name
@@ -2642,21 +2650,21 @@ Total steps: 311
     flow-export        Legacy NetFlow export
     gratuitous-arps    Send gratuitous ARP
     host               Add a host to the host table
-    http               Hypertext Transfer Protocol
-    local              Local settings
+    http               Enable HTTP server
+    local              Apply local PBR
     multicast-routing  Enable IP multicast routing
     name-server        Specify address of name server to use
-    nat                Network Address Translation
-    pim                Protocol Independent Multicast
+    nat                Wipe NAT configuration
+    pim                Configure static PIM RP address
     prefix-list        Build a prefix list
-    route              Establish static routes
+    route              Establish static routes in a VRF
     route-cache        Route cache
     routing            Enable IP routing
-    scp                SCP server config
+    scp                Enable the SCP server
     sla                Configure an IP SLAs operation
     source-route       Accept source-routed packets
-    ssh                SSH config
-    subnet-zero        Accepted, default behaviour on IOS 12.0 and later
+    ssh                SSH protocol version to accept
+    subnet-zero        Enable use of subnet zero
     vrf                Define a VRF instance
 
 [306/311] r1 R1(config)# router ?
@@ -2667,48 +2675,56 @@ Total steps: 311
 
 [307/311] r1 R1(config)# crypto ?
     dynamic-map  Define a dynamic crypto map
-    gdoi         Group Domain of Interpretation
-    ikev2        Internet Key Exchange version 2
-    ipsec        IP Security
-    isakmp       Internet Security Association and Key Management Protocol
-    key          Key management
+    gdoi         Define a GDOI GET-VPN group
+    ikev2        Define IKEv2 proposal
+    ipsec        Configure IPSec policy
+    isakmp       Define an IKE policy
+    key          Generate RSA key
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
-    pki          Public Key Infrastructure
+    pki          Declare a PKI trustpoint
     <cr>
 
 [308/311] r1 R1(config)# no ?
-    aaa            Disable AAA
+    aaa            Enable NEW access control commands and functions
     access-list    Remove an access list
     alias          Remove a command alias
-    arp            Remove ARP entry
+    arp            Add static ARP entry
     banner         Remove a banner
-    boot           Boot Commands
+    boot           Specify system image to load
     cdp            Enable CDP globally
-    clock          Set the system clock
-    crypto         Encryption and key management
-    enable         Modify enable password parameters
+    clock          Hardware calendar is a valid time source
+    crypto         Encryption module
+    enable         Set enable secret
     event          Embedded Event Manager
-    hostname       Reset hostname
+    hostname       Set system hostname
     interface      Remove a virtual interface
-    ip             Global IP configuration subcommands
+    ip             Enable IP routing
     ipv6           IPv6 interface subcommands
     key            Key management
-    line           Remove line configuration
+    line           Enter line configuration
     lldp           Enable LLDP globally
-    logging        line logging
-    login          line login
+    logging        Count every log message and timestamp last occurrence
+    login          Set the login blocking period
     ntp            Authenticate time sources
-    parser         Negate a parser command
-    privilege      Remove privilege command rule
-    radius-server  Remove legacy radius host
+    object-group   Configure object-group
+    parser         Define a CLI view
+    priority-list  Remove build a priority list
+    privilege      Configure command privilege levels
+    queue-list     Remove build a custom queue list
+    radius         RADIUS server configuration
+    radius-server  Specify a RADIUS server
     route-map      Remove a route-map
-    router         Enable a routing protocol
+    router         Enter RIP routing protocol configuration
     service        Disable a network based service
-    sntp           Configure SNTP
-    tacacs-server  Remove legacy tacacs host
+    snmp-server    Set community string and access privs
+    sntp           SNTP server (alias for ntp server)
+    tacacs         TACACS+ server configuration
+    tacacs-server  Specify a TACACS+ server
+    time-range     Remove a time range
     track          Remove a tracked object
     username       Remove a local user
+    vrf            Configure a VRF
 
 [309/311] r1 R1(config)# end
 <empty>

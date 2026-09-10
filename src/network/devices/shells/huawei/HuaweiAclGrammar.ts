@@ -11,7 +11,6 @@
  *   [switch]  acl 42                -> [SW-acl-basic-42]
  *   [switch]  acl abc               -> [SW-acl-basic-NaN]      (une vue nommee NaN)
  *   [switch]  acl name TEST advance -> [SW-acl-basic-TEST]     (jamais advanced)
- *   [switch]  acl ipv6 name V6      -> [SW-acl-basic-NaN]
  *
  * La grammaire est ici ; chaque plateforme garde SON magasin, qui est
  * legitimement different (le moteur d'ACL du routeur, la table du
@@ -24,7 +23,7 @@ export type AclType = 'basic' | 'advanced';
 
 export type AclCommande =
   | { kind: 'numero'; numero: number; type: AclType }
-  | { kind: 'nom'; nom: string; type: AclType; ipv6: boolean; numero?: number };
+  | { kind: 'nom'; nom: string; type: AclType; numero?: number };
 
 export type AclAnalyse =
   | { statut: 'ok'; cmd: AclCommande }
@@ -56,10 +55,10 @@ function typeDuNumero(n: number): AclType | null {
   return null;
 }
 
-/**
- * `acl [ number ] <n>` | `acl name <nom> [ basic | advance | <n> ]` |
- * `acl ipv6 name <nom>`.
- */
+export const ACL6_ABSENTE =
+  'Error: IPv6 ACLs are not supported on this device: there is no ACL6 rule table,'
+  + ' no `traffic-filter ipv6` binding and no IPv6 data plane to apply one.';
+
 export function analyserAcl(args: readonly string[]): AclAnalyse {
   const mots = args.filter((a) => a.length > 0);
   if (mots.length === 0) return { statut: 'refus', err: { kind: 'incomplete' } };
@@ -73,14 +72,14 @@ export function analyserAcl(args: readonly string[]): AclAnalyse {
     }
     if (mots.length < 3) return { statut: 'refus', err: { kind: 'incomplete' } };
     if (mots.length > 3) return { statut: 'refus', err: { kind: 'too-many', token: mots[3] } };
-    return { statut: 'ok', cmd: { kind: 'nom', nom: mots[2], type: 'advanced', ipv6: true } };
+    return { statut: 'refus', err: { kind: 'propre', message: ACL6_ABSENTE } };
   }
 
   if (tete === 'name') {
     if (mots.length < 2) return { statut: 'refus', err: { kind: 'incomplete' } };
     const nom = mots[1];
     if (mots.length === 2) {
-      return { statut: 'ok', cmd: { kind: 'nom', nom, type: 'basic', ipv6: false } };
+      return { statut: 'ok', cmd: { kind: 'nom', nom, type: 'basic' } };
     }
     // `acl name <nom> <numero>` lie un nom a un numero, et c'est bien une
     // forme de VRP : c'etait la seule que le switch avait et que le
@@ -98,7 +97,7 @@ export function analyserAcl(args: readonly string[]): AclAnalyse {
       if (!type) return { statut: 'refus', err: { kind: 'wrong', token: suite } };
     }
     if (mots.length > 3) return { statut: 'refus', err: { kind: 'too-many', token: mots[3] } };
-    return { statut: 'ok', cmd: { kind: 'nom', nom, type, ipv6: false, numero } };
+    return { statut: 'ok', cmd: { kind: 'nom', nom, type, numero } };
   }
 
   const avecNumber = tete === 'number';

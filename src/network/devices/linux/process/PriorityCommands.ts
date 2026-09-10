@@ -34,39 +34,67 @@ function resolvePids(tokens: string[]): number[] {
 
 // ─── nice ──────────────────────────────────────────────────────────────
 
+/** Le code de sortie que `nice` rend quand il n'a pas pu lancer la commande. */
+const NICE_USAGE_EXIT = 125;
+
+const NICE_TRY_HELP = "Try 'nice --help' for more information.";
+
+/** L'ajustement par defaut de `nice`, quand aucun `-n` n'est donne. */
+const NICE_DEFAULT_ADJUSTMENT = 10;
+
+function clampNice(value: number): number {
+  return Math.max(-20, Math.min(19, value));
+}
+
+/**
+ * `nice` est un ENFANT du shell : il s'abaisse lui-meme puis execve()
+ * la commande, et ce qu'il a abaisse meurt avec elle. L'implementation
+ * appliquait l'abaissement a `currentPid ?? shellPid`, donc AU SHELL des
+ * qu'aucun enfant n'etait en cours — une seule commande niceee degradait
+ * definitivement la session.
+ *
+ * L'ajustement est RELATIF a la priorite heritee : `nice -n 3 nice -n 4
+ * nice` rend 7 sur une vraie machine, ce que seul un vrai enfant
+ * portant sa propre priorite peut reproduire.
+ */
 export function cmdNice(args: string[], ctx: ProcessCmdContext): CmdResult {
+  const heritee = ctx.pm.get(ctx.currentPid ?? ctx.shellPid ?? 0)?.nice ?? 0;
   if (args.length === 0) {
-    // No command: print the shell's current niceness.
-    const shell = ctx.shellPid ? ctx.pm.get(ctx.shellPid) : undefined;
-    return { output: String(shell?.nice ?? 0), exitCode: 0 };
+    return { output: String(heritee), exitCode: 0 };
   }
   let i = 0;
-  let adj = 10;
+  let adj = NICE_DEFAULT_ADJUSTMENT;
+  let donne = false;
   if (args[0] === '-n' || args[0] === '--adjustment') {
     adj = Number(args[1]);
     i = 2;
+    donne = true;
   } else if (/^-n\d/.test(args[0]) || /^--adjustment=/.test(args[0])) {
     adj = Number(args[0].replace(/^(-n|--adjustment=)/, ''));
     i = 1;
+    donne = true;
   } else if (/^-\d+$/.test(args[0])) {
     adj = Number(args[0]);
     i = 1;
+    donne = true;
   }
   if (Number.isNaN(adj)) {
-    return { output: `nice: invalid adjustment '${args[1] ?? args[0]}'`, exitCode: 1 };
+    return {
+      output: `nice: invalid adjustment '${args[1] ?? args[0]}'\n${NICE_TRY_HELP}`,
+      exitCode: NICE_USAGE_EXIT,
+    };
   }
   const cmd = args.slice(i);
   if (cmd.length === 0) {
-    return { output: '', exitCode: 0 };
+    return donne
+      ? {
+        output: `nice: a command must be given with an adjustment\n${NICE_TRY_HELP}`,
+        exitCode: NICE_USAGE_EXIT,
+      }
+      : { output: String(heritee), exitCode: 0 };
   }
-  // real nice(1) setpriority()s itself then execve()s into the target —
-  // same PID, new image.
-  const target = ctx.currentPid ?? ctx.shellPid;
-  if (target !== undefined) {
-    ctx.pm.renice(target, Math.max(-20, Math.min(19, adj)));
-  }
-  if (!ctx.execute) return { output: '', exitCode: 0 };
-  return ctx.execute(cmd.join(' '));
+  if (!ctx.runAsChild) return { output: '', exitCode: 0 };
+  return ctx.runAsChild(clampNice(heritee + adj), cmd.join(' '));
 }
 
 // ─── renice ────────────────────────────────────────────────────────────

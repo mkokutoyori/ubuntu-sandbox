@@ -26,7 +26,12 @@ export interface VfsAdapter {
   fileExists(path: string):                  boolean;
   deleteFile(path: string):                  Result<void, RmanError>;
   availableBytes():                          number;
+  ensureDirectory?(path: string):            Result<void, RmanError>;
 }
+
+export type ConnectTargetOutcome =
+  | { readonly ok: true; readonly dbName: string; readonly dbId: number; readonly remote: boolean }
+  | { readonly ok: false; readonly error: string };
 
 export interface IRmanOracleContext {
   readonly dbId:    DbId;
@@ -41,4 +46,22 @@ export interface IRmanOracleContext {
   getControlFilePath?(): string;
   /** Optional: instance lifecycle state used to gate CONNECT/RESTORE/RECOVER. */
   getInstanceState?(): 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
+  /**
+   * Resolve a `user/pass@identifier` target through Oracle Net, opening
+   * the same TCP connection `sqlplus` opens. Absent on contexts with no
+   * device to dial from, in which case CONNECT stays local.
+   */
+  connectTarget?(identifier: string): ConnectTargetOutcome;
+  recordBackupPiece?(piece: RecordedBackupPiece): void;
+  getRecoveryAreaUsedBytes?(): number;
+}
+
+export interface RecordedBackupPiece {
+  readonly setId:       number;
+  readonly pieceId:     number;
+  readonly type:        'FULL' | 'INCREMENTAL' | 'ARCHIVELOG' | 'CONTROLFILE' | 'SPFILE';
+  readonly handle:      string;
+  readonly bytes:       number;
+  readonly startedAt:   number;
+  readonly completedAt: number;
 }

@@ -23,7 +23,34 @@ export interface SysfsHooks {
   liveMtu?: (iface: string) => number | null;
   /** Real link state of the interface — drives `carrier` and `operstate`. */
   liveLink?: (iface: string) => { carrier: boolean; operUp: boolean } | null;
+  /**
+   * Les compteurs de l'interface, ceux que `ip -s link`, `ifconfig`,
+   * `ethtool -S`, `/proc/net/dev` et `netstat -i` rendent deja. `/sys`
+   * ne les portait pas, alors que c'est la que lit un agent de
+   * supervision.
+   */
+  liveCounters?: (iface: string) => {
+    framesIn: number; framesOut: number; bytesIn: number; bytesOut: number;
+    errorsIn?: number; errorsOut?: number;
+  } | null;
+  /** Le numero que `ip link` affiche devant le nom. */
+  liveIfIndex?: (iface: string) => number | null;
 }
+
+/**
+ * Les vingt-quatre compteurs qu'une interface expose sous
+ * `statistics/`, releves sur la machine reelle. Ce simulateur en mesure
+ * six ; les dix-huit autres valent zero, ce qui est le compte JUSTE —
+ * rien ici ne produit d'erreur de trame, de collision ni de depassement
+ * de file.
+ */
+const STAT_ZEROS = [
+  'multicast', 'rx_compressed', 'rx_crc_errors', 'rx_fifo_errors',
+  'rx_frame_errors', 'rx_length_errors', 'rx_missed_errors', 'rx_nohandler',
+  'rx_over_errors', 'tx_aborted_errors', 'tx_carrier_errors', 'tx_compressed',
+  'tx_fifo_errors', 'tx_heartbeat_errors', 'tx_window_errors', 'collisions',
+  'rx_dropped', 'tx_dropped',
+];
 
 export class SysfsTree {
   private readonly get: () => HardwareProfile;
@@ -135,6 +162,7 @@ export class SysfsTree {
         { path: `${base}/tx_queue_len`, read: () => '1000\n' },
         { path: `${base}/broadcast`, read: () => 'ff:ff:ff:ff:ff:ff\n' },
       );
+      out.push(...this.netStatistics(nom));
     }
     out.push(
       { path: '/sys/class/net/lo/address', read: () => '00:00:00:00:00:00\n' },
@@ -142,8 +170,33 @@ export class SysfsTree {
       { path: '/sys/class/net/lo/operstate', read: () => 'unknown\n' },
       { path: '/sys/class/net/lo/type', read: () => '772\n' },
       { path: '/sys/class/net/lo/arp', read: () => '0\n' },
+      ...this.netStatistics('lo'),
     );
     return out;
+  }
+
+  /**
+   * `statistics/` et `ifindex` d'une interface. Les six compteurs
+   * mesures viennent de la MEME source que `ethtool -S` et
+   * `/proc/net/dev` : la machine ne compte ses trames qu'une fois.
+   */
+  private netStatistics(nom: string): SysfsLeaf[] {
+    const base = `/sys/class/net/${nom}`;
+    const c = () => this.hooks.liveCounters?.(nom)
+      ?? { framesIn: 0, framesOut: 0, bytesIn: 0, bytesOut: 0 };
+    const mesures: Array<[string, () => number]> = [
+      ['rx_packets', () => c().framesIn],
+      ['tx_packets', () => c().framesOut],
+      ['rx_bytes', () => c().bytesIn],
+      ['tx_bytes', () => c().bytesOut],
+      ['rx_errors', () => c().errorsIn ?? 0],
+      ['tx_errors', () => c().errorsOut ?? 0],
+    ];
+    return [
+      { path: `${base}/ifindex`, read: () => `${this.hooks.liveIfIndex?.(nom) ?? 0}\n` },
+      ...mesures.map(([n, lire]) => ({ path: `${base}/statistics/${n}`, read: () => `${lire()}\n` })),
+      ...STAT_ZEROS.map((n) => ({ path: `${base}/statistics/${n}`, read: () => '0\n' })),
+    ];
   }
 }
 

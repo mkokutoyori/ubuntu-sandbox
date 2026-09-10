@@ -21,7 +21,9 @@ import { privilegeConfigLines } from '../cli/CliAuthorization';
 import { getPrivilegeRules } from '../../router/security/CiscoPrivilegeStore';
 import type { Port } from '../../../hardware/Port';
 import { IPAddress, SubnetMask, RIP_METRIC_INFINITY } from '../../../core/types';
-import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
+import { runningConfigACL, runningConfigInterfaceACL,
+  runningConfigIPv6ACL,
+} from './CiscoAclCommands';
 import { fhrpRunningConfigLines, type FhrpInterfaceView } from '../../../fhrp/runningConfig';
 import { runningConfigObjectGroups } from '@/cli/commands/objectGroup/objectGroupFamily';
 import {
@@ -581,6 +583,12 @@ export function showRunningConfig(router: Router): string {
   const aclLines = runningConfigACL(router);
   if (aclLines.length > 0) {
     lines.push(...aclLines);
+    lines.push('!');
+  }
+
+  const ipv6AclLines = runningConfigIPv6ACL(router);
+  if (ipv6AclLines.length > 0) {
+    lines.push(...ipv6AclLines);
     lines.push('!');
   }
 

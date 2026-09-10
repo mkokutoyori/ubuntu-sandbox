@@ -8,10 +8,11 @@
 
 import type { LinuxProcessManager, Signal } from './LinuxProcessManager';
 import { SIGNAL_NUMBERS } from './LinuxProcessManager';
-import type { LinuxServiceManager, ServiceUnit, ServiceState } from './LinuxServiceManager';
+import type { LinuxServiceManager, ServiceUnit } from './LinuxServiceManager';
 import type { LinuxJobTable } from './jobs/LinuxJobTable';
-import { runPs } from './ps/PsCommand';
-import { memPercent, kbToMiB } from './system/ProcFormat';
+import { runPs, transientSelfProcess } from './ps/PsCommand';
+import { memPercent, sharedKib, topCommand, taskBucketOf, type TaskBucket } from './system/ProcFormat';
+import { renderTable, type TableColumn, type TableStyle } from '../shells/cli/TextTable';
 
 function topCpuTime(ms: number): string {
   const min = Math.floor(ms / 60_000);
@@ -20,10 +21,7 @@ function topCpuTime(ms: number): string {
   return `${min}:${String(sec).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
 }
 
-function loadAverage(running: number): string {
-  const v = running.toFixed(2);
-  return `${v}, ${v}, ${v}`;
-}
+import { CPU_IDLE_LINE, IDLE_LOAD_AVERAGE } from './system/LoadAverage';
 import { LinuxService } from './service/LinuxService';
 import { fullUnitName, unitSuffix } from './systemd/DependencyGraph';
 import { exitStatusLabel } from './systemd/ExitStatus';
@@ -49,6 +47,13 @@ export interface ProcessCmdContext {
   memory?: import('../host/hardware').MemoryProfile;
   /** Runs a command line through the shell — backs `nice <cmd>`. */
   execute?: (cmd: string) => { output: string; exitCode: number };
+  /**
+   * Lance une commande dans un PROCESSUS ENFANT portant la priorite
+   * donnee, puis le reape. C'est ce que fait `nice` : il s'abaisse
+   * lui-meme, execve la commande, et disparait avec elle — le shell qui
+   * l'a lance n'est jamais touche.
+   */
+  runAsChild?: (nice: number, cmd: string) => { output: string; exitCode: number };
 }
 
 // ─── ps ───────────────────────────────────────────────────────────────
@@ -66,7 +71,7 @@ export function cmdPs(args: string[], ctx: ProcessCmdContext): string {
 
 export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
   // We always print one snapshot — the simulator has no interactive top.
-  const procs = ctx.pm.list();
+  const procs = [...ctx.pm.list(), transientSelfProcess(ctx, 'top')];
   const now = new Date();
   const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
   const mib = (kib: number) => Math.round(kib / 1024);
@@ -76,10 +81,12 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
   const freeMem = mem ? mib(mem.freeKib) : 1468;
   const bufCache = mem ? mib(mem.buffCacheKib) : 1254;
 
-  const sleeping = procs.filter(p => p.state === 'S').length;
-  const running = procs.filter(p => p.state === 'R').length;
-  const stopped = procs.filter(p => p.state === 'T').length;
-  const zombie = procs.filter(p => p.state === 'Z').length;
+  const compte = (bucket: TaskBucket) =>
+    procs.filter(p => taskBucketOf(p.state) === bucket).length;
+  const running = compte('running');
+  const sleeping = compte('sleeping');
+  const stopped = compte('stopped');
+  const zombie = compte('zombie');
 
   const lines: string[] = [];
   const upSec = ctx.uptimeSeconds ?? 0;
@@ -89,16 +96,11 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
   const upClause = upDays > 0
     ? `${upDays} day${upDays > 1 ? 's' : ''}, ${upH}:${String(upM).padStart(2, '0')}`
     : upH > 0 ? `${upH}:${String(upM).padStart(2, '0')}` : `${upM} min`;
-  const runnable = procs.filter(p => p.state === 'R' || p.state === 'D').length;
-  lines.push(`top - ${timeStr} up  ${upClause},  1 user,  load average: ${loadAverage(runnable)}`);
+  lines.push(`top - ${timeStr} up  ${upClause},  1 user,  load average: ${IDLE_LOAD_AVERAGE}`);
   lines.push(
     `Tasks: ${procs.length} total,  ${running} running, ${sleeping} sleeping,  ${stopped} stopped,  ${zombie} zombie`,
   );
-  const busyPct = Math.min(100, running * 100);
-  const us = (busyPct * 0.6).toFixed(1);
-  const sy = (busyPct * 0.4).toFixed(1);
-  const id = (100 - busyPct).toFixed(1);
-  lines.push(`%Cpu(s):  ${us} us,  ${sy} sy,  0.0 ni,${id.padStart(5)} id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st`);
+  lines.push(`%Cpu(s):  ${CPU_IDLE_LINE}`);
   lines.push(`MiB Mem :  ${totalMem}.0 total,  ${freeMem}.0 free,  ${usedMem}.0 used,  ${bufCache}.0 buff/cache`);
   lines.push('MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem');
   lines.push('');
@@ -113,14 +115,14 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
         p.user.padEnd(9),
         String(p.priority).padStart(3),
         String(p.nice).padStart(4),
-        `${kbToMiB(p.vsize)}M`.padStart(7),
-        `${kbToMiB(p.rss)}M`.padStart(6),
-        '4M'.padStart(6),
-        p.state,
+        String(p.vsize).padStart(7),
+        String(p.rss).padStart(6),
+        String(sharedKib(p)).padStart(6),
+        p.state[0],
         pcpu.toFixed(1).padStart(5),
         mem.padStart(5),
         topCpuTime(p.cpuTime).padStart(9),
-        p.comm,
+        topCommand(p.comm),
       ].join(' '),
     );
   }
@@ -387,6 +389,29 @@ const ACTIVE_SUBSTATE: Record<ReturnType<typeof unitSuffix>, string> = {
   socket: 'listening',
   timer: 'waiting',
 };
+
+interface UnitRow {
+  unit: string;
+  load: string;
+  active: string;
+  sub: string;
+  description: string;
+}
+
+/**
+ * Le tableau de `systemctl list-units`, dont l'en-tete et les valeurs
+ * partagent une seule mesure de largeur : ils s'ecrivaient chacun de
+ * leur cote, et aucune colonne ne tombait sous son intitule.
+ */
+const UNIT_COLUMNS: ReadonlyArray<TableColumn<UnitRow>> = [
+  { header: 'UNIT', value: (r) => r.unit },
+  { header: 'LOAD', value: (r) => r.load },
+  { header: 'ACTIVE', value: (r) => r.active },
+  { header: 'SUB', value: (r) => r.sub },
+  { header: 'DESCRIPTION', value: (r) => r.description },
+];
+
+const UNIT_TABLE: TableStyle = { gap: 1, rule: false, indent: '  ' };
 
 /**
  * La ligne `Active:` en DEUX morceaux, parce que la couleur ne les couvre
@@ -685,23 +710,28 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager, color = fa
       const typeArg = args.find((a) => a.startsWith('--type='))?.slice('--type='.length)
         ?? (args.includes('-t') ? args[args.indexOf('-t') + 1] : undefined);
       const matchesType = (name: string): boolean => !typeArg || unitSuffix(name) === typeArg;
-      const allUnits = (stateFilter
-        ? sm.list({ state: stateFilter as ServiceState })
-        : sm.list()).filter((u) => matchesType(u.name));
-      const lines = ['  UNIT                          LOAD   ACTIVE SUB     DESCRIPTION'];
-      for (const u of allUnits) {
-        const active = u.state === 'active' ? 'active' : u.state === 'failed' ? 'failed' : 'inactive';
-        const sub2 = u.state !== 'active' ? 'dead' : ACTIVE_SUBSTATE[unitSuffix(u.name)];
-        lines.push(
-          `  ${fullUnitName(u.name).padEnd(30)} loaded ${active.padEnd(8)} ${sub2.padEnd(8)} ${u.description}`,
-        );
-      }
+      const showAll = args.includes('--all') || args.includes('-a');
+      const rows: UnitRow[] = sm.list()
+        .filter((u) => matchesType(u.name))
+        .map((u) => ({
+          unit: fullUnitName(u.name),
+          load: 'loaded',
+          active: u.state === 'active' ? 'active' : u.state === 'failed' ? 'failed' : 'inactive',
+          sub: u.state !== 'active' ? 'dead' : ACTIVE_SUBSTATE[unitSuffix(u.name)],
+          description: u.description,
+        }));
+      const kept = stateFilter
+        ? rows.filter((r) => r.load === stateFilter || r.active === stateFilter || r.sub === stateFilter)
+        : rows.filter((r) => showAll || r.sub !== 'dead');
+      const lines = renderTable(kept, UNIT_COLUMNS, UNIT_TABLE);
       lines.push('');
       lines.push('LOAD   = Reflects whether the unit definition was properly loaded.');
       lines.push('ACTIVE = The high-level unit activation state, i.e. generalization of SUB.');
       lines.push('SUB    = The low-level unit activation state, values depend on unit type.');
       lines.push('');
-      lines.push(`${allUnits.length} loaded units listed. Pass --all to see loaded but inactive units, too.`);
+      lines.push(showAll
+        ? `${kept.length} loaded units listed.`
+        : `${kept.length} loaded units listed. Pass --all to see loaded but inactive units, too.`);
       lines.push("To show all installed unit files use 'systemctl list-unit-files'.");
       return { output: lines.join('\n'), exitCode: 0 };
     }

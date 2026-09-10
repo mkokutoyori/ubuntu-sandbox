@@ -55,11 +55,10 @@ export function cmdTouch(ctx: ShellContext, args: string[]): string {
     const path = ctx.vfs.normalizePath(arg, ctx.cwd);
     const existed = ctx.vfs.exists(path);
     ctx.vfs.touch(path, ctx.uid, ctx.gid, ctx.umask);
-    // A file that did not appear on a volume with no inodes left is the
-    // one refusal `touch` can hit here (docs/PRD-Pannes.md §F9.2) —
-    // permission cases are already reported by the caller.
-    if (!existed && !ctx.vfs.exists(path) && ctx.vfs.freeInodes() === 0) {
-      errors.push(`touch: cannot touch '${arg}': No space left on device`);
+    if (!existed && !ctx.vfs.exists(path)) {
+      errors.push(ctx.vfs.freeInodes() === 0
+        ? `touch: cannot touch '${arg}': No space left on device`
+        : `touch: cannot touch '${arg}': No such file or directory`);
     }
   }
   return errors.join('\n');
@@ -116,7 +115,13 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
 
     for (const p of expandedPaths) {
       const absPath = ctx.vfs.normalizePath(p, ctx.cwd);
-      const inode = ctx.vfs.resolveInode(absPath, false);
+      // `ls <lien>` liste ce que le lien DESIGNE ; `ls -l` et `ls -d`
+      // decrivent le lien lui-meme. C'est le comportement de coreutils,
+      // releve sur la machine reelle : `ls /lib` liste `usr/lib`, tandis
+      // que `ls -l /lib` rend la ligne `lib -> usr/lib`.
+      const suitLeLien = !longFormat && !dirOnly;
+      const inode = ctx.vfs.resolveInode(absPath, suitLeLien)
+        ?? ctx.vfs.resolveInode(absPath, false);
 
       if (!inode) {
         allOutput.push(`ls: cannot access '${p}': No such file or directory`);

@@ -19,6 +19,11 @@ export function formatLinkSpeedMbps(mbps: number): string {
 
 export const LOOPBACK_IFINDEX = 1;
 
+export function withWindowsZone(address: { toString(): string }, ifIndex: number): string {
+  const bare = address.toString().replace(/%.*$/, '');
+  return /^fe80:/i.test(bare) ? `${bare}%${ifIndex}` : bare;
+}
+
 export function adapterIfIndex(position: number): number {
   return LOOPBACK_IFINDEX + 1 + position;
 }

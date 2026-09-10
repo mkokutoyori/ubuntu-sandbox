@@ -20,7 +20,7 @@ import type { NetRouteIdentity, NetRouteUpdate } from '@/network/devices/windows
 import type { NetFirewallRuleEntry } from '@/network/devices/windows/netFirewallRule';
 import type { NetAdapterEntry } from '@/network/devices/windows/netAdapter';
 import type { NetNeighborPlan, NetNeighborRow } from '@/network/devices/windows/netNeighbor';
-import type { DnsCacheRow } from '@/network/devices/windows/dnsClientCache';
+import type { DnsAnswerRow, DnsCacheRow } from '@/network/devices/windows/dnsClientCache';
 
 // ─── Entry types re-exported for cmdlet use ────────────────────────────────
 
@@ -1311,12 +1311,8 @@ export interface INetworkProvider {
   getDhcpServer?(ifAlias: string): string | null;
   /** Test-Connection (ping) */
   testConnection(target: string): boolean;
-  /**
-   * Synchronous reachability probe: send a real ICMP echo, capture the
-   * reply via the bus's synchronous publish, return the outcome. Returns
-   * null only when the target cannot be resolved to an IP.
-   */
-  testPingProbe(target: string): { success: boolean; rttMs: number; resolvedIp: string } | null;
+  testPingProbe(target: string, count?: number):
+    { resolvedIp: string; probes: ReadonlyArray<{ success: boolean; rttMs: number }> } | null;
   /**
    * Synchronous TCP probe: open the socket, observe whether the handshake
    * settles to established inline. The simulator's bus is synchronous so
@@ -1343,6 +1339,7 @@ export interface INetworkProvider {
   resolveDnsViaServer?(name: string, server: string): string[];
   /** Resolve-DnsName -Server, with each answer's real TTL (does not touch the client cache). */
   resolveDnsViaServerWithTtl?(name: string, server: string): Array<{ ip: string; ttl: number }>;
+  resolveDnsRecords?(name: string, type: string, server?: string): DnsAnswerRow[] | null;
   /** Get-DnsClientCache */
   getDnsClientCache?(): DnsCacheRow[];
   /** Clear-DnsClientCache */
@@ -1498,9 +1495,28 @@ export interface IEnvironmentProvider {
   remove(name: string): void;
 }
 
+export interface PartitionInfo {
+  diskNumber: number;
+  partitionNumber: number;
+  driveLetter: string;
+  offset: number;
+  size: number;
+  type: string;
+}
+
+/**
+ * Les classes WMI adossees a l'inventaire materiel de la machine. Une
+ * seule declaration les porte (`network/devices/windows/WmiClasses.ts`),
+ * lue par `wmic` comme par `Get-CimInstance` : deux facades, un WMI.
+ */
+export interface IWmiProvider {
+  instances(className: string): Array<Record<string, string>> | null;
+}
+
 export interface IDiskProvider {
   listDisks(): DiskInfo[];
   listVolumes(): VolumeInfo[];
+  listPartitions(): PartitionInfo[];
 }
 
 export interface VpnConnectionInfo {
@@ -1572,6 +1588,7 @@ export interface PSProviders {
   readonly vpn:            IVpnProvider            | null;
   readonly scheduledTasks: IScheduledTaskProvider  | null;
   readonly disks:          IDiskProvider           | null;
+  readonly wmi:            IWmiProvider            | null;
   readonly environment:    IEnvironmentProvider    | null;
   readonly remoting:       IRemotingProvider       | null;
   readonly roles:          IRoleProvider           | null;

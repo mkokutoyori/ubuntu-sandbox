@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-08-23T10:16:23.010Z
+Generated: 2026-09-10T16:21:15.579Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -29,7 +29,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1698EXLZ
+  Processor board ID FTX2818WJEQ
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -57,7 +57,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1698EXLZ
+  Processor board ID FTX2818WJEQ
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -65,10 +65,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:15.000 UTC Thu Sep 10 2026
 
 [4/482] r1 R1> show calendar
-  10:16:23 UTC Sun Aug 23 2026
+  16:21:15 UTC Thu Sep 10 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -84,7 +84,7 @@ Total steps: 482
 
 [7/482] r1 R1> show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX1698EXLZ
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX2818WJEQ
 
 [8/482] r1 R1> show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -154,7 +154,7 @@ Total steps: 482
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 160 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
        1 packets output, 64 bytes, 0 underruns
@@ -173,7 +173,7 @@ Total steps: 482
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 128 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
        2 packets output, 128 bytes, 0 underruns
@@ -316,7 +316,7 @@ Total steps: 482
   Entry address(es):
   Platform: Cisco 2911,  Capabilities: Router
   Interface: GigabitEthernet0/1,  Port ID (outgoing port): GigabitEthernet0/1
-  Holdtime : 0 sec
+  Holdtime : 180 sec
   
   Version :
   Cisco IOS Software, c2900 Software (C2900-UNIVERSALK9-M), Version 15.4(3)M
@@ -422,13 +422,14 @@ Total steps: 482
   % Invalid input detected at '^' marker.
 
 [42/482] r1 R1> show snmp
+          ^
   % Invalid input detected at '^' marker.
 
 [43/482] r1 R1> show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE3546F7.2C083126 (10:16:23.172 UTC Sun Aug 23 2026)
+  reference time is EE4D577C.1F3B645A (16:21:16.122 UTC Thu Sep 10 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -529,6 +530,8 @@ Total steps: 482
 
 [57/482] r1 R1> show tcp brief
   TCB       Local Address           Foreign Address        (state)
+  44AA016F  *.23                    *.*                    LISTEN
+  E3661D36  *.1812                  *.*                    LISTEN
 
 [58/482] r1 R1> show sockets
   Proto    Local Address      Foreign Address      State
@@ -580,6 +583,7 @@ Total steps: 482
     Name                             Default RD            Protocols   Interfaces
 
 [68/482] r1 R1> show tech-support
+          ^
   % Invalid input detected at '^' marker.
 
 [69/482] r1 R1> show diag
@@ -590,13 +594,13 @@ Total steps: 482
   % Invalid input detected at '^' marker.
 
 [71/482] r1 R1> ?
-    clear       Clear DHCP address bindings
+    clear       Clear the command history buffer
     debug       Enable debugging functions
     delete      Delete a file
     dir         List files on a filesystem
     disconnect  Close an outgoing connection
-    enable      Enter privileged EXEC at a specific level
-    event       Embedded Event Manager
+    enable      Turn on privileged commands
+    event       Run an EEM applet manually
     exit        Exit from the EXEC
     help        Description of the interactive help system
     mkdir       Create a directory
@@ -606,23 +610,23 @@ Total steps: 482
     pwd         Display current working directory
     resume      Resume an outgoing connection
     rmdir       Remove a directory
-    show        System hardware and software status
+    show        Time range
     squeeze     Squeeze a filesystem
     ssh         Open an SSH connection to a remote host
     telnet      Open a Telnet session
-    terminal    Set terminal parameters
+    terminal    Set number of lines on a screen
     traceroute  Trace route to destination
     verify      Verify a file
     where       List open outgoing connections
 
 [72/482] r1 R1> show ?
-    aaa            Display AAA servers
+    aaa            Display AAA state
     access-lists   Display all access lists
     accounting     Display accounting records
     adjacency      Display CEF adjacency table
     aliases        Display command aliases
     arp            Display ARP table
-    bfd            Bidirectional Forwarding Detection
+    bfd            Display BFD summary
     bgp            Display BGP
     buffers        Display buffer pools
     calendar       Display hardware calendar
@@ -636,13 +640,13 @@ Total steps: 482
     dmvpn          Display DMVPN status
     eigrp          EIGRP information
     environment    Display environment
-    event          Embedded Event Manager
+    event          Display EEM environment
     file           Show filesystem information
-    flow           NetFlow
+    flow           Display Flexible NetFlow exporter
     glbp           Display GLBP state
     history        Display command history
     hosts          Display host cache
-    interfaces     Display interface status
+    interfaces     Interface status and configuration
     inventory      Display hardware inventory
     ip             IP information
     ipv6           Display IPv6 interface state
@@ -652,11 +656,12 @@ Total steps: 482
     login          Display login config
     memory         Display memory statistics
     ntp            Display NTP status
-    parameter-map  Display parameter-map
+    object-group   Display object groups
+    parameter-map  Show parameter-map
     policy-map     Show policy-map
     privilege      Display current privilege level
     processes      Display active processes
-    queueing       Display queueing configuration
+    queueing       Display interface queueing
     radius         Display Radius stats
     reload         Display reload schedule
     route-map      Display route-maps
@@ -669,7 +674,7 @@ Total steps: 482
     tacacs         Display TACACS
     tcp            Status of TCP connections
     terminal       Display terminal configuration parameters
-    time-range     Show time-range
+    time-range     Time range
     track          Tracking information
     traffic-shape  Display traffic shaping
     users          Display active lines
@@ -678,8 +683,8 @@ Total steps: 482
     vrf            Display VRFs
     vrrp           Display VRRP state
     who            Display active lines
-    zone           Display security zone
-    zone-pair      Display security zone-pair
+    zone           Display zones
+    zone-pair      Display zone-pairs
 
 [73/482] r1 R1> ping
   % Ping requires a target IP address.
@@ -723,7 +728,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1698EXLZ
+  Processor board ID FTX2818WJEQ
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -731,10 +736,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:16.000 UTC Thu Sep 10 2026
 
 [81/482] r1 R1# show calendar
-  10:16:23 UTC Sun Aug 23 2026
+  16:21:16 UTC Thu Sep 10 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -765,7 +770,7 @@ Total steps: 482
 
 [84/482] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX1698EXLZ
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX2818WJEQ
 
 [85/482] r1 R1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -808,17 +813,17 @@ Total steps: 482
 [90/482] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 562 bytes
+  Current configuration : 514 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
   !
   hostname R1
   !
-  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   interface GigabitEthernet0/0
    no ip address
@@ -840,17 +845,17 @@ Total steps: 482
 [92/482] r1 R1# show running-config all
   Building configuration...
   
-  Current configuration : 562 bytes
+  Current configuration : 514 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
   !
   hostname R1
   !
-  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   interface GigabitEthernet0/0
    no ip address
@@ -887,7 +892,7 @@ Total steps: 482
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 160 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
        1 packets output, 64 bytes, 0 underruns
@@ -906,7 +911,7 @@ Total steps: 482
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 128 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
        2 packets output, 128 bytes, 0 underruns
@@ -1039,7 +1044,7 @@ Total steps: 482
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  R2               Gig 0/1           180        R           Cisco 291 Gig 0/1
+  R2               Gig 0/1           179        R           Cisco 291 Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -1049,7 +1054,7 @@ Total steps: 482
   Entry address(es):
   Platform: Cisco 2911,  Capabilities: Router
   Interface: GigabitEthernet0/1,  Port ID (outgoing port): GigabitEthernet0/1
-  Holdtime : 0 sec
+  Holdtime : 179 sec
   
   Version :
   Cisco IOS Software, c2900 Software (C2900-UNIVERSALK9-M), Version 15.4(3)M
@@ -1174,10 +1179,10 @@ Total steps: 482
   
   Log Buffer (4096 bytes):
   
-  *Aug 23 10:16:23.005: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 23 10:16:23.006: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 23 10:16:23.007: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 10:16:23.007: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:21:15.574: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 10 16:21:15.574: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 10 16:21:15.576: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:21:15.576: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
 
 [119/482] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1188,8 +1193,8 @@ Total steps: 482
 [120/482] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE3546F7.574BC6A7 (10:16:23.341 UTC Sun Aug 23 2026)
+  ntp uptime is 100 (1/100 of seconds), resolution is 4001
+  reference time is EE4D577C.D9581062 (16:21:16.849 UTC Thu Sep 10 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1240,7 +1245,7 @@ Total steps: 482
 [126/482] r1 R1# show platform
   Cisco ISR 2911
     PID: CISCO2911/K9
-    S/N: FTX1698EXLZ
+    S/N: FTX2818WJEQ
 
 [127/482] r1 R1# show license
   Index Feature                  Period left    Period Used    License Type    License State    License Count    License Priority
@@ -1249,7 +1254,7 @@ Total steps: 482
 
 [128/482] r1 R1# show license udi
   Device#   PID                   SN
-  *0        CISCO2911/K9          FTX1698EXLZ
+  *0        CISCO2911/K9          FTX2818WJEQ
 
 [129/482] r1 R1# show boot
   BOOT variable = 
@@ -1303,6 +1308,8 @@ Total steps: 482
 
 [134/482] r1 R1# show tcp brief
   TCB       Local Address           Foreign Address        (state)
+  44AA016F  *.23                    *.*                    LISTEN
+  E3661D36  *.1812                  *.*                    LISTEN
 
 [135/482] r1 R1# show sockets
   Proto    Local Address      Foreign Address      State
@@ -1378,7 +1385,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1698EXLZ
+  Processor board ID FTX2818WJEQ
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1388,17 +1395,17 @@ Total steps: 482
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 562 bytes
+  Current configuration : 514 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
   !
   hostname R1
   !
-  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   interface GigabitEthernet0/0
    no ip address
@@ -1449,7 +1456,7 @@ Total steps: 482
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 160 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
        1 packets output, 64 bytes, 0 underruns
@@ -1468,7 +1475,7 @@ Total steps: 482
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 128 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
        2 packets output, 128 bytes, 0 underruns
@@ -1582,10 +1589,10 @@ Total steps: 482
   
   Log Buffer (4096 bytes):
   
-  *Aug 23 10:16:23.005: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 23 10:16:23.006: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 23 10:16:23.007: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 23 10:16:23.007: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:21:15.574: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 10 16:21:15.574: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 10 16:21:15.576: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 10 16:21:15.576: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
 
 [146/482] r1 R1# show diag
   Slot 0:
@@ -1595,7 +1602,7 @@ Total steps: 482
           Hardware Revision        : 1.0
           Part Number              : CISCO2911/K9
           Board Revision           : 1.0
-          PCB Serial Number        : FTX1698EXLZ
+          PCB Serial Number        : FTX2818WJEQ
 
 [147/482] r1 R1# show idprom backplane
           ^
@@ -1621,7 +1628,7 @@ Total steps: 482
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
        2 packets input, 160 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
+       Received 0 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
        1 packets output, 64 bytes, 0 underruns
@@ -1668,7 +1675,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1677,7 +1684,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1686,7 +1693,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1695,7 +1702,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1704,7 +1711,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -1713,7 +1720,7 @@ Total steps: 482
 <empty>
 
 [172/482] r1 R1(config-router)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [173/482] r1 R1(config-router)# exit
 <empty>
@@ -1722,7 +1729,7 @@ Total steps: 482
 <empty>
 
 [175/482] r1 R1(config-router)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [176/482] r1 R1(config-router)# exit
 <empty>
@@ -1731,7 +1738,7 @@ Total steps: 482
 <empty>
 
 [178/482] r1 R1(dhcp-config)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [179/482] r1 R1(dhcp-config)# exit
 <empty>
@@ -1740,7 +1747,7 @@ Total steps: 482
 <empty>
 
 [181/482] r1 R1(config-line)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [182/482] r1 R1(config-line)# exit
 <empty>
@@ -1749,7 +1756,7 @@ Total steps: 482
 <empty>
 
 [184/482] r1 R1(config-line)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [185/482] r1 R1(config-line)# exit
 <empty>
@@ -1758,7 +1765,7 @@ Total steps: 482
 <empty>
 
 [187/482] r1 R1(config-line)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [188/482] r1 R1(config-line)# exit
 <empty>
@@ -1767,7 +1774,7 @@ Total steps: 482
 <empty>
 
 [190/482] r1 R1(config-std-nacl)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [191/482] r1 R1(config-std-nacl)# exit
 <empty>
@@ -1776,7 +1783,7 @@ Total steps: 482
 <empty>
 
 [193/482] r1 R1(config-ext-nacl)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [194/482] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -1785,7 +1792,7 @@ Total steps: 482
 <empty>
 
 [196/482] r1 R1(config-route-map)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [197/482] r1 R1(config-route-map)# exit
 <empty>
@@ -1794,7 +1801,7 @@ Total steps: 482
 <empty>
 
 [199/482] r1 R1(config-cmap)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [200/482] r1 R1(config-cmap)# exit
 <empty>
@@ -1803,7 +1810,7 @@ Total steps: 482
 <empty>
 
 [202/482] r1 R1(config-pmap)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [203/482] r1 R1(config-pmap)# exit
 <empty>
@@ -1812,7 +1819,7 @@ Total steps: 482
 <empty>
 
 [205/482] r1 R1(config-isakmp)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [206/482] r1 R1(config-isakmp)# exit
 <empty>
@@ -1821,7 +1828,7 @@ Total steps: 482
 <empty>
 
 [208/482] r1 R1(cfg-crypto-trans)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [209/482] r1 R1(cfg-crypto-trans)# exit
 <empty>
@@ -1830,7 +1837,7 @@ Total steps: 482
 <empty>
 
 [211/482] r1 R1(config-crypto-map)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [212/482] r1 R1(config-crypto-map)# exit
 <empty>
@@ -1839,7 +1846,7 @@ Total steps: 482
 <empty>
 
 [214/482] r1 R1(config-keychain)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [215/482] r1 R1(config-keychain)# exit
 <empty>
@@ -1848,7 +1855,7 @@ Total steps: 482
 <empty>
 
 [217/482] r1 R1(config-track)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [218/482] r1 R1(config-track)# exit
 <empty>
@@ -1857,7 +1864,7 @@ Total steps: 482
 <empty>
 
 [220/482] r1 R1(config-vrf)# do show clock
-  *10:16:23.000 UTC Sun Aug 23 2026
+  *16:21:17.000 UTC Thu Sep 10 2026
 
 [221/482] r1 R1(config-vrf)# exit
 <empty>
@@ -1924,15 +1931,16 @@ Total steps: 482
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [240/482] r1 R1-CORE(config)# host R1-EDGE
-<empty>
+                  ^
+  % Invalid input detected at '^' marker.
 
-[241/482] r1 R1-EDGE(config)# do sh ver
+[241/482] r1 R1-CORE(config)# do sh ver
   Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
   
   ROM: System Bootstrap, Version 15.0(1r)M15
   
-  R1-EDGE uptime is 0 minutes
+  R1-CORE uptime is 0 minutes
   System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
   
   Technology Package License Information for Module:'c2900'
@@ -1947,14 +1955,14 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1698EXLZ
+  Processor board ID FTX2818WJEQ
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
   
   Configuration register is 0x2102
 
-[242/482] r1 R1-EDGE(config)# do sh ip int br
+[242/482] r1 R1-CORE(config)# do sh ip int br
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         unassigned      YES unset  up                    up
   GigabitEthernet0/1         unassigned      YES unset  up                    up
@@ -1963,16 +1971,16 @@ Total steps: 482
   Loopback0                  unassigned      YES unset  up                    up
   Tunnel0                    unassigned      YES unset  up                    up
 
-[243/482] r1 R1-EDGE(config)# int gi0/0
+[243/482] r1 R1-CORE(config)# int gi0/0
 <empty>
 
-[244/482] r1 R1-EDGE(config-if)# ip addr 192.168.1.1 255.255.255.0
+[244/482] r1 R1-CORE(config-if)# ip addr 192.168.1.1 255.255.255.0
 <empty>
 
-[245/482] r1 R1-EDGE(config-if)# no shut
+[245/482] r1 R1-CORE(config-if)# no shut
 <empty>
 
-[246/482] r1 R1-EDGE(config-if)# do sh run int gi0/0
+[246/482] r1 R1-CORE(config-if)# do sh run int gi0/0
   Building configuration...
   
   Current configuration : 73 bytes
@@ -1981,20 +1989,20 @@ Total steps: 482
    ip address 192.168.1.1 255.255.255.0
   end
 
-[247/482] r1 R1-EDGE(config-if)# exi
+[247/482] r1 R1-CORE(config-if)# exi
 <empty>
 
-[248/482] r1 R1-EDGE(config)# rou ospf 1
+[248/482] r1 R1-CORE(config)# rou ospf 1
   % Ambiguous command:  "rou ospf 1"
 
-[249/482] r1 R1-EDGE(config)# net 192.168.1.0 0.0.0.255 a 0
+[249/482] r1 R1-CORE(config)# net 192.168.1.0 0.0.0.255 a 0
                   ^
   % Invalid input detected at '^' marker.
 
-[250/482] r1 R1-EDGE(config)# end
+[250/482] r1 R1-CORE(config)# end
 <empty>
 
-[251/482] r1 R1-EDGE# sh ip int br
+[251/482] r1 R1-CORE# sh ip int br
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         unassigned      YES unset  up                    up
@@ -2003,7 +2011,7 @@ Total steps: 482
   Loopback0                  unassigned      YES unset  up                    up
   Tunnel0                    unassigned      YES unset  up                    up
 
-[252/482] r1 R1-EDGE# sh ip ro
+[252/482] r1 R1-CORE# sh ip ro
   Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
          D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
          N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
@@ -2020,36 +2028,44 @@ Total steps: 482
   C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
   L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
 
-[253/482] r1 R1-EDGE# wr
+[253/482] r1 R1-CORE# wr
   Building configuration...
   [OK]
 
 
 --- [254] § context help (?) ---
-[254/482] r1 R1-EDGE# configure terminal
+[254/482] r1 R1-CORE# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
 
-[255/482] r1 R1-EDGE(config)# interface ?
+[255/482] r1 R1-CORE(config)# interface ?
+    BVI              Bridge-Group Virtual Interface
     BVI              Bridge-Group Virtual Interface
     Ethernet         IEEE 802.3
+    Ethernet         IEEE 802.3
+    FastEthernet     FastEthernet IEEE 802.3u
     FastEthernet     FastEthernet IEEE 802.3u
     GigabitEthernet  GigabitEthernet IEEE 802.3z
+    GigabitEthernet  GigabitEthernet IEEE 802.3z
+    Loopback         Loopback interface
     Loopback         Loopback interface
     Port-channel     Ethernet Channel of interfaces
+    Port-channel     Ethernet Channel of interfaces
+    Serial           Serial
     Serial           Serial
     Tunnel           Tunnel interface
+    Tunnel           Tunnel interface
 
-[256/482] r1 R1-EDGE(config)# ip ?
-    access-list        Add an access list entry
-    as-path            BGP autonomous-system path filter
-    bootp              Bootstrap Protocol
-    cef                Enable CEF
-    classless          Accepted, default behaviour on IOS 12.0 and later
+[256/482] r1 R1-CORE(config)# ip ?
+    access-list        Create a named extended access list
+    as-path            Define BGP AS-path filter
+    bootp              Enable BOOTP server
+    cef                Enable Cisco Express Forwarding
+    classless          Follow classless routing forwarding rules
     community-list     Define BGP community list
-    default-network    Configure default-network
-    dhcp               Dynamic Host Configuration Protocol
-    dns                Domain Name System
-    domain             IP domain configuration
+    default-network    Configure default network
+    dhcp               Configure DHCP address pools
+    dns                Enable the DNS server
+    domain             Enable IP Domain Name System hostname translation
     domain-list        Define a list of default domain names
     domain-lookup      Enable IP Domain Name System hostname translation
     domain-name        Define the default domain name
@@ -2058,78 +2074,89 @@ Total steps: 482
     flow-export        Legacy NetFlow export
     gratuitous-arps    Send gratuitous ARP
     host               Add a host to the host table
-    http               Hypertext Transfer Protocol
-    local              Local settings
+    http               Enable HTTP server
+    local              Apply local PBR
     multicast-routing  Enable IP multicast routing
     name-server        Specify address of name server to use
-    nat                Network Address Translation
-    pim                Protocol Independent Multicast
+    nat                Wipe NAT configuration
+    pim                Configure static PIM RP address
     prefix-list        Build a prefix list
-    route              Establish static routes
+    route              Establish static routes in a VRF
     route-cache        Route cache
     routing            Enable IP routing
-    scp                SCP server config
+    scp                Enable the SCP server
     sla                Configure an IP SLAs operation
     source-route       Accept source-routed packets
-    ssh                SSH config
-    subnet-zero        Accepted, default behaviour on IOS 12.0 and later
+    ssh                SSH protocol version to accept
+    subnet-zero        Enable use of subnet zero
     vrf                Define a VRF instance
 
-[257/482] r1 R1-EDGE(config)# router ?
+[257/482] r1 R1-CORE(config)# router ?
     bgp    Enter BGP configuration
     eigrp  Enter EIGRP configuration
     ospf   Enter OSPF routing protocol configuration
     rip    Enter RIP routing protocol configuration
 
-[258/482] r1 R1-EDGE(config)# no ?
-    aaa            Disable AAA
+[258/482] r1 R1-CORE(config)# no ?
+    aaa            Enable NEW access control commands and functions
     access-list    Remove an access list
     alias          Remove a command alias
-    arp            Remove ARP entry
+    arp            Add static ARP entry
     banner         Remove a banner
-    boot           Boot Commands
+    boot           Specify system image to load
     cdp            Enable CDP globally
-    clock          Set the system clock
-    crypto         Encryption and key management
-    enable         Modify enable password parameters
+    clock          Hardware calendar is a valid time source
+    crypto         Encryption module
+    enable         Set enable secret
     event          Embedded Event Manager
-    hostname       Reset hostname
+    hostname       Set system hostname
     interface      Remove a virtual interface
-    ip             Global IP configuration subcommands
+    ip             Enable IP routing
     ipv6           IPv6 interface subcommands
     key            Key management
-    line           Remove line configuration
+    line           Enter line configuration
     lldp           Enable LLDP globally
-    logging        line logging
-    login          line login
+    logging        Count every log message and timestamp last occurrence
+    login          Set the login blocking period
     ntp            Authenticate time sources
-    parser         Negate a parser command
-    privilege      Remove privilege command rule
-    radius-server  Remove legacy radius host
+    object-group   Configure object-group
+    parser         Define a CLI view
+    priority-list  Remove build a priority list
+    privilege      Configure command privilege levels
+    queue-list     Remove build a custom queue list
+    radius         RADIUS server configuration
+    radius-server  Specify a RADIUS server
     route-map      Remove a route-map
-    router         Enable a routing protocol
+    router         Enter RIP routing protocol configuration
     service        Disable a network based service
-    sntp           Configure SNTP
-    tacacs-server  Remove legacy tacacs host
+    snmp-server    Set community string and access privs
+    sntp           SNTP server (alias for ntp server)
+    tacacs         TACACS+ server configuration
+    tacacs-server  Specify a TACACS+ server
+    time-range     Remove a time range
     track          Remove a tracked object
     username       Remove a local user
+    vrf            Configure a VRF
 
-[259/482] r1 R1-EDGE(config)# crypto ?
+[259/482] r1 R1-CORE(config)# crypto ?
     dynamic-map  Define a dynamic crypto map
-    gdoi         Group Domain of Interpretation
-    ikev2        Internet Key Exchange version 2
-    ipsec        IP Security
-    isakmp       Internet Security Association and Key Management Protocol
-    key          Key management
+    gdoi         Define a GDOI GET-VPN group
+    ikev2        Define IKEv2 proposal
+    ipsec        Configure IPSec policy
+    isakmp       Define an IKE policy
+    key          Generate RSA key
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
-    pki          Public Key Infrastructure
+    pki          Declare a PKI trustpoint
     <cr>
 
-[260/482] r1 R1-EDGE(config)# access-list ?
-    <1-2699>  Access list number
+[260/482] r1 R1-CORE(config)# access-list ?
+    <1-99>       IP standard access list
+    <100-199>    IP extended access list
+    <1300-1999>  IP standard access list (expanded range)
+    <2000-2699>  IP extended access list (expanded range)
 
-[261/482] r1 R1-EDGE(config)# snmp-server ?
+[261/482] r1 R1-CORE(config)# snmp-server ?
     chassis-id    String to uniquely identify this chassis
     community     Set community string and access privs
     contact       Text for mib object sysContact
@@ -2143,8 +2170,8 @@ Total steps: 482
     user          Define an SNMP user
     view          Define an SNMPv2 MIB view
 
-[262/482] r1 R1-EDGE(config)# logging ?
-    A.B.C.D           IP address of the syslog server
+[262/482] r1 R1-CORE(config)# logging ?
+    A.B.C.D           ip
     buffered          Set buffered logging parameters
     console           Set console logging parameters
     count             Count every log message and timestamp last occurrence
@@ -2168,11 +2195,12 @@ Total steps: 482
     trap              Set syslog server logging level
     userinfo          Enable logging of user info on privileged mode enabling
 
-[263/482] r1 R1-EDGE(config)# ntp ?
+[263/482] r1 R1-CORE(config)# ntp ?
     access-group        Control NTP access
     allow               Allow processing of packets
     authenticate        Authenticate time sources
     authentication-key  Authentication key for trusted time sources
+    logging             Enable NTP message logging
     master              Act as NTP master clock
     peer                Configure NTP peer
     server              Configure NTP server
@@ -2180,38 +2208,37 @@ Total steps: 482
     trusted-key         Key numbers for trusted time sources
     update-calendar     Periodically update calendar from NTP
 
-[264/482] r1 R1-EDGE(config)# clock ?
+[264/482] r1 R1-CORE(config)# clock ?
     calendar-valid  Hardware calendar is a valid time source
     set             Set the system clock
     summer-time     Configure daylight saving time
     timezone        Set timezone
 
-[265/482] r1 R1-EDGE(config)# banner ?
-    exec      EXEC process
-    incoming  Incoming
-    login     Login configuration
-    motd      Message of the day banner
+[265/482] r1 R1-CORE(config)# banner ?
+    exec      Set EXEC process creation banner
+    incoming  Set incoming terminal line banner
+    login     Set login banner
+    motd      Set Message of the Day banner
 
-[266/482] r1 R1-EDGE(config)# aaa ?
-    accounting      Accounting configuration
-    authentication  Authentication configuration
-    authorization   Authorization configuration
+[266/482] r1 R1-CORE(config)# aaa ?
+    accounting      Accounting configurations parameters
+    authentication  Authentication configurations parameters
+    authorization   Authorization configurations parameters
     group           AAA server-group definitions
     local           AAA local authentication parameters
     new-model       Enable NEW access control commands and functions
     session-id      AAA Session ID
 
-[267/482] r1 R1-EDGE(config)# username ?
-    WORD  Name of the local user
+[267/482] r1 R1-CORE(config)# username ?
+    WORD  User name
 
-[268/482] r1 R1-EDGE(config)# line ?
+[268/482] r1 R1-CORE(config)# line ?
     aux      Auxiliary line
     console  Primary terminal line
     tty      Terminal controller
     vty      Virtual terminal
-    <cr>
 
-[269/482] r1 R1-EDGE(config)# service ?
+[269/482] r1 R1-CORE(config)# service ?
     compress-config          Compress the configuration file
     config                   TFTP load config files
     counters                 Control aging of interface counters
@@ -2241,50 +2268,53 @@ Total steps: 482
     udp-small-servers        Enable small UDP servers (e.g., ECHO)
     unsupported-transceiver  Enable support for third-party transceivers
 
-[270/482] r1 R1-EDGE(config)# spanning-tree ?
+[270/482] r1 R1-CORE(config)# spanning-tree ?
   % Invalid input detected at '^' marker.
 
-[271/482] r1 R1-EDGE(config)# interface GigabitEthernet0/0
+[271/482] r1 R1-CORE(config)# interface GigabitEthernet0/0
 <empty>
 
-[272/482] r1 R1-EDGE(config-if)# ip ?
-    access-group        Set access group on interface
+[272/482] r1 R1-CORE(config-if)# ip ?
+    access-group        Specify access control for packets
     accounting          Enable IP accounting
-    address             IP Address negotiated via DHCP
-    authentication      Authentication configuration
-    bandwidth-percent   Percentage of interface bandwidth
-    dhcp                Dynamic Host Configuration Protocol
+    address             Set the IP address of an interface
+    authentication      EIGRP auth mode
+    bandwidth-percent   EIGRP bandwidth %
+    dhcp                Trust this interface for DHCP snooping
     directed-broadcast  Enable directed broadcast
-    flow                NetFlow
-    forward-protocol    Protocols to forward
-    hello-interval      Hello interval in seconds
-    helper-address      Set DHCP relay agent address
-    hold-time           Hold time in seconds
+    flow                Enable ingress NetFlow
+    forward-protocol    Forward UDP port
+    hello-interval      EIGRP hello interval
+    helper-address      Specify a destination address for UDP broadcasts
+    hold-time           EIGRP hold time
     igmp                Enable IGMP
+    mask-reply          Enable sending ICMP Mask Reply messages
     mtu                 Set IP MTU
-    nat                 Network Address Translation
-    nbar                Network-Based Application Recognition
+    nat                 Mark interface as NAT inside
+    nbar                Enable NBAR protocol discovery
     nhrp                NHRP configuration
-    ospf                OSPF interface configuration
-    pim                 Protocol Independent Multicast
-    policy              Policy configuration
-    proxy-arp           Enable proxy-ARP
-    redirects           Enable ICMP redirects
-    rip                 Routing Information Protocol
-    route-cache         Route cache
+    ospf                Enable BFD on this OSPF interface
+    pim                 PIM interface configuration
+    policy              Apply PBR on interface
+    proxy-arp           Enable proxy ARP
+    redirects           Enable sending ICMP Redirect messages
+    rip                 Configure RIP authentication
+    route-cache         Enable legacy NetFlow on interface
     split-horizon       Enable RIP split horizon on this interface
-    summary-address     Summary address entries
-    tcp                 Transmission Control Protocol
+    summary-address     Summarize RIP routes
+    tcp                 Clamp TCP MSS on outgoing SYN
     unnumbered          Borrow IP from another interface
-    unreachables        Enable ICMP unreachables
-    verify              Verify
-    vrf                 VPN Routing/Forwarding
+    unreachables        Enable sending ICMP Unreachable messages
+    verify              Configure uRPF
+    vrf                 Configure forwarding table
 
-[273/482] r1 R1-EDGE(config-if)# ip address ?
-    A.B.C.D  IP address
-    dhcp     IP Address negotiated via DHCP
+[273/482] r1 R1-CORE(config-if)# ip address ?
+    A.B.C.D     IP address
+    dhcp        IP Address negotiated via DHCP
+    negotiated  IP Address negotiated over PPP
 
-[274/482] r1 R1-EDGE(config-if)# ip ospf ?
+[274/482] r1 R1-CORE(config-if)# ip ospf ?
+    LINE                 Process identifier, then `area <aire>`
     area                 Enable OSPF on this interface
     authentication       Enable OSPF authentication
     authentication-key   Set OSPF authentication key
@@ -2302,139 +2332,140 @@ Total steps: 482
     retransmit-interval  Set OSPF retransmit interval
     transmit-delay       Set OSPF transmit delay
 
-[275/482] r1 R1-EDGE(config-if)# standby ?
+[275/482] r1 R1-CORE(config-if)# standby ?
     <0-255>  Group number
+    version  HSRP version
 
-[276/482] r1 R1-EDGE(config-if)# exit
+[276/482] r1 R1-CORE(config-if)# exit
 <empty>
 
-[277/482] r1 R1-EDGE(config)# end
+[277/482] r1 R1-CORE(config)# end
 <empty>
 
 
 --- [278] § no / negation battery ---
-[278/482] r1 R1-EDGE# configure terminal
+[278/482] r1 R1-CORE# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
 
-[279/482] r1 R1-EDGE(config)# logging buffered
+[279/482] r1 R1-CORE(config)# logging buffered
 <empty>
 
-[280/482] r1 R1-EDGE(config)# no logging buffered
+[280/482] r1 R1-CORE(config)# no logging buffered
 <empty>
 
-[281/482] r1 R1-EDGE(config)# service timestamps
+[281/482] r1 R1-CORE(config)# service timestamps
 <empty>
 
-[282/482] r1 R1-EDGE(config)# no service timestamps
+[282/482] r1 R1-CORE(config)# no service timestamps
 <empty>
 
-[283/482] r1 R1-EDGE(config)# service password-encryption
+[283/482] r1 R1-CORE(config)# service password-encryption
 <empty>
 
-[284/482] r1 R1-EDGE(config)# no service password-encryption
+[284/482] r1 R1-CORE(config)# no service password-encryption
 <empty>
 
-[285/482] r1 R1-EDGE(config)# ip cef
+[285/482] r1 R1-CORE(config)# ip cef
 <empty>
 
-[286/482] r1 R1-EDGE(config)# no ip cef
+[286/482] r1 R1-CORE(config)# no ip cef
 <empty>
 
-[287/482] r1 R1-EDGE(config)# ip routing
+[287/482] r1 R1-CORE(config)# ip routing
 <empty>
 
-[288/482] r1 R1-EDGE(config)# no ip routing
+[288/482] r1 R1-CORE(config)# no ip routing
 <empty>
 
-[289/482] r1 R1-EDGE(config)# ip domain-lookup
+[289/482] r1 R1-CORE(config)# ip domain-lookup
 <empty>
 
-[290/482] r1 R1-EDGE(config)# no ip domain-lookup
+[290/482] r1 R1-CORE(config)# no ip domain-lookup
 <empty>
 
-[291/482] r1 R1-EDGE(config)# cdp run
+[291/482] r1 R1-CORE(config)# cdp run
 <empty>
 
-[292/482] r1 R1-EDGE(config)# no cdp run
+[292/482] r1 R1-CORE(config)# no cdp run
 <empty>
 
-[293/482] r1 R1-EDGE(config)# lldp run
+[293/482] r1 R1-CORE(config)# lldp run
 <empty>
 
-[294/482] r1 R1-EDGE(config)# no lldp run
+[294/482] r1 R1-CORE(config)# no lldp run
 <empty>
 
-[295/482] r1 R1-EDGE(config)# ip http server
+[295/482] r1 R1-CORE(config)# ip http server
 <empty>
 
-[296/482] r1 R1-EDGE(config)# no ip http server
+[296/482] r1 R1-CORE(config)# no ip http server
 <empty>
 
-[297/482] r1 R1-EDGE(config)# ip http secure-server
+[297/482] r1 R1-CORE(config)# ip http secure-server
 <empty>
 
-[298/482] r1 R1-EDGE(config)# no ip http secure-server
+[298/482] r1 R1-CORE(config)# no ip http secure-server
 <empty>
 
-[299/482] r1 R1-EDGE(config)# ip source-route
+[299/482] r1 R1-CORE(config)# ip source-route
 <empty>
 
-[300/482] r1 R1-EDGE(config)# no ip source-route
+[300/482] r1 R1-CORE(config)# no ip source-route
 <empty>
 
-[301/482] r1 R1-EDGE(config)# ip bootp server
+[301/482] r1 R1-CORE(config)# ip bootp server
 <empty>
 
-[302/482] r1 R1-EDGE(config)# no ip bootp server
+[302/482] r1 R1-CORE(config)# no ip bootp server
 <empty>
 
-[303/482] r1 R1-EDGE(config)# ip finger
+[303/482] r1 R1-CORE(config)# ip finger
 <empty>
 
-[304/482] r1 R1-EDGE(config)# no ip finger
+[304/482] r1 R1-CORE(config)# no ip finger
 <empty>
 
-[305/482] r1 R1-EDGE(config)# service config
+[305/482] r1 R1-CORE(config)# service config
 <empty>
 
-[306/482] r1 R1-EDGE(config)# no service config
+[306/482] r1 R1-CORE(config)# no service config
 <empty>
 
-[307/482] r1 R1-EDGE(config)# service pad
+[307/482] r1 R1-CORE(config)# service pad
 <empty>
 
-[308/482] r1 R1-EDGE(config)# no service pad
+[308/482] r1 R1-CORE(config)# no service pad
 <empty>
 
-[309/482] r1 R1-EDGE(config)# ip gratuitous-arps
+[309/482] r1 R1-CORE(config)# ip gratuitous-arps
 <empty>
 
-[310/482] r1 R1-EDGE(config)# no ip gratuitous-arps
+[310/482] r1 R1-CORE(config)# no ip gratuitous-arps
 <empty>
 
-[311/482] r1 R1-EDGE(config)# end
+[311/482] r1 R1-CORE(config)# end
 <empty>
 
 
 --- [312] § pipe filters ---
-[312/482] r1 R1-EDGE# show running-config | include hostname
-  hostname R1-EDGE
+[312/482] r1 R1-CORE# show running-config | include hostname
+  hostname R1-CORE
 
-[313/482] r1 R1-EDGE# show running-config | exclude !
+[313/482] r1 R1-CORE# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 1583 bytes
+  Current configuration : 1566 bytes
   no service password-encryption
   no service config
   no service pad
-  hostname R1-EDGE
-  clock summer-time CEST recurring  
+  hostname R1-CORE
+  clock summer-time CEST recurring
   ip domain-name lab.local
   ip name-server 8.8.8.8 8.8.4.4 1.1.1.1
-  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   key chain KC1
   ip dhcp pool LAN
   no ip routing
@@ -2464,9 +2495,10 @@ Total steps: 482
   router eigrp 100
   router bgp 65000
   router ospf 1
+   router-id 192.168.1.1
   ip access-list standard STD1
   ip access-list extended EXT1
-  ip vrf CUST
+  vrf definition CUST
   no ip domain-lookup
   no logging buffered
   no cdp run
@@ -2484,7 +2516,7 @@ Total steps: 482
   line vty 0 4
   end
 
-[314/482] r1 R1-EDGE# show running-config | begin interface
+[314/482] r1 R1-CORE# show running-config | begin interface
   track 1 interface GigabitEthernet0/0 line-protocol
   !
   interface GigabitEthernet0/0
@@ -2511,11 +2543,12 @@ Total steps: 482
   router bgp 65000
   !
   router ospf 1
+   router-id 192.168.1.1
   !
   ip access-list standard STD1
   ip access-list extended EXT1
   !
-  ip vrf CUST
+  vrf definition CUST
   no ip domain-lookup
   no logging buffered
   no cdp run
@@ -2539,7 +2572,7 @@ Total steps: 482
   !
   end
 
-[315/482] r1 R1-EDGE# show running-config | section interface
+[315/482] r1 R1-CORE# show running-config | section interface
   track 1 interface GigabitEthernet0/0 line-protocol
   !
   interface GigabitEthernet0/0
@@ -2562,36 +2595,37 @@ Total steps: 482
   interface Tunnel0
   !
 
-[316/482] r1 R1-EDGE# show running-config | section router
+[316/482] r1 R1-CORE# show running-config | section router
   router eigrp 100
   !
   router bgp 65000
   !
   router ospf 1
+   router-id 192.168.1.1
   !
 
-[317/482] r1 R1-EDGE# show ip interface brief | include up
+[317/482] r1 R1-CORE# show ip interface brief | include up
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         unassigned      YES unset  up                    up
   Loopback0                  unassigned      YES unset  up                    up
   Tunnel0                    unassigned      YES unset  up                    up
 
-[318/482] r1 R1-EDGE# show ip interface brief | exclude unassigned
+[318/482] r1 R1-CORE# show ip interface brief | exclude unassigned
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
 
-[319/482] r1 R1-EDGE# show ip route | include C
+[319/482] r1 R1-CORE# show ip route | include C
   Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
   C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
 
-[320/482] r1 R1-EDGE# show ip route | begin Gateway
+[320/482] r1 R1-CORE# show ip route | begin Gateway
   Gateway of last resort is not set
   
         192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
   C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
   L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
 
-[321/482] r1 R1-EDGE# show interfaces | include line protocol
+[321/482] r1 R1-CORE# show interfaces | include line protocol
   GigabitEthernet0/0 is up, line protocol is up
   GigabitEthernet0/1 is up, line protocol is up
   GigabitEthernet0/2 is down, line protocol is down
@@ -2599,39 +2633,39 @@ Total steps: 482
   Loopback0 is up, line protocol is up
   Tunnel0 is up, line protocol is up
 
-[322/482] r1 R1-EDGE# show processes cpu | exclude 0.00
+[322/482] r1 R1-CORE# show processes cpu | exclude 0.00
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
 
-[323/482] r1 R1-EDGE# show running-config | redirect flash:cfg.txt
+[323/482] r1 R1-CORE# show running-config | redirect flash:cfg.txt
   !!
 
-[324/482] r1 R1-EDGE# show running-config | append flash:cfg.txt
+[324/482] r1 R1-CORE# show running-config | append flash:cfg.txt
   !!
 
-[325/482] r1 R1-EDGE# show running-config | tee flash:cfg.txt
+[325/482] r1 R1-CORE# show running-config | tee flash:cfg.txt
   Building configuration...
   
-  Current configuration : 1583 bytes
+  Current configuration : 1566 bytes
   !
-  ! Last configuration change at 10:16:23 UTC Sun Aug 23 2026 by console
-  ! NVRAM config last updated at 10:16:23 UTC Sun Aug 23 2026 by console
+  ! Last configuration change at 17:21:18 CEST Thu Sep 10 2026 by console
+  ! NVRAM config last updated at 17:21:17 CEST Thu Sep 10 2026 by console
   !
   no service password-encryption
   no service config
   no service pad
   !
-  hostname R1-EDGE
+  hostname R1-CORE
   !
-  clock summer-time CEST recurring  
+  clock summer-time CEST recurring
   !
   ip domain-name lab.local
   ip name-server 8.8.8.8 8.8.4.4 1.1.1.1
   !
-  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   key chain KC1
   !
@@ -2676,11 +2710,12 @@ Total steps: 482
   router bgp 65000
   !
   router ospf 1
+   router-id 192.168.1.1
   !
   ip access-list standard STD1
   ip access-list extended EXT1
   !
-  ip vrf CUST
+  vrf definition CUST
   no ip domain-lookup
   no logging buffered
   no cdp run
@@ -2707,137 +2742,137 @@ Total steps: 482
 
 
 --- [326] § terminal settings ---
-[326/482] r1 R1-EDGE# terminal length 0
+[326/482] r1 R1-CORE# terminal length 0
 <empty>
 
-[327/482] r1 R1-EDGE# terminal length 24
+[327/482] r1 R1-CORE# terminal length 24
 <empty>
 
-[328/482] r1 R1-EDGE# terminal width 132
+[328/482] r1 R1-CORE# terminal width 132
 <empty>
 
-[329/482] r1 R1-EDGE# terminal monitor
+[329/482] r1 R1-CORE# terminal monitor
 <empty>
 
-[330/482] r1 R1-EDGE# terminal no monitor
+[330/482] r1 R1-CORE# terminal no monitor
 <empty>
 
-[331/482] r1 R1-EDGE# terminal history size 100
+[331/482] r1 R1-CORE# terminal history size 100
 <empty>
 
-[332/482] r1 R1-EDGE# terminal exec prompt timestamp
+[332/482] r1 R1-CORE# terminal exec prompt timestamp
 <empty>
 
-[333/482] r1 R1-EDGE# configure terminal
+[333/482] r1 R1-CORE# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
 
-[334/482] r1 R1-EDGE(config)# line console 0
+[334/482] r1 R1-CORE(config)# line console 0
 <empty>
 
-[335/482] r1 R1-EDGE(config-line)# exec-timeout 0 0
+[335/482] r1 R1-CORE(config-line)# exec-timeout 0 0
 <empty>
 
-[336/482] r1 R1-EDGE(config-line)# logging synchronous
+[336/482] r1 R1-CORE(config-line)# logging synchronous
 <empty>
 
-[337/482] r1 R1-EDGE(config-line)# history size 50
+[337/482] r1 R1-CORE(config-line)# history size 50
 <empty>
 
-[338/482] r1 R1-EDGE(config-line)# privilege level 15
+[338/482] r1 R1-CORE(config-line)# privilege level 15
 <empty>
 
-[339/482] r1 R1-EDGE(config-line)# exit
+[339/482] r1 R1-CORE(config-line)# exit
 <empty>
 
-[340/482] r1 R1-EDGE(config)# line vty 0 4
+[340/482] r1 R1-CORE(config)# line vty 0 4
 <empty>
 
-[341/482] r1 R1-EDGE(config-line)# transport input ssh
+[341/482] r1 R1-CORE(config-line)# transport input ssh
 <empty>
 
-[342/482] r1 R1-EDGE(config-line)# transport input telnet ssh
-                       ^
+[342/482] r1 R1-CORE(config-line)# transport input telnet ssh
+                                              ^
   % Invalid input detected at '^' marker.
 
-[343/482] r1 R1-EDGE(config-line)# transport output none
+[343/482] r1 R1-CORE(config-line)# transport output none
 <empty>
 
-[344/482] r1 R1-EDGE(config-line)# access-class 10 in
+[344/482] r1 R1-CORE(config-line)# access-class 10 in
 <empty>
 
-[345/482] r1 R1-EDGE(config-line)# exec-timeout 5 0
+[345/482] r1 R1-CORE(config-line)# exec-timeout 5 0
 <empty>
 
-[346/482] r1 R1-EDGE(config-line)# login local
+[346/482] r1 R1-CORE(config-line)# login local
 <empty>
 
-[347/482] r1 R1-EDGE(config-line)# exit
+[347/482] r1 R1-CORE(config-line)# exit
 <empty>
 
-[348/482] r1 R1-EDGE(config)# end
+[348/482] r1 R1-CORE(config)# end
 <empty>
 
 
 --- [349] § aliases / privilege ---
-[349/482] r1 R1-EDGE# configure terminal
+[349/482] r1 R1-CORE# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
 
-[350/482] r1 R1-EDGE(config)# alias exec sr show running-config
+[350/482] r1 R1-CORE(config)# alias exec sr show running-config
 <empty>
 
-[351/482] r1 R1-EDGE(config)# alias exec sib show ip interface brief
+[351/482] r1 R1-CORE(config)# alias exec sib show ip interface brief
 <empty>
 
-[352/482] r1 R1-EDGE(config)# privilege exec level 5 show running-config
+[352/482] r1 R1-CORE(config)# privilege exec level 5 show running-config
 <empty>
 
-[353/482] r1 R1-EDGE(config)# enable secret cisco123
+[353/482] r1 R1-CORE(config)# enable secret cisco123
 <empty>
 
-[354/482] r1 R1-EDGE(config)# enable password weakpass
+[354/482] r1 R1-CORE(config)# enable password weakpass
 <empty>
 
-[355/482] r1 R1-EDGE(config)# username admin privilege 15 secret admin123
+[355/482] r1 R1-CORE(config)# username admin privilege 15 secret admin123
 <empty>
 
-[356/482] r1 R1-EDGE(config)# username operator privilege 5 password oper
+[356/482] r1 R1-CORE(config)# username operator privilege 5 password oper
   WARNING: Command has been added to the configuration using a type 0
   password. However, type 0 passwords will soon be deprecated. Migrate
   to a supported password type
 
-[357/482] r1 R1-EDGE(config)# service password-encryption
+[357/482] r1 R1-CORE(config)# service password-encryption
 <empty>
 
-[358/482] r1 R1-EDGE(config)# end
+[358/482] r1 R1-CORE(config)# end
 <empty>
 
-[359/482] r1 R1-EDGE# sr
+[359/482] r1 R1-CORE# sr
   Building configuration...
   
-  Current configuration : 2077 bytes
+  Current configuration : 2060 bytes
   !
-  ! Last configuration change at 10:16:23 UTC Sun Aug 23 2026 by console
-  ! NVRAM config last updated at 10:16:23 UTC Sun Aug 23 2026 by console
+  ! Last configuration change at 17:21:18 CEST Thu Sep 10 2026 by console
+  ! NVRAM config last updated at 17:21:17 CEST Thu Sep 10 2026 by console
   !
   service password-encryption
   no service config
   no service pad
   !
-  hostname R1-EDGE
+  hostname R1-CORE
   !
   enable secret 5 $1$22e5a69c$F8nN2fU1MysP5Rof..MIJ.
   enable password 7 111E1C041C020A1F17
   !
-  clock summer-time CEST recurring  
+  clock summer-time CEST recurring
   !
   ip domain-name lab.local
   ip name-server 8.8.8.8 8.8.4.4 1.1.1.1
   !
   username admin privilege 15 secret 5 $1$f005296f$g3zRXg8BqJUj6/eUOXLuw1
-  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   username operator privilege 5 password 7 070031495C
   !
   privilege exec level 5 show running-config
@@ -2885,13 +2920,14 @@ Total steps: 482
   router bgp 65000
   !
   router ospf 1
+   router-id 192.168.1.1
   !
   ip access-list standard STD1
   ip access-list extended EXT1
   !
   alias exec sr show running-config
   alias exec sib show ip interface brief
-  ip vrf CUST
+  vrf definition CUST
   no ip domain-lookup
   no logging buffered
   no cdp run
@@ -2925,7 +2961,7 @@ Total steps: 482
   !
   end
 
-[360/482] r1 R1-EDGE# sib
+[360/482] r1 R1-CORE# sib
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         unassigned      YES unset  up                    up
@@ -2934,7 +2970,7 @@ Total steps: 482
   Loopback0                  unassigned      YES unset  up                    up
   Tunnel0                    unassigned      YES unset  up                    up
 
-[361/482] r1 R1-EDGE# show aliases
+[361/482] r1 R1-CORE# show aliases
   Exec mode aliases:
     h                   help
     lo                  logout
@@ -2949,46 +2985,46 @@ Total steps: 482
 
 
 --- [362] § save / reload / copy ---
-[362/482] r1 R1-EDGE# write memory
+[362/482] r1 R1-CORE# write memory
   Building configuration...
   [OK]
 
-[363/482] r1 R1-EDGE# copy running-config startup-config
+[363/482] r1 R1-CORE# copy running-config startup-config
   Destination filename [startup-config]?
   Building configuration...
   [OK]
 
-[364/482] r1 R1-EDGE# copy startup-config running-config
+[364/482] r1 R1-CORE# copy startup-config running-config
   Destination filename [running-config]?
-  2140 bytes copied
+  2123 bytes copied
 
-[365/482] r1 R1-EDGE# copy running-config tftp:
+[365/482] r1 R1-CORE# copy running-config tftp:
   %Error: no remote host in the destination URL (write it as tftp://<address>/<filename>).
 
-[366/482] r1 R1-EDGE# copy running-config flash:backup.cfg
+[366/482] r1 R1-CORE# copy running-config flash:backup.cfg
   Destination filename [backup.cfg]?
-  2140 bytes copied
+  2123 bytes copied
 
-[367/482] r1 R1-EDGE# write erase
+[367/482] r1 R1-CORE# write erase
   Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]
   [OK]
   Erase of nvram: complete
 
-[368/482] r1 R1-EDGE# erase startup-config
+[368/482] r1 R1-CORE# erase startup-config
   Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]
   [OK]
   Erase of nvram: complete
 
-[369/482] r1 R1-EDGE# show startup-config
+[369/482] r1 R1-CORE# show startup-config
   % startup-config is not present
 
-[370/482] r1 R1-EDGE# reload in 5
+[370/482] r1 R1-CORE# reload in 5
   Reload scheduled in 5 minutes
 
-[371/482] r1 R1-EDGE# reload cancel
+[371/482] r1 R1-CORE# reload cancel
   Reload cancelled.
 
-[372/482] r1 R1-EDGE# reload
+[372/482] r1 R1-CORE# reload
   Proceed with reload? [confirm]
   Reload requested.
   System restarting...

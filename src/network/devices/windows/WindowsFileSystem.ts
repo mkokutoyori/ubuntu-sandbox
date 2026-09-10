@@ -10,6 +10,7 @@
  */
 
 import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
+import { normalizeWindowsPath } from './windowsPath';
 import { HostsFile } from '../HostsFile';
 
 /**
@@ -97,6 +98,16 @@ export class WindowsFileSystem {
    * extra setup.
    */
   private driveCapacityBytes: Map<string, number> = new Map();
+
+  /**
+   * L'étiquette de volume, source UNIQUE pour `vol`, `dir`, `Get-Volume`
+   * et `wmic logicaldisk get volumename`. Elle vivait auparavant dans
+   * l'adaptateur PowerShell seul, si bien que `Get-Volume` annonçait
+   * « Windows » quand `vol` répondait « has no label » sur le même
+   * lecteur au même instant. Elle est SEMÉE depuis la partition qui
+   * porte le volume, pas écrite ici une seconde fois.
+   */
+  private volumeLabels: Map<string, string> = new Map();
 
   /** Default capacity for a drive that hasn't been configured. */
   private readonly DEFAULT_DRIVE_CAPACITY = 53_687_091_200; // 50 GB
@@ -429,46 +440,8 @@ export class WindowsFileSystem {
    * - If relative, resolve against cwd
    */
   normalizePath(path: string, cwd: string): string {
-    // Convert forward slashes
-    let p = path.replace(/\//g, '\\');
-
-    // Check if absolute (starts with drive letter)
-    const driveMatch = p.match(/^([A-Za-z]):\\/);
-    if (!driveMatch) {
-      // Check if just a drive letter like "C:"
-      const justDrive = p.match(/^([A-Za-z]):$/);
-      if (justDrive) {
-        return justDrive[1].toUpperCase() + ':\\';
-      }
-      // Relative path - prepend cwd
-      if (p.startsWith('\\')) {
-        // Root-relative on current drive
-        const cwdDrive = cwd.match(/^([A-Za-z]):/);
-        p = (cwdDrive ? cwdDrive[1].toUpperCase() : 'C') + ':' + p;
-      } else {
-        p = cwd + '\\' + p;
-      }
-    }
-
-    // Extract drive
-    const drive = p.substring(0, 2).toUpperCase();
-    let rest = p.substring(2);
-
-    // Split and resolve . and ..
-    const parts = rest.split('\\').filter(s => s !== '' && s !== '.');
-    const resolved: string[] = [];
-    for (const part of parts) {
-      if (part === '..') {
-        if (resolved.length > 0) resolved.pop();
-      } else {
-        resolved.push(part);
-      }
-    }
-
-    if (resolved.length === 0) return drive + '\\';
-    return drive + '\\' + resolved.join('\\');
+    return normalizeWindowsPath(path, cwd);
   }
-
   // ─── Resolution ──────────────────────────────────────────────────
 
   /**
@@ -922,6 +895,16 @@ export class WindowsFileSystem {
     return [...this.drives.keys()]
       .map((d) => d.replace(/:.*$/, ':').toUpperCase())
       .sort();
+  }
+
+  getVolumeLabel(drive: string = 'C'): string {
+    return this.volumeLabels.get(this.normaliseDriveLetter(drive)) ?? '';
+  }
+
+  setVolumeLabel(drive: string, label: string): void {
+    const letter = this.normaliseDriveLetter(drive);
+    if (label) this.volumeLabels.set(letter, label);
+    else this.volumeLabels.delete(letter);
   }
 
   /**

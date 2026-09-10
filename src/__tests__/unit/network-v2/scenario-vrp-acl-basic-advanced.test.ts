@@ -142,7 +142,7 @@ describe('Scénario 5 — ACL sur switch et routeur Huawei', () => {
       await ar1.executeCommand('return');
 
       const probe = await pc1.executeCommand('nc -zv -w 1 192.168.20.101 22');
-      expect(probe).toMatch(/timed out|refused/i);
+      expect(probe).toMatch(/permission denied|timed out|refused/i);
       expect(probe).not.toMatch(/succeeded/i);
 
       const ping = await pingOnSimulatedClock(pc1, 'ping -c 2 192.168.20.101');

@@ -216,11 +216,21 @@ describe('`access-list <n> remark` sur un routeur', () => {
     expect(await tape(r, 'do show running-config | include access-list')).toBe('');
   });
 
+  /*
+   * Ce cas EPINGLAIT un defaut : il exigeait `% Invalid action
+   * "zorglub"`, une phrase qu'IOS n'emploie pas et que ce depot
+   * n'ecrit nulle part ailleurs — son voisin immediat, pour un NUMERO
+   * hors plage, attendait deja le caret. Les deux plateformes ne
+   * disaient d'ailleurs pas la meme chose : le commutateur repondait
+   * `% Incomplete command.` a la meme frappe. Ce qu'il mesure — une
+   * action inventee est refusee — est garde ; c'est la formulation
+   * epinglee qui est corrigee, pas l'intention.
+   */
   it('TEMOIN : une action inventee reste refusee', async () => {
     const r = await routeur();
 
     expect(await tape(r, 'access-list 10 zorglub 10.0.0.0 0.0.0.255'))
-      .toMatch(/Invalid action/i);
+      .toContain("% Invalid input detected at '^' marker.");
   });
 });
 

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-connectivity
-Generated: 2026-08-23T10:16:31.201Z
+Generated: 2026-09-10T16:24:44.396Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP routed data path: static/default/OSPF/RIP/BGP/DHCP + faults
 Total steps: 312
@@ -40,10 +40,11 @@ Total steps: 312
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller
      Physical Address. . . . . . . . . : 02-00-00-00-00-0D
      DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:d%2(Preferred)
      IPv4 Address. . . . . . . . . . . : 192.168.2.10(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 192.168.2.1
@@ -53,7 +54,7 @@ Total steps: 312
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #2
      Physical Address. . . . . . . . . : 02-00-00-00-00-0E
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -62,7 +63,7 @@ Total steps: 312
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #3
      Physical Address. . . . . . . . . : 02-00-00-00-00-0F
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -71,7 +72,7 @@ Total steps: 312
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #4
      Physical Address. . . . . . . . . : 02-00-00-00-00-10
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -198,9 +199,9 @@ Total steps: 312
 
 [35/312] r1 <R1> ping 10.0.0.2
   PING 10.0.0.2: 56  data bytes, press CTRL_C to break
-  Reply from 10.0.0.2: bytes=56 Sequence=1 ttl=254 time=3 ms
-  Reply from 10.0.0.2: bytes=56 Sequence=2 ttl=255 time=1 ms
-  Reply from 10.0.0.2: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=1 ttl=255 time=2 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=2 ttl=255 time=5 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=3 ttl=255 time=1 ms
   Reply from 10.0.0.2: bytes=56 Sequence=4 ttl=255 time=0 ms
   Reply from 10.0.0.2: bytes=56 Sequence=5 ttl=255 time=0 ms
   
@@ -222,7 +223,7 @@ Total steps: 312
   PING 192.168.1.1: 56  data bytes, press CTRL_C to break
   Reply from 192.168.1.1: bytes=56 Sequence=1 ttl=255 time=0 ms
   Reply from 192.168.1.1: bytes=56 Sequence=2 ttl=255 time=0 ms
-  Reply from 192.168.1.1: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 192.168.1.1: bytes=56 Sequence=3 ttl=255 time=1 ms
   Reply from 192.168.1.1: bytes=56 Sequence=4 ttl=255 time=0 ms
   Reply from 192.168.1.1: bytes=56 Sequence=5 ttl=255 time=0 ms
   
@@ -231,39 +232,39 @@ Total steps: 312
 
 [38/312] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=254 time=1.353 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.303 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.218 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=1.733 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.418 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.259 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.218/0.625/1.353/0.516 ms
+  rtt min/avg/max/mdev = 0.259/0.803/1.733/0.661 ms
 
 [39/312] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
-  64 bytes from 192.168.2.1: icmp_seq=1 ttl=253 time=0.791 ms
-  64 bytes from 192.168.2.1: icmp_seq=2 ttl=253 time=0.712 ms
-  64 bytes from 192.168.2.1: icmp_seq=3 ttl=253 time=0.506 ms
+  64 bytes from 192.168.2.1: icmp_seq=1 ttl=254 time=6.353 ms
+  64 bytes from 192.168.2.1: icmp_seq=2 ttl=254 time=0.736 ms
+  64 bytes from 192.168.2.1: icmp_seq=3 ttl=254 time=0.955 ms
   
   --- 192.168.2.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.506/0.670/0.791/0.120 ms
+  rtt min/avg/max/mdev = 0.736/2.682/6.353/2.598 ms
 
 [40/312] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=1.275 ms
-  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.604 ms
-  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=1.327 ms
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=1.795 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.826 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.688 ms
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.604/1.069/1.327/0.329 ms
+  rtt min/avg/max/mdev = 0.688/1.103/1.795/0.493 ms
 
 [41/312] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.912 ms  0.365 ms  9.018 ms
-   2  10.0.0.2 (10.0.0.2)  0.515 ms  0.316 ms  0.240 ms
-   3  192.168.2.10 (192.168.2.10)  0.463 ms  0.362 ms  0.318 ms
+   1  192.168.1.1 (192.168.1.1)  1.054 ms  0.441 ms  0.336 ms
+   2  10.0.0.2 (10.0.0.2)  4.639 ms  0.524 ms  0.299 ms
+   3  192.168.2.10 (192.168.2.10)  0.600 ms  0.545 ms  0.379 ms
 
 [42/312] win1 win1$ ping 192.168.1.10
   
@@ -368,7 +369,7 @@ Total steps: 312
   PING 10.0.0.2: 56  data bytes, press CTRL_C to break
   Reply from 10.0.0.2: bytes=56 Sequence=1 ttl=255 time=0 ms
   Reply from 10.0.0.2: bytes=56 Sequence=2 ttl=255 time=0 ms
-  Reply from 10.0.0.2: bytes=56 Sequence=3 ttl=255 time=0 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=3 ttl=255 time=8 ms
   Reply from 10.0.0.2: bytes=56 Sequence=4 ttl=255 time=0 ms
   Reply from 10.0.0.2: bytes=56 Sequence=5 ttl=255 time=0 ms
   
@@ -399,39 +400,39 @@ Total steps: 312
 
 [60/312] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.229 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.107 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.081 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.200 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.103 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.131 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.081/0.139/0.229/0.064 ms
+  rtt min/avg/max/mdev = 0.103/0.145/0.200/0.041 ms
 
 [61/312] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
-  64 bytes from 192.168.2.1: icmp_seq=1 ttl=253 time=0.312 ms
-  64 bytes from 192.168.2.1: icmp_seq=2 ttl=253 time=0.179 ms
-  64 bytes from 192.168.2.1: icmp_seq=3 ttl=253 time=0.158 ms
+  64 bytes from 192.168.2.1: icmp_seq=1 ttl=254 time=0.348 ms
+  64 bytes from 192.168.2.1: icmp_seq=2 ttl=254 time=0.410 ms
+  64 bytes from 192.168.2.1: icmp_seq=3 ttl=254 time=0.217 ms
   
   --- 192.168.2.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.158/0.216/0.312/0.069 ms
+  rtt min/avg/max/mdev = 0.217/0.325/0.410/0.081 ms
 
 [62/312] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.388 ms
-  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.229 ms
-  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.327 ms
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.469 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.271 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.242 ms
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.229/0.315/0.388/0.066 ms
+  rtt min/avg/max/mdev = 0.242/0.327/0.469/0.101 ms
 
 [63/312] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.223 ms  0.117 ms  0.092 ms
-   2  10.0.0.2 (10.0.0.2)  0.257 ms  0.166 ms  0.157 ms
-   3  192.168.2.10 (192.168.2.10)  0.225 ms  0.199 ms  0.822 ms
+   1  192.168.1.1 (192.168.1.1)  0.274 ms  0.171 ms  0.155 ms
+   2  10.0.0.2 (10.0.0.2)  0.247 ms  0.185 ms  4.433 ms
+   3  192.168.2.10 (192.168.2.10)  0.428 ms  0.259 ms  0.387 ms
 
 [64/312] win1 win1$ ping 192.168.1.10
   
@@ -452,7 +453,7 @@ Total steps: 312
   
      1    <1 ms    <1 ms    <1 ms    192.168.2.1
      2    <1 ms    <1 ms    <1 ms    10.0.0.1
-     3    <1 ms    1 ms     <1 ms    192.168.1.10
+     3    <1 ms    <1 ms    1 ms     192.168.1.10
   
   Trace complete.
 
@@ -591,7 +592,7 @@ Total steps: 312
   Reply from 10.0.0.2: bytes=56 Sequence=1 ttl=255 time=0 ms
   Reply from 10.0.0.2: bytes=56 Sequence=2 ttl=255 time=0 ms
   Reply from 10.0.0.2: bytes=56 Sequence=3 ttl=255 time=0 ms
-  Reply from 10.0.0.2: bytes=56 Sequence=4 ttl=255 time=1 ms
+  Reply from 10.0.0.2: bytes=56 Sequence=4 ttl=255 time=0 ms
   Reply from 10.0.0.2: bytes=56 Sequence=5 ttl=255 time=0 ms
   
   --- 10.0.0.2 ping statistics ---
@@ -621,13 +622,13 @@ Total steps: 312
 
 [96/312] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.254 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.198 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.190 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.326 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.325 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.274 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.190/0.214/0.254/0.028 ms
+  rtt min/avg/max/mdev = 0.274/0.308/0.326/0.024 ms
 
 [97/312] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
@@ -636,8 +637,7 @@ Total steps: 312
   From 192.168.1.1 icmp_seq=3 Destination Net Unreachable
   
   --- 192.168.2.1 ping statistics ---
-  3 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  3 packets transmitted, 0 received, +3 errors, 100% packet loss
 
 [98/312] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
@@ -646,21 +646,20 @@ Total steps: 312
   From 192.168.1.1 icmp_seq=3 Destination Net Unreachable
   
   --- 192.168.2.10 ping statistics ---
-  3 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  3 packets transmitted, 0 received, +3 errors, 100% packet loss
 
 [99/312] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.205 ms  0.205 ms  0.105 ms
-   2  192.168.1.1 (192.168.1.1)  0.100 ms !N (Net unreachable)  0.095 ms !N (Net unreachable)  0.096 ms !N (Net unreachable)
+   1  192.168.1.1 (192.168.1.1)  0.369 ms  0.175 ms  0.235 ms
+   2  192.168.1.1 (192.168.1.1)  0.232 ms !N (Net unreachable)  0.209 ms !N (Net unreachable)  0.193 ms !N (Net unreachable)
 
 [100/312] win1 win1$ ping 192.168.1.10
   
   Pinging 192.168.1.10 with 32 bytes of data:
-  Reply from 192.168.2.1: Destination host unreachable.
-  Reply from 192.168.2.1: Destination host unreachable.
-  Reply from 192.168.2.1: Destination host unreachable.
-  Reply from 192.168.2.1: Destination host unreachable.
+  Reply from 192.168.2.1: Destination net unreachable.
+  Reply from 192.168.2.1: Destination net unreachable.
+  Reply from 192.168.2.1: Destination net unreachable.
+  Reply from 192.168.2.1: Destination net unreachable.
   
   Ping statistics for 192.168.1.10:
       Packets: Sent = 4, Received = 0, Lost = 4 (100% loss),
@@ -870,13 +869,13 @@ Total steps: 312
 
 [130/312] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.227 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.089 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.176 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.251 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.154 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.139 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.089/0.164/0.227/0.057 ms
+  rtt min/avg/max/mdev = 0.139/0.181/0.251/0.049 ms
 
 [131/312] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
@@ -885,8 +884,7 @@ Total steps: 312
   From 192.168.1.1 icmp_seq=3 Destination Net Unreachable
   
   --- 192.168.2.1 ping statistics ---
-  3 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  3 packets transmitted, 0 received, +3 errors, 100% packet loss
 
 [132/312] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
@@ -895,13 +893,12 @@ Total steps: 312
   From 192.168.1.1 icmp_seq=3 Destination Net Unreachable
   
   --- 192.168.2.10 ping statistics ---
-  3 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  3 packets transmitted, 0 received, +3 errors, 100% packet loss
 
 [133/312] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.202 ms  0.106 ms  0.090 ms
-   2  192.168.1.1 (192.168.1.1)  0.096 ms !N (Net unreachable)  0.169 ms !N (Net unreachable)  0.101 ms !N (Net unreachable)
+   1  192.168.1.1 (192.168.1.1)  0.336 ms  0.206 ms  0.144 ms
+   2  192.168.1.1 (192.168.1.1)  0.185 ms !N (Net unreachable)  0.237 ms !N (Net unreachable)  6.013 ms !N (Net unreachable)
 
 [134/312] win1 win1$ ping 192.168.1.10
   
@@ -1118,44 +1115,44 @@ Total steps: 312
 
 [168/312] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.217 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.156 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.098 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.227 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=4.188 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.121 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.098/0.157/0.217/0.049 ms
+  rtt min/avg/max/mdev = 0.121/1.512/4.188/1.893 ms
 
 [169/312] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
-  64 bytes from 192.168.2.1: icmp_seq=1 ttl=253 time=0.347 ms
-  64 bytes from 192.168.2.1: icmp_seq=2 ttl=253 time=0.205 ms
-  64 bytes from 192.168.2.1: icmp_seq=3 ttl=253 time=0.166 ms
+  64 bytes from 192.168.2.1: icmp_seq=1 ttl=254 time=0.296 ms
+  64 bytes from 192.168.2.1: icmp_seq=2 ttl=254 time=0.308 ms
+  64 bytes from 192.168.2.1: icmp_seq=3 ttl=254 time=0.343 ms
   
   --- 192.168.2.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.166/0.239/0.347/0.078 ms
+  rtt min/avg/max/mdev = 0.296/0.315/0.343/0.020 ms
 
 [170/312] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.312 ms
-  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.282 ms
-  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.228 ms
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.361 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.367 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.305 ms
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.228/0.274/0.312/0.035 ms
+  rtt min/avg/max/mdev = 0.305/0.345/0.367/0.028 ms
 
 [171/312] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.299 ms  0.119 ms  0.110 ms
-   2  10.0.0.2 (10.0.0.2)  0.294 ms  0.242 ms  0.186 ms
-   3  192.168.2.10 (192.168.2.10)  0.234 ms  0.190 ms  0.184 ms
+   1  192.168.1.1 (192.168.1.1)  0.341 ms  0.171 ms  0.115 ms
+   2  10.0.0.2 (10.0.0.2)  8.612 ms  0.343 ms  0.205 ms
+   3  192.168.2.10 (192.168.2.10)  0.312 ms  0.433 ms  0.262 ms
 
 [172/312] win1 win1$ ping 192.168.1.10
   
   Pinging 192.168.1.10 with 32 bytes of data:
-  Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 192.168.1.10: bytes=32 time=5ms TTL=62
   Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
   Reply from 192.168.1.10: bytes=32 time=<1ms TTL=62
@@ -1163,7 +1160,7 @@ Total steps: 312
   Ping statistics for 192.168.1.10:
       Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 0ms, Maximum = 5ms, Average = 1ms
 
 [173/312] win1 win1$ tracert 192.168.1.10
   
@@ -1295,8 +1292,7 @@ Total steps: 312
   From 192.168.1.1 icmp_seq=2 Destination Net Unreachable
   
   --- 192.168.2.10 ping statistics ---
-  2 packets transmitted, 0 received, 100% packet loss
-  ping: destination host unreachable
+  2 packets transmitted, 0 received, +2 errors, 100% packet loss
 
 [199/312] r1 <R1> system-view
   Enter system view, return user view with return command.
@@ -1312,13 +1308,13 @@ Total steps: 312
 
 [203/312] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.382 ms
-  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.325 ms
-  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.312 ms
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.721 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.497 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.419 ms
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.312/0.340/0.382/0.030 ms
+  rtt min/avg/max/mdev = 0.419/0.546/0.721/0.128 ms
 
 
 --- [204] § final state ---
@@ -1366,7 +1362,6 @@ Total steps: 312
   bgp 65001
    router-id 1.1.1.1
    network 192.168.1.0 255.255.255.0
-   peer 10.0.0.2 as-number 65002
    peer 10.0.0.2 as-number 65002
    peer 10.0.0.2 enable
   #
@@ -1468,7 +1463,6 @@ Total steps: 312
    router-id 1.1.1.1
    network 192.168.1.0 255.255.255.0
    peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 as-number 65002
    peer 10.0.0.2 enable
   #
 
@@ -1496,26 +1490,66 @@ Total steps: 312
   Line protocol current state : UP
   Internet Address is 10.0.0.1/30
   The Maximum Transmit Unit is 1500
-  Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+  Input:  238 packets, 22190 bytes
+    Unicast:                  235,  Multicast:                  1
+    Broadcast:                  2,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  213 packets, 19030 bytes
+    Unicast:                  211,  Multicast:                  1
+    Broadcast:                  1,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.1/24
   The Maximum Transmit Unit is 1500
-  Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+  Input:  262 packets, 22022 bytes
+    Unicast:                  253,  Multicast:                  5
+    Broadcast:                  4,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  280 packets, 23348 bytes
+    Unicast:                  275,  Multicast:                  1
+    Broadcast:                  4,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [214/312] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
@@ -1656,32 +1690,41 @@ Total steps: 312
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 10:16:33.180  Aug 23 2026(EE354701.2E147AE1)
+  Reference time: 16:24:46.770  Sep 10 2026(EE4D584E.C51EB851)
 
 [242/312] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [243/312] r1 <R1> display clock
-  2026-08-23 10:16:33
-  Sunday
+  2026-09-10 16:24:46
+  Thursday
   Time Zone(UTC) : UTC
 
 [244/312] r1 <R1> display lldp neighbor
-  Info: No LLDP neighbor is found.
+  GigabitEthernet0/0/0 has 0 neighbors
+  
+  GigabitEthernet0/0/1 has 0 neighbors
+  
+  GigabitEthernet0/0/2 has 0 neighbors
+  
+  GigabitEthernet0/0/3 has 0 neighbors
+  
+  Total: 0
 
 [245/312] r1 <R1> display lldp neighbor brief
-  Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
+  Local Intf                Neighbor Dev    Neighbor Intf   Exptime(s)
+  Total: 0
 
 [246/312] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-23 10:16:33
+  CPU Usage Stat. Time : 2026-09-10 16:24:46
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [247/312] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-23 10:16:33
+  Memory utilization statistics at 2026-09-10 16:24:46
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1722,15 +1765,15 @@ Total steps: 312
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 9
-  2026-08-23 10:16:31 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-23 10:16:31 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-23 10:16:31 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-23 10:16:31 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-23 10:16:33 %01BGP/5/NOTIFICATIONS: neighbor 10.0.0.2 Up
-  2026-08-23 10:16:33 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
-  2026-08-23 10:16:33 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
-  2026-08-23 10:16:33 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-23 10:16:33 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-09-10 16:24:44 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-09-10 16:24:44 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-09-10 16:24:44 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-09-10 16:24:44 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-09-10 16:24:46 %01BGP/5/NOTIFICATIONS: neighbor 10.0.0.2 Up
+  2026-09-10 16:24:46 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
+  2026-09-10 16:24:46 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
+  2026-09-10 16:24:46 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-09-10 16:24:46 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [252/312] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1790,20 +1833,36 @@ Total steps: 312
   Internet Address is 10.0.0.1/30
   Broadcast address : 10.0.0.3
   The Maximum Transmit Unit : 1500 bytes
-  Input bandwidth utilization  : 0%
-  Output bandwidth utilization : 0%
-      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
-      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
-      Input:  0 packets, 0 bytes
-      Output: 0 packets, 0 bytes
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+  Input:  238 packets, 22190 bytes
+    Unicast:                  235,  Multicast:                  1
+    Broadcast:                  2,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  213 packets, 19030 bytes
+    Unicast:                  211,  Multicast:                  1
+    Broadcast:                  1,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [260/312] r1 <R1> display interface GigabitEthernet0/0/0
   GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 10.0.0.1/30
   The Maximum Transmit Unit is 1500
-  Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+  Input:  238 packets, 22190 bytes
+    Unicast:                  235,  Multicast:                  1
+    Broadcast:                  2,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  213 packets, 19030 bytes
+    Unicast:                  211,  Multicast:                  1
+    Broadcast:                  1,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [261/312] r1 <R1> display this
   #
@@ -1849,7 +1908,6 @@ Total steps: 312
   bgp 65001
    router-id 1.1.1.1
    network 192.168.1.0 255.255.255.0
-   peer 10.0.0.2 as-number 65002
    peer 10.0.0.2 as-number 65002
    peer 10.0.0.2 enable
   #
@@ -1934,7 +1992,6 @@ Total steps: 312
    router-id 1.1.1.1
    network 192.168.1.0 255.255.255.0
    peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 as-number 65002
    peer 10.0.0.2 enable
   #
 
@@ -1972,7 +2029,6 @@ Total steps: 312
   bgp 65001
    router-id 1.1.1.1
    network 192.168.1.0 255.255.255.0
-   peer 10.0.0.2 as-number 65002
    peer 10.0.0.2 as-number 65002
    peer 10.0.0.2 enable
 
@@ -2126,7 +2182,7 @@ Total steps: 312
     ipsec          IP Security
     ipv6           Disable IPv6
     isis           Remove IS-IS
-    lldp           Disable LLDP
+    lldp           Link Layer Discovery Protocol
     local-user     Remove a local user
     multicast      Disable multicast routing
     nat            Network Address Translation
@@ -2138,17 +2194,16 @@ Total steps: 312
     route-policy   Remove a route-policy
     screen-length  Restore default screen length
     screen-width   Restore default screen width
+    snmp-agent     Remove SNMP agent configuration
     terminal       Set the terminal line characteristics
     time-range     Remove a time-range
     traffic        Display traffic statistics
-    <cr>
 
 [310/312] r1 [Huawei] acl ?
     advanced  Advanced ACL (3000-3999)
     basic     Basic ACL (2000-2999)
     name      Named ACL
     number    ACL number
-    <cr>
 
 [311/312] r1 [Huawei] return
 <empty>

@@ -84,14 +84,13 @@ function buildRows(ctx: WinCommandContext): Row[] {
   for (const [name, port] of ctx.ports) {
     const mac = port.getMAC().toWindowsString();
     const displayName = adapterDisplayName(name, ctx.ports);
+    const card = ctx.adapterIdentityOf(name);
     const isUp = port.getIsUp() && port.isConnected();
     rows.push({
       connectionName: displayName,
-      networkAdapter: 'Intel(R) Ethernet Connection',
+      networkAdapter: card.description,
       physicalAddress: mac,
-      transport: isUp
-        ? `\\Device\\Tcpip_${displayName.replace(/\s+/g, '_')}`
-        : 'Media disconnected',
+      transport: isUp ? `\\Device\\Tcpip_${card.guid}` : 'Media disconnected',
     });
   }
   return rows;

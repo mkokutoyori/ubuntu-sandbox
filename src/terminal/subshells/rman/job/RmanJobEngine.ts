@@ -29,6 +29,11 @@ import { BackupSetFactory } from '../catalog/BackupSetFactory';
 import { RmanTag } from '../values/RmanTag';
 import { Scn } from '../values/Scn';
 import { generatePieceName } from '../core/pureUtils';
+import type { OmfBackupKind } from '@/database/oracle/storage/OracleManagedFiles';
+import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
+import { resolveFormatSpec } from '../core/formatSpec';
+import { parseSize } from '@/database/oracle/views/_fileSize';
+import { BackupKey } from '../values/BackupKey';
 import { implicitToDate } from '@/database/oracle/functions/valueUtils';
 
 export class RmanJobEngine implements IRmanJobEngine {
@@ -125,13 +130,19 @@ export class RmanJobEngine implements IRmanJobEngine {
     const compressed = params.compressed === 'true';
     const encrypted  = params.encrypted  === 'true';
     const tag = params.tag ? RmanTag.of(params.tag) : RmanTag.generate();
-    const basePath = this._resolvePath(params.format, tag);
     const isControlfile = params.what === 'controlfile';
     const isSpfile      = params.what === 'spfile';
     const isArchivelog  = job.operation === 'BACKUP_ARCHIVELOG';
     const incLevel = params.incrementalLevel === '0' || params.incrementalLevel === '1'
       ? (Number(params.incrementalLevel) as 0 | 1)
       : undefined;
+    const omfKind: OmfBackupKind =
+      isControlfile || isSpfile ? 'controlfile-spfile'
+        : isArchivelog          ? 'archivelog'
+          : incLevel === 0      ? 'datafile-incremental-0'
+            : incLevel === 1    ? 'datafile-incremental-1'
+              : 'datafile-full';
+    const basePath = this._resolvePath(params.format, tag, omfKind);
     const maxPieceSize = params.maxPieceSize ? Number(params.maxPieceSize) : undefined;
 
     const allDatafiles = this._ctx.getDatafiles();
@@ -259,11 +270,20 @@ export class RmanJobEngine implements IRmanJobEngine {
     const pieceCount = maxPieceSize ? Math.max(1, Math.ceil(totalSize / maxPieceSize)) : 1;
     const pieceSize  = maxPieceSize ? Math.min(maxPieceSize, totalSize) : totalSize;
 
+    const usedPaths = new Set<string>();
     for (let i = 1; i <= pieceCount; i++) {
-      const path = pieceCount === 1 ? basePath : `${basePath}.p${i}`;
+      const candidate = i === 1
+        ? basePath
+        : this._resolvePath(params.format, tag, omfKind, i);
+      const path = usedPaths.has(candidate) ? `${candidate}.p${i}` : candidate;
+      usedPaths.add(path);
       const size = i === pieceCount
         ? (totalSize - pieceSize * (pieceCount - 1))
         : pieceSize;
+      if (!params.format) {
+        const overflow = this._recoveryAreaOverflow(size);
+        if (overflow) return err(overflow);
+      }
       const writeResult = this._ctx.vfs.writeFile(path, new Uint8Array(0), size);
       if (!writeResult.ok) return writeResult;
 
@@ -280,6 +300,15 @@ export class RmanJobEngine implements IRmanJobEngine {
 
       const recR = this._catalog.recordBackupSet(set);
       if (!recR.ok) return recR;
+      this._ctx.recordBackupPiece?.({
+        setId: set.bsKey, pieceId: set.pieces[0].key.bpKey,
+        type: isControlfile ? 'CONTROLFILE'
+          : isSpfile       ? 'SPFILE'
+          : isArchivelog   ? 'ARCHIVELOG'
+          : incLevel === undefined ? 'FULL' : 'INCREMENTAL',
+        handle: path, bytes: size,
+        startedAt: set.startTime, completedAt: set.completionTime,
+      });
 
       this._bus.emit({ type: 'BACKUP_SET_COMPLETE', jobId: job.id, bsKey: set.bsKey, tag, sizeBytes: size });
     }
@@ -296,16 +325,39 @@ export class RmanJobEngine implements IRmanJobEngine {
     return ok(undefined);
   }
 
+  private _recoveryAreaOverflow(sizeBytes: number): RmanError | null {
+    const limitText = this._ctx.getSpfileParam('db_recovery_file_dest_size');
+    const limit = parseSize(limitText);
+    if (limit <= 0) return null;
+    const used = this._ctx.getRecoveryAreaUsedBytes?.() ?? 0;
+    if (used + sizeBytes <= limit) return null;
+    return {
+      code: 'VFS_NO_SPACE',
+      message: `ORA-19809: limit exceeded for recovery files\n`
+        + `ORA-19804: cannot reclaim ${sizeBytes} bytes disk space from ${limit} limit`,
+      available: Math.max(0, limit - used),
+    };
+  }
+
   /** Resolve a piece file path from an optional FORMAT template + tag. */
-  private _resolvePath(format: string | undefined, tag: RmanTag): string {
-    if (!format) return generatePieceName(this._ctx.dbName, tag);
-    // Minimal Oracle %-substitution: %U → unique-ish suffix, %s → 1, %p → 1.
-    const unique = `${this._ctx.dbName}_${Math.random().toString(36).slice(2, 10)}`;
-    return format
-      .replace(/%U/g, unique)
-      .replace(/%s/g, '1')
-      .replace(/%p/g, '1')
-      .replace(/%T/g, tag.label);
+  private _resolvePath(
+    format: string | undefined, tag: RmanTag, kind: OmfBackupKind, pieceNumber = 1,
+  ): string {
+    if (!format) {
+      const dest = this._ctx.getSpfileParam('db_recovery_file_dest') ?? ORACLE_CONFIG.FRA;
+      const path = generatePieceName(this._ctx.dbName, tag, dest, kind);
+      this._ctx.vfs.ensureDirectory?.(path.slice(0, path.lastIndexOf('/')));
+      return path;
+    }
+    return resolveFormatSpec(format, {
+      dbName:      this._ctx.dbName,
+      dbId:        this._ctx.dbId.value,
+      setNumber:   BackupKey.peekBsKey(),
+      pieceNumber,
+      copyNumber:  1,
+      logSequence: 1,
+      at:          new Date(),
+    });
   }
 
   private _doRestore(job: RmanJob, channelId: string): Result<void, RmanError> {

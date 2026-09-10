@@ -18,6 +18,8 @@ import {
 } from '../shells/cli/TextTable';
 import type { WinCommandContext } from './WinCommandExecutor';
 import { showRoutePrint } from './WinRoute';
+import { netstatStatistics, type NetstatProtocolFilter } from './WinNetstatStatistics';
+import { snmpSnapshot } from '../linux/ports/PortsFilesystem';
 
 /** Context provided to all Windows file command modules */
 export interface WinFileCommandContext {
@@ -297,6 +299,17 @@ const NETSTAT_PROTOCOLS: Readonly<Record<string, SocketProtocol>> = {
   tcp: 'tcp', udp: 'udp', tcpv6: 'tcp', udpv6: 'udp',
 };
 
+const NETSTAT_FAMILIES: Record<string, NetstatProtocolFilter> = {
+  ip: 'ip', ipv4: 'ipv4', icmp: 'icmp', icmpv4: 'icmpv4',
+  tcp: 'tcp', tcpv4: 'tcpv4', udp: 'udp', udpv4: 'udpv4',
+};
+
+function familleDemandee(args: string[]): NetstatProtocolFilter | null {
+  const at = args.findIndex((a) => a.toLowerCase() === '-p');
+  if (at < 0 || args[at + 1] === undefined) return null;
+  return NETSTAT_FAMILIES[args[at + 1].toLowerCase()] ?? null;
+}
+
 function protocoleDemande(args: string[]): SocketProtocol | null {
   const at = args.findIndex((a) => a.toLowerCase() === '-p');
   if (at < 0 || args[at + 1] === undefined) return null;
@@ -319,6 +332,12 @@ export function cmdNetstat(
 
   if (hasFlag('e')) {
     return netCtx ? statistiquesInterfaces(netCtx) : '';
+  }
+
+  if (hasFlag('s')) {
+    return netstatStatistics(
+      snmpSnapshot(socketTable, netCtx?.protocolCounters()),
+      familleDemandee(args));
   }
 
   const showAll = hasFlag('a') || args.includes('-an');

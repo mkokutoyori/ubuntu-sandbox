@@ -23,7 +23,9 @@ import {
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import type { EthernetFrame } from '../core/types';
 import { MACAddress } from '../core/types';
-import { toDisplayName } from './windows/WindowsInterfaceNaming';
+import { toDisplayName, adapterIfIndex, LOOPBACK_IFINDEX } from './windows/WindowsInterfaceNaming';
+import { interfaceGuidFor } from './host/hardware/HardwareIdentity';
+import type { WindowsAdapterIdentity } from './windows/netAdapter';
 import { NetworkAdapter } from './host/hardware';
 import {
   MULTIPLEXOR_DRIVER, adapterNameProblem, adapterNameTaken, identityOfPort,
@@ -34,8 +36,8 @@ import { UDP_PORT_NTP } from '../ntp/types';
 import { W32TimeService } from './windows/W32TimeService';
 import { DnsCache } from '../dns/resolver/DnsCache';
 import { RRType } from '../dns/wire/RRType';
-import type { ARecordData, PtrRecordData } from '../dns/wire/ResourceRecord';
-import { ptrQName, resourceRecordToLegacyRecord } from '../dns/compat/DnsWireCompat';
+import type { ARecordData, PtrRecordData, ResourceRecord } from '../dns/wire/ResourceRecord';
+import { ptrQName, resourceRecordToLegacyRecord, rrTypeFromName } from '../dns/compat/DnsWireCompat';
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
 import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
@@ -186,6 +188,8 @@ import { SessionSwapWindow } from './host/session/SessionSwapWindow';
 import * as WinSys from './windows/WinSystemCommands';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { cmdDir } from './windows/WinDir';
+import { cmdFsutil } from './windows/Fsutil';
+import type { WmiHost } from './windows/WmiClasses';
 import { applyFindstr } from './windows/textFilters';
 import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import type { NetIPAddressEntry } from './windows/netIpAddress';
@@ -418,6 +422,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.hostModel = 'strong';
     this.createPorts();
     this.fs = new WindowsFileSystem(name);
+    this.seedVolumesFromHardware();
     // Materialise the event logs as .evtx files under winevt\Logs.
     this.eventLog.attachFilesystem(this.fs);
     this.userMgr = new WindowsUserManager();
@@ -2145,6 +2150,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const nics: NetworkAdapter[] = [];
     for (let i = 0; i < 4; i++) {
       const port = new Port(`eth${i}`, 'ethernet');
+      port.onLinkChange((state) => {
+        if (state === 'up' && !port.isIPv6Enabled()) this.enableIPv6(port.getName());
+      });
       this.addPort(port);
       nics.push(new NetworkAdapter({
         name: `eth${i}`,
@@ -2169,6 +2177,23 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       .filter(p => this.driverModelOf(p.getName()) === model)
       .findIndex(p => p.getName() === portName) + 1;
     return windowsInterfaceDescription(model, ordinal);
+  }
+
+  adapterIfIndexOf(portName: string): number {
+    const position = this.getPorts().findIndex(p => p.getName() === portName);
+    return position < 0 ? LOOPBACK_IFINDEX : adapterIfIndex(position);
+  }
+
+  interfaceGuidOf(portName: string): string {
+    return interfaceGuidFor(this.name, portName);
+  }
+
+  adapterIdentityOf(portName: string): WindowsAdapterIdentity {
+    return {
+      description: this.interfaceDescriptionOf(portName),
+      ifIndex: this.adapterIfIndexOf(portName),
+      guid: this.interfaceGuidOf(portName),
+    };
   }
 
   private driverModelOf(portName: string): string {
@@ -2439,16 +2464,30 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   resolveDnsViaServerWithTtlSync(name: string, server: string): Array<{ ip: string; ttl: number }> {
-    let serverIP: IPAddress;
-    try { serverIP = new IPAddress(server); } catch { return []; }
-    for (const qname of this.dnsSearchCandidates(name)) {
-      const response = this.queryDnsServerSync(serverIP, qname, 'A');
-      const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
-      if (aRecords.length > 0) {
-        return aRecords.map((rr) => ({ ip: (rr.data as ARecordData).address.toString(), ttl: rr.ttl }));
+    return this.lookupDnsRecordsSync(name, 'A', server)
+      .map((rr) => ({ ip: (rr.data as ARecordData).address.toString(), ttl: rr.ttl }));
+  }
+
+  lookupDnsRecordsSync(name: string, qtype: string, server?: string): readonly ResourceRecord[] | null {
+    const wanted = rrTypeFromName(qtype);
+    if (wanted === null) return null;
+    for (const attempt of this.typedDnsAttempts(name, server)) {
+      const response = this.queryDnsServerSync(attempt.server, attempt.qname, qtype);
+      const answers = response?.answers ?? [];
+      const matching = wanted === RRType.ANY ? answers : answers.filter((rr) => rr.data.type === wanted);
+      if (matching.length > 0) {
+        if (server === undefined) this.dnsCache.storePositive(response!.answers, attempt.qname);
+        return matching;
       }
     }
     return [];
+  }
+
+  private typedDnsAttempts(name: string, server?: string): Array<{ server: IPAddress; qname: string }> {
+    if (server === undefined) return this.dnsResolutionAttempts(name);
+    const resolver = IPAddress.tryParse(server);
+    if (!resolver) return [];
+    return this.dnsSearchCandidates(name).map((qname) => ({ server: resolver, qname }));
   }
 
   private dhcpLease(ifName: string) {
@@ -2705,6 +2744,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'nbtstat': return this.cmdNbtstat(args);
       case 'w32tm':   return this.cmdW32tm(args);
       case 'wmic':    return this.cmdWmic(args);
+      case 'fsutil':  return cmdFsutil(this.buildSystemContext(), args);
       case 'reg':     return this.cmdReg(args);
       case 'nltest':  return cmdNltest({
         domainMembership: this.domainMembership,
@@ -3189,6 +3229,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return {
       hostname: this.hostname,
       ports: this.ports,
+      adapterIdentityOf: (portName: string) => this.adapterIdentityOf(portName),
+      protocolCounters: () => this.getProtocolCounters(),
       get defaultGateway() { return host.defaultGateway?.toString() || null; },
       get defaultGateway6() { return host.getDefaultGateway6()?.toString() || null; },
       arpTable: this.arpTable,
@@ -3202,6 +3244,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         this.addStaticRoute(network, mask, nextHop, metric),
       removeRoute: (dest: IPAddress, mask: SubnetMask) => this.removeRoute(dest, mask),
       getRoutingTable: () => this.getRoutingTable() as RouteEntry[],
+      getIPv6RoutingTable: () => this.getIPv6RoutingTable(),
+      addIPv6StaticRoute: (prefix, prefixLength, nextHop, iface, metric) =>
+        this.addIPv6StaticRoute(prefix, prefixLength, nextHop, iface, metric),
+      removeIPv6StaticRoute: (prefix, prefixLength, nextHop) =>
+        this.removeIPv6StaticRoute(prefix, prefixLength, nextHop),
 
       isDHCPConfigured: (ifName: string) => this.isDHCPConfigured(ifName),
       getDHCPState: (ifName: string) => this.dhcpClient.getState(ifName),
@@ -3468,6 +3515,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       os: this.getIdentity().os,
       bootedAt: () => this.getLifecycle().bootedAt() ?? null,
       hardware: this.hardware,
+      adapterIdentityOf: (portName: string) => this.adapterIdentityOf(portName),
+      volumes: {
+        letters: () => this.fs.listDrives(),
+        capacityBytes: (letter) => this.fs.getDriveCapacity(letter),
+        freeBytes: (letter) => this.fs.getFreeDiskSpace(letter),
+        label: (letter) => this.fs.getVolumeLabel(letter),
+      },
       ports: this.ports,
       isDHCPConfigured: (ifName) => this.isDHCPConfigured(ifName),
       getVolumeSerialNumber: (letter) => this.fs.getVolumeSerialNumber(letter),
@@ -3783,11 +3837,34 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private cmdWmic(args: string[]): string {
-    if (args.join(' ').toLowerCase().includes('logicaldisk')) {
-      const drives = this.fs.listDrives();
-      return ['Name  ', ...drives.map((d) => d.padEnd(6))].join('\n');
-    }
     return WinSys.cmdWmic(this.buildSystemContext(), args);
+  }
+
+  /**
+   * Ce que les classes WMI lisent de la machine. `wmic` y arrive par le
+   * contexte des commandes cmd, `Get-CimInstance` par le fournisseur
+   * PowerShell : deux facades, une seule source.
+   */
+  wmiHost(): WmiHost {
+    return this.buildSystemContext();
+  }
+
+  /**
+   * La taille et l'etiquette d'un volume viennent de la partition qui le
+   * porte. Sans cela le systeme de fichiers inventait ses propres 100 Go
+   * pour `C:` pendant que l'inventaire materiel en annoncait d'autres —
+   * deux ecritures du meme fait.
+   */
+  private seedVolumesFromHardware(): void {
+    for (const disk of this.hardware.storage) {
+      for (const part of disk.partitions) {
+        if (!part.mountPoint) continue;
+        const letter = part.mountPoint.charAt(0).toUpperCase();
+        this.fs.mkdirp(`${letter}:\\`);
+        this.fs.setDriveCapacity(letter, part.sizeBytes);
+        this.fs.setVolumeLabel(letter, part.label);
+      }
+    }
   }
 
   private cmdReg(args: string[]): string {

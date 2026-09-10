@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-info-snmp-ntp
-Generated: 2026-08-23T10:19:37.505Z
+Generated: 2026-09-10T16:31:14.968Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP info-center/SNMPv1-3/NTP/LLDP/NQA/sFlow
 Total steps: 233
@@ -119,10 +119,10 @@ Total steps: 233
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-08-23 10:19:37 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-23 10:19:37 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-23 10:19:37 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-23 10:19:37 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-09-10 16:31:14 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-09-10 16:31:14 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-09-10 16:31:14 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-09-10 16:31:14 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [31/233] r1 <R1> display logbuffer summary
   Log buffer: 0 messages.
@@ -248,33 +248,33 @@ Total steps: 233
 <empty>
 
 [56/233] r1 <R1> display snmp-agent sys-info
-  Contact: <not set>
-  Location: <not set>
+  Contact: noc@lab.local
+  Location: DC1-Rack5
   Chassis-id: <not set>
 
 [57/233] r1 <R1> display snmp-agent community
-  The contact person for this managed node: R&D Beijing, Huawei
-  The physical location of this node: Beijing China
+  The contact person for this managed node: noc@lab.local
+  The physical location of this node: DC1-Rack5
   SNMP version running in the system: SNMPv2c SNMPv3
 
 [58/233] r1 <R1> display snmp-agent mib-view
-  The contact person for this managed node: R&D Beijing, Huawei
-  The physical location of this node: Beijing China
+  The contact person for this managed node: noc@lab.local
+  The physical location of this node: DC1-Rack5
   SNMP version running in the system: SNMPv2c SNMPv3
 
 [59/233] r1 <R1> display snmp-agent target-host
-  The contact person for this managed node: R&D Beijing, Huawei
-  The physical location of this node: Beijing China
+  The contact person for this managed node: noc@lab.local
+  The physical location of this node: DC1-Rack5
   SNMP version running in the system: SNMPv2c SNMPv3
 
 [60/233] r1 <R1> display snmp-agent trap-list
-  The contact person for this managed node: R&D Beijing, Huawei
-  The physical location of this node: Beijing China
+  The contact person for this managed node: noc@lab.local
+  The physical location of this node: DC1-Rack5
   SNMP version running in the system: SNMPv2c SNMPv3
 
 [61/233] r1 <R1> display snmp-agent statistics
-  The contact person for this managed node: R&D Beijing, Huawei
-  The physical location of this node: Beijing China
+  The contact person for this managed node: noc@lab.local
+  The physical location of this node: DC1-Rack5
   SNMP version running in the system: SNMPv2c SNMPv3
 
 
@@ -313,17 +313,17 @@ Total steps: 233
 <empty>
 
 [73/233] r1 <R1> display snmp-agent usm-user
-  The contact person for this managed node: R&D Beijing, Huawei
-  The physical location of this node: Beijing China
+  The contact person for this managed node: noc@lab.local
+  The physical location of this node: DC1-Rack5
   SNMP version running in the system: SNMPv2c SNMPv3
 
 [74/233] r1 <R1> display snmp-agent group
-  The contact person for this managed node: R&D Beijing, Huawei
-  The physical location of this node: Beijing China
+  The contact person for this managed node: noc@lab.local
+  The physical location of this node: DC1-Rack5
   SNMP version running in the system: SNMPv2c SNMPv3
 
 [75/233] r1 <R1> display snmp-agent local-engineid
-  SNMP local EngineID: 8000000903C60D8206
+  SNMP local EngineID: 800007DB0300DEADBEEF01
 
 
 --- [76] § NTP ---
@@ -396,7 +396,7 @@ Total steps: 233
   Root delay: 0.00 ms
   Root dispersion: 0.00 ms
   Peer dispersion: 0.00 ms
-  Reference time: 10:19:37.523  Aug 23 2026(EE3547B9.85E353F7)
+  Reference time: 16:31:14.995  Sep 10 2026(EE4D59D2.FEB851EB)
   Source interface: LoopBack0
 
 [95/233] r1 <R1> display ntp-service sessions
@@ -421,8 +421,8 @@ Total steps: 233
    clock offset: 0.0000 ms
 
 [97/233] r1 <R1> display clock
-  2026-08-23 10:19:37
-  Sunday
+  2026-09-10 16:31:14
+  Thursday
   Time Zone(UTC) : UTC
 
 
@@ -440,7 +440,9 @@ Total steps: 233
 <empty>
 
 [102/233] r1 [R1] lldp management-address 1.1.1.1
-<empty>
+  Error: Unrecognized command found at '^' position.
+  lldp management-address 1.1.1.1
+       ^
 
 [103/233] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
@@ -500,16 +502,113 @@ Total steps: 233
 <empty>
 
 [122/233] r1 <R1> display lldp local
-  Info: LLDP is disabled.
+  Global LLDP Information:
+  Chassis type :macAddress
+  Chassis ID :0200-0000-0001
+  System name :R1
+  System description :Huawei VRP Software, Version 5.160 (AR2200 V200R003C00)
+  System capabilities supported :router
+  System capabilities enabled :router
+  LLDP Status :enabled
+  Message transmission interval :30
+  Message transmission hold multiplier :4
+  Reinit delay :2
+  
+  GigabitEthernet0/0/0:
+  Port ID type :interfaceName
+  Port ID :GigabitEthernet0/0/0
+  Port description :GigabitEthernet0/0/0
+  Port status :enabled
+  
+  GigabitEthernet0/0/1:
+  Port ID type :interfaceName
+  Port ID :GigabitEthernet0/0/1
+  Port description :GigabitEthernet0/0/1
+  Port status :enabled
+  
+  GigabitEthernet0/0/2:
+  Port ID type :interfaceName
+  Port ID :GigabitEthernet0/0/2
+  Port description :GigabitEthernet0/0/2
+  Port status :enabled
+  
+  GigabitEthernet0/0/3:
+  Port ID type :interfaceName
+  Port ID :GigabitEthernet0/0/3
+  Port description :GigabitEthernet0/0/3
+  Port status :enabled
+  
+  LoopBack0:
+  Port ID type :interfaceName
+  Port ID :LoopBack0
+  Port description :LoopBack0
+  Port status :enabled
 
 [123/233] r1 <R1> display lldp neighbor
-  Info: No LLDP neighbor is found.
+  GigabitEthernet0/0/0 has 0 neighbors
+  
+  GigabitEthernet0/0/1 has 0 neighbors
+  
+  GigabitEthernet0/0/2 has 0 neighbors
+  
+  GigabitEthernet0/0/3 has 0 neighbors
+  
+  LoopBack0 has 0 neighbors
+  
+  Total: 0
 
 [124/233] r1 <R1> display lldp neighbor brief
-  Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
+  Local Intf                Neighbor Dev    Neighbor Intf   Exptime(s)
+  Total: 0
 
 [125/233] r1 <R1> display lldp statistics
-   No LLDP neighbors.
+  LLDP statistics global Information:
+  Total Neighbors Expired :0
+  
+  Statistics for GigabitEthernet0/0/0:
+  Sent Frames :3
+  Received Frames :0
+  Frames Discarded :0
+  Frames Error :0
+  TLVs Discarded :0
+  TLVs Unrecognized :0
+  Neighbors Expired :0
+  
+  Statistics for GigabitEthernet0/0/1:
+  Sent Frames :5
+  Received Frames :0
+  Frames Discarded :0
+  Frames Error :0
+  TLVs Discarded :0
+  TLVs Unrecognized :0
+  Neighbors Expired :0
+  
+  Statistics for GigabitEthernet0/0/2:
+  Sent Frames :0
+  Received Frames :0
+  Frames Discarded :0
+  Frames Error :0
+  TLVs Discarded :0
+  TLVs Unrecognized :0
+  Neighbors Expired :0
+  
+  Statistics for GigabitEthernet0/0/3:
+  Sent Frames :0
+  Received Frames :0
+  Frames Discarded :0
+  Frames Error :0
+  TLVs Discarded :0
+  TLVs Unrecognized :0
+  Neighbors Expired :0
+  
+  Statistics for LoopBack0:
+  Sent Frames :0
+  Received Frames :0
+  Frames Discarded :0
+  Frames Error :0
+  TLVs Discarded :0
+  TLVs Unrecognized :0
+  Neighbors Expired :0
 
 [126/233] r1 <R1> display nqa results test-instance admin jitter
   NQA entry(admin, jitter) :testflag is active ,testtype is jitter
@@ -565,6 +664,7 @@ Total steps: 233
   #
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   lldp enable
   #
   interface GigabitEthernet0/0/2
    shutdown
@@ -591,20 +691,20 @@ Total steps: 233
    local-user dave privilege level 1
    local-user dave service-type ssh
   #
-  snmp-agent community read cipher acl mib-view
+  snmp-agent community read RoComm123
+  snmp-agent community write RwComm123
+  snmp-agent community read AclComm mib-view iso acl 2000
+  snmp-agent local-engineid 800007DB0300DEADBEEF01
   snmp-agent sys-info version v2c v3
   snmp-agent sys-info contact noc@lab.local
   snmp-agent sys-info location DC1-Rack5
-  snmp-agent target-host trap-hostname params securityname H1 address
-  snmp-agent target-host trap-paramsname params securityname P1 v2c
-  snmp-agent target-host trap-hostname params securityname H3 address
-  snmp-agent target-host trap-paramsname params securityname P3 v3
-  snmp-agent 
-  snmp-agent mib-view included iso-view iso
+  snmp-agent trap source LoopBack0
   snmp-agent trap enable
   snmp-agent trap enable feature-name ospf
   snmp-agent trap enable feature-name bgp
-  snmp-agent trap source LoopBack0
+  snmp-agent mib-view included iso-view 1
+  snmp-agent target-host trap-hostname H1 address 10.0.0.5 udp-port 162 trap-paramsname P1
+  snmp-agent target-host trap-paramsname P1 v2c securityname cipher Pub123
   snmp-agent packet max-size 1500
   snmp-agent protocol source-interface LoopBack0
   snmp-agent group v3 GRP-RW privacy read-view iso write-view iso notify-view iso
@@ -613,7 +713,8 @@ Total steps: 233
   snmp-agent usm-user v3 adminv3 authentication-mode sha2-256 cipher Auth@12345
   snmp-agent usm-user v3 adminv3 privacy-mode aes256 cipher Priv@12345
   snmp-agent usm-user v3 rouser group GRP-RO authentication-mode sha cipher Auth@67890
-  snmp-agent local-engineid 800007DB0300DEADBEEF01
+  snmp-agent target-host trap-hostname H3 address 10.0.0.8 trap-paramsname P3
+  snmp-agent target-host trap-paramsname P3 v3 securityname adminv3 privacy
   #
   ntp-service refclock-master 3
   ntp-service unicast-server 10.0.0.21 authentication-keyid 1 preference
@@ -648,6 +749,8 @@ Total steps: 233
    start now
    #
   #
+  lldp enable
+  #
 
 [132/233] r1 <R1> display saved-configuration
   Error: The configuration file doesn't exist.
@@ -674,32 +777,82 @@ Total steps: 233
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  3 packets, 192 bytes
+    Unicast:                    0,  Multicast:                  3
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
   Internet Address is 10.0.0.1/30
   The Maximum Transmit Unit is 1500
-  Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+  Input:  2 packets, 160 bytes
+    Unicast:                    0,  Multicast:                  2
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  11 packets, 750 bytes
+    Unicast:                    0,  Multicast:                  5
+    Broadcast:                  6,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   LoopBack0 current state : UP
   Line protocol current state : UP (spoofing)
   Internet Address is 1.1.1.1/32
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 1514
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [135/233] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
@@ -807,8 +960,8 @@ Total steps: 233
   Info: No IKE peers configured.
 
 [161/233] r1 <R1> display snmp-agent sys-info
-  Contact: <not set>
-  Location: <not set>
+  Contact: noc@lab.local
+  Location: DC1-Rack5
   Chassis-id: <not set>
 
 [162/233] r1 <R1> display ntp status
@@ -822,7 +975,7 @@ Total steps: 233
   Root delay: 0.00 ms
   Root dispersion: 0.00 ms
   Peer dispersion: 0.00 ms
-  Reference time: 10:19:37.586  Aug 23 2026(EE3547B9.96041893)
+  Reference time: 16:31:15.069  Sep 10 2026(EE4D59D3.11A9FBE7)
   Source interface: LoopBack0
 
 [163/233] r1 <R1> display ntp session
@@ -838,26 +991,37 @@ Total steps: 233
   Total sessions: 4
 
 [164/233] r1 <R1> display clock
-  2026-08-23 10:19:37
-  Sunday
+  2026-09-10 16:31:15
+  Thursday
   Time Zone(UTC) : UTC
 
 [165/233] r1 <R1> display lldp neighbor
-  Info: No LLDP neighbor is found.
+  GigabitEthernet0/0/0 has 0 neighbors
+  
+  GigabitEthernet0/0/1 has 0 neighbors
+  
+  GigabitEthernet0/0/2 has 0 neighbors
+  
+  GigabitEthernet0/0/3 has 0 neighbors
+  
+  LoopBack0 has 0 neighbors
+  
+  Total: 0
 
 [166/233] r1 <R1> display lldp neighbor brief
-  Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
+  Local Intf                Neighbor Dev    Neighbor Intf   Exptime(s)
+  Total: 0
 
 [167/233] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-23 10:19:37
+  CPU Usage Stat. Time : 2026-09-10 16:31:15
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [168/233] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-23 10:19:37
+  Memory utilization statistics at 2026-09-10 16:31:15
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -898,10 +1062,10 @@ Total steps: 233
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-08-23 10:19:37 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-23 10:19:37 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-23 10:19:37 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-23 10:19:37 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-09-10 16:31:14 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-09-10 16:31:14 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-09-10 16:31:14 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-09-10 16:31:14 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [173/233] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -962,20 +1126,36 @@ Total steps: 233
   Internet Address is unassigned
   Broadcast address : 0.0.0.0
   The Maximum Transmit Unit : 1500 bytes
-  Input bandwidth utilization  : 0%
-  Output bandwidth utilization : 0%
-      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
-      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
-      Input:  0 packets, 0 bytes
-      Output: 0 packets, 0 bytes
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+  Input:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  3 packets, 192 bytes
+    Unicast:                    0,  Multicast:                  3
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [181/233] r1 <R1> display interface GigabitEthernet0/0/0
   GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  3 packets, 192 bytes
+    Unicast:                    0,  Multicast:                  3
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [182/233] r1 <R1> display this
   #
@@ -991,6 +1171,7 @@ Total steps: 233
   #
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   lldp enable
   #
   interface GigabitEthernet0/0/2
    shutdown
@@ -1017,20 +1198,20 @@ Total steps: 233
    local-user dave privilege level 1
    local-user dave service-type ssh
   #
-  snmp-agent community read cipher acl mib-view
+  snmp-agent community read RoComm123
+  snmp-agent community write RwComm123
+  snmp-agent community read AclComm mib-view iso acl 2000
+  snmp-agent local-engineid 800007DB0300DEADBEEF01
   snmp-agent sys-info version v2c v3
   snmp-agent sys-info contact noc@lab.local
   snmp-agent sys-info location DC1-Rack5
-  snmp-agent target-host trap-hostname params securityname H1 address
-  snmp-agent target-host trap-paramsname params securityname P1 v2c
-  snmp-agent target-host trap-hostname params securityname H3 address
-  snmp-agent target-host trap-paramsname params securityname P3 v3
-  snmp-agent 
-  snmp-agent mib-view included iso-view iso
+  snmp-agent trap source LoopBack0
   snmp-agent trap enable
   snmp-agent trap enable feature-name ospf
   snmp-agent trap enable feature-name bgp
-  snmp-agent trap source LoopBack0
+  snmp-agent mib-view included iso-view 1
+  snmp-agent target-host trap-hostname H1 address 10.0.0.5 udp-port 162 trap-paramsname P1
+  snmp-agent target-host trap-paramsname P1 v2c securityname cipher Pub123
   snmp-agent packet max-size 1500
   snmp-agent protocol source-interface LoopBack0
   snmp-agent group v3 GRP-RW privacy read-view iso write-view iso notify-view iso
@@ -1039,7 +1220,8 @@ Total steps: 233
   snmp-agent usm-user v3 adminv3 authentication-mode sha2-256 cipher Auth@12345
   snmp-agent usm-user v3 adminv3 privacy-mode aes256 cipher Priv@12345
   snmp-agent usm-user v3 rouser group GRP-RO authentication-mode sha cipher Auth@67890
-  snmp-agent local-engineid 800007DB0300DEADBEEF01
+  snmp-agent target-host trap-hostname H3 address 10.0.0.8 trap-paramsname P3
+  snmp-agent target-host trap-paramsname P3 v3 securityname adminv3 privacy
   #
   ntp-service refclock-master 3
   ntp-service unicast-server 10.0.0.21 authentication-keyid 1 preference
@@ -1073,6 +1255,8 @@ Total steps: 233
    datasize 32
    start now
    #
+  #
+  lldp enable
   #
 
 [183/233] r1 <R1> display diagnostic-information
@@ -1129,6 +1313,7 @@ Total steps: 233
   #
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   lldp enable
   #
   interface GigabitEthernet0/0/2
    shutdown
@@ -1155,20 +1340,20 @@ Total steps: 233
    local-user dave privilege level 1
    local-user dave service-type ssh
   #
-  snmp-agent community read cipher acl mib-view
+  snmp-agent community read RoComm123
+  snmp-agent community write RwComm123
+  snmp-agent community read AclComm mib-view iso acl 2000
+  snmp-agent local-engineid 800007DB0300DEADBEEF01
   snmp-agent sys-info version v2c v3
   snmp-agent sys-info contact noc@lab.local
   snmp-agent sys-info location DC1-Rack5
-  snmp-agent target-host trap-hostname params securityname H1 address
-  snmp-agent target-host trap-paramsname params securityname P1 v2c
-  snmp-agent target-host trap-hostname params securityname H3 address
-  snmp-agent target-host trap-paramsname params securityname P3 v3
-  snmp-agent 
-  snmp-agent mib-view included iso-view iso
+  snmp-agent trap source LoopBack0
   snmp-agent trap enable
   snmp-agent trap enable feature-name ospf
   snmp-agent trap enable feature-name bgp
-  snmp-agent trap source LoopBack0
+  snmp-agent mib-view included iso-view 1
+  snmp-agent target-host trap-hostname H1 address 10.0.0.5 udp-port 162 trap-paramsname P1
+  snmp-agent target-host trap-paramsname P1 v2c securityname cipher Pub123
   snmp-agent packet max-size 1500
   snmp-agent protocol source-interface LoopBack0
   snmp-agent group v3 GRP-RW privacy read-view iso write-view iso notify-view iso
@@ -1177,7 +1362,8 @@ Total steps: 233
   snmp-agent usm-user v3 adminv3 authentication-mode sha2-256 cipher Auth@12345
   snmp-agent usm-user v3 adminv3 privacy-mode aes256 cipher Priv@12345
   snmp-agent usm-user v3 rouser group GRP-RO authentication-mode sha cipher Auth@67890
-  snmp-agent local-engineid 800007DB0300DEADBEEF01
+  snmp-agent target-host trap-hostname H3 address 10.0.0.8 trap-paramsname P3
+  snmp-agent target-host trap-paramsname P3 v3 securityname adminv3 privacy
   #
   ntp-service refclock-master 3
   ntp-service unicast-server 10.0.0.21 authentication-keyid 1 preference
@@ -1212,6 +1398,8 @@ Total steps: 233
    start now
    #
   #
+  lldp enable
+  #
 
 [192/233] r1 <R1> display current-configuration | exclude #
   sysname R1
@@ -1222,6 +1410,7 @@ Total steps: 233
    shutdown
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   lldp enable
   interface GigabitEthernet0/0/2
    shutdown
   interface GigabitEthernet0/0/3
@@ -1243,20 +1432,20 @@ Total steps: 233
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
    local-user dave privilege level 1
    local-user dave service-type ssh
-  snmp-agent community read cipher acl mib-view
+  snmp-agent community read RoComm123
+  snmp-agent community write RwComm123
+  snmp-agent community read AclComm mib-view iso acl 2000
+  snmp-agent local-engineid 800007DB0300DEADBEEF01
   snmp-agent sys-info version v2c v3
   snmp-agent sys-info contact noc@lab.local
   snmp-agent sys-info location DC1-Rack5
-  snmp-agent target-host trap-hostname params securityname H1 address
-  snmp-agent target-host trap-paramsname params securityname P1 v2c
-  snmp-agent target-host trap-hostname params securityname H3 address
-  snmp-agent target-host trap-paramsname params securityname P3 v3
-  snmp-agent 
-  snmp-agent mib-view included iso-view iso
+  snmp-agent trap source LoopBack0
   snmp-agent trap enable
   snmp-agent trap enable feature-name ospf
   snmp-agent trap enable feature-name bgp
-  snmp-agent trap source LoopBack0
+  snmp-agent mib-view included iso-view 1
+  snmp-agent target-host trap-hostname H1 address 10.0.0.5 udp-port 162 trap-paramsname P1
+  snmp-agent target-host trap-paramsname P1 v2c securityname cipher Pub123
   snmp-agent packet max-size 1500
   snmp-agent protocol source-interface LoopBack0
   snmp-agent group v3 GRP-RW privacy read-view iso write-view iso notify-view iso
@@ -1265,7 +1454,8 @@ Total steps: 233
   snmp-agent usm-user v3 adminv3 authentication-mode sha2-256 cipher Auth@12345
   snmp-agent usm-user v3 adminv3 privacy-mode aes256 cipher Priv@12345
   snmp-agent usm-user v3 rouser group GRP-RO authentication-mode sha cipher Auth@67890
-  snmp-agent local-engineid 800007DB0300DEADBEEF01
+  snmp-agent target-host trap-hostname H3 address 10.0.0.8 trap-paramsname P3
+  snmp-agent target-host trap-paramsname P3 v3 securityname adminv3 privacy
   ntp-service refclock-master 3
   ntp-service unicast-server 10.0.0.21 authentication-keyid 1 preference
   ntp-service unicast-server 10.0.0.22 authentication-keyid 1 preference
@@ -1294,6 +1484,7 @@ Total steps: 233
    frequency 60
    datasize 32
    start now
+  lldp enable
 
 [193/233] r1 <R1> display ip routing-table | include Direct
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
@@ -1446,7 +1637,7 @@ Total steps: 233
     ipsec          IP Security
     ipv6           Disable IPv6
     isis           Remove IS-IS
-    lldp           Disable LLDP
+    lldp           Link Layer Discovery Protocol
     local-user     Remove a local user
     multicast      Disable multicast routing
     nat            Network Address Translation
@@ -1458,17 +1649,16 @@ Total steps: 233
     route-policy   Remove a route-policy
     screen-length  Restore default screen length
     screen-width   Restore default screen width
+    snmp-agent     Remove SNMP agent configuration
     terminal       Set the terminal line characteristics
     time-range     Remove a time-range
     traffic        Display traffic statistics
-    <cr>
 
 [231/233] r1 [Huawei] acl ?
     advanced  Advanced ACL (3000-3999)
     basic     Basic ACL (2000-2999)
     name      Named ACL
     number    ACL number
-    <cr>
 
 [232/233] r1 [Huawei] return
 <empty>

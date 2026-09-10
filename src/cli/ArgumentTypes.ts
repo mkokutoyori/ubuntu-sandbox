@@ -68,6 +68,18 @@ export interface ArgumentSpec {
    */
   readonly alternatives?: readonly EnumValue[];
   /**
+   * Les FORMES sont TOUT ce que la place accepte.
+   *
+   * Par defaut l'aide annonce le type de base puis ses formes, parce
+   * qu'une place en accepte souvent une de plus que celles qu'on nomme :
+   * `ip access-group ?` rend `WORD`, `<1-199>` et `<1300-2699>`, et le
+   * `WORD` en est une. Mais `access-list ?` n'en rend que QUATRE — les
+   * quatre plages d'IOS — et rien d'autre : y ajouter le type de base
+   * annoncerait une cinquieme forme que la machine refuse. C'est le
+   * meme raisonnement que pour `values`, qui l'applique deja.
+   */
+  readonly formsAreExhaustive?: boolean;
+  /**
    * Les formes ne valent qu'en TETE de la place.
    *
    * Une place `REST` sert deux grammaires que le moteur ne peut pas
@@ -292,7 +304,8 @@ export function argumentSuggestions(spec: ArgumentSpec): readonly EnumValue[] {
     keyword: argumentPlaceholder(spec), description: describeArgument(spec),
   };
   if (out.length === 0) return [placeholder];
-  return spec.type === 'REST' ? out : [placeholder, ...out];
+  if (spec.type === 'REST' || spec.formsAreExhaustive) return out;
+  return [placeholder, ...out];
 }
 
 export function describeArgument(spec: ArgumentSpec): string {

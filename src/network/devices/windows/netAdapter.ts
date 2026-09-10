@@ -12,6 +12,7 @@ export interface AdapterIdentity {
 
 export interface NetAdapterEntry extends AdapterIdentity {
   interfaceDescription: string;
+  interfaceGuid: string;
   ifIndex: number;
   status: NetAdapterStatus;
   macAddress: string;
@@ -154,6 +155,21 @@ export function adapterNameProblem(newName: string): string | null {
 }
 
 export const MULTIPLEXOR_DRIVER = 'Microsoft Network Adapter Multiplexor Driver';
+
+/**
+ * L'identite d'UNE carte, celle que `Get-NetAdapter`, `ipconfig /all`,
+ * `route print`, `getmac`, `systeminfo` et `arp -a` rendent chacun a
+ * leur facon. Elle est calculee une seule fois, par l'equipement.
+ */
+export interface WindowsAdapterIdentity {
+  description: string;
+  ifIndex: number;
+  guid: string;
+}
+
+export interface WindowsAdapterIdentitySource {
+  adapterIdentityOf(portName: string): WindowsAdapterIdentity;
+}
 
 export function windowsInterfaceDescription(model: string, ordinal: number): string {
   return ordinal <= 1 ? model : `${model} #${ordinal}`;

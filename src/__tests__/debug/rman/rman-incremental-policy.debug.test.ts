@@ -35,6 +35,7 @@ describe('debug — incremental strategy + retention policy on db-prod', () => {
   it('week-long incremental cadence + policy-driven obsolescence', () => {
     const srv = new LinuxServer('linux-server', 'db-prod', 100, 100);
     getOracleDatabase(srv.id);
+    srv.executeShellCommandSync('mkdir -p /u01/backup && chown oracle:oinstall /u01/backup');
     const runner = createRmanRunner(srv);
 
     const lines: RmanDebugLine[] = [

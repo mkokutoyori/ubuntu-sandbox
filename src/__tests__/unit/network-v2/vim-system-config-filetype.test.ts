@@ -44,9 +44,10 @@ beforeEach(() => {
 });
 
 describe('Scénario 9 — /etc/fstab : création, filetype, validation mount --fake -a', () => {
-  it('un utilisateur non privilégié ne peut pas créer /etc/fstab (parent /etc root:root 0755)', async () => {
+  it('un utilisateur non privilégié ne peut pas écrire /etc/fstab (root:root 0644)', async () => {
     const fsCtx = new LinuxEditorFsContext(pc);
-    expect(fsCtx.readFile('/etc/fstab')).toBeNull();
+    const avant = fsCtx.readFile('/etc/fstab');
+    expect(avant).toContain('# /etc/fstab: static file system information.');
 
     const vim = new VimEngine(fsCtx, '/etc/fstab', '', true, 'vim');
     press(vim, 'i');
@@ -56,13 +57,13 @@ describe('Scénario 9 — /etc/fstab : création, filetype, validation mount --f
 
     expect(vim.message).toBe(`E212: Can't open file for writing`);
     expect(vim.exited).toBe(false); // the write failed, so :wq did not exit
-    expect(fsCtx.readFile('/etc/fstab')).toBeNull(); // still absent — the write never landed
+    expect(fsCtx.readFile('/etc/fstab')).toBe(avant); // unchanged — the write never landed
   });
 
-  it('détecte le filetype fstab sur un nouveau fichier (créé en root) et ajoute une entrée tmpfs valide', async () => {
+  it('détecte le filetype fstab et ajoute une entrée tmpfs valide (en root)', async () => {
     const rootSession = pc.openShellSession({ user: 'root' });
     const fsCtx = new LinuxEditorFsContext(pc, rootSession);
-    expect(fsCtx.readFile('/etc/fstab')).toBeNull(); // absent par défaut
+    expect(fsCtx.readFile('/etc/fstab')).toContain('/boot'); // la machine décrit déjà ses montages
 
     const vim = new VimEngine(fsCtx, '/etc/fstab', '', true, 'vim', 'root');
     exCommand(vim, 'set filetype?');

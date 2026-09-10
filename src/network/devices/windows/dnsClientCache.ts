@@ -1,4 +1,7 @@
 import type { DnsCacheRecordView } from '@/network/dns/resolver/DnsCache';
+import type { ResourceRecord } from '@/network/dns/wire/ResourceRecord';
+import { RRType } from '@/network/dns/wire/RRType';
+import { rrTypeFromName, rrTypeName } from '@/network/dns/compat/DnsWireCompat';
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { applyCimCriteria, cimNotFound } from './cimQuery';
 import { matchEnumValue } from './netIpAddress';
@@ -13,10 +16,6 @@ export const DNS_CACHE_RECORD_TYPES: readonly DnsCacheRecordType[] =
   ['A', 'NS', 'CNAME', 'SOA', 'PTR', 'MX', 'AAAA', 'SRV'];
 
 export const DNS_CACHE_CIM_CLASS = 'MSFT_DNSClientCache';
-
-export const DNS_RECORD_TYPE_NUMBER: Record<string, number> = {
-  A: 1, NS: 2, CNAME: 5, SOA: 6, PTR: 12, MX: 15, TXT: 16, AAAA: 28, SRV: 33,
-};
 
 export function dnsRdataLength(type: string, value: string): number {
   const upper = type.toUpperCase();
@@ -110,6 +109,48 @@ export function dnsCacheRowsOf(views: readonly DnsCacheRecordView[]): DnsCacheRo
   }));
 }
 
+export interface DnsAnswerRow {
+  name: string;
+  type: string;
+  ttl: number;
+  section: DnsCacheSection;
+  fields: Record<string, string | number | readonly string[]>;
+}
+
+export function dnsAnswerRowOf(record: ResourceRecord): DnsAnswerRow {
+  const base = { name: record.name, type: rrTypeName(record.data.type), ttl: record.ttl, section: 'Answer' as const };
+  const data = record.data;
+  switch (data.type) {
+    case RRType.A:
+      return { ...base, fields: { IPAddress: data.address.toString(), IP4Address: data.address.toString() } };
+    case RRType.AAAA:
+      return { ...base, fields: { IPAddress: data.address.toString(), IP6Address: data.address.toString() } };
+    case RRType.SRV:
+      return { ...base, fields: { NameTarget: data.target, Priority: data.priority, Weight: data.weight, Port: data.port } };
+    case RRType.MX:
+      return { ...base, fields: { NameExchange: data.exchange, Preference: data.preference } };
+    case RRType.NS:
+      return { ...base, fields: { NameHost: data.nsdname } };
+    case RRType.CNAME:
+      return { ...base, fields: { NameHost: data.cname } };
+    case RRType.PTR:
+      return { ...base, fields: { NameHost: data.ptrdname } };
+    case RRType.TXT:
+      return { ...base, fields: { Strings: [...data.text] } };
+    case RRType.SOA:
+      return {
+        ...base,
+        fields: {
+          PrimaryServer: data.mname, NameAdministrator: data.rname, SerialNumber: data.serial,
+          TimeToZoneRefresh: data.refresh, TimeToZoneFailureRetry: data.retry,
+          TimeToExpiration: data.expire, DefaultTTL: data.minimum,
+        },
+      };
+    default:
+      return { ...base, fields: {} };
+  }
+}
+
 const DISPLAY_DNS_HEADER = 'Windows IP Configuration';
 
 export function renderDisplayDns(rows: readonly DnsCacheRow[]): string {
@@ -121,7 +162,7 @@ export function renderDisplayDns(rows: readonly DnsCacheRow[]): string {
     out.push(`    ${r.entry}`);
     out.push(`    ----------------------------------------`);
     out.push(`    Record Name . . . . . : ${r.recordName}`);
-    out.push(`    Record Type . . . . . : ${DNS_RECORD_TYPE_NUMBER[r.recordType.toUpperCase()] ?? 0}`);
+    out.push(`    Record Type . . . . . : ${rrTypeFromName(r.recordType) ?? 0}`);
     out.push(`    Time To Live  . . . . : ${r.timeToLive}`);
     out.push(`    Data Length . . . . . : ${r.dataLength}`);
     out.push(`    Section . . . . . . . : ${r.section}`);

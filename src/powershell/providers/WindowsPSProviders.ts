@@ -14,6 +14,7 @@
  */
 
 
+import { findWmiClass } from '@/network/devices/windows/WmiClasses';
 import type { WindowsPC } from '@/network/devices/WindowsPC';
 import type { ServiceStartType } from '@/network/devices/windows/WindowsServiceManager';
 import type { WindowsServer } from '@/network/devices/WindowsServer';
@@ -24,10 +25,10 @@ import { RemoteAccessVpnClient } from '@/network/ipsec/RemoteAccessVpnClient';
 import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY } from '@/network/devices/windows/PSRegistryProvider';
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
 import {
-  LOOPBACK_IFINDEX, adapterIfIndex, toDisplayName, toPortName, formatLinkSpeedMbps,
+  LOOPBACK_IFINDEX, toDisplayName, toPortName, formatLinkSpeedMbps, withWindowsZone,
 } from '@/network/devices/windows/WindowsInterfaceNaming';
 import { NO_MATCHING_INTERFACE } from '@/network/devices/windows/netIpAddress';
-import { type DnsCacheRow, dnsCacheRowsOf } from '@/network/devices/windows/dnsClientCache';
+import { type DnsAnswerRow, type DnsCacheRow, dnsAnswerRowOf, dnsCacheRowsOf } from '@/network/devices/windows/dnsClientCache';
 import { resolveAdapter, resolveAdapterPortName } from '@/network/devices/windows/netAdapter';
 import {
   memberFailureReason, memberStatus, normaliseAdminMode, normaliseLacpTimer,
@@ -38,6 +39,7 @@ import type { NetNeighborPlan, NetNeighborState } from '@/network/devices/window
 import { isValidIPv4 } from '@/network/core/ip';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { discoverDcHostname, rootDnOf } from '@/network/devices/windows/domain/DcHostnameDiscovery';
+import { locateDomainController } from '@/network/devices/windows/domain/DcLocator';
 import { dialLdap } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 
@@ -55,7 +57,7 @@ function mapV4Origin(origin: 'manual' | 'dhcp' | 'link-local'): { prefixOrigin: 
 }
 import { JobProvider } from '@/powershell/providers/JobProvider';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
-import { WINDOWS_LOOPBACK_ROUTES, LOOPBACK_IFALIAS } from '@/network/devices/windows/WindowsLoopbackRoutes';
+import { WINDOWS_LOOPBACK_ROUTES, WINDOWS_LOOPBACK_ROUTES_V6, LOOPBACK_IFALIAS } from '@/network/devices/windows/WindowsLoopbackRoutes';
 import type {
   PSProviders,
   IFileSystemProvider, IRegistryProvider, IServiceProvider,
@@ -94,7 +96,7 @@ import type {
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetAdapterEntry, AdapterStatisticsInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   NicTeamInfo, NicTeamMemberInfo, NicTeamNicInfo, NewNicTeamRequest, SetNicTeamRequest,
-  VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
+  VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo, PartitionInfo, IWmiProvider,
   NeighborInfo,
 } from '@/powershell/providers/PSProviders';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
@@ -1625,15 +1627,17 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return (this.pc as unknown as { name: string }).name;
   }
   getAdapters(): NetAdapterEntry[] {
-    return this.pc.getPorts().map((port, idx) => {
+    return this.pc.getPorts().map((port) => {
       const portName = port.getName();
       const connected = port.isOperationallyUp();
       const aggregated = this.pc.aggregateLinkSpeedMbps(portName);
+      const card = this.pc.adapterIdentityOf(portName);
       return {
         portName,
         name: this.pc.adapterAlias(portName),
-        interfaceDescription: this.pc.interfaceDescriptionOf(portName),
-        ifIndex: adapterIfIndex(idx),
+        interfaceDescription: card.description,
+        interfaceGuid: card.guid,
+        ifIndex: card.ifIndex,
         status: port.isAdminDown() ? 'Disabled' : (connected ? 'Up' : 'Disconnected'),
         macAddress: port.getMAC().toString(),
         linkSpeed: connected
@@ -1843,6 +1847,11 @@ class WindowsNetworkAdapter implements INetworkProvider {
         getIPAddress: () => unknown;
         getSubnetMask?: () => { toCIDR?: () => number } | null;
         getIPv4Origin?: () => 'manual' | 'dhcp' | 'link-local';
+        getIPv6Addresses?: () => Array<{
+          address: { toString: () => string };
+          prefixLength: number;
+          origin: string;
+        }>;
       }>;
       getInterfaceLeaseLifetimes?: (ifName: string) => { validSeconds: number; preferredSeconds: number } | null;
     };
@@ -1851,7 +1860,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const filtered = resolvedFilter
       ? ports.filter(p => p.name.toLowerCase() === resolvedFilter.toLowerCase())
       : ports;
-    filtered.forEach((p, idx) => {
+    filtered.forEach((p) => {
       const raw = p.getIPAddress();
       if (raw) {
         const ip = String((raw as { toString: () => string }).toString());
@@ -1863,12 +1872,26 @@ class WindowsNetworkAdapter implements INetworkProvider {
           ipAddress: ip,
           prefixLength: typeof cidr === 'number' ? cidr : 24,
           ifAlias: toDisplayName(p.name),
-          ifIndex: adapterIfIndex(idx),
+          ifIndex: this.pc.adapterIfIndexOf(p.name),
           prefixOrigin,
           suffixOrigin,
           addressFamily: ip.includes(':') ? 'IPv6' : 'IPv4',
           validLifetimeSeconds: lease?.validSeconds,
           preferredLifetimeSeconds: lease?.preferredSeconds,
+        });
+      }
+      const ifIndex = this.pc.adapterIfIndexOf(p.name);
+      for (const entry of p.getIPv6Addresses?.() ?? []) {
+        const rendered = withWindowsZone(entry.address, ifIndex);
+        const wellKnown = entry.origin === 'link-local';
+        out.push({
+          ipAddress: rendered,
+          prefixLength: entry.prefixLength,
+          ifAlias: toDisplayName(p.name),
+          ifIndex,
+          prefixOrigin: wellKnown ? 'WellKnown' : 'Manual',
+          suffixOrigin: wellKnown ? 'Link' : 'Manual',
+          addressFamily: 'IPv6',
         });
       }
     });
@@ -2023,6 +2046,31 @@ class WindowsNetworkAdapter implements INetworkProvider {
         destinationPrefix: `${lo.network}/${lo.prefixLength}`,
         ifAlias: LOOPBACK_IFALIAS, nextHop: UNSPECIFIED_NEXT_HOP.IPv4, routeMetric: lo.metric,
       };
+      seen.add(netRouteKey(row));
+      out.push(row);
+    }
+    for (const lo of WINDOWS_LOOPBACK_ROUTES_V6) {
+      const row: RouteInfo = {
+        destinationPrefix: `${lo.prefix}/${lo.prefixLength}`,
+        ifAlias: LOOPBACK_IFALIAS, nextHop: UNSPECIFIED_NEXT_HOP.IPv6, routeMetric: lo.metric,
+      };
+      seen.add(netRouteKey(row));
+      out.push(row);
+    }
+    const v6 = (this.pc as unknown as {
+      getIPv6RoutingTable: () => Array<{
+        prefix: { toString(): string }; prefixLength: number;
+        nextHop: { toString(): string } | null; iface: string; metric: number;
+      }>;
+    }).getIPv6RoutingTable();
+    for (const r of v6) {
+      const row: RouteInfo = {
+        destinationPrefix: `${r.prefix.toString()}/${r.prefixLength}`,
+        ifAlias: toDisplayName(r.iface),
+        nextHop: r.nextHop ? r.nextHop.toString() : UNSPECIFIED_NEXT_HOP.IPv6,
+        routeMetric: r.metric,
+      };
+      if (seen.has(netRouteKey(row))) continue;
       seen.add(netRouteKey(row));
       out.push(row);
     }
@@ -2182,7 +2230,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
   }
   testConnection(target: string): boolean {
     const probe = this.testPingProbe(target);
-    return probe?.success ?? false;
+    return probe?.probes[0]?.success ?? false;
   }
   resolveDns(name: string): string[] { return this.pc.resolveDnsSync(name); }
   resolveDnsWithOptions(name: string, options: {
@@ -2195,17 +2243,25 @@ class WindowsNetworkAdapter implements INetworkProvider {
   resolveDnsViaServerWithTtl(name: string, server: string): Array<{ ip: string; ttl: number }> {
     return this.pc.resolveDnsViaServerWithTtlSync(name, server);
   }
+  resolveDnsRecords(name: string, type: string, server?: string): DnsAnswerRow[] | null {
+    const records = this.pc.lookupDnsRecordsSync(name, type, server);
+    return records === null ? null : records.map(dnsAnswerRowOf);
+  }
   getDnsClientCache(): DnsCacheRow[] {
     return dnsCacheRowsOf(this.pc.dnsCache.entries());
   }
   clearDnsClientCache(): void { this.pc.dnsCache.flush(); }
   invokeWebRequest(url: string) { return this.pc.invokeWebRequest(url); }
   sendMailMessage(opts: Parameters<WindowsPC['sendMailMessage']>[0]) { return this.pc.sendMailMessage(opts); }
-  testPingProbe(target: string) {
+  testPingProbe(target: string, count = 1) {
     const ip = this.resolveTargetSync(target);
     if (!ip) return null;
-    const r = this.pc.sendPingProbeSync(ip);
-    return { success: r.success, rttMs: r.rttMs, resolvedIp: ip.toString() };
+    const probes: Array<{ success: boolean; rttMs: number }> = [];
+    for (let sent = 0; sent < Math.max(1, count); sent++) {
+      const r = this.pc.sendPingProbeSync(ip);
+      probes.push({ success: r.success, rttMs: r.rttMs });
+    }
+    return { resolvedIp: ip.toString(), probes };
   }
   traceRoute(target: string): string[] {
     const ip = this.resolveTargetSync(target);
@@ -2253,11 +2309,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
       getPorts: () => Array<{ name: string }>;
       getNeighborCache?: () => Map<string, { mac: MACAddress; iface: string; state: string }>;
     };
-    const ports = pc.getPorts();
-    const indexOf = (iface: string): number => {
-      const position = ports.findIndex(p => p.name === iface);
-      return position < 0 ? LOOPBACK_IFINDEX : adapterIfIndex(position);
-    };
+    const indexOf = (iface: string): number => this.pc.adapterIfIndexOf(iface);
     const arpState: Record<string, NetNeighborState> = {
       static: 'Permanent', dynamic: 'Reachable', failed: 'Unreachable',
     };
@@ -2650,34 +2702,82 @@ class WindowsEnvironmentAdapter implements IEnvironmentProvider {
   }
 }
 
+/**
+ * `Get-CimInstance` et `wmic` sont DEUX FACADES du meme WMI. Elles
+ * tirent donc de la meme declaration de classes, sans quoi
+ * `wmic logicaldisk` pouvait servir une classe que
+ * `Get-CimInstance Win32_LogicalDisk` declarait invalide — ce qui etait
+ * le cas mesure.
+ */
+class WindowsWmiAdapter implements IWmiProvider {
+  constructor(private readonly pc: WindowsPC) {}
+  instances(className: string): Array<Record<string, string>> | null {
+    const klass = findWmiClass(className);
+    return klass ? klass.rows(this.pc.wmiHost()) : null;
+  }
+}
+
+/** Windows aligne sa premiere partition sur 1 Mio. */
+const FIRST_PARTITION_OFFSET = 1_048_576;
+
+/**
+ * Un disque PHYSIQUE n'est pas un volume. Cet adaptateur lisait la liste
+ * des lettres de lecteur et en fabriquait un disque par lettre, si bien
+ * qu'un `mkdir E:\` faisait apparaitre un troisieme disque dur, et que
+ * le numero de serie « du disque » etait celui du VOLUME. Les disques,
+ * leurs partitions et leurs tailles viennent de l'inventaire materiel ;
+ * seule la place LIBRE vient du systeme de fichiers, qui la consomme.
+ */
 class WindowsDiskAdapter implements IDiskProvider {
   constructor(private readonly pc: WindowsPC) {}
+
+  private disks() {
+    return this.pc.getHardware().storage;
+  }
+
   listDisks(): DiskInfo[] {
-    const fs = this.pc.getFileSystem();
-    return fs.listDrives().map((drive, index) => {
-      const letter = drive.charAt(0).toUpperCase();
-      const boot = letter === 'C';
+    return this.disks().map((disk, index) => {
+      const boot = disk.partitions.some((p) => p.mountPoint.toUpperCase().startsWith('C'));
       return {
         number: index,
-        friendlyName: boot ? 'Microsoft Virtual Disk' : `Virtual HD ${letter}:`,
-        size: fs.getDriveCapacity(letter),
+        friendlyName: disk.model,
+        size: disk.sizeBytes,
         partitionStyle: 'MBR',
         operationalStatus: 'Online',
         uniqueId: `{00000000-0000-0000-0000-${String(index + 1).padStart(12, '0')}}`,
-        serialNumber: fs.getVolumeSerialNumber(letter).replace('-', ''),
+        serialNumber: disk.serial,
         isBoot: boot,
         isSystem: boot,
       };
     });
   }
+
+  listPartitions(): PartitionInfo[] {
+    const out: PartitionInfo[] = [];
+    this.disks().forEach((disk, diskNumber) => {
+      let offset = FIRST_PARTITION_OFFSET;
+      disk.partitions.forEach((part, index) => {
+        out.push({
+          diskNumber,
+          partitionNumber: index + 1,
+          driveLetter: part.mountPoint.charAt(0).toUpperCase(),
+          offset,
+          size: part.sizeBytes,
+          type: 'IFS',
+        });
+        offset += part.sizeBytes;
+      });
+    });
+    return out;
+  }
+
   listVolumes(): VolumeInfo[] {
     const fs = this.pc.getFileSystem();
-    const labels: Record<string, string> = { C: 'Windows', D: 'Data' };
     return fs.listDrives().map(drive => {
       const letter = drive.charAt(0).toUpperCase();
       return {
         driveLetter: letter,
-        fileSystemLabel: labels[letter] ?? 'Local Disk',
+        fileSystemLabel: fs.getVolumeLabel(letter) || 'Local Disk',
         fileSystem: 'NTFS',
         sizeRemaining: fs.getFreeDiskSpace(letter),
         size: fs.getDriveCapacity(letter),
@@ -2711,7 +2811,9 @@ class WindowsComputerAdapter implements IComputerProvider {
   private device(): JoinableDevice { return this.pc as unknown as JoinableDevice; }
 
   join(domainName: string, credential: { username: string; password: string }, server?: string, opts?: { ouPath?: string; newName?: string }): AdOpResult {
-    const dcAddress = server ?? this.pc.resolveHostnameSync(domainName)?.toString();
+    const dcAddress = server
+      ?? locateDomainController(this.pc, domainName)?.address.toString()
+      ?? this.pc.resolveHostnameSync(domainName)?.toString();
     if (!dcAddress) {
       return { ok: false, message: `Computer '${this.pc.getHostname()}' failed to join domain '${domainName}': The specified domain either does not exist or could not be contacted.` };
     }
@@ -3537,6 +3639,7 @@ export function createWindowsPSProviders(
     identity: (pc as unknown as { getTimezoneStore?: () => { timezone: string; setTimezone(n: string): void } }).getTimezoneStore?.() ?? null,
     scheduledTasks: new WindowsScheduledTaskAdapter(pc),
     disks:          new WindowsDiskAdapter(pc),
+    wmi:            new WindowsWmiAdapter(pc),
     environment:    new WindowsEnvironmentAdapter(pc),
     remoting:       new WindowsRemotingAdapter(pc),
     roles:          pc.getRoleManager() ? new WindowsRoleAdapter(pc) : null,

@@ -52,15 +52,35 @@
  * `TODO.md` reste ouverte — elle demande d'extraire le magasin
  * d'horloge du service de gestion, ce que ce lot prepare sans le faire.
  *
- * Et la convention de BORD reste assumee plutot que sourcee :
- * `cisco.com` et `support.huawei.com` sont injoignables depuis cet
- * environnement. Voir l'entree `TODO.md` correspondante.
+ * La FORMULATION constructeur de la convention de bord reste hors
+ * d'atteinte : `cisco.com` et `support.huawei.com` sont tous deux
+ * bloques par le proxy de sortie. Voir l'entree `TODO.md`.
+ *
+ * Mais la convention elle-meme n'est plus assumee, et c'est l'objet des
+ * deux derniers cas. La regle `CET / CEST recurring last Sun Mar 2:00
+ * last Sun Oct 3:00` DECRIT `Europe/Paris` ; or tzdata, lui, est
+ * joignable, par le socle du lot T1. Les deux se comparent donc
+ * directement, et sur toute l'annee 2026 :
+ *
+ *     525 600 minutes comparees -> AUCUN ecart
+ *
+ * Cela ne prouve pas ce que Cisco ECRIT ; cela prouve que l'evaluation
+ * ecrite a la main reproduit le fuseau reel que l'operateur decrit, ce
+ * qui est la question a laquelle un apprenant compare sa propre sortie
+ * (`CLAUDE.md` §8). Ce qui restait indecidable se reduit donc a la
+ * formulation, et a elle seule.
+ *
+ * Le cas minute par minute garde la forme de la bascule, que la
+ * comparaison annuelle prouve sans la montrer : au PRINTEMPS l'heure
+ * locale saute de 01:59 a 03:00 — l'heure 02:00-02:59 n'existe pas ce
+ * jour-la — et a l'AUTOMNE elle repasse de 02:59 CEST a 02:00 CET, si
+ * bien que cette heure-la se produit deux fois.
  *
  * ── Discrimination ──────────────────────────────────────────────────
  *
- * Mesure, et non prediction : `git stash push -- src/network` fait
- * tomber **10 des 12 cas**. Les 2 qui passent des deux cotes sont
- * nommes :
+ * Mesure, et non prediction : `git stash push -- src/network` faisait
+ * tomber **10 des 12 cas** du lot. Les 2 qui passaient des deux cotes
+ * sont nommes :
  *
  *   - « en janvier, show clock reste a l'heure standard » est le TEMOIN
  *     et le cas de NON-REGRESSION a la fois. C'etait la seule reponse
@@ -73,9 +93,20 @@
  *     une regle absente decalerait toutes les machines qui n'en ont pas,
  *     c'est-a-dire la quasi-totalite du depot. Sa chute signalerait que
  *     le lot a casse le cas ordinaire pour servir le cas rare.
+ *
+ * **Les DEUX DERNIERS cas ne discriminent RIEN, et c'est assume.** Ils
+ * ont ete ajoutes apres coup, sur un arbre ou le lot etait deja commis,
+ * si bien qu'il n'y a plus d'avant a leur opposer. Ils ne mesurent pas
+ * un defaut ferme : ils POSENT EN CONTRAT une convention qui n'etait
+ * jusque-la qu'une decision d'ecriture, et que rien n'aurait rattrapee
+ * si quelqu'un l'avait retournee. C'est leur seule raison d'etre, et
+ * elle regarde vers l'avant plutot que vers l'arriere.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { clockReadingAt, type DeviceClockConfig } from '@/network/core/time/DeviceClock';
+import { TimeZone } from '@/network/core/time/TimeZone';
+import { offsetMinutesAt } from '@/network/core/time/TimeZoneRegistry';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
@@ -208,4 +239,45 @@ describe('les deux constructeurs lisent le MEME instant', () => {
     expect(await c.executeCommand('show clock')).toContain('14:00:00');
     expect(await h.executeCommand('display clock')).toContain('14:00:00');
   }, 30000);
+});
+
+const PARIS_ECRIT_A_LA_MAIN: DeviceClockConfig = {
+  timezone: 'CET', offsetMin: 60,
+  summerTimezone: 'CEST', summerKind: 'recurring',
+  daylightStart: 'last Sun Mar 2:00', daylightEnd: 'last Sun Oct 3:00',
+  daylightOffsetMin: 60,
+};
+
+describe('la regle ecrite a la main reproduit le fuseau reel', () => {
+  it('elle s_accorde a tzdata sur CHAQUE minute de l_annee', () => {
+    const paris = TimeZone.of('Europe/Paris');
+    const ecarts: string[] = [];
+    let comparees = 0;
+
+    for (let at = Date.UTC(2026, 0, 1); at < Date.UTC(2027, 0, 1); at += 60_000) {
+      comparees++;
+      const regle = clockReadingAt(PARIS_ECRIT_A_LA_MAIN, at).offsetMin;
+      const tzdata = offsetMinutesAt(paris, at);
+      if (regle !== tzdata && ecarts.length < 5) {
+        ecarts.push(`${new Date(at).toISOString()} regle=${regle} tzdata=${tzdata}`);
+      }
+    }
+
+    expect(comparees).toBe(525_600);
+    expect(ecarts).toEqual([]);
+  }, 60000);
+
+  it('au printemps l_heure locale SAUTE, a l_automne elle REPASSE', () => {
+    const localeA = (iso: string): string => {
+      const local = new Date(clockReadingAt(PARIS_ECRIT_A_LA_MAIN, Date.parse(iso)).localMs);
+      return `${String(local.getUTCHours()).padStart(2, '0')}`
+        + `:${String(local.getUTCMinutes()).padStart(2, '0')}`;
+    };
+
+    expect(localeA('2026-03-29T00:59:00Z')).toBe('01:59');
+    expect(localeA('2026-03-29T01:00:00Z')).toBe('03:00');
+
+    expect(localeA('2026-10-25T00:59:00Z')).toBe('02:59');
+    expect(localeA('2026-10-25T01:00:00Z')).toBe('02:00');
+  });
 });

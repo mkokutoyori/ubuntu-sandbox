@@ -844,11 +844,13 @@ describe('Batch 32: OSPF advanced config commands', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('Batch 33: IPv6 ACL support', () => {
-  it('should create IPv6 ACL with acl ipv6', async () => {
+  it('refuses `acl ipv6` and names the missing piece', async () => {
     const r = new HuaweiRouter('R1');
     await r.executeCommand('system-view');
     const result = await r.executeCommand('acl ipv6 name IPV6_ACL');
-    expect(result).toBe('');
+    expect(result).toContain('not supported');
+    expect(result).toContain('traffic-filter ipv6');
+    expect(r.getPrompt()).not.toContain('IPV6_ACL');
   });
 });
 

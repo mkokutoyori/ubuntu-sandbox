@@ -43,6 +43,9 @@ import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddr
 } from '../core/types';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { VlanSet } from './switch/VlanSet';
+import {
+  evaluateMacAcl, isIpEtherType, type MacAccessList,
+} from './switch/MacAccessList';
 import { RouterDhcpClient } from './router/RouterDhcpClient';
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
 import { ControlPlaneUdpEndpoint } from './udp/ControlPlaneUdpEndpoint';
@@ -95,6 +98,7 @@ import { SwitchSecurityService } from './switch/SwitchSecurityService';
 import { CiscoHttpService } from './router/management/CiscoHttpService';
 import { SnmpService } from './router/management/SnmpService';
 import { PortMirror, type MirrorDirection, type MirrorSession } from './switch/PortMirror';
+import { compactVlanList } from './shells/cli/vlanList';
 import { ACLEngine } from './router/ACLEngine';
 import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
 import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
@@ -205,7 +209,8 @@ export interface PrivateVlanPortConfig {
 
 export interface VlanAccessMapRule {
   sequence: number;
-  matchIpAcl?: string;
+  matchIpAcls?: string[];
+  matchMacAcls?: string[];
   action: 'forward' | 'drop';
 }
 
@@ -329,6 +334,11 @@ export abstract class Switch extends Equipment {
 
   private readonly _deviceClock = new DeviceClockStore();
   getDeviceClock(): DeviceClockStore { return this._deviceClock; }
+
+  localClock(): { localMs: number; offsetMin: number } {
+    const lecture = this._deviceClock.readingAt(this.getSystemClockMs());
+    return { localMs: lecture.localMs, offsetMin: lecture.offsetMin };
+  }
 
   private macTable: Map<string, MACTableEntry> = new Map(); // key: "vlan:mac"
   private macLearningPorts = new Map<string, MacLearningAction>();
@@ -484,6 +494,10 @@ export abstract class Switch extends Equipment {
   private arpTable: Map<string, ARPEntry> = new Map();
   private readonly arpStats = new ArpStats();
   private ipRoutingEnabled = false;
+
+  // ─── MAC access lists (filtrage NON-IP) ────────────────────────
+  private macAccessLists: Map<string, MacAccessList> = new Map();
+  private macAccessGroups: Map<string, string> = new Map();
 
   // ─── Dynamic ARP Inspection ────────────────────────────────────
   private arpInspection: ArpInspectionConfig = createDefaultArpInspectionConfig();
@@ -1505,9 +1519,18 @@ export abstract class Switch extends Equipment {
     for (const [name, rules] of this.vlanAccessMaps) {
       for (const rule of rules) {
         out.push(`vlan access-map ${name} ${rule.sequence}`);
-        if (rule.matchIpAcl) out.push(` match ip address ${rule.matchIpAcl}`);
+        if (rule.matchIpAcls?.length) out.push(` match ip address ${rule.matchIpAcls.join(' ')}`);
+        if (rule.matchMacAcls?.length) out.push(` match mac address ${rule.matchMacAcls.join(' ')}`);
         out.push(` action ${rule.action}`);
       }
+    }
+    return out;
+  }
+
+  vlanFilterRunningConfigLines(): string[] {
+    const out: string[] = [];
+    for (const [name, vlans] of this.getVlanFilterBindings()) {
+      out.push(`vlan filter ${name} vlan-list ${compactVlanList(vlans)}`);
     }
     return out;
   }
@@ -1549,6 +1572,15 @@ export abstract class Switch extends Equipment {
     return parCarte;
   }
 
+  removeVlanAccessMapSequence(mapName: string, sequence: number): boolean {
+    const rules = this.vlanAccessMaps.get(mapName);
+    if (!rules) return false;
+    const index = rules.findIndex((r) => r.sequence === sequence);
+    if (index === -1) return false;
+    rules.splice(index, 1);
+    return true;
+  }
+
   removeVlanAccessMap(mapName: string): boolean {
     for (const [vlan, name] of this.vlanFilterBindings) {
       if (name === mapName) this.vlanFilterBindings.delete(vlan);
@@ -1580,16 +1612,44 @@ export abstract class Switch extends Equipment {
     if (!mapName) return true;
     const rules = this.vlanAccessMaps.get(mapName);
     if (!rules || rules.length === 0) return true;
-    if (frame.etherType !== ETHERTYPE_IPV4) return true;
-    const ip = frame.payload as IPv4Packet | undefined;
-    if (!ip || ip.type !== 'ipv4') return true;
-    for (const rule of rules) {
-      if (!rule.matchIpAcl) return rule.action === 'forward';
-      if (this.getVaclEngine().evaluateACLByName(rule.matchIpAcl, ip) === 'permit') {
-        return rule.action === 'forward';
+
+    const isIp = isIpEtherType(frame.etherType);
+    const ip = isIp ? frame.payload as IPv4Packet | undefined : undefined;
+    if (isIp && frame.etherType !== ETHERTYPE_IPV4) return true;
+    if (isIp && (!ip || ip.type !== 'ipv4')) return true;
+
+    const clauseFor = (rule: VlanAccessMapRule): string[] | undefined =>
+      isIp ? rule.matchIpAcls : rule.matchMacAcls;
+    const otherClauseFor = (rule: VlanAccessMapRule): string[] | undefined =>
+      isIp ? rule.matchMacAcls : rule.matchIpAcls;
+
+    let sawClauseForThisType = false;
+    for (const rule of [...rules].sort((a, b) => a.sequence - b.sequence)) {
+      const mine = clauseFor(rule);
+      if (mine?.length) {
+        sawClauseForThisType = true;
+        if (this.vaclClauseMatches(mine, isIp, ip, frame)) return rule.action === 'forward';
+        continue;
       }
+      if (otherClauseFor(rule)?.length) continue;
+      return rule.action === 'forward';
     }
-    return false;
+    return !sawClauseForThisType;
+  }
+
+  private vaclClauseMatches(
+    names: string[], isIp: boolean, ip: IPv4Packet | undefined, frame: EthernetFrame,
+  ): boolean {
+    if (isIp) {
+      if (!ip) return false;
+      const engine = this.getVaclEngine();
+      return names.some((name) => engine.evaluateACLByName(name, ip) === 'permit');
+    }
+    return names.some((name) => {
+      const list = this.macAccessLists.get(name);
+      return list !== undefined
+        && evaluateMacAcl(list, frame.srcMAC, frame.dstMAC) === 'permit';
+    });
   }
 
   /** Huawei `traffic-filter inbound|outbound acl <N>` on a physical port. */
@@ -2136,6 +2196,12 @@ export abstract class Switch extends Equipment {
 
     // SPAN ingress copy must happen before any DAI/STP/VLAN drop.
     this.mirrorIngress(portName, frame);
+
+    if (!this.macAclPermits(portName, frame)) {
+      Logger.debug(this.id, 'switch:mac-acl-drop',
+        `${this.name}: inbound MAC ACL dropped frame on ${portName}`);
+      return;
+    }
 
     // ─── Port ACL (Huawei `traffic-filter inbound`) ─────────────
     if (!this.portAclPermits(portName, 'in', frame)) {
@@ -3604,6 +3670,26 @@ export abstract class Switch extends Equipment {
 
   _getArpInspectionConfig(): ArpInspectionConfig { return this.arpInspection; }
   _getArpAccessLists(): Map<string, ArpAccessList> { return this.arpAccessLists; }
+
+  _getMacAccessLists(): Map<string, MacAccessList> { return this.macAccessLists; }
+
+  _getMacAccessGroups(): Map<string, string> { return this.macAccessGroups; }
+
+  /**
+   * La liste MAC liee a ce port refuse-t-elle cette trame ?
+   *
+   * Une trame IP n'est JAMAIS soumise a une liste MAC — c'est la liste
+   * IP du meme port qui en repond. Les deux coexistent sur une
+   * interface, chacune sur son trafic.
+   */
+  private macAclPermits(portName: string, frame: EthernetFrame): boolean {
+    const nom = this.macAccessGroups.get(portName);
+    if (nom === undefined) return true;
+    if (isIpEtherType(frame.etherType)) return true;
+    const liste = this.macAccessLists.get(nom);
+    if (!liste) return true;
+    return evaluateMacAcl(liste, frame.srcMAC, frame.dstMAC) !== 'deny';
+  }
   _getArpErrDisabledPorts(): Set<string> { return this.arpErrDisabledPorts; }
   _getArpInspectionStats() {
     return this.arpInspectionPipeline?.getStats() ?? new Map();

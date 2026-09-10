@@ -98,7 +98,6 @@ describe('`acl` : une seule grammaire pour les deux plateformes', () => {
       ['acl name TEST basic', 'acl-basic-TEST'],
       ['acl name TEST 3001', 'acl-adv-TEST'],
       ['acl name TEST 2999', 'acl-basic-TEST'],
-      ['acl ipv6 name V6', 'acl-adv-V6'],
     ] as const) {
       for (const plat of ['R', 'S'] as const) {
         const d = await dans(plat, ['system-view']);

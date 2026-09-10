@@ -13,7 +13,8 @@ import { TimeZone } from '../../core/time/TimeZone';
 import { partsAt } from '../../core/time/TimeZoneRegistry';
 import { dhcpEnabledFor } from './WinAdapterFacts';
 import type { ProcessSession } from './WindowsProcessManager';
-import { adapterDisplayName } from './netAdapter';
+import { adapterDisplayName, type WindowsAdapterIdentity } from './netAdapter';
+import { aliasNotFound, parseWmicProperties, wmicQuery } from './Wmic';
 
 /** Minimal process-manager surface needed by `start`. */
 export interface WinSystemProcessManager {
@@ -61,11 +62,37 @@ export interface WinSystemContext {
   readonly hardware: {
     manufacturer: string;
     productName: string;
+    productUuid: string;
+    serialNumber: string;
     cpu: { sockets: number; cpuFamily: number; model: number; stepping: number; vendor: string; clockMhz: number };
-    memory: { totalKib: number; availableKib: number; swapTotalKib: number };
+    memory: {
+      totalKib: number; availableKib: number; swapTotalKib: number;
+      modules: ReadonlyArray<{
+        sizeMib: number; type: string; speedMtps: number;
+        manufacturer: string; locator: string; formFactor: string;
+      }>;
+    };
     firmware: { vendor: string; version: string; releaseDate: string };
+    mainboard: { manufacturer: string; productName: string; version: string; serialNumber: string };
+    storage: ReadonlyArray<{
+      name: string; sizeBytes: number; model: string; serial: string;
+      partitions: ReadonlyArray<unknown>;
+    }>;
+  };
+  /**
+   * Les volumes montés, lus là où `dir` et `Get-Volume` les lisent — le
+   * système de fichiers — pour que `wmic logicaldisk` ne puisse pas
+   * annoncer une place libre que `dir` compte autrement.
+   */
+  readonly volumes: {
+    letters(): string[];
+    capacityBytes(letter: string): number;
+    freeBytes(letter: string): number;
+    label(letter: string): string;
   };
   readonly ports: Map<string, Port>;
+  /** L'identite de la carte — description, index, GUID — lue a sa source. */
+  adapterIdentityOf(portName: string): WindowsAdapterIdentity;
   isDHCPConfigured(ifName: string): boolean;
   /** Volume serial source — same serial `dir` prints (single source of truth). */
   getVolumeSerialNumber(letter: string): string;
@@ -124,7 +151,7 @@ export function cmdSysteminfo(ctx: WinSystemContext): string {
   let idx = 1;
   for (const [name, port] of ctx.ports) {
     const displayName = adapterDisplayName(name, ctx.ports);
-    lines.push(`                           [${String(idx).padStart(2, '0')}]: Intel(R) Ethernet Connection`);
+    lines.push(`                           [${String(idx).padStart(2, '0')}]: ${ctx.adapterIdentityOf(name).description}`);
     const ip = port.getIPAddress();
     if (ip) {
       lines.push(`                                 Connection Name: ${displayName}`);
@@ -185,8 +212,9 @@ export function cmdVol(ctx: WinSystemContext, args: string[]): string {
   const arg = (args[0] ?? 'C:').toUpperCase().replace(/[:\\]+$/, '');
   const letter = arg.charAt(0) || 'C';
   const serial = ctx.getVolumeSerialNumber(letter);
+  const label = ctx.volumes.label(letter);
   return [
-    ` Volume in drive ${letter} has no label.`,
+    label ? ` Volume in drive ${letter} is ${label}` : ` Volume in drive ${letter} has no label.`,
     ` Volume Serial Number is ${serial}`,
   ].join('\n');
 }
@@ -564,22 +592,17 @@ export function cmdNbtstat(ctx: WinSystemContext, args: string[]): string {
   return 'NBTSTAT [ [-a RemoteName] [-A IP address] [-c] [-n] [-r] [-R] [-RR] [-s] [-S] [interval] ]';
 }
 
-/** `wmic logicaldisk get name` / minimal WMI stub. */
 export function cmdWmic(ctx: WinSystemContext, args: string[]): string {
   if (args.length === 0) return 'wmic:root\\cli>';
   const joined = args.join(' ').toLowerCase();
-  if (joined.includes('logicaldisk') && joined.includes('get name')) {
-    return 'Name  \nC:    ';
-  }
-  if (joined.includes('os get caption')) {
-    return `Caption                              \n${ctx.os.prettyName.padEnd(38)}`;
-  }
-  if (joined.includes('cpu get name')) {
-    return 'Name                                              \nIntel(R) Core(TM) i7 CPU @ 2.50GHz                ';
-  }
   if (joined.startsWith('nic ') || joined === 'nic') return wmicNic(ctx);
   if (joined.startsWith('nicconfig')) return wmicNicConfig(ctx);
-  return '';
+
+  const alias = args[0];
+  const getIndex = args.findIndex((a) => a.toLowerCase() === 'get');
+  if (getIndex > 1) return aliasNotFound(alias);
+  const asked = getIndex < 0 ? [] : parseWmicProperties(args.slice(getIndex + 1));
+  return wmicQuery(ctx, alias, asked) ?? aliasNotFound(alias);
 }
 
 function wmicNic(ctx: WinSystemContext): string {

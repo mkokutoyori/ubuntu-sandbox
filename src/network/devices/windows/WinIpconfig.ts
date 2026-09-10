@@ -27,6 +27,7 @@ import { dhcpEnabledFor } from './WinAdapterFacts';
 import { requireWindowsService } from './WinFeatureGate';
 import { dnsCacheRowsOf, renderDisplayDns } from './dnsClientCache';
 import { adapterDisplayName, adapterNameMatches } from './netAdapter';
+import { adapterIfIndex, withWindowsZone } from './WindowsInterfaceNaming';
 
 const IPCONFIG_HELP = `
 USAGE:
@@ -128,6 +129,10 @@ export function cmdIpconfig(ctx: WinCommandContext, args: string[]): string {
 
 // ─── Basic output ─────────────────────────────────────────────────
 
+function windowsZoneOf(ctx: WinCommandContext, portName: string): number {
+  return adapterIfIndex([...ctx.ports.keys()].indexOf(portName));
+}
+
 function ipconfigBasic(ctx: WinCommandContext): string {
   const lines: string[] = ['Windows IP Configuration', ''];
   for (const [name, port] of ctx.ports) {
@@ -147,13 +152,13 @@ function ipconfigBasic(ctx: WinCommandContext): string {
       lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
     } else {
       if (global6) lines.push(`   IPv6 Address. . . . . . . . . . . : ${global6}`);
-      if (linkLocal6) lines.push(`   Link-local IPv6 Address. . . . . . : ${linkLocal6}`);
+      if (linkLocal6) lines.push(`   Link-local IPv6 Address. . . . . . : ${withWindowsZone(linkLocal6, windowsZoneOf(ctx, name))}`);
 
       if (ip) {
         lines.push(`   IPv4 Address. . . . . . . . . . . : ${ip}`);
         lines.push(`   Subnet Mask . . . . . . . . . . . : ${mask || '255.255.255.0'}`);
       }
-      pushDefaultGatewayLines(lines, ctx);
+      pushDefaultGatewayLines(lines, ctx, windowsZoneOf(ctx, name));
     }
     lines.push('');
   }
@@ -191,19 +196,19 @@ function ipconfigAll(ctx: WinCommandContext): string {
     if (!adapterUp) {
       lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
       lines.push(`   Connection-specific DNS Suffix  . :`);
-      lines.push(`   Description . . . . . . . . . . . : Intel(R) Ethernet Connection`);
+      lines.push(`   Description . . . . . . . . . . . : ${ctx.adapterIdentityOf(name).description}`);
       lines.push(`   Physical Address. . . . . . . . . : ${mac}`);
       lines.push(`   DHCP Enabled. . . . . . . . . . . : ${dhcpEnabledFor(port, isDHCP) ? 'Yes' : 'No'}`);
       lines.push(`   Autoconfiguration Enabled . . . . : Yes`);
     } else {
       lines.push(`   Connection-specific DNS Suffix  . : ${ctx.getConnectionDnsSuffix(name)}`.trimEnd());
-      lines.push(`   Description . . . . . . . . . . . : Intel(R) Ethernet Connection`);
+      lines.push(`   Description . . . . . . . . . . . : ${ctx.adapterIdentityOf(name).description}`);
       lines.push(`   Physical Address. . . . . . . . . : ${mac}`);
       lines.push(`   DHCP Enabled. . . . . . . . . . . : ${dhcpEnabledFor(port, isDHCP) ? 'Yes' : 'No'}`);
       lines.push(`   Autoconfiguration Enabled . . . . : Yes`);
 
       if (global6) lines.push(`   IPv6 Address. . . . . . . . . . . : ${global6}(Preferred)`);
-      if (linkLocal6) lines.push(`   Link-local IPv6 Address. . . . . . : ${linkLocal6}(Preferred)`);
+      if (linkLocal6) lines.push(`   Link-local IPv6 Address. . . . . . : ${withWindowsZone(linkLocal6, windowsZoneOf(ctx, name))}(Preferred)`);
 
       if (ip) {
         lines.push(`   IPv4 Address. . . . . . . . . . . : ${ip}(Preferred)`);
@@ -218,7 +223,7 @@ function ipconfigAll(ctx: WinCommandContext): string {
           }
         }
 
-        pushDefaultGatewayLines(lines, ctx);
+        pushDefaultGatewayLines(lines, ctx, windowsZoneOf(ctx, name));
 
         if (isDHCP) {
           const dhcpState = ctx.getDHCPState(name);
@@ -244,7 +249,7 @@ function ipconfigAll(ctx: WinCommandContext): string {
 
         lines.push(`   NetBIOS over Tcpip. . . . . . . . : Enabled`);
       } else if (global6 || linkLocal6) {
-        pushDefaultGatewayLines(lines, ctx);
+        pushDefaultGatewayLines(lines, ctx, windowsZoneOf(ctx, name));
         lines.push(`   NetBIOS over Tcpip. . . . . . . . : Enabled`);
       }
     }
@@ -370,11 +375,11 @@ function ipconfigRenew(ctx: WinCommandContext, args: string[]): string {
     lines.push(`Ethernet adapter ${dn}:`);
     lines.push(`   Connection-specific DNS Suffix  . : ${ctx.getConnectionDnsSuffix(name)}`.trimEnd());
     if (global6) lines.push(`   IPv6 Address. . . . . . . . . . . : ${global6}`);
-    if (linkLocal6) lines.push(`   Link-local IPv6 Address. . . . . . : ${linkLocal6}`);
+    if (linkLocal6) lines.push(`   Link-local IPv6 Address. . . . . . : ${withWindowsZone(linkLocal6, windowsZoneOf(ctx, name))}`);
     if (ip) {
       lines.push(`   IPv4 Address. . . . . . . . . . . : ${ip}`);
       lines.push(`   Subnet Mask . . . . . . . . . . . : ${mask || '255.255.255.0'}`);
-      pushDefaultGatewayLines(lines, ctx);
+      pushDefaultGatewayLines(lines, ctx, windowsZoneOf(ctx, name));
     }
     lines.push('');
   }
@@ -478,9 +483,9 @@ function ipconfigSetClassId(ctx: WinCommandContext, args: string[], switchName: 
 // ─── Helpers ──────────────────────────────────────────────────────
 
 /** Real ipconfig lists the IPv6 gateway first, the IPv4 one on a continuation line. */
-function pushDefaultGatewayLines(lines: string[], ctx: WinCommandContext): void {
+function pushDefaultGatewayLines(lines: string[], ctx: WinCommandContext, zone: number): void {
   if (ctx.defaultGateway6) {
-    lines.push(`   Default Gateway . . . . . . . . . : ${ctx.defaultGateway6}`);
+    lines.push(`   Default Gateway . . . . . . . . . : ${withWindowsZone(ctx.defaultGateway6, zone)}`);
     if (ctx.defaultGateway) lines.push(`                                       ${ctx.defaultGateway}`);
     return;
   }

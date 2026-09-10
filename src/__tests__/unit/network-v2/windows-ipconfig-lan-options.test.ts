@@ -61,7 +61,10 @@ describe('ipconfig — options réels sur un LAN complet', () => {
       await pc1.executeCommand('ipconfig /renew');
       const out = await pc1.executeCommand('ipconfig');
       expect(out).toMatch(/IPv4 Address[ .]*: 192\.168\.1\.\d+/);
-      expect(out).toMatch(/Default Gateway[ .]*: 192\.168\.1\.1/);
+      expect(out).toMatch(/Link-local IPv6 Address[ .]*: fe80::[0-9a-f:]+%\d+/);
+      expect(out).toMatch(/IPv6 Address[ .]*: 2001:db8:1::/);
+      expect(out).toMatch(/Default Gateway[ .]*: fe80::[0-9a-f:]+%\d+\n\s+192\.168\.1\.1/);
+      expect(out).not.toMatch(/Lease Obtained/);
     });
 
     it('ipconfig /all affiche le serveur DHCP réel, le bail et les DNS transmis par le routeur', async () => {

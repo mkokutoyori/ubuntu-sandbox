@@ -37,20 +37,9 @@ import {
 import { matchEnumValue } from './netIpAddress';
 import { PortProxyRule, PORT_PROXY_FAMILIES, type PortProxyFamily } from './PortProxyRule';
 import { adapterDisplayName, resolveAdapterPortName } from './netAdapter';
+import { adapterIfIndex, withWindowsZone, LOOPBACK_IFINDEX } from './WindowsInterfaceNaming';
 import type { Port } from '../../hardware/Port';
 
-// ─── Per-device IPv6 route state (WeakMap keyed by ctx.ports for test isolation) ──
-// IPv6 addresses live on the real Port (port.configureIPv6/getIPv6Addresses),
-// not here — so ipconfig, ping -6 and the data plane all see the same state.
-
-interface IPv6RouteEntry { prefix: string; prefixLen: number; iface: string; nexthop: string; metric: number; published: boolean; }
-
-const ipv6RouteStore = new WeakMap<Map<string, any>, IPv6RouteEntry[]>();
-
-function getIPv6Routes(ctx: WinCommandContext): IPv6RouteEntry[] {
-  if (!ipv6RouteStore.has(ctx.ports)) ipv6RouteStore.set(ctx.ports, []);
-  return ipv6RouteStore.get(ctx.ports)!;
-}
 
 // ─── Help text matching real Windows netsh ─────────────────────────
 
@@ -780,15 +769,18 @@ function handleShowAddresses(ctx: NetshContext, ifFilter?: string): string {
 function handleShowIpInterfaces(ctx: NetshContext): string {
   const lines = ['', 'Idx     Met         MTU          State                Name',
     '---  ----------  ----------  ------------  ---------------------------'];
-  let idx = 1;
+  lines.push(
+    `${String(LOOPBACK_IFINDEX).padStart(3)}${String(75).padStart(12)}`
+    + `${String(4294967295).padStart(12)}${'connected'.padStart(14)}  Loopback Pseudo-Interface 1`,
+  );
+  const names = [...ctx.ports.keys()];
   for (const [name, port] of ctx.ports) {
     const displayName = adapterDisplayName(name, ctx.ports);
     const etat = port.isAdminDown() ? 'disabled' : (port.getIsUp() && port.hasCarrier() ? 'connected' : 'disconnected');
     lines.push(
-      `${String(idx).padStart(3)}${String(25).padStart(12)}${String(port.getMTU()).padStart(12)}`
-      + `${etat.padStart(14)}  ${displayName}`,
+      `${String(adapterIfIndex(names.indexOf(name))).padStart(3)}${String(25).padStart(12)}`
+      + `${String(port.getMTU()).padStart(12)}${etat.padStart(14)}  ${displayName}`,
     );
-    idx++;
   }
   lines.push('');
   return lines.join('\n');
@@ -1398,13 +1390,18 @@ To view help for a command, type the command, followed by a space, and then
       const publishMatch = args.join(' ').match(/\bpublish=(\w+)/i);
       const [prefix, pfxLen] = prefixRaw.split('/');
       const portName = resolveAdapterName(ifName, ctx.ports);
-      const routes = getIPv6Routes(ctx);
-      routes.push({
-        prefix, prefixLen: pfxLen ? parseInt(pfxLen, 10) : 48,
-        iface: portName, nexthop,
-        metric: metricMatch ? parseInt(metricMatch[1], 10) : 1,
-        published: publishMatch ? publishMatch[1].toLowerCase() === 'yes' : false,
-      });
+      if (publishMatch && !/^(yes|no)$/i.test(publishMatch[1])) {
+        return `The parameter is incorrect.`;
+      }
+      try {
+        ctx.addIPv6StaticRoute(
+          new IPv6Address(prefix), pfxLen ? parseInt(pfxLen, 10) : 48,
+          new IPv6Address(nexthop), portName,
+          metricMatch ? parseInt(metricMatch[1], 10) : 1,
+        );
+      } catch {
+        return `The parameter is incorrect.`;
+      }
       return 'Ok.';
     }
 
@@ -1416,7 +1413,7 @@ To view help for a command, type the command, followed by a space, and then
     const obj = (rest[0] || '').toLowerCase();
     const ifFilter = rest[1] || '';
 
-    if (obj === 'addresses') {
+    if (obj === 'addresses' || obj === 'address') {
       const lines: string[] = [''];
       for (const [portName, port] of ctx.ports) {
         if (ifFilter) {
@@ -1427,8 +1424,9 @@ To view help for a command, type the command, followed by a space, and then
         if (entries.length === 0) continue;
         const displayName = adapterDisplayName(portName, ctx.ports);
         lines.push(`Interface ${displayName} Parameters`);
+        const zone = adapterIfIndex([...ctx.ports.keys()].indexOf(portName));
         for (const e of entries) {
-          lines.push(`  Address ${e.address.toString()}/${e.prefixLength}`);
+          lines.push(`  Address ${withWindowsZone(e.address, zone)}/${e.prefixLength}`);
           lines.push(`    Type:          Unicast`);
           lines.push(`    DAD State:     Preferred`);
           lines.push('');
@@ -1437,21 +1435,26 @@ To view help for a command, type the command, followed by a space, and then
       return lines.join('\n');
     }
 
+    if (obj === 'interfaces' || obj === 'interface') {
+      return handleShowIpInterfaces(ctx);
+    }
+
     if (obj === 'neighbors' || obj === 'neighbor') {
       return handleShowNeighbors(ctx, 'ipv6');
     }
 
     if (obj === 'route' || obj === 'routes') {
-      const routes = getIPv6Routes(ctx);
       const lines: string[] = ['', 'Publish  Type      Met  Prefix                              NextHop/Interface'];
       lines.push('----------------------------------------------------------------------');
-      for (const r of routes) {
+      for (const r of ctx.getIPv6RoutingTable()) {
         if (ifFilter) {
           const resolved = resolveAdapterName(ifFilter, ctx.ports);
           if (r.iface !== resolved) continue;
         }
-        const prefix = `${r.prefix}/${r.prefixLen}`;
-        lines.push(`${r.published ? 'Yes' : 'No '.padEnd(9)}${'Static'.padEnd(10)}${String(r.metric).padEnd(5)}${prefix.padEnd(36)}${r.nexthop}`);
+        const prefix = `${r.prefix.toString()}/${r.prefixLength}`;
+        const target = r.nextHop ? r.nextHop.toString() : adapterDisplayName(r.iface, ctx.ports);
+        lines.push(`${'No '.padEnd(9)}${(r.nextHop ? 'Static' : 'Connected').padEnd(10)}`
+          + `${String(r.metric).padEnd(5)}${prefix.padEnd(36)}${target}`);
       }
       lines.push('');
       return lines.join('\n');
@@ -1465,10 +1468,17 @@ To view help for a command, type the command, followed by a space, and then
     const rest = args.slice(1);
     const obj = (rest[0] || '').toLowerCase();
     if (obj === 'route' || obj === 'routes') {
-      if (args[args.length - 1] === '?') {
+      const prefixRaw = rest[1] || '';
+      if (args[args.length - 1] === '?' || !prefixRaw) {
         return `Usage: netsh interface ipv6 delete route [prefix=]<string> [interface=]<string>`;
       }
-      return 'Ok.';
+      const [prefix, pfxLen] = prefixRaw.split('/');
+      let parsedPrefix: IPv6Address;
+      try { parsedPrefix = new IPv6Address(prefix); }
+      catch { return `The value for the IP address is invalid.`; }
+      const removed = ctx.removeIPv6StaticRoute(
+        parsedPrefix, pfxLen ? parseInt(pfxLen, 10) : 48);
+      return removed ? 'Ok.' : `Element not found.`;
     }
     if (obj === 'address') {
       // netsh interface ipv6 delete address <iface> <addr>

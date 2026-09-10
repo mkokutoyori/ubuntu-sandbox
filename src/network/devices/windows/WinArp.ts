@@ -176,9 +176,8 @@ function handleShow(ctx: WinCommandContext, flags: WinArpFlags): string {
   for (const [iface, ifEntries] of byIface) {
     const port = ctx.ports.get(iface);
     const ifaceIP = port?.getIPAddress()?.toString() || iface;
-    const ifaceIdx = parseInt(iface.replace(/\D/g, '') || '0', 10) + 1;
     lines.push('');
-    lines.push(`Interface: ${ifaceIP} --- 0x${ifaceIdx}`);
+    lines.push(`Interface: ${ifaceIP} --- 0x${ctx.adapterIdentityOf(iface).ifIndex.toString(16)}`);
     lines.push('  Internet Address      Physical Address      Type');
     for (const e of ifEntries) {
       lines.push(`  ${e.ip.padEnd(22)}${e.mac.padEnd(22)}${e.type}`);

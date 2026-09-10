@@ -8,6 +8,18 @@
  * - Positional parameters ($1, $2, ..., $@, $#)
  */
 
+/**
+ * Les variables que bash POSE pour lui-meme sans les exporter. Elles
+ * sont visibles dans le shell (`echo $UID`) mais absentes de
+ * l'environnement d'un processus enfant — releve sur une vraie
+ * machine, ou `env | grep -c ^EUID=` rend zero.
+ */
+const SHELL_LOCAL_VARIABLES = new Set([
+  'UID', 'EUID', 'PPID', 'HOSTNAME', 'BASH', 'BASH_VERSION', 'BASH_SUBSHELL',
+  'OSTYPE', 'HOSTTYPE', 'MACHTYPE', 'IFS', 'PS1', 'PS2', 'PS4',
+  'RANDOM', 'SECONDS', 'LINENO', 'BASHPID', 'GROUPS', 'HISTFILE', 'HISTSIZE',
+]);
+
 export interface EnvironmentOptions {
   /** Initial variables (e.g. PATH, HOME). */
   variables?: Record<string, string>;
@@ -63,6 +75,7 @@ export class Environment {
     if (options.variables) {
       for (const [k, v] of Object.entries(options.variables)) {
         this.vars.set(k, v);
+        if (!SHELL_LOCAL_VARIABLES.has(k)) this.exported.add(k);
       }
     }
     if (options.scriptName !== undefined) {
@@ -411,7 +424,7 @@ export class Environment {
     // Inline the visible variable set rather than chain to `this` so
     // writes against the snapshot never bubble up.
     for (const [k, v] of this.getAll()) sub.vars.set(k, v);
-    for (const ex of this.exported) sub.exported.add(ex);
+    for (const ex of Object.keys(this.getExported())) sub.exported.add(ex);
     for (const ro of this.readonlyVars) sub.readonlyVars.add(ro);
     sub.vars.set('0', this.get('0') ?? '');
     return sub;

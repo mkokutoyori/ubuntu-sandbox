@@ -385,11 +385,7 @@ export class InstallADDSDomainControllerCmdlet implements ICmdlet {
       ctx.emitError('Install-ADDSDomainController : Cannot process command because of one or more missing mandatory parameters: Credential.');
       return null;
     }
-    const server = ctx.named['server'] !== undefined ? psValueToString(ctx.named['server']) : undefined;
-    if (!server) {
-      ctx.emitError('Install-ADDSDomainController : Cannot process command because of one or more missing mandatory parameters: Server.');
-      return null;
-    }
+    const server = ctx.named['server'] !== undefined ? psValueToString(ctx.named['server']) : '';
     const password = securePasswordOf(ctx, 'safemodeadministratorpassword');
     if (!password) {
       ctx.emitError('Install-ADDSDomainController : Cannot process command because of one or more missing mandatory parameters: SafeModeAdministratorPassword.');

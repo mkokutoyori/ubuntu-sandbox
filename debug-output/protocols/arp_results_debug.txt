@@ -237,12 +237,12 @@ Total steps: 339
       link/ether 02:00:00:00:00:57 brd ff:ff:ff:ff:ff:ff
 
 [38/339] whq whq$ getmac
-  Physical Address  Transport Name          
-  ================= ========================
-  02-00-00-00-00-4B \Device\Tcpip_Ethernet_0
-  02-00-00-00-00-4C Media disconnected      
-  02-00-00-00-00-4D Media disconnected      
-  02-00-00-00-00-4E Media disconnected      
+  Physical Address  Transport Name                                      
+  ================= ====================================================
+  02-00-00-00-00-4B \Device\Tcpip_{325CE57B-ED2B-0015-7A32-87EF13476644}
+  02-00-00-00-00-4C Media disconnected                                  
+  02-00-00-00-00-4D Media disconnected                                  
+  02-00-00-00-00-4E Media disconnected                                  
 
 [39/339] whq whq$ ipconfig /all
   Windows IP Configuration
@@ -256,10 +256,11 @@ Total steps: 339
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller
      Physical Address. . . . . . . . . : 02-00-00-00-00-4B
      DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4b%2(Preferred)
      IPv4 Address. . . . . . . . . . . : 10.1.1.11(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
@@ -269,7 +270,7 @@ Total steps: 339
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #2
      Physical Address. . . . . . . . . : 02-00-00-00-00-4C
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -278,7 +279,7 @@ Total steps: 339
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #3
      Physical Address. . . . . . . . . : 02-00-00-00-00-4D
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -287,19 +288,19 @@ Total steps: 339
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #4
      Physical Address. . . . . . . . . : 02-00-00-00-00-4E
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
   
 
 [40/339] wbr wbr$ getmac
-  Physical Address  Transport Name          
-  ================= ========================
-  02-00-00-00-00-4F \Device\Tcpip_Ethernet_0
-  02-00-00-00-00-50 Media disconnected      
-  02-00-00-00-00-51 Media disconnected      
-  02-00-00-00-00-52 Media disconnected      
+  Physical Address  Transport Name                                      
+  ================= ====================================================
+  02-00-00-00-00-4F \Device\Tcpip_{A3D69D3A-B7B1-8EE3-2EE3-AC17092E9A82}
+  02-00-00-00-00-50 Media disconnected                                  
+  02-00-00-00-00-51 Media disconnected                                  
+  02-00-00-00-00-52 Media disconnected                                  
 
 [41/339] wbr wbr$ ipconfig /all
   Windows IP Configuration
@@ -313,10 +314,11 @@ Total steps: 339
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller
      Physical Address. . . . . . . . . : 02-00-00-00-00-4F
      DHCP Enabled. . . . . . . . . . . : No
      Autoconfiguration Enabled . . . . : Yes
+     Link-local IPv6 Address. . . . . . : fe80::ff:fe00:4f%2(Preferred)
      IPv4 Address. . . . . . . . . . . : 10.2.2.10(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.2.2.1
@@ -326,7 +328,7 @@ Total steps: 339
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #2
      Physical Address. . . . . . . . . : 02-00-00-00-00-50
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -335,7 +337,7 @@ Total steps: 339
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #3
      Physical Address. . . . . . . . . : 02-00-00-00-00-51
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -344,7 +346,7 @@ Total steps: 339
   
      Media State . . . . . . . . . . . : Media disconnected
      Connection-specific DNS Suffix  . :
-     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #4
      Physical Address. . . . . . . . . : 02-00-00-00-00-52
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
@@ -481,9 +483,9 @@ Total steps: 339
   -------------------------------------------------------------------------------
   MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
+  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
   0200-0000-0053 1          GigabitEthernet0/0/3  dynamic
   0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
-  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 3
 
@@ -492,9 +494,9 @@ Total steps: 339
   -------------------------------------------------------------------------------
   MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
+  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
   0200-0000-0053 1          GigabitEthernet0/0/3  dynamic
   0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
-  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 3
 
@@ -596,46 +598,46 @@ Total steps: 339
 
 [81/339] whq whq$ arp -a
   
-  Interface: 10.1.1.11 --- 0x1
+  Interface: 10.1.1.11 --- 0x2
     Internet Address      Physical Address      Type
     10.1.1.1              02-00-00-00-00-01     dynamic
     10.1.1.10             02-00-00-00-00-47     dynamic
 
 [82/339] whq whq$ arp -g
   
-  Interface: 10.1.1.11 --- 0x1
+  Interface: 10.1.1.11 --- 0x2
     Internet Address      Physical Address      Type
     10.1.1.1              02-00-00-00-00-01     dynamic
     10.1.1.10             02-00-00-00-00-47     dynamic
 
 [83/339] whq whq$ netsh interface ip show neighbors
   
-  Interface      IP Address          Physical Address      Type
-  ----------------------------------------------------------------------
-  Ethernet 0     10.1.1.1            02:00:00:00:00:01     dynamic
-  Ethernet 0     10.1.1.10           02:00:00:00:00:47     dynamic
+  Interface      Internet Address                      Physical Address    Type
+  ---------------------------------------------------------------------------------------
+  Ethernet 0     10.1.1.1                              02-00-00-00-00-01   Reachable
+  Ethernet 0     10.1.1.10                             02-00-00-00-00-47   Reachable
   
 
 [84/339] wbr wbr$ arp -a
   
-  Interface: 10.2.2.10 --- 0x1
+  Interface: 10.2.2.10 --- 0x2
     Internet Address      Physical Address      Type
     10.2.2.1              02-00-00-00-00-05     dynamic
     10.2.2.11             02-00-00-00-00-53     dynamic
 
 [85/339] wbr wbr$ arp -g
   
-  Interface: 10.2.2.10 --- 0x1
+  Interface: 10.2.2.10 --- 0x2
     Internet Address      Physical Address      Type
     10.2.2.1              02-00-00-00-00-05     dynamic
     10.2.2.11             02-00-00-00-00-53     dynamic
 
 [86/339] wbr wbr$ netsh interface ip show neighbors
   
-  Interface      IP Address          Physical Address      Type
-  ----------------------------------------------------------------------
-  Ethernet 0     10.2.2.1            02:00:00:00:00:05     dynamic
-  Ethernet 0     10.2.2.11           02:00:00:00:00:53     dynamic
+  Interface      Internet Address                      Physical Address    Type
+  ---------------------------------------------------------------------------------------
+  Ethernet 0     10.2.2.1                              02-00-00-00-00-05   Reachable
+  Ethernet 0     10.2.2.11                             02-00-00-00-00-53   Reachable
   
 
 
@@ -651,11 +653,11 @@ Total steps: 339
 
 [90/339] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.702 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.791 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.702/0.702/0.702/0.000 ms
+  rtt min/avg/max/mdev = 0.791/0.791/0.791/0.000 ms
 
 [91/339] lhq lhq$ arp -n 10.1.1.11
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -675,11 +677,11 @@ Total steps: 339
 
 [96/339] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.573 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=2.016 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.573/0.573/0.573/0.000 ms
+  rtt min/avg/max/mdev = 2.016/2.016/2.016/0.000 ms
 
 [97/339] lbr lbr$ arp -n 10.2.2.10
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -699,11 +701,11 @@ Total steps: 339
 
 [102/339] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.720 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.351 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.720/0.720/0.720/0.000 ms
+  rtt min/avg/max/mdev = 0.351/0.351/0.351/0.000 ms
 
 [103/339] ldc ldc$ arp -n 10.3.3.10
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -723,11 +725,11 @@ Total steps: 339
 
 [108/339] srvdc srvdc$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.377 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.409 ms
   
   --- 10.3.3.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.377/0.377/0.377/0.000 ms
+  rtt min/avg/max/mdev = 0.409/0.409/0.409/0.000 ms
 
 [109/339] srvdc srvdc$ arp -n 10.3.3.11
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -754,7 +756,7 @@ Total steps: 339
 
 [114/339] whq whq$ arp -a
   
-  Interface: 10.1.1.11 --- 0x1
+  Interface: 10.1.1.11 --- 0x2
     Internet Address      Physical Address      Type
     10.1.1.10             02-00-00-00-00-47     dynamic
 
@@ -773,7 +775,7 @@ Total steps: 339
 
 [117/339] wbr wbr$ arp -a
   
-  Interface: 10.2.2.10 --- 0x1
+  Interface: 10.2.2.10 --- 0x2
     Internet Address      Physical Address      Type
     10.2.2.11             02-00-00-00-00-53     dynamic
 
@@ -787,11 +789,11 @@ Total steps: 339
 
 [120/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.337 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=2.170 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.337/0.337/0.337/0.000 ms
+  rtt min/avg/max/mdev = 2.170/2.170/2.170/0.000 ms
 
 [121/339] lhq lhq$ ip neigh show 10.1.1.1 dev eth0
   10.1.1.1 dev eth0 lladdr 02:00:00:00:00:01 REACHABLE
@@ -805,11 +807,11 @@ Total steps: 339
 
 [124/339] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.389 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=2.454 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.389/0.389/0.389/0.000 ms
+  rtt min/avg/max/mdev = 2.454/2.454/2.454/0.000 ms
 
 [125/339] lbr lbr$ ip neigh show 10.2.2.1 dev eth0
   10.2.2.1 dev eth0 lladdr 02:00:00:00:00:05 REACHABLE
@@ -823,11 +825,11 @@ Total steps: 339
 
 [128/339] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.733 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.465 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.733/0.733/0.733/0.000 ms
+  rtt min/avg/max/mdev = 0.465/0.465/0.465/0.000 ms
 
 [129/339] ldc ldc$ ip neigh show 10.3.3.1 dev eth0
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -841,11 +843,11 @@ Total steps: 339
 
 [132/339] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.404 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.373 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.404/0.404/0.404/0.000 ms
+  rtt min/avg/max/mdev = 0.373/0.373/0.373/0.000 ms
 
 [133/339] srvdc srvdc$ ip neigh show 10.3.3.1 dev eth0
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -1028,7 +1030,7 @@ Total steps: 339
 
 [179/339] whq whq$ arp -a
   
-  Interface: 10.1.1.11 --- 0x1
+  Interface: 10.1.1.11 --- 0x2
     Internet Address      Physical Address      Type
     10.1.1.10             02-00-00-00-00-47     dynamic
     10.0.0.250            02-00-00-de-ad-01     static
@@ -1041,7 +1043,7 @@ Total steps: 339
 
 [182/339] wbr wbr$ arp -a
   
-  Interface: 10.2.2.10 --- 0x1
+  Interface: 10.2.2.10 --- 0x2
     Internet Address      Physical Address      Type
     10.2.2.11             02-00-00-00-00-53     dynamic
     10.0.0.250            02-00-00-de-ad-01     static
@@ -1055,7 +1057,7 @@ Total steps: 339
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [185/339] rhq R-HQ(config)# configure terminal
-<empty>
+  Enter configuration commands, one per line.  End with CNTL/Z.
 
 [186/339] rhq R-HQ(config)# arp 10.9.9.9 0200.00de.ad01 arpa
 <empty>
@@ -1151,6 +1153,7 @@ Total steps: 339
     Split horizon is enabled
     ICMP redirects are always sent
     ICMP unreachables are always sent
+    ICMP mask replies are never sent
     IP fast switching is enabled
     IP CEF switching is enabled
 
@@ -1179,6 +1182,7 @@ Total steps: 339
     Split horizon is enabled
     ICMP redirects are always sent
     ICMP unreachables are always sent
+    ICMP mask replies are never sent
     IP fast switching is enabled
     IP CEF switching is enabled
 
@@ -1201,6 +1205,7 @@ Total steps: 339
     Split horizon is enabled
     ICMP redirects are always sent
     ICMP unreachables are always sent
+    ICMP mask replies are never sent
     IP fast switching is enabled
     IP CEF switching is enabled
 
@@ -1424,12 +1429,12 @@ Total steps: 339
 
 [264/339] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.514 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.389 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.452 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.368 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.389/0.451/0.514/0.062 ms
+  rtt min/avg/max/mdev = 0.368/0.410/0.452/0.042 ms
 
 [265/339] srvdc srvdc$ sysctl -w net.ipv4.conf.all.arp_ignore=0
   net.ipv4.conf.all.arp_ignore = 0
@@ -1442,12 +1447,12 @@ Total steps: 339
 
 [268/339] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.276 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.265 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.325 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.177 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.265/0.270/0.276/0.005 ms
+  rtt min/avg/max/mdev = 0.177/0.251/0.325/0.074 ms
 
 
 --- [269] § L2 — corrélation MAC/ARP sur switchs ---
@@ -1495,9 +1500,9 @@ Total steps: 339
   -------------------------------------------------------------------------------
   MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
+  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
   0200-0000-0053 1          GigabitEthernet0/0/3  dynamic
   0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
-  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 3
 
@@ -1599,27 +1604,27 @@ Total steps: 339
 --- [298] § ARP — re-résolution complète après flush ---
 [298/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.434 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.476 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.434/0.434/0.434/0.000 ms
+  rtt min/avg/max/mdev = 0.476/0.476/0.476/0.000 ms
 
 [299/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.292 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.353 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.292/0.292/0.292/0.000 ms
+  rtt min/avg/max/mdev = 0.353/0.353/0.353/0.000 ms
 
 [300/339] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.239 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.348 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.239/0.239/0.239/0.000 ms
+  rtt min/avg/max/mdev = 0.348/0.348/0.348/0.000 ms
 
 [301/339] lhq lhq$ ip -s neigh
   10.1.1.250 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
@@ -1628,19 +1633,19 @@ Total steps: 339
 
 [302/339] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.359 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.400 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.359/0.359/0.359/0.000 ms
+  rtt min/avg/max/mdev = 0.400/0.400/0.400/0.000 ms
 
 [303/339] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.253 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.245 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.253/0.253/0.253/0.000 ms
+  rtt min/avg/max/mdev = 0.245/0.245/0.245/0.000 ms
 
 [304/339] lbr lbr$ ip -s neigh
   10.2.2.1 dev eth0 lladdr 02:00:00:00:00:05 REACHABLE
@@ -1648,19 +1653,19 @@ Total steps: 339
 
 [305/339] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.209 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.251 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.209/0.209/0.209/0.000 ms
+  rtt min/avg/max/mdev = 0.251/0.251/0.251/0.000 ms
 
 [306/339] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.206 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.365 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.206/0.206/0.206/0.000 ms
+  rtt min/avg/max/mdev = 0.365/0.365/0.365/0.000 ms
 
 [307/339] ldc ldc$ ip -s neigh
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -1668,19 +1673,19 @@ Total steps: 339
 
 [308/339] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.221 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.413 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.221/0.221/0.221/0.000 ms
+  rtt min/avg/max/mdev = 0.413/0.413/0.413/0.000 ms
 
 [309/339] srvdc srvdc$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.380 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.275 ms
   
   --- 10.3.3.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.380/0.380/0.380/0.000 ms
+  rtt min/avg/max/mdev = 0.275/0.275/0.275/0.000 ms
 
 [310/339] srvdc srvdc$ ip -s neigh
   10.3.3.11 dev eth0 lladdr 02:00:00:00:00:5b REACHABLE
@@ -1751,7 +1756,7 @@ Total steps: 339
 
 [319/339] whq whq$ arp -x
   
-  Interface: 10.1.1.11 --- 0x1
+  Interface: 10.1.1.11 --- 0x2
     Internet Address      Physical Address      Type
     10.1.1.10             02-00-00-00-00-47     dynamic
 
@@ -1796,9 +1801,9 @@ Total steps: 339
   -------------------------------------------------------------------------------
   MAC Address    VLAN/VSI   Learned-From          Type
   -------------------------------------------------------------------------------
+  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
   0200-0000-0053 1          GigabitEthernet0/0/3  dynamic
   0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
-  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
   -------------------------------------------------------------------------------
   Total items displayed = 3
 
@@ -1842,13 +1847,13 @@ Total steps: 339
 
 [336/339] whq whq$ arp -a
   
-  Interface: 10.1.1.11 --- 0x1
+  Interface: 10.1.1.11 --- 0x2
     Internet Address      Physical Address      Type
     10.1.1.10             02-00-00-00-00-47     dynamic
 
 [337/339] wbr wbr$ arp -a
   
-  Interface: 10.2.2.10 --- 0x1
+  Interface: 10.2.2.10 --- 0x2
     Internet Address      Physical Address      Type
     10.2.2.11             02-00-00-00-00-53     dynamic
 

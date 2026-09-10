@@ -5,6 +5,7 @@
 
 import { VirtualFileSystem } from './VirtualFileSystem';
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
+import { kernelBootMessages, kernelCommandLine, defaultKernelBootFacts, type KernelBootFacts } from './boot/KernelBootLog';
 
 // ── Priority levels (syslog) ─────────────────────────────────────
 const PRIORITY_NAMES: Record<string, number> = {
@@ -121,10 +122,26 @@ export class LinuxLogManager {
     'warnings', 'notifications', 'informational', 'debugging',
   ] as const;
 
-  constructor(private vfs: VirtualFileSystem) {
+  /**
+   * Le noyau que les lignes d'amorcage de `dmesg` nomment. Elles en
+   * portaient une copie ecrite en dur (`5.15.0-generic`), differente de
+   * ce que `uname -r` annonce et de ce que `last` annoncait encore.
+   */
+  private kernelRelease = '5.15.0-130-generic';
+
+  private readonly bootFacts: KernelBootFacts;
+
+  constructor(private vfs: VirtualFileSystem, facts?: KernelBootFacts) {
+    this.bootFacts = facts ?? defaultKernelBootFacts();
+    this.kernelRelease = this.bootFacts.kernelRelease;
     this.bootTime = new Date(Date.now() - 30_000);
     this.bootId = this.generateBootId();
     this.populateBootMessages();
+  }
+
+  /** La ligne de commande du noyau, celle que `/proc/cmdline` rend. */
+  kernelCommandLine(): string {
+    return kernelCommandLine(this.bootFacts.kernelRelease, this.bootFacts.rootPartition);
   }
 
   /**
@@ -160,13 +177,27 @@ export class LinuxLogManager {
   }
 
   // ── logger command ─────────────────────────────────────────────
+  /**
+   * La taille maximale d'un message `logger`, celle de la RFC 3164 que
+   * `logger(1)` applique par defaut. Elle valait 2048 ici, un chiffre
+   * qu'aucune machine ne porte.
+   */
+  private static readonly DEFAULT_MESSAGE_SIZE = 1024;
+
   executeLogger(args: string[], currentUser: string): string {
+    const DEFAULT_MESSAGE_SIZE = LinuxLogManager.DEFAULT_MESSAGE_SIZE;
+    const split = (line: string, size: number): string[] => {
+      const out: string[] = [];
+      for (let at = 0; at < line.length; at += size) out.push(line.slice(at, at + size));
+      return out.length > 0 ? out : [''];
+    };
     let tag = currentUser;
     let priority = 'user.notice';
     let includePid = false;
     let toStderr = false;
     let expandNewlines = false;
     let fromFile: string | null = null;
+    let sizeArg: string | null = null;
     const msgParts: string[] = [];
 
     let i = 0;
@@ -178,8 +209,14 @@ export class LinuxLogManager {
       else if (a === '-s' || a === '--stderr') { toStderr = true; i++; }
       else if (a === '-e') { expandNewlines = true; i++; }
       else if (a === '-f' || a === '--file') { fromFile = args[++i] ?? null; i++; }
+      else if (a === '-S' || a === '--size') { sizeArg = args[++i] ?? ''; i++; }
       else { msgParts.push(a); i++; }
     }
+
+    if (sizeArg !== null && !/^\d+$/.test(sizeArg)) {
+      return `logger: failed to parse message size: '${sizeArg}': Invalid argument`;
+    }
+    const size = sizeArg === null ? DEFAULT_MESSAGE_SIZE : Number(sizeArg);
 
     const parsed = this.parsePriority(priority);
     if (!parsed) return `logger: unknown priority name: ${priority}`;
@@ -188,13 +225,17 @@ export class LinuxLogManager {
     if (fromFile !== null) {
       const content = this.vfs.readFile(fromFile);
       if (content === null) return `logger: ${fromFile}: No such file or directory`;
-      messages = content.split('\n').filter((l) => l.length > 0);
+      messages = content.split('\n').filter((l) => l.length > 0).flatMap((l) => split(l, size));
     } else {
       if (args.length === 0) return 'Usage: logger [options] [<message>]';
       let msg = msgParts.join(' ');
       if (expandNewlines) msg = msg.replace(/\\n/g, '\n');
-      if (msg.length > 2048) msg = msg.slice(0, 2048);
-      messages = [msg];
+      // Un message passe en ARGUMENT est coupe et le reste jete ; un
+      // FICHIER est decoupe en messages successifs. Les deux formes sont
+      // relevees sur util-linux, la page de manuel annoncant par
+      // ailleurs une limite « en-tete comprise » que le binaire
+      // n'applique pas.
+      messages = [msg.slice(0, size)];
     }
 
     const safeTag = tag.length > 255 ? tag.slice(0, 255) : tag;
@@ -945,26 +986,7 @@ export class LinuxLogManager {
   private populateBootMessages(): void {
     const bt = this.bootTime;
 
-    // Kernel dmesg messages
-    const kernelMsgs: Array<{ offset: number; level: number; msg: string }> = [
-      { offset: 0.000000, level: 6, msg: 'Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64' },
-      { offset: 0.000001, level: 6, msg: 'Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash' },
-      { offset: 0.010000, level: 6, msg: 'DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014' },
-      { offset: 0.050000, level: 6, msg: 'Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)' },
-      { offset: 0.100000, level: 6, msg: 'CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz' },
-      { offset: 0.500000, level: 6, msg: 'NET: Registered PF_INET protocol family' },
-      { offset: 0.600000, level: 6, msg: 'NET: Registered PF_INET6 protocol family' },
-      { offset: 0.300000, level: 6, msg: 'PCI: Using configuration type 1 for base access' },
-      { offset: 0.310000, level: 6, msg: 'pci 0000:00:01.0: PIIX/ICH IDE controller' },
-      { offset: 0.320000, level: 6, msg: 'usbcore: registered new interface driver usbfs' },
-      { offset: 0.330000, level: 6, msg: 'usbcore: registered new interface driver hub' },
-      { offset: 0.340000, level: 6, msg: 'e1000: Intel(R) PRO/1000 Network Driver' },
-      { offset: 0.350000, level: 6, msg: 'e1000 0000:00:03.0 eth0: (PCI:33MHz:32-bit) link up' },
-      { offset: 1.000000, level: 6, msg: 'EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)' },
-      { offset: 1.200000, level: 6, msg: 'EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro' },
-    ];
-
-    for (const km of kernelMsgs) {
+    for (const km of kernelBootMessages(this.bootFacts)) {
       this.dmesgBuffer.push({ offsetSec: km.offset, level: km.level, message: km.msg });
       // Also add to journal
       this.journal.push({

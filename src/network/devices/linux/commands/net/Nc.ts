@@ -17,7 +17,7 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { IPAddress } from '../../../../core/types';
-import { findHostByAddress, transitTcpAclVerdict, localDeviceOf, resolveNatHairpinHost } from '../../network/HostLookup';
+import { findHostByAddress, localDeviceOf, resolveNatHairpinHost } from '../../network/HostLookup';
 import { makeArgCompleter } from '../completionHelpers';
 
 function isIPv6Literal(host: string): boolean {
@@ -228,10 +228,6 @@ export const ncCommand: LinuxCommand = {
       return `nc: connect to ${found.ip} port ${port} (tcp) failed: No route to host`;
     }
 
-    if (transitTcpAclVerdict(sourceIp, found.ip, effectivePort, new Date(), localDeviceOf(ctx)) === 'deny') {
-      if (verbose) return `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection timed out`;
-      return '';
-    }
     if (!ctx.executor.hasFreeEphemeralPort()) {
       const msg = `nc: connect to ${found.ip} port ${port} (tcp) failed: Cannot assign requested address`;
       return verbose ? msg : '';
@@ -243,6 +239,10 @@ export const ncCommand: LinuxCommand = {
     }
     if (outcome === 'refused') {
       if (verbose) return `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection refused`;
+      return '';
+    }
+    if (outcome === 'prohibited') {
+      if (verbose) return `nc: connect to ${found.ip} port ${port} (tcp) failed: Permission denied`;
       return '';
     }
 

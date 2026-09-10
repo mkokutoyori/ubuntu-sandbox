@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-interfaces
-Generated: 2026-08-23T10:29:59.251Z
+Generated: 2026-09-10T16:31:03.549Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IPv4/IPv6 addressing, dot1q sub-if, tunnels, display
 Total steps: 286
@@ -426,8 +426,18 @@ Total steps: 286
   Line protocol current state : UP
   Internet Address is 192.168.1.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 
 --- [120] § tunnels ---
@@ -489,8 +499,18 @@ Total steps: 286
   Tunnel source GE0/0/0
   Tunnel destination 10.0.0.2
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 
 --- [138] § IPv6 addressing ---
@@ -643,151 +663,381 @@ Total steps: 286
   Line protocol current state : UP
   Description: ## LAN to L1 ##
   Internet Address is 192.168.100.1/24
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 9000
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  4 packets, 372 bytes
+    Unicast:                    0,  Multicast:                  2
+    Broadcast:                  2,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
-  Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+  Input:  3 packets, 234 bytes
+    Unicast:                    0,  Multicast:                  3
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   LoopBack1 current state : UP
   Line protocol current state : UP (spoofing)
   Description: LOOP-1
   Internet Address is 10.255.255.1/32
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 1514
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   LoopBack2 current state : UP
   Line protocol current state : UP (spoofing)
   Description: LOOP-2
   Internet Address is 10.255.255.2/32
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 1514
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   LoopBack3 current state : UP
   Line protocol current state : UP (spoofing)
   Description: LOOP-3
   Internet Address is 10.255.255.3/32
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 1514
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   LoopBack4 current state : UP
   Line protocol current state : UP (spoofing)
   Description: LOOP-4
   Internet Address is 10.255.255.4/32
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 1514
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   LoopBack5 current state : UP
   Line protocol current state : UP (spoofing)
   Description: LOOP-5
   Internet Address is 10.255.255.5/32
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 1514
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   LoopBack6 current state : UP
   Line protocol current state : UP (spoofing)
   Description: LOOP-6
   Internet Address is 10.255.255.6/32
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 1514
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   LoopBack7 current state : UP
   Line protocol current state : UP (spoofing)
   Description: LOOP-7
   Internet Address is 10.255.255.7/32
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 1514
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   LoopBack8 current state : UP
   Line protocol current state : UP (spoofing)
   Description: LOOP-8
   Internet Address is 10.255.255.8/32
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 1514
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.10 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.20 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.2.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.30 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.3.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.40 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.4.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.50 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.5.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.60 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.6.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.70 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.7.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.80 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.8.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.90 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.9.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.100 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.10.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   Tunnel0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 172.16.0.1/30
   Tunnel source GE0/0/0
   Tunnel destination 10.0.0.2
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   Tunnel0/0/1 current state : UP
   Line protocol current state : UP
   Internet Address is 172.16.0.5/30
@@ -795,30 +1045,56 @@ Total steps: 286
   Tunnel destination 10.0.0.2
   Tunnel protection IPSec profile PROF1
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [167/286] r1 <R1> display interface GigabitEthernet0/0/0
   GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Description: ## LAN to L1 ##
   Internet Address is 192.168.100.1/24
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 9000
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  4 packets, 372 bytes
+    Unicast:                    0,  Multicast:                  2
+    Broadcast:                  2,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [168/286] r1 <R1> display ip interface GigabitEthernet0/0/0
   GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.100.1/24
   Broadcast address : 192.168.100.255
-  The Maximum Transmit Unit : 1500 bytes
-  Input bandwidth utilization  : 0%
-  Output bandwidth utilization : 0%
-      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
-      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
-      Input:  0 packets, 0 bytes
-      Output: 0 packets, 0 bytes
+  The Maximum Transmit Unit : 9000 bytes
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+  Input:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  4 packets, 372 bytes
+    Unicast:                    0,  Multicast:                  2
+    Broadcast:                  2,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [169/286] r1 <R1> display interface GigabitEthernet0/0/0 | include line protocol
 <empty>
@@ -828,8 +1104,18 @@ Total steps: 286
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
-  Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+  Input:  3 packets, 234 bytes
+    Unicast:                    0,  Multicast:                  3
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [171/286] r1 <R1> display ip interface GigabitEthernet0/0/1
   GigabitEthernet0/0/1 current state : UP
@@ -837,12 +1123,18 @@ Total steps: 286
   Internet Address is unassigned
   Broadcast address : 0.0.0.0
   The Maximum Transmit Unit : 1500 bytes
-  Input bandwidth utilization  : 0%
-  Output bandwidth utilization : 0%
-      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
-      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
-      Input:  0 packets, 0 bytes
-      Output: 0 packets, 0 bytes
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+  Input:  3 packets, 234 bytes
+    Unicast:                    0,  Multicast:                  3
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [172/286] r1 <R1> display interface GigabitEthernet0/0/1 | include line protocol
 <empty>
@@ -869,8 +1161,18 @@ Total steps: 286
   Tunnel source GE0/0/0
   Tunnel destination 10.0.0.2
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [177/286] r1 <R1> display ip interface Tunnel0/0/0
   Tunnel0/0/0 current state : UP
@@ -878,12 +1180,18 @@ Total steps: 286
   Internet Address is 172.16.0.1/30
   Broadcast address : 172.16.0.3
   The Maximum Transmit Unit : 1500 bytes
-  Input bandwidth utilization  : 0%
-  Output bandwidth utilization : 0%
-      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
-      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
-      Input:  0 packets, 0 bytes
-      Output: 0 packets, 0 bytes
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+  Input:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [178/286] r1 <R1> display interface Tunnel0/0/0 | include line protocol
 <empty>
@@ -1203,151 +1511,381 @@ Total steps: 286
   Line protocol current state : UP
   Description: ## LAN to L1 ##
   Internet Address is 192.168.100.1/24
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 9000
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  4 packets, 372 bytes
+    Unicast:                    0,  Multicast:                  2
+    Broadcast:                  2,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
-  Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+  Input:  3 packets, 234 bytes
+    Unicast:                    0,  Multicast:                  3
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   LoopBack1 current state : UP
   Line protocol current state : UP (spoofing)
   Description: LOOP-1
   Internet Address is 10.255.255.1/32
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 1514
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   LoopBack2 current state : UP
   Line protocol current state : UP (spoofing)
   Description: LOOP-2
   Internet Address is 10.255.255.2/32
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 1514
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   LoopBack3 current state : UP
   Line protocol current state : UP (spoofing)
   Description: LOOP-3
   Internet Address is 10.255.255.3/32
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 1514
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   LoopBack4 current state : UP
   Line protocol current state : UP (spoofing)
   Description: LOOP-4
   Internet Address is 10.255.255.4/32
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 1514
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   LoopBack5 current state : UP
   Line protocol current state : UP (spoofing)
   Description: LOOP-5
   Internet Address is 10.255.255.5/32
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 1514
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   LoopBack6 current state : UP
   Line protocol current state : UP (spoofing)
   Description: LOOP-6
   Internet Address is 10.255.255.6/32
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 1514
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   LoopBack7 current state : UP
   Line protocol current state : UP (spoofing)
   Description: LOOP-7
   Internet Address is 10.255.255.7/32
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 1514
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   LoopBack8 current state : UP
   Line protocol current state : UP (spoofing)
   Description: LOOP-8
   Internet Address is 10.255.255.8/32
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 1514
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.10 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.20 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.2.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.30 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.3.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.40 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.4.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.50 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.5.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.60 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.6.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.70 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.7.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.80 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.8.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.90 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.9.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   GigabitEthernet0/0/0.100 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.10.1/24
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   Tunnel0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 172.16.0.1/30
   Tunnel source GE0/0/0
   Tunnel destination 10.0.0.2
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
   Tunnel0/0/1 current state : UP
   Line protocol current state : UP
   Internet Address is 172.16.0.5/30
@@ -1355,8 +1893,18 @@ Total steps: 286
   Tunnel destination 10.0.0.2
   Tunnel protection IPSec profile PROF1
   The Maximum Transmit Unit is 1500
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [188/286] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
@@ -1508,32 +2056,81 @@ Total steps: 286
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 10:29:59.388  Aug 23 2026(EE354A27.6353F7CE)
+  Reference time: 16:31:03.865  Sep 10 2026(EE4D59C7.DD70A3D7)
 
 [216/286] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [217/286] r1 <R1> display clock
-  2026-08-23 10:29:59
-  Sunday
+  2026-09-10 16:31:03
+  Thursday
   Time Zone(UTC) : UTC
 
 [218/286] r1 <R1> display lldp neighbor
-  Info: No LLDP neighbor is found.
+  GigabitEthernet0/0/0 has 0 neighbors
+  
+  GigabitEthernet0/0/1 has 0 neighbors
+  
+  GigabitEthernet0/0/2 has 0 neighbors
+  
+  GigabitEthernet0/0/3 has 0 neighbors
+  
+  LoopBack1 has 0 neighbors
+  
+  LoopBack2 has 0 neighbors
+  
+  LoopBack3 has 0 neighbors
+  
+  LoopBack4 has 0 neighbors
+  
+  LoopBack5 has 0 neighbors
+  
+  LoopBack6 has 0 neighbors
+  
+  LoopBack7 has 0 neighbors
+  
+  LoopBack8 has 0 neighbors
+  
+  GigabitEthernet0/0/0.10 has 0 neighbors
+  
+  GigabitEthernet0/0/0.20 has 0 neighbors
+  
+  GigabitEthernet0/0/0.30 has 0 neighbors
+  
+  GigabitEthernet0/0/0.40 has 0 neighbors
+  
+  GigabitEthernet0/0/0.50 has 0 neighbors
+  
+  GigabitEthernet0/0/0.60 has 0 neighbors
+  
+  GigabitEthernet0/0/0.70 has 0 neighbors
+  
+  GigabitEthernet0/0/0.80 has 0 neighbors
+  
+  GigabitEthernet0/0/0.90 has 0 neighbors
+  
+  GigabitEthernet0/0/0.100 has 0 neighbors
+  
+  Tunnel0/0/0 has 0 neighbors
+  
+  Tunnel0/0/1 has 0 neighbors
+  
+  Total: 0
 
 [219/286] r1 <R1> display lldp neighbor brief
-  Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
+  Local Intf                Neighbor Dev    Neighbor Intf   Exptime(s)
+  Total: 0
 
 [220/286] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-23 10:29:59
+  CPU Usage Stat. Time : 2026-09-10 16:31:03
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [221/286] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-23 10:29:59
+  Memory utilization statistics at 2026-09-10 16:31:03
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1574,18 +2171,18 @@ Total steps: 286
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 12
-  2026-08-23 10:29:59 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-23 10:29:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-23 10:29:59 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-23 10:29:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-23 10:29:59 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
-  2026-08-23 10:29:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
-  2026-08-23 10:29:59 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-23 10:29:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-23 10:29:59 %01LINK/5/NOTIFICATIONS: Interface GE0/0/1, changed state to administratively down
-  2026-08-23 10:29:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to down
-  2026-08-23 10:29:59 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-23 10:29:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-09-10 16:31:03 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-09-10 16:31:03 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-09-10 16:31:03 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-09-10 16:31:03 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-09-10 16:31:03 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
+  2026-09-10 16:31:03 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
+  2026-09-10 16:31:03 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-09-10 16:31:03 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-09-10 16:31:03 %01LINK/5/NOTIFICATIONS: Interface GE0/0/1, changed state to administratively down
+  2026-09-10 16:31:03 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to down
+  2026-09-10 16:31:03 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-09-10 16:31:03 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
 
 [226/286] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1664,22 +2261,38 @@ Total steps: 286
   Line protocol current state : UP
   Internet Address is 192.168.100.1/24
   Broadcast address : 192.168.100.255
-  The Maximum Transmit Unit : 1500 bytes
-  Input bandwidth utilization  : 0%
-  Output bandwidth utilization : 0%
-      Last 300 seconds input rate 0 bits/sec, 0 packets/sec
-      Last 300 seconds output rate 0 bits/sec, 0 packets/sec
-      Input:  0 packets, 0 bytes
-      Output: 0 packets, 0 bytes
+  The Maximum Transmit Unit : 9000 bytes
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
+  Input:  0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  4 packets, 372 bytes
+    Unicast:                    0,  Multicast:                  2
+    Broadcast:                  2,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [234/286] r1 <R1> display interface GigabitEthernet0/0/0
   GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Description: ## LAN to L1 ##
   Internet Address is 192.168.100.1/24
-  The Maximum Transmit Unit is 1500
+  The Maximum Transmit Unit is 9000
+  Last 300 seconds input rate 0 bits/sec, 0 packets/sec
+  Last 300 seconds output rate 0 bits/sec, 0 packets/sec
   Input:  0 packets, 0 bytes
-  Output: 0 packets, 0 bytes
+    Unicast:                    0,  Multicast:                  0
+    Broadcast:                  0,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+  Output:  4 packets, 372 bytes
+    Unicast:                    0,  Multicast:                  2
+    Broadcast:                  2,  Jumbo:                      -
+    Discard:                    0,  Total Error:                0
+      Input bandwidth utilization  :    0%
+      Output bandwidth utilization :    0%
 
 [235/286] r1 <R1> display this
   #
@@ -2378,7 +2991,7 @@ Total steps: 286
     ipsec          IP Security
     ipv6           Disable IPv6
     isis           Remove IS-IS
-    lldp           Disable LLDP
+    lldp           Link Layer Discovery Protocol
     local-user     Remove a local user
     multicast      Disable multicast routing
     nat            Network Address Translation
@@ -2390,17 +3003,16 @@ Total steps: 286
     route-policy   Remove a route-policy
     screen-length  Restore default screen length
     screen-width   Restore default screen width
+    snmp-agent     Remove SNMP agent configuration
     terminal       Set the terminal line characteristics
     time-range     Remove a time-range
     traffic        Display traffic statistics
-    <cr>
 
 [284/286] r1 [Huawei] acl ?
     advanced  Advanced ACL (3000-3999)
     basic     Basic ACL (2000-2999)
     name      Named ACL
     number    ACL number
-    <cr>
 
 [285/286] r1 [Huawei] return
 <empty>

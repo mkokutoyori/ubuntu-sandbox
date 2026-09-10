@@ -730,47 +730,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     { keyword: 'in', description: 'Reload after a time interval' },
   ]);
 
-  for (const trie of [tries.configStdNacl, tries.configExtNacl]) {
-    for (const verbe of ['permit', 'deny']) {
-      trie.addCompletionKeywords(verbe, [
-        { keyword: 'any', description: 'Any source host' },
-        { keyword: 'host', description: 'A single host address' },
-      ]);
-    }
-  }
-  for (const verbe of ['permit', 'deny']) {
-    for (const proto of ['ip', 'tcp', 'udp', 'icmp']) {
-      tries.configExtNacl.describeArgs(`${verbe} ${proto}`, [
-        ENUM('source', 'Source address', [
-          ['A.B.C.D', 'Source address'],
-          ['any', 'Any source host'],
-          ['host', 'A single source host'],
-          ['object-group', 'Source object group'],
-        ]),
-      ]);
-    }
-    tries.configExtNacl.describeArgs(`${verbe} tcp any any eq`, [
-      ENUM('port', 'Port number or name', [
-        ['<0-65535>', 'Port number'],
-        ['domain', 'Domain Name Server (53)'],
-        ['ftp', 'File Transfer Protocol (21)'],
-        ['telnet', 'Telnet (23)'],
-        ['www', 'World Wide Web (HTTP, 80)'],
-      ]),
-    ]);
-  }
-
-  for (const trie of [tries.configStdNacl, tries.configExtNacl]) {
-    trie.describeArgs('permit', [
-      { name: 'source', type: 'IP_ADDR', description: 'Source address', optional: true },
-    ]);
-    trie.describeArgs('deny', [
-      { name: 'source', type: 'IP_ADDR', description: 'Source address', optional: true },
-    ]);
-    trie.requireArgs('permit', 1);
-    trie.requireArgs('deny', 1);
-  }
-
   describeArgumentTypes(tries);
 
   // Une place qui accepte PLUSIEURS formes, et la direction qui suit.

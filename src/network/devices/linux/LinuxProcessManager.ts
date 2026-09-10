@@ -197,7 +197,10 @@ export class LinuxProcessManager {
       vsize: opts.vsize ?? 10240,
       rss: opts.rss ?? 4096,
       tty: opts.tty ?? '?',
-      nice: opts.nice ?? 0,
+      // Un enfant HERITE la priorite de son parent — c'est ce qui fait
+      // que `nice -n 19 sleep 300 &` laisse le `sleep` a 19, et que
+      // `nice -n 3 nice -n 4 nice` rend 7 et non 4.
+      nice: opts.nice ?? parent?.nice ?? 0,
       priority: 20 + (opts.nice ?? 0),
       cwd: opts.cwd ?? '/',
       exe: argv0,

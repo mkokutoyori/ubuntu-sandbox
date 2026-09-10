@@ -15,7 +15,7 @@ beforeEach(() => {
 });
 
 const USERS_DBF = '/u01/app/oracle/oradata/ORCL/users01.dbf';
-const BACKUP_BASE = '/u01/backup';
+const FRA = '/u01/app/oracle/fast_recovery_area';
 
 function bootOracleServer(name: string): LinuxServer {
   const srv = new LinuxServer('linux-server', name, 0, 0);
@@ -30,8 +30,8 @@ function sqlplus(srv: LinuxServer) {
 }
 
 function backupPieceFiles(srv: LinuxServer): string[] {
-  const out = sh(srv, `find ${BACKUP_BASE} -type f`);
-  return out.split(/\s+/).map(s => s.trim()).filter(p => p.startsWith(BACKUP_BASE));
+  const out = sh(srv, `find ${FRA} -type f`);
+  return out.split(/\s+/).map(s => s.trim()).filter(p => p.endsWith('.bkp'));
 }
 
 describe('a healthy backup still restores (no false positives)', () => {

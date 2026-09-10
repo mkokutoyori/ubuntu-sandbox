@@ -185,7 +185,7 @@ export class KernelModuleTable {
   private readonly modules = new Map<string, KernelModule>();
 
   /** `driver` est le pilote de la carte réseau de la machine. */
-  constructor(driver = 'e1000', private readonly release = '5.15.0-91-generic') {
+  constructor(driver = 'e1000', private readonly release = '5.15.0-130-generic') {
     for (const seed of [...BASE_MODULES, nicModule(driver)]) this.insert(seed);
     this.recomputeUsedBy();
   }
@@ -246,6 +246,19 @@ export class KernelModuleTable {
   /** `/lib/modules/<release>/<path>` — ce que `modinfo` met en `filename:`. */
   filenameOf(m: KernelModule): string {
     return `/lib/modules/${this.release}/${m.path}`;
+  }
+
+  /**
+   * Tous les chemins que l'image porte sous `/lib/modules/<release>/`.
+   * `modinfo` nommait un fichier que rien ne materialisait : un
+   * laboratoire qui fait `ls /lib/modules/$(uname -r)` — le geste normal
+   * pour inspecter les modules — ne trouvait rien. Le contenu du fichier
+   * reste vide : ce qui est modelise est sa PRESENCE, pas son code.
+   */
+  allFilenames(): string[] {
+    const seeds = [...this.modules.values()].map((m) => m.path);
+    for (const c of CHARGEABLES) if (!seeds.includes(c.path)) seeds.push(c.path);
+    return seeds.map((p) => `/lib/modules/${this.release}/${p}`);
   }
 
   /**

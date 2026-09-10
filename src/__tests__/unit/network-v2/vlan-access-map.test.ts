@@ -61,7 +61,7 @@ describe('Cisco VACL — vlan access-map / vlan filter CLI', () => {
     const rules = sw.getVlanAccessMap('VMAP');
     expect(rules).toBeDefined();
     expect(rules!.length).toBe(2);
-    expect(rules![0]).toMatchObject({ sequence: 10, matchIpAcl: 'BLOCK-HOST', action: 'drop' });
+    expect(rules![0]).toMatchObject({ sequence: 10, matchIpAcls: ['BLOCK-HOST'], action: 'drop' });
     expect(rules![1]).toMatchObject({ sequence: 20, action: 'forward' });
     expect(sw.getVlanFilter(10)).toBe('VMAP');
     expect(sw.getVlanFilter(20)).toBeUndefined();

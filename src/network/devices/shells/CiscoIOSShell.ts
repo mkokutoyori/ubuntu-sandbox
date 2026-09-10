@@ -128,11 +128,14 @@ import {
 import { RoutingConfigRepository } from '../inspection/config/RoutingConfigRepository';
 import {
   type CiscoACLShellContext,
-  buildACLConfigCommands,
   buildNamedStdACLCommands, buildNamedExtACLCommands,
   buildIPv6ACLGlobalCommands, buildIPv6ACLModeCommands,
   registerACLShowCommands, aclShowSpecs,
+  parseCiscoAce, texteDeRemarque, standardAclHost, extendedAclHost, type NamedAclEditContext,
 } from './cisco/CiscoAclCommands';
+import { aclStandardSpecs } from './cisco/aclStandardSpecs';
+import { aclExtendedSpecs } from './cisco/aclExtendedSpecs';
+import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import {
   registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
   buildConfigRouterOSPFv3Commands,
@@ -201,6 +204,7 @@ import { prefixListSpecs } from './cisco/filterListSpecs';
 import {
   routeMapSpecs, refuserSelonLeJuge, type RouteMapHost,
 } from './cisco/routeMapSpecs';
+import { aclHeadSpecs, type AclHeadHost, type AclKind } from './cisco/aclHeadSpecs';
 import {
   parseRouteMapClause, type RouteMapClauseKind,
 } from '../router/policy/routeMapClauses';
@@ -494,6 +498,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...keyChainSubmodeSpecs(this),
       ...keyChainKeySubmodeSpecs(this),
       ...routeMapSpecs(() => this.routeMapHost()),
+      ...aclHeadSpecs(() => this.aclHeadHost()),
+      ...aclStandardSpecs(() => standardAclHost(this.namedAclEditContext())),
+      ...aclExtendedSpecs(() => extendedAclHost(this.namedAclEditContext())),
       ...prefixListSpecs(() => this.policy),
       ...routerSubmodeSpecs(this, this.routingCfg),
       ...bfdInterfaceSpecs({
@@ -547,7 +554,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...this.interfaceEntrySpecs(),
       ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(), ...this.ipv6ReglagesSpecs(),
       ...this.clearIpv6Specs(),
-      ...this.aclNommeeSpecs(),
       ...this.pkiSpecs(),
     ];
   }
@@ -576,40 +582,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return specsFromTrieRegistrations(
       (collector) =>
         buildSecurityConfigCommands(collector as unknown as CommandTrie, this),
-      {
-        modes: ['config'], minPrivilege: 15,
-        undoFromNegatedPaths: true,
-        skip: (path) => places[path.replace(/^no /, '')] === undefined,
-        argumentFor: (path) => places[path.replace(/^no /, '')],
-      },
-    );
-  }
-
-  /**
-   * `ip access-list {standard|extended|resequence} …`.
-   *
-   * Les places sont declarees plutot que subies : le NOM d'une liste
-   * n'est pas un mot-cle et la renumerotation prend deux entiers, que la
-   * place libre de l'adaptateur laissait deviner.
-   */
-  private aclNommeeSpecs(): CommandSpec[] {
-    const nom: ArgumentSpec = {
-      name: 'nom', type: 'WORD', description: 'Access list name',
-    };
-    const places: Readonly<Record<string, readonly ArgumentSpec[]>> = {
-      'ip access-list standard': [nom],
-      'ip access-list extended': [nom],
-      'ip access-list resequence': [
-        nom,
-        { name: 'debut', type: 'INT', range: [1, 2147483647],
-          description: 'First sequence number' },
-        { name: 'pas', type: 'INT', range: [1, 2147483647],
-          description: 'Step between sequence numbers' },
-      ],
-    };
-
-    return specsFromTrieRegistrations(
-      (collector) => buildACLConfigCommands(collector as unknown as CommandTrie, this),
       {
         modes: ['config'], minPrivilege: 15,
         undoFromNegatedPaths: true,
@@ -1188,6 +1160,57 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private selectedRouteMap: { name: string; seq: number } | null = null;
   getSelectedRouteMap(): { name: string; seq: number } | null { return this.selectedRouteMap; }
   setSelectedRouteMap(v: { name: string; seq: number } | null): void { this.selectedRouteMap = v; }
+
+  private namedAclEditContext(): NamedAclEditContext {
+    return {
+      engine: () => this.d()._getACLEngineInternal(),
+      getSelectedACL: () => this.getSelectedACL(),
+    };
+  }
+
+  private aclHeadHost(): AclHeadHost {
+    const entree = (id: number, action: 'permit' | 'deny', queue: string): string => {
+      const parsed = parseCiscoAce(
+        queue.split(/\s+/).filter(Boolean), IOS_ACL_NUMBERING(id));
+      if ('error' in parsed) return parsed.error;
+      this.d().addAccessListEntry(id, action, parsed.opts);
+      return '';
+    };
+
+    return {
+      addNumbered: entree,
+      addNumberedRemark: (id, texte) => {
+        const type = IOS_ACL_NUMBERING(id);
+        this.d().addAccessListEntry(id, 'permit', {
+          srcIP: new IPAddress('0.0.0.0'),
+          srcWildcard: new SubnetMask('255.255.255.255'),
+          ...(type === 'extended' ? {
+            protocol: 'ip',
+            dstIP: new IPAddress('0.0.0.0'),
+            dstWildcard: new SubnetMask('255.255.255.255'),
+          } : {}),
+          remark: texteDeRemarque(texte.split(/\s+/).filter(Boolean)),
+        });
+        return '';
+      },
+      removeNumbered: (id) => { this.d().removeAccessList(id); return ''; },
+      enterNamed: (kind, nom) => {
+        this.d()._ensureNamedAccessList(nom, kind);
+        this.setSelectedACL(nom);
+        this.setSelectedACLType(kind);
+        this.setMode((kind === 'standard'
+          ? 'config-std-nacl' : 'config-ext-nacl') as CiscoShellMode);
+        return '';
+      },
+      removeNamed: (_kind: AclKind, nom) => {
+        this.d().removeNamedAccessList(nom);
+        return '';
+      },
+      resequenceNamed: (nom, debut, pas) =>
+        this.d()._resequenceNamedACL(nom, debut, pas)
+          ? '' : `% Access-list ${nom} not found`,
+    };
+  }
 
   private routeMapHost(): RouteMapHost {
     const clause = () => {
@@ -1890,7 +1913,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildIpSlaConfigCommands(this.configTrie, this.configIpSlaTrie,
       this.configIpSlaHttpRawTrie, this);
     registerIpSlaTypeSubModes(this.configIpSlaTypeTries, this.configIpSlaHttpRawTrie, this);
-    buildACLConfigCommands(this.configTrie, this);
     // NAT
     buildNATConfigCommands(this.configTrie, this);
     buildNATInterfaceCommands(this.configIfTrie, this);
@@ -1907,8 +1929,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.configRouterTrie.setCompletionFilter((path, keyword) =>
       routerKeywordBelongsTo(path.length > 0 ? path[0] : keyword,
         this.selectedRoutingProto?.proto ?? 'rip'));
-    buildNamedStdACLCommands(this.configStdNaclTrie, this);
-    buildNamedExtACLCommands(this.configExtNaclTrie, this);
+    buildNamedStdACLCommands(this.configStdNaclTrie, this.namedAclEditContext());
+    buildNamedExtACLCommands(this.configExtNaclTrie, this.namedAclEditContext());
     buildIPv6ACLGlobalCommands(this.configTrie, this);
     buildIPv6ACLModeCommands(this.configIpv6NaclTrie, this);
     // OSPF
