@@ -35,7 +35,7 @@ export function formatLogRecord(
 export function orderedFields(
   record: FirewallLogRecord, context: FortiLogContext,
 ): ReadonlyArray<readonly [string, string]> {
-  const stamp = new Date(record.at);
+  const stamp = new Date(context.localClock?.(record.at).localMs ?? record.at);
   const head: Array<readonly [string, string]> = [
     ['date', isoDate(stamp)],
     ['time', isoTime(stamp)],
