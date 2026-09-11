@@ -17,6 +17,8 @@ import type { SmbListEntry } from './SmbTypes';
 
 export interface SmbConnection {
   readonly shareName: string;
+  /** Whether the session is still live — false once the peer closed it or the link that carried it went down. */
+  isConnected(): boolean;
   read(path: string): { ok: boolean; content?: string; error?: string };
   write(path: string, content: string): { ok: boolean; error?: string };
   list(path: string): { ok: boolean; entries?: SmbListEntry[]; error?: string };
@@ -114,21 +116,34 @@ export function dialSmbShare(opts: {
   let disconnected = false;
   socket.onClose?.(() => { disconnected = true; });
 
+  /**
+   * A request that draws no answer means the far end is gone — the link
+   * dropped, or the server stopped. TCP itself stays `established` until
+   * it times out, so the redirector learns it here, the way a real one
+   * learns on the next use rather than the instant a cable is pulled.
+   */
+  const exchange = (payload: Record<string, unknown>): Record<string, unknown> | null => {
+    const answer = roundTrip(socket, payload);
+    if (answer === null) disconnected = true;
+    return answer;
+  };
+
   const connection: SmbConnection = {
     shareName: opts.shareName,
+    isConnected: () => !disconnected && socket.state === 'established',
     read(path: string) {
       if (disconnected) return { ok: false, error: 'The specified network name is no longer available.' };
-      const r = roundTrip(socket, { op: 'read', treeId, path });
+      const r = exchange({ op: 'read', treeId, path });
       return r?.ok ? { ok: true, content: r.content as string } : { ok: false, error: (r as { message?: string } | null)?.message ?? 'Unknown error' };
     },
     write(path: string, content: string) {
       if (disconnected) return { ok: false, error: 'The specified network name is no longer available.' };
-      const r = roundTrip(socket, { op: 'write', treeId, path, content });
+      const r = exchange({ op: 'write', treeId, path, content });
       return r?.ok ? { ok: true } : { ok: false, error: (r as { message?: string } | null)?.message ?? 'Unknown error' };
     },
     list(path: string) {
       if (disconnected) return { ok: false, error: 'The specified network name is no longer available.' };
-      const r = roundTrip(socket, { op: 'list', treeId, path });
+      const r = exchange({ op: 'list', treeId, path });
       return r?.ok ? { ok: true, entries: r.entries as SmbListEntry[] } : { ok: false, error: (r as { message?: string } | null)?.message ?? 'Unknown error' };
     },
     disconnect() {

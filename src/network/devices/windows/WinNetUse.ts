@@ -72,6 +72,18 @@ function keyOf(entry: { local: string; remote: string }): string {
   return entry.local ? entry.local.toUpperCase() : entry.remote.toUpperCase();
 }
 
+/**
+ * The status column reports the link as it is NOW, not as it was when the
+ * mapping was made: a session whose peer or cable has gone reads
+ * `Disconnected`, which is what an operator looks at to know whether the
+ * share still answers.
+ */
+function observedStatus(entry: NetUseEntry): NetUseEntry['status'] {
+  if (entry.status !== 'OK') return entry.status;
+  if (!entry.connection) return 'Unavailable';
+  return entry.connection.isConnected() ? 'OK' : 'Disconnected';
+}
+
 function listConnections(ctx: WinCommandContext, store: Map<string, NetUseEntry>): string {
   const header =
     `New connections will ${savesConnections(ctx) ? '' : 'not '}be remembered.\n\n` +
@@ -81,7 +93,7 @@ function listConnections(ctx: WinCommandContext, store: Map<string, NetUseEntry>
     return header + `There are no entries in the list.`;
   }
   const rows = Array.from(store.values()).map(e =>
-    `${e.status.padEnd(13)}${e.local.padEnd(10)}${e.remote.padEnd(26)}Microsoft Windows Network`,
+    `${observedStatus(e).padEnd(13)}${e.local.padEnd(10)}${e.remote.padEnd(26)}Microsoft Windows Network`,
   );
   return header + rows.join('\n') + `\nThe command completed successfully.`;
 }
@@ -91,7 +103,7 @@ function detailOf(entry: NetUseEntry): string {
     `Local name        ${entry.local}`,
     `Remote name       ${entry.remote}`,
     `Resource type     Disk`,
-    `Status            ${entry.status}`,
+    `Status            ${observedStatus(entry)}`,
     `# Opens           0`,
     `# Connections     1`,
     `The command completed successfully.`,
