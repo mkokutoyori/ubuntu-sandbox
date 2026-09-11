@@ -45,7 +45,7 @@ async function router(): Promise<Cli> {
 function pair(over: Partial<DebugPair> = {}): DebugPair {
   return {
     path: ['debug', 'arp'], description: 'Enable ARP debug',
-    undoDescription: 'Disable ARP debug', takesArguments: false,
+    undoDescription: 'Disable ARP debug',
     enable: () => 'on', disable: () => 'off',
     ...over,
   };
@@ -80,7 +80,8 @@ describe('une paire est UNE declaration', () => {
     const vus: string[][] = [];
     const table = new CommandTable();
     for (const spec of debugFamily([pair({
-      path: ['debug', 'ip'], takesArguments: true,
+      path: ['debug', 'ip'],
+      argument: { description: 'Debug scope', optional: true },
       enable: (a) => { vus.push(a); return ''; },
       disable: (a) => { vus.push(a); return ''; },
     })])) table.declare(spec);
@@ -100,7 +101,8 @@ describe('une paire est UNE declaration', () => {
     const vus: string[][] = [];
     const table = new CommandTable();
     for (const spec of debugFamily([pair({
-      path: ['debug', 'ip'], takesArguments: true,
+      path: ['debug', 'ip'],
+      argument: { description: 'Debug scope', optional: true },
       enable: (a) => { vus.push(a); return ''; },
     })])) table.declare(spec);
     const session = newSession('R1', {}, { initialMode: 'privileged', privilegeLevel: 15 });

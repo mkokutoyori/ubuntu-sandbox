@@ -239,10 +239,28 @@ export function keywordMatches(
   return reachable.filter(child => child.keyword?.toLowerCase().startsWith(lowered));
 }
 
+export function modesInSubtree(node: TreeNode): Set<string> {
+  if (node.modesInSubtree !== undefined) return node.modesInSubtree;
+  const modes = new Set<string>();
+  for (const spec of node.specs) for (const mode of spec.modes) modes.add(mode);
+  for (const spec of node.undoOnlySpecs) for (const mode of spec.modes) modes.add(mode);
+  for (const place of node.argumentChildren) {
+    for (const mode of modesInSubtree(place)) modes.add(mode);
+  }
+  for (const child of node.children.values()) {
+    for (const mode of modesInSubtree(child)) modes.add(mode);
+  }
+  node.modesInSubtree = modes;
+  return modes;
+}
+
 export function subtreeReachable(
   node: TreeNode, table: CommandTable, session: CliSession,
   options: ReachabilityOptions = {},
 ): boolean {
+  const modes = modesInSubtree(node);
+  if (!modes.has(session.mode)
+    && !session.configAncestors().some(mode => modes.has(mode))) return false;
   if (node.specs.some(spec => table.isReachable(spec, session, options))) return true;
   for (const place of node.argumentChildren) {
     if (subtreeReachable(place, table, session, options)) return true;
