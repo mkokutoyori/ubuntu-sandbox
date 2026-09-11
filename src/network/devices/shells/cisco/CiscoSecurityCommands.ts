@@ -381,27 +381,6 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     return '';
   });
 
-  trie.registerGreedy('zone security', 'Define security zone', (args) => {
-    if (!args[0]) return '% Incomplete command.';
-    sec().zones.set(args[0], { name: args[0] });
-    ctx.setZone?.(args[0]);
-    ctx.setMode('config-zone' as CiscoShellMode);
-    return '';
-  });
-
-  trie.registerGreedy('zone-pair security', 'Define zone-pair', (args) => {
-    if (args.length < 5) return '% Incomplete command.';
-    const name = args[0];
-    let src = '', dst = '';
-    for (let i = 1; i < args.length; i++) {
-      if (args[i] === 'source' && args[i + 1]) src = args[i + 1];
-      if (args[i] === 'destination' && args[i + 1]) dst = args[i + 1];
-    }
-    sec().zonePairs.set(name, { name, source: src, destination: dst });
-    ctx.setZonePair?.(name);
-    ctx.setMode('config-zone-pair' as CiscoShellMode);
-    return '';
-  });
 }
 
 function mapRevocationCheck(mode: string | undefined): RevocationCheckMode {

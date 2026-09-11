@@ -43,6 +43,7 @@ import {
 } from './cisco/ciscoVrfStore';
 import { CliInvalidInput } from './cli/CliDiagnostic';
 import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
+import { zoneSpecs, type ZoneHost } from './cisco/zoneSpecs';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
@@ -440,6 +441,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
+      ...zoneSpecs(() => this.zoneHost()),
       ...dhcpClientFamily(),
       ...hsrpShowSpecs(this, () => this.fhrp),
       ...trackShowSpecs(this),
@@ -1384,6 +1386,20 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   setPolicyClass(n: string | null): void { this.selectedPolicyClass = n; }
   getControlPlane(): boolean { return this.controlPlaneActive; }
   setControlPlane(v: boolean): void { this.controlPlaneActive = v; }
+  private zoneHost(): ZoneHost {
+    const sec = () => getSecurityConfig(this.d());
+    return {
+      declareZone: (name) => {
+        sec().zones.set(name, { name });
+        this.selectedZone = name;
+      },
+      declareZonePair: (name, source, destination) => {
+        sec().zonePairs.set(name, { name, source, destination });
+        this.selectedZonePair = name;
+      },
+    };
+  }
+
   getZone(): string | null { return this.selectedZone; }
   setZone(n: string | null): void { this.selectedZone = n; }
   getZonePair(): string | null { return this.selectedZonePair; }

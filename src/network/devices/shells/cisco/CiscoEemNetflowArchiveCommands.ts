@@ -59,6 +59,7 @@ export function buildEemNetflowArchiveConfigCommands(
     ctx.setMode('config-applet' as CiscoShellMode);
     return '';
   });
+  trie.requireArgs('event manager applet', 1);
   trie.registerGreedy('no event manager applet', 'Remove EEM applet', (args) => {
     if (args[0]) eem().removeApplet(args[0]);
     return '';

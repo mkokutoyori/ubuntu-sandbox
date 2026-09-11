@@ -119,19 +119,10 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
 // ─── Cisco Switch Prompt Map ──────────────────────────────────────
 
 export const CISCO_SWITCH_PROMPTS: PromptMap = {
-  'user':        '{host}>',
-  'privileged':  '{host}#',
-  'config':      '{host}(config)#',
-  'config-if':   '{host}(config-if)#',
-  'config-vlan': '{host}(config-vlan)#',
-  'config-mst':  '{host}(config-mst)#',
-  'config-line': '{host}(config-line)#',
-  'config-view': '{host}(config-view)#',
-  'config-std-nacl': '{host}(config-std-nacl)#',
-  'config-ext-nacl': '{host}(config-ext-nacl)#',
-  'config-ext-macl': '{host}(config-ext-macl)#',
-  'config-acl':  '{host}(config-ext-nacl)#',
-  'config-dhcp': '{host}(dhcp-config)#',
+  ...CISCO_IOS_PROMPTS,
+  'config-mst':        '{host}(config-mst)#',
+  'config-ext-macl':   '{host}(config-ext-macl)#',
+  'config-acl':        '{host}(config-ext-nacl)#',
   'config-access-map': '{host}(config-access-map)#',
 };
 
