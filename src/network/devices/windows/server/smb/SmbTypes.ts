@@ -56,15 +56,20 @@ export interface SmbListRequest { op: 'list'; treeId: number; path: string }
 export interface SmbLogoffRequest { op: 'logoff' }
 /** What a real client sends as FSCTL_DFS_GET_REFERRALS: asks this server which share a namespace path actually lives on. */
 export interface SmbDfsReferralRequest { op: 'dfs_referral'; path: string }
+/** What `net view \\server` asks: the shares this server offers, as NetShareEnum does over the SRVSVC pipe. */
+export interface SmbShareEnumRequest { op: 'share_enum' }
 
 export type SmbRequest =
   | SmbNegotiateRequest | SmbSessionSetupRequest | SmbTreeConnectRequest
   | SmbTreeDisconnectRequest | SmbReadRequest | SmbWriteRequest | SmbListRequest
-  | SmbLogoffRequest | SmbDfsReferralRequest;
+  | SmbLogoffRequest | SmbDfsReferralRequest | SmbShareEnumRequest;
 
 // ── Wire PDUs (server → client) ──────────────────────────────────────────────
 
 export interface SmbListEntry { name: string; isDirectory: boolean; size: number }
+
+/** One row of a share enumeration: what `net view` prints per share. */
+export interface SmbEnumeratedShare { name: string; type: 'Disk' | 'IPC'; comment: string; special: boolean }
 
 export interface SmbErrorResponse {
   ok: false;
@@ -82,4 +87,5 @@ export type SmbResponse =
   | { ok: true; content: string }
   | { ok: true; entries: SmbListEntry[] }
   | { ok: true; targets: string[] }
+  | { ok: true; shares: SmbEnumeratedShare[] }
   | SmbErrorResponse;

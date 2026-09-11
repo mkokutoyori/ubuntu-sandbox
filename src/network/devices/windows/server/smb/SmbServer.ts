@@ -164,6 +164,21 @@ export class SmbServerHandler {
           break;
         }
 
+        case 'share_enum': {
+          if (!user) { denyAccess(); return; }
+          const offered = this.ctx.shares.list().map(share => {
+            const view = this.ctx.shares.toView(share);
+            return {
+              name: view.name,
+              type: view.name.toUpperCase() === 'IPC$' ? 'IPC' : 'Disk',
+              comment: view.description,
+              special: view.special,
+            };
+          });
+          reply({ ok: true, shares: offered });
+          break;
+        }
+
         case 'dfs_referral': {
           const namespaces = this.ctx.dfsNamespaces?.();
           const asked = String(parsed.path ?? '');

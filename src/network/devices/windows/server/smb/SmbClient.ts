@@ -13,7 +13,7 @@
  */
 
 import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
-import type { SmbListEntry } from './SmbTypes';
+import type { SmbEnumeratedShare, SmbListEntry } from './SmbTypes';
 
 export interface SmbConnection {
   readonly shareName: string;
@@ -72,6 +72,42 @@ export function requestDfsReferral(opts: {
     if (!referral?.ok) return [];
     const targets = referral.targets;
     return Array.isArray(targets) ? targets.map(String) : [];
+  } finally {
+    roundTrip(socket, { op: 'logoff' });
+    socket.close();
+  }
+}
+
+/**
+ * NetShareEnum: ask a server which shares it offers. `net view` reads
+ * this — an enumeration is a question put to the machine opposite, never
+ * a look inside it.
+ */
+export function requestShareEnum(opts: {
+  tcpStack: TcpStack;
+  targetIp: string;
+  username: string;
+  password: string;
+}): { ok: boolean; shares?: SmbEnumeratedShare[]; error?: string; systemErrorCode?: number } {
+  const socket = opts.tcpStack.connect(opts.targetIp, 445);
+  if (!socket || socket.state !== 'established') {
+    const refused = socket?.connectRefused === true;
+    const e = refused ? ERR_CONNECTION_REFUSED : ERR_NETWORK_PATH_NOT_FOUND;
+    return { ok: false, error: e.error, systemErrorCode: e.code };
+  }
+  try {
+    if (!roundTrip(socket, { op: 'negotiate' })?.ok) {
+      return { ok: false, error: ERR_NETWORK_PATH_NOT_FOUND.error, systemErrorCode: ERR_NETWORK_PATH_NOT_FOUND.code };
+    }
+    if (!roundTrip(socket, { op: 'session_setup', username: opts.username, password: opts.password })?.ok) {
+      return { ok: false, error: ERR_BAD_CREDENTIALS.error, systemErrorCode: ERR_BAD_CREDENTIALS.code };
+    }
+    const answer = roundTrip(socket, { op: 'share_enum' });
+    if (!answer?.ok) {
+      return { ok: false, error: ERR_ACCESS_DENIED.error, systemErrorCode: ERR_ACCESS_DENIED.code };
+    }
+    const shares = answer.shares;
+    return { ok: true, shares: Array.isArray(shares) ? shares as SmbEnumeratedShare[] : [] };
   } finally {
     roundTrip(socket, { op: 'logoff' });
     socket.close();

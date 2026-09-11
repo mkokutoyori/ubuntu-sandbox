@@ -183,7 +183,7 @@ export interface SmbSessionInfo {
 export interface ISmbProvider {
   listShares(): SmbShareInfo[];
   getShare(name: string): SmbShareInfo | null;
-  newShare(name: string, path: string, opts?: { fullAccess?: string[]; changeAccess?: string[]; readAccess?: string[] }):
+  newShare(name: string, path: string, opts?: { description?: string; fullAccess?: string[]; changeAccess?: string[]; readAccess?: string[] }):
     { ok: boolean; message: string };
   removeShare(name: string): { ok: boolean; message: string };
   listSessions(): SmbSessionInfo[];

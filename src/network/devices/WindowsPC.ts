@@ -105,7 +105,8 @@ import { cmdTaskkill } from './windows/WinTaskkill';
 import { cmdSc } from './windows/WinSc';
 import { cmdNetStart, cmdNetStop } from './windows/WinNetStart';
 import { cmdNetUse, establishMapping, releaseMapping, restorePersistentMappings, type NetUseEntry } from './windows/WinNetUse';
-import { requestDfsReferral } from './windows/server/smb/SmbClient';
+import { cmdNetView } from './windows/WinNetView';
+import { requestDfsReferral, requestShareEnum } from './windows/server/smb/SmbClient';
 import { cmdNetShare } from './windows/WinNetShare';
 import { SmbShareTable } from './windows/server/smb/SmbShareTable';
 import { SmbSessionTable } from './windows/server/smb/SmbSessionTable';
@@ -2984,6 +2985,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       if (subCmd === 'use') return cmdNetUse(this.buildNetContext(), subArgs);
       if (subCmd === 'share') return cmdNetShare(this.buildNetContext(), subArgs);
       if (subCmd === 'session') return this.cmdNetSession(subArgs);
+      if (subCmd === 'view') return cmdNetView(this.buildNetContext(), subArgs);
       if (subCmd === 'accounts') {
         if (subArgs.length === 0) return this.accountsPolicy.render();
         for (const a of subArgs) {
@@ -3472,6 +3474,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       requestDfsReferral: (targetIp: string, path: string, username: string, password: string) =>
         requestDfsReferral({ tcpStack: this.getTcpStack(), targetIp, path, username, password }),
       resolveHostnameSync: (name: string) => this.resolveHostnameSync(name),
+      requestShareEnum: (targetIp: string, username: string, password: string) =>
+        requestShareEnum({ tcpStack: this.getTcpStack(), targetIp, username, password }),
       signedInIdentity: () => (this.domainSession
         ? `${this.domainSession.netbiosName}\\${this.domainSession.sam}`
         : this.userMgr.currentUser || 'Administrator'),

@@ -91,6 +91,7 @@ export class NewSmbShareCmdlet implements ICmdlet {
       return null;
     }
     const res = smb.newShare(name, path, {
+      description: ctx.named['description'] !== undefined ? psValueToString(ctx.named['description']) : undefined,
       fullAccess: principalsOf(ctx, 'fullaccess'),
       changeAccess: principalsOf(ctx, 'changeaccess'),
       readAccess: principalsOf(ctx, 'readaccess'),

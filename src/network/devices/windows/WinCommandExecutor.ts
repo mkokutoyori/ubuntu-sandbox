@@ -245,6 +245,9 @@ export interface WinCommandContext {
   requestDfsReferral?(targetIp: string, path: string, username: string, password: string): string[];
   /** Name resolution without waiting — the mapping path shares one implementation between `net use` and PowerShell, and a cmdlet cannot await. */
   resolveHostnameSync?(name: string): { toString(): string } | null;
+  /** NetShareEnum against a server — what `net view` asks before it can print anything. */
+  requestShareEnum?(targetIp: string, username: string, password: string):
+    { ok: boolean; shares?: import('./server/smb/SmbTypes').SmbEnumeratedShare[]; error?: string; systemErrorCode?: number };
   /** Who is signed in, domain-qualified when a domain logon is open — the identity an outbound connection carries when the operator names none. */
   signedInIdentity?(): string;
   /** The secret this machine holds for an account: the vault `runas /savecred` fills, then the logon secret. */

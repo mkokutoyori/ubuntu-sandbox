@@ -438,14 +438,14 @@ class WindowsSmbAdapter implements ISmbProvider {
     const s = this.pc.smbShares.get(name);
     return s ? this.toShareInfo(this.pc.smbShares.toView(s)) : null;
   }
-  newShare(name: string, path: string, opts?: { fullAccess?: string[]; changeAccess?: string[]; readAccess?: string[] }) {
+  newShare(name: string, path: string, opts?: { description?: string; fullAccess?: string[]; changeAccess?: string[]; readAccess?: string[] }) {
     this.requireRole();
     const permissions = new Map<string, 'Full' | 'Change' | 'Read'>();
     for (const p of opts?.fullAccess ?? []) permissions.set(p, 'Full');
     for (const p of opts?.changeAccess ?? []) permissions.set(p, 'Change');
     for (const p of opts?.readAccess ?? []) permissions.set(p, 'Read');
     if (permissions.size === 0) permissions.set('Everyone', 'Read');
-    const res = this.pc.smbShares.add(name, path, { permissions });
+    const res = this.pc.smbShares.add(name, path, { description: opts?.description, permissions });
     // 5142 — « un objet de partage réseau a été ajouté ». C'est
     // l'événement de la *création* ; 5140 est celui de l'*accès*, et les
     // confondre revient à croire qu'un partage créé a déjà été utilisé.
