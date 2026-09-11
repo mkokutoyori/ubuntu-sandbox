@@ -557,6 +557,16 @@ export class GetVolumeCmdlet implements ICmdlet {
       }
       return byFs as PSValue;
     }
+    const label = ctx.named['filesystemlabel'];
+    if (label !== undefined && label !== null && label !== '') {
+      const wanted = psValueToString(label).toUpperCase();
+      const byLabel = rows.filter(r => psValueToString(r['FileSystemLabel']).toUpperCase() === wanted);
+      if (byLabel.length === 0) {
+        ctx.emitError(`Get-Volume : No MSFT_Volume objects found with FileSystemLabel = ${psValueToString(label)}.`);
+        return null;
+      }
+      return byLabel as PSValue;
+    }
     const asked = psValueToString(ctx.named['driveletter'] ?? ctx.positional[0] ?? '')
       .replace(/:$/, '').toUpperCase();
     if (!asked) return rows as PSValue;

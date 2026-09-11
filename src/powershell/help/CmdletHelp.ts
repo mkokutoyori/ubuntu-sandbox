@@ -195,7 +195,7 @@ export const CMDLET_HELP: Record<string, CmdletHelpEntry> = {
   'get-volume': {
     synopsis: 'Gets the specified Volume object, or all Volume objects if no filter is specified.',
     description: 'The Get-Volume cmdlet returns a list of all available volumes.',
-    syntax: 'Get-Volume [[-DriveLetter] <Char[]>] [-FriendlyName <String[]>] [<CommonParameters>]',
+    syntax: 'Get-Volume [[-DriveLetter] <Char[]>] [-FileSystemLabel <String[]>] [-FileSystem <String[]>] [<CommonParameters>]',
     examples: 'EXAMPLE 1\n    PS> Get-Volume\n    (Lists all volumes)',
   },
   'get-localuser': {

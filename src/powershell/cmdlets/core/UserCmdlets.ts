@@ -60,9 +60,20 @@ export class GetLocalUserCmdlet implements ICmdlet {
   readonly name = 'get-localuser';
   readonly displayName = 'Get-LocalUser';
   readonly aliases = [] as const;
+  readonly parameters = ['Name', 'SID'] as const;
+  readonly parameterValues = { Name: 'localUser' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const users = requireUsers(ctx);
+    const sid = ctx.named['sid'];
+    if (sid !== undefined && sid !== null && sid !== '') {
+      const wanted = (Array.isArray(sid) ? sid : [sid]).map(psValueToString);
+      const matched = users.listUsers().filter(u => wanted.includes(u.sid));
+      for (const missing of wanted.filter(w => !matched.some(u => u.sid === w))) {
+        ctx.emitError(`User ${missing} was not found.`);
+      }
+      return matched.map(userToPSObject) as PSValue;
+    }
     const name  = pickName(ctx);
     if (name === null) return users.listUsers().map(userToPSObject) as PSValue;
     const names = Array.isArray(name) ? name : [name];
