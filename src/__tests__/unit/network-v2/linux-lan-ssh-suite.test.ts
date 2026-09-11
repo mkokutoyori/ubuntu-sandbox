@@ -1809,7 +1809,7 @@ describe('§27 — ssh-agent and ssh-add', () => {
       },
       on: l => l.pc1,
       cmd: 'ssh-add -l',
-      contains: [/^256 SHA256:.*id_ed25519 \(ED25519\)/m],
+      contains: [/^256 SHA256:\S+ \S+ \(ED25519\)$/m],
     },
     {
       name: 'ssh-add -L prints the public key in authorized_keys form',
@@ -1853,7 +1853,7 @@ describe('§27 — ssh-agent and ssh-add', () => {
       },
       on: l => l.pc1,
       cmd: 'ssh -A alice@10.0.0.2 ssh-add -l',
-      contains: [/SHA256:.*id_ed25519/],
+      contains: [/SHA256:\S+ \S+ \(ED25519\)/],
     },
   ];
 
