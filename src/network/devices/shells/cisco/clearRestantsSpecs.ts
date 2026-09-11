@@ -42,26 +42,39 @@ export function lineTargetPlace(maxAbsolute: number): ArgumentSpec {
 }
 
 const LINE_INDEX: ArgumentSpec = {
-  name: 'index', type: 'INT', optional: true, range: [0, 15],
+  name: 'index', type: 'INT', range: [0, 15],
   description: 'Line number',
 };
+
+const SORTES_DE_LIGNE: ReadonlyArray<readonly [string, string]> = [
+  ['aux', 'Auxiliary line'],
+  ['console', 'Primary terminal line'],
+  ['tty', 'Terminal controller'],
+  ['vty', 'Virtual terminal'],
+];
 
 export function clearLineSpecs(
   ctx: () => ClearRestantsHost, maxAbsolute: number,
 ): CommandSpec[] {
-  const cible = lineTargetPlace(maxAbsolute);
+  const absolue: ArgumentSpec = {
+    name: 'cible', type: 'INT', range: [0, maxAbsolute],
+    description: 'First Line number',
+  };
   return [
     {
       id: 'clear-line',
-      path: ['clear', 'line', cible, LINE_INDEX],
+      path: ['clear', 'line', absolue],
       description: 'Reset a terminal line',
       modes: EXEC, minPrivilege: 15,
-      run: (_session, args) => {
-        const mots = args.index === undefined
-          ? [args.cible] : [args.cible, args.index];
-        return clearLine(ctx().linePool(), mots);
-      },
+      run: (_session, args) => clearLine(ctx().linePool(), [args.cible]),
     },
+    ...SORTES_DE_LIGNE.map(([sorte, description]): CommandSpec => ({
+      id: `clear-line-${sorte}`,
+      path: ['clear', 'line', sorte, LINE_INDEX],
+      description,
+      modes: EXEC, minPrivilege: 15,
+      run: (_session, args) => clearLine(ctx().linePool(), [sorte, args.index]),
+    })),
     {
       id: 'clear-logging-persistent',
       path: ['clear', 'logging', 'persistent'],

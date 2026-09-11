@@ -7699,7 +7699,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const rendues = negation === null
         ? this.avecNegationAuPremierRang(table, ligne, brutes)
         : this.suggestionsNegatives(table, ligne, brutes);
-      return rendues.map(({ keyword, description }) => ({ keyword, description }));
+      const vus = new Set<string>();
+      return rendues
+        .filter(({ keyword }) => {
+          const cle = keyword.toLowerCase();
+          if (vus.has(cle)) return false;
+          vus.add(cle);
+          return true;
+        })
+        .map(({ keyword, description }) => ({ keyword, description }));
     } finally {
       this.deviceRef = precedent;
     }

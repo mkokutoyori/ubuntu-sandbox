@@ -1199,6 +1199,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       this.mode = 'config-acl';
       return '';
     });
+    trie.config.requireArgs('arp access-list', 1);
 
     // ── Interface ── trust + limit rate
     trie.configIf.register('ip arp inspection trust', 'Trust port for DAI', () => {
@@ -1589,6 +1590,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private registerUdldCommands(trie: SwitchTries): void {
+    trie.config.requireArgs('udld', 1);
     trie.config.registerGreedy('udld', 'UDLD global configuration', (args) => {
       const agent = this.requireUdld();
       const mot = (args[0] ?? '').toLowerCase();
@@ -2745,6 +2747,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return this.showVlanBrief(this.d(), { id });
     });
 
+    t.requireArgs('show vlan name', 1);
     t.registerGreedy('show vlan name', 'Display a VLAN by name', (args) => {
       if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
       return this.showVlanBrief(this.d(), { name: args[0] });
@@ -3243,6 +3246,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return this.showQueuingInterface(name);
     });
+    this.privilegedTrie.requireArgs('show queuing interface', 1);
 
     this.privilegedTrie.register('write', 'Save running-config to startup-config', () => {
       return this.d().writeMemory();
@@ -6065,6 +6069,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
     });
 
+    trie.privileged.requireArgs('show lacp', 1);
     trie.privileged.registerGreedy('show lacp', 'Display LACP state', (args) => this.showLacp(args));
     trie.privileged.registerGreedy('test etherchannel load-balance',
       'Simulate the load-balance decision for a flow', (args) => {
