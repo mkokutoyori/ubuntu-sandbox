@@ -16,9 +16,11 @@
  * inbound SSH, so the client logic is shared rather than duplicated.
  */
 
-import { findHostByAddress, isPathReachable, transitTcpAclVerdict } from './HostLookup';
+import { findHostByAddress, isPathReachable } from './HostLookup';
 import { sshUnreachableReason } from '@/terminal/ssh/wireSshLogin';
 import { IPAddress } from '../../../core/types';
+import type { TcpFlags } from '../../../tcp/types';
+import type { StatelessProbeReply } from '../../../tcp/TcpStack';
 import { type SshHostKeyType } from './SshKnownHostEntry';
 import { SshPortForward } from './SshPortForward';
 import type { AccountLifecycleVerdict } from '@/network/protocols/ssh/auth/ISshAuthMethod';
@@ -726,6 +728,26 @@ function rebindToLoopback(fwd: SshPortForward): SshPortForward {
   return SshPortForward.parse(fwd.kind, spec) ?? fwd;
 }
 
+type WireProbeDevice = {
+  getTcpStack(): {
+    scanProbe(remoteIp: string, remotePort: number, flags: TcpFlags): StatelessProbeReply;
+  };
+};
+
+function wireReachOutcome(
+  device: object | null | undefined, destIp: string, port: number,
+): 'blocked' | 'reached' {
+  const probe = device as WireProbeDevice | null | undefined;
+  if (!probe || typeof probe.getTcpStack !== 'function') return 'reached';
+  const stack = probe.getTcpStack();
+  if (!stack || typeof stack.scanProbe !== 'function') return 'reached';
+  if (IPAddress.tryParse(destIp) === null) return 'reached';
+  const syn: TcpFlags = {
+    fin: false, syn: true, rst: false, psh: false, ack: false, urg: false, ece: false, cwr: false,
+  };
+  return stack.scanProbe(destIp, port, syn) === 'none' ? 'blocked' : 'reached';
+}
+
 export function runSshClient(opts: SshClientOpts): SshClientResult {
   const { positional, flags } = splitSshArgs(opts.args);
   const target = positional[0];
@@ -921,17 +943,6 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
 
-  // Transit router ACL — any Cisco extended ACL on a router along the
-  // path that denies the synth SYN drops the packet silently, so the
-  // client times out (no SYN-ACK, no RST).
-  if (transitTcpAclVerdict(opts.sourceIp, destIp, port) === 'deny') {
-    return {
-      output: `ssh: connect to host ${host} port ${port}: Connection timed out\n`,
-      exitCode: 255,
-      droppedSyn: { localIp: opts.sourceIp, peerIp: destIp, peerPort: port },
-    };
-  }
-
   const verdict = inboundFirewallVerdict(machine, opts.sourceIp, port);
   if (verdict === 'drop' || verdict === 'reject') {
     return {
@@ -939,6 +950,14 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
         ? `ssh: connect to host ${host} port ${port}: Connection refused\n`
         : `ssh: connect to host ${host} port ${port}: Connection timed out\n`,
       exitCode: 255,
+    };
+  }
+
+  if (wireReachOutcome(opts.sourceDevice, destIp, port) === 'blocked') {
+    return {
+      output: `ssh: connect to host ${host} port ${port}: Connection timed out\n`,
+      exitCode: 255,
+      droppedSyn: { localIp: opts.sourceIp, peerIp: destIp, peerPort: port },
     };
   }
 
