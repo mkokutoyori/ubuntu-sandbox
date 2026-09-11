@@ -17,7 +17,8 @@ export type ParameterValueKind =
   | 'addressFamily'
   | 'serviceName'
   | 'processName'
-  | 'localUser';
+  | 'localUser'
+  | 'firewallProfile';
 
 export interface ICmdlet {
   /** Canonical lowercase name (e.g. 'get-content'). */

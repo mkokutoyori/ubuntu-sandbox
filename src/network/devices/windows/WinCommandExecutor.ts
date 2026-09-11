@@ -228,6 +228,11 @@ export interface WinCommandContext {
    */
   firewallRules: Map<string, NetFirewallRuleEntry>;
 
+  firewallProfiles: Map<
+    import('./netFirewallProfile').FirewallProfileName,
+    import('./netFirewallProfile').NetFirewallProfileRow>;
+  currentFirewallProfile?(): import('./netFirewallProfile').FirewallProfileName;
+
   /** Per-device SMB share table (`net share` / `New-SmbShare`) — instance-owned. */
   smbShares: import('./server/smb/SmbShareTable').SmbShareTable;
   /** Per-device `net use` drive-letter mapping table — instance-owned. */

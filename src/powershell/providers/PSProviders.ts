@@ -18,6 +18,9 @@ import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFu
 import type { RemoteDirectoryTarget } from './adRemoteDirectory';
 import type { NetRouteIdentity, NetRouteUpdate } from '@/network/devices/windows/netRoute';
 import type { NetFirewallRuleEntry } from '@/network/devices/windows/netFirewallRule';
+import type {
+  FirewallProfileName, NetFirewallProfileRow,
+} from '@/network/devices/windows/netFirewallProfile';
 import type { NetAdapterEntry } from '@/network/devices/windows/netAdapter';
 import type { NetNeighborPlan, NetNeighborRow } from '@/network/devices/windows/netNeighbor';
 import type { DnsAnswerRow, DnsCacheRow } from '@/network/devices/windows/dnsClientCache';
@@ -1376,6 +1379,8 @@ export interface INetworkProvider {
    */
   getUdpEndpoints?(): Array<{ localAddress: string; localPort: number; pid: number; processName: string }>;
   getFirewallRules(): NetFirewallRuleEntry[];
+  getFirewallProfiles(): NetFirewallProfileRow[];
+  updateFirewallProfile(name: FirewallProfileName, patch: Partial<NetFirewallProfileRow>): void;
   addFirewallRule(rule: NetFirewallRuleEntry): string;
   updateFirewallRule(name: string, patch: Partial<NetFirewallRuleEntry>): void;
   removeFirewallRule(name: string): void;

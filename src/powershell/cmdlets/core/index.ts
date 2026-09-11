@@ -91,6 +91,7 @@ import {
   SetNetFirewallRuleCmdlet, RemoveNetFirewallRuleCmdlet,
   EnableNetFirewallRuleCmdlet, DisableNetFirewallRuleCmdlet,
   GetNetConnectionProfileCmdlet, SetNetConnectionProfileCmdlet,
+  GetNetFirewallProfileCmdlet, SetNetFirewallProfileCmdlet,
   SetNetIPAddressCmdlet, SetNetRouteCmdlet,
   RestartNetAdapterCmdlet, SetNetAdapterCmdlet, TestNetConnectionCmdlet,
   ClearNetNeighborCacheCmdlet, GetNetAdapterStatisticsCmdlet,
@@ -441,6 +442,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new RemoveNetFirewallRuleCmdlet());
   registry.register(new EnableNetFirewallRuleCmdlet());
   registry.register(new DisableNetFirewallRuleCmdlet());
+  registry.register(new GetNetFirewallProfileCmdlet());
+  registry.register(new SetNetFirewallProfileCmdlet());
   registry.register(new GetNetConnectionProfileCmdlet());
   registry.register(new SetNetConnectionProfileCmdlet());
   registry.register(new SetNetIPAddressCmdlet());

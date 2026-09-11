@@ -117,6 +117,9 @@ import {
 import {
   type NetFirewallRuleEntry, firewallRuleKey,
 } from '@/network/devices/windows/netFirewallRule';
+import type {
+  FirewallProfileName, NetFirewallProfileRow,
+} from '@/network/devices/windows/netFirewallProfile';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function defaultNamingContextOf(client: LdapClient): string | null {
@@ -2497,7 +2500,14 @@ class WindowsNetworkAdapter implements INetworkProvider {
   // ─ Network connection profile ──────────────────────────────────────────
 
   getNetworkProfile(ifIndex: number): string {
-    return this.state.networkProfiles.get(ifIndex) ?? 'DomainAuthenticated';
+    return this.state.networkProfiles.get(ifIndex) ?? this.pc.defaultNetworkCategory();
+  }
+  getFirewallProfiles(): NetFirewallProfileRow[] {
+    return [...this.pc.firewallProfiles.values()];
+  }
+  updateFirewallProfile(name: FirewallProfileName, patch: Partial<NetFirewallProfileRow>): void {
+    const row = this.pc.firewallProfiles.get(name);
+    if (row) Object.assign(row, patch);
   }
   setNetworkProfile(ifIndex: number, category: string): void {
     this.state.networkProfiles.set(ifIndex, category);

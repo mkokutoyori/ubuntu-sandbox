@@ -40,7 +40,7 @@ import type { ARecordData, PtrRecordData, ResourceRecord } from '../dns/wire/Res
 import { ptrQName, resourceRecordToLegacyRecord, rrTypeFromName } from '../dns/compat/DnsWireCompat';
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
-import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
+import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, type ICMPType, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
 import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import type { TcpStream } from '../tcp/types';
@@ -204,6 +204,11 @@ import {
   type FirewallPacketFacts, type NetFirewallRuleEntry,
   firewallRuleMatches, seedBuiltInFirewallRules,
 } from './windows/netFirewallRule';
+import {
+  type FirewallProfileName, type NetFirewallProfileRow,
+  defaultActionFor, defaultFirewallProfiles, firewallIsOn, profileForNetworkCategory,
+  rulesApplyTo,
+} from './windows/netFirewallProfile';
 import {
   cmdCd, cmdMkdir, cmdRmdir, cmdType, cmdCopy, cmdMove,
   cmdRen, cmdDel, cmdTree, cmdSet, cmdTasklist, cmdNetstat,
@@ -386,6 +391,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   readonly firewallRules: Map<string, NetFirewallRuleEntry> = seededFirewallRules();
   /** Network connection profiles: ifIndex → category. */
   readonly networkProfiles: Map<number, string> = new Map();
+  readonly firewallProfiles: Map<FirewallProfileName, NetFirewallProfileRow> =
+    defaultFirewallProfiles();
   /** VPN connections: lowercase name → details. */
   readonly vpnConnections: Map<string, VpnConnectionInfo> = new Map();
   /** In-memory registry hive (HKLM / HKCU). */
@@ -3490,6 +3497,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
       portProxy: this.portProxyTable,
       firewallRules: this.firewallRules,
+      firewallProfiles: this.firewallProfiles,
+      currentFirewallProfile: () =>
+        this.activeFirewallProfileName(this.getPorts()[0]?.getName() ?? ''),
       eventLog: this.eventLog,
       dnsCache: this.dnsCache,
 
@@ -5862,35 +5872,94 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return verdict === 'accept' ? 'accept' : 'drop';
   }
 
+  defaultNetworkCategory(): string {
+    return this.domainMembership !== null ? 'DomainAuthenticated' : 'Public';
+  }
+
+  networkCategoryOf(portName: string): string {
+    return this.networkProfiles.get(this.adapterIfIndexOf(portName))
+      ?? this.defaultNetworkCategory();
+  }
+
+  activeFirewallProfileName(portName: string): FirewallProfileName {
+    return profileForNetworkCategory(this.networkCategoryOf(portName));
+  }
+
+  activeFirewallProfile(portName: string): NetFirewallProfileRow {
+    const name = this.activeFirewallProfileName(portName);
+    const row = this.firewallProfiles.get(name);
+    if (row) return row;
+    const rebuilt = defaultFirewallProfiles();
+    for (const [key, value] of rebuilt) this.firewallProfiles.set(key, value);
+    return this.firewallProfiles.get(name)!;
+  }
+
   protected override firewallFilter(
-    _portName: string,
+    portName: string,
     ipPkt: IPv4Packet,
     direction: 'in' | 'out' | 'forward',
     _outPortName?: string,
   ): 'accept' | 'drop' | 'reject' {
     if (direction === 'forward') return 'accept';
-    const facts = this.firewallFactsFor(ipPkt, direction);
-    const matching = [...this.firewallRules.values()].filter(r => firewallRuleMatches(r, facts));
-    for (const rule of matching) {
-      if (rule.action !== 'Block') continue;
-      this.getBus().publish({
-        topic: 'windows.firewall.drop',
-        payload: {
-          deviceId: this.id, hostname: this.getHostname(),
-          ruleName: rule.name,
-          sourceIp: ipPkt.sourceIP.toString(),
-          destinationIp: ipPkt.destinationIP.toString(),
-          sourcePort: facts.direction === 'Inbound' ? facts.remotePort : facts.localPort,
-          destinationPort: facts.direction === 'Inbound' ? facts.localPort : facts.remotePort,
-          protocol: rule.protocol, direction: facts.direction,
-        },
-      });
-      return 'drop';
+    const profile = this.activeFirewallProfile(portName);
+    if (!firewallIsOn(profile)) return 'accept';
+    const facts = this.firewallFactsFor(portName, ipPkt, direction);
+    if (rulesApplyTo(profile, facts.direction)) {
+      const matching = [...this.firewallRules.values()].filter(r => firewallRuleMatches(r, facts));
+      for (const rule of matching) {
+        if (rule.action !== 'Block') continue;
+        this.publishFirewallDrop(ipPkt, facts, rule.name, rule.protocol);
+        return 'drop';
+      }
+      if (matching.some(r => r.action === 'Allow')) return 'accept';
     }
-    return 'accept';
+    if (defaultActionFor(profile, facts.direction) === 'Allow') return 'accept';
+    if (this.belongsToOwnFlow(ipPkt, facts)) return 'accept';
+    this.publishFirewallDrop(ipPkt, facts, '', String(ipPkt.protocol));
+    return 'drop';
   }
 
-  private firewallFactsFor(ipPkt: IPv4Packet, direction: 'in' | 'out'): FirewallPacketFacts {
+  private publishFirewallDrop(
+    ipPkt: IPv4Packet, facts: FirewallPacketFacts, ruleName: string, protocol: string,
+  ): void {
+    this.getBus().publish({
+      topic: 'windows.firewall.drop',
+      payload: {
+        deviceId: this.id, hostname: this.getHostname(),
+        ruleName,
+        sourceIp: ipPkt.sourceIP.toString(),
+        destinationIp: ipPkt.destinationIP.toString(),
+        sourcePort: facts.direction === 'Inbound' ? facts.remotePort : facts.localPort,
+        destinationPort: facts.direction === 'Inbound' ? facts.localPort : facts.remotePort,
+        protocol, direction: facts.direction,
+      },
+    });
+  }
+
+  private belongsToOwnFlow(ipPkt: IPv4Packet, facts: FirewallPacketFacts): boolean {
+    if (facts.direction !== 'Inbound') return false;
+    if (ipPkt.protocol === IP_PROTO_TCP) {
+      const segment = ipPkt.payload as TCPPacket | null;
+      if (segment && segment.flags.syn && !segment.flags.ack) return false;
+      const peer = facts.remoteAddress.toString();
+      return this.getTcpStack().listSockets().some(s => s.localPort === facts.localPort
+        && s.remotePort === facts.remotePort && s.remoteIp === peer);
+    }
+    if (ipPkt.protocol === IP_PROTO_UDP) {
+      const range = this.getTcpStack().getEphemeralRange();
+      return facts.localPort >= range.min && facts.localPort <= range.max;
+    }
+    return ipPkt.protocol === IP_PROTO_ICMP && !this.isEchoRequest(ipPkt);
+  }
+
+  private isEchoRequest(ipPkt: IPv4Packet): boolean {
+    const icmp = ipPkt.payload as { icmpType?: ICMPType } | null;
+    return icmp?.icmpType === 'echo-request';
+  }
+
+  private firewallFactsFor(
+    portName: string, ipPkt: IPv4Packet, direction: 'in' | 'out',
+  ): FirewallPacketFacts {
     const ports = this.extractPorts(ipPkt);
     const inbound = direction === 'in';
     return {
@@ -5900,7 +5969,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       remoteAddress: inbound ? ipPkt.sourceIP : ipPkt.destinationIP,
       localPort: inbound ? ports.dstPort : ports.srcPort,
       remotePort: inbound ? ports.srcPort : ports.dstPort,
-      profile: 'Any',
+      profile: this.activeFirewallProfileName(portName),
     };
   }
 }

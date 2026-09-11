@@ -62,6 +62,12 @@ import {
   profileSelectionIsEmpty, selectNetConnectionProfiles,
 } from '@/network/devices/windows/netConnectionProfile';
 import {
+  type NetFirewallProfileRow, GPO_BOOLEANS, MAX_FIREWALL_LOG_KILOBYTES,
+  MIN_FIREWALL_LOG_KILOBYTES, PROFILE_ACTIONS, UNSOURCED_PROFILE_SETTINGS,
+  noMatchingFirewallProfile, readGpoBoolean, readLogSizeKilobytes, readProfileAction,
+  refusedProfileSetting, selectFirewallProfiles,
+} from '@/network/devices/windows/netFirewallProfile';
+import {
   type DnsClientServerAddressRow, type DnsClientServerAddressSelection,
   dnsServerSelectionIsEmpty, noMatchingDnsClientServerAddress, selectDnsClientServerAddresses,
 } from '@/network/devices/windows/dnsClientServerAddress';
@@ -2217,6 +2223,160 @@ export class SetNetConnectionProfileCmdlet implements ICmdlet {
     return selectNetConnectionProfiles(connectionProfiles(net), {
       interfaceIndex: matched.map(r => String(r.ifIndex)),
     }).map(profileToPSObject) as PSValue;
+  }
+}
+
+
+const NET_FW_PROFILE_FILTERS = ['Name', 'All', 'PolicyStore', 'GPOSession', 'CimSession'] as const;
+
+const NET_FW_PROFILE_SET_PARAMS = [
+  ...NET_FW_PROFILE_FILTERS, 'InputObject', 'PassThru', 'WhatIf', 'Confirm',
+  'Enabled', 'DefaultInboundAction', 'DefaultOutboundAction', 'AllowInboundRules',
+  'AllowLocalFirewallRules', 'AllowLocalIPsecRules', 'AllowUnicastResponseToMulticast',
+  'NotifyOnListen', 'LogAllowed', 'LogBlocked', 'LogIgnored', 'LogFileName',
+  'LogMaxSizeKilobytes',
+  ...UNSOURCED_PROFILE_SETTINGS,
+] as const;
+
+const PROFILE_GPO_FIELDS: ReadonlyArray<readonly [string, keyof NetFirewallProfileRow]> = [
+  ['enabled', 'enabled'],
+  ['allowinboundrules', 'allowInboundRules'],
+  ['allowlocalfirewallrules', 'allowLocalFirewallRules'],
+  ['allowlocalipsecrules', 'allowLocalIPsecRules'],
+  ['allowunicastresponsetomulticast', 'allowUnicastResponseToMulticast'],
+  ['notifyonlisten', 'notifyOnListen'],
+  ['logallowed', 'logAllowed'],
+  ['logblocked', 'logBlocked'],
+  ['logignored', 'logIgnored'],
+];
+
+const PROFILE_ACTION_FIELDS: ReadonlyArray<readonly [string, keyof NetFirewallProfileRow]> = [
+  ['defaultinboundaction', 'defaultInboundAction'],
+  ['defaultoutboundaction', 'defaultOutboundAction'],
+];
+
+function firewallProfileToPSObject(row: NetFirewallProfileRow): Record<string, PSValue> {
+  return {
+    Name:                            row.name,
+    Enabled:                         row.enabled,
+    DefaultInboundAction:            row.defaultInboundAction,
+    DefaultOutboundAction:           row.defaultOutboundAction,
+    AllowInboundRules:               row.allowInboundRules,
+    AllowLocalFirewallRules:         row.allowLocalFirewallRules,
+    AllowLocalIPsecRules:            row.allowLocalIPsecRules,
+    AllowUnicastResponseToMulticast: row.allowUnicastResponseToMulticast,
+    NotifyOnListen:                  row.notifyOnListen,
+    LogAllowed:                      row.logAllowed,
+    LogBlocked:                      row.logBlocked,
+    LogIgnored:                      row.logIgnored,
+    LogFileName:                     row.logFileName,
+    LogMaxSizeKilobytes:             row.logMaxSizeKilobytes,
+  };
+}
+
+function matchedFirewallProfiles(
+  ctx: CmdletContext, net: INetworkProvider, cmdlet: string,
+): NetFirewallProfileRow[] | null {
+  const remote = remoteCimRefusal(ctx, cmdlet);
+  if (remote !== null) { ctx.emitError(remote); return null; }
+  const list = cimFilterReader(ctx, NET_FW_PROFILE_FILTERS);
+  const selection = { name: list('name') };
+  const matched = selectFirewallProfiles(net.getFirewallProfiles(), selection);
+  if (matched.length === 0) {
+    ctx.emitError(`${cmdlet} : ${noMatchingFirewallProfile(selection)}`);
+    return null;
+  }
+  return matched;
+}
+
+export class GetNetFirewallProfileCmdlet implements ICmdlet {
+  readonly name = 'get-netfirewallprofile';
+  readonly displayName = 'Get-NetFirewallProfile';
+  readonly aliases = [] as const;
+  readonly description = 'Displays the per-profile settings of Windows Firewall.';
+  readonly parameters = NET_FW_PROFILE_FILTERS;
+  readonly parameterValues = { Name: 'firewallProfile' } as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const matched = matchedFirewallProfiles(ctx, requireNetwork(ctx), this.displayName);
+    if (matched === null) return null;
+    return matched.map(firewallProfileToPSObject) as PSValue;
+  }
+}
+
+export class SetNetFirewallProfileCmdlet implements ICmdlet {
+  readonly pipelineByPropertyName = true as const;
+  readonly name = 'set-netfirewallprofile';
+  readonly displayName = 'Set-NetFirewallProfile';
+  readonly aliases = [] as const;
+  readonly description = 'Configures the per-profile settings of Windows Firewall.';
+  readonly parameters = NET_FW_PROFILE_SET_PARAMS;
+  readonly parameterValues = { Name: 'firewallProfile' } as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    for (const setting of UNSOURCED_PROFILE_SETTINGS) {
+      if (ctx.named[setting.toLowerCase()] === undefined) continue;
+      ctx.emitError(refusedProfileSetting(this.displayName, setting));
+      return null;
+    }
+    const patch: Partial<NetFirewallProfileRow> = {};
+    for (const [parameter, field] of PROFILE_GPO_FIELDS) {
+      const raw = ctx.named[parameter];
+      if (raw === undefined) continue;
+      const value = readGpoBoolean(psValueToString(raw));
+      if (value === null) {
+        ctx.emitError(this.rejected(parameter, GPO_BOOLEANS));
+        return null;
+      }
+      (patch as Record<string, unknown>)[field] = value;
+    }
+    for (const [parameter, field] of PROFILE_ACTION_FIELDS) {
+      const raw = ctx.named[parameter];
+      if (raw === undefined) continue;
+      const value = readProfileAction(psValueToString(raw));
+      if (value === null) {
+        ctx.emitError(this.rejected(parameter, PROFILE_ACTIONS));
+        return null;
+      }
+      (patch as Record<string, unknown>)[field] = value;
+    }
+    const fileName = ctx.named['logfilename'];
+    if (fileName !== undefined) patch.logFileName = psValueToString(fileName);
+    const size = ctx.named['logmaxsizekilobytes'];
+    if (size !== undefined) {
+      const kilobytes = readLogSizeKilobytes(psValueToString(size));
+      if (kilobytes === null) {
+        ctx.emitError(`${this.displayName} : Cannot validate argument on parameter`
+          + " 'LogMaxSizeKilobytes'. The argument is outside the range"
+          + ` ${MIN_FIREWALL_LOG_KILOBYTES} through ${MAX_FIREWALL_LOG_KILOBYTES}.`);
+        return null;
+      }
+      patch.logMaxSizeKilobytes = kilobytes;
+    }
+
+    const matched = matchedFirewallProfiles(ctx, net, this.displayName);
+    if (matched === null) return null;
+    if (ctx.named['whatif'] === true) {
+      for (const row of matched) {
+        ctx.emit(`What if: Performing the operation "${this.displayName}" on target "${row.name}".`);
+      }
+      return null;
+    }
+    if (confirmationDue(ctx, 'None')) {
+      ctx.emitError(`${this.displayName} : ${NON_INTERACTIVE_HOST}`);
+      return null;
+    }
+    for (const row of matched) net.updateFirewallProfile(row.name, patch);
+    if (ctx.named['passthru'] !== true) return null;
+    return selectFirewallProfiles(net.getFirewallProfiles(), { name: matched.map(r => r.name) })
+      .map(firewallProfileToPSObject) as PSValue;
+  }
+
+  private rejected(parameter: string, accepted: readonly string[]): string {
+    const shown = parameter.charAt(0).toUpperCase() + parameter.slice(1);
+    return `${this.displayName} : Cannot validate argument on parameter '${shown}'.`
+      + ` The argument does not belong to the set "${accepted.join(',')}".`;
   }
 }
 

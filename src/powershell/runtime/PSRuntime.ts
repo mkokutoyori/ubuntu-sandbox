@@ -567,6 +567,8 @@ export class PSRuntime {
         return [...new Set((this.providers.processes?.listProcesses() ?? []).map(p => p.name))];
       case 'localUser':
         return (this.providers.users?.listUsers() ?? []).map(u => u.name);
+      case 'firewallProfile':
+        return (this.providers.network?.getFirewallProfiles() ?? []).map(p => p.name);
       case 'path':
         return [];
     }
