@@ -129,6 +129,7 @@ import {
 } from './ServerManagerCmdlets';
 import {
   GetSmbShareCmdlet, NewSmbShareCmdlet, RemoveSmbShareCmdlet, GetSmbSessionCmdlet,
+  GetSmbMappingCmdlet, NewSmbMappingCmdlet, RemoveSmbMappingCmdlet,
 } from './SmbCmdlets';
 import {
   InstallADDSForestCmdlet, InstallADDSDomainControllerCmdlet, GetADDomainControllerCmdlet, RemoveADDomainControllerCmdlet,
@@ -495,6 +496,9 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   // ── SMB file sharing (available on client and server editions) ───────────
   registry.register(new GetSmbShareCmdlet());
   registry.register(new NewSmbShareCmdlet());
+  registry.register(new GetSmbMappingCmdlet());
+  registry.register(new NewSmbMappingCmdlet());
+  registry.register(new RemoveSmbMappingCmdlet());
   registry.register(new RemoveSmbShareCmdlet());
   registry.register(new GetSmbSessionCmdlet());
 
