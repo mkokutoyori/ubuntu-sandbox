@@ -66,6 +66,7 @@ import {
 } from './cisco/clockSummerTime';
 import { privilegeRuleSpecs, type PrivilegeRuleHost } from './cisco/privilegeRuleSpecs';
 import { ipSshSpecs, type IpSshHost } from './cisco/ipSshSpecs';
+import { terminalSpecs } from './cisco/terminalSpecs';
 import { ipAddressInterfaceSpecs, type IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import {
   interfaceLoadMtuSpecs, MTU_MIN,
@@ -5830,6 +5831,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.fileSystemSpecs(),
       ...this.sessionSpecs(),
       ...this.sharedShowSpecs(),
+      ...terminalSpecs(() => ({
+        applyTerminal: (words) => this.handleTerminalCommand([...words]),
+      })),
     ];
   }
 
@@ -9104,14 +9108,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `Router` comme par `Switch` est `getRunningConfig()`.
     // Un compteur qu'on ne peut pas remettre a zero ne sert qu'a moitie :
     // un diagnostic commence par effacer, provoquer, relire.
-    trie.registerGreedy('terminal', 'Set terminal parameters', (args) =>
-      this.handleTerminalCommand(args), [
-      { keyword: 'length',  description: 'Set number of lines on a screen' },
-      { keyword: 'width',   description: 'Set width of the display terminal' },
-      { keyword: 'monitor', description: 'Copy debug output to the current terminal line' },
-      { keyword: 'history', description: 'Enable and control the command history function' },
-      { keyword: 'no',      description: 'Negate a command or set its defaults' },
-    ]);
 
     // NOTE: `copy` is a privileged-EXEC command — it is registered once, with
     // full file-system semantics, in registerPrivilegedExtras (the rich
