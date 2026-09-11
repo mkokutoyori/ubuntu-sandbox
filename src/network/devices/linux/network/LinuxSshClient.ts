@@ -90,6 +90,10 @@ export interface SshClientOpts {
    * `VAR=val` prefix assignments). Drives SendEnv/AcceptEnv forwarding.
    */
   callerEnv?: Record<string, string>;
+  execRelay?: (
+    command: string, env: Record<string, string>,
+  ) => { output: string; exitCode: number } | null;
+  wireAuthenticated?: boolean;
   /**
    * The local machine's port-forwarding table — `-L` / `-D` listeners are
    * bound here so the tunnel surfaces through `ss` / `netstat`.
@@ -601,6 +605,36 @@ function computeForwardedEnv(
 }
 
 /** Extract -p <port> from argv (default 22). */
+export interface WireExecTarget {
+  host: string;
+  user: string;
+  port: number;
+  identities: string[];
+}
+
+export function wireExecTarget(
+  args: string[],
+  vfs: { normalizePath(path: string, cwd: string): string },
+  cwd: string,
+  defaultUser: string,
+): WireExecTarget | null {
+  const { positional, flags } = splitSshArgs(args);
+  const target = positional[0];
+  if (target === undefined || positional.length < 2) return null;
+  for (const blocking of ['-N', '-W', '-J', '-A', '-D', '-L', '-R']) {
+    if (flags.includes(blocking)) return null;
+  }
+  const at = target.indexOf('@');
+  const host = at >= 0 ? target.slice(at + 1) : target;
+  const user = at >= 0 ? target.slice(0, at) : defaultUser;
+  if (host === '') return null;
+  const identities: string[] = [];
+  for (let i = 0; i < flags.length; i++) {
+    if (flags[i] === '-i' && flags[i + 1]) identities.push(vfs.normalizePath(flags[i + 1], cwd));
+  }
+  return { host, user, port: clientPort(flags), identities };
+}
+
 function clientPort(args: string[]): number {
   const i = args.indexOf('-p');
   if (i >= 0 && args[i + 1]) {
@@ -1071,13 +1105,15 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     ? `Warning: your password will expire in ${warningDays} day${warningDays === 1 ? '' : 's'}.\n`
     : '';
 
-  machine.recordSshLogin?.(
-    remoteUser,
-    opts.sourceIp,
-    opts.sourceHostname,
-    true,
-    auth.method,
-  );
+  if (!opts.wireAuthenticated) {
+    machine.recordSshLogin?.(
+      remoteUser,
+      opts.sourceIp,
+      opts.sourceHostname,
+      true,
+      auth.method,
+    );
+  }
 
   // StrictHostKeyChecking=yes — refuse if no known_hosts entry exists
   // for the remote IP. The default behaviour (ask/accept-new) keeps the
@@ -1251,9 +1287,11 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
         const rc = remoteExec?.vfs.readFile(`${home}/.bashrc`) ?? '';
         if (rc.trim()) effectiveCmd = `${rc}\n${remoteCmd}`;
       }
+      const relayed = opts.execRelay?.(effectiveCmd, forwarded) ?? null;
       try {
-        execOut =
-          Object.keys(forwarded).length > 0 && execMod?.executeWithEnv
+        execOut = relayed
+          ? relayed.output
+          : Object.keys(forwarded).length > 0 && execMod?.executeWithEnv
             ? execMod.executeWithEnv(effectiveCmd, forwarded)
             : execMod?.execute?.(effectiveCmd) ?? '';
       } finally {
@@ -1262,7 +1300,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
           for (const [k, v] of savedEntries) envSnapshot.set(k, v);
         }
       }
-      execRc = execMod?.lastExitCode ?? 0;
+      execRc = relayed ? relayed.exitCode : execMod?.lastExitCode ?? 0;
     } finally {
       restoreAgent?.();
       remoteUidBeforeAfter?.();

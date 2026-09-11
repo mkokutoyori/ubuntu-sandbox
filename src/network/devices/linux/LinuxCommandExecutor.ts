@@ -120,7 +120,7 @@ import { LinuxServiceManager } from './LinuxServiceManager';
 import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService } from './LinuxProcessCommands';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
-import { runSshClient } from './network/LinuxSshClient';
+import { runSshClient, wireExecTarget } from './network/LinuxSshClient';
 import { findHostByAddress, isPathReachable, findReachableHost } from './network/HostLookup';
 import type { ProbedHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { runTruncate } from './commands/fs/Truncate';
@@ -1521,9 +1521,9 @@ export class LinuxCommandExecutor {
    * doesn't match over the real pipeline), letting the caller fall
    * back to the direct in-memory resolution.
    */
-  private async tryOpenWireSftpFs(
+  private async openWireSshSession(
     host: string, user: string, password: string, port = 22, identities: string[] = [],
-  ): Promise<ISftpFileSystem | null> {
+  ): Promise<SshSession | null> {
     if (!this.tcpConnector) return null;
     const connector = this.tcpConnector;
     const session = new SshSession({
@@ -1546,9 +1546,76 @@ export class LinuxCommandExecutor {
     }
     const result = await session.connect(builder.build());
     if (!isOk(result)) { session.disconnect(); return null; }
+    return session;
+  }
+
+  private async tryOpenWireSftpFs(
+    host: string, user: string, password: string, port = 22, identities: string[] = [],
+  ): Promise<ISftpFileSystem | null> {
+    const session = await this.openWireSshSession(host, user, password, port, identities);
+    if (!session) return null;
     const channelResult = session.openSftpChannel();
     if (!isOk(channelResult)) { session.disconnect(); return null; }
     return new WireSftpFileSystem(channelResult.value);
+  }
+
+  async runSshExecAsync(
+    args: string[], stdin?: string,
+  ): Promise<{ output: string; exitCode: number }> {
+    const stdinPwd = (stdin ?? (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '')
+      .split('\n')[0] || undefined;
+    const opts = this.buildSshClientOpts(args, this._cmdEnv, stdinPwd);
+    const target = wireExecTarget(args, this.vfs, this.cwd, this.userMgr.currentUser);
+    const session = target === null
+      ? null
+      : await this.openWireSshSession(
+        target.host, target.user, stdinPwd ?? '', target.port, target.identities);
+    if (!session) return this.finishSshClientResult(runSshClient(opts));
+    try {
+      return this.finishSshClientResult(runSshClient({
+        ...opts,
+        wireAuthenticated: true,
+        execRelay: (command) => {
+          const channel = session.openExecChannel(command);
+          if (!isOk(channel)) return null;
+          const result = channel.value.run();
+          channel.value.close();
+          return result === null
+            ? null
+            : { output: result.stdout, exitCode: result.exitCode };
+        },
+      }), true);
+    } finally {
+      session.disconnect();
+    }
+  }
+
+  private finishSshClientResult(
+    result: ReturnType<typeof runSshClient>, onWire = false,
+  ): { output: string; exitCode: number } {
+    if (!onWire && result.connection) {
+      const entry = this.socketTable?.connect(
+        'tcp', result.connection.localIp, 0,
+        result.connection.peerIp, result.connection.peerPort,
+        undefined, 'ssh',
+      );
+      const srcPort = entry?.localPort ?? 49152 + Math.floor(Math.random() * 16000);
+      this.mirrorSshHandshakeCapture(
+        { ip: result.connection.localIp, port: srcPort },
+        { ip: result.connection.peerIp, port: result.connection.peerPort },
+      );
+      this.emitSshWire(result.connection.localIp, srcPort, result.connection.peerIp, result.connection.peerPort);
+      if (entry) this.socketTable?.transition(entry.id, 'TIME_WAIT');
+    }
+    if (result.droppedSyn) {
+      const srcPort = this.socketTable?.allocateEphemeralPort()
+        ?? 49152 + Math.floor(Math.random() * 16000);
+      this.captureLog.captureTcpSynDropped(
+        { ip: result.droppedSyn.localIp, port: srcPort },
+        { ip: result.droppedSyn.peerIp, port: result.droppedSyn.peerPort },
+      );
+    }
+    return { output: result.output, exitCode: result.exitCode };
   }
 
   /**
@@ -5337,30 +5404,8 @@ export class LinuxCommandExecutor {
       }
       case 'ssh': {
         const stdinPwd = ((this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '').split('\n')[0] || undefined;
-        const result = runSshClient(this.buildSshClientOpts(args, this._cmdEnv, stdinPwd));
-        if (result.connection) {
-          const entry = this.socketTable?.connect(
-            'tcp', result.connection.localIp, 0,
-            result.connection.peerIp, result.connection.peerPort,
-            undefined, 'ssh',
-          );
-          const srcPort = entry?.localPort ?? 49152 + Math.floor(Math.random() * 16000);
-          this.mirrorSshHandshakeCapture(
-            { ip: result.connection.localIp, port: srcPort },
-            { ip: result.connection.peerIp, port: result.connection.peerPort },
-          );
-          this.emitSshWire(result.connection.localIp, srcPort, result.connection.peerIp, result.connection.peerPort);
-          if (entry) this.socketTable?.transition(entry.id, 'TIME_WAIT');
-        }
-        if (result.droppedSyn) {
-          const srcPort = this.socketTable?.allocateEphemeralPort()
-            ?? 49152 + Math.floor(Math.random() * 16000);
-          this.captureLog.captureTcpSynDropped(
-            { ip: result.droppedSyn.localIp, port: srcPort },
-            { ip: result.droppedSyn.peerIp, port: result.droppedSyn.peerPort },
-          );
-        }
-        return { output: result.output, exitCode: result.exitCode };
+        return this.finishSshClientResult(
+          runSshClient(this.buildSshClientOpts(args, this._cmdEnv, stdinPwd)));
       }
       case 'telnet':
         return this.runTelnetClient(args);

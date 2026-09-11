@@ -49,22 +49,25 @@ export class SshExecChannel
     this.offConn = null;
   }
 
-  async execute(): Promise<ExecResult> {
+  run(): ExecResult | null {
     if (!this._isOpen) {
       throw new Error('SshExecChannel: cannot execute on closed channel');
     }
+    this.conn.write(
+      JSON.stringify({
+        op: 'exec',
+        command: this.command,
+        channelId: this.channelId,
+      }),
+    );
+    return this.result;
+  }
+
+  async execute(): Promise<ExecResult> {
     return new Promise<ExecResult>((resolve) => {
       this.resolveExec = resolve;
-      this.conn.write(
-        JSON.stringify({
-          op: 'exec',
-          command: this.command,
-          channelId: this.channelId,
-        }),
-      );
-      // The simulator delivery chain is synchronous: the response arrives
-      // during write(), so result is populated by the time we get here.
-      if (this.result) resolve(this.result);
+      const immediate = this.run();
+      if (immediate) resolve(immediate);
     });
   }
 
