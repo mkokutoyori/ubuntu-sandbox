@@ -21,10 +21,9 @@
  * authentifiee — `whoami` rend l'utilisateur SSH et non le compte par
  * defaut du peripherique, et `pwd` rend le foyer de cet utilisateur.
  *
- * Ce que la sonde ne couvre PAS, et il faut le dire : `sshpass -p … ssh …`
- * garde son propre `case` dans le dispatch SYNCHRONE et ne passe donc pas
- * par la porte asynchrone. Mesure : 28 trames pour `ssh … whoami`, 3 pour
- * la meme invocation sous `sshpass`. La famille `sshpass` reste a migrer.
+ * `sshpass -p … ssh …` compte aussi, et pour une raison mesuree : il gardait
+ * son propre `case` dans le dispatch SYNCHRONE, donc 3 trames la ou `ssh`
+ * nu en coutait 28. Les deux verbes passent desormais par la meme porte.
  *
  * Discrimine contre le commit precedent : 1 des 6 cas tombe, et c'est
  * exactement celui qui COMPTE LES TRAMES. Les cinq autres passent des deux
@@ -109,6 +108,27 @@ describe('La commande distante traverse le cable', () => {
     const sortie = await pc.executeCommand(
       `ssh -o StrictHostKeyChecking=no bob@${SERVER_IP} whoami`);
     expect(sortie.trim()).toBe('bob');
+  });
+
+  it('`sshpass` emprunte le MEME chemin, et non un raccourci', async () => {
+    const trames = async (ligne: string): Promise<number> => {
+      const { pc, cable } = await labo();
+      const avant = cable.getStats().framesTransmitted;
+      await pc.executeCommand(ligne);
+      return cable.getStats().framesTransmitted - avant;
+    };
+    const avecCommande = await trames(
+      `sshpass -p secret123 ssh -o StrictHostKeyChecking=no alice@${SERVER_IP} whoami`);
+    const connexionSeule = await trames(
+      `sshpass -p secret123 ssh -o StrictHostKeyChecking=no alice@${SERVER_IP}`);
+    expect(avecCommande).toBeGreaterThan(connexionSeule);
+  });
+
+  it('`sshpass` rend la meme reponse que `ssh` nu', async () => {
+    const { pc } = await labo();
+    const sortie = await pc.executeCommand(
+      `sshpass -p secret123 ssh -o StrictHostKeyChecking=no alice@${SERVER_IP} whoami`);
+    expect(sortie.trim()).toBe('alice');
   });
 
   it('le code de retour de la commande distante remonte', async () => {

@@ -39,6 +39,7 @@ import { nmapCommand } from './net/Nmap';
 import { curlCommand } from './net/Curl';
 import { scpCommand } from './net/Scp';
 import { sshCommand } from './net/Ssh';
+import { sshpassCommand } from './net/Sshpass';
 import { sftpCommand } from './net/Sftp';
 import { opensslCommand } from './crypto/OpenSsl';
 import { updateCaCertificatesCommand } from './crypto/UpdateCaCertificates';
@@ -171,6 +172,7 @@ export {
   curlCommand,
   scpCommand,
   sshCommand,
+  sshpassCommand,
   sftpCommand,
   opensslCommand,
   updateCaCertificatesCommand,
@@ -322,6 +324,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   curlCommand,
   scpCommand,
   sshCommand,
+  sshpassCommand,
   sftpCommand,
   opensslCommand,
   updateCaCertificatesCommand,

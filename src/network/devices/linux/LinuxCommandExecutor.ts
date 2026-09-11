@@ -1210,7 +1210,7 @@ export class LinuxCommandExecutor {
    * Mirrors real OpenSSH where these tools fail with the same
    * "Connection refused" / "Could not resolve hostname" as the parent.
    */
-  private runSshTransport(
+  runSshTransport(
     cmd: 'scp' | 'sftp' | 'rsync', args: string[], stdinArg?: string, offeredPassword?: string,
   ): { output: string; exitCode: number } {
     // Extract the destination spec: user@host[:path] (positional argv).
@@ -1560,9 +1560,10 @@ export class LinuxCommandExecutor {
   }
 
   async runSshExecAsync(
-    args: string[], stdin?: string,
+    args: string[], offeredPassword?: string,
   ): Promise<{ output: string; exitCode: number }> {
-    const stdinPwd = (stdin ?? (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '')
+    const stdinPwd = (offeredPassword
+      ?? (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '')
       .split('\n')[0] || undefined;
     const opts = this.buildSshClientOpts(args, this._cmdEnv, stdinPwd);
     const target = wireExecTarget(args, this.vfs, this.cwd, this.userMgr.currentUser);
