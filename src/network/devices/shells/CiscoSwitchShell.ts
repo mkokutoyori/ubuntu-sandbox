@@ -1009,6 +1009,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return CISCO_ERRORS.INCOMPLETE;
     });
+    this.configVlanTrie.requireArgs('private-vlan', 1);
 
     // ── Spanning Tree (L2, switch-only) ──
     this.registerStpCommands();
@@ -3854,7 +3855,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         }
         return recordIf(`${sub} ${args.join(' ')}`.trim());
       });
+      if (sub !== 'srr-queue') trie.requireArgs(sub, 1);
     }
+    trie.requireArgs('no storm-control', 1);
     trie.registerGreedy('no storm-control', 'Remove a storm-control setting', (args) => {
       const quoi = (args[0] ?? '').toLowerCase();
       if (quoi === 'action') return removeIf('storm-control action');
@@ -4013,6 +4016,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
     });
 
+    trie.requireArgs('description', 1);
     trie.register('no description', 'Remove interface description', () => {
       if (!this.selectedInterface) return '';
       return this.applyToSelectedInterfaces(portName => {

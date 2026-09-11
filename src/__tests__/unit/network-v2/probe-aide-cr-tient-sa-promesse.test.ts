@@ -28,6 +28,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { MACAddress, resetCounters } from '@/network/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -52,16 +53,26 @@ const annonceCr = (t: string): boolean =>
   t.split('\n').some((l) => /^\s\s<cr>\s*$/.test(l));
 
 let serie = 0;
-async function neuf(prelude: readonly string[]): Promise<Dev> {
-  const r = new CiscoRouter(`M${serie++}`) as unknown as Dev;
+type Fabrique = () => Dev;
+
+const ROUTEUR: Fabrique = () => new CiscoRouter(`M${serie++}`) as unknown as Dev;
+const CATALYST: Fabrique = () =>
+  new CiscoSwitch('switch-cisco', `S${serie++}`, 8, 0, 0) as unknown as Dev;
+
+async function neuf(
+  prelude: readonly string[], fabrique: Fabrique = ROUTEUR,
+): Promise<Dev> {
+  const r = fabrique();
   await r.executeCommand('enable');
   for (const c of prelude) await r.executeCommand(c);
   return r;
 }
 
 /** Les `<cr>` annonces qui ne tiennent pas, dans un mode donne. */
-async function crMensongers(prelude: readonly string[], racine: string): Promise<string[]> {
-  const guide = await neuf(prelude);
+async function crMensongers(
+  prelude: readonly string[], racine: string, fabrique: Fabrique = ROUTEUR,
+): Promise<string[]> {
+  const guide = await neuf(prelude, fabrique);
   const fautes: string[] = [];
   const vus = new Set<string>();
   let file = [racine];
@@ -70,7 +81,7 @@ async function crMensongers(prelude: readonly string[], racine: string): Promise
     for (const base of file) {
       const aide = guide.cliHelp(base === '' ? '' : `${base} `);
       if (base !== '' && annonceCr(aide)) {
-        const essai = await neuf(prelude);
+        const essai = await neuf(prelude, fabrique);
         const out = String(await essai.executeCommand(base));
         if (out.includes('Incomplete')) fautes.push(`«${base} ?» annonce <cr>`);
       }
@@ -169,6 +180,45 @@ describe('M6 — un `<cr>` annonce se valide vraiment', () => {
 
   it('dans un pool DHCP', async () => {
     const f = await crMensongers(['configure terminal', 'ip dhcp pool P1'], '');
+    expect(f, f.join('\n')).toEqual([]);
+  }, 300_000);
+});
+
+/*
+ * Le balayage n'avait jamais ete promene sur un CATALYST : il ne
+ * connaissait que le routeur, et douze fautes l'attendaient. Les quatre
+ * branches ci-dessous sont celles qui sont PROPRES. La configuration
+ * globale, `config-if` et `config-vlan` n'y entrent pas encore : six
+ * frappes y promettent encore un `<cr>` — `duplex`, `speed`,
+ * `l2protocol-tunnel`, `no storm-control`, `private-vlan association` et
+ * `monitor session` — qu'une declaration d'arite sur l'arbre ne sait pas
+ * leur retirer. Elle ne fait rien sur un noeud elague, et sur un noeud
+ * qui porte deja des indications d'argument elle fait rendre
+ * « % Invalid input » a l'aide d'une commande qui existe : le remede est
+ * alors pire que le mal. Elles attendent leur declaration au socle, et
+ * les ajouter ici reviendrait a epingler le defaut au lieu de le
+ * mesurer.
+ */
+describe('M6 — le meme garde-fou, sur un Catalyst', () => {
+  it('en EXEC privilegie, branche `show`', async () => {
+    const f = await crMensongers([], 'show', CATALYST);
+    expect(f, f.join('\n')).toEqual([]);
+  }, 300_000);
+
+  it('en EXEC privilegie, branche `clear`', async () => {
+    const f = await crMensongers([], 'clear', CATALYST);
+    expect(f, f.join('\n')).toEqual([]);
+  }, 300_000);
+
+  it('sur la ligne console', async () => {
+    const f = await crMensongers(['configure terminal', 'line con 0'], '', CATALYST);
+    expect(f, f.join('\n')).toEqual([]);
+  }, 300_000);
+});
+
+describe('M6 — la branche `clear` du routeur', () => {
+  it('en EXEC privilegie', async () => {
+    const f = await crMensongers([], 'clear');
     expect(f, f.join('\n')).toEqual([]);
   }, 300_000);
 });
