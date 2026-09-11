@@ -39,6 +39,12 @@ export interface NetUseEntry {
   connection?: SmbConnection;
 }
 
+/** The narrow slice of the machine's registry these mappings need. */
+export interface RegistryPort {
+  listSubkeyNames(path: string): string[];
+  getItemPropertyValues(path: string): Record<string, string | number> | null;
+}
+
 const PERSISTENCE_KEY = 'HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Network\\Persistent Connections';
 const PERSISTENCE_VALUE = 'SaveConnections';
 const MAPPING_KEY = 'HKCU\\Network';
@@ -66,6 +72,31 @@ function rememberMapping(ctx: WinCommandContext, entry: NetUseEntry): void {
 function forgetMapping(ctx: WinCommandContext, entry: NetUseEntry): void {
   if (!entry.local) return;
   ctx.registry?.removeItem(`${MAPPING_KEY}\\${entry.local[0]}`, true);
+}
+
+/**
+ * What a logon does to the network connections: the previous session's
+ * are gone, and the ones the user asked to keep come back from the
+ * registry. The reconnection itself is DEFERRED, as a real redirector
+ * defers it — the entry is listed straight away, and the first access
+ * dials it.
+ */
+export function restorePersistentMappings(
+  registry: RegistryPort | undefined,
+  store: Map<string, NetUseEntry>,
+): void {
+  for (const entry of store.values()) entry.connection?.disconnect();
+  store.clear();
+  if (!registry) return;
+  for (const letter of registry.listSubkeyNames(MAPPING_KEY)) {
+    const remote = registry.getItemPropertyValues(`${MAPPING_KEY}\\${letter}`)?.['RemotePath'];
+    if (remote === undefined || remote === null || String(remote) === '') continue;
+    const local = `${letter.toUpperCase()}:`;
+    store.set(local, {
+      local, remote: String(remote), status: 'Disconnected',
+      user: '', persistent: true,
+    });
+  }
 }
 
 function keyOf(entry: { local: string; remote: string }): string {

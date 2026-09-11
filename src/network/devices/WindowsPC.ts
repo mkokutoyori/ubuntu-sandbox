@@ -104,7 +104,7 @@ import { cmdTasklist as cmdTasklistDynamic } from './windows/WinTasklist';
 import { cmdTaskkill } from './windows/WinTaskkill';
 import { cmdSc } from './windows/WinSc';
 import { cmdNetStart, cmdNetStop } from './windows/WinNetStart';
-import { cmdNetUse, type NetUseEntry } from './windows/WinNetUse';
+import { cmdNetUse, restorePersistentMappings, type NetUseEntry } from './windows/WinNetUse';
 import { requestDfsReferral } from './windows/server/smb/SmbClient';
 import { cmdNetShare } from './windows/WinNetShare';
 import { SmbShareTable } from './windows/server/smb/SmbShareTable';
@@ -1769,8 +1769,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     target: NonNullable<ReturnType<WindowsPC['resolveSmbPath']>>,
   ): Promise<{ connection: import('./windows/server/smb/SmbClient').SmbConnection; adHoc: boolean } | { error: string }> {
     if (target.unc === false) {
-      if (!target.mapped.connection) return { error: 'The specified network name is no longer available.' };
-      return { connection: target.mapped.connection, adHoc: false };
+      const live = target.mapped.connection;
+      if (live && live.isConnected()) return { connection: live, adHoc: false };
+      // A mapping restored at logon carries no session yet, and one whose
+      // link died carries a dead one. Either way the redirector redials on
+      // this first use, which is when a real one does it too.
+      const revived = await this.redialMapping(target.mapped);
+      if (!revived) return { error: 'The specified network name is no longer available.' };
+      return { connection: revived, adHoc: false };
     }
     const targetIp = await this.resolveHostname(target.server);
     if (!targetIp) return { error: 'System error 53 has occurred.\n\nThe network path was not found.' };
@@ -1779,6 +1785,28 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return { error: dial.error ?? 'System error 53 has occurred.\n\nThe network path was not found.' };
     }
     return { connection: dial.connection, adHoc: true };
+  }
+
+  /** Re-establish a mapped drive's session with the identity that holds it. */
+  private async redialMapping(
+    mapped: NetUseEntry,
+  ): Promise<import('./windows/server/smb/SmbClient').SmbConnection | null> {
+    const parsed = /^\\\\([^\\]+)\\([^\\]+)/.exec(mapped.remote);
+    if (!parsed) return null;
+    const targetIp = await this.resolveHostname(parsed[1]);
+    if (!targetIp) return null;
+    const account = mapped.user || this.userMgr.currentUser || 'Administrator';
+    const bare = account.includes('\\') ? account.slice(account.indexOf('\\') + 1) : account;
+    const secret = this.userMgr.getSavedCredential(account)
+      ?? this.userMgr.getSavedCredential(bare)
+      ?? this.userMgr.getLogonSecret(bare)
+      ?? '';
+    const dial = this.dialSmbShare(targetIp.toString(), parsed[2], account, secret);
+    if (!dial.ok || !dial.connection) return null;
+    mapped.connection = dial.connection;
+    mapped.status = 'OK';
+    mapped.user = account;
+    return dial.connection;
   }
 
   /**
@@ -4056,6 +4084,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   setCurrentUser(name: string): void {
     this.domainSession = null;
     this.kerberosTicketCache.clear();
+    restorePersistentMappings(this.registry, this.netUseTable);
     this.userMgr.setCurrentUser(name);
   }
 
