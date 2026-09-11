@@ -74,7 +74,9 @@ import { stpGlobalSpecs, type StpGlobalHost } from './cisco/stpGlobalSpecs';
 import { IPV4_PLACE, valeurGlobaleSpecs } from './cisco/ipGlobalSpecs';
 import { clearSwitchSpecs } from './cisco/clearRestantsSpecs';
 import { showAdjacencySpec, showTrackSpec } from './cisco/showViewSpecs';
-import { debugPairsKnownBy, type DebugPair } from '@/cli/commands/debug/debugFamily';
+import {
+  debugPairsKnownBy, type DebugPair, type DebugSubKeyword,
+} from '@/cli/commands/debug/debugFamily';
 import { categoryOnPlatform } from '../router/diag/RouterDebugService';
 import { buildActorState } from '@/network/lacp/types';
 import { etherChannelLimitFamily } from '@/cli/commands/aggregation/etherChannelLimits';
@@ -2927,19 +2929,24 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const svc = () => this.switchDebug();
     const portee = (
       chemin: readonly string[], nom: string, cle: string,
-      avecArguments = false,
+      sousMots: readonly DebugSubKeyword[] = [],
     ): DebugPair => ({
       path: [...chemin], description: `Enable ${nom} debugging`,
-      undoDescription: `Disable ${nom} debugging`, takesArguments: avecArguments,
+      undoDescription: `Disable ${nom} debugging`,
+      ...(sousMots.length === 0 ? {} : { subKeywords: sousMots }),
       enable: (args) => svc()?.enableScope(
-        avecArguments ? `${cle} ${args.join(' ') || 'all'}` : cle) ?? '',
+        sousMots.length === 0 ? cle : `${cle} ${args.join(' ') || 'all'}`) ?? '',
       disable: (args) => svc()?.disableScope(
-        avecArguments ? `${cle} ${args.join(' ') || 'all'}` : cle) ?? '',
+        sousMots.length === 0 ? cle : `${cle} ${args.join(' ') || 'all'}`) ?? '',
     });
 
     return [
       ...debugPairsKnownBy(super.debugPairs(), (c) => categoryOnPlatform(c, 'switch')),
-      portee(['debug', 'spanning-tree'], 'STP', 'spanning-tree', true),
+      portee(['debug', 'spanning-tree'], 'STP', 'spanning-tree', [
+        { keyword: 'all', description: 'All STP debugging', category: 'stp.events' },
+        { keyword: 'bpdu', description: 'STP BPDU', category: 'stp.bpdu' },
+        { keyword: 'events', description: 'STP events', category: 'stp.events' },
+      ]),
       portee(['debug', 'mac', 'address-table'], 'MAC table', 'mac'),
       portee(['debug', 'mac-address-table'], 'MAC table', 'mac'),
       portee(['debug', 'link-state'], 'link-state', 'link'),

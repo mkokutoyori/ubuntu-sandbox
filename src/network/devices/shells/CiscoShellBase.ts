@@ -3226,6 +3226,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return this.socleUndoSansValeur.has(`${mode} ${chemin}`);
   }
 
+  private specsParInitiale(table: CommandTable): Map<string, CommandSpec[]> {
+    if (!this.socleSpecsParInitiale) {
+      const index = new Map<string, CommandSpec[]>();
+      for (const spec of table.specs()) {
+        const initiale = CiscoShellBase.keywordPathOf(spec)[0]?.[0];
+        if (initiale === undefined) continue;
+        const seau = index.get(initiale);
+        if (seau) seau.push(spec); else index.set(initiale, [spec]);
+      }
+      this.socleSpecsParInitiale = index;
+    }
+    return this.socleSpecsParInitiale;
+  }
+
   private niveauDeclareParLeSocle(cmdPart: string): number | null {
     const table = this.socleTable();
     if (!table) return null;
@@ -3235,7 +3249,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     const portee = scopeForMode(this.mode);
     let niveau: number | null = null;
-    for (const spec of table.specs()) {
+    for (const spec of this.specsParInitiale(table).get(mots[0][0]) ?? []) {
       const chemin = CiscoShellBase.keywordPathOf(spec);
       const absorbeLaSuite = spec.path.length > chemin.length;
       if (chemin.length < mots.length && !absorbeLaSuite) continue;
@@ -3522,6 +3536,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * une fois construite, donc l'index se calcule une fois avec elle.
    */
   private socleCheminsParPortee?: Map<string, string[][]>;
+  private socleSpecsParInitiale?: Map<string, CommandSpec[]>;
+  private socleNegationsParMode?: Map<string, Map<string, CommandSpec>>;
   private socleUndoSansValeur?: Set<string>;
 
   private readonly socleFields: Record<string, string | undefined> = {};
@@ -3638,7 +3654,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   ): DebugPair {
     return {
       path: ['debug', word], description, undoDescription: `Disable ${description}`,
-      takesArguments: true, categories: [category],
+      categories: [category],
       enable: () => this.debugServiceRef()?.enable(category) ?? '',
       disable: () => this.debugServiceRef()?.disable(category) ?? '',
     };
@@ -3678,65 +3694,73 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const pairs: DebugPair[] = [
       {
         path: ['debug', 'arp'], description: 'Enable ARP debug',
-        undoDescription: 'Disable ARP debug', takesArguments: false,
+        undoDescription: 'Disable ARP debug',
         categories: ['ip.arp'],
         enable: () => svc()?.enable('ip.arp') ?? 'ARP packet debugging is on',
         disable: () => svc()?.disable('ip.arp') ?? 'ARP packet debugging is off',
       },
       {
         path: ['debug', 'domain'], description: 'Debug DNS name resolution',
-        undoDescription: 'Stop DNS debugging', takesArguments: false,
+        undoDescription: 'Stop DNS debugging',
         categories: ['ip.domain'],
         enable: () => svc()?.enable('ip.domain') ?? 'Domain Name System debugging is on',
         disable: () => svc()?.disable('ip.domain') ?? '',
       },
       {
         path: ['debug', 'dhcp'], description: 'Debug DHCP',
-        undoDescription: 'Stop DHCP debugging', takesArguments: false,
+        undoDescription: 'Stop DHCP debugging',
         categories: ['ip.dhcp.server'],
         enable: () => svc()?.enable('ip.dhcp.server') ?? '',
         disable: () => svc()?.disable('ip.dhcp.server') ?? '',
       },
       {
         path: ['debug', 'ip'], description: 'Enable IP debug',
-        undoDescription: 'Disable IP debug', takesArguments: true,
+        undoDescription: 'Disable IP debug', familyOnly: true,
         subKeywords: [
           { keyword: 'arp', description: 'Debug ARP packets', category: 'ip.arp' },
           { keyword: 'bgp', description: 'Debug BGP', category: 'ip.bgp' },
-          { keyword: 'dhcp', description: 'Debug DHCP', category: 'ip.dhcp.server' },
+          { keyword: 'dhcp', description: 'Debug DHCP', category: 'ip.dhcp.server',
+            argument: { description: 'DHCP server', optional: true } },
           { keyword: 'domain', description: 'Debug DNS name resolution', category: 'ip.domain' },
           { keyword: 'eigrp', description: 'Debug EIGRP', category: 'ip.eigrp' },
           { keyword: 'icmp', description: 'Debug ICMP packets', category: 'ip.icmp' },
-          { keyword: 'nat', description: 'Debug NAT', category: 'ip.nat' },
+          { keyword: 'nat', description: 'Debug NAT', category: 'ip.nat',
+            argument: { description: 'Access list, or detailed', optional: true } },
           { keyword: 'nhrp', description: 'Debug NHRP', category: 'ip.nhrp' },
-          { keyword: 'packet', description: 'Debug all IP packets', category: 'ip.packet' },
+          { keyword: 'packet', description: 'Debug all IP packets', category: 'ip.packet',
+            argument: { description: 'Access list, or detail', optional: true } },
           { keyword: 'pim', description: 'Debug PIM', category: 'ip.pim' },
           { keyword: 'rip', description: 'Debug RIP', category: 'ip.rip' },
           { keyword: 'routing', description: 'Debug routing table changes', category: 'ip.routing' },
           { keyword: 'ssh', description: 'Debug SSH', category: 'ip.ssh' },
-          { keyword: 'tcp', description: 'Debug TCP special events', category: 'ip.tcp' },
-          { keyword: 'udp', description: 'Debug UDP packets', category: 'ip.udp' },
+          { keyword: 'tcp', description: 'Debug TCP special events', category: 'ip.tcp',
+            argument: { description: 'Access list', optional: true } },
+          { keyword: 'udp', description: 'Debug UDP packets', category: 'ip.udp',
+            argument: { description: 'Access list', optional: true } },
         ],
         enable: (args) => this.enableIpDebug(args),
         disable: (args) => this.disableIpDebug(args),
       },
       {
         path: ['debug', 'all'], description: 'Enable all debugging',
-        undoDescription: 'Disable all debugging', takesArguments: false,
+        undoDescription: 'Disable all debugging',
         enable: () => this.enableEveryDebug(),
         disable: () => this.disableEveryDebug(),
       },
       {
         path: ['debug', 'standby'], description: 'Debug HSRP',
-        undoDescription: 'Disable HSRP debug', takesArguments: true,
+        undoDescription: 'Disable HSRP debug',
         categories: ['standby'],
         enable: () => svc()?.enable('standby') ?? '',
         disable: () => svc()?.disable('standby') ?? '',
       },
       {
         path: ['debug', 'eigrp'], description: 'Debug EIGRP',
-        undoDescription: 'Disable EIGRP debug', takesArguments: true,
+        undoDescription: 'Disable EIGRP debug',
         categories: ['ip.eigrp'],
+        subKeywords: Object.keys(EIGRP_DEBUG_SUBJECTS).sort().map((mot) => ({
+          keyword: mot, description: `EIGRP ${mot}`, category: 'ip.eigrp',
+        })),
         enable: (args) => {
           const sujet = (args[0] ?? '').toLowerCase();
           const annonce = EIGRP_DEBUG_SUBJECTS[sujet];
@@ -3748,8 +3772,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
       {
         path: ['debug', 'interface'], description: 'Debug interface state changes',
-        undoDescription: 'Disable interface debug', takesArguments: true,
+        undoDescription: 'Disable interface debug',
         categories: ['interface'],
+        argument: { description: 'Interface name', optional: true },
         enable: (args) => {
           const service = svc();
           const iface = args.join(' ').trim();
@@ -3760,25 +3785,32 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
       {
         path: ['debug', 'lldp'], description: 'Debug LLDP',
-        undoDescription: 'Disable LLDP debug', takesArguments: true,
+        undoDescription: 'Disable LLDP debug',
         categories: ['lldp.packets'],
+        subKeywords: [
+          { keyword: 'packets', description: 'LLDP packets', category: 'lldp.packets' },
+        ],
         enable: () => svc()?.enable('lldp.packets') ?? 'LLDP packets debugging is on',
         disable: () => svc()?.disable('lldp.packets') ?? '',
       },
       {
         path: ['debug', 'cdp'], description: 'Debug CDP',
-        undoDescription: 'Disable CDP debug', takesArguments: true,
+        undoDescription: 'Disable CDP debug',
         categories: ['cdp.packets'],
+        subKeywords: [
+          { keyword: 'packets', description: 'CDP packets', category: 'cdp.packets' },
+        ],
         enable: () => svc()?.enable('cdp.packets') ?? 'CDP packets debugging is on',
         disable: () => svc()?.disable('cdp.packets') ?? '',
       },
       {
         path: ['debug', 'ipv6'], description: 'Debug IPv6',
-        undoDescription: 'Disable IPv6 debug', takesArguments: true,
+        undoDescription: 'Disable IPv6 debug',
         subKeywords: [
           { keyword: 'icmp', description: 'ICMPv6 messages', category: 'ipv6.icmp' },
           { keyword: 'nd', description: 'ICMPv6 Neighbor Discovery', category: 'ipv6.nd' },
-          { keyword: 'packet', description: 'IPv6 packets', category: 'ipv6.packet' },
+          { keyword: 'packet', description: 'IPv6 packets', category: 'ipv6.packet',
+            argument: { description: 'Access list', optional: true } },
         ],
         enable: (args) => this.enableIpv6Debug(args),
         disable: (args) => {
@@ -3789,7 +3821,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
       {
         path: ['debug', 'condition'], description: 'Restrict every debug to a condition',
-        undoDescription: 'Remove a debug condition', takesArguments: true,
+        undoDescription: 'Remove a debug condition',
+        argument: { description: 'Debug condition' },
         enable: (args) => this.addDebugCondition(args),
         disable: (args) => this.removeDebugCondition(args),
       },
@@ -3799,7 +3832,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.simpleDebugPair('tacacs', 'tacacs', 'Debug TACACS+'),
       {
         path: ['debug', 'ntp'], description: 'Debug NTP',
-        undoDescription: 'Disable NTP debug', takesArguments: true,
+        undoDescription: 'Disable NTP debug',
         categories: ['ntp.events', 'ntp.packets'],
         subKeywords: [
           { keyword: 'events', description: 'NTP events', category: 'ntp.events' },
@@ -3810,7 +3843,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
       {
         path: ['debug', 'aaa'], description: 'Debug AAA',
-        undoDescription: 'Disable AAA debug', takesArguments: true,
+        undoDescription: 'Disable AAA debug', familyOnly: true,
         categories: ['aaa.accounting', 'aaa.authentication', 'aaa.authorization'],
         subKeywords: [
           { keyword: 'accounting', description: 'AAA accounting', category: 'aaa.accounting' },
@@ -3825,14 +3858,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (this.hasSwitchingHardware()) {
       pairs.push({
         path: ['debug', 'vxlan'], description: 'Debug VXLAN',
-        undoDescription: 'Disable VXLAN debug', takesArguments: true,
+        undoDescription: 'Disable VXLAN debug',
         categories: ['vxlan'],
         enable: () => svc()?.enable('vxlan') ?? 'VXLAN debugging is on',
         disable: () => svc()?.disable('vxlan') ?? '',
       });
       pairs.push({
         path: ['debug', 'port-security'], description: 'Debug port security',
-        undoDescription: 'Disable port-security debug', takesArguments: true,
+        undoDescription: 'Disable port-security debug',
         categories: ['port-security'],
         enable: () => svc()?.enable('port-security') ?? 'Port security debugging is on',
         disable: () => svc()?.disable('port-security') ?? '',
@@ -7041,6 +7074,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected socleTable(): CommandTable | null {
     if (!this.socleInstance) {
       this.socleCheminsParPortee = undefined;
+      this.socleSpecsParInitiale = undefined;
+      this.socleNegationsParMode = undefined;
       this.socleUndoSansValeur = undefined;
       this.socleInstance = new CommandTable();
       for (const spec of this.socleSpecs()) this.socleInstance.declare(spec);
@@ -7709,7 +7744,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (/\s/.test(frappe) || !'no'.startsWith(frappe)) return brutes;
     if (!this.isConfigMode()) return brutes;
     if (brutes.some(s => s.keyword.toLowerCase() === 'no')) return brutes;
-    if (!CiscoShellBase.negationSous(table, [], this.mode)) return brutes;
+    if (!this.negationSous(table, [], this.mode)) return brutes;
     return [...brutes, {
       keyword: 'no', description: 'Negate a command or set its defaults',
       isArgument: false,
@@ -7722,7 +7757,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   ): Array<{ keyword: string; description: string; isArgument: boolean }> {
     const amont = this.cheminCanonique(table, ligne, this.socleSession(table));
     if (amont === null
-      || !CiscoShellBase.negationSous(table, amont, this.mode)) return [];
+      || !this.negationSous(table, amont, this.mode)) return [];
 
     /*
      * `<cr>` repond de la NEGATION, pas de la forme positive.
@@ -7742,7 +7777,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (suggestion.isArgument || !/^[A-Za-z]/.test(suggestion.keyword)) return [suggestion];
 
       const chemin = [...amont, suggestion.keyword.toLowerCase()];
-      const spec = CiscoShellBase.negationSous(table, chemin, this.mode);
+      const spec = this.negationSous(table, chemin, this.mode);
       if (!spec) return [];
 
       return [{
@@ -7759,24 +7794,37 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       .map(word => word.toLowerCase());
   }
 
-  private static negationSous(
-    table: CommandTable, chemin: readonly string[], mode?: string,
-  ): CommandSpec | null {
-    let dessous: CommandSpec | null = null;
-
-    for (const spec of table.specs()) {
-      if (!spec.undo) continue;
-      // Une commande d'un AUTRE mode ne se defait pas ici : sans ce
-      // filtre, `no ?` proposait dans un sous-mode les negations de tous
-      // les autres.
-      if (mode !== undefined && !spec.modes.includes(mode)) continue;
-      const mots = CiscoShellBase.keywordPathOf(spec);
-      if (mots.length < chemin.length) continue;
-      if (!chemin.every((mot, rang) => mots[rang] === mot)) continue;
-      if (mots.length === chemin.length) return spec;
-      dessous ??= spec;
+  private negationsParMode(table: CommandTable): Map<string, Map<string, CommandSpec>> {
+    if (!this.socleNegationsParMode) {
+      const index = new Map<string, Map<string, CommandSpec>>();
+      const poser = (mode: string, cle: string, spec: CommandSpec, exact: boolean): void => {
+        let parChemin = index.get(mode);
+        if (!parChemin) { parChemin = new Map(); index.set(mode, parChemin); }
+        const deja = parChemin.get(cle);
+        if (deja === undefined || (exact && CiscoShellBase.keywordPathOf(deja).length
+          !== cle.split(' ').filter(Boolean).length)) {
+          parChemin.set(cle, spec);
+        }
+      };
+      for (const spec of table.specs()) {
+        if (!spec.undo) continue;
+        const mots = CiscoShellBase.keywordPathOf(spec);
+        for (const mode of spec.modes) {
+          for (let taille = 0; taille < mots.length; taille++) {
+            poser(mode, mots.slice(0, taille).join(' '), spec, false);
+          }
+          poser(mode, mots.join(' '), spec, true);
+        }
+      }
+      this.socleNegationsParMode = index;
     }
-    return dessous;
+    return this.socleNegationsParMode;
+  }
+
+  private negationSous(
+    table: CommandTable, chemin: readonly string[], mode: string,
+  ): CommandSpec | null {
+    return this.negationsParMode(table).get(mode)?.get(chemin.join(' ')) ?? null;
   }
 
   /**
@@ -9337,22 +9385,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       { keyword: 'tftp:',          description: 'Upload to TFTP server' },
       { keyword: 'scp:',           description: 'Upload over SCP' },
       { keyword: 'flash:',         description: 'Save to flash filesystem' },
-    ]);
-    this.privilegedTrie.registerSuggestions('debug', [
-      { keyword: 'all',      description: 'Enable all debugging' },
-      { keyword: 'ip',       description: 'Debug IP subsystem' },
-      { keyword: 'ipv6',     description: 'Debug IPv6 subsystem' },
-      { keyword: 'crypto',   description: 'Debug crypto subsystem' },
-      { keyword: 'dhcp',     description: 'Debug DHCP' },
-      { keyword: 'domain',   description: 'Debug DNS name resolution' },
-    ]);
-    this.privilegedTrie.registerSuggestions('debug ip', [
-      { keyword: 'icmp',     description: 'Debug ICMP packets' },
-      { keyword: 'packet',   description: 'Debug all IP packets' },
-      { keyword: 'ospf',     description: 'Debug OSPF' },
-      { keyword: 'routing',  description: 'Debug routing table changes' },
-      { keyword: 'nat',      description: 'Debug NAT' },
-      { keyword: 'dhcp',     description: 'Debug DHCP' },
     ]);
     this.privilegedTrie.registerSuggestions('write', [
       { keyword: 'memory',   description: 'Write to NVRAM' },
