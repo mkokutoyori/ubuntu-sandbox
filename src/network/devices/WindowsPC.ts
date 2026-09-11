@@ -107,6 +107,9 @@ import { cmdNetStart, cmdNetStop } from './windows/WinNetStart';
 import { cmdNetUse, establishMapping, releaseMapping, restorePersistentMappings, type NetUseEntry } from './windows/WinNetUse';
 import { cmdNetView } from './windows/WinNetView';
 import { requestDfsReferral, requestShareEnum } from './windows/server/smb/SmbClient';
+import { hostRegistrationRequest } from './windows/domain/DnsHostRegistration';
+import { sendDynamicUpdate } from '@/network/dns/update/DynamicUpdateClient';
+import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { cmdNetShare } from './windows/WinNetShare';
 import { SmbShareTable } from './windows/server/smb/SmbShareTable';
 import { SmbSessionTable } from './windows/server/smb/SmbSessionTable';
@@ -1253,8 +1256,34 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (result.ok && result.membership) {
       this.domainMembership = result.membership;
       if (opts.newName) this.setHostname(opts.newName);
+      void this.registerHostInDomainDns();
     }
     return result;
+  }
+
+  /**
+   * What a machine does once it belongs to a domain: it puts its own A
+   * record into the domain's zone by RFC 2136 update, so every other
+   * machine resolves it by name without anyone editing a hosts file.
+   * Sent to the DNS server this machine is configured with — the update
+   * crosses the wire and the SERVER decides whether to accept it.
+   */
+  async registerHostInDomainDns(): Promise<boolean> {
+    const membership = this.domainMembership;
+    if (!membership) return false;
+    const resolver = this.firstConfiguredDnsServerAddress();
+    const address = this.getInterfaces().map(p => p.getIPAddress()).find(ip => ip !== null);
+    if (!resolver || !address) return false;
+    const outcome = await sendDynamicUpdate(
+      this, resolver,
+      hostRegistrationRequest(membership.dnsName, this.getHostname(), address),
+    );
+    return outcome.rcode === DnsRcode.NOERROR;
+  }
+
+  private firstConfiguredDnsServerAddress(): IPAddress | null {
+    const first = this.firstConfiguredDnsServer();
+    return first ? IPAddress.tryParse(first) : null;
   }
 
   markServiceAccountInstalled(sam: string): void { this.installedServiceAccounts.add(sam.toLowerCase()); }
@@ -3476,6 +3505,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       resolveHostnameSync: (name: string) => this.resolveHostnameSync(name),
       requestShareEnum: (targetIp: string, username: string, password: string) =>
         requestShareEnum({ tcpStack: this.getTcpStack(), targetIp, username, password }),
+      registerHostInDomainDns: () => this.registerHostInDomainDns(),
       signedInIdentity: () => (this.domainSession
         ? `${this.domainSession.netbiosName}\\${this.domainSession.sam}`
         : this.userMgr.currentUser || 'Administrator'),

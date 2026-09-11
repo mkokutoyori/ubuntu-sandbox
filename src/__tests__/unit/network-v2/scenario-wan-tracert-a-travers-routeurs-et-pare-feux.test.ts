@@ -30,6 +30,17 @@
  *   5  172.16.3.2   R-C
  *   6  10.3.0.10    PC-C
  *
+ * Un QUATRIEME site prolonge le WAN derriere deux routeurs HUAWEI, pour
+ * que la trace traverse les deux vendeurs dans la meme commande :
+ *
+ *   R-C Gi0/2 172.16.4.1 ── R-D GE0/0/0 172.16.4.2 (Huawei)
+ *   R-D GE0/0/1 172.16.5.1 ── R-E GE0/0/0 172.16.5.2 (Huawei)
+ *   R-E GE0/0/1 10.4.0.1 ── SW-D ── PC-D 10.4.0.10
+ *
+ * Un routeur qui decremente le TTL doit repondre « Time Exceeded » quel
+ * que soit son vendeur : c'est la meme RFC 792 des deux cotes, et une
+ * trace qui saute le Huawei serait une trace qui ment.
+ *
  * Les attentes sont ecrites A L'AVEUGLE d'apres ce que fait une vraie
  * infrastructure : `tracert` sous Windows sonde en ICMP Echo a TTL
  * croissant et lit les « Time Exceeded » que chaque routeur renvoie ;
@@ -58,6 +69,7 @@ import { resetCounters, IPAddress, SubnetMask, MACAddress } from '@/network/core
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
 import { Cable } from '@/network/hardware/Cable';
@@ -79,6 +91,7 @@ const M30 = new SubnetMask('255.255.255.252');
 interface Wan {
   pcA: WindowsPC;
   pcC: WindowsPC;
+  pcD: WindowsPC;
   lxA: LinuxPC;
   fgt1: FortiGate;
   fgt2: FortiGate;
@@ -172,7 +185,60 @@ async function wan(): Promise<Wan> {
     ['10.2.0.0', '255.255.255.0', '172.16.2.1'],
   ]);
 
-  return { pcA, pcC, lxA, fgt1, fgt2 };
+  // SITE D, derriere un routeur HUAWEI : la trace doit traverser les deux
+  // vendeurs sans que l'operateur ait a savoir lequel est lequel.
+  const pcD = new WindowsPC('windows-pc', 'PC-D');
+  const swD = new GenericSwitch('switch-generic', 'SW-D', 8, 0, 0);
+  const rD = new HuaweiRouter('R-D');
+  const rE = new HuaweiRouter('R-E');
+  for (const d of [pcD, swD, rD, rE]) d.powerOn();
+
+  new Cable('c-hw').connect(rC.getPort('GigabitEthernet0/2')!, rD.getPort('GE0/0/0')!);
+  new Cable('hw-hw').connect(rD.getPort('GE0/0/1')!, rE.getPort('GE0/0/0')!);
+  new Cable('d-gw').connect(rE.getPort('GE0/0/1')!, swD.getPorts()[7]);
+  new Cable('d-pc').connect(pcD.getPorts()[0], swD.getPorts()[0]);
+
+  pcD.getPorts()[0].configureIP(new IPAddress('10.4.0.10'), M24);
+  pcD.setDefaultGateway(new IPAddress('10.4.0.1'));
+
+  await rC.executeCommand('configure terminal');
+  for (const c of [
+    'interface GigabitEthernet0/2', 'ip address 172.16.4.1 255.255.255.252', 'no shutdown', 'exit',
+    'ip route 10.4.0.0 255.255.255.0 172.16.4.2', 'end',
+  ]) await rC.executeCommand(c);
+
+  for (const c of [
+    'system-view',
+    'interface GE0/0/0', 'ip address 172.16.4.2 255.255.255.252', 'undo shutdown', 'quit',
+    'interface GE0/0/1', 'ip address 172.16.5.1 255.255.255.252', 'undo shutdown', 'quit',
+    'ip route-static 10.4.0.0 255.255.255.0 172.16.5.2',
+    'ip route-static 10.1.0.0 255.255.255.0 172.16.4.1',
+    'ip route-static 10.3.0.0 255.255.255.0 172.16.4.1',
+    'return',
+  ]) await rD.executeCommand(c);
+
+  for (const c of [
+    'system-view',
+    'interface GE0/0/0', 'ip address 172.16.5.2 255.255.255.252', 'undo shutdown', 'quit',
+    'interface GE0/0/1', 'ip address 10.4.0.1 255.255.255.0', 'undo shutdown', 'quit',
+    'ip route-static 0.0.0.0 0.0.0.0 172.16.5.1',
+    'return',
+  ]) await rE.executeCommand(c);
+
+  // Le retour depuis le site D doit traverser les memes pare-feux.
+  fgt1.getShell().execute('config router static');
+  for (const line of ['edit 4', 'set dst 10.4.0.0 255.255.255.0', 'set gateway 172.16.1.2', 'next', 'end']) {
+    fgt1.getShell().execute(line);
+  }
+  fgt2.getShell().execute('config router static');
+  for (const line of ['edit 4', 'set dst 10.4.0.0 255.255.255.0', 'set gateway 172.16.3.2', 'next', 'end']) {
+    fgt2.getShell().execute(line);
+  }
+  await rB.executeCommand('configure terminal');
+  await rB.executeCommand('ip route 10.4.0.0 255.255.255.0 172.16.2.2');
+  await rB.executeCommand('end');
+
+  return { pcA, pcC, pcD, lxA, fgt1, fgt2 };
 }
 
 const hopOrder = (out: string, addresses: string[]): number[] =>
@@ -256,6 +322,48 @@ describe('Scenario WAN — tracert a travers trois routeurs et deux pare-feux', 
         fgt2.getShell().execute(line);
       }
       expect(await pcA.executeCommand('ping -n 1 10.2.0.1')).toMatch(/Received = 1/);
+    }, 120_000);
+  });
+
+  describe('le WAN melange les vendeurs', () => {
+    it('joint le site Huawei depuis le site Cisco', async () => {
+      const { pcA } = await wan();
+      expect(await pcA.executeCommand('ping -n 1 10.4.0.10')).toMatch(/Received = 1/);
+    }, 120_000);
+
+    it('tracert traverse Cisco, FortiGate PUIS Huawei, dans l ordre', async () => {
+      const { pcA } = await wan();
+      const out = await pcA.executeCommand('tracert -d 10.4.0.10');
+      const attendus = ['10.1.0.1', '172.16.0.2', '172.16.1.2', '172.16.2.2',
+        '172.16.3.2', '172.16.4.2', '172.16.5.2', '10.4.0.10'];
+      for (const hop of attendus) expect(out).toContain(hop);
+      const corps = out.slice(out.indexOf('over a maximum'));
+      const positions = hopOrder(corps, attendus);
+      expect(positions.every(p => p >= 0)).toBe(true);
+      expect(positions).toEqual([...positions].sort((x, y) => x - y));
+    }, 120_000);
+
+    it('le routeur Huawei repond au TTL expire comme le Cisco', async () => {
+      const { pcA } = await wan();
+      const out = await pcA.executeCommand('tracert -d -h 6 10.4.0.10');
+      expect(out).toContain('172.16.4.2');
+      expect(out).not.toContain('10.4.0.10\n');
+    }, 120_000);
+
+    it('traceroute depuis Linux voit le meme chemin melange', async () => {
+      const { lxA } = await wan();
+      const out = await lxA.executeCommand('traceroute -n 10.4.0.10');
+      for (const hop of ['172.16.2.2', '172.16.4.2', '172.16.5.2', '10.4.0.10']) {
+        expect(out).toContain(hop);
+      }
+    }, 120_000);
+
+    it('la trace en sens INVERSE, depuis le Huawei vers le Cisco', async () => {
+      const { pcD } = await wan();
+      const out = await pcD.executeCommand('tracert -d 10.1.0.10');
+      for (const hop of ['10.4.0.1', '172.16.5.1', '172.16.4.1', '10.1.0.10']) {
+        expect(out).toContain(hop);
+      }
     }, 120_000);
   });
 

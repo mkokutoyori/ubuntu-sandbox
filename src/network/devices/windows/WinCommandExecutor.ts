@@ -248,6 +248,8 @@ export interface WinCommandContext {
   /** NetShareEnum against a server — what `net view` asks before it can print anything. */
   requestShareEnum?(targetIp: string, username: string, password: string):
     { ok: boolean; shares?: import('./server/smb/SmbTypes').SmbEnumeratedShare[]; error?: string; systemErrorCode?: number };
+  /** `ipconfig /registerdns` — put this machine's own A record into its domain's zone, by dynamic update over the wire. */
+  registerHostInDomainDns?(): Promise<boolean>;
   /** Who is signed in, domain-qualified when a domain logon is open — the identity an outbound connection carries when the operator names none. */
   signedInIdentity?(): string;
   /** The secret this machine holds for an account: the vault `runas /savecred` fills, then the logon secret. */
