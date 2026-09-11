@@ -104,7 +104,7 @@ import { cmdTasklist as cmdTasklistDynamic } from './windows/WinTasklist';
 import { cmdTaskkill } from './windows/WinTaskkill';
 import { cmdSc } from './windows/WinSc';
 import { cmdNetStart, cmdNetStop } from './windows/WinNetStart';
-import { cmdNetUse, restorePersistentMappings, type NetUseEntry } from './windows/WinNetUse';
+import { cmdNetUse, establishMapping, releaseMapping, restorePersistentMappings, type NetUseEntry } from './windows/WinNetUse';
 import { requestDfsReferral } from './windows/server/smb/SmbClient';
 import { cmdNetShare } from './windows/WinNetShare';
 import { SmbShareTable } from './windows/server/smb/SmbShareTable';
@@ -1787,6 +1787,37 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return { connection: dial.connection, adHoc: true };
   }
 
+  /**
+   * Map a network drive. `net use` and PowerShell's `New-PSDrive -Persist`
+   * both land here, so the two interfaces show one table rather than each
+   * keeping its own idea of which drives exist.
+   */
+  mapNetworkDrive(local: string, remote: string, credential?: { username: string; password: string }):
+    { ok: boolean; error?: string } {
+    const account = credential?.username
+      ?? (this.domainSession ? `${this.domainSession.netbiosName}\\${this.domainSession.sam}` : this.userMgr.currentUser || 'Administrator');
+    const bare = account.includes('\\') ? account.slice(account.indexOf('\\') + 1) : account;
+    const secret = credential?.password
+      ?? this.userMgr.getSavedCredential(account)
+      ?? this.userMgr.getSavedCredential(bare)
+      ?? this.userMgr.getLogonSecret(bare)
+      ?? '';
+    return establishMapping(this.buildNetContext(), this.netUseTable, {
+      local: local ? local.toUpperCase() : '', remote, username: account, password: secret,
+    });
+  }
+
+  /** Undo a mapping, whether named by drive letter or by UNC. */
+  unmapNetworkDrive(target: string): boolean {
+    return releaseMapping(this.buildNetContext(), this.netUseTable, target);
+  }
+
+  /** Every mapped network drive this machine holds — the one table both interfaces read. */
+  listNetworkDrives(): Array<{ local: string; remote: string; status: string; user: string }> {
+    return Array.from(this.netUseTable.values())
+      .map(e => ({ local: e.local, remote: e.remote, status: e.status, user: e.user }));
+  }
+
   /** Re-establish a mapped drive's session with the identity that holds it. */
   private async redialMapping(
     mapped: NetUseEntry,
@@ -3440,6 +3471,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       localDrives: () => this.fs.listDrives(),
       requestDfsReferral: (targetIp: string, path: string, username: string, password: string) =>
         requestDfsReferral({ tcpStack: this.getTcpStack(), targetIp, path, username, password }),
+      resolveHostnameSync: (name: string) => this.resolveHostnameSync(name),
       signedInIdentity: () => (this.domainSession
         ? `${this.domainSession.netbiosName}\\${this.domainSession.sam}`
         : this.userMgr.currentUser || 'Administrator'),

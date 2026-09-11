@@ -182,6 +182,79 @@ function disconnect(ctx: WinCommandContext, store: Map<string, NetUseEntry>, ent
   store.delete(keyOf(entry));
 }
 
+export interface MappingRequest {
+  /** Drive letter (`Z:`), or empty for a deviceless connection. */
+  local: string;
+  /** The UNC as typed, kept verbatim for display. */
+  remote: string;
+  username: string;
+  password: string;
+  persistent?: boolean;
+}
+
+/**
+ * Establish one mapping and record it. The single implementation behind
+ * both `net use` and PowerShell's `New-PSDrive -Persist`, so the two
+ * interfaces cannot drift about what a mapped drive is or where it lives.
+ */
+export function establishMapping(
+  ctx: WinCommandContext, store: Map<string, NetUseEntry>, request: MappingRequest,
+): { ok: boolean; error?: string } {
+  const unc = parseUnc(request.remote);
+  if (!unc) return { ok: false, error: 'The network path was not found.' };
+
+  if (request.local) {
+    const takenLocally = (ctx.localDrives?.() ?? []).some(d => d.toUpperCase() === request.local);
+    if (store.has(request.local) || takenLocally) return { ok: false, error: ERROR_85 };
+  }
+  const conflicting = Array.from(store.values())
+    .find(e => serverOf(e.remote) === unc.server.toLowerCase() && e.user !== request.username);
+  if (conflicting) return { ok: false, error: ERROR_1219 };
+
+  const targetIp = ctx.resolveHostnameSync?.(unc.server);
+  if (!targetIp) return { ok: false, error: ERROR_53 };
+
+  let dial = ctx.dialSmbShare(targetIp.toString(), unc.share, request.username, request.password);
+  // `\\domain\namespace` is not a share on the machine that answers for the
+  // domain — it is a DFS root. A real client asks that machine for a
+  // referral and dials the share it names instead of giving up.
+  if (!dial.ok && dial.systemErrorCode === 67) {
+    const referred = ctx.requestDfsReferral?.(targetIp.toString(), request.remote, request.username, request.password) ?? [];
+    for (const target of referred) {
+      const parsed = parseUnc(target);
+      if (!parsed) continue;
+      const targetAddress = ctx.resolveHostnameSync?.(parsed.server);
+      if (!targetAddress) continue;
+      const viaDfs = ctx.dialSmbShare(targetAddress.toString(), parsed.share, request.username, request.password);
+      if (viaDfs.ok) { dial = viaDfs; break; }
+    }
+  }
+  if (!dial.ok) return { ok: false, error: dial.error ?? ERROR_53 };
+
+  const entry: NetUseEntry = {
+    local: request.local,
+    remote: request.remote,
+    status: 'OK',
+    user: request.username,
+    persistent: request.persistent ?? (request.local !== '' && savesConnections(ctx)),
+    connection: dial.connection,
+  };
+  store.set(keyOf(entry), entry);
+  rememberMapping(ctx, entry);
+  return { ok: true };
+}
+
+/** Undo one mapping by drive letter or UNC, as `net use /delete` and `Remove-PSDrive` both do. */
+export function releaseMapping(
+  ctx: WinCommandContext, store: Map<string, NetUseEntry>, target: string,
+): boolean {
+  const byLetter = store.get(target.toUpperCase());
+  const entry = byLetter ?? findByRemote(store, target);
+  if (!entry) return false;
+  disconnect(ctx, store, entry);
+  return true;
+}
+
 export async function cmdNetUse(ctx: WinCommandContext, args: string[]): Promise<string> {
   const gate = requireWindowsService(ctx, 'LanmanWorkstation');
   if (!gate.ok) return gate.error;
@@ -235,14 +308,9 @@ export async function cmdNetUse(ctx: WinCommandContext, args: string[]): Promise
 
   const uncArg = isUnc ? first : args[1];
   if ((isDriveLetter || isWildcard || isUnc) && uncArg?.startsWith('\\\\')) {
-    const unc = parseUnc(uncArg);
-    if (!unc) return 'The network path was not found.';
-
     let local = '';
     if (isDriveLetter) {
       local = first.toUpperCase();
-      const takenLocally = (ctx.localDrives?.() ?? []).some(d => d.toUpperCase() === local);
-      if (store.has(local) || takenLocally) return ERROR_85;
     } else if (isWildcard) {
       const free = nextFreeDrive(ctx, store);
       if (!free) return ERROR_85;
@@ -261,40 +329,12 @@ export async function cmdNetUse(ctx: WinCommandContext, args: string[]): Promise
     const typedPassword = passwordArg && !passwordArg.startsWith('/') ? passwordArg : '';
     const password = typedPassword || (ctx.secretFor?.(username) ?? '');
 
-    const alreadyThere = Array.from(store.values())
-      .find(e => serverOf(e.remote) === unc.server.toLowerCase() && e.user !== username);
-    if (alreadyThere) return ERROR_1219;
+    const result = establishMapping(ctx, store, {
+      local, remote: uncArg, username, password,
+      persistent: persistArg !== undefined ? persistArg.toLowerCase() === 'yes' : undefined,
+    });
+    if (!result.ok) return result.error ?? ERROR_53;
 
-    const targetIp = await ctx.resolveHostname(unc.server);
-    if (!targetIp) return ERROR_53;
-
-    let dial = ctx.dialSmbShare(targetIp.toString(), unc.share, username, password);
-    // `\\domain\namespace` is not a share on the machine that answers for the
-    // domain — it is a DFS root. A real client asks that machine for a
-    // referral and dials the share it names instead of giving up.
-    if (!dial.ok && dial.systemErrorCode === 67) {
-      const referred = ctx.requestDfsReferral?.(targetIp.toString(), uncArg, username, password) ?? [];
-      for (const target of referred) {
-        const parsed = parseUnc(target);
-        if (!parsed) continue;
-        const targetAddress = await ctx.resolveHostname(parsed.server);
-        if (!targetAddress) continue;
-        const viaDfs = ctx.dialSmbShare(targetAddress.toString(), parsed.share, username, password);
-        if (viaDfs.ok) { dial = viaDfs; break; }
-      }
-    }
-    if (!dial.ok) return dial.error ?? ERROR_53;
-
-    const entry: NetUseEntry = {
-      local,
-      remote: uncArg,
-      status: 'OK',
-      user: username,
-      persistent: persistArg !== undefined ? persistArg.toLowerCase() === 'yes' : (local !== '' && savesConnections(ctx)),
-      connection: dial.connection,
-    };
-    store.set(keyOf(entry), entry);
-    rememberMapping(ctx, entry);
     if (args.some(a => a.toLowerCase() === '/savecred') && typedPassword) {
       ctx.rememberSecret?.(username, typedPassword);
     }

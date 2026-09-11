@@ -822,11 +822,32 @@ export class NewPSDriveCmdlet implements ICmdlet {
   readonly name = 'new-psdrive';
   readonly displayName = 'New-PSDrive';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'Root'] as const;
+  readonly parameters = ['Name', 'PSProvider', 'Root', 'Description', 'Scope', 'Persist', 'Credential'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
-    const root = psValueToString(ctx.named['root'] ?? '');
+    const root = psValueToString(ctx.named['root'] ?? ctx.positional[2] ?? '');
+    // A UNC root names a share on another machine: mapping it is a real
+    // SMB connection, recorded where `net use` reads it, not a row in a
+    // shell variable.
+    if (root.startsWith('\\\\')) {
+      const smb = ctx.providers.smb;
+      if (!smb?.mapDrive) {
+        ctx.emitError(`New-PSDrive : This computer cannot map a network drive.`);
+        return null;
+      }
+      const credentialRaw = ctx.named['credential'] !== undefined ? psValueToString(ctx.named['credential']) : '';
+      const separator = credentialRaw.indexOf(':');
+      const credential = separator > 0
+        ? { username: credentialRaw.slice(0, separator), password: credentialRaw.slice(separator + 1) }
+        : undefined;
+      const mapped = smb.mapDrive(name.endsWith(':') ? name : `${name}:`, root, credential);
+      if (!mapped.ok) {
+        ctx.emitError(`New-PSDrive : ${mapped.error ?? 'The network path was not found.'}`);
+        return null;
+      }
+      return { Name: name, Root: root, Used: 0, Free: 0, Provider: 'FileSystem' } as Record<string, PSValue>;
+    }
     const drive = { Name: name, Root: root, Used: 0, Free: 0 } as Record<string, PSValue>;
     // Register drive in global scope for Get-PSDrive to retrieve
     const existing = (ctx.runtime.getVariable('__drives__') as Record<string, PSValue> | null) ?? {};
@@ -873,11 +894,47 @@ export class GetPSDriveCmdlet implements ICmdlet {
       });
     }
 
+    // Mapped network drives come from the machine's own table — the very
+    // one `net use` lists — so the two views cannot disagree about which
+    // drives exist.
+    for (const mapping of ctx.providers.smb?.listMappings?.() ?? []) {
+      if (!mapping.local) continue;
+      const letter = mapping.local.replace(/:$/, '');
+      if (rows.some(r => psValueToString(r['Name']).toLowerCase() === letter.toLowerCase())) continue;
+      rows.push({
+        Name: letter, Used: '', Free: '', Provider: 'FileSystem', Root: mapping.remote,
+      });
+    }
+
     if (nameFilter) {
       const found = rows.find(r => psValueToString(r['Name']).toLowerCase() === nameFilter);
       return found ?? null;
     }
     return rows;
+  }
+}
+
+// ─── Remove-PSDrive ────────────────────────────────────────────────────────
+
+export class RemovePSDriveCmdlet implements ICmdlet {
+  readonly name = 'remove-psdrive';
+  readonly displayName = 'Remove-PSDrive';
+  readonly aliases = ['rdr'] as const;
+  readonly parameters = ['Name', 'PSProvider', 'Scope', 'Force', 'WhatIf', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError('Remove-PSDrive : Cannot process command because of one or more missing mandatory parameters: Name.'); return null; }
+    const letter = name.endsWith(':') ? name : `${name}:`;
+    if (ctx.providers.smb?.unmapDrive?.(letter)) return null;
+    const declared = (ctx.runtime.getVariable('__drives__') as Record<string, PSValue> | null) ?? {};
+    if (declared[name.toLowerCase()] === undefined) {
+      ctx.emitError(`Remove-PSDrive : Cannot find drive. A drive with the name '${name}' does not exist.`);
+      return null;
+    }
+    delete declared[name.toLowerCase()];
+    ctx.runtime.setVariable('__drives__', declared);
+    return null;
   }
 }
 

@@ -54,7 +54,7 @@ import {
   GetModuleCmdlet, ImportModuleCmdlet, ClearHostCmdlet,
   InvokeCommandCmdlet, StartJobCmdlet, GetJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
   SetLocationCmdlet, GetLocationCmdlet, PushLocationCmdlet, PopLocationCmdlet,
-  NewPSDriveCmdlet, GetPSDriveCmdlet,
+  NewPSDriveCmdlet, GetPSDriveCmdlet, RemovePSDriveCmdlet,
   GetAliasCmdlet, GetPSProviderCmdlet,
   GetHistoryCmdlet, GetExecutionPolicyCmdlet, SetExecutionPolicyCmdlet,
 } from './MiscCmdlets';
@@ -352,6 +352,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new PopLocationCmdlet());
   registry.register(new NewPSDriveCmdlet());
   registry.register(new GetPSDriveCmdlet());
+  registry.register(new RemovePSDriveCmdlet());
   registry.register(new ClearHostCmdlet());
   registry.register(new GetAliasCmdlet());
   registry.register(new GetPSProviderCmdlet());

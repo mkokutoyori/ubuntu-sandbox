@@ -459,6 +459,12 @@ class WindowsSmbAdapter implements ISmbProvider {
   listSessions(): SmbSessionInfo[] {
     return this.pc.smbSessions.list().map(s => this.pc.smbSessions.toView(s));
   }
+
+  listMappings() { return this.pc.listNetworkDrives(); }
+  mapDrive(local: string, remote: string, credential?: { username: string; password: string }) {
+    return this.pc.mapNetworkDrive(local, remote, credential);
+  }
+  unmapDrive(target: string) { return this.pc.unmapNetworkDrive(target); }
 }
 
 // ── AD DS adapter (Server Manager — WindowsServer only, gated on AD-Domain-Services) ──
@@ -3643,7 +3649,10 @@ export function createWindowsPSProviders(
     environment:    new WindowsEnvironmentAdapter(pc),
     remoting:       new WindowsRemotingAdapter(pc),
     roles:          pc.getRoleManager() ? new WindowsRoleAdapter(pc) : null,
-    smb:            pc.getRoleManager() ? new WindowsSmbAdapter(pc) : null,
+    // Any Windows machine maps a network drive; only SERVING a share needs
+    // the File Server role, and the adapter checks that itself on the two
+    // operations that require it.
+    smb:            new WindowsSmbAdapter(pc),
     ad:             pc.getRoleManager() ? new WindowsAdAdapter(pc) : null,
     computer:       new WindowsComputerAdapter(pc),
     dns:            pc.getRoleManager() ? new WindowsDnsServerAdapter(pc) : null,

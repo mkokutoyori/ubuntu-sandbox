@@ -187,6 +187,10 @@ export interface ISmbProvider {
     { ok: boolean; message: string };
   removeShare(name: string): { ok: boolean; message: string };
   listSessions(): SmbSessionInfo[];
+  /** Mapped network drives — the very table `net use` shows, per `New-PSDrive -Persist`. */
+  listMappings?(): Array<{ local: string; remote: string; status: string; user: string }>;
+  mapDrive?(local: string, remote: string, credential?: { username: string; password: string }): { ok: boolean; error?: string };
+  unmapDrive?(target: string): boolean;
 }
 
 // ── AD DS (Active Directory Domain Services) ────────────────────────────────

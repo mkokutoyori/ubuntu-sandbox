@@ -243,6 +243,8 @@ export interface WinCommandContext {
   localDrives?(): string[];
   /** FSCTL_DFS_GET_REFERRALS against a namespace server — what a real client asks before giving up on `\\domain\namespace`. */
   requestDfsReferral?(targetIp: string, path: string, username: string, password: string): string[];
+  /** Name resolution without waiting — the mapping path shares one implementation between `net use` and PowerShell, and a cmdlet cannot await. */
+  resolveHostnameSync?(name: string): { toString(): string } | null;
   /** Who is signed in, domain-qualified when a domain logon is open — the identity an outbound connection carries when the operator names none. */
   signedInIdentity?(): string;
   /** The secret this machine holds for an account: the vault `runas /savecred` fills, then the logon secret. */
