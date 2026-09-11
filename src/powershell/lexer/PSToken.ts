@@ -178,9 +178,24 @@ export interface PSToken {
   type: PSTokenType;
   value: string;
   position: SourcePosition;
+  /**
+   * The spelling as typed, present only when `value` was normalized away
+   * from it. A keyword is lowercased so the parser can match it without
+   * caring about case — but a keyword is only a keyword in statement
+   * position, and the same word used as an argument is an ordinary string
+   * that keeps the case the operator wrote.
+   */
+  text?: string;
 }
 
 /** Convenience factory. */
-export function psToken(type: PSTokenType, value: string, position: SourcePosition): PSToken {
-  return { type, value, position };
+export function psToken(type: PSTokenType, value: string, position: SourcePosition, text?: string): PSToken {
+  return text !== undefined && text !== value
+    ? { type, value, position, text }
+    : { type, value, position };
+}
+
+/** The spelling to use when a token stands for itself rather than for a keyword. */
+export function tokenText(token: PSToken): string {
+  return token.text ?? token.value;
 }
