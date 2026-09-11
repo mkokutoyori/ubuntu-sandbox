@@ -3412,6 +3412,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       localDrives: () => this.fs.listDrives(),
       requestDfsReferral: (targetIp: string, path: string, username: string, password: string) =>
         requestDfsReferral({ tcpStack: this.getTcpStack(), targetIp, path, username, password }),
+      signedInIdentity: () => (this.domainSession
+        ? `${this.domainSession.netbiosName}\\${this.domainSession.sam}`
+        : this.userMgr.currentUser || 'Administrator'),
+      secretFor: (account: string) => {
+        const bare = account.includes('\\') ? account.slice(account.indexOf('\\') + 1) : account.split('@')[0];
+        return this.userMgr.getSavedCredential(account)
+          ?? this.userMgr.getSavedCredential(bare)
+          ?? this.userMgr.getLogonSecret(bare);
+      },
+      rememberSecret: (account: string, secret: string) => this.userMgr.saveCredential(account, secret),
       dhcpServerRole: this.getDhcpServerRole(),
       npsRole: this.getNpsRole(),
     };

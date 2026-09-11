@@ -17,7 +17,7 @@
  * Supported forms:
  *   net use                              — list current connections
  *   net use <device>                     — detail of one connection
- *   net use {<device> | *} \\server\share [password] [/user:NAME] [/persistent:yes|no]
+ *   net use {<device> | *} \\server\share [password] [/user:NAME] [/savecred] [/persistent:yes|no]
  *   net use \\server\share [...]         — deviceless connection
  *   net use {<device> | \\server\share} /delete
  *   net use * /delete                    — clear every connection
@@ -151,10 +151,6 @@ export async function cmdNetUse(ctx: WinCommandContext, args: string[]): Promise
   const persistArg = flag('/persistent:');
   const wantsDelete = args.some(a => a.toLowerCase() === '/delete' || a.toLowerCase() === '/d');
 
-  if (args.some(a => a.toLowerCase() === '/savecred')) {
-    return 'net use : /SAVECRED cannot be honoured here — this machine has no credential store to save the credential in.';
-  }
-
   const first = args[0];
   const isDriveLetter = /^[A-Za-z]:$/.test(first);
   const isWildcard = first === '*';
@@ -215,9 +211,12 @@ export async function cmdNetUse(ctx: WinCommandContext, args: string[]): Promise
     // PRD-Windows-Server.md §5 P6) — kept verbatim; only the target SERVER
     // knows its own hostname, so distinguishing "this is me" from "this is
     // my domain" happens in `SmbServerHandler.session_setup`, not here.
-    const username = userArg ?? 'Administrator';
+    // Named nobody, the connection carries the identity that is signed in,
+    // as a real client does.
+    const username = userArg ?? ctx.signedInIdentity?.() ?? 'Administrator';
     const passwordArg = args[isUnc ? 1 : 2];
-    const password = passwordArg && !passwordArg.startsWith('/') ? passwordArg : '';
+    const typedPassword = passwordArg && !passwordArg.startsWith('/') ? passwordArg : '';
+    const password = typedPassword || (ctx.secretFor?.(username) ?? '');
 
     const alreadyThere = Array.from(store.values())
       .find(e => serverOf(e.remote) === unc.server.toLowerCase() && e.user !== username);
@@ -253,6 +252,9 @@ export async function cmdNetUse(ctx: WinCommandContext, args: string[]): Promise
     };
     store.set(keyOf(entry), entry);
     rememberMapping(ctx, entry);
+    if (args.some(a => a.toLowerCase() === '/savecred') && typedPassword) {
+      ctx.rememberSecret?.(username, typedPassword);
+    }
     return isWildcard
       ? `Drive ${local} is now connected to ${uncArg}.\n\nThe command completed successfully.`
       : `The command completed successfully.`;

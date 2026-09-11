@@ -564,6 +564,17 @@ export class WindowsUserManager {
     return this.savedCredentials.get(name.toLowerCase()) ?? null;
   }
 
+  /**
+   * The logon secret this machine holds for an account, as Windows holds
+   * one to authenticate the signed-in user outbound without re-prompting.
+   * A real client proves knowledge of it by challenge-response; this
+   * simulator's SMB session-setup verifies the secret itself, so the
+   * caller hands it over and the SERVER still decides.
+   */
+  getLogonSecret(name: string): string | null {
+    return this.passwords.get(name.toLowerCase()) ?? null;
+  }
+
   clearSavedCredential(name: string): void {
     this.savedCredentials.delete(name.toLowerCase());
   }

@@ -243,6 +243,12 @@ export interface WinCommandContext {
   localDrives?(): string[];
   /** FSCTL_DFS_GET_REFERRALS against a namespace server — what a real client asks before giving up on `\\domain\namespace`. */
   requestDfsReferral?(targetIp: string, path: string, username: string, password: string): string[];
+  /** Who is signed in, domain-qualified when a domain logon is open — the identity an outbound connection carries when the operator names none. */
+  signedInIdentity?(): string;
+  /** The secret this machine holds for an account: the vault `runas /savecred` fills, then the logon secret. */
+  secretFor?(account: string): string | null;
+  /** `net use /savecred` — the same vault `runas /savecred` writes to. */
+  rememberSecret?(account: string, secret: string): void;
 
   /** DHCP Server role (PRD-Windows-Server.md §5 P8) — null/undefined unless this is a `WindowsServer` with the `DHCP` feature installed. Backs `netsh dhcp server`. */
   dhcpServerRole?: import('./server/dhcp/WindowsDhcpServerRole').WindowsDhcpServerRole | null;
