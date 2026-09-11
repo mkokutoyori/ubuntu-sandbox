@@ -768,7 +768,7 @@ type WireProbeDevice = {
   };
 };
 
-function wireReachOutcome(
+export function wireReachOutcome(
   device: object | null | undefined, destIp: string, port: number,
 ): 'blocked' | 'reached' {
   const probe = device as WireProbeDevice | null | undefined;
