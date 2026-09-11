@@ -77,12 +77,31 @@ describe('Cisco shell interaction planner', () => {
     expect(shell.interactionPlanFor('reload', { mode: 'user' })).toBeNull();
   });
 
+  /*
+   * `rel` etait exige ici comme une abreviation de `reload`, et c'en
+   * n'est pas une : la meme machine en privilegie rend `release` ET
+   * `reload` a `rel ?`, et repond « % Ambiguous command: "rel" » a la
+   * validation. Une frappe ambigue ne designe aucune commande, donc elle
+   * n'a pas de plan — exiger le contraire epinglait un defaut comme
+   * contrat. L'abreviation reste mesuree, sur `relo`, qui ne designe
+   * qu'une commande.
+   */
   it('plans reload only for the bare command (reload in 5 stays non-interactive)', () => {
     const router = new CiscoRouter('R1');
     const shell = shellOf(router);
     expect(shell.interactionPlanFor('reload', { mode: 'privileged' })).not.toBeNull();
-    expect(shell.interactionPlanFor('rel', { mode: 'privileged' })).not.toBeNull();
+    expect(shell.interactionPlanFor('relo', { mode: 'privileged' })).not.toBeNull();
+    expect(shell.interactionPlanFor('rel', { mode: 'privileged' })).toBeNull();
     expect(shell.interactionPlanFor('reload in 5', { mode: 'privileged' })).toBeNull();
+  });
+
+  it('`rel` est AMBIGU sur cette machine, et les deux moteurs le disent', async () => {
+    const router = new CiscoRouter('R1');
+    const aide = (router as unknown as { cliHelp(s: string): string });
+    await router.executeCommand('enable');
+    expect(aide.cliHelp('rel')).toMatch(/release/);
+    expect(aide.cliHelp('rel')).toMatch(/reload/);
+    expect(String(await router.executeCommand('rel'))).toMatch(/Ambiguous command/);
   });
 
   it('plans copy running-config startup-config for IOS abbreviations', () => {
