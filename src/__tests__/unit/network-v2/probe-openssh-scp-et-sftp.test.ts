@@ -150,17 +150,17 @@ describe('sftp : les verbes de la page man, sur le serveur', () => {
 
   it('`rm` retire le fichier SUR le serveur', async () => {
     const { pc, srv } = await labo();
-    await srv.executeCommand('echo x > /tmp/a-supprimer.txt');
-    await pc.executeCommand(lot('rm /tmp/a-supprimer.txt'));
-    expect(await srv.executeCommand('test -f /tmp/a-supprimer.txt && echo OUI || echo NON'))
+    await srv.executeCommand('sudo -u alice touch /home/alice/a-supprimer.txt');
+    await pc.executeCommand(lot('rm /home/alice/a-supprimer.txt'));
+    expect(await srv.executeCommand('test -f /home/alice/a-supprimer.txt && echo OUI || echo NON'))
       .toContain('NON');
   });
 
   it('`rename` renomme SUR le serveur', async () => {
     const { pc, srv } = await labo();
-    await srv.executeCommand('echo x > /tmp/avant.txt');
-    await pc.executeCommand(lot('rename /tmp/avant.txt /tmp/apres.txt'));
-    expect(await srv.executeCommand('test -f /tmp/apres.txt && echo OUI')).toContain('OUI');
+    await srv.executeCommand('sudo -u alice touch /home/alice/avant.txt');
+    await pc.executeCommand(lot('rename /home/alice/avant.txt /home/alice/apres.txt'));
+    expect(await srv.executeCommand('test -f /home/alice/apres.txt && echo OUI')).toContain('OUI');
   });
 
   it('un chemin distant absent est REFUSE, et le lot continue', async () => {
