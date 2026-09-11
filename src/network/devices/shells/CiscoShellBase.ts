@@ -785,6 +785,8 @@ const DOMAIN_LOOKUP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [{
     description: 'Interface used as the source address' },
 }];
 
+const QUATUOR_POINTE = /^\d{1,3}(\.\d{1,3}){3}$/;
+
 const DNS_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
 
@@ -6937,8 +6939,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         {
           modes: ['config'], minPrivilege: 15,
           undoFromNegatedPaths: true,
-          argumentFor: () => ({
-            name: 'reste', type: 'REST',
+          argumentFor: (path) => ({
+            name: 'reste', type: 'REST', pattern: QUATUOR_POINTE,
+            restMinWords: path === 'no arp' ? 1 : 2,
             description: 'IP address of the ARP entry', literal: 'A.B.C.D',
           }),
         },

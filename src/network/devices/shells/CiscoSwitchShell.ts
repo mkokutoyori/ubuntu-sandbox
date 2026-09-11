@@ -95,7 +95,9 @@ import { aclExtendedSpecs } from './cisco/aclExtendedSpecs';
 import { aclSubmodeSpecs, avecNumeroDeSequence } from './cisco/aclSubmodeSpecs';
 import { renderMacAce, type MacAce } from '../switch/MacAccessList';
 import { CISCO_ERRORS, resolveCiscoInterfaceName } from './cli-utils';
-import { estTypeSansNumero, typesInterfaceEnMotsCles } from './cisco/CiscoConfigCommands';
+import {
+  estTypeSansNumero, typesInterfaceEnMotsCles, NOM_INTERFACE_TAPE,
+} from './cisco/CiscoConfigCommands';
 import { getNtpAgent, getSnmpService } from '../../equipment/RouterServiceCapabilities';
 import { fhrpRunningConfigLines } from '../../fhrp/runningConfig';
 import { fhrpViewOf } from './cisco/CiscoShowCommands';
@@ -2519,9 +2521,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         modes: ['config', 'config-if', 'config-subif'], minPrivilege: 15,
         argumentFor: () => ({
           name: 'interface', type: 'REST', description: 'Interface to configure',
+          pattern: NOM_INTERFACE_TAPE,
           literal: 'IFACE', alternatives: CATALYST_INTERFACE_TYPES,
         }),
-        keywordsFor: () => typesInterfaceEnMotsCles(CATALYST_INTERFACE_TYPES),
+        keywordsFor: () => [
+          ...typesInterfaceEnMotsCles(CATALYST_INTERFACE_TYPES),
+          {
+            keyword: 'range', description: 'interface range command',
+            argument: {
+              name: 'plage', type: 'REST' as const,
+              description: 'Interfaces in the range', literal: 'IFACE',
+            },
+          },
+        ],
       });
   }
 
