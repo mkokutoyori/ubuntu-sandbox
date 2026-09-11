@@ -9907,13 +9907,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
        * `generate` ni `zeroize` ; leur migration au socle lui a retire ce
        * refus, et c'est lui qu'on remet ici.
        */
-      if (args[0]?.toLowerCase() === 'key') {
+      if (args.length === 0) throw new CliIncomplete();
+      if (args[0].toLowerCase() === 'key') {
         throw new CliInvalidInput({ token: args[1] });
       }
       const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       dev._recordUnhandledConfigLine?.(raw ?? `crypto ${args.join(' ')}`);
       return '';
     });
+    trie.requireArgs('crypto', 1);
     // `service timestamps` has its own registration above and the trie
     // routes to the more specific one, so the second parser this handler
     // used to carry never ran — it could only ever contradict the first.
