@@ -16,6 +16,7 @@ import type { CommandSpec } from '../../CommandTable';
 export interface DebugSubKeyword {
   readonly keyword: string;
   readonly description: string;
+  readonly category?: string;
 }
 
 export interface DebugPair {
@@ -35,6 +36,22 @@ export interface DebugPair {
    * objet decrit et achemine.
    */
   readonly subKeywords?: readonly DebugSubKeyword[];
+  readonly categories?: readonly string[];
+}
+
+export function debugPairsKnownBy(
+  pairs: readonly DebugPair[], knows: (category: string) => boolean,
+): DebugPair[] {
+  const kept: DebugPair[] = [];
+  for (const pair of pairs) {
+    if (pair.categories !== undefined && !pair.categories.some(knows)) continue;
+    if (pair.subKeywords === undefined) { kept.push(pair); continue; }
+    const subKeywords = pair.subKeywords.filter(
+      (sub) => sub.category === undefined || knows(sub.category));
+    if (subKeywords.length === 0) continue;
+    kept.push({ ...pair, subKeywords });
+  }
+  return kept;
 }
 
 const DEBUG_MODES = Object.freeze(['privileged']);
@@ -61,6 +78,22 @@ function specFor(
   };
 }
 
+function undebugSpecFor(
+  pair: DebugPair, tail: readonly string[], prefix: readonly string[],
+): CommandSpec {
+  const path = ['undebug', ...tail];
+  return {
+    id: path.join('-'),
+    path: pair.takesArguments
+      ? [...path, { name: 'rest', type: 'REST' as const, optional: true }]
+      : [...path],
+    description: pair.undoDescription,
+    modes: DEBUG_MODES,
+    minPrivilege: 15,
+    run: (_session, args) => pair.disable([...prefix, ...positional(args.rest)]),
+  };
+}
+
 export function debugFamily(pairs: readonly DebugPair[]): CommandSpec[] {
   const specs: CommandSpec[] = [];
   for (const pair of pairs) {
@@ -68,6 +101,18 @@ export function debugFamily(pairs: readonly DebugPair[]): CommandSpec[] {
     for (const sub of pair.subKeywords ?? []) {
       specs.push(specFor(
         pair, [...pair.path, sub.keyword], sub.description, [sub.keyword]));
+    }
+  }
+  return specs;
+}
+
+export function undebugFamily(pairs: readonly DebugPair[]): CommandSpec[] {
+  const specs: CommandSpec[] = [];
+  for (const pair of pairs) {
+    const tail = pair.path.slice(1);
+    specs.push(undebugSpecFor(pair, tail, []));
+    for (const sub of pair.subKeywords ?? []) {
+      specs.push(undebugSpecFor(pair, [...tail, sub.keyword], [sub.keyword]));
     }
   }
   return specs;

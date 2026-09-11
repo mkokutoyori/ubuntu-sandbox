@@ -42,7 +42,8 @@ import type { CommandSpec, TreeNode, LiveValuesPort } from '@/cli/CommandTable';
 export type SocleLegend = readonly [readonly string[], string, (readonly string[])?];
 import { showIpDhcpSpecs, type DhcpViewServer } from '@/cli/commands/show/showIpDhcp';
 import { showConfigViewSpecs } from '@/cli/commands/show/showSlice';
-import { debugFamily, type DebugPair } from '@/cli/commands/debug/debugFamily';
+import { debugFamily, undebugFamily, type DebugPair } from '@/cli/commands/debug/debugFamily';
+import { ciscoExecSpecs, sendTargetOf, type CiscoExecHost } from './cisco/ciscoExecSpecs';
 import { legacyFamily } from '@/cli/LegacyDeclaration';
 import {
   loggingFamily, type LoggingEntry, type LoggingContinuation,
@@ -1564,7 +1565,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const migre = m.status === 'ok' && m.node
       ? null : this.cheminCanoniqueDuSocle(`${line} `, mode);
     if (migre === null && (m.status !== 'ok' || !m.node)) return null;
-    const path = (migre ?? m.matchedKeywords).join(' ').toLowerCase();
+    const chemin = migre ?? m.matchedKeywords;
+    const path = chemin.join(' ').toLowerCase();
+    const restants = migre === null
+      ? m.args
+      : line.split(/\s+/).slice(migre.length);
 
     if (path === 'setup') {
       const target = (ctx?.device ?? this.deviceRef) as unknown as {
@@ -1578,7 +1583,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (path === 'erase startup-config' || path === 'write erase' || path === 'erase nvram:') {
       return this.eraseInteractionPlan();
     }
-    if (path === 'reload' && m.args.length === 0) {
+    if (path === 'reload' && restants.length === 0) {
       return this.reloadInteractionPlan();
     }
     if (path === 'debug all') {
@@ -1600,7 +1605,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         ],
       };
     }
-    if (path === 'clear ip ospf' && m.args[0]?.toLowerCase() === 'process') {
+    if (chemin.slice(0, 3).join(' ').toLowerCase() === 'clear ip ospf'
+      && (chemin[3] ?? restants[0])?.toLowerCase() === 'process') {
       return {
         steps: [
           {
@@ -1613,65 +1619,26 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         ],
       };
     }
-    if (path === 'send') {
-      const cible = this.cibleDeSend(m.args);
+    if (chemin[0]?.toLowerCase() === 'send') {
+      const cible = sendTargetOf([...chemin, ...restants]);
       if (cible === null) return { steps: [{ kind: 'output', lines: [CISCO_ERRORS.INVALID_INPUT] }] };
-      if (cible === 'incomplet') {
+      if (cible === 'incomplete') {
         return { steps: [{ kind: 'output', lines: [CISCO_ERRORS.INCOMPLETE] }] };
       }
       return this.sendInteractionPlan(cible, ctx?.device);
     }
-    if (path === 'copy' && m.args.length === 2) {
+    if (path === 'copy' && restants.length === 2) {
       const norm = (a: string): string => {
         const t = a.toLowerCase();
         if (t && 'running-config'.startsWith(t)) return 'running-config';
         if (t && 'startup-config'.startsWith(t)) return 'startup-config';
         return t;
       };
-      if (norm(m.args[0]) === 'running-config' && norm(m.args[1]) === 'startup-config') {
+      if (norm(restants[0]) === 'running-config' && norm(restants[1]) === 'startup-config') {
         return this.copyRunStartInteractionPlan();
       }
     }
     return null;
-  }
-
-  /**
-   * `send {line-number | * | aux n | console n | tty n | vty n}` — porter
-   * un message a une session vivante.
-   *
-   * La commande n'existait pas du tout : `send` tombait dans le
-   * rattrapage « mot inconnu » et partait en RESOLUTION DNS
-   * (`Translating "send"...domain server`), c'est-a-dire que la machine
-   * prenait le nom d'une de ses propres commandes pour un nom d'hote.
-   *
-   * Note de syntaxe, verifiee sur la reference Cisco : la forme est
-   * `send *` pour toutes les lignes et `send vty 0` pour une ligne — les
-   * orthographes `send all` et `send line vty 0` qu'on lit dans les
-   * supports de cours n'existent sur aucune machine, et les accepter
-   * apprendrait une commande que le materiel refuse.
-   */
-  /**
-   * `null` = ce mot-la ne convient pas ; `'incomplet'` = il en manque un.
-   *
-   * `send vty` etait refuse au caret alors que son aide venait de
-   * proposer `vty` : il manquait seulement le rang de la ligne, ce
-   * qu'IOS dit par « % Incomplete command. ». Les deux reponses etaient
-   * confondues parce que la fonction n'avait qu'une facon d'echouer.
-   */
-  private cibleDeSend(args: string[]): 'all' | number | 'incomplet' | null {
-    const a = args.map((x) => x.toLowerCase()).filter((x) => x.length > 0);
-    if (a.length === 0) return 'incomplet';
-    if (a[0] === '*') return a.length === 1 ? 'all' : null;
-    if (a[0] === 'vty' || a[0] === 'tty' || a[0] === 'aux' || a[0] === 'console' || a[0] === 'con') {
-      if (a.length === 1) return 'incomplet';
-      const n = Number.parseInt(a[1] ?? '', 10);
-      if (!Number.isInteger(n) || n < 0 || a.length > 2) return null;
-      // La console et l'AUX sont les lignes 0 et 1 ; une vty prend son rang.
-      return a[0] === 'console' || a[0] === 'con' ? 0 : n;
-    }
-    const n = Number.parseInt(a[0], 10);
-    if (!Number.isInteger(n) || n < 0 || a.length > 1) return null;
-    return n;
   }
 
   private sendInteractionPlan(cible: 'all' | number, deviceCtx?: unknown): CommandInteractionPlan {
@@ -2841,26 +2808,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (lower === 'logout' && (this.mode === 'user' || this.mode === 'privileged')) {
       return this.fermerSessionExec();
     }
-    // `disable [niveau]` — IOS accepte un niveau de destination, et
-    // c'est la moitie de la manoeuvre d'escalade temporaire : on monte a
-    // 15 pour l'intervention, on REDESCEND ensuite. Seul `disable` nu
-    // etait reconnu, donc `disable 10` repondait au caret et laissait
-    // l'operateur a 15 en croyant en etre redescendu.
-    if ((lower === 'disable' || lower.startsWith('disable '))
-      && (this.mode === 'user' || this.mode === 'privileged')) {
-      const arg = cmdPart.trim().split(/\s+/)[1];
-      const cible = arg === undefined ? 1 : Number.parseInt(arg, 10);
-      if (!Number.isFinite(cible) || cible < 0 || cible > 15) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      // Descendre seulement : `disable` ne fait jamais monter, sinon ce
-      // serait un `enable` sans mot de passe.
-      if (cible > this.currentPrivilegeLevel) return CISCO_ERRORS.INVALID_INPUT;
-      this.currentPrivilegeLevel = cible;
-      this.mode = cible >= 15 ? 'privileged' : 'user';
-      return '';
-    }
-
     // Bind device reference for command closures
     this.deviceRef = device;
 
@@ -3179,7 +3126,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // question au socle, elle passerait pour inconnue et IOS en ferait
     // un nom d'hote a joindre — donc `do write memory` refuse au niveau
     // reduit repondait par une resolution de nom.
-    return this.niveauDeclareParLeSocle(cmdPart);
+    const declare = this.niveauDeclareParLeSocle(cmdPart);
+    if (declare !== null) return declare;
+    const mots = cmdPart.trim().split(/\s+/).filter(Boolean);
+    if (mots.length < 2 || !/^(n|no|d|de|def|defa|defau|defaul|default)$/i.test(mots[0])) {
+      return null;
+    }
+    return this.niveauDeclareParLeSocle(mots.slice(1).join(' '));
   }
 
   /**
@@ -3535,22 +3488,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
   }
 
-  /**
-   * `undebug X` is `no debug X`, and IOS accepts every abbreviation down
-   * to `u X`. Registering both spellings for each debug family would
-   * guarantee the two drift apart the first time one gains an option, so
-   * the synonym is resolved once, here, before the trie ever sees it.
-   * `undebug all` keeps its own registration — it does more than clear
-   * the flag registry.
-   */
-  private static undebugAsNoDebug(cmdPart: string): string | null {
-    const m = /^\s*(u|un|und|unde|undeb|undebu|undebug)\s+(\S.*)$/i.exec(cmdPart);
-    if (!m) return null;
-    const rest = m[2].trim();
-    if (/^all\b/i.test(rest)) return null;
-    return `no debug ${rest}`;
-  }
-
   protected resolveInterfaceName(raw: string): string | null {
     const dev = this.d() as unknown as { getPortNames?: () => string[] };
     const names = dev.getPortNames?.() ?? [];
@@ -3701,9 +3638,38 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   ): DebugPair {
     return {
       path: ['debug', word], description, undoDescription: `Disable ${description}`,
-      takesArguments: true,
+      takesArguments: true, categories: [category],
       enable: () => this.debugServiceRef()?.enable(category) ?? '',
       disable: () => this.debugServiceRef()?.disable(category) ?? '',
+    };
+  }
+
+  protected debugSpecs(): CommandSpec[] {
+    const pairs = this.debugPairs();
+    return [...debugFamily(pairs), ...undebugFamily(pairs)];
+  }
+
+  protected execHost(): CiscoExecHost {
+    return {
+      privilegeLevel: () => this.currentPrivilegeLevel,
+      descendToPrivilege: (level) => {
+        this.currentPrivilegeLevel = level;
+        this.mode = level >= 15 ? 'privileged' : 'user';
+      },
+      cancelReload: () => {
+        if (this.reloadTimer !== null) {
+          this.schedulerFor(this.d()).clear(this.reloadTimer);
+          this.reloadTimer = null;
+        }
+        this.scheduledReloadAtMs = null;
+        return 'Reload cancelled.';
+      },
+      scheduleReloadIn: (minutes) => {
+        this.armReloadTimer(minutes * 60_000);
+        return `Reload scheduled in ${minutes} minute${minutes === 1 ? '' : 's'}`;
+      },
+      scheduleReloadAt: (time) => `Reload scheduled for ${time}`,
+      reloadNow: () => this.performImmediateReload(),
     };
   }
 
@@ -3713,18 +3679,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         path: ['debug', 'arp'], description: 'Enable ARP debug',
         undoDescription: 'Disable ARP debug', takesArguments: false,
+        categories: ['ip.arp'],
         enable: () => svc()?.enable('ip.arp') ?? 'ARP packet debugging is on',
         disable: () => svc()?.disable('ip.arp') ?? 'ARP packet debugging is off',
       },
       {
         path: ['debug', 'domain'], description: 'Debug DNS name resolution',
         undoDescription: 'Stop DNS debugging', takesArguments: false,
+        categories: ['ip.domain'],
         enable: () => svc()?.enable('ip.domain') ?? 'Domain Name System debugging is on',
         disable: () => svc()?.disable('ip.domain') ?? '',
       },
       {
         path: ['debug', 'dhcp'], description: 'Debug DHCP',
         undoDescription: 'Stop DHCP debugging', takesArguments: false,
+        categories: ['ip.dhcp.server'],
         enable: () => svc()?.enable('ip.dhcp.server') ?? '',
         disable: () => svc()?.disable('ip.dhcp.server') ?? '',
       },
@@ -3732,21 +3701,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         path: ['debug', 'ip'], description: 'Enable IP debug',
         undoDescription: 'Disable IP debug', takesArguments: true,
         subKeywords: [
-          { keyword: 'arp', description: 'Debug ARP packets' },
-          { keyword: 'bgp', description: 'Debug BGP' },
-          { keyword: 'dhcp', description: 'Debug DHCP' },
-          { keyword: 'domain', description: 'Debug DNS name resolution' },
-          { keyword: 'eigrp', description: 'Debug EIGRP' },
-          { keyword: 'icmp', description: 'Debug ICMP packets' },
-          { keyword: 'nat', description: 'Debug NAT' },
-          { keyword: 'nhrp', description: 'Debug NHRP' },
-          { keyword: 'packet', description: 'Debug all IP packets' },
-          { keyword: 'pim', description: 'Debug PIM' },
-          { keyword: 'rip', description: 'Debug RIP' },
-          { keyword: 'routing', description: 'Debug routing table changes' },
-          { keyword: 'ssh', description: 'Debug SSH' },
-          { keyword: 'tcp', description: 'Debug TCP special events' },
-          { keyword: 'udp', description: 'Debug UDP packets' },
+          { keyword: 'arp', description: 'Debug ARP packets', category: 'ip.arp' },
+          { keyword: 'bgp', description: 'Debug BGP', category: 'ip.bgp' },
+          { keyword: 'dhcp', description: 'Debug DHCP', category: 'ip.dhcp.server' },
+          { keyword: 'domain', description: 'Debug DNS name resolution', category: 'ip.domain' },
+          { keyword: 'eigrp', description: 'Debug EIGRP', category: 'ip.eigrp' },
+          { keyword: 'icmp', description: 'Debug ICMP packets', category: 'ip.icmp' },
+          { keyword: 'nat', description: 'Debug NAT', category: 'ip.nat' },
+          { keyword: 'nhrp', description: 'Debug NHRP', category: 'ip.nhrp' },
+          { keyword: 'packet', description: 'Debug all IP packets', category: 'ip.packet' },
+          { keyword: 'pim', description: 'Debug PIM', category: 'ip.pim' },
+          { keyword: 'rip', description: 'Debug RIP', category: 'ip.rip' },
+          { keyword: 'routing', description: 'Debug routing table changes', category: 'ip.routing' },
+          { keyword: 'ssh', description: 'Debug SSH', category: 'ip.ssh' },
+          { keyword: 'tcp', description: 'Debug TCP special events', category: 'ip.tcp' },
+          { keyword: 'udp', description: 'Debug UDP packets', category: 'ip.udp' },
         ],
         enable: (args) => this.enableIpDebug(args),
         disable: (args) => this.disableIpDebug(args),
@@ -3760,12 +3729,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         path: ['debug', 'standby'], description: 'Debug HSRP',
         undoDescription: 'Disable HSRP debug', takesArguments: true,
+        categories: ['standby'],
         enable: () => svc()?.enable('standby') ?? '',
         disable: () => svc()?.disable('standby') ?? '',
       },
       {
         path: ['debug', 'eigrp'], description: 'Debug EIGRP',
         undoDescription: 'Disable EIGRP debug', takesArguments: true,
+        categories: ['ip.eigrp'],
         enable: (args) => {
           const sujet = (args[0] ?? '').toLowerCase();
           const annonce = EIGRP_DEBUG_SUBJECTS[sujet];
@@ -3778,6 +3749,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         path: ['debug', 'interface'], description: 'Debug interface state changes',
         undoDescription: 'Disable interface debug', takesArguments: true,
+        categories: ['interface'],
         enable: (args) => {
           const service = svc();
           const iface = args.join(' ').trim();
@@ -3789,12 +3761,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         path: ['debug', 'lldp'], description: 'Debug LLDP',
         undoDescription: 'Disable LLDP debug', takesArguments: true,
+        categories: ['lldp.packets'],
         enable: () => svc()?.enable('lldp.packets') ?? 'LLDP packets debugging is on',
         disable: () => svc()?.disable('lldp.packets') ?? '',
       },
       {
         path: ['debug', 'cdp'], description: 'Debug CDP',
         undoDescription: 'Disable CDP debug', takesArguments: true,
+        categories: ['cdp.packets'],
         enable: () => svc()?.enable('cdp.packets') ?? 'CDP packets debugging is on',
         disable: () => svc()?.disable('cdp.packets') ?? '',
       },
@@ -3802,9 +3776,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         path: ['debug', 'ipv6'], description: 'Debug IPv6',
         undoDescription: 'Disable IPv6 debug', takesArguments: true,
         subKeywords: [
-          { keyword: 'icmp', description: 'ICMPv6 messages' },
-          { keyword: 'nd', description: 'ICMPv6 Neighbor Discovery' },
-          { keyword: 'packet', description: 'IPv6 packets' },
+          { keyword: 'icmp', description: 'ICMPv6 messages', category: 'ipv6.icmp' },
+          { keyword: 'nd', description: 'ICMPv6 Neighbor Discovery', category: 'ipv6.nd' },
+          { keyword: 'packet', description: 'IPv6 packets', category: 'ipv6.packet' },
         ],
         enable: (args) => this.enableIpv6Debug(args),
         disable: (args) => {
@@ -3826,9 +3800,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         path: ['debug', 'ntp'], description: 'Debug NTP',
         undoDescription: 'Disable NTP debug', takesArguments: true,
+        categories: ['ntp.events', 'ntp.packets'],
         subKeywords: [
-          { keyword: 'events', description: 'NTP events' },
-          { keyword: 'packets', description: 'NTP packets' },
+          { keyword: 'events', description: 'NTP events', category: 'ntp.events' },
+          { keyword: 'packets', description: 'NTP packets', category: 'ntp.packets' },
         ],
         enable: (args) => CiscoShellBase.ntpDebugSwitch(svc(), args, true),
         disable: (args) => CiscoShellBase.ntpDebugSwitch(svc(), args, false),
@@ -3836,28 +3811,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         path: ['debug', 'aaa'], description: 'Debug AAA',
         undoDescription: 'Disable AAA debug', takesArguments: true,
+        categories: ['aaa.accounting', 'aaa.authentication', 'aaa.authorization'],
         subKeywords: [
-          { keyword: 'accounting', description: 'AAA accounting' },
-          { keyword: 'authentication', description: 'AAA authentication' },
-          { keyword: 'authorization', description: 'AAA authorization' },
+          { keyword: 'accounting', description: 'AAA accounting', category: 'aaa.accounting' },
+          { keyword: 'authentication', description: 'AAA authentication', category: 'aaa.authentication' },
+          { keyword: 'authorization', description: 'AAA authorization', category: 'aaa.authorization' },
         ],
         enable: (args) => CiscoShellBase.aaaDebugSwitch(svc(), args, true),
         disable: (args) => CiscoShellBase.aaaDebugSwitch(svc(), args, false),
       },
     ];
 
-    if (this.hasVxlanHardware()) {
+    if (this.hasSwitchingHardware()) {
       pairs.push({
         path: ['debug', 'vxlan'], description: 'Debug VXLAN',
         undoDescription: 'Disable VXLAN debug', takesArguments: true,
+        categories: ['vxlan'],
         enable: () => svc()?.enable('vxlan') ?? 'VXLAN debugging is on',
         disable: () => svc()?.disable('vxlan') ?? '',
       });
-    }
-    if (this.hasSwitchingHardware()) {
       pairs.push({
         path: ['debug', 'port-security'], description: 'Debug port security',
         undoDescription: 'Disable port-security debug', takesArguments: true,
+        categories: ['port-security'],
         enable: () => svc()?.enable('port-security') ?? 'Port security debugging is on',
         disable: () => svc()?.disable('port-security') ?? '',
       });
@@ -5770,7 +5746,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...vrfDeclarationSpecs(() => this.vrfDeclarationHost()),
       ...cryptoKeySpecs(() => this.cryptoKeyHost()),
       ...clearLineSpecs(() => this.clearRestantsHost(), DERNIERE_LIGNE_ABSOLUE),
-      ...debugFamily(this.debugPairs()),
+      ...this.debugSpecs(),
+      ...ciscoExecSpecs(() => this.execHost()),
       ...showConfigViewSpecs(() => this),
       ...showIpDhcpSpecs(() => this.dhcpViewServer()),
       ...this.discoverySpecs(),
@@ -7046,6 +7023,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected socleLegends(): SocleLegend[] {
     return [
+      [['debug'], 'Enable debugging functions'],
+      [['undebug'], 'Disable debugging functions'],
       [['show', 'ip', 'http'], 'HTTP information'],
       [['client-identifier'], 'Manual binding client identifier'],
       [['lease'], 'Set DHCP lease duration'],
@@ -7571,11 +7550,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   private trieIgnoreLaRacine(cmdPart: string): boolean {
-    const premier = cmdPart.trim().toLowerCase()
-      .replace(/^no\s+/i, '').split(/\s+/)[0] ?? '';
-    if (premier.length === 0) return false;
-    return !this.getActiveTrie().enumerateCommandPaths()
-      .some((path) => path.toLowerCase().split(' ')[0].startsWith(premier));
+    const mots = cmdPart.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const nie = /^no?$/.test(mots[0] ?? '') && mots.length > 1;
+    const racine = nie ? mots.slice(0, 2) : mots.slice(0, 1);
+    if ((racine[0] ?? '').length === 0) return false;
+    return !this.getActiveTrie().enumerateCommandPaths().some((path) => {
+      const words = path.toLowerCase().split(' ');
+      return racine.every((mot, rang) => words[rang]?.startsWith(mot));
+    });
   }
 
   private trieProlonge(cmdPart: string): boolean {
@@ -7615,9 +7597,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   private socleSession(table: CommandTable): CliSession {
     table.attachAuthorization({
-      authorizes: (commandText, defaultLevel) => this.autorisation().authorize({
-        principal: this.mandataire(),
-        scope: scopeForMode(this.mode),
+      authorizes: (commandText, defaultLevel, session) => this.autorisation().authorize({
+        principal: { level: session.privilegeLevel, view: session.viewName ?? null },
+        scope: scopeForMode(session.mode as typeof this.mode),
         command: commandText,
         defaultLevel,
       }) !== 'absent',
@@ -7629,6 +7611,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       initialMode: this.mode,
       privilegeLevel: this.currentPrivilegeLevel,
     });
+    session.viewName = this.activeParserView ?? undefined;
     Object.assign(session.fields, this.socleFields);
     return session;
   }
@@ -7762,11 +7745,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const spec = CiscoShellBase.negationSous(table, chemin, this.mode);
       if (!spec) return [];
 
-      const nomme = CiscoShellBase.keywordPathOf(spec).length === chemin.length;
       return [{
         keyword: suggestion.keyword,
-        description: nomme && spec.undoDescription
-          ? spec.undoDescription : suggestion.description,
+        description: spec.undoDescription ?? suggestion.description,
         isArgument: false,
       }];
     });
@@ -7982,12 +7963,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected executeOnTrie(cmdPart: string): string {
-    // `undebug X` EST `no debug X`, donc la reecriture precede les deux
-    // moteurs. Placee apres le socle, elle laissait `undebug` chercher
-    // dans un trie dont la famille venait d'etre elaguee.
-    const asNoDebug = CiscoShellBase.undebugAsNoDebug(cmdPart);
-    if (asNoDebug !== null) cmdPart = asNoDebug;
-
     const migrated = this.tryMigratedCommand(cmdPart);
     if (migrated !== null) return migrated;
     // UNE seule question, posee a UN seul endroit : cette session
@@ -9325,12 +9300,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   private registerCommonPrivilegedCommands(): void {
     this.registerTestAaaCommand();
-    this.privilegedTrie.register('disable', 'Return to user EXEC mode', () => {
-      this.mode = 'user';
-      this.currentPrivilegeLevel = 1;
-      return '';
-    });
-
     const saveRunningToStartup = () =>
       `Destination filename [startup-config]?\n${this.onSave()}`;
     // Sauvegarder DATE la NVRAM : c'est la seconde des deux lignes d'en-tête.
@@ -9517,44 +9486,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
       return this.deposerCopie(this.d(), dstBrut, dst, source.texte, srcBrut);
     });
-    this.privilegedTrie.registerGreedy('reload', 'Reload the device', (args) => {
-      if (args[0]?.toLowerCase() === 'cancel') {
-        if (this.reloadTimer !== null) { this.schedulerFor(this.d()).clear(this.reloadTimer); this.reloadTimer = null; }
-        this.scheduledReloadAtMs = null;
-        return 'Reload cancelled.';
-      }
-      if (args[0]?.toLowerCase() === 'in') {
-        if (!args[1]) return '% Incomplete command.';
-        if (!/^\d+$/.test(args[1])) return CISCO_ERRORS.INVALID_INPUT;
-        const min = parseInt(args[1], 10);
-        this.armReloadTimer(min * 60_000);
-        return `Reload scheduled in ${min} minute${min === 1 ? '' : 's'}`;
-      }
-      if (args[0]?.toLowerCase() === 'at') {
-        if (!args[1]) return '% Incomplete command.';
-        return `Reload scheduled for ${args[1]}`;
-      }
-      return this.performImmediateReload();
-    });
-    // `send` doit EXISTER dans le trie meme si tout son interet est dans
-    // le plan interactif : sans noeud, le mot part en resolution DNS et
-    // la machine cherche un hote nomme « send ».
-    this.privilegedTrie.registerGreedy('send', 'Send a message to other tty lines', (args) => {
-      const cible = this.cibleDeSend(args);
-      if (cible === null) return CISCO_ERRORS.INVALID_INPUT;
-      if (cible === 'incomplet') return CISCO_ERRORS.INCOMPLETE;
-      // Appel non interactif (script, pipe) : aucun corps a saisir, donc
-      // rien a livrer. On ne feint pas un envoi.
-      return '';
-    });
-    this.privilegedTrie.addCompletionKeywords('send', [
-      { keyword: '*', description: 'All tty lines' },
-      { keyword: 'aux', description: 'Auxiliary line' },
-      { keyword: 'console', description: 'Primary terminal line' },
-      { keyword: 'tty', description: 'Terminal controller' },
-      { keyword: 'vty', description: 'Virtual terminal' },
-    ]);
-
     this.registerCommonShowCommands(this.privilegedTrie);
 
     // `clock set` est une commande d'EXEC privilégié sur IOS, et n'était

@@ -74,7 +74,8 @@ import { stpGlobalSpecs, type StpGlobalHost } from './cisco/stpGlobalSpecs';
 import { IPV4_PLACE, valeurGlobaleSpecs } from './cisco/ipGlobalSpecs';
 import { clearSwitchSpecs } from './cisco/clearRestantsSpecs';
 import { showAdjacencySpec, showTrackSpec } from './cisco/showViewSpecs';
-import type { DebugPair } from '@/cli/commands/debug/debugFamily';
+import { debugPairsKnownBy, type DebugPair } from '@/cli/commands/debug/debugFamily';
+import { categoryOnPlatform } from '../router/diag/RouterDebugService';
 import { buildActorState } from '@/network/lacp/types';
 import { etherChannelLimitFamily } from '@/cli/commands/aggregation/etherChannelLimits';
 import {
@@ -2902,46 +2903,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private registerSwitchDebugCommands(): void {
-    const p = this.privilegedTrie;
     const svc = () => this.switchDebug();
-    const guard = (raw: string): boolean => /[A-Z]/.test((raw.trim().split(/\s+/)[0]) ?? '');
-
-    p.register('show debugging', 'Display active debugging', () =>
-      this.mode === 'user' ? CISCO_ERRORS.INVALID_INPUT : (svc()?.format() ?? 'No debug flags are enabled'));
-
-    p.registerGreedy('debug', 'Enable debugging', (a, raw) => {
-      if (guard(raw ?? '')) return CISCO_ERRORS.INVALID_INPUT;
-      const arg = a.join(' ');
-      const service = svc();
-      if (!service || !service.recognizes(arg)) return CISCO_ERRORS.INVALID_INPUT;
-      return service.enableScope(arg);
-    });
-
-    /*
-     * Le pendant NEGATIF du glouton ci-dessus. Il n'existait pas : le
-     * noeud `no debug` naissait par accident des trois negations
-     * specifiques enregistrees a cote, et leur passage au socle l'a
-     * emporte avec elles — `no debug zorglub` cessait alors d'etre
-     * refuse pour devenir un NOM D'HOTE a resoudre (« Translating
-     * "no"... »), c'est-a-dire le pire des messages, puisqu'il envoie
-     * verifier un serveur DNS pour une faute de frappe.
-     */
-    p.registerGreedy('no debug', 'Disable debugging', (a, raw) => {
-      if (guard(raw ?? '')) return CISCO_ERRORS.INVALID_INPUT;
-      const arg = a.join(' ');
-      const service = svc();
-      if (!service || !service.recognizes(arg)) return CISCO_ERRORS.INVALID_INPUT;
-      return service.disableScope(arg);
-    });
-
-    const undebugScope = (arg: string): string => {
-      const service = svc();
-      if (!service) return '';
-      if (arg.trim() === '' || arg.trim() === 'all') return service.disableAll();
-      if (!service.recognizes(arg)) return CISCO_ERRORS.INVALID_INPUT;
-      return service.disableScope(arg);
-    };
-    p.registerGreedy('undebug', 'Disable debugging', (a) => undebugScope(a.join(' ')));
+    this.privilegedTrie.register('show debugging', 'Display active debugging', () =>
+      this.mode === 'user'
+        ? CISCO_ERRORS.INVALID_INPUT
+        : (svc()?.format() ?? 'No debug flags are enabled'));
   }
 
   /**
@@ -2972,7 +2938,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     return [
-      ...super.debugPairs(),
+      ...debugPairsKnownBy(super.debugPairs(), (c) => categoryOnPlatform(c, 'switch')),
       portee(['debug', 'spanning-tree'], 'STP', 'spanning-tree', true),
       portee(['debug', 'mac', 'address-table'], 'MAC table', 'mac'),
       portee(['debug', 'mac-address-table'], 'MAC table', 'mac'),
