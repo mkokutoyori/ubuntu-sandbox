@@ -318,6 +318,16 @@ function stateLabel(s: string): string {
   }
 }
 
+const SSH_COPY_ID_VALUE_FLAGS: ReadonlySet<string> = new Set(['-p', '-o', '-F', '-t']);
+
+const KEYSCAN_VALUE_FLAGS: ReadonlySet<string> = new Set(['-f', '-O', '-T']);
+
+const KEYSCAN_TYPES: Readonly<Record<string, string>> = {
+  ed25519: 'ssh-ed25519',
+  rsa: 'ssh-rsa',
+  ecdsa: 'ecdsa-sha2-nistp256',
+};
+
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
   readonly mountTable: MountTable;
@@ -503,6 +513,20 @@ export class LinuxCommandExecutor {
    * host when real credentials are available (audit 03, MAJEUR §4).
    */
   private tcpConnector: ((host: string, port: number) => Promise<unknown>) | null = null;
+
+  private sshpassPassword: string | undefined;
+
+  async runSshpassWrapped(
+    argv: string[], password: string | undefined, stdin?: string,
+  ): Promise<{ output: string; exitCode: number; stderr?: string }> {
+    const previous = this.sshpassPassword;
+    this.sshpassPassword = password;
+    try {
+      return await this.dispatchMaybeNetwork(argv, this._cmdEnv, false, stdin, false);
+    } finally {
+      this.sshpassPassword = previous;
+    }
+  }
   setTcpConnector(connector: ((host: string, port: number) => Promise<unknown>) | null): void {
     this.tcpConnector = connector;
   }
@@ -1729,6 +1753,7 @@ export class LinuxCommandExecutor {
   }
 
   private buildSshClientOpts(args: string[], callerEnv?: Record<string, string>, offeredPassword?: string) {
+    const password = offeredPassword ?? this.sshpassPassword;
     const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     const user = this.userMgr.currentUser;
@@ -1750,7 +1775,7 @@ export class LinuxCommandExecutor {
       callerEnv: env,
       localForwarding: this.forwarding ?? undefined,
       localAgent: this.sshAgent,
-      offeredPassword,
+      offeredPassword: password,
       localVfs: {
         readFile: (p: string) => this.vfs.readFile(p),
         writeFile: (p: string, c: string, uid: number, gid: number, umask: number) =>
@@ -1910,9 +1935,14 @@ export class LinuxCommandExecutor {
 
   private runSshKeyscan(args: string[]): { output: string; exitCode: number } {
     let port = 22;
+    let wanted: readonly string[] | null = null;
     const positional: string[] = [];
     for (let i = 0; i < args.length; i++) {
       if (args[i] === '-p' && i + 1 < args.length) { port = parseInt(args[++i], 10) || 22; }
+      else if (args[i] === '-t' && i + 1 < args.length) {
+        wanted = args[++i].split(',').map(k => KEYSCAN_TYPES[k.trim().toLowerCase()] ?? k.trim());
+      }
+      else if (KEYSCAN_VALUE_FLAGS.has(args[i]) && i + 1 < args.length) { i++; }
       else if (!args[i].startsWith('-')) positional.push(args[i]);
     }
     const host = positional[0];
@@ -1921,6 +1951,9 @@ export class LinuxCommandExecutor {
     if (!found) return { output: `# ${host} unknown host`, exitCode: 1 };
     const hostKey = this.sshHostKeyProbe?.(found.ip, port) ?? null;
     if (!hostKey) return { output: `# ${host} no host key`, exitCode: 1 };
+    if (wanted !== null && !wanted.includes(hostKey.algorithm)) {
+      return { output: '', exitCode: 0 };
+    }
     return { output: `${host} ${hostKey.algorithm} ${hostKey.publicKey}`, exitCode: 0 };
   }
 
@@ -2049,7 +2082,7 @@ export class LinuxCommandExecutor {
     for (let i = 0; i < args.length; i++) {
       const a = args[i];
       if (a === '-i' && args[i + 1]) { identity = args[++i]; continue; }
-      if (a === '-p' && args[i + 1]) { i++; continue; }
+      if (SSH_COPY_ID_VALUE_FLAGS.has(a) && args[i + 1]) { i++; continue; }
       if (a.startsWith('-')) continue;
       if (!target) target = a;
     }

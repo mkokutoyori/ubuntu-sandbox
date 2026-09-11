@@ -4,9 +4,6 @@ import { makeArgCompleter } from '../completionHelpers';
 
 const SSHPASS_USAGE = 'Usage: sshpass [-f|-d|-p|-e[env_var]] [-hV] command parameters';
 
-const UNSUPPORTED =
-  'sshpass: only `sshpass -p <pw> ssh|scp|sftp …` is supported in the simulator';
-
 function splitSshpass(args: string[]): { password?: string; wrapped: string[] } {
   let password: string | undefined;
   let i = 0;
@@ -49,6 +46,9 @@ export const sshpassCommand: LinuxCommand = {
     if (verb === 'rsync') {
       return ctx.executor.runSshTransport('rsync', wrapped.slice(1), stdin, password);
     }
-    return { output: UNSUPPORTED, exitCode: 1 };
+    if (verb === undefined) {
+      return { output: SSHPASS_USAGE, exitCode: 1 };
+    }
+    return ctx.executor.runSshpassWrapped(wrapped, password, stdin);
   },
 };

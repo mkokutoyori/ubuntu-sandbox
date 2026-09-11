@@ -160,7 +160,7 @@ describe('ssh-copy-id : la cle publique atterrit dans authorized_keys DU SERVEUR
     const ligne = `sshpass -p secret123 ssh-copy-id -o StrictHostKeyChecking=no -i ${CLE}.pub alice@10.0.0.2`;
     await pc.executeCommand(ligne);
     const second = await pc.executeCommand(ligne);
-    expect(second).toContain('Number of key(s) added: 0');
+    expect(second).toContain('WARNING: All keys were skipped because they already exist');
     const autorisees = await srv.executeCommand('sudo cat /home/alice/.ssh/authorized_keys');
     expect(autorisees.split('\n').filter(l => l.includes('ssh-ed25519')).length).toBe(1);
   });
@@ -199,7 +199,7 @@ describe('ssh-keyscan : les cles d hote, prises SUR LE SERVEUR', () => {
     const balayee = (await pc.executeCommand('ssh-keyscan -t ed25519 10.0.0.2'))
       .split('\n').find(l => l.includes('ssh-ed25519'))?.split(/\s+/)[2];
     await pc.executeCommand('sshpass -p secret123 ssh -o StrictHostKeyChecking=no alice@10.0.0.2 true');
-    const connus = await pc.executeCommand('cat /root/.ssh/known_hosts');
+    const connus = await pc.executeCommand('cat $HOME/.ssh/known_hosts');
     expect(balayee).toBeTruthy();
     expect(connus).toContain(balayee!);
   });
