@@ -7416,7 +7416,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     const table = this.socleTable();
     const parLeSocle = table
-      ? this.cheminCanonique(table, `${brut} `, this.socleSession(table)) : null;
+      ? this.cheminCanonique(table, `${brut} `, this.socleSession(table))?.canonique ?? null
+      : null;
     if (parLeSocle !== null && parLeSocle.length > 0) return parLeSocle.join(' ');
 
     const parLeTrie = this.getActiveTrie().match(brut);
@@ -7768,7 +7769,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     table: CommandTable, ligne: string,
     brutes: Array<{ keyword: string; description: string; isArgument: boolean }>,
   ): Array<{ keyword: string; description: string; isArgument: boolean }> {
-    const amont = this.cheminCanonique(table, ligne, this.socleSession(table));
+    const amont = this.cheminCanonique(table, ligne, this.socleSession(table))?.motsCles
+      ?? null;
     if (amont === null
       || !this.negationSous(table, amont, this.mode)) return [];
 
@@ -7877,18 +7879,30 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       initialMode: mode,
       privilegeLevel: mode === 'user' ? 1 : 15,
     });
-    const chemin = this.cheminCanonique(table, ligne, session);
+    const chemin = this.cheminCanonique(table, ligne, session)?.canonique ?? null;
     return chemin !== null && chemin.length > 0 ? chemin : null;
   }
 
+  /**
+   * Le chemin franchi, sous ses DEUX formes.
+   *
+   * `canonique` garde la valeur tapee a la place qu'elle a remplie ;
+   * `motsCles` ne garde que les mots-cles, ce qui est la forme sous
+   * laquelle les commandes sont INDEXEES — `keywordPathOf` retire les
+   * places. Les deux se confondaient tant qu'aucune place ne precedait
+   * un mot-cle ; `storm-control <sorte> level` en pose une, et la
+   * negation cherchait alors `storm-control broadcast` dans un index qui
+   * ne connait que `storm-control level`.
+   */
   private cheminCanonique(
     table: CommandTable, ligne: string, session: CliSession | null,
-  ): string[] | null {
+  ): { canonique: string[]; motsCles: string[] } | null {
     const tapes = ligne.trim().split(/\s+/).filter(Boolean);
     const parcourus = ligne.endsWith(' ') ? tapes : tapes.slice(0, -1);
 
     let node = table.rootNode();
     const canonique: string[] = [];
+    const motsCles: string[] = [];
     for (const tape of parcourus) {
       const mot = tape.toLowerCase();
       const enfant = session
@@ -7897,6 +7911,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (enfant?.keyword) {
         node = enfant;
         canonique.push(enfant.keyword.toLowerCase());
+        motsCles.push(enfant.keyword.toLowerCase());
         continue;
       }
       const argument = session
@@ -7909,7 +7924,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return null;
     }
-    return canonique;
+    return { canonique, motsCles };
   }
 
   private tryMigratedCommand(cmdPart: string): string | null {
