@@ -51,6 +51,7 @@ import { parseVlanId, VLAN_MIN, VLAN_MAX, type VlanSet } from '../switch/VlanSet
 import {
   STORM_CONTROL_TYPES, parseStormControl, stormControlPercent,
 } from './cisco/stormControlSyntax';
+import { stormControlSpecs, type StormControlHost } from './cisco/stormControlSpecs';
 import { igmpSnoopingRunningConfigLines } from '../../igmp-snooping/snoopingRunningConfig';
 import type { SnoopingConfig } from '../../igmp-snooping/types';
 import type { CiscoSwitch } from '../CiscoSwitch';
@@ -97,6 +98,7 @@ import { renderMacAce, type MacAce } from '../switch/MacAccessList';
 import { CISCO_ERRORS, resolveCiscoInterfaceName } from './cli-utils';
 import {
   estTypeSansNumero, typesInterfaceEnMotsCles, NOM_INTERFACE_TAPE,
+  DUPLEX_PLACE, SPEED_PLACE,
 } from './cisco/CiscoConfigCommands';
 import { getNtpAgent, getSnmpService } from '../../equipment/RouterServiceCapabilities';
 import { fhrpRunningConfigLines } from '../../fhrp/runningConfig';
@@ -375,7 +377,7 @@ const CONFIG_IF_AUTRES: ReadonlySet<string> = new Set([
   'duplex', 'speed', 'channel-group', 'no channel-group',
   'mls qos trust cos', 'mls qos trust dscp', 'no mls qos trust', 'mls qos cos',
   'ip dhcp snooping trust', 'ip dhcp snooping limit rate',
-  'l2protocol-tunnel', 'private-vlan mapping',
+  'l2protocol-tunnel', 'private-vlan mapping', 'srr-queue',
 ]);
 
 /**
@@ -413,6 +415,11 @@ const MAC_TABLE_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
 const VLAN_PLACE = (name: string, description: string): ArgumentSpec =>
   ({ name, type: 'VLAN_ID', description });
 
+const FORME_LISTE_VLAN = /^\d+(-\d+)?(,\d+(-\d+)?)*$/;
+
+const VLAN_LIST_PLACE = (name: string, description: string): ArgumentSpec =>
+  ({ name, type: 'WORD', literal: 'WORD', description, pattern: FORME_LISTE_VLAN });
+
 const VOICE_VLAN_MODES = [
   { keyword: 'dot1p', description: 'Tag traffic with 802.1p priority' },
   { keyword: 'none', description: 'Do not tell the telephone which VLAN to use' },
@@ -446,6 +453,47 @@ const SWITCHPORT_PLACES: Readonly<Record<string, ArgumentSpec | readonly Argumen
       { keyword: 'isl', description: 'Interface uses only ISL trunking encapsulation' },
       { keyword: 'negotiate', description: 'Device negotiates the trunking encapsulation' },
     ],
+  },
+  duplex: DUPLEX_PLACE,
+  speed: SPEED_PLACE,
+  'l2protocol-tunnel': {
+    name: 'protocole', type: 'ENUM', description: 'Protocol to tunnel',
+    values: [
+      { keyword: 'cdp', description: 'Cisco Discovery Protocol' },
+      { keyword: 'lldp', description: 'Link Layer Discovery Protocol' },
+      { keyword: 'stp', description: 'Spanning Tree Protocol' },
+      { keyword: 'vtp', description: 'VLAN Trunking Protocol' },
+    ],
+  },
+  'mls qos cos': {
+    name: 'cos', type: 'INT', range: [0, 7],
+    description: 'Class of service value applied to untrusted ingress traffic',
+  },
+  'private-vlan mapping':
+    VLAN_LIST_PLACE('secondaires', 'Secondary VLANs mapped to this primary VLAN SVI'),
+  'switchport private-vlan host-association': [
+    VLAN_PLACE('primaire', 'Primary private VLAN of the host port'),
+    VLAN_PLACE('secondaire', 'Secondary private VLAN of the host port'),
+  ],
+  'switchport private-vlan mapping': [
+    VLAN_PLACE('primaire', 'Primary private VLAN of the promiscuous port'),
+    VLAN_LIST_PLACE('secondaires', 'Secondary VLANs mapped to the promiscuous port'),
+  ],
+  'switchport private-vlan mapping trunk': [
+    VLAN_PLACE('primaire', 'Primary private VLAN of the promiscuous trunk'),
+    VLAN_LIST_PLACE('secondaires', 'Secondary VLANs mapped to the promiscuous trunk'),
+  ],
+  'switchport private-vlan association trunk': [
+    VLAN_PLACE('primaire', 'Primary private VLAN of the isolated trunk'),
+    VLAN_PLACE('secondaire', 'Secondary private VLAN of the isolated trunk'),
+  ],
+  'switchport vlan mapping': [
+    VLAN_PLACE('client', 'Customer VLAN carried into the service VLAN'),
+    VLAN_PLACE('service', 'Service VLAN the customer VLAN is mapped to'),
+  ],
+  'srr-queue': {
+    name: 'reglage', type: 'REST', literal: 'LINE',
+    description: 'Shaped Round Robin queue settings, kept as written',
   },
 };
 
@@ -2442,6 +2490,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.l2TableSpecs(),
       ...this.portSecuritySpecs(),
       ...this.switchportL2Specs(),
+      ...stormControlSpecs(() => this.stormControlHost()),
       ...this.dot1xSpecs(),
       ...this.vtpConfigSpecs(),
       ...this.daiSpecs(),
@@ -3763,18 +3812,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     // ── switchport extras / EtherChannel (recorded for show run) ──
-    const recordIf = (line: string) => {
-      const ifs = this.selectedInterface
-        ? [this.selectedInterface] : this.selectedInterfaceRange;
-      const verb = line.split(' ').slice(0, 3).join(' ');
-      for (const i of ifs) {
-        const l = (this.ifExtra.get(i) ?? []).filter(
-          (existing) => existing.split(' ').slice(0, 3).join(' ') !== verb);
-        l.push(line);
-        this.ifExtra.set(i, l);
-      }
-      return '';
-    };
+    const recordIf = (line: string) => this.noterLigneInterface(line);
     trie.registerGreedy('switchport trunk encapsulation', 'Trunk encapsulation', (args) => {
       if (this.selectedInterface && this.sviVlanId(this.selectedInterface) !== null) {
         return CISCO_ERRORS.INVALID_INPUT;
@@ -3835,9 +3873,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return recordIf(`speed ${n}`);
     });
-    for (const sub of [
-      'switchport voice', 'storm-control', 'srr-queue',
-    ]) {
+    for (const sub of ['switchport voice', 'srr-queue']) {
       trie.registerGreedy(sub, `Interface ${sub}`, (args) => {
         // These are physical-port-only; an SVI is a virtual L3 interface and
         // rejects them just like real IOS does.
@@ -3848,33 +3884,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           if (args[0] === undefined) throw new CliIncomplete();
           throw new CliInvalidInput({ token: args[0] });
         }
-        if (sub === 'storm-control') {
-          const parsed = parseStormControl(args);
-          if (parsed.incomplete) throw new CliIncomplete();
-          if (!parsed.setting) throw new CliInvalidInput({ token: args[parsed.at] });
-        }
         return recordIf(`${sub} ${args.join(' ')}`.trim());
       });
       if (sub !== 'srr-queue') trie.requireArgs(sub, 1);
     }
-    trie.requireArgs('no storm-control', 1);
-    trie.registerGreedy('no storm-control', 'Remove a storm-control setting', (args) => {
-      const quoi = (args[0] ?? '').toLowerCase();
-      if (quoi === 'action') return removeIf('storm-control action');
-      if (!STORM_CONTROL_TYPES.includes(quoi)) throw new CliInvalidInput({ token: args[0] });
 
-      return removeIf(`storm-control ${quoi} level`);
-    });
-
-    const removeIf = (prefix: string) => {
-      const ifs = this.selectedInterface
-        ? [this.selectedInterface] : this.selectedInterfaceRange;
-      for (const i of ifs) {
-        const l = this.ifExtra.get(i);
-        if (l) this.ifExtra.set(i, l.filter(x => !x.startsWith(prefix)));
-      }
-      return '';
-    };
+    const removeIf = (prefix: string) => this.retirerLigneInterface(prefix);
     trie.registerGreedy('switchport voice vlan', 'Set the voice VLAN', (args) => {
       if (args[0] === undefined) throw new CliIncomplete();
       if (args[1] !== undefined) throw new CliInvalidInput({ token: args[1] });
@@ -5257,6 +5272,52 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const vl = compact.match(/^(?:vl|vlan)(\d+)$/i);
     if (vl) return `Vlan${vl[1]}`;
     return null;
+  }
+
+  private interfacesEnCours(): string[] {
+    return this.selectedInterface
+      ? [this.selectedInterface] : this.selectedInterfaceRange;
+  }
+
+  private noterLigneInterface(line: string): string {
+    const verb = line.split(' ').slice(0, 3).join(' ');
+    for (const i of this.interfacesEnCours()) {
+      const l = (this.ifExtra.get(i) ?? []).filter(
+        (existing) => existing.split(' ').slice(0, 3).join(' ') !== verb);
+      l.push(line);
+      this.ifExtra.set(i, l);
+    }
+    return '';
+  }
+
+  private retirerLigneInterface(prefix: string): string {
+    for (const i of this.interfacesEnCours()) {
+      const l = this.ifExtra.get(i);
+      if (l) this.ifExtra.set(i, l.filter((x) => !x.startsWith(prefix)));
+    }
+    return '';
+  }
+
+  private stormControlHost(): StormControlHost {
+    return {
+      applyStormControl: (words) => {
+        if (this.selectedInterface && this.sviVlanId(this.selectedInterface) !== null) {
+          return CISCO_ERRORS.INVALID_INPUT;
+        }
+        const parsed = parseStormControl(words);
+        if (parsed.incomplete) throw new CliIncomplete();
+        if (!parsed.setting) throw new CliInvalidInput({ token: words[parsed.at] });
+        return this.noterLigneInterface(`storm-control ${words.join(' ')}`.trim());
+      },
+      clearStormControl: (words) => {
+        const quoi = (words[0] ?? '').toLowerCase();
+        if (quoi === 'action') return this.retirerLigneInterface('storm-control action');
+        if (!STORM_CONTROL_TYPES.includes(quoi)) {
+          throw new CliInvalidInput({ token: words[0] });
+        }
+        return this.retirerLigneInterface(`storm-control ${quoi} level`);
+      },
+    };
   }
 
   /** Extract the VLAN id from an SVI interface name ("Vlan10" → 10). */

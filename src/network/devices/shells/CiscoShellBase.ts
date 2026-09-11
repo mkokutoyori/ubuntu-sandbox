@@ -66,6 +66,8 @@ import {
 } from './cisco/clockSummerTime';
 import { privilegeRuleSpecs, type PrivilegeRuleHost } from './cisco/privilegeRuleSpecs';
 import { ipSshSpecs, type IpSshHost } from './cisco/ipSshSpecs';
+import { terminalSpecs } from './cisco/terminalSpecs';
+import { copySpecs } from './cisco/copySpecs';
 import { ipAddressInterfaceSpecs, type IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import {
   interfaceLoadMtuSpecs, MTU_MIN,
@@ -1631,16 +1633,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return this.sendInteractionPlan(cible, ctx?.device);
     }
-    if (path === 'copy' && restants.length === 2) {
-      const norm = (a: string): string => {
-        const t = a.toLowerCase();
-        if (t && 'running-config'.startsWith(t)) return 'running-config';
-        if (t && 'startup-config'.startsWith(t)) return 'startup-config';
-        return t;
-      };
-      if (norm(restants[0]) === 'running-config' && norm(restants[1]) === 'startup-config') {
-        return this.copyRunStartInteractionPlan();
-      }
+    /*
+     * Les deux moteurs decoupent la meme frappe autrement : le trie
+     * rendait `copy` avec deux arguments, le socle rend le chemin
+     * canonique avec ses valeurs et plus rien derriere. Les mots qui
+     * SUIVENT `copy` sont ce que les deux savent dire, et c'est sur eux
+     * que la question se pose.
+     */
+    const mots = [...path.split(' ').slice(1), ...restants];
+    if (path.split(' ')[0] === 'copy' && mots.length === 2
+      && CiscoShellBase.developperNomDeConfig(mots[0]) === 'running-config'
+      && CiscoShellBase.developperNomDeConfig(mots[1]) === 'startup-config') {
+      return this.copyRunStartInteractionPlan();
     }
     return null;
   }
@@ -5830,6 +5834,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.fileSystemSpecs(),
       ...this.sessionSpecs(),
       ...this.sharedShowSpecs(),
+      ...terminalSpecs(() => ({
+        applyTerminal: (words) => this.handleTerminalCommand([...words]),
+      })),
+      ...copySpecs(() => ({ copyFile: (words) => this.copierFichier(words) })),
     ];
   }
 
@@ -7416,7 +7424,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     const table = this.socleTable();
     const parLeSocle = table
-      ? this.cheminCanonique(table, `${brut} `, this.socleSession(table)) : null;
+      ? this.cheminCanonique(table, `${brut} `, this.socleSession(table))?.canonique ?? null
+      : null;
     if (parLeSocle !== null && parLeSocle.length > 0) return parLeSocle.join(' ');
 
     const parLeTrie = this.getActiveTrie().match(brut);
@@ -7768,7 +7777,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     table: CommandTable, ligne: string,
     brutes: Array<{ keyword: string; description: string; isArgument: boolean }>,
   ): Array<{ keyword: string; description: string; isArgument: boolean }> {
-    const amont = this.cheminCanonique(table, ligne, this.socleSession(table));
+    const amont = this.cheminCanonique(table, ligne, this.socleSession(table))?.motsCles
+      ?? null;
     if (amont === null
       || !this.negationSous(table, amont, this.mode)) return [];
 
@@ -7877,18 +7887,30 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       initialMode: mode,
       privilegeLevel: mode === 'user' ? 1 : 15,
     });
-    const chemin = this.cheminCanonique(table, ligne, session);
+    const chemin = this.cheminCanonique(table, ligne, session)?.canonique ?? null;
     return chemin !== null && chemin.length > 0 ? chemin : null;
   }
 
+  /**
+   * Le chemin franchi, sous ses DEUX formes.
+   *
+   * `canonique` garde la valeur tapee a la place qu'elle a remplie ;
+   * `motsCles` ne garde que les mots-cles, ce qui est la forme sous
+   * laquelle les commandes sont INDEXEES — `keywordPathOf` retire les
+   * places. Les deux se confondaient tant qu'aucune place ne precedait
+   * un mot-cle ; `storm-control <sorte> level` en pose une, et la
+   * negation cherchait alors `storm-control broadcast` dans un index qui
+   * ne connait que `storm-control level`.
+   */
   private cheminCanonique(
     table: CommandTable, ligne: string, session: CliSession | null,
-  ): string[] | null {
+  ): { canonique: string[]; motsCles: string[] } | null {
     const tapes = ligne.trim().split(/\s+/).filter(Boolean);
     const parcourus = ligne.endsWith(' ') ? tapes : tapes.slice(0, -1);
 
     let node = table.rootNode();
     const canonique: string[] = [];
+    const motsCles: string[] = [];
     for (const tape of parcourus) {
       const mot = tape.toLowerCase();
       const enfant = session
@@ -7897,6 +7919,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (enfant?.keyword) {
         node = enfant;
         canonique.push(enfant.keyword.toLowerCase());
+        motsCles.push(enfant.keyword.toLowerCase());
         continue;
       }
       const argument = session
@@ -7909,7 +7932,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return null;
     }
-    return canonique;
+    return { canonique, motsCles };
   }
 
   private tryMigratedCommand(cmdPart: string): string | null {
@@ -9089,14 +9112,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `Router` comme par `Switch` est `getRunningConfig()`.
     // Un compteur qu'on ne peut pas remettre a zero ne sert qu'a moitie :
     // un diagnostic commence par effacer, provoquer, relire.
-    trie.registerGreedy('terminal', 'Set terminal parameters', (args) =>
-      this.handleTerminalCommand(args), [
-      { keyword: 'length',  description: 'Set number of lines on a screen' },
-      { keyword: 'width',   description: 'Set width of the display terminal' },
-      { keyword: 'monitor', description: 'Copy debug output to the current terminal line' },
-      { keyword: 'history', description: 'Enable and control the command history function' },
-      { keyword: 'no',      description: 'Negate a command or set its defaults' },
-    ]);
 
     // NOTE: `copy` is a privileged-EXEC command — it is registered once, with
     // full file-system semantics, in registerPrivilegedExtras (the rich
@@ -9359,12 +9374,125 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // ARP show commands (shared between router and switch)
   }
 
+  /** `copy run start` s'ecrit abrege sur IOS, et designe la meme chose. */
+  protected static developperNomDeConfig(mot: string): string {
+    const t = mot.toLowerCase();
+    if (t && 'running-config'.startsWith(t)) return 'running-config';
+    if (t && 'startup-config'.startsWith(t)) return 'startup-config';
+    return t;
+  }
+
+  /**
+   * `copy SOURCE DESTINATION`.
+   *
+   * Ce qu'elle faisait avant : `copy running-config flash:X` répondait
+   * `Writing flash:X ... [OK]` en écrivant dans une Map À PART de
+   * l'appareil, si bien que `dir flash:` de la même machine, au même
+   * instant, ne montrait rien. Une sauvegarde qui annonce avoir
+   * réussi et n'a rien écrit est le pire des défauts de ce chapitre :
+   * on ne le découvre qu'au moment de restaurer. Tout passe désormais
+   * par le VRAI `flash:` — celui que `dir`, `more`, `delete` et
+   * `verify` lisent.
+   *
+   * IOS compte les octets et le temps ; le temps est nul ici (la copie
+   * est locale et synchrone), donc seule la taille est rapportée — un
+   * débit inventé serait une mesure fausse.
+   */
+  private copierFichier(args: readonly string[]): string {
+    if (!args[0]) return '% Incomplete command.';
+    if (!args[1]) return '% Incomplete command.';
+    const srcBrut = args[0];
+    const dstBrut = args[1];
+    const src = CiscoShellBase.developperNomDeConfig(srcBrut);
+    const dst = CiscoShellBase.developperNomDeConfig(dstBrut);
+    const dev = this.d() as unknown as {
+      _restoreStartupConfig?: () => boolean;
+      _applyConfigText?: (text: string) => void;
+      getRunningConfig?: () => string;
+    };
+
+    const estConfigCourante = (x: string) =>
+      x === 'running-config' || x === 'system:running-config';
+    const estConfigDemarrage = (x: string) =>
+      x === 'startup-config' || x === 'nvram:startup-config' || x === 'nvram:';
+    const estReseau = (x: string) =>
+      /^(tftp|ftp|scp|sftp|http|https|rcp):/.test(x);
+    const estTftp = (x: string) => /^tftp:/.test(x);
+
+    /**
+     * La table des ports UDP de CETTE machine. Le routeur et le
+     * commutateur la portent tous les deux ; une plateforme qui ne
+     * l'a pas n'a pas de client TFTP, et le dit.
+     */
+    const pointUdp = (): TftpEndpoint | null =>
+      (this.d() as unknown as { getUdpEndpoint?: () => TftpEndpoint })
+        .getUdpEndpoint?.() ?? null;
+
+    /** Le contenu de la source, ou un message d'erreur d'IOS. */
+    const lire = (): { texte: string } | { erreur: string } => {
+      if (estConfigCourante(src)) return { texte: dev.getRunningConfig?.() ?? '' };
+      if (estConfigDemarrage(src)) {
+        const t = this.readStartupConfig();
+        return t === null
+          ? { erreur: '%% Non-volatile configuration memory is not present' }
+          : { texte: t };
+      }
+      if (estReseau(src)) {
+        return { erreur: this.copieReseauIndisponible(srcBrut) };
+      }
+      const contenu = this.fs().read(srcBrut);
+      return contenu === null
+        ? { erreur: `%Error opening ${srcBrut} (No such file or directory)` }
+        : { texte: contenu };
+    };
+
+    if (estConfigCourante(src) && estConfigDemarrage(dst)) {
+      return `Destination filename [startup-config]?\n${this.onSave()}`;
+    }
+
+    // ── Le fil : `copy tftp: <cible>` ──
+    if (estTftp(src)) {
+      const url = parseTftpUrl(srcBrut);
+      const point = pointUdp();
+      if (!url) return TFTP_NO_HOST;
+      if (!point) return this.copieReseauIndisponible(srcBrut);
+      const appareil = this.d();
+      this._pendingAsync = tftpGet(point, url).then((res) =>
+        'erreur' in res ? res.erreur : res.trace + this.deposerCopie(appareil, dstBrut, dst, res.texte));
+      return '';
+    }
+
+    const source = lire();
+    if ('erreur' in source) return source.erreur;
+
+    // ── Le fil : `copy <source> tftp:` ──
+    if (estTftp(dst)) {
+      const url = parseTftpUrl(dstBrut);
+      const point = pointUdp();
+      if (!url) return TFTP_NO_HOST;
+      if (!point) return this.copieReseauIndisponible(dstBrut);
+      this._pendingAsync = tftpPut(point, url, source.texte);
+      return '';
+    }
+
+    if (estConfigCourante(dst) && estConfigDemarrage(src)
+      && typeof dev._restoreStartupConfig === 'function') {
+      // MERGE, et pas remplacement : c'est le point que le tutoriel
+      // insiste à distinguer de `configure replace`.
+      if (!dev._restoreStartupConfig()) {
+        return '%% Non-volatile configuration memory is not present';
+      }
+      return `Destination filename [running-config]?\n`
+        + `${source.texte.length} bytes copied`;
+    }
+
+    if (estReseau(dst)) return this.copieReseauIndisponible(dstBrut);
+
+    return this.deposerCopie(this.d(), dstBrut, dst, source.texte, srcBrut);
+  }
+
   private registerCommonPrivilegedCommands(): void {
     this.registerTestAaaCommand();
-    const saveRunningToStartup = () =>
-      `Destination filename [startup-config]?\n${this.onSave()}`;
-    // Sauvegarder DATE la NVRAM : c'est la seconde des deux lignes d'en-tête.
-    this.privilegedTrie.describeNode('copy', 'Copy a file');
 
     this.privilegedTrie.register('setup', 'Run the initial configuration dialog', () => '');
 
@@ -9376,29 +9504,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.registerArchiveExecOn(this.privilegedTrie);
 
 
-    // Single greedy `copy` handler so any source/destination pair is consumed
-    // as arguments (an exact `copy running-config startup-config` registration
-    // would create an intermediate node that hides other destinations from the
-    // greedy match). IOS keyword abbreviations (`copy run start`) are expanded.
-    const norm = (a: string): string => {
-      const t = a.toLowerCase();
-      if (t && 'running-config'.startsWith(t)) return 'running-config';
-      if (t && 'startup-config'.startsWith(t)) return 'startup-config';
-      return t;
-    };
-    this.privilegedTrie.registerSuggestions('copy', [
-      { keyword: 'running-config', description: 'Current running configuration' },
-      { keyword: 'startup-config', description: 'Saved startup configuration' },
-      { keyword: 'tftp:',          description: 'Trivial File Transfer Protocol' },
-      { keyword: 'flash:',         description: 'Local flash filesystem' },
-      { keyword: 'scp:',           description: 'Secure Copy' },
-    ]);
-    this.privilegedTrie.registerSuggestions('copy running-config', [
-      { keyword: 'startup-config', description: 'Save to NVRAM startup-config' },
-      { keyword: 'tftp:',          description: 'Upload to TFTP server' },
-      { keyword: 'scp:',           description: 'Upload over SCP' },
-      { keyword: 'flash:',         description: 'Save to flash filesystem' },
-    ]);
     this.privilegedTrie.registerSuggestions('write', [
       { keyword: 'memory',   description: 'Write to NVRAM' },
       { keyword: 'terminal', description: 'Write to terminal (display running-config)' },
@@ -9425,112 +9530,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     ];
     this.privilegedTrie.registerSuggestions('show ip route', showIpRouteHints);
     this.userTrie.registerSuggestions('show ip route', showIpRouteHints);
-    /**
-     * `copy SOURCE DESTINATION`.
-     *
-     * Ce qu'elle faisait avant : `copy running-config flash:X` répondait
-     * `Writing flash:X ... [OK]` en écrivant dans une Map À PART de
-     * l'appareil, si bien que `dir flash:` de la même machine, au même
-     * instant, ne montrait rien. Une sauvegarde qui annonce avoir
-     * réussi et n'a rien écrit est le pire des défauts de ce chapitre :
-     * on ne le découvre qu'au moment de restaurer. Tout passe désormais
-     * par le VRAI `flash:` — celui que `dir`, `more`, `delete` et
-     * `verify` lisent.
-     *
-     * IOS compte les octets et le temps ; le temps est nul ici (la copie
-     * est locale et synchrone), donc seule la taille est rapportée — un
-     * débit inventé serait une mesure fausse.
-     */
-    this.privilegedTrie.registerGreedy('copy', 'Copy a file', (args) => {
-      if (!args[0]) return '% Incomplete command.';
-      if (!args[1]) return '% Incomplete command.';
-      const srcBrut = args[0];
-      const dstBrut = args[1];
-      const src = norm(srcBrut);
-      const dst = norm(dstBrut);
-      const dev = this.d() as unknown as {
-        _restoreStartupConfig?: () => boolean;
-        _applyConfigText?: (text: string) => void;
-        getRunningConfig?: () => string;
-      };
-
-      const estConfigCourante = (x: string) =>
-        x === 'running-config' || x === 'system:running-config';
-      const estConfigDemarrage = (x: string) =>
-        x === 'startup-config' || x === 'nvram:startup-config' || x === 'nvram:';
-      const estReseau = (x: string) =>
-        /^(tftp|ftp|scp|sftp|http|https|rcp):/.test(x);
-      const estTftp = (x: string) => /^tftp:/.test(x);
-
-      /**
-       * La table des ports UDP de CETTE machine. Le routeur et le
-       * commutateur la portent tous les deux ; une plateforme qui ne
-       * l'a pas n'a pas de client TFTP, et le dit.
-       */
-      const pointUdp = (): TftpEndpoint | null =>
-        (this.d() as unknown as { getUdpEndpoint?: () => TftpEndpoint })
-          .getUdpEndpoint?.() ?? null;
-
-      /** Le contenu de la source, ou un message d'erreur d'IOS. */
-      const lire = (): { texte: string } | { erreur: string } => {
-        if (estConfigCourante(src)) return { texte: dev.getRunningConfig?.() ?? '' };
-        if (estConfigDemarrage(src)) {
-          const t = this.readStartupConfig();
-          return t === null
-            ? { erreur: '%% Non-volatile configuration memory is not present' }
-            : { texte: t };
-        }
-        if (estReseau(src)) {
-          return { erreur: this.copieReseauIndisponible(srcBrut) };
-        }
-        const contenu = this.fs().read(srcBrut);
-        return contenu === null
-          ? { erreur: `%Error opening ${srcBrut} (No such file or directory)` }
-          : { texte: contenu };
-      };
-
-      if (estConfigCourante(src) && estConfigDemarrage(dst)) return saveRunningToStartup();
-
-      // ── Le fil : `copy tftp: <cible>` ──
-      if (estTftp(src)) {
-        const url = parseTftpUrl(srcBrut);
-        const point = pointUdp();
-        if (!url) return TFTP_NO_HOST;
-        if (!point) return this.copieReseauIndisponible(srcBrut);
-        const appareil = this.d();
-        this._pendingAsync = tftpGet(point, url).then((res) =>
-          'erreur' in res ? res.erreur : res.trace + this.deposerCopie(appareil, dstBrut, dst, res.texte));
-        return '';
-      }
-
-      const source = lire();
-      if ('erreur' in source) return source.erreur;
-
-      // ── Le fil : `copy <source> tftp:` ──
-      if (estTftp(dst)) {
-        const url = parseTftpUrl(dstBrut);
-        const point = pointUdp();
-        if (!url) return TFTP_NO_HOST;
-        if (!point) return this.copieReseauIndisponible(dstBrut);
-        this._pendingAsync = tftpPut(point, url, source.texte);
-        return '';
-      }
-
-      if (estConfigCourante(dst) && estConfigDemarrage(src)
-        && typeof dev._restoreStartupConfig === 'function') {
-        // MERGE, et pas remplacement : c'est le point que le tutoriel
-        // insiste à distinguer de `configure replace`.
-        if (!dev._restoreStartupConfig()) {
-          return '%% Non-volatile configuration memory is not present';
-        }
-        return `Destination filename [running-config]?\n`
-          + `${source.texte.length} bytes copied`;
-      }
-
-      if (estReseau(dst)) return this.copieReseauIndisponible(dstBrut);
-
-      return this.deposerCopie(this.d(), dstBrut, dst, source.texte, srcBrut);
-    });
     this.registerCommonShowCommands(this.privilegedTrie);
 
     // `clock set` est une commande d'EXEC privilégié sur IOS, et n'était

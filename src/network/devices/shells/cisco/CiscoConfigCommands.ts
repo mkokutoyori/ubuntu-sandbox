@@ -499,6 +499,25 @@ const IP_ADDRESS_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
     description: 'IP Address negotiated over PPP' },
 ];
 
+export const DUPLEX_PLACE: ArgumentSpec = {
+  name: 'duplex', type: 'ENUM', description: 'Set duplex mode',
+  values: [
+    { keyword: 'auto', description: 'Enable AUTO duplex configuration' },
+    { keyword: 'full', description: 'Force full duplex operation' },
+    { keyword: 'half', description: 'Force half-duplex operation' },
+  ],
+};
+
+export const SPEED_PLACE: ArgumentSpec = {
+  name: 'speed', type: 'ENUM', description: 'Force speed',
+  values: [
+    { keyword: '10', description: 'Force 10 Mbps operation' },
+    { keyword: '100', description: 'Force 100 Mbps operation' },
+    { keyword: '1000', description: 'Force 1000 Mbps operation' },
+    { keyword: 'auto', description: 'Enable AUTO speed configuration' },
+  ],
+};
+
 const CONFIG_IF_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   bandwidth: { name: 'kilobits', type: 'INT', range: [1, 10000000],
@@ -538,15 +557,7 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'Transmit ring size, in packets' },
   'ipv6 eigrp': { name: 'as-number', type: 'INT', range: [1, 65535],
     description: 'Autonomous system number' },
-  speed: {
-    name: 'speed', type: 'ENUM', description: 'Force speed',
-    values: [
-      { keyword: '10', description: 'Force 10 Mbps operation' },
-      { keyword: '100', description: 'Force 100 Mbps operation' },
-      { keyword: '1000', description: 'Force 1000 Mbps operation' },
-      { keyword: 'auto', description: 'Enable AUTO speed configuration' },
-    ],
-  },
+  speed: SPEED_PLACE,
   encapsulation: {
     name: 'type', type: 'REST', description: 'Encapsulation type',
   },
@@ -585,14 +596,7 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'Direction to rate limit, then the rate and burst sizes' },
   delay: { name: 'tens-of-microseconds', type: 'INT', range: [1, 16777215],
     description: 'Delay in tens of microseconds' },
-  duplex: {
-    name: 'duplex', type: 'ENUM', description: 'Set duplex mode',
-    values: [
-      { keyword: 'auto', description: 'Enable AUTO duplex configuration' },
-      { keyword: 'full', description: 'Force full duplex operation' },
-      { keyword: 'half', description: 'Force half-duplex operation' },
-    ],
-  },
+  duplex: DUPLEX_PLACE,
   description: { name: 'texte', type: 'REST', literal: 'LINE',
     description: 'Up to 240 characters describing this interface' },
   shutdown: null,
