@@ -156,6 +156,9 @@ export function typesInterfaceEnMotsCles(
   }));
 }
 
+export const NOM_INTERFACE_TAPE =
+  /^[A-Za-z][A-Za-z-]*\d[\d/.]*$/i;
+
 export function registerInterfaceEntry(trie: CommandTrie, ctx: CiscoShellContext): void {
   trie.registerGreedy('interface', 'Select an interface to configure', (args) => {
     if (args.length < 1) return '% Incomplete command.';

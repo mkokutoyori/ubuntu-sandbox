@@ -106,7 +106,7 @@ import { showIpOspfNeighbor, routerIpRouteView } from './cisco/CiscoOspfCommands
 import {
   type CiscoShellMode, type CiscoShellContext,
   buildConfigCommands, buildConfigIfCommands, configIfSpecs, dhcpGlobalSpecs,
-  registerInterfaceEntry, INTERFACE_TYPES, typesInterfaceEnMotsCles,
+  registerInterfaceEntry, INTERFACE_TYPES, typesInterfaceEnMotsCles, NOM_INTERFACE_TAPE,
 } from './cisco/CiscoConfigCommands';
 import {
   buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands, dhcpPoolSpecs,
@@ -617,6 +617,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         modes: ['config', 'config-if', 'config-subif'], minPrivilege: 15,
         argumentFor: () => ({
           name: 'interface', type: 'REST', description: 'Interface to configure',
+          pattern: NOM_INTERFACE_TAPE,
           literal: 'IFACE', alternatives: INTERFACE_TYPES,
         }),
         keywordsFor: () => typesInterfaceEnMotsCles(INTERFACE_TYPES),
