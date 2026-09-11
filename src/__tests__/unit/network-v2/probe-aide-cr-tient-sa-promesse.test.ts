@@ -146,6 +146,31 @@ describe('M6 — un `<cr>` annonce se valide vraiment', () => {
     const f = await crMensongers(['configure terminal', 'line vty 0 4'], '');
     expect(f, f.join('\n')).toEqual([]);
   }, 300_000);
+
+  it('dans un processus OSPF', async () => {
+    const f = await crMensongers(['configure terminal', 'router ospf 1'], '');
+    expect(f, f.join('\n')).toEqual([]);
+  }, 300_000);
+
+  it('dans un processus EIGRP', async () => {
+    const f = await crMensongers(['configure terminal', 'router eigrp 1'], '');
+    expect(f, f.join('\n')).toEqual([]);
+  }, 300_000);
+
+  it('dans un processus BGP', async () => {
+    const f = await crMensongers(['configure terminal', 'router bgp 65000'], '');
+    expect(f, f.join('\n')).toEqual([]);
+  }, 300_000);
+
+  it('dans un processus RIP', async () => {
+    const f = await crMensongers(['configure terminal', 'router rip'], '');
+    expect(f, f.join('\n')).toEqual([]);
+  }, 300_000);
+
+  it('dans un pool DHCP', async () => {
+    const f = await crMensongers(['configure terminal', 'ip dhcp pool P1'], '');
+    expect(f, f.join('\n')).toEqual([]);
+  }, 300_000);
 });
 
 describe('les cas nommes de l audit', () => {

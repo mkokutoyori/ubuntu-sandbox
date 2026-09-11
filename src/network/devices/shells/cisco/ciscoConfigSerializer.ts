@@ -146,6 +146,22 @@ export interface OspfConfigView {
    * se remettait à émettre des Hellos.
    */
   passiveInterfaces?: ReadonlyArray<string>;
+  /**
+   * Ce qu'une aire porte : son type, ses plages, son cout par defaut,
+   * son authentification, ses liens virtuels et fictifs.
+   *
+   * Tout cela etait ACCEPTE, range dans le moteur — et jamais rendu.
+   * `area 1 stub` disparaissait de `show running-config`, donc de
+   * l'export d'une topologie : l'aire redevenait normale au
+   * rechargement, et l'adjacence que l'operateur avait reglee ne se
+   * reformait pas comme il l'avait laissee.
+   */
+  areas?: ReadonlyArray<string>;
+  /**
+   * `passive-interface default` vaut pour les interfaces a venir, ce
+   * qu'une liste des interfaces du moment ne dit pas.
+   */
+  passiveDefault?: boolean;
 }
 
 export function policyConfigLines(policy: PolicyRepository): string[] {
@@ -249,8 +265,12 @@ export function routingProcessConfigLines(
     lines.push(`router ospf ${ospf.processId}`);
     if (ospf.routerId && ospf.routerId !== '0.0.0.0') lines.push(` router-id ${ospf.routerId}`);
     for (const n of ospf.networks) lines.push(` network ${n.network} ${n.wildcard} area ${n.areaId}`);
-    for (const iface of [...(ospf.passiveInterfaces ?? [])].sort()) {
-      lines.push(` passive-interface ${iface}`);
+    for (const ligne of ospf.areas ?? []) lines.push(` ${ligne}`);
+    if (ospf.passiveDefault) lines.push(' passive-interface default');
+    else {
+      for (const iface of [...(ospf.passiveInterfaces ?? [])].sort()) {
+        lines.push(` passive-interface ${iface}`);
+      }
     }
     lines.push('!');
   }

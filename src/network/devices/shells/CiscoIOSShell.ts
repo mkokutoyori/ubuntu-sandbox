@@ -802,6 +802,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [
       ...super.socleLegends(),
       [['no'], 'Negate a command or set its defaults', ['config-router']],
+      [['area'], 'OSPF area parameters', ['config-router-ospf']],
       [['crypto'], 'Encryption module'],
       [['crypto', 'ipsec'], 'Configure IPSec policy'],
       [['crypto', 'ipsec', 'security-association'], 'Security association parameters'],

@@ -739,6 +739,14 @@ export function buildRouterSubmodeOn(
     ctx.setMode('config-router');
     return '';
   });
+  /*
+   * Trois mots OUVRENT une famille sans etre des commandes :
+   * `redistribute` demande un protocole, `eigrp` une sous-commande,
+   * `offset-list` ses operandes. Les trois annoncaient `<cr>`.
+   */
+  for (const kw of ['redistribute', 'eigrp', 'offset-list']) {
+    routerTrie.requireArgs(kw, 1);
+  }
   const PROTO_EXTRAS = [
     'offset-list', 'output-delay', 'flash-update-threshold',
     'validate-update-source', 'no validate-update-source',
@@ -1130,14 +1138,30 @@ export function routingProtoShowSpecs(
  * `probe-cli-aide-egale-execution` interdit — et c'est lui qui l'a
  * attrape.
  */
+/**
+ * Un protocole redistribuable, et ce qu'il EXIGE.
+ *
+ * `ospf`, `eigrp` et `bgp` se redistribuent depuis un PROCESSUS nomme :
+ * sans son numero, le gestionnaire ne sait pas lequel, et il refuse.
+ * Les trois annoncaient pourtant `<cr>`. `connected` et `static` n'en
+ * ont pas — la nuance est la raison d'etre de ce parametre.
+ */
 function redistribuable(
   ctx: CiscoShellContext, keyword: string, description: string,
-  saufSousRip = false,
+  saufSousRip = false, numeroteur?: readonly [number, number, string],
 ): AdapterKeyword {
+  const queue: ArgumentSpec = {
+    name: 'reste', type: 'REST', optional: true,
+    description: '`metric`, `route-map` or `subnets`',
+  };
   return {
     keyword, description,
-    argument: { name: 'reste', type: 'REST', optional: true,
-      description: 'Process number, `metric`, `route-map` or `subnets`' },
+    argument: numeroteur
+      ? [{
+        name: 'processus', type: 'INT', range: [numeroteur[0], numeroteur[1]],
+        description: numeroteur[2],
+      }, queue]
+      : { ...queue, description: 'Process number, `metric`, `route-map` or `subnets`' },
     ...(saufSousRip
       ? { reachableWhen: () => curProto(ctx).proto !== 'rip' } : {}),
   };
@@ -1147,9 +1171,12 @@ function redistributionKeywords(ctx: CiscoShellContext): ReadonlyArray<AdapterKe
   return [
     redistribuable(ctx, 'connected', 'Connected routes'),
     redistribuable(ctx, 'static', 'Static routes'),
-    redistribuable(ctx, 'ospf', 'Open Shortest Path First'),
-    redistribuable(ctx, 'eigrp', 'Enhanced Interior Gateway Routing Protocol'),
-    redistribuable(ctx, 'bgp', 'Border Gateway Protocol'),
+    redistribuable(ctx, 'ospf', 'Open Shortest Path First', false,
+      [1, 65535, 'OSPF process number']),
+    redistribuable(ctx, 'eigrp', 'Enhanced Interior Gateway Routing Protocol', false,
+      [1, 65535, 'Autonomous system number']),
+    redistribuable(ctx, 'bgp', 'Border Gateway Protocol', false,
+      [1, 4294967295, 'Autonomous system number']),
     redistribuable(ctx, 'rip', 'Routing Information Protocol', true),
     redistribuable(ctx, 'isis', 'ISO IS-IS', true),
   ];
@@ -1179,7 +1206,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     { name: 'reste', type: 'REST', optional: true,
       description: 'A wildcard or `mask <A.B.C.D>`, depending on the protocol' },
   ],
-  redistribute: null,
   'default-metric': { name: 'metrique', type: 'REST',
     description: 'Metric given to a redistributed route' },
   distance: [
@@ -1237,7 +1263,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     name: 'option', type: 'REST', description: 'BGP process option',
     alternatives: [
       { keyword: 'default', description: 'Configure a BGP default' },
-      { keyword: 'router-id', description: 'Router identifier of this BGP process' },
       { keyword: 'log-neighbor-changes', description: 'Log neighbour up/down events' },
     ],
   },
@@ -1266,8 +1291,22 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   },
   'default-information': { name: 'reste', type: 'REST', optional: true,
     description: '`originate`' },
-  eigrp: null,
 };
+
+/*
+ * `bgp router-id` prend une adresse, et l'annoncait comme une simple
+ * FORME de la place libre : `bgp router-id ?` promettait donc `<cr>`
+ * pour une frappe que le gestionnaire refuse. Le mot-cle porte
+ * desormais sa place ; la place libre garde le reste, que ce processus
+ * range tel quel (`bestpath`, `deterministic-med`...).
+ */
+const BGP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
+  {
+    keyword: 'router-id', description: 'Router identifier of this BGP process',
+    argument: { name: 'identifiant-bgp', type: 'IP_ADDR',
+      description: 'Router identifier, in the shape of an IPv4 address' },
+  },
+];
 
 const EIGRP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
   {
@@ -1301,7 +1340,8 @@ export function routerSubmodeSpecs(
       undoFromNegatedPaths: true,
       argumentFor: (path) => ROUTER_ARGUMENTS[path],
       keywordsFor: (path) => path === 'eigrp' ? EIGRP_KEYWORDS
-        : path === 'redistribute' ? redistributionKeywords(ctx) : undefined,
+        : path === 'redistribute' ? redistributionKeywords(ctx)
+          : path === 'bgp' ? BGP_KEYWORDS : undefined,
       /*
        * Le mot qui decide est celui qu'on NIE, pas `no`.
        * `routerKeywordBelongsTo` sait deja retirer un `no` de tete, mais

@@ -441,9 +441,6 @@ export function buildOSPFAreaViewCommands(
     if (args.length < 2) return 'Error: Incomplete command.';
     const areaId = getOSPFArea();
     if (!areaId) return 'Error: Not in area view.';
-    const extra = ctx.r()._getOSPFExtraConfig();
-    if (!extra.areaRanges.has(areaId)) extra.areaRanges.set(areaId, []);
-    extra.areaRanges.get(areaId)!.push({ network: args[0], mask: args[1] });
     const ospf = ctx.r()._getOSPFEngineInternal();
     const advertise = !args.some(a => a.toLowerCase() === 'not-advertise' || a.toLowerCase() === 'suppress-vlink');
     ospf?.addAreaRange(areaId, args[0], args[1], advertise);
@@ -453,9 +450,7 @@ export function buildOSPFAreaViewCommands(
   trie.registerGreedy('undo abr-summary', 'Remove area route summary', (args) => {
     const areaId = getOSPFArea();
     if (!areaId) return 'Error: Not in area view.';
-    const extra = ctx.r()._getOSPFExtraConfig();
-    const ranges = extra.areaRanges.get(areaId);
-    if (ranges) extra.areaRanges.set(areaId, ranges.filter(r => !(r.network === args[0] && r.mask === args[1])));
+    ctx.r()._getOSPFEngineInternal()?.removeAreaRange(areaId, args[0], args[1]);
     return '';
   });
 
