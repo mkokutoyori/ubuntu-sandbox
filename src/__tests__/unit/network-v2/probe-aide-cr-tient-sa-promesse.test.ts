@@ -68,15 +68,25 @@ async function neuf(
   return r;
 }
 
-/** Les `<cr>` annonces qui ne tiennent pas, dans un mode donne. */
+/**
+ * Les `<cr>` annonces qui ne tiennent pas, dans un mode donne.
+ *
+ * La PROFONDEUR est un parametre parce qu'elle se gagne : une branche
+ * entre ici a trois rangs, et passe a quatre le jour ou elle est propre
+ * a quatre. Le balayage promene a quatre a trouve ce que celui a trois
+ * ne voyait pas — `aaa accounting commands`, `copy flash:`,
+ * `terminal length` — et l'y inscrire avant correction reviendrait a
+ * epingler le defaut au lieu de le mesurer.
+ */
 async function crMensongers(
   prelude: readonly string[], racine: string, fabrique: Fabrique = ROUTEUR,
+  profondeur = 3,
 ): Promise<string[]> {
   const guide = await neuf(prelude, fabrique);
   const fautes: string[] = [];
   const vus = new Set<string>();
   let file = [racine];
-  for (let p = 0; p < 3; p++) {
+  for (let p = 0; p < profondeur; p++) {
     const suivant: string[] = [];
     for (const base of file) {
       const aide = guide.cliHelp(base === '' ? '' : `${base} `);
@@ -92,7 +102,7 @@ async function crMensongers(
         const chemin = base === '' ? k : `${base} ${k}`;
         if (vus.has(chemin)) continue;
         vus.add(chemin);
-        if (suivant.length < 240) suivant.push(chemin);
+        if (suivant.length < 400) suivant.push(chemin);
       }
     }
     file = suivant;
@@ -113,9 +123,14 @@ describe('M6 — un `<cr>` annonce se valide vraiment', () => {
 
   it('en configuration d interface', async () => {
     const f = await crMensongers(
-      ['configure terminal', 'interface GigabitEthernet0/0'], '');
+      ['configure terminal', 'interface GigabitEthernet0/0'], '', ROUTEUR, 4);
     expect(f, f.join('\n')).toEqual([]);
-  }, 240_000);
+  }, 300_000);
+
+  it('en EXEC privilegie, depuis la racine', async () => {
+    const f = await crMensongers([], '', ROUTEUR, 4);
+    expect(f, f.join('\n')).toEqual([]);
+  }, 300_000);
 
   /*
    * Le balayage n'entrait dans AUCUN sous-mode, et c'est la que les
@@ -186,20 +201,23 @@ describe('M6 — un `<cr>` annonce se valide vraiment', () => {
 
 /*
  * Le balayage n'avait jamais ete promene sur un CATALYST : il ne
- * connaissait que le routeur, et douze fautes l'attendaient. Les quatre
- * branches ci-dessous sont celles qui sont PROPRES. La configuration
- * globale, `config-if` et `config-vlan` n'y entrent pas encore : six
- * frappes y promettent encore un `<cr>` — `duplex`, `speed`,
- * `l2protocol-tunnel`, `no storm-control`, `private-vlan association` et
- * `monitor session` — qu'une declaration d'arite sur l'arbre ne sait pas
- * leur retirer. Elle ne fait rien sur un noeud elague, et sur un noeud
- * qui porte deja des indications d'argument elle fait rendre
- * « % Invalid input » a l'aide d'une commande qui existe : le remede est
- * alors pire que le mal. Elles attendent leur declaration au socle, et
- * les ajouter ici reviendrait a epingler le defaut au lieu de le
- * mesurer.
+ * connaissait que le routeur, et douze fautes l'attendaient. Il en a
+ * trouve vingt de plus en configuration d'interface, une en
+ * configuration de VLAN et deux en EXEC privilegie quand on l'a
+ * enfonce d'un rang. Toutes sont fermees, et les branches entrent ici
+ * a la profondeur ou elles sont propres.
+ *
+ * La configuration GLOBALE d'un Catalyst n'y est pas encore : elle
+ * porte `monitor session`, `udld message`, `vlan access-map`, `vlan
+ * filter` et la famille `aaa` a son troisieme rang. L'y inscrire
+ * reviendrait a epingler le defaut au lieu de le mesurer.
  */
 describe('M6 — le meme garde-fou, sur un Catalyst', () => {
+  it('en EXEC privilegie, depuis la racine', async () => {
+    const f = await crMensongers([], '', CATALYST, 4);
+    expect(f, f.join('\n')).toEqual([]);
+  }, 300_000);
+
   it('en EXEC privilegie, branche `show`', async () => {
     const f = await crMensongers([], 'show', CATALYST);
     expect(f, f.join('\n')).toEqual([]);
@@ -207,6 +225,17 @@ describe('M6 — le meme garde-fou, sur un Catalyst', () => {
 
   it('en EXEC privilegie, branche `clear`', async () => {
     const f = await crMensongers([], 'clear', CATALYST);
+    expect(f, f.join('\n')).toEqual([]);
+  }, 300_000);
+
+  it('en configuration d interface', async () => {
+    const f = await crMensongers(
+      ['configure terminal', 'interface FastEthernet0/1'], '', CATALYST, 4);
+    expect(f, f.join('\n')).toEqual([]);
+  }, 300_000);
+
+  it('en configuration de VLAN', async () => {
+    const f = await crMensongers(['configure terminal', 'vlan 10'], '', CATALYST, 4);
     expect(f, f.join('\n')).toEqual([]);
   }, 300_000);
 

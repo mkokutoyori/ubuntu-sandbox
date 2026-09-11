@@ -52,6 +52,10 @@ import {
   STORM_CONTROL_TYPES, parseStormControl, stormControlPercent,
 } from './cisco/stormControlSyntax';
 import { stormControlSpecs, type StormControlHost } from './cisco/stormControlSpecs';
+import { privateVlanSpecs, type PrivateVlanHost } from './cisco/privateVlanSpecs';
+import {
+  testEtherChannelSpecs, type TestEtherChannelHost,
+} from './cisco/testEtherChannelSpecs';
 import { igmpSnoopingRunningConfigLines } from '../../igmp-snooping/snoopingRunningConfig';
 import type { SnoopingConfig } from '../../igmp-snooping/types';
 import type { CiscoSwitch } from '../CiscoSwitch';
@@ -1041,23 +1045,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return ok ? '' : '% VLAN not found';
     });
 
-    this.configVlanTrie.registerGreedy('private-vlan', 'Configure private VLAN role/association', (args) => {
-      if (!this.selectedVlan || args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-      const sub = args[0].toLowerCase();
-      if (sub === 'primary' || sub === 'isolated' || sub === 'community') {
-        const res = this.d().setPrivateVlanRole(this.selectedVlan, sub);
-        return res.ok ? '' : `% ${res.error}`;
-      }
-      if (sub === 'association') {
-        if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
-        const idSet = this.parseVlanList(args[1]);
-        if (!idSet) return '% Invalid VLAN list';
-        const res = this.d().associatePrivateVlan(this.selectedVlan, [...idSet]);
-        return res.ok ? '' : `% ${res.error}`;
-      }
-      return CISCO_ERRORS.INCOMPLETE;
-    });
-    this.configVlanTrie.requireArgs('private-vlan', 1);
 
     // ── Spanning Tree (L2, switch-only) ──
     this.registerStpCommands();
@@ -2491,6 +2478,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.portSecuritySpecs(),
       ...this.switchportL2Specs(),
       ...stormControlSpecs(() => this.stormControlHost()),
+      ...privateVlanSpecs(() => this.privateVlanHost()),
+      ...testEtherChannelSpecs(() => this.testEtherChannelHost()),
       ...this.dot1xSpecs(),
       ...this.vtpConfigSpecs(),
       ...this.daiSpecs(),
@@ -5298,6 +5287,45 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return '';
   }
 
+  private testEtherChannelHost(): TestEtherChannelHost {
+    return {
+      testLoadBalance: (args) => {
+        const mots = args.map((a) => a.toLowerCase());
+        const iPort = mots.indexOf('port-channel');
+        const groupId = iPort >= 0 ? Number(args[iPort + 1]) : NaN;
+        if (!Number.isFinite(groupId)) return CISCO_ERRORS.INCOMPLETE;
+        const groupe = this.requireLacp().getAllGroups().find(g => g.id === groupId);
+        if (!groupe) return `% Channel group ${groupId} does not exist`;
+        const membres = groupe.members.filter(m => m.bundled).map(m => m.portName);
+        if (membres.length === 0) return '% No ports are bundled in this port-channel';
+        const iCle = mots.findIndex(m => m === 'ip' || m === 'mac');
+        if (iCle < 0) return CISCO_ERRORS.INCOMPLETE;
+        const cle = args.slice(iCle + 1).filter(Boolean).join('|');
+        if (!cle) return CISCO_ERRORS.INCOMPLETE;
+        const elu = selectBundleMemberForFlow(membres, cle);
+        return elu ? `Would use ${this.abbreviateInterface(elu)}` : CISCO_ERRORS.INVALID_INPUT;
+      },
+    };
+  }
+
+  private privateVlanHost(): PrivateVlanHost {
+    return {
+      applyPrivateVlan: (words) => {
+        if (!this.selectedVlan || words.length < 1) return CISCO_ERRORS.INCOMPLETE;
+        const sub = words[0].toLowerCase();
+        if (sub === 'primary' || sub === 'isolated' || sub === 'community') {
+          const res = this.d().setPrivateVlanRole(this.selectedVlan, sub);
+          return res.ok ? '' : `% ${res.error}`;
+        }
+        if (!words[1]) return CISCO_ERRORS.INCOMPLETE;
+        const idSet = this.parseVlanList(words[1]);
+        if (!idSet) return '% Invalid VLAN list';
+        const res = this.d().associatePrivateVlan(this.selectedVlan, [...idSet]);
+        return res.ok ? '' : `% ${res.error}`;
+      },
+    };
+  }
+
   private stormControlHost(): StormControlHost {
     return {
       applyStormControl: (words) => {
@@ -6148,24 +6176,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     trie.privileged.requireArgs('show lacp', 1);
     trie.privileged.registerGreedy('show lacp', 'Display LACP state', (args) => this.showLacp(args));
-    trie.privileged.registerGreedy('test etherchannel load-balance',
-      'Simulate the load-balance decision for a flow', (args) => {
-        const mots = args.map(a => a.toLowerCase());
-        const iPort = mots.indexOf('port-channel');
-        const groupId = iPort >= 0 ? Number(args[iPort + 1]) : NaN;
-        if (!Number.isFinite(groupId)) return CISCO_ERRORS.INCOMPLETE;
-        const groupe = this.requireLacp().getAllGroups().find(g => g.id === groupId);
-        if (!groupe) return `% Channel group ${groupId} does not exist`;
-        const membres = groupe.members.filter(m => m.bundled).map(m => m.portName);
-        if (membres.length === 0) return '% No ports are bundled in this port-channel';
-        const iCle = mots.findIndex(m => m === 'ip' || m === 'mac');
-        if (iCle < 0) return CISCO_ERRORS.INCOMPLETE;
-        const cle = args.slice(iCle + 1).filter(Boolean).join('|');
-        if (!cle) return CISCO_ERRORS.INCOMPLETE;
-        const elu = selectBundleMemberForFlow(membres, cle);
-        return elu ? `Would use ${this.abbreviateInterface(elu)}` : CISCO_ERRORS.INVALID_INPUT;
-      });
-
     trie.privileged.registerGreedy('show pagp', 'Display PAgP state', () =>
       '% PAgP is not implemented: this switch aggregates with LACP only.');
   }

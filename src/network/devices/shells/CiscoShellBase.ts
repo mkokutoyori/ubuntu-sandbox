@@ -68,6 +68,7 @@ import { privilegeRuleSpecs, type PrivilegeRuleHost } from './cisco/privilegeRul
 import { ipSshSpecs, type IpSshHost } from './cisco/ipSshSpecs';
 import { terminalSpecs } from './cisco/terminalSpecs';
 import { copySpecs } from './cisco/copySpecs';
+import { testAaaSpecs, type TestAaaHost } from './cisco/testAaaSpecs';
 import { ipAddressInterfaceSpecs, type IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import {
   interfaceLoadMtuSpecs, MTU_MIN,
@@ -1434,12 +1435,60 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   /** Return the CommandTrie for the current mode */
   protected abstract getActiveTrie(): CommandTrie;
 
+  /**
+   * Le vocabulaire du MODE, des DEUX moteurs.
+   *
+   * Ces deux inventaires ne lisaient que le trie, et c'est ce que
+   * `probe-cli-help-parity-ratchet` parcourt. Chaque famille migree les
+   * faisait donc RETRECIR : le garde-fou mesurait de moins en moins a
+   * chaque lot, et il aurait fini par ne plus rien mesurer le jour ou le
+   * trie serait vide — c'est-a-dire au terme de la migration. Un
+   * garde-fou qui disparait avec ce qu'il surveille ne surveille pas.
+   *
+   * Ce que `?` repond est la FUSION des deux, et c'est elle qui est
+   * enumeree ici.
+   */
+  private cheminsSocleDuMode(executablesSeulement: boolean): string[] {
+    const table = this.socleTable();
+    if (!table) return [];
+    const out = new Set<string>();
+    for (const spec of table.specs()) {
+      if (spec.hidden || !spec.modes.includes(this.mode)) continue;
+      /*
+       * Le chemin s'arrete a la premiere PLACE, et garde la casse
+       * declaree. Une place n'est pas un mot : reprendre les mots-cles
+       * qui la suivent fabriquerait une suite que personne ne tape
+       * (`logging host transport port discriminator`), et la mettre en
+       * minuscules ferait manquer `FastEthernet` a l'aide qui l'annonce.
+       */
+      const mots: string[] = [];
+      for (const etape of spec.path) {
+        if (typeof etape !== 'string') break;
+        mots.push(etape);
+      }
+      if (mots.length === 0) continue;
+      if (executablesSeulement) {
+        if (spec.existsOnlyNegated || mots.length !== spec.path.length) continue;
+        out.add(mots.join(' '));
+        continue;
+      }
+      for (let n = 1; n <= mots.length; n++) out.add(mots.slice(0, n).join(' '));
+    }
+    return [...out];
+  }
+
   executablePathsInCurrentMode(): string[] {
-    return this.getActiveTrie().enumerateExecutablePaths();
+    return [...new Set([
+      ...this.getActiveTrie().enumerateExecutablePaths(),
+      ...this.cheminsSocleDuMode(true),
+    ])];
   }
 
   commandPathsInCurrentMode(): string[] {
-    return this.getActiveTrie().enumerateCommandPaths();
+    return [...new Set([
+      ...this.getActiveTrie().enumerateCommandPaths(),
+      ...this.cheminsSocleDuMode(false),
+    ])];
   }
 
   derivedContinuationsInCurrentMode(): string[] {
@@ -5838,6 +5887,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         applyTerminal: (words) => this.handleTerminalCommand([...words]),
       })),
       ...copySpecs(() => ({ copyFile: (words) => this.copierFichier(words) })),
+      ...testAaaSpecs(() => this.testAaaHost()),
     ];
   }
 
@@ -9492,8 +9542,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   private registerCommonPrivilegedCommands(): void {
-    this.registerTestAaaCommand();
-
     this.privilegedTrie.register('setup', 'Run the initial configuration dialog', () => '');
 
     // `archive config` / `show archive` — enregistrées ici, donc pour le
@@ -10122,17 +10170,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
   }
 
-  private registerTestAaaCommand(): void {
-    this.privilegedTrie.registerGreedy('test aaa group',
-      'Test AAA server-group authentication', (args) => {
-        const [groupName, username, password, mode] = args;
-        if (!groupName || !username || password === undefined) throw new CliIncomplete();
-        // `legacy` et `new-code` désignent deux versions du code d'appel
-        // interne d'IOS, pas deux protocoles : le dialogue sur le fil est
-        // le même, donc les deux mots sont acceptés.
-        if (mode === undefined) throw new CliIncomplete();
-        if (mode !== 'legacy' && mode !== 'new-code') throw new CliInvalidInput({ token: mode });
-
+  private testAaaHost(): TestAaaHost {
+    return {
+      testAaaGroup: (words) => {
+        const [groupName, username, password] = words;
         const dev = this.d() as unknown as { getAaaAuthenticator?: () => AaaAuthenticator };
         const authenticator = dev.getAaaAuthenticator?.();
         if (!authenticator) throw new CliInvalidInput({ token: 'aaa' });
@@ -10140,12 +10181,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         this._pendingAsync = runTestAaaGroup(authenticator, groupName, username, password)
           .then((lines) => lines.join('\n'));
         return '';
-      });
-    // Le nœud intermédiaire porte sa description, sans quoi `?` le
-    // proposerait nu — ce que le garde-fou
-    // `cisco-help-every-keyword-described` attrape.
-    this.privilegedTrie.describeNode('test', 'Test subsystems, memory, and interfaces');
-    this.privilegedTrie.describeNode('test aaa', 'Test AAA subsystem');
+      },
+    };
   }
 
   /**

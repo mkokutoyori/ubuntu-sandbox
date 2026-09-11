@@ -625,6 +625,32 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'Name of the route-map applied to this interface' },
   'ip unnumbered': { name: 'interface', type: 'INTERFACE',
     description: 'Interface whose address this one borrows' },
+  /*
+   * Le service se NOMME ou se numerote, et rien d'autre ne passe : le
+   * glouton acceptait n'importe quel mot et n'en faisait rien, donc
+   * `ip forward-protocol udp zorglub` etait pris pour une commande
+   * appliquee alors que le relais restait ferme.
+   */
+  'ip forward-protocol udp': {
+    name: 'service', type: 'WORD', literal: '<0-65535>',
+    pattern: /^(bootps|bootpc|\d{1,5})$/i,
+    description: 'UDP port number, or the name of a well-known service',
+    alternatives: [
+      { keyword: '<0-65535>', description: 'Port number' },
+      { keyword: 'bootpc', description: 'Bootstrap Protocol Client (68)' },
+      { keyword: 'bootps', description: 'Bootstrap Protocol Server (67)' },
+    ],
+  },
+  'ip summary-address rip': [
+    { name: 'address', type: 'IP_ADDR', description: 'Summary address' },
+    { name: 'mask', type: 'SUBNET_MASK', description: 'Summary mask' },
+  ],
+  'ip summary-address eigrp': [
+    { name: 'as-number', type: 'INT', range: [1, 65535],
+      description: 'Autonomous system number' },
+    { name: 'address', type: 'IP_ADDR', description: 'Summary address' },
+    { name: 'mask', type: 'SUBNET_MASK', description: 'Summary mask' },
+  ],
 };
 
 export function configIfSpecs(ctx: CiscoShellContext): CommandSpec[] {
