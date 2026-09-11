@@ -175,6 +175,7 @@ import {
 } from './cisco/CiscoCommonShow';
 import {
   registerCiscoDnsCommands, registerCiscoDnsExecCommands, type DnsCommandContext,
+  DNS_RETRY_RANGE, DNS_TIMEOUT_RANGE,
 } from './cisco/CiscoDnsCommands';
 import type { CiscoDnsConfig } from '../router/dns/CiscoDnsConfig';
 import type { RouterHostsTable } from '../router/dns/RouterHostsTable';
@@ -786,6 +787,7 @@ const DOMAIN_LOOKUP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [{
 
 const DNS_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+
   'ip domain-lookup': null,
   'ip domain lookup': null,
   'ip domain round-robin': null,
@@ -794,9 +796,9 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'ip domain name': { name: 'nom', type: 'WORD', description: 'Default domain name' },
   'ip domain-list': { name: 'nom', type: 'WORD', description: 'Domain name to append to the list' },
   'ip domain list': { name: 'nom', type: 'WORD', description: 'Domain name to append to the list' },
-  'ip domain retry': { name: 'essais', type: 'REST',
+  'ip domain retry': { name: 'essais', type: 'INT', range: DNS_RETRY_RANGE,
     description: 'Number of times a resolution is retried' },
-  'ip domain timeout': { name: 'secondes', type: 'REST',
+  'ip domain timeout': { name: 'secondes', type: 'INT', range: DNS_TIMEOUT_RANGE,
     description: 'Time waited for a resolution' },
   'ip dns spoofing': { name: 'adresse', type: 'REST',
     description: 'Address answered to every query' },
