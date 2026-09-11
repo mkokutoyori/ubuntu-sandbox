@@ -97,6 +97,7 @@ import { renderMacAce, type MacAce } from '../switch/MacAccessList';
 import { CISCO_ERRORS, resolveCiscoInterfaceName } from './cli-utils';
 import {
   estTypeSansNumero, typesInterfaceEnMotsCles, NOM_INTERFACE_TAPE,
+  DUPLEX_PLACE, SPEED_PLACE,
 } from './cisco/CiscoConfigCommands';
 import { getNtpAgent, getSnmpService } from '../../equipment/RouterServiceCapabilities';
 import { fhrpRunningConfigLines } from '../../fhrp/runningConfig';
@@ -413,6 +414,11 @@ const MAC_TABLE_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
 const VLAN_PLACE = (name: string, description: string): ArgumentSpec =>
   ({ name, type: 'VLAN_ID', description });
 
+const FORME_LISTE_VLAN = /^\d+(-\d+)?(,\d+(-\d+)?)*$/;
+
+const VLAN_LIST_PLACE = (name: string, description: string): ArgumentSpec =>
+  ({ name, type: 'WORD', literal: 'WORD', description, pattern: FORME_LISTE_VLAN });
+
 const VOICE_VLAN_MODES = [
   { keyword: 'dot1p', description: 'Tag traffic with 802.1p priority' },
   { keyword: 'none', description: 'Do not tell the telephone which VLAN to use' },
@@ -447,6 +453,43 @@ const SWITCHPORT_PLACES: Readonly<Record<string, ArgumentSpec | readonly Argumen
       { keyword: 'negotiate', description: 'Device negotiates the trunking encapsulation' },
     ],
   },
+  duplex: DUPLEX_PLACE,
+  speed: SPEED_PLACE,
+  'l2protocol-tunnel': {
+    name: 'protocole', type: 'ENUM', description: 'Protocol to tunnel',
+    values: [
+      { keyword: 'cdp', description: 'Cisco Discovery Protocol' },
+      { keyword: 'lldp', description: 'Link Layer Discovery Protocol' },
+      { keyword: 'stp', description: 'Spanning Tree Protocol' },
+      { keyword: 'vtp', description: 'VLAN Trunking Protocol' },
+    ],
+  },
+  'mls qos cos': {
+    name: 'cos', type: 'INT', range: [0, 7],
+    description: 'Class of service value applied to untrusted ingress traffic',
+  },
+  'private-vlan mapping':
+    VLAN_LIST_PLACE('secondaires', 'Secondary VLANs mapped to this primary VLAN SVI'),
+  'switchport private-vlan host-association': [
+    VLAN_PLACE('primaire', 'Primary private VLAN of the host port'),
+    VLAN_PLACE('secondaire', 'Secondary private VLAN of the host port'),
+  ],
+  'switchport private-vlan mapping': [
+    VLAN_PLACE('primaire', 'Primary private VLAN of the promiscuous port'),
+    VLAN_LIST_PLACE('secondaires', 'Secondary VLANs mapped to the promiscuous port'),
+  ],
+  'switchport private-vlan mapping trunk': [
+    VLAN_PLACE('primaire', 'Primary private VLAN of the promiscuous trunk'),
+    VLAN_LIST_PLACE('secondaires', 'Secondary VLANs mapped to the promiscuous trunk'),
+  ],
+  'switchport private-vlan association trunk': [
+    VLAN_PLACE('primaire', 'Primary private VLAN of the isolated trunk'),
+    VLAN_PLACE('secondaire', 'Secondary private VLAN of the isolated trunk'),
+  ],
+  'switchport vlan mapping': [
+    VLAN_PLACE('client', 'Customer VLAN carried into the service VLAN'),
+    VLAN_PLACE('service', 'Service VLAN the customer VLAN is mapped to'),
+  ],
 };
 
 const VLAN_LIST_KEYWORDS: readonly AdapterKeyword[] = [
