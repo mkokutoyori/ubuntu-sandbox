@@ -60,10 +60,53 @@ const PHASE_DESCRIPTIONS: Readonly<Record<AaaPhase, readonly [string, string]>> 
 const decoupe = (reste: string | undefined): string[] =>
   (reste ?? '').trim().length === 0 ? [] : (reste as string).trim().split(/\s+/);
 
-const suiteDeMethodes: ArgumentSpec = {
-  name: 'reste', type: 'REST', literal: 'LINE', optional: true,
-  description: 'List name, then the methods to try in order',
+/**
+ * Le nom de la liste, puis les methodes — DEUX places et non une.
+ *
+ * Une seule place `REST` prenait toute la fin de la ligne, donc
+ * `aaa authentication login ?` annoncait `<cr>` pour une frappe que
+ * `parseAaaMethod` declare incomplete : il exige un nom de liste ET au
+ * moins une methode. Les separer fait plus que corriger l'annonce, elle
+ * ouvre le rang ou vivent les mots-cles de la comptabilite
+ * (`start-stop`, `stop-only`…), qu'une place gloutonne avalait.
+ *
+ * La suite est EXIGEE, et la forme qui s'arrete au nom de la liste est
+ * declaree a part, comme n'existant QUE niee. La rendre facultative
+ * aurait pose la commande au rang du nom de liste, donc rendu son `<cr>`
+ * a `aaa authentication login default ?` pour une frappe que la machine
+ * declare incomplete — le meme defaut deplace d'un rang.
+ */
+const NOM_DE_LISTE: ArgumentSpec = {
+  name: 'liste', type: 'WORD', description: 'Named method list, or `default`',
+  alternatives: [
+    { keyword: 'default', description: 'The default method list' },
+    { keyword: 'WORD', description: 'Name of a method list' },
+  ],
 };
+
+const METHODES: ArgumentSpec = {
+  name: 'methodes', type: 'REST', literal: 'LINE',
+  description: 'Methods to try, in order',
+};
+
+const NIVEAU_DE_COMMANDE: ArgumentSpec = {
+  name: 'niveau', type: 'INT', range: [0, 15],
+  description: 'Enable level of the commands concerned',
+};
+
+/**
+ * Ce qu'IOS ecrit entre la liste et les methodes, en comptabilite seule.
+ *
+ * Ce sont des MOTS-CLES : declares comme une valeur possible de la suite,
+ * ils la remplissaient — `aaa accounting exec default start-stop ?`
+ * annoncait alors `<cr>` alors qu'il manque encore les methodes.
+ */
+const TYPES_D_ENREGISTREMENT: ReadonlyArray<readonly [string, string]> = [
+  ['none', 'No accounting'],
+  ['start-stop', 'Record start and stop without waiting'],
+  ['stop-only', 'Record stop when service terminates'],
+  ['wait-start', 'Same as start-stop but wait for start-record commit'],
+];
 
 /**
  * Les cinq formes de la tete `aaa`, declarees au lieu d'etre avalees.
@@ -80,29 +123,92 @@ const suiteDeMethodes: ArgumentSpec = {
 export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
   const sec = () => ctx().security();
 
+  const oublier = (nom: AaaPhase, service: string, mots: readonly string[]): string => {
+    const liste = mots[0]?.toLowerCase() === 'default' ? 'default' : mots[0];
+    const config = sec();
+    config.aaaMethods = config.aaaMethods.filter((m) =>
+      !(m.phase === nom && m.service === service && (!liste || m.listName === liste)));
+    return '';
+  };
+
   const phase = (nom: AaaPhase): CommandSpec => {
     const [description, placeDescription] = PHASE_DESCRIPTIONS[nom];
     return {
       id: `aaa-${nom}`,
       path: ['aaa', nom, {
         name: 'service', type: 'ENUM', description: placeDescription,
-        values: AAA_SERVICE_VALUES[nom],
-      }, suiteDeMethodes],
+        values: AAA_SERVICE_VALUES[nom].filter((v) => v.keyword !== 'commands'),
+      }, NOM_DE_LISTE, METHODES],
       description,
       modes: MODES, minPrivilege: 15,
       run: (_s, args) =>
-        ctx().parseMethodList(nom, [args.service, ...decoupe(args.reste)]),
-      undo: (_s, args) => {
-        const mots = decoupe(args.reste);
-        const liste = mots[0]?.toLowerCase() === 'default' ? 'default' : mots[0];
-        const config = sec();
-        config.aaaMethods = config.aaaMethods.filter((m) =>
-          !(m.phase === nom && m.service === args.service
-            && (!liste || m.listName === liste)));
-        return '';
-      },
+        ctx().parseMethodList(nom, [args.service, args.liste, ...decoupe(args.methodes)]),
+      undo: (_s, args) => oublier(nom, args.service, [args.liste]),
     };
   };
+
+  /*
+   * `commands` prend un NIVEAU avant le nom de la liste, et les autres
+   * services non. Une place unique ne sait pas le dire : declare avec
+   * les autres, `aaa authorization commands 15 ?` promettait `<cr>` a un
+   * rang ou il manque encore les methodes. Le service devient donc un
+   * mot-cle avec sa propre suite — et il quitte les valeurs de la place,
+   * sans quoi `?` l'annoncerait deux fois.
+   */
+  const commandes = (nom: AaaPhase): CommandSpec => ({
+    id: `aaa-${nom}-commands`,
+    path: ['aaa', nom, 'commands', NIVEAU_DE_COMMANDE, NOM_DE_LISTE, METHODES],
+    description: 'For exec (shell) commands',
+    modes: MODES, minPrivilege: 15,
+    run: (_s, args) => ctx().parseMethodList(
+      nom, ['commands', args.niveau, args.liste, ...decoupe(args.methodes)]),
+    undo: (_s, args) => oublier(nom, 'commands', [args.liste]),
+  });
+
+  /**
+   * La forme qui s'arrete au nom de la liste : elle n'existe que NIEE.
+   *
+   * `no aaa authentication login default` se tape sans les methodes —
+   * on retire une liste, on ne la redecrit pas — tandis que la forme
+   * positive les exige. Le socle porte deja cette notion, et c'est elle
+   * qui permet d'EXIGER les methodes sans casser la negation.
+   */
+  const seulementNiee = (
+    id: string, chemin: CommandSpec['path'], nom: AaaPhase, service: string,
+    description: string,
+  ): CommandSpec => ({
+    id,
+    path: chemin,
+    description,
+    modes: MODES, minPrivilege: 15,
+    existsOnlyNegated: true,
+    run: () => '% Incomplete command.',
+    undo: (_s, args) => oublier(nom, service === '' ? args.service : service, [args.liste]),
+  });
+
+  const enregistrement = (mot: string, description: string): CommandSpec[] => [{
+    id: `aaa-accounting-${mot}`,
+    path: ['aaa', 'accounting', {
+      name: 'service', type: 'ENUM',
+      description: PHASE_DESCRIPTIONS.accounting[1],
+      values: AAA_SERVICE_VALUES.accounting.filter((v) => v.keyword !== 'commands'),
+    }, NOM_DE_LISTE, mot, METHODES],
+    description,
+    modes: MODES, minPrivilege: 15,
+    run: (_s, args) => ctx().parseMethodList(
+      'accounting', [args.service, args.liste, mot, ...decoupe(args.methodes)]),
+    undo: (_s, args) => oublier('accounting', args.service, [args.liste]),
+  }, {
+    id: `aaa-accounting-commands-${mot}`,
+    path: ['aaa', 'accounting', 'commands', NIVEAU_DE_COMMANDE, NOM_DE_LISTE,
+      mot, METHODES],
+    description,
+    modes: MODES, minPrivilege: 15,
+    run: (_s, args) => ctx().parseMethodList(
+      'accounting', ['commands', args.niveau, args.liste, mot,
+        ...decoupe(args.methodes)]),
+    undo: (_s, args) => oublier('accounting', 'commands', [args.liste]),
+  }];
 
   return [
     {
@@ -173,5 +279,18 @@ export function aaaHeadSpecs(ctx: () => AaaHeadHost): CommandSpec[] {
     phase('authentication'),
     phase('authorization'),
     phase('accounting'),
+    commandes('authorization'),
+    commandes('accounting'),
+    ...TYPES_D_ENREGISTREMENT.flatMap(([mot, description]) =>
+      enregistrement(mot, description)),
+    ...(['authentication', 'authorization', 'accounting'] as AaaPhase[]).map((nom) =>
+      seulementNiee(`no-aaa-${nom}`, ['aaa', nom, {
+        name: 'service', type: 'ENUM', description: PHASE_DESCRIPTIONS[nom][1],
+        values: AAA_SERVICE_VALUES[nom].filter((v) => v.keyword !== 'commands'),
+      }, NOM_DE_LISTE], nom, '', PHASE_DESCRIPTIONS[nom][0])),
+    ...(['authorization', 'accounting'] as AaaPhase[]).map((nom) =>
+      seulementNiee(`no-aaa-${nom}-commands`,
+        ['aaa', nom, 'commands', NIVEAU_DE_COMMANDE, NOM_DE_LISTE], nom, 'commands',
+        'For exec (shell) commands')),
   ];
 }

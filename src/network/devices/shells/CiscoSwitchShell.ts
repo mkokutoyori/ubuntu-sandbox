@@ -56,6 +56,7 @@ import { privateVlanSpecs, type PrivateVlanHost } from './cisco/privateVlanSpecs
 import {
   testEtherChannelSpecs, type TestEtherChannelHost,
 } from './cisco/testEtherChannelSpecs';
+import { switchGlobalSpecs, type SwitchGlobalHost } from './cisco/switchGlobalSpecs';
 import { igmpSnoopingRunningConfigLines } from '../../igmp-snooping/snoopingRunningConfig';
 import type { SnoopingConfig } from '../../igmp-snooping/types';
 import type { CiscoSwitch } from '../CiscoSwitch';
@@ -138,7 +139,7 @@ import type { VrrpGroupRuntime } from '../../vrrp/types';
 import type { HsrpGroupRuntime } from '../../hsrp/types';
 import type { GlbpGroupRuntime } from '../../glbp/types';
 import { iosSviName } from '../inspection/InterfaceStatusView';
-import { UDLD_DEFAULT_HELLO_SEC, UDLD_MESSAGE_TIME_RANGE } from '../../udld/types';
+import { UDLD_DEFAULT_HELLO_SEC } from '../../udld/types';
 import {
   parseFhrpShowArgs, fhrpShowMatches, fhrpInterfaceResolver, fhrpShowSpecs,
   HSRP_SHOW_GRAMMAR, VRRP_SHOW_GRAMMAR, GLBP_SHOW_GRAMMAR,
@@ -1050,40 +1051,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.registerStpCommands();
 
     // ── VACL + DAI (switch-only) ──
-    this.configTrie.registerGreedy('vlan access-map', 'Configure a VLAN access map', (args) => {
-      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
-      if (args.length > 2) return CISCO_ERRORS.INVALID_INPUT;
-      const seq = this.parseAccessMapSequence(args[1]);
-      if (seq === null) return '% Invalid sequence number';
-      this.selectedAccessMap = { name: args[0], seq };
-      this.d().setVlanAccessMapRule(args[0], seq);
-      this.mode = 'config-access-map';
-      return '';
-    });
-    this.configTrie.registerGreedy('no vlan access-map', 'Remove a VLAN access map', (args) => {
-      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
-      if (args.length > 2) return CISCO_ERRORS.INVALID_INPUT;
-      if (args[1] === undefined) { this.d().removeVlanAccessMap(args[0]); return ''; }
-      const seq = this.parseAccessMapSequence(args[1]);
-      if (seq === null) return '% Invalid sequence number';
-      this.d().removeVlanAccessMapSequence(args[0], seq);
-      return '';
-    });
-    this.configTrie.registerGreedy('vlan filter', 'Apply a VLAN access map to VLANs', (args) => {
-      const li = args.findIndex(a => a.toLowerCase() === 'vlan-list');
-      if (li < 0 || !args[0] || !args[li + 1]) return CISCO_ERRORS.INCOMPLETE;
-      const vlans = this.parseVlanList(args.slice(li + 1).join(','));
-      if (!vlans) return '% Invalid VLAN list';
-      const res = this.d().applyVlanFilter(args[0], [...vlans]);
-      return res.ok ? '' : `% ${res.error}`;
-    });
-    this.configTrie.registerGreedy('no vlan filter', 'Remove a VLAN access map binding', (args) => {
-      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
-      const li = args.findIndex(a => a.toLowerCase() === 'vlan-list');
-      const vlans = li >= 0 && args[li + 1] ? this.parseVlanList(args.slice(li + 1).join(',')) : null;
-      this.d().removeVlanFilter(args[0], vlans ? [...vlans] : undefined);
-      return '';
-    });
 
     this.configAccessMapTrie.registerGreedy('match ip address', 'Match an IP ACL', (args) => {
       if (!this.selectedAccessMap || !args[0]) return CISCO_ERRORS.INCOMPLETE;
@@ -1628,42 +1595,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private registerUdldCommands(trie: SwitchTries): void {
-    trie.config.requireArgs('udld', 1);
-    trie.config.registerGreedy('udld', 'UDLD global configuration', (args) => {
-      const agent = this.requireUdld();
-      const mot = (args[0] ?? '').toLowerCase();
-      if (mot === '') throw new CliIncomplete();
-      if (mot === 'enable' || mot === 'aggressive') {
-        if (args[1] !== undefined) throw new CliInvalidInput({ token: args[1] });
-        agent.setGlobalMode(mot === 'enable' ? 'normal' : 'aggressive');
-        return '';
-      }
-      if (mot === 'message') {
-        agent.setHelloInterval(this.lireUdldMessageTime(args.slice(1)));
-        return '';
-      }
-      throw new CliInvalidInput({ token: args[0] });
-    }, [
-      { keyword: 'enable', description: 'Enable UDLD in normal mode on fibre ports' },
-      { keyword: 'aggressive', description: 'Enable UDLD in aggressive mode on fibre ports' },
-      { keyword: 'message', description: 'Set the message interval' },
-    ]);
-    trie.config.registerGreedy('no udld', 'Disable UDLD globally', (args) => {
-      const agent = this.requireUdld();
-      if ((args[0] ?? '').toLowerCase() === 'message') {
-        if ((args[1] ?? '').toLowerCase() !== 'time') {
-          throw new CliInvalidInput({ token: args[1] });
-        }
-        if (args[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
-        agent.setHelloInterval(UDLD_DEFAULT_HELLO_SEC);
-        return '';
-      }
-      if (args[0] !== undefined && !['enable', 'aggressive'].includes(args[0].toLowerCase())) {
-        throw new CliInvalidInput({ token: args[0] });
-      }
-      agent.setGlobalMode('disabled');
-      return '';
-    });
     trie.configIf.registerGreedy('udld port', 'UDLD per-port configuration', (args) => {
       const m = (args[0] ?? '').toLowerCase();
       if (m !== '' && m !== 'aggressive') throw new CliInvalidInput({ token: args[0] });
@@ -1717,14 +1648,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return lines.join('\n');
       });
     }
-  }
-
-  private lireUdldMessageTime(args: readonly string[]): number {
-    if (args[0] === undefined) throw new CliIncomplete();
-    if (args[0].toLowerCase() !== 'time') throw new CliInvalidInput({ token: args[0] });
-    if (args[1] === undefined) throw new CliIncomplete();
-    if (args[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
-    return entierBorne(args[1], ...UDLD_MESSAGE_TIME_RANGE);
   }
 
   /** `ip igmp snooping vlan <n> mrouter interface <port>`. */
@@ -2480,6 +2403,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...stormControlSpecs(() => this.stormControlHost()),
       ...privateVlanSpecs(() => this.privateVlanHost()),
       ...testEtherChannelSpecs(() => this.testEtherChannelHost()),
+      ...switchGlobalSpecs(() => this.switchGlobalHost()),
       ...this.dot1xSpecs(),
       ...this.vtpConfigSpecs(),
       ...this.daiSpecs(),
@@ -3490,11 +3414,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private registerMonitorSessionCommands(trie: SwitchTries): void {
-    trie.config.registerGreedy('monitor session', 'Configure SPAN session', (args) =>
-      this.handleMonitorSession(args, false));
-    trie.config.registerGreedy('no monitor session', 'Delete a SPAN session', (args) =>
-      this.handleMonitorSession(args, true));
-
     for (const t of [trie.user, trie.privileged]) {
       t.register('show monitor', 'Display SPAN sessions', () => this.showMonitor(null));
       t.registerGreedy('show monitor session', 'Display SPAN session(s)', (args) => {
@@ -5285,6 +5204,44 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (l) this.ifExtra.set(i, l.filter((x) => !x.startsWith(prefix)));
     }
     return '';
+  }
+
+  private switchGlobalHost(): SwitchGlobalHost {
+    return {
+      monitorSession: (words, negate) =>
+        this.handleMonitorSession([...words], negate),
+      setUdldGlobalMode: (mode) => { this.requireUdld().setGlobalMode(mode); return ''; },
+      setUdldHelloInterval: (seconds) => {
+        this.requireUdld().setHelloInterval(
+          seconds < 0 ? UDLD_DEFAULT_HELLO_SEC : seconds);
+        return '';
+      },
+      selectVlanAccessMap: (name, sequence) => {
+        const seq = this.parseAccessMapSequence(sequence);
+        if (seq === null) return '% Invalid sequence number';
+        this.selectedAccessMap = { name, seq };
+        this.d().setVlanAccessMapRule(name, seq);
+        return '';
+      },
+      dropVlanAccessMap: (name, sequence) => {
+        if (sequence === undefined) { this.d().removeVlanAccessMap(name); return ''; }
+        const seq = this.parseAccessMapSequence(sequence);
+        if (seq === null) return '% Invalid sequence number';
+        this.d().removeVlanAccessMapSequence(name, seq);
+        return '';
+      },
+      applyVlanFilter: (name, vlans) => {
+        const ids = this.parseVlanList(vlans);
+        if (!ids) return '% Invalid VLAN list';
+        const res = this.d().applyVlanFilter(name, [...ids]);
+        return res.ok ? '' : `% ${res.error}`;
+      },
+      dropVlanFilter: (name, vlans) => {
+        const ids = vlans === undefined ? null : this.parseVlanList(vlans);
+        this.d().removeVlanFilter(name, ids ? [...ids] : undefined);
+        return '';
+      },
+    };
   }
 
   private testEtherChannelHost(): TestEtherChannelHost {
