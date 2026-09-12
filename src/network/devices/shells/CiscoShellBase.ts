@@ -69,6 +69,7 @@ import { ipSshSpecs, type IpSshHost } from './cisco/ipSshSpecs';
 import { terminalSpecs } from './cisco/terminalSpecs';
 import { copySpecs } from './cisco/copySpecs';
 import { testAaaSpecs, type TestAaaHost } from './cisco/testAaaSpecs';
+import { showDebuggingSpecs, type ShowDebuggingHost } from './cisco/showDebuggingSpecs';
 import { ipAddressInterfaceSpecs, type IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import {
   interfaceLoadMtuSpecs, MTU_MIN,
@@ -5888,7 +5889,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       })),
       ...copySpecs(() => ({ copyFile: (words) => this.copierFichier(words) })),
       ...testAaaSpecs(() => this.testAaaHost()),
+      ...showDebuggingSpecs(() => this.showDebuggingHost()),
     ];
+  }
+
+  /**
+   * Le service de debogage de CETTE machine, quelle que soit sa sorte.
+   *
+   * Le routeur et le Catalyst portent tous deux `getDebugService()`, de
+   * la meme classe : c'est ce qui rend une declaration UNIQUE possible.
+   * La phrase de repli sert la machine qui n'en a pas encore construit.
+   */
+  private showDebuggingHost(): ShowDebuggingHost {
+    const service = () => (this.d() as unknown as {
+      getDebugService?: () => { format(): string; formatConditions(): string };
+    }).getDebugService?.();
+    return {
+      debugFlags: () => service()?.format() ?? 'No debug flags are enabled',
+      debugConditions: () => service()?.formatConditions() ?? '',
+    };
   }
 
   /*

@@ -1951,7 +1951,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     // show spanning-tree summary | mst configuration | interface <if>
-    this.registerSwitchDebugCommands();
   }
 
   private dhcpPoolContext(): CiscoShellContext {
@@ -2864,13 +2863,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
   }
 
-  private registerSwitchDebugCommands(): void {
-    const svc = () => this.switchDebug();
-    this.privilegedTrie.register('show debugging', 'Display active debugging', () =>
-      this.mode === 'user'
-        ? CISCO_ERRORS.INVALID_INPUT
-        : (svc()?.format() ?? 'No debug flags are enabled'));
-  }
 
   /**
    * Ce qu'un Catalyst ajoute a la famille `debug` du socle.
