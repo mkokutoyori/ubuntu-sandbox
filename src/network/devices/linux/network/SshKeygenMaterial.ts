@@ -35,6 +35,14 @@ function fromBase64(text: string): Uint8Array {
   return bytes;
 }
 
+function decodedOrLiteral(text: string): Uint8Array {
+  try {
+    return fromBase64(text);
+  } catch {
+    return ascii(text);
+  }
+}
+
 function lengthPrefixed(parts: readonly Uint8Array[]): Uint8Array {
   let total = 0;
   for (const part of parts) total += 4 + part.length;
@@ -178,7 +186,7 @@ export function keygenKeyFacts(publicLine: string): KeygenKeyFacts {
 export function keygenBlobDigest(blob: string, hash: string): string | null {
   const wanted = hash.trim().toLowerCase() || 'sha256';
   if (wanted !== 'sha256' && wanted !== 'md5') return null;
-  const bytes = fromBase64(blob);
+  const bytes = decodedOrLiteral(blob);
   return wanted === 'sha256'
     ? `SHA256:${toBase64(sha256(bytes)).replace(/=+$/, '')}`
     : `MD5:${[...md5(bytes)].map(b => b.toString(16).padStart(2, '0')).join(':')}`;

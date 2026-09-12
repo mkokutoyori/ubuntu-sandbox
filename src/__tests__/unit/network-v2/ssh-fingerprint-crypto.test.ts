@@ -49,6 +49,12 @@ describe('SshFingerprint — real SHA-256', () => {
     expect(a).not.toBe(b);
   });
 
+  it('une entree qui n est pas du base64 ne fait pas EXPLOSER l empreinte', () => {
+    expect(() => SshFingerprint.fromPublicKey('cle effacee !!!').toString()).not.toThrow();
+    expect(SshFingerprint.fromPublicKey('cle effacee !!!').toString())
+      .toMatch(/^SHA256:[A-Za-z0-9+/]{43}$/);
+  });
+
   it('l empreinte d une cle d hote est celle que `ssh-keygen -l` annonce', () => {
     const cle = SshHostKey.generate('srv1');
     expect(cle.fingerprint.toString()).toBe(
