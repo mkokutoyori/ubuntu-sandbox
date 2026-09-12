@@ -3941,6 +3941,10 @@ export abstract class LinuxMachine extends EndHost
       'netfilter',
       `${tag} IN=${inIface} OUT=${outIface ?? ''} SRC=${pkt.srcIP} DST=${pkt.dstIP} PROTO=${proto}${portFields}`,
     );
+    this.executor.firewall.logBlockedPacket({
+      verdict, iface: inIface, src: pkt.srcIP, dst: pkt.dstIP,
+      proto, sport: pkt.srcPort ?? 0, dport: pkt.dstPort ?? 0,
+    });
   }
 
   private logIptablesLog(prefix: string, pkt: PacketInfo): void {
