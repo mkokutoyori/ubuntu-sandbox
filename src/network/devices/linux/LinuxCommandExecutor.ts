@@ -3340,10 +3340,13 @@ export class LinuxCommandExecutor {
     if (!background && this.networkRunner && argv.length > 0) {
       const viaSudo = argv[0] === 'sudo';
       const effective = viaSudo ? argv.slice(1) : argv;
+      const previousEnv = this._cmdEnv;
+      this._cmdEnv = env;
       const pending = effective.length > 0 ? this.networkRunner(effective, env, viaSudo, stdin, outputPiped) : null;
-      if (pending) return pending;
+      if (pending) return pending.finally(() => { this._cmdEnv = previousEnv; });
       const suPending = this.trySuNetworkCommand(argv, env);
-      if (suPending) return suPending;
+      if (suPending) return suPending.finally(() => { this._cmdEnv = previousEnv; });
+      this._cmdEnv = previousEnv;
     }
     // A `bash script.sh` / `./script.sh` / `run-parts dir` reached through
     // this (already async-capable) entry point may contain a network

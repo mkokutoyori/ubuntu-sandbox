@@ -1657,7 +1657,7 @@ describe('§25 — full end-to-end audit story', () => {
     },
     {
       name: 'logger writes a custom line and syslog records it',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 logger "audit-trail-marker"'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.10 logger "audit-trail-marker"'); },
       on: l => l.srv1,
       cmd: 'grep audit-trail-marker /var/log/syslog',
       contains: [/audit-trail-marker/],
@@ -2032,7 +2032,7 @@ describe('§30 — network monitoring of SSH listener and sessions', () => {
     },
     {
       name: 'tcpdump -ni eth0 port 22 -c 2 captures SYN/SYN-ACK during a connect',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 hostname'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2 hostname'); },
       on: l => l.pc1,
       cmd: 'tcpdump -ni eth0 port 22 -c 2',
       contains: [/Flags \[S\]|Flags \[S\.\]/, /10\.0\.0\.2\.22/],
@@ -2278,14 +2278,14 @@ describe('§34 — sudo over ssh', () => {
     },
     {
       name: 'sudo over ssh is logged in /var/log/auth.log',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 sudo -n ls /'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2 sudo -n ls /'); },
       on: l => l.pc2,
       cmd: 'grep sudo /var/log/auth.log',
       contains: [/sudo:\s+alice : TTY=.*PWD=.*USER=root/],
     },
     {
       name: 'sudo with bad password is rejected and audit logs the failure',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 \'echo wrong | sudo -S whoami\''); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2 \'echo wrong | sudo -S whoami\''); },
       on: l => l.pc2,
       cmd: 'tail -5 /var/log/auth.log',
       contains: [/incorrect password|authentication failure/i],
