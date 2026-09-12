@@ -86,20 +86,30 @@ function keyLengthFor(algorithm: string, bits: number): number {
   return 32;
 }
 
-export function keygenDeterministicPublicBlob(algorithm: string, seed: string): string {
+function deterministicKey(algorithm: string, seed: string): Uint8Array {
   const length = keyLengthFor(algorithm, keygenBits(algorithm));
   const key = new Uint8Array(length);
   for (let offset = 0, counter = 0; offset < length; offset += 32, counter++) {
     key.set(sha256(ascii(`${seed}#${counter}`)).subarray(0, Math.min(32, length - offset)), offset);
   }
-  return publicBlob(algorithm, key);
+  return key;
 }
 
-export function keygenPair(algorithm: string, comment: string, bits?: number): KeygenPair {
-  const size = keygenBits(algorithm, bits);
-  const key = randomBytes(keyLengthFor(algorithm, size));
+export function keygenDeterministicPublicBlob(algorithm: string, seed: string): string {
+  return publicBlob(algorithm, deterministicKey(algorithm, seed));
+}
+
+export function keygenDeterministicPair(
+  algorithm: string, seed: string, comment: string,
+): KeygenPair {
+  return assemblePair(algorithm, deterministicKey(algorithm, seed), comment);
+}
+
+function assemblePair(
+  algorithm: string, key: Uint8Array, comment: string, bits?: number,
+): KeygenPair {
   const secret: KeygenSecret = {
-    algorithm, key: toBase64(key), comment, bits: size,
+    algorithm, key: toBase64(key), comment, bits: bits ?? keygenBits(algorithm),
   };
   const armoured = toBase64(ascii(JSON.stringify(secret)));
   const wrapped = armoured.match(/.{1,70}/g) ?? [armoured];
@@ -107,6 +117,11 @@ export function keygenPair(algorithm: string, comment: string, bits?: number): K
     pub: `${algorithm} ${publicBlob(algorithm, key)} ${comment}`,
     priv: `${PRIVATE_HEADER}\n${wrapped.join('\n')}\n${PRIVATE_FOOTER}\n`,
   };
+}
+
+export function keygenPair(algorithm: string, comment: string, bits?: number): KeygenPair {
+  const size = keygenBits(algorithm, bits);
+  return assemblePair(algorithm, randomBytes(keyLengthFor(algorithm, size)), comment, size);
 }
 
 function readSecret(material: string): KeygenSecret | null {
