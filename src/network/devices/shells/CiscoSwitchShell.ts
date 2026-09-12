@@ -52,7 +52,7 @@ import {
   STORM_CONTROL_TYPES, parseStormControl, stormControlPercent,
 } from './cisco/stormControlSyntax';
 import { stormControlSpecs, type StormControlHost } from './cisco/stormControlSpecs';
-import { privateVlanSpecs, type PrivateVlanHost } from './cisco/privateVlanSpecs';
+import { configVlanSpecs, type ConfigVlanHost } from './cisco/configVlanSpecs';
 import {
   testEtherChannelSpecs, type TestEtherChannelHost,
 } from './cisco/testEtherChannelSpecs';
@@ -1037,15 +1037,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // ── Config-if mode ──
     this.registerConfigIfCommands(this.configIfTrie);
-
-    // ── Config-vlan mode ──
-    this.configVlanTrie.registerGreedy('name', 'Set VLAN name', (args) => {
-      if (!this.selectedVlan || args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-      const ok = this.d().renameVLAN(this.selectedVlan, args[0]);
-      if (ok) this.optionalVtp()?.onLocalVlanChange();
-      return ok ? '' : '% VLAN not found';
-    });
-
 
     // ── Spanning Tree (L2, switch-only) ──
     this.registerStpCommands();
@@ -2401,7 +2392,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.portSecuritySpecs(),
       ...this.switchportL2Specs(),
       ...stormControlSpecs(() => this.stormControlHost()),
-      ...privateVlanSpecs(() => this.privateVlanHost()),
+      ...configVlanSpecs(() => this.configVlanHost()),
       ...testEtherChannelSpecs(() => this.testEtherChannelHost()),
       ...switchGlobalSpecs(() => this.switchGlobalHost()),
       ...this.dot1xSpecs(),
@@ -2605,6 +2596,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return [
       ...super.socleLegends(),
       [['show', 'spanning-tree', 'pathcost'], 'Path cost method'],
+      /*
+       * Un noeud sans commande herite de la description de son premier
+       * descendant : `private-vlan` s'annoncait donc par les mots de son
+       * association, c'est-a-dire par UNE de ses branches pour le nom de
+       * TOUTES.
+       */
+      [['private-vlan'], 'Configure the private VLAN role or association'],
     ];
   }
 
@@ -5265,8 +5263,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     };
   }
 
-  private privateVlanHost(): PrivateVlanHost {
+  private configVlanHost(): ConfigVlanHost {
     return {
+      renameVlan: (nom) => {
+        if (!this.selectedVlan) return CISCO_ERRORS.INCOMPLETE;
+        const ok = this.d().renameVLAN(this.selectedVlan, nom);
+        if (ok) this.optionalVtp()?.onLocalVlanChange();
+        return ok ? '' : '% VLAN not found';
+      },
       applyPrivateVlan: (words) => {
         if (!this.selectedVlan || words.length < 1) return CISCO_ERRORS.INCOMPLETE;
         const sub = words[0].toLowerCase();

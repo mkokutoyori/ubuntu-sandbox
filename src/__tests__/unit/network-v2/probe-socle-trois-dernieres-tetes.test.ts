@@ -114,6 +114,47 @@ describe('l aide NOMME ce que le moteur juge', () => {
       .not.toMatch(/SNMP/i);
   });
 
+  /*
+   * Le meme defaut vu du rang au-dessus : un noeud sans commande herite
+   * de la description de son PREMIER descendant, donc `private-vlan`
+   * s'annoncait par les mots de son association — une de ses branches
+   * pour le nom de toutes.
+   */
+  it('`?` decrit `private-vlan` par la famille, pas par une branche', async () => {
+    const d = await commutateur(...VLAN);
+    const ligne = d.cliHelp('').split('\n')
+      .find((l) => /^\s\s+private-vlan\s/.test(l)) ?? '';
+    expect(ligne, 'private-vlan n est pas annonce').not.toBe('');
+    expect(ligne, 'la famille est decrite par une seule de ses branches')
+      .not.toMatch(/Associate secondary/);
+  });
+
+  /*
+   * `config-vlan` est le PREMIER sous-mode dont l'arbre est vide : tout
+   * ce qu'on y tape vient du socle. C'est la mesure du but — « a la fin
+   * on ne doit plus avoir un trie » — prise sur le premier mode qui y
+   * arrive, et le cas qui le dira si une commande y revient par
+   * l'ancien moteur.
+   */
+  it('l arbre de `config-vlan` est VIDE', async () => {
+    const d = await commutateur(...VLAN);
+    const shell = (d as unknown as {
+      getShell?: () => { getActiveTrie(): { enumerateExecutablePaths(): string[] } };
+    });
+    const trie = shell.getShell?.();
+    expect(trie, 'le shell ne s expose pas').toBeTruthy();
+    expect(trie!.getActiveTrie().enumerateExecutablePaths()).toEqual([]);
+  });
+
+  it('`name VENTES` renomme le VLAN, et la vue le relit', async () => {
+    const d = await commutateur(...VLAN);
+    expect(annonceCr(d.cliHelp('name '))).toBe(false);
+    expect(await d.executeCommand('name')).toMatch(/Incomplete command/);
+    expect(await d.executeCommand('name VENTES')).not.toMatch(/Invalid|Incomplete/);
+    await d.executeCommand('end');
+    expect(await d.executeCommand('show vlan')).toMatch(/VENTES/);
+  });
+
   it('`test aaa group ... ?` nomme les deux codes d appel', async () => {
     const d = await commutateur();
     expect(nomsAnnonces(d.cliHelp('test aaa group GRP jb secret ')))

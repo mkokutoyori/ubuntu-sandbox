@@ -1,11 +1,16 @@
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { CommandSpec } from '@/cli/CommandTable';
 
-export interface PrivateVlanHost {
+export interface ConfigVlanHost {
   applyPrivateVlan(words: readonly string[]): string;
+  renameVlan(name: string): string;
 }
 
 const CONFIG_VLAN = Object.freeze(['config-vlan']);
+
+const NOM_DE_VLAN: ArgumentSpec = {
+  name: 'nom', type: 'WORD', description: 'The ascii name for the VLAN',
+};
 
 const ROLE: ArgumentSpec = {
   name: 'role', type: 'ENUM', description: 'Private VLAN role of this VLAN',
@@ -22,8 +27,15 @@ const SECONDAIRES: ArgumentSpec = {
   description: 'Secondary VLANs associated with this primary VLAN',
 };
 
-export function privateVlanSpecs(ctx: () => PrivateVlanHost): CommandSpec[] {
+export function configVlanSpecs(ctx: () => ConfigVlanHost): CommandSpec[] {
   return [
+    {
+      id: 'vlan-name',
+      path: ['name', NOM_DE_VLAN],
+      description: 'Ascii name of the VLAN',
+      modes: CONFIG_VLAN, minPrivilege: 15,
+      run: (_session, args) => ctx().renameVlan(args.nom),
+    },
     {
       id: 'private-vlan-role',
       path: ['private-vlan', ROLE],
