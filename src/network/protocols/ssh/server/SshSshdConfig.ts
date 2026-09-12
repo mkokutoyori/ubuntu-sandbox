@@ -14,6 +14,7 @@
  */
 
 import type { SshServerConfig } from './ISshServerContext';
+import { SSHD_CONFIG_KEYWORDS } from './SshdConfigKeywords';
 
 export type SshLogLevel =
   | 'QUIET'
@@ -272,6 +273,10 @@ export function validateSshdConfig(
     if (idx === -1) continue;
     const key = line.slice(0, idx).toLowerCase();
     const value = line.slice(idx + 1).trim();
+    if (!SSHD_CONFIG_KEYWORDS.has(key)) {
+      errors.push(`${path}: line ${i + 1}: Bad configuration option: ${line.slice(0, idx)}`);
+      continue;
+    }
     if (key === 'port') {
       const n = Number(value);
       if (!Number.isInteger(n) || n < 1 || n > 65535) {
@@ -287,6 +292,9 @@ export function validateSshdConfig(
         );
       }
     }
+  }
+  if (errors.length > 0) {
+    errors.push(`${path}: terminating, ${errors.length} bad configuration options`);
   }
   return { ok: errors.length === 0, errors };
 }
