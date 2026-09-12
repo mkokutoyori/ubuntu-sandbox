@@ -1526,6 +1526,7 @@ export class LinuxCommandExecutor {
       }),
       remote: remoteFs,
       initialLocalCwd: this.cwd,
+      initialRemoteCwd: remoteFs.initialCwd?.() ?? undefined,
     });
     session.run(SftpCommandScript.parse(stdin));
     return { output: `Connected to ${hostPart}.\n${session.transcript}\nsftp> `, exitCode: 0 };
