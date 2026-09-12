@@ -1087,22 +1087,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     buildNamedStdACLCommands(this.configStdNaclTrie, this.namedAclEditContext());
     buildNamedExtACLCommands(this.configExtNaclTrie, this.namedAclEditContext());
     this.registerL3Commands();
-    for (const t of [this.userTrie, this.privilegedTrie]) {
-      const vueAcl = (args: string[]): string =>
-        showAccessListsFrom(this.d().getVaclEngine().getAccessListsInternal(), args[0]);
-      t.registerGreedy('show access-lists', 'Display ACLs', vueAcl);
-      t.registerGreedy('show ip access-lists', 'Display IP access lists', vueAcl);
-      t.registerGreedy('show port-security', 'Display port security', (args) => {
-        if (args[0]?.toLowerCase() === 'interface' && args[1]) {
-          return this.showPortSecurityInterface(this.d(), args.slice(1).join(' '));
-        }
-        if (args[0]?.toLowerCase() === 'address') {
-          return this.showPortSecurityAddress(this.d());
-        }
-        return this.showPortSecurityOverview(this.d());
-      });
-    }
-
     this.registerShowCompletionKeywords();
   }
 
@@ -3048,12 +3032,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // de trafic dans le plan de données. Inventer un pourcentage courant
     // serait la seule façon de mentir ici ; le seuil, lui, est exact.
 
-    this.privilegedTrie.registerGreedy('show interfaces trunk', 'Display trunk ports', () => {
-      return this.showTrunkTable(this.d().getPortNames());
-    });
-
-    this.privilegedTrie.registerGreedy('show etherchannel', 'Display EtherChannel',
-      (args) => this.showEtherchannel(args));
     this.registerEtherchannelShowRest();
   }
 
@@ -3140,25 +3118,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // dead-ended on "% Incomplete command." — the trie's own child-first
     // lookahead (CommandTrie.ts) still routes `... counters errors`
     // through to its own leaf action underneath, unaffected.
-    this.privilegedTrie.registerGreedy('show interfaces counters', 'Display interface counters', (args) => {
-      if (args.length === 0) return this.showInterfacesCounters(null);
-      const name = this.resolveInterfaceName(args.join(' '));
-      if (!name || !this.d().getPort(name)) {
-        return formatInvalidInput(16);
-      }
-      return this.showInterfacesCounters(name);
-    });
-
-
-    this.privilegedTrie.registerGreedy('show queuing interface', 'Display the 802.1p trust state of an interface', (args) => {
-      const target = args.join(' ');
-      const name = this.resolveInterfaceName(target) ?? target;
-      if (!name || !this.d().getPort(name)) {
-        return formatInvalidInput(23);
-      }
-      return this.showQueuingInterface(name);
-    });
-    this.privilegedTrie.requireArgs('show queuing interface', 1);
 
     this.privilegedTrie.register('write', 'Save running-config to startup-config', () => {
       return this.d().writeMemory();
@@ -3173,16 +3132,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
    * constructor, after every command family is registered.
    */
   private registerShowCompletionKeywords(): void {
-    for (const t of [this.privilegedTrie, this.userTrie]) {
-      t.addCompletionKeywords('show access-lists', [
-        { keyword: 'interface', description: 'ACLs applied to an interface' },
-        { keyword: 'address', description: 'Filter by address' },
-      ]);
-      t.addCompletionKeywords('show port-security', [
-        { keyword: 'interface', description: 'Port security for an interface' },
-        { keyword: 'address', description: 'Secure MAC addresses' },
-      ]);
-    }
     const t = this.privilegedTrie;
     t.addCompletionKeywords('show interfaces', [
       { keyword: 'status', description: 'Interface line status' },
@@ -5404,6 +5353,26 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       dhcpDatabase: () => dhcp().formatDatabaseShow(),
       dhcpSnoopingStatistics: () => this.showIpDhcpSnoopingStatistics(),
       stormControl: (sorte) => this.showStormControl(sorte),
+      etherChannel: (mots) => this.showEtherchannel([...mots]),
+      interfacesTrunk: () => this.showTrunkTable(this.d().getPortNames()),
+      interfacesCounters: (iface) => {
+        if (iface === null) return this.showInterfacesCounters(null);
+        const nom = this.resolveInterfaceName(iface);
+        if (!nom || !this.d().getPort(nom)) return formatInvalidInput(16);
+        return this.showInterfacesCounters(nom);
+      },
+      accessLists: (nom) => showAccessListsFrom(
+        this.d().getVaclEngine().getAccessListsInternal(), nom ?? undefined),
+      portSecurity: () => this.showPortSecurityOverview(this.d()),
+      portSecurityAddress: () => this.showPortSecurityAddress(this.d()),
+      portSecurityInterface: (iface) => iface === null
+        ? this.showPortSecurityOverview(this.d())
+        : this.showPortSecurityInterface(this.d(), iface),
+      queuingInterface: (iface) => {
+        const nom = this.resolveInterfaceName(iface) ?? iface;
+        if (!this.d().getPort(nom)) return formatInvalidInput(23);
+        return this.showQueuingInterface(nom);
+      },
     };
   }
 
