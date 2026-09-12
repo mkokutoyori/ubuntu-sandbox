@@ -86,6 +86,15 @@ function keyLengthFor(algorithm: string, bits: number): number {
   return 32;
 }
 
+export function keygenDeterministicPublicBlob(algorithm: string, seed: string): string {
+  const length = keyLengthFor(algorithm, keygenBits(algorithm));
+  const key = new Uint8Array(length);
+  for (let offset = 0, counter = 0; offset < length; offset += 32, counter++) {
+    key.set(sha256(ascii(`${seed}#${counter}`)).subarray(0, Math.min(32, length - offset)), offset);
+  }
+  return publicBlob(algorithm, key);
+}
+
 export function keygenPair(algorithm: string, comment: string, bits?: number): KeygenPair {
   const size = keygenBits(algorithm, bits);
   const key = randomBytes(keyLengthFor(algorithm, size));
@@ -151,13 +160,17 @@ export function keygenKeyFacts(publicLine: string): KeygenKeyFacts {
   };
 }
 
-export function keygenDigest(publicLine: string, hash: string): string | null {
+export function keygenBlobDigest(blob: string, hash: string): string | null {
   const wanted = hash.trim().toLowerCase() || 'sha256';
   if (wanted !== 'sha256' && wanted !== 'md5') return null;
-  const bytes = fromBase64(publicLine.trim().split(/\s+/)[1] ?? '');
+  const bytes = fromBase64(blob);
   return wanted === 'sha256'
     ? `SHA256:${toBase64(sha256(bytes)).replace(/=+$/, '')}`
     : `MD5:${[...md5(bytes)].map(b => b.toString(16).padStart(2, '0')).join(':')}`;
+}
+
+export function keygenDigest(publicLine: string, hash: string): string | null {
+  return keygenBlobDigest(publicLine.trim().split(/\s+/)[1] ?? '', hash);
 }
 
 export function keygenFingerprint(publicLine: string, hash: string): string | null {

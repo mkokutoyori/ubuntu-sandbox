@@ -6,6 +6,7 @@
 
 import { SshFingerprint } from './SshFingerprint';
 import { deriveKeyMaterial } from './sshKeyMaterial';
+import { keygenDeterministicPublicBlob } from '@/network/devices/linux/network/SshKeygenMaterial';
 
 export type SshKeyAlgorithm = 'ssh-ed25519' | 'ssh-rsa' | 'ecdsa-sha2-nistp256';
 
@@ -25,7 +26,7 @@ export class SshHostKey {
     algorithm: SshKeyAlgorithm = 'ssh-ed25519',
   ): SshHostKey {
     const seed = `${algorithm}:${hostname}`;
-    const publicKey = deriveKeyMaterial(seed, 43);
+    const publicKey = keygenDeterministicPublicBlob(algorithm, seed);
     const privateKey = deriveKeyMaterial(`priv:${seed}`, 64);
     return new SshHostKey(algorithm, publicKey, privateKey);
   }
