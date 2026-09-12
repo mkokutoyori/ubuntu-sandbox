@@ -57,6 +57,7 @@ import {
   testEtherChannelSpecs, type TestEtherChannelHost,
 } from './cisco/testEtherChannelSpecs';
 import { switchGlobalSpecs, type SwitchGlobalHost } from './cisco/switchGlobalSpecs';
+import { snoopingViewSpecs, type SnoopingViewHost } from './cisco/snoopingViewSpecs';
 import { igmpSnoopingRunningConfigLines } from '../../igmp-snooping/snoopingRunningConfig';
 import type { SnoopingConfig } from '../../igmp-snooping/types';
 import type { CiscoSwitch } from '../CiscoSwitch';
@@ -1736,10 +1737,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       (args) => this.applyPimSnooping(args, true));
     this.configTrie.registerGreedy('no ip pim snooping', 'Disable PIM snooping',
       (args) => this.applyPimSnooping(args, false));
-    for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.registerGreedy('show ip pim snooping', 'Display PIM snooping state',
-        (args) => this.showPimSnooping(args.map(s => s.toLowerCase())));
-    }
   }
 
   private applyIgmpSnooping(args: string[], on: boolean): string {
@@ -1766,20 +1763,18 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       (args) => this.applyIgmpSnooping(args, true));
     this.configTrie.registerGreedy('no ip igmp snooping', 'Disable IGMP snooping',
       (args) => this.applyIgmpSnooping(args, false));
-    for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.registerGreedy('show ip igmp snooping groups',
-        'IGMP snooping multicast group information', (args) =>
-        this.showIgmpSnoopingGroups(args));
-      t.registerGreedy('show ip igmp snooping mrouter',
-        'IGMP snooping multicast router ports', () => this.showIgmpSnoopingMrouter());
-      t.registerGreedy('show ip igmp snooping querier',
-        'IGMP snooping querier status', () => this.showIgmpSnoopingQuerier());
-      t.registerGreedy('show ip igmp snooping vlan',
-        'IGMP snooping information for a VLAN', (args) =>
-        this.showIgmpSnoopingGlobal(args));
-      t.register('show ip igmp snooping', 'Display IGMP snooping state', () =>
-        this.showIgmpSnoopingGlobal([]));
-    }
+  }
+
+  private snoopingViewHost(): SnoopingViewHost {
+    return {
+      igmpSnoopingGlobal: (vlan) =>
+        this.showIgmpSnoopingGlobal(vlan === undefined ? [] : [vlan]),
+      igmpSnoopingGroups: (vlan) =>
+        this.showIgmpSnoopingGroups(vlan === undefined ? [] : ['vlan', vlan]),
+      igmpSnoopingMrouter: () => this.showIgmpSnoopingMrouter(),
+      igmpSnoopingQuerier: () => this.showIgmpSnoopingQuerier(),
+      pimSnooping: (words) => this.showPimSnooping(words.map((s) => s.toLowerCase())),
+    };
   }
 
   /** L'en-tete que les trois vues globales partagent. */
@@ -2395,6 +2390,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...configVlanSpecs(() => this.configVlanHost()),
       ...testEtherChannelSpecs(() => this.testEtherChannelHost()),
       ...switchGlobalSpecs(() => this.switchGlobalHost()),
+      ...snoopingViewSpecs(() => this.snoopingViewHost()),
       ...this.dot1xSpecs(),
       ...this.vtpConfigSpecs(),
       ...this.daiSpecs(),
