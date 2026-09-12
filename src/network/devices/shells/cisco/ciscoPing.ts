@@ -1,3 +1,5 @@
+import { CISCO_ERRORS } from '../cli-utils';
+
 /**
  * Shared Cisco IOS `ping` helpers.
  *
@@ -60,6 +62,7 @@ export interface ParsedPing {
   protocol: 'ip' | 'ipv6';
   /** Set when the target is missing or malformed — caller should echo it. */
   error?: string;
+  badToken?: string;
 }
 
 /**
@@ -108,26 +111,29 @@ export function parsePingArgs(args: string[]): ParsedPing {
   }
   base.target = args[i++]?.trim() || '';
 
+  const COMPTEURS: Readonly<Record<string, (n: number) => void>> = {
+    repeat: (n) => { base.count = n; },
+    timeout: (n) => { base.timeoutMs = n * 1000; },
+    size: (n) => { base.sizeBytes = n; },
+  };
+
   while (i < args.length) {
-    const kw = args[i]?.toLowerCase();
-    if (kw === 'source' && args[i + 1]) {
+    const kw = args[i]?.toLowerCase() ?? '';
+    if (kw === 'source') {
+      if (!args[i + 1]) return { ...base, error: CISCO_ERRORS.INCOMPLETE };
       base.sourceIP = args[i + 1];
       i += 2;
-    } else if (kw === 'repeat' && args[i + 1]) {
-      const n = parseInt(args[i + 1], 10);
-      if (!isNaN(n) && n > 0) base.count = n;
-      i += 2;
-    } else if (kw === 'timeout' && args[i + 1]) {
-      const n = parseInt(args[i + 1], 10);
-      if (!isNaN(n) && n > 0) base.timeoutMs = n * 1000;
-      i += 2;
-    } else if (kw === 'size' && args[i + 1]) {
-      const n = parseInt(args[i + 1], 10);
-      if (!isNaN(n) && n > 0) base.sizeBytes = n;
-      i += 2;
-    } else {
-      i++;
+      continue;
     }
+    const poser = COMPTEURS[kw];
+    if (!poser) return { ...base, error: CISCO_ERRORS.INVALID_INPUT, badToken: args[i] };
+    if (!args[i + 1]) return { ...base, error: CISCO_ERRORS.INCOMPLETE };
+    const n = parseInt(args[i + 1], 10);
+    if (isNaN(n) || n <= 0 || !/^\d+$/.test(args[i + 1])) {
+      return { ...base, error: CISCO_ERRORS.INVALID_INPUT, badToken: args[i + 1] };
+    }
+    poser(n);
+    i += 2;
   }
 
   if (!base.target) {

@@ -1001,6 +1001,19 @@ connexion. La sonde `probe-ssh-verdict-de-transit-sur-le-fil` tient le
 resultat, et le note : les quatre verdicts etaient DEJA justes — ce qui
 manquait, c'est qu'ils soient subis.
 
+**Puis (lot « le client entend l'ICMP du fil ») la DERNIERE porte
+re-derivee cote client est tombee.** `inboundFirewallVerdict` atteignait
+l'`iptables` de la machine distante et tranchait AVANT la sonde du fil :
+un `ssh` bloque par une liste de ROUTEUR se faisait donc juger par un
+pare-feu qu'il n'avait pas atteint, et la consultation INCREMENTAIT ses
+compteurs pour une trame jamais recue. La cause etait en amont — la
+sonde apatride etait SOURDE a l'ICMP (`onIcmpUnreachable` ne parcourait
+que `sockets`, or `scanProbe` n'en ouvre aucun), si bien que tout refus
+se presentait comme un silence. La sonde entend maintenant les deux
+classes de code, et le verdict du client vient du fil seul. Restent les
+gates sshd re-derivees (`Match Address`, forced-command, banner…) et la
+commande distante executee en memoire, ci-dessous.
+
 **La note qui declarait ce rejeu « porteur » etait PERIMEE.** Elle
 affirmait que le chemin `tcpConnectOutcome`/`TcpStack` n'atteignait pas
 `evaluateForDataPlane` du routeur de transit. Remesure, en neutralisant

@@ -99,11 +99,20 @@ describe('une route IPv6 par interface existe', () => {
     expect(refus).toContain('% Invalid next-hop address');
   });
 
+  /*
+   * Le refus a CHANGE D'ENDROIT, pas de sens. Le prefixe est desormais
+   * une place typee du socle, donc il est refuse au CARET, au jeton
+   * fautif, avant que le gestionnaire soit appele — la phrase
+   * « % Invalid prefix format » etait une invention de ce simulateur, et
+   * le caret dit en plus OU l'operateur s'est trompe. Ce qui est exige
+   * ici reste ce que le titre annonce : un refus, et pas un rangement
+   * silencieux.
+   */
   it('un PREFIXE malforme est refuse aussi', async () => {
     const { routeur } = await maquette();
     await routeur.executeCommand('configure terminal');
     const refus = await routeur.executeCommand('ipv6 route zorglub/64 2001:DB8:1::2');
-    expect(refus).toContain('% Invalid prefix format');
+    expect(refus).toMatch(/^%/m);
   });
 
   it('TEMOIN : la forme par SAUT SUIVANT marche toujours', async () => {

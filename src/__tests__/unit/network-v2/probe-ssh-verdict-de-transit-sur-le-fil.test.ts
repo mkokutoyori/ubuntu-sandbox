@@ -22,12 +22,31 @@
  * celui des balayages `nmap`) et lit ce qui revient.
  *
  * Sources. Le comportement attendu est celui d'OpenSSH sur un reseau
- * reel : un SYN JETE en transit ne produit ni RST ni ICMP, donc le
- * client attend puis rend `Connection timed out` ; un port ferme sur
- * l'hote produit un RST, donc `Connection refused`. Les listes Cisco
- * etendues sont citees par leur comportement standard : une liste
- * appliquee `in` juge le paquet a l'entree de l'interface, et
- * `permit tcp any any eq 22` ne sauve que le port 22.
+ * reel : un port ferme sur l'hote produit un RST, donc
+ * `Connection refused`. Les listes Cisco etendues sont citees par leur
+ * comportement standard : une liste appliquee `in` juge le paquet a
+ * l'entree de l'interface, et `permit tcp any any eq 22` ne sauve que le
+ * port 22.
+ *
+ * CORRECTION d'une premisse FAUSSE de cette sonde, et elle etait ecrite
+ * ici meme. Ce fichier affirmait qu'« un SYN JETE en transit ne produit
+ * ni RST ni ICMP, donc le client attend puis rend
+ * `Connection timed out` ». C'est faux d'un routeur Cisco : une liste
+ * qui refuse repond en ICMP « communication administratively
+ * prohibited » (type 3, code 13) SAUF si l'interface porte
+ * `no ip unreachables`. `Router.deniedByInboundACL` l'emet depuis
+ * toujours, son propre commentaire le dit, et `sendICMPError` honore
+ * bien le reglage. Le noyau du client tire du code 13 un
+ * `EHOSTUNREACH` (`icmp_err_convert`, `net/ipv4/icmp.c`), qu'OpenSSH
+ * rend « No route to host » — et non un delai d'attente.
+ *
+ * Ce que la sonde epinglait n'etait donc pas le reseau mais la SURDITE
+ * du client : sa sonde apatride n'ecoutait pas l'ICMP, si bien que tout
+ * refus se presentait comme un silence. Les deux cas concernes exigent
+ * desormais le mot juste, et un cas de PLUS mesure la distinction que
+ * le simulateur portait sans que rien ne la lise : avec
+ * `no ip unreachables` sur l'interface d'entree, le refus redevient
+ * muet et le delai d'attente est alors la bonne reponse.
  *
  * Discrimine par `git stash` : 2 des 7 cas tombent avant correctif, et
  * LESQUELS est tout le resultat. Les QUATRE cas de verdict — temoin,
@@ -58,7 +77,7 @@ beforeEach(() => {
 
 const DENY_TOUT = 'access-list 100 deny ip any any';
 
-async function labo(acl: readonly string[]) {
+async function labo(acl: readonly string[], entree: readonly string[] = []) {
   const routeur = new CiscoRouter('R1');
   const pc = new LinuxPC('linux-pc', 'PC1');
   const srv = new LinuxServer('linux-server', 'SRV1');
@@ -67,7 +86,8 @@ async function labo(acl: readonly string[]) {
   c1.connect(routeur.getPort('GigabitEthernet0/0')!, pc.getPort('eth0')!);
   c2.connect(routeur.getPort('GigabitEthernet0/1')!, srv.getPort('eth0')!);
   for (const commande of ['enable', 'configure terminal',
-    'interface GigabitEthernet0/0', 'ip address 10.0.1.1 255.255.255.0', 'no shutdown', 'exit',
+    'interface GigabitEthernet0/0', 'ip address 10.0.1.1 255.255.255.0', 'no shutdown',
+    ...entree, 'exit',
     'interface GigabitEthernet0/1', 'ip address 10.0.2.1 255.255.255.0', 'no shutdown', 'exit',
     ...acl,
     ...(acl.length
@@ -87,8 +107,10 @@ async function labo(acl: readonly string[]) {
 
 const SSH = 'sshpass -p secret123 ssh -o StrictHostKeyChecking=no alice@10.0.2.10 whoami';
 
-async function sshAuTravers(acl: readonly string[]): Promise<string> {
-  const { pc } = await labo(acl);
+async function sshAuTravers(
+  acl: readonly string[], entree: readonly string[] = [],
+): Promise<string> {
+  const { pc } = await labo(acl, entree);
   return (await pc.executeCommand(SSH)).trim();
 }
 
@@ -97,8 +119,13 @@ describe('Une liste de transit se SUBIT, elle ne se rejoue pas', () => {
     expect(await sshAuTravers([])).toBe('alice');
   });
 
-  it('`deny ip any any` fait expirer la connexion', async () => {
+  it('`deny ip any any` repond en ICMP 3/13 : No route to host', async () => {
     expect(await sshAuTravers([DENY_TOUT]))
+      .toContain('ssh: connect to host 10.0.2.10 port 22: No route to host');
+  });
+
+  it('`no ip unreachables` rend le refus MUET : Connection timed out', async () => {
+    expect(await sshAuTravers([DENY_TOUT], ['no ip unreachables']))
       .toContain('ssh: connect to host 10.0.2.10 port 22: Connection timed out');
   });
 
@@ -109,7 +136,7 @@ describe('Une liste de transit se SUBIT, elle ne se rejoue pas', () => {
 
   it('`permit tcp any any eq 23` ne sauve pas le port 22', async () => {
     expect(await sshAuTravers(['access-list 100 permit tcp any any eq 23', DENY_TOUT]))
-      .toContain('Connection timed out');
+      .toContain('No route to host');
   });
 
   it('le SYN refuse COUTE une trame : le verdict est subi, pas devine', async () => {

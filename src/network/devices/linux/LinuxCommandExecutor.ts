@@ -1595,7 +1595,7 @@ export class LinuxCommandExecutor {
     const opts = this.buildSshClientOpts(args, this._cmdEnv, stdinPwd);
     const target = wireExecTarget(args, this.vfs, this.cwd, this.userMgr.currentUser);
     const reachable = target !== null
-      && wireReachOutcome(this.localDevice, target.host, target.port) === 'reached';
+      && wireReachOutcome(this.localDevice, target.host, target.port) === 'open';
     const session = reachable && target !== null
       ? await this.openWireSshSession(
         target.host, target.user, stdinPwd ?? '', target.port, target.identities)

@@ -136,31 +136,6 @@ export function registerOSPFConfigCommands(configTrie: CommandTrie, ctx: CiscoSh
   });
 
   // IPv6 OSPF router configuration mode
-  configTrie.registerGreedy('ipv6 router eigrp', 'Configure EIGRP for IPv6', (args) => {
-    if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-    const asn = parseInt(args[0], 10);
-    if (Number.isNaN(asn) || asn < 1 || asn > 65535) throw new CliInvalidInput();
-    const r = ctx.r() as unknown as {
-      _ipv6EigrpProcesses?: Set<number>;
-      _recordUnhandledConfigLine?: (l: string) => void;
-    };
-    (r._ipv6EigrpProcesses ??= new Set()).add(asn);
-    ctx.setMode('config-router');
-    ctx.setSelectedRoutingProto({ proto: 'eigrp', asn });
-    return '';
-  });
-
-  configTrie.registerGreedy('ipv6 router ospf', 'Configure IPv6 OSPF', (args) => {
-    const processId = args.length >= 1 ? parseInt(args[0], 10) : 1;
-    if (isNaN(processId) || processId < 1 || processId > 65535) return '% Invalid OSPFv3 process ID';
-    const router = ctx.r();
-    if (!router._getOSPFv3EngineInternal()) {
-      router._enableOSPFv3(processId);
-    }
-    ctx.setMode('config-router-ospfv3' as any);
-    return '';
-  });
-
 }
 
 // ─── Config-Router Mode: OSPF sub-commands ───────────────────────────

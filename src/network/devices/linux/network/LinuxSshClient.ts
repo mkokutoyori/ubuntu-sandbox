@@ -21,6 +21,7 @@ import { sshUnreachableReason } from '@/terminal/ssh/wireSshLogin';
 import { IPAddress } from '../../../core/types';
 import type { TcpFlags } from '../../../tcp/types';
 import type { StatelessProbeReply } from '../../../tcp/TcpStack';
+import type { TcpWireOutcome } from '../../../tcp/types';
 import { type SshHostKeyType } from './SshKnownHostEntry';
 import { SshPortForward } from './SshPortForward';
 import type { AccountLifecycleVerdict } from '@/network/protocols/ssh/auth/ISshAuthMethod';
@@ -198,41 +199,6 @@ function effectiveSshdView(
   const cfg = SshdServerConfig.parse(raw);
   const groups = (machine.executor?.userMgr?.getUserGroups?.(user) ?? []).map(g => g.name);
   return cfg.effectiveFor({ user, groups, address: sourceIp, host: sourceHost });
-}
-
-/**
- * Ask the remote machine's iptables/ufw filter table whether an
- * inbound TCP SYN from `srcIp` to `dstPort` would be accepted.
- * Returns 'accept' / 'drop' / 'reject'. Defaults to 'accept' if the
- * remote has no firewall manager (e.g. switches).
- */
-function inboundFirewallVerdict(machine: LinuxMachine, srcIp: string, dstPort: number): 'accept' | 'drop' | 'reject' {
-  const exec = (machine as unknown as {
-    executor?: {
-      iptables?: { filterPacket: (p: object) => 'accept' | 'drop' | 'reject' };
-      firewall?: {
-        logBlockedPacket: (o: {
-          verdict: 'drop' | 'reject'; iface: string; src: string;
-          dst: string; proto: string; sport: number; dport: number;
-        }) => void;
-      };
-    };
-  }).executor;
-  const ipt = exec?.iptables;
-  if (!ipt?.filterPacket) return 'accept';
-  const dstIp = machine.getPorts().map(p => p.getIPAddress()?.toString()).find(Boolean) ?? '0.0.0.0';
-  const verdict = ipt.filterPacket({
-    direction: 'in', protocol: 6, srcIP: srcIp, dstIP: dstIp,
-    srcPort: 50000, dstPort, iface: 'eth0',
-  });
-  // Reactively record the drop in /var/log/ufw.log, as the kernel does.
-  if (verdict === 'drop' || verdict === 'reject') {
-    exec?.firewall?.logBlockedPacket({
-      verdict, iface: 'eth0', src: srcIp, dst: dstIp,
-      proto: 'tcp', sport: 50000, dport: dstPort,
-    });
-  }
-  return verdict;
 }
 
 function remoteSshdConfig(machine: LinuxMachine): SshdServerConfig {
@@ -770,19 +736,35 @@ type WireProbeDevice = {
   };
 };
 
+const OUTCOME_OF_REPLY: Readonly<Record<StatelessProbeReply, TcpWireOutcome>> = {
+  'syn-ack': 'open',
+  rst: 'refused',
+  'rst-window': 'refused',
+  'icmp-unreachable': 'refused',
+  'icmp-prohibited': 'prohibited',
+  none: 'timeout',
+};
+
 export function wireReachOutcome(
   device: object | null | undefined, destIp: string, port: number,
-): 'blocked' | 'reached' {
+): TcpWireOutcome {
   const probe = device as WireProbeDevice | null | undefined;
-  if (!probe || typeof probe.getTcpStack !== 'function') return 'reached';
+  if (!probe || typeof probe.getTcpStack !== 'function') return 'open';
   const stack = probe.getTcpStack();
-  if (!stack || typeof stack.scanProbe !== 'function') return 'reached';
-  if (IPAddress.tryParse(destIp) === null) return 'reached';
+  if (!stack || typeof stack.scanProbe !== 'function') return 'open';
+  if (IPAddress.tryParse(destIp) === null) return 'open';
   const syn: TcpFlags = {
     fin: false, syn: true, rst: false, psh: false, ack: false, urg: false, ece: false, cwr: false,
   };
-  return stack.scanProbe(destIp, port, syn) === 'none' ? 'blocked' : 'reached';
+  return OUTCOME_OF_REPLY[stack.scanProbe(destIp, port, syn)];
 }
+
+const WIRE_FAILURE_TEXT: Readonly<Record<Exclude<TcpWireOutcome, 'open'>, string>> = {
+  refused: 'Connection refused',
+  prohibited: 'No route to host',
+  unreachable: 'No route to host',
+  timeout: 'Connection timed out',
+};
 
 export function runSshClient(opts: SshClientOpts): SshClientResult {
   const { positional, flags } = splitSshArgs(opts.args);
@@ -979,19 +961,10 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
 
-  const verdict = inboundFirewallVerdict(machine, opts.sourceIp, port);
-  if (verdict === 'drop' || verdict === 'reject') {
+  const wire = wireReachOutcome(opts.sourceDevice, destIp, port);
+  if (wire !== 'open') {
     return {
-      output: verdict === 'reject'
-        ? `ssh: connect to host ${host} port ${port}: Connection refused\n`
-        : `ssh: connect to host ${host} port ${port}: Connection timed out\n`,
-      exitCode: 255,
-    };
-  }
-
-  if (wireReachOutcome(opts.sourceDevice, destIp, port) === 'blocked') {
-    return {
-      output: `ssh: connect to host ${host} port ${port}: Connection timed out\n`,
+      output: `ssh: connect to host ${host} port ${port}: ${WIRE_FAILURE_TEXT[wire]}\n`,
       exitCode: 255,
       droppedSyn: { localIp: opts.sourceIp, peerIp: destIp, peerPort: port },
     };
