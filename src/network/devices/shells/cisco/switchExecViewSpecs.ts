@@ -13,6 +13,10 @@ export interface SwitchExecViewHost {
   interfacesTrunk(): string;
   interfacesCounters(iface: string | null): string;
   queuingInterface(iface: string): string;
+  accessLists(name: string | null): string;
+  portSecurity(): string;
+  portSecurityAddress(): string;
+  portSecurityInterface(iface: string | null): string;
 }
 
 const EXEC = Object.freeze(['user', 'privileged']);
@@ -42,6 +46,16 @@ const PORT_EXIGE: ArgumentSpec = {
 const GROUPE: ArgumentSpec = {
   name: 'groupe', type: 'INT', range: [1, 64], description: 'Channel group number',
 };
+
+const NOM_DE_LISTE: ArgumentSpec = {
+  name: 'liste', type: 'WORD', optional: true,
+  description: 'Name or number of one access list',
+};
+
+const VUES_ACL: ReadonlyArray<readonly [readonly string[], string]> = [
+  [['show', 'access-lists'], 'Display access lists'],
+  [['show', 'ip', 'access-lists'], 'Display IP access lists'],
+];
 
 const VUES_ETHERCHANNEL: ReadonlyArray<readonly [string, string]> = [
   ['detail', 'Detailed EtherChannel state'],
@@ -141,6 +155,47 @@ export function switchExecViewSpecs(ctx: () => SwitchExecViewHost): CommandSpec[
       description: 'Port-channel information for one group',
       modes: EXEC, minPrivilege: 1,
       run: (_session, args) => ctx().etherChannel([args.groupe, 'port-channel']),
+    },
+    /*
+     * Les deux vues d'ACL ne lisent qu'UN argument, et le prennent pour
+     * un nom de liste. Leur table de completion annoncait pourtant
+     * `interface` et `address` — copies de celle de `show
+     * port-security`, qui les honore vraiment — si bien que `show
+     * access-lists interface` cherchait une liste nommee « interface »
+     * et rendait une vue vide sans un mot.
+     */
+    ...VUES_ACL.map(([chemin, description]): CommandSpec => ({
+      id: `show-${chemin.join('-')}`,
+      path: [...chemin, NOM_DE_LISTE],
+      description,
+      modes: EXEC, minPrivilege: 1,
+      run: (_session, args) => ctx().accessLists(args.liste || null),
+    })),
+    {
+      id: 'show-port-security',
+      path: ['show', 'port-security'],
+      description: 'Display port security',
+      modes: EXEC, minPrivilege: 1,
+      run: () => ctx().portSecurity(),
+    },
+    {
+      id: 'show-port-security-address',
+      path: ['show', 'port-security', 'address'],
+      description: 'Secure MAC addresses',
+      modes: EXEC, minPrivilege: 1,
+      run: () => ctx().portSecurityAddress(),
+    },
+    /*
+     * La place est FACULTATIVE : `show port-security interface` sans nom
+     * rend le tableau de resume, une sonde anterieure l'a mesure, et
+     * c'est une reponse — donc le `<cr>` que `?` annonce la est tenu.
+     */
+    {
+      id: 'show-port-security-interface',
+      path: ['show', 'port-security', 'interface', PORT_FACULTATIF],
+      description: 'Port security for an interface',
+      modes: EXEC, minPrivilege: 1,
+      run: (_session, args) => ctx().portSecurityInterface(args.iface || null),
     },
   ];
 }

@@ -1087,22 +1087,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     buildNamedStdACLCommands(this.configStdNaclTrie, this.namedAclEditContext());
     buildNamedExtACLCommands(this.configExtNaclTrie, this.namedAclEditContext());
     this.registerL3Commands();
-    for (const t of [this.userTrie, this.privilegedTrie]) {
-      const vueAcl = (args: string[]): string =>
-        showAccessListsFrom(this.d().getVaclEngine().getAccessListsInternal(), args[0]);
-      t.registerGreedy('show access-lists', 'Display ACLs', vueAcl);
-      t.registerGreedy('show ip access-lists', 'Display IP access lists', vueAcl);
-      t.registerGreedy('show port-security', 'Display port security', (args) => {
-        if (args[0]?.toLowerCase() === 'interface' && args[1]) {
-          return this.showPortSecurityInterface(this.d(), args.slice(1).join(' '));
-        }
-        if (args[0]?.toLowerCase() === 'address') {
-          return this.showPortSecurityAddress(this.d());
-        }
-        return this.showPortSecurityOverview(this.d());
-      });
-    }
-
     this.registerShowCompletionKeywords();
   }
 
@@ -3148,16 +3132,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
    * constructor, after every command family is registered.
    */
   private registerShowCompletionKeywords(): void {
-    for (const t of [this.privilegedTrie, this.userTrie]) {
-      t.addCompletionKeywords('show access-lists', [
-        { keyword: 'interface', description: 'ACLs applied to an interface' },
-        { keyword: 'address', description: 'Filter by address' },
-      ]);
-      t.addCompletionKeywords('show port-security', [
-        { keyword: 'interface', description: 'Port security for an interface' },
-        { keyword: 'address', description: 'Secure MAC addresses' },
-      ]);
-    }
     const t = this.privilegedTrie;
     t.addCompletionKeywords('show interfaces', [
       { keyword: 'status', description: 'Interface line status' },
@@ -5387,6 +5361,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         if (!nom || !this.d().getPort(nom)) return formatInvalidInput(16);
         return this.showInterfacesCounters(nom);
       },
+      accessLists: (nom) => showAccessListsFrom(
+        this.d().getVaclEngine().getAccessListsInternal(), nom ?? undefined),
+      portSecurity: () => this.showPortSecurityOverview(this.d()),
+      portSecurityAddress: () => this.showPortSecurityAddress(this.d()),
+      portSecurityInterface: (iface) => iface === null
+        ? this.showPortSecurityOverview(this.d())
+        : this.showPortSecurityInterface(this.d(), iface),
       queuingInterface: (iface) => {
         const nom = this.resolveInterfaceName(iface) ?? iface;
         if (!this.d().getPort(nom)) return formatInvalidInput(23);
