@@ -1591,8 +1591,9 @@ export class LinuxCommandExecutor {
   }
 
   async runSshExecAsync(
-    args: string[], offeredPassword?: string,
+    rawArgs: string[], offeredPassword?: string,
   ): Promise<{ output: string; exitCode: number }> {
+    const args = rawArgs.map(word => this.expandTilde(word));
     const stdinPwd = (offeredPassword
       ?? (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '')
       .split('\n')[0] || undefined;
