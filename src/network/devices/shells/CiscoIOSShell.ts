@@ -82,7 +82,7 @@ import {
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import {
-  keyChainSubmodeSpecs, keyChainKeySubmodeSpecs,
+  keyChainSubmodeSpecs, keyChainKeySubmodeSpecs, keyChainGlobalSpecs, keyChainShowSpecs,
 } from './cisco/CiscoKeyChainCommands';
 import {
   buildIpSlaConfigCommands, registerIpSlaTypeSubModes,
@@ -498,6 +498,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...this.vrfSubmodeSpecs(),
       ...trackSubmodeSpecs(this),
       ...trackEntrySpecs(() => routerTrackEntryHost(this), ['config']),
+      ...keyChainGlobalSpecs(this),
+      ...keyChainShowSpecs(this),
       ...keyChainSubmodeSpecs(this),
       ...keyChainKeySubmodeSpecs(this),
       ...routeMapSpecs(() => this.routeMapHost()),
