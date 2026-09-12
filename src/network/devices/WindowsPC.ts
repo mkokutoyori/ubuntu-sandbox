@@ -239,7 +239,7 @@ const TASK_TICK_MS = 60_000;
  */
 function w32ReferenceId(ref: string): string {
   if (!ref || ref === '.INIT.') return '0x00000000 (unspecified)';
-  if (!/^\d+\.\d+\.\d+\.\d+$/.test(ref)) return `0x00000000 (${ref})`;
+  if (IPAddress.tryParse(ref) === null) return `0x00000000 (${ref})`;
   const hex = ref.split('.')
     .map((o) => parseInt(o, 10).toString(16).toUpperCase().padStart(2, '0')).join('');
   return `0x${hex} (source IP:  ${ref})`;
@@ -2245,8 +2245,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         },
       },
     }).then(r => {
-      const peerIp = this.resolveSshPeer(args);
-      if (peerIp && !/Permission denied|refused|timed out|Could not resolve|No route/i.test(r.output)) {
+      const peerIp = r.exitCode === 0 ? this.resolveSshPeer(args) : null;
+      if (peerIp) {
         const entry = this.socketTable.connect('tcp', sourceIp, 0, peerIp, 22, undefined, 'ssh.exe');
         this.socketTable.transition(entry.id, 'TIME_WAIT');
       }
@@ -2258,7 +2258,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     for (const a of args) {
       if (a.startsWith('-')) continue;
       const at = a.includes('@') ? a.split('@')[1] : a;
-      if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(at)) return at;
+      if (IPAddress.tryParse(at) !== null) return at;
     }
     return null;
   }
@@ -4177,7 +4177,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // The static hosts table (including the machine's own name) is
     // answered locally, ahead of any DNS query — same order as the
     // resolveHostname() resolver.
-    if (host && !/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+    if (host && IPAddress.tryParse(host) === null) {
       const ownHostName = typeof this.hostname === 'string' ? this.hostname.toLowerCase() : '';
       const hostsIp = this.readHostsFile().resolve(host, 4)
         ?? (ownHostName && host.toLowerCase() === ownHostName ? '127.0.0.1' : null);
