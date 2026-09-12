@@ -224,7 +224,8 @@ function suggestionsAt(
    */
   const ici = table.specAt(cursor.node, session, AIDE);
   const restePartiel = cursor.node.argument?.type === 'REST'
-    && (cursor.node.argument.restMinWords ?? 0) > cursor.restWords.length;
+    ? (cursor.node.argument.restMinWords ?? 0) > cursor.restWords.length
+    : argument?.type === 'REST' && (argument.restMinWords ?? 0) > 0;
   if (trigger === 'QUESTION_MARK' && ici && cursor.prefix.length === 0
     && !enAttente && !restePartiel && !ici.existsOnlyNegated) {
     out.push({ value: '<cr>', description: '', isArgument: true });

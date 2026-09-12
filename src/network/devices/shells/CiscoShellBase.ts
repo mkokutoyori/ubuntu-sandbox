@@ -4498,6 +4498,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           description: 'Interface to use for source address',
         }],
         undoArgs: [],
+        undoArgsOnlyNegated: true,
       },
       {
         path: ['ntp', 'trusted-key'],
@@ -4757,7 +4758,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           description: 'Current time', pattern: /^([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/,
         }],
         tail: {
-          name: 'date', type: 'REST', optional: true, description: 'Day, month and year',
+          name: 'date', type: 'REST', restMinWords: 3, literal: 'DAY MONTH YEAR',
+          description: 'Day, month and year',
         },
         negatable: false,
       },
@@ -9828,37 +9830,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.applyServiceTimestamps(args, false));
     trie.registerGreedy('no service timestamps', 'Stop timestamping messages', (args) =>
       this.applyServiceTimestamps(args, true));
-    // Chaque sous-commande de `ntp` est un VRAI noeud de l'arbre.
-    //
-    // Un unique noeud glouton n'a pas de sous-arbre : son aide ne
-    // pouvait donc rien descendre, et `?` reproduisait la meme liste a
-    // toutes les profondeurs — `ntp access-group access-group ?`
-    // proposait encore la liste complete, et la commande etait acceptee.
-    // Pire, la liste elle-meme etait EXTRAITE du code source du
-    // gestionnaire (`autoContinuations`), d'ou trois mots qui ne sont
-    // pas des sous-commandes de `ntp` : `md5` (argument
-    // d'`authentication-key`), `prefer` (argument de `server`) et
-    // `mode` — qui portait « Set trunking mode of the interface », la
-    // description de `switchport mode`, une fuite d'une commande vers
-    // une autre.
-    //
-    // Declarer les vrais enfants les exclut de l'extraction, donne a
-    // chacun sa propre aide, et fait refuser ce qui n'existe pas.
-    trie.register('ntp', 'Configure NTP', () => CISCO_ERRORS.INCOMPLETE);
-
-
     // Même chemin exact que la forme d'EXEC privilégié : deux analyseurs
     // pour une seule commande finiraient par se contredire sur la même
     // date.
-    // `calendar-valid` est declare pour LUI-MEME, non plus comme le seul
-    // mot qu'un noeud glouton accepte. Le noeud glouton extrayait ses
-    // suites du code de son propre gestionnaire, et proposait donc un
-    // `timezone` sans description depuis que la sous-commande de ce nom
-    // est passee au socle.
-    trie.register('clock', 'Configure time-of-day clock', () => {
-      throw new CliIncomplete();
-    });
-
     trie.registerGreedy('enable secret', 'Set enable secret', (args) => {
       const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
       let algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'md5';
