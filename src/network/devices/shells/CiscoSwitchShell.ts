@@ -3048,12 +3048,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // de trafic dans le plan de données. Inventer un pourcentage courant
     // serait la seule façon de mentir ici ; le seuil, lui, est exact.
 
-    this.privilegedTrie.registerGreedy('show interfaces trunk', 'Display trunk ports', () => {
-      return this.showTrunkTable(this.d().getPortNames());
-    });
-
-    this.privilegedTrie.registerGreedy('show etherchannel', 'Display EtherChannel',
-      (args) => this.showEtherchannel(args));
     this.registerEtherchannelShowRest();
   }
 
@@ -3140,25 +3134,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // dead-ended on "% Incomplete command." — the trie's own child-first
     // lookahead (CommandTrie.ts) still routes `... counters errors`
     // through to its own leaf action underneath, unaffected.
-    this.privilegedTrie.registerGreedy('show interfaces counters', 'Display interface counters', (args) => {
-      if (args.length === 0) return this.showInterfacesCounters(null);
-      const name = this.resolveInterfaceName(args.join(' '));
-      if (!name || !this.d().getPort(name)) {
-        return formatInvalidInput(16);
-      }
-      return this.showInterfacesCounters(name);
-    });
-
-
-    this.privilegedTrie.registerGreedy('show queuing interface', 'Display the 802.1p trust state of an interface', (args) => {
-      const target = args.join(' ');
-      const name = this.resolveInterfaceName(target) ?? target;
-      if (!name || !this.d().getPort(name)) {
-        return formatInvalidInput(23);
-      }
-      return this.showQueuingInterface(name);
-    });
-    this.privilegedTrie.requireArgs('show queuing interface', 1);
 
     this.privilegedTrie.register('write', 'Save running-config to startup-config', () => {
       return this.d().writeMemory();
@@ -5404,6 +5379,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       dhcpDatabase: () => dhcp().formatDatabaseShow(),
       dhcpSnoopingStatistics: () => this.showIpDhcpSnoopingStatistics(),
       stormControl: (sorte) => this.showStormControl(sorte),
+      etherChannel: (mots) => this.showEtherchannel([...mots]),
+      interfacesTrunk: () => this.showTrunkTable(this.d().getPortNames()),
+      interfacesCounters: (iface) => {
+        if (iface === null) return this.showInterfacesCounters(null);
+        const nom = this.resolveInterfaceName(iface);
+        if (!nom || !this.d().getPort(nom)) return formatInvalidInput(16);
+        return this.showInterfacesCounters(nom);
+      },
+      queuingInterface: (iface) => {
+        const nom = this.resolveInterfaceName(iface) ?? iface;
+        if (!this.d().getPort(nom)) return formatInvalidInput(23);
+        return this.showQueuingInterface(nom);
+      },
     };
   }
 
