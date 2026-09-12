@@ -320,6 +320,7 @@ const AGREGATION_PLACES: Readonly<Record<string, ArgumentSpec>> = {
 const DAI_CHEMINS: ReadonlySet<string> = new Set([
   'ip arp inspection vlan', 'ip arp inspection validate', 'ip arp inspection filter',
   'errdisable recovery cause arp-inspection', 'errdisable recovery cause bpduguard',
+  'errdisable recovery cause psecure-violation',
   'errdisable recovery interval',
   'ip arp inspection trust', 'ip arp inspection limit rate',
   'clear ip arp inspection statistics',
@@ -1158,6 +1159,26 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         if (sw._getBpduGuardRecoverySec?.() === 0) sw._setBpduGuardRecoverySec?.(30);
         return '';
       });
+    trie.config.registerGreedy('errdisable recovery cause psecure-violation',
+      'Auto-recover ports err-disabled by port-security', () => {
+        if (this.d()._getPsecRecoverySec() <= 0) this.d()._setPsecRecoverySec(30);
+        return '';
+      });
+    trie.config.registerGreedy('no errdisable recovery cause arp-inspection',
+      'Stop auto-recovering DAI err-disabled ports', () => {
+        this.d()._setArpRecoverySec(0);
+        return '';
+      });
+    trie.config.registerGreedy('no errdisable recovery cause bpduguard',
+      'Stop auto-recovering BPDU Guard err-disabled ports', () => {
+        this.d()._setBpduGuardRecoverySec?.(0);
+        return '';
+      });
+    trie.config.registerGreedy('no errdisable recovery cause psecure-violation',
+      'Stop auto-recovering port-security err-disabled ports', () => {
+        this.d()._setPsecRecoverySec(0);
+        return '';
+      });
     trie.config.registerGreedy('errdisable recovery interval',
       'Auto-recovery interval (sec)', (args) => {
         const n = parseInt(args[0] ?? '', 10);
@@ -1374,13 +1395,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // trame) : le moteur, la liaison et le filtrage existaient, il
     // manquait la commande qui les relie.
 
-
-    // ── errdisable recovery ──
-    this.configTrie.register('errdisable recovery cause psecure-violation',
-      'Auto-recover ports err-disabled by port-security', () => {
-        if (this.d()._getPsecRecoverySec() <= 0) this.d()._setPsecRecoverySec(30);
-        return '';
-      });
 
     this.privilegedTrie.describeNode('clear port-security', 'Clear secure MAC entries');
     // `describeNode` sort en silence sur un noeud absent : l'appel doit
@@ -2557,6 +2571,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
        * TOUTES.
        */
       [['private-vlan'], 'Configure the private VLAN role or association'],
+      [['errdisable'], 'Error disable recovery configuration'],
+      [['errdisable', 'recovery'], 'Configure error disable recovery'],
+      [['errdisable', 'recovery', 'cause'],
+        'Cause of the err-disable condition to recover from'],
     ];
   }
 
