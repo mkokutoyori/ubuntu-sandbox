@@ -825,6 +825,48 @@ const CMAP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
   { keyword: 'any', description: 'Any packets', argument: null },
 ];
 
+/**
+ * Ce que la configuration globale de securite confie au socle.
+ *
+ * La liste est NOMMEE plutot que devinee par un prefixe : ce
+ * constructeur porte une trentaine de familles aux grammaires tres
+ * inegales, et un filtre large y emmenerait des gloutons dont la place
+ * n'est pas encore decrite. On y ajoute une famille quand elle est
+ * prete, et la liste dit ou en est la migration.
+ *
+ * `ip multicast-routing` y entre pour une raison de plus que le but :
+ * enregistre GLOUTON alors qu'il ne lit aucun argument, il acceptait
+ * `ip multicast-routing zorglub` sans rien en faire.
+ */
+const SECURITE_AU_SOCLE: ReadonlySet<string> = new Set([
+  'control-plane',
+  'ip multicast-routing',
+  'no ip multicast-routing',
+  'parameter-map type inspect',
+]);
+
+const PLACES_SECURITE_GLOBALE:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'control-plane': null,
+  'ip multicast-routing': null,
+  'no ip multicast-routing': null,
+  'parameter-map type inspect': {
+    name: 'nom', type: 'WORD', description: 'Name of the parameter map',
+  },
+};
+
+export function securityGlobalSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildSecurityConfigCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      skip: (path) => !SECURITE_AU_SOCLE.has(path),
+      argumentFor: (path) => PLACES_SECURITE_GLOBALE[path],
+    },
+  );
+}
+
 export function classMapSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
   return specsFromTrieRegistrations(
     (collector) => buildClassMapSubmodeOn(collector as unknown as CommandTrie, ctx),
