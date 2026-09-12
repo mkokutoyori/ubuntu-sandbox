@@ -82,7 +82,7 @@ import {
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import {
-  keyChainSubmodeSpecs, keyChainKeySubmodeSpecs,
+  keyChainSubmodeSpecs, keyChainKeySubmodeSpecs, keyChainGlobalSpecs, keyChainShowSpecs,
 } from './cisco/CiscoKeyChainCommands';
 import {
   buildIpSlaConfigCommands, registerIpSlaTypeSubModes,
@@ -171,13 +171,13 @@ import {
   buildSecurityConfigCommands, buildSecurityInterfaceCommands,
   buildSecuritySubmodeCommands, buildSecurityShowCommands, securityInterfaceSpecs,
   securityShowSpecs,
-  classMapSubmodeSpecs, policyMapSubmodeSpecs, policyClassSubmodeSpecs,
+  classMapSubmodeSpecs, policyMapSubmodeSpecs, policyClassSubmodeSpecs, securityGlobalSpecs,
   controlPlaneSubmodeSpecs, zoneSubmodeSpecs, zonePairSubmodeSpecs,
   trustpointSubmodeSpecs,
   type CiscoSecurityShellContext,
 } from './cisco/CiscoSecurityCommands';
 import {
-  buildEemNetflowArchiveConfigCommands, buildEemAppletSubmode,
+  buildEemNetflowArchiveConfigCommands, buildEemAppletSubmode, netflowSpecs,
   buildFlowExporterSubmode, buildFlowRecordSubmode, buildFlowMonitorSubmode,
   buildArchiveSubmode, buildArchiveLogSubmode,
   eemAppletSpecs, flowExporterSpecs, flowRecordSpecs, flowMonitorSpecs,
@@ -485,6 +485,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...flowExporterSpecs(this),
       ...flowRecordSpecs(this),
       ...flowMonitorSpecs(this),
+      ...netflowSpecs(this),
+      ...securityGlobalSpecs(this),
       ...classMapSubmodeSpecs(this),
       ...policyMapSubmodeSpecs(this),
       ...policyClassSubmodeSpecs(this),
@@ -498,6 +500,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...this.vrfSubmodeSpecs(),
       ...trackSubmodeSpecs(this),
       ...trackEntrySpecs(() => routerTrackEntryHost(this), ['config']),
+      ...keyChainGlobalSpecs(this),
+      ...keyChainShowSpecs(this),
       ...keyChainSubmodeSpecs(this),
       ...keyChainKeySubmodeSpecs(this),
       ...routeMapSpecs(() => this.routeMapHost()),
