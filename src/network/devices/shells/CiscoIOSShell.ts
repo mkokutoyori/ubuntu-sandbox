@@ -38,6 +38,7 @@ import { IPAddress, IPv6Address, SubnetMask } from '../../core/types';
 import { ipv6PorteSpecs } from './cisco/ipv6PorteSpecs';
 import { isValidIPv4 } from '../../core/ip';
 import { parsePingArgs, formatCiscoPing, looksLikeIPv6 } from './cisco/ciscoPing';
+import { CISCO_ERRORS as CISCO_TRACE_ERRORS } from './cli-utils';
 import {
   parseRouteDistinguisher, parseRouteTarget, applyRouteTarget,
   vrfStoreOf, type VrfHost, type VrfInstance,
@@ -2321,23 +2322,32 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     }
     target = args[i++]?.trim() || '';
 
+    const entierPositif = (mot: string | undefined): number | null => {
+      if (mot === undefined || !/^\d+$/.test(mot)) return null;
+      const n = parseInt(mot, 10);
+      return n > 0 ? n : null;
+    };
+
     while (i < args.length) {
       const kw = args[i]?.toLowerCase();
-      if (kw === 'ttl' && args[i + 1]) {
-        const n = parseInt(args[i + 1], 10);
-        if (!isNaN(n) && n > 0) maxHops = n;
-        i += 2;
-      } else if (kw === 'timeout' && args[i + 1]) {
-        const n = parseInt(args[i + 1], 10);
-        if (!isNaN(n) && n > 0) timeoutMs = n * 1000;
-        i += 2;
-      } else if (kw === 'probe' && args[i + 1]) {
-        const n = parseInt(args[i + 1], 10);
-        if (!isNaN(n) && n > 0) probesPerHop = n;
-        i += 2;
-      } else {
-        i++;
+      if (kw !== 'ttl' && kw !== 'timeout' && kw !== 'probe') {
+        return CISCO_TRACE_ERRORS.INVALID_INPUT;
       }
+      const attendus = kw === 'ttl' ? 2 : 1;
+      if (args.length - i - 1 < attendus) return CISCO_TRACE_ERRORS.INCOMPLETE;
+      const valeurs = args.slice(i + 1, i + 1 + attendus).map(entierPositif);
+      if (valeurs.some((n) => n === null)) return CISCO_TRACE_ERRORS.INVALID_INPUT;
+      if (kw === 'ttl') {
+        if ((valeurs[0] as number) > (valeurs[1] as number)) {
+          return CISCO_TRACE_ERRORS.INVALID_INPUT;
+        }
+        maxHops = valeurs[1] as number;
+      } else if (kw === 'timeout') {
+        timeoutMs = (valeurs[0] as number) * 1000;
+      } else {
+        probesPerHop = valeurs[0] as number;
+      }
+      i += 1 + attendus;
     }
 
     if (!target) return '% Traceroute requires a target IP address.';
