@@ -1909,12 +1909,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       this.showMstConfig());
     this.configMstTrie.register('show pending', 'Show pending MST config', () =>
       this.showMstConfig());
-    // The base redirects `show …` in config modes to the privileged
-    // trie, so `show current` must also resolve there.
-    this.privilegedTrie.register('show current', 'Show current MST config', () =>
-      this.showMstConfig());
-    this.privilegedTrie.register('show pending', 'Show pending MST config', () =>
-      this.showMstConfig());
     this.configMstTrie.registerGreedy('no', 'Negate MST option', (args) => {
       const head = args[0]?.toLowerCase();
       const ag = this.stpAgentOf(this.d());

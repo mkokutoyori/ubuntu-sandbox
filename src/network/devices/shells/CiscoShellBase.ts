@@ -2895,6 +2895,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
 
     if (this.isConfigMode() && lower.startsWith('show ')) {
+      if (this.getActiveTrie().match(cmdPart).status === 'ok') {
+        const output = this.executeOnTrie(cmdPart);
+        this.deviceRef = null;
+        return applyPipeFilter(output, pipeFilter);
+      }
       const savedMode = this.mode;
       this.mode = 'privileged';
       const output = this.executeOnTrie(cmdPart);
