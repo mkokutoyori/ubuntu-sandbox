@@ -2236,6 +2236,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       sourceIp,
       sourceUser: user,
       sourceHome: `C:\\Users\\${user}`,
+      localAgent: this.sshAgent,
       localFs: {
         readFile: (p: string) => this.fs.readFile(p),
         createFile: (p: string, c: string) => {
