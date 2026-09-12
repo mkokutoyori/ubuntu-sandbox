@@ -58,10 +58,13 @@ import {
 } from './cisco/testEtherChannelSpecs';
 import { switchGlobalSpecs, type SwitchGlobalHost } from './cisco/switchGlobalSpecs';
 import { snoopingViewSpecs, type SnoopingViewHost } from './cisco/snoopingViewSpecs';
+import { snoopingConfigSpecs } from './cisco/snoopingConfigSpecs';
 import {
   switchExecViewSpecs, type SwitchExecViewHost,
 } from './cisco/switchExecViewSpecs';
 import { igmpSnoopingRunningConfigLines } from '../../igmp-snooping/snoopingRunningConfig';
+import { pimSnoopingRunningConfigLines } from '../../pim-snooping/snoopingRunningConfig';
+import type { PimSnoopingConfig } from '../../pim-snooping/types';
 import type { SnoopingConfig } from '../../igmp-snooping/types';
 import type { CiscoSwitch } from '../CiscoSwitch';
 import type { PromptMap } from './PromptBuilder';
@@ -1649,19 +1652,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const agent = this.requireIgmpSnooping();
     const kw = rest[0];
     if (kw === 'address') {
-      if (on && !rest[1]) return CISCO_ERRORS.INCOMPLETE;
-      if (on && !/^\d{1,3}(\.\d{1,3}){3}$/.test(rest[1])) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
       agent.setQuerierAddress(on ? rest[1] : null);
       return '';
     }
     if (kw === 'query-interval') {
-      const secs = parseInt(rest[1] ?? '', 10);
-      if (on && (Number.isNaN(secs) || secs < 1 || secs > 18000)) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      agent.setQuerierInterval(on ? secs : 60);
+      agent.setQuerierInterval(on ? parseInt(rest[1] ?? '', 10) : 60);
       return '';
     }
     if (kw !== undefined) return CISCO_ERRORS.INVALID_INPUT;
@@ -1719,10 +1714,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private registerPimSnoopingCommands(): void {
-    this.configTrie.registerGreedy('ip pim snooping', 'PIM snooping config',
-      (args) => this.applyPimSnooping(args, true));
-    this.configTrie.registerGreedy('no ip pim snooping', 'Disable PIM snooping',
-      (args) => this.applyPimSnooping(args, false));
   }
 
   private applyIgmpSnooping(args: string[], on: boolean): string {
@@ -1745,10 +1736,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private registerIgmpSnoopingCommands(): void {
-    this.configTrie.registerGreedy('ip igmp snooping', 'IGMP snooping config',
-      (args) => this.applyIgmpSnooping(args, true));
-    this.configTrie.registerGreedy('no ip igmp snooping', 'Disable IGMP snooping',
-      (args) => this.applyIgmpSnooping(args, false));
   }
 
   private snoopingViewHost(): SnoopingViewHost {
@@ -1951,7 +1938,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     // show spanning-tree summary | mst configuration | interface <if>
-    this.registerSwitchDebugCommands();
   }
 
   private dhcpPoolContext(): CiscoShellContext {
@@ -2377,6 +2363,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...testEtherChannelSpecs(() => this.testEtherChannelHost()),
       ...switchGlobalSpecs(() => this.switchGlobalHost()),
       ...snoopingViewSpecs(() => this.snoopingViewHost()),
+      ...snoopingConfigSpecs(() => ({
+        applyIgmp: (mots, on) => this.applyIgmpSnooping([...mots], on),
+        applyPim: (mots, on) => this.applyPimSnooping([...mots], on),
+      })),
       ...switchExecViewSpecs(() => this.switchExecViewHost()),
       ...this.dot1xSpecs(),
       ...this.vtpConfigSpecs(),
@@ -2864,13 +2854,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
   }
 
-  private registerSwitchDebugCommands(): void {
-    const svc = () => this.switchDebug();
-    this.privilegedTrie.register('show debugging', 'Display active debugging', () =>
-      this.mode === 'user'
-        ? CISCO_ERRORS.INVALID_INPUT
-        : (svc()?.format() ?? 'No debug flags are enabled'));
-  }
 
   /**
    * Ce qu'un Catalyst ajoute a la famille `debug` du socle.
@@ -4092,7 +4075,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const snoopingConfig = (sw as unknown as {
       getIgmpSnoopingAgent?: () => { getConfig(): SnoopingConfig };
     }).getIgmpSnoopingAgent?.().getConfig();
-    const snooping = snoopingConfig ? igmpSnoopingRunningConfigLines(snoopingConfig) : [];
+    const pimConfig = (sw as unknown as {
+      getPimSnoopingAgent?: () => { getConfig(): PimSnoopingConfig };
+    }).getPimSnoopingAgent?.().getConfig();
+    const snooping = [
+      ...(snoopingConfig ? igmpSnoopingRunningConfigLines(snoopingConfig) : []),
+      ...(pimConfig ? pimSnoopingRunningConfigLines(pimConfig) : []),
+    ];
     if (snooping.length > 0) { lines.push(...snooping); lines.push('!'); }
 
     // Les vues AVANT les comptes, pour la meme raison que sur le

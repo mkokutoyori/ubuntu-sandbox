@@ -178,14 +178,45 @@ describe('plusieurs candidats : Tab ecrit le COMMUN, jamais un choix', () => {
     expect(device.cliTabComplete('show cl')).toBeNull();
   });
 
+  /*
+   * La frappe mesuree etait `show debu`, et elle ne l'est plus.
+   *
+   * Elle avait deux candidats — `show debug` et `show debugging` — parce
+   * que la vue etait DECLAREE deux fois : `show debug` n'est pas une
+   * commande, c'est l'abreviation de l'autre, et un constructeur
+   * l'avait ecrite a la main. Le jour ou la duplication est fermee,
+   * `show debu` designe une seule commande et se complete entierement,
+   * ce qui est la bonne reponse — donc ce cas ne mesurait plus le
+   * prefixe commun, il mesurait un doublon.
+   *
+   * `show aaa s` le remplace : deux commandes qui existent vraiment
+   * toutes les deux, et dont le prefixe commun est plus long que la
+   * frappe.
+   */
   it('et il ecrit le prefixe commun quand il est plus long que la frappe', async () => {
     const device = await router();
 
-    const candidats = device.cliTabCandidates('show debu');
-    const complete = device.cliTabComplete('show debu');
+    const candidats = device.cliTabCandidates('show aaa s');
+    const complete = device.cliTabComplete('show aaa s');
 
-    expect(candidats.length).toBeGreaterThan(1);
+    expect(candidats).toContain('show aaa servers');
+    expect(candidats).toContain('show aaa sessions');
+    expect(complete, 'aucun prefixe commun ecrit').not.toBeNull();
+    expect(complete!.trimEnd().length, 'le prefixe commun n allonge pas la frappe')
+      .toBeGreaterThan('show aaa s'.length);
     for (const c of candidats) expect(c.startsWith(complete!.trimEnd()), c).toBe(true);
+  });
+
+  /*
+   * Et la frappe d'origine, devenue non ambigue, doit s'ecrire en
+   * ENTIER : c'est l'autre moitie de la deduplication, et sans ce cas
+   * rien ne dirait que `show debu` a cesse d'hesiter.
+   */
+  it('`show debu` ne designe plus qu une commande, et Tab l ecrit', async () => {
+    const device = await router();
+
+    expect(device.cliTabCandidates('show debu')).toEqual(['show debugging']);
+    expect(device.cliTabComplete('show debu')).toBe('show debugging ');
   });
 });
 
