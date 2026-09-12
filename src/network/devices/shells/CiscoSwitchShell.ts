@@ -1859,10 +1859,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // même module (`CiscoArchiveCommands`) plutôt que recopiée : deux
     // plateformes qui archivent différemment seraient un défaut, pas une
     // fonctionnalité.
-    this.configTrie.register('archive', 'Enter archive configuration', () => {
-      this.mode = 'config-archive';
-      return '';
-    });
     const archiveOf = () => this.archiveService();
     buildArchiveSubmodeOn(this.configArchiveTrie, archiveOf, () => {
       this.mode = 'config-archive-log';
@@ -3285,8 +3281,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // d'adresse. Le simulateur n'a pas de générateur de piège sur ce
     // chemin ; accepter la commande sans rien envoyer serait une
     // promesse non tenue, alors elle reste refusée.
-
-    this.configTrie.register('no shutdown', 'Enable interface', () => '');
 
     // ── Management plane: SSH host keys, domain, default-gateway ──
     // `crypto key generate rsa`, `crypto key zeroize rsa` et

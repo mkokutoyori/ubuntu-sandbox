@@ -47,10 +47,6 @@ export function buildEemNetflowArchiveConfigCommands(
 ): void {
   const ar = () => ctx.r().getArchiveService();
 
-  trie.register('archive', 'Enter archive configuration', () => {
-    ctx.setMode('config-archive' as CiscoShellMode);
-    return '';
-  });
   void ar;
 }
 
