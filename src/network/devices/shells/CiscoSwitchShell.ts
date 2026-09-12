@@ -58,6 +58,9 @@ import {
 } from './cisco/testEtherChannelSpecs';
 import { switchGlobalSpecs, type SwitchGlobalHost } from './cisco/switchGlobalSpecs';
 import { snoopingViewSpecs, type SnoopingViewHost } from './cisco/snoopingViewSpecs';
+import {
+  switchExecViewSpecs, type SwitchExecViewHost,
+} from './cisco/switchExecViewSpecs';
 import { igmpSnoopingRunningConfigLines } from '../../igmp-snooping/snoopingRunningConfig';
 import type { SnoopingConfig } from '../../igmp-snooping/types';
 import type { CiscoSwitch } from '../CiscoSwitch';
@@ -2391,6 +2394,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...testEtherChannelSpecs(() => this.testEtherChannelHost()),
       ...switchGlobalSpecs(() => this.switchGlobalHost()),
       ...snoopingViewSpecs(() => this.snoopingViewHost()),
+      ...switchExecViewSpecs(() => this.switchExecViewHost()),
       ...this.dot1xSpecs(),
       ...this.vtpConfigSpecs(),
       ...this.daiSpecs(),
@@ -5440,20 +5444,21 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // ── Show commands ──────────────────────────────────────────────
     for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.register('show ip traffic', 'IP traffic statistics', () =>
-        showIpTraffic(this.d()._getPortsInternal().values(), this.d()._getArpStats()));
       t.registerGreedy('show adjacency', 'Display CEF adjacency table', (args) =>
         this.showAdjacency(args));
-      const dhcp = () => this.d()._getDHCPServerInternal();
-      t.register('show ip dhcp statistics', 'Display DHCP server statistics', () =>
-        dhcp().formatStatsShow());
-      t.register('show ip dhcp lease', 'Display DHCP client leases', () =>
-        this.showIpDhcpLease());
-      t.register('show ip dhcp database', 'Display DHCP database agents', () =>
-        dhcp().formatDatabaseShow());
-      t.register('show ip dhcp snooping statistics', 'Display DHCP snooping statistics', () =>
-        this.showIpDhcpSnoopingStatistics());
     }
+  }
+
+  private switchExecViewHost(): SwitchExecViewHost {
+    const dhcp = () => this.d()._getDHCPServerInternal();
+    return {
+      ipTraffic: () =>
+        showIpTraffic(this.d()._getPortsInternal().values(), this.d()._getArpStats()),
+      dhcpStatistics: () => dhcp().formatStatsShow(),
+      dhcpLease: () => this.showIpDhcpLease(),
+      dhcpDatabase: () => dhcp().formatDatabaseShow(),
+      dhcpSnoopingStatistics: () => this.showIpDhcpSnoopingStatistics(),
+    };
   }
 
   /**
