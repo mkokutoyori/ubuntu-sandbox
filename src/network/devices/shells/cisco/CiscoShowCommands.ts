@@ -606,6 +606,45 @@ export function showRunningConfig(router: Router): string {
     if (r.type === 'default' && r.nextHop) lines.push(`ip route 0.0.0.0 0.0.0.0 ${staticRouteTail(r)}`);
   }
 
+  /*
+   * Les routes IPv6 STATIQUES se posaient, se lisaient dans
+   * `show ipv6 route` — et ne s'ecrivaient pas ici. Un export de
+   * topologie perdait donc toutes les routes IPv6 d'un laboratoire, en
+   * silence, et le reimport rendait un routeur qui ne route plus. La
+   * table v4 juste au-dessus rendait les siennes depuis toujours ; c'est
+   * la meme question posee de deux facons, et une seule avait sa
+   * reponse.
+   */
+  const ipv6Statiques = (router as unknown as {
+    _getIPv6RoutingTableInternal?: () => ReadonlyArray<{
+      prefix: { toString(): string }; prefixLength: number;
+      nextHop: { toString(): string } | null; iface: string; type: string;
+    }>;
+  })._getIPv6RoutingTableInternal?.() ?? [];
+  const lignesIpv6: string[] = [];
+  for (const r of ipv6Statiques) {
+    if (r.type !== 'static' && r.type !== 'default') continue;
+    const queue = [r.nextHop ? String(r.nextHop) : null, r.nextHop ? null : r.iface]
+      .filter((x): x is string => !!x).join(' ');
+    if (!queue) continue;
+    lignesIpv6.push(`ipv6 route ${r.prefix}/${r.prefixLength} ${queue}`);
+  }
+  if (lignesIpv6.length > 0) { lines.push(...lignesIpv6); lines.push('!'); }
+
+  /*
+   * Le processus EIGRP pour IPv6 etait range dans un ensemble que
+   * personne ne relisait : la porte s'ouvrait, le sous-mode servait, et
+   * la configuration relue n'en portait pas trace.
+   */
+  const eigrpV6 = (router as unknown as { _ipv6EigrpProcesses?: Set<number> })
+    ._ipv6EigrpProcesses;
+  if (eigrpV6 && eigrpV6.size > 0) {
+    for (const asn of [...eigrpV6].sort((a, b) => a - b)) {
+      lines.push(`ipv6 router eigrp ${asn}`);
+    }
+    lines.push('!');
+  }
+
   const vrfRoutes = (router as unknown as {
     _ciscoVrfRoutes?: Map<string, Array<{
       network: string; mask: string; nextHop: string | null; iface: string | null;

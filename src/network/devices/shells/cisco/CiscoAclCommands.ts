@@ -1002,19 +1002,7 @@ export function runningConfigIPv6ACL(router: Router): string[] {
  * Entering this command creates/selects the ACL and enters config-ipv6-nacl mode.
  */
 export function buildIPv6ACLGlobalCommands(configTrie: CommandTrie, ctx: CiscoACLShellContext): void {
-  configTrie.registerGreedy('ipv6 access-list', 'Define IPv6 named access list', (args) => {
-    const name = args[0];
-    if (!name) return '% Incomplete command.';
-    // Ré-entrer dans une liste existante l'OUVRE en ajout, comme sur IOS.
-    // L'ancienne version la vidait : rééditer une ACL liée à une interface
-    // la faisait passer, sans un mot, de filtre à liste vide — donc à
-    // `permit` inconditionnel.
-    const acls = ctx.r().getIpv6AccessLists();
-    if (!acls.some((a) => a.name === name)) acls.push({ name, entries: [] });
-    ctx.setSelectedACL(name);
-    ctx.setMode('config-ipv6-nacl');
-    return '';
-  });
+  void configTrie; void ctx;
 }
 
 /**
