@@ -121,9 +121,11 @@ import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSy
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
 import { runSshClient, wireExecTarget, wireReachOutcome } from './network/LinuxSshClient';
+import { runSshKeygenCommand, vfsKeygenHost, type SshKeygenHost } from '@/network/protocols/ssh/SshKeygenCommand';
 import {
-  KEYGEN_ALGORITHMS, keygenFingerprint, keygenPair, keygenPublicOf, keygenRandomart,
-} from './network/SshKeygenMaterial';
+  runSshAddCommand, runSshAgentCommand, type SshAgentHost,
+} from '@/network/protocols/ssh/SshAgentCommands';
+import { runSshKeyscanCommand } from '@/network/protocols/ssh/SshKeyscanCommand';
 import { findHostByAddress, isPathReachable, findReachableHost } from './network/HostLookup';
 import type { ProbedHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { runTruncate } from './commands/fs/Truncate';
@@ -319,14 +321,6 @@ function stateLabel(s: string): string {
 }
 
 const SSH_COPY_ID_VALUE_FLAGS: ReadonlySet<string> = new Set(['-p', '-o', '-F', '-t']);
-
-const KEYSCAN_VALUE_FLAGS: ReadonlySet<string> = new Set(['-f', '-O', '-T']);
-
-const KEYSCAN_TYPES: Readonly<Record<string, string>> = {
-  ed25519: 'ssh-ed25519',
-  rsa: 'ssh-rsa',
-  ecdsa: 'ecdsa-sha2-nistp256',
-};
 
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
@@ -1774,6 +1768,8 @@ export class LinuxCommandExecutor {
       sourceIp,
       sourceUser: user,
       sourceHome: home,
+      sourceUid: this.userMgr.currentUid,
+      sourceGid: this.userMgr.currentGid,
       callerEnv: env,
       localForwarding: this.forwarding ?? undefined,
       localAgent: this.sshAgent,
@@ -1936,141 +1932,25 @@ export class LinuxCommandExecutor {
   }
 
   private runSshKeyscan(args: string[]): { output: string; exitCode: number } {
-    let port = 22;
-    let wanted: readonly string[] | null = null;
-    const positional: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-p' && i + 1 < args.length) { port = parseInt(args[++i], 10) || 22; }
-      else if (args[i] === '-t' && i + 1 < args.length) {
-        wanted = args[++i].split(',').map(k => KEYSCAN_TYPES[k.trim().toLowerCase()] ?? k.trim());
-      }
-      else if (KEYSCAN_VALUE_FLAGS.has(args[i]) && i + 1 < args.length) { i++; }
-      else if (!args[i].startsWith('-')) positional.push(args[i]);
-    }
-    const host = positional[0];
-    if (!host) return { output: 'usage: ssh-keyscan [-Hv46cD] [-f file] [-p port] [-t type] [host | addrlist namelist]', exitCode: 1 };
-    const found = findHostByAddress(host, undefined, this.localDevice as never);
-    if (!found) return { output: `# ${host} unknown host`, exitCode: 1 };
-    const hostKey = this.sshHostKeyProbe?.(found.ip, port) ?? null;
-    if (!hostKey) return { output: `# ${host} no host key`, exitCode: 1 };
-    if (wanted !== null && !wanted.includes(hostKey.algorithm)) {
-      return { output: '', exitCode: 0 };
-    }
-    return { output: `${host} ${hostKey.algorithm} ${hostKey.publicKey}`, exitCode: 0 };
+    return runSshKeyscanCommand(args, {
+      resolve: (target: string) =>
+        findHostByAddress(target, undefined, this.localDevice as never)?.ip ?? null,
+      probe: (ip: string, port: number) => this.sshHostKeyProbe?.(ip, port) ?? null,
+    });
   }
 
-  /**
-   * `ssh-keygen -R <host>` — remove all entries matching the host from
-   * the local known_hosts. Other subcommands (-y, -F, -t) flow through
-   * the existing key-management dispatcher.
-   */
+  private keygenHost(): SshKeygenHost {
+    return vfsKeygenHost(this.vfs, {
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+      user: this.userMgr.currentUser,
+      hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+      sshDir: `${this.sshHomeDir()}/.ssh`,
+    });
+  }
+
   private runSshKeygen(args: string[]): { output: string; exitCode: number } {
-    if (args[0] === '-R' && args[1]) {
-      const path = `${this.sshHomeDir()}/.ssh/known_hosts`;
-      const existing = this.vfs.readFile(path) ?? '';
-      const before = SshKnownHostEntry.parseFile(existing);
-      const after = before.filter(e => !e.matches(args[1]));
-      this.vfs.writeFile(path, SshKnownHostEntry.serializeFile(after), 0, 0, 0o022);
-      return { output: `# Host ${args[1]} found: line 1\n/root/.ssh/known_hosts updated.\nOriginal contents retained as /root/.ssh/known_hosts.old`, exitCode: 0 };
-    }
-    // Fall back to the keypair generator already wired into handleSshAdd
-    // path. The existing implementation only supports -t / -f / -N / -q
-    // / -y for the simulator, which is enough for the new tests.
-    return this.handleSshKeygenLegacy(args);
-  }
-
-  /**
-   * Bridge to the legacy ssh-keygen handler kept inside handleSshAdd.
-   * Wraps the simple `-t / -f / -N / -y / -q` interface that has lived
-   * here for a while.
-   */
-  private handleSshKeygenLegacy(args: string[]): { output: string; exitCode: number } {
-    const fIdx = args.indexOf('-f');
-    const tIdx = args.indexOf('-t');
-    const cIdx = args.indexOf('-C');
-    const bIdx = args.indexOf('-b');
-    const eIdx = args.indexOf('-E');
-    const requested = tIdx >= 0 ? (args[tIdx + 1] ?? '').toLowerCase() : 'ed25519';
-    const algoPrefix = KEYGEN_ALGORITHMS[requested];
-    const defaultFile = requested === 'rsa' ? 'id_rsa' : requested === 'ecdsa' ? 'id_ecdsa' : 'id_ed25519';
-    const file = fIdx >= 0 ? args[fIdx + 1] : `${this.sshHomeDir()}/.ssh/${defaultFile}`;
-
-    const fIdxArg = args.indexOf('-F');
-    if (fIdxArg >= 0 && args[fIdxArg + 1]) {
-      const wanted = args[fIdxArg + 1];
-      const path = `${this.sshHomeDir()}/.ssh/known_hosts`;
-      const entries = SshKnownHostEntry.parseFile(this.vfs.readFile(path) ?? '');
-      const lines: string[] = [];
-      entries.forEach((entry, index) => {
-        if (!entry.matches(wanted)) return;
-        lines.push(`# Host ${wanted} found: line ${index + 1}`);
-        lines.push(entry.toLine());
-      });
-      return { output: lines.join('\n'), exitCode: lines.length > 0 ? 0 : 1 };
-    }
-
-    if (args.includes('-A')) {
-      const fAfterA = fIdx >= 0 ? args[fIdx + 1] : '/etc/ssh';
-      const dir = fAfterA.replace(/\/$/, '');
-      for (const a of ['ed25519', 'rsa', 'ecdsa']) {
-        const algoTok = KEYGEN_ALGORITHMS[a]!;
-        const host = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-        const pair = keygenPair(algoTok, `root@${host}`);
-        this.vfs.writeFile(`${dir}/ssh_host_${a}_key`, pair.priv, 0, 0, 0o077);
-        this.vfs.writeFile(`${dir}/ssh_host_${a}_key.pub`, `${pair.pub}\n`, 0, 0, 0o022);
-      }
-      return { output: '', exitCode: 0 };
-    }
-
-    if (args.includes('-l')) {
-      const target = fIdx >= 0 ? args[fIdx + 1] : file;
-      const candidate = target.endsWith('.pub') ? target : `${target}.pub`;
-      const data = (this.vfs.readFile(candidate) ?? this.vfs.readFile(target) ?? '').trim();
-      if (!data) return { output: `${target}: No such file or directory`, exitCode: 1 };
-      const shape = keygenFingerprint(data, eIdx >= 0 ? (args[eIdx + 1] ?? '') : 'sha256');
-      if (shape === null) {
-        return { output: `unknown fingerprint hash type "${args[eIdx + 1]}"`, exitCode: 1 };
-      }
-      return { output: shape, exitCode: 0 };
-    }
-
-    if (args.includes('-y')) {
-      const source = fIdx >= 0 ? args[fIdx + 1] : file;
-      const material = this.vfs.readFile(source);
-      if (material === null) return { output: `${source}: No such file or directory`, exitCode: 1 };
-      const derived = keygenPublicOf(material);
-      if (derived === null) return { output: `Load key "${source}": invalid format`, exitCode: 1 };
-      return { output: derived, exitCode: 0 };
-    }
-
-    if (algoPrefix === undefined) {
-      return { output: `unknown key type ${requested}`, exitCode: 255 };
-    }
-
-    const sshDir = file.replace(/\/[^/]+$/, '');
-    const uid = this.userMgr.currentUid;
-    const gid = this.userMgr.currentGid;
-    if (!this.vfs.resolveInode(sshDir)) this.vfs.mkdirp(sshDir, 0o700, uid, gid);
-    const host = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-    const comment = cIdx >= 0 ? (args[cIdx + 1] ?? '') : `${this.userMgr.currentUser}@${host}`;
-    const bits = bIdx >= 0 ? Number.parseInt(args[bIdx + 1] ?? '', 10) : NaN;
-    const pair = keygenPair(algoPrefix, comment, Number.isFinite(bits) ? bits : undefined);
-    this.vfs.writeFile(file, pair.priv, uid, gid, 0o077);
-    this.vfs.writeFile(`${file}.pub`, `${pair.pub}\n`, uid, gid, 0o022);
-    if (args.includes('-q')) return { output: '', exitCode: 0 };
-    const empreinte = keygenFingerprint(pair.pub, 'sha256') ?? '';
-    return {
-      output: [
-        `Generating public/private ${requested} key pair.`,
-        `Your identification has been saved in ${file}`,
-        `Your public key has been saved in ${file}.pub`,
-        'The key fingerprint is:',
-        empreinte.split(' ').slice(1).join(' '),
-        "The key's randomart image is:",
-        keygenRandomart(pair.pub),
-      ].join('\n'),
-      exitCode: 0,
-    };
+    return runSshKeygenCommand(args, this.keygenHost());
   }
 
   /**
@@ -5475,24 +5355,8 @@ export class LinuxCommandExecutor {
         return this.runTelnetClient(args);
       case 'ssh-add':
         return this.handleSshAdd(args);
-      case 'ssh-agent': {
-        // `ssh-agent -s` prints sh-style exports; `-k` kills; `-t` sets a default
-        // life-span. The simulator's agent is per-device and always live, so the
-        // -s/-c forms emit the canonical environment lines (SSH_AUTH_SOCK +
-        // SSH_AGENT_PID) and `eval $(ssh-agent -s)` becomes a no-op import.
-        if (args.includes('-k')) {
-          this.sshAgent.removeAll();
-          return { output: 'echo Agent pid 1 killed;', exitCode: 0 };
-        }
-        const user = this.userMgr.currentUser;
-        const sock = `/tmp/ssh-${user}/agent.1`;
-        const lines = args.includes('-c')
-          ? [`setenv SSH_AUTH_SOCK ${sock};`, `setenv SSH_AGENT_PID 1;`, `echo Agent pid 1;`]
-          : [`SSH_AUTH_SOCK=${sock}; export SSH_AUTH_SOCK;`, `SSH_AGENT_PID=1; export SSH_AGENT_PID;`, `echo Agent pid 1;`];
-        this.env.set('SSH_AUTH_SOCK', sock);
-        this.env.set('SSH_AGENT_PID', '1');
-        return { output: lines.join('\n'), exitCode: 0 };
-      }
+      case 'ssh-agent':
+        return runSshAgentCommand(args, this.agentHost());
       case 'ssh-keyscan': return this.runSshKeyscan(args);
       case 'ssh-keygen':  return this.runSshKeygen(args);
       case 'ssh-copy-id': return this.runSshCopyId(args);
@@ -6330,86 +6194,19 @@ export class LinuxCommandExecutor {
 
   // ─── su handler ──────────────────────────────────────────────────
 
-  private handleSshAdd(args: string[]): { output: string; exitCode: number } {
-    const home =
-      this.userMgr.currentUid === 0
-        ? '/root'
-        : `/home/${this.userMgr.currentUser}`;
-
-    // `-D` — delete all identities.
-    if (args.includes('-D')) {
-      this.sshAgent.removeAll();
-      return { output: 'All identities removed.', exitCode: 0 };
-    }
-
-    // `-d <path>` — delete a single identity (or default if none given).
-    const dIdx = args.indexOf('-d');
-    if (dIdx >= 0) {
-      const path =
-        args[dIdx + 1] && !args[dIdx + 1].startsWith('-')
-          ? args[dIdx + 1]
-          : `${home}/.ssh/id_ed25519`;
-      const removed = this.sshAgent.remove(path);
-      return removed
-        ? { output: `Identity removed: ${path}`, exitCode: 0 }
-        : { output: 'Could not remove identity: not loaded', exitCode: 1 };
-    }
-
-    // `-l` — short fingerprint listing.
-    if (args.includes('-l')) {
-      const keys = this.sshAgent.list();
-      if (keys.length === 0) {
-        return { output: 'The agent has no identities.', exitCode: 1 };
-      }
-      const lines = keys.map(
-        (k) => `${k.bits} ${k.fingerprint} ${k.comment} (${k.algorithm})`,
-      );
-      return { output: lines.join('\n'), exitCode: 0 };
-    }
-
-    // `-L` — long form (public-key material). Pedagogical stub.
-    if (args.includes('-L')) {
-      const keys = this.sshAgent.list();
-      if (keys.length === 0) {
-        return { output: 'The agent has no identities.', exitCode: 1 };
-      }
-      const lines = keys.map(
-        (k) => k.publicKey ?? `${k.algorithm.toLowerCase()} ${k.comment}`,
-      );
-      return { output: lines.join('\n'), exitCode: 0 };
-    }
-
-    // Default — load identities listed in args, or fall back to discovery.
-    const explicit = args.filter((a) => !a.startsWith('-'));
-    if (explicit.length > 0) {
-      const lines: string[] = [];
-      let anyFailed = false;
-      for (const path of explicit) {
-        if (this.sshAgent.add(path, this.vfs)) {
-          const loaded = this.sshAgent.list().find(k => k.path === path);
-          lines.push(`Identity added: ${path} (${loaded?.comment ?? path})`);
-        } else {
-          lines.push(`Could not open key file ${path}: No such file or directory`);
-          anyFailed = true;
-        }
-      }
-      return { output: lines.join('\n'), exitCode: anyFailed ? 1 : 0 };
-    }
-
-    const added = this.sshAgent.addAll(home, this.vfs);
-    if (added.length === 0) {
-      return {
-        output: `Could not open a connection to your authentication agent.`,
-        exitCode: 2,
-      };
-    }
+  private agentHost(): SshAgentHost {
     return {
-      output: added.map((path) => {
-        const loaded = this.sshAgent.list().find(k => k.path === path);
-        return `Identity added: ${path} (${loaded?.comment ?? path})`;
-      }).join('\n'),
-      exitCode: 0,
+      agent: this.sshAgent,
+      reader: this.vfs,
+      separator: '/',
+      sshDir: `${this.sshHomeDir()}/.ssh`,
+      authSocket: `/tmp/ssh-${this.userMgr.currentUser}/agent.1`,
+      setEnvironment: (name: string, value: string) => { this.env.set(name, value); },
     };
+  }
+
+  private handleSshAdd(args: string[]): { output: string; exitCode: number } {
+    return runSshAddCommand(args, this.agentHost());
   }
 
   private static parseSuArgs(args: string[]): { loginShell: boolean; targetUser: string; command: string | null } {

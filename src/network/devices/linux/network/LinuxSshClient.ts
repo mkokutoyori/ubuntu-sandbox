@@ -84,6 +84,8 @@ export interface SshClientOpts {
   };
   /** Home dir for the source user (resolves the path of ~/.ssh/known_hosts). */
   sourceHome?: string;
+  sourceUid?: number;
+  sourceGid?: number;
   resolveName?: (name: string) => string | null;
   /**
    * Shell environment of the `ssh` invocation (exported variables plus
@@ -1447,10 +1449,12 @@ function updateKnownHosts(opts: SshClientOpts, machine: LinuxMachine, ip: string
   if (changed || !file.find(ip, keyType)) {
     const updated = (changed ? file.remove(ip) : file).add({ hostnames: [ip], keyType, publicKey });
     const sshDir = knownHostsPath.replace(/\/[^/]+$/, '');
+    const uid = opts.sourceUid ?? 0;
+    const gid = opts.sourceGid ?? 0;
     if (opts.localVfs.mkdirp && opts.localVfs.resolveInode && !opts.localVfs.resolveInode(sshDir)) {
-      opts.localVfs.mkdirp(sshDir, 0o700, 0, 0);
+      opts.localVfs.mkdirp(sshDir, 0o700, uid, gid);
     }
-    opts.localVfs.writeFile(knownHostsPath, updated.serialize(), 0, 0, 0o022);
+    opts.localVfs.writeFile(knownHostsPath, updated.serialize(), uid, gid, 0o022);
   }
   return false;
 }

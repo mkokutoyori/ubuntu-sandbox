@@ -110,6 +110,7 @@ import {
   IpconfigCmdlet, NetshCmdlet, ArpCmdlet, RouteCmdlet, FindstrCmdlet,
   GetmacCmdlet, SysteminfoCmdlet, VerCmdlet, NslookupCmdlet,
   NetCmdlet, VolCmdlet, ChcpCmdlet, ScCmdlet, ScExeCmdlet,
+  SshKeygenCmdlet, SshAgentCmdlet, SshAddCmdlet, SshKeyscanCmdlet,
 } from './NativeShimCmdlets';
 import {
   GetScheduledTaskCmdlet, RegisterScheduledTaskCmdlet,
@@ -552,6 +553,10 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(ChcpCmdlet);
   registry.register(ScCmdlet);
   registry.register(ScExeCmdlet);
+  registry.register(SshKeygenCmdlet);
+  registry.register(SshAgentCmdlet);
+  registry.register(SshAddCmdlet);
+  registry.register(SshKeyscanCmdlet);
 
   if (opts.includeServerCmdlets ?? true) registerServerCmdlets(registry);
 }

@@ -38,9 +38,9 @@ import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
 import { isOk } from '@/network/protocols/ssh/Result';
 import {
-  parseSshKeygenArgs,
-  generateAndWriteKeyPair,
-} from '@/network/protocols/ssh/SshKeygen';
+  runSshKeygenCommand,
+  vfsKeygenHost,
+} from '@/network/protocols/ssh/SshKeygenCommand';
 import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
 import { parseScpArgs, parseScpEndpoint } from '@/network/protocols/ssh/Scp';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
@@ -352,16 +352,18 @@ describe('SSH-05 — exec channel (non-interactive command)', () => {
 });
 
 describe('SSH-03 — ssh-keygen (key pair generation)', () => {
+  const alice = (vfs: VirtualFileSystem) => vfsKeygenHost(vfs, {
+    uid: 1000, gid: 1000, user: 'alice', hostname: 'local', sshDir: '/home/alice/.ssh',
+  });
+
   it('writes a deterministic key pair under ~/.ssh/ with correct modes', () => {
     const vfs = new VirtualFileSystem();
     vfs.mkdirp('/home/alice', 0o755, 1000, 1000);
-    const opts = parseSshKeygenArgs(['-t', 'ed25519', '-C', 'alice@local'], '/home/alice');
-    const result = generateAndWriteKeyPair(vfs, 1000, 1000, opts);
-    expect('error' in result).toBe(false);
-    if ('error' in result) return;
+    const result = runSshKeygenCommand(['-t', 'ed25519', '-C', 'alice@local'], alice(vfs));
+    expect(result.exitCode).toBe(0);
     expect(vfs.exists('/home/alice/.ssh/id_ed25519')).toBe(true);
     expect(vfs.exists('/home/alice/.ssh/id_ed25519.pub')).toBe(true);
-    expect(result.fingerprint.startsWith('SHA256:')).toBe(true);
+    expect(result.output).toContain('SHA256:');
     const pub = vfs.readFile('/home/alice/.ssh/id_ed25519.pub');
     expect(pub).toContain('ssh-ed25519');
     expect(pub).toContain('alice@local');
@@ -371,9 +373,11 @@ describe('SSH-03 — ssh-keygen (key pair generation)', () => {
     const vfs = new VirtualFileSystem();
     vfs.mkdirp('/home/alice/.ssh', 0o700, 1000, 1000);
     vfs.writeFile('/home/alice/.ssh/id_ed25519', 'pre-existing', 1000, 1000, 0o077);
-    const opts = parseSshKeygenArgs([], '/home/alice');
-    const result = generateAndWriteKeyPair(vfs, 1000, 1000, opts);
-    expect('error' in result).toBe(true);
+    const result = runSshKeygenCommand([], alice(vfs));
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain('/home/alice/.ssh/id_ed25519 already exists.');
+    expect(result.output).toContain('Overwrite (y/n)? ');
+    expect(vfs.readFile('/home/alice/.ssh/id_ed25519')).toBe('pre-existing');
   });
 });
 

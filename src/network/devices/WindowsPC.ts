@@ -48,6 +48,14 @@ import type { TcpSocket } from '../tcp/TcpStack';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
 import { runWindowsSshClient } from './windows/network/WindowsSshClient';
+import { SshAgent } from '@/network/protocols/ssh/SshAgent';
+import { runSshKeygenCommand, type SshKeygenHost } from '@/network/protocols/ssh/SshKeygenCommand';
+import {
+  runSshAddCommand, runSshAgentCommand, type SshAgentHost,
+} from '@/network/protocols/ssh/SshAgentCommands';
+import { runSshKeyscanCommand } from '@/network/protocols/ssh/SshKeyscanCommand';
+import { probeSshHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
+import { findHostByAddress } from './linux/network/HostLookup';
 import { runWindowsSftpClient } from './windows/network/WindowsSftpClient';
 import { runWindowsScpClient } from './windows/network/WindowsScpClient';
 import { splitCmdArgs } from './windows/cmdline';
@@ -2170,6 +2178,54 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return null;
   }
 
+  private readonly sshAgent: SshAgent = new SshAgent();
+
+  private userProfileDir(): string {
+    return `C:\\Users\\${this.userMgr.currentUser}`;
+  }
+
+  private sshProfileDir(): string {
+    return `${this.userProfileDir()}\\.ssh`;
+  }
+
+  private keygenHost(): SshKeygenHost {
+    return {
+      store: {
+        read: (path: string) => {
+          const r = this.fs.readFile(this.fs.normalizePath(path, this.cwd));
+          return r.ok ? (r.content ?? '') : null;
+        },
+        write: (path: string, content: string) =>
+          this.fs.createFile(this.fs.normalizePath(path, this.cwd), content).ok,
+        ensureDir: (path: string) => {
+          const abs = this.fs.normalizePath(path, this.cwd);
+          if (!this.fs.exists(abs)) this.fs.mkdirp(abs);
+        },
+      },
+      separator: '\\',
+      sshDir: this.sshProfileDir(),
+      hostKeyDir: 'C:\\ProgramData\\ssh',
+      user: this.userMgr.currentUser,
+      hostname: this.hostname,
+    };
+  }
+
+  private agentHost(): SshAgentHost {
+    return {
+      agent: this.sshAgent,
+      reader: {
+        readFile: (path: string) => {
+          const r = this.fs.readFile(this.fs.normalizePath(path, this.cwd));
+          return r.ok ? (r.content ?? '') : null;
+        },
+      },
+      separator: '\\',
+      sshDir: this.sshProfileDir(),
+      authSocket: `${this.userProfileDir()}\\AppData\\Local\\Temp\\ssh-${this.userMgr.currentUser}\\agent.1`,
+      setEnvironment: (name: string, value: string) => { this.setEnvVar(name, value); },
+    };
+  }
+
   private cmdSsh(args: string[]): Promise<string> {
     const user = this.userMgr.currentUser;
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
@@ -3062,6 +3118,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'nmap':
       case 'nmap.exe': return this.cmdNmap(args);
       case 'ssh':      return this.cmdSsh(args);
+      case 'ssh-keygen':
+      case 'ssh-agent':
+      case 'ssh-add':
+      case 'ssh-keyscan':
+        return Promise.resolve(this.runOpenSshTool(cmd, args));
       case 'sftp':     return this.cmdSftp(args);
       case 'scp':      return this.cmdScp(args);
       case 'telnet':   return this.cmdTelnet(args);
@@ -3593,8 +3654,25 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * Returns null when the command is async (ping / tracert) or unknown —
    * callers fall back to executeCmdCommand() in that case.
    */
+  private runOpenSshTool(name: string, args: string[]): string {
+    switch (name) {
+      case 'ssh-keygen': return runSshKeygenCommand(args, this.keygenHost()).output;
+      case 'ssh-agent':  return runSshAgentCommand(args, this.agentHost()).output;
+      case 'ssh-add':    return runSshAddCommand(args, this.agentHost()).output;
+      default:
+        return runSshKeyscanCommand(args, {
+          resolve: (target: string) => findHostByAddress(target, undefined, this)?.ip ?? null,
+          probe: (ip: string, port: number) => probeSshHostKey(this.getTcpStack().connect(ip, port)),
+        }).output;
+    }
+  }
+
   runSyncNativeCommand(cmd: string, args: string[]): string | null {
     const lower = cmd.toLowerCase();
+    if (lower === 'ssh-keygen' || lower === 'ssh-agent'
+      || lower === 'ssh-add' || lower === 'ssh-keyscan') {
+      return this.runOpenSshTool(lower, args);
+    }
     if (lower === 'systeminfo') return this.cmdSysteminfo();
     if (lower === 'ver') return WindowsPC.VER_STRING;
     if (lower === 'hostname') return this.hostname;

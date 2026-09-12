@@ -24,7 +24,7 @@ import { TerminalSshInteractionHandler } from '@/network/protocols/ssh/session/T
 import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols/ssh/session/QueuedTerminalIO';
 import { isOk } from '@/network/protocols/ssh/Result';
 import { peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
-import { sshLocalFsFor, knownHostsPathFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
+import { sshLocalFsFor, knownHostsPathFor, sshLocalIdentityFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
 import { IPAddress } from '@/network/core/types';
 
 export interface WireSshLoginRequest {
@@ -151,8 +151,8 @@ export async function openWireSshConnection(
     tcpConnector,
     vfs: sshLocalFsFor(req.device) as never,
     localUser: req.localUser,
-    localUid: req.localUid ?? 1000,
-    localGid: req.localGid ?? 1000,
+    localUid: req.localUid ?? sshLocalIdentityFor(req.device, req.localUser).uid,
+    localGid: req.localGid ?? sshLocalIdentityFor(req.device, req.localUser).gid,
     knownHostsPath: knownHostsPathFor(req.device, req.localUser),
     interactionHandler: new TerminalSshInteractionHandler(req.io),
   });

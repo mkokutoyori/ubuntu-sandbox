@@ -132,20 +132,39 @@ const ALGORITHM_LABELS: Readonly<Record<string, string>> = {
   'ecdsa-sha2-nistp256': 'ECDSA',
 };
 
-export function keygenFingerprint(publicLine: string, hash: string): string | null {
-  const wanted = hash.trim().toLowerCase() || 'sha256';
-  if (wanted !== 'sha256' && wanted !== 'md5') return null;
+export interface KeygenKeyFacts {
+  readonly label: string;
+  readonly bits: number;
+  readonly comment: string;
+}
+
+export function keygenKeyFacts(publicLine: string): KeygenKeyFacts {
   const tokens = publicLine.trim().split(/\s+/);
   const algorithm = tokens[0] ?? '';
-  const blob = tokens[1] ?? '';
-  const comment = tokens.slice(2).join(' ');
-  const label = ALGORITHM_LABELS[algorithm] ?? algorithm.toUpperCase();
-  const bytes = fromBase64(blob);
-  const digest = wanted === 'sha256'
+  const bytes = fromBase64(tokens[1] ?? '');
+  return {
+    label: ALGORITHM_LABELS[algorithm] ?? algorithm.toUpperCase(),
+    bits: algorithm === 'ssh-rsa'
+      ? (bytes.length - 4 - algorithm.length - 4 - 3 - 4) * 8
+      : 256,
+    comment: tokens.slice(2).join(' '),
+  };
+}
+
+export function keygenDigest(publicLine: string, hash: string): string | null {
+  const wanted = hash.trim().toLowerCase() || 'sha256';
+  if (wanted !== 'sha256' && wanted !== 'md5') return null;
+  const bytes = fromBase64(publicLine.trim().split(/\s+/)[1] ?? '');
+  return wanted === 'sha256'
     ? `SHA256:${toBase64(sha256(bytes)).replace(/=+$/, '')}`
     : `MD5:${[...md5(bytes)].map(b => b.toString(16).padStart(2, '0')).join(':')}`;
-  const bits = algorithm === 'ssh-rsa' ? (bytes.length - 4 - algorithm.length - 4 - 3 - 4) * 8 : 256;
-  return `${bits} ${digest} ${comment} (${label})`;
+}
+
+export function keygenFingerprint(publicLine: string, hash: string): string | null {
+  const digest = keygenDigest(publicLine, hash);
+  if (digest === null) return null;
+  const facts = keygenKeyFacts(publicLine);
+  return `${facts.bits} ${digest} ${facts.comment} (${facts.label})`;
 }
 
 export function keygenRandomart(publicLine: string): string {
