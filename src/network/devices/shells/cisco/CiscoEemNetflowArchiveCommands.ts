@@ -46,7 +46,6 @@ export function buildEemNetflowArchiveConfigCommands(
   trie: CommandTrie, ctx: CiscoEemNetflowArchiveContext,
 ): void {
   const eem = () => ctx.r().getEemService();
-  const nf = () => ctx.r().getNetflowService();
   const ar = () => ctx.r().getArchiveService();
 
   trie.registerGreedy('event manager applet', 'EEM applet', (args) => {
@@ -68,50 +67,6 @@ export function buildEemNetflowArchiveConfigCommands(
     if (args[0] && args[1] !== undefined) eem().setEnvironment(args[0], args.slice(1).join(' '));
     return '';
   });
-
-  trie.registerGreedy('flow exporter', 'Define a Flexible NetFlow exporter', (args) => {
-    if (!args[0]) return '% Incomplete command.';
-    nf().ensureExporter(args[0]);
-    ctx.setFlowExporter?.(args[0]);
-    ctx.setMode('config-flow-exporter' as CiscoShellMode);
-    return '';
-  });
-  trie.registerGreedy('flow record', 'Define a Flexible NetFlow record', (args) => {
-    if (!args[0]) return '% Incomplete command.';
-    nf().ensureRecord(args[0]);
-    ctx.setFlowRecord?.(args[0]);
-    ctx.setMode('config-flow-record' as CiscoShellMode);
-    return '';
-  });
-  trie.registerGreedy('flow monitor', 'Define a Flexible NetFlow monitor', (args) => {
-    if (!args[0]) return '% Incomplete command.';
-    nf().ensureMonitor(args[0]);
-    ctx.setFlowMonitor?.(args[0]);
-    ctx.setMode('config-flow-monitor' as CiscoShellMode);
-    return '';
-  });
-
-  trie.registerGreedy('ip flow-export', 'Legacy NetFlow export', (args) => {
-    if (args[0] === 'destination' && args[1] && args[2]) {
-      nf().setLegacyDestination(args[1], nombre(args, 2, 1, MAX_PORT));
-    } else if (args[0] === 'source' && args[1]) {
-      nf().setLegacySource(args[1]);
-    } else if (args[0] === 'version' && args[1]) {
-      nf().setLegacyVersion(nombre(args, 1, 1, NETFLOW_VERSION_MAX));
-    }
-    ctx.syncNetflowAgent?.();
-    return '';
-  });
-  trie.registerGreedy('ip flow-cache', 'NetFlow cache timeout', (args) => {
-    if (args[0] === 'timeout' && args[1] === 'active' && args[2]) {
-      nf().setLegacyCacheActiveMin(nombre(args, 2, 1, DUREE_MAX));
-    } else if (args[0] === 'timeout' && args[1] === 'inactive' && args[2]) {
-      nf().setLegacyCacheInactiveSec(nombre(args, 2, 1, DUREE_MAX));
-    }
-    ctx.syncNetflowAgent?.();
-    return '';
-  });
-  trie.register('ip route-cache flow', 'Enable NetFlow on all interfaces', () => '');
 
   trie.register('archive', 'Enter archive configuration', () => {
     ctx.setMode('config-archive' as CiscoShellMode);
@@ -652,4 +607,122 @@ export function flowMonitorSpecs(ctx: CiscoEemNetflowArchiveContext): CommandSpe
       argumentFor: (path) => FLOW_MONITOR_ARGUMENTS[path],
     },
   );
+}
+
+const CONFIG = Object.freeze(['config']);
+
+const NOM_DE_FLUX = (quoi: string): ArgumentSpec =>
+  ({ name: 'nom', type: 'WORD', description: `Name of the Flexible NetFlow ${quoi}` });
+
+const PORT_COLLECTEUR: ArgumentSpec = {
+  name: 'port', type: 'INT', range: [1, MAX_PORT],
+  description: 'UDP port the collector listens on',
+};
+
+const VERSION_EXPORT: ArgumentSpec = {
+  name: 'version', type: 'INT', range: [1, NETFLOW_VERSION_MAX],
+  description: 'Export datagram version',
+};
+
+const DUREE: (unite: string) => ArgumentSpec = (unite) => ({
+  name: 'duree', type: 'INT', range: [1, DUREE_MAX],
+  description: `Timeout in ${unite}`,
+});
+
+/**
+ * Les PORTES de Flexible NetFlow et la famille heritee, declarees.
+ *
+ * Les deux gloutons herites finissaient par un `return ''` que n'importe
+ * quelle saisie atteignait : `ip flow-export zorglub` etait accepte et ne
+ * posait rien. Une commande d'export qui n'exporte pas et ne proteste pas
+ * ne se decouvre qu'au moment ou l'on cherche les flux.
+ */
+export function netflowSpecs(ctx: CiscoEemNetflowArchiveContext): CommandSpec[] {
+  const nf = () => ctx.r().getNetflowService();
+  const pose = (agir: () => void): string => {
+    agir();
+    ctx.syncNetflowAgent?.();
+    return '';
+  };
+
+  const porte = (
+    mot: string, quoi: string, mode: string,
+    ouvrir: (nom: string) => void, retenir: (nom: string) => void,
+  ): CommandSpec => ({
+    id: `flow-${mot}`,
+    path: ['flow', mot, NOM_DE_FLUX(quoi)],
+    description: `Define a Flexible NetFlow ${quoi}`,
+    modes: CONFIG, minPrivilege: 15,
+    run: (_s, args) => {
+      ouvrir(args.nom);
+      retenir(args.nom);
+      ctx.setMode(mode as CiscoShellMode);
+      return '';
+    },
+  });
+
+  return [
+    porte('exporter', 'exporter', 'config-flow-exporter',
+      (n) => { nf().ensureExporter(n); }, (n) => ctx.setFlowExporter?.(n)),
+    porte('record', 'record', 'config-flow-record',
+      (n) => { nf().ensureRecord(n); }, (n) => ctx.setFlowRecord?.(n)),
+    porte('monitor', 'monitor', 'config-flow-monitor',
+      (n) => { nf().ensureMonitor(n); }, (n) => ctx.setFlowMonitor?.(n)),
+    {
+      id: 'ip-flow-export-destination',
+      path: ['ip', 'flow-export', 'destination',
+        { name: 'collecteur', type: 'IP_ADDR', description: 'Address of the collector' },
+        PORT_COLLECTEUR],
+      description: 'Address of the NetFlow collector',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) =>
+        pose(() => nf().setLegacyDestination(args.collecteur, Number(args.port))),
+    },
+    {
+      id: 'ip-flow-export-source',
+      path: ['ip', 'flow-export', 'source',
+        { name: 'interface', type: 'INTERFACE',
+          description: 'Interface whose address the datagrams carry' }],
+      description: 'Source interface of the export datagrams',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) => pose(() => nf().setLegacySource(args.interface)),
+    },
+    {
+      id: 'ip-flow-export-version',
+      path: ['ip', 'flow-export', 'version', VERSION_EXPORT],
+      description: 'Version of the export datagrams',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) => pose(() => nf().setLegacyVersion(Number(args.version))),
+    },
+    {
+      id: 'ip-flow-cache-timeout-active',
+      path: ['ip', 'flow-cache', 'timeout', 'active', DUREE('minutes')],
+      description: 'How long an active flow stays in the cache',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) =>
+        pose(() => nf().setLegacyCacheActiveMin(Number(args.duree))),
+    },
+    {
+      id: 'ip-flow-cache-timeout-inactive',
+      path: ['ip', 'flow-cache', 'timeout', 'inactive', DUREE('seconds')],
+      description: 'How long an idle flow stays in the cache',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) =>
+        pose(() => nf().setLegacyCacheInactiveSec(Number(args.duree))),
+    },
+    /*
+     * `ip route-cache flow` active NetFlow sur toutes les interfaces
+     * d'un vrai routeur ; ici le gestionnaire n'enregistre rien. La
+     * commande reste ACCEPTEE parce qu'un import de configuration la
+     * porte, et la declarer ne la rendrait pas vraie : c'est une limite
+     * assumee, pas un oubli.
+     */
+    {
+      id: 'ip-route-cache-flow',
+      path: ['ip', 'route-cache', 'flow'],
+      description: 'Enable NetFlow on all interfaces',
+      modes: CONFIG, minPrivilege: 15,
+      run: () => '',
+    },
+  ];
 }

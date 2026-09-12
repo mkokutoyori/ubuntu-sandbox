@@ -177,7 +177,7 @@ import {
   type CiscoSecurityShellContext,
 } from './cisco/CiscoSecurityCommands';
 import {
-  buildEemNetflowArchiveConfigCommands, buildEemAppletSubmode,
+  buildEemNetflowArchiveConfigCommands, buildEemAppletSubmode, netflowSpecs,
   buildFlowExporterSubmode, buildFlowRecordSubmode, buildFlowMonitorSubmode,
   buildArchiveSubmode, buildArchiveLogSubmode,
   eemAppletSpecs, flowExporterSpecs, flowRecordSpecs, flowMonitorSpecs,
@@ -485,6 +485,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...flowExporterSpecs(this),
       ...flowRecordSpecs(this),
       ...flowMonitorSpecs(this),
+      ...netflowSpecs(this),
       ...classMapSubmodeSpecs(this),
       ...policyMapSubmodeSpecs(this),
       ...policyClassSubmodeSpecs(this),
