@@ -53,8 +53,8 @@ function frames(c: Cable): number {
  * vrai, exactement comme sur une vraie machine.
  */
 async function autoriserLaCle(client: LinuxPC, server: LinuxServer, user: string): Promise<void> {
-  await client.executeCommand('ssh-keygen -t rsa -N "" -f /root/.ssh/id_rsa');
-  const pub = (await client.executeCommand('cat /root/.ssh/id_rsa.pub')).trim();
+  await client.executeCommand('ssh-keygen -t rsa -N "" -f ~/.ssh/id_rsa');
+  const pub = (await client.executeCommand('cat ~/.ssh/id_rsa.pub')).trim();
   await server.executeCommand(`mkdir -p /home/${user}/.ssh`);
   await server.executeCommand(`sh -c 'echo "${pub}" > /home/${user}/.ssh/authorized_keys'`);
   await server.executeCommand(`chmod 700 /home/${user}/.ssh`);

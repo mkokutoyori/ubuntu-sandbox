@@ -35,8 +35,8 @@ async function installKeyAndAuthorize(
   srv: LinuxServer,
   optionsPrefix: string,
 ) {
-  await pc.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
-  const pub = (await pc.executeCommand('cat /root/.ssh/id_rsa.pub')).trim();
+  await pc.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
+  const pub = (await pc.executeCommand('cat ~/.ssh/id_rsa.pub')).trim();
   const vfs = (srv as unknown as { executor: { vfs: {
     mkdirp(p: string, m: number, u: number, g: number): void;
     writeFile(p: string, c: string, u: number, g: number, m: number): void;

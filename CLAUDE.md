@@ -153,7 +153,7 @@ Each of these is measured and deliberate; a lab that assumes otherwise fails sil
 - **Frame delivery is synchronous, so RTT is 0 ms in virtual time.** No topology can cross an IP SLA / NQA latency threshold by itself.
 - **The iptables NAT engine has no reply-leg conntrack.** A DNAT'd TCP connection through a Linux host reaches "SYN delivered to the right port", not a completed handshake; UDP round-trips.
 - **The interactive-terminal SSH forwarders (`-L`/`-R`/`-D`) relay nothing.** The `executeCommand`/`LinuxSshClient` path does relay `-L`/`-R` for real. The two SSH stacks do not interoperate.
-- **Windows default firewall posture is accept-when-no-rule-matches**, where a real Windows blocks inbound by default; there is no active-profile model yet.
+- **Windows ships `DefaultInboundAction = Allow`, where a real Windows ships `Block`.** The profile model is real — three profiles, the active one chosen per adapter from the connection's `NetworkCategory`, every packet-deciding setting evaluated, and `Set-NetFirewallProfile -DefaultInboundAction Block` genuinely blocks. What is not modelled is the several-hundred-rule built-in set Windows ships alongside its `Block`, which is what makes `Block` livable; it is not attestable from this network, so the simulator renders the permissive default it actually enforces rather than a `Block` it could not honour. `netsh advfirewall show <profile>` still answers `Ok.` — its column layout is not sourceable either.
 
 ## Docs
 

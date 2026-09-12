@@ -114,7 +114,10 @@ export class SftpInteractiveSession {
   private doLs(path: string | null): void {
     const target = this.remote.normalizePath(path ?? '.', this.remoteCwd);
     const r = this.remote.listDirectory(target);
-    if (!r.ok) { this.recordError({ kind: 'parse', line: `ls ${path ?? ''}`, reason: 'list failed' }); return; }
+    if (!r.ok) {
+      this.lines.push(`Can't ls: "${target}" not found`);
+      return;
+    }
     for (const e of r.value) this.lines.push(e.name);
   }
 

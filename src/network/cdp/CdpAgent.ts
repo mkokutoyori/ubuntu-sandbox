@@ -35,7 +35,7 @@ import {
 } from '../core/types';
 import type { LinkSendRequest } from '../layers/link/LinkLayer';
 import { Logger } from '../core/Logger';
-import { C2960_SOFTWARE, ciscoSoftwareDescriptor } from '../devices/shells/cisco/CiscoPlatform';
+import { C2900_SOFTWARE, C2960_SOFTWARE, ciscoSoftwareDescriptor } from '../devices/shells/cisco/CiscoPlatform';
 
 export interface CdpHost {
   readonly id: string;
@@ -415,7 +415,7 @@ export class CdpAgent extends ReactiveAgentBase {
       return ciscoSoftwareDescriptor(C2960_SOFTWARE);
     }
     if (t.startsWith('router')) {
-      return 'Cisco IOS Software, c2900 Software (C2900-UNIVERSALK9-M), Version 15.4(3)M';
+      return ciscoSoftwareDescriptor(C2900_SOFTWARE);
     }
     return '';
   }

@@ -59,7 +59,7 @@ function srvVfs(srv: LinuxServer) {
 }
 
 async function deployKey(pc: LinuxPC) {
-  await pc.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+  await pc.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
   await pc.executeCommand('ssh-copy-id alice@10.0.0.2');
 }
 

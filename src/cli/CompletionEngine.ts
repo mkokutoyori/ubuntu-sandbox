@@ -55,7 +55,8 @@ export function locateCursor(
 
     const argument = table.argumentAt(node, session, AIDE);
     const porteur = table.specAt(node, session, AIDE);
-    if (argument?.argument?.type === 'REST') {
+    if (argument?.argument?.type === 'REST'
+      && argumentAccepts(argument.argument, token)) {
       return { node: argument, prefix, resolved: true, path, restWords: walked.slice(i) };
     }
     if (argument?.argument && argumentAccepts(argument.argument, token)
@@ -222,8 +223,10 @@ function suggestionsAt(
    * meme machine declare incomplete.
    */
   const ici = table.specAt(cursor.node, session, AIDE);
+  const restePartiel = cursor.node.argument?.type === 'REST'
+    && (cursor.node.argument.restMinWords ?? 0) > cursor.restWords.length;
   if (trigger === 'QUESTION_MARK' && ici && cursor.prefix.length === 0
-    && !enAttente && !ici.existsOnlyNegated) {
+    && !enAttente && !restePartiel && !ici.existsOnlyNegated) {
     out.push({ value: '<cr>', description: '', isArgument: true });
   }
 

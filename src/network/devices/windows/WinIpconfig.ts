@@ -116,6 +116,10 @@ export function cmdIpconfig(ctx: WinCommandContext, args: string[]): string {
     return renderDisplayDns(dnsCacheRowsOf(ctx.dnsCache.entries()));
   }
   if (restLower.includes('/registerdns')) {
+    // Frame delivery is synchronous here, so the update reaches the zone
+    // during this call; only the promise that reports the server's rcode
+    // settles later, and `ipconfig` never printed that rcode anyway.
+    void ctx.registerHostInDomainDns?.();
     return 'Windows IP Configuration\n\nRegistration of the DNS resource records for all adapters of this computer\nhas been initiated. Any errors will be reported in the Event Viewer in 15 minutes.';
   }
   if (restLower.includes('/showclassid6')) return ipconfigShowClassId(ctx, rest, '/showclassid6', true);

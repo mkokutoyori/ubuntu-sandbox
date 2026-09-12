@@ -53,7 +53,7 @@ describe('Scenario 9 — Détection d\'usurpation de clé d\'hôte (MITM)', () =
       'wonderland\n',
     );
     expect(out).not.toMatch(/Host key verification failed/i);
-    const kh = await client.executeCommand('cat /root/.ssh/known_hosts');
+    const kh = await client.executeCommand('cat ~/.ssh/known_hosts');
     expect(kh).toContain('10.0.0.2');
     expect(kh).toContain('ssh-ed25519');
     expect(kh).toContain(readPubKey(server));
@@ -96,13 +96,13 @@ describe('Scenario 9 — Détection d\'usurpation de clé d\'hôte (MITM)', () =
       'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 "echo first"',
       'wonderland\n',
     );
-    const before = await client.executeCommand('cat /root/.ssh/known_hosts');
+    const before = await client.executeCommand('cat ~/.ssh/known_hosts');
     const oldPub = readPubKey(server);
     await server.executeCommand('rm -f /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key.pub');
     await server.executeCommand('ssh-keygen -A');
     await server.executeCommand('systemctl restart ssh');
     await client.executeCommand('ssh alice@10.0.0.2 "echo second"', 'wonderland\n');
-    const after = await client.executeCommand('cat /root/.ssh/known_hosts');
+    const after = await client.executeCommand('cat ~/.ssh/known_hosts');
     expect(after).toBe(before);
     expect(after).toContain(oldPub);
   });
@@ -128,7 +128,7 @@ describe('Scenario 9 — Détection d\'usurpation de clé d\'hôte (MITM)', () =
       'wonderland\n',
     );
     expect(retry).not.toMatch(/REMOTE HOST IDENTIFICATION HAS CHANGED/);
-    const kh = await client.executeCommand('cat /root/.ssh/known_hosts');
+    const kh = await client.executeCommand('cat ~/.ssh/known_hosts');
     expect(kh).toContain(newPub);
   });
 });

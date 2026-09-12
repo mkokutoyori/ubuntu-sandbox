@@ -788,6 +788,12 @@ export class OSPFEngine implements IProtocolEngine {
     area.ranges.push({ network, mask, advertise });
   }
 
+  removeAreaRange(areaId: string, network: string, mask: string): void {
+    const area = this.config.areas.get(areaId);
+    if (!area?.ranges) return;
+    area.ranges = area.ranges.filter(r => r.network !== network || r.mask !== mask);
+  }
+
   setPassiveInterface(ifName: string): void {
     this.config.passiveInterfaces.add(ifName);
     const iface = this.interfaces.get(ifName);

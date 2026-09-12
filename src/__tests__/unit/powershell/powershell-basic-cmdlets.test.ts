@@ -2983,10 +2983,11 @@ describe('25. Get-LocalUser', () => {
   });
   it('-SID filter', async () => {
     const pc = createPC(); const ps = createPS(pc);
-    // known SID for Administrator is S-1-5-21-...-500. Hard to know, but we can try
-    const sid = (await ps.execute('(Get-LocalUser -Name Administrator).SID.Value')).trim();
+    const sid = (await ps.execute('(Get-LocalUser -Name Administrator).SID')).trim();
+    expect(sid).toMatch(/^S-1-/);
     const out = await ps.execute(`Get-LocalUser -SID ${sid}`);
     expect(out).toContain('Administrator');
+    expect(out).not.toContain('Guest');
   });
   it('returns Enabled property', async () => {
     const pc = createPC(); const ps = createPS(pc);

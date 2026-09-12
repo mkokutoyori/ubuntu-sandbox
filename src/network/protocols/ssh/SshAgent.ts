@@ -68,7 +68,7 @@ export class SshAgent {
       material,
       fingerprint: fingerprintOf(material),
       algorithm: algo,
-      comment: comment ?? defaultComment(path),
+      comment: comment ?? publicKeyComment(publicKey) ?? path,
       bits: bitsFor(algo),
       publicKey,
     };
@@ -134,9 +134,10 @@ function bitsFor(algo: AgentKey['algorithm']): number {
   }
 }
 
-function defaultComment(path: string): string {
-  const at = path.lastIndexOf('/');
-  return at >= 0 ? path.slice(at + 1) : path;
+function publicKeyComment(publicKey: string | null): string | null {
+  if (publicKey === null) return null;
+  const comment = publicKey.trim().split(/\s+/).slice(2).join(' ');
+  return comment === '' ? null : comment;
 }
 
 /**

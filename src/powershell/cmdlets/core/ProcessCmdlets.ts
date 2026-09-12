@@ -77,6 +77,7 @@ export class GetProcessCmdlet implements ICmdlet {
   readonly name = 'get-process';
   readonly aliases = ['gps', 'ps'] as const;
   readonly parameters = ['Name', 'Id', 'IncludeUserName', 'ComputerName', 'Module', 'FileVersionInfo'] as const;
+  readonly parameterValues = { Name: 'processName' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const remote = ctx.named['computername'];
@@ -140,6 +141,7 @@ export class StopProcessCmdlet implements ICmdlet {
   readonly supportsShouldProcess = true as const;
   readonly aliases = ['kill', 'spps'] as const;
   readonly parameters = ['Name', 'Id', 'InputObject', 'Force', 'PassThru'] as const;
+  readonly parameterValues = { Name: 'processName' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const procs = requireProcesses(ctx);
@@ -237,6 +239,7 @@ export class StartProcessCmdlet implements ICmdlet {
   readonly name = 'start-process';
   readonly aliases = ['saps'] as const;
   readonly parameters = ['FilePath', 'ArgumentList', 'WorkingDirectory', 'NoNewWindow', 'Wait', 'PassThru', 'Verb', 'WindowStyle', 'Credential'] as const;
+  readonly parameterValues = { FilePath: 'path' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const filePath = psValueToString(

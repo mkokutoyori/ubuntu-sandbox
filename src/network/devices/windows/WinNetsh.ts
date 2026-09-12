@@ -34,6 +34,10 @@ import {
   ANY, NET_FIREWALL_PROFILES, firewallRuleKey, parseAddressSpec, parseFirewallProtocol,
   parsePortSpec, seedBuiltInFirewallRules,
 } from './netFirewallRule';
+import {
+  type FirewallProfileName, type GpoBoolean, type NetFirewallProfileRow,
+  FIREWALL_PROFILE_NAMES, readLogSizeKilobytes, resetFirewallProfiles,
+} from './netFirewallProfile';
 import { matchEnumValue } from './netIpAddress';
 import { PortProxyRule, PORT_PROXY_FAMILIES, type PortProxyFamily } from './PortProxyRule';
 import { adapterDisplayName, resolveAdapterPortName } from './netAdapter';
@@ -2990,10 +2994,110 @@ function handleNetshAdvfirewall(ctx: WinCommandContext, args: string[]): string 
   }
   const sub = args[0].toLowerCase();
   if (sub === 'firewall') return handleAdvfwFirewall(ctx, args.slice(1));
-  if (sub === 'reset')    { ctx.firewallRules.clear(); seedBuiltInFirewallRules(ctx.firewallRules); return 'Ok.'; }
+  if (sub === 'reset') {
+    ctx.firewallRules.clear();
+    seedBuiltInFirewallRules(ctx.firewallRules);
+    resetFirewallProfiles(ctx.firewallProfiles);
+    return 'Ok.';
+  }
   if (sub === 'show')     return 'Ok.';
-  if (sub === 'set')      return 'Ok.';
+  if (sub === 'set')      return handleAdvfwSet(ctx, args.slice(1));
   return `The subcommand "${args[0]}" was not found.\nType "netsh advfirewall ?" for more information.`;
+}
+
+const ADVFW_SCOPES: Readonly<Record<string, readonly FirewallProfileName[]>> = {
+  allprofiles: FIREWALL_PROFILE_NAMES,
+  domainprofile: ['Domain'],
+  privateprofile: ['Private'],
+  publicprofile: ['Public'],
+};
+
+const ADVFW_STATES: Readonly<Record<string, GpoBoolean>> = {
+  on: 'True', off: 'False', notconfigured: 'NotConfigured',
+};
+
+const ADVFW_SETTING_VALUES: Readonly<Record<string, GpoBoolean>> = {
+  enable: 'True', disable: 'False', notconfigured: 'NotConfigured',
+};
+
+const ADVFW_SETTINGS: Readonly<Record<string, keyof NetFirewallProfileRow>> = {
+  localfirewallrules: 'allowLocalFirewallRules',
+  localconsecrules: 'allowLocalIPsecRules',
+  inboundusernotification: 'notifyOnListen',
+  unicastresponsetomulticast: 'allowUnicastResponseToMulticast',
+};
+
+const ADVFW_POLICIES: Readonly<Record<string, Partial<NetFirewallProfileRow>>> = {
+  blockinbound: { defaultInboundAction: 'Block', allowInboundRules: 'True' },
+  blockinboundalways: { defaultInboundAction: 'Block', allowInboundRules: 'False' },
+  allowinbound: { defaultInboundAction: 'Allow', allowInboundRules: 'True' },
+  allowoutbound: { defaultOutboundAction: 'Allow' },
+  blockoutbound: { defaultOutboundAction: 'Block' },
+  notconfigured: { defaultInboundAction: 'NotConfigured', defaultOutboundAction: 'NotConfigured' },
+};
+
+const ADVFW_REMOTE_MANAGEMENT_REFUSAL =
+  'The remotemanagement setting is not implemented by this simulator: the Windows Firewall'
+  + ' Remote Management rule group it switches on does not exist here, so accepting it would'
+  + ' record a setting nothing enforces.';
+
+function scopedProfiles(ctx: WinCommandContext, scope: string): readonly FirewallProfileName[] | null {
+  if (scope === 'currentprofile') return [ctx.currentFirewallProfile?.() ?? 'Domain'];
+  return ADVFW_SCOPES[scope] ?? null;
+}
+
+function advfirewallPatch(rest: string[]): Partial<NetFirewallProfileRow> | string | null {
+  const keyword = (rest[0] ?? '').toLowerCase();
+  if (keyword === 'state') {
+    const value = ADVFW_STATES[(rest[1] ?? '').toLowerCase()];
+    return value ? { enabled: value } : null;
+  }
+  if (keyword === 'firewallpolicy') {
+    const parts = (rest[1] ?? '').toLowerCase().split(',').filter(p => p !== '');
+    if (parts.length === 0) return null;
+    let patch: Partial<NetFirewallProfileRow> = {};
+    for (const part of parts) {
+      const mapped = ADVFW_POLICIES[part];
+      if (!mapped) return null;
+      patch = { ...patch, ...mapped };
+    }
+    return patch;
+  }
+  if (keyword === 'settings') {
+    const what = (rest[1] ?? '').toLowerCase();
+    if (what === 'remotemanagement') return ADVFW_REMOTE_MANAGEMENT_REFUSAL;
+    const field = ADVFW_SETTINGS[what];
+    const value = ADVFW_SETTING_VALUES[(rest[2] ?? '').toLowerCase()];
+    if (field === undefined || value === undefined) return null;
+    return { [field]: value } as Partial<NetFirewallProfileRow>;
+  }
+  if (keyword === 'logging') {
+    const what = (rest[1] ?? '').toLowerCase();
+    if (what === 'filename') return rest[2] ? { logFileName: rest[2] } : null;
+    if (what === 'maxfilesize') {
+      const size = readLogSizeKilobytes(rest[2] ?? '');
+      return size === null ? null : { logMaxSizeKilobytes: size };
+    }
+    const value = ADVFW_STATES[(rest[2] ?? '').toLowerCase()];
+    if (value === undefined) return null;
+    if (what === 'allowedconnections') return { logAllowed: value };
+    if (what === 'droppedconnections') return { logBlocked: value };
+    return null;
+  }
+  return null;
+}
+
+function handleAdvfwSet(ctx: WinCommandContext, args: string[]): string {
+  const names = scopedProfiles(ctx, (args[0] ?? '').toLowerCase());
+  if (names === null) return NETSH_ADVFW_HELP;
+  const patch = advfirewallPatch(args.slice(1));
+  if (patch === null) return NETSH_ADVFW_HELP;
+  if (typeof patch === 'string') return patch;
+  for (const name of names) {
+    const row = ctx.firewallProfiles.get(name);
+    if (row) Object.assign(row, patch);
+  }
+  return 'Ok.';
 }
 
 

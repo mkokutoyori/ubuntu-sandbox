@@ -5,6 +5,8 @@
  * Used by CiscoIOSShell for "show" commands in user and privileged modes.
  */
 
+import { C2900_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
+import { OSPF_DEFAULT_REFERENCE_BANDWIDTH } from '../../../ospf/types';
 import type { Router } from '../../Router';
 import { iosClockConfigLines } from './CiscoCommonShow';
 import { getDeviceClock } from '@/network/equipment/RouterServiceCapabilities';
@@ -69,7 +71,7 @@ export function showVersion(
   const hw = CISCO_HARDWARE_PROFILES[profile];
   const uptimeMs = router._getUptimeMs?.() ?? 0;
   return [
-    `Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5`,
+    ciscoSoftwareDescriptor(C2900_SOFTWARE),
     `Copyright (c) 1986-2025 by Cisco Systems, Inc.`,
     '',
     `ROM: System Bootstrap, Version 15.0(1r)M15`,
@@ -832,6 +834,8 @@ export function showRunningConfig(router: Router): string {
       processId: ospfCfg.processId,
       routerId: ospfCfg.routerId,
       networks: ospfCfg.networks,
+      areas: lignesDAire(router, ospfCfg),
+      passiveDefault: ospfCfg.passiveInterfaceDefault === true,
       passiveInterfaces: [...ospfCfg.passiveInterfaces],
     } : null);
     if (routingLines.length > 0) { lines.push('!'); lines.push(...routingLines); }
@@ -877,6 +881,72 @@ export function showRunningConfig(router: Router): string {
  * pour une sauvegarde qui n'a jamais eu lieu serait exactement le
  * contraire de ce que l'auditeur cherche.
  */
+/**
+ * Ce que `router ospf <n>` porte au-dela de ses reseaux.
+ *
+ * Le type d'une aire, ses plages, son cout par defaut et son
+ * authentification se lisent sur le MOTEUR — c'est lui qui les evalue.
+ * Les liens virtuels et fictifs, les voisins NBMA, les capacites et les
+ * minuteries d'etranglement viennent de la configuration annexe. Aucun
+ * de ces reglages n'etait rendu : ils etaient acceptes, ranges, et
+ * perdus au rechargement — donc a l'export d'une topologie.
+ */
+function lignesDAire(
+  router: Router,
+  ospfCfg: {
+    referenceBandwidth: number;
+    areas: Map<string, { type: string; ranges?: Array<{ network: string; mask: string; advertise: boolean }>; defaultCost?: number; authentication?: string }>;
+  },
+): string[] {
+  const lignes: string[] = [];
+  for (const [id, aire] of ospfCfg.areas) {
+    if (aire.authentication === 'simple') lignes.push(`area ${id} authentication`);
+    else if (aire.authentication === 'message-digest') {
+      lignes.push(`area ${id} authentication message-digest`);
+    }
+    if (aire.defaultCost !== undefined) lignes.push(`area ${id} default-cost ${aire.defaultCost}`);
+    if (aire.type === 'nssa') lignes.push(`area ${id} nssa`);
+    else if (aire.type === 'stub') lignes.push(`area ${id} stub`);
+    else if (aire.type === 'totally-stubby') lignes.push(`area ${id} stub no-summary`);
+    for (const plage of aire.ranges ?? []) {
+      lignes.push(`area ${id} range ${plage.network} ${plage.mask}`
+        + `${plage.advertise ? '' : ' not-advertise'}`);
+    }
+  }
+  const extra = (router as unknown as {
+    _getOSPFExtraConfig?: () => {
+      virtualLinks: Map<string, string>;
+      shamLinks?: Map<string, { areaId: string; source: string; destination: string }>;
+      nbmaNeighbors?: Array<{ ip: string; priority?: number; pollInterval?: number }>;
+      capabilities?: { transit?: boolean; opaque?: boolean };
+      timersThrottleLsa?: { startMs: number; holdMs: number; maxMs: number };
+      spfThrottle?: { initial: number; hold: number; max: number };
+    };
+  })._getOSPFExtraConfig?.();
+  for (const [id, voisin] of extra?.virtualLinks ?? []) {
+    lignes.push(`area ${id} virtual-link ${voisin}`);
+  }
+  for (const lien of (extra?.shamLinks ?? new Map()).values()) {
+    lignes.push(`area ${lien.areaId} sham-link ${lien.source} ${lien.destination}`);
+  }
+  if (ospfCfg.referenceBandwidth !== OSPF_DEFAULT_REFERENCE_BANDWIDTH) {
+    lignes.push(`auto-cost reference-bandwidth ${
+      Math.round(ospfCfg.referenceBandwidth / 1_000_000)}`);
+  }
+  if (extra?.capabilities?.opaque) lignes.push('capability opaque');
+  if (extra?.capabilities?.transit) lignes.push('capability transit');
+  const lsa = extra?.timersThrottleLsa;
+  if (lsa) lignes.push(`timers throttle lsa ${lsa.startMs} ${lsa.holdMs} ${lsa.maxMs}`);
+  const spf = extra?.spfThrottle;
+  if (spf) lignes.push(`timers throttle spf ${spf.initial} ${spf.hold} ${spf.max}`);
+  for (const voisin of extra?.nbmaNeighbors ?? []) {
+    lignes.push(`neighbor ${voisin.ip}`
+      + `${voisin.priority !== undefined ? ` priority ${voisin.priority}` : ''}`
+      + `${voisin.pollInterval !== undefined ? ` poll-interval ${voisin.pollInterval}` : ''}`);
+  }
+  return lignes;
+}
+
 export function configProvenanceLines(router: Router): string[] {
   const dev = router as unknown as {
     _getConfigProvenance?: () => {

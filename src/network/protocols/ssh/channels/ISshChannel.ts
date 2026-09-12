@@ -119,6 +119,7 @@ export interface ISshShellChannel extends ISshChannel {
 export interface ISshExecChannel extends ISshChannel {
   readonly type: 'exec';
   execute(): Promise<ExecResult>;
+  run(): ExecResult | null;
   readonly stdout: string;
   readonly exitCode: number;
 }

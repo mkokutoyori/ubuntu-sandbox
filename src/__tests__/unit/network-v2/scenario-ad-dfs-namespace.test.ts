@@ -56,6 +56,9 @@ async function buildLan(): Promise<{ dc: WindowsServer; dc2: WindowsServer; srvF
 
   srvFichiers.setCurrentUser('Administrator');
   client.setCurrentUser('Administrator');
+  srvFichiers.addHostsEntry('192.168.10.10', 'mandeng.lan');
+  srvFichiers.addHostsEntry('192.168.10.10', 'DC01.mandeng.lan');
+  await run(ps(srvFichiers), 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -Force');
   await run(ps(client), 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -NewName "PC-WIN-01" -Force');
 
   await run(ps(dc), 'Install-WindowsFeature -Name FS-DFS-Namespace, FS-DFS-Replication -IncludeManagementTools');
@@ -97,7 +100,7 @@ describe('Scénario 13 — DFS : espace de noms unifié et réplication (mandeng
     it('New-DfsnRoot crée l\'espace de noms basé domaine \\\\mandeng.lan\\Partages avec cible SRV-FICHIERS\\DFS-Root', async () => {
       const { dc, srvFichiers } = await buildLan();
       await run(ps(srvFichiers), 'New-Item "D:\\DFS-Root" -ItemType Directory -Force');
-      await run(ps(srvFichiers), 'New-SmbShare -Name "DFS-Root" -Path "D:\\DFS-Root"');
+      await run(ps(srvFichiers), 'New-SmbShare -Name "DFS-Root" -Path "D:\\DFS-Root" -FullAccess "MANDENG\\Administrator"');
 
       const out = await run(ps(dc), 'New-DfsnRoot -Path "\\\\mandeng.lan\\Partages" -Type DomainV2 -TargetPath "\\\\SRV-FICHIERS\\DFS-Root" -Description "Espace de noms DFS Mandeng"');
       expect(out).not.toMatch(/not recognized/i);
@@ -234,9 +237,11 @@ describe('Scénario 13 — DFS : espace de noms unifié et réplication (mandeng
 
     it('net use \\\\mandeng.lan\\Partages depuis PC-WIN-01 se résout via l\'espace de noms DFS', async () => {
       const { client } = await labWithFolderTargets();
-      const out = await client.executeCmdCommand('net use \\\\mandeng.lan\\Partages');
-      expect(out).not.toMatch(/not recognized/i);
-      expect(out).not.toMatch(/network path was not found/i);
+      await run(ps(client), 'Set-DnsClientServerAddress -InterfaceAlias "Ethernet 0" -ServerAddresses 192.168.10.10');
+      client.addHostsEntry('192.168.10.20', 'SRV-FICHIERS');
+      const out = await client.executeCmdCommand('net use \\\\mandeng.lan\\Partages DSRM@Mandeng2025! /user:MANDENG\\Administrator');
+      expect(out).toMatch(/command completed successfully/i);
+      expect(await client.executeCmdCommand('net use')).toMatch(/mandeng\.lan\\Partages/);
     });
   });
 });

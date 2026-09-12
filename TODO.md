@@ -57,6 +57,25 @@ ne le signale. Retire avec la refutation ci-dessus.
 
 ## Routeur Cisco (IOS)
 
+### [ssh] `~/.ssh/config` : quatre cas rouges, anterieurs et reproductibles
+`cross-equipment-ssh-suite.test.ts` echoue sur quatre cas — trois de
+`§12 — ~/.ssh/config Host blocks` (`Host alias resolves HostName and
+User`, `Per-host Port override is honoured`, `Wildcard Host * applies
+User and Stri...`) et un de `§13 — ProxyJump across heterogeneous hops`
+(`ProxyJump uses ~/.ssh/config Host alias`).
+
+**Mesure, trois fois** : dans un lot de 132 fichiers (4 rouges), dans un
+lot de 2 fichiers — donc quasiment sans charge — les MEMES 4 rouges, et
+enfin le fichier SEUL avec le lot « une seule version d'IOS » RETIRE :
+toujours les memes 4. Ce n'est donc ni la charge ni ce lot-la.
+
+**Ce qui n'a pas ete cherche** : la cause. Les quatre cas portent tous
+sur la lecture des blocs `Host` de `~/.ssh/config` — alias, `Port` par
+hote, joker `Host *`, et l'alias vu depuis `ProxyJump`. Le point commun
+designe l'analyse de ce fichier plutot que le transport ; c'est par la
+qu'il faut commencer.
+
+
 ### [cli] `probe-cli-help-parity-ratchet` depasse son propre budget de 120 s
 Deux cas de ce fichier expirent — `l'arbre parcouru est non vide`
 (routeur/config) et `un mot-cle sans description est compte, pas
@@ -964,48 +983,31 @@ ici). Les ecrire avec des zeros annoncerait une mesure qui n'a pas lieu.
 
 ### [ssh] `ssh` entre deux hotes ne traverse PAS le fil
 **Constat.** `ssh alice@10.0.2.10 whoami` lance par `executeCommand`
-rend `alice` sans qu'AUCUNE trame n'atteigne le serveur. Mesure : une
-prise posee sur le port du serveur voit les deux trames d'un `ping`
-(`in/ipv4/1`, `out/ipv4/1`) et ZERO pendant le SSH qui reussit.
+rend `alice` sans qu'AUCUNE trame n'atteigne le serveur. Mesure, par le
+compteur du cable : entre deux hotes separes par un routeur, le meme
+`ssh` ne fait franchir au routeur ni plus ni moins de trames que rien
+du tout.
 
-**Ce qui tient lieu de reseau.** `LinuxSshClient` appelle
-`transitTcpAclVerdict` (`devices/linux/network/HostLookup.ts`), qui
-parcourt la topologie depuis le port source, suit les cables, et evalue
-un SYN SYNTHETIQUE contre la liste de chaque routeur rencontre — par
-`evaluateACLByName`. C'est une SECONDE implantation de « ce paquet
-passerait-il ? », a cote de `evaluateForDataPlane` que suit le vrai plan
-de donnees, et les deux peuvent diverger sans que rien ne l'empeche.
+**Ce qui a ete FERME (lot « le verdict de transit vient du fil »).** Le
+client ne rejoue plus les listes de transit. Il demandait a
+`transitTcpAclVerdict` (`HostLookup.ts`) si un SYN passerait — une
+SECONDE implantation de « ce paquet passerait-il ? », a cote de
+`evaluateForDataPlane`. Il emet desormais un vrai SYN sans connexion
+(`TcpStack.scanProbe`, celui des balayages `nmap`) et lit ce qui
+revient. `transitTcpAclVerdict` et `transitAckAclVerdict` sont
+supprimes ; il ne reste du parcours que `transitUdpAclVerdict`, lu par
+`traceroute` seul, dont la sonde UDP n'a pas encore d'equivalent sans
+connexion. La sonde `probe-ssh-verdict-de-transit-sur-le-fil` tient le
+resultat, et le note : les quatre verdicts etaient DEJA justes — ce qui
+manquait, c'est qu'ils soient subis.
 
-**Comment cela a ete trouve.** En discriminant
-`acl-protocoles-applicatifs` : les cas de blocage SSH ne tombaient pas
-avec `evaluateForDataPlane` neutralise, alors que HTTP, SMTP et FTP
-tombaient. Neutraliser `evaluateACLByName` a la place les fait tomber
-tous les deux — donc c'est bien cette fonction, et non le plan de
-donnees, qui decide du sort de SSH.
-
-**Consequence, et elle depasse l'ACL.** Le verdict rendu est JUSTE
-aujourd'hui (sans liste ca marche, `deny ip any any` coupe,
-`permit tcp … eq 22` retablit, `eq 23` ne sauve pas), mais il est
-REJOUE et non SUBI : rien ne garantit qu'il suive le plan de donnees le
-jour ou l'un des deux change. Et cela contredit la regle que ce depot
-pose comme obligatoire — tout echange entre deux machines doit traverser
-le reseau simule comme de vraies trames.
-
-**Raison du report.** Faire passer ce client par une vraie session TCP
-est le chantier d'unification des deux piles SSH que le depot documente
-deja comme large ; `transitTcpAclVerdict` a par ailleurs d'autres
-lecteurs (traceroute, sondes UDP) qui disparaitraient avec lui.
-
-**Mesure affinee (probe `nc-transit-acl-frame`).** On a cru pouvoir retirer
-le repli en s'appuyant sur `ctx.net.tcpConnectOutcome`, que `nc` appelle
-DEJA a cote du repli. Neutralise `transitTcpAclVerdict` a `permit`, la sonde
-reelle rend `succeeded` a travers un routeur `deny ip any any` : le chemin
-TCP-connect n'atteint PAS `evaluateForDataPlane` du routeur de transit. Donc
-le repli est PORTEUR, pas un doublon retirable, et le vrai correctif n'est
-pas de supprimer le repli mais de faire SUBIR les ACL de transit au chemin
-`tcpConnectOutcome`/`TcpStack` lui-meme. Le garde-fou `nc-transit-acl-frame`
-tient le verdict d'aujourd'hui et passera par le vrai plan de donnees le
-jour ou ce chemin traverse les ACL.
+**La note qui declarait ce rejeu « porteur » etait PERIMEE.** Elle
+affirmait que le chemin `tcpConnectOutcome`/`TcpStack` n'atteignait pas
+`evaluateForDataPlane` du routeur de transit. Remesure, en neutralisant
+`transitTcpAclVerdict` a `permit` : `connectOutcome` rend TOUJOURS
+`prohibited` a travers un routeur `deny ip any any`, alors que `ssh`
+rendait `alice`. Le plan de donnees savait deja refuser ; seul le client
+ne le lui demandait pas.
 
 **Le client reel canonique existe deja : `SshSession` (session/SshSession.ts).**
 Le serveur `SshServerHandler` est un vrai sshd sur TCP (ops JSON
@@ -1023,11 +1025,6 @@ fait DEJA passer scp/sftp avec mot de passe par `SshSession` + `SshSftpChannel`
 prouvent la coherence trois-vues (ssh/journalctl/tcpdump) et la subissance ACL
 de transit sur ce client.
 
-Un second client, `SshWireClient.sshWireExec`, avait ete ecrit a cote : il
-DOUBLONNAIT `SshSession` (meme protocole, meme serveur) en plus permissif (pas
-de host key, pas de negociation d'auth). Retire ; ses gardes rejouent desormais
-`SshSession` via les fixtures.
-
 **Ce qui reste : migrer `LinuxSshClient.runSshClient` (~1555 lignes) sur
 `SshSession`.** C'est le chemin god-mode SYNCHRONE encore appele par la commande
 bash `ssh` (`LinuxCommandExecutor`) et par les shells Cisco/Huawei : il retrouve
@@ -1037,9 +1034,18 @@ fichiers de tests EPINGLENT ce comportement client (lignes `auth.log`,
 forced-command, port/env forwarding, banner, motd, `.bashrc`). Les faire passer
 par `SshServerHandler` deplace ces effets du client vers le serveur et doit
 reproduire chaque sortie a l'octet ; migration incrementale, famille par famille,
-validee lot par lot contre ces 274 fichiers — pas un remplacement d'un bloc. La
-barriere reelle est le passage synchrone->async : `runSshClient` rend un resultat
-synchrone la ou `SshSession.connect()`/`.execute()` sont `async`.
+validee lot par lot contre ces 274 fichiers — pas un remplacement d'un bloc.
+
+**La barriere, localisee.** `LinuxCommandExecutor.dispatch` est synchrone
+(`case 'ssh':`), mais la porte asynchrone EXISTE deja et sert `scp`/`sftp` :
+`executeCoreAsync` -> `runScriptContentAsync` -> `dispatchMaybeNetwork` ->
+`networkRunner`, qui sert toute commande declaree `needsNetworkContext`
+dans `commands/net/` (voir `Scp.ts`, dont le `runWithStatus` attend
+`runSshTransportAsync`). Declarer un `ssh` la-bas est donc le chemin, et
+le point de couture dans `runSshClient` est UNIQUE : le bloc
+`execMod.executeWithEnv(effectiveCmd, forwarded)` / `execMod.execute(effectiveCmd)`
+qui suit le calcul de `forwarded` et de `effectiveCmd`. Tout ce qui est
+au-dessus (auth, politique, forwarding, `.bashrc` sous `-t`) reste client.
 
 ### [acl] GRE n'est pas eprouvable sur un routeur Cisco
 La matrice « chaque protocole a son transport » couvre OSPF, EIGRP, RIP,
@@ -1490,28 +1496,6 @@ ce depot passe son temps a defaire. Ce qui EST ferme depuis le lot
 « une exclusion malformee ne rentre pas dans le magasin » : une borne
 qui n'est pas une adresse est refusee aux quatre portes.
 
-
-### [cli] `utilization mark high ?` annonce `<cr>` et `<0-100>`
-Deux infidelites d'AIDE, pas de comportement, laissees par le lot des
-seuils DHCP. **`<cr>`** : la place du pourcentage est declaree
-FACULTATIVE parce que c'est la seule facon, dans le socle, qu'un
-`no utilization mark high` — qui s'arrete au mot-cle, comme sur IOS —
-atteigne la commande ; `CommandTable.declare` ne pose une commande sur
-un noeud intermediaire que devant une place facultative. La forme
-positive refuse toujours `utilization mark high` seul, donc l'aide
-promet un `<cr>` que le gestionnaire refuse. **`<0-100>`** : une SEULE
-declaration sert les deux seuils, dont les plages reelles different
-(`<1-100>` pour le haut, `<0-100>` pour le bas), donc l'aide annonce
-leur union et le gestionnaire refuse `high 0`.
-**Mesure** : `utilization mark high ?` rend `<0-100>` puis `<cr>` ;
-`utilization mark high` seul rend `% Incomplete command.` ;
-`utilization mark high 0` rend le caret.
-**Report** : fermer le premier demande que le socle sache poser une
-commande sur un noeud pour sa seule forme NIEE (un `undoPath`, ou un
-`undoRequiresArgument` reellement lu) ; fermer le second demande qu'une
-plage puisse dependre du JETON precedent — `SessionParamRanges`, le
-port pose par le lot `standby version 2`, lit la session et non la
-ligne. Les deux touchent le socle CLI, pas la famille DHCP.
 
 ### [dhcp] Un pool sans adresse a distribuer ne franchit aucun seuil
 `utilization mark high|low` est applique, mais `poolLeasableTotal` rend
@@ -2895,7 +2879,7 @@ defaut que la migration referme partout ailleurs. Le refus actuel dit
 la verite : la plateforme ne les porte pas. A rouvrir des que la
 reference est atteignable.
 
-### [cli] le garde-fou des `<cr>` n'entrait dans aucun sous-mode — 33 promesses menteuses y restent
+### [cli] le garde-fou des `<cr>` n'entrait dans aucun sous-mode — TOUS FERMES
 `probe-aide-cr-tient-sa-promesse` balayait trois modes : `show` en EXEC
 privilegie, la configuration globale et celle d'interface. Aucun
 sous-mode. Promene dans huit d'entre eux, le meme balayage a trouve 77
@@ -2904,16 +2888,20 @@ sous-mode. Promene dans huit d'entre eux, le meme balayage a trouve 77
 empecher, dans les endroits ou il ne regardait pas.
 **Mesure** (routeur Cisco, profondeur 3, un materiel neuf par
 validation) :
-- `config-router-ospf` 20 : `area`, `area range`, `area stub`,
-  `area virtual-link`, `auto-cost`, `auto-cost reference-bandwidth`,
-  `capability`, `neighbor`, `passive-interface`, `no passive-interface`…
+- `config-router-ospf` 20 — FERMES, et le mode est desormais balaye.
+  Le balayage en avait compte VINGT-ET-UN, un de plus que la mesure
+  d'origine : `area filter-list`, annonce au rang de l'identifiant
+  d'aire.
 - `config-line` 13 — FERMES, et le mode est desormais balaye. Le trie
   y etait deja vide : les treize venaient de places DECLAREES
   facultatives (`exec-timeout`, `login-timeout`, le protocole de
   `transport`) et de trois mots-cles qui ouvrent une famille sans etre
   une commande (`transport`, `accounting`, `authorization`).
-- `config-router-eigrp` 6, `config-router-bgp` 5, `config-dhcp` 2
-  (`option ascii`, `option hex`) ;
+- `config-router-eigrp` 6, `config-router-bgp` 5, `config-dhcp` 2 —
+  FERMES. Le balayage en a compte VINGT dans ces modes plutot que
+  treize : RIP en portait cinq que la mesure d'origine n'avait pas
+  vus, et le pool DHCP deux de plus (`utilization mark high` et `low`).
+  Les huit sous-modes sont desormais balayes, et le compte est zero.
 - `config-view` 4, `config-route-map` 24 et `config-acl-ext` 3
   (`sequence`, `sequence deny`, `sequence permit`) — FERMES. Les quatre
   sous-modes correspondants sont desormais balayes : les deux vues, et

@@ -41,7 +41,6 @@ export interface OSPFExtraConfig {
   redistributeStatic?: { subnets: boolean; metricType: number };
   redistributeConnected?: { subnets: boolean };
   redistributeRip?: { subnets: boolean; metric?: number; metricType: number };
-  areaRanges: Map<string, Array<{ network: string; mask: string }>>;
   virtualLinks: Map<string, string>;
   areaDefaultCost: Map<string, number>;
   areaAuthentication: Map<string, 'simple' | 'message-digest' | 'null'>;
@@ -121,7 +120,6 @@ export class RouterOSPFIntegration {
 
   // ── Extra config (advanced features not in OSPFEngine) ──
   private extraConfig: OSPFExtraConfig = {
-    areaRanges: new Map(),
     virtualLinks: new Map(),
     areaDefaultCost: new Map(),
     areaAuthentication: new Map(),

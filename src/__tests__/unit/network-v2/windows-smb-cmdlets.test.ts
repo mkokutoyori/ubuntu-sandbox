@@ -30,11 +30,17 @@ describe('New-SmbShare requires the FS-FileServer role', () => {
     expect(out).toMatch(/is not recognized as the name of a cmdlet/i);
   });
 
-  it('does not exist at all on a windows-pc', async () => {
+  it('enumere les partages administratifs sur un poste, mais refuse d en creer un', async () => {
+    // `Get-SmbShare` fait partie du module SmbShare livre avec Windows
+    // client : il enumere les partages administratifs que LanmanServer
+    // cree (ADMIN$, C$, IPC$). Seule la CREATION d'un partage demande le
+    // role FS-FileServer, comme le disait deja le commentaire de
+    // `WindowsSmbAdapter.requireRole`.
     const pc = new WindowsPC('windows-pc', 'DESKTOP-01');
     pc.setCurrentUser('Administrator');
-    const out = await run(ps(pc), 'Get-SmbShare');
-    expect(out).toMatch(/is not recognized as the name of a cmdlet/i);
+    expect(await run(ps(pc), 'Get-SmbShare')).toMatch(/ADMIN\$|IPC\$/);
+    expect(await run(ps(pc), 'New-SmbShare -Name Data -Path C:\\Shares\\Data'))
+      .toMatch(/is not recognized as the name of a cmdlet/i);
   });
 
   it('works once FS-FileServer is installed', async () => {

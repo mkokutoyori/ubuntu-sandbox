@@ -161,24 +161,8 @@ interface FirewallSimulationSurface {
   simulate(request: {
     ingressPort: string; protocol: 'tcp' | 'udp';
     sourceIP: string; destinationIP: string;
-    sourcePort: number; destinationPort: number; ackOnly?: boolean;
+    sourcePort: number; destinationPort: number;
   }): { allowed: boolean };
-}
-
-export function transitTcpAclVerdict(
-  srcIp: string, dstIp: string, dstPort: number,
-  now: Date = new Date(),
-  from?: Equipment | null,
-): 'permit' | 'deny' {
-  return transitAclVerdict(srcIp, dstIp, dstPort, 'tcp', now, from);
-}
-
-export function transitAckAclVerdict(
-  srcIp: string, dstIp: string, dstPort: number,
-  now: Date = new Date(),
-  from?: Equipment | null,
-): 'permit' | 'deny' {
-  return transitAclVerdict(srcIp, dstIp, dstPort, 'tcp', now, from, true);
 }
 
 /**
@@ -191,15 +175,13 @@ export function transitUdpAclVerdict(
   now: Date = new Date(),
   from?: Equipment | null,
 ): 'permit' | 'deny' {
-  return transitAclVerdict(srcIp, dstIp, dstPort, 'udp', now, from);
+  return transitAclVerdict(srcIp, dstIp, dstPort, now, from);
 }
 
 function transitAclVerdict(
   srcIp: string, dstIp: string, dstPort: number,
-  proto: 'tcp' | 'udp',
   now: Date,
   from?: Equipment | null,
-  ackOnly = false,
 ): 'permit' | 'deny' {
   if (srcIp === dstIp) return 'permit';
   const startPorts: Port[] = [];
@@ -211,9 +193,7 @@ function transitAclVerdict(
   }
   if (startPorts.length === 0) return 'permit';
 
-  const synth = proto === 'tcp'
-    ? synthSynPacket(srcIp, dstIp, dstPort, ackOnly)
-    : synthUdpPacket(srcIp, dstIp, dstPort);
+  const synth = synthUdpPacket(srcIp, dstIp, dstPort);
   const visited = new Set<string>();
   const queue: Port[] = [...startPorts];
   while (queue.length > 0) {
@@ -235,12 +215,11 @@ function transitAclVerdict(
       try {
         const outcome = firewall.simulate({
           ingressPort: peerPort.getName(),
-          protocol: proto,
+          protocol: 'udp',
           sourceIP: srcIp,
           destinationIP: dstIp,
           sourcePort: 49152,
           destinationPort: dstPort,
-          ackOnly,
         });
         if (!outcome.allowed) return 'deny';
       } catch {
@@ -292,30 +271,20 @@ function synthUdpPacket(srcIp: string, dstIp: string, dstPort: number): IPv4Pack
   );
 }
 
-function synthSynPacket(
-  srcIp: string, dstIp: string, dstPort: number, ackOnly = false,
-): IPv4Packet {
+function synthSynPacket(srcIp: string, dstIp: string, dstPort: number): IPv4Packet {
   const tcp: TCPPacket = {
     type: 'tcp',
     sourcePort: 49152,
     destinationPort: dstPort,
     sequenceNumber: 0,
-    acknowledgementNumber: ackOnly ? 1 : 0,
-    flags: {
-      syn: !ackOnly, ack: ackOnly,
-      fin: false, rst: false, psh: false, urg: false,
-    },
+    acknowledgementNumber: 0,
+    flags: { syn: true, ack: false, fin: false, rst: false, psh: false, urg: false },
     windowSize: 65535,
     checksum: 0,
     payload: null,
   };
   return createIPv4Packet(
-    new IPAddress(srcIp),
-    new IPAddress(dstIp),
-    IP_PROTO_TCP,
-    64,
-    tcp,
-    20,
+    new IPAddress(srcIp), new IPAddress(dstIp), IP_PROTO_TCP, 64, tcp, 20,
   );
 }
 

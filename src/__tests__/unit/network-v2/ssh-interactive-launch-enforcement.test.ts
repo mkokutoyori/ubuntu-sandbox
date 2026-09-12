@@ -42,9 +42,19 @@ async function buildLab(): Promise<Lab> {
   return { client, server };
 }
 
+/*
+ * Le compte LOCAL du lancement est celui sous lequel le meme test tape
+ * ses commandes : `ssh-keygen -R` et la connexion interactive doivent
+ * lire le MEME `known_hosts`. Il etait fixe a `root` alors que
+ * `executeCommand` s'execute sous l'utilisateur ordinaire, si bien que
+ * la suppression d'une cle ne touchait pas le magasin ou la connexion
+ * l'avait ecrite.
+ */
 function launchOpts(client: LinuxPC): SshLaunchOptions {
   return {
-    defaultUser: 'root',
+    defaultUser: (client as unknown as {
+      executor: { userMgr: { currentUser: string } };
+    }).executor.userMgr.currentUser,
     sourceIp: CLIENT_IP,
     sourceDevice: client,
     wireProbe: (host, port) => client.tcpConnectOutcome(new IPAddress(host), port),
@@ -118,7 +128,7 @@ describe('ssh interactif (terminal réel) — détection MITM par changement de 
     if (finalised.kind !== 'success') throw new Error('unreachable');
     finalised.shell.dispose();
 
-    const kh = await client.executeCommand('cat /root/.ssh/known_hosts');
+    const kh = await client.executeCommand('cat ~/.ssh/known_hosts');
     expect(kh).toContain(SERVER_IP);
     expect(kh).toContain(readPubKey(server));
   });

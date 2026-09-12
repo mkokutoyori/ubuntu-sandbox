@@ -43,6 +43,7 @@ import {
 } from './cisco/ciscoVrfStore';
 import { CliInvalidInput } from './cli/CliDiagnostic';
 import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
+import { zoneSpecs, type ZoneHost } from './cisco/zoneSpecs';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
@@ -81,7 +82,7 @@ import {
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import {
-  keyChainSubmodeSpecs, keyChainKeySubmodeSpecs,
+  keyChainSubmodeSpecs, keyChainKeySubmodeSpecs, keyChainGlobalSpecs, keyChainShowSpecs,
 } from './cisco/CiscoKeyChainCommands';
 import {
   buildIpSlaConfigCommands, registerIpSlaTypeSubModes,
@@ -105,7 +106,7 @@ import { showIpOspfNeighbor, routerIpRouteView } from './cisco/CiscoOspfCommands
 import {
   type CiscoShellMode, type CiscoShellContext,
   buildConfigCommands, buildConfigIfCommands, configIfSpecs, dhcpGlobalSpecs,
-  registerInterfaceEntry, INTERFACE_TYPES, typesInterfaceEnMotsCles,
+  registerInterfaceEntry, INTERFACE_TYPES, typesInterfaceEnMotsCles, NOM_INTERFACE_TAPE,
 } from './cisco/CiscoConfigCommands';
 import {
   buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands, dhcpPoolSpecs,
@@ -170,13 +171,13 @@ import {
   buildSecurityConfigCommands, buildSecurityInterfaceCommands,
   buildSecuritySubmodeCommands, buildSecurityShowCommands, securityInterfaceSpecs,
   securityShowSpecs,
-  classMapSubmodeSpecs, policyMapSubmodeSpecs, policyClassSubmodeSpecs,
+  classMapSubmodeSpecs, policyMapSubmodeSpecs, policyClassSubmodeSpecs, securityGlobalSpecs,
   controlPlaneSubmodeSpecs, zoneSubmodeSpecs, zonePairSubmodeSpecs,
   trustpointSubmodeSpecs,
   type CiscoSecurityShellContext,
 } from './cisco/CiscoSecurityCommands';
 import {
-  buildEemNetflowArchiveConfigCommands, buildEemAppletSubmode,
+  buildEemNetflowArchiveConfigCommands, buildEemAppletSubmode, netflowSpecs,
   buildFlowExporterSubmode, buildFlowRecordSubmode, buildFlowMonitorSubmode,
   buildArchiveSubmode, buildArchiveLogSubmode,
   eemAppletSpecs, flowExporterSpecs, flowRecordSpecs, flowMonitorSpecs,
@@ -440,6 +441,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
+      ...zoneSpecs(() => this.zoneHost()),
       ...dhcpClientFamily(),
       ...hsrpShowSpecs(this, () => this.fhrp),
       ...trackShowSpecs(this),
@@ -483,6 +485,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...flowExporterSpecs(this),
       ...flowRecordSpecs(this),
       ...flowMonitorSpecs(this),
+      ...netflowSpecs(this),
+      ...securityGlobalSpecs(this),
       ...classMapSubmodeSpecs(this),
       ...policyMapSubmodeSpecs(this),
       ...policyClassSubmodeSpecs(this),
@@ -496,6 +500,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...this.vrfSubmodeSpecs(),
       ...trackSubmodeSpecs(this),
       ...trackEntrySpecs(() => routerTrackEntryHost(this), ['config']),
+      ...keyChainGlobalSpecs(this),
+      ...keyChainShowSpecs(this),
       ...keyChainSubmodeSpecs(this),
       ...keyChainKeySubmodeSpecs(this),
       ...routeMapSpecs(() => this.routeMapHost()),
@@ -615,6 +621,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         modes: ['config', 'config-if', 'config-subif'], minPrivilege: 15,
         argumentFor: () => ({
           name: 'interface', type: 'REST', description: 'Interface to configure',
+          pattern: NOM_INTERFACE_TAPE,
           literal: 'IFACE', alternatives: INTERFACE_TYPES,
         }),
         keywordsFor: () => typesInterfaceEnMotsCles(INTERFACE_TYPES),
@@ -802,6 +809,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [
       ...super.socleLegends(),
       [['no'], 'Negate a command or set its defaults', ['config-router']],
+      [['area'], 'OSPF area parameters', ['config-router-ospf']],
       [['crypto'], 'Encryption module'],
       [['crypto', 'ipsec'], 'Configure IPSec policy'],
       [['crypto', 'ipsec', 'security-association'], 'Security association parameters'],
@@ -1383,6 +1391,20 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   setPolicyClass(n: string | null): void { this.selectedPolicyClass = n; }
   getControlPlane(): boolean { return this.controlPlaneActive; }
   setControlPlane(v: boolean): void { this.controlPlaneActive = v; }
+  private zoneHost(): ZoneHost {
+    const sec = () => getSecurityConfig(this.d());
+    return {
+      declareZone: (name) => {
+        sec().zones.set(name, { name });
+        this.selectedZone = name;
+      },
+      declareZonePair: (name, source, destination) => {
+        sec().zonePairs.set(name, { name, source, destination });
+        this.selectedZonePair = name;
+      },
+    };
+  }
+
   getZone(): string | null { return this.selectedZone; }
   setZone(n: string | null): void { this.selectedZone = n; }
   getZonePair(): string | null { return this.selectedZonePair; }

@@ -275,7 +275,7 @@ export function ipSlaDebugPairs(ctx: IpSlaShowContext): DebugPair[] {
     path: readonly string[], description: string,
     category: 'ip.sla.trace' | 'ip.sla.error' | 'track',
   ): DebugPair => ({
-    path: [...path], description, undoDescription: description, takesArguments: false,
+    path: [...path], description, undoDescription: description,
     enable: () => service().enable(category),
     disable: () => service().disable(category),
   });

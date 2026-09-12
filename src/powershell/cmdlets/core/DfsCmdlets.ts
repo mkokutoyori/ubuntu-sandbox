@@ -45,6 +45,7 @@ export class NewDfsnRootCmdlet implements ICmdlet {
   readonly name = 'new-dfsnroot';
   readonly aliases = [] as const;
   readonly parameters = ['Path', 'Type', 'TargetPath', 'Description'] as const;
+  readonly parameterValues = { Path: 'path' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dfs = requireDfs(ctx, 'New-DfsnRoot');
@@ -69,6 +70,7 @@ export class GetDfsnRootCmdlet implements ICmdlet {
   readonly name = 'get-dfsnroot';
   readonly aliases = [] as const;
   readonly parameters = ['Path'] as const;
+  readonly parameterValues = { Path: 'path' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dfs = requireDfs(ctx, 'Get-DfsnRoot');
@@ -85,6 +87,7 @@ export class NewDfsnFolderCmdlet implements ICmdlet {
   readonly name = 'new-dfsnfolder';
   readonly aliases = [] as const;
   readonly parameters = ['Path', 'TargetPath', 'Description'] as const;
+  readonly parameterValues = { Path: 'path' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dfs = requireDfs(ctx, 'New-DfsnFolder');
@@ -110,6 +113,7 @@ export class NewDfsnFolderTargetCmdlet implements ICmdlet {
   readonly name = 'new-dfsnfoldertarget';
   readonly aliases = [] as const;
   readonly parameters = ['Path', 'TargetPath'] as const;
+  readonly parameterValues = { Path: 'path' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dfs = requireDfs(ctx, 'New-DfsnFolderTarget');
@@ -134,6 +138,7 @@ export class GetDfsnFolderCmdlet implements ICmdlet {
   readonly name = 'get-dfsnfolder';
   readonly aliases = [] as const;
   readonly parameters = ['Path'] as const;
+  readonly parameterValues = { Path: 'path' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dfs = requireDfs(ctx, 'Get-DfsnFolder');
@@ -158,6 +163,7 @@ export class GetDfsnFolderTargetCmdlet implements ICmdlet {
   readonly name = 'get-dfsnfoldertarget';
   readonly aliases = [] as const;
   readonly parameters = ['Path'] as const;
+  readonly parameterValues = { Path: 'path' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dfs = requireDfs(ctx, 'Get-DfsnFolderTarget');
@@ -184,6 +190,7 @@ export class SetDfsnFolderTargetCmdlet implements ICmdlet {
   readonly name = 'set-dfsnfoldertarget';
   readonly aliases = [] as const;
   readonly parameters = ['Path', 'TargetPath', 'ReferralPriorityClass'] as const;
+  readonly parameterValues = { Path: 'path' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dfs = requireDfs(ctx, 'Set-DfsnFolderTarget');

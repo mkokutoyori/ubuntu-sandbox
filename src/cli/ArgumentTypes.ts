@@ -105,6 +105,15 @@ export interface ArgumentSpec {
    * l'argument est ce qui rend le caret d'IOS possible.
    */
   readonly pattern?: RegExp;
+  /**
+   * Le nombre de mots qu'une place `REST` exige.
+   *
+   * Une place `REST` prend toute la fin de la ligne, donc UN mot la
+   * remplit — et `?` annoncait `<cr>` des le premier. `arp <adresse>` en
+   * vivait : l'adresse suffisait a la declarer complete alors que le
+   * gestionnaire attend aussi l'adresse materielle.
+   */
+  readonly restMinWords?: number;
 }
 
 export interface ArgumentTypeDefinition {
@@ -249,6 +258,7 @@ export function argumentAccepts(spec: ArgumentSpec, raw: string): boolean {
   // c'est la forme qui decide de l'acceptation, jamais son intitule.
   if (spec.alternatives && spec.alternatives.length > 0 && !spec.values) {
     if (outsideEveryAnnouncedRange(token, spec.alternatives)) return false;
+    if (spec.pattern && !spec.pattern.test(token)) return false;
     return ARGUMENT_TYPES[spec.type].accepts(token);
   }
   // Porter les DEUX veut dire « l'un ou l'autre » : une severite IOS

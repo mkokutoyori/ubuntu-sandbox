@@ -18,6 +18,9 @@ import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFu
 import type { RemoteDirectoryTarget } from './adRemoteDirectory';
 import type { NetRouteIdentity, NetRouteUpdate } from '@/network/devices/windows/netRoute';
 import type { NetFirewallRuleEntry } from '@/network/devices/windows/netFirewallRule';
+import type {
+  FirewallProfileName, NetFirewallProfileRow,
+} from '@/network/devices/windows/netFirewallProfile';
 import type { NetAdapterEntry } from '@/network/devices/windows/netAdapter';
 import type { NetNeighborPlan, NetNeighborRow } from '@/network/devices/windows/netNeighbor';
 import type { DnsAnswerRow, DnsCacheRow } from '@/network/devices/windows/dnsClientCache';
@@ -183,10 +186,14 @@ export interface SmbSessionInfo {
 export interface ISmbProvider {
   listShares(): SmbShareInfo[];
   getShare(name: string): SmbShareInfo | null;
-  newShare(name: string, path: string, opts?: { fullAccess?: string[]; changeAccess?: string[]; readAccess?: string[] }):
+  newShare(name: string, path: string, opts?: { description?: string; fullAccess?: string[]; changeAccess?: string[]; readAccess?: string[] }):
     { ok: boolean; message: string };
   removeShare(name: string): { ok: boolean; message: string };
   listSessions(): SmbSessionInfo[];
+  /** Mapped network drives — the very table `net use` shows, per `New-PSDrive -Persist`. */
+  listMappings?(): Array<{ local: string; remote: string; status: string; user: string }>;
+  mapDrive?(local: string, remote: string, credential?: { username: string; password: string }): { ok: boolean; error?: string };
+  unmapDrive?(target: string): boolean;
 }
 
 // ── AD DS (Active Directory Domain Services) ────────────────────────────────
@@ -1372,6 +1379,8 @@ export interface INetworkProvider {
    */
   getUdpEndpoints?(): Array<{ localAddress: string; localPort: number; pid: number; processName: string }>;
   getFirewallRules(): NetFirewallRuleEntry[];
+  getFirewallProfiles(): NetFirewallProfileRow[];
+  updateFirewallProfile(name: FirewallProfileName, patch: Partial<NetFirewallProfileRow>): void;
   addFirewallRule(rule: NetFirewallRuleEntry): string;
   updateFirewallRule(name: string, patch: Partial<NetFirewallRuleEntry>): void;
   removeFirewallRule(name: string): void;

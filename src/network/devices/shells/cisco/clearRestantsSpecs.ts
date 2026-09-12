@@ -42,26 +42,39 @@ export function lineTargetPlace(maxAbsolute: number): ArgumentSpec {
 }
 
 const LINE_INDEX: ArgumentSpec = {
-  name: 'index', type: 'INT', optional: true, range: [0, 15],
+  name: 'index', type: 'INT', range: [0, 15],
   description: 'Line number',
 };
+
+const SORTES_DE_LIGNE: ReadonlyArray<readonly [string, string]> = [
+  ['aux', 'Auxiliary line'],
+  ['console', 'Primary terminal line'],
+  ['tty', 'Terminal controller'],
+  ['vty', 'Virtual terminal'],
+];
 
 export function clearLineSpecs(
   ctx: () => ClearRestantsHost, maxAbsolute: number,
 ): CommandSpec[] {
-  const cible = lineTargetPlace(maxAbsolute);
+  const absolue: ArgumentSpec = {
+    name: 'cible', type: 'INT', range: [0, maxAbsolute],
+    description: 'First Line number',
+  };
   return [
     {
       id: 'clear-line',
-      path: ['clear', 'line', cible, LINE_INDEX],
+      path: ['clear', 'line', absolue],
       description: 'Reset a terminal line',
       modes: EXEC, minPrivilege: 15,
-      run: (_session, args) => {
-        const mots = args.index === undefined
-          ? [args.cible] : [args.cible, args.index];
-        return clearLine(ctx().linePool(), mots);
-      },
+      run: (_session, args) => clearLine(ctx().linePool(), [args.cible]),
     },
+    ...SORTES_DE_LIGNE.map(([sorte, description]): CommandSpec => ({
+      id: `clear-line-${sorte}`,
+      path: ['clear', 'line', sorte, LINE_INDEX],
+      description,
+      modes: EXEC, minPrivilege: 15,
+      run: (_session, args) => clearLine(ctx().linePool(), [sorte, args.index]),
+    })),
     {
       id: 'clear-logging-persistent',
       path: ['clear', 'logging', 'persistent'],
@@ -140,11 +153,31 @@ export function clearCryptoSpecs(ctx: () => ClearCryptoHost): CommandSpec[] {
 export interface ClearSwitchHost {
   resolveInterface(name: string): string | null;
   recoverErrDisable(port: string): void;
+  clearPortSecurity(kind: string, iface: string | null): string;
 }
 
 const INTERFACE_PLACE: ArgumentSpec = {
   name: 'iface', type: 'INTERFACE', description: 'Interface to recover',
 };
+
+const PORT_A_VIDER: ArgumentSpec = {
+  name: 'iface', type: 'INTERFACE', description: 'Clear one interface only',
+};
+
+/**
+ * Les quatre genres d'adresses securisees, chacun un CHEMIN.
+ *
+ * Ils portaient deja leur description, posee a la main a cote d'un
+ * noeud intermediaire ; ce qui manquait est la place de leur filtre —
+ * `interface <nom>` — declaree plutot que relue mot a mot dans le
+ * gestionnaire.
+ */
+const GENRES_PORT_SECURITY: ReadonlyArray<readonly [string, string]> = [
+  ['all', 'Clear all secure MAC addresses'],
+  ['configured', 'Clear configured secure MAC addresses'],
+  ['dynamic', 'Clear dynamically learned secure MAC addresses'],
+  ['sticky', 'Clear sticky secure MAC addresses'],
+];
 
 /**
  * Les trois `clear` que seul un Catalyst porte.
@@ -163,6 +196,22 @@ const INTERFACE_PLACE: ArgumentSpec = {
  */
 export function clearSwitchSpecs(ctx: () => ClearSwitchHost): CommandSpec[] {
   return [
+    ...GENRES_PORT_SECURITY.flatMap(([genre, description]): CommandSpec[] => [
+      {
+        id: `clear-port-security-${genre}`,
+        path: ['clear', 'port-security', genre],
+        description,
+        modes: EXEC, minPrivilege: 15,
+        run: () => ctx().clearPortSecurity(genre, null),
+      },
+      {
+        id: `clear-port-security-${genre}-interface`,
+        path: ['clear', 'port-security', genre, 'interface', PORT_A_VIDER],
+        description,
+        modes: EXEC, minPrivilege: 15,
+        run: (_session, args) => ctx().clearPortSecurity(genre, args.iface),
+      },
+    ]),
     {
       id: 'clear-spanning-tree-detected-protocols',
       path: ['clear', 'spanning-tree', 'detected-protocols'],

@@ -454,7 +454,7 @@ describe('8. Network Profile', () => {
     const ps = createPS(pc);
     const out = await ps.execute('Get-NetConnectionProfile');
     expect(out).toContain('NetworkCategory');
-    expect(out).toContain('DomainAuthenticated');
+    expect(out).toContain('Public');
   });
 
   it.skip('Set-NetConnectionProfile changes network category', async () => {

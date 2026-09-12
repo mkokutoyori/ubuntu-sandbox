@@ -1657,7 +1657,7 @@ describe('§25 — full end-to-end audit story', () => {
     },
     {
       name: 'logger writes a custom line and syslog records it',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 logger "audit-trail-marker"'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.10 logger "audit-trail-marker"'); },
       on: l => l.srv1,
       cmd: 'grep audit-trail-marker /var/log/syslog',
       contains: [/audit-trail-marker/],
@@ -1727,15 +1727,15 @@ describe('§26 — SSH public-key authentication', () => {
     {
       name: 'ssh-keygen creates ~/.ssh/id_ed25519 and .pub',
       on: l => l.pc1,
-      cmd: 'ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q',
+      cmd: 'ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q',
       contains: [''],
       excludes: [/error|failed/i],
     },
     {
       name: 'after keygen, both private and public files exist with 0600 / 0644',
-      setup: (l) => { void l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q'); },
+      setup: (l) => { void l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q'); },
       on: l => l.pc1,
-      cmd: 'ls -l /root/.ssh/',
+      cmd: 'ls -l ~/.ssh/',
       contains: [/-rw-------.*id_ed25519$/m, /-rw-r--r--.*id_ed25519\.pub/],
     },
     {
@@ -1744,7 +1744,7 @@ describe('§26 — SSH public-key authentication', () => {
       // le fichier au nom de root.
       name: 'ssh-copy-id installs the public key on the remote',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q');
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q');
         await l.pc1.executeCommand('ssh-copy-id alice@10.0.0.2');
       },
       on: l => l.pc2,
@@ -1754,7 +1754,7 @@ describe('§26 — SSH public-key authentication', () => {
     {
       name: 'subsequent ssh uses public-key auth (Accepted publickey line)',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q');
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q');
         await l.pc1.executeCommand('ssh-copy-id alice@10.0.0.2');
         await l.pc1.executeCommand('ssh alice@10.0.0.2');
       },
@@ -1765,7 +1765,7 @@ describe('§26 — SSH public-key authentication', () => {
     {
       name: 'PubkeyAuthentication no in sshd_config blocks pubkey login',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q');
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q');
         await l.pc1.executeCommand('ssh-copy-id alice@10.0.0.2');
         await l.pc2.executeCommand('printf "PubkeyAuthentication no\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
         await l.pc2.executeCommand('sudo systemctl reload ssh');
@@ -1776,9 +1776,9 @@ describe('§26 — SSH public-key authentication', () => {
     },
     {
       name: 'ssh-keygen -y -f reads the private key and prints the public form',
-      setup: (l) => { void l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q'); },
+      setup: (l) => { void l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q'); },
       on: l => l.pc1,
-      cmd: 'ssh-keygen -y -f /root/.ssh/id_ed25519',
+      cmd: 'ssh-keygen -y -f ~/.ssh/id_ed25519',
       contains: [/^ssh-ed25519 /],
     },
   ];
@@ -1804,18 +1804,18 @@ describe('§27 — ssh-agent and ssh-add', () => {
     {
       name: 'ssh-add of a key adds it and ssh-add -l lists it',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q');
-        await l.pc1.executeCommand('ssh-add /root/.ssh/id_ed25519');
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q');
+        await l.pc1.executeCommand('ssh-add ~/.ssh/id_ed25519');
       },
       on: l => l.pc1,
       cmd: 'ssh-add -l',
-      contains: [/^256 SHA256:.*id_ed25519 \(ED25519\)/m],
+      contains: [/^256 SHA256:\S+ \S+ \(ED25519\)$/m],
     },
     {
       name: 'ssh-add -L prints the public key in authorized_keys form',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q');
-        await l.pc1.executeCommand('ssh-add /root/.ssh/id_ed25519');
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q');
+        await l.pc1.executeCommand('ssh-add ~/.ssh/id_ed25519');
       },
       on: l => l.pc1,
       cmd: 'ssh-add -L',
@@ -1824,9 +1824,9 @@ describe('§27 — ssh-agent and ssh-add', () => {
     {
       name: 'ssh-add -d removes a specific identity',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q');
-        await l.pc1.executeCommand('ssh-add /root/.ssh/id_ed25519');
-        await l.pc1.executeCommand('ssh-add -d /root/.ssh/id_ed25519');
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q');
+        await l.pc1.executeCommand('ssh-add ~/.ssh/id_ed25519');
+        await l.pc1.executeCommand('ssh-add -d ~/.ssh/id_ed25519');
       },
       on: l => l.pc1,
       cmd: 'ssh-add -l',
@@ -1835,10 +1835,10 @@ describe('§27 — ssh-agent and ssh-add', () => {
     {
       name: 'ssh-add -D removes all identities',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/k1 -N "" -q');
-        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/k2 -N "" -q');
-        await l.pc1.executeCommand('ssh-add /root/.ssh/k1');
-        await l.pc1.executeCommand('ssh-add /root/.ssh/k2');
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/k1 -N "" -q');
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/k2 -N "" -q');
+        await l.pc1.executeCommand('ssh-add ~/.ssh/k1');
+        await l.pc1.executeCommand('ssh-add ~/.ssh/k2');
         await l.pc1.executeCommand('ssh-add -D');
       },
       on: l => l.pc1,
@@ -1848,12 +1848,12 @@ describe('§27 — ssh-agent and ssh-add', () => {
     {
       name: 'ssh -A forwards the agent (remote ssh-add -l hits original agent)',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -q');
-        await l.pc1.executeCommand('ssh-add /root/.ssh/id_ed25519');
+        await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q');
+        await l.pc1.executeCommand('ssh-add ~/.ssh/id_ed25519');
       },
       on: l => l.pc1,
       cmd: 'ssh -A alice@10.0.0.2 ssh-add -l',
-      contains: [/SHA256:.*id_ed25519/],
+      contains: [/SHA256:\S+ \S+ \(ED25519\)/],
     },
   ];
 
@@ -1936,7 +1936,7 @@ describe('§29 — ~/.ssh/known_hosts host-key tracking', () => {
       name: 'first ssh appends a known_hosts entry for the remote',
       setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2'); },
       on: l => l.pc1,
-      cmd: 'cat /root/.ssh/known_hosts',
+      cmd: 'cat ~/.ssh/known_hosts',
       contains: [/^10\.0\.0\.2 ssh-(ed25519|rsa) /m],
     },
     {
@@ -1946,7 +1946,7 @@ describe('§29 — ~/.ssh/known_hosts host-key tracking', () => {
         await l.pc1.executeCommand('ssh alice@10.0.0.2');
       },
       on: l => l.pc1,
-      cmd: 'wc -l /root/.ssh/known_hosts',
+      cmd: 'wc -l ~/.ssh/known_hosts',
       contains: [/^\s*1\s/],
     },
     {
@@ -1974,7 +1974,7 @@ describe('§29 — ~/.ssh/known_hosts host-key tracking', () => {
         await l.pc1.executeCommand('ssh-keygen -R 10.0.0.2');
       },
       on: l => l.pc1,
-      cmd: 'cat /root/.ssh/known_hosts',
+      cmd: 'cat ~/.ssh/known_hosts',
       excludes: ['10.0.0.2'],
     },
     {
@@ -2032,7 +2032,7 @@ describe('§30 — network monitoring of SSH listener and sessions', () => {
     },
     {
       name: 'tcpdump -ni eth0 port 22 -c 2 captures SYN/SYN-ACK during a connect',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 hostname'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2 hostname'); },
       on: l => l.pc1,
       cmd: 'tcpdump -ni eth0 port 22 -c 2',
       contains: [/Flags \[S\]|Flags \[S\.\]/, /10\.0\.0\.2\.22/],
@@ -2149,7 +2149,8 @@ describe('§32 — environment forwarding (SendEnv / AcceptEnv)', () => {
     {
       name: 'SendEnv MYVAR + AcceptEnv MYVAR forwards the variable',
       setup: async (l) => {
-        await l.pc1.executeCommand('printf "SendEnv MYVAR\\n" > /root/.ssh/config');
+        await l.pc1.executeCommand('mkdir -p ~/.ssh');
+        await l.pc1.executeCommand('printf "SendEnv MYVAR\\n" > ~/.ssh/config');
         await l.pc2.executeCommand('printf "AcceptEnv MYVAR\\n"| sudo tee -a /etc/ssh/sshd_config > /dev/null');
         await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
@@ -2165,7 +2166,10 @@ describe('§32 — environment forwarding (SendEnv / AcceptEnv)', () => {
     },
     {
       name: '-o SendEnv= overrides config and blocks forwarding',
-      setup: (l) => { void l.pc1.executeCommand('printf "SendEnv MYVAR\\n" > /root/.ssh/config'); },
+      setup: async (l) => {
+        await l.pc1.executeCommand('mkdir -p ~/.ssh');
+        await l.pc1.executeCommand('printf "SendEnv MYVAR\\n" > ~/.ssh/config');
+      },
       on: l => l.pc1,
       cmd: 'MYVAR=zzz ssh -o "SendEnv " alice@10.0.0.2 \'echo "MYVAR=$MYVAR"\'',
       contains: [/^MYVAR=\s*$/m],
@@ -2173,7 +2177,8 @@ describe('§32 — environment forwarding (SendEnv / AcceptEnv)', () => {
     {
       name: 'forwarded env appears in env output on remote',
       setup: async (l) => {
-        await l.pc1.executeCommand('printf "SendEnv FOO BAR\\n" > /root/.ssh/config');
+        await l.pc1.executeCommand('mkdir -p ~/.ssh');
+        await l.pc1.executeCommand('printf "SendEnv FOO BAR\\n" > ~/.ssh/config');
         await l.pc2.executeCommand('printf "AcceptEnv FOO BAR\\n"| sudo tee -a /etc/ssh/sshd_config > /dev/null');
         await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
@@ -2273,14 +2278,14 @@ describe('§34 — sudo over ssh', () => {
     },
     {
       name: 'sudo over ssh is logged in /var/log/auth.log',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 sudo -n ls /'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2 sudo -n ls /'); },
       on: l => l.pc2,
       cmd: 'grep sudo /var/log/auth.log',
       contains: [/sudo:\s+alice : TTY=.*PWD=.*USER=root/],
     },
     {
       name: 'sudo with bad password is rejected and audit logs the failure',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 \'echo wrong | sudo -S whoami\''); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2 \'echo wrong | sudo -S whoami\''); },
       on: l => l.pc2,
       cmd: 'tail -5 /var/log/auth.log',
       contains: [/incorrect password|authentication failure/i],

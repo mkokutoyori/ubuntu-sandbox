@@ -804,10 +804,12 @@ export class PSLexer {
       return psToken(PSTokenType.WORD, c, start);
     }
 
-    // Keywords are normalized to lowercase
+    // Keywords are normalized to lowercase, with the spelling as typed
+    // kept alongside for the places where the word is an argument rather
+    // than a keyword.
     const lower = value.toLowerCase();
     if (PS_KEYWORDS.has(lower)) {
-      return psToken(PSTokenType.WORD, lower, start);
+      return psToken(PSTokenType.WORD, lower, start, value);
     }
 
     return psToken(PSTokenType.WORD, value, start);

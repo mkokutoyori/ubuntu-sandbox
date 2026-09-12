@@ -510,6 +510,7 @@ export class NewADUserCmdlet implements ICmdlet {
     'AccountExpirationDate', 'ChangePasswordAtLogon', 'CannotChangePassword', 'ServicePrincipalNames',
     'PassThru', 'Credential', 'WhatIf', 'Confirm',
     ...USER_PROPERTY_PARAMETERS, ...USER_FLAG_PARAMETERS] as const;
+  readonly parameterValues = { Path: 'path' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'New-ADUser');
@@ -699,6 +700,7 @@ export class NewADGroupCmdlet implements ICmdlet {
   readonly parameters = ['Name', 'GroupScope', 'GroupCategory', 'SamAccountName', 'Path', 'Instance',
     'OtherAttributes', 'PassThru', 'Credential', 'Server', 'AuthType', 'WhatIf', 'Confirm',
     ...GROUP_PROPERTY_PARAMETERS] as const;
+  readonly parameterValues = { Path: 'path' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'New-ADGroup');
@@ -1183,6 +1185,7 @@ export class NewADServiceAccountCmdlet implements ICmdlet {
   readonly displayName = 'New-ADServiceAccount';
   readonly aliases = [] as const;
   readonly parameters = ['Name', 'DNSHostName', 'Description', 'PrincipalsAllowedToRetrieveManagedPassword', 'ManagedPasswordIntervalInDays', 'Path', 'RestrictToSingleComputer'] as const;
+  readonly parameterValues = { Path: 'path' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'New-ADServiceAccount');
@@ -1383,6 +1386,7 @@ export class NewADOrganizationalUnitCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly parameters = ['Name', 'Path', 'Instance', 'OtherAttributes', 'ProtectedFromAccidentalDeletion',
     'PassThru', 'Credential', 'Server', 'AuthType', 'WhatIf', 'Confirm', ...OU_PROPERTY_PARAMETERS] as const;
+  readonly parameterValues = { Path: 'path' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'New-ADOrganizationalUnit');

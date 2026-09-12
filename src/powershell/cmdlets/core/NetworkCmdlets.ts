@@ -62,6 +62,12 @@ import {
   profileSelectionIsEmpty, selectNetConnectionProfiles,
 } from '@/network/devices/windows/netConnectionProfile';
 import {
+  type NetFirewallProfileRow, GPO_BOOLEANS, MAX_FIREWALL_LOG_KILOBYTES,
+  MIN_FIREWALL_LOG_KILOBYTES, PROFILE_ACTIONS, UNSOURCED_PROFILE_SETTINGS,
+  noMatchingFirewallProfile, readGpoBoolean, readLogSizeKilobytes, readProfileAction,
+  refusedProfileSetting, selectFirewallProfiles,
+} from '@/network/devices/windows/netFirewallProfile';
+import {
   type DnsClientServerAddressRow, type DnsClientServerAddressSelection,
   dnsServerSelectionIsEmpty, noMatchingDnsClientServerAddress, selectDnsClientServerAddresses,
 } from '@/network/devices/windows/dnsClientServerAddress';
@@ -209,6 +215,7 @@ export class GetNetAdapterCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Gets the basic network adapter properties.';
   readonly parameters = NET_ADAPTER_FILTERS;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -248,6 +255,7 @@ export class GetNetIPAddressCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Gets the IP address configuration.';
   readonly parameters = NET_IP_FILTERS;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -312,6 +320,7 @@ export class GetNetIPInterfaceCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Gets the IP interface properties.';
   readonly parameters = NET_IP_INTERFACE_FILTERS;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -566,6 +575,7 @@ export class GetNetIPConfigurationCmdlet implements ICmdlet {
   readonly description = 'Gets IP network configuration.';
   readonly parameters = ['InterfaceAlias', 'InterfaceIndex', 'All', 'Detailed',
     'CimSession'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -702,6 +712,7 @@ export class GetNetRouteCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Gets the IP route information from the IP routing table.';
   readonly parameters = NET_ROUTE_FILTERS;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -806,6 +817,7 @@ export class GetNetNeighborCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Gets the neighbor cache entries.';
   readonly parameters = NET_NEIGHBOR_FILTERS;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex', InterfaceAlias: 'interfaceAlias', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const matched = selectedNeighbors(ctx, requireNetwork(ctx), this.displayName);
@@ -819,6 +831,7 @@ export class ClearNetNeighborCacheCmdlet implements ICmdlet {
   readonly displayName = 'Clear-NetNeighborCache';
   readonly aliases = [] as const;
   readonly parameters = ['InterfaceAlias'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ifAlias = ctx.named['interfacealias']
@@ -871,6 +884,7 @@ export class NewNetNeighborCmdlet implements ICmdlet {
   readonly displayName = 'New-NetNeighbor';
   readonly aliases = [] as const;
   readonly parameters = NET_NEIGHBOR_WRITE_PARAMS;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex', InterfaceAlias: 'interfaceAlias', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -906,6 +920,7 @@ export class RemoveNetNeighborCmdlet implements ICmdlet {
   readonly displayName = 'Remove-NetNeighbor';
   readonly aliases = [] as const;
   readonly parameters = NET_NEIGHBOR_WRITE_PARAMS;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex', InterfaceAlias: 'interfaceAlias', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -928,6 +943,7 @@ export class SetNetNeighborCmdlet implements ICmdlet {
   readonly displayName = 'Set-NetNeighbor';
   readonly aliases = [] as const;
   readonly parameters = NET_NEIGHBOR_WRITE_PARAMS;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex', InterfaceAlias: 'interfaceAlias', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1108,6 +1124,7 @@ export class NewNetIPAddressCmdlet implements ICmdlet {
   readonly parameters = ['IPAddress', 'InterfaceAlias', 'InterfaceIndex', 'DefaultGateway',
     'AddressFamily', 'Type', 'PrefixLength', 'ValidLifetime', 'PreferredLifetime',
     'SkipAsSource', 'PolicyStore', 'WhatIf', 'Confirm'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1156,6 +1173,7 @@ export class RemoveNetIPAddressCmdlet implements ICmdlet {
   readonly pipelineByPropertyName = true as const;
   readonly description = 'Removes an IP address and its configuration.';
   readonly parameters = [...NET_IP_FILTERS, 'DefaultGateway', 'PassThru', 'WhatIf', 'Confirm'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1202,6 +1220,7 @@ export class NewNetRouteCmdlet implements ICmdlet {
   readonly parameters = ['DestinationPrefix', 'InterfaceAlias', 'InterfaceIndex', 'NextHop',
     'AddressFamily', 'RouteMetric', 'Publish', 'Protocol', 'PolicyStore',
     'ValidLifetime', 'PreferredLifetime', 'WhatIf', 'Confirm'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1258,6 +1277,7 @@ export class RemoveNetRouteCmdlet implements ICmdlet {
   readonly pipelineByPropertyName = true as const;
   readonly description = 'Removes IP routes from the IP routing table.';
   readonly parameters = [...NET_ROUTE_FILTERS, 'PassThru', 'WhatIf', 'Confirm'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1299,6 +1319,7 @@ export class SetNetIPAddressCmdlet implements ICmdlet {
   readonly description = 'Modifies the configuration of an IP address.';
   readonly parameters = [...NET_IP_SET_FILTERS, 'PrefixLength', 'ValidLifetime',
     'PreferredLifetime', 'SkipAsSource', 'PassThru', 'WhatIf', 'Confirm'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1355,6 +1376,7 @@ export class SetNetRouteCmdlet implements ICmdlet {
   readonly description = 'Sets route information in the IP routing table.';
   readonly parameters = [...NET_ROUTE_SET_FILTERS, 'Publish', 'RouteMetric',
     'ValidLifetime', 'PreferredLifetime', 'PassThru', 'WhatIf', 'Confirm'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1521,6 +1543,7 @@ export class EnableNetAdapterCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Enables a network adapter.';
   readonly parameters = NET_ADAPTER_ACTION_PARAMS;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1539,6 +1562,7 @@ export class DisableNetAdapterCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Disables a network adapter.';
   readonly parameters = NET_ADAPTER_ACTION_PARAMS;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1557,6 +1581,7 @@ export class RestartNetAdapterCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Restarts a network adapter.';
   readonly parameters = NET_ADAPTER_ACTION_PARAMS;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1578,6 +1603,7 @@ export class RenameNetAdapterCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Renames a network adapter.';
   readonly parameters = [...NET_ADAPTER_ACTION_PARAMS, 'NewName'] as const;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1616,6 +1642,7 @@ export class SetNetAdapterCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Sets the basic network adapter properties.';
   readonly parameters = [...NET_ADAPTER_ACTION_PARAMS, 'MacAddress', 'NoRestart'] as const;
+  readonly parameterValues = { InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1660,6 +1687,7 @@ export class GetDnsClientServerAddressCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Gets the DNS server IP addresses of an interface.';
   readonly parameters = DNS_SERVER_FILTERS;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex', AddressFamily: 'addressFamily' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1712,6 +1740,7 @@ export class SetDnsClientServerAddressCmdlet implements ICmdlet {
   readonly displayName = 'Set-DnsClientServerAddress';
   readonly aliases = [] as const;
   readonly parameters = ['InterfaceAlias', 'ServerAddresses'] as const;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias' } as const;
   readonly description = 'Sets DNS server addresses associated with the TCP/IP properties on an interface.';
 
   execute(ctx: CmdletContext): PSValue {
@@ -2137,6 +2166,7 @@ export class GetNetConnectionProfileCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Gets a connection profile.';
   readonly parameters = NET_PROFILE_FILTERS;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const matched = matchedProfiles(ctx, requireNetwork(ctx), this.displayName,
@@ -2153,6 +2183,7 @@ export class SetNetConnectionProfileCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly description = 'Changes the network category of a connection profile.';
   readonly parameters = NET_PROFILE_SET_PARAMS;
+  readonly parameterValues = { InterfaceAlias: 'interfaceAlias', InterfaceIndex: 'interfaceIndex' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -2192,6 +2223,160 @@ export class SetNetConnectionProfileCmdlet implements ICmdlet {
     return selectNetConnectionProfiles(connectionProfiles(net), {
       interfaceIndex: matched.map(r => String(r.ifIndex)),
     }).map(profileToPSObject) as PSValue;
+  }
+}
+
+
+const NET_FW_PROFILE_FILTERS = ['Name', 'All', 'PolicyStore', 'GPOSession', 'CimSession'] as const;
+
+const NET_FW_PROFILE_SET_PARAMS = [
+  ...NET_FW_PROFILE_FILTERS, 'InputObject', 'PassThru', 'WhatIf', 'Confirm',
+  'Enabled', 'DefaultInboundAction', 'DefaultOutboundAction', 'AllowInboundRules',
+  'AllowLocalFirewallRules', 'AllowLocalIPsecRules', 'AllowUnicastResponseToMulticast',
+  'NotifyOnListen', 'LogAllowed', 'LogBlocked', 'LogIgnored', 'LogFileName',
+  'LogMaxSizeKilobytes',
+  ...UNSOURCED_PROFILE_SETTINGS,
+] as const;
+
+const PROFILE_GPO_FIELDS: ReadonlyArray<readonly [string, keyof NetFirewallProfileRow]> = [
+  ['enabled', 'enabled'],
+  ['allowinboundrules', 'allowInboundRules'],
+  ['allowlocalfirewallrules', 'allowLocalFirewallRules'],
+  ['allowlocalipsecrules', 'allowLocalIPsecRules'],
+  ['allowunicastresponsetomulticast', 'allowUnicastResponseToMulticast'],
+  ['notifyonlisten', 'notifyOnListen'],
+  ['logallowed', 'logAllowed'],
+  ['logblocked', 'logBlocked'],
+  ['logignored', 'logIgnored'],
+];
+
+const PROFILE_ACTION_FIELDS: ReadonlyArray<readonly [string, keyof NetFirewallProfileRow]> = [
+  ['defaultinboundaction', 'defaultInboundAction'],
+  ['defaultoutboundaction', 'defaultOutboundAction'],
+];
+
+function firewallProfileToPSObject(row: NetFirewallProfileRow): Record<string, PSValue> {
+  return {
+    Name:                            row.name,
+    Enabled:                         row.enabled,
+    DefaultInboundAction:            row.defaultInboundAction,
+    DefaultOutboundAction:           row.defaultOutboundAction,
+    AllowInboundRules:               row.allowInboundRules,
+    AllowLocalFirewallRules:         row.allowLocalFirewallRules,
+    AllowLocalIPsecRules:            row.allowLocalIPsecRules,
+    AllowUnicastResponseToMulticast: row.allowUnicastResponseToMulticast,
+    NotifyOnListen:                  row.notifyOnListen,
+    LogAllowed:                      row.logAllowed,
+    LogBlocked:                      row.logBlocked,
+    LogIgnored:                      row.logIgnored,
+    LogFileName:                     row.logFileName,
+    LogMaxSizeKilobytes:             row.logMaxSizeKilobytes,
+  };
+}
+
+function matchedFirewallProfiles(
+  ctx: CmdletContext, net: INetworkProvider, cmdlet: string,
+): NetFirewallProfileRow[] | null {
+  const remote = remoteCimRefusal(ctx, cmdlet);
+  if (remote !== null) { ctx.emitError(remote); return null; }
+  const list = cimFilterReader(ctx, NET_FW_PROFILE_FILTERS);
+  const selection = { name: list('name') };
+  const matched = selectFirewallProfiles(net.getFirewallProfiles(), selection);
+  if (matched.length === 0) {
+    ctx.emitError(`${cmdlet} : ${noMatchingFirewallProfile(selection)}`);
+    return null;
+  }
+  return matched;
+}
+
+export class GetNetFirewallProfileCmdlet implements ICmdlet {
+  readonly name = 'get-netfirewallprofile';
+  readonly displayName = 'Get-NetFirewallProfile';
+  readonly aliases = [] as const;
+  readonly description = 'Displays the per-profile settings of Windows Firewall.';
+  readonly parameters = NET_FW_PROFILE_FILTERS;
+  readonly parameterValues = { Name: 'firewallProfile' } as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const matched = matchedFirewallProfiles(ctx, requireNetwork(ctx), this.displayName);
+    if (matched === null) return null;
+    return matched.map(firewallProfileToPSObject) as PSValue;
+  }
+}
+
+export class SetNetFirewallProfileCmdlet implements ICmdlet {
+  readonly pipelineByPropertyName = true as const;
+  readonly name = 'set-netfirewallprofile';
+  readonly displayName = 'Set-NetFirewallProfile';
+  readonly aliases = [] as const;
+  readonly description = 'Configures the per-profile settings of Windows Firewall.';
+  readonly parameters = NET_FW_PROFILE_SET_PARAMS;
+  readonly parameterValues = { Name: 'firewallProfile' } as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    for (const setting of UNSOURCED_PROFILE_SETTINGS) {
+      if (ctx.named[setting.toLowerCase()] === undefined) continue;
+      ctx.emitError(refusedProfileSetting(this.displayName, setting));
+      return null;
+    }
+    const patch: Partial<NetFirewallProfileRow> = {};
+    for (const [parameter, field] of PROFILE_GPO_FIELDS) {
+      const raw = ctx.named[parameter];
+      if (raw === undefined) continue;
+      const value = readGpoBoolean(psValueToString(raw));
+      if (value === null) {
+        ctx.emitError(this.rejected(parameter, GPO_BOOLEANS));
+        return null;
+      }
+      (patch as Record<string, unknown>)[field] = value;
+    }
+    for (const [parameter, field] of PROFILE_ACTION_FIELDS) {
+      const raw = ctx.named[parameter];
+      if (raw === undefined) continue;
+      const value = readProfileAction(psValueToString(raw));
+      if (value === null) {
+        ctx.emitError(this.rejected(parameter, PROFILE_ACTIONS));
+        return null;
+      }
+      (patch as Record<string, unknown>)[field] = value;
+    }
+    const fileName = ctx.named['logfilename'];
+    if (fileName !== undefined) patch.logFileName = psValueToString(fileName);
+    const size = ctx.named['logmaxsizekilobytes'];
+    if (size !== undefined) {
+      const kilobytes = readLogSizeKilobytes(psValueToString(size));
+      if (kilobytes === null) {
+        ctx.emitError(`${this.displayName} : Cannot validate argument on parameter`
+          + " 'LogMaxSizeKilobytes'. The argument is outside the range"
+          + ` ${MIN_FIREWALL_LOG_KILOBYTES} through ${MAX_FIREWALL_LOG_KILOBYTES}.`);
+        return null;
+      }
+      patch.logMaxSizeKilobytes = kilobytes;
+    }
+
+    const matched = matchedFirewallProfiles(ctx, net, this.displayName);
+    if (matched === null) return null;
+    if (ctx.named['whatif'] === true) {
+      for (const row of matched) {
+        ctx.emit(`What if: Performing the operation "${this.displayName}" on target "${row.name}".`);
+      }
+      return null;
+    }
+    if (confirmationDue(ctx, 'None')) {
+      ctx.emitError(`${this.displayName} : ${NON_INTERACTIVE_HOST}`);
+      return null;
+    }
+    for (const row of matched) net.updateFirewallProfile(row.name, patch);
+    if (ctx.named['passthru'] !== true) return null;
+    return selectFirewallProfiles(net.getFirewallProfiles(), { name: matched.map(r => r.name) })
+      .map(firewallProfileToPSObject) as PSValue;
+  }
+
+  private rejected(parameter: string, accepted: readonly string[]): string {
+    const shown = parameter.charAt(0).toUpperCase() + parameter.slice(1);
+    return `${this.displayName} : Cannot validate argument on parameter '${shown}'.`
+      + ` The argument does not belong to the set "${accepted.join(',')}".`;
   }
 }
 
