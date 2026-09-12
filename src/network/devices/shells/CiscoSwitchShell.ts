@@ -678,13 +678,6 @@ interface SwitchTries {
   user: CommandTrie;
 }
 
-const PORT_SECURITY_CLEAR_KINDS: ReadonlyArray<readonly [string, string]> = [
-  ['all', 'Clear all secure MAC addresses'],
-  ['configured', 'Clear configured secure MAC addresses'],
-  ['dynamic', 'Clear dynamically learned secure MAC addresses'],
-  ['sticky', 'Clear sticky secure MAC addresses'],
-];
-
 export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISwitchShell {
   override versionText(): string {
     return showSwitchVersion(this.d());
@@ -1402,25 +1395,15 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return '';
       });
 
-    // ── clear ──
-    for (const [genre, description] of PORT_SECURITY_CLEAR_KINDS) {
-      this.privilegedTrie.registerGreedy(`clear port-security ${genre}`, description,
-        (args) => this.clearPortSecurity(genre, args));
-    }
     this.privilegedTrie.describeNode('clear port-security', 'Clear secure MAC entries');
     // `describeNode` sort en silence sur un noeud absent : l'appel doit
     // SUIVRE l'enregistrement qui cree le noeud intermediaire.
   }
 
-  private clearPortSecurity(genre: string, args: readonly string[]): string {
-    let portFilter: string | null = null;
-    if (args.length > 0) {
-      if (args[0].toLowerCase() !== 'interface') {
-        throw new CliInvalidInput({ token: args[0] });
-      }
-      if (args.length === 1) throw new CliIncomplete();
-      portFilter = this.resolveInterfaceName(args.slice(1).join(' '));
-      if (portFilter === null) throw new CliInvalidInput({ token: args[1] });
+  private clearPortSecurity(genre: string, iface: string | null): string {
+    const portFilter = iface === null ? null : this.resolveInterfaceName(iface);
+    if (iface !== null && portFilter === null) {
+      throw new CliInvalidInput({ token: iface });
     }
     for (const [name, p] of this.d()._getPortsInternal()) {
       if (portFilter && name !== portFilter) continue;
@@ -2413,6 +2396,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           this.d()._clearPsecErrDisable(port);
           this.d()._clearBpduGuardErrDisable?.(port);
         },
+        clearPortSecurity: (genre, iface) => this.clearPortSecurity(genre, iface),
       })),
       ...valeurGlobaleSpecs('ip-default-gateway', ['ip', 'default-gateway'],
         'Set the management default gateway', IPV4_PLACE,
@@ -3080,34 +3064,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // parce qu'il n'existe pas de compteur de débit par port et par type
     // de trafic dans le plan de données. Inventer un pourcentage courant
     // serait la seule façon de mentir ici ; le seuil, lui, est exact.
-    this.privilegedTrie.registerGreedy('show storm-control', 'Display storm-control settings', (args) => {
-      const filtre = (args[0] ?? '').toLowerCase();
-      const types = ['broadcast', 'multicast', 'unicast'];
-      const voulu = types.includes(filtre) ? [filtre] : types;
-      const lignes = ['Interface  Filter State   Upper        Lower        Current'];
-      let trouve = false;
-      for (const nom of this.d().getPortNames()) {
-        const conf = (this.ifExtra.get(nom) ?? []).filter((l) => l.startsWith('storm-control'));
-        for (const type of voulu) {
-          const seuil = conf.find((l) => l.startsWith(`storm-control ${type} level`));
-          if (!seuil) continue;
-          trouve = true;
-          // `storm-control <type> level <haut> [<bas>]` — le seuil haut
-          // est le 4ᵉ mot, le bas est optionnel et vaut le haut sinon,
-          // exactement comme sur IOS. Les pourcentages sortent à deux
-          // décimales, la forme du vrai binaire.
-          const { setting } = parseStormControl(seuil.split(/\s+/).slice(1));
-          if (!setting || setting.kind !== 'level') continue;
-
-          const unite = setting.unit === 'percent'
-            ? stormControlPercent : (v: number) => String(v);
-          lignes.push(`${this.abbreviateInterface(nom).padEnd(11)}${'Forwarding'.padEnd(15)}`
-            + `${unite(setting.upper).padEnd(13)}${unite(setting.lower).padEnd(13)}0.00%`);
-        }
-      }
-      if (!trouve) return lignes[0];
-      return lignes.join('\n');
-    });
 
     this.privilegedTrie.registerGreedy('show interfaces trunk', 'Display trunk ports', () => {
       return this.showTrunkTable(this.d().getPortNames());
@@ -5458,7 +5414,39 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       dhcpLease: () => this.showIpDhcpLease(),
       dhcpDatabase: () => dhcp().formatDatabaseShow(),
       dhcpSnoopingStatistics: () => this.showIpDhcpSnoopingStatistics(),
+      stormControl: (sorte) => this.showStormControl(sorte),
     };
+  }
+
+  /**
+   * Les seuils poses, lus dans le MEME journal que `show running-config`.
+   *
+   * La colonne « Current » reste a 0.00% : il n'existe pas de compteur de
+   * debit par port et par sorte de trafic dans le plan de donnees, et
+   * inventer un pourcentage courant serait la seule facon de mentir ici.
+   * Le seuil, lui, est exact.
+   */
+  private showStormControl(sorte: string | null): string {
+    const voulu = sorte === null ? STORM_CONTROL_TYPES : [sorte];
+    const lignes = ['Interface  Filter State   Upper        Lower        Current'];
+    let trouve = false;
+    for (const nom of this.d().getPortNames()) {
+      const conf = (this.ifExtra.get(nom) ?? []).filter((l) => l.startsWith('storm-control'));
+      for (const type of voulu) {
+        const seuil = conf.find((l) => l.startsWith(`storm-control ${type} level`));
+        if (!seuil) continue;
+        trouve = true;
+        const { setting } = parseStormControl(seuil.split(/\s+/).slice(1));
+        if (!setting || setting.kind !== 'level') continue;
+
+        const unite = setting.unit === 'percent'
+          ? stormControlPercent : (v: number) => String(v);
+        lignes.push(`${this.abbreviateInterface(nom).padEnd(11)}${'Forwarding'.padEnd(15)}`
+          + `${unite(setting.upper).padEnd(13)}${unite(setting.lower).padEnd(13)}0.00%`);
+      }
+    }
+    if (!trouve) return lignes[0];
+    return lignes.join('\n');
   }
 
   /**
