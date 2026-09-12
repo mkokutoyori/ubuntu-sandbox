@@ -10,7 +10,11 @@
  *   - `ssh-add` sans argument charge les identites par defaut du meme
  *     repertoire (ssh-add.c, DEFAULT_FILES) ;
  *   - `ssh-copy-id` n'existe pas sous Windows : la cle publique s'installe
- *     a la main dans l'`authorized_keys` du serveur, ce que fait ce labo.
+ *     a la main dans l'`authorized_keys` du serveur, ce que fait ce labo —
+ *     y compris les droits, car StrictModes refuse un `authorized_keys`
+ *     lisible par le groupe ou par tous (`LinuxSshServerContext`, masque
+ *     0o077). `sudo tee` le cree en 0644 : sans `chmod 600`, le serveur a
+ *     raison de refuser la cle.
  *
  * Le point eprouve n'est pas le format mais la CHAINE : ce que le
  * generateur ecrit, l'agent le lit, et le serveur l'accepte sur le fil.
@@ -74,6 +78,8 @@ describe('la chaine ssh-keygen -> ssh-add -> ssh tient sous Windows', () => {
     await srv.executeCommand('sudo mkdir -p /home/alice/.ssh');
     await srv.executeCommand(`echo "${publique}" | sudo tee -a /home/alice/.ssh/authorized_keys`);
     await srv.executeCommand('sudo chown -R alice:alice /home/alice/.ssh');
+    await srv.executeCommand('sudo chmod 700 /home/alice/.ssh');
+    await srv.executeCommand('sudo chmod 600 /home/alice/.ssh/authorized_keys');
     const out = await win.executeCommand(
       'ssh -o StrictHostKeyChecking=no -o PasswordAuthentication=no -i C:\\cle alice@10.0.0.2 hostname');
     expect(out.trim()).toBe('linux-server');
