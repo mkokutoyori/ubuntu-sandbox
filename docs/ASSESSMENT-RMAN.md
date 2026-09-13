@@ -287,7 +287,7 @@ L'ordre n'est pas négociable : chaque lot a besoin du précédent.
 |---|---|---|---|
 | **R1** | ~~**Sérialiser un tablespace** vers son `.dbf` et le relire~~ **FAIT** | applicative | rien de crédible n'est possible avant ; c'est le lot qui transforme RMAN d'animation en outil |
 | **R2** | ~~`BACKUP` **lit** les fichiers, `RESTORE` les **réécrit**~~ **FAIT** — la sonde du §1 est verte | RMAN | le premier lot où la sonde du §1 devient verte |
-| **R3** | `SHUTDOWN`/`STARTUP` **dans** RMAN | applicative | sans eux, R2 n'est pas jouable comme un vrai opérateur le joue |
+| **R3** | ~~`SHUTDOWN`/`STARTUP` **dans** RMAN~~ **FAIT** — plus `ALTER DATABASE OPEN` et `SQL '...'` ; restent `SWITCH DATAFILE` et `RESET DATABASE`, qui appartiennent au lot des incarnations (R5) | applicative | sans eux, R2 n'est pas jouable comme un vrai opérateur le joue |
 | **R4** | **ARCHIVELOG** : mode, écriture du redo, `V$ARCHIVED_LOG`, `LOG SWITCH` | applicative | ouvre le PITR, `BACKUP ARCHIVELOG`, `RECOVER UNTIL` |
 | **R5** | Fichier de contrôle réel + autobackup + `RESTORE CONTROLFILE` | applicative | ouvre la reprise depuis rien |
 | **R6** | ~~FRA réelle : `V$RECOVERY_FILE_DEST`, nom OMF, propriété `oracle`, quota, substitutions de FORMAT, vues V$ alimentées~~ **FAIT** | OS | petit lot, forte fidélité |

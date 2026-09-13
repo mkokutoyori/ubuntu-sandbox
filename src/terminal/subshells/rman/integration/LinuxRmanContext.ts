@@ -16,6 +16,7 @@ import { DbId } from '../values/DbId';
 import { ok, err, type Result } from '../core/Result';
 import type {
   IRmanOracleContext, DatafileInfo, VfsAdapter, ConnectTargetOutcome, RecordedBackupPiece,
+  SqlStatementOutcome,
 } from './IRmanOracleContext';
 import type { HostCapableDevice } from '@/network';
 import { resolveOracleConnectTarget } from '@/terminal/commands/oracleNet';
@@ -44,6 +45,7 @@ export class LinuxRmanContext implements IRmanOracleContext {
   readonly dbId: DbId;
   readonly dbName: string;
   readonly vfs: VfsAdapter;
+  private _sysdbaExecutor: import('@/database/oracle/OracleExecutor').OracleExecutor | null = null;
 
   private constructor(
     private readonly _device: Equipment,
@@ -121,6 +123,22 @@ export class LinuxRmanContext implements IRmanOracleContext {
 
   checkpointDatafiles(): void {
     this._oracle?.instance.performCheckpoint();
+  }
+
+  runSqlStatement(statement: string): SqlStatementOutcome {
+    const oracle = this._oracle;
+    if (!oracle) return { ok: false, error: 'ORA-01034: ORACLE not available' };
+    try {
+      const executor = this._sysdbaExecutor
+        ?? (this._sysdbaExecutor = oracle.connectAsSysdba().executor);
+      const result = oracle.executeSql(executor, statement.replace(/;$/, ''));
+      const lines: string[] = [];
+      if (result.message) lines.push(...result.message.split('\n'));
+      for (const row of result.rows ?? []) lines.push(row.map(String).join(' '));
+      return { ok: true, lines: lines.map(l => l.trim()).filter(Boolean) };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
   }
 
   recordBackupPiece(piece: RecordedBackupPiece): void {

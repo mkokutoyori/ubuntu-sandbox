@@ -4,13 +4,11 @@
  * disposes the bound RmanSession when the watched device's instance
  * leaves a usable lifecycle state.
  *
- * Mirrors what would happen against a real Oracle target: the network
- * channel dies and the RMAN client exits. Here we map the same event
- * onto an explicit session.dispose() so the active job (if any) emits
- * JOB_FAILED via the engine's regular shutdown path, the bus bridge
- * forwards the disconnect, and downstream consumers (LoggerActor,
- * SignalRefreshActor, UI) react reactively without any imperative
- * coupling.
+ * The event maps onto an explicit session.dispose() so the active job
+ * (if any) emits JOB_FAILED via the engine's regular shutdown path, the
+ * bus bridge forwards the disconnect, and downstream consumers
+ * (LoggerActor, SignalRefreshActor, UI) react reactively without any
+ * imperative coupling.
  *
  * Lifecycle:
  *   const w = new OracleInstanceWatcherActor(bus, deviceId, session);
@@ -42,6 +40,7 @@ export class OracleInstanceWatcherActor {
       const p = e.payload as { deviceId: string; newState: InstanceState };
       if (p.deviceId !== this._deviceId) return;
       if (!FATAL_STATES.has(p.newState))  return;
+      if (this._session.ownsPendingShutdown?.()) return;
       this._session.dispose();
     });
   }

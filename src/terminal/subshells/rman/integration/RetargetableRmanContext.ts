@@ -1,5 +1,6 @@
 import type {
   IRmanOracleContext, VfsAdapter, DatafileInfo, ConnectTargetOutcome, RecordedBackupPiece,
+  SqlStatementOutcome,
 } from './IRmanOracleContext';
 import type { DbId } from '../values/DbId';
 import type { Equipment } from '@/network';
@@ -29,6 +30,9 @@ export class RetargetableRmanContext implements IRmanOracleContext {
   }
   getRecoveryAreaUsedBytes(): number { return this._current.getRecoveryAreaUsedBytes(); }
   checkpointDatafiles(): void { this._current.checkpointDatafiles(); }
+  runSqlStatement(statement: string): SqlStatementOutcome {
+    return this._current.runSqlStatement(statement);
+  }
   recordBackupPiece(piece: RecordedBackupPiece): void { this._current.recordBackupPiece(piece); }
 
   connectTarget(identifier: string): ConnectTargetOutcome {

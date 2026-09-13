@@ -53,9 +53,14 @@ export interface IRmanOracleContext {
    */
   connectTarget?(identifier: string): ConnectTargetOutcome;
   checkpointDatafiles?(): void;
+  runSqlStatement?(statement: string): SqlStatementOutcome;
   recordBackupPiece?(piece: RecordedBackupPiece): void;
   getRecoveryAreaUsedBytes?(): number;
 }
+
+export type SqlStatementOutcome =
+  | { readonly ok: true;  readonly lines: readonly string[] }
+  | { readonly ok: false; readonly error: string };
 
 export interface RecordedBackupPiece {
   readonly setId:       number;

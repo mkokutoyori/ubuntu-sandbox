@@ -105,7 +105,9 @@ export class ReactiveRmanSubShell implements ISubShell {
         banner.push('');
       } else {
         session.connect(args[targetIdx + 1] ?? '/');
-        banner.push(`connected to target database: ${ctx.dbName} (DBID=${ctx.dbId.value})`);
+        banner.push(ctx.getInstanceState() === 'SHUTDOWN'
+          ? 'connected to target database (not started)'
+          : `connected to target database: ${ctx.dbName} (DBID=${ctx.dbId.value})`);
         banner.push('');
       }
     }

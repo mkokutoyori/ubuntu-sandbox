@@ -119,8 +119,20 @@ export class ResetDatabaseCommand implements IRmanCommand<string[]> {
 
 export class SqlMacroCommand implements IRmanCommand<string[]> {
   readonly name = 'SQL';
-  execute(args: string[]): Result<string[], RmanError> {
-    const stmt = (args[0] ?? '').replace(/^"|"$/g, '');
+  execute(args: string[], ctx: RmanCommandContext): Result<string[], RmanError> {
+    const stmt = (args[0] ?? '').replace(/^["']|["']$/g, '');
+    const outcome = ctx.ctx.runSqlStatement?.(stmt);
+    if (outcome?.ok === false) {
+      return ok([
+        'RMAN-00571: ===========================================================',
+        'RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============',
+        'RMAN-00571: ===========================================================',
+        'RMAN-03002: failure during compilation of command',
+        outcome.error,
+      ]);
+    }
+    const failed = (outcome?.lines ?? []).find(l => /^ORA-/.test(l));
+    if (failed) return ok(['sql statement: ' + stmt, failed]);
     return ok(['sql statement: ' + stmt, 'Statement processed']);
   }
 }

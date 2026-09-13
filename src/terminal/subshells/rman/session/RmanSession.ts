@@ -49,6 +49,7 @@ export class RmanSession implements IRmanSession {
   private _state: RmanSessionState = 'IDLE';
   private readonly _unsubs: Array<() => void> = [];
   private _disposed = false;
+  private _selfShutdown = false;
 
   readonly events$:        RmanObservable<RmanEvent>;
   readonly metrics$:        RmanObservable<SessionMetrics>;
@@ -98,12 +99,14 @@ export class RmanSession implements IRmanSession {
 
   get state(): RmanSessionState { return this._state; }
 
+  ownsPendingShutdown(): boolean {
+    const owned = this._selfShutdown;
+    this._selfShutdown = false;
+    return owned;
+  }
+
   connect(_target?: string): Result<void, RmanError> {
     if (this._state === 'CONNECTED' || this._state === 'RUNNING_JOB') return ok(undefined);
-    const inst = this._ctx.getInstanceState?.();
-    if (inst === 'SHUTDOWN') {
-      return err({ code: 'RMAN_04014', message: 'Oracle instance is not started' });
-    }
     this._transition('CONNECTING');
     this._transition('CONNECTED');
     this._bus.emit({
@@ -186,6 +189,7 @@ export class RmanSession implements IRmanSession {
       return err({ code: 'RMAN_03002', message: 'target database is not connected' });
     }
 
+    this._selfShutdown = /^SHUTDOWN\b/i.test(cleanedUpper);
     return this._dispatcher.dispatch(cleaned, this._cmdCtx());
   }
 
