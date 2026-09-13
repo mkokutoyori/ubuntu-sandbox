@@ -1548,7 +1548,8 @@ export class LinuxCommandExecutor {
   }
 
   private async openWireSshSession(
-    host: string, user: string, password: string, port = 22, identities: string[] = [],
+    host: string, user: string, password: string | undefined,
+    port = 22, identities: string[] = [],
   ): Promise<SshSession | null> {
     if (!this.tcpConnector) return null;
     const connector = this.tcpConnector;
@@ -1559,7 +1560,8 @@ export class LinuxCommandExecutor {
       localUid: this.userMgr.currentUid,
       localGid: this.userMgr.currentGid,
       knownHostsPath: `${this.sshHomeDir()}/.ssh/known_hosts`,
-      interactionHandler: new SilentSshInteractionHandler(password),
+      credentialless: password === undefined,
+      interactionHandler: new SilentSshInteractionHandler(password ?? ''),
     });
     const builder = SshConnectOptionsBuilder.create()
       .host(host).user(user).port(port).strictHostKeyChecking('accept-new');
@@ -1598,7 +1600,7 @@ export class LinuxCommandExecutor {
       && wireReachOutcome(this.localDevice, target.host, target.port) === 'open';
     const session = reachable && target !== null
       ? await this.openWireSshSession(
-        target.host, target.user, stdinPwd ?? '', target.port, target.identities)
+        target.host, target.user, stdinPwd, target.port, target.identities)
       : null;
     if (!session) return this.finishSshClientResult(runSshClient(opts));
     try {

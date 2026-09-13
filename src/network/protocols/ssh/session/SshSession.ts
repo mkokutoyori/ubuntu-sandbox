@@ -50,6 +50,7 @@ export interface SshSessionDeps {
   readonly localUid: number;
   readonly localGid: number;
   readonly knownHostsPath: string;
+  readonly credentialless?: boolean;
   readonly interactionHandler: ISshInteractionHandler;
 }
 
@@ -351,7 +352,9 @@ export class SshSession implements ISshSession {
           op: 'auth',
           method: 'password',
           user: u,
-          password,
+          ...(this.deps.credentialless === true && password === ''
+            ? {}
+            : { password }),
         });
         if (response.ended) attemptsLeft = 0;
         return response.ok === true;

@@ -1080,7 +1080,11 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     ? `Warning: your password will expire in ${warningDays} day${warningDays === 1 ? '' : 's'}.\n`
     : '';
 
-  if (!opts.wireAuthenticated) {
+  if (opts.wireAuthenticated) {
+    (machine as unknown as {
+      openSshSessionRecord?: (u: string, ip: string, host: string) => void;
+    }).openSshSessionRecord?.(remoteUser, opts.sourceIp, opts.sourceHostname);
+  } else {
     machine.recordSshLogin?.(
       remoteUser,
       opts.sourceIp,
