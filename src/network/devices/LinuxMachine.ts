@@ -1866,7 +1866,12 @@ export abstract class LinuxMachine extends EndHost
       });
       this.sessionTable.recordFailedLogin(user, fromIp);
     }
-    if (accepted) {
+    if (accepted) this.openSshSessionRecord(user, fromIp, fromHost);
+  }
+
+  openSshSessionRecord(user: string, fromIp: string, fromHost: string): void {
+    const events = this.getSshServerContext().events;
+    {
       const userEntry = this.executor.userMgr.getUser(user);
       const uid = userEntry?.uid ?? 1000;
       const gid = userEntry?.gid ?? uid;

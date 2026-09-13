@@ -32,6 +32,7 @@ export interface ISshAuthContext {
    * non-Linux contexts (router/switch AAA) are unaffected.
    */
   checkAccountLifecycle?(user: string): AccountLifecycleVerdict;
+  acceptsWithoutCredential?(user: string): boolean;
 }
 
 /**

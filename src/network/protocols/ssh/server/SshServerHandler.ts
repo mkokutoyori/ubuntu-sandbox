@@ -720,7 +720,9 @@ export class SshServerHandler {
   > {
     const method = payload.method as string | undefined;
     const user = (payload.user as string | undefined) ?? '';
-    const password = (payload.password as string | undefined) ?? '';
+    const offered = payload.password as string | undefined;
+    const password = offered ?? '';
+    const credentialless = method === 'password' && offered === undefined;
 
     // Reactive throttler check: refuse before consulting auth.
     if (this.ctx.isClientBlocked?.(clientIp, user)) {
@@ -777,6 +779,7 @@ export class SshServerHandler {
     // PermitEmptyPasswords gate (cheaper than calling the user DB).
     if (
       method === 'password' &&
+      !credentialless &&
       password.length === 0 &&
       this.ctx.permitEmptyPasswords?.() === false
     ) {
@@ -792,7 +795,9 @@ export class SshServerHandler {
     }
 
     let success = false;
-    if (method === 'password') {
+    if (credentialless) {
+      success = this.ctx.auth.acceptsWithoutCredential?.(user) ?? false;
+    } else if (method === 'password') {
       success = this.ctx.config.passwordAuthentication && (
         this.ctx.auth.checkPasswordAsync
           ? await this.ctx.auth.checkPasswordAsync(user, password)
