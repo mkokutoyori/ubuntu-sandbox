@@ -257,8 +257,18 @@ describe('SSH a travers le filtre', () => {
     expect(await sshRepond([])).toBe('alice');
   });
 
-  it('`deny ip any any` la fait expirer', async () => {
-    expect(await sshRepond([DENY_TOUT])).toContain('Connection timed out');
+  /*
+   * Une liste Cisco qui refuse n'est pas MUETTE : elle repond
+   * « communication administratively prohibited » (type 3, code 13) tant
+   * que l'interface ne porte pas `no ip unreachables`, et le noyau du
+   * client en tire un `EHOSTUNREACH` qu'OpenSSH rend « No route to
+   * host ». Ce fichier exigeait « Connection timed out », ce qui ne
+   * tenait que parce que le client etait alors SOURD a l'ICMP.
+   */
+  it('`deny ip any any` la refuse — No route to host', async () => {
+    const sortie = await sshRepond([DENY_TOUT]);
+    expect(sortie).toContain('No route to host');
+    expect(sortie).not.toContain('Connection refused');
   });
 
   it('`permit tcp any any eq 22` la retablit', async () => {
@@ -268,7 +278,7 @@ describe('SSH a travers le filtre', () => {
 
   it('le port 23 ne sauve pas SSH', async () => {
     expect(await sshRepond(
-      ['access-list 100 permit tcp any any eq 23', DENY_TOUT])).toContain('Connection timed out');
+      ['access-list 100 permit tcp any any eq 23', DENY_TOUT])).toContain('No route to host');
   });
 });
 
