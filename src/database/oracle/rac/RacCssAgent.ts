@@ -176,6 +176,7 @@ function writeEvictionLogs(cluster: RacCluster, evicted: RacMember): void {
 }
 
 function appendDeviceFile(dev: HostCapableDevice, path: string, content: string): void {
+  dev.makeDirectoryAsOracle?.(path.slice(0, path.lastIndexOf('/')));
   const existing = dev.readFileForEditor?.(path) ?? '';
   dev.writeFileFromEditor?.(path, existing + content);
 }

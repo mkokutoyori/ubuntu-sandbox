@@ -2149,7 +2149,8 @@ describe('§32 — environment forwarding (SendEnv / AcceptEnv)', () => {
     {
       name: 'SendEnv MYVAR + AcceptEnv MYVAR forwards the variable',
       setup: async (l) => {
-        await l.pc1.executeCommand('printf "SendEnv MYVAR\\n" > /root/.ssh/config');
+        await l.pc1.executeCommand('sudo mkdir -p /root/.ssh');
+        await l.pc1.executeCommand('printf "SendEnv MYVAR\\n" | sudo tee /root/.ssh/config > /dev/null');
         await l.pc2.executeCommand('printf "AcceptEnv MYVAR\\n"| sudo tee -a /etc/ssh/sshd_config > /dev/null');
         await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
@@ -2165,7 +2166,7 @@ describe('§32 — environment forwarding (SendEnv / AcceptEnv)', () => {
     },
     {
       name: '-o SendEnv= overrides config and blocks forwarding',
-      setup: (l) => { void l.pc1.executeCommand('printf "SendEnv MYVAR\\n" > /root/.ssh/config'); },
+      setup: (l) => { void l.pc1.executeCommand('sudo mkdir -p /root/.ssh'); void l.pc1.executeCommand('printf "SendEnv MYVAR\\n" | sudo tee /root/.ssh/config > /dev/null'); },
       on: l => l.pc1,
       cmd: 'MYVAR=zzz ssh -o "SendEnv " alice@10.0.0.2 \'echo "MYVAR=$MYVAR"\'',
       contains: [/^MYVAR=\s*$/m],
@@ -2173,7 +2174,8 @@ describe('§32 — environment forwarding (SendEnv / AcceptEnv)', () => {
     {
       name: 'forwarded env appears in env output on remote',
       setup: async (l) => {
-        await l.pc1.executeCommand('printf "SendEnv FOO BAR\\n" > /root/.ssh/config');
+        await l.pc1.executeCommand('sudo mkdir -p /root/.ssh');
+        await l.pc1.executeCommand('printf "SendEnv FOO BAR\\n" | sudo tee /root/.ssh/config > /dev/null');
         await l.pc2.executeCommand('printf "AcceptEnv FOO BAR\\n"| sudo tee -a /etc/ssh/sshd_config > /dev/null');
         await l.pc2.executeCommand('sudo systemctl reload ssh');
       },

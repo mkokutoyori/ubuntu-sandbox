@@ -886,9 +886,10 @@ describe('§12 — ~/.ssh/config Host blocks', () => {
   beforeEach(async () => { lan = await buildXLan(); });
 
   const writeConfig = async (l: XLan, body: string) => {
-    await l.linux1.executeCommand('mkdir -p /root/.ssh');
-    await l.linux1.executeCommand(`cat > /root/.ssh/config <<'EOF'\n${body}\nEOF`);
-    await l.linux1.executeCommand('chmod 600 /root/.ssh/config');
+    await l.linux1.executeCommand('sudo mkdir -p /root/.ssh');
+    await l.linux1.executeCommand(
+      `sudo tee /root/.ssh/config > /dev/null <<'EOF'\n${body}\nEOF`);
+    await l.linux1.executeCommand('sudo chmod 600 /root/.ssh/config');
   };
 
   const rows: Row[] = [
@@ -980,7 +981,8 @@ describe('§13 — ProxyJump across heterogeneous hops', () => {
       name: 'ProxyJump uses ~/.ssh/config Host alias',
       setup: async (l) => {
         await l.linux1.executeCommand('mkdir -p /root/.ssh');
-        await l.linux1.executeCommand("cat > /root/.ssh/config <<'EOF'\nHost jump\n  HostName 10.0.0.2\n  User alice\nHost target\n  HostName 10.0.0.3\n  User alice\n  ProxyJump jump\nEOF");
+        await l.linux1.executeCommand('sudo mkdir -p /root/.ssh');
+        await l.linux1.executeCommand("sudo tee /root/.ssh/config > /dev/null <<'EOF'\nHost jump\n  HostName 10.0.0.2\n  User alice\nHost target\n  HostName 10.0.0.3\n  User alice\n  ProxyJump jump\nEOF");
       },
       on: l => l.linux1, cmd: 'ssh target hostname',
       contains: [/^lxsrv1$/m],

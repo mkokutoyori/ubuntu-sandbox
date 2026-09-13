@@ -169,6 +169,8 @@ export class VirtualFileSystem {
       '/etc/sudoers.d',
       '/etc/ufw', '/etc/ufw/applications.d',
       '/etc/iptables',
+      '/etc/network', '/etc/network/interfaces.d', '/etc/network/if-up.d',
+      '/etc/network/if-down.d', '/etc/network/if-pre-up.d', '/etc/network/if-post-down.d',
       '/home', '/home/scripts', '/root', '/tmp', '/var', '/var/lib', '/var/lib/dhcp', '/var/log',
       '/var/tmp', '/var/cache', '/var/spool', '/var/spool/mail', '/var/spool/cron',
       '/var/local', '/var/opt', '/var/backups', '/var/run', '/var/spool/cron/crontabs',
