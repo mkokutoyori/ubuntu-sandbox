@@ -53,6 +53,7 @@ export interface ISshInteractionHandler {
    * existing handlers keep working without overriding.
    */
   showAuthFailure?(user: string, host: string): void;
+  canPromptAgain?(): boolean;
 }
 
 /**
@@ -71,6 +72,10 @@ export class SilentSshInteractionHandler implements ISshInteractionHandler {
 
   async promptPassword(): Promise<string> {
     return this.password;
+  }
+
+  canPromptAgain(): boolean {
+    return false;
   }
 
   showWarning(_message: string): void {
