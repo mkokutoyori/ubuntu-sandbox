@@ -414,6 +414,10 @@ export class OracleInstance {
     this._checkpointScn = this.advanceScn();
     this._checkpointTime = new Date();
     this.logAlert(`Completed checkpoint up to RBA, SCN: ${this._checkpointScn}`);
+    this.getBus().publish({
+      topic: 'oracle.storage.checkpoint-completed',
+      payload: { ...this.ref(), scn: this._checkpointScn },
+    });
   }
 
   /** (Re-)bind the refresh actor whenever bus / deviceId is updated. */

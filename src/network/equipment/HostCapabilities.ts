@@ -31,6 +31,7 @@ export interface FileEditorHost {
   resolveAbsolutePath(path: string): string;
   readFileForEditor(path: string): string | null;
   writeFileFromEditor(path: string, content: string): boolean;
+  makeDirectoryAsOracle(path: string): boolean;
 }
 
 /** An Equipment that MAY expose host capabilities. */

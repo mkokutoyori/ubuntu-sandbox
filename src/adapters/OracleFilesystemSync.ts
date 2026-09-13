@@ -28,6 +28,7 @@ import type { Equipment } from '@/network/equipment/Equipment';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { parseSize } from '@/database/oracle/views/_fileSize';
+import { renderDatafileImage, parseDatafileImage } from '@/database/oracle/storage/DatafileImage';
 
 export interface OracleFilesystemSyncCtx {
   /** Resolve a deviceId to the Equipment instance to write files on. */
@@ -158,7 +159,14 @@ export class OracleFilesystemSync {
         if (newState === 'MOUNT' || newState === 'OPEN') {
           this.syncDatafiles(deviceId);
         }
+        if (newState === 'OPEN') {
+          this.loadSegmentImages(deviceId);
+        }
         this.syncSgaMemory(deviceId, newState === 'OPEN');
+      }),
+
+      this.bus.subscribe('oracle.storage.checkpoint-completed', (e) => {
+        this.writeSegmentImages(e.payload.deviceId);
       }),
 
       this.bus.subscribe('oracle.storage.tablespace-encrypted', (e) => {
@@ -523,6 +531,48 @@ export class OracleFilesystemSync {
       seen.add(f);
       writeAsOracle(dev, f, `[ORACLE CONTROL FILE ${i + 1}]`);
     });
+  }
+
+  private writeSegmentImages(deviceId: string): void {
+    const dev = this.dev(deviceId);
+    const db = this.ctx.resolveDatabase(deviceId);
+    if (!dev || !db) return;
+    const storage = db.storage as import('@/database/oracle/OracleStorage').OracleStorage;
+    for (const ts of storage.getAllTablespaces()) {
+      if (ts.type === 'TEMPORARY' || ts.encrypted) continue;
+      const df = ts.datafiles[0];
+      if (!df) continue;
+      if (!this.fileExists(dev, df.path)) continue;
+      writeAsOracle(dev, df.path,
+        renderDatafileImage(datafileContent(ts, df), storage.serializeTablespace(ts.name)));
+    }
+  }
+
+  private loadSegmentImages(deviceId: string): void {
+    const dev = this.dev(deviceId);
+    const db = this.ctx.resolveDatabase(deviceId);
+    if (!dev || !db) return;
+    const storage = db.storage as import('@/database/oracle/OracleStorage').OracleStorage;
+    for (const ts of storage.getAllTablespaces()) {
+      if (ts.type === 'TEMPORARY' || ts.encrypted) continue;
+      const df = ts.datafiles[0];
+      if (!df) continue;
+      const payload = parseDatafileImage(this.readAsOracle(dev, df.path));
+      if (payload) storage.loadTablespace(payload);
+    }
+  }
+
+  private fileExists(dev: FsEquipment, path: string): boolean {
+    return this.readAsOracle(dev, path) !== null;
+  }
+
+  private readAsOracle(dev: FsEquipment, path: string): string | null {
+    const reader = dev as unknown as {
+      readFileAsOracle?: (p: string) => string | null;
+      readFileForEditor?: (p: string) => string | null;
+    };
+    if (typeof reader.readFileAsOracle === 'function') return reader.readFileAsOracle(path);
+    return reader.readFileForEditor?.(path) ?? null;
   }
 
   private reencryptTablespaceDatafiles(deviceId: string, tablespaceName: string): void {

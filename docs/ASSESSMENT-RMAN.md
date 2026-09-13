@@ -31,8 +31,26 @@ détruire, restaurer.
 [6]  SELECT COUNT(*) FROM clients                  ORA-00942
 ```
 
-La table ne revient pas. Et elle ne pouvait pas revenir, pour une raison
-qui n'est ni un bug ni un oubli mais un **choix de représentation** :
+**Depuis les lots R1 et R2, la table revient.** Le même enchaînement,
+mesuré après :
+
+```
+[8]  SELECT COUNT(*) FROM clients                  2
+```
+
+Trois pièces ont été mises bout à bout :
+
+- un **checkpoint** (`ALTER SYSTEM CHECKPOINT`, un `SHUTDOWN` propre, un
+  `OPEN`, ou le début d'un `BACKUP`) sérialise chaque tablespace
+  permanent dans le **premier** fichier de données qui le porte ;
+- `BACKUP` **lit** ces fichiers et écrit leur contenu dans la pièce OMF ;
+  `RESTORE` **réécrit** les fichiers depuis la pièce ;
+- l'`OPEN` relit les fichiers de données et recharge les tablespaces —
+  une table détruite entre-temps est **recréée**, sa métadonnée voyageant
+  avec ses lignes.
+
+Ce qui suit décrit l'état AVANT ces deux lots, conservé parce qu'il
+explique pourquoi la chaîne répondait « fini » sans rien faire :
 
 ```
 [3c] ls -l /u01/backup
@@ -267,8 +285,8 @@ L'ordre n'est pas négociable : chaque lot a besoin du précédent.
 
 | # | Lot | Pile | Pourquoi ici |
 |---|---|---|---|
-| **R1** | **Sérialiser un tablespace** vers son `.dbf` et le relire | applicative | rien de crédible n'est possible avant ; c'est le lot qui transforme RMAN d'animation en outil |
-| **R2** | `BACKUP` **lit** les fichiers, `RESTORE` les **réécrit** ; le cycle *sauvegarder / détruire / restaurer* referme la boucle | RMAN | le premier lot où la sonde du §1 devient verte |
+| **R1** | ~~**Sérialiser un tablespace** vers son `.dbf` et le relire~~ **FAIT** | applicative | rien de crédible n'est possible avant ; c'est le lot qui transforme RMAN d'animation en outil |
+| **R2** | ~~`BACKUP` **lit** les fichiers, `RESTORE` les **réécrit**~~ **FAIT** — la sonde du §1 est verte | RMAN | le premier lot où la sonde du §1 devient verte |
 | **R3** | `SHUTDOWN`/`STARTUP` **dans** RMAN | applicative | sans eux, R2 n'est pas jouable comme un vrai opérateur le joue |
 | **R4** | **ARCHIVELOG** : mode, écriture du redo, `V$ARCHIVED_LOG`, `LOG SWITCH` | applicative | ouvre le PITR, `BACKUP ARCHIVELOG`, `RECOVER UNTIL` |
 | **R5** | Fichier de contrôle réel + autobackup + `RESTORE CONTROLFILE` | applicative | ouvre la reprise depuis rien |

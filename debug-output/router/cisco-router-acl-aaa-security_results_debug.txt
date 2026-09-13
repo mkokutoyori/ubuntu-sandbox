@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-09-10T16:29:40.106Z
+Generated: 2026-09-13T11:35:44.238Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -908,43 +908,43 @@ Total steps: 388
   %No SSHv1 server connections running.
 
 [216/388] r1 R1# show crypto key mypubkey rsa
-  % Key pair was generated at: 16:29:41 UTC Sep 10 2026
+  % Key pair was generated at: 11:35:45 UTC Sep 13 2026
   Key name: R1.lab.local
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   D068E21BEF26BD37ACC124496B0D52893397112AAF8BADB227739ECEF9DCF38E
-    549BBD5B834001373129E24DF6C6EC7513D06F2AD1EC533A13F1E882AF7134FA
-    E1087B1BE692AC3F87AF1FC17B927D89168174AA39B7908A434E1CC6C883299E
-    EE3ADB5B6D8B835F1D9FD2C5BD534715FB8837AA900D9C82107B719ABC3B93DA
-    ECE1341B0914C277F53C3B39D18CA479A8A1C20A0A777712450964BEE860EA1E
-    56D06D3BCCDA11B7C460C11D580D96A5274931EAA31A467AD934EA527FEB2CEA
-    D07070DBE480843F9A802E714278CD39CD56314A02DDAEAA6363C2766725788E
-    ADDAFEFBF2908E5FD0177955FCF115C5B374D62A4ED086427518B6EA551A6CEA
+   E957C162F312430A9BB31360824443288F3F3273826B1F57331D2347CC56B01F
+    6BFD92A2ED3129823DDDE764C4DE4994790FC67358A3235FB7255E0BB3C77E33
+    B8B2F16225C60022552B10E87C1144C8F886F7F34D2A434F4A51FE4FD1A17BCF
+    800BFDA22C1127CADB24AFECB9CCE0D4BF44E6F33962ABC78489EDF3119068B3
+    6C5B4B42B652782A9FE7E2500D1685181FAA1B53AB8D98B7F9C26B17D8E416AF
+    CD6DEE62B8C83AA2D1A2B2343258D784B734B533A7D2E95F0B4F95BB43B273E3
+    918E0702BE202CE21AB53F98E50FECD8A17AD49387A78B4FA11D8DDF0A22CC1F
+    8E1DB522758B590A4517AA7C3AFCDF64AA2A997348C2B4E7F4C13D633D182D63
   
-  % Key pair was generated at: 16:29:41 UTC Sep 10 2026
+  % Key pair was generated at: 11:35:45 UTC Sep 13 2026
   Key name: SSH-KEY
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   4BB661855DD8AEE9D3333D5712039A1743761B1468A4A46427E3461087E2A5E0
-    04C66185ABA4D5F9DE65569394AF7F7B9BC8D05466B7836C2C178B9C01E13AF4
-    9043EF059AE69B71792F605F9EF960E7B8554E147A63C29C5C0C5698DC01F4D0
-    09774A05955D6CD19FD6649BCC4221DBCC917E5489A5AB244DE27104FB5B4A04
-    22861C85C83AC2E998AE2367C30AE6671514573431F89244A81E5D2037C66390
-    536F7EA503391A19156E34C3ED69BBCB19B6BA947F22214CA19726CC042E68A4
-    F89F8645EA57E031CD37CEAF1451B057C4F4FE7486D83F7CD1FB0DE8A90C2CE0
-    0DD0736502B25571CD21FB0B1160D4AB2D770CD4E84CD98414DB48B448D68A34
-    9EEE9C058EC302E9492965F71FE36D77DF4C9B947E42E4A4AC5DD4B07F8FB680
-    285D6805F73109B908528B33C4FD119BFE1A9CD4D02BFEAC86BDA63CE0F4F294
-    7122C18515499231452CA0FF92644207516B6694F6C448DCB056FD38461D04B0
-    5F46E885B0611B91EABCB13B52283C3BDF74E2D4CFC8CE64360AA3A4CF5C49A4
-    7FAF8705E6E880693E167C071BA58947556C73F4EA194144B0F1C7C0EDA91F30
-    CA510D658DF58399482B716370775BEB9FA60F1437F6414C4970496C8518D944
-    108EE0C5DA06F3F1B3EB174F5EFDA277258D0B348EA8F97CEF736888FFF2FE40
-    502BF225D5822CF1E19E27ABA35EF98B97DA5154617C1284F19082D4B312F7D4
+   4A983CD815E285B826DB1CBA0169E5A2C7D14CE9B4DEBAA5E1FD34DD0C5763A5
+    9873A158C47D8220BE69FFFE82F471BE6DC5AC2912B9D31DAD1E9BD14C75EFE9
+    F53AD858056FDF60738C52B22E9F1E122ADDA2E9BE2EA0FDBA6EDD554B946B35
+    2B2DA1D83083C41845050AF6BA95D36E242B4729AC89BF65F1D52F69C2C4FDC9
+    3A9D89F8FEC8B1380A61F4CABC9496D20313DB099A5080457C86340DAEA0B815
+    88915C98FE8F9800A7C21C2E1CD2F76EFACB7469527DCFDD52FBEB21DDD7D759
+    8B6319B850305440B4704B0230A6FEC26581BD49D448E4BDA47414C56D0B35A5
+    5C8481584A5DF89892C1776661A7319E423ACBA985696605DD497AB913123739
+    E1679B18FC90EF78F676BD1AC53185C25CC7C56954407BE57BEBCF3D5F447945
+    71148798FEB24EE0512CA85ED7D780DE1B80ACA963CE3F5D83373E31085B7DC9
+    FCB34698CC36A560809C0312CB822B7288A32B69A7E6033D7A1787B5376C25D5
+    7B039818BBC649D8C807C356C843A0CEA5C157A9180282E53CF3E1C968EDBEA9
+    06B57478D23754F80F52612A7DA658F2D238F34908664A45BA516E6D62347AB5
+    545CE2D87A06A480E09D648E20A1468E832D14E9294A7C1D77E92D810DF6A539
+    815C94384849B9003B6547628E88A72231DE65896CA0CDFD28B9DF257F0B1345
+    C11D97980544AD588ACD4FC6B09369FEDF3FFC29761E1F45A21A2599F8BE8399
 
 [217/388] r1 R1# show login
   A login delay of 2 seconds is applied.
@@ -1202,7 +1202,7 @@ Total steps: 388
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX8732Y1J2
+  Processor board ID FTX7023YFDM
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1214,7 +1214,7 @@ Total steps: 388
   
   Current configuration : 6955 bytes
   !
-  ! Last configuration change at 16:29:42 UTC Thu Sep 10 2026 by console
+  ! Last configuration change at 11:35:46 UTC Sun Sep 13 2026 by console
   !
   service password-encryption
   service timestamps debug datetime msec
@@ -1871,21 +1871,21 @@ Total steps: 388
   
   Log Buffer (4096 bytes):
   
-  *Sep 10 16:29:40.097: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 10 16:29:40.097: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 10 16:29:40.099: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 10 16:29:40.099: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 10 16:29:40.372: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:40.538: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:40.772: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:40.956: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:41.085: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:41.147: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:41.210: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:41.406: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:41.725: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:41.969: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:42.139: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:44.231: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 13 11:35:44.232: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 13 11:35:44.234: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 13 11:35:44.234: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 13 11:35:44.380: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:44.619: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:45.003: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:45.223: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:45.336: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:45.416: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:45.489: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:45.741: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:46.067: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:46.295: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:46.464: %SYS-5-CONFIG_I: Configured from console by console
 
 [315/388] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1896,8 +1896,8 @@ Total steps: 388
 [316/388] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 300 (1/100 of seconds), resolution is 4001
-  reference time is EE4D5976.E76C8B43 (16:29:42.904 UTC Thu Sep 10 2026)
+  ntp uptime is 200 (1/100 of seconds), resolution is 4001
+  reference time is EE510912.DA9FBE76 (11:35:46.854 UTC Sun Sep 13 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1908,7 +1908,7 @@ Total steps: 388
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [318/388] r1 R1# show clock
-  *16:29:42.000 UTC Thu Sep 10 2026
+  *11:35:46.000 UTC Sun Sep 13 2026
 
 [319/388] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2090,7 +2090,7 @@ Total steps: 388
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX8732Y1J2
+  Processor board ID FTX7023YFDM
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2102,7 +2102,7 @@ Total steps: 388
   
   Current configuration : 6955 bytes
   !
-  ! Last configuration change at 16:29:42 UTC Thu Sep 10 2026 by console
+  ! Last configuration change at 11:35:46 UTC Sun Sep 13 2026 by console
   !
   service password-encryption
   service timestamps debug datetime msec
@@ -2502,25 +2502,25 @@ Total steps: 388
   
   Log Buffer (4096 bytes):
   
-  *Sep 10 16:29:40.097: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 10 16:29:40.097: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 10 16:29:40.099: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 10 16:29:40.099: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 10 16:29:40.372: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:40.538: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:40.772: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:40.956: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:41.085: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:41.147: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:41.210: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:41.406: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:41.725: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:41.969: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:42.139: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:44.231: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 13 11:35:44.232: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 13 11:35:44.234: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 13 11:35:44.234: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 13 11:35:44.380: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:44.619: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:45.003: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:45.223: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:45.336: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:45.416: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:45.489: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:45.741: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:46.067: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:46.295: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:46.464: %SYS-5-CONFIG_I: Configured from console by console
 
 [332/388] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX8732Y1J2
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX7023YFDM
 
 [333/388] r1 R1# show environment
   Number of Critical alarms:  0
@@ -3141,20 +3141,12 @@ Total steps: 388
 
 [381/388] r1 R1(config)# interface ?
     BVI              Bridge-Group Virtual Interface
-    BVI              Bridge-Group Virtual Interface
-    Ethernet         IEEE 802.3
     Ethernet         IEEE 802.3
     FastEthernet     FastEthernet IEEE 802.3u
-    FastEthernet     FastEthernet IEEE 802.3u
-    GigabitEthernet  GigabitEthernet IEEE 802.3z
     GigabitEthernet  GigabitEthernet IEEE 802.3z
     Loopback         Loopback interface
-    Loopback         Loopback interface
-    Port-channel     Ethernet Channel of interfaces
     Port-channel     Ethernet Channel of interfaces
     Serial           Serial
-    Serial           Serial
-    Tunnel           Tunnel interface
     Tunnel           Tunnel interface
 
 [382/388] r1 R1(config)# ip ?
@@ -3172,8 +3164,8 @@ Total steps: 388
     domain-lookup      Enable IP Domain Name System hostname translation
     domain-name        Define the default domain name
     finger             Enable finger service
-    flow-cache         NetFlow cache timeout
-    flow-export        Legacy NetFlow export
+    flow-cache         How long an active flow stays in the cache
+    flow-export        Address of the NetFlow collector
     gratuitous-arps    Send gratuitous ARP
     host               Add a host to the host table
     http               Enable HTTP server
@@ -3184,7 +3176,7 @@ Total steps: 388
     pim                Configure static PIM RP address
     prefix-list        Build a prefix list
     route              Establish static routes in a VRF
-    route-cache        Route cache
+    route-cache        Enable NetFlow on all interfaces
     routing            Enable IP routing
     scp                Enable the SCP server
     sla                Configure an IP SLAs operation
@@ -3209,7 +3201,6 @@ Total steps: 388
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     pki          Declare a PKI trustpoint
-    <cr>
 
 [385/388] r1 R1(config)# no ?
     aaa            Enable NEW access control commands and functions
@@ -3219,38 +3210,38 @@ Total steps: 388
     banner         Remove a banner
     boot           Specify system image to load
     cdp            Enable CDP globally
-    clock          Hardware calendar is a valid time source
+    clock          Remove hardware calendar is a valid time source
     crypto         Encryption module
     enable         Set enable secret
-    event          Embedded Event Manager
+    event          Register an EEM applet
     hostname       Set system hostname
     interface      Remove a virtual interface
-    ip             Enable IP routing
+    ip             Disable IP routing
     ipv6           IPv6 interface subcommands
-    key            Key management
+    key            Define a key chain
     line           Enter line configuration
     lldp           Enable LLDP globally
     logging        Count every log message and timestamp last occurrence
     login          Set the login blocking period
     ntp            Authenticate time sources
-    object-group   Configure object-group
-    parser         Define a CLI view
+    object-group   Remove a network object group
+    parser         Remove a CLI view
     priority-list  Remove build a priority list
-    privilege      Configure command privilege levels
+    privilege      Remove a command privilege rule
     queue-list     Remove build a custom queue list
-    radius         RADIUS server configuration
+    radius         Remove a named RADIUS server
     radius-server  Specify a RADIUS server
     route-map      Remove a route-map
     router         Enter RIP routing protocol configuration
     service        Disable a network based service
     snmp-server    Set community string and access privs
     sntp           SNTP server (alias for ntp server)
-    tacacs         TACACS+ server configuration
+    tacacs         Remove a named TACACS+ server
     tacacs-server  Specify a TACACS+ server
     time-range     Remove a time range
     track          Remove a tracked object
     username       Remove a local user
-    vrf            Configure a VRF
+    vrf            Remove configure a vrf
 
 [386/388] r1 R1(config)# end
 <empty>
