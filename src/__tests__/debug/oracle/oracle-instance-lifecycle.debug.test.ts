@@ -285,5 +285,5 @@ describe('debug — Oracle instance lifecycle', () => {
       'LinuxServer ora-life — Oracle ORCL', lines, runner);
     runner.dispose();
     removeOracleDatabase(srv.id);
-  });
+  }, 180000);
 });

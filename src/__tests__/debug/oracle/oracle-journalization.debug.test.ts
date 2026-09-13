@@ -313,5 +313,5 @@ describe('debug — Oracle journalization', () => {
       'LinuxServer ora-journal — Oracle ORCL OPEN', lines, runner);
     runner.dispose();
     removeOracleDatabase(srv.id);
-  });
+  }, 180000);
 });

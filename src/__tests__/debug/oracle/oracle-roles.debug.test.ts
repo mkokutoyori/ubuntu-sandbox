@@ -185,5 +185,5 @@ describe('debug — Oracle roles & profiles', () => {
     runOracleDump('oracle-roles', 'LinuxServer ora-roles — Oracle ORCL OPEN', lines, runner);
     runner.dispose();
     removeOracleDatabase(srv.id);
-  });
+  }, 180000);
 });

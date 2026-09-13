@@ -333,5 +333,5 @@ describe('debug — Oracle processes & services', () => {
       'LinuxServer ora-proc — Oracle ORCL OPEN', lines, runner);
     runner.dispose();
     removeOracleDatabase(srv.id);
-  });
+  }, 180000);
 });

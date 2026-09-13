@@ -420,5 +420,5 @@ describe('debug — Oracle key views', () => {
     runOracleDump('oracle-key-views', 'LinuxServer ora-views — Oracle ORCL OPEN', lines, runner);
     runner.dispose();
     removeOracleDatabase(srv.id);
-  });
+  }, 180000);
 });

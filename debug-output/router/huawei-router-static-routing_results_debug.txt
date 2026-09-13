@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-static-routing
-Generated: 2026-09-13T12:08:17.049Z
+Generated: 2026-09-13T18:29:44.199Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP static/default/IPv6, ip-prefix, route-policy, PBR, NQA
 Total steps: 300
@@ -1646,13 +1646,13 @@ Total steps: 300
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 12:08:17.205  Sep 13 2026(EE5110B1.347AE147)
+  Reference time: 18:29:44.363  Sep 13 2026(EE516A18.5CED9168)
 
 [230/300] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [231/300] r1 <R1> display clock
-  2026-09-13 12:08:17
+  2026-09-13 18:29:44
   Sunday
   Time Zone(UTC) : UTC
 
@@ -1674,13 +1674,13 @@ Total steps: 300
 [234/300] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-09-13 12:08:17
+  CPU Usage Stat. Time : 2026-09-13 18:29:44
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [235/300] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-09-13 12:08:17
+  Memory utilization statistics at 2026-09-13 18:29:44
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1721,10 +1721,10 @@ Total steps: 300
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-09-13 12:08:17 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-09-13 12:08:17 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-09-13 12:08:17 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-09-13 12:08:17 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-09-13 18:29:44 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-09-13 18:29:44 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-09-13 18:29:44 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-09-13 18:29:44 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [240/300] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled

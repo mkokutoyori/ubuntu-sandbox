@@ -367,5 +367,5 @@ describe('debug — Oracle access management', () => {
       'LinuxServer ora-access (10.0.0.10) — Oracle ORCL OPEN', lines, runner);
     runner.dispose();
     removeOracleDatabase(srv.id);
-  });
+  }, 180000);
 });

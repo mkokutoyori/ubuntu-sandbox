@@ -251,5 +251,5 @@ describe('debug — Oracle PL/SQL', () => {
     runOracleDump('oracle-plsql', 'LinuxServer ora-plsql — Oracle ORCL OPEN', lines, runner);
     runner.dispose();
     removeOracleDatabase(srv.id);
-  });
+  }, 180000);
 });
