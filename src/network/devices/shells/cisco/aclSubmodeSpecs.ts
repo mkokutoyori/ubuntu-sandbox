@@ -31,7 +31,7 @@ export function avecNumeroDeSequence(
 }
 
 export function aclSubmodeSpecs(
-  mode: 'config-std-nacl' | 'config-ext-nacl',
+  mode: 'config-std-nacl' | 'config-ext-nacl' | 'config-ipv6-nacl',
   ctx: () => AclEntryHost,
 ): CommandSpec[] {
   const modes = [mode] as const;
@@ -57,9 +57,9 @@ export function aclSubmodeSpecs(
     },
   ];
 
-  if (mode === 'config-ext-nacl') {
+  if (mode === 'config-ext-nacl' || mode === 'config-ipv6-nacl') {
     specs.push({
-      id: 'acl-ext-evaluate',
+      id: `acl-${mode}-evaluate`,
       path: ['evaluate', {
         name: 'miroir', type: 'WORD',
         description: 'Access list name',
