@@ -104,6 +104,9 @@ import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import { aclHeadSpecs, type AclHeadHost, type AclKind } from './cisco/aclHeadSpecs';
 import { macAclSpecs, type MacAclHost } from './cisco/macAclSpecs';
 import { arpAclSpecs, type ArpAclHost } from './cisco/arpAclSpecs';
+import {
+  vlanAccessMapSpecs, VLAN_ACCESS_MAP_LEGENDS, type VlanAccessMapHost,
+} from './cisco/vlanAccessMapSpecs';
 import { aclStandardSpecs } from './cisco/aclStandardSpecs';
 import { aclExtendedSpecs } from './cisco/aclExtendedSpecs';
 import { aclSubmodeSpecs, avecNumeroDeSequence } from './cisco/aclSubmodeSpecs';
@@ -1045,27 +1048,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // ── VACL + DAI (switch-only) ──
 
-    this.configAccessMapTrie.registerGreedy('match ip address', 'Match an IP ACL', (args) => {
-      if (!this.selectedAccessMap || !args[0]) return CISCO_ERRORS.INCOMPLETE;
-      const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
-      rule.matchIpAcls = [...(rule.matchIpAcls ?? []), ...args];
-      return '';
-    });
-    this.configAccessMapTrie.registerGreedy('match mac address', 'Match a MAC ACL', (args) => {
-      if (!this.selectedAccessMap || !args[0]) return CISCO_ERRORS.INCOMPLETE;
-      const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
-      rule.matchMacAcls = [...(rule.matchMacAcls ?? []), ...args];
-      return '';
-    });
-    this.configAccessMapTrie.registerGreedy('action', 'Set the access-map action', (args) => {
-      if (!this.selectedAccessMap) return CISCO_ERRORS.INCOMPLETE;
-      const a = args[0]?.toLowerCase();
-      if (a !== 'forward' && a !== 'drop') return '% Invalid action';
-      if (args.length > 1) return CISCO_ERRORS.INVALID_INPUT;
-      const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
-      rule.action = a;
-      return '';
-    });
     this.registerDaiCommands({
       config: this.configTrie, configIf: this.configIfTrie,
       privileged: this.privilegedTrie, user: this.userTrie,
@@ -1215,6 +1197,37 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // desormais depuis la configuration, ou il passe.
     trie.privileged.describeNode('show errdisable', 'Error-disable configuration');
     trie.privileged.describeNode('show queuing', 'Show queueing configuration');
+  }
+
+  private vlanAccessMapHost(): VlanAccessMapHost {
+    const regle = () => {
+      if (!this.selectedAccessMap) return null;
+      return this.d().setVlanAccessMapRule(
+        this.selectedAccessMap.name, this.selectedAccessMap.seq);
+    };
+    const champ = (famille: 'ip' | 'mac') =>
+      (famille === 'ip' ? 'matchIpAcls' : 'matchMacAcls') as
+        'matchIpAcls' | 'matchMacAcls';
+    return {
+      poserAction: (action) => {
+        const r = regle();
+        if (r) r.action = action;
+        return '';
+      },
+      ajouterListes: (famille, noms) => {
+        const r = regle();
+        if (r) r[champ(famille)] = [...(r[champ(famille)] ?? []), ...noms];
+        return '';
+      },
+      retirerListes: (famille, noms) => {
+        const r = regle();
+        if (!r) return '';
+        const restantes = (r[champ(famille)] ?? []).filter((n) => !noms.includes(n));
+        if (restantes.length === 0) delete r[champ(famille)];
+        else r[champ(famille)] = restantes;
+        return '';
+      },
+    };
   }
 
   private arpAclHost(): ArpAclHost {
@@ -2318,6 +2331,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         () => extendedAclHost(this.namedAclEditContext())),
       ...macAclSpecs(() => this.macAclHost()),
       ...arpAclSpecs(() => this.arpAclHost()),
+      ...vlanAccessMapSpecs(() => this.vlanAccessMapHost()),
       ...switchPortPhysicalSpecs(() => this.portPhysiqueHost()),
       ...stpInterfaceSpecs(() => this.stpInterfaceHost()),
       ...this.dot1xPaeSpecs(),
@@ -2547,6 +2561,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
        * TOUTES.
        */
       [['private-vlan'], 'Configure the private VLAN role or association'],
+      ...VLAN_ACCESS_MAP_LEGENDS.map(
+        ([chemin, legende, modes]) => [chemin, legende, modes] as SocleLegend),
       [['errdisable'], 'Error disable recovery configuration'],
       [['errdisable', 'recovery'], 'Configure error disable recovery'],
       [['errdisable', 'recovery', 'cause'],
