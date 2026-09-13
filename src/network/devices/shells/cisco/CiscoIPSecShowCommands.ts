@@ -173,16 +173,10 @@ export function registerIPSecShowCommands(
     ].join('\n')).join('\n\n');
   });
 
-  const debugSvc = () => getRouter().getDebugService();
   const PKI_REFUS = '% Crypto PKI has no trace point on this platform:'
     + ' the certificate engine publishes no enrolment or validation event';
   trie.registerGreedy('debug crypto pki', 'Enable PKI debug', () => PKI_REFUS);
   trie.registerGreedy('no debug crypto pki', 'Disable PKI debug', () => PKI_REFUS);
-  trie.register('show debugging', 'Display active debug flags', () => debugSvc().format());
-  trie.register('show debug condition', 'Display standing debug conditions',
-    () => debugSvc().formatConditions());
-  trie.register('show debugging condition', 'Display standing debug conditions',
-    () => debugSvc().formatConditions());
 
   const nhrp = () => getRouter().getNhrpService();
   trie.register('show ip nhrp', 'Display NHRP cache', () => nhrp().formatCache());

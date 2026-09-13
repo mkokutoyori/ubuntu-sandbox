@@ -454,9 +454,6 @@ export function ipv6DhcpPoolSpecs(ctx: CiscoShellContext): CommandSpec[] {
 }
 
 export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Router): void {
-  trie.register('show debug', 'Display debugging flags', () =>
-    getRouter().getDebugService().format());
-
   trie.register('show ipv6 dhcp binding', 'Display IPv6 DHCP bindings', () => {
     const r = getRouter() as any;
     const bindings = r._ciscoIpv6DhcpBindings as Map<string, any> | undefined;

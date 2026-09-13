@@ -35,18 +35,20 @@ beforeEach(() => {
 const SRV = '10.0.0.2';
 const MOT = 'sshpass -p secret123';
 
-async function labo(): Promise<{ pc: LinuxPC; srv: LinuxServer }> {
+async function labo(): Promise<{ pc: LinuxPC; srv: LinuxServer; cable: Cable }> {
   const pc = new LinuxPC('linux-pc', 'PC1');
   const srv = new LinuxServer('linux-server', 'SRV1');
   pc.powerOn(); srv.powerOn();
-  new Cable('c1').connect(pc.getPort('eth0')!, srv.getPort('eth0')!);
+  const cable = new Cable('c1');
+  cable.connect(pc.getPort('eth0')!, srv.getPort('eth0')!);
   const m = new SubnetMask('255.255.255.0');
   pc.getPort('eth0')!.configureIP(new IPAddress('10.0.0.1'), m);
   srv.getPort('eth0')!.configureIP(new IPAddress(SRV), m);
   await srv.executeCommand('sudo systemctl start ssh');
   await srv.executeCommand('sudo useradd -m alice');
   await srv.executeCommand('echo "alice:secret123" | sudo chpasswd');
-  return { pc, srv };
+  await pc.executeCommand(`ping -c 1 ${SRV}`);
+  return { pc, srv, cable };
 }
 
 describe('scp : le contenu ARRIVE, a l octet', () => {
@@ -161,6 +163,13 @@ describe('sftp : les verbes de la page man, sur le serveur', () => {
     await srv.executeCommand('sudo -u alice touch /home/alice/avant.txt');
     await pc.executeCommand(lot('rename /home/alice/avant.txt /home/alice/apres.txt'));
     expect(await srv.executeCommand('test -f /home/alice/apres.txt && echo OUI')).toContain('OUI');
+  });
+
+  it('les verbes COUTENT des trames : la session passe par le fil', async () => {
+    const { pc, cable } = await labo();
+    const avant = cable.getStats().framesTransmitted;
+    await pc.executeCommand(lot('pwd\nls /tmp'));
+    expect(cable.getStats().framesTransmitted).toBeGreaterThan(avant);
   });
 
   it('un chemin distant absent est REFUSE, et le lot continue', async () => {

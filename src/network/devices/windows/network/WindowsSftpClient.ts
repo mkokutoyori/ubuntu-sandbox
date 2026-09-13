@@ -57,9 +57,13 @@ export async function runWindowsSftpClient(opts: WindowsSftpClientOpts): Promise
 
   const pIdx = opts.args.indexOf('-P');
   const probePort = pIdx >= 0 ? opts.args[pIdx + 1] : null;
-  const probeArgs = probePort
-    ? ['-p', probePort, `${remoteUser}@${host}`, 'hostname']
-    : [`${remoteUser}@${host}`, 'hostname'];
+  const probeArgs = probePort ? ['-p', probePort] : [];
+  for (let i = 0; i < opts.args.length; i++) {
+    if ((opts.args[i] === '-i' || opts.args[i] === '-o') && opts.args[i + 1] !== undefined) {
+      probeArgs.push(opts.args[i], opts.args[++i]);
+    }
+  }
+  probeArgs.push(`${remoteUser}@${host}`, 'hostname');
   const probe = await runWindowsSshClient({ ...opts, args: probeArgs });
   if (probe.exitCode !== 0) {
     return { output: `sftp: ${probe.output.replace(/^ssh:\s*/, '')}`, exitCode: probe.exitCode };

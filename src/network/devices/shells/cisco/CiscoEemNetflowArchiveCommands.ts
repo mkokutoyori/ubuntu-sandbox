@@ -45,33 +45,8 @@ export interface CiscoEemNetflowArchiveContext extends CiscoShellContext {
 export function buildEemNetflowArchiveConfigCommands(
   trie: CommandTrie, ctx: CiscoEemNetflowArchiveContext,
 ): void {
-  const eem = () => ctx.r().getEemService();
   const ar = () => ctx.r().getArchiveService();
 
-  trie.registerGreedy('event manager applet', 'EEM applet', (args) => {
-    if (!args[0]) return '% Incomplete command.';
-    const applet = eem().ensureApplet(args[0]);
-    for (let i = 1; i < args.length; i++) {
-      if (args[i] === 'authorization' && args[i + 1]) { applet.authorization = args[i + 1]; i++; }
-    }
-    ctx.setApplet?.(args[0]);
-    ctx.setMode('config-applet' as CiscoShellMode);
-    return '';
-  });
-  trie.requireArgs('event manager applet', 1);
-  trie.registerGreedy('no event manager applet', 'Remove EEM applet', (args) => {
-    if (args[0]) eem().removeApplet(args[0]);
-    return '';
-  });
-  trie.registerGreedy('event manager environment', 'EEM environment variable', (args) => {
-    if (args[0] && args[1] !== undefined) eem().setEnvironment(args[0], args.slice(1).join(' '));
-    return '';
-  });
-
-  trie.register('archive', 'Enter archive configuration', () => {
-    ctx.setMode('config-archive' as CiscoShellMode);
-    return '';
-  });
   void ar;
 }
 
@@ -723,6 +698,77 @@ export function netflowSpecs(ctx: CiscoEemNetflowArchiveContext): CommandSpec[] 
       description: 'Enable NetFlow on all interfaces',
       modes: CONFIG, minPrivilege: 15,
       run: () => '',
+    },
+  ];
+}
+
+const NOM_D_APPLET: ArgumentSpec = {
+  name: 'nom', type: 'WORD', description: 'Name of the EEM applet',
+};
+
+const NOM_DE_VARIABLE: ArgumentSpec = {
+  name: 'nom', type: 'WORD', description: 'Name of the environment variable',
+};
+
+const VALEUR_DE_VARIABLE: ArgumentSpec = {
+  name: 'valeur', type: 'REST', literal: 'LINE',
+  description: 'Value the variable takes',
+};
+
+const AUTORISATION: ArgumentSpec = {
+  name: 'autorisation', type: 'WORD',
+  description: 'Authorization the applet runs under',
+};
+
+/**
+ * La PORTE des applets EEM, sa negation et la variable d'environnement.
+ *
+ * Le sous-mode etait migre ; ces trois-la restaient a l'arbre, sous des
+ * gloutons qui finissaient par un `return ''` que n'importe quelle
+ * saisie atteignait. `event manager environment SEUIL` — une variable
+ * sans valeur — etait accepte et ne posait rien, et `no event manager
+ * applet` tout seul repondait comme s'il avait retire un applet qu'il
+ * n'avait pas nomme.
+ *
+ * `authorization` existait et n'etait annonce nulle part : le glouton le
+ * cherchait n'importe ou dans la ligne, si bien que la forme marchait
+ * sans que `?` en parle, et que les mots qui n'etaient pas les siens
+ * etaient avales en silence.
+ */
+export function eemPorteSpecs(ctx: CiscoEemNetflowArchiveContext): CommandSpec[] {
+  const eem = () => ctx.r().getEemService();
+  const entrer = (nom: string, autorisation?: string): string => {
+    const applet = eem().ensureApplet(nom);
+    if (autorisation !== undefined) applet.authorization = autorisation;
+    ctx.setApplet?.(nom);
+    ctx.setMode('config-applet' as CiscoShellMode);
+    return '';
+  };
+
+  return [
+    {
+      id: 'event-manager-applet',
+      path: ['event', 'manager', 'applet', NOM_D_APPLET],
+      description: 'Register an EEM applet',
+      modes: CONFIG, minPrivilege: 15,
+      enters: 'config-applet',
+      run: (_s, args) => entrer(args.nom),
+      undo: (_s, args) => { eem().removeApplet(args.nom); return ''; },
+    },
+    {
+      id: 'event-manager-applet-authorization',
+      path: ['event', 'manager', 'applet', NOM_D_APPLET, 'authorization', AUTORISATION],
+      description: 'Authorization the applet runs under',
+      modes: CONFIG, minPrivilege: 15,
+      enters: 'config-applet',
+      run: (_s, args) => entrer(args.nom, args.autorisation),
+    },
+    {
+      id: 'event-manager-environment',
+      path: ['event', 'manager', 'environment', NOM_DE_VARIABLE, VALEUR_DE_VARIABLE],
+      description: 'Set an EEM environment variable',
+      modes: CONFIG, minPrivilege: 15,
+      run: (_s, args) => { eem().setEnvironment(args.nom, args.valeur); return ''; },
     },
   ];
 }

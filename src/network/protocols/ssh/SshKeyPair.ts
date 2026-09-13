@@ -7,7 +7,6 @@
 import type { ISshLocalFs } from './ISshLocalFs';
 import { type Result, ok, err } from './Result';
 import { SshFingerprint } from './SshFingerprint';
-import { deriveKeyMaterial } from './sshKeyMaterial';
 
 export class SshKeyPair {
   constructor(
@@ -20,21 +19,6 @@ export class SshKeyPair {
 
   get fingerprint(): SshFingerprint {
     return SshFingerprint.fromPublicKey(this.publicKeyContent);
-  }
-
-  /**
-   * Generate a deterministic key pair (simulator only).
-   * Uses the comment as seed to keep the result stable for testing.
-   */
-  static generate(
-    algorithm: string = 'ssh-ed25519',
-    comment: string = 'user@host',
-  ): SshKeyPair {
-    const seed = `${algorithm}:${comment}`;
-    const pub = deriveKeyMaterial(seed, 43);
-    const privPath = '~/.ssh/id_ed25519';
-    const pubPath = '~/.ssh/id_ed25519.pub';
-    return new SshKeyPair(privPath, pubPath, pub, comment, algorithm);
   }
 
   /**

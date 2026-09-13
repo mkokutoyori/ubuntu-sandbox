@@ -1,16 +1,16 @@
 ============================================================
 RMAN debug transcript — rman-basics
-Generated: 2026-09-10T16:28:17.912Z
+Generated: 2026-09-13T12:04:39.763Z
 Topology:  Single LinuxServer oracle-srv-A (10.0.0.10/24) — Oracle ORCL OPEN
 Total commands: 226
 ============================================================
 
   
-  Recovery Manager: Release 19.0.0.0.0 - Production on 10-SEP-2026 16:28:17
+  Recovery Manager: Release 19.0.0.0.0 - Production on 13-SEP-2026 12:04:39
   
   Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.
   
-  connected to target database: ORCL (DBID=2537618955)
+  connected to target database: ORCL (DBID=3911047698)
   
 
 
@@ -35,7 +35,7 @@ RMAN [1/226]> SHOW ALL
   
 
 RMAN [2/226]> CONNECT TARGET /
-  connected to target database: ORCL (DBID=2537618955)
+  connected to target database: ORCL (DBID=3911047698)
 
 RMAN [3/226]> SHOW RETENTION POLICY
   
@@ -148,8 +148,8 @@ RMAN [16/226]> LIST INCARNATION OF DATABASE
   =============================
   DB Key  Inc Key DB Name  DB ID            STATUS  Reset SCN  Reset Time
   ------- ------- -------- ---------------- ------- ---------- ----------
-  1       1       ORCL     2537618955       PARENT  1          2026-09-09
-  1       2       ORCL     2537618955       CURRENT 1892354    2026-09-10
+  1       1       ORCL     3911047698       PARENT  1          2026-09-12
+  1       2       ORCL     3911047698       CURRENT 1892354    2026-09-13
   
 
 
@@ -267,76 +267,76 @@ RMAN [47/226]> SHOW ALL
 --- [48] § BACKUP DATABASE — full ---
 RMAN [48/226]> BACKUP DATABASE
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=100 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_vy3rq7vm_.bkp tag=TAG20260910T162817
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_rz5ouk7w_.bkp tag=TAG20260913T120439
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=101 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_jc2p1yve_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_7r63yksl_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [49/226]> BACKUP DATABASE TAG 'FULL_001'
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=102 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_FULL_001_u025whh8_.bkp tag=FULL_001
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_FULL_001_4ob77p3o_.bkp tag=FULL_001
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=103 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_68uatbqx_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_f9pb1vai_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [50/226]> BACKUP DATABASE TAG 'FULL_002' FORMAT '/u01/backup/full_%U.bkp'
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=104 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/full_05tl5pr5_1_1.bkp tag=FULL_002
+  piece handle=/u01/backup/full_05tlaxjr_1_1.bkp tag=FULL_002
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=105 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_2n4ovatq_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_nijpgr1o_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [51/226]> BACKUP DATABASE COMPRESSED BACKUPSET
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=106 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -349,19 +349,19 @@ RMAN [51/226]> BACKUP DATABASE COMPRESSED BACKUPSET
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=107 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_zce3sq5n_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_t2wadr9e_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [52/226]> BACKUP COMPRESSED BACKUPSET DATABASE
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=108 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -374,19 +374,19 @@ RMAN [52/226]> BACKUP COMPRESSED BACKUPSET DATABASE
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=109 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_rqhssu6x_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_3ddzuoig_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [53/226]> BACKUP DATABASE ENCRYPTED
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=110 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -399,19 +399,19 @@ RMAN [53/226]> BACKUP DATABASE ENCRYPTED
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=111 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_il7zk7t2_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_dc3nh8d8_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [54/226]> BACKUP DATABASE KEEP FOREVER
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=112 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -424,19 +424,19 @@ RMAN [54/226]> BACKUP DATABASE KEEP FOREVER
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=113 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_hh8sn6tc_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_v204te99_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [55/226]> BACKUP DATABASE KEEP UNTIL TIME '2027-01-01'
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=114 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -449,29 +449,29 @@ RMAN [55/226]> BACKUP DATABASE KEEP UNTIL TIME '2027-01-01'
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=115 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_fevkvkua_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_qg6eql1l_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [56/226]> BACKUP DATABASE MAXPIECESIZE 200M
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=116 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_gvu3fj57_.bkp tag=TAG20260910T162817
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_28cmoybl_.bkp tag=TAG20260913T120439
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:04
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_knvqbcjj_.bkp tag=TAG20260910T162817
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_4oeahpuq_.bkp tag=TAG20260913T120439
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:04
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_k3rhnquz_.bkp tag=TAG20260910T162817
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_pblu69e9_.bkp tag=TAG20260913T120439
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:04
   
   RMAN-00571: ===========================================================
@@ -480,19 +480,19 @@ RMAN [56/226]> BACKUP DATABASE MAXPIECESIZE 200M
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 209715200 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=117 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_p6zdo8ft_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_mocvrrcb_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [57/226]> BACKUP DATABASE MAXPIECESIZE 1G
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=118 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -505,19 +505,19 @@ RMAN [57/226]> BACKUP DATABASE MAXPIECESIZE 1G
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1073741824 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=119 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_t2a4okxt_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_0yzopxyh_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [58/226]> BACKUP DATABASE PLUS ARCHIVELOG
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=120 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -530,7 +530,7 @@ RMAN [58/226]> BACKUP DATABASE PLUS ARCHIVELOG
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=121 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
@@ -542,19 +542,19 @@ RMAN [58/226]> BACKUP DATABASE PLUS ARCHIVELOG
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=122 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_68d5xefw_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ry6qbnqv_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [59/226]> BACKUP DATABASE PLUS ARCHIVELOG DELETE INPUT
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=123 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -567,7 +567,7 @@ RMAN [59/226]> BACKUP DATABASE PLUS ARCHIVELOG DELETE INPUT
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=124 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
@@ -579,63 +579,63 @@ RMAN [59/226]> BACKUP DATABASE PLUS ARCHIVELOG DELETE INPUT
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=125 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_21g4qrxd_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_h7ccrwyv_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [60/226]> BACKUP DATABASE TAG 'WEEKLY' FORMAT '/u01/backup/%d_%T_%U.bkp' COMPRESSED
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=126 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_20260910_0jtl5pr5_1_1.bkp tag=WEEKLY
+  piece handle=/u01/backup/ORCL_20260913_0jtlaxjr_1_1.bkp tag=WEEKLY
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=127 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_b1813tuh_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_iqni4crw_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [61/226]> BACKUP NOT BACKED UP 1 TIMES DATABASE
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=128 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=129 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_wb2wwit3_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ndy43t0u_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [62/226]> BACKUP NOT BACKED UP 10 TIMES DATABASE
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=130 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -648,14 +648,14 @@ RMAN [62/226]> BACKUP NOT BACKED UP 10 TIMES DATABASE
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=131 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_z8kx7bcz_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_nqwvdp76_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [63/226]> LIST BACKUP
@@ -665,122 +665,122 @@ RMAN [63/226]> LIST BACKUP
   
   BS Key  Type LV Size       Device Type Elapsed Time Completion Time
   ------- ---- -- ---------- ----------- ------------ ---------------
-  1       Full    1.61G      DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 1   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_vy3rq7vm_.bkp
+  1       Full    1.61G      DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 1   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_rz5ouk7w_.bkp
     List of Datafiles in backup set 1
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  2       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  2       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 2   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_jc2p1yve_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  3       Full    1.61G      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_7r63yksl_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  3       Full    1.61G      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 3   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: FULL_001
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_FULL_001_u025whh8_.bkp
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_FULL_001_4ob77p3o_.bkp
     List of Datafiles in backup set 3
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  4       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  4       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 4   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_68uatbqx_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  5       Full    1.61G      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_f9pb1vai_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  5       Full    1.61G      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 5   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: FULL_002
-            Piece Name: /u01/backup/full_05tl5pr5_1_1.bkp
+            Piece Name: /u01/backup/full_05tlaxjr_1_1.bkp
     List of Datafiles in backup set 5
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  6       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  6       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 6   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_2n4ovatq_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  7       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_nijpgr1o_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  7       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 7   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_zce3sq5n_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  8       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_t2wadr9e_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  8       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 8   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_rqhssu6x_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  9       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_3ddzuoig_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  9       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 9   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_il7zk7t2_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  10      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_dc3nh8d8_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  10      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 10   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_hh8sn6tc_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  11      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_v204te99_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  11      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 11   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_fevkvkua_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  12      Full    200.00M    DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 12   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_gvu3fj57_.bkp
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_qg6eql1l_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  12      Full    200.00M    DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 12   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_28cmoybl_.bkp
     List of Datafiles in backup set 12
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  13      Full    200.00M    DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 13   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_knvqbcjj_.bkp
-  14      Full    200.00M    DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 14   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_k3rhnquz_.bkp
-  15      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  13      Full    200.00M    DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 13   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_4oeahpuq_.bkp
+  14      Full    200.00M    DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 14   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_pblu69e9_.bkp
+  15      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 15   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_p6zdo8ft_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  16      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_mocvrrcb_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  16      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 16   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_t2a4okxt_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  17      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_0yzopxyh_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  17      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 17   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_68d5xefw_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  18      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ry6qbnqv_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  18      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 18   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_21g4qrxd_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  19      Full    1.61G      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_h7ccrwyv_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  19      Full    1.61G      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 19   Status: AVAILABLE  Compressed: YES  Encrypted: NO  Tag: WEEKLY
-            Piece Name: /u01/backup/ORCL_20260910_0jtl5pr5_1_1.bkp
+            Piece Name: /u01/backup/ORCL_20260913_0jtlaxjr_1_1.bkp
     List of Datafiles in backup set 19
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  20      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  20      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 20   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_b1813tuh_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  21      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_iqni4crw_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  21      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 21   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_wb2wwit3_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  22      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ndy43t0u_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  22      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 22   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_z8kx7bcz_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_nqwvdp76_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
   
 
 RMAN [64/226]> LIST BACKUP SUMMARY
@@ -789,35 +789,35 @@ RMAN [64/226]> LIST BACKUP SUMMARY
   ===============
   Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- ------------------- ------- ------- ---------- ---
-  1       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         TAG20260910T162817
-  2       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  3       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         FULL_001
-  4       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  5       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         FULL_002
-  6       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  7       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  8       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  9       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  10      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  11      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  12      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         TAG20260910T162817
-  13      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         TAG20260910T162817
-  14      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         TAG20260910T162817
-  15      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  16      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  17      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  18      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  19      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         WEEKLY
-  20      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  21      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  22      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
+  1       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         TAG20260913T120439
+  2       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  3       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         FULL_001
+  4       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  5       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         FULL_002
+  6       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  7       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  8       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  9       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  10      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  11      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  12      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         TAG20260913T120439
+  13      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         TAG20260913T120439
+  14      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         TAG20260913T120439
+  15      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  16      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  17      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  18      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  19      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         WEEKLY
+  20      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  21      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  22      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
   
 
 
 --- [65] § BACKUP scoped variants ---
 RMAN [65/226]> BACKUP TABLESPACE SYSTEM
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=132 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -829,19 +829,19 @@ RMAN [65/226]> BACKUP TABLESPACE SYSTEM
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 838860800 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=133 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_b9g9uoj1_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_3da3cmwu_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [66/226]> BACKUP TABLESPACE USERS
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=134 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -853,19 +853,19 @@ RMAN [66/226]> BACKUP TABLESPACE USERS
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 104857600 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=135 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_jdl0k0yq_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_1c3ep5ht_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [67/226]> BACKUP TABLESPACE SYSAUX
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=136 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -877,19 +877,19 @@ RMAN [67/226]> BACKUP TABLESPACE SYSAUX
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 576716800 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=137 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_1oz1q1qp_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_05aj64b3_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [68/226]> BACKUP TABLESPACE UNDOTBS1
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=138 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -901,19 +901,19 @@ RMAN [68/226]> BACKUP TABLESPACE UNDOTBS1
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 209715200 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=139 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_f07yqu0v_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_qof04ryw_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [69/226]> BACKUP TABLESPACE USERS TAG 'USERS_HOT'
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=140 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -925,19 +925,19 @@ RMAN [69/226]> BACKUP TABLESPACE USERS TAG 'USERS_HOT'
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 104857600 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=141 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_pflvnp46_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ifsmgog1_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [70/226]> BACKUP DATAFILE 1
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=142 device type=DISK
   channel ORA_DISK_1: starting full datafile 1 backup set
@@ -949,19 +949,19 @@ RMAN [70/226]> BACKUP DATAFILE 1
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 838860800 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=143 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_2brk7xta_.bkp tag=AUTOBACKUP
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_znadyoiw_.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [71/226]> BACKUP DATAFILE 2
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=144 device type=DISK
   channel ORA_DISK_1: starting full datafile 2 backup set
@@ -973,7 +973,7 @@ RMAN [71/226]> BACKUP DATAFILE 2
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 576716800 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=145 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -987,7 +987,7 @@ RMAN [71/226]> BACKUP DATAFILE 2
 
 RMAN [72/226]> BACKUP DATAFILE 3
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=146 device type=DISK
   channel ORA_DISK_1: starting full datafile 3 backup set
@@ -999,7 +999,7 @@ RMAN [72/226]> BACKUP DATAFILE 3
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 209715200 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=147 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1013,7 +1013,7 @@ RMAN [72/226]> BACKUP DATAFILE 3
 
 RMAN [73/226]> BACKUP DATAFILE 4
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=148 device type=DISK
   channel ORA_DISK_1: starting full datafile 4 backup set
@@ -1025,7 +1025,7 @@ RMAN [73/226]> BACKUP DATAFILE 4
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 104857600 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=149 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1039,7 +1039,7 @@ RMAN [73/226]> BACKUP DATAFILE 4
 
 RMAN [74/226]> BACKUP DATAFILE 4 TAG 'DF4_AD_HOC'
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=150 device type=DISK
   channel ORA_DISK_1: starting full datafile 4 backup set
@@ -1051,7 +1051,7 @@ RMAN [74/226]> BACKUP DATAFILE 4 TAG 'DF4_AD_HOC'
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 104857600 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=151 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1065,17 +1065,17 @@ RMAN [74/226]> BACKUP DATAFILE 4 TAG 'DF4_AD_HOC'
 
 RMAN [75/226]> BACKUP SPFILE
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=152 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current SPFILE in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_TAG20260910T162817_t2iz4pi6_.bkp tag=TAG20260910T162817
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_TAG20260913T120439_qwm512mn_.bkp tag=TAG20260913T120439
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=153 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1089,17 +1089,17 @@ RMAN [75/226]> BACKUP SPFILE
 
 RMAN [76/226]> BACKUP SPFILE TAG 'SPFILE_SAVE'
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=154 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current SPFILE in backup set
-  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_SPFILE_SAVE_0lcgi9wo_.bkp tag=SPFILE_SAVE
+  piece handle=/u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_SPFILE_SAVE_5nylz99l_.bkp tag=SPFILE_SAVE
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=155 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1113,7 +1113,7 @@ RMAN [76/226]> BACKUP SPFILE TAG 'SPFILE_SAVE'
 
 RMAN [77/226]> BACKUP CURRENT CONTROLFILE
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=156 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1127,7 +1127,7 @@ RMAN [77/226]> BACKUP CURRENT CONTROLFILE
 
 RMAN [78/226]> BACKUP CURRENT CONTROLFILE TAG 'CF_MANUAL'
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=157 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1146,159 +1146,159 @@ RMAN [79/226]> LIST BACKUP
   
   BS Key  Type LV Size       Device Type Elapsed Time Completion Time
   ------- ---- -- ---------- ----------- ------------ ---------------
-  1       Full    1.61G      DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 1   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_vy3rq7vm_.bkp
+  1       Full    1.61G      DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 1   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_rz5ouk7w_.bkp
     List of Datafiles in backup set 1
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  2       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  2       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 2   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_jc2p1yve_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  3       Full    1.61G      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_7r63yksl_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  3       Full    1.61G      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 3   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: FULL_001
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_FULL_001_u025whh8_.bkp
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_FULL_001_4ob77p3o_.bkp
     List of Datafiles in backup set 3
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  4       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  4       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 4   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_68uatbqx_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  5       Full    1.61G      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_f9pb1vai_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  5       Full    1.61G      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 5   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: FULL_002
-            Piece Name: /u01/backup/full_05tl5pr5_1_1.bkp
+            Piece Name: /u01/backup/full_05tlaxjr_1_1.bkp
     List of Datafiles in backup set 5
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  6       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  6       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 6   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_2n4ovatq_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  7       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_nijpgr1o_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  7       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 7   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_zce3sq5n_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  8       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_t2wadr9e_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  8       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 8   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_rqhssu6x_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  9       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_3ddzuoig_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  9       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 9   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_il7zk7t2_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  10      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_dc3nh8d8_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  10      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 10   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_hh8sn6tc_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  11      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_v204te99_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  11      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 11   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_fevkvkua_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  12      Full    200.00M    DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 12   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_gvu3fj57_.bkp
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_qg6eql1l_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  12      Full    200.00M    DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 12   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_28cmoybl_.bkp
     List of Datafiles in backup set 12
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  13      Full    200.00M    DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 13   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_knvqbcjj_.bkp
-  14      Full    200.00M    DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 14   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_k3rhnquz_.bkp
-  15      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  13      Full    200.00M    DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 13   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_4oeahpuq_.bkp
+  14      Full    200.00M    DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 14   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_pblu69e9_.bkp
+  15      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 15   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_p6zdo8ft_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  16      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_mocvrrcb_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  16      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 16   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_t2a4okxt_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  17      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_0yzopxyh_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  17      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 17   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_68d5xefw_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  18      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ry6qbnqv_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  18      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 18   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_21g4qrxd_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  19      Full    1.61G      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_h7ccrwyv_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  19      Full    1.61G      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 19   Status: AVAILABLE  Compressed: YES  Encrypted: NO  Tag: WEEKLY
-            Piece Name: /u01/backup/ORCL_20260910_0jtl5pr5_1_1.bkp
+            Piece Name: /u01/backup/ORCL_20260913_0jtlaxjr_1_1.bkp
     List of Datafiles in backup set 19
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  20      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  20      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 20   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_b1813tuh_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  21      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_iqni4crw_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  21      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 21   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_wb2wwit3_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  22      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ndy43t0u_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  22      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 22   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_z8kx7bcz_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  23      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_nqwvdp76_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  23      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 23   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_b9g9uoj1_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  24      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_3da3cmwu_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  24      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 24   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_jdl0k0yq_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  25      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_1c3ep5ht_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  25      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 25   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_1oz1q1qp_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  26      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_05aj64b3_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  26      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 26   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_f07yqu0v_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  27      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_qof04ryw_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  27      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 27   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_pflvnp46_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  28      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ifsmgog1_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  28      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 28   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_2brk7xta_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  29      Full    4.00K      DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 29   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_TAG20260910T162817_t2iz4pi6_.bkp
-  30      Full    4.00K      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_znadyoiw_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  29      Full    4.00K      DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 29   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_TAG20260913T120439_qwm512mn_.bkp
+  30      Full    4.00K      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 30   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: SPFILE_SAVE
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_SPFILE_SAVE_0lcgi9wo_.bkp
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_SPFILE_SAVE_5nylz99l_.bkp
   
 
 
 --- [80] § BACKUP incremental ---
 RMAN [80/226]> BACKUP INCREMENTAL LEVEL 0 DATABASE
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=158 device type=DISK
   channel ORA_DISK_1: starting incremental level 0 datafile backup set
@@ -1311,7 +1311,7 @@ RMAN [80/226]> BACKUP INCREMENTAL LEVEL 0 DATABASE
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=159 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1325,7 +1325,7 @@ RMAN [80/226]> BACKUP INCREMENTAL LEVEL 0 DATABASE
 
 RMAN [81/226]> BACKUP INCREMENTAL LEVEL 0 DATABASE TAG 'L0_BASE'
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=160 device type=DISK
   channel ORA_DISK_1: starting incremental level 0 datafile backup set
@@ -1338,7 +1338,7 @@ RMAN [81/226]> BACKUP INCREMENTAL LEVEL 0 DATABASE TAG 'L0_BASE'
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=161 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1352,7 +1352,7 @@ RMAN [81/226]> BACKUP INCREMENTAL LEVEL 0 DATABASE TAG 'L0_BASE'
 
 RMAN [82/226]> BACKUP INCREMENTAL LEVEL 1 DATABASE
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=162 device type=DISK
   channel ORA_DISK_1: starting incremental level 1 datafile backup set
@@ -1365,7 +1365,7 @@ RMAN [82/226]> BACKUP INCREMENTAL LEVEL 1 DATABASE
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 86507520 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=163 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1379,7 +1379,7 @@ RMAN [82/226]> BACKUP INCREMENTAL LEVEL 1 DATABASE
 
 RMAN [83/226]> BACKUP INCREMENTAL LEVEL 1 DATABASE TAG 'DAILY_L1'
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=164 device type=DISK
   channel ORA_DISK_1: starting incremental level 1 datafile backup set
@@ -1392,7 +1392,7 @@ RMAN [83/226]> BACKUP INCREMENTAL LEVEL 1 DATABASE TAG 'DAILY_L1'
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 86507520 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=165 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1406,7 +1406,7 @@ RMAN [83/226]> BACKUP INCREMENTAL LEVEL 1 DATABASE TAG 'DAILY_L1'
 
 RMAN [84/226]> BACKUP INCREMENTAL LEVEL 1 CUMULATIVE DATABASE
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=166 device type=DISK
   channel ORA_DISK_1: starting cumulative incremental level 1 datafile backup set
@@ -1419,7 +1419,7 @@ RMAN [84/226]> BACKUP INCREMENTAL LEVEL 1 CUMULATIVE DATABASE
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 259522560 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=167 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1433,7 +1433,7 @@ RMAN [84/226]> BACKUP INCREMENTAL LEVEL 1 CUMULATIVE DATABASE
 
 RMAN [85/226]> BACKUP INCREMENTAL LEVEL 1 CUMULATIVE DATABASE TAG 'CUM_L1'
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=168 device type=DISK
   channel ORA_DISK_1: starting cumulative incremental level 1 datafile backup set
@@ -1446,7 +1446,7 @@ RMAN [85/226]> BACKUP INCREMENTAL LEVEL 1 CUMULATIVE DATABASE TAG 'CUM_L1'
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 259522560 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=169 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1460,7 +1460,7 @@ RMAN [85/226]> BACKUP INCREMENTAL LEVEL 1 CUMULATIVE DATABASE TAG 'CUM_L1'
 
 RMAN [86/226]> BACKUP INCREMENTAL LEVEL 0 DATABASE TAG 'L0_002'
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=170 device type=DISK
   channel ORA_DISK_1: starting incremental level 0 datafile backup set
@@ -1473,7 +1473,7 @@ RMAN [86/226]> BACKUP INCREMENTAL LEVEL 0 DATABASE TAG 'L0_002'
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=171 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1487,7 +1487,7 @@ RMAN [86/226]> BACKUP INCREMENTAL LEVEL 0 DATABASE TAG 'L0_002'
 
 RMAN [87/226]> BACKUP INCREMENTAL LEVEL 1 DATABASE TAG 'L1_002'
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=172 device type=DISK
   channel ORA_DISK_1: starting incremental level 1 datafile backup set
@@ -1500,7 +1500,7 @@ RMAN [87/226]> BACKUP INCREMENTAL LEVEL 1 DATABASE TAG 'L1_002'
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 86507520 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=173 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1514,7 +1514,7 @@ RMAN [87/226]> BACKUP INCREMENTAL LEVEL 1 DATABASE TAG 'L1_002'
 
 RMAN [88/226]> BACKUP INCREMENTAL LEVEL 1 DATABASE TAG 'L1_003'
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=174 device type=DISK
   channel ORA_DISK_1: starting incremental level 1 datafile backup set
@@ -1527,7 +1527,7 @@ RMAN [88/226]> BACKUP INCREMENTAL LEVEL 1 DATABASE TAG 'L1_003'
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 86507520 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=175 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1545,43 +1545,43 @@ RMAN [89/226]> LIST BACKUP SUMMARY
   ===============
   Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- ------------------- ------- ------- ---------- ---
-  1       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         TAG20260910T162817
-  2       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  3       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         FULL_001
-  4       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  5       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         FULL_002
-  6       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  7       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  8       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  9       B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  10      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  11      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  12      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         TAG20260910T162817
-  13      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         TAG20260910T162817
-  14      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         TAG20260910T162817
-  15      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  16      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  17      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  18      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  19      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         WEEKLY
-  20      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  21      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  22      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  23      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  24      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  25      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  26      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  27      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  28      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         AUTOBACKUP
-  29      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         TAG20260910T162817
-  30      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         SPFILE_SAVE
+  1       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         TAG20260913T120439
+  2       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  3       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         FULL_001
+  4       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  5       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         FULL_002
+  6       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  7       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  8       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  9       B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  10      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  11      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  12      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         TAG20260913T120439
+  13      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         TAG20260913T120439
+  14      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         TAG20260913T120439
+  15      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  16      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  17      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  18      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  19      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         WEEKLY
+  20      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  21      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  22      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  23      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  24      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  25      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  26      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  27      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  28      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         AUTOBACKUP
+  29      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         TAG20260913T120439
+  30      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         SPFILE_SAVE
   
 
 
 --- [90] § BACKUP ARCHIVELOG ---
 RMAN [90/226]> BACKUP ARCHIVELOG ALL
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=176 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
@@ -1593,7 +1593,7 @@ RMAN [90/226]> BACKUP ARCHIVELOG ALL
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=177 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1607,7 +1607,7 @@ RMAN [90/226]> BACKUP ARCHIVELOG ALL
 
 RMAN [91/226]> BACKUP ARCHIVELOG ALL DELETE INPUT
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=178 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
@@ -1619,7 +1619,7 @@ RMAN [91/226]> BACKUP ARCHIVELOG ALL DELETE INPUT
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=179 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1633,7 +1633,7 @@ RMAN [91/226]> BACKUP ARCHIVELOG ALL DELETE INPUT
 
 RMAN [92/226]> BACKUP ARCHIVELOG FROM SCN 1000000
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=180 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
@@ -1645,7 +1645,7 @@ RMAN [92/226]> BACKUP ARCHIVELOG FROM SCN 1000000
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=181 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1659,7 +1659,7 @@ RMAN [92/226]> BACKUP ARCHIVELOG FROM SCN 1000000
 
 RMAN [93/226]> BACKUP ARCHIVELOG FROM SCN 1500000 DELETE INPUT
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=182 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
@@ -1671,7 +1671,7 @@ RMAN [93/226]> BACKUP ARCHIVELOG FROM SCN 1500000 DELETE INPUT
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=183 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1685,7 +1685,7 @@ RMAN [93/226]> BACKUP ARCHIVELOG FROM SCN 1500000 DELETE INPUT
 
 RMAN [94/226]> BACKUP ARCHIVELOG ALL TAG 'ARC_DAILY'
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=184 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
@@ -1697,7 +1697,7 @@ RMAN [94/226]> BACKUP ARCHIVELOG ALL TAG 'ARC_DAILY'
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=185 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -1718,72 +1718,72 @@ RMAN [95/226]> LIST ARCHIVELOG ALL
 --- [96] § VALIDATE / CROSSCHECK ---
 RMAN [96/226]> BACKUP VALIDATE DATABASE
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=186 device type=DISK
   channel ORA_DISK_1: starting validation of datafile backup set
   channel ORA_DISK_1: validating files in backup set
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [97/226]> VALIDATE DATABASE
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=187 device type=DISK
   channel ORA_DISK_1: starting validation of database
   channel ORA_DISK_1: validating database
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [98/226]> VALIDATE TABLESPACE SYSTEM
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=188 device type=DISK
   channel ORA_DISK_1: starting validation of tablespace SYSTEM
   channel ORA_DISK_1: validating tablespace SYSTEM
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [99/226]> VALIDATE TABLESPACE USERS
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=189 device type=DISK
   channel ORA_DISK_1: starting validation of tablespace USERS
   channel ORA_DISK_1: validating tablespace USERS
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [100/226]> VALIDATE DATAFILE 1
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=190 device type=DISK
   channel ORA_DISK_1: starting validation of datafile 1
   channel ORA_DISK_1: validating datafile 1
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [101/226]> VALIDATE DATAFILE 4
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=191 device type=DISK
   channel ORA_DISK_1: starting validation of datafile 4
   channel ORA_DISK_1: validating datafile 4
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [102/226]> VALIDATE BACKUPSET 1
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=192 device type=DISK
   channel ORA_DISK_1: starting validation of backupset 1
   channel ORA_DISK_1: validating backupset 1
-  Finished backup at 10-SEP-2026 16:28:17
+  Finished backup at 13-SEP-2026 12:04:39
   
 
 RMAN [103/226]> VALIDATE BACKUPSET 999
@@ -1794,22 +1794,22 @@ RMAN [103/226]> VALIDATE BACKUPSET 999
 
 RMAN [104/226]> CROSSCHECK BACKUP
   
-  Starting crosscheck at 10-SEP-2026 16:28:17
+  Starting crosscheck at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=193 device type=DISK
   crosschecked backup piece: found to be 'AVAILABLE'
   Crosschecked 30 objects
-  Finished crosscheck at 10-SEP-2026 16:28:17
+  Finished crosscheck at 13-SEP-2026 12:04:39
   
 
 RMAN [105/226]> CROSSCHECK ARCHIVELOG ALL
   
-  Starting crosscheck at 10-SEP-2026 16:28:17
+  Starting crosscheck at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=194 device type=DISK
   crosschecked archived log: found to be 'AVAILABLE'
   Crosschecked 0 objects
-  Finished crosscheck at 10-SEP-2026 16:28:17
+  Finished crosscheck at 13-SEP-2026 12:04:39
   
 
 
@@ -1850,152 +1850,152 @@ RMAN [111/226]> LIST BACKUP
   
   BS Key  Type LV Size       Device Type Elapsed Time Completion Time
   ------- ---- -- ---------- ----------- ------------ ---------------
-  1       Full    1.61G      DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 1   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_vy3rq7vm_.bkp
+  1       Full    1.61G      DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 1   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_rz5ouk7w_.bkp
     List of Datafiles in backup set 1
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  2       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  2       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 2   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_jc2p1yve_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  3       Full    1.61G      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_7r63yksl_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  3       Full    1.61G      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 3   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: FULL_001
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_FULL_001_u025whh8_.bkp
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_FULL_001_4ob77p3o_.bkp
     List of Datafiles in backup set 3
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  4       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  4       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 4   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_68uatbqx_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  5       Full    1.61G      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_f9pb1vai_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  5       Full    1.61G      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 5   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: FULL_002
-            Piece Name: /u01/backup/full_05tl5pr5_1_1.bkp
+            Piece Name: /u01/backup/full_05tlaxjr_1_1.bkp
     List of Datafiles in backup set 5
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  6       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  6       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 6   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_2n4ovatq_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  7       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_nijpgr1o_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  7       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 7   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_zce3sq5n_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  8       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_t2wadr9e_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  8       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 8   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_rqhssu6x_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  9       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_3ddzuoig_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  9       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 9   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_il7zk7t2_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  10      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_dc3nh8d8_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  10      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 10   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_hh8sn6tc_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  11      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_v204te99_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  11      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 11   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_fevkvkua_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  12      Full    200.00M    DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 12   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_gvu3fj57_.bkp
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_qg6eql1l_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  12      Full    200.00M    DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 12   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_28cmoybl_.bkp
     List of Datafiles in backup set 12
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  13      Full    200.00M    DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 13   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_knvqbcjj_.bkp
-  14      Full    200.00M    DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 14   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_k3rhnquz_.bkp
-  15      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  13      Full    200.00M    DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 13   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_4oeahpuq_.bkp
+  14      Full    200.00M    DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 14   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_pblu69e9_.bkp
+  15      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 15   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_p6zdo8ft_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  16      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_mocvrrcb_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  16      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 16   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_t2a4okxt_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  17      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_0yzopxyh_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  17      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 17   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_68d5xefw_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  18      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ry6qbnqv_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  18      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 18   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_21g4qrxd_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  19      Full    1.61G      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_h7ccrwyv_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  19      Full    1.61G      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 19   Status: AVAILABLE  Compressed: YES  Encrypted: NO  Tag: WEEKLY
-            Piece Name: /u01/backup/ORCL_20260910_0jtl5pr5_1_1.bkp
+            Piece Name: /u01/backup/ORCL_20260913_0jtlaxjr_1_1.bkp
     List of Datafiles in backup set 19
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  20      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  20      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 20   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_b1813tuh_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  21      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_iqni4crw_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  21      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 21   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_wb2wwit3_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  22      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ndy43t0u_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  22      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 22   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_z8kx7bcz_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  23      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_nqwvdp76_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  23      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 23   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_b9g9uoj1_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  24      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_3da3cmwu_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  24      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 24   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_jdl0k0yq_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  25      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_1c3ep5ht_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  25      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 25   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_1oz1q1qp_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  26      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_05aj64b3_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  26      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 26   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_f07yqu0v_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  27      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_qof04ryw_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  27      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 27   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_pflvnp46_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  28      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ifsmgog1_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  28      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 28   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_2brk7xta_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  29      Full    4.00K      DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 29   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_TAG20260910T162817_t2iz4pi6_.bkp
-  30      Full    4.00K      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_znadyoiw_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  29      Full    4.00K      DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 29   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_TAG20260913T120439_qwm512mn_.bkp
+  30      Full    4.00K      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 30   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: SPFILE_SAVE
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_SPFILE_SAVE_0lcgi9wo_.bkp
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_SPFILE_SAVE_5nylz99l_.bkp
   
 
 
@@ -2028,152 +2028,152 @@ RMAN [117/226]> LIST BACKUP
   
   BS Key  Type LV Size       Device Type Elapsed Time Completion Time
   ------- ---- -- ---------- ----------- ------------ ---------------
-  1       Full    1.61G      DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 1   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_vy3rq7vm_.bkp
+  1       Full    1.61G      DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 1   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_rz5ouk7w_.bkp
     List of Datafiles in backup set 1
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  2       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  2       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 2   Status: UNAVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_jc2p1yve_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  3       Full    1.61G      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_7r63yksl_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  3       Full    1.61G      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 3   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: FULL_001
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_FULL_001_u025whh8_.bkp
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_FULL_001_4ob77p3o_.bkp
     List of Datafiles in backup set 3
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  4       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  4       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 4   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_68uatbqx_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  5       Full    1.61G      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_f9pb1vai_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  5       Full    1.61G      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 5   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: FULL_002
-            Piece Name: /u01/backup/full_05tl5pr5_1_1.bkp
+            Piece Name: /u01/backup/full_05tlaxjr_1_1.bkp
     List of Datafiles in backup set 5
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  6       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  6       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 6   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_2n4ovatq_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  7       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_nijpgr1o_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  7       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 7   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_zce3sq5n_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  8       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_t2wadr9e_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  8       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 8   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_rqhssu6x_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  9       Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_3ddzuoig_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  9       Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 9   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_il7zk7t2_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  10      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_dc3nh8d8_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  10      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 10   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_hh8sn6tc_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  11      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_v204te99_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  11      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 11   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_fevkvkua_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  12      Full    200.00M    DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 12   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_gvu3fj57_.bkp
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_qg6eql1l_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  12      Full    200.00M    DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 12   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_28cmoybl_.bkp
     List of Datafiles in backup set 12
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  13      Full    200.00M    DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 13   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_knvqbcjj_.bkp
-  14      Full    200.00M    DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 14   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_k3rhnquz_.bkp
-  15      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  13      Full    200.00M    DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 13   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_4oeahpuq_.bkp
+  14      Full    200.00M    DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 14   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_pblu69e9_.bkp
+  15      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 15   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_p6zdo8ft_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  16      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_mocvrrcb_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  16      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 16   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_t2a4okxt_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  17      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_0yzopxyh_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  17      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 17   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_68d5xefw_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  18      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ry6qbnqv_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  18      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 18   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_21g4qrxd_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  19      Full    1.61G      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_h7ccrwyv_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  19      Full    1.61G      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 19   Status: AVAILABLE  Compressed: YES  Encrypted: NO  Tag: WEEKLY
-            Piece Name: /u01/backup/ORCL_20260910_0jtl5pr5_1_1.bkp
+            Piece Name: /u01/backup/ORCL_20260913_0jtlaxjr_1_1.bkp
     List of Datafiles in backup set 19
     File LV Type Ckp SCN    Ckp Time        Name
     ---- -- ---- ---------- --------------- ----
-       1    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/system01.dbf
-       2    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
-       3    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
-       4    Full 1892354    10-SEP-2026 16:28:17  /u01/app/oracle/oradata/ORCL/users01.dbf
-  20      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+       1    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/system01.dbf
+       2    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/sysaux01.dbf
+       3    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/undotbs01.dbf
+       4    Full 1892354    13-SEP-2026 12:04:39  /u01/app/oracle/oradata/ORCL/users01.dbf
+  20      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 20   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_b1813tuh_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  21      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_iqni4crw_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  21      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 21   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_wb2wwit3_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  22      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ndy43t0u_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  22      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 22   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_z8kx7bcz_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  23      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_nqwvdp76_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  23      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 23   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_b9g9uoj1_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  24      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_3da3cmwu_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  24      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 24   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_jdl0k0yq_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  25      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_1c3ep5ht_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  25      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 25   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_1oz1q1qp_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  26      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_05aj64b3_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  26      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 26   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_f07yqu0v_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  27      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_qof04ryw_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  27      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 27   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_pflvnp46_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  28      Ctrl    9.20M      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ifsmgog1_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  28      Ctrl    9.20M      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 28   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: AUTOBACKUP
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_2brk7xta_.bkp
-    Control File Included: Ckp SCN: 1892354    Ckp time: 10-SEP-2026 16:28:17
-  29      Full    4.00K      DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 29   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260910T162817
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_TAG20260910T162817_t2iz4pi6_.bkp
-  30      Full    4.00K      DISK        00:00:15     10-SEP-2026 16:28:17
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_znadyoiw_.bkp
+    Control File Included: Ckp SCN: 1892354    Ckp time: 13-SEP-2026 12:04:39
+  29      Full    4.00K      DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 29   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_TAG20260913T120439_qwm512mn_.bkp
+  30      Full    4.00K      DISK        00:00:15     13-SEP-2026 12:04:39
           BP Key: 30   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: SPFILE_SAVE
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_SPFILE_SAVE_0lcgi9wo_.bkp
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_SPFILE_SAVE_5nylz99l_.bkp
   
 
 
@@ -2232,35 +2232,35 @@ RMAN [122/226]> REPORT OBSOLETE
   Report of obsolete backups and copies
   Type                 Key    Completion Time    Filename/Handle
   -------------------- ------ ------------------ --------------------
-  Backup Set           29     2026-09-10T16:28:17.961Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_TAG20260910T162817_t2iz4pi6_.bkp
-  Backup Set           28     2026-09-10T16:28:17.960Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_2brk7xta_.bkp
-  Backup Set           25     2026-09-10T16:28:17.959Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_1oz1q1qp_.bkp
-  Backup Set           26     2026-09-10T16:28:17.959Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_f07yqu0v_.bkp
-  Backup Set           27     2026-09-10T16:28:17.959Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_pflvnp46_.bkp
-  Backup Set           23     2026-09-10T16:28:17.958Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_b9g9uoj1_.bkp
-  Backup Set           24     2026-09-10T16:28:17.958Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_jdl0k0yq_.bkp
-  Backup Set           21     2026-09-10T16:28:17.955Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_wb2wwit3_.bkp
-  Backup Set           22     2026-09-10T16:28:17.955Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_z8kx7bcz_.bkp
-  Backup Set           18     2026-09-10T16:28:17.954Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_21g4qrxd_.bkp
-  Backup Set           19     2026-09-10T16:28:17.954Z  /u01/backup/ORCL_20260910_0jtl5pr5_1_1.bkp
-  Backup Set           20     2026-09-10T16:28:17.954Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_b1813tuh_.bkp
-  Backup Set           17     2026-09-10T16:28:17.953Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_68d5xefw_.bkp
-  Backup Set           13     2026-09-10T16:28:17.952Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_knvqbcjj_.bkp
-  Backup Set           14     2026-09-10T16:28:17.952Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_k3rhnquz_.bkp
-  Backup Set           15     2026-09-10T16:28:17.952Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_p6zdo8ft_.bkp
-  Backup Set           16     2026-09-10T16:28:17.952Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_t2a4okxt_.bkp
-  Backup Set           11     2026-09-10T16:28:17.951Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_fevkvkua_.bkp
-  Backup Set           12     2026-09-10T16:28:17.951Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_gvu3fj57_.bkp
-  Backup Set           9      2026-09-10T16:28:17.950Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_il7zk7t2_.bkp
-  Backup Set           10     2026-09-10T16:28:17.950Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_hh8sn6tc_.bkp
-  Backup Set           8      2026-09-10T16:28:17.949Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_rqhssu6x_.bkp
-  Backup Set           7      2026-09-10T16:28:17.939Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_zce3sq5n_.bkp
-  Backup Set           5      2026-09-10T16:28:17.937Z  /u01/backup/full_05tl5pr5_1_1.bkp
-  Backup Set           6      2026-09-10T16:28:17.937Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_2n4ovatq_.bkp
-  Backup Set           4      2026-09-10T16:28:17.931Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_68uatbqx_.bkp
-  Backup Set           3      2026-09-10T16:28:17.930Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_FULL_001_u025whh8_.bkp
-  Backup Set           2      2026-09-10T16:28:17.929Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_jc2p1yve_.bkp
-  Backup Set           1      2026-09-10T16:28:17.928Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_vy3rq7vm_.bkp
+  Backup Set           30     2026-09-13T12:04:39.819Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_SPFILE_SAVE_5nylz99l_.bkp
+  Backup Set           28     2026-09-13T12:04:39.814Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_znadyoiw_.bkp
+  Backup Set           27     2026-09-13T12:04:39.813Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ifsmgog1_.bkp
+  Backup Set           25     2026-09-13T12:04:39.812Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_05aj64b3_.bkp
+  Backup Set           26     2026-09-13T12:04:39.812Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_qof04ryw_.bkp
+  Backup Set           23     2026-09-13T12:04:39.811Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_3da3cmwu_.bkp
+  Backup Set           24     2026-09-13T12:04:39.811Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_1c3ep5ht_.bkp
+  Backup Set           21     2026-09-13T12:04:39.809Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ndy43t0u_.bkp
+  Backup Set           22     2026-09-13T12:04:39.809Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_nqwvdp76_.bkp
+  Backup Set           19     2026-09-13T12:04:39.808Z  /u01/backup/ORCL_20260913_0jtlaxjr_1_1.bkp
+  Backup Set           20     2026-09-13T12:04:39.808Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_iqni4crw_.bkp
+  Backup Set           18     2026-09-13T12:04:39.807Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_h7ccrwyv_.bkp
+  Backup Set           17     2026-09-13T12:04:39.806Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ry6qbnqv_.bkp
+  Backup Set           15     2026-09-13T12:04:39.805Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_mocvrrcb_.bkp
+  Backup Set           16     2026-09-13T12:04:39.805Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_0yzopxyh_.bkp
+  Backup Set           12     2026-09-13T12:04:39.804Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_28cmoybl_.bkp
+  Backup Set           13     2026-09-13T12:04:39.804Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_4oeahpuq_.bkp
+  Backup Set           14     2026-09-13T12:04:39.804Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_pblu69e9_.bkp
+  Backup Set           11     2026-09-13T12:04:39.803Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_qg6eql1l_.bkp
+  Backup Set           10     2026-09-13T12:04:39.794Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_v204te99_.bkp
+  Backup Set           9      2026-09-13T12:04:39.793Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_dc3nh8d8_.bkp
+  Backup Set           8      2026-09-13T12:04:39.792Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_3ddzuoig_.bkp
+  Backup Set           7      2026-09-13T12:04:39.790Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_t2wadr9e_.bkp
+  Backup Set           6      2026-09-13T12:04:39.789Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_nijpgr1o_.bkp
+  Backup Set           5      2026-09-13T12:04:39.788Z  /u01/backup/full_05tlaxjr_1_1.bkp
+  Backup Set           4      2026-09-13T12:04:39.787Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_f9pb1vai_.bkp
+  Backup Set           3      2026-09-13T12:04:39.786Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_FULL_001_4ob77p3o_.bkp
+  Backup Set           2      2026-09-13T12:04:39.785Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_7r63yksl_.bkp
+  Backup Set           1      2026-09-13T12:04:39.783Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_rz5ouk7w_.bkp
   
 
 RMAN [123/226]> REPORT OBSOLETE REDUNDANCY 1
@@ -2270,35 +2270,35 @@ RMAN [123/226]> REPORT OBSOLETE REDUNDANCY 1
   Report of obsolete backups and copies
   Type                 Key    Completion Time    Filename/Handle
   -------------------- ------ ------------------ --------------------
-  Backup Set           29     2026-09-10T16:28:17.961Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_TAG20260910T162817_t2iz4pi6_.bkp
-  Backup Set           28     2026-09-10T16:28:17.960Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_2brk7xta_.bkp
-  Backup Set           25     2026-09-10T16:28:17.959Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_1oz1q1qp_.bkp
-  Backup Set           26     2026-09-10T16:28:17.959Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_f07yqu0v_.bkp
-  Backup Set           27     2026-09-10T16:28:17.959Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_pflvnp46_.bkp
-  Backup Set           23     2026-09-10T16:28:17.958Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_b9g9uoj1_.bkp
-  Backup Set           24     2026-09-10T16:28:17.958Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_jdl0k0yq_.bkp
-  Backup Set           21     2026-09-10T16:28:17.955Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_wb2wwit3_.bkp
-  Backup Set           22     2026-09-10T16:28:17.955Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_z8kx7bcz_.bkp
-  Backup Set           18     2026-09-10T16:28:17.954Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_21g4qrxd_.bkp
-  Backup Set           19     2026-09-10T16:28:17.954Z  /u01/backup/ORCL_20260910_0jtl5pr5_1_1.bkp
-  Backup Set           20     2026-09-10T16:28:17.954Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_b1813tuh_.bkp
-  Backup Set           17     2026-09-10T16:28:17.953Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_68d5xefw_.bkp
-  Backup Set           13     2026-09-10T16:28:17.952Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_knvqbcjj_.bkp
-  Backup Set           14     2026-09-10T16:28:17.952Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_k3rhnquz_.bkp
-  Backup Set           15     2026-09-10T16:28:17.952Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_p6zdo8ft_.bkp
-  Backup Set           16     2026-09-10T16:28:17.952Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_t2a4okxt_.bkp
-  Backup Set           11     2026-09-10T16:28:17.951Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_fevkvkua_.bkp
-  Backup Set           12     2026-09-10T16:28:17.951Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_gvu3fj57_.bkp
-  Backup Set           9      2026-09-10T16:28:17.950Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_il7zk7t2_.bkp
-  Backup Set           10     2026-09-10T16:28:17.950Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_hh8sn6tc_.bkp
-  Backup Set           8      2026-09-10T16:28:17.949Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_rqhssu6x_.bkp
-  Backup Set           7      2026-09-10T16:28:17.939Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_zce3sq5n_.bkp
-  Backup Set           5      2026-09-10T16:28:17.937Z  /u01/backup/full_05tl5pr5_1_1.bkp
-  Backup Set           6      2026-09-10T16:28:17.937Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_2n4ovatq_.bkp
-  Backup Set           4      2026-09-10T16:28:17.931Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_68uatbqx_.bkp
-  Backup Set           3      2026-09-10T16:28:17.930Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_FULL_001_u025whh8_.bkp
-  Backup Set           2      2026-09-10T16:28:17.929Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_AUTOBACKUP_jc2p1yve_.bkp
-  Backup Set           1      2026-09-10T16:28:17.928Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_nnndf_TAG20260910T162817_vy3rq7vm_.bkp
+  Backup Set           30     2026-09-13T12:04:39.819Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_SPFILE_SAVE_5nylz99l_.bkp
+  Backup Set           28     2026-09-13T12:04:39.814Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_znadyoiw_.bkp
+  Backup Set           27     2026-09-13T12:04:39.813Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ifsmgog1_.bkp
+  Backup Set           25     2026-09-13T12:04:39.812Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_05aj64b3_.bkp
+  Backup Set           26     2026-09-13T12:04:39.812Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_qof04ryw_.bkp
+  Backup Set           23     2026-09-13T12:04:39.811Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_3da3cmwu_.bkp
+  Backup Set           24     2026-09-13T12:04:39.811Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_1c3ep5ht_.bkp
+  Backup Set           21     2026-09-13T12:04:39.809Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ndy43t0u_.bkp
+  Backup Set           22     2026-09-13T12:04:39.809Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_nqwvdp76_.bkp
+  Backup Set           19     2026-09-13T12:04:39.808Z  /u01/backup/ORCL_20260913_0jtlaxjr_1_1.bkp
+  Backup Set           20     2026-09-13T12:04:39.808Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_iqni4crw_.bkp
+  Backup Set           18     2026-09-13T12:04:39.807Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_h7ccrwyv_.bkp
+  Backup Set           17     2026-09-13T12:04:39.806Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_ry6qbnqv_.bkp
+  Backup Set           15     2026-09-13T12:04:39.805Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_mocvrrcb_.bkp
+  Backup Set           16     2026-09-13T12:04:39.805Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_0yzopxyh_.bkp
+  Backup Set           12     2026-09-13T12:04:39.804Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_28cmoybl_.bkp
+  Backup Set           13     2026-09-13T12:04:39.804Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_4oeahpuq_.bkp
+  Backup Set           14     2026-09-13T12:04:39.804Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_pblu69e9_.bkp
+  Backup Set           11     2026-09-13T12:04:39.803Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_qg6eql1l_.bkp
+  Backup Set           10     2026-09-13T12:04:39.794Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_v204te99_.bkp
+  Backup Set           9      2026-09-13T12:04:39.793Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_dc3nh8d8_.bkp
+  Backup Set           8      2026-09-13T12:04:39.792Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_3ddzuoig_.bkp
+  Backup Set           7      2026-09-13T12:04:39.790Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_t2wadr9e_.bkp
+  Backup Set           6      2026-09-13T12:04:39.789Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_nijpgr1o_.bkp
+  Backup Set           5      2026-09-13T12:04:39.788Z  /u01/backup/full_05tlaxjr_1_1.bkp
+  Backup Set           4      2026-09-13T12:04:39.787Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_f9pb1vai_.bkp
+  Backup Set           3      2026-09-13T12:04:39.786Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_FULL_001_4ob77p3o_.bkp
+  Backup Set           2      2026-09-13T12:04:39.785Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_AUTOBACKUP_7r63yksl_.bkp
+  Backup Set           1      2026-09-13T12:04:39.783Z  /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_nnndf_TAG20260913T120439_rz5ouk7w_.bkp
   
 
 RMAN [124/226]> REPORT OBSOLETE RECOVERY WINDOW OF 3 DAYS
@@ -2323,71 +2323,71 @@ RMAN [125/226]> REPORT UNRECOVERABLE
 --- [126] § DELETE ---
 RMAN [126/226]> DELETE NOPROMPT EXPIRED BACKUP
   
-  Starting delete at 10-SEP-2026 16:28:17
+  Starting delete at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=195 device type=DISK
   using channel ORA_DISK_1
-  Finished delete at 10-SEP-2026 16:28:17
+  Finished delete at 13-SEP-2026 12:04:39
   
 
 RMAN [127/226]> DELETE NOPROMPT OBSOLETE
   
-  Starting delete at 10-SEP-2026 16:28:17
+  Starting delete at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=196 device type=DISK
   RMAN retention policy will be applied to the command
   using channel ORA_DISK_1
-  Finished delete at 10-SEP-2026 16:28:17
+  Finished delete at 13-SEP-2026 12:04:39
   
 
 RMAN [128/226]> DELETE NOPROMPT OBSOLETE REDUNDANCY 1
   
-  Starting delete at 10-SEP-2026 16:28:17
+  Starting delete at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=197 device type=DISK
   RMAN retention policy will be applied to the command
   using channel ORA_DISK_1
-  Finished delete at 10-SEP-2026 16:28:17
+  Finished delete at 13-SEP-2026 12:04:39
   
 
 RMAN [129/226]> DELETE NOPROMPT OBSOLETE RECOVERY WINDOW OF 1 DAYS
   
-  Starting delete at 10-SEP-2026 16:28:17
+  Starting delete at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=198 device type=DISK
   RMAN retention policy will be applied to the command
   using channel ORA_DISK_1
-  Finished delete at 10-SEP-2026 16:28:17
+  Finished delete at 13-SEP-2026 12:04:39
   
 
 RMAN [130/226]> DELETE NOPROMPT BACKUP TAG 'L0_002'
   
-  Starting delete at 10-SEP-2026 16:28:17
+  Starting delete at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=199 device type=DISK
   RMAN retention policy will be applied to the command
   using channel ORA_DISK_1
-  Finished delete at 10-SEP-2026 16:28:17
+  Finished delete at 13-SEP-2026 12:04:39
   
 
 RMAN [131/226]> DELETE NOPROMPT BACKUPSET 3
   
-  Starting delete at 10-SEP-2026 16:28:17
+  Starting delete at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=200 device type=DISK
   RMAN retention policy will be applied to the command
   using channel ORA_DISK_1
-  Finished delete at 10-SEP-2026 16:28:17
+  Finished delete at 13-SEP-2026 12:04:39
   
 
 RMAN [132/226]> DELETE NOPROMPT BACKUPSET 999
   
-  Starting delete at 10-SEP-2026 16:28:17
+  Starting delete at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=201 device type=DISK
   RMAN retention policy will be applied to the command
   using channel ORA_DISK_1
-  Finished delete at 10-SEP-2026 16:28:17
+  Finished delete at 13-SEP-2026 12:04:39
   
 
 RMAN [133/226]> DELETE NOPROMPT ARCHIVELOG ALL
@@ -2400,16 +2400,16 @@ RMAN [134/226]> LIST BACKUP
   
   BS Key  Type LV Size       Device Type Elapsed Time Completion Time
   ------- ---- -- ---------- ----------- ------------ ---------------
-  30      Full    4.00K      DISK        00:00:15     10-SEP-2026 16:28:17
-          BP Key: 30   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: SPFILE_SAVE
-            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_10/o1_mf_ncsnf_SPFILE_SAVE_0lcgi9wo_.bkp
+  29      Full    4.00K      DISK        00:00:15     13-SEP-2026 12:04:39
+          BP Key: 29   Status: AVAILABLE  Compressed: NO  Encrypted: NO  Tag: TAG20260913T120439
+            Piece Name: /u01/app/oracle/fast_recovery_area/ORCL/backupset/2026_09_13/o1_mf_ncsnf_TAG20260913T120439_qwm512mn_.bkp
   
 
 
 --- [135] § RUN — inline ---
 RMAN [135/226]> RUN { BACKUP DATABASE; }
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=202 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -2422,7 +2422,7 @@ RMAN [135/226]> RUN { BACKUP DATABASE; }
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=203 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -2440,10 +2440,10 @@ RMAN [136/226]> RUN { BACKUP DATABASE TAG 'RUN_INLINE'; LIST BACKUP SUMMARY; }
   ===============
   Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- ------------------- ------- ------- ---------- ---
-  30      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         SPFILE_SAVE
+  29      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         TAG20260913T120439
   
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=204 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -2456,7 +2456,7 @@ RMAN [136/226]> RUN { BACKUP DATABASE TAG 'RUN_INLINE'; LIST BACKUP SUMMARY; }
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=205 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -2475,7 +2475,7 @@ RMAN [137/226]> RUN { ALLOCATE CHANNEL c1 DEVICE TYPE DISK; BACKUP DATABASE; REL
   allocated channel: c1
   channel c1: SID=206 device type=DISK
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=207 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -2488,7 +2488,7 @@ RMAN [137/226]> RUN { ALLOCATE CHANNEL c1 DEVICE TYPE DISK; BACKUP DATABASE; REL
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=208 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -2512,7 +2512,7 @@ RMAN [138/226]> RUN { ALLOCATE CHANNEL c1 DEVICE TYPE DISK; ALLOCATE CHANNEL c2 
   allocated channel: c2
   channel c2: SID=210 device type=DISK
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=211 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -2525,7 +2525,7 @@ RMAN [138/226]> RUN { ALLOCATE CHANNEL c1 DEVICE TYPE DISK; ALLOCATE CHANNEL c2 
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=212 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -2564,7 +2564,7 @@ RMAN [145/226]> }
   allocated channel: c1
   channel c1: SID=213 device type=DISK
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=214 device type=DISK
   channel ORA_DISK_1: starting incremental level 0 datafile backup set
@@ -2577,7 +2577,7 @@ RMAN [145/226]> }
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=215 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -2589,7 +2589,7 @@ RMAN [145/226]> }
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 9650176 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=216 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
@@ -2601,7 +2601,7 @@ RMAN [145/226]> }
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=217 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -2646,7 +2646,7 @@ RMAN [153/226]> }
   allocated channel: c2
   channel c2: SID=219 device type=DISK
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=220 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -2659,7 +2659,7 @@ RMAN [153/226]> }
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 1730150400 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=221 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -2706,7 +2706,7 @@ RMAN [159/226]> RELEASE CHANNEL nonexistent
 --- [160] § RESTORE — wrong state ---
 RMAN [160/226]> RESTORE DATABASE
   
-  Starting restore at 10-SEP-2026 16:28:17
+  Starting restore at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=224 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -2718,7 +2718,7 @@ RMAN [160/226]> RESTORE DATABASE
 
 RMAN [161/226]> RESTORE TABLESPACE USERS
   
-  Starting restore at 10-SEP-2026 16:28:17
+  Starting restore at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=225 device type=DISK
   channel ORA_DISK_1: starting tablespace USERS restore
@@ -2730,7 +2730,7 @@ RMAN [161/226]> RESTORE TABLESPACE USERS
 
 RMAN [162/226]> RESTORE DATAFILE 4
   
-  Starting restore at 10-SEP-2026 16:28:17
+  Starting restore at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=226 device type=DISK
   channel ORA_DISK_1: starting datafile 4 restore
@@ -2742,7 +2742,7 @@ RMAN [162/226]> RESTORE DATAFILE 4
 
 RMAN [163/226]> RESTORE DATABASE FROM TAG 'FULL_002'
   
-  Starting restore at 10-SEP-2026 16:28:17
+  Starting restore at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=227 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -2754,7 +2754,7 @@ RMAN [163/226]> RESTORE DATABASE FROM TAG 'FULL_002'
 
 RMAN [164/226]> RESTORE DATABASE PREVIEW
   
-  Starting restore at 10-SEP-2026 16:28:17
+  Starting restore at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=228 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -2766,7 +2766,7 @@ RMAN [164/226]> RESTORE DATABASE PREVIEW
 
 RMAN [165/226]> RESTORE DATABASE VALIDATE
   
-  Starting restore at 10-SEP-2026 16:28:17
+  Starting restore at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=229 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -2780,66 +2780,66 @@ RMAN [165/226]> RESTORE DATABASE VALIDATE
 --- [166] § RECOVER ---
 RMAN [166/226]> RECOVER DATABASE
   
-  Starting recover at 10-SEP-2026 16:28:17
+  Starting recover at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=230 device type=DISK
   starting media recovery
   media recovery complete, elapsed time: 00:00:03
-  Finished recover at 10-SEP-2026 16:28:17
+  Finished recover at 13-SEP-2026 12:04:39
   
 
 RMAN [167/226]> RECOVER DATABASE UNTIL SCN 2000000
   
-  Starting recover at 10-SEP-2026 16:28:17
+  Starting recover at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=231 device type=DISK
   starting media recovery
   media recovery complete, elapsed time: 00:00:03
-  Finished recover at 10-SEP-2026 16:28:17
+  Finished recover at 13-SEP-2026 12:04:39
   
 
 RMAN [168/226]> RECOVER DATABASE UNTIL TIME '2026-01-01 00:00:00'
   
-  Starting recover at 10-SEP-2026 16:28:17
+  Starting recover at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=232 device type=DISK
   starting media recovery
   recovering until time 2026-01-01 00:00:00
   media recovery complete, elapsed time: 00:00:03
-  Finished recover at 10-SEP-2026 16:28:17
+  Finished recover at 13-SEP-2026 12:04:39
   
 
 RMAN [169/226]> RECOVER DATABASE UNTIL CANCEL
   
-  Starting recover at 10-SEP-2026 16:28:17
+  Starting recover at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=233 device type=DISK
   starting media recovery
   recovery cancelled by operator
   media recovery complete, elapsed time: 00:00:03
-  Finished recover at 10-SEP-2026 16:28:17
+  Finished recover at 13-SEP-2026 12:04:39
   
 
 RMAN [170/226]> RECOVER TABLESPACE USERS
   
-  Starting recover at 10-SEP-2026 16:28:17
+  Starting recover at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=234 device type=DISK
   starting media recovery
   recovering tablespace USERS
   media recovery complete, elapsed time: 00:00:03
-  Finished recover at 10-SEP-2026 16:28:17
+  Finished recover at 13-SEP-2026 12:04:39
   
 
 RMAN [171/226]> RECOVER DATAFILE 4
   
-  Starting recover at 10-SEP-2026 16:28:17
+  Starting recover at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=235 device type=DISK
   starting media recovery
   recovering datafile 4
   media recovery complete, elapsed time: 00:00:03
-  Finished recover at 10-SEP-2026 16:28:17
+  Finished recover at 13-SEP-2026 12:04:39
   
 
 
@@ -2847,7 +2847,7 @@ RMAN [171/226]> RECOVER DATAFILE 4
 RMAN [172/226]> RUN { SET UNTIL TIME '2026-06-01 00:00:00'; RESTORE DATABASE PREVIEW; RECOVER DATABASE; }
   executing command: SET until clause
   
-  Starting restore at 10-SEP-2026 16:28:17
+  Starting restore at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=236 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -2857,19 +2857,19 @@ RMAN [172/226]> RUN { SET UNTIL TIME '2026-06-01 00:00:00'; RESTORE DATABASE PRE
   RMAN-00571: ===========================================================
   RMAN-03014: RMAN-06403: database must be mounted (not open)
   
-  Starting recover at 10-SEP-2026 16:28:17
+  Starting recover at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=237 device type=DISK
   starting media recovery
   recovering until time 2026-06-01 00:00:00
   media recovery complete, elapsed time: 00:00:03
-  Finished recover at 10-SEP-2026 16:28:17
+  Finished recover at 13-SEP-2026 12:04:39
   
 
 RMAN [173/226]> RUN { SET UNTIL SCN 1900000; RESTORE DATABASE PREVIEW; RECOVER DATABASE; }
   executing command: SET until clause
   
-  Starting restore at 10-SEP-2026 16:28:17
+  Starting restore at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=238 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -2879,18 +2879,18 @@ RMAN [173/226]> RUN { SET UNTIL SCN 1900000; RESTORE DATABASE PREVIEW; RECOVER D
   RMAN-00571: ===========================================================
   RMAN-03014: RMAN-06403: database must be mounted (not open)
   
-  Starting recover at 10-SEP-2026 16:28:17
+  Starting recover at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=239 device type=DISK
   starting media recovery
   media recovery complete, elapsed time: 00:00:03
-  Finished recover at 10-SEP-2026 16:28:17
+  Finished recover at 13-SEP-2026 12:04:39
   
 
 RMAN [174/226]> RUN { SET NEWNAME FOR DATAFILE 1 TO '/u01/new/system01.dbf'; RESTORE DATABASE; }
   new name for datafile 1: '/u01/new/system01.dbf'
   
-  Starting restore at 10-SEP-2026 16:28:17
+  Starting restore at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=240 device type=DISK
   channel ORA_DISK_1: starting datafile backup set restore
@@ -2903,7 +2903,7 @@ RMAN [174/226]> RUN { SET NEWNAME FOR DATAFILE 1 TO '/u01/new/system01.dbf'; RES
 RMAN [175/226]> RUN { SET NEWNAME FOR DATAFILE 4 TO '/u01/new/users01.dbf'; RESTORE TABLESPACE USERS; }
   new name for datafile 4: '/u01/new/users01.dbf'
   
-  Starting restore at 10-SEP-2026 16:28:17
+  Starting restore at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=241 device type=DISK
   channel ORA_DISK_1: starting tablespace USERS restore
@@ -2920,10 +2920,10 @@ RMAN [176/226]> CONNECT AUXILIARY /
 
 RMAN [177/226]> DUPLICATE TARGET DATABASE TO DUP1
   
-  Starting Duplicate Db at 10-SEP-2026 16:28:17
+  Starting Duplicate Db at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=242 device type=DISK
-  Starting Duplicate Db at 2026-09-10T16:28:17.977Z
+  Starting Duplicate Db at 2026-09-13T12:04:39.839Z
   contents of Memory Script: { set newname for datafiles }
   restore clone database
   switch clone datafile
@@ -2935,15 +2935,15 @@ RMAN [177/226]> DUPLICATE TARGET DATABASE TO DUP1
   channel ORA_DISK_1: restore complete, elapsed time: 00:00:25
   channel ORA_DISK_1: restoring datafile 00004 to /u01/app/oracle/oradata/DUP1/users01.dbf
   channel ORA_DISK_1: restore complete, elapsed time: 00:00:25
-  Finished Duplicate Db at 10-SEP-2026 16:28:17
+  Finished Duplicate Db at 13-SEP-2026 12:04:39
   
 
 RMAN [178/226]> DUPLICATE DATABASE TO DUP2
   
-  Starting Duplicate Db at 10-SEP-2026 16:28:17
+  Starting Duplicate Db at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=243 device type=DISK
-  Starting Duplicate Db at 2026-09-10T16:28:17.977Z
+  Starting Duplicate Db at 2026-09-13T12:04:39.839Z
   contents of Memory Script: { set newname for datafiles }
   restore clone database
   switch clone datafile
@@ -2955,15 +2955,15 @@ RMAN [178/226]> DUPLICATE DATABASE TO DUP2
   channel ORA_DISK_1: restore complete, elapsed time: 00:00:25
   channel ORA_DISK_1: restoring datafile 00004 to /u01/app/oracle/oradata/DUP2/users01.dbf
   channel ORA_DISK_1: restore complete, elapsed time: 00:00:25
-  Finished Duplicate Db at 10-SEP-2026 16:28:17
+  Finished Duplicate Db at 13-SEP-2026 12:04:39
   
 
 RMAN [179/226]> DUPLICATE TARGET DATABASE TO STBYDR
   
-  Starting Duplicate Db at 10-SEP-2026 16:28:17
+  Starting Duplicate Db at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=244 device type=DISK
-  Starting Duplicate Db at 2026-09-10T16:28:17.977Z
+  Starting Duplicate Db at 2026-09-13T12:04:39.839Z
   contents of Memory Script: { set newname for datafiles }
   restore clone database
   switch clone datafile
@@ -2975,7 +2975,7 @@ RMAN [179/226]> DUPLICATE TARGET DATABASE TO STBYDR
   channel ORA_DISK_1: restore complete, elapsed time: 00:00:25
   channel ORA_DISK_1: restoring datafile 00004 to /u01/app/oracle/oradata/STBYDR/users01.dbf
   channel ORA_DISK_1: restore complete, elapsed time: 00:00:25
-  Finished Duplicate Db at 10-SEP-2026 16:28:17
+  Finished Duplicate Db at 13-SEP-2026 12:04:39
   
 
 
@@ -3250,7 +3250,7 @@ RMAN [216/226]> LIST BACKUP SUMMARY
   ===============
   Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- ------------------- ------- ------- ---------- ---
-  30      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         SPFILE_SAVE
+  29      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         TAG20260913T120439
   
 
 RMAN [217/226]> LIST OBSOLETE
@@ -3260,22 +3260,22 @@ RMAN [217/226]> LIST OBSOLETE
 
 RMAN [218/226]> CROSSCHECK BACKUP
   
-  Starting crosscheck at 10-SEP-2026 16:28:17
+  Starting crosscheck at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=245 device type=DISK
   crosschecked backup piece: found to be 'AVAILABLE'
   Crosschecked 1 objects
-  Finished crosscheck at 10-SEP-2026 16:28:17
+  Finished crosscheck at 13-SEP-2026 12:04:39
   
 
 RMAN [219/226]> DELETE NOPROMPT OBSOLETE
   
-  Starting delete at 10-SEP-2026 16:28:17
+  Starting delete at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=246 device type=DISK
   RMAN retention policy will be applied to the command
   using channel ORA_DISK_1
-  Finished delete at 10-SEP-2026 16:28:17
+  Finished delete at 13-SEP-2026 12:04:39
   
 
 RMAN [220/226]> LIST BACKUP SUMMARY
@@ -3284,12 +3284,12 @@ RMAN [220/226]> LIST BACKUP SUMMARY
   ===============
   Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- ------------------- ------- ------- ---------- ---
-  30      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         SPFILE_SAVE
+  29      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         TAG20260913T120439
   
 
 RMAN [221/226]> BACKUP INCREMENTAL LEVEL 1 DATABASE TAG 'CLOSING_L1'
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=247 device type=DISK
   channel ORA_DISK_1: starting incremental level 1 datafile backup set
@@ -3302,7 +3302,7 @@ RMAN [221/226]> BACKUP INCREMENTAL LEVEL 1 DATABASE TAG 'CLOSING_L1'
   RMAN-03014: RMAN-19811: ORA-19809: limit exceeded for recovery files
   ORA-19804: cannot reclaim 86507520 bytes disk space from 4294967296 limit
   
-  Starting backup at 10-SEP-2026 16:28:17
+  Starting backup at 13-SEP-2026 12:04:39
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=248 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
@@ -3320,7 +3320,7 @@ RMAN [222/226]> LIST BACKUP SUMMARY
   ===============
   Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- ------------------- ------- ------- ---------- ---
-  30      B  F  A DISK        10-SEP-2026 16:28:17  1       1       NO         SPFILE_SAVE
+  29      B  F  A DISK        13-SEP-2026 12:04:39  1       1       NO         TAG20260913T120439
   
 
 RMAN [223/226]> REPORT SCHEMA

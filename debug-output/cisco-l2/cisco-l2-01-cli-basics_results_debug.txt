@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-09-10T16:23:58.511Z
+Generated: 2026-09-13T11:43:12.415Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -12,6 +12,7 @@ Total steps: 366
     clear       Clear the command history buffer
     delete      Delete a file
     dir         List files on a filesystem
+    disable     Turn off privileged commands
     disconnect  Close an outgoing connection
     enable      Turn on privileged commands
     exit        Exit from the EXEC
@@ -32,7 +33,7 @@ Total steps: 366
 
 [2/366] sw1 SW1> show ?
     aaa            Display AAA state
-    access-lists   Display ACLs
+    access-lists   Display access lists
     accounting     Display accounting records
     adjacency      Display CEF adjacency table
     aliases        Display command aliases
@@ -43,13 +44,12 @@ Total steps: 366
     clock          Display the system clock
     controllers    Display controller status
     crypto         Show RSA public keys
-    current        Show current MST config
     dhcp           DHCP client lease information
     dot1x          Display 802.1X state
     dtp            Display DTP information
     environment    Display environment
     errdisable     Display errdisable recovery state
-    etherchannel   Display EtherChannel
+    etherchannel   Display EtherChannel information
     file           Show filesystem information
     glbp           Display GLBP groups on SVIs
     history        Display command history
@@ -66,11 +66,10 @@ Total steps: 366
     monitor        Display SPAN sessions
     ntp            Display NTP status
     pagp           Display PAgP state
-    pending        Show pending MST config
     port-security  Display port security
     privilege      Display current privilege level
     processes      Display active processes
-    queuing        Show queueing configuration
+    queuing        Display the 802.1p trust state of an interface
     radius         Display Radius stats
     redundancy     Display redundancy state
     reload         Display reload schedule
@@ -116,11 +115,10 @@ Total steps: 366
     <cr>
 
 [8/366] sw1 SW1> terminal ?
-    LINE     Terminal parameter to set
     history  Enable and control the command history function
     length   Set number of lines on a screen
     monitor  Copy debug output to the current terminal line
-    no       Negate a command or set its defaults
+    no       Enable and control the command history function
     width    Set width of the display terminal
 
 [9/366] sw1 SW1> show version
@@ -150,7 +148,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *16:23:58.000 UTC Thu Sep 10 2026
+  *11:43:12.000 UTC Sun Sep 13 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -219,14 +217,14 @@ Total steps: 366
 
 [18/366] sw1 SW1# ?
     archive     Archive the running configuration
-    clear       Reset a terminal line
+    clear       Auxiliary line
     clock       Set the system clock
     configure   Replace the running configuration
-    copy        Copy a file
-    debug       Enable ARP debug
+    copy        Current running configuration
+    debug       Enable debugging functions
     delete      Delete a file
     dir         List files on a filesystem
-    disable     Return to user EXEC mode
+    disable     Turn off privileged commands
     disconnect  Close an outgoing connection
     enable      Turn on privileged commands
     erase       Erase contents of configuration memory
@@ -234,23 +232,22 @@ Total steps: 366
     help        Description of the interactive help system
     mkdir       Create a directory
     more        Display a file
-    no          Negate a command or set its defaults
     ping        Send echo messages
     pwd         Display current working directory
     release     Release a DHCP lease
-    reload      Reload the device
+    reload      Halt and perform a cold restart
     renew       Renew a DHCP lease
     resume      Resume an outgoing connection
     rmdir       Remove a directory
-    send        Send a message to other tty lines
+    send        All tty lines
     setup       Run the initial configuration dialog
     show        Time range
     squeeze     Squeeze a filesystem
     ssh         Open an SSH connection to a remote host
     telnet      Open a Telnet session
     terminal    Set number of lines on a screen
-    test        Test subsystems, memory, and interfaces
-    undebug     Disable debugging
+    test        Test AAA server-group authentication
+    undebug     Disable debugging functions
     verify      Verify a file
     vtp         Force this switch to become the VTP Primary Server
     where       List open outgoing connections
@@ -258,7 +255,7 @@ Total steps: 366
 
 [19/366] sw1 SW1# show ?
     aaa             Display AAA state
-    access-lists    Display ACLs
+    access-lists    Display access lists
     accounting      Display accounting records
     adjacency       Display CEF adjacency table
     aliases         Display command aliases
@@ -273,15 +270,14 @@ Total steps: 366
     configuration   Contents of startup configuration
     controllers     Display controller status
     crypto          Show RSA public keys
-    current         Show current MST config
-    debugging       Display active debugging
+    debugging       Display active debug flags
     dhcp            DHCP client lease information
     diag            Display chassis diagnostics
     dot1x           Display 802.1X state
     dtp             Display DTP information
     environment     Display environment
     errdisable      Display errdisable recovery state
-    etherchannel    Display EtherChannel
+    etherchannel    Display EtherChannel information
     file            Show filesystem information
     flash:          Display flash filesystem
     glbp            Display GLBP groups on SVIs
@@ -302,12 +298,11 @@ Total steps: 366
     ntp             Display NTP status
     pagp            Display PAgP state
     parser          Display CLI view information
-    pending         Show pending MST config
     platform        Display platform information
     port-security   Display port security
     privilege       Display current privilege level
     processes       Display active processes
-    queuing         Show queueing configuration
+    queuing         Display the 802.1p trust state of an interface
     radius          Display Radius stats
     redundancy      Display redundancy state
     reload          Display reload schedule
@@ -348,39 +343,28 @@ Total steps: 366
     history        Clear the command history buffer
     host           Delete entries from the host table
     ip             Clear DHCP address bindings
-    line           Reset a terminal line
+    line           Auxiliary line
     logging        Clear the syslog buffer
     mac            Clear MAC address table entries
     ntp            Clear NTP packet statistics
-    port-security  Clear secure MAC entries
+    port-security  Clear all secure MAC addresses
     spanning-tree  Restart protocol migration
 
 [22/366] sw1 SW1# debug ?
-    aaa                Debug AAA
     all                Enable all debugging
     arp                Enable ARP debug
     cdp                Debug CDP
     condition          Restrict every debug to a condition
-    crypto             Debug crypto subsystem
     dhcp               Debug DHCP
-    domain             Debug DNS name resolution
-    eigrp              Debug EIGRP
-    glbp               Debug GLBP
     interface          Debug interface state changes
-    ip                 Enable IP debug
-    ipv6               Debug IPv6
+    ip                 Debug ARP packets
     link-state         Enable link-state debugging
     lldp               Debug LLDP
     mac                Enable MAC table debugging
     mac-address-table  Enable MAC table debugging
-    ntp                Debug NTP
     port-security      Debug port security
-    radius             Debug RADIUS
     spanning-tree      Enable STP debugging
-    standby            Debug HSRP
-    tacacs             Debug TACACS+
-    vrrp               Debug VRRP
-    <cr>
+    vxlan              Debug VXLAN
 
 [23/366] sw1 SW1# write ?
     erase     Erase NV memory
@@ -508,7 +492,7 @@ Total steps: 366
 
 [29/366] sw1 SW1# show inventory
   NAME: "WS-C3560-24TS-S chassis", DESCR: "Cisco Catalyst 3560 Multilayer Switch"
-  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC1594W2P5
+  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC4886VA3S
 
 [30/366] sw1 SW1# show flash:
   Directory of flash:/
@@ -1363,7 +1347,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *16:23:59.000 UTC Thu Sep 10 2026
+  *11:43:12.000 UTC Sun Sep 13 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1515,15 +1499,15 @@ Total steps: 366
   
   Log Buffer (4096 bytes):
   
-  *Sep 10 16:23:58.222: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Sep 10 16:23:58.222: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Sep 10 16:23:58.226: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Sep 10 16:23:58.226: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Sep 10 16:23:58.228: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Sep 10 16:23:58.228: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Sep 10 16:23:58.232: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 10 16:23:58.232: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 10 16:23:58.354: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:43:12.078: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Sep 13 11:43:12.079: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Sep 13 11:43:12.084: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Sep 13 11:43:12.084: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Sep 13 11:43:12.087: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Sep 13 11:43:12.087: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Sep 13 11:43:12.092: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 13 11:43:12.092: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 13 11:43:12.227: %SYS-5-CONFIG_I: Configured from console by console
 
 [60/366] sw1 SW1# show boot
   BOOT path-list      : 
@@ -1619,7 +1603,7 @@ Total steps: 366
     dot1x          Enable 802.1X globally
     enable         Set enable secret
     end            Exit from configure mode
-    errdisable     Auto-recover DAI err-disabled ports
+    errdisable     Error disable recovery configuration
     exit           Exit from configure mode
     help           Description of the interactive help system
     hostname       Set system hostname
@@ -1631,7 +1615,7 @@ Total steps: 366
     logging        Count every log message and timestamp last occurrence
     login          Set the login blocking period
     mac            Extended MAC access list
-    monitor        Configure SPAN session
+    monitor        Configure a SPAN session
     no             Negate a command or set its defaults
     ntp            Authenticate time sources
     parser         Define a CLI view
@@ -1648,7 +1632,6 @@ Total steps: 366
     spanning-tree  Enable portfast by default on access ports
     tacacs         TACACS+ server configuration
     tacacs-server  Specify a TACACS+ server
-    test           Simulate the load-balance decision for a flow
     time-range     Define time range functions
     track          Tracking configuration commands
     udld           UDLD global configuration
@@ -1782,13 +1765,13 @@ Total steps: 366
     no                 Negate a command or set its defaults
     port-channel       Minimum number of bundled ports before the channel comes up
     power              Inline power configuration
-    private-vlan       Map secondary VLANs to this primary VLAN SVI
+    private-vlan       Configure the private VLAN role or association
     shutdown           Disable interface
     spanning-tree      Enable an interface to move directly to forwarding on link up
     speed              Set interface speed
     srr-queue          Interface srr-queue
     standby            HSRP version
-    storm-control      Interface storm-control
+    storm-control      Action taken when a storm is detected
     switchport         Enable port-security
     udld               UDLD per-port configuration
     vrrp               VRRP configuration
@@ -3617,7 +3600,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   16:24:00 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   11:43:14 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [257/366] w1 w1$ hostname
   W1
@@ -3724,7 +3707,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          9/10/2026, 4:23:58 PM
+  System Boot Time:          9/13/2026, 11:43:11 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3780,7 +3763,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   16:24:00 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   11:43:14 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -3812,7 +3795,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   16:24:00 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   11:43:14 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [277/366] w2 w2$ hostname
   W2
@@ -3919,7 +3902,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          9/10/2026, 4:23:58 PM
+  System Boot Time:          9/13/2026, 11:43:12 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3975,27 +3958,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   16:24:00 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   11:43:14 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=11.120 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.703 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=4.100 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.946 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.703/5.911/11.120/5.208 ms
+  rtt min/avg/max/mdev = 0.946/2.523/4.100/1.577 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.058 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.648 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.391 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.977 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.648/0.853/1.058/0.205 ms
+  rtt min/avg/max/mdev = 0.977/1.184/1.391/0.207 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0

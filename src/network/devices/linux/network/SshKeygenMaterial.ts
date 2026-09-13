@@ -35,6 +35,14 @@ function fromBase64(text: string): Uint8Array {
   return bytes;
 }
 
+function decodedOrLiteral(text: string): Uint8Array {
+  try {
+    return fromBase64(text);
+  } catch {
+    return ascii(text);
+  }
+}
+
 function lengthPrefixed(parts: readonly Uint8Array[]): Uint8Array {
   let total = 0;
   for (const part of parts) total += 4 + part.length;
@@ -86,11 +94,30 @@ function keyLengthFor(algorithm: string, bits: number): number {
   return 32;
 }
 
-export function keygenPair(algorithm: string, comment: string, bits?: number): KeygenPair {
-  const size = keygenBits(algorithm, bits);
-  const key = randomBytes(keyLengthFor(algorithm, size));
+function deterministicKey(algorithm: string, seed: string): Uint8Array {
+  const length = keyLengthFor(algorithm, keygenBits(algorithm));
+  const key = new Uint8Array(length);
+  for (let offset = 0, counter = 0; offset < length; offset += 32, counter++) {
+    key.set(sha256(ascii(`${seed}#${counter}`)).subarray(0, Math.min(32, length - offset)), offset);
+  }
+  return key;
+}
+
+export function keygenDeterministicPublicBlob(algorithm: string, seed: string): string {
+  return publicBlob(algorithm, deterministicKey(algorithm, seed));
+}
+
+export function keygenDeterministicPair(
+  algorithm: string, seed: string, comment: string,
+): KeygenPair {
+  return assemblePair(algorithm, deterministicKey(algorithm, seed), comment);
+}
+
+function assemblePair(
+  algorithm: string, key: Uint8Array, comment: string, bits?: number,
+): KeygenPair {
   const secret: KeygenSecret = {
-    algorithm, key: toBase64(key), comment, bits: size,
+    algorithm, key: toBase64(key), comment, bits: bits ?? keygenBits(algorithm),
   };
   const armoured = toBase64(ascii(JSON.stringify(secret)));
   const wrapped = armoured.match(/.{1,70}/g) ?? [armoured];
@@ -98,6 +125,11 @@ export function keygenPair(algorithm: string, comment: string, bits?: number): K
     pub: `${algorithm} ${publicBlob(algorithm, key)} ${comment}`,
     priv: `${PRIVATE_HEADER}\n${wrapped.join('\n')}\n${PRIVATE_FOOTER}\n`,
   };
+}
+
+export function keygenPair(algorithm: string, comment: string, bits?: number): KeygenPair {
+  const size = keygenBits(algorithm, bits);
+  return assemblePair(algorithm, randomBytes(keyLengthFor(algorithm, size)), comment, size);
 }
 
 function readSecret(material: string): KeygenSecret | null {
@@ -132,20 +164,43 @@ const ALGORITHM_LABELS: Readonly<Record<string, string>> = {
   'ecdsa-sha2-nistp256': 'ECDSA',
 };
 
-export function keygenFingerprint(publicLine: string, hash: string): string | null {
-  const wanted = hash.trim().toLowerCase() || 'sha256';
-  if (wanted !== 'sha256' && wanted !== 'md5') return null;
+export interface KeygenKeyFacts {
+  readonly label: string;
+  readonly bits: number;
+  readonly comment: string;
+}
+
+export function keygenKeyFacts(publicLine: string): KeygenKeyFacts {
   const tokens = publicLine.trim().split(/\s+/);
   const algorithm = tokens[0] ?? '';
-  const blob = tokens[1] ?? '';
-  const comment = tokens.slice(2).join(' ');
-  const label = ALGORITHM_LABELS[algorithm] ?? algorithm.toUpperCase();
-  const bytes = fromBase64(blob);
-  const digest = wanted === 'sha256'
+  const bytes = fromBase64(tokens[1] ?? '');
+  return {
+    label: ALGORITHM_LABELS[algorithm] ?? algorithm.toUpperCase(),
+    bits: algorithm === 'ssh-rsa'
+      ? (bytes.length - 4 - algorithm.length - 4 - 3 - 4) * 8
+      : 256,
+    comment: tokens.slice(2).join(' '),
+  };
+}
+
+export function keygenBlobDigest(blob: string, hash: string): string | null {
+  const wanted = hash.trim().toLowerCase() || 'sha256';
+  if (wanted !== 'sha256' && wanted !== 'md5') return null;
+  const bytes = decodedOrLiteral(blob);
+  return wanted === 'sha256'
     ? `SHA256:${toBase64(sha256(bytes)).replace(/=+$/, '')}`
     : `MD5:${[...md5(bytes)].map(b => b.toString(16).padStart(2, '0')).join(':')}`;
-  const bits = algorithm === 'ssh-rsa' ? (bytes.length - 4 - algorithm.length - 4 - 3 - 4) * 8 : 256;
-  return `${bits} ${digest} ${comment} (${label})`;
+}
+
+export function keygenDigest(publicLine: string, hash: string): string | null {
+  return keygenBlobDigest(publicLine.trim().split(/\s+/)[1] ?? '', hash);
+}
+
+export function keygenFingerprint(publicLine: string, hash: string): string | null {
+  const digest = keygenDigest(publicLine, hash);
+  if (digest === null) return null;
+  const facts = keygenKeyFacts(publicLine);
+  return `${facts.bits} ${digest} ${facts.comment} (${facts.label})`;
 }
 
 export function keygenRandomart(publicLine: string): string {

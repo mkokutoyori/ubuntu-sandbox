@@ -20,6 +20,7 @@ import { findEquipmentByIp, findEquipmentByHostname } from './hostResolution';
 import { primaryShellKindFor } from './shellKind';
 import { WireRemoteShell } from './WireRemoteShell';
 import { openWireSshShell, openWireSshConnection, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
+import { sshLocalIdentityFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
 import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshells/SshInteractiveSubShell';
 import type { IShell, ShellLineResult } from './IShell';
 import { SshKnownHostsFile, type SshHostKeyType } from '@/network/protocols/ssh/SshKnownHostsFile';
@@ -378,7 +379,8 @@ function checkKnownHosts(auth: PendingSshAuth): 'changed' | 'ok' | 'unsupported'
   if (file.hostKeyChanged(auth.host, keyType, publicKey)) return 'changed';
   if (!file.find(auth.host, keyType)) {
     const updated = file.add({ hostnames: [auth.host], keyType, publicKey });
-    sourceVfs.writeFile(knownHostsPath, updated.serialize(), 0, 0, 0o022);
+    const owner = sshLocalIdentityFor(auth.sourceDevice, auth.sourceUser ?? auth.user);
+    sourceVfs.writeFile(knownHostsPath, updated.serialize(), owner.uid, owner.gid, 0o022);
   }
   return 'ok';
 }

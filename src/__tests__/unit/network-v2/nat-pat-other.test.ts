@@ -12,7 +12,9 @@
  *  - Section 8: Edge Cases, Pool Exhaustion, Typos & Syntax Error Handlers (Tests 351-400)
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';

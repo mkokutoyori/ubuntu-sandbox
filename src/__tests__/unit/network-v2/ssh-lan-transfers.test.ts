@@ -25,9 +25,9 @@ import {
 } from './ssh-lan-fixtures';
 import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
 import {
-  parseSshKeygenArgs,
-  generateAndWriteKeyPair,
-} from '@/network/protocols/ssh/SshKeygen';
+  runSshKeygenCommand,
+  vfsKeygenHost,
+} from '@/network/protocols/ssh/SshKeygenCommand';
 
 describe('SSH LAN — file transfers', () => {
   let lan: SshLan;
@@ -158,12 +158,11 @@ describe('SSH LAN — file transfers', () => {
   it('S62 — ssh-keygen writes id_ed25519 + .pub with proper modes', () => {
     const localVfs = new VirtualFileSystem();
     localVfs.mkdirp('/home/user', 0o755, 1000, 1000);
-    const opts = parseSshKeygenArgs(
-      ['-t', 'ed25519', '-C', 'alice@local'],
-      '/home/user',
-    );
-    const result = generateAndWriteKeyPair(localVfs, 1000, 1000, opts);
-    expect('error' in result).toBe(false);
+    const result = runSshKeygenCommand(['-t', 'ed25519', '-C', 'alice@local'],
+      vfsKeygenHost(localVfs, {
+        uid: 1000, gid: 1000, user: 'user', hostname: 'local', sshDir: '/home/user/.ssh',
+      }));
+    expect(result.exitCode).toBe(0);
     expect(localVfs.exists('/home/user/.ssh/id_ed25519')).toBe(true);
     expect(localVfs.exists('/home/user/.ssh/id_ed25519.pub')).toBe(true);
   });

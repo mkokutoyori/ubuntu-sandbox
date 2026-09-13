@@ -399,7 +399,7 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   // l'oeil : c'est lui qui les a nommees, et lui qui nommera la suivante.
   for (const chemin of [
     'class-map', 'class-map match-all', 'class-map match-any',
-    'clock', 'crypto map', 'ip community-list', 'ip sla',
+    'crypto map', 'ip community-list', 'ip sla',
     'no logging', 'policy-map',
     'route-map', 'sntp server', 'zone-pair security',
   ]) tries.config.requireArgs(chemin, 1);

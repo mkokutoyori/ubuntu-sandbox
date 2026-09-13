@@ -1824,7 +1824,7 @@ export abstract class LinuxMachine extends EndHost
   private readonly sshPeerPorts: Map<string, number> = new Map();
   private sshNextClientPort = 0;
 
-  private sshClientPort(fromIp: string): number {
+  sshClientPort(fromIp: string): number {
     const known = this.sshPeerPorts.get(fromIp);
     if (known !== undefined) return known;
     const { min, max } = this.getTcpStack().getEphemeralRange();
@@ -3941,6 +3941,10 @@ export abstract class LinuxMachine extends EndHost
       'netfilter',
       `${tag} IN=${inIface} OUT=${outIface ?? ''} SRC=${pkt.srcIP} DST=${pkt.dstIP} PROTO=${proto}${portFields}`,
     );
+    this.executor.firewall.logBlockedPacket({
+      verdict, iface: inIface, src: pkt.srcIP, dst: pkt.dstIP,
+      proto, sport: pkt.srcPort ?? 0, dport: pkt.dstPort ?? 0,
+    });
   }
 
   private logIptablesLog(prefix: string, pkt: PacketInfo): void {

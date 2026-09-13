@@ -56,3 +56,17 @@ export function knownHostsPathFor(device: Equipment, user: string): string {
   if (!dev.executor?.vfs && dev.getFileSystem) return `/Users/${user}/.ssh/known_hosts`;
   return user === 'root' ? '/root/.ssh/known_hosts' : `/home/${user}/.ssh/known_hosts`;
 }
+
+export interface SshLocalIdentity {
+  readonly uid: number;
+  readonly gid: number;
+}
+
+export function sshLocalIdentityFor(device: Equipment, user: string): SshLocalIdentity {
+  const dev = device as unknown as {
+    executor?: { userMgr?: { getUser(name: string): { uid?: number; gid?: number } | undefined } };
+  };
+  const entry = dev.executor?.userMgr?.getUser(user);
+  if (entry?.uid !== undefined) return { uid: entry.uid, gid: entry.gid ?? entry.uid };
+  return user === 'root' ? { uid: 0, gid: 0 } : { uid: 1000, gid: 1000 };
+}

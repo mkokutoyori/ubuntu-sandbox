@@ -52,12 +52,13 @@ export function createAuthMethods(
   vfs: ISshLocalFs,
   opts: SshConnectOptions,
   passwordProvider: PasswordProvider,
+  passwordPrompts = 3,
 ): ISshAuthMethod[] {
   const methods: ISshAuthMethod[] = [];
   for (const keyPath of opts.identityFiles) {
     const pair = SshKeyPair.fromVfs(vfs, keyPath);
     if (pair.ok) methods.push(new PublicKeyAuthMethod(pair.value));
   }
-  methods.push(new PasswordAuthMethod(passwordProvider));
+  methods.push(new PasswordAuthMethod(passwordProvider, passwordPrompts));
   return methods;
 }

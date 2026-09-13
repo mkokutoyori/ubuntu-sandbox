@@ -8,12 +8,21 @@
  * Déroulé : ACL étendue 100 sur le routeur (modélisant un L3-switch),
  * avec une clause `time-range BUSINESS_HOURS` (lundi-vendredi 8h-18h)
  * sur l'entrée permit. Une tentative SSH pendant la plage autorisée
- * passe ; hors plage, le SYN est silencieusement droppé et le client
- * voit `Connection timed out`.
+ * passe ; hors plage, le SYN est refusé par la liste et le client voit
+ * `No route to host`.
  *
  * Critère de réussite : connexion possible uniquement dans la fenêtre,
- * avec un comportement de drop identique à n'importe quelle ACL réseau
+ * avec un comportement de refus identique à n'importe quelle ACL réseau
  * le reste du temps.
+ *
+ * Correction d'une premisse de ce fichier, qui exigeait
+ * « Connection timed out », donc un drop SILENCIEUX. Un routeur Cisco
+ * n'est pas muet quand une liste refuse : il repond « communication
+ * administratively prohibited » (type 3, code 13) tant que l'interface
+ * ne porte pas `no ip unreachables`, et le noyau du client en tire un
+ * `EHOSTUNREACH` (`icmp_err_convert`, `net/ipv4/icmp.c`) qu'OpenSSH
+ * rend « No route to host ». Ce que le fichier mesure — la fenetre
+ * horaire decide, et le refus n'est pas un RST actif — est intact.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -102,24 +111,24 @@ describe('Scénario 11 — ACL Cisco étendue avec time-range', () => {
     expect(out).not.toMatch(/Connection timed out/);
   });
 
-  it('mercredi 22h : connexion droppée (hors fenêtre) — Connection timed out', async () => {
+  it('mercredi 22h : connexion refusée (hors fenêtre) — No route to host', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-01T22:00:00')); // mercredi 22h local
     const { adminPc, router } = await buildLan();
     await installTimeBoundedAcl(router);
     const out = await adminPc.executeCommand('ssh alice@10.0.30.10 whoami');
-    expect(out).toMatch(/Connection timed out/);
+    expect(out).toMatch(/No route to host/);
     expect(out).not.toMatch(/Connection refused/);
     expect(out).not.toMatch(/^alice\s*$/m);
   });
 
-  it('dimanche 10h : connexion droppée (jour hors weekdays)', async () => {
+  it('dimanche 10h : connexion refusée (jour hors weekdays)', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-05T10:00:00')); // dimanche
     const { adminPc, router } = await buildLan();
     await installTimeBoundedAcl(router);
     const out = await adminPc.executeCommand('ssh alice@10.0.30.10 whoami');
-    expect(out).toMatch(/Connection timed out/);
+    expect(out).toMatch(/No route to host/);
   });
 
   it('show access-lists 100 : le compteur deny grimpe après une tentative hors plage', async () => {
@@ -147,6 +156,6 @@ describe('Scénario 11 — ACL Cisco étendue avec time-range', () => {
 
     vi.setSystemTime(new Date('2026-07-04T10:00:00')); // samedi 10h
     const saturday = await adminPc.executeCommand('ssh alice@10.0.30.10 whoami');
-    expect(saturday).toMatch(/Connection timed out/);
+    expect(saturday).toMatch(/No route to host/);
   });
 });

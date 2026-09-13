@@ -156,6 +156,7 @@ export interface ISshServerContext {
    * append to /var/log/auth.log and /var/log/btmp.json.
    */
   recordAuthFailure?(user: string, fromIp: string, reason: string): void;
+  clientPort?(fromIp: string): number | undefined;
   /**
    * Build a fully-populated SshUserContext from /etc/passwd (real uid/gid/groups/home).
    * Returns null when the user does not exist on this system.

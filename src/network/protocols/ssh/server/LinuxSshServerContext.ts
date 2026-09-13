@@ -577,6 +577,11 @@ export class LinuxSshServerContext implements ISshServerContext {
    * The matching /var/log/auth.log line is emitted by SshSyslogger via the
    * `auth_failure` event.
    */
+  clientPort(fromIp: string): number | undefined {
+    const machine = this.device as { sshClientPort?: (ip: string) => number } | null;
+    return machine?.sshClientPort?.(fromIp);
+  }
+
   recordAuthFailure(user: string, fromIp: string, reason: string): void {
     this.appendBtmp({
       user: user || 'invalid user',
@@ -671,13 +676,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     );
     this.vfs.chmod(HOST_KEY_PUB_PATH, 0o644);
     // Persist a stable opaque private key blob (no real crypto — see C-02).
-    this.vfs.writeFile(
-      HOST_KEY_PATH,
-      `-----BEGIN OPENSSH PRIVATE KEY-----\n${generated.publicKey}\n-----END OPENSSH PRIVATE KEY-----\n`,
-      0,
-      0,
-      0o022,
-    );
+    this.vfs.writeFile(HOST_KEY_PATH, generated.privateKeyBlob, 0, 0, 0o022);
     this.vfs.chmod(HOST_KEY_PATH, 0o600);
     return generated;
   }

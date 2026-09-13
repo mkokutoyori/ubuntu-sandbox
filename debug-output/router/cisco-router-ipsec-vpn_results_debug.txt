@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-09-10T16:30:06.448Z
+Generated: 2026-09-13T11:35:06.055Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -965,7 +965,7 @@ Total steps: 370
     Certificate Serial Number: 0000000000001002
     Subject: CN=R1.lab.local
     Issuer: CN=http://10.0.0.5:80
-    Validity: 2026-09-10T16:30:07.975Z to 2027-09-10T16:30:07.975Z
+    Validity: 2026-09-13T11:35:08.136Z to 2027-09-13T11:35:08.136Z
   CA Certificate (Trustpoint CA1):
     Status: Available
     Certificate Serial Number: 0000000000001001
@@ -1058,7 +1058,7 @@ Total steps: 370
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX91605S34
+  Processor board ID FTX807300SM
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1070,7 +1070,7 @@ Total steps: 370
   
   Current configuration : 4054 bytes
   !
-  ! Last configuration change at 16:30:07 UTC Thu Sep 10 2026 by console
+  ! Last configuration change at 11:35:08 UTC Sun Sep 13 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1620,18 +1620,18 @@ Total steps: 370
   
   Log Buffer (4096 bytes):
   
-  *Sep 10 16:30:06.442: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 10 16:30:06.443: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 10 16:30:06.445: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 10 16:30:06.446: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 10 16:30:06.652: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:30:07.023: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:30:07.230: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:30:07.390: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:30:07.595: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:30:07.739: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:30:07.887: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:30:07.987: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:06.049: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 13 11:35:06.050: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 13 11:35:06.052: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 13 11:35:06.052: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 13 11:35:06.256: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:06.698: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:06.972: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:07.270: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:07.550: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:07.805: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:08.014: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:08.154: %SYS-5-CONFIG_I: Configured from console by console
 
 [297/370] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1643,7 +1643,7 @@ Total steps: 370
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 200 (1/100 of seconds), resolution is 4001
-  reference time is EE4D5990.624DD2F1 (16:30:08.384 UTC Thu Sep 10 2026)
+  reference time is EE5108EC.A5604189 (11:35:08.646 UTC Sun Sep 13 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1654,14 +1654,14 @@ Total steps: 370
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [300/370] r1 R1# show clock
-  *16:30:08.000 UTC Thu Sep 10 2026
+  *11:35:08.000 UTC Sun Sep 13 2026
 
 [301/370] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  R2               Gig 0/1           179        R           Cisco 291 Gig 0/1
+  R2               Gig 0/1           178        R           Cisco 291 Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -1840,7 +1840,7 @@ Total steps: 370
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX91605S34
+  Processor board ID FTX807300SM
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1852,7 +1852,7 @@ Total steps: 370
   
   Current configuration : 4054 bytes
   !
-  ! Last configuration change at 16:30:07 UTC Thu Sep 10 2026 by console
+  ! Last configuration change at 11:35:08 UTC Sun Sep 13 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2276,22 +2276,22 @@ Total steps: 370
   
   Log Buffer (4096 bytes):
   
-  *Sep 10 16:30:06.442: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 10 16:30:06.443: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 10 16:30:06.445: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 10 16:30:06.446: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 10 16:30:06.652: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:30:07.023: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:30:07.230: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:30:07.390: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:30:07.595: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:30:07.739: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:30:07.887: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:30:07.987: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:06.049: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 13 11:35:06.050: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 13 11:35:06.052: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 13 11:35:06.052: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 13 11:35:06.256: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:06.698: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:06.972: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:07.270: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:07.550: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:07.805: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:08.014: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:35:08.154: %SYS-5-CONFIG_I: Configured from console by console
 
 [314/370] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX91605S34
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX807300SM
 
 [315/370] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2690,20 +2690,12 @@ Total steps: 370
 
 [363/370] r1 R1(config)# interface ?
     BVI              Bridge-Group Virtual Interface
-    BVI              Bridge-Group Virtual Interface
-    Ethernet         IEEE 802.3
     Ethernet         IEEE 802.3
     FastEthernet     FastEthernet IEEE 802.3u
-    FastEthernet     FastEthernet IEEE 802.3u
-    GigabitEthernet  GigabitEthernet IEEE 802.3z
     GigabitEthernet  GigabitEthernet IEEE 802.3z
     Loopback         Loopback interface
-    Loopback         Loopback interface
-    Port-channel     Ethernet Channel of interfaces
     Port-channel     Ethernet Channel of interfaces
     Serial           Serial
-    Serial           Serial
-    Tunnel           Tunnel interface
     Tunnel           Tunnel interface
 
 [364/370] r1 R1(config)# ip ?
@@ -2721,8 +2713,8 @@ Total steps: 370
     domain-lookup      Enable IP Domain Name System hostname translation
     domain-name        Define the default domain name
     finger             Enable finger service
-    flow-cache         NetFlow cache timeout
-    flow-export        Legacy NetFlow export
+    flow-cache         How long an active flow stays in the cache
+    flow-export        Address of the NetFlow collector
     gratuitous-arps    Send gratuitous ARP
     host               Add a host to the host table
     http               Enable HTTP server
@@ -2733,7 +2725,7 @@ Total steps: 370
     pim                Configure static PIM RP address
     prefix-list        Build a prefix list
     route              Establish static routes in a VRF
-    route-cache        Route cache
+    route-cache        Enable NetFlow on all interfaces
     routing            Enable IP routing
     scp                Enable the SCP server
     sla                Configure an IP SLAs operation
@@ -2758,7 +2750,6 @@ Total steps: 370
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     pki          Declare a PKI trustpoint
-    <cr>
 
 [367/370] r1 R1(config)# no ?
     aaa            Enable NEW access control commands and functions
@@ -2768,38 +2759,38 @@ Total steps: 370
     banner         Remove a banner
     boot           Specify system image to load
     cdp            Enable CDP globally
-    clock          Hardware calendar is a valid time source
+    clock          Remove hardware calendar is a valid time source
     crypto         Encryption module
     enable         Set enable secret
-    event          Embedded Event Manager
+    event          Register an EEM applet
     hostname       Set system hostname
     interface      Remove a virtual interface
-    ip             Enable IP routing
+    ip             Disable IP routing
     ipv6           IPv6 interface subcommands
-    key            Key management
+    key            Define a key chain
     line           Enter line configuration
     lldp           Enable LLDP globally
     logging        Count every log message and timestamp last occurrence
     login          Set the login blocking period
     ntp            Authenticate time sources
-    object-group   Configure object-group
-    parser         Define a CLI view
+    object-group   Remove a network object group
+    parser         Remove a CLI view
     priority-list  Remove build a priority list
-    privilege      Configure command privilege levels
+    privilege      Remove a command privilege rule
     queue-list     Remove build a custom queue list
-    radius         RADIUS server configuration
+    radius         Remove a named RADIUS server
     radius-server  Specify a RADIUS server
     route-map      Remove a route-map
     router         Enter RIP routing protocol configuration
     service        Disable a network based service
     snmp-server    Set community string and access privs
     sntp           SNTP server (alias for ntp server)
-    tacacs         TACACS+ server configuration
+    tacacs         Remove a named TACACS+ server
     tacacs-server  Specify a TACACS+ server
     time-range     Remove a time range
     track          Remove a tracked object
     username       Remove a local user
-    vrf            Configure a VRF
+    vrf            Remove configure a vrf
 
 [368/370] r1 R1(config)# end
 <empty>

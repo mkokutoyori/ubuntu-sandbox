@@ -44,6 +44,7 @@ export class LinuxNetworkConfigManager {
     if (!this.vfs.exists(INTERFACES_PATH)) {
       const configs = new Map<string, DeclaredInterfaceConfig>();
       for (const name of ifaceNames) configs.set(name, { method: 'dhcp' });
+      if (!this.vfs.exists('/etc/network')) this.vfs.mkdirp('/etc/network', 0o755, 0, 0);
       this.vfs.createFileAt(INTERFACES_PATH, serializeInterfacesFile(configs), 0o644, 0, 0);
     }
     if (!this.vfs.exists(NETPLAN_PATH)) {

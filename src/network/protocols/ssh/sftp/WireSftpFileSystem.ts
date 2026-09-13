@@ -36,6 +36,11 @@ export class WireSftpFileSystem implements ISftpFileSystem {
     return `${cwd.replace(/\/$/, '')}/${path}`;
   }
 
+  initialCwd(): string | null {
+    const resp = this.channel.sendRequest({ op: 'pwd' });
+    return resp.ok && typeof resp.cwd === 'string' ? resp.cwd : null;
+  }
+
   exists(path: string): boolean {
     return this.channel.sendRequest({ op: 'stat', path }).ok;
   }

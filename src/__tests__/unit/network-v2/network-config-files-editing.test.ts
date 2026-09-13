@@ -134,9 +134,15 @@ describe('Scénario 6 — édition sécurisée de /etc/resolv.conf avec vim', ()
 
 describe('Scénario 6 — édition de /etc/network/interfaces avec vim, validée par ifup --no-act', () => {
   it('crée une interface statique complète et ifup --no-act la valide sans erreur', async () => {
-    const fsCtx = new LinuxEditorFsContext(pc);
-    const existing = fsCtx.readFile('/etc/network/interfaces');
-    expect(existing).toBeNull(); // no /etc/network/interfaces by default on a fresh LinuxPC
+    // ifupdown seeds /etc/network/interfaces at boot, exactly as netplan
+    // seeds 01-netcfg.yaml next to it. /etc/network is root-owned 0755,
+    // so rewriting the file from scratch is a root operation — the same
+    // `sudo vim` an admin types.
+    const rootSession = pc.openShellSession({ user: 'root' });
+    const fsCtx = new LinuxEditorFsContext(pc, rootSession);
+    expect(fsCtx.readFile('/etc/network/interfaces')).not.toBeNull();
+    expect(fsCtx.deleteFile('/etc/network/interfaces')).toBe(true);
+    expect(fsCtx.readFile('/etc/network/interfaces')).toBeNull();
     const vim = new VimEngine(fsCtx, '/etc/network/interfaces', '', true, 'vim');
 
     press(vim, 'i'); // empty new-file buffer: insert directly on the blank line

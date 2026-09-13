@@ -844,7 +844,10 @@ describe('§11 — known_hosts coherence across platforms', () => {
       name: 'Linux: regenerated remote host key triggers identification-changed',
       setup: async (l) => {
         await l.linux1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 hostname');
-        await l.linux2.executeCommand('sudo ssh-keygen -A -f /etc/ssh -t rsa');
+        for (const type of ['rsa', 'ed25519', 'ecdsa']) {
+          await l.linux2.executeCommand(`sudo rm -f /etc/ssh/ssh_host_${type}_key /etc/ssh/ssh_host_${type}_key.pub`);
+        }
+        await l.linux2.executeCommand('sudo ssh-keygen -A -f /etc/ssh');
         await l.linux2.executeCommand('sudo systemctl restart ssh');
       },
       on: l => l.linux1,

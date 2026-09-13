@@ -229,10 +229,7 @@ export class WindowsSshServerContext implements ISshServerContext {
     }
     const generated = SshHostKey.generate(this.hostname);
     this.wfs.createFile(HOST_KEY_PUB_PATH, generated.publicKeyLine + '\n');
-    this.wfs.createFile(
-      HOST_KEY_PATH,
-      `-----BEGIN OPENSSH PRIVATE KEY-----\n${generated.publicKey}\n-----END OPENSSH PRIVATE KEY-----\n`,
-    );
+    this.wfs.createFile(HOST_KEY_PATH, generated.privateKeyBlob);
     return generated;
   }
 

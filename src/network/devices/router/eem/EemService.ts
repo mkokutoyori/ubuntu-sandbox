@@ -90,6 +90,15 @@ export class EemService {
       case 'snmp-notification': return `event snmp-notification oid ${t.oid}`;
       case 'snmp-object': return `event snmp oid ${t.oid} get-type ${t.op} entry-val ${t.value}`;
       case 'cli': return `event cli pattern "${t.pattern}"`;
+      /*
+       * `event none` se RENDAIT vide, et une ligne blanche ferme le bloc
+       * de l'applet dans le serialiseur : toutes les actions qui la
+       * suivaient disparaissaient de `show running-config`. Un applet
+       * declenche a la main — la forme de tous les tutoriels EEM —
+       * revenait donc VIDE d'un export de topologie, sans qu'un mot le
+       * dise, alors que l'agent gardait bien ses actions.
+       */
+      case 'none': return 'event none';
       default: return '';
     }
   }

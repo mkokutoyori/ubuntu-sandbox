@@ -155,5 +155,13 @@ export function globalHeadSpecs(ctx: () => GlobalHeadHost): CommandSpec[] {
       LEGACY_LIST_PLACES('Custom queue list number')),
     recordedGlobalSpec('clock-calendar-valid', ['clock', 'calendar-valid'],
       'Hardware calendar is a valid time source', ctx),
+    {
+      id: 'archive',
+      path: ['archive'],
+      description: 'Enter archive configuration',
+      modes: MODES, minPrivilege: 15,
+      enters: 'config-archive',
+      run: () => '',
+    },
   ];
 }

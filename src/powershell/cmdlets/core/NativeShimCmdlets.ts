@@ -73,3 +73,7 @@ export const ChcpCmdlet      = new NativeShim('chcp');
 // always-correct explicit form.
 export const ScCmdlet        = new NativeShim('sc');
 export const ScExeCmdlet     = new NativeShim('sc.exe');
+export const SshKeygenCmdlet  = new NativeShim('ssh-keygen');
+export const SshAgentCmdlet   = new NativeShim('ssh-agent');
+export const SshAddCmdlet     = new NativeShim('ssh-add');
+export const SshKeyscanCmdlet = new NativeShim('ssh-keyscan');

@@ -35,8 +35,10 @@ import type { IRouterShell } from './IRouterShell';
 import { CiscoShellBase } from './CiscoShellBase';
 import { CommandTrie, setInvalidInputPromptWidth, formatInvalidInput, formatInvalidInputAt } from './CommandTrie';
 import { IPAddress, IPv6Address, SubnetMask } from '../../core/types';
+import { ipv6PorteSpecs } from './cisco/ipv6PorteSpecs';
 import { isValidIPv4 } from '../../core/ip';
 import { parsePingArgs, formatCiscoPing, looksLikeIPv6 } from './cisco/ciscoPing';
+import { CISCO_ERRORS as CISCO_TRACE_ERRORS } from './cli-utils';
 import {
   parseRouteDistinguisher, parseRouteTarget, applyRouteTarget,
   vrfStoreOf, type VrfHost, type VrfInstance,
@@ -178,6 +180,7 @@ import {
 } from './cisco/CiscoSecurityCommands';
 import {
   buildEemNetflowArchiveConfigCommands, buildEemAppletSubmode, netflowSpecs,
+  eemPorteSpecs,
   buildFlowExporterSubmode, buildFlowRecordSubmode, buildFlowMonitorSubmode,
   buildArchiveSubmode, buildArchiveLogSubmode,
   eemAppletSpecs, flowExporterSpecs, flowRecordSpecs, flowMonitorSpecs,
@@ -486,6 +489,32 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...flowRecordSpecs(this),
       ...flowMonitorSpecs(this),
       ...netflowSpecs(this),
+      ...eemPorteSpecs(this),
+      ...ipv6PorteSpecs(() => ({
+        ouvrirListe: (nom) => {
+          const acls = this.r().getIpv6AccessLists();
+          if (!acls.some((a) => a.name === nom)) acls.push({ name: nom, entries: [] });
+          this.setSelectedACL(nom);
+          this.setMode('config-ipv6-nacl');
+          return '';
+        },
+        ouvrirEigrp: (asn) => {
+          const n = Number(asn);
+          const r = this.r() as unknown as { _ipv6EigrpProcesses?: Set<number> };
+          (r._ipv6EigrpProcesses ??= new Set()).add(n);
+          this.setMode('config-router');
+          this.setSelectedRoutingProto({ proto: 'eigrp', asn: n });
+          return '';
+        },
+        ouvrirOspf: (processus) => {
+          const n = Number(processus);
+          if (!Number.isFinite(n) || n < 1 || n > 65535) return '% Invalid OSPFv3 process ID';
+          if (!this.r()._getOSPFv3EngineInternal()) this.r()._enableOSPFv3(n);
+          this.setMode('config-router-ospfv3' as CiscoShellMode);
+          return '';
+        },
+        poserRoute: (mots) => this.poserRouteIpv6([...mots]),
+      })),
       ...securityGlobalSpecs(this),
       ...classMapSubmodeSpecs(this),
       ...policyMapSubmodeSpecs(this),
@@ -2293,23 +2322,32 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     }
     target = args[i++]?.trim() || '';
 
+    const entierPositif = (mot: string | undefined): number | null => {
+      if (mot === undefined || !/^\d+$/.test(mot)) return null;
+      const n = parseInt(mot, 10);
+      return n > 0 ? n : null;
+    };
+
     while (i < args.length) {
       const kw = args[i]?.toLowerCase();
-      if (kw === 'ttl' && args[i + 1]) {
-        const n = parseInt(args[i + 1], 10);
-        if (!isNaN(n) && n > 0) maxHops = n;
-        i += 2;
-      } else if (kw === 'timeout' && args[i + 1]) {
-        const n = parseInt(args[i + 1], 10);
-        if (!isNaN(n) && n > 0) timeoutMs = n * 1000;
-        i += 2;
-      } else if (kw === 'probe' && args[i + 1]) {
-        const n = parseInt(args[i + 1], 10);
-        if (!isNaN(n) && n > 0) probesPerHop = n;
-        i += 2;
-      } else {
-        i++;
+      if (kw !== 'ttl' && kw !== 'timeout' && kw !== 'probe') {
+        return CISCO_TRACE_ERRORS.INVALID_INPUT;
       }
+      const attendus = kw === 'ttl' ? 2 : 1;
+      if (args.length - i - 1 < attendus) return CISCO_TRACE_ERRORS.INCOMPLETE;
+      const valeurs = args.slice(i + 1, i + 1 + attendus).map(entierPositif);
+      if (valeurs.some((n) => n === null)) return CISCO_TRACE_ERRORS.INVALID_INPUT;
+      if (kw === 'ttl') {
+        if ((valeurs[0] as number) > (valeurs[1] as number)) {
+          return CISCO_TRACE_ERRORS.INVALID_INPUT;
+        }
+        maxHops = valeurs[1] as number;
+      } else if (kw === 'timeout') {
+        timeoutMs = (valeurs[0] as number) * 1000;
+      } else {
+        probesPerHop = valeurs[0] as number;
+      }
+      i += 1 + attendus;
     }
 
     if (!target) return '% Traceroute requires a target IP address.';
@@ -2399,4 +2437,40 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     }
     return null;
   }
+
+  /** Le corps de `ipv6 route`, tel que le glouton le portait. */
+  private poserRouteIpv6(args: string[]): string {
+    const parseIpv6OrNull = (texte: string): IPv6Address | null => {
+      try { return new IPv6Address(texte); } catch { return null; }
+    };
+    if (args.length < 2) return '% Incomplete command.';
+    // ipv6 route <prefix>/<len> <next-hop>
+    const prefixStr = args[0];
+    const nextHopStr = args[1];
+    const slashIdx = prefixStr.indexOf('/');
+    if (slashIdx === -1) return '% Invalid prefix format';
+    const prefix = prefixStr.substring(0, slashIdx);
+    const prefixLen = parseInt(prefixStr.substring(slashIdx + 1), 10);
+    if (isNaN(prefixLen) || prefixLen < 0 || prefixLen > 128) throw new CliInvalidInput();
+    let prefixAddr: IPv6Address;
+    try {
+      prefixAddr = new IPv6Address(prefix);
+    } catch {
+      return '% Invalid prefix format';
+    }
+
+    const egress = this.r().getPort(nextHopStr);
+    if (egress) {
+      const viaHop = args[2] ? parseIpv6OrNull(args[2]) : null;
+      if (args[2] && !viaHop) return '% Invalid next-hop address';
+      this.r().addIPv6StaticRoute(prefixAddr, prefixLen, viaHop, 0, { iface: egress.getName() });
+      return '';
+    }
+
+    const nextHop = parseIpv6OrNull(nextHopStr);
+    if (!nextHop) return '% Invalid next-hop address';
+    this.r().addIPv6StaticRoute(prefixAddr, prefixLen, nextHop);
+    return '';
+  }
+
 }

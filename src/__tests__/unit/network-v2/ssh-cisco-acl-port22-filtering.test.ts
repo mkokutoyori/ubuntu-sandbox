@@ -24,8 +24,20 @@
  *     SYN-ACK retour.
  *
  * Critère de réussite : la machine autorisée établit la session,
- * la non autorisée n'obtient aucune réponse SYN-ACK (drop silencieux,
- * pas de RST actif).
+ * la non autorisée n'obtient aucune réponse SYN-ACK, et son refus
+ * n'est PAS un RST actif.
+ *
+ * Correction d'une premisse de ce fichier. Il exigeait
+ * « Connection timed out », donc un drop SILENCIEUX. Un routeur Cisco
+ * n'est pas muet quand une liste refuse : il repond « communication
+ * administratively prohibited » (type 3, code 13) tant que l'interface
+ * ne porte pas `no ip unreachables`, ce que `Router.deniedByInboundACL`
+ * et son jumeau sortant font depuis toujours. Le noyau du client en
+ * tire un `EHOSTUNREACH` (`icmp_err_convert`, `net/ipv4/icmp.c`),
+ * qu'OpenSSH rend « No route to host ». Ce que le fichier voulait
+ * mesurer — bloque, et pas par un refus actif — est intact : le verdict
+ * n'est toujours pas « Connection refused », qui demanderait un RST ou
+ * un code 3.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -119,13 +131,25 @@ describe('Scénario 3 — ACL Cisco étendue filtrant SSH (TCP/22) entre VLANs',
     expect(server).toBeDefined();
   });
 
-  it('la machine hors plage est silencieusement droppée (Connection timed out)', async () => {
+  it('la machine hors plage est refusée par la liste (No route to host)', async () => {
     const { userPc, router } = await buildLan();
     await installAcl(router);
     const out = await userPc.executeCommand('ssh alice@10.0.30.10 whoami');
-    expect(out).toMatch(/Connection timed out/);
+    expect(out).toMatch(/No route to host/);
     expect(out).not.toMatch(/Connection refused/);
     expect(out).not.toMatch(/^alice\s*$/m);
+  });
+
+  it('`no ip unreachables` sur l\'interface d\'entrée rend le refus MUET', async () => {
+    const { userPc, router } = await buildLan();
+    await installAcl(router);
+    for (const cmd of ['enable', 'configure terminal',
+      'interface GigabitEthernet0/1', 'no ip unreachables', 'end']) {
+      await router.executeCommand(cmd);
+    }
+    const out = await userPc.executeCommand('ssh alice@10.0.30.10 whoami');
+    expect(out).toMatch(/Connection timed out/);
+    expect(out).not.toMatch(/Connection refused/);
   });
 
   it('show ip access-lists incrémente le compteur permit (admin) et deny (user)', async () => {

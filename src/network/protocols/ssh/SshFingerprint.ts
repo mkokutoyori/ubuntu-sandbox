@@ -1,14 +1,13 @@
 /**
  * SshFingerprint — immutable value object representing an SSH key fingerprint.
  *
- * Format: SHA256:base64(sha256(key)) with padding stripped — exactly what
- * OpenSSH `ssh-keygen -lf` prints. Backed by the real SHA-256 in `@/crypto`
- * (previously a non-cryptographic FNV stand-in).
+ * Format: SHA256:base64(sha256(blob)) with padding stripped — exactly what
+ * OpenSSH `ssh-keygen -lf` prints, over the DECODED wire blob.
  *
  * Reference: DESIGN-SSH-SFTP.md section 3.
  */
 
-import { sha256, bytesToBase64, utf8ToBytes } from '@/crypto';
+import { keygenBlobDigest } from '@/network/devices/linux/network/SshKeygenMaterial';
 
 export class SshFingerprint {
   private constructor(private readonly _value: string) {}
@@ -18,8 +17,9 @@ export class SshFingerprint {
    * Pure function: same input always produces same output.
    */
   static fromPublicKey(publicKey: string): SshFingerprint {
-    const digest = bytesToBase64(sha256(utf8ToBytes(publicKey))).replace(/=+$/, '');
-    return new SshFingerprint(`SHA256:${digest}`);
+    const fields = publicKey.trim().split(/\s+/);
+    const blob = fields.length > 1 ? fields[1] : fields[0];
+    return new SshFingerprint(keygenBlobDigest(blob, 'sha256') ?? 'SHA256:');
   }
 
   static fromString(raw: string): SshFingerprint {

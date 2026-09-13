@@ -97,6 +97,26 @@ export function tokenContent(token: string): string {
     : token;
 }
 
+function undoableUnder(
+  node: TreeNode, table: CommandTable, session: CliSession,
+): boolean {
+  const vus = new Set<TreeNode>();
+  const pile: TreeNode[] = [node];
+  while (pile.length > 0) {
+    const courant = pile.pop() as TreeNode;
+    if (vus.has(courant)) continue;
+    vus.add(courant);
+    for (const spec of [...courant.specs, ...courant.undoOnlySpecs]) {
+      if (!spec.modes.includes(session.mode)) continue;
+      if (!table.isReachable(spec, session)) continue;
+      if (spec.undo !== undefined || spec.existsOnlyNegated) return true;
+    }
+    for (const enfant of courant.children.values()) pile.push(enfant);
+    for (const enfant of courant.argumentChildren) pile.push(enfant);
+  }
+  return false;
+}
+
 export function parseCommand(
   table: CommandTable, input: string, session: CliSession,
   options?: TokenizeOptions,
@@ -208,7 +228,12 @@ export function parseCommand(
   // noeud porte, dans ce mode, des continuations parfaitement valides.
   const spec = table.specAt(node, session)
     ?? (negated ? table.undoOnlySpecAt(node, session) : undefined);
-  if (!spec) return { status: 'incomplete', consumed: tokens.length };
+  if (!spec) {
+    if (negated && !undoableUnder(node, table, session)) {
+      return { status: 'invalid', token: 'no', position: 0 };
+    }
+    return { status: 'incomplete', consumed: tokens.length };
+  }
   if (spec.existsOnlyNegated && !negated) {
     return { status: 'incomplete', consumed: tokens.length };
   }

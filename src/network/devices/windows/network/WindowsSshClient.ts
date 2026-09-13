@@ -9,11 +9,12 @@
  * output in exec mode).
  *
  * It is built section by section alongside the Windows SSH test suite,
- * mirroring the Linux suite. Today it covers the happy-path connect.
+ * mirroring the Linux suite.
  */
 
 import { findHostByAddress } from '../../linux/network/HostLookup';
 import { SshKnownHostsFile } from '../../../protocols/ssh/SshKnownHostsFile';
+import type { ISshAuthContext } from '../../../protocols/ssh/auth/ISshAuthMethod';
 
 export interface WinSshClientResult {
   output: string;
@@ -41,6 +42,7 @@ export interface WinSshClientOpts {
   };
   /** %USERPROFILE% for the current user (default `C:\Users\<user>`). */
   sourceHome?: string;
+  localAgent?: { list(): readonly { publicKey: string | null }[] };
 }
 
 /**
@@ -101,6 +103,34 @@ function splitSshArgs(args: string[]): { positional: string[]; flags: string[] }
     }
   }
   return { positional, flags };
+}
+
+function clientOption(flags: string[], name: string): string | null {
+  for (let i = 0; i < flags.length; i++) {
+    if (flags[i] === '-o' && flags[i + 1] !== undefined) {
+      const parts = flags[i + 1].trim().split(/[=\s]+/);
+      if (parts[0]?.toLowerCase() === name.toLowerCase()) return (parts[1] ?? '').toLowerCase();
+    }
+  }
+  return null;
+}
+
+function offeredIdentityMaterial(opts: WinSshClientOpts, flags: string[]): string | null {
+  const home = opts.sourceHome ?? `C:\\Users\\${opts.sourceUser}`;
+  const iIdx = flags.indexOf('-i');
+  const iVal = iIdx >= 0 ? flags[iIdx + 1] : undefined;
+  const candidates = iVal
+    ? [iVal.endsWith('.pub') ? iVal : `${iVal}.pub`]
+    : ['id_ed25519.pub', 'id_rsa.pub', 'id_ecdsa.pub'].map(n => `${home}\\.ssh\\${n}`);
+  for (const candidate of candidates) {
+    const read = opts.localFs?.readFile(candidate);
+    const line = read?.ok ? (read.content ?? '').trim() : '';
+    if (line !== '') return line.split(/\s+/)[1] ?? null;
+  }
+  for (const key of opts.localAgent?.list() ?? []) {
+    if (key.publicKey) return key.publicKey.trim().split(/\s+/)[1] ?? null;
+  }
+  return null;
 }
 
 /** Resolve `-p <port>` from the flag list (default 22). */
@@ -193,6 +223,24 @@ export async function runWindowsSshClient(
       output: `${remoteUser}@${host}: Permission denied (publickey,password).`,
       exitCode: 255,
     };
+  }
+
+  const serverAuth = (found.device as unknown as {
+    getSshServerContext?: () => { auth?: ISshAuthContext };
+  }).getSshServerContext?.().auth;
+  const serverOffersPassword = serverAuth === undefined
+    || serverAuth.getAvailableMethods().includes('password');
+  if (clientOption(flags, 'PasswordAuthentication') === 'no' || !serverOffersPassword) {
+    const material = offeredIdentityMaterial(opts, flags);
+    const accepted = material !== null
+      && serverAuth?.checkPublicKey(remoteUser, material) === true;
+    if (!accepted) {
+      remote.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+      return {
+        output: `${remoteUser}@${host}: Permission denied (publickey).`,
+        exitCode: 255,
+      };
+    }
   }
 
   remote.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, true);

@@ -58,10 +58,13 @@ import {
 } from './cisco/testEtherChannelSpecs';
 import { switchGlobalSpecs, type SwitchGlobalHost } from './cisco/switchGlobalSpecs';
 import { snoopingViewSpecs, type SnoopingViewHost } from './cisco/snoopingViewSpecs';
+import { snoopingConfigSpecs } from './cisco/snoopingConfigSpecs';
 import {
   switchExecViewSpecs, type SwitchExecViewHost,
 } from './cisco/switchExecViewSpecs';
 import { igmpSnoopingRunningConfigLines } from '../../igmp-snooping/snoopingRunningConfig';
+import { pimSnoopingRunningConfigLines } from '../../pim-snooping/snoopingRunningConfig';
+import type { PimSnoopingConfig } from '../../pim-snooping/types';
 import type { SnoopingConfig } from '../../igmp-snooping/types';
 import type { CiscoSwitch } from '../CiscoSwitch';
 import type { PromptMap } from './PromptBuilder';
@@ -317,6 +320,7 @@ const AGREGATION_PLACES: Readonly<Record<string, ArgumentSpec>> = {
 const DAI_CHEMINS: ReadonlySet<string> = new Set([
   'ip arp inspection vlan', 'ip arp inspection validate', 'ip arp inspection filter',
   'errdisable recovery cause arp-inspection', 'errdisable recovery cause bpduguard',
+  'errdisable recovery cause psecure-violation',
   'errdisable recovery interval',
   'ip arp inspection trust', 'ip arp inspection limit rate',
   'clear ip arp inspection statistics',
@@ -1084,22 +1088,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     buildNamedStdACLCommands(this.configStdNaclTrie, this.namedAclEditContext());
     buildNamedExtACLCommands(this.configExtNaclTrie, this.namedAclEditContext());
     this.registerL3Commands();
-    for (const t of [this.userTrie, this.privilegedTrie]) {
-      const vueAcl = (args: string[]): string =>
-        showAccessListsFrom(this.d().getVaclEngine().getAccessListsInternal(), args[0]);
-      t.registerGreedy('show access-lists', 'Display ACLs', vueAcl);
-      t.registerGreedy('show ip access-lists', 'Display IP access lists', vueAcl);
-      t.registerGreedy('show port-security', 'Display port security', (args) => {
-        if (args[0]?.toLowerCase() === 'interface' && args[1]) {
-          return this.showPortSecurityInterface(this.d(), args.slice(1).join(' '));
-        }
-        if (args[0]?.toLowerCase() === 'address') {
-          return this.showPortSecurityAddress(this.d());
-        }
-        return this.showPortSecurityOverview(this.d());
-      });
-    }
-
     this.registerShowCompletionKeywords();
   }
 
@@ -1169,6 +1157,26 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       'Auto-recover BPDU Guard err-disabled ports', () => {
         const sw = this.d();
         if (sw._getBpduGuardRecoverySec?.() === 0) sw._setBpduGuardRecoverySec?.(30);
+        return '';
+      });
+    trie.config.registerGreedy('errdisable recovery cause psecure-violation',
+      'Auto-recover ports err-disabled by port-security', () => {
+        if (this.d()._getPsecRecoverySec() <= 0) this.d()._setPsecRecoverySec(30);
+        return '';
+      });
+    trie.config.registerGreedy('no errdisable recovery cause arp-inspection',
+      'Stop auto-recovering DAI err-disabled ports', () => {
+        this.d()._setArpRecoverySec(0);
+        return '';
+      });
+    trie.config.registerGreedy('no errdisable recovery cause bpduguard',
+      'Stop auto-recovering BPDU Guard err-disabled ports', () => {
+        this.d()._setBpduGuardRecoverySec?.(0);
+        return '';
+      });
+    trie.config.registerGreedy('no errdisable recovery cause psecure-violation',
+      'Stop auto-recovering port-security err-disabled ports', () => {
+        this.d()._setPsecRecoverySec(0);
         return '';
       });
     trie.config.registerGreedy('errdisable recovery interval',
@@ -1387,13 +1395,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // trame) : le moteur, la liaison et le filtrage existaient, il
     // manquait la commande qui les relie.
 
-
-    // ── errdisable recovery ──
-    this.configTrie.register('errdisable recovery cause psecure-violation',
-      'Auto-recover ports err-disabled by port-security', () => {
-        if (this.d()._getPsecRecoverySec() <= 0) this.d()._setPsecRecoverySec(30);
-        return '';
-      });
 
     this.privilegedTrie.describeNode('clear port-security', 'Clear secure MAC entries');
     // `describeNode` sort en silence sur un noeud absent : l'appel doit
@@ -1649,19 +1650,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const agent = this.requireIgmpSnooping();
     const kw = rest[0];
     if (kw === 'address') {
-      if (on && !rest[1]) return CISCO_ERRORS.INCOMPLETE;
-      if (on && !/^\d{1,3}(\.\d{1,3}){3}$/.test(rest[1])) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
       agent.setQuerierAddress(on ? rest[1] : null);
       return '';
     }
     if (kw === 'query-interval') {
-      const secs = parseInt(rest[1] ?? '', 10);
-      if (on && (Number.isNaN(secs) || secs < 1 || secs > 18000)) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      agent.setQuerierInterval(on ? secs : 60);
+      agent.setQuerierInterval(on ? parseInt(rest[1] ?? '', 10) : 60);
       return '';
     }
     if (kw !== undefined) return CISCO_ERRORS.INVALID_INPUT;
@@ -1719,10 +1712,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private registerPimSnoopingCommands(): void {
-    this.configTrie.registerGreedy('ip pim snooping', 'PIM snooping config',
-      (args) => this.applyPimSnooping(args, true));
-    this.configTrie.registerGreedy('no ip pim snooping', 'Disable PIM snooping',
-      (args) => this.applyPimSnooping(args, false));
   }
 
   private applyIgmpSnooping(args: string[], on: boolean): string {
@@ -1745,10 +1734,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private registerIgmpSnoopingCommands(): void {
-    this.configTrie.registerGreedy('ip igmp snooping', 'IGMP snooping config',
-      (args) => this.applyIgmpSnooping(args, true));
-    this.configTrie.registerGreedy('no ip igmp snooping', 'Disable IGMP snooping',
-      (args) => this.applyIgmpSnooping(args, false));
   }
 
   private snoopingViewHost(): SnoopingViewHost {
@@ -1888,10 +1873,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // même module (`CiscoArchiveCommands`) plutôt que recopiée : deux
     // plateformes qui archivent différemment seraient un défaut, pas une
     // fonctionnalité.
-    this.configTrie.register('archive', 'Enter archive configuration', () => {
-      this.mode = 'config-archive';
-      return '';
-    });
     const archiveOf = () => this.archiveService();
     buildArchiveSubmodeOn(this.configArchiveTrie, archiveOf, () => {
       this.mode = 'config-archive-log';
@@ -1928,12 +1909,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       this.showMstConfig());
     this.configMstTrie.register('show pending', 'Show pending MST config', () =>
       this.showMstConfig());
-    // The base redirects `show …` in config modes to the privileged
-    // trie, so `show current` must also resolve there.
-    this.privilegedTrie.register('show current', 'Show current MST config', () =>
-      this.showMstConfig());
-    this.privilegedTrie.register('show pending', 'Show pending MST config', () =>
-      this.showMstConfig());
     this.configMstTrie.registerGreedy('no', 'Negate MST option', (args) => {
       const head = args[0]?.toLowerCase();
       const ag = this.stpAgentOf(this.d());
@@ -1951,7 +1926,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     // show spanning-tree summary | mst configuration | interface <if>
-    this.registerSwitchDebugCommands();
   }
 
   private dhcpPoolContext(): CiscoShellContext {
@@ -2377,6 +2351,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...testEtherChannelSpecs(() => this.testEtherChannelHost()),
       ...switchGlobalSpecs(() => this.switchGlobalHost()),
       ...snoopingViewSpecs(() => this.snoopingViewHost()),
+      ...snoopingConfigSpecs(() => ({
+        applyIgmp: (mots, on) => this.applyIgmpSnooping([...mots], on),
+        applyPim: (mots, on) => this.applyPimSnooping([...mots], on),
+      })),
       ...switchExecViewSpecs(() => this.switchExecViewHost()),
       ...this.dot1xSpecs(),
       ...this.vtpConfigSpecs(),
@@ -2587,6 +2565,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
        * TOUTES.
        */
       [['private-vlan'], 'Configure the private VLAN role or association'],
+      [['errdisable'], 'Error disable recovery configuration'],
+      [['errdisable', 'recovery'], 'Configure error disable recovery'],
+      [['errdisable', 'recovery', 'cause'],
+        'Cause of the err-disable condition to recover from'],
     ];
   }
 
@@ -2864,13 +2846,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
   }
 
-  private registerSwitchDebugCommands(): void {
-    const svc = () => this.switchDebug();
-    this.privilegedTrie.register('show debugging', 'Display active debugging', () =>
-      this.mode === 'user'
-        ? CISCO_ERRORS.INVALID_INPUT
-        : (svc()?.format() ?? 'No debug flags are enabled'));
-  }
 
   /**
    * Ce qu'un Catalyst ajoute a la famille `debug` du socle.
@@ -3065,12 +3040,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // de trafic dans le plan de données. Inventer un pourcentage courant
     // serait la seule façon de mentir ici ; le seuil, lui, est exact.
 
-    this.privilegedTrie.registerGreedy('show interfaces trunk', 'Display trunk ports', () => {
-      return this.showTrunkTable(this.d().getPortNames());
-    });
-
-    this.privilegedTrie.registerGreedy('show etherchannel', 'Display EtherChannel',
-      (args) => this.showEtherchannel(args));
     this.registerEtherchannelShowRest();
   }
 
@@ -3157,25 +3126,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // dead-ended on "% Incomplete command." — the trie's own child-first
     // lookahead (CommandTrie.ts) still routes `... counters errors`
     // through to its own leaf action underneath, unaffected.
-    this.privilegedTrie.registerGreedy('show interfaces counters', 'Display interface counters', (args) => {
-      if (args.length === 0) return this.showInterfacesCounters(null);
-      const name = this.resolveInterfaceName(args.join(' '));
-      if (!name || !this.d().getPort(name)) {
-        return formatInvalidInput(16);
-      }
-      return this.showInterfacesCounters(name);
-    });
-
-
-    this.privilegedTrie.registerGreedy('show queuing interface', 'Display the 802.1p trust state of an interface', (args) => {
-      const target = args.join(' ');
-      const name = this.resolveInterfaceName(target) ?? target;
-      if (!name || !this.d().getPort(name)) {
-        return formatInvalidInput(23);
-      }
-      return this.showQueuingInterface(name);
-    });
-    this.privilegedTrie.requireArgs('show queuing interface', 1);
 
     this.privilegedTrie.register('write', 'Save running-config to startup-config', () => {
       return this.d().writeMemory();
@@ -3190,16 +3140,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
    * constructor, after every command family is registered.
    */
   private registerShowCompletionKeywords(): void {
-    for (const t of [this.privilegedTrie, this.userTrie]) {
-      t.addCompletionKeywords('show access-lists', [
-        { keyword: 'interface', description: 'ACLs applied to an interface' },
-        { keyword: 'address', description: 'Filter by address' },
-      ]);
-      t.addCompletionKeywords('show port-security', [
-        { keyword: 'interface', description: 'Port security for an interface' },
-        { keyword: 'address', description: 'Secure MAC addresses' },
-      ]);
-    }
     const t = this.privilegedTrie;
     t.addCompletionKeywords('show interfaces', [
       { keyword: 'status', description: 'Interface line status' },
@@ -3353,8 +3293,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // d'adresse. Le simulateur n'a pas de générateur de piège sur ce
     // chemin ; accepter la commande sans rien envoyer serait une
     // promesse non tenue, alors elle reste refusée.
-
-    this.configTrie.register('no shutdown', 'Enable interface', () => '');
 
     // ── Management plane: SSH host keys, domain, default-gateway ──
     // `crypto key generate rsa`, `crypto key zeroize rsa` et
@@ -4092,7 +4030,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const snoopingConfig = (sw as unknown as {
       getIgmpSnoopingAgent?: () => { getConfig(): SnoopingConfig };
     }).getIgmpSnoopingAgent?.().getConfig();
-    const snooping = snoopingConfig ? igmpSnoopingRunningConfigLines(snoopingConfig) : [];
+    const pimConfig = (sw as unknown as {
+      getPimSnoopingAgent?: () => { getConfig(): PimSnoopingConfig };
+    }).getPimSnoopingAgent?.().getConfig();
+    const snooping = [
+      ...(snoopingConfig ? igmpSnoopingRunningConfigLines(snoopingConfig) : []),
+      ...(pimConfig ? pimSnoopingRunningConfigLines(pimConfig) : []),
+    ];
     if (snooping.length > 0) { lines.push(...snooping); lines.push('!'); }
 
     // Les vues AVANT les comptes, pour la meme raison que sur le
@@ -5415,6 +5359,26 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       dhcpDatabase: () => dhcp().formatDatabaseShow(),
       dhcpSnoopingStatistics: () => this.showIpDhcpSnoopingStatistics(),
       stormControl: (sorte) => this.showStormControl(sorte),
+      etherChannel: (mots) => this.showEtherchannel([...mots]),
+      interfacesTrunk: () => this.showTrunkTable(this.d().getPortNames()),
+      interfacesCounters: (iface) => {
+        if (iface === null) return this.showInterfacesCounters(null);
+        const nom = this.resolveInterfaceName(iface);
+        if (!nom || !this.d().getPort(nom)) return formatInvalidInput(16);
+        return this.showInterfacesCounters(nom);
+      },
+      accessLists: (nom) => showAccessListsFrom(
+        this.d().getVaclEngine().getAccessListsInternal(), nom ?? undefined),
+      portSecurity: () => this.showPortSecurityOverview(this.d()),
+      portSecurityAddress: () => this.showPortSecurityAddress(this.d()),
+      portSecurityInterface: (iface) => iface === null
+        ? this.showPortSecurityOverview(this.d())
+        : this.showPortSecurityInterface(this.d(), iface),
+      queuingInterface: (iface) => {
+        const nom = this.resolveInterfaceName(iface) ?? iface;
+        if (!this.d().getPort(nom)) return formatInvalidInput(23);
+        return this.showQueuingInterface(nom);
+      },
     };
   }
 

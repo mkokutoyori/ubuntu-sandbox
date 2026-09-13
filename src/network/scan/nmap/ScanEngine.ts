@@ -134,7 +134,7 @@ export interface TraceContext {
   readonly connectScan: boolean;
 }
 
-const TCP_SCAN_REASON: Readonly<Record<TcpWireOutcome, string>> = {
+export const TCP_SCAN_REASON: Readonly<Record<TcpWireOutcome, string>> = {
   open: 'syn-ack',
   refused: 'reset',
   prohibited: 'admin-prohibited',

@@ -93,6 +93,7 @@ import {
   ICMP_UNREACH_FRAG_NEEDED,
   ICMP_TTL_EXPIRED_IN_TRANSIT,
   unreachableCodeName,
+  isHardTcpUnreachCode,
   type ICMPErrorType,
 } from '../core/IcmpErrors';
 import { fragmentIPv4, IPv4Reassembler, IPV4_FLAG_DF } from '../core/Ipv4Fragmentation';
@@ -2553,7 +2554,7 @@ export abstract class EndHost extends Equipment {
       this.publishIcmpUnreachable(ipPkt, icmp);
 
       const isHardTcpError = icmp.icmpType === 'destination-unreachable'
-        && (icmp.code === ICMP_UNREACH_PORT || icmp.code === ICMP_UNREACH_ADMIN_PROHIBITED);
+        && isHardTcpUnreachCode(icmp.code);
       // PRD-TCP.md P7 (RFC 1191/1981) — Fragmentation Needed/Packet Too Big
       // is not a hard error like the codes above: the path works, our
       // segment was just too big for it, so this shrinks MSS and

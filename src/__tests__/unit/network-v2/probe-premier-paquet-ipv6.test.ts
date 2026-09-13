@@ -41,11 +41,16 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import {
   SCAN_PROBE_FLAGS, readStatelessReply, type StatelessScanKind,
 } from '@/network/scan/nmap/StatelessScans';
+import type { StatelessProbeReply } from '@/network/tcp/TcpStack';
 
 interface Cmd { executeCommand(cmd: string): Promise<string> }
 
 function sonde(
-  hote: { getTcpStack(): { scanProbe(ip: string, port: number, f: typeof SCAN_PROBE_FLAGS.syn): 'rst' | 'rst-window' | 'syn-ack' | 'none' } },
+  hote: {
+    getTcpStack(): {
+      scanProbe(ip: string, port: number, f: typeof SCAN_PROBE_FLAGS.syn): StatelessProbeReply;
+    };
+  },
   ip: string, port: number, kind: StatelessScanKind,
 ) {
   return readStatelessReply(kind, hote.getTcpStack().scanProbe(ip, port, SCAN_PROBE_FLAGS[kind]));
