@@ -103,6 +103,7 @@ import {
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import { aclHeadSpecs, type AclHeadHost, type AclKind } from './cisco/aclHeadSpecs';
 import { macAclSpecs, type MacAclHost } from './cisco/macAclSpecs';
+import { arpAclSpecs, type ArpAclHost } from './cisco/arpAclSpecs';
 import { aclStandardSpecs } from './cisco/aclStandardSpecs';
 import { aclExtendedSpecs } from './cisco/aclExtendedSpecs';
 import { aclSubmodeSpecs, avecNumeroDeSequence } from './cisco/aclSubmodeSpecs';
@@ -1081,10 +1082,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       config: this.configTrie, configIf: this.configIfTrie,
       privileged: this.privilegedTrie, user: this.userTrie,
     });
-    for (const kw of ['permit', 'deny']) {
-      this.configAclTrie.registerGreedy(kw, `ARP ACL ${kw}`, (args) =>
-        this.handleArpAclLine(kw, args));
-    }
     buildNamedStdACLCommands(this.configStdNaclTrie, this.namedAclEditContext());
     buildNamedExtACLCommands(this.configExtNaclTrie, this.namedAclEditContext());
     this.registerL3Commands();
@@ -1190,18 +1187,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return '';
       });
 
-    // ── arp access-list ──
-    trie.config.registerGreedy('arp access-list', 'Define an ARP ACL', (args) => {
-      const name = args[0]; if (!name) return CISCO_ERRORS.INCOMPLETE;
-      const map = this.d()._getArpAccessLists();
-      if (!map.has(name)) map.set(name, { name, entries: [] });
-      this.selectedArpAcl = name;
-      this.selectedAcl = null;
-      this.mode = 'config-acl';
-      return '';
-    });
-    trie.config.requireArgs('arp access-list', 1);
-
     // ── Interface ── trust + limit rate
     trie.configIf.register('ip arp inspection trust', 'Trust port for DAI', () => {
       const cfg = this.d()._getArpInspectionConfig();
@@ -1232,37 +1217,33 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     trie.privileged.describeNode('show queuing', 'Show queueing configuration');
   }
 
-  private handleArpAclLine(kw: string, args: string[]): string {
-    if (!this.selectedArpAcl) return '';
-    const map = this.d()._getArpAccessLists();
-    const acl = map.get(this.selectedArpAcl);
-    if (!acl) return '';
-    if (kw === 'no') {
-      const raw = args.join(' ');
-      const idx = acl.entries.findIndex(e => e.raw === raw);
-      if (idx >= 0) acl.entries.splice(idx, 1);
-      return '';
-    }
-    if (kw !== 'permit' && kw !== 'deny') return '';
-    // Syntax: permit ip {host <ip>|any} mac {host <mac>|any}
-    let i = 0;
-    let senderIp: string | null = null;
-    let senderMac: string | null = null;
-    if (args[i]?.toLowerCase() === 'ip') {
-      i++;
-      if (args[i]?.toLowerCase() === 'host') { senderIp = args[i + 1] ?? null; i += 2; }
-      else if (args[i]?.toLowerCase() === 'any') { i++; }
-    }
-    if (args[i]?.toLowerCase() === 'mac') {
-      i++;
-      if (args[i]?.toLowerCase() === 'host') { senderMac = (args[i + 1] ?? '').toLowerCase() || null; i += 2; }
-      else if (args[i]?.toLowerCase() === 'any') { i++; }
-    }
-    acl.entries.push({
-      action: kw, senderIp, senderMac,
-      raw: `${kw} ${args.join(' ')}`.trim(),
-    });
-    return '';
+  private arpAclHost(): ArpAclHost {
+    const listeCourante = () => {
+      if (!this.selectedArpAcl) return null;
+      return this.d()._getArpAccessLists().get(this.selectedArpAcl) ?? null;
+    };
+    return {
+      ouvrirListe: (nom) => {
+        const map = this.d()._getArpAccessLists();
+        if (!map.has(nom)) map.set(nom, { name: nom, entries: [] });
+        this.selectedArpAcl = nom;
+        this.selectedAcl = null;
+        return '';
+      },
+      ajouterEntree: (action, senderIp, senderMac, ligne) => {
+        const acl = listeCourante();
+        if (!acl) return '';
+        acl.entries.push({ action, senderIp, senderMac, raw: ligne });
+        return '';
+      },
+      retirerEntree: (ligne) => {
+        const acl = listeCourante();
+        if (!acl) return '';
+        const index = acl.entries.findIndex((e) => e.raw === ligne);
+        if (index >= 0) acl.entries.splice(index, 1);
+        return '';
+      },
+    };
   }
 
   private registerPortSecurityCommands(): void {
@@ -2336,6 +2317,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...aclSubmodeSpecs('config-ext-nacl',
         () => extendedAclHost(this.namedAclEditContext())),
       ...macAclSpecs(() => this.macAclHost()),
+      ...arpAclSpecs(() => this.arpAclHost()),
       ...switchPortPhysicalSpecs(() => this.portPhysiqueHost()),
       ...stpInterfaceSpecs(() => this.stpInterfaceHost()),
       ...this.dot1xPaeSpecs(),
