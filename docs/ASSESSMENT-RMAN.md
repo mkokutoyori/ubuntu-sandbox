@@ -294,6 +294,48 @@ L'ordre n'est pas négociable : chaque lot a besoin du précédent.
 | **R7** | `CONNECT TARGET …@tns` **sur le fil** | réseau | referme la violation du §4 |
 | **R8** | Catalogue distant, `DUPLICATE`, transfert des pièces entre sites | réseau | le laboratoire DR devient réel |
 
+### 5.0 Lot R2b — la cible distante (fermé)
+
+Une fois R1/R2 en place, la question « et sur TCP/IP ? » a trouvé trois
+défauts, mesurés dans le laboratoire routeur + pare-feu
+(`src/__tests__/support/rmanLab.ts`) :
+
+```
+ORA-PROD ── R-CORE (Cisco) ── FGT-DC (FortiGate) ── ORA-DR
+10.10.10.10    .1 / 10.10.30.1    .2 / 10.10.20.1    10.10.20.20
+```
+
+| porte | annonçait | écrivait |
+|---|---|---|
+| `CONNECT TARGET @DR` | DBID de DR (juste) | FRA de **PROD** |
+| `rman target …@DR` | DBID de **PROD** | FRA de **PROD** |
+| `rman target …@injoignable` | rien | FRA de **PROD** |
+
+Le troisième est le pire : la cible étant jetée (`connect(_target?)` ne
+lisait pas son paramètre), rien ne pouvait échouer, et un opérateur au
+lien coupé croyait sauvegarder son site distant.
+
+Fermé par **un seul mécanisme** : `LinuxRmanContext.forTarget` résout un
+identifiant en contexte de la machine cible, et `RetargetableRmanContext`
+échange la cible courante — les deux portes passant déjà par
+`connectTarget`, elles en bénéficient ensemble. Catalogue et
+configuration suivent le device résolu.
+
+**Ce que le fil porte, mesuré :** `tcpdump -i eth0` sur ORA-PROD montre
+la vraie poignée de main à travers le routeur et le pare-feu —
+`10.10.10.10.32768 > 10.10.20.20.1521 Flags [S]`, `[S.]`, `[.]`, puis un
+`[P.]` de 36 octets du listener.
+
+**Limite nommée, pas contournée :** la différence de trames entre
+`CONNECT` seul et `CONNECT + BACKUP` est nulle. Que les DONNÉES ne
+traversent pas est correct — un vrai RMAN fait écrire la pièce par le
+processus serveur de la cible, sur le disque de la cible. Mais
+l'aller-retour de la COMMANDE n'est pas tramé non plus, exactement comme
+`SQLPlusSession` le documente déjà pour `sqlplus`.
+
+**Tous les tests RMAN vivent désormais dans ce laboratoire** — sept
+fichiers migrés, plus aucun ne démarre un `LinuxServer` nu.
+
 ### 5.1 Ordre révisé après la mesure en infrastructure (§4.1)
 
 Les deux pistes sont **indépendantes** — R7 n'a pas besoin que les

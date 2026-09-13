@@ -31,24 +31,29 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
-import { resetCounters } from '@/network/core/types';
+import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { resetAllOracleInstances } from '@/terminal/commands/database';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
+import { buildRmanLab, type RmanLab } from '../../support/rmanLab';
 
-beforeEach(() => {
+let lab: RmanLab;
+
+beforeEach(async () => {
   resetCounters();
   resetDeviceCounters();
+  MACAddress.resetCounter();
   resetAllOracleInstances();
   Logger.reset();
+  lab = await buildRmanLab();
 });
 
 const USERS_DBF = '/u01/app/oracle/oradata/ORCL/users01.dbf';
 const sh = (srv: LinuxServer, cmd: string) => srv.executeShellCommandSync(cmd);
 
-function bootOracleServer(name: string): { srv: LinuxServer; q: (sql: string) => string } {
-  const srv = new LinuxServer('linux-server', name, 0, 0);
+function bootOracleServer(_name: string): { srv: LinuxServer; q: (sql: string) => string } {
+  const srv = lab.prod;
   const sql = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
   return { srv, q: (s: string) => sql.processLine(s).output.join('\n').trim() };
 }

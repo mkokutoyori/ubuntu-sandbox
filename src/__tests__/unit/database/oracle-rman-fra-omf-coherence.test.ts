@@ -55,19 +55,23 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { resetAllOracleInstances } from '@/terminal/commands/database';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
+import { buildRmanLab, type RmanLab } from '../../support/rmanLab';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman';
 
-beforeEach(() => {
+let lab: RmanLab;
+
+beforeEach(async () => {
   resetCounters();
   resetDeviceCounters();
   resetAllOracleInstances();
   Logger.reset();
+  lab = await buildRmanLab();
 });
 
 const sh = (srv: LinuxServer, cmd: string) => srv.executeShellCommandSync(cmd);
 
-function bootOracleServer(name: string): LinuxServer {
-  const srv = new LinuxServer('linux-server', name, 0, 0);
+function bootOracleServer(_name: string): LinuxServer {
+  const srv = lab.prod;
   SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell.dispose();
   return srv;
 }

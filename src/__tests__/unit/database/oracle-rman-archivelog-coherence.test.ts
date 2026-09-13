@@ -5,19 +5,23 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { getOracleDatabase, resetAllOracleInstances } from '@/terminal/commands/database';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
+import { buildRmanLab, type RmanLab } from '../../support/rmanLab';
 import { LinuxRmanContext } from '@/terminal/subshells/rman/integration/LinuxRmanContext';
 
-beforeEach(() => {
+let lab: RmanLab;
+
+beforeEach(async () => {
   resetCounters();
   resetDeviceCounters();
   resetAllOracleInstances();
   Logger.reset();
+  lab = await buildRmanLab();
 });
 
 const ARC_DIR = '/u01/app/oracle/archivelog';
 
-function bootArchivelog(name: string): { srv: LinuxServer; sql: SqlPlusSubShell } {
-  const srv = new LinuxServer('linux-server', name, 100, 100);
+function bootArchivelog(_name: string): { srv: LinuxServer; sql: SqlPlusSubShell } {
+  const srv = lab.prod;
   const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
   const db = getOracleDatabase(srv.getId());
   (db.instance as unknown as { _archiveLogMode: boolean })._archiveLogMode = true;
