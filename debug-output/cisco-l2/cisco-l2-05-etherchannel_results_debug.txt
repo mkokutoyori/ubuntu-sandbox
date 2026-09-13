@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-05-etherchannel
-Generated: 2026-09-10T16:30:40.306Z
+Generated: 2026-09-13T11:42:23.901Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=LACP/PAgP/static bundles, port-channel interfaces, load-balance, teardown
 Total steps: 340
@@ -93,7 +93,8 @@ Total steps: 340
 <empty>
 
 [25/340] sw1 SW1(config)# do show etherchannel 1 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [26/340] sw1 SW1(config)# interface range FastEthernet0/6 - 7
 <empty>
@@ -120,7 +121,8 @@ Total steps: 340
 <empty>
 
 [34/340] sw1 SW1(config)# do show etherchannel 2 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [35/340] sw1 SW1(config)# interface range FastEthernet0/8 - 9
 <empty>
@@ -147,7 +149,8 @@ Total steps: 340
 <empty>
 
 [43/340] sw1 SW1(config)# do show etherchannel 3 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [44/340] sw1 SW1(config)# interface range FastEthernet0/10 - 11
 <empty>
@@ -174,7 +177,8 @@ Total steps: 340
 <empty>
 
 [52/340] sw1 SW1(config)# do show etherchannel 4 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [53/340] sw1 SW1(config)# interface range FastEthernet0/12 - 13
 <empty>
@@ -201,7 +205,8 @@ Total steps: 340
 <empty>
 
 [61/340] sw1 SW1(config)# do show etherchannel 5 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [62/340] sw1 SW1(config)# end
 <empty>
@@ -500,12 +505,14 @@ Total steps: 340
   10     Port-channel10LACP        Gi0/1(I)
 
 [143/340] core CORE# show etherchannel 10 detail
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 
 --- [144] § per-channel-group inspection loop ---
 [145/340] sw1 SW1# show etherchannel 1 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [146/340] sw1 SW1# show etherchannel 1 port-channel
   Port-channels in the group:
@@ -520,7 +527,8 @@ Total steps: 340
   Port security       = Disabled
 
 [147/340] sw1 SW1# show etherchannel 2 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [148/340] sw1 SW1# show etherchannel 2 port-channel
   Port-channels in the group:
@@ -535,7 +543,8 @@ Total steps: 340
   Port security       = Disabled
 
 [149/340] sw1 SW1# show etherchannel 3 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [150/340] sw1 SW1# show etherchannel 3 port-channel
   Port-channels in the group:
@@ -550,7 +559,8 @@ Total steps: 340
   Port security       = Disabled
 
 [151/340] sw1 SW1# show etherchannel 4 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [152/340] sw1 SW1# show etherchannel 4 port-channel
   Port-channels in the group:
@@ -565,7 +575,8 @@ Total steps: 340
   Port security       = Disabled
 
 [153/340] sw1 SW1# show etherchannel 5 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [154/340] sw1 SW1# show etherchannel 5 port-channel
   Port-channels in the group:
@@ -580,25 +591,29 @@ Total steps: 340
   Port security       = Disabled
 
 [155/340] sw1 SW1# show etherchannel 6 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [156/340] sw1 SW1# show etherchannel 6 port-channel
   No EtherChannel groups configured
 
 [157/340] sw1 SW1# show etherchannel 7 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [158/340] sw1 SW1# show etherchannel 7 port-channel
   No EtherChannel groups configured
 
 [159/340] sw1 SW1# show etherchannel 8 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [160/340] sw1 SW1# show etherchannel 8 port-channel
   No EtherChannel groups configured
 
 [161/340] sw1 SW1# show etherchannel 9 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [162/340] sw1 SW1# show etherchannel 9 port-channel
   Port-channels in the group:
@@ -1309,7 +1324,8 @@ Total steps: 340
 <empty>
 
 [234/340] sw2 SW2(config)# do show etherchannel 1 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [235/340] sw2 SW2(config)# interface range FastEthernet0/6 - 7
 <empty>
@@ -1324,7 +1340,8 @@ Total steps: 340
 <empty>
 
 [239/340] sw2 SW2(config)# do show etherchannel 2 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [240/340] sw2 SW2(config)# interface range FastEthernet0/8 - 9
 <empty>
@@ -1339,7 +1356,8 @@ Total steps: 340
 <empty>
 
 [244/340] sw2 SW2(config)# do show etherchannel 3 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [245/340] sw2 SW2(config)# interface range FastEthernet0/10 - 11
 <empty>
@@ -1354,7 +1372,8 @@ Total steps: 340
 <empty>
 
 [249/340] sw2 SW2(config)# do show etherchannel 4 summary
-  EtherChannel: no detail
+       ^
+  % Invalid input detected at '^' marker.
 
 [250/340] sw2 SW2(config)# interface GigabitEthernet0/1
 <empty>
@@ -1632,12 +1651,12 @@ Total steps: 340
 
 [266/340] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.910 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.680 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=3.345 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.858 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.680/1.795/2.910/1.115 ms
+  rtt min/avg/max/mdev = 0.858/2.102/3.345/1.244 ms
 
 [267/340] sw1 SW1# show running-config
   Building configuration...

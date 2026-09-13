@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-09-10T16:29:55.282Z
+Generated: 2026-09-13T11:38:02.640Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -246,10 +246,11 @@ Total steps: 311
 <empty>
 
 [61/311] r1 R1(config-router)# area 2 nssa default-information-originate
-<empty>
+                                ^
+  % Invalid input detected at '^' marker.
 
 [62/311] r1 R1(config-router)# area 2 nssa no-summary
-<empty>
+  % OSPF: totally-NSSA (no-summary) is not implemented in this simulator — OSPFAreaType has no totally-nssa value.
 
 [63/311] r1 R1(config-router)# area 3 range 10.30.0.0 255.255.0.0
 <empty>
@@ -270,10 +271,12 @@ Total steps: 311
 <empty>
 
 [69/311] r1 R1(config-router)# area 1 virtual-link 2.2.2.2 authentication message-digest
-<empty>
+                                                ^
+  % Invalid input detected at '^' marker.
 
 [70/311] r1 R1(config-router)# area 1 virtual-link 2.2.2.2 message-digest-key 1 md5 cisco
-<empty>
+                                                ^
+  % Invalid input detected at '^' marker.
 
 [71/311] r1 R1(config-router)# area 1 sham-link 1.1.1.1 2.2.2.2
 <empty>
@@ -1065,7 +1068,7 @@ Total steps: 311
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3225AE1F
+  Processor board ID FTX3919PY2Z
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1075,9 +1078,9 @@ Total steps: 311
 [204/311] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 2194 bytes
+  Current configuration : 2328 bytes
   !
-  ! Last configuration change at 16:29:57 UTC Thu Sep 10 2026 by console
+  ! Last configuration change at 11:38:04 UTC Sun Sep 13 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1151,13 +1154,18 @@ Total steps: 311
    network 10.10.8.0 0.0.0.255 area 2
    network 192.168.1.0 0.0.0.255 area 0
    network 10.0.0.0 0.0.0.3 area 0
-   passive-interface GigabitEthernet0/0
-   passive-interface GigabitEthernet0/2
-   passive-interface GigabitEthernet0/3
-   passive-interface Loopback1
-   passive-interface Loopback2
-   passive-interface Loopback3
-   passive-interface Loopback4
+   area 1 default-cost 10
+   area 1 stub no-summary
+   area 2 nssa
+   area 0 authentication message-digest
+   area 0 range 192.168.0.0 255.255.0.0
+   area 3 range 10.30.0.0 255.255.0.0
+   area 1 virtual-link 2.2.2.2
+   area 1 sham-link 1.1.1.1 2.2.2.2
+   auto-cost reference-bandwidth 10000
+   timers throttle lsa 0 50 5000
+   timers throttle spf 10 100 5000
+   passive-interface default
   !
   access-list 10 permit 172.16.0.0 0.0.255.255
   !
@@ -1618,17 +1626,17 @@ Total steps: 311
   
   Log Buffer (4096 bytes):
   
-  *Sep 10 16:29:55.277: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 10 16:29:55.277: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 10 16:29:55.279: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 10 16:29:55.279: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 10 16:29:55.555: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:55.798: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:55.948: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:56.418: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:56.577: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:56.686: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:57.450: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:38:02.634: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 13 11:38:02.635: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 13 11:38:02.636: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 13 11:38:02.636: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 13 11:38:02.938: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:38:03.240: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:38:03.413: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:38:03.818: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:38:03.987: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:38:04.135: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:38:04.573: %SYS-5-CONFIG_I: Configured from console by console
 
 [238/311] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1639,8 +1647,8 @@ Total steps: 311
 [239/311] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 300 (1/100 of seconds), resolution is 4001
-  reference time is EE4D5986.249BA5E3 (16:29:58.143 UTC Thu Sep 10 2026)
+  ntp uptime is 200 (1/100 of seconds), resolution is 4001
+  reference time is EE51099D.174BC6A7 (11:38:05.091 UTC Sun Sep 13 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1651,7 +1659,7 @@ Total steps: 311
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [241/311] r1 R1# show clock
-  *16:29:58.000 UTC Thu Sep 10 2026
+  *11:38:05.000 UTC Sun Sep 13 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1837,7 +1845,7 @@ Total steps: 311
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3225AE1F
+  Processor board ID FTX3919PY2Z
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1847,9 +1855,9 @@ Total steps: 311
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 2194 bytes
+  Current configuration : 2328 bytes
   !
-  ! Last configuration change at 16:29:57 UTC Thu Sep 10 2026 by console
+  ! Last configuration change at 11:38:04 UTC Sun Sep 13 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1923,13 +1931,18 @@ Total steps: 311
    network 10.10.8.0 0.0.0.255 area 2
    network 192.168.1.0 0.0.0.255 area 0
    network 10.0.0.0 0.0.0.3 area 0
-   passive-interface GigabitEthernet0/0
-   passive-interface GigabitEthernet0/2
-   passive-interface GigabitEthernet0/3
-   passive-interface Loopback1
-   passive-interface Loopback2
-   passive-interface Loopback3
-   passive-interface Loopback4
+   area 1 default-cost 10
+   area 1 stub no-summary
+   area 2 nssa
+   area 0 authentication message-digest
+   area 0 range 192.168.0.0 255.255.0.0
+   area 3 range 10.30.0.0 255.255.0.0
+   area 1 virtual-link 2.2.2.2
+   area 1 sham-link 1.1.1.1 2.2.2.2
+   auto-cost reference-bandwidth 10000
+   timers throttle lsa 0 50 5000
+   timers throttle spf 10 100 5000
+   passive-interface default
   !
   access-list 10 permit 172.16.0.0 0.0.255.255
   !
@@ -2246,21 +2259,21 @@ Total steps: 311
   
   Log Buffer (4096 bytes):
   
-  *Sep 10 16:29:55.277: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 10 16:29:55.277: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 10 16:29:55.279: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 10 16:29:55.279: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 10 16:29:55.555: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:55.798: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:55.948: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:56.418: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:56.577: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:56.686: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 10 16:29:57.450: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:38:02.634: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 13 11:38:02.635: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 13 11:38:02.636: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 13 11:38:02.636: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 13 11:38:02.938: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:38:03.240: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:38:03.413: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:38:03.818: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:38:03.987: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:38:04.135: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 13 11:38:04.573: %SYS-5-CONFIG_I: Configured from console by console
 
 [255/311] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX3225AE1F
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX3919PY2Z
 
 [256/311] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2385,7 +2398,7 @@ Total steps: 311
 [268/311] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 2194 bytes
+  Current configuration : 2328 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
@@ -2447,13 +2460,18 @@ Total steps: 311
    network 10.10.8.0 0.0.0.255 area 2
    network 192.168.1.0 0.0.0.255 area 0
    network 10.0.0.0 0.0.0.3 area 0
-   passive-interface GigabitEthernet0/0
-   passive-interface GigabitEthernet0/2
-   passive-interface GigabitEthernet0/3
-   passive-interface Loopback1
-   passive-interface Loopback2
-   passive-interface Loopback3
-   passive-interface Loopback4
+   area 1 default-cost 10
+   area 1 stub no-summary
+   area 2 nssa
+   area 0 authentication message-digest
+   area 0 range 192.168.0.0 255.255.0.0
+   area 3 range 10.30.0.0 255.255.0.0
+   area 1 virtual-link 2.2.2.2
+   area 1 sham-link 1.1.1.1 2.2.2.2
+   auto-cost reference-bandwidth 10000
+   timers throttle lsa 0 50 5000
+   timers throttle spf 10 100 5000
+   passive-interface default
   access-list 10 permit 172.16.0.0 0.0.255.255
   ipv6 unicast-routing
   route-map RM-OSPF permit 10
@@ -2615,20 +2633,12 @@ Total steps: 311
 
 [304/311] r1 R1(config)# interface ?
     BVI              Bridge-Group Virtual Interface
-    BVI              Bridge-Group Virtual Interface
-    Ethernet         IEEE 802.3
     Ethernet         IEEE 802.3
     FastEthernet     FastEthernet IEEE 802.3u
-    FastEthernet     FastEthernet IEEE 802.3u
-    GigabitEthernet  GigabitEthernet IEEE 802.3z
     GigabitEthernet  GigabitEthernet IEEE 802.3z
     Loopback         Loopback interface
-    Loopback         Loopback interface
-    Port-channel     Ethernet Channel of interfaces
     Port-channel     Ethernet Channel of interfaces
     Serial           Serial
-    Serial           Serial
-    Tunnel           Tunnel interface
     Tunnel           Tunnel interface
 
 [305/311] r1 R1(config)# ip ?
@@ -2646,8 +2656,8 @@ Total steps: 311
     domain-lookup      Enable IP Domain Name System hostname translation
     domain-name        Define the default domain name
     finger             Enable finger service
-    flow-cache         NetFlow cache timeout
-    flow-export        Legacy NetFlow export
+    flow-cache         How long an active flow stays in the cache
+    flow-export        Address of the NetFlow collector
     gratuitous-arps    Send gratuitous ARP
     host               Add a host to the host table
     http               Enable HTTP server
@@ -2658,7 +2668,7 @@ Total steps: 311
     pim                Configure static PIM RP address
     prefix-list        Build a prefix list
     route              Establish static routes in a VRF
-    route-cache        Route cache
+    route-cache        Enable NetFlow on all interfaces
     routing            Enable IP routing
     scp                Enable the SCP server
     sla                Configure an IP SLAs operation
@@ -2683,7 +2693,6 @@ Total steps: 311
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     pki          Declare a PKI trustpoint
-    <cr>
 
 [308/311] r1 R1(config)# no ?
     aaa            Enable NEW access control commands and functions
@@ -2693,38 +2702,38 @@ Total steps: 311
     banner         Remove a banner
     boot           Specify system image to load
     cdp            Enable CDP globally
-    clock          Hardware calendar is a valid time source
+    clock          Remove hardware calendar is a valid time source
     crypto         Encryption module
     enable         Set enable secret
-    event          Embedded Event Manager
+    event          Register an EEM applet
     hostname       Set system hostname
     interface      Remove a virtual interface
-    ip             Enable IP routing
+    ip             Disable IP routing
     ipv6           IPv6 interface subcommands
-    key            Key management
+    key            Define a key chain
     line           Enter line configuration
     lldp           Enable LLDP globally
     logging        Count every log message and timestamp last occurrence
     login          Set the login blocking period
     ntp            Authenticate time sources
-    object-group   Configure object-group
-    parser         Define a CLI view
+    object-group   Remove a network object group
+    parser         Remove a CLI view
     priority-list  Remove build a priority list
-    privilege      Configure command privilege levels
+    privilege      Remove a command privilege rule
     queue-list     Remove build a custom queue list
-    radius         RADIUS server configuration
+    radius         Remove a named RADIUS server
     radius-server  Specify a RADIUS server
     route-map      Remove a route-map
     router         Enter RIP routing protocol configuration
     service        Disable a network based service
     snmp-server    Set community string and access privs
     sntp           SNTP server (alias for ntp server)
-    tacacs         TACACS+ server configuration
+    tacacs         Remove a named TACACS+ server
     tacacs-server  Specify a TACACS+ server
     time-range     Remove a time range
     track          Remove a tracked object
     username       Remove a local user
-    vrf            Configure a VRF
+    vrf            Remove configure a vrf
 
 [309/311] r1 R1(config)# end
 <empty>

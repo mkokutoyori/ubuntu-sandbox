@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-networking
-Generated: 2026-09-10T16:21:30.855Z
+Generated: 2026-09-13T10:58:27.722Z
 Engine: linux
 host=L-SRV-NET-DBG (linux-server) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -1082,18 +1082,18 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-09-10 16:21:33--  http://192.168.10.1
+  --2026-09-13 10:58:30--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [172/302]> wget -q http://192.168.10.1
 <empty>
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-09-10 16:21:33--  http://192.168.10.1
+  --2026-09-13 10:58:30--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-09-10 16:21:33--  http://192.168.10.99
+  --2026-09-13 10:58:30--  http://192.168.10.99
   Connecting to 192.168.10.99:80... failed: Connection refused.
 
 $ [175/302]> curl
@@ -1313,29 +1313,78 @@ $ [217/302]> arping -c 1 192.168.10.99
 
 --- [218] § clés & SSH ---
 $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
-<empty>
+  Generating public/private rsa key pair.
+  Your identification has been saved in /tmp/id_rsa
+  Your public key has been saved in /tmp/id_rsa.pub
+  The key fingerprint is:
+  SHA256:fqr5zxSOToDa8NF+2qfuBQbCiU7PGDAmoPRKeYDiLaY root@linux-server (RSA)
+  The key's randomart image is:
+  +--[RSA   ]----+
+  |B*@#*O+XX ^BXo/*B|
+  |^o+#@+X%=^.X. .B*|
+  |@#*O+XX ^BXo/*B^o|
+  |+#@+X%=^.X. .B*@#|
+  |*O+XX ^BXo/*B^o+#|
+  |@+X%=^.X. .B*@#*O|
+  |+XX ^BXo/*B^o+#@+|
+  |X%=^.X. .B*@#*O+X|
+  |X ^BXo/*B^o+#@+X%|
+  +----[SHA256]-----+
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 root root 77 Sep 10 16:21 /tmp/id_rsa
-  -rw-r--r-- 1 root root 42 Sep 10 16:21 /tmp/id_rsa.pub
+  -rw------- 1 root root 638 Sep 13 10:58 /tmp/id_rsa
+  -rw-r--r-- 1 root root 399 Sep 13 10:58 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAe63ho16luma root@linux-server
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAM2WCTWNiVb37ott4XxW4ECCrkNhMlBg7XDWJmF224zu0CWzuu+Wj3GGqiILo6FFJZUCQYCnTx3wZuiC704ClTVemD2bw7w4L/wHZtQH+F7vaiwPR8hHFQ0RpDf+mUr1fu9PTST6Ro/MYPvVEdn9HRnSw8M10W5GzrnSeRdO7VE6RNz2O19YZYITpNz1P0cuV/Xp9VImhmuiEJmG+W2JxMWmGqe4bhBR1lDGxxUfQIs4EbrNIWgihNqmSn4QlHPvAQCcpk74LNYWR3IOscP7kbNhMRs/oQ6SN1axl73aFaQoUxLZ2Gc+obkds/eWPs4lSV8vebWnXAM96AlXpkK9GQY= root@linux-server
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
-<empty>
+  Generating public/private ed25519 key pair.
+  Your identification has been saved in /tmp/id_ed25519
+  Your public key has been saved in /tmp/id_ed25519.pub
+  The key fingerprint is:
+  SHA256:07akEkwKVKx0nC/vLj++st533D4WiyyZDn1TdGBBVz8 root@linux-server (ED25519)
+  The key's randomart image is:
+  +--[ED25519]----+
+  |.o^+.%@O&Bo^.+%/#|
+  |^%oO=^+^*X&B*#+.o|
+  |^+.%@O&Bo^.+%/#^%|
+  |oO=^+^*X&B*#+.o^+|
+  |.%@O&Bo^.+%/#^%oO|
+  |=^+^*X&B*#+.o^+.%|
+  |@O&Bo^.+%/#^%oO=^|
+  |+^*X&B*#+.o^+.%@O|
+  |&Bo^.+%/#^%oO=^+^|
+  +----[SHA256]-----+
 
 $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
-<empty>
+  Generating public/private ed25519 key pair.
+  Your identification has been saved in /root/.ssh/id_ed25519
+  Your public key has been saved in /root/.ssh/id_ed25519.pub
+  The key fingerprint is:
+  SHA256:0ZXaCWn67jnjH8BtFXQ/8HsAXEJ4Wfc8fSVln4g329I root@linux-server (ED25519)
+  The key's randomart image is:
+  +--[ED25519]----+
+  |^^X@ %/#o.#=B&+ +|
+  | oB ^O *O&@.%@ ^^|
+  |X@ %/#o.#=B&+ + o|
+  |B ^O *O&@.%@ ^^X@|
+  | %/#o.#=B&+ + oB |
+  |^O *O&@.%@ ^^X@ %|
+  |/#o.#=B&+ + oB ^O|
+  | *O&@.%@ ^^X@ %/#|
+  |o.#=B&+ + oB ^O *|
+  +----[SHA256]-----+
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAA3jnhischh2g root@localhost
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAM2WCTWNiVb37ott4XxW4ECCrkNhMlBg7XDWJmF224zu0CWzuu+Wj3GGqiILo6FFJZUCQYCnTx3wZuiC704ClTVemD2bw7w4L/wHZtQH+F7vaiwPR8hHFQ0RpDf+mUr1fu9PTST6Ro/MYPvVEdn9HRnSw8M10W5GzrnSeRdO7VE6RNz2O19YZYITpNz1P0cuV/Xp9VImhmuiEJmG+W2JxMWmGqe4bhBR1lDGxxUfQIs4EbrNIWgihNqmSn4QlHPvAQCcpk74LNYWR3IOscP7kbNhMRs/oQ6SN1axl73aFaQoUxLZ2Gc+obkds/eWPs4lSV8vebWnXAM96AlXpkK9GQY= root@linux-server
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]
 
 $ [225/302]> ssh root@192.168.10.99
   ssh: connect to host 192.168.10.99 port 22: Network is unreachable
+  
 
 $ [226/302]> ssh-keyscan 192.168.10.1
   # 192.168.10.1 unknown host

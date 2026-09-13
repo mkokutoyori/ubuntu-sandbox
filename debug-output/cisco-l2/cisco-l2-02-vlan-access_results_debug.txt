@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-02-vlan-access
-Generated: 2026-09-10T16:30:54.842Z
+Generated: 2026-09-13T11:41:47.827Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=VLAN lifecycle/ranges, access ports, inter-switch trunks, VLAN isolation, voice VLAN
 Total steps: 360
@@ -793,13 +793,13 @@ Total steps: 360
 --- [213] § connectivity: same VLAN across switches ---
 [213/360] l1 l1$ ping -c 3 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=4.452 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.385 ms
-  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=2.867 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=4.842 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.557 ms
+  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=1.065 ms
   
   --- 192.168.1.21 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.385/2.901/4.452/1.252 ms
+  rtt min/avg/max/mdev = 1.065/2.488/4.842/1.676 ms
 
 [214/360] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -810,13 +810,13 @@ Total steps: 360
 
 [215/360] l2 l2$ ping -c 3 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.830 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.937 ms
-  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=1.013 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.959 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=1.104 ms
+  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=0.718 ms
   
   --- 192.168.1.11 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.830/0.927/1.013/0.075 ms
+  rtt min/avg/max/mdev = 0.718/0.927/1.104/0.159 ms
 
 [216/360] sw1 SW1# show mac address-table vlan 10
   Mac Address Table
@@ -906,21 +906,21 @@ Total steps: 360
 [227/360] w2 w2$ ping -n 1 192.168.1.11
   
   Pinging 192.168.1.11 with 32 bytes of data:
-  Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.11: bytes=32 time=2ms TTL=64
   
   Ping statistics for 192.168.1.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 2ms, Maximum = 2ms, Average = 2ms
 
 [228/360] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=2.467 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.935 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=1.187 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.879 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.935/1.701/2.467/0.766 ms
+  rtt min/avg/max/mdev = 0.879/1.033/1.187/0.154 ms
 
 
 --- [229] § voice VLAN ---
