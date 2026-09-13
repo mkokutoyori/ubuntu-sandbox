@@ -605,6 +605,7 @@ export class GetUniqueCmdlet implements ICmdlet {
 export class TeeObjectCmdlet implements ICmdlet {
   readonly name = 'tee-object';
   readonly parameters = ['FilePath', 'LiteralPath', 'InputObject', 'Append', 'Variable'] as const;
+  readonly parameterValues = { FilePath: 'path', LiteralPath: 'path' } as const;
   readonly aliases = ['tee'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -680,6 +681,7 @@ export class CompareObjectCmdlet implements ICmdlet {
 export class SelectStringCmdlet implements ICmdlet {
   readonly name = 'select-string';
   readonly parameters = ['Pattern', 'Path', 'LiteralPath', 'InputObject', 'SimpleMatch', 'CaseSensitive', 'Quiet', 'List', 'NotMatch', 'AllMatches', 'Context'] as const;
+  readonly parameterValues = { Path: 'path', LiteralPath: 'path' } as const;
   readonly aliases = ['sls'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -784,6 +786,7 @@ export class FormatListCmdlet implements ICmdlet {
 export class FormatWideCmdlet implements ICmdlet {
   readonly name = 'format-wide';
   readonly aliases = ['fw'] as const;
+  readonly parameters = ['Column'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const items = toArray(ctx.pipeInput);

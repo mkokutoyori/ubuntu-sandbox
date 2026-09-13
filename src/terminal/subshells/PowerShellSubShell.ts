@@ -23,6 +23,7 @@ import type { WindowsShellSession } from '@/network/devices/windows/shell/Window
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { parseCredentialArg } from '@/powershell/cmdlets/core/RemotingCmdlets';
 import { makePSCredential, formatPSCredentialTable } from '@/powershell/credential/PSCredential';
+import type { ParameterValueKind } from '@/powershell/cmdlets/ICmdlet';
 
 /**
  * Tokens that bypass the interpreter and are handed straight to the
@@ -348,7 +349,18 @@ export class PowerShellSubShell implements ISubShell {
       return this.completeParameter(commandWord, token);
     }
 
-    // 3) Command-name completion.
+    // 3) Parameter VALUE completion: the token before this one named a
+    //    parameter whose values the cmdlet declares.
+    if (!onCommandPosition) {
+      const previous = endsWithSpace ? segTokens[segTokens.length - 1] : segTokens[segTokens.length - 2];
+      if (previous && previous.startsWith('-')) {
+        const kind = this.interp.getParameterValueKind(commandWord, previous);
+        if (kind === 'path') return this.completePath(token);
+        if (kind !== null) return this.completeParameterValue(kind, token);
+      }
+    }
+
+    // 4) Command-name completion.
     if (onCommandPosition) {
       const prefix = token.toLowerCase();
       return this.interp.listCommandNames()
@@ -356,8 +368,17 @@ export class PowerShellSubShell implements ISubShell {
         .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
     }
 
-    // 4) Filesystem path completion.
+    // 5) Filesystem path completion.
     return this.completePath(token);
+  }
+
+  private completeParameterValue(kind: ParameterValueKind, token: string): string[] {
+    const quote = token.startsWith('"') || token.startsWith("'") ? token[0] : '';
+    const stem = (quote ? token.slice(1) : token).toLowerCase();
+    return this.interp.getParameterValues(kind)
+      .filter(v => v.toLowerCase().startsWith(stem))
+      .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+      .map(v => (/\s/.test(v) ? `"${v}"` : v));
   }
 
   /** Substring after the last unquoted `| ; & ( { ` separator. */

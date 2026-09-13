@@ -173,16 +173,10 @@ export function registerIPSecShowCommands(
     ].join('\n')).join('\n\n');
   });
 
-  const debugSvc = () => getRouter().getDebugService();
   const PKI_REFUS = '% Crypto PKI has no trace point on this platform:'
     + ' the certificate engine publishes no enrolment or validation event';
   trie.registerGreedy('debug crypto pki', 'Enable PKI debug', () => PKI_REFUS);
   trie.registerGreedy('no debug crypto pki', 'Disable PKI debug', () => PKI_REFUS);
-  trie.register('show debugging', 'Display active debug flags', () => debugSvc().format());
-  trie.register('show debug condition', 'Display standing debug conditions',
-    () => debugSvc().formatConditions());
-  trie.register('show debugging condition', 'Display standing debug conditions',
-    () => debugSvc().formatConditions());
 
   const nhrp = () => getRouter().getNhrpService();
   trie.register('show ip nhrp', 'Display NHRP cache', () => nhrp().formatCache());
@@ -198,6 +192,16 @@ const DEJA_AU_SOCLE = new Set(
   SHOW_CRYPTO_FAMILY.map(spec =>
     spec.path.filter((step): step is string => typeof step === 'string').join(' ')));
 
+/**
+ * Ce que ce constructeur confie au socle.
+ *
+ * Il en enregistre trois familles : `show crypto`, les vues NHRP/DMVPN,
+ * et les vues de debogage. Les deux premieres sont des vues sans
+ * argument ou a place simple, et elles passent ; `show debugging` reste
+ * a l'arbre, sa famille vivant encore la-bas.
+ */
+const CONFIEES_AU_SOCLE = /^show (crypto|ip nhrp|dmvpn)(\s|$)/;
+
 export function cryptoShowSpecs(ctx: Parameters<typeof registerIPSecShowCommands>[1]): CommandSpec[] {
   return specsFromTrieRegistrations(
     (collector) => registerIPSecShowCommands(collector as unknown as CommandTrie, ctx),
@@ -208,7 +212,7 @@ export function cryptoShowSpecs(ctx: Parameters<typeof registerIPSecShowCommands
         'show crypto ipsec sa interface': 'Interface name',
         'show crypto map interface': 'Interface name',
       })[path],
-      skip: (path) => !path.startsWith('show crypto') || DEJA_AU_SOCLE.has(path),
+      skip: (path) => !CONFIEES_AU_SOCLE.test(path) || DEJA_AU_SOCLE.has(path),
     },
   );
 }

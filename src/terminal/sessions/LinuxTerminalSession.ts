@@ -105,10 +105,7 @@ import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISs
 import { TerminalSshInteractionHandler } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
 import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols/ssh/session/QueuedTerminalIO';
 import { isOk } from '@/network/protocols/ssh/Result';
-import {
-  parseSshKeygenArgs,
-  generateAndWriteKeyPair,
-} from '@/network/protocols/ssh/SshKeygen';
+import { defaultKeygenFile } from '@/network/protocols/ssh/SshKeygenCommand';
 import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
 import { parseScpArgs } from '@/network/protocols/ssh/Scp';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
@@ -2412,7 +2409,7 @@ export class LinuxTerminalSession extends TerminalSession {
       const expandedArgs = [...meta.args];
       if (!expandedArgs.includes('-f')) expandedArgs.push('-f', filePath);
       if (!expandedArgs.includes('-N')) expandedArgs.push('-N', passphrase);
-      this.runSshKeygen(expandedArgs);
+      void this.runSshKeygen(expandedArgs);
       return;
     }
     const sshCopyMeta = ctx.metadata.get('enter_ssh_copy_id') as string | undefined;
@@ -3262,13 +3259,17 @@ export class LinuxTerminalSession extends TerminalSession {
     };
     const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
     const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
-    const opts = parseSshKeygenArgs(args, homeDir);
+    const typeIndex = args.indexOf('-t');
+    const defaultFile = defaultKeygenFile(
+      { separator: '/', sshDir: `${homeDir}/.ssh` },
+      typeIndex >= 0 ? (args[typeIndex + 1] ?? '').toLowerCase() : 'ed25519',
+    );
     const hasFlagF = args.includes('-f');
     const hasFlagN = args.includes('-N');
 
     // Both -f and -N supplied → non-interactive.
     if (hasFlagF && hasFlagN) {
-      this.runSshKeygen(args);
+      void this.runSshKeygen(args);
       return;
     }
 
@@ -3277,7 +3278,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (!hasFlagF) {
       steps.push({
         type: 'text',
-        prompt: `Enter file in which to save the key (${opts.file}): `,
+        prompt: `Enter file in which to save the key (${defaultFile}): `,
         storeAs: 'keygen_file',
       });
     }
@@ -3300,45 +3301,23 @@ export class LinuxTerminalSession extends TerminalSession {
       action: async (ctx: FlowContext) => {
         ctx.metadata.set(
           'enter_ssh_keygen',
-          JSON.stringify({ args, defaultFile: opts.file }),
+          JSON.stringify({ args, defaultFile }),
         );
       },
     });
     this.startFlowFromSteps(steps, `ssh-keygen ${args.join(' ')}`);
   }
 
-  /**
-   * Non-interactive `ssh-keygen` (BRD SSH-03-R1..R3, R10).
-   * Writes the key pair under ~/.ssh/ on the local VFS.
-   */
-  private runSshKeygen(args: string[]): void {
-    const dev = this.device as unknown as {
-      executor?: {
-        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
-        userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined };
-      };
-    };
-    const localVfs = dev.executor?.vfs;
-    if (!localVfs) {
+  private async runSshKeygen(args: string[]): Promise<void> {
+    const dev = this.device as unknown as { executeCommand?(line: string): Promise<string> | string };
+    if (typeof dev.executeCommand !== 'function') {
       this.addLine('ssh-keygen: this device has no filesystem', 'error');
       this.notify();
       return;
     }
-    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
-    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
-    const opts = parseSshKeygenArgs(args, homeDir);
-    const result = generateAndWriteKeyPair(
-      localVfs,
-      userEntry?.uid ?? 1000,
-      userEntry?.gid ?? 1000,
-      opts,
-    );
-    if ('error' in result) {
-      this.addLine(`ssh-keygen: ${result.error}`, 'error');
-      this.notify();
-      return;
-    }
-    for (const line of result.output) this.addLine(line);
+    const quoted = args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+    const out = await dev.executeCommand(`ssh-keygen ${quoted}`);
+    for (const line of String(out).split('\n')) this.addLine(line);
     this.notify();
   }
 

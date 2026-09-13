@@ -120,7 +120,12 @@ import { LinuxServiceManager } from './LinuxServiceManager';
 import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService } from './LinuxProcessCommands';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
-import { runSshClient } from './network/LinuxSshClient';
+import { runSshClient, wireExecTarget, wireReachOutcome } from './network/LinuxSshClient';
+import { runSshKeygenCommand, vfsKeygenHost, type SshKeygenHost } from '@/network/protocols/ssh/SshKeygenCommand';
+import {
+  runSshAddCommand, runSshAgentCommand, type SshAgentHost,
+} from '@/network/protocols/ssh/SshAgentCommands';
+import { runSshKeyscanCommand } from '@/network/protocols/ssh/SshKeyscanCommand';
 import { findHostByAddress, isPathReachable, findReachableHost } from './network/HostLookup';
 import type { ProbedHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { runTruncate } from './commands/fs/Truncate';
@@ -315,6 +320,8 @@ function stateLabel(s: string): string {
   }
 }
 
+const SSH_COPY_ID_VALUE_FLAGS: ReadonlySet<string> = new Set(['-p', '-o', '-F', '-t']);
+
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
   readonly mountTable: MountTable;
@@ -500,6 +507,20 @@ export class LinuxCommandExecutor {
    * host when real credentials are available (audit 03, MAJEUR §4).
    */
   private tcpConnector: ((host: string, port: number) => Promise<unknown>) | null = null;
+
+  private sshpassPassword: string | undefined;
+
+  async runSshpassWrapped(
+    argv: string[], password: string | undefined, stdin?: string,
+  ): Promise<{ output: string; exitCode: number; stderr?: string }> {
+    const previous = this.sshpassPassword;
+    this.sshpassPassword = password;
+    try {
+      return await this.dispatchMaybeNetwork(argv, this._cmdEnv, false, stdin, false);
+    } finally {
+      this.sshpassPassword = previous;
+    }
+  }
   setTcpConnector(connector: ((host: string, port: number) => Promise<unknown>) | null): void {
     this.tcpConnector = connector;
   }
@@ -1210,7 +1231,7 @@ export class LinuxCommandExecutor {
    * Mirrors real OpenSSH where these tools fail with the same
    * "Connection refused" / "Could not resolve hostname" as the parent.
    */
-  private runSshTransport(
+  runSshTransport(
     cmd: 'scp' | 'sftp' | 'rsync', args: string[], stdinArg?: string, offeredPassword?: string,
   ): { output: string; exitCode: number } {
     // Extract the destination spec: user@host[:path] (positional argv).
@@ -1272,13 +1293,9 @@ export class LinuxCommandExecutor {
       const bIdx = args.indexOf('-b');
       let stdin = stdinArg ?? '';
       if (bIdx >= 0) {
-        const batchPath = args[bIdx + 1];
-        if (!batchPath) return { output: 'sftp: missing argument to -b', exitCode: 1 };
-        const body = this.vfs.readFile(this.vfs.normalizePath(batchPath, this.cwd));
-        if (body === null) {
-          return { output: `Couldn't open ${batchPath}: No such file or directory`, exitCode: 1 };
-        }
-        stdin = body;
+        const batch = this.readSftpBatch(args[bIdx + 1], stdin);
+        if (typeof batch !== 'string') return batch;
+        stdin = batch;
       }
       const found = findHostByAddress(hostPart, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
       const remoteUserName = userMatch ? userMatch[1] : this.userMgr.currentUser;
@@ -1477,13 +1494,9 @@ export class LinuxCommandExecutor {
     const bIdx = args.indexOf('-b');
     let stdin = stdinArg ?? '';
     if (bIdx >= 0) {
-      const batchPath = args[bIdx + 1];
-      if (!batchPath) return { output: 'sftp: missing argument to -b', exitCode: 1 };
-      const body = this.vfs.readFile(this.vfs.normalizePath(batchPath, this.cwd));
-      if (body === null) {
-        return { output: `Couldn't open ${batchPath}: No such file or directory`, exitCode: 1 };
-      }
-      stdin = body;
+      const batch = this.readSftpBatch(args[bIdx + 1], stdin);
+      if (typeof batch !== 'string') return batch;
+      stdin = batch;
     }
     const refusedSftp = unauthenticated();
     if (refusedSftp) return refusedSftp;
@@ -1507,6 +1520,7 @@ export class LinuxCommandExecutor {
       }),
       remote: remoteFs,
       initialLocalCwd: this.cwd,
+      initialRemoteCwd: remoteFs.initialCwd?.() ?? undefined,
     });
     session.run(SftpCommandScript.parse(stdin));
     return { output: `Connected to ${hostPart}.\n${session.transcript}\nsftp> `, exitCode: 0 };
@@ -1521,9 +1535,21 @@ export class LinuxCommandExecutor {
    * doesn't match over the real pipeline), letting the caller fall
    * back to the direct in-memory resolution.
    */
-  private async tryOpenWireSftpFs(
+  private readSftpBatch(
+    batchPath: string | undefined, standardInput: string,
+  ): string | { output: string; exitCode: number } {
+    if (!batchPath) return { output: 'sftp: missing argument to -b', exitCode: 1 };
+    if (batchPath === '-') return standardInput;
+    const body = this.vfs.readFile(this.vfs.normalizePath(batchPath, this.cwd));
+    if (body === null) {
+      return { output: `Couldn't open ${batchPath}: No such file or directory`, exitCode: 1 };
+    }
+    return body;
+  }
+
+  private async openWireSshSession(
     host: string, user: string, password: string, port = 22, identities: string[] = [],
-  ): Promise<ISftpFileSystem | null> {
+  ): Promise<SshSession | null> {
     if (!this.tcpConnector) return null;
     const connector = this.tcpConnector;
     const session = new SshSession({
@@ -1546,9 +1572,80 @@ export class LinuxCommandExecutor {
     }
     const result = await session.connect(builder.build());
     if (!isOk(result)) { session.disconnect(); return null; }
+    return session;
+  }
+
+  private async tryOpenWireSftpFs(
+    host: string, user: string, password: string, port = 22, identities: string[] = [],
+  ): Promise<ISftpFileSystem | null> {
+    const session = await this.openWireSshSession(host, user, password, port, identities);
+    if (!session) return null;
     const channelResult = session.openSftpChannel();
     if (!isOk(channelResult)) { session.disconnect(); return null; }
     return new WireSftpFileSystem(channelResult.value);
+  }
+
+  async runSshExecAsync(
+    rawArgs: string[], offeredPassword?: string,
+  ): Promise<{ output: string; exitCode: number }> {
+    const args = rawArgs.map(word => this.expandTilde(word));
+    const stdinPwd = (offeredPassword
+      ?? (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '')
+      .split('\n')[0] || undefined;
+    const opts = this.buildSshClientOpts(args, this._cmdEnv, stdinPwd);
+    const target = wireExecTarget(args, this.vfs, this.cwd, this.userMgr.currentUser);
+    const reachable = target !== null
+      && wireReachOutcome(this.localDevice, target.host, target.port) === 'open';
+    const session = reachable && target !== null
+      ? await this.openWireSshSession(
+        target.host, target.user, stdinPwd ?? '', target.port, target.identities)
+      : null;
+    if (!session) return this.finishSshClientResult(runSshClient(opts));
+    try {
+      return this.finishSshClientResult(runSshClient({
+        ...opts,
+        wireAuthenticated: true,
+        execRelay: (command) => {
+          const channel = session.openExecChannel(command);
+          if (!isOk(channel)) return null;
+          const result = channel.value.run();
+          channel.value.close();
+          return result === null
+            ? null
+            : { output: result.stdout, exitCode: result.exitCode };
+        },
+      }), true);
+    } finally {
+      session.disconnect();
+    }
+  }
+
+  private finishSshClientResult(
+    result: ReturnType<typeof runSshClient>, onWire = false,
+  ): { output: string; exitCode: number } {
+    if (!onWire && result.connection) {
+      const entry = this.socketTable?.connect(
+        'tcp', result.connection.localIp, 0,
+        result.connection.peerIp, result.connection.peerPort,
+        undefined, 'ssh',
+      );
+      const srcPort = entry?.localPort ?? 49152 + Math.floor(Math.random() * 16000);
+      this.mirrorSshHandshakeCapture(
+        { ip: result.connection.localIp, port: srcPort },
+        { ip: result.connection.peerIp, port: result.connection.peerPort },
+      );
+      this.emitSshWire(result.connection.localIp, srcPort, result.connection.peerIp, result.connection.peerPort);
+      if (entry) this.socketTable?.transition(entry.id, 'TIME_WAIT');
+    }
+    if (result.droppedSyn) {
+      const srcPort = this.socketTable?.allocateEphemeralPort()
+        ?? 49152 + Math.floor(Math.random() * 16000);
+      this.captureLog.captureTcpSynDropped(
+        { ip: result.droppedSyn.localIp, port: srcPort },
+        { ip: result.droppedSyn.peerIp, port: result.droppedSyn.peerPort },
+      );
+    }
+    return { output: result.output, exitCode: result.exitCode };
   }
 
   /**
@@ -1624,8 +1721,20 @@ export class LinuxCommandExecutor {
     return cfg.chrootDirectory;
   }
 
+  /**
+   * `ssh` lit le `~/.ssh` de CELUI QUI LE TAPE.
+   *
+   * Cette methode rendait le foyer de `root` quel que soit l'utilisateur
+   * courant : un compte non privilegie voyait donc sa propre
+   * configuration cliente ignoree, et obeissait a celle de root — sa
+   * cle d'identite, son `ProxyJump`, son `StrictHostKeyChecking`, et
+   * son `known_hosts`. C'est le raccourci que ce depot refuse : la
+   * privilegie s'y perdait sans un mot.
+   */
   private sshHomeDir(): string {
-    return this.userMgr.getUser('root')?.home ?? '/root';
+    const user = this.userMgr.currentUser;
+    return this.userMgr.getUser(user)?.home
+      ?? (user === 'root' ? '/root' : `/home/${user}`);
   }
 
   /** Build the standard SshClientOpts (used by `ssh` and ssh-transport). */
@@ -1640,6 +1749,7 @@ export class LinuxCommandExecutor {
   }
 
   private buildSshClientOpts(args: string[], callerEnv?: Record<string, string>, offeredPassword?: string) {
+    const password = offeredPassword ?? this.sshpassPassword;
     const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     const user = this.userMgr.currentUser;
@@ -1658,10 +1768,12 @@ export class LinuxCommandExecutor {
       sourceIp,
       sourceUser: user,
       sourceHome: home,
+      sourceUid: this.userMgr.currentUid,
+      sourceGid: this.userMgr.currentGid,
       callerEnv: env,
       localForwarding: this.forwarding ?? undefined,
       localAgent: this.sshAgent,
-      offeredPassword,
+      offeredPassword: password,
       localVfs: {
         readFile: (p: string) => this.vfs.readFile(p),
         writeFile: (p: string, c: string, uid: number, gid: number, umask: number) =>
@@ -1820,117 +1932,25 @@ export class LinuxCommandExecutor {
   }
 
   private runSshKeyscan(args: string[]): { output: string; exitCode: number } {
-    let port = 22;
-    const positional: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-p' && i + 1 < args.length) { port = parseInt(args[++i], 10) || 22; }
-      else if (!args[i].startsWith('-')) positional.push(args[i]);
-    }
-    const host = positional[0];
-    if (!host) return { output: 'usage: ssh-keyscan [-Hv46cD] [-f file] [-p port] [-t type] [host | addrlist namelist]', exitCode: 1 };
-    const found = findHostByAddress(host, undefined, this.localDevice as never);
-    if (!found) return { output: `# ${host} unknown host`, exitCode: 1 };
-    const hostKey = this.sshHostKeyProbe?.(found.ip, port) ?? null;
-    if (!hostKey) return { output: `# ${host} no host key`, exitCode: 1 };
-    return { output: `${host} ${hostKey.algorithm} ${hostKey.publicKey}`, exitCode: 0 };
+    return runSshKeyscanCommand(args, {
+      resolve: (target: string) =>
+        findHostByAddress(target, undefined, this.localDevice as never)?.ip ?? null,
+      probe: (ip: string, port: number) => this.sshHostKeyProbe?.(ip, port) ?? null,
+    });
   }
 
-  /**
-   * `ssh-keygen -R <host>` — remove all entries matching the host from
-   * the local known_hosts. Other subcommands (-y, -F, -t) flow through
-   * the existing key-management dispatcher.
-   */
+  private keygenHost(): SshKeygenHost {
+    return vfsKeygenHost(this.vfs, {
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+      user: this.userMgr.currentUser,
+      hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+      sshDir: `${this.sshHomeDir()}/.ssh`,
+    });
+  }
+
   private runSshKeygen(args: string[]): { output: string; exitCode: number } {
-    if (args[0] === '-R' && args[1]) {
-      const path = `${this.sshHomeDir()}/.ssh/known_hosts`;
-      const existing = this.vfs.readFile(path) ?? '';
-      const before = SshKnownHostEntry.parseFile(existing);
-      const after = before.filter(e => !e.matches(args[1]));
-      this.vfs.writeFile(path, SshKnownHostEntry.serializeFile(after), 0, 0, 0o022);
-      return { output: `# Host ${args[1]} found: line 1\n/root/.ssh/known_hosts updated.\nOriginal contents retained as /root/.ssh/known_hosts.old`, exitCode: 0 };
-    }
-    // Fall back to the keypair generator already wired into handleSshAdd
-    // path. The existing implementation only supports -t / -f / -N / -q
-    // / -y for the simulator, which is enough for the new tests.
-    return this.handleSshKeygenLegacy(args);
-  }
-
-  /**
-   * Bridge to the legacy ssh-keygen handler kept inside handleSshAdd.
-   * Wraps the simple `-t / -f / -N / -y / -q` interface that has lived
-   * here for a while.
-   */
-  private handleSshKeygenLegacy(args: string[]): { output: string; exitCode: number } {
-    // The legacy bash interpreter saw `ssh-keygen` as an unknown command
-    // and returned "command not found". Provide a minimal compatible
-    // implementation that creates a file pair under -f and -N.
-    const fIdx = args.indexOf('-f');
-    const tIdx = args.indexOf('-t');
-    const keyType = tIdx >= 0 ? args[tIdx + 1].toLowerCase() : 'ed25519';
-    const algoPrefix = keyType === 'rsa' ? 'ssh-rsa'
-      : keyType === 'ecdsa' ? 'ecdsa-sha2-nistp256'
-      : 'ssh-ed25519';
-    const defaultFile = keyType === 'rsa' ? 'id_rsa' : keyType === 'ecdsa' ? 'id_ecdsa' : 'id_ed25519';
-    const file = fIdx >= 0 ? args[fIdx + 1] : `${this.sshHomeDir()}/.ssh/${defaultFile}`;
-
-    // `ssh-keygen -A` — regenerate all missing host-key types in the
-    // target directory (defaults to /etc/ssh). The simulator rewrites the
-    // ed25519/rsa/ecdsa pairs unconditionally so a subsequent client sees
-    // a different fingerprint, mirroring real-life key rotation.
-    if (args.includes('-A')) {
-      const fAfterA = fIdx >= 0 ? args[fIdx + 1] : '/etc/ssh';
-      const dir = fAfterA.replace(/\/$/, '');
-      for (const a of ['ed25519', 'rsa', 'ecdsa']) {
-        const algoTok = a === 'ed25519' ? 'ssh-ed25519' : a === 'rsa' ? 'ssh-rsa' : 'ecdsa-sha2-nistp256';
-        const rand = Math.random().toString(36).slice(2, 16) + Date.now().toString(36);
-        const host = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-        this.vfs.writeFile(`${dir}/ssh_host_${a}_key`, `-----BEGIN OPENSSH PRIVATE KEY-----\n(stub-${rand})\n-----END OPENSSH PRIVATE KEY-----\n`, 0, 0, 0o077);
-        this.vfs.writeFile(`${dir}/ssh_host_${a}_key.pub`, `${algoTok} AAAA${rand} root@${host}\n`, 0, 0, 0o022);
-      }
-      return { output: '', exitCode: 0 };
-    }
-
-    // `ssh-keygen -l -f <pubfile>` — print the fingerprint of a public key.
-    if (args.includes('-l')) {
-      const target = fIdx >= 0 ? args[fIdx + 1] : file;
-      const candidate = target.endsWith('.pub') ? target : `${target}.pub`;
-      const data = (this.vfs.readFile(candidate) ?? this.vfs.readFile(target) ?? '').trim();
-      if (!data) {
-        return { output: `${target}: No such file or directory`, exitCode: 1 };
-      }
-      const tokens = data.split(/\s+/);
-      const algoToken = tokens[0] ?? '';
-      const keyBlob = tokens[1] ?? '';
-      const comment = tokens.slice(2).join(' ') || `${this.userMgr.currentUser}@localhost`;
-      const algoLabel = algoToken.startsWith('ssh-ed25519') ? 'ED25519'
-        : algoToken.startsWith('ssh-rsa') ? 'RSA'
-        : algoToken.startsWith('ecdsa-') ? 'ECDSA'
-        : algoToken.toUpperCase();
-      const bits = algoLabel === 'RSA' ? 2048 : algoLabel === 'ECDSA' ? 256 : 256;
-      const seed = `fp:${algoToken}:${keyBlob}`;
-      let hash = 5381;
-      for (let i = 0; i < seed.length; i++) hash = ((hash * 33) ^ seed.charCodeAt(i)) >>> 0;
-      const bytes: number[] = [];
-      let h = hash;
-      for (let i = 0; i < 32; i++) { h = (h * 1664525 + 1013904223) >>> 0; bytes.push(h & 0xff); }
-      const fp = 'SHA256:' + btoa(String.fromCharCode(...bytes)).replace(/=+$/, '');
-      return { output: `${bits} ${fp} ${comment} (${algoLabel})`, exitCode: 0 };
-    }
-
-    if (args.includes('-y')) {
-      // Read the private key, output its public form (stub).
-      return { output: `ssh-ed25519 AAAA${Math.random().toString(36).slice(2, 16)} ${this.userMgr.currentUser}@localhost`, exitCode: 0 };
-    }
-    const sshDir = file.replace(/\/[^/]+$/, '');
-    const uid = this.userMgr.currentUid;
-    const gid = this.userMgr.currentGid;
-    if (!this.vfs.resolveInode(sshDir)) {
-      this.vfs.mkdirp(sshDir, 0o700, uid, gid);
-    }
-    const pubKey = `${algoPrefix} AAAA${Math.random().toString(36).slice(2, 16)} ${this.userMgr.currentUser}@${(this.vfs.readFile('/etc/hostname') ?? 'localhost').trim()}`;
-    this.vfs.writeFile(file, '-----BEGIN OPENSSH PRIVATE KEY-----\n(stub)\n-----END OPENSSH PRIVATE KEY-----\n', uid, gid, 0o077);
-    this.vfs.writeFile(`${file}.pub`, pubKey + '\n', uid, gid, 0o022);
-    return { output: '', exitCode: 0 };
+    return runSshKeygenCommand(args, this.keygenHost());
   }
 
   /**
@@ -1944,7 +1964,7 @@ export class LinuxCommandExecutor {
     for (let i = 0; i < args.length; i++) {
       const a = args[i];
       if (a === '-i' && args[i + 1]) { identity = args[++i]; continue; }
-      if (a === '-p' && args[i + 1]) { i++; continue; }
+      if (SSH_COPY_ID_VALUE_FLAGS.has(a) && args[i + 1]) { i++; continue; }
       if (a.startsWith('-')) continue;
       if (!target) target = a;
     }
@@ -3202,10 +3222,13 @@ export class LinuxCommandExecutor {
     if (!background && this.networkRunner && argv.length > 0) {
       const viaSudo = argv[0] === 'sudo';
       const effective = viaSudo ? argv.slice(1) : argv;
+      const previousEnv = this._cmdEnv;
+      this._cmdEnv = env;
       const pending = effective.length > 0 ? this.networkRunner(effective, env, viaSudo, stdin, outputPiped) : null;
-      if (pending) return pending;
+      if (pending) return pending.finally(() => { this._cmdEnv = previousEnv; });
       const suPending = this.trySuNetworkCommand(argv, env);
-      if (suPending) return suPending;
+      if (suPending) return suPending.finally(() => { this._cmdEnv = previousEnv; });
+      this._cmdEnv = previousEnv;
     }
     // A `bash script.sh` / `./script.sh` / `run-parts dir` reached through
     // this (already async-capable) entry point may contain a network
@@ -5325,53 +5348,15 @@ export class LinuxCommandExecutor {
       }
       case 'ssh': {
         const stdinPwd = ((this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '').split('\n')[0] || undefined;
-        const result = runSshClient(this.buildSshClientOpts(args, this._cmdEnv, stdinPwd));
-        if (result.connection) {
-          const entry = this.socketTable?.connect(
-            'tcp', result.connection.localIp, 0,
-            result.connection.peerIp, result.connection.peerPort,
-            undefined, 'ssh',
-          );
-          const srcPort = entry?.localPort ?? 49152 + Math.floor(Math.random() * 16000);
-          this.mirrorSshHandshakeCapture(
-            { ip: result.connection.localIp, port: srcPort },
-            { ip: result.connection.peerIp, port: result.connection.peerPort },
-          );
-          this.emitSshWire(result.connection.localIp, srcPort, result.connection.peerIp, result.connection.peerPort);
-          if (entry) this.socketTable?.transition(entry.id, 'TIME_WAIT');
-        }
-        if (result.droppedSyn) {
-          const srcPort = this.socketTable?.allocateEphemeralPort()
-            ?? 49152 + Math.floor(Math.random() * 16000);
-          this.captureLog.captureTcpSynDropped(
-            { ip: result.droppedSyn.localIp, port: srcPort },
-            { ip: result.droppedSyn.peerIp, port: result.droppedSyn.peerPort },
-          );
-        }
-        return { output: result.output, exitCode: result.exitCode };
+        return this.finishSshClientResult(
+          runSshClient(this.buildSshClientOpts(args, this._cmdEnv, stdinPwd)));
       }
       case 'telnet':
         return this.runTelnetClient(args);
       case 'ssh-add':
         return this.handleSshAdd(args);
-      case 'ssh-agent': {
-        // `ssh-agent -s` prints sh-style exports; `-k` kills; `-t` sets a default
-        // life-span. The simulator's agent is per-device and always live, so the
-        // -s/-c forms emit the canonical environment lines (SSH_AUTH_SOCK +
-        // SSH_AGENT_PID) and `eval $(ssh-agent -s)` becomes a no-op import.
-        if (args.includes('-k')) {
-          this.sshAgent.removeAll();
-          return { output: 'Agent pid 1 killed', exitCode: 0 };
-        }
-        const user = this.userMgr.currentUser;
-        const sock = `/tmp/ssh-${user}/agent.1`;
-        const lines = args.includes('-c')
-          ? [`setenv SSH_AUTH_SOCK ${sock};`, `setenv SSH_AGENT_PID 1;`, `echo Agent pid 1;`]
-          : [`SSH_AUTH_SOCK=${sock}; export SSH_AUTH_SOCK;`, `SSH_AGENT_PID=1; export SSH_AGENT_PID;`, `echo Agent pid 1;`];
-        this.env.set('SSH_AUTH_SOCK', sock);
-        this.env.set('SSH_AGENT_PID', '1');
-        return { output: lines.join('\n'), exitCode: 0 };
-      }
+      case 'ssh-agent':
+        return runSshAgentCommand(args, this.agentHost());
       case 'ssh-keyscan': return this.runSshKeyscan(args);
       case 'ssh-keygen':  return this.runSshKeygen(args);
       case 'ssh-copy-id': return this.runSshCopyId(args);
@@ -6209,82 +6194,19 @@ export class LinuxCommandExecutor {
 
   // ─── su handler ──────────────────────────────────────────────────
 
-  private handleSshAdd(args: string[]): { output: string; exitCode: number } {
-    const home =
-      this.userMgr.currentUid === 0
-        ? '/root'
-        : `/home/${this.userMgr.currentUser}`;
-
-    // `-D` — delete all identities.
-    if (args.includes('-D')) {
-      this.sshAgent.removeAll();
-      return { output: 'All identities removed.', exitCode: 0 };
-    }
-
-    // `-d <path>` — delete a single identity (or default if none given).
-    const dIdx = args.indexOf('-d');
-    if (dIdx >= 0) {
-      const path =
-        args[dIdx + 1] && !args[dIdx + 1].startsWith('-')
-          ? args[dIdx + 1]
-          : `${home}/.ssh/id_ed25519`;
-      const removed = this.sshAgent.remove(path);
-      return removed
-        ? { output: `Identity removed: ${path}`, exitCode: 0 }
-        : { output: 'Could not remove identity: not loaded', exitCode: 1 };
-    }
-
-    // `-l` — short fingerprint listing.
-    if (args.includes('-l')) {
-      const keys = this.sshAgent.list();
-      if (keys.length === 0) {
-        return { output: 'The agent has no identities.', exitCode: 1 };
-      }
-      const lines = keys.map(
-        (k) => `${k.bits} ${k.fingerprint} ${k.path} (${k.algorithm})`,
-      );
-      return { output: lines.join('\n'), exitCode: 0 };
-    }
-
-    // `-L` — long form (public-key material). Pedagogical stub.
-    if (args.includes('-L')) {
-      const keys = this.sshAgent.list();
-      if (keys.length === 0) {
-        return { output: 'The agent has no identities.', exitCode: 1 };
-      }
-      const lines = keys.map(
-        (k) => `ssh-${k.algorithm.toLowerCase()} ${k.material.replace(/\n/g, '')} ${k.comment}`,
-      );
-      return { output: lines.join('\n'), exitCode: 0 };
-    }
-
-    // Default — load identities listed in args, or fall back to discovery.
-    const explicit = args.filter((a) => !a.startsWith('-'));
-    if (explicit.length > 0) {
-      const lines: string[] = [];
-      let anyFailed = false;
-      for (const path of explicit) {
-        if (this.sshAgent.add(path, this.vfs)) {
-          lines.push(`Identity added: ${path}`);
-        } else {
-          lines.push(`Could not open key file ${path}: No such file or directory`);
-          anyFailed = true;
-        }
-      }
-      return { output: lines.join('\n'), exitCode: anyFailed ? 1 : 0 };
-    }
-
-    const added = this.sshAgent.addAll(home, this.vfs);
-    if (added.length === 0) {
-      return {
-        output: `Could not open a connection to your authentication agent.`,
-        exitCode: 2,
-      };
-    }
+  private agentHost(): SshAgentHost {
     return {
-      output: added.map((p) => `Identity added: ${p}`).join('\n'),
-      exitCode: 0,
+      agent: this.sshAgent,
+      reader: this.vfs,
+      separator: '/',
+      sshDir: `${this.sshHomeDir()}/.ssh`,
+      authSocket: `/tmp/ssh-${this.userMgr.currentUser}/agent.1`,
+      setEnvironment: (name: string, value: string) => { this.env.set(name, value); },
     };
+  }
+
+  private handleSshAdd(args: string[]): { output: string; exitCode: number } {
+    return runSshAddCommand(args, this.agentHost());
   }
 
   private static parseSuArgs(args: string[]): { loginShell: boolean; targetUser: string; command: string | null } {

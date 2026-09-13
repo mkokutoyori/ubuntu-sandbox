@@ -9,6 +9,9 @@ export interface DnsCommandContext {
   afterApply?(): void;
 }
 
+export const DNS_RETRY_RANGE: readonly [number, number] = [0, 100];
+export const DNS_TIMEOUT_RANGE: readonly [number, number] = [0, 3600];
+
 const INVALID = "% Invalid input detected at '^' marker.";
 const INCOMPLETE = '% Incomplete command.';
 
@@ -79,7 +82,7 @@ export function registerCiscoDnsCommands(trie: CommandTrie, ctx: DnsCommandConte
 
   trie.registerGreedy('ip domain timeout', 'Set time to wait for a DNS response', (args) =>
     applique((c) => {
-      const n = borne(args[0], 0, 3600);
+      const n = borne(args[0], ...DNS_TIMEOUT_RANGE);
       if (n === null) return args[0] === undefined ? INCOMPLETE : INVALID;
       c.timeout = n;
       return '';
@@ -89,7 +92,7 @@ export function registerCiscoDnsCommands(trie: CommandTrie, ctx: DnsCommandConte
 
   trie.registerGreedy('ip domain retry', 'Set number of times to retry a DNS query', (args) =>
     applique((c) => {
-      const n = borne(args[0], 0, 100);
+      const n = borne(args[0], ...DNS_RETRY_RANGE);
       if (n === null) return args[0] === undefined ? INCOMPLETE : INVALID;
       c.retry = n;
       return '';

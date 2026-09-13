@@ -6,23 +6,23 @@
  * client invocations on the same machine can authenticate without
  * re-reading the on-disk identity file or prompting for a passphrase.
  *
- * The simulator stores no real key material — `material` is the raw
- * bytes read from the VFS, and `fingerprint` is a deterministic
- * non-cryptographic SHA256-shaped token (BRD C-02). The pedagogical
- * surface (`ssh-add -l` / `-L`, identity discovery, `ssh -A` agent
- * forwarding) is what matters for tutorials.
- *
  * Reference: SSH-IMPLEMENTATION-ANALYSIS.md §5 advanced features.
  */
 
-import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+import {
+  keygenDigest, keygenKeyFacts, keygenPublicOf,
+} from '@/network/devices/linux/network/SshKeygenMaterial';
+
+export interface SshAgentKeyReader {
+  readFile(path: string): string | null;
+}
 
 export interface AgentKey {
   /** Absolute VFS path to the identity file. */
   readonly path: string;
   /** Raw bytes read from the VFS (simulator's "private key material"). */
   readonly material: string;
-  /** `SHA256:<base64>` — pedagogical, deterministic (BRD C-02). */
+  /** `SHA256:<base64>` over the wire-format public blob. */
   readonly fingerprint: string;
   /** Algorithm derived from the file name (`id_ed25519` → `ED25519`). */
   readonly algorithm: 'ED25519' | 'RSA' | 'ECDSA' | 'DSA' | 'UNKNOWN';
@@ -57,19 +57,20 @@ export class SshAgent {
    * file does not exist (the same exit code OpenSSH's `ssh-add` returns
    * for an unknown identity).
    */
-  add(path: string, vfs: VirtualFileSystem, comment?: string): boolean {
+  add(path: string, vfs: SshAgentKeyReader, comment?: string): boolean {
     const material = vfs.readFile(path);
     if (material === null) return false;
-    const algo = detectAlgorithm(path);
-    // Companion .pub file is what authorized_keys checks compare against.
-    const publicKey = vfs.readFile(`${path}.pub`)?.trim() ?? null;
+    const publicKey = vfs.readFile(`${path}.pub`)?.trim() ?? keygenPublicOf(material);
+    const facts = publicKey === null ? null : keygenKeyFacts(publicKey);
+    const algo = labelToAlgorithm(facts?.label) ?? detectAlgorithm(path);
     const key: AgentKey = {
       path,
       material,
-      fingerprint: fingerprintOf(material),
+      fingerprint: (publicKey === null ? null : keygenDigest(publicKey, 'sha256'))
+        ?? fingerprintOf(material),
       algorithm: algo,
-      comment: comment ?? defaultComment(path),
-      bits: bitsFor(algo),
+      comment: comment ?? publicKeyComment(publicKey) ?? path,
+      bits: facts?.bits ?? bitsFor(algo),
       publicKey,
     };
     this.keys.set(path, key);
@@ -99,14 +100,27 @@ export class SshAgent {
    * Returns the list of paths that were successfully added (in the
    * canonical OpenSSH order: ed25519, rsa, ecdsa, dsa).
    */
-  addAll(home: string, vfs: VirtualFileSystem): string[] {
+  addAll(home: string, vfs: SshAgentKeyReader): string[] {
+    return this.addAllFrom(`${home.replace(/\/$/, '')}/.ssh`, '/', vfs);
+  }
+
+  addAllFrom(sshDir: string, separator: string, vfs: SshAgentKeyReader): string[] {
     const added: string[] = [];
-    const base = `${home.replace(/\/$/, '')}/.ssh`;
     for (const file of DEFAULT_IDENTITY_FILES) {
-      const path = `${base}/${file}`;
+      const path = [sshDir, file].join(separator);
       if (this.add(path, vfs)) added.push(path);
     }
     return added;
+  }
+}
+
+function labelToAlgorithm(label: string | undefined): AgentKey['algorithm'] | null {
+  switch (label) {
+    case 'ED25519': return 'ED25519';
+    case 'RSA': return 'RSA';
+    case 'ECDSA': return 'ECDSA';
+    case 'DSA': return 'DSA';
+    default: return null;
   }
 }
 
@@ -134,16 +148,12 @@ function bitsFor(algo: AgentKey['algorithm']): number {
   }
 }
 
-function defaultComment(path: string): string {
-  const at = path.lastIndexOf('/');
-  return at >= 0 ? path.slice(at + 1) : path;
+function publicKeyComment(publicKey: string | null): string | null {
+  if (publicKey === null) return null;
+  const comment = publicKey.trim().split(/\s+/).slice(2).join(' ');
+  return comment === '' ? null : comment;
 }
 
-/**
- * Deterministic non-cryptographic stand-in for SHA-256 + base64
- * fingerprint. The shape (`SHA256:<token>`) is faithful so output
- * blends in with real OpenSSH lines.
- */
 function fingerprintOf(material: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < material.length; i++) {

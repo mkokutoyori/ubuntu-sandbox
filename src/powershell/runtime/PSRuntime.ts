@@ -34,6 +34,7 @@ import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { NativeCommandNeedsAsync, nativeArgv, isNativeProgramName } from '@/powershell/nativeAsync';
 import { formatDefault, hasDefaultColumns, type PSObject } from '@/network/devices/windows/PSPipeline';
 import type { PSProviders } from '@/powershell/providers/PSProviders';
+import type { ParameterValueKind } from '@/powershell/cmdlets/ICmdlet';
 import type { CmdletContext, IRuntimeRef } from '@/powershell/cmdlets/CmdletContext';
 import type {
   PSProgram, PSStatementList, PSStatement,
@@ -534,6 +535,43 @@ export class PSRuntime {
     const cmdlet = this.registry.resolve(name.toLowerCase());
     const declared = cmdlet?.parameters;
     return declared ? [...declared] : [];
+  }
+
+  /**
+   * The kind of value a cmdlet's parameter takes, for `-Param <Tab>`.
+   * `null` when the cmdlet declares nothing for it — the shell then keeps
+   * its default rather than guessing.
+   */
+  getParameterValueKind(command: string, parameter: string): ParameterValueKind | null {
+    const declared = this.registry.resolve(command.toLowerCase())?.parameterValues;
+    if (!declared) return null;
+    const wanted = parameter.replace(/^-/, '').toLowerCase();
+    for (const [name, kind] of Object.entries(declared)) {
+      if (name.toLowerCase() === wanted) return kind;
+    }
+    return null;
+  }
+
+  /** The live values behind a kind, read from this machine's own providers. */
+  getParameterValues(kind: ParameterValueKind): string[] {
+    switch (kind) {
+      case 'interfaceAlias':
+        return (this.providers.network?.getAdapters() ?? []).map(a => a.name);
+      case 'interfaceIndex':
+        return (this.providers.network?.getAdapters() ?? []).map(a => String(a.ifIndex));
+      case 'addressFamily':
+        return ['IPv4', 'IPv6'];
+      case 'serviceName':
+        return (this.providers.services?.listServices() ?? []).map(s => s.name);
+      case 'processName':
+        return [...new Set((this.providers.processes?.listProcesses() ?? []).map(p => p.name))];
+      case 'localUser':
+        return (this.providers.users?.listUsers() ?? []).map(u => u.name);
+      case 'firewallProfile':
+        return (this.providers.network?.getFirewallProfiles() ?? []).map(p => p.name);
+      case 'path':
+        return [];
+    }
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -2664,6 +2702,7 @@ export class PSRuntime {
       getFunctionSource: (name) => self.functionSources.get(name.toLowerCase()) ?? null,
       listFunctions: () => [...self.functions.values()].map(f => f.declaredName),
       listHistory: () => self.listHistory(),
+      getCommandParameters: (name) => self.getCommandParameters(name),
     };
 
     return {

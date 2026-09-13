@@ -9,7 +9,7 @@
  *
  * Authentication is real Kerberos (PRD-Windows-Server-Advanced.md §5 P24):
  * an AS exchange, then a TGS exchange for the DC's own computer account
- * (discovered via `discoverDcHostname`, §5 P24's own doc), then an AP-REQ
+ * (discovered via `discoverDc`, §5 P24's own doc), then an AP-REQ
  * presented as a GSSAPI SASL bind — not the plaintext simple bind this
  * used before. Every failure point still surfaces the exact same observable
  * message a plaintext bind failure produced, so existing consumers see no

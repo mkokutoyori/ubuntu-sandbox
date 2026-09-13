@@ -136,31 +136,6 @@ export function registerOSPFConfigCommands(configTrie: CommandTrie, ctx: CiscoSh
   });
 
   // IPv6 OSPF router configuration mode
-  configTrie.registerGreedy('ipv6 router eigrp', 'Configure EIGRP for IPv6', (args) => {
-    if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-    const asn = parseInt(args[0], 10);
-    if (Number.isNaN(asn) || asn < 1 || asn > 65535) throw new CliInvalidInput();
-    const r = ctx.r() as unknown as {
-      _ipv6EigrpProcesses?: Set<number>;
-      _recordUnhandledConfigLine?: (l: string) => void;
-    };
-    (r._ipv6EigrpProcesses ??= new Set()).add(asn);
-    ctx.setMode('config-router');
-    ctx.setSelectedRoutingProto({ proto: 'eigrp', asn });
-    return '';
-  });
-
-  configTrie.registerGreedy('ipv6 router ospf', 'Configure IPv6 OSPF', (args) => {
-    const processId = args.length >= 1 ? parseInt(args[0], 10) : 1;
-    if (isNaN(processId) || processId < 1 || processId > 65535) return '% Invalid OSPFv3 process ID';
-    const router = ctx.r();
-    if (!router._getOSPFv3EngineInternal()) {
-      router._enableOSPFv3(processId);
-    }
-    ctx.setMode('config-router-ospfv3' as any);
-    return '';
-  });
-
 }
 
 // ─── Config-Router Mode: OSPF sub-commands ───────────────────────────
@@ -282,6 +257,13 @@ function adresseReseau(ip: string, wildcard: string): string {
     if (!ospf) return '% OSPF is not configured';
 
     if (args[0].toLowerCase() === 'default') {
+      /*
+       * `default` vaut pour les interfaces d'AUJOURD'HUI et de demain.
+       * Il n'etait que deplie sur celles du moment, donc la
+       * configuration relue rendait une liste au lieu du mot, et une
+       * interface ajoutee ensuite se remettait a emettre des Hellos.
+       */
+      ospf.getConfig().passiveInterfaceDefault = true;
       const ports = ctx.r()._getPortsInternal();
       for (const [name] of ports) {
         ospf.setPassiveInterface(name);
@@ -304,72 +286,12 @@ function adresseReseau(ip: string, wildcard: string): string {
     return '';
   });
 
-  trie.registerGreedy('area', 'OSPF area parameters', (args) => {
-    if (args.length < 2) return '% Incomplete command.';
-    const ospf = ctx.r()._getOSPFEngineInternal();
-    if (!ospf) return '% OSPF is not configured';
-
-    const areaId = args[0];
-    const subCmd = args[1].toLowerCase();
-
-    if (subCmd === 'stub' || subCmd === 'nssa') {
-      // Area 0 carries the inter-area LSAs a stub/NSSA area exists to
-      // suppress, so the backbone can be neither (RFC 2328 §3.6). IOS
-      // refuses in these exact words rather than storing a contradiction.
-      if (isBackboneArea(areaId)) {
-        return `% OSPF: Area 0 is the backbone area and cannot be a ${
-          subCmd === 'stub' ? 'stub' : 'NSSA'} area.`;
-      }
-    }
-    if (subCmd === 'stub') {
-      ospf.setAreaType(areaId, args[2]?.toLowerCase() === 'no-summary' ? 'totally-stubby' : 'stub');
-      return '';
-    } else if (subCmd === 'nssa') {
-      ospf.setAreaType(areaId, 'nssa');
-      return '';
-    } else if (subCmd === 'range') {
-      // area <id> range <network> <mask> [not-advertise]
-      if (args.length < 4) return '% Incomplete command.';
-      const extra = ctx.r()._getOSPFExtraConfig();
-      if (!extra.areaRanges.has(areaId)) extra.areaRanges.set(areaId, []);
-      extra.areaRanges.get(areaId)!.push({ network: args[2], mask: args[3] });
-      const advertise = !args.some(a => a.toLowerCase() === 'not-advertise');
-      ospf.addAreaRange(areaId, args[2], args[3], advertise);
-      return '';
-    } else if (subCmd === 'virtual-link') {
-      if (args.length < 3) return '% Incomplete command.';
-      const extra = ctx.r()._getOSPFExtraConfig();
-      extra.virtualLinks.set(areaId, args[2]);
-      return '';
-    } else if (subCmd === 'default-cost') {
-      if (args.length < 3) return '% Incomplete command.';
-      const cost = parseInt(args[2], 10);
-      if (isNaN(cost) || cost < 0 || cost > 65535) return '% Invalid default-cost value (0-65535)';
-      const extra = ctx.r()._getOSPFExtraConfig();
-      extra.areaDefaultCost.set(areaId, cost);
-      ospf.setAreaDefaultCost?.(areaId, cost);
-      return '';
-    } else if (subCmd === 'authentication') {
-      const mode = args[2]?.toLowerCase();
-      const extra = ctx.r()._getOSPFExtraConfig();
-      const authMode: 'simple' | 'message-digest' | 'null' = mode === 'message-digest'
-        ? 'message-digest'
-        : mode === 'null' ? 'null' : 'simple';
-      extra.areaAuthentication.set(areaId, authMode);
-      ospf.setAreaAuthentication?.(areaId, authMode);
-      return '';
-    } else if (subCmd === 'nssa-only' || subCmd === 'filter-list') {
-      return '';
-    } else if (subCmd === 'sham-link') {
-      if (args.length < 4) return '% Incomplete command.';
-      const extra = ctx.r()._getOSPFExtraConfig();
-      if (!extra.shamLinks) extra.shamLinks = new Map();
-      extra.shamLinks.set(`${args[2]}->${args[3]}`, { areaId, source: args[2], destination: args[3] });
-      return '';
-    }
-    return `% Invalid area sub-command "${args[1]}"`;
-  });
-
+  /*
+   * `capability` et `auto-cost` OUVRENT une famille : ils ne sont pas
+   * des commandes. Les deux annoncaient `<cr>` et refusaient ensuite.
+   */
+  trie.requireArgs('capability', 1);
+  trie.requireArgs('auto-cost', 1);
   trie.registerGreedy('auto-cost', 'Calculate OSPF interface cost according to bandwidth', (args) => {
     if (args.length < 2 || args[0].toLowerCase() !== 'reference-bandwidth') {
       return '% Incomplete command.';
@@ -467,22 +389,6 @@ function adresseReseau(ip: string, wildcard: string): string {
 
   trie.registerGreedy('no distribute-list', 'Remove distribute-list filter', () => {
     ctx.r()._getOSPFExtraConfig().distributeList = undefined;
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
-
-  trie.registerGreedy('no area', 'Remove OSPF area parameter', (args) => {
-    const areaId = args[0];
-    const subCmd = (args[1] ?? '').toLowerCase();
-    const ospf = ctx.r()._getOSPFEngineInternal();
-    if (!ospf || areaId === undefined) return '';
-    const extra = ctx.r()._getOSPFExtraConfig();
-    if (subCmd === 'range') {
-      const ranges = extra.areaRanges.get(areaId);
-      if (ranges) extra.areaRanges.set(areaId, ranges.filter(r => !(r.network === args[2] && r.mask === args[3])));
-    } else if (subCmd === 'stub' || subCmd === 'nssa') {
-      ospf.setAreaType?.(areaId, 'normal');
-    }
     ctx.r()._ospfAutoConverge?.();
     return '';
   });
@@ -1194,6 +1100,23 @@ const OSPF_INT = (
   name: string, min: number, max: number, description: string,
 ): ArgumentSpec => ({ name, type: 'INT', range: [min, max], description });
 
+const AIRE: ArgumentSpec = {
+  name: 'aire', type: 'WORD', literal: '<0-4294967295>',
+  description: 'OSPF area ID',
+};
+
+const INTERVALLES_LSA: readonly ArgumentSpec[] = [
+  OSPF_INT('depart', 0, 600000, 'Delay before generating the first LSA'),
+  OSPF_INT('attente', 1, 600000, 'Minimum delay between updates of the same LSA'),
+  OSPF_INT('maximum', 1, 600000, 'Maximum delay between updates of the same LSA'),
+];
+
+const INTERVALLES_SPF: readonly ArgumentSpec[] = [
+  OSPF_INT('depart', 1, 600000, 'Delay before running the first SPF'),
+  OSPF_INT('attente', 1, 600000, 'Minimum hold time between two SPF runs'),
+  OSPF_INT('maximum', 1, 600000, 'Maximum wait time between two SPF runs'),
+];
+
 const ROUTER_OSPF_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   network: [
@@ -1208,7 +1131,11 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'default-metric': OSPF_INT('metrique', 1, 16777214, 'Default metric of redistributed routes'),
   'maximum-paths': OSPF_INT('chemins', 1, 32, 'Number of equal-cost paths installed'),
   'max-lsa': OSPF_INT('lsas', 1, 4294967294, 'Maximum number of non self-generated LSAs'),
-  'passive-interface': { name: 'interface', type: 'INTERFACE', optional: true, description: 'Interface on which updates are suppressed' },
+  'passive-interface': { name: 'interface', type: 'INTERFACE', description: 'Interface on which updates are suppressed' },
+  area: AIRE,
+  neighbor: { name: 'voisin', type: 'IP_ADDR', description: 'Neighbor address' },
+  'timers throttle lsa': INTERVALLES_LSA,
+  'timers throttle spf': INTERVALLES_SPF,
   redistribute: [{
     name: 'protocole', type: 'ENUM', description: 'Source protocol to redistribute',
     values: [
@@ -1226,7 +1153,7 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
       { keyword: 'gateway', description: 'Filtering incoming updates based on gateway' },
       { keyword: 'prefix', description: 'Filter prefixes in routing updates' },
     ],
-  }, { name: 'options', type: 'REST', optional: true, values: [], description: '' }],
+  }, { name: 'options', type: 'REST', values: [], description: 'Direction and filter name' }],
   shutdown: null,
   ispf: null,
   'prefix-suppression': null,
@@ -1242,7 +1169,10 @@ Readonly<Record<string, ReadonlyArray<{
     argument: { name: 'aire', type: 'WORD', literal: '<0-4294967295>', description: 'OSPF area ID' },
   }],
   'passive-interface': [{ keyword: 'default', description: 'Suppress routing updates on all interfaces', argument: null }],
-  'auto-cost': [{ keyword: 'reference-bandwidth', description: 'Reference bandwidth for cost calculation' }],
+  'auto-cost': [{
+    keyword: 'reference-bandwidth', description: 'Reference bandwidth for cost calculation',
+    argument: OSPF_INT('bande-passante', 1, 4294967, 'Reference bandwidth in Mbps'),
+  }],
   bfd: [{ keyword: 'all-interfaces', description: 'Enable BFD on all interfaces' }],
   capability: [
     { keyword: 'opaque', description: 'Opaque LSA' },
@@ -1265,31 +1195,210 @@ Readonly<Record<string, ReadonlyArray<{
     { keyword: 'priority', description: 'OSPF priority of non-broadcast neighbor' },
   ],
   'segment-routing': [{ keyword: 'mpls', description: 'Segment Routing global block' }],
-  area: [
-    { keyword: 'authentication', description: 'Authentication configuration' },
-    { keyword: 'default-cost', description: 'Cost of the default summary route' },
-    { keyword: 'filter-list', description: 'Filter prefixes' },
-    { keyword: 'message-digest', description: 'MD5 authentication' },
-    { keyword: 'no-summary', description: 'Do not send summary LSAs into the area' },
-    { keyword: 'nssa-only', description: 'Limit the route to the NSSA area' },
-    { keyword: 'range', description: 'Range of values' },
-    { keyword: 'sham-link', description: 'OSPF sham link' },
-    { keyword: 'stub', description: 'Stub area' },
-    { keyword: 'virtual-link', description: 'OSPF virtual link' },
-  ],
 };
 
+/**
+ * Ce qu'une ligne `area <id> <sous-commande> ...` fait.
+ *
+ * Extraite du noeud glouton pour que le socle puisse la declarer
+ * place par place : deux ecritures de la meme regle finiraient par
+ * accepter d'un cote ce que l'autre refuse.
+ */
+function retirerAire(ctx: CiscoShellContext, args: string[]): string {
+  const areaId = args[0];
+  const subCmd = (args[1] ?? '').toLowerCase();
+  const ospf = ctx.r()._getOSPFEngineInternal();
+  if (!ospf || areaId === undefined) return '';
+  const extra = ctx.r()._getOSPFExtraConfig();
+  if (subCmd === 'range') {
+    ospf.removeAreaRange(areaId, args[2], args[3]);
+  } else if (subCmd === 'stub' || subCmd === 'nssa') {
+    ospf.setAreaType?.(areaId, 'normal');
+  }
+  ctx.r()._ospfAutoConverge?.();
+  return '';
+}
+
+function appliquerAire(ctx: CiscoShellContext, args: string[]): string {
+    if (args.length < 2) return '% Incomplete command.';
+    const ospf = ctx.r()._getOSPFEngineInternal();
+    if (!ospf) return '% OSPF is not configured';
+
+    const areaId = args[0];
+    const subCmd = args[1].toLowerCase();
+
+    if (subCmd === 'stub' || subCmd === 'nssa') {
+      // Area 0 carries the inter-area LSAs a stub/NSSA area exists to
+      // suppress, so the backbone can be neither (RFC 2328 §3.6). IOS
+      // refuses in these exact words rather than storing a contradiction.
+      if (isBackboneArea(areaId)) {
+        return `% OSPF: Area 0 is the backbone area and cannot be a ${
+          subCmd === 'stub' ? 'stub' : 'NSSA'} area.`;
+      }
+    }
+    if (subCmd === 'stub') {
+      ospf.setAreaType(areaId, args[2]?.toLowerCase() === 'no-summary' ? 'totally-stubby' : 'stub');
+      return '';
+    } else if (subCmd === 'nssa') {
+      /*
+       * `no-summary` fait d'une NSSA une NSSA TOTALEMENT stub, et
+       * `OSPFAreaType` ne porte pas ce type-la : il n'a que `nssa`. Le
+       * stocker sans l'evaluer rendrait une aire qui laisse passer les
+       * LSA de resume que l'operateur croit avoir supprimes.
+       */
+      if (args[2]?.toLowerCase() === 'no-summary') {
+        return '% OSPF: totally-NSSA (no-summary) is not implemented in this'
+          + ' simulator — OSPFAreaType has no totally-nssa value.';
+      }
+      ospf.setAreaType(areaId, 'nssa');
+      return '';
+    } else if (subCmd === 'range') {
+      // area <id> range <network> <mask> [not-advertise]
+      if (args.length < 4) return '% Incomplete command.';
+      const advertise = !args.some(a => a.toLowerCase() === 'not-advertise');
+      ospf.addAreaRange(areaId, args[2], args[3], advertise);
+      return '';
+    } else if (subCmd === 'virtual-link') {
+      if (args.length < 3) return '% Incomplete command.';
+      const extra = ctx.r()._getOSPFExtraConfig();
+      extra.virtualLinks.set(areaId, args[2]);
+      return '';
+    } else if (subCmd === 'default-cost') {
+      if (args.length < 3) return '% Incomplete command.';
+      const cost = parseInt(args[2], 10);
+      if (isNaN(cost) || cost < 0 || cost > 65535) return '% Invalid default-cost value (0-65535)';
+      const extra = ctx.r()._getOSPFExtraConfig();
+      extra.areaDefaultCost.set(areaId, cost);
+      ospf.setAreaDefaultCost?.(areaId, cost);
+      return '';
+    } else if (subCmd === 'authentication') {
+      const mode = args[2]?.toLowerCase();
+      const extra = ctx.r()._getOSPFExtraConfig();
+      const authMode: 'simple' | 'message-digest' | 'null' = mode === 'message-digest'
+        ? 'message-digest'
+        : mode === 'null' ? 'null' : 'simple';
+      extra.areaAuthentication.set(areaId, authMode);
+      ospf.setAreaAuthentication?.(areaId, authMode);
+      return '';
+    } else if (subCmd === 'nssa-only' || subCmd === 'filter-list') {
+      return '';
+    } else if (subCmd === 'sham-link') {
+      if (args.length < 4) return '% Incomplete command.';
+      const extra = ctx.r()._getOSPFExtraConfig();
+      if (!extra.shamLinks) extra.shamLinks = new Map();
+      extra.shamLinks.set(`${args[2]}->${args[3]}`, { areaId, source: args[2], destination: args[3] });
+      return '';
+    }
+    return `% Invalid area sub-command "${args[1]}"`;
+}
+
+/**
+ * Les sept sous-commandes d'une aire, chacune avec SES places.
+ *
+ * Elles etaient des SUITES d'un noeud glouton, donc annoncees juste
+ * apres `area` — au rang de l'identifiant d'aire. Qui suivait l'aide
+ * ecrivait `area stub`, et la machine rangeait une aire NOMMEE
+ * « stub ». Declarees en propre, chacune vient apres l'identifiant et
+ * exige ce qu'elle exige.
+ */
+const SOUS_COMMANDES_AIRE: ReadonlyArray<{
+  readonly mot: string;
+  readonly description: string;
+  readonly places: readonly ArgumentSpec[];
+}> = [
+  {
+    mot: 'authentication', description: 'Authentication configuration',
+    places: [{
+      name: 'mode-auth', type: 'ENUM', optional: true,
+      description: 'Authentication mode',
+      values: [
+        { keyword: 'message-digest', description: 'Use message-digest authentication' },
+      ],
+    }],
+  },
+  {
+    mot: 'default-cost', description: 'Cost of the default summary route',
+    places: [OSPF_INT('cout', 0, 65535, 'Cost of the default summary route')],
+  },
+  {
+    mot: 'nssa', description: 'Not-So-Stubby-Area',
+    places: [{
+      name: 'nssa-option', type: 'ENUM', optional: true, description: 'NSSA option',
+      values: [
+        { keyword: 'no-summary', description: 'Do not send summary LSAs into the NSSA' },
+      ],
+    }],
+  },
+  {
+    mot: 'range', description: 'Summarize routes matching an address/mask',
+    places: [
+      { name: 'plage-reseau', type: 'IP_ADDR', description: 'Address to summarize' },
+      { name: 'plage-masque', type: 'SUBNET_MASK', description: 'Summary mask' },
+      {
+        name: 'plage-option', type: 'ENUM', optional: true, description: 'Range option',
+        values: [
+          { keyword: 'advertise', description: 'Advertise this range' },
+          { keyword: 'not-advertise', description: 'Do not advertise this range' },
+        ],
+      },
+    ],
+  },
+  {
+    mot: 'sham-link', description: 'OSPF sham link',
+    places: [
+      { name: 'sham-source', type: 'IP_ADDR', description: 'Source address of the sham link' },
+      { name: 'sham-destination', type: 'IP_ADDR', description: 'Destination address of the sham link' },
+    ],
+  },
+  {
+    mot: 'stub', description: 'Stub area',
+    places: [{
+      name: 'stub-option', type: 'ENUM', optional: true, description: 'Stub option',
+      values: [
+        { keyword: 'no-summary', description: 'Do not send summary LSAs into the stub area' },
+      ],
+    }],
+  },
+  {
+    mot: 'virtual-link', description: 'OSPF virtual link',
+    places: [{
+      name: 'voisin-virtuel', type: 'IP_ADDR',
+      description: 'Router ID of the virtual link neighbor',
+    }],
+  },
+];
+
+function aireSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return SOUS_COMMANDES_AIRE.map(({ mot, description, places }) => ({
+    id: `ospf-area-${mot}`,
+    path: ['area', AIRE, mot, ...places],
+    description,
+    modes: ['config-router-ospf'], minPrivilege: 15,
+    run: (_s: unknown, args: Record<string, string>) => appliquerAire(ctx, [
+      args.aire, mot,
+      ...places.map(place => args[place.name]).filter(v => v !== undefined),
+    ]),
+    undo: (_s: unknown, args: Record<string, string>) => retirerAire(ctx, [
+      args.aire, mot,
+      ...places.map(place => args[place.name]).filter(v => v !== undefined),
+    ]),
+  })) as CommandSpec[];
+}
+
 export function routerOspfSpecs(ctx: CiscoShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) =>
-      buildConfigRouterOSPFCommands(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config-router-ospf'], minPrivilege: 15,
-      undoFromNegatedPaths: true,
-      argumentFor: (path) => ROUTER_OSPF_ARGUMENTS[path],
-      keywordsFor: (path) => ROUTER_OSPF_KEYWORDS[path],
-    },
-  );
+  return [
+    ...specsFromTrieRegistrations(
+      (collector) =>
+        buildConfigRouterOSPFCommands(collector as unknown as CommandTrie, ctx),
+      {
+        modes: ['config-router-ospf'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        argumentFor: (path) => ROUTER_OSPF_ARGUMENTS[path],
+        keywordsFor: (path) => ROUTER_OSPF_KEYWORDS[path],
+      },
+    ),
+    ...aireSpecs(ctx),
+  ];
 }
 
 const ROUTER_OSPFV3_ARGUMENTS:

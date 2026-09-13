@@ -303,7 +303,7 @@ describe('§3 — ls lists remote directory contents', () => {
       name: 'ls of a directory that does not exist surfaces an error',
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['ls /nope/does/not/exist']),
-      contains: [/list failed|No such/i],
+      contains: [/Can't ls:.*not found|list failed|No such/i],
     },
     {
       name: 'ls of an empty directory yields no file lines (but does not error)',
@@ -323,7 +323,7 @@ describe('§3 — ls lists remote directory contents', () => {
       setup: async (l) => { await l.pc2.executeCommand('echo solo > /tmp/just-a-file'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['ls /tmp/just-a-file/nope']),
-      contains: [/list failed|No such|Not a directory/i],
+      contains: [/Can't ls:.*not found|list failed|No such|Not a directory/i],
     },
   ];
 

@@ -54,7 +54,7 @@ import {
   GetModuleCmdlet, ImportModuleCmdlet, ClearHostCmdlet,
   InvokeCommandCmdlet, StartJobCmdlet, GetJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
   SetLocationCmdlet, GetLocationCmdlet, PushLocationCmdlet, PopLocationCmdlet,
-  NewPSDriveCmdlet, GetPSDriveCmdlet,
+  NewPSDriveCmdlet, GetPSDriveCmdlet, RemovePSDriveCmdlet,
   GetAliasCmdlet, GetPSProviderCmdlet,
   GetHistoryCmdlet, GetExecutionPolicyCmdlet, SetExecutionPolicyCmdlet,
 } from './MiscCmdlets';
@@ -91,6 +91,7 @@ import {
   SetNetFirewallRuleCmdlet, RemoveNetFirewallRuleCmdlet,
   EnableNetFirewallRuleCmdlet, DisableNetFirewallRuleCmdlet,
   GetNetConnectionProfileCmdlet, SetNetConnectionProfileCmdlet,
+  GetNetFirewallProfileCmdlet, SetNetFirewallProfileCmdlet,
   SetNetIPAddressCmdlet, SetNetRouteCmdlet,
   RestartNetAdapterCmdlet, SetNetAdapterCmdlet, TestNetConnectionCmdlet,
   ClearNetNeighborCacheCmdlet, GetNetAdapterStatisticsCmdlet,
@@ -109,6 +110,7 @@ import {
   IpconfigCmdlet, NetshCmdlet, ArpCmdlet, RouteCmdlet, FindstrCmdlet,
   GetmacCmdlet, SysteminfoCmdlet, VerCmdlet, NslookupCmdlet,
   NetCmdlet, VolCmdlet, ChcpCmdlet, ScCmdlet, ScExeCmdlet,
+  SshKeygenCmdlet, SshAgentCmdlet, SshAddCmdlet, SshKeyscanCmdlet,
 } from './NativeShimCmdlets';
 import {
   GetScheduledTaskCmdlet, RegisterScheduledTaskCmdlet,
@@ -129,6 +131,7 @@ import {
 } from './ServerManagerCmdlets';
 import {
   GetSmbShareCmdlet, NewSmbShareCmdlet, RemoveSmbShareCmdlet, GetSmbSessionCmdlet,
+  GetSmbMappingCmdlet, NewSmbMappingCmdlet, RemoveSmbMappingCmdlet,
 } from './SmbCmdlets';
 import {
   InstallADDSForestCmdlet, InstallADDSDomainControllerCmdlet, GetADDomainControllerCmdlet, RemoveADDomainControllerCmdlet,
@@ -352,6 +355,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new PopLocationCmdlet());
   registry.register(new NewPSDriveCmdlet());
   registry.register(new GetPSDriveCmdlet());
+  registry.register(new RemovePSDriveCmdlet());
   registry.register(new ClearHostCmdlet());
   registry.register(new GetAliasCmdlet());
   registry.register(new GetPSProviderCmdlet());
@@ -439,6 +443,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new RemoveNetFirewallRuleCmdlet());
   registry.register(new EnableNetFirewallRuleCmdlet());
   registry.register(new DisableNetFirewallRuleCmdlet());
+  registry.register(new GetNetFirewallProfileCmdlet());
+  registry.register(new SetNetFirewallProfileCmdlet());
   registry.register(new GetNetConnectionProfileCmdlet());
   registry.register(new SetNetConnectionProfileCmdlet());
   registry.register(new SetNetIPAddressCmdlet());
@@ -494,6 +500,9 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   // ── SMB file sharing (available on client and server editions) ───────────
   registry.register(new GetSmbShareCmdlet());
   registry.register(new NewSmbShareCmdlet());
+  registry.register(new GetSmbMappingCmdlet());
+  registry.register(new NewSmbMappingCmdlet());
+  registry.register(new RemoveSmbMappingCmdlet());
   registry.register(new RemoveSmbShareCmdlet());
   registry.register(new GetSmbSessionCmdlet());
 
@@ -544,6 +553,10 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(ChcpCmdlet);
   registry.register(ScCmdlet);
   registry.register(ScExeCmdlet);
+  registry.register(SshKeygenCmdlet);
+  registry.register(SshAgentCmdlet);
+  registry.register(SshAddCmdlet);
+  registry.register(SshKeyscanCmdlet);
 
   if (opts.includeServerCmdlets ?? true) registerServerCmdlets(registry);
 }

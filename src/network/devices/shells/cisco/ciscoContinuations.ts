@@ -57,13 +57,6 @@ export const SOCLE: ContinuationTable = {
   },
   privileged: {
     'clear aaa local user lockout': ['username'],
-    'debug aaa': ['accounting', 'authentication', 'authorization'],
-    'debug condition': ['interface', 'ip', 'vrf'],
-    'debug ntp': ['events', 'packets'],
-    'no debug aaa': ['accounting', 'authentication', 'authorization'],
-    'no debug condition': ['all', 'interface', 'ip', 'vrf'],
-    'no debug ip': ['arp', 'bgp', 'eigrp', 'icmp', 'nhrp', 'packet', 'pim', 'rip', 'routing', 'ssh', 'tcp', 'udp'],
-    'no debug ntp': ['events', 'packets'],
     'show archive log config': ['statistics'],
     'show parser view': ['all'],
     'sntp server': ['prefer'],
@@ -210,9 +203,6 @@ export const COMMUTATEUR_SEUL: ContinuationTable = {
   },
   configVlan: {
     'private-vlan': ['association', 'community', 'isolated', 'primary'],
-  },
-  privileged: {
-    'no debug ip': ['nat'],
   },
   user: {
     'show interfaces': ['etherchannel', 'status', 'switchport'],

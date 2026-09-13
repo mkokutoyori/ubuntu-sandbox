@@ -407,8 +407,23 @@ describe('la forme `no` est une PROPRIETE, pas une commande jumelle', () => {
     expect(result.status === 'ok' && result.spec.id).toBe('shutdown');
   });
 
-  it('`no` seul n\'est pas une negation, c\'est une commande inconnue', () => {
+  /*
+   * `no` SEUL est une commande INCOMPLETE, pas une commande inconnue :
+   * il y a bien quelque chose a defaire ici, il manque de dire quoi.
+   * Ce cas exigeait `invalid`, et la machine rendait pourtant
+   * « % Incomplete command. » en configuration globale et sur une
+   * interface — c'est ailleurs que la reponse se decidait. Elle se
+   * decide desormais ici, une fois, ce qui a mis d'accord `config-line`,
+   * `config-route-map` et les deux sous-modes d'ACL, qui rendaient
+   * « % Invalid input detected » pour la meme frappe.
+   */
+  it('`no` seul est une commande INCOMPLETE', () => {
     expect(parseCommand(withUndo(), 'no', session({ mode: 'config-if' })).status)
+      .toBe('incomplete');
+  });
+
+  it('`no` seul reste inconnu la ou rien ne se defait — le TEMOIN', () => {
+    expect(parseCommand(withUndo(), 'no', session({ mode: 'user' })).status)
       .toBe('invalid');
   });
 });

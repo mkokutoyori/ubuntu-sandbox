@@ -20,6 +20,7 @@ import { findEquipmentByIp, findEquipmentByHostname } from './hostResolution';
 import { primaryShellKindFor } from './shellKind';
 import { WireRemoteShell } from './WireRemoteShell';
 import { openWireSshShell, openWireSshConnection, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
+import { sshLocalIdentityFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
 import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshells/SshInteractiveSubShell';
 import type { IShell, ShellLineResult } from './IShell';
 import { SshKnownHostsFile, type SshHostKeyType } from '@/network/protocols/ssh/SshKnownHostsFile';
@@ -339,6 +340,23 @@ function vfsOf(device: unknown): DeviceVfsLike | null {
 }
 
 /**
+ * Le foyer du compte qui LANCE la connexion.
+ *
+ * `sourceUser` etait declare « choisit quel known_hosts la connexion lit
+ * et ecrit » et n'etait jamais lu : le chemin etait ecrit en dur sur
+ * celui de root. Un compte ordinaire enregistrait donc la cle d'hote
+ * dans le magasin de root, et n'y retrouvait rien a la connexion
+ * suivante.
+ */
+function foyerDe(device: unknown, user: string | undefined): string {
+  const compte = user ?? 'root';
+  const declare = (device as {
+    executor?: { userMgr?: { getUser?: (u: string) => { home?: string } | undefined } };
+  } | undefined)?.executor?.userMgr?.getUser?.(compte)?.home;
+  return declare ?? (compte === 'root' ? '/root' : `/home/${compte}`);
+}
+
+/**
  * Real known_hosts comparison for the interactive `ssh` path — mirrors
  * {@link file://../network/devices/linux/network/LinuxSshClient.ts}'s
  * `updateKnownHosts`. Returns `'unsupported'` (skip, no-op) when either
@@ -355,13 +373,14 @@ function checkKnownHosts(auth: PendingSshAuth): 'changed' | 'ok' | 'unsupported'
   const keyType = tokens[0] as SshHostKeyType;
   const publicKey = tokens[1];
 
-  const knownHostsPath = '/root/.ssh/known_hosts';
+  const knownHostsPath = `${foyerDe(auth.sourceDevice, auth.sourceUser)}/.ssh/known_hosts`;
   const existing = sourceVfs.readFile(knownHostsPath) ?? '';
   const file = SshKnownHostsFile.parse(existing);
   if (file.hostKeyChanged(auth.host, keyType, publicKey)) return 'changed';
   if (!file.find(auth.host, keyType)) {
     const updated = file.add({ hostnames: [auth.host], keyType, publicKey });
-    sourceVfs.writeFile(knownHostsPath, updated.serialize(), 0, 0, 0o022);
+    const owner = sshLocalIdentityFor(auth.sourceDevice, auth.sourceUser ?? auth.user);
+    sourceVfs.writeFile(knownHostsPath, updated.serialize(), owner.uid, owner.gid, 0o022);
   }
   return 'ok';
 }

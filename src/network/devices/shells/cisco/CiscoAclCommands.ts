@@ -26,8 +26,7 @@ import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 export { isValidIosAclNumber } from './aclHeadSpecs';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import type { ACLEngine } from '../../router/ACLEngine';
-import type { AclStandardHost } from './aclStandardSpecs';
-import type { AclExtendedHost } from './aclExtendedSpecs';
+import type { AclEntryHost } from './aclSubmodeSpecs';
 
 // ─── Extended Shell Context for ACL modes ────────────────────────────
 
@@ -501,51 +500,44 @@ function parseStandardSource(args: string[]): { ip: IPAddress; wildcard: SubnetM
  * avec le caret au bon mot ; `parseCiscoAce` ne voit donc plus que des
  * lignes bien formees, et reste le SEUL a decider ce qu'elles valent.
  */
-export function standardAclHost(ctx: NamedAclEditContext): AclStandardHost {
-  const rendu = (action: 'permit' | 'deny', mots: readonly string[]): string | null => {
-    const lu = parseCiscoAce([...mots], 'standard');
-    return 'error' in lu ? null : formatACLEntry('standard', asEntry(action, lu.opts));
-  };
-
-  return {
-    addEntry: (action, mots) => {
-      const nom = ctx.getSelectedACL();
-      if (!nom) return '% No ACL selected';
-      const lu = parseCiscoAce([...mots], 'standard');
-      if ('error' in lu) return lu.error;
-      ctx.engine().addNamedAccessListEntry(nom, 'standard', action, lu.opts);
-      return '';
-    },
-    removeEntry: (action, mots) => {
-      const nom = ctx.getSelectedACL();
-      if (!nom) return '% No ACL selected';
-      const cible = rendu(action, mots);
-      if (cible === null) return '% Incomplete command.';
-      const acl = ctx.engine().getAccessListsInternal().find(a => a.name === nom);
-      const rang = acl
-        ? acl.entries.findIndex(e => formatACLEntry('standard', e) === cible)
-        : -1;
-      if (rang === -1) return '% Access list entry does not exist.';
-      acl!.entries.splice(rang, 1);
-      return '';
-    },
-  };
+export function standardAclHost(ctx: NamedAclEditContext): AclEntryHost {
+  return namedAclHost(ctx, 'standard');
 }
 
 /** Le meme port, pour une liste ETENDUE. */
-export function extendedAclHost(ctx: NamedAclEditContext): AclExtendedHost {
+export function extendedAclHost(ctx: NamedAclEditContext): AclEntryHost {
+  return namedAclHost(ctx, 'extended');
+}
+
+/**
+ * Le port du sous-mode : une seule ecriture pour les deux sortes de
+ * liste, et pour les deux plateformes.
+ */
+export function namedAclHost(
+  ctx: NamedAclEditContext, type: 'standard' | 'extended',
+): AclEntryHost {
   const rendu = (action: 'permit' | 'deny', mots: readonly string[]): string | null => {
-    const lu = parseCiscoAce([...mots], 'extended');
-    return 'error' in lu ? null : formatACLEntry('extended', asEntry(action, lu.opts));
+    const lu = parseCiscoAce([...mots], type);
+    return 'error' in lu ? null : formatACLEntry(type, asEntry(action, lu.opts));
   };
+  const jokers = () => ({
+    protocol: 'ip',
+    srcIP: new IPAddress('0.0.0.0'),
+    srcWildcard: new SubnetMask('255.255.255.255'),
+    dstIP: new IPAddress('0.0.0.0'),
+    dstWildcard: new SubnetMask('255.255.255.255'),
+  });
 
   return {
-    addEntry: (action, mots) => {
+    addEntry: (action, mots, sequence) => {
       const nom = ctx.getSelectedACL();
       if (!nom) return '% No ACL selected';
-      const lu = parseCiscoAce([...mots], 'extended');
+      if (sequence !== undefined && ctx.engine().hasSequence(nom, sequence)) {
+        return '% Duplicate sequence number.';
+      }
+      const lu = parseCiscoAce([...mots], type, sequence);
       if ('error' in lu) return lu.error;
-      ctx.engine().addNamedAccessListEntry(nom, 'extended', action, lu.opts);
+      ctx.engine().addNamedAccessListEntry(nom, type, action, lu.opts);
       return '';
     },
     removeEntry: (action, mots) => {
@@ -555,10 +547,32 @@ export function extendedAclHost(ctx: NamedAclEditContext): AclExtendedHost {
       if (cible === null) return '% Incomplete command.';
       const acl = ctx.engine().getAccessListsInternal().find(a => a.name === nom);
       const rang = acl
-        ? acl.entries.findIndex(e => formatACLEntry('extended', e) === cible)
+        ? acl.entries.findIndex(e => formatACLEntry(type, e) === cible)
         : -1;
       if (rang === -1) return '% Access list entry does not exist.';
       acl!.entries.splice(rang, 1);
+      return '';
+    },
+    removeSequence: (sequence) => {
+      const nom = ctx.getSelectedACL();
+      if (!nom) return '% No ACL selected';
+      return ctx.engine().removeNamedACLEntryBySequence(nom, sequence)
+        ? '' : '% Sequence number not found';
+    },
+    addRemark: (texte) => {
+      const nom = ctx.getSelectedACL();
+      if (!nom) return '% No ACL selected';
+      ctx.engine().addNamedAccessListEntry(nom, type, 'permit', {
+        ...jokers(), remark: texteDeRemarque(texte.split(/\s+/)),
+      });
+      return '';
+    },
+    addEvaluate: (miroir) => {
+      const nom = ctx.getSelectedACL();
+      if (!nom) return '% No ACL selected';
+      ctx.engine().addNamedAccessListEntry(nom, type, 'permit', {
+        ...jokers(), evaluate: miroir,
+      });
       return '';
     },
   };
@@ -577,72 +591,8 @@ export function buildNamedStdACLCommands(trie: CommandTrie, ctx: NamedAclEditCon
     ctx.engine().addNamedAccessListEntry(aclName, 'standard', action, parsed.opts);
     return '';
   };
-  const renderStd = (action: 'permit' | 'deny', args: string[]): string | null => {
-    const parsed = parseStd(args);
-    return 'error' in parsed ? null : formatACLEntry('standard', asEntry(action, parsed.opts));
-  };
   trie.registerGreedy('permit', 'Specify packets to forward', (args) => handle('permit', args));
   trie.registerGreedy('deny', 'Specify packets to reject', (args) => handle('deny', args));
-  registerSequenceEdits(trie, ctx, 'standard', handle, renderStd);
-  trie.registerGreedy('remark', 'ACL remark', (args) => {
-    const aclName = ctx.getSelectedACL();
-    if (!aclName) return '% No ACL selected';
-    ctx.engine().addNamedAccessListEntry(aclName, 'standard', 'permit', {
-      srcIP: new IPAddress('0.0.0.0'),
-      srcWildcard: new SubnetMask('255.255.255.255'),
-      remark: texteDeRemarque(args),
-    });
-    return '';
-  });
-}
-
-function registerSequenceEdits(
-  trie: CommandTrie,
-  ctx: NamedAclEditContext,
-  aclType: 'standard' | 'extended',
-  handle: (action: 'permit' | 'deny', args: string[], sequence?: number) => string,
-  /** Rend le texte canonique de l'ACE decrite par `args`, ou `null`. */
-  renderAce: (action: 'permit' | 'deny', args: string[]) => string | null,
-): void {
-  trie.registerGreedy('no', 'Remove an entry', (args) => {
-    if (args.length === 0) return '% Incomplete command.';
-    const aclName = ctx.getSelectedACL();
-    if (!aclName) return '% No ACL selected';
-
-    const seq = parseInt(args[0], 10);
-    if (!isNaN(seq) && args.length === 1) {
-      const ok = ctx.engine().removeNamedACLEntryBySequence(aclName, seq);
-      return ok ? '' : '% Sequence number not found';
-    }
-
-    // `no permit tcp any any eq 80` — suppression par TEXTE. IOS accepte
-    // les deux formes ; seule celle par numero de sequence existait ici,
-    // et la forme textuelle rendait « % Incomplete command. », un message
-    // qui designait la mauvaise cause.
-    const action = args[0].toLowerCase();
-    if (action === 'permit' || action === 'deny') {
-      const cible = renderAce(action, args.slice(1));
-      if (cible === null) return '% Incomplete command.';
-      const acl = ctx.engine().getAccessListsInternal().find(a => a.name === aclName);
-      const idx = acl
-        ? acl.entries.findIndex(e => formatACLEntry(aclType, e) === cible)
-        : -1;
-      if (idx === -1) return '% Access list entry does not exist.';
-      acl!.entries.splice(idx, 1);
-      return '';
-    }
-    return '% Incomplete command.';
-  });
-  trie.registerGreedy('sequence', 'Sequence number', (args) => {
-    if (args.length < 3) return '% Incomplete command.';
-    const seq = parseInt(args[0], 10);
-    if (isNaN(seq)) return '% Invalid sequence number.';
-    const action = args[1].toLowerCase();
-    if (action !== 'permit' && action !== 'deny') return '% Invalid action.';
-    const aclName = ctx.getSelectedACL();
-    if (aclName && ctx.engine().hasSequence(aclName, seq)) return '% Duplicate sequence number.';
-    return handle(action as 'permit' | 'deny', args.slice(2), seq);
-  });
 }
 
 // ─── Named Extended ACL Config Mode ──────────────────────────────────
@@ -658,40 +608,8 @@ export function buildNamedExtACLCommands(trie: CommandTrie, ctx: NamedAclEditCon
     ctx.engine().addNamedAccessListEntry(aclName, 'extended', action, parsed.opts);
     return '';
   };
-  const renderExt = (action: 'permit' | 'deny', args: string[]): string | null => {
-    const parsed = parseExt(args);
-    return 'error' in parsed ? null : formatACLEntry('extended', asEntry(action, parsed.opts));
-  };
-
   trie.registerGreedy('permit', 'Specify packets to forward', (args) => addEntry('permit', args));
   trie.registerGreedy('deny', 'Specify packets to reject', (args) => addEntry('deny', args));
-  trie.registerGreedy('evaluate', 'Evaluate reflexive ACL', (args) => {
-    const aclName = ctx.getSelectedACL();
-    if (!aclName || args.length < 1) return '% Incomplete command.';
-    ctx.engine().addNamedAccessListEntry(aclName, 'extended', 'permit', {
-      protocol: 'ip',
-      srcIP: new IPAddress('0.0.0.0'),
-      srcWildcard: new SubnetMask('255.255.255.255'),
-      dstIP: new IPAddress('0.0.0.0'),
-      dstWildcard: new SubnetMask('255.255.255.255'),
-      evaluate: args[0],
-    });
-    return '';
-  });
-  trie.registerGreedy('remark', 'ACL remark', (args) => {
-    const aclName = ctx.getSelectedACL();
-    if (!aclName) return '% No ACL selected';
-    ctx.engine().addNamedAccessListEntry(aclName, 'extended', 'permit', {
-      protocol: 'ip',
-      srcIP: new IPAddress('0.0.0.0'),
-      srcWildcard: new SubnetMask('255.255.255.255'),
-      dstIP: new IPAddress('0.0.0.0'),
-      dstWildcard: new SubnetMask('255.255.255.255'),
-      remark: texteDeRemarque(args),
-    });
-    return '';
-  });
-  registerSequenceEdits(trie, ctx, 'extended', addEntry, renderExt);
 }
 
 // ─── Show Commands ────────────────────────────────────────────────────
@@ -1084,19 +1002,7 @@ export function runningConfigIPv6ACL(router: Router): string[] {
  * Entering this command creates/selects the ACL and enters config-ipv6-nacl mode.
  */
 export function buildIPv6ACLGlobalCommands(configTrie: CommandTrie, ctx: CiscoACLShellContext): void {
-  configTrie.registerGreedy('ipv6 access-list', 'Define IPv6 named access list', (args) => {
-    const name = args[0];
-    if (!name) return '% Incomplete command.';
-    // Ré-entrer dans une liste existante l'OUVRE en ajout, comme sur IOS.
-    // L'ancienne version la vidait : rééditer une ACL liée à une interface
-    // la faisait passer, sans un mot, de filtre à liste vide — donc à
-    // `permit` inconditionnel.
-    const acls = ctx.r().getIpv6AccessLists();
-    if (!acls.some((a) => a.name === name)) acls.push({ name, entries: [] });
-    ctx.setSelectedACL(name);
-    ctx.setMode('config-ipv6-nacl');
-    return '';
-  });
+  void configTrie; void ctx;
 }
 
 /**

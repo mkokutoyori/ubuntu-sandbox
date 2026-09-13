@@ -50,6 +50,17 @@ export function unreachableCodeName(code: number | undefined): UnreachableCodeNa
   return (code === undefined ? undefined : UNREACHABLE_CODE_NAMES[code]) ?? 'other';
 }
 
+export const PROHIBITED_UNREACH_CODES: ReadonlySet<number> = new Set([
+  ICMP_UNREACH_NET_PROHIBITED,
+  ICMP_UNREACH_HOST_PROHIBITED,
+  ICMP_UNREACH_ADMIN_PROHIBITED,
+]);
+
+export function isHardTcpUnreachCode(code: number | undefined): boolean {
+  if (code === undefined) return false;
+  return code === ICMP_UNREACH_PORT || PROHIBITED_UNREACH_CODES.has(code);
+}
+
 /** Time Exceeded (Type 11) codes */
 export const ICMP_TTL_EXPIRED_IN_TRANSIT = 0;
 export const ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED = 1;

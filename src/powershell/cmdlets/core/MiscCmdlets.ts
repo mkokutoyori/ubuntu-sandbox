@@ -228,6 +228,7 @@ export class GetHelpCmdlet implements ICmdlet {
   readonly name = 'get-help';
   readonly description = 'Displays information about PowerShell commands and concepts.';
   readonly parameters = ['Name', 'Path', 'Category', 'Component', 'Functionality', 'Role', 'Detailed', 'Full', 'Examples', 'Parameter', 'Online', 'ShowWindow'] as const;
+  readonly parameterValues = { Path: 'path' } as const;
   readonly aliases = ['help', 'man'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -258,6 +259,7 @@ export class GetHelpCmdlet implements ICmdlet {
       online:     ctx.named['online'] === true,
       showWindow: ctx.named['showwindow'] === true,
       parameter:  ctx.named['parameter'] !== undefined ? psValueToString(ctx.named['parameter']) : undefined,
+      declaredParameters: ctx.runtime.getCommandParameters(name),
     });
     if (rendered !== null) {
       ctx.emit(rendered);
@@ -452,6 +454,7 @@ function titleCaseCmdletName(raw: string): string {
 export class GetModuleCmdlet implements ICmdlet {
   readonly name = 'get-module';
   readonly aliases = [] as const;
+  readonly parameters = ['ListAvailable'] as const;
   execute(ctx: CmdletContext): PSValue {
     const listAvail = ctx.named['listavailable'] === true || ctx.named['listavailable'] === 'true';
     if (listAvail) {
@@ -560,6 +563,7 @@ function jobKey(ctx: CmdletContext): string | number | null {
 export class StartJobCmdlet implements ICmdlet {
   readonly name = 'start-job';
   readonly aliases = [] as const;
+  readonly parameters = ['Name', 'ScriptBlock'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const jobs = ctx.providers.jobs;
@@ -577,6 +581,7 @@ export class StartJobCmdlet implements ICmdlet {
 export class GetJobCmdlet implements ICmdlet {
   readonly name = 'get-job';
   readonly aliases = [] as const;
+  readonly parameters = ['Id', 'Name'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const jobs = ctx.providers.jobs;
@@ -610,6 +615,7 @@ export class ReceiveJobCmdlet implements ICmdlet {
 export class WaitJobCmdlet implements ICmdlet {
   readonly name = 'wait-job';
   readonly aliases = [] as const;
+  readonly parameters = ['Job'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const jobs = ctx.providers.jobs;
@@ -725,6 +731,7 @@ export class SetLocationCmdlet implements ICmdlet {
   readonly name = 'set-location';
   readonly displayName = 'Set-Location';
   readonly parameters = ['Path', 'LiteralPath', 'PassThru', 'StackName'] as const;
+  readonly parameterValues = { Path: 'path', LiteralPath: 'path' } as const;
   readonly aliases = ['cd', 'chdir', 'sl'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -739,6 +746,7 @@ export class PushLocationCmdlet implements ICmdlet {
   readonly name = 'push-location';
   readonly displayName = 'Push-Location';
   readonly parameters = ['Path', 'LiteralPath', 'PassThru', 'StackName'] as const;
+  readonly parameterValues = { Path: 'path', LiteralPath: 'path' } as const;
   readonly aliases = ['pushd'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -814,10 +822,32 @@ export class NewPSDriveCmdlet implements ICmdlet {
   readonly name = 'new-psdrive';
   readonly displayName = 'New-PSDrive';
   readonly aliases = [] as const;
+  readonly parameters = ['Name', 'PSProvider', 'Root', 'Description', 'Scope', 'Persist', 'Credential'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
-    const root = psValueToString(ctx.named['root'] ?? '');
+    const root = psValueToString(ctx.named['root'] ?? ctx.positional[2] ?? '');
+    // A UNC root names a share on another machine: mapping it is a real
+    // SMB connection, recorded where `net use` reads it, not a row in a
+    // shell variable.
+    if (root.startsWith('\\\\')) {
+      const smb = ctx.providers.smb;
+      if (!smb?.mapDrive) {
+        ctx.emitError(`New-PSDrive : This computer cannot map a network drive.`);
+        return null;
+      }
+      const credentialRaw = ctx.named['credential'] !== undefined ? psValueToString(ctx.named['credential']) : '';
+      const separator = credentialRaw.indexOf(':');
+      const credential = separator > 0
+        ? { username: credentialRaw.slice(0, separator), password: credentialRaw.slice(separator + 1) }
+        : undefined;
+      const mapped = smb.mapDrive(name.endsWith(':') ? name : `${name}:`, root, credential);
+      if (!mapped.ok) {
+        ctx.emitError(`New-PSDrive : ${mapped.error ?? 'The network path was not found.'}`);
+        return null;
+      }
+      return { Name: name, Root: root, Used: 0, Free: 0, Provider: 'FileSystem' } as Record<string, PSValue>;
+    }
     const drive = { Name: name, Root: root, Used: 0, Free: 0 } as Record<string, PSValue>;
     // Register drive in global scope for Get-PSDrive to retrieve
     const existing = (ctx.runtime.getVariable('__drives__') as Record<string, PSValue> | null) ?? {};
@@ -833,6 +863,7 @@ export class GetPSDriveCmdlet implements ICmdlet {
   readonly name = 'get-psdrive';
   readonly displayName = 'Get-PSDrive';
   readonly aliases = ['gdr'] as const;
+  readonly parameters = ['Name'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const nameFilter = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '').toLowerCase();
@@ -863,11 +894,47 @@ export class GetPSDriveCmdlet implements ICmdlet {
       });
     }
 
+    // Mapped network drives come from the machine's own table — the very
+    // one `net use` lists — so the two views cannot disagree about which
+    // drives exist.
+    for (const mapping of ctx.providers.smb?.listMappings?.() ?? []) {
+      if (!mapping.local) continue;
+      const letter = mapping.local.replace(/:$/, '');
+      if (rows.some(r => psValueToString(r['Name']).toLowerCase() === letter.toLowerCase())) continue;
+      rows.push({
+        Name: letter, Used: '', Free: '', Provider: 'FileSystem', Root: mapping.remote,
+      });
+    }
+
     if (nameFilter) {
       const found = rows.find(r => psValueToString(r['Name']).toLowerCase() === nameFilter);
       return found ?? null;
     }
     return rows;
+  }
+}
+
+// ─── Remove-PSDrive ────────────────────────────────────────────────────────
+
+export class RemovePSDriveCmdlet implements ICmdlet {
+  readonly name = 'remove-psdrive';
+  readonly displayName = 'Remove-PSDrive';
+  readonly aliases = ['rdr'] as const;
+  readonly parameters = ['Name', 'PSProvider', 'Scope', 'Force', 'WhatIf', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError('Remove-PSDrive : Cannot process command because of one or more missing mandatory parameters: Name.'); return null; }
+    const letter = name.endsWith(':') ? name : `${name}:`;
+    if (ctx.providers.smb?.unmapDrive?.(letter)) return null;
+    const declared = (ctx.runtime.getVariable('__drives__') as Record<string, PSValue> | null) ?? {};
+    if (declared[name.toLowerCase()] === undefined) {
+      ctx.emitError(`Remove-PSDrive : Cannot find drive. A drive with the name '${name}' does not exist.`);
+      return null;
+    }
+    delete declared[name.toLowerCase()];
+    ctx.runtime.setVariable('__drives__', declared);
+    return null;
   }
 }
 
@@ -901,6 +968,7 @@ interface AliasEntry { Name: string; Definition: string; CommandType: string }
 export class GetAliasCmdlet implements ICmdlet {
   readonly name = 'get-alias';
   readonly aliases = ['gal'] as const;
+  readonly parameters = ['Name'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const filter = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '').trim();
@@ -929,6 +997,7 @@ export class GetPSProviderCmdlet implements ICmdlet {
   readonly name = 'get-psprovider';
   readonly displayName = 'Get-PSProvider';
   readonly aliases = [] as const;
+  readonly parameters = ['PSProvider'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const filter = psValueToString(ctx.named['psprovider'] ?? ctx.positional[0] ?? '').trim();

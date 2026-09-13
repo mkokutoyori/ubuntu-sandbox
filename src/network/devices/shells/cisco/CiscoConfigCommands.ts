@@ -156,6 +156,9 @@ export function typesInterfaceEnMotsCles(
   }));
 }
 
+export const NOM_INTERFACE_TAPE =
+  /^[A-Za-z][A-Za-z-]*\d[\d/.]*$/i;
+
 export function registerInterfaceEntry(trie: CommandTrie, ctx: CiscoShellContext): void {
   trie.registerGreedy('interface', 'Select an interface to configure', (args) => {
     if (args.length < 1) return '% Incomplete command.';
@@ -250,44 +253,7 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
   // register them again here.
 
   // IPv6 static routes
-  const parseIpv6OrNull = (text: string): IPv6Address | null => {
-    try {
-      return new IPv6Address(text);
-    } catch {
-      return null;
-    }
-  };
 
-  trie.registerGreedy('ipv6 route', 'Configure IPv6 static route', (args) => {
-    if (args.length < 2) return '% Incomplete command.';
-    // ipv6 route <prefix>/<len> <next-hop>
-    const prefixStr = args[0];
-    const nextHopStr = args[1];
-    const slashIdx = prefixStr.indexOf('/');
-    if (slashIdx === -1) return '% Invalid prefix format';
-    const prefix = prefixStr.substring(0, slashIdx);
-    const prefixLen = parseInt(prefixStr.substring(slashIdx + 1), 10);
-    if (isNaN(prefixLen) || prefixLen < 0 || prefixLen > 128) throw new CliInvalidInput();
-    let prefixAddr: IPv6Address;
-    try {
-      prefixAddr = new IPv6Address(prefix);
-    } catch {
-      return '% Invalid prefix format';
-    }
-
-    const egress = ctx.r().getPort(nextHopStr);
-    if (egress) {
-      const viaHop = args[2] ? parseIpv6OrNull(args[2]) : null;
-      if (args[2] && !viaHop) return '% Invalid next-hop address';
-      ctx.r().addIPv6StaticRoute(prefixAddr, prefixLen, viaHop, 0, { iface: egress.getName() });
-      return '';
-    }
-
-    const nextHop = parseIpv6OrNull(nextHopStr);
-    if (!nextHop) return '% Invalid next-hop address';
-    ctx.r().addIPv6StaticRoute(prefixAddr, prefixLen, nextHop);
-    return '';
-  });
 
   trie.registerSuggestions('no', [
     { keyword: 'hostname',  description: 'Reset system hostname' },
@@ -496,6 +462,25 @@ const IP_ADDRESS_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
     description: 'IP Address negotiated over PPP' },
 ];
 
+export const DUPLEX_PLACE: ArgumentSpec = {
+  name: 'duplex', type: 'ENUM', description: 'Set duplex mode',
+  values: [
+    { keyword: 'auto', description: 'Enable AUTO duplex configuration' },
+    { keyword: 'full', description: 'Force full duplex operation' },
+    { keyword: 'half', description: 'Force half-duplex operation' },
+  ],
+};
+
+export const SPEED_PLACE: ArgumentSpec = {
+  name: 'speed', type: 'ENUM', description: 'Force speed',
+  values: [
+    { keyword: '10', description: 'Force 10 Mbps operation' },
+    { keyword: '100', description: 'Force 100 Mbps operation' },
+    { keyword: '1000', description: 'Force 1000 Mbps operation' },
+    { keyword: 'auto', description: 'Enable AUTO speed configuration' },
+  ],
+};
+
 const CONFIG_IF_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   bandwidth: { name: 'kilobits', type: 'INT', range: [1, 10000000],
@@ -535,15 +520,7 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'Transmit ring size, in packets' },
   'ipv6 eigrp': { name: 'as-number', type: 'INT', range: [1, 65535],
     description: 'Autonomous system number' },
-  speed: {
-    name: 'speed', type: 'ENUM', description: 'Force speed',
-    values: [
-      { keyword: '10', description: 'Force 10 Mbps operation' },
-      { keyword: '100', description: 'Force 100 Mbps operation' },
-      { keyword: '1000', description: 'Force 1000 Mbps operation' },
-      { keyword: 'auto', description: 'Enable AUTO speed configuration' },
-    ],
-  },
+  speed: SPEED_PLACE,
   encapsulation: {
     name: 'type', type: 'REST', description: 'Encapsulation type',
   },
@@ -582,14 +559,7 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'Direction to rate limit, then the rate and burst sizes' },
   delay: { name: 'tens-of-microseconds', type: 'INT', range: [1, 16777215],
     description: 'Delay in tens of microseconds' },
-  duplex: {
-    name: 'duplex', type: 'ENUM', description: 'Set duplex mode',
-    values: [
-      { keyword: 'auto', description: 'Enable AUTO duplex configuration' },
-      { keyword: 'full', description: 'Force full duplex operation' },
-      { keyword: 'half', description: 'Force half-duplex operation' },
-    ],
-  },
+  duplex: DUPLEX_PLACE,
   description: { name: 'texte', type: 'REST', literal: 'LINE',
     description: 'Up to 240 characters describing this interface' },
   shutdown: null,
@@ -618,6 +588,32 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'Name of the route-map applied to this interface' },
   'ip unnumbered': { name: 'interface', type: 'INTERFACE',
     description: 'Interface whose address this one borrows' },
+  /*
+   * Le service se NOMME ou se numerote, et rien d'autre ne passe : le
+   * glouton acceptait n'importe quel mot et n'en faisait rien, donc
+   * `ip forward-protocol udp zorglub` etait pris pour une commande
+   * appliquee alors que le relais restait ferme.
+   */
+  'ip forward-protocol udp': {
+    name: 'service', type: 'WORD', literal: '<0-65535>',
+    pattern: /^(bootps|bootpc|\d{1,5})$/i,
+    description: 'UDP port number, or the name of a well-known service',
+    alternatives: [
+      { keyword: '<0-65535>', description: 'Port number' },
+      { keyword: 'bootpc', description: 'Bootstrap Protocol Client (68)' },
+      { keyword: 'bootps', description: 'Bootstrap Protocol Server (67)' },
+    ],
+  },
+  'ip summary-address rip': [
+    { name: 'address', type: 'IP_ADDR', description: 'Summary address' },
+    { name: 'mask', type: 'SUBNET_MASK', description: 'Summary mask' },
+  ],
+  'ip summary-address eigrp': [
+    { name: 'as-number', type: 'INT', range: [1, 65535],
+      description: 'Autonomous system number' },
+    { name: 'address', type: 'IP_ADDR', description: 'Summary address' },
+    { name: 'mask', type: 'SUBNET_MASK', description: 'Summary mask' },
+  ],
 };
 
 export function configIfSpecs(ctx: CiscoShellContext): CommandSpec[] {

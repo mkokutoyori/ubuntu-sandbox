@@ -38,7 +38,7 @@ import { IPAddress, IPv6Address, MACAddress, SubnetMask } from '@/network/core/t
 import type { NetNeighborPlan, NetNeighborState } from '@/network/devices/windows/netNeighbor';
 import { isValidIPv4 } from '@/network/core/ip';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
-import { discoverDcHostname, rootDnOf } from '@/network/devices/windows/domain/DcHostnameDiscovery';
+import { discoverDc, rootDnOf } from '@/network/devices/windows/domain/DcHostnameDiscovery';
 import { locateDomainController } from '@/network/devices/windows/domain/DcLocator';
 import { dialLdap } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
@@ -117,6 +117,9 @@ import {
 import {
   type NetFirewallRuleEntry, firewallRuleKey,
 } from '@/network/devices/windows/netFirewallRule';
+import type {
+  FirewallProfileName, NetFirewallProfileRow,
+} from '@/network/devices/windows/netFirewallProfile';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function defaultNamingContextOf(client: LdapClient): string | null {
@@ -438,14 +441,14 @@ class WindowsSmbAdapter implements ISmbProvider {
     const s = this.pc.smbShares.get(name);
     return s ? this.toShareInfo(this.pc.smbShares.toView(s)) : null;
   }
-  newShare(name: string, path: string, opts?: { fullAccess?: string[]; changeAccess?: string[]; readAccess?: string[] }) {
+  newShare(name: string, path: string, opts?: { description?: string; fullAccess?: string[]; changeAccess?: string[]; readAccess?: string[] }) {
     this.requireRole();
     const permissions = new Map<string, 'Full' | 'Change' | 'Read'>();
     for (const p of opts?.fullAccess ?? []) permissions.set(p, 'Full');
     for (const p of opts?.changeAccess ?? []) permissions.set(p, 'Change');
     for (const p of opts?.readAccess ?? []) permissions.set(p, 'Read');
     if (permissions.size === 0) permissions.set('Everyone', 'Read');
-    const res = this.pc.smbShares.add(name, path, { permissions });
+    const res = this.pc.smbShares.add(name, path, { description: opts?.description, permissions });
     // 5142 — « un objet de partage réseau a été ajouté ». C'est
     // l'événement de la *création* ; 5140 est celui de l'*accès*, et les
     // confondre revient à croire qu'un partage créé a déjà été utilisé.
@@ -459,6 +462,12 @@ class WindowsSmbAdapter implements ISmbProvider {
   listSessions(): SmbSessionInfo[] {
     return this.pc.smbSessions.list().map(s => this.pc.smbSessions.toView(s));
   }
+
+  listMappings() { return this.pc.listNetworkDrives(); }
+  mapDrive(local: string, remote: string, credential?: { username: string; password: string }) {
+    return this.pc.mapNetworkDrive(local, remote, credential);
+  }
+  unmapDrive(target: string) { return this.pc.unmapNetworkDrive(target); }
 }
 
 // ── AD DS adapter (Server Manager — WindowsServer only, gated on AD-Domain-Services) ──
@@ -2491,7 +2500,14 @@ class WindowsNetworkAdapter implements INetworkProvider {
   // ─ Network connection profile ──────────────────────────────────────────
 
   getNetworkProfile(ifIndex: number): string {
-    return this.state.networkProfiles.get(ifIndex) ?? 'DomainAuthenticated';
+    return this.state.networkProfiles.get(ifIndex) ?? this.pc.defaultNetworkCategory();
+  }
+  getFirewallProfiles(): NetFirewallProfileRow[] {
+    return [...this.pc.firewallProfiles.values()];
+  }
+  updateFirewallProfile(name: FirewallProfileName, patch: Partial<NetFirewallProfileRow>): void {
+    const row = this.pc.firewallProfiles.get(name);
+    if (row) Object.assign(row, patch);
   }
   setNetworkProfile(ifIndex: number, category: string): void {
     this.state.networkProfiles.set(ifIndex, category);
@@ -2827,7 +2843,7 @@ class WindowsComputerAdapter implements IComputerProvider {
   discoverDomainController(): { hostName: string } | null {
     const membership = this.device().getDomainMembership();
     if (!membership) return null;
-    const hostname = discoverDcHostname(this.pc.getTcpStack(), membership.dcAddress, membership.dnsName);
+    const hostname = discoverDc(this.pc.getTcpStack(), membership.dcAddress, membership.dnsName)?.hostname ?? null;
     return hostname ? { hostName: `${hostname}.${membership.dnsName}` } : null;
   }
 
@@ -3643,7 +3659,10 @@ export function createWindowsPSProviders(
     environment:    new WindowsEnvironmentAdapter(pc),
     remoting:       new WindowsRemotingAdapter(pc),
     roles:          pc.getRoleManager() ? new WindowsRoleAdapter(pc) : null,
-    smb:            pc.getRoleManager() ? new WindowsSmbAdapter(pc) : null,
+    // Any Windows machine maps a network drive; only SERVING a share needs
+    // the File Server role, and the adapter checks that itself on the two
+    // operations that require it.
+    smb:            new WindowsSmbAdapter(pc),
     ad:             pc.getRoleManager() ? new WindowsAdAdapter(pc) : null,
     computer:       new WindowsComputerAdapter(pc),
     dns:            pc.getRoleManager() ? new WindowsDnsServerAdapter(pc) : null,

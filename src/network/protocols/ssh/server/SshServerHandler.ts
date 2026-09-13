@@ -303,6 +303,7 @@ export class SshServerHandler {
             conn.write(JSON.stringify({ ok: false, ended: true, error: 'too many authentication failures' }));
             this.eventBus.emit({
               kind: 'auth_failure',
+              port: this.ctx.clientPort?.(clientIp),
               user: (parsed.user as string | undefined) ?? '',
               reason: 'max_auth_tries',
               ip: clientIp,
@@ -326,6 +327,7 @@ export class SshServerHandler {
             if (authFailures >= cap) {
               this.eventBus.emit({
                 kind: 'auth_failure',
+                port: this.ctx.clientPort?.(clientIp),
                 user: (parsed.user as string | undefined) ?? '',
                 reason: 'max_auth_tries',
                 ip: clientIp,
@@ -346,6 +348,7 @@ export class SshServerHandler {
             conn.write(JSON.stringify({ ok: false, error: 'open failed: administratively prohibited: too many open sessions' }));
             this.eventBus.emit({
               kind: 'auth_failure',
+              port: this.ctx.clientPort?.(clientIp),
               user: userCtx.username,
               reason: 'max_sessions',
               ip: clientIp,
@@ -723,6 +726,7 @@ export class SshServerHandler {
     if (this.ctx.isClientBlocked?.(clientIp, user)) {
       this.eventBus.emit({
         kind: 'auth_failure',
+        port: this.ctx.clientPort?.(clientIp),
         user,
         reason: 'throttled',
         ip: clientIp,
@@ -735,6 +739,7 @@ export class SshServerHandler {
     if (user === 'root' && !this.ctx.config.permitRootLogin) {
       this.eventBus.emit({
         kind: 'auth_failure',
+        port: this.ctx.clientPort?.(clientIp),
         user,
         reason: 'root_login_disabled',
         ip: clientIp,
@@ -760,6 +765,7 @@ export class SshServerHandler {
       // (Real sshd does the same for the same reason: side-channel hardening.)
       this.eventBus.emit({
         kind: 'auth_failure',
+        port: this.ctx.clientPort?.(clientIp),
         user,
         reason: 'invalid_user',
         ip: clientIp,
@@ -776,6 +782,7 @@ export class SshServerHandler {
     ) {
       this.eventBus.emit({
         kind: 'auth_failure',
+        port: this.ctx.clientPort?.(clientIp),
         user,
         reason: 'empty_password_disabled',
         ip: clientIp,
@@ -799,6 +806,7 @@ export class SshServerHandler {
     if (!success) {
       this.eventBus.emit({
         kind: 'auth_failure',
+        port: this.ctx.clientPort?.(clientIp),
         user,
         reason: method === 'password' ? 'wrong_password' : 'wrong_key',
         ip: clientIp,
@@ -813,6 +821,7 @@ export class SshServerHandler {
     if (!lifecycle.ok) {
       this.eventBus.emit({
         kind: 'auth_failure',
+        port: this.ctx.clientPort?.(clientIp),
         user,
         reason: lifecycle.kind === 'account-expired' ? 'account_expired' : 'password_expired',
         ip: clientIp,
@@ -830,6 +839,7 @@ export class SshServerHandler {
       user,
       method: method ?? 'unknown',
       ip: clientIp,
+      port: this.ctx.clientPort?.(clientIp),
       timestamp: Date.now(),
     });
     const userCtx =

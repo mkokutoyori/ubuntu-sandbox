@@ -22,6 +22,13 @@
  * This is the wire path EVERY interactive client shares — the terminal's
  * own first hop, `startNestedHop`, and `sshLauncher`'s wire leg — so the
  * fix lands once for all three.
+ *
+ * `CountingHandler` declare `canPromptAgain()` : il tient la place d'un
+ * HUMAIN devant son terminal, qui peut retaper autre chose a chaque invite.
+ * Les appelants non interactifs du depot construisent au contraire leur
+ * gestionnaire avec un mot de passe CONSTANT, et n'obtiennent donc qu'une
+ * seule tentative — sans quoi une connexion reussie inscrivait trois echecs
+ * au journal du serveur. Les comptes attendus ici, 2 et 3, sont inchanges.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -61,6 +68,8 @@ class CountingHandler extends SilentSshInteractionHandler {
     this.prompts += 1;
     return this.answer;
   }
+
+  canPromptAgain(): boolean { return true; }
 
   showAuthFailure(): void { this.failuresShown += 1; }
 }

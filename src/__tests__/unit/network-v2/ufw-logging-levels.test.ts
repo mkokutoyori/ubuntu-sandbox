@@ -1,6 +1,14 @@
 // `ufw logging off` gates /var/log/ufw.log writes — PRD-Iptables-UFW.md §2.1
 // objectif F.17. Only on/off gating; low/medium/high/full content-level
 // filtering is out of scope (see logBlockedPacket() doc comment).
+//
+// Le cas « logging off » mesure le DELTA, et non l'absence absolue. Le
+// pare-feu journalise desormais tout paquet qu'il jette sur le chemin
+// REEL — et non plus seulement celui qu'un `ssh` provoque —, si bien que
+// la deny par defaut inscrit deja des lignes avant que `logging off`
+// soit tape : les requetes LLMNR du voisin, jetees a l'arrivee. Exiger
+// un fichier vierge mesurait l'etroitesse de l'ancien ecrivain, pas la
+// porte ; compter les lignes avant et apres mesure la porte.
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
@@ -51,15 +59,15 @@ describe('ufw logging on/off gates /var/log/ufw.log writes', () => {
     await pc2.executeCommand('sudo ufw enable');
     await pc2.executeCommand('sudo ufw deny 22');
     await pc2.executeCommand('sudo ufw logging off');
-    const beforeLog = await pc2.executeCommand('sudo cat /var/log/ufw.log');
+    const compteBloques = async (): Promise<number> => {
+      const log = await pc2.executeCommand('sudo cat /var/log/ufw.log');
+      return (log.match(/\[UFW (BLOCK|REJECT)\]/g) ?? []).length;
+    };
+    const avant = await compteBloques();
 
     await pc1.executeCommand('ssh alice@10.0.0.2');
 
-    const afterLog = await pc2.executeCommand('sudo cat /var/log/ufw.log');
-    expect(afterLog).not.toMatch(/\[UFW (BLOCK|REJECT)\]/);
-    // Confirms the earlier assertion isn't vacuous (the log file itself
-    // still exists and is being read correctly).
-    expect(afterLog.length).toBeGreaterThanOrEqual(beforeLog.length);
+    expect(await compteBloques()).toBe(avant);
   });
 
   it('re-enabling logging (any level) resumes blocked-packet writes', async () => {

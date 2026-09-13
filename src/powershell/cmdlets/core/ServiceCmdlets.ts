@@ -125,6 +125,7 @@ export class GetServiceCmdlet implements ICmdlet {
   readonly name = 'get-service';
   readonly aliases = ['gsv'] as const;
   readonly parameters = ['Name', 'DisplayName', 'Include', 'Exclude', 'InputObject', 'DependentServices', 'RequiredServices', 'ComputerName'] as const;
+  readonly parameterValues = { Name: 'serviceName' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const remote = ctx.named['computername'];
@@ -250,6 +251,7 @@ export class SetServiceCmdlet implements ICmdlet {
   readonly supportsShouldProcess = true as const;
   readonly aliases = [] as const;
   readonly parameters = ['Name', 'DisplayName', 'Description', 'StartupType', 'Status', 'Credential', 'PassThru'] as const;
+  readonly parameterValues = { Name: 'serviceName' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const svc = requireServices(ctx);
@@ -283,6 +285,7 @@ export class NewServiceCmdlet implements ICmdlet {
   readonly name = 'new-service';
   readonly aliases = [] as const;
   readonly parameters = ['Name', 'BinaryPathName', 'DisplayName', 'Description', 'StartupType', 'DependsOn', 'Credential'] as const;
+  readonly parameterValues = { Name: 'serviceName' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const svc = requireServices(ctx);

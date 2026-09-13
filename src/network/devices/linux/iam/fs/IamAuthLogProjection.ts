@@ -49,7 +49,6 @@ export class IamAuthLogProjection {
       bus.subscribe('linux.iam.user.modified', (e) => this.onUserModified(e.payload)),
       bus.subscribe('linux.iam.user.gecos-changed', (e) => this.onGecosChanged(e.payload)),
       bus.subscribe('linux.iam.group.modified', (e) => this.onGroupModified(e.payload)),
-      bus.subscribe('linux.firewall.drop', (e) => this.onFirewallDrop(e.payload)),
     );
   }
 
@@ -67,17 +66,6 @@ export class IamAuthLogProjection {
   private onGroupModified(p: { deviceId: string; groupName: string }): void {
     if (p.deviceId !== this.deviceId) return;
     this.logManager.logAuth('groupmod', `modify group '${p.groupName}'`);
-  }
-
-  private onFirewallDrop(p: {
-    deviceId: string; inIface?: string; outIface?: string;
-    sourceIp: string; destinationIp: string;
-    sourcePort: number; destinationPort: number;
-    protocol: string; chain: string;
-  }): void {
-    if (p.deviceId !== this.deviceId) return;
-    this.logManager.logAuth('audit',
-      `netfilter ${p.chain}: src=${p.sourceIp}:${p.sourcePort} dst=${p.destinationIp}:${p.destinationPort} proto=${p.protocol} in=${p.inIface ?? ''} out=${p.outIface ?? ''}`);
   }
 
   /** Detach every subscription — call before discarding the projection. */

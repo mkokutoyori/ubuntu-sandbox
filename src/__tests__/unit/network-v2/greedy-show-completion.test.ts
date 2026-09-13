@@ -42,10 +42,26 @@ describe('Greedy-command continuation completion — Cisco switch show family', 
     expect(help).toContain('interface');
   });
 
-  it('show etherchannel / port-security / access-lists sub-keywords complete', () => {
+  it('show etherchannel / port-security sub-keywords complete', () => {
     expect(sw.cliTabCandidates('show etherchannel sum')).toEqual(['show etherchannel summary']);
     expect(sw.cliTabCandidates('show port-security int')).toEqual(['show port-security interface']);
-    expect(sw.cliTabCandidates('show access-lists int')).toEqual(['show access-lists interface']);
+  });
+
+  /*
+   * `show access-lists interface` etait exige ici, et ce n'est pas une
+   * forme de cette commande : son gestionnaire ne lit qu'UN argument et
+   * le prend pour un NOM de liste. Le mot venait de la table de
+   * completion de `show port-security`, qui l'honore vraiment ; recopie
+   * sur la vue ACL, il y cherchait une liste nommee « interface » et
+   * rendait une vue vide sans un mot.
+   *
+   * La place est un nom LIBRE : la tabulation n'a donc rien a y deviner,
+   * et n'offre aucun candidat. C'est la reponse juste, et ce cas la
+   * mesure a la place de l'ancienne.
+   */
+  it('`show access-lists int` n offre rien : la place est un nom libre', () => {
+    expect(sw.cliTabCandidates('show access-lists int')).toEqual([]);
+    expect(sw.cliHelp('show access-lists ')).not.toContain('interface');
   });
 
   it('the continuation keywords still EXECUTE (completion did not break the handler)', async () => {

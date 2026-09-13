@@ -12,7 +12,7 @@
  *   Expression → unary, binary, member, index, cast, range, ...
  */
 
-import { PSTokenType, PS_OPERATOR_PARAMS, PS_AMBIGUOUS_OPERATOR_PARAMS } from '@/powershell/lexer/PSToken';
+import { PSTokenType, PS_OPERATOR_PARAMS, PS_AMBIGUOUS_OPERATOR_PARAMS, tokenText } from '@/powershell/lexer/PSToken';
 // PSTokenType.INCREMENT and PSTokenType.DECREMENT are used below
 import type { PSToken, SourcePosition } from '@/powershell/lexer/PSToken';
 import { PSParserError } from './PSParserError';
@@ -594,7 +594,10 @@ export class PSParser {
   private parseBareword(withRange: boolean): PSExpression {
     const pos = this.pos_();
     const head = this.advance();
-    let value = head.value;
+    // A bareword stands for itself, so it carries the spelling typed —
+    // `Data` used as an argument is the string `Data`, not the `data`
+    // keyword the lexer normalized for statement position.
+    let value = tokenText(head);
     let prevEnd = head.position.offset + head.value.length;
     for (;;) {
       const nxt = this.peek();
@@ -602,7 +605,7 @@ export class PSParser {
       if (nxt.type === PSTokenType.ASSIGN) { value += '='; this.advance(); break; }
       if (nxt.type === PSTokenType.RANGE && !withRange) break;
       if (!BAREWORD_GLUE.has(nxt.type)) break;
-      value += nxt.value;
+      value += tokenText(nxt);
       this.advance();
       prevEnd = nxt.position.offset + nxt.value.length;
     }

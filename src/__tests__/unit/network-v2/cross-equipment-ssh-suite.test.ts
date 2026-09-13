@@ -747,7 +747,7 @@ describe('§10 — SSH authentication methods', () => {
     {
       name: 'Linux→Linux: publickey auth after ssh-keygen+ssh-copy-id works',
       setup: async (l) => {
-        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
         await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
       },
       on: l => l.linux1,
@@ -783,8 +783,8 @@ describe('§10 — SSH authentication methods', () => {
     {
       name: 'Linux→Huawei: publickey after ssh user admin assign rsa-key',
       setup: async (l) => {
-        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
-        const pub = await l.linux1.executeCommand('cat /root/.ssh/id_rsa.pub');
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
+        const pub = await l.linux1.executeCommand('cat ~/.ssh/id_rsa.pub');
         await l.hwR1.executeCommand('system-view');
         await l.hwR1.executeCommand(`rsa peer-public-key linux1key encoding-type openssh`);
         await l.hwR1.executeCommand(`public-key-code begin`);
@@ -825,10 +825,10 @@ describe('§11 — known_hosts coherence across platforms', () => {
     {
       name: 'Linux: first connect with accept-new persists host key',
       setup: async (l) => {
-        await l.linux1.executeCommand('rm -f /root/.ssh/known_hosts');
+        await l.linux1.executeCommand('rm -f ~/.ssh/known_hosts');
         await l.linux1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 hostname');
       },
-      on: l => l.linux1, cmd: 'cat /root/.ssh/known_hosts',
+      on: l => l.linux1, cmd: 'cat ~/.ssh/known_hosts',
       contains: [/10\.0\.0\.2/, /ssh-(rsa|ed25519|ecdsa)/i],
     },
     {
@@ -844,7 +844,10 @@ describe('§11 — known_hosts coherence across platforms', () => {
       name: 'Linux: regenerated remote host key triggers identification-changed',
       setup: async (l) => {
         await l.linux1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 hostname');
-        await l.linux2.executeCommand('sudo ssh-keygen -A -f /etc/ssh -t rsa');
+        for (const type of ['rsa', 'ed25519', 'ecdsa']) {
+          await l.linux2.executeCommand(`sudo rm -f /etc/ssh/ssh_host_${type}_key /etc/ssh/ssh_host_${type}_key.pub`);
+        }
+        await l.linux2.executeCommand('sudo ssh-keygen -A -f /etc/ssh');
         await l.linux2.executeCommand('sudo systemctl restart ssh');
       },
       on: l => l.linux1,
@@ -886,10 +889,9 @@ describe('§12 — ~/.ssh/config Host blocks', () => {
   beforeEach(async () => { lan = await buildXLan(); });
 
   const writeConfig = async (l: XLan, body: string) => {
-    await l.linux1.executeCommand('sudo mkdir -p /root/.ssh');
-    await l.linux1.executeCommand(
-      `sudo tee /root/.ssh/config > /dev/null <<'EOF'\n${body}\nEOF`);
-    await l.linux1.executeCommand('sudo chmod 600 /root/.ssh/config');
+    await l.linux1.executeCommand('mkdir -p ~/.ssh');
+    await l.linux1.executeCommand(`cat > ~/.ssh/config <<'EOF'\n${body}\nEOF`);
+    await l.linux1.executeCommand('chmod 600 ~/.ssh/config');
   };
 
   const rows: Row[] = [
@@ -922,9 +924,9 @@ describe('§12 — ~/.ssh/config Host blocks', () => {
     {
       name: 'IdentityFile is read for the matching Host only',
       setup: async (l) => {
-        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_two");
-        await l.linux1.executeCommand('ssh-copy-id -i /root/.ssh/id_two.pub alice@10.0.0.2');
-        await writeConfig(l, 'Host two\n  HostName 10.0.0.2\n  User alice\n  IdentityFile /root/.ssh/id_two\n  IdentitiesOnly yes');
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_two");
+        await l.linux1.executeCommand('ssh-copy-id -i ~/.ssh/id_two.pub alice@10.0.0.2');
+        await writeConfig(l, 'Host two\n  HostName 10.0.0.2\n  User alice\n  IdentityFile ~/.ssh/id_two\n  IdentitiesOnly yes');
       },
       on: l => l.linux1,
       cmd: 'ssh -o PasswordAuthentication=no two whoami',
@@ -980,9 +982,8 @@ describe('§13 — ProxyJump across heterogeneous hops', () => {
     {
       name: 'ProxyJump uses ~/.ssh/config Host alias',
       setup: async (l) => {
-        await l.linux1.executeCommand('mkdir -p /root/.ssh');
-        await l.linux1.executeCommand('sudo mkdir -p /root/.ssh');
-        await l.linux1.executeCommand("sudo tee /root/.ssh/config > /dev/null <<'EOF'\nHost jump\n  HostName 10.0.0.2\n  User alice\nHost target\n  HostName 10.0.0.3\n  User alice\n  ProxyJump jump\nEOF");
+        await l.linux1.executeCommand('mkdir -p ~/.ssh');
+        await l.linux1.executeCommand("cat > ~/.ssh/config <<'EOF'\nHost jump\n  HostName 10.0.0.2\n  User alice\nHost target\n  HostName 10.0.0.3\n  User alice\n  ProxyJump jump\nEOF");
       },
       on: l => l.linux1, cmd: 'ssh target hostname',
       contains: [/^lxsrv1$/m],
@@ -1147,10 +1148,10 @@ describe('§16 — SSH agent & agent forwarding', () => {
   beforeEach(async () => {
     lan = await buildXLan();
     await enableCiscoSsh(lan.ciscoR1);
-    await lan.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+    await lan.linux1.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
     await lan.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
     await lan.linux1.executeCommand('ssh-copy-id alice@10.0.0.3');
-    await lan.linux1.executeCommand('eval $(ssh-agent -s) && ssh-add /root/.ssh/id_rsa');
+    await lan.linux1.executeCommand('eval $(ssh-agent -s) && ssh-add ~/.ssh/id_rsa');
   });
 
   const rows: Row[] = [
@@ -1828,7 +1829,7 @@ describe('§27 — Strict-mode permission coherence', () => {
       // group/other) est refusé au même titre que 0777.
       name: 'authorized_keys mode 0644 is refused (read-bit leaks to group/other)',
       setup: async (l) => {
-        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
         await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
         await l.linux2.executeCommand('sudo chmod 0644 /home/alice/.ssh/authorized_keys');
       },
@@ -1839,7 +1840,7 @@ describe('§27 — Strict-mode permission coherence', () => {
     {
       name: 'authorized_keys mode 0777 is refused (StrictModes yes)',
       setup: async (l) => {
-        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
         await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
         await l.linux2.executeCommand('sudo chmod 0777 /home/alice/.ssh/authorized_keys');
       },
@@ -1850,7 +1851,7 @@ describe('§27 — Strict-mode permission coherence', () => {
     {
       name: '~/.ssh owned by another user is refused',
       setup: async (l) => {
-        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
         await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
         await l.linux2.executeCommand('sudo sh -c "chown -R bob:bob /home/alice/.ssh"');
       },
@@ -1861,11 +1862,11 @@ describe('§27 — Strict-mode permission coherence', () => {
     {
       name: 'private key mode 0644 triggers UNPROTECTED PRIVATE KEY warning',
       setup: async (l) => {
-        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
-        await l.linux1.executeCommand('chmod 0644 /root/.ssh/id_rsa');
+        await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
+        await l.linux1.executeCommand('chmod 0644 ~/.ssh/id_rsa');
       },
       on: l => l.linux1,
-      cmd: 'ssh -o PasswordAuthentication=no -i /root/.ssh/id_rsa alice@10.0.0.2 whoami',
+      cmd: 'ssh -o PasswordAuthentication=no -i ~/.ssh/id_rsa alice@10.0.0.2 whoami',
       contains: [/UNPROTECTED PRIVATE KEY|too open/i],
     },
   ];
@@ -1885,39 +1886,39 @@ describe('§28 — Key formats across platforms', () => {
     {
       name: 'ssh-keygen -t rsa produces a usable identity',
       setup: async (l) => {
-        await l.linux1.executeCommand("ssh-keygen -t rsa -b 2048 -N '' -f /root/.ssh/id_rsa");
+        await l.linux1.executeCommand("ssh-keygen -t rsa -b 2048 -N '' -f ~/.ssh/id_rsa");
         await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
       },
       on: l => l.linux1,
-      cmd: 'ssh -o PreferredAuthentications=publickey -i /root/.ssh/id_rsa alice@10.0.0.2 whoami',
+      cmd: 'ssh -o PreferredAuthentications=publickey -i ~/.ssh/id_rsa alice@10.0.0.2 whoami',
       contains: [/^alice$/m],
     },
     {
       name: 'ssh-keygen -t ed25519 produces a usable identity',
       setup: async (l) => {
-        await l.linux1.executeCommand("ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519");
-        await l.linux1.executeCommand('ssh-copy-id -i /root/.ssh/id_ed25519.pub alice@10.0.0.2');
+        await l.linux1.executeCommand("ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519");
+        await l.linux1.executeCommand('ssh-copy-id -i ~/.ssh/id_ed25519.pub alice@10.0.0.2');
       },
       on: l => l.linux1,
-      cmd: 'ssh -o PreferredAuthentications=publickey -i /root/.ssh/id_ed25519 alice@10.0.0.2 whoami',
+      cmd: 'ssh -o PreferredAuthentications=publickey -i ~/.ssh/id_ed25519 alice@10.0.0.2 whoami',
       contains: [/^alice$/m],
     },
     {
       name: 'ssh-keygen -t ecdsa -b 256 produces a usable identity',
       setup: async (l) => {
-        await l.linux1.executeCommand("ssh-keygen -t ecdsa -b 256 -N '' -f /root/.ssh/id_ecdsa");
-        await l.linux1.executeCommand('ssh-copy-id -i /root/.ssh/id_ecdsa.pub alice@10.0.0.2');
+        await l.linux1.executeCommand("ssh-keygen -t ecdsa -b 256 -N '' -f ~/.ssh/id_ecdsa");
+        await l.linux1.executeCommand('ssh-copy-id -i ~/.ssh/id_ecdsa.pub alice@10.0.0.2');
       },
       on: l => l.linux1,
-      cmd: 'ssh -o PreferredAuthentications=publickey -i /root/.ssh/id_ecdsa alice@10.0.0.2 whoami',
+      cmd: 'ssh -o PreferredAuthentications=publickey -i ~/.ssh/id_ecdsa alice@10.0.0.2 whoami',
       contains: [/^alice$/m],
     },
     {
       name: 'ssh-keygen -l -f reports the public-key fingerprint',
       setup: async (l) => {
-        await l.linux1.executeCommand("ssh-keygen -t ed25519 -N '' -f /root/.ssh/id_ed25519");
+        await l.linux1.executeCommand("ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519");
       },
-      on: l => l.linux1, cmd: 'ssh-keygen -l -f /root/.ssh/id_ed25519.pub',
+      on: l => l.linux1, cmd: 'ssh-keygen -l -f ~/.ssh/id_ed25519.pub',
       contains: [/SHA256:[A-Za-z0-9+\/]+/, /ED25519/i],
     },
     {
@@ -2147,7 +2148,7 @@ describe('§32 — Negative paths', () => {
     },
     {
       name: 'StrictHostKeyChecking=yes with no known_hosts entry refuses',
-      setup: async (l) => { await l.linux1.executeCommand('rm -f /root/.ssh/known_hosts'); },
+      setup: async (l) => { await l.linux1.executeCommand('rm -f ~/.ssh/known_hosts'); },
       on: l => l.linux1,
       cmd: 'ssh -o StrictHostKeyChecking=yes alice@10.0.0.2',
       contains: [/Host key verification failed|No matching host key|not known/i],

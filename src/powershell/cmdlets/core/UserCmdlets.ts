@@ -60,9 +60,20 @@ export class GetLocalUserCmdlet implements ICmdlet {
   readonly name = 'get-localuser';
   readonly displayName = 'Get-LocalUser';
   readonly aliases = [] as const;
+  readonly parameters = ['Name', 'SID'] as const;
+  readonly parameterValues = { Name: 'localUser' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const users = requireUsers(ctx);
+    const sid = ctx.named['sid'];
+    if (sid !== undefined && sid !== null && sid !== '') {
+      const wanted = (Array.isArray(sid) ? sid : [sid]).map(psValueToString);
+      const matched = users.listUsers().filter(u => wanted.includes(u.sid));
+      for (const missing of wanted.filter(w => !matched.some(u => u.sid === w))) {
+        ctx.emitError(`User ${missing} was not found.`);
+      }
+      return matched.map(userToPSObject) as PSValue;
+    }
     const name  = pickName(ctx);
     if (name === null) return users.listUsers().map(userToPSObject) as PSValue;
     const names = Array.isArray(name) ? name : [name];
@@ -87,6 +98,8 @@ export class NewLocalUserCmdlet implements ICmdlet {
   readonly name = 'new-localuser';
   readonly displayName = 'New-LocalUser';
   readonly aliases = [] as const;
+  readonly parameters = ['Description', 'FullName', 'Name', 'Password'] as const;
+  readonly parameterValues = { Name: 'localUser' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const users = requireUsers(ctx);
@@ -111,6 +124,8 @@ export class SetLocalUserCmdlet implements ICmdlet {
   readonly name = 'set-localuser';
   readonly displayName = 'Set-LocalUser';
   readonly aliases = [] as const;
+  readonly parameters = ['Description', 'Enabled', 'FullName', 'Name', 'Password'] as const;
+  readonly parameterValues = { Name: 'localUser' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const users = requireUsers(ctx);
@@ -174,6 +189,8 @@ export class RenameLocalUserCmdlet implements ICmdlet {
   readonly name = 'rename-localuser';
   readonly displayName = 'Rename-LocalUser';
   readonly aliases = [] as const;
+  readonly parameters = ['Name', 'NewName'] as const;
+  readonly parameterValues = { Name: 'localUser' } as const;
 
   execute(ctx: CmdletContext): PSValue {
     const users = requireUsers(ctx);
@@ -215,6 +232,7 @@ export class NewLocalGroupCmdlet implements ICmdlet {
   readonly name = 'new-localgroup';
   readonly displayName = 'New-LocalGroup';
   readonly aliases = [] as const;
+  readonly parameters = ['Description', 'Name'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const users = requireUsers(ctx);
@@ -251,6 +269,7 @@ export class RemoveLocalGroupCmdlet implements ICmdlet {
 abstract class GroupMemberCmdlet implements ICmdlet {
   abstract readonly name: string;
   abstract readonly aliases: readonly string[];
+  readonly parameters = ['Group', 'Member'] as const;
   protected abstract act(users: IUserProvider, group: string, member: string): string;
 
   execute(ctx: CmdletContext): PSValue {
@@ -287,6 +306,7 @@ export class RenameLocalGroupCmdlet implements ICmdlet {
   readonly name = 'rename-localgroup';
   readonly displayName = 'Rename-LocalGroup';
   readonly aliases = [] as const;
+  readonly parameters = ['Name', 'NewName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const users = requireUsers(ctx);
@@ -306,6 +326,7 @@ export class GetLocalGroupMemberCmdlet implements ICmdlet {
   readonly name = 'get-localgroupmember';
   readonly displayName = 'Get-LocalGroupMember';
   readonly aliases = [] as const;
+  readonly parameters = ['Group'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const users = requireUsers(ctx);

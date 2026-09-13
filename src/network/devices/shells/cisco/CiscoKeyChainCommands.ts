@@ -180,6 +180,37 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     range: [0, 255] },
 };
 
+const NOM_DE_CHAINE: ArgumentSpec = {
+  name: 'nom', type: 'WORD', description: 'Name of the key chain',
+};
+
+export function keyChainGlobalSpecs(ctx: KeyChainShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      registerKeyChainGlobalCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: () => NOM_DE_CHAINE,
+    },
+  );
+}
+
+/*
+ * Le nom est FACULTATIF : la vue nue liste toutes les chaines, et c'est
+ * ce que le gestionnaire fait depuis toujours.
+ */
+export function keyChainShowSpecs(ctx: KeyChainShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      registerKeyChainShowCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['user', 'privileged'], minPrivilege: 1,
+      argumentFor: () => ({ ...NOM_DE_CHAINE, optional: true }),
+    },
+  );
+}
+
 export function keyChainSubmodeSpecs(ctx: KeyChainShellContext): CommandSpec[] {
   return specsFromTrieRegistrations(
     (collector) => buildKeyChainSubmode(collector as unknown as CommandTrie, ctx),

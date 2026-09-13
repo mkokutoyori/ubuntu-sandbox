@@ -35,14 +35,17 @@ import type { IRouterShell } from './IRouterShell';
 import { CiscoShellBase } from './CiscoShellBase';
 import { CommandTrie, setInvalidInputPromptWidth, formatInvalidInput, formatInvalidInputAt } from './CommandTrie';
 import { IPAddress, IPv6Address, SubnetMask } from '../../core/types';
+import { ipv6PorteSpecs } from './cisco/ipv6PorteSpecs';
 import { isValidIPv4 } from '../../core/ip';
 import { parsePingArgs, formatCiscoPing, looksLikeIPv6 } from './cisco/ciscoPing';
+import { CISCO_ERRORS as CISCO_TRACE_ERRORS } from './cli-utils';
 import {
   parseRouteDistinguisher, parseRouteTarget, applyRouteTarget,
   vrfStoreOf, type VrfHost, type VrfInstance,
 } from './cisco/ciscoVrfStore';
 import { CliInvalidInput } from './cli/CliDiagnostic';
 import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
+import { zoneSpecs, type ZoneHost } from './cisco/zoneSpecs';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
@@ -81,7 +84,7 @@ import {
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import {
-  keyChainSubmodeSpecs, keyChainKeySubmodeSpecs,
+  keyChainSubmodeSpecs, keyChainKeySubmodeSpecs, keyChainGlobalSpecs, keyChainShowSpecs,
 } from './cisco/CiscoKeyChainCommands';
 import {
   buildIpSlaConfigCommands, registerIpSlaTypeSubModes,
@@ -105,7 +108,7 @@ import { showIpOspfNeighbor, routerIpRouteView } from './cisco/CiscoOspfCommands
 import {
   type CiscoShellMode, type CiscoShellContext,
   buildConfigCommands, buildConfigIfCommands, configIfSpecs, dhcpGlobalSpecs,
-  registerInterfaceEntry, INTERFACE_TYPES, typesInterfaceEnMotsCles,
+  registerInterfaceEntry, INTERFACE_TYPES, typesInterfaceEnMotsCles, NOM_INTERFACE_TAPE,
 } from './cisco/CiscoConfigCommands';
 import {
   buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands, dhcpPoolSpecs,
@@ -135,6 +138,7 @@ import {
 } from './cisco/CiscoAclCommands';
 import { aclStandardSpecs } from './cisco/aclStandardSpecs';
 import { aclExtendedSpecs } from './cisco/aclExtendedSpecs';
+import { aclSubmodeSpecs, avecNumeroDeSequence } from './cisco/aclSubmodeSpecs';
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import {
   registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
@@ -169,13 +173,14 @@ import {
   buildSecurityConfigCommands, buildSecurityInterfaceCommands,
   buildSecuritySubmodeCommands, buildSecurityShowCommands, securityInterfaceSpecs,
   securityShowSpecs,
-  classMapSubmodeSpecs, policyMapSubmodeSpecs, policyClassSubmodeSpecs,
+  classMapSubmodeSpecs, policyMapSubmodeSpecs, policyClassSubmodeSpecs, securityGlobalSpecs,
   controlPlaneSubmodeSpecs, zoneSubmodeSpecs, zonePairSubmodeSpecs,
   trustpointSubmodeSpecs,
   type CiscoSecurityShellContext,
 } from './cisco/CiscoSecurityCommands';
 import {
-  buildEemNetflowArchiveConfigCommands, buildEemAppletSubmode,
+  buildEemNetflowArchiveConfigCommands, buildEemAppletSubmode, netflowSpecs,
+  eemPorteSpecs,
   buildFlowExporterSubmode, buildFlowRecordSubmode, buildFlowMonitorSubmode,
   buildArchiveSubmode, buildArchiveLogSubmode,
   eemAppletSpecs, flowExporterSpecs, flowRecordSpecs, flowMonitorSpecs,
@@ -439,6 +444,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
+      ...zoneSpecs(() => this.zoneHost()),
       ...dhcpClientFamily(),
       ...hsrpShowSpecs(this, () => this.fhrp),
       ...trackShowSpecs(this),
@@ -482,6 +488,34 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...flowExporterSpecs(this),
       ...flowRecordSpecs(this),
       ...flowMonitorSpecs(this),
+      ...netflowSpecs(this),
+      ...eemPorteSpecs(this),
+      ...ipv6PorteSpecs(() => ({
+        ouvrirListe: (nom) => {
+          const acls = this.r().getIpv6AccessLists();
+          if (!acls.some((a) => a.name === nom)) acls.push({ name: nom, entries: [] });
+          this.setSelectedACL(nom);
+          this.setMode('config-ipv6-nacl');
+          return '';
+        },
+        ouvrirEigrp: (asn) => {
+          const n = Number(asn);
+          const r = this.r() as unknown as { _ipv6EigrpProcesses?: Set<number> };
+          (r._ipv6EigrpProcesses ??= new Set()).add(n);
+          this.setMode('config-router');
+          this.setSelectedRoutingProto({ proto: 'eigrp', asn: n });
+          return '';
+        },
+        ouvrirOspf: (processus) => {
+          const n = Number(processus);
+          if (!Number.isFinite(n) || n < 1 || n > 65535) return '% Invalid OSPFv3 process ID';
+          if (!this.r()._getOSPFv3EngineInternal()) this.r()._enableOSPFv3(n);
+          this.setMode('config-router-ospfv3' as CiscoShellMode);
+          return '';
+        },
+        poserRoute: (mots) => this.poserRouteIpv6([...mots]),
+      })),
+      ...securityGlobalSpecs(this),
       ...classMapSubmodeSpecs(this),
       ...policyMapSubmodeSpecs(this),
       ...policyClassSubmodeSpecs(this),
@@ -495,12 +529,20 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...this.vrfSubmodeSpecs(),
       ...trackSubmodeSpecs(this),
       ...trackEntrySpecs(() => routerTrackEntryHost(this), ['config']),
+      ...keyChainGlobalSpecs(this),
+      ...keyChainShowSpecs(this),
       ...keyChainSubmodeSpecs(this),
       ...keyChainKeySubmodeSpecs(this),
       ...routeMapSpecs(() => this.routeMapHost()),
       ...aclHeadSpecs(() => this.aclHeadHost()),
-      ...aclStandardSpecs(() => standardAclHost(this.namedAclEditContext())),
-      ...aclExtendedSpecs(() => extendedAclHost(this.namedAclEditContext())),
+      ...avecNumeroDeSequence(
+        aclStandardSpecs(() => standardAclHost(this.namedAclEditContext()))),
+      ...avecNumeroDeSequence(
+        aclExtendedSpecs(() => extendedAclHost(this.namedAclEditContext()))),
+      ...aclSubmodeSpecs('config-std-nacl',
+        () => standardAclHost(this.namedAclEditContext())),
+      ...aclSubmodeSpecs('config-ext-nacl',
+        () => extendedAclHost(this.namedAclEditContext())),
       ...prefixListSpecs(() => this.policy),
       ...routerSubmodeSpecs(this, this.routingCfg),
       ...bfdInterfaceSpecs({
@@ -608,6 +650,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         modes: ['config', 'config-if', 'config-subif'], minPrivilege: 15,
         argumentFor: () => ({
           name: 'interface', type: 'REST', description: 'Interface to configure',
+          pattern: NOM_INTERFACE_TAPE,
           literal: 'IFACE', alternatives: INTERFACE_TYPES,
         }),
         keywordsFor: () => typesInterfaceEnMotsCles(INTERFACE_TYPES),
@@ -795,6 +838,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [
       ...super.socleLegends(),
       [['no'], 'Negate a command or set its defaults', ['config-router']],
+      [['area'], 'OSPF area parameters', ['config-router-ospf']],
       [['crypto'], 'Encryption module'],
       [['crypto', 'ipsec'], 'Configure IPSec policy'],
       [['crypto', 'ipsec', 'security-association'], 'Security association parameters'],
@@ -1376,6 +1420,20 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   setPolicyClass(n: string | null): void { this.selectedPolicyClass = n; }
   getControlPlane(): boolean { return this.controlPlaneActive; }
   setControlPlane(v: boolean): void { this.controlPlaneActive = v; }
+  private zoneHost(): ZoneHost {
+    const sec = () => getSecurityConfig(this.d());
+    return {
+      declareZone: (name) => {
+        sec().zones.set(name, { name });
+        this.selectedZone = name;
+      },
+      declareZonePair: (name, source, destination) => {
+        sec().zonePairs.set(name, { name, source, destination });
+        this.selectedZonePair = name;
+      },
+    };
+  }
+
   getZone(): string | null { return this.selectedZone; }
   setZone(n: string | null): void { this.selectedZone = n; }
   getZonePair(): string | null { return this.selectedZonePair; }
@@ -2264,23 +2322,32 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     }
     target = args[i++]?.trim() || '';
 
+    const entierPositif = (mot: string | undefined): number | null => {
+      if (mot === undefined || !/^\d+$/.test(mot)) return null;
+      const n = parseInt(mot, 10);
+      return n > 0 ? n : null;
+    };
+
     while (i < args.length) {
       const kw = args[i]?.toLowerCase();
-      if (kw === 'ttl' && args[i + 1]) {
-        const n = parseInt(args[i + 1], 10);
-        if (!isNaN(n) && n > 0) maxHops = n;
-        i += 2;
-      } else if (kw === 'timeout' && args[i + 1]) {
-        const n = parseInt(args[i + 1], 10);
-        if (!isNaN(n) && n > 0) timeoutMs = n * 1000;
-        i += 2;
-      } else if (kw === 'probe' && args[i + 1]) {
-        const n = parseInt(args[i + 1], 10);
-        if (!isNaN(n) && n > 0) probesPerHop = n;
-        i += 2;
-      } else {
-        i++;
+      if (kw !== 'ttl' && kw !== 'timeout' && kw !== 'probe') {
+        return CISCO_TRACE_ERRORS.INVALID_INPUT;
       }
+      const attendus = kw === 'ttl' ? 2 : 1;
+      if (args.length - i - 1 < attendus) return CISCO_TRACE_ERRORS.INCOMPLETE;
+      const valeurs = args.slice(i + 1, i + 1 + attendus).map(entierPositif);
+      if (valeurs.some((n) => n === null)) return CISCO_TRACE_ERRORS.INVALID_INPUT;
+      if (kw === 'ttl') {
+        if ((valeurs[0] as number) > (valeurs[1] as number)) {
+          return CISCO_TRACE_ERRORS.INVALID_INPUT;
+        }
+        maxHops = valeurs[1] as number;
+      } else if (kw === 'timeout') {
+        timeoutMs = (valeurs[0] as number) * 1000;
+      } else {
+        probesPerHop = valeurs[0] as number;
+      }
+      i += 1 + attendus;
     }
 
     if (!target) return '% Traceroute requires a target IP address.';
@@ -2370,4 +2437,40 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     }
     return null;
   }
+
+  /** Le corps de `ipv6 route`, tel que le glouton le portait. */
+  private poserRouteIpv6(args: string[]): string {
+    const parseIpv6OrNull = (texte: string): IPv6Address | null => {
+      try { return new IPv6Address(texte); } catch { return null; }
+    };
+    if (args.length < 2) return '% Incomplete command.';
+    // ipv6 route <prefix>/<len> <next-hop>
+    const prefixStr = args[0];
+    const nextHopStr = args[1];
+    const slashIdx = prefixStr.indexOf('/');
+    if (slashIdx === -1) return '% Invalid prefix format';
+    const prefix = prefixStr.substring(0, slashIdx);
+    const prefixLen = parseInt(prefixStr.substring(slashIdx + 1), 10);
+    if (isNaN(prefixLen) || prefixLen < 0 || prefixLen > 128) throw new CliInvalidInput();
+    let prefixAddr: IPv6Address;
+    try {
+      prefixAddr = new IPv6Address(prefix);
+    } catch {
+      return '% Invalid prefix format';
+    }
+
+    const egress = this.r().getPort(nextHopStr);
+    if (egress) {
+      const viaHop = args[2] ? parseIpv6OrNull(args[2]) : null;
+      if (args[2] && !viaHop) return '% Invalid next-hop address';
+      this.r().addIPv6StaticRoute(prefixAddr, prefixLen, viaHop, 0, { iface: egress.getName() });
+      return '';
+    }
+
+    const nextHop = parseIpv6OrNull(nextHopStr);
+    if (!nextHop) return '% Invalid next-hop address';
+    this.r().addIPv6StaticRoute(prefixAddr, prefixLen, nextHop);
+    return '';
+  }
+
 }

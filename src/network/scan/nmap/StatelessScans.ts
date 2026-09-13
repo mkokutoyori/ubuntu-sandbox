@@ -1,5 +1,5 @@
 import type { StatelessProbeReply } from '@/network/tcp/TcpStack';
-import type { PortState } from './ScanEngine';
+import { TCP_SCAN_REASON, type PortState } from './ScanEngine';
 
 /**
  * Les balayages TCP de `nmap` qui n'ouvrent RIEN. Chacun se distingue par
@@ -103,6 +103,12 @@ export function readStatelessReply(
     };
   }
   if (reply === 'syn-ack') return { state: 'open', reason: 'syn-ack' };
+  if (reply === 'icmp-prohibited' || reply === 'icmp-unreachable') {
+    return {
+      state: 'filtered',
+      reason: TCP_SCAN_REASON[reply === 'icmp-prohibited' ? 'prohibited' : 'unreachable'],
+    };
+  }
   if (kind === 'ack') return { state: 'unfiltered', reason: 'reset' };
   if (kind === 'window') {
     return reply === 'rst-window'

@@ -38,6 +38,7 @@ export class AddVpnConnectionCmdlet implements ICmdlet {
   readonly name = 'add-vpnconnection';
   readonly displayName = 'Add-VpnConnection';
   readonly aliases = [] as const;
+  readonly parameters = ['AuthenticationMethod', 'EncryptionLevel', 'Name', 'ServerAddress', 'SplitTunneling', 'TunnelType'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const vpn = requireVpn(ctx);
@@ -67,6 +68,7 @@ export class GetVpnConnectionCmdlet implements ICmdlet {
   readonly name = 'get-vpnconnection';
   readonly displayName = 'Get-VpnConnection';
   readonly aliases = [] as const;
+  readonly parameters = ['Name'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const vpn = requireVpn(ctx);
@@ -90,6 +92,7 @@ export class SetVpnConnectionCmdlet implements ICmdlet {
   readonly name = 'set-vpnconnection';
   readonly displayName = 'Set-VpnConnection';
   readonly aliases = [] as const;
+  readonly parameters = ['AuthenticationMethod', 'EncryptionLevel', 'Name', 'ServerAddress', 'SplitTunneling', 'TunnelType'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const vpn = requireVpn(ctx);
@@ -115,6 +118,7 @@ export class AddVpnConnectionRouteCmdlet implements ICmdlet {
   readonly name = 'add-vpnconnectionroute';
   readonly displayName = 'Add-VpnConnectionRoute';
   readonly aliases = [] as const;
+  readonly parameters = ['ConnectionName', 'DestinationPrefix', 'Name'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const vpn = requireVpn(ctx);
@@ -136,6 +140,7 @@ export class ConnectVpnConnectionCmdlet implements ICmdlet {
   readonly name = 'connect-vpnconnection';
   readonly displayName = 'Connect-VpnConnection';
   readonly aliases = [] as const;
+  readonly parameters = ['Name'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const vpn = requireVpn(ctx);
@@ -153,6 +158,7 @@ export class DisconnectVpnConnectionCmdlet implements ICmdlet {
   readonly name = 'disconnect-vpnconnection';
   readonly displayName = 'Disconnect-VpnConnection';
   readonly aliases = [] as const;
+  readonly parameters = ['Name'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const vpn = requireVpn(ctx);
@@ -170,6 +176,7 @@ export class RemoveVpnConnectionCmdlet implements ICmdlet {
   readonly name = 'remove-vpnconnection';
   readonly displayName = 'Remove-VpnConnection';
   readonly aliases = [] as const;
+  readonly parameters = ['Name'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const vpn = requireVpn(ctx);

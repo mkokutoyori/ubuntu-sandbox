@@ -10,6 +10,12 @@ export const C2960_SOFTWARE: CiscoSoftwareIdentity = {
   image: 'c2960-lanbasek9-mz.150-2.SE.bin',
 };
 
+export const C2900_SOFTWARE: CiscoSoftwareIdentity = {
+  softwareId: 'C2900-UNIVERSALK9-M',
+  iosVersion: '15.7(3)M5',
+  image: 'c2900-universalk9-mz.SPA.157-3.M5.bin',
+};
+
 export const C3560_SOFTWARE: CiscoSoftwareIdentity = {
   softwareId: 'C3560-IPSERVICESK9-M',
   iosVersion: '12.2(55)SE12',

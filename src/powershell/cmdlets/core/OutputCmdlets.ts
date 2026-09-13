@@ -14,13 +14,24 @@ import { psValueToString } from '@/powershell/runtime/PSExpansion';
 export class WriteOutputCmdlet implements ICmdlet {
   readonly name = 'write-output';
   readonly aliases = ['echo'] as const;
+  readonly parameters = ['InputObject', 'NoEnumerate'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     // Write-Output emits ONE item per positional arg (matches real PS).
     // `echo hello world` writes two lines: "hello" then "world".
     // Falls back to the pipeline input when there are no explicit args.
-    const args: PSValue[] = ctx.positional.length > 0
+    if (ctx.named['noenumerate'] !== undefined && ctx.named['noenumerate'] !== false) {
+      ctx.emitError('Write-Output : -NoEnumerate cannot be honoured here — every stage of this pipeline enumerates a collection, so a collection cannot be passed down as a single object.');
+      return null;
+    }
+    const given = ctx.named['inputobject'];
+    const explicit: PSValue[] = ctx.positional.length > 0
       ? ctx.positional
+      : given !== undefined && given !== null
+        ? (Array.isArray(given) ? given : [given])
+        : [];
+    const args: PSValue[] = explicit.length > 0
+      ? explicit
       : ctx.pipeInput !== undefined && ctx.pipeInput !== null
         ? (Array.isArray(ctx.pipeInput) ? ctx.pipeInput : [ctx.pipeInput])
         : [];
@@ -62,6 +73,7 @@ export class WriteHostCmdlet implements ICmdlet {
 export class WriteErrorCmdlet implements ICmdlet {
   readonly name = 'write-error';
   readonly aliases = [] as const;
+  readonly parameters = ['Message'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const msg = psValueToString(ctx.named['message'] ?? ctx.positional[0] ?? ctx.pipeInput ?? '');
@@ -123,6 +135,7 @@ export class OutNullCmdlet implements ICmdlet {
 export class OutStringCmdlet implements ICmdlet {
   readonly name = 'out-string';
   readonly aliases = [] as const;
+  readonly parameters = ['Stream'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const raw = ctx.pipeInput ?? ctx.positional[0] ?? null;

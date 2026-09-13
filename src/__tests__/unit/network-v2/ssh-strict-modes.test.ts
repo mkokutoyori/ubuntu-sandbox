@@ -43,8 +43,8 @@ async function reload(srv: LinuxServer, body: string) {
 }
 
 async function installLooseAuthorizedKeys(pc: LinuxPC, srv: LinuxServer) {
-  await pc.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
-  const pub = (await pc.executeCommand('cat /root/.ssh/id_rsa.pub')).trim();
+  await pc.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
+  const pub = (await pc.executeCommand('cat ~/.ssh/id_rsa.pub')).trim();
   const vfs = srvVfs(srv);
   vfs.mkdirp('/home/alice/.ssh', 0o700, 1000, 1000);
   // umask 0 → file ends up 0o666 (group/world rw) — violates strict modes.

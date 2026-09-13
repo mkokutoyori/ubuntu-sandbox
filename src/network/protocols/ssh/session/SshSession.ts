@@ -324,7 +324,8 @@ export class SshSession implements ISshSession {
       if (opts.password !== undefined) return opts.password;
       return this.deps.interactionHandler.promptPassword(currentUser, opts.host);
     };
-    const methods = createAuthMethods(this.deps.vfs, opts, passwordProvider);
+    const prompts = this.deps.interactionHandler.canPromptAgain?.() === false ? 1 : 3;
+    const methods = createAuthMethods(this.deps.vfs, opts, passwordProvider, prompts);
     const chain = AuthChain.create(methods);
 
     const result = await chain.tryAll(user, ctx);

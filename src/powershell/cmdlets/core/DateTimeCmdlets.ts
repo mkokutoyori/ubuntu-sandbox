@@ -70,6 +70,7 @@ function objetZone(z: { id: string; iana: string; nom: string }): PSValue {
 export class GetTimeZoneCmdlet implements ICmdlet {
   readonly name = 'get-timezone';
   readonly aliases = [] as const;
+  readonly parameters = ['ListAvailable'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     if (ctx.named['listavailable'] !== undefined) {
@@ -84,6 +85,7 @@ export class GetTimeZoneCmdlet implements ICmdlet {
 export class SetTimeZoneCmdlet implements ICmdlet {
   readonly name = 'set-timezone';
   readonly aliases = [] as const;
+  readonly parameters = ['Id', 'Name'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const demande = ctx.named['id'] ?? ctx.named['name'] ?? ctx.positional[0];
@@ -109,6 +111,7 @@ export class SetTimeZoneCmdlet implements ICmdlet {
 export class GetDateCmdlet implements ICmdlet {
   readonly name = 'get-date';
   readonly aliases = [] as const;
+  readonly parameters = ['Date', 'Format'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const fmt     = ctx.named['format'] ? psValueToString(ctx.named['format']) : null;
@@ -216,6 +219,7 @@ export class NewTimespanCmdlet implements ICmdlet {
   readonly name = 'new-timespan';
   readonly displayName = 'New-TimeSpan';
   readonly aliases = [] as const;
+  readonly parameters = ['Days', 'Hours', 'Minutes', 'Seconds'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const days  = Number(ctx.named['days']    ?? 0);
@@ -250,6 +254,7 @@ export class MeasureCommandCmdlet implements ICmdlet {
   readonly name = 'measure-command';
   readonly displayName = 'Measure-Command';
   readonly aliases = [] as const;
+  readonly parameters = ['Expression'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const raw = ctx.named['expression'] ?? ctx.positional[0] ?? null;
@@ -268,6 +273,7 @@ export class MeasureCommandCmdlet implements ICmdlet {
 export class StartSleepCmdlet implements ICmdlet {
   readonly name = 'start-sleep';
   readonly aliases = ['sleep'] as const;
+  readonly parameters = ['Milliseconds', 'Seconds'] as const;
   execute(ctx: CmdletContext): PSValue {
     const seconds = ctx.named['seconds'] ?? ctx.positional[0];
     const millis = ctx.named['milliseconds'];

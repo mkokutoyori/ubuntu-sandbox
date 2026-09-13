@@ -28,6 +28,30 @@ interface Device {
 
 const PROBES = 'abcdefghijklmnopqrstuvwxyz0123456789*'.split('');
 
+/*
+ * Le DELAI de ces balayages est une mesure de machine, pas un contrat.
+ *
+ * Il valait 120 s. Mesure ici, le meme fichier rend 139 s sur l'arbre
+ * ANTERIEUR a la migration de `undebug` (5f726bd4c), 143 s apres elle et
+ * 125 s avec les trois memoires posees dans ce lot — la table des modes
+ * presents dans un sous-arbre, l'index des negations par mode, et les
+ * ancetres de configuration d'une session. Autrement dit le budget etait
+ * deja depasse avant qu'aucune famille n'y entre, et ce lot est le seul
+ * des trois a l'avoir fait BAISSER.
+ *
+ * Il est porte a 240 s, la valeur que les autres balayages du depot
+ * utilisent deja. Les budgets qui COMPTENT quelque chose — continuations
+ * derivees, mots muets, mots sans completion — ne bougent pas : eux
+ * decrivent la CLI, et c'est sur eux que le cliquet cliquete.
+ *
+ * Puis a 480 s, le jour ou l'inventaire parcouru est devenu celui des
+ * DEUX moteurs. Le fichier rendait 125 s quand il ne voyait que le trie
+ * et 377 s quand il voit aussi le socle : trois fois plus d'arbre, trois
+ * fois plus de temps, et c'est la mesure qu'on voulait — un garde-fou
+ * qui ne lisait qu'un moteur retrecissait a chaque famille migree et
+ * n'aurait plus rien mesure le jour ou le trie serait vide.
+ */
+
 /**
  * Les budgets sont les nombres MESURES, jamais un plafond confortable.
  *
@@ -56,9 +80,18 @@ const MODES: ReadonlyArray<{ name: string; enter: string[] }> = [
   { name: 'config', enter: ['enable', 'configure terminal'] },
 ];
 
+/*
+ * Une DUREE d'IOS s'ecrit en lettres repetees — `mmm` pour des minutes,
+ * `hhh:mm` pour des heures — et c'est un rendu de TYPE, pas un mot-cle :
+ * la tabulation n'a rien a y ecrire, exactement comme pour `WORD` ou
+ * `<1-9>`. La forme a deux points etait deja reconnue ici ; celle sans
+ * deux points manquait, si bien que `reload in ?` annoncait `mmm` et
+ * passait pour un mot que Tab ne complete pas.
+ */
 function isPlaceholder(word: string): boolean {
   return /[A-Z<]/.test(word)
     || /^[0-9]/.test(word)
+    || /^([a-z])\1+$/.test(word)
     || (word.includes(':') && !word.endsWith(':'));
 }
 
@@ -154,7 +187,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
       it('l\'arbre parcouru est non vide', async () => {
         const r = await surveyOf(cle, fabrique, mode.enter);
         expect(r.paths).toBeGreaterThan(100);
-      }, 120_000);
+      }, 480_000);
 
       it(`au plus ${budget.unsuggested} commande(s) exécutable(s) que \`?\` ne propose pas`, async () => {
         const { unsuggested } = await surveyOf(cle, fabrique, mode.enter);
@@ -163,7 +196,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
             + unsuggested.slice(0, 40).join('\n  '));
         }
         expect(unsuggested.length).toBeLessThanOrEqual(budget.unsuggested);
-      }, 120_000);
+      }, 480_000);
 
       it(`au plus ${budget.uncompletable} mot(s) proposé(s) par \`?\` que Tab ne complète pas`, async () => {
         const { uncompletable } = await surveyOf(cle, fabrique, mode.enter);
@@ -172,7 +205,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
             + uncompletable.slice(0, 40).join('\n  '));
         }
         expect(uncompletable.length).toBeLessThanOrEqual(budget.uncompletable);
-      }, 120_000);
+      }, 480_000);
 
       it(`au plus ${budget.derived} continuation(s) DÉRIVÉE(S) du texte source`, async () => {
         const d = await inMode(fabrique, mode.enter);
@@ -183,7 +216,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
             + derives.slice(0, 40).join('\n  '));
         }
         expect(derives.length).toBeLessThanOrEqual(budget.derived);
-      }, 120_000);
+      }, 480_000);
 
       it(`au plus ${budget.undescribed} continuation(s) que Tab accepte et que \`?\` tait`, async () => {
         const { undescribed } = await surveyOf(cle, fabrique, mode.enter);
@@ -192,7 +225,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
             + undescribed.slice(0, 40).join('\n  '));
         }
         expect(undescribed.length).toBeLessThanOrEqual(budget.undescribed);
-      }, 120_000);
+      }, 480_000);
     });
   }
 }
@@ -205,13 +238,13 @@ describe('le cliquet mesure quelque chose', () => {
     });
     expect(trie.cliUndescribedContinuations()).toHaveLength(0);
     expect(survey(d).uncompletable).toHaveLength(0);
-  }, 120_000);
+  }, 480_000);
 
   it('`?` et Tab traversent le même chemin sous une commande gloutonne', async () => {
     const d = await inMode(() => new CiscoRouter('R8', 0, 0), ['enable', 'configure terminal']);
     expect(d.cliHelp('router ')).toContain('ospf');
     expect(d.cliTabCandidates('router os')).toContain('router ospf');
-  }, 120_000);
+  }, 480_000);
 
   it('un commutateur ne propose pas les commandes qu\'il refuse', async () => {
     const d = await inMode(() => new CiscoSwitch('SW9'), ['enable', 'configure terminal']);
@@ -219,5 +252,5 @@ describe('le cliquet mesure quelque chose', () => {
       expect(d.cliHelp(`${absente} `)).toContain('% Invalid input');
       expect(await d.executeCommand(`${absente} x`)).toContain('% Invalid input');
     }
-  }, 120_000);
+  }, 480_000);
 });

@@ -228,6 +228,11 @@ export interface WinCommandContext {
    */
   firewallRules: Map<string, NetFirewallRuleEntry>;
 
+  firewallProfiles: Map<
+    import('./netFirewallProfile').FirewallProfileName,
+    import('./netFirewallProfile').NetFirewallProfileRow>;
+  currentFirewallProfile?(): import('./netFirewallProfile').FirewallProfileName;
+
   /** Per-device SMB share table (`net share` / `New-SmbShare`) — instance-owned. */
   smbShares: import('./server/smb/SmbShareTable').SmbShareTable;
   /** Per-device `net use` drive-letter mapping table — instance-owned. */
@@ -237,6 +242,25 @@ export interface WinCommandContext {
   /** Dial a remote SMB share over the real network (`net use` add-form). */
   dialSmbShare(targetIp: string, shareName: string, username: string, password: string):
     import('./server/smb/SmbClient').SmbDialResult;
+  /** This machine's own registry — `net use` keeps its reconnect-at-logon default and its persistent mappings where Windows keeps them. */
+  registry?: import('./PSRegistryProvider').PSRegistryProvider;
+  /** Drive letters the local disks already hold, so `net use *` never picks one. */
+  localDrives?(): string[];
+  /** FSCTL_DFS_GET_REFERRALS against a namespace server — what a real client asks before giving up on `\\domain\namespace`. */
+  requestDfsReferral?(targetIp: string, path: string, username: string, password: string): string[];
+  /** Name resolution without waiting — the mapping path shares one implementation between `net use` and PowerShell, and a cmdlet cannot await. */
+  resolveHostnameSync?(name: string): { toString(): string } | null;
+  /** NetShareEnum against a server — what `net view` asks before it can print anything. */
+  requestShareEnum?(targetIp: string, username: string, password: string):
+    { ok: boolean; shares?: import('./server/smb/SmbTypes').SmbEnumeratedShare[]; error?: string; systemErrorCode?: number };
+  /** `ipconfig /registerdns` — put this machine's own A record into its domain's zone, by dynamic update over the wire. */
+  registerHostInDomainDns?(): Promise<boolean>;
+  /** Who is signed in, domain-qualified when a domain logon is open — the identity an outbound connection carries when the operator names none. */
+  signedInIdentity?(): string;
+  /** The secret this machine holds for an account: the vault `runas /savecred` fills, then the logon secret. */
+  secretFor?(account: string): string | null;
+  /** `net use /savecred` — the same vault `runas /savecred` writes to. */
+  rememberSecret?(account: string, secret: string): void;
 
   /** DHCP Server role (PRD-Windows-Server.md §5 P8) — null/undefined unless this is a `WindowsServer` with the `DHCP` feature installed. Backs `netsh dhcp server`. */
   dhcpServerRole?: import('./server/dhcp/WindowsDhcpServerRole').WindowsDhcpServerRole | null;

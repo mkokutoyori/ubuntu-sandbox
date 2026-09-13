@@ -54,7 +54,6 @@ function cryptoPair(
     path: ['debug', 'crypto', verb],
     description: `Enable ${label} debug output`,
     undoDescription: `Disable ${label} debug output`,
-    takesArguments: true,
     subKeywords: [{ keyword: 'detail', description: `Detailed ${label} output` }],
     enable: (args) => {
       const detail = /^detail$/i.test(args.join(' ').trim());
@@ -79,7 +78,7 @@ function refusalPair(
     path: ['debug', 'crypto', word],
     description,
     undoDescription: `Disable ${description}`,
-    takesArguments: true,
+    argument: { description: 'Event class', optional: true },
     enable: () => message,
     disable: () => message,
   };
@@ -97,7 +96,6 @@ export function routerOnlyDebugPairs(host: () => RouterDebugHost): DebugPair[] {
       path: ['debug', 'ip', 'dhcp', 'server'],
       description: 'Debug DHCP server',
       undoDescription: 'Disable DHCP server debugging',
-      takesArguments: false,
       enable: () => {
         dhcp()?.setDebugServerPacket(true);
         dhcp()?.setDebugServerEvents(true);
@@ -115,7 +113,6 @@ export function routerOnlyDebugPairs(host: () => RouterDebugHost): DebugPair[] {
       path: ['debug', 'ip', 'dhcp', 'server', 'packets'],
       description: 'Debug DHCP server packets',
       undoDescription: 'Disable DHCP packet debugging',
-      takesArguments: false,
       enable: () => {
         dhcp()?.setDebugServerPacket(true);
         svc().enable('ip.dhcp.server', 'packet');
@@ -131,7 +128,6 @@ export function routerOnlyDebugPairs(host: () => RouterDebugHost): DebugPair[] {
       path: ['debug', 'ip', 'dhcp', 'server', 'events'],
       description: 'Debug DHCP server events',
       undoDescription: 'Disable DHCP event debugging',
-      takesArguments: false,
       enable: () => {
         dhcp()?.setDebugServerEvents(true);
         svc().enable('ip.dhcp.server', 'events');
@@ -147,7 +143,6 @@ export function routerOnlyDebugPairs(host: () => RouterDebugHost): DebugPair[] {
       path: ['debug', 'ip', 'dhcp', 'server', 'linkage'],
       description: 'Debug DHCP database linkage',
       undoDescription: 'Disable DHCP linkage debugging',
-      takesArguments: false,
       enable: () => {
         svc().enable('ip.dhcp.server', 'linkage');
         return 'DHCP server linkage debugging is on';
@@ -161,7 +156,6 @@ export function routerOnlyDebugPairs(host: () => RouterDebugHost): DebugPair[] {
       path: ['debug', 'ip', 'ospf'],
       description: 'Enable OSPF debugging',
       undoDescription: 'Disable OSPF debugging',
-      takesArguments: true,
       subKeywords: OSPF_DEBUG_CATEGORIES.map(([word]) => ({
         keyword: word, description: `Debug OSPF ${word}`,
       })),

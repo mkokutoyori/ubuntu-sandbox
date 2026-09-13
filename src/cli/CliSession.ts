@@ -58,6 +58,15 @@ export class CliSession {
   }
 
   configAncestors(): readonly string[] {
+    if (this.ancestorsOfMode?.[0] === this.mode) return this.ancestorsOfMode[1];
+    const computed = this.computeConfigAncestors();
+    this.ancestorsOfMode = [this.mode, computed];
+    return computed;
+  }
+
+  private ancestorsOfMode?: [string, readonly string[]];
+
+  private computeConfigAncestors(): readonly string[] {
     if (!this.machine.isConfigMode()) return [];
 
     const chain: string[] = [];

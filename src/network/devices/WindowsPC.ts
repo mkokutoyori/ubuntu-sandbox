@@ -40,7 +40,7 @@ import type { ARecordData, PtrRecordData, ResourceRecord } from '../dns/wire/Res
 import { ptrQName, resourceRecordToLegacyRecord, rrTypeFromName } from '../dns/compat/DnsWireCompat';
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
-import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
+import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, type ICMPType, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
 import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import type { TcpStream } from '../tcp/types';
@@ -48,6 +48,14 @@ import type { TcpSocket } from '../tcp/TcpStack';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
 import { runWindowsSshClient } from './windows/network/WindowsSshClient';
+import { SshAgent } from '@/network/protocols/ssh/SshAgent';
+import { runSshKeygenCommand, type SshKeygenHost } from '@/network/protocols/ssh/SshKeygenCommand';
+import {
+  runSshAddCommand, runSshAgentCommand, type SshAgentHost,
+} from '@/network/protocols/ssh/SshAgentCommands';
+import { runSshKeyscanCommand } from '@/network/protocols/ssh/SshKeyscanCommand';
+import { probeSshHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
+import { findHostByAddress } from './linux/network/HostLookup';
 import { runWindowsSftpClient } from './windows/network/WindowsSftpClient';
 import { runWindowsScpClient } from './windows/network/WindowsScpClient';
 import { splitCmdArgs } from './windows/cmdline';
@@ -104,7 +112,12 @@ import { cmdTasklist as cmdTasklistDynamic } from './windows/WinTasklist';
 import { cmdTaskkill } from './windows/WinTaskkill';
 import { cmdSc } from './windows/WinSc';
 import { cmdNetStart, cmdNetStop } from './windows/WinNetStart';
-import { cmdNetUse, type NetUseEntry } from './windows/WinNetUse';
+import { cmdNetUse, establishMapping, releaseMapping, restorePersistentMappings, type NetUseEntry } from './windows/WinNetUse';
+import { cmdNetView } from './windows/WinNetView';
+import { requestDfsReferral, requestShareEnum } from './windows/server/smb/SmbClient';
+import { hostRegistrationRequest } from './windows/domain/DnsHostRegistration';
+import { sendDynamicUpdate } from '@/network/dns/update/DynamicUpdateClient';
+import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { cmdNetShare } from './windows/WinNetShare';
 import { SmbShareTable } from './windows/server/smb/SmbShareTable';
 import { SmbSessionTable } from './windows/server/smb/SmbSessionTable';
@@ -156,6 +169,7 @@ import { dialHttp as dialHttpClient, parseHttpUrl } from '@/network/http/HttpCli
 import { SmtpClientSession } from '@/network/smtp/SmtpClientSession';
 import type { GpoSettings } from './windows/server/ad/AdTypes';
 import { cmdNltest, cmdDcdiag, cmdKlist } from './windows/WinDomainDiag';
+import { discoverDc } from './windows/domain/DcHostnameDiscovery';
 import { cmdRepadmin, type RepadminContext } from './windows/WinRepadmin';
 import { cmdDnscmd } from './windows/WinDnscmd';
 import { cmdCertreq, cmdCertutil } from './windows/WinCertReq';
@@ -199,6 +213,11 @@ import {
   firewallRuleMatches, seedBuiltInFirewallRules,
 } from './windows/netFirewallRule';
 import {
+  type FirewallProfileName, type NetFirewallProfileRow,
+  defaultActionFor, defaultFirewallProfiles, firewallIsOn, profileForNetworkCategory,
+  rulesApplyTo,
+} from './windows/netFirewallProfile';
+import {
   cmdCd, cmdMkdir, cmdRmdir, cmdType, cmdCopy, cmdMove,
   cmdRen, cmdDel, cmdTree, cmdSet, cmdTasklist, cmdNetstat,
   cmdAttrib, cmdFind, cmdFindstr, cmdWhere, cmdMore, cmdFc,
@@ -220,7 +239,7 @@ const TASK_TICK_MS = 60_000;
  */
 function w32ReferenceId(ref: string): string {
   if (!ref || ref === '.INIT.') return '0x00000000 (unspecified)';
-  if (!/^\d+\.\d+\.\d+\.\d+$/.test(ref)) return `0x00000000 (${ref})`;
+  if (IPAddress.tryParse(ref) === null) return `0x00000000 (${ref})`;
   const hex = ref.split('.')
     .map((o) => parseInt(o, 10).toString(16).toUpperCase().padStart(2, '0')).join('');
   return `0x${hex} (source IP:  ${ref})`;
@@ -285,7 +304,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Real Kerberos ticket cache (PRD-Windows-Server-Advanced.md §5 P2) — populated by an actual AS exchange as a side effect of domain logon, backing `klist`. */
   private readonly kerberosTicketCache: KerberosTicketCache = new KerberosTicketCache();
   /** One entry per `replicateFrom` cycle, annotated intra-/inter-site (PRD-Windows-Server-Advanced.md §5 P6) — this simulator's minimal stand-in for a real replication event log (full observability arrives at §5 P12). */
-  private readonly replicationLog: ReplicationLogEntry[] = [];
   /** `repadmin /options` (PRD-Repadmin.md P8) — this DC's NTDS Settings flags. `DISABLE_OUTBOUND_REPL`/`DISABLE_INBOUND_REPL` have a real causal effect on `ReplicationServerHandler`/`replicateFrom`; `IS_GC`/`DISABLE_SPN_REGISTRATION` are declarative storage only (§2.1 P8). */
   private readonly ntdsOptions = new Set<NtdsOption>();
   /** This DC's own StartTLS identity (PRD-Windows-Server-Advanced.md §5 P11) — lazily created once and reused across connections, mirroring a real DC's stable machine certificate. */
@@ -381,6 +399,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   readonly firewallRules: Map<string, NetFirewallRuleEntry> = seededFirewallRules();
   /** Network connection profiles: ifIndex → category. */
   readonly networkProfiles: Map<number, string> = new Map();
+  readonly firewallProfiles: Map<FirewallProfileName, NetFirewallProfileRow> =
+    defaultFirewallProfiles();
   /** VPN connections: lowercase name → details. */
   readonly vpnConnections: Map<string, VpnConnectionInfo> = new Map();
   /** In-memory registry hive (HKLM / HKCU). */
@@ -856,6 +876,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           kerberos: serviceSecret !== null ? { realm: store.getRealm(), serviceSecret } : undefined,
           startTls: { serverCert: this.ldapStartTlsIdentity.cert, serverPrivateKey: this.ldapStartTlsIdentity.keyPair.privateKey },
           otherForestDomainRoots: () => otherDomainRoots,
+          serverIdentity: () => ({
+            hostname: this.getHostname(), dnsName: store.dnsName,
+            site: store.siteForDc(this.getHostname()),
+          }),
         }).register(socket);
       },
     });
@@ -1028,11 +1052,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const partnerSite = (partnerDcName ? store.siteForDc(partnerDcName) : null) ?? store.siteForIp(partnerIp);
     const siteRelation: 'intra-site' | 'inter-site' =
       ownSite !== null && partnerSite !== null && ownSite !== partnerSite ? 'inter-site' : 'intra-site';
-    const logEntry: ReplicationLogEntry = {
-      timestamp: Math.floor(Date.now() / 1000), partnerAddress: partnerIp, applied: result.applied, ok: result.ok, siteRelation, direction: 'inbound',
-      error: result.error, remoteInvocationId: result.responderInvocationId,
-    };
-    this.replicationLog.push(logEntry);
+    this.recordReplicationCycle(partnerIp, result, store, siteRelation);
+    return result;
+  }
+
+  protected recordReplicationCycle(
+    partnerIp: string, result: ReplicationPullResult,
+    store: import('./windows/server/ad/DirectoryStore').DirectoryStore,
+    siteRelation: 'intra-site' | 'inter-site',
+  ): void {
     this.getBus().publish(
       result.ok
         ? {
@@ -1050,11 +1078,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
             },
           },
     );
-    return result;
   }
 
   /** PRD-Windows-Server-Advanced.md §5 P6 — every past `replicateFrom` cycle, annotated intra-/inter-site. */
-  getReplicationLog(): readonly ReplicationLogEntry[] { return this.replicationLog; }
+  getReplicationLog(): readonly ReplicationLogEntry[] { return this.replicationSignals.log.get(); }
 
   /** PRD-Windows-Server-Advanced.md §5 P12 — observable read-models for this DC's Kerberos KDC and AD replication activity. */
   getKerberosSignals(): KerberosSignalStore { return this.kerberosSignals; }
@@ -1191,6 +1218,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       now: () => this.simulatedDate().getTime(),
       hostname: this.hostname,
       domainAuth: (u, p) => this.tryDomainAuth(u, p),
+      dfsNamespaces: () => this.getDfsNamespaceRole(),
     });
   }
 
@@ -1243,8 +1271,34 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (result.ok && result.membership) {
       this.domainMembership = result.membership;
       if (opts.newName) this.setHostname(opts.newName);
+      void this.registerHostInDomainDns();
     }
     return result;
+  }
+
+  /**
+   * What a machine does once it belongs to a domain: it puts its own A
+   * record into the domain's zone by RFC 2136 update, so every other
+   * machine resolves it by name without anyone editing a hosts file.
+   * Sent to the DNS server this machine is configured with — the update
+   * crosses the wire and the SERVER decides whether to accept it.
+   */
+  async registerHostInDomainDns(): Promise<boolean> {
+    const membership = this.domainMembership;
+    if (!membership) return false;
+    const resolver = this.firstConfiguredDnsServerAddress();
+    const address = this.getInterfaces().map(p => p.getIPAddress()).find(ip => ip !== null);
+    if (!resolver || !address) return false;
+    const outcome = await sendDynamicUpdate(
+      this, resolver,
+      hostRegistrationRequest(membership.dnsName, this.getHostname(), address),
+    );
+    return outcome.rcode === DnsRcode.NOERROR;
+  }
+
+  private firstConfiguredDnsServerAddress(): IPAddress | null {
+    const first = this.firstConfiguredDnsServer();
+    return first ? IPAddress.tryParse(first) : null;
   }
 
   markServiceAccountInstalled(sam: string): void { this.installedServiceAccounts.add(sam.toLowerCase()); }
@@ -1378,6 +1432,21 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   /** Domain-qualified credential check for inbound SMB/WinRM auth — real LDAP bind, not a topology shortcut. Returns null when unqualified/not domain-joined (caller should fall back to local auth). */
   tryDomainAuth(rawUser: string, password: string): { ok: boolean; sam: string; groups: string[] } | null {
+    // A domain controller holds the directory: it answers for its own
+    // domain accounts itself, exactly as a real DC does, instead of
+    // dialling out to find an authority it already is. A member machine
+    // has no such directory and must go to the wire below.
+    const ownDirectory = this.getDirectoryStore();
+    if (ownDirectory) {
+      const qualifier = rawUser.includes('\\') ? rawUser.slice(0, rawUser.indexOf('\\')) : '';
+      const sam = rawUser.includes('\\') ? rawUser.slice(rawUser.indexOf('\\') + 1) : rawUser.split('@')[0];
+      const known = qualifier === ''
+        || qualifier.toLowerCase() === ownDirectory.netbiosName.toLowerCase()
+        || qualifier.toLowerCase() === ownDirectory.dnsName.toLowerCase();
+      if (!known) return null;
+      if (!ownDirectory.getBindCheck().checkBind(sam, password)) return { ok: false, sam, groups: [] };
+      return { ok: true, sam, groups: ownDirectory.groupsForUser(sam).map(g => g.name) };
+    }
     if (!this.domainMembership) return null;
     const parsed = parseDomainQualifiedUser(rawUser, this.domainMembership);
     if (!parsed) return null;
@@ -1745,8 +1814,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     target: NonNullable<ReturnType<WindowsPC['resolveSmbPath']>>,
   ): Promise<{ connection: import('./windows/server/smb/SmbClient').SmbConnection; adHoc: boolean } | { error: string }> {
     if (target.unc === false) {
-      if (!target.mapped.connection) return { error: 'The specified network name is no longer available.' };
-      return { connection: target.mapped.connection, adHoc: false };
+      const live = target.mapped.connection;
+      if (live && live.isConnected()) return { connection: live, adHoc: false };
+      // A mapping restored at logon carries no session yet, and one whose
+      // link died carries a dead one. Either way the redirector redials on
+      // this first use, which is when a real one does it too.
+      const revived = await this.redialMapping(target.mapped);
+      if (!revived) return { error: 'The specified network name is no longer available.' };
+      return { connection: revived, adHoc: false };
     }
     const targetIp = await this.resolveHostname(target.server);
     if (!targetIp) return { error: 'System error 53 has occurred.\n\nThe network path was not found.' };
@@ -1755,6 +1830,59 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return { error: dial.error ?? 'System error 53 has occurred.\n\nThe network path was not found.' };
     }
     return { connection: dial.connection, adHoc: true };
+  }
+
+  /**
+   * Map a network drive. `net use` and PowerShell's `New-PSDrive -Persist`
+   * both land here, so the two interfaces show one table rather than each
+   * keeping its own idea of which drives exist.
+   */
+  mapNetworkDrive(local: string, remote: string, credential?: { username: string; password: string }):
+    { ok: boolean; error?: string } {
+    const account = credential?.username
+      ?? (this.domainSession ? `${this.domainSession.netbiosName}\\${this.domainSession.sam}` : this.userMgr.currentUser || 'Administrator');
+    const bare = account.includes('\\') ? account.slice(account.indexOf('\\') + 1) : account;
+    const secret = credential?.password
+      ?? this.userMgr.getSavedCredential(account)
+      ?? this.userMgr.getSavedCredential(bare)
+      ?? this.userMgr.getLogonSecret(bare)
+      ?? '';
+    return establishMapping(this.buildNetContext(), this.netUseTable, {
+      local: local ? local.toUpperCase() : '', remote, username: account, password: secret,
+    });
+  }
+
+  /** Undo a mapping, whether named by drive letter or by UNC. */
+  unmapNetworkDrive(target: string): boolean {
+    return releaseMapping(this.buildNetContext(), this.netUseTable, target);
+  }
+
+  /** Every mapped network drive this machine holds — the one table both interfaces read. */
+  listNetworkDrives(): Array<{ local: string; remote: string; status: string; user: string }> {
+    return Array.from(this.netUseTable.values())
+      .map(e => ({ local: e.local, remote: e.remote, status: e.status, user: e.user }));
+  }
+
+  /** Re-establish a mapped drive's session with the identity that holds it. */
+  private async redialMapping(
+    mapped: NetUseEntry,
+  ): Promise<import('./windows/server/smb/SmbClient').SmbConnection | null> {
+    const parsed = /^\\\\([^\\]+)\\([^\\]+)/.exec(mapped.remote);
+    if (!parsed) return null;
+    const targetIp = await this.resolveHostname(parsed[1]);
+    if (!targetIp) return null;
+    const account = mapped.user || this.userMgr.currentUser || 'Administrator';
+    const bare = account.includes('\\') ? account.slice(account.indexOf('\\') + 1) : account;
+    const secret = this.userMgr.getSavedCredential(account)
+      ?? this.userMgr.getSavedCredential(bare)
+      ?? this.userMgr.getLogonSecret(bare)
+      ?? '';
+    const dial = this.dialSmbShare(targetIp.toString(), parsed[2], account, secret);
+    if (!dial.ok || !dial.connection) return null;
+    mapped.connection = dial.connection;
+    mapped.status = 'OK';
+    mapped.user = account;
+    return dial.connection;
   }
 
   /**
@@ -2050,6 +2178,54 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return null;
   }
 
+  private readonly sshAgent: SshAgent = new SshAgent();
+
+  private userProfileDir(): string {
+    return `C:\\Users\\${this.userMgr.currentUser}`;
+  }
+
+  private sshProfileDir(): string {
+    return `${this.userProfileDir()}\\.ssh`;
+  }
+
+  private keygenHost(): SshKeygenHost {
+    return {
+      store: {
+        read: (path: string) => {
+          const r = this.fs.readFile(this.fs.normalizePath(path, this.cwd));
+          return r.ok ? (r.content ?? '') : null;
+        },
+        write: (path: string, content: string) =>
+          this.fs.createFile(this.fs.normalizePath(path, this.cwd), content).ok,
+        ensureDir: (path: string) => {
+          const abs = this.fs.normalizePath(path, this.cwd);
+          if (!this.fs.exists(abs)) this.fs.mkdirp(abs);
+        },
+      },
+      separator: '\\',
+      sshDir: this.sshProfileDir(),
+      hostKeyDir: 'C:\\ProgramData\\ssh',
+      user: this.userMgr.currentUser,
+      hostname: this.hostname,
+    };
+  }
+
+  private agentHost(): SshAgentHost {
+    return {
+      agent: this.sshAgent,
+      reader: {
+        readFile: (path: string) => {
+          const r = this.fs.readFile(this.fs.normalizePath(path, this.cwd));
+          return r.ok ? (r.content ?? '') : null;
+        },
+      },
+      separator: '\\',
+      sshDir: this.sshProfileDir(),
+      authSocket: `${this.userProfileDir()}\\AppData\\Local\\Temp\\ssh-${this.userMgr.currentUser}\\agent.1`,
+      setEnvironment: (name: string, value: string) => { this.setEnvVar(name, value); },
+    };
+  }
+
   private cmdSsh(args: string[]): Promise<string> {
     const user = this.userMgr.currentUser;
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
@@ -2060,6 +2236,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       sourceIp,
       sourceUser: user,
       sourceHome: `C:\\Users\\${user}`,
+      localAgent: this.sshAgent,
       localFs: {
         readFile: (p: string) => this.fs.readFile(p),
         createFile: (p: string, c: string) => {
@@ -2069,8 +2246,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         },
       },
     }).then(r => {
-      const peerIp = this.resolveSshPeer(args);
-      if (peerIp && !/Permission denied|refused|timed out|Could not resolve|No route/i.test(r.output)) {
+      const peerIp = r.exitCode === 0 ? this.resolveSshPeer(args) : null;
+      if (peerIp) {
         const entry = this.socketTable.connect('tcp', sourceIp, 0, peerIp, 22, undefined, 'ssh.exe');
         this.socketTable.transition(entry.id, 'TIME_WAIT');
       }
@@ -2082,7 +2259,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     for (const a of args) {
       if (a.startsWith('-')) continue;
       const at = a.includes('@') ? a.split('@')[1] : a;
-      if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(at)) return at;
+      if (IPAddress.tryParse(at) !== null) return at;
     }
     return null;
   }
@@ -2468,12 +2645,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       .map((rr) => ({ ip: (rr.data as ARecordData).address.toString(), ttl: rr.ttl }));
   }
 
-  lookupDnsRecordsSync(name: string, qtype: string, server?: string): ResourceRecord[] | null {
+  lookupDnsRecordsSync(name: string, qtype: string, server?: string): readonly ResourceRecord[] | null {
     const wanted = rrTypeFromName(qtype);
     if (wanted === null) return null;
     for (const attempt of this.typedDnsAttempts(name, server)) {
       const response = this.queryDnsServerSync(attempt.server, attempt.qname, qtype);
-      const matching = response?.answers.filter((rr) => rr.data.type === wanted) ?? [];
+      const answers = response?.answers ?? [];
+      const matching = wanted === RRType.ANY ? answers : answers.filter((rr) => rr.data.type === wanted);
       if (matching.length > 0) {
         if (server === undefined) this.dnsCache.storePositive(response!.answers, attempt.qname);
         return matching;
@@ -2748,6 +2926,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'nltest':  return cmdNltest({
         domainMembership: this.domainMembership,
         probeDc: (address) => this.probeTcpReachable(address, 389),
+        discoverDc: (address, dnsName) => discoverDc(this.getTcpStack(), address, dnsName),
       }, args);
       case 'dcdiag': {
         const store = this.getDirectoryStore();
@@ -2899,6 +3078,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       if (subCmd === 'use') return cmdNetUse(this.buildNetContext(), subArgs);
       if (subCmd === 'share') return cmdNetShare(this.buildNetContext(), subArgs);
       if (subCmd === 'session') return this.cmdNetSession(subArgs);
+      if (subCmd === 'view') return cmdNetView(this.buildNetContext(), subArgs);
       if (subCmd === 'accounts') {
         if (subArgs.length === 0) return this.accountsPolicy.render();
         for (const a of subArgs) {
@@ -2939,6 +3119,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'nmap':
       case 'nmap.exe': return this.cmdNmap(args);
       case 'ssh':      return this.cmdSsh(args);
+      case 'ssh-keygen':
+      case 'ssh-agent':
+      case 'ssh-add':
+      case 'ssh-keyscan':
+        return Promise.resolve(this.runOpenSshTool(cmd, args));
       case 'sftp':     return this.cmdSftp(args);
       case 'scp':      return this.cmdScp(args);
       case 'telnet':   return this.cmdTelnet(args);
@@ -3374,6 +3559,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
       portProxy: this.portProxyTable,
       firewallRules: this.firewallRules,
+      firewallProfiles: this.firewallProfiles,
+      currentFirewallProfile: () =>
+        this.activeFirewallProfileName(this.getPorts()[0]?.getName() ?? ''),
       eventLog: this.eventLog,
       dnsCache: this.dnsCache,
 
@@ -3382,6 +3570,24 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       smbSessions: this.smbSessions,
       dialSmbShare: (targetIp: string, shareName: string, username: string, password: string) =>
         this.dialSmbShare(targetIp, shareName, username, password),
+      registry: this.registry,
+      localDrives: () => this.fs.listDrives(),
+      requestDfsReferral: (targetIp: string, path: string, username: string, password: string) =>
+        requestDfsReferral({ tcpStack: this.getTcpStack(), targetIp, path, username, password }),
+      resolveHostnameSync: (name: string) => this.resolveHostnameSync(name),
+      requestShareEnum: (targetIp: string, username: string, password: string) =>
+        requestShareEnum({ tcpStack: this.getTcpStack(), targetIp, username, password }),
+      registerHostInDomainDns: () => this.registerHostInDomainDns(),
+      signedInIdentity: () => (this.domainSession
+        ? `${this.domainSession.netbiosName}\\${this.domainSession.sam}`
+        : this.userMgr.currentUser || 'Administrator'),
+      secretFor: (account: string) => {
+        const bare = account.includes('\\') ? account.slice(account.indexOf('\\') + 1) : account.split('@')[0];
+        return this.userMgr.getSavedCredential(account)
+          ?? this.userMgr.getSavedCredential(bare)
+          ?? this.userMgr.getLogonSecret(bare);
+      },
+      rememberSecret: (account: string, secret: string) => this.userMgr.saveCredential(account, secret),
       dhcpServerRole: this.getDhcpServerRole(),
       npsRole: this.getNpsRole(),
     };
@@ -3449,8 +3655,25 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * Returns null when the command is async (ping / tracert) or unknown —
    * callers fall back to executeCmdCommand() in that case.
    */
+  private runOpenSshTool(name: string, args: string[]): string {
+    switch (name) {
+      case 'ssh-keygen': return runSshKeygenCommand(args, this.keygenHost()).output;
+      case 'ssh-agent':  return runSshAgentCommand(args, this.agentHost()).output;
+      case 'ssh-add':    return runSshAddCommand(args, this.agentHost()).output;
+      default:
+        return runSshKeyscanCommand(args, {
+          resolve: (target: string) => findHostByAddress(target, undefined, this)?.ip ?? null,
+          probe: (ip: string, port: number) => probeSshHostKey(this.getTcpStack().connect(ip, port)),
+        }).output;
+    }
+  }
+
   runSyncNativeCommand(cmd: string, args: string[]): string | null {
     const lower = cmd.toLowerCase();
+    if (lower === 'ssh-keygen' || lower === 'ssh-agent'
+      || lower === 'ssh-add' || lower === 'ssh-keyscan') {
+      return this.runOpenSshTool(lower, args);
+    }
     if (lower === 'systeminfo') return this.cmdSysteminfo();
     if (lower === 'ver') return WindowsPC.VER_STRING;
     if (lower === 'hostname') return this.hostname;
@@ -3955,7 +4178,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // The static hosts table (including the machine's own name) is
     // answered locally, ahead of any DNS query — same order as the
     // resolveHostname() resolver.
-    if (host && !/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+    if (host && IPAddress.tryParse(host) === null) {
       const ownHostName = typeof this.hostname === 'string' ? this.hostname.toLowerCase() : '';
       const hostsIp = this.readHostsFile().resolve(host, 4)
         ?? (ownHostName && host.toLowerCase() === ownHostName ? '127.0.0.1' : null);
@@ -4016,6 +4239,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   setCurrentUser(name: string): void {
     this.domainSession = null;
     this.kerberosTicketCache.clear();
+    restorePersistentMappings(this.registry, this.netUseTable);
     this.userMgr.setCurrentUser(name);
   }
 
@@ -5727,35 +5951,94 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return verdict === 'accept' ? 'accept' : 'drop';
   }
 
+  defaultNetworkCategory(): string {
+    return this.domainMembership !== null ? 'DomainAuthenticated' : 'Public';
+  }
+
+  networkCategoryOf(portName: string): string {
+    return this.networkProfiles.get(this.adapterIfIndexOf(portName))
+      ?? this.defaultNetworkCategory();
+  }
+
+  activeFirewallProfileName(portName: string): FirewallProfileName {
+    return profileForNetworkCategory(this.networkCategoryOf(portName));
+  }
+
+  activeFirewallProfile(portName: string): NetFirewallProfileRow {
+    const name = this.activeFirewallProfileName(portName);
+    const row = this.firewallProfiles.get(name);
+    if (row) return row;
+    const rebuilt = defaultFirewallProfiles();
+    for (const [key, value] of rebuilt) this.firewallProfiles.set(key, value);
+    return this.firewallProfiles.get(name)!;
+  }
+
   protected override firewallFilter(
-    _portName: string,
+    portName: string,
     ipPkt: IPv4Packet,
     direction: 'in' | 'out' | 'forward',
     _outPortName?: string,
   ): 'accept' | 'drop' | 'reject' {
     if (direction === 'forward') return 'accept';
-    const facts = this.firewallFactsFor(ipPkt, direction);
-    const matching = [...this.firewallRules.values()].filter(r => firewallRuleMatches(r, facts));
-    for (const rule of matching) {
-      if (rule.action !== 'Block') continue;
-      this.getBus().publish({
-        topic: 'windows.firewall.drop',
-        payload: {
-          deviceId: this.id, hostname: this.getHostname(),
-          ruleName: rule.name,
-          sourceIp: ipPkt.sourceIP.toString(),
-          destinationIp: ipPkt.destinationIP.toString(),
-          sourcePort: facts.direction === 'Inbound' ? facts.remotePort : facts.localPort,
-          destinationPort: facts.direction === 'Inbound' ? facts.localPort : facts.remotePort,
-          protocol: rule.protocol, direction: facts.direction,
-        },
-      });
-      return 'drop';
+    const profile = this.activeFirewallProfile(portName);
+    if (!firewallIsOn(profile)) return 'accept';
+    const facts = this.firewallFactsFor(portName, ipPkt, direction);
+    if (rulesApplyTo(profile, facts.direction)) {
+      const matching = [...this.firewallRules.values()].filter(r => firewallRuleMatches(r, facts));
+      for (const rule of matching) {
+        if (rule.action !== 'Block') continue;
+        this.publishFirewallDrop(ipPkt, facts, rule.name, rule.protocol);
+        return 'drop';
+      }
+      if (matching.some(r => r.action === 'Allow')) return 'accept';
     }
-    return 'accept';
+    if (defaultActionFor(profile, facts.direction) === 'Allow') return 'accept';
+    if (this.belongsToOwnFlow(ipPkt, facts)) return 'accept';
+    this.publishFirewallDrop(ipPkt, facts, '', String(ipPkt.protocol));
+    return 'drop';
   }
 
-  private firewallFactsFor(ipPkt: IPv4Packet, direction: 'in' | 'out'): FirewallPacketFacts {
+  private publishFirewallDrop(
+    ipPkt: IPv4Packet, facts: FirewallPacketFacts, ruleName: string, protocol: string,
+  ): void {
+    this.getBus().publish({
+      topic: 'windows.firewall.drop',
+      payload: {
+        deviceId: this.id, hostname: this.getHostname(),
+        ruleName,
+        sourceIp: ipPkt.sourceIP.toString(),
+        destinationIp: ipPkt.destinationIP.toString(),
+        sourcePort: facts.direction === 'Inbound' ? facts.remotePort : facts.localPort,
+        destinationPort: facts.direction === 'Inbound' ? facts.localPort : facts.remotePort,
+        protocol, direction: facts.direction,
+      },
+    });
+  }
+
+  private belongsToOwnFlow(ipPkt: IPv4Packet, facts: FirewallPacketFacts): boolean {
+    if (facts.direction !== 'Inbound') return false;
+    if (ipPkt.protocol === IP_PROTO_TCP) {
+      const segment = ipPkt.payload as TCPPacket | null;
+      if (segment && segment.flags.syn && !segment.flags.ack) return false;
+      const peer = facts.remoteAddress.toString();
+      return this.getTcpStack().listSockets().some(s => s.localPort === facts.localPort
+        && s.remotePort === facts.remotePort && s.remoteIp === peer);
+    }
+    if (ipPkt.protocol === IP_PROTO_UDP) {
+      const range = this.getTcpStack().getEphemeralRange();
+      return facts.localPort >= range.min && facts.localPort <= range.max;
+    }
+    return ipPkt.protocol === IP_PROTO_ICMP && !this.isEchoRequest(ipPkt);
+  }
+
+  private isEchoRequest(ipPkt: IPv4Packet): boolean {
+    const icmp = ipPkt.payload as { icmpType?: ICMPType } | null;
+    return icmp?.icmpType === 'echo-request';
+  }
+
+  private firewallFactsFor(
+    portName: string, ipPkt: IPv4Packet, direction: 'in' | 'out',
+  ): FirewallPacketFacts {
     const ports = this.extractPorts(ipPkt);
     const inbound = direction === 'in';
     return {
@@ -5765,7 +6048,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       remoteAddress: inbound ? ipPkt.sourceIP : ipPkt.destinationIP,
       localPort: inbound ? ports.dstPort : ports.srcPort,
       remotePort: inbound ? ports.srcPort : ports.dstPort,
-      profile: 'Any',
+      profile: this.activeFirewallProfileName(portName),
     };
   }
 }

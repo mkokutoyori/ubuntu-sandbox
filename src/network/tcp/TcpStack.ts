@@ -12,10 +12,7 @@ import { bogusChecksum, payloadBytes } from '@/network/layers/transport/L4Checks
 import { type StreamPayload, isStreamPayload, sliceStream, appendStream } from './StreamPayload';
 import { fragmentIPv4, IPV4_FLAG_DF } from '@/network/core/Ipv4Fragmentation';
 import { PortNumber } from '@/network/core/ports/PortNumber';
-import {
-  ICMP_UNREACH_NET_PROHIBITED, ICMP_UNREACH_HOST_PROHIBITED,
-  ICMP_UNREACH_ADMIN_PROHIBITED,
-} from '@/network/core/IcmpErrors';
+import { PROHIBITED_UNREACH_CODES } from '@/network/core/IcmpErrors';
 
 /**
  * Ce qu'une sonde apatride a vu revenir. `rst-window` distingue un RST a
@@ -23,7 +20,9 @@ import {
  * regarde : `scan_engine_raw.cc` y lit `(tcp.th_win) ? PORT_OPEN :
  * PORT_CLOSED`.
  */
-export type StatelessProbeReply = 'rst' | 'rst-window' | 'syn-ack' | 'none';
+export type StatelessProbeReply =
+  | 'rst' | 'rst-window' | 'syn-ack'
+  | 'icmp-prohibited' | 'icmp-unreachable' | 'none';
 
 /**
  * Ce qu'un balayeur COMPOSE dans sa sonde au lieu de laisser la pile le
@@ -56,15 +55,13 @@ export interface ScanProbeShape {
 const TCP_DEFAULT_TTL = 64;
 
 interface StatelessProbeWatch {
-  seen: 'rst' | 'syn-ack' | 'none';
+  seen: 'rst' | 'syn-ack' | 'icmp-prohibited' | 'icmp-unreachable' | 'none';
   window: number;
+  localPort: number;
+  destIp: string;
+  destPort: number;
 }
 
-const PROHIBITED_UNREACH_CODES: ReadonlySet<number> = new Set([
-  ICMP_UNREACH_NET_PROHIBITED,
-  ICMP_UNREACH_HOST_PROHIBITED,
-  ICMP_UNREACH_ADMIN_PROHIBITED,
-]);
 import {
   connectedPrefixesOfPort, isUnicastDestination, type ConnectedIpv4Prefix,
 } from '@/network/layers/internet/InternetLayer';
@@ -354,7 +351,7 @@ export class TcpSocket {
 
   _fireData(data: unknown): void {
     if (this.dataHandlers.length === 0) {
-      const len = typeof data === 'string' ? data.length : 1;
+      const len = isStreamPayload(data) ? data.length : OPAQUE_PAYLOAD_SEQUENCE_UNITS;
       if (this.earlyDataBytes + len > this.windowSize) return;
       this.earlyData.push(data);
       this.earlyDataBytes += len;
@@ -628,7 +625,10 @@ export class TcpStack {
     const srcIp = shape.sourceIp === undefined
       ? egress.srcIp : canonicalIpText(shape.sourceIp);
     const key = makeSocketKey(srcIp, localPort, target, remotePort);
-    const watch: StatelessProbeWatch = { seen: 'none', window: 0 };
+    const watch: StatelessProbeWatch = {
+      seen: 'none', window: 0,
+      localPort, destIp: target, destPort: remotePort,
+    };
     this.statelessProbes.set(key, watch);
 
     const seg: TcpSegment = {
@@ -647,6 +647,21 @@ export class TcpStack {
     }
     if (watch.seen !== 'rst') return watch.seen;
     return watch.window > 0 ? 'rst-window' : 'rst';
+  }
+
+  private noteStatelessUnreachable(
+    origSourcePort: number, origDestPort: number, origDestIp: string,
+    icmpCode: number | undefined,
+  ): void {
+    for (const watch of this.statelessProbes.values()) {
+      if (watch.localPort !== origSourcePort) continue;
+      if (watch.destPort !== origDestPort) continue;
+      if (watch.destIp !== origDestIp) continue;
+      watch.seen = icmpCode !== undefined && PROHIBITED_UNREACH_CODES.has(icmpCode)
+        ? 'icmp-prohibited'
+        : 'icmp-unreachable';
+      return;
+    }
   }
 
   private statelessProbes = new Map<string, StatelessProbeWatch>();
@@ -678,6 +693,7 @@ export class TcpStack {
       this._teardown(socket, 'rst');
       return;
     }
+    this.noteStatelessUnreachable(origSourcePort, origDestPort, origDestIp, icmpCode);
   }
 
   /**

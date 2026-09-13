@@ -16,9 +16,12 @@
  * inbound SSH, so the client logic is shared rather than duplicated.
  */
 
-import { findHostByAddress, isPathReachable, transitTcpAclVerdict } from './HostLookup';
+import { findHostByAddress, isPathReachable } from './HostLookup';
 import { sshUnreachableReason } from '@/terminal/ssh/wireSshLogin';
 import { IPAddress } from '../../../core/types';
+import type { TcpFlags } from '../../../tcp/types';
+import type { StatelessProbeReply } from '../../../tcp/TcpStack';
+import type { TcpWireOutcome } from '../../../tcp/types';
 import { type SshHostKeyType } from './SshKnownHostEntry';
 import { SshPortForward } from './SshPortForward';
 import type { AccountLifecycleVerdict } from '@/network/protocols/ssh/auth/ISshAuthMethod';
@@ -82,12 +85,18 @@ export interface SshClientOpts {
   };
   /** Home dir for the source user (resolves the path of ~/.ssh/known_hosts). */
   sourceHome?: string;
+  sourceUid?: number;
+  sourceGid?: number;
   resolveName?: (name: string) => string | null;
   /**
    * Shell environment of the `ssh` invocation (exported variables plus
    * `VAR=val` prefix assignments). Drives SendEnv/AcceptEnv forwarding.
    */
   callerEnv?: Record<string, string>;
+  execRelay?: (
+    command: string, env: Record<string, string>,
+  ) => { output: string; exitCode: number } | null;
+  wireAuthenticated?: boolean;
   /**
    * The local machine's port-forwarding table — `-L` / `-D` listeners are
    * bound here so the tunnel surfaces through `ss` / `netstat`.
@@ -190,41 +199,6 @@ function effectiveSshdView(
   const cfg = SshdServerConfig.parse(raw);
   const groups = (machine.executor?.userMgr?.getUserGroups?.(user) ?? []).map(g => g.name);
   return cfg.effectiveFor({ user, groups, address: sourceIp, host: sourceHost });
-}
-
-/**
- * Ask the remote machine's iptables/ufw filter table whether an
- * inbound TCP SYN from `srcIp` to `dstPort` would be accepted.
- * Returns 'accept' / 'drop' / 'reject'. Defaults to 'accept' if the
- * remote has no firewall manager (e.g. switches).
- */
-function inboundFirewallVerdict(machine: LinuxMachine, srcIp: string, dstPort: number): 'accept' | 'drop' | 'reject' {
-  const exec = (machine as unknown as {
-    executor?: {
-      iptables?: { filterPacket: (p: object) => 'accept' | 'drop' | 'reject' };
-      firewall?: {
-        logBlockedPacket: (o: {
-          verdict: 'drop' | 'reject'; iface: string; src: string;
-          dst: string; proto: string; sport: number; dport: number;
-        }) => void;
-      };
-    };
-  }).executor;
-  const ipt = exec?.iptables;
-  if (!ipt?.filterPacket) return 'accept';
-  const dstIp = machine.getPorts().map(p => p.getIPAddress()?.toString()).find(Boolean) ?? '0.0.0.0';
-  const verdict = ipt.filterPacket({
-    direction: 'in', protocol: 6, srcIP: srcIp, dstIP: dstIp,
-    srcPort: 50000, dstPort, iface: 'eth0',
-  });
-  // Reactively record the drop in /var/log/ufw.log, as the kernel does.
-  if (verdict === 'drop' || verdict === 'reject') {
-    exec?.firewall?.logBlockedPacket({
-      verdict, iface: 'eth0', src: srcIp, dst: dstIp,
-      proto: 'tcp', sport: 50000, dport: dstPort,
-    });
-  }
-  return verdict;
 }
 
 function remoteSshdConfig(machine: LinuxMachine): SshdServerConfig {
@@ -599,6 +573,36 @@ function computeForwardedEnv(
 }
 
 /** Extract -p <port> from argv (default 22). */
+export interface WireExecTarget {
+  host: string;
+  user: string;
+  port: number;
+  identities: string[];
+}
+
+export function wireExecTarget(
+  args: string[],
+  vfs: { normalizePath(path: string, cwd: string): string },
+  cwd: string,
+  defaultUser: string,
+): WireExecTarget | null {
+  const { positional, flags } = splitSshArgs(args);
+  const target = positional[0];
+  if (target === undefined || positional.length < 2) return null;
+  for (const blocking of ['-N', '-W', '-J', '-A', '-D', '-L', '-R']) {
+    if (flags.includes(blocking)) return null;
+  }
+  const at = target.indexOf('@');
+  const host = at >= 0 ? target.slice(at + 1) : target;
+  const user = at >= 0 ? target.slice(0, at) : defaultUser;
+  if (host === '') return null;
+  const identities: string[] = [];
+  for (let i = 0; i < flags.length; i++) {
+    if (flags[i] === '-i' && flags[i + 1]) identities.push(vfs.normalizePath(flags[i + 1], cwd));
+  }
+  return { host, user, port: clientPort(flags), identities };
+}
+
 function clientPort(args: string[]): number {
   const i = args.indexOf('-p');
   if (i >= 0 && args[i + 1]) {
@@ -726,6 +730,42 @@ function rebindToLoopback(fwd: SshPortForward): SshPortForward {
   return SshPortForward.parse(fwd.kind, spec) ?? fwd;
 }
 
+type WireProbeDevice = {
+  getTcpStack(): {
+    scanProbe(remoteIp: string, remotePort: number, flags: TcpFlags): StatelessProbeReply;
+  };
+};
+
+const OUTCOME_OF_REPLY: Readonly<Record<StatelessProbeReply, TcpWireOutcome>> = {
+  'syn-ack': 'open',
+  rst: 'refused',
+  'rst-window': 'refused',
+  'icmp-unreachable': 'refused',
+  'icmp-prohibited': 'prohibited',
+  none: 'timeout',
+};
+
+export function wireReachOutcome(
+  device: object | null | undefined, destIp: string, port: number,
+): TcpWireOutcome {
+  const probe = device as WireProbeDevice | null | undefined;
+  if (!probe || typeof probe.getTcpStack !== 'function') return 'open';
+  const stack = probe.getTcpStack();
+  if (!stack || typeof stack.scanProbe !== 'function') return 'open';
+  if (IPAddress.tryParse(destIp) === null) return 'open';
+  const syn: TcpFlags = {
+    fin: false, syn: true, rst: false, psh: false, ack: false, urg: false, ece: false, cwr: false,
+  };
+  return OUTCOME_OF_REPLY[stack.scanProbe(destIp, port, syn)];
+}
+
+const WIRE_FAILURE_TEXT: Readonly<Record<Exclude<TcpWireOutcome, 'open'>, string>> = {
+  refused: 'Connection refused',
+  prohibited: 'No route to host',
+  unreachable: 'No route to host',
+  timeout: 'Connection timed out',
+};
+
 export function runSshClient(opts: SshClientOpts): SshClientResult {
   const { positional, flags } = splitSshArgs(opts.args);
   const target = positional[0];
@@ -782,7 +822,18 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     port = cfgEntry.port;
   }
   if (cfgEntry?.identityFile && !flags.includes('-i')) {
-    flags.push('-i', cfgEntry.identityFile);
+    /*
+     * `IdentityFile ~/.ssh/id_two` designe la cle de CELUI qui se
+     * connecte, et un vrai `ssh` developpe le tilde. Il etait passe tel
+     * quel a l'ouverture du fichier, donc la seule forme qui marchait
+     * etait le chemin absolu — et la ligne la plus courante d'un
+     * `~/.ssh/config` refusait la cle sans un mot.
+     */
+    const foyer = opts.sourceHome ?? '/root';
+    const chemin = cfgEntry.identityFile.startsWith('~/')
+      ? `${foyer}/${cfgEntry.identityFile.slice(2)}`
+      : cfgEntry.identityFile;
+    flags.push('-i', chemin);
   }
 
   // Loopback target (127.0.0.1 / localhost) resolves to this very machine —
@@ -910,24 +961,12 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
 
-  // Transit router ACL — any Cisco extended ACL on a router along the
-  // path that denies the synth SYN drops the packet silently, so the
-  // client times out (no SYN-ACK, no RST).
-  if (transitTcpAclVerdict(opts.sourceIp, destIp, port) === 'deny') {
+  const wire = wireReachOutcome(opts.sourceDevice, destIp, port);
+  if (wire !== 'open') {
     return {
-      output: `ssh: connect to host ${host} port ${port}: Connection timed out\n`,
+      output: `ssh: connect to host ${host} port ${port}: ${WIRE_FAILURE_TEXT[wire]}\n`,
       exitCode: 255,
       droppedSyn: { localIp: opts.sourceIp, peerIp: destIp, peerPort: port },
-    };
-  }
-
-  const verdict = inboundFirewallVerdict(machine, opts.sourceIp, port);
-  if (verdict === 'drop' || verdict === 'reject') {
-    return {
-      output: verdict === 'reject'
-        ? `ssh: connect to host ${host} port ${port}: Connection refused\n`
-        : `ssh: connect to host ${host} port ${port}: Connection timed out\n`,
-      exitCode: 255,
     };
   }
 
@@ -1041,13 +1080,15 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     ? `Warning: your password will expire in ${warningDays} day${warningDays === 1 ? '' : 's'}.\n`
     : '';
 
-  machine.recordSshLogin?.(
-    remoteUser,
-    opts.sourceIp,
-    opts.sourceHostname,
-    true,
-    auth.method,
-  );
+  if (!opts.wireAuthenticated) {
+    machine.recordSshLogin?.(
+      remoteUser,
+      opts.sourceIp,
+      opts.sourceHostname,
+      true,
+      auth.method,
+    );
+  }
 
   // StrictHostKeyChecking=yes — refuse if no known_hosts entry exists
   // for the remote IP. The default behaviour (ask/accept-new) keeps the
@@ -1221,9 +1262,11 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
         const rc = remoteExec?.vfs.readFile(`${home}/.bashrc`) ?? '';
         if (rc.trim()) effectiveCmd = `${rc}\n${remoteCmd}`;
       }
+      const relayed = opts.execRelay?.(effectiveCmd, forwarded) ?? null;
       try {
-        execOut =
-          Object.keys(forwarded).length > 0 && execMod?.executeWithEnv
+        execOut = relayed
+          ? relayed.output
+          : Object.keys(forwarded).length > 0 && execMod?.executeWithEnv
             ? execMod.executeWithEnv(effectiveCmd, forwarded)
             : execMod?.execute?.(effectiveCmd) ?? '';
       } finally {
@@ -1232,7 +1275,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
           for (const [k, v] of savedEntries) envSnapshot.set(k, v);
         }
       }
-      execRc = execMod?.lastExitCode ?? 0;
+      execRc = relayed ? relayed.exitCode : execMod?.lastExitCode ?? 0;
     } finally {
       restoreAgent?.();
       remoteUidBeforeAfter?.();
@@ -1379,10 +1422,12 @@ function updateKnownHosts(opts: SshClientOpts, machine: LinuxMachine, ip: string
   if (changed || !file.find(ip, keyType)) {
     const updated = (changed ? file.remove(ip) : file).add({ hostnames: [ip], keyType, publicKey });
     const sshDir = knownHostsPath.replace(/\/[^/]+$/, '');
+    const uid = opts.sourceUid ?? 0;
+    const gid = opts.sourceGid ?? 0;
     if (opts.localVfs.mkdirp && opts.localVfs.resolveInode && !opts.localVfs.resolveInode(sshDir)) {
-      opts.localVfs.mkdirp(sshDir, 0o700, 0, 0);
+      opts.localVfs.mkdirp(sshDir, 0o700, uid, gid);
     }
-    opts.localVfs.writeFile(knownHostsPath, updated.serialize(), 0, 0, 0o022);
+    opts.localVfs.writeFile(knownHostsPath, updated.serialize(), uid, gid, 0o022);
   }
   return false;
 }

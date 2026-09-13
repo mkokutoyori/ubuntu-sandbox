@@ -1,7 +1,7 @@
 import type { DnsCacheRecordView } from '@/network/dns/resolver/DnsCache';
 import type { ResourceRecord } from '@/network/dns/wire/ResourceRecord';
 import { RRType } from '@/network/dns/wire/RRType';
-import { rrTypeName } from '@/network/dns/compat/DnsWireCompat';
+import { rrTypeFromName, rrTypeName } from '@/network/dns/compat/DnsWireCompat';
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { applyCimCriteria, cimNotFound } from './cimQuery';
 import { matchEnumValue } from './netIpAddress';
@@ -16,10 +16,6 @@ export const DNS_CACHE_RECORD_TYPES: readonly DnsCacheRecordType[] =
   ['A', 'NS', 'CNAME', 'SOA', 'PTR', 'MX', 'AAAA', 'SRV'];
 
 export const DNS_CACHE_CIM_CLASS = 'MSFT_DNSClientCache';
-
-export const DNS_RECORD_TYPE_NUMBER: Record<string, number> = {
-  A: 1, NS: 2, CNAME: 5, SOA: 6, PTR: 12, MX: 15, TXT: 16, AAAA: 28, SRV: 33,
-};
 
 export function dnsRdataLength(type: string, value: string): number {
   const upper = type.toUpperCase();
@@ -166,7 +162,7 @@ export function renderDisplayDns(rows: readonly DnsCacheRow[]): string {
     out.push(`    ${r.entry}`);
     out.push(`    ----------------------------------------`);
     out.push(`    Record Name . . . . . : ${r.recordName}`);
-    out.push(`    Record Type . . . . . : ${DNS_RECORD_TYPE_NUMBER[r.recordType.toUpperCase()] ?? 0}`);
+    out.push(`    Record Type . . . . . : ${rrTypeFromName(r.recordType) ?? 0}`);
     out.push(`    Time To Live  . . . . : ${r.timeToLive}`);
     out.push(`    Data Length . . . . . : ${r.dataLength}`);
     out.push(`    Section . . . . . . . : ${r.section}`);

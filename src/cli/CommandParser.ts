@@ -97,6 +97,26 @@ export function tokenContent(token: string): string {
     : token;
 }
 
+function undoableUnder(
+  node: TreeNode, table: CommandTable, session: CliSession,
+): boolean {
+  const vus = new Set<TreeNode>();
+  const pile: TreeNode[] = [node];
+  while (pile.length > 0) {
+    const courant = pile.pop() as TreeNode;
+    if (vus.has(courant)) continue;
+    vus.add(courant);
+    for (const spec of [...courant.specs, ...courant.undoOnlySpecs]) {
+      if (!spec.modes.includes(session.mode)) continue;
+      if (!table.isReachable(spec, session)) continue;
+      if (spec.undo !== undefined || spec.existsOnlyNegated) return true;
+    }
+    for (const enfant of courant.children.values()) pile.push(enfant);
+    for (const enfant of courant.argumentChildren) pile.push(enfant);
+  }
+  return false;
+}
+
 export function parseCommand(
   table: CommandTable, input: string, session: CliSession,
   options?: TokenizeOptions,
@@ -104,6 +124,21 @@ export function parseCommand(
   const decoupe = tokenizeWithPositions(input, options);
   const all = decoupe.tokens;
   if (all.length === 0) return { status: 'empty' };
+
+  /*
+   * `no` SEUL est une commande incomplete, pas une commande inconnue.
+   * La machine rendait les deux selon le mode — `% Incomplete command.`
+   * en configuration globale et sur une interface, `% Invalid input` en
+   * `config-line`, en `config-route-map` et dans un sous-mode d'ACL —
+   * alors que c'est la MEME frappe et la meme reponse d'IOS. La
+   * condition dit ce qui la justifie : il y a bien quelque chose a
+   * defaire ici.
+   */
+  if (all.length === 1 && all[0].toLowerCase() === 'no'
+    && table.specs().some(spec => spec.undo
+      && spec.modes.includes(session.mode) && table.isReachable(spec, session))) {
+    return { status: 'incomplete', consumed: 1 };
+  }
 
   const negated = all[0].toLowerCase() === 'no' && all.length > 1;
   const tokens = negated ? all.slice(1) : all;
@@ -193,7 +228,12 @@ export function parseCommand(
   // noeud porte, dans ce mode, des continuations parfaitement valides.
   const spec = table.specAt(node, session)
     ?? (negated ? table.undoOnlySpecAt(node, session) : undefined);
-  if (!spec) return { status: 'incomplete', consumed: tokens.length };
+  if (!spec) {
+    if (negated && !undoableUnder(node, table, session)) {
+      return { status: 'invalid', token: 'no', position: 0 };
+    }
+    return { status: 'incomplete', consumed: tokens.length };
+  }
   if (spec.existsOnlyNegated && !negated) {
     return { status: 'incomplete', consumed: tokens.length };
   }
@@ -224,10 +264,28 @@ export function keywordMatches(
   return reachable.filter(child => child.keyword?.toLowerCase().startsWith(lowered));
 }
 
+export function modesInSubtree(node: TreeNode): Set<string> {
+  if (node.modesInSubtree !== undefined) return node.modesInSubtree;
+  const modes = new Set<string>();
+  for (const spec of node.specs) for (const mode of spec.modes) modes.add(mode);
+  for (const spec of node.undoOnlySpecs) for (const mode of spec.modes) modes.add(mode);
+  for (const place of node.argumentChildren) {
+    for (const mode of modesInSubtree(place)) modes.add(mode);
+  }
+  for (const child of node.children.values()) {
+    for (const mode of modesInSubtree(child)) modes.add(mode);
+  }
+  node.modesInSubtree = modes;
+  return modes;
+}
+
 export function subtreeReachable(
   node: TreeNode, table: CommandTable, session: CliSession,
   options: ReachabilityOptions = {},
 ): boolean {
+  const modes = modesInSubtree(node);
+  if (!modes.has(session.mode)
+    && !session.configAncestors().some(mode => modes.has(mode))) return false;
   if (node.specs.some(spec => table.isReachable(spec, session, options))) return true;
   for (const place of node.argumentChildren) {
     if (subtreeReachable(place, table, session, options)) return true;

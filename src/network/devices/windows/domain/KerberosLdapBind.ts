@@ -4,7 +4,7 @@ import { KU_AP_REQ_AUTHENTICATOR } from '@/network/kerberos/crypto';
 import { principalName, PrincipalNameType } from '@/network/kerberos/types';
 import { dialLdap } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 import type { LdapClient } from '@/network/devices/windows/server/ad/ldap/LdapClient';
-import { discoverDcHostname } from './DcHostnameDiscovery';
+import { discoverDc } from './DcHostnameDiscovery';
 
 export type KerberosLdapFailure = 'no-network-path' | 'bad-credential';
 
@@ -21,7 +21,7 @@ export function bindLdapWithKerberos(opts: {
   user: string;
   password: string;
 }): KerberosLdapBindResult {
-  const dcHostname = discoverDcHostname(opts.tcpStack, opts.dcAddress, opts.domainName);
+  const dcHostname = discoverDc(opts.tcpStack, opts.dcAddress, opts.domainName)?.hostname ?? null;
   if (!dcHostname) return { failure: 'no-network-path' };
 
   const realm = opts.domainName.toUpperCase();
