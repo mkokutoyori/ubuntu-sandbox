@@ -577,6 +577,11 @@ export class LinuxSshServerContext implements ISshServerContext {
    * The matching /var/log/auth.log line is emitted by SshSyslogger via the
    * `auth_failure` event.
    */
+  clientPort(fromIp: string): number | undefined {
+    const machine = this.device as { sshClientPort?: (ip: string) => number } | null;
+    return machine?.sshClientPort?.(fromIp);
+  }
+
   recordAuthFailure(user: string, fromIp: string, reason: string): void {
     this.appendBtmp({
       user: user || 'invalid user',

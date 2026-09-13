@@ -1824,7 +1824,7 @@ export abstract class LinuxMachine extends EndHost
   private readonly sshPeerPorts: Map<string, number> = new Map();
   private sshNextClientPort = 0;
 
-  private sshClientPort(fromIp: string): number {
+  sshClientPort(fromIp: string): number {
     const known = this.sshPeerPorts.get(fromIp);
     if (known !== undefined) return known;
     const { min, max } = this.getTcpStack().getEphemeralRange();
