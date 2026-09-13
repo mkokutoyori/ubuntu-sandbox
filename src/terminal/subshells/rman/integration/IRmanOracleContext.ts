@@ -52,6 +52,7 @@ export interface IRmanOracleContext {
    * device to dial from, in which case CONNECT stays local.
    */
   connectTarget?(identifier: string): ConnectTargetOutcome;
+  checkpointDatafiles?(): void;
   recordBackupPiece?(piece: RecordedBackupPiece): void;
   getRecoveryAreaUsedBytes?(): number;
 }

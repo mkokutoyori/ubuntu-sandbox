@@ -82,7 +82,7 @@ const DICTIONARY_SCHEMAS: ReadonlySet<string> = new Set(['SYS', 'SYSTEM', 'XDB',
 export interface SerializedTable {
   readonly schema: string;
   readonly table: string;
-  readonly columns: readonly string[];
+  readonly meta: TableMeta;
   readonly rows: ReadonlyArray<readonly CellValue[]>;
 }
 
@@ -188,7 +188,7 @@ export class OracleStorage extends BaseStorage {
         if (this.tablespaceOf(held.meta) !== wanted) continue;
         tables.push({
           schema, table,
-          columns: held.meta.columns.map((c) => c.name),
+          meta: held.meta,
           rows: held.rows.map((row) => [...row]),
         });
       }
@@ -199,9 +199,14 @@ export class OracleStorage extends BaseStorage {
   loadTablespace(payload: TablespacePayload): number {
     let restored = 0;
     for (const held of payload.tables) {
-      const bySchema = this.tables.get(held.schema.toUpperCase());
-      const target = bySchema?.get(held.table.toUpperCase());
-      if (!target) continue;
+      const schema = held.schema.toUpperCase();
+      const table = held.table.toUpperCase();
+      let target = this.tables.get(schema)?.get(table);
+      if (!target) {
+        this.createTable(held.meta);
+        target = this.tables.get(schema)?.get(table);
+        if (!target) continue;
+      }
       target.rows.splice(0, target.rows.length, ...held.rows.map((row) => [...row]));
       target.meta.rowCount = target.rows.length;
       restored++;

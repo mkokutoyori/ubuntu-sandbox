@@ -99,6 +99,10 @@ export class LinuxRmanContext implements IRmanOracleContext {
     ];
   }
 
+  checkpointDatafiles(): void {
+    this._oracle?.instance.performCheckpoint();
+  }
+
   recordBackupPiece(piece: RecordedBackupPiece): void {
     const oracle = this._oracle;
     if (!oracle) return;
@@ -166,10 +170,12 @@ export class LinuxRmanContext implements IRmanOracleContext {
     const read = (path: string): string | null =>
       dev.readFileForEditor?.(path) ?? dev.readFile?.(path) ?? null;
     return {
-      writeFile: (path, _data, declaredSizeBytes): Result<void, RmanError> => {
+      writeFile: (path, data, declaredSizeBytes): Result<void, RmanError> => {
         try {
-          const size = declaredSizeBytes ?? _data.length;
-          const body = `[ORACLE RMAN BACKUP PIECE - ${size} bytes]`;
+          const size = declaredSizeBytes ?? data.length;
+          const body = data.length > 0
+            ? new TextDecoder().decode(data)
+            : `[ORACLE RMAN BACKUP PIECE - ${size} bytes]`;
           const written = dev.writeFileAsOracle
             ? dev.writeFileAsOracle(path, body, size)
             : dev.writeFileFromEditor(path, body, size);

@@ -298,6 +298,10 @@ export interface OracleTablespaceEncryptedPayload extends OracleDeviceRef {
   name: string;
 }
 
+export interface OracleCheckpointCompletedPayload extends OracleDeviceRef {
+  scn: number;
+}
+
 export interface OracleTablespaceRenamedPayload extends OracleDeviceRef {
   oldName: string;
   newName: string;
@@ -570,6 +574,7 @@ export type OracleDomainEvent =
   | { topic: 'oracle.storage.datafile-autoextend-changed'; payload: OracleDatafileAutoextendChangedPayload }
   | { topic: 'oracle.storage.datafile-added';            payload: OracleDatafileAddedPayload }
   | { topic: 'oracle.storage.tablespace-status-changed'; payload: OracleTablespaceStatusChangedPayload }
+  | { topic: 'oracle.storage.checkpoint-completed';      payload: OracleCheckpointCompletedPayload }
   | { topic: 'oracle.storage.tablespace-encrypted';      payload: OracleTablespaceEncryptedPayload }
   | { topic: 'oracle.storage.tablespace-renamed';        payload: OracleTablespaceRenamedPayload }
   | { topic: 'oracle.audit.recorded';                    payload: OracleAuditRecordedPayload }

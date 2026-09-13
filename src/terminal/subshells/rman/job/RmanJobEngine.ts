@@ -32,6 +32,7 @@ import { generatePieceName } from '../core/pureUtils';
 import type { OmfBackupKind } from '@/database/oracle/storage/OracleManagedFiles';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { resolveFormatSpec } from '../core/formatSpec';
+import { renderBackupPieceImage, parseBackupPieceImage } from '../core/BackupPieceImage';
 import { parseSize } from '@/database/oracle/views/_fileSize';
 import { BackupKey } from '../values/BackupKey';
 import { implicitToDate } from '@/database/oracle/functions/valueUtils';
@@ -270,6 +271,10 @@ export class RmanJobEngine implements IRmanJobEngine {
     const pieceCount = maxPieceSize ? Math.max(1, Math.ceil(totalSize / maxPieceSize)) : 1;
     const pieceSize  = maxPieceSize ? Math.min(maxPieceSize, totalSize) : totalSize;
 
+    if (!isControlfile && !isSpfile) this._ctx.checkpointDatafiles?.();
+    const image = (isControlfile || isSpfile)
+      ? null
+      : { datafiles: this._readDatafileImages(datafiles) };
     const usedPaths = new Set<string>();
     for (let i = 1; i <= pieceCount; i++) {
       const candidate = i === 1
@@ -284,7 +289,9 @@ export class RmanJobEngine implements IRmanJobEngine {
         const overflow = this._recoveryAreaOverflow(size);
         if (overflow) return err(overflow);
       }
-      const writeResult = this._ctx.vfs.writeFile(path, new Uint8Array(0), size);
+      const body = renderBackupPieceImage(
+        `[ORACLE RMAN BACKUP PIECE - ${size} bytes]`, i === 1 ? image : null);
+      const writeResult = this._ctx.vfs.writeFile(path, new TextEncoder().encode(body), size);
       if (!writeResult.ok) return writeResult;
 
       const set = BackupSetFactory.createBackupSet({
@@ -323,6 +330,31 @@ export class RmanJobEngine implements IRmanJobEngine {
     }
 
     return ok(undefined);
+  }
+
+  private _readDatafileImages(
+    datafiles: ReadonlyArray<{ path: string }>,
+  ): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const df of datafiles) {
+      const read = this._ctx.vfs.readFile(df.path);
+      if (read.ok) out[df.path] = new TextDecoder().decode(read.value);
+    }
+    return out;
+  }
+
+  private _readPieceImages(
+    sets: ReadonlyArray<{ pieces: ReadonlyArray<{ path: string }> }>,
+  ): Record<string, string> {
+    for (const set of sets) {
+      for (const piece of set.pieces) {
+        const read = this._ctx.vfs.readFile(piece.path);
+        if (!read.ok) continue;
+        const image = parseBackupPieceImage(new TextDecoder().decode(read.value));
+        if (image) return { ...image.datafiles };
+      }
+    }
+    return {};
   }
 
   private _recoveryAreaOverflow(sizeBytes: number): RmanError | null {
@@ -434,6 +466,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       });
     }
 
+    const restoredImages = this._readPieceImages(usableSets);
     const tsFilter   = params.tablespace ? params.tablespace.toUpperCase() : undefined;
     const fileFilter = params.fileNo     ? Number(params.fileNo) : undefined;
     const datafiles  = this._ctx.getDatafiles().filter(df => {
@@ -454,8 +487,9 @@ export class RmanJobEngine implements IRmanJobEngine {
       // point. The instance's OPEN-time existence check (ORA-01157)
       // relies on this file being really rewritten.
       const sizeMb = Math.max(1, Math.round(df.sizeBytes / 1048576));
+      const saved = restoredImages[df.path];
       this._ctx.vfs.writeFile(df.path, new TextEncoder().encode(
-        `[ORACLE DATAFILE - ${df.tablespace} tablespace - ${sizeMb}M]`));
+        saved ?? `[ORACLE DATAFILE - ${df.tablespace} tablespace - ${sizeMb}M]`));
       this._bus.emit({
         type: 'RESTORE_DATAFILE_COMPLETED', jobId: job.id,
         fileNo: df.fileNo, elapsedMs: 5_000,
