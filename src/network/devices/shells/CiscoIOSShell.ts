@@ -132,13 +132,15 @@ import { RoutingConfigRepository } from '../inspection/config/RoutingConfigRepos
 import {
   type CiscoACLShellContext,
   buildNamedStdACLCommands, buildNamedExtACLCommands,
-  buildIPv6ACLGlobalCommands, buildIPv6ACLModeCommands,
+  buildIPv6ACLGlobalCommands,
   registerACLShowCommands, aclShowSpecs,
-  parseCiscoAce, texteDeRemarque, standardAclHost, extendedAclHost, type NamedAclEditContext,
+  parseCiscoAce, texteDeRemarque, standardAclHost, extendedAclHost, ipv6AclHost,
+  type NamedAclEditContext,
 } from './cisco/CiscoAclCommands';
 import { aclStandardSpecs } from './cisco/aclStandardSpecs';
 import { aclExtendedSpecs } from './cisco/aclExtendedSpecs';
 import { aclSubmodeSpecs, avecNumeroDeSequence } from './cisco/aclSubmodeSpecs';
+import { aclIpv6Specs } from './cisco/aclIpv6Specs';
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import {
   registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
@@ -543,6 +545,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         () => standardAclHost(this.namedAclEditContext())),
       ...aclSubmodeSpecs('config-ext-nacl',
         () => extendedAclHost(this.namedAclEditContext())),
+      ...aclIpv6Specs(() => ipv6AclHost(this)),
+      ...aclSubmodeSpecs('config-ipv6-nacl', () => ipv6AclHost(this)),
       ...prefixListSpecs(() => this.policy),
       ...routerSubmodeSpecs(this, this.routingCfg),
       ...bfdInterfaceSpecs({
@@ -1990,7 +1994,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildNamedStdACLCommands(this.configStdNaclTrie, this.namedAclEditContext());
     buildNamedExtACLCommands(this.configExtNaclTrie, this.namedAclEditContext());
     buildIPv6ACLGlobalCommands(this.configTrie, this);
-    buildIPv6ACLModeCommands(this.configIpv6NaclTrie, this);
     // OSPF
     registerOSPFConfigCommands(this.configTrie, this);
     registerOSPFInterfaceCommands(this.configIfTrie, this);

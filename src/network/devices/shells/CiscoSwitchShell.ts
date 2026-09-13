@@ -103,6 +103,10 @@ import {
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import { aclHeadSpecs, type AclHeadHost, type AclKind } from './cisco/aclHeadSpecs';
 import { macAclSpecs, type MacAclHost } from './cisco/macAclSpecs';
+import { arpAclSpecs, type ArpAclHost } from './cisco/arpAclSpecs';
+import {
+  vlanAccessMapSpecs, VLAN_ACCESS_MAP_LEGENDS, type VlanAccessMapHost,
+} from './cisco/vlanAccessMapSpecs';
 import { aclStandardSpecs } from './cisco/aclStandardSpecs';
 import { aclExtendedSpecs } from './cisco/aclExtendedSpecs';
 import { aclSubmodeSpecs, avecNumeroDeSequence } from './cisco/aclSubmodeSpecs';
@@ -1044,27 +1048,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // ── VACL + DAI (switch-only) ──
 
-    this.configAccessMapTrie.registerGreedy('match ip address', 'Match an IP ACL', (args) => {
-      if (!this.selectedAccessMap || !args[0]) return CISCO_ERRORS.INCOMPLETE;
-      const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
-      rule.matchIpAcls = [...(rule.matchIpAcls ?? []), ...args];
-      return '';
-    });
-    this.configAccessMapTrie.registerGreedy('match mac address', 'Match a MAC ACL', (args) => {
-      if (!this.selectedAccessMap || !args[0]) return CISCO_ERRORS.INCOMPLETE;
-      const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
-      rule.matchMacAcls = [...(rule.matchMacAcls ?? []), ...args];
-      return '';
-    });
-    this.configAccessMapTrie.registerGreedy('action', 'Set the access-map action', (args) => {
-      if (!this.selectedAccessMap) return CISCO_ERRORS.INCOMPLETE;
-      const a = args[0]?.toLowerCase();
-      if (a !== 'forward' && a !== 'drop') return '% Invalid action';
-      if (args.length > 1) return CISCO_ERRORS.INVALID_INPUT;
-      const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
-      rule.action = a;
-      return '';
-    });
     this.registerDaiCommands({
       config: this.configTrie, configIf: this.configIfTrie,
       privileged: this.privilegedTrie, user: this.userTrie,
@@ -1081,10 +1064,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       config: this.configTrie, configIf: this.configIfTrie,
       privileged: this.privilegedTrie, user: this.userTrie,
     });
-    for (const kw of ['permit', 'deny']) {
-      this.configAclTrie.registerGreedy(kw, `ARP ACL ${kw}`, (args) =>
-        this.handleArpAclLine(kw, args));
-    }
     buildNamedStdACLCommands(this.configStdNaclTrie, this.namedAclEditContext());
     buildNamedExtACLCommands(this.configExtNaclTrie, this.namedAclEditContext());
     this.registerL3Commands();
@@ -1190,18 +1169,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return '';
       });
 
-    // ── arp access-list ──
-    trie.config.registerGreedy('arp access-list', 'Define an ARP ACL', (args) => {
-      const name = args[0]; if (!name) return CISCO_ERRORS.INCOMPLETE;
-      const map = this.d()._getArpAccessLists();
-      if (!map.has(name)) map.set(name, { name, entries: [] });
-      this.selectedArpAcl = name;
-      this.selectedAcl = null;
-      this.mode = 'config-acl';
-      return '';
-    });
-    trie.config.requireArgs('arp access-list', 1);
-
     // ── Interface ── trust + limit rate
     trie.configIf.register('ip arp inspection trust', 'Trust port for DAI', () => {
       const cfg = this.d()._getArpInspectionConfig();
@@ -1232,37 +1199,64 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     trie.privileged.describeNode('show queuing', 'Show queueing configuration');
   }
 
-  private handleArpAclLine(kw: string, args: string[]): string {
-    if (!this.selectedArpAcl) return '';
-    const map = this.d()._getArpAccessLists();
-    const acl = map.get(this.selectedArpAcl);
-    if (!acl) return '';
-    if (kw === 'no') {
-      const raw = args.join(' ');
-      const idx = acl.entries.findIndex(e => e.raw === raw);
-      if (idx >= 0) acl.entries.splice(idx, 1);
-      return '';
-    }
-    if (kw !== 'permit' && kw !== 'deny') return '';
-    // Syntax: permit ip {host <ip>|any} mac {host <mac>|any}
-    let i = 0;
-    let senderIp: string | null = null;
-    let senderMac: string | null = null;
-    if (args[i]?.toLowerCase() === 'ip') {
-      i++;
-      if (args[i]?.toLowerCase() === 'host') { senderIp = args[i + 1] ?? null; i += 2; }
-      else if (args[i]?.toLowerCase() === 'any') { i++; }
-    }
-    if (args[i]?.toLowerCase() === 'mac') {
-      i++;
-      if (args[i]?.toLowerCase() === 'host') { senderMac = (args[i + 1] ?? '').toLowerCase() || null; i += 2; }
-      else if (args[i]?.toLowerCase() === 'any') { i++; }
-    }
-    acl.entries.push({
-      action: kw, senderIp, senderMac,
-      raw: `${kw} ${args.join(' ')}`.trim(),
-    });
-    return '';
+  private vlanAccessMapHost(): VlanAccessMapHost {
+    const regle = () => {
+      if (!this.selectedAccessMap) return null;
+      return this.d().setVlanAccessMapRule(
+        this.selectedAccessMap.name, this.selectedAccessMap.seq);
+    };
+    const champ = (famille: 'ip' | 'mac') =>
+      (famille === 'ip' ? 'matchIpAcls' : 'matchMacAcls') as
+        'matchIpAcls' | 'matchMacAcls';
+    return {
+      poserAction: (action) => {
+        const r = regle();
+        if (r) r.action = action;
+        return '';
+      },
+      ajouterListes: (famille, noms) => {
+        const r = regle();
+        if (r) r[champ(famille)] = [...(r[champ(famille)] ?? []), ...noms];
+        return '';
+      },
+      retirerListes: (famille, noms) => {
+        const r = regle();
+        if (!r) return '';
+        const restantes = (r[champ(famille)] ?? []).filter((n) => !noms.includes(n));
+        if (restantes.length === 0) delete r[champ(famille)];
+        else r[champ(famille)] = restantes;
+        return '';
+      },
+    };
+  }
+
+  private arpAclHost(): ArpAclHost {
+    const listeCourante = () => {
+      if (!this.selectedArpAcl) return null;
+      return this.d()._getArpAccessLists().get(this.selectedArpAcl) ?? null;
+    };
+    return {
+      ouvrirListe: (nom) => {
+        const map = this.d()._getArpAccessLists();
+        if (!map.has(nom)) map.set(nom, { name: nom, entries: [] });
+        this.selectedArpAcl = nom;
+        this.selectedAcl = null;
+        return '';
+      },
+      ajouterEntree: (action, senderIp, senderMac, ligne) => {
+        const acl = listeCourante();
+        if (!acl) return '';
+        acl.entries.push({ action, senderIp, senderMac, raw: ligne });
+        return '';
+      },
+      retirerEntree: (ligne) => {
+        const acl = listeCourante();
+        if (!acl) return '';
+        const index = acl.entries.findIndex((e) => e.raw === ligne);
+        if (index >= 0) acl.entries.splice(index, 1);
+        return '';
+      },
+    };
   }
 
   private registerPortSecurityCommands(): void {
@@ -2336,6 +2330,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...aclSubmodeSpecs('config-ext-nacl',
         () => extendedAclHost(this.namedAclEditContext())),
       ...macAclSpecs(() => this.macAclHost()),
+      ...arpAclSpecs(() => this.arpAclHost()),
+      ...vlanAccessMapSpecs(() => this.vlanAccessMapHost()),
       ...switchPortPhysicalSpecs(() => this.portPhysiqueHost()),
       ...stpInterfaceSpecs(() => this.stpInterfaceHost()),
       ...this.dot1xPaeSpecs(),
@@ -2565,6 +2561,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
        * TOUTES.
        */
       [['private-vlan'], 'Configure the private VLAN role or association'],
+      ...VLAN_ACCESS_MAP_LEGENDS.map(
+        ([chemin, legende, modes]) => [chemin, legende, modes] as SocleLegend),
       [['errdisable'], 'Error disable recovery configuration'],
       [['errdisable', 'recovery'], 'Configure error disable recovery'],
       [['errdisable', 'recovery', 'cause'],

@@ -25,6 +25,7 @@ import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { getRegisteredOracleDatabase } from '@/terminal/commands/database';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { recoveryAreaUsage } from '@/database/oracle/storage/RecoveryArea';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 interface FsCapableEquipment {
   writeFileFromEditor(path: string, content: string, declaredSizeBytes?: number): boolean;
@@ -65,6 +66,25 @@ export class LinuxRmanContext implements IRmanOracleContext {
       ok: true,
       dbName: resolved.db.instance.config.sid,
       dbId: resolved.db.instance.getDbId(),
+      remote: resolved.remote,
+    };
+  }
+
+  static forTarget(
+    localDevice: Equipment,
+    identifier: string,
+  ): { ok: true; ctx: LinuxRmanContext; deviceId: string; remote: boolean }
+     | { ok: false; error: string } {
+    const resolved = resolveOracleConnectTarget(
+      localDevice as unknown as HostCapableDevice, identifier,
+      (id) => getRegisteredOracleDatabase(id) as OracleDatabase);
+    if (resolved.ok === false) return { ok: false, error: resolved.error };
+    const deviceId = resolved.db.instance.getDeviceId();
+    const targetDevice = EquipmentRegistry.getInstance().getById(deviceId) ?? localDevice;
+    return {
+      ok: true,
+      ctx: new LinuxRmanContext(targetDevice, resolved.db),
+      deviceId,
       remote: resolved.remote,
     };
   }
