@@ -73,7 +73,8 @@ import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
 import { MACAddress, IPAddress, SubnetMask } from '../../core/types';
 import { decouperPlages, completerBorne, etendreEntre } from './cli/interfaceRange';
 import { renderSecretField, renderPasswordField, renderCiscoUsernameLines } from './cisco/ciscoPasswordRender';
-import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
+import { formatCiscoPing, type ParsedPing } from './cisco/ciscoPing';
+import { echoSpecs, type EchoHost } from './cisco/echoSpecs';
 import {
   showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
   ipIntBriefRowsFromPorts, renderIpIntBrief, ipInterfaceBlockFor,
@@ -1038,7 +1039,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   protected registerDeviceCommands(): void {
     // ── User mode ──
-    this.registerUserCommands();
 
     // ── Privileged mode ──
     this.registerPrivilegedCommands();
@@ -2353,6 +2353,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...arpAclSpecs(() => this.arpAclHost()),
       ...vlanAccessMapSpecs(() => this.vlanAccessMapHost()),
       ...mstConfigSpecs(() => this.mstConfigHost()),
+      ...echoSpecs(() => this.echoHost(), { ipv6: false, traceroute: false }),
       ...switchPortPhysicalSpecs(() => this.portPhysiqueHost()),
       ...stpInterfaceSpecs(() => this.stpInterfaceHost()),
       ...this.dot1xPaeSpecs(),
@@ -3009,41 +3010,39 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return { mac: mac.toLowerCase(), vlan, port };
   }
 
-  // ─── User Commands ────────────────────────────────────────────────
-
-  private registerUserCommands(): void {
-
-    this.userTrie.registerGreedy('ping', 'Send echo messages', (args) => this.handlePing(args));
+  private echoHost(): EchoHost {
+    return {
+      pingWithoutTarget: () => '% Ping requires a target IP address.',
+      runPing: (demande) => this.handlePing(demande),
+      tracerouteWithoutTarget: () => '',
+      runTraceroute: () => '',
+    };
   }
 
   /**
    * Drive a management-plane ping from an SVI. Uses the shared async pipeline
    * (`_pendingAsync`) and the shared IOS renderer, exactly like the router.
    */
-  private resolvePingSourceInterface(args: string[]): string[] | string {
-    const idx = args.findIndex(a => a.toLowerCase() === 'source');
-    if (idx === -1 || !args[idx + 1]) return args;
-    const vlanMatch = args[idx + 1].match(/^vl(?:an)?$/i)
-      ? args[idx + 2]
-      : args[idx + 1].match(/^vl(?:an)?(\d+)$/i)?.[1];
-    if (vlanMatch === undefined || !/^\d+$/.test(vlanMatch)) return args;
-    const vlan = parseInt(vlanMatch, 10);
-    const svi = this.d().getSvi(vlan);
+  private resolvePingSourceInterface(source: string): string | { refus: string } {
+    const vlan = /^vl(?:an)?(\d+)$/i.exec(source)?.[1];
+    if (vlan === undefined) return source;
+    const svi = this.d().getSvi(parseInt(vlan, 10));
     if (!svi || !svi.ip) {
-      return `% Source interface Vlan${vlan} has no IP address assigned`;
+      return { refus: `% Source interface Vlan${vlan} has no IP address assigned` };
     }
-    const consumed = args[idx + 1].match(/^vl(?:an)?$/i) ? 3 : 2;
-    return [...args.slice(0, idx), 'source', svi.ip.toString(), ...args.slice(idx + consumed)];
+    return svi.ip.toString();
   }
 
-  private handlePing(args: string[]): string {
-    const resolved = this.resolvePingSourceInterface(args);
-    if (typeof resolved === 'string') return resolved;
-    const parsed = parsePingArgs(resolved);
-    if (parsed.error) return parsed.error;
+  private handlePing(parsed: ParsedPing): string {
+    let sourceIP = parsed.sourceIP;
+    if (sourceIP) {
+      const resolved = this.resolvePingSourceInterface(sourceIP);
+      if (typeof resolved !== 'string') return resolved.refus;
+      sourceIP = resolved;
+    }
     const target = new IPAddress(parsed.target);
     this._pendingAsync = this.d()
-      .executePingSequence(target, parsed.count, parsed.timeoutMs, parsed.sourceIP ?? undefined)
+      .executePingSequence(target, parsed.count, parsed.timeoutMs, sourceIP ?? undefined)
       .then(results => formatCiscoPing(parsed.target, parsed.count, parsed.timeoutMs, results, parsed.sizeBytes));
     return '';
   }
@@ -3051,7 +3050,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   // ─── Privileged Commands ──────────────────────────────────────────
 
   private registerPrivilegedCommands(): void {
-    this.privilegedTrie.registerGreedy('ping', 'Send echo messages', (args) => this.handlePing(args));
 
     // `show storm-control` — la configuration était acceptée et
     // rangée (elle revient dans `show running-config interface`), mais

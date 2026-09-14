@@ -90,6 +90,24 @@ export function estUneAdresseLitterale(target: string): boolean {
   return m !== null && [+m[1], +m[2], +m[3], +m[4]].every((o) => o <= 255);
 }
 
+export const UNKNOWN_TARGET = '% Unrecognized host or address, or protocol not running.';
+
+export function resolveTargetFamily(
+  target: string, announced: 'ip' | 'ipv6',
+): { protocol: 'ip' | 'ipv6' } | { error: string } {
+  if (announced === 'ipv6' || looksLikeIPv6(target)) {
+    if (!looksLikeIPv6(target)) return { error: UNKNOWN_TARGET };
+    return { protocol: 'ipv6' };
+  }
+  const quatuor = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  const ressembleAUneAdresse = /^[\d.]+$/.test(target);
+  if (ressembleAUneAdresse
+    && (!quatuor || [+quatuor[1], +quatuor[2], +quatuor[3], +quatuor[4]].some(o => o > 255))) {
+    return { error: UNKNOWN_TARGET };
+  }
+  return { protocol: 'ip' };
+}
+
 export function parsePingArgs(args: string[]): ParsedPing {
   const base: ParsedPing = {
     target: '', count: 5, timeoutMs: 2000, sizeBytes: 100, sourceIP: null, protocol: 'ip',
@@ -139,18 +157,9 @@ export function parsePingArgs(args: string[]): ParsedPing {
   if (!base.target) {
     return { ...base, error: '% Ping requires a target IP address.' };
   }
-  if (base.protocol === 'ipv6' || looksLikeIPv6(base.target)) {
-    if (!looksLikeIPv6(base.target)) {
-      return { ...base, error: '% Unrecognized host or address, or protocol not running.' };
-    }
-    base.protocol = 'ipv6';
-  } else {
-    const m = base.target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    const ressembleAUneAdresse = /^[\d.]+$/.test(base.target);
-    if (ressembleAUneAdresse && (!m || [+m[1], +m[2], +m[3], +m[4]].some(o => o > 255))) {
-      return { ...base, error: '% Unrecognized host or address, or protocol not running.' };
-    }
-  }
+  const famille = resolveTargetFamily(base.target, base.protocol);
+  if ('error' in famille) return { ...base, error: famille.error };
+  base.protocol = famille.protocol;
   // Practical simulator bounds (the probes are driven synchronously): a
   // multi-million `repeat` is rejected like an out-of-range IOS parameter.
   if (base.count > MAX_PING_REPEAT) {
