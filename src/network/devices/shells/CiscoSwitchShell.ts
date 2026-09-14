@@ -3042,7 +3042,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     }
     const target = new IPAddress(parsed.target);
     this._pendingAsync = this.d()
-      .executePingSequence(target, parsed.count, parsed.timeoutMs, sourceIP ?? undefined)
+      .executePingSequence(target, parsed.count, parsed.timeoutMs, sourceIP ?? undefined,
+        { sizeBytes: parsed.sizeBytes })
       .then(results => formatCiscoPing(parsed.target, parsed.count, parsed.timeoutMs, results, parsed.sizeBytes));
     return '';
   }

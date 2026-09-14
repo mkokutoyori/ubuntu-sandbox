@@ -6,8 +6,10 @@
  */
 
 import type { Switch } from '../Switch';
+import type { ParsedPing } from './cisco/ciscoPing';
 
 export interface ISwitchShell {
+  parseEchoRequest?(line: string, device: Switch): ParsedPing | null;
   /** Execute a raw CLI command string and return the output */
   execute(sw: Switch, rawInput: string): string;
   /**

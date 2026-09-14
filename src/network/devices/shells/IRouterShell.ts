@@ -6,8 +6,10 @@
  */
 
 import type { Router } from '../Router';
+import type { ParsedPing } from './cisco/ciscoPing';
 
 export interface IRouterShell {
+  parseEchoRequest?(line: string, device: Router): ParsedPing | null;
   /** Execute a raw CLI command string and return the output */
   execute(router: Router, rawInput: string): string | Promise<string>;
   /** Get the OS type identifier */

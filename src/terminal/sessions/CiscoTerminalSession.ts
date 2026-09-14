@@ -17,8 +17,9 @@ import { testAaaAttemptLine, testAaaVerdictLine } from '@/network/devices/router
 import { Switch } from '@/network/devices/Switch';
 import { IPAddress } from '@/network/core/types';
 import {
-  parsePingArgs, formatCiscoPingSummary, ciscoPingMark, answerOr, isYes,
+  formatCiscoPingSummary, ciscoPingMark, answerOr, isYes,
   sweepSizes, EXTENDED_PING_PROMPTS as EP, defaultExtendedPingParams, estUneAdresseLitterale,
+  resolveTargetFamily,
   type CiscoPingRow, type ExtendedPingParams,
 } from '@/network/devices/shells/cisco/ciscoPing';
 import type { CliLineKind, CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
@@ -792,9 +793,14 @@ export class CiscoTerminalSession extends CLITerminalSession {
    * a question-and-answer dialog rather than an error. User EXEC keeps the
    * one-line form, exactly like real IOS.
    */
+  private echoDevice(): Router | Switch | null {
+    const dev = this.device;
+    return dev instanceof Router || dev instanceof Switch ? dev : null;
+  }
+
   protected override buildInteractiveFlow(command: string): InteractiveStep[] | null {
     if (command.trim() === 'ping' && this.vty?.state.mode === 'privileged'
-        && this.device instanceof Router) {
+        && this.echoDevice()) {
       return this.buildExtendedPingSteps();
     }
     return super.buildInteractiveFlow(command);
@@ -922,11 +928,11 @@ export class CiscoTerminalSession extends CLITerminalSession {
    * each size is genuinely sent rather than summarised.
    */
   private async runExtendedPing(p: ExtendedPingParams): Promise<void> {
-    const dev = this.device;
-    if (!(dev instanceof Router)) return;
+    const dev = this.echoDevice();
+    if (!dev) return;
 
-    const parsed = parsePingArgs([p.target]);
-    if (parsed.error) { this.addLine(parsed.error); this.notify(); return; }
+    const famille = resolveTargetFamily(p.target, 'ip');
+    if ('error' in famille) { this.addLine(famille.error); this.notify(); return; }
 
     let sourceIP = p.sourceIP;
     if (sourceIP) sourceIP = this.resolvePingSource(dev, sourceIP) ?? sourceIP;
@@ -969,7 +975,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
   }
 
   /** `Source address or interface:` accepts either form, like IOS. */
-  private resolvePingSource(dev: Router, source: string): string | null {
+  private resolvePingSource(dev: Router | Switch, source: string): string | null {
     if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(source)) return source;
     for (const [name, port] of dev._getPortsInternal()) {
       if (name.toLowerCase() === source.toLowerCase()) {
@@ -981,15 +987,13 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   private tryStartCiscoPing(commandLine: string): boolean {
     if (this.hasForegroundAsyncJob) return false;
-    const dev = this.device;
-    if (!(dev instanceof Router)) return false;
+    const dev = this.echoDevice();
+    if (!dev) return false;
     const mode = this.vty?.state.mode;
     if (mode !== 'user' && mode !== 'privileged') return false;
 
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'ping') return false;
-    const parsed = parsePingArgs(toks.slice(1));
-    if (parsed.error || parsed.sourceIP) return false;
+    const parsed = dev.parseEchoRequest(commandLine.trim());
+    if (!parsed || parsed.protocol !== 'ip' || parsed.sourceIP) return false;
 
     const targetIP = new IPAddress(parsed.target);
     const results: CiscoPingRow[] = [];
@@ -1016,6 +1020,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
         await dev.executePingSequence(targetIP, parsed.count, parsed.timeoutMs, undefined, {
           onResult: (row) => { if (ctx.cancelled()) return; results.push(row); repaintMarks(); },
           shouldStop: () => ctx.cancelled(),
+          sizeBytes: parsed.sizeBytes,
         });
         if (ctx.cancelled()) return;
 

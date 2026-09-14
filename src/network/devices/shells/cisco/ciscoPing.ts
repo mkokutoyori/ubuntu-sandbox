@@ -1,4 +1,3 @@
-import { CISCO_ERRORS } from '../cli-utils';
 
 /**
  * Shared Cisco IOS `ping` helpers.
@@ -77,11 +76,6 @@ export function looksLikeIPv6(target: string): boolean {
     && (target.match(/::/g)?.length ?? 0) <= 1;
 }
 
-/**
- * Parse the tail of an IOS `ping <target> [repeat N] [timeout S] [size B]
- * [source X]` command. Returns an `error` string (IOS-worded) when the
- * target is absent or not a dotted-quad.
- */
 export function estUneAdresseLitterale(target: string): boolean {
   const t = target.trim();
   if (t.length === 0) return false;
@@ -106,66 +100,6 @@ export function resolveTargetFamily(
     return { error: UNKNOWN_TARGET };
   }
   return { protocol: 'ip' };
-}
-
-export function parsePingArgs(args: string[]): ParsedPing {
-  const base: ParsedPing = {
-    target: '', count: 5, timeoutMs: 2000, sizeBytes: 100, sourceIP: null, protocol: 'ip',
-  };
-  if (args.length === 0) {
-    return { ...base, error: '% Ping requires a target IP address.' };
-  }
-
-  let i = 0;
-  // `ping ip <addr>` and `ping ipv6 <addr>` name the protocol first; the
-  // keyword only says which family follows, never which target.
-  const first = args[0]?.trim().toLowerCase();
-  if (first === 'ipv6' || first === 'ip') {
-    base.protocol = first === 'ipv6' ? 'ipv6' : 'ip';
-    i++;
-    if (i >= args.length) {
-      return { ...base, error: '% Ping requires a target IP address.' };
-    }
-  }
-  base.target = args[i++]?.trim() || '';
-
-  const COMPTEURS: Readonly<Record<string, (n: number) => void>> = {
-    repeat: (n) => { base.count = n; },
-    timeout: (n) => { base.timeoutMs = n * 1000; },
-    size: (n) => { base.sizeBytes = n; },
-  };
-
-  while (i < args.length) {
-    const kw = args[i]?.toLowerCase() ?? '';
-    if (kw === 'source') {
-      if (!args[i + 1]) return { ...base, error: CISCO_ERRORS.INCOMPLETE };
-      base.sourceIP = args[i + 1];
-      i += 2;
-      continue;
-    }
-    const poser = COMPTEURS[kw];
-    if (!poser) return { ...base, error: CISCO_ERRORS.INVALID_INPUT, badToken: args[i] };
-    if (!args[i + 1]) return { ...base, error: CISCO_ERRORS.INCOMPLETE };
-    const n = parseInt(args[i + 1], 10);
-    if (isNaN(n) || n <= 0 || !/^\d+$/.test(args[i + 1])) {
-      return { ...base, error: CISCO_ERRORS.INVALID_INPUT, badToken: args[i + 1] };
-    }
-    poser(n);
-    i += 2;
-  }
-
-  if (!base.target) {
-    return { ...base, error: '% Ping requires a target IP address.' };
-  }
-  const famille = resolveTargetFamily(base.target, base.protocol);
-  if ('error' in famille) return { ...base, error: famille.error };
-  base.protocol = famille.protocol;
-  // Practical simulator bounds (the probes are driven synchronously): a
-  // multi-million `repeat` is rejected like an out-of-range IOS parameter.
-  if (base.count > MAX_PING_REPEAT) {
-    return { ...base, error: "% Invalid input detected at '^' marker." };
-  }
-  return base;
 }
 
 /**
