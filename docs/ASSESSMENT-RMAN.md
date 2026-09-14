@@ -302,7 +302,7 @@ L'ordre n'est pas négociable : chaque lot a besoin du précédent.
 | **R6** | ~~FRA réelle : `V$RECOVERY_FILE_DEST`, nom OMF, propriété `oracle`, quota, substitutions de FORMAT, vues V$ alimentées~~ **FAIT** | OS | petit lot, forte fidélité |
 | **R7** | `CONNECT TARGET …@tns` **sur le fil** | réseau | referme la violation du §4 |
 | **R8a** | ~~**Transfert des pièces entre sites**~~ **FAIT** — NFSv3 réel (XDR, ONC RPC, portmap, mountd, nfsd) plus son branchement : une pièce écrite sous un montage réseau est sur le disque du SERVEUR | réseau | ferme [G]/[H], la dernière violation du §4 sur le chemin de sauvegarde |
-| **R8b** | Catalogue distant (`CONNECT CATALOG`) et `DUPLICATE` | réseau | le laboratoire DR devient complet |
+| **R8b** | ~~Catalogue distant (`CONNECT CATALOG`) et `DUPLICATE`~~ **FAIT** — le catalogue est un jeu de tables `RC_` dans la base que `CONNECT CATALOG` a résolue, et `DUPLICATE` écrit par le VFS de la machine auxiliaire | réseau | le laboratoire DR est complet |
 
 ### 5.0 Lot R2b — la cible distante (fermé)
 
@@ -433,3 +433,39 @@ n'ait été touché.
 était accepté et silencieusement ignoré — la sauvegarde partait dans la
 FRA sous un autre nom que celui demandé (§6). `TAG` et `KEEP UNTIL TIME`
 avaient le même défaut.
+
+### 5.3 Lot R8b — le catalogue est une vraie base, DUPLICATE écrit vraiment (fermé)
+
+`RecoveryCatalogCommands.ts` le disait en en-tête : *« accepted as
+no-ops »*, *« we just echo the canonical success line »*. Mesure dans le
+laboratoire routeur + pare-feu :
+
+| | avant | après |
+|---|---|---|
+| `CONNECT CATALOG …@10.99.99.99/NEXISTEPAS` | `connected to recovery catalog database` | `RMAN-04004: … ORA-12545` |
+| `CONNECT CATALOG …@10.10.20.20/ORCL` | la **même** phrase | connecté |
+| `CREATE CATALOG` sans connexion | `recovery catalog created` | `RMAN-06171` |
+| `CREATE CATALOG` puis `SELECT table_name … LIKE 'RC%'` **sur le serveur** | `no rows selected` | `RC_DATABASE`, `RC_BACKUP_SET` |
+| `REGISTER DATABASE` deux fois | deux succès | `RMAN-20002` la seconde fois |
+| `BACKUP` sous catalogue, puis `SELECT COUNT(*) FROM rc_backup_set` | table inexistante | la sauvegarde y est |
+| `CONNECT AUXILIARY …@10.99.99.99` | `connected to auxiliary database: ORCL` (la base **locale**) | `RMAN-04006: … ORA-12545` |
+| `DUPLICATE TARGET DATABASE TO DUPDB` | quatre fichiers annoncés, aucun écrit nulle part | écrits dans `/u01/…/DUPDB/` **sur la machine auxiliaire** |
+
+**L'autorité** pour les deux codes vient de transcriptions capturées :
+`RMAN-04004: error from recovery catalog database: ORA-…` et
+`RMAN-04006: error from auxiliary database: ORA-…`. La documentation
+Oracle reste injoignable depuis la machine de développement.
+
+**Le §1 a décidé de la forme.** `CONNECT CATALOG` passe par le même
+`resolveOracleConnectTarget` que `CONNECT TARGET` depuis R2b — pas un
+second client Oracle Net. `RemoteRecoveryCatalog` est une seconde
+implantation d'`IRmanCatalogRepository`, l'interface que le moteur
+consommait déjà.
+
+**Limite, et elle n'est pas neuve.** Une fois la connexion établie et
+comptée sur le fil, les ordres SQL s'exécutent contre l'objet
+`OracleDatabase` résolu ; ils ne repartent pas en paquets de données
+Oracle Net. C'est le comportement de `sqlplus user/pass@hôte` dans ce
+dépôt depuis toujours, repris par R2b. Rendre le plan de données
+d'Oracle Net réel est un lot à lui seul, et il concernerait sqlplus
+autant que RMAN.

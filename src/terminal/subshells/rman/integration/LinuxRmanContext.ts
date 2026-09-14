@@ -20,6 +20,7 @@ import type {
 } from './IRmanOracleContext';
 import type { HostCapableDevice } from '@/network';
 import { resolveOracleConnectTarget } from '@/terminal/commands/oracleNet';
+import type { ConnectPeerOutcome } from './IRmanOracleContext';
 import type { Equipment } from '@/network';
 import type { RmanError } from '../core/RmanError';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
@@ -70,6 +71,20 @@ export class LinuxRmanContext implements IRmanOracleContext {
       dbName: resolved.db.instance.config.sid,
       dbId: resolved.db.instance.getDbId(),
       remote: resolved.remote,
+    };
+  }
+
+  connectPeer(identifier: string): ConnectPeerOutcome {
+    const resolved = LinuxRmanContext.forTarget(this._device, identifier);
+    if (resolved.ok === false) return { ok: false, error: resolved.error };
+    const peer = resolved.ctx;
+    return {
+      ok: true,
+      dbName: peer.dbName,
+      dbId: peer.dbId.value,
+      remote: resolved.remote,
+      runSql: (statement: string) => peer.runSqlStatement(statement),
+      context: peer,
     };
   }
 

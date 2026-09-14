@@ -595,6 +595,12 @@ export class RmanJobEngine implements IRmanJobEngine {
     return ok(undefined);
   }
 
+  private _auxiliaryContext: IRmanOracleContext | null = null;
+
+  setAuxiliaryContext(ctx: IRmanOracleContext | null): void {
+    this._auxiliaryContext = ctx;
+  }
+
   private _doDuplicate(job: RmanJob, channelId: string): Result<void, RmanError> {
     const aux = (job.params?.auxiliary ?? 'AUX').toUpperCase();
     const snap = this._catalog.listAll();
@@ -602,12 +608,19 @@ export class RmanJobEngine implements IRmanJobEngine {
     if (snap.value.sets.length === 0) {
       return err({ code: 'RMAN_06023', message: 'No backup found to duplicate' });
     }
+    const images = this._readPieceImages(snap.value.sets);
+    const target = this._auxiliaryContext ?? this._ctx;
     for (const df of this._ctx.getDatafiles()) {
       const dest = df.path.replace(this._ctx.dbName.toUpperCase(), aux);
       this._bus.emit({
         type: 'RESTORE_DATAFILE_STARTED', jobId: job.id, channelId,
         fileNo: df.fileNo, to: dest,
       });
+      target.vfs.ensureDirectory?.(dest.slice(0, dest.lastIndexOf('/')));
+      const body = images[df.path];
+      const written = target.vfs.writeFile(
+        dest, new TextEncoder().encode(body ?? `[ORACLE DATAFILE - ${aux} duplicate]`));
+      if (written.ok === false) return written;
       this._bus.emit({
         type: 'RESTORE_DATAFILE_COMPLETED', jobId: job.id,
         fileNo: df.fileNo, elapsedMs: 4_000,

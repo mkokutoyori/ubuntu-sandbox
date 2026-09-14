@@ -1,19 +1,27 @@
 /**
  * ResyncCatalogCommand — `RESYNC CATALOG`.
  *
- * In a real RMAN session this synchronises the recovery catalog DB with
- * the target's control file. The in-memory catalog needs no such sync,
- * so we just emit the canonical "full resync complete" line.
+ * Copies the control-file repository into the recovery catalog database
+ * that `CONNECT CATALOG` resolved over Oracle Net.
  */
 
-import { ok, type Result } from '../core/Result';
+import { ok, err, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
-import type { IRmanCommand } from './types';
+import type { IRmanCommand, RmanCommandContext } from './types';
 
 export class ResyncCatalogCommand implements IRmanCommand<string[]> {
   readonly name = 'RESYNC CATALOG';
 
-  execute(): Result<string[], RmanError> {
+  execute(
+    _args: string[], { catalog, recoveryCatalog }: RmanCommandContext,
+  ): Result<string[], RmanError> {
+    if (!recoveryCatalog) {
+      return err({ code: 'RMAN_06171', message: 'not connected to recovery catalog' });
+    }
+    const snapshot = catalog.listAll();
+    if (snapshot.ok === false) return snapshot;
+    const written = recoveryCatalog.resyncFrom(snapshot.value);
+    if (written.ok === false) return err(written.error);
     return ok(['starting full resync of recovery catalog', 'full resync complete']);
   }
 }

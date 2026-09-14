@@ -4,10 +4,14 @@
  *   SET UNTIL TIME '<date>'        (PITR precursor inside RUN blocks)
  *   SET UNTIL SCN  <n>
  *
- *   CONNECT AUXILIARY [target]    (no-op against an in-memory aux)
+ *   CONNECT AUXILIARY /           (connexion locale, sans identifiant)
  *
- *   RESYNC CATALOG                (no-op for an in-memory catalog,
- *                                  returns ok with the canonical message)
+ *   RESYNC CATALOG                (refuse tant qu'aucun catalogue n'est
+ *                                  connecte, comme le vrai RMAN)
+ *
+ * Le cas RESYNC affirmait « is accepted as a no-op against the in-memory
+ * catalog » : il epinglait en contrat le defaut que le lot du catalogue
+ * distant a ferme. Il mesure desormais le refus.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -77,11 +81,11 @@ describe('CONNECT AUXILIARY', () => {
 });
 
 describe('RESYNC CATALOG', () => {
-  it('is accepted as a no-op against the in-memory catalog', () => {
+  it('sans catalogue connecte, est refuse par RMAN-06171', () => {
     const s = new RmanSession(new RmanSessionOptionsBuilder().build(), makeCtx());
     s.connect();
     const r = s.processLine('RESYNC CATALOG');
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.join('\n')).toMatch(/resync|full resync/i);
+    expect(r.ok).toBe(false);
+    if (r.ok === false) expect(r.error.code).toBe('RMAN_06171');
   });
 });

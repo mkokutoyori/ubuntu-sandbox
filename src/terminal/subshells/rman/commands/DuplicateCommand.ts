@@ -13,8 +13,12 @@ import { JobBuilder } from '../job/JobBuilder';
 export class DuplicateCommand implements IRmanCommand<void> {
   readonly name = 'DUPLICATE';
 
-  execute(args: string[], { engine }: RmanCommandContext): Result<void, RmanError> {
+  execute(args: string[], cmdCtx: RmanCommandContext): Result<void, RmanError> {
     const name = (args[0] ?? 'AUX').trim();
-    return engine.run(JobBuilder.duplicateDatabase(name));
+    const engine = cmdCtx.engine as unknown as {
+      setAuxiliaryContext?(ctx: RmanCommandContext['auxiliary']): void;
+    };
+    engine.setAuxiliaryContext?.(cmdCtx.auxiliary ?? null);
+    return cmdCtx.engine.run(JobBuilder.duplicateDatabase(name));
   }
 }

@@ -1,5 +1,5 @@
 import type {
-  IRmanOracleContext, VfsAdapter, DatafileInfo, ConnectTargetOutcome, RecordedBackupPiece,
+  IRmanOracleContext, VfsAdapter, DatafileInfo, ConnectTargetOutcome, ConnectPeerOutcome, RecordedBackupPiece,
   SqlStatementOutcome,
 } from './IRmanOracleContext';
 import type { DbId } from '../values/DbId';
@@ -36,6 +36,20 @@ export class RetargetableRmanContext implements IRmanOracleContext {
     return this._current.runSqlStatement(statement);
   }
   recordBackupPiece(piece: RecordedBackupPiece): void { this._current.recordBackupPiece(piece); }
+
+  connectPeer(identifier: string): ConnectPeerOutcome {
+    const resolved = LinuxRmanContext.forTarget(this._localDevice, identifier);
+    if (resolved.ok === false) return { ok: false, error: resolved.error };
+    const peer = resolved.ctx;
+    return {
+      ok: true,
+      dbName: peer.dbName,
+      dbId: peer.dbId.value,
+      remote: resolved.remote,
+      runSql: (statement: string) => peer.runSqlStatement(statement),
+      context: peer,
+    };
+  }
 
   connectTarget(identifier: string): ConnectTargetOutcome {
     const resolved = LinuxRmanContext.forTarget(this._localDevice, identifier);

@@ -7,6 +7,7 @@ import type { RmanError } from '../core/RmanError';
 import type { RmanEventBus } from '../reactive/RmanEventBus';
 import type { IRmanJobEngine } from '../job/IRmanJobEngine';
 import type { IRmanCatalogRepository } from '../catalog/IRmanCatalogRepository';
+import type { RemoteRecoveryCatalog } from '../catalog/RemoteRecoveryCatalog';
 import type { IRmanOracleContext } from '../integration/IRmanOracleContext';
 import type { IRetentionPolicy } from '../policy/IRetentionPolicy';
 import type { RmanConfig } from '../session/RmanConfig';
@@ -28,6 +29,8 @@ export interface RmanCommandContext {
   readonly setNewname?:  Map<number, string>;
   /** Optional UNTIL binding populated by SET UNTIL TIME / SET UNTIL SCN. */
   readonly setUntil?:    { untilTime?: string; untilScn?: number };
+  readonly recoveryCatalog?: RemoteRecoveryCatalog | null;
+  readonly auxiliary?: IRmanOracleContext | null;
 }
 
 export interface IRmanCommand<T = void> {
