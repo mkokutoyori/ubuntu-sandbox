@@ -213,9 +213,21 @@ export const COMMUTATEUR_SEUL: ContinuationTable = {
 export interface SocleContinuation {
   readonly keyword: string;
   readonly description: string;
-  readonly afterArguments: true;
-  readonly argument: null;
+  readonly afterArguments: boolean;
+  readonly argument: null | undefined;
 }
+
+export const SUITES_LUES_EN_TETE: ReadonlySet<string> = new Set([
+  'dot1x timeout',
+  'frame-relay',
+  'ip nhrp',
+  'negotiation',
+  'show monitor session',
+  'show parser view',
+  'show traffic-shape',
+  'switchport mode private-vlan trunk',
+  'udld port',
+]);
 
 export function continuationsPourLeSocle(
   path: string, ...tables: readonly ContinuationTable[]
@@ -227,12 +239,17 @@ export function continuationsPourLeSocle(
     }
   }
   if (mots.size === 0) return undefined;
+  const enTete = SUITES_LUES_EN_TETE.has(path);
   return [...mots].sort().map(keyword => ({
     keyword,
     description: descriptionForKeyword(keyword),
-    afterArguments: true as const,
-    argument: null,
+    afterArguments: !enTete,
+    argument: enTete ? undefined : null,
   }));
+}
+
+export function toutesLesSuites(path: string): readonly SocleContinuation[] | undefined {
+  return continuationsPourLeSocle(path, SOCLE, ROUTEUR_SEUL, COMMUTATEUR_SEUL);
 }
 
 export function appliquerContinuations(

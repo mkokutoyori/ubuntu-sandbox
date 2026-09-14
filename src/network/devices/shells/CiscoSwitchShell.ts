@@ -168,7 +168,9 @@ import {
   INTERFACE_STATUS_COLUMNS, INTERFACE_STATUS_STYLE, type InterfaceStatusRow,
   SPANNING_TREE_COLUMNS, SPANNING_TREE_STYLE, type SpanningTreePortRow,
 } from './cisco/ciscoTableLayouts';
-import { SOCLE, COMMUTATEUR_SEUL, appliquerContinuations } from './cisco/ciscoContinuations';
+import {
+  SOCLE, COMMUTATEUR_SEUL, appliquerContinuations, toutesLesSuites,
+} from './cisco/ciscoContinuations';
 import type { ContinuationTable } from './cisco/ciscoContinuations';
 import {
   mstConfigDigest, vlansMappedToInstanceZero, formatVlanRanges,
@@ -2488,6 +2490,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       modesFor: (path) => modesParChemin[path.replace(/^no /, '')],
       minPrivilegeFor: privilegeSelonModes(modesParChemin),
       argumentFor: (path) => AGREGATION_PLACES[path],
+      keywordsFor: toutesLesSuites,
     });
 
     return [
@@ -2540,6 +2543,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         modesFor: (path) => DOT1X_MODES[path.replace(/^no /, '')],
         minPrivilegeFor: privilegeSelonModes(DOT1X_MODES),
         argumentFor: (path) => DOT1X_PLACES[path],
+        keywordsFor: toutesLesSuites,
       },
     );
   }
@@ -2554,7 +2558,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         argumentFor: (path) => SWITCHPORT_PLACES[path] ?? undefined,
         restDescriptionFor: (path) => path === 'description'
           ? 'Up to 240 characters describing this interface' : undefined,
-        keywordsFor: (path) => SWITCHPORT_KEYWORDS[path],
+        keywordsFor: (path) => SWITCHPORT_KEYWORDS[path] ?? toutesLesSuites(path),
       },
     );
   }

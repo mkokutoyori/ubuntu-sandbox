@@ -65,6 +65,7 @@ import {
   parseSummerTimeRule, type SummerTimeRule,
 } from './cisco/clockSummerTime';
 import { pingRequestOfSpec } from './cisco/echoSpecs';
+import { toutesLesSuites } from './cisco/ciscoContinuations';
 import type { ParsedPing } from './cisco/ciscoPing';
 import { privilegeRuleSpecs, type PrivilegeRuleHost } from './cisco/privilegeRuleSpecs';
 import { ipSshSpecs, type IpSshHost } from './cisco/ipSshSpecs';
@@ -5938,6 +5939,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         modesFor: (path) => PRIVILEGED_EXEC_ONLY.has(path) ? ['privileged'] : undefined,
         skip: (path) => !SHOW_PARTAGEES.has(path),
         argumentFor: (path) => SHARED_SHOW_ARGUMENTS[path],
+        keywordsFor: toutesLesSuites,
       },
     );
   }
