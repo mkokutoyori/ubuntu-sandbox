@@ -108,13 +108,30 @@ describe('VTP v3 — MST database propagation', () => {
     await makeTrunk(client, 'FastEthernet0/1');
     await configureMstRegion(server, 'REGION-C', 2);
 
+    const apresMst = { ...client.getVtpAgent().getConfig() };
+
     await server.executeCommand('configure terminal');
     await server.executeCommand('vlan 50');
     await server.executeCommand('end');
 
+    const apresVlan = { ...client.getVtpAgent().getConfig() };
     expect(client.getVLAN(50), 'VLAN db should still sync').toBeDefined();
     expect(client.getStpAgent().getMstRegion().name).toBe('REGION-C');
-    expect(client.getVtpAgent().getConfig().revision).not.toBe(client.getVtpAgent().getConfig().mstDatabaseRevision);
+    expect(apresVlan.revision, 'a VLAN change must move the VLAN counter')
+      .toBeGreaterThan(apresMst.revision);
+    expect(apresVlan.mstDatabaseRevision, 'a VLAN change moved the MST counter')
+      .toBe(apresMst.mstDatabaseRevision);
+
+    await server.executeCommand('configure terminal');
+    await server.executeCommand('spanning-tree mst configuration');
+    await server.executeCommand('revision 12');
+    await server.executeCommand('end');
+
+    const apresRegion = { ...client.getVtpAgent().getConfig() };
+    expect(apresRegion.mstDatabaseRevision, 'an MST change must move the MST counter')
+      .toBeGreaterThan(apresVlan.mstDatabaseRevision);
+    expect(apresRegion.revision, 'an MST change moved the VLAN counter')
+      .toBe(apresVlan.revision);
   });
 
   it('a VTP v1/v2 domain never emits an MST-database frame', async () => {

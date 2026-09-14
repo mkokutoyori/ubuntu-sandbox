@@ -41,6 +41,7 @@ export interface StpHost {
 export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   private config: StpConfig;
   private readonly mstRegion: MstRegion = createDefaultMstRegion();
+  private readonly mstRegionPending: MstRegion = createDefaultMstRegion();
   private readonly mstInstancePriority = new Map<number, number>();
   private readonly rootRole = new Map<number, 'primary' | 'secondary'>();
   private readonly vlanPriority = new Map<number, number>();
@@ -544,22 +545,46 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     if (!payload.mstConfigId) return true;
     return !sameMstRegion(payload.mstConfigId, mstConfigIdentifier(this.mstRegion));
   }
-  setMstName(name: string): void { this.mstRegion.name = name; }
-  setMstRevision(rev: number): void { this.mstRegion.revision = rev; }
+  getPendingMstRegion(): MstRegion { return this.mstRegionPending; }
+
+  isMstRegionPendingActivation(): boolean {
+    return !sameMstRegion(
+      mstConfigIdentifier(this.mstRegionPending), mstConfigIdentifier(this.mstRegion));
+  }
+
+  setMstName(name: string): void { this.mstRegionPending.name = name; }
+  setMstRevision(rev: number): void { this.mstRegionPending.revision = rev; }
   mapMstInstance(instanceId: number, vlans: string): void {
-    this.mstRegion.instances.set(instanceId, vlans);
-    this.recomputeOnTopologyChange();
+    this.mstRegionPending.instances.set(instanceId, vlans);
   }
   unmapMstInstance(instanceId: number): void {
-    this.mstRegion.instances.delete(instanceId);
+    this.mstRegionPending.instances.delete(instanceId);
+  }
+
+  commitMstRegion(): void {
+    if (!this.isMstRegionPendingActivation()) return;
+    this.copyMstRegion(this.mstRegionPending, this.mstRegion);
     this.recomputeOnTopologyChange();
   }
+
+  discardMstRegion(): void {
+    this.copyMstRegion(this.mstRegion, this.mstRegionPending);
+  }
+
   applyMstRegion(name: string, revision: number, instances: [number, string][]): void {
-    this.mstRegion.name = name;
-    this.mstRegion.revision = revision;
-    this.mstRegion.instances.clear();
-    for (const [id, vlans] of instances) this.mstRegion.instances.set(id, vlans);
+    this.mstRegionPending.name = name;
+    this.mstRegionPending.revision = revision;
+    this.mstRegionPending.instances.clear();
+    for (const [id, vlans] of instances) this.mstRegionPending.instances.set(id, vlans);
+    this.copyMstRegion(this.mstRegionPending, this.mstRegion);
     this.recomputeOnTopologyChange();
+  }
+
+  private copyMstRegion(source: MstRegion, cible: MstRegion): void {
+    cible.name = source.name;
+    cible.revision = source.revision;
+    cible.instances.clear();
+    for (const [id, vlans] of source.instances) cible.instances.set(id, vlans);
   }
 
   isTopologyChangeActive(): boolean { return this.tcFlagActive; }

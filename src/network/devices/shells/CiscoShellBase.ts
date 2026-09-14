@@ -2848,7 +2848,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // rien borner du tout — le défaut que ce câblage corrige.
     this.logging.endReloadWindow();
 
-    // Global shortcuts (no device ref needed)
     const lower = cmdPart.toLowerCase();
     const firstWord = cmdPart.split(/\s+/)[0];
     if (/[A-Z]/.test(firstWord) && (firstWord.toLowerCase() === 'debug' || firstWord.toLowerCase() === 'undebug')) {
@@ -2857,8 +2856,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (this.mode === 'user' && /^(un)?deb(u(g)?)?\b/i.test(cmdPart)) {
       return CISCO_ERRORS.INVALID_INPUT;
     }
-    if (lower === 'exit' || lower === 'exi' || lower === 'ex') return this.cmdExit();
-    if (lower === 'end' || cmdPart === '\x03' || cmdPart === '\x1a') return this.cmdEnd();
+    if (lower === 'exit' || lower === 'exi' || lower === 'ex') {
+      return this.avecReferenceAppareil(device, () => this.cmdExit());
+    }
+    if (lower === 'end' || cmdPart === '\x03' || cmdPart === '\x1a') {
+      return this.avecReferenceAppareil(device, () => this.cmdEnd());
+    }
     // `help` n'existait pas : en EXEC il partait vers la résolution de
     // noms (« Translating "help"… »), en configuration il répondait au
     // caret. C'est le texte d'IOS, mot pour mot.
@@ -2895,7 +2898,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
 
     if (this.isConfigMode() && lower.startsWith('show ')) {
-      if (this.getActiveTrie().match(cmdPart).status === 'ok') {
+      if (this.getActiveTrie().match(cmdPart).status === 'ok'
+        || this.socleConnaitDansCeMode(cmdPart)) {
         const output = this.executeOnTrie(cmdPart);
         this.deviceRef = null;
         return applyPipeFilter(output, pipeFilter);
@@ -8011,6 +8015,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return { canonique, motsCles };
   }
 
+  private socleConnaitDansCeMode(cmdPart: string): boolean {
+    const table = this.socleTable();
+    if (!table) return false;
+    const parsed = parseCommand(table, cmdPart, this.socleSession(table));
+    return parsed.status === 'ok' && parsed.spec.modes.includes(this.mode);
+  }
+
   private tryMigratedCommand(cmdPart: string): string | null {
     const table = this.socleTable();
     if (!table) return null;
@@ -8458,6 +8469,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.terminalHistorySize = this.tailleHistoriqueDeLigne();
     this.terminalHistoryEnabled = this.terminalHistorySize > 0;
     return 'Connection closed.';
+  }
+
+  private avecReferenceAppareil(device: TDevice, action: () => string): string {
+    const precedente = this.deviceRef;
+    this.deviceRef = device;
+    try {
+      return action();
+    } finally {
+      this.deviceRef = precedente;
+    }
   }
 
   protected cmdExit(): string {
