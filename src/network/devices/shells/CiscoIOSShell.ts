@@ -64,7 +64,7 @@ import {
   vrrpGlbpShowSpecs,
 } from './cisco/CiscoVrrpGlbpCommands';
 import {
-  buildBfdInterfaceCommands, registerBfdShowCommands, bfdInterfaceSpecs,
+  buildBfdInterfaceCommands, bfdInterfaceSpecs, bfdShowSpecs,
 } from './cisco/CiscoBfdCommands';
 import {
   buildIgmpInterfaceCommands, registerIgmpShowCommands, igmpShowSpecs,
@@ -257,6 +257,11 @@ const ROUTER_SHOW_VIEWS: ReadonlySet<string> = new Set([
   'show traffic-shape', 'show ip policy', 'show ip static route',
   'show ip interface brief', 'show ip rip database', 'show counters',
   'show ip rip', 'show vlans',
+]);
+
+const VUES_SHOW_RESTANTES: ReadonlySet<string> = new Set([
+  'show dhcp server',
+  'show crypto engine brief', 'show crypto engine configuration',
 ]);
 
 const ROUTER_SHOW_ARGUMENTS: Readonly<Record<string, string>> = {
@@ -599,6 +604,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY,
       ...OBJECT_GROUP_FAMILY,
       ...this.routerShowSpecs(),
+      ...this.vuesShowRestantes(),
+      ...bfdShowSpecs({ r: () => this.d() }),
       ...this.routingProtocolSpecs(),
       ...this.interfaceEntrySpecs(),
       ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(), ...this.ipv6ReglagesSpecs(),
@@ -711,6 +718,21 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         keywordsFor: (path) => continuationsPourLeSocle(path, SOCLE, ROUTEUR_SEUL),
         restDescriptionFor: (path) => ROUTER_SHOW_ARGUMENTS[path],
         restLiteralFor: (path) => ROUTER_SHOW_ARGUMENTS[path] === undefined ? undefined : 'WORD',
+      },
+    );
+  }
+
+  private vuesShowRestantes(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => {
+        const trie = collector as unknown as CommandTrie;
+        registerDhcpShowCommands(trie, () => this.d());
+        buildIPSecPrivilegedCommands(trie, this);
+      },
+      {
+        modes: ['user', 'privileged'], minPrivilege: 1,
+        skip: (path) => !VUES_SHOW_RESTANTES.has(path),
+        keywordsFor: (path) => continuationsPourLeSocle(path, SOCLE, ROUTEUR_SEUL),
       },
     );
   }
@@ -2032,7 +2054,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   private registerShowCommands(trie: CommandTrie): void {
     registerRoutingProtoShow(trie, this, this.routingCfg);
-    registerBfdShowCommands(trie, { r: () => this.d() });
     registerIgmpShowCommands(trie, this.multicastShowContext());
     registerPimShowCommands(trie, this.multicastShowContext());
     if (this.hasVxlanHardware()) registerVxlanShowCommands(trie, { r: () => this.d() });
