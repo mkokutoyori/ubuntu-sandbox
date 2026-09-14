@@ -2,6 +2,7 @@ const PAYLOAD_MARKER = 'ORACLE-BACKUP-PIECE-IMAGE';
 
 export interface BackupPieceImage {
   readonly datafiles: Readonly<Record<string, string>>;
+  readonly scn?: number;
 }
 
 export function renderBackupPieceImage(banner: string, image: BackupPieceImage | null): string {
@@ -18,7 +19,9 @@ export function parseBackupPieceImage(text: string | null): BackupPieceImage | n
     if (!parsed || typeof parsed !== 'object') return null;
     const candidate = parsed as Partial<BackupPieceImage>;
     if (!candidate.datafiles || typeof candidate.datafiles !== 'object') return null;
-    return { datafiles: candidate.datafiles };
+    return typeof candidate.scn === 'number'
+      ? { datafiles: candidate.datafiles, scn: candidate.scn }
+      : { datafiles: candidate.datafiles };
   } catch {
     return null;
   }

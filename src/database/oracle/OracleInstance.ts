@@ -895,7 +895,10 @@ export class OracleInstance {
       const archivePath = `${ORACLE_CONFIG.BASE}/archivelog/1_${this._redoSequence - 1}_arc.arc`;
       this.getBus().publish({
         topic: 'oracle.archive-log.created',
-        payload: { ...this.ref(), sequence: this._redoSequence - 1, path: archivePath },
+        payload: {
+          ...this.ref(), sequence: this._redoSequence - 1, path: archivePath,
+          scn: this.getCurrentScn(),
+        },
       });
     }
     return `System altered.`;

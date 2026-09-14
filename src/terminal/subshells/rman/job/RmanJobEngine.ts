@@ -364,6 +364,19 @@ export class RmanJobEngine implements IRmanJobEngine {
     return {};
   }
 
+  private _applyArchivedLogs(paths: ReadonlyArray<string>, untilScn?: number): void {
+    for (const path of paths) {
+      const read = this._ctx.vfs.readFile(path);
+      if (read.ok === false) continue;
+      const image = parseBackupPieceImage(new TextDecoder().decode(read.value));
+      if (!image) continue;
+      if (untilScn !== undefined && image.scn !== undefined && image.scn > untilScn) return;
+      for (const [dfPath, body] of Object.entries(image.datafiles)) {
+        this._ctx.vfs.writeFile(dfPath, new TextEncoder().encode(body));
+      }
+    }
+  }
+
   private _controlFileImage(): ControlFileImage {
     const snap = this._catalog.listAll();
     return {
@@ -633,6 +646,7 @@ export class RmanJobEngine implements IRmanJobEngine {
         });
       }
     }
+    this._applyArchivedLogs(arcPaths, params.untilScn !== undefined ? Number(params.untilScn) : undefined);
     this._bus.emit({ type: 'RECOVER_COMPLETED', jobId: job.id, toScn:   to.ok   ? to.value   : Scn.ZERO, elapsedMs: 3_000 });
     this._pendingRecoveryGap = false;
     return ok(undefined);

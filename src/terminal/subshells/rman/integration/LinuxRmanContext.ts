@@ -202,6 +202,9 @@ export class LinuxRmanContext implements IRmanOracleContext {
   }
 
   getArchivelogPaths(): ReadonlyArray<string> {
+    const onDisk = this.vfs.listFilesRecursively?.(ORACLE_CONFIG.ARCHIVELOG_DIR)
+      ?.filter(p => p.endsWith('.arc')).sort() ?? [];
+    if (onDisk.length > 0) return onDisk;
     if (this._oracle) {
       return this._oracle.instance.getRuntimeState().archivedLogs.map(l => l.name);
     }

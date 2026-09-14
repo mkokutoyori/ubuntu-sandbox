@@ -73,6 +73,7 @@ export interface OracleRedoLogSwitchedPayload extends OracleDeviceRef {
 export interface OracleArchiveLogCreatedPayload extends OracleDeviceRef {
   sequence: number;
   path: string;
+  scn: number;
 }
 
 // ── Session / transaction / DML / DDL ──────────────────────────────────
