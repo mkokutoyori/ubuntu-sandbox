@@ -33,6 +33,7 @@ import type { OmfBackupKind } from '@/database/oracle/storage/OracleManagedFiles
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { resolveFormatSpec } from '../core/formatSpec';
 import { renderBackupPieceImage, parseBackupPieceImage } from '../core/BackupPieceImage';
+import { renderControlFileImage, type ControlFileImage } from '@/database/oracle/storage/ControlFileImage';
 import { parseSize } from '@/database/oracle/views/_fileSize';
 import { BackupKey } from '../values/BackupKey';
 import { implicitToDate } from '@/database/oracle/functions/valueUtils';
@@ -137,8 +138,10 @@ export class RmanJobEngine implements IRmanJobEngine {
     const incLevel = params.incrementalLevel === '0' || params.incrementalLevel === '1'
       ? (Number(params.incrementalLevel) as 0 | 1)
       : undefined;
+    const isAutobackup = isControlfile && tag.label.toUpperCase() === 'AUTOBACKUP';
     const omfKind: OmfBackupKind =
-      isControlfile || isSpfile ? 'controlfile-spfile'
+      isAutobackup             ? 'autobackup'
+        : isControlfile || isSpfile ? 'controlfile-spfile'
         : isArchivelog          ? 'archivelog'
           : incLevel === 0      ? 'datafile-incremental-0'
             : incLevel === 1    ? 'datafile-incremental-1'
@@ -289,8 +292,10 @@ export class RmanJobEngine implements IRmanJobEngine {
         const overflow = this._recoveryAreaOverflow(size);
         if (overflow) return err(overflow);
       }
-      const body = renderBackupPieceImage(
-        `[ORACLE RMAN BACKUP PIECE - ${size} bytes]`, i === 1 ? image : null);
+      const body = isControlfile
+        ? renderControlFileImage(`[ORACLE RMAN BACKUP PIECE - ${size} bytes]`, this._controlFileImage())
+        : renderBackupPieceImage(
+          `[ORACLE RMAN BACKUP PIECE - ${size} bytes]`, i === 1 ? image : null);
       const writeResult = this._ctx.vfs.writeFile(path, new TextEncoder().encode(body), size);
       if (!writeResult.ok) return writeResult;
 
@@ -319,6 +324,8 @@ export class RmanJobEngine implements IRmanJobEngine {
 
       this._bus.emit({ type: 'BACKUP_SET_COMPLETE', jobId: job.id, bsKey: set.bsKey, tag, sizeBytes: size });
     }
+
+    this._refreshControlFiles();
 
     // ARCHIVELOG ALL DELETE INPUT — consume + delete every reported archivelog
     if (isArchivelog && deleteInput) {
@@ -355,6 +362,43 @@ export class RmanJobEngine implements IRmanJobEngine {
       }
     }
     return {};
+  }
+
+  private _controlFileImage(): ControlFileImage {
+    const snap = this._catalog.listAll();
+    return {
+      dbName: this._ctx.dbName,
+      dbId: this._ctx.dbId.value,
+      datafiles: this._ctx.getDatafiles().map(df => ({
+        fileNo: df.fileNo, path: df.path, sizeBytes: df.sizeBytes, tablespace: df.tablespace,
+      })),
+      backupSets: snap.ok ? [...snap.value.sets] : [],
+    };
+  }
+
+  private _refreshControlFiles(): void {
+    const paths = this._ctx.getControlFilePaths?.() ?? [];
+    if (paths.length === 0) return;
+    const image = this._controlFileImage();
+    paths.forEach((path, index) => {
+      const body = renderControlFileImage(`[ORACLE CONTROL FILE ${index + 1}]`, image);
+      this._ctx.vfs.writeFile(path, new TextEncoder().encode(body));
+    });
+  }
+
+  restoreControlFilesFromImage(image: ControlFileImage): number {
+    const paths = this._ctx.getControlFilePaths?.() ?? [];
+    paths.forEach((path, index) => {
+      const body = renderControlFileImage(`[ORACLE CONTROL FILE ${index + 1}]`, image);
+      this._ctx.vfs.writeFile(path, new TextEncoder().encode(body));
+    });
+    let restored = 0;
+    for (const raw of image.backupSets) {
+      const set = raw as import('../catalog/types').BackupSet;
+      if (!set || typeof set !== 'object' || !Array.isArray(set.pieces)) continue;
+      if (this._catalog.recordBackupSet(set).ok) restored++;
+    }
+    return restored;
   }
 
   private _recoveryAreaOverflow(sizeBytes: number): RmanError | null {

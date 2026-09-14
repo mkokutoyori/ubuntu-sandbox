@@ -28,6 +28,10 @@ function delegate(
   return ok(outcome.lines.filter(Boolean));
 }
 
+function oracleErrors(lines: readonly string[]): string[] {
+  return lines.filter(l => /^ORA-\d/.test(l));
+}
+
 export class ShutdownCommand implements IRmanCommand<string[]> {
   readonly name = 'SHUTDOWN';
   execute(args: string[], ctx: RmanCommandContext): Result<string[], RmanError> {
@@ -35,6 +39,9 @@ export class ShutdownCommand implements IRmanCommand<string[]> {
     const done = delegate(ctx, `SHUTDOWN ${mode}`);
     if (done.ok === false) return done;
     if (done.value.some(l => l.startsWith('RMAN-'))) return done;
+    const failures = oracleErrors(done.value);
+    if (failures.length > 0) return ok(failures);
+    if (ctx.ctx.getInstanceState?.() !== 'SHUTDOWN') return ok(done.value);
     if (mode === 'ABORT') return ok(['Oracle instance shut down']);
     return ok(['database closed', 'database dismounted', 'Oracle instance shut down']);
   }
@@ -47,11 +54,13 @@ export class StartupCommand implements IRmanCommand<string[]> {
     const done = delegate(ctx, mode ? `STARTUP ${mode}` : 'STARTUP');
     if (done.ok === false) return done;
     if (done.value.some(l => l.startsWith('RMAN-'))) return done;
-    const sga = done.value.filter(l => /Total System Global Area|Fixed Size|Variable Size|Database Buffers|Redo Buffers/i.test(l));
-    const lines = ['Oracle instance started', ...sga];
-    if (mode !== 'NOMOUNT') lines.push('database mounted');
-    if (mode === '' || mode === 'FORCE' || mode === 'OPEN') lines.push('database opened');
-    return ok(lines);
+    const sga = done.value.filter(l =>
+      /Total System Global Area|Fixed Size|Variable Size|Database Buffers|Redo Buffers/i.test(l));
+    const reached = ctx.ctx.getInstanceState?.() ?? 'SHUTDOWN';
+    const lines = reached === 'SHUTDOWN' ? [] : ['Oracle instance started', ...sga];
+    if (reached === 'MOUNT' || reached === 'OPEN') lines.push('database mounted');
+    if (reached === 'OPEN') lines.push('database opened');
+    return ok([...lines, ...oracleErrors(done.value)]);
   }
 }
 

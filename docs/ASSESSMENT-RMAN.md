@@ -289,7 +289,7 @@ L'ordre n'est pas négociable : chaque lot a besoin du précédent.
 | **R2** | ~~`BACKUP` **lit** les fichiers, `RESTORE` les **réécrit**~~ **FAIT** — la sonde du §1 est verte | RMAN | le premier lot où la sonde du §1 devient verte |
 | **R3** | ~~`SHUTDOWN`/`STARTUP` **dans** RMAN~~ **FAIT** — plus `ALTER DATABASE OPEN` et `SQL '...'` ; restent `SWITCH DATAFILE` et `RESET DATABASE`, qui appartiennent au lot des incarnations (R5) | applicative | sans eux, R2 n'est pas jouable comme un vrai opérateur le joue |
 | **R4** | **ARCHIVELOG** : mode, écriture du redo, `V$ARCHIVED_LOG`, `LOG SWITCH` | applicative | ouvre le PITR, `BACKUP ARCHIVELOG`, `RECOVER UNTIL` |
-| **R5** | Fichier de contrôle réel + autobackup + `RESTORE CONTROLFILE` | applicative | ouvre la reprise depuis rien |
+| **R5** | ~~Fichier de contrôle réel + autobackup + `RESTORE CONTROLFILE`~~ **FAIT** — la reprise depuis rien fonctionne, control file ET répertoire RMAN perdus ; restent `SWITCH DATAFILE` et `RESET DATABASE` (incarnations) | applicative | ouvre la reprise depuis rien |
 | **R6** | ~~FRA réelle : `V$RECOVERY_FILE_DEST`, nom OMF, propriété `oracle`, quota, substitutions de FORMAT, vues V$ alimentées~~ **FAIT** | OS | petit lot, forte fidélité |
 | **R7** | `CONNECT TARGET …@tns` **sur le fil** | réseau | referme la violation du §4 |
 | **R8** | Catalogue distant, `DUPLICATE`, transfert des pièces entre sites | réseau | le laboratoire DR devient réel |

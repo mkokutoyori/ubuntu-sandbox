@@ -29,6 +29,7 @@ import { recoveryAreaUsage } from '@/database/oracle/storage/RecoveryArea';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 interface FsCapableEquipment {
+  executeShellCommandSync?(command: string): string;
   writeFileFromEditor(path: string, content: string, declaredSizeBytes?: number): boolean;
   writeFileAsOracle?(path: string, content: string, declaredSizeBytes?: number): boolean;
   freeDiskBytes?(): number;
@@ -191,6 +192,11 @@ export class LinuxRmanContext implements IRmanOracleContext {
     return this._oracle?.instance.state ?? 'OPEN';
   }
 
+  getControlFilePaths(): ReadonlyArray<string> {
+    const declared = this._oracle?.instance.getControlFilePaths() ?? [];
+    return declared.length > 0 ? declared : [this.getControlFilePath()];
+  }
+
   getControlFilePath(): string {
     return `${ORADATA_BASE}/${this.dbName}/control01.ctl`;
   }
@@ -252,6 +258,14 @@ export class LinuxRmanContext implements IRmanOracleContext {
         }
       },
       availableBytes: () => dev.freeDiskBytes?.() ?? 10_737_418_240,
+      listFilesRecursively: (dir): ReadonlyArray<string> => {
+        const lister = dev as unknown as {
+          executeShellCommandSync?: (cmd: string) => string;
+        };
+        if (typeof lister.executeShellCommandSync !== 'function') return [];
+        const out = lister.executeShellCommandSync(`find ${dir} -type f`);
+        return out.split('\n').map(l => l.trim()).filter(l => l.startsWith('/'));
+      },
       ensureDirectory: (path): Result<void, RmanError> => {
         if (!dev.makeDirectoryAsOracle) return ok(undefined);
         if (dev.makeDirectoryAsOracle(path)) return ok(undefined);

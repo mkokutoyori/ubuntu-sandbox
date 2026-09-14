@@ -27,6 +27,7 @@ export interface VfsAdapter {
   deleteFile(path: string):                  Result<void, RmanError>;
   availableBytes():                          number;
   ensureDirectory?(path: string):            Result<void, RmanError>;
+  listFilesRecursively?(dir: string):        ReadonlyArray<string>;
 }
 
 export type ConnectTargetOutcome =
@@ -44,6 +45,7 @@ export interface IRmanOracleContext {
   getArchivelogPaths?(): ReadonlyArray<string>;
   /** Optional: a virtual control-file path (used by BACKUP CURRENT CONTROLFILE). */
   getControlFilePath?(): string;
+  getControlFilePaths?(): ReadonlyArray<string>;
   /** Optional: instance lifecycle state used to gate CONNECT/RESTORE/RECOVER. */
   getInstanceState?(): 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
   /**
