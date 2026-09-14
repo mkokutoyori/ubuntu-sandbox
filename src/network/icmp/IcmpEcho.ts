@@ -5,6 +5,14 @@ import {
 
 export const ECHO_DATA_BYTES = 56;
 
+export const IPV4_ICMP_ECHO_OVERHEAD = 28;
+
+export const CISCO_ECHO_DATAGRAM_BYTES = 100;
+
+export function echoDataBytesForDatagram(datagramBytes: number): number {
+  return Math.max(IPV4_ICMP_ECHO_OVERHEAD, datagramBytes) - IPV4_ICMP_ECHO_OVERHEAD;
+}
+
 export function buildEchoRequest(
   source: string, destination: string,
   identifier: number, sequence: number, dataSize = ECHO_DATA_BYTES,

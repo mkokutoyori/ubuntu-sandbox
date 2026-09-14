@@ -95,6 +95,19 @@ const TRACE_OPTIONS: readonly OptionSpec[] = [
 const entier = (args: Record<string, string>, nom: string, defaut: number): number =>
   args[nom] === undefined ? defaut : Number(args[nom]);
 
+const FAMILLE_PAR_SPEC: Readonly<Record<string, 'ip' | 'ipv6'>> = {
+  'ping-destination': 'ip', 'ping-ip': 'ip', 'ping-ipv6': 'ipv6',
+};
+
+export function pingRequestOfSpec(
+  specId: string, args: Record<string, string>,
+): ParsedPing | null {
+  const famille = FAMILLE_PAR_SPEC[specId];
+  if (famille === undefined) return null;
+  const demande = pingRequest(args, famille);
+  return typeof demande === 'string' ? null : demande;
+}
+
 function pingRequest(
   args: Record<string, string>, announced: 'ip' | 'ipv6',
 ): ParsedPing | string {

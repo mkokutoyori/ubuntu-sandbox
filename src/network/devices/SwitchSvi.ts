@@ -13,6 +13,18 @@ import {
 } from '../core/IcmpErrors';
 import { Logger } from '../core/Logger';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
+import {
+  echoDataBytesForDatagram, CISCO_ECHO_DATAGRAM_BYTES,
+} from '../icmp/IcmpEcho';
+import { IPV4_FLAG_DF } from '../core/Ipv4Fragmentation';
+
+export interface EchoHooks {
+  onResult?: (row: CiscoPingRow) => void;
+  df?: boolean;
+  tos?: number;
+  sizeBytes?: number;
+  shouldStop?: () => boolean;
+}
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import type { DHCPServer } from '../dhcp/DHCPServer';
 import { buildDhcpServerReply } from '../dhcp/DhcpServerExchange';
@@ -614,6 +626,7 @@ export class SwitchSvi {
    */
   async executePingSequence(
     target: IPAddress, count = 5, _timeoutMs = 2000, sourceIPStr?: string,
+    hooks?: EchoHooks,
   ): Promise<CiscoPingRow[]> {
     let svi: SviInterface | null = null;
     if (sourceIPStr) {
@@ -628,9 +641,16 @@ export class SwitchSvi {
     // Self-ping: every SVI address answers immediately.
     for (const s of this.svis.values()) {
       if (s.ip?.equals(target)) {
-        return Array.from({ length: count }, (_, k) => ({
-          success: true, rttMs: 0.01, ttl: 255, seq: k + 1, fromIP: target.toString(),
-        }));
+        const propres: CiscoPingRow[] = [];
+        for (let k = 1; k <= count; k++) {
+          const row: CiscoPingRow = {
+            success: true, rttMs: 0.01, ttl: 255, seq: k, fromIP: target.toString(),
+          };
+          propres.push(row);
+          hooks?.onResult?.(row);
+          if (hooks?.shouldStop?.()) break;
+        }
+        return propres;
       }
     }
 
@@ -639,7 +659,10 @@ export class SwitchSvi {
 
     const results: CiscoPingRow[] = [];
     for (let seq = 1; seq <= count; seq++) {
-      results.push(this.sendEcho(svi.vlan, selfIp, target, targetMac, seq));
+      const row = this.sendEcho(svi.vlan, selfIp, target, targetMac, seq, hooks);
+      results.push(row);
+      hooks?.onResult?.(row);
+      if (hooks?.shouldStop?.()) break;
     }
     return results;
   }
@@ -682,12 +705,18 @@ export class SwitchSvi {
 
   private sendEcho(
     vlan: number, selfIp: IPAddress, target: IPAddress, targetMac: MACAddress, seq: number,
+    hooks?: EchoHooks,
   ): CiscoPingRow {
     const id = (this.pingId = (this.pingId + 1) & 0xffff);
+    const dataSize = echoDataBytesForDatagram(
+      hooks?.sizeBytes ?? CISCO_ECHO_DATAGRAM_BYTES);
     const icmp: ICMPPacket = {
-      type: 'icmp', icmpType: 'echo-request', code: 0, id, sequence: seq, dataSize: 56,
+      type: 'icmp', icmpType: 'echo-request', code: 0, id, sequence: seq, dataSize,
     };
-    const ipPkt = createIPv4Packet(selfIp, target, IP_PROTO_ICMP, 255, icmp, 8 + 56);
+    const ipPkt = createIPv4Packet(
+      selfIp, target, IP_PROTO_ICMP, 255, icmp, 8 + dataSize);
+    if (hooks?.tos) ipPkt.tos = hooks.tos;
+    if (hooks?.df) ipPkt.flags |= IPV4_FLAG_DF;
     this.pendingReply = null;
 
     this.host.egressOnVlan(vlan, {

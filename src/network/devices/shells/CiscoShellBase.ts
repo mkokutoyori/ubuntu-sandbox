@@ -64,6 +64,8 @@ import { getDeviceClock } from '@/network/equipment/RouterServiceCapabilities';
 import {
   parseSummerTimeRule, type SummerTimeRule,
 } from './cisco/clockSummerTime';
+import { pingRequestOfSpec } from './cisco/echoSpecs';
+import type { ParsedPing } from './cisco/ciscoPing';
 import { privilegeRuleSpecs, type PrivilegeRuleHost } from './cisco/privilegeRuleSpecs';
 import { ipSshSpecs, type IpSshHost } from './cisco/ipSshSpecs';
 import { terminalSpecs } from './cisco/terminalSpecs';
@@ -8015,6 +8017,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return { canonique, motsCles };
   }
 
+  parseEchoRequest(cmdPart: string, device: TDevice): ParsedPing | null {
+    let demande: ParsedPing | null = null;
+    this.avecReferenceAppareil(device, () => {
+      const table = this.socleTable();
+      if (!table) return '';
+      const parsed = parseCommand(table, cmdPart, this.socleSession(table));
+      if (parsed.status !== 'ok') return '';
+      if (!parsed.spec.modes.includes(this.mode)) return '';
+      demande = pingRequestOfSpec(parsed.spec.id, parsed.args);
+      return '';
+    });
+    return demande;
+  }
+
   private socleConnaitDansCeMode(cmdPart: string): boolean {
     const table = this.socleTable();
     if (!table) return false;
@@ -8471,7 +8487,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return 'Connection closed.';
   }
 
-  private avecReferenceAppareil(device: TDevice, action: () => string): string {
+  protected avecReferenceAppareil(device: TDevice, action: () => string): string {
     const precedente = this.deviceRef;
     this.deviceRef = device;
     try {
