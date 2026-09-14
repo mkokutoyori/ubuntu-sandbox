@@ -25,13 +25,11 @@
  *     d'ou le RMAN-06054 au moment precis ou ils servent. La liste vient
  *     maintenant du DISQUE, comme l'autobackup du lot R5.
  *
- * LIMITE NOMMEE, et c'est la plus importante de ce lot : le journal
- * archive porte un INSTANTANE des tablespaces au moment du switch, pas
- * un flux de vecteurs de changement. La reprise roule donc jusqu'a l'etat
- * du dernier switch retenu, pas jusqu'a un SCN arbitraire entre deux
- * switchs. `RECOVER UNTIL SCN` s'arrete au dernier journal dont le SCN
- * est <= la borne — c'est une borne REELLE, mais sa granularite est le
- * switch. Ce moteur n'a pas de vecteurs de changement a rejouer.
+ * La limite que ce lot avait nommee — le journal ne portait qu'un
+ * INSTANTANE au switch, donc `UNTIL SCN` etait quantifie au switch — est
+ * fermee par le lot R4b, dont la sonde est oracle-rman-redo-vectors.
+ * L'instantane reste : il est la base sur laquelle les vecteurs se
+ * rejouent, et c'est lui que les cas ci-dessous mesurent.
  *
  * Discrimination par `git stash push -- src/terminal src/database src/adapters` :
  * 2 cas sur 5 tombent avant le correctif — les deux qui portent le lot :

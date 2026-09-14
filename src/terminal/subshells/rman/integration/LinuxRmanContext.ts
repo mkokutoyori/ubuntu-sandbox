@@ -122,6 +122,10 @@ export class LinuxRmanContext implements IRmanOracleContext {
     ];
   }
 
+  getCurrentScn(): number {
+    return this._oracle?.instance.getCurrentScn() ?? 0;
+  }
+
   checkpointDatafiles(): void {
     this._oracle?.instance.performCheckpoint();
   }

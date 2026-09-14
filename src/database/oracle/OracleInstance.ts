@@ -5,6 +5,8 @@
  * background processes, SGA/PGA parameters, and redo log groups.
  */
 
+import type { RedoRecord } from './storage/RedoStream';
+import type { UndoRecord } from './transaction/TransactionManager';
 import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
 import { defaultOracleConfig } from '../engine/types/DatabaseConfig';
 import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS } from './OracleConfig';
@@ -402,6 +404,18 @@ export class OracleInstance {
 
   /** SCN stamped into every datafile header at the last checkpoint. */
   getCheckpointScn(): number { return this._checkpointScn; }
+
+  private _redoBuffer: RedoRecord[] = [];
+
+  appendRedo(changes: readonly UndoRecord[], scn: number): void {
+    for (const change of changes) this._redoBuffer.push({ ...change, scn });
+  }
+
+  drainRedo(): RedoRecord[] {
+    const drained = this._redoBuffer;
+    this._redoBuffer = [];
+    return drained;
+  }
   getCheckpointTime(): Date { return this._checkpointTime; }
 
   /**
@@ -897,7 +911,7 @@ export class OracleInstance {
         topic: 'oracle.archive-log.created',
         payload: {
           ...this.ref(), sequence: this._redoSequence - 1, path: archivePath,
-          scn: this.getCurrentScn(),
+          scn: this.getCurrentScn(), redo: this.drainRedo(),
         },
       });
     }

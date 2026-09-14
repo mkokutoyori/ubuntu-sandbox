@@ -55,6 +55,7 @@ export interface IRmanOracleContext {
    */
   connectTarget?(identifier: string): ConnectTargetOutcome;
   checkpointDatafiles?(): void;
+  getCurrentScn?(): number;
   runSqlStatement?(statement: string): SqlStatementOutcome;
   recordBackupPiece?(piece: RecordedBackupPiece): void;
   getRecoveryAreaUsedBytes?(): number;

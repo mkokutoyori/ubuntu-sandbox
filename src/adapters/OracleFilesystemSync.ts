@@ -30,6 +30,7 @@ import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { parseSize } from '@/database/oracle/views/_fileSize';
 import { renderDatafileImage, parseDatafileImage } from '@/database/oracle/storage/DatafileImage';
 import { renderBackupPieceImage } from '@/terminal/subshells/rman/core/BackupPieceImage';
+import { renderRedoStream, type RedoRecord } from '@/database/oracle/storage/RedoStream';
 
 export interface OracleFilesystemSyncCtx {
   /** Resolve a deviceId to the Equipment instance to write files on. */
@@ -298,7 +299,7 @@ export class OracleFilesystemSync {
           renderBackupPieceImage(
             `[ORACLE ARCHIVED REDO LOG - sequence ${e.payload.sequence}]`,
             { datafiles: this.segmentImages(e.payload.deviceId), scn: e.payload.scn },
-          ),
+          ) + renderRedoStream(e.payload.redo as readonly RedoRecord[]),
         );
       }),
 

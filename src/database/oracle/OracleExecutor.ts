@@ -180,9 +180,9 @@ export class OracleExecutor extends BaseExecutor {
       (cond, row, columns) => this.evaluateCondition3VL(cond, row, columns) !== false);
     this.txn = new TransactionManager(storage, {
       onBegin: txId => this.emitTxnStarted(txId),
-      onCommit: (txId, durationMs) => {
+      onCommit: (txId, durationMs, changes) => {
         // Every commit advances the database SCN (V$DATABASE.CURRENT_SCN).
-        instance.advanceScn();
+        instance.appendRedo(changes, instance.advanceScn());
         this.emitTxnCommitted(txId, durationMs);
       },
       onRollback: txId => this.emitTxnRolledBack(txId),

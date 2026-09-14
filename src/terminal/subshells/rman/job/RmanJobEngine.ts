@@ -34,6 +34,9 @@ import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { resolveFormatSpec } from '../core/formatSpec';
 import { renderBackupPieceImage, parseBackupPieceImage } from '../core/BackupPieceImage';
 import { renderControlFileImage, type ControlFileImage } from '@/database/oracle/storage/ControlFileImage';
+import { parseRedoStream, applyRedoToTablespace, type RedoRecord } from '@/database/oracle/storage/RedoStream';
+import { parseDatafileImage, renderDatafileImage, datafileBannerOf } from '@/database/oracle/storage/DatafileImage';
+import type { TablespacePayload } from '@/database/oracle/OracleStorage';
 import { parseSize } from '@/database/oracle/views/_fileSize';
 import { BackupKey } from '../values/BackupKey';
 import { implicitToDate } from '@/database/oracle/functions/valueUtils';
@@ -277,7 +280,7 @@ export class RmanJobEngine implements IRmanJobEngine {
     if (!isControlfile && !isSpfile) this._ctx.checkpointDatafiles?.();
     const image = (isControlfile || isSpfile)
       ? null
-      : { datafiles: this._readDatafileImages(datafiles) };
+      : { datafiles: this._readDatafileImages(datafiles), scn: this._ctx.getCurrentScn?.() };
     const usedPaths = new Set<string>();
     for (let i = 1; i <= pieceCount; i++) {
       const candidate = i === 1
@@ -350,6 +353,8 @@ export class RmanJobEngine implements IRmanJobEngine {
     return out;
   }
 
+  private _restoredScn = 0;
+
   private _readPieceImages(
     sets: ReadonlyArray<{ pieces: ReadonlyArray<{ path: string }> }>,
   ): Record<string, string> {
@@ -358,22 +363,58 @@ export class RmanJobEngine implements IRmanJobEngine {
         const read = this._ctx.vfs.readFile(piece.path);
         if (!read.ok) continue;
         const image = parseBackupPieceImage(new TextDecoder().decode(read.value));
-        if (image) return { ...image.datafiles };
+        if (image) {
+          this._restoredScn = image.scn ?? 0;
+          return { ...image.datafiles };
+        }
       }
     }
     return {};
   }
 
   private _applyArchivedLogs(paths: ReadonlyArray<string>, untilScn?: number): void {
+    const pending: RedoRecord[] = [];
     for (const path of paths) {
       const read = this._ctx.vfs.readFile(path);
       if (read.ok === false) continue;
-      const image = parseBackupPieceImage(new TextDecoder().decode(read.value));
-      if (!image) continue;
-      if (untilScn !== undefined && image.scn !== undefined && image.scn > untilScn) return;
-      for (const [dfPath, body] of Object.entries(image.datafiles)) {
-        this._ctx.vfs.writeFile(dfPath, new TextEncoder().encode(body));
+      const text = new TextDecoder().decode(read.value);
+      const image = parseBackupPieceImage(text);
+      if (image && (untilScn === undefined || image.scn === undefined || image.scn <= untilScn)) {
+        for (const [dfPath, body] of Object.entries(image.datafiles)) {
+          this._ctx.vfs.writeFile(dfPath, new TextEncoder().encode(body));
+        }
+        pending.length = 0;
+        continue;
       }
+      for (const rec of parseRedoStream(text)) {
+        if (rec.scn <= this._restoredScn) continue;
+        if (untilScn === undefined || rec.scn <= untilScn) pending.push(rec);
+      }
+    }
+    this._applyRedoRecords(pending);
+  }
+
+  private _applyRedoRecords(records: readonly RedoRecord[]): void {
+    if (records.length === 0) return;
+    const byFile = new Map<string, TablespacePayload>();
+    for (const df of this._ctx.getDatafiles()) {
+      const read = this._ctx.vfs.readFile(df.path);
+      if (read.ok === false) continue;
+      const payload = parseDatafileImage(new TextDecoder().decode(read.value));
+      if (payload) byFile.set(df.path, payload);
+    }
+    const ordered = [...records].sort((a, b) => a.scn - b.scn || a.seq - b.seq);
+    for (const rec of ordered) {
+      for (const [path, payload] of byFile) {
+        byFile.set(path, applyRedoToTablespace(payload, rec));
+      }
+    }
+    for (const [path, payload] of byFile) {
+      const read = this._ctx.vfs.readFile(path);
+      if (read.ok === false) continue;
+      const banner = datafileBannerOf(new TextDecoder().decode(read.value));
+      this._ctx.vfs.writeFile(path,
+        new TextEncoder().encode(renderDatafileImage(banner, payload)));
     }
   }
 

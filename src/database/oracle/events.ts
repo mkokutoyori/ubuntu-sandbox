@@ -74,6 +74,7 @@ export interface OracleArchiveLogCreatedPayload extends OracleDeviceRef {
   sequence: number;
   path: string;
   scn: number;
+  redo: readonly unknown[];
 }
 
 // ── Session / transaction / DML / DDL ──────────────────────────────────
