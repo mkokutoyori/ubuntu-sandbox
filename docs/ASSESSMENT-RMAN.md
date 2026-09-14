@@ -31,8 +31,26 @@ détruire, restaurer.
 [6]  SELECT COUNT(*) FROM clients                  ORA-00942
 ```
 
-La table ne revient pas. Et elle ne pouvait pas revenir, pour une raison
-qui n'est ni un bug ni un oubli mais un **choix de représentation** :
+**Depuis les lots R1 et R2, la table revient.** Le même enchaînement,
+mesuré après :
+
+```
+[8]  SELECT COUNT(*) FROM clients                  2
+```
+
+Trois pièces ont été mises bout à bout :
+
+- un **checkpoint** (`ALTER SYSTEM CHECKPOINT`, un `SHUTDOWN` propre, un
+  `OPEN`, ou le début d'un `BACKUP`) sérialise chaque tablespace
+  permanent dans le **premier** fichier de données qui le porte ;
+- `BACKUP` **lit** ces fichiers et écrit leur contenu dans la pièce OMF ;
+  `RESTORE` **réécrit** les fichiers depuis la pièce ;
+- l'`OPEN` relit les fichiers de données et recharge les tablespaces —
+  une table détruite entre-temps est **recréée**, sa métadonnée voyageant
+  avec ses lignes.
+
+Ce qui suit décrit l'état AVANT ces deux lots, conservé parce qu'il
+explique pourquoi la chaîne répondait « fini » sans rien faire :
 
 ```
 [3c] ls -l /u01/backup
@@ -229,6 +247,13 @@ un serveur de sauvegarde
 | **[G]** `BACKUP … FORMAT '/mnt/backup_nfs/%U'` | `Finished backup`, `piece handle=/mnt/backup_nfs/ORCL_…` |
 | **[H]** ce chemin, vu du serveur de sauvegarde | `No such file or directory` |
 
+> **[G]/[H] sont FERMÉS** par le lot NFS (voir §5.1). La mesure est
+> désormais : `piece handle=/mnt/backup_nfs/01tlcvep_1_1`, et `ls
+> /srv/backup` **sur le serveur de sauvegarde** rend cette pièce. Les
+> octets traversent le routeur puis le pare-feu ; politique passée à
+> `deny`, le montage ne se fait plus. Sonde :
+> `nfs-montage-reseau-reel`, 8 cas discriminants sur 10 (voir §5.2).
+
 **[A]/[B]/[E] sont le témoin, et ils rendent le reste opposable.** Le
 pare-feu de ce laboratoire bloque réellement : sans politique il jette,
 avec `ACCEPT` il achemine, avec `DENY` il jette de nouveau. Que **[C]**
@@ -267,14 +292,59 @@ L'ordre n'est pas négociable : chaque lot a besoin du précédent.
 
 | # | Lot | Pile | Pourquoi ici |
 |---|---|---|---|
-| **R1** | **Sérialiser un tablespace** vers son `.dbf` et le relire | applicative | rien de crédible n'est possible avant ; c'est le lot qui transforme RMAN d'animation en outil |
-| **R2** | `BACKUP` **lit** les fichiers, `RESTORE` les **réécrit** ; le cycle *sauvegarder / détruire / restaurer* referme la boucle | RMAN | le premier lot où la sonde du §1 devient verte |
-| **R3** | `SHUTDOWN`/`STARTUP` **dans** RMAN | applicative | sans eux, R2 n'est pas jouable comme un vrai opérateur le joue |
-| **R4** | **ARCHIVELOG** : mode, écriture du redo, `V$ARCHIVED_LOG`, `LOG SWITCH` | applicative | ouvre le PITR, `BACKUP ARCHIVELOG`, `RECOVER UNTIL` |
-| **R5** | Fichier de contrôle réel + autobackup + `RESTORE CONTROLFILE` | applicative | ouvre la reprise depuis rien |
+| **R1** | ~~**Sérialiser un tablespace** vers son `.dbf` et le relire~~ **FAIT** | applicative | rien de crédible n'est possible avant ; c'est le lot qui transforme RMAN d'animation en outil |
+| **R2** | ~~`BACKUP` **lit** les fichiers, `RESTORE` les **réécrit**~~ **FAIT** — la sonde du §1 est verte | RMAN | le premier lot où la sonde du §1 devient verte |
+| **R3** | ~~`SHUTDOWN`/`STARTUP` **dans** RMAN~~ **FAIT** — plus `ALTER DATABASE OPEN` et `SQL '...'` ; restent `SWITCH DATAFILE` et `RESET DATABASE`, qui appartiennent au lot des incarnations (R5) | applicative | sans eux, R2 n'est pas jouable comme un vrai opérateur le joue |
+| **R4** | ~~**ARCHIVELOG** : mode, écriture du redo, `V$ARCHIVED_LOG`, `LOG SWITCH`~~ **FAIT** — une ligne écrite après la sauvegarde revient par `RECOVER` | applicative | ouvre le PITR, `BACKUP ARCHIVELOG`, `RECOVER UNTIL` |
+| **R4b** | ~~La limite nommée de R4 : le journal portait un **instantané** au switch, pas un flux de **vecteurs de changement**~~ **FAIT** — `COMMIT` rend son journal d'annulation, l'exécuteur l'estampille du SCN, le switch le vide dans le `.arc`, `RECOVER` le rejoue ; la granularité de `UNTIL SCN` descend à la transaction | applicative | c'est ce qui rend le PITR réel plutôt que quantifié au switch |
+| **R5** | ~~Fichier de contrôle réel + autobackup + `RESTORE CONTROLFILE`~~ **FAIT** — la reprise depuis rien fonctionne, control file ET répertoire RMAN perdus ; restent `SWITCH DATAFILE` et `RESET DATABASE` (incarnations) | applicative | ouvre la reprise depuis rien |
+| **R5b** | ~~La limite nommée de R5 : une base fraîche n'avait qu'une **bannière** dans son fichier de contrôle~~ **FAIT** — plus le §6 mesuré à côté : `V$CONTROLFILE_RECORD_SECTION.RECORDS_USED` valait `RECORDS_TOTAL/10` et contredisait `V$DATAFILE` ; chaque section délègue désormais à la vue qui énumère ses enregistrements | applicative | le fichier de contrôle devient la trace de la structure, pas seulement du répertoire RMAN |
 | **R6** | ~~FRA réelle : `V$RECOVERY_FILE_DEST`, nom OMF, propriété `oracle`, quota, substitutions de FORMAT, vues V$ alimentées~~ **FAIT** | OS | petit lot, forte fidélité |
 | **R7** | `CONNECT TARGET …@tns` **sur le fil** | réseau | referme la violation du §4 |
-| **R8** | Catalogue distant, `DUPLICATE`, transfert des pièces entre sites | réseau | le laboratoire DR devient réel |
+| **R8a** | ~~**Transfert des pièces entre sites**~~ **FAIT** — NFSv3 réel (XDR, ONC RPC, portmap, mountd, nfsd) plus son branchement : une pièce écrite sous un montage réseau est sur le disque du SERVEUR | réseau | ferme [G]/[H], la dernière violation du §4 sur le chemin de sauvegarde |
+| **R8b** | Catalogue distant (`CONNECT CATALOG`) et `DUPLICATE` | réseau | le laboratoire DR devient complet |
+
+### 5.0 Lot R2b — la cible distante (fermé)
+
+Une fois R1/R2 en place, la question « et sur TCP/IP ? » a trouvé trois
+défauts, mesurés dans le laboratoire routeur + pare-feu
+(`src/__tests__/support/rmanLab.ts`) :
+
+```
+ORA-PROD ── R-CORE (Cisco) ── FGT-DC (FortiGate) ── ORA-DR
+10.10.10.10    .1 / 10.10.30.1    .2 / 10.10.20.1    10.10.20.20
+```
+
+| porte | annonçait | écrivait |
+|---|---|---|
+| `CONNECT TARGET @DR` | DBID de DR (juste) | FRA de **PROD** |
+| `rman target …@DR` | DBID de **PROD** | FRA de **PROD** |
+| `rman target …@injoignable` | rien | FRA de **PROD** |
+
+Le troisième est le pire : la cible étant jetée (`connect(_target?)` ne
+lisait pas son paramètre), rien ne pouvait échouer, et un opérateur au
+lien coupé croyait sauvegarder son site distant.
+
+Fermé par **un seul mécanisme** : `LinuxRmanContext.forTarget` résout un
+identifiant en contexte de la machine cible, et `RetargetableRmanContext`
+échange la cible courante — les deux portes passant déjà par
+`connectTarget`, elles en bénéficient ensemble. Catalogue et
+configuration suivent le device résolu.
+
+**Ce que le fil porte, mesuré :** `tcpdump -i eth0` sur ORA-PROD montre
+la vraie poignée de main à travers le routeur et le pare-feu —
+`10.10.10.10.32768 > 10.10.20.20.1521 Flags [S]`, `[S.]`, `[.]`, puis un
+`[P.]` de 36 octets du listener.
+
+**Limite nommée, pas contournée :** la différence de trames entre
+`CONNECT` seul et `CONNECT + BACKUP` est nulle. Que les DONNÉES ne
+traversent pas est correct — un vrai RMAN fait écrire la pièce par le
+processus serveur de la cible, sur le disque de la cible. Mais
+l'aller-retour de la COMMANDE n'est pas tramé non plus, exactement comme
+`SQLPlusSession` le documente déjà pour `sqlplus`.
+
+**Tous les tests RMAN vivent désormais dans ce laboratoire** — sept
+fichiers migrés, plus aucun ne démarre un `LinuxServer` nu.
 
 ### 5.1 Ordre révisé après la mesure en infrastructure (§4.1)
 
@@ -324,3 +394,42 @@ L'architecture RMAN est en place et bien faite ; ce qui manque n'est pas
 dans RMAN mais **sous** lui — une base dont les fichiers contiennent
 quelque chose — et **à côté** de lui — un réseau que ses connexions
 traversent vraiment.
+
+### 5.2 Lot NFS — le montage réseau porte vraiment les octets (fermé)
+
+Le transfert des pièces entre sites (item 3 du lot R8) n'était pas un
+manque de RMAN mais une couche plus bas. `PRD-Pannes.md` le disait en
+toutes lettres : **« aucun protocole NFS n'est implanté »**. Conséquence
+mesurée dans le laboratoire routeur + pare-feu :
+
+| | avant | après |
+|---|---|---|
+| `exportfs -a` | `command not found` | silencieux, comme le vrai |
+| `systemctl start nfs-kernel-server` | `Unit not found` | démarre |
+| `ss -ltn` sur le serveur | rien sur 111/2049/20048 | les trois écoutent |
+| `showmount -e <serveur>` | `command not found` | `Export list for …` |
+| `mount -t nfs <serveur>:/srv/absent` | `rc=0` | `mount.nfs: … No such file or directory` |
+| `echo X > /mnt/backup_nfs/f` puis `cat` **sur le serveur** | `No such file or directory` | `X` |
+| `BACKUP … FORMAT '/mnt/backup_nfs/%U'` | pièce dans la FRA **locale** | `piece handle=/mnt/backup_nfs/…`, présente sur le serveur |
+
+**L'autorité.** NFS est un standard ouvert adopté, donc les RFC sont bien
+la référence (RFC 1813, 5531, 4506, 1833 ; 2049 et 111 à l'IANA). Leur
+texte est **injoignable** depuis la machine de développement — le
+mandataire refuse rfc-editor.org, ietf.org, datatracker.ietf.org,
+tools.ietf.org, et les miroirs hjp.at et freesoft.org. Les nombres et la
+disposition viennent donc de l'implantation de référence, qui est
+joignable et qui *est* ce que le fil porte : `include/uapi/linux/nfs3.h`,
+`include/uapi/linux/nfs.h`, `include/linux/sunrpc/msg_prot.h`, et
+`fs/nfsd/nfs3xdr.c` pour la disposition exacte (fattr3 en 21 unités XDR,
+wcc_attr en 6).
+
+**Le point étroit.** `RemoteMountPort` dans le VFS, jumeau de
+`setReadOnlyResolver` : le VFS ne connaît pas le réseau, il connaît un
+port. C'est ce qui fait que `cat`, `echo >`, `ls`, `mv`, `rm` **et**
+l'écriture de pièce de RMAN traversent tous le fil sans qu'aucun d'eux
+n'ait été touché.
+
+**Trouvé en chemin, et fermé.** `FORMAT "…"` entre guillemets doubles
+était accepté et silencieusement ignoré — la sauvegarde partait dans la
+FRA sous un autre nom que celui demandé (§6). `TAG` et `KEEP UNTIL TIME`
+avaient le même défaut.

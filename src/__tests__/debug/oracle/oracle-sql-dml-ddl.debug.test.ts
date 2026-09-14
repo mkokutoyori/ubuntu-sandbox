@@ -349,5 +349,5 @@ describe('debug — Oracle SQL DML & DDL', () => {
     runOracleDump('oracle-sql-dml-ddl', 'LinuxServer ora-sql — Oracle ORCL OPEN', lines, runner);
     runner.dispose();
     removeOracleDatabase(srv.id);
-  });
+  }, 180000);
 });

@@ -15,14 +15,55 @@
 import { ok, err, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
+import { parseControlFileImage } from '@/database/oracle/storage/ControlFileImage';
 
 export type RestoreSystemTarget = 'CONTROLFILE_AUTOBACKUP' | 'CONTROLFILE_FROM' | 'SPFILE_AUTOBACKUP' | 'SPFILE_TO';
+
+function findAutobackupOnDisk(cmdCtx: RmanCommandContext): string {
+  const { ctx } = cmdCtx;
+  const dest = ctx.getSpfileParam('db_recovery_file_dest');
+  if (!dest || !ctx.vfs.listFilesRecursively) return '';
+  const root = `${dest.replace(/\/+$/, '')}/${ctx.dbName.toUpperCase()}/autobackup`;
+  const candidates = ctx.vfs.listFilesRecursively(root).filter(p => p.endsWith('.bkp'));
+  return candidates.sort().reverse()[0] ?? '';
+}
+
+function catalogAutobackup(cmdCtx: RmanCommandContext): string {
+  const snap = cmdCtx.catalog.listAll();
+  if (snap.ok === false) return '';
+  const set = snap.value.sets.find(
+    s => s.type === 'CONTROLFILE' && s.tag.label.toUpperCase() === 'AUTOBACKUP',
+  );
+  const path = set?.pieces[0]?.path ?? '';
+  return path && cmdCtx.ctx.vfs.fileExists(path) ? path : '';
+}
+
+function writeControlFilesFrom(
+  cmdCtx: RmanCommandContext,
+  piecePath: string,
+): Result<void, RmanError> {
+  const read = cmdCtx.ctx.vfs.readFile(piecePath);
+  if (read.ok === false) return read;
+  const image = parseControlFileImage(new TextDecoder().decode(read.value));
+  if (!image) {
+    return err({
+      code: 'RMAN_06172',
+      message: `piece ${piecePath} is not a valid copy of the controlfile`,
+    });
+  }
+  const restorer = cmdCtx.engine as unknown as {
+    restoreControlFilesFromImage?(img: typeof image): number;
+  };
+  restorer.restoreControlFilesFromImage?.(image);
+  return ok(undefined);
+}
 
 export class RestoreSystemCommand implements IRmanCommand<string[]> {
   readonly name = 'RESTORE SYSTEM';
   constructor(private readonly target: RestoreSystemTarget) {}
 
-  execute(args: string[], { ctx, catalog }: RmanCommandContext): Result<string[], RmanError> {
+  execute(args: string[], cmdCtx: RmanCommandContext): Result<string[], RmanError> {
+    const { ctx, catalog, engine } = cmdCtx;
     const inst = ctx.getInstanceState?.();
     // RESTORE CONTROLFILE / SPFILE require NOMOUNT or MOUNT, NOT OPEN.
     if (inst === 'OPEN') {
@@ -32,13 +73,10 @@ export class RestoreSystemCommand implements IRmanCommand<string[]> {
       });
     }
 
+    let autobackupPath = '';
     if (this.target === 'CONTROLFILE_AUTOBACKUP' || this.target === 'SPFILE_AUTOBACKUP') {
-      const snap = catalog.listAll();
-      if (snap.ok === false) return snap;
-      const autobackup = snap.value.sets.find(
-        s => s.type === 'CONTROLFILE' && s.tag.label.toUpperCase() === 'AUTOBACKUP',
-      );
-      if (!autobackup) {
+      autobackupPath = findAutobackupOnDisk(cmdCtx) || catalogAutobackup(cmdCtx);
+      if (!autobackupPath) {
         return err({
           code: 'RMAN_06172',
           message: 'no autobackup found or specified handle is not a valid copy of the controlfile',
@@ -47,6 +85,8 @@ export class RestoreSystemCommand implements IRmanCommand<string[]> {
     }
 
     if (this.target === 'CONTROLFILE_AUTOBACKUP') {
+      const written = writeControlFilesFrom(cmdCtx, autobackupPath);
+      if (written.ok === false) return written;
       return ok([
         '',
         `Starting restore at ${new Date().toISOString()}`,
@@ -68,6 +108,8 @@ export class RestoreSystemCommand implements IRmanCommand<string[]> {
       if (!ctx.vfs.fileExists(path)) {
         return err({ code: 'RMAN_06004', message: `backup piece ${path} not found` });
       }
+      const written = writeControlFilesFrom(cmdCtx, path);
+      if (written.ok === false) return written;
       return ok([
         '',
         `Starting restore at ${new Date().toISOString()}`,

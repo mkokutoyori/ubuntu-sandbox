@@ -90,12 +90,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   tries.privileged.describeArgs('configure replace', [
     WORD('url', 'Configuration file URL'),
   ]);
-  for (const cmd of ['ping', 'traceroute']) {
-    tries.privileged.describeArgs(cmd, [
-      { name: 'destination', type: 'WORD', description: 'Destination address or hostname',
-        optional: true },
-    ]);
-  }
   for (const [cmd, description] of [
     ['show access-lists', 'Access list name or number'],
     ['show class-map', 'Class map name'],

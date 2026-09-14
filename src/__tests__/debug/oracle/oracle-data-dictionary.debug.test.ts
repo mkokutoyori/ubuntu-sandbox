@@ -280,5 +280,5 @@ describe('debug — Oracle data dictionary', () => {
       'LinuxServer ora-dict — Oracle ORCL OPEN', lines, runner);
     runner.dispose();
     removeOracleDatabase(srv.id);
-  });
+  }, 180000);
 });

@@ -32,6 +32,11 @@ import { generatePieceName } from '../core/pureUtils';
 import type { OmfBackupKind } from '@/database/oracle/storage/OracleManagedFiles';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { resolveFormatSpec } from '../core/formatSpec';
+import { renderBackupPieceImage, parseBackupPieceImage } from '../core/BackupPieceImage';
+import { renderControlFileImage, controlFileBody, type ControlFileImage } from '@/database/oracle/storage/ControlFileImage';
+import { parseRedoStream, applyRedoToTablespace, type RedoRecord } from '@/database/oracle/storage/RedoStream';
+import { parseDatafileImage, renderDatafileImage, datafileBannerOf } from '@/database/oracle/storage/DatafileImage';
+import type { TablespacePayload } from '@/database/oracle/OracleStorage';
 import { parseSize } from '@/database/oracle/views/_fileSize';
 import { BackupKey } from '../values/BackupKey';
 import { implicitToDate } from '@/database/oracle/functions/valueUtils';
@@ -136,8 +141,10 @@ export class RmanJobEngine implements IRmanJobEngine {
     const incLevel = params.incrementalLevel === '0' || params.incrementalLevel === '1'
       ? (Number(params.incrementalLevel) as 0 | 1)
       : undefined;
+    const isAutobackup = isControlfile && tag.label.toUpperCase() === 'AUTOBACKUP';
     const omfKind: OmfBackupKind =
-      isControlfile || isSpfile ? 'controlfile-spfile'
+      isAutobackup             ? 'autobackup'
+        : isControlfile || isSpfile ? 'controlfile-spfile'
         : isArchivelog          ? 'archivelog'
           : incLevel === 0      ? 'datafile-incremental-0'
             : incLevel === 1    ? 'datafile-incremental-1'
@@ -270,6 +277,10 @@ export class RmanJobEngine implements IRmanJobEngine {
     const pieceCount = maxPieceSize ? Math.max(1, Math.ceil(totalSize / maxPieceSize)) : 1;
     const pieceSize  = maxPieceSize ? Math.min(maxPieceSize, totalSize) : totalSize;
 
+    if (!isControlfile && !isSpfile) this._ctx.checkpointDatafiles?.();
+    const image = (isControlfile || isSpfile)
+      ? null
+      : { datafiles: this._readDatafileImages(datafiles), scn: this._ctx.getCurrentScn?.() };
     const usedPaths = new Set<string>();
     for (let i = 1; i <= pieceCount; i++) {
       const candidate = i === 1
@@ -284,7 +295,11 @@ export class RmanJobEngine implements IRmanJobEngine {
         const overflow = this._recoveryAreaOverflow(size);
         if (overflow) return err(overflow);
       }
-      const writeResult = this._ctx.vfs.writeFile(path, new Uint8Array(0), size);
+      const body = isControlfile
+        ? renderControlFileImage(`[ORACLE RMAN BACKUP PIECE - ${size} bytes]`, this._controlFileImage())
+        : renderBackupPieceImage(
+          `[ORACLE RMAN BACKUP PIECE - ${size} bytes]`, i === 1 ? image : null);
+      const writeResult = this._ctx.vfs.writeFile(path, new TextEncoder().encode(body), size);
       if (!writeResult.ok) return writeResult;
 
       const set = BackupSetFactory.createBackupSet({
@@ -313,6 +328,8 @@ export class RmanJobEngine implements IRmanJobEngine {
       this._bus.emit({ type: 'BACKUP_SET_COMPLETE', jobId: job.id, bsKey: set.bsKey, tag, sizeBytes: size });
     }
 
+    this._refreshControlFiles();
+
     // ARCHIVELOG ALL DELETE INPUT — consume + delete every reported archivelog
     if (isArchivelog && deleteInput) {
       const paths = this._ctx.getArchivelogPaths?.() ?? [];
@@ -323,6 +340,117 @@ export class RmanJobEngine implements IRmanJobEngine {
     }
 
     return ok(undefined);
+  }
+
+  private _readDatafileImages(
+    datafiles: ReadonlyArray<{ path: string }>,
+  ): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const df of datafiles) {
+      const read = this._ctx.vfs.readFile(df.path);
+      if (read.ok) out[df.path] = new TextDecoder().decode(read.value);
+    }
+    return out;
+  }
+
+  private _restoredScn = 0;
+
+  private _readPieceImages(
+    sets: ReadonlyArray<{ pieces: ReadonlyArray<{ path: string }> }>,
+  ): Record<string, string> {
+    for (const set of sets) {
+      for (const piece of set.pieces) {
+        const read = this._ctx.vfs.readFile(piece.path);
+        if (!read.ok) continue;
+        const image = parseBackupPieceImage(new TextDecoder().decode(read.value));
+        if (image) {
+          this._restoredScn = image.scn ?? 0;
+          return { ...image.datafiles };
+        }
+      }
+    }
+    return {};
+  }
+
+  private _applyArchivedLogs(paths: ReadonlyArray<string>, untilScn?: number): void {
+    const pending: RedoRecord[] = [];
+    for (const path of paths) {
+      const read = this._ctx.vfs.readFile(path);
+      if (read.ok === false) continue;
+      const text = new TextDecoder().decode(read.value);
+      const image = parseBackupPieceImage(text);
+      if (image && (untilScn === undefined || image.scn === undefined || image.scn <= untilScn)) {
+        for (const [dfPath, body] of Object.entries(image.datafiles)) {
+          this._ctx.vfs.writeFile(dfPath, new TextEncoder().encode(body));
+        }
+        pending.length = 0;
+        continue;
+      }
+      for (const rec of parseRedoStream(text)) {
+        if (rec.scn <= this._restoredScn) continue;
+        if (untilScn === undefined || rec.scn <= untilScn) pending.push(rec);
+      }
+    }
+    this._applyRedoRecords(pending);
+  }
+
+  private _applyRedoRecords(records: readonly RedoRecord[]): void {
+    if (records.length === 0) return;
+    const byFile = new Map<string, TablespacePayload>();
+    for (const df of this._ctx.getDatafiles()) {
+      const read = this._ctx.vfs.readFile(df.path);
+      if (read.ok === false) continue;
+      const payload = parseDatafileImage(new TextDecoder().decode(read.value));
+      if (payload) byFile.set(df.path, payload);
+    }
+    const ordered = [...records].sort((a, b) => a.scn - b.scn || a.seq - b.seq);
+    for (const rec of ordered) {
+      for (const [path, payload] of byFile) {
+        byFile.set(path, applyRedoToTablespace(payload, rec));
+      }
+    }
+    for (const [path, payload] of byFile) {
+      const read = this._ctx.vfs.readFile(path);
+      if (read.ok === false) continue;
+      const banner = datafileBannerOf(new TextDecoder().decode(read.value));
+      this._ctx.vfs.writeFile(path,
+        new TextEncoder().encode(renderDatafileImage(banner, payload)));
+    }
+  }
+
+  private _controlFileImage(): ControlFileImage {
+    const snap = this._catalog.listAll();
+    return {
+      dbName: this._ctx.dbName,
+      dbId: this._ctx.dbId.value,
+      datafiles: this._ctx.getDatafiles().map(df => ({
+        fileNo: df.fileNo, path: df.path, sizeBytes: df.sizeBytes, tablespace: df.tablespace,
+      })),
+      backupSets: snap.ok ? [...snap.value.sets] : [],
+    };
+  }
+
+  private _refreshControlFiles(): void {
+    const paths = this._ctx.getControlFilePaths?.() ?? [];
+    if (paths.length === 0) return;
+    const image = this._controlFileImage();
+    paths.forEach((path, index) => {
+      this._ctx.vfs.writeFile(path, new TextEncoder().encode(controlFileBody(index, image)));
+    });
+  }
+
+  restoreControlFilesFromImage(image: ControlFileImage): number {
+    const paths = this._ctx.getControlFilePaths?.() ?? [];
+    paths.forEach((path, index) => {
+      this._ctx.vfs.writeFile(path, new TextEncoder().encode(controlFileBody(index, image)));
+    });
+    let restored = 0;
+    for (const raw of image.backupSets) {
+      const set = raw as import('../catalog/types').BackupSet;
+      if (!set || typeof set !== 'object' || !Array.isArray(set.pieces)) continue;
+      if (this._catalog.recordBackupSet(set).ok) restored++;
+    }
+    return restored;
   }
 
   private _recoveryAreaOverflow(sizeBytes: number): RmanError | null {
@@ -434,6 +562,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       });
     }
 
+    const restoredImages = this._readPieceImages(usableSets);
     const tsFilter   = params.tablespace ? params.tablespace.toUpperCase() : undefined;
     const fileFilter = params.fileNo     ? Number(params.fileNo) : undefined;
     const datafiles  = this._ctx.getDatafiles().filter(df => {
@@ -454,8 +583,9 @@ export class RmanJobEngine implements IRmanJobEngine {
       // point. The instance's OPEN-time existence check (ORA-01157)
       // relies on this file being really rewritten.
       const sizeMb = Math.max(1, Math.round(df.sizeBytes / 1048576));
+      const saved = restoredImages[df.path];
       this._ctx.vfs.writeFile(df.path, new TextEncoder().encode(
-        `[ORACLE DATAFILE - ${df.tablespace} tablespace - ${sizeMb}M]`));
+        saved ?? `[ORACLE DATAFILE - ${df.tablespace} tablespace - ${sizeMb}M]`));
       this._bus.emit({
         type: 'RESTORE_DATAFILE_COMPLETED', jobId: job.id,
         fileNo: df.fileNo, elapsedMs: 5_000,
@@ -555,6 +685,7 @@ export class RmanJobEngine implements IRmanJobEngine {
         });
       }
     }
+    this._applyArchivedLogs(arcPaths, params.untilScn !== undefined ? Number(params.untilScn) : undefined);
     this._bus.emit({ type: 'RECOVER_COMPLETED', jobId: job.id, toScn:   to.ok   ? to.value   : Scn.ZERO, elapsedMs: 3_000 });
     this._pendingRecoveryGap = false;
     return ok(undefined);

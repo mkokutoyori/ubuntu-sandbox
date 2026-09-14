@@ -6,7 +6,7 @@ const VRP_MAX_AGE_SEC = 20;
 const VRP_DEFAULT_PRIORITY = 32768;
 
 export function vrpStpRegionLines(agent: StpAgent | undefined): string[] {
-  const region = agent?.getMstRegion();
+  const region = agent?.getPendingMstRegion();
   if (!region) return [];
   if (!region.name && region.revision === 0 && region.instances.size === 0) return [];
   const out = ['stp region-configuration'];
@@ -15,7 +15,7 @@ export function vrpStpRegionLines(agent: StpAgent | undefined): string[] {
   for (const [id, vlans] of [...region.instances].sort((a, b) => a[0] - b[0])) {
     out.push(` instance ${id} vlan ${vlans}`);
   }
-  out.push(' active region-configuration');
+  if (!agent?.isMstRegionPendingActivation()) out.push(' active region-configuration');
   return out;
 }
 

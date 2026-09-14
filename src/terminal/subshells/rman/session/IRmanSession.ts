@@ -15,4 +15,5 @@ export interface IRmanSession {
   processLine(line: string): Result<string[], RmanError>;
   getBanner(): string[];
   dispose(): void;
+  ownsPendingShutdown?(): boolean;
 }

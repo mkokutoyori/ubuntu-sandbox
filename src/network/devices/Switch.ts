@@ -47,7 +47,8 @@ import {
   evaluateMacAcl, isIpEtherType, type MacAccessList,
 } from './switch/MacAccessList';
 import { RouterDhcpClient } from './router/RouterDhcpClient';
-import { SwitchSvi, type SviInterface } from './SwitchSvi';
+import { SwitchSvi, type SviInterface, type EchoHooks } from './SwitchSvi';
+import type { ParsedPing } from './shells/cisco/ciscoPing';
 import { ControlPlaneUdpEndpoint } from './udp/ControlPlaneUdpEndpoint';
 import {
   requiresNamedInterface, sendOnNamedInterface, type Ipv4SendRequest,
@@ -2993,8 +2994,9 @@ export abstract class Switch extends Equipment {
 
   executePingSequence(
     target: IPAddress, count = 5, timeoutMs = 2000, sourceIPStr?: string,
+    hooks?: EchoHooks,
   ): Promise<CiscoPingRow[]> {
-    return this.svi.executePingSequence(target, count, timeoutMs, sourceIPStr);
+    return this.svi.executePingSequence(target, count, timeoutMs, sourceIPStr, hooks);
   }
 
   getStaticRoutes() { return this.svi.getStaticRoutes(); }
@@ -3781,6 +3783,10 @@ export abstract class Switch extends Equipment {
 
   cliHelp(inputBeforeQuestion: string): string {
     return this.shell.getHelp(inputBeforeQuestion, this);
+  }
+
+  parseEchoRequest(line: string): ParsedPing | null {
+    return this.shell.parseEchoRequest?.(line, this) ?? null;
   }
 
   /** Get CLI tab completion for the given input (used by terminal UI) */

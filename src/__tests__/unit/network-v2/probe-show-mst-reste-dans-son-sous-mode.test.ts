@@ -37,16 +37,14 @@
  * commande n'est annoncee et executable que dans les modes ou elle
  * existe, et les autres `show` continuent de passer.
  *
- * CE QUI N'EST PAS CORRIGE, et qui est une LIMITE et non un defaut de ce
- * lot : `show current` et `show pending` rendent le MEME texte, parce
- * que ce moteur applique les editions MST immediatement. Sur IOS la
- * distinction est tout l'objet de la paire — `pending` montre le tampon
- * en cours, `current` la configuration active, et elles ne se rejoignent
- * qu'a la sortie du sous-mode. Ici il n'y a pas de tampon, donc les deux
- * vues coincident par CONSTRUCTION, et aucune des deux ne ment sur
- * l'etat de cette machine. Modeler le tampon est un lot en soi. La sonde
- * epingle donc leur egalite comme un fait mesure, pour que le jour ou le
- * tampon existera, ce cas tombe et rappelle qu'il faut le mettre a jour.
+ * Le cas qui epinglait l'EGALITE des deux vues est tombe, comme il
+ * annoncait qu'il le ferait : le tampon d'edition existe desormais
+ * (`probe-region-mst-tampon-d-edition`), donc `pending` montre ce qui
+ * vient d'etre tape et `current` ce qui est en service, et ils ne se
+ * rejoignent qu'a la sortie du sous-mode. Le temoin d'ici ne porte plus
+ * que sur ce qu'il a toujours voulu dire — les deux vues RENDENT, dans
+ * ce sous-mode et nulle part ailleurs ; laquelle rend quoi est mesure
+ * dans la sonde du tampon.
  *
  * Discriminee contre l'etat d'avant (`git stash`) : 4 des 10 cas
  * tombent — les deux commandes executees en EXEC privilegie, leur
@@ -101,7 +99,7 @@ describe('`show current`/`show pending` n\'existent que dans le sous-mode MST', 
   it.each(['show current', 'show pending', 'show curr'])(
     '`%s` marche dans le sous-mode MST — les TEMOINS', async (ligne) => {
       const d = await commutateur(...MST, 'name LAB');
-      expect(await d.executeCommand(ligne), ligne).toMatch(/Name\s+\[LAB\]/);
+      expect(await d.executeCommand(ligne), ligne).toMatch(/Name\s+\[/);
     });
 
   it.each(['show running-config', 'show vlan brief'])(
@@ -110,15 +108,9 @@ describe('`show current`/`show pending` n\'existent que dans le sous-mode MST', 
       expect(await d.executeCommand(ligne), ligne).not.toMatch(/Invalid input/);
     });
 
-  /*
-   * Le tampon d'edition n'existe pas : les deux vues coincident par
-   * construction. Ce cas est un FAIT mesure, pas une exigence — le jour
-   * ou le tampon sera modele, il tombera, et ce sera le rappel qu'il
-   * faut le reecrire.
-   */
-  it('les deux vues coincident, faute de tampon d\'edition', async () => {
+  it('les deux vues se separent pendant l\'edition', async () => {
     const d = await commutateur(...MST, 'name LAB', 'revision 7');
     expect(await d.executeCommand('show pending'))
-      .toBe(await d.executeCommand('show current'));
+      .not.toBe(await d.executeCommand('show current'));
   });
 });

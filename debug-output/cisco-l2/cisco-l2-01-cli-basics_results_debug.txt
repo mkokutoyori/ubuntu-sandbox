@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-09-13T11:43:12.415Z
+Generated: 2026-09-14T11:20:47.258Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -111,7 +111,8 @@ Total steps: 366
     <cr>
 
 [7/366] sw1 SW1> ping ?
-    WORD  Send echo messages
+    WORD  Ping destination address or hostname
+    ip    IP echo
     <cr>
 
 [8/366] sw1 SW1> terminal ?
@@ -148,7 +149,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *11:43:12.000 UTC Sun Sep 13 2026
+  *11:20:47.000 UTC Mon Sep 14 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -492,7 +493,7 @@ Total steps: 366
 
 [29/366] sw1 SW1# show inventory
   NAME: "WS-C3560-24TS-S chassis", DESCR: "Cisco Catalyst 3560 Multilayer Switch"
-  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC4886VA3S
+  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC7514GHS5
 
 [30/366] sw1 SW1# show flash:
   Directory of flash:/
@@ -1347,7 +1348,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *11:43:12.000 UTC Sun Sep 13 2026
+  *11:20:47.000 UTC Mon Sep 14 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1499,15 +1500,15 @@ Total steps: 366
   
   Log Buffer (4096 bytes):
   
-  *Sep 13 11:43:12.078: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Sep 13 11:43:12.079: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Sep 13 11:43:12.084: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Sep 13 11:43:12.084: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Sep 13 11:43:12.087: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Sep 13 11:43:12.087: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Sep 13 11:43:12.092: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 13 11:43:12.092: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 13 11:43:12.227: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 14 11:20:46.864: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Sep 14 11:20:46.865: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Sep 14 11:20:46.872: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Sep 14 11:20:46.872: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Sep 14 11:20:46.874: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Sep 14 11:20:46.874: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Sep 14 11:20:46.896: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 14 11:20:46.896: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 14 11:20:47.031: %SYS-5-CONFIG_I: Configured from console by console
 
 [60/366] sw1 SW1# show boot
   BOOT path-list      : 
@@ -3600,7 +3601,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   11:43:14 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   11:20:49 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [257/366] w1 w1$ hostname
   W1
@@ -3707,7 +3708,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          9/13/2026, 11:43:11 AM
+  System Boot Time:          9/14/2026, 11:20:46 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3763,7 +3764,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   11:43:14 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   11:20:49 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -3795,7 +3796,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   11:43:14 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   11:20:49 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [277/366] w2 w2$ hostname
   W2
@@ -3902,7 +3903,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          9/13/2026, 11:43:12 AM
+  System Boot Time:          9/14/2026, 11:20:46 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3958,27 +3959,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   11:43:14 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   11:20:49 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=4.100 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.946 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=4.089 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.910 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.946/2.523/4.100/1.577 ms
+  rtt min/avg/max/mdev = 0.910/2.499/4.089/1.590 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.391 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.977 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.389 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.946 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.977/1.184/1.391/0.207 ms
+  rtt min/avg/max/mdev = 0.946/1.168/1.389/0.222 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0

@@ -33,6 +33,9 @@ import {
   ListDbUniqueNameCommand, AlterDatabaseOpenResetlogsCommand,
   SwitchDatafileCommand, ResetDatabaseCommand, SqlMacroCommand,
 } from './RecoveryCatalogCommands';
+import {
+  ShutdownCommand, StartupCommand, AlterDatabaseOpenCommand,
+} from './InstanceControlCommands';
 import { BlockRecoverCommand } from './BlockRecoverCommand';
 import { RestoreSystemCommand } from './RestoreSystemCommands';
 import {
@@ -83,10 +86,13 @@ export class RmanCommandDispatcher {
       { pattern: /^UNREGISTER DATABASE(?:\s+(\S+))?(?:\s+NOPROMPT)?$/i,          command: new UnregisterDatabaseCommand() },
       { pattern: /^CONNECT CATALOG(?:\s+(.*))?$/i,                               command: new ConnectCatalogCommand() },
       { pattern: /^LIST DB_UNIQUE_NAME OF DATABASE$/i,                           command: new ListDbUniqueNameCommand() },
-      { pattern: /^ALTER DATABASE OPEN RESETLOGS$/i,                             command: new AlterDatabaseOpenResetlogsCommand() },
+      { pattern: /^SHUTDOWN(?:\s+(IMMEDIATE|ABORT|NORMAL|TRANSACTIONAL))?$/i,     command: new ShutdownCommand() },
+      { pattern: /^STARTUP(?:\s+(NOMOUNT|MOUNT|FORCE|OPEN))?$/i,                  command: new StartupCommand() },
+      { pattern: /^ALTER DATABASE OPEN(?:\s+(RESETLOGS))?$/i,                     command: new AlterDatabaseOpenCommand() },
       { pattern: /^SWITCH DATAFILE (ALL|\d+)$/i,                                 command: new SwitchDatafileCommand() },
       { pattern: /^RESET DATABASE(?: TO INCARNATION (\d+))?$/i,                  command: new ResetDatabaseCommand() },
       { pattern: /^SQL ("[^"]+"|'[^']+')$/i,                                     command: new SqlMacroCommand() },
+      { pattern: /^SQL ([^;]+)$/i,                                               command: new SqlMacroCommand() },
       // Block-level recovery
       { pattern: /^BLOCKRECOVER DATAFILE (\d+) BLOCK (\d+)$/i,                   command: new BlockRecoverCommand('BY_BLOCK') },
       { pattern: /^BLOCKRECOVER CORRUPTION LIST$/i,                              command: new BlockRecoverCommand('CORRUPTION_LIST') },

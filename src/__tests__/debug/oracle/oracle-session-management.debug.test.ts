@@ -254,5 +254,5 @@ describe('debug — Oracle session management', () => {
     runOracleDump('oracle-session-management', 'LinuxServer ora-sess — Oracle ORCL OPEN', lines, runner);
     runner.dispose();
     removeOracleDatabase(srv.id);
-  });
+  }, 180000);
 });

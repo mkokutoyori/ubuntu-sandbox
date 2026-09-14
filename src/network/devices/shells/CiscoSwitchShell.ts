@@ -73,7 +73,8 @@ import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
 import { MACAddress, IPAddress, SubnetMask } from '../../core/types';
 import { decouperPlages, completerBorne, etendreEntre } from './cli/interfaceRange';
 import { renderSecretField, renderPasswordField, renderCiscoUsernameLines } from './cisco/ciscoPasswordRender';
-import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
+import { formatCiscoPing, type ParsedPing } from './cisco/ciscoPing';
+import { echoSpecs, type EchoHost } from './cisco/echoSpecs';
 import {
   showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
   ipIntBriefRowsFromPorts, renderIpIntBrief, ipInterfaceBlockFor,
@@ -103,6 +104,13 @@ import {
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import { aclHeadSpecs, type AclHeadHost, type AclKind } from './cisco/aclHeadSpecs';
 import { macAclSpecs, type MacAclHost } from './cisco/macAclSpecs';
+import { arpAclSpecs, type ArpAclHost } from './cisco/arpAclSpecs';
+import {
+  vlanAccessMapSpecs, VLAN_ACCESS_MAP_LEGENDS, type VlanAccessMapHost,
+} from './cisco/vlanAccessMapSpecs';
+import {
+  mstConfigSpecs, MST_CONFIG_LEGENDS, type MstConfigHost,
+} from './cisco/mstConfigSpecs';
 import { aclStandardSpecs } from './cisco/aclStandardSpecs';
 import { aclExtendedSpecs } from './cisco/aclExtendedSpecs';
 import { aclSubmodeSpecs, avecNumeroDeSequence } from './cisco/aclSubmodeSpecs';
@@ -160,9 +168,14 @@ import {
   INTERFACE_STATUS_COLUMNS, INTERFACE_STATUS_STYLE, type InterfaceStatusRow,
   SPANNING_TREE_COLUMNS, SPANNING_TREE_STYLE, type SpanningTreePortRow,
 } from './cisco/ciscoTableLayouts';
-import { SOCLE, COMMUTATEUR_SEUL, appliquerContinuations } from './cisco/ciscoContinuations';
+import {
+  SOCLE, COMMUTATEUR_SEUL, appliquerContinuations, toutesLesSuites,
+} from './cisco/ciscoContinuations';
 import type { ContinuationTable } from './cisco/ciscoContinuations';
-import { mstConfigDigest, vlansMappedToInstanceZero } from '@/network/stp/MstConfigId';
+import {
+  mstConfigDigest, vlansMappedToInstanceZero, formatVlanRanges,
+} from '@/network/stp/MstConfigId';
+import { parseStpVlanList } from '@/network/stp/types';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -1028,7 +1041,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   protected registerDeviceCommands(): void {
     // ── User mode ──
-    this.registerUserCommands();
 
     // ── Privileged mode ──
     this.registerPrivilegedCommands();
@@ -1044,27 +1056,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // ── VACL + DAI (switch-only) ──
 
-    this.configAccessMapTrie.registerGreedy('match ip address', 'Match an IP ACL', (args) => {
-      if (!this.selectedAccessMap || !args[0]) return CISCO_ERRORS.INCOMPLETE;
-      const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
-      rule.matchIpAcls = [...(rule.matchIpAcls ?? []), ...args];
-      return '';
-    });
-    this.configAccessMapTrie.registerGreedy('match mac address', 'Match a MAC ACL', (args) => {
-      if (!this.selectedAccessMap || !args[0]) return CISCO_ERRORS.INCOMPLETE;
-      const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
-      rule.matchMacAcls = [...(rule.matchMacAcls ?? []), ...args];
-      return '';
-    });
-    this.configAccessMapTrie.registerGreedy('action', 'Set the access-map action', (args) => {
-      if (!this.selectedAccessMap) return CISCO_ERRORS.INCOMPLETE;
-      const a = args[0]?.toLowerCase();
-      if (a !== 'forward' && a !== 'drop') return '% Invalid action';
-      if (args.length > 1) return CISCO_ERRORS.INVALID_INPUT;
-      const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
-      rule.action = a;
-      return '';
-    });
     this.registerDaiCommands({
       config: this.configTrie, configIf: this.configIfTrie,
       privileged: this.privilegedTrie, user: this.userTrie,
@@ -1081,10 +1072,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       config: this.configTrie, configIf: this.configIfTrie,
       privileged: this.privilegedTrie, user: this.userTrie,
     });
-    for (const kw of ['permit', 'deny']) {
-      this.configAclTrie.registerGreedy(kw, `ARP ACL ${kw}`, (args) =>
-        this.handleArpAclLine(kw, args));
-    }
     buildNamedStdACLCommands(this.configStdNaclTrie, this.namedAclEditContext());
     buildNamedExtACLCommands(this.configExtNaclTrie, this.namedAclEditContext());
     this.registerL3Commands();
@@ -1190,18 +1177,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return '';
       });
 
-    // ── arp access-list ──
-    trie.config.registerGreedy('arp access-list', 'Define an ARP ACL', (args) => {
-      const name = args[0]; if (!name) return CISCO_ERRORS.INCOMPLETE;
-      const map = this.d()._getArpAccessLists();
-      if (!map.has(name)) map.set(name, { name, entries: [] });
-      this.selectedArpAcl = name;
-      this.selectedAcl = null;
-      this.mode = 'config-acl';
-      return '';
-    });
-    trie.config.requireArgs('arp access-list', 1);
-
     // ── Interface ── trust + limit rate
     trie.configIf.register('ip arp inspection trust', 'Trust port for DAI', () => {
       const cfg = this.d()._getArpInspectionConfig();
@@ -1232,37 +1207,64 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     trie.privileged.describeNode('show queuing', 'Show queueing configuration');
   }
 
-  private handleArpAclLine(kw: string, args: string[]): string {
-    if (!this.selectedArpAcl) return '';
-    const map = this.d()._getArpAccessLists();
-    const acl = map.get(this.selectedArpAcl);
-    if (!acl) return '';
-    if (kw === 'no') {
-      const raw = args.join(' ');
-      const idx = acl.entries.findIndex(e => e.raw === raw);
-      if (idx >= 0) acl.entries.splice(idx, 1);
-      return '';
-    }
-    if (kw !== 'permit' && kw !== 'deny') return '';
-    // Syntax: permit ip {host <ip>|any} mac {host <mac>|any}
-    let i = 0;
-    let senderIp: string | null = null;
-    let senderMac: string | null = null;
-    if (args[i]?.toLowerCase() === 'ip') {
-      i++;
-      if (args[i]?.toLowerCase() === 'host') { senderIp = args[i + 1] ?? null; i += 2; }
-      else if (args[i]?.toLowerCase() === 'any') { i++; }
-    }
-    if (args[i]?.toLowerCase() === 'mac') {
-      i++;
-      if (args[i]?.toLowerCase() === 'host') { senderMac = (args[i + 1] ?? '').toLowerCase() || null; i += 2; }
-      else if (args[i]?.toLowerCase() === 'any') { i++; }
-    }
-    acl.entries.push({
-      action: kw, senderIp, senderMac,
-      raw: `${kw} ${args.join(' ')}`.trim(),
-    });
-    return '';
+  private vlanAccessMapHost(): VlanAccessMapHost {
+    const regle = () => {
+      if (!this.selectedAccessMap) return null;
+      return this.d().setVlanAccessMapRule(
+        this.selectedAccessMap.name, this.selectedAccessMap.seq);
+    };
+    const champ = (famille: 'ip' | 'mac') =>
+      (famille === 'ip' ? 'matchIpAcls' : 'matchMacAcls') as
+        'matchIpAcls' | 'matchMacAcls';
+    return {
+      poserAction: (action) => {
+        const r = regle();
+        if (r) r.action = action;
+        return '';
+      },
+      ajouterListes: (famille, noms) => {
+        const r = regle();
+        if (r) r[champ(famille)] = [...(r[champ(famille)] ?? []), ...noms];
+        return '';
+      },
+      retirerListes: (famille, noms) => {
+        const r = regle();
+        if (!r) return '';
+        const restantes = (r[champ(famille)] ?? []).filter((n) => !noms.includes(n));
+        if (restantes.length === 0) delete r[champ(famille)];
+        else r[champ(famille)] = restantes;
+        return '';
+      },
+    };
+  }
+
+  private arpAclHost(): ArpAclHost {
+    const listeCourante = () => {
+      if (!this.selectedArpAcl) return null;
+      return this.d()._getArpAccessLists().get(this.selectedArpAcl) ?? null;
+    };
+    return {
+      ouvrirListe: (nom) => {
+        const map = this.d()._getArpAccessLists();
+        if (!map.has(nom)) map.set(nom, { name: nom, entries: [] });
+        this.selectedArpAcl = nom;
+        this.selectedAcl = null;
+        return '';
+      },
+      ajouterEntree: (action, senderIp, senderMac, ligne) => {
+        const acl = listeCourante();
+        if (!acl) return '';
+        acl.entries.push({ action, senderIp, senderMac, raw: ligne });
+        return '';
+      },
+      retirerEntree: (ligne) => {
+        const acl = listeCourante();
+        if (!acl) return '';
+        const index = acl.entries.findIndex((e) => e.raw === ligne);
+        if (index >= 0) acl.entries.splice(index, 1);
+        return '';
+      },
+    };
   }
 
   private registerPortSecurityCommands(): void {
@@ -1863,7 +1865,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         this.requireStp().setMode(
           m === 'mst' ? 'mstp' : m === 'rapid-pvst' ? 'rstp' : 'stp');
       },
-      enterMstConfiguration: () => { this.mode = 'config-mst'; },
+      enterMstConfiguration: () => {
+        this.requireStp().discardMstRegion();
+        this.mode = 'config-mst';
+      },
     };
   }
 
@@ -1879,53 +1884,64 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
     buildArchiveLogSubmodeOn(this.configArchiveLogTrie, archiveOf);
 
-    // config-mst sub-mode
-    this.configMstTrie.registerGreedy('name', 'Set MST region name', (a) => {
-      this.stpAgentOf(this.d())?.setMstName(a.join(' '));
-      this.requireVtp().onLocalMstChange();
-      return '';
-    });
-    this.configMstTrie.registerGreedy('revision', 'Set MST revision', (a) => {
-      if (a[0] === undefined) return CISCO_ERRORS.INCOMPLETE;
-      const n = entierBorne(a[0], 0, 65535);
-      this.stpAgentOf(this.d())?.setMstRevision(n);
-      this.requireVtp().onLocalMstChange();
-      return '';
-    });
-    this.configMstTrie.registerGreedy('instance', 'Map VLANs to an MST instance', (a) => {
-      if (a[0] === undefined) return CISCO_ERRORS.INCOMPLETE;
-      const id = entierBorne(a[0], 0, 4094);
-      const reste = a.slice(1);
-      if (reste[0]?.toLowerCase() === 'vlan') reste.shift();
-      if (reste.length > 0) {
-        const liste = analyserListeVlan([reste.join('')]);
-        if ('erreur' in liste) return liste.erreur;
-      }
-      this.stpAgentOf(this.d())?.mapMstInstance(id, reste.join(' '));
-      this.requireVtp().onLocalMstChange();
-      return '';
-    });
-    this.configMstTrie.register('show current', 'Show current MST config', () =>
-      this.showMstConfig());
-    this.configMstTrie.register('show pending', 'Show pending MST config', () =>
-      this.showMstConfig());
-    this.configMstTrie.registerGreedy('no', 'Negate MST option', (args) => {
-      const head = args[0]?.toLowerCase();
-      const ag = this.stpAgentOf(this.d());
-      if (head === 'name') ag?.setMstName('');
-      else if (head === 'revision') ag?.setMstRevision(0);
-      else if (head === 'instance' && args[1]) {
-        const inst = parseInt(args[1], 10);
-        if (!isNaN(inst)) ag?.unmapMstInstance(inst);
-      }
-      this.requireVtp().onLocalMstChange();
-      return '';
-    });
-    this.configMstTrie.registerGreedy('abort', 'Abort MST changes', () => {
-      this.mode = 'config'; return '';
-    });
-
     // show spanning-tree summary | mst configuration | interface <if>
+  }
+
+  private mstConfigHost(): MstConfigHost {
+    const agent = () => this.stpAgentOf(this.d());
+    const vlansValides = (liste: string): string | null => {
+      const lus = analyserListeVlan([liste.replace(/\s+/g, '')]);
+      return 'erreur' in lus ? lus.erreur : null;
+    };
+    return {
+      poserNom: (nom) => { agent()?.setMstName(nom); return ''; },
+      effacerNom: () => { agent()?.setMstName(''); return ''; },
+      poserRevision: (revision) => { agent()?.setMstRevision(revision); return ''; },
+      effacerRevision: () => { agent()?.setMstRevision(0); return ''; },
+      associerVlans: (instance, vlans) => {
+        const refus = vlansValides(vlans);
+        if (refus !== null) return refus;
+        agent()?.mapMstInstance(instance, vlans.replace(/\s+/g, ''));
+        return '';
+      },
+      dissocierVlans: (instance, vlans) => {
+        const refus = vlansValides(vlans);
+        if (refus !== null) return refus;
+        const region = agent()?.getPendingMstRegion();
+        const actuel = region?.instances.get(instance);
+        if (actuel === undefined) return '';
+        const retires = new Set(parseStpVlanList(vlans));
+        const restants = parseStpVlanList(actuel).filter((v) => !retires.has(v));
+        if (restants.length === 0) agent()?.unmapMstInstance(instance);
+        else agent()?.mapMstInstance(instance, formatVlanRanges(restants));
+        return '';
+      },
+      retirerInstance: (instance) => { agent()?.unmapMstInstance(instance); return ''; },
+      abandonner: () => {
+        agent()?.discardMstRegion();
+        this.mode = 'config';
+        return '';
+      },
+      regionEnService: () => this.showMstConfig(),
+      regionEnAttente: () => this.showMstConfig(false, true),
+    };
+  }
+
+  private validerRegionMst(): void {
+    const agent = this.stpAgentOf(this.d());
+    if (!agent?.isMstRegionPendingActivation()) return;
+    agent.commitMstRegion();
+    this.requireVtp().onLocalMstChange();
+  }
+
+  protected override cmdExit(): string {
+    if (this.mode === 'config-mst') this.validerRegionMst();
+    return super.cmdExit();
+  }
+
+  protected override cmdEnd(): string {
+    if (this.mode === 'config-mst') this.validerRegionMst();
+    return super.cmdEnd();
   }
 
   private dhcpPoolContext(): CiscoShellContext {
@@ -2336,6 +2352,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...aclSubmodeSpecs('config-ext-nacl',
         () => extendedAclHost(this.namedAclEditContext())),
       ...macAclSpecs(() => this.macAclHost()),
+      ...arpAclSpecs(() => this.arpAclHost()),
+      ...vlanAccessMapSpecs(() => this.vlanAccessMapHost()),
+      ...mstConfigSpecs(() => this.mstConfigHost()),
+      ...echoSpecs(() => this.echoHost(), { ipv6: false, traceroute: false }),
       ...switchPortPhysicalSpecs(() => this.portPhysiqueHost()),
       ...stpInterfaceSpecs(() => this.stpInterfaceHost()),
       ...this.dot1xPaeSpecs(),
@@ -2470,6 +2490,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       modesFor: (path) => modesParChemin[path.replace(/^no /, '')],
       minPrivilegeFor: privilegeSelonModes(modesParChemin),
       argumentFor: (path) => AGREGATION_PLACES[path],
+      keywordsFor: toutesLesSuites,
     });
 
     return [
@@ -2522,6 +2543,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         modesFor: (path) => DOT1X_MODES[path.replace(/^no /, '')],
         minPrivilegeFor: privilegeSelonModes(DOT1X_MODES),
         argumentFor: (path) => DOT1X_PLACES[path],
+        keywordsFor: toutesLesSuites,
       },
     );
   }
@@ -2536,7 +2558,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         argumentFor: (path) => SWITCHPORT_PLACES[path] ?? undefined,
         restDescriptionFor: (path) => path === 'description'
           ? 'Up to 240 characters describing this interface' : undefined,
-        keywordsFor: (path) => SWITCHPORT_KEYWORDS[path],
+        keywordsFor: (path) => SWITCHPORT_KEYWORDS[path] ?? toutesLesSuites(path),
       },
     );
   }
@@ -2565,6 +2587,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
        * TOUTES.
        */
       [['private-vlan'], 'Configure the private VLAN role or association'],
+      ...VLAN_ACCESS_MAP_LEGENDS.map(
+        ([chemin, legende, modes]) => [chemin, legende, modes] as SocleLegend),
+      ...MST_CONFIG_LEGENDS.map(
+        ([chemin, legende, modes]) => [chemin, legende, modes] as SocleLegend),
       [['errdisable'], 'Error disable recovery configuration'],
       [['errdisable', 'recovery'], 'Configure error disable recovery'],
       [['errdisable', 'recovery', 'cause'],
@@ -2892,8 +2918,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return (this.d() as unknown as { getDebugService?: () => import('../router/diag/RouterDebugService').RouterDebugService }).getDebugService?.();
   }
 
-  private showMstConfig(withDigest = false): string {
-    const region = this.stpAgentOf(this.d())?.getMstRegion();
+  private showMstConfig(withDigest = false, enAttente = false): string {
+    const agent = this.stpAgentOf(this.d());
+    const region = enAttente ? agent?.getPendingMstRegion() : agent?.getMstRegion();
     const instances = region?.instances ?? new Map<number, string>();
     const ml: string[] = [
       'Name      [' + (region?.name ?? '') + ']',
@@ -2987,41 +3014,40 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return { mac: mac.toLowerCase(), vlan, port };
   }
 
-  // ─── User Commands ────────────────────────────────────────────────
-
-  private registerUserCommands(): void {
-
-    this.userTrie.registerGreedy('ping', 'Send echo messages', (args) => this.handlePing(args));
+  private echoHost(): EchoHost {
+    return {
+      pingWithoutTarget: () => '% Ping requires a target IP address.',
+      runPing: (demande) => this.handlePing(demande),
+      tracerouteWithoutTarget: () => '',
+      runTraceroute: () => '',
+    };
   }
 
   /**
    * Drive a management-plane ping from an SVI. Uses the shared async pipeline
    * (`_pendingAsync`) and the shared IOS renderer, exactly like the router.
    */
-  private resolvePingSourceInterface(args: string[]): string[] | string {
-    const idx = args.findIndex(a => a.toLowerCase() === 'source');
-    if (idx === -1 || !args[idx + 1]) return args;
-    const vlanMatch = args[idx + 1].match(/^vl(?:an)?$/i)
-      ? args[idx + 2]
-      : args[idx + 1].match(/^vl(?:an)?(\d+)$/i)?.[1];
-    if (vlanMatch === undefined || !/^\d+$/.test(vlanMatch)) return args;
-    const vlan = parseInt(vlanMatch, 10);
-    const svi = this.d().getSvi(vlan);
+  private resolvePingSourceInterface(source: string): string | { refus: string } {
+    const vlan = /^vl(?:an)?(\d+)$/i.exec(source)?.[1];
+    if (vlan === undefined) return source;
+    const svi = this.d().getSvi(parseInt(vlan, 10));
     if (!svi || !svi.ip) {
-      return `% Source interface Vlan${vlan} has no IP address assigned`;
+      return { refus: `% Source interface Vlan${vlan} has no IP address assigned` };
     }
-    const consumed = args[idx + 1].match(/^vl(?:an)?$/i) ? 3 : 2;
-    return [...args.slice(0, idx), 'source', svi.ip.toString(), ...args.slice(idx + consumed)];
+    return svi.ip.toString();
   }
 
-  private handlePing(args: string[]): string {
-    const resolved = this.resolvePingSourceInterface(args);
-    if (typeof resolved === 'string') return resolved;
-    const parsed = parsePingArgs(resolved);
-    if (parsed.error) return parsed.error;
+  private handlePing(parsed: ParsedPing): string {
+    let sourceIP = parsed.sourceIP;
+    if (sourceIP) {
+      const resolved = this.resolvePingSourceInterface(sourceIP);
+      if (typeof resolved !== 'string') return resolved.refus;
+      sourceIP = resolved;
+    }
     const target = new IPAddress(parsed.target);
     this._pendingAsync = this.d()
-      .executePingSequence(target, parsed.count, parsed.timeoutMs, parsed.sourceIP ?? undefined)
+      .executePingSequence(target, parsed.count, parsed.timeoutMs, sourceIP ?? undefined,
+        { sizeBytes: parsed.sizeBytes })
       .then(results => formatCiscoPing(parsed.target, parsed.count, parsed.timeoutMs, results, parsed.sizeBytes));
     return '';
   }
@@ -3029,7 +3055,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   // ─── Privileged Commands ──────────────────────────────────────────
 
   private registerPrivilegedCommands(): void {
-    this.privilegedTrie.registerGreedy('ping', 'Send echo messages', (args) => this.handlePing(args));
 
     // `show storm-control` — la configuration était acceptée et
     // rangée (elle revient dans `show running-config interface`), mais

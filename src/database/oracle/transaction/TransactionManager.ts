@@ -74,7 +74,7 @@ export function reverseApplyInMemory(rows: StorageRow[], rec: UndoRecord): void 
 /** Lifecycle notifications, used by the executor to publish oracle.transaction.* events. */
 export interface TransactionObserver {
   onBegin(txId: number): void;
-  onCommit(txId: number, durationMs: number): void;
+  onCommit(txId: number, durationMs: number, changes: readonly UndoRecord[]): void;
   onRollback(txId: number): void;
 }
 
@@ -160,11 +160,12 @@ export class TransactionManager implements UndoSink {
   commit(): boolean {
     const wasActive = this.active;
     const startedAt = this.startedAt;
+    const changes = this.undoLog;
     this.undoLog = [];
     this.savepoints.clear();
     this.active = false;
     this.coordinator?.unregisterWriter(this);
-    if (wasActive) this.observer.onCommit(this.txId, performance.now() - startedAt);
+    if (wasActive) this.observer.onCommit(this.txId, performance.now() - startedAt, changes);
     return wasActive;
   }
 

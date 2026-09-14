@@ -37,8 +37,10 @@ import { CommandTrie, setInvalidInputPromptWidth, formatInvalidInput, formatInva
 import { IPAddress, IPv6Address, SubnetMask } from '../../core/types';
 import { ipv6PorteSpecs } from './cisco/ipv6PorteSpecs';
 import { isValidIPv4 } from '../../core/ip';
-import { parsePingArgs, formatCiscoPing, looksLikeIPv6 } from './cisco/ciscoPing';
-import { CISCO_ERRORS as CISCO_TRACE_ERRORS } from './cli-utils';
+import { formatCiscoPing, type ParsedPing } from './cisco/ciscoPing';
+import {
+  echoSpecs, type EchoHost, type TracerouteRequest,
+} from './cisco/echoSpecs';
 import {
   parseRouteDistinguisher, parseRouteTarget, applyRouteTarget,
   vrfStoreOf, type VrfHost, type VrfInstance,
@@ -62,7 +64,7 @@ import {
   vrrpGlbpShowSpecs,
 } from './cisco/CiscoVrrpGlbpCommands';
 import {
-  buildBfdInterfaceCommands, registerBfdShowCommands, bfdInterfaceSpecs,
+  buildBfdInterfaceCommands, bfdInterfaceSpecs, bfdShowSpecs,
 } from './cisco/CiscoBfdCommands';
 import {
   buildIgmpInterfaceCommands, registerIgmpShowCommands, igmpShowSpecs,
@@ -132,13 +134,15 @@ import { RoutingConfigRepository } from '../inspection/config/RoutingConfigRepos
 import {
   type CiscoACLShellContext,
   buildNamedStdACLCommands, buildNamedExtACLCommands,
-  buildIPv6ACLGlobalCommands, buildIPv6ACLModeCommands,
+  buildIPv6ACLGlobalCommands,
   registerACLShowCommands, aclShowSpecs,
-  parseCiscoAce, texteDeRemarque, standardAclHost, extendedAclHost, type NamedAclEditContext,
+  parseCiscoAce, texteDeRemarque, standardAclHost, extendedAclHost, ipv6AclHost,
+  type NamedAclEditContext,
 } from './cisco/CiscoAclCommands';
 import { aclStandardSpecs } from './cisco/aclStandardSpecs';
 import { aclExtendedSpecs } from './cisco/aclExtendedSpecs';
 import { aclSubmodeSpecs, avecNumeroDeSequence } from './cisco/aclSubmodeSpecs';
+import { aclIpv6Specs } from './cisco/aclIpv6Specs';
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import {
   registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
@@ -253,6 +257,11 @@ const ROUTER_SHOW_VIEWS: ReadonlySet<string> = new Set([
   'show traffic-shape', 'show ip policy', 'show ip static route',
   'show ip interface brief', 'show ip rip database', 'show counters',
   'show ip rip', 'show vlans',
+]);
+
+const VUES_SHOW_RESTANTES: ReadonlySet<string> = new Set([
+  'show dhcp server',
+  'show crypto engine brief', 'show crypto engine configuration',
 ]);
 
 const ROUTER_SHOW_ARGUMENTS: Readonly<Record<string, string>> = {
@@ -444,6 +453,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
+      ...echoSpecs(() => this.echoHost(), { ipv6: true, traceroute: true }),
       ...zoneSpecs(() => this.zoneHost()),
       ...dhcpClientFamily(),
       ...hsrpShowSpecs(this, () => this.fhrp),
@@ -543,6 +553,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         () => standardAclHost(this.namedAclEditContext())),
       ...aclSubmodeSpecs('config-ext-nacl',
         () => extendedAclHost(this.namedAclEditContext())),
+      ...aclIpv6Specs(() => ipv6AclHost(this)),
+      ...aclSubmodeSpecs('config-ipv6-nacl', () => ipv6AclHost(this)),
       ...prefixListSpecs(() => this.policy),
       ...routerSubmodeSpecs(this, this.routingCfg),
       ...bfdInterfaceSpecs({
@@ -592,6 +604,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY,
       ...OBJECT_GROUP_FAMILY,
       ...this.routerShowSpecs(),
+      ...this.vuesShowRestantes(),
+      ...bfdShowSpecs({ r: () => this.d() }),
       ...this.routingProtocolSpecs(),
       ...this.interfaceEntrySpecs(),
       ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(), ...this.ipv6ReglagesSpecs(),
@@ -704,6 +718,21 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         keywordsFor: (path) => continuationsPourLeSocle(path, SOCLE, ROUTEUR_SEUL),
         restDescriptionFor: (path) => ROUTER_SHOW_ARGUMENTS[path],
         restLiteralFor: (path) => ROUTER_SHOW_ARGUMENTS[path] === undefined ? undefined : 'WORD',
+      },
+    );
+  }
+
+  private vuesShowRestantes(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => {
+        const trie = collector as unknown as CommandTrie;
+        registerDhcpShowCommands(trie, () => this.d());
+        buildIPSecPrivilegedCommands(trie, this);
+      },
+      {
+        modes: ['user', 'privileged'], minPrivilege: 1,
+        skip: (path) => !VUES_SHOW_RESTANTES.has(path),
+        keywordsFor: (path) => continuationsPourLeSocle(path, SOCLE, ROUTEUR_SEUL),
       },
     );
   }
@@ -1912,31 +1941,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected registerDeviceCommands(): void {
     // ── User mode ──
     this.registerShowCommands(this.userTrie);
-    this.userTrie.registerGreedy('ping', 'Send echo messages', (args) => {
-      return this._handlePing(args);
-    });
-    // Le protocole se choisit AVANT la cible, les options viennent
-    // APRÈS : `ping ip 1.1.1.1` et `ping 1.1.1.1 repeat 5` existent,
-    // `ping 1.1.1.1 ip` non. Et seules les options que `parsePingArgs`
-    // accepte vraiment sont annoncées.
-    this.userTrie.addCompletionKeywords('ping', [
-      { keyword: 'ip', description: 'IP echo', leadingOnly: true },
-      { keyword: 'ipv6', description: 'IPv6 echo', leadingOnly: true },
-      { keyword: 'repeat', description: 'Repeat count' },
-      { keyword: 'size', description: 'Datagram size' },
-      { keyword: 'source', description: 'Source address or interface' },
-      { keyword: 'timeout', description: 'Timeout in seconds' },
-    ]);
-    this.userTrie.registerGreedy('traceroute', 'Trace route to destination', (args) => {
-      return this._handleTraceroute(args);
-    });
-    this.userTrie.addCompletionKeywords('traceroute', [
-      { keyword: 'ip', description: 'IP Trace', leadingOnly: true },
-      { keyword: 'ipv6', description: 'IPv6 Trace', leadingOnly: true },
-      { keyword: 'probe', description: 'Probe count' },
-      { keyword: 'timeout', description: 'Timeout in seconds' },
-      { keyword: 'ttl', description: 'Minimum and maximum time to live' },
-    ]);
 
     // ── Privileged mode ──
     this.registerShowCommands(this.privilegedTrie);
@@ -1990,7 +1994,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildNamedStdACLCommands(this.configStdNaclTrie, this.namedAclEditContext());
     buildNamedExtACLCommands(this.configExtNaclTrie, this.namedAclEditContext());
     buildIPv6ACLGlobalCommands(this.configTrie, this);
-    buildIPv6ACLModeCommands(this.configIpv6NaclTrie, this);
     // OSPF
     registerOSPFConfigCommands(this.configTrie, this);
     registerOSPFInterfaceCommands(this.configIfTrie, this);
@@ -2051,7 +2054,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   private registerShowCommands(trie: CommandTrie): void {
     registerRoutingProtoShow(trie, this, this.routingCfg);
-    registerBfdShowCommands(trie, { r: () => this.d() });
     registerIgmpShowCommands(trie, this.multicastShowContext());
     registerPimShowCommands(trie, this.multicastShowContext());
     if (this.hasVxlanHardware()) registerVxlanShowCommands(trie, { r: () => this.d() });
@@ -2260,10 +2262,16 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   // ─── Ping Command ────────────────────────────────────────────────
 
-  private _handlePing(args: string[]): string {
-    const parsed = parsePingArgs(args);
-    if (parsed.error) return parsed.error;
+  protected echoHost(): EchoHost {
+    return {
+      pingWithoutTarget: () => '% Ping requires a target IP address.',
+      runPing: (demande) => this._handlePing(demande),
+      tracerouteWithoutTarget: () => '% Traceroute requires a target IP address.',
+      runTraceroute: (demande) => this._handleTraceroute(demande),
+    };
+  }
 
+  private _handlePing(parsed: ParsedPing): string {
     const router = this.d();
     let sourceIP = parsed.sourceIP;
     if (sourceIP) {
@@ -2303,59 +2311,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return svc.resolve(cible);
   }
 
-  private _handleTraceroute(args: string[]): string {
-    if (args.length === 0) {
-      return '% Traceroute requires a target IP address.';
-    }
+  private _handleTraceroute(demande: TracerouteRequest): string {
+    const { target, maxHops, timeoutMs, probesPerHop, firstTtl } = demande;
 
-    let target = '';
-    let maxHops = 30;
-    let timeoutMs = 2000;
-    let probesPerHop = 3;
-
-    let i = 0;
-    let ipv6 = false;
-    const first = args[0]?.trim().toLowerCase();
-    if (first === 'ipv6' || first === 'ip') {
-      ipv6 = first === 'ipv6';
-      i++;
-    }
-    target = args[i++]?.trim() || '';
-
-    const entierPositif = (mot: string | undefined): number | null => {
-      if (mot === undefined || !/^\d+$/.test(mot)) return null;
-      const n = parseInt(mot, 10);
-      return n > 0 ? n : null;
-    };
-
-    while (i < args.length) {
-      const kw = args[i]?.toLowerCase();
-      if (kw !== 'ttl' && kw !== 'timeout' && kw !== 'probe') {
-        return CISCO_TRACE_ERRORS.INVALID_INPUT;
-      }
-      const attendus = kw === 'ttl' ? 2 : 1;
-      if (args.length - i - 1 < attendus) return CISCO_TRACE_ERRORS.INCOMPLETE;
-      const valeurs = args.slice(i + 1, i + 1 + attendus).map(entierPositif);
-      if (valeurs.some((n) => n === null)) return CISCO_TRACE_ERRORS.INVALID_INPUT;
-      if (kw === 'ttl') {
-        if ((valeurs[0] as number) > (valeurs[1] as number)) {
-          return CISCO_TRACE_ERRORS.INVALID_INPUT;
-        }
-        maxHops = valeurs[1] as number;
-      } else if (kw === 'timeout') {
-        timeoutMs = (valeurs[0] as number) * 1000;
-      } else {
-        probesPerHop = valeurs[0] as number;
-      }
-      i += 1 + attendus;
-    }
-
-    if (!target) return '% Traceroute requires a target IP address.';
-
-    if (ipv6 || looksLikeIPv6(target)) {
-      if (!looksLikeIPv6(target)) {
-        return `% Unrecognized host or address, or protocol not running.`;
-      }
+    if (demande.protocol === 'ipv6') {
       this._pendingAsync = this.d()
         .executeTraceroute6(new IPv6Address(target), maxHops, timeoutMs, probesPerHop)
         .then(hops => this._formatCiscoTraceroute(target, maxHops, hops));
@@ -2366,7 +2325,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this._pendingAsync = this.resoudreCible(router, target).then((adresse) => {
       if (!adresse) return `% Unrecognized host or address, or protocol not running.`;
       return router
-        .executeTraceroute(new IPAddress(adresse), maxHops, timeoutMs, probesPerHop)
+        .executeTraceroute(
+          new IPAddress(adresse), maxHops, timeoutMs, probesPerHop, firstTtl)
         .then(hops => this._formatCiscoTraceroute(adresse, maxHops, hops));
     });
 

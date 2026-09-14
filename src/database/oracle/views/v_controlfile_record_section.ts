@@ -4,9 +4,10 @@
 
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
-import { registerView } from './registry';
+import { registerView, queryView } from './registry';
+import type { ViewContext } from './types';
 
-const SECTIONS: Array<[string, number, number]> = [
+const SECTION_SIZES: ReadonlyArray<readonly [string, number, number]> = [
   ['DATABASE', 316, 1],
   ['CKPT PROGRESS', 8180, 5],
   ['REDO THREAD', 256, 8],
@@ -24,10 +25,36 @@ const SECTIONS: Array<[string, number, number]> = [
   ['BACKUP DATAFILE', 200, 4163],
 ];
 
+const SECTION_RECORDS: Readonly<Record<string, readonly string[]>> = {
+  'DATABASE': ['V$DATABASE'],
+  'CKPT PROGRESS': [],
+  'REDO THREAD': ['V$THREAD'],
+  'REDO LOG': ['V$LOGFILE'],
+  'DATAFILE': ['V$DATAFILE'],
+  'FILENAME': ['V$DATAFILE', 'V$TEMPFILE', 'V$LOGFILE', 'V$CONTROLFILE'],
+  'TABLESPACE': ['V$TABLESPACE'],
+  'TEMPORARY FILENAME': ['V$TEMPFILE'],
+  'RMAN CONFIGURATION': [],
+  'LOG HISTORY': ['V$LOG_HISTORY'],
+  'OFFLINE RANGE': [],
+  'ARCHIVED LOG': ['V$ARCHIVED_LOG'],
+  'BACKUP SET': ['V$BACKUP_SET'],
+  'BACKUP PIECE': ['V$BACKUP_PIECE'],
+  'BACKUP DATAFILE': ['V$BACKUP_DATAFILE'],
+};
+
+function recordsUsed(section: string, ctx: ViewContext): number {
+  let used = 0;
+  for (const view of SECTION_RECORDS[section] ?? []) {
+    used += queryView(view, ctx)?.rows.length ?? 0;
+  }
+  return used;
+}
+
 registerView({
   name: 'V$CONTROLFILE_RECORD_SECTION',
   comment: 'Control file record sections',
-  query() {
+  query(ctx) {
     return queryResult(
       [
         col.str('TYPE', 17),
@@ -38,9 +65,17 @@ registerView({
         col.num('LAST_INDEX'),
         col.num('LAST_RECID'),
       ],
-      SECTIONS.map(([type, sz, total]) => [
-        type, sz, total, Math.floor(total / 10), 0, 0, 0,
-      ])
+      SECTION_SIZES.map(([type, size, total]) => {
+        const used = Math.min(recordsUsed(type, ctx), total);
+        const circular = type === 'LOG HISTORY' || type === 'ARCHIVED LOG'
+          || type === 'OFFLINE RANGE' || type.startsWith('BACKUP');
+        return [
+          type, size, total, used,
+          circular && used > 0 ? 1 : 0,
+          circular ? used : 0,
+          used,
+        ];
+      }),
     );
   },
 });

@@ -102,6 +102,7 @@ describe('la famille stp du commutateur VRP', () => {
       'region-name REGION',
       'revision-level 7',
       'instance 1 vlan 10',
+      'active region-configuration',
       'quit',
     ]);
     const texte = await config(sw);

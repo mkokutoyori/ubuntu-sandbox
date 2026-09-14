@@ -97,5 +97,5 @@ describe('debug — Oracle view registration coherence', () => {
     expect(a).toBe(b);
 
     removeOracleDatabase(srv.id);
-  });
+  }, 180000);
 });

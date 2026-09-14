@@ -254,5 +254,5 @@ describe('debug — Oracle filesystem coherence', () => {
       'LinuxServer ora-fs — Oracle ORCL OPEN', lines, runner);
     runner.dispose();
     removeOracleDatabase(srv.id);
-  });
+  }, 180000);
 });

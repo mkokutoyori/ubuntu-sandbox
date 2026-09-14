@@ -20,6 +20,7 @@ import { RmanSessionOptionsBuilder } from './session/RmanSessionOptionsBuilder';
 import { rmanErrorMessage, type RmanError } from './core/RmanError';
 import { formatOracleDate, formatElapsed, simulateBackupElapsedMs } from './core/pureUtils';
 import { LinuxRmanContext } from './integration/LinuxRmanContext';
+import { RetargetableRmanContext } from './integration/RetargetableRmanContext';
 import { RmanLoggerActor } from './actors/RmanLoggerActor';
 import { OracleInstanceWatcherActor } from './actors/OracleInstanceWatcherActor';
 import { DeviceCatalogRegistry } from './catalog/DeviceCatalogRegistry';
@@ -74,9 +75,14 @@ export class ReactiveRmanSubShell implements ISubShell {
     device: Equipment,
     args: string[],
   ): { subShell: ReactiveRmanSubShell; banner: string[] } {
-    const ctx = LinuxRmanContext.forDevice(device);
+    const localId = (device as { id?: string }).id ?? 'default';
+    const targetIdx = args.findIndex(a => a.toUpperCase() === 'TARGET');
+    const identifier = targetIdx === -1 ? undefined : /@(\S+)/.exec(args[targetIdx + 1] ?? '')?.[1];
+    const resolved = identifier ? LinuxRmanContext.forTarget(device, identifier) : null;
+    const targetId = resolved?.ok === true ? resolved.deviceId : localId;
+    const ctx = resolved?.ok === true ? resolved.ctx : LinuxRmanContext.forDevice(device);
     const bus = device.getBus();
-    const sessionId = `${(device as { id?: string }).id ?? 'device'}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const sessionId = `${localId}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
     const builder = new RmanSessionOptionsBuilder()
       .withDbId(ctx.dbId)
@@ -84,16 +90,26 @@ export class ReactiveRmanSubShell implements ISubShell {
       // Device-scoped catalog so backups survive an OracleInstanceWatcher
       // disposal (shutdown → mount) and subsequent restore calls see the
       // pieces that were already written.
-      .withCatalog(DeviceCatalogRegistry.get((device as { id?: string }).id ?? 'default'))
+      .withCatalog(DeviceCatalogRegistry.get(targetId))
       // Device-scoped config — CONFIGURE statements persist across sessions.
-      .withConfig(DeviceConfigRegistry.get((device as { id?: string }).id ?? 'default'));
-    const session = new RmanSession(builder.build(), ctx);
+      .withConfig(DeviceConfigRegistry.get(targetId));
+    const retargetable = new RetargetableRmanContext(device, ctx);
+    const session = new RmanSession(builder.build(), retargetable);
     const banner  = session.getBanner();
-    const targetIdx = args.findIndex(a => a.toUpperCase() === 'TARGET');
     if (targetIdx !== -1) {
-      session.connect(args[targetIdx + 1] ?? '/');
-      banner.push(`connected to target database: ${ctx.dbName} (DBID=${ctx.dbId.value})`);
-      banner.push('');
+      if (resolved?.ok === false) {
+        banner.push(`RMAN-00571: ===========================================================`);
+        banner.push(`RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============`);
+        banner.push(`RMAN-00571: ===========================================================`);
+        banner.push(`RMAN-04006: error from target database: ${resolved.error}`);
+        banner.push('');
+      } else {
+        session.connect(args[targetIdx + 1] ?? '/');
+        banner.push(ctx.getInstanceState() === 'SHUTDOWN'
+          ? 'connected to target database (not started)'
+          : `connected to target database: ${ctx.dbName} (DBID=${ctx.dbId.value})`);
+        banner.push('');
+      }
     }
 
     const loggerActor   = new RmanLoggerActor(bus, sessionId);

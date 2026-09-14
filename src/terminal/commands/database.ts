@@ -10,6 +10,7 @@ import { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
 import type { OsSecurityContext } from '@/database/oracle/security/types';
 import { installAllDemoSchemas } from '@/database/oracle/demo/DemoSchemas';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
+import { controlFileBody, mergeControlFileImage, parseControlFileImage, controlFileStructureOf } from '@/database/oracle/storage/ControlFileImage';
 import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
 import { OracleSystemdSync } from '@/adapters/OracleSystemdSync';
 import { OracleAuditSyslogSync } from '@/adapters/OracleAuditSyslogSync';
@@ -816,8 +817,12 @@ export function syncDatafilesToDevice(device: import('@/network').HostCapableDev
 
   // Sync control files from instance parameters
   const ctlFiles = (db.instance.getParameter('control_files') ?? '').split(',').map(f => f.trim()).filter(f => f);
+  const structure = controlFileStructureOf(
+    db.instance.getParameter('db_name') ?? '', db.instance.getDbId(), db.storage.listDatafiles());
   ctlFiles.forEach((f, i) => {
-    device.writeFileFromEditor?.(f, `[ORACLE CONTROL FILE ${i + 1}]`);
+    const current = device.readFileForEditor?.(f) ?? null;
+    device.writeFileFromEditor?.(f,
+      controlFileBody(i, mergeControlFileImage(parseControlFileImage(current), structure)));
   });
 }
 

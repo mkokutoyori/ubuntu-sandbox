@@ -36,6 +36,10 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+import {
+  echoDataBytesForDatagram, CISCO_ECHO_DATAGRAM_BYTES,
+} from '../icmp/IcmpEcho';
+import type { ParsedPing } from './shells/cisco/ciscoPing';
 import type { TaggedEthernetFrame } from './Switch';
 import type { CredentialAuthenticator } from '../equipment/HostCapabilities';
 import { deviceClockSource, SEVERITY_NAMES } from './inspection/config/LoggingConfig';
@@ -127,7 +131,7 @@ import type { IpSlaEgress } from '../ipsla/types';
 import { dialHttp } from '../http/HttpClient';
 import { md5Hex } from '@/crypto/hash/md5';
 import type { KeyChainRepository } from './inspection/config/KeyChainRepository';
-import { fragmentIPv4, IPv4Reassembler } from '../core/Ipv4Fragmentation';
+import { fragmentIPv4, IPv4Reassembler, IPV4_FLAG_DF } from '../core/Ipv4Fragmentation';
 import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer, type DhcpUtilizationCrossing } from '../dhcp/DHCPServer';
 import {
@@ -3730,6 +3734,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.shell.getHelp(inputBeforeQuestion, this);
   }
 
+  parseEchoRequest(line: string): ParsedPing | null {
+    return this.shell.parseEchoRequest?.(line, this) ?? null;
+  }
+
   /** Get CLI tab completion for the given input (used by terminal UI) */
   cliTabComplete(input: string): string | null {
     return this.shell.tabComplete(input, this);
@@ -5707,6 +5715,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     maxHops: number = 30,
     timeoutMs: number = 2000,
     probesPerHop: number = 3,
+    firstTtl: number = 1,
   ): Promise<Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> }>> {
     const route = this.lookupRoute(targetIP);
     if (!route) return [];
@@ -5728,7 +5737,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
     const hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> }> = [];
 
-    for (let ttl = 1; ttl <= maxHops; ttl++) {
+    for (let ttl = firstTtl; ttl <= maxHops; ttl++) {
       const probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> = [];
       let destinationReached = false;
 
@@ -5892,10 +5901,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       { timeoutMs, scheduler: this.getRouterScheduler() },
     );
 
-    // IOS counts the whole IP datagram in `Datagram size`, so the ICMP
-    // payload is that minus the 20-byte IP header and the 8-byte ICMP one.
-    const datagram = Math.max(28, opts?.sizeBytes ?? 100);
-    const dataSize = datagram - 28;
+    const dataSize = echoDataBytesForDatagram(opts?.sizeBytes ?? CISCO_ECHO_DATAGRAM_BYTES);
     const icmp: ICMPPacket = {
       type: 'icmp', icmpType: 'echo-request', code: 0,
       id, sequence: seq, dataSize,
@@ -5903,10 +5909,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const icmpSize = 8 + dataSize;
     const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, this.defaultTTL, icmp, icmpSize);
     if (opts?.tos) ipPkt.tos = opts.tos;
-    // RFC 791 §3.1: DF is bit 1 of the flags field. With it set a router
-    // that would have to fragment answers ICMP type 3 code 4 instead,
-    // which is what makes `Set DF bit` a real path-MTU probe.
-    if (opts?.df) ipPkt.flags |= 0x2;
+    if (opts?.df) ipPkt.flags |= IPV4_FLAG_DF;
 
     this.emitIcmpEchoSent({
       fromIp: myIP.toString(), toIp: targetIpStr,

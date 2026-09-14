@@ -156,11 +156,11 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ? ve
 
 [6/64] Server1 Server1$ ping -c 1 192.168.40.1
   PING 192.168.40.1 (192.168.40.1) 56(84) bytes of data.
-  64 bytes from 192.168.40.1: icmp_seq=1 ttl=255 time=0.820 ms
+  64 bytes from 192.168.40.1: icmp_seq=1 ttl=255 time=0.901 ms
   
   --- 192.168.40.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.820/0.820/0.820/0.000 ms
+  rtt min/avg/max/mdev = 0.901/0.901/0.901/0.000 ms
 
 [7/64] Server1 Server1$ ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
@@ -206,8 +206,8 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ? ve
 
 [14/64] Server1 Server1$ traceroute 192.168.10.2
   traceroute to 192.168.10.2 (192.168.10.2), 30 hops max, 60 byte packets
-   1  192.168.40.1 (192.168.40.1)  1.342 ms  0.869 ms  0.739 ms
-   2  192.168.40.1 (192.168.40.1)  0.829 ms !N (Net unreachable)  0.816 ms !N (Net unreachable)  0.618 ms !N (Net unreachable)
+   1  192.168.40.1 (192.168.40.1)  0.785 ms  0.656 ms  0.692 ms
+   2  192.168.40.1 (192.168.40.1)  0.716 ms !N (Net unreachable)  0.698 ms !N (Net unreachable)  0.601 ms !N (Net unreachable)
 
 
 --- [15] § Jusqu'où le paquet passe-t-il ? ---
@@ -224,12 +224,12 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ? ve
 [16/64] PC1 PC1$ ping -n 1 10.0.20.2
   
   Pinging 10.0.20.2 with 32 bytes of data:
-  Reply from 10.0.20.2: bytes=32 time=3ms TTL=252
+  Reply from 10.0.20.2: bytes=32 time=4ms TTL=252
   
   Ping statistics for 10.0.20.2:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 3ms, Maximum = 3ms, Average = 3ms
+      Minimum = 4ms, Maximum = 4ms, Average = 4ms
 
 [17/64] PC1 PC1$ ping -n 1 10.0.30.2
   

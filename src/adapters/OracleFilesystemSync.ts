@@ -28,6 +28,13 @@ import type { Equipment } from '@/network/equipment/Equipment';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { parseSize } from '@/database/oracle/views/_fileSize';
+import { renderDatafileImage, parseDatafileImage } from '@/database/oracle/storage/DatafileImage';
+import { renderBackupPieceImage } from '@/terminal/subshells/rman/core/BackupPieceImage';
+import { renderRedoStream, type RedoRecord } from '@/database/oracle/storage/RedoStream';
+import {
+  controlFileBody, mergeControlFileImage, parseControlFileImage, controlFileStructureOf,
+  type ControlFileStructure,
+} from '@/database/oracle/storage/ControlFileImage';
 
 export interface OracleFilesystemSyncCtx {
   /** Resolve a deviceId to the Equipment instance to write files on. */
@@ -158,7 +165,15 @@ export class OracleFilesystemSync {
         if (newState === 'MOUNT' || newState === 'OPEN') {
           this.syncDatafiles(deviceId);
         }
+        if (newState === 'OPEN') {
+          this.loadSegmentImages(deviceId);
+        }
         this.syncSgaMemory(deviceId, newState === 'OPEN');
+      }),
+
+      this.bus.subscribe('oracle.storage.checkpoint-completed', (e) => {
+        this.writeSegmentImages(e.payload.deviceId);
+        this.refreshControlFiles(e.payload.deviceId);
       }),
 
       this.bus.subscribe('oracle.storage.tablespace-encrypted', (e) => {
@@ -220,6 +235,7 @@ export class OracleFilesystemSync {
           this.markDatafileMaterialized(e.payload.deviceId, df.path);
           writeAsOracle(dev, df.path, ts ? datafileContent(ts, df) : `[ORACLE ${e.payload.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE'} - ${e.payload.name} tablespace - ${df.size}]`);
         }
+        this.refreshControlFiles(e.payload.deviceId);
       }),
 
       this.bus.subscribe('oracle.storage.datafile-added', (e) => {
@@ -229,12 +245,13 @@ export class OracleFilesystemSync {
         this.markDatafileMaterialized(e.payload.deviceId, e.payload.path);
         const df = { path: e.payload.path, size: e.payload.size };
         writeAsOracle(dev, e.payload.path, ts ? datafileContent(ts, df) : `[ORACLE ${e.payload.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE'} - ${e.payload.tablespace} tablespace - ${e.payload.size}]`);
+        this.refreshControlFiles(e.payload.deviceId);
       }),
 
       this.bus.subscribe('oracle.asm.disk-added', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
-        writeAsOracle(dev, 
+        writeAsOracle(dev,
           e.payload.path,
           `[ASM DISK ${e.payload.diskName} - diskgroup ${e.payload.diskgroup} - ${e.payload.sizeMb}M]`,
         );
@@ -255,7 +272,7 @@ export class OracleFilesystemSync {
       this.bus.subscribe('oracle.instance.parameter-file-requested', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
-        writeAsOracle(dev, 
+        writeAsOracle(dev,
           e.payload.outputPath,
           renderParameterFile(e.payload.target, e.payload.params),
         );
@@ -284,9 +301,12 @@ export class OracleFilesystemSync {
       this.bus.subscribe('oracle.archive-log.created', (e) => {
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
-        writeAsOracle(dev, 
+        writeAsOracle(dev,
           e.payload.path,
-          `[ORACLE ARCHIVED REDO LOG - sequence ${e.payload.sequence}]`,
+          renderBackupPieceImage(
+            `[ORACLE ARCHIVED REDO LOG - sequence ${e.payload.sequence}]`,
+            { datafiles: this.segmentImages(e.payload.deviceId), scn: e.payload.scn },
+          ) + renderRedoStream(e.payload.redo as readonly RedoRecord[]),
         );
       }),
 
@@ -306,7 +326,7 @@ export class OracleFilesystemSync {
         const storage = db?.storage as import('@/database/oracle/OracleStorage').OracleStorage | undefined;
         const ts = storage?.getTablespace(e.payload.tablespace);
         const typeLabel = ts?.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
-        writeAsOracle(dev, 
+        writeAsOracle(dev,
           e.payload.path,
           `[ORACLE ${typeLabel} - ${e.payload.tablespace} tablespace - ${e.payload.size}]`,
         );
@@ -334,7 +354,7 @@ export class OracleFilesystemSync {
         this.auditCounters.set(e.payload.deviceId, seq);
         const fname = `${e.payload.sid.toLowerCase()}_ora_${e.payload.sessionId}_${seq}.aud`;
         const dbid = this.ctx.resolveDatabase(e.payload.deviceId)?.instance.getDbId() ?? 0;
-        writeAsOracle(dev, 
+        writeAsOracle(dev,
           `${ORACLE_CONFIG.BASE}/admin/${e.payload.sid}/adump/${fname}`,
           renderConnectionAud(e.payload, dbid),
         );
@@ -379,7 +399,7 @@ export class OracleFilesystemSync {
         const df = ts?.datafiles.find(d => d.path === e.payload.newPath);
         const typeLabel = ts?.type === 'TEMPORARY' ? 'TEMPFILE' : 'DATAFILE';
         const size = df?.size ?? '0M';
-        writeAsOracle(dev, 
+        writeAsOracle(dev,
           e.payload.newPath,
           `[ORACLE ${typeLabel} - ${e.payload.tablespace} tablespace - ${size}]`,
         );
@@ -481,6 +501,7 @@ export class OracleFilesystemSync {
     for (const ctl of db.instance.getControlFilePaths()) {
       this.markDatafileMaterialized(deviceId, ctl);
     }
+    this.refreshControlFiles(deviceId);
   }
 
   private syncDatafiles(deviceId: string): void {
@@ -521,8 +542,81 @@ export class OracleFilesystemSync {
     db.instance.getControlFilePaths().forEach((f, i) => {
       if (seen.has(f)) return;
       seen.add(f);
-      writeAsOracle(dev, f, `[ORACLE CONTROL FILE ${i + 1}]`);
+      writeAsOracle(dev, f, controlFileBody(i, mergeControlFileImage(null, this.controlFileStructure(deviceId))));
     });
+    this.refreshControlFiles(deviceId);
+  }
+
+  private controlFileStructure(deviceId: string): ControlFileStructure {
+    const db = this.ctx.resolveDatabase(deviceId);
+    if (!db) return { dbName: '', dbId: 0, datafiles: [] };
+    const storage = db.storage as import('@/database/oracle/OracleStorage').OracleStorage;
+    return controlFileStructureOf(
+      db.instance.getParameter('db_name') ?? '', db.instance.getDbId(), storage.listDatafiles());
+  }
+
+  private refreshControlFiles(deviceId: string): void {
+    const dev = this.dev(deviceId);
+    const db = this.ctx.resolveDatabase(deviceId);
+    if (!dev || !db) return;
+    const structure = this.controlFileStructure(deviceId);
+    db.instance.getControlFilePaths().forEach((path, index) => {
+      const current = this.readAsOracle(dev, path);
+      if (current === null) return;
+      const merged = mergeControlFileImage(parseControlFileImage(current), structure);
+      writeAsOracle(dev, path, controlFileBody(index, merged));
+    });
+  }
+
+  private segmentImages(deviceId: string): Record<string, string> {
+    const db = this.ctx.resolveDatabase(deviceId);
+    if (!db) return {};
+    const storage = db.storage as import('@/database/oracle/OracleStorage').OracleStorage;
+    const out: Record<string, string> = {};
+    for (const ts of storage.getAllTablespaces()) {
+      if (ts.type === 'TEMPORARY' || ts.encrypted) continue;
+      const df = ts.datafiles[0];
+      if (!df) continue;
+      out[df.path] = renderDatafileImage(
+        datafileContent(ts, df), storage.serializeTablespace(ts.name));
+    }
+    return out;
+  }
+
+  private writeSegmentImages(deviceId: string): void {
+    const dev = this.dev(deviceId);
+    if (!dev) return;
+    for (const [path, body] of Object.entries(this.segmentImages(deviceId))) {
+      if (!this.fileExists(dev, path)) continue;
+      writeAsOracle(dev, path, body);
+    }
+  }
+
+  private loadSegmentImages(deviceId: string): void {
+    const dev = this.dev(deviceId);
+    const db = this.ctx.resolveDatabase(deviceId);
+    if (!dev || !db) return;
+    const storage = db.storage as import('@/database/oracle/OracleStorage').OracleStorage;
+    for (const ts of storage.getAllTablespaces()) {
+      if (ts.type === 'TEMPORARY' || ts.encrypted) continue;
+      const df = ts.datafiles[0];
+      if (!df) continue;
+      const payload = parseDatafileImage(this.readAsOracle(dev, df.path));
+      if (payload) storage.loadTablespace(payload);
+    }
+  }
+
+  private fileExists(dev: FsEquipment, path: string): boolean {
+    return this.readAsOracle(dev, path) !== null;
+  }
+
+  private readAsOracle(dev: FsEquipment, path: string): string | null {
+    const reader = dev as unknown as {
+      readFileAsOracle?: (p: string) => string | null;
+      readFileForEditor?: (p: string) => string | null;
+    };
+    if (typeof reader.readFileAsOracle === 'function') return reader.readFileAsOracle(path);
+    return reader.readFileForEditor?.(path) ?? null;
   }
 
   private reencryptTablespaceDatafiles(deviceId: string, tablespaceName: string): void {

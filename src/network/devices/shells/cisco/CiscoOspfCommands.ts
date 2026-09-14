@@ -36,6 +36,7 @@ import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
+import { toutesLesSuites } from './ciscoContinuations';
 
 const OSPF_METRIC_MAX = 16777214;
 const OSPF_TIMER_MAX_MS = 600000;
@@ -758,6 +759,7 @@ export function ospfInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
       modes: MODES_INTERFACE, minPrivilege: 15,
       undoFromNegatedPaths: true,
       argumentFor: (path) => OSPF_IF_ARGUMENTS[path],
+      keywordsFor: toutesLesSuites,
     },
   );
 }

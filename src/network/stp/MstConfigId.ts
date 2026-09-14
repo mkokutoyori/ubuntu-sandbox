@@ -49,17 +49,24 @@ export function sameMstRegion(a: MstConfigIdentifier, b: MstConfigIdentifier): b
   return a.name === b.name && a.revision === b.revision && a.digest === b.digest;
 }
 
+export function formatVlanRanges(vlans: Iterable<number>): string {
+  const tries = [...new Set(vlans)].sort((a, b) => a - b);
+  const ranges: string[] = [];
+  let debut: number | null = null;
+  let dernier = 0;
+  for (const vlan of tries) {
+    if (debut !== null && vlan === dernier + 1) { dernier = vlan; continue; }
+    if (debut !== null) ranges.push(debut === dernier ? `${debut}` : `${debut}-${dernier}`);
+    debut = vlan;
+    dernier = vlan;
+  }
+  if (debut !== null) ranges.push(debut === dernier ? `${debut}` : `${debut}-${dernier}`);
+  return ranges.join(',');
+}
+
 export function vlansMappedToInstanceZero(instances: ReadonlyMap<number, string>): string {
   const table = vlanToInstanceTable(instances);
-  const ranges: string[] = [];
-  let start: number | null = null;
-  for (let vlan = 1; vlan <= MAX_VID + 1; vlan++) {
-    const free = vlan <= MAX_VID && table[vlan] === 0;
-    if (free && start === null) start = vlan;
-    if (!free && start !== null) {
-      ranges.push(start === vlan - 1 ? `${start}` : `${start}-${vlan - 1}`);
-      start = null;
-    }
-  }
-  return ranges.join(',');
+  const libres: number[] = [];
+  for (let vlan = 1; vlan <= MAX_VID; vlan++) if (table[vlan] === 0) libres.push(vlan);
+  return formatVlanRanges(libres);
 }

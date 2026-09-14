@@ -4,7 +4,6 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
 import type { BfdSessionRuntime } from '../../../bfd/types';
 
 interface IfCtx {
@@ -146,21 +145,24 @@ function bfdEchoEnabled(router: Router, iface: string): boolean {
   return !router._getOSPFExtraConfig().pendingIfConfig.get(iface)?.bfdEchoDisabled;
 }
 
-export function registerBfdShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
-  trie.registerGreedy('show bfd neighbors', 'Display BFD sessions', (args) => {
-    const a = agent(ctx.r());
-    if (!a) return '';
-    let details = false;
-    for (const word of args) {
-      if (word === '') continue;
-      if (word === 'details') { details = true; continue; }
-      throw new CliInvalidInput({ token: word });
-    }
-    const lines = [BFD_NEIGHBORS_HEADER];
-    for (const s of a.listSessions()) {
-      lines.push(bfdNeighborRow(s));
-      if (details) lines.push(...bfdNeighborDetail(s, bfdEchoEnabled(ctx.r(), s.iface)));
-    }
-    return lines.join('\n');
-  });
+function bfdNeighborsView(ctx: ShowCtx, details: boolean): string {
+  const a = agent(ctx.r());
+  if (!a) return '';
+  const lines = [BFD_NEIGHBORS_HEADER];
+  for (const s of a.listSessions()) {
+    lines.push(bfdNeighborRow(s));
+    if (details) lines.push(...bfdNeighborDetail(s, bfdEchoEnabled(ctx.r(), s.iface)));
+  }
+  return lines.join('\n');
+}
+
+export function bfdShowSpecs(ctx: ShowCtx): CommandSpec[] {
+  return [{
+    id: 'show-bfd-neighbors',
+    path: ['show', 'bfd', 'neighbors'],
+    description: 'Display BFD sessions',
+    modes: ['user', 'privileged'], minPrivilege: 1,
+    options: [{ keyword: 'details', description: 'Detailed information' }],
+    run: (_session, args) => bfdNeighborsView(ctx, args.details !== undefined),
+  }];
 }

@@ -16,6 +16,7 @@ import { DbId } from '../values/DbId';
 import { ok, err, type Result } from '../core/Result';
 import type {
   IRmanOracleContext, DatafileInfo, VfsAdapter, ConnectTargetOutcome, RecordedBackupPiece,
+  SqlStatementOutcome,
 } from './IRmanOracleContext';
 import type { HostCapableDevice } from '@/network';
 import { resolveOracleConnectTarget } from '@/terminal/commands/oracleNet';
@@ -25,8 +26,10 @@ import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { getRegisteredOracleDatabase } from '@/terminal/commands/database';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { recoveryAreaUsage } from '@/database/oracle/storage/RecoveryArea';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 interface FsCapableEquipment {
+  executeShellCommandSync?(command: string): string;
   writeFileFromEditor(path: string, content: string, declaredSizeBytes?: number): boolean;
   writeFileAsOracle?(path: string, content: string, declaredSizeBytes?: number): boolean;
   freeDiskBytes?(): number;
@@ -43,6 +46,7 @@ export class LinuxRmanContext implements IRmanOracleContext {
   readonly dbId: DbId;
   readonly dbName: string;
   readonly vfs: VfsAdapter;
+  private _sysdbaExecutor: import('@/database/oracle/OracleExecutor').OracleExecutor | null = null;
 
   private constructor(
     private readonly _device: Equipment,
@@ -65,6 +69,25 @@ export class LinuxRmanContext implements IRmanOracleContext {
       ok: true,
       dbName: resolved.db.instance.config.sid,
       dbId: resolved.db.instance.getDbId(),
+      remote: resolved.remote,
+    };
+  }
+
+  static forTarget(
+    localDevice: Equipment,
+    identifier: string,
+  ): { ok: true; ctx: LinuxRmanContext; deviceId: string; remote: boolean }
+     | { ok: false; error: string } {
+    const resolved = resolveOracleConnectTarget(
+      localDevice as unknown as HostCapableDevice, identifier,
+      (id) => getRegisteredOracleDatabase(id) as OracleDatabase);
+    if (resolved.ok === false) return { ok: false, error: resolved.error };
+    const deviceId = resolved.db.instance.getDeviceId();
+    const targetDevice = EquipmentRegistry.getInstance().getById(deviceId) ?? localDevice;
+    return {
+      ok: true,
+      ctx: new LinuxRmanContext(targetDevice, resolved.db),
+      deviceId,
       remote: resolved.remote,
     };
   }
@@ -97,6 +120,30 @@ export class LinuxRmanContext implements IRmanOracleContext {
       { fileNo: 3, path: `${base}/undotbs01.dbf`, sizeBytes: 209_715_200, tablespace: 'UNDOTBS1' },
       { fileNo: 4, path: `${base}/users01.dbf`,   sizeBytes: 104_857_600, tablespace: 'USERS'    },
     ];
+  }
+
+  getCurrentScn(): number {
+    return this._oracle?.instance.getCurrentScn() ?? 0;
+  }
+
+  checkpointDatafiles(): void {
+    this._oracle?.instance.performCheckpoint();
+  }
+
+  runSqlStatement(statement: string): SqlStatementOutcome {
+    const oracle = this._oracle;
+    if (!oracle) return { ok: false, error: 'ORA-01034: ORACLE not available' };
+    try {
+      const executor = this._sysdbaExecutor
+        ?? (this._sysdbaExecutor = oracle.connectAsSysdba().executor);
+      const result = oracle.executeSql(executor, statement.replace(/;$/, ''));
+      const lines: string[] = [];
+      if (result.message) lines.push(...result.message.split('\n'));
+      for (const row of result.rows ?? []) lines.push(row.map(String).join(' '));
+      return { ok: true, lines: lines.map(l => l.trim()).filter(Boolean) };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
   }
 
   recordBackupPiece(piece: RecordedBackupPiece): void {
@@ -149,11 +196,19 @@ export class LinuxRmanContext implements IRmanOracleContext {
     return this._oracle?.instance.state ?? 'OPEN';
   }
 
+  getControlFilePaths(): ReadonlyArray<string> {
+    const declared = this._oracle?.instance.getControlFilePaths() ?? [];
+    return declared.length > 0 ? declared : [this.getControlFilePath()];
+  }
+
   getControlFilePath(): string {
     return `${ORADATA_BASE}/${this.dbName}/control01.ctl`;
   }
 
   getArchivelogPaths(): ReadonlyArray<string> {
+    const onDisk = this.vfs.listFilesRecursively?.(ORACLE_CONFIG.ARCHIVELOG_DIR)
+      ?.filter(p => p.endsWith('.arc')).sort() ?? [];
+    if (onDisk.length > 0) return onDisk;
     if (this._oracle) {
       return this._oracle.instance.getRuntimeState().archivedLogs.map(l => l.name);
     }
@@ -166,10 +221,12 @@ export class LinuxRmanContext implements IRmanOracleContext {
     const read = (path: string): string | null =>
       dev.readFileForEditor?.(path) ?? dev.readFile?.(path) ?? null;
     return {
-      writeFile: (path, _data, declaredSizeBytes): Result<void, RmanError> => {
+      writeFile: (path, data, declaredSizeBytes): Result<void, RmanError> => {
         try {
-          const size = declaredSizeBytes ?? _data.length;
-          const body = `[ORACLE RMAN BACKUP PIECE - ${size} bytes]`;
+          const size = declaredSizeBytes ?? data.length;
+          const body = data.length > 0
+            ? new TextDecoder().decode(data)
+            : `[ORACLE RMAN BACKUP PIECE - ${size} bytes]`;
           const written = dev.writeFileAsOracle
             ? dev.writeFileAsOracle(path, body, size)
             : dev.writeFileFromEditor(path, body, size);
@@ -208,6 +265,14 @@ export class LinuxRmanContext implements IRmanOracleContext {
         }
       },
       availableBytes: () => dev.freeDiskBytes?.() ?? 10_737_418_240,
+      listFilesRecursively: (dir): ReadonlyArray<string> => {
+        const lister = dev as unknown as {
+          executeShellCommandSync?: (cmd: string) => string;
+        };
+        if (typeof lister.executeShellCommandSync !== 'function') return [];
+        const out = lister.executeShellCommandSync(`find ${dir} -type f`);
+        return out.split('\n').map(l => l.trim()).filter(l => l.startsWith('/'));
+      },
       ensureDirectory: (path): Result<void, RmanError> => {
         if (!dev.makeDirectoryAsOracle) return ok(undefined);
         if (dev.makeDirectoryAsOracle(path)) return ok(undefined);

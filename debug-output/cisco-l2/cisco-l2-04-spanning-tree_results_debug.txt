@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-04-spanning-tree
-Generated: 2026-09-13T11:34:51.772Z
+Generated: 2026-09-14T11:13:26.975Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=PVST/RPVST/MST modes, root/priority, portfast/guards, MST region, topology change
 Total steps: 363
@@ -1030,14 +1030,12 @@ Total steps: 363
 <empty>
 
 [213/363] sw1 SW1(config-mst)# show current
-  Name      [REGION1]
-  Revision  5     Instances configured 3
+  Name      []
+  Revision  0     Instances configured 1
   -------------------------------------------------------------
   Instance  Vlans mapped
   --------  -------------------------------------------------
-  0         1-9,11-19,21-29,31-39,41-49,51-59,61-4094
-  1         10,20,30
-  2         40,50,60
+  0         1-4094
 
 [214/363] sw1 SW1(config-mst)# show pending
   Name      [REGION1]
@@ -1597,10 +1595,10 @@ Total steps: 363
 <empty>
 
 [272/363] sw1 SW1(config-if)# shutdown
-  *11:34:54: STP: VLAN0001 Fa0/3 -> disabled
+  *11:13:29: STP: VLAN0001 Fa0/3 -> disabled
 
 [273/363] sw1 SW1(config-if)# no shutdown
-  *11:34:54: STP: VLAN0001 Fa0/3 -> forwarding
+  *11:13:29: STP: VLAN0001 Fa0/3 -> forwarding
 
 [274/363] sw1 SW1(config-if)# end
 <empty>
@@ -1715,12 +1713,12 @@ Total steps: 363
 
 [289/363] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=3.735 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.039 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=3.711 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.000 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.039/2.387/3.735/1.348 ms
+  rtt min/avg/max/mdev = 1.000/2.356/3.711/1.356 ms
 
 [290/363] sw1 SW1# show running-config
   Building configuration...
@@ -2444,7 +2442,7 @@ Total steps: 363
        Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       35 packets output, 2440 bytes, 0 underruns
+       33 packets output, 2312 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2465,7 +2463,7 @@ Total steps: 363
        Received 1 broadcasts (3 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       32 packets output, 2210 bytes, 0 underruns
+       30 packets output, 2082 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2486,7 +2484,7 @@ Total steps: 363
        Received 1 broadcasts (2 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       31 packets output, 2162 bytes, 0 underruns
+       29 packets output, 2034 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

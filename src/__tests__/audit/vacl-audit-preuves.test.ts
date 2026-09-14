@@ -164,13 +164,20 @@ describe('VACL — non-regression', () => {
     expect(config).not.toContain('capture');
   });
 
+  /*
+   * Le CONSTAT tient — la plage 0-65535 documentee est bien appliquee —
+   * mais la phrase a change : `% Invalid sequence number` etait ecrite a
+   * la main par le glouton de l'arbre, et la migration de la famille au
+   * socle rend desormais le refus d'IOS, au caret. Ce que ce cas doit
+   * epingler est le REFUS, pas une formule inventee.
+   */
   it('W-05 a sequence outside 0-65535 is refused', async () => {
     const { device, out } = await switchOnly([
       'enable', 'configure terminal',
       'vlan access-map M 70000', 'vlan access-map N abc', 'vlan access-map P 65535',
     ]);
-    expect(out[2]).toContain('Invalid sequence number');
-    expect(out[3]).toContain('Invalid sequence number');
+    expect(out[2]).toContain('Invalid input');
+    expect(out[3]).toContain('Invalid input');
     expect(out[4]).toBe('');
     expect(device.getVlanAccessMapNames()).toEqual(['P']);
   });

@@ -1143,10 +1143,15 @@ Voir F1.10.
   commande sort avec 0, l'opérateur n'a aucun message d'erreur — c'est
   précisément ce qui rend la panne déroutante.
 - **Cause modélisée.** Un montage réseau dont le serveur a disparu, comme
-  annoncé. **Aucun protocole NFS n'est implémenté** : ce qui décide, c'est
-  que le serveur soit encore atteignable à travers les vrais câbles depuis
-  cette machine (`findHostByAddress`), le fait physique que le simulateur
-  connaît vraiment. `MountEntry.serverHost` porte l'hôte de `host:/export`.
+  annoncé. Ce qui décide, c'est que le serveur soit encore atteignable à
+  travers les vrais câbles depuis cette machine (`findHostByAddress`), le
+  fait physique que le simulateur connaît vraiment. `MountEntry.serverHost`
+  porte l'hôte de `host:/export`. *(La phrase « aucun protocole NFS n'est
+  implémenté » qui figurait ici n'est plus vraie : `src/network/nfs/` porte
+  NFSv3, MOUNT v3 et portmap sur le fil, et un accès sous un montage
+  réseau traverse réellement le réseau. La détection de serveur disparu
+  reste celle décrite ci-dessus — elle répond à une question physique, pas
+  protocolaire.)*
 - **Limite assumée.** Un accès au PREMIER PLAN ne fige pas le shell : la
   chaîne d'exécution est synchrone de bout en bout (même mur que
   `SELECT … FOR UPDATE` côté Oracle). La forme observable est l'accès lancé

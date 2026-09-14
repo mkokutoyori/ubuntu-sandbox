@@ -15,12 +15,22 @@ import {
   DeviceCatalogRegistry,
   type IRmanOracleContext, type RmanEvent,
 } from '@/terminal/subshells/rman';
+import { renderControlFileImage } from '@/database/oracle/storage/ControlFileImage';
+
+// Depuis le lot R5, RESTORE CONTROLFILE LIT la pièce et refuse ce qui
+// n'est pas une copie valide du fichier de contrôle (RMAN-06172, dans les
+// mots mêmes d'Oracle). Le double doit donc rendre une vraie image, là où
+// un Uint8Array vide suffisait quand la commande ne faisait qu'imprimer.
+const AUTOBACKUP_PIECE = new TextEncoder().encode(renderControlFileImage(
+  '[ORACLE RMAN BACKUP PIECE - 9650176 bytes]',
+  { dbName: 'ORCL', dbId: DbId.DEFAULT.value, datafiles: [], backupSets: [] },
+));
 
 function ctx(state: 'OPEN' | 'MOUNT' | 'NOMOUNT' | 'SHUTDOWN'): IRmanOracleContext {
   return {
     dbId: DbId.DEFAULT, dbName: 'ORCL',
     vfs: {
-      writeFile: () => ok(undefined), readFile: () => ok(new Uint8Array(0)),
+      writeFile: () => ok(undefined), readFile: () => ok(AUTOBACKUP_PIECE),
       fileExists: () => true, deleteFile: () => ok(undefined), availableBytes: () => 1e10,
     },
     getDatafiles: () => [

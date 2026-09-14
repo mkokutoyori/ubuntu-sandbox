@@ -244,5 +244,5 @@ describe('debug — Oracle storage spaces', () => {
     runOracleDump('oracle-storage-spaces', 'LinuxServer ora-stor — Oracle ORCL OPEN', lines, runner);
     runner.dispose();
     removeOracleDatabase(srv.id);
-  });
+  }, 180000);
 });

@@ -1,4 +1,3 @@
-import { CISCO_ERRORS } from '../cli-utils';
 
 /**
  * Shared Cisco IOS `ping` helpers.
@@ -77,11 +76,6 @@ export function looksLikeIPv6(target: string): boolean {
     && (target.match(/::/g)?.length ?? 0) <= 1;
 }
 
-/**
- * Parse the tail of an IOS `ping <target> [repeat N] [timeout S] [size B]
- * [source X]` command. Returns an `error` string (IOS-worded) when the
- * target is absent or not a dotted-quad.
- */
 export function estUneAdresseLitterale(target: string): boolean {
   const t = target.trim();
   if (t.length === 0) return false;
@@ -90,73 +84,22 @@ export function estUneAdresseLitterale(target: string): boolean {
   return m !== null && [+m[1], +m[2], +m[3], +m[4]].every((o) => o <= 255);
 }
 
-export function parsePingArgs(args: string[]): ParsedPing {
-  const base: ParsedPing = {
-    target: '', count: 5, timeoutMs: 2000, sizeBytes: 100, sourceIP: null, protocol: 'ip',
-  };
-  if (args.length === 0) {
-    return { ...base, error: '% Ping requires a target IP address.' };
-  }
+export const UNKNOWN_TARGET = '% Unrecognized host or address, or protocol not running.';
 
-  let i = 0;
-  // `ping ip <addr>` and `ping ipv6 <addr>` name the protocol first; the
-  // keyword only says which family follows, never which target.
-  const first = args[0]?.trim().toLowerCase();
-  if (first === 'ipv6' || first === 'ip') {
-    base.protocol = first === 'ipv6' ? 'ipv6' : 'ip';
-    i++;
-    if (i >= args.length) {
-      return { ...base, error: '% Ping requires a target IP address.' };
-    }
+export function resolveTargetFamily(
+  target: string, announced: 'ip' | 'ipv6',
+): { protocol: 'ip' | 'ipv6' } | { error: string } {
+  if (announced === 'ipv6' || looksLikeIPv6(target)) {
+    if (!looksLikeIPv6(target)) return { error: UNKNOWN_TARGET };
+    return { protocol: 'ipv6' };
   }
-  base.target = args[i++]?.trim() || '';
-
-  const COMPTEURS: Readonly<Record<string, (n: number) => void>> = {
-    repeat: (n) => { base.count = n; },
-    timeout: (n) => { base.timeoutMs = n * 1000; },
-    size: (n) => { base.sizeBytes = n; },
-  };
-
-  while (i < args.length) {
-    const kw = args[i]?.toLowerCase() ?? '';
-    if (kw === 'source') {
-      if (!args[i + 1]) return { ...base, error: CISCO_ERRORS.INCOMPLETE };
-      base.sourceIP = args[i + 1];
-      i += 2;
-      continue;
-    }
-    const poser = COMPTEURS[kw];
-    if (!poser) return { ...base, error: CISCO_ERRORS.INVALID_INPUT, badToken: args[i] };
-    if (!args[i + 1]) return { ...base, error: CISCO_ERRORS.INCOMPLETE };
-    const n = parseInt(args[i + 1], 10);
-    if (isNaN(n) || n <= 0 || !/^\d+$/.test(args[i + 1])) {
-      return { ...base, error: CISCO_ERRORS.INVALID_INPUT, badToken: args[i + 1] };
-    }
-    poser(n);
-    i += 2;
+  const quatuor = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  const ressembleAUneAdresse = /^[\d.]+$/.test(target);
+  if (ressembleAUneAdresse
+    && (!quatuor || [+quatuor[1], +quatuor[2], +quatuor[3], +quatuor[4]].some(o => o > 255))) {
+    return { error: UNKNOWN_TARGET };
   }
-
-  if (!base.target) {
-    return { ...base, error: '% Ping requires a target IP address.' };
-  }
-  if (base.protocol === 'ipv6' || looksLikeIPv6(base.target)) {
-    if (!looksLikeIPv6(base.target)) {
-      return { ...base, error: '% Unrecognized host or address, or protocol not running.' };
-    }
-    base.protocol = 'ipv6';
-  } else {
-    const m = base.target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    const ressembleAUneAdresse = /^[\d.]+$/.test(base.target);
-    if (ressembleAUneAdresse && (!m || [+m[1], +m[2], +m[3], +m[4]].some(o => o > 255))) {
-      return { ...base, error: '% Unrecognized host or address, or protocol not running.' };
-    }
-  }
-  // Practical simulator bounds (the probes are driven synchronously): a
-  // multi-million `repeat` is rejected like an out-of-range IOS parameter.
-  if (base.count > MAX_PING_REPEAT) {
-    return { ...base, error: "% Invalid input detected at '^' marker." };
-  }
-  return base;
+  return { protocol: 'ip' };
 }
 
 /**

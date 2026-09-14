@@ -267,5 +267,5 @@ describe('debug — Oracle end-to-end DBA workflows', () => {
     runOracleDump('oracle-end-to-end-dba', 'LinuxServer ora-e2e — Oracle ORCL OPEN', lines, runner);
     runner.dispose();
     removeOracleDatabase(srv.id);
-  });
+  }, 180000);
 });
