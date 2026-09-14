@@ -247,6 +247,13 @@ un serveur de sauvegarde
 | **[G]** `BACKUP … FORMAT '/mnt/backup_nfs/%U'` | `Finished backup`, `piece handle=/mnt/backup_nfs/ORCL_…` |
 | **[H]** ce chemin, vu du serveur de sauvegarde | `No such file or directory` |
 
+> **[G]/[H] sont FERMÉS** par le lot NFS (voir §5.1). La mesure est
+> désormais : `piece handle=/mnt/backup_nfs/01tlcvep_1_1`, et `ls
+> /srv/backup` **sur le serveur de sauvegarde** rend cette pièce. Les
+> octets traversent le routeur puis le pare-feu ; politique passée à
+> `deny`, le montage ne se fait plus. Sonde :
+> `nfs-montage-reseau-reel`, 8 cas discriminants sur 10 (voir §5.2).
+
 **[A]/[B]/[E] sont le témoin, et ils rendent le reste opposable.** Le
 pare-feu de ce laboratoire bloque réellement : sans politique il jette,
 avec `ACCEPT` il achemine, avec `DENY` il jette de nouveau. Que **[C]**
@@ -294,7 +301,8 @@ L'ordre n'est pas négociable : chaque lot a besoin du précédent.
 | **R5b** | ~~La limite nommée de R5 : une base fraîche n'avait qu'une **bannière** dans son fichier de contrôle~~ **FAIT** — plus le §6 mesuré à côté : `V$CONTROLFILE_RECORD_SECTION.RECORDS_USED` valait `RECORDS_TOTAL/10` et contredisait `V$DATAFILE` ; chaque section délègue désormais à la vue qui énumère ses enregistrements | applicative | le fichier de contrôle devient la trace de la structure, pas seulement du répertoire RMAN |
 | **R6** | ~~FRA réelle : `V$RECOVERY_FILE_DEST`, nom OMF, propriété `oracle`, quota, substitutions de FORMAT, vues V$ alimentées~~ **FAIT** | OS | petit lot, forte fidélité |
 | **R7** | `CONNECT TARGET …@tns` **sur le fil** | réseau | referme la violation du §4 |
-| **R8** | Catalogue distant, `DUPLICATE`, transfert des pièces entre sites | réseau | le laboratoire DR devient réel |
+| **R8a** | ~~**Transfert des pièces entre sites**~~ **FAIT** — NFSv3 réel (XDR, ONC RPC, portmap, mountd, nfsd) plus son branchement : une pièce écrite sous un montage réseau est sur le disque du SERVEUR | réseau | ferme [G]/[H], la dernière violation du §4 sur le chemin de sauvegarde |
+| **R8b** | Catalogue distant (`CONNECT CATALOG`) et `DUPLICATE` | réseau | le laboratoire DR devient complet |
 
 ### 5.0 Lot R2b — la cible distante (fermé)
 
@@ -386,3 +394,42 @@ L'architecture RMAN est en place et bien faite ; ce qui manque n'est pas
 dans RMAN mais **sous** lui — une base dont les fichiers contiennent
 quelque chose — et **à côté** de lui — un réseau que ses connexions
 traversent vraiment.
+
+### 5.2 Lot NFS — le montage réseau porte vraiment les octets (fermé)
+
+Le transfert des pièces entre sites (item 3 du lot R8) n'était pas un
+manque de RMAN mais une couche plus bas. `PRD-Pannes.md` le disait en
+toutes lettres : **« aucun protocole NFS n'est implanté »**. Conséquence
+mesurée dans le laboratoire routeur + pare-feu :
+
+| | avant | après |
+|---|---|---|
+| `exportfs -a` | `command not found` | silencieux, comme le vrai |
+| `systemctl start nfs-kernel-server` | `Unit not found` | démarre |
+| `ss -ltn` sur le serveur | rien sur 111/2049/20048 | les trois écoutent |
+| `showmount -e <serveur>` | `command not found` | `Export list for …` |
+| `mount -t nfs <serveur>:/srv/absent` | `rc=0` | `mount.nfs: … No such file or directory` |
+| `echo X > /mnt/backup_nfs/f` puis `cat` **sur le serveur** | `No such file or directory` | `X` |
+| `BACKUP … FORMAT '/mnt/backup_nfs/%U'` | pièce dans la FRA **locale** | `piece handle=/mnt/backup_nfs/…`, présente sur le serveur |
+
+**L'autorité.** NFS est un standard ouvert adopté, donc les RFC sont bien
+la référence (RFC 1813, 5531, 4506, 1833 ; 2049 et 111 à l'IANA). Leur
+texte est **injoignable** depuis la machine de développement — le
+mandataire refuse rfc-editor.org, ietf.org, datatracker.ietf.org,
+tools.ietf.org, et les miroirs hjp.at et freesoft.org. Les nombres et la
+disposition viennent donc de l'implantation de référence, qui est
+joignable et qui *est* ce que le fil porte : `include/uapi/linux/nfs3.h`,
+`include/uapi/linux/nfs.h`, `include/linux/sunrpc/msg_prot.h`, et
+`fs/nfsd/nfs3xdr.c` pour la disposition exacte (fattr3 en 21 unités XDR,
+wcc_attr en 6).
+
+**Le point étroit.** `RemoteMountPort` dans le VFS, jumeau de
+`setReadOnlyResolver` : le VFS ne connaît pas le réseau, il connaît un
+port. C'est ce qui fait que `cat`, `echo >`, `ls`, `mv`, `rm` **et**
+l'écriture de pièce de RMAN traversent tous le fil sans qu'aucun d'eux
+n'ait été touché.
+
+**Trouvé en chemin, et fermé.** `FORMAT "…"` entre guillemets doubles
+était accepté et silencieusement ignoré — la sauvegarde partait dans la
+FRA sous un autre nom que celui demandé (§6). `TAG` et `KEEP UNTIL TIME`
+avaient le même défaut.

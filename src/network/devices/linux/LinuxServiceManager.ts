@@ -418,6 +418,25 @@ const SERVER_UNITS: DefaultUnit[] = [
     enabledByDefault: false,
   },
   {
+    name: 'rpcbind',
+    description: 'RPC bind portmap service',
+    type: 'forking',
+    execStart: '/sbin/rpcbind -f -w',
+    user: '_rpc',
+    after: ['network.target'],
+    enabledByDefault: false,
+  },
+  {
+    name: 'nfs-kernel-server',
+    description: 'NFS server and services',
+    type: 'oneshot',
+    execStart: '/usr/sbin/rpc.nfsd',
+    execReload: '/usr/sbin/exportfs -r',
+    user: 'root',
+    after: ['network.target', 'rpcbind.service'],
+    enabledByDefault: false,
+  },
+  {
     name: 'nginx',
     description: 'A high performance web server and a reverse proxy server',
     type: 'forking',
@@ -518,6 +537,11 @@ export const SERVICE_LISTENERS: Readonly<Record<string, ServiceListenerSpec>> = 
   },
   mysql: { processName: 'mysqld', sockets: [{ port: 3306, protocol: 'tcp' }] },
   postgresql: { processName: 'postgres', sockets: [{ port: 5432, protocol: 'tcp' }] },
+  rpcbind: { processName: 'rpcbind', sockets: [{ port: 111, protocol: 'tcp' }] },
+  'nfs-kernel-server': {
+    processName: 'nfsd',
+    sockets: [{ port: 2049, protocol: 'tcp' }, { port: 20048, protocol: 'tcp' }],
+  },
   'oracle-ohasd': { processName: 'tnslsnr', sockets: [{ port: 1521, protocol: 'tcp' }] },
 };
 

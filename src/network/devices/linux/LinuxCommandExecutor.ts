@@ -80,6 +80,16 @@ import { cmdIostat } from './system/Iostat';
 import { cmdPidstat } from './system/Pidstat';
 import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './system/Dstat';
 import { MountTable, MountEntry } from './MountTable';
+import type { LinuxNfsService } from './nfs/LinuxNfsService';
+import { MOUNTD_PORT } from './nfs/LinuxNfsService';
+import type { NfsMountedFileSystem } from '@/network/nfs/NfsMountedFileSystem';
+import { NfsClient, TcpRpcTransport } from '@/network/nfs/NfsClient';
+import { MOUNT_PROGRAM, MOUNT_V3, MountStatus } from '@/network/nfs/wire/NfsConstants';
+import { MOUNT_STATUS_REASON } from './nfs/LinuxNfsService';
+import {
+  renderExportList, renderExportsSource, renderShowmountDirectories,
+  renderShowmountExports, renderShowmountHosts, renderShowmountMounts,
+} from './nfs/NfsCommands';
 import { FSTAB_PATH, renderFstab } from './fs/FstabFile';
 import { SysfsTree } from './Sysfs';
 import { cmdNetstat, cmdWget } from './LinuxNetCommands';
@@ -423,6 +433,8 @@ export class LinuxCommandExecutor {
 
   /** Le nginx de cette machine, pour la commande `nginx` (docs/PRD-Nginx.md §P2). */
   nginxService: NginxControl | null = null;
+  nfsService: LinuxNfsService | null = null;
+  nfsMounts: NfsMountedFileSystem | null = null;
   /** Le recepteur rsyslog — voir `docs/PRD-Rsyslog.md`. */
   rsyslogService: import('./syslog/LinuxRsyslogService').LinuxRsyslogService | null = null;
 
@@ -2437,9 +2449,9 @@ export class LinuxCommandExecutor {
 
   /**
    * Le montage réseau MORT qui recouvre ce chemin, s'il y en a un
-   * (docs/PRD-Pannes.md §F5.7). Aucun protocole NFS n'est implémenté : ce
-   * qui décide, c'est que le serveur soit encore joignable dans la
-   * topologie — le fait physique que le simulateur connaît vraiment.
+   * (docs/PRD-Pannes.md §F5.7). Ce qui décide, c'est que le serveur soit
+   * encore joignable dans la topologie — le fait physique que le
+   * simulateur connaît vraiment.
    */
   staleNetworkMount(path: string): MountEntry | null {
     const probe = this.mountServerReachable;
@@ -3900,6 +3912,10 @@ export class LinuxCommandExecutor {
     }
     if (!this.vfs.exists(target)) return { output: `mount: ${positionals[1]}: No such file or directory`, exitCode: 32 };
     if (fake) return { output: '', exitCode: 0 }; // validated only — no mount syscall, no state change
+    if (isNetworkSource && /^nfs/.test(fstype ?? '')) {
+      const refusal = this.attachNfsExport(source, target, options);
+      if (refusal) return { output: refusal, exitCode: 32 };
+    }
     const entry = this.mountTable.mount(new MountEntry({
       source,
       target,
@@ -3908,6 +3924,117 @@ export class LinuxCommandExecutor {
     }));
     this.publishMountEvent('linux.mount.mounted', entry);
     return { output: '', exitCode: 0 };
+  }
+
+  private nfsClient(): NfsClient | null {
+    const stack = (this.localDevice as { getTcpStack?: () => TcpStack } | null)?.getTcpStack?.();
+    if (!stack) return null;
+    const machineName = (this.localDevice as { getHostname?: () => string } | null)
+      ?.getHostname?.() ?? 'localhost';
+    return new NfsClient(new TcpRpcTransport(stack), { machineName, uid: 0, gid: 0, gids: [] });
+  }
+
+  private attachNfsExport(source: string, target: string, options: string[]): string | null {
+    const mounts = this.nfsMounts;
+    if (!mounts) return `mount.nfs: ${source} is not a supported filesystem on this host`;
+    const split = source.indexOf(':');
+    const host = source.slice(0, split);
+    const exportPath = source.slice(split + 1);
+    const resolved = this.resolveMountServer(host);
+    if (!resolved) {
+      return `mount.nfs: Failed to resolve server ${host}: Name or service not known`;
+    }
+    const client = this.nfsClient();
+    if (!client) return `mount.nfs: ${source} is not a supported filesystem on this host`;
+    const mountdPort = client.queryPort(resolved, MOUNT_PROGRAM, MOUNT_V3) || MOUNTD_PORT;
+    const outcome = client.mount(resolved, exportPath, mountdPort);
+    if (!(outcome instanceof Uint8Array)) {
+      return outcome === MountStatus.MNT3ERR_ACCES
+        ? `mount.nfs: access denied by server while mounting ${source}`
+        : `mount.nfs: mounting ${source} failed, reason given by server: `
+          + `${MOUNT_STATUS_REASON[outcome] ?? 'Remote I/O error'}`;
+    }
+    mounts.attach({
+      mountPoint: target,
+      server: resolved,
+      exportPath,
+      rootHandle: outcome,
+      readOnly: options.includes('ro'),
+    });
+    return null;
+  }
+
+  private resolveMountServer(host: string): IPAddress | null {
+    if (IPAddress.isValid(host)) return new IPAddress(host);
+    const found = this.nss.lookup<NssHostEntry[]>('hosts', (src) => src.gethostbyname?.(host, 2));
+    if (found.status !== 'SUCCESS' || !found.entry) return null;
+    for (const entry of found.entry) {
+      if (entry.addressFamily === 2 && IPAddress.isValid(entry.address)) {
+        return new IPAddress(entry.address);
+      }
+    }
+    return null;
+  }
+
+  handleExportfs(args: string[]): { output: string; exitCode: number } {
+    const service = this.nfsService;
+    if (!service) return { output: 'exportfs: command not found', exitCode: 127 };
+    const flags = args.filter((a) => a.startsWith('-')).join('');
+    const targets = args.filter((a) => !a.startsWith('-'));
+    if (flags.includes('u')) {
+      if (targets.length === 0) {
+        service.unexportAll();
+        return { output: '', exitCode: 0 };
+      }
+      const path = targets[0].includes(':') ? targets[0].split(':')[1] : targets[0];
+      if (!service.unexport(path)) {
+        return { output: `exportfs: Could not find '${targets[0]}' to unexport.`, exitCode: 1 };
+      }
+      return { output: '', exitCode: 0 };
+    }
+    if (flags.includes('a') || flags.includes('r')) {
+      service.reloadExports();
+      return { output: flags.includes('v') ? renderExportList(service.publishedExports(), true) : '', exitCode: 0 };
+    }
+    if (flags.includes('s')) {
+      return { output: renderExportsSource(service.publishedExports()), exitCode: 0 };
+    }
+    return { output: renderExportList(service.publishedExports(), flags.includes('v')), exitCode: 0 };
+  }
+
+  handleShowmount(args: string[]): { output: string; exitCode: number } {
+    const flags = args.filter((a) => a.startsWith('-')).join('');
+    const host = args.find((a) => !a.startsWith('-')) ?? 'localhost';
+    const client = this.nfsClient();
+    const server = this.resolveMountServer(host);
+    if (!client || !server) {
+      return { output: `clnt_create: RPC: Unknown host`, exitCode: 1 };
+    }
+    const mountdPort = client.queryPort(server, MOUNT_PROGRAM, MOUNT_V3);
+    if (mountdPort === 0) {
+      return {
+        output: `clnt_create: RPC: Program not registered`,
+        exitCode: 1,
+      };
+    }
+    if (flags.includes('e')) {
+      const exported = client.listExports(server, mountdPort);
+      return {
+        output: renderShowmountExports(host, exported.map((node) => ({
+          path: node.directory,
+          clients: node.groups.map((pattern) => ({
+            pattern,
+            readOnly: true, rootSquash: true, allSquash: false,
+            anonUid: 65534, anonGid: 65534, secure: true, sync: true, subtreeCheck: false,
+          })),
+        }))),
+        exitCode: 0,
+      };
+    }
+    const mounts = client.listMounts(server, mountdPort);
+    if (flags.includes('a')) return { output: renderShowmountMounts(host, mounts), exitCode: 0 };
+    if (flags.includes('d')) return { output: renderShowmountDirectories(host, mounts), exitCode: 0 };
+    return { output: renderShowmountHosts(host, mounts), exitCode: 0 };
   }
 
   handleUmount(args: string[]): { output: string; exitCode: number } {
@@ -5150,6 +5277,8 @@ export class LinuxCommandExecutor {
         kernel: this.identity.kernel,
         hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
       });
+      case 'exportfs': return this.handleExportfs(args);
+      case 'showmount': return this.handleShowmount(args);
       case 'mount': return this.handleMount(args);
       case 'umount': return this.handleUmount(args);
       case 'findmnt': return this.handleFindmnt(args);

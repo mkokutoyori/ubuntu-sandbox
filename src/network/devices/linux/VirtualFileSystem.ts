@@ -10,6 +10,31 @@ import { AT_DENY_USINE } from './jobs/AtPermissions';
 
 export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev';
 
+export interface RemoteMountStat {
+  readonly type: FileType;
+  readonly permissions: number;
+  readonly uid: number;
+  readonly gid: number;
+  readonly size: number;
+  readonly nlink: number;
+  readonly fileid: number;
+  readonly atime: number;
+  readonly mtime: number;
+  readonly ctime: number;
+}
+
+export interface RemoteMountPort {
+  readonly mountCount: number;
+  covers(path: string): boolean;
+  stat(path: string): RemoteMountStat | null;
+  read(path: string): string | null;
+  write(path: string, content: string, uid: number, gid: number): boolean;
+  remove(path: string): boolean;
+  makeDirectory(path: string, permissions: number, uid: number, gid: number): boolean;
+  list(path: string): readonly string[] | null;
+  rename(from: string, to: string): boolean;
+}
+
 export interface INode {
   id: number;
   type: FileType;
@@ -80,6 +105,7 @@ export class VirtualFileSystem {
   /** Per-path subscribers — see `onWrite()`. */
   private writeListeners: Map<string, Set<VfsWriteListener>> = new Map();
   private readOnlyResolver?: (path: string) => boolean;
+  private remoteMountPort: RemoteMountPort | null = null;
   /**
    * How big this filesystem is, and how many inodes it has.
    *
@@ -142,6 +168,36 @@ export class VirtualFileSystem {
 
   /** Is there an inode left for one more file or directory? */
   private fitsInode(): boolean { return this.usedInodes() < this.inodeCapacity; }
+
+  setRemoteMountPort(port: RemoteMountPort | null): void {
+    this.remoteMountPort = port;
+  }
+
+  private remoteFor(path: string): RemoteMountPort | null {
+    const port = this.remoteMountPort;
+    if (!port || port.mountCount === 0) return null;
+    return port.covers(this.canonicalKey(path)) ? port : null;
+  }
+
+  private remoteInode(port: RemoteMountPort, path: string): INode | null {
+    const stat = port.stat(this.canonicalKey(path));
+    if (!stat) return null;
+    return {
+      id: stat.fileid,
+      type: stat.type,
+      permissions: stat.permissions,
+      uid: stat.uid,
+      gid: stat.gid,
+      content: '',
+      target: '',
+      children: new Map(),
+      linkCount: stat.nlink,
+      size: stat.size,
+      mtime: stat.mtime,
+      atime: stat.atime,
+      ctime: stat.ctime,
+    };
+  }
 
   setReadOnlyResolver(resolver: (path: string) => boolean): void {
     this.readOnlyResolver = resolver;
@@ -449,6 +505,9 @@ export class VirtualFileSystem {
   resolveInode(path: string, followSymlinks = true, maxDepth = 20): INode | null {
     if (maxDepth <= 0) return null; // symlink loop protection
 
+    const remote = this.remoteFor(path);
+    if (remote) return this.remoteInode(remote, path);
+
     const parts = path.split('/').filter(Boolean);
     let currentId = 1; // root inode
     let current = this.inodes.get(currentId)!;
@@ -607,6 +666,9 @@ export class VirtualFileSystem {
   }
 
   readFile(path: string): string | null {
+    const remote = this.remoteFor(path);
+    if (remote) return remote.read(this.canonicalKey(path));
+
     const inode = this.resolveInode(path);
     if (!inode) return null;
 
@@ -692,6 +754,13 @@ export class VirtualFileSystem {
    * `inode.size`, so this is the only override point needed.
    */
   writeFile(path: string, content: string, uid: number, gid: number, umask: number, append = false, declaredSizeBytes?: number, createParents = true): boolean {
+    const remote = this.remoteFor(path);
+    if (remote) {
+      const key = this.canonicalKey(path);
+      const previous = append ? remote.read(key) ?? '' : '';
+      return remote.write(key, previous + content, uid, gid);
+    }
+
     // Handle special devices
     const inode = this.resolveInode(path);
     if (inode?.type === 'chardev') {
@@ -831,6 +900,9 @@ export class VirtualFileSystem {
   }
 
   deleteFile(path: string): boolean {
+    const remote = this.remoteFor(path);
+    if (remote) return remote.remove(this.canonicalKey(path));
+
     const parent = this.resolveParent(path);
     if (!parent) return false;
     const [parentInode, basename] = parent;
@@ -856,6 +928,9 @@ export class VirtualFileSystem {
   // ─── Directory Operations ──────────────────────────────────────────
 
   mkdir(path: string, permissions: number, uid: number, gid: number): boolean {
+    const remote = this.remoteFor(path);
+    if (remote) return remote.makeDirectory(this.canonicalKey(path), permissions, uid, gid);
+
     const parent = this.resolveParent(path);
     if (!parent) return false;
     const [parentInode, basename] = parent;
@@ -929,6 +1004,19 @@ export class VirtualFileSystem {
   }
 
   listDirectory(path: string): DirEntry[] | null {
+    const remote = this.remoteFor(path);
+    if (remote) {
+      const key = this.canonicalKey(path).replace(/\/+$/, '');
+      const names = remote.list(key);
+      if (!names) return null;
+      const out: DirEntry[] = [];
+      for (const name of names) {
+        const child = this.remoteInode(remote, `${key}/${name}`);
+        if (child) out.push({ name, inode: child });
+      }
+      return out;
+    }
+
     const inode = this.resolveInode(path);
     if (!inode || inode.type !== 'directory') return null;
 
@@ -1106,6 +1194,11 @@ export class VirtualFileSystem {
   }
 
   rename(srcPath: string, dstPath: string): boolean {
+    const remote = this.remoteFor(srcPath);
+    if (remote && this.remoteFor(dstPath) === remote) {
+      return remote.rename(this.canonicalKey(srcPath), this.canonicalKey(dstPath));
+    }
+
     const srcParent = this.resolveParent(srcPath);
     if (!srcParent) return false;
     const [srcParentInode, srcBasename] = srcParent;

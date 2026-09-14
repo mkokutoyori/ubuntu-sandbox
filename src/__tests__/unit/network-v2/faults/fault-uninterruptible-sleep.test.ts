@@ -17,9 +17,17 @@
  * jamais.
  *
  * La cause modélisée est celle du PRD : un montage réseau dont le serveur
- * a disparu. **Aucun protocole NFS n'est implémenté** — ce qui décide, c'est
- * que le serveur soit encore atteignable à travers les vrais câbles depuis
- * cette machine, le fait physique que le simulateur connaît vraiment.
+ * a disparu. Ce qui décide, c'est que le serveur soit encore atteignable à
+ * travers les vrais câbles depuis cette machine, le fait physique que le
+ * simulateur connaît vraiment.
+ *
+ * Le laboratoire a dû être corrigé quand NFS est devenu un vrai protocole.
+ * Il montait `10.0.0.2:/export` sur un serveur qui n'exportait RIEN et ne
+ * faisait tourner aucun démon ; le montage réussissait parce que rien ne
+ * le vérifiait. C'était une PRÉMISSE FAUSSE, et la garder aurait épinglé
+ * le défaut en contrat. Le serveur sert maintenant son export pour de bon
+ * — la panne mesurée reste la même, mais elle part d'un montage qui a
+ * vraiment existé.
  *
  * Limite assumée, et énoncée plutôt que contournée : un accès au PREMIER
  * PLAN ne fige pas ce shell. La chaîne d'exécution est synchrone de bout en
@@ -60,6 +68,11 @@ async function lab(): Promise<Lab> {
   new Cable('c1').connect(cli.getPort('eth0')!, sw.getPorts()[0]);
   const cable = new Cable('c2');
   cable.connect(srv.getPort('eth0')!, sw.getPorts()[1]);
+
+  await srv.executeCommand('mkdir -p /export');
+  await srv.executeCommand('sh -c \'echo "/export 10.0.0.0/24(rw,sync,no_root_squash)" > /etc/exports\'');
+  await srv.executeCommand('systemctl start rpcbind');
+  await srv.executeCommand('systemctl start nfs-kernel-server');
 
   await cli.executeCommand('mkdir -p /mnt/data');
   await cli.executeCommand('mount -t nfs 10.0.0.2:/export /mnt/data');

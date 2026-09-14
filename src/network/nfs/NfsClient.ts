@@ -120,6 +120,12 @@ export class NfsClient {
       codec.encodeMountPath(exportPath));
   }
 
+  listMounts(ip: IPAddress, mountPort: number): ReturnType<typeof codec.decodeMountList> {
+    const answer = this.invoke(
+      ip, mountPort, MOUNT_PROGRAM, MOUNT_V3, MountProcedure.DUMP, new Uint8Array(0));
+    return answer ? codec.decodeMountList(answer) : [];
+  }
+
   listExports(ip: IPAddress, mountPort: number): ReturnType<typeof codec.decodeExportList> {
     const answer = this.invoke(
       ip, mountPort, MOUNT_PROGRAM, MOUNT_V3, MountProcedure.EXPORT, new Uint8Array(0));

@@ -32,6 +32,10 @@ import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equi
 import type { PathActor } from './linux/VfsPath';
 import { findHostByAddress } from './linux/network/HostLookup';
 import { LinuxNginxService } from './linux/http/nginx/LinuxNginxService';
+import { LinuxNfsService, EXPORTS_PATH, DEBIAN_EXPORTS_FILE } from './linux/nfs/LinuxNfsService';
+import { NfsMountedFileSystem } from '@/network/nfs/NfsMountedFileSystem';
+import { NfsClient, TcpRpcTransport } from '@/network/nfs/NfsClient';
+import { findEquipmentByIp } from '@/shell/hostResolution';
 import { LinuxRsyslogService } from './linux/syslog/LinuxRsyslogService';
 import { RSYSLOG_SEEDED_FILES } from './linux/syslog/RsyslogFiles';
 import { checkRsyslogCriticalFiles } from './linux/service/CriticalFiles';
@@ -1242,6 +1246,23 @@ export abstract class LinuxMachine extends EndHost
       resolve: (name) => this.resolveHostnameSyncForServices(name),
     });
 
+    if (!vfs.exists(EXPORTS_PATH)) {
+      vfs.writeFile(EXPORTS_PATH, DEBIAN_EXPORTS_FILE, 0, 0, 0o022, true);
+    }
+    this.nfsService = new LinuxNfsService({
+      vfs,
+      tcpStack: () => this.getTcpStack(),
+      hostnameOf: (ip) => findEquipmentByIp(ip)?.getHostname() ?? null,
+    });
+    this.executor.registerServiceSocketServer('nfs-kernel-server', this.nfsService);
+    this.executor.registerServiceSocketServer('rpcbind', this.nfsService);
+    this.executor.nfsService = this.nfsService;
+    this.executor.nfsMounts = new NfsMountedFileSystem(new NfsClient(
+      new TcpRpcTransport(this.getTcpStack()),
+      { machineName: this.getHostname(), uid: 0, gid: 0, gids: [] },
+    ));
+    vfs.setRemoteMountPort(this.executor.nfsMounts);
+
     this.executor.registerServiceSocketServer('nginx', this.nginxService);
     this.executor.nginxService = this.nginxService;
     this.installerRsyslog(vfs);
@@ -1399,6 +1420,7 @@ export abstract class LinuxMachine extends EndHost
 
   /** Le serveur nginx de cette machine — `null` avant l'amorçage. */
   nginxService: LinuxNginxService | null = null;
+  nfsService: LinuxNfsService | null = null;
 
   /** L'agent NTP de cette machine — le MÊME moteur que Cisco et Huawei. */
   private _ntpAgent: NtpAgent | null = null;
