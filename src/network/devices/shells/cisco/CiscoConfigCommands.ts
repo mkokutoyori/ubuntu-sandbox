@@ -27,6 +27,7 @@ import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import {
   specsFromTrieRegistrations, type AdapterKeyword,
 } from '@/cli/commands/trieAdapter';
+import { toutesLesSuites } from './ciscoContinuations';
 
 /**
  * Un TYPE d'interface sans son numéro.
@@ -635,7 +636,7 @@ export function configIfSpecs(ctx: CiscoShellContext): CommandSpec[] {
         argument: { name: 'vlan', type: 'INT', range: [1, 4094],
           description: 'IEEE 802.1Q VLAN ID' },
       }] : path === 'ip address' ? IP_ADDRESS_KEYWORDS
-        : path === 'rate-limit' ? RATE_LIMIT_KEYWORDS : undefined,
+        : path === 'rate-limit' ? RATE_LIMIT_KEYWORDS : toutesLesSuites(path),
     },
   );
 }
