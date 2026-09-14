@@ -5707,6 +5707,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     maxHops: number = 30,
     timeoutMs: number = 2000,
     probesPerHop: number = 3,
+    firstTtl: number = 1,
   ): Promise<Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> }>> {
     const route = this.lookupRoute(targetIP);
     if (!route) return [];
@@ -5728,7 +5729,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
     const hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> }> = [];
 
-    for (let ttl = 1; ttl <= maxHops; ttl++) {
+    for (let ttl = firstTtl; ttl <= maxHops; ttl++) {
       const probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> = [];
       let destinationReached = false;
 
