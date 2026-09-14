@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-networking
-Generated: 2026-09-13T17:17:47.112Z
+Generated: 2026-09-14T10:39:40.507Z
 Engine: linux
 host=L-SRV-NET-DBG (linux-server) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -1082,18 +1082,18 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-09-13 17:17:50--  http://192.168.10.1
+  --2026-09-14 10:39:43--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [172/302]> wget -q http://192.168.10.1
 <empty>
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-09-13 17:17:50--  http://192.168.10.1
+  --2026-09-14 10:39:43--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-09-13 17:17:50--  http://192.168.10.99
+  --2026-09-14 10:39:43--  http://192.168.10.99
   Connecting to 192.168.10.99:80... failed: Connection refused.
 
 $ [175/302]> curl
@@ -1317,44 +1317,44 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
   Your identification has been saved in /tmp/id_rsa
   Your public key has been saved in /tmp/id_rsa.pub
   The key fingerprint is:
-  SHA256:CYFWR2TlGWt9Uh2lFECbUv4K6FrBk3q9VgeNtzf1fnI root@linux-server (RSA)
+  SHA256:J+P4OsGrajlu3ExwhxZ/KIelQ+qwy9/O62aYN/Owezw root@linux-server (RSA)
   The key's randomart image is:
   +--[RSA   ]----+
-  |@@&&%=%o*O^ *=*O^|
-  |%O /#o@&OB+%*B@@@|
-  |&&%=%o*O^ *=*O^%O|
-  | /#o@&OB+%*B@@@&&|
-  |%=%o*O^ *=*O^%O /|
-  |#o@&OB+%*B@@@&&%=|
-  |%o*O^ *=*O^%O /#o|
-  |@&OB+%*B@@@&&%=%o|
-  |*O^ *=*O^%O /#o@&|
+  |@oX//B.#*%.O OO% |
+  | O@&X/&%#o%+&+ @o|
+  |X//B.#*%.O OO%  O|
+  |@&X/&%#o%+&+ @oX/|
+  |/B.#*%.O OO%  O@&|
+  |X/&%#o%+&+ @oX//B|
+  |.#*%.O OO%  O@&X/|
+  |&%#o%+&+ @oX//B.#|
+  |*%.O OO%  O@&X/&%|
   +----[SHA256]-----+
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 root root 638 Sep 13 17:17 /tmp/id_rsa
-  -rw-r--r-- 1 root root 399 Sep 13 17:17 /tmp/id_rsa.pub
+  -rw------- 1 root root 638 Sep 14 10:39 /tmp/id_rsa
+  -rw-r--r-- 1 root root 399 Sep 14 10:39 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAPeKiksTPc96CO6MhaI1jKLVcAawiBkB09c3FLlA1PF6Otsq7EWbib46qVgYDaoMsKWJhfRrR8RBal+mR/FdNhF+PqG5jXcdM7fct1htpaqu+Pp7rtqGHRcOR/K676nuvO5+CvhkszsEf2Ive4h9YxUXPlEFLpLK3IZ7XXrxvXHPkbAoUydLNr5GVxyCrQha7QT2368C1aecI2XletcMNCVIs0EwoNwVQmUgBmcsVVUFFqhjbHXygcjnETZ5eqT9WMwO1wIQfAyH6JW2hAOQct6VPF4CG0701bJN7eC/ESlmXFMRy+oCDEk3djykPHW8qk49yhtqU7g8Scm2rhSJXk4= root@linux-server
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAGEv6soDQUV5F5Fe55Ljn10+Q4YHOz/CW8pqwkM8uoM6yTwgc9+0GYQexRkWYsHSOC0VyR8C42stXpB6N7eSNijzq/wgVRazEyUn6X/e1Y/6mVpwFhFWdBcsDhNhDtg9HPepfhRVb4HONPEJzdTJNFSG9zz/b28IBmb6jhvmQW2qS0/ZvkweQlFK7mqF4XxjH9OLTVEvhUyG9XvrDcREK4SOYVjMZu20tNAejYm+4kFhjUrpfieNLwqEs8NoYOIT0V2/msV/2/C2f2axwgnks5ZjUDGcIXGDs3Nn2YajUHH7khvX6WsnnswHdbH4L2t1WRN84CzhgDqEMmwU3OMU3Hk= root@linux-server
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
   Generating public/private ed25519 key pair.
   Your identification has been saved in /tmp/id_ed25519
   Your public key has been saved in /tmp/id_ed25519.pub
   The key fingerprint is:
-  SHA256:q90quylsr75ewtAYgNZn1Ti+PrganZGQuMcr/c394fM root@linux-server (ED25519)
+  SHA256:vWTo3NcvkjUxWaVtn/tAVeHFCwOd9rFkqUqWzteXJMA root@linux-server (ED25519)
   The key's randomart image is:
   +--[ED25519]----+
-  |B&#O&+%%=^/@X=/+&|
-  |%o=&O%@==//%/ +B&|
-  |#O&+%%=^/@X=/+&%o|
-  |=&O%@==//%/ +B&#O|
-  |&+%%=^/@X=/+&%o=&|
-  |O%@==//%/ +B&#O&+|
-  |%%=^/@X=/+&%o=&O%|
-  |@==//%/ +B&#O&+%%|
-  |=^/@X=/+&%o=&O%@=|
+  |@%O%*o&X=^ =@&=% |
+  |o&+OB#%=^ &*.B#@%|
+  |O%*o&X=^ =@&=% o&|
+  |+OB#%=^ &*.B#@%O%|
+  |*o&X=^ =@&=% o&+O|
+  |B#%=^ &*.B#@%O%*o|
+  |&X=^ =@&=% o&+OB#|
+  |%=^ &*.B#@%O%*o&X|
+  |=^ =@&=% o&+OB#%=|
   +----[SHA256]-----+
 
 $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
@@ -1362,22 +1362,22 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
   Your identification has been saved in /root/.ssh/id_ed25519
   Your public key has been saved in /root/.ssh/id_ed25519.pub
   The key fingerprint is:
-  SHA256:Urw7YkxVj30rM9vITB+pDEOD6yr6TetRVrv85xHZGJQ root@linux-server (ED25519)
+  SHA256:a236920u8e2WGdAms9LSz+KpgIz116OHMOX1UNTYkv0 root@linux-server (ED25519)
   The key's randomart image is:
   +--[ED25519]----+
-  |OX^X.%X*/B@*..=#O|
-  |&%#%o%B&O#BoO@/OX|
-  |^X.%X*/B@*..=#O&%|
-  |#%o%B&O#BoO@/OX^X|
-  |.%X*/B@*..=#O&%#%|
-  |o%B&O#BoO@/OX^X.%|
-  |X*/B@*..=#O&%#%o%|
-  |B&O#BoO@/OX^X.%X*|
-  |/B@*..=#O&%#%o%B&|
+  |o=%O=..# %/X^  #.|
+  |=X***/ +=**oB&/o=|
+  |%O=..# %/X^  #.=X|
+  |***/ +=**oB&/o=%O|
+  |=..# %/X^  #.=X**|
+  |*/ +=**oB&/o=%O=.|
+  |.# %/X^  #.=X***/|
+  | +=**oB&/o=%O=..#|
+  | %/X^  #.=X***/ +|
   +----[SHA256]-----+
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAPeKiksTPc96CO6MhaI1jKLVcAawiBkB09c3FLlA1PF6Otsq7EWbib46qVgYDaoMsKWJhfRrR8RBal+mR/FdNhF+PqG5jXcdM7fct1htpaqu+Pp7rtqGHRcOR/K676nuvO5+CvhkszsEf2Ive4h9YxUXPlEFLpLK3IZ7XXrxvXHPkbAoUydLNr5GVxyCrQha7QT2368C1aecI2XletcMNCVIs0EwoNwVQmUgBmcsVVUFFqhjbHXygcjnETZ5eqT9WMwO1wIQfAyH6JW2hAOQct6VPF4CG0701bJN7eC/ESlmXFMRy+oCDEk3djykPHW8qk49yhtqU7g8Scm2rhSJXk4= root@linux-server
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAGEv6soDQUV5F5Fe55Ljn10+Q4YHOz/CW8pqwkM8uoM6yTwgc9+0GYQexRkWYsHSOC0VyR8C42stXpB6N7eSNijzq/wgVRazEyUn6X/e1Y/6mVpwFhFWdBcsDhNhDtg9HPepfhRVb4HONPEJzdTJNFSG9zz/b28IBmb6jhvmQW2qS0/ZvkweQlFK7mqF4XxjH9OLTVEvhUyG9XvrDcREK4SOYVjMZu20tNAejYm+4kFhjUrpfieNLwqEs8NoYOIT0V2/msV/2/C2f2axwgnks5ZjUDGcIXGDs3Nn2YajUHH7khvX6WsnnswHdbH4L2t1WRN84CzhgDqEMmwU3OMU3Hk= root@linux-server
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]
