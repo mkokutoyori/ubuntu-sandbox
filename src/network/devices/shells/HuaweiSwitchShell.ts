@@ -3538,10 +3538,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.applyToStpAgent(ag => ag.setMstRevision(n));
       return '';
     });
-    t.register('active region-configuration', 'Activate MST region', () =>
-      'Info: This operation may take a few seconds. Please wait for a moment...done.');
+    t.register('active region-configuration', 'Activate MST region', () => {
+      this.applyToStpAgent(ag => ag.commitMstRegion());
+      return 'Info: This operation may take a few seconds. Please wait for a moment...done.';
+    });
     t.register('check region-configuration', 'Check MST region', () => {
-      const region = this.stpAgent()?.getMstRegion();
+      const region = this.stpAgent()?.getPendingMstRegion();
       const lines = [
         `Region Name: ${region?.name ?? ''}`,
         `Revision Level: ${region?.revision ?? 0}`,
