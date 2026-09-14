@@ -33,7 +33,7 @@ import type { OmfBackupKind } from '@/database/oracle/storage/OracleManagedFiles
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { resolveFormatSpec } from '../core/formatSpec';
 import { renderBackupPieceImage, parseBackupPieceImage } from '../core/BackupPieceImage';
-import { renderControlFileImage, type ControlFileImage } from '@/database/oracle/storage/ControlFileImage';
+import { renderControlFileImage, controlFileBody, type ControlFileImage } from '@/database/oracle/storage/ControlFileImage';
 import { parseRedoStream, applyRedoToTablespace, type RedoRecord } from '@/database/oracle/storage/RedoStream';
 import { parseDatafileImage, renderDatafileImage, datafileBannerOf } from '@/database/oracle/storage/DatafileImage';
 import type { TablespacePayload } from '@/database/oracle/OracleStorage';
@@ -435,16 +435,14 @@ export class RmanJobEngine implements IRmanJobEngine {
     if (paths.length === 0) return;
     const image = this._controlFileImage();
     paths.forEach((path, index) => {
-      const body = renderControlFileImage(`[ORACLE CONTROL FILE ${index + 1}]`, image);
-      this._ctx.vfs.writeFile(path, new TextEncoder().encode(body));
+      this._ctx.vfs.writeFile(path, new TextEncoder().encode(controlFileBody(index, image)));
     });
   }
 
   restoreControlFilesFromImage(image: ControlFileImage): number {
     const paths = this._ctx.getControlFilePaths?.() ?? [];
     paths.forEach((path, index) => {
-      const body = renderControlFileImage(`[ORACLE CONTROL FILE ${index + 1}]`, image);
-      this._ctx.vfs.writeFile(path, new TextEncoder().encode(body));
+      this._ctx.vfs.writeFile(path, new TextEncoder().encode(controlFileBody(index, image)));
     });
     let restored = 0;
     for (const raw of image.backupSets) {

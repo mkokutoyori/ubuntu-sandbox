@@ -14,8 +14,33 @@ export interface ControlFileImage {
   readonly backupSets: readonly unknown[];
 }
 
+export type ControlFileStructure = Omit<ControlFileImage, 'backupSets'>;
+
 export function renderControlFileImage(banner: string, image: ControlFileImage): string {
   return `${banner}\n${PAYLOAD_MARKER} ${JSON.stringify(image)}\n`;
+}
+
+export function controlFileBanner(index: number): string {
+  return `[ORACLE CONTROL FILE ${index + 1}]`;
+}
+
+export function controlFileBody(index: number, image: ControlFileImage): string {
+  return renderControlFileImage(controlFileBanner(index), image);
+}
+
+export function controlFileStructureOf(
+  dbName: string,
+  dbId: number,
+  datafiles: readonly ControlFileDatafile[],
+): ControlFileStructure {
+  return { dbName, dbId, datafiles: [...datafiles] };
+}
+
+export function mergeControlFileImage(
+  existing: ControlFileImage | null,
+  structure: ControlFileStructure,
+): ControlFileImage {
+  return { ...structure, backupSets: existing?.backupSets ?? [] };
 }
 
 export function parseControlFileImage(text: string | null): ControlFileImage | null {

@@ -12,9 +12,7 @@ registerView({
   name: 'V$BACKUP_DATAFILE',
   comment: 'Backup history per datafile',
   query({ runtime, storage }) {
-    const datafiles = storage.getAllTablespaces().flatMap(ts =>
-      ts.datafiles.map((df, i) => ({ ts: ts.name, file: i + 1, path: df.path }))
-    );
+    const datafiles = storage.listDatafiles().map(df => ({ file: df.fileNo, path: df.path }));
     const rows: (string | number)[][] = [];
     let recId = 1;
     for (const b of runtime.backups.filter(x => x.type === 'FULL' || x.type === 'INCREMENTAL')) {
