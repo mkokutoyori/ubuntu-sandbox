@@ -35,12 +35,12 @@
  * et devait survivre. Il prouve que les cinq reussites ne viennent pas
  * d'une commande devenue complaisante.
  *
- * LIMITE NOMMEE : au demarrage, avant toute sauvegarde, le fichier de
- * controle ne porte que sa banniere. Son contenu est ecrit par RMAN, qui
- * est le seul a connaitre le repertoire de sauvegarde ; faire ecrire
- * aussi l'adaptateur Oracle donnerait deux redacteurs pour un fichier,
- * ce que le §2 interdit. Une base sans sauvegarde n'a de toute facon
- * aucun repertoire a inscrire.
+ * La limite que ce lot avait nommee — au demarrage le fichier de
+ * controle ne portait que sa banniere — est fermee par le lot R5b, dont
+ * la sonde est oracle-control-file-record-sections. Le §2 y trouve sa
+ * vraie reponse : pas un seul redacteur, mais une seule ECRITURE et deux
+ * sections, la structurelle et celle de RMAN, comme dans le vrai fichier
+ * de controle.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
