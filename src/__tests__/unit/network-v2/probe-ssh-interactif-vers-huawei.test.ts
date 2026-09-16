@@ -129,7 +129,7 @@ describe('un commutateur Huawei repond vraiment en SSH', () => {
     new Cable('c1').connect(pc.getPort('eth0')!, hw.getPorts()[0]);
     for (const l of [
       'system-view', 'sysname HW1',
-      `interface ${hw.getPorts()[0].name}`, 'ip address 10.0.0.2 255.255.255.0', 'undo shutdown', 'quit',
+      `interface ${hw.getPorts()[0].getName()}`, 'ip address 10.0.0.2 255.255.255.0', 'undo shutdown', 'quit',
       'aaa', 'local-user admin password cipher Admin@123',
       'local-user admin service-type ssh', 'local-user admin privilege level 15', 'quit',
       'rsa local-key-pair create', 'stelnet server enable',
