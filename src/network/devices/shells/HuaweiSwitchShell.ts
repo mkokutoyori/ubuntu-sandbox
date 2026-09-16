@@ -76,6 +76,7 @@ import { VRP_STATIC_PREFERENCE } from '../SwitchSvi';
 import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
+import { registerHuaweiKeypairCommands } from './huawei/HuaweiKeypairCommands';
 import { lignesConfigSnmpVrp } from './huawei/huaweiSnmpCommands';
 import { buildDhcpPoolCommands } from './huawei/HuaweiDhcpCommands';
 import { formatHuaweiAcl, formatHuaweiAclConfig } from './huawei/HuaweiAclFormat';
@@ -1206,6 +1207,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     // Shared management commands (SSH/Telnet/SNMP/NTP/syslog/…) — DRY
+    registerHuaweiKeypairCommands(this.systemTrie, () => this.swRef);
     registerHuaweiCommonSecurity(this.systemTrie,
       () => commeRouteur(this.swRef),
       () => this.swRef?.getNtpAgent(),
@@ -2292,7 +2294,16 @@ export class HuaweiSwitchShell implements ISwitchShell {
           rawLines: [] as string[],
         };
         const line = raw ?? `${kw} ${args.join(' ')}`.trim();
-        if (kw === 'authentication-mode' && args[0]) cfg.authMode = args[0];
+        if (kw === 'authentication-mode' && args[0]) {
+          cfg.authMode = args[0];
+          const mode = args[0].toLowerCase();
+          const plage = this.selectedUiRange;
+          if (plage && (mode === 'aaa' || mode === 'password' || mode === 'none')) {
+            this.swRef?._getVtyLineConfig?.().upsert({
+              first: plage.first, last: plage.last, authenticationMode: mode,
+            });
+          }
+        }
         else if (kw === 'idle-timeout' && args[0]) cfg.idleTimeoutMin = parseInt(args[0], 10);
         else if (kw === 'screen-length' && args[0]) cfg.screenLength = parseInt(args[0], 10);
         else if (kw === 'history-command' && args[0] === 'max-size' && args[1]) cfg.historySize = parseInt(args[1], 10);

@@ -46,6 +46,7 @@ import { deviceClockSource, SEVERITY_NAMES } from './inspection/config/LoggingCo
 import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import type { VtyLineConfig } from './router/vty/VtyLineConfig';
+import { vtyLoginModeOf } from './router/vty/VtyLineConfig';
 import { VtyIncomingPolicy, type VtyAdmissionVerdict, type VtyTransportKind } from './router/vty/VtyIncomingPolicy';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { isInteractionPlanner } from '@/shell/interaction/CommandInteraction';
@@ -1063,12 +1064,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private resolveVtyLoginMode(): 'none' | 'local' | 'aaa' | 'password' {
-    const block = this.blocVtyCourant();
-    if (!block) return 'none';
-    if (block.login) return block.login;
-    if (block.authenticationMode === 'aaa') return 'aaa';
-    if (block.authenticationMode === 'password') return 'password';
-    return 'none';
+    return vtyLoginModeOf(this.blocVtyCourant());
   }
 
   /** Header printed above the telnet credential prompts — IOS wording by default. */

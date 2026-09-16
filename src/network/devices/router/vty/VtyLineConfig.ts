@@ -29,6 +29,16 @@ export function transportAdmet(reglage: VtyTransport, kind: 'ssh' | 'telnet'): b
   return reglage === 'all' || reglage === kind;
 }
 
+export function vtyLoginModeOf(
+  block: { login: VtyLoginMode | null; authenticationMode: 'password' | 'aaa' | 'none' | null } | undefined,
+): VtyLoginMode {
+  if (!block) return 'none';
+  if (block.login) return block.login;
+  if (block.authenticationMode === 'aaa') return 'aaa';
+  if (block.authenticationMode === 'password') return 'password';
+  return 'none';
+}
+
 export class VtyLineRange {
   constructor(public readonly first: number, public readonly last: number) {
     if (last < first) throw new Error(`Invalid vty range: ${first} ${last}`);

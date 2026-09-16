@@ -119,6 +119,8 @@ import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { NetworkOsAccount, applyCiscoUsernamePatch } from './router/aaa/NetworkOsAccount';
 import type { CiscoUsernamePatch, PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
+import { vtyLoginModeOf } from './router/vty/VtyLineConfig';
+import { KeypairService } from './router/security/KeypairService';
 import { classifyIpv4Destination } from '../layers/internet/InternetLayer';
 
 // Re-export shell classes for backward compatibility
@@ -2837,14 +2839,36 @@ export abstract class Switch extends Equipment {
     return this._sshHostKeyCache;
   }
 
+  private _keypairService: KeypairService | null = null;
+
+  getKeypairService(): KeypairService {
+    if (!this._keypairService) this._keypairService = new KeypairService();
+    return this._keypairService;
+  }
+
+  hasSshHostKeys(): boolean { return this.hasRsaKeys(); }
+
+  private sshServerEnabled = true;
+
+  _setSshServerEnabled(enabled: boolean): void {
+    if (this.sshServerEnabled === enabled) return;
+    this.sshServerEnabled = enabled;
+    this.syncManagementListeners();
+  }
+
+  _refreshSshAvailability(): void { this.syncManagementListeners(); }
+
   isSshActive(): boolean {
-    return this.hasRsaKeys() && this._getVtyLineConfig().admetQuelquePart('ssh');
+    return this.sshServerEnabled
+      && this.hasSshHostKeys()
+      && this._getVtyLineConfig().admetQuelquePart('ssh');
   }
 
   sshdAcceptsLogin(user: string): { ok: boolean; reason?: string } {
     const verdict = this._getVtyLineConfig().incomingVerdict();
     if (!verdict.accept) return { ok: false, reason: verdict.reason };
-    if (this.vtyBlock()?.login === 'local' && !this.getCredentialStore().get(user)) {
+    const mode = vtyLoginModeOf(this.vtyBlock());
+    if ((mode === 'local' || mode === 'aaa') && !this.getCredentialStore().get(user)) {
       return { ok: false, reason: 'no such user' };
     }
     return { ok: true };
@@ -2944,7 +2968,8 @@ export abstract class Switch extends Equipment {
       hostname: () => this.getHostname(),
       loginMode: () => {
         const block = this.vtyBlock();
-        return block?.login ?? (block?.linePassword ? 'password' : 'none');
+        const mode = vtyLoginModeOf(block);
+        return mode === 'none' && block?.linePassword ? 'password' : mode;
       },
       linePassword: () => {
         const block = this.vtyBlock();
@@ -3643,7 +3668,7 @@ export abstract class Switch extends Equipment {
       this._sshHost = new CrossVendorSshHost({
         deviceId: this.id,
         hostname: this.getHostname(),
-        vendor: 'cisco',
+        vendor: this.getOSType() === 'huawei-vrp' ? 'huawei' : 'cisco',
         bus: this.getBus(),
         authority: this._credentialStore,
         active: this.isSshActive(),

@@ -296,6 +296,10 @@ export class HuaweiSwitch extends Switch {
 
   getOSType(): string { return 'huawei-vrp'; }
 
+  override hasSshHostKeys(): boolean {
+    return this.getKeypairService().list().length > 0;
+  }
+
   getBootSequence(): string {
     return [
       '',
