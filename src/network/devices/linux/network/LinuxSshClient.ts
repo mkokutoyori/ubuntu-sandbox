@@ -97,6 +97,7 @@ export interface SshClientOpts {
     command: string, env: Record<string, string>,
   ) => { output: string; exitCode: number } | null;
   wireAuthenticated?: boolean;
+  wireAuthRefused?: boolean;
   /**
    * The local machine's port-forwarding table — `-L` / `-D` listeners are
    * bound here so the tunnel surfaces through `ss` / `netstat`.
@@ -975,6 +976,14 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // connectivity one, so a failure here is still a real, wire-visible
   // connection for `tcpdump` / socket accounting to record.
   const connectedTuple: SshConnectionTuple = { localIp: opts.sourceIp, peerIp: destIp, peerPort: port };
+
+  if (opts.wireAuthRefused) {
+    return {
+      output: `${remoteUser}@${host}: Permission denied, please try again.\n`,
+      exitCode: 255,
+      connection: connectedTuple,
+    };
+  }
 
   // Login policy gate (root login, allowed users, etc.).
   const login = machine.sshdAcceptsLogin?.(remoteUser, { address: opts.sourceIp, host: opts.sourceHostname }) ?? { ok: true };
