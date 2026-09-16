@@ -5,8 +5,10 @@ import type { RuleAction } from '../../model/SecurityRule';
 import type { AsaFirewall } from './AsaFirewall';
 import type { SimulatedFlow, SimulatedProtocol } from '../../pipeline/SimulatedPacket';
 import type { FirewallSession } from '../../session/SessionTable';
-import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../../../core/types';
+import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IPAddress } from '../../../../core/types';
 import { ASA_NAT_SECTIONS, ASA_PROFILE, asaDefaultSecurityLevel } from './AsaProfile';
+
+const ASA_MANAGEMENT_SERVICES = ['ping', 'ssh', 'telnet', 'http', 'https', 'snmp'] as const;
 import { renderPacketTracer } from './AsaPacketTracer';
 import { ASA_COMMAND_HELP, ASA_VOCABULARY } from './AsaVocabulary';
 import {
@@ -431,7 +433,53 @@ export class AsaShell implements AsaShowHost {
     if (head === 'access-group') return this.accessGroup(rest, negated);
     if (head === 'same-security-traffic') return this.sameSecurityTraffic(rest, negated);
     if (head === 'hostname') { this.fw.setName(rest[0]); return ''; }
+    if (head === 'username') return this.usernameCommand(rest, negated);
+    if (head === 'ssh' || head === 'telnet') return this.managementAccess(head, rest, negated);
+    if (head === 'aaa') return this.aaaCommand(rest);
+    if (head === 'passwd' || (head === 'enable' && rest[0] === 'password')) return '';
+    if (head === 'crypto' && rest[0] === 'key' && rest[1] === 'generate') return '';
     return ASA_INVALID_INPUT;
+  }
+
+  private usernameCommand(rest: string[], negated: boolean): string {
+    const name = rest[0];
+    if (!name) return ASA_INVALID_INPUT;
+    if (negated) return '';
+    if (rest[1] !== 'password' || !rest[2]) return ASA_INVALID_INPUT;
+    const level = rest.includes('privilege')
+      ? Number(rest[rest.indexOf('privilege') + 1]) : 2;
+    if (!Number.isInteger(level) || level < 0 || level > 15) return ASA_INVALID_INPUT;
+    this.fw.applyAdminAccount({
+      name, password: rest[2],
+      profile: level >= 15 ? 'super_admin' : 'prof_admin',
+      vdoms: [], trustHosts: [],
+    });
+    return '';
+  }
+
+  private managementAccess(service: 'ssh' | 'telnet', rest: string[], negated: boolean): string {
+    if (rest[0] === 'timeout' || rest[0] === 'version' || rest[0] === 'scopy') return '';
+    const [network, mask, iface] = rest;
+    if (!network || !mask || !iface) return ASA_INVALID_INPUT;
+    if (IPAddress.tryParse(network) === null || IPAddress.tryParse(mask) === null) {
+      return ASA_INVALID_INPUT;
+    }
+    const ports = this.fw.getZoneTable().interfacesOf(iface);
+    const port = ports[0];
+    if (!port) return ASA_INVALID_INPUT;
+    const current = ASA_MANAGEMENT_SERVICES.filter((s) => this.fw.allowsAccess(port, s));
+    const next = negated
+      ? current.filter((s) => s !== service)
+      : [...new Set([...current, service])];
+    for (const name of ports) this.fw.setAllowedAccess(name, next);
+    return '';
+  }
+
+  private aaaCommand(rest: string[]): string {
+    if (rest[0] !== 'authentication' && rest[0] !== 'authorization' && rest[0] !== 'local') {
+      return ASA_INVALID_INPUT;
+    }
+    return '';
   }
 
   private interfaceCommand(tokens: string[], negated: boolean): string {

@@ -2918,6 +2918,7 @@ export abstract class Switch extends Equipment {
       banner: () => this.getBanner('login') || null,
       motd: () => this.getBanner('motd') || undefined,
       isClientBlocked: () => !this._getVtyLineConfig().incomingVerdict().accept,
+      recordLogin: (user, fromIp) => this.recordSshLogin(user, fromIp, '', true),
     }));
   }
 

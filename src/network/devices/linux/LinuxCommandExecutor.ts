@@ -1612,6 +1612,16 @@ export class LinuxCommandExecutor {
     return new WireSftpFileSystem(channelResult.value);
   }
 
+  private async relayOverWire(
+    session: SshSession, command: string,
+  ): Promise<{ output: string; exitCode: number } | null> {
+    const channel = session.openExecChannel(command);
+    if (!isOk(channel)) return null;
+    const result = await channel.value.execute();
+    channel.value.close();
+    return { output: result.stdout, exitCode: result.exitCode };
+  }
+
   async runSshExecAsync(
     rawArgs: string[], offeredPassword?: string,
   ): Promise<{ output: string; exitCode: number }> {
@@ -1632,11 +1642,17 @@ export class LinuxCommandExecutor {
       return this.finishSshClientResult(
         runSshClient({ ...opts, wireAuthRefused: wire.authRefused }), wire.authRefused);
     }
+    const peer = target !== null ? this.sshPeerDevice(target.host) : null;
+    const linuxPeer = (peer as { executor?: unknown } | null)?.executor !== undefined;
+    const settled = !linuxPeer && target !== null && target.command
+      ? await this.relayOverWire(session, target.command)
+      : null;
     try {
       return this.finishSshClientResult(runSshClient({
         ...opts,
         wireAuthenticated: true,
         execRelay: (command) => {
+          if (settled && target !== null && command === target.command) return settled;
           const channel = session.openExecChannel(command);
           if (!isOk(channel)) return null;
           const result = channel.value.run();

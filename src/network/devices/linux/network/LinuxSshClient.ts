@@ -579,6 +579,7 @@ export interface WireExecTarget {
   user: string;
   port: number;
   identities: string[];
+  command: string;
 }
 
 export function wireExecTarget(
@@ -601,7 +602,10 @@ export function wireExecTarget(
   for (let i = 0; i < flags.length; i++) {
     if (flags[i] === '-i' && flags[i + 1]) identities.push(vfs.normalizePath(flags[i + 1], cwd));
   }
-  return { host, user, port: clientPort(flags), identities };
+  return {
+    host, user, port: clientPort(flags), identities,
+    command: joinRemoteCommand(positional.slice(1)),
+  };
 }
 
 function clientPort(args: string[]): number {
@@ -891,10 +895,21 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
 
+  const linuxLike = (found.device as Partial<LinuxMachine & { executor: unknown }>).executor !== undefined;
+  if (!linuxLike && opts.wireAuthenticated && opts.execRelay) {
+    const wireCmd = joinRemoteCommand(positional.slice(1));
+    const relayed = wireCmd ? opts.execRelay(wireCmd, {}) : null;
+    if (relayed) {
+      return {
+        output: relayed.output,
+        exitCode: relayed.exitCode,
+        connection: { localIp: opts.sourceIp, peerIp: destIp, peerPort: port },
+      };
+    }
+  }
   // Cross-platform dispatch (Windows / Cisco / Huawei). A target that
   // implements SshExecTarget but is *not* a LinuxMachine (no in-process
   // `executor` shortcut) handles its own auth + exec synchronously.
-  const linuxLike = (found.device as Partial<LinuxMachine & { executor: unknown }>).executor !== undefined;
   if (!linuxLike && isSshExecTarget(found.device)) {
     return runCrossPlatformExec(found.device, remoteUser, positional, port, host, opts);
   }
