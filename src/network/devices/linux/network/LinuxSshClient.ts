@@ -98,6 +98,7 @@ export interface SshClientOpts {
   ) => { output: string; exitCode: number } | null;
   wireAuthenticated?: boolean;
   wireAuthRefused?: boolean;
+  shellRelay?: () => { output: string; exitCode: number } | null;
   /**
    * The local machine's port-forwarding table — `-L` / `-D` listeners are
    * bound here so the tunnel surfaces through `ss` / `netstat`.
@@ -590,7 +591,7 @@ export function wireExecTarget(
 ): WireExecTarget | null {
   const { positional, flags } = splitSshArgs(args);
   const target = positional[0];
-  if (target === undefined || positional.length < 2) return null;
+  if (target === undefined) return null;
   for (const blocking of ['-N', '-W', '-J', '-A', '-D', '-L', '-R']) {
     if (flags.includes(blocking)) return null;
   }
@@ -896,12 +897,17 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   }
 
   const linuxLike = (found.device as Partial<LinuxMachine & { executor: unknown }>).executor !== undefined;
-  if (!linuxLike && opts.wireAuthenticated && opts.execRelay) {
+  if (!linuxLike && opts.wireAuthenticated) {
     const wireCmd = joinRemoteCommand(positional.slice(1));
-    const relayed = wireCmd ? opts.execRelay(wireCmd, {}) : null;
+    const relayed = wireCmd
+      ? opts.execRelay?.(wireCmd, {}) ?? null
+      : opts.shellRelay?.() ?? null;
     if (relayed) {
+      const transcript = wireCmd
+        ? [relayed.output]
+        : [relayed.output, connectionClosed(host)].filter(part => part.length > 0);
       return {
-        output: relayed.output,
+        output: transcript.join('\n'),
         exitCode: relayed.exitCode,
         connection: { localIp: opts.sourceIp, peerIp: destIp, peerPort: port },
       };
@@ -1377,9 +1383,13 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     lines.push(`Last login: ${fmtHumanDate(new Date())} from ${opts.sourceIp}`);
   }
   if (printMotd && motd.trim()) lines.push(motd.replace(/\n*$/, ''));
-  lines.push(`Connection to ${host} closed.`);
+  lines.push(connectionClosed(host));
   machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, 0);
   return { output: warningBanner + verboseHeader + forwardingError + lines.join('\n'), exitCode: 0, connection };
+}
+
+function connectionClosed(host: string): string {
+  return `Connection to ${host} closed.`;
 }
 
 function sessionHold(machine: unknown): number {
@@ -1628,7 +1638,7 @@ function runCrossPlatformExec(
   const motd = target.getSshMotd();
   if (banner.trim()) lines.push(banner.replace(/\n*$/, ''));
   if (motd.trim()) lines.push(motd.replace(/\n*$/, ''));
-  lines.push(`Connection to ${host} closed.`);
+  lines.push(connectionClosed(host));
   closeSession();
   return { output: lines.join('\n'), exitCode: 0 };
 }

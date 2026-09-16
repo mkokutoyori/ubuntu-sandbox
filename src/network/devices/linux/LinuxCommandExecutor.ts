@@ -339,6 +339,7 @@ export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
   readonly mountTable: MountTable;
   readonly userMgr: LinuxUserManager;
+  _scenarioStdin?: string;
   /**
    * In-memory ssh-agent — one per device, lazily populated by `ssh-add`
    * and surfaced to outgoing SSH connections that honour `ssh -A`.
@@ -1612,6 +1613,36 @@ export class LinuxCommandExecutor {
     return new WireSftpFileSystem(channelResult.value);
   }
 
+  private async relayShellOverWire(
+    session: SshSession, skipLines: number,
+  ): Promise<{ output: string; exitCode: number } | null> {
+    const channel = session.openShellChannel();
+    if (!isOk(channel)) return null;
+    const shell = channel.value;
+    const lines: string[] = [];
+    let prompt = shell.initialPrompt() ?? '';
+    let awaitingChallenge = false;
+    let remaining = skipLines;
+    let ended = false;
+    for (const raw of (this._scenarioStdin ?? '').split('\n')) {
+      if (remaining > 0) { remaining -= 1; continue; }
+      if (ended) break;
+      const line = raw.trim();
+      if (!awaitingChallenge && line.length === 0) continue;
+      const result = awaitingChallenge
+        ? await shell.provideInput(line)
+        : await shell.runLine(line);
+      if (!awaitingChallenge) lines.push(`${prompt}${line}`);
+      const merged = `${result.stdout}${result.stderr}`.replace(/\n+$/, '');
+      if (merged.length > 0) lines.push(merged);
+      prompt = result.prompt ?? prompt;
+      awaitingChallenge = result.pendingInput !== undefined;
+      ended = result.sessionEnded === true;
+    }
+    shell.close();
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
   private async relayOverWire(
     session: SshSession, command: string,
   ): Promise<{ output: string; exitCode: number } | null> {
@@ -1627,11 +1658,14 @@ export class LinuxCommandExecutor {
   ): Promise<{ output: string; exitCode: number }> {
     const args = rawArgs.map(word => this.expandTilde(word));
     const stdinPwd = (offeredPassword
-      ?? (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '')
+      ?? this._scenarioStdin ?? '')
       .split('\n')[0] || undefined;
     const opts = this.buildSshClientOpts(args, this._cmdEnv, stdinPwd);
     const target = wireExecTarget(args, this.vfs, this.cwd, this.userMgr.currentUser);
-    const reachable = target !== null
+    const peer = target !== null ? this.sshPeerDevice(target.host) : null;
+    const linuxPeer = (peer as { executor?: unknown } | null)?.executor !== undefined;
+    const wanted = target !== null && (target.command !== '' || !linuxPeer);
+    const reachable = wanted && target !== null
       && wireReachOutcome(this.localDevice, target.host, target.port) === 'open';
     const wire = reachable && target !== null
       ? await this.connectWireSsh(
@@ -1642,15 +1676,17 @@ export class LinuxCommandExecutor {
       return this.finishSshClientResult(
         runSshClient({ ...opts, wireAuthRefused: wire.authRefused }), wire.authRefused);
     }
-    const peer = target !== null ? this.sshPeerDevice(target.host) : null;
-    const linuxPeer = (peer as { executor?: unknown } | null)?.executor !== undefined;
     const settled = !linuxPeer && target !== null && target.command
       ? await this.relayOverWire(session, target.command)
+      : null;
+    const settledShell = !linuxPeer && target !== null && !target.command
+      ? await this.relayShellOverWire(session, offeredPassword === undefined && stdinPwd ? 1 : 0)
       : null;
     try {
       return this.finishSshClientResult(runSshClient({
         ...opts,
         wireAuthenticated: true,
+        shellRelay: () => settledShell,
         execRelay: (command) => {
           if (settled && target !== null && command === target.command) return settled;
           const channel = session.openExecChannel(command);
@@ -1960,7 +1996,7 @@ export class LinuxCommandExecutor {
     for (let i = 0; i < kex.length; i++) kex[i] = Math.floor(Math.random() * 256);
     publishWireSegment({ srcDevice: this.localDevice, srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq: 30, ack: 35, payload: kex });
     publishWireSegment({ srcDevice: this.localDevice, srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 35, ack: 30 + kex.length, payload: kex });
-    const stdin = (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '';
+    const stdin = this._scenarioStdin ?? '';
     let seq = 30 + kex.length;
     for (const line of stdin.split('\n')) {
       void line;
@@ -1992,7 +2028,7 @@ export class LinuxCommandExecutor {
     if (probe.exitCode !== 0 || !probe.wireTarget) return { output: probe.output, exitCode: probe.exitCode };
     const session = await this.openWireTelnetSession(probe.wireTarget.ip, probe.wireTarget.port);
     if (!session) return { output: probe.output, exitCode: probe.exitCode };
-    const stdin = (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '';
+    const stdin = this._scenarioStdin ?? '';
     await LinuxCommandExecutor.settleWire();
     let transcript = session.drain();
     for (const line of stdin.split('\n')) {
@@ -2010,7 +2046,7 @@ export class LinuxCommandExecutor {
 
   private emitTelnetWire(srcIp: string, dstIp: string, dstPort: number): void {
     ensureCaptureRouterInstalled();
-    const stdin = (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '';
+    const stdin = this._scenarioStdin ?? '';
     const srcPort = 49152 + Math.floor(Math.random() * 1000);
     const enc = new TextEncoder();
     const iac = new Uint8Array([0xff, 0xfd, 0x18, 0xff, 0xfd, 0x20, 0xff, 0xfd, 0x23]);
@@ -5562,7 +5598,7 @@ export class LinuxCommandExecutor {
         return { output: sshpassResult.output, exitCode: sshpassResult.exitCode };
       }
       case 'ssh': {
-        const stdinPwd = ((this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '').split('\n')[0] || undefined;
+        const stdinPwd = (this._scenarioStdin ?? '').split('\n')[0] || undefined;
         return this.finishSshClientResult(
           runSshClient(this.buildSshClientOpts(args, this._cmdEnv, stdinPwd)));
       }
