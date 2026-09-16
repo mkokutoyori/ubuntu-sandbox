@@ -51,6 +51,7 @@ export const COMMAND_PACKAGES: Readonly<Record<string, string>> = {
   lsof: 'lsof',
   cal: 'ncal', ncal: 'ncal',
   ifconfig: 'net-tools', netstat: 'net-tools', route: 'net-tools', arp: 'net-tools',
+  telnet: 'inetutils-telnet',
   ssh: 'openssh-client', scp: 'openssh-client', sftp: 'openssh-client',
   'ssh-keygen': 'openssh-client', 'ssh-keyscan': 'openssh-client',
   'ssh-copy-id': 'openssh-client',

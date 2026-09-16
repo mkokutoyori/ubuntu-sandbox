@@ -96,6 +96,8 @@ const CATALOGUE: readonly PackageEntry[] = [
     summary: 'small, powerful, scalable web/proxy server', units: ['nginx'] },
   { name: 'ntpsec', version: '1.2.1+dfsg1-4', arch: 'amd64',
     summary: 'Network Time Protocol daemon and utility programs', },
+  { name: 'inetutils-telnet', version: '2:2.2-2', arch: 'amd64',
+    summary: 'telnet client', },
   { name: 'openssh-client', version: '1:8.9p1-3ubuntu0.1', arch: 'amd64',
     summary: 'secure shell (SSH) client, for secure access to remote machines', },
   { name: 'openssh-server', version: '1:8.9p1-3ubuntu0.1', arch: 'amd64',

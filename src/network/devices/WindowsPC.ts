@@ -44,6 +44,9 @@ import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type T
 import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import type { TcpStream } from '../tcp/types';
+import {
+  TelnetClientSession, type TelnetClientTransport,
+} from '../protocols/telnet/TelnetClientSession';
 import type { TcpSocket } from '../tcp/TcpStack';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
@@ -2295,12 +2298,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }).then(r => r.output);
   }
 
-  /**
-   * `telnet host [port]` — real TCP/23 handshake via `tcpConnect`, then
-   * the socket is closed immediately. No nested interactive session is
-   * pushed the way `cmdSsh` does (see the Telnet note in CLAUDE.md's
-   * Terminal emulation section).
-   */
   private async cmdTelnet(args: string[]): Promise<string> {
     const positional = args.filter((a) => !a.startsWith('-'));
     const host = positional[0];
@@ -2319,8 +2316,27 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (!sock) {
       return `Connecting To ${host}...Could not open connection to the host, on port ${port}: Connect failed`;
     }
-    sock.close();
-    return `Connecting To ${host}...\nWelcome to Microsoft Telnet Client\n\nEscape Character is 'CTRL+]'`;
+    const header = `Connecting To ${host}...\nWelcome to Microsoft Telnet Client\n\nEscape Character is 'CTRL+]'`;
+    const session = new TelnetClientSession(sock as unknown as TelnetClientTransport);
+    await WindowsPC.settleWire();
+    let transcript = session.drain();
+    for (const line of (this._scenarioStdin ?? '').split('\n')) {
+      if (line.length === 0 && transcript.length > 0) continue;
+      session.send(line);
+      await WindowsPC.settleWire();
+      transcript += session.drain();
+    }
+    const closedByPeer = session.closed;
+    session.close();
+    await WindowsPC.settleWire();
+    return `${header}\n${transcript}${closedByPeer ? 'Connection closed by foreign host.\n' : ''}`;
+  }
+
+  private static async settleWire(times = 12): Promise<void> {
+    for (let i = 0; i < times; i++) {
+      await Promise.resolve();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
   }
 
   private createPorts(): void {
@@ -2716,9 +2732,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return this.auditPolicy.getOption('CrashOnAuditFail') === true && this.eventLog.isFullAndProtected('Security');
   }
 
-  async executeCommand(command: string): Promise<string> {
-    return this.executeCmdCommand(command);
+  async executeCommand(command: string, stdin?: string): Promise<string> {
+    if (stdin !== undefined) this._scenarioStdin = stdin;
+    try {
+      return await this.executeCmdCommand(command);
+    } finally {
+      if (stdin !== undefined) this._scenarioStdin = undefined;
+    }
   }
+
+  private _scenarioStdin: string | undefined;
 
   /**
    * Execute a command in CMD mode.

@@ -160,6 +160,9 @@ import { SilentSshInteractionHandler } from '../../protocols/ssh/session/ISshInt
 import { SshConnectOptionsBuilder } from '../../protocols/ssh/SshConnectOptions';
 import { isOk } from '../../protocols/ssh/Result';
 import type { TcpConnector } from '@/network/tcp/types';
+import {
+  TelnetClientSession, type TelnetClientTransport,
+} from '@/network/protocols/telnet/TelnetClientSession';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
 import type { TcpStack } from '../../tcp/TcpStack';
@@ -1840,7 +1843,9 @@ export class LinuxCommandExecutor {
    * nested interactive session the way `ssh` does (see the Telnet note in
    * CLAUDE.md's Terminal emulation section).
    */
-  private runTelnetClient(args: string[]): { output: string; exitCode: number } {
+  private runTelnetClient(
+    args: string[],
+  ): { output: string; exitCode: number; wireTarget?: { ip: string; port: number } } {
     const positional = args.filter(a => !a.startsWith('-'));
     const host = positional[0];
     if (!host) return { output: 'usage: telnet host-name [port]', exitCode: 1 };
@@ -1869,14 +1874,11 @@ export class LinuxCommandExecutor {
       return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: No route to host`, exitCode: 1 };
     }
 
-    const stdinHas = (this as unknown as { _scenarioStdin?: string })._scenarioStdin;
     const wireCapable = typeof ((reachable ?? found.device) as unknown as {
       getTcpStack?: () => unknown;
     }).getTcpStack === 'function';
     if (wireCapable && this.tcpProbe && !this.tcpProbe(found.ip, port)) {
-      if (!stdinHas) {
-        return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: Connection refused`, exitCode: 1 };
-      }
+      return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: Connection refused`, exitCode: 1 };
     }
 
     const header = `Trying ${found.ip}...\nConnected to ${host}.\nEscape character is '^]'.`;
@@ -1898,6 +1900,9 @@ export class LinuxCommandExecutor {
       if (verdict && !verdict.accept) {
         return { output: `${header}\n\n[${verdict.reason}]\n\nConnection closed by foreign host.`, exitCode: 1 };
       }
+    }
+    if (wireCapable) {
+      return { output: `${header}\n`, exitCode: 0, wireTarget: { ip: found.ip, port } };
     }
     this.emitTelnetWire(sourceIp, found.ip, port);
     return { output: `${header}\n`, exitCode: 0 };
@@ -1948,6 +1953,43 @@ export class LinuxCommandExecutor {
       publishWireSegment({ srcDevice: this.localDevice, srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq, ack: 35, payload: cipher });
       seq += cipher.length;
     }
+  }
+
+  private async openWireTelnetSession(
+    ip: string, port: number,
+  ): Promise<TelnetClientSession | null> {
+    if (!this.tcpConnector) return null;
+    const dialed = await this.tcpConnector(ip, port);
+    if (!dialed || (dialed as { dialFailed?: string }).dialFailed !== undefined) return null;
+    return new TelnetClientSession(dialed as TelnetClientTransport);
+  }
+
+  private static async settleWire(times = 12): Promise<void> {
+    for (let i = 0; i < times; i++) {
+      await Promise.resolve();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  async runTelnetExecAsync(args: string[]): Promise<{ output: string; exitCode: number }> {
+    const probe = this.runTelnetClient(args);
+    if (probe.exitCode !== 0 || !probe.wireTarget) return { output: probe.output, exitCode: probe.exitCode };
+    const session = await this.openWireTelnetSession(probe.wireTarget.ip, probe.wireTarget.port);
+    if (!session) return { output: probe.output, exitCode: probe.exitCode };
+    const stdin = (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '';
+    await LinuxCommandExecutor.settleWire();
+    let transcript = session.drain();
+    for (const line of stdin.split('\n')) {
+      if (line.length === 0 && transcript.length > 0) continue;
+      session.send(line);
+      await LinuxCommandExecutor.settleWire();
+      transcript += session.drain();
+    }
+    const closedByPeer = session.closed;
+    session.close();
+    await LinuxCommandExecutor.settleWire();
+    const farewell = closedByPeer ? 'Connection closed by foreign host.\n' : '';
+    return { output: `${probe.output}${transcript}${farewell}`, exitCode: 0 };
   }
 
   private emitTelnetWire(srcIp: string, dstIp: string, dstPort: number): void {
