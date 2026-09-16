@@ -56,6 +56,13 @@ export interface ITelnetServerContext {
   authenticate(username: string | null, password: string): boolean | Promise<boolean>;
   /** Attempts allowed before the server drops the connection (IOS: 3). */
   maxAuthAttempts?(): number;
+  /**
+   * The line the server prints after a rejected credential, in this
+   * vendor's own wording. IOS says `% Login invalid`; a Linux telnetd
+   * execs `login`, which says `Login incorrect` (util-linux
+   * `login-utils/login.c`). Absent leaves the IOS wording.
+   */
+  authFailureMessage?(): string;
   createShell(username: string | null): TelnetVtyShell | null;
   /** Claims a VTY line; `null` when the pool is exhausted. */
   openSession(username: string, fromIp: string, peerPort: number): TelnetSessionHandle | null;

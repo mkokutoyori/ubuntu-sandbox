@@ -235,6 +235,14 @@ const BASE_UNITS: DefaultUnit[] = [
     enabledByDefault: true,
   },
   {
+    name: 'telnet',
+    description: 'Telnet server',
+    type: 'forking',
+    execStart: '/usr/sbin/in.telnetd',
+    after: ['network.target'],
+    enabledByDefault: false,
+  },
+  {
     name: 'fail2ban',
     description: 'Fail2Ban Service',
     type: 'forking',
@@ -514,6 +522,7 @@ export interface ServiceListenerSpec {
  */
 export const SERVICE_LISTENERS: Readonly<Record<string, ServiceListenerSpec>> = {
   ssh: { processName: 'sshd', sockets: [{ port: 22, protocol: 'tcp' }] },
+  telnet: { processName: 'in.telnetd', sockets: [{ port: 23, protocol: 'tcp' }] },
   'systemd-resolved': {
     processName: 'systemd-resolved',
     sockets: [

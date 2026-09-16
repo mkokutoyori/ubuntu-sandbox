@@ -200,7 +200,7 @@ class TelnetSession {
       this.conn.close();
       return;
     }
-    this.write('\n% Login invalid\n');
+    this.write(`\n${this.ctx.authFailureMessage?.() ?? '% Login invalid'}\n`);
     if (this.ctx.authPrompt() === 'username-password') { this.phase = 'username'; this.write(`\n${this.prompts().username}`); }
     else { this.phase = 'password'; this.write(`\n${this.prompts().password}`); }
   }
