@@ -43,6 +43,36 @@ export interface WinSshClientOpts {
   /** %USERPROFILE% for the current user (default `C:\Users\<user>`). */
   sourceHome?: string;
   localAgent?: { list(): readonly { publicKey: string | null }[] };
+  execRelay?: (command: string) => { output: string; exitCode: number } | null;
+  shellRelay?: () => { output: string; exitCode: number } | null;
+  wireAuthRefused?: boolean;
+}
+
+export interface WinWireTarget {
+  host: string;
+  user: string;
+  port: number;
+  command: string;
+  identities: string[];
+}
+
+export function winWireExecTarget(args: string[], defaultUser: string): WinWireTarget | null {
+  const { positional, flags } = splitSshArgs(args);
+  const first = positional[0];
+  if (first === undefined) return null;
+  for (const blocking of ['-N', '-W', '-J', '-A', '-D', '-L', '-R']) {
+    if (flags.includes(blocking)) return null;
+  }
+  const parsed = RE_USERHOST.exec(first);
+  if (!parsed) return null;
+  const identity = flags.indexOf('-i');
+  return {
+    host: parsed[2],
+    user: parsed[1] ?? clientLoginUser(flags) ?? defaultUser,
+    port: clientPort(flags),
+    command: positional.slice(1).join(' ').trim(),
+    identities: identity >= 0 && flags[identity + 1] ? [flags[identity + 1]] : [],
+  };
 }
 
 /**
@@ -225,6 +255,14 @@ export async function runWindowsSshClient(
     };
   }
 
+  if (opts.wireAuthRefused) {
+    remote.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
+    return {
+      output: `${remoteUser}@${host}: Permission denied (publickey,password).`,
+      exitCode: 255,
+    };
+  }
+
   const serverAuth = (found.device as unknown as {
     getSshServerContext?: () => { auth?: ISshAuthContext };
   }).getSshServerContext?.().auth;
@@ -267,7 +305,8 @@ export async function runWindowsSshClient(
   // Exec mode: a command after the host runs on the remote with no banner.
   const remoteCmd = positional.slice(1).join(' ').trim();
   if (remoteCmd) {
-    const r = await remote.runSshCommand(remoteUser, remoteCmd);
+    const relayed = opts.execRelay?.(remoteCmd) ?? null;
+    const r = relayed ?? await remote.runSshCommand(remoteUser, remoteCmd);
     const normalised = r.output && !r.output.endsWith('\n') ? `${r.output}\n` : r.output;
     return { output: normalised, exitCode: r.exitCode };
   }
@@ -275,6 +314,16 @@ export async function runWindowsSshClient(
   // `-q` (quiet) connects but suppresses banner output.
   if (flags.includes('-q')) {
     return { output: '', exitCode: 0 };
+  }
+
+  const relayedShell = opts.shellRelay?.() ?? null;
+  if (relayedShell) {
+    (remote as unknown as {
+      scheduleSshLogout?: (u: string, ip: string, hold: number) => void;
+    }).scheduleSshLogout?.(remoteUser, opts.sourceIp, 0);
+    const transcript = [relayedShell.output, `Connection to ${host} closed.`]
+      .filter(part => part.length > 0);
+    return { output: transcript.join('\n'), exitCode: relayedShell.exitCode };
   }
 
   // Interactive form: the remote command-prompt banner, then the

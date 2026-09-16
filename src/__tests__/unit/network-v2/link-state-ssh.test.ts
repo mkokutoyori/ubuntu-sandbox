@@ -80,7 +80,6 @@ describe('interactive remote shell liveness (docs/PRD-Link-State.md §3.3 / §4 
     return new CrossVendorRemoteShell({
       device: b,
       user: 'alice',
-      remoteHost: '10.0.3.2',
       primaryKind: 'bash',
       probeAlive: alive,
       onClose,
@@ -113,7 +112,7 @@ describe('interactive remote shell liveness (docs/PRD-Link-State.md §3.3 / §4 
   it('a session with no probe configured is left exactly as before', async () => {
     const { b } = lan();
     const shell = new CrossVendorRemoteShell({
-      device: b, user: 'alice', remoteHost: '10.0.3.2', primaryKind: 'bash',
+      device: b, user: 'alice', primaryKind: 'bash',
     });
     const res = await shell.processLine('hostname');
     expect(res.output.join('\n')).toContain('pcb');

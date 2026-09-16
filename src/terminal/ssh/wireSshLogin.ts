@@ -21,8 +21,10 @@ import type { TcpConnector } from '@/network/tcp/types';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
 import { TerminalSshInteractionHandler } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
+import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols/ssh/session/QueuedTerminalIO';
 import { isOk } from '@/network/protocols/ssh/Result';
+import type { ISshShellChannel } from '@/network/protocols/ssh/channels/ISshChannel';
 import { peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import { sshLocalFsFor, knownHostsPathFor, sshLocalIdentityFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
 import { IPAddress } from '@/network/core/types';
@@ -51,6 +53,7 @@ export interface WireSshLoginRequest {
   readonly password?: string;
   readonly strict?: 'yes' | 'no' | 'accept-new';
   readonly identityFiles?: readonly string[];
+  readonly credentialless?: boolean;
 }
 
 export type WireSshLoginOutcome =
@@ -154,7 +157,10 @@ export async function openWireSshConnection(
     localUid: req.localUid ?? sshLocalIdentityFor(req.device, req.localUser).uid,
     localGid: req.localGid ?? sshLocalIdentityFor(req.device, req.localUser).gid,
     knownHostsPath: knownHostsPathFor(req.device, req.localUser),
-    interactionHandler: new TerminalSshInteractionHandler(req.io),
+    credentialless: req.credentialless,
+    interactionHandler: req.credentialless
+      ? new SilentSshInteractionHandler('')
+      : new TerminalSshInteractionHandler(req.io),
   });
 
   const builder = SshConnectOptionsBuilder.create()
@@ -189,6 +195,32 @@ export async function openWireSshConnection(
   }
 
   return { kind: 'connected', session };
+}
+
+export async function relayScriptedShell(
+  shell: ISshShellChannel, stdin: string, skipLines: number,
+): Promise<{ output: string; exitCode: number }> {
+  const lines: string[] = [];
+  let prompt = shell.initialPrompt() ?? '';
+  let awaitingChallenge = false;
+  let remaining = skipLines;
+  let ended = false;
+  for (const raw of stdin.split('\n')) {
+    if (remaining > 0) { remaining -= 1; continue; }
+    if (ended) break;
+    const line = raw.trim();
+    if (!awaitingChallenge && line.length === 0) continue;
+    const result = awaitingChallenge
+      ? await shell.provideInput(line)
+      : await shell.runLine(line);
+    if (!awaitingChallenge) lines.push(`${prompt}${line}`);
+    const merged = `${result.stdout}${result.stderr}`.replace(/\n+$/, '');
+    if (merged.length > 0) lines.push(merged);
+    prompt = result.prompt ?? prompt;
+    awaitingChallenge = result.pendingInput !== undefined;
+    ended = result.sessionEnded === true;
+  }
+  return { output: lines.join('\n'), exitCode: 0 };
 }
 
 /**

@@ -3,7 +3,7 @@
  */
 
 import { VirtualFileSystem, type INode } from './VirtualFileSystem';
-import { sshUnreachableReason } from '@/terminal/ssh/wireSshLogin';
+import { sshUnreachableReason, relayScriptedShell } from '@/terminal/ssh/wireSshLogin';
 import type { TcpWireOutcome } from '../../tcp/types';
 import { LinuxUserManager } from './LinuxUserManager';
 import { loadSudoPolicy, type SudoActor } from './iam/SudoPolicyEngine';
@@ -1619,28 +1619,9 @@ export class LinuxCommandExecutor {
     const channel = session.openShellChannel();
     if (!isOk(channel)) return null;
     const shell = channel.value;
-    const lines: string[] = [];
-    let prompt = shell.initialPrompt() ?? '';
-    let awaitingChallenge = false;
-    let remaining = skipLines;
-    let ended = false;
-    for (const raw of (this._scenarioStdin ?? '').split('\n')) {
-      if (remaining > 0) { remaining -= 1; continue; }
-      if (ended) break;
-      const line = raw.trim();
-      if (!awaitingChallenge && line.length === 0) continue;
-      const result = awaitingChallenge
-        ? await shell.provideInput(line)
-        : await shell.runLine(line);
-      if (!awaitingChallenge) lines.push(`${prompt}${line}`);
-      const merged = `${result.stdout}${result.stderr}`.replace(/\n+$/, '');
-      if (merged.length > 0) lines.push(merged);
-      prompt = result.prompt ?? prompt;
-      awaitingChallenge = result.pendingInput !== undefined;
-      ended = result.sessionEnded === true;
-    }
+    const relayed = await relayScriptedShell(shell, this._scenarioStdin ?? '', skipLines);
     shell.close();
-    return { output: lines.join('\n'), exitCode: 0 };
+    return relayed;
   }
 
   private async relayOverWire(
