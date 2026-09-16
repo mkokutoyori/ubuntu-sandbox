@@ -1594,6 +1594,11 @@ function runCrossPlatformExec(
   };
 
   if (remoteCmd) {
+    const relayed = opts.execRelay?.(remoteCmd, {}) ?? null;
+    if (relayed) {
+      closeSession();
+      return { output: relayed.output, exitCode: relayed.exitCode };
+    }
     const result = target.runSshCommandSync(remoteUser, remoteCmd);
     closeSession();
     if (result) return { output: result.output, exitCode: result.exitCode };
