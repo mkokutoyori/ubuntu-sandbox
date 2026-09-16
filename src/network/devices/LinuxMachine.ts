@@ -1886,9 +1886,13 @@ export abstract class LinuxMachine extends EndHost
         kind: 'auth_failure', user, method: authMethod, ip: fromIp, fromHost,
         port, reason: failureReason, validUser,
       });
-      this.sessionTable.recordFailedLogin(user, fromIp);
+      this.recordFailedSshLogin(user, fromIp);
     }
     if (accepted) this.openSshSessionRecord(user, fromIp, fromHost);
+  }
+
+  recordFailedSshLogin(user: string, fromIp: string): void {
+    this.sessionTable.recordFailedLogin(user, fromIp);
   }
 
   openSshSessionRecord(user: string, fromIp: string, fromHost: string): void {
@@ -3027,7 +3031,7 @@ export abstract class LinuxMachine extends EndHost
     if (input.includes('/var/lib/dhcp/')) return true;
     if (LinuxMachine.SSHPASS_TRANSFER_RE.test(input)) return true;
     if (LinuxMachine.TRANSFER_RE.test(input)) return true;
-    const words = input.split(/[\s;|&"'`()]+/);
+    const words = LinuxCommandRegistry.commandWordsIn(input);
     if (words.some(w => w === 'ps' || w === 'man' || w === 'sshd')) return true;
     // `bash script.sh` / `./script.sh` / `run-parts DIR` at the top of the
     // line: a network command (`ssh`, `curl`, …) may be hiding inside the

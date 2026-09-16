@@ -42,6 +42,10 @@ import {
   idle,
   verifyingHostKey,
 } from './SshSessionState';
+import {
+  SshRecordLayer, sealedStream, generateEphemeralScalar,
+  ephemeralPublicKey, sharedSecretFrom,
+} from '../transport/SshRecordLayer';
 
 export interface SshSessionDeps {
   readonly tcpConnector: TcpConnector;
@@ -66,6 +70,12 @@ export const SSH_PASSWORD_PROMPTS = 3;
 export class SshSession implements ISshSession {
   private _state: SshSessionState = idle();
   private conn: TcpConnection | null = null;
+  private readonly records = new SshRecordLayer();
+
+  revealWireRecord(frame: string): string | null {
+    return this.records.reveal(frame);
+  }
+
   private channelManager = new SshChannelManager();
   private knownHosts: SshKnownHosts;
 
@@ -106,10 +116,11 @@ export class SshSession implements ISshSession {
         port: opts.port,
       });
     }
-    const conn = dialed;
+    const records = this.records;
+    const conn = sealedStream(dialed, records);
     this.conn = conn;
 
-    const banner = await this.exchangeBanner(conn);
+    const banner = await this.exchangeBanner(conn, records);
     if (!banner.ok) {
       this.transition(disconnected('protocol error'));
       conn.close();
@@ -220,22 +231,33 @@ export class SshSession implements ISshSession {
 
   private async exchangeBanner(
     conn: TcpConnection,
+    records: SshRecordLayer,
   ): Promise<Result<ServerBanner>> {
-    let banner: ServerBanner | null = null;
+    let banner: (ServerBanner & { kexPublicKey?: string }) | null = null;
     const off = conn.onData((data) => {
       try {
-        const parsed = JSON.parse(data) as Partial<ServerBanner>;
+        const parsed = JSON.parse(data) as Partial<ServerBanner & { kexPublicKey?: string }>;
         if (parsed.hostKey && parsed.serverVersion) {
-          banner = parsed as ServerBanner;
+          banner = parsed as ServerBanner & { kexPublicKey?: string };
         }
       } catch {
         /* ignore non-JSON banner traffic */
       }
     });
-    conn.write(JSON.stringify({ op: 'hello', clientVersion: 'SSH-2.0-Sandbox' }));
+    const scalar = generateEphemeralScalar();
+    conn.write(JSON.stringify({
+      op: 'hello',
+      clientVersion: 'SSH-2.0-Sandbox',
+      kexPublicKey: ephemeralPublicKey(scalar),
+    }));
     off();
     if (!banner) {
       return err({ kind: 'IO_ERROR', message: 'no server banner' });
+    }
+    const peerKey = (banner as { kexPublicKey?: string }).kexPublicKey;
+    if (peerKey) {
+      const secret = sharedSecretFrom(scalar, peerKey);
+      if (secret) records.install(secret, 'client');
     }
     return ok(banner);
   }

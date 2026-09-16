@@ -1,9 +1,6 @@
 /**
- * Recovery-catalog DDL — accepted as no-ops against the in-memory catalog.
- *
- * Real Oracle RMAN keeps an external recovery catalog DB. The simulator
- * has no second DB, so we just echo the canonical success line so DBA
- * scripts paste-and-run.
+ * Recovery-catalog DDL, against the recovery catalog database that
+ * `CONNECT CATALOG` resolved over Oracle Net.
  *
  *   CREATE CATALOG
  *   CREATE VIRTUAL CATALOG <name>
@@ -15,13 +12,21 @@
  *   ALTER DATABASE OPEN RESETLOGS
  */
 
-import { ok, type Result } from '../core/Result';
+import { ok, err, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
 
+const NOT_CONNECTED: RmanError = {
+  code: 'RMAN_06171',
+  message: 'not connected to recovery catalog',
+};
+
 export class CreateCatalogCommand implements IRmanCommand<string[]> {
   readonly name = 'CREATE CATALOG';
-  execute(): Result<string[], RmanError> {
+  execute(_args: string[], { recoveryCatalog }: RmanCommandContext): Result<string[], RmanError> {
+    if (!recoveryCatalog) return err(NOT_CONNECTED);
+    const created = recoveryCatalog.createSchema();
+    if (created.ok === false) return created;
     return ok(['recovery catalog created']);
   }
 }
@@ -45,7 +50,14 @@ export class GrantCatalogCommand implements IRmanCommand<string[]> {
 
 export class RegisterDatabaseCommand implements IRmanCommand<string[]> {
   readonly name = 'REGISTER DATABASE';
-  execute(_args: string[], { ctx }: RmanCommandContext): Result<string[], RmanError> {
+  execute(
+    _args: string[], { ctx, catalog, recoveryCatalog }: RmanCommandContext,
+  ): Result<string[], RmanError> {
+    if (!recoveryCatalog) return err(NOT_CONNECTED);
+    const registered = recoveryCatalog.registerDatabase();
+    if (registered.ok === false) return registered;
+    const snapshot = catalog.listAll();
+    if (snapshot.ok) recoveryCatalog.resyncFrom(snapshot.value);
     return ok([
       'database registered in recovery catalog',
       'starting full resync of recovery catalog',
@@ -57,10 +69,19 @@ export class RegisterDatabaseCommand implements IRmanCommand<string[]> {
 
 export class UnregisterDatabaseCommand implements IRmanCommand<string[]> {
   readonly name = 'UNREGISTER DATABASE';
-  execute(args: string[]): Result<string[], RmanError> {
-    const name = (args[0] ?? '').toUpperCase();
+  execute(args: string[], { ctx, recoveryCatalog }: RmanCommandContext): Result<string[], RmanError> {
+    if (!recoveryCatalog) return err(NOT_CONNECTED);
+    const name = (args[0] ?? ctx.dbName).toUpperCase();
+    if (!recoveryCatalog.isRegistered()) {
+      return err({
+        code: 'RMAN_06004',
+        message: `database ${name} not found in the recovery catalog`,
+      });
+    }
+    const removed = recoveryCatalog.unregisterDatabase();
+    if (removed.ok === false) return removed;
     return ok([
-      `database name is "${name}" and DBID is unknown`,
+      `database name is "${name}" and DBID is ${ctx.dbId.value}`,
       'database unregistered from the recovery catalog',
     ]);
   }
@@ -68,14 +89,17 @@ export class UnregisterDatabaseCommand implements IRmanCommand<string[]> {
 
 export class ConnectCatalogCommand implements IRmanCommand<string[]> {
   readonly name = 'CONNECT CATALOG';
-  execute(_args: string[]): Result<string[], RmanError> {
+  execute(_args: string[], { recoveryCatalog }: RmanCommandContext): Result<string[], RmanError> {
+    if (!recoveryCatalog) return err(NOT_CONNECTED);
     return ok(['connected to recovery catalog database']);
   }
 }
 
 export class ListDbUniqueNameCommand implements IRmanCommand<string[]> {
   readonly name = 'LIST DB_UNIQUE_NAME';
-  execute(_args: string[], { ctx }: RmanCommandContext): Result<string[], RmanError> {
+  execute(_args: string[], { ctx, recoveryCatalog }: RmanCommandContext): Result<string[], RmanError> {
+    if (!recoveryCatalog) return err(NOT_CONNECTED);
+    if (!recoveryCatalog.isRegistered()) return ok(['', 'List of Databases', '=================', '']);
     return ok([
       '',
       'List of Databases',

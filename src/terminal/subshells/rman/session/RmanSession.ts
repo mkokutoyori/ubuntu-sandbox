@@ -17,6 +17,7 @@ import { createAggregations, type ReactiveAggregations, type SessionMetrics } fr
 import { ReactiveChannelPool } from '../channel/ReactiveChannelPool';
 import { RmanBusBridge } from '../RmanBusBridge';
 import { InMemoryRmanCatalog } from '../catalog/InMemoryRmanCatalog';
+import { RemoteRecoveryCatalog } from '../catalog/RemoteRecoveryCatalog';
 import { RmanJobEngine } from '../job/RmanJobEngine';
 import { RmanCommandDispatcher } from '../commands/RmanCommandDispatcher';
 import { ok, err, type Result } from '../core/Result';
@@ -30,10 +31,14 @@ import type { RmanEvent } from '../core/types';
 import { RmanSessionOptionsBuilder } from './RmanSessionOptionsBuilder';
 import { RmanConfig } from './RmanConfig';
 
+const NO_IDENTIFIER = 'ORA-12154: TNS:could not resolve the connect identifier specified';
+
 export class RmanSession implements IRmanSession {
   private readonly _bus:        RmanEventBus;
   private readonly _pool:       ReactiveChannelPool;
   private readonly _catalog:    InMemoryRmanCatalog;
+  private _recoveryCatalog: RemoteRecoveryCatalog | null = null;
+  private _auxiliary: IRmanOracleContext | null = null;
   private readonly _engine:     RmanJobEngine;
   private readonly _dispatcher: RmanCommandDispatcher;
   private readonly _config:     RmanConfig;
@@ -185,12 +190,72 @@ export class RmanSession implements IRmanSession {
       return ok([`connected to target database: ${name} (DBID=${id})`]);
     }
 
+    if (cleanedUpper.startsWith('CONNECT CATALOG')) {
+      return this._connectCatalog(cleaned);
+    }
+
+    if (cleanedUpper.startsWith('CONNECT AUXILIARY')) {
+      return this._connectAuxiliary(cleaned);
+    }
+
     if (this._state !== 'CONNECTED' && this._state !== 'RUNNING_JOB') {
       return err({ code: 'RMAN_03002', message: 'target database is not connected' });
     }
 
     this._selfShutdown = /^SHUTDOWN\b/i.test(cleanedUpper);
-    return this._dispatcher.dispatch(cleaned, this._cmdCtx());
+    const dispatched = this._dispatcher.dispatch(cleaned, this._cmdCtx());
+    this._implicitResync(dispatched.ok);
+    return dispatched;
+  }
+
+  private _implicitResync(dispatchSucceeded: boolean): void {
+    const catalog = this._recoveryCatalog;
+    if (!dispatchSucceeded || !catalog || !catalog.isRegistered()) return;
+    const snapshot = this._catalog.listAll();
+    if (snapshot.ok) catalog.resyncFrom(snapshot.value);
+  }
+
+  private _connectCatalog(line: string): Result<string[], RmanError> {
+    const identifier = /@(\S+)/.exec(line)?.[1]?.replace(/;$/, '');
+    if (!identifier) {
+      return err({
+        code: 'RMAN_01009',
+        message: 'CONNECT CATALOG requires a connect identifier',
+      });
+    }
+    const outcome = this._ctx.connectPeer?.(identifier);
+    if (!outcome || outcome.ok === false) {
+      return err({
+        code: 'RMAN_04004',
+        message: 'error from recovery catalog database: '
+          + (outcome && outcome.ok === false ? outcome.error : NO_IDENTIFIER),
+      });
+    }
+    this._recoveryCatalog = new RemoteRecoveryCatalog(
+      { run: (statement) => outcome.runSql(statement) },
+      this._ctx.dbName,
+      this._ctx.dbId.value,
+    );
+    const snapshot = this._catalog.listAll();
+    if (snapshot.ok) this._recoveryCatalog.adoptLocal(snapshot.value);
+    return ok(['connected to recovery catalog database']);
+  }
+
+  private _connectAuxiliary(line: string): Result<string[], RmanError> {
+    const identifier = /@(\S+)/.exec(line)?.[1]?.replace(/;$/, '');
+    if (!identifier) {
+      return ok([`connected to auxiliary database: ${this._ctx.dbName} (not started)`]);
+    }
+    const outcome = this._ctx.connectPeer?.(identifier);
+    if (!outcome || outcome.ok === false) {
+      return err({
+        code: 'RMAN_04006',
+        message: 'error from auxiliary database: '
+          + (outcome && outcome.ok === false ? outcome.error : NO_IDENTIFIER),
+      });
+    }
+    this._auxiliary = outcome.context;
+    return ok([`connected to auxiliary database: ${outcome.dbName}`]);
   }
 
   private _cmdCtx() {
@@ -198,6 +263,8 @@ export class RmanSession implements IRmanSession {
       bus:     this._bus,
       engine:  this._engine,
       catalog: this._catalog,
+      recoveryCatalog: this._recoveryCatalog,
+      auxiliary: this._auxiliary,
       ctx:     this._ctx,
       policy:  this._config.snapshot().retentionPolicy,
       config:  this._config,

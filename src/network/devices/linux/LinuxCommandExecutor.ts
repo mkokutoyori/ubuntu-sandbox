@@ -1563,7 +1563,14 @@ export class LinuxCommandExecutor {
     host: string, user: string, password: string | undefined,
     port = 22, identities: string[] = [],
   ): Promise<SshSession | null> {
-    if (!this.tcpConnector) return null;
+    return (await this.connectWireSsh(host, user, password, port, identities)).session;
+  }
+
+  private async connectWireSsh(
+    host: string, user: string, password: string | undefined,
+    port = 22, identities: string[] = [],
+  ): Promise<{ session: SshSession | null; authRefused: boolean }> {
+    if (!this.tcpConnector) return { session: null, authRefused: false };
     const connector = this.tcpConnector;
     const session = new SshSession({
       tcpConnector: ((h, p) => connector(h, p)) as unknown as TcpConnector,
@@ -1585,8 +1592,11 @@ export class LinuxCommandExecutor {
       }
     }
     const result = await session.connect(builder.build());
-    if (!isOk(result)) { session.disconnect(); return null; }
-    return session;
+    if (!isOk(result)) {
+      session.disconnect();
+      return { session: null, authRefused: result.error.kind === 'AUTH_FAILED' };
+    }
+    return { session, authRefused: false };
   }
 
   private async tryOpenWireSftpFs(
@@ -1610,11 +1620,15 @@ export class LinuxCommandExecutor {
     const target = wireExecTarget(args, this.vfs, this.cwd, this.userMgr.currentUser);
     const reachable = target !== null
       && wireReachOutcome(this.localDevice, target.host, target.port) === 'open';
-    const session = reachable && target !== null
-      ? await this.openWireSshSession(
+    const wire = reachable && target !== null
+      ? await this.connectWireSsh(
         target.host, target.user, stdinPwd, target.port, target.identities)
-      : null;
-    if (!session) return this.finishSshClientResult(runSshClient(opts));
+      : { session: null, authRefused: false };
+    const session = wire.session;
+    if (!session) {
+      return this.finishSshClientResult(
+        runSshClient({ ...opts, wireAuthRefused: wire.authRefused }), wire.authRefused);
+    }
     try {
       return this.finishSshClientResult(runSshClient({
         ...opts,
@@ -1637,18 +1651,22 @@ export class LinuxCommandExecutor {
   private finishSshClientResult(
     result: ReturnType<typeof runSshClient>, onWire = false,
   ): { output: string; exitCode: number } {
-    if (!onWire && result.connection) {
-      const entry = this.socketTable?.connect(
+    if (result.connection) {
+      const entry = onWire ? null : this.socketTable?.connect(
         'tcp', result.connection.localIp, 0,
         result.connection.peerIp, result.connection.peerPort,
         undefined, 'ssh',
       );
-      const srcPort = entry?.localPort ?? 49152 + Math.floor(Math.random() * 16000);
+      const srcPort = entry?.localPort
+        ?? this.sshServerViewOfClientPort(result.connection.localIp, result.connection.peerIp)
+        ?? 49152 + Math.floor(Math.random() * 16000);
       this.mirrorSshHandshakeCapture(
         { ip: result.connection.localIp, port: srcPort },
         { ip: result.connection.peerIp, port: result.connection.peerPort },
       );
-      this.emitSshWire(result.connection.localIp, srcPort, result.connection.peerIp, result.connection.peerPort);
+      if (!onWire) {
+        this.emitSshWire(result.connection.localIp, srcPort, result.connection.peerIp, result.connection.peerPort);
+      }
       if (entry) this.socketTable?.transition(entry.id, 'TIME_WAIT');
     }
     if (result.droppedSyn) {
@@ -1885,6 +1903,15 @@ export class LinuxCommandExecutor {
     return { output: `${header}\n`, exitCode: 0 };
   }
 
+  private sshPeerDevice(peerIp: string): unknown {
+    return findHostByAddress(peerIp, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never)?.device;
+  }
+
+  private sshServerViewOfClientPort(localIp: string, peerIp: string): number | undefined {
+    const server = this.sshPeerDevice(peerIp) as { sshClientPort?: (ip: string) => number } | undefined;
+    return server?.sshClientPort?.(localIp);
+  }
+
   /**
    * `captureTcpHandshake` only writes into the calling machine's own
    * `captureLog` — unlike `emitSshWire`'s `publishWireSegment` calls, it
@@ -1898,9 +1925,8 @@ export class LinuxCommandExecutor {
     dst: { ip: string; port: number },
   ): void {
     this.captureLog.captureTcpHandshake(src, dst);
-    const remote = findHostByAddress(dst.ip, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
-    const remoteCap = (remote?.device as unknown as { executor?: { captureLog?: PacketCaptureLog } } | undefined)
-      ?.executor?.captureLog;
+    const remoteCap = (this.sshPeerDevice(dst.ip) as unknown as
+      { executor?: { captureLog?: PacketCaptureLog } } | undefined)?.executor?.captureLog;
     if (remoteCap && remoteCap !== this.captureLog) remoteCap.captureTcpHandshake(src, dst);
   }
 

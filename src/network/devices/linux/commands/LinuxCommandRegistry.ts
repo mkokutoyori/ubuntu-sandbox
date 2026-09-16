@@ -51,13 +51,26 @@ export class LinuxCommandRegistry {
    * `LinuxPC.containsNetworkCommand()`.
    */
   hasNetworkCommandIn(line: string): boolean {
-    const words = line.split(/[\s;|&"'`()]+/);
-    for (const w of words) {
+    for (const w of LinuxCommandRegistry.commandWordsIn(line)) {
       const cmd = this.cmds.get(w);
       if (cmd && cmd.needsNetworkContext) return true;
     }
     return false;
   }
+
+  static commandWordsIn(line: string): string[] {
+    const words: string[] = [];
+    for (const segment of line.split(/[;|&]+/)) {
+      const tokens = segment.split(/[\s"'`()]+/).filter(Boolean);
+      const head = tokens[0] === 'sudo' ? tokens[1] : tokens[0];
+      if (head !== undefined && LinuxCommandRegistry.UNIT_OPERAND_COMMANDS.has(head)) continue;
+      words.push(...tokens);
+    }
+    return words;
+  }
+
+  private static readonly UNIT_OPERAND_COMMANDS: ReadonlySet<string> =
+    new Set(['systemctl', 'service']);
 
   /** Read-only view over the unique set of registered commands. */
   list(): readonly LinuxCommand[] {
