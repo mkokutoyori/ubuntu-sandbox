@@ -173,6 +173,10 @@ import { GreAgent, type GreHost } from '../gre/GreAgent';
 import type { DHCPClient } from '../dhcp/DHCPClient';
 import { LinuxSshServerContext } from '../protocols/ssh/server/LinuxSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
+import { TelnetServerHandler } from '../protocols/telnet/TelnetServerHandler';
+import {
+  LinuxTelnetServerContext, type LinuxTelnetHost,
+} from '../protocols/telnet/LinuxTelnetServerContext';
 import { probeSshHostKey } from '../protocols/ssh/SshHostKeyProbe';
 import { parseSshdConfig, validateSshdConfig } from '../protocols/ssh/server/SshSshdConfig';
 import {
@@ -469,6 +473,7 @@ export abstract class LinuxMachine extends EndHost
     this.executor.ip6tables.setLogCallback((prefix, pkt) => this.logIptablesLog(prefix, pkt));
 
     this.attachSshTcpListeners();
+    this.wireTelnetLifecycle();
     this.attachProcessSocketReaper();
 
     // 7. Cron daemon ticker — fires due jobs every simulated minute.
@@ -1741,6 +1746,103 @@ export abstract class LinuxMachine extends EndHost
       }
       this._sshdActivePorts.add(port);
     }
+  }
+
+  private readonly _telnetActivePorts = new Set<number>();
+  private _telnetContext: LinuxTelnetServerContext | null = null;
+
+  private telnetdPid(): number {
+    return this.executor.processMgr.list({ comm: 'in.telnetd' })[0]?.pid ?? 1;
+  }
+
+  isTelnetActive(): boolean { return this.isServiceActive('telnet'); }
+
+  getTelnetServerContext(): LinuxTelnetServerContext {
+    if (!this._telnetContext) {
+      this._telnetContext = new LinuxTelnetServerContext(this.telnetHost());
+    }
+    return this._telnetContext;
+  }
+
+  private telnetHost(): LinuxTelnetHost {
+    return {
+      hostname: () => this.hostname,
+      readFile: (path) => this.executor.vfs.readFile(path),
+      telnetActive: () => this.isTelnetActive(),
+      account: (user) => {
+        const entry = this.executor.userMgr.getUser(user) as
+          { uid?: number; home?: string; shell?: string } | undefined;
+        if (!entry) return null;
+        return {
+          uid: entry.uid ?? 1000,
+          home: entry.home ?? `/home/${user}`,
+          shell: entry.shell ?? '/bin/bash',
+        };
+      },
+      authenticate: (user, password) => this.executor.userMgr.checkPassword(user, password),
+      runLine: (user, line) => this.executor.runAsUser(user, () => this.executeCommand(line)),
+      openSession: (user, fromIp, peerPort) => {
+        void peerPort;
+        const entry = this.executor.userMgr.getUser(user) as { uid?: number } | undefined;
+        const session = this.sessionTable.open({
+          user, uid: entry?.uid ?? 1000, sshdPid: this.telnetdPid(),
+          fromIp, fromHost: fromIp,
+        });
+        return { id: session.tty, line: session.tty };
+      },
+      closeSession: (id, reason) => {
+        this.sessionTable.close(id, reason);
+      },
+      recordLogin: (user, fromIp, tty, uid) => {
+        this.executor.logMgr.logAuth('login', uid === 0
+          ? `ROOT LOGIN ON ${tty} FROM ${fromIp}`
+          : `LOGIN ON ${tty} BY ${user} FROM ${fromIp}`, this.telnetdPid());
+      },
+      recordAuthFailure: (user, fromIp, attempt, reason) => {
+        this.executor.logMgr.logAuth('login',
+          `FAILED LOGIN ${attempt} FROM ${fromIp} FOR ${user ?? '(unknown)'}, ${reason}`,
+          this.telnetdPid());
+        this.recordFailedSshLogin(user ?? '(unknown)', fromIp);
+      },
+    };
+  }
+
+  private attachTelnetTcpListeners(): void {
+    const stack = this.getTcpStack();
+    const pid = this.telnetdPid();
+    for (const addr of LinuxMachine.SSHD_ADDRESSES) {
+      try {
+        stack.listen(LinuxMachine.TELNET_PORT, {
+          identity: { pid, processName: 'in.telnetd' },
+          onAccept: (socket) => {
+            stack.setSocketOwner(socket, pid);
+            new TelnetServerHandler(this.getTelnetServerContext())
+              .register(socket as unknown as TcpStream, socket.remoteIp);
+          },
+        }, addr);
+      } catch { /* deja ouverte sur cette adresse */ }
+    }
+    this._telnetActivePorts.add(LinuxMachine.TELNET_PORT);
+  }
+
+  private detachTelnetTcpListeners(): void {
+    const stack = this.getTcpStack();
+    for (const port of this._telnetActivePorts) {
+      for (const addr of LinuxMachine.SSHD_ADDRESSES) stack.closeListener(port, addr);
+    }
+    this._telnetActivePorts.clear();
+    this._telnetContext = null;
+  }
+
+  private static readonly TELNET_PORT = 23;
+
+  private wireTelnetLifecycle(): void {
+    const bus = this.getBus();
+    const isTelnet = (p: { deviceId?: string; name?: string }) =>
+      p.deviceId === this.id && (p.name === 'telnet' || p.name === 'telnetd');
+    bus.subscribeWhere('linux.service.started', isTelnet, () => this.attachTelnetTcpListeners());
+    bus.subscribeWhere('linux.service.restarted', isTelnet, () => this.attachTelnetTcpListeners());
+    bus.subscribeWhere('linux.service.stopped', isTelnet, () => this.detachTelnetTcpListeners());
   }
 
   private detachSshTcpListeners(): void {
