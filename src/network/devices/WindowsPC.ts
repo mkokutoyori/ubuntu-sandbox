@@ -2296,6 +2296,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       execRelay: wire?.exec,
       shellRelay: wire?.shell,
       wireAuthRefused: wire?.authRefused,
+      wireAuthenticated: wire?.authRefused === false,
       localFs: {
         readFile: (p: string) => this.fs.readFile(p),
         createFile: (p: string, c: string) => {

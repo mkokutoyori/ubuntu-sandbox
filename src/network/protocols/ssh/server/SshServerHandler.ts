@@ -237,6 +237,8 @@ export class SshServerHandler {
         kind: 'client_disconnected',
         user: userCtx?.username ?? '',
         ip: clientIp,
+        port: this.ctx.clientPort?.(clientIp),
+        authenticated: userCtx !== null,
         reason: reason === 'rst' ? 'reset' : 'closed',
         timestamp: Date.now(),
       });

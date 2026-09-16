@@ -46,6 +46,7 @@ export interface WinSshClientOpts {
   execRelay?: (command: string) => { output: string; exitCode: number } | null;
   shellRelay?: () => { output: string; exitCode: number } | null;
   wireAuthRefused?: boolean;
+  wireAuthenticated?: boolean;
 }
 
 export interface WinWireTarget {
@@ -281,7 +282,9 @@ export async function runWindowsSshClient(
     }
   }
 
-  remote.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, true);
+  if (!opts.wireAuthenticated) {
+    remote.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, true);
+  }
 
   // First-connect TOFU: append the remote host key to %USERPROFILE%\.ssh\
   // known_hosts. Mirrors OpenSSH-for-Windows under StrictHostKeyChecking=
@@ -318,19 +321,21 @@ export async function runWindowsSshClient(
 
   const relayedShell = opts.shellRelay?.() ?? null;
   if (relayedShell) {
-    (remote as unknown as {
-      scheduleSshLogout?: (u: string, ip: string, hold: number) => void;
-    }).scheduleSshLogout?.(remoteUser, opts.sourceIp, 0);
-    const transcript = [relayedShell.output, `Connection to ${host} closed.`]
-      .filter(part => part.length > 0);
+    const transcript = [
+      remote.getSshMotd().replace(/^\n+/, '').replace(/\n+$/, ''),
+      relayedShell.output,
+      `Connection to ${host} closed.`,
+    ].filter(part => part.length > 0);
     return { output: transcript.join('\n'), exitCode: relayedShell.exitCode };
   }
 
   // Interactive form: the remote command-prompt banner, then the
   // OpenSSH "Connection to <host> closed." line.
   const lines = [remote.getSshMotd().replace(/^\n+/, ''), '', `Connection to ${host} closed.`];
-  (remote as unknown as {
-    scheduleSshLogout?: (u: string, ip: string, hold: number) => void;
-  }).scheduleSshLogout?.(remoteUser, opts.sourceIp, 0);
+  if (!opts.wireAuthenticated) {
+    (remote as unknown as {
+      scheduleSshLogout?: (u: string, ip: string, hold: number) => void;
+    }).scheduleSshLogout?.(remoteUser, opts.sourceIp, 0);
+  }
   return { output: lines.join('\n'), exitCode: 0 };
 }
