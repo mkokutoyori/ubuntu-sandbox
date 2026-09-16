@@ -14,6 +14,7 @@ export interface IRouterShell {
   execute(router: Router, rawInput: string): string | Promise<string>;
   /** Get the OS type identifier */
   getOSType(): string;
+  execSessionClosed?(): boolean;
   /** Get the current CLI prompt string (e.g. "Router#", "<Router>") */
   getPrompt(router: Router): string;
   /**

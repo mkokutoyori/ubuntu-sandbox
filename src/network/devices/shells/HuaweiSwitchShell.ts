@@ -789,6 +789,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   // ─── FSM Transitions ─────────────────────────────────────────────
 
+  private sessionExecFermee = false;
+
+  execSessionClosed(): boolean { return this.sessionExecFermee; }
+
   private cmdQuit(): string {
     switch (this.mode) {
       case 'interface':
@@ -829,6 +833,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.mode = 'user';
         return '';
       case 'user':
+        this.sessionExecFermee = true;
         return '';
       default:
         return '';

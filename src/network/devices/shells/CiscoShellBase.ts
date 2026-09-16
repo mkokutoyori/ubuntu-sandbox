@@ -8456,6 +8456,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * meme session.
    */
   beginExecSession(level: number, user?: string, view?: string | null): void {
+    this.sessionExecFermee = false;
     this.currentPrivilegeLevel = level;
     this.mode = (level >= 15 || view) ? 'privileged' : 'user';
     this.fsm.mode = this.mode;
@@ -8470,7 +8471,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.terminalHistoryEnabled = this.terminalHistorySize > 0;
   }
 
+  private sessionExecFermee = false;
+
+  execSessionClosed(): boolean { return this.sessionExecFermee; }
+
   protected fermerSessionExec(): string {
+    this.sessionExecFermee = true;
     this.terminalMonitor = false;
     this.currentPrivilegeLevel = 1;
     // La vue est un ROLE porte par la session, pas par la machine :

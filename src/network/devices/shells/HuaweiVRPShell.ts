@@ -918,6 +918,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     return transport === 'telnet' || transport === 'all';
   }
 
+  private sessionExecFermee = false;
+
+  execSessionClosed(): boolean { return this.sessionExecFermee; }
+
   private cmdQuit(): string {
     switch (this.mode) {
       case 'interface':
@@ -1050,6 +1054,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         this.mode = 'user';
         return '';
       case 'user':
+        this.sessionExecFermee = true;
         return '';
       default:
         return '';

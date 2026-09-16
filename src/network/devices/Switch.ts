@@ -2820,11 +2820,8 @@ export abstract class Switch extends Equipment {
     let ended = false;
     return {
       execute: (rawInput: string): string => {
-        const before = shell.getPrompt(this);
         const output = shell.execute(this, rawInput);
-        const line = rawInput.trim().toLowerCase();
-        if ((line === 'exit' || line === 'logout' || line === 'quit')
-          && shell.getPrompt(this) === before) ended = true;
+        ended = shell.execSessionClosed?.() === true;
         return output;
       },
       getPrompt: () => shell.getPrompt(this),
