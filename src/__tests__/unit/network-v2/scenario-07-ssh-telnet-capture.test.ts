@@ -31,27 +31,6 @@ function buildTopology(): Topology {
   return { client, server, capture, sw };
 }
 
-function captureLog(host: LinuxPC | LinuxServer) {
-  return (host as unknown as { executor: { captureLog: { all: () => readonly { srcIp: string; dstIp: string; srcPort: number; dstPort: number; payload?: Uint8Array }[]; clear: () => void } } }).executor.captureLog;
-}
-
-function asAscii(bytes?: Uint8Array): string {
-  if (!bytes) return '';
-  let out = '';
-  for (const b of bytes) {
-    if (b >= 0x20 && b <= 0x7e) out += String.fromCharCode(b);
-    else out += '.';
-  }
-  return out;
-}
-
-function flatPayload(host: LinuxPC | LinuxServer, port?: number): string {
-  return captureLog(host).all()
-    .filter(p => port == null || p.srcPort === port || p.dstPort === port)
-    .map(p => asAscii(p.payload))
-    .join('\n');
-}
-
 describe('Scenario 7 — Capture et analyse de paquets sur un lien SSH', () => {
   beforeEach(() => {
     resetCounters();
@@ -77,14 +56,10 @@ describe('Scenario 7 — Capture et analyse de paquets sur un lien SSH', () => {
     await client.executeCommand('ssh -o StrictHostKeyChecking=no alice@10.0.0.20 "cat /etc/shadow"', 'ssh-secret-PW!\n');
 
     const tcpdumpOut = await capture.executeCommand('tcpdump -r /tmp/ssh.pcap -A');
+    expect(tcpdumpOut).toMatch(/10\.0\.0\.20\.22/);
     expect(tcpdumpOut).toMatch(/SSH-2\.0/);
     expect(tcpdumpOut).not.toContain('ssh-secret-PW!');
     expect(tcpdumpOut).not.toContain('cat /etc/shadow');
-
-    const sniffer = flatPayload(capture);
-    expect(sniffer).toMatch(/SSH-2\.0/);
-    expect(sniffer).not.toContain('ssh-secret-PW!');
-    expect(sniffer).not.toContain('cat /etc/shadow');
   });
 
   it('Telnet session: la capture expose le mot de passe et les commandes en clair', async () => {
@@ -104,17 +79,13 @@ describe('Scenario 7 — Capture et analyse de paquets sur un lien SSH', () => {
     await client.executeCommand('telnet 10.0.0.20', 'bob\ntelnet-cleartext\nls /etc/shadow\nexit\n');
 
     const tcpdumpOut = await capture.executeCommand('tcpdump -r /tmp/telnet.pcap -A');
+    expect(tcpdumpOut).toMatch(/10\.0\.0\.20\.23/);
     expect(tcpdumpOut).toContain('telnet-cleartext');
     expect(tcpdumpOut).toContain('ls /etc/shadow');
-
-    const sniffer = flatPayload(capture, 23);
-    expect(sniffer).toContain('telnet-cleartext');
-    expect(sniffer).toContain('ls /etc/shadow');
   });
 
   it('Comparaison: aucune donnée applicative lisible côté SSH, conversation entière côté Telnet', async () => {
     const { client, server, sw, capture } = buildTopology();
-    const swPorts = sw.getPortNames();
 
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
@@ -128,21 +99,19 @@ describe('Scenario 7 — Capture et analyse de paquets sur un lien SSH', () => {
 
     await capture.executeCommand('tcpdump -i eth0 -w /tmp/ssh2.pcap &');
     await client.executeCommand('ssh -o StrictHostKeyChecking=no carol@10.0.0.20 "uname -a"', 'carolsecret123\n');
-    const sshPayloads = captureLog(capture).all().filter(p => p.srcPort === 22 || p.dstPort === 22);
-    captureLog(capture).clear();
+    const sshAscii = await capture.executeCommand('tcpdump -r /tmp/ssh2.pcap -A');
 
     await server.executeCommand('systemctl stop ssh');
     await server.executeCommand('systemctl start telnet');
     await capture.executeCommand('tcpdump -i eth0 -w /tmp/telnet2.pcap &');
     await client.executeCommand('telnet 10.0.0.20', 'carol\ncarolsecret123\nuname -a\nexit\n');
-    const telnetPayloads = captureLog(capture).all().filter(p => p.srcPort === 23 || p.dstPort === 23);
+    const telnetAscii = await capture.executeCommand('tcpdump -r /tmp/telnet2.pcap -A');
 
-    const sshAscii = sshPayloads.map(p => asAscii(p.payload)).join('');
-    const telnetAscii = telnetPayloads.map(p => asAscii(p.payload)).join('');
-
+    expect(sshAscii).toMatch(/10\.0\.0\.20\.22/);
     expect(sshAscii).not.toContain('carolsecret123');
     expect(sshAscii).not.toContain('uname -a');
 
+    expect(telnetAscii).toMatch(/10\.0\.0\.20\.23/);
     expect(telnetAscii).toContain('carolsecret123');
     expect(telnetAscii).toContain('uname -a');
   });
