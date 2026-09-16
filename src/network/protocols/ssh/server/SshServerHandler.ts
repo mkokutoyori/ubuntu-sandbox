@@ -27,6 +27,10 @@ import { SftpWireSession } from '../sftp/SftpWireSession';
 import { encodeSftpWirePacket, decodeSftpWirePacket } from '../sftp/SftpWireCodec';
 import { SshUserContext } from '../SshUserContext';
 import { SSH_SERVER_IDENTIFICATION } from '../serverIdentification';
+import {
+  SshRecordLayer, sealedStream, generateEphemeralScalar,
+  ephemeralPublicKey, sharedSecretFrom,
+} from '../transport/SshRecordLayer';
 import type { ILinuxShell, ISshServerContext } from './ISshServerContext';
 import type { SshInteractiveShell } from './SshInteractiveShell';
 import {
@@ -141,7 +145,10 @@ export class SshServerHandler {
     this.handleConnection(conn, clientIp);
   }
 
-  private handleConnection(conn: TcpConnection, clientIp: string): void {
+  private handleConnection(rawConn: TcpConnection, clientIp: string): void {
+    const records = new SshRecordLayer();
+    const kexScalar = generateEphemeralScalar();
+    const conn = sealedStream(rawConn, records);
     const channels = new Map<number, OpenChannelInfo>();
     const sftpWireSessions = new Map<number, SftpWireSession>();
     let userCtx: SshUserContext | null = null;
@@ -283,6 +290,7 @@ export class SshServerHandler {
         case 'hello': {
           const protocolInfo = this.negotiateProtocol(parsed);
           const preAuthBanner = this.ctx.getBanner?.() ?? null;
+          const peerKey = parsed.kexPublicKey as string | undefined;
           conn.write(
             JSON.stringify({
               hostKey: {
@@ -291,9 +299,14 @@ export class SshServerHandler {
               },
               serverVersion: SSH_SERVER_IDENTIFICATION,
               clientVersion: protocolInfo.clientVersion,
+              ...(peerKey ? { kexPublicKey: ephemeralPublicKey(kexScalar) } : {}),
               ...(preAuthBanner ? { preAuthBanner } : {}),
             }),
           );
+          if (peerKey) {
+            const secret = sharedSecretFrom(kexScalar, peerKey);
+            if (secret) records.install(secret, 'server');
+          }
           break;
         }
 

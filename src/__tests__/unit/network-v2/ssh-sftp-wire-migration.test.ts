@@ -8,6 +8,14 @@
  * encoding is genuinely on the wire — behavioral regression coverage
  * for `SftpSession`'s public surface already lives in `ssh-sftp.test.ts`
  * and stays green unmodified.
+ *
+ * Le transport est desormais CHIFFRE apres l'echange de versions, comme
+ * dans un vrai SSH : un releve brut du flux TCP ne montre plus que des
+ * enregistrements scelles. Ce que ce fichier prouve n'a pas change --
+ * SFTP parle bien le codec binaire et non une enveloppe JSON -- mais le
+ * point d'observation descend d'un cran : chaque message est d'abord
+ * ouvert par la couche d'enregistrement de la session, qui detient les
+ * deux cles de sa propre conversation.
  */
 import { describe, it, expect } from 'vitest';
 import type { TcpConnector } from '@/network/tcp/types';
@@ -20,6 +28,8 @@ import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { decodeSftpChannelFrame, isSftpChannelFrame } from '@/network/protocols/ssh/channels/SftpChannelFraming';
 import { decodeSftpWirePacket } from '@/network/protocols/ssh/sftp/SftpWireCodec';
+import { isSealedRecord } from '@/network/protocols/ssh/transport/SshRecordLayer';
+import type { SshSession } from '@/network/protocols/ssh/session/SshSession';
 
 const REMOTE_IP = '10.0.0.2';
 const LOCAL_IP = '10.0.0.1';
@@ -65,7 +75,11 @@ function buildTopology(files: Record<string, string> = {}) {
     interactionHandler: new SilentSshInteractionHandler('secret'),
     homeDirectory: '/root',
   });
-  return { session, vfs, localVfs, clientToServer, serverToClient };
+  const revealed = (payloads: readonly string[]): string[] => payloads
+    .map((p) => (isSealedRecord(p)
+      ? ((session as unknown as { ssh: SshSession }).ssh.revealWireRecord(p) ?? p)
+      : p));
+  return { session, vfs, localVfs, clientToServer, serverToClient, revealed };
 }
 
 function wirePacketTypes(payloads: readonly string[]): string[] {
@@ -81,33 +95,33 @@ function wirePacketTypes(payloads: readonly string[]): string[] {
 
 describe('SFTP-over-SSH speaks the real SSH_FXP_* wire protocol (§2.1.20/P19)', () => {
   it('the channel-open handshake is a real binary INIT/VERSION exchange, not JSON', async () => {
-    const { session, clientToServer, serverToClient } = buildTopology();
+    const { session, clientToServer, serverToClient, revealed } = buildTopology();
     await session.connect(`alice@${REMOTE_IP}`);
 
-    expect(wirePacketTypes(clientToServer)).toContain('INIT');
-    expect(wirePacketTypes(serverToClient)).toContain('VERSION');
+    expect(wirePacketTypes(revealed(clientToServer))).toContain('INIT');
+    expect(wirePacketTypes(revealed(serverToClient))).toContain('VERSION');
     // Every message on the wire is either a real `\0`-tagged frame or valid JSON control text — never a mix.
-    for (const p of [...clientToServer, ...serverToClient]) {
+    for (const p of [...revealed(clientToServer), ...revealed(serverToClient)]) {
       if (isSftpChannelFrame(p)) continue;
       expect(() => JSON.parse(p)).not.toThrow();
     }
   });
 
   it('get() drives a real OPEN(read)/READ/CLOSE sequence on the wire', async () => {
-    const { session, clientToServer } = buildTopology({ '/home/alice/hello.txt': 'hello wire migration' });
+    const { session, clientToServer, revealed } = buildTopology({ '/home/alice/hello.txt': 'hello wire migration' });
     await session.connect(`alice@${REMOTE_IP}`);
     clientToServer.length = 0;
     const out = session.get('hello.txt');
     expect(out).toContain('hello.txt');
 
-    const types = wirePacketTypes(clientToServer);
+    const types = wirePacketTypes(revealed(clientToServer));
     expect(types).toContain('OPEN');
     expect(types).toContain('READ');
     expect(types).toContain('CLOSE');
   });
 
   it('put() drives a real OPEN(write)/WRITE/CLOSE sequence, and the file really lands on the server', async () => {
-    const { session, vfs, localVfs, clientToServer } = buildTopology();
+    const { session, vfs, localVfs, clientToServer, revealed } = buildTopology();
     await session.connect(`alice@${REMOTE_IP}`);
     localVfs.writeFile('/root/local.txt', 'uploaded via real wire', 0, 0, 0o022);
     clientToServer.length = 0;
@@ -116,72 +130,72 @@ describe('SFTP-over-SSH speaks the real SSH_FXP_* wire protocol (§2.1.20/P19)',
     expect(out).toContain('uploaded.txt');
     expect(vfs.readFile('/home/alice/uploaded.txt')).toBe('uploaded via real wire');
 
-    const types = wirePacketTypes(clientToServer);
+    const types = wirePacketTypes(revealed(clientToServer));
     expect(types).toContain('OPEN');
     expect(types).toContain('WRITE');
     expect(types).toContain('CLOSE');
   });
 
   it('ls() drives a real OPENDIR/READDIR/CLOSE sequence', async () => {
-    const { session, clientToServer } = buildTopology({ '/home/alice/a.txt': 'A' });
+    const { session, clientToServer, revealed } = buildTopology({ '/home/alice/a.txt': 'A' });
     await session.connect(`alice@${REMOTE_IP}`);
     clientToServer.length = 0;
     const out = session.ls([], new Set());
     expect(out).toContain('a.txt');
 
-    const types = wirePacketTypes(clientToServer);
+    const types = wirePacketTypes(revealed(clientToServer));
     expect(types).toContain('OPENDIR');
     expect(types).toContain('READDIR');
     expect(types).toContain('CLOSE');
   });
 
   it('mkdir/rm/rmdir/rename/chmod/chown/stat each produce a real single wire op', async () => {
-    const { session, clientToServer } = buildTopology({ '/home/alice/target.txt': 'x' });
+    const { session, clientToServer, revealed } = buildTopology({ '/home/alice/target.txt': 'x' });
     await session.connect(`alice@${REMOTE_IP}`);
 
     clientToServer.length = 0;
     expect(session.mkdir('newdir')).toBe('');
-    expect(wirePacketTypes(clientToServer)).toContain('MKDIR');
+    expect(wirePacketTypes(revealed(clientToServer))).toContain('MKDIR');
 
     clientToServer.length = 0;
     expect(session.chmod('600', 'target.txt')).toContain('Changing mode');
-    expect(wirePacketTypes(clientToServer)).toContain('SETSTAT');
+    expect(wirePacketTypes(revealed(clientToServer))).toContain('SETSTAT');
 
     clientToServer.length = 0;
     expect(session.stat('target.txt')).toContain('Size:');
-    expect(wirePacketTypes(clientToServer)).toContain('STAT');
+    expect(wirePacketTypes(revealed(clientToServer))).toContain('STAT');
 
     clientToServer.length = 0;
     expect(session.rename('target.txt', 'renamed.txt')).toBe('');
-    expect(wirePacketTypes(clientToServer)).toContain('RENAME');
+    expect(wirePacketTypes(revealed(clientToServer))).toContain('RENAME');
 
     clientToServer.length = 0;
     expect(session.rm('renamed.txt')).toBe('');
-    expect(wirePacketTypes(clientToServer)).toContain('REMOVE');
+    expect(wirePacketTypes(revealed(clientToServer))).toContain('REMOVE');
 
     clientToServer.length = 0;
     expect(session.rmdir('newdir')).toBe('');
-    expect(wirePacketTypes(clientToServer)).toContain('RMDIR');
+    expect(wirePacketTypes(revealed(clientToServer))).toContain('RMDIR');
   });
 
   it('version() is answered from the real INIT/VERSION handshake, still reporting v3 (OpenSSH-compatible default)', async () => {
-    const { session, clientToServer } = buildTopology();
+    const { session, clientToServer, revealed } = buildTopology();
     await session.connect(`alice@${REMOTE_IP}`);
     clientToServer.length = 0;
     expect(session.version()).toBe('SFTP protocol version 3');
     // No new wire round trip needed for `version` — the earlier handshake already answered it.
-    expect(wirePacketTypes(clientToServer)).toHaveLength(0);
+    expect(wirePacketTypes(revealed(clientToServer))).toHaveLength(0);
   });
 
   it('df() deliberately keeps using the legacy JSON envelope (no real SFTP wire representation exists for it)', async () => {
-    const { session, clientToServer } = buildTopology();
+    const { session, clientToServer, revealed } = buildTopology();
     await session.connect(`alice@${REMOTE_IP}`);
     clientToServer.length = 0;
     const out = session.df(undefined, false);
     expect(out).toContain('Size');
 
-    expect(wirePacketTypes(clientToServer)).toHaveLength(0);
-    const jsonMessages = clientToServer.filter((p) => !isSftpChannelFrame(p));
+    expect(wirePacketTypes(revealed(clientToServer))).toHaveLength(0);
+    const jsonMessages = revealed(clientToServer).filter((p) => !isSftpChannelFrame(p));
     expect(jsonMessages.some((p) => { try { return JSON.parse(p).op === 'df'; } catch { return false; } })).toBe(true);
   });
 });
