@@ -878,7 +878,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
   const destIp = found.ip;
-  if (opts.sourceIp && destIp && !isPathReachable(opts.sourceIp, destIp)) {
+  if (opts.sourceIp && destIp && !isPathReachable(opts.sourceIp, destIp, opts.sourceDevice as never)) {
     return {
       output: `ssh: connect to host ${host} port ${port}: No route to host\n`,
       exitCode: 255,
