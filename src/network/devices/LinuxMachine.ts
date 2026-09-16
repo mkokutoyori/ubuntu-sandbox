@@ -1811,16 +1811,17 @@ export abstract class LinuxMachine extends EndHost
     const stack = this.getTcpStack();
     const pid = this.telnetdPid();
     for (const addr of LinuxMachine.SSHD_ADDRESSES) {
-      try {
-        stack.listen(LinuxMachine.TELNET_PORT, {
-          identity: { pid, processName: 'in.telnetd' },
-          onAccept: (socket) => {
-            stack.setSocketOwner(socket, pid);
-            new TelnetServerHandler(this.getTelnetServerContext())
-              .register(socket as unknown as TcpStream, socket.remoteIp);
-          },
-        }, addr);
-      } catch { /* deja ouverte sur cette adresse */ }
+      const bound = stack.listListeners()
+        .some((l) => l.localPort === LinuxMachine.TELNET_PORT && l.localIp === addr);
+      if (bound) continue;
+      stack.listen(LinuxMachine.TELNET_PORT, {
+        identity: { pid, processName: 'in.telnetd' },
+        onAccept: (socket) => {
+          stack.setSocketOwner(socket, pid);
+          new TelnetServerHandler(this.getTelnetServerContext())
+            .register(socket as unknown as TcpStream, socket.remoteIp);
+        },
+      }, addr);
     }
     this._telnetActivePorts.add(LinuxMachine.TELNET_PORT);
   }

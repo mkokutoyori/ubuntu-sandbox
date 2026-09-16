@@ -48,6 +48,11 @@ import {
 } from './switch/MacAccessList';
 import { RouterDhcpClient } from './router/RouterDhcpClient';
 import { SwitchSvi, type SviInterface, type EchoHooks } from './SwitchSvi';
+import { TcpStack, type TcpHost } from '../tcp/TcpStack';
+import type { TcpStream } from '../tcp/types';
+import { TelnetServerHandler } from '../protocols/telnet/TelnetServerHandler';
+import { RouterTelnetServerContext } from '../protocols/telnet/RouterTelnetServerContext';
+import type { TelnetVtyShell } from '../protocols/telnet/ITelnetServerContext';
 import type { ParsedPing } from './shells/cisco/ciscoPing';
 import { ControlPlaneUdpEndpoint } from './udp/ControlPlaneUdpEndpoint';
 import {
@@ -575,6 +580,10 @@ export abstract class Switch extends Equipment {
     natTranslateOutbound: (pkt, outIface, inIface, opts) =>
       this.getNATEngine()?.translateOutbound(pkt, outIface, inIface, opts) ?? null,
     natIsOutsideInterface: (iface) => this.getNATEngine()?.isOutsideInterface(iface) ?? false,
+    deliverLocalTcp: (inVlan, sourceIP, pkt) => {
+      this.syncTelnetListener();
+      return this.getTcpStack().handleIp(`Vlanif${inVlan}`, sourceIP, pkt);
+    },
     deliverLocalUdp: (sourceIP, destinationPort, sourcePort, payload) => {
       // Le port 123 va au moteur NTP, exactement comme sur un routeur.
       // Sans cet aiguillage, un commutateur configure en client NTP
@@ -2794,6 +2803,153 @@ export abstract class Switch extends Equipment {
   // ─── L3 Management Plane (SVI) plumbing ───────────────────────────
 
   /** Bridge base MAC — shared by every SVI, like real Catalyst hardware. */
+  private vtyBlock() {
+    return this._getVtyLineConfig().all()[0];
+  }
+
+  createVtyShell(): TelnetVtyShell {
+    const shell = this.createShell();
+    let ended = false;
+    return {
+      execute: (rawInput: string): string => {
+        const before = shell.getPrompt(this);
+        const output = shell.execute(this, rawInput);
+        const line = rawInput.trim().toLowerCase();
+        if ((line === 'exit' || line === 'logout' || line === 'quit')
+          && shell.getPrompt(this) === before) ended = true;
+        return output;
+      },
+      getPrompt: () => shell.getPrompt(this),
+      lastEndedSession: () => ended,
+    };
+  }
+
+  private buildTelnetServerHandler(): TelnetServerHandler {
+    return new TelnetServerHandler(new RouterTelnetServerContext({
+      hostname: () => this.getHostname(),
+      loginMode: () => {
+        const block = this.vtyBlock();
+        return block?.login ?? (block?.linePassword ? 'password' : 'none');
+      },
+      linePassword: () => {
+        const block = this.vtyBlock();
+        return block?.linePassword
+          ? { value: block.linePassword, algo: block.linePasswordAlgo ?? 'plain' }
+          : null;
+      },
+      authHeader: () => null,
+      loginBanner: () => this.getBanner('login') || null,
+      motd: () => this.getBanner('motd') || null,
+      admit: (ip) => {
+        void ip;
+        const verdict = this._getVtyLineConfig().incomingVerdict();
+        return verdict.accept ? { accept: true } : { accept: false, kind: 'no-line', reason: verdict.reason };
+      },
+      authenticateLocal: (user, password) => this.getCredentialStore().authenticate(user, password),
+      authenticateAaa: (user, password) => Promise.resolve(
+        this.getCredentialStore().authenticate(user, password),
+      ),
+      createVtyShell: () => this.createVtyShell(),
+      openSession: (user, fromIp, peerPort) => {
+        const record = this.getSshSessionRegistry().open({
+          user, privilege: 1, fromIp, authMethod: 'password', localPort: 23, peerPort,
+        });
+        return record ? { id: record.id, line: record.line } : null;
+      },
+      noteTerminalType: (id, terminalType) => {
+        this.getSshSessionRegistry().setTerminalType(id, terminalType);
+      },
+      closeSession: (id, reason) => { this.getSshSessionRegistry().close(id, reason); },
+      touchSession: (id, bytesIn, bytesOut) => {
+        this.getSshSessionRegistry().touch(id, Date.now(), bytesIn, bytesOut);
+      },
+      idleTimeoutMs: () => null,
+      recordAuthFailure: (user, ip) => { void user; void ip; },
+      recordLogin: (user, ip) => { void user; void ip; },
+    }));
+  }
+
+  private syncTelnetListener(): void {
+    const wanted = this._getVtyLineConfig().admetQuelquePart('telnet')
+      && this.getSvis().some((svi) => svi.ip && svi.adminUp);
+    const stack = this.getTcpStack();
+    const bound = stack.listListeners().some((l) => l.localPort === 23);
+    if (wanted === bound) return;
+    if (wanted) {
+      stack.listen(23, {
+        onAccept: (socket) => {
+          this.buildTelnetServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+        },
+      });
+    } else {
+      stack.closeListener(23);
+    }
+  }
+
+  private readonly _sviPorts = new Map<number, Port>();
+
+  private sviVlanOf(name: string): number | null {
+    const m = /^Vlan(?:if)?(\d+)$/i.exec(name);
+    return m ? Number(m[1]) : null;
+  }
+
+  private sviPort(name: string): Port | undefined {
+    const vlan = this.sviVlanOf(name);
+    if (vlan === null) return undefined;
+    const svi = this.getSvi(vlan);
+    if (!svi?.ip || !svi.mask) return undefined;
+    let port = this._sviPorts.get(vlan);
+    if (!port) {
+      port = new Port(`Vlan${vlan}`, 'ethernet', this.getBridgeMac(), { socketless: true });
+      this._sviPorts.set(vlan, port);
+    }
+    const current = port.getIPAddress();
+    if (!current || current.toString() !== svi.ip.toString()) {
+      port.configureIP(svi.ip, svi.mask);
+    }
+    port.setUp(svi.adminUp);
+    return port;
+  }
+
+  private sviPorts(): Port[] {
+    const ports: Port[] = [];
+    for (const svi of this.getSvis()) {
+      const port = this.sviPort(`Vlan${svi.vlan}`);
+      if (port) ports.push(port);
+    }
+    return ports;
+  }
+
+  private _tcpStack: TcpStack | null = null;
+
+  getTcpStack(): TcpStack {
+    if (!this._tcpStack) {
+      this._tcpStack = new TcpStack(this.buildTcpHost(), () => this.getBus());
+      this._tcpStack.start();
+    }
+    return this._tcpStack;
+  }
+
+  private buildTcpHost(): TcpHost {
+    return {
+      id: this.id,
+      name: this.name,
+      getHostname: () => this.getHostname(),
+      getPort: (n: string) => this.sviPort(n) ?? this.getPort(n),
+      getPorts: () => [...this.getPorts(), ...this.sviPorts()],
+      sendFrame: (portName: string, frame: EthernetFrame) => { this.sendFrame(portName, frame); },
+      resolveRoute: (targetIp: string) => {
+        const source = this.svi.sourceAddressFor(new IPAddress(targetIp));
+        if (!source) return null;
+        const svi = this.getSvis().find((s) => s.ip?.toString() === source.toString());
+        return svi ? { iface: `Vlan${svi.vlan}`, nextHopIp: targetIp } : null;
+      },
+      sendIpv4FrameArpAware: (_outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) => {
+        this.svi.sendIpv4FrameArpAware(ipPkt, nextHopIP);
+      },
+    };
+  }
+
   getBridgeMac(): MACAddress {
     const first = this.getPorts()[0];
     return first ? first.getMAC() : MACAddress.broadcast();

@@ -1,7 +1,7 @@
 import {
   EthernetFrame, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, IPv4Packet, UDPPacket,
-  ETHERTYPE_ARP, ETHERTYPE_IPV4, IP_PROTO_ICMP, IP_PROTO_UDP,
+  ETHERTYPE_ARP, ETHERTYPE_IPV4, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP,
   createIPv4Packet,
 } from '../core/types';
 import {
@@ -90,6 +90,7 @@ export interface SviHost {
   isDhcpRelayInfoEnabled?(): boolean;
   /** Un datagramme UDP adresse a CETTE machine, remis au port ouvert par son plan de controle. */
   deliverLocalUdp?(sourceIP: IPAddress, destinationPort: number, sourcePort: number, payload: unknown): boolean;
+  deliverLocalTcp?(inVlan: number, sourceIP: IPAddress, pkt: IPv4Packet): boolean;
   /**
    * The box's own DHCP server, when it is serving its VLANs rather than
    * relaying them. Absent on a pure L2 switch.
@@ -397,6 +398,13 @@ export class SwitchSvi {
               id: icmp.id, seq: icmp.sequence,
               fromIp: workingIp.sourceIP.toString(), ttl: workingIp.ttl,
             };
+          }
+        } else if (workingIp.protocol === IP_PROTO_TCP) {
+          const claimed = this.host.deliverLocalTcp?.(
+            ingressVlan, workingIp.sourceIP, workingIp,
+          ) ?? false;
+          if (!claimed) {
+            this.sendIcmpError(workingIp, 'destination-unreachable', ICMP_UNREACH_PORT, ingressVlan);
           }
         } else if (workingIp.protocol === IP_PROTO_UDP) {
           const udp = workingIp.payload as UDPPacket | undefined;
