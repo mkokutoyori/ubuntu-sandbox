@@ -392,6 +392,7 @@ export class PortActivityLogProjection {
   }): void {
     if (p.deviceId !== this.deviceId) return;
     if (!p.passive) return;
+    if (this.tagForPort(p.localPort) === 'sshd') return;
     this.logConnection(
       p.localPort,
       `Accepted connection from ${p.remoteIp}:${p.remotePort} on ${p.localIp}:${p.localPort}`,
@@ -407,6 +408,7 @@ export class PortActivityLogProjection {
     // not a "Connection from" anybody, and `sshd` has no business logging
     // the close of a connection it never accepted.
     if (!p.passive) return;
+    if (this.tagForPort(p.localPort) === 'sshd') return;
     this.logConnection(
       p.localPort,
       `Connection from ${p.remoteIp}:${p.remotePort} closed (${p.reason})`,

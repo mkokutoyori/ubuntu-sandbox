@@ -977,19 +977,23 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // connection for `tcpdump` / socket accounting to record.
   const connectedTuple: SshConnectionTuple = { localIp: opts.sourceIp, peerIp: destIp, peerPort: port };
 
-  if (opts.wireAuthRefused) {
-    return {
-      output: `${remoteUser}@${host}: Permission denied, please try again.\n`,
-      exitCode: 255,
-      connection: connectedTuple,
-    };
-  }
+  const noteRefusal = (
+    method?: 'password' | 'publickey', reason?: string,
+  ): void => {
+    if (opts.wireAuthRefused) {
+      (machine as unknown as {
+        recordFailedSshLogin?: (u: string, ip: string) => void;
+      }).recordFailedSshLogin?.(remoteUser, opts.sourceIp);
+      return;
+    }
+    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false, method, reason);
+    throttler?.recordFailure(opts.sourceIp, Date.now());
+  };
 
   // Login policy gate (root login, allowed users, etc.).
   const login = machine.sshdAcceptsLogin?.(remoteUser, { address: opts.sourceIp, host: opts.sourceHostname }) ?? { ok: true };
   if (!login.ok) {
-    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-    throttler?.recordFailure(opts.sourceIp, Date.now());
+    noteRefusal();
     // Surface the specific policy in /var/log/auth.log via the bus —
     // real sshd writes `User <u> not allowed because not listed in
     // AllowUsers` or `User <u> not allowed because listed in DenyUsers`
@@ -1035,8 +1039,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // Wrong passwords drive the brute-force detection chain: the
   // auth_failure event lands on the throttler which trips fail2ban.
   if (auth.method === 'password' && verifyOfferedPassword(remoteExec, remoteUser, opts.offeredPassword, machine) === 'wrong-password') {
-    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false, 'password');
-    throttler?.recordFailure(opts.sourceIp, Date.now());
+    noteRefusal('password');
     return {
       output: `${remoteUser}@${host}: Permission denied, please try again.\n`,
       exitCode: 255,
@@ -1044,8 +1047,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
   if (!auth.method) {
-    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-    throttler?.recordFailure(opts.sourceIp, Date.now());
+    noteRefusal();
     const events = (machine as unknown as { getSshServerContext?: () => { events?: { emit: (e: { kind: 'client_disconnected'; user: string; ip: string; reason: string }) => void } } }).getSshServerContext?.()?.events;
     events?.emit({ kind: 'client_disconnected', user: remoteUser, ip: opts.sourceIp, reason: 'too_many_failures' });
     return {
@@ -1064,8 +1066,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   } | undefined)?.accountLifecycleGate?.(remoteUser);
   if (lifecycleGate && !lifecycleGate.ok) {
     const reason = lifecycleGate.kind === 'account-expired' ? 'account_expired' : 'password_expired';
-    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false, auth.method, reason);
-    throttler?.recordFailure(opts.sourceIp, Date.now());
+    noteRefusal(auth.method, reason);
     if (lifecycleGate.kind === 'password-expired') {
       remoteEvents?.emit({ kind: 'auth_account_phase', user: remoteUser, ip: opts.sourceIp });
     }
