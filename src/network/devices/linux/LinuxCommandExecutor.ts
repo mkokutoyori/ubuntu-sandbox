@@ -1637,18 +1637,22 @@ export class LinuxCommandExecutor {
   private finishSshClientResult(
     result: ReturnType<typeof runSshClient>, onWire = false,
   ): { output: string; exitCode: number } {
-    if (!onWire && result.connection) {
-      const entry = this.socketTable?.connect(
+    if (result.connection) {
+      const entry = onWire ? null : this.socketTable?.connect(
         'tcp', result.connection.localIp, 0,
         result.connection.peerIp, result.connection.peerPort,
         undefined, 'ssh',
       );
-      const srcPort = entry?.localPort ?? 49152 + Math.floor(Math.random() * 16000);
+      const srcPort = entry?.localPort
+        ?? this.sshServerViewOfClientPort(result.connection.localIp, result.connection.peerIp)
+        ?? 49152 + Math.floor(Math.random() * 16000);
       this.mirrorSshHandshakeCapture(
         { ip: result.connection.localIp, port: srcPort },
         { ip: result.connection.peerIp, port: result.connection.peerPort },
       );
-      this.emitSshWire(result.connection.localIp, srcPort, result.connection.peerIp, result.connection.peerPort);
+      if (!onWire) {
+        this.emitSshWire(result.connection.localIp, srcPort, result.connection.peerIp, result.connection.peerPort);
+      }
       if (entry) this.socketTable?.transition(entry.id, 'TIME_WAIT');
     }
     if (result.droppedSyn) {
@@ -1885,6 +1889,15 @@ export class LinuxCommandExecutor {
     return { output: `${header}\n`, exitCode: 0 };
   }
 
+  private sshPeerDevice(peerIp: string): unknown {
+    return findHostByAddress(peerIp, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never)?.device;
+  }
+
+  private sshServerViewOfClientPort(localIp: string, peerIp: string): number | undefined {
+    const server = this.sshPeerDevice(peerIp) as { sshClientPort?: (ip: string) => number } | undefined;
+    return server?.sshClientPort?.(localIp);
+  }
+
   /**
    * `captureTcpHandshake` only writes into the calling machine's own
    * `captureLog` — unlike `emitSshWire`'s `publishWireSegment` calls, it
@@ -1898,9 +1911,8 @@ export class LinuxCommandExecutor {
     dst: { ip: string; port: number },
   ): void {
     this.captureLog.captureTcpHandshake(src, dst);
-    const remote = findHostByAddress(dst.ip, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
-    const remoteCap = (remote?.device as unknown as { executor?: { captureLog?: PacketCaptureLog } } | undefined)
-      ?.executor?.captureLog;
+    const remoteCap = (this.sshPeerDevice(dst.ip) as unknown as
+      { executor?: { captureLog?: PacketCaptureLog } } | undefined)?.executor?.captureLog;
     if (remoteCap && remoteCap !== this.captureLog) remoteCap.captureTcpHandshake(src, dst);
   }
 
