@@ -23,6 +23,7 @@
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
+import type { ListFormat } from './LinuxIptablesManager';
 import { IPAddress, IPv6Address } from '@/network/core/types';
 
 // Re-export types from LinuxIptablesManager for backward compatibility
@@ -62,6 +63,24 @@ type DefaultPolicy = 'allow' | 'deny' | 'reject';
 type RuleWriteOutcome =
   | 'added' | 'updated' | 'inserted' | 'deleted'
   | 'skipped-existing' | 'skipped-inserting' | 'absent';
+
+const HOOKS = ['input', 'forward', 'output'] as const;
+
+const RAW_TABLES = ['filter', 'nat', 'mangle', 'raw'] as const;
+const RAW_TABLES6 = ['filter', 'mangle', 'raw'] as const;
+
+const BUILTIN_CHAINS: readonly string[] = ['INPUT', 'FORWARD', 'OUTPUT'];
+const BEFORE_CHAINS: readonly string[] = HOOKS.map(h => `ufw-before-${h}`);
+const AFTER_CHAINS: readonly string[] = HOOKS.map(h => `ufw-after-${h}`);
+const USER_CHAINS: readonly string[] = [
+  ...HOOKS.map(h => `ufw-user-${h}`), 'ufw-user-limit-accept', 'ufw-user-limit',
+];
+const LOGGING_CHAINS: readonly string[] = [
+  ...HOOKS.flatMap(h => [
+    `ufw-before-logging-${h}`, `ufw-user-logging-${h}`, `ufw-after-logging-${h}`,
+  ]),
+  'ufw-logging-allow', 'ufw-logging-deny',
+];
 
 const LIVE_RULE_MESSAGE: Readonly<Record<RuleWriteOutcome, string>> = {
   added: 'Rule added',
@@ -1342,52 +1361,47 @@ export class LinuxFirewallManager {
   // ─── Show subcommands ───────────────────────────────────────────
 
   private cmdShow(args: string[]): string {
-    if (args.length === 0) return 'ERROR: wrong number of arguments';
+    if (args.length === 0) return this.invalidSyntax();
 
     switch (args[0]) {
-      case 'raw':      return this.cmdShowRaw();
-      case 'added':    return this.cmdShowAdded();
-      case 'listening': return this.cmdShowListening();
+      case 'raw':          return this.cmdShowRaw();
+      case 'builtins':     return this.cmdShowChains('builtins', BUILTIN_CHAINS);
+      case 'before-rules': return this.cmdShowChains('before', BEFORE_CHAINS);
+      case 'user-rules':   return this.cmdShowChains('user', USER_CHAINS);
+      case 'after-rules':  return this.cmdShowChains('after', AFTER_CHAINS);
+      case 'logging-rules': return this.cmdShowChains('logging', LOGGING_CHAINS);
+      case 'added':        return this.cmdShowAdded();
+      case 'listening':    return this.cmdShowListening();
       default:
-        return `ERROR: unsupported show command '${args[0]}'`;
+        return this.invalidSyntax();
     }
   }
 
+  private static readonly RAW_FORMAT: ListFormat =
+    { verbose: true, numeric: true, lineNumbers: false, exact: true };
+
   private cmdShowRaw(): string {
-    const lines: string[] = [];
-    lines.push('IPV4 (raw):');
-    lines.push('Chain ufw-user-input (1 references)');
-    lines.push(' pkts bytes target     prot opt in     out     source               destination');
-
-    const v4Rules = this.rules.filter(r => !r.v6);
-    for (const rule of v4Rules) {
-      const target = rule.action === 'ALLOW' ? 'ACCEPT' : rule.action === 'DENY' ? 'DROP' : rule.action;
-      const proto = this.extractProtoFromPort(rule.port);
-      const portNum = this.extractPortNum(rule.port);
-      const src = rule.from === 'Anywhere' ? '0.0.0.0/0' : rule.from;
-      const dst = rule.to === 'Anywhere' ? '0.0.0.0/0' : rule.to;
-      const dpt = portNum ? ` dpt:${portNum}` : '';
-      const iface = rule.iface || '*';
-      lines.push(`    0     0 ${target.padEnd(10)} ${(proto || 'all').padEnd(4)} opt ${rule.direction === 'in' ? iface.padEnd(6) : '*'.padEnd(6)} ${rule.direction === 'out' ? iface.padEnd(6) : '*'.padEnd(6)} ${src.padEnd(20)} ${dst}${dpt}`);
+    const parts: string[] = ['IPV4 (raw):'];
+    for (const table of RAW_TABLES) {
+      const body = this.iptables.listTable(table, LinuxFirewallManager.RAW_FORMAT);
+      if (body) parts.push(body);
     }
-
-    lines.push('');
-    lines.push('Chain ufw-user-output (1 references)');
-    lines.push(' pkts bytes target     prot opt in     out     source               destination');
-
-    const v4Out = v4Rules.filter(r => r.direction === 'out');
-    for (const rule of v4Out) {
-      const target = rule.action === 'ALLOW' ? 'ACCEPT' : rule.action === 'DENY' ? 'DROP' : rule.action;
-      const proto = this.extractProtoFromPort(rule.port);
-      const portNum = this.extractPortNum(rule.port);
-      const src = rule.from === 'Anywhere' ? '0.0.0.0/0' : rule.from;
-      const dst = rule.to === 'Anywhere' ? '0.0.0.0/0' : rule.to;
-      const dpt = portNum ? ` dpt:${portNum}` : '';
-      const iface = rule.iface || '*';
-      lines.push(`    0     0 ${target.padEnd(10)} ${(proto || 'all').padEnd(4)} opt ${'*'.padEnd(6)} ${iface.padEnd(6)} ${src.padEnd(20)} ${dst}${dpt}`);
+    parts.push('', 'IPV6 (raw):');
+    for (const table of RAW_TABLES6) {
+      const body = this.ip6tables.listTable(table, LinuxFirewallManager.RAW_FORMAT);
+      if (body) parts.push(body);
     }
+    return parts.join('\n');
+  }
 
-    return lines.join('\n');
+  private cmdShowChains(label: string, chains: readonly string[]): string {
+    const parts: string[] = [`IPV4 (${label}):`];
+    const v4 = this.iptables.listTable('filter', LinuxFirewallManager.RAW_FORMAT, chains);
+    if (v4) parts.push(v4);
+    parts.push('', `IPV6 (${label}):`);
+    const v6 = this.ip6tables.listTable('filter', LinuxFirewallManager.RAW_FORMAT, chains);
+    if (v6) parts.push(v6);
+    return parts.join('\n');
   }
 
   private cmdShowAdded(): string {

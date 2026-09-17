@@ -98,6 +98,23 @@ interface IptablesTable {
   chains: Map<string, IptablesChain>;
 }
 
+export interface ListFormat {
+  verbose: boolean;
+  numeric: boolean;
+  lineNumbers: boolean;
+  exact: boolean;
+}
+
+function abbreviateCounter(n: number): string {
+  if (n <= 99999) return String(n);
+  let v = Math.floor((n + 500) / 1000);
+  for (const suffix of ['K', 'M', 'G']) {
+    if (v <= 9999) return `${v}${suffix}`;
+    v = Math.floor((v + 500) / 1000);
+  }
+  return `${v}T`;
+}
+
 // ─── Table definitions ───────────────────────────────────────────────
 
 const TABLE_BUILTIN_CHAINS: Record<TableName, string[]> = {
@@ -802,42 +819,63 @@ export class LinuxIptablesManager {
 
   private cmdList(table: IptablesTable, args: string[]): { output: string; exitCode: number } {
     let chainName = '';
-    let numeric = false, verbose = false, lineNumbers = false;
+    let numeric = false, verbose = false, lineNumbers = false, exact = false;
 
     for (const arg of args) {
       switch (arg) {
         case '-n': case '--numeric': numeric = true; break;
         case '-v': case '--verbose': verbose = true; break;
+        case '-x': case '--exact': exact = true; break;
         case '--line-numbers': lineNumbers = true; break;
         default: if (!arg.startsWith('-')) chainName = arg; break;
       }
     }
 
+    const opts: ListFormat = { verbose, numeric, lineNumbers, exact };
     if (chainName) {
       const chain = table.chains.get(chainName);
       if (!chain) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
-      return { output: this.fmtChainList(chain, table, verbose, numeric, lineNumbers), exitCode: 0 };
+      return { output: this.fmtChainList(chain, table, opts), exitCode: 0 };
     }
 
     const parts: string[] = [];
     for (const chain of table.chains.values()) {
       if (parts.length > 0) parts.push('');
-      parts.push(this.fmtChainList(chain, table, verbose, numeric, lineNumbers));
+      parts.push(this.fmtChainList(chain, table, opts));
     }
     return { output: parts.join('\n'), exitCode: 0 };
   }
 
-  private fmtChainList(chain: IptablesChain, table: IptablesTable, verbose: boolean, numeric: boolean, lineNumbers: boolean): string {
+  listTable(tableName: TableName, opts: ListFormat, chains?: readonly string[]): string {
+    const table = this.tables.get(tableName);
+    if (!table) return '';
+    const parts: string[] = [];
+    for (const chain of table.chains.values()) {
+      if (chains && !chains.includes(chain.name)) continue;
+      if (parts.length > 0) parts.push('');
+      parts.push(this.fmtChainList(chain, table, opts));
+    }
+    return parts.join('\n');
+  }
+
+  private fmtChainList(chain: IptablesChain, table: IptablesTable, opts: ListFormat): string {
+    const { verbose, numeric, lineNumbers, exact } = opts;
+    const count = (n: number): string => (exact ? String(n) : abbreviateCounter(n));
     const lines: string[] = [];
     if (chain.policy !== null) {
-      lines.push(`Chain ${chain.name} (policy ${chain.policy})`);
+      const counters = verbose
+        ? ` ${count(chain.pkts)} packets, ${count(chain.bytes)} bytes`
+        : '';
+      lines.push(`Chain ${chain.name} (policy ${chain.policy}${counters})`);
     } else {
       lines.push(`Chain ${chain.name} (${this.countRefs(chain.name, table)} references)`);
     }
 
     const numCol = lineNumbers ? 'num   ' : '';
     if (verbose) {
-      lines.push(`${numCol} pkts bytes target     prot opt in     out     source               destination`);
+      lines.push(exact
+        ? `${numCol}    pkts      bytes target     prot opt in     out     source               destination`
+        : `${numCol} pkts bytes target     prot opt in     out     source               destination`);
     } else {
       lines.push(`${numCol}target     prot opt source               destination`);
     }
@@ -853,8 +891,9 @@ export class LinuxIptablesManager {
       const extra = this.fmtRuleExtras(r, numeric);
 
       if (verbose) {
-        const pkts = String(r.pkts).padStart(5);
-        const bytes = String(r.bytes).padStart(5);
+        const width = exact ? 8 : 5;
+        const pkts = count(r.pkts).padStart(width);
+        const bytes = count(r.bytes).padStart(width);
         const inIf = ((r.negInInterface ? '!' : '') + (r.inInterface || '*')).padEnd(6);
         const outIf = ((r.negOutInterface ? '!' : '') + (r.outInterface || '*')).padEnd(6);
         lines.push(`${num}${pkts} ${bytes} ${target} ${prot} ${opt}${inIf} ${outIf} ${src.padEnd(20)} ${dst}${extra}`);
