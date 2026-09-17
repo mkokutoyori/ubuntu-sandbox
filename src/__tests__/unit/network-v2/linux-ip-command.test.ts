@@ -5,6 +5,14 @@
  * Covers: ip addr, ip link, ip route, ip neigh, ip help
  *
  * Realistic error messages matching iproute2 output.
+ *
+ * Un cas pinglait un DEFAUT comme contrat : « should return error when
+ * adding IP without CIDR » attendait
+ * `Error: either "local" or "peer" address is required.'. Le vrai `ip'
+ * accepte une adresse sans prefixe et la pose en /32 — mesure dans un
+ * netns sur la machine hote. Le cas dit maintenant ce que la commande
+ * fait ; la mesure complete est dans l'en-tete de
+ * `probe-ip-addr-accepte-ce-qu-un-vrai-ip-accepte'.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -270,9 +278,10 @@ describe('ip command', () => {
       expect(info?.cidr).toBe(24);
     });
 
-    it('should return error when adding IP without CIDR', () => {
+    it('takes an address without a prefix as /32, the way iproute2 does', () => {
       const output = executeIpCommand(ctx, ['addr', 'add', '10.0.0.5', 'dev', 'eth1']);
-      expect(output).toContain('Error: either "local" or "peer" address is required.');
+      expect(output.trim()).toBe('');
+      expect(ctx.getInterfaceInfo('eth1')?.cidr).toBe(32);
     });
 
     it('should return error when adding IP without dev', () => {

@@ -2,6 +2,12 @@
  * TDD tests for IP addressing, subnet configuration, and routing commands
  * across Linux, Windows, and Cisco IOS devices.
  *
+ * Le cas 22, « should allow CIDR range of 0 », attendait une ERREUR — son
+ * intitule disait pourtant l'inverse. Le vrai `ip' accepte `/0' :
+ * `# ip addr add 10.4.4.4/0 dev eth0' rend rc=0 sans un mot, mesure dans
+ * un netns sur la machine hote. Le cas dit maintenant ce que la commande
+ * fait, et son intitule et son assertion s'accordent enfin.
+ *
  * Covers 100 test scenarios grouped by operating system environment.
  */
 
@@ -227,7 +233,7 @@ describe('Linux Subnet and Route Configurations', () => {
     it('22. should allow CIDR range of 0', async () => {
       const { pc1 } = setupLinuxTopology();
       const output = await pc1.executeCommand('ip addr add 10.10.10.1/0 dev eth0');
-      expect(output.toLowerCase()).toMatch(/invalid|error/); // 0 prefix is typical network configuration error for host interface
+      expect(output.trim()).toBe('');
     });
 
     it('23. should reject adding IP to non-existent dev name', async () => {
