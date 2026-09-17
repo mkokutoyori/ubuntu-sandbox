@@ -63,7 +63,7 @@ import {
 } from './diag/FortiDiagCommands';
 import { renderVpnTunnelList, renderVpnTunnelSummary } from './diag/vpnTunnelRenderer';
 import {
-  renderArpTable, renderInterfaceStatus, renderPerformanceStatus,
+  renderArpTable, renderInterfaceSummary, renderInterfacePhysical, renderPerformanceStatus,
   type InterfaceStatusFacts,
   renderBgpNeighbors, renderBgpSummary, renderDhcpLeases, renderDhcp6Leases,
   renderSslVpnLoginUsers, renderSslVpnSessions, type SslVpnListRow,
@@ -921,9 +921,11 @@ export class FortiShell {
         now: this.fw.now(),
       });
     }
-    if (path === 'system interface' || path === 'system interface physical') {
-      return renderInterfaceStatus(
-        this.interfaceStatusFacts(), path.endsWith('physical'));
+    if (path === 'system interface') {
+      return renderInterfaceSummary(this.interfaceStatusFacts());
+    }
+    if (path === 'system interface physical') {
+      return renderInterfacePhysical(this.interfaceStatusFacts());
     }
     if (path === 'router info ospf neighbor') {
       return renderOspfNeighbors(this.fw.getRouting().ospfNeighbors());
@@ -986,6 +988,7 @@ export class FortiShell {
         speed: linked && port !== undefined
           ? `${port.getNegotiatedSpeed()}Mbps (Duplex: ${port.getNegotiatedDuplex()})`
           : 'n/a',
+        type: this.interfaceSetting(iface.name, 'type') ?? 'physical',
         physical: port !== undefined,
       };
     });

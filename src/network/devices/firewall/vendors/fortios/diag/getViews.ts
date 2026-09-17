@@ -96,21 +96,48 @@ export interface InterfaceStatusFacts {
   readonly ipv6: string;
   readonly status: string;
   readonly speed: string;
+  readonly type: string;
   readonly physical: boolean;
 }
 
-export function renderInterfaceStatus(
-  facts: readonly InterfaceStatusFacts[], physicalOnly: boolean,
-): string {
+const ONBOARD_GROUP = '== [onboard]';
+const PHYSICAL_INDENT = ' '.repeat(4);
+const PHYSICAL_FIELD_INDENT = ' '.repeat(8);
+const FORWARD_ERROR_CORRECTION = 'none';
+
+function summaryLine(iface: InterfaceStatusFacts): string {
+  const fields: ReadonlyArray<readonly [string, number]> = [
+    [`name: ${iface.name}`, 3],
+    [`mode: ${iface.mode}`, 4],
+    [`ip: ${iface.ip}`, 3],
+    [`status: ${iface.status}`, 4],
+    [`type: ${iface.type}`, 0],
+  ];
+  return fields.map(([text, gap]) => text + ' '.repeat(gap)).join('');
+}
+
+export function renderInterfaceSummary(facts: readonly InterfaceStatusFacts[]): string {
   const lines: string[] = [];
   for (const iface of facts) {
-    if (physicalOnly && !iface.physical) continue;
-    lines.push(`== [${iface.name}]`);
-    lines.push(`\tmode: ${iface.mode}`);
-    lines.push(`\tip: ${iface.ip}`);
-    lines.push(`\tipv6: ${iface.ipv6}`);
-    lines.push(`\tstatus: ${iface.status}`);
-    lines.push(`\tspeed: ${iface.speed}`);
+    lines.push(`== [ ${iface.name} ]`, summaryLine(iface));
+  }
+  return lines.join('\n');
+}
+
+export function renderInterfacePhysical(facts: readonly InterfaceStatusFacts[]): string {
+  const lines: string[] = [ONBOARD_GROUP];
+  for (const iface of facts) {
+    if (!iface.physical) continue;
+    lines.push(
+      `${PHYSICAL_INDENT}==[${iface.name}]`,
+      `${PHYSICAL_FIELD_INDENT}mode: ${iface.mode}`,
+      `${PHYSICAL_FIELD_INDENT}ip: ${iface.ip}`,
+      `${PHYSICAL_FIELD_INDENT}ipv6: ${iface.ipv6}`,
+      `${PHYSICAL_FIELD_INDENT}status: ${iface.status}`,
+      `${PHYSICAL_FIELD_INDENT}speed: ${iface.speed}`,
+      `${PHYSICAL_FIELD_INDENT}FEC: ${FORWARD_ERROR_CORRECTION}`,
+      `${PHYSICAL_FIELD_INDENT}FEC_cap: ${FORWARD_ERROR_CORRECTION}`,
+    );
   }
   return lines.join('\n');
 }

@@ -97,7 +97,7 @@ describe('`config system console` existe, et ce qu on y regle agit', () => {
   it('`set output more` PAGINE une longue sortie', async () => {
     const fgt = new FortiGate('firewall-fortinet', 'FGT-01', 0, 0);
     const s = await openFortiConsole(fgt);
-    await runCommand(s, 'get system interface');
+    await runCommand(s, 'get system interface physical');
     expect(s.currentInputMode.type).toBe('pager');
   });
 
@@ -107,7 +107,7 @@ describe('`config system console` existe, et ce qu on y regle agit', () => {
     for (const c of ['config system console', 'set output standard', 'end']) {
       await runCommand(s, c);
     }
-    await runCommand(s, 'get system interface');
+    await runCommand(s, 'get system interface physical');
     expect(s.currentInputMode.type).toBe('normal');
   });
 
