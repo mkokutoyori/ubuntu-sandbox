@@ -894,7 +894,9 @@ export class FortiShell {
     if (path === 'system fortiguard-service status') {
       return renderFortiguardServiceStatus();
     }
-    if (path === 'system arp') return renderArpTable(this.fw.getArpService());
+    if (path === 'system arp') {
+      return renderArpTable(this.fw.getArpService(), this.fw.now());
+    }
     if (path === 'system session status') {
       return renderSessionCount(this.fw.getSessionTable().view().count());
     }

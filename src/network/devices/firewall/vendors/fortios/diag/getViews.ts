@@ -148,18 +148,20 @@ export function renderInterfacePhysical(facts: readonly InterfaceStatusFacts[]):
   return lines.join('\n');
 }
 
-export function renderArpTable(arp: ArpService): string {
+const ARP_AGE_UNIT_MS = 60_000;
+
+export function renderArpTable(arp: ArpService, now: number): string {
   const rows = [...arp.getCache().entries()].map(([address, entry]) => ({
     address,
-    age: '0',
+    age: String(Math.max(0, Math.floor((now - entry.timestamp) / ARP_AGE_UNIT_MS))),
     mac: entry.mac.toString(),
     iface: entry.iface,
   }));
 
   return renderTable(rows, [
     { header: 'Address', width: 18, value: row => row.address },
-    { header: 'Age(min)', width: 10, value: row => row.age },
-    { header: 'Hardware Addr', width: 20, value: row => row.mac },
+    { header: 'Age(min)', width: 11, value: row => row.age },
+    { header: 'Hardware Addr', width: 18, headerWidth: 19, value: row => row.mac },
     { header: 'Interface', width: 0, value: row => row.iface },
   ], FIXED_TABLE).join('\n');
 }
