@@ -34,6 +34,19 @@
  * passaient DEJA, parce que l'execution en memoire lisait le bon systeme de
  * fichiers sous la bonne identite. Ce n'etait pas la justesse qui manquait,
  * c'est que rien ne traversait. Mesure : 28 trames avec la commande, 3 sans.
+ *
+ * LE TEMOIN DE COMPARAISON A CHANGE, et la raison est un progres. Le cas
+ * « sans commande » ne coute plus 3 trames mais 31 : depuis que le client
+ * Linux ouvre une vraie session interactive, un `ssh <hote>' nu ouvre un
+ * canal shell et le pilote. Il n'est donc plus le plancher « connexion
+ * seule » que cette mesure prenait pour reference. Ce qui isole encore le
+ * trafic PROPRE de la commande est la meme ligne dont l'authentification
+ * ECHOUE : elle traverse le cable, elle est refusee, et elle ne peut par
+ * construction avoir execute quoi que ce soit. Mesure du jour : 25 trames
+ * pour la commande, 23 pour le refus — les DEUX trames d'ecart sont la
+ * requete du canal exec et sa reponse, et aucun raccourci en memoire ne
+ * peut les produire. Le cas `sshpass', lui, compare desormais les deux
+ * VERBES entre eux : meme ligne, meme cout, donc la meme porte.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, MACAddress, IPAddress, SubnetMask } from '@/network/core/types';
@@ -79,16 +92,18 @@ describe('La commande distante traverse le cable', () => {
     expect(cable.getStats().framesTransmitted).toBeGreaterThan(avant);
   });
 
-  it('la commande coute des trames de plus que la seule connexion', async () => {
-    const trames = async (suffixe: string): Promise<number> => {
+  it('la commande coute des trames de plus qu une session refusee', async () => {
+    const trames = async (ligne: string): Promise<number> => {
       const { pc, cable } = await labo();
       const avant = cable.getStats().framesTransmitted;
-      await pc.executeCommand(ssh(suffixe));
+      await pc.executeCommand(ligne);
       return cable.getStats().framesTransmitted - avant;
     };
-    const avecCommande = await trames(' whoami');
-    const connexionSeule = await trames('');
-    expect(avecCommande).toBeGreaterThan(connexionSeule);
+    const avecCommande = await trames(
+      `sshpass -p secret123 ssh -o StrictHostKeyChecking=no alice@${SERVER_IP} whoami`);
+    const authRefusee = await trames(
+      `sshpass -p FAUX ssh -o StrictHostKeyChecking=no alice@${SERVER_IP} whoami`);
+    expect(avecCommande).toBeGreaterThan(authRefusee);
   });
 
   it('`whoami` rend l utilisateur SSH', async () => {
@@ -117,11 +132,10 @@ describe('La commande distante traverse le cable', () => {
       await pc.executeCommand(ligne);
       return cable.getStats().framesTransmitted - avant;
     };
-    const avecCommande = await trames(
+    const parSshpass = await trames(
       `sshpass -p secret123 ssh -o StrictHostKeyChecking=no alice@${SERVER_IP} whoami`);
-    const connexionSeule = await trames(
-      `sshpass -p secret123 ssh -o StrictHostKeyChecking=no alice@${SERVER_IP}`);
-    expect(avecCommande).toBeGreaterThan(connexionSeule);
+    const parSshNu = await trames(ssh(' whoami'));
+    expect(parSshpass).toBe(parSshNu);
   });
 
   it('`sshpass` rend la meme reponse que `ssh` nu', async () => {
