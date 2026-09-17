@@ -1,3 +1,28 @@
+/**
+ * iptables / nftables — persistance, compteurs et correlation avec le fil.
+ *
+ * Deux cas de ce fichier portaient une premisse fausse, heritee du temps ou
+ * `ssh' repondait en memoire au lieu de traverser le cable.
+ *
+ * 1. « les compteurs d'une regle specifique croissent exactement en fonction
+ *    du trafic » attendait `acceptAfter === acceptBefore + 3' pour TROIS
+ *    sessions SSH — un paquet par commande. Une session TCP n'est pas un
+ *    paquet : la capture detachee d'une seule session `ssh … whoami' en
+ *    montre 25 sur le fil (SYN/SYN-ACK/ACK avec MSS, SACK et horodatage,
+ *    bannieres, authentification, exec, FIN/ACK), et le compteur INPUT en
+ *    voit 12 — les 12 segments entrants. Trois sessions identiques en font
+ *    36. Ce que le cas doit prouver, c'est la SELECTIVITE de la regle, pas
+ *    un nombre magique : il mesure donc le cout d'UNE session, puis verifie
+ *    que trois en coutent exactement le triple et que la regle DROP voisine,
+ *    elle, ne bouge pas.
+ *
+ * 2. « une regle LOG … correlee avec le SYN capture » lancait le `ssh' sans
+ *    l'attendre, PUIS `tcpdump -c 2'. La livraison des trames est synchrone
+ *    ici (CLAUDE.md, limites connues) : la poignee de main etait finie avant
+ *    meme que la capture ne s'abonne, et un vrai tcpdump ne rejoue jamais le
+ *    passe. Le cas capture maintenant comme le ferait un operateur — un
+ *    `tcpdump -w' detache AVANT le trafic, relu ensuite avec `-r'.
+ */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -168,8 +193,9 @@ describe('Scénario 5 — Corrélation règles / trafic observé', () => {
     const { client, server } = buildLab();
     await server.executeCommand('iptables -A INPUT -p tcp --dport 22 -j LOG --log-prefix "SSH-ATTEMPT: "');
 
-    void client.executeCommand('ssh -o StrictHostKeyChecking=no alice@10.0.0.2 whoami', 'wonderland\n');
-    const sniffed = await client.executeCommand('tcpdump -ni eth0 port 22 -c 2');
+    await client.executeCommand('tcpdump -ni eth0 port 22 -w /tmp/ssh-attempt.pcap &');
+    await client.executeCommand('ssh -o StrictHostKeyChecking=no alice@10.0.0.2 whoami', 'wonderland\n');
+    const sniffed = await client.executeCommand('tcpdump -r /tmp/ssh-attempt.pcap');
 
     const syslog = await server.executeCommand('cat /var/log/syslog');
     expect(syslog).toMatch(/SSH-ATTEMPT: IN=eth0.*SRC=10\.0\.0\.1.*PROTO=TCP.*DPT=22/);
@@ -196,19 +222,26 @@ describe('Scénario 5 — Corrélation règles / trafic observé', () => {
     await server.executeCommand('iptables -A INPUT -p tcp --dport 22 -j ACCEPT');
     await server.executeCommand('iptables -A INPUT -p tcp --dport 12345 -j DROP');
 
-    const before = await server.executeCommand('iptables -L INPUT -n -v');
-    const acceptBefore = parseInt(/^\s*(\d+)\s+\d+\s+ACCEPT/m.exec(before)?.[1] ?? '0', 10);
-    const dropBefore = parseInt(/^\s*(\d+)\s+\d+\s+DROP/m.exec(before)?.[1] ?? '0', 10);
+    const counters = async (): Promise<{ accept: number; drop: number }> => {
+      const listing = await server.executeCommand('iptables -L INPUT -n -v');
+      return {
+        accept: parseInt(/^\s*(\d+)\s+\d+\s+ACCEPT/m.exec(listing)?.[1] ?? '0', 10),
+        drop: parseInt(/^\s*(\d+)\s+\d+\s+DROP/m.exec(listing)?.[1] ?? '0', 10),
+      };
+    };
+    const session = (): Promise<string> =>
+      client.executeCommand('ssh -o StrictHostKeyChecking=no alice@10.0.0.2 whoami', 'wonderland\n');
 
-    await client.executeCommand('ssh -o StrictHostKeyChecking=no alice@10.0.0.2 whoami', 'wonderland\n');
-    await client.executeCommand('ssh -o StrictHostKeyChecking=no alice@10.0.0.2 whoami', 'wonderland\n');
-    await client.executeCommand('ssh -o StrictHostKeyChecking=no alice@10.0.0.2 whoami', 'wonderland\n');
+    const before = await counters();
+    await session();
+    const afterOne = await counters();
+    await session();
+    await session();
+    const afterThree = await counters();
 
-    const after = await server.executeCommand('iptables -L INPUT -n -v');
-    const acceptAfter = parseInt(/^\s*(\d+)\s+\d+\s+ACCEPT/m.exec(after)?.[1] ?? '0', 10);
-    const dropAfter = parseInt(/^\s*(\d+)\s+\d+\s+DROP/m.exec(after)?.[1] ?? '0', 10);
-
-    expect(acceptAfter).toBe(acceptBefore + 3);
-    expect(dropAfter).toBe(dropBefore);
+    const perSession = afterOne.accept - before.accept;
+    expect(perSession).toBeGreaterThan(0);
+    expect(afterThree.accept - before.accept).toBe(3 * perSession);
+    expect(afterThree.drop).toBe(before.drop);
   });
 });

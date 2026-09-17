@@ -1739,6 +1739,7 @@ export abstract class LinuxMachine extends EndHost
             },
             onAccept: (socket) => {
               stack.setSocketOwner(socket, pid);
+              this.noteSshWirePeer(socket.remoteIp, socket.remotePort);
               this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
             },
           }, addr);
@@ -1947,7 +1948,17 @@ export abstract class LinuxMachine extends EndHost
   }
 
   private readonly sshPeerPorts: Map<string, number> = new Map();
+  private readonly sshWirePeers = new Set<string>();
   private sshNextClientPort = 0;
+
+  noteSshWirePeer(fromIp: string, port: number): void {
+    this.sshPeerPorts.set(fromIp, port);
+    this.sshWirePeers.add(fromIp);
+  }
+
+  sshArrivedOverWire(fromIp: string): boolean {
+    return this.sshWirePeers.has(fromIp);
+  }
 
   sshClientPort(fromIp: string): number {
     const known = this.sshPeerPorts.get(fromIp);
@@ -1962,6 +1973,7 @@ export abstract class LinuxMachine extends EndHost
 
   sshForgetPeerPort(fromIp: string): void {
     this.sshPeerPorts.delete(fromIp);
+    this.sshWirePeers.delete(fromIp);
   }
 
   /**
@@ -2044,10 +2056,12 @@ export abstract class LinuxMachine extends EndHost
           sshdChild.pid, 'sshd',
         );
       } catch { /* socket accounting is best-effort */ }
-      this.executor.captureLog.captureTcpHandshake(
-        { ip: fromIp, port: peerPort },
-        { ip: myIp, port: 22 },
-      );
+      if (!this.sshArrivedOverWire(fromIp)) {
+        this.executor.captureLog.captureTcpHandshake(
+          { ip: fromIp, port: peerPort },
+          { ip: myIp, port: 22 },
+        );
+      }
     }
   }
 

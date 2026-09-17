@@ -218,8 +218,11 @@ export class VirtualFileSystem {
     // Real directories under /usr; top-level /bin, /sbin, /lib, /lib64 are symlinks
     const dirs = [
       '/usr', '/usr/bin', '/usr/sbin', '/usr/lib', '/usr/lib64',
-      '/usr/local', '/usr/local/bin', '/usr/local/share', '/usr/local/share/ca-certificates',
-      '/usr/share', '/usr/share/ca-certificates',
+      '/usr/local', '/usr/local/bin', '/usr/local/sbin',
+      '/usr/local/share', '/usr/local/share/ca-certificates', '/usr/local/share/man',
+      '/usr/local/games', '/usr/local/src',
+      '/usr/share', '/usr/share/ca-certificates', '/usr/share/man', '/usr/share/info',
+      '/usr/games', '/usr/include', '/usr/libexec', '/usr/src',
       '/etc/ssl', '/etc/ssl/certs', '/etc/ssl/private',
       '/etc', '/etc/cron.hourly', '/etc/cron.daily', '/etc/cron.weekly', '/etc/cron.monthly', '/etc/cron.d',
       '/etc/sudoers.d',
@@ -244,6 +247,7 @@ export class VirtualFileSystem {
     this.createSymlink('/sbin', 'usr/sbin', 0, 0);
     this.createSymlink('/lib', 'usr/lib', 0, 0);
     this.createSymlink('/lib64', 'usr/lib64', 0, 0);
+    this.createSymlink('/usr/local/man', 'share/man', 0, 0);
 
     // /tmp is world-writable with sticky bit
     const tmpInode = this.resolveInode('/tmp');

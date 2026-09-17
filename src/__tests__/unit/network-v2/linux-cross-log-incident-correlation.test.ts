@@ -1,3 +1,30 @@
+/**
+ * Correlation croisee auth.log / syslog / journald.
+ *
+ * Le lab portait une premisse fausse : les DEUX pattes du serveur etaient
+ * dans 10.0.0.0/24, chacune cablee en point a point vers un pair different.
+ * Un vrai Linux ne repond pas dans cette configuration, et la sonde a ete
+ * faite sur le noyau de la machine hote (Ubuntu 24.04.4, trois netns relies
+ * par des veth reproduisant exactement ce cablage) :
+ *
+ *   srv$ ip route
+ *     10.0.0.0/24 dev s0 proto kernel scope link src 10.0.0.10
+ *     10.0.0.0/24 dev s1 proto kernel scope link src 10.0.0.11
+ *   adm$ ping -c 2 10.0.0.11   ->  2 transmitted, 0 received, 100% packet loss
+ *   srv$ tcpdump -ni s1 icmp   ->  10.0.0.30 > 10.0.0.11: ICMP echo request  (x2)
+ *   srv$ tcpdump -ni s0 icmp   ->  (rien)
+ *   srv$ ip neigh
+ *     10.0.0.30 dev s0 INCOMPLETE
+ *     10.0.0.30 dev s1 lladdr 16:d8:c4:7f:61:50 STALE
+ *
+ * La demande arrive bien sur s1, mais la reponse suit la PREMIERE route du
+ * prefixe — s0 — ou personne ne repond a l'ARP : elle ne part jamais. Le
+ * simulateur reproduit cela trait pour trait, meme table de routage et meme
+ * echec. Ce n'est donc pas un defaut de la machine, c'est un cablage que le
+ * lab ne devait pas poser. La patte d'administration a maintenant son propre
+ * segment (10.0.1.0/24), ce que decrit d'ailleurs le scenario : un attaquant
+ * sur le reseau expose, un administrateur sur le reseau d'administration.
+ */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -28,9 +55,9 @@ function buildLab(): Lab {
   new Cable('c1').connect(attacker.getPorts()[0], server.getPorts()[0]);
   new Cable('c2').connect(admin.getPorts()[0], server.getPorts()[1]);
   attacker.getPorts()[0].configureIP(new IPAddress('10.0.0.20'), new SubnetMask('255.255.255.0'));
-  admin.getPorts()[0].configureIP(new IPAddress('10.0.0.30'), new SubnetMask('255.255.255.0'));
+  admin.getPorts()[0].configureIP(new IPAddress('10.0.1.30'), new SubnetMask('255.255.255.0'));
   server.getPorts()[0].configureIP(new IPAddress('10.0.0.10'), new SubnetMask('255.255.255.0'));
-  server.getPorts()[1].configureIP(new IPAddress('10.0.0.11'), new SubnetMask('255.255.255.0'));
+  server.getPorts()[1].configureIP(new IPAddress('10.0.1.11'), new SubnetMask('255.255.255.0'));
   const um = (server as unknown as { executor: { userMgr: { useradd: (u: string, o?: object) => void; setPassword: (u: string, p: string) => void } } }).executor.userMgr;
   um.useradd('alice', { m: true, s: '/bin/bash' });
   um.setPassword('alice', 'correct-horse-battery-staple');
@@ -93,14 +120,14 @@ describe('Scénario 6 — Corrélation croisée auth.log / syslog / journald pou
   describe('Acte 2 — connexion SSH réussie puis reconfiguration réseau', () => {
     it('la connexion réussie d\'un compte autorisé est tracée dans auth.log ET journalctl -u ssh', async () => {
       const { admin, server } = buildLab();
-      const out = await admin.executeCommand('sshpass -p admin-legit-pw ssh bob@10.0.0.11 whoami');
+      const out = await admin.executeCommand('sshpass -p admin-legit-pw ssh bob@10.0.1.11 whoami');
       expect(out).toMatch(/^bob\s*$/m);
 
       const authLog = await server.executeCommand('cat /var/log/auth.log');
-      expect(authLog).toMatch(/Accepted password for bob from 10\.0\.0\.30/);
+      expect(authLog).toMatch(/Accepted password for bob from 10\.0\.1\.30/);
 
       const journal = await server.executeCommand('journalctl -u ssh');
-      expect(journal).toMatch(/Accepted password for bob from 10\.0\.0\.30/);
+      expect(journal).toMatch(/Accepted password for bob from 10\.0\.1\.30/);
     });
 
     it('une reconfiguration réseau appliquée par systemd-networkd est tracée dans journalctl -u systemd-networkd, indépendamment des événements SSH', async () => {
@@ -110,20 +137,20 @@ describe('Scénario 6 — Corrélation croisée auth.log / syslog / journald pou
         '  version: 2',
         '  ethernets:',
         '    eth1:',
-        '      addresses: [10.0.0.11/24]',
+        '      addresses: [10.0.1.11/24]',
         '      dhcp4: false',
         '      dhcp6: false',
       ].join('\n');
       await server.executeCommand(`cat > /etc/netplan/01-netcfg.yaml <<'EOF'\n${netplanYaml}\nEOF`);
       await server.executeCommand('netplan apply');
-      await server.executeCommand(`sed -i 's/10.0.0.11/10.0.0.99/' /etc/netplan/01-netcfg.yaml`);
+      await server.executeCommand(`sed -i 's/10.0.1.11/10.0.1.99/' /etc/netplan/01-netcfg.yaml`);
       await server.executeCommand('systemctl restart systemd-networkd');
 
       const journal = await server.executeCommand('journalctl -u systemd-networkd');
-      expect(journal).toMatch(/eth1.*10\.0\.0\.99/);
+      expect(journal).toMatch(/eth1.*10\.0\.1\.99/);
 
       const sshJournal = await server.executeCommand('journalctl -u ssh');
-      expect(sshJournal).not.toMatch(/10\.0\.0\.99/);
+      expect(sshJournal).not.toMatch(/10\.0\.1\.99/);
     });
   });
 
@@ -132,7 +159,7 @@ describe('Scénario 6 — Corrélation croisée auth.log / syslog / journald pou
       const { admin, server } = buildLab();
       await server.executeCommand('iptables -A INPUT -p tcp --dport 8080 -j DROP');
 
-      const before = await admin.executeCommand('nc -zv 10.0.0.11 8080');
+      const before = await admin.executeCommand('nc -zv 10.0.1.11 8080');
       expect(before).not.toMatch(/succeeded|open/i);
 
       await server.executeCommand('iptables -I INPUT -p tcp --dport 8080 -j ACCEPT');
@@ -173,7 +200,7 @@ describe('Scénario 6 — Corrélation croisée auth.log / syslog / journald pou
       for (let i = 0; i < 5; i++) {
         await attacker.executeCommand('sshpass -p WRONG ssh alice@10.0.0.10 whoami');
       }
-      await admin.executeCommand('sshpass -p admin-legit-pw ssh bob@10.0.0.11 whoami');
+      await admin.executeCommand('sshpass -p admin-legit-pw ssh bob@10.0.1.11 whoami');
       await server.executeCommand('iptables -A INPUT -p tcp --dport 9090 -j DROP');
       await server.executeCommand('iptables -I INPUT -p tcp --dport 9090 -j ACCEPT');
 
@@ -183,9 +210,9 @@ describe('Scénario 6 — Corrélation croisée auth.log / syslog / journald pou
       const firewallState = await server.executeCommand('iptables-save');
 
       expect(authLog).toMatch(/Failed password for alice from 10\.0\.0\.20/);
-      expect(authLog).toMatch(/Accepted password for bob from 10\.0\.0\.30/);
+      expect(authLog).toMatch(/Accepted password for bob from 10\.0\.1\.30/);
       expect(fail2banJournal).toMatch(/Ban 10\.0\.0\.20/);
-      expect(sshJournal).toMatch(/Accepted password for bob from 10\.0\.0\.30/);
+      expect(sshJournal).toMatch(/Accepted password for bob from 10\.0\.1\.30/);
       expect(firewallState).toContain('-A INPUT -p tcp --dport 9090 -j ACCEPT');
       expect(firewallState).toContain('-A INPUT -p tcp --dport 9090 -j DROP');
 

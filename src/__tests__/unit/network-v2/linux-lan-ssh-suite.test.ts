@@ -2031,10 +2031,13 @@ describe('§30 — network monitoring of SSH listener and sessions', () => {
       contains: [/10\.0\.0\.2:(ssh|22)\s+10\.0\.0\.1:\d+/],
     },
     {
-      name: 'tcpdump -ni eth0 port 22 -c 2 captures SYN/SYN-ACK during a connect',
-      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2 hostname'); },
+      name: 'a capture started before the connect holds its SYN/SYN-ACK',
+      setup: async (l) => {
+        await l.pc1.executeCommand('tcpdump -ni eth0 port 22 -w /tmp/connect.pcap &');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2 hostname');
+      },
       on: l => l.pc1,
-      cmd: 'tcpdump -ni eth0 port 22 -c 2',
+      cmd: 'tcpdump -r /tmp/connect.pcap',
       contains: [/Flags \[S\]|Flags \[S\.\]/, /10\.0\.0\.2\.22/],
     },
     {

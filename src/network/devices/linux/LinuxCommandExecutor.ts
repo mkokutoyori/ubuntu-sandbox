@@ -1689,8 +1689,8 @@ export class LinuxCommandExecutor {
   private finishSshClientResult(
     result: ReturnType<typeof runSshClient>, onWire = false,
   ): { output: string; exitCode: number } {
-    if (result.connection) {
-      const entry = onWire ? null : this.socketTable?.connect(
+    if (result.connection && !onWire) {
+      const entry = this.socketTable?.connect(
         'tcp', result.connection.localIp, 0,
         result.connection.peerIp, result.connection.peerPort,
         undefined, 'ssh',
@@ -1702,9 +1702,7 @@ export class LinuxCommandExecutor {
         { ip: result.connection.localIp, port: srcPort },
         { ip: result.connection.peerIp, port: result.connection.peerPort },
       );
-      if (!onWire) {
-        this.emitSshWire(result.connection.localIp, srcPort, result.connection.peerIp, result.connection.peerPort);
-      }
+      this.emitSshWire(result.connection.localIp, srcPort, result.connection.peerIp, result.connection.peerPort);
       if (entry) this.socketTable?.transition(entry.id, 'TIME_WAIT');
     }
     if (result.droppedSyn) {
@@ -7120,6 +7118,8 @@ export class LinuxCommandExecutor {
         const entries = this.vfs.listDirectory(this.vfs.normalizePath(dir, '/'));
         return entries ? entries.filter(e => e.name !== '.' && e.name !== '..').map(e => e.name) : null;
       },
+      directoryInode: (dir) => this.vfs.resolveInode(this.vfs.normalizePath(dir, '/'))?.id ?? null,
+      canonicalPath: (dir) => this.vfs.realpath(this.vfs.normalizePath(dir, '/')),
     });
     if (listDirs) return { output: resolver.allDirectories().join('\n'), exitCode: 0 };
 
