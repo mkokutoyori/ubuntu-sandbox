@@ -155,6 +155,10 @@ export class OSPFEngine implements IProtocolEngine {
 
   /** Total number of SPF runs performed */
   private spfRunCount = 0;
+  private readonly spfRunsByArea = new Map<string, number>();
+  private lastSpfAt: number | null = null;
+  private lsaOriginatedCount = 0;
+  private lsaReceivedCount = 0;
 
   /** Total number of neighbor state changes logged */
   private neighborChangeCount = 0;
@@ -2171,6 +2175,7 @@ export class OSPFEngine implements IProtocolEngine {
         this.packetStats.rxChecksumErrors++;
         continue;
       }
+      this.lsaReceivedCount++;
 
       // Reactive: announce reception so observers (capture, replay,
       // telemetry) can audit incoming LSAs without instrumenting the
@@ -2336,6 +2341,12 @@ export class OSPFEngine implements IProtocolEngine {
   }
 
   // ─── LSDB Management ──────────────────────────────────────────
+
+  private originateOwnLSA(areaId: string, lsa: LSA): void {
+    this.lsaOriginatedCount++;
+    this.installLSA(areaId, lsa);
+    this.floodLSA(areaId, lsa, null);
+  }
 
   installLSA(areaId: string, lsa: LSA): void {
     // Always (re-)compute the checksum so that locally originated LSAs and
@@ -2566,11 +2577,7 @@ export class OSPFEngine implements IProtocolEngine {
       links,
     };
 
-    // Compute a simple checksum
-    lsa.checksum = this.computeLSAChecksum(lsa);
-
-    this.installLSA(areaId, lsa);
-    this.floodLSA(areaId, lsa, null);
+    this.originateOwnLSA(areaId, lsa);
 
     return lsa;
   }
@@ -2611,10 +2618,7 @@ export class OSPFEngine implements IProtocolEngine {
       attachedRouters,
     };
 
-    lsa.checksum = this.computeLSAChecksum(lsa);
-
-    this.installLSA(iface.areaId, lsa);
-    this.floodLSA(iface.areaId, lsa, null);
+    this.originateOwnLSA(iface.areaId, lsa);
 
     return lsa;
   }
@@ -2685,9 +2689,7 @@ export class OSPFEngine implements IProtocolEngine {
       networkMask: mask,
       metric,
     };
-    lsa.checksum = this.computeLSAChecksum(lsa);
-    this.installLSA(intoAreaId, lsa);
-    this.floodLSA(intoAreaId, lsa, null);
+    this.originateOwnLSA(intoAreaId, lsa);
     return lsa;
   }
 
@@ -2711,9 +2713,7 @@ export class OSPFEngine implements IProtocolEngine {
       networkMask: '0.0.0.0',
       metric,
     };
-    lsa.checksum = this.computeLSAChecksum(lsa);
-    this.installLSA(intoAreaId, lsa);
-    this.floodLSA(intoAreaId, lsa, null);
+    this.originateOwnLSA(intoAreaId, lsa);
     return lsa;
   }
 
@@ -2749,9 +2749,7 @@ export class OSPFEngine implements IProtocolEngine {
       forwardingAddress,
       externalRouteTag: 0,
     };
-    lsa.checksum = this.computeLSAChecksum(lsa);
-    this.installLSA(areaId, lsa);
-    this.floodLSA(areaId, lsa, null);
+    this.originateOwnLSA(areaId, lsa);
     return lsa;
   }
 
@@ -2776,12 +2774,7 @@ export class OSPFEngine implements IProtocolEngine {
       forwardingAddress: nssaLsa.forwardingAddress,
       externalRouteTag: nssaLsa.externalRouteTag,
     };
-    // installLSA() recomputes the real Fletcher-16 checksum (this.computeLSAChecksum()
-    // is a simplified placeholder every other origination path overwrites the same
-    // way) — every receiving router's verifyOSPFLSAChecksum() would otherwise reject
-    // this LSA on arrival and the translated route would silently never propagate.
-    this.installLSA(OSPF_BACKBONE_AREA, lsa);
-    this.floodLSA(OSPF_BACKBONE_AREA, lsa, null);
+    this.originateOwnLSA(OSPF_BACKBONE_AREA, lsa);
     return lsa;
   }
 
@@ -2812,9 +2805,7 @@ export class OSPFEngine implements IProtocolEngine {
       forwardingAddress,
       externalRouteTag: 0,
     };
-    lsa.checksum = this.computeLSAChecksum(lsa);
-    this.installLSA(OSPF_BACKBONE_AREA, lsa);
-    this.floodLSA(OSPF_BACKBONE_AREA, lsa, null);
+    this.originateOwnLSA(OSPF_BACKBONE_AREA, lsa);
     return lsa;
   }
 
@@ -3053,11 +3044,13 @@ export class OSPFEngine implements IProtocolEngine {
     this.spfRunning = true;
     this.lastSPFType = 'full';
     this.spfRunCount++;
+    this.lastSpfAt = startedAt;
     this.ospfRoutes = [];
 
     // Step 1: Compute intra-area + inter-area routes for each area via Dijkstra
     const intraAreaRoutesByArea = new Map<string, OSPFRouteEntry[]>();
     for (const [areaId] of this.config.areas) {
+      this.spfRunsByArea.set(areaId, (this.spfRunsByArea.get(areaId) ?? 0) + 1);
       const { routes: areaRoutes, tree } = this.runSPFForArea(areaId);
       intraAreaRoutesByArea.set(areaId, areaRoutes);
       this.spfTreeCache.set(areaId, tree);
@@ -3873,6 +3866,22 @@ export class OSPFEngine implements IProtocolEngine {
     return this.spfRunCount;
   }
 
+  getSpfRunCountForArea(areaId: string): number {
+    return this.spfRunsByArea.get(areaId) ?? 0;
+  }
+
+  msSinceLastSpf(): number | null {
+    return this.lastSpfAt === null ? null : this.getScheduler().now() - this.lastSpfAt;
+  }
+
+  getLsaOriginatedCount(): number {
+    return this.lsaOriginatedCount;
+  }
+
+  getLsaReceivedCount(): number {
+    return this.lsaReceivedCount;
+  }
+
   getNeighborChangeCount(): number {
     return this.neighborChangeCount;
   }
@@ -3998,6 +4007,7 @@ export class OSPFEngine implements IProtocolEngine {
     lsa.lsAge = 0;
     lsa.lsSequenceNumber = this.nextSeqNumber();
     lsa.checksum = computeOSPFLSAChecksum(lsa);
+    this.lsaOriginatedCount++;
     this.floodLSA(areaId, lsa, null, true); // force=true bypasses MinLSInterval
     // Reactive: announce the periodic refresh so observers can audit
     // self-originated LSA churn (telemetry, replay snapshots, …).
@@ -4064,14 +4074,6 @@ export class OSPFEngine implements IProtocolEngine {
     // We simply increment the counter; wrap-around from max unsigned is unlikely in simulation
     this.seqNumber = seq + 1;
     return seq;
-  }
-
-  private computeLSAChecksum(lsa: LSA): number {
-    // Simplified checksum (not the real Fletcher-16)
-    let sum = lsa.lsType + lsa.lsSequenceNumber;
-    sum += ipToUint32(lsa.linkStateId);
-    sum += ipToUint32(lsa.advertisingRouter);
-    return (sum & 0xFFFF) ^ ((sum >> 16) & 0xFFFF);
   }
 
   private computeNetwork(ip: string, mask: string): string {

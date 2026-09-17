@@ -130,6 +130,28 @@ export interface OspfDatabaseFacts {
   readonly external: readonly OspfLsaFacts[];
 }
 
+export interface OspfStatusAreaFacts {
+  readonly areaId: string;
+  readonly interfaceCount: number;
+  readonly activeInterfaceCount: number;
+  readonly fullyAdjacentNeighbors: number;
+  readonly authenticated: boolean;
+  readonly spfRuns: number;
+  readonly lsaCount: number;
+  readonly lsaChecksumSum: number;
+}
+
+export interface OspfStatusFacts {
+  readonly routerId: string;
+  readonly externalLsaCount: number;
+  readonly externalLsaChecksumSum: number;
+  readonly nonDefaultExternalLsaCount: number;
+  readonly lsaOriginated: number;
+  readonly lsaReceived: number;
+  readonly msSinceLastSpf: number | null;
+  readonly areas: readonly OspfStatusAreaFacts[];
+}
+
 
 export interface OspfInterfaceFacts {
   readonly name: string;

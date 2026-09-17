@@ -100,6 +100,7 @@ import { encryptConfig, decryptConfig, isEncryptedConfig } from './backup/Config
 import {
   renderOspfDatabase, renderOspfInterfaces,
 } from './diag/ospfDatabaseRenderer';
+import { renderOspfStatus } from './diag/ospfStatusRenderer';
 import type { OspfInterfaceFacts } from '../../routing/DynamicRoutingTypes';
 
 const OSPF_NOT_RUNNING = '';
@@ -926,6 +927,10 @@ export class FortiShell {
     }
     if (path === 'router info ospf neighbor') {
       return renderOspfNeighbors(this.fw.getRouting().ospfNeighbors());
+    }
+    if (path === 'router info ospf status') {
+      const facts = this.fw.getRouting().ospfStatus();
+      return facts === null ? OSPF_NOT_RUNNING : renderOspfStatus(facts);
     }
     if (path === 'router info ospf database' || path === 'router info ospf database brief') {
       const facts = this.fw.getRouting().ospfDatabase();

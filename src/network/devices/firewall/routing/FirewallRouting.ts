@@ -1,5 +1,6 @@
 import type {
   OspfDatabaseFacts, OspfInterfaceFacts, OspfLsaFacts,
+  OspfStatusAreaFacts, OspfStatusFacts,
 } from './DynamicRoutingTypes';
 import {
   ETHERTYPE_IPV4, IPAddress, IP_PROTO_OSPF, MACAddress, SubnetMask,
@@ -210,6 +211,45 @@ export class FirewallRouting {
       routerId: engine.getRouterId(),
       areas,
       external: [...lsdb.external.values()].map(lsaFacts),
+    };
+  }
+
+  ospfStatus(): OspfStatusFacts | null {
+    const engine = this.ospf;
+    if (!engine) return null;
+
+    const lsdb = engine.getLSDB();
+    const externals = [...lsdb.external.values()];
+    const areas: OspfStatusAreaFacts[] = [];
+
+    for (const [areaId, area] of engine.getConfig().areas) {
+      const interfaces = [...engine.getInterfaces().values()]
+        .filter(iface => iface.areaId === areaId);
+      const lsas = [...(lsdb.areas.get(areaId)?.values() ?? [])];
+      areas.push({
+        areaId,
+        interfaceCount: interfaces.length,
+        activeInterfaceCount: interfaces.filter(iface => iface.state !== 'Down').length,
+        fullyAdjacentNeighbors: interfaces.reduce((total, iface) => total
+          + [...(iface.neighbors ?? new Map()).values()]
+            .filter(neighbour => neighbour.state === 'Full').length, 0),
+        authenticated: area.authentication !== undefined && area.authentication !== 'null',
+        spfRuns: engine.getSpfRunCountForArea(areaId),
+        lsaCount: lsas.length,
+        lsaChecksumSum: lsas.reduce((total, lsa) => total + lsa.checksum, 0),
+      });
+    }
+
+    return {
+      routerId: engine.getRouterId(),
+      externalLsaCount: externals.length,
+      externalLsaChecksumSum: externals.reduce((total, lsa) => total + lsa.checksum, 0),
+      nonDefaultExternalLsaCount:
+        externals.filter(lsa => lsa.linkStateId !== '0.0.0.0').length,
+      lsaOriginated: engine.getLsaOriginatedCount(),
+      lsaReceived: engine.getLsaReceivedCount(),
+      msSinceLastSpf: engine.msSinceLastSpf(),
+      areas,
     };
   }
 
