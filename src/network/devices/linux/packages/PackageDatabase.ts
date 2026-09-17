@@ -136,6 +136,8 @@ const CATALOGUE: readonly PackageEntry[] = [
     summary: 'miscellaneous system utilities', },
   { name: 'vim', version: '2:8.2.3995-1ubuntu2', arch: 'amd64',
     summary: 'Vi IMproved - enhanced vi editor', },
+  { name: 'vim-tiny', version: '2:8.2.3995-1ubuntu2', arch: 'amd64',
+    summary: 'Vi IMproved - enhanced vi editor - compact version', },
   { name: 'wget', version: '1.21.2-2ubuntu1', arch: 'amd64',
     summary: 'retrieves files from the web', },
 ];

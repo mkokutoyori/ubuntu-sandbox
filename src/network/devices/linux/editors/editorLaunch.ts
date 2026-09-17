@@ -75,3 +75,7 @@ export function parseEditorLaunch(commandLine: string): EditorLaunch | null {
     initialCursorCol,
   };
 }
+
+export function viVariantFor(vimPackageInstalled: boolean): 'vi' | 'vim' {
+  return vimPackageInstalled ? 'vim' : 'vi';
+}

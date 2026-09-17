@@ -79,7 +79,7 @@ export const COMMAND_PACKAGES: Readonly<Record<string, string>> = {
   hexdump: 'util-linux', rev: 'util-linux', script: 'util-linux',
   lscpu: 'util-linux', dmidecode: 'util-linux', getconf: 'libc-bin',
   ldd: 'libc-bin', iconv: 'libc-bin', getent: 'libc-bin',
-  vim: 'vim', vi: 'vim', vimdiff: 'vim',
+  vim: 'vim', vi: 'vim-tiny', vimdiff: 'vim',
   nano: 'nano',
   wget: 'wget',
   addgroup: 'adduser', adduser: 'adduser', deluser: 'adduser', delgroup: 'adduser',

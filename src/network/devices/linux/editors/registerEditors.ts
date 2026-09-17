@@ -11,6 +11,8 @@
 
 import { NanoEngine } from './NanoEngine';
 import { VimEngine } from './VimEngine';
+import { viVariantFor } from './editorLaunch';
+import { findPackage } from '../packages/PackageDatabase';
 import {
   registerEditorSession,
   type EditorSession,
@@ -107,10 +109,14 @@ function nanoSession(seed: EditorSessionSeed): EditorSession {
   };
 }
 
+function viVariant(): 'vi' | 'vim' {
+  return viVariantFor(findPackage('vim')?.installed === true);
+}
+
 export function installDefaultEditors(): void {
   if (installed) return;
   installed = true;
   registerEditorSession('vim', (seed) => vimSession('vim', seed));
-  registerEditorSession('vi', (seed) => vimSession('vi', seed));
+  registerEditorSession('vi', (seed) => vimSession(viVariant(), seed));
   registerEditorSession('nano', nanoSession);
 }
