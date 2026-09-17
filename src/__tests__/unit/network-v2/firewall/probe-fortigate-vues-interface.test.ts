@@ -113,7 +113,8 @@ const vue = (fgt: FortiGate, cmd: string): Promise<string> =>
   fgt.executeCommand(cmd).then(String);
 
 const LIGNE_PORT1 = 'name: port1   mode: static    ip: 192.168.100.99 255.255.255.0'
-  + '   status: up    type: physical';
+  + '   status: up    type: physical   src-check: enable'
+  + '    drop-overlapped-fragment: disable    drop-fragment: disable';
 
 describe('les deux vues d_interface de FortiOS ne sont pas la meme vue', () => {
   it('TEMOIN : l adresse est bien posee, une autre vue le montre', async () => {

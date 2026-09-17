@@ -145,6 +145,19 @@ export class IPv4Reassembler {
     return this.reassemble(entry);
   }
 
+  overlaps(pkt: IPv4Packet): boolean {
+    if (!isIPv4Fragment(pkt)) return false;
+    const entry = this.pending.get(this.key(pkt));
+    if (!entry) return false;
+
+    const start = pkt.fragmentOffset * 8;
+    const end = start + (pkt.totalLength - pkt.ihl * 4);
+    return entry.fragments.some(held =>
+      held.offsetBytes !== start
+      && start < held.offsetBytes + held.lengthBytes
+      && held.offsetBytes < end);
+  }
+
   private isComplete(entry: PendingDatagram): boolean {
     if (entry.lastOffsetSeen === null) return false;
     let expected = 0;

@@ -123,7 +123,7 @@ function repartition(
 ): Record<string, number> {
   const vues: Record<string, number> = {};
   for (let index = 0; index < flux; index++) {
-    const port = sortie(fw, `10.1.${Math.floor(index / 250)}.${index % 250}`, destination);
+    const port = sortie(fw, `10.1.1.${index % 250}`, destination);
     vues[port] = (vues[port] ?? 0) + 1;
   }
   return vues;

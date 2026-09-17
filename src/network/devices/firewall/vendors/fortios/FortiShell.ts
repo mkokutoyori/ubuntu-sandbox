@@ -312,6 +312,12 @@ export class FortiShell {
       adminSessions: () => this.fw.getAdminSessions().list(),
       disconnectAdminSession: (index) => this.disconnectAdminSession(index),
     });
+    this.fw.bindIngressInterfaceOptions((iface) => ({
+      srcCheck: this.interfaceSetting(iface, 'src-check') !== 'disable',
+      dropFragment: this.interfaceSetting(iface, 'drop-fragment') === 'enable',
+      dropOverlappedFragment:
+        this.interfaceSetting(iface, 'drop-overlapped-fragment') === 'enable',
+    }));
     this.fw.bindConfigSnapshot(
       () => renderWholeConfig(this.tree, { full: false }).join('\n'));
     this.fw.bindHaConfiguration(
@@ -989,6 +995,10 @@ export class FortiShell {
           ? `${port.getNegotiatedSpeed()}Mbps (Duplex: ${port.getNegotiatedDuplex()})`
           : 'n/a',
         type: this.interfaceSetting(iface.name, 'type') ?? 'physical',
+        srcCheck: this.interfaceSetting(iface.name, 'src-check') ?? 'enable',
+        dropOverlappedFragment:
+          this.interfaceSetting(iface.name, 'drop-overlapped-fragment') ?? 'disable',
+        dropFragment: this.interfaceSetting(iface.name, 'drop-fragment') ?? 'disable',
         physical: port !== undefined,
       };
     });

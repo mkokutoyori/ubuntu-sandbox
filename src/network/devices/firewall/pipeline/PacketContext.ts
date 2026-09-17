@@ -34,7 +34,8 @@ export type VerdictReason =
   | 'interface-down'
   | 'ttl-expired'
   | 'mtu-exceeded-df'
-  | 'dos-anomaly';
+  | 'dos-anomaly'
+  | 'reverse-path-failed';
 
 export type VerdictAction = 'accept' | 'deny' | 'drop' | 'reset' | 'reject';
 

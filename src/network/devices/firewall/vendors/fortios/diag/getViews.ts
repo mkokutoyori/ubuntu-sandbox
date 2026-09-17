@@ -97,6 +97,9 @@ export interface InterfaceStatusFacts {
   readonly status: string;
   readonly speed: string;
   readonly type: string;
+  readonly srcCheck: string;
+  readonly dropOverlappedFragment: string;
+  readonly dropFragment: string;
   readonly physical: boolean;
 }
 
@@ -111,7 +114,10 @@ function summaryLine(iface: InterfaceStatusFacts): string {
     [`mode: ${iface.mode}`, 4],
     [`ip: ${iface.ip}`, 3],
     [`status: ${iface.status}`, 4],
-    [`type: ${iface.type}`, 0],
+    [`type: ${iface.type}`, 3],
+    [`src-check: ${iface.srcCheck}`, 4],
+    [`drop-overlapped-fragment: ${iface.dropOverlappedFragment}`, 4],
+    [`drop-fragment: ${iface.dropFragment}`, 0],
   ];
   return fields.map(([text, gap]) => text + ' '.repeat(gap)).join('');
 }

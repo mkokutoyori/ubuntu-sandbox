@@ -40,6 +40,7 @@ import {
 import type { FirewallNatEngine } from '../../nat/FirewallNatEngine';
 import type { NatPolicyStore } from '../../nat/NatPolicyStore';
 import type { PolicyRouteTable } from '../../l3/PolicyRouteTable';
+import type { IngressInterfaceOptionsReader } from '../../l3/IngressInterfaceOptions';
 import type { PacketContext, VerdictReason } from '../PacketContext';
 import type { PipelineStage } from '../FirewallPipeline';
 
@@ -95,6 +96,7 @@ export interface FirewallServices {
   assembleStream?: StreamJoiner;
   onInspection?: () => void;
   onDosAnomaly?: (finding: DosFinding, iface: string, traffic: DosTraffic) => void;
+  ingressOptions?: IngressInterfaceOptionsReader;
 }
 
 function vdom(services: FirewallServices, context: PacketContext): VdomServices {
@@ -197,6 +199,7 @@ export function createCoreStages(services: FirewallServices): PipelineStage[] {
     switchBridgeStage(services),
     ingressZoneStage(services),
     dosPolicyStage(services),
+    srcCheckStage(services),
     sessionLookupStage(services),
     tcpStateCheckStage(services),
     natDestinationStage(services),
@@ -507,6 +510,27 @@ function dosPolicyStage(services: FirewallServices): PipelineStage {
         return proceed(context, 'dos-policy', `${finding.anomaly}:pass`);
       }
       return deny(context, 'dos-policy', 'dos-anomaly', finding.anomaly);
+    },
+  };
+}
+
+function srcCheckStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'src-check',
+    apply(context) {
+      const packet = ipv4(context);
+      if (!packet) return proceed(context, 'src-check', 'not-ipv4');
+      if (services.ingressOptions?.(context.ingressPort).srcCheck !== true) {
+        return proceed(context, 'src-check', 'disabled');
+      }
+
+      const reverse = vdom(services, context).routes
+        .resolveNextHop(packet.sourceIP.toString());
+      if (!reverse) return deny(context, 'src-check', 'reverse-path-failed');
+      if (reverse.iface !== context.ingressPort) {
+        return deny(context, 'src-check', 'reverse-path-failed');
+      }
+      return proceed(context, 'src-check', reverse.iface);
     },
   };
 }
