@@ -49,10 +49,35 @@
  * l'application n'apprend la connexion qu'une fois la poignee de main
  * terminee par l'ACK du client -- c'est precisement ce qui rend ce
  * balayage « furtif ». Ici la sonde traverse jusqu'a l'application, qui
- * l'inscrit puis la voit se fermer. La refermer se fait dans
- * `TcpStack', en n'attribuant une connexion a l'ecouteur qu'apres
- * l'ACK, et touche TOUS les serveurs du simulateur : c'est un lot a
- * part, pas une ligne a glisser dans celui-ci.
+ * l'inscrit puis la voit se fermer.
+ *
+ * LA CORRECTION A ETE ECRITE, MESUREE, ET REPOSEE -- et ce qui l'a
+ * arretee merite d'etre ecrit ici plutot que redecouvert. Ne remettre la
+ * socket a l'ecouteur qu'a l'ACK tient en quatre lignes de `TcpStack' et
+ * donne exactement ce qu'on attend : `nmap -sS' voit toujours le port
+ * ouvert, le journal du serveur ne voit plus le balayage (1 connexion ->
+ * 0), et un `ssh' retombe a UNE connexion sans fermeture fantome. Le
+ * rayon d'action complet -- 632 fichiers, puis les 156 autres qui
+ * touchent la pile TCP -- a rendu son verdict : six cas tombent, et
+ * DEUX familles expliquent pourquoi.
+ *
+ * La premiere est cosmetique : `tcp-flow-control' et `tcp-options'
+ * posent `s.windowSize` DANS `onAccept', en comptant sur le fait que le
+ * SYN/ACK n'est pas encore parti. C'est reparable -- une vraie pile lit
+ * la taille du tampon sur la socket d'ECOUTE, pas dans le rappel
+ * d'acceptation, donc l'option appartient a `listen()'.
+ *
+ * La seconde est structurelle et bloque. `linux-dnat-port-forward' et
+ * `linux-nat-redirect-output' observent la socket AU MOMENT DE
+ * L'ACCEPTATION, a l'etat `syn-received', et leur propre commentaire dit
+ * pourquoi : le SYN/ACK du serveur repart avec sa VRAIE adresse et non
+ * l'adresse publique composee, donc le client le refuse par RST et la
+ * poignee de main d'une connexion DNAT ne se termine JAMAIS. C'est la
+ * limite que `CLAUDE.md' nomme -- « The iptables NAT engine has no
+ * reply-leg conntrack ». Tant qu'elle tient, deplacer l'acceptation a
+ * l'ACK ne rend pas le balayage furtif : il rend la redirection de port
+ * INVISIBLE, l'ecouteur ne recevant plus jamais la connexion. Le lot du
+ * demi-balayage attend donc le conntrack de retour, et pas l'inverse.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
