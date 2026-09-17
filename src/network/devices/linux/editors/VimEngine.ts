@@ -1708,6 +1708,69 @@ export class VimEngine {
     return null;
   }
 
+  private applyRangeCommand(range: ExRange, verbe: string, cible: string): boolean {
+    const lo = Math.max(0, range.start ?? this._cursorLine);
+    const hi = Math.max(0, range.end ?? range.start ?? this._cursorLine);
+
+    if (verbe === 'd' || verbe === 'y') {
+      this.deleteExRange(range, verbe === 'y');
+      return true;
+    }
+    if (verbe === 'j') {
+      const fin = range.start === null ? Math.min(lo + 1, this.linesArr.length - 1) : hi;
+      if (fin <= lo) { this._message = ''; return true; }
+      this.pushUndoSnapshot();
+      const joint = this.linesArr.slice(lo, fin + 1)
+        .map((l, i) => (i === 0 ? l : l.replace(/^\s+/, ''))).join(' ');
+      this.linesArr.splice(lo, fin - lo + 1, joint);
+      this._cursorLine = lo;
+      this._cursorCol = 0;
+      this._modified = true;
+      this._message = '';
+      return true;
+    }
+    if (verbe === '>' || verbe === '<') {
+      this.pushUndoSnapshot();
+      for (let i = lo; i <= hi && i < this.linesArr.length; i++) {
+        this.linesArr[i] = verbe === '>'
+          ? `\t${this.linesArr[i]}`
+          : this.linesArr[i].replace(/^(\t| {1,8})/, '');
+      }
+      this._cursorLine = lo;
+      this._modified = true;
+      this._message = '';
+      return true;
+    }
+
+    const destination = this.resolveExAddress(cible);
+    if (destination === null) return false;
+    const bloc = this.linesArr.slice(lo, hi + 1);
+    this.pushUndoSnapshot();
+    if (verbe === 'm') {
+      this.linesArr.splice(lo, hi - lo + 1);
+      const decale = destination > hi ? destination - bloc.length : destination;
+      this.linesArr.splice(decale + 1, 0, ...bloc);
+      this._cursorLine = Math.min(decale + bloc.length, this.linesArr.length - 1);
+    } else {
+      this.linesArr.splice(destination + 1, 0, ...bloc);
+      this._cursorLine = Math.min(destination + bloc.length, this.linesArr.length - 1);
+    }
+    this._cursorCol = 0;
+    this._modified = true;
+    this._message = '';
+    return true;
+  }
+
+  private resolveExAddress(token: string): number | null {
+    if (token === '$') return this.linesArr.length - 1;
+    if (token === '.') return this._cursorLine;
+    if (/^\d+$/.test(token)) {
+      const n = parseInt(token, 10) - 1;
+      return n >= -1 && n <= this.linesArr.length - 1 ? n : null;
+    }
+    return null;
+  }
+
   private deleteExRange(range: ExRange, yankOnly: boolean): void {
     const lo = Math.max(0, range.start ?? this._cursorLine);
     const hi = Math.max(0, range.end ?? range.start ?? this._cursorLine);
@@ -1737,16 +1800,20 @@ export class VimEngine {
     const range = this.parseExRange(trimmed);
     const { start: rangeStart, end: rangeEnd, rest } = range;
 
-    if (/^[dy]$/.test(rest.trim())) {
+    const ligne = rest.trim();
+    const parPlage = ligne.match(/^([dy]|j|[<>]|m|co?|t)\s*(\S*)$/);
+    if (parPlage !== null && (parPlage[2] === '' || /^(m|co?|t)$/.test(parPlage[1]))) {
       const refus = this.rangeRefusal(range, trimmed);
       if (refus !== null) {
         this._message = refus;
         this._mode = 'normal';
         return;
       }
-      this.deleteExRange(range, rest.trim() === 'y');
-      this._mode = 'normal';
-      return;
+      const applique = this.applyRangeCommand(range, parPlage[1], parPlage[2]);
+      if (applique) {
+        this._mode = 'normal';
+        return;
+      }
     }
 
     const globalMatch = rest.match(/^g(!)?\/((?:\\.|[^/])*)\/(.*)$/);
