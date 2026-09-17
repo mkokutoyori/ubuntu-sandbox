@@ -308,6 +308,8 @@ export function renderOspfNeighbors(
 }
 
 
+const BGP_STATE_WIDTH = 9;
+
 export function renderBgpSummary(facts: BgpSummaryFacts): string {
   const lines = [
     `BGP router identifier ${facts.routerId}, local AS number ${facts.localAs}`,
@@ -324,12 +326,14 @@ export function renderBgpSummary(facts: BgpSummaryFacts): string {
     inQueue: '0',
     outQueue: '0',
     upDown: peer.isUp ? uptimeClock(peer.uptimeSec) : 'never',
-    state: peer.isUp ? String(peer.prefixesReceived) : peer.state,
+    state: peer.isUp
+      ? String(peer.prefixesReceived).padStart(BGP_STATE_WIDTH)
+      : ` ${peer.state}`.padEnd(BGP_STATE_WIDTH),
   }));
 
   lines.push(...renderTable(rows, [
-    { header: 'Neighbor', width: 16, value: row => row.address },
-    { header: 'V', width: 1, value: row => row.version },
+    { header: 'Neighbor', width: 13, headerWidth: 16, value: row => row.address },
+    { header: 'V', width: 3, headerWidth: 1, align: 'right', value: row => row.version },
     { header: 'AS', width: 11, align: 'right', value: row => row.remoteAs },
     { header: 'MsgRcvd', width: 8, align: 'right', value: row => row.received },
     { header: 'MsgSent', width: 8, align: 'right', value: row => row.sent },
@@ -337,7 +341,10 @@ export function renderBgpSummary(facts: BgpSummaryFacts): string {
     { header: 'InQ', width: 5, align: 'right', value: row => row.inQueue },
     { header: 'OutQ', width: 5, align: 'right', value: row => row.outQueue },
     { header: 'Up/Down', width: 9, align: 'right', value: row => row.upDown },
-    { header: 'State/PfxRcd', width: 13, align: 'right', value: row => row.state },
+    {
+      header: 'State/PfxRcd', width: BGP_STATE_WIDTH, headerWidth: 13,
+      align: 'right', value: row => row.state,
+    },
   ], FIXED_TABLE));
 
   lines.push('', `Total number of neighbors ${facts.neighbours.length}`);

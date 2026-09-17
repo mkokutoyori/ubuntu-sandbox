@@ -106,7 +106,7 @@ export class FirewallBgp {
           state: seen?.isUp ? 'Established' : (seen?.state ?? 'Idle'),
           isUp: seen?.isUp === true,
           uptimeSec: seen?.uptimeSec ?? 0,
-          prefixesReceived: 0,
+          prefixesReceived: this.engine?.prefixesReceivedFrom(peer.ip) ?? 0,
         };
       }),
     };

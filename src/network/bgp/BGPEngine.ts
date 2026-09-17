@@ -440,6 +440,10 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     };
   }
 
+  prefixesReceivedFrom(peerIp: string): number {
+    return this.peers.get(peerIp)?.adjRibIn.size ?? 0;
+  }
+
   // ── route computation (Loc-RIB) ────────────────────────────────────
   /**
    * The Loc-RIB: the single best path per prefix over our originated
