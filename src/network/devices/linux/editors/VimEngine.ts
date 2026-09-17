@@ -214,6 +214,39 @@ interface UnnamedRegister {
  * extension — plain vi addresses lines with `NG`/`:N`), and no
  * `-- INSERT --` mode indicator (classic vi shows no mode line at all).
  */
+const VIM_BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
+  'number', 'nu', 'relativenumber', 'rnu', 'list', 'showmatch', 'sm',
+  'incsearch', 'hlsearch', 'ignorecase', 'autoindent', 'ai',
+]);
+
+const VIM_NUMERIC_OPTIONS: ReadonlySet<string> = new Set(['colorcolumn']);
+
+const VIM_STRING_OPTIONS: ReadonlySet<string> = new Set([
+  'listchars', 'filetype', 'ft', 'fileformat', 'ff', 'fileencoding', 'fenc',
+]);
+
+function vimSetRefusal(argument: string): string {
+  const name = argument.split('=')[0].replace(/^no/, '');
+  const bare = argument.split('=')[0];
+  const value = argument.includes('=') ? argument.slice(argument.indexOf('=') + 1) : null;
+  const known = VIM_BOOLEAN_OPTIONS.has(name) || VIM_NUMERIC_OPTIONS.has(name)
+    || VIM_STRING_OPTIONS.has(name);
+  if (!known) return `E518: Unknown option: ${argument}`;
+  if (value === null) return `E518: Unknown option: ${argument}`;
+  if (VIM_NUMERIC_OPTIONS.has(bare) && !/^\d+$/.test(value)) {
+    return `E521: Number required after =: ${argument}`;
+  }
+  if (VIM_BOOLEAN_OPTIONS.has(bare)) return `E474: Invalid argument: ${argument}`;
+  return `E518: Unknown option: ${argument}`;
+}
+
+interface ExRange {
+  start: number | null;
+  end: number | null;
+  rest: string;
+  literal: string;
+}
+
 export class VimEngine {
   private linesArr: string[];
   private _mode: VimMode = 'normal';
@@ -1649,10 +1682,12 @@ export class VimEngine {
   }
 
   /** Parse an optional leading ex range (`%`, `N`, `N,M`, `$`, `.`, `'<,'>`) off a command string. */
-  private parseExRange(s: string): { start: number | null; end: number | null; rest: string } {
-    if (s.startsWith('%')) return { start: 0, end: this.linesArr.length - 1, rest: s.slice(1) };
+  private parseExRange(s: string): ExRange {
+    if (s.startsWith('%')) {
+      return { start: 0, end: this.linesArr.length - 1, rest: s.slice(1), literal: '%' };
+    }
     const m = s.match(/^(\$|\.|'<|'>|\d+)(?:,(\$|\.|'<|'>|\d+))?/);
-    if (!m) return { start: null, end: null, rest: s };
+    if (!m) return { start: null, end: null, rest: s, literal: '' };
     const resolve = (tok: string) => {
       if (tok === '$') return this.linesArr.length - 1;
       if (tok === '.') return this._cursorLine;
@@ -1662,7 +1697,33 @@ export class VimEngine {
     };
     const start = resolve(m[1]);
     const end = m[2] !== undefined ? resolve(m[2]) : start;
-    return { start, end, rest: s.slice(m[0].length) };
+    return { start, end, rest: s.slice(m[0].length), literal: m[0] };
+  }
+
+  private rangeRefusal(range: ExRange, typed: string): string | null {
+    if (range.start === null || range.end === null || range.literal === '%') return null;
+    const last = this.linesArr.length - 1;
+    if (range.start > last || range.end > last) return `E16: Invalid range: ${typed}`;
+    if (range.start > range.end) return `E493: Backwards range given: ${typed}`;
+    return null;
+  }
+
+  private deleteExRange(range: ExRange, yankOnly: boolean): void {
+    const lo = Math.max(0, range.start ?? this._cursorLine);
+    const hi = Math.max(0, range.end ?? range.start ?? this._cursorLine);
+    const cut = this.linesArr.slice(lo, hi + 1);
+    this.registers.set('"', { lines: [...cut], linewise: true });
+    if (yankOnly) {
+      this._message = '';
+      return;
+    }
+    this.pushUndoSnapshot();
+    this.linesArr.splice(lo, hi - lo + 1);
+    if (this.linesArr.length === 0) this.linesArr.push('');
+    this._cursorLine = Math.min(lo, this.linesArr.length - 1);
+    this._cursorCol = 0;
+    this._modified = true;
+    this._message = '';
   }
 
   private parseSubstituteCmd(s: string): { pattern: string; replacement: string; flags: string } | null {
@@ -1673,7 +1734,20 @@ export class VimEngine {
 
   protected executeExCommand(raw: string): void {
     const trimmed = raw.trim();
-    const { start: rangeStart, end: rangeEnd, rest } = this.parseExRange(trimmed);
+    const range = this.parseExRange(trimmed);
+    const { start: rangeStart, end: rangeEnd, rest } = range;
+
+    if (/^[dy]$/.test(rest.trim())) {
+      const refus = this.rangeRefusal(range, trimmed);
+      if (refus !== null) {
+        this._message = refus;
+        this._mode = 'normal';
+        return;
+      }
+      this.deleteExRange(range, rest.trim() === 'y');
+      this._mode = 'normal';
+      return;
+    }
 
     const globalMatch = rest.match(/^g(!)?\/((?:\\.|[^/])*)\/(.*)$/);
     if (globalMatch) {
@@ -1987,6 +2061,12 @@ export class VimEngine {
     if (!isNaN(lineNum) && lineNum > 0) {
       this.gotoLine(lineNum - 1);
       this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+
+    if (/^set\s+\S/.test(trimmed)) {
+      this._message = vimSetRefusal(trimmed.replace(/^set\s+/, ''));
       this._mode = 'normal';
       return;
     }
