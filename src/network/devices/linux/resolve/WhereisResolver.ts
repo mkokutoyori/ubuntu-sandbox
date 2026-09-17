@@ -46,9 +46,7 @@ export interface WhereisFs {
   exists(path: string): boolean;
   /** Directory entry names (no `.`/`..`), or null when not a directory. */
   list(dir: string): string[] | null;
-  /** Inode number of an existing directory, or null when there is none. */
   directoryInode?(dir: string): number | null;
-  /** Symlink-free spelling of an existing path, or null when there is none. */
   canonicalPath?(dir: string): string | null;
 }
 

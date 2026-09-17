@@ -102,7 +102,6 @@ async function sessionCapture(): Promise<{ pc: LinuxPC; srv: LinuxServer; client
   return { pc, srv, clientSide, serverSide, journal };
 }
 
-/** The port that carried the session: the one that exchanged payload. */
 function sessionPort(segs: Segment[]): number {
   const carried = segs.find(s => s.dport === 22 && s.flags === 'P.');
   return carried?.sport ?? -1;

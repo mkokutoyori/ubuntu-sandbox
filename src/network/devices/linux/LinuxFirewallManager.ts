@@ -82,6 +82,36 @@ const LOGGING_CHAINS: readonly string[] = [
   'ufw-logging-allow', 'ufw-logging-deny',
 ];
 
+function limitRules(
+  spec: Partial<Parameters<typeof LinuxIptablesManager.createRule>[0]>,
+  v6: boolean,
+): ReturnType<typeof LinuxIptablesManager.createRule>[] {
+  const listOptions = (): [string, string][] => [
+    ['--name', 'DEFAULT'],
+    ['--mask', v6 ? 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff' : '255.255.255.255'],
+    ['--rsource', ''],
+  ];
+  const isNew = (): { module: string; options: Map<string, string> } =>
+    ({ module: 'conntrack', options: new Map([['--ctstate', 'NEW']]) });
+
+  const record = LinuxIptablesManager.createRule({ ...spec });
+  record.matches.push(isNew(), {
+    module: 'recent',
+    options: new Map<string, string>([['--set', ''], ...listOptions()]),
+  });
+
+  const reject = LinuxIptablesManager.createRule({ ...spec, target: 'ufw-user-limit' });
+  reject.matches.push(isNew(), {
+    module: 'recent',
+    options: new Map<string, string>([
+      ['--update', ''], ['--seconds', '30'], ['--hitcount', '6'], ...listOptions(),
+    ]),
+  });
+
+  const accept = LinuxIptablesManager.createRule({ ...spec, target: 'ufw-user-limit-accept' });
+  return [record, reject, accept];
+}
+
 const LIVE_RULE_MESSAGE: Readonly<Record<RuleWriteOutcome, string>> = {
   added: 'Rule added',
   updated: 'Rule updated',
@@ -119,11 +149,6 @@ export class LinuxFirewallManager {
   // Real ufw ships ufw.conf with LOGLEVEL=low from the first install.
   private logging = true;
   private loggingLevel = 'low';
-
-  // Rate limiting state: key = "srcIP:ruleIndex" → timestamps of recent hits
-  private rateLimitHits: Map<string, number[]> = new Map();
-  private readonly RATE_LIMIT_MAX = 6;      // Max connections
-  private readonly RATE_LIMIT_WINDOW = 30000; // 30 seconds (ms)
 
   constructor(vfs: VirtualFileSystem | undefined, iptables: LinuxIptablesManager, ip6tables: LinuxIptablesManager) {
     if (vfs) this.vfs = vfs;
@@ -393,33 +418,33 @@ export class LinuxFirewallManager {
         outIf = (ufwRule.iface && ufwRule.direction === 'out') ? ufwRule.iface : '';
       }
 
-      const rule = LinuxIptablesManager.createRule({
+      const spec = {
         protocol: p || '',
         source: ufwRule.from !== 'Anywhere' ? ufwRule.from : '',
         destination: ufwRule.to !== 'Anywhere' ? ufwRule.to : '',
         inInterface: inIf,
         outInterface: outIf,
         dport: portNum,
-        target,
-      });
+      };
+      const commented = (rule: ReturnType<typeof LinuxIptablesManager.createRule>) => {
+        if (ufwRule.comment) {
+          rule.matches.push({
+            module: 'comment',
+            options: new Map([['--comment', ufwRule.comment]]),
+          });
+        }
+        return rule;
+      };
 
-      // Add comment extension if present
-      if (ufwRule.comment) {
-        rule.matches.push({
-          module: 'comment',
-          options: new Map([['--comment', ufwRule.comment]]),
-        });
-      }
-
-      // For LIMIT rules, add limit match extension
       if (ufwRule.action === 'LIMIT') {
-        rule.matches.push({
-          module: 'limit',
-          options: new Map([['--limit', '6/minute'], ['--limit-burst', '6']]),
-        });
+        for (const rule of limitRules(spec, ufwRule.v6)) {
+          ipt.appendRule('filter', chain, commented(rule));
+        }
+        continue;
       }
 
-      ipt.appendRule('filter', chain, rule);
+      ipt.appendRule('filter', chain,
+        commented(LinuxIptablesManager.createRule({ ...spec, target })));
     }
   }
 
@@ -449,38 +474,6 @@ export class LinuxFirewallManager {
     this.addRejectCatchAll();
   }
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Rate limiting (managed at UFW level since iptables limit module
-  // is stateless — we need stateful per-source tracking)
-  // ═══════════════════════════════════════════════════════════════════
-
-  /**
-   * Check rate limit for a given source IP and rule index.
-   * Called by the iptables manager via the rate limit callback.
-   */
-  evaluateRateLimit(srcIP: string, ruleIdx: number): boolean {
-    const key = `${srcIP}:${ruleIdx}`;
-    const now = Date.now();
-
-    let hits = this.rateLimitHits.get(key);
-    if (!hits) {
-      hits = [];
-      this.rateLimitHits.set(key, hits);
-    }
-
-    // Purge expired entries
-    const cutoff = now - this.RATE_LIMIT_WINDOW;
-    while (hits.length > 0 && hits[0] < cutoff) {
-      hits.shift();
-    }
-
-    if (hits.length >= this.RATE_LIMIT_MAX) {
-      return false; // Rate limit exceeded
-    }
-
-    hits.push(now);
-    return true; // Under limit
-  }
 
   // ═══════════════════════════════════════════════════════════════════
   // Subcommands
@@ -517,7 +510,6 @@ export class LinuxFirewallManager {
     this.defaultRouted = 'disabled';
     this.logging = false;
     this.loggingLevel = 'low';
-    this.rateLimitHits.clear();
     this.syncToVfs();
     return 'Resetting all rules to installed defaults. This may disrupt existing ssh connections. Proceed with operation (y|n)? y\nBacking up \'user.rules\' to \'/etc/ufw/user.rules.20260320_000000\'\nBacking up \'before.rules\' to \'/etc/ufw/before.rules.20260320_000000\'\nBacking up \'after.rules\' to \'/etc/ufw/after.rules.20260320_000000\'\nBacking up \'user6.rules\' to \'/etc/ufw/user6.rules.20260320_000000\'\nBacking up \'before6.rules\' to \'/etc/ufw/before6.rules.20260320_000000\'\nBacking up \'after6.rules\' to \'/etc/ufw/after6.rules.20260320_000000\'';
   }

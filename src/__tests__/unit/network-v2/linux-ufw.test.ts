@@ -2,6 +2,28 @@
  * TDD Tests for Linux UFW (Uncomplicated Firewall)
  * ~40 scénarios couvrant enable/disable, rules, status, logging, etc.
  * Fidèle au comportement réel de ufw sur Ubuntu/Debian.
+ *
+ * Les trois cas de « rate limiting » (G8-18) portaient deux premisses
+ * fausses, heritees du temps ou `ufw limit' injectait `-m limit
+ * --limit-burst 6' :
+ *
+ * 1. Ils comptaient des PAQUETS, en rejouant six fois le MEME 5-uplet.
+ *    `ufw limit' ne compte que les connexions NEUVES (`-m conntrack
+ *    --ctstate NEW' devant `-m recent'), et six paquets d'un meme
+ *    5-uplet ne sont qu'UNE connexion : le premier est NEW, les suivants
+ *    ESTABLISHED, et ils passent par la troisieme regle, celle qui
+ *    accepte. Un vrai ufw les accepterait aussi. Les cas frappent
+ *    desormais depuis des ports source differents, ce qui est ce que
+ *    « six tentatives de connexion » veut dire.
+ *
+ * 2. Ils attendaient le refus au SEPTIEME coup — le seau de six jetons —
+ *    et un verdict `drop' par la politique de chaine. Le vrai ufw pose
+ *    `--hitcount 6' : le SIXIEME est le premier refuse, et il l'est par
+ *    `ufw-user-limit', c'est-a-dire `REJECT --reject-with
+ *    icmp-port-unreachable', pas par la politique.
+ *
+ * La mesure et l'autorite sont dans l'en-tete de
+ * `probe-ufw-limit-compte-par-source'.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -1347,19 +1369,16 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       fw.execute(['limit', '22/tcp']);
       fw.execute(['enable']);
 
-      const pkt = {
+      const knock = (srcPort: number) => ipt.filterPacket({
         direction: 'in' as const, protocol: 6,
         srcIP: '10.0.0.1', dstIP: '10.0.0.2',
-        srcPort: 12345, dstPort: 22, iface: 'eth0',
-      };
+        srcPort, dstPort: 22, iface: 'eth0',
+      });
 
-      // Send 6 packets (under limit) — all should be accepted
-      for (let i = 0; i < 6; i++) {
-        expect(ipt.filterPacket(pkt)).toBe('accept');
+      for (let i = 0; i < 5; i++) {
+        expect(knock(40000 + i)).toBe('accept');
       }
-
-      // 7th packet should be dropped (over limit → falls through to INPUT policy DROP)
-      expect(ipt.filterPacket(pkt)).toBe('drop');
+      expect(knock(40005)).toBe('reject');
     });
 
     it('should track rate limit per source IP', async () => {
@@ -1371,22 +1390,17 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       fw.execute(['limit', '22/tcp']);
       fw.execute(['enable']);
 
-      const pkt1 = {
+      const knock = (srcIP: string, srcPort: number) => ipt.filterPacket({
         direction: 'in' as const, protocol: 6,
-        srcIP: '10.0.0.1', dstIP: '10.0.0.2',
-        srcPort: 12345, dstPort: 22, iface: 'eth0',
-      };
-      const pkt2 = {
-        direction: 'in' as const, protocol: 6,
-        srcIP: '10.0.0.99', dstIP: '10.0.0.2',
-        srcPort: 12345, dstPort: 22, iface: 'eth0',
-      };
+        srcIP, dstIP: '10.0.0.2',
+        srcPort, dstPort: 22, iface: 'eth0',
+      });
 
-      // Exhaust limit for 10.0.0.1
-      for (let i = 0; i < 7; i++) ipt.filterPacket(pkt1);
+      for (let i = 0; i < 6; i++) knock('10.0.0.1', 40000 + i);
+      expect(knock('10.0.0.1', 40006)).toBe('reject');
 
-      // 10.0.0.99 should still be accepted (different source)
-      expect(ipt.filterPacket(pkt2)).toBe('accept');
+      // 10.0.0.99 keeps its own count — `--rsource` lists the source address
+      expect(knock('10.0.0.99', 50000)).toBe('accept');
     });
   });
 
