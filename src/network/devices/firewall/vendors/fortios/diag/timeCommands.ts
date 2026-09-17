@@ -30,10 +30,10 @@ const MONTHS = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
-export function fortiSystemTime(fw: Firewall): string {
-  const local = new Date(fw.localNow());
+export function fortiSystemTime(fw: Firewall, at?: number): string {
+  const local = new Date(at === undefined ? fw.localNow() : fw.localTimeOf(at));
   return `${WEEKDAYS[local.getUTCDay()]} ${MONTHS[local.getUTCMonth()]}`
-    + ` ${String(local.getUTCDate()).padStart(2, ' ')} ${localClockText(fw)}`
+    + ` ${String(local.getUTCDate()).padStart(2, ' ')} ${localClockText(fw, at)}`
     + ` ${local.getUTCFullYear()}`;
 }
 

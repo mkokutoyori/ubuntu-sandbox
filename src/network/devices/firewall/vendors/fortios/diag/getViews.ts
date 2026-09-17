@@ -1,7 +1,9 @@
 import { ospfRouteCode } from '@/network/ospf/routeCodes';
 import { cpuStatesLines, memoryLine } from './systemLoad';
 import type { SystemLoad } from '../../../health/SystemLoad';
-import { renderTable, FIXED_TABLE } from '../../../../shells/cli/TextTable';
+import {
+  renderTable, FIXED_TABLE, type TableStyle,
+} from '../../../../shells/cli/TextTable';
 import type { InterfaceTable } from '../../../l3/InterfaceTable';
 import type { FirewallRoute, RouteTable } from '../../../l3/RouteTable';
 import type { ArpService } from '../../../l3/ArpService';
@@ -343,32 +345,28 @@ function groupLeasesByInterface<T extends { iface: string }>(
   return byInterface;
 }
 
+const LEASE_TABLE: TableStyle = { ...FIXED_TABLE, indent: '  ' };
+
 export function renderDhcpLeases(
   leases: ReadonlyArray<{
-    iface: string; ip: string; mac: string; expiresAt: number; serverId: string;
+    iface: string; ip: string; mac: string; hostName: string; expiresAt: number;
   }>,
+  expiry: (at: number) => string,
 ): string {
   if (leases.length === 0) return '';
 
   const lines: string[] = [];
   for (const [iface, bucket] of groupLeasesByInterface(leases)) {
     lines.push(iface);
-    const rows = bucket.map(lease => ({
-      ip: lease.ip,
-      mac: lease.mac,
-      hostname: '',
-      vci: '',
-      serverId: lease.serverId,
-      expiry: new Date(lease.expiresAt).toUTCString(),
-    }));
-    lines.push(...renderTable(rows, [
-      { header: 'IP', width: 16, value: row => row.ip },
-      { header: 'MAC-Address', width: 19, value: row => row.mac },
-      { header: 'Hostname', width: 19, value: row => row.hostname },
-      { header: 'VCI', width: 17, value: row => row.vci },
-      { header: 'SERVER-ID', width: 10, value: row => row.serverId },
-      { header: 'Expiry', width: 0, value: row => row.expiry },
-    ], FIXED_TABLE).map(line => `    ${line}`));
+    lines.push(...renderTable(bucket, [
+      { header: 'IP', width: 14, value: lease => lease.ip },
+      { header: 'MAC-Address', width: 24, value: lease => lease.mac },
+      { header: 'Hostname', width: 20, value: lease => lease.hostName },
+      { header: 'VCI', width: 20, value: () => '' },
+      { header: 'SSID', width: 20, value: () => '' },
+      { header: 'AP', width: 20, value: () => '' },
+      { header: 'Expiry', width: 0, value: lease => expiry(lease.expiresAt) },
+    ], LEASE_TABLE));
   }
   return lines.join('\n');
 }
@@ -415,6 +413,7 @@ export function renderDhcp6Leases(
   leases: ReadonlyArray<{
     iface: string; ip: string; duid: string; expiresAt: number; serverId: string;
   }>,
+  expiry: (at: number) => string,
 ): string {
   if (leases.length === 0) return '';
 
@@ -425,7 +424,7 @@ export function renderDhcp6Leases(
       ip: lease.ip,
       duid: lease.duid,
       serverId: lease.serverId,
-      expiry: new Date(lease.expiresAt).toUTCString(),
+      expiry: expiry(lease.expiresAt),
     }));
     lines.push(...renderTable(rows, [
       { header: 'IPv6-Address', width: 40, value: row => row.ip },

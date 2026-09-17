@@ -1885,7 +1885,9 @@ export class FortiShell {
     if (rest.length === 0) return FortiMessages.incomplete('a DHCP operation');
     const dhcp = this.fw.getDhcp();
     if (rest[0] === 'lease-list') {
-      return renderDhcpLeases(this.leasesOnInterface(dhcp.leases(), rest[1]));
+      return renderDhcpLeases(
+        this.leasesOnInterface(dhcp.leases(), rest[1]),
+        (at) => fortiSystemTime(this.fw, at));
     }
     if (rest[0] === 'lease-clear') {
       if (rest.length < 2) return FortiMessages.incomplete('an IP address');
@@ -1900,7 +1902,9 @@ export class FortiShell {
     if (rest.length === 0) return FortiMessages.incomplete('a DHCPv6 operation');
     const dhcp6 = this.fw.getDhcp6();
     if (rest[0] === 'lease-list') {
-      return renderDhcp6Leases(this.leasesOnInterface(dhcp6.leases(), rest[1]));
+      return renderDhcp6Leases(
+        this.leasesOnInterface(dhcp6.leases(), rest[1]),
+        (at) => fortiSystemTime(this.fw, at));
     }
     if (rest[0] === 'lease-clear') {
       if (rest.length < 2) return FortiMessages.incomplete('an IPv6 address');
