@@ -1645,17 +1645,18 @@ export class LinuxCommandExecutor {
     const target = wireExecTarget(args, this.vfs, this.cwd, this.userMgr.currentUser);
     const peer = target !== null ? this.sshPeerDevice(target.host) : null;
     const linuxPeer = (peer as { executor?: unknown } | null)?.executor !== undefined;
-    const wanted = target !== null;
-    const reachable = wanted && target !== null
-      && wireReachOutcome(this.localDevice, target.host, target.port) === 'open';
-    const wire = reachable && target !== null
+    const reach = target === null
+      ? undefined
+      : wireReachOutcome(this.localDevice, target.host, target.port);
+    const wire = reach === 'open' && target !== null
       ? await this.connectWireSsh(
         target.host, target.user, stdinPwd, target.port, target.identities, target.strict)
       : { session: null, authRefused: false };
     const session = wire.session;
     if (!session) {
       return this.finishSshClientResult(
-        runSshClient({ ...opts, wireAuthRefused: wire.authRefused }), wire.authRefused);
+        runSshClient({ ...opts, wireAuthRefused: wire.authRefused, wireOutcome: reach }),
+        wire.authRefused);
     }
     const settled = !linuxPeer && target !== null && target.command
       ? await this.relayOverWire(session, target.command)
@@ -1667,6 +1668,7 @@ export class LinuxCommandExecutor {
       return this.finishSshClientResult(runSshClient({
         ...opts,
         wireAuthenticated: true,
+        wireOutcome: reach,
         shellRelay: () => settledShell,
         execRelay: (command) => {
           if (settled && target !== null && command === target.command) return settled;

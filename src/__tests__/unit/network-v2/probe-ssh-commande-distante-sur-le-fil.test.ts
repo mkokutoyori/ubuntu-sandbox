@@ -42,11 +42,16 @@
  * seule » que cette mesure prenait pour reference. Ce qui isole encore le
  * trafic PROPRE de la commande est la meme ligne dont l'authentification
  * ECHOUE : elle traverse le cable, elle est refusee, et elle ne peut par
- * construction avoir execute quoi que ce soit. Mesure du jour : 25 trames
- * pour la commande, 23 pour le refus — les DEUX trames d'ecart sont la
+ * construction avoir execute quoi que ce soit. Mesure du jour : 22 trames
+ * pour la commande, 20 pour le refus — les DEUX trames d'ecart sont la
  * requete du canal exec et sa reponse, et aucun raccourci en memoire ne
  * peut les produire. Le cas `sshpass', lui, compare desormais les deux
  * VERBES entre eux : meme ligne, meme cout, donc la meme porte.
+ *
+ * (Ces totaux ont baisse de TROIS depuis que `runSshClient' ne re-sonde
+ * plus la joignabilite que l'appelant a deja mesuree — 25/23/31 sont
+ * devenus 22/20/28. L'ECART, lui, n'a pas bouge : c'est lui que la
+ * sonde defend, pas le total.)
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, MACAddress, IPAddress, SubnetMask } from '@/network/core/types';

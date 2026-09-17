@@ -98,6 +98,7 @@ export interface SshClientOpts {
   ) => { output: string; exitCode: number } | null;
   wireAuthenticated?: boolean;
   wireAuthRefused?: boolean;
+  wireOutcome?: TcpWireOutcome;
   shellRelay?: () => { output: string; exitCode: number } | null;
   /**
    * The local machine's port-forwarding table — `-L` / `-D` listeners are
@@ -986,7 +987,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
 
-  const wire = wireReachOutcome(opts.sourceDevice, destIp, port);
+  const wire = opts.wireOutcome ?? wireReachOutcome(opts.sourceDevice, destIp, port);
   if (wire !== 'open') {
     return {
       output: `ssh: connect to host ${host} port ${port}: ${WIRE_FAILURE_TEXT[wire]}\n`,
