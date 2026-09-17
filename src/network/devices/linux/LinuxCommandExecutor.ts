@@ -1572,7 +1572,7 @@ export class LinuxCommandExecutor {
 
   private async connectWireSsh(
     host: string, user: string, password: string | undefined,
-    port = 22, identities: string[] = [],
+    port = 22, identities: string[] = [], strict: 'yes' | 'no' | 'accept-new' = 'accept-new',
   ): Promise<{ session: SshSession | null; authRefused: boolean }> {
     if (!this.tcpConnector) return { session: null, authRefused: false };
     const connector = this.tcpConnector;
@@ -1584,10 +1584,10 @@ export class LinuxCommandExecutor {
       localGid: this.userMgr.currentGid,
       knownHostsPath: `${this.sshHomeDir()}/.ssh/known_hosts`,
       credentialless: password === undefined,
-      interactionHandler: new SilentSshInteractionHandler(password ?? ''),
+      interactionHandler: new SilentSshInteractionHandler(password ?? '', strict !== 'yes'),
     });
     const builder = SshConnectOptionsBuilder.create()
-      .host(host).user(user).port(port).strictHostKeyChecking('accept-new');
+      .host(host).user(user).port(port).strictHostKeyChecking(strict);
     for (const path of identities) builder.addIdentityFile(path);
     if (identities.length === 0) {
       for (const candidate of ['id_ed25519', 'id_rsa', 'id_ecdsa']) {
@@ -1645,12 +1645,12 @@ export class LinuxCommandExecutor {
     const target = wireExecTarget(args, this.vfs, this.cwd, this.userMgr.currentUser);
     const peer = target !== null ? this.sshPeerDevice(target.host) : null;
     const linuxPeer = (peer as { executor?: unknown } | null)?.executor !== undefined;
-    const wanted = target !== null && (target.command !== '' || !linuxPeer);
+    const wanted = target !== null;
     const reachable = wanted && target !== null
       && wireReachOutcome(this.localDevice, target.host, target.port) === 'open';
     const wire = reachable && target !== null
       ? await this.connectWireSsh(
-        target.host, target.user, stdinPwd, target.port, target.identities)
+        target.host, target.user, stdinPwd, target.port, target.identities, target.strict)
       : { session: null, authRefused: false };
     const session = wire.session;
     if (!session) {
@@ -1660,7 +1660,7 @@ export class LinuxCommandExecutor {
     const settled = !linuxPeer && target !== null && target.command
       ? await this.relayOverWire(session, target.command)
       : null;
-    const settledShell = !linuxPeer && target !== null && !target.command
+    const settledShell = target !== null && !target.command
       ? await this.relayShellOverWire(session, offeredPassword === undefined && stdinPwd ? 1 : 0)
       : null;
     try {

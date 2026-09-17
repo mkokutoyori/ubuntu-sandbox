@@ -581,6 +581,7 @@ export interface WireExecTarget {
   port: number;
   identities: string[];
   command: string;
+  strict: 'yes' | 'no' | 'accept-new';
 }
 
 export function wireExecTarget(
@@ -603,9 +604,11 @@ export function wireExecTarget(
   for (let i = 0; i < flags.length; i++) {
     if (flags[i] === '-i' && flags[i + 1]) identities.push(vfs.normalizePath(flags[i + 1], cwd));
   }
+  const asked = clientOption(flags, 'StrictHostKeyChecking');
   return {
     host, user, port: clientPort(flags), identities,
     command: joinRemoteCommand(positional.slice(1)),
+    strict: asked === 'yes' || asked === 'no' ? asked : 'accept-new',
   };
 }
 
@@ -1383,6 +1386,8 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     lines.push(`Last login: ${fmtHumanDate(new Date())} from ${opts.sourceIp}`);
   }
   if (printMotd && motd.trim()) lines.push(motd.replace(/\n*$/, ''));
+  const relayedShell = opts.shellRelay?.() ?? null;
+  if (relayedShell && relayedShell.output.length > 0) lines.push(relayedShell.output);
   lines.push(connectionClosed(host));
   machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, 0);
   return { output: warningBanner + verboseHeader + forwardingError + lines.join('\n'), exitCode: 0, connection };
