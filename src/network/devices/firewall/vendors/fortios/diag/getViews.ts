@@ -198,15 +198,22 @@ function prefixLength(mask: string): number {
 export type RoutingView = 'all' | 'static' | 'connected' | 'database'
   | 'ospf' | 'rip' | 'bgp';
 
+const ROUTE_CODE_LEGEND: readonly string[] = Object.freeze([
+  'Codes: K - kernel, C - connected, S - static, R - RIP, B - BGP',
+  '       O - OSPF, IA - OSPF inter area',
+  '       E1 - OSPF external type 1, E2 - OSPF external type 2',
+]);
+
+const DEFAULT_ROUTING_VRF = 'Routing table for VRF=0';
+
+function routeLegend(lastLine: string): string[] {
+  return [...ROUTE_CODE_LEGEND, `       ${lastLine}`, ''];
+}
+
 export function renderRoutingTable(routes: RouteTable, view: RoutingView): string {
   if (view === 'database') return renderRoutingDatabase(routes);
 
-  const lines = [
-    'Codes: K - kernel, C - connected, S - static, R - RIP, B - BGP',
-    '       O - OSPF, IA - OSPF inter area',
-    '       * - candidate default',
-    '',
-  ];
+  const lines = [...routeLegend('* - candidate default'), DEFAULT_ROUTING_VRF];
 
   const rows = routes.selected()
     .filter(route => keptBy(view, route))
@@ -224,12 +231,7 @@ export function renderRoutingTable(routes: RouteTable, view: RoutingView): strin
 }
 
 export function renderRoutingDatabase(routes: RouteTable): string {
-  const lines = [
-    'Codes: K - kernel, C - connected, S - static, R - RIP, B - BGP',
-    '       O - OSPF, IA - OSPF inter area',
-    '       > - selected route, * - FIB route',
-    '',
-  ];
+  const lines = routeLegend('> - selected route, * - FIB route');
 
   for (const route of routes.all()) {
     const kept = routes.isSelected(route);
