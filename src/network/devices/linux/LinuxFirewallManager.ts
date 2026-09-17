@@ -23,6 +23,7 @@
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 
 // Re-export types from LinuxIptablesManager for backward compatibility
 export type { FirewallVerdict, PacketInfo } from './LinuxIptablesManager';
@@ -751,33 +752,34 @@ export class LinuxFirewallManager {
     const parsed = this.parseRuleArgs(action, args);
     if (typeof parsed === 'string') return parsed; // Error message
 
-    // Check for duplicates
-    const dup = this.rules.find(r =>
-      !r.v6 && r.action === parsed.action && r.port === parsed.port &&
-      r.from === parsed.from && r.to === parsed.to &&
-      r.direction === parsed.direction && r.iface === parsed.iface
-    );
-    if (dup) {
-      const addsV6 = this.ruleGetsV6(parsed);
-      return addsV6
-        ? 'Skipping adding existing rule\nSkipping adding existing rule (v6)'
-        : 'Skipping adding existing rule';
-    }
-
-    // Add IPv4 rule
-    this.rules.push({ ...parsed, v6: false });
-    // Add IPv6 duplicate if source/dest are not IPv4-specific
     const addsV6 = this.ruleGetsV6(parsed);
-    if (addsV6) {
-      this.rules.push({ ...parsed, v6: true });
+    const twice = (line: string): string => (addsV6 ? `${line}\n${line} (v6)` : line);
+
+    const sameTarget = (r: UfwRule, v6: boolean): boolean =>
+      r.v6 === v6 && r.port === parsed.port && r.from === parsed.from
+      && r.to === parsed.to && r.direction === parsed.direction
+      && r.iface === parsed.iface && r.route === parsed.route;
+
+    const existing = this.rules.find(r => sameTarget(r, false));
+    if (existing && existing.action === parsed.action) {
+      return twice('Skipping adding existing rule');
+    }
+    if (existing) {
+      for (const v6 of addsV6 ? [false, true] : [false]) {
+        const at = this.rules.findIndex(r => sameTarget(r, v6));
+        if (at >= 0) this.rules[at] = { ...parsed, v6 };
+      }
+      this.rebuildIptablesRules();
+      this.syncToVfs();
+      return twice('Rule updated');
     }
 
-    // Rebuild iptables rules if enabled
+    this.rules.push({ ...parsed, v6: false });
+    if (addsV6) this.rules.push({ ...parsed, v6: true });
+
     this.rebuildIptablesRules();
     this.syncToVfs();
-    return addsV6
-      ? 'Rule added\nRule added (v6)'
-      : 'Rule added';
+    return twice('Rule added');
   }
 
   private ruleGetsV6(rule: UfwRule): boolean {
@@ -800,6 +802,23 @@ export class LinuxFirewallManager {
       if (p1 >= p2) return `ERROR: Invalid port range '${portStr}'`;
     }
     return null; // valid
+  }
+
+  private static validAddress(addr: string): boolean {
+    const [host, mask, ...extra] = addr.split('/');
+    if (extra.length > 0 || host === undefined || host === '') return false;
+    const isV4 = IPAddress.isValid(host);
+    let isV6 = false;
+    if (!isV4) {
+      try { new IPv6Address(host); isV6 = true; } catch { isV6 = false; }
+    }
+    if (!isV4 && !isV6) return false;
+    if (mask === undefined) return true;
+    if (/^\d+$/.test(mask)) {
+      const bits = Number(mask);
+      return bits >= 0 && bits <= (isV6 ? 128 : 32);
+    }
+    return !isV6 && IPAddress.isValid(mask);
   }
 
   private parseRuleArgs(action: Action, args: string[]): UfwRule | string {
@@ -867,6 +886,9 @@ export class LinuxFirewallManager {
     if (args[i] === 'from') {
       i++;
       if (i >= args.length) return 'ERROR: missing source address';
+      if (args[i] !== 'any' && !LinuxFirewallManager.validAddress(args[i])) {
+        return 'ERROR: Bad source address';
+      }
       from = args[i] === 'any' ? 'Anywhere' : args[i];
       i++;
     }
@@ -875,6 +897,9 @@ export class LinuxFirewallManager {
     if (i < args.length && args[i] === 'to') {
       i++; // 'to'
       if (i >= args.length) return 'ERROR: missing destination address';
+      if (args[i] !== 'any' && !LinuxFirewallManager.validAddress(args[i])) {
+        return 'ERROR: Bad destination address';
+      }
       to = args[i] === 'any' ? 'Anywhere' : args[i];
       i++;
     }
@@ -1405,6 +1430,8 @@ export class LinuxFirewallManager {
     ].join('\n');
     this.vfs.writeFile('/etc/ufw/ufw.conf', ufwConf, 0, 0, 0o022);
 
+    this.vfs.writeFile('/etc/default/ufw', this.generateDefaults(), 0, 0, 0o022);
+
     // Write /etc/ufw/user.rules (IPv4) — the iptables-save format rules
     const v4Rules = this.rules.filter(r => !r.v6);
     this.vfs.writeFile('/etc/ufw/user.rules', this.generateIptablesRules(v4Rules, false), 0, 0, 0o022);
@@ -1421,6 +1448,56 @@ export class LinuxFirewallManager {
 
     const ip6Save = this.ip6tables.executeSave();
     this.vfs.writeFile('/etc/iptables/rules.v6', ip6Save, 0, 0, 0o022);
+  }
+
+  private static readonly CHAIN_TARGET:
+  Readonly<Record<DefaultPolicy | 'disabled', string>> = {
+    allow: 'ACCEPT', deny: 'DROP', reject: 'REJECT', disabled: 'DROP',
+  };
+
+  private generateDefaults(): string {
+    const target = (p: DefaultPolicy | 'disabled'): string =>
+      LinuxFirewallManager.CHAIN_TARGET[p];
+    return [
+      '# /etc/default/ufw',
+      '#',
+      '',
+      '# Set to yes to apply rules to support IPv6 (no means only IPv6 on loopback',
+      "# accepted). You will need to 'disable' and then 'enable' the firewall for",
+      '# the changes to take affect.',
+      'IPV6=yes',
+      '',
+      '# Set the default input policy to ACCEPT, DROP, or REJECT. Please note that if',
+      '# you change this you will most likely want to adjust your rules.',
+      `DEFAULT_INPUT_POLICY="${target(this.defaultIncoming)}"`,
+      '',
+      '# Set the default output policy to ACCEPT, DROP, or REJECT. Please note that if',
+      '# you change this you will most likely want to adjust your rules.',
+      `DEFAULT_OUTPUT_POLICY="${target(this.defaultOutgoing)}"`,
+      '',
+      '# Set the default forward policy to ACCEPT, DROP or REJECT.  Please note that',
+      '# if you change this you will most likely want to adjust your rules',
+      `DEFAULT_FORWARD_POLICY="${target(this.defaultRouted)}"`,
+      '',
+      '# Set the default application policy to ACCEPT, DROP, REJECT or SKIP. Please',
+      "# note that setting this to ACCEPT may be a security risk. See 'man ufw' for",
+      '# details',
+      'DEFAULT_APPLICATION_POLICY="SKIP"',
+      '',
+      '# By default, ufw only touches its own chains. Set this to \'yes\' to have ufw',
+      '# manage the built-in chains too. Warning: setting this to \'yes\' will break',
+      '# non-ufw managed firewall rules',
+      'MANAGE_BUILTINS=no',
+      '',
+      '#',
+      '# IPT backend',
+      '#',
+      '# only enable if using iptables backend',
+      'IPT_SYSCTL=/etc/ufw/sysctl.conf',
+      '',
+      'IPT_MODULES="nf_conntrack_ftp nf_nat_ftp nf_conntrack_netbios_ns"',
+      '',
+    ].join('\n');
   }
 
   private generateIptablesRules(rules: UfwRule[], ipv6: boolean): string {
