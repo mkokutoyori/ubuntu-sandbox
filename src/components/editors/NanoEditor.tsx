@@ -8,6 +8,9 @@
 
 import React, { useRef, useEffect, useCallback, useReducer } from 'react';
 import { scrollCaretIntoView } from './caretScroll';
+import {
+  nanoEditShortcutRows, nanoTitleState, nanoTitleName,
+} from '@/network/devices/linux/editors/editorRender';
 import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
 import type { EditorFsContext } from '@/network/devices/linux/editors/EditorFsContext';
 
@@ -102,18 +105,7 @@ function shortcutsForMode(engine: NanoEditorDriver): readonly [readonly Shortcut
       ];
     case 'edit':
     default:
-      if (engine.isReadOnly) {
-        // View mode: no Write Out, Cut, Paste, Replace, Read File,
-        // Execute, or Justify — nothing that could touch the buffer.
-        return [
-          [['^G', 'Help'], ['^W', 'Where Is']],
-          [['^X', 'Exit'], ['^_', 'Go To Line']],
-        ];
-      }
-      return [
-        [['^G', 'Help'], ['^O', 'Write Out'], ['^W', 'Where Is'], ['^K', 'Cut'], ['^T', 'Execute']],
-        [['^X', 'Exit'], ['^R', 'Read File'], ['^\\', 'Replace'], ['^U', 'Paste'], ['^J', 'Justify']],
-      ];
+      return nanoEditShortcutRows();
   }
 }
 
@@ -219,13 +211,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
 
   const [shortcutsRow1, shortcutsRow2] = shortcutsForMode(engine);
 
-  const titleStatus = engine.isReadOnly
-    ? '[view]'
-    : engine.modified
-      ? 'Modified'
-      : isNewFile
-        ? 'New Buffer'
-        : '';
+  const titleStatus = nanoTitleState({ readOnly: engine.isReadOnly, modified: engine.modified });
   const titlePosition = showPosition
     ? `line ${engine.cursorLine + 1}/${engine.lines.length} col ${engine.cursorCol + 1}`
     : '';
@@ -253,7 +239,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
         }}
       >
         <span className="mx-1">GNU nano 6.2</span>
-        <span className="flex-1 text-center mx-1">{filePath}</span>
+        <span className="flex-1 text-center mx-1">{nanoTitleName(filePath)}</span>
         <span className="mx-1">
           {titleStatus}
           {titleStatus && titlePosition && '    '}
