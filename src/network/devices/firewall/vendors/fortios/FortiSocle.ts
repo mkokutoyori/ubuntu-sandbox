@@ -26,6 +26,7 @@ const LEGENDS: ReadonlyArray<readonly [readonly string[], string]> = Object.free
   [['config', 'log', 'syslogd', 'setting'], 'Configure the first syslog collector.'],
   [['config', 'log', 'syslogd2', 'setting'], 'Configure the second syslog collector.'],
   [['config', 'log', 'memory'], 'Configure memory logging.'],
+  [['fnsysctl'], 'Underlying system utilities.'],
   [['diagnose'], 'Diagnose facility.'],
   [['diagnose', 'sys'], 'System diagnostics.'],
   [['diagnose', 'sys', 'session'], 'IPv4 session table diagnostics.'],
@@ -98,6 +99,7 @@ export interface SocleDeps {
   readonly view: (rest: readonly string[], full: boolean) => string;
   readonly inspect: (rest: readonly string[]) => string;
   readonly diagnose: (rest: readonly string[]) => string;
+  readonly fnsysctl: (rest: readonly string[]) => string;
   readonly runExecute: (rest: readonly string[]) => string;
   readonly leaveCli: () => string;
   readonly enterGlobal: () => string;
@@ -279,6 +281,9 @@ export class FortiSocle {
       this.plain('config vdom', ['config', 'vdom'],
         'Configure virtual domain.',
         () => this.deps.nav.descend(['vdom'])),
+      this.plain('fnsysctl ifconfig', ['fnsysctl', 'ifconfig'],
+        'Show the kernel interface table.',
+        () => this.deps.fnsysctl(['ifconfig'])),
       this.plain('exit', ['exit'], 'Exit the CLI.', () => this.deps.leaveCli()),
       this.plain('quit', ['quit'], 'Exit the CLI.', () => this.deps.leaveCli()),
     ];

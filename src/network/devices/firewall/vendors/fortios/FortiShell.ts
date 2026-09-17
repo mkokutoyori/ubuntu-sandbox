@@ -58,7 +58,7 @@ import type {
 } from '../../inspection/UtmProfiles';
 import { FortiDiagnostics } from './diag/FortiDiagnostics';
 import {
-  deniedLog, runDiagnose, runExecuteLog, runSessionFilter,
+  deniedLog, runDiagnose, runExecuteLog, runFnsysctl, runSessionFilter,
   parseSnifferPlan, type SnifferPlan,
 } from './diag/FortiDiagCommands';
 import { renderVpnTunnelList, renderVpnTunnelSummary } from './diag/vpnTunnelRenderer';
@@ -296,6 +296,7 @@ export class FortiShell {
       view: (rest, full) => this.show(rest, full),
       inspect: (rest) => this.get(rest),
       diagnose: (rest) => this.diagnose(rest),
+      fnsysctl: (rest) => runFnsysctl(rest, this.diagDeps()),
       runExecute: (rest) => this.executeVerb(rest),
       leaveCli: () => '',
       enterGlobal: () => this.enterGlobal(),

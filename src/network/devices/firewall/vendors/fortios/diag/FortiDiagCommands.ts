@@ -1,6 +1,8 @@
 import { conserveModeLines, procMeminfoLines } from './systemLoad';
 import { renderArpKernelList } from './getViews';
-import { IPv6Address, type IPv4Packet } from '../../../../../core/types';
+import {
+  IPv6Address, type IPAddress, type IPv4Packet, type SubnetMask,
+} from '../../../../../core/types';
 import type { FirewallSession } from '../../../session/SessionTable';
 import type { Firewall } from '../../../Firewall';
 import type { FirewallLogDraft } from '../../../logging/FirewallLogStore';
@@ -61,6 +63,9 @@ import { renderAutoupdateVersions } from './fortiguardRenderer';
 import { renderPolicyRoutes, type ProuteContext } from './prouteRenderer';
 import { renderRealServers, type VirtualServerView } from './realServerRenderer';
 import { renderNic, renderNicList, type NicView } from './nicRenderer';
+import {
+  renderIfconfigList, type IfconfigAddress, type IfconfigView,
+} from './ifconfigRenderer';
 import { fortiLogStamp } from './timeCommands';
 import {
   describeLogCategories, logFilePrefix, resolveLogCategory, typesOfLogFile,
@@ -179,6 +184,36 @@ function nicViews(deps: FortiDiagDeps): NicView[] {
     duplex: port.getNegotiatedDuplex() === 'full' ? 'Full' : 'Half',
     counters: port.getCounters(),
   }));
+}
+
+interface AddressedPort {
+  getIPAddress(): IPAddress | null;
+  getSubnetMask(): SubnetMask | null;
+}
+
+function ifconfigAddress(port: AddressedPort): IfconfigAddress | undefined {
+  const ip = port.getIPAddress();
+  const mask = port.getSubnetMask();
+  if (ip === null || mask === null) return undefined;
+  if (ip.isUnspecified()) return undefined;
+  return { ip, mask };
+}
+
+function ifconfigViews(deps: FortiDiagDeps): IfconfigView[] {
+  return deps.fw.getPorts().map(port => ({
+    name: port.getName(),
+    hardwareAddress: port.getMAC().toString().toUpperCase(),
+    address: ifconfigAddress(port),
+    adminUp: !port.isAdminDown(),
+    linkUp: port.isOperationallyUp(),
+    mtu: port.getMTU(),
+    counters: port.getCounters(),
+  }));
+}
+
+export function runFnsysctl(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] === 'ifconfig') return renderIfconfigList(ifconfigViews(deps));
+  return FortiMessages.unknownPath(`fnsysctl ${rest.join(' ')}`, 'fnsysctl');
 }
 
 function virtualServers(deps: FortiDiagDeps): VirtualServerView[] {
