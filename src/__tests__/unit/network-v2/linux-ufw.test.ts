@@ -164,25 +164,25 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should allow a port', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw allow 22');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
     });
 
     it('should allow port with protocol', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw allow 80/tcp');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
     });
 
     it('should deny a port', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw deny 23');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
     });
 
     it('should reject a port', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw reject 25/tcp');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
     });
 
     it('should show rules in status output', async () => {
@@ -219,7 +219,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should allow port range', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw allow 6000:6007/tcp');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status');
@@ -229,7 +229,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should allow port range with udp', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw allow 60000:61000/udp');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status');
@@ -243,7 +243,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should allow ssh service', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw allow ssh');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status');
@@ -285,7 +285,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should allow from specific IP', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw allow from 192.168.1.100');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status');
@@ -296,7 +296,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should deny from specific IP', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw deny from 10.0.0.5');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status');
@@ -307,7 +307,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should allow from subnet', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw allow from 192.168.1.0/24');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status');
@@ -317,7 +317,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should allow from IP to specific port', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw allow from 192.168.1.0/24 to any port 22');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status');
@@ -328,7 +328,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should allow from IP to port with protocol', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw allow from 10.0.0.0/8 to any port 3306 proto tcp');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status');
@@ -445,7 +445,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       await server.executeCommand('ufw allow 443/tcp');
 
       const out = await server.executeCommand('ufw insert 2 allow 80/tcp');
-      expect(out).toContain('Rule inserted');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status numbered');
@@ -588,16 +588,20 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
   // ─── 8.10b: Bug fix validations ──────────────────────────────────
 
   describe('G8-10b: Bug fix validations', () => {
-    it('should include logging level in enable output', async () => {
+    it('records the logging level where ufw shows it, not in the ack', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw logging on');
-      expect(out).toContain('Logging enabled (low)');
+      expect(out).toBe('Logging enabled');
+      await server.executeCommand('ufw enable');
+      expect(await server.executeCommand('ufw status verbose')).toContain('Logging: on (low)');
     });
 
-    it('should include correct logging level for medium', async () => {
+    it('records a medium logging level the same way', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw logging medium');
-      expect(out).toContain('Logging enabled (medium)');
+      expect(out).toBe('Logging enabled');
+      await server.executeCommand('ufw enable');
+      expect(await server.executeCommand('ufw status verbose')).toContain('Logging: on (medium)');
     });
 
     it('should show correct position in insert error', async () => {
@@ -630,7 +634,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       await server.executeCommand('ufw allow from 192.168.1.1 to any port 22');
       const out = await server.executeCommand('ufw delete 1');
-      expect(out).toBe('Rule deleted');
+      expect(out).toBe('Rules updated');
       expect(out).not.toContain('(v6)');
     });
 
@@ -638,7 +642,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       await server.executeCommand('ufw allow 22/tcp');
       const out = await server.executeCommand('ufw delete 1');
-      expect(out).toContain('Rule deleted (v6)');
+      expect(out).toContain('Rules updated (v6)');
     });
 
     it('should not say v6 in skip message for IP-specific duplicate', async () => {
@@ -698,7 +702,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should handle limit rule for SSH brute-force protection', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw limit ssh');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status');
@@ -728,7 +732,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should allow rule with "in" direction', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw allow in 22/tcp');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status');
@@ -739,7 +743,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should allow rule with "out" direction', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw allow out 53');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status');
@@ -750,7 +754,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should allow rule with interface "on eth0"', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw allow in on eth0 80/tcp');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status');
@@ -761,7 +765,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should deny outgoing on specific interface', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw deny out on ens33 25/tcp');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status');
@@ -771,7 +775,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should allow direction with from syntax', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw allow in on eth0 from 10.0.0.0/24 to any port 22');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status');
@@ -785,13 +789,13 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should allow rule to specific destination IP', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw allow from 10.0.0.1 to 192.168.1.1 port 443 proto tcp');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
     });
 
     it('should allow app profile as rule target (OpenSSH)', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw allow OpenSSH');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status');
@@ -801,7 +805,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should allow multi-word app profile (Nginx Full)', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw allow Nginx Full');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status');
@@ -811,7 +815,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should support comment on from-rule', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw allow from 10.0.0.1 to any port 22 comment SSH from office');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
     });
 
     it('should show destination IP in status To column', async () => {
@@ -1281,7 +1285,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       await server.executeCommand('ufw allow 80/tcp');
 
       const out = await server.executeCommand('ufw prepend deny 23');
-      expect(out).toContain('Rule prepended');
+      expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status numbered');
@@ -1309,7 +1313,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
     it('should prepend to empty rule set', async () => {
       const server = new LinuxServer('linux-server', 'SRV1');
       const out = await server.executeCommand('ufw prepend allow 22/tcp');
-      expect(out).toContain('Rule prepended');
+      expect(out).toContain('Rules updated');
     });
   });
 
@@ -1560,7 +1564,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
 
     it('should add route deny rule', async () => {
       const out = await server.executeCommand('ufw route deny in on eth0 out on eth1 from 10.0.0.0/24 to any');
-      expect(out).toContain('Rule added');
+      expect(out).toContain('Rules updated');
       await server.executeCommand('ufw enable');
       const ipt = await server.executeCommand('iptables -S ufw-user-forward');
       expect(ipt).toContain('DROP');

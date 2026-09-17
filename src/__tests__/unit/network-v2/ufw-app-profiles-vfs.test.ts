@@ -60,7 +60,7 @@ describe('ufw app profiles read from /etc/ufw/applications.d/', () => {
     );
 
     const out = await server.executeCommand('ufw allow MyApp');
-    expect(out).toContain('Rule added');
+    expect(out).toContain('Rules updated');
 
     await server.executeCommand('ufw enable');
     const status = await server.executeCommand('ufw status');
