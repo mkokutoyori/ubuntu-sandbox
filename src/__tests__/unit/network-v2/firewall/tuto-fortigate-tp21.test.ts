@@ -33,7 +33,7 @@
  *      `Group Name:`. Le lot qui a ecrit ce point n'avancait aucune
  *      capture ; celui qui le corrige en avance sept. Le cas ci-dessous
  *      est revenu a la forme attestee.
- *   5. **La ligne `Slave :` ne nommait personne** et la ligne `Master:`
+ *   5. **La ligne `Secondary :` ne nommait personne** et la ligne `Primary :`
  *      portait le nom de la machine QUI REGARDE : un membre ne
  *      transportait pas son nom d'hote dans son battement de coeur.
  *   6. **`set hbdev "port5" 50 "port6" 100` ressortait sans guillemets**,
@@ -186,8 +186,8 @@ describe('TP 21 — Monter un cluster et le faire basculer', () => {
     expect(vue).toContain('HA Health Status: OK');
     expect(vue).toContain('Mode: HA A-P');
     expect(vue).toContain('Group: 0');
-    expect(vue).toMatch(/^Master: FGT-01, FGVMEV\d+, cluster index = 0$/m);
-    expect(vue).toMatch(/^Slave : FGT-02, FGVMEV\d+, cluster index = 1$/m);
+    expect(vue).toMatch(/^Primary : FGT-01, FGVMEV\d+, HA cluster index = 0$/m);
+    expect(vue).toMatch(/^Secondary : FGT-02, FGVMEV\d+, HA cluster index = 1$/m);
   });
 
   it('etape 5 : `diagnose sys ha checksum cluster` rend les DEUX membres',

@@ -9,6 +9,12 @@ export interface HaViewFacts {
 }
 
 const MEMBER_INDENT = ' '.repeat(4);
+export const ROLE_LABEL = Object.freeze({ master: 'Primary', slave: 'Secondary' });
+
+function roleLine(label: string, member: MemberView, index: number): string {
+  return `${label} : ${member.hostname}, ${member.serial}, HA cluster index = ${index}`;
+}
+
 const NO_STATE_CHANGE = 'N/A';
 const USAGE_HEADINGS: readonly string[] = Object.freeze([
   'System Usage stats:', 'HBDEV stats:',
@@ -56,7 +62,7 @@ export function renderHaStatus(ha: HaAgent, facts: HaViewFacts): string {
 
   const lines = [
     ...preamble(ha, facts, `HA ${config.mode.toUpperCase()}`, ha.uptimeMs()),
-    'Master selected using:',
+    `${ROLE_LABEL.master} selected using:`,
   ];
 
   for (const record of ha.elections()) {
@@ -74,12 +80,8 @@ export function renderHaStatus(ha: HaAgent, facts: HaViewFacts): string {
 
   const primary = members(ha).find(member => member.role === 'master');
   const secondary = members(ha).find(member => member.role !== 'master');
-  if (primary) {
-    lines.push(`Master: ${primary.hostname}, ${primary.serial}, cluster index = 0`);
-  }
-  if (secondary) {
-    lines.push(`Slave : ${secondary.hostname}, ${secondary.serial}, cluster index = 1`);
-  }
+  if (primary) lines.push(roleLine(ROLE_LABEL.master, primary, 0));
+  if (secondary) lines.push(roleLine(ROLE_LABEL.slave, secondary, 1));
   lines.push('number of vcluster: 1');
 
   return lines.join('\n');

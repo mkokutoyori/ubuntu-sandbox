@@ -46,7 +46,7 @@
  * l'autonome, qui en a trois.
  *
  * LES BLOCS DE MEMBRES SONT INDENTES DE QUATRE ESPACES : la ligne
- * d'election sous `Master selected using:', et chaque membre sous
+ * d'election sous `Primary selected using:', et chaque membre sous
  * `Configuration Status:'. Nous les posions a la marge.
  *
  * ET L'HORODATAGE EST CELUI DE L'EQUIPEMENT. `stamp()' lisait la date par
@@ -206,6 +206,7 @@ describe('`get system ha status` rend son bloc, grappe ou pas', () => {
 
   it('NON-REGRESSION : en grappe, le maitre et l esclave restent nommes', async () => {
     const fgt = await enGrappe();
-    expect(await etat(fgt)).toMatch(/Master: FGT-A, FGVM\w+, cluster index = 0/);
+    expect(await etat(fgt))
+      .toMatch(/Primary : FGT-A, FGVM\w+, HA cluster index = 0/);
   }, 30000);
 });

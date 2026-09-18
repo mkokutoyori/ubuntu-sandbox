@@ -68,6 +68,7 @@ import {
   renderBgpNeighbors, renderBgpSummary, renderDhcpLeases, renderDhcp6Leases,
   renderSslVpnLoginUsers, renderSslVpnSessions, type SslVpnListRow,
   renderOspfNeighbors, renderRoutingTable, renderSystemStatus,
+  type SystemClusterFacts,
 } from './diag/getViews';
 import {
   renderSessionCount, renderSessionSummary, renderSessionTtl,
@@ -81,7 +82,7 @@ import type { SslVpnSessionMode } from '../../vpn/SslVpnSessionTable';
 import { PkiKeyPair } from '../../../../pki/PkiKeyPair';
 import { buildCertificateRequest } from '../../../../pki/CertificateSigningRequest';
 import { csrToPem, privateKeyToPem, pemToCert } from '../../../../pki/pem';
-import { renderHaChecksum, renderHaStatus } from './diag/haRenderer';
+import { renderHaChecksum, renderHaStatus, ROLE_LABEL } from './diag/haRenderer';
 import type { FortiLogFormat } from './log/fortiLogFormat';
 import {
   configChangeLog,
@@ -1013,6 +1014,26 @@ export class FortiShell {
     return this.tree.table(spec).get(name)?.effective(attribute)[0];
   }
 
+  private haModeText(): string {
+    const mode = this.fw.getHa().getConfiguration().mode;
+    if (mode === 'standalone') return 'standalone';
+    const role = this.fw.getHa().role() === 'master'
+      ? ROLE_LABEL.master : ROLE_LABEL.slave;
+    return `${mode}, ${role.toLowerCase()}`;
+  }
+
+  private clusterFacts(): SystemClusterFacts | undefined {
+    const ha = this.fw.getHa();
+    if (ha.getConfiguration().mode === 'standalone') return undefined;
+    const records = ha.elections();
+    const last = records[records.length - 1];
+    return {
+      uptimeMs: ha.uptimeMs(),
+      stateChangeTime: last === undefined
+        ? 'N/A' : fortiLogStamp(this.fw, last.at),
+    };
+  }
+
   private systemStatus(): string {
     const settings = this.tree.setting('system settings', 'opmode')[0] ?? 'nat';
     const vdomMode = this.tree.setting('system global', 'vdom-mode')[0] ?? 'no-vdom';
@@ -1029,8 +1050,8 @@ export class FortiShell {
       vdomsInNat: settings === 'transparent' ? 0 : 1,
       vdomsInTransparent: settings === 'transparent' ? 1 : 0,
       vdomConfiguration: vdomMode === 'no-vdom' ? 'disable' : 'enable',
-      haMode: this.fw.getHa().getConfiguration().mode === 'standalone'
-        ? 'standalone' : this.fw.getHa().getConfiguration().mode,
+      haMode: this.haModeText(),
+      cluster: this.clusterFacts(),
       licenseStatus: 'Valid',
       vmCpus: this.fw.getSystemLoad().cpuCount(),
       vmMemoryMb: Math.round(this.fw.getSystemLoad().memory().totalKib / 1024),

@@ -10,6 +10,27 @@ import type { ArpService } from '../../../l3/ArpService';
 import type { SecurityRule } from '../../../model/SecurityRule';
 import type { BgpSummaryFacts } from '../../../routing/DynamicRoutingTypes';
 
+function clusterLines(facts: SystemStatusFacts): string[] {
+  if (facts.cluster === undefined) return [];
+  return [
+    `Cluster uptime: ${spelledUptime(facts.cluster.uptimeMs)}`,
+    `Cluster state change time: ${facts.cluster.stateChangeTime}`,
+  ];
+}
+
+function spelledUptime(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  return `${Math.floor(seconds / 86400)} days,`
+    + ` ${Math.floor((seconds % 86400) / 3600)} hours,`
+    + ` ${Math.floor((seconds % 3600) / 60)} minutes,`
+    + ` ${seconds % 60} seconds`;
+}
+
+export interface SystemClusterFacts {
+  readonly uptimeMs: number;
+  readonly stateChangeTime: string;
+}
+
 export interface SystemStatusFacts {
   readonly model: string;
   readonly version: string;
@@ -23,6 +44,7 @@ export interface SystemStatusFacts {
   readonly vdomsInTransparent: number;
   readonly vdomConfiguration: string;
   readonly haMode: string;
+  readonly cluster?: SystemClusterFacts;
   readonly licenseStatus: string;
   readonly vmCpus: number;
   readonly vmMemoryMb: number;
@@ -45,6 +67,7 @@ export function renderSystemStatus(facts: SystemStatusFacts): string {
     + ` ${facts.vdomsInTransparent} in TP mode`,
     `Virtual domain configuration: ${facts.vdomConfiguration}`,
     `Current HA mode: ${facts.haMode}`,
+    ...clusterLines(facts),
     `Branch point: ${facts.build}`,
     `System time: ${facts.systemTime}`,
   ].join('\n');
