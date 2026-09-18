@@ -63,6 +63,7 @@ export const FORTIOS_PROFILE: FirewallProfile = Object.freeze({
   displayName: 'Fortinet FortiGate',
   osName: 'fortios',
   defaultVersion: '7.6.3',
+  model: 'FortiGate-VM64',
   predefinedAddresses: PREDEFINED_ADDRESSES,
   predefinedServices: PREDEFINED_SERVICES,
 

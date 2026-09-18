@@ -5,36 +5,72 @@ export interface HaViewFacts {
   readonly model: string;
   readonly hostname: string;
   readonly now: number;
+  readonly localStamp: (at: number) => string;
+}
+
+const MEMBER_INDENT = ' '.repeat(4);
+const NO_STATE_CHANGE = 'N/A';
+const USAGE_HEADINGS: readonly string[] = Object.freeze([
+  'System Usage stats:', 'HBDEV stats:',
+]);
+
+function stateChangeTime(ha: HaAgent, facts: HaViewFacts): string {
+  const records = ha.elections();
+  const last = records[records.length - 1];
+  return last === undefined ? NO_STATE_CHANGE : facts.localStamp(last.at);
+}
+
+function preamble(
+  ha: HaAgent, facts: HaViewFacts, mode: string, uptimeMs: number,
+): string[] {
+  const config = ha.getConfiguration();
+  return [
+    'HA Health Status: OK',
+    `Model: ${facts.model}`,
+    `Mode: ${mode}`,
+    `Group: ${config.groupId}`,
+    'Debug: 0',
+    `Cluster Uptime: ${formatUptime(uptimeMs)}`,
+    `Cluster state change time: ${stateChangeTime(ha, facts)}`,
+  ];
+}
+
+function pickupLines(ha: HaAgent): string[] {
+  const config = ha.getConfiguration();
+  return [
+    `ses_pickup: ${config.sessionPickup ? 'enable' : 'disable'}, ses_pickup_delay=disable`,
+    `override: ${config.override ? 'enable' : 'disable'}`,
+  ];
 }
 
 export function renderHaStatus(ha: HaAgent, facts: HaViewFacts): string {
   const config = ha.getConfiguration();
-  if (config.mode === 'standalone') return 'HA Health Status: OK\nMode: Standalone';
+  if (config.mode === 'standalone') {
+    return [
+      ...preamble(ha, facts, 'Standalone', 0),
+      ...pickupLines(ha),
+      ...USAGE_HEADINGS,
+      'number of vcluster: 0',
+    ].join('\n');
+  }
 
   const lines = [
-    'HA Health Status: OK',
-    `Model: ${facts.model}`,
-    `Mode: HA ${config.mode.toUpperCase()}`,
-    `Group Name: ${config.groupName}`,
-    `Group ID: ${config.groupId}`,
-    'Debug: 0',
-    `Cluster Uptime: ${formatUptime(ha.uptimeMs())}`,
+    ...preamble(ha, facts, `HA ${config.mode.toUpperCase()}`, ha.uptimeMs()),
     'Master selected using:',
   ];
 
   for (const record of ha.elections()) {
-    lines.push(`<${stamp(record.at)}> ${electionSentence(record.serial, record.reason)}`);
+    lines.push(`${MEMBER_INDENT}<${electionStamp(facts.localStamp(record.at))}>`
+      + ` ${electionSentence(record.serial, record.reason)}`);
   }
 
-  lines.push(
-    `ses_pickup: ${config.sessionPickup ? 'enable' : 'disable'}, ses_pickup_delay=disable`,
-    `override: ${config.override ? 'enable' : 'disable'}`,
-    'Configuration Status:',
-  );
+  lines.push(...pickupLines(ha), 'Configuration Status:');
 
   for (const member of members(ha)) {
-    lines.push(`${member.serial}(updated 1 seconds ago): ${member.sync}`);
+    lines.push(`${MEMBER_INDENT}${member.serial}(updated 1 seconds ago): ${member.sync}`);
   }
+
+  lines.push(...USAGE_HEADINGS);
 
   const primary = members(ha).find(member => member.role === 'master');
   const secondary = members(ha).find(member => member.role !== 'master');
@@ -47,6 +83,10 @@ export function renderHaStatus(ha: HaAgent, facts: HaViewFacts): string {
   lines.push('number of vcluster: 1');
 
   return lines.join('\n');
+}
+
+function electionStamp(localStamp: string): string {
+  return localStamp.replace(/-/g, '/');
 }
 
 export function renderHaChecksum(ha: HaAgent): string {
@@ -113,16 +153,5 @@ function formatUptime(ms: number): string {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  const rest = seconds % 60;
-  return `${days} days ${hours}:${pad(minutes)}:${pad(rest)}`;
-}
-
-function stamp(at: number): string {
-  const date = new Date(at);
-  return `${date.getUTCFullYear()}/${pad(date.getUTCMonth() + 1)}/${pad(date.getUTCDate())} `
-    + `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
-}
-
-function pad(value: number): string {
-  return String(value).padStart(2, '0');
+  return `${days} days ${hours}:${minutes}:${seconds % 60}`;
 }

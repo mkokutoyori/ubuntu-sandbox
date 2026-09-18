@@ -924,9 +924,10 @@ export class FortiShell {
     }
     if (path === 'system ha status') {
       return renderHaStatus(this.fw.getHa(), {
-        model: 'FortiGate-VM64',
+        model: this.fw.getProfile().model,
         hostname: this.fw.getName(),
         now: this.fw.now(),
+        localStamp: (at) => fortiLogStamp(this.fw, at),
       });
     }
     if (path === 'system interface') {
@@ -1017,6 +1018,7 @@ export class FortiShell {
     const vdomMode = this.tree.setting('system global', 'vdom-mode')[0] ?? 'no-vdom';
 
     return renderSystemStatus({
+      model: this.fw.getProfile().model,
       version: FORTIOS_PROFILE.defaultVersion,
       build: FORTI_BUILD,
       serial: this.serialNumber(),
@@ -2096,6 +2098,7 @@ export class FortiShell {
     return {
       hostname: this.fw.getName(),
       serial: this.serialNumber(),
+      model: this.fw.getProfile().model,
       version: FORTIOS_PROFILE.defaultVersion,
       facility: 23,
       localClock: (atMs: number) => ({

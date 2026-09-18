@@ -11,6 +11,7 @@ import type { SecurityRule } from '../../../model/SecurityRule';
 import type { BgpSummaryFacts } from '../../../routing/DynamicRoutingTypes';
 
 export interface SystemStatusFacts {
+  readonly model: string;
   readonly version: string;
   readonly build: string;
   readonly serial: string;
@@ -31,7 +32,7 @@ export interface SystemStatusFacts {
 
 export function renderSystemStatus(facts: SystemStatusFacts): string {
   return [
-    `Version: FortiGate-VM64 v${facts.version},build${facts.build}`,
+    `Version: ${facts.model} v${facts.version},build${facts.build}`,
     `Serial-Number: ${facts.serial}`,
     `License Status: ${facts.licenseStatus}`,
     `VM Resources: ${facts.vmCpus} CPU, ${facts.vmMemoryMb} MB RAM`,

@@ -381,7 +381,10 @@ function diagnoseHa(rest: readonly string[], deps: FortiDiagDeps): string {
 
   if (rest[0] === 'status') {
     return renderHaStatus(ha, {
-      model: 'FortiGate-VM64', hostname: deps.fw.getName(), now: deps.fw.now(),
+      model: deps.fw.getProfile().model,
+      hostname: deps.fw.getName(),
+      now: deps.fw.now(),
+      localStamp: (at) => fortiLogStamp(deps.fw, at),
     });
   }
   if (rest[0] === 'checksum' && rest[1] === 'show') return renderHaChecksum(ha);

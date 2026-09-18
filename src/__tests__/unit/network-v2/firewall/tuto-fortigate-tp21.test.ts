@@ -25,6 +25,14 @@
  *      d'empreintes — et non les deux empreintes entre elles.
  *   4. **`Group:` rendait l'IDENTIFIANT et taisait le NOM.** Un vrai
  *      FortiOS rend deux lignes, `Group Name:` et `Group ID:`.
+ *
+ *      **NOTE D'UN LOT ULTERIEUR — ce point 4 etait FAUX.** Les SEPT
+ *      captures que `ntc-templates` conserve pour
+ *      `get system ha status`, de la 5.6 a la 7.0, rendent toutes
+ *      `Group: <identifiant>` sur UNE ligne, et aucune ne porte
+ *      `Group Name:`. Le lot qui a ecrit ce point n'avancait aucune
+ *      capture ; celui qui le corrige en avance sept. Le cas ci-dessous
+ *      est revenu a la forme attestee.
  *   5. **La ligne `Slave :` ne nommait personne** et la ligne `Master:`
  *      portait le nom de la machine QUI REGARDE : un membre ne
  *      transportait pas son nom d'hote dans son battement de coeur.
@@ -177,8 +185,7 @@ describe('TP 21 — Monter un cluster et le faire basculer', () => {
     const vue = await maitre.executeCommand('get system ha status');
     expect(vue).toContain('HA Health Status: OK');
     expect(vue).toContain('Mode: HA A-P');
-    expect(vue).toContain('Group Name: CLUSTER-LAB');
-    expect(vue).toContain('Group ID: 0');
+    expect(vue).toContain('Group: 0');
     expect(vue).toMatch(/^Master: FGT-01, FGVMEV\d+, cluster index = 0$/m);
     expect(vue).toMatch(/^Slave : FGT-02, FGVMEV\d+, cluster index = 1$/m);
   });

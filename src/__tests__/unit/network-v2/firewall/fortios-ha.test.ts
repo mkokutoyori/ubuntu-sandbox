@@ -280,8 +280,7 @@ describe('get system ha status', () => {
     const vue = labo.a.sh.execute('get system ha status');
     expect(vue).toMatch(/HA Health Status: OK/);
     expect(vue).toMatch(/Mode: HA A-P/);
-    expect(vue).toMatch(/Group Name: cluster-paris/);
-    expect(vue).toMatch(/Group ID: 10/);
+    expect(vue).toMatch(/^Group: 10$/m);
     expect(vue).toMatch(/^Master: FGT-A, /m);
     expect(vue).toMatch(/^Slave : FGT-B, /m);
   });
