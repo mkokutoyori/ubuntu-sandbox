@@ -1,7 +1,7 @@
 import type { LinuxCommand, LinuxCommandOption } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import type { LldpAgent, LldpNeighbor } from '@/network/lldp/LldpAgent';
-import type { LldpCapability, LldpFrame } from '@/network/lldp/types';
+import type { LldpCapability, LldpFrame, LldpManagementAddress } from '@/network/lldp/types';
 
 const SEP = '-'.repeat(79);
 
@@ -78,7 +78,7 @@ function ageSince(ttlSec: number, remaining: number): string {
 function writeChassis(
   w: TextWriter, chassisId: string, systemName: string | undefined,
   systemDescription: string | undefined, capabilities: readonly LldpCapability[] | undefined,
-  addresses: readonly string[] | undefined,
+  addresses: readonly LldpManagementAddress[] | undefined,
 ): void {
   w.start('Chassis');
   w.start('ChassisID');
@@ -89,7 +89,7 @@ function writeChassis(
   if (systemDescription !== undefined) {
     w.start('SysDescr'); w.data(systemDescription); w.end();
   }
-  for (const a of addresses ?? []) { w.start('MgmtIP'); w.data(a); w.end(); }
+  for (const a of addresses ?? []) { w.start('MgmtIP'); w.data(a.address.toString()); w.end(); }
   for (const c of capabilities ?? []) {
     w.start('Capability');
     w.attr('', CAPABILITY_SYMBOL[c]);
@@ -192,7 +192,8 @@ function jsonNeighbor(agent: LldpAgent, iface: string, n: LldpNeighbor): unknown
       id: { type: 'mac', value: n.chassisId },
       ...(n.systemName !== undefined ? { name: n.systemName } : {}),
       ...(n.systemDescription !== undefined ? { descr: n.systemDescription } : {}),
-      ...(n.managementAddresses?.length ? { 'mgmt-ip': n.managementAddresses } : {}),
+      ...(n.managementAddresses?.length
+        ? { 'mgmt-ip': n.managementAddresses.map(a => a.address.toString()) } : {}),
       capability: (n.remoteCapabilities ?? []).map(c => ({
         type: CAPABILITY_SYMBOL[c], enabled: true,
       })),

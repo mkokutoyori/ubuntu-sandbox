@@ -122,6 +122,7 @@ import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { vtyLoginModeOf } from './router/vty/VtyLineConfig';
 import { KeypairService } from './router/security/KeypairService';
 import { classifyIpv4Destination } from '../layers/internet/InternetLayer';
+import type { LldpHost } from '../lldp/LldpAgent';
 
 // Re-export shell classes for backward compatibility
 export { CiscoSwitchShell } from './shells/CiscoSwitchShell';
@@ -1116,6 +1117,20 @@ export abstract class Switch extends Equipment {
 
   getSwitchportConfig(portName: string): SwitchportConfig | undefined {
     return this.switchportConfigs.get(portName);
+  }
+
+  lldpHostExtras(): Pick<LldpHost, 'bridgePortVlans' | 'managementPorts'> {
+    return {
+      bridgePortVlans: (portName: string) => {
+        const untagged = this.resolveSnoopingVlan(portName);
+        if (untagged === undefined) return undefined;
+        const names = [...this.vlans.values()]
+          .filter(v => v.ports.has(portName))
+          .map(v => ({ id: v.id, name: v.name }));
+        return { untagged, names };
+      },
+      managementPorts: () => [...this.getPorts(), ...this.sviPorts()],
+    };
   }
 
   /**

@@ -24,7 +24,7 @@ import { nomLoopfilterIos } from '@/network/ntp/discipline';
 import { C2900_SOFTWARE, C3560_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
-import { lldpCapabilityLetters } from '@/network/lldp/types';
+import { lldpCapabilityLetters, type LldpAutoNegotiation } from '@/network/lldp/types';
 import { MACAddress } from '@/network/core/types';
 import type { LldpNeighbor } from '@/network/lldp/LldpAgent';
 
@@ -550,6 +550,11 @@ function notAdvertised(label: string, value: string | undefined): string {
   return value ? `${label}: ${value}` : `${label} - not advertised`;
 }
 
+function lldpAutoNegotiationLine(auto: LldpAutoNegotiation | undefined): string {
+  if (!auto?.supported) return 'Auto Negotiation - not supported';
+  return `Auto Negotiation - supported, ${auto.enabled ? 'enabled' : 'not enabled'}`;
+}
+
 function lldpDetailBlock(n: LldpNeighbor, remaining: number): string {
   const lines = [
     '------------------------------------------------',
@@ -571,14 +576,14 @@ function lldpDetailBlock(n: LldpNeighbor, remaining: number): string {
   lines.push(notAdvertised('Enabled Capabilities', n.remoteCapabilities ? caps : undefined));
   if (n.managementAddresses && n.managementAddresses.length > 0) {
     lines.push('Management Addresses:');
-    for (const a of n.managementAddresses) lines.push(`    IP: ${a}`);
+    for (const a of n.managementAddresses) lines.push(`    IP: ${a.address.toString()}`);
   } else {
     lines.push('Management Addresses - not advertised');
   }
-  lines.push('Auto Negotiation - not supported');
+  lines.push(lldpAutoNegotiationLine(n.autoNegotiation));
   lines.push('Physical media capabilities - not advertised');
   lines.push('Media Attachment Unit type - not advertised');
-  lines.push('Vlan ID: - not advertised');
+  lines.push(`Vlan ID: ${n.portVlanId === undefined ? '- not advertised' : n.portVlanId}`);
   return lines.join('\n');
 }
 
@@ -620,7 +625,7 @@ function lldpLocalInfo(dev: ShowStateDevice, ttl: number): string {
   lines.push(`    ${notAdvertised('Enabled Capabilities', self.capabilities ? caps : undefined)}`);
   if (self.managementAddresses && self.managementAddresses.length > 0) {
     lines.push('    Management Addresses:');
-    for (const addr of self.managementAddresses) lines.push(`        IP: ${addr}`);
+    for (const a of self.managementAddresses) lines.push(`        IP: ${a.address.toString()}`);
   } else {
     lines.push('    Management Addresses - not advertised');
   }

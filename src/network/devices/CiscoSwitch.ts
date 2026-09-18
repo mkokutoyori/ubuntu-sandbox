@@ -90,7 +90,8 @@ export class CiscoSwitch extends Switch {
       getNativeVlan: (p: string) => this.resolveSnoopingVlan(p),
       getVoiceVlan: (p: string) => this.getSwitchportConfig(p)?.voiceVlan,
     }, () => this.getBus(), () => this.getScheduler());
-    this.lldpAgent = new LldpAgent(hostBase, () => this.getBus(), () => this.getScheduler());
+    this.lldpAgent = new LldpAgent({ ...hostBase, ...this.lldpHostExtras() },
+      () => this.getBus(), () => this.getScheduler());
     this.dtpAgent = new DtpAgent({
       ...hostBase,
       onOperationalModeChanged: (p, m) => this.applyDtpOperationalMode(p, m),
