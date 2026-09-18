@@ -154,7 +154,7 @@ describe('TP 22 — Rendre ton pare-feu bavard', () => {
     ]);
     const vue = await fgt.executeCommand('execute log display');
 
-    expect(vue).not.toBe('No matching log data.');
+    expect(vue).not.toBe('0 logs found.\n0 logs returned.');
     expect(vue).toContain('srcip=192.168.10.10');
     expect(vue).toContain('logid="0000000020"');
     expect(vue).toContain('type="traffic"');
@@ -173,7 +173,7 @@ describe('TP 22 — Rendre ton pare-feu bavard', () => {
     ]);
     const vue = await fgt.executeCommand('execute log display');
 
-    expect(vue).not.toBe('No matching log data.');
+    expect(vue).not.toBe('0 logs found.\n0 logs returned.');
     expect(vue).toContain('action="deny"');
     expect(vue).toContain('policyid=0');
     expect(vue).toContain('proto=1');
@@ -223,7 +223,7 @@ describe('TP 22 — Rendre ton pare-feu bavard', () => {
 
     await taper(fgt, ['execute log filter reset', 'execute log filter category 3']);
     const web = await fgt.executeCommand('execute log display');
-    expect(web).not.toBe('No matching log data.');
+    expect(web).not.toBe('0 logs found.\n0 logs returned.');
     expect(web).toContain('type="utm"');
     expect(web).toContain('subtype="webfilter"');
 
@@ -243,7 +243,7 @@ describe('TP 22 — Rendre ton pare-feu bavard', () => {
     await taper(fgt, ['execute log filter reset', 'execute log filter category 1']);
     const vue = await fgt.executeCommand('execute log display');
 
-    expect(vue).not.toBe('No matching log data.');
+    expect(vue).not.toBe('0 logs found.\n0 logs returned.');
     expect(vue).toContain('type="event"');
     expect(vue).toContain('subtype="system"');
     expect(vue).toContain('logid="0100044547"');
@@ -308,7 +308,7 @@ describe('TP 22 — Rendre ton pare-feu bavard', () => {
 
     await taper(fgt, ['execute log filter reset', 'execute log filter category 1']);
     expect(await fgt.executeCommand('execute log display'))
-      .toBe('No matching log data.');
+      .toBe('0 logs found.\n0 logs returned.');
   });
 
   it('etape 1 : `max-size` BORNE vraiment le tampon memoire', async () => {
@@ -408,11 +408,11 @@ describe('TP 22 — Rendre ton pare-feu bavard', () => {
 
     await taper(fgt, ['execute log filter reset', 'execute log filter category 0']);
     expect(await fgt.executeCommand('execute log display'))
-      .not.toBe('No matching log data.');
+      .not.toBe('0 logs found.\n0 logs returned.');
 
     expect(await fgt.executeCommand('execute log delete-all'))
       .toMatch(/log entries deleted/);
     expect(await fgt.executeCommand('execute log display'))
-      .toBe('No matching log data.');
+      .toBe('0 logs found.\n0 logs returned.');
   });
 });

@@ -440,6 +440,8 @@ function listLogFiles(raw: string | undefined, deps: FortiDiagDeps): string {
     deps.fw, deps.fw.getLogDisk().listing(prefix, current), category.name);
 }
 
+const WHOLE_LOG_SEARCHED = 100;
+
 export function runExecuteLog(rest: readonly string[], deps: FortiDiagDeps): string {
   const view = deps.state.logFilter;
 
@@ -464,18 +466,28 @@ export function runExecuteLog(rest: readonly string[], deps: FortiDiagDeps): str
   if (rest[0] === 'filter') return setLogFilter(rest.slice(1), deps);
   if (rest[0] !== 'display') return FortiMessages.unknownPath(`log ${rest.join(' ')}`);
 
-  const records = deps.fw.getLogStore().select({
+  const selection = {
     type: view.category,
     subtype: view.subtype,
     level: view.level,
     fields: view.fields,
-    viewLines: view.viewLines,
-  });
-  if (records.length === 0) return 'No matching log data.';
+  };
+  const found = deps.fw.getLogStore().countMatching(selection);
+  const records = deps.fw.getLogStore()
+    .select({ ...selection, viewLines: view.viewLines });
+
+  const entete = [`${found} logs found.`, `${records.length} logs returned.`];
+  if (records.length === 0) return entete.join('\n');
 
   const context = deps.logContext();
   const format = deps.logFormat();
-  return records.map(record => formatLogRecord(record, format, context)).join('\n');
+  return [
+    ...entete,
+    `${WHOLE_LOG_SEARCHED.toFixed(1)}% of logs has been searched.`,
+    '',
+    ...records.map((record, index) =>
+      `${index + 1}: ${formatLogRecord(record, format, context)}`),
+  ].join('\n');
 }
 
 export function deniedLog(

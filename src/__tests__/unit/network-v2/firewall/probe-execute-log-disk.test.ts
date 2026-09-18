@@ -129,7 +129,7 @@ describe('le disque de journalisation', () => {
     expect(lignes[0]).toMatch(/^tlog\.1 /);
     expect(taille(lignes[0])).toBe(avant);
     expect(lignes[1]).toBe('1 traffic log file(s) found.');
-    expect(sh.execute('execute log display')).toBe('No matching log data.');
+    expect(sh.execute('execute log display')).toBe('0 logs found.\n0 logs returned.');
   });
 
   it('un second roulement decale `.1` vers `.2`', () => {
