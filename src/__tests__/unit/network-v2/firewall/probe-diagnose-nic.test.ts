@@ -28,8 +28,16 @@
  * profil de ce pare-feu ne porte aucun nom de carte, et l'inventer
  * serait exactement le defaut qu'on referme. Ne restent que les champs
  * que la machine sait mesurer, dans la mise en forme attestee — nom
- * cale sur 22 colonnes, deux-points colle a la valeur sauf pour les
- * deux adresses.
+ * cale sur 16 colonnes, deux-points colle a la valeur sauf pour les
+ * deux adresses, qui portent un blanc.
+ *
+ * NOTE D'UN LOT ULTERIEUR. Cet en-tete annoncait « 22 colonnes » comme
+ * une mesure attestee. La capture `fortinet_get_hardware_nic_nic-name'
+ * de `ntc-templates' dit 16, et le prouve par un libelle de SEIZE
+ * caracteres — `autonego_setting:1' — qui n'y porte aucun blanc, la ou
+ * `duplex_setting' en porte deux et `Host Tx dropped' un seul. La valeur
+ * de 22 n'etait donc pas attestee ; elle est corrigee, ici et dans les
+ * cas ci-dessous.
  *
  * **Un defaut a ete trouve en chemin et corrige avec.** `permanentMacOf`
  * lisait `aggregateSavedMacs`, le magasin de RESTAURATION de
@@ -145,9 +153,9 @@ describe('diagnose hardware deviceinfo nic', () => {
     const { sh } = await laboratoire();
 
     const vue = sh.execute('diagnose hardware deviceinfo nic port2');
-    expect(vue).toContain('Admin                 :up');
-    expect(vue).toContain('link_status           :Down');
-    expect(vue).toContain('netdev status         :down');
+    expect(vue).toContain('Admin           :up');
+    expect(vue).toContain('link_status     :Down');
+    expect(vue).toContain('netdev status   :down');
   });
 
   it('`set status down` descend l etat administratif', async () => {
@@ -156,8 +164,8 @@ describe('diagnose hardware deviceinfo nic', () => {
       'set status down', 'next', 'end');
 
     const vue = sh.execute('diagnose hardware deviceinfo nic port1');
-    expect(vue).toContain('Admin                 :down');
-    expect(vue).toContain('link_status           :Down');
+    expect(vue).toContain('Admin           :down');
+    expect(vue).toContain('link_status     :Down');
   });
 
   it('les compteurs survivent a la descente de l interface', async () => {
@@ -178,8 +186,8 @@ describe('diagnose hardware deviceinfo nic', () => {
 
     const vue = sh.execute('diagnose hardware deviceinfo nic port1');
     const mac = fw.getPort('port1')!.getMAC().toString();
-    expect(vue).toContain(`Current_HWaddr        ${mac}`);
-    expect(vue).toContain(`Permanent_HWaddr      ${mac}`);
+    expect(vue).toContain(`Current_HWaddr   ${mac}`);
+    expect(vue).toContain(`Permanent_HWaddr ${mac}`);
   });
 
   it('une grappe FGCP separe l adresse courante de l adresse d usine', async () => {
@@ -192,9 +200,9 @@ describe('diagnose hardware deviceinfo nic', () => {
       'set priority 200', 'end');
 
     const vue = sh.execute('diagnose hardware deviceinfo nic port2');
-    expect(vue).toContain(`Permanent_HWaddr      ${usine}`);
-    expect(vue).toContain('Current_HWaddr        00:09:0f:09:0a:');
-    expect(vue).not.toContain(`Current_HWaddr        ${usine}`);
+    expect(vue).toContain(`Permanent_HWaddr ${usine}`);
+    expect(vue).toContain('Current_HWaddr   00:09:0f:09:0a:');
+    expect(vue).not.toContain(`Current_HWaddr   ${usine}`);
   });
 
   it('la vue LACP nomme toujours l adresse d usine du membre', async () => {
@@ -207,13 +215,13 @@ describe('diagnose hardware deviceinfo nic', () => {
     expect(fw.permanentMacOf('port4')).toBe(usine);
   });
 
-  it('sans nom, chaque interface est listee sous son nom', async () => {
+  it('sans nom, la vue CATALOGUE les interfaces au lieu de les deverser', async () => {
     const { sh } = await laboratoire();
 
     const vue = sh.execute('diagnose hardware deviceinfo nic');
-    expect(vue.split('\n')[0]).toBe('port1');
-    expect(vue).toContain('\nport2\n');
-    expect(vue.split('stat: ').length - 1).toBeGreaterThan(1);
+    expect(vue.split('\n')[0]).toBe('The following NICs are available:');
+    expect(vue).toContain('\n        port2\n');
+    expect(vue).not.toContain('stat: ');
   });
 
   it('une interface inconnue est nommee comme telle', async () => {
