@@ -28,7 +28,7 @@ import {
   type BgpPathCandidate, type BgpOrigin,
 } from './bestPath';
 import {
-  BgpSession, type BgpFsmState,
+  BgpSession, type BgpFsmState, type BgpMessageCounts,
 } from './BgpSession';
 import {
   BGP_DEFAULT_CONNECT_RETRY_SEC,
@@ -106,6 +106,10 @@ interface ConnectRetryState {
   timer: symbol | null;
   counter: number;
 }
+
+const NO_BGP_MESSAGES: BgpMessageCounts = Object.freeze({
+  received: 0, sent: 0, notificationsReceived: 0, notificationsSent: 0,
+});
 
 /** Per-neighbour session state owned by the engine. */
 interface PeerSession {
@@ -442,6 +446,14 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
 
   prefixesReceivedFrom(peerIp: string): number {
     return this.peers.get(peerIp)?.adjRibIn.size ?? 0;
+  }
+
+  messageCountsFor(peerIp: string): BgpMessageCounts {
+    return this.peers.get(peerIp)?.session.messageCounts() ?? NO_BGP_MESSAGES;
+  }
+
+  remoteRouterIdOf(peerIp: string): string {
+    return this.peers.get(peerIp)?.session.remoteRouterId ?? '';
   }
 
   // ── route computation (Loc-RIB) ────────────────────────────────────

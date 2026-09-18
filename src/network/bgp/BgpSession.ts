@@ -56,8 +56,19 @@ export interface BgpSessionCallbacks {
   onClose?(): void;
 }
 
+export interface BgpMessageCounts {
+  readonly received: number;
+  readonly sent: number;
+  readonly notificationsReceived: number;
+  readonly notificationsSent: number;
+}
+
 export class BgpSession {
   private _state: BgpFsmState = 'Idle';
+  private messagesIn = 0;
+  private messagesOut = 0;
+  private notificationsIn = 0;
+  private notificationsOut = 0;
   private peerAsn: number | null = null;
   private peerRouterId: string | null = null;
   private sentOpen = false;
@@ -105,21 +116,37 @@ export class BgpSession {
   /** Advertise/withdraw routes to the peer (only meaningful when up). */
   sendUpdate(update: BgpUpdateMessage): void {
     if (this._state !== 'Established') return;
-    this.transport.send(update);
+    this.emit(update);
   }
 
   /** Administrative shutdown (RFC 4271 §6.7 Cease). */
   close(): void {
     if (this._state === 'Idle') return;
-    this.transport.send({
+    this.emit({
       type: 'bgp', message: 'notification',
       errorCode: BGP_ERROR.CEASE, errorSubcode: 0,
     });
     this.teardown();
   }
 
+  private emit(msg: BgpMessage): void {
+    this.messagesOut++;
+    if (msg.message === 'notification') this.notificationsOut++;
+    this.transport.send(msg);
+  }
+
+  messageCounts(): BgpMessageCounts {
+    return Object.freeze({
+      received: this.messagesIn, sent: this.messagesOut,
+      notificationsReceived: this.notificationsIn,
+      notificationsSent: this.notificationsOut,
+    });
+  }
+
   // ── inbound ────────────────────────────────────────────────────────
   private receive(msg: BgpMessage): void {
+    this.messagesIn++;
+    if (msg.message === 'notification') this.notificationsIn++;
     this.armHoldTimer();   // any message resets the Hold Timer (§4.4)
     switch (msg.message) {
       case 'open': this.handleOpen(msg); break;
@@ -148,7 +175,7 @@ export class BgpSession {
     // Transition first so a synchronous KEEPALIVE reply lands in OpenConfirm.
     this.transition('OpenConfirm');
     if (!this.sentOpen) this.emitOpen();   // passive side answers with OPEN
-    this.transport.send(keepalive());      // ack the OPEN (§8.2.2)
+    this.emit(keepalive());      // ack the OPEN (§8.2.2)
     this.armKeepalive();
   }
 
@@ -179,11 +206,11 @@ export class BgpSession {
       holdTimeSec: this.cfg.holdTimeSec ?? BGP_DEFAULT_HOLD_SEC,
       bgpIdentifier: this.cfg.localRouterId,
     };
-    this.transport.send(open);
+    this.emit(open);
   }
 
   private reject(errorCode: number, errorSubcode: number): void {
-    this.transport.send({
+    this.emit({
       type: 'bgp', message: 'notification', errorCode, errorSubcode,
     });
     this.teardown();
@@ -226,7 +253,7 @@ export class BgpSession {
     if (this.negotiatedHoldSec <= 0) return;   // Hold Time 0 ⇒ no keepalives
     this.keepaliveTimer = this.timers.setInterval(() => {
       if (this._state === 'OpenConfirm' || this._state === 'Established') {
-        this.transport.send(keepalive());
+        this.emit(keepalive());
       }
     }, this.keepaliveIntervalSec() * 1000);
   }

@@ -91,6 +91,13 @@ export const OSPF_DEFAULTS: OspfConfiguration = Object.freeze({
   redistributeStatic: false,
 });
 
+export interface BgpMessageTally {
+  readonly received: number;
+  readonly sent: number;
+  readonly notificationsReceived: number;
+  readonly notificationsSent: number;
+}
+
 export interface BgpPeerSummary {
   readonly address: string;
   readonly remoteAs: number;
@@ -98,7 +105,10 @@ export interface BgpPeerSummary {
   readonly isUp: boolean;
   readonly uptimeSec: number;
   readonly prefixesReceived: number;
+  readonly remoteRouterId: string;
+  readonly messages: BgpMessageTally;
 }
+
 
 export interface BgpSummaryFacts {
   readonly routerId: string;

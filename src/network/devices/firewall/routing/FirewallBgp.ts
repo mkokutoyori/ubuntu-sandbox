@@ -34,6 +34,10 @@ export interface BgpClearScope {
   readonly value?: string;
 }
 
+const NO_MESSAGES = Object.freeze({
+  received: 0, sent: 0, notificationsReceived: 0, notificationsSent: 0,
+});
+
 export class FirewallBgp {
   private engine: BGPEngine | null = null;
   private config: BgpConfiguration = BGP_DEFAULTS;
@@ -107,6 +111,8 @@ export class FirewallBgp {
           isUp: seen?.isUp === true,
           uptimeSec: seen?.uptimeSec ?? 0,
           prefixesReceived: this.engine?.prefixesReceivedFrom(peer.ip) ?? 0,
+          remoteRouterId: this.engine?.remoteRouterIdOf(peer.ip) ?? '',
+          messages: this.engine?.messageCountsFor(peer.ip) ?? NO_MESSAGES,
         };
       }),
     };

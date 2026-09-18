@@ -322,8 +322,8 @@ export function renderBgpSummary(facts: BgpSummaryFacts): string {
     address: peer.address,
     version: '4',
     remoteAs: String(peer.remoteAs),
-    received: '0',
-    sent: '0',
+    received: String(peer.messages.received),
+    sent: String(peer.messages.sent),
     tableVersion: '0',
     inQueue: '0',
     outQueue: '0',
@@ -353,16 +353,28 @@ export function renderBgpSummary(facts: BgpSummaryFacts): string {
   return lines.join('\n');
 }
 
+const BGP_NEIGHBOR_TABLE = 'VRF 0 neighbor table:';
+const BGP_VERSION = 4;
+
 export function renderBgpNeighbors(facts: BgpSummaryFacts): string {
   if (facts.neighbours.length === 0) return 'No BGP neighbors configured.';
 
-  const lines: string[] = [];
+  const lines: string[] = [BGP_NEIGHBOR_TABLE];
   for (const peer of facts.neighbours) {
     lines.push(
       `BGP neighbor is ${peer.address}, remote AS ${peer.remoteAs},`
       + ` local AS ${facts.localAs}, ${peer.remoteAs === facts.localAs ? 'internal' : 'external'} link`,
+    );
+    if (peer.remoteRouterId.length > 0) {
+      lines.push(`  BGP version ${BGP_VERSION}, remote router ID ${peer.remoteRouterId}`);
+    }
+    lines.push(
       `  BGP state = ${peer.state}${peer.isUp ? `, up for ${uptimeClock(peer.uptimeSec)}` : ''}`,
       `  Local router ID ${facts.routerId}`,
+      `  Received ${peer.messages.received} messages,`
+      + ` ${peer.messages.notificationsReceived} notifications, 0 in queue`,
+      `  Sent ${peer.messages.sent} messages,`
+      + ` ${peer.messages.notificationsSent} notifications, 0 in queue`,
       '',
     );
   }
