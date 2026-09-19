@@ -762,9 +762,6 @@ function briefSelection(ctx: IpNetworkContext, args: string[]): string[] {
 
 function briefColumns(info: IpInterfaceInfo, c: IpColorizer): string {
   const { state } = formeLien(info);
-  // En mode bref, la couleur enveloppe la COLONNE complétée et non le
-  // mot : le vrai `ip -br` colorie `eth0            ` d'un bloc, ce qui
-  // se voit quand on aligne deux lignes l'une sous l'autre.
   return `${c.ifname(`${info.name.padEnd(16)} `)}${c.operstate(state, `${state.padEnd(14)} `)}`;
 }
 
