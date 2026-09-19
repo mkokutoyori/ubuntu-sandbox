@@ -46,14 +46,15 @@
  * DEUX CHOSES MESUREES EN CHEMIN, dites ici plutot que laissees a
  * decouvrir.
  *
- * La premiere est un DEFAUT, et il depasse ce lot : `FirewallBgp.apply`
- * construit un `BGPEngine` NEUF a chaque application de configuration.
- * Un second `config router bgp ... end` jette donc toutes les sessions,
- * et elles ne se retablissent pas -- la table retombe a zero. Les
- * laboratoires de cette sonde declarent pour cette raison leur reseau
- * local dans la MEME application que leurs voisins. Un vrai FortiGate ne
- * reinitialise pas BGP pour un `network` ajoute ; rendre `apply`
- * incremental est un lot a soi.
+ * La premiere etait un DEFAUT qui depassait ce lot : `FirewallBgp.apply`
+ * construisait un `BGPEngine` NEUF a chaque application de
+ * configuration, si bien qu'un second `config router bgp ... end` jetait
+ * toutes les sessions sans qu'elles se retablissent. Les laboratoires de
+ * cette sonde declarent pour cette raison leur reseau local dans la MEME
+ * application que leurs voisins. Le defaut est depuis FERME
+ * (`probe-fortigate-bgp-sans-reinit`) : `apply` reutilise le moteur
+ * vivant tant que l'AS et l'identifiant de routeur ne changent pas. Ces
+ * laboratoires restent en une seule application, ce qui leur suffit.
  *
  * La seconde n'est PAS un defaut et le premier jet de cette sonde s'y
  * est trompe : `set prefix 172.16.0.0 255.255.0.0` n'origine rien,
