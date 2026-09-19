@@ -282,7 +282,7 @@ describe('IPv6 access lists — non-regression', () => {
     expect(seen[0]).toContain('list LOGGED denied icmp');
     const syslog = await right.executeCommand('show logging');
     expect(syslog).toContain('%IPV6_ACL-6-ACCESSLOGP');
-    expect(syslog).not.toContain('%SEC-4-IPACCESSLOGP');
+    expect(syslog).not.toContain('IPACCESSLOGP');
   }, 30000);
 
   it('V-15 `show ipv6 access-list` renders matches, sequence and the port name', async () => {

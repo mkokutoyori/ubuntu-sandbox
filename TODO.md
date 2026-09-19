@@ -57,67 +57,6 @@ ne le signale. Retire avec la refutation ci-dessus.
 
 ## Routeur Cisco (IOS)
 
-### [ssh] `~/.ssh/config` : quatre cas rouges, anterieurs et reproductibles
-`cross-equipment-ssh-suite.test.ts` echoue sur quatre cas — trois de
-`§12 — ~/.ssh/config Host blocks` (`Host alias resolves HostName and
-User`, `Per-host Port override is honoured`, `Wildcard Host * applies
-User and Stri...`) et un de `§13 — ProxyJump across heterogeneous hops`
-(`ProxyJump uses ~/.ssh/config Host alias`).
-
-**Mesure, trois fois** : dans un lot de 132 fichiers (4 rouges), dans un
-lot de 2 fichiers — donc quasiment sans charge — les MEMES 4 rouges, et
-enfin le fichier SEUL avec le lot « une seule version d'IOS » RETIRE :
-toujours les memes 4. Ce n'est donc ni la charge ni ce lot-la.
-
-**Ce qui n'a pas ete cherche** : la cause. Les quatre cas portent tous
-sur la lecture des blocs `Host` de `~/.ssh/config` — alias, `Port` par
-hote, joker `Host *`, et l'alias vu depuis `ProxyJump`. Le point commun
-designe l'analyse de ce fichier plutot que le transport ; c'est par la
-qu'il faut commencer.
-
-
-### [cli] `probe-cli-help-parity-ratchet` depasse son propre budget de 120 s
-Deux cas de ce fichier expirent — `l'arbre parcouru est non vide`
-(routeur/config) et `un mot-cle sans description est compte, pas
-ignore`. Ce ne sont PAS des assertions fausses : ce sont des DEPASSEMENTS
-du `120_000` que le fichier se donne lui-meme.
-
-**Mesure, trois fois, et la premiere lecture etait fausse** :
-- sous un balayage de 520 fichiers (9 travailleurs) : 124,5 s et 130,7 s ;
-- SEUL sur une machine libre : 136,8 s et 143,4 s — donc PIRE a vide, ce
-  qui elimine l'explication par la charge que j'avais d'abord retenue ;
-- un seul cas, seul, avec les fichiers du lot VACL/MAC RAMENES a leur
-  etat d'avant (`Switch.ts`, `CiscoSwitchShell.ts`, `MacAccessList.ts`) :
-  122,6 s — il echoue donc SANS ces changements. Le defaut leur est
-  anterieur.
-
-**Pourquoi c'est instable plutot que faux** : 122,6 s pour un budget de
-120 s, c'est deux pour cent. Le meme cas passera sur une machine un peu
-plus rapide et tombera sur une plus lente, et le fichier entier demande
-468 s a lui seul. Le cliquet mesure quelque chose de reel ; c'est son
-COUT qui n'est pas tenable, et un budget qu'on releverait sans regarder
-ne ferait que deplacer la limite.
-
-**Ce qui n'a pas ete cherche** : d'ou vient le temps. `surveyOf` parcourt
-l'arbre en tapant chaque lettre de `PROBES` a chaque profondeur, donc le
-cout croit avec le vocabulaire — et le socle en a recu beaucoup
-recemment. Mesurer QUEL parcours coute, avant de toucher au budget, est
-le prealable.
-
-
-### [logging] `%SEC-4-IPACCESSLOGP` porte la severite 4 la ou IOS ecrit 6
-`LoggingConfig` empile le journal d'ACL IPv4 dans le seau `warnings`,
-et `formatEntry` derive le chiffre du seau : la ligne sort donc en
-`%SEC-4-IPACCESSLOGP` alors qu'IOS ecrit `%SEC-6-IPACCESSLOGP`.
-**Mesure** : trouve en branchant le journal des ACL **IPv6**, qui a
-recu sa propre facilite `%IPV6_ACL-6-ACCESSLOGP` (severite 6, juste).
-Les deux ne s'accordent donc pas sur la severite d'un meme genre
-d'evenement.
-**Pourquoi ce n'est pas ferme ici** : le defaut est anterieur et propre
-a IPv4 ; le corriger dans un lot IPv6 melangerait deux sujets, et
-`show logging` filtre par severite — bouger le seau change ce que
-`logging buffered <niveau>` retient, ce qui demande sa propre mesure.
-
 ## Moteur L2 partagé (`Switch.ts`)
 
 ### [stp] `display stp brief` liste-t-il les ports sans câble ?

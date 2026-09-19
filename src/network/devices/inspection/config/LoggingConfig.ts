@@ -1360,7 +1360,7 @@ export class LoggingConfig {
       // mappage se declenchait sur TOUT refus, ce qui rendait le mot-cle
       // `log` sans effet observable : marque ou non, la ligne sortait.
       if (p.event === 'router:acl-log') {
-        this.append('warnings', 'sec', p.message, true, 'IPACCESSLOGP');
+        this.append('informational', 'sec', p.message, true, 'IPACCESSLOGP');
         return;
       }
       if (p.event === 'router:ipv6-acl-log') {
