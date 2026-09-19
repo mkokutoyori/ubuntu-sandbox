@@ -4,6 +4,7 @@ export enum OracleNetCallId {
   Logon = 1,
   Execute = 2,
   Logoff = 3,
+  ExecuteStatement = 4,
 }
 
 export enum OracleNetCallStatus {
@@ -31,6 +32,10 @@ export interface OracleNetExecuteRequest {
   readonly sql: string;
 }
 
+export interface OracleNetStatementRequest {
+  readonly statement: unknown;
+}
+
 export interface OracleNetColumn {
   readonly name: string;
   readonly dataType: string;
@@ -47,6 +52,7 @@ export interface OracleNetResult {
 export type OracleNetRequest =
   | { readonly call: OracleNetCallId.Logon; readonly body: OracleNetLogonRequest }
   | { readonly call: OracleNetCallId.Execute; readonly body: OracleNetExecuteRequest }
+  | { readonly call: OracleNetCallId.ExecuteStatement; readonly body: OracleNetStatementRequest }
   | { readonly call: OracleNetCallId.Logoff; readonly body: Record<string, never> };
 
 export type OracleNetResponse =
@@ -75,6 +81,9 @@ export function decodeRequest(payload: Uint8Array): OracleNetRequest | null {
   }
   if (call === OracleNetCallId.Execute) {
     return { call, body: body as OracleNetExecuteRequest };
+  }
+  if (call === OracleNetCallId.ExecuteStatement) {
+    return { call, body: body as OracleNetStatementRequest };
   }
   if (call === OracleNetCallId.Logoff) {
     return { call, body: {} };

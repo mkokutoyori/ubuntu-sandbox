@@ -43,7 +43,13 @@ export class OracleNetServerHandler implements OracleNetCallHandler {
       return this.logon(database, key, decoded.body, context);
     }
     if (decoded.call === OracleNetCallId.Execute) {
-      return this.execute(database, key, decoded.body.sql);
+      return this.execute(database, key, (session) =>
+        database.executeSql(session.executor, decoded.body.sql));
+    }
+    if (decoded.call === OracleNetCallId.ExecuteStatement) {
+      return this.execute(database, key, (session) =>
+        session.executor.execute(
+          decoded.body.statement as import('../../engine/parser/ASTNode').Statement));
     }
     return this.logoff(database, key);
   }
@@ -77,7 +83,11 @@ export class OracleNetServerHandler implements OracleNetCallHandler {
     }
   }
 
-  private execute(database: OracleDatabase, key: string, sql: string): Uint8Array {
+  private execute(
+    database: OracleDatabase,
+    key: string,
+    run: (session: ServerSession) => import('../../engine/executor/ResultSet').ResultSet,
+  ): Uint8Array {
     const session = this.sessions.get(key);
     if (!session) {
       return encodeResponse({
@@ -86,7 +96,7 @@ export class OracleNetServerHandler implements OracleNetCallHandler {
       });
     }
     try {
-      const result = database.executeSql(session.executor, sql);
+      const result = run(session);
       const payload: OracleNetResult = {
         columns: result.columns.map((column) => ({
           name: column.name,
