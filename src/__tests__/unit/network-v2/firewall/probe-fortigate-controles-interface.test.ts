@@ -47,6 +47,17 @@
  * rejetes aussi. Le laboratoire est corrige pour emettre depuis le sous-
  * reseau connecte, et ses mesures de repartition sont inchangees.
  *
+ * UN SIXIEME LABORATOIRE A ETE MANQUE par ce balayage, et le dire vaut
+ * mieux que le taire : `scenario-wan-tracert-a-travers-routeurs-et-pare-
+ * feux' vit hors du repertoire `firewall/' que le rayon d'action de ce
+ * lot couvrait, et ses sept cas sont tombes sans que rien ne le signale.
+ * Meme cause exactement : ses deux pare-feux ne connaissaient que les
+ * reseaux de site, donc le « Time Exceeded » d'un equipement situe
+ * au-dela d'eux n'avait pas de chemin inverse. Le laboratoire porte
+ * desormais ses routes de transit. La lecon est sur le RAYON D'ACTION,
+ * pas sur le controle : une etape de pipeline touche toute machine qui
+ * route, et le balayage doit suivre les machines, pas les repertoires.
+ *
  * MESURE : 9 cas tombent sur 11.
  * Les 2 qui passent des deux cotes sont nommes :
  *   - TEMOIN : un paquet de la source legitime traverse le pare-feu et

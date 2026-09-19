@@ -261,7 +261,13 @@ export function keywordMatches(
 
   if (children.some(child => child.keyword?.toLowerCase() === lowered)) return [];
 
-  return reachable.filter(child => child.keyword?.toLowerCase().startsWith(lowered));
+  const commencent = reachable
+    .filter(child => child.keyword?.toLowerCase().startsWith(lowered));
+  if (commencent.length <= 1) return commencent;
+
+  const duMode = commencent.filter(
+    child => subtreeReachable(child, table, session, { modeStrict: true }));
+  return duMode.length > 0 ? duMode : commencent;
 }
 
 export function modesInSubtree(node: TreeNode): Set<string> {
