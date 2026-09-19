@@ -26,6 +26,11 @@ import { DatabaseError } from '../../engine/types/DatabaseError';
 import type { HostCommandRunner } from './HostCommandRunner';
 
 import { QueryResultRenderer, type ColumnFormat } from './QueryResultRenderer';
+import type { OracleNetSession } from '@/network/oracle-net/OracleNetClient';
+import {
+  OracleNetCallId, OracleNetCallStatus, decodeResponse, encodeRequest,
+  type OracleNetRequest, type OracleNetResponse,
+} from '@/network/oracle-net/wire/OracleNetCall';
 export type { ColumnFormat } from './QueryResultRenderer';
 
 export interface SQLPlusSettings {
@@ -128,6 +133,7 @@ export class SQLPlusSession {
    */
   private osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT;
   private transport: import('../OracleDatabase').ConnectTransport = 'beq';
+  private netSession: OracleNetSession | null = null;
 
   private readonly commands: SqlPlusCommand[];
 
@@ -214,6 +220,49 @@ export class SQLPlusSession {
   /** Record the identifier the INITIAL `sqlplus user/pass@X` connected
    *  with, so the per-statement reachability recheck (see executeSql) has
    *  something to re-resolve — an in-session CONNECT updates this itself. */
+  setNetSession(session: OracleNetSession | null): void {
+    this.netSession = session;
+  }
+
+  private executeOverOracleNet(sql: string): ResultSet {
+    const answer = this.callOverOracleNet({
+      call: OracleNetCallId.Execute,
+      body: { sql },
+    });
+    if (answer.status === OracleNetCallStatus.Error) {
+      throw new Error(answer.error);
+    }
+    const result = answer.result;
+    if (!result) {
+      throw new Error('ORA-03113: end-of-file on communication channel');
+    }
+    return {
+      columns: result.columns.map((column) => ({
+        name: column.name, dataType: column.dataType,
+      })) as unknown as ResultSet['columns'],
+      rows: result.rows as unknown as ResultSet['rows'],
+      affectedRows: result.affectedRows,
+      isQuery: result.isQuery,
+      message: result.message,
+    };
+  }
+
+  private callOverOracleNet(request: OracleNetRequest): OracleNetResponse {
+    const session = this.netSession;
+    if (!session || !session.isOpen()) {
+      return {
+        status: OracleNetCallStatus.Error,
+        error: 'ORA-03113: end-of-file on communication channel',
+      };
+    }
+    const answer = session.call(encodeRequest(request));
+    const decoded = answer ? decodeResponse(answer) : null;
+    return decoded ?? {
+      status: OracleNetCallStatus.Error,
+      error: 'ORA-03113: end-of-file on communication channel',
+    };
+  }
+
   setConnectIdentifier(identifier: string | null): void {
     this.connectIdentifier = identifier;
   }
@@ -244,6 +293,34 @@ export class SQLPlusSession {
     }
 
     this.lastPassword = password;
+    if (this.netSession) {
+      const answer = this.callOverOracleNet({
+        call: OracleNetCallId.Logon,
+        body: {
+          username: asSysdba ? (username || 'SYS') : username,
+          password,
+          asSysdba,
+          identity: {
+            osUser: this.osCtx.osUser,
+            osGroup: this.osCtx.osGroup,
+            hostname: this.osCtx.hostname,
+            terminal: this.osCtx.terminal,
+            program: this.osCtx.program,
+          },
+          proxyUser,
+        },
+      });
+      if (answer.status === OracleNetCallStatus.Error) {
+        output.push('ERROR:');
+        output.push(answer.error);
+        return output;
+      }
+      this.asSysdba = asSysdba;
+      this.connected = true;
+      this.currentUser = asSysdba ? 'SYS' : username.toUpperCase();
+      output.push('Connected.');
+      return output;
+    }
     try {
       let result;
       if (asSysdba) {
@@ -739,19 +816,14 @@ export class SQLPlusSession {
   }
 
   private executeSql(sql: string): SQLPlusResult {
-    if (!this.connected || !this.executor) {
+    if (!this.connected || (!this.executor && !this.netSession)) {
       return { output: ['ERROR:', ORACLE_ERRORS.ORA_01012], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 
-    // A TCP session has no real per-statement network round trip in this
-    // simulator (SQL executes in-process against the bound OracleDatabase),
-    // so nothing else would ever notice the peer disappearing mid-session.
-    // Re-resolve the connect identifier before every statement: unchanged
-    // means nothing to do, a DIFFERENT reachable address means an
-    // ADDRESS_LIST/TAF failover just happened and the session transparently
-    // rebinds to it, and total resolution failure surfaces the same
-    // connection-loss error a real client's socket would report.
-    if (this.transport === 'tcp' && this.tnsResolver && this.connectIdentifier) {
+    if (this.transport === 'tcp' && this.netSession && !this.netSession.isOpen()) {
+      return { output: ['ERROR:', 'ORA-03135: connection lost contact'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    if (this.transport === 'tcp' && !this.netSession && this.tnsResolver && this.connectIdentifier) {
       const recheck = this.tnsResolver(this.connectIdentifier);
       if (!recheck.ok) {
         return { output: ['ERROR:', 'ORA-03135: connection lost contact'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
@@ -771,7 +843,9 @@ export class SQLPlusSession {
 
     try {
       const startTime = Date.now();
-      const result = this.db.executeSql(this.executor, sql);
+      const result = this.netSession
+        ? this.executeOverOracleNet(sql)
+        : this.db.executeSql(this.executor, sql);
       const elapsed = Date.now() - startTime;
 
       if (result.isQuery && result.columns.length > 0) {
@@ -1129,7 +1203,7 @@ export class SQLPlusSession {
   // ── DESCRIBE ─────────────────────────────────────────────────────
 
   private handleDescribe(objectName: string): SQLPlusResult {
-    if (!this.connected || !this.executor) {
+    if (!this.connected || (!this.executor && !this.netSession)) {
       return { output: ['ERROR:', ORACLE_ERRORS.ORA_01012], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
 

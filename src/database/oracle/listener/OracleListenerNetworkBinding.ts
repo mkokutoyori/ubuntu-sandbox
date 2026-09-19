@@ -1,14 +1,16 @@
 import type { ListenerControl } from './ListenerControl';
+import { OracleNetService, type OracleNetCallHandler, type OracleNetSocket } from '@/network/oracle-net/OracleNetService';
 
 interface TcpStackLike {
-  listen(port: number, opts: { onAccept: (socket: TcpSocketLike) => void; localIp?: string }): unknown;
+  listen(
+    port: number,
+    opts: { onAccept: (socket: TcpSocketLike) => void; identity?: { pid?: number; processName?: string; banner?: string } },
+    localIp?: string,
+  ): unknown;
   closeListener(port: number, localIp?: string): void;
 }
 
-interface TcpSocketLike {
-  readonly remoteIp: string;
-  close(): void;
-}
+type TcpSocketLike = OracleNetSocket;
 
 interface SocketTableLike {
   bind(protocol: 'tcp', localAddress: string, localPort: number, pid?: number, processName?: string, banner?: string): unknown;
@@ -46,12 +48,18 @@ export class OracleListenerNetworkBinding {
   private readonly pid: number;
   private attached = false;
   private boundPort: number | null = null;
+  private readonly service: OracleNetService;
 
   constructor(cfg: OracleListenerNetworkBindingConfig) {
     this.host = cfg.host;
     this.listener = cfg.listener;
     this.banner = cfg.tnsBanner ?? DEFAULT_TNS_BANNER;
     this.pid = cfg.listenerPid ?? DEFAULT_LISTENER_PID;
+    this.service = new OracleNetService(this.listener);
+  }
+
+  setCallHandler(handler: OracleNetCallHandler | null): void {
+    this.service.setCallHandler(handler);
   }
 
   isAttached(): boolean { return this.attached; }
@@ -68,15 +76,11 @@ export class OracleListenerNetworkBinding {
     // une écoute TNS à l'amorçage (§P2c), celle que `dbstart` aurait
     // posée. Sans cette fermeture, `listen()` lèverait EADDRINUSE et la
     // base démarrerait sans jamais enregistrer ses sondes.
-    const advertised = this.listener.isNoBannerMode() ? '' : this.banner;
-    const identity = { pid: this.pid, processName: TNSLSNR_PROCESS, banner: advertised };
+    const identity = { pid: this.pid, processName: TNSLSNR_PROCESS };
     for (const addr of LISTEN_ADDRESSES) {
       try { stack.closeListener(port, addr); } catch { /* rien à reprendre */ }
       stack.listen(port, {
-        onAccept: (socket) => {
-          this.listener.recordScanAttempt(socket.remoteIp, 'syn-probe');
-          socket.close();
-        },
+        onAccept: (socket) => this.service.accept(socket),
         identity,
       }, addr);
     }
