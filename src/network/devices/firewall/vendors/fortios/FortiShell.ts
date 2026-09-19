@@ -76,7 +76,7 @@ import {
 import {
   renderAdminSessionList, renderAdminSessionStatus,
 } from './view/adminSessions';
-import { fortiLogStamp } from './diag/timeCommands';
+import { fortiLogStamp, fortiMinuteStamp } from './diag/timeCommands';
 import { renderIpsecTunnelStats } from './view/ipsecStats';
 import type { SslVpnSessionMode } from '../../vpn/SslVpnSessionTable';
 import { PkiKeyPair } from '../../../../pki/PkiKeyPair';
@@ -90,7 +90,10 @@ import {
 } from './log/trafficLog';
 import { localTrafficLog } from './log/localTrafficLog';
 import { anomalyLog, utmLog } from './log/utmLog';
-import { renderFortiguardServiceStatus } from './diag/fortiguardRenderer';
+import {
+  renderFortiguardServiceStatus, renderFortiguardStatusLines,
+} from './diag/fortiguardRenderer';
+import { FORTI_FIRMWARE, fortiVersionSuffix } from './FortiFirmware';
 import type { FortiGuardFamily } from '../../mgmt/FortiGuardDatabases';
 import { TftpClientSession } from '@/network/tftp/TftpSession';
 import { IPAddress } from '@/network/core/types';
@@ -117,8 +120,6 @@ function outsideOspf(name: string, physical: boolean): OspfInterfaceFacts {
 }
 
 export { FORTI_COMMAND_FAIL };
-
-export const FORTI_BUILD = '2660';
 
 const PER_MEMBER_LINE = /^set (priority|hostname)\b/;
 
@@ -1038,10 +1039,20 @@ export class FortiShell {
     const settings = this.tree.setting('system settings', 'opmode')[0] ?? 'nat';
     const vdomMode = this.tree.setting('system global', 'vdom-mode')[0] ?? 'no-vdom';
 
+    const load = this.fw.getSystemLoad();
+    const memoryMb = Math.round(load.memory().totalKib / 1024);
     return renderSystemStatus({
       model: this.fw.getProfile().model,
       version: FORTIOS_PROFILE.defaultVersion,
-      build: FORTI_BUILD,
+      build: FORTI_FIRMWARE.build,
+      buildDate: FORTI_FIRMWARE.buildDate,
+      branch: FORTI_FIRMWARE.branch,
+      versionSuffix: fortiVersionSuffix(FORTI_FIRMWARE),
+      x86_64: FORTI_FIRMWARE.x86_64,
+      fortiguard: renderFortiguardStatusLines(this.fw.getFortiGuard().list(),
+        at => fortiMinuteStamp(this.fw, at)),
+      fipsCcMode: this.tree.setting('system fips-cc', 'status')[0] ?? 'disable',
+      lastRebootReason: this.fw.lastRebootReason(),
       serial: this.serialNumber(),
       hostname: this.fw.getName(),
       operationMode: settings === 'transparent' ? 'Transparent' : 'NAT',
@@ -1053,8 +1064,10 @@ export class FortiShell {
       haMode: this.haModeText(),
       cluster: this.clusterFacts(),
       licenseStatus: 'Valid',
-      vmCpus: this.fw.getSystemLoad().cpuCount(),
-      vmMemoryMb: Math.round(this.fw.getSystemLoad().memory().totalKib / 1024),
+      vmCpus: load.cpuCount(),
+      vmCpusAllowed: load.cpuCount(),
+      vmMemoryMb: memoryMb,
+      vmMemoryMbAllowed: memoryMb,
       logDisk: this.fw.getProfile().logDisk === undefined
         ? 'Not available' : 'Available',
       systemTime: fortiSystemTime(this.fw),

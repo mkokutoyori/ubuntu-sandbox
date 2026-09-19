@@ -66,7 +66,7 @@ import { renderNic, renderNicList, type NicView } from './nicRenderer';
 import {
   renderIfconfigList, type IfconfigAddress, type IfconfigView,
 } from './ifconfigRenderer';
-import { fortiLogStamp } from './timeCommands';
+import { fortiLogStamp, fortiSystemTime } from './timeCommands';
 import {
   describeLogCategories, logFilePrefix, resolveLogCategory, typesOfLogFile,
 } from '../log/logCategories';
@@ -276,7 +276,8 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
     if (tail[0] !== 'versions') {
       return FortiMessages.unknownPath(`autoupdate ${tail.join(' ')}`);
     }
-    return renderAutoupdateVersions(deps.fw.getFortiGuard().list());
+    return renderAutoupdateVersions(deps.fw.getFortiGuard().list(),
+      at => fortiSystemTime(deps.fw, at));
   }
   return FortiMessages.unknownPath(rest.join(' '));
 }

@@ -230,6 +230,8 @@ function frameBytes(frame: EthernetFrame): number {
 const ICMP_ERROR_TTL = 64;
 const DEFAULT_INTERFACE_MTU = 1500;
 
+export type RebootReason = 'power cycle' | 'warm reboot';
+
 export class Firewall extends Equipment {
   private readonly logDisk = new LogDisk();
   private readonly savedConfig = new SavedConfiguration();
@@ -295,7 +297,8 @@ export class Firewall extends Equipment {
   private configSnapshot?: () => string;
   private readonly proxyArp = new ProxyArpTable();
   private readonly adminSessions = new AdminSessionTable();
-  private readonly fortiguard = new FortiGuardDatabases();
+  private rebootReason: RebootReason = 'power cycle';
+  private readonly fortiguard = new FortiGuardDatabases({ now: () => this.now() });
   private readonly arp: ArpService;
   private readonly registry = new PipelineStageRegistry();
   private readonly pipelines: PipelineCache;
@@ -696,6 +699,14 @@ export class Firewall extends Equipment {
   rebootNow(): void {
     this.powerOff();
     this.powerOn();
+    this.rebootReason = 'warm reboot';
+  }
+
+  lastRebootReason(): RebootReason { return this.rebootReason; }
+
+  powerOn(): void {
+    super.powerOn();
+    this.rebootReason = 'power cycle';
   }
 
   private resolveEgress(destination: string): FirewallPingEgress | null {

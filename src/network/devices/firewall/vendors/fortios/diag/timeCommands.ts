@@ -24,6 +24,12 @@ export function fortiLogStamp(fw: Firewall, at: number): string {
   return `${localDateText(fw, at)} ${localClockText(fw, at)}`;
 }
 
+export function fortiMinuteStamp(fw: Firewall, at: number): string {
+  const local = new Date(fw.localTimeOf(at));
+  return `${localDateText(fw, at)} ${twoDigits(local.getUTCHours())}`
+    + `:${twoDigits(local.getUTCMinutes())}`;
+}
+
 export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',

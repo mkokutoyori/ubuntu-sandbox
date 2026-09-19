@@ -35,6 +35,13 @@ export interface SystemStatusFacts {
   readonly model: string;
   readonly version: string;
   readonly build: string;
+  readonly buildDate: string;
+  readonly branch: string;
+  readonly versionSuffix: string;
+  readonly x86_64: boolean;
+  readonly fortiguard: readonly string[];
+  readonly fipsCcMode: string;
+  readonly lastRebootReason: string;
   readonly serial: string;
   readonly hostname: string;
   readonly operationMode: string;
@@ -47,17 +54,22 @@ export interface SystemStatusFacts {
   readonly cluster?: SystemClusterFacts;
   readonly licenseStatus: string;
   readonly vmCpus: number;
+  readonly vmCpusAllowed: number;
   readonly vmMemoryMb: number;
+  readonly vmMemoryMbAllowed: number;
   readonly logDisk: string;
   readonly systemTime: string;
 }
 
 export function renderSystemStatus(facts: SystemStatusFacts): string {
   return [
-    `Version: ${facts.model} v${facts.version},build${facts.build}`,
+    `Version: ${facts.model} v${facts.version},build${facts.build},`
+    + `${facts.buildDate} (${facts.versionSuffix})`,
+    ...facts.fortiguard,
     `Serial-Number: ${facts.serial}`,
     `License Status: ${facts.licenseStatus}`,
-    `VM Resources: ${facts.vmCpus} CPU, ${facts.vmMemoryMb} MB RAM`,
+    `VM Resources: ${facts.vmCpus} CPU/${facts.vmCpusAllowed} allowed,`
+    + ` ${facts.vmMemoryMb} MB RAM/${facts.vmMemoryMbAllowed} MB allowed`,
     `Log hard disk: ${facts.logDisk}`,
     `Hostname: ${facts.hostname}`,
     `Operation Mode: ${facts.operationMode}`,
@@ -66,10 +78,14 @@ export function renderSystemStatus(facts: SystemStatusFacts): string {
     `Virtual domains status: ${facts.vdomsInNat} in NAT mode,`
     + ` ${facts.vdomsInTransparent} in TP mode`,
     `Virtual domain configuration: ${facts.vdomConfiguration}`,
+    `FIPS-CC mode: ${facts.fipsCcMode}`,
     `Current HA mode: ${facts.haMode}`,
     ...clusterLines(facts),
     `Branch point: ${facts.build}`,
+    `Release Version Information: ${facts.branch}`,
+    ...(facts.x86_64 ? ['FortiOS x86-64: Yes'] : []),
     `System time: ${facts.systemTime}`,
+    `Last reboot reason: ${facts.lastRebootReason}`,
   ].join('\n');
 }
 
