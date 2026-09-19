@@ -55,6 +55,66 @@ exactement comment `acl ipv6` a pu creer une liste IPv4 sans que rien
 ne le signale. Retire avec la refutation ci-dessus.
 
 
+## Pile TCP/IP
+
+### [tcp] Nagle et l'ACK retarde : TENTES, MESURES, non livrables en l'etat
+Les deux sont absents (RFC 896 / RFC 9293 §3.7.4, et RFC 5681 §4.2).
+Mesure de depart : trois ecritures d'un octet donnent trois segments
+d'un octet, et 3000 octets recus font partir TROIS ACK purs la ou une
+vraie pile en emet un pour deux segments.
+
+**Les deux ont ete ecrits, puis retires.** La brique qui manque n'est ni
+l'un ni l'autre : c'est une HORLOGE QUE LES LABORATOIRES AVANCENT. Ce
+simulateur livre les trames synchroniquement (RTT 0 ms) et son
+ordonnanceur par defaut est le temps reel ; un ACK differe de 200 ms
+n'arrive donc jamais dans un scenario synchrone, et tout ce qui
+l'attend se bloque.
+
+**Mesures, dans l'ordre ou elles ont ete faites** :
+- Nagle + ACK retarde ensemble : `send(20_000)` livre **0 octet** ; deux
+  petites ecritures `hello`/`world` n'en livrent qu'une.
+- ACK retarde SEUL : correct et sans degat — 1 ACK pour 3 segments,
+  20 000/20 000 octets livres, `helloworld` intact.
+- Nagle sous une horloge REELLEMENT avancee : il retient bien, mais rend
+  `[1,1,1]` et non `[1,2]` — il differe sans FUSIONNER, parce que le
+  `sendBacklog` est deja decoupe en morceaux et que rien ne recolle deux
+  petits voisins. Fusionner est pourtant ce qu'EST Nagle.
+- ACK retarde seul, sur la suite connectee (183 fichiers, 1728 cas) :
+  **6 echecs**, tous de la meme cause — le budget d'horloge des tests ne
+  comprend pas l'intervalle de l'ACK. Le cas qui tranche est
+  `tcp-flow-control` « a small receive window » : fenetre de 1280 octets,
+  soit MOINS DE DEUX SEGMENTS, donc la regle « un ACK tous les 2
+  segments » ne peut jamais se declencher et le transfert INTERBLOQUE en
+  attendant le minuteur. C'est exactement pourquoi la RFC 5681 §4.2 fait
+  des 500 ms un MUST et non un SHOULD.
+
+**Verifie en chemin et NON casse** : le fast retransmit tient. Sur 30 000
+octets avec ACK retarde, perdre le 2e, 4e ou 5e segment declenche une
+retransmission et `ssthresh` vaut 2920 — l'arithmetique que le test
+existant attend. Le scenario a 5 segments du test actuel est seulement
+trop court pour produire 3 doublons une fois les ACK groupes, ce qui est
+le comportement reel de TCP et non un defaut.
+
+**Ce qu'il faudrait, dans cet ordre** : d'abord decider comment un
+laboratoire fait avancer le temps (ou rendre l'ACK en attente vidable a
+la fin d'une rafale synchrone), ensuite l'ACK retarde — qui est pret et
+correct —, et seulement apres Nagle, qui demande EN PLUS de fusionner
+les petits morceaux voisins du `sendBacklog`.
+
+### [tcp] donnees urgentes : le pointeur est ecrit, jamais lu
+`urgentPointer` n'est jamais emis qu'a `0` et n'est relu nulle part ; il
+n'existe aucune API pour emettre des donnees urgentes. Le drapeau URG
+figure dans la serialisation, la fonction non.
+
+### [ip] aucune zone d'options IPv4
+Ni record-route, ni timestamp, ni routage par la source. Le dialogue du
+`ping` etendu le DIVULGUE honnetement (« collected and reported rather
+than silently pretended ») ; la presente entree note que `no ip
+source-route` est, lui, ecrit par la CLI et rendu dans la configuration
+sans qu'aucun plan de donnees ne le consulte. C'est sans effet
+aujourd'hui puisqu'aucun paquet ne peut porter l'option, mais c'est une
+commande de durcissement et rien ne le disait.
+
 ## Routeur Cisco (IOS)
 
 ## Moteur L2 partagé (`Switch.ts`)
