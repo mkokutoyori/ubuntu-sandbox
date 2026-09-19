@@ -14,7 +14,7 @@ import {
   getConnectionColor,
   getConnectionDash,
   computeInterfaceLabelPositions,
-  getConnectionMidpointInfo,
+  computeOrthogonalPoints,
   computeBundleSlots,
   bundleOffset,
   pointAlongPolyline,
@@ -23,7 +23,6 @@ import {
   NODE_HALF_HEIGHT,
   NODE_CENTER_OFFSET_Y,
 } from '@/components/network/connection-line-logic';
-import type { Connection } from '@/store/networkStore';
 
 describe('connection-line-logic', () => {
   // ── computeConnectionPath ───────────────────────────────────────────
@@ -197,58 +196,15 @@ describe('connection-line-logic', () => {
       expect(positions.target.x).toBeLessThan(400);
     });
 
-    it('should offset labels vertically to avoid overlap with line', () => {
-      const positions = computeInterfaceLabelPositions(
-        { x: 100, y: 200 },
-        { x: 400, y: 200 }
-      );
+    it('should centre labels on the run, not beside it', () => {
+      const source = { x: 100, y: 200 };
+      const target = { x: 400, y: 200 };
+      const points = computeOrthogonalPoints(source, target);
+      const positions = computeInterfaceLabelPositions(source, target);
 
-      // Labels should be offset from the line
-      expect(positions.source.y).not.toBe(200);
-      expect(positions.target.y).not.toBe(200);
+      expect(positions.source.y).toBeCloseTo(points[0].y, 5);
+      expect(positions.target.y).toBeCloseTo(points[points.length - 1].y, 5);
     });
   });
 
-  // ── getConnectionMidpointInfo ───────────────────────────────────────
-
-  describe('getConnectionMidpointInfo', () => {
-    it('should return type label and bandwidth for ethernet connection', () => {
-      const connection: Connection = {
-        id: 'conn-1', type: 'ethernet',
-        sourceDeviceId: 'dev-1', sourceInterfaceId: 'eth0',
-        targetDeviceId: 'dev-2', targetInterfaceId: 'eth0',
-        cable: {} as Connection['cable']
-              };
-
-      const info = getConnectionMidpointInfo(connection);
-      expect(info.typeLabel).toBe('Ethernet');
-      expect(info.color).toBe('#3b82f6');
-    });
-
-    it('should return serial info for serial connection', () => {
-      const connection: Connection = {
-        id: 'conn-1', type: 'serial',
-        sourceDeviceId: 'dev-1', sourceInterfaceId: 'serial0/0',
-        targetDeviceId: 'dev-2', targetInterfaceId: 'serial0/0',
-        cable: {} as Connection['cable']
-              };
-
-      const info = getConnectionMidpointInfo(connection);
-      expect(info.typeLabel).toBe('Serial');
-      expect(info.color).toBe('#f97316');
-    });
-
-    it('should return console info for console connection', () => {
-      const connection: Connection = {
-        id: 'conn-1', type: 'console',
-        sourceDeviceId: 'dev-1', sourceInterfaceId: 'console0',
-        targetDeviceId: 'dev-2', targetInterfaceId: 'console0',
-        cable: {} as Connection['cable']
-              };
-
-      const info = getConnectionMidpointInfo(connection);
-      expect(info.typeLabel).toBe('Console');
-      expect(info.color).toBe('#64748b');
-    });
-  });
 });
