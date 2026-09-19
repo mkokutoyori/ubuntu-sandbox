@@ -14,6 +14,10 @@
 import { IPAddress, MACAddress } from '../../../core/types';
 import type { ARPProvider, CiscoARPEntry } from '../CiscoDevice';
 import type { CommandTrie } from '../CommandTrie';
+import { renderTableText } from '../cli/TextTable';
+import {
+  ARP_COLUMNS, ARP_DETAIL_COLUMNS, ARP_STYLE, type ArpRow,
+} from './ciscoTableLayouts';
 
 // Re-export for backward compatibility
 export type { CiscoARPEntry, ARPProvider } from '../CiscoDevice';
@@ -25,34 +29,71 @@ const ARP_IFACE_PREFIXES: Record<string, string> = {
   eth: 'Ethernet', ethernet: 'Ethernet',
 };
 
-function arpSummary(entries: Array<[string, CiscoARPEntry]>): string {
-  const total = entries.length;
-  const dyn = entries.filter(([, e]) => e.type === 'dynamic').length;
-  const stat = entries.filter(([, e]) => e.type === 'static').length;
+const ARP_AGE_UNIT_MS = 60_000;
+const ARP_NO_AGE = '-';
+const ARP_ENCAPSULATION = 'ARPA';
+const ARP_PROTOCOL = 'Internet';
+const ARP_DEFAULT_VRF = 'Default';
+
+type ArpKind = 'interface' | 'dynamic' | 'static';
+
+interface ArpLine extends ArpRow { readonly kind: ArpKind; }
+
+function interfaceLines(provider: ARPProvider): ArpLine[] {
+  const out: ArpLine[] = [];
+  for (const [name, port] of provider._getPortsInternal()) {
+    const ip = port.getIPAddress();
+    if (!ip) continue;
+    out.push({
+      protocol: ARP_PROTOCOL, address: ip.toString(), age: ARP_NO_AGE,
+      mac: port.getMAC().toCiscoString(), type: ARP_ENCAPSULATION,
+      iface: name, vrf: ARP_DEFAULT_VRF, kind: 'interface',
+    });
+  }
+  return out;
+}
+
+function tableLine([ip, entry]: [string, CiscoARPEntry]): ArpLine {
+  const isStatic = entry.type === 'static';
+  return {
+    protocol: ARP_PROTOCOL,
+    address: ip,
+    age: isStatic
+      ? ARP_NO_AGE
+      : String(Math.floor((Date.now() - entry.timestamp) / ARP_AGE_UNIT_MS)),
+    mac: entry.mac.toCiscoString(),
+    type: ARP_ENCAPSULATION,
+    iface: entry.iface,
+    vrf: ARP_DEFAULT_VRF,
+    kind: isStatic ? 'static' : 'dynamic',
+  };
+}
+
+function arpLines(
+  provider: ARPProvider, entries: Array<[string, CiscoARPEntry]>,
+): ArpLine[] {
+  const own = interfaceLines(provider);
+  const held = new Set(own.map(line => line.address));
+  return [...own, ...entries.filter(([ip]) => !held.has(ip)).map(tableLine)];
+}
+
+function arpSummary(lines: readonly ArpLine[]): string {
+  const count = (kind: ArpKind) => lines.filter(line => line.kind === kind).length;
   return [
-    `Total number of entries in the arp table: ${total}.`,
-    `Total number of Dynamic entries: ${dyn}.`,
-    `Total number of Static entries: ${stat}.`,
-    `Total number of Interface entries: ${total - dyn - stat}.`,
+    `Total number of entries in the arp table: ${lines.length}.`,
+    `Total number of Dynamic entries: ${count('dynamic')}.`,
+    `Total number of Static entries: ${count('static')}.`,
+    `Total number of Interface entries: ${count('interface')}.`,
   ].join('\n');
 }
 
-function arpCount(entries: Array<[string, CiscoARPEntry]>): string {
-  return `Total number of entries in the arp table: ${entries.length}.`;
+function arpCount(lines: readonly ArpLine[]): string {
+  return `Total number of entries in the arp table: ${lines.length}.`;
 }
 
-function arpDetail(entries: Array<[string, CiscoARPEntry]>): string {
-  if (entries.length === 0) return 'No ARP entries.';
-  const lines = ['Protocol  Address          Age (min)   Hardware Addr   Type   Interface   VRF'];
-  for (const [ip, entry] of entries) {
-    const isStatic = entry.type === 'static';
-    const age = isStatic ? '-' : String(Math.floor((Date.now() - entry.timestamp) / 60000));
-    lines.push(
-      `Internet  ${ip.padEnd(17)}${age.padEnd(12)}${entry.mac.toCiscoString().padEnd(18)}` +
-      `${(isStatic ? 'static' : 'ARPA').padEnd(7)}${entry.iface.padEnd(12)}Default`,
-    );
-  }
-  return lines.join('\n');
+function arpDetail(lines: readonly ArpLine[]): string {
+  if (lines.length === 0) return 'No ARP entries.';
+  return renderTableText(lines, ARP_DETAIL_COLUMNS, ARP_STYLE);
 }
 
 function matchArpInterface(provider: ARPProvider, raw: string): string | null {
@@ -80,44 +121,34 @@ function matchArpInterface(provider: ARPProvider, raw: string): string | null {
  */
 export function showArp(provider: ARPProvider, filterArgs?: string[]): string {
   const arpTable = provider._getArpTableInternal();
-  let entries = Array.from(arpTable.entries());
+  let lines = arpLines(provider, Array.from(arpTable.entries()));
 
   if (filterArgs && filterArgs.length > 0) {
     const filter = filterArgs.join(' ');
-    if (/^summary$/i.test(filter)) return arpSummary(entries);
-    if (/^count$/i.test(filter)) return arpCount(entries);
-    if (/^detail$/i.test(filter)) return arpDetail(entries);
+    if (/^summary$/i.test(filter)) return arpSummary(lines);
+    if (/^count$/i.test(filter)) return arpCount(lines);
+    if (/^detail$/i.test(filter)) return arpDetail(lines);
     if (/^statistics$/i.test(filter)) {
       return "% Invalid input detected at '^' marker.";
     }
     const isIP = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(filter);
     const vlanMatch = /^vlan\s*(\d+)$/i.exec(filter);
     if (isIP) {
-      entries = entries.filter(([ip]) => ip === filter);
+      lines = lines.filter(line => line.address === filter);
     } else if (vlanMatch) {
       const vlanId = parseInt(vlanMatch[1], 10);
       const sviIds = provider._getSviVlanIds?.();
       if (!sviIds || !sviIds.includes(vlanId)) return '% Invalid interface';
-      entries = entries.filter(([, entry]) => entry.iface === `Vlan${vlanId}`);
+      lines = lines.filter(line => line.iface === `Vlan${vlanId}`);
     } else {
       const canonical = matchArpInterface(provider, filter);
       if (!canonical) return "% Invalid input detected at '^' marker.";
-      entries = entries.filter(([, entry]) => entry.iface === canonical);
+      lines = lines.filter(line => line.iface === canonical);
     }
   }
 
-  if (entries.length === 0) return 'No ARP entries.';
-
-  const lines = ['Protocol  Address          Age (min)   Hardware Addr   Type   Interface'];
-  for (const [ip, entry] of entries) {
-    const isStatic = entry.type === 'static';
-    const age = isStatic ? '-' : String(Math.floor((Date.now() - entry.timestamp) / 60000));
-    const suffix = isStatic
-      ? `ARPA   ${entry.iface}\n                                                       static`
-      : `ARPA   ${entry.iface}`;
-    lines.push(`Internet  ${ip.padEnd(17)}${age.padEnd(12)}${entry.mac.toCiscoString().padEnd(18)}${suffix}`);
-  }
-  return lines.join('\n');
+  if (lines.length === 0) return 'No ARP entries.';
+  return renderTableText(lines, ARP_COLUMNS, ARP_STYLE);
 }
 
 // ─── Command Registration: Show Commands ────────────────────────────

@@ -165,7 +165,8 @@ import { CliInvalidInput, CliIncomplete } from './cli/CliDiagnostic';
 import { describeCiscoSwitchArguments } from './cisco/ciscoArgumentHelp';
 import { renderTableText, FIXED_TABLE } from './cli/TextTable';
 import {
-  INTERFACE_STATUS_COLUMNS, INTERFACE_STATUS_STYLE, type InterfaceStatusRow,
+  INTERFACE_STATUS_COLUMNS, INTERFACE_STATUS_STYLE, INTERFACE_STATUS_NAME_WIDTH,
+  type InterfaceStatusRow,
   SPANNING_TREE_COLUMNS, SPANNING_TREE_STYLE, type SpanningTreePortRow,
 } from './cisco/ciscoTableLayouts';
 import {
@@ -4655,7 +4656,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const connected = port.getIsUp() && port.hasCarrier();
       rows.push({
         port: this.abbreviateInterface(portName),
-        name: (sw.getInterfaceDescription(portName) || '').slice(0, 17),
+        name: (sw.getInterfaceDescription(portName) || '')
+          .slice(0, INTERFACE_STATUS_NAME_WIDTH),
         status: port.getIsUp() ? (connected ? 'connected' : 'notconnect') : 'disabled',
         vlan: cfg?.mode === 'trunk' ? 'trunk' : String(cfg?.accessVlan || 1),
         // Read the port rather than guess from its name. The `a-`
@@ -4669,7 +4671,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         speed: port.isAutoNegotiation()
           ? (connected ? `a-${port.getNegotiatedSpeed()}` : 'auto')
           : String(port.getNegotiatedSpeed()),
-        type: portName.startsWith('Gi') ? '1000BASE-T' : '10/100BaseTX',
+        type: portName.startsWith('Gi') ? '10/100/1000BaseTX' : '10/100BaseTX',
       });
     }
     return renderTableText(rows, INTERFACE_STATUS_COLUMNS, INTERFACE_STATUS_STYLE);
