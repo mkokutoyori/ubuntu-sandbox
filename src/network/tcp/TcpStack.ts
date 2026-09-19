@@ -207,6 +207,8 @@ export class TcpSocket {
   /** Peer's last-advertised receive window (PRD-TCP.md P3) — bounds how much unacked data we may have in flight. */
   peerWindow = TCP_DEFAULT_WINDOW;
   sendBacklog: Array<{ payload: StreamPayload; psh: boolean }> = [];
+  segmentsSinceAck = 0;
+  delayedAckTimer: symbol | null = null;
   /** Zero-window persist-probe timer (RFC 9293 §3.8.6.1). */
   persistTimer: symbol | null = null;
   persistBackoffMs = 0;
@@ -256,7 +258,7 @@ export class TcpSocket {
   private readonly closeHandlers: TcpCloseHandler[] = [];
 
   constructor(
-    private readonly stack: TcpStack,
+    readonly stack: TcpStack,
     localIp: string, localPort: number,
     remoteIp: string, remotePort: number,
   ) {
@@ -385,6 +387,13 @@ export class TcpListener {
 
   key(): string { return makeListenerKey(this.localIp, this.localPort); }
 }
+
+const socketsOwingAck = new Set<TcpSocket>();
+let burstDepth = 0;
+let drainingAcks = false;
+
+export const TCP_DELAYED_ACK_MS = 200;
+const TCP_ACK_EVERY_N_SEGMENTS = 2;
 
 export class TcpStack {
   private listeners = new Map<string, TcpListener>();
@@ -903,6 +912,35 @@ export class TcpStack {
   }
 
   _sendData(socket: TcpSocket, data: unknown): void {
+    this.withinBurst(() => this.sendDataWithinBurst(socket, data));
+  }
+
+  private withinBurst(body: () => void): void {
+    burstDepth++;
+    try {
+      body();
+    } finally {
+      burstDepth--;
+      if (burstDepth === 0) this.drainOwedAcks();
+    }
+  }
+
+  private drainOwedAcks(): void {
+    if (drainingAcks) return;
+    drainingAcks = true;
+    try {
+      while (socketsOwingAck.size > 0) {
+        for (const socket of [...socketsOwingAck]) {
+          socketsOwingAck.delete(socket);
+          socket.stack.sendOwedAck(socket);
+        }
+      }
+    } finally {
+      drainingAcks = false;
+    }
+  }
+
+  private sendDataWithinBurst(socket: TcpSocket, data: unknown): void {
     if (socket.closed) return;
     if (socket.state === 'syn-sent' || socket.state === 'syn-received') {
       socket.pendingSendQueue.push(data);
@@ -997,6 +1035,10 @@ export class TcpStack {
    * value even if it has nothing else to say.
    */
   private onPersistFired(socket: TcpSocket): void {
+    this.withinBurst(() => this.persistProbeWithinBurst(socket));
+  }
+
+  private persistProbeWithinBurst(socket: TcpSocket): void {
     socket.persistTimer = null;
     if (socket.closed || socket.sendBacklog.length === 0) { socket.persistBackoffMs = 0; return; }
     const next = socket.sendBacklog[0];
@@ -1194,9 +1236,9 @@ export class TcpStack {
       case 'established':
         if (payloadSize > 0) {
           if (!this.acceptInOrder(socket, seg)) break;
+          const fillsAGap = socket.reassemblyBuffer.length > 0;
           this.deliverData(socket, seg);
-          const ackFlags = noFlags(); ackFlags.ack = true;
-          this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
+          this.acknowledgeReceivedData(socket, fillsAGap);
         } else if (seg.flags.ack && !seg.flags.fin) {
           // Guarded like `pruneUnackedQueue`'s own update (PRD-TCP.md P1):
           // an old/reordered ACK reaching this branch after a newer one
@@ -1276,6 +1318,38 @@ export class TcpStack {
       socket.keepAliveProbesSent = 0;
       this.rearmKeepAliveTimer(socket);
     }
+  }
+
+  private acknowledgeReceivedData(socket: TcpSocket, fillsAGap: boolean): void {
+    socket.segmentsSinceAck++;
+    if (fillsAGap || socket.segmentsSinceAck >= TCP_ACK_EVERY_N_SEGMENTS) {
+      this.sendOwedAck(socket);
+      return;
+    }
+    socketsOwingAck.add(socket);
+    if (socket.delayedAckTimer) return;
+    socket.delayedAckTimer = this.timers.setTimeout(() => {
+      socket.delayedAckTimer = null;
+      this.sendOwedAck(socket);
+    }, TCP_DELAYED_ACK_MS);
+  }
+
+  private sendOwedAck(socket: TcpSocket): void {
+    const stillOurs = this.sockets.get(socket.key()) === socket;
+    if (socket.segmentsSinceAck === 0 || socket.closed || !stillOurs) {
+      this.forgetOwedAck(socket);
+      return;
+    }
+    const flags = noFlags(); flags.ack = true;
+    this.transmit(socket, flags, socket.sendNext, socket.recvNext, undefined);
+  }
+
+  private forgetOwedAck(socket: TcpSocket): void {
+    socket.segmentsSinceAck = 0;
+    socketsOwingAck.delete(socket);
+    if (!socket.delayedAckTimer) return;
+    this.timers.clear(socket.delayedAckTimer);
+    socket.delayedAckTimer = null;
   }
 
   /**
@@ -1401,6 +1475,7 @@ export class TcpStack {
     socket.persistTimer = null;
     this.timers.clear(socket.keepAliveTimer);
     socket.keepAliveTimer = null;
+    this.forgetOwedAck(socket);
     socket.sendBacklog = [];
     socket.reassemblyBuffer = [];
     this._transition(socket, 'closed');
@@ -1544,6 +1619,7 @@ export class TcpStack {
   ): number | undefined {
     const egress = this.resolveEgress(socket.remoteIp);
     if (!egress) { this.dropped(socket.remoteIp, socket.remotePort, 'no-egress'); return undefined; }
+    if (flags.ack && ackNum === socket.recvNext) this.forgetOwedAck(socket);
     const options = [...extraOptions];
     let sentTsVal: number | undefined;
     if (socket.timestampsEnabled) {
@@ -1679,6 +1755,10 @@ export class TcpStack {
 
   /** RFC 6298 §5: retransmit the earliest unacked segment, back off the RTO, and restart the timer. */
   private onRtoFired(socket: TcpSocket): void {
+    this.withinBurst(() => this.rtoWithinBurst(socket));
+  }
+
+  private rtoWithinBurst(socket: TcpSocket): void {
     socket.rtoTimer = null;
     const head = socket.unackedQueue[0];
     if (!head) return;

@@ -7,6 +7,25 @@
  * could only ever be recovered by waiting out a full RTO cycle (P1),
  * never by the 3-duplicate-ACK fast path real TCP uses to recover in a
  * fraction of the time.
+ *
+ * The fast-retransmit scaffold below was re-measured once the receiver
+ * started delaying its ACKs (RFC 5681 §4.2, one ACK per two full-sized
+ * segments). Measured `tcp.segment.sent` interleaving for a 12000-byte
+ * stream over an MSS of 1460, on a bare cable pair with no L2 chatter
+ * left after `connect()` returns:
+ *
+ *   C1460 C1460 S0 C1460 C1460 S0 C1460 C1460 S0 C1460 C1460 S0 C320 S0
+ *
+ * so cable call #2 is the client's 2nd data segment. Dropping it leaves
+ * the 3rd/4th/5th/6th arriving out of order; the first of those flushes
+ * the ACK still owed for segment #1 (a real stack subsumes the delayed
+ * ACK into the immediate out-of-order one rather than sending two), so
+ * the 3rd DUPLICATE only lands on the 6th segment — one segment later
+ * than before delayed ACK existed, which is why the 6000-byte stream the
+ * old scaffold used is now too short to reach fast retransmit at all.
+ * At that instant SND.UNA/SND.NXT were measured 5841 apart (the +1 is
+ * the SYN's own sequence number), and the figure is set by `cwnd`, not
+ * by the stream length: 12000, 20000 and 30000 bytes all measure 5841.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -77,26 +96,19 @@ describe('TCP congestion control (PRD-TCP.md P5)', () => {
     const retransmits: unknown[] = [];
     bus.subscribe('tcp.retransmit', (e) => retransmits.push(e.payload));
 
-    // 6000 bytes over an MSS of 1460 ships as 5 client-side data segments
-    // interleaved with 4 server ACKs (empirically confirmed via
-    // tcp.segment.sent tracing): call #1/3/5/7/9 are the data segments,
-    // #2/4/6/8 the ACKs answering them. Losing exactly call #3 drops the
-    // *2nd* data segment — the 3rd/4th/5th then arrive out of order at
-    // the server, each drawing a duplicate ACK for what's already been
-    // cumulatively acked, so the 3rd such duplicate should fire a fast
-    // retransmit well before any RTO timer would (none was even armed
-    // via a scheduler advance in this test).
     let calls = 0;
+    const flightAtRetransmit: number[] = [];
+    bus.subscribe('tcp.retransmit', () => {
+      flightAtRetransmit.push((clientSocket.sendNext - clientSocket.sendUnacked) >>> 0);
+    });
     cable.setPacketLossRate(0.999);
-    cable.setRng(() => (++calls === 3 ? 0 : 1));
+    cable.setRng(() => (++calls === 2 ? 0 : 1));
 
-    clientSocket.send('B'.repeat(6000));
+    clientSocket.send('B'.repeat(12_000));
 
     expect(retransmits.length).toBeGreaterThan(0);
-    // RFC 5681 §3.2: ssthresh = max(flightSize/2, 2×MSS). flightSize at
-    // the moment of the 3rd duplicate ACK is 6000 - 1460 (only the 1st
-    // segment had been cumulatively acked) = 4540, so ssthresh =
-    // max(2270, 2920) = 2920.
+    expect(flightAtRetransmit[0]).toBe(5841);
+    expect(clientSocket.cc.ssthresh).toBe(Math.max(Math.floor(5841 / 2), 2 * clientSocket.mss));
     expect(clientSocket.cc.ssthresh).toBe(2920);
     expect(clientSocket.cc.ssthresh).toBeLessThan(Number.MAX_SAFE_INTEGER);
   });
