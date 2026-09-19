@@ -207,6 +207,7 @@ export class TcpSocket {
   /** Peer's last-advertised receive window (PRD-TCP.md P3) — bounds how much unacked data we may have in flight. */
   peerWindow = TCP_DEFAULT_WINDOW;
   sendBacklog: Array<{ payload: StreamPayload; psh: boolean }> = [];
+  noDelay = false;
   segmentsSinceAck = 0;
   delayedAckTimer: symbol | null = null;
   /** Zero-window persist-probe timer (RFC 9293 §3.8.6.1). */
@@ -281,6 +282,13 @@ export class TcpSocket {
    */
   abort(): void { this.stack._abort(this); }
   reset(): void { this.stack._abort(this); }
+
+  /**
+   * TCP_NODELAY (RFC 9293 §3.7.4): "applications that require low latency
+   * on every packet sent MUST be provided with a mechanism to disable
+   * Nagle". Turning it on releases whatever Nagle is currently holding.
+   */
+  setNoDelay(enabled: boolean): void { this.stack._setNoDelay(this, enabled); }
 
   /**
    * Enable RFC 9293 §3.8.4 (SO_KEEPALIVE) idle-probe monitoring: after
@@ -963,10 +971,35 @@ export class TcpStack {
       while (offset < data.length) {
         const chunk = sliceStream(data, offset, offset + socket.mss);
         offset += chunk.length;
-        socket.sendBacklog.push({ payload: chunk, psh: offset >= data.length });
+        this.queueForSend(socket, chunk, offset >= data.length);
       }
     }
     this.flushSendBacklog(socket);
+  }
+
+  /**
+   * RFC 896 / RFC 9293 §3.7.4 — Nagle is a COALESCING algorithm, not
+   * merely a delaying one: what it holds back it must also glue to
+   * whatever the application writes next, or it turns one small segment
+   * into two. A write lands on the tail of `sendBacklog` while that tail
+   * is still short of a full segment, so consecutive small writes that
+   * never made it onto the wire become one segment rather than a queue of
+   * runts. Only the tail is touched, so a remainder that `flushSendBacklog`
+   * or `resegmentAndRetransmit` pushed back onto the FRONT keeps its place
+   * in the stream.
+   */
+  private queueForSend(socket: TcpSocket, payload: StreamPayload, psh: boolean): void {
+    let rest = payload;
+    const tail = socket.sendBacklog[socket.sendBacklog.length - 1];
+    if (tail && tail.payload.length < socket.mss) {
+      const room = socket.mss - tail.payload.length;
+      const merged = sliceStream(rest, 0, room);
+      tail.payload = appendStream(tail.payload, merged);
+      tail.psh = psh && merged.length === rest.length;
+      rest = sliceStream(rest, merged.length);
+    }
+    if (rest.length === 0) return;
+    socket.sendBacklog.push({ payload: rest, psh });
   }
 
   /**
@@ -975,7 +1008,7 @@ export class TcpStack {
    * chunk if only part of it fits. Whatever doesn't fit stays queued in
    * order until a future ACK/window-update frees enough room.
    */
-  private flushSendBacklog(socket: TcpSocket): void {
+  private flushSendBacklog(socket: TcpSocket, overrideNagle = false): void {
     // Reentrant call (see `flushingBacklog`'s doc comment): the outer
     // invocation's `while` loop will pick up the freed window on its very
     // next iteration since the ACK that triggered this reentry already
@@ -994,6 +1027,7 @@ export class TcpStack {
         if (available === 0) break;
         const next = socket.sendBacklog[0];
         const take = Math.min(available, next.payload.length);
+        if (this.nagleHolds(socket, next.payload.length, take, overrideNagle)) break;
         const chunk = sliceStream(next.payload, 0, take);
         const remainder = sliceStream(next.payload, take);
         socket.sendBacklog.shift();
@@ -1011,6 +1045,37 @@ export class TcpStack {
       socket.flushingBacklog = false;
     }
     this.maybeArmPersistTimer(socket);
+  }
+
+  /**
+   * RFC 9293 §3.7.4: "If there is unacknowledged data (i.e., SND.NXT >
+   * SND.UNA), then the sending TCP endpoint buffers all user data
+   * (regardless of the PSH bit) until the outstanding data has been
+   * acknowledged or until the TCP endpoint can send a full-sized
+   * segment."
+   *
+   * Two readings of "can send a full-sized segment" are possible and only
+   * one is safe. Measured against the QUEUE and not against the window:
+   * a receive window smaller than the MSS otherwise keeps every chunk
+   * below full size forever, so the hold would never lift and a transfer
+   * through a 128-byte window would deadlock outright. A window that
+   * small is flow control's business (SWS avoidance) and the persist
+   * timer's, never Nagle's. The empty write that carries only a PSH is
+   * exempt: there is nothing to coalesce it with, and holding it would
+   * simply lose the marker.
+   */
+  private nagleHolds(socket: TcpSocket, headLength: number, take: number, overrideNagle: boolean): boolean {
+    if (overrideNagle || socket.noDelay) return false;
+    if (headLength === 0 || take >= socket.mss) return false;
+    let queued = 0;
+    for (const entry of socket.sendBacklog) queued += entry.payload.length;
+    if (queued >= socket.mss) return false;
+    return seqLt(socket.sendUnacked, socket.sendNext);
+  }
+
+  _setNoDelay(socket: TcpSocket, enabled: boolean): void {
+    socket.noDelay = enabled;
+    if (enabled) this.withinBurst(() => this.flushSendBacklog(socket));
   }
 
   /** (Re)arm or disarm the zero-window persist-probe timer based on current window/backlog state. */
@@ -1106,6 +1171,9 @@ export class TcpStack {
     if (socket.state === 'syn-received') {
       socket.closeAfterFlush = true;
       return;
+    }
+    if (socket.state === 'established' || socket.state === 'close-wait') {
+      this.flushSendBacklog(socket, true);
     }
     if (socket.state === 'established') {
       this._transition(socket, 'fin-wait-1');

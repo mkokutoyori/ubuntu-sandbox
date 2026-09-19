@@ -116,6 +116,7 @@ export class SshSession implements ISshSession {
         port: opts.port,
       });
     }
+    dialed.setNoDelay?.(true);
     const records = this.records;
     const conn = sealedStream(dialed, records);
     this.conn = conn;
