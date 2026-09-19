@@ -140,6 +140,8 @@ const SWITCH_CATEGORIES: ReadonlySet<string> = new Set<string>([
   'mac', 'link', 'stp.events', 'stp.bpdu',
   'ip.arp', 'cdp.packets', 'lldp.packets', 'port-security',
   'ip.dhcp.server', 'vxlan', 'interface',
+  'aaa.authentication', 'aaa.authorization', 'aaa.accounting',
+  'radius', 'tacacs',
 ]);
 
 export function categoryOnPlatform(category: string, platform: DebugPlatform): boolean {

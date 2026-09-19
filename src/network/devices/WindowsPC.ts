@@ -44,10 +44,17 @@ import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type T
 import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import type { TcpStream } from '../tcp/types';
+import {
+  TelnetClientSession, type TelnetClientTransport,
+} from '../protocols/telnet/TelnetClientSession';
 import type { TcpSocket } from '../tcp/TcpStack';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
-import { runWindowsSshClient } from './windows/network/WindowsSshClient';
+import { runWindowsSshClient, winWireExecTarget } from './windows/network/WindowsSshClient';
+import type { WinWireTarget } from './windows/network/WindowsSshClient';
+import { openWireSshConnection, silentConnectIo, relayScriptedShell } from '@/terminal/ssh/wireSshLogin';
+import { isOk } from '@/network/protocols/ssh/Result';
+import { installDefaultShells } from '@/shell/registerDefaults';
 import { SshAgent } from '@/network/protocols/ssh/SshAgent';
 import { runSshKeygenCommand, type SshKeygenHost } from '@/network/protocols/ssh/SshKeygenCommand';
 import {
@@ -2226,9 +2233,58 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     };
   }
 
-  private cmdSsh(args: string[]): Promise<string> {
+  private async openWireSsh(
+    target: WinWireTarget, password: string | undefined,
+  ): Promise<{
+    exec: ((command: string) => { output: string; exitCode: number } | null) | undefined;
+    shell: (() => { output: string; exitCode: number } | null) | undefined;
+    authRefused: boolean;
+    close: () => void;
+  } | null> {
+    const outcome = await openWireSshConnection({
+      device: this,
+      localUser: this.userMgr.currentUser,
+      user: target.user,
+      host: target.host,
+      port: target.port,
+      io: silentConnectIo(),
+      password,
+      credentialless: password === undefined,
+      identityFiles: target.identities,
+    });
+    if (outcome.kind === 'auth-failed' && password !== undefined) {
+      return { exec: undefined, shell: undefined, authRefused: true, close: () => undefined };
+    }
+    if (outcome.kind !== 'connected') return null;
+    const { session } = outcome;
+    const close = () => session.disconnect();
+
+    if (target.command) {
+      const channel = session.openExecChannel(target.command);
+      if (!isOk(channel)) { close(); return null; }
+      const result = await channel.value.execute();
+      channel.value.close();
+      const settled = result === null
+        ? null
+        : { output: result.stdout, exitCode: result.exitCode };
+      return { exec: () => settled, shell: undefined, authRefused: false, close };
+    }
+
+    const channel = session.openShellChannel();
+    if (!isOk(channel)) { close(); return null; }
+    const shell = channel.value;
+    const settled = await relayScriptedShell(
+      shell, this._scenarioStdin ?? '', password === undefined ? 0 : 1);
+    shell.close();
+    return { exec: undefined, shell: () => settled, authRefused: false, close };
+  }
+
+  private async cmdSsh(args: string[]): Promise<string> {
     const user = this.userMgr.currentUser;
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
+    const target = winWireExecTarget(args, user);
+    const password = (this._scenarioStdin ?? '').split('\n')[0] || undefined;
+    const wire = target ? await this.openWireSsh(target, password) : null;
     return runWindowsSshClient({
       args,
       sourceDevice: this,
@@ -2237,6 +2293,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       sourceUser: user,
       sourceHome: `C:\\Users\\${user}`,
       localAgent: this.sshAgent,
+      execRelay: wire?.exec,
+      shellRelay: wire?.shell,
+      wireAuthRefused: wire?.authRefused,
+      wireAuthenticated: wire?.authRefused === false,
       localFs: {
         readFile: (p: string) => this.fs.readFile(p),
         createFile: (p: string, c: string) => {
@@ -2246,6 +2306,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         },
       },
     }).then(r => {
+      wire?.close();
       const peerIp = r.exitCode === 0 ? this.resolveSshPeer(args) : null;
       if (peerIp) {
         const entry = this.socketTable.connect('tcp', sourceIp, 0, peerIp, 22, undefined, 'ssh.exe');
@@ -2295,12 +2356,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }).then(r => r.output);
   }
 
-  /**
-   * `telnet host [port]` — real TCP/23 handshake via `tcpConnect`, then
-   * the socket is closed immediately. No nested interactive session is
-   * pushed the way `cmdSsh` does (see the Telnet note in CLAUDE.md's
-   * Terminal emulation section).
-   */
   private async cmdTelnet(args: string[]): Promise<string> {
     const positional = args.filter((a) => !a.startsWith('-'));
     const host = positional[0];
@@ -2319,8 +2374,27 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (!sock) {
       return `Connecting To ${host}...Could not open connection to the host, on port ${port}: Connect failed`;
     }
-    sock.close();
-    return `Connecting To ${host}...\nWelcome to Microsoft Telnet Client\n\nEscape Character is 'CTRL+]'`;
+    const header = `Connecting To ${host}...\nWelcome to Microsoft Telnet Client\n\nEscape Character is 'CTRL+]'`;
+    const session = new TelnetClientSession(sock as unknown as TelnetClientTransport);
+    await WindowsPC.settleWire();
+    let transcript = session.drain();
+    for (const line of (this._scenarioStdin ?? '').split('\n')) {
+      if (line.length === 0 && transcript.length > 0) continue;
+      session.send(line);
+      await WindowsPC.settleWire();
+      transcript += session.drain();
+    }
+    const closedByPeer = session.closed;
+    session.close();
+    await WindowsPC.settleWire();
+    return `${header}\n${transcript}${closedByPeer ? 'Connection closed by foreign host.\n' : ''}`;
+  }
+
+  private static async settleWire(times = 12): Promise<void> {
+    for (let i = 0; i < times; i++) {
+      await Promise.resolve();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
   }
 
   private createPorts(): void {
@@ -2716,9 +2790,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return this.auditPolicy.getOption('CrashOnAuditFail') === true && this.eventLog.isFullAndProtected('Security');
   }
 
-  async executeCommand(command: string): Promise<string> {
-    return this.executeCmdCommand(command);
+  async executeCommand(command: string, stdin?: string): Promise<string> {
+    if (stdin !== undefined) this._scenarioStdin = stdin;
+    try {
+      return await this.executeCmdCommand(command);
+    } finally {
+      if (stdin !== undefined) this._scenarioStdin = undefined;
+    }
   }
+
+  private _scenarioStdin: string | undefined;
 
   /**
    * Execute a command in CMD mode.
@@ -3938,13 +4019,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     handleInput(value: string): Promise<string>;
   } | null {
     let stack: CrossVendorRemoteShell;
+    installDefaultShells();
     try {
       stack = new CrossVendorRemoteShell({
-        device: this, user, remoteHost: this.hostname, primaryKind: 'cmd',
+        device: this, user, primaryKind: 'cmd',
       });
     } catch {
-      // No shell registered for 'cmd' (bare unit fixtures): fall back to
-      // the flat one-shot executor rather than failing the session.
       return null;
     }
     // `cls` is a screen wipe, and the screen belongs to the client — so

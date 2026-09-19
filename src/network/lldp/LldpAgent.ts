@@ -3,14 +3,23 @@ import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type LldpCapability, type LldpConfig, type LldpFrame, type LldpNeighborEntry,
-  type LldpOptionalTlv, type LldpPortConfig,
+  type LldpOptionalTlv, type LldpPortConfig, type LldpManagementAddress,
+  type LldpVlanName,
   createDefaultLldpConfig, defaultPortConfig, neighborKey,
   LLDP_OPTIONAL_TLVS, ETHERTYPE_LLDP, LLDP_MULTICAST_MAC,
 } from './types';
-import { MACAddress, type DeviceType, type EthernetFrame } from '../core/types';
+import {
+  MACAddress, ETHERNET_FRAME_OVERHEAD_BYTES,
+  type DeviceType, type EthernetFrame,
+} from '../core/types';
 import type { LinkSendRequest } from '../layers/link/LinkLayer';
 import { Logger } from '../core/Logger';
 import { C2900_SOFTWARE, C2960_SOFTWARE } from '../devices/shells/cisco/CiscoPlatform';
+
+export interface LldpBridgePortVlans {
+  readonly untagged: number;
+  readonly names: readonly LldpVlanName[];
+}
 
 export interface LldpHost {
   readonly id: string;
@@ -22,6 +31,8 @@ export interface LldpHost {
   sendOnLink(request: LinkSendRequest): boolean;
   displayPortName?(portName: string): string;
   systemDescription?(): string;
+  bridgePortVlans?(portName: string): LldpBridgePortVlans | undefined;
+  managementPorts?(): import('../hardware/Port').Port[];
 }
 
 export type LldpNeighbor = Readonly<LldpNeighborEntry>;
@@ -201,7 +212,18 @@ export class LldpAgent extends ReactiveAgentBase {
       systemDescription: this.systemDescription(),
       capabilities: [this.deviceCapability()],
       managementAddresses: this.collectAddresses(),
+      ...this.bridgeVlans(portName),
+      ...(port ? {
+        autoNegotiation: { supported: true, enabled: port.isAutoNegotiation() },
+        maxFrameSize: port.getMTU() + ETHERNET_FRAME_OVERHEAD_BYTES,
+      } : {}),
     };
+  }
+
+  private bridgeVlans(portName: string): Partial<LldpFrame> {
+    const vlans = this.host.bridgePortVlans?.(portName);
+    if (!vlans) return {};
+    return { portVlanId: vlans.untagged, vlanNames: vlans.names };
   }
 
   buildAdvertisement(portName: string): LldpFrame {
@@ -286,6 +308,10 @@ export class LldpAgent extends ReactiveAgentBase {
       remoteCapabilities: payload.capabilities ? [...payload.capabilities] : undefined,
       managementAddresses: payload.managementAddresses
         ? [...payload.managementAddresses] : undefined,
+      portVlanId: payload.portVlanId,
+      vlanNames: payload.vlanNames ? [...payload.vlanNames] : undefined,
+      autoNegotiation: payload.autoNegotiation,
+      maxFrameSize: payload.maxFrameSize,
       learnedAtMs: now,
       ttlSec: payload.ttlSec,
       expiresAtMs,
@@ -472,16 +498,21 @@ export class LldpAgent extends ReactiveAgentBase {
     }
   }
 
-  private collectAddresses(): string[] {
-    const out: string[] = [];
-    for (const p of this.manageablePorts()) {
+  private collectAddresses(): LldpManagementAddress[] {
+    const out: LldpManagementAddress[] = [];
+    this.manageablePorts().forEach((p, index) => {
       const ip = p.getIPAddress();
-      if (ip && !ip.toString().startsWith('127.')) out.push(ip.toString());
-    }
+      if (!ip || ip.isLoopback() || ip.isUnspecified()) return;
+      out.push({
+        address: ip, family: 'ipv4',
+        numbering: 'ifIndex', interfaceNumber: index + 1,
+      });
+    });
     return out;
   }
 
   manageablePorts(): import('../hardware/Port').Port[] {
-    return this.host.getPorts().filter(p => !p.isLoopback?.());
+    const ports = this.host.managementPorts?.() ?? this.host.getPorts();
+    return ports.filter(p => !p.isLoopback?.());
   }
 }

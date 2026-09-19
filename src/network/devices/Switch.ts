@@ -48,6 +48,16 @@ import {
 } from './switch/MacAccessList';
 import { RouterDhcpClient } from './router/RouterDhcpClient';
 import { SwitchSvi, type SviInterface, type EchoHooks } from './SwitchSvi';
+import { TcpStack, type TcpHost } from '../tcp/TcpStack';
+import type { TcpStream } from '../tcp/types';
+import { TelnetServerHandler } from '../protocols/telnet/TelnetServerHandler';
+import { RouterTelnetServerContext } from '../protocols/telnet/RouterTelnetServerContext';
+import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
+import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
+import { SshHostKey } from '../protocols/ssh/SshHostKey';
+import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
+import type { SshExecTarget } from '../protocols/ssh/server/SshExecTarget';
+import type { TelnetVtyShell } from '../protocols/telnet/ITelnetServerContext';
 import type { ParsedPing } from './shells/cisco/ciscoPing';
 import { ControlPlaneUdpEndpoint } from './udp/ControlPlaneUdpEndpoint';
 import {
@@ -109,7 +119,10 @@ import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { NetworkOsAccount, applyCiscoUsernamePatch } from './router/aaa/NetworkOsAccount';
 import type { CiscoUsernamePatch, PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
+import { vtyLoginModeOf } from './router/vty/VtyLineConfig';
+import { KeypairService } from './router/security/KeypairService';
 import { classifyIpv4Destination } from '../layers/internet/InternetLayer';
+import type { LldpHost } from '../lldp/LldpAgent';
 
 // Re-export shell classes for backward compatibility
 export { CiscoSwitchShell } from './shells/CiscoSwitchShell';
@@ -575,6 +588,11 @@ export abstract class Switch extends Equipment {
     natTranslateOutbound: (pkt, outIface, inIface, opts) =>
       this.getNATEngine()?.translateOutbound(pkt, outIface, inIface, opts) ?? null,
     natIsOutsideInterface: (iface) => this.getNATEngine()?.isOutsideInterface(iface) ?? false,
+    deliverLocalTcp: (inVlan, sourceIP, pkt) => {
+      this.syncTelnetListener();
+      this.syncSshListener();
+      return this.getTcpStack().handleIp(`Vlanif${inVlan}`, sourceIP, pkt);
+    },
     deliverLocalUdp: (sourceIP, destinationPort, sourcePort, payload) => {
       // Le port 123 va au moteur NTP, exactement comme sur un routeur.
       // Sans cet aiguillage, un commutateur configure en client NTP
@@ -1099,6 +1117,20 @@ export abstract class Switch extends Equipment {
 
   getSwitchportConfig(portName: string): SwitchportConfig | undefined {
     return this.switchportConfigs.get(portName);
+  }
+
+  lldpHostExtras(): Pick<LldpHost, 'bridgePortVlans' | 'managementPorts'> {
+    return {
+      bridgePortVlans: (portName: string) => {
+        const untagged = this.resolveSnoopingVlan(portName);
+        if (untagged === undefined) return undefined;
+        const names = [...this.vlans.values()]
+          .filter(v => v.ports.has(portName))
+          .map(v => ({ id: v.id, name: v.name }));
+        return { untagged, names };
+      },
+      managementPorts: () => [...this.getPorts(), ...this.sviPorts()],
+    };
   }
 
   /**
@@ -2794,6 +2826,282 @@ export abstract class Switch extends Equipment {
   // ─── L3 Management Plane (SVI) plumbing ───────────────────────────
 
   /** Bridge base MAC — shared by every SVI, like real Catalyst hardware. */
+  private vtyBlock() {
+    return this._getVtyLineConfig().all()[0];
+  }
+
+  createVtyShell(): TelnetVtyShell {
+    const shell = this.createShell();
+    let ended = false;
+    return {
+      execute: (rawInput: string): string => {
+        const output = shell.execute(this, rawInput);
+        ended = shell.execSessionClosed?.() === true;
+        return output;
+      },
+      getPrompt: () => shell.getPrompt(this),
+      lastEndedSession: () => ended,
+    };
+  }
+
+  private _sshHostKeyCache: SshHostKey | null = null;
+
+  private sshHostKey(): SshHostKey {
+    if (!this._sshHostKeyCache) this._sshHostKeyCache = SshHostKey.generate(this.getHostname());
+    return this._sshHostKeyCache;
+  }
+
+  private _keypairService: KeypairService | null = null;
+
+  getKeypairService(): KeypairService {
+    if (!this._keypairService) this._keypairService = new KeypairService();
+    return this._keypairService;
+  }
+
+  hasSshHostKeys(): boolean { return this.hasRsaKeys(); }
+
+  private sshServerEnabled = true;
+
+  _setSshServerEnabled(enabled: boolean): void {
+    if (this.sshServerEnabled === enabled) return;
+    this.sshServerEnabled = enabled;
+    this.syncManagementListeners();
+  }
+
+  _refreshSshAvailability(): void { this.syncManagementListeners(); }
+
+  isSshActive(): boolean {
+    return this.sshServerEnabled
+      && this.hasSshHostKeys()
+      && this._getVtyLineConfig().admetQuelquePart('ssh');
+  }
+
+  sshdAcceptsLogin(user: string): { ok: boolean; reason?: string } {
+    const verdict = this._getVtyLineConfig().incomingVerdict();
+    if (!verdict.accept) return { ok: false, reason: verdict.reason };
+    const mode = vtyLoginModeOf(this.vtyBlock());
+    if ((mode === 'local' || mode === 'aaa') && !this.getCredentialStore().get(user)) {
+      return { ok: false, reason: 'no such user' };
+    }
+    return { ok: true };
+  }
+
+  recordSshLogin(user: string, fromIp: string, fromHost: string, accepted: boolean): void {
+    void fromHost;
+    if (!accepted) return;
+    this.getSshSessionRegistry().open({
+      user, privilege: this.getCredentialStore().get(user)?.privilege ?? 1,
+      fromIp, authMethod: 'password', localPort: 22, peerPort: 0,
+    });
+  }
+
+  runSshCommandSync(user: string, command: string): { output: string; exitCode: number } | null {
+    void user;
+    let line = command.trim();
+    if (!line) return { output: '', exitCode: 0 };
+    if ((line.startsWith('"') && line.endsWith('"')) || (line.startsWith("'") && line.endsWith("'"))) {
+      line = line.slice(1, -1).trim();
+    }
+    const output = this.createShell().execute(this, line);
+    return { output: output.endsWith('\n') ? output : `${output}\n`, exitCode: 0 };
+  }
+
+  getSshBanner(): string { return this.getBanner('login') || ''; }
+
+  getSshMotd(): string { return this.getBanner('motd') || ''; }
+
+  getSshPolicy(): {
+    active: boolean; ports: readonly number[]; permitRootLogin: boolean;
+    passwordAuthentication: boolean; pubkeyAuthentication: boolean; maxAuthTries: number;
+  } {
+    return {
+      active: this.isSshActive(),
+      ports: [22],
+      permitRootLogin: true,
+      passwordAuthentication: true,
+      pubkeyAuthentication: false,
+      maxAuthTries: 3,
+    };
+  }
+
+  getSshHostKey(): {
+    type: 'ssh-rsa' | 'ssh-ed25519' | 'ecdsa-sha2-nistp256';
+    fingerprintSha256: string; publicKey: string;
+  } {
+    const key = this.sshHostKey();
+    return {
+      type: key.algorithm as 'ssh-rsa' | 'ssh-ed25519' | 'ecdsa-sha2-nistp256',
+      fingerprintSha256: key.fingerprint.toString(),
+      publicKey: key.publicKeyLine,
+    };
+  }
+
+  private buildSshServerHandler(): SshServerHandler {
+    const credentials = this.getCredentialStore();
+    return new SshServerHandler(new RouterSshServerContext({
+      hostname: () => this.getHostname(),
+      hostKey: () => this.sshHostKey(),
+      credentials: () => ({
+        authenticate: (n, p) => credentials.authenticate(n, p),
+        has: (n) => credentials.get(n) !== undefined,
+        get: (n) => {
+          const a = credentials.get(n);
+          return a ? { name: a.name, privilege: a.privilege, secret: a.secret } : undefined;
+        },
+      }),
+      execTarget: () => this as unknown as SshExecTarget,
+      execIdleTimeoutMs: () => null,
+      banner: () => this.getBanner('login') || null,
+      motd: () => this.getBanner('motd') || undefined,
+      isClientBlocked: () => !this._getVtyLineConfig().incomingVerdict().accept,
+      recordLogin: (user, fromIp) => this.recordSshLogin(user, fromIp, '', true),
+    }));
+  }
+
+  private syncSshListener(): void {
+    const stack = this.getTcpStack();
+    const wanted = this.isSshActive()
+      && this.getSvis().some((svi) => svi.ip && svi.adminUp);
+    const bound = stack.listListeners().some((l) => l.localPort === 22);
+    if (wanted === bound) return;
+    if (wanted) {
+      stack.listen(22, {
+        onAccept: (socket) => {
+          this.buildSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+        },
+      });
+    } else {
+      stack.closeListener(22);
+    }
+  }
+
+  private buildTelnetServerHandler(): TelnetServerHandler {
+    return new TelnetServerHandler(new RouterTelnetServerContext({
+      hostname: () => this.getHostname(),
+      loginMode: () => {
+        const block = this.vtyBlock();
+        const mode = vtyLoginModeOf(block);
+        return mode === 'none' && block?.linePassword ? 'password' : mode;
+      },
+      linePassword: () => {
+        const block = this.vtyBlock();
+        return block?.linePassword
+          ? { value: block.linePassword, algo: block.linePasswordAlgo ?? 'plain' }
+          : null;
+      },
+      authHeader: () => null,
+      loginBanner: () => this.getBanner('login') || null,
+      motd: () => this.getBanner('motd') || null,
+      admit: (ip) => {
+        void ip;
+        const verdict = this._getVtyLineConfig().incomingVerdict();
+        return verdict.accept ? { accept: true } : { accept: false, kind: 'no-line', reason: verdict.reason };
+      },
+      authenticateLocal: (user, password) => this.getCredentialStore().authenticate(user, password),
+      authenticateAaa: (user, password) => Promise.resolve(
+        this.getCredentialStore().authenticate(user, password),
+      ),
+      createVtyShell: () => this.createVtyShell(),
+      openSession: (user, fromIp, peerPort) => {
+        const record = this.getSshSessionRegistry().open({
+          user, privilege: 1, fromIp, authMethod: 'password', localPort: 23, peerPort,
+        });
+        return record ? { id: record.id, line: record.line } : null;
+      },
+      noteTerminalType: (id, terminalType) => {
+        this.getSshSessionRegistry().setTerminalType(id, terminalType);
+      },
+      closeSession: (id, reason) => { this.getSshSessionRegistry().close(id, reason); },
+      touchSession: (id, bytesIn, bytesOut) => {
+        this.getSshSessionRegistry().touch(id, Date.now(), bytesIn, bytesOut);
+      },
+      idleTimeoutMs: () => null,
+      recordAuthFailure: (user, ip) => { void user; void ip; },
+      recordLogin: (user, ip) => { void user; void ip; },
+    }));
+  }
+
+  private syncTelnetListener(): void {
+    const wanted = this._getVtyLineConfig().admetQuelquePart('telnet')
+      && this.getSvis().some((svi) => svi.ip && svi.adminUp);
+    const stack = this.getTcpStack();
+    const bound = stack.listListeners().some((l) => l.localPort === 23);
+    if (wanted === bound) return;
+    if (wanted) {
+      stack.listen(23, {
+        onAccept: (socket) => {
+          this.buildTelnetServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+        },
+      });
+    } else {
+      stack.closeListener(23);
+    }
+  }
+
+  private readonly _sviPorts = new Map<number, Port>();
+
+  private sviVlanOf(name: string): number | null {
+    const m = /^Vlan(?:if)?(\d+)$/i.exec(name);
+    return m ? Number(m[1]) : null;
+  }
+
+  private sviPort(name: string): Port | undefined {
+    const vlan = this.sviVlanOf(name);
+    if (vlan === null) return undefined;
+    const svi = this.getSvi(vlan);
+    if (!svi?.ip || !svi.mask) return undefined;
+    let port = this._sviPorts.get(vlan);
+    if (!port) {
+      port = new Port(`Vlan${vlan}`, 'ethernet', this.getBridgeMac(), { socketless: true });
+      this._sviPorts.set(vlan, port);
+    }
+    const current = port.getIPAddress();
+    if (!current || current.toString() !== svi.ip.toString()) {
+      port.configureIP(svi.ip, svi.mask);
+    }
+    port.setUp(svi.adminUp);
+    return port;
+  }
+
+  private sviPorts(): Port[] {
+    const ports: Port[] = [];
+    for (const svi of this.getSvis()) {
+      const port = this.sviPort(`Vlan${svi.vlan}`);
+      if (port) ports.push(port);
+    }
+    return ports;
+  }
+
+  private _tcpStack: TcpStack | null = null;
+
+  getTcpStack(): TcpStack {
+    if (!this._tcpStack) {
+      this._tcpStack = new TcpStack(this.buildTcpHost(), () => this.getBus());
+      this._tcpStack.start();
+    }
+    return this._tcpStack;
+  }
+
+  private buildTcpHost(): TcpHost {
+    return {
+      id: this.id,
+      name: this.name,
+      getHostname: () => this.getHostname(),
+      getPort: (n: string) => this.sviPort(n) ?? this.getPort(n),
+      getPorts: () => [...this.getPorts(), ...this.sviPorts()],
+      sendFrame: (portName: string, frame: EthernetFrame) => { this.sendFrame(portName, frame); },
+      resolveRoute: (targetIp: string) => {
+        const source = this.svi.sourceAddressFor(new IPAddress(targetIp));
+        if (!source) return null;
+        const svi = this.getSvis().find((s) => s.ip?.toString() === source.toString());
+        return svi ? { iface: `Vlan${svi.vlan}`, nextHopIp: targetIp } : null;
+      },
+      sendIpv4FrameArpAware: (_outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) => {
+        this.svi.sendIpv4FrameArpAware(ipPkt, nextHopIP);
+      },
+    };
+  }
+
   getBridgeMac(): MACAddress {
     const first = this.getPorts()[0];
     return first ? first.getMAC() : MACAddress.broadcast();
@@ -3369,9 +3677,26 @@ export abstract class Switch extends Equipment {
         deviceId: this.id, bus: this.getBus(),
       });
       this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
+      this._sshHost = new CrossVendorSshHost({
+        deviceId: this.id,
+        hostname: this.getHostname(),
+        vendor: this.getOSType() === 'huawei-vrp' ? 'huawei' : 'cisco',
+        bus: this.getBus(),
+        authority: this._credentialStore,
+        active: this.isSshActive(),
+      });
     }
     return this._credentialStore;
   }
+
+  getSshHost(): CrossVendorSshHost {
+    if (!this._sshHost) this.getCredentialStore();
+    this._sshHost!.setSshActive(this.isSshActive());
+    this._sshHost!.setHostname(this.getHostname());
+    return this._sshHost!;
+  }
+
+  private _sshHost: CrossVendorSshHost | null = null;
 
   /**
    * Un commutateur tient ses sessions comme un routeur.
@@ -3833,6 +4158,19 @@ export abstract class Switch extends Equipment {
 
   async executeCommand(command: string, answers?: HeadlessAnswers): Promise<string> {
     if (!this.isPoweredOn) return '% Device is powered off';
+    try {
+      return await this.runCliCommand(command, answers);
+    } finally {
+      this.syncManagementListeners();
+    }
+  }
+
+  private syncManagementListeners(): void {
+    this.syncTelnetListener();
+    this.syncSshListener();
+  }
+
+  private async runCliCommand(command: string, answers?: HeadlessAnswers): Promise<string> {
     if (hasHeadlessAnswers(answers)) {
       const dialogue = await this.jouerDialogueSansTerminal(command, answers as HeadlessAnswers);
       if (dialogue !== null) return dialogue;

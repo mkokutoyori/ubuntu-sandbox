@@ -47,6 +47,8 @@ export function daemonMemoryKib(fw: Firewall): number {
   return processTable(fw).reduce((total, process) => total + process.residentKib, 0);
 }
 
+const STATE_INDENT = ' '.repeat(6);
+
 function runTime(uptimeMs: number): string {
   const minutes = Math.floor(uptimeMs / 60_000);
   const days = Math.floor(minutes / 1440);
@@ -68,15 +70,14 @@ export function renderSysTop(fw: Firewall): string {
     runTime(fw.getUptimeMs()),
     sysTopCpuLine(load),
     ...renderTable(processes, [
-      { header: '', width: 15, align: 'right', value: (p) => p.name },
-      { header: '', width: 11, align: 'right', value: (p) => String(p.pid) },
-      { header: '', width: 7, align: 'right', value: (p) => p.state },
+      { header: '', width: 16, align: 'right', value: (p) => p.name },
+      { header: '', width: 9, align: 'right', value: (p) => String(p.pid) },
+      { header: '', width: 9, value: (p) => `${STATE_INDENT}${p.state}` },
       { header: '', width: 8, align: 'right', value: (p) => cpuShare(p).toFixed(1) },
       {
-        header: '', width: 7, align: 'right',
+        header: '', width: 8, align: 'right',
         value: (p) => ((p.residentKib / totalKib) * 100).toFixed(1),
       },
-      { header: '', width: 5, align: 'right', value: () => '1' },
     ], { ...FIXED_TABLE, header: false }),
   ].join('\n');
 }

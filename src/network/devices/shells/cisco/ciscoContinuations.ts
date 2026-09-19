@@ -183,7 +183,6 @@ export const COMMUTATEUR_SEUL: ContinuationTable = {
     'dot1x pae': ['authenticator'],
     'dot1x timeout': ['quiet-period'],
     'interface': ['range'],
-    'l2protocol-tunnel': ['cdp', 'lldp', 'stp', 'vtp'],
     'lacp rate': ['fast', 'normal'],
     'no spanning-tree': ['bpdufilter', 'bpduguard', 'guard', 'loop', 'portfast', 'vlan'],
     'no switchport port-security mac-address': ['sticky'],

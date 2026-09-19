@@ -1,16 +1,47 @@
 import { ospfRouteCode } from '@/network/ospf/routeCodes';
 import { cpuStatesLines, memoryLine } from './systemLoad';
 import type { SystemLoad } from '../../../health/SystemLoad';
-import { renderTable, FIXED_TABLE } from '../../../../shells/cli/TextTable';
+import {
+  renderTable, FIXED_TABLE, type TableStyle,
+} from '../../../../shells/cli/TextTable';
 import type { InterfaceTable } from '../../../l3/InterfaceTable';
 import type { FirewallRoute, RouteTable } from '../../../l3/RouteTable';
 import type { ArpService } from '../../../l3/ArpService';
 import type { SecurityRule } from '../../../model/SecurityRule';
 import type { BgpSummaryFacts } from '../../../routing/DynamicRoutingTypes';
 
+function clusterLines(facts: SystemStatusFacts): string[] {
+  if (facts.cluster === undefined) return [];
+  return [
+    `Cluster uptime: ${spelledUptime(facts.cluster.uptimeMs)}`,
+    `Cluster state change time: ${facts.cluster.stateChangeTime}`,
+  ];
+}
+
+function spelledUptime(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  return `${Math.floor(seconds / 86400)} days,`
+    + ` ${Math.floor((seconds % 86400) / 3600)} hours,`
+    + ` ${Math.floor((seconds % 3600) / 60)} minutes,`
+    + ` ${seconds % 60} seconds`;
+}
+
+export interface SystemClusterFacts {
+  readonly uptimeMs: number;
+  readonly stateChangeTime: string;
+}
+
 export interface SystemStatusFacts {
+  readonly model: string;
   readonly version: string;
   readonly build: string;
+  readonly buildDate: string;
+  readonly branch: string;
+  readonly versionSuffix: string;
+  readonly x86_64: boolean;
+  readonly fortiguard: readonly string[];
+  readonly fipsCcMode: string;
+  readonly lastRebootReason: string;
   readonly serial: string;
   readonly hostname: string;
   readonly operationMode: string;
@@ -20,19 +51,25 @@ export interface SystemStatusFacts {
   readonly vdomsInTransparent: number;
   readonly vdomConfiguration: string;
   readonly haMode: string;
+  readonly cluster?: SystemClusterFacts;
   readonly licenseStatus: string;
   readonly vmCpus: number;
+  readonly vmCpusAllowed: number;
   readonly vmMemoryMb: number;
+  readonly vmMemoryMbAllowed: number;
   readonly logDisk: string;
   readonly systemTime: string;
 }
 
 export function renderSystemStatus(facts: SystemStatusFacts): string {
   return [
-    `Version: FortiGate-VM64 v${facts.version},build${facts.build}`,
+    `Version: ${facts.model} v${facts.version},build${facts.build},`
+    + `${facts.buildDate} (${facts.versionSuffix})`,
+    ...facts.fortiguard,
     `Serial-Number: ${facts.serial}`,
     `License Status: ${facts.licenseStatus}`,
-    `VM Resources: ${facts.vmCpus} CPU, ${facts.vmMemoryMb} MB RAM`,
+    `VM Resources: ${facts.vmCpus} CPU/${facts.vmCpusAllowed} allowed,`
+    + ` ${facts.vmMemoryMb} MB RAM/${facts.vmMemoryMbAllowed} MB allowed`,
     `Log hard disk: ${facts.logDisk}`,
     `Hostname: ${facts.hostname}`,
     `Operation Mode: ${facts.operationMode}`,
@@ -41,9 +78,14 @@ export function renderSystemStatus(facts: SystemStatusFacts): string {
     `Virtual domains status: ${facts.vdomsInNat} in NAT mode,`
     + ` ${facts.vdomsInTransparent} in TP mode`,
     `Virtual domain configuration: ${facts.vdomConfiguration}`,
+    `FIPS-CC mode: ${facts.fipsCcMode}`,
     `Current HA mode: ${facts.haMode}`,
+    ...clusterLines(facts),
     `Branch point: ${facts.build}`,
+    `Release Version Information: ${facts.branch}`,
+    ...(facts.x86_64 ? ['FortiOS x86-64: Yes'] : []),
     `System time: ${facts.systemTime}`,
+    `Last reboot reason: ${facts.lastRebootReason}`,
   ].join('\n');
 }
 
@@ -94,37 +136,72 @@ export interface InterfaceStatusFacts {
   readonly ipv6: string;
   readonly status: string;
   readonly speed: string;
+  readonly type: string;
+  readonly srcCheck: string;
+  readonly dropOverlappedFragment: string;
+  readonly dropFragment: string;
   readonly physical: boolean;
 }
 
-export function renderInterfaceStatus(
-  facts: readonly InterfaceStatusFacts[], physicalOnly: boolean,
-): string {
+const ONBOARD_GROUP = '== [onboard]';
+const PHYSICAL_INDENT = ' '.repeat(4);
+const PHYSICAL_FIELD_INDENT = ' '.repeat(8);
+const FORWARD_ERROR_CORRECTION = 'none';
+
+function summaryLine(iface: InterfaceStatusFacts): string {
+  const fields: ReadonlyArray<readonly [string, number]> = [
+    [`name: ${iface.name}`, 3],
+    [`mode: ${iface.mode}`, 4],
+    [`ip: ${iface.ip}`, 3],
+    [`status: ${iface.status}`, 4],
+    [`type: ${iface.type}`, 3],
+    [`src-check: ${iface.srcCheck}`, 4],
+    [`drop-overlapped-fragment: ${iface.dropOverlappedFragment}`, 4],
+    [`drop-fragment: ${iface.dropFragment}`, 0],
+  ];
+  return fields.map(([text, gap]) => text + ' '.repeat(gap)).join('');
+}
+
+export function renderInterfaceSummary(facts: readonly InterfaceStatusFacts[]): string {
   const lines: string[] = [];
   for (const iface of facts) {
-    if (physicalOnly && !iface.physical) continue;
-    lines.push(`== [${iface.name}]`);
-    lines.push(`\tmode: ${iface.mode}`);
-    lines.push(`\tip: ${iface.ip}`);
-    lines.push(`\tipv6: ${iface.ipv6}`);
-    lines.push(`\tstatus: ${iface.status}`);
-    lines.push(`\tspeed: ${iface.speed}`);
+    lines.push(`== [ ${iface.name} ]`, summaryLine(iface));
   }
   return lines.join('\n');
 }
 
-export function renderArpTable(arp: ArpService): string {
+export function renderInterfacePhysical(facts: readonly InterfaceStatusFacts[]): string {
+  const lines: string[] = [ONBOARD_GROUP];
+  for (const iface of facts) {
+    if (!iface.physical) continue;
+    lines.push(
+      `${PHYSICAL_INDENT}==[${iface.name}]`,
+      `${PHYSICAL_FIELD_INDENT}mode: ${iface.mode}`,
+      `${PHYSICAL_FIELD_INDENT}ip: ${iface.ip}`,
+      `${PHYSICAL_FIELD_INDENT}ipv6: ${iface.ipv6}`,
+      `${PHYSICAL_FIELD_INDENT}status: ${iface.status}`,
+      `${PHYSICAL_FIELD_INDENT}speed: ${iface.speed}`,
+      `${PHYSICAL_FIELD_INDENT}FEC: ${FORWARD_ERROR_CORRECTION}`,
+      `${PHYSICAL_FIELD_INDENT}FEC_cap: ${FORWARD_ERROR_CORRECTION}`,
+    );
+  }
+  return lines.join('\n');
+}
+
+const ARP_AGE_UNIT_MS = 60_000;
+
+export function renderArpTable(arp: ArpService, now: number): string {
   const rows = [...arp.getCache().entries()].map(([address, entry]) => ({
     address,
-    age: '0',
+    age: String(Math.max(0, Math.floor((now - entry.timestamp) / ARP_AGE_UNIT_MS))),
     mac: entry.mac.toString(),
     iface: entry.iface,
   }));
 
   return renderTable(rows, [
     { header: 'Address', width: 18, value: row => row.address },
-    { header: 'Age(min)', width: 10, value: row => row.age },
-    { header: 'Hardware Addr', width: 20, value: row => row.mac },
+    { header: 'Age(min)', width: 11, value: row => row.age },
+    { header: 'Hardware Addr', width: 18, headerWidth: 19, value: row => row.mac },
     { header: 'Interface', width: 0, value: row => row.iface },
   ], FIXED_TABLE).join('\n');
 }
@@ -161,15 +238,22 @@ function prefixLength(mask: string): number {
 export type RoutingView = 'all' | 'static' | 'connected' | 'database'
   | 'ospf' | 'rip' | 'bgp';
 
+const ROUTE_CODE_LEGEND: readonly string[] = Object.freeze([
+  'Codes: K - kernel, C - connected, S - static, R - RIP, B - BGP',
+  '       O - OSPF, IA - OSPF inter area',
+  '       E1 - OSPF external type 1, E2 - OSPF external type 2',
+]);
+
+const DEFAULT_ROUTING_VRF = 'Routing table for VRF=0';
+
+function routeLegend(lastLine: string): string[] {
+  return [...ROUTE_CODE_LEGEND, `       ${lastLine}`, ''];
+}
+
 export function renderRoutingTable(routes: RouteTable, view: RoutingView): string {
   if (view === 'database') return renderRoutingDatabase(routes);
 
-  const lines = [
-    'Codes: K - kernel, C - connected, S - static, R - RIP, B - BGP',
-    '       O - OSPF, IA - OSPF inter area',
-    '       * - candidate default',
-    '',
-  ];
+  const lines = [...routeLegend('* - candidate default'), DEFAULT_ROUTING_VRF];
 
   const rows = routes.selected()
     .filter(route => keptBy(view, route))
@@ -187,12 +271,7 @@ export function renderRoutingTable(routes: RouteTable, view: RoutingView): strin
 }
 
 export function renderRoutingDatabase(routes: RouteTable): string {
-  const lines = [
-    'Codes: K - kernel, C - connected, S - static, R - RIP, B - BGP',
-    '       O - OSPF, IA - OSPF inter area',
-    '       > - selected route, * - FIB route',
-    '',
-  ];
+  const lines = routeLegend('> - selected route, * - FIB route');
 
   for (const route of routes.all()) {
     const kept = routes.isSelected(route);
@@ -271,9 +350,14 @@ export function renderOspfNeighbors(
 }
 
 
+const BGP_STATE_WIDTH = 9;
+
 export function renderBgpSummary(facts: BgpSummaryFacts): string {
   const lines = [
     `BGP router identifier ${facts.routerId}, local AS number ${facts.localAs}`,
+    `BGP table version is ${facts.tableVersion}`,
+    `${facts.asPathEntries} BGP AS-PATH entries`,
+    `${facts.communityEntries} BGP community entries`,
     '',
   ];
 
@@ -281,42 +365,62 @@ export function renderBgpSummary(facts: BgpSummaryFacts): string {
     address: peer.address,
     version: '4',
     remoteAs: String(peer.remoteAs),
-    received: '0',
-    sent: '0',
-    tableVersion: '0',
+    received: String(peer.messages.received),
+    sent: String(peer.messages.sent),
+    tableVersion: String(peer.tableVersionSent),
     inQueue: '0',
     outQueue: '0',
     upDown: peer.isUp ? uptimeClock(peer.uptimeSec) : 'never',
-    state: peer.isUp ? String(peer.prefixesReceived) : peer.state,
+    state: peer.isUp
+      ? String(peer.prefixesReceived).padStart(BGP_STATE_WIDTH)
+      : ` ${peer.state}`.padEnd(BGP_STATE_WIDTH),
   }));
 
   lines.push(...renderTable(rows, [
-    { header: 'Neighbor', width: 16, value: row => row.address },
-    { header: 'V', width: 1, value: row => row.version },
+    { header: 'Neighbor', width: 13, headerWidth: 16, value: row => row.address },
+    { header: 'V', width: 3, headerWidth: 1, align: 'right', value: row => row.version },
     { header: 'AS', width: 11, align: 'right', value: row => row.remoteAs },
     { header: 'MsgRcvd', width: 8, align: 'right', value: row => row.received },
     { header: 'MsgSent', width: 8, align: 'right', value: row => row.sent },
     { header: 'TblVer', width: 9, align: 'right', value: row => row.tableVersion },
     { header: 'InQ', width: 5, align: 'right', value: row => row.inQueue },
     { header: 'OutQ', width: 5, align: 'right', value: row => row.outQueue },
-    { header: 'Up/Down', width: 9, align: 'right', value: row => row.upDown },
-    { header: 'State/PfxRcd', width: 13, align: 'right', value: row => row.state },
+    {
+      header: 'Up/Down', width: 9, headerWidth: 8,
+      align: 'right', value: row => row.upDown,
+    },
+    {
+      header: 'State/PfxRcd', width: BGP_STATE_WIDTH, headerWidth: 14,
+      align: 'right', value: row => row.state,
+    },
   ], FIXED_TABLE));
 
   lines.push('', `Total number of neighbors ${facts.neighbours.length}`);
   return lines.join('\n');
 }
 
+const BGP_NEIGHBOR_TABLE = 'VRF 0 neighbor table:';
+const BGP_VERSION = 4;
+
 export function renderBgpNeighbors(facts: BgpSummaryFacts): string {
   if (facts.neighbours.length === 0) return 'No BGP neighbors configured.';
 
-  const lines: string[] = [];
+  const lines: string[] = [BGP_NEIGHBOR_TABLE];
   for (const peer of facts.neighbours) {
     lines.push(
       `BGP neighbor is ${peer.address}, remote AS ${peer.remoteAs},`
       + ` local AS ${facts.localAs}, ${peer.remoteAs === facts.localAs ? 'internal' : 'external'} link`,
+    );
+    if (peer.remoteRouterId.length > 0) {
+      lines.push(`  BGP version ${BGP_VERSION}, remote router ID ${peer.remoteRouterId}`);
+    }
+    lines.push(
       `  BGP state = ${peer.state}${peer.isUp ? `, up for ${uptimeClock(peer.uptimeSec)}` : ''}`,
       `  Local router ID ${facts.routerId}`,
+      `  Received ${peer.messages.received} messages,`
+      + ` ${peer.messages.notificationsReceived} notifications, 0 in queue`,
+      `  Sent ${peer.messages.sent} messages,`
+      + ` ${peer.messages.notificationsSent} notifications, 0 in queue`,
       '',
     );
   }
@@ -343,32 +447,28 @@ function groupLeasesByInterface<T extends { iface: string }>(
   return byInterface;
 }
 
+const LEASE_TABLE: TableStyle = { ...FIXED_TABLE, indent: '  ' };
+
 export function renderDhcpLeases(
   leases: ReadonlyArray<{
-    iface: string; ip: string; mac: string; expiresAt: number; serverId: string;
+    iface: string; ip: string; mac: string; hostName: string; expiresAt: number;
   }>,
+  expiry: (at: number) => string,
 ): string {
   if (leases.length === 0) return '';
 
   const lines: string[] = [];
   for (const [iface, bucket] of groupLeasesByInterface(leases)) {
     lines.push(iface);
-    const rows = bucket.map(lease => ({
-      ip: lease.ip,
-      mac: lease.mac,
-      hostname: '',
-      vci: '',
-      serverId: lease.serverId,
-      expiry: new Date(lease.expiresAt).toUTCString(),
-    }));
-    lines.push(...renderTable(rows, [
-      { header: 'IP', width: 16, value: row => row.ip },
-      { header: 'MAC-Address', width: 19, value: row => row.mac },
-      { header: 'Hostname', width: 19, value: row => row.hostname },
-      { header: 'VCI', width: 17, value: row => row.vci },
-      { header: 'SERVER-ID', width: 10, value: row => row.serverId },
-      { header: 'Expiry', width: 0, value: row => row.expiry },
-    ], FIXED_TABLE).map(line => `    ${line}`));
+    lines.push(...renderTable(bucket, [
+      { header: 'IP', width: 14, value: lease => lease.ip },
+      { header: 'MAC-Address', width: 24, value: lease => lease.mac },
+      { header: 'Hostname', width: 20, value: lease => lease.hostName },
+      { header: 'VCI', width: 20, value: () => '' },
+      { header: 'SSID', width: 20, value: () => '' },
+      { header: 'AP', width: 20, value: () => '' },
+      { header: 'Expiry', width: 0, value: lease => expiry(lease.expiresAt) },
+    ], LEASE_TABLE));
   }
   return lines.join('\n');
 }
@@ -415,6 +515,7 @@ export function renderDhcp6Leases(
   leases: ReadonlyArray<{
     iface: string; ip: string; duid: string; expiresAt: number; serverId: string;
   }>,
+  expiry: (at: number) => string,
 ): string {
   if (leases.length === 0) return '';
 
@@ -425,7 +526,7 @@ export function renderDhcp6Leases(
       ip: lease.ip,
       duid: lease.duid,
       serverId: lease.serverId,
-      expiry: new Date(lease.expiresAt).toUTCString(),
+      expiry: expiry(lease.expiresAt),
     }));
     lines.push(...renderTable(rows, [
       { header: 'IPv6-Address', width: 40, value: row => row.ip },

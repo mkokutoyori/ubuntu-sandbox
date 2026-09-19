@@ -48,6 +48,7 @@ export interface FirewallProfile {
   readonly displayName: string;
   readonly osName: string;
   readonly defaultVersion: string;
+  readonly model: string;
 
   readonly pipeline: PipelineByMode;
   readonly natOrder: NatPolicyOrder;
@@ -135,6 +136,7 @@ export const GENERIC_PROFILE: FirewallProfile = Object.freeze({
   displayName: 'Generic Firewall',
   osName: 'generic',
   defaultVersion: '1.0',
+  model: 'Generic Firewall',
 
   pipeline: GENERIC_PIPELINE_BY_MODE,
   natOrder: Object.freeze({

@@ -8,7 +8,7 @@
  * Extracted so a switch serving its own VLANs runs the same RFC 2131
  * server path a router does, rather than a second copy of it.
  */
-import { DHCPPacket } from './DHCPPacket';
+import { DHCPPacket, DHCP_OPTION } from './DHCPPacket';
 import type { DHCPServer } from './DHCPServer';
 import type { DHCPDiscoverParams, DHCPOfferResult } from './types';
 
@@ -37,6 +37,11 @@ function offerPacket(pkt: DHCPPacket, offer: DHCPOfferResult): DHCPPacket {
   });
 }
 
+function clientHostName(pkt: DHCPPacket): string | undefined {
+  const raw = pkt.getOption(DHCP_OPTION.HOST_NAME);
+  return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+}
+
 /**
  * Returns the packet to send back, or null when the request needs no
  * reply (RELEASE, DECLINE, or no address available).
@@ -49,6 +54,7 @@ export function buildDhcpServerReply(pkt: DHCPPacket, ctx: DhcpServeContext): DH
   if (type === 'DHCPDISCOVER') {
     const params: DHCPDiscoverParams = {
       clientMAC: pkt.chaddr, xid: pkt.xid,
+      hostName: clientHostName(pkt),
       clientIdentifier: pkt.chaddr, parameterRequestList: [],
       giaddr, localGatewayIP: giaddr ? undefined : ctx.localGatewayIP,
     };
@@ -70,6 +76,7 @@ export function buildDhcpServerReply(pkt: DHCPPacket, ctx: DhcpServeContext): DH
     const result = server.processRequestWithNak({
       clientMAC: pkt.chaddr, xid: pkt.xid,
       requestedIP: String(pkt.getOption(50) ?? pkt.ciaddr),
+      hostName: clientHostName(pkt),
       clientIdentifier: pkt.chaddr,
       serverIdentifier: String(pkt.getOption(54) ?? ''),
       giaddr,

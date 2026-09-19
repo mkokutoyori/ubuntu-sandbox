@@ -34,6 +34,11 @@ import {
 } from '../../core/IcmpErrors';
 import { fragmentIPv4, IPV4_FLAG_DF } from '../../core/Ipv4Fragmentation';
 import { FragmentReassembly } from './l3/FragmentReassembly';
+import {
+  INGRESS_INTERFACE_DEFAULTS,
+  type IngressInterfaceOptions, type IngressInterfaceOptionsReader,
+} from './l3/IngressInterfaceOptions';
+import { isIPv4Fragment } from '../../core/Ipv4Fragmentation';
 import { SystemClock } from '../../core/SystemClock';
 import { SystemLoad, type MemoryWorkload } from './health/SystemLoad';
 import { conserveLogDraft } from './health/ConserveEvent';
@@ -225,6 +230,8 @@ function frameBytes(frame: EthernetFrame): number {
 const ICMP_ERROR_TTL = 64;
 const DEFAULT_INTERFACE_MTU = 1500;
 
+export type RebootReason = 'power cycle' | 'warm reboot';
+
 export class Firewall extends Equipment {
   private readonly logDisk = new LogDisk();
   private readonly savedConfig = new SavedConfiguration();
@@ -242,6 +249,8 @@ export class Firewall extends Equipment {
   private readonly vdomLinks: VdomLinkTable;
   private readonly bridges = new Map<string, BridgeFdb>();
   private readonly fragments = new FragmentReassembly();
+  private ingressOptions: IngressInterfaceOptionsReader =
+    () => INGRESS_INTERFACE_DEFAULTS;
 
   private readonly ipv6 = new FirewallIpv6({
     id: this.id,
@@ -288,7 +297,8 @@ export class Firewall extends Equipment {
   private configSnapshot?: () => string;
   private readonly proxyArp = new ProxyArpTable();
   private readonly adminSessions = new AdminSessionTable();
-  private readonly fortiguard = new FortiGuardDatabases();
+  private rebootReason: RebootReason = 'power cycle';
+  private readonly fortiguard = new FortiGuardDatabases({ now: () => this.now() });
   private readonly arp: ArpService;
   private readonly registry = new PipelineStageRegistry();
   private readonly pipelines: PipelineCache;
@@ -484,6 +494,7 @@ export class Firewall extends Equipment {
         if (!finding.log) return;
         this.trafficLogger?.onDosAnomaly?.(finding, iface, packet);
       },
+      ingressOptions: (iface) => this.ingressOptions(iface),
       bridgedWith: (ingress, egress) => this.sameSwitchInterface(ingress, egress),
       intraSwitchPolicy: (ingress) =>
         this.switchGroups.groupOf(ingress)?.intraSwitchPolicy,
@@ -532,6 +543,11 @@ export class Firewall extends Equipment {
       certificates: () => this.getCertificateStore(),
       remoteAuthenticate: (s1, u, p) => this.remoteAuthenticate(s1, u, p),
       serial: () => this.serialNumber(),
+      cpuStates: () => this.getSystemLoad().cpuStates(),
+      memoryPercent: () => {
+        const memory = this.getSystemLoad().memory();
+        return Math.round((memory.usedKib / memory.totalKib) * 100);
+      },
       port: (iface) => this.getPort(iface),
       ports: () => [...this.getPorts().values()],
       sendArpAware: (iface, ipPkt, nextHopIP) =>
@@ -688,6 +704,14 @@ export class Firewall extends Equipment {
   rebootNow(): void {
     this.powerOff();
     this.powerOn();
+    this.rebootReason = 'warm reboot';
+  }
+
+  lastRebootReason(): RebootReason { return this.rebootReason; }
+
+  powerOn(): void {
+    super.powerOn();
+    this.rebootReason = 'power cycle';
   }
 
   private resolveEgress(destination: string): FirewallPingEgress | null {
@@ -784,6 +808,14 @@ export class Firewall extends Equipment {
   });
 
   getDnsServer(): FirewallDnsServer { return this.dnsServer; }
+
+  bindIngressInterfaceOptions(reader: IngressInterfaceOptionsReader): void {
+    this.ingressOptions = reader;
+  }
+
+  ingressInterfaceOptions(iface: string): IngressInterfaceOptions {
+    return this.ingressOptions(iface);
+  }
 
   listL3Interfaces(): readonly import('./l3/InterfaceTable').L3Interface[] {
     return this.interfaces.all();
@@ -2093,6 +2125,12 @@ export class Firewall extends Equipment {
   ): void {
     if (!packet || packet.type !== 'ipv4') return;
     if (ipv4HeaderProblem(packet)) return;
+
+    if (isIPv4Fragment(packet)) {
+      const options = this.ingressOptions(portName);
+      if (options.dropFragment) return;
+      if (options.dropOverlappedFragment && this.fragments.overlaps(packet)) return;
+    }
 
     const recolle = this.fragments.accept(packet, this.services.now(), portName);
     if (recolle === null) return;

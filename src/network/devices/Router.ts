@@ -46,6 +46,7 @@ import { deviceClockSource, SEVERITY_NAMES } from './inspection/config/LoggingCo
 import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import type { VtyLineConfig } from './router/vty/VtyLineConfig';
+import { vtyLoginModeOf } from './router/vty/VtyLineConfig';
 import { VtyIncomingPolicy, type VtyAdmissionVerdict, type VtyTransportKind } from './router/vty/VtyIncomingPolicy';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { isInteractionPlanner } from '@/shell/interaction/CommandInteraction';
@@ -1063,12 +1064,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private resolveVtyLoginMode(): 'none' | 'local' | 'aaa' | 'password' {
-    const block = this.blocVtyCourant();
-    if (!block) return 'none';
-    if (block.login) return block.login;
-    if (block.authenticationMode === 'aaa') return 'aaa';
-    if (block.authenticationMode === 'password') return 'password';
-    return 'none';
+    return vtyLoginModeOf(this.blocVtyCourant());
   }
 
   /** Header printed above the telnet credential prompts — IOS wording by default. */
@@ -1626,19 +1622,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   } {
     const shell = this.createShell();
     shell.beginExecSession?.(this.resolveVtyExecLevel(user), user);
-    // A vendor CLI's exit word unwinds one mode at a time and, at the
-    // top level, logs the VTY line out. The shell owns that state, so
-    // the logout is detected here — an exit verb that leaves the prompt
-    // unchanged means there was no mode left to pop
-    // (docs/PRD-SSH-Unification.md §4bis B4).
-    const EXIT_VERBS = /^(exit|quit|logout)$/i;
     let ended = false;
     return {
       execute: (rawInput: string) => {
-        const before = shell.getPrompt(this);
         const result = shell.execute(this, rawInput);
         const settle = (out: string): string => {
-          ended = EXIT_VERBS.test(rawInput.trim()) && shell.getPrompt(this) === before;
+          ended = shell.execSessionClosed?.() === true;
           return out;
         };
         return result instanceof Promise ? result.then(settle) : settle(result);

@@ -792,9 +792,9 @@ describe('Cisco IOS arp commands', () => {
     // Clear
     await r1.executeCommand('clear arp-cache');
 
-    // Verify table is empty
     output = await r1.executeCommand('show arp');
-    expect(output).toContain('No ARP entries');
+    expect(output).not.toContain('10.0.0.10');
+    expect(output).toContain('10.0.0.1');
   });
 
   it('clear arp-cache should not remove static entries', async () => {
@@ -811,8 +811,9 @@ describe('Cisco IOS arp commands', () => {
 
     // Static should remain
     const output = await r1.executeCommand('show arp');
-    expect(output).toContain('10.0.0.50');
-    expect(output).toContain('static');
+    const ligne = output.split('\n').find(l => l.includes('10.0.0.50')) ?? '';
+    expect(ligne.slice(31, 46).trim()).toBe('-');
+    expect(ligne.slice(64, 74).trim()).toBe('ARPA');
   });
 
   // ─── arp <ip> <mac> arpa (config mode) ─────────────────────────
@@ -834,8 +835,9 @@ describe('Cisco IOS arp commands', () => {
     expect(result).toBe('');
 
     const output = await r1.executeCommand('show arp');
-    expect(output).toContain('10.0.0.50');
-    expect(output).toContain('static');
+    const ligne = output.split('\n').find(l => l.includes('10.0.0.50')) ?? '';
+    expect(ligne.slice(31, 46).trim()).toBe('-');
+    expect(ligne.slice(64, 74).trim()).toBe('ARPA');
   });
 
   it('arp command should accept Cisco MAC format (xxxx.xxxx.xxxx)', async () => {
@@ -977,8 +979,9 @@ describe('Cisco Switch arp commands', () => {
     expect(result).toBe('');
 
     const output = await sw.executeCommand('show arp');
-    expect(output).toContain('10.0.0.50');
-    expect(output).toContain('static');
+    const ligne = output.split('\n').find(l => l.includes('10.0.0.50')) ?? '';
+    expect(ligne.slice(31, 46).trim()).toBe('-');
+    expect(ligne.slice(64, 74).trim()).toBe('ARPA');
   });
 
   it('no arp should remove a static ARP entry on switch', async () => {

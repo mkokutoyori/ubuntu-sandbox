@@ -39,9 +39,11 @@ export interface InterfaceStatusRow {
   duplex: string; speed: string; type: string;
 }
 
+export const INTERFACE_STATUS_NAME_WIDTH = 18;
+
 export const INTERFACE_STATUS_COLUMNS: ReadonlyArray<TableColumn<InterfaceStatusRow>> = [
   { header: 'Port', width: 9, value: (r) => r.port },
-  { header: 'Name', width: 18, value: (r) => r.name },
+  { header: 'Name', width: INTERFACE_STATUS_NAME_WIDTH, value: (r) => r.name },
   { header: 'Status', width: 12, value: (r) => r.status },
   { header: 'Vlan', width: 10, value: (r) => r.vlan },
   { header: 'Duplex', width: 6, align: 'right', value: (r) => r.duplex },
@@ -51,6 +53,27 @@ export const INTERFACE_STATUS_COLUMNS: ReadonlyArray<TableColumn<InterfaceStatus
 
 /** Un seul blanc de séparation, les largeurs ci-dessus ne le portant pas. */
 export const INTERFACE_STATUS_STYLE: TableStyle = { gap: 1, rule: false };
+
+export interface ArpRow {
+  protocol: string; address: string; age: string;
+  mac: string; type: string; iface: string; vrf: string;
+}
+
+export const ARP_COLUMNS: ReadonlyArray<TableColumn<ArpRow>> = [
+  { header: 'Protocol', width: 10, value: (r) => r.protocol },
+  { header: 'Address', width: 21, value: (r) => r.address },
+  { header: 'Age(min)', width: 15, value: (r) => r.age },
+  { header: 'Hardware Addr', width: 18, value: (r) => r.mac },
+  { header: 'Type', width: 10, value: (r) => r.type },
+  { header: 'Interface', width: 20, value: (r) => r.iface },
+];
+
+export const ARP_DETAIL_COLUMNS: ReadonlyArray<TableColumn<ArpRow>> = [
+  ...ARP_COLUMNS,
+  { header: 'VRF', value: (r) => r.vrf },
+];
+
+export const ARP_STYLE: TableStyle = { gap: 0, rule: false };
 
 /**
  * `show ipv6 neighbors`.

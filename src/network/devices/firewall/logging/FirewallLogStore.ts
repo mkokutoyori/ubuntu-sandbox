@@ -153,6 +153,11 @@ export class FirewallLogStore {
     return Object.freeze(matched.slice(matched.length - lines));
   }
 
+  countMatching(filter: FirewallLogFilter): number {
+    return this.records.reduce(
+      (total, record) => total + (matches(record, filter) ? 1 : 0), 0);
+  }
+
   count(): number {
     return this.records.length;
   }

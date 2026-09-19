@@ -394,11 +394,19 @@ export class LinuxSshServerContext implements ISshServerContext {
         user: userCtx.username,
         primaryKind: 'bash',
       });
+      const EXIT_WORDS = new Set(['exit', 'logout']);
       return {
         execute: async (line: string) => {
           if (subShells.active) {
             const routed = await subShells.process(line);
             return { stdout: joinLines(routed.output), stderr: '', exitCode: routed.exitCode };
+          }
+          if (EXIT_WORDS.has(line.trim().toLowerCase())) {
+            const left = device.handleExitInSession(session);
+            return {
+              stdout: left.output === '' ? '' : `${left.output}\n`,
+              stderr: '', exitCode: 0, sessionEnded: !left.inSu,
+            };
           }
           const launched = subShells.launch(line);
           if (launched) return { stdout: joinLines(launched), stderr: '', exitCode: 0 };

@@ -22,6 +22,7 @@ export const ASA_PROFILE: FirewallProfile = Object.freeze({
   displayName: 'Cisco Secure Firewall ASA',
   osName: 'asa',
   defaultVersion: '9.16(1)',
+  model: 'ASAv',
 
   pipeline: Object.freeze({ nat: ASA_PIPELINE, transparent: ASA_PIPELINE }),
   natOrder: Object.freeze({

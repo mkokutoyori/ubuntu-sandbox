@@ -124,10 +124,10 @@ export class FirewallDhcp {
   }
 
   leases(): ReadonlyArray<{
-    iface: string; ip: string; mac: string; expiresAt: number; serverId: string;
+    iface: string; ip: string; mac: string; hostName: string; expiresAt: number;
   }> {
     const found: Array<{
-      iface: string; ip: string; mac: string; expiresAt: number; serverId: string;
+      iface: string; ip: string; mac: string; hostName: string; expiresAt: number;
     }> = [];
     for (const [ip, binding] of this.server.getBindings()) {
       const scope = [...this.scopes.values()]
@@ -135,9 +135,9 @@ export class FirewallDhcp {
       found.push({
         iface: scope?.iface ?? '',
         ip,
-        mac: binding.clientId,
+        mac: new MACAddress(binding.clientId).toString(),
+        hostName: binding.hostName ?? '',
         expiresAt: binding.leaseExpiration,
-        serverId: scope?.id ?? '0',
       });
     }
     return found;

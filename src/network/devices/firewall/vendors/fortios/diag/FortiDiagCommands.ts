@@ -1,6 +1,8 @@
 import { conserveModeLines, procMeminfoLines } from './systemLoad';
 import { renderArpKernelList } from './getViews';
-import { IPv6Address, type IPv4Packet } from '../../../../../core/types';
+import {
+  IPv6Address, type IPAddress, type IPv4Packet, type SubnetMask,
+} from '../../../../../core/types';
 import type { FirewallSession } from '../../../session/SessionTable';
 import type { Firewall } from '../../../Firewall';
 import type { FirewallLogDraft } from '../../../logging/FirewallLogStore';
@@ -61,7 +63,10 @@ import { renderAutoupdateVersions } from './fortiguardRenderer';
 import { renderPolicyRoutes, type ProuteContext } from './prouteRenderer';
 import { renderRealServers, type VirtualServerView } from './realServerRenderer';
 import { renderNic, renderNicList, type NicView } from './nicRenderer';
-import { fortiLogStamp } from './timeCommands';
+import {
+  renderIfconfigList, type IfconfigAddress, type IfconfigView,
+} from './ifconfigRenderer';
+import { fortiLogStamp, fortiSystemTime } from './timeCommands';
 import {
   describeLogCategories, logFilePrefix, resolveLogCategory, typesOfLogFile,
 } from '../log/logCategories';
@@ -181,6 +186,36 @@ function nicViews(deps: FortiDiagDeps): NicView[] {
   }));
 }
 
+interface AddressedPort {
+  getIPAddress(): IPAddress | null;
+  getSubnetMask(): SubnetMask | null;
+}
+
+function ifconfigAddress(port: AddressedPort): IfconfigAddress | undefined {
+  const ip = port.getIPAddress();
+  const mask = port.getSubnetMask();
+  if (ip === null || mask === null) return undefined;
+  if (ip.isUnspecified()) return undefined;
+  return { ip, mask };
+}
+
+function ifconfigViews(deps: FortiDiagDeps): IfconfigView[] {
+  return deps.fw.getPorts().map(port => ({
+    name: port.getName(),
+    hardwareAddress: port.getMAC().toString().toUpperCase(),
+    address: ifconfigAddress(port),
+    adminUp: !port.isAdminDown(),
+    linkUp: port.isOperationallyUp(),
+    mtu: port.getMTU(),
+    counters: port.getCounters(),
+  }));
+}
+
+export function runFnsysctl(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] === 'ifconfig') return renderIfconfigList(ifconfigViews(deps));
+  return FortiMessages.unknownPath(`fnsysctl ${rest.join(' ')}`, 'fnsysctl');
+}
+
 function virtualServers(deps: FortiDiagDeps): VirtualServerView[] {
   const views: VirtualServerView[] = [];
   for (const rule of deps.fw.getNatPolicy().ordered()) {
@@ -241,7 +276,8 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
     if (tail[0] !== 'versions') {
       return FortiMessages.unknownPath(`autoupdate ${tail.join(' ')}`);
     }
-    return renderAutoupdateVersions(deps.fw.getFortiGuard().list());
+    return renderAutoupdateVersions(deps.fw.getFortiGuard().list(),
+      at => fortiSystemTime(deps.fw, at));
   }
   return FortiMessages.unknownPath(rest.join(' '));
 }
@@ -346,7 +382,10 @@ function diagnoseHa(rest: readonly string[], deps: FortiDiagDeps): string {
 
   if (rest[0] === 'status') {
     return renderHaStatus(ha, {
-      model: 'FortiGate-VM64', hostname: deps.fw.getName(), now: deps.fw.now(),
+      model: deps.fw.getProfile().model,
+      hostname: deps.fw.getName(),
+      now: deps.fw.now(),
+      localStamp: (at) => fortiLogStamp(deps.fw, at),
     });
   }
   if (rest[0] === 'checksum' && rest[1] === 'show') return renderHaChecksum(ha);
@@ -402,6 +441,8 @@ function listLogFiles(raw: string | undefined, deps: FortiDiagDeps): string {
     deps.fw, deps.fw.getLogDisk().listing(prefix, current), category.name);
 }
 
+const WHOLE_LOG_SEARCHED = 100;
+
 export function runExecuteLog(rest: readonly string[], deps: FortiDiagDeps): string {
   const view = deps.state.logFilter;
 
@@ -426,18 +467,28 @@ export function runExecuteLog(rest: readonly string[], deps: FortiDiagDeps): str
   if (rest[0] === 'filter') return setLogFilter(rest.slice(1), deps);
   if (rest[0] !== 'display') return FortiMessages.unknownPath(`log ${rest.join(' ')}`);
 
-  const records = deps.fw.getLogStore().select({
+  const selection = {
     type: view.category,
     subtype: view.subtype,
     level: view.level,
     fields: view.fields,
-    viewLines: view.viewLines,
-  });
-  if (records.length === 0) return 'No matching log data.';
+  };
+  const found = deps.fw.getLogStore().countMatching(selection);
+  const records = deps.fw.getLogStore()
+    .select({ ...selection, viewLines: view.viewLines });
+
+  const entete = [`${found} logs found.`, `${records.length} logs returned.`];
+  if (records.length === 0) return entete.join('\n');
 
   const context = deps.logContext();
   const format = deps.logFormat();
-  return records.map(record => formatLogRecord(record, format, context)).join('\n');
+  return [
+    ...entete,
+    `${WHOLE_LOG_SEARCHED.toFixed(1)}% of logs has been searched.`,
+    '',
+    ...records.map((record, index) =>
+      `${index + 1}: ${formatLogRecord(record, format, context)}`),
+  ].join('\n');
 }
 
 export function deniedLog(

@@ -49,6 +49,37 @@ export interface HaSyncedSession {
   readonly policyId?: string;
 }
 
+export interface HaTrafficCounters {
+  readonly bytes: number;
+  readonly packets: number;
+  readonly dropped: number;
+  readonly errors: number;
+}
+
+export interface HaInterfaceStats {
+  readonly iface: string;
+  readonly medium: string;
+  readonly up: boolean;
+  readonly rx: HaTrafficCounters;
+  readonly tx: HaTrafficCounters;
+}
+
+export interface HaMemberUsage {
+  readonly sessions: number;
+  readonly cpuUser: number;
+  readonly cpuNice: number;
+  readonly cpuSystem: number;
+  readonly cpuIdle: number;
+  readonly memoryPercent: number;
+  readonly heartbeat: readonly HaInterfaceStats[];
+  readonly monitored: readonly HaInterfaceStats[];
+}
+
+export const NO_MEMBER_USAGE: HaMemberUsage = Object.freeze({
+  sessions: 0, cpuUser: 0, cpuNice: 0, cpuSystem: 0, cpuIdle: 100,
+  memoryPercent: 0, heartbeat: Object.freeze([]), monitored: Object.freeze([]),
+});
+
 export interface HaHeartbeat {
   readonly type: 'fgcp-heartbeat';
   readonly groupId: number;
@@ -66,6 +97,7 @@ export interface HaHeartbeat {
   readonly sessionPickup: boolean;
   readonly steppingDown: boolean;
   readonly sessions: readonly HaSyncedSession[];
+  readonly usage: HaMemberUsage;
 }
 
 export type HaCommandKind =
@@ -111,6 +143,7 @@ export interface HaPeer {
   configurationDigest: string;
   silentTicks: number;
   lastSeenAt: number;
+  usage: HaMemberUsage;
 }
 
 export interface HaCandidate {

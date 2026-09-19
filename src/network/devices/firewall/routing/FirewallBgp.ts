@@ -1,6 +1,6 @@
 import { IPAddress, SubnetMask } from '../../../core/types';
 import { ipToUint32, tryIpToUint32, prefixLengthToMaskUint32 } from '../../../core/ip';
-import { BGPEngine, type BgpPeerLink } from '../../../bgp/BGPEngine';
+import { BGPEngine, type BgpPeerLink, type BgpNeighborCfg } from '../../../bgp/BGPEngine';
 import { BGP_PORT } from '../../../bgp/messages';
 import { bgpTransport } from '../../../bgp/bgpTransport';
 import type { TcpStack } from '../../../tcp/TcpStack';
@@ -34,6 +34,20 @@ export interface BgpClearScope {
   readonly value?: string;
 }
 
+function sameRouterIdentity(
+  previous: BgpConfiguration, config: BgpConfiguration,
+): boolean {
+  return previous.asn === config.asn && previous.routerId === config.routerId;
+}
+
+const NO_TABLE_COUNTS = Object.freeze({
+  version: 0, asPathEntries: 0, communityEntries: 0,
+});
+
+const NO_MESSAGES = Object.freeze({
+  received: 0, sent: 0, notificationsReceived: 0, notificationsSent: 0,
+});
+
 export class FirewallBgp {
   private engine: BGPEngine | null = null;
   private config: BgpConfiguration = BGP_DEFAULTS;
@@ -42,11 +56,18 @@ export class FirewallBgp {
   constructor(private readonly deps: FirewallBgpDeps) {}
 
   apply(config: BgpConfiguration): string | undefined {
+    const previous = this.config;
     this.config = config;
     if (!config.enabled) {
       this.engine?.shutdownTimers();
       this.engine = null;
       this.deps.removeRoutes();
+      return undefined;
+    }
+
+    const live = this.engine;
+    if (live !== null && previous.enabled && sameRouterIdentity(previous, config)) {
+      this.reconfigure(live, previous, config);
       return undefined;
     }
 
@@ -60,7 +81,29 @@ export class FirewallBgp {
 
     this.engine = engine;
     this.listen();
-    engine.enable({
+    engine.enable(this.engineConfig(config));
+    this.installRoutes();
+    return undefined;
+  }
+
+  private reconfigure(
+    engine: BGPEngine, previous: BgpConfiguration, config: BgpConfiguration,
+  ): void {
+    const avant = new Map(previous.neighbours.map(peer => [peer.ip, peer.remoteAs]));
+    engine.enable(this.engineConfig(config));
+    engine.resetPeers((ip, cfg) => {
+      const ancien = avant.get(ip);
+      return ancien !== undefined && ancien !== cfg.remoteAs;
+    });
+    this.installRoutes();
+  }
+
+  private engineConfig(config: BgpConfiguration): {
+    asn: number; routerId: string;
+    networks: Array<{ network: string; mask: string }>;
+    neighbors: Map<string, BgpNeighborCfg>;
+  } {
+    return {
       asn: config.asn,
       routerId: config.routerId.length > 0 ? config.routerId : this.derivedRouterId(),
       networks: config.networks.map(network => ({
@@ -69,9 +112,7 @@ export class FirewallBgp {
       neighbors: new Map(config.neighbours.map(peer => [peer.ip, {
         ip: peer.ip, remoteAs: peer.remoteAs, activated: true, weight: peer.weight,
       }])),
-    });
-    this.installRoutes();
-    return undefined;
+    };
   }
 
   getEngine(): BGPEngine | null { return this.engine; }
@@ -95,9 +136,13 @@ export class FirewallBgp {
 
   summaryFacts(): BgpSummaryFacts {
     const live = new Map(this.neighbours().map(peer => [peer.address, peer]));
+    const table = this.engine?.bgpTableCounts() ?? NO_TABLE_COUNTS;
     return {
       routerId: this.config.routerId.length > 0 ? this.config.routerId : '0.0.0.0',
       localAs: this.config.asn,
+      tableVersion: table.version,
+      asPathEntries: table.asPathEntries,
+      communityEntries: table.communityEntries,
       neighbours: this.config.neighbours.map(peer => {
         const seen = live.get(peer.ip);
         return {
@@ -106,7 +151,10 @@ export class FirewallBgp {
           state: seen?.isUp ? 'Established' : (seen?.state ?? 'Idle'),
           isUp: seen?.isUp === true,
           uptimeSec: seen?.uptimeSec ?? 0,
-          prefixesReceived: 0,
+          prefixesReceived: this.engine?.prefixesReceivedFrom(peer.ip) ?? 0,
+          remoteRouterId: this.engine?.remoteRouterIdOf(peer.ip) ?? '',
+          messages: this.engine?.messageCountsFor(peer.ip) ?? NO_MESSAGES,
+          tableVersionSent: this.engine?.tableVersionSentTo(peer.ip) ?? 0,
         };
       }),
     };

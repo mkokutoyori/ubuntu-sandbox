@@ -23,6 +23,8 @@
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
+import type { ListFormat } from './LinuxIptablesManager';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 
 // Re-export types from LinuxIptablesManager for backward compatibility
 export type { FirewallVerdict, PacketInfo } from './LinuxIptablesManager';
@@ -58,6 +60,68 @@ type Action = 'ALLOW' | 'DENY' | 'REJECT' | 'LIMIT';
 type RuleDirection = 'in' | 'out';
 type DefaultPolicy = 'allow' | 'deny' | 'reject';
 
+type RuleWriteOutcome =
+  | 'added' | 'updated' | 'inserted' | 'deleted'
+  | 'skipped-existing' | 'skipped-inserting' | 'absent';
+
+const HOOKS = ['input', 'forward', 'output'] as const;
+
+const RAW_TABLES = ['filter', 'nat', 'mangle', 'raw'] as const;
+const RAW_TABLES6 = ['filter', 'mangle', 'raw'] as const;
+
+const BUILTIN_CHAINS: readonly string[] = ['INPUT', 'FORWARD', 'OUTPUT'];
+const BEFORE_CHAINS: readonly string[] = HOOKS.map(h => `ufw-before-${h}`);
+const AFTER_CHAINS: readonly string[] = HOOKS.map(h => `ufw-after-${h}`);
+const USER_CHAINS: readonly string[] = [
+  ...HOOKS.map(h => `ufw-user-${h}`), 'ufw-user-limit-accept', 'ufw-user-limit',
+];
+const LOGGING_CHAINS: readonly string[] = [
+  ...HOOKS.flatMap(h => [
+    `ufw-before-logging-${h}`, `ufw-user-logging-${h}`, `ufw-after-logging-${h}`,
+  ]),
+  'ufw-logging-allow', 'ufw-logging-deny',
+];
+
+function limitRules(
+  spec: Partial<Parameters<typeof LinuxIptablesManager.createRule>[0]>,
+  v6: boolean,
+): ReturnType<typeof LinuxIptablesManager.createRule>[] {
+  const listOptions = (): [string, string][] => [
+    ['--name', 'DEFAULT'],
+    ['--mask', v6 ? 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff' : '255.255.255.255'],
+    ['--rsource', ''],
+  ];
+  const isNew = (): { module: string; options: Map<string, string> } =>
+    ({ module: 'conntrack', options: new Map([['--ctstate', 'NEW']]) });
+
+  const record = LinuxIptablesManager.createRule({ ...spec });
+  record.matches.push(isNew(), {
+    module: 'recent',
+    options: new Map<string, string>([['--set', ''], ...listOptions()]),
+  });
+
+  const reject = LinuxIptablesManager.createRule({ ...spec, target: 'ufw-user-limit' });
+  reject.matches.push(isNew(), {
+    module: 'recent',
+    options: new Map<string, string>([
+      ['--update', ''], ['--seconds', '30'], ['--hitcount', '6'], ...listOptions(),
+    ]),
+  });
+
+  const accept = LinuxIptablesManager.createRule({ ...spec, target: 'ufw-user-limit-accept' });
+  return [record, reject, accept];
+}
+
+const LIVE_RULE_MESSAGE: Readonly<Record<RuleWriteOutcome, string>> = {
+  added: 'Rule added',
+  updated: 'Rule updated',
+  inserted: 'Rule inserted',
+  deleted: 'Rule deleted',
+  'skipped-existing': 'Skipping adding existing rule',
+  'skipped-inserting': 'Skipping inserting existing rule',
+  absent: 'Could not delete non-existent rule',
+};
+
 interface UfwRule {
   action: Action;
   direction: RuleDirection;
@@ -81,14 +145,10 @@ export class LinuxFirewallManager {
   private defaultIncoming: DefaultPolicy = 'deny';
   private defaultOutgoing: DefaultPolicy = 'allow';
   private defaultRouted: DefaultPolicy | 'disabled' = 'disabled';
+  private defaultApplication: DefaultPolicy | 'skip' = 'skip';
   // Real ufw ships ufw.conf with LOGLEVEL=low from the first install.
   private logging = true;
   private loggingLevel = 'low';
-
-  // Rate limiting state: key = "srcIP:ruleIndex" → timestamps of recent hits
-  private rateLimitHits: Map<string, number[]> = new Map();
-  private readonly RATE_LIMIT_MAX = 6;      // Max connections
-  private readonly RATE_LIMIT_WINDOW = 30000; // 30 seconds (ms)
 
   constructor(vfs: VirtualFileSystem | undefined, iptables: LinuxIptablesManager, ip6tables: LinuxIptablesManager) {
     if (vfs) this.vfs = vfs;
@@ -358,33 +418,33 @@ export class LinuxFirewallManager {
         outIf = (ufwRule.iface && ufwRule.direction === 'out') ? ufwRule.iface : '';
       }
 
-      const rule = LinuxIptablesManager.createRule({
+      const spec = {
         protocol: p || '',
         source: ufwRule.from !== 'Anywhere' ? ufwRule.from : '',
         destination: ufwRule.to !== 'Anywhere' ? ufwRule.to : '',
         inInterface: inIf,
         outInterface: outIf,
         dport: portNum,
-        target,
-      });
+      };
+      const commented = (rule: ReturnType<typeof LinuxIptablesManager.createRule>) => {
+        if (ufwRule.comment) {
+          rule.matches.push({
+            module: 'comment',
+            options: new Map([['--comment', ufwRule.comment]]),
+          });
+        }
+        return rule;
+      };
 
-      // Add comment extension if present
-      if (ufwRule.comment) {
-        rule.matches.push({
-          module: 'comment',
-          options: new Map([['--comment', ufwRule.comment]]),
-        });
-      }
-
-      // For LIMIT rules, add limit match extension
       if (ufwRule.action === 'LIMIT') {
-        rule.matches.push({
-          module: 'limit',
-          options: new Map([['--limit', '6/minute'], ['--limit-burst', '6']]),
-        });
+        for (const rule of limitRules(spec, ufwRule.v6)) {
+          ipt.appendRule('filter', chain, commented(rule));
+        }
+        continue;
       }
 
-      ipt.appendRule('filter', chain, rule);
+      ipt.appendRule('filter', chain,
+        commented(LinuxIptablesManager.createRule({ ...spec, target })));
     }
   }
 
@@ -414,38 +474,6 @@ export class LinuxFirewallManager {
     this.addRejectCatchAll();
   }
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Rate limiting (managed at UFW level since iptables limit module
-  // is stateless — we need stateful per-source tracking)
-  // ═══════════════════════════════════════════════════════════════════
-
-  /**
-   * Check rate limit for a given source IP and rule index.
-   * Called by the iptables manager via the rate limit callback.
-   */
-  evaluateRateLimit(srcIP: string, ruleIdx: number): boolean {
-    const key = `${srcIP}:${ruleIdx}`;
-    const now = Date.now();
-
-    let hits = this.rateLimitHits.get(key);
-    if (!hits) {
-      hits = [];
-      this.rateLimitHits.set(key, hits);
-    }
-
-    // Purge expired entries
-    const cutoff = now - this.RATE_LIMIT_WINDOW;
-    while (hits.length > 0 && hits[0] < cutoff) {
-      hits.shift();
-    }
-
-    if (hits.length >= this.RATE_LIMIT_MAX) {
-      return false; // Rate limit exceeded
-    }
-
-    hits.push(now);
-    return true; // Under limit
-  }
 
   // ═══════════════════════════════════════════════════════════════════
   // Subcommands
@@ -482,13 +510,28 @@ export class LinuxFirewallManager {
     this.defaultRouted = 'disabled';
     this.logging = false;
     this.loggingLevel = 'low';
-    this.rateLimitHits.clear();
     this.syncToVfs();
     return 'Resetting all rules to installed defaults. This may disrupt existing ssh connections. Proceed with operation (y|n)? y\nBacking up \'user.rules\' to \'/etc/ufw/user.rules.20260320_000000\'\nBacking up \'before.rules\' to \'/etc/ufw/before.rules.20260320_000000\'\nBacking up \'after.rules\' to \'/etc/ufw/after.rules.20260320_000000\'\nBacking up \'user6.rules\' to \'/etc/ufw/user6.rules.20260320_000000\'\nBacking up \'before6.rules\' to \'/etc/ufw/before6.rules.20260320_000000\'\nBacking up \'after6.rules\' to \'/etc/ufw/after6.rules.20260320_000000\'';
   }
 
+  private ruleWriteMessage(outcome: RuleWriteOutcome, v6: boolean): string {
+    const wroteFile = outcome === 'added' || outcome === 'updated'
+      || outcome === 'inserted' || outcome === 'deleted';
+    const base = wroteFile && !this.enabled
+      ? 'Rules updated'
+      : LIVE_RULE_MESSAGE[outcome];
+    return v6 ? `${base} (v6)` : base;
+  }
+
+  private ruleWriteResult(outcome: RuleWriteOutcome, addsV6: boolean): string {
+    return addsV6
+      ? `${this.ruleWriteMessage(outcome, false)}\n${this.ruleWriteMessage(outcome, true)}`
+      : this.ruleWriteMessage(outcome, false);
+  }
+
   private cmdReload(): string {
     this.reconcileFromBoot();
+    if (!this.enabled) return 'Firewall not enabled (skipping reload)';
     this.syncToVfs();
     return 'Firewall reloaded';
   }
@@ -666,7 +709,7 @@ export class LinuxFirewallManager {
     if (verbose) {
       lines.push(`Logging: ${this.logging ? `on (${this.loggingLevel})` : 'off'}`);
       lines.push(`Default: ${this.defaultIncoming} (incoming), ${this.defaultOutgoing} (outgoing), ${this.defaultRouted} (routed)`);
-      lines.push(`New profiles: skip`);
+      lines.push(`New profiles: ${this.defaultApplication}`);
       lines.push('');
     }
 
@@ -722,13 +765,15 @@ export class LinuxFirewallManager {
       this.defaultIncoming = policy;
       if (this.enabled) this.applyDefaultPolicies();
       this.syncToVfs();
-      return `Default incoming policy changed to '${policy}'`;
+      return `Default incoming policy changed to '${policy}'`
+        + '\n(be sure to update your rules accordingly)';
     }
     if (direction === 'outgoing') {
       this.defaultOutgoing = policy;
       if (this.enabled) this.applyDefaultPolicies();
       this.syncToVfs();
-      return `Default outgoing policy changed to '${policy}'`;
+      return `Default outgoing policy changed to '${policy}'`
+        + '\n(be sure to update your rules accordingly)';
     }
     if (direction === 'routed') {
       this.defaultRouted = policy;
@@ -737,7 +782,8 @@ export class LinuxFirewallManager {
         this.rebuildIptablesRules();
       }
       this.syncToVfs();
-      return `Default routed policy changed to '${policy}'`;
+      return `Default routed policy changed to '${policy}'`
+        + '\n(be sure to update your rules accordingly)';
     }
 
     return "ERROR: unsupported direction '" + direction + "'";
@@ -751,33 +797,33 @@ export class LinuxFirewallManager {
     const parsed = this.parseRuleArgs(action, args);
     if (typeof parsed === 'string') return parsed; // Error message
 
-    // Check for duplicates
-    const dup = this.rules.find(r =>
-      !r.v6 && r.action === parsed.action && r.port === parsed.port &&
-      r.from === parsed.from && r.to === parsed.to &&
-      r.direction === parsed.direction && r.iface === parsed.iface
-    );
-    if (dup) {
-      const addsV6 = this.ruleGetsV6(parsed);
-      return addsV6
-        ? 'Skipping adding existing rule\nSkipping adding existing rule (v6)'
-        : 'Skipping adding existing rule';
-    }
-
-    // Add IPv4 rule
-    this.rules.push({ ...parsed, v6: false });
-    // Add IPv6 duplicate if source/dest are not IPv4-specific
     const addsV6 = this.ruleGetsV6(parsed);
-    if (addsV6) {
-      this.rules.push({ ...parsed, v6: true });
+
+    const sameTarget = (r: UfwRule, v6: boolean): boolean =>
+      r.v6 === v6 && r.port === parsed.port && r.from === parsed.from
+      && r.to === parsed.to && r.direction === parsed.direction
+      && r.iface === parsed.iface && r.route === parsed.route;
+
+    const existing = this.rules.find(r => sameTarget(r, false));
+    if (existing && existing.action === parsed.action) {
+      return this.ruleWriteResult('skipped-existing', addsV6);
+    }
+    if (existing) {
+      for (const v6 of addsV6 ? [false, true] : [false]) {
+        const at = this.rules.findIndex(r => sameTarget(r, v6));
+        if (at >= 0) this.rules[at] = { ...parsed, v6 };
+      }
+      this.rebuildIptablesRules();
+      this.syncToVfs();
+      return this.ruleWriteResult('updated', addsV6);
     }
 
-    // Rebuild iptables rules if enabled
+    this.rules.push({ ...parsed, v6: false });
+    if (addsV6) this.rules.push({ ...parsed, v6: true });
+
     this.rebuildIptablesRules();
     this.syncToVfs();
-    return addsV6
-      ? 'Rule added\nRule added (v6)'
-      : 'Rule added';
+    return this.ruleWriteResult('added', addsV6);
   }
 
   private ruleGetsV6(rule: UfwRule): boolean {
@@ -800,6 +846,23 @@ export class LinuxFirewallManager {
       if (p1 >= p2) return `ERROR: Invalid port range '${portStr}'`;
     }
     return null; // valid
+  }
+
+  private static validAddress(addr: string): boolean {
+    const [host, mask, ...extra] = addr.split('/');
+    if (extra.length > 0 || host === undefined || host === '') return false;
+    const isV4 = IPAddress.isValid(host);
+    let isV6 = false;
+    if (!isV4) {
+      try { new IPv6Address(host); isV6 = true; } catch { isV6 = false; }
+    }
+    if (!isV4 && !isV6) return false;
+    if (mask === undefined) return true;
+    if (/^\d+$/.test(mask)) {
+      const bits = Number(mask);
+      return bits >= 0 && bits <= (isV6 ? 128 : 32);
+    }
+    return !isV6 && IPAddress.isValid(mask);
   }
 
   private parseRuleArgs(action: Action, args: string[]): UfwRule | string {
@@ -867,6 +930,9 @@ export class LinuxFirewallManager {
     if (args[i] === 'from') {
       i++;
       if (i >= args.length) return 'ERROR: missing source address';
+      if (args[i] !== 'any' && !LinuxFirewallManager.validAddress(args[i])) {
+        return 'ERROR: Bad source address';
+      }
       from = args[i] === 'any' ? 'Anywhere' : args[i];
       i++;
     }
@@ -875,6 +941,9 @@ export class LinuxFirewallManager {
     if (i < args.length && args[i] === 'to') {
       i++; // 'to'
       if (i >= args.length) return 'ERROR: missing destination address';
+      if (args[i] !== 'any' && !LinuxFirewallManager.validAddress(args[i])) {
+        return 'ERROR: Bad destination address';
+      }
       to = args[i] === 'any' ? 'Anywhere' : args[i];
       i++;
     }
@@ -1033,20 +1102,17 @@ export class LinuxFirewallManager {
       r.from === rule.from && r.to === rule.to && r.iface === inIface &&
       (r as any).outIface === outIface
     );
-    if (dup) return 'Skipping adding existing rule';
-
-    // Add IPv4 rule
-    this.rules.push({ ...rule, v6: false });
     const addsV6 = this.ruleGetsV6(rule);
+    if (dup) return this.ruleWriteResult('skipped-existing', addsV6);
+
+    this.rules.push({ ...rule, v6: false });
     if (addsV6) {
       this.rules.push({ ...rule, v6: true });
     }
 
     this.rebuildIptablesRules();
     this.syncToVfs();
-    return addsV6
-      ? 'Rule added\nRule added (v6)'
-      : 'Rule added';
+    return this.ruleWriteResult('added', addsV6);
   }
 
   // ─── Delete rule ─────────────────────────────────────────────────
@@ -1059,7 +1125,7 @@ export class LinuxFirewallManager {
     if (!isNaN(num) && args.length === 1) {
       const ordered = this.getOrderedRules();
       if (num < 1 || num > ordered.length) {
-        return 'ERROR: could not find a rule matching that number';
+        return `ERROR: Could not find rule '${num}'`;
       }
       const target = ordered[num - 1];
       // If deleting a v4 rule, also remove its v6 counterpart
@@ -1076,13 +1142,13 @@ export class LinuxFirewallManager {
         });
         this.rebuildIptablesRules();
         this.syncToVfs();
-        return hasV6 ? 'Rule deleted\nRule deleted (v6)' : 'Rule deleted';
+        return this.ruleWriteResult('deleted', hasV6);
       }
       // Deleting a v6 rule directly (only removes that one)
       this.rules = this.rules.filter(r => r !== target);
       this.rebuildIptablesRules();
       this.syncToVfs();
-      return 'Rule deleted (v6)';
+      return this.ruleWriteMessage('deleted', true);
     }
 
     // ufw delete allow|deny|reject <port>
@@ -1102,11 +1168,11 @@ export class LinuxFirewallManager {
           r.from === parsed.from && r.direction === parsed.direction && r.iface === parsed.iface)
       );
       if (this.rules.length === before) {
-        return 'Could not delete non-existent rule';
+        return this.ruleWriteResult('absent', hadV6);
       }
       this.rebuildIptablesRules();
       this.syncToVfs();
-      return hadV6 ? 'Rule deleted\nRule deleted (v6)' : 'Rule deleted';
+      return this.ruleWriteResult('deleted', hadV6);
     }
 
     return 'ERROR: invalid delete syntax';
@@ -1144,16 +1210,15 @@ export class LinuxFirewallManager {
     // Find the actual index in the array
     const insertIdx = pos <= v4Rules.length ? v4Rules[pos - 1] : this.rules.length;
 
-    // Insert v4 rule
+    const addsV6 = this.ruleGetsV6(parsed);
     this.rules.splice(insertIdx, 0, { ...parsed, v6: false });
-    // Insert v6 rule right after if applicable
-    if (this.ruleGetsV6(parsed)) {
+    if (addsV6) {
       this.rules.splice(insertIdx + 1, 0, { ...parsed, v6: true });
     }
 
     this.rebuildIptablesRules();
     this.syncToVfs();
-    return 'Rule inserted';
+    return this.ruleWriteResult('inserted', addsV6);
   }
 
   // ─── Prepend rule ───────────────────────────────────────────────
@@ -1170,16 +1235,15 @@ export class LinuxFirewallManager {
     const parsed = this.parseRuleArgs(action, ruleArgs);
     if (typeof parsed === 'string') return parsed;
 
-    // Prepend = insert at position 0
+    const addsV6 = this.ruleGetsV6(parsed);
     this.rules.unshift({ ...parsed, v6: false });
-    if (this.ruleGetsV6(parsed)) {
-      // Insert v6 right after the v4 rule
+    if (addsV6) {
       this.rules.splice(1, 0, { ...parsed, v6: true });
     }
 
     this.rebuildIptablesRules();
     this.syncToVfs();
-    return 'Rule prepended';
+    return this.ruleWriteResult('inserted', addsV6);
   }
 
   // ─── Logging ─────────────────────────────────────────────────────
@@ -1204,7 +1268,7 @@ export class LinuxFirewallManager {
     }
 
     this.syncToVfs();
-    return `Logging enabled (${this.loggingLevel})`;
+    return 'Logging enabled';
   }
 
   // ─── App profiles ────────────────────────────────────────────────
@@ -1254,7 +1318,7 @@ export class LinuxFirewallManager {
       const name = args.slice(1).join(' ');
       const profile = profiles[name];
       if (!profile) {
-        return `ERROR: Could not find a profile matching '${name}'`;
+        return `ERROR: Could not find profile '${name}'`;
       }
       return [
         `Profile: ${name}`,
@@ -1266,58 +1330,70 @@ export class LinuxFirewallManager {
       ].join('\n');
     }
 
-    return 'ERROR: invalid app command';
+    if (args[0] === 'default') {
+      const policy = args[1];
+      if (policy !== 'allow' && policy !== 'deny' && policy !== 'reject' && policy !== 'skip') {
+        return this.invalidSyntax();
+      }
+      this.defaultApplication = policy;
+      this.syncToVfs();
+      return `Default application policy changed to '${policy}'`;
+    }
+
+    if (args[0] === 'update') {
+      const name = args.slice(1).join(' ');
+      if (!profiles[name]) return `ERROR: Could not find profile '${name}'`;
+      if (!this.enabled) return '';
+      return `Rules updated for profile '${name}'\nFirewall reloaded`;
+    }
+
+    return this.invalidSyntax();
   }
 
   // ─── Show subcommands ───────────────────────────────────────────
 
   private cmdShow(args: string[]): string {
-    if (args.length === 0) return 'ERROR: wrong number of arguments';
+    if (args.length === 0) return this.invalidSyntax();
 
     switch (args[0]) {
-      case 'raw':      return this.cmdShowRaw();
-      case 'added':    return this.cmdShowAdded();
-      case 'listening': return this.cmdShowListening();
+      case 'raw':          return this.cmdShowRaw();
+      case 'builtins':     return this.cmdShowChains('builtins', BUILTIN_CHAINS);
+      case 'before-rules': return this.cmdShowChains('before', BEFORE_CHAINS);
+      case 'user-rules':   return this.cmdShowChains('user', USER_CHAINS);
+      case 'after-rules':  return this.cmdShowChains('after', AFTER_CHAINS);
+      case 'logging-rules': return this.cmdShowChains('logging', LOGGING_CHAINS);
+      case 'added':        return this.cmdShowAdded();
+      case 'listening':    return this.cmdShowListening();
       default:
-        return `ERROR: unsupported show command '${args[0]}'`;
+        return this.invalidSyntax();
     }
   }
 
+  private static readonly RAW_FORMAT: ListFormat =
+    { verbose: true, numeric: true, lineNumbers: false, exact: true };
+
   private cmdShowRaw(): string {
-    const lines: string[] = [];
-    lines.push('IPV4 (raw):');
-    lines.push('Chain ufw-user-input (1 references)');
-    lines.push(' pkts bytes target     prot opt in     out     source               destination');
-
-    const v4Rules = this.rules.filter(r => !r.v6);
-    for (const rule of v4Rules) {
-      const target = rule.action === 'ALLOW' ? 'ACCEPT' : rule.action === 'DENY' ? 'DROP' : rule.action;
-      const proto = this.extractProtoFromPort(rule.port);
-      const portNum = this.extractPortNum(rule.port);
-      const src = rule.from === 'Anywhere' ? '0.0.0.0/0' : rule.from;
-      const dst = rule.to === 'Anywhere' ? '0.0.0.0/0' : rule.to;
-      const dpt = portNum ? ` dpt:${portNum}` : '';
-      const iface = rule.iface || '*';
-      lines.push(`    0     0 ${target.padEnd(10)} ${(proto || 'all').padEnd(4)} opt ${rule.direction === 'in' ? iface.padEnd(6) : '*'.padEnd(6)} ${rule.direction === 'out' ? iface.padEnd(6) : '*'.padEnd(6)} ${src.padEnd(20)} ${dst}${dpt}`);
+    const parts: string[] = ['IPV4 (raw):'];
+    for (const table of RAW_TABLES) {
+      const body = this.iptables.listTable(table, LinuxFirewallManager.RAW_FORMAT);
+      if (body) parts.push(body);
     }
-
-    lines.push('');
-    lines.push('Chain ufw-user-output (1 references)');
-    lines.push(' pkts bytes target     prot opt in     out     source               destination');
-
-    const v4Out = v4Rules.filter(r => r.direction === 'out');
-    for (const rule of v4Out) {
-      const target = rule.action === 'ALLOW' ? 'ACCEPT' : rule.action === 'DENY' ? 'DROP' : rule.action;
-      const proto = this.extractProtoFromPort(rule.port);
-      const portNum = this.extractPortNum(rule.port);
-      const src = rule.from === 'Anywhere' ? '0.0.0.0/0' : rule.from;
-      const dst = rule.to === 'Anywhere' ? '0.0.0.0/0' : rule.to;
-      const dpt = portNum ? ` dpt:${portNum}` : '';
-      const iface = rule.iface || '*';
-      lines.push(`    0     0 ${target.padEnd(10)} ${(proto || 'all').padEnd(4)} opt ${'*'.padEnd(6)} ${iface.padEnd(6)} ${src.padEnd(20)} ${dst}${dpt}`);
+    parts.push('', 'IPV6 (raw):');
+    for (const table of RAW_TABLES6) {
+      const body = this.ip6tables.listTable(table, LinuxFirewallManager.RAW_FORMAT);
+      if (body) parts.push(body);
     }
+    return parts.join('\n');
+  }
 
-    return lines.join('\n');
+  private cmdShowChains(label: string, chains: readonly string[]): string {
+    const parts: string[] = [`IPV4 (${label}):`];
+    const v4 = this.iptables.listTable('filter', LinuxFirewallManager.RAW_FORMAT, chains);
+    if (v4) parts.push(v4);
+    parts.push('', `IPV6 (${label}):`);
+    const v6 = this.ip6tables.listTable('filter', LinuxFirewallManager.RAW_FORMAT, chains);
+    if (v6) parts.push(v6);
+    return parts.join('\n');
   }
 
   private cmdShowAdded(): string {
@@ -1405,6 +1481,8 @@ export class LinuxFirewallManager {
     ].join('\n');
     this.vfs.writeFile('/etc/ufw/ufw.conf', ufwConf, 0, 0, 0o022);
 
+    this.vfs.writeFile('/etc/default/ufw', this.generateDefaults(), 0, 0, 0o022);
+
     // Write /etc/ufw/user.rules (IPv4) — the iptables-save format rules
     const v4Rules = this.rules.filter(r => !r.v6);
     this.vfs.writeFile('/etc/ufw/user.rules', this.generateIptablesRules(v4Rules, false), 0, 0, 0o022);
@@ -1421,6 +1499,56 @@ export class LinuxFirewallManager {
 
     const ip6Save = this.ip6tables.executeSave();
     this.vfs.writeFile('/etc/iptables/rules.v6', ip6Save, 0, 0, 0o022);
+  }
+
+  private static readonly CHAIN_TARGET:
+  Readonly<Record<DefaultPolicy | 'disabled', string>> = {
+    allow: 'ACCEPT', deny: 'DROP', reject: 'REJECT', disabled: 'DROP',
+  };
+
+  private generateDefaults(): string {
+    const target = (p: DefaultPolicy | 'disabled'): string =>
+      LinuxFirewallManager.CHAIN_TARGET[p];
+    return [
+      '# /etc/default/ufw',
+      '#',
+      '',
+      '# Set to yes to apply rules to support IPv6 (no means only IPv6 on loopback',
+      "# accepted). You will need to 'disable' and then 'enable' the firewall for",
+      '# the changes to take affect.',
+      'IPV6=yes',
+      '',
+      '# Set the default input policy to ACCEPT, DROP, or REJECT. Please note that if',
+      '# you change this you will most likely want to adjust your rules.',
+      `DEFAULT_INPUT_POLICY="${target(this.defaultIncoming)}"`,
+      '',
+      '# Set the default output policy to ACCEPT, DROP, or REJECT. Please note that if',
+      '# you change this you will most likely want to adjust your rules.',
+      `DEFAULT_OUTPUT_POLICY="${target(this.defaultOutgoing)}"`,
+      '',
+      '# Set the default forward policy to ACCEPT, DROP or REJECT.  Please note that',
+      '# if you change this you will most likely want to adjust your rules',
+      `DEFAULT_FORWARD_POLICY="${target(this.defaultRouted)}"`,
+      '',
+      '# Set the default application policy to ACCEPT, DROP, REJECT or SKIP. Please',
+      "# note that setting this to ACCEPT may be a security risk. See 'man ufw' for",
+      '# details',
+      `DEFAULT_APPLICATION_POLICY="${this.defaultApplication.toUpperCase()}"`,
+      '',
+      '# By default, ufw only touches its own chains. Set this to \'yes\' to have ufw',
+      '# manage the built-in chains too. Warning: setting this to \'yes\' will break',
+      '# non-ufw managed firewall rules',
+      'MANAGE_BUILTINS=no',
+      '',
+      '#',
+      '# IPT backend',
+      '#',
+      '# only enable if using iptables backend',
+      'IPT_SYSCTL=/etc/ufw/sysctl.conf',
+      '',
+      'IPT_MODULES="nf_conntrack_ftp nf_nat_ftp nf_conntrack_netbios_ns"',
+      '',
+    ].join('\n');
   }
 
   private generateIptablesRules(rules: UfwRule[], ipv6: boolean): string {
@@ -1537,6 +1665,10 @@ export class LinuxFirewallManager {
   }
 
   // ─── Usage ───────────────────────────────────────────────────────
+
+  private invalidSyntax(): string {
+    return `ERROR: Invalid syntax\n\n${this.showUsage()}`;
+  }
 
   private showUsage(): string {
     return [

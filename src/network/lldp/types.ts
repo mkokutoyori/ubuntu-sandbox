@@ -16,8 +16,33 @@ export const LLDP_PORT_ID_SUBTYPE = {
   interfaceName: 5, agentCircuitId: 6, local: 7,
 } as const;
 
+export const LLDP_INTERFACE_NUMBERING_SUBTYPE = {
+  unknown: 1, ifIndex: 2, systemPortNumber: 3,
+} as const;
+
+export const LLDP_MANAGEMENT_ADDRESS_FAMILY = { ipv4: 1, ipv6: 2 } as const;
+
 export type LldpChassisIdSubtype = keyof typeof LLDP_CHASSIS_ID_SUBTYPE;
 export type LldpPortIdSubtype = keyof typeof LLDP_PORT_ID_SUBTYPE;
+export type LldpInterfaceNumbering = keyof typeof LLDP_INTERFACE_NUMBERING_SUBTYPE;
+export type LldpManagementAddressFamily = keyof typeof LLDP_MANAGEMENT_ADDRESS_FAMILY;
+
+export interface LldpManagementAddress {
+  readonly address: IPAddress;
+  readonly family: LldpManagementAddressFamily;
+  readonly numbering: LldpInterfaceNumbering;
+  readonly interfaceNumber: number;
+}
+
+export interface LldpVlanName {
+  readonly id: number;
+  readonly name: string;
+}
+
+export interface LldpAutoNegotiation {
+  readonly supported: boolean;
+  readonly enabled: boolean;
+}
 
 export interface LldpFrame extends NetworkPdu {
   type: 'lldp';
@@ -30,7 +55,11 @@ export interface LldpFrame extends NetworkPdu {
   systemName?: string;
   systemDescription?: string;
   capabilities?: LldpCapability[];
-  managementAddresses?: string[];
+  managementAddresses?: readonly LldpManagementAddress[];
+  portVlanId?: number;
+  vlanNames?: readonly LldpVlanName[];
+  autoNegotiation?: LldpAutoNegotiation;
+  maxFrameSize?: number;
 }
 
 export interface LldpNeighborEntry {
@@ -44,7 +73,11 @@ export interface LldpNeighborEntry {
   portDescription?: string;
   remoteType: DeviceType;
   remoteCapabilities?: LldpCapability[];
-  managementAddresses?: string[];
+  managementAddresses?: readonly LldpManagementAddress[];
+  portVlanId?: number;
+  vlanNames?: readonly LldpVlanName[];
+  autoNegotiation?: LldpAutoNegotiation;
+  maxFrameSize?: number;
   learnedAtMs: number;
   ttlSec: number;
   expiresAtMs: number;

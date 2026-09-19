@@ -276,12 +276,6 @@ export function netflowInterfaceSpecs(
 
 export function buildEemNetflowArchiveInterfaceCommands(trie: CommandTrie, ctx: CiscoEemNetflowArchiveContext): void {
   const nf = () => ctx.r().getNetflowService();
-  trie.register('ip route-cache flow', 'Enable legacy NetFlow on interface', () => {
-    const i = ctx.getSelectedInterface();
-    if (i) nf().setLegacyInterfaceMode(i, 'ingress', true);
-    ctx.syncNetflowAgent?.();
-    return '';
-  });
   trie.register('ip flow ingress', 'Enable ingress NetFlow', () => {
     const i = ctx.getSelectedInterface();
     if (i) nf().setLegacyInterfaceMode(i, 'ingress', true);
@@ -585,6 +579,7 @@ export function flowMonitorSpecs(ctx: CiscoEemNetflowArchiveContext): CommandSpe
 }
 
 const CONFIG = Object.freeze(['config']);
+const CONFIG_OU_INTERFACE = Object.freeze(['config', 'config-if']);
 
 const NOM_DE_FLUX = (quoi: string): ArgumentSpec =>
   ({ name: 'nom', type: 'WORD', description: `Name of the Flexible NetFlow ${quoi}` });
@@ -685,19 +680,15 @@ export function netflowSpecs(ctx: CiscoEemNetflowArchiveContext): CommandSpec[] 
       run: (_s, args) =>
         pose(() => nf().setLegacyCacheInactiveSec(Number(args.duree))),
     },
-    /*
-     * `ip route-cache flow` active NetFlow sur toutes les interfaces
-     * d'un vrai routeur ; ici le gestionnaire n'enregistre rien. La
-     * commande reste ACCEPTEE parce qu'un import de configuration la
-     * porte, et la declarer ne la rendrait pas vraie : c'est une limite
-     * assumee, pas un oubli.
-     */
     {
       id: 'ip-route-cache-flow',
       path: ['ip', 'route-cache', 'flow'],
       description: 'Enable NetFlow on all interfaces',
-      modes: CONFIG, minPrivilege: 15,
-      run: () => '',
+      modes: CONFIG_OU_INTERFACE, minPrivilege: 15,
+      run: () => pose(() => {
+        const iface = ctx.getSelectedInterface();
+        if (iface) nf().setLegacyInterfaceMode(iface, 'ingress', true);
+      }),
     },
   ];
 }

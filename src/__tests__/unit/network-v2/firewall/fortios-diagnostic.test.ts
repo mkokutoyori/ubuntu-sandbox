@@ -114,6 +114,12 @@ function politique(sh: FortiShell, ...extra: string[]): void {
 
 beforeEach(() => { Logger.reset(); });
 
+function enregistrements(vue: string): string[] {
+  const lignes = vue.split('\n');
+  const debut = lignes.indexOf('');
+  return debut < 0 ? [] : lignes.slice(debut + 1).map(l => l.replace(/^\d+: /, ''));
+}
+
 describe('diagnose sys session', () => {
   it('rend le format complet, lu depuis la table reelle', async () => {
     const { sh, poste } = await laboratoire();
@@ -382,9 +388,11 @@ describe('les vues `get`', () => {
 
     const vu = run(sh, 'get system interface');
 
-    expect(vu).toMatch(/== \[port1\]\n\tmode: static\n\tip: 192\.168\.1\.1 255\.255\.255\.0/);
-    expect(vu).toMatch(/== \[port2\]\n\tmode: static\n\tip: 203\.0\.113\.1 255\.255\.255\.0/);
-    expect(vu).toMatch(/\tstatus: up/);
+    expect(vu).toMatch(
+      /== \[ port1 \]\nname: port1 {3}mode: static {4}ip: 192\.168\.1\.1 255\.255\.255\.0/);
+    expect(vu).toMatch(
+      /== \[ port2 \]\nname: port2 {3}mode: static {4}ip: 203\.0\.113\.1 255\.255\.255\.0/);
+    expect(vu).toMatch(/ {3}status: up {4}type: physical/);
   });
 
   it('`get router info routing-table all` rend la route par defaut', async () => {
@@ -470,7 +478,7 @@ describe('les journaux', () => {
     politique(sh, 'set logtraffic all');
     await pingOnSimulatedClock(poste, 'ping -c 1 203.0.113.10');
 
-    expect(run(sh, 'execute log display')).toBe('No matching log data.');
+    expect(run(sh, 'execute log display')).toBe('0 logs found.\n0 logs returned.');
     fw.clearTranslations();
 
     const vu = run(sh, 'execute log display');
@@ -486,7 +494,7 @@ describe('les journaux', () => {
     await pingOnSimulatedClock(poste, 'ping -c 1 203.0.113.10');
     fw.clearTranslations();
 
-    expect(run(sh, 'execute log display')).toBe('No matching log data.');
+    expect(run(sh, 'execute log display')).toBe('0 logs found.\n0 logs returned.');
   });
 
   it('`logtraffic-start enable` ajoute une ligne a l\'OUVERTURE', async () => {
@@ -499,7 +507,7 @@ describe('les journaux', () => {
 
     fw.clearTranslations();
     const deux = run(sh, 'execute log display');
-    expect(deux.split('\n')).toHaveLength(2);
+    expect(enregistrements(deux)).toHaveLength(2);
   });
 
   it('un refus par la politique implicite se TAIT par defaut', async () => {
@@ -507,7 +515,7 @@ describe('les journaux', () => {
 
     await pingOnSimulatedClock(poste, 'ping -c 1 203.0.113.10');
 
-    expect(run(sh, 'execute log display')).toBe('No matching log data.');
+    expect(run(sh, 'execute log display')).toBe('0 logs found.\n0 logs returned.');
   });
 
   it('`fwpolicy-implicit-log enable` le fait journaliser, avec `policyid=0`', async () => {
@@ -528,7 +536,8 @@ describe('les journaux', () => {
     await pingOnSimulatedClock(poste, 'ping -c 1 203.0.113.10');
     const vu = run(sh, 'execute log display');
 
-    expect(vu).toMatch(/^date=\d{4}-\d{2}-\d{2} time=\d{2}:\d{2}:\d{2} /);
+    expect(enregistrements(vu)[0])
+      .toMatch(/^date=\d{4}-\d{2}-\d{2} time=\d{2}:\d{2}:\d{2} /);
     expect(vu).toContain('devname="FGT1"');
     expect(vu).toContain('logid="0000000015"');
     expect(vu).toContain('srcip=192.168.1.10');
@@ -543,7 +552,8 @@ describe('les journaux', () => {
     await pingOnSimulatedClock(poste, 'ping -c 1 203.0.113.10');
     const vu = run(sh, 'execute log display');
 
-    expect(vu).toMatch(/^"\d{4}-\d{2}-\d{2}","\d{2}:\d{2}:\d{2}",/);
+    expect(enregistrements(vu)[0])
+      .toMatch(/^"\d{4}-\d{2}-\d{2}","\d{2}:\d{2}:\d{2}",/);
   });
 
   it('`set format cef` rend un en-tete CEF', async () => {
@@ -554,7 +564,7 @@ describe('les journaux', () => {
     await pingOnSimulatedClock(poste, 'ping -c 1 203.0.113.10');
     const vu = run(sh, 'execute log display');
 
-    expect(vu).toMatch(
+    expect(enregistrements(vu)[0]).toMatch(
       new RegExp(`^CEF:0\\|Fortinet\\|Fortigate\\|${FORTIOS_PROFILE.defaultVersion}\\|`),
     );
     expect(vu).toContain('|traffic:forward|');
@@ -568,7 +578,7 @@ describe('les journaux', () => {
     await pingOnSimulatedClock(poste, 'ping -c 1 203.0.113.10');
     const vu = run(sh, 'execute log display');
 
-    expect(vu).toMatch(/^<\d+>1 \d{4}-\d{2}-\d{2}T/);
+    expect(enregistrements(vu)[0]).toMatch(/^<\d+>1 \d{4}-\d{2}-\d{2}T/);
     expect(vu).toContain('[FTNTFGT@12356 ');
   });
 
@@ -583,7 +593,7 @@ describe('les journaux', () => {
       'execute log display');
 
     expect(retenu).toContain('srcip=192.168.1.10');
-    expect(ecarte).toBe('No matching log data.');
+    expect(ecarte).toBe('0 logs found.\n0 logs returned.');
   });
 
   it('`execute log filter view-lines` borne l\'affichage', async () => {
@@ -593,7 +603,7 @@ describe('les journaux', () => {
     await pingOnSimulatedClock(poste, 'ping -c 3 203.0.113.10');
     const vu = run(sh, 'execute log filter view-lines 1', 'execute log display');
 
-    expect(vu.split('\n')).toHaveLength(1);
+    expect(enregistrements(vu)).toHaveLength(1);
   });
 
   it('`execute log delete-all` vide le magasin', async () => {
@@ -604,7 +614,7 @@ describe('les journaux', () => {
     const efface = run(sh, 'execute log delete-all');
 
     expect(efface).toMatch(/[1-9]\d* log entries deleted/);
-    expect(run(sh, 'execute log display')).toBe('No matching log data.');
+    expect(run(sh, 'execute log display')).toBe('0 logs found.\n0 logs returned.');
   });
 
   it('le journal memoire est circulaire et borne', async () => {

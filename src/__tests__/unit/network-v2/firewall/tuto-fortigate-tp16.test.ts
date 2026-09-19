@@ -300,7 +300,7 @@ describe('TP 16 — une politique qui parle de personnes', () => {
 
     await fgt.executeCommand('execute log filter field user "paul.stagiaire"');
     expect(await fgt.executeCommand('execute log display'))
-      .toBe('No matching log data.');
+      .toBe('0 logs found.\n0 logs returned.');
   });
 
   it('une politique authentifiee que l\'utilisateur ne satisfait pas TOMBE sur la suivante',

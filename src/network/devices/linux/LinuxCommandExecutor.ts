@@ -3,7 +3,7 @@
  */
 
 import { VirtualFileSystem, type INode } from './VirtualFileSystem';
-import { sshUnreachableReason } from '@/terminal/ssh/wireSshLogin';
+import { sshUnreachableReason, relayScriptedShell } from '@/terminal/ssh/wireSshLogin';
 import type { TcpWireOutcome } from '../../tcp/types';
 import { LinuxUserManager } from './LinuxUserManager';
 import { loadSudoPolicy, type SudoActor } from './iam/SudoPolicyEngine';
@@ -160,6 +160,9 @@ import { SilentSshInteractionHandler } from '../../protocols/ssh/session/ISshInt
 import { SshConnectOptionsBuilder } from '../../protocols/ssh/SshConnectOptions';
 import { isOk } from '../../protocols/ssh/Result';
 import type { TcpConnector } from '@/network/tcp/types';
+import {
+  TelnetClientSession, type TelnetClientTransport,
+} from '@/network/protocols/telnet/TelnetClientSession';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
 import type { TcpStack } from '../../tcp/TcpStack';
@@ -336,6 +339,7 @@ export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
   readonly mountTable: MountTable;
   readonly userMgr: LinuxUserManager;
+  _scenarioStdin?: string;
   /**
    * In-memory ssh-agent — one per device, lazily populated by `ssh-add`
    * and surfaced to outgoing SSH connections that honour `ssh -A`.
@@ -1568,7 +1572,7 @@ export class LinuxCommandExecutor {
 
   private async connectWireSsh(
     host: string, user: string, password: string | undefined,
-    port = 22, identities: string[] = [],
+    port = 22, identities: string[] = [], strict: 'yes' | 'no' | 'accept-new' = 'accept-new',
   ): Promise<{ session: SshSession | null; authRefused: boolean }> {
     if (!this.tcpConnector) return { session: null, authRefused: false };
     const connector = this.tcpConnector;
@@ -1580,10 +1584,10 @@ export class LinuxCommandExecutor {
       localGid: this.userMgr.currentGid,
       knownHostsPath: `${this.sshHomeDir()}/.ssh/known_hosts`,
       credentialless: password === undefined,
-      interactionHandler: new SilentSshInteractionHandler(password ?? ''),
+      interactionHandler: new SilentSshInteractionHandler(password ?? '', strict !== 'yes'),
     });
     const builder = SshConnectOptionsBuilder.create()
-      .host(host).user(user).port(port).strictHostKeyChecking('accept-new');
+      .host(host).user(user).port(port).strictHostKeyChecking(strict);
     for (const path of identities) builder.addIdentityFile(path);
     if (identities.length === 0) {
       for (const candidate of ['id_ed25519', 'id_rsa', 'id_ecdsa']) {
@@ -1609,31 +1613,65 @@ export class LinuxCommandExecutor {
     return new WireSftpFileSystem(channelResult.value);
   }
 
+  private async relayShellOverWire(
+    session: SshSession, skipLines: number,
+  ): Promise<{ output: string; exitCode: number } | null> {
+    const channel = session.openShellChannel();
+    if (!isOk(channel)) return null;
+    const shell = channel.value;
+    const relayed = await relayScriptedShell(shell, this._scenarioStdin ?? '', skipLines);
+    shell.close();
+    return relayed;
+  }
+
+  private async relayOverWire(
+    session: SshSession, command: string,
+  ): Promise<{ output: string; exitCode: number } | null> {
+    const channel = session.openExecChannel(command);
+    if (!isOk(channel)) return null;
+    const result = await channel.value.execute();
+    channel.value.close();
+    return { output: result.stdout, exitCode: result.exitCode };
+  }
+
   async runSshExecAsync(
     rawArgs: string[], offeredPassword?: string,
   ): Promise<{ output: string; exitCode: number }> {
     const args = rawArgs.map(word => this.expandTilde(word));
     const stdinPwd = (offeredPassword
-      ?? (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '')
+      ?? this._scenarioStdin ?? '')
       .split('\n')[0] || undefined;
     const opts = this.buildSshClientOpts(args, this._cmdEnv, stdinPwd);
     const target = wireExecTarget(args, this.vfs, this.cwd, this.userMgr.currentUser);
-    const reachable = target !== null
-      && wireReachOutcome(this.localDevice, target.host, target.port) === 'open';
-    const wire = reachable && target !== null
+    const peer = target !== null ? this.sshPeerDevice(target.host) : null;
+    const linuxPeer = (peer as { executor?: unknown } | null)?.executor !== undefined;
+    const reach = target === null
+      ? undefined
+      : wireReachOutcome(this.localDevice, target.host, target.port);
+    const wire = reach === 'open' && target !== null
       ? await this.connectWireSsh(
-        target.host, target.user, stdinPwd, target.port, target.identities)
+        target.host, target.user, stdinPwd, target.port, target.identities, target.strict)
       : { session: null, authRefused: false };
     const session = wire.session;
     if (!session) {
       return this.finishSshClientResult(
-        runSshClient({ ...opts, wireAuthRefused: wire.authRefused }), wire.authRefused);
+        runSshClient({ ...opts, wireAuthRefused: wire.authRefused, wireOutcome: reach }),
+        wire.authRefused);
     }
+    const settled = !linuxPeer && target !== null && target.command
+      ? await this.relayOverWire(session, target.command)
+      : null;
+    const settledShell = target !== null && !target.command
+      ? await this.relayShellOverWire(session, offeredPassword === undefined && stdinPwd ? 1 : 0)
+      : null;
     try {
       return this.finishSshClientResult(runSshClient({
         ...opts,
         wireAuthenticated: true,
+        wireOutcome: reach,
+        shellRelay: () => settledShell,
         execRelay: (command) => {
+          if (settled && target !== null && command === target.command) return settled;
           const channel = session.openExecChannel(command);
           if (!isOk(channel)) return null;
           const result = channel.value.run();
@@ -1651,8 +1689,8 @@ export class LinuxCommandExecutor {
   private finishSshClientResult(
     result: ReturnType<typeof runSshClient>, onWire = false,
   ): { output: string; exitCode: number } {
-    if (result.connection) {
-      const entry = onWire ? null : this.socketTable?.connect(
+    if (result.connection && !onWire) {
+      const entry = this.socketTable?.connect(
         'tcp', result.connection.localIp, 0,
         result.connection.peerIp, result.connection.peerPort,
         undefined, 'ssh',
@@ -1664,9 +1702,7 @@ export class LinuxCommandExecutor {
         { ip: result.connection.localIp, port: srcPort },
         { ip: result.connection.peerIp, port: result.connection.peerPort },
       );
-      if (!onWire) {
-        this.emitSshWire(result.connection.localIp, srcPort, result.connection.peerIp, result.connection.peerPort);
-      }
+      this.emitSshWire(result.connection.localIp, srcPort, result.connection.peerIp, result.connection.peerPort);
       if (entry) this.socketTable?.transition(entry.id, 'TIME_WAIT');
     }
     if (result.droppedSyn) {
@@ -1840,7 +1876,9 @@ export class LinuxCommandExecutor {
    * nested interactive session the way `ssh` does (see the Telnet note in
    * CLAUDE.md's Terminal emulation section).
    */
-  private runTelnetClient(args: string[]): { output: string; exitCode: number } {
+  private runTelnetClient(
+    args: string[],
+  ): { output: string; exitCode: number; wireTarget?: { ip: string; port: number } } {
     const positional = args.filter(a => !a.startsWith('-'));
     const host = positional[0];
     if (!host) return { output: 'usage: telnet host-name [port]', exitCode: 1 };
@@ -1869,14 +1907,11 @@ export class LinuxCommandExecutor {
       return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: No route to host`, exitCode: 1 };
     }
 
-    const stdinHas = (this as unknown as { _scenarioStdin?: string })._scenarioStdin;
     const wireCapable = typeof ((reachable ?? found.device) as unknown as {
       getTcpStack?: () => unknown;
     }).getTcpStack === 'function';
     if (wireCapable && this.tcpProbe && !this.tcpProbe(found.ip, port)) {
-      if (!stdinHas) {
-        return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: Connection refused`, exitCode: 1 };
-      }
+      return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: Connection refused`, exitCode: 1 };
     }
 
     const header = `Trying ${found.ip}...\nConnected to ${host}.\nEscape character is '^]'.`;
@@ -1898,6 +1933,9 @@ export class LinuxCommandExecutor {
       if (verdict && !verdict.accept) {
         return { output: `${header}\n\n[${verdict.reason}]\n\nConnection closed by foreign host.`, exitCode: 1 };
       }
+    }
+    if (wireCapable) {
+      return { output: `${header}\n`, exitCode: 0, wireTarget: { ip: found.ip, port } };
     }
     this.emitTelnetWire(sourceIp, found.ip, port);
     return { output: `${header}\n`, exitCode: 0 };
@@ -1939,7 +1977,7 @@ export class LinuxCommandExecutor {
     for (let i = 0; i < kex.length; i++) kex[i] = Math.floor(Math.random() * 256);
     publishWireSegment({ srcDevice: this.localDevice, srcIp, srcPort, dstIp, dstPort, flags: 'P.', seq: 30, ack: 35, payload: kex });
     publishWireSegment({ srcDevice: this.localDevice, srcIp: dstIp, srcPort: dstPort, dstIp: srcIp, dstPort: srcPort, flags: 'P.', seq: 35, ack: 30 + kex.length, payload: kex });
-    const stdin = (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '';
+    const stdin = this._scenarioStdin ?? '';
     let seq = 30 + kex.length;
     for (const line of stdin.split('\n')) {
       void line;
@@ -1950,9 +1988,46 @@ export class LinuxCommandExecutor {
     }
   }
 
+  private async openWireTelnetSession(
+    ip: string, port: number,
+  ): Promise<TelnetClientSession | null> {
+    if (!this.tcpConnector) return null;
+    const dialed = await this.tcpConnector(ip, port);
+    if (!dialed || (dialed as { dialFailed?: string }).dialFailed !== undefined) return null;
+    return new TelnetClientSession(dialed as TelnetClientTransport);
+  }
+
+  private static async settleWire(times = 12): Promise<void> {
+    for (let i = 0; i < times; i++) {
+      await Promise.resolve();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  async runTelnetExecAsync(args: string[]): Promise<{ output: string; exitCode: number }> {
+    const probe = this.runTelnetClient(args);
+    if (probe.exitCode !== 0 || !probe.wireTarget) return { output: probe.output, exitCode: probe.exitCode };
+    const session = await this.openWireTelnetSession(probe.wireTarget.ip, probe.wireTarget.port);
+    if (!session) return { output: probe.output, exitCode: probe.exitCode };
+    const stdin = this._scenarioStdin ?? '';
+    await LinuxCommandExecutor.settleWire();
+    let transcript = session.drain();
+    for (const line of stdin.split('\n')) {
+      if (line.length === 0 && transcript.length > 0) continue;
+      session.send(line);
+      await LinuxCommandExecutor.settleWire();
+      transcript += session.drain();
+    }
+    const closedByPeer = session.closed;
+    session.close();
+    await LinuxCommandExecutor.settleWire();
+    const farewell = closedByPeer ? 'Connection closed by foreign host.\n' : '';
+    return { output: `${probe.output}${transcript}${farewell}`, exitCode: 0 };
+  }
+
   private emitTelnetWire(srcIp: string, dstIp: string, dstPort: number): void {
     ensureCaptureRouterInstalled();
-    const stdin = (this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '';
+    const stdin = this._scenarioStdin ?? '';
     const srcPort = 49152 + Math.floor(Math.random() * 1000);
     const enc = new TextEncoder();
     const iac = new Uint8Array([0xff, 0xfd, 0x18, 0xff, 0xfd, 0x20, 0xff, 0xfd, 0x23]);
@@ -5504,7 +5579,7 @@ export class LinuxCommandExecutor {
         return { output: sshpassResult.output, exitCode: sshpassResult.exitCode };
       }
       case 'ssh': {
-        const stdinPwd = ((this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '').split('\n')[0] || undefined;
+        const stdinPwd = (this._scenarioStdin ?? '').split('\n')[0] || undefined;
         return this.finishSshClientResult(
           runSshClient(this.buildSshClientOpts(args, this._cmdEnv, stdinPwd)));
       }
@@ -7043,6 +7118,8 @@ export class LinuxCommandExecutor {
         const entries = this.vfs.listDirectory(this.vfs.normalizePath(dir, '/'));
         return entries ? entries.filter(e => e.name !== '.' && e.name !== '..').map(e => e.name) : null;
       },
+      directoryInode: (dir) => this.vfs.resolveInode(this.vfs.normalizePath(dir, '/'))?.id ?? null,
+      canonicalPath: (dir) => this.vfs.realpath(this.vfs.normalizePath(dir, '/')),
     });
     if (listDirs) return { output: resolver.allDirectories().join('\n'), exitCode: 0 };
 

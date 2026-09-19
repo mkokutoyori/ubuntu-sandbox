@@ -55,7 +55,8 @@ export function renderVrpLldpNeighborVerbose(
       lines.push(field('System capabilities enabled', caps));
       const addrs = n.managementAddresses ?? [];
       lines.push(field('Management address type', addrs.length ? 'ipV4' : NOT_ADVERTISED));
-      lines.push(field('Management address', addrs.length ? ` ${addrs[0]}` : NOT_ADVERTISED));
+      lines.push(field('Management address',
+        addrs.length ? ` ${addrs[0].address.toString()}` : NOT_ADVERTISED));
       lines.push(field('Expired time', `${agent.ttlRemainingSec(n)}s`));
       lines.push('');
     });

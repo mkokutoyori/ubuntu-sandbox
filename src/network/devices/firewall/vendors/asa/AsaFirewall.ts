@@ -20,6 +20,15 @@ export class AsaFirewall extends Firewall {
     return this.shellInstance;
   }
 
+  protected override createManagementCli(user: string, origin: string): AsaShell {
+    void user; void origin;
+    return new AsaShell(this);
+  }
+
+  protected override managementRunningConfig(): string {
+    return this.getShell().execute('show running-config');
+  }
+
   executeCommand(command: string): Promise<string> {
     return Promise.resolve(this.getShell().execute(command));
   }

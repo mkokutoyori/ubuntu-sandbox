@@ -52,6 +52,23 @@
  * temps d'aller-retour vaut zero en temps virtuel : aucun cas n'epingle
  * de duree, seulement l'ordre et l'identite des sauts.
  *
+ * LE LABORATOIRE MANQUAIT SES ROUTES DE TRANSIT, et c'est ce qui l'a
+ * rendu rouge le jour ou `src-check' est devenu reel (`cddd9033'). Les
+ * deux pare-feux ne connaissaient que les trois reseaux de SITE ; ils
+ * n'avaient aucune route vers les liens 172.16.x.0/30 situes au-dela
+ * d'eux. Or un « Time Exceeded » emis par FGT-2 a pour source
+ * 172.16.2.2, et celui de R-C a pour source 172.16.3.2 : FGT-1 ne
+ * pouvait router NI l'une NI l'autre en retour, donc son controle de
+ * chemin inverse les rejetait. Les sauts 4 et 5 s'affichaient en
+ * etoiles pendant que le 3 et le 6 arrivaient -- le 3 parce que R-B est
+ * sur un lien CONNECTE de FGT-1, le 6 parce que la reponse d'echo vient
+ * d'un reseau de site, lui, route.
+ *
+ * Un vrai FortiGate aurait rejete exactement de meme : le simulateur
+ * avait raison et le laboratoire etait incomplet. Les deux pare-feux
+ * portent desormais les routes qu'un vrai WAN leur donnerait, vers les
+ * liens de transit comme vers les sites.
+ *
  * UNE PREMISSE FAUSSE, CORRIGEE AVANT D'ETRE EPINGLEE. Trois cas de la
  * premiere ecriture exigeaient que « Trace complete. » n'apparaisse PAS
  * quand la trace n'atteint jamais sa cible — limite de sauts atteinte,
@@ -178,11 +195,21 @@ async function wan(): Promise<Wan> {
     ['10.1.0.0', '255.255.255.0', '172.16.0.1'],
     ['10.2.0.0', '255.255.255.0', '172.16.1.2'],
     ['10.3.0.0', '255.255.255.0', '172.16.1.2'],
+    ['10.4.0.0', '255.255.255.0', '172.16.1.2'],
+    ['172.16.2.0', '255.255.255.252', '172.16.1.2'],
+    ['172.16.3.0', '255.255.255.252', '172.16.1.2'],
+    ['172.16.4.0', '255.255.255.252', '172.16.1.2'],
+    ['172.16.5.0', '255.255.255.252', '172.16.1.2'],
   ]);
   fortigate(fgt2, '172.16.2.2', '172.16.3.1', [
     ['10.3.0.0', '255.255.255.0', '172.16.3.2'],
     ['10.1.0.0', '255.255.255.0', '172.16.2.1'],
     ['10.2.0.0', '255.255.255.0', '172.16.2.1'],
+    ['10.4.0.0', '255.255.255.0', '172.16.3.2'],
+    ['172.16.0.0', '255.255.255.252', '172.16.2.1'],
+    ['172.16.1.0', '255.255.255.252', '172.16.2.1'],
+    ['172.16.4.0', '255.255.255.252', '172.16.3.2'],
+    ['172.16.5.0', '255.255.255.252', '172.16.3.2'],
   ]);
 
   // SITE D, derriere un routeur HUAWEI : la trace doit traverser les deux

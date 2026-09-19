@@ -719,8 +719,10 @@ export interface EthernetFrame {
   payload: ARPPacket | IPv4Packet | IPv6Packet | unknown;
 }
 
+export const ETHERNET_FRAME_OVERHEAD_BYTES = 18;
+
 export function ethernetFrameBytes(frame: EthernetFrame): number {
-  let overhead = 18;
+  let overhead = ETHERNET_FRAME_OVERHEAD_BYTES;
   if ((frame as { dot1q?: unknown }).dot1q) overhead += 4;
   if ((frame as { outerDot1q?: unknown }).outerDot1q) overhead += 4;
   const p = frame.payload as { totalLength?: number; payloadLength?: number } | undefined;

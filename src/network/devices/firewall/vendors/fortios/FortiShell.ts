@@ -58,16 +58,17 @@ import type {
 } from '../../inspection/UtmProfiles';
 import { FortiDiagnostics } from './diag/FortiDiagnostics';
 import {
-  deniedLog, runDiagnose, runExecuteLog, runSessionFilter,
+  deniedLog, runDiagnose, runExecuteLog, runFnsysctl, runSessionFilter,
   parseSnifferPlan, type SnifferPlan,
 } from './diag/FortiDiagCommands';
 import { renderVpnTunnelList, renderVpnTunnelSummary } from './diag/vpnTunnelRenderer';
 import {
-  renderArpTable, renderInterfaceStatus, renderPerformanceStatus,
+  renderArpTable, renderInterfaceSummary, renderInterfacePhysical, renderPerformanceStatus,
   type InterfaceStatusFacts,
   renderBgpNeighbors, renderBgpSummary, renderDhcpLeases, renderDhcp6Leases,
   renderSslVpnLoginUsers, renderSslVpnSessions, type SslVpnListRow,
   renderOspfNeighbors, renderRoutingTable, renderSystemStatus,
+  type SystemClusterFacts,
 } from './diag/getViews';
 import {
   renderSessionCount, renderSessionSummary, renderSessionTtl,
@@ -75,13 +76,13 @@ import {
 import {
   renderAdminSessionList, renderAdminSessionStatus,
 } from './view/adminSessions';
-import { fortiLogStamp } from './diag/timeCommands';
+import { fortiLogStamp, fortiMinuteStamp } from './diag/timeCommands';
 import { renderIpsecTunnelStats } from './view/ipsecStats';
 import type { SslVpnSessionMode } from '../../vpn/SslVpnSessionTable';
 import { PkiKeyPair } from '../../../../pki/PkiKeyPair';
 import { buildCertificateRequest } from '../../../../pki/CertificateSigningRequest';
 import { csrToPem, privateKeyToPem, pemToCert } from '../../../../pki/pem';
-import { renderHaChecksum, renderHaStatus } from './diag/haRenderer';
+import { renderHaChecksum, renderHaStatus, ROLE_LABEL } from './diag/haRenderer';
 import type { FortiLogFormat } from './log/fortiLogFormat';
 import {
   configChangeLog,
@@ -89,7 +90,10 @@ import {
 } from './log/trafficLog';
 import { localTrafficLog } from './log/localTrafficLog';
 import { anomalyLog, utmLog } from './log/utmLog';
-import { renderFortiguardServiceStatus } from './diag/fortiguardRenderer';
+import {
+  renderFortiguardServiceStatus, renderFortiguardStatusLines,
+} from './diag/fortiguardRenderer';
+import { FORTI_FIRMWARE, fortiVersionSuffix } from './FortiFirmware';
 import type { FortiGuardFamily } from '../../mgmt/FortiGuardDatabases';
 import { TftpClientSession } from '@/network/tftp/TftpSession';
 import { IPAddress } from '@/network/core/types';
@@ -100,6 +104,7 @@ import { encryptConfig, decryptConfig, isEncryptedConfig } from './backup/Config
 import {
   renderOspfDatabase, renderOspfInterfaces,
 } from './diag/ospfDatabaseRenderer';
+import { renderOspfStatus } from './diag/ospfStatusRenderer';
 import type { OspfInterfaceFacts } from '../../routing/DynamicRoutingTypes';
 
 const OSPF_NOT_RUNNING = '';
@@ -115,8 +120,6 @@ function outsideOspf(name: string, physical: boolean): OspfInterfaceFacts {
 }
 
 export { FORTI_COMMAND_FAIL };
-
-export const FORTI_BUILD = '2660';
 
 const PER_MEMBER_LINE = /^set (priority|hostname)\b/;
 
@@ -296,6 +299,7 @@ export class FortiShell {
       view: (rest, full) => this.show(rest, full),
       inspect: (rest) => this.get(rest),
       diagnose: (rest) => this.diagnose(rest),
+      fnsysctl: (rest) => runFnsysctl(rest, this.diagDeps()),
       runExecute: (rest) => this.executeVerb(rest),
       leaveCli: () => '',
       enterGlobal: () => this.enterGlobal(),
@@ -310,6 +314,12 @@ export class FortiShell {
       adminSessions: () => this.fw.getAdminSessions().list(),
       disconnectAdminSession: (index) => this.disconnectAdminSession(index),
     });
+    this.fw.bindIngressInterfaceOptions((iface) => ({
+      srcCheck: this.interfaceSetting(iface, 'src-check') !== 'disable',
+      dropFragment: this.interfaceSetting(iface, 'drop-fragment') === 'enable',
+      dropOverlappedFragment:
+        this.interfaceSetting(iface, 'drop-overlapped-fragment') === 'enable',
+    }));
     this.fw.bindConfigSnapshot(
       () => renderWholeConfig(this.tree, { full: false }).join('\n'));
     this.fw.bindHaConfiguration(
@@ -886,7 +896,9 @@ export class FortiShell {
     if (path === 'system fortiguard-service status') {
       return renderFortiguardServiceStatus();
     }
-    if (path === 'system arp') return renderArpTable(this.fw.getArpService());
+    if (path === 'system arp') {
+      return renderArpTable(this.fw.getArpService(), this.fw.now());
+    }
     if (path === 'system session status') {
       return renderSessionCount(this.fw.getSessionTable().view().count());
     }
@@ -914,17 +926,24 @@ export class FortiShell {
     }
     if (path === 'system ha status') {
       return renderHaStatus(this.fw.getHa(), {
-        model: 'FortiGate-VM64',
+        model: this.fw.getProfile().model,
         hostname: this.fw.getName(),
         now: this.fw.now(),
+        localStamp: (at) => fortiLogStamp(this.fw, at),
       });
     }
-    if (path === 'system interface' || path === 'system interface physical') {
-      return renderInterfaceStatus(
-        this.interfaceStatusFacts(), path.endsWith('physical'));
+    if (path === 'system interface') {
+      return renderInterfaceSummary(this.interfaceStatusFacts());
+    }
+    if (path === 'system interface physical') {
+      return renderInterfacePhysical(this.interfaceStatusFacts());
     }
     if (path === 'router info ospf neighbor') {
       return renderOspfNeighbors(this.fw.getRouting().ospfNeighbors());
+    }
+    if (path === 'router info ospf status') {
+      const facts = this.fw.getRouting().ospfStatus();
+      return facts === null ? OSPF_NOT_RUNNING : renderOspfStatus(facts);
     }
     if (path === 'router info ospf database' || path === 'router info ospf database brief') {
       const facts = this.fw.getRouting().ospfDatabase();
@@ -980,6 +999,11 @@ export class FortiShell {
         speed: linked && port !== undefined
           ? `${port.getNegotiatedSpeed()}Mbps (Duplex: ${port.getNegotiatedDuplex()})`
           : 'n/a',
+        type: this.interfaceSetting(iface.name, 'type') ?? 'physical',
+        srcCheck: this.interfaceSetting(iface.name, 'src-check') ?? 'enable',
+        dropOverlappedFragment:
+          this.interfaceSetting(iface.name, 'drop-overlapped-fragment') ?? 'disable',
+        dropFragment: this.interfaceSetting(iface.name, 'drop-fragment') ?? 'disable',
         physical: port !== undefined,
       };
     });
@@ -991,13 +1015,44 @@ export class FortiShell {
     return this.tree.table(spec).get(name)?.effective(attribute)[0];
   }
 
+  private haModeText(): string {
+    const mode = this.fw.getHa().getConfiguration().mode;
+    if (mode === 'standalone') return 'standalone';
+    const role = this.fw.getHa().role() === 'master'
+      ? ROLE_LABEL.master : ROLE_LABEL.slave;
+    return `${mode}, ${role.toLowerCase()}`;
+  }
+
+  private clusterFacts(): SystemClusterFacts | undefined {
+    const ha = this.fw.getHa();
+    if (ha.getConfiguration().mode === 'standalone') return undefined;
+    const records = ha.elections();
+    const last = records[records.length - 1];
+    return {
+      uptimeMs: ha.uptimeMs(),
+      stateChangeTime: last === undefined
+        ? 'N/A' : fortiLogStamp(this.fw, last.at),
+    };
+  }
+
   private systemStatus(): string {
     const settings = this.tree.setting('system settings', 'opmode')[0] ?? 'nat';
     const vdomMode = this.tree.setting('system global', 'vdom-mode')[0] ?? 'no-vdom';
 
+    const load = this.fw.getSystemLoad();
+    const memoryMb = Math.round(load.memory().totalKib / 1024);
     return renderSystemStatus({
+      model: this.fw.getProfile().model,
       version: FORTIOS_PROFILE.defaultVersion,
-      build: FORTI_BUILD,
+      build: FORTI_FIRMWARE.build,
+      buildDate: FORTI_FIRMWARE.buildDate,
+      branch: FORTI_FIRMWARE.branch,
+      versionSuffix: fortiVersionSuffix(FORTI_FIRMWARE),
+      x86_64: FORTI_FIRMWARE.x86_64,
+      fortiguard: renderFortiguardStatusLines(this.fw.getFortiGuard().list(),
+        at => fortiMinuteStamp(this.fw, at)),
+      fipsCcMode: this.tree.setting('system fips-cc', 'status')[0] ?? 'disable',
+      lastRebootReason: this.fw.lastRebootReason(),
       serial: this.serialNumber(),
       hostname: this.fw.getName(),
       operationMode: settings === 'transparent' ? 'Transparent' : 'NAT',
@@ -1006,11 +1061,13 @@ export class FortiShell {
       vdomsInNat: settings === 'transparent' ? 0 : 1,
       vdomsInTransparent: settings === 'transparent' ? 1 : 0,
       vdomConfiguration: vdomMode === 'no-vdom' ? 'disable' : 'enable',
-      haMode: this.fw.getHa().getConfiguration().mode === 'standalone'
-        ? 'standalone' : this.fw.getHa().getConfiguration().mode,
+      haMode: this.haModeText(),
+      cluster: this.clusterFacts(),
       licenseStatus: 'Valid',
-      vmCpus: this.fw.getSystemLoad().cpuCount(),
-      vmMemoryMb: Math.round(this.fw.getSystemLoad().memory().totalKib / 1024),
+      vmCpus: load.cpuCount(),
+      vmCpusAllowed: load.cpuCount(),
+      vmMemoryMb: memoryMb,
+      vmMemoryMbAllowed: memoryMb,
       logDisk: this.fw.getProfile().logDisk === undefined
         ? 'Not available' : 'Available',
       systemTime: fortiSystemTime(this.fw),
@@ -1884,7 +1941,9 @@ export class FortiShell {
     if (rest.length === 0) return FortiMessages.incomplete('a DHCP operation');
     const dhcp = this.fw.getDhcp();
     if (rest[0] === 'lease-list') {
-      return renderDhcpLeases(this.leasesOnInterface(dhcp.leases(), rest[1]));
+      return renderDhcpLeases(
+        this.leasesOnInterface(dhcp.leases(), rest[1]),
+        (at) => fortiSystemTime(this.fw, at));
     }
     if (rest[0] === 'lease-clear') {
       if (rest.length < 2) return FortiMessages.incomplete('an IP address');
@@ -1899,7 +1958,9 @@ export class FortiShell {
     if (rest.length === 0) return FortiMessages.incomplete('a DHCPv6 operation');
     const dhcp6 = this.fw.getDhcp6();
     if (rest[0] === 'lease-list') {
-      return renderDhcp6Leases(this.leasesOnInterface(dhcp6.leases(), rest[1]));
+      return renderDhcp6Leases(
+        this.leasesOnInterface(dhcp6.leases(), rest[1]),
+        (at) => fortiSystemTime(this.fw, at));
     }
     if (rest[0] === 'lease-clear') {
       if (rest.length < 2) return FortiMessages.incomplete('an IPv6 address');
@@ -2071,6 +2132,7 @@ export class FortiShell {
     return {
       hostname: this.fw.getName(),
       serial: this.serialNumber(),
+      model: this.fw.getProfile().model,
       version: FORTIOS_PROFILE.defaultVersion,
       facility: 23,
       localClock: (atMs: number) => ({

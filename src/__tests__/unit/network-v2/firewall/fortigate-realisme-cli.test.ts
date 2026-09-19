@@ -1357,8 +1357,14 @@ describe('20. l invite ne ment jamais sur le contexte', () => {
 // ─────────────────────────────────────────────────────────────────────
 
 function blocInterface(vue: string, nom: string): string {
-  const debut = vue.indexOf(`== [${nom}]`);
+  const debut = vue.indexOf(`== [ ${nom} ]`);
   const suite = vue.indexOf('== [', debut + 1);
+  return suite < 0 ? vue.slice(debut) : vue.slice(debut, suite);
+}
+
+function blocPhysique(vue: string, nom: string): string {
+  const debut = vue.indexOf(`==[${nom}]`);
+  const suite = vue.indexOf('==[', debut + 1);
   return suite < 0 ? vue.slice(debut) : vue.slice(debut, suite);
 }
 
@@ -1373,7 +1379,8 @@ describe('21. `get system interface` rend l etat ADMINISTRATIF', () => {
   it('et sa vitesse est `n/a` — c est LA que le lien se voit', async () => {
     const fw = fortigate();
 
-    expect(blocInterface(await fw.executeCommand('get system interface'), 'port1'))
+    expect(blocPhysique(
+      await fw.executeCommand('get system interface physical'), 'port1'))
       .toMatch(/speed: n\/a/);
   });
 
@@ -1394,9 +1401,11 @@ describe('21. `get system interface` rend l etat ADMINISTRATIF', () => {
     new Cable('lien').connect(fw.getPort('port1') as never, pc.getPort('eth0') as never);
     await pc.executeCommand('ip link set eth0 up');
 
-    const bloc = blocInterface(await fw.executeCommand('get system interface'), 'port1');
-    expect(bloc).toMatch(/status: up/);
-    expect(bloc).toMatch(/speed: \d+Mbps/);
+    expect(blocInterface(await fw.executeCommand('get system interface'), 'port1'))
+      .toMatch(/status: up/);
+    expect(blocPhysique(
+      await fw.executeCommand('get system interface physical'), 'port1'))
+      .toMatch(/speed: \d+Mbps/);
   });
 
   it('un port cable mais admin-DOWN reste `status: down`', async () => {

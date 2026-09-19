@@ -46,6 +46,8 @@ export interface WhereisFs {
   exists(path: string): boolean;
   /** Directory entry names (no `.`/`..`), or null when not a directory. */
   list(dir: string): string[] | null;
+  directoryInode?(dir: string): number | null;
+  canonicalPath?(dir: string): string | null;
 }
 
 const MAN_SECTION_RE = /^(\d|n|l)/;
@@ -56,9 +58,28 @@ export class WhereisResolver {
     private readonly dirs: WhereisDirectories = DEFAULT_WHEREIS_DIRECTORIES,
   ) {}
 
+  private searchList(configured: readonly string[]): string[] {
+    const seen = new Set<number>();
+    const kept: string[] = [];
+    for (const dir of configured) {
+      if (this.fs.list(dir) === null) continue;
+      const inode = this.fs.directoryInode?.(dir) ?? null;
+      if (inode !== null) {
+        if (seen.has(inode)) continue;
+        seen.add(inode);
+      }
+      kept.push(this.fs.canonicalPath?.(dir) ?? dir);
+    }
+    return kept;
+  }
+
   /** All search directories, flattened — backs `whereis -l`. */
   allDirectories(): string[] {
-    return [...this.dirs.binary, ...this.dirs.manual, ...this.dirs.source];
+    return [
+      ...this.searchList(this.dirs.binary),
+      ...this.searchList(this.dirs.manual),
+      ...this.searchList(this.dirs.source),
+    ];
   }
 
   locate(name: string, sel: WhereisSelector = ALL_CATEGORIES): WhereisResult {
@@ -67,18 +88,18 @@ export class WhereisResolver {
     const sources: string[] = [];
 
     if (sel.binary) {
-      for (const dir of this.dirs.binary) {
+      for (const dir of this.searchList(this.dirs.binary)) {
         const p = `${dir}/${name}`;
         if (this.fs.exists(p)) binaries.push(p);
       }
     }
     if (sel.manual) {
-      for (const dir of this.dirs.manual) {
+      for (const dir of this.searchList(this.dirs.manual)) {
         manuals.push(...this.findManPages(dir, name));
       }
     }
     if (sel.source) {
-      for (const dir of this.dirs.source) {
+      for (const dir of this.searchList(this.dirs.source)) {
         const p = `${dir}/${name}`;
         if (this.fs.exists(p)) sources.push(p);
       }

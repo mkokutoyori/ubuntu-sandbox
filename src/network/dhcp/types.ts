@@ -246,6 +246,7 @@ export interface DHCPBinding {
   ipAddress: string;
   /** Client hardware (MAC) address */
   clientId: string;
+  hostName?: string;
   /** Lease start timestamp (ms) */
   leaseStart: number;
   /** Lease expiration timestamp (ms) */

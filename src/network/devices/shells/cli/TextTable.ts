@@ -60,6 +60,7 @@ export interface TableColumn<R> {
    * « Hops 1-N are the same as for … » d'une section `TRACEROUTE`.
    */
   readonly measured?: (row: R) => boolean;
+  readonly headerWidth?: number;
 }
 
 export interface TableStyle {
@@ -159,15 +160,20 @@ export function renderTable<R>(
   style: TableStyle = IOS_TABLE,
 ): string[] {
   const largeurs = columns.map((c) => largeur(c, rows));
+  const largeursEntete = columns.map((c, i) => c.headerWidth ?? largeurs[i]);
   const sep = ' '.repeat(style.gap);
   const indent = style.indent ?? '';
-  const ligne = (cellules: readonly string[]): string => {
-    const brut = indent + cellules.map((c, i) => caler(c, largeurs[i], columns[i].align ?? 'left')).join(sep);
+  const ligne = (
+    cellules: readonly string[], mesures: readonly number[] = largeurs,
+  ): string => {
+    const brut = indent + cellules.map((c, i) => caler(c, mesures[i], columns[i].align ?? 'left')).join(sep);
     return style.padTrailing ? brut : brut.trimEnd();
   };
 
   const out: string[] = [];
-  if (style.header !== false) out.push(ligne(columns.map((c) => c.header)));
+  if (style.header !== false) {
+    out.push(ligne(columns.map((c) => c.header), largeursEntete));
+  }
   if (style.rule) out.push(ligne(largeurs.map((w) => '-'.repeat(w))));
   for (const r of rows) out.push(ligne(columns.map((c) => c.value(r))));
   return out;

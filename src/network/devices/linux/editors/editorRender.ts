@@ -52,3 +52,25 @@ export function displayColumnFor(lines: readonly string[], line: number, col: nu
   for (let i = 0; i < col && i < text.length; i++) w += displayWidth(text[i]);
   return w;
 }
+
+export type NanoShortcut = readonly [string, string];
+
+const NANO_EDIT_ROWS: readonly [readonly NanoShortcut[], readonly NanoShortcut[]] = [
+  [['^G', 'Help'], ['^O', 'Write Out'], ['^W', 'Where Is'],
+   ['^K', 'Cut'], ['^T', 'Execute'], ['^C', 'Location']],
+  [['^X', 'Exit'], ['^R', 'Read File'], ['^\\', 'Replace'],
+   ['^U', 'Paste'], ['^J', 'Justify'], ['^/', 'Go To Line']],
+];
+
+export function nanoEditShortcutRows(): readonly [readonly NanoShortcut[], readonly NanoShortcut[]] {
+  return NANO_EDIT_ROWS;
+}
+
+export function nanoTitleState(state: { readOnly: boolean; modified: boolean }): string {
+  if (state.readOnly) return 'View';
+  return state.modified ? 'Modified' : '';
+}
+
+export function nanoTitleName(filePath: string): string {
+  return filePath === '' ? 'New Buffer' : filePath;
+}

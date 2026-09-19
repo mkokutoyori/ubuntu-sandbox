@@ -1919,7 +1919,26 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (verdict === true) return true;
       if (verdict === false) juge = true;
     }
+    const socle = this.socleMeneAQuelqueChoseDeVisible(cible, mode, ctx);
+    if (socle === true) return true;
+    if (socle === false) juge = true;
     return !juge;
+  }
+
+  private socleMeneAQuelqueChoseDeVisible(
+    cible: string, mode: string, ctx?: InteractionPlanContext,
+  ): boolean | null {
+    const table = this.socleTable();
+    if (!table) return null;
+    const racine = cible.toLowerCase().split(/\s+/).filter((m) => m.length > 0);
+    let vu = false;
+    for (const chemin of this.cheminsDuSocle(table, scopeForMode(mode as typeof this.mode))) {
+      if (chemin.length <= racine.length) continue;
+      if (!racine.every((mot, rang) => chemin[rang] === mot)) continue;
+      vu = true;
+      if (this.commandVisibleToNow(chemin.join(' '), mode, ctx)) return true;
+    }
+    return vu ? false : null;
   }
 
   /**
@@ -8456,6 +8475,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * meme session.
    */
   beginExecSession(level: number, user?: string, view?: string | null): void {
+    this.sessionExecFermee = false;
     this.currentPrivilegeLevel = level;
     this.mode = (level >= 15 || view) ? 'privileged' : 'user';
     this.fsm.mode = this.mode;
@@ -8470,7 +8490,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.terminalHistoryEnabled = this.terminalHistorySize > 0;
   }
 
+  private sessionExecFermee = false;
+
+  execSessionClosed(): boolean { return this.sessionExecFermee; }
+
   protected fermerSessionExec(): string {
+    this.sessionExecFermee = true;
     this.terminalMonitor = false;
     this.currentPrivilegeLevel = 1;
     // La vue est un ROLE porte par la session, pas par la machine :

@@ -17,7 +17,7 @@
  *      priorite — c'est ce que le chapitre existe pour montrer.
  *   2. **Les battements de coeur sont de vraies trames** sur `hbdev`.
  *   3. **`get system ha status` dit POURQUOI** le primaire a ete elu :
- *      la ligne `Master selected using:` est la valeur pedagogique de
+ *      la ligne `Primary selected using:` est la valeur pedagogique de
  *      cette vue, et son texte est releve sur une sortie reelle.
  *   4. **`override` decide du retour** : sans lui, le membre revenu reste
  *      secondaire ; avec, il reprend la main.
@@ -280,10 +280,9 @@ describe('get system ha status', () => {
     const vue = labo.a.sh.execute('get system ha status');
     expect(vue).toMatch(/HA Health Status: OK/);
     expect(vue).toMatch(/Mode: HA A-P/);
-    expect(vue).toMatch(/Group Name: cluster-paris/);
-    expect(vue).toMatch(/Group ID: 10/);
-    expect(vue).toMatch(/^Master: FGT-A, /m);
-    expect(vue).toMatch(/^Slave : FGT-B, /m);
+    expect(vue).toMatch(/^Group: 10$/m);
+    expect(vue).toMatch(/^Primary : FGT-A, /m);
+    expect(vue).toMatch(/^Secondary : FGT-B, /m);
   });
 
   it('dit POURQUOI le primaire a ete elu', () => {
@@ -291,7 +290,7 @@ describe('get system ha status', () => {
     battre(labo);
 
     expect(labo.a.sh.execute('get system ha status'))
-      .toMatch(/Master selected using:[\s\S]*priority/);
+      .toMatch(/Primary selected using:[\s\S]*priority/);
   });
 
   it('le membre seul le dit dans le meme champ', () => {

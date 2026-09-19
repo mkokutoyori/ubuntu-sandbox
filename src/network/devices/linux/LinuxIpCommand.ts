@@ -753,42 +753,51 @@ function formatAddrInterface(info: IpInterfaceInfo, idx: number, opts: IpOutputO
   return lines.join('\n');
 }
 
-function ipAddrBrief(ctx: IpNetworkContext, args: string[], c: IpColorizer): string {
-  const names = ['lo', ...ctx.getInterfaceNames().filter(n => n !== 'lo')];
-  const lines: string[] = [];
+function briefSelection(ctx: IpNetworkContext, args: string[]): string[] {
+  const demande = args.find((a) => a !== 'show' && a !== 'list' && a !== 'dev');
+  return demande
+    ? [demande]
+    : ['lo', ...ctx.getInterfaceNames().filter((n) => n !== 'lo')];
+}
 
-  for (const name of names) {
+function briefColumns(info: IpInterfaceInfo, c: IpColorizer): string {
+  const { state } = formeLien(info);
+  // En mode bref, la couleur enveloppe la COLONNE complétée et non le
+  // mot : le vrai `ip -br` colorie `eth0            ` d'un bloc, ce qui
+  // se voit quand on aligne deux lignes l'une sous l'autre.
+  return `${c.ifname(info.name.padEnd(16))} ${c.operstate(state, state.padEnd(14))} `;
+}
+
+function briefAddresses(info: IpInterfaceInfo, c: IpColorizer): string[] {
+  const out: string[] = [];
+  if (info.ip && info.cidr !== null) out.push(`${c.inet(String(info.ip))}/${info.cidr}`);
+  for (const secondary of info.secondaryIPs ?? []) {
+    out.push(`${c.inet(secondary.ip)}/${secondary.cidr}`);
+  }
+  for (const v6 of info.ipv6 ?? []) {
+    out.push(`${c.inet6(String(v6.address))}/${v6.prefixLength}`);
+  }
+  return out;
+}
+
+function ipAddrBrief(ctx: IpNetworkContext, args: string[], c: IpColorizer): string {
+  const lines: string[] = [];
+  for (const name of briefSelection(ctx, args)) {
     const info = ctx.getInterfaceInfo(name);
     if (!info) continue;
-    const { state } = formeLien(info);
-    // En mode bref, la couleur enveloppe la COLONNE complétée et non le
-    // mot : le vrai `ip -br` colorie `eth0            ` d'un bloc, ce qui
-    // se voit quand on aligne deux lignes l'une sous l'autre.
-    const ipStr = info.ip && info.cidr !== null ? `${c.inet(String(info.ip))}/${info.cidr}` : '';
-    // Left-pad name to 16 chars, state to 14 chars
-    const nameCol = c.ifname(info.name.padEnd(16));
-    const stateCol = c.operstate(state, state.padEnd(14));
-    lines.push(`${nameCol}${stateCol}${ipStr}`);
+    const adresses = briefAddresses(info, c);
+    lines.push(`${briefColumns(info, c)}${adresses.join(' ')}${adresses.length > 0 ? ' ' : ''}`);
   }
-
   return lines.join('\n');
 }
 
 function ipLinkBrief(ctx: IpNetworkContext, args: string[], c: IpColorizer): string {
-  const demande = args.find((a) => a !== 'show' && a !== 'list' && a !== 'dev');
-  const names = demande
-    ? [demande]
-    : ['lo', ...ctx.getInterfaceNames().filter((n) => n !== 'lo')];
   const lines: string[] = [];
-  for (const name of names) {
+  for (const name of briefSelection(ctx, args)) {
     const info = ctx.getInterfaceInfo(name);
     if (!info) continue;
-    const { state } = formeLien(info);
     const drapeaux = `<${computeIfaceFlags(info).join(',')}>`;
-    lines.push(
-      `${c.ifname(info.name.padEnd(16))}${c.operstate(state, state.padEnd(14))}`
-      + `${(info.mac ?? '').padEnd(18)}${drapeaux}`,
-    );
+    lines.push(`${briefColumns(info, c)}${(info.mac ?? '').padEnd(17)} ${drapeaux} `);
   }
   return lines.join('\n');
 }
@@ -830,6 +839,14 @@ function addrExistsOnDevice(info: IpInterfaceInfo, ipStr: string): boolean {
   return false;
 }
 
+function prefixWithinFamily(prefix: number, max: number): boolean {
+  return Number.isInteger(prefix) && prefix >= 0 && prefix <= max;
+}
+
+function badPrefix(arg: string): string {
+  return `Error: any valid prefix is expected rather than "${arg}".`;
+}
+
 function ipAddrAdd(ctx: IpNetworkContext, args: string[]): string {
   // ip addr add <ip>/<cidr> dev <name>
   const parsed = parseAddrArgs(args);
@@ -837,23 +854,22 @@ function ipAddrAdd(ctx: IpNetworkContext, args: string[]): string {
   const { addrStr, devName } = parsed;
 
   const slashIdx = addrStr.indexOf('/');
-  if (slashIdx === -1) return 'Error: either "local" or "peer" address is required.';
-
-  const ipStr = addrStr.slice(0, slashIdx);
-  const prefix = parseInt(addrStr.slice(slashIdx + 1), 10);
+  const ipStr = slashIdx === -1 ? addrStr : addrStr.slice(0, slashIdx);
+  const family = ipStr.includes(':') ? 128 : 32;
+  const prefix = slashIdx === -1 ? family : parseInt(addrStr.slice(slashIdx + 1), 10);
   const info = ctx.getInterfaceInfo(devName);
 
   if (ipStr.includes(':')) {
-    if (isNaN(prefix) || prefix < 1 || prefix > 128) return 'Error: invalid prefix length.';
+    if (!prefixWithinFamily(prefix, 128)) return badPrefix(addrStr);
     if (!ctx.addInterfaceIPv6) return `Error: IPv6 address configuration is not supported on this interface.`;
     if (info && addrExistsOnDevice(info, ipStr)) return 'RTNETLINK answers: File exists';
     return ctx.addInterfaceIPv6(devName, ipStr, prefix);
   }
 
-  if (isNaN(prefix) || prefix < 1 || prefix > 32) return 'Error: invalid prefix length.';
+  if (!prefixWithinFamily(prefix, 32)) return badPrefix(addrStr);
   let ip: IPAddress;
   try { ip = new IPAddress(ipStr); }
-  catch { return `Error: ${ipStr} is not a valid IPv4 address.`; }
+  catch { return badPrefix(addrStr); }
 
   if (info && addrExistsOnDevice(info, ipStr)) return 'RTNETLINK answers: File exists';
 
@@ -1733,8 +1749,8 @@ function ipNeighAdd(ctx: IpNetworkContext, args: string[]): string {
     else if (args[i] === 'nud') { i++; } // accept but ignore (always static)
   }
 
-  if (!macStr) return 'RTNETLINK answers: Invalid argument (missing lladdr)';
-  if (!dev) return 'RTNETLINK answers: Invalid argument (missing dev)';
+  if (!dev) return 'Device and destination are required arguments.';
+  if (!macStr) return 'Error: No link layer address given.';
   let mac: MACAddress;
   try { mac = new MACAddress(macStr); }
   catch { return 'RTNETLINK answers: Invalid argument'; }
@@ -1754,7 +1770,7 @@ function ipNeighDel(ctx: IpNetworkContext, args: string[]): string {
   for (let i = 1; i < args.length; i++) {
     if (args[i] === 'dev' && args[i + 1]) { dev = args[++i]; }
   }
-  if (!dev) return 'RTNETLINK answers: Invalid argument (missing dev)';
+  if (!dev) return 'Device and destination are required arguments.';
 
   return ctx.deleteNeighbor(ip, dev);
 }

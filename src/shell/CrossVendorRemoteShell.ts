@@ -26,7 +26,6 @@ import type { ShellContext } from './ShellContext';
 export interface CrossVendorRemoteShellOptions {
   readonly device: Equipment;
   readonly user: string;
-  readonly remoteHost: string;
   /** Kind of the remote's primary shell — `bash`, `cmd`, `cisco-ios`, … */
   readonly primaryKind: string;
   /**
@@ -56,7 +55,6 @@ export class CrossVendorRemoteShell implements IShell {
   readonly device: Equipment;
   readonly user: string;
   readonly context: ShellContext;
-  readonly remoteHost: string;
   /** The kind of the primary shell — useful for callers that need to
    *  decide "is the inner host POSIX or Windows or a router?". */
   readonly primaryKind: string;
@@ -76,7 +74,6 @@ export class CrossVendorRemoteShell implements IShell {
   constructor(opts: CrossVendorRemoteShellOptions) {
     this.device = opts.device;
     this.user = opts.user;
-    this.remoteHost = opts.remoteHost;
     this.primaryKind = opts.primaryKind;
     this.onClose = opts.onClose ?? (() => undefined);
     this.probeAlive = opts.probeAlive;
@@ -125,7 +122,7 @@ export class CrossVendorRemoteShell implements IShell {
   }
 
   getDeactivationBanner(): readonly string[] {
-    return [`logout`, `Connection to ${this.remoteHost} closed.`];
+    return this.stack[0]?.getDeactivationBanner() ?? [];
   }
 
   /**
@@ -191,12 +188,9 @@ export class CrossVendorRemoteShell implements IShell {
       popped?.deactivate();
       popped?.dispose();
       if (this.stack.length === 0) {
-        // The primary shell has exited — the whole SSH session ends.
-        // Append the OpenSSH "Connection to <host> closed." footer the
-        // user expects regardless of which vendor's shell was on top.
         this.fireClose();
         return {
-          output: [...result.output, `Connection to ${this.remoteHost} closed.`],
+          output: [...result.output],
           styledOutput: result.styledOutput,
           exit: true,
         };

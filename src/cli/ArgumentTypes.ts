@@ -133,9 +133,14 @@ const INTERFACE_NAME = /^[A-Za-z][A-Za-z-]*[0-9]+(\/[0-9]+)*(\.[0-9]+)?$/;
  */
 const TIME_OF_DAY = /^(?:[01]\d|2[0-3]|24):[0-5]\d(?::[0-5]\d)?$/;
 
+const INT_ANNOUNCED_MAX = 4294967295;
+
 export const ARGUMENT_TYPES: Readonly<Record<ArgumentType, ArgumentTypeDefinition>> =
   Object.freeze({
-    INT: { placeholder: '<0-4294967295>', accepts: (t) => /^\d+$/.test(t) },
+    INT: {
+      placeholder: `<0-${INT_ANNOUNCED_MAX}>`,
+      accepts: (t) => /^\d+$/.test(t) && Number(t) <= INT_ANNOUNCED_MAX,
+    },
     WORD: { placeholder: 'WORD', accepts: (t) => t.length > 0 && !/\s/.test(t) },
     LINE: { placeholder: 'LINE', accepts: (t) => t.length > 0 },
     IP_ADDR: { placeholder: 'A.B.C.D', accepts: (t) => isValidIPv4(t) },

@@ -24,16 +24,22 @@ export function fortiLogStamp(fw: Firewall, at: number): string {
   return `${localDateText(fw, at)} ${localClockText(fw, at)}`;
 }
 
+export function fortiMinuteStamp(fw: Firewall, at: number): string {
+  const local = new Date(fw.localTimeOf(at));
+  return `${localDateText(fw, at)} ${twoDigits(local.getUTCHours())}`
+    + `:${twoDigits(local.getUTCMinutes())}`;
+}
+
 export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
-export function fortiSystemTime(fw: Firewall): string {
-  const local = new Date(fw.localNow());
+export function fortiSystemTime(fw: Firewall, at?: number): string {
+  const local = new Date(at === undefined ? fw.localNow() : fw.localTimeOf(at));
   return `${WEEKDAYS[local.getUTCDay()]} ${MONTHS[local.getUTCMonth()]}`
-    + ` ${String(local.getUTCDate()).padStart(2, ' ')} ${localClockText(fw)}`
+    + ` ${String(local.getUTCDate()).padStart(2, ' ')} ${localClockText(fw, at)}`
     + ` ${local.getUTCFullYear()}`;
 }
 

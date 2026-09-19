@@ -5,6 +5,20 @@
  * resolution, the ShellCatalog of bash builtins/keywords, the alias table,
  * the function map, and the WhereisResolver's directory model) and asserts
  * realistic util-linux / Bash output and exit codes.
+ *
+ * A3 disait autrefois que `which -a foo' ne rend que /usr/local/bin/foo et
+ * /usr/bin/foo. C'etait une premisse fausse, heritee d'un temps ou la
+ * machine simulee ne portait pas la fusion /usr. Mesure sur l'Ubuntu 24.04.4
+ * hote de cette session :
+ *
+ *   $ which -a ls   ->  /usr/bin/ls
+ *                       /bin/ls
+ *
+ * Le script debianutils (/etc/alternatives/which) parcourt `$PATH' mot pour
+ * mot et ne deduplique rien ; /bin et /usr/bin y figurent tous les deux.
+ * `whereis', lui, deduplique par inode — les deux reponses different expres,
+ * et la sonde probe-whereis-ne-compte-pas-deux-fois-un-repertoire les tient
+ * face a face.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -27,12 +41,12 @@ describe('which', () => {
   it('A2 picks the first $PATH match (deterministic order)', () => {
     expect(run('which ls')).toBe('/usr/bin/ls');
   });
-  it('A3 -a lists every $PATH match in order', () => {
+  it('A3 -a lists every $PATH match in order, merged spellings included', () => {
     exec.vfs.mkdirp('/usr/local/bin', 0o755, 0, 0);
     write('/usr/local/bin/foo', '#!/bin/sh\n');
     write('/usr/bin/foo', '#!/bin/sh\n');
     const lines = run('which -a foo').split('\n');
-    expect(lines).toEqual(['/usr/local/bin/foo', '/usr/bin/foo']);
+    expect(lines).toEqual(['/usr/local/bin/foo', '/usr/bin/foo', '/bin/foo']);
   });
   it('A4 produces no stdout when the name is not in $PATH', () => {
     expect(run('which zzznotacommand')).toBe('');

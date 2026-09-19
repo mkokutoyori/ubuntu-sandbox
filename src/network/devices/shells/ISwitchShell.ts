@@ -12,6 +12,7 @@ export interface ISwitchShell {
   parseEchoRequest?(line: string, device: Switch): ParsedPing | null;
   /** Execute a raw CLI command string and return the output */
   execute(sw: Switch, rawInput: string): string;
+  execSessionClosed?(): boolean;
   /**
    * Command-owned interactive flows (IoC): the shell declares which
    * commands are interactive and what their dialogue is. Terminals render

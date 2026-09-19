@@ -16,7 +16,7 @@
  */
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
-import { IPAddress, IPv6Address } from '../../core/types';
+import { IPAddress, IPv6Address, SubnetMask } from '../../core/types';
 
 // ─── Packet filtering types (shared with UFW) ───────────────────────
 
@@ -54,6 +54,8 @@ function tcpFlagSet(token: string | undefined): boolean {
 // ─── Internal types ──────────────────────────────────────────────────
 
 type TableName = 'filter' | 'nat' | 'mangle' | 'raw';
+
+const RECENT_STAMPS_PER_ENTRY = 20;
 type BuiltinPolicy = 'ACCEPT' | 'DROP';
 
 interface MatchExtension {
@@ -96,6 +98,23 @@ interface IptablesChain {
 interface IptablesTable {
   name: TableName;
   chains: Map<string, IptablesChain>;
+}
+
+export interface ListFormat {
+  verbose: boolean;
+  numeric: boolean;
+  lineNumbers: boolean;
+  exact: boolean;
+}
+
+function abbreviateCounter(n: number): string {
+  if (n <= 99999) return String(n);
+  let v = Math.floor((n + 500) / 1000);
+  for (const suffix of ['K', 'M', 'G']) {
+    if (v <= 9999) return `${v}${suffix}`;
+    v = Math.floor((v + 500) / 1000);
+  }
+  return `${v}T`;
 }
 
 // ─── Table definitions ───────────────────────────────────────────────
@@ -141,8 +160,8 @@ export class LinuxIptablesManager {
   private vfs: VirtualFileSystem | null = null;
   private resolveService: IptablesServiceResolver | null = null;
   private tables: Map<TableName, IptablesTable> = new Map();
-  // Rate limiting state for limit match extension: key = "srcIP:ruleKey" → timestamps
-  private rateLimitHits: Map<string, number[]> = new Map();
+  private readonly limitBuckets = new WeakMap<IptablesRule, { tokens: number; at: number }>();
+  private readonly recentLists = new Map<string, Map<string, number[]>>();
   // Connection tracking: "proto:srcIP:srcPort:dstIP:dstPort" → timestamp
   // Used for state/conntrack match extensions
   private conntrack: Map<string, number> = new Map();
@@ -525,32 +544,11 @@ export class LinuxIptablesManager {
         if (dports && !this.portMatchesSpec(pkt.dstPort, dports)) return false;
         if (sports && !this.portMatchesSpec(pkt.srcPort, sports)) return false;
       }
-      // limit match: enforce rate limiting per source IP
       if (m.module === 'limit') {
-        const limitStr = m.options.get('--limit') || '6/minute';
-        const burstStr = m.options.get('--limit-burst') || '6';
-        const burst = parseInt(burstStr) || 6;
-        // Parse rate: "N/second", "N/minute", "N/hour"
-        const rateMatch = limitStr.match(/^(\d+)\/(second|minute|hour)$/);
-        const windowMs = rateMatch
-          ? (rateMatch[2] === 'second' ? 1000 : rateMatch[2] === 'minute' ? 60000 : 3600000)
-          : 60000;
-
-        // Build key from src IP + rule port spec for per-source tracking
-        const ruleKey = `${pkt.srcIP}:${rule.protocol}:${rule.dport}`;
-        const now = Date.now();
-        let hits = this.rateLimitHits.get(ruleKey);
-        if (!hits) {
-          hits = [];
-          this.rateLimitHits.set(ruleKey, hits);
-        }
-        // Purge expired entries
-        const cutoff = now - windowMs;
-        while (hits.length > 0 && hits[0] < cutoff) hits.shift();
-        if (hits.length >= burst) {
-          return false; // Rate limit exceeded → rule doesn't match → fall through to next rule
-        }
-        hits.push(now);
+        if (!this.spendLimitCredit(rule, m)) return false;
+      }
+      if (m.module === 'recent') {
+        if (!this.matchRecent(pkt, m)) return false;
       }
       // state/conntrack: evaluate connection tracking
       if (m.module === 'state' || m.module === 'conntrack') {
@@ -739,6 +737,70 @@ export class LinuxIptablesManager {
     return null;
   }
 
+  private spendLimitCredit(rule: IptablesRule, m: MatchExtension): boolean {
+    const rate = m.options.get('--limit') ?? '3/hour';
+    const burst = parseInt(m.options.get('--limit-burst') ?? '5', 10) || 5;
+    const parsed = rate.match(/^(\d+)\/(sec|second|min|minute|hour|day)$/);
+    const per = parsed?.[2] ?? 'hour';
+    const unitMs = per.startsWith('sec') ? 1000
+      : per.startsWith('min') ? 60000
+      : per === 'hour' ? 3600000 : 86400000;
+    const refillMs = unitMs / (parseInt(parsed?.[1] ?? '3', 10) || 1);
+
+    const now = Date.now();
+    const bucket = this.limitBuckets.get(rule) ?? { tokens: burst, at: now };
+    bucket.tokens = Math.min(burst, bucket.tokens + (now - bucket.at) / refillMs);
+    bucket.at = now;
+    const allowed = bucket.tokens >= 1;
+    if (allowed) bucket.tokens -= 1;
+    this.limitBuckets.set(rule, bucket);
+    return allowed;
+  }
+
+  private matchRecent(pkt: PacketInfo, m: MatchExtension): boolean {
+    const name = m.options.get('--name') ?? 'DEFAULT';
+    const side = m.options.has('--rdest') ? pkt.dstIP : pkt.srcIP;
+    if (!side) return false;
+    const key = this.recentKey(side, m.options.get('--mask'));
+
+    let list = this.recentLists.get(name);
+    if (!list) { list = new Map(); this.recentLists.set(name, list); }
+    const now = Date.now();
+
+    if (m.options.has('--remove')) {
+      const known = list.delete(key);
+      return known;
+    }
+    if (m.options.has('--set')) {
+      const stamps = list.get(key) ?? [];
+      LinuxIptablesManager.stamp(stamps, now);
+      list.set(key, stamps);
+      return true;
+    }
+
+    const stamps = list.get(key);
+    if (!stamps) return false;
+    const seconds = parseInt(m.options.get('--seconds') ?? '0', 10) || 0;
+    const hitcount = parseInt(m.options.get('--hitcount') ?? '0', 10) || 0;
+    const floor = seconds > 0 ? now - seconds * 1000 : -Infinity;
+    const inWindow = stamps.filter(t => t >= floor).length;
+    const matched = hitcount > 0 ? inWindow >= hitcount : inWindow > 0;
+    if (matched && m.options.has('--update')) LinuxIptablesManager.stamp(stamps, now);
+    return matched;
+  }
+
+  private static stamp(stamps: number[], now: number): void {
+    stamps.push(now);
+    if (stamps.length > RECENT_STAMPS_PER_ENTRY) stamps.shift();
+  }
+
+  private recentKey(address: string, mask: string | undefined): string {
+    if (!mask || mask === '255.255.255.255') return address;
+    const host = IPAddress.tryParse(address);
+    if (!host || !IPAddress.isValid(mask)) return address;
+    return host.networkAddress(new SubnetMask(mask)).toString();
+  }
+
   /** Create a default empty rule (helper for UFW) */
   static createRule(overrides?: Partial<IptablesRule>): IptablesRule {
     return {
@@ -802,42 +864,63 @@ export class LinuxIptablesManager {
 
   private cmdList(table: IptablesTable, args: string[]): { output: string; exitCode: number } {
     let chainName = '';
-    let numeric = false, verbose = false, lineNumbers = false;
+    let numeric = false, verbose = false, lineNumbers = false, exact = false;
 
     for (const arg of args) {
       switch (arg) {
         case '-n': case '--numeric': numeric = true; break;
         case '-v': case '--verbose': verbose = true; break;
+        case '-x': case '--exact': exact = true; break;
         case '--line-numbers': lineNumbers = true; break;
         default: if (!arg.startsWith('-')) chainName = arg; break;
       }
     }
 
+    const opts: ListFormat = { verbose, numeric, lineNumbers, exact };
     if (chainName) {
       const chain = table.chains.get(chainName);
       if (!chain) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
-      return { output: this.fmtChainList(chain, table, verbose, numeric, lineNumbers), exitCode: 0 };
+      return { output: this.fmtChainList(chain, table, opts), exitCode: 0 };
     }
 
     const parts: string[] = [];
     for (const chain of table.chains.values()) {
       if (parts.length > 0) parts.push('');
-      parts.push(this.fmtChainList(chain, table, verbose, numeric, lineNumbers));
+      parts.push(this.fmtChainList(chain, table, opts));
     }
     return { output: parts.join('\n'), exitCode: 0 };
   }
 
-  private fmtChainList(chain: IptablesChain, table: IptablesTable, verbose: boolean, numeric: boolean, lineNumbers: boolean): string {
+  listTable(tableName: TableName, opts: ListFormat, chains?: readonly string[]): string {
+    const table = this.tables.get(tableName);
+    if (!table) return '';
+    const parts: string[] = [];
+    for (const chain of table.chains.values()) {
+      if (chains && !chains.includes(chain.name)) continue;
+      if (parts.length > 0) parts.push('');
+      parts.push(this.fmtChainList(chain, table, opts));
+    }
+    return parts.join('\n');
+  }
+
+  private fmtChainList(chain: IptablesChain, table: IptablesTable, opts: ListFormat): string {
+    const { verbose, numeric, lineNumbers, exact } = opts;
+    const count = (n: number): string => (exact ? String(n) : abbreviateCounter(n));
     const lines: string[] = [];
     if (chain.policy !== null) {
-      lines.push(`Chain ${chain.name} (policy ${chain.policy})`);
+      const counters = verbose
+        ? ` ${count(chain.pkts)} packets, ${count(chain.bytes)} bytes`
+        : '';
+      lines.push(`Chain ${chain.name} (policy ${chain.policy}${counters})`);
     } else {
       lines.push(`Chain ${chain.name} (${this.countRefs(chain.name, table)} references)`);
     }
 
     const numCol = lineNumbers ? 'num   ' : '';
     if (verbose) {
-      lines.push(`${numCol} pkts bytes target     prot opt in     out     source               destination`);
+      lines.push(exact
+        ? `${numCol}    pkts      bytes target     prot opt in     out     source               destination`
+        : `${numCol} pkts bytes target     prot opt in     out     source               destination`);
     } else {
       lines.push(`${numCol}target     prot opt source               destination`);
     }
@@ -853,8 +936,9 @@ export class LinuxIptablesManager {
       const extra = this.fmtRuleExtras(r, numeric);
 
       if (verbose) {
-        const pkts = String(r.pkts).padStart(5);
-        const bytes = String(r.bytes).padStart(5);
+        const width = exact ? 8 : 5;
+        const pkts = count(r.pkts).padStart(width);
+        const bytes = count(r.bytes).padStart(width);
         const inIf = ((r.negInInterface ? '!' : '') + (r.inInterface || '*')).padEnd(6);
         const outIf = ((r.negOutInterface ? '!' : '') + (r.outInterface || '*')).padEnd(6);
         lines.push(`${num}${pkts} ${bytes} ${target} ${prot} ${opt}${inIf} ${outIf} ${src.padEnd(20)} ${dst}${extra}`);
@@ -965,7 +1049,7 @@ export class LinuxIptablesManager {
     if (rule.dport) p.push(`--dport ${rule.dport}`);
     for (const m of rule.matches) {
       p.push(`-m ${m.module}`);
-      for (const [opt, val] of m.options) p.push(`${opt} ${this.quote(val)}`);
+      for (const [opt, val] of m.options) p.push(val === '' ? opt : `${opt} ${this.quote(val)}`);
     }
     if (rule.target) {
       p.push(`-j ${rule.target}`);

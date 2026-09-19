@@ -11,7 +11,9 @@ export interface NicView {
   readonly counters: Readonly<PortCounters>;
 }
 
-const FIELD_WIDTH = 22;
+const FIELD_WIDTH = 16;
+const NIC_LIST_HEADING = 'The following NICs are available:';
+const NIC_LIST_INDENT = ' '.repeat(8);
 
 function field(name: string, value: string): string {
   return `${name.padEnd(FIELD_WIDTH)}${value}`;
@@ -27,8 +29,8 @@ function statLine(counters: Readonly<PortCounters>): string {
 
 export function renderNic(nic: NicView): string {
   return [
-    field('Current_HWaddr', nic.currentMac),
-    field('Permanent_HWaddr', nic.permanentMac),
+    field('Current_HWaddr', ` ${nic.currentMac}`),
+    field('Permanent_HWaddr', ` ${nic.permanentMac}`),
     field('Admin', `:${nic.adminUp ? 'up' : 'down'}`),
     field('netdev status', `:${nic.linkUp ? 'up' : 'down'}`),
     field('Speed', `:${nic.speed}`),
@@ -39,5 +41,6 @@ export function renderNic(nic: NicView): string {
 }
 
 export function renderNicList(nics: readonly NicView[]): string {
-  return nics.map(nic => `${nic.name}\n${renderNic(nic)}`).join('\n\n');
+  return [NIC_LIST_HEADING, ...nics.map(nic => `${NIC_LIST_INDENT}${nic.name}`)]
+    .join('\n');
 }

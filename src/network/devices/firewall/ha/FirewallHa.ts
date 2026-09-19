@@ -1,4 +1,5 @@
 import type { EthernetFrame, MACAddress } from '../../../core/types';
+import type { HaInterfaceStats } from './HaTypes';
 import type { SessionTable } from '../session/SessionTable';
 import { HaAgent } from './HaAgent';
 import { exportSessions, importSessions } from './HaSessionSync';
@@ -11,6 +12,11 @@ export interface FirewallHaDeps {
   readonly interfaceMac: (iface: string) => MACAddress | undefined;
   readonly interfaceUp: (iface: string) => boolean;
   readonly sessions: () => SessionTable;
+  readonly cpuStates: () => {
+    user: number; nice: number; system: number; idle: number;
+  };
+  readonly memoryPercent: () => number;
+  readonly interfaceStats: (iface: string) => HaInterfaceStats | undefined;
   readonly authenticateAdmin: (admin: string, secret: string) => boolean;
   readonly runCommand: (admin: string, line: string) => string;
   readonly leaveCluster: (iface: string, ip: string, mask: string) => string;
@@ -33,6 +39,10 @@ export class FirewallHa {
       configurationText: () => this.read?.() ?? '',
       applyConfiguration: (text) => { this.apply?.(text); },
       exportSessions: () => exportSessions(deps.sessions()),
+      sessionCount: () => deps.sessions().count(),
+      cpuStates: deps.cpuStates,
+      memoryPercent: deps.memoryPercent,
+      interfaceStats: deps.interfaceStats,
       importSessions: (sessions) => { importSessions(deps.sessions(), sessions); },
       authenticateAdmin: deps.authenticateAdmin,
       runCommand: deps.runCommand,
@@ -64,6 +74,9 @@ export interface HaWiringHost {
     isOperationallyUp(): boolean;
   } | undefined;
   sessions(): SessionTable;
+  cpuStates(): { user: number; nice: number; system: number; idle: number };
+  memoryPercent(): number;
+  interfaceStats(iface: string): HaInterfaceStats | undefined;
   authenticateAdmin(admin: string, secret: string): boolean;
   runManagementCommand(admin: string, line: string): string;
   leaveCluster(iface: string, ip: string, mask: string): string;
@@ -82,6 +95,9 @@ export function buildFirewallHa(host: HaWiringHost): FirewallHa {
       return port !== undefined && port.isConnected() && port.isOperationallyUp();
     },
     sessions: () => host.sessions(),
+    cpuStates: () => host.cpuStates(),
+    memoryPercent: () => host.memoryPercent(),
+    interfaceStats: (iface) => host.interfaceStats(iface),
     authenticateAdmin: (admin, secret) => host.authenticateAdmin(admin, secret),
     runCommand: (admin, line) => host.runManagementCommand(admin, line),
     leaveCluster: (iface, ip, mask) => host.leaveCluster(iface, ip, mask),

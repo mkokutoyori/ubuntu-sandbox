@@ -108,18 +108,18 @@ describe('Scénario 3 — Capture sur interface trunk 802.1Q et isolation du tra
 
       // Deux captures séquentielles plutôt que `-i any` simultané : la
       // dédup de segments TCP fusionne les deux vues d'un même segment.
-      const trunkDump = await captureOn(pc, `tcpdump -c 1 -nn -e tcp and port 9000`, () => {
+      const trunkDump = await captureOn(pc, `tcpdump -c 2 -nn -e tcp and port 9000`, () => {
         pc.getTcpStack().connect('192.168.10.1', 9000);
         return Promise.resolve();
       });
-      const taggedLine = trunkDump.split('\n').find((l) => l.includes('Flags [') && l.includes('vlan 10'));
+      const taggedLine = trunkDump.split('\n').find((l) => l.includes('Flags [S]') && l.includes('vlan 10'));
       expect(taggedLine).toBeDefined();
 
-      const subDump = await captureOn(pc, `tcpdump -c 1 -nn -e -i eth0.10 tcp and port 9000`, () => {
+      const subDump = await captureOn(pc, `tcpdump -c 2 -nn -e -i eth0.10 tcp and port 9000`, () => {
         pc.getTcpStack().connect('192.168.10.1', 9000);
         return Promise.resolve();
       });
-      const untaggedLine = subDump.split('\n').find((l) => l.includes('Flags ['));
+      const untaggedLine = subDump.split('\n').find((l) => l.includes('Flags [S]'));
       expect(untaggedLine).toBeDefined();
       expect(untaggedLine).not.toContain('vlan');
 

@@ -824,6 +824,7 @@ export class DHCPServer implements IProtocolEngine {
       const binding: DHCPBinding = {
         ipAddress: params.requestedIP,
         clientId: params.clientMAC,
+        hostName: params.hostName,
         leaseStart: Date.now(),
         leaseExpiration: Date.now() + pool.leaseDuration * 1000,
         poolName: pool.name,
@@ -958,6 +959,7 @@ export class DHCPServer implements IProtocolEngine {
       const binding: DHCPBinding = {
         ipAddress: params.requestedIP,
         clientId: params.clientMAC,
+        hostName: params.hostName,
         leaseStart: Date.now(),
         leaseExpiration: Date.now() + pool.leaseDuration * 1000,
         poolName: pool.name,

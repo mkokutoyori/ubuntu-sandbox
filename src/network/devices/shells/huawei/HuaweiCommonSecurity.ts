@@ -130,6 +130,10 @@ export function registerHuaweiCommonSecurity(
     return '';
   };
   trie.registerGreedy('stelnet', 'STelnet configuration', (args) => dispatch('stelnet', args));
+  trie.registerGreedy('undo stelnet', 'Disable the STelnet server', (args) => {
+    if ((args[0] ?? '').toLowerCase() !== 'server') return '';
+    return dispatch('stelnet', ['server', 'disable']);
+  });
   trie.registerGreedy('telnet', 'Telnet configuration', (args) => dispatch('telnet', args));
   trie.registerGreedy('ssh', 'SSH configuration', (args) => dispatch('ssh', args));
   const snmpService = (): SnmpService | undefined =>

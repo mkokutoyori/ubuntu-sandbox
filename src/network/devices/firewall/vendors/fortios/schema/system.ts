@@ -477,6 +477,10 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       ], 'physical'),
       availableWhen: (object) => !object.hasPhysicalKey(),
     },
+    enable('src-check', 'Enable/disable source IP check on this interface.', true),
+    enable('drop-fragment', 'Enable/disable dropping fragmented packets.'),
+    enable('drop-overlapped-fragment',
+      'Enable/disable dropping overlapped fragments.'),
     { ...reference('interface', 'Parent interface name.', ['system interface']),
       availableWhen: isVlan },
     {

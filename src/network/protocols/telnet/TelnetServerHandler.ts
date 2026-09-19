@@ -49,7 +49,7 @@ export class TelnetServerHandler {
     const admission = this.ctx.admit(clientIp);
     if (!admission.accept) {
       if (admission.kind === 'line-password' && admission.reason) {
-        conn.write(toNvtText(`\n[${admission.reason}]\n\nConnection closed by foreign host.\n`));
+        conn.write(toNvtText(`\n[${admission.reason}]\n`));
       }
       conn.close();
       return;
@@ -195,7 +195,7 @@ class TelnetSession {
     const max = this.ctx.maxAuthAttempts?.() ?? DEFAULT_MAX_AUTH_ATTEMPTS;
     if (this.attempts >= max) {
       this.phase = 'exec';
-      this.write('\n% Bad passwords\n\nConnection closed by foreign host.\n');
+      this.write('\n% Bad passwords\n');
       this.teardown('bad-passwords');
       this.conn.close();
       return;
@@ -208,7 +208,7 @@ class TelnetSession {
   private beginExec(username: string): void {
     const handle = this.ctx.openSession(username, this.clientIp, this.conn.remotePort);
     if (!handle) {
-      this.write('\n% No free vty lines\n\nConnection closed by foreign host.\n');
+      this.write('\n% No free vty lines\n');
       this.teardown('no-line');
       this.conn.close();
       return;
@@ -235,7 +235,6 @@ class TelnetSession {
     if (this.phase === 'closed') return;
     if (output) this.write(`${output}\n`);
     if (shell.lastEndedSession()) {
-      this.write('\nConnection closed by foreign host.\n');
       this.teardown('logout');
       this.conn.close();
       return;
@@ -260,7 +259,6 @@ class TelnetSession {
     const ms = this.ctx.idleTimeoutMs?.() ?? null;
     if (ms == null || ms <= 0) return;
     this.idleTimer = this.timers.setTimeout(() => {
-      this.write('\nConnection closed by foreign host.\n');
       this.teardown('exec-timeout');
       this.conn.close();
     }, ms);

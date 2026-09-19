@@ -67,6 +67,10 @@ export class FragmentReassembly {
     });
   }
 
+  overlaps(packet: IPv4Packet): boolean {
+    return this.engine.overlaps(packet);
+  }
+
   accept(packet: IPv4Packet, nowMs: number, ingressPort?: string): IPv4Packet | null {
     this.engine.purgeExpired(nowMs);
     if (!isIPv4Fragment(packet)) return packet;

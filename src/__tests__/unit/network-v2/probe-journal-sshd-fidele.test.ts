@@ -31,6 +31,16 @@
  *    `/proc/sys/net/ipv4/ip_local_port_range` en donne les bornes. Une
  *    TROISIEME valeur, encore differente, etait fabriquee pour la table
  *    des sockets — donc `ss` et le journal se contredisaient.
+ *
+ *    Ce cas exigeait ensuite QUATRE ports DISTINCTS pour quatre pairs.
+ *    C'etait un artefact de l'attributeur que le SERVEUR s'etait invente :
+ *    il comptait pour lui-meme, donc chaque pair recevait un numero neuf.
+ *    Depuis que sshd lit le vrai port du socket accepte, chaque pile
+ *    cliente choisit le sien dans SA propre plage — et deux machines
+ *    differentes ont parfaitement le droit de sortir sur le meme port,
+ *    c'est le quadruplet qui les distingue. La distinction n'est donc pas
+ *    un invariant du reseau ; ce qui en est un, et que le cas garde, c'est
+ *    que le port est un vrai ephemere et jamais la constante.
  * 6. `pam_unix(sshd:session)` AVAIT DEUX PRODUCTEURS de formats
  *    differents : celui de `LinuxMachine` (le vrai) et un autre dans
  *    `SshSyslogger` qui ajoutait « (channel session) » et une duree.
@@ -153,13 +163,16 @@ describe('le journal porte les messages d\'OpenSSH', () => {
     expect(await (await labo()).journal()).not.toContain('Connection refused for');
   });
 
-  it('chaque pair a son propre port source, pris dans la plage ephemere', async () => {
+  it('chaque pair a un vrai port source ephemere, jamais la constante 50000', async () => {
     const { srv, journal } = await labo();
     const ports = [...(await journal()).matchAll(/ port (\d+) ssh2/g)].map(m => Number(m[1]));
     const { min, max } = srv.getTcpStack().getEphemeralRange();
     expect(ports.length).toBe(4);
-    expect(new Set(ports).size).toBe(4);
-    for (const p of ports) { expect(p).toBeGreaterThanOrEqual(min); expect(p).toBeLessThanOrEqual(max); }
+    for (const p of ports) {
+      expect(p).not.toBe(50000);
+      expect(p).toBeGreaterThanOrEqual(min);
+      expect(p).toBeLessThanOrEqual(max);
+    }
   });
 
   it('`pam_unix(sshd:session)` n\'a qu\'un seul format', async () => {

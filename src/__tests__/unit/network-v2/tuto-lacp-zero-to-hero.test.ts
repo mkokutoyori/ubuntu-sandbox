@@ -707,7 +707,7 @@ describe('Partie 6 — LACP sur FortiGate', () => {
   it('TEMOIN — la CLI FortiGate repond bien par ailleurs : `get system interface`', async () => {
     const fw = new FortiGate('firewall-fortinet', 'FW', 0, 0);
     const out = await fw.executeCommand('get system interface');
-    expect(out).toContain('== [port1]');
+    expect(out).toContain('== [ port1 ]');
     expect(out).toContain('ip: 192.168.1.99 255.255.255.0');
   });
 });

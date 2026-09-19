@@ -36,6 +36,7 @@ interface WireSocket {
   write(data: string): void;
   close(): void;
   onData(handler: (data: string) => void): () => void;
+  onClose?(handler: (reason?: string) => void): () => void;
 }
 
 /** A minimal telnet client: answers the negotiation, keeps the printable text. */
@@ -44,8 +45,10 @@ class TelnetClient {
   private readonly negotiator = new TelnetNegotiator({ offer: [], request: [] });
   received = '';
   rawReceived = '';
+  closedByPeer = false;
 
   constructor(private readonly socket: WireSocket) {
+    socket.onClose?.(() => { this.closedByPeer = true; });
     socket.onData((chunk) => {
       this.rawReceived += chunk;
       const parsed = parseTelnetChunk(chunk, this.carry);
@@ -288,7 +291,8 @@ describe('Cisco telnet server — the session is real', () => {
     client.send('nope');
     await settle();
     expect(client.received).toContain('% Bad passwords');
-    expect(client.received).toContain('Connection closed by foreign host');
+    expect(client.closedByPeer).toBe(true);
+    expect(client.received).not.toContain('Connection closed by foreign host');
   });
 
   it('`login local` challenges for a username and a password', async () => {
@@ -321,7 +325,8 @@ describe('Cisco telnet server — the session is real', () => {
     client.clear();
     client.send('exit');
     await settle();
-    expect(client.received).toContain('Connection closed by foreign host');
+    expect(client.closedByPeer).toBe(true);
+    expect(client.received).not.toContain('Connection closed by foreign host');
     expect(cisco.getSshSessionRegistry().list()).toHaveLength(0);
   });
 

@@ -54,6 +54,16 @@
  *     accepter un argument sans le lire fait croire a un filtrage qui
  *     n'a pas lieu, et c'est exactement ce que le defaut (1) produisait.
  *
+ * UN CAS DE CETTE SONDE PORTAIT UNE FAUSSE PREMISSE, corrigee plutot que
+ * laissee : il exigeait que `show bfd neighbors detail`, au singulier,
+ * soit REFUSE « comme sur IOS ». Rien dans la reference ne le dit, et
+ * IOS fait l'inverse : un mot-cle s'abrege des que l'abreviation est
+ * NON AMBIGUE, et `detail` est un prefixe unique de `details`. C'est
+ * aussi le contrat du socle, qui porte abreviation et ambiguite par un
+ * seul mecanisme. Le cas demande desormais ce qui est vrai : la forme
+ * abregee est acceptee et rend EXACTEMENT la meme chose que la forme
+ * complete.
+ *
  * CE QUE CETTE SONDE NE DEMANDE DELIBEREMENT PAS : que le bloc de detail
  * de `show bfd neighbors details` reproduise les seize lignes d'IOS. Ce
  * simulateur ne mesure pas les intervalles de reception ni les compteurs
@@ -216,10 +226,11 @@ describe('`show bfd neighbors details` rend au moins ce que rend la vue plate', 
     expect(detail).toContain(plate);
   });
 
-  it('`show bfd neighbors detail` — le singulier — est refuse comme sur IOS', async () => {
+  it('`show bfd neighbors detail` — le singulier — est une ABREVIATION', async () => {
     const d = await routeur('B3');
-    expect(String(await d.executeCommand('show bfd neighbors detail')))
-      .toContain('% Invalid input');
+    const singulier = String(await d.executeCommand('show bfd neighbors detail'));
+    expect(singulier).not.toContain('% Invalid input');
+    expect(singulier).toBe(String(await d.executeCommand('show bfd neighbors details')));
   });
 });
 

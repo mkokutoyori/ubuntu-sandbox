@@ -64,7 +64,8 @@ export class HuaweiSwitch extends Switch {
       getPorts: () => this.getPorts(),
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
     };
-    this.lldpAgent = new LldpAgent(hostBase, () => this.getBus(), () => this.getScheduler());
+    this.lldpAgent = new LldpAgent({ ...hostBase, ...this.lldpHostExtras() },
+      () => this.getBus(), () => this.getScheduler());
     const firstPort = this.getPorts()[0];
     const baseMac = firstPort ? firstPort.getMAC().toString() : '00:00:00:00:00:00';
     this.stpAgent = new StpAgent({
@@ -295,6 +296,10 @@ export class HuaweiSwitch extends Switch {
   }
 
   getOSType(): string { return 'huawei-vrp'; }
+
+  override hasSshHostKeys(): boolean {
+    return this.getKeypairService().list().length > 0;
+  }
 
   getBootSequence(): string {
     return [

@@ -135,6 +135,7 @@ import {
 import { estAdresseIPv4 } from './cli-utils';
 import { boundedInteger } from '@/cli/ArgumentTypes';
 import { BGP_ATTRIBUTE_MAX, BGP_HOLD_TIME_MAX } from '@/network/bgp/attributes';
+import { registerHuaweiKeypairCommands } from './huawei/HuaweiKeypairCommands';
 
 const JOURS_VRP: Record<string, string> = {
   daily: 'daily', 'working-day': 'weekdays', 'off-day': 'weekend',
@@ -917,6 +918,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     return transport === 'telnet' || transport === 'all';
   }
 
+  private sessionExecFermee = false;
+
+  execSessionClosed(): boolean { return this.sessionExecFermee; }
+
   private cmdQuit(): string {
     switch (this.mode) {
       case 'interface':
@@ -1049,6 +1054,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         this.mode = 'user';
         return '';
       case 'user':
+        this.sessionExecFermee = true;
         return '';
       default:
         return '';
@@ -2145,42 +2151,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
-    t.register('rsa local-key-pair create', 'Generate RSA key pair', () => {
-      const name = `${this.r().getHostname()}_Host`;
-      const pair = this.r().getKeypairService().generate(name, 'rsa', 2048);
-      // Creating the key pair is what actually brings STelnet up on VRP,
-      // so the listener has to follow it.
-      this.r()._refreshSshAvailability();
-      return [
-        `Info: The name of the key pair will be: ${pair.name}`,
-        `The range of public key size is (512 ~ 2048).`,
-        `Input the bits in the modulus[default = 2048]: ${pair.modulusBits}`,
-        `Info: Keys are generated. Fingerprint: ${pair.fingerprint}`,
-      ].join('\n');
-    });
-    t.register('rsa local-key-pair destroy', 'Destroy the RSA key pair', () => {
-      const ks = this.r().getKeypairService();
-      const pairs = ks.list().filter((k) => k.algo === 'rsa');
-      if (pairs.length === 0) return 'Error: The RSA host key does not exist.';
-      for (const p of pairs) ks.destroy(p.name);
-      // Destroying them really takes STelnet down — VRP's own version of
-      // `crypto key zeroize rsa`, and the classic way to lock yourself out
-      // of a box you are reaching over ssh (docs/PRD-Pannes.md §F7.2).
-      this.r()._refreshSshAvailability();
-      return [
-        '% The name for the keys which will be destroyed is '
-          + `${this.r().getHostname()}_Host.`,
-        'Info: The key pair has been destroyed.',
-      ].join('\n');
-    });
-    t.register('dsa local-key-pair create', 'Generate DSA key pair', () => {
-      const name = `${this.r().getHostname()}_Host`;
-      const pair = this.r().getKeypairService().generate(name, 'dsa', 1024);
-      return [
-        `Info: The name of the key pair will be: ${pair.name}`,
-        `Info: Keys are generated. Fingerprint: ${pair.fingerprint}`,
-      ].join('\n');
-    });
+    registerHuaweiKeypairCommands(t, () => this.r());
 
     t.registerGreedy('cpu-defend policy', 'Enter CPU-defend policy', (args, raw) => {
       const r = vrpStores(this.r());

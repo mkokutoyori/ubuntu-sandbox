@@ -91,6 +91,13 @@ export const OSPF_DEFAULTS: OspfConfiguration = Object.freeze({
   redistributeStatic: false,
 });
 
+export interface BgpMessageTally {
+  readonly received: number;
+  readonly sent: number;
+  readonly notificationsReceived: number;
+  readonly notificationsSent: number;
+}
+
 export interface BgpPeerSummary {
   readonly address: string;
   readonly remoteAs: number;
@@ -98,11 +105,18 @@ export interface BgpPeerSummary {
   readonly isUp: boolean;
   readonly uptimeSec: number;
   readonly prefixesReceived: number;
+  readonly remoteRouterId: string;
+  readonly messages: BgpMessageTally;
+  readonly tableVersionSent: number;
 }
+
 
 export interface BgpSummaryFacts {
   readonly routerId: string;
   readonly localAs: number;
+  readonly tableVersion: number;
+  readonly asPathEntries: number;
+  readonly communityEntries: number;
   readonly neighbours: readonly BgpPeerSummary[];
 }
 
@@ -128,6 +142,28 @@ export interface OspfDatabaseFacts {
   readonly routerId: string;
   readonly areas: readonly OspfAreaFacts[];
   readonly external: readonly OspfLsaFacts[];
+}
+
+export interface OspfStatusAreaFacts {
+  readonly areaId: string;
+  readonly interfaceCount: number;
+  readonly activeInterfaceCount: number;
+  readonly fullyAdjacentNeighbors: number;
+  readonly authenticated: boolean;
+  readonly spfRuns: number;
+  readonly lsaCount: number;
+  readonly lsaChecksumSum: number;
+}
+
+export interface OspfStatusFacts {
+  readonly routerId: string;
+  readonly externalLsaCount: number;
+  readonly externalLsaChecksumSum: number;
+  readonly nonDefaultExternalLsaCount: number;
+  readonly lsaOriginated: number;
+  readonly lsaReceived: number;
+  readonly msSinceLastSpf: number | null;
+  readonly areas: readonly OspfStatusAreaFacts[];
 }
 
 

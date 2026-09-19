@@ -68,7 +68,7 @@ describe('TP 1 — installer et demarrer son premier FortiGate', () => {
     expect(out).toMatch(/^Version: FortiGate-VM64 v7\.6\.\d+,build\d+/m);
     expect(out).toMatch(/^Serial-Number: FGVM/m);
     expect(out).toMatch(/^License Status: /m);
-    expect(out).toMatch(/^VM Resources: 1 CPU, \d+ MB RAM/m);
+    expect(out).toMatch(/^VM Resources: 1 CPU\/1 allowed, \d+ MB RAM\/\d+ MB allowed$/m);
     expect(out).toMatch(/^Log hard disk: /m);
     expect(out).toMatch(/^Hostname: /m);
     expect(out).toMatch(/^Operation Mode: NAT$/m);
