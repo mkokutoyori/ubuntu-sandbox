@@ -60,6 +60,7 @@ import {
 import type { NssHostEntry } from './linux/nss/types';
 import type { TcpStack } from '../tcp/TcpStack';
 import type { TcpStream } from '../tcp/types';
+import type { TcpSocket } from '../tcp/TcpStack';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
 import { HostsFile } from './HostsFile';
 import { Port } from '../hardware/Port';
@@ -1739,6 +1740,7 @@ export abstract class LinuxMachine extends EndHost
             },
             onAccept: (socket) => {
               stack.setSocketOwner(socket, pid);
+              this.sshAcceptedSockets.set(socket.remoteIp, socket);
               this.noteSshWirePeer(socket.remoteIp, socket.remotePort);
               this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
             },
@@ -1864,7 +1866,7 @@ export abstract class LinuxMachine extends EndHost
       const toUnbind: Array<{ protocol: 'tcp' | 'udp'; localAddress: string; localPort: number; state: string }> = [];
       for (const sock of this.socketTable.getAll()) {
         const matchesByPid = sock.pid === pid;
-        const matchesByName = comm && sock.processName === comm;
+        const matchesByName = comm && sock.pid === undefined && sock.processName === comm;
         if (!matchesByPid && !matchesByName) continue;
         toUnbind.push({ protocol: sock.protocol, localAddress: sock.localAddress, localPort: sock.localPort, state: sock.state });
       }
@@ -1949,6 +1951,7 @@ export abstract class LinuxMachine extends EndHost
 
   private readonly sshPeerPorts: Map<string, number> = new Map();
   private readonly sshWirePeers = new Set<string>();
+  private readonly sshAcceptedSockets = new Map<string, TcpSocket>();
   private sshNextClientPort = 0;
 
   noteSshWirePeer(fromIp: string, port: number): void {
@@ -2051,10 +2054,15 @@ export abstract class LinuxMachine extends EndHost
         .find((ip): ip is string => !!ip) ?? '0.0.0.0';
       const peerPort = this.sshClientPort(fromIp);
       try {
-        this.socketTable.connect(
-          'tcp', myIp, 22, fromIp, peerPort,
-          sshdChild.pid, 'sshd',
-        );
+        this.socketTable.upsertConnection({
+          protocol: 'tcp',
+          localAddress: myIp, localPort: 22,
+          remoteAddress: fromIp, remotePort: peerPort,
+          state: 'ESTABLISHED',
+          pid: sshdChild.pid, processName: 'sshd',
+        });
+        const accepted = this.sshAcceptedSockets.get(fromIp);
+        if (accepted) this.getTcpStack().setSocketOwner(accepted, sshdChild.pid);
       } catch { /* socket accounting is best-effort */ }
       if (!this.sshArrivedOverWire(fromIp)) {
         this.executor.captureLog.captureTcpHandshake(
