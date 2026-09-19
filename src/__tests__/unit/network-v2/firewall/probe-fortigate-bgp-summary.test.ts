@@ -36,29 +36,29 @@
  * bien qu'un `Idle' partait a la colonne 84 sur un pare-feu ou aucune
  * session ne monte, c'est-a-dire le cas le plus frequent en laboratoire.
  *
- * CE QUE CE LOT NE REND TOUJOURS PAS, mesure et dit plutot que laisse a
- * decouvrir. La capture porte trois lignes de plus entre l'identifiant et
- * le tableau :
+ * CE QUE CE LOT NE RENDAIT PAS ENCORE, et qui est desormais FERME par
+ * `probe-fortigate-bgp-table-version' : les trois lignes que la capture
+ * porte entre l'identifiant et le tableau
+ * (`BGP table version is 13', `1 BGP AS-PATH entries',
+ * `0 BGP community entries'), et la colonne `TblVer', qui valait `'0''
+ * ecrit tel quel.
  *
- *   BGP table version is 13
- *   1 BGP AS-PATH entries
- *   0 BGP community entries
+ * DEUX AFFIRMATIONS DE CET EN-TETE ETAIENT FAUSSES, et les corriger vaut
+ * mieux que les laisser :
  *
- * Les deux dernieres sont derivables du Loc-RIB que le moteur calcule
- * deja — les chemins d'AS distincts, et zero communaute puisque
- * `BgpRibEntry' n'en porte aucune. La premiere demande un compteur de
- * VERSION que ce moteur n'a pas : la fabriquer depuis un nombre d'appels
- * a `computeLocRib' donnerait un nombre qui ne veut rien dire. Rendre deux
- * lignes d'un bloc de trois serait plus trompeur que de n'en rendre
- * aucune ; le bloc entier est un lot a soi.
- *
- * `Up/Down' reste dans l'en-tete a la colonne 65 la ou la capture le pose
- * a la 64. La vraie boite ecrit son en-tete a la main — le `static char
- * header[]' que Quagga porte encore aujourd'hui — et son blanc avant
- * `State/PfxRcd' vaut DEUX dans l'en-tete et UN dans les donnees.
- * `TextTable' tire l'en-tete et les donnees d'un seul calcul par colonne :
- * on peut honorer l'une des deux positions, pas les deux. La colonne
- * `State/PfxRcd' est choisie, parce que c'est celle qu'on lit.
+ * 1. « la premiere ligne demande un compteur de VERSION que ce moteur n'a
+ *    pas ». Elle en demande un, en effet -- et l'ecrire est exactement ce
+ *    qu'un moteur BGP fait : un compteur qui avance quand le Loc-RIB
+ *    change, et une version retenue par pair au dernier UPDATE envoye.
+ *    C'est ce que le lot suivant a ajoute.
+ * 2. « `Up/Down' reste a la colonne 65 la ou la capture le pose a la 64 ;
+ *    on peut honorer l'une des deux positions, pas les deux ». FAUX :
+ *    `headerWidth' decouple DEJA, colonne par colonne, la largeur de
+ *    l'en-tete de celle des donnees -- c'est pour cela qu'il existe, et
+ *    cet en-tete-ci s'en servait deja pour `Neighbor', `V' et
+ *    `State/PfxRcd'. Deux nombres suffisaient (8 pour `Up/Down', 14 pour
+ *    `State/PfxRcd') et l'en-tete capture se reproduit caractere pour
+ *    caractere.
  *
  * MESURE : 4 cas tombent sur 8.
  * Les 4 qui passent des deux cotes sont nommes, et ce sont des gardes

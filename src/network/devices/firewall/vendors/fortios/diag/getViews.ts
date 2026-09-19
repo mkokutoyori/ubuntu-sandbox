@@ -355,6 +355,9 @@ const BGP_STATE_WIDTH = 9;
 export function renderBgpSummary(facts: BgpSummaryFacts): string {
   const lines = [
     `BGP router identifier ${facts.routerId}, local AS number ${facts.localAs}`,
+    `BGP table version is ${facts.tableVersion}`,
+    `${facts.asPathEntries} BGP AS-PATH entries`,
+    `${facts.communityEntries} BGP community entries`,
     '',
   ];
 
@@ -364,7 +367,7 @@ export function renderBgpSummary(facts: BgpSummaryFacts): string {
     remoteAs: String(peer.remoteAs),
     received: String(peer.messages.received),
     sent: String(peer.messages.sent),
-    tableVersion: '0',
+    tableVersion: String(peer.tableVersionSent),
     inQueue: '0',
     outQueue: '0',
     upDown: peer.isUp ? uptimeClock(peer.uptimeSec) : 'never',
@@ -382,9 +385,12 @@ export function renderBgpSummary(facts: BgpSummaryFacts): string {
     { header: 'TblVer', width: 9, align: 'right', value: row => row.tableVersion },
     { header: 'InQ', width: 5, align: 'right', value: row => row.inQueue },
     { header: 'OutQ', width: 5, align: 'right', value: row => row.outQueue },
-    { header: 'Up/Down', width: 9, align: 'right', value: row => row.upDown },
     {
-      header: 'State/PfxRcd', width: BGP_STATE_WIDTH, headerWidth: 13,
+      header: 'Up/Down', width: 9, headerWidth: 8,
+      align: 'right', value: row => row.upDown,
+    },
+    {
+      header: 'State/PfxRcd', width: BGP_STATE_WIDTH, headerWidth: 14,
       align: 'right', value: row => row.state,
     },
   ], FIXED_TABLE));

@@ -107,12 +107,16 @@ export interface BgpPeerSummary {
   readonly prefixesReceived: number;
   readonly remoteRouterId: string;
   readonly messages: BgpMessageTally;
+  readonly tableVersionSent: number;
 }
 
 
 export interface BgpSummaryFacts {
   readonly routerId: string;
   readonly localAs: number;
+  readonly tableVersion: number;
+  readonly asPathEntries: number;
+  readonly communityEntries: number;
   readonly neighbours: readonly BgpPeerSummary[];
 }
 

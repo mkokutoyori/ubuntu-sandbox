@@ -34,6 +34,10 @@ export interface BgpClearScope {
   readonly value?: string;
 }
 
+const NO_TABLE_COUNTS = Object.freeze({
+  version: 0, asPathEntries: 0, communityEntries: 0,
+});
+
 const NO_MESSAGES = Object.freeze({
   received: 0, sent: 0, notificationsReceived: 0, notificationsSent: 0,
 });
@@ -99,9 +103,13 @@ export class FirewallBgp {
 
   summaryFacts(): BgpSummaryFacts {
     const live = new Map(this.neighbours().map(peer => [peer.address, peer]));
+    const table = this.engine?.bgpTableCounts() ?? NO_TABLE_COUNTS;
     return {
       routerId: this.config.routerId.length > 0 ? this.config.routerId : '0.0.0.0',
       localAs: this.config.asn,
+      tableVersion: table.version,
+      asPathEntries: table.asPathEntries,
+      communityEntries: table.communityEntries,
       neighbours: this.config.neighbours.map(peer => {
         const seen = live.get(peer.ip);
         return {
@@ -113,6 +121,7 @@ export class FirewallBgp {
           prefixesReceived: this.engine?.prefixesReceivedFrom(peer.ip) ?? 0,
           remoteRouterId: this.engine?.remoteRouterIdOf(peer.ip) ?? '',
           messages: this.engine?.messageCountsFor(peer.ip) ?? NO_MESSAGES,
+          tableVersionSent: this.engine?.tableVersionSentTo(peer.ip) ?? 0,
         };
       }),
     };

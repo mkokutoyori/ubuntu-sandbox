@@ -90,6 +90,7 @@ interface BgpRibEntry {
   network: IPAddress;
   mask: SubnetMask;
   asPath: number[];
+  communities: readonly string[];
   source: 'originated' | 'ebgp' | 'ibgp';
   nextHop: IPAddress | null;
   iface: string;
@@ -121,12 +122,22 @@ interface PeerSession {
   adjRibOut: Map<string, { nlri: BgpNlri; serial: string }>;
   /** True while we have at least attempted a TCP session this peer. */
   attempted: boolean;
+  /** Table version carried by the last UPDATE we sent this peer. */
+  tableVersionSent: number;
+}
+
+export interface BgpTableCounts {
+  readonly version: number;
+  readonly asPathEntries: number;
+  readonly communityEntries: number;
 }
 
 export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
   readonly protocol = 'bgp';
 
   private wire: BgpWire | null = null;
+  private tableVersion = 0;
+  private lastTableSerial = '';
   /** Device hook: routes learned/withdrawn outside a local converge (an
    *  UPDATE arrives on a peer's converge) must still reach the Router RIB. */
   private onRibChange: (() => void) | null = null;
@@ -352,6 +363,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     const ps: PeerSession = {
       link,
       adjRibIn: new Map(),
+      tableVersionSent: 0,
       adjRibOut: new Map(),
       attempted: true,
       session: new BgpSession(link.transport, {
@@ -427,6 +439,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
       network: new IPAddress(nlri.network),
       mask: this.maskOf(nlri),
       asPath: [...attrs.asPath],
+      communities: [],
       source: isEbgp ? 'ebgp' : 'ibgp',
       // eBGP next-hop is the advertising peer (next-hop-self default here).
       nextHop: new IPAddress(ps.link.neighborIp),
@@ -461,6 +474,38 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
    * The Loc-RIB: the single best path per prefix over our originated
    * prefixes plus every Adj-RIB-In, arbitrated by compareBgpPaths.
    */
+  bgpTableCounts(): BgpTableCounts {
+    const table = this.refreshTableVersion();
+    const paths = new Set<string>();
+    const communities = new Set<string>();
+    for (const entry of table) {
+      paths.add(entry.asPath.join(' '));
+      for (const value of entry.communities) communities.add(value);
+    }
+    return {
+      version: this.tableVersion,
+      asPathEntries: paths.size,
+      communityEntries: communities.size,
+    };
+  }
+
+  tableVersionSentTo(peerIp: string): number {
+    return this.peers.get(peerIp)?.tableVersionSent ?? 0;
+  }
+
+  private refreshTableVersion(): BgpRibEntry[] {
+    const table = this.computeLocRib();
+    const serial = table
+      .map(e => `${e.network}/${e.mask}|${e.asPath.join(' ')}|${e.nextHop ?? ''}`)
+      .sort()
+      .join(';');
+    if (serial !== this.lastTableSerial) {
+      this.lastTableSerial = serial;
+      this.tableVersion += 1;
+    }
+    return table;
+  }
+
   private computeLocRib(): BgpRibEntry[] {
     const byPrefix = new Map<string, BgpRibEntry>();
     const consider = (e: BgpRibEntry): void => {
@@ -472,7 +517,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     };
     for (const pre of this.originatedPrefixes()) {
       consider({
-        network: pre.network, mask: pre.mask, asPath: [],
+        network: pre.network, mask: pre.mask, asPath: [], communities: [],
         source: 'originated', nextHop: null, iface: '',
         weight: BGP_WEIGHT_LOCAL, localPref: this.config.defaultLocalPref,
         origin: 'igp', med: 0,
@@ -531,7 +576,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     const ibgpReceiver = (ps.session.remoteAsn ?? this.config.asn) === this.config.asn;
 
     const desired = new Map<string, { nlri: BgpNlri; attrs: BgpPathAttributes }>();
-    for (const e of this.computeLocRib()) {
+    for (const e of this.refreshTableVersion()) {
       if (ibgpReceiver && e.source === 'ibgp') continue;     // iBGP split-horizon
       if (e.peerIp === ip) continue;            // don't echo a route to its source
       if (e.asPath.includes(ps.session.remoteAsn ?? -1)) continue; // would loop
@@ -562,11 +607,13 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
       ps.session.sendUpdate({
         type: 'bgp', message: 'update', withdrawn: [], announced: [nlri], attributes: attrs,
       });
+      ps.tableVersionSent = this.tableVersion;
     }
     if (withdrawn.length > 0) {
       ps.session.sendUpdate({
         type: 'bgp', message: 'update', withdrawn, announced: [],
       });
+      ps.tableVersionSent = this.tableVersion;
     }
   }
 
