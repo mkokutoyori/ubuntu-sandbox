@@ -245,10 +245,14 @@ export function createSQLPlusSession(
   }
   let viaOracleNet = false;
   let netSession: import('@/network/oracle-net/OracleNetClient').OracleNetSession | null = null;
+  let failoverEnabled = false;
   if (connectIdentifier && localDevice) {
     const res = resolveOracleConnectTarget(localDevice, connectIdentifier, getOracleDatabase);
     if (res.ok === false) { netError = res.error; }
-    else { db = res.db; viaOracleNet = true; netSession = res.session ?? null; }
+    else {
+      db = res.db; viaOracleNet = true; netSession = res.session ?? null;
+      failoverEnabled = res.descriptor.failoverEnabled === true;
+    }
   }
 
   const session = new SQLPlusSession(db);
@@ -258,6 +262,7 @@ export function createSQLPlusSession(
     session.setTransport('tcp');
     session.setConnectIdentifier(connectIdentifier);
     session.setNetSession(netSession);
+    session.setFailoverEnabled(failoverEnabled);
   }
   // Bind the launching shell's OS identity so bequeath connections
   // (`/ as sysdba`) are gated by real dba-group membership and the audit

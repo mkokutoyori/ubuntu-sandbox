@@ -27,6 +27,12 @@ import type { HostCommandRunner } from './HostCommandRunner';
 
 import { QueryResultRenderer, type ColumnFormat } from './QueryResultRenderer';
 import type { OracleNetSession } from '@/network/oracle-net/OracleNetClient';
+const CONNECTION_LOST_ERRORS = ['ORA-03113', 'ORA-03114', 'ORA-03135', 'ORA-12571'];
+
+function connectionWasLost(answer: OracleNetResponse): boolean {
+  return answer.status === OracleNetCallStatus.Error
+    && CONNECTION_LOST_ERRORS.some((code) => answer.error.startsWith(code));
+}
 import {
   OracleNetCallId, OracleNetCallStatus, decodeResponse, encodeRequest,
   type OracleNetRequest, type OracleNetResponse,
@@ -115,10 +121,8 @@ export class SQLPlusSession {
   private hostRunner: HostCommandRunner | null = null;
   /** Oracle Net client for CONNECT @identifier — injected by the terminal layer. */
   private tnsResolver: ((identifier: string) =>
-    { ok: true; db: OracleDatabase } | { ok: false; error: string }) | null = null;
-  /** The connect identifier last used to reach `db` over 'tcp' transport
-   *  — reused by the per-statement reachability recheck below, and by an
-   *  in-session CONNECT user/pass@X. Null for a local bequeath session. */
+    { ok: true; db: OracleDatabase; session?: OracleNetSession }
+    | { ok: false; error: string }) | null = null;
   private connectIdentifier: string | null = null;
   /** Password from the last successful login/CONNECT — kept only so a
    *  transparent TAF reconnect (see executeSql) can re-authenticate
@@ -134,6 +138,7 @@ export class SQLPlusSession {
   private osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT;
   private transport: import('../OracleDatabase').ConnectTransport = 'beq';
   private netSession: OracleNetSession | null = null;
+  private failoverEnabled = false;
 
   private readonly commands: SqlPlusCommand[];
 
@@ -213,22 +218,60 @@ export class SQLPlusSession {
    * SQL*Plus CONNECT hops servers.
    */
   setTnsResolver(resolver: (identifier: string) =>
-    { ok: true; db: OracleDatabase } | { ok: false; error: string }): void {
+    { ok: true; db: OracleDatabase; session?: OracleNetSession }
+    | { ok: false; error: string }): void {
     this.tnsResolver = resolver;
   }
 
-  /** Record the identifier the INITIAL `sqlplus user/pass@X` connected
-   *  with, so the per-statement reachability recheck (see executeSql) has
-   *  something to re-resolve — an in-session CONNECT updates this itself. */
   setNetSession(session: OracleNetSession | null): void {
     this.netSession = session;
   }
 
-  private executeOverOracleNet(sql: string): ResultSet {
+  setFailoverEnabled(enabled: boolean): void {
+    this.failoverEnabled = enabled;
+  }
+
+  private reopenNetSessionAfterLoss(): boolean {
+    if (!this.failoverEnabled || !this.tnsResolver || !this.connectIdentifier) return false;
+    this.netSession?.close();
+    this.netSession = null;
+    const recheck = this.tnsResolver(this.connectIdentifier);
+    if (!recheck.ok || !recheck.session) return false;
+    this.netSession = recheck.session;
+    this.db = recheck.db;
     const answer = this.callOverOracleNet({
+      call: OracleNetCallId.Logon,
+      body: {
+        username: this.asSysdba ? (this.currentUser || 'SYS') : this.currentUser,
+        password: this.lastPassword,
+        asSysdba: this.asSysdba,
+        identity: {
+          osUser: this.osCtx.osUser,
+          osGroup: this.osCtx.osGroup,
+          hostname: this.osCtx.hostname,
+          terminal: this.osCtx.terminal,
+          program: this.osCtx.program,
+        },
+      },
+    });
+    if (answer.status === OracleNetCallStatus.Error) {
+      this.netSession = null;
+      return false;
+    }
+    return true;
+  }
+
+  private executeOverOracleNet(sql: string): ResultSet {
+    let answer = this.callOverOracleNet({
       call: OracleNetCallId.Execute,
       body: { sql },
     });
+    if (connectionWasLost(answer) && this.reopenNetSessionAfterLoss()) {
+      answer = this.callOverOracleNet({
+        call: OracleNetCallId.Execute,
+        body: { sql },
+      });
+    }
     if (answer.status === OracleNetCallStatus.Error) {
       throw new Error(answer.error);
     }
