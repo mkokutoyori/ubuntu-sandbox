@@ -5,6 +5,26 @@
  * shared storage and no clusterware — these tests target the real RAC
  * behaviour (CSS/CRS eviction, V$ACTIVE_INSTANCES with two nodes, TAF
  * failover) and are expected to fail until that subsystem exists.
+ *
+ * Deux cas ont ete corriges quand le plan de donnees Oracle Net a rendu
+ * la perte de connexion OBSERVABLE, et non plus deduite.
+ *
+ * 1. Le cas sans TAF attendait ORA-03135 ou ORA-01033. Ce qu'un vrai
+ *    client rend quand le pair disparait PENDANT un appel, c'est
+ *    ORA-03113. Autorite : python-oracledb, le pilote d'Oracle lui-meme.
+ *    Dans `impl/thin/transport.pyx`, `read_packet` leve
+ *    `ERR_CONNECTION_CLOSED` des que `recv` rend zero octet — le
+ *    << end-of-file on communication channel >> qui EST ORA-03113 ; et
+ *    `errors.py` range 3113, 3114 et 3135 sous ce meme
+ *    `ERR_CONNECTION_CLOSED`, donc la classe d'erreur que le titre du
+ *    cas nomme. ORA-03135 est ce que rend la detection d'une connexion
+ *    morte AU REPOS (DCD), pas une lecture qui echoue en plein appel.
+ *
+ * 2. Le cas avec TAF affirmait `toContain('1')` sur la sortie jointe.
+ *    Le << 1 >> de << ORA-03113 >> suffisait a le satisfaire : le cas ne
+ *    pouvait pas tomber, et il n'a effectivement rien vu quand le
+ *    basculement a ete casse. Il lit desormais la valeur dans sa
+ *    colonne, et exige qu'aucune erreur ne soit rendue.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -135,7 +155,10 @@ describe('client behaviour differs with and without TAF once node1 disappears', 
     await node1.executeCommand('ip link set eth0 down');
 
     const afterFailover = taf.subShell.processLine('SELECT id FROM system.orders;');
-    expect(afterFailover.output.join('\n')).toContain('1');
+    const rendered = afterFailover.output.join('\n');
+    expect(rendered).not.toMatch(/ORA-\d+/);
+    expect(afterFailover.output.map((line) => line.trim())).toContain('1');
+    expect(rendered).toContain('1 row selected.');
     taf.subShell.dispose();
   });
 
@@ -152,7 +175,7 @@ describe('client behaviour differs with and without TAF once node1 disappears', 
     await node1.executeCommand('ip link set eth0 down');
 
     const afterOutage = plain.subShell.processLine('SELECT id FROM system.orders;').output.join('\n');
-    expect(afterOutage).toMatch(/ORA-03135|ORA-01033/);
+    expect(afterOutage).toContain('ORA-03113');
     plain.subShell.dispose();
   });
 });

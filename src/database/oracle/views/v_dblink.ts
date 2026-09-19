@@ -1,16 +1,28 @@
-/**
- * V$DBLINK — currently-open database links in this session. Empty
- * until a CONNECT TO over a link occurs in the session.
- */
-
 import { queryResult } from '../../engine/executor/ResultSet';
 import { oracleVarchar2, oracleNumber, oracleDate } from '../../engine/catalog/DataType';
 import { registerView } from './registry';
 
+const YES_NO = (flag: boolean): string => (flag ? 'YES' : 'NO');
+
 registerView({
   name: 'V$DBLINK',
   comment: 'Currently-open database links',
-  query() {
+  query(ctx) {
+    const owner = ctx.currentUser.toUpperCase();
+    const rows = [...ctx.runtime.openDbLinks.values()]
+      .filter((link) => link.owner === owner)
+      .map((link) => [
+        link.dbLink,
+        ctx.catalog.getUser(link.owner)?.userId ?? 0,
+        YES_NO(link.loggedOn),
+        YES_NO(link.heterogeneous),
+        link.protocol,
+        0,
+        YES_NO(link.inTransaction),
+        YES_NO(link.updateSent),
+        1,
+        new Date(link.openedAt),
+      ]);
     return queryResult(
       [
         { name: 'DB_LINK', dataType: oracleVarchar2(128) },
@@ -24,7 +36,7 @@ registerView({
         { name: 'COMMIT_POINT_STRENGTH', dataType: oracleNumber(10) },
         { name: 'INSTANT', dataType: oracleDate() },
       ],
-      []
+      rows
     );
   },
 });

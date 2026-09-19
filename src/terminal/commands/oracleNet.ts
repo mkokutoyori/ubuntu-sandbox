@@ -29,6 +29,14 @@ import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { findEquipmentByIp, findEquipmentByHostname } from '@/shell/hostResolution';
 import { isPathReachable } from '@/network/devices/linux/network/HostLookup';
 import { IPAddress } from '@/network/core/types';
+import { PortNumber } from '@/network/core/ports/PortNumber';
+import {
+  OracleNetClient, type OracleNetSession, type OracleNetTransport,
+  type OracleNetTransportSocket,
+} from '@/network/oracle-net/OracleNetClient';
+import {
+  findBalancedGroups, readConnectAddresses, readRequestedService,
+} from '@/network/oracle-net/wire/ConnectDescriptor';
 
 export interface TnsDescriptor {
   host: string;
@@ -49,7 +57,10 @@ export interface TnsDescriptor {
 }
 
 export type TnsResolution =
-  | { ok: true; db: OracleDatabase; remote: boolean; descriptor: TnsDescriptor }
+  | {
+      ok: true; db: OracleDatabase; remote: boolean; descriptor: TnsDescriptor;
+      session?: OracleNetSession;
+    }
   | { ok: false; error: string };
 
 /**
@@ -95,56 +106,16 @@ export function parseConnectIdentifier(
  * EZConnect parser's own scope.
  */
 function parseTnsDescription(text: string): TnsDescriptor | null {
-  const addresses: { host: string; port: number }[] = [];
-  for (const body of findBalancedGroups(text, 'ADDRESS')) {
-    const host = /\(\s*HOST\s*=\s*([^)\s]+)\s*\)/i.exec(body)?.[1];
-    const port = /\(\s*PORT\s*=\s*(\d+)\s*\)/i.exec(body)?.[1];
-    if (host) addresses.push({ host, port: port ? Number.parseInt(port, 10) : ORACLE_CONFIG.PORT });
-  }
+  const addresses = readConnectAddresses(text);
   if (addresses.length === 0) return null;
-
-  const connectDataBody = findBalancedGroups(text, 'CONNECT_DATA')[0] ?? text;
-  const service = /\(\s*SERVICE_NAME\s*=\s*([^)\s]+)\s*\)/i.exec(connectDataBody)?.[1]
-    ?? /\(\s*SID\s*=\s*([^)\s]+)\s*\)/i.exec(connectDataBody)?.[1];
-
   const failoverEnabled = /\(\s*FAILOVER\s*=\s*ON\s*\)/i.test(text) || /FAILOVER_MODE/i.test(text);
-
   return {
     host: addresses[0].host,
     port: addresses[0].port,
-    service: (service ?? '').toUpperCase() || ORACLE_CONFIG.SID,
-    addressList: addresses,
+    service: readRequestedService(text) ?? ORACLE_CONFIG.SID,
+    addressList: addresses.map((a) => ({ ...a })),
     failoverEnabled,
   };
-}
-
-/**
- * Finds every `(KEY=...)` group in `text` at any nesting depth and returns
- * each one's body (the text between the outer parens, `KEY=...` included),
- * using real paren-depth counting instead of regex — a plain
- * `[^)]*`-style regex can't skip past sibling groups like
- * `(ADDRESS=(PROTOCOL=TCP)(HOST=x)(PORT=y))`, since the first inner `)`
- * ends the character class before the next sibling `(...)` is reached.
- */
-function findBalancedGroups(text: string, key: string): string[] {
-  const results: string[] = [];
-  const startRe = new RegExp(`\\(\\s*${key}\\s*=`, 'gi');
-  let m: RegExpExecArray | null;
-  while ((m = startRe.exec(text)) !== null) {
-    const start = m.index;
-    let depth = 0;
-    let i = start;
-    for (; i < text.length; i++) {
-      if (text[i] === '(') depth++;
-      else if (text[i] === ')') {
-        depth--;
-        if (depth === 0) { i++; break; }
-      }
-    }
-    results.push(text.slice(start + 1, i - 1));
-    startRe.lastIndex = i;
-  }
-  return results;
 }
 
 function splitOnce(s: string, sep: string): [string, string] {
@@ -248,7 +219,8 @@ function resolveOneAddress(
   port: number,
   service: string,
   getDb: (deviceId: string) => OracleDatabase,
-): { ok: true; db: OracleDatabase; remote: boolean } | { ok: false; error: string } {
+): { ok: true; db: OracleDatabase; remote: boolean; session?: OracleNetSession }
+  | { ok: false; error: string } {
   let target: Equipment | HostCapableDevice = localDevice;
   let remote = false;
   if (!isLocalAddress(localDevice, host)) {
@@ -311,12 +283,50 @@ function resolveOneAddress(
   if (port !== db.instance.listener.port) {
     return { ok: false, error: 'ORA-12541: TNS:no listener' };
   }
-  const sourceIp = remote ? (primaryIpv4(localDevice) ?? '0.0.0.0') : '127.0.0.1';
-  const outcome = db.instance.listener.attemptConnect(service, sourceIp);
-  if (outcome.ok === false) {
-    return { ok: false, error: outcome.error };
+  if (!remote) {
+    const outcome = db.instance.listener.attemptConnect(service, '127.0.0.1');
+    if (outcome.ok === false) {
+      return { ok: false, error: outcome.error };
+    }
+    return { ok: true, db, remote };
   }
-  return { ok: true, db, remote };
+
+  const dstIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) ? host : (primaryIpv4(target) ?? host);
+  const handshake = openOracleNetSession(localDevice, dstIp, port, service);
+  if (handshake.ok === false) {
+    return { ok: false, error: handshake.error };
+  }
+  return { ok: true, db, remote, session: handshake.session };
+}
+
+function oracleNetTransportOf(localDevice: HostCapableDevice): OracleNetTransport | null {
+  const stack = (localDevice as unknown as {
+    getTcpStack?: () => { connect(remoteIp: string, remotePort: number): OracleNetTransportSocket | null };
+  }).getTcpStack?.();
+  if (!stack) return null;
+  return { connect: (ip, port) => stack.connect(ip.toString(), port) };
+}
+
+function openOracleNetSession(
+  localDevice: HostCapableDevice,
+  dstIp: string,
+  port: number,
+  service: string,
+): { ok: true; session: OracleNetSession } | { ok: false; error: string } {
+  const transport = oracleNetTransportOf(localDevice);
+  const portNumber = PortNumber.tryParse(String(port));
+  if (!transport || !portNumber) {
+    return { ok: false, error: 'ORA-12541: TNS:no listener' };
+  }
+  const hostname = (localDevice as unknown as { getHostname?: () => string }).getHostname?.();
+  return new OracleNetClient(transport).connect(new IPAddress(dstIp), portNumber, {
+    host: dstIp,
+    port,
+    service,
+    programName: 'sqlplus',
+    hostName: hostname ?? (primaryIpv4(localDevice) ?? 'unknown'),
+    userName: 'oracle',
+  });
 }
 
 /**
@@ -341,7 +351,12 @@ export function resolveOracleConnectTarget(
   let lastError = 'ORA-12154: TNS:could not resolve the connect identifier specified';
   for (const addr of addresses) {
     const res = resolveOneAddress(localDevice, addr.host, addr.port, desc.service, getDb);
-    if (res.ok) return { ok: true, db: res.db, remote: res.remote, descriptor: { ...desc, host: addr.host, port: addr.port } };
+    if (res.ok) {
+      return {
+        ok: true, db: res.db, remote: res.remote, session: res.session,
+        descriptor: { ...desc, host: addr.host, port: addr.port },
+      };
+    }
     lastError = res.error;
   }
   return { ok: false, error: lastError };

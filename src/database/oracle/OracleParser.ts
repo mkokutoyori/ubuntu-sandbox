@@ -243,6 +243,13 @@ export class OracleParser extends BaseParser {
   private parseAlterSession(pos: SourcePosition): import('../engine/parser/ASTNode').AlterSessionStatement {
     let param: string | undefined;
     let value: string | undefined;
+    if (this.matchKeyword('CLOSE')) {
+      this.matchKeyword('DATABASE');
+      this.matchKeyword('LINK');
+      const closeDbLink = this.expectIdentifierOrKeyword().toUpperCase();
+      while (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) this.advance();
+      return { type: 'AlterSessionStatement', position: pos, closeDbLink };
+    }
     if (this.matchKeyword('SET')) {
       param = this.expectIdentifierOrKeyword().toUpperCase();
       this.matchOperator(TokenType.COMPARISON_OP, '=');

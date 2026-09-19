@@ -2195,8 +2195,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   async processTimers(seconds: number): Promise<void> {
     const ms = Math.max(0, seconds) * 1000;
     this.convergeDynamicRouting();
-    Router.simulationClock().advance(ms);
     this.advanceProtocolTimers(ms);
+    Router.simulationClock().advance(ms);
     this.convergeDynamicRouting();
   }
 
