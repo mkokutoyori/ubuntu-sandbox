@@ -1007,9 +1007,8 @@ export class RIPEngine implements IProtocolEngine {
     this.callbacks.updateRoute(state.route.network, state.route.mask, state.route);
     this.scheduleTriggeredUpdate(state.route);
 
-    state.gcTimer = this.timers.setTimeout(() => {
-      this.garbageCollect(key);
-    }, this.config.gcTimeout);
+    state.gcTimer = this.timers.setTimeout(
+      () => this.fireDueTimers(), this.config.gcTimeout);
 
     Logger.info(this.equipmentId, 'rip:route-invalidated',
       `${this.hostname}: RIP route ${key} invalidated (metric=16)`);
@@ -1056,8 +1055,7 @@ export class RIPEngine implements IProtocolEngine {
       state.gcTimer = null;
     }
 
-    state.timeoutTimer = this.timers.setTimeout(() => {
-      this.invalidateRoute(key, state);
-    }, this.config.routeTimeout);
+    state.timeoutTimer = this.timers.setTimeout(
+      () => this.fireDueTimers(), this.config.routeTimeout);
   }
 }
