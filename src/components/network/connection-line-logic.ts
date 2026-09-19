@@ -4,7 +4,6 @@
  */
 
 import type { ConnectionType } from '@/network';
-import type { Connection } from '@/store/networkStore';
 
 export interface Point {
   x: number;
@@ -27,7 +26,8 @@ export interface BundleSlot {
 export const NODE_HALF_WIDTH = 30;
 export const NODE_HALF_HEIGHT = 30;
 export const NODE_CENTER_OFFSET_Y = -10;
-export const BUNDLE_SPACING = 13;
+export const BUNDLE_SPACING = 18;
+export const BUNDLE_SPREAD_LIMIT = 72;
 export const CORNER_RADIUS = 10;
 
 export function bundleKey(aDeviceId: string, bDeviceId: string): string {
@@ -52,9 +52,14 @@ export function computeBundleSlots(
   return slots;
 }
 
+export function bundleSpacing(size: number): number {
+  if (size < 2) return 0;
+  return Math.min(BUNDLE_SPACING, BUNDLE_SPREAD_LIMIT / (size - 1));
+}
+
 export function bundleOffset(slot?: BundleSlot): number {
   if (!slot || slot.size < 2) return 0;
-  return (slot.index - (slot.size - 1) / 2) * BUNDLE_SPACING;
+  return (slot.index - (slot.size - 1) / 2) * bundleSpacing(slot.size);
 }
 
 function cardCenter(p: Point): Point {
@@ -230,8 +235,71 @@ export interface LabelPositions {
 
 export const LABEL_ANCHOR_DISTANCE = 30;
 export const LABEL_ANCHOR_DISTANCE_VERTICAL = 48;
-export const LABEL_STAGGER = 21;
-export const LABEL_LIFT = 9;
+
+export const CONNECTOR_HALF_LENGTH = 5;
+export const TAG_CHAR_WIDTH = 5.42;
+export const TAG_PADDING = 7;
+export const TAG_MIN_WIDTH = 22;
+export const TAG_HEIGHT = 14;
+export const LINK_SUMMARY_SEPARATOR = '\u27f7';
+
+export interface EndpointAnchor {
+  point: Point;
+  direction: Point;
+}
+
+export interface EndpointAnchors {
+  source: EndpointAnchor;
+  target: EndpointAnchor;
+}
+
+export interface ConnectorSegment {
+  a: Point;
+  b: Point;
+}
+
+function unitToward(from: Point, toward: Point): Point {
+  const len = Math.hypot(toward.x - from.x, toward.y - from.y);
+  if (len === 0) return { x: 1, y: 0 };
+  return { x: (toward.x - from.x) / len, y: (toward.y - from.y) / len };
+}
+
+export function computeEndpointAnchors(
+  source: Point,
+  target: Point,
+  slot?: BundleSlot,
+): EndpointAnchors {
+  const points = computeOrthogonalPoints(source, target, slot);
+  const last = points.length - 1;
+  return {
+    source: { point: points[0], direction: unitToward(points[0], points[1]) },
+    target: { point: points[last], direction: unitToward(points[last], points[last - 1]) },
+  };
+}
+
+export function connectorSegment(anchor: EndpointAnchor): ConnectorSegment {
+  const nx = -anchor.direction.y;
+  const ny = anchor.direction.x;
+  return {
+    a: {
+      x: anchor.point.x - nx * CONNECTOR_HALF_LENGTH,
+      y: anchor.point.y - ny * CONNECTOR_HALF_LENGTH,
+    },
+    b: {
+      x: anchor.point.x + nx * CONNECTOR_HALF_LENGTH,
+      y: anchor.point.y + ny * CONNECTOR_HALF_LENGTH,
+    },
+  };
+}
+
+export function interfaceTagWidth(label: string): number {
+  return Math.max(TAG_MIN_WIDTH, label.length * TAG_CHAR_WIDTH + TAG_PADDING * 2);
+}
+
+export function linkSummaryLabel(sourceName: string, targetName: string): string {
+  return `${abbreviateInterfaceName(sourceName)} ${LINK_SUMMARY_SEPARATOR}`
+    + ` ${abbreviateInterfaceName(targetName)}`;
+}
 
 const INTERFACE_ABBREVIATIONS: ReadonlyArray<readonly [RegExp, string]> = [
   [/^TenGigabitEthernet/i, 'Te'],
@@ -256,14 +324,11 @@ export function abbreviateInterfaceName(name: string): string {
 
 function labelPoint(from: Point, toward: Point, distance: number): Point {
   const len = Math.hypot(toward.x - from.x, toward.y - from.y);
-  if (len === 0) return { x: from.x, y: from.y - LABEL_LIFT };
+  if (len === 0) return { x: from.x, y: from.y };
   const ux = (toward.x - from.x) / len;
   const uy = (toward.y - from.y) / len;
   const reach = Math.min(distance, Math.max(len - 6, 0));
-  return {
-    x: from.x + ux * reach - uy * LABEL_LIFT,
-    y: from.y + uy * reach + ux * LABEL_LIFT - (uy === 0 ? LABEL_LIFT : 0),
-  };
+  return { x: from.x + ux * reach, y: from.y + uy * reach };
 }
 
 export function computeInterfaceLabelPositions(
@@ -272,33 +337,10 @@ export function computeInterfaceLabelPositions(
   slot?: BundleSlot,
 ): LabelPositions {
   const points = computeOrthogonalPoints(source, target, slot);
-  const stagger = (slot?.size ?? 1) > 1 ? slot!.index * LABEL_STAGGER : 0;
   const vertical = Math.abs(points[1].y - points[0].y) > Math.abs(points[1].x - points[0].x);
-  const base = vertical ? LABEL_ANCHOR_DISTANCE_VERTICAL : LABEL_ANCHOR_DISTANCE;
-  const distance = base + stagger;
+  const distance = vertical ? LABEL_ANCHOR_DISTANCE_VERTICAL : LABEL_ANCHOR_DISTANCE;
   return {
     source: labelPoint(points[0], points[1], distance),
     target: labelPoint(points[points.length - 1], points[points.length - 2], distance),
-  };
-}
-
-export interface MidpointInfo {
-  typeLabel: string;
-  color: string;
-}
-
-/**
- * Returns display info for the connection midpoint badge.
- */
-export function getConnectionMidpointInfo(connection: Connection): MidpointInfo {
-  const labels: Record<string, string> = {
-    ethernet: 'Ethernet',
-    serial: 'Serial',
-    console: 'Console'
-  };
-
-  return {
-    typeLabel: labels[connection.type] || connection.type,
-    color: getConnectionColor(connection.type)
   };
 }

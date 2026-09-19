@@ -1,12 +1,3 @@
-/**
- * ConnectionLine - SVG line connecting two devices
- *
- * Renders an orthogonal run between source and target devices, with
- * interface labels at each endpoint and a type indicator at the midpoint.
- * Several cables between the same pair share a bundle and are drawn on
- * parallel lanes, each carrying its rank.
- */
-
 import { memo, useMemo } from 'react';
 import { Connection, isConnectionActive } from '@/store/networkStore';
 import { NetworkDeviceUI, useNetworkStore } from '@/store/networkStore';
@@ -14,9 +5,15 @@ import {
   computeConnectionPath,
   getLinkAppearance,
   computeInterfaceLabelPositions,
-  getConnectionMidpointInfo,
+  computeEndpointAnchors,
+  connectorSegment,
+  interfaceTagWidth,
+  linkSummaryLabel,
   abbreviateInterfaceName,
+  TAG_HEIGHT,
   type BundleSlot,
+  type EndpointAnchor,
+  type Point,
 } from './connection-line-logic';
 import { cn } from '@/lib/utils';
 
@@ -63,8 +60,14 @@ function ConnectionLineImpl({ connection, devices, slot }: ConnectionLineProps) 
     slot,
   );
 
-  const midpointInfo = getConnectionMidpointInfo(connection);
-  const adjustedMidY = midY;
+  const anchors = computeEndpointAnchors(
+    { x: sourceDevice.x, y: sourceDevice.y },
+    { x: targetDevice.x, y: targetDevice.y },
+    slot,
+  );
+
+  const summary = linkSummaryLabel(
+    connection.sourceInterfaceId, connection.targetInterfaceId);
   const inBundle = (slot?.size ?? 1) > 1;
 
   // The state belongs in the label, not only in the colour: a red line
@@ -160,41 +163,22 @@ function ConnectionLineImpl({ connection, devices, slot }: ConnectionLineProps) 
         onClick={() => selectConnection(connection.id)}
       />
 
-      {/* Source interface label */}
-      <text
-        x={labelPositions.source.x}
-        y={labelPositions.source.y}
-        textAnchor="middle"
-        fill="white"
-        fontSize={9}
-        stroke="rgba(2,6,23,0.85)"
-        strokeWidth={2.5}
-        paintOrder="stroke"
-        opacity={isSelected ? 1 : 0.75}
-        className="pointer-events-none select-none transition-opacity group-hover:opacity-90"
-        fontFamily="monospace"
-      >
-        {abbreviateInterfaceName(connection.sourceInterfaceId)}
-      </text>
+      <Connector anchor={anchors.source} color={color} />
+      <Connector anchor={anchors.target} color={color} />
 
-      {/* Target interface label */}
-      <text
-        x={labelPositions.target.x}
-        y={labelPositions.target.y}
-        textAnchor="middle"
-        fill="white"
-        fontSize={9}
-        stroke="rgba(2,6,23,0.85)"
-        strokeWidth={2.5}
-        paintOrder="stroke"
-        opacity={isSelected ? 1 : 0.75}
-        className="pointer-events-none select-none transition-opacity group-hover:opacity-90"
-        fontFamily="monospace"
-      >
-        {abbreviateInterfaceName(connection.targetInterfaceId)}
-      </text>
+      <PortTag
+        at={labelPositions.source}
+        name={connection.sourceInterfaceId}
+        color={color}
+        emphasised={isSelected}
+      />
+      <PortTag
+        at={labelPositions.target}
+        name={connection.targetInterfaceId}
+        color={color}
+        emphasised={isSelected}
+      />
 
-      {/* Connection type indicator at midpoint */}
       {inBundle ? (
         <g
           className="cursor-pointer"
@@ -202,7 +186,7 @@ function ConnectionLineImpl({ connection, devices, slot }: ConnectionLineProps) 
         >
           <rect
             x={midX - 15}
-            y={adjustedMidY - 8}
+            y={midY - 8}
             width={30}
             height={16}
             rx={8}
@@ -212,7 +196,7 @@ function ConnectionLineImpl({ connection, devices, slot }: ConnectionLineProps) 
           />
           <text
             x={midX}
-            y={adjustedMidY}
+            y={midY}
             textAnchor="middle"
             dominantBaseline="central"
             fill={color}
@@ -227,7 +211,7 @@ function ConnectionLineImpl({ connection, devices, slot }: ConnectionLineProps) 
       ) : (
         <circle
           cx={midX}
-          cy={adjustedMidY}
+          cy={midY}
           r={isSelected ? 6 : 4}
           fill={color}
           stroke="rgba(2,6,23,0.75)"
@@ -237,24 +221,38 @@ function ConnectionLineImpl({ connection, devices, slot }: ConnectionLineProps) 
         />
       )}
 
-      {/* Type label below midpoint (visible on hover or selection) */}
-      <text
-        x={midX}
-        y={adjustedMidY + (inBundle ? 20 : (isSelected ? 16 : 14))}
-        textAnchor="middle"
-        fill={color}
-        fontSize={8}
-        fontWeight="600"
+      <g
         opacity={isSelected ? 1 : 0}
-        className="pointer-events-none select-none transition-opacity group-hover:opacity-80"
+        className="pointer-events-none select-none transition-opacity group-hover:opacity-100"
       >
-        {midpointInfo.typeLabel}
-      </text>
+        <rect
+          x={midX - interfaceTagWidth(summary) / 2}
+          y={midY + (inBundle ? 12 : 8)}
+          width={interfaceTagWidth(summary)}
+          height={TAG_HEIGHT}
+          rx={TAG_HEIGHT / 2}
+          fill="rgba(2,6,23,0.92)"
+          stroke={color}
+          strokeWidth={1.25}
+        />
+        <text
+          x={midX}
+          y={midY + (inBundle ? 12 : 8) + TAG_HEIGHT / 2}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fill={color}
+          fontSize={9}
+          fontWeight="600"
+          fontFamily="monospace"
+        >
+          {summary}
+        </text>
+      </g>
 
       {/* Delete button when selected */}
       {isSelected && (
         <g
-          transform={`translate(${midX + (inBundle ? 24 : 15)}, ${adjustedMidY - 15})`}
+          transform={`translate(${midX + (inBundle ? 24 : 15)}, ${midY - 15})`}
           className="cursor-pointer"
           onClick={() => removeConnection(connection.id)}
         >
@@ -270,6 +268,63 @@ function ConnectionLineImpl({ connection, devices, slot }: ConnectionLineProps) 
           </text>
         </g>
       )}
+    </g>
+  );
+}
+
+function Connector({ anchor, color }: { anchor: EndpointAnchor; color: string }) {
+  const { a, b } = connectorSegment(anchor);
+  return (
+    <g className="pointer-events-none">
+      <line
+        x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+        stroke="rgba(2,6,23,0.85)"
+        strokeWidth={6}
+        strokeLinecap="round"
+      />
+      <line
+        x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+        stroke={color}
+        strokeWidth={3}
+        strokeLinecap="round"
+      />
+    </g>
+  );
+}
+
+function PortTag(
+  { at, name, color, emphasised }:
+  { at: Point; name: string; color: string; emphasised: boolean },
+) {
+  const label = abbreviateInterfaceName(name);
+  const width = interfaceTagWidth(label);
+  return (
+    <g
+      className="pointer-events-none select-none transition-opacity group-hover:opacity-100"
+      opacity={emphasised ? 1 : 0.92}
+    >
+      <rect
+        x={at.x - width / 2}
+        y={at.y - TAG_HEIGHT / 2}
+        width={width}
+        height={TAG_HEIGHT}
+        rx={TAG_HEIGHT / 2}
+        fill="rgba(2,6,23,0.92)"
+        stroke={color}
+        strokeWidth={emphasised ? 1.6 : 1.1}
+      />
+      <text
+        x={at.x}
+        y={at.y}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill={color}
+        fontSize={9}
+        fontWeight="600"
+        fontFamily="monospace"
+      >
+        {label}
+      </text>
     </g>
   );
 }
