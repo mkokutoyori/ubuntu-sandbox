@@ -1092,6 +1092,7 @@ export interface AlterSessionStatement extends ASTNode {
   type: 'AlterSessionStatement';
   param?: string;
   value?: string;
+  closeDbLink?: string;
 }
 
 // ── Top-level statement union ───────────────────────────────────────

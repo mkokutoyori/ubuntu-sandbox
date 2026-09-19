@@ -1042,6 +1042,17 @@ export class OracleDatabase implements SqlCommandHost {
   }
 
   execAlterSession(stmt: AlterSessionStatement, ctx: ExecutionContext): ResultSet {
+    if (stmt.closeDbLink) {
+      const outcome = this.closeDbLinkSession(ctx.currentUser, stmt.closeDbLink);
+      if (outcome === 'not-open') {
+        return emptyResult('ORA-02081: database link is not open');
+      }
+      if (outcome === 'in-transaction') {
+        return emptyResult(
+          'ORA-02080: database link is in use in a distributed transaction');
+      }
+      return emptyResult('Session altered.');
+    }
     if (stmt.param && stmt.value !== undefined) {
       if (stmt.param === 'SERVEROUTPUT') {
         ctx.serverOutput = stmt.value === 'ON';
@@ -1198,6 +1209,46 @@ export class OracleDatabase implements SqlCommandHost {
 
   private pendingLinkSessions = new Map<string, DbLinkSession>();
 
+  private linkKey(currentUser: string, dbLink: string): string {
+    return `${currentUser.toUpperCase()}@${dbLink.toUpperCase()}`;
+  }
+
+  private linkSessionFor(currentUser: string, dbLink: string): DbLinkSession {
+    const key = this.linkKey(currentUser, dbLink);
+    const existing = this.pendingLinkSessions.get(key);
+    if (existing) return existing;
+    const opened = this.openLinkSession(currentUser, dbLink);
+    this.pendingLinkSessions.set(key, opened);
+    this.instance.getRuntimeState().openDbLinks.set(key, {
+      dbLink: dbLink.toUpperCase(),
+      owner: currentUser.toUpperCase(),
+      loggedOn: true,
+      inTransaction: false,
+      updateSent: false,
+      heterogeneous: false,
+      protocol: 'UNKWN',
+      openedAt: Date.now(),
+    });
+    return opened;
+  }
+
+  private forgetLinkSession(key: string): void {
+    this.pendingLinkSessions.delete(key);
+    this.instance.getRuntimeState().openDbLinks.delete(key);
+  }
+
+  closeDbLinkSession(currentUser: string, dbLink: string): 'closed' | 'not-open' | 'in-transaction' {
+    const key = this.linkKey(currentUser, dbLink);
+    const session = this.pendingLinkSessions.get(key);
+    if (!session) return 'not-open';
+    if (this.instance.getRuntimeState().openDbLinks.get(key)?.inTransaction) {
+      return 'in-transaction';
+    }
+    try { session.close(); } catch { /* already gone */ }
+    this.forgetLinkSession(key);
+    return 'closed';
+  }
+
   private openLinkSession(currentUser: string, dbLink: string): DbLinkSession {
     const linkName = dbLink.toUpperCase();
     const link = this.catalog.getDbLink(currentUser.toUpperCase(), linkName)
@@ -1223,20 +1274,16 @@ export class OracleDatabase implements SqlCommandHost {
     schema: string | undefined,
     table: string,
   ): { rows: import('../engine/storage/BaseStorage').CellValue[][]; columns: { name: string; dataType: string }[] } {
-    const session = this.openLinkSession(currentUser, dbLink);
-    try {
-      const qualified = schema ? `${schema}.${table}` : table;
-      const result = session.executeSql(`SELECT * FROM ${qualified}`);
-      return {
-        rows: result.rows.map(r => [...r]),
-        columns: result.columns.map(c => ({
-          name: c.name,
-          dataType: (typeof c.dataType === 'string' ? c.dataType : c.dataType?.name) ?? 'VARCHAR2',
-        })),
-      };
-    } finally {
-      session.close();
-    }
+    const session = this.linkSessionFor(currentUser, dbLink);
+    const qualified = schema ? `${schema}.${table}` : table;
+    const result = session.executeSql(`SELECT * FROM ${qualified}`);
+    return {
+      rows: result.rows.map(r => [...r]),
+      columns: result.columns.map(c => ({
+        name: c.name,
+        dataType: (typeof c.dataType === 'string' ? c.dataType : c.dataType?.name) ?? 'VARCHAR2',
+      })),
+    };
   }
 
   execDbLinkDml(
@@ -1244,11 +1291,12 @@ export class OracleDatabase implements SqlCommandHost {
     dbLink: string,
     stmt: import('../engine/parser/ASTNode').Statement,
   ): import('../engine/executor/ResultSet').ResultSet {
-    const key = `${currentUser.toUpperCase()}@${dbLink.toUpperCase()}`;
-    let session = this.pendingLinkSessions.get(key);
-    if (!session) {
-      session = this.openLinkSession(currentUser, dbLink);
-      this.pendingLinkSessions.set(key, session);
+    const session = this.linkSessionFor(currentUser, dbLink);
+    const record = this.instance.getRuntimeState().openDbLinks.get(
+      this.linkKey(currentUser, dbLink));
+    if (record) {
+      record.inTransaction = true;
+      record.updateSent = true;
     }
     return session.executeStatement(stmt);
   }
@@ -1256,7 +1304,7 @@ export class OracleDatabase implements SqlCommandHost {
   settleDbLinkTransactions(mode: 'COMMIT' | 'ROLLBACK'): void {
     if (this.pendingLinkSessions.size === 0) return;
     const sessions = [...this.pendingLinkSessions.values()];
-    this.pendingLinkSessions.clear();
+    for (const key of [...this.pendingLinkSessions.keys()]) this.forgetLinkSession(key);
     const pos = { line: 1, column: 1 };
     for (const s of sessions) {
       try {
