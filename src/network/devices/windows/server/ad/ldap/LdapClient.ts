@@ -8,7 +8,7 @@
 import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
 import {
   type LdapMessage, type ProtocolOp, type PartialAttribute, type LdapResult, type LdapControl,
-  encodeLdapMessage, decodeLdapMessage, LdapResultCode,
+  encodeLdapMessage, decodeLdapMessages, LdapResultCode,
   START_TLS_OID, PAGED_RESULTS_CONTROL_OID, encodePagedResultsValue, decodePagedResultsValue,
 } from './LdapMessage';
 import type { LdapFilter } from './LdapFilter';
@@ -44,11 +44,17 @@ export class LdapClient {
   private roundTrip(op: ProtocolOp, controls?: LdapControl[]): LdapMessage[] {
     const messageID = this.nextMessageId++;
     const replies: LdapMessage[] = [];
+    let pending = new Uint8Array(0);
     const unsubscribe = this.socket.onData((data) => {
       if (!(data instanceof Uint8Array)) return;
       try {
         const plaintext = this.tls ? this.decryptIncoming(data) : data;
-        replies.push(decodeLdapMessage(plaintext));
+        const joined = new Uint8Array(pending.length + plaintext.length);
+        joined.set(pending, 0);
+        joined.set(plaintext, pending.length);
+        const { messages, bytesConsumed } = decodeLdapMessages(joined);
+        pending = joined.slice(bytesConsumed);
+        for (const message of messages) replies.push(message);
       } catch { /* ignore malformed */ }
     });
     const bytes = encodeLdapMessage({ messageID, protocolOp: op, controls });
