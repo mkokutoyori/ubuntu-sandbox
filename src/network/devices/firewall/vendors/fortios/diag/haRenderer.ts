@@ -1,4 +1,7 @@
-import { electionSentence } from '../../../ha/HaTypes';
+import {
+  electionSentence, NO_MEMBER_USAGE,
+  type HaInterfaceStats, type HaMemberUsage,
+} from '../../../ha/HaTypes';
 import type { HaAgent } from '../../../ha/HaAgent';
 
 export interface HaViewFacts {
@@ -16,9 +19,46 @@ function roleLine(label: string, member: MemberView, index: number): string {
 }
 
 const NO_STATE_CHANGE = 'N/A';
+const STAT_INDENT = ' '.repeat(8);
+const SYSTEM_USAGE_HEADING = 'System Usage stats:';
+const HEARTBEAT_HEADING = 'HBDEV stats:';
+const MONITORED_HEADING = 'MONDEV stats:';
 const USAGE_HEADINGS: readonly string[] = Object.freeze([
-  'System Usage stats:', 'HBDEV stats:',
+  SYSTEM_USAGE_HEADING, HEARTBEAT_HEADING,
 ]);
+
+function memberHeading(member: MemberView): string {
+  return `${MEMBER_INDENT}${member.serial}`
+    + `(updated ${member.updatedSecondsAgo} seconds ago):`;
+}
+
+function usageLine(usage: HaMemberUsage): string {
+  return `${STAT_INDENT}sessions=${usage.sessions},`
+    + ` average-cpu-user/nice/system/idle=${usage.cpuUser}%/${usage.cpuNice}%`
+    + `/${usage.cpuSystem}%/${usage.cpuIdle}%, memory=${usage.memoryPercent}%`;
+}
+
+function interfaceLine(stats: HaInterfaceStats): string {
+  return `${STAT_INDENT}${stats.iface}: physical/${stats.medium},`
+    + ` ${stats.up ? 'up' : 'down'},`
+    + ` rx-bytes/packets/dropped/errors=${stats.rx.bytes}/${stats.rx.packets}`
+    + `/${stats.rx.dropped}/${stats.rx.errors},`
+    + ` tx=${stats.tx.bytes}/${stats.tx.packets}/${stats.tx.dropped}/${stats.tx.errors}`;
+}
+
+function usageBlock(members: readonly MemberView[]): string[] {
+  return [SYSTEM_USAGE_HEADING, ...members.flatMap(member =>
+    [memberHeading(member), usageLine(member.usage)])];
+}
+
+function interfaceBlock(
+  heading: string, members: readonly MemberView[],
+  pick: (usage: HaMemberUsage) => readonly HaInterfaceStats[],
+): string[] {
+  if (members.every(member => pick(member.usage).length === 0)) return [];
+  return [heading, ...members.flatMap(member =>
+    [memberHeading(member), ...pick(member.usage).map(interfaceLine)])];
+}
 
 function stateChangeTime(ha: HaAgent, facts: HaViewFacts): string {
   const records = ha.elections();
@@ -73,10 +113,15 @@ export function renderHaStatus(ha: HaAgent, facts: HaViewFacts): string {
   lines.push(...pickupLines(ha), 'Configuration Status:');
 
   for (const member of members(ha)) {
-    lines.push(`${MEMBER_INDENT}${member.serial}(updated 1 seconds ago): ${member.sync}`);
+    lines.push(`${memberHeading(member)} ${member.sync}`);
   }
 
-  lines.push(...USAGE_HEADINGS);
+  const vus = members(ha);
+  lines.push(
+    ...usageBlock(vus),
+    ...interfaceBlock(HEARTBEAT_HEADING, vus, usage => usage.heartbeat),
+    ...interfaceBlock(MONITORED_HEADING, vus, usage => usage.monitored),
+  );
 
   const primary = members(ha).find(member => member.role === 'master');
   const secondary = members(ha).find(member => member.role !== 'master');
@@ -107,6 +152,8 @@ interface MemberView {
   readonly hostname: string;
   readonly role: string;
   readonly sync: string;
+  readonly usage: HaMemberUsage;
+  readonly updatedSecondsAgo: number;
 }
 
 function members(ha: HaAgent): readonly MemberView[] {
@@ -115,6 +162,8 @@ function members(ha: HaAgent): readonly MemberView[] {
     hostname: ha.hostname(),
     role: ha.role(),
     sync: 'in-sync',
+    usage: ha.localUsage(),
+    updatedSecondsAgo: 0,
   };
   const digest = ha.configurationDigest();
   const peers = ha.knownPeers().map(peer => ({
@@ -122,6 +171,8 @@ function members(ha: HaAgent): readonly MemberView[] {
     hostname: peer.hostname,
     role: peer.role,
     sync: peer.configurationDigest === digest ? 'in-sync' : 'out-of-sync',
+    usage: peer.usage ?? NO_MEMBER_USAGE,
+    updatedSecondsAgo: ha.secondsSinceSeen(peer.serial),
   }));
   return [own, ...peers];
 }

@@ -8,6 +8,7 @@ import type { CertificateStore } from '../vpn/CertificateStore';
 import type { RemoteAuthOutcome } from '../auth/AuthPortal';
 import { buildFirewallPortals, type FirewallPortals } from '../auth/FirewallPortals';
 import { buildFirewallHa, type FirewallHa } from '../ha/FirewallHa';
+import type { HaInterfaceStats } from '../ha/HaTypes';
 import { buildFirewallNtp, type FirewallNtp } from './FirewallNtp';
 import {
   CAPTURED_HTTP_PORT, CaptivePortalRedirect,
@@ -36,6 +37,8 @@ export interface ManagementHost {
     server: string, user: string, password: string,
   ): Promise<RemoteAuthOutcome>;
   serial(): string;
+  cpuStates(): { user: number; nice: number; system: number; idle: number };
+  memoryPercent(): number;
   port(iface: string): Port | undefined;
   ports(): Port[];
   sendFrame(iface: string, frame: EthernetFrame): void;
@@ -74,6 +77,27 @@ export interface ManagementServices {
   readonly admin: AdminHttpServer;
 }
 
+const LINK_DOWN_MEDIUM = '00';
+
+function interfaceStatsOf(port: Port | undefined): HaInterfaceStats | undefined {
+  if (!port) return undefined;
+  const up = port.isConnected() && port.isOperationallyUp();
+  const counters = port.getCounters();
+  return {
+    iface: port.getName(),
+    medium: up ? `${port.getNegotiatedSpeed()}auto` : LINK_DOWN_MEDIUM,
+    up,
+    rx: {
+      bytes: counters.bytesIn, packets: counters.framesIn,
+      dropped: counters.dropsIn, errors: counters.errorsIn,
+    },
+    tx: {
+      bytes: counters.bytesOut, packets: counters.framesOut,
+      dropped: counters.dropsOut, errors: counters.errorsOut,
+    },
+  };
+}
+
 export function buildManagementServices(host: ManagementHost): ManagementServices {
   const portals = buildFirewallPortals({
     tcp: host.tcp(),
@@ -91,6 +115,9 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     sendFrame: (iface, frame) => { host.sendFrame(iface, frame); },
     port: (iface) => host.port(iface),
     sessions: () => host.sessions(),
+    cpuStates: () => host.cpuStates(),
+    memoryPercent: () => host.memoryPercent(),
+    interfaceStats: (iface) => interfaceStatsOf(host.port(iface)),
     authenticateAdmin: (admin, secret) =>
       host.authenticateAdmin(admin, secret, HA_COMMAND_SOURCE),
     runManagementCommand: (admin, line) =>

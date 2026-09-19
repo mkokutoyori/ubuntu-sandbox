@@ -543,6 +543,11 @@ export class Firewall extends Equipment {
       certificates: () => this.getCertificateStore(),
       remoteAuthenticate: (s1, u, p) => this.remoteAuthenticate(s1, u, p),
       serial: () => this.serialNumber(),
+      cpuStates: () => this.getSystemLoad().cpuStates(),
+      memoryPercent: () => {
+        const memory = this.getSystemLoad().memory();
+        return Math.round((memory.usedKib / memory.totalKib) * 100);
+      },
       port: (iface) => this.getPort(iface),
       ports: () => [...this.getPorts().values()],
       sendArpAware: (iface, ipPkt, nextHopIP) =>

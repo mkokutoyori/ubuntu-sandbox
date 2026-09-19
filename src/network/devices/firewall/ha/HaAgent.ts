@@ -3,7 +3,8 @@ import {
   HA_DEFAULTS, electPrimary,
   type HaCandidate, type HaCommandKind, type HaCommandReply,
   type HaCommandRequest, type HaConfiguration, type HaElectionReason,
-  type HaHeartbeat, type HaPeer, type HaRole, type HaSyncedSession,
+  type HaHeartbeat, type HaInterfaceStats, type HaMemberUsage,
+  type HaPeer, type HaRole, type HaSyncedSession,
 } from './HaTypes';
 
 export const ETHERTYPE_FGCP = 0x8890;
@@ -18,6 +19,12 @@ export interface HaAgentDeps {
   readonly configurationText: () => string;
   readonly applyConfiguration: (text: string) => void;
   readonly exportSessions: () => readonly HaSyncedSession[];
+  readonly sessionCount: () => number;
+  readonly cpuStates: () => {
+    user: number; nice: number; system: number; idle: number;
+  };
+  readonly memoryPercent: () => number;
+  readonly interfaceStats: (iface: string) => HaInterfaceStats | undefined;
   readonly importSessions: (sessions: readonly HaSyncedSession[]) => void;
   readonly authenticateAdmin: (admin: string, secret: string) => boolean;
   readonly runCommand: (admin: string, line: string) => string;
@@ -135,6 +142,33 @@ export class HaAgent {
 
   knownPeers(): readonly HaPeer[] { return Object.freeze([...this.peers.values()]); }
 
+  localUsage(): HaMemberUsage {
+    const cpu = this.deps.cpuStates();
+    return {
+      sessions: this.deps.sessionCount(),
+      cpuUser: cpu.user, cpuNice: cpu.nice,
+      cpuSystem: cpu.system, cpuIdle: cpu.idle,
+      memoryPercent: this.deps.memoryPercent(),
+      heartbeat: this.statsOf(this.config.heartbeatDevices.map(d => d.iface)),
+      monitored: this.statsOf(this.config.monitored),
+    };
+  }
+
+  secondsSinceSeen(serial: string): number {
+    const peer = this.peers.get(serial);
+    if (!peer) return 0;
+    return Math.max(0, Math.floor((this.deps.now() - peer.lastSeenAt) / 1000));
+  }
+
+  private statsOf(ifaces: readonly string[]): HaInterfaceStats[] {
+    const out: HaInterfaceStats[] = [];
+    for (const iface of ifaces) {
+      const stats = this.deps.interfaceStats(iface);
+      if (stats) out.push(stats);
+    }
+    return out;
+  }
+
   elections(): readonly HaElectionRecord[] {
     return Object.freeze(this.electionRecords.slice(-2).reverse());
   }
@@ -189,6 +223,7 @@ export class HaAgent {
       role: beat.role,
       steppingDown: beat.steppingDown,
       configurationDigest: beat.configurationDigest,
+      usage: beat.usage,
       silentTicks: 0,
       lastSeenAt: this.deps.now(),
     });
@@ -304,6 +339,7 @@ export class HaAgent {
       sessionPickup: this.config.sessionPickup,
       steppingDown: this.forcedFailover,
       sessions: this.config.sessionPickup ? this.deps.exportSessions() : [],
+      usage: this.localUsage(),
     };
 
     for (const device of this.config.heartbeatDevices) {
