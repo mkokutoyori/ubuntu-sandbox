@@ -17,6 +17,14 @@
  * Les 331 paires que l'extraction produisait ont ete relevees, verifiees
  * contre la syntaxe d'IOS, et ecrites dans `ciscoContinuations.ts`. Le
  * module d'extraction est supprime.
+ *
+ * UN CAS DE NON-REGRESSION CITAIT LA SUITE AU MAUVAIS ENDROIT, et il est
+ * corrige plutot que garde : il demandait `repeat` et `size` a `ping ?`.
+ * IOS ne les y met pas -- `ping ?` n'offre que la cible (`WORD`, `ip`,
+ * `ipv6`, `<cr>`) et la suite curatee vient APRES elle,
+ * `ping 10.0.0.1 ?` rendant `repeat`, `size`, `source`, `timeout`. Le
+ * cas demande maintenant les deux, chacune a sa place : la suite est
+ * toujours servie, et elle l'est la ou la machine la sert.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -140,7 +148,10 @@ describe('non-regression — ce qui etait declare autrement ne bouge pas', () =>
     const r = new CiscoRouter('C5') as unknown as Dev
       & { executeCommand(c: string): Promise<string> };
     await r.executeCommand('enable');
-    expect(offerts(r.cliHelp('ping '))).toEqual(expect.arrayContaining(['repeat', 'size']));
+    expect(offerts(r.cliHelp('ping ')))
+      .toEqual(expect.arrayContaining(['WORD', 'ip', 'ipv6']));
+    expect(offerts(r.cliHelp('ping 10.0.0.1 ')))
+      .toEqual(expect.arrayContaining(['repeat', 'size']));
   });
 
   it('et les arguments declares aussi', async () => {
