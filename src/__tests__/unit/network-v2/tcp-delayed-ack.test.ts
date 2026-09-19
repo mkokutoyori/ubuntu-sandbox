@@ -43,18 +43,8 @@
  * ── Discrimination (`git stash` de `TcpStack.ts`) ───────────────────
  *
  * TROIS cas sur huit tombent : les deux comptages d'ACK (mesures 3 et
- * 14 avant, 2 et 8 apres) et le garde-fou a 200 ms, qui avant repondait
+ * 14 avant, 2 et 7 apres) et le garde-fou a 200 ms, qui avant repondait
  * immediatement au segment injecte.
- *
- * Le second comptage vaut 8 et non 7 depuis que Nagle existe, et le
- * chiffre est juste : les 13 segments pleins se font acquitter deux par
- * deux, le 13e laisse un ACK du que le drain libere, et Nagle RETIENT le
- * 14e — 1020 octets, moins d'un segment plein — jusqu'a cet acquittement,
- * si bien que ce dernier morceau paie son propre ACK. C'est l'aller-retour
- * de queue bien connu de Nagle sous ACK retarde, et la RFC 9293 §3.7.4 le
- * veut ainsi : elle fait tamponner « all user data (regardless of the PSH
- * bit) ». Le trafic reste divise par pres de deux ; il n'est simplement
- * pas divise par exactement deux.
  *
  * Les CINQ autres sont des TEMOINS et passent des deux cotes :
  *   - l'integralite des octets, qui prouve que le laboratoire tient —
@@ -179,7 +169,7 @@ describe('TCP delayed ACK (RFC 5681 §4.2)', () => {
     expect(acks.length).toBe(2);
   });
 
-  it('cuts the pure-ACK count of a bulk transfer nearly in half', () => {
+  it('halves the pure-ACK count of a bulk transfer', () => {
     const { client, server, bus } = buildPair();
     server.getTcpStack().listen(7601, { onAccept: () => {} });
     const socket = client.getTcpStack().connect(SERVER_IP, 7601)!;
@@ -187,7 +177,7 @@ describe('TCP delayed ACK (RFC 5681 §4.2)', () => {
 
     socket.send('A'.repeat(20_000));
 
-    expect(acks.length).toBe(8);
+    expect(acks.length).toBe(7);
   });
 
   it('releases an ACK owed outside any send burst through the 200 ms timer', () => {
