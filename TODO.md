@@ -57,27 +57,32 @@ ne le signale. Retire avec la refutation ci-dessus.
 
 ## Pile TCP/IP
 
-### [tcp] Nagle : il faut d'abord savoir FUSIONNER deux petits voisins
-RFC 896 / RFC 9293 §3.7.4. Mesure : trois ecritures d'un octet donnent
-trois segments d'un octet, la ou une vraie pile en emet un seul puis
-retient les suivants jusqu'a l'acquittement.
+### [tcp] `close()` sur fenetre FERMEE perd les donnees en attente
+Mesure, sur la pile telle quelle : une socket ecrit 25 octets alors que
+le pair annonce une fenetre de 0, puis appelle `close()`. La trace
+cliente est
 
-**Ecrit, mesure, retire.** Sous une horloge reellement avancee, Nagle
-retient bien — mais rend `[1,1,1]` et non `[1,2]` : il DIFFERE sans
-FUSIONNER, parce que le `sendBacklog` est deja decoupe en morceaux et
-que rien ne recolle deux petits voisins. Or fusionner est ce qu'EST
-Nagle. La brique qui manque n'est donc plus la temporisation : l'ACK
-retarde est livre, et c'est la FIN DE RAFALE qui lui sert d'horloge
-(`src/__tests__/unit/network-v2/tcp-delayed-ack.test.ts` dit comment et
-pourquoi). Ce qui manque est une coalescence dans le `sendBacklog`, a
-ecrire AVANT toute nouvelle tentative.
+    ACK|FIN len=0 seq=+0
+    ACK    len=0 seq=+1
 
-**Mesure a ne pas refaire** : Nagle et l'ACK retarde poses ensemble sans
-cette coalescence livraient **0 octet** sur `send(20_000)`.
+Le FIN part au PREMIER numero de sequence, devant des donnees qui n'ont
+jamais quitte `sendBacklog` ; le recepteur ne recoit RIEN, la connexion
+passe en `time-wait` comme si tout avait ete livre, et `sendBacklog`
+garde son entree pour personne. Une perte silencieuse, sans erreur
+rendue a l'appelant.
 
-**Et il faut son interrupteur** : la RFC 9293 §3.7.4 fait de
-`TCP_NODELAY` un MUST. Aucun socket de ce depot ne porte aujourd'hui
-d'option de ce genre ; c'est a prevoir dans le meme lot.
+Ce n'est PAS un effet de Nagle : mesure faite au commit qui le precede.
+`_initiateClose` vide bien la file avant le FIN et passe outre la
+retenue de Nagle, donc ce que Nagle retenait part ; ce qu'une FENETRE
+fermee retient, non — et aucun vidage ne peut y changer quoi que ce
+soit, puisque rien ne peut partir.
+
+Ce qu'il faut : `closeAfterFlush` existe deja pour `syn-received`.
+Il faut l'etendre a `established`/`close-wait` — differer le FIN tant
+que `sendBacklog` n'est pas vide, et le reemettre depuis la fin de
+`flushSendBacklog` quand elle se vide. Le minuteur de persistance est
+deja arme dans ce cas, donc la reouverture de la fenetre finira par
+arriver ; c'est uniquement l'ordre FIN/donnees qui est faux.
 
 ### [tcp] donnees urgentes : le pointeur est ecrit, jamais lu
 `urgentPointer` n'est jamais emis qu'a `0` et n'est relu nulle part ; il
