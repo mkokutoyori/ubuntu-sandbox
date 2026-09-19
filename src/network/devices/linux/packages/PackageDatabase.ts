@@ -116,6 +116,8 @@ const CATALOGUE: readonly PackageEntry[] = [
     summary: 'reliable system and kernel logging daemon', units: ['rsyslog'] },
   { name: 'sed', version: '4.8-1ubuntu2', arch: 'amd64',
     summary: 'GNU stream editor for filtering/transforming text', },
+  { name: 'sshpass', version: '1.09-1', arch: 'amd64',
+    summary: 'Non-interactive ssh password authentication', },
   { name: 'strongswan', version: '5.9.5-2ubuntu2', arch: 'amd64',
     summary: 'IPsec VPN solution', },
   { name: 'sudo', version: '1.9.9-1ubuntu2.4', arch: 'amd64',
