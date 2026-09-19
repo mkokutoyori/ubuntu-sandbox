@@ -2,7 +2,7 @@ import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { TlsServerSession, type TlsServerConfig } from '@/network/tls/TlsServerSession';
 import { TlsClientSession, type TlsClientConfig } from '@/network/tls/TlsClientSession';
 import type { TlsRecord } from '@/network/tls/recordLayer';
-import { encodeRecords, decodeRecords } from '@/network/http/https/TlsRecordWire';
+import { encodeRecords, decodeRecords, pumpTlsHandshake } from '@/network/http/https/TlsRecordWire';
 import { encryptApplicationData, decryptApplicationData } from '@/network/http/https/ApplicationDataCipher';
 import { PkiKeyPair } from '@/network/pki/PkiKeyPair';
 import { tbsPayload, type X509Certificate } from '@/network/pki/X509Certificate';
@@ -35,14 +35,8 @@ const decoder = new TextDecoder();
 
 export function startClientHandshake(socket: TcpSocket, config: TlsClientConfig): TlsClientSession {
   const tls = new TlsClientSession(config);
-  socket.onData((data) => {
-    if (tls.result !== null) return;
-    const incoming = decodeRecords(binaryStringToBytes(String(data)));
-    const nextFlight = tls.handle(incoming);
-    if (nextFlight && nextFlight.length > 0) socket.write(bytesToBinaryString(encodeRecords(nextFlight)));
-  });
-  const firstFlight = tls.start();
-  socket.write(bytesToBinaryString(encodeRecords(firstFlight)));
+  pumpTlsHandshake(socket, tls);
+  socket.write(bytesToBinaryString(encodeRecords(tls.start())));
   return tls;
 }
 

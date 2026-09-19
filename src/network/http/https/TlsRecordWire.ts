@@ -68,24 +68,72 @@ export function decodeRecords(bytes: Uint8Array): TlsRecord[] {
   return records;
 }
 
-export interface TlsHandshakeSocket {
+export function decodeCompleteRecords(
+  bytes: Uint8Array,
+): { records: TlsRecord[]; bytesConsumed: number } {
+  const records: TlsRecord[] = [];
+  let offset = 0;
+  while (offset < bytes.length) {
+    if (bytes.length - offset < RECORD_HEADER_LENGTH) break;
+    const length = (bytes[offset + 3] << 8) | bytes[offset + 4];
+    if (bytes.length - offset - RECORD_HEADER_LENGTH < length) break;
+    const { record, bytesConsumed } = decodeRecord(bytes, offset);
+    records.push(record);
+    offset += bytesConsumed;
+  }
+  return { records, bytesConsumed: offset };
+}
+
+export interface TlsRecordSink {
   onData(handler: (data: unknown) => void): () => void;
+  setNoDelay?(enabled: boolean): void;
+}
+
+export interface TlsHandshakeSocket extends TlsRecordSink {
   write(data: string): unknown;
 }
 
-export interface TlsHandshakeDriver {
-  start(): readonly TlsRecord[];
+export function attachTlsRecordPump(
+  socket: TlsRecordSink,
+  onRecords: (records: readonly TlsRecord[], raw: string) => void,
+): () => void {
+  socket.setNoDelay?.(true);
+  let pending = new Uint8Array(0);
+  return socket.onData((data) => {
+    const arriving = binaryStringToBytes(String(data));
+    if (pending.length > 0) {
+      const joined = new Uint8Array(pending.length + arriving.length);
+      joined.set(pending, 0);
+      joined.set(arriving, pending.length);
+      pending = joined;
+    } else {
+      pending = arriving;
+    }
+    const { records, bytesConsumed } = decodeCompleteRecords(pending);
+    if (records.length === 0) return;
+    const raw = bytesToBinaryString(pending.slice(0, bytesConsumed));
+    pending = pending.slice(bytesConsumed);
+    onRecords(records, raw);
+  });
+}
+
+export interface TlsRecordHandler {
   handle(records: readonly TlsRecord[]): readonly TlsRecord[] | null;
+  readonly result: string | null;
+}
+
+export interface TlsHandshakeDriver extends TlsRecordHandler {
+  start(): readonly TlsRecord[];
   readonly result: 'success' | 'failure' | null;
 }
 
-function bytesToBinaryString(bytes: Uint8Array): string {
+export function bytesToBinaryString(bytes: Uint8Array): string {
   let out = '';
   for (const b of bytes) out += String.fromCharCode(b);
   return out;
 }
 
-function binaryStringToBytes(text: string): Uint8Array {
+export function binaryStringToBytes(text: string): Uint8Array {
   const bytes = new Uint8Array(text.length);
   for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
   return bytes;
@@ -94,15 +142,22 @@ function binaryStringToBytes(text: string): Uint8Array {
 export function runTlsHandshakeOverSocket(
   socket: TlsHandshakeSocket, tls: TlsHandshakeDriver,
 ): void {
-  const unsubscribe = socket.onData((data) => {
+  const unsubscribe = pumpTlsHandshake(socket, tls);
+  try {
+    socket.write(bytesToBinaryString(encodeRecords(tls.start())));
+  } finally {
+    unsubscribe();
+  }
+}
+
+export function pumpTlsHandshake(
+  socket: TlsHandshakeSocket, tls: TlsRecordHandler,
+): () => void {
+  return attachTlsRecordPump(socket, (records) => {
     if (tls.result !== null) return;
-    const incoming = decodeRecords(binaryStringToBytes(String(data)));
-    const nextFlight = tls.handle(incoming);
+    const nextFlight = tls.handle(records);
     if (nextFlight && nextFlight.length > 0) {
       socket.write(bytesToBinaryString(encodeRecords(nextFlight)));
     }
   });
-  const firstFlight = tls.start();
-  socket.write(bytesToBinaryString(encodeRecords(firstFlight)));
-  unsubscribe();
 }

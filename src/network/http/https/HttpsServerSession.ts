@@ -11,22 +11,10 @@ import { createResponse, type HttpMessage } from '../semantics/types';
 import type { Http1RequestHandler } from '../http1/Http1ServerSession';
 import { parseRequest, encodeResponse } from '../http1/Http1Wire';
 import { TlsServerSession, type TlsServerConfig } from '@/network/tls/TlsServerSession';
-import { encodeRecords, decodeRecords } from './TlsRecordWire';
+import { encodeRecords, attachTlsRecordPump, bytesToBinaryString } from './TlsRecordWire';
 import { encryptApplicationData, decryptApplicationData } from './ApplicationDataCipher';
 import type { IEventBus } from '@/events/EventBus';
 import { randomRequestId } from '../events';
-
-function bytesToBinaryString(bytes: Uint8Array): string {
-  let out = '';
-  for (const b of bytes) out += String.fromCharCode(b);
-  return out;
-}
-
-function binaryStringToBytes(text: string): Uint8Array {
-  const bytes = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
-  return bytes;
-}
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -107,18 +95,15 @@ export class HttpsServerSession {
       pending = maillon;
     };
 
-    const unsubscribe = socket.onData((data) => {
-      const incomingBytes = binaryStringToBytes(String(data));
-
+    const unsubscribe = attachTlsRecordPump(socket, (records) => {
       if (tls.result !== 'accept') {
-        const incoming = decodeRecords(incomingBytes);
-        const reply = tls.handle(incoming);
+        const reply = tls.handle(records);
         if (reply && reply.length > 0) socket.write(bytesToBinaryString(encodeRecords(reply)));
         return;
       }
 
       const { plaintext: requestBytes, nextSeq: clientNextSeq } = decryptApplicationData(
-        tls.clientApplicationTrafficSecret!, clientSeq, decodeRecords(incomingBytes),
+        tls.clientApplicationTrafficSecret!, clientSeq, records,
       );
       clientSeq = clientNextSeq;
 

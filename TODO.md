@@ -57,49 +57,77 @@ ne le signale. Retire avec la refutation ci-dessus.
 
 ## Pile TCP/IP
 
-### [tcp] Nagle et l'ACK retarde : TENTES, MESURES, non livrables en l'etat
-Les deux sont absents (RFC 896 / RFC 9293 §3.7.4, et RFC 5681 §4.2).
-Mesure de depart : trois ecritures d'un octet donnent trois segments
-d'un octet, et 3000 octets recus font partir TROIS ACK purs la ou une
-vraie pile en emet un pour deux segments.
+### [tcp] Nagle : ECRIT, MESURE, JUSTE — et retire une 3e fois
+RFC 896 / RFC 9293 §3.7.4. Le code a existe et fonctionnait : coalescence
+sur la queue de `sendBacklog` (`queueForSend`) et porte de retenue
+(`nagleHolds`) bornee sur la FILE et non sur la fenetre. Mesures, toutes
+reproductibles :
 
-**Les deux ont ete ecrits, puis retires.** La brique qui manque n'est ni
-l'un ni l'autre : c'est une HORLOGE QUE LES LABORATOIRES AVANCENT. Ce
-simulateur livre les trames synchroniquement (RTT 0 ms) et son
-ordonnanceur par defaut est le temps reel ; un ACK differe de 200 ms
-n'arrive donc jamais dans un scenario synchrone, et tout ce qui
-l'attend se bloque.
+    six ecritures de 5 octets, fenetre fermee
+        [1,4,5,5,5,5,5]  ->  [1,29]     et 6 entrees de file -> 1
+    trois ecritures emises depuis `onData`, dans la rafale du pair
+        [1,1,3]          ->  [1,4]
+    quatre ecritures binaires de 3 octets, fenetre fermee
+        [1,2,3,3,3]      ->  [1,11]
+    `setNoDelay(true)` sur le meme laboratoire  ->  [1,1,3]
+    vrac de 20 000 octets, fenetre de 128 octets : 20 000/20 000, file vide
 
-**Mesures, dans l'ordre ou elles ont ete faites** :
-- Nagle + ACK retarde ensemble : `send(20_000)` livre **0 octet** ; deux
-  petites ecritures `hello`/`world` n'en livrent qu'une.
-- ACK retarde SEUL : correct et sans degat — 1 ACK pour 3 segments,
-  20 000/20 000 octets livres, `helloworld` intact.
-- Nagle sous une horloge REELLEMENT avancee : il retient bien, mais rend
-  `[1,1,1]` et non `[1,2]` — il differe sans FUSIONNER, parce que le
-  `sendBacklog` est deja decoupe en morceaux et que rien ne recolle deux
-  petits voisins. Fusionner est pourtant ce qu'EST Nagle.
-- ACK retarde seul, sur la suite connectee (183 fichiers, 1728 cas) :
-  **6 echecs**, tous de la meme cause — le budget d'horloge des tests ne
-  comprend pas l'intervalle de l'ACK. Le cas qui tranche est
-  `tcp-flow-control` « a small receive window » : fenetre de 1280 octets,
-  soit MOINS DE DEUX SEGMENTS, donc la regle « un ACK tous les 2
-  segments » ne peut jamais se declencher et le transfert INTERBLOQUE en
-  attendant le minuteur. C'est exactement pourquoi la RFC 5681 §4.2 fait
-  des 500 ms un MUST et non un SHOULD.
+**CE QUI L'A FAIT RETIRER, ET C'EST NOMME CETTE FOIS.**
+`tuto-fortigate-tp15` tombe sur 3 cas de 13 (13/13 au commit d'avant).
+`runTlsHandshakeOverSocket`
+(`src/network/http/https/TlsRecordWire.ts`) s'abonne, ecrit UNE fois,
+puis se desabonne : il exige que tout le handshake tienne dans un seul
+`write()` synchrone. Le pilote ne survit donc a AUCUN mecanisme qui
+differe un flight — Nagle en est un, une fenetre fermee en serait un
+autre. Trace : le parent recoit trois flights (2439, 1407, 2439), avec
+Nagle un seul (2439), et deux sondes sur trois ne recoivent rien, d'ou
+« no certificate presented ».
 
-**Verifie en chemin et NON casse** : le fast retransmit tient. Sur 30 000
-octets avec ACK retarde, perdre le 2e, 4e ou 5e segment declenche une
-retransmission et `ssthresh` vaut 2920 — l'arithmetique que le test
-existant attend. Le scenario a 5 segments du test actuel est seulement
-trop court pour produire 3 doublons une fois les ACK groupes, ce qui est
-le comportement reel de TCP et non un defaut.
+**Deux mesures qui corrigent l'hypothese evidente, a ne pas refaire :**
+- Nagle se comporte comme la RFC le decrit — `held=true inflight=1460`
+  puis `held=false inflight=0` des l'acquittement. Il n'y a pas de
+  retenue definitive.
+- `decodeRecords` ne leve pas et rend `records=2` des DEUX cotes, et
+  `result=failure` arrive AUSSI au parent a chaque flight. Le test ne
+  depend pas de la reussite du handshake, seulement du certificat. Ce
+  n'est donc pas un probleme de decoupage de records.
 
-**Ce qu'il faudrait, dans cet ordre** : d'abord decider comment un
-laboratoire fait avancer le temps (ou rendre l'ACK en attente vidable a
-la fin d'une rafale synchrone), ensuite l'ACK retarde — qui est pret et
-correct —, et seulement apres Nagle, qui demande EN PLUS de fusionner
-les petits morceaux voisins du `sendBacklog`.
+**Quatre reparations essayees, aucune ne ferme le cas** : `TCP_NODELAY`
+sur la socket cliente (le retenteur est le SERVEUR, port 443) ;
+liberation des retenues en fin de rafale ; suppression du desabonnement
+precoce ; neutralisation du garde `flushingBacklog`.
+
+**Ce qu'il faut, et c'est un lot a soi** : rendre le pilote de handshake
+REPRENABLE — qu'il pompe jusqu'a ce que la session se resolve au lieu
+d'ecrire un coup et de se desabonner. Tant qu'il ne l'est pas, reposer
+Nagle le recassera a l'identique.
+
+### [tcp] `close()` sur fenetre FERMEE perd les donnees en attente
+Mesure, sur la pile telle quelle : une socket ecrit 25 octets alors que
+le pair annonce une fenetre de 0, puis appelle `close()`. La trace
+cliente est
+
+    ACK|FIN len=0 seq=+0
+    ACK    len=0 seq=+1
+
+Le FIN part au PREMIER numero de sequence, devant des donnees qui n'ont
+jamais quitte `sendBacklog` ; le recepteur ne recoit RIEN, la connexion
+passe en `time-wait` comme si tout avait ete livre, et `sendBacklog`
+garde son entree pour personne. Une perte silencieuse, sans erreur
+rendue a l'appelant.
+
+Ce n'est PAS un effet de Nagle : mesure faite au commit qui le precede.
+`_initiateClose` vide bien la file avant le FIN et passe outre la
+retenue de Nagle, donc ce que Nagle retenait part ; ce qu'une FENETRE
+fermee retient, non — et aucun vidage ne peut y changer quoi que ce
+soit, puisque rien ne peut partir.
+
+Ce qu'il faut : `closeAfterFlush` existe deja pour `syn-received`.
+Il faut l'etendre a `established`/`close-wait` — differer le FIN tant
+que `sendBacklog` n'est pas vide, et le reemettre depuis la fin de
+`flushSendBacklog` quand elle se vide. Le minuteur de persistance est
+deja arme dans ce cas, donc la reouverture de la fenetre finira par
+arriver ; c'est uniquement l'ordre FIN/donnees qui est faux.
 
 ### [tcp] donnees urgentes : le pointeur est ecrit, jamais lu
 `urgentPointer` n'est jamais emis qu'a `0` et n'est relu nulle part ; il
