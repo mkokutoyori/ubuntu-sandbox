@@ -5,7 +5,7 @@ import { TlsClientSession } from '../../../tls/TlsClientSession';
 import { CertificateAuthority } from '../../../pki/CertificateAuthority';
 import { CertificateVerifier } from '../../../pki/CertificateVerifier';
 import {
-  encodeRecords, decodeRecords, runTlsHandshakeOverSocket,
+  encodeRecords, decodeRecords, runTlsHandshakeOverSocket, attachTlsRecordPump,
 } from '../../../http/https/TlsRecordWire';
 import {
   encryptApplicationData, decryptApplicationData,
@@ -190,9 +190,7 @@ export class SslDeepInspection {
     let started = false;
     let relay: ((records: readonly TlsRecord[], raw: string) => void) | null = null;
 
-    clientSocket.onData((data) => {
-      const raw = String(data);
-      const records = decodeRecords(binaryStringToBytes(raw));
+    attachTlsRecordPump(clientSocket, (records, raw) => {
       if (!started) {
         started = true;
         const serverName = serverNameOf(records);
