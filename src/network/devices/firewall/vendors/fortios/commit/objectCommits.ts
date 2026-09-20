@@ -1,7 +1,7 @@
 import { vipAddress } from '../../../model/AddressObject';
 import { proxyOwnerKey, type Firewall } from '../../../Firewall';
 import type {
-  CategoryFilterEntry, FilterTable, UrlFilterEntry, UtmAction,
+  CategoryFilterEntry, FilterTable, UntrustedCertAction, UrlFilterEntry, UtmAction,
 } from '../../../inspection/UtmProfiles';
 import type {
   FortiCategoryFilterPatch, FortiCentralSnatPatch, FortiFilterTablePatch,
@@ -11,6 +11,12 @@ import type {
 export function utmAction(declared: string): UtmAction {
   if (declared === 'block') return 'block';
   if (declared === 'monitor' || declared === 'log-only') return 'monitor';
+  return 'allow';
+}
+
+export function untrustedCertAction(declared: string | undefined): UntrustedCertAction {
+  if (declared === 'block') return 'block';
+  if (declared === 'ignore') return 'ignore';
   return 'allow';
 }
 

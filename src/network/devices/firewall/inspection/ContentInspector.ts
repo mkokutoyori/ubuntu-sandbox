@@ -254,7 +254,17 @@ export function scanApplicationControl(
       application,
     });
   }
-  return CLEAN;
+
+  const fallback = list.otherApplicationAction;
+  if (fallback === undefined || fallback === 'allow') return CLEAN;
+
+  return Object.freeze({
+    kind: 'application-blocked' as const,
+    blocked: fallback === 'block',
+    detail: application,
+    profile: list.name,
+    application,
+  });
 }
 
 export function readSni(flow: InspectedFlow): string | undefined {
