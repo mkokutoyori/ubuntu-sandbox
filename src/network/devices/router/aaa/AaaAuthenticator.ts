@@ -370,16 +370,15 @@ export class AaaAuthenticator {
   private async tryRadiusGroup(sec: CiscoSecurityConfig, group: AaaServerGroup, username: string, password: string): Promise<MethodVerdict> {
     const client = radiusClientOf(this.router);
     if (!client) return 'continue';
-    let reachable = false;
     for (const memberName of group.members) {
       const server = sec.radiusServers.get(memberName);
       if (!server || !server.address) continue;
-      reachable = true;
       this.syncRadiusServer(client, server);
-      const accepted = await client.authenticate(username, password, server.address);
-      if (accepted) return 'accept';
+      const outcome = await client.authenticateWithOutcome(username, password, server.address);
+      if (outcome === 'accept') return 'accept';
+      if (outcome === 'reject') return 'reject';
     }
-    return reachable ? 'reject' : 'continue';
+    return 'continue';
   }
 
   private async tryTacacsGroup(sec: CiscoSecurityConfig, group: AaaServerGroup, username: string, password: string): Promise<{ verdict: MethodVerdict; privLvl?: number | null }> {

@@ -156,12 +156,19 @@ sérieux au défaut du §6.
 **Date :** 2026-09-20 · Relevé dans
 `src/__tests__/debug/infra/second-passage-attaques.debug.test.ts`.
 
-Le pronostic de la §5 s'est vérifié sur le premier contrôle attaqué.
+Le pronostic de la §5 s'est vérifié : sur les huit contrôles attaqués,
+quatre tiennent, quatre portaient un défaut.
 
 | Contrôle | Attaque | Accepté | Rendu par `show` | **Applique** |
 |---|---|---|---|---|
 | **uRPF** | paquet source `203.0.113.9`, aucune route | oui | oui | **oui** |
 | **storm-control** | 53 diffusions à travers le port | oui | `Fa0/1 Forwarding 1.00%` | **NON** → S-01 |
+| **BPDU guard** | BPDU sur un port `portfast` | oui | oui | **oui** |
+| **SNMP** | requête v2c, community inconnue | oui | oui | **oui** |
+| **NTP authentifié** | serveur sans la clé exigée | oui | oui | **oui** |
+| **ARP inspection** | ARP gratuit à liaison fausse | oui | `(all)` → S-05 | **oui** |
+| **VLAN natif** | double étiquetage | oui | oui | **partiel** → S-02 |
+| **AAA** | repli après serveur injoignable | oui | oui | **NON** → S-03, S-04 |
 
 ### 6.1 uRPF tient, dans les deux sens
 
@@ -215,7 +222,178 @@ classes de trafic serait un défaut plus grave que son absence.
 
 Non-régression : `src/__tests__/audit/storm-control-audit-preuves.test.ts`.
 
-### 6.3 Ce qui reste à attaquer
+### 6.3 BPDU guard, SNMP, NTP, ARP inspection — ils appliquent
 
-Les six autres contrôles de la §5 n'ont pas encore été éprouvés. Ne pas
-les compter comme validés.
+Quatre des six contrôles restants tiennent, et le relevé le montre dans
+les deux sens, comme l'exige §6 :
+
+```
+[bpdu-2] avant la BPDU du voyou                Fa0/3 connected
+[bpdu-3] après la BPDU du voyou                Fa0/3 disabled
+
+[snmp-4] requête v2c, community=public         refusée (aucune donnée)
+[snmp-5] TÉMOIN — la même APRÈS `snmp-server community public RO`  aboutit
+
+[ntp-4] clé exigée, serveur SANS clé           stratum 16, unsynchronized
+[ntp-5] TÉMOIN — clé exigée, serveur AVEC clé  stratum 4, synchronized
+
+[dai-3] deux ARP gratuits usurpant 10.0.0.10   2 reçus, 2 rejetés
+[dai-4] journal                                Fa0/2 1 …/10.0.0.10 2 DHCP Deny
+[dai-5] table ARP de la victime                non empoisonnée
+```
+
+Les témoins ne sont pas décoratifs. Sans `[snmp-5]`, « la requête v2c
+est refusée » ne distinguerait pas un contrôle de communauté d'un agent
+inerte ; sans `[ntp-5]`, « stratum 16 » ne distinguerait pas
+l'authentification NTP d'un lien qui ne porte rien.
+
+Deux limites nommées au passage, et mesurées :
+
+- **`SnmpAgent` ne parle que v2c sur le fil.** `snmp-server group … v3
+  priv` et `snmp-server user … auth sha … priv aes 128 …` sont acceptés
+  et rendus, `groups`/`versions` ne sont consultés par aucun chemin de
+  décision, et la brique manquante est USM (RFC 3414). Un labo ne peut
+  donc pas démontrer qu'une requête v2c est refusée *parce que* seul v3
+  est déclaré — ce qu'il démontre ici, c'est le contrôle de communauté.
+- **`ntp server X` sans `key N` se synchronise même sous `ntp
+  authenticate`.** C'est la lecture retenue par le dépôt dans
+  `NtpAgent.authRequise()` (`this.config.authenticate && a.keyId !==
+  undefined`), sourcée Cisco : `ntp authenticate` arme le mécanisme,
+  c'est `key` sur l'association qui l'exige. Ce n'est pas un défaut.
+
+### 6.4 S-02 — le saut de VLAN par double étiquetage — **CORRIGÉ**
+
+L'attaque : une trame à DEUX étiquettes injectée sur un port d'accès —
+extérieure égale au VLAN natif du trunk, intérieure VLAN 10.
+
+```
+[hop-1] natif 1, pirate en VLAN 1, double étiquette 1/10   VLAN 10  ← le saut aboutit
+[hop-2] TÉMOIN — même port, trame simple                   VLAN 1
+[hop-3] `switchport trunk native vlan 999`, pirate en 1    VLAN 1   ← refermé
+[hop-4] TÉMOIN — trame simple, natif 999                   VLAN 1
+[hop-5] natif 999 mais le pirate EST dans le natif          VLAN 10  ← toujours ouvert
+[hop-6] `vlan dot1q tag native`                            % Invalid VLAN ID
+```
+
+`[hop-1]` et `[hop-5]` sont le comportement d'un vrai commutateur, et
+doivent le rester. `[hop-3]` prouve que `switchport trunk native vlan`
+applique. Le constat est `[hop-6]` : **la seule parade qui refermerait
+`[hop-5]` n'existait pas.** `vlan dot1q tag native` n'était déclarée
+nulle part — la commande tombait sur l'analyseur de `vlan <id>`, qui
+répondait `% Invalid VLAN ID`.
+
+Premier temps de la mesure, et il faut le dire : `[hop-6]` a d'abord été
+relevé comme « accepté (silence) », ce qui aurait fait conclure au pire
+des trois cas du §6. C'était une erreur de sonde — la ligne lisait la
+sortie de `end`, pas celle de la commande. La commande était refusée,
+donc §6 était respecté : un critère que le moteur ne sait pas évaluer
+est refusé. Il manquait le moteur, pas la rigueur.
+
+La commande est désormais déclarée (`vlan dot1q tag native` /
+`no …`, annoncée par `?` à chaque niveau, rendue par
+`show running-config`) et **elle décide** : à la sortie d'un trunk le
+VLAN natif est étiqueté au lieu d'être envoyé nu, et une trame NON
+étiquetée arrivant sur un trunk est rejetée. Relevé après correctif :
+
+```
+[hop-7] même attaque avec `vlan dot1q tag native`   VLAN 1   ← refermé
+[hop-8] TÉMOIN — trame simple                       VLAN 1
+```
+
+La documentation Cisco est **injoignable depuis cet environnement**
+(`www.cisco.com` → `connect_rejected` par le proxy de sortie, mesuré) ;
+les deux moitiés du comportement viennent donc de la définition de la
+commande pour l'étiquetage, et de la règle « un critère de sécurité
+échoue FERMÉ » (§6) pour le rejet de l'entrant non étiqueté. Les
+protocoles de contrôle (STP, CDP, DTP, LLDP, VTP, LACP, UDLD, EAPOL)
+sont interceptés avant la classification de VLAN, donc ce rejet ne les
+touche pas.
+
+### 6.5 S-03 — le repli `local` après un groupe RADIUS injoignable — **CORRIGÉ**
+
+L'attaque : `aaa authentication login default group GRP local`, serveur
+RADIUS à une adresse où il n'y a personne, et une ouverture de session
+SSH avec le compte **local**.
+
+```
+[aaa-0]  TÉMOIN DU LABO — `login local`, aucun aaa        entre
+[aaa-0b] TÉMOIN — aaa new-model + `… default local`       entre
+[aaa-2]  `… default group GRP` seul, serveur muet         refusé
+[aaa-4]  `… default group GRP local`                      REFUSÉ  ← le défaut
+[aaa-5]  TÉMOIN — mauvais mot de passe, repli autorisé    refusé
+```
+
+`[aaa-4]` est l'inverse exact d'IOS : un serveur injoignable doit être
+**sauté**, et la chaîne continuer vers `local`. Ici il **rejetait**, et
+la session était refusée. Conséquence pratique : *un routeur dont le
+serveur RADIUS tombe verrouille dehors tous ses administrateurs, alors
+même que l'opérateur avait écrit `local` pour ce cas précis.*
+
+La cause tenait en une ligne. `RadiusClientAgent` distingue déjà en
+interne `accept` / `reject` / `timeout` — son propre commentaire dit que
+« seul `timeout` déclenche le basculement » — mais `authenticate()`
+écrasait les trois en un booléen, et `tryRadiusGroup` relisait ce
+booléen comme un **rejet faisant autorité** :
+
+```ts
+reachable = true;                       // « joignable » = une adresse est CONFIGURÉE
+const accepted = await client.authenticate(…);
+if (accepted) return 'accept';
+return reachable ? 'reject' : 'continue';
+```
+
+`tryTacacsGroup`, quarante lignes plus bas, tenait déjà la bonne forme :
+`pass` → accepte, `fail` → rejette, **tout le reste** → serveur suivant,
+puis méthode suivante. C'est la duplication du §2 dans sa version la
+plus coûteuse : deux écritures d'un même fait, dont une seule est juste.
+
+Le verdict à trois valeurs est désormais porté jusqu'à l'appelant
+(`authenticateWithOutcome`), et `tryRadiusGroup` a la forme de son
+jumeau TACACS+. Relevé après correctif :
+
+```
+[aaa-2] `… group GRP` seul, serveur muet     Permission denied
+[aaa-4] `… group GRP local`                  entre          ← le repli applique
+[aaa-5] mauvais mot de passe                 Permission denied
+```
+
+### 6.6 S-04 — `radius-server timeout` / `retransmit` jamais appliqués — **CORRIGÉ**
+
+Trouvé en instrumentant S-03 : la chaîne mettait **20 s** à rendre son
+verdict là où l'opérateur avait écrit `radius-server timeout 1` et
+`radius-server retransmit 0` — soit exactement les défauts IOS, 4 essais
+de 5 s.
+
+Un serveur déclaré par `radius server <nom>` naissait avec
+`timeoutSec: 5, retransmit: 3` **inscrits dans son enregistrement**, si
+bien que la chaîne `server.timeoutSec ?? defauts.timeoutSec` choisissait
+toujours la valeur du serveur. Les réglages globaux étaient acceptés,
+rendus par `show running-config`, et sans aucun effet. La forme héritée
+`radius-server host …`, elle, laissait ces champs indéfinis — donc elle
+marchait, et les deux formes ne répondaient pas la même chose sur la
+même machine (§3).
+
+Le défaut vit désormais **une seule fois**, au bout de la chaîne `??`
+(`radiusAuthPort`, `syncRadiusServer`), et l'enregistrement du serveur ne
+porte que ce que l'opérateur a tapé. Même correctif pour TACACS+, qui
+avait la même forme. Mesure après : **1 003 ms** au lieu de 20 006.
+
+### 6.7 S-05 — la colonne `Vlan` de `show ip arp inspection statistics` — **CORRIGÉ**
+
+Le contrôle DAI applique (§6.3). Mais le tableau de ses compteurs
+annonçait une colonne `Vlan` et y écrivait le mot `(all)` : les
+statistiques étaient tenues **par port seulement**, donc le VLAN — que
+le journal `show ip arp inspection log` connaît, lui — était perdu. Deux
+vues d'un même fait dont une seule sait répondre. Les compteurs sont
+désormais tenus par port **et** par VLAN, et le tableau rend une ligne
+par VLAN observé.
+
+### 6.8 Ce qui reste à attaquer
+
+De la §5, il reste **la pile hôte** : `iptables`, `sudo`, les
+permissions `oracle`. Ne pas la compter comme validée.
+
+Non-régression du second passage :
+`src/__tests__/audit/storm-control-audit-preuves.test.ts` (S-01) et
+`src/__tests__/audit/second-passage-audit-preuves.test.ts` (S-02 à
+S-05, 7 cas discriminants sur 13).

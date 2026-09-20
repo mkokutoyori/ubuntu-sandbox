@@ -99,6 +99,7 @@ import {
 import {
   type ArpAccessList,
   type ArpInspectionConfig,
+  type ArpStats as ArpInspectionStats,
   createDefaultArpInspectionConfig,
 } from '../arp/types';
 import { ArpInspectionPipeline } from '../arp/ArpInspectionPipeline';
@@ -518,6 +519,7 @@ export abstract class Switch extends Equipment {
   private arpAccessLists: Map<string, ArpAccessList> = new Map();
   private arpErrDisabledPorts: Set<string> = new Set();
   private arpInspectionPipeline: ArpInspectionPipeline | null = null;
+  private dot1qTagNative = false;
   private arpRecoveryTimer: TimerHandle | null = null;
   private arpRecoveryScheduler: IScheduler | null = null;
   private arpErrDisableTimestamps: Map<string, number> = new Map();
@@ -2327,6 +2329,11 @@ export abstract class Switch extends Equipment {
           return;
         }
       } else {
+        if (this.dot1qTagNative) {
+          Logger.debug(this.id, 'switch:untagged-on-trunk',
+            `${this.name}: dropping untagged frame on trunk ${portName} (dot1q tag native)`);
+          return;
+        }
         ingressVlan = cfg.trunkNativeVlan;
       }
     }
@@ -2734,11 +2741,11 @@ export abstract class Switch extends Equipment {
           if (pv && this.resolvePvlanPrimary(vlan) !== undefined) {
             if (!this.pvlanEgressAllowed(exceptPort, portName, vlan)) continue;
             const outVlan = this.pvlanTrunkEgressVlan(pv, vlan);
-            this.sendFrame(portName, outVlan === cfg.trunkNativeVlan
+            this.sendFrame(portName, this.trunkEgressIsUntagged(outVlan, cfg)
               ? this.stripTag(frame) : this.addTag(frame, outVlan, cos));
             continue;
           }
-          if (vlan === cfg.trunkNativeVlan) {
+          if (this.trunkEgressIsUntagged(vlan, cfg)) {
             // Native VLAN: send untagged
             this.sendFrame(portName, isQinQ ? this.stripOuterTag(frame) : this.stripTag(frame));
           } else {
@@ -2794,11 +2801,11 @@ export abstract class Switch extends Equipment {
       if (pv && this.resolvePvlanPrimary(vlan) !== undefined) {
         if (ingressPort !== undefined && !this.pvlanEgressAllowed(ingressPort, portName, vlan)) return;
         const outVlan = this.pvlanTrunkEgressVlan(pv, vlan);
-        this.sendFrame(portName, outVlan === cfg.trunkNativeVlan
+        this.sendFrame(portName, this.trunkEgressIsUntagged(outVlan, cfg)
           ? this.stripTag(frame) : this.addTag(frame, outVlan, cos));
         return;
       }
-      if (vlan === cfg.trunkNativeVlan) {
+      if (this.trunkEgressIsUntagged(vlan, cfg)) {
         this.sendFrame(portName, isQinQ ? this.stripOuterTag(frame) : this.stripTag(frame));
       } else {
         this.sendFrame(portName, isQinQ ? this.addOuterTag(frame, vlan, cos) : this.addTag(frame, vlan, cos));
@@ -3356,6 +3363,14 @@ export abstract class Switch extends Equipment {
   }
 
   // ─── 802.1Q Tagging Helpers ───────────────────────────────────────
+
+  private trunkEgressIsUntagged(vlan: number, cfg: SwitchportConfig): boolean {
+    return vlan === cfg.trunkNativeVlan && !this.dot1qTagNative;
+  }
+
+  setDot1qTagNative(enabled: boolean): void { this.dot1qTagNative = enabled; }
+
+  isDot1qTagNative(): boolean { return this.dot1qTagNative; }
 
   private addTag(frame: EthernetFrame, vlan: number, cos: number = 0): TaggedEthernetFrame {
     return {
@@ -4054,6 +4069,9 @@ export abstract class Switch extends Equipment {
   _getArpErrDisabledPorts(): Set<string> { return this.arpErrDisabledPorts; }
   _getArpInspectionStats() {
     return this.arpInspectionPipeline?.getStats() ?? new Map();
+  }
+  _getArpInspectionVlanStats() {
+    return this.arpInspectionPipeline?.getVlanStats() ?? new Map<number, ArpInspectionStats>();
   }
   _getArpInspectionPortStats(port: string) {
     return this.arpInspectionPipeline?.getPortStats(port);
