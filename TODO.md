@@ -57,33 +57,6 @@ ne le signale. Retire avec la refutation ci-dessus.
 
 ## Pile TCP/IP
 
-### [tcp] `close()` sur fenetre FERMEE perd les donnees en attente
-Mesure, sur la pile telle quelle : une socket ecrit 25 octets alors que
-le pair annonce une fenetre de 0, puis appelle `close()`. La trace
-cliente est
-
-    ACK|FIN len=0 seq=+0
-    ACK    len=0 seq=+1
-
-Le FIN part au PREMIER numero de sequence, devant des donnees qui n'ont
-jamais quitte `sendBacklog` ; le recepteur ne recoit RIEN, la connexion
-passe en `time-wait` comme si tout avait ete livre, et `sendBacklog`
-garde son entree pour personne. Une perte silencieuse, sans erreur
-rendue a l'appelant.
-
-Ce n'est PAS un effet de Nagle : mesure faite au commit qui le precede.
-`_initiateClose` vide bien la file avant le FIN et passe outre la
-retenue de Nagle, donc ce que Nagle retenait part ; ce qu'une FENETRE
-fermee retient, non — et aucun vidage ne peut y changer quoi que ce
-soit, puisque rien ne peut partir.
-
-Ce qu'il faut : `closeAfterFlush` existe deja pour `syn-received`.
-Il faut l'etendre a `established`/`close-wait` — differer le FIN tant
-que `sendBacklog` n'est pas vide, et le reemettre depuis la fin de
-`flushSendBacklog` quand elle se vide. Le minuteur de persistance est
-deja arme dans ce cas, donc la reouverture de la fenetre finira par
-arriver ; c'est uniquement l'ordre FIN/donnees qui est faux.
-
 ### [tcp] donnees urgentes : le pointeur est ecrit, jamais lu
 `urgentPointer` n'est jamais emis qu'a `0` et n'est relu nulle part ; il
 n'existe aucune API pour emettre des donnees urgentes. Le drapeau URG
