@@ -24,7 +24,7 @@ export interface DnsUdpClient {
     port: number,
     listener: (delivery: { udp: { payload: unknown } }) => void,
     processName?: string,
-  ): boolean;
+  ): number | false;
   udpClose(port: number): void;
   sendUdpDatagramTo(
     destinationIP: IPAddress | IPv6Address,

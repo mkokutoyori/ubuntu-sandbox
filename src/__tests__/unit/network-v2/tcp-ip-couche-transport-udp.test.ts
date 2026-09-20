@@ -24,7 +24,7 @@ interface Host {
   executeCommand(command: string): Promise<string>;
   getPort(name: string): unknown;
   powerOn(): void;
-  udpBind(port: number, handler: (d: Datagram) => void): boolean;
+  udpBind(port: number, handler: (d: Datagram) => void): number | false;
   udpClose(port: number): void;
   sendUdpDatagram(dstIp: IPAddress, dstPort: number, srcPort: number, payload: unknown): boolean;
 }
@@ -113,7 +113,7 @@ describe('une seule table de ports', () => {
     server.udpBind(5000, () => { /* premier */ });
     server.udpClose(5000);
 
-    expect(server.udpBind(5000, () => { /* second */ })).toBe(true);
+    expect(server.udpBind(5000, () => { /* second */ })).toBe(5000);
   });
 
   it('`ss -lun` montre le port UDP en ecoute', async () => {

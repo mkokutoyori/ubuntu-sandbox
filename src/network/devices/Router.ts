@@ -4319,7 +4319,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return {
       bind: (port, onQuery) => ep.udpBind(port, (d) => {
         onQuery(d.sourceIP.toString(), d.udp.sourcePort, d.udp.payload);
-      }),
+      }) !== false,
       unbind: (port) => { ep.udpClose(port); },
       reply: (dst, dstPort, charge) => {
         ep.sendUdpDatagramTo(new IPAddress(dst), dstPort, DNS_PORT, charge as Uint8Array);

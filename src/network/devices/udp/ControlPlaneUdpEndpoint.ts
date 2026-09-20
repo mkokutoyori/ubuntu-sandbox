@@ -25,7 +25,7 @@ export class ControlPlaneUdpEndpoint implements TftpEndpoint {
 
   udpBind(
     port: number, handler: (delivery: TftpUdpDelivery) => void, owner?: string,
-  ): boolean {
+  ): number | false {
     return this.ports.bind(port, handler, owner);
   }
 

@@ -11,7 +11,7 @@ import {
 import { bogusChecksum, payloadBytes } from '@/network/layers/transport/L4Checksum';
 import { type StreamPayload, isStreamPayload, sliceStream, appendStream } from './StreamPayload';
 import { fragmentIPv4, IPV4_FLAG_DF } from '@/network/core/Ipv4Fragmentation';
-import { PortNumber } from '@/network/core/ports/PortNumber';
+import { PortNumber, PORT_ANY } from '@/network/core/ports/PortNumber';
 import { PROHIBITED_UNREACH_CODES } from '@/network/core/IcmpErrors';
 
 /**
@@ -469,17 +469,21 @@ export class TcpStack {
     if (!PortNumber.isValid(localPort)) {
       throw new Error(`TCP listener port out of range: ${localPort} (EINVAL)`);
     }
-    const listener = new TcpListener(localIp, localPort, opts.onAccept, opts.identity ?? {});
+    const boundPort = localPort === PORT_ANY ? this.nextEphemeral(localIp) : localPort;
+    if (boundPort < 0) {
+      throw new Error(`TCP listener has no free ephemeral port on ${localIp} (EADDRINUSE)`);
+    }
+    const listener = new TcpListener(localIp, boundPort, opts.onAccept, opts.identity ?? {});
     if (this.listeners.has(listener.key())) {
-      throw new Error(`TCP listener already bound on ${localIp}:${localPort} (EADDRINUSE)`);
+      throw new Error(`TCP listener already bound on ${localIp}:${boundPort} (EADDRINUSE)`);
     }
     this.listeners.set(listener.key(), listener);
-    this.socketSink?.announce(localIp, localPort, listener.identity);
+    this.socketSink?.announce(localIp, boundPort, listener.identity);
     this.getBus().publish({
       topic: 'tcp.listener.changed',
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
-        localIp, localPort, added: true,
+        localIp, localPort: boundPort, added: true,
       },
     });
     return listener;

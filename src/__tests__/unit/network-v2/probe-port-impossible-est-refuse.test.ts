@@ -82,7 +82,7 @@ describe('un port impossible ne se lie pas', () => {
 
   it('TEMOIN : un port ordinaire se lie toujours, des deux cotes', () => {
     const endpoint = new CiscoRouter('R2').getUdpEndpoint();
-    expect(endpoint.udpBind(1234, () => undefined, 'sonde')).toBe(true);
+    expect(endpoint.udpBind(1234, () => undefined, 'sonde')).toBe(1234);
     const stack = new LinuxPC('PC2').getTcpStack();
     expect(() => stack.listen(8080, { onAccept: () => undefined })).not.toThrow();
   });

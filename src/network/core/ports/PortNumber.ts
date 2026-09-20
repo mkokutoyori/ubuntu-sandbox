@@ -24,6 +24,8 @@ export interface PortSpec {
 
 /** Lowest valid port number. */
 export const MIN_PORT = 0;
+/** POSIX `bind()` wildcard: "assign me an ephemeral port" — never a port to sit on. */
+export const PORT_ANY = 0;
 /** Highest valid port number. */
 export const MAX_PORT = 65535;
 /** Ports below this conventionally require privilege to bind (POSIX). */

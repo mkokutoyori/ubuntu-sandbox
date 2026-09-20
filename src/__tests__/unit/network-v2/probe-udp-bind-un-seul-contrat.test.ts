@@ -16,7 +16,7 @@ beforeEach(() => {
 });
 
 interface UdpHost {
-  udpBind(port: number, handler: (d: unknown) => void): boolean;
+  udpBind(port: number, handler: (d: unknown) => void): number | false;
   udpClose(port: number): void;
 }
 
@@ -35,11 +35,11 @@ function routerEndpoint(): UdpHost {
 
 describe('un port libre se lie, et le dit', () => {
   it('sur un hote Linux', () => {
-    expect(linuxHost().udpBind(5000, () => { /* ecoute */ })).toBe(true);
+    expect(linuxHost().udpBind(5000, () => { /* ecoute */ })).toBe(5000);
   });
 
   it('sur le point d acces du plan de controle d un routeur', () => {
-    expect(routerEndpoint().udpBind(5000, () => { /* ecoute */ })).toBe(true);
+    expect(routerEndpoint().udpBind(5000, () => { /* ecoute */ })).toBe(5000);
   });
 });
 
@@ -109,7 +109,7 @@ describe('libérer rend le port disponible', () => {
     host.udpBind(5000, () => { /* premier */ });
     host.udpClose(5000);
 
-    expect(host.udpBind(5000, () => { /* second */ })).toBe(true);
+    expect(host.udpBind(5000, () => { /* second */ })).toBe(5000);
   });
 
   it('sur le point d acces du routeur', () => {
@@ -117,6 +117,6 @@ describe('libérer rend le port disponible', () => {
     ep.udpBind(5000, () => { /* premier */ });
     ep.udpClose(5000);
 
-    expect(ep.udpBind(5000, () => { /* second */ })).toBe(true);
+    expect(ep.udpBind(5000, () => { /* second */ })).toBe(5000);
   });
 });

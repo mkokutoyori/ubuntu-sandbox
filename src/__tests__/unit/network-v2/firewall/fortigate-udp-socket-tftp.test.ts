@@ -92,7 +92,7 @@ describe('le pare-feu ouvre un port UDP', () => {
   it('deux liaisons sur le meme port sont refusees', async () => {
     const { fgt } = await laboratoire({ withServer: false });
 
-    expect(fgt.getUdpEndpoint().udpBind(6000, () => undefined)).toBe(true);
+    expect(fgt.getUdpEndpoint().udpBind(6000, () => undefined)).toBe(6000);
     expect(fgt.getUdpEndpoint().udpBind(6000, () => undefined)).toBe(false);
   });
 
