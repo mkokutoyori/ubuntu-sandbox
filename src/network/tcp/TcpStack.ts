@@ -1045,6 +1045,13 @@ export class TcpStack {
       socket.flushingBacklog = false;
     }
     this.maybeArmPersistTimer(socket);
+    const closePending = socket.closeAfterFlush
+      && socket.sendBacklog.length === 0
+      && (socket.state === 'established' || socket.state === 'close-wait');
+    if (closePending) {
+      socket.closeAfterFlush = false;
+      this._initiateClose(socket);
+    }
   }
 
   /**
@@ -1174,6 +1181,10 @@ export class TcpStack {
     }
     if (socket.state === 'established' || socket.state === 'close-wait') {
       this.flushSendBacklog(socket, true);
+      if (socket.sendBacklog.length > 0) {
+        socket.closeAfterFlush = true;
+        return;
+      }
     }
     if (socket.state === 'established') {
       this._transition(socket, 'fin-wait-1');
