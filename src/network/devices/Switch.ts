@@ -844,6 +844,38 @@ export abstract class Switch extends Equipment {
     // handleFrame. No cross-machine bus subscription.
   }
 
+  private stormControlDrops(
+    portName: string, frame: EthernetFrame, ingressVlan: number, isMulticast: boolean,
+  ): boolean {
+    const port = this.getPort(portName);
+    if (!port) return false;
+    const storm = port.getStormControl();
+    if (!storm.isConfigured()) return false;
+
+    const known = this.macTable.has(`${ingressVlan}:${frame.dstMAC.toString()}`);
+    const type = frame.dstMAC.isBroadcast()
+      ? 'broadcast'
+      : isMulticast ? 'multicast' : (known ? null : 'unicast');
+    if (type === null) return false;
+
+    const verdict = storm.admit(
+      type, ethernetFrameBytes(frame) * 8, port.getSpeed(), Date.now());
+    if (verdict === 'forward') return false;
+
+    Logger.warn(this.id, 'switch:storm-control',
+      `${this.name}: ${portName} suppressed ${type} traffic above the configured level`);
+    if (storm.getAction() === 'shutdown') this.stormErrDisablePort(portName);
+    return true;
+  }
+
+  private stormErrDisablePort(portName: string): void {
+    const port = this.getPort(portName);
+    if (!port) return;
+    port.setUp(false);
+    Logger.warn(this.id, 'switch:storm-errdisable',
+      `${this.name}: ${portName} err-disabled by storm-control`);
+  }
+
   private arpErrDisablePort(port: string): void {
     if (this.arpErrDisabledPorts.has(port)) return;
     this.arpErrDisabledPorts.add(port);
@@ -2524,6 +2556,8 @@ export abstract class Switch extends Equipment {
         `${this.name}: dropped frame to ${dstMAC} VLAN ${ingressVlan} (blackhole destination)`);
       return;
     }
+
+    if (this.stormControlDrops(portName, frame, ingressVlan, isMulticast)) return;
 
     if (isMulticast || !this.macTable.has(`${ingressVlan}:${dstMAC}`)) {
       const snoopedPorts = isMulticast ? this.resolveSnoopedMulticastEgressPorts(portName, frame, ingressVlan) : null;

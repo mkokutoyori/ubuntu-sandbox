@@ -5223,14 +5223,23 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         const parsed = parseStormControl(words);
         if (parsed.incomplete) throw new CliIncomplete();
         if (!parsed.setting) throw new CliInvalidInput({ token: words[parsed.at] });
+        const port = this.selectedInterface
+          ? this.d().getPort(this.selectedInterface) : null;
+        port?.getStormControl().apply(parsed.setting);
         return this.noterLigneInterface(`storm-control ${words.join(' ')}`.trim());
       },
       clearStormControl: (words) => {
         const quoi = (words[0] ?? '').toLowerCase();
-        if (quoi === 'action') return this.retirerLigneInterface('storm-control action');
+        const port = this.selectedInterface
+          ? this.d().getPort(this.selectedInterface) : null;
+        if (quoi === 'action') {
+          port?.getStormControl().clearAction();
+          return this.retirerLigneInterface('storm-control action');
+        }
         if (!STORM_CONTROL_TYPES.includes(quoi)) {
           throw new CliInvalidInput({ token: words[0] });
         }
+        port?.getStormControl().clearLevel(quoi as 'broadcast' | 'multicast' | 'unicast');
         return this.retirerLigneInterface(`storm-control ${quoi} level`);
       },
     };

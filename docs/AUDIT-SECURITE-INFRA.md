@@ -148,3 +148,74 @@ comme validés.
 
 C'est le programme d'un second passage, et chacun est un candidat
 sérieux au défaut du §6.
+
+---
+
+## 6. Second passage — les attaques, et ce qu'elles ont trouvé
+
+**Date :** 2026-09-20 · Relevé dans
+`src/__tests__/debug/infra/second-passage-attaques.debug.test.ts`.
+
+Le pronostic de la §5 s'est vérifié sur le premier contrôle attaqué.
+
+| Contrôle | Attaque | Accepté | Rendu par `show` | **Applique** |
+|---|---|---|---|---|
+| **uRPF** | paquet source `203.0.113.9`, aucune route | oui | oui | **oui** |
+| **storm-control** | 53 diffusions à travers le port | oui | `Fa0/1 Forwarding 1.00%` | **NON** → S-01 |
+
+### 6.1 uRPF tient, dans les deux sens
+
+Le contrôle est éprouvé comme l'exige §6 — *il correspond quand il doit,
+et il ne correspond pas quand il ne doit pas* :
+
+```
+[uRPF-T] TÉMOIN avant durcissement           0% packet loss
+[uRPF-3] source légitime APRÈS durcissement  0% packet loss
+[uRPF-4] source légitime rejetée ?           non
+[uRPF-5] source usurpée rejetée ?            OUI
+```
+
+Le témoin et le cas [uRPF-3] sont indispensables : un banc qui n'aurait
+mesuré que le rejet n'aurait pas distingué « uRPF filtre » de « ce lien
+ne passe plus rien ».
+
+### 6.2 S-01 — `storm-control` n'appliquait rien — **CORRIGÉ**
+
+Le relevé initial :
+
+```
+storm-control broadcast level 1.00   accepté, silence
+show storm-control                   Fa0/1 Forwarding 1.00% 1.00%
+running-config                       la ligne est rendue
+53 diffusions à travers le port      53 passent, AUCUNE supprimée
+show interfaces status               Fa0/1 connected
+```
+
+La lecture du code a confirmé la mesure : le réglage était analysé,
+**refusé s'il était incomplet**, stocké comme ligne de configuration et
+rendu par `show storm-control` et `show running-config` — et le plan de
+commutation ne le consultait **nulle part**. C'est le §6 dans sa forme
+la plus exacte, et pour un contrôle de sécurité il produit une **fausse
+assurance** : un opérateur croit son port protégé de l'inondation.
+
+Le moteur évalue désormais les trois unités (`percent`, `pps`, `bps`)
+sur une fenêtre d'une seconde, avec seuil haut et seuil bas. Relevé
+après correctif :
+
+```
+40 diffusions, seuil 10 pps, sans action   10 relayées, 30 supprimées
+le port reste                              connected
+une trame UNICAST connue pendant la tempête  passe
+avec `action shutdown`                     Fa0/1 disabled
+```
+
+**Le troisième point est celui qui compte.** `storm-control broadcast`
+ne doit rien faire à l'unicast : un limiteur qui déborde sur les autres
+classes de trafic serait un défaut plus grave que son absence.
+
+Non-régression : `src/__tests__/audit/storm-control-audit-preuves.test.ts`.
+
+### 6.3 Ce qui reste à attaquer
+
+Les six autres contrôles de la §5 n'ont pas encore été éprouvés. Ne pas
+les compter comme validés.
