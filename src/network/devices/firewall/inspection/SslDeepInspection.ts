@@ -311,13 +311,15 @@ export class SslDeepInspection {
 
     const session = new TlsClientSession({
       verifier: new CertificateVerifier({ trustAnchors: this.deps.trustAnchors() }),
+      allowUntrustedPeer: true,
       alpn: ['http/1.1'],
     });
     runTlsHandshakeOverSocket(socket, session);
 
     const certificate = session.peerCertificate;
     if (!certificate) { socket.close(); return null; }
-    return { socket, session, certificate, verified: session.result === 'success' };
+    if (session.result !== 'success') { socket.close(); return null; }
+    return { socket, session, certificate, verified: session.peerVerified };
   }
 
   private reSign(server: X509Certificate, authorityName: string) {

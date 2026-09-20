@@ -44,30 +44,34 @@
  * la CA normale signe — et les cas ci-dessous portent sur la DECISION
  * (passer ou bloquer), jamais sur ce detail.
  *
- * CE QUE CE BANC NE PROUVE PAS, et pourquoi il ne le pretend pas.
- * L'effet de `untrusted-cert' sur une VRAIE session n'est pas montre ici,
- * parce qu'il n'est pas montrable aujourd'hui : mesure sur ce meme labo,
- * meme serveur, meme requete —
+ * L'EFFET SUR UNE VRAIE SESSION a d'abord ete indemontrable, et c'est
+ * ce qui a mis au jour un second defaut, corrige depuis. Mesure d'alors,
+ * sur ce meme labo :
  *
- *   curl -sS -k https://192.168.20.10/  SANS profil d'inspection
+ *   curl -sS -k https://192.168.20.10/  sans profil d'inspection
  *     -> la page nginx est servie
  *   la meme requete AVEC `set status deep-inspection'
- *     -> curl: (35) OpenSSL SSL_connect: SSL routines::wrong version
- *        number, a l'identique pour `allow', `block' ET `ignore'
+ *     -> curl: (35) ... wrong version number, a l'identique pour
+ *        `allow', `block' ET `ignore'
  *
- * L'interception casse donc TOUTE session TLS, quelle que soit la
- * decision. Un cas << a block, la session est refusee >> passerait ici
- * pour la mauvaise raison — la session echoue de toute facon — et
- * epinglerait un defaut comme contrat. Il a ete ecrit, mesure, puis
- * RETIRE. Le defaut d'interception est reel et distinct de ce lot ; il
- * est rapporte dans le message de commit avec cette mesure.
+ * L'interception cassait TOUTE session TLS. Un cas << a block, la session
+ * est refusee >> passait alors pour la mauvaise raison. Il avait ete
+ * ecrit, mesure, puis RETIRE ; il est revenu ici une fois la cause
+ * fermee — la session cliente amont abandonnait la poignee de main des
+ * que le certificat du serveur ne se verifiait pas, sans jamais envoyer
+ * son `Finished', de sorte qu'aucun serveur non deja de confiance ne
+ * pouvait etre inspecte. C'est precisement le cas que `untrusted-cert'
+ * existe pour arbitrer.
  *
- * Ce que le banc prouve donc pour `untrusted-cert' : que le critere
- * traverse les quatre maillons et parvient au profil que le moteur lit,
- * la ou il tombait avant au premier. La decision elle-meme est ecrite au
- * point ou la confiance est calculee.
+ * Les trois valeurs se distinguent donc maintenant, et c'est le TRIO qui
+ * fait la preuve : `block' ne prouverait rien seul — une session qui
+ * echoue de toute facon le satisferait —, mais `allow' et `ignore' qui
+ * SERVENT la page, a cote, etablissent que le refus vient bien de la
+ * decision.
  *
- * Discrimination : 4 cas sur 9, mesures par `git stash push -- src/network'.
+ * Discrimination : 4 cas sur 9 pour le plombage des deux criteres, puis
+ * 2 cas sur 13 pour le correctif d'interception, chacun mesure par
+ * `git stash push -- src/network' contre l'etat qui le precede.
  * Les cinq qui passent des deux cotes, et pourquoi :
  *
  *   - les deux cas << le CLI accepte le reglage et le rend >> sont le
@@ -79,9 +83,14 @@
  *     cas. Il garde que le reglage permissif reste permissif.
  *   - << une entree explicite garde la main >> : NON-REGRESSION. La
  *     precedence entree > defaut existait deja.
- *   - << temoin : sans profil applicatif, la navigation fonctionne >> :
- *     le TEMOIN du labo. Sans lui, un banc fait de blocages ne
- *     prouverait rien.
+ *   - << temoin : sans profil applicatif, la navigation fonctionne >> et
+ *     << temoin : sans profil d'inspection, la meme page HTTPS est
+ *     servie >> : les deux TEMOINS du labo. Sans eux, un banc fait de
+ *     blocages ne prouverait rien.
+ *   - << a `block`, la session ... est REFUSEE >> ne discrimine pas le
+ *     correctif d'interception, puisque la session echouait deja avant.
+ *     Il ne vaut qu'accompagne de `allow' et `ignore', qui eux
+ *     discriminent : c'est leur succes qui donne son sens a ce refus.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
@@ -165,6 +174,25 @@ async function listeSansEntreePourHttp(
 
 const navigue = (pcLan: LinuxPC): Promise<string> =>
   pcLan.executeCommand('curl -sS http://192.168.20.10/');
+
+const navigueTls = (pcLan: LinuxPC): Promise<string> =>
+  pcLan.executeCommand('curl -sS -k https://192.168.20.10/');
+
+const SITE_HTTPS =
+  'server {\\n  listen 443 ssl;\\n  server_name _;\\n  root /var/www/html;\\n'
+  + '  index index.nginx-debian.html;\\n'
+  + '  ssl_certificate /etc/ssl/certs/srv.crt;\\n'
+  + '  ssl_certificate_key /etc/ssl/private/srv.key;\\n}\\n';
+
+async function servirHttpsAutoSigne(srvDmz: LinuxServer): Promise<void> {
+  await srvDmz.executeCommand('mkdir -p /etc/ssl/certs /etc/ssl/private');
+  await srvDmz.executeCommand(
+    'openssl req -x509 -newkey rsa:512 -keyout /etc/ssl/private/srv.key '
+    + '-out /etc/ssl/certs/srv.crt -days 365 -nodes -subj "/CN=192.168.20.10"');
+  await srvDmz.executeCommand(
+    `sh -c 'printf "${SITE_HTTPS}" > /etc/nginx/sites-available/default'`);
+  await srvDmz.executeCommand('systemctl restart nginx');
+}
 
 async function inspectionProfonde(
   fgt: FortiGate, action: 'allow' | 'block' | 'ignore',
@@ -251,6 +279,37 @@ describe('untrusted-cert decide du sort d une session au certificat non fiable',
 
     propre(await inspectionProfonde(fgt, 'allow'));
     expect(fgt.getUtmProfiles().getSslSsh('Deep-Lab')?.untrustedCert).toBe('allow');
+  });
+
+  it('a `block`, la session vers un certificat auto-signe est REFUSEE', async () => {
+    const { fgt, pcLan, srvDmz } = await laboratoire();
+    await servirHttpsAutoSigne(srvDmz);
+    propre(await inspectionProfonde(fgt, 'block'));
+
+    expect(await navigueTls(pcLan)).not.toMatch(/<html|Welcome to nginx/i);
+  });
+
+  it('a `allow`, la meme session est inspectee ET servie', async () => {
+    const { fgt, pcLan, srvDmz } = await laboratoire();
+    await servirHttpsAutoSigne(srvDmz);
+    propre(await inspectionProfonde(fgt, 'allow'));
+
+    expect(await navigueTls(pcLan)).toMatch(/Welcome to nginx/i);
+  });
+
+  it('a `ignore`, la session est servie elle aussi', async () => {
+    const { fgt, pcLan, srvDmz } = await laboratoire();
+    await servirHttpsAutoSigne(srvDmz);
+    propre(await inspectionProfonde(fgt, 'ignore'));
+
+    expect(await navigueTls(pcLan)).toMatch(/Welcome to nginx/i);
+  });
+
+  it('temoin : sans profil d inspection, la meme page HTTPS est servie', async () => {
+    const { pcLan, srvDmz } = await laboratoire();
+    await servirHttpsAutoSigne(srvDmz);
+
+    expect(await navigueTls(pcLan)).toMatch(/Welcome to nginx/i);
   });
 
   it('l application sans entree atteint aussi le moteur', async () => {

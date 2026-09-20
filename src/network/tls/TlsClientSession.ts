@@ -35,6 +35,14 @@ import { type SessionTicket, deriveResumptionPsk } from './sessionTickets';
 
 export interface TlsClientConfig {
   readonly verifier: CertificateVerifier;
+  /**
+   * Continue the handshake when the peer certificate does not verify,
+   * recording the outcome on `peerVerified` instead of aborting. Off by
+   * default: only an inspecting middlebox, which must terminate the
+   * session before it can decide what to do with an untrusted peer, has
+   * any business turning it on.
+   */
+  readonly allowUntrustedPeer?: boolean;
   /** Suites offered, in preference order; defaults to all 5 mandatory suites (RFC 8446 §B.4). */
   readonly cipherSuites?: readonly CipherSuite[];
   /** Presented only if the server actually sends a CertificateRequest (mTLS). */
@@ -69,6 +77,8 @@ export class TlsClientSession {
   /** A ticket received via `receiveSessionTicket()`, ready to resume a future session. */
   receivedTicket: SessionTicket | null = null;
   peerCertificate: X509Certificate | null = null;
+  peerVerified = false;
+  peerVerificationReason: string | null = null;
   /**
    * RFC 8446 §7.2 — this side's current application traffic secrets, set
    * once the handshake succeeds and ratcheted independently per direction
@@ -244,13 +254,17 @@ export class TlsClientSession {
     if (!leafCert) return this.fail('certificate_unknown');
     this.peerCertificate = leafCert;
     const verification = this.config.verifier.verify(leafCert);
+    this.peerVerified = verification.ok !== false;
     if (verification.ok === false) {
-      this.lastAlert = certificateAlert(verification.reason);
-      this.state = 'done';
-      this.result = 'failure';
-      this.emit({ topic: 'tls.handshake.failed', payload: { sessionId: this.sessionId, role: 'client', alert: this.lastAlert } });
-      this.emit({ topic: 'tls.alert.sent', payload: { sessionId: this.sessionId, role: 'client', alert: this.lastAlert } });
-      return null;
+      this.peerVerificationReason = verification.reason;
+      if (!this.config.allowUntrustedPeer) {
+        this.lastAlert = certificateAlert(verification.reason);
+        this.state = 'done';
+        this.result = 'failure';
+        this.emit({ topic: 'tls.handshake.failed', payload: { sessionId: this.sessionId, role: 'client', alert: this.lastAlert } });
+        this.emit({ topic: 'tls.alert.sent', payload: { sessionId: this.sessionId, role: 'client', alert: this.lastAlert } });
+        return null;
+      }
     }
 
     this.transcript.push(encodeHandshakeMessage(encryptedExtensions));
