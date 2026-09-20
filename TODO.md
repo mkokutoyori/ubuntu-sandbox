@@ -57,11 +57,6 @@ ne le signale. Retire avec la refutation ci-dessus.
 
 ## Pile TCP/IP
 
-### [tcp] donnees urgentes : le pointeur est ecrit, jamais lu
-`urgentPointer` n'est jamais emis qu'a `0` et n'est relu nulle part ; il
-n'existe aucune API pour emettre des donnees urgentes. Le drapeau URG
-figure dans la serialisation, la fonction non.
-
 ### [ip] aucune zone d'options IPv4
 Ni record-route, ni timestamp, ni routage par la source. Le dialogue du
 `ping` etendu le DIVULGUE honnetement (« collected and reported rather

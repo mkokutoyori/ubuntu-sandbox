@@ -81,6 +81,7 @@ export interface CaptureFrame {
   tcpSeq?: number;
   tcpAck?: number;
   tcpWindow?: number;
+  tcpUrgentPointer?: number;
   tcpOptions?: readonly TcpOption[];
   tcpChecksum?: number;
   tcpChecksumComputed?: number;
@@ -498,6 +499,7 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
     base.tcpSeq = seg.sequence;
     base.tcpAck = seg.acknowledgement;
     base.tcpWindow = seg.window;
+    base.tcpUrgentPointer = seg.urgentPointer;
     base.tcpOptions = seg.options;
     base.tcpChecksum = seg.checksum;
     base.tcpChecksumComputed = computeTcpChecksum(seg, base.srcIp!, base.dstIp!);
@@ -549,6 +551,7 @@ function decodeIpv6Payload(base: CaptureFrame, ip6: IPv6Packet): void {
     base.tcpSeq = seg.sequence;
     base.tcpAck = seg.acknowledgement;
     base.tcpWindow = seg.window;
+    base.tcpUrgentPointer = seg.urgentPointer;
     base.tcpOptions = seg.options;
     base.tcpChecksum = seg.checksum;
     base.tcpChecksumComputed = computeTcpChecksum(seg, base.srcIp!, base.dstIp!);

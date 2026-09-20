@@ -166,6 +166,10 @@ export class TcpSocket {
   sendNext = 0;
   sendUnacked = 0;
   recvNext = 0;
+  /** SND.UP (RFC 9293 §3.3.1) — one past the last urgent octet we have queued, or null outside urgent mode. */
+  sndUp: number | null = null;
+  /** RCV.UP (RFC 9293 §3.3.1) — one past the last urgent octet the peer has designated. */
+  rcvUp: number | null = null;
   windowSize = TCP_DEFAULT_WINDOW;
   mss = TCP_DEFAULT_MSS;
   passive = false;
@@ -257,6 +261,7 @@ export class TcpSocket {
   private readonly openHandlers: TcpOpenHandler[] = [];
   private readonly dataHandlers: TcpDataHandler[] = [];
   private readonly closeHandlers: TcpCloseHandler[] = [];
+  private readonly urgentHandlers: Array<(lastUrgentByte: string) => void> = [];
 
   constructor(
     readonly stack: TcpStack,
@@ -272,6 +277,31 @@ export class TcpSocket {
 
   send(data: unknown): void { this.stack._sendData(this, data); }
   write(data: string): void { this.stack._sendData(this, data); }
+
+  /**
+   * RFC 9293 §3.8.5 — the urgent mechanism, which MUST-30 requires a TCP
+   * implementation to carry even though SHLD-13 tells new applications not
+   * to reach for it. The data still travels in the stream; what URG adds is
+   * a point designating where the urgent information ENDS.
+   */
+  sendUrgent(data: string): void { this.stack._sendUrgentData(this, data); }
+
+  /** True while the peer's urgent point is in advance of RCV.NXT (RFC 9293 §3.8.5). */
+  get urgentMode(): boolean {
+    return this.rcvUp !== null && seqLt(this.recvNext, this.rcvUp);
+  }
+
+  onUrgent(handler: (lastUrgentByte: string) => void): () => void {
+    this.urgentHandlers.push(handler);
+    return () => {
+      const i = this.urgentHandlers.indexOf(handler);
+      if (i >= 0) this.urgentHandlers.splice(i, 1);
+    };
+  }
+
+  _fireUrgent(lastUrgentByte: string): void {
+    for (const handler of [...this.urgentHandlers]) handler(lastUrgentByte);
+  }
   close(): void { this.stack._initiateClose(this); }
 
   /**
@@ -927,6 +957,21 @@ export class TcpStack {
     this.withinBurst(() => this.sendDataWithinBurst(socket, data));
   }
 
+  /**
+   * RFC 793 §3.7: "the urgent field is meaningful and must be added to the
+   * segment sequence number to yield the urgent pointer", and RFC 9293 §3.1
+   * places that pointer on "the sequence number of the octet following the
+   * urgent data". SND.UP therefore lands one past the last urgent octet, and
+   * `transmit` marks every segment still behind it.
+   */
+  _sendUrgentData(socket: TcpSocket, data: string): void {
+    if (socket.closed || data.length === 0) return;
+    const queued = socket.sendBacklog.reduce((n, e) => n + e.payload.length, 0);
+    const point = (socket.sendNext + queued + data.length) >>> 0;
+    socket.sndUp = socket.sndUp !== null && seqLt(point, socket.sndUp) ? socket.sndUp : point;
+    this._sendData(socket, data);
+  }
+
   private withinBurst(body: () => void): void {
     burstDepth++;
     try {
@@ -1320,6 +1365,7 @@ export class TcpStack {
         if (payloadSize > 0) {
           if (!this.acceptInOrder(socket, seg)) break;
           const fillsAGap = socket.reassemblyBuffer.length > 0;
+          this.noteUrgentPoint(socket, seg);
           this.deliverData(socket, seg);
           this.acknowledgeReceivedData(socket, fillsAGap);
         } else if (seg.flags.ack && !seg.flags.fin) {
@@ -1401,6 +1447,31 @@ export class TcpStack {
       socket.keepAliveProbesSent = 0;
       this.rearmKeepAliveTimer(socket);
     }
+  }
+
+  /**
+   * RFC 793 §3.7 adds SEG.UP to the segment's sequence number to yield the
+   * urgent point; RFC 9293 §3.8.5 keeps the receiver in urgent mode while
+   * that point is in advance of RCV.NXT. RFC 6093 §3.1 settles what the
+   * application is handed: "the last byte of 'urgent data' is delivered
+   * 'out of band'".
+   *
+   * The byte is ALSO left in the ordinary stream — the behaviour a real
+   * socket gets with SO_OOBINLINE. Removing it would make the octet count
+   * the application reads disagree with the one countable on the wire, and
+   * two views of one transfer that contradict each other is the defect this
+   * repository refuses first.
+   */
+  private noteUrgentPoint(socket: TcpSocket, seg: TcpSegment): void {
+    if (!seg.flags.urg || seg.urgentPointer <= 0) return;
+    const point = (seg.sequence + seg.urgentPointer) >>> 0;
+    if (socket.rcvUp === null || seqLt(socket.rcvUp, point)) socket.rcvUp = point;
+    if (!isStreamPayload(seg.payload)) return;
+    const offset = (point - 1 - seg.sequence) | 0;
+    if (offset < 0 || offset >= seg.payload.length) return;
+    const lastUrgentByte = String(sliceStream(seg.payload, offset, offset + 1));
+    try { socket._fireUrgent(lastUrgentByte); }
+    catch (e) { Logger.warn(this.host.id, 'tcp:onUrgent', String(e)); }
   }
 
   private acknowledgeReceivedData(socket: TcpSocket, fillsAGap: boolean): void {
@@ -1559,6 +1630,8 @@ export class TcpStack {
     this.timers.clear(socket.keepAliveTimer);
     socket.keepAliveTimer = null;
     this.forgetOwedAck(socket);
+    socket.sndUp = null;
+    socket.rcvUp = null;
     socket.sendBacklog = [];
     socket.reassemblyBuffer = [];
     this._transition(socket, 'closed');
@@ -1715,13 +1788,16 @@ export class TcpStack {
     if (socket.sackEnabled && flags.ack && socket.reassemblyBuffer.length > 0) {
       options.push({ kind: 'sack', blocks: this.sackBlocksFor(socket) });
     }
+    const stillUrgent = socket.sndUp !== null && seqLt(sequence, socket.sndUp);
+    const urgent = stillUrgent ? (socket.sndUp! - sequence) >>> 0 : 0;
+    if (stillUrgent) flags.urg = true;
     const seg: TcpSegment = {
       type: 'tcp',
       sourcePort: socket.localPort, destinationPort: socket.remotePort,
       sequence, acknowledgement: flags.ack ? ackNum : 0,
       dataOffset: optionsDataOffset(options), flags,
-      window: this.encodeWindowField(socket, flags), checksum: 0, urgentPointer: 0,
-      options, payload,
+      window: this.encodeWindowField(socket, flags), checksum: 0,
+      urgentPointer: urgent, options, payload,
     };
     const source = sourceAddressOf(socket, egress.srcIp);
     seg.checksum = computeTcpChecksum(seg, source, socket.remoteIp);
