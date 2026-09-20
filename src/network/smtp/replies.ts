@@ -45,6 +45,30 @@ export function encodeReply(r: SmtpReply): string {
   return `${code}-${first}${CRLF}${middle}${code} ${last}${CRLF}`;
 }
 
+export function decodeReplies(raw: string): { replies: SmtpReply[]; consumed: number } {
+  const replies: SmtpReply[] = [];
+  let consumed = 0;
+  let cursor = 0;
+  let inReply = false;
+  for (;;) {
+    const end = raw.indexOf(CRLF, cursor);
+    if (end === -1) break;
+    const line = raw.slice(cursor, end);
+    cursor = end + CRLF.length;
+    const m = /^(\d{3})([ -])/.exec(line);
+    if (!m) {
+      if (!inReply) consumed = cursor;
+      continue;
+    }
+    if (m[2] === '-') { inReply = true; continue; }
+    const reply = decodeReply(raw.slice(consumed, cursor));
+    if (reply) replies.push(reply);
+    consumed = cursor;
+    inReply = false;
+  }
+  return { replies, consumed };
+}
+
 export function decodeReply(raw: string): SmtpReply | null {
   const lines = raw.split(CRLF).filter((_, i, arr) => i < arr.length - 1 || arr[i] !== '');
   if (lines.length === 0) return null;

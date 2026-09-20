@@ -1,6 +1,6 @@
 import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
 import type { SmtpCommand, SmtpReply } from './types';
-import { encodeCommand, decodeReply } from './replies';
+import { encodeCommand, decodeReplies } from './replies';
 import { stuffDotLines } from './envelope';
 import { SMTP_PORT } from './SmtpServer';
 import { type TlsClientConfig, TlsClientSession, stepHandshake, encryptText, decryptText, encodeFlight } from './starttls';
@@ -11,6 +11,7 @@ const CRLF = '\r\n';
 export class SmtpClientSession {
   private socket: TcpSocket | null = null;
   private repliesBuffer: SmtpReply[] = [];
+  private replyPending = '';
 
   private controlTls: TlsClientSession | null = null;
   private controlTlsHandshakePending = false;
@@ -59,12 +60,17 @@ export class SmtpClientSession {
     if (this.controlTls?.result === 'success') {
       const { text, nextSeq } = decryptText(this.controlTls.serverApplicationTrafficSecret!, this.controlServerSeq, String(data));
       this.controlServerSeq = nextSeq;
-      const r = decodeReply(text);
-      if (r) this.repliesBuffer.push(r);
+      this.absorbReplies(text);
       return;
     }
-    const r = decodeReply(String(data));
-    if (r) this.repliesBuffer.push(r);
+    this.absorbReplies(String(data));
+  }
+
+  private absorbReplies(text: string): void {
+    this.replyPending += text;
+    const { replies, consumed } = decodeReplies(this.replyPending);
+    this.replyPending = this.replyPending.slice(consumed);
+    for (const reply of replies) this.repliesBuffer.push(reply);
   }
 
   isTlsActive(): boolean {

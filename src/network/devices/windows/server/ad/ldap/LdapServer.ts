@@ -16,7 +16,7 @@ import { DirectoryTree, type DirectoryEntry } from './DirectoryTree';
 import { parseDN, formatDN, type DistinguishedName } from './LdapDN';
 import {
   type LdapMessage, type ProtocolOp, type PartialAttribute, type LdapResult, type SaslCredentials, type LdapControl,
-  encodeLdapMessage, decodeLdapMessage, ldapResult, LdapResultCode,
+  encodeLdapMessage, decodeLdapMessages, ldapResult, LdapResultCode,
   START_TLS_OID, PAGED_RESULTS_CONTROL_OID, encodePagedResultsValue, decodePagedResultsValue,
 } from './LdapMessage';
 import { decodeApReq, decodeAuthenticator, decodeEncTicketPart } from '@/network/kerberos/codec';
@@ -104,6 +104,15 @@ export class LdapServerHandler {
   constructor(private readonly ctx: LdapServerContext) {}
 
   register(socket: TcpSocket): void {
+    let pending = new Uint8Array(0);
+    const absorb = (plaintext: Uint8Array): LdapMessage[] => {
+      const joined = new Uint8Array(pending.length + plaintext.length);
+      joined.set(pending, 0);
+      joined.set(plaintext, pending.length);
+      const { messages, bytesConsumed } = decodeLdapMessages(joined);
+      pending = joined.slice(bytesConsumed);
+      return messages;
+    };
     socket.onData((data) => {
       if (!(data instanceof Uint8Array)) return;
       if (this.tls && this.tls.result === null) {
@@ -111,20 +120,20 @@ export class LdapServerHandler {
         return;
       }
       if (this.tls && this.tls.result === 'accept') {
-        let msg: LdapMessage;
+        let messages: LdapMessage[];
         try {
           const { plaintext, nextSeq } = decryptApplicationData(this.tls.clientApplicationTrafficSecret!, this.tlsRecvSeq, decodeRecords(data));
           this.tlsRecvSeq = nextSeq;
-          msg = decodeLdapMessage(plaintext);
+          messages = absorb(plaintext);
         } catch { return; }
         this.replyEncrypted = true;
-        this.handle(socket, msg);
+        for (const msg of messages) this.handle(socket, msg);
         return;
       }
-      let msg: LdapMessage;
-      try { msg = decodeLdapMessage(data); } catch { return; }
+      let messages: LdapMessage[];
+      try { messages = absorb(data); } catch { return; }
       this.replyEncrypted = false;
-      this.handle(socket, msg);
+      for (const msg of messages) this.handle(socket, msg);
     });
   }
 

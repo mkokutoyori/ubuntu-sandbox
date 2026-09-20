@@ -98,6 +98,7 @@ export class SshServerHandler {
   }
 
   register(conn: TcpConnection, clientIp: string): void {
+    conn.setNoDelay?.(true);
     const ms = this.ctx.config.maxStartups;
     if (ms && ms.start > 0) {
       const slot = preauthSlot(this.ctx);

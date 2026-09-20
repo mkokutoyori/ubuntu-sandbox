@@ -57,51 +57,6 @@ ne le signale. Retire avec la refutation ci-dessus.
 
 ## Pile TCP/IP
 
-### [tcp] Nagle : ECRIT, MESURE, JUSTE — et retire une 3e fois
-RFC 896 / RFC 9293 §3.7.4. Le code a existe et fonctionnait : coalescence
-sur la queue de `sendBacklog` (`queueForSend`) et porte de retenue
-(`nagleHolds`) bornee sur la FILE et non sur la fenetre. Mesures, toutes
-reproductibles :
-
-    six ecritures de 5 octets, fenetre fermee
-        [1,4,5,5,5,5,5]  ->  [1,29]     et 6 entrees de file -> 1
-    trois ecritures emises depuis `onData`, dans la rafale du pair
-        [1,1,3]          ->  [1,4]
-    quatre ecritures binaires de 3 octets, fenetre fermee
-        [1,2,3,3,3]      ->  [1,11]
-    `setNoDelay(true)` sur le meme laboratoire  ->  [1,1,3]
-    vrac de 20 000 octets, fenetre de 128 octets : 20 000/20 000, file vide
-
-**CE QUI L'A FAIT RETIRER, ET C'EST NOMME CETTE FOIS.**
-`tuto-fortigate-tp15` tombe sur 3 cas de 13 (13/13 au commit d'avant).
-`runTlsHandshakeOverSocket`
-(`src/network/http/https/TlsRecordWire.ts`) s'abonne, ecrit UNE fois,
-puis se desabonne : il exige que tout le handshake tienne dans un seul
-`write()` synchrone. Le pilote ne survit donc a AUCUN mecanisme qui
-differe un flight — Nagle en est un, une fenetre fermee en serait un
-autre. Trace : le parent recoit trois flights (2439, 1407, 2439), avec
-Nagle un seul (2439), et deux sondes sur trois ne recoivent rien, d'ou
-« no certificate presented ».
-
-**Deux mesures qui corrigent l'hypothese evidente, a ne pas refaire :**
-- Nagle se comporte comme la RFC le decrit — `held=true inflight=1460`
-  puis `held=false inflight=0` des l'acquittement. Il n'y a pas de
-  retenue definitive.
-- `decodeRecords` ne leve pas et rend `records=2` des DEUX cotes, et
-  `result=failure` arrive AUSSI au parent a chaque flight. Le test ne
-  depend pas de la reussite du handshake, seulement du certificat. Ce
-  n'est donc pas un probleme de decoupage de records.
-
-**Quatre reparations essayees, aucune ne ferme le cas** : `TCP_NODELAY`
-sur la socket cliente (le retenteur est le SERVEUR, port 443) ;
-liberation des retenues en fin de rafale ; suppression du desabonnement
-precoce ; neutralisation du garde `flushingBacklog`.
-
-**Ce qu'il faut, et c'est un lot a soi** : rendre le pilote de handshake
-REPRENABLE — qu'il pompe jusqu'a ce que la session se resolve au lieu
-d'ecrire un coup et de se desabonner. Tant qu'il ne l'est pas, reposer
-Nagle le recassera a l'identique.
-
 ### [tcp] `close()` sur fenetre FERMEE perd les donnees en attente
 Mesure, sur la pile telle quelle : une socket ecrit 25 octets alors que
 le pair annonce une fenetre de 0, puis appelle `close()`. La trace

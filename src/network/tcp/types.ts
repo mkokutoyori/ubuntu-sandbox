@@ -74,6 +74,7 @@ export interface TcpStream {
   close(): void;
   onData(handler: (data: string) => void): () => void;
   onClose?(handler: (reason: string) => void): () => void;
+  setNoDelay?(enabled: boolean): void;
 }
 
 export type TcpWireOutcome = 'open' | 'refused' | 'prohibited' | 'timeout' | 'unreachable';
