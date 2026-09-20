@@ -11,7 +11,7 @@ export const CSS_HEARTBEAT_INTERVAL_MS = 1_000;
 export const CSS_MISSCOUNT_MS = 30_000;
 
 interface CssHost {
-  udpBind(port: number, listener: (delivery: { udp: { payload: unknown } }) => void): boolean;
+  udpBind(port: number, listener: (delivery: { udp: { payload: unknown } }) => void): number | false;
   sendUdpDatagram(
     destinationIP: IPAddress, destinationPort: number, sourcePort: number,
     payload: unknown, payloadBytes?: number, options?: { iface?: string },

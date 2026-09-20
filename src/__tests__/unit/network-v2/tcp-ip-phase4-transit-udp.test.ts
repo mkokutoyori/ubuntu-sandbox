@@ -70,7 +70,7 @@ describe('a router must FORWARD transit UDP, not eat it', () => {
       // jamais posee. On arrete donc le demon, ce que ferait un
       // operateur qui veut ce port.
       await right.executeCommand('sudo systemctl stop chrony');
-      expect(right.udpBind(port, () => { got.push(1); })).toBe(true);
+      expect(right.udpBind(port, () => { got.push(1); })).toBe(port);
 
       left.sendUdpDatagram(new IPAddress('10.0.1.2'), port, 40000, 'transit');
       await wait();

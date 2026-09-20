@@ -115,9 +115,9 @@ async function udpPasse(
 ): Promise<boolean> {
   const recu: string[] = [];
   const lie = (serveur as unknown as {
-    udpBind(p: number, h: () => void): boolean;
+    udpBind(p: number, h: () => void): number | false;
   }).udpBind(port, () => { recu.push('x'); });
-  expect(lie, `le port ${port} doit etre libre, sinon ce cas ne mesure rien`).toBe(true);
+  expect(lie, `le port ${port} doit etre libre, sinon ce cas ne mesure rien`).toBe(port);
   (client as unknown as {
     sendUdpDatagram(d: IPAddress, dp: number, sp: number, p: unknown, n: number): boolean;
   }).sendUdpDatagram(new IPAddress('10.0.2.10'), port, sourcePort, 'z', 1);

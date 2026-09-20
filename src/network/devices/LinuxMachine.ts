@@ -1474,7 +1474,7 @@ export abstract class LinuxMachine extends EndHost
       bindNtpPort: (port) => this.ntpPortBound
         || (this.ntpPortBound = this.udpBind(port, ({ inPort, sourceIP, udp }) => {
           this.getNtpAgent().handleUdp(inPort, sourceIP as IPAddress, udp);
-        }, 'chronyd')),
+        }, 'chronyd') !== false),
       releaseNtpPort: (port) => { this.udpClose(port); this.ntpPortBound = false; },
     });
     this.executor.chronyService = this.chronyService;
