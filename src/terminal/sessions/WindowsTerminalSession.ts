@@ -1287,7 +1287,7 @@ export class WindowsTerminalSession extends TerminalSession {
         return false;
       }
     }
-    return true;
+    return false;
   }
 
   /**
