@@ -5861,6 +5861,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected socleSpecs(): readonly CommandSpec[] {
     return [
       {
+        id: 'crypto-ligne-non-honoree',
+        path: ['crypto', {
+          name: 'ligne', type: 'REST', restMinWords: 1,
+          description: 'Encryption module',
+        }],
+        description: 'Encryption module',
+        modes: ['config'], minPrivilege: 15,
+        hidden: true,
+        run: (_session, args) => {
+          const dev = this.d() as unknown as {
+            _recordUnhandledConfigLine?: (l: string) => void;
+          };
+          dev._recordUnhandledConfigLine?.(`crypto ${args.ligne}`);
+          return '';
+        },
+      },
+      {
         id: 'setup',
         path: ['setup'],
         description: 'Run the initial configuration dialog',
@@ -10021,27 +10038,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `username <name> [privilege N] [secret|password] <pwd>` — captures
     // the local-user database so the sshd dispatch can validate inbound
     // logins. Anything we don't parse is still accepted silently.
-    trie.registerGreedy('crypto', 'Encryption module', (args, raw) => {
-      /*
-       * Ce glouton existe pour ne pas PERDRE une ligne `crypto` que ce
-       * simulateur ne sait pas honorer : elle est retenue telle quelle et
-       * rejouee a l'import d'une topologie. `crypto key` fait exception,
-       * parce que le socle la porte ENTIEREMENT : y retenir une forme
-       * inconnue rejouerait a l'import une ligne que la meme machine
-       * refuse. Tant que ces deux commandes etaient des noeuds du trie,
-       * le noeud intermediaire `crypto key` refusait deja ce qui n'est ni
-       * `generate` ni `zeroize` ; leur migration au socle lui a retire ce
-       * refus, et c'est lui qu'on remet ici.
-       */
-      if (args.length === 0) throw new CliIncomplete();
-      if (args[0].toLowerCase() === 'key') {
-        throw new CliInvalidInput({ token: args[1] });
-      }
-      const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      dev._recordUnhandledConfigLine?.(raw ?? `crypto ${args.join(' ')}`);
-      return '';
-    });
-    trie.requireArgs('crypto', 1);
     // `service timestamps` has its own registration above and the trie
     // routes to the more specific one, so the second parser this handler
     // used to carry never ran — it could only ever contradict the first.
