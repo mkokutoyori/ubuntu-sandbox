@@ -132,6 +132,7 @@ import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
 import { runSshClient, wireExecTarget } from './network/LinuxSshClient';
 import { wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
+import { BSD_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
 import { runSshKeygenCommand, vfsKeygenHost, type SshKeygenHost } from '@/network/protocols/ssh/SshKeygenCommand';
 import {
   runSshAddCommand, runSshAgentCommand, type SshAgentHost,
@@ -1911,8 +1912,12 @@ export class LinuxCommandExecutor {
     const wireCapable = typeof ((reachable ?? found.device) as unknown as {
       getTcpStack?: () => unknown;
     }).getTcpStack === 'function';
-    if (wireCapable && this.tcpProbe && !this.tcpProbe(found.ip, port)) {
-      return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: Connection refused`, exitCode: 1 };
+    const reach = wireCapable && this.wireProbe ? this.wireProbe(found.ip, port) : 'open';
+    if (reach !== 'open') {
+      return {
+        output: telnetWireFailure(BSD_TELNET, reach, host, found.ip, port).join('\n'),
+        exitCode: 1,
+      };
     }
 
     const header = `Trying ${found.ip}...\nConnected to ${host}.\nEscape character is '^]'.`;
@@ -2317,10 +2322,6 @@ export class LinuxCommandExecutor {
     };
   }
 
-  private tcpProbe: ((ip: string, port: number) => boolean) | null = null;
-  setTcpProbe(probe: (ip: string, port: number) => boolean): void {
-    this.tcpProbe = probe;
-  }
 
   /**
    * The machine this shell runs on. Client commands anchor their host
