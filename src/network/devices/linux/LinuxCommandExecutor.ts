@@ -133,6 +133,7 @@ import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands'
 import { runSshClient, wireExecTarget } from './network/LinuxSshClient';
 import { wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
 import { BSD_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
+import { parseDialAddress } from '@/network/tcp/dial';
 import { runSshKeygenCommand, vfsKeygenHost, type SshKeygenHost } from '@/network/protocols/ssh/SshKeygenCommand';
 import {
   runSshAddCommand, runSshAgentCommand, type SshAgentHost,
@@ -1892,7 +1893,7 @@ export class LinuxCommandExecutor {
     }
     const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
     if (!found) {
-      if (IPAddress.tryParse(host)) {
+      if (parseDialAddress(host)) {
         const reason = sshUnreachableReason(this.localDevice, host);
         return {
           output: `Trying ${host}...\ntelnet: connect to address ${host}: ${reason}`,

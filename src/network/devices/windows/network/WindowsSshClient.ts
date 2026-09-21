@@ -102,7 +102,7 @@ export interface WindowsSshTarget {
   ): Promise<{ output: string; exitCode: number }> | { output: string; exitCode: number };
 }
 
-const RE_USERHOST = /^(?:([\w.\-\\]+)@)?([\w.-]+)$/;
+const RE_USERHOST = /^(?:([\w.\-\\]+)@)?([\w.:-]+)$/;
 
 /** SSH short options that consume a value — used to skip them in argv. */
 const SSH_VALUE_FLAGS = new Set(['p', 'i', 'l', 'o', 'L', 'R', 'D', 'F', 'c', 'm', 'J', 'b', 'E', 'S', 'W', 'w']);
