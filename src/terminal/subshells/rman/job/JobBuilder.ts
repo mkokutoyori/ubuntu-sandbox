@@ -220,12 +220,7 @@ export const JobBuilder = {
   },
 
   crosscheck(scope: 'BACKUP' | 'ARCHIVELOG' = 'BACKUP'): RmanJob {
-    const msg = scope === 'ARCHIVELOG'
-      ? "crosschecked archived log: found to be 'AVAILABLE'"
-      : "crosschecked backup piece: found to be 'AVAILABLE'";
-    return _make('CROSSCHECK', [
-      { name: 'crosscheck', pct: 80, message: msg },
-    ], { scope });
+    return _make('CROSSCHECK', [], { scope });
   },
 
   deleteExpired(): RmanJob {

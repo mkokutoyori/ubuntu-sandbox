@@ -235,6 +235,9 @@ export class ReactiveRmanSubShell implements ISubShell {
         }
         this._push(`channel ORA_DISK_1: validation complete, elapsed time: ${formatElapsed(e.elapsedMs)}`);
         break;
+      case 'CROSSCHECK_PIECE':
+        this._push(`crosschecked ${e.kind}: found to be '${e.status}'`);
+        break;
       case 'CROSSCHECK_DONE':
         this._push(`Crosschecked ${e.available + e.expired} objects`);
         if (e.expired > 0) this._push(`${e.expired} piece(s) marked EXPIRED`);

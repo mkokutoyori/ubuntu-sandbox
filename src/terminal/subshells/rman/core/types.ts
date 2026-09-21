@@ -70,6 +70,7 @@ export type RmanEvent =
   | { type: 'BACKUP_PIECE_CREATED'; jobId: string; channelId: string; piece: BackupPieceInfo }
   | { type: 'BACKUP_SET_COMPLETE';  jobId: string; bsKey: number; tag: RmanTag; sizeBytes: number }
   | { type: 'BACKUP_VALIDATED';     jobId: string; what: string }
+  | { type: 'CROSSCHECK_PIECE';     jobId: string; kind: 'backup piece' | 'archived log'; status: 'AVAILABLE' | 'EXPIRED' }
   | { type: 'VALIDATION_REPORT';    jobId: string; files: ReadonlyArray<ValidatedFile>; elapsedMs: number }
   | { type: 'ARCHIVELOG_DELETED';   jobId: string; path: string }
   // Restore / Recover

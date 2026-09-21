@@ -87,6 +87,7 @@ export interface IRmanOracleContext {
   getCurrentScn?(): number;
   runSqlStatement?(statement: string): SqlStatementOutcome;
   recordBackupPiece?(piece: RecordedBackupPiece): void;
+  recordBlockCorruption?(fileNo: number, blocks: number, type: 'CHECKSUM' | 'CORRUPT'): void;
   getRecoveryAreaUsedBytes?(): number;
 }
 

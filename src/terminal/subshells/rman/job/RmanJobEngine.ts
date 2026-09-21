@@ -776,11 +776,18 @@ export class RmanJobEngine implements IRmanJobEngine {
     }
     const blockSize = Number(this._ctx.getSpfileParam('db_block_size') ?? 8192) || 8192;
     const highScn = this._ctx.getCurrentScn?.() ?? 0;
+    const absent = datafiles.find(df => !this._ctx.vfs.fileExists(df.path));
+    if (absent) {
+      return err({
+        code: 'ERROR_STACK',
+        message: `ORA-19505: failed to identify file "${absent.path}"\n`
+          + 'ORA-27037: unable to obtain file status',
+      });
+    }
     const files: ValidatedFile[] = datafiles.map(df => {
       const read = this._ctx.vfs.readFile(df.path);
       const text = read.ok ? new TextDecoder().decode(read.value) : '';
-      const lisible = this._ctx.vfs.fileExists(df.path)
-        && bannerIsIntact(text, 'ORACLE DATAFILE');
+      const lisible = bannerIsIntact(text, 'ORACLE DATAFILE');
       const blocksExamined = Math.max(1, Math.ceil(df.sizeBytes / blockSize));
       const blocksUsed = Math.min(blocksExamined, Math.ceil(text.length / blockSize));
       return {
@@ -792,12 +799,16 @@ export class RmanJobEngine implements IRmanJobEngine {
       };
     });
     this._bus.emit({ type: 'VALIDATION_REPORT', jobId: job.id, files, elapsedMs: 1_000 });
-    const casse = files.find(f => f.status === 'FAILED');
-    if (casse) {
-      return err({
-        code: 'ERROR_STACK',
-        message: `ORA-19505: failed to identify file "${casse.path}"\n`
-          + 'ORA-27037: unable to obtain file status',
+    let corrompus = 0;
+    for (const f of files) {
+      if (f.status !== 'FAILED') continue;
+      corrompus++;
+      this._ctx.recordBlockCorruption?.(f.fileNo, f.blocksExamined, 'CORRUPT');
+    }
+    if (corrompus > 0) {
+      this._bus.emit({
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'validate_corrupt', pct: 95,
+        message: 'validate found one or more corrupt blocks',
       });
     }
     return ok(undefined);
@@ -836,8 +847,14 @@ export class RmanJobEngine implements IRmanJobEngine {
       const set = snap.value.sets.find(s => s.bsKey === p.bsKey);
       if (scope === 'ARCHIVELOG' && set?.type !== 'ARCHIVELOG') continue;
       if (scope === 'BACKUP'     && set?.type === 'ARCHIVELOG') continue;
-      if (this._ctx.vfs.fileExists(p.path)) available++;
+      const intacte = validateBackupPiece(this._ctx.vfs, p.path).fault === null;
+      if (intacte) available++;
       else { this._catalog.expirePiece(p.key); expired++; }
+      this._bus.emit({
+        type: 'CROSSCHECK_PIECE', jobId: job?.id ?? '',
+        kind: scope === 'ARCHIVELOG' ? 'archived log' : 'backup piece',
+        status: intacte ? 'AVAILABLE' : 'EXPIRED',
+      });
     }
     this._bus.emit({ type: 'CROSSCHECK_DONE', available, expired });
     return ok(undefined);

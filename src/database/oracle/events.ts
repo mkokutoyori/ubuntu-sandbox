@@ -207,6 +207,12 @@ export interface OracleBackupRecordedPayload extends OracleDeviceRef {
   status: 'COMPLETED' | 'FAILED';
 }
 
+export interface OracleBlockCorruptionFoundPayload extends OracleDeviceRef {
+  fileNo: number;
+  blocks: number;
+  type: 'CHECKSUM' | 'CORRUPT';
+}
+
 export interface OracleServiceEventPayload extends OracleDeviceRef {
   name: string;
   /** started → active, stopped → archived. */
@@ -564,6 +570,7 @@ export type OracleDomainEvent =
   | { topic: 'oracle.sql.parsed';                        payload: OracleSqlParsedPayload }
   | { topic: 'oracle.sql.executed';                      payload: OracleSqlExecutedPayload }
   | { topic: 'oracle.backup.recorded';                   payload: OracleBackupRecordedPayload }
+  | { topic: 'oracle.block-corruption.found';            payload: OracleBlockCorruptionFoundPayload }
   | { topic: 'oracle.service.event';                     payload: OracleServiceEventPayload }
   | { topic: 'oracle.listener.event';                    payload: OracleListenerEventPayload }
   | { topic: 'oracle.session.longops';                   payload: OracleSessionLongopsPayload }

@@ -97,6 +97,14 @@ export interface RuntimeArchivedLogRecord {
   nextTime: number;
 }
 
+export interface RuntimeBlockCorruptionRecord {
+  fileNo: number;
+  block: number;
+  blocks: number;
+  changeScn: number;
+  type: 'CHECKSUM' | 'CORRUPT';
+}
+
 export interface RuntimeAlertRecord {
   ts: number;
   line: string;
@@ -174,6 +182,7 @@ export class OracleRuntimeState {
   readonly transactions = new Map<number, RuntimeTransactionRecord>();
   readonly locks: RuntimeLockRecord[] = [];
   readonly archivedLogs: RuntimeArchivedLogRecord[] = [];
+  readonly blockCorruptions: RuntimeBlockCorruptionRecord[] = [];
   readonly alertEntries: RuntimeAlertRecord[] = [];
   readonly latches: RuntimeLatchRecord[] = [];
   readonly backups: RuntimeBackupRecord[] = [];
