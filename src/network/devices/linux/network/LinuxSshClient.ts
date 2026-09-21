@@ -17,9 +17,8 @@
  */
 
 import { findHostByAddress, isPathReachable } from './HostLookup';
-import {
-  sshUnreachableReason, sshWireFailureText, wireReachOutcome,
-} from '@/terminal/ssh/wireSshLogin';
+import { sshUnreachableReason, wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
+import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
 import { IPAddress } from '../../../core/types';
 import type { TcpWireOutcome } from '../../../tcp/types';
 import { type SshHostKeyType } from './SshKnownHostEntry';
@@ -745,7 +744,7 @@ function wireFailure(
   outcome: Exclude<TcpWireOutcome, 'open'>,
 ): SshClientResult {
   return {
-    output: `ssh: connect to host ${host} port ${port}: ${sshWireFailureText(outcome)}\n`,
+    output: `${sshWireFailureLine(OPENSSH_SSH, outcome, host, port)}\n`,
     exitCode: 255,
     droppedSyn: { localIp: opts.sourceIp, peerIp: destIp, peerPort: port },
   };

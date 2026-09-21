@@ -14,7 +14,8 @@
 import { findHostByAddress } from '../../linux/network/HostLookup';
 import { SshKnownHostsFile } from '../../../protocols/ssh/SshKnownHostsFile';
 import type { ISshAuthContext } from '../../../protocols/ssh/auth/ISshAuthMethod';
-import { sshWireFailureText, wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
+import { wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
+import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
 import type { TcpWireOutcome } from '@/network/tcp/types';
 
 export interface WinSshClientResult {
@@ -189,7 +190,7 @@ function verdictFromWireAlone(
   const wire = opts.wireOutcome ?? wireReachOutcome(opts.sourceDevice, destIp, port);
   if (wire !== 'open') {
     return {
-      output: `ssh: connect to host ${host} port ${port}: ${sshWireFailureText(wire)}\n`,
+      output: `${sshWireFailureLine(OPENSSH_SSH, wire, host, port)}\n`,
       exitCode: 255,
     };
   }

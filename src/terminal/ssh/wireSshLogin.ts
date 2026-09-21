@@ -60,16 +60,6 @@ export function wireReachOutcome(
   return OUTCOME_OF_REPLY[stack.scanProbe(destIp, port, syn)];
 }
 
-const WIRE_FAILURE_TEXT: Readonly<Record<Exclude<TcpWireOutcome, 'open'>, string>> = {
-  refused: 'Connection refused',
-  prohibited: 'No route to host',
-  unreachable: 'No route to host',
-  timeout: 'Connection timed out',
-};
-
-export function sshWireFailureText(outcome: Exclude<TcpWireOutcome, 'open'>): string {
-  return WIRE_FAILURE_TEXT[outcome];
-}
 
 export interface WireSshLoginRequest {
   /** The device typing `ssh`. */
