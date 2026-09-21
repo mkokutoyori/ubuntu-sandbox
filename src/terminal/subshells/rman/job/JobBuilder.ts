@@ -93,15 +93,18 @@ export const JobBuilder = {
     tablespace?: string;
     fileNo?: number;
     bsKey?: number;
+    checkLogical?: boolean;
   }): RmanJob {
     const params: Record<string, string> = { validate: 'true', validateScope: opts.scope };
+    if (opts.checkLogical) params.checkLogical = 'true';
     if (opts.tablespace) params.tablespace = opts.tablespace.toUpperCase();
     if (opts.fileNo !== undefined) params.fileNo = String(opts.fileNo);
     if (opts.bsKey !== undefined)  params.bsKey  = String(opts.bsKey);
-    const label = opts.scope === 'TABLESPACE' ? `tablespace ${opts.tablespace}`
-               : opts.scope === 'DATAFILE'   ? `datafile ${opts.fileNo}`
-               : opts.scope === 'BACKUPSET'  ? `backupset ${opts.bsKey}`
-               :                                'database';
+    const portee = opts.scope === 'TABLESPACE' ? `tablespace ${opts.tablespace}`
+                 : opts.scope === 'DATAFILE'   ? `datafile ${opts.fileNo}`
+                 : opts.scope === 'BACKUPSET'  ? `backupset ${opts.bsKey}`
+                 :                                'database';
+    const label = opts.checkLogical ? `${portee} (check logical)` : portee;
     return _make('VALIDATE', [
       { name: 'start_validate', pct: 10, message: `channel ORA_DISK_1: starting validation of ${label}` },
       { name: 'validate_what',  pct: 60, message: `channel ORA_DISK_1: validating ${label}` },

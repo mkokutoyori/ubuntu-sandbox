@@ -102,7 +102,7 @@ export interface RuntimeBlockCorruptionRecord {
   block: number;
   blocks: number;
   changeScn: number;
-  type: 'CHECKSUM' | 'CORRUPT';
+  type: 'CHECKSUM' | 'CORRUPT' | 'LOGICAL';
 }
 
 export interface RuntimeAlertRecord {

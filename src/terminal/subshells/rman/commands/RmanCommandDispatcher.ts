@@ -107,6 +107,7 @@ export class RmanCommandDispatcher {
       { pattern: /^EXECUTE SCRIPT (\S+|'[^']+')$/i,                              command: new ExecuteScriptCommand() },
       { pattern: /^LIST SCRIPT NAMES$/i,                                         command: new ListScriptNamesCommand() },
       // VALIDATE / CONTROLFILE / INCREMENTAL — match before plain "BACKUP DATABASE"
+      { pattern: /^BACKUP VALIDATE CHECK LOGICAL DATABASE$/i,      command: new ValidateCommand('DATABASE', true) },
       { pattern: /^BACKUP VALIDATE DATABASE$/i,                    command: new BackupCommand('validate') },
       { pattern: /^BACKUP CURRENT CONTROLFILE(.*)$/i,              command: new BackupCommand('controlfile') },
       { pattern: /^BACKUP INCREMENTAL LEVEL (\d)(?:\s+(CUMULATIVE))? DATABASE(.*)$/i, command: new BackupCommand('incremental') },
@@ -144,6 +145,10 @@ export class RmanCommandDispatcher {
       { pattern: /^LIST COPY(?:\s+.*)?$/i,       command: new ListBackupCommand('COPY') },
       { pattern: /^LIST INCARNATION(?:\s+OF DATABASE)?$/i, command: new ListBackupCommand('INCARNATION') },
       // VALIDATE (12c+) — distinct from BACKUP VALIDATE
+      { pattern: /^VALIDATE CHECK LOGICAL DATABASE$/i,     command: new ValidateCommand('DATABASE', true) },
+      { pattern: /^VALIDATE CHECK LOGICAL TABLESPACE (\S+)$/i, command: new ValidateCommand('TABLESPACE', true) },
+      { pattern: /^VALIDATE CHECK LOGICAL DATAFILE (\d+)$/i,   command: new ValidateCommand('DATAFILE', true) },
+      { pattern: /^VALIDATE CHECK LOGICAL BACKUPSET (\d+)$/i,  command: new ValidateCommand('BACKUPSET', true) },
       { pattern: /^VALIDATE DATABASE$/i,                  command: new ValidateCommand('DATABASE') },
       { pattern: /^VALIDATE TABLESPACE (\S+)$/i,          command: new ValidateCommand('TABLESPACE') },
       { pattern: /^VALIDATE DATAFILE (\d+)$/i,            command: new ValidateCommand('DATAFILE') },

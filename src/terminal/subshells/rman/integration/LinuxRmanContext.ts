@@ -16,7 +16,7 @@ import { DbId } from '../values/DbId';
 import { ok, err, type Result } from '../core/Result';
 import type {
   IRmanOracleContext, DatafileInfo, VfsAdapter, ConnectTargetOutcome, RecordedBackupPiece,
-  SqlStatementOutcome, RmanCredentials, ArchivedLogRecord,
+  SqlStatementOutcome, RmanCredentials, ArchivedLogRecord, BlockCorruptionType,
 } from './IRmanOracleContext';
 import type { HostCapableDevice } from '@/network';
 import { resolveOracleConnectTarget } from '@/terminal/commands/oracleNet';
@@ -281,7 +281,7 @@ export class LinuxRmanContext implements IRmanOracleContext {
     }));
   }
 
-  recordBlockCorruption(fileNo: number, blocks: number, type: 'CHECKSUM' | 'CORRUPT'): void {
+  recordBlockCorruption(fileNo: number, blocks: number, type: BlockCorruptionType): void {
     const oracle = this._oracle;
     if (!oracle) return;
     oracle.instance.getBus().publish({

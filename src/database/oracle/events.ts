@@ -210,7 +210,7 @@ export interface OracleBackupRecordedPayload extends OracleDeviceRef {
 export interface OracleBlockCorruptionFoundPayload extends OracleDeviceRef {
   fileNo: number;
   blocks: number;
-  type: 'CHECKSUM' | 'CORRUPT';
+  type: 'CHECKSUM' | 'CORRUPT' | 'LOGICAL';
 }
 
 export interface OracleBlockCorruptionRepairedPayload extends OracleDeviceRef {

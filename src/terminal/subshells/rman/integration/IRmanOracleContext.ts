@@ -14,6 +14,8 @@ export interface DatafileInfo {
   readonly tablespace: string;
 }
 
+export type BlockCorruptionType = 'CHECKSUM' | 'CORRUPT' | 'LOGICAL';
+
 export interface ArchivedLogRecord {
   readonly thread:   number;
   readonly sequence: number;
@@ -87,7 +89,7 @@ export interface IRmanOracleContext {
   getCurrentScn?(): number;
   runSqlStatement?(statement: string): SqlStatementOutcome;
   recordBackupPiece?(piece: RecordedBackupPiece): void;
-  recordBlockCorruption?(fileNo: number, blocks: number, type: 'CHECKSUM' | 'CORRUPT'): void;
+  recordBlockCorruption?(fileNo: number, blocks: number, type: BlockCorruptionType): void;
   getBlockCorruptions?(): ReadonlyArray<{ fileNo: number; blocks: number }>;
   clearBlockCorruption?(fileNo: number): void;
   getRecoveryAreaUsedBytes?(): number;

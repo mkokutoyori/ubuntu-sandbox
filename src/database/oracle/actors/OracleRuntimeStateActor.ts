@@ -290,7 +290,7 @@ export class OracleRuntimeStateActor {
 
       this.bus.subscribe('oracle.block-corruption.found', scoped<{
         deviceId: string; fileNo: number; blocks: number;
-        type: 'CHECKSUM' | 'CORRUPT';
+        type: 'CHECKSUM' | 'CORRUPT' | 'LOGICAL';
       }>((p) => {
         const deja = this.state.blockCorruptions.find(c => c.fileNo === p.fileNo);
         if (deja) {

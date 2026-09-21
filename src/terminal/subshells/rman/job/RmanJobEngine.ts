@@ -21,7 +21,9 @@ import type { RmanError } from '../core/RmanError';
 import type { IRmanJobEngine } from './IRmanJobEngine';
 import type { IChannelPool } from '../channel/IChannelPool';
 import type { IRmanCatalogRepository } from '../catalog/IRmanCatalogRepository';
-import type { IRmanOracleContext, ArchivedLogRecord } from '../integration/IRmanOracleContext';
+import type {
+  IRmanOracleContext, ArchivedLogRecord, BlockCorruptionType,
+} from '../integration/IRmanOracleContext';
 import {
   validateBackupPiece, pieceFaultMessage, bannerIsIntact, type PieceVerdict,
 } from '../core/pieceValidation';
@@ -44,6 +46,15 @@ import { parseDatafileImage, renderDatafileImage, datafileBannerOf } from '@/dat
 
 const bySequence = (a: ArchivedLogRecord, b: ArchivedLogRecord): number =>
   a.thread - b.thread || a.sequence - b.sequence;
+
+const SEGMENT_MARKER = 'ORACLE-SEGMENT-IMAGE';
+
+function logicalFaultOfDatafile(text: string, tablespace: string): 'LOGICAL' | null {
+  if (!text.includes(SEGMENT_MARKER)) return null;
+  const payload = parseDatafileImage(text);
+  if (payload === null) return 'LOGICAL';
+  return payload.tablespace.toUpperCase() === tablespace.toUpperCase() ? null : 'LOGICAL';
+}
 import type { TablespacePayload } from '@/database/oracle/OracleStorage';
 import { parseSize } from '@/database/oracle/views/_fileSize';
 import { BackupKey } from '../values/BackupKey';
@@ -541,11 +552,17 @@ export class RmanJobEngine implements IRmanJobEngine {
   }
 
   private _doRestore(job: RmanJob, channelId: string): Result<void, RmanError> {
+    const params = job.params ?? {};
+    // PREVIEW et VALIDATE n'ecrivent aucun datafile : l'exigence de
+    // l'etat MOUNT ne porte que sur la forme qui en REECRIT.
+    const lectureSeule = params.preview === 'true' || params.validate === 'true';
     const inst = this._ctx.getInstanceState?.();
-    if (inst === 'OPEN' || inst === 'SHUTDOWN') {
+    if (!lectureSeule && (inst === 'OPEN' || inst === 'SHUTDOWN')) {
       return err({ code: 'RMAN_06403', message: 'database must be mounted (not open)' });
     }
-    const params = job.params ?? {};
+    if (lectureSeule && inst === 'SHUTDOWN') {
+      return err({ code: 'RMAN_04014', message: 'startup failed: ORA-01034: ORACLE not available' });
+    }
     const snap = this._catalog.listAll();
     if (snap.ok === false) return snap;
     let sets = [...snap.value.sets];
@@ -578,13 +595,30 @@ export class RmanJobEngine implements IRmanJobEngine {
       }
     }
 
-    // PREVIEW / VALIDATE — emit a progress line and skip the actual restore.
-    if (params.preview === 'true' || params.validate === 'true') {
-      const kind = params.preview === 'true' ? 'preview' : 'validate';
+    if (params.preview === 'true') {
       this._bus.emit({
-        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: kind, pct: 60,
-        message: `restore ${kind}: ${sets.length} backup set(s) examined`,
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'preview', pct: 60,
+        message: `restore preview: ${sets.length} backup set(s) examined`,
       });
+      return ok(undefined);
+    }
+    // RESTORE ... VALIDATE repond a la meme question que VALIDATE
+    // BACKUPSET — « ce jeu est-il restaurable ? » — et doit donc lire
+    // les pieces par le meme predicat, sans rien ecrire sur le disque.
+    if (params.validate === 'true') {
+      for (const set of sets) {
+        for (const piece of set.pieces) {
+          const verdict = validateBackupPiece(this._ctx.vfs, piece.path);
+          if (verdict.fault !== null) {
+            return err({ code: 'ERROR_STACK', message: pieceFaultMessage(verdict) });
+          }
+          this._bus.emit({
+            type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'validate_piece', pct: 70,
+            message: `channel ORA_DISK_1: reading from backup piece ${piece.path}`,
+          });
+        }
+      }
+      this._bus.emit({ type: 'VALIDATION_REPORT', jobId: job.id, files: [], elapsedMs: 1_000 });
       return ok(undefined);
     }
 
@@ -785,26 +819,32 @@ export class RmanJobEngine implements IRmanJobEngine {
           + 'ORA-27037: unable to obtain file status',
       });
     }
+    const checkLogical = params.checkLogical === 'true';
+    const defauts = new Map<number, BlockCorruptionType>();
     const files: ValidatedFile[] = datafiles.map(df => {
       const read = this._ctx.vfs.readFile(df.path);
       const text = read.ok ? new TextDecoder().decode(read.value) : '';
-      const lisible = bannerIsIntact(text, 'ORACLE DATAFILE');
+      const defaut = bannerIsIntact(text, 'ORACLE DATAFILE')
+        ? (checkLogical ? logicalFaultOfDatafile(text, df.tablespace) : null)
+        : 'CORRUPT';
+      if (defaut !== null) defauts.set(df.fileNo, defaut);
       const blocksExamined = Math.max(1, Math.ceil(df.sizeBytes / blockSize));
       const blocksUsed = Math.min(blocksExamined, Math.ceil(text.length / blockSize));
       return {
         fileNo: df.fileNo, path: df.path,
-        status: lisible ? 'OK' : 'FAILED',
-        markedCorrupt: lisible ? 0 : blocksExamined,
-        emptyBlocks: lisible ? blocksExamined - blocksUsed : 0,
+        status: defaut === null ? 'OK' : 'FAILED',
+        markedCorrupt: defaut === null ? 0 : blocksExamined,
+        emptyBlocks: defaut === null ? blocksExamined - blocksUsed : 0,
         blocksExamined, highScn,
       };
     });
     this._bus.emit({ type: 'VALIDATION_REPORT', jobId: job.id, files, elapsedMs: 1_000 });
     let corrompus = 0;
     for (const f of files) {
-      if (f.status !== 'FAILED') continue;
+      const defaut = defauts.get(f.fileNo);
+      if (defaut === undefined) continue;
       corrompus++;
-      this._ctx.recordBlockCorruption?.(f.fileNo, f.blocksExamined, 'CORRUPT');
+      this._ctx.recordBlockCorruption?.(f.fileNo, f.blocksExamined, defaut);
     }
     if (corrompus > 0) {
       this._bus.emit({
