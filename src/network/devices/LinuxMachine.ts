@@ -74,6 +74,10 @@ import {
   type DeviceType,
   type IPv4Packet,
   type EthernetFrame,
+  type ICMPType,
+  type ICMPv6Type,
+  icmpTypeNumber,
+  icmpv6TypeNumber,
 } from '../core/types';
 
 // Linux kernel / userspace
@@ -3993,6 +3997,7 @@ export abstract class LinuxMachine extends EndHost
     outPortName?: string,
   ): 'accept' | 'drop' | 'reject' {
     const ports = this.extractPorts(ipPkt);
+    const icmp = ipPkt.payload as { type?: string; icmpType?: ICMPType; id?: number } | undefined;
     return this.runFilterTable(this.executor.iptables, {
       direction,
       protocol: ipPkt.protocol,
@@ -4002,6 +4007,9 @@ export abstract class LinuxMachine extends EndHost
       dstPort: ports.dstPort,
       iface: portName,
       outIface: outPortName,
+      icmpType: icmp?.type === 'icmp' && icmp.icmpType !== undefined
+        ? icmpTypeNumber(icmp.icmpType) : undefined,
+      icmpId: icmp?.type === 'icmp' ? icmp.id : undefined,
     });
   }
 
@@ -4011,7 +4019,10 @@ export abstract class LinuxMachine extends EndHost
     direction: 'in' | 'out' | 'forward',
     outPortName?: string,
   ): 'accept' | 'drop' | 'reject' {
-    const transport = ipv6Pkt.payload as { sourcePort?: number; destinationPort?: number } | undefined;
+    const transport = ipv6Pkt.payload as {
+      sourcePort?: number; destinationPort?: number;
+      type?: string; icmpType?: ICMPv6Type; id?: number;
+    } | undefined;
     return this.runFilterTable(this.executor.ip6tables, {
       direction,
       protocol: ipv6Pkt.nextHeader,
@@ -4021,6 +4032,9 @@ export abstract class LinuxMachine extends EndHost
       dstPort: transport?.destinationPort ?? 0,
       iface: portName,
       outIface: outPortName,
+      icmpType: transport?.type === 'icmpv6' && transport.icmpType !== undefined
+        ? icmpv6TypeNumber(transport.icmpType) : undefined,
+      icmpId: transport?.type === 'icmpv6' ? transport.id : undefined,
     });
   }
 

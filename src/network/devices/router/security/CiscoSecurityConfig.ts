@@ -478,6 +478,18 @@ export class CiscoSecurityConfig {
     return pm;
   }
 
+  removeClassMap(name: string): void {
+    this.classMaps.delete(name);
+    for (const pm of this.policyMaps.values()) {
+      const reste = pm.classes.filter((c) => c.className !== name);
+      if (reste.length !== pm.classes.length) pm.classes = reste;
+    }
+  }
+
+  removePolicyMap(name: string): void {
+    this.policyMaps.delete(name);
+  }
+
   ensureTimeRange(name: string): TimeRange {
     let tr = this.timeRanges.get(name);
     if (!tr) {

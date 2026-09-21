@@ -323,11 +323,42 @@ export interface InterfaceACLBinding {
   outbound: number | string | null;
 }
 
+function bindAcl<K>(
+  bindings: Map<K, InterfaceACLBinding>, key: K,
+  direction: 'in' | 'out', aclRef: number | string,
+): void {
+  let binding = bindings.get(key);
+  if (!binding) {
+    binding = { inbound: null, outbound: null };
+    bindings.set(key, binding);
+  }
+  if (direction === 'in') binding.inbound = aclRef;
+  else binding.outbound = aclRef;
+}
+
+function unbindAcl<K>(
+  bindings: Map<K, InterfaceACLBinding>, key: K, direction: 'in' | 'out',
+): void {
+  const binding = bindings.get(key);
+  if (!binding) return;
+  if (direction === 'in') binding.inbound = null;
+  else binding.outbound = null;
+}
+
+function readAcl<K>(
+  bindings: Map<K, InterfaceACLBinding>, key: K, direction: 'in' | 'out',
+): number | string | null {
+  const binding = bindings.get(key);
+  if (!binding) return null;
+  return direction === 'in' ? binding.inbound : binding.outbound;
+}
+
 // ─── ACL Engine ─────────────────────────────────────────────────
 
 export class ACLEngine {
   private accessLists: AccessList[] = [];
   private interfaceACLBindings: Map<string, InterfaceACLBinding> = new Map();
+  private vlanACLBindings: Map<number, InterfaceACLBinding> = new Map();
 
   /**
    * Le moteur sert plusieurs vendeurs, et leurs plages de numéros se
@@ -643,26 +674,29 @@ export class ACLEngine {
   }
 
   setInterfaceACL(ifName: string, direction: 'in' | 'out', aclRef: number | string): void {
-    let binding = this.interfaceACLBindings.get(ifName);
-    if (!binding) {
-      binding = { inbound: null, outbound: null };
-      this.interfaceACLBindings.set(ifName, binding);
-    }
-    if (direction === 'in') binding.inbound = aclRef;
-    else binding.outbound = aclRef;
+    bindAcl(this.interfaceACLBindings, ifName, direction, aclRef);
   }
 
+  setVlanACL(vlan: number, direction: 'in' | 'out', aclRef: number | string): void {
+    bindAcl(this.vlanACLBindings, vlan, direction, aclRef);
+  }
+
+  removeVlanACL(vlan: number, direction: 'in' | 'out'): void {
+    unbindAcl(this.vlanACLBindings, vlan, direction);
+  }
+
+  getVlanACL(vlan: number, direction: 'in' | 'out'): number | string | null {
+    return readAcl(this.vlanACLBindings, vlan, direction);
+  }
+
+  getVlanACLBindingsInternal(): Map<number, InterfaceACLBinding> { return this.vlanACLBindings; }
+
   removeInterfaceACL(ifName: string, direction: 'in' | 'out'): void {
-    const binding = this.interfaceACLBindings.get(ifName);
-    if (!binding) return;
-    if (direction === 'in') binding.inbound = null;
-    else binding.outbound = null;
+    unbindAcl(this.interfaceACLBindings, ifName, direction);
   }
 
   getInterfaceACL(ifName: string, direction: 'in' | 'out'): number | string | null {
-    const binding = this.interfaceACLBindings.get(ifName);
-    if (!binding) return null;
-    return direction === 'in' ? binding.inbound : binding.outbound;
+    return readAcl(this.interfaceACLBindings, ifName, direction);
   }
 
   /**

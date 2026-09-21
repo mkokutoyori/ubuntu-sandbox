@@ -14,6 +14,13 @@
  * lue au même endroit que `-u`. **L'application d'`EMFILE` à l'ouverture
  * n'est pas encore branchée** — elle est la suite, et rien ici ne prétend
  * le contraire.
+ *
+ * Les trois cas qui lisent `/proc/<pid>/fd` passent par `sudo` : ce
+ * répertoire est `dr-x------` et appartient au propriétaire du processus —
+ * c'est ce que la machine rend elle-même en `ls -ld`, et ce qu'un vrai
+ * Linux ship. Ils lisaient la table d'un démon root SANS root, et ne
+ * passaient que parce que `ls` ignorait le droit de lecture du répertoire
+ * (`docs/AUDIT-SECURITE-INFRA.md`, H-01) : ils épinglaient le défaut.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -75,7 +82,7 @@ describe('`/proc/<pid>/fd` rend exactement cette table', () => {
     const pid = ps.split('\n').find((l) => l.includes('/usr/sbin/sshd'))!
       .trim().split(/\s+/)[1];
 
-    const listing = await pc.executeCommand(`ls /proc/${pid}/fd`);
+    const listing = await pc.executeCommand(`sudo ls /proc/${pid}/fd`);
     expect(listing).toContain('0');
     expect(listing).toContain('1');
     expect(listing).toContain('2');
@@ -135,7 +142,7 @@ describe('§F9.3 — les journaux que rsyslog tient ouverts SONT ses descripteur
 
     // Le descripteur appartient au PROCESSUS, plus au gestionnaire de logs :
     // c'est ce qui fait que /proc, lsof et le plafond parlent du même.
-    const fds = await pc.executeCommand(`ls -l /proc/${pid}/fd`);
+    const fds = await pc.executeCommand(`sudo ls -l /proc/${pid}/fd`);
     expect(fds).toContain('/var/log/syslog');
   });
 
@@ -159,7 +166,7 @@ describe('§F9.3 — les journaux que rsyslog tient ouverts SONT ses descripteur
     // journal que le démon ouvre, or cela dépend de ce qui est écrit en
     // premier au démarrage. On vérifie donc l'invariant réel — `lsof` et
     // `/proc/<pid>/fd` donnent le MÊME numéro pour le même fichier.
-    const fds = await pc.executeCommand(`ls -l /proc/${pid}/fd`);
+    const fds = await pc.executeCommand(`sudo ls -l /proc/${pid}/fd`);
     // Le numéro de descripteur est le jeton juste avant `->` ; les autres
     // colonnes numériques de `ls -l` (liens, taille) ne sont pas lui.
     const fromProc = /(\d+)\s+->\s+\/var\/log\/syslog/.exec(fds)?.[1];

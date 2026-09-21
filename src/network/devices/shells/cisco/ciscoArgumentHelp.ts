@@ -1,6 +1,5 @@
 import type { CommandTrie, ParamSpec } from '../CommandTrie';
 import { estTypeSansNumero } from './CiscoConfigCommands';
-import { mapCommandIsComplete } from './classMapGrammar';
 import {
   RSA_MODULUS_MIN, RSA_MODULUS_MAX,
 } from './CiscoSecurityCommands';
@@ -437,8 +436,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   // `class-map type inspect` attendent encore leur nom. Un seul argument
   // dans plusieurs de ces cas — seul son contenu les separe, et c'est la
   // grammaire partagee qui tranche, celle-la meme que le gestionnaire lit.
-  tries.config.executableWhen('class-map', (args) => mapCommandIsComplete(args, true));
-  tries.config.executableWhen('policy-map', (args) => mapCommandIsComplete(args, false));
 
 }
 

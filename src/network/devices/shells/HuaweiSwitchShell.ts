@@ -188,6 +188,32 @@ const MST_REVISION_MAX = 65535;
 
 const ETH_TRUNK_MODES = new Set(['lacp-static', 'lacp-dynamic', 'manual']);
 
+interface FiltreVlanLu {
+  vlan: number;
+  direction: 'in' | 'out';
+  acl: number | string | null;
+}
+
+function analyserTrafficFilterVlan(
+  args: string[], sansAcl = false,
+): FiltreVlanLu | { erreur: string } {
+  const vlan = parseInt(args[0] ?? '', 10);
+  if (!Number.isInteger(vlan) || vlan < 1 || vlan > 4094) {
+    return { erreur: 'Error: Invalid VLAN ID.' };
+  }
+  const mot = (args[1] ?? '').toLowerCase();
+  if (mot !== 'inbound' && mot !== 'outbound') {
+    return { erreur: 'Error: Expected inbound or outbound.' };
+  }
+  const direction: 'in' | 'out' = mot === 'inbound' ? 'in' : 'out';
+  if (sansAcl) return { vlan, direction, acl: null };
+  if ((args[2] ?? '').toLowerCase() !== 'acl' || !args[3]) {
+    return { erreur: 'Error: Expected "acl".' };
+  }
+  const numero = parseInt(args[3], 10);
+  return { vlan, direction, acl: Number.isNaN(numero) ? args[3] : numero };
+}
+
 export class HuaweiSwitchShell implements ISwitchShell {
   private mode: VRPSwitchMode = 'user';
   private selectedInterface: string | null = null;
@@ -368,6 +394,25 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private buildDhcpCommands(): void {
     // `ip pool <name>` enters the DHCP pool view.
     this.systemTrie.describeArgs('ip pool', [wordArg('DHCP address pool name', 'pool-name')]);
+    this.systemTrie.registerGreedy('traffic-filter vlan',
+      'Apply an ACL to every frame of a VLAN', (args) => {
+        const analyse = analyserTrafficFilterVlan(args);
+        if ('erreur' in analyse) return analyse.erreur;
+        if (!this.swRef) return 'Error: Incomplete command.';
+        if (analyse.acl === null) return 'Error: Expected "acl".';
+        this.swRef.getVaclEngine().setVlanACL(analyse.vlan, analyse.direction, analyse.acl);
+        return '';
+      });
+
+    this.systemTrie.registerGreedy('undo traffic-filter vlan',
+      'Remove the ACL applied to a VLAN', (args) => {
+        const analyse = analyserTrafficFilterVlan(args, true);
+        if ('erreur' in analyse) return analyse.erreur;
+        if (!this.swRef) return 'Error: Incomplete command.';
+        this.swRef.getVaclEngine().removeVlanACL(analyse.vlan, analyse.direction);
+        return '';
+      });
+
     this.systemTrie.registerGreedy('ip pool', 'Enter DHCP pool view', (args) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
       const dhcp = this.swRef._getDHCPServerInternal();
@@ -4424,6 +4469,19 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   private globalRunningConfigBlocks(sw: HuaweiSwitchDevice): string[][] {
     const blocs: string[][] = [...this.mqcRunningConfigBlocks(sw)];
+
+    const filtresVlan: string[] = [];
+    const liaisons = sw.getVaclEngine().getVlanACLBindingsInternal();
+    for (const vlan of [...liaisons.keys()].sort((a, b) => a - b)) {
+      const liaison = liaisons.get(vlan)!;
+      if (liaison.inbound !== null) {
+        filtresVlan.push(`traffic-filter vlan ${vlan} inbound acl ${liaison.inbound}`);
+      }
+      if (liaison.outbound !== null) {
+        filtresVlan.push(`traffic-filter vlan ${vlan} outbound acl ${liaison.outbound}`);
+      }
+    }
+    if (filtresVlan.length > 0) blocs.push(filtresVlan);
     const sec = sw.getSecurityService();
 
     const dhcp: string[] = [];

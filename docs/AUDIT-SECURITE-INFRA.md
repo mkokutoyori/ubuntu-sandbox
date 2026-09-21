@@ -156,8 +156,8 @@ sérieux au défaut du §6.
 **Date :** 2026-09-20 · Relevé dans
 `src/__tests__/debug/infra/second-passage-attaques.debug.test.ts`.
 
-Le pronostic de la §5 s'est vérifié : sur les huit contrôles attaqués,
-quatre tiennent, quatre portaient un défaut.
+Le pronostic de la §5 s'est vérifié : sur les onze contrôles attaqués au
+second passage, quatre tiennent, sept portaient un défaut.
 
 | Contrôle | Attaque | Accepté | Rendu par `show` | **Applique** |
 |---|---|---|---|---|
@@ -169,6 +169,9 @@ quatre tiennent, quatre portaient un défaut.
 | **ARP inspection** | ARP gratuit à liaison fausse | oui | `(all)` → S-05 | **oui** |
 | **VLAN natif** | double étiquetage | oui | oui | **partiel** → S-02 |
 | **AAA** | repli après serveur injoignable | oui | oui | **NON** → S-03, S-04 |
+| **iptables** | politique DROP, port ouvert, règle d'état | oui | oui | **NON** → H-04, H-05 |
+| **sudo** | commande hors liste, chemin absolu, retour de session | oui | oui | **NON** → H-02, H-03 |
+| **permissions `oracle`** | lecture par un compte tiers | oui | oui | **NON** → H-01 |
 
 ### 6.1 uRPF tient, dans les deux sens
 
@@ -388,12 +391,124 @@ vues d'un même fait dont une seule sait répondre. Les compteurs sont
 désormais tenus par port **et** par VLAN, et le tableau rend une ligne
 par VLAN observé.
 
-### 6.8 Ce qui reste à attaquer
+### 6.8 La pile hôte — cinq défauts, tous **CORRIGÉS**
 
-De la §5, il reste **la pile hôte** : `iptables`, `sudo`, les
-permissions `oracle`. Ne pas la compter comme validée.
+Dernière tranche de la §5. Relevé dans
+`src/__tests__/debug/infra/second-passage-pile-hote.debug.test.ts`.
+
+**Un piège de labo, payé comptant, et qui vaut d'être écrit :** sur un
+`LinuxPC` la session est `user` (uid 1000), donc `iptables` sans `sudo`
+répond `Permission denied`. La première version du banc mesurait ainsi
+l'**absence** de pare-feu en croyant mesurer le pare-feu, et concluait
+« tout applique ». Sur un `LinuxServer` la session est root, ce qui
+rendait la moitié des cas verts et l'autre moitié muette — exactement le
+genre de banc qui ne distingue rien. De même, `su <user>` depuis un
+compte non-root échoue à l'authentification : le changement d'identité
+passe par `sudo su <user> -c "<cmd>"`.
+
+#### H-01 — `ls` ne lisait pas le droit de lecture du répertoire
+
+```
+ls -ld /root                      drwx------ 2 root root
+su quidam -c "ls /root"           (le contenu, listé)
+su quidam -c "cat /etc/shadow"    Permission denied
+```
+
+`cat` consultait `canRead()`, `ls` ne le consultait **nulle part** : deux
+lecteurs d'une même règle DAC, dont un seul l'appliquait. Le mode 700 est
+*le* durcissement canonique d'un répertoire, et `chmod 750` sur
+`oradata` ne protégeait donc rien non plus — la question « les fichiers
+d'Oracle sont-ils protégés ? » recevait deux réponses opposées selon la
+commande. Le contrôle existe déjà (`ctx.vfs.path(…).canRead()`) ; `ls` le
+lit maintenant, avec la formulation de coreutils
+(`ls: cannot open directory 'X': Permission denied`).
+
+#### H-02 — `sudo /bin/ls` refusé, alors que la ligne nomme `/bin/ls`
+
+```
+sudo -l (vu par operateur)   (ALL) NOPASSWD: /bin/ls
+sudo -n ls /root             autorisé
+sudo -n /bin/ls /root        Sorry, user operateur is not allowed…
+sudo -n /usr/bin/ls /root    Sorry, user operateur is not allowed…
+```
+
+Deux causes qui se rejoignaient. `resolveExePath` préfixait un chemin
+**déjà absolu** (`/bin/ls` → `/usr/bin//bin/ls`) — un défaut qui salissait
+aussi les traces `execve`. Et le comparateur de la politique opposait les
+chemins bruts alors que `/bin` est un lien vers `/usr/bin` : `/bin/ls` et
+`/usr/bin/ls` sont le même fichier, une équivalence dont ce dépôt portait
+**déjà** le prédicat (`canonicalBinPath`), utilisé ailleurs et pas là.
+C'est la §1 dans sa forme ordinaire : la brique existait, la politique ne
+s'y branchait pas.
+
+#### H-03 — `sudo su <user> -c "<cmd>"` laissait la session **root**
+
+```
+id -u                              1000
+sudo su tiers -c "id -u"           1005
+id -u                              0        ← la session est restée root
+ls /root                           (listé)
+```
+
+Une élévation à **usage unique** ne revenait jamais : toute commande
+suivante s'exécutait root. Le restaurateur était gardé par
+`actualCmd !== 'su'` — écrit pour la forme **interactive**, où `su`
+laisse une session ouverte que `exit` dépile. Mais la forme `-c` a déjà
+dépilé son propre contexte quand `sudo` reprend la main : la pile est
+vide, la branche de rattrapage ne s'applique pas, et plus personne ne
+restaure. La règle s'écrit désormais une fois, sur ce qu'elle décide
+vraiment — *`su` a-t-il laissé une session ouverte ?* — au lieu du nom de
+la commande.
+
+#### H-04 — la règle `ESTABLISHED,RELATED` n'appliquait rien aux flux sortants
+
+```
+-P INPUT DROP seul, ping sortant                   100% packet loss
++ -m conntrack --ctstate ESTABLISHED,RELATED       100% packet loss
+```
+
+Le suivi de connexion n'était alimenté que pour `in` et `forward` : rien
+de ce que la machine **initie** n'était suivi, donc la réponse ne pouvait
+jamais correspondre. La paire `-P INPUT DROP` + `ESTABLISHED,RELATED
+ACCEPT` — le patron d'un pare-feu à états, celui qu'on écrit sur toutes
+les machines — **coupait** la machine au lieu de la protéger. Le vrai
+netfilter suit dans les deux sens (`PREROUTING` *et* `OUTPUT`).
+
+#### H-05 — le tuple de suivi ignorait le type et l'identifiant ICMP
+
+Avec les ports à 0 des deux côtés, un echo-**request** entrant et un
+echo-**reply** entrant avaient la **même clef** : un ping accepté rendait
+`ESTABLISHED` tout ping ultérieur. Le défaut préexistait par le suivi
+entrant, et le correctif H-04 l'aurait élargi aux flux sortants — une
+machine durcie serait devenue pingable dès qu'elle aurait pingé.
+
+Le tuple porte désormais le type, avec la correspondance
+requête → réponse (RFC 792, RFC 4443 : 8→0, 13→14, 15→16, 17→18, 128→129,
+133→134, 135→136), **et** l'identifiant d'écho — sans lui, deux pings
+distincts sont un seul flux. Les deux convertisseurs
+(`icmpTypeNumber`, `icmpv6TypeNumber`) existaient déjà. Relevé après :
+
+```
+-P INPUT DROP seul, ping sortant                      100% packet loss
++ ESTABLISHED,RELATED, ping sortant                     0% packet loss
+le serveur ping la machine durcie                     100% packet loss
+un port explicitement autorisé pendant DROP           passe
+```
+
+**La troisième ligne est celle qui compte.** Une règle d'état doit
+laisser revenir ce que la machine a demandé, et rien d'autre : un
+pare-feu que le premier ping sortant ouvre serait pire que pas de
+pare-feu.
+
+### 6.9 Où en est la §5
+
+Les vingt contrôles du premier audit ont été posés et acceptés ; les
+**vingt** ont maintenant été attaqués. Neuf défauts trouvés, neuf
+corrigés (S-01 à S-05, H-01 à H-05).
 
 Non-régression du second passage :
-`src/__tests__/audit/storm-control-audit-preuves.test.ts` (S-01) et
-`src/__tests__/audit/second-passage-audit-preuves.test.ts` (S-02 à
-S-05, 7 cas discriminants sur 13).
+`src/__tests__/audit/storm-control-audit-preuves.test.ts` (S-01),
+`src/__tests__/audit/second-passage-audit-preuves.test.ts` (S-02 à S-05,
+7 cas discriminants sur 13) et
+`src/__tests__/audit/pile-hote-audit-preuves.test.ts` (H-01 à H-05,
+10 cas discriminants sur 19).

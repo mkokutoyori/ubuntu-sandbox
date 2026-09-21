@@ -229,6 +229,7 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
 };
 
 export function resolveExePath(name: string): string {
+  if (name.startsWith('/')) return name;
   return STANDARD_BIN_PATHS[name] ?? `/usr/bin/${name}`;
 }
 

@@ -14,6 +14,7 @@
  */
 
 import type { VirtualFileSystem } from '../VirtualFileSystem';
+import { canonicalBinPath } from '../service/CriticalFiles';
 import {
   parseSudoersText, type AliasTable, type SudoersRule, type SudoersParseError,
   type ListItem, type DefaultsConfig,
@@ -111,7 +112,7 @@ function tokenMatchesCommand(token: string, cmdPath: string, argsJoined: string)
   if (!token.startsWith('/')) return false;
   const spaceIdx = token.indexOf(' ');
   const tokPath = spaceIdx === -1 ? token : token.slice(0, spaceIdx);
-  if (tokPath !== cmdPath) return false;
+  if (canonicalBinPath(tokPath) !== canonicalBinPath(cmdPath)) return false;
   if (spaceIdx === -1) return true;
   return globMatch(token.slice(spaceIdx + 1).trim(), argsJoined);
 }

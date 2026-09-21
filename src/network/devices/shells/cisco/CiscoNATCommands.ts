@@ -20,6 +20,7 @@ import { IP_PROTO_TCP, IP_PROTO_UDP } from '../../../core/types';
 import { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import { isValidIPv4, isValidSubnetMask, prefixLengthToMaskUint32, uint32ToIp } from '../../../core/ip';
+import { SubnetMask } from '../../../core/types';
 
 function isValidCidr(s: string): boolean {
   const m = s.match(/^\/?(\d+)$/);
@@ -42,6 +43,18 @@ function hasUnmatchedQuote(tokens: string[]): boolean {
   const dq = (joined.match(/"/g) ?? []).length;
   const sq = (joined.match(/'/g) ?? []).length;
   return (dq % 2 !== 0) || (sq % 2 !== 0);
+}
+
+export function networkPrefixLength(token: string): number | null {
+  if (token.startsWith('/')) {
+    return isValidCidr(token) ? parseInt(token.slice(1), 10) : null;
+  }
+  if (!isValidSubnetMask(token)) return null;
+  return new SubnetMask(token).toCIDR();
+}
+
+export function natErrorMessageFor(reason: string): string {
+  return errorMessageFor(reason);
 }
 
 function errorMessageFor(reason: string): string {
@@ -130,29 +143,6 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     if (args[1]) args[1] = aliasLookup(ctx.r(), args[1]);
 
     const first = args[0].toLowerCase();
-    if (first === 'network') {
-      if (args.length < 3) return '% Incomplete command.';
-      const local = args[1];
-      const global = args[2];
-      const maskTok = args[3];
-      if (!isValidIPv4(local)) return `% Invalid IP address ${local}.`;
-      if (!isValidIPv4(global)) return `% Invalid IP address ${global}.`;
-      let prefixLen = 24;
-      if (maskTok) {
-        if (maskTok.startsWith('/')) {
-          if (!isValidCidr(maskTok)) return `% Invalid prefix-length ${maskTok}.`;
-          prefixLen = parseInt(maskTok.slice(1), 10);
-        } else if (isValidSubnetMask(maskTok)) {
-          prefixLen = maskTok.split('.').map(p => parseInt(p, 10)).reduce((acc, p) => acc + p.toString(2).replace(/0/g, '').length, 0);
-        } else {
-          return `% Invalid mask ${maskTok}.`;
-        }
-      }
-      const vrf = parseVrf(args);
-      const res = engine.addStaticEntry({ localIP: local, globalIP: global, isNetwork: true, prefixLen, vrf });
-      return res.ok === false ? `% ${errorMessageFor(res.reason)}` : '';
-    }
-
     if (first === 'tcp' || first === 'udp') {
       if (args.length < 5) return '% Incomplete command.';
       const localIP = args[1];
@@ -423,12 +413,6 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
   trie.registerGreedy('no ip nat outside source static', 'Remove outside static NAT', (args) => {
     if (args.length < 2) return '% Incomplete command.';
     ctx.r()._getNATEngine().removeOutsideStatic(args[0], args[1]);
-    return '';
-  });
-
-  trie.registerGreedy('no ip nat inside source static network', 'Remove network static NAT', (args) => {
-    if (args.length < 2) return '% Incomplete command.';
-    ctx.r()._getNATEngine().removeStaticEntry(args[0], args[1]);
     return '';
   });
 

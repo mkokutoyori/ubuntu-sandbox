@@ -41,6 +41,14 @@ import { formatCiscoPing, type ParsedPing } from './cisco/ciscoPing';
 import {
   echoSpecs, type EchoHost, type TracerouteRequest,
 } from './cisco/echoSpecs';
+import { mapSpecs, MAP_LEGENDS, type MapHost } from './cisco/mapSpecs';
+import { negationSpecs, type NegationHost } from './cisco/negationSpecs';
+
+const TYPES_VIRTUELS: Readonly<Record<string, string>> = {
+  loopback: 'Loopback', lo: 'Loopback', tunnel: 'Tunnel', tu: 'Tunnel',
+  'virtual-template': 'Virtual-Template', 'port-channel': 'Port-channel',
+  po: 'Port-channel', vlan: 'Vlan', nve: 'Nve',
+};
 import {
   parseRouteDistinguisher, parseRouteTarget, applyRouteTarget,
   vrfStoreOf, type VrfHost, type VrfInstance,
@@ -105,7 +113,9 @@ import {
 // Extracted command modules
 import * as Show from './cisco/CiscoShowCommands';
 import { showProcessesCpu } from './cisco/CiscoCommonShow';
-import { showNATTranslations, showNATStatistics } from './cisco/CiscoNATCommands';
+import {
+  showNATTranslations, showNATStatistics, networkPrefixLength, natErrorMessageFor,
+} from './cisco/CiscoNATCommands';
 import { showIpOspfNeighbor, routerIpRouteView } from './cisco/CiscoOspfCommands';
 import {
   type CiscoShellMode, type CiscoShellContext,
@@ -454,6 +464,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [
       ...super.socleSpecs(),
       ...echoSpecs(() => this.echoHost(), { ipv6: true, traceroute: true }),
+      ...mapSpecs(() => this.mapHost()),
+      ...negationSpecs(() => this.negationHost()),
       ...zoneSpecs(() => this.zoneHost()),
       ...dhcpClientFamily(),
       ...hsrpShowSpecs(this, () => this.fhrp),
@@ -658,7 +670,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
    * par les trois modes, ne peut plus se contredire.
    */
   private interfaceEntrySpecs(): CommandSpec[] {
-    return specsFromTrieRegistrations(
+    return this.avecRetraitDInterface(specsFromTrieRegistrations(
       (collector) => registerInterfaceEntry(collector as unknown as CommandTrie, this),
       {
         modes: ['config', 'config-if', 'config-subif'], minPrivilege: 15,
@@ -668,7 +680,40 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
           literal: 'IFACE', alternatives: INTERFACE_TYPES,
         }),
         keywordsFor: () => typesInterfaceEnMotsCles(INTERFACE_TYPES),
-      });
+      }));
+  }
+
+  /**
+   * `interface` se tape de deux facons, et les deux doivent se defaire :
+   * `interface Loopback100`, que la place unique lit, et
+   * `interface Loopback 100`, que le mot-cle du type lit avec son propre
+   * numero. Le retrait n'etait attache qu'a la premiere, si bien que
+   * `no interface Loopback 100` etait refuse alors que sa forme positive
+   * l'accepte — les deux moities d'une meme commande ne jugeaient pas la
+   * meme frappe.
+   */
+  private avecRetraitDInterface(specs: CommandSpec[]): CommandSpec[] {
+    const retirer = (nomTape: string): string =>
+      this.negationHost().retirerInterface(nomTape);
+    const undoDescription = 'Remove a virtual interface';
+    return specs.map((spec) => {
+      if (spec.path[0] !== 'interface') return spec;
+      const mots = spec.path.filter((etape): etape is string => typeof etape === 'string');
+      if (spec.path.length === 2 && mots.length === 1) {
+        return {
+          ...spec, undoDescription,
+          undo: (_s: unknown, args: Record<string, string>) => retirer(args.interface),
+        };
+      }
+      if (spec.path.length === 3 && mots.length === 2) {
+        return {
+          ...spec, undoDescription,
+          undo: (_s: unknown, args: Record<string, string>) =>
+            retirer(`${mots[1]}${args.numero ?? ''}`),
+        };
+      }
+      return spec;
+    });
   }
 
   private routingProtocolSpecs(): CommandSpec[] {
@@ -866,6 +911,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected override socleLegends(): SocleLegend[] {
     return [
       ...super.socleLegends(),
+      ...MAP_LEGENDS.map(
+        ([chemin, legende, modes]) => [chemin, legende, modes] as SocleLegend),
       [['no'], 'Negate a command or set its defaults', ['config-router']],
       [['area'], 'OSPF area parameters', ['config-router-ospf']],
       [['crypto'], 'Encryption module'],
@@ -1442,6 +1489,62 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   getTimeRange(): string | null { return this.selectedTimeRange; }
   setTimeRange(n: string | null): void { this.selectedTimeRange = n; }
   getClassMap(): string | null { return this.selectedClassMap; }
+  private negationHost(): NegationHost {
+    return {
+      retirerInterface: (nomTape) => {
+        const combine = nomTape.replace(/\s+/g, '');
+        const type = combine.match(
+          /^(loopback|lo|tunnel|tu|virtual-template|port-channel|po|vlan|nve)([\d/.]+)$/i);
+        const nom = type
+          ? `${TYPES_VIRTUELS[type[1].toLowerCase()]}${type[2]}`
+          : this.resolveInterfaceName(nomTape);
+        if (!nom) return formatInvalidInput(13);
+        if (!this.d()._removeVirtualInterface(nom)) return formatInvalidInput(13);
+        if (this.getSelectedInterface() === nom) this.setSelectedInterface(null);
+        return '';
+      },
+      poserStatiqueDeReseau: (local, global, prefixe, vrf) => {
+        let prefixLen = 24;
+        if (prefixe !== undefined) {
+          const longueur = networkPrefixLength(prefixe);
+          if (longueur === null) {
+            return prefixe.startsWith('/')
+              ? `% Invalid prefix-length ${prefixe}.`
+              : `% Invalid mask ${prefixe}.`;
+          }
+          prefixLen = longueur;
+        }
+        const res = this.d()._getNATEngine().addStaticEntry(
+          { localIP: local, globalIP: global, isNetwork: true, prefixLen, vrf });
+        return res.ok === false ? `% ${natErrorMessageFor(res.reason)}` : '';
+      },
+      retirerStatiqueDeReseau: (local, global) => {
+        this.d()._getNATEngine().removeStaticEntry(local, global);
+        return '';
+      },
+    };
+  }
+
+  private mapHost(): MapHost {
+    const sec = () => getSecurityConfig(this.d());
+    return {
+      ouvrirClassMap: (nom, sorte, matchAll) => {
+        sec().ensureClassMap(nom, sorte, matchAll);
+        this.setClassMap(nom);
+        this.mode = 'config-cmap' as typeof this.mode;
+        return '';
+      },
+      retirerClassMap: (nom) => { sec().removeClassMap(nom); return ''; },
+      ouvrirPolicyMap: (nom, sorte) => {
+        sec().ensurePolicyMap(nom, sorte);
+        this.setPolicyMap(nom);
+        this.mode = 'config-pmap' as typeof this.mode;
+        return '';
+      },
+      retirerPolicyMap: (nom) => { sec().removePolicyMap(nom); return ''; },
+    };
+  }
+
   setClassMap(n: string | null): void { this.selectedClassMap = n; }
   getPolicyMap(): string | null { return this.selectedPolicyMap; }
   setPolicyMap(n: string | null): void { this.selectedPolicyMap = n; }

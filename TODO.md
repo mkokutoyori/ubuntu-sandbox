@@ -12,20 +12,6 @@ Format : `[famille] intitulé` puis constat / mesure / raison du report.
 
 ## Commutateur Huawei (VRP)
 
-### [acl] pas de `traffic-filter vlan <n> inbound`, l'equivalent VRP du VACL
-Un commutateur VRP filtre un VLAN entier par
-`traffic-filter vlan <n> inbound acl <n>` ; ici la commande n'existe pas.
-**Mesure** : `traffic-filter vlan 10 inbound acl 3000` rend
-`Error: Unrecognized command found at '^' position.` — refus honnete,
-mais un laboratoire VACL est infaisable sur VRP.
-**Ce qui manque** : `Switch.vaclPermits` est ecrit pour la carte d'acces
-de Cisco (`vlanAccessMaps` + `vlanFilterBindings`). VRP lie une ACL
-directement au VLAN, sans carte intermediaire, donc il faut une seconde
-liaison `vlan -> acl` et son point d'appel — et surtout NE PAS reutiliser
-`evaluateACLByName` telle quelle : la politique VRP pour un paquet non
-apparie est `permit`, ce que `evaluateForDataPlane` porte deja.
-
-
 ### [acl] VRP n'a pas d'ACL IPv6, et `acl ipv6` est refusee
 `acl ipv6 name <nom>` rangeait la liste dans le magasin **IPv4** avec le
 type `extended`, sous une invite annoncant `acl-adv-<nom>` — donc une

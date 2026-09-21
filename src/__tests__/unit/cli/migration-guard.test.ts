@@ -101,19 +101,28 @@ describe('ce que la migration rapporte, mesure', () => {
   });
 
   /*
-   * Ce cas exigeait plus de CENT chemins restants, et le chiffre etait un
-   * plancher qui combat le but : la migration le fait baisser a chaque
-   * lot, donc il devait finir par tomber — il est tombe a 88. Ce qu'il
-   * garde vraiment est que l'inventaire est LU, sans quoi les deux
-   * garde-fous ci-dessus compareraient le registre a un ensemble vide et
-   * passeraient toujours. La derniere famille migree le ramenera a zero,
-   * et ce fichier dira alors que le trie est fini plutot que casser.
+   * Ce cas exigeait plus de CENT chemins restants, puis seulement que
+   * l'inventaire soit LU. Il annoncait lui-meme sa fin : « la derniere
+   * famille migree le ramenera a zero, et ce fichier dira alors que le
+   * trie est fini plutot que casser ». Elle est migree ; il le dit.
+   *
+   * Le piege est que `enumerateAllExecutablePaths?.() ?? []` rend le MEME
+   * ensemble vide quand le trie est fini et quand le lecteur a disparu.
+   * Un « zero » ne prouve donc rien tout seul : le cas verifie d'abord
+   * que la methode EXISTE et rend bien un tableau, puis qu'elle n'y met
+   * plus rien.
    */
-  it('l\'inventaire du trie est LU — sinon le garde-fou ne lirait rien', () => {
-    const legacy = legacyPaths();
+  it('le trie est FINI — plus un seul chemin executable', () => {
+    resetCounters(); resetDeviceCounters(); MACAddress.resetCounter();
+    const shell = new CiscoRouter('router-cisco', 'R1', 0, 0).getShell() as unknown as {
+      enumerateAllExecutablePaths?: () => string[];
+    };
 
-    expect(legacy.size).toBeGreaterThan(0);
-    expect([...legacy].every(path => path.length > 0)).toBe(true);
+    expect(typeof shell.enumerateAllExecutablePaths, 'le lecteur a disparu')
+      .toBe('function');
+    const restants = shell.enumerateAllExecutablePaths!();
+    expect(Array.isArray(restants), 'le lecteur ne rend plus un tableau').toBe(true);
+    expect(restants, `il reste ${restants.join(', ')}`).toEqual([]);
   });
 });
 
