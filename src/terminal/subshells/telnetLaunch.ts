@@ -23,7 +23,7 @@ import {
   TelnetClientSession, type TelnetClientTransport,
 } from '@/network/protocols/telnet/TelnetClientSession';
 import { TelnetInteractiveSubShell } from './TelnetInteractiveSubShell';
-import { BSD_TELNET, type TelnetDialect } from './telnetDialect';
+import { BSD_TELNET, telnetWireFailure, type TelnetDialect } from './telnetDialect';
 
 export const TELNET_USAGE = BSD_TELNET.usage;
 
@@ -82,10 +82,7 @@ export async function launchTelnet(
 
   if (!dialed || isDialFailure(dialed)) {
     const reason = isDialFailure(dialed) ? dialed.dialFailed : 'refused';
-    const wording = reason === 'timeout' ? dialect.timedOut
-      : reason === 'unreachable' ? dialect.unreachable
-        : dialect.refused;
-    return fail(wording(host, found.ip, port));
+    return fail(telnetWireFailure(dialect, reason, host, found.ip, port));
   }
   const socket = dialed as TelnetClientTransport;
 

@@ -15,6 +15,8 @@
  * different things about the same event.
  */
 
+import type { TcpWireOutcome } from '@/network/tcp/types';
+
 /** What a telnet attempt can print, per platform. */
 export interface TelnetDialect {
   /** No host on the command line. */
@@ -27,6 +29,7 @@ export interface TelnetDialect {
   timedOut(host: string, ip: string, port: number): string[];
   /** No route resolves, so nothing was ever sent — ENETUNREACH. */
   unreachable(host: string, ip: string, port: number): string[];
+  noRoute(host: string, ip: string, port: number): string[];
   /** The session is open; these lines precede the remote's own output. */
   connected(host: string, ip: string): string[];
 }
@@ -48,6 +51,10 @@ export const BSD_TELNET: TelnetDialect = {
   unreachable: (_host, ip) => [
     `Trying ${ip}...`,
     `telnet: connect to address ${ip}: Network is unreachable`,
+  ],
+  noRoute: (_host, ip) => [
+    `Trying ${ip}...`,
+    `telnet: connect to address ${ip}: No route to host`,
   ],
   connected: (host, ip) => [
     `Trying ${ip}...`,
@@ -82,6 +89,10 @@ export const IOS_TELNET: TelnetDialect = {
     `Trying ${host} ...`,
     '% Destination unreachable; gateway or host down',
   ],
+  noRoute: (host) => [
+    `Trying ${host} ...`,
+    '% Destination unreachable; gateway or host down',
+  ],
   connected: (host) => [`Trying ${host} ...`, 'Open'],
 };
 
@@ -101,6 +112,10 @@ export const VRP_TELNET: TelnetDialect = {
     'Error: Failed to connect to the remote host.',
   ],
   unreachable: (host) => [
+    `Trying ${host} ...`,
+    'Error: Failed to connect to the remote host.',
+  ],
+  noRoute: (host) => [
     `Trying ${host} ...`,
     'Error: Failed to connect to the remote host.',
   ],
@@ -126,6 +141,9 @@ export const WINDOWS_TELNET: TelnetDialect = {
   unreachable: (host, _ip, port) => [
     `Connecting To ${host}...Could not open connection to the host, on port ${port}: Network is unreachable`,
   ],
+  noRoute: (host, _ip, port) => [
+    `Connecting To ${host}...Could not open connection to the host, on port ${port}: Network is unreachable`,
+  ],
   connected: (host) => [
     `Connecting To ${host}...`,
     'Welcome to Microsoft Telnet Client',
@@ -133,3 +151,19 @@ export const WINDOWS_TELNET: TelnetDialect = {
     "Escape Character is 'CTRL+]'",
   ],
 };
+
+const SAYS: Readonly<Record<
+  Exclude<TcpWireOutcome, 'open'>, keyof Omit<TelnetDialect, 'usage' | 'connected' | 'unresolved'>
+>> = {
+  refused: 'refused',
+  timeout: 'timedOut',
+  prohibited: 'noRoute',
+  unreachable: 'unreachable',
+};
+
+export function telnetWireFailure(
+  dialect: TelnetDialect, outcome: Exclude<TcpWireOutcome, 'open'>,
+  host: string, ip: string, port: number,
+): string[] {
+  return dialect[SAYS[outcome]](host, ip, port);
+}
