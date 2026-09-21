@@ -21,9 +21,14 @@ import type { RmanError } from '../core/RmanError';
 import type { IRmanJobEngine } from './IRmanJobEngine';
 import type { IChannelPool } from '../channel/IChannelPool';
 import type { IRmanCatalogRepository } from '../catalog/IRmanCatalogRepository';
-import type { IRmanOracleContext } from '../integration/IRmanOracleContext';
+import type { IRmanOracleContext, ArchivedLogRecord } from '../integration/IRmanOracleContext';
+import {
+  validateBackupPiece, pieceFaultMessage, bannerIsIntact, type PieceVerdict,
+} from '../core/pieceValidation';
+import { archivedLogFromPath } from '../core/archivedLogNaming';
 import type { RmanEventBus } from '../reactive/RmanEventBus';
 import type { RmanJob } from './types';
+import type { ValidatedFile } from '../core/types';
 import type { DatafileEntry } from '../catalog/types';
 import { BackupSetFactory } from '../catalog/BackupSetFactory';
 import { RmanTag } from '../values/RmanTag';
@@ -36,6 +41,9 @@ import { renderBackupPieceImage, parseBackupPieceImage } from '../core/BackupPie
 import { renderControlFileImage, controlFileBody, type ControlFileImage } from '@/database/oracle/storage/ControlFileImage';
 import { parseRedoStream, applyRedoToTablespace, type RedoRecord } from '@/database/oracle/storage/RedoStream';
 import { parseDatafileImage, renderDatafileImage, datafileBannerOf } from '@/database/oracle/storage/DatafileImage';
+
+const bySequence = (a: ArchivedLogRecord, b: ArchivedLogRecord): number =>
+  a.thread - b.thread || a.sequence - b.sequence;
 import type { TablespacePayload } from '@/database/oracle/OracleStorage';
 import { parseSize } from '@/database/oracle/views/_fileSize';
 import { BackupKey } from '../values/BackupKey';
@@ -118,6 +126,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       case 'BACKUP_DATABASE':    return this._doBackup(job, channelId, 'database');
       case 'BACKUP_ARCHIVELOG':  return this._doBackup(job, channelId, 'archivelog');
       case 'BACKUP_TABLESPACE':  return this._doBackup(job, channelId, `tablespace ${job.params?.tablespace ?? 'USERS'}`);
+      case 'VALIDATE':           return this._doValidate(job);
       case 'RESTORE_DATABASE':   return this._doRestore(job, channelId);
       case 'RECOVER_DATABASE':   return this._doRecover(job);
       case 'DUPLICATE_DATABASE': return this._doDuplicate(job, channelId);
@@ -149,7 +158,6 @@ export class RmanJobEngine implements IRmanJobEngine {
           : incLevel === 0      ? 'datafile-incremental-0'
             : incLevel === 1    ? 'datafile-incremental-1'
               : 'datafile-full';
-    const basePath = this._resolvePath(params.format, tag, omfKind);
     const maxPieceSize = params.maxPieceSize ? Number(params.maxPieceSize) : undefined;
 
     const allDatafiles = this._ctx.getDatafiles();
@@ -171,6 +179,14 @@ export class RmanJobEngine implements IRmanJobEngine {
       if (tsFilters   && !tsFilters.has(df.tablespace.toUpperCase())) return false;
       return true;
     });
+    // `%f` et `%N` ne valent que pour une COPIE IMAGE, qui porte un seul
+    // fichier : un jeu de sauvegarde en couvre plusieurs, et il n'y
+    // aurait aucun fichier ni aucun tablespace a nommer.
+    const fichierUnique = params.asCopy === 'true' && datafiles.length === 1
+      ? { fileNumber: datafiles[0].fileNo, tablespace: datafiles[0].tablespace }
+      : undefined;
+    const basePath = this._resolvePath(params.format, tag, omfKind, 1, fichierUnique);
+
     const cumulative = params.cumulative === 'true';
     const rawSize = isControlfile
       ? 9_650_176
@@ -192,14 +208,8 @@ export class RmanJobEngine implements IRmanJobEngine {
 
     this._bus.emit({ type: 'BACKUP_PIECE_STARTED', jobId: job.id, channelId, what });
 
-    // VALIDATE — skip the VFS write and the catalog persistence.
     if (validate) {
-      const scope = params.validateScope;
-      const label = scope === 'TABLESPACE' && params.tablespace ? `tablespace ${params.tablespace}`
-                  : scope === 'DATAFILE'   && params.fileNo     ? `datafile ${params.fileNo}`
-                  : scope === 'BACKUPSET'  && params.bsKey      ? `backupset ${params.bsKey}`
-                  :                                                what;
-      this._bus.emit({ type: 'BACKUP_VALIDATED', jobId: job.id, what: label });
+      this._bus.emit({ type: 'BACKUP_VALIDATED', jobId: job.id, what });
       return ok(undefined);
     }
 
@@ -280,12 +290,14 @@ export class RmanJobEngine implements IRmanJobEngine {
     if (!isControlfile && !isSpfile) this._ctx.checkpointDatafiles?.();
     const image = (isControlfile || isSpfile)
       ? null
-      : { datafiles: this._readDatafileImages(datafiles), scn: this._ctx.getCurrentScn?.() };
+      : isArchivelog
+        ? { datafiles: {}, archivedLogs: this._readArchivedLogImages(), scn: this._ctx.getCurrentScn?.() }
+        : { datafiles: this._readDatafileImages(datafiles), scn: this._ctx.getCurrentScn?.() };
     const usedPaths = new Set<string>();
     for (let i = 1; i <= pieceCount; i++) {
       const candidate = i === 1
         ? basePath
-        : this._resolvePath(params.format, tag, omfKind, i);
+        : this._resolvePath(params.format, tag, omfKind, i, fichierUnique);
       const path = usedPaths.has(candidate) ? `${candidate}.p${i}` : candidate;
       usedPaths.add(path);
       const size = i === pieceCount
@@ -332,7 +344,7 @@ export class RmanJobEngine implements IRmanJobEngine {
 
     // ARCHIVELOG ALL DELETE INPUT — consume + delete every reported archivelog
     if (isArchivelog && deleteInput) {
-      const paths = this._ctx.getArchivelogPaths?.() ?? [];
+      const paths = this._archivedLogs().map(l => l.path);
       for (const p of paths) {
         this._ctx.vfs.deleteFile(p);
         this._bus.emit({ type: 'ARCHIVELOG_DELETED', jobId: job.id, path: p });
@@ -370,6 +382,40 @@ export class RmanJobEngine implements IRmanJobEngine {
       }
     }
     return {};
+  }
+
+  private _archivedLogs(): ReadonlyArray<ArchivedLogRecord> {
+    const declares = this._ctx.getArchivedLogs?.();
+    if (declares !== undefined) return [...declares].sort(bySequence);
+    const paths = this._ctx.getArchivelogPaths?.() ?? [];
+    return paths.map((p, i) => archivedLogFromPath(p, i)).sort(bySequence);
+  }
+
+  private _readArchivedLogImages(): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const log of this._archivedLogs()) {
+      const read = this._ctx.vfs.readFile(log.path);
+      if (read.ok) out[log.path] = new TextDecoder().decode(read.value);
+    }
+    return out;
+  }
+
+  private _restoreArchivedLogFromBackup(path: string): boolean {
+    const snap = this._catalog.listAll();
+    if (snap.ok === false) return false;
+    for (const set of snap.value.sets) {
+      if (set.type !== 'ARCHIVELOG') continue;
+      for (const piece of set.pieces) {
+        const read = this._ctx.vfs.readFile(piece.path);
+        if (read.ok === false) continue;
+        const image = parseBackupPieceImage(new TextDecoder().decode(read.value));
+        const body = image?.archivedLogs?.[path];
+        if (body === undefined) continue;
+        const written = this._ctx.vfs.writeFile(path, new TextEncoder().encode(body));
+        if (written.ok) return true;
+      }
+    }
+    return false;
   }
 
   private _applyArchivedLogs(paths: ReadonlyArray<string>, untilScn?: number): void {
@@ -470,6 +516,7 @@ export class RmanJobEngine implements IRmanJobEngine {
   /** Resolve a piece file path from an optional FORMAT template + tag. */
   private _resolvePath(
     format: string | undefined, tag: RmanTag, kind: OmfBackupKind, pieceNumber = 1,
+    seul?: { fileNumber?: number; tablespace?: string },
   ): string {
     if (!format) {
       const dest = this._ctx.getSpfileParam('db_recovery_file_dest') ?? ORACLE_CONFIG.FRA;
@@ -478,13 +525,17 @@ export class RmanJobEngine implements IRmanJobEngine {
       return path;
     }
     return resolveFormatSpec(format, {
-      dbName:      this._ctx.dbName,
-      dbId:        this._ctx.dbId.value,
-      setNumber:   BackupKey.peekBsKey(),
+      dbName:       this._ctx.dbName,
+      dbId:         this._ctx.dbId.value,
+      activationId: this._ctx.dbId.value % 1_000_000_000,
+      setNumber:    BackupKey.peekBsKey(),
       pieceNumber,
-      copyNumber:  1,
-      logSequence: 1,
-      at:          new Date(),
+      copyNumber:   1,
+      logSequence:  1,
+      logThread:    1,
+      at:           new Date(),
+      fileNumber:   seul?.fileNumber,
+      tablespace:   seul?.tablespace,
     });
   }
 
@@ -541,24 +592,24 @@ export class RmanJobEngine implements IRmanJobEngine {
     // piece had been `rm`'d — the catalog said yes, the filesystem said
     // the bytes were gone. Real RMAN fails over past the missing piece
     // and, with nothing left, aborts (RMAN-06026/06023).
-    const missingPieces: string[] = [];
+    const refusees: PieceVerdict[] = [];
     const usableSets = sets.filter(s => {
-      const present = s.pieces.every(p => this._ctx.vfs.fileExists(p.path));
-      if (!present) for (const p of s.pieces) {
-        if (!this._ctx.vfs.fileExists(p.path)) missingPieces.push(p.path);
-      }
-      return present;
+      const verdicts = s.pieces.map(p => validateBackupPiece(this._ctx.vfs, p.path));
+      const casses = verdicts.filter(v => v.fault !== null);
+      refusees.push(...casses);
+      return casses.length === 0;
     });
     if (usableSets.length === 0) {
+      const premier = refusees[0];
       this._bus.emit({
         type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'restore', pct: 0,
-        message: `ORA-19505: failed to identify file "${missingPieces[0] ?? '?'}"\n`
-          + 'ORA-27037: unable to obtain file status',
+        message: premier ? pieceFaultMessage(premier) : '',
       });
+      const premierFichier = this._ctx.getDatafiles()[0]?.fileNo ?? 1;
       return err({
-        code: 'RMAN_06023',
+        code: 'ERROR_STACK',
         message: 'RMAN-06026: some targets not found - aborting restore\n'
-          + 'RMAN-06023: no backup or copy of datafile found to restore',
+          + `RMAN-06023: no backup or copy of datafile ${premierFichier} found to restore`,
       });
     }
 
@@ -675,32 +726,104 @@ export class RmanJobEngine implements IRmanJobEngine {
     //    as file /u01/.../arch_1_42_xxx.arc"
     // pour chaque log appliqué pendant le RECOVER. On synthétise un set
     // raisonnable autour des SCN from/to.
-    const arcPaths = this._ctx.getArchivelogPaths?.() ?? [];
-    // A RESTORE left the datafiles at an older checkpoint; without any
-    // archivelog to replay, there is nothing to bridge the gap with, and
-    // a real RMAN aborts media recovery rather than silently declaring
-    // the (still-stale) datafiles current.
-    if (this._pendingRecoveryGap && arcPaths.length === 0) {
+    const logs = this._archivedLogs();
+    if (this._pendingRecoveryGap && logs.length === 0) {
       return err({
         code: 'RMAN_06054',
-        message: 'media recovery requesting unknown archived log for thread 1 with sequence 1',
+        message: 'media recovery requesting unknown archived log for thread 1'
+          + ` with sequence 1 and starting SCN of ${this._restoredScn}`,
       });
     }
-    if (arcPaths.length > 0) {
-      const baseSeq = 1;
-      for (let i = 0; i < arcPaths.length; i++) {
-        const seq = baseSeq + i;
-        this._bus.emit({
-          type: 'ARCHIVELOG_APPLIED', jobId: job.id,
-          thread: 1, sequence: seq, path: arcPaths[i],
-          firstScn: fromValue - (arcPaths.length - i) * 100,
-          nextScn:  fromValue - (arcPaths.length - i - 1) * 100,
-        });
-      }
+    const absent = logs.filter(l =>
+      !this._ctx.vfs.fileExists(l.path) && !this._restoreArchivedLogFromBackup(l.path));
+    if (absent.length > 0) {
+      return err({
+        code: 'RMAN_06053',
+        message: ['unable to perform media recovery because of missing log']
+          .concat(absent.map(l => `RMAN-06025: no backup of archived log for thread ${l.thread}`
+            + ` with sequence ${l.sequence} and starting SCN of ${l.firstScn}`
+            + ' found to restore'))
+          .join('\n'),
+      });
+    }
+    const arcPaths = logs.map(l => l.path);
+    for (const log of logs) {
+      const firstScn = log.firstScn > 0 ? log.firstScn : log.sequence;
+      this._bus.emit({
+        type: 'ARCHIVELOG_APPLIED', jobId: job.id,
+        thread: log.thread, sequence: log.sequence, path: log.path,
+        firstScn, nextScn: log.nextScn > firstScn ? log.nextScn : firstScn + 1,
+      });
     }
     this._applyArchivedLogs(arcPaths, params.untilScn !== undefined ? Number(params.untilScn) : undefined);
     this._bus.emit({ type: 'RECOVER_COMPLETED', jobId: job.id, toScn:   to.ok   ? to.value   : Scn.ZERO, elapsedMs: 3_000 });
     this._pendingRecoveryGap = false;
+    return ok(undefined);
+  }
+
+  private _doValidate(job: RmanJob): Result<void, RmanError> {
+    const params = job.params ?? {};
+    if (params.validateScope === 'BACKUPSET') return this._validateBackupset(job, params.bsKey);
+    const tsFilter = params.tablespace?.toUpperCase();
+    const fileFilter = params.fileNo === undefined ? undefined : Number(params.fileNo);
+    const datafiles = this._ctx.getDatafiles().filter(df => {
+      if (fileFilter !== undefined) return df.fileNo === fileFilter;
+      if (tsFilter !== undefined)   return df.tablespace.toUpperCase() === tsFilter;
+      return true;
+    });
+    if (datafiles.length === 0) {
+      return err({ code: 'RMAN_06023', message: 'No datafiles match the validate scope' });
+    }
+    const blockSize = Number(this._ctx.getSpfileParam('db_block_size') ?? 8192) || 8192;
+    const highScn = this._ctx.getCurrentScn?.() ?? 0;
+    const files: ValidatedFile[] = datafiles.map(df => {
+      const read = this._ctx.vfs.readFile(df.path);
+      const text = read.ok ? new TextDecoder().decode(read.value) : '';
+      const lisible = this._ctx.vfs.fileExists(df.path)
+        && bannerIsIntact(text, 'ORACLE DATAFILE');
+      const blocksExamined = Math.max(1, Math.ceil(df.sizeBytes / blockSize));
+      const blocksUsed = Math.min(blocksExamined, Math.ceil(text.length / blockSize));
+      return {
+        fileNo: df.fileNo, path: df.path,
+        status: lisible ? 'OK' : 'FAILED',
+        markedCorrupt: lisible ? 0 : blocksExamined,
+        emptyBlocks: lisible ? blocksExamined - blocksUsed : 0,
+        blocksExamined, highScn,
+      };
+    });
+    this._bus.emit({ type: 'VALIDATION_REPORT', jobId: job.id, files, elapsedMs: 1_000 });
+    const casse = files.find(f => f.status === 'FAILED');
+    if (casse) {
+      return err({
+        code: 'ERROR_STACK',
+        message: `ORA-19505: failed to identify file "${casse.path}"\n`
+          + 'ORA-27037: unable to obtain file status',
+      });
+    }
+    return ok(undefined);
+  }
+
+  private _validateBackupset(job: RmanJob, bsKey?: string): Result<void, RmanError> {
+    const snap = this._catalog.listAll();
+    if (snap.ok === false) return snap;
+    const wanted = bsKey === undefined ? undefined : Number(bsKey);
+    const sets = snap.value.sets.filter(s => wanted === undefined || s.bsKey === wanted);
+    if (sets.length === 0) {
+      return err({ code: 'RMAN_06004', message: `backupset ${bsKey ?? '?'} not found in catalog` });
+    }
+    for (const set of sets) {
+      for (const piece of set.pieces) {
+        const verdict = validateBackupPiece(this._ctx.vfs, piece.path);
+        if (verdict.fault !== null) {
+          return err({ code: 'ERROR_STACK', message: pieceFaultMessage(verdict) });
+        }
+        this._bus.emit({
+          type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'validate_piece', pct: 80,
+          message: `channel ORA_DISK_1: backup piece ${piece.path}`,
+        });
+      }
+    }
+    this._bus.emit({ type: 'VALIDATION_REPORT', jobId: job.id, files: [], elapsedMs: 1_000 });
     return ok(undefined);
   }
 

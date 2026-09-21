@@ -383,12 +383,31 @@ environnement — comme `cisco.com`, `support.huawei.com`,
 
 Ne sont donc **pas** sourcés, et devront l'être avant d'être implantés :
 
-- le format exact d'une pièce de sauvegarde (il n'a pas à être imité
-  octet pour octet, mais sa STRUCTURE — en-tête, jeu de blocs, somme de
-  contrôle — décide de ce que `VALIDATE` peut vérifier) ;
-- la nomenclature `%U`/`%d_%T_%s_%p` des noms de pièces ;
-- les seuils exacts de `REPORT NEED BACKUP` / `REPORT OBSOLETE` ;
-- le comportement précis de `RECOVER` quand il manque un archivelog.
+~~le format exact d'une pièce de sauvegarde — sa STRUCTURE décide de ce
+que `VALIDATE` peut vérifier~~ **FAIT** — la pièce porte une bannière,
+sa charge utile et désormais une SOMME DE CONTRÔLE ; `VALIDATE` lit les
+trois et refuse (`ORA-19870`/`ORA-19501`, ou `ORA-19505`/`ORA-27037`
+quand elle manque) au lieu de répondre « Finished » sans rien lire. Une
+pièce corrompue n'est plus restaurable non plus. Reste NON rendu, et
+c'est délibéré : la ventilation `Block Type / Data / Index / Other` du
+vrai rapport, que l'image d'un datafile de ce simulateur ne permet pas
+de décider (elle ne porte que des segments de tables).
+
+~~la nomenclature `%U`/`%d_%T_%s_%p` des noms de pièces~~ **FAIT** —
+les 20 spécificateurs sont sourcés et appliqués.
+
+~~les seuils exacts de `REPORT NEED BACKUP` / `REPORT OBSOLETE`~~
+**FAIT** — la fenêtre de récupération garde l'ancre d'avant la fenêtre,
+la redondance se compte par DATAFILE.
+
+~~le comportement précis de `RECOVER` quand il manque un archivelog~~
+**FAIT** — les deux familles que RMAN distingue sont sourcées et
+appliquées : `RMAN-06054` quand le journal n'est pas connu du fichier
+de contrôle, `RMAN-06053` + un `RMAN-06025` par journal quand il est
+connu mais introuvable. La chaîne est désormais VÉRIFIÉE (un trou au
+milieu arrête la reprise au lieu de la déclarer complète), et
+`V$ARCHIVED_LOG`/`V$BACKUP_SET` survivent à un `SHUTDOWN`, ce sans quoi
+aucune de ces décisions n'avait d'autorité à lire.
 
 Pour chacun, la règle du §8 s'applique : une transcription capturée sur
 une vraie base vaut mieux qu'une documentation, et mieux vaut ne pas

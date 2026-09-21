@@ -15,6 +15,7 @@ registerView({
     return queryResult(
       [
         { name: 'DBID', dataType: oracleNumber(10) },
+        { name: 'ACTIVATION#', dataType: oracleNumber(20) },
         { name: 'NAME', dataType: oracleVarchar2(9) },
         { name: 'CREATED', dataType: oracleDate() },
         { name: 'LOG_MODE', dataType: oracleVarchar2(12) },
@@ -37,7 +38,8 @@ registerView({
         { name: 'CHECKPOINT_CHANGE#', dataType: oracleNumber(20) },
       ],
       [[
-        instance.getDbId(), instance.config.sid, new Date().toISOString(),
+        instance.getDbId(), instance.getActivationId(),
+        instance.config.sid, new Date().toISOString(),
         instance.archiveLogMode ? 'ARCHIVELOG' : 'NOARCHIVELOG',
         instance.state === 'OPEN' ? 'READ WRITE' : 'MOUNTED',
         'PRIMARY', 'Linux x86 64-bit', 'CURRENT',

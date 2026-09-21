@@ -16,7 +16,7 @@ import { DbId } from '../values/DbId';
 import { ok, err, type Result } from '../core/Result';
 import type {
   IRmanOracleContext, DatafileInfo, VfsAdapter, ConnectTargetOutcome, RecordedBackupPiece,
-  SqlStatementOutcome, RmanCredentials,
+  SqlStatementOutcome, RmanCredentials, ArchivedLogRecord,
 } from './IRmanOracleContext';
 import type { HostCapableDevice } from '@/network';
 import { resolveOracleConnectTarget } from '@/terminal/commands/oracleNet';
@@ -26,6 +26,7 @@ import type { RmanError } from '../core/RmanError';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { getRegisteredOracleDatabase } from '@/terminal/commands/database';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
+import { archivedLogFromPath } from '../core/archivedLogNaming';
 import { recoveryAreaUsage } from '@/database/oracle/storage/RecoveryArea';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { OracleNetSession } from '@/network/oracle-net/OracleNetClient';
@@ -355,16 +356,44 @@ export class LinuxRmanContext implements IRmanOracleContext {
   }
 
   getArchivelogPaths(): ReadonlyArray<string> {
-    const distant = this.askRemoteColumn('SELECT name FROM V$ARCHIVED_LOG', 'NAME');
-    if (distant !== null) return distant;
+    return this.getArchivedLogs().map(l => l.path);
+  }
+
+  getArchivedLogs(): ReadonlyArray<ArchivedLogRecord> {
+    const distant = this.askRemote(
+      'SELECT thread#, sequence#, name, first_change#, next_change# FROM V$ARCHIVED_LOG');
+    if (distant !== null) {
+      const colonne = (nom: string): number =>
+        distant.columns.findIndex((c) => c.name.toUpperCase() === nom);
+      const iThread = colonne('THREAD#');
+      const iSeq = colonne('SEQUENCE#');
+      const iNom = colonne('NAME');
+      const iFirst = colonne('FIRST_CHANGE#');
+      const iNext = colonne('NEXT_CHANGE#');
+      if (iSeq >= 0 && iNom >= 0) {
+        return distant.rows.map((row) => ({
+          thread: iThread < 0 ? 1 : Number(row[iThread]),
+          sequence: Number(row[iSeq]),
+          path: String(row[iNom]),
+          firstScn: iFirst < 0 ? 0 : Number(row[iFirst]),
+          nextScn: iNext < 0 ? 0 : Number(row[iNext]),
+        }));
+      }
+    }
+    const enregistres = this._oracle?.instance.getRuntimeState().archivedLogs ?? [];
+    if (enregistres.length > 0) {
+      return enregistres.map(l => ({
+        thread: l.thread, sequence: l.sequence, path: l.name,
+        firstScn: l.firstScn, nextScn: l.nextScn,
+      }));
+    }
     const onDisk = this.vfs.listFilesRecursively?.(ORACLE_CONFIG.ARCHIVELOG_DIR)
       ?.filter(p => p.endsWith('.arc')).sort() ?? [];
-    if (onDisk.length > 0) return onDisk;
-    if (this._oracle) {
-      return this._oracle.instance.getRuntimeState().archivedLogs.map(l => l.name);
-    }
+    if (onDisk.length > 0) return onDisk.map((p, i) => archivedLogFromPath(p, i));
+    if (this._oracle) return [];
     const sid = this.dbName;
-    return [1, 2, 3].map(seq => `${ORACLE_CONFIG.ARCHIVELOG_DIR}/arch_1_${seq}_${sid}.arc`);
+    return [1, 2, 3].map((seq, i) => archivedLogFromPath(
+      `${ORACLE_CONFIG.ARCHIVELOG_DIR}/arch_1_${seq}_${sid}.arc`, i));
   }
 
   private _buildVfsAdapter(): VfsAdapter {

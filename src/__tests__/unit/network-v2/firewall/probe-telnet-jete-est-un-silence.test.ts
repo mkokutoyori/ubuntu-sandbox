@@ -38,15 +38,15 @@
  * `strerror(errno)` : ECONNREFUSED « Connection refused » quand un RST
  * revient, ETIMEDOUT « Connection timed out » quand rien ne revient.
  *
- * LIMITE MESUREE ET NON FERMEE, trouvee en chemin : `telnet` vers une
- * adresse IPv6 rend « No route to host » alors meme que le port ecoute,
- * et cela se decide AVANT la sonde — la verification d'atteignabilite du
- * client telnet ne connait que l'IPv4. C'est un defaut distinct, en
- * amont de celui-ci, et le corriger ici aurait melange deux mesures.
- * Le cas est pose plus bas en l'etat, pour qu'il ne se redecouvre pas.
+ * La limite IPv6 que cette sonde portait — `telnet` vers une adresse
+ * IPv6 rendait « No route to host » alors meme que le port ecoutait — a
+ * ete FERMEE par `probe-le-chemin-existe-aussi-en-ipv6`, qui l'a trouvee
+ * plus large qu'elle n'y paraissait : la marche du plan de cables et les
+ * deux clients ssh la partageaient. Le cas qui la posait est donc retire
+ * d'ici plutot que garde en contrat d'un defaut corrige.
  *
  * Discriminee contre l'etat d'avant (`git stash push -- src/network`) :
- * 2 des 7 cas tombent. Les 5 autres sont nommes ici, et aucun ne prouve
+ * 2 des 6 cas tombent. Les 4 autres sont nommes ici, et aucun ne prouve
  * le mecanisme :
  *
  *  - TEMOINS du fil : `nc` et `ssh` disaient DEJA « timed out » pour ce
@@ -60,7 +60,6 @@
  *    RESTER « Connection refused ». C'est le cas qui tombe si l'on
  *    remplace le refus par un silence au lieu de le faire dependre du
  *    fil.
- *  - L'IPv6 est la limite ci-dessus, pose tel qu'il est mesure.
  */
 import { describe, it, expect } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
@@ -159,14 +158,5 @@ describe('ce que le correctif ne doit pas casser', () => {
 
     expect(await poste.executeCommand(`telnet ${SERVEUR}`))
       .toMatch(/Connection refused/);
-  });
-});
-
-describe('la limite mesuree et NON fermee', () => {
-  it('`telnet` vers une adresse IPv6 ne joint pas un port qui ecoute', async () => {
-    const { poste } = await laboratoire();
-
-    expect(await poste.executeCommand(`telnet ${SERVEUR_V6} 22`))
-      .toMatch(/No route to host/);
   });
 });

@@ -26,10 +26,10 @@ registerView({
         col.num('RESETLOGS_CHANGE#'),
         col.date('RESETLOGS_TIME'),
       ],
-      runtime.archivedLogs.map((l, idx) => [
-        l.recid, l.firstTime, 1, l.sequence,
+      runtime.archivedLogs.map((l) => [
+        l.recid, l.firstTime, l.thread, l.sequence,
         new Date(l.firstTime).toISOString(),
-        100 + idx, 100 + idx + 1,
+        l.firstScn, l.nextScn,
         'YES', 1, new Date('2026-01-01T00:00:00Z'),
       ])
     );

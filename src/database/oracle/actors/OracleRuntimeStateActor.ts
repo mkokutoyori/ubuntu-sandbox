@@ -67,7 +67,7 @@ export class OracleRuntimeStateActor {
       this.bus.subscribe('oracle.instance.state-changed', scoped<{
         deviceId: string; sid: string; newState: 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN';
       }>((p) => {
-        if (p.newState === 'SHUTDOWN') this.clearAll();
+        if (p.newState === 'SHUTDOWN') this.clearVolatileState();
       })),
 
       this.bus.subscribe('oracle.session.connected', scoped<{
@@ -153,14 +153,19 @@ export class OracleRuntimeStateActor {
       })),
 
       this.bus.subscribe('oracle.archive-log.created', scoped<{
-        deviceId: string; sequence: number; path: string;
+        deviceId: string; sequence: number; path: string; scn?: number;
       }>((p) => {
         const recid = this.state.archivedLogs.length + 1;
         const now = Date.now();
+        const previous = this.state.archivedLogs[this.state.archivedLogs.length - 1];
+        const nextScn = p.scn ?? (previous ? previous.nextScn + 1 : 1);
         this.state.archivedLogs.push({
           recid,
           name: p.path,
           sequence: p.sequence,
+          thread: 1,
+          firstScn: previous ? previous.nextScn : Math.max(1, nextScn - 1),
+          nextScn,
           firstTime: now - 60_000,
           nextTime: now,
         });
@@ -414,24 +419,20 @@ export class OracleRuntimeStateActor {
     }
   }
 
-  /** Reset all collections — called when the instance shuts down. */
-  clearAll(): void {
+  clearVolatileState(): void {
     this.state.sessions.clear();
     this.state.waitHistory.length = 0;
     this.state.sqlCache.clear();
     this.state.transactions.clear();
     this.state.locks.length = 0;
-    this.state.archivedLogs.length = 0;
-    this.state.alertEntries.length = 0;
     this.state.latches.length = 0;
-    this.state.backups.length = 0;
     this.state.services.clear();
     this.state.longops.length = 0;
     this.state.sessionMetrics.length = 0;
-    this.state.flashbackHistory.length = 0;
     const c = this.state.counters;
     c.commits = c.rollbacks = c.dml = c.ddl = c.errors = 0;
     c.redoSwitches = c.archiveLogs = c.logonsCumulative = 0;
     c.parseTotal = c.parseHard = c.executions = 0;
   }
+
 }

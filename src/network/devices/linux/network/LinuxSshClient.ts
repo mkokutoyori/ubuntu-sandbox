@@ -20,6 +20,7 @@ import { findHostByAddress, isPathReachable } from './HostLookup';
 import { sshUnreachableReason, wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
 import { IPAddress } from '../../../core/types';
+import { parseDialAddress } from '../../../tcp/dial';
 import type { TcpWireOutcome } from '../../../tcp/types';
 import { type SshHostKeyType } from './SshKnownHostEntry';
 import { SshPortForward } from './SshPortForward';
@@ -119,7 +120,7 @@ export interface SshClientOpts {
   offeredPassword?: string;
 }
 
-const RE_USERHOST = /^(?:([\w.-]+)@)?([\w.-]+)$/;
+const RE_USERHOST = /^(?:([\w.-]+)@)?([\w.:-]+)$/;
 
 /**
  * Short `ssh` options that consume a value — the character right after
@@ -857,9 +858,9 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     // look like IPs but have out-of-range octets ("10.0.0.999") are
     // treated as hostnames by the resolver, so they keep the original
     // name-resolution error.
-    const isValidIPv4 = IPAddress.isValid(lookupHost);
+    const isLiteral = parseDialAddress(lookupHost) !== null;
     return {
-      output: isValidIPv4
+      output: isLiteral
         ? `ssh: connect to host ${host} port ${port}: ${sshUnreachableReason(opts.sourceDevice, lookupHost)}\n`
         : `ssh: Could not resolve hostname ${host}: Name or service not known\n`,
       exitCode: 255,

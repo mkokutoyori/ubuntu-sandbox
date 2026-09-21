@@ -14,6 +14,14 @@ export interface DatafileInfo {
   readonly tablespace: string;
 }
 
+export interface ArchivedLogRecord {
+  readonly thread:   number;
+  readonly sequence: number;
+  readonly path:     string;
+  readonly firstScn: number;
+  readonly nextScn:  number;
+}
+
 export interface VfsAdapter {
   /**
    * `declaredSizeBytes`, when given, is the logical size the backup
@@ -62,6 +70,7 @@ export interface IRmanOracleContext {
   /** Optional: archivelog file paths the engine may delete after a
    *  `BACKUP ARCHIVELOG ALL DELETE INPUT`. Empty by default. */
   getArchivelogPaths?(): ReadonlyArray<string>;
+  getArchivedLogs?(): ReadonlyArray<ArchivedLogRecord>;
   /** Optional: a virtual control-file path (used by BACKUP CURRENT CONTROLFILE). */
   getControlFilePath?(): string;
   getControlFilePaths?(): ReadonlyArray<string>;
