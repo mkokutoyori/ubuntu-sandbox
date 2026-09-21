@@ -55,6 +55,7 @@ import type { WinWireTarget } from './windows/network/WindowsSshClient';
 import {
   openWireSshConnection, silentConnectIo, relayScriptedShell, wireReachOutcome,
 } from '@/terminal/ssh/wireSshLogin';
+import { WINDOWS_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
 import { isOk } from '@/network/protocols/ssh/Result';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { SshAgent } from '@/network/protocols/ssh/SshAgent';
@@ -2374,11 +2375,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
     const sourceIp = this.firstConfiguredIp();
     if (!sourceIp) {
-      return `Connecting To ${host}...Could not open connection to the host, on port ${port}: Network is unreachable`;
+      return WINDOWS_TELNET.unreachable(host, host, port).join('\n');
+    }
+    const reach = wireReachOutcome(this, host, port);
+    if (reach !== 'open') {
+      return telnetWireFailure(WINDOWS_TELNET, reach, host, host, port).join('\n');
     }
     const sock = await this.tcpConnect(host, port);
     if (!sock) {
-      return `Connecting To ${host}...Could not open connection to the host, on port ${port}: Connect failed`;
+      return WINDOWS_TELNET.refused(host, host, port).join('\n');
     }
     const header = `Connecting To ${host}...\nWelcome to Microsoft Telnet Client\n\nEscape Character is 'CTRL+]'`;
     const session = new TelnetClientSession(sock as unknown as TelnetClientTransport);
