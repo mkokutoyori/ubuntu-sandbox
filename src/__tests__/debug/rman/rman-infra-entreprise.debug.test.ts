@@ -33,7 +33,8 @@
  *
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
 import { Cable } from '@/network/hardware/Cable';
@@ -120,7 +121,11 @@ describe('RMAN dans une infra d entreprise', () => {
     notes.push(`[H] le fichier existe-t-il cote BACKUP-SRV ? ${
       sh(bkpSrv, 'ls -l /mnt/backup_nfs 2>&1').trim().replace(/\n/g, ' / ')}`);
 
-    writeFileSync('/tmp/mes/lab.txt', notes.join('\n') + '\n');
+    const dossier = path.resolve(__dirname, '../../../../debug-output/rman');
+    mkdirSync(dossier, { recursive: true });
+    writeFileSync(
+      path.join(dossier, 'rman-infra-entreprise_results_debug.txt'),
+      notes.join('\n') + '\n', 'utf8');
     expect(true).toBe(true);
   }, 180000);
 });
