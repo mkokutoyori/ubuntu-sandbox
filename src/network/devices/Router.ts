@@ -146,6 +146,7 @@ import {
 import {
   advanceSourceRoute, recordRoute, sourceRouteState,
 } from '../layers/internet/Ipv4Options';
+import { buildEchoReply } from '../icmp/IcmpEcho';
 import { selectIpv6SourceAddress } from '../layers/internet/Ipv6Egress';
 import type { ProtocolCounters } from '../layers/internet/ProtocolCounters';
 import {
@@ -2728,21 +2729,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         // (correct for loopback/virtual interfaces and transport mode IPSec)
         const replySourceIP = ipPkt.destinationIP;
 
-        const replyICMP: ICMPPacket = {
-          type: 'icmp', icmpType: 'echo-reply', code: 0,
-          id: icmp.id, sequence: icmp.sequence, dataSize: icmp.dataSize,
-        };
-
-        const replyIP = createIPv4Packet(
-          replySourceIP, ipPkt.sourceIP, IP_PROTO_ICMP, this.defaultTTL,
-          replyICMP, 8 + icmp.dataSize,
-        );
+        const replyIP = buildEchoReply(ipPkt, icmp, replySourceIP, this.defaultTTL);
 
         this.counters.icmpOutEchoReps++;
         this.counters.icmpOutMsgs++;
 
-        const sameSubnetMac = this.peerOnSameSubnet(inPort, ipPkt.sourceIP)
-          ? this.arpTable.get(ipPkt.sourceIP.toString())
+        const replyTarget = replyIP.destinationIP;
+        const sameSubnetMac = this.peerOnSameSubnet(inPort, replyTarget)
+          ? this.arpTable.get(replyTarget.toString())
           : undefined;
         if (sameSubnetMac && !this.ipsecEngine) {
           this.counters.ifOutOctets += replyIP.totalLength;
@@ -2750,7 +2744,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
             srcMAC: port.getMAC(), dstMAC: sameSubnetMac.mac,
             etherType: ETHERTYPE_IPV4, payload: replyIP,
           });
-        } else if (!this.sendSelfOriginatedIPv4(replyIP, ipPkt.sourceIP)) {
+        } else if (!this.sendSelfOriginatedIPv4(replyIP, replyTarget)) {
           this.forwardPacket(inPort, replyIP);
         }
       } else if (icmp.icmpType === 'destination-unreachable' && icmp.code === 4) {

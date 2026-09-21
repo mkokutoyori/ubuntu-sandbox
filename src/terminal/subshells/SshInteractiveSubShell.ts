@@ -340,6 +340,11 @@ export class SshInteractiveSubShell implements ISubShell {
     return this.channel.supportsInlineHelp();
   }
 
+  completesWholeLine(): boolean {
+    if (this.nestedHop) return this.nestedHop.completesWholeLine();
+    return this.channel.supportsInlineHelp();
+  }
+
   /**
    * The help the device would print for `<line>?`, without consuming the
    * line the user is composing or changing the CLI mode.
