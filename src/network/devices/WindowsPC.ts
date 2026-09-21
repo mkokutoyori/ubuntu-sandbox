@@ -52,7 +52,9 @@ import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
 import { runWindowsSshClient, winWireExecTarget } from './windows/network/WindowsSshClient';
 import type { WinWireTarget } from './windows/network/WindowsSshClient';
-import { openWireSshConnection, silentConnectIo, relayScriptedShell } from '@/terminal/ssh/wireSshLogin';
+import {
+  openWireSshConnection, silentConnectIo, relayScriptedShell, wireReachOutcome,
+} from '@/terminal/ssh/wireSshLogin';
 import { isOk } from '@/network/protocols/ssh/Result';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { SshAgent } from '@/network/protocols/ssh/SshAgent';
@@ -2284,9 +2286,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     const target = winWireExecTarget(args, user);
     const password = (this._scenarioStdin ?? '').split('\n')[0] || undefined;
-    const wire = target ? await this.openWireSsh(target, password) : null;
+    const reach = target === null
+      ? undefined
+      : wireReachOutcome(this, target.host, target.port);
+    const wire = target && reach === 'open' ? await this.openWireSsh(target, password) : null;
     return runWindowsSshClient({
       args,
+      wireOutcome: reach,
       sourceDevice: this,
       sourceHostname: this.hostname,
       sourceIp,
