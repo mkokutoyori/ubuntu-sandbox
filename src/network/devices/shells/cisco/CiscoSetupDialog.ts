@@ -115,6 +115,8 @@ function interfaceSteps(target: SetupTarget): InteractionStep[] {
   return steps;
 }
 
+const SELECTIONS: ReadonlySet<string> = new Set(['', '0', '1', '2']);
+
 export function setupInteractionPlan(target: SetupTarget): CommandInteractionPlan {
   return {
     steps: [
@@ -129,6 +131,7 @@ export function setupInteractionPlan(target: SetupTarget): CommandInteractionPla
           : { valid: false, errorMessage: '', maxRetries: 0 }),
       },
       { kind: 'output', lines: PREAMBLE },
+      { kind: 'label', name: 'parametres' },
       ...globalParameterSteps(target),
       ...interfaceSteps(target),
       {
@@ -152,12 +155,20 @@ export function setupInteractionPlan(target: SetupTarget): CommandInteractionPla
           + 'Enter your selection [2]: ',
         storeAs: 'setup_selection',
         allowEmpty: true,
+        validate: (value) => (SELECTIONS.has(value.trim())
+          ? { valid: true }
+          : { valid: false, errorMessage: '' }),
+      },
+      {
+        kind: 'branch',
+        to: (values) =>
+          ((values.get('setup_selection') ?? '').trim() === '1' ? 'parametres' : null),
       },
       {
         kind: 'run',
         run: async (rt) => {
           const selection = (rt.values.get('setup_selection') ?? '').trim() || '2';
-          if (selection === '0' || selection === '1') {
+          if (selection !== '2') {
             rt.output('');
             return;
           }

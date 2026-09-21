@@ -61,6 +61,11 @@ export type InteractionStep =
       validate?: (value: string, values: ReadonlyMap<string, string>) => InteractionValidation;
     }
   | { kind: 'run'; run: (rt: InteractionRuntime) => Promise<void> }
+  | { kind: 'label'; name: string }
+  | {
+      kind: 'branch';
+      to: (values: ReadonlyMap<string, string>) => string | null;
+    }
   | {
       /**
        * Multi-line capture: keep prompting (with `prompt`, usually empty —

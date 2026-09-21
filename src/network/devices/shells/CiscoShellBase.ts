@@ -5860,6 +5860,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected socleSpecs(): readonly CommandSpec[] {
     return [
+      {
+        id: 'setup',
+        path: ['setup'],
+        description: 'Run the initial configuration dialog',
+        modes: ['privileged'], minPrivilege: 15,
+        run: () => '',
+      },
       ...TIME_RANGE_FAMILY,
       ...ipGlobalSpecs(() => this.ipGlobalHost()),
       ...bgpFilterListSpecs(() => this.filterListHost()),
@@ -9632,7 +9639,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   private registerCommonPrivilegedCommands(): void {
-    this.privilegedTrie.register('setup', 'Run the initial configuration dialog', () => '');
 
     // `archive config` / `show archive` — enregistrées ici, donc pour le
     // routeur ET le switch, parce qu'un Catalyst connaît cette famille

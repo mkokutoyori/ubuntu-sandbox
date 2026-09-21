@@ -62,6 +62,7 @@ export async function runInteractionPlanHeadless(
   for (const step of plan.steps) {
     if (step.kind === 'output') { sortie.push(...step.lines); continue; }
     if (step.kind === 'run') { await step.run(rt); continue; }
+    if (step.kind === 'label' || step.kind === 'branch') continue;
     if (step.kind === 'collect') {
       values.set(step.storeAs, answers.textInput ?? '');
       continue;
