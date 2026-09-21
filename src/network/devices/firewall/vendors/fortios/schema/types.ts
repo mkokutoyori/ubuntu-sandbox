@@ -632,6 +632,7 @@ export interface FortiApplicationListPatch {
   readonly entries: ReadonlyArray<{
     id: string; application: string; action: string;
   }>;
+  readonly otherApplicationAction?: string;
   readonly comment?: string;
 }
 
@@ -674,6 +675,7 @@ export interface FortiSslSshPatch {
   readonly caName: string;
   readonly untrustedCaName?: string;
   readonly serverCertMode?: string;
+  readonly untrustedCert?: string;
   readonly exemptions?: readonly FortiSslExemptPatch[];
   readonly comment?: string;
 }

@@ -419,6 +419,24 @@ export function decodeLdapMessage(bytes: Uint8Array): LdapMessage {
   return { messageID, protocolOp, controls };
 }
 
+export function decodeLdapMessages(
+  bytes: Uint8Array,
+): { messages: LdapMessage[]; bytesConsumed: number } {
+  const messages: LdapMessage[] = [];
+  let offset = 0;
+  while (offset < bytes.length) {
+    let nextOffset: number;
+    try {
+      nextOffset = parseTLV(bytes, offset).nextOffset;
+    } catch {
+      break;
+    }
+    messages.push(decodeLdapMessage(bytes.subarray(offset, nextOffset)));
+    offset = nextOffset;
+  }
+  return { messages, bytesConsumed: offset };
+}
+
 export function ldapResult(resultCode: number, matchedDN = '', diagnosticMessage = ''): LdapResult {
   return { resultCode, matchedDN, diagnosticMessage };
 }

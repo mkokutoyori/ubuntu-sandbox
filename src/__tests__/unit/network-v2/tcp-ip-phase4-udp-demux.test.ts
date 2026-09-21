@@ -113,7 +113,7 @@ describe('a UDP port nobody listens on is announced, on every family', () => {
 
     expect(endpoint.udpBind(520, () => undefined)).toBe(false);
     expect(endpoint.udpBind(161, () => undefined)).toBe(false);
-    expect(endpoint.udpBind(9999, () => undefined)).toBe(true);
+    expect(endpoint.udpBind(9999, () => undefined)).toBe(9999);
   });
 
   it('ROUTER: the port table names the owner of a reserved port', async () => {

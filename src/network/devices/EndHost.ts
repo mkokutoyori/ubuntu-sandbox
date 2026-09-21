@@ -37,7 +37,7 @@ import {
 } from '@/network/layers/transport/UdpChecksum';
 import { bogusChecksum } from '@/network/layers/transport/L4Checksum';
 import { dialTcp, parseDialAddress, type DialAddress } from '../tcp/dial';
-import { PortNumber } from '../core/ports/PortNumber';
+import { PortNumber, PORT_ANY } from '../core/ports/PortNumber';
 import { TimerSet } from '@/events/TimerSet';
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
@@ -2889,15 +2889,17 @@ export abstract class EndHost extends Equipment {
     }, iface, port, target);
   }
 
-  public udpBind(port: number, listener: UdpListener, processName?: string): boolean {
+  public udpBind(port: number, listener: UdpListener, processName?: string): number | false {
+    let bound: number;
     try {
-      this.socketTable.bind('udp', '0.0.0.0', port, undefined, processName);
+      bound = port === PORT_ANY ? this.socketTable.allocateEphemeralPort() : port;
+      this.socketTable.bind('udp', '0.0.0.0', bound, undefined, processName);
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('EADDRINUSE')) return false;
       throw error;
     }
-    this.udpListeners.set(port, listener);
-    return true;
+    this.udpListeners.set(bound, listener);
+    return bound;
   }
 
   private readonly udpAddressListeners = new Map<string, UdpListener>();

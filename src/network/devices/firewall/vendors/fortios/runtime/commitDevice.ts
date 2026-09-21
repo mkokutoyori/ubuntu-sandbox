@@ -14,7 +14,7 @@ import {
   applyBalancedVipToFirewall, applyCentralSnatToFirewall, applyFqdnVipToFirewall,
   applyVipToFirewall, categoryEntry,
   centralSnatRuleId,
-  filterTable, urlEntry, utmAction, vipRuleId,
+  filterTable, untrustedCertAction, urlEntry, utmAction, vipRuleId,
 } from '../commit/objectCommits';
 import type { PolicyRoutePrefix } from '../../../l3/PolicyRouteTable';
 import { makeIpPool, type IpPoolType } from '../../../nat/IpPool';
@@ -360,6 +360,7 @@ export function buildCommitDevice(
             application: entry.application,
             action: entry.action === 'allow' ? 'allow' : 'block',
           })),
+          otherApplicationAction: list.otherApplicationAction === 'block' ? 'block' : 'allow',
           comment: list.comment,
         });
       },
@@ -424,6 +425,7 @@ export function buildCommitDevice(
           caName: profile.caName,
           untrustedCaName: profile.untrustedCaName,
           serverCertMode: profile.serverCertMode,
+          untrustedCert: untrustedCertAction(profile.untrustedCert),
           exemptions: profile.exemptions?.map(entry => ({ ...entry })),
           comment: profile.comment,
         });

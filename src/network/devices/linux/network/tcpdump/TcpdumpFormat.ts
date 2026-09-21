@@ -227,7 +227,8 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions): string {
     const cksum = opt.verbose > 0 ? tcpChecksumToken(frame) : '';
     const ack = frame.tcpFlags?.ack ? `, ack ${frame.tcpAck ?? 0}` : '';
     const options = tcpOptionsToken(frame);
-    const base = `Flags [${tcpFlagToken(frame)}]${cksum}, seq ${frame.tcpSeq ?? 0}${ack}, win ${frame.tcpWindow ?? 0}${options}, length ${frame.payloadLength ?? 0}`;
+    const urgent = frame.tcpFlags?.urg ? `, urg ${frame.tcpUrgentPointer ?? 0}` : '';
+    const base = `Flags [${tcpFlagToken(frame)}]${cksum}, seq ${frame.tcpSeq ?? 0}${ack}, win ${frame.tcpWindow ?? 0}${urgent}${options}, length ${frame.payloadLength ?? 0}`;
     if (frame.dnsQr !== undefined && (frame.payloadLength ?? 0) > 0) {
       return `${base}: ${dnsLine(frame, opt)}`;
     }

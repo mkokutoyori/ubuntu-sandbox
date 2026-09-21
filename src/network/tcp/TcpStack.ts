@@ -11,7 +11,7 @@ import {
 import { bogusChecksum, payloadBytes } from '@/network/layers/transport/L4Checksum';
 import { type StreamPayload, isStreamPayload, sliceStream, appendStream } from './StreamPayload';
 import { fragmentIPv4, IPV4_FLAG_DF } from '@/network/core/Ipv4Fragmentation';
-import { PortNumber } from '@/network/core/ports/PortNumber';
+import { PortNumber, PORT_ANY } from '@/network/core/ports/PortNumber';
 import { PROHIBITED_UNREACH_CODES } from '@/network/core/IcmpErrors';
 
 /**
@@ -166,6 +166,10 @@ export class TcpSocket {
   sendNext = 0;
   sendUnacked = 0;
   recvNext = 0;
+  /** SND.UP (RFC 9293 §3.3.1) — one past the last urgent octet we have queued, or null outside urgent mode. */
+  sndUp: number | null = null;
+  /** RCV.UP (RFC 9293 §3.3.1) — one past the last urgent octet the peer has designated. */
+  rcvUp: number | null = null;
   windowSize = TCP_DEFAULT_WINDOW;
   mss = TCP_DEFAULT_MSS;
   passive = false;
@@ -207,6 +211,9 @@ export class TcpSocket {
   /** Peer's last-advertised receive window (PRD-TCP.md P3) — bounds how much unacked data we may have in flight. */
   peerWindow = TCP_DEFAULT_WINDOW;
   sendBacklog: Array<{ payload: StreamPayload; psh: boolean }> = [];
+  noDelay = false;
+  segmentsSinceAck = 0;
+  delayedAckTimer: symbol | null = null;
   /** Zero-window persist-probe timer (RFC 9293 §3.8.6.1). */
   persistTimer: symbol | null = null;
   persistBackoffMs = 0;
@@ -254,9 +261,10 @@ export class TcpSocket {
   private readonly openHandlers: TcpOpenHandler[] = [];
   private readonly dataHandlers: TcpDataHandler[] = [];
   private readonly closeHandlers: TcpCloseHandler[] = [];
+  private readonly urgentHandlers: Array<(lastUrgentByte: string) => void> = [];
 
   constructor(
-    private readonly stack: TcpStack,
+    readonly stack: TcpStack,
     localIp: string, localPort: number,
     remoteIp: string, remotePort: number,
   ) {
@@ -269,6 +277,31 @@ export class TcpSocket {
 
   send(data: unknown): void { this.stack._sendData(this, data); }
   write(data: string): void { this.stack._sendData(this, data); }
+
+  /**
+   * RFC 9293 §3.8.5 — the urgent mechanism, which MUST-30 requires a TCP
+   * implementation to carry even though SHLD-13 tells new applications not
+   * to reach for it. The data still travels in the stream; what URG adds is
+   * a point designating where the urgent information ENDS.
+   */
+  sendUrgent(data: string): void { this.stack._sendUrgentData(this, data); }
+
+  /** True while the peer's urgent point is in advance of RCV.NXT (RFC 9293 §3.8.5). */
+  get urgentMode(): boolean {
+    return this.rcvUp !== null && seqLt(this.recvNext, this.rcvUp);
+  }
+
+  onUrgent(handler: (lastUrgentByte: string) => void): () => void {
+    this.urgentHandlers.push(handler);
+    return () => {
+      const i = this.urgentHandlers.indexOf(handler);
+      if (i >= 0) this.urgentHandlers.splice(i, 1);
+    };
+  }
+
+  _fireUrgent(lastUrgentByte: string): void {
+    for (const handler of [...this.urgentHandlers]) handler(lastUrgentByte);
+  }
   close(): void { this.stack._initiateClose(this); }
 
   /**
@@ -279,6 +312,13 @@ export class TcpSocket {
    */
   abort(): void { this.stack._abort(this); }
   reset(): void { this.stack._abort(this); }
+
+  /**
+   * TCP_NODELAY (RFC 9293 §3.7.4): "applications that require low latency
+   * on every packet sent MUST be provided with a mechanism to disable
+   * Nagle". Turning it on releases whatever Nagle is currently holding.
+   */
+  setNoDelay(enabled: boolean): void { this.stack._setNoDelay(this, enabled); }
 
   /**
    * Enable RFC 9293 §3.8.4 (SO_KEEPALIVE) idle-probe monitoring: after
@@ -386,6 +426,13 @@ export class TcpListener {
   key(): string { return makeListenerKey(this.localIp, this.localPort); }
 }
 
+const socketsOwingAck = new Set<TcpSocket>();
+let burstDepth = 0;
+let drainingAcks = false;
+
+export const TCP_DELAYED_ACK_MS = 200;
+const TCP_ACK_EVERY_N_SEGMENTS = 2;
+
 export class TcpStack {
   private listeners = new Map<string, TcpListener>();
   private sockets = new Map<string, TcpSocket>();
@@ -452,17 +499,21 @@ export class TcpStack {
     if (!PortNumber.isValid(localPort)) {
       throw new Error(`TCP listener port out of range: ${localPort} (EINVAL)`);
     }
-    const listener = new TcpListener(localIp, localPort, opts.onAccept, opts.identity ?? {});
+    const boundPort = localPort === PORT_ANY ? this.nextEphemeral(localIp) : localPort;
+    if (boundPort < 0) {
+      throw new Error(`TCP listener has no free ephemeral port on ${localIp} (EADDRINUSE)`);
+    }
+    const listener = new TcpListener(localIp, boundPort, opts.onAccept, opts.identity ?? {});
     if (this.listeners.has(listener.key())) {
-      throw new Error(`TCP listener already bound on ${localIp}:${localPort} (EADDRINUSE)`);
+      throw new Error(`TCP listener already bound on ${localIp}:${boundPort} (EADDRINUSE)`);
     }
     this.listeners.set(listener.key(), listener);
-    this.socketSink?.announce(localIp, localPort, listener.identity);
+    this.socketSink?.announce(localIp, boundPort, listener.identity);
     this.getBus().publish({
       topic: 'tcp.listener.changed',
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
-        localIp, localPort, added: true,
+        localIp, localPort: boundPort, added: true,
       },
     });
     return listener;
@@ -903,6 +954,50 @@ export class TcpStack {
   }
 
   _sendData(socket: TcpSocket, data: unknown): void {
+    this.withinBurst(() => this.sendDataWithinBurst(socket, data));
+  }
+
+  /**
+   * RFC 793 §3.7: "the urgent field is meaningful and must be added to the
+   * segment sequence number to yield the urgent pointer", and RFC 9293 §3.1
+   * places that pointer on "the sequence number of the octet following the
+   * urgent data". SND.UP therefore lands one past the last urgent octet, and
+   * `transmit` marks every segment still behind it.
+   */
+  _sendUrgentData(socket: TcpSocket, data: string): void {
+    if (socket.closed || data.length === 0) return;
+    const queued = socket.sendBacklog.reduce((n, e) => n + e.payload.length, 0);
+    const point = (socket.sendNext + queued + data.length) >>> 0;
+    socket.sndUp = socket.sndUp !== null && seqLt(point, socket.sndUp) ? socket.sndUp : point;
+    this._sendData(socket, data);
+  }
+
+  private withinBurst(body: () => void): void {
+    burstDepth++;
+    try {
+      body();
+    } finally {
+      burstDepth--;
+      if (burstDepth === 0) this.drainOwedAcks();
+    }
+  }
+
+  private drainOwedAcks(): void {
+    if (drainingAcks) return;
+    drainingAcks = true;
+    try {
+      while (socketsOwingAck.size > 0) {
+        for (const socket of [...socketsOwingAck]) {
+          socketsOwingAck.delete(socket);
+          socket.stack.sendOwedAck(socket);
+        }
+      }
+    } finally {
+      drainingAcks = false;
+    }
+  }
+
+  private sendDataWithinBurst(socket: TcpSocket, data: unknown): void {
     if (socket.closed) return;
     if (socket.state === 'syn-sent' || socket.state === 'syn-received') {
       socket.pendingSendQueue.push(data);
@@ -925,10 +1020,35 @@ export class TcpStack {
       while (offset < data.length) {
         const chunk = sliceStream(data, offset, offset + socket.mss);
         offset += chunk.length;
-        socket.sendBacklog.push({ payload: chunk, psh: offset >= data.length });
+        this.queueForSend(socket, chunk, offset >= data.length);
       }
     }
     this.flushSendBacklog(socket);
+  }
+
+  /**
+   * RFC 896 / RFC 9293 §3.7.4 — Nagle is a COALESCING algorithm, not
+   * merely a delaying one: what it holds back it must also glue to
+   * whatever the application writes next, or it turns one small segment
+   * into two. A write lands on the tail of `sendBacklog` while that tail
+   * is still short of a full segment, so consecutive small writes that
+   * never made it onto the wire become one segment rather than a queue of
+   * runts. Only the tail is touched, so a remainder that `flushSendBacklog`
+   * or `resegmentAndRetransmit` pushed back onto the FRONT keeps its place
+   * in the stream.
+   */
+  private queueForSend(socket: TcpSocket, payload: StreamPayload, psh: boolean): void {
+    let rest = payload;
+    const tail = socket.sendBacklog[socket.sendBacklog.length - 1];
+    if (tail && tail.payload.length < socket.mss) {
+      const room = socket.mss - tail.payload.length;
+      const merged = sliceStream(rest, 0, room);
+      tail.payload = appendStream(tail.payload, merged);
+      tail.psh = psh && merged.length === rest.length;
+      rest = sliceStream(rest, merged.length);
+    }
+    if (rest.length === 0) return;
+    socket.sendBacklog.push({ payload: rest, psh });
   }
 
   /**
@@ -937,7 +1057,7 @@ export class TcpStack {
    * chunk if only part of it fits. Whatever doesn't fit stays queued in
    * order until a future ACK/window-update frees enough room.
    */
-  private flushSendBacklog(socket: TcpSocket): void {
+  private flushSendBacklog(socket: TcpSocket, overrideNagle = false): void {
     // Reentrant call (see `flushingBacklog`'s doc comment): the outer
     // invocation's `while` loop will pick up the freed window on its very
     // next iteration since the ACK that triggered this reentry already
@@ -956,6 +1076,7 @@ export class TcpStack {
         if (available === 0) break;
         const next = socket.sendBacklog[0];
         const take = Math.min(available, next.payload.length);
+        if (this.nagleHolds(socket, next.payload.length, take, overrideNagle)) break;
         const chunk = sliceStream(next.payload, 0, take);
         const remainder = sliceStream(next.payload, take);
         socket.sendBacklog.shift();
@@ -973,6 +1094,44 @@ export class TcpStack {
       socket.flushingBacklog = false;
     }
     this.maybeArmPersistTimer(socket);
+    const closePending = socket.closeAfterFlush
+      && socket.sendBacklog.length === 0
+      && (socket.state === 'established' || socket.state === 'close-wait');
+    if (closePending) {
+      socket.closeAfterFlush = false;
+      this._initiateClose(socket);
+    }
+  }
+
+  /**
+   * RFC 9293 §3.7.4: "If there is unacknowledged data (i.e., SND.NXT >
+   * SND.UNA), then the sending TCP endpoint buffers all user data
+   * (regardless of the PSH bit) until the outstanding data has been
+   * acknowledged or until the TCP endpoint can send a full-sized
+   * segment."
+   *
+   * Two readings of "can send a full-sized segment" are possible and only
+   * one is safe. Measured against the QUEUE and not against the window:
+   * a receive window smaller than the MSS otherwise keeps every chunk
+   * below full size forever, so the hold would never lift and a transfer
+   * through a 128-byte window would deadlock outright. A window that
+   * small is flow control's business (SWS avoidance) and the persist
+   * timer's, never Nagle's. The empty write that carries only a PSH is
+   * exempt: there is nothing to coalesce it with, and holding it would
+   * simply lose the marker.
+   */
+  private nagleHolds(socket: TcpSocket, headLength: number, take: number, overrideNagle: boolean): boolean {
+    if (overrideNagle || socket.noDelay) return false;
+    if (headLength === 0 || take >= socket.mss) return false;
+    let queued = 0;
+    for (const entry of socket.sendBacklog) queued += entry.payload.length;
+    if (queued >= socket.mss) return false;
+    return seqLt(socket.sendUnacked, socket.sendNext);
+  }
+
+  _setNoDelay(socket: TcpSocket, enabled: boolean): void {
+    socket.noDelay = enabled;
+    if (enabled) this.withinBurst(() => this.flushSendBacklog(socket));
   }
 
   /** (Re)arm or disarm the zero-window persist-probe timer based on current window/backlog state. */
@@ -997,6 +1156,10 @@ export class TcpStack {
    * value even if it has nothing else to say.
    */
   private onPersistFired(socket: TcpSocket): void {
+    this.withinBurst(() => this.persistProbeWithinBurst(socket));
+  }
+
+  private persistProbeWithinBurst(socket: TcpSocket): void {
     socket.persistTimer = null;
     if (socket.closed || socket.sendBacklog.length === 0) { socket.persistBackoffMs = 0; return; }
     const next = socket.sendBacklog[0];
@@ -1064,6 +1227,13 @@ export class TcpStack {
     if (socket.state === 'syn-received') {
       socket.closeAfterFlush = true;
       return;
+    }
+    if (socket.state === 'established' || socket.state === 'close-wait') {
+      this.flushSendBacklog(socket, true);
+      if (socket.sendBacklog.length > 0) {
+        socket.closeAfterFlush = true;
+        return;
+      }
     }
     if (socket.state === 'established') {
       this._transition(socket, 'fin-wait-1');
@@ -1194,9 +1364,10 @@ export class TcpStack {
       case 'established':
         if (payloadSize > 0) {
           if (!this.acceptInOrder(socket, seg)) break;
+          const fillsAGap = socket.reassemblyBuffer.length > 0;
+          this.noteUrgentPoint(socket, seg);
           this.deliverData(socket, seg);
-          const ackFlags = noFlags(); ackFlags.ack = true;
-          this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
+          this.acknowledgeReceivedData(socket, fillsAGap);
         } else if (seg.flags.ack && !seg.flags.fin) {
           // Guarded like `pruneUnackedQueue`'s own update (PRD-TCP.md P1):
           // an old/reordered ACK reaching this branch after a newer one
@@ -1276,6 +1447,63 @@ export class TcpStack {
       socket.keepAliveProbesSent = 0;
       this.rearmKeepAliveTimer(socket);
     }
+  }
+
+  /**
+   * RFC 793 §3.7 adds SEG.UP to the segment's sequence number to yield the
+   * urgent point; RFC 9293 §3.8.5 keeps the receiver in urgent mode while
+   * that point is in advance of RCV.NXT. RFC 6093 §3.1 settles what the
+   * application is handed: "the last byte of 'urgent data' is delivered
+   * 'out of band'".
+   *
+   * The byte is ALSO left in the ordinary stream — the behaviour a real
+   * socket gets with SO_OOBINLINE. Removing it would make the octet count
+   * the application reads disagree with the one countable on the wire, and
+   * two views of one transfer that contradict each other is the defect this
+   * repository refuses first.
+   */
+  private noteUrgentPoint(socket: TcpSocket, seg: TcpSegment): void {
+    if (!seg.flags.urg || seg.urgentPointer <= 0) return;
+    const point = (seg.sequence + seg.urgentPointer) >>> 0;
+    if (socket.rcvUp === null || seqLt(socket.rcvUp, point)) socket.rcvUp = point;
+    if (!isStreamPayload(seg.payload)) return;
+    const offset = (point - 1 - seg.sequence) | 0;
+    if (offset < 0 || offset >= seg.payload.length) return;
+    const lastUrgentByte = String(sliceStream(seg.payload, offset, offset + 1));
+    try { socket._fireUrgent(lastUrgentByte); }
+    catch (e) { Logger.warn(this.host.id, 'tcp:onUrgent', String(e)); }
+  }
+
+  private acknowledgeReceivedData(socket: TcpSocket, fillsAGap: boolean): void {
+    socket.segmentsSinceAck++;
+    if (fillsAGap || socket.segmentsSinceAck >= TCP_ACK_EVERY_N_SEGMENTS) {
+      this.sendOwedAck(socket);
+      return;
+    }
+    socketsOwingAck.add(socket);
+    if (socket.delayedAckTimer) return;
+    socket.delayedAckTimer = this.timers.setTimeout(() => {
+      socket.delayedAckTimer = null;
+      this.sendOwedAck(socket);
+    }, TCP_DELAYED_ACK_MS);
+  }
+
+  private sendOwedAck(socket: TcpSocket): void {
+    const stillOurs = this.sockets.get(socket.key()) === socket;
+    if (socket.segmentsSinceAck === 0 || socket.closed || !stillOurs) {
+      this.forgetOwedAck(socket);
+      return;
+    }
+    const flags = noFlags(); flags.ack = true;
+    this.transmit(socket, flags, socket.sendNext, socket.recvNext, undefined);
+  }
+
+  private forgetOwedAck(socket: TcpSocket): void {
+    socket.segmentsSinceAck = 0;
+    socketsOwingAck.delete(socket);
+    if (!socket.delayedAckTimer) return;
+    this.timers.clear(socket.delayedAckTimer);
+    socket.delayedAckTimer = null;
   }
 
   /**
@@ -1401,6 +1629,9 @@ export class TcpStack {
     socket.persistTimer = null;
     this.timers.clear(socket.keepAliveTimer);
     socket.keepAliveTimer = null;
+    this.forgetOwedAck(socket);
+    socket.sndUp = null;
+    socket.rcvUp = null;
     socket.sendBacklog = [];
     socket.reassemblyBuffer = [];
     this._transition(socket, 'closed');
@@ -1544,6 +1775,7 @@ export class TcpStack {
   ): number | undefined {
     const egress = this.resolveEgress(socket.remoteIp);
     if (!egress) { this.dropped(socket.remoteIp, socket.remotePort, 'no-egress'); return undefined; }
+    if (flags.ack && ackNum === socket.recvNext) this.forgetOwedAck(socket);
     const options = [...extraOptions];
     let sentTsVal: number | undefined;
     if (socket.timestampsEnabled) {
@@ -1556,13 +1788,16 @@ export class TcpStack {
     if (socket.sackEnabled && flags.ack && socket.reassemblyBuffer.length > 0) {
       options.push({ kind: 'sack', blocks: this.sackBlocksFor(socket) });
     }
+    const stillUrgent = socket.sndUp !== null && seqLt(sequence, socket.sndUp);
+    const urgent = stillUrgent ? (socket.sndUp! - sequence) >>> 0 : 0;
+    if (stillUrgent) flags.urg = true;
     const seg: TcpSegment = {
       type: 'tcp',
       sourcePort: socket.localPort, destinationPort: socket.remotePort,
       sequence, acknowledgement: flags.ack ? ackNum : 0,
       dataOffset: optionsDataOffset(options), flags,
-      window: this.encodeWindowField(socket, flags), checksum: 0, urgentPointer: 0,
-      options, payload,
+      window: this.encodeWindowField(socket, flags), checksum: 0,
+      urgentPointer: urgent, options, payload,
     };
     const source = sourceAddressOf(socket, egress.srcIp);
     seg.checksum = computeTcpChecksum(seg, source, socket.remoteIp);
@@ -1679,6 +1914,10 @@ export class TcpStack {
 
   /** RFC 6298 §5: retransmit the earliest unacked segment, back off the RTO, and restart the timer. */
   private onRtoFired(socket: TcpSocket): void {
+    this.withinBurst(() => this.rtoWithinBurst(socket));
+  }
+
+  private rtoWithinBurst(socket: TcpSocket): void {
     socket.rtoTimer = null;
     const head = socket.unackedQueue[0];
     if (!head) return;

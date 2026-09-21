@@ -124,6 +124,13 @@ export class InteractionPlanRunner {
         this.idx++;
         continue;
       }
+      if (step.kind === 'label') { this.idx++; continue; }
+      if (step.kind === 'branch') {
+        const repere = step.to(this.values);
+        const cible = repere === null ? null : indexDuRepere(this.plan, repere);
+        this.idx = cible ?? this.idx + 1;
+        continue;
+      }
       if (step.kind === 'collect') {
         this.currentCollect = step;
         this.collectBuffer = [];
@@ -134,6 +141,12 @@ export class InteractionPlanRunner {
     }
     return { lines, done: true };
   }
+}
+
+function indexDuRepere(plan: CommandInteractionPlan, nom: string): number | null {
+  const at = plan.steps.findIndex(
+    (step) => step.kind === 'label' && step.name === nom);
+  return at < 0 ? null : at;
 }
 
 function collectPending(step: CollectStep): PlanPendingInput {

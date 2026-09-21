@@ -3,6 +3,19 @@
  * protocolaire tcpdump : handshake, transfert, contrôle de flux, fermeture.
  * Volume réduit vs. le 1 Mo du scénario (segmentation MSS/contrôle de
  * flux sont invariants d'échelle) pour garder le test rapide.
+ *
+ * Le cas « perte ponctuelle » a dû être rallongé (6000 → 12000 octets)
+ * quand le récepteur s'est mis à retarder ses ACK (RFC 5681 §4.2, un ACK
+ * pour deux segments pleins). Le premier segment hors séquence absorbe
+ * l'ACK encore dû au segment précédent au lieu d'en émettre deux, donc le
+ * 3e ACK DUPLIQUÉ — celui qui déclenche le fast retransmit — arrive un
+ * segment plus tard qu'avant. Mesuré : à 6000 octets plus aucun rang de
+ * perte n'atteint le fast retransmit, et comme `deliverData` ne remonte
+ * le tampon à l'application qu'au segment portant PSH (le dernier de
+ * l'envoi), la perte laissait `received` entièrement vide ; le RTO, lui,
+ * ne peut pas rattraper ici puisque ce laboratoire n'avance jamais son
+ * `VirtualTimeScheduler`. À 12000 octets la reprise est bien rapide et
+ * les 12000 octets arrivent.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -238,12 +251,12 @@ describe('Scénario 1 — Analyse complète du cycle de vie TCP par dissection p
       const received: string[] = [];
       const dump = await captureFullSession(lan, async (sock) => {
         lan.getServerSocket()!.onData((d) => received.push(d as string));
-        sock.send('D'.repeat(6000));
+        sock.send('D'.repeat(12_000));
         await new Promise((r) => setTimeout(r, 50));
       });
       const segs = parseSegments(dump);
 
-      expect(received.join('')).toBe('D'.repeat(6000));
+      expect(received.join('')).toBe('D'.repeat(12_000));
       expect(segs.some((s) => /sack \d+ \{/.test(s.options))).toBe(true);
       for (const s of segs) if (s.length > 0) expect(s.length).toBeLessThanOrEqual(TCP_DEFAULT_MSS);
     });

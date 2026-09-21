@@ -148,3 +148,367 @@ comme validés.
 
 C'est le programme d'un second passage, et chacun est un candidat
 sérieux au défaut du §6.
+
+---
+
+## 6. Second passage — les attaques, et ce qu'elles ont trouvé
+
+**Date :** 2026-09-20 · Relevé dans
+`src/__tests__/debug/infra/second-passage-attaques.debug.test.ts`.
+
+Le pronostic de la §5 s'est vérifié : sur les onze contrôles attaqués au
+second passage, quatre tiennent, sept portaient un défaut.
+
+| Contrôle | Attaque | Accepté | Rendu par `show` | **Applique** |
+|---|---|---|---|---|
+| **uRPF** | paquet source `203.0.113.9`, aucune route | oui | oui | **oui** |
+| **storm-control** | 53 diffusions à travers le port | oui | `Fa0/1 Forwarding 1.00%` | **NON** → S-01 |
+| **BPDU guard** | BPDU sur un port `portfast` | oui | oui | **oui** |
+| **SNMP** | requête v2c, community inconnue | oui | oui | **oui** |
+| **NTP authentifié** | serveur sans la clé exigée | oui | oui | **oui** |
+| **ARP inspection** | ARP gratuit à liaison fausse | oui | `(all)` → S-05 | **oui** |
+| **VLAN natif** | double étiquetage | oui | oui | **partiel** → S-02 |
+| **AAA** | repli après serveur injoignable | oui | oui | **NON** → S-03, S-04 |
+| **iptables** | politique DROP, port ouvert, règle d'état | oui | oui | **NON** → H-04, H-05 |
+| **sudo** | commande hors liste, chemin absolu, retour de session | oui | oui | **NON** → H-02, H-03 |
+| **permissions `oracle`** | lecture par un compte tiers | oui | oui | **NON** → H-01 |
+
+### 6.1 uRPF tient, dans les deux sens
+
+Le contrôle est éprouvé comme l'exige §6 — *il correspond quand il doit,
+et il ne correspond pas quand il ne doit pas* :
+
+```
+[uRPF-T] TÉMOIN avant durcissement           0% packet loss
+[uRPF-3] source légitime APRÈS durcissement  0% packet loss
+[uRPF-4] source légitime rejetée ?           non
+[uRPF-5] source usurpée rejetée ?            OUI
+```
+
+Le témoin et le cas [uRPF-3] sont indispensables : un banc qui n'aurait
+mesuré que le rejet n'aurait pas distingué « uRPF filtre » de « ce lien
+ne passe plus rien ».
+
+### 6.2 S-01 — `storm-control` n'appliquait rien — **CORRIGÉ**
+
+Le relevé initial :
+
+```
+storm-control broadcast level 1.00   accepté, silence
+show storm-control                   Fa0/1 Forwarding 1.00% 1.00%
+running-config                       la ligne est rendue
+53 diffusions à travers le port      53 passent, AUCUNE supprimée
+show interfaces status               Fa0/1 connected
+```
+
+La lecture du code a confirmé la mesure : le réglage était analysé,
+**refusé s'il était incomplet**, stocké comme ligne de configuration et
+rendu par `show storm-control` et `show running-config` — et le plan de
+commutation ne le consultait **nulle part**. C'est le §6 dans sa forme
+la plus exacte, et pour un contrôle de sécurité il produit une **fausse
+assurance** : un opérateur croit son port protégé de l'inondation.
+
+Le moteur évalue désormais les trois unités (`percent`, `pps`, `bps`)
+sur une fenêtre d'une seconde, avec seuil haut et seuil bas. Relevé
+après correctif :
+
+```
+40 diffusions, seuil 10 pps, sans action   10 relayées, 30 supprimées
+le port reste                              connected
+une trame UNICAST connue pendant la tempête  passe
+avec `action shutdown`                     Fa0/1 disabled
+```
+
+**Le troisième point est celui qui compte.** `storm-control broadcast`
+ne doit rien faire à l'unicast : un limiteur qui déborde sur les autres
+classes de trafic serait un défaut plus grave que son absence.
+
+Non-régression : `src/__tests__/audit/storm-control-audit-preuves.test.ts`.
+
+### 6.3 BPDU guard, SNMP, NTP, ARP inspection — ils appliquent
+
+Quatre des six contrôles restants tiennent, et le relevé le montre dans
+les deux sens, comme l'exige §6 :
+
+```
+[bpdu-2] avant la BPDU du voyou                Fa0/3 connected
+[bpdu-3] après la BPDU du voyou                Fa0/3 disabled
+
+[snmp-4] requête v2c, community=public         refusée (aucune donnée)
+[snmp-5] TÉMOIN — la même APRÈS `snmp-server community public RO`  aboutit
+
+[ntp-4] clé exigée, serveur SANS clé           stratum 16, unsynchronized
+[ntp-5] TÉMOIN — clé exigée, serveur AVEC clé  stratum 4, synchronized
+
+[dai-3] deux ARP gratuits usurpant 10.0.0.10   2 reçus, 2 rejetés
+[dai-4] journal                                Fa0/2 1 …/10.0.0.10 2 DHCP Deny
+[dai-5] table ARP de la victime                non empoisonnée
+```
+
+Les témoins ne sont pas décoratifs. Sans `[snmp-5]`, « la requête v2c
+est refusée » ne distinguerait pas un contrôle de communauté d'un agent
+inerte ; sans `[ntp-5]`, « stratum 16 » ne distinguerait pas
+l'authentification NTP d'un lien qui ne porte rien.
+
+Deux limites nommées au passage, et mesurées :
+
+- **`SnmpAgent` ne parle que v2c sur le fil.** `snmp-server group … v3
+  priv` et `snmp-server user … auth sha … priv aes 128 …` sont acceptés
+  et rendus, `groups`/`versions` ne sont consultés par aucun chemin de
+  décision, et la brique manquante est USM (RFC 3414). Un labo ne peut
+  donc pas démontrer qu'une requête v2c est refusée *parce que* seul v3
+  est déclaré — ce qu'il démontre ici, c'est le contrôle de communauté.
+- **`ntp server X` sans `key N` se synchronise même sous `ntp
+  authenticate`.** C'est la lecture retenue par le dépôt dans
+  `NtpAgent.authRequise()` (`this.config.authenticate && a.keyId !==
+  undefined`), sourcée Cisco : `ntp authenticate` arme le mécanisme,
+  c'est `key` sur l'association qui l'exige. Ce n'est pas un défaut.
+
+### 6.4 S-02 — le saut de VLAN par double étiquetage — **CORRIGÉ**
+
+L'attaque : une trame à DEUX étiquettes injectée sur un port d'accès —
+extérieure égale au VLAN natif du trunk, intérieure VLAN 10.
+
+```
+[hop-1] natif 1, pirate en VLAN 1, double étiquette 1/10   VLAN 10  ← le saut aboutit
+[hop-2] TÉMOIN — même port, trame simple                   VLAN 1
+[hop-3] `switchport trunk native vlan 999`, pirate en 1    VLAN 1   ← refermé
+[hop-4] TÉMOIN — trame simple, natif 999                   VLAN 1
+[hop-5] natif 999 mais le pirate EST dans le natif          VLAN 10  ← toujours ouvert
+[hop-6] `vlan dot1q tag native`                            % Invalid VLAN ID
+```
+
+`[hop-1]` et `[hop-5]` sont le comportement d'un vrai commutateur, et
+doivent le rester. `[hop-3]` prouve que `switchport trunk native vlan`
+applique. Le constat est `[hop-6]` : **la seule parade qui refermerait
+`[hop-5]` n'existait pas.** `vlan dot1q tag native` n'était déclarée
+nulle part — la commande tombait sur l'analyseur de `vlan <id>`, qui
+répondait `% Invalid VLAN ID`.
+
+Premier temps de la mesure, et il faut le dire : `[hop-6]` a d'abord été
+relevé comme « accepté (silence) », ce qui aurait fait conclure au pire
+des trois cas du §6. C'était une erreur de sonde — la ligne lisait la
+sortie de `end`, pas celle de la commande. La commande était refusée,
+donc §6 était respecté : un critère que le moteur ne sait pas évaluer
+est refusé. Il manquait le moteur, pas la rigueur.
+
+La commande est désormais déclarée (`vlan dot1q tag native` /
+`no …`, annoncée par `?` à chaque niveau, rendue par
+`show running-config`) et **elle décide** : à la sortie d'un trunk le
+VLAN natif est étiqueté au lieu d'être envoyé nu, et une trame NON
+étiquetée arrivant sur un trunk est rejetée. Relevé après correctif :
+
+```
+[hop-7] même attaque avec `vlan dot1q tag native`   VLAN 1   ← refermé
+[hop-8] TÉMOIN — trame simple                       VLAN 1
+```
+
+La documentation Cisco est **injoignable depuis cet environnement**
+(`www.cisco.com` → `connect_rejected` par le proxy de sortie, mesuré) ;
+les deux moitiés du comportement viennent donc de la définition de la
+commande pour l'étiquetage, et de la règle « un critère de sécurité
+échoue FERMÉ » (§6) pour le rejet de l'entrant non étiqueté. Les
+protocoles de contrôle (STP, CDP, DTP, LLDP, VTP, LACP, UDLD, EAPOL)
+sont interceptés avant la classification de VLAN, donc ce rejet ne les
+touche pas.
+
+### 6.5 S-03 — le repli `local` après un groupe RADIUS injoignable — **CORRIGÉ**
+
+L'attaque : `aaa authentication login default group GRP local`, serveur
+RADIUS à une adresse où il n'y a personne, et une ouverture de session
+SSH avec le compte **local**.
+
+```
+[aaa-0]  TÉMOIN DU LABO — `login local`, aucun aaa        entre
+[aaa-0b] TÉMOIN — aaa new-model + `… default local`       entre
+[aaa-2]  `… default group GRP` seul, serveur muet         refusé
+[aaa-4]  `… default group GRP local`                      REFUSÉ  ← le défaut
+[aaa-5]  TÉMOIN — mauvais mot de passe, repli autorisé    refusé
+```
+
+`[aaa-4]` est l'inverse exact d'IOS : un serveur injoignable doit être
+**sauté**, et la chaîne continuer vers `local`. Ici il **rejetait**, et
+la session était refusée. Conséquence pratique : *un routeur dont le
+serveur RADIUS tombe verrouille dehors tous ses administrateurs, alors
+même que l'opérateur avait écrit `local` pour ce cas précis.*
+
+La cause tenait en une ligne. `RadiusClientAgent` distingue déjà en
+interne `accept` / `reject` / `timeout` — son propre commentaire dit que
+« seul `timeout` déclenche le basculement » — mais `authenticate()`
+écrasait les trois en un booléen, et `tryRadiusGroup` relisait ce
+booléen comme un **rejet faisant autorité** :
+
+```ts
+reachable = true;                       // « joignable » = une adresse est CONFIGURÉE
+const accepted = await client.authenticate(…);
+if (accepted) return 'accept';
+return reachable ? 'reject' : 'continue';
+```
+
+`tryTacacsGroup`, quarante lignes plus bas, tenait déjà la bonne forme :
+`pass` → accepte, `fail` → rejette, **tout le reste** → serveur suivant,
+puis méthode suivante. C'est la duplication du §2 dans sa version la
+plus coûteuse : deux écritures d'un même fait, dont une seule est juste.
+
+Le verdict à trois valeurs est désormais porté jusqu'à l'appelant
+(`authenticateWithOutcome`), et `tryRadiusGroup` a la forme de son
+jumeau TACACS+. Relevé après correctif :
+
+```
+[aaa-2] `… group GRP` seul, serveur muet     Permission denied
+[aaa-4] `… group GRP local`                  entre          ← le repli applique
+[aaa-5] mauvais mot de passe                 Permission denied
+```
+
+### 6.6 S-04 — `radius-server timeout` / `retransmit` jamais appliqués — **CORRIGÉ**
+
+Trouvé en instrumentant S-03 : la chaîne mettait **20 s** à rendre son
+verdict là où l'opérateur avait écrit `radius-server timeout 1` et
+`radius-server retransmit 0` — soit exactement les défauts IOS, 4 essais
+de 5 s.
+
+Un serveur déclaré par `radius server <nom>` naissait avec
+`timeoutSec: 5, retransmit: 3` **inscrits dans son enregistrement**, si
+bien que la chaîne `server.timeoutSec ?? defauts.timeoutSec` choisissait
+toujours la valeur du serveur. Les réglages globaux étaient acceptés,
+rendus par `show running-config`, et sans aucun effet. La forme héritée
+`radius-server host …`, elle, laissait ces champs indéfinis — donc elle
+marchait, et les deux formes ne répondaient pas la même chose sur la
+même machine (§3).
+
+Le défaut vit désormais **une seule fois**, au bout de la chaîne `??`
+(`radiusAuthPort`, `syncRadiusServer`), et l'enregistrement du serveur ne
+porte que ce que l'opérateur a tapé. Même correctif pour TACACS+, qui
+avait la même forme. Mesure après : **1 003 ms** au lieu de 20 006.
+
+### 6.7 S-05 — la colonne `Vlan` de `show ip arp inspection statistics` — **CORRIGÉ**
+
+Le contrôle DAI applique (§6.3). Mais le tableau de ses compteurs
+annonçait une colonne `Vlan` et y écrivait le mot `(all)` : les
+statistiques étaient tenues **par port seulement**, donc le VLAN — que
+le journal `show ip arp inspection log` connaît, lui — était perdu. Deux
+vues d'un même fait dont une seule sait répondre. Les compteurs sont
+désormais tenus par port **et** par VLAN, et le tableau rend une ligne
+par VLAN observé.
+
+### 6.8 La pile hôte — cinq défauts, tous **CORRIGÉS**
+
+Dernière tranche de la §5. Relevé dans
+`src/__tests__/debug/infra/second-passage-pile-hote.debug.test.ts`.
+
+**Un piège de labo, payé comptant, et qui vaut d'être écrit :** sur un
+`LinuxPC` la session est `user` (uid 1000), donc `iptables` sans `sudo`
+répond `Permission denied`. La première version du banc mesurait ainsi
+l'**absence** de pare-feu en croyant mesurer le pare-feu, et concluait
+« tout applique ». Sur un `LinuxServer` la session est root, ce qui
+rendait la moitié des cas verts et l'autre moitié muette — exactement le
+genre de banc qui ne distingue rien. De même, `su <user>` depuis un
+compte non-root échoue à l'authentification : le changement d'identité
+passe par `sudo su <user> -c "<cmd>"`.
+
+#### H-01 — `ls` ne lisait pas le droit de lecture du répertoire
+
+```
+ls -ld /root                      drwx------ 2 root root
+su quidam -c "ls /root"           (le contenu, listé)
+su quidam -c "cat /etc/shadow"    Permission denied
+```
+
+`cat` consultait `canRead()`, `ls` ne le consultait **nulle part** : deux
+lecteurs d'une même règle DAC, dont un seul l'appliquait. Le mode 700 est
+*le* durcissement canonique d'un répertoire, et `chmod 750` sur
+`oradata` ne protégeait donc rien non plus — la question « les fichiers
+d'Oracle sont-ils protégés ? » recevait deux réponses opposées selon la
+commande. Le contrôle existe déjà (`ctx.vfs.path(…).canRead()`) ; `ls` le
+lit maintenant, avec la formulation de coreutils
+(`ls: cannot open directory 'X': Permission denied`).
+
+#### H-02 — `sudo /bin/ls` refusé, alors que la ligne nomme `/bin/ls`
+
+```
+sudo -l (vu par operateur)   (ALL) NOPASSWD: /bin/ls
+sudo -n ls /root             autorisé
+sudo -n /bin/ls /root        Sorry, user operateur is not allowed…
+sudo -n /usr/bin/ls /root    Sorry, user operateur is not allowed…
+```
+
+Deux causes qui se rejoignaient. `resolveExePath` préfixait un chemin
+**déjà absolu** (`/bin/ls` → `/usr/bin//bin/ls`) — un défaut qui salissait
+aussi les traces `execve`. Et le comparateur de la politique opposait les
+chemins bruts alors que `/bin` est un lien vers `/usr/bin` : `/bin/ls` et
+`/usr/bin/ls` sont le même fichier, une équivalence dont ce dépôt portait
+**déjà** le prédicat (`canonicalBinPath`), utilisé ailleurs et pas là.
+C'est la §1 dans sa forme ordinaire : la brique existait, la politique ne
+s'y branchait pas.
+
+#### H-03 — `sudo su <user> -c "<cmd>"` laissait la session **root**
+
+```
+id -u                              1000
+sudo su tiers -c "id -u"           1005
+id -u                              0        ← la session est restée root
+ls /root                           (listé)
+```
+
+Une élévation à **usage unique** ne revenait jamais : toute commande
+suivante s'exécutait root. Le restaurateur était gardé par
+`actualCmd !== 'su'` — écrit pour la forme **interactive**, où `su`
+laisse une session ouverte que `exit` dépile. Mais la forme `-c` a déjà
+dépilé son propre contexte quand `sudo` reprend la main : la pile est
+vide, la branche de rattrapage ne s'applique pas, et plus personne ne
+restaure. La règle s'écrit désormais une fois, sur ce qu'elle décide
+vraiment — *`su` a-t-il laissé une session ouverte ?* — au lieu du nom de
+la commande.
+
+#### H-04 — la règle `ESTABLISHED,RELATED` n'appliquait rien aux flux sortants
+
+```
+-P INPUT DROP seul, ping sortant                   100% packet loss
++ -m conntrack --ctstate ESTABLISHED,RELATED       100% packet loss
+```
+
+Le suivi de connexion n'était alimenté que pour `in` et `forward` : rien
+de ce que la machine **initie** n'était suivi, donc la réponse ne pouvait
+jamais correspondre. La paire `-P INPUT DROP` + `ESTABLISHED,RELATED
+ACCEPT` — le patron d'un pare-feu à états, celui qu'on écrit sur toutes
+les machines — **coupait** la machine au lieu de la protéger. Le vrai
+netfilter suit dans les deux sens (`PREROUTING` *et* `OUTPUT`).
+
+#### H-05 — le tuple de suivi ignorait le type et l'identifiant ICMP
+
+Avec les ports à 0 des deux côtés, un echo-**request** entrant et un
+echo-**reply** entrant avaient la **même clef** : un ping accepté rendait
+`ESTABLISHED` tout ping ultérieur. Le défaut préexistait par le suivi
+entrant, et le correctif H-04 l'aurait élargi aux flux sortants — une
+machine durcie serait devenue pingable dès qu'elle aurait pingé.
+
+Le tuple porte désormais le type, avec la correspondance
+requête → réponse (RFC 792, RFC 4443 : 8→0, 13→14, 15→16, 17→18, 128→129,
+133→134, 135→136), **et** l'identifiant d'écho — sans lui, deux pings
+distincts sont un seul flux. Les deux convertisseurs
+(`icmpTypeNumber`, `icmpv6TypeNumber`) existaient déjà. Relevé après :
+
+```
+-P INPUT DROP seul, ping sortant                      100% packet loss
++ ESTABLISHED,RELATED, ping sortant                     0% packet loss
+le serveur ping la machine durcie                     100% packet loss
+un port explicitement autorisé pendant DROP           passe
+```
+
+**La troisième ligne est celle qui compte.** Une règle d'état doit
+laisser revenir ce que la machine a demandé, et rien d'autre : un
+pare-feu que le premier ping sortant ouvre serait pire que pas de
+pare-feu.
+
+### 6.9 Où en est la §5
+
+Les vingt contrôles du premier audit ont été posés et acceptés ; les
+**vingt** ont maintenant été attaqués. Neuf défauts trouvés, neuf
+corrigés (S-01 à S-05, H-01 à H-05).
+
+Non-régression du second passage :
+`src/__tests__/audit/storm-control-audit-preuves.test.ts` (S-01),
+`src/__tests__/audit/second-passage-audit-preuves.test.ts` (S-02 à S-05,
+7 cas discriminants sur 13) et
+`src/__tests__/audit/pile-hote-audit-preuves.test.ts` (H-01 à H-05,
+10 cas discriminants sur 19).

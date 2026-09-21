@@ -55,7 +55,7 @@ export type TftpPacket = TftpRequestPacket | TftpDataPacket | TftpAckPacket | Tf
  */
 export interface TftpEndpoint {
   allocateEphemeralPort(): number;
-  udpBind(port: number, handler: (delivery: TftpUdpDelivery) => void, owner?: string): boolean;
+  udpBind(port: number, handler: (delivery: TftpUdpDelivery) => void, owner?: string): number | false;
   udpClose(port: number): void;
   sendUdpDatagramTo(
     destIP: unknown, destPort: number, sourcePort: number,

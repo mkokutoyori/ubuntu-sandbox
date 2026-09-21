@@ -50,10 +50,15 @@ export interface DaiLogEntry {
 
 const DAI_LOG_BUFFER_SIZE = 32;
 
+function bump(targets: ArpStats[], field: keyof ArpStats): void {
+  for (const s of targets) s[field]++;
+}
+
 export class ArpInspectionPipeline {
   private readonly engine = new ArpInspectionEngine();
   private readonly limiter = new ArpRateLimiter();
   private readonly stats: Map<string, ArpStats> = new Map();
+  private readonly vlanStats: Map<number, ArpStats> = new Map();
   private readonly log: DaiLogEntry[] = [];
 
   constructor(
@@ -71,12 +76,15 @@ export class ArpInspectionPipeline {
   process(ctx: ArpInspectionContext): boolean {
     const cfg = this.host._getArpInspectionConfig();
     const port = ctx.ingressPort;
-    const s = this.stats.get(port) ?? this.installStats(port);
-    s.received++;
+    const counters = [
+      this.stats.get(port) ?? this.installStats(port),
+      this.vlanStats.get(ctx.vlan) ?? this.installVlanStats(ctx.vlan),
+    ];
+    bump(counters, 'received');
 
     if (this.host._isArpErrDisabled(port)) {
-      s.dropped++;
-      s.droppedDisabled++;
+      bump(counters, 'dropped');
+      bump(counters, 'droppedDisabled');
       this.publish({ kind: 'drop', reason: 'port-err-disabled', detail: 'port is err-disabled by arp-inspection' }, ctx);
       return false;
     }
@@ -86,8 +94,8 @@ export class ArpInspectionPipeline {
       if (limit && limit > 0) {
         const r = this.limiter.consume(port, limit, cfg.rateBurstSec);
         if (r.ok === false) {
-          s.dropped++;
-          s.droppedRateLimit++;
+          bump(counters, 'dropped');
+          bump(counters, 'droppedRateLimit');
           this.host._arpErrDisable(port);
           this.bus.publish({
             topic: 'arp.rate-limit-exceeded',
@@ -112,10 +120,10 @@ export class ArpInspectionPipeline {
     );
 
     if (verdict.kind === 'pass') {
-      s.forwarded++;
+      bump(counters, 'forwarded');
     } else {
-      s.dropped++;
-      this.bumpDropCounter(s, verdict);
+      bump(counters, 'dropped');
+      this.bumpDropCounter(counters, verdict);
       this.appendLog(this.formatDropLog(ctx, verdict), cfg.loggingEnabled);
       this.recordLogEntry(ctx, verdict.reason);
       this.bus.publish({
@@ -136,6 +144,10 @@ export class ArpInspectionPipeline {
     return new Map(this.stats);
   }
 
+  getVlanStats(): Map<number, ArpStats> {
+    return new Map(this.vlanStats);
+  }
+
   getLog(): DaiLogEntry[] {
     return [...this.log];
   }
@@ -146,6 +158,7 @@ export class ArpInspectionPipeline {
 
   resetStats(): void {
     this.stats.clear();
+    this.vlanStats.clear();
     this.limiter.clear();
   }
 
@@ -166,16 +179,22 @@ export class ArpInspectionPipeline {
     return s;
   }
 
-  private bumpDropCounter(s: ArpStats, v: ArpInspectionVerdict): void {
+  private installVlanStats(vlan: number): ArpStats {
+    const s = createDefaultArpStats();
+    this.vlanStats.set(vlan, s);
+    return s;
+  }
+
+  private bumpDropCounter(targets: ArpStats[], v: ArpInspectionVerdict): void {
     if (v.kind !== 'drop') return;
     switch (v.reason) {
-      case 'binding-mismatch':  s.droppedBindingMismatch++; break;
-      case 'acl-deny':          s.droppedAclDeny++; break;
-      case 'src-mac-mismatch':  s.droppedSrcMacMismatch++; break;
-      case 'dst-mac-mismatch':  s.droppedDstMacMismatch++; break;
-      case 'invalid-ip':        s.droppedInvalidIp++; break;
-      case 'rate-limit':        s.droppedRateLimit++; break;
-      case 'port-err-disabled': s.droppedDisabled++; break;
+      case 'binding-mismatch':  bump(targets, 'droppedBindingMismatch'); break;
+      case 'acl-deny':          bump(targets, 'droppedAclDeny'); break;
+      case 'src-mac-mismatch':  bump(targets, 'droppedSrcMacMismatch'); break;
+      case 'dst-mac-mismatch':  bump(targets, 'droppedDstMacMismatch'); break;
+      case 'invalid-ip':        bump(targets, 'droppedInvalidIp'); break;
+      case 'rate-limit':        bump(targets, 'droppedRateLimit'); break;
+      case 'port-err-disabled': bump(targets, 'droppedDisabled'); break;
     }
   }
 

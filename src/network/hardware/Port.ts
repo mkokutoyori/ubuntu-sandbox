@@ -27,6 +27,7 @@ import {
 import { Logger } from '../core/Logger';
 import { TapPoint, type FrameTap, type DetachTap } from './PortTap';
 import { PortSecurity } from './PortSecurity';
+import { StormControl } from './StormControl';
 import type { Cable } from './Cable';
 import { type IEventBus } from '@/events/EventBus';
 import { BusHolder } from '@/events/BusHolder';
@@ -267,6 +268,12 @@ export class Port {
       this._security = new PortSecurity(this.name, this.equipmentId);
     }
     return this._security;
+  }
+
+  private _stormControl: StormControl | null = null;
+  private get stormControl(): StormControl {
+    if (!this._stormControl) this._stormControl = new StormControl();
+    return this._stormControl;
   }
 
   // ─── Error counters (RFC 2863 ifTable) ──────────────────────────
@@ -808,6 +815,8 @@ export class Port {
 
   /** Get the PortSecurity manager for direct access */
   getPortSecurity(): PortSecurity { return this.security; }
+
+  getStormControl(): StormControl { return this.stormControl; }
 
   isPortSecurityEnabled(): boolean { return this.security.isEnabled(); }
 

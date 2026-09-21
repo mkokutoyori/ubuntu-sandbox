@@ -2195,8 +2195,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   async processTimers(seconds: number): Promise<void> {
     const ms = Math.max(0, seconds) * 1000;
     this.convergeDynamicRouting();
-    Router.simulationClock().advance(ms);
     this.advanceProtocolTimers(ms);
+    Router.simulationClock().advance(ms);
     this.convergeDynamicRouting();
   }
 
@@ -4319,7 +4319,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return {
       bind: (port, onQuery) => ep.udpBind(port, (d) => {
         onQuery(d.sourceIP.toString(), d.udp.sourcePort, d.udp.payload);
-      }),
+      }) !== false,
       unbind: (port) => { ep.udpClose(port); },
       reply: (dst, dstPort, charge) => {
         ep.sendUdpDatagramTo(new IPAddress(dst), dstPort, DNS_PORT, charge as Uint8Array);

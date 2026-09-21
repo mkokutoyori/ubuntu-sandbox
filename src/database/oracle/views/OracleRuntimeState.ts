@@ -150,8 +150,20 @@ export interface RuntimeFlashbackRecord {
   scn: number;
 }
 
+export interface RuntimeDbLinkRecord {
+  dbLink: string;
+  owner: string;
+  loggedOn: boolean;
+  inTransaction: boolean;
+  updateSent: boolean;
+  heterogeneous: boolean;
+  protocol: string;
+  openedAt: number;
+}
+
 export class OracleRuntimeState {
   readonly sessions = new Map<string, RuntimeSessionRecord>();
+  readonly openDbLinks = new Map<string, RuntimeDbLinkRecord>();
   readonly waitHistory: RuntimeWaitRecord[] = [];
   readonly sqlCache = new Map<string, RuntimeSqlRecord>();
 

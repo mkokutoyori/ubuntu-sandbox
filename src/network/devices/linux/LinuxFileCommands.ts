@@ -157,6 +157,9 @@ function listDir(ctx: ShellContext, absPath: string, displayPath: string,
   classify: boolean = false, onePerLine: boolean = false, useColor: boolean = false): string {
   const entries = ctx.vfs.listDirectory(absPath);
   if (!entries) return `ls: cannot access '${displayPath}': No such file or directory`;
+  if (ctx.uid !== 0 && !ctx.vfs.path(absPath, '/', actorOf(ctx)).canRead()) {
+    return `ls: cannot open directory '${displayPath}': Permission denied`;
+  }
 
   let filtered = entries.filter(e => showAll || !e.name.startsWith('.'));
 

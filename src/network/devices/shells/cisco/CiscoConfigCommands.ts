@@ -212,28 +212,6 @@ export function registerInterfaceEntry(trie: CommandTrie, ctx: CiscoShellContext
 export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
   registerInterfaceEntry(trie, ctx);
 
-  trie.registerGreedy('no interface', 'Remove a virtual interface', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const raw = args.join(' ');
-    const combined = raw.replace(/\s+/g, '');
-    const typed = combined.match(/^(loopback|lo|tunnel|tu|virtual-template|port-channel|po|vlan|nve)([\d/.]+)$/i);
-    const typeMap: Record<string, string> = {
-      loopback: 'Loopback', lo: 'Loopback', tunnel: 'Tunnel', tu: 'Tunnel',
-      'virtual-template': 'Virtual-Template', 'port-channel': 'Port-channel',
-      po: 'Port-channel', vlan: 'Vlan', nve: 'Nve',
-    };
-    const name = typed
-      ? `${typeMap[typed[1].toLowerCase()]}${typed[2]}`
-      : ctx.resolveInterfaceName(raw);
-    if (!name) return formatInvalidInput(13);
-    if (!ctx.r()._removeVirtualInterface(name)) {
-      // Real IOS on a physical port: the hardware is not going anywhere.
-      return formatInvalidInput(13);
-    }
-    if (ctx.getSelectedInterface?.() === name) ctx.setSelectedInterface(null);
-    return '';
-  });
-
   buildDhcpGlobalOn(trie, ctx);
 
   trie.register('router rip', 'Enter RIP routing protocol configuration', () => {

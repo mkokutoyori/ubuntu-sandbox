@@ -2,6 +2,7 @@ import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { Equipment } from '@/network/equipment/Equipment';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { OracleListenerNetworkBinding } from '@/database/oracle/listener/OracleListenerNetworkBinding';
+import { OracleNetServerHandler } from '@/database/oracle/listener/OracleNetServerHandler';
 
 export interface OracleListenerTcpSyncCtx {
   resolveDevice(deviceId: string): Equipment | null;
@@ -63,6 +64,8 @@ export class OracleListenerTcpSync {
       host, listener: db.instance.listener,
       listenerPid: this.daemonPid(dev, db.instance.config.sid) ?? db.instance.listener.pid,
     });
+    binding.setCallHandler(
+      new OracleNetServerHandler(() => this.ctx.resolveDatabase(deviceId)));
     try {
       binding.attach();
       this.bindings.set(deviceId, binding);

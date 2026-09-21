@@ -3883,14 +3883,14 @@ export class LinuxCommandExecutor {
       result = { output: `${actualCmd}: error`, exitCode: 1 };
     }
 
-    // Restore user after sudo — BUT NOT if the command was `su` (su manages its own context)
-    if (savedUser && actualCmd !== 'su') {
+    const suLeftSessionOpen = actualCmd === 'su' && this.suStack.length > 0;
+    if (savedUser && !suLeftSessionOpen) {
       this.userMgr.currentUser = savedUser.user;
       this.userMgr.currentUid = savedUser.uid;
       this.userMgr.currentGid = savedUser.gid;
     }
     // For sudo su: fix the suStack to return to the original (pre-sudo) user, not root
-    if (savedUser && actualCmd === 'su' && this.suStack.length > 0) {
+    if (savedUser && suLeftSessionOpen) {
       const top = this.suStack[this.suStack.length - 1];
       top.user = savedUser.user;
       top.uid = savedUser.uid;

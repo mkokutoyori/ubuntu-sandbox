@@ -42,8 +42,24 @@ function runtimeFrom(ctx: FlowContext): InteractionRuntime {
 
 export function toInteractiveSteps(plan: CommandInteractionPlan): InteractiveStep[] {
   const out: InteractiveStep[] = [];
+  const reperes = new Map<string, number>();
   for (const step of plan.steps) {
     switch (step.kind) {
+      case 'label':
+        reperes.set(step.name, out.length);
+        break;
+      case 'branch': {
+        const suivant = out.length + 1;
+        out.push({
+          type: 'branch',
+          predicate: (ctx: FlowContext) => {
+            const repere = step.to(ctx.values);
+            if (repere === null) return suivant;
+            return reperes.get(repere) ?? suivant;
+          },
+        });
+        break;
+      }
       case 'output':
         out.push({ type: 'output', outputLines: [...step.lines] });
         break;

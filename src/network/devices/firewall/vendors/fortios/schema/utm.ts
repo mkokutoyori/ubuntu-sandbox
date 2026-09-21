@@ -404,6 +404,7 @@ export const SSL_SSH_PROFILE: FortiTableSpec = {
       caName: object.effective('caname')[0] ?? 'Fortinet_CA_SSL',
       untrustedCaName: object.effective('untrusted-caname')[0] ?? 'Fortinet_CA_Untrusted',
       serverCertMode: object.effective('server-cert-mode')[0] ?? 're-sign',
+      untrustedCert: object.effective('untrusted-cert')[0] ?? 'allow',
       exemptions: object.childEntries('ssl-exempt').map(entry => ({
         type: entry.effective('type')[0] ?? 'fortiguard-category',
         category: Number.parseInt(entry.effective('fortiguard-category')[0] ?? '0', 10),
@@ -550,6 +551,7 @@ export const APPLICATION_LIST: FortiTableSpec = {
           application,
           action: field(entry, 'action') === 'pass' ? 'allow' : 'block',
         }))),
+      otherApplicationAction: object.effective('other-application-action')[0] ?? 'pass',
       comment: object.effective('comment')[0] || undefined,
     });
   },

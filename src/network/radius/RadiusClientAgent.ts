@@ -229,13 +229,25 @@ export class RadiusClientAgent {
   }
 
   /** PAP authentication (RFC 2865 §5.2 User-Password). */
-  authenticate(username: string, password: string, serverIp?: string): Promise<boolean> {
-    return this.run(username, password, 'pap', serverIp);
+  async authenticate(username: string, password: string, serverIp?: string): Promise<boolean> {
+    return (await this.run(username, password, 'pap', serverIp)) === 'accept';
   }
 
   /** CHAP authentication (RFC 2865 §5.3, RFC 1994). */
-  authenticateChap(username: string, password: string, serverIp?: string): Promise<boolean> {
-    return this.run(username, password, 'chap', serverIp);
+  async authenticateChap(username: string, password: string, serverIp?: string): Promise<boolean> {
+    return (await this.run(username, password, 'chap', serverIp)) === 'accept';
+  }
+
+  /**
+   * Same exchange as {@link authenticate}, keeping the three-valued
+   * outcome instead of collapsing it: an AAA method chain has to tell an
+   * Access-Reject (authoritative — the chain stops) from silence (the
+   * chain falls through to the next method).
+   */
+  authenticateWithOutcome(
+    username: string, password: string, serverIp?: string,
+  ): Promise<RadiusRoundResult> {
+    return this.run(username, password, 'pap', serverIp);
   }
 
   /**
@@ -490,11 +502,13 @@ export class RadiusClientAgent {
     pending.resolve({ kind: 'reject' });
   }
 
-  private run(username: string, password: string, authMethod: RadiusAuthMethod, serverIp?: string): Promise<boolean> {
-    if (!this.config.enabled) return Promise.resolve(false);
+  private run(
+    username: string, password: string, authMethod: RadiusAuthMethod, serverIp?: string,
+  ): Promise<RadiusRoundResult> {
+    if (!this.config.enabled) return Promise.resolve('timeout');
     const order = this.candidateServers(serverIp);
-    if (order.length === 0) return Promise.resolve(false);
-    return new Promise<boolean>((resolve) => {
+    if (order.length === 0) return Promise.resolve('timeout');
+    return new Promise<RadiusRoundResult>((resolve) => {
       this.tryServers(order, 0, username, password, authMethod, resolve);
     });
   }
@@ -513,9 +527,9 @@ export class RadiusClientAgent {
   /** Attempt `order[idx]`; on an explicit accept/reject resolve immediately (authoritative — no failover), on timeout mark it dead and move to the next server. */
   private tryServers(
     order: RadiusServerConfig[], idx: number, username: string, password: string,
-    authMethod: RadiusAuthMethod, resolve: (accepted: boolean) => void,
+    authMethod: RadiusAuthMethod, resolve: (result: RadiusRoundResult) => void,
   ): void {
-    if (idx >= order.length) { resolve(false); return; }
+    if (idx >= order.length) { resolve('timeout'); return; }
     const server = order[idx];
     const state = this.stateFor(server.ip);
     state.stats.requests++;
@@ -523,18 +537,18 @@ export class RadiusClientAgent {
       if (result === 'accept') {
         state.stats.accepts++;
         this.markAlive(server.ip);
-        resolve(true);
+        resolve('accept');
         return;
       }
       if (result === 'reject') {
         state.stats.rejects++;
         this.markAlive(server.ip);
-        resolve(false);
+        resolve('reject');
         return;
       }
       state.stats.timeouts++;
       this.markDead(server.ip);
-      if (!this.running) { resolve(false); return; } // agent stopped mid-flight — don't start a new request
+      if (!this.running) { resolve('timeout'); return; } // agent stopped mid-flight — don't start a new request
       this.tryServers(order, idx + 1, username, password, authMethod, resolve);
     });
   }

@@ -37,9 +37,6 @@ export const TACACS_RANGES: Readonly<Record<string, readonly [number, number]>> 
   timeout: [1, 1000],
 };
 
-const RADIUS_DEFAULTS = { authPort: 1645, acctPort: 1646, retransmit: 3, timeoutSec: 5 };
-const TACACS_DEFAULTS = { port: 49, timeoutSec: 5 };
-
 export interface AaaServerHost {
   security(): CiscoSecurityConfig;
   selectRadiusServer(name: string): void;
@@ -177,7 +174,7 @@ export function aaaServerSpecs(ctx: () => AaaServerHost): CommandSpec[] {
         const nomServeur = args.nom;
         const existant = radius().get(nomServeur);
         radius().set(nomServeur, existant ?? {
-          name: nomServeur, ...RADIUS_DEFAULTS, stats: newRadiusServerStats(),
+          name: nomServeur, stats: newRadiusServerStats(),
         });
         ctx().selectRadiusServer(nomServeur);
         return '';
@@ -195,7 +192,7 @@ export function aaaServerSpecs(ctx: () => AaaServerHost): CommandSpec[] {
         const nomServeur = args.nom;
         const existant = tacacs().get(nomServeur);
         tacacs().set(nomServeur, existant ?? {
-          name: nomServeur, ...TACACS_DEFAULTS, singleConnection: false,
+          name: nomServeur, singleConnection: false,
           stats: newTacacsServerStats(),
         });
         ctx().selectTacacsServer(nomServeur);

@@ -23,6 +23,10 @@ import type {
   PluggableDatabaseStatement, CreateTypeStatement, AlterSessionStatement,
 } from '../engine/parser/ASTNode';
 import { OracleExecutor } from './OracleExecutor';
+import {
+  LocalDbLinkSession, WireDbLinkSession, type DbLinkSession,
+} from './DbLinkSession';
+import type { OracleNetSession } from '@/network/oracle-net/OracleNetClient';
 import { SecurityEngine } from './security/SecurityEngine';
 import { provisionPredefinedProfiles } from './security/classicProfiles';
 import { DEFAULT_OS_CONTEXT, type OsSecurityContext } from './security/types';
@@ -1038,6 +1042,17 @@ export class OracleDatabase implements SqlCommandHost {
   }
 
   execAlterSession(stmt: AlterSessionStatement, ctx: ExecutionContext): ResultSet {
+    if (stmt.closeDbLink) {
+      const outcome = this.closeDbLinkSession(ctx.currentUser, stmt.closeDbLink);
+      if (outcome === 'not-open') {
+        return emptyResult('ORA-02081: database link is not open');
+      }
+      if (outcome === 'in-transaction') {
+        return emptyResult(
+          'ORA-02080: database link is in use in a distributed transaction');
+      }
+      return emptyResult('Session altered.');
+    }
     if (stmt.param && stmt.value !== undefined) {
       if (stmt.param === 'SERVEROUTPUT') {
         ctx.serverOutput = stmt.value === 'ON';
@@ -1182,17 +1197,59 @@ export class OracleDatabase implements SqlCommandHost {
    * with the resolution error, like a server with no network.
    */
   private dbLinkResolver:
-    ((connectString: string) => { ok: true; db: OracleDatabase } | { ok: false; error: string }) | null = null;
+    ((connectString: string) =>
+      { ok: true; db: OracleDatabase; session?: OracleNetSession }
+      | { ok: false; error: string }) | null = null;
 
   setDbLinkResolver(resolver: (connectString: string) =>
-    { ok: true; db: OracleDatabase } | { ok: false; error: string }): void {
+    { ok: true; db: OracleDatabase; session?: OracleNetSession }
+    | { ok: false; error: string }): void {
     this.dbLinkResolver = resolver;
   }
 
-  private pendingLinkSessions = new Map<string, { remote: OracleDatabase; sid: number; executor: OracleExecutor }>();
+  private pendingLinkSessions = new Map<string, DbLinkSession>();
 
-  private resolveLinkRemote(currentUser: string, dbLink: string):
-    { remote: OracleDatabase; username: string; password: string } {
+  private linkKey(currentUser: string, dbLink: string): string {
+    return `${currentUser.toUpperCase()}@${dbLink.toUpperCase()}`;
+  }
+
+  private linkSessionFor(currentUser: string, dbLink: string): DbLinkSession {
+    const key = this.linkKey(currentUser, dbLink);
+    const existing = this.pendingLinkSessions.get(key);
+    if (existing) return existing;
+    const opened = this.openLinkSession(currentUser, dbLink);
+    this.pendingLinkSessions.set(key, opened);
+    this.instance.getRuntimeState().openDbLinks.set(key, {
+      dbLink: dbLink.toUpperCase(),
+      owner: currentUser.toUpperCase(),
+      loggedOn: true,
+      inTransaction: false,
+      updateSent: false,
+      heterogeneous: false,
+      protocol: 'UNKWN',
+      openedAt: Date.now(),
+    });
+    return opened;
+  }
+
+  private forgetLinkSession(key: string): void {
+    this.pendingLinkSessions.delete(key);
+    this.instance.getRuntimeState().openDbLinks.delete(key);
+  }
+
+  closeDbLinkSession(currentUser: string, dbLink: string): 'closed' | 'not-open' | 'in-transaction' {
+    const key = this.linkKey(currentUser, dbLink);
+    const session = this.pendingLinkSessions.get(key);
+    if (!session) return 'not-open';
+    if (this.instance.getRuntimeState().openDbLinks.get(key)?.inTransaction) {
+      return 'in-transaction';
+    }
+    try { session.close(); } catch { /* already gone */ }
+    this.forgetLinkSession(key);
+    return 'closed';
+  }
+
+  private openLinkSession(currentUser: string, dbLink: string): DbLinkSession {
     const linkName = dbLink.toUpperCase();
     const link = this.catalog.getDbLink(currentUser.toUpperCase(), linkName)
       ?? this.catalog.getDbLink('PUBLIC', linkName);
@@ -1204,7 +1261,11 @@ export class OracleDatabase implements SqlCommandHost {
     }
     const res = this.dbLinkResolver(link.host);
     if (res.ok === false) throw new Error(res.error);
-    return { remote: res.db, username: link.username ?? currentUser, password: link.password ?? '' };
+    const username = link.username ?? currentUser;
+    const password = link.password ?? '';
+    return res.session
+      ? WireDbLinkSession.open(res.session, username, password, DEFAULT_OS_CONTEXT)
+      : new LocalDbLinkSession(res.db, username, password, DEFAULT_OS_CONTEXT);
   }
 
   fetchDbLinkRows(
@@ -1213,21 +1274,16 @@ export class OracleDatabase implements SqlCommandHost {
     schema: string | undefined,
     table: string,
   ): { rows: import('../engine/storage/BaseStorage').CellValue[][]; columns: { name: string; dataType: string }[] } {
-    const { remote, username, password } = this.resolveLinkRemote(currentUser, dbLink);
-    const { sid, executor } = remote.connect(username, password, DEFAULT_OS_CONTEXT, 'tcp');
-    try {
-      const qualified = schema ? `${schema}.${table}` : table;
-      const result = remote.executeSql(executor, `SELECT * FROM ${qualified}`);
-      return {
-        rows: result.rows.map(r => [...r]),
-        columns: result.columns.map(c => ({
-          name: c.name,
-          dataType: (typeof c.dataType === 'string' ? c.dataType : c.dataType?.name) ?? 'VARCHAR2',
-        })),
-      };
-    } finally {
-      remote.disconnect(sid);
-    }
+    const session = this.linkSessionFor(currentUser, dbLink);
+    const qualified = schema ? `${schema}.${table}` : table;
+    const result = session.executeSql(`SELECT * FROM ${qualified}`);
+    return {
+      rows: result.rows.map(r => [...r]),
+      columns: result.columns.map(c => ({
+        name: c.name,
+        dataType: (typeof c.dataType === 'string' ? c.dataType : c.dataType?.name) ?? 'VARCHAR2',
+      })),
+    };
   }
 
   execDbLinkDml(
@@ -1235,28 +1291,27 @@ export class OracleDatabase implements SqlCommandHost {
     dbLink: string,
     stmt: import('../engine/parser/ASTNode').Statement,
   ): import('../engine/executor/ResultSet').ResultSet {
-    const key = `${currentUser.toUpperCase()}@${dbLink.toUpperCase()}`;
-    let session = this.pendingLinkSessions.get(key);
-    if (!session) {
-      const { remote, username, password } = this.resolveLinkRemote(currentUser, dbLink);
-      const { sid, executor } = remote.connect(username, password, DEFAULT_OS_CONTEXT, 'tcp');
-      session = { remote, sid, executor };
-      this.pendingLinkSessions.set(key, session);
+    const session = this.linkSessionFor(currentUser, dbLink);
+    const record = this.instance.getRuntimeState().openDbLinks.get(
+      this.linkKey(currentUser, dbLink));
+    if (record) {
+      record.inTransaction = true;
+      record.updateSent = true;
     }
-    return session.executor.execute(stmt);
+    return session.executeStatement(stmt);
   }
 
   settleDbLinkTransactions(mode: 'COMMIT' | 'ROLLBACK'): void {
     if (this.pendingLinkSessions.size === 0) return;
     const sessions = [...this.pendingLinkSessions.values()];
-    this.pendingLinkSessions.clear();
+    for (const key of [...this.pendingLinkSessions.keys()]) this.forgetLinkSession(key);
     const pos = { line: 1, column: 1 };
     for (const s of sessions) {
       try {
         const type = mode === 'COMMIT' ? 'CommitStatement' : 'RollbackStatement';
-        s.executor.execute({ type, position: pos } as unknown as import('../engine/parser/ASTNode').Statement);
+        s.executeStatement({ type, position: pos } as unknown as import('../engine/parser/ASTNode').Statement);
       } catch { /* settle best-effort */ }
-      s.remote.disconnect(s.sid);
+      try { s.close(); } catch { /* already gone */ }
     }
   }
 

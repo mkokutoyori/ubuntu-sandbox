@@ -3225,6 +3225,18 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (supprime) this.optionalVtp()?.onLocalVlanChange();
       return absents.length === 0 ? '' : `% VLAN ${absents[0]} not found.`;
     });
+    trie.register('vlan dot1q tag native',
+      'Tag the native VLAN on every 802.1Q trunk', () => {
+        this.d().setDot1qTagNative(true);
+        return '';
+      });
+
+    trie.register('no vlan dot1q tag native',
+      'Send the native VLAN untagged on 802.1Q trunks', () => {
+        this.d().setDot1qTagNative(false);
+        return '';
+      });
+
     trie.requireArgs('vlan', 1);
     trie.requireArgs('no vlan', 1);
   }
@@ -3235,7 +3247,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       {
         modes: ['config', 'config-vlan'], minPrivilege: 15,
         undoFromNegatedPaths: true,
-        argumentFor: () => ({
+        argumentFor: (path) => (path.startsWith('vlan dot1q') ? null : {
           name: 'ids', type: 'REST', range: [1, 4094], rangeIsAdvisory: true,
           description: 'ISL VLAN IDs 1-4094',
         }),
@@ -4121,6 +4133,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const dhcpLines = dhcpRunningConfigLines(sw._getDHCPServerInternal());
     if (dhcpLines.length > 0) { lines.push(...dhcpLines); lines.push('!'); }
 
+    if (sw.isDot1qTagNative()) { lines.push('vlan dot1q tag native'); lines.push('!'); }
+
     for (const [id, vlan] of sw.getVLANs()) {
       if (id === 1) continue;
       lines.push(`vlan ${id}`);
@@ -4982,16 +4996,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ' Vlan  Forwarded     Dropped       DHCP-Drops    ACL-Drops',
       ' ----  ---------     -------       ----------    ---------',
     ];
-    const ports = sw._getPortsInternal();
-    let fwd = 0, drop = 0, bind = 0, acl = 0;
-    for (const [port] of ports) {
-      const s = stats.get(port);
-      if (!s) continue;
-      fwd += s.forwarded; drop += s.dropped;
-      bind += s.droppedBindingMismatch; acl += s.droppedAclDeny;
+    const perVlan = sw._getArpInspectionVlanStats();
+    for (const vlan of [...perVlan.keys()].sort((a, b) => a - b)) {
+      const s = perVlan.get(vlan)!;
+      lines.push(` ${String(vlan).padEnd(5)} ${String(s.forwarded).padEnd(13)} ${String(s.dropped).padEnd(13)} ` +
+                 `${String(s.droppedBindingMismatch).padEnd(13)} ${s.droppedAclDeny}`);
     }
-    lines.push(` ${'(all)'.padEnd(5)} ${String(fwd).padEnd(13)} ${String(drop).padEnd(13)} ` +
-               `${String(bind).padEnd(13)} ${acl}`);
+    const ports = sw._getPortsInternal();
     lines.push('');
     lines.push(' Interface          Packets Received  Permitted  Dropped');
     lines.push(' ----------------   ----------------  ---------  -------');
@@ -5223,14 +5234,23 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         const parsed = parseStormControl(words);
         if (parsed.incomplete) throw new CliIncomplete();
         if (!parsed.setting) throw new CliInvalidInput({ token: words[parsed.at] });
+        const port = this.selectedInterface
+          ? this.d().getPort(this.selectedInterface) : null;
+        port?.getStormControl().apply(parsed.setting);
         return this.noterLigneInterface(`storm-control ${words.join(' ')}`.trim());
       },
       clearStormControl: (words) => {
         const quoi = (words[0] ?? '').toLowerCase();
-        if (quoi === 'action') return this.retirerLigneInterface('storm-control action');
+        const port = this.selectedInterface
+          ? this.d().getPort(this.selectedInterface) : null;
+        if (quoi === 'action') {
+          port?.getStormControl().clearAction();
+          return this.retirerLigneInterface('storm-control action');
+        }
         if (!STORM_CONTROL_TYPES.includes(quoi)) {
           throw new CliInvalidInput({ token: words[0] });
         }
+        port?.getStormControl().clearLevel(quoi as 'broadcast' | 'multicast' | 'unicast');
         return this.retirerLigneInterface(`storm-control ${quoi} level`);
       },
     };

@@ -72,6 +72,7 @@ export interface ApplicationEntry {
 export interface ApplicationList {
   readonly name: string;
   readonly entries: readonly ApplicationEntry[];
+  readonly otherApplicationAction: UtmAction;
   readonly comment?: string;
 }
 
@@ -82,9 +83,12 @@ export interface SslSshProfile {
   readonly caName: string;
   readonly untrustedCaName?: string;
   readonly serverCertMode?: string;
+  readonly untrustedCert?: UntrustedCertAction;
   readonly exemptions?: readonly SslExemptEntry[];
   readonly comment?: string;
 }
+
+export type UntrustedCertAction = 'allow' | 'block' | 'ignore';
 
 export interface SslExemptEntry {
   readonly type: string;

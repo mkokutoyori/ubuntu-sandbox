@@ -16,6 +16,16 @@
  * aucun ne s'invente : l'espace séparateur est DANS la séquence, le
  * préfixe est dehors sur une adresse d'interface mais dedans sur une
  * route, et `-c` nu vaut `always` et non `auto`.
+ *
+ * Un cas contredisait cet en-tête. « en mode bref » attendait deux
+ * colonnes collées, sans séparateur ni dedans ni dehors, et le rendu en
+ * mettait un DEHORS — deux réponses fausses, chacune à sa manière. La
+ * source tranche : `print_linkinfo_brief` appelle
+ * `print_color_string(..., "%-16s ", name)` et `print_operstate` fait de
+ * même avec `"%-14s "` ; `color_fprintf` (lib/color.c) écrit la séquence,
+ * puis TOUT le format, puis la remise à zéro. Le remplissage et l'espace
+ * sont donc à l'intérieur, et rien ne sépare une colonne de la suivante.
+ * L'attente et le rendu sont corrigés ensemble.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
@@ -144,9 +154,9 @@ describe('`ip -c` colorie, `ip` tout court reste nu', () => {
     expect(out).toContain(`${INET}192.168.1.1 ${OFF}dev ${IFNAME}eth0 ${OFF}lladdr ${MAC}aa:bb:cc:00:00:01 ${OFF}REACHABLE`);
   });
 
-  it('en mode bref, la couleur enveloppe la COLONNE complétée', () => {
+  it('en mode bref, la couleur enveloppe la colonne ET son separateur', () => {
     const out = executeIpCommand(ctx, ['-c', '-br', 'addr']);
-    expect(out).toContain(`${IFNAME}eth0            ${OFF}${UP}UP            ${OFF}${INET}192.168.1.10${OFF}/24`);
+    expect(out).toContain(`${IFNAME}eth0             ${OFF}${UP}UP             ${OFF}${INET}192.168.1.10${OFF}/24`);
   });
 
   it('les orthographes que le vrai `ip` accepte par préfixe', () => {

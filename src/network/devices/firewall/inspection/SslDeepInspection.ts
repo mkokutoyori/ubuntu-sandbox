@@ -5,7 +5,7 @@ import { TlsClientSession } from '../../../tls/TlsClientSession';
 import { CertificateAuthority } from '../../../pki/CertificateAuthority';
 import { CertificateVerifier } from '../../../pki/CertificateVerifier';
 import {
-  encodeRecords, decodeRecords, runTlsHandshakeOverSocket,
+  encodeRecords, decodeRecords, runTlsHandshakeOverSocket, attachTlsRecordPump,
 } from '../../../http/https/TlsRecordWire';
 import {
   encryptApplicationData, decryptApplicationData,
@@ -13,6 +13,7 @@ import {
 import type { TlsRecord } from '../../../tls/recordLayer';
 import type { X509Certificate } from '../../../pki/X509Certificate';
 import type { LocalCertificate } from '../vpn/CertificateStore';
+import type { UntrustedCertAction } from './UtmProfiles';
 import { decodeHandshakeMessage } from '../../../tls/messages';
 import { categoryOfDomain } from './UtmProfiles';
 
@@ -29,6 +30,7 @@ export interface DeepInspectionProfile {
   readonly caName: string;
   readonly untrustedCaName: string;
   readonly serverCertMode: string;
+  readonly untrustedCert: UntrustedCertAction;
   readonly exemptions: readonly SslExemption[];
 }
 
@@ -94,6 +96,7 @@ export interface DeepInspectionDeps {
   readonly matchesAddress: (name: string, candidate: string) => boolean;
   readonly now: () => number;
   readonly onIntercepted?: (server: string, subject: string, issuer: string) => void;
+  readonly onUntrustedCertBlocked?: (server: string, subject: string, profile: string) => void;
   readonly claimPort?: (port: number) => void;
   readonly releasePort?: (port: number) => void;
 }
@@ -190,9 +193,7 @@ export class SslDeepInspection {
     let started = false;
     let relay: ((records: readonly TlsRecord[], raw: string) => void) | null = null;
 
-    clientSocket.onData((data) => {
-      const raw = String(data);
-      const records = decodeRecords(binaryStringToBytes(raw));
+    attachTlsRecordPump(clientSocket, (records, raw) => {
       if (!started) {
         started = true;
         const serverName = serverNameOf(records);
@@ -236,7 +237,16 @@ export class SslDeepInspection {
     const upstream = this.openUpstream(clientSocket.localIp, clientSocket.localPort);
     if (!upstream) { clientSocket.close(); return () => undefined; }
 
-    const authorityName = upstream.verified ? profile.caName : profile.untrustedCaName;
+    if (!upstream.verified && profile.untrustedCert === 'block') {
+      this.deps.onUntrustedCertBlocked?.(
+        clientSocket.localIp, upstream.certificate.subject, profile.name);
+      upstream.socket.close();
+      clientSocket.close();
+      return () => undefined;
+    }
+
+    const trusted = upstream.verified || profile.untrustedCert === 'ignore';
+    const authorityName = trusted ? profile.caName : profile.untrustedCaName;
     const leaf = this.reSign(upstream.certificate, authorityName);
     if (!leaf) { upstream.socket.close(); clientSocket.close(); return () => undefined; }
 
@@ -301,13 +311,15 @@ export class SslDeepInspection {
 
     const session = new TlsClientSession({
       verifier: new CertificateVerifier({ trustAnchors: this.deps.trustAnchors() }),
+      allowUntrustedPeer: true,
       alpn: ['http/1.1'],
     });
     runTlsHandshakeOverSocket(socket, session);
 
     const certificate = session.peerCertificate;
     if (!certificate) { socket.close(); return null; }
-    return { socket, session, certificate, verified: session.result === 'success' };
+    if (session.result !== 'success') { socket.close(); return null; }
+    return { socket, session, certificate, verified: session.peerVerified };
   }
 
   private reSign(server: X509Certificate, authorityName: string) {

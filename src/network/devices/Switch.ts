@@ -99,6 +99,7 @@ import {
 import {
   type ArpAccessList,
   type ArpInspectionConfig,
+  type ArpStats as ArpInspectionStats,
   createDefaultArpInspectionConfig,
 } from '../arp/types';
 import { ArpInspectionPipeline } from '../arp/ArpInspectionPipeline';
@@ -518,6 +519,7 @@ export abstract class Switch extends Equipment {
   private arpAccessLists: Map<string, ArpAccessList> = new Map();
   private arpErrDisabledPorts: Set<string> = new Set();
   private arpInspectionPipeline: ArpInspectionPipeline | null = null;
+  private dot1qTagNative = false;
   private arpRecoveryTimer: TimerHandle | null = null;
   private arpRecoveryScheduler: IScheduler | null = null;
   private arpErrDisableTimestamps: Map<string, number> = new Map();
@@ -842,6 +844,38 @@ export abstract class Switch extends Equipment {
     // Bindings are learned from the DHCP frames this switch forwards
     // (ACK installs, RELEASE removes) — see the DHCP inspection step in
     // handleFrame. No cross-machine bus subscription.
+  }
+
+  private stormControlDrops(
+    portName: string, frame: EthernetFrame, ingressVlan: number, isMulticast: boolean,
+  ): boolean {
+    const port = this.getPort(portName);
+    if (!port) return false;
+    const storm = port.getStormControl();
+    if (!storm.isConfigured()) return false;
+
+    const known = this.macTable.has(`${ingressVlan}:${frame.dstMAC.toString()}`);
+    const type = frame.dstMAC.isBroadcast()
+      ? 'broadcast'
+      : isMulticast ? 'multicast' : (known ? null : 'unicast');
+    if (type === null) return false;
+
+    const verdict = storm.admit(
+      type, ethernetFrameBytes(frame) * 8, port.getSpeed(), Date.now());
+    if (verdict === 'forward') return false;
+
+    Logger.warn(this.id, 'switch:storm-control',
+      `${this.name}: ${portName} suppressed ${type} traffic above the configured level`);
+    if (storm.getAction() === 'shutdown') this.stormErrDisablePort(portName);
+    return true;
+  }
+
+  private stormErrDisablePort(portName: string): void {
+    const port = this.getPort(portName);
+    if (!port) return;
+    port.setUp(false);
+    Logger.warn(this.id, 'switch:storm-errdisable',
+      `${this.name}: ${portName} err-disabled by storm-control`);
   }
 
   private arpErrDisablePort(port: string): void {
@@ -1688,12 +1722,22 @@ export abstract class Switch extends Equipment {
   /** Huawei `traffic-filter inbound|outbound acl <N>` on a physical port. */
   private portAclPermits(portName: string, direction: 'in' | 'out', frame: EthernetFrame): boolean {
     if (!this.vaclEngine) return true;
-    const aclRef = this.vaclEngine.getInterfaceACL(portName, direction);
+    return this.trafficFilterPermits(
+      this.vaclEngine.getInterfaceACL(portName, direction), frame);
+  }
+
+  /** Huawei `traffic-filter vlan <N> inbound|outbound acl <N>`, the VRP VACL. */
+  private vlanAclPermits(vlan: number, direction: 'in' | 'out', frame: EthernetFrame): boolean {
+    if (!this.vaclEngine) return true;
+    return this.trafficFilterPermits(this.vaclEngine.getVlanACL(vlan, direction), frame);
+  }
+
+  private trafficFilterPermits(aclRef: number | string | null, frame: EthernetFrame): boolean {
     if (aclRef === null) return true;
     if (frame.etherType !== ETHERTYPE_IPV4) return true;
     const ip = frame.payload as IPv4Packet | undefined;
     if (!ip || ip.type !== 'ipv4') return true;
-    return this.vaclEngine.evaluateForDataPlane(aclRef, ip) !== 'deny';
+    return this.vaclEngine!.evaluateForDataPlane(aclRef, ip) !== 'deny';
   }
 
   // ─── MQC (Huawei traffic classifier/behavior/policy) API ──────────
@@ -2295,6 +2339,11 @@ export abstract class Switch extends Equipment {
           return;
         }
       } else {
+        if (this.dot1qTagNative) {
+          Logger.debug(this.id, 'switch:untagged-on-trunk',
+            `${this.name}: dropping untagged frame on trunk ${portName} (dot1q tag native)`);
+          return;
+        }
         ingressVlan = cfg.trunkNativeVlan;
       }
     }
@@ -2498,6 +2547,7 @@ export abstract class Switch extends Equipment {
 
     // ─── Step 2.7: VLAN-scoped filtering (Cisco VACL / Huawei MQC) ─
     if (!this.vaclPermits(ingressVlan, frame)
+      || !this.vlanAclPermits(ingressVlan, 'in', frame)
       || !this.mqcVlanPermits(ingressVlan, frame)
       || !this.mqcPortPermits(portName, ingressVlan, frame)) {
       Logger.debug(this.id, 'switch:vacl-drop',
@@ -2524,6 +2574,8 @@ export abstract class Switch extends Equipment {
         `${this.name}: dropped frame to ${dstMAC} VLAN ${ingressVlan} (blackhole destination)`);
       return;
     }
+
+    if (this.stormControlDrops(portName, frame, ingressVlan, isMulticast)) return;
 
     if (isMulticast || !this.macTable.has(`${ingressVlan}:${dstMAC}`)) {
       const snoopedPorts = isMulticast ? this.resolveSnoopedMulticastEgressPorts(portName, frame, ingressVlan) : null;
@@ -2659,12 +2711,15 @@ export abstract class Switch extends Equipment {
   }
 
   private floodFrame(exceptPort: string, frame: EthernetFrame, vlan: number, cos: number = 0, isQinQ: boolean = false): void {
+    if (!this.vlanAclPermits(vlan, 'out', frame)) return;
     for (const [portName, cfg] of this.switchportConfigs) {
       if (portName === exceptPort) continue;
       if (this.aggregationEgressPort(portName, frame, exceptPort) !== portName) continue;
 
       const port = this.getPort(portName);
       if (!port || !port.getIsUp() || !port.isConnected()) continue;
+
+      if (!this.portAclPermits(portName, 'out', frame)) continue;
 
       const stpState = this.getStpVlanState(portName, vlan);
       if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening' || stpState === 'learning') continue;
@@ -2700,11 +2755,11 @@ export abstract class Switch extends Equipment {
           if (pv && this.resolvePvlanPrimary(vlan) !== undefined) {
             if (!this.pvlanEgressAllowed(exceptPort, portName, vlan)) continue;
             const outVlan = this.pvlanTrunkEgressVlan(pv, vlan);
-            this.sendFrame(portName, outVlan === cfg.trunkNativeVlan
+            this.sendFrame(portName, this.trunkEgressIsUntagged(outVlan, cfg)
               ? this.stripTag(frame) : this.addTag(frame, outVlan, cos));
             continue;
           }
-          if (vlan === cfg.trunkNativeVlan) {
+          if (this.trunkEgressIsUntagged(vlan, cfg)) {
             // Native VLAN: send untagged
             this.sendFrame(portName, isQinQ ? this.stripOuterTag(frame) : this.stripTag(frame));
           } else {
@@ -2728,6 +2783,7 @@ export abstract class Switch extends Equipment {
 
     // ─── Port ACL (Huawei `traffic-filter outbound`) ────────────
     if (!this.portAclPermits(portName, 'out', frame)) return;
+    if (!this.vlanAclPermits(vlan, 'out', frame)) return;
 
     const stpState = this.getStpVlanState(portName, vlan);
     if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening' || stpState === 'learning') return;
@@ -2760,11 +2816,11 @@ export abstract class Switch extends Equipment {
       if (pv && this.resolvePvlanPrimary(vlan) !== undefined) {
         if (ingressPort !== undefined && !this.pvlanEgressAllowed(ingressPort, portName, vlan)) return;
         const outVlan = this.pvlanTrunkEgressVlan(pv, vlan);
-        this.sendFrame(portName, outVlan === cfg.trunkNativeVlan
+        this.sendFrame(portName, this.trunkEgressIsUntagged(outVlan, cfg)
           ? this.stripTag(frame) : this.addTag(frame, outVlan, cos));
         return;
       }
-      if (vlan === cfg.trunkNativeVlan) {
+      if (this.trunkEgressIsUntagged(vlan, cfg)) {
         this.sendFrame(portName, isQinQ ? this.stripOuterTag(frame) : this.stripTag(frame));
       } else {
         this.sendFrame(portName, isQinQ ? this.addOuterTag(frame, vlan, cos) : this.addTag(frame, vlan, cos));
@@ -3322,6 +3378,14 @@ export abstract class Switch extends Equipment {
   }
 
   // ─── 802.1Q Tagging Helpers ───────────────────────────────────────
+
+  private trunkEgressIsUntagged(vlan: number, cfg: SwitchportConfig): boolean {
+    return vlan === cfg.trunkNativeVlan && !this.dot1qTagNative;
+  }
+
+  setDot1qTagNative(enabled: boolean): void { this.dot1qTagNative = enabled; }
+
+  isDot1qTagNative(): boolean { return this.dot1qTagNative; }
 
   private addTag(frame: EthernetFrame, vlan: number, cos: number = 0): TaggedEthernetFrame {
     return {
@@ -4020,6 +4084,9 @@ export abstract class Switch extends Equipment {
   _getArpErrDisabledPorts(): Set<string> { return this.arpErrDisabledPorts; }
   _getArpInspectionStats() {
     return this.arpInspectionPipeline?.getStats() ?? new Map();
+  }
+  _getArpInspectionVlanStats() {
+    return this.arpInspectionPipeline?.getVlanStats() ?? new Map<number, ArpInspectionStats>();
   }
   _getArpInspectionPortStats(port: string) {
     return this.arpInspectionPipeline?.getPortStats(port);
