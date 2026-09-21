@@ -1,5 +1,9 @@
-import type { VfsAdapter } from '../integration/IRmanOracleContext';
+import type { VfsAdapter, BlockCorruptionType } from '../integration/IRmanOracleContext';
 import { readBackupPieceImage } from './BackupPieceImage';
+import { parseDatafileImage } from '@/database/oracle/storage/DatafileImage';
+
+const DATAFILE_BANNER = 'ORACLE DATAFILE';
+const SEGMENT_MARKER  = 'ORACLE-SEGMENT-IMAGE';
 
 export type PieceFault = 'missing' | 'unreadable' | 'checksum';
 
@@ -35,4 +39,20 @@ export function pieceFaultMessage(verdict: PieceVerdict): string {
     default:
       return '';
   }
+}
+
+export function datafileFault(
+  vfs: VfsAdapter,
+  datafile: { path: string; tablespace: string },
+  checkLogical: boolean,
+): BlockCorruptionType | null {
+  const read = vfs.readFile(datafile.path);
+  const text = read.ok ? new TextDecoder().decode(read.value) : '';
+  if (!bannerIsIntact(text, DATAFILE_BANNER)) return 'CORRUPT';
+  if (!checkLogical || !text.includes(SEGMENT_MARKER)) return null;
+  const payload = parseDatafileImage(text);
+  if (payload === null) return 'LOGICAL';
+  return payload.tablespace.toUpperCase() === datafile.tablespace.toUpperCase()
+    ? null
+    : 'LOGICAL';
 }

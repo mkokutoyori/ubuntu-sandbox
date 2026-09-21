@@ -44,6 +44,12 @@ export class RetargetableRmanContext implements IRmanOracleContext {
     return this._current.getBlockCorruptions();
   }
   clearBlockCorruption(fileNo: number): void { this._current.clearBlockCorruption(fileNo); }
+  recordBackupCorruption(entry: {
+    setStamp: number; fileNo: number; blocks: number;
+    markedCorrupt: boolean; type: BlockCorruptionType; kind: 'BACKUPSET' | 'COPY';
+  }): void {
+    this._current.recordBackupCorruption(entry);
+  }
 
   connectPeer(identifier: string, credentials?: RmanCredentials): ConnectPeerOutcome {
     const resolved = LinuxRmanContext.forTarget(this._localDevice, identifier, credentials);

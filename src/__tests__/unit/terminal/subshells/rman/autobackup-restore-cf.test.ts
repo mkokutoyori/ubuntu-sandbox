@@ -26,15 +26,26 @@ const AUTOBACKUP_PIECE = new TextEncoder().encode(renderControlFileImage(
   { dbName: 'ORCL', dbId: DbId.DEFAULT.value, datafiles: [], backupSets: [] },
 ));
 
+// Ce double rendait la MEME image pour tout chemin, y compris pour le
+// datafile : celui-ci se lisait donc comme une piece de sauvegarde.
+// Tant que BACKUP ne lisait pas ses fichiers d'entree, cela ne se
+// voyait pas ; depuis qu'il les lit pour compter les blocs corrompus,
+// un datafile qui n'en est pas un fait refuser la sauvegarde — a juste
+// titre. Le faux disque repond desormais selon le chemin demande.
+const DATAFILE_IMAGE = new TextEncoder().encode(
+  '[ORACLE DATAFILE - SYSTEM tablespace - 1M]');
+const SYSTEM01 = '/u01/oradata/ORCL/system01.dbf';
+
 function ctx(state: 'OPEN' | 'MOUNT' | 'NOMOUNT' | 'SHUTDOWN'): IRmanOracleContext {
   return {
     dbId: DbId.DEFAULT, dbName: 'ORCL',
     vfs: {
-      writeFile: () => ok(undefined), readFile: () => ok(AUTOBACKUP_PIECE),
+      writeFile: () => ok(undefined),
+      readFile: (path: string) => ok(path === SYSTEM01 ? DATAFILE_IMAGE : AUTOBACKUP_PIECE),
       fileExists: () => true, deleteFile: () => ok(undefined), availableBytes: () => 1e10,
     },
     getDatafiles: () => [
-      { fileNo: 1, path: '/u01/oradata/ORCL/system01.dbf', sizeBytes: 1_000, tablespace: 'SYSTEM' },
+      { fileNo: 1, path: SYSTEM01, sizeBytes: 1_000, tablespace: 'SYSTEM' },
     ],
     getSpfileParam: () => undefined,
     getInstanceState: () => state,

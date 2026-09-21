@@ -5,6 +5,7 @@
  *   - 'NEWNAME'     SET NEWNAME FOR DATAFILE <n> TO '<path>'
  *   - 'UNTIL_TIME'  SET UNTIL TIME '<date>'
  *   - 'UNTIL_SCN'   SET UNTIL SCN  <n>
+ *   - 'MAXCORRUPT'  SET MAXCORRUPT FOR DATAFILE <n> TO <m>
  *
  * The first stores rename targets in cmdCtx.setNewname; the two UNTIL
  * forms write into cmdCtx.setUntil so later RESTORE/RECOVER calls inside
@@ -15,7 +16,7 @@ import { ok, err, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
 
-export type SetMode = 'NEWNAME' | 'UNTIL_TIME' | 'UNTIL_SCN';
+export type SetMode = 'NEWNAME' | 'UNTIL_TIME' | 'UNTIL_SCN' | 'MAXCORRUPT';
 
 export class SetCommand implements IRmanCommand<string[]> {
   readonly name = 'SET';
@@ -35,6 +36,18 @@ export class SetCommand implements IRmanCommand<string[]> {
       const u = cmdCtx.setUntil;
       if (u) { u.untilScn = n; u.untilTime = undefined; }
       return ok([`executing command: SET until clause`]);
+    }
+    if (this.mode === 'MAXCORRUPT') {
+      const fichier = Number(args[0]);
+      const limite  = Number(args[1]);
+      if (!Number.isFinite(fichier) || !Number.isFinite(limite)) {
+        return err({
+          code: 'RMAN_01009',
+          message: 'SET MAXCORRUPT requires a datafile number and a limit',
+        });
+      }
+      cmdCtx.setMaxCorrupt?.set(fichier, limite);
+      return ok(['executing command: SET MAXCORRUPT']);
     }
     // 'NEWNAME'
     const n = Number(args[0]);

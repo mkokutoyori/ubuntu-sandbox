@@ -58,6 +58,10 @@ export class BackupCommand implements IRmanCommand<void> {
     const optimizationOn = cmdCtx.config?.snapshot().backupOptimization === true;
     if (optimizationOn && opts.notBackedUpNTimes === undefined) opts.notBackedUpNTimes = 1;
 
+    const tolerances = [...(cmdCtx.setMaxCorrupt ?? new Map<number, number>())]
+      .map(([fichier, limite]) => `${fichier}:${limite}`).join(',');
+    if (tolerances) opts.maxCorrupt = tolerances;
+
     const plusArchivelog = /\bPLUS\s+ARCHIVELOG\b/i.test(all);
 
     // Tablespaces exclus via CONFIGURE EXCLUDE FOR TABLESPACE — appliqués
@@ -127,22 +131,17 @@ export class BackupCommand implements IRmanCommand<void> {
 }
 
 /** Parse optional clauses from the trailing text of a BACKUP command. */
-export function parseBackupOptions(text: string): {
+export interface BackupOptions {
   tag?: string; format?: string; deleteInput?: boolean;
   compressed?: boolean; fromScn?: number;
   keepForever?: boolean; keepUntilTime?: string;
   cumulative?: boolean; maxPieceSize?: number;
   encrypted?: boolean; notBackedUpNTimes?: number;
-  asCopy?: boolean;
-} {
-  const out: {
-    tag?: string; format?: string; deleteInput?: boolean;
-    compressed?: boolean; fromScn?: number;
-    keepForever?: boolean; keepUntilTime?: string;
-    cumulative?: boolean; maxPieceSize?: number;
-    encrypted?: boolean; notBackedUpNTimes?: number;
-    asCopy?: boolean;
-  } = {};
+  asCopy?: boolean; maxCorrupt?: string;
+}
+
+export function parseBackupOptions(text: string): BackupOptions {
+  const out: BackupOptions = {};
   const tagMatch = text.match(/\bTAG\s+(?:'([^']+)'|"([^"]+)")/i);
   if (tagMatch) out.tag = (tagMatch[1] ?? tagMatch[2]).toUpperCase();
   const fmtMatch = text.match(/\bFORMAT\s+(?:'([^']+)'|"([^"]+)")/i);

@@ -27,6 +27,8 @@ export interface RmanCommandContext {
   readonly userChannels?: Map<string, ChannelHandle>;
   /** Optional rename map populated by SET NEWNAME FOR DATAFILE n TO '<path>'. */
   readonly setNewname?:  Map<number, string>;
+  /** Optional per-datafile tolerance populated by SET MAXCORRUPT FOR DATAFILE n TO m. */
+  readonly setMaxCorrupt?: Map<number, number>;
   /** Optional UNTIL binding populated by SET UNTIL TIME / SET UNTIL SCN. */
   readonly setUntil?:    { untilTime?: string; untilScn?: number };
   readonly recoveryCatalog?: RemoteRecoveryCatalog | null;

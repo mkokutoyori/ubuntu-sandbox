@@ -21,8 +21,10 @@ export const JobBuilder = {
     notBackedUpNTimes?: number;
     excludeTablespaces?: ReadonlyArray<string>;
     asCopy?: boolean;
+    maxCorrupt?: string;
   } = {}): RmanJob {
     const params: Record<string, string> = {};
+    if (opts.maxCorrupt)       params.maxCorrupt    = opts.maxCorrupt;
     if (opts.tag)              params.tag           = opts.tag;
     if (opts.format)           params.format        = opts.format;
     if (opts.compressed)       params.compressed    = 'true';
@@ -55,8 +57,9 @@ export const JobBuilder = {
   },
 
   /** Incremental level 0 (full baseline) or level 1 (changes since 0). */
-  backupIncremental(level: 0 | 1, opts: { tag?: string; format?: string; cumulative?: boolean; notBackedUpNTimes?: number } = {}): RmanJob {
+  backupIncremental(level: 0 | 1, opts: { tag?: string; format?: string; cumulative?: boolean; notBackedUpNTimes?: number; maxCorrupt?: string } = {}): RmanJob {
     const params: Record<string, string> = { incrementalLevel: String(level) };
+    if (opts.maxCorrupt) params.maxCorrupt = opts.maxCorrupt;
     if (opts.tag) params.tag = opts.tag;
     if (opts.format) params.format = opts.format;
     if (opts.cumulative) params.cumulative = 'true';
@@ -119,9 +122,10 @@ export const JobBuilder = {
     ], params);
   },
 
-  backupDatafile(fileNos: number | ReadonlyArray<number>, opts: { tag?: string; format?: string; compressed?: boolean; asCopy?: boolean; notBackedUpNTimes?: number } = {}): RmanJob {
+  backupDatafile(fileNos: number | ReadonlyArray<number>, opts: { tag?: string; format?: string; compressed?: boolean; asCopy?: boolean; notBackedUpNTimes?: number; maxCorrupt?: string } = {}): RmanJob {
     const list = Array.isArray(fileNos) ? fileNos : [fileNos as number];
     const params: Record<string, string> = { fileNo: list.join(',') };
+    if (opts.maxCorrupt) params.maxCorrupt = opts.maxCorrupt;
     if (opts.tag)        params.tag        = opts.tag;
     if (opts.format)     params.format     = opts.format;
     if (opts.compressed) params.compressed = 'true';
@@ -144,9 +148,10 @@ export const JobBuilder = {
     ], params);
   },
 
-  backupTablespace(tsName: string | ReadonlyArray<string>, opts: { tag?: string; format?: string; asCopy?: boolean; notBackedUpNTimes?: number } = {}): RmanJob {
+  backupTablespace(tsName: string | ReadonlyArray<string>, opts: { tag?: string; format?: string; asCopy?: boolean; notBackedUpNTimes?: number; maxCorrupt?: string } = {}): RmanJob {
     const list = (Array.isArray(tsName) ? tsName : [tsName as string]).map(s => s.toUpperCase());
     const params: Record<string, string> = { tablespace: list.join(',') };
+    if (opts.maxCorrupt) params.maxCorrupt = opts.maxCorrupt;
     if (opts.tag)    params.tag    = opts.tag;
     if (opts.format) params.format = opts.format;
     if (opts.asCopy) params.asCopy = 'true';

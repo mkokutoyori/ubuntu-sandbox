@@ -9,7 +9,7 @@ import { registerView } from './registry';
 registerView({
   name: 'V$BACKUP_CORRUPTION',
   comment: 'Corrupt blocks discovered during backups',
-  query() {
+  query({ runtime }) {
     return queryResult(
       [
         col.num('RECID'),
@@ -22,7 +22,12 @@ registerView({
         col.str('MARKED_CORRUPT', 3),
         col.str('CORRUPTION_TYPE', 9),
       ],
-      []
+      runtime.backupCorruptions
+        .filter(c => c.kind === 'BACKUPSET')
+        .map(c => [
+          c.recid, c.setStamp, c.piece, c.fileNo, c.block, c.blocks,
+          c.changeScn, c.markedCorrupt ? 'YES' : 'NO', c.type,
+        ])
     );
   },
 });

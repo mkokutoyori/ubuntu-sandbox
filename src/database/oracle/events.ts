@@ -213,6 +213,15 @@ export interface OracleBlockCorruptionFoundPayload extends OracleDeviceRef {
   type: 'CHECKSUM' | 'CORRUPT' | 'LOGICAL';
 }
 
+export interface OracleBackupCorruptionFoundPayload extends OracleDeviceRef {
+  setStamp: number;
+  fileNo: number;
+  blocks: number;
+  markedCorrupt: boolean;
+  type: 'CHECKSUM' | 'CORRUPT' | 'LOGICAL';
+  kind: 'BACKUPSET' | 'COPY';
+}
+
 export interface OracleBlockCorruptionRepairedPayload extends OracleDeviceRef {
   fileNo: number;
 }
@@ -576,6 +585,7 @@ export type OracleDomainEvent =
   | { topic: 'oracle.backup.recorded';                   payload: OracleBackupRecordedPayload }
   | { topic: 'oracle.block-corruption.found';            payload: OracleBlockCorruptionFoundPayload }
   | { topic: 'oracle.block-corruption.repaired';         payload: OracleBlockCorruptionRepairedPayload }
+  | { topic: 'oracle.backup-corruption.found';           payload: OracleBackupCorruptionFoundPayload }
   | { topic: 'oracle.service.event';                     payload: OracleServiceEventPayload }
   | { topic: 'oracle.listener.event';                    payload: OracleListenerEventPayload }
   | { topic: 'oracle.session.longops';                   payload: OracleSessionLongopsPayload }
