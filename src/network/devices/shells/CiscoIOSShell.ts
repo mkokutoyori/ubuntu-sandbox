@@ -41,6 +41,7 @@ import { formatCiscoPing, type ParsedPing } from './cisco/ciscoPing';
 import {
   echoSpecs, type EchoHost, type TracerouteRequest,
 } from './cisco/echoSpecs';
+import { mapSpecs, MAP_LEGENDS, type MapHost } from './cisco/mapSpecs';
 import {
   parseRouteDistinguisher, parseRouteTarget, applyRouteTarget,
   vrfStoreOf, type VrfHost, type VrfInstance,
@@ -454,6 +455,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [
       ...super.socleSpecs(),
       ...echoSpecs(() => this.echoHost(), { ipv6: true, traceroute: true }),
+      ...mapSpecs(() => this.mapHost()),
       ...zoneSpecs(() => this.zoneHost()),
       ...dhcpClientFamily(),
       ...hsrpShowSpecs(this, () => this.fhrp),
@@ -866,6 +868,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected override socleLegends(): SocleLegend[] {
     return [
       ...super.socleLegends(),
+      ...MAP_LEGENDS.map(
+        ([chemin, legende, modes]) => [chemin, legende, modes] as SocleLegend),
       [['no'], 'Negate a command or set its defaults', ['config-router']],
       [['area'], 'OSPF area parameters', ['config-router-ospf']],
       [['crypto'], 'Encryption module'],
@@ -1442,6 +1446,26 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   getTimeRange(): string | null { return this.selectedTimeRange; }
   setTimeRange(n: string | null): void { this.selectedTimeRange = n; }
   getClassMap(): string | null { return this.selectedClassMap; }
+  private mapHost(): MapHost {
+    const sec = () => getSecurityConfig(this.d());
+    return {
+      ouvrirClassMap: (nom, sorte, matchAll) => {
+        sec().ensureClassMap(nom, sorte, matchAll);
+        this.setClassMap(nom);
+        this.mode = 'config-cmap' as typeof this.mode;
+        return '';
+      },
+      retirerClassMap: (nom) => { sec().removeClassMap(nom); return ''; },
+      ouvrirPolicyMap: (nom, sorte) => {
+        sec().ensurePolicyMap(nom, sorte);
+        this.setPolicyMap(nom);
+        this.mode = 'config-pmap' as typeof this.mode;
+        return '';
+      },
+      retirerPolicyMap: (nom) => { sec().removePolicyMap(nom); return ''; },
+    };
+  }
+
   setClassMap(n: string | null): void { this.selectedClassMap = n; }
   getPolicyMap(): string | null { return this.selectedPolicyMap; }
   setPolicyMap(n: string | null): void { this.selectedPolicyMap = n; }
