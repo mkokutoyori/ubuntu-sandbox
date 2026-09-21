@@ -310,6 +310,91 @@ utilisent encore `createSessionForDevice` + `adoptRemoteChild`. Les
 basculer suit la même recette, désormais éprouvée ; `CrossVendorRemoteShell`
 ne pourra être replié qu'ensuite.
 
+### 4bis.7 B1 était fait dans UNE session sur trois, et sa moitié manquante
+
+B1 (« chemin de complétion asynchrone dans la couche terminal ») était
+posé comme fait. Mesure, à partir d'une transcription d'opérateur —
+`get sys int` puis Tab sur un FortiGate :
+
+| Chemin | Après Tab |
+|---|---|
+| candidats du pare-feu | `["get system interface"]` |
+| sa console locale | `get system interface ` |
+| **par SSH depuis un Linux** | **`get sys get system interface`** |
+
+Deux constats, et le second n'était pas dans B1.
+
+**Le chemin asynchrone n'existait que dans `LinuxTerminalSession`.**
+`WindowsTerminalSession.onSubShellTab` était une quasi-copie de la
+version Linux — même `LastWordSource`, même `uniqueSpace: 'never'`, même
+gestion des suggestions — **moins la branche asynchrone** ; elle
+retombait donc sur les complétions de l'appareil LOCAL. La duplication et
+le défaut ensemble.
+
+**La FORME du candidat ne traversait pas.** Une CLI vendeur complète par
+LIGNE ENTIÈRE, un shell POSIX par DERNIER MOT. Cette forme était choisie
+par la session locale (`CLITerminalSession` → `FullLineSource`,
+`LinuxTerminalSession` → `LastWordSource`) alors qu'elle est une
+propriété du shell qui RÉPOND. Par SSH vers un vendeur, la session Linux
+se trompait donc systématiquement, et collait le candidat derrière le
+préfixe déjà tapé.
+
+Le fil portait déjà le fait nécessaire : le serveur déclare
+`supportsInlineHelp` (`ISshServerContext` → `SshServerHandler` →
+`SshShellChannel`), c'est-à-dire « je suis une CLI vendeur, `?` y est une
+touche d'aide ». `SshInteractiveSubShell.completesWholeLine()` le dérive
+de là ; **aucun champ n'est ajouté au protocole**, une seconde
+déclaration toujours égale à la première étant la duplication que ce
+dépôt referme. Le jour où un shell aura `?` sans compléter par ligne
+entière, c'est à ce moment-là qu'il faudra les séparer.
+
+`terminal/completion/subShellTab.ts` porte désormais le comportement
+entier — choix de la source, chemin asynchrone quand le distant ne sait
+répondre qu'ainsi, garde contre une réponse périmée, application par le
+même contrôleur — et les sessions l'appellent. La portée est la CLASSE et
+non un équipement : `RouterSshServerContext` déclare le même drapeau pour
+les routeurs et les commutateurs, donc un Cisco atteint par SSH tombait
+de la même façon. `probe-completion-coherente-sur-le-fil.test.ts` le
+mesure.
+
+**Relevé pour qui clôt B4.** L'état des origines non-Linux a été mesuré
+au passage, et il confirme le « reste à faire » du §4bis.6 :
+
+| Depuis | Vers | Premier plan | `activeSubShell` |
+|---|---|---|---|
+| Windows | FortiGate | `FortiTerminalSession` | absent |
+| Windows | Linux | `LinuxTerminalSession` | absent |
+| Linux | FortiGate | session Linux | sous-shell SSH réel |
+
+Autrement dit les origines Windows ouvrent encore une SESSION ENFANT en
+mémoire, donc elles n'ont jamais emprunté le chemin défectueux — ce qui
+explique qu'elles complétaient juste, et interdit d'en conclure que le
+défaut était plus large qu'il n'était.
+
+**Ce que ce lot NE ferme pas : telnet depuis une CLI vendeur.**
+`CLITerminalSession` porte un sous-shell TELNET (`telnetSubShell`), et
+son `onTab` ne le consulte pas — il interroge `cliDevice.cliTabCandidates`,
+donc l'équipement LOCAL. Une session telnet ouverte depuis un Cisco vers
+un FortiGate compléterait donc avec le vocabulaire du Cisco : le
+vocabulaire de la mauvaise machine, ce qui est pire qu'une absence de
+complétion.
+
+Le correctif n'est PAS « consulter le sous-shell », et c'est pourquoi ce
+lot s'arrête ici : `TelnetInteractiveSubShell` n'expose NI
+`getCompletions`, NI `getCompletionsAsync`, NI `supportsInlineHelp`. Il
+n'y a rien à consulter. La cause est structurelle — telnet n'a pas de
+protocole de complétion : sur un vrai telnet, c'est le DISTANT qui édite
+la ligne, parce que le client lui envoie les touches une à une. Or ce
+sous-shell-ci est ligne à ligne (`processLine`), donc aucune touche
+n'atteint le distant avant le retour chariot. Lui donner Tab et `?`
+suppose d'abord un canal au niveau TOUCHE, ce qui est le même prérequis
+que B3 (éditeurs sur le fil) et se mesure de la même façon.
+
+Statut : vu par LECTURE, pas encore mesuré. La mesure, pour qui
+l'ouvrira : ouvrir un telnet depuis un Cisco vers un FortiGate et taper
+Tab sur un mot que seul FortiOS connaît — `get sys int` fait l'affaire,
+puisque le Cisco n'a pas `get`.
+
 ## 5. Hors périmètre
 
 - Le retrait effectif des chemins clients en mémoire (étape 2) et le
