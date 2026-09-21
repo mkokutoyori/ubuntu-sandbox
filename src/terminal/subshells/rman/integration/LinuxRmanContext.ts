@@ -182,6 +182,8 @@ export class LinuxRmanContext implements IRmanOracleContext {
   }
 
   getCurrentScn(): number {
+    const distant = this.askRemoteScalar('SELECT current_scn FROM V$DATABASE', 'CURRENT_SCN');
+    if (distant !== null) return Number(distant);
     return this._oracle?.instance.getCurrentScn() ?? 0;
   }
 
@@ -227,10 +229,42 @@ export class LinuxRmanContext implements IRmanOracleContext {
     return { ok: true, lines: lines.map((l) => l.trim()).filter(Boolean) };
   }
 
-  private datafilesOverOracleNet(): DatafileInfo[] | null {
-    const answer = executeOverOracleNet(this._netSession, 'SELECT * FROM V$DATAFILE');
+  /**
+   * Une cible DISTANTE repond par le fil, jamais par son objet. Ce port
+   * est le SEUL endroit ou une question part vers elle ; les accesseurs
+   * qui suivent le posent tous, avec leur vue.
+   */
+  private askRemote(sql: string): {
+    columns: ReadonlyArray<{ name: string }>;
+    rows: ReadonlyArray<ReadonlyArray<unknown>>;
+  } | null {
+    if (!this._netSession) return null;
+    const answer = executeOverOracleNet(this._netSession, sql);
     if (answer.status === OracleNetCallStatus.Error || !answer.result) return null;
-    const { columns, rows } = answer.result;
+    return { columns: answer.result.columns, rows: answer.result.rows };
+  }
+
+  /** La premiere valeur d'une colonne nommee, ou null si la vue ne repond pas. */
+  private askRemoteScalar(sql: string, colonne: string): unknown {
+    const result = this.askRemote(sql);
+    if (!result || result.rows.length === 0) return null;
+    const index = result.columns.findIndex((c) => c.name.toUpperCase() === colonne);
+    return index < 0 ? null : result.rows[0][index];
+  }
+
+  /** Toutes les valeurs d'une colonne nommee, ou null si la vue ne repond pas. */
+  private askRemoteColumn(sql: string, colonne: string): string[] | null {
+    const result = this.askRemote(sql);
+    if (!result) return null;
+    const index = result.columns.findIndex((c) => c.name.toUpperCase() === colonne);
+    if (index < 0) return null;
+    return result.rows.map((row) => String(row[index]));
+  }
+
+  private datafilesOverOracleNet(): DatafileInfo[] | null {
+    const result = this.askRemote('SELECT * FROM V$DATAFILE');
+    if (!result) return null;
+    const { columns, rows } = result;
     const colonne = (nom: string): number =>
       columns.findIndex((c) => c.name.toUpperCase() === nom);
     const iFile = colonne('FILE#');
@@ -267,6 +301,9 @@ export class LinuxRmanContext implements IRmanOracleContext {
   }
 
   getRecoveryAreaUsedBytes(): number {
+    const distant = this.askRemoteScalar(
+      'SELECT space_used FROM V$RECOVERY_FILE_DEST', 'SPACE_USED');
+    if (distant !== null) return Number(distant);
     const oracle = this._oracle;
     if (!oracle) return 0;
     return recoveryAreaUsage(
@@ -277,6 +314,9 @@ export class LinuxRmanContext implements IRmanOracleContext {
 
   getSpfileParam(name: string): string | undefined {
     const key = name.toLowerCase();
+    const distant = this.askRemoteScalar(
+      `SELECT value FROM V$PARAMETER WHERE name = '${key}'`, 'VALUE');
+    if (distant !== null && String(distant) !== '') return String(distant);
     const live = this._oracle?.instance.getParameter(key);
     if (live !== undefined && live !== '') return live;
     const sid = this.dbName;
@@ -293,10 +333,19 @@ export class LinuxRmanContext implements IRmanOracleContext {
 
   /** Live instance state — falls back to OPEN when no Oracle is registered. */
   getInstanceState(): 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN' {
+    const distant = this.askRemoteScalar('SELECT status FROM V$INSTANCE', 'STATUS');
+    const lu = distant === null ? null : String(distant).toUpperCase();
+    if (lu === 'OPEN' || lu === 'MOUNTED' || lu === 'STARTED' || lu === 'SHUTDOWN') {
+      // V$INSTANCE nomme MOUNTED et STARTED ce que RMAN appelle MOUNT et
+      // NOMOUNT : c'est la vue qui fait foi, pas le vocabulaire interne.
+      return lu === 'MOUNTED' ? 'MOUNT' : lu === 'STARTED' ? 'NOMOUNT' : lu;
+    }
     return this._oracle?.instance.state ?? 'OPEN';
   }
 
   getControlFilePaths(): ReadonlyArray<string> {
+    const distant = this.askRemoteColumn('SELECT name FROM V$CONTROLFILE', 'NAME');
+    if (distant && distant.length > 0) return distant;
     const declared = this._oracle?.instance.getControlFilePaths() ?? [];
     return declared.length > 0 ? declared : [this.getControlFilePath()];
   }
@@ -306,6 +355,8 @@ export class LinuxRmanContext implements IRmanOracleContext {
   }
 
   getArchivelogPaths(): ReadonlyArray<string> {
+    const distant = this.askRemoteColumn('SELECT name FROM V$ARCHIVED_LOG', 'NAME');
+    if (distant !== null) return distant;
     const onDisk = this.vfs.listFilesRecursively?.(ORACLE_CONFIG.ARCHIVELOG_DIR)
       ?.filter(p => p.endsWith('.arc')).sort() ?? [];
     if (onDisk.length > 0) return onDisk;
