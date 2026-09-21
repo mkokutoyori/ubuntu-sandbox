@@ -40,7 +40,9 @@ import {
 } from '@/network/devices/windows/WinPathping';
 import type { PingResult, TracerouteHopResult } from '@/network/devices/EndHost';
 import { IPAddress } from '@/network/core/types';
-import { openWireSshConnection, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
+import {
+  openWireSshConnection, silentConnectIo, sshWireFailureText, wireReachOutcome,
+} from '@/terminal/ssh/wireSshLogin';
 import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
 import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
@@ -1036,14 +1038,21 @@ export class WindowsTerminalSession extends TerminalSession {
       getSshHost?: () => { acceptsLogin?: (u: string) => { ok: boolean; reason?: string } };
     };
     const remote = found.device as unknown as RemoteSurface;
-    const sshActive = typeof remote.isSshActive === 'function'
+    const declared = typeof remote.isSshActive === 'function'
       ? remote.isSshActive()
       // Cross-vendor hosts expose service state through getSshHost().
-      : (remote.getSshHost?.() as unknown as { isSshActive?: () => boolean })?.isSshActive?.() ?? false;
-    if (!sshActive) {
+      : (remote.getSshHost?.() as unknown as { isSshActive?: () => boolean })?.isSshActive?.();
+    if (declared === false) {
       remote.recordSshLogin?.(user, sourceIp, dev.getHostname(), false);
       this.addLine(`ssh: connect to host ${host} port ${port}: Connection refused`);
       return true;
+    }
+    if (declared === undefined) {
+      const wire = wireReachOutcome(this.device, found.ip, port);
+      if (wire !== 'open') {
+        this.addLine(`ssh: connect to host ${host} port ${port}: ${sshWireFailureText(wire)}`);
+        return true;
+      }
     }
 
     const gate = remote.sshdAcceptsLogin?.(user)
@@ -1228,10 +1237,7 @@ export class WindowsTerminalSession extends TerminalSession {
 
   /**
    * Validate <user, password> against whatever credential store the
-   * remote vendor exposes. Linux + Windows machines ship a direct
-   * `checkPassword`; routers route through the SSH host's AAA
-   * evaluator. Devices that expose neither (synthetic test doubles)
-   * accept the credentials so legacy tests don't break.
+   * remote vendor exposes.
    */
   private verifyRemoteCredentials(
     device: Equipment, user: string, password: string,
@@ -1240,6 +1246,7 @@ export class WindowsTerminalSession extends TerminalSession {
       checkPassword?: (u: string, p: string) => boolean;
       userMgr?: { checkPassword?: (u: string, p: string) => boolean };
       tryDomainAuth?: (u: string, p: string) => { ok: boolean; sam: string; groups: string[] } | null;
+      authenticateAdmin?: (u: string, p: string, source?: string) => boolean;
       getSshHost?: () => {
         evaluate?: (req: unknown) => { outcome: string };
       };
@@ -1254,6 +1261,9 @@ export class WindowsTerminalSession extends TerminalSession {
     }
     if (typeof dev.userMgr?.checkPassword === 'function') {
       return dev.userMgr.checkPassword(user, password);
+    }
+    if (typeof dev.authenticateAdmin === 'function') {
+      return dev.authenticateAdmin(user, password, this.firstLocalIp() ?? undefined);
     }
     // Router / Switch path — route through the SSH host's evaluator,
     // which checks the local-user database AND the VTY's protocol
