@@ -160,9 +160,9 @@ export function formatCiscoPingSummary(results: CiscoPingRow[], count: number): 
  * `df`; `sweep` turns one run into a series of increasing sizes.
  *
  * `validateReply`, `dataPattern` and the record-route options are part of
- * the dialog because IOS asks them, but the simulator has no payload
- * bytes to validate and no IP-option area to record a route in, so they
- * are collected and reported rather than silently pretended.
+ * the dialog because IOS asks them, but this ping builds no payload bytes
+ * to validate and sets no IP option area, so they are collected and
+ * reported rather than silently pretended.
  */
 export interface ExtendedPingParams {
   target: string;

@@ -6,6 +6,7 @@ import {
   IP_PROTO_ICMPV6,
   IP_PROTO_TCP,
   IP_PROTO_UDP,
+  encodeIPv4Options,
   ethernetFrameBytes,
   icmpTypeNumber,
   icmpv6TypeNumber,
@@ -276,6 +277,7 @@ function synthL4Bytes(pkt: IPv4Packet): number[] {
 }
 
 function synthIpv4Bytes(pkt: IPv4Packet): number[] {
+  const optionBytes = encodeIPv4Options(pkt.options);
   const versionIhl = (4 << 4) | (pkt.ihl ?? 5);
   const total = pkt.totalLength ?? 20;
   const header = [
@@ -289,6 +291,7 @@ function synthIpv4Bytes(pkt: IPv4Packet): number[] {
     ...u16(pkt.headerChecksum & 0xffff),
     ...ipBytes(pkt.sourceIP.toString()),
     ...ipBytes(pkt.destinationIP.toString()),
+    ...optionBytes,
   ];
   return [...header, ...synthL4Bytes(pkt)];
 }

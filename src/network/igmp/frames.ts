@@ -13,7 +13,7 @@
  * destined to a multicast group address. RFC 2236 §2 requires the option
  * but says nothing about DF; the kernel is what sets it.
  */
-import { type IPAddress } from '../core/types';
+import { routerAlertOption, type IPAddress } from '../core/types';
 import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import {
   IP_PROTO_IGMP, IGMP_ALL_SYSTEMS, IGMP_ALL_ROUTERS,
@@ -21,7 +21,6 @@ import {
 } from './types';
 
 const IGMP_HEADER_BYTES = 8;
-const IPV4_RA_HEADER_BYTES = 24;
 const IPV4_FLAG_DF = 0b010;
 
 /** General Query (group 0.0.0.0) or Group-Specific Query. */
@@ -84,6 +83,6 @@ export function igmpSendRequest(
     protocol: IP_PROTO_IGMP, ttl: 1,
     payload, payloadBytes: IGMP_HEADER_BYTES,
     tos: 0xc0, flags: IPV4_FLAG_DF,
-    headerBytes: IPV4_RA_HEADER_BYTES,
+    ipOptions: [routerAlertOption()],
   };
 }
