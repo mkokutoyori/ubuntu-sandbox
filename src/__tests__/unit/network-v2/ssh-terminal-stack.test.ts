@@ -158,19 +158,19 @@ describe('SSH terminal — device.executeCommand stubs', () => {
     // Both pc1 and pc2 ship sshd Running by default. The remote command
     // mode prints just the command's output (no banner) — here, the
     // remote's /etc/hostname.
-    const out = await lan.pc1.executeCommand(`ssh alice@${PC2_IP} hostname`);
+    const out = await lan.pc1.executeCommand(`ssh alice@${PC2_IP} hostname`, 'admin\n');
     expect(out.trim()).toMatch(/^[a-z0-9-]+$/);
     expect(out).not.toMatch(/Connection refused/);
   });
 
   it('interactive ssh (no remote command) prints the OpenSSH banner', async () => {
-    const out = await lan.pc1.executeCommand(`ssh alice@${PC2_IP}`);
+    const out = await lan.pc1.executeCommand(`ssh alice@${PC2_IP}`, 'admin\n');
     expect(out).toContain('Welcome to Ubuntu');
   });
 
   it('refuses when the remote sshd service has been stopped', async () => {
     lan.pc2.executeCommand('systemctl stop ssh');
-    const out = await lan.pc1.executeCommand(`ssh alice@${PC2_IP} hostname`);
+    const out = await lan.pc1.executeCommand(`ssh alice@${PC2_IP} hostname`, 'admin\n');
     expect(out).toMatch(/Connection refused/);
   });
 

@@ -199,7 +199,7 @@ describe('Scénario 6 — SSH et AAA sur équipements Huawei', () => {
       await configureRouterBase(ar1);
       await client.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const out = await client.executeCommand('ssh admin@10.0.0.1 "display ssh server session"');
+      const out = await client.executeCommand('ssh admin@10.0.0.1 "display ssh server session"', 'Admin@123\n');
       expect(out).toContain('admin');
       expect(out).toContain('10.0.0.2');
     });

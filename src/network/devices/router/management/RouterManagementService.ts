@@ -14,7 +14,7 @@ export class RouterManagementService {
   domainName: string = '';
   ipDomainLookupEnabled: boolean = true;
   nameServers: string[] = [];
-  private readonly stelnetServer = { enabled: false, port: 22, acl: undefined as string | undefined };
+  private stelnetAcl: string | undefined;
   private readonly telnetServer = { enabled: false, port: 23, acl: undefined as string | undefined };
   /**
    * Le serveur SSH, cote GESTIONNAIRE : ce qu'il porte seul, c'est-a-dire
@@ -55,12 +55,15 @@ export class RouterManagementService {
 
   configureStelnet(args: string[]): void {
     const head = (args[0] ?? '').toLowerCase();
-    if (head === 'server' && args[1]?.toLowerCase() === 'enable') this.stelnetServer.enabled = true;
-    else if (head === 'server' && args[1]?.toLowerCase() === 'disable') this.stelnetServer.enabled = false;
-    else if (head === 'server' && args[1]?.toLowerCase() === 'port' && args[2]) this.stelnetServer.port = parseInt(args[2], 10);
+    if (head === 'server' && args[1]?.toLowerCase() === 'enable') this.sshServer.enabled = true;
+    else if (head === 'server' && args[1]?.toLowerCase() === 'disable') this.sshServer.enabled = false;
+    else if (head === 'server' && args[1]?.toLowerCase() === 'port' && args[2]) this.sshServer.port = parseInt(args[2], 10);
     else this.recordRaw('stelnet', args.join(' '));
   }
-  getStelnet(): typeof this.stelnetServer { return this.stelnetServer; }
+
+  getStelnet(): { enabled: boolean; port: number; acl: string | undefined } {
+    return { enabled: this.sshServer.enabled, port: this.sshServer.port, acl: this.stelnetAcl };
+  }
 
   configureTelnet(args: string[]): void {
     const head = (args[0] ?? '').toLowerCase();

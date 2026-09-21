@@ -1178,7 +1178,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         topic: 'windows.account.logoff',
         payload: { deviceId: this.id, account: user, logonType: 10 },
       });
-    });
+    },
+    () => this.getSshBanner());
   }
 
   private _sshHost: CrossVendorSshHost | null = null;

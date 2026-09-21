@@ -74,6 +74,8 @@ export interface RouterSshServerDeps {
   motd?(): string;
   /** Optional record-login callback when a session is established. */
   recordLogin?(user: string, fromIp: string): void;
+  /** Optional record-logout callback when the last channel of a session closes. */
+  recordLogout?(user: string, fromIp: string): void;
   /** Optional rate-limit gate. */
   isClientBlocked?(ip: string, user?: string): boolean;
   /** Optional auth-failure hook for the audit log. */
@@ -161,6 +163,10 @@ export class RouterSshServerContext implements ISshServerContext {
     };
   }
 
+  getBanner(): string | null {
+    return this.deps.banner?.() ?? null;
+  }
+
   getMotd(): string {
     return this.deps.motd?.() ?? `Welcome to ${this.deps.hostname()}\n`;
   }
@@ -169,6 +175,10 @@ export class RouterSshServerContext implements ISshServerContext {
 
   recordLogin(user: string, fromIp: string): void {
     this.deps.recordLogin?.(user, fromIp);
+  }
+
+  recordLogout(user: string, fromIp: string): void {
+    this.deps.recordLogout?.(user, fromIp);
   }
 
   recordAuthFailure(user: string, fromIp: string, reason: string): void {
