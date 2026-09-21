@@ -42,6 +42,13 @@ import {
   echoSpecs, type EchoHost, type TracerouteRequest,
 } from './cisco/echoSpecs';
 import { mapSpecs, MAP_LEGENDS, type MapHost } from './cisco/mapSpecs';
+import { negationSpecs, type NegationHost } from './cisco/negationSpecs';
+
+const TYPES_VIRTUELS: Readonly<Record<string, string>> = {
+  loopback: 'Loopback', lo: 'Loopback', tunnel: 'Tunnel', tu: 'Tunnel',
+  'virtual-template': 'Virtual-Template', 'port-channel': 'Port-channel',
+  po: 'Port-channel', vlan: 'Vlan', nve: 'Nve',
+};
 import {
   parseRouteDistinguisher, parseRouteTarget, applyRouteTarget,
   vrfStoreOf, type VrfHost, type VrfInstance,
@@ -106,7 +113,9 @@ import {
 // Extracted command modules
 import * as Show from './cisco/CiscoShowCommands';
 import { showProcessesCpu } from './cisco/CiscoCommonShow';
-import { showNATTranslations, showNATStatistics } from './cisco/CiscoNATCommands';
+import {
+  showNATTranslations, showNATStatistics, networkPrefixLength, natErrorMessageFor,
+} from './cisco/CiscoNATCommands';
 import { showIpOspfNeighbor, routerIpRouteView } from './cisco/CiscoOspfCommands';
 import {
   type CiscoShellMode, type CiscoShellContext,
@@ -456,6 +465,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...super.socleSpecs(),
       ...echoSpecs(() => this.echoHost(), { ipv6: true, traceroute: true }),
       ...mapSpecs(() => this.mapHost()),
+      ...negationSpecs(() => this.negationHost()),
       ...zoneSpecs(() => this.zoneHost()),
       ...dhcpClientFamily(),
       ...hsrpShowSpecs(this, () => this.fhrp),
@@ -660,7 +670,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
    * par les trois modes, ne peut plus se contredire.
    */
   private interfaceEntrySpecs(): CommandSpec[] {
-    return specsFromTrieRegistrations(
+    const retrait = (_session: unknown, args: Record<string, string>): string =>
+      this.negationHost().retirerInterface(args.interface);
+    return this.avecRetraitDInterface(specsFromTrieRegistrations(
       (collector) => registerInterfaceEntry(collector as unknown as CommandTrie, this),
       {
         modes: ['config', 'config-if', 'config-subif'], minPrivilege: 15,
@@ -670,7 +682,15 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
           literal: 'IFACE', alternatives: INTERFACE_TYPES,
         }),
         keywordsFor: () => typesInterfaceEnMotsCles(INTERFACE_TYPES),
-      });
+      }), retrait);
+  }
+
+  private avecRetraitDInterface(
+    specs: CommandSpec[], retrait: CommandSpec['undo'],
+  ): CommandSpec[] {
+    return specs.map((spec) => spec.path[0] === 'interface' && spec.path.length === 2
+      ? { ...spec, undo: retrait, undoDescription: 'Remove a virtual interface' }
+      : spec);
   }
 
   private routingProtocolSpecs(): CommandSpec[] {
@@ -1446,6 +1466,42 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   getTimeRange(): string | null { return this.selectedTimeRange; }
   setTimeRange(n: string | null): void { this.selectedTimeRange = n; }
   getClassMap(): string | null { return this.selectedClassMap; }
+  private negationHost(): NegationHost {
+    return {
+      retirerInterface: (nomTape) => {
+        const combine = nomTape.replace(/\s+/g, '');
+        const type = combine.match(
+          /^(loopback|lo|tunnel|tu|virtual-template|port-channel|po|vlan|nve)([\d/.]+)$/i);
+        const nom = type
+          ? `${TYPES_VIRTUELS[type[1].toLowerCase()]}${type[2]}`
+          : this.resolveInterfaceName(nomTape);
+        if (!nom) return formatInvalidInput(13);
+        if (!this.d()._removeVirtualInterface(nom)) return formatInvalidInput(13);
+        if (this.getSelectedInterface() === nom) this.setSelectedInterface(null);
+        return '';
+      },
+      poserStatiqueDeReseau: (local, global, prefixe, vrf) => {
+        let prefixLen = 24;
+        if (prefixe !== undefined) {
+          const longueur = networkPrefixLength(prefixe);
+          if (longueur === null) {
+            return prefixe.startsWith('/')
+              ? `% Invalid prefix-length ${prefixe}.`
+              : `% Invalid mask ${prefixe}.`;
+          }
+          prefixLen = longueur;
+        }
+        const res = this.d()._getNATEngine().addStaticEntry(
+          { localIP: local, globalIP: global, isNetwork: true, prefixLen, vrf });
+        return res.ok === false ? `% ${natErrorMessageFor(res.reason)}` : '';
+      },
+      retirerStatiqueDeReseau: (local, global) => {
+        this.d()._getNATEngine().removeStaticEntry(local, global);
+        return '';
+      },
+    };
+  }
+
   private mapHost(): MapHost {
     const sec = () => getSecurityConfig(this.d());
     return {
