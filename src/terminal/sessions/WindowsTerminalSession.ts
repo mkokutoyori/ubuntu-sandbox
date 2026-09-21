@@ -49,7 +49,8 @@ import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { classifyWindowsLines } from '@/terminal/core/windowsOutputStyle';
-import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder } from '@/terminal/completion';
+import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder, driveSubShellTab, hasSubShellCompletion } from '@/terminal/completion';
+import type { SubShellTabHost } from '@/terminal/completion';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
 import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
@@ -1761,17 +1762,9 @@ export class WindowsTerminalSession extends TerminalSession {
     // Sub-shells that own their completion logic (PowerShell) get the
     // real PS console experience: Tab inserts the first match, repeated
     // Tab cycles forward, Shift+Tab cycles backward.
-    if (sub && typeof sub.getCompletions === 'function') {
-      const source = new LastWordSource(
-        (line) => sub.getCompletions?.(line) ?? [],
-        { uniqueSpace: 'never' },
-      );
-      const out = this.subShellCompletion.handleTab(this._inputBuf, source, reverse);
-      if (!out.changed && out.suggestions === null) return;
-      this._inputBuf = out.input;
-      this.tabSuggestions =
-        out.suggestions && out.suggestions.length > 1 ? [...out.suggestions] : null;
-      this.notify();
+    if (hasSubShellCompletion(sub)) {
+      driveSubShellTab(
+        sub, this.subShellTabHost(), this.subShellCompletion, reverse);
       return;
     }
 
@@ -1785,6 +1778,17 @@ export class WindowsTerminalSession extends TerminalSession {
     this._inputBuf = out.input;
     this.tabSuggestions = out.suggestions ? [...out.suggestions] : null;
     this.notify();
+  }
+
+  private subShellTabHost(): SubShellTabHost {
+    return {
+      readBuffer: () => this._inputBuf,
+      applyTab: (input, suggestions) => {
+        this._inputBuf = input;
+        this.tabSuggestions = suggestions ? [...suggestions] : null;
+        this.notify();
+      },
+    };
   }
 
   private rootCompletionSource(): LastWordSource {

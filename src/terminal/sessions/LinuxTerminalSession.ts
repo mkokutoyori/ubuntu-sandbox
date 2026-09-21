@@ -62,7 +62,8 @@ import { validateSudoersContent } from '@/network/devices/linux/iam/PwGrCheck';
 import { validateCrontabContent } from '@/network/devices/linux/cron/CrontabParser';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
-import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder } from '@/terminal/completion';
+import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder, driveSubShellTab } from '@/terminal/completion';
+import type { SubShellTabHost } from '@/terminal/completion';
 import { toInteractiveSteps } from '@/terminal/flows/planAdapter';
 import { analyzeBashInput } from '@/bash/incompleteInput';
 import {
@@ -3829,38 +3830,19 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   private onSubShellTab(reverse: boolean): void {
-    const sub = this.activeSubShell;
-    if (!sub) return;
-    if (typeof sub.getCompletionsAsync === 'function') {
-      void this.onSubShellTabAsync(sub, reverse);
-      return;
-    }
-    if (typeof sub.getCompletions !== 'function') return;
-    this.applySubShellTab((line) => sub.getCompletions?.(line) ?? [], reverse);
+    driveSubShellTab(
+      this.activeSubShell, this.subShellTabHost(), this.subShellCompletion, reverse);
   }
 
-  /**
-   * Tab against a sub-shell that can only answer asynchronously (a remote
-   * shell over an SSH channel). The candidates are fetched first, then fed
-   * to the same synchronous completion controller; a keystroke landing
-   * while the request is in flight abandons the stale answer
-   * (docs/PRD-SSH-Unification.md §4bis B1).
-   */
-  private async onSubShellTabAsync(sub: ISubShell, reverse: boolean): Promise<void> {
-    const asked = this._inputBuf;
-    const candidates = await sub.getCompletionsAsync!(asked);
-    if (this._inputBuf !== asked) return;
-    this.applySubShellTab(() => candidates, reverse);
-  }
-
-  private applySubShellTab(fetch: (line: string) => readonly string[], reverse: boolean): void {
-    const source = new LastWordSource(fetch, { uniqueSpace: 'never' });
-    const out = this.subShellCompletion.handleTab(this._inputBuf, source, reverse);
-    if (!out.changed && out.suggestions === null) return;
-    this._inputBuf = out.input;
-    this.tabSuggestions =
-      out.suggestions && out.suggestions.length > 1 ? [...out.suggestions] : null;
-    this.notify();
+  private subShellTabHost(): SubShellTabHost {
+    return {
+      readBuffer: () => this._inputBuf,
+      applyTab: (input, suggestions) => {
+        this._inputBuf = input;
+        this.tabSuggestions = suggestions ? [...suggestions] : null;
+        this.notify();
+      },
+    };
   }
 
   /**
