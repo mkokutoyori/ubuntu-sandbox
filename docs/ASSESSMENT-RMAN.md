@@ -211,6 +211,14 @@ Deux écarts de plus, trouvés en fermant ceux-là, et fermés avec eux :
 
 ## 4. Pile RÉSEAU — la plus éloignée, et la plus contraire aux règles
 
+> **Fermée depuis.** Ce que cette section décrit est l'état de départ.
+> Les lots R2b, R8a (NFS), R8b, R7 et R7b l'ont refermée : la cible est
+> résolue, la session Oracle Net est ouverte à travers routeur et
+> pare-feu, les identifiants sont vérifiés, et chaque commande comme
+> chaque accesseur pose sa question sur le fil (§5.0, §5.2, §5.3, §5.4).
+> Le constat ci-dessous est conservé parce qu'il dit **pourquoi** cela
+> comptait.
+
 ```ts
 export class ConnectCommand implements IRmanCommand<string[]> {
   execute(_args: string[], { bus, ctx }: RmanCommandContext) {
@@ -300,7 +308,7 @@ L'ordre n'est pas négociable : chaque lot a besoin du précédent.
 | **R5** | ~~Fichier de contrôle réel + autobackup + `RESTORE CONTROLFILE`~~ **FAIT** — la reprise depuis rien fonctionne, control file ET répertoire RMAN perdus ; restent `SWITCH DATAFILE` et `RESET DATABASE` (incarnations) | applicative | ouvre la reprise depuis rien |
 | **R5b** | ~~La limite nommée de R5 : une base fraîche n'avait qu'une **bannière** dans son fichier de contrôle~~ **FAIT** — plus le §6 mesuré à côté : `V$CONTROLFILE_RECORD_SECTION.RECORDS_USED` valait `RECORDS_TOTAL/10` et contredisait `V$DATAFILE` ; chaque section délègue désormais à la vue qui énumère ses enregistrements | applicative | le fichier de contrôle devient la trace de la structure, pas seulement du répertoire RMAN |
 | **R6** | ~~FRA réelle : `V$RECOVERY_FILE_DEST`, nom OMF, propriété `oracle`, quota, substitutions de FORMAT, vues V$ alimentées~~ **FAIT** | OS | petit lot, forte fidélité |
-| **R7** | `CONNECT TARGET …@tns` **sur le fil** | réseau | referme la violation du §4 |
+| **R7** | ~~`CONNECT TARGET …@tns` **sur le fil**~~ **FAIT** — plus R7b : les sept accesseurs d'une cible distante posent leur question au lieu de lire l'objet du pair | réseau | referme la violation du §4 |
 | **R8a** | ~~**Transfert des pièces entre sites**~~ **FAIT** — NFSv3 réel (XDR, ONC RPC, portmap, mountd, nfsd) plus son branchement : une pièce écrite sous un montage réseau est sur le disque du SERVEUR | réseau | ferme [G]/[H], la dernière violation du §4 sur le chemin de sauvegarde |
 | **R8b** | ~~Catalogue distant (`CONNECT CATALOG`) et `DUPLICATE`~~ **FAIT** — le catalogue est un jeu de tables `RC_` dans la base que `CONNECT CATALOG` a résolue, et `DUPLICATE` écrit par le VFS de la machine auxiliaire | réseau | le laboratoire DR est complet |
 
@@ -390,10 +398,17 @@ implanter que deviner.
 
 ## 7. En une phrase
 
-L'architecture RMAN est en place et bien faite ; ce qui manque n'est pas
-dans RMAN mais **sous** lui — une base dont les fichiers contiennent
-quelque chose — et **à côté** de lui — un réseau que ses connexions
-traversent vraiment.
+**État à l'ouverture de cet assessment :** l'architecture RMAN est en
+place et bien faite ; ce qui manque n'est pas dans RMAN mais **sous**
+lui — une base dont les fichiers contiennent quelque chose — et **à
+côté** de lui — un réseau que ses connexions traversent vraiment.
+
+**État après R1 → R8b.** Les deux manques sont fermés. Les fichiers de
+données portent les octets de leurs tablespaces, une sauvegarde les lit
+et une restauration les réécrit ; et le réseau est traversé pour de vrai,
+de la poignée de main TNS jusqu'à l'aller-retour de chaque commande.
+
+Le tableau du §5 n'a plus de ligne ouverte.
 
 ### 5.2 Lot NFS — le montage réseau porte vraiment les octets (fermé)
 
@@ -469,3 +484,71 @@ Oracle Net. C'est le comportement de `sqlplus user/pass@hôte` dans ce
 dépôt depuis toujours, repris par R2b. Rendre le plan de données
 d'Oracle Net réel est un lot à lui seul, et il concernerait sqlplus
 autant que RMAN.
+
+### 5.4 Lot R7 — la commande traverse le fil, pas seulement la connexion (fermé)
+
+La §5.0 avait fermé la CIBLE (le bon DBID, la bonne FRA, un lien coupé
+qui refuse) et nommé ce qu'elle laissait ouvert :
+
+> la différence de trames entre `CONNECT` seul et `CONNECT + BACKUP` est
+> nulle […] l'aller-retour de la **commande** n'est pas tramé non plus.
+
+**Mesuré sur une commande qui ne transporte aucune donnée**, pour lever
+l'ambiguïté avec `BACKUP` — dont les octets ne *doivent* pas traverser :
+
+```
+CONNECT seul                   9 trames
+CONNECT + SQL '...'            8      différence  -1
+CONNECT + REPORT SCHEMA        8      différence  -1
+CONNECT + BACKUP DATABASE      8      différence  -1
+```
+
+Le `-1` est le bruit d'un ARP que seule la première résolution paie.
+Autrement dit **zéro** : `REPORT SCHEMA` lisait le schéma de la cible
+sur l'objet du pair.
+
+**Le port existait déjà.** `resolveOracleConnectTarget` — que RMAN
+appelle depuis toujours — rend `{ db, remote, session, descriptor }`, où
+`session` est une vraie `OracleNetSession` ouverte à travers routeur et
+pare-feu. RMAN lisait `db` et **jetait `session`** ; `SQLPlusSession`, sur
+la même fonction, la garde. R7 n'était donc pas à écrire : c'était un
+port étroit à brancher.
+
+Trois choses que la mesure a imposées, dans cet ordre :
+
+1. **Les identifiants n'étaient lus par personne.** Les trois portes
+   (`CONNECT TARGET`, `rman target …`, `CONNECT CATALOG`/`AUXILIARY`)
+   n'extrayaient que ce qui suit le `@`. Le serveur a refusé le `Logon`
+   (`ORA-01017`) — c'est la mesure qui l'a montré, pas la lecture. Un
+   mot de passe **faux** valait donc un mot de passe juste.
+2. **Le rôle dépend de la porte** : TARGET et AUXILIARY ouvrent une
+   session SYSDBA, CATALOG non.
+3. **Les accesseurs demandent** (lot R7b). Chacun interroge la vue qui
+   porte son fait — `V$DATAFILE`, `V$DATABASE`, `V$INSTANCE`,
+   `V$PARAMETER`, `V$CONTROLFILE`, `V$ARCHIVED_LOG`,
+   `V$RECOVERY_FILE_DEST` — par un port unique.
+
+**Pourquoi le compte de trames, et pas le contenu.** `forTarget`
+construit le contexte *sur* la machine cible : `getCurrentScn()` rendait
+déjà le **bon** SCN, celui de DR. La valeur était juste ; c'est le moyen
+qui ne l'était pas. Un témoin de contenu n'aurait rien distingué — le
+piège exact que CLAUDE.md §4 décrit. Après :
+
+```
+getDatafiles / getCurrentScn / getInstanceState / getSpfileParam
+getControlFilePaths / getArchivelogPaths / getRecoveryAreaUsedBytes
+                               0 trame  →  2 trames chacun
+```
+
+**Contre-témoin, qui compte autant** : une cible **locale** continue à ne
+mettre *rien* sur le fil. Une connexion bequeath n'a aucun réseau à
+traverser, et tout router serait le défaut symétrique.
+
+**Trois tests épinglaient le défaut**, corrigés en le disant :
+`oracle-rman-remote-target` exigeait que la différence de trames soit
+**nulle** ; `oracle-rman-catalogue-distant` se passait d'un compte `rman`
+sur la base distante et cherchait les tables `RC_` dans le schéma de SYS
+— les deux ne tenaient que parce que rien n'authentifiait.
+
+Non-régression : `src/__tests__/audit/rman-accesseurs-distants-preuves.test.ts`
+(6 cas discriminants sur 9).
