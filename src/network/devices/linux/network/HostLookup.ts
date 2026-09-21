@@ -64,14 +64,26 @@ export function reachableDevices(from?: Equipment | null): Equipment[] {
   return [...seen.values()];
 }
 
+function normalisedIpv6(literal: string): string {
+  return literal.split('%')[0].toLowerCase();
+}
+
+function portHoldsAddress(port: Port, address: string): boolean {
+  const v4 = port.getIPAddress();
+  if (v4 && v4.toString() === address) return true;
+  if (!address.includes(':')) return false;
+  const wanted = normalisedIpv6(address);
+  return port.getIPv6Addresses().some(
+    (entry) => normalisedIpv6(entry.address.toString()) === wanted);
+}
+
 export function isPathReachable(srcIp: string, dstIp: string, from?: Equipment | null): boolean {
   if (srcIp === dstIp) return true;
   if (!srcIp || srcIp === '127.0.0.1' || srcIp.startsWith('169.254.')) return true;
   const startPorts: Port[] = [];
   for (const dev of reachableDevices(from)) {
     for (const port of dev.getPorts()) {
-      const ip = port.getIPAddress();
-      if (ip && ip.toString() === srcIp) startPorts.push(port);
+      if (portHoldsAddress(port, srcIp)) startPorts.push(port);
     }
   }
   if (startPorts.length === 0) return true;
@@ -98,8 +110,7 @@ export function findReachableHost(srcIp: string, dstIp: string, from?: Equipment
   const startPorts: Port[] = [];
   for (const dev of reachableDevices(from)) {
     for (const port of dev.getPorts()) {
-      const ip = port.getIPAddress();
-      if (ip && ip.toString() === srcIp) startPorts.push(port);
+      if (portHoldsAddress(port, srcIp)) startPorts.push(port);
     }
   }
 
@@ -117,8 +128,7 @@ export function findReachableHost(srcIp: string, dstIp: string, from?: Equipment
     if (!peerPort || !peerPort.getIsUp()) continue;
     const peerDev = peerPort.getOwner() as Equipment | null;
     if (!peerDev || !peerDev.getIsPoweredOn()) continue;
-    const peerIp = peerPort.getIPAddress();
-    if (peerIp && peerIp.toString() === dstIp) return peerDev;
+    if (portHoldsAddress(peerPort, dstIp)) return peerDev;
     // A switch management SVI carries its IP on no physical port. When the
     // destination is such an address, a reachable+up SVI on the peer device
     // terminates the path exactly like a physical NIC would.

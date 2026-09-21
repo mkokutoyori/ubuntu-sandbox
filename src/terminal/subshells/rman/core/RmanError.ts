@@ -19,6 +19,8 @@ export type RmanError =
   | { code: 'RMAN_04006'; message: string }   // error from target database (Oracle Net)
   | { code: 'RMAN_06172'; message: string }   // no autobackup found or specified handle is not a valid copy
   | { code: 'RMAN_06054'; message: string }   // media recovery requesting unknown archived log
+  | { code: 'RMAN_06053'; message: string }   // unable to perform media recovery because of missing log
+  | { code: 'ERROR_STACK'; message: string }   // a message stack RMAN relays verbatim
   | { code: 'RMAN_06026'; message: string }   // no backup set found within the SET UNTIL bound
   | { code: 'RMAN_04004'; message: string }   // error from recovery catalog database (Oracle Net)
   | { code: 'RMAN_06428'; message: string }   // recovery catalog is not installed
@@ -74,6 +76,7 @@ export function rmanErrorMessage(e: RmanError): string {
   // underscores so TypeScript can narrow; rewrite to hyphens for any
   // RMAN_NNNNN code, fall back to the ORACLE_CODE_MAP for internal
   // categories so the transcript stays Oracle-shaped.
+  if (e.code === 'ERROR_STACK') return e.message;
   const code = /^RMAN_\d+$/.test(e.code)
     ? e.code.replace('_', '-')
     : (ORACLE_CODE_MAP[e.code] ?? e.code);

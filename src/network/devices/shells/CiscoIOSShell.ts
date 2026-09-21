@@ -670,8 +670,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
    * par les trois modes, ne peut plus se contredire.
    */
   private interfaceEntrySpecs(): CommandSpec[] {
-    const retrait = (_session: unknown, args: Record<string, string>): string =>
-      this.negationHost().retirerInterface(args.interface);
     return this.avecRetraitDInterface(specsFromTrieRegistrations(
       (collector) => registerInterfaceEntry(collector as unknown as CommandTrie, this),
       {
@@ -682,15 +680,40 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
           literal: 'IFACE', alternatives: INTERFACE_TYPES,
         }),
         keywordsFor: () => typesInterfaceEnMotsCles(INTERFACE_TYPES),
-      }), retrait);
+      }));
   }
 
-  private avecRetraitDInterface(
-    specs: CommandSpec[], retrait: CommandSpec['undo'],
-  ): CommandSpec[] {
-    return specs.map((spec) => spec.path[0] === 'interface' && spec.path.length === 2
-      ? { ...spec, undo: retrait, undoDescription: 'Remove a virtual interface' }
-      : spec);
+  /**
+   * `interface` se tape de deux facons, et les deux doivent se defaire :
+   * `interface Loopback100`, que la place unique lit, et
+   * `interface Loopback 100`, que le mot-cle du type lit avec son propre
+   * numero. Le retrait n'etait attache qu'a la premiere, si bien que
+   * `no interface Loopback 100` etait refuse alors que sa forme positive
+   * l'accepte — les deux moities d'une meme commande ne jugeaient pas la
+   * meme frappe.
+   */
+  private avecRetraitDInterface(specs: CommandSpec[]): CommandSpec[] {
+    const retirer = (nomTape: string): string =>
+      this.negationHost().retirerInterface(nomTape);
+    const undoDescription = 'Remove a virtual interface';
+    return specs.map((spec) => {
+      if (spec.path[0] !== 'interface') return spec;
+      const mots = spec.path.filter((etape): etape is string => typeof etape === 'string');
+      if (spec.path.length === 2 && mots.length === 1) {
+        return {
+          ...spec, undoDescription,
+          undo: (_s: unknown, args: Record<string, string>) => retirer(args.interface),
+        };
+      }
+      if (spec.path.length === 3 && mots.length === 2) {
+        return {
+          ...spec, undoDescription,
+          undo: (_s: unknown, args: Record<string, string>) =>
+            retirer(`${mots[1]}${args.numero ?? ''}`),
+        };
+      }
+      return spec;
+    });
   }
 
   private routingProtocolSpecs(): CommandSpec[] {

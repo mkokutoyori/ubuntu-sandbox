@@ -20,6 +20,7 @@ import { RmanSessionOptionsBuilder } from './session/RmanSessionOptionsBuilder';
 import { rmanErrorMessage, type RmanError } from './core/RmanError';
 import { formatOracleDate, formatElapsed, simulateBackupElapsedMs } from './core/pureUtils';
 import { LinuxRmanContext } from './integration/LinuxRmanContext';
+import { credentialsOf } from './session/RmanSession';
 import { RetargetableRmanContext } from './integration/RetargetableRmanContext';
 import { RmanLoggerActor } from './actors/RmanLoggerActor';
 import { OracleInstanceWatcherActor } from './actors/OracleInstanceWatcherActor';
@@ -77,8 +78,11 @@ export class ReactiveRmanSubShell implements ISubShell {
   ): { subShell: ReactiveRmanSubShell; banner: string[] } {
     const localId = (device as { id?: string }).id ?? 'default';
     const targetIdx = args.findIndex(a => a.toUpperCase() === 'TARGET');
-    const identifier = targetIdx === -1 ? undefined : /@(\S+)/.exec(args[targetIdx + 1] ?? '')?.[1];
-    const resolved = identifier ? LinuxRmanContext.forTarget(device, identifier) : null;
+    const cible = targetIdx === -1 ? '' : (args[targetIdx + 1] ?? '');
+    const identifier = targetIdx === -1 ? undefined : /@(\S+)/.exec(cible)?.[1];
+    const resolved = identifier
+      ? LinuxRmanContext.forTarget(device, identifier, credentialsOf(cible))
+      : null;
     const targetId = resolved?.ok === true ? resolved.deviceId : localId;
     const ctx = resolved?.ok === true ? resolved.ctx : LinuxRmanContext.forDevice(device);
     const bus = device.getBus();
@@ -211,6 +215,26 @@ export class ReactiveRmanSubShell implements ISubShell {
       case 'RECOVER_COMPLETED':
         this._push('media recovery complete, elapsed time: 00:00:03');
         break;
+      case 'VALIDATION_REPORT':
+        if (e.files.length > 0) {
+          this._push('List of Datafiles');
+          this._push('=================');
+          this._push('File Status Marked Corrupt Empty Blocks Blocks Examined High SCN');
+          this._push('---- ------ -------------- ------------ --------------- ----------');
+          for (const f of e.files) {
+            this._push([
+              String(f.fileNo).padEnd(4),
+              f.status.padEnd(6),
+              String(f.markedCorrupt).padEnd(14),
+              String(f.emptyBlocks).padEnd(12),
+              String(f.blocksExamined).padEnd(15),
+              String(f.highScn),
+            ].join(' '));
+            this._push(`File Name: ${f.path}`);
+          }
+        }
+        this._push(`channel ORA_DISK_1: validation complete, elapsed time: ${formatElapsed(e.elapsedMs)}`);
+        break;
       case 'CROSSCHECK_DONE':
         this._push(`Crosschecked ${e.available + e.expired} objects`);
         if (e.expired > 0) this._push(`${e.expired} piece(s) marked EXPIRED`);
@@ -224,7 +248,9 @@ export class ReactiveRmanSubShell implements ISubShell {
         this._push('RMAN-00571: ===========================================================');
         this._push('RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============');
         this._push('RMAN-00571: ===========================================================');
-        this._push(`RMAN-03014: ${rmanErrorMessage(e.error)}`);
+        this._push(
+          `RMAN-03002: failure of ${this._opLabel(e.operation)} command at ${formatOracleDate()}`);
+        for (const ligne of rmanErrorMessage(e.error).split('\n')) this._push(ligne);
         break;
       // CONNECTED, SESSION_STATE_CHANGED, CATALOG_UPDATED, etc.
       // are internal — no terminal output.
@@ -239,6 +265,7 @@ export class ReactiveRmanSubShell implements ISubShell {
       case 'BACKUP_ARCHIVELOG':
       case 'BACKUP_TABLESPACE':    return 'backup';
       case 'RESTORE_DATABASE':     return 'restore';
+      case 'VALIDATE':             return 'validate';
       case 'RECOVER_DATABASE':     return 'recover';
       case 'DUPLICATE_DATABASE':   return 'Duplicate Db';
       case 'CROSSCHECK':           return 'crosscheck';

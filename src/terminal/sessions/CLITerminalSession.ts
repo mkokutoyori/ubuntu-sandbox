@@ -14,8 +14,8 @@
  */
 
 import type { Equipment, ICLIDevice } from '@/network';
-import { sshUnreachableReason } from '@/terminal/ssh/wireSshLogin';
-import type { SshDialect } from '@/terminal/ssh/sshDialect';
+import { sshUnreachableReason, wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
+import { sshWireFailureLine, type SshDialect } from '@/terminal/ssh/sshDialect';
 import {
   TerminalSession, TerminalTheme, SessionType,
   KeyEvent, InputMode,
@@ -33,7 +33,7 @@ import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
 import type { TelnetDialect } from '@/terminal/subshells/telnetDialect';
 import type { TelnetInteractiveSubShell } from '@/terminal/subshells/TelnetInteractiveSubShell';
 import { createSessionForDevice } from './sessionFactory';
-import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
+import { verifyRemoteCredentials } from '@/terminal/ssh/remoteCredentials';
 import { IPAddress } from '@/network/core/types';
 import { openWireSshConnection, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
 import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
@@ -692,12 +692,21 @@ export abstract class CLITerminalSession extends TerminalSession {
     };
     const remoteDevice = found.device;
     const remote = remoteDevice as unknown as RemoteSurface;
-    const sshActive = typeof remote.isSshActive === 'function'
+    const declared = typeof remote.isSshActive === 'function'
       ? remote.isSshActive()
-      : remote.getSshHost?.()?.isSshActive?.() ?? false;
-    if (!sshActive) {
+      : remote.getSshHost?.()?.isSshActive?.();
+    if (declared === false) {
       remote.recordSshLogin?.(user, sourceIp, localHostname, false);
       return [{ type: 'output', outputLines: [dialect.refused(host, port)] }];
+    }
+    if (declared === undefined) {
+      const wire = wireReachOutcome(this.device, found.ip, port);
+      if (wire !== 'open') {
+        return [{
+          type: 'output',
+          outputLines: [sshWireFailureLine(dialect, wire, host, port)],
+        }];
+      }
     }
 
     const gate = remote.sshdAcceptsLogin?.(user) ?? remote.getSshHost?.()?.acceptsLogin?.(user) ?? { ok: true };
@@ -808,32 +817,9 @@ export abstract class CLITerminalSession extends TerminalSession {
     device: Equipment, user: string, host: string, port: number,
     sourceIp: string, sourceHostname: string, password: string,
   ): boolean {
-    const dev = device as unknown as {
-      checkPassword?: (u: string, p: string) => boolean;
-      userMgr?: { checkPassword?: (u: string, p: string) => boolean };
-      getSshHost?: () => { evaluate?: (req: unknown) => { outcome: string } };
-    };
-    if (typeof dev.checkPassword === 'function') return dev.checkPassword(user, password);
-    if (typeof dev.userMgr?.checkPassword === 'function') return dev.userMgr.checkPassword(user, password);
-    if (typeof dev.getSshHost === 'function') {
-      try {
-        const req = SshConnectionRequest.create({
-          requestedUser: user,
-          requestedHost: host,
-          requestedPort: port,
-          sourceIp,
-          sourceHostname,
-          command: null,
-          offeredAuthMethods: ['password'],
-          credentials: { password },
-        });
-        const decision = dev.getSshHost()?.evaluate?.(req);
-        return decision?.outcome === 'accepted';
-      } catch {
-        return false;
-      }
-    }
-    return true;
+    return verifyRemoteCredentials(device, {
+      user, password, host, port, sourceIp, sourceHostname,
+    });
   }
 
   /**

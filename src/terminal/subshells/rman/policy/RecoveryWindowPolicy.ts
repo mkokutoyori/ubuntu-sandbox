@@ -1,7 +1,11 @@
 /**
- * RecoveryWindowPolicy — keep every backup set inside the recovery
- * window. When no set is inside the window, retain the most-recent
- * pre-window set as a recovery anchor.
+ * RecoveryWindowPolicy — garde tout ce qui est DANS la fenetre, plus la
+ * sauvegarde la plus recente d'AVANT son bord.
+ *
+ * Cette derniere n'est pas une precaution : pour revenir au DEBUT de la
+ * fenetre il faut une sauvegarde anterieure a ce debut, et la jeter
+ * rendrait le bord le plus ancien de la fenetre irrecuperable — une
+ * politique de retention qui promet sept jours et n'en tient que six.
  */
 
 import type { IRetentionPolicy, RetentionKind } from './IRetentionPolicy';
@@ -22,12 +26,9 @@ export class RecoveryWindowPolicy implements IRetentionPolicy {
 
   findObsolete(sets: ReadonlyArray<BackupSet>): BackupSet[] {
     const cutoff = Date.now() - this.value * 86_400_000;
-    const sorted = [...sets].sort((a, b) => b.completionTime - a.completionTime);
-    const inWindow  = sorted.filter(s => s.completionTime >= cutoff);
-    const preWindow = sorted.filter(s => s.completionTime < cutoff);
-
-    if (inWindow.length > 0) return preWindow;
-    // No in-window backup → keep the most-recent pre-window as anchor.
+    const preWindow = [...sets]
+      .sort((a, b) => b.completionTime - a.completionTime)
+      .filter(s => s.completionTime < cutoff);
     return preWindow.slice(1);
   }
 }

@@ -2,10 +2,19 @@
  * Retention policies — Strategy pattern.
  *
  * Three concrete strategies implement IRetentionPolicy:
- *   - RedundancyPolicy(n)        : keep the n most recent successful sets.
+ *   - RedundancyPolicy(n)        : keep n copies of EACH datafile.
  *   - RecoveryWindowPolicy(days) : keep every set inside the window, plus
- *                                  one anchor if no in-window set exists.
+ *                                  the most recent pre-window set as the
+ *                                  recovery anchor — ALWAYS, not only when
+ *                                  the window is empty.
  *   - NonePolicy                 : never marks anything obsolete.
+ *
+ * Les deux premieres descriptions ont change avec la mesure des seuils
+ * reels (`src/__tests__/audit/rman-retention-preuves.test.ts`). Oracle
+ * garde « for each datafile, ONE BACKUP THAT IS OLDER THAN THE POINT OF
+ * RECOVERABILITY » : sans elle, on ne peut pas revenir au DEBUT de la
+ * fenetre. Le cas ci-dessous attendait que les DEUX jeux d'avant la
+ * fenetre soient obsoletes — il epinglait le defaut, et il est corrige.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -67,10 +76,10 @@ describe('RecoveryWindowPolicy', () => {
     expect(new RecoveryWindowPolicy(14).describe()).toBe('RECOVERY WINDOW OF 14 DAYS');
   });
 
-  it('keeps every backup inside the window and marks the older ones obsolete', () => {
+  it('keeps every backup inside the window, plus the pre-window anchor', () => {
     const p = new RecoveryWindowPolicy(7);
     const r = p.findObsolete([set(1, 10), set(2, 8), set(3, 6), set(4, 2)]);
-    expect(r.map(s => s.bsKey).sort()).toEqual([1, 2]);
+    expect(r.map(s => s.bsKey).sort()).toEqual([1]);
   });
 
   it('retains one pre-window anchor when no in-window backup exists', () => {

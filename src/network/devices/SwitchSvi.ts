@@ -9,6 +9,9 @@ import {
   type ConnectedIpv4Prefix,
 } from '../layers/internet/InternetLayer';
 import {
+  advanceSourceRoute, recordRoute, sourceRouteState,
+} from '../layers/internet/Ipv4Options';
+import {
   buildICMPError, mayGenerateICMPError, ICMP_UNREACH_PORT, type ICMPErrorType,
 } from '../core/IcmpErrors';
 import { Logger } from '../core/Logger';
@@ -79,6 +82,7 @@ export interface SviHost {
    * message — un critere range et jamais evalue.
    */
   icmpUnreachablesEnabled?(vlan: number): boolean;
+  acceptsSourceRouting?(): boolean;
   /**
    * `ip access-group <liste> in|out` sur la Vlanif. Le pendant de
    * `Router.deniedByInboundACL` et de son controle en sortie, lisant le
@@ -374,6 +378,19 @@ export class SwitchSvi {
 
       if (!forUs) return false;
 
+      const routedBySource = sourceRouteState(ip, a => this.isOwnAddress(a));
+      if (routedBySource.kind !== 'absent'
+        && this.host.acceptsSourceRouting?.() === false) {
+        Logger.info(this.host.deviceId, 'svi:source-route-denied',
+          `source-routed packet from ${ip.sourceIP} dropped (no ip source-route)`);
+        return true;
+      }
+      if (routedBySource.kind === 'malformed') {
+        Logger.warn(this.host.deviceId, 'svi:source-route-malformed',
+          `malformed source route from ${ip.sourceIP}, dropping`);
+        return true;
+      }
+
       /*
        * La liste ENTRANTE est consultee avant la traduction, comme sur
        * le routeur : une liste ecrite sur l'adresse publique doit voir
@@ -388,7 +405,8 @@ export class SwitchSvi {
       const natIn = this.host.natTranslateInbound?.(ip, `Vlanif${ingressVlan}`) ?? null;
       const workingIp = natIn ?? ip;
 
-      if (this.isOwnAddress(workingIp.destinationIP)) {
+      if (this.isOwnAddress(workingIp.destinationIP)
+        && routedBySource.kind !== 'pending') {
         if (workingIp.protocol === IP_PROTO_ICMP) {
           const icmp = workingIp.payload as ICMPPacket;
           if (icmp?.icmpType === 'echo-request') {
@@ -552,13 +570,16 @@ export class SwitchSvi {
   }
 
   private forwardIpPacket(ingressVlan: number, ip: IPv4Packet, originalPkt: IPv4Packet = ip): void {
+    const sourceRoute = sourceRouteState(ip, a => this.isOwnAddress(a));
     const decision = decrementForForwarding(ip);
     if (decision.kind === 'expired') {
       const ingressSvi = this.svis.get(ingressVlan);
       if (ingressSvi?.ip) this.sendIcmpError(ip, 'time-exceeded', 0);
       return;
     }
-    const route = this.lookupRoute(ip.destinationIP);
+    const lookupTarget = sourceRoute.kind === 'pending'
+      ? sourceRoute.nextHop : ip.destinationIP;
+    const route = this.lookupRoute(lookupTarget);
     if (!route) {
       const ingressSvi = this.svis.get(ingressVlan);
       if (ingressSvi?.ip) this.sendIcmpError(ip, 'destination-unreachable', 0, ingressVlan);
@@ -571,6 +592,24 @@ export class SwitchSvi {
       return;
     }
     let fwd: IPv4Packet = decision.packet;
+
+    const egressAddress = route.egress.ip;
+    if (sourceRoute.kind === 'pending') {
+      if (sourceRoute.strict && !route.nextHop.equals(sourceRoute.nextHop)) {
+        this.sendIcmpError(ip, 'destination-unreachable', 5, ingressVlan);
+        return;
+      }
+      if (egressAddress) fwd = advanceSourceRoute(fwd, sourceRoute, egressAddress);
+    }
+    if (egressAddress) {
+      const recorded = recordRoute(fwd, egressAddress);
+      if (recorded.kind === 'error') {
+        Logger.warn(this.host.deviceId, 'svi:record-route-malformed',
+          `record route from ${ip.sourceIP} has no room for an address, dropping`);
+        return;
+      }
+      fwd = recorded.packet;
+    }
 
     if (this.host.natTranslateOutbound) {
       const outIface = `Vlanif${route.egress.vlan}`;

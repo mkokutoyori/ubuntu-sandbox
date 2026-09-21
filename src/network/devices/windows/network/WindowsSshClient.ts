@@ -2,11 +2,10 @@
  * WindowsSshClient — outbound `ssh user@host` for Windows machines.
  *
  * The Windows analogue of {@link runSshClient}: it resolves the target
- * through the simulated topology, asks the remote machine whether its
- * OpenSSH server is accepting connections, applies the login policy and
- * — on success — returns the transcript a Windows OpenSSH client would
- * print (the remote command prompt banner, or a remote command's
- * output in exec mode).
+ * through the simulated topology, applies the login policy and — on
+ * success — returns the transcript a Windows OpenSSH client would print
+ * (the remote command prompt banner, or a remote command's output in
+ * exec mode).
  *
  * It is built section by section alongside the Windows SSH test suite,
  * mirroring the Linux suite.
@@ -15,6 +14,9 @@
 import { findHostByAddress } from '../../linux/network/HostLookup';
 import { SshKnownHostsFile } from '../../../protocols/ssh/SshKnownHostsFile';
 import type { ISshAuthContext } from '../../../protocols/ssh/auth/ISshAuthMethod';
+import { wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
+import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
+import type { TcpWireOutcome } from '@/network/tcp/types';
 
 export interface WinSshClientResult {
   output: string;
@@ -47,6 +49,7 @@ export interface WinSshClientOpts {
   shellRelay?: () => { output: string; exitCode: number } | null;
   wireAuthRefused?: boolean;
   wireAuthenticated?: boolean;
+  wireOutcome?: TcpWireOutcome;
 }
 
 export interface WinWireTarget {
@@ -99,7 +102,7 @@ export interface WindowsSshTarget {
   ): Promise<{ output: string; exitCode: number }> | { output: string; exitCode: number };
 }
 
-const RE_USERHOST = /^(?:([\w.\-\\]+)@)?([\w.-]+)$/;
+const RE_USERHOST = /^(?:([\w.\-\\]+)@)?([\w.:-]+)$/;
 
 /** SSH short options that consume a value — used to skip them in argv. */
 const SSH_VALUE_FLAGS = new Set(['p', 'i', 'l', 'o', 'L', 'R', 'D', 'F', 'c', 'm', 'J', 'b', 'E', 'S', 'W', 'w']);
@@ -180,6 +183,41 @@ function clientLoginUser(flags: string[]): string | null {
   return i >= 0 && flags[i + 1] ? flags[i + 1] : null;
 }
 
+function verdictFromWireAlone(
+  opts: WinSshClientOpts, remoteUser: string, host: string, destIp: string,
+  port: number, positional: string[],
+): WinSshClientResult {
+  const wire = opts.wireOutcome ?? wireReachOutcome(opts.sourceDevice, destIp, port);
+  if (wire !== 'open') {
+    return {
+      output: `${sshWireFailureLine(OPENSSH_SSH, wire, host, port)}\n`,
+      exitCode: 255,
+    };
+  }
+  const remoteCmd = positional.slice(1).join(' ').trim();
+  const relayed = opts.wireAuthenticated
+    ? (remoteCmd ? opts.execRelay?.(remoteCmd) : opts.shellRelay?.()) ?? null
+    : null;
+  if (relayed) {
+    if (remoteCmd) {
+      const body = relayed.output;
+      return {
+        output: body && !body.endsWith('\n') ? `${body}\n` : body,
+        exitCode: relayed.exitCode,
+      };
+    }
+    return {
+      output: [relayed.output, `Connection to ${host} closed.`]
+        .filter(part => part.length > 0).join('\n'),
+      exitCode: relayed.exitCode,
+    };
+  }
+  return {
+    output: `${remoteUser}@${host}: Permission denied (publickey,password).`,
+    exitCode: 255,
+  };
+}
+
 export async function runWindowsSshClient(
   opts: WinSshClientOpts,
 ): Promise<WinSshClientResult> {
@@ -227,14 +265,9 @@ export async function runWindowsSshClient(
     };
   }
 
-  // Only a Windows machine running an OpenSSH server answers; anything
-  // else (router, switch, …) refuses the connection.
   const machine = found.device as unknown as Partial<WindowsSshTarget>;
   if (typeof machine.isSshActive !== 'function') {
-    return {
-      output: `ssh: connect to host ${host} port ${port}: Connection refused\n`,
-      exitCode: 255,
-    };
+    return verdictFromWireAlone(opts, remoteUser, host, found.ip, port, positional);
   }
   const remote = machine as WindowsSshTarget;
 

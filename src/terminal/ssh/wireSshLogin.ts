@@ -28,6 +28,38 @@ import type { ISshShellChannel } from '@/network/protocols/ssh/channels/ISshChan
 import { peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import { sshLocalFsFor, knownHostsPathFor, sshLocalIdentityFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
 import { IPAddress } from '@/network/core/types';
+import type { TcpFlags, TcpWireOutcome } from '@/network/tcp/types';
+import type { StatelessProbeReply } from '@/network/tcp/TcpStack';
+
+type WireProbeDevice = {
+  getTcpStack(): {
+    scanProbe(remoteIp: string, remotePort: number, flags: TcpFlags): StatelessProbeReply;
+  };
+};
+
+const OUTCOME_OF_REPLY: Readonly<Record<StatelessProbeReply, TcpWireOutcome>> = {
+  'syn-ack': 'open',
+  rst: 'refused',
+  'rst-window': 'refused',
+  'icmp-unreachable': 'refused',
+  'icmp-prohibited': 'prohibited',
+  none: 'timeout',
+};
+
+export function wireReachOutcome(
+  device: object | null | undefined, destIp: string, port: number,
+): TcpWireOutcome {
+  const probe = device as WireProbeDevice | null | undefined;
+  if (!probe || typeof probe.getTcpStack !== 'function') return 'open';
+  const stack = probe.getTcpStack();
+  if (!stack || typeof stack.scanProbe !== 'function') return 'open';
+  if (IPAddress.tryParse(destIp) === null) return 'open';
+  const syn: TcpFlags = {
+    fin: false, syn: true, rst: false, psh: false, ack: false, urg: false, ece: false, cwr: false,
+  };
+  return OUTCOME_OF_REPLY[stack.scanProbe(destIp, port, syn)];
+}
+
 
 export interface WireSshLoginRequest {
   /** The device typing `ssh`. */

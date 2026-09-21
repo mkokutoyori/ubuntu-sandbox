@@ -54,7 +54,7 @@ export class ValidateCommand implements IRmanCommand<void> {
         if (snap.ok === false) return snap;
         const found = snap.value.sets.find(s => s.bsKey === n);
         if (!found) {
-          return err({ code: 'RMAN_06004', message: `RMAN-06004: backupset ${n} not found in catalog` });
+          return err({ code: 'RMAN_06004', message: `backupset ${n} not found in catalog` });
         }
         return engine.run(JobBuilder.validate({ scope: 'BACKUPSET', bsKey: n }));
       }

@@ -43,14 +43,63 @@ ne le signale. Retire avec la refutation ci-dessus.
 
 ## Pile TCP/IP
 
-### [ip] aucune zone d'options IPv4
-Ni record-route, ni timestamp, ni routage par la source. Le dialogue du
-`ping` etendu le DIVULGUE honnetement (« collected and reported rather
-than silently pretended ») ; la presente entree note que `no ip
-source-route` est, lui, ecrit par la CLI et rendu dans la configuration
-sans qu'aucun plan de donnees ne le consulte. C'est sans effet
-aujourd'hui puisqu'aucun paquet ne peut porter l'option, mais c'est une
-commande de durcissement et rien ne le disait.
+### [ip] l'option Timestamp n'est ni construite ni horodatee
+La zone d'options existe desormais (RFC 791 §3.1), et Record Route comme
+le routage par la source sont honores par `Router`. L'option Timestamp
+(type 68) ne l'est PAS : son codec la transporte comme n'importe quelle
+autre option, mais aucun equipement n'y ecrit d'heure. La raison est
+mesuree et elle est dans les limites connues — la livraison des trames
+est synchrone, le RTT vaut 0 ms en temps virtuel, donc les quatre
+horodatages d'un aller-retour vaudraient tous la meme chose. Un
+horodatage identique a chaque saut serait la « valeur decorative » que ce
+depot refuse. A rouvrir le jour ou une horloge de trajet existera.
+
+### [ip] le `ping` etendu collecte `Record` / `Loose` / `Strict` sans les construire
+`ExtendedPingParams.routeOptions` porte la reponse au prompt IOS
+`Loose, Strict, Record, Timestamp, Verbose[none]:` et la SESSION la
+rend ; aucune option n'est posee dans le paquet. Depuis ce lot le
+mecanisme existe (`buildRecordRouteOption`, `buildSourceRouteOption`),
+donc l'obstacle n'est plus le plan de donnees : c'est le RENDU. IOS
+imprime la route collectee sous le resultat du ping, et ni la largeur
+des colonnes ni le libelle exact ne sont attestables depuis ce reseau
+(le §8 du CLAUDE.md : quand la source est injoignable, on le dit et on
+n'implante pas). A rouvrir avec une capture de `ping` etendu reel.
+
+### [ip] la reponse d'echo ne renvoie pas la route enregistree
+RFC 1122 §3.2.2.6, et les deux forces sont differentes : un Record Route
+ou un Timestamp recu dans une requete d'echo « SHOULD be updated to
+include the current host and included in the IP header of the Echo
+Reply », tandis qu'une source route recue « MUST be reversed and used as
+a Source Route option for the Echo Reply ». `Router` construit sa reponse
+sans relire les options de la requete, donc ni l'un ni l'autre n'est
+fait. Vu en ecrivant `probe-options-ipv4.test.ts`, qui mesure la route a
+l'ARRIVEE (chez B) precisement parce que le retour ne la porte pas.
+
+### [ip] le pare-feu ignore la zone d'options, et l'ouvrir le rendrait PLUS permissif
+Le commutateur de niveau 3 est FERME (`probe-options-ipv4-commutateur-l3
+.test.ts`) : `SwitchSvi` appelle desormais `layers/internet/Ipv4Options
+.ts`, note la route, honore les source routes lache et stricte, et
+`no ip source-route` y decide par le port etroit
+`SviHost.acceptsSourceRouting`. Le pare-feu, lui, reste dehors, et le
+laisser dehors est une DECISION plutot qu'un reste :
+
+`Firewall` a son propre pipeline (`classifyIpv4` → `processPipeline` →
+`forward`) et achemine aujourd'hui sur le champ destination, en ignorant
+l'option. Lui faire honorer une source route le rendrait PLUS permissif
+qu'aujourd'hui : un paquet vise sur l'adresse du pare-feu lui-meme
+repartirait vers l'interieur au lieu d'etre livre localement. C'est
+exactement le contournement que la RFC 1812 §5.3.13.4 decrit — « source
+routing may be used to bypass administrative and security controls
+within a network [...] Packet filtering can be defeated by source
+routing ». La reponse juste est d'implanter le comportement AVEC le
+bouton qui le refuse, et le bouton FortiOS correspondant n'est pas
+attestable depuis ce reseau : on ne l'invente pas (§8).
+
+Ce qui PEUT se faire sans ce bouton, et qui n'est pas fait ici :
+l'insertion Record Route, que la RFC 1812 §5.3.13.5 exige des routeurs
+(« MUST support the Record Route option in forwarded packets ») et qui
+n'ouvre aucun contournement. A prendre avec la mesure du pipeline, ou
+l'adresse d'egress se decide.
 
 ## Routeur Cisco (IOS)
 

@@ -34,9 +34,10 @@ function connectionWasLost(answer: OracleNetResponse): boolean {
     && CONNECTION_LOST_ERRORS.some((code) => answer.error.startsWith(code));
 }
 import {
-  OracleNetCallId, OracleNetCallStatus, decodeResponse, encodeRequest,
+  OracleNetCallId, OracleNetCallStatus,
   type OracleNetRequest, type OracleNetResponse,
 } from '@/network/oracle-net/wire/OracleNetCall';
+import { callOverOracleNet } from '@/network/oracle-net/OracleNetSqlClient';
 export type { ColumnFormat } from './QueryResultRenderer';
 
 export interface SQLPlusSettings {
@@ -291,19 +292,7 @@ export class SQLPlusSession {
   }
 
   private callOverOracleNet(request: OracleNetRequest): OracleNetResponse {
-    const session = this.netSession;
-    if (!session || !session.isOpen()) {
-      return {
-        status: OracleNetCallStatus.Error,
-        error: 'ORA-03113: end-of-file on communication channel',
-      };
-    }
-    const answer = session.call(encodeRequest(request));
-    const decoded = answer ? decodeResponse(answer) : null;
-    return decoded ?? {
-      status: OracleNetCallStatus.Error,
-      error: 'ORA-03113: end-of-file on communication channel',
-    };
+    return callOverOracleNet(this.netSession, request);
   }
 
   setConnectIdentifier(identifier: string | null): void {

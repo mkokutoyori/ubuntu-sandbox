@@ -1,6 +1,6 @@
 import {
   MACAddress, createIPv4Packet,
-  type EthernetFrame, type IPAddress, type IPv4HeaderOptions, type IPv4Packet,
+  type EthernetFrame, type IPAddress, type IPv4HeaderOptions, type IPv4Option, type IPv4Packet,
 } from '../../core/types';
 import { ipv4MulticastToMac } from '../../core/ip';
 import {
@@ -19,6 +19,7 @@ export interface Ipv4SendRequest {
   readonly tos?: number;
   readonly flags?: number;
   readonly headerBytes?: number;
+  readonly ipOptions?: IPv4Option[];
 }
 
 export interface Ipv4EgressHost {
@@ -33,6 +34,7 @@ export function ipv4HeaderOptionsOf(request: Ipv4SendRequest): IPv4HeaderOptions
     ...(request.tos === undefined ? {} : { tos: request.tos }),
     ...(request.flags === undefined ? {} : { flags: request.flags }),
     ...(request.headerBytes === undefined ? {} : { headerBytes: request.headerBytes }),
+    ...(request.ipOptions === undefined ? {} : { ipOptions: request.ipOptions }),
   };
 }
 

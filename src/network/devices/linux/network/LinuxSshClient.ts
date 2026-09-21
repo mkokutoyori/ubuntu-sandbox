@@ -17,10 +17,10 @@
  */
 
 import { findHostByAddress, isPathReachable } from './HostLookup';
-import { sshUnreachableReason } from '@/terminal/ssh/wireSshLogin';
+import { sshUnreachableReason, wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
+import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
 import { IPAddress } from '../../../core/types';
-import type { TcpFlags } from '../../../tcp/types';
-import type { StatelessProbeReply } from '../../../tcp/TcpStack';
+import { parseDialAddress } from '../../../tcp/dial';
 import type { TcpWireOutcome } from '../../../tcp/types';
 import { type SshHostKeyType } from './SshKnownHostEntry';
 import { SshPortForward } from './SshPortForward';
@@ -120,7 +120,7 @@ export interface SshClientOpts {
   offeredPassword?: string;
 }
 
-const RE_USERHOST = /^(?:([\w.-]+)@)?([\w.-]+)$/;
+const RE_USERHOST = /^(?:([\w.-]+)@)?([\w.:-]+)$/;
 
 /**
  * Short `ssh` options that consume a value — the character right after
@@ -740,41 +740,27 @@ function rebindToLoopback(fwd: SshPortForward): SshPortForward {
   return SshPortForward.parse(fwd.kind, spec) ?? fwd;
 }
 
-type WireProbeDevice = {
-  getTcpStack(): {
-    scanProbe(remoteIp: string, remotePort: number, flags: TcpFlags): StatelessProbeReply;
+function wireFailure(
+  opts: SshClientOpts, host: string, destIp: string, port: number,
+  outcome: Exclude<TcpWireOutcome, 'open'>,
+): SshClientResult {
+  return {
+    output: `${sshWireFailureLine(OPENSSH_SSH, outcome, host, port)}\n`,
+    exitCode: 255,
+    droppedSyn: { localIp: opts.sourceIp, peerIp: destIp, peerPort: port },
   };
-};
-
-const OUTCOME_OF_REPLY: Readonly<Record<StatelessProbeReply, TcpWireOutcome>> = {
-  'syn-ack': 'open',
-  rst: 'refused',
-  'rst-window': 'refused',
-  'icmp-unreachable': 'refused',
-  'icmp-prohibited': 'prohibited',
-  none: 'timeout',
-};
-
-export function wireReachOutcome(
-  device: object | null | undefined, destIp: string, port: number,
-): TcpWireOutcome {
-  const probe = device as WireProbeDevice | null | undefined;
-  if (!probe || typeof probe.getTcpStack !== 'function') return 'open';
-  const stack = probe.getTcpStack();
-  if (!stack || typeof stack.scanProbe !== 'function') return 'open';
-  if (IPAddress.tryParse(destIp) === null) return 'open';
-  const syn: TcpFlags = {
-    fin: false, syn: true, rst: false, psh: false, ack: false, urg: false, ece: false, cwr: false,
-  };
-  return OUTCOME_OF_REPLY[stack.scanProbe(destIp, port, syn)];
 }
 
-const WIRE_FAILURE_TEXT: Readonly<Record<Exclude<TcpWireOutcome, 'open'>, string>> = {
-  refused: 'Connection refused',
-  prohibited: 'No route to host',
-  unreachable: 'No route to host',
-  timeout: 'Connection timed out',
-};
+function verdictFromWireAlone(
+  opts: SshClientOpts, remoteUser: string, host: string, destIp: string, port: number,
+): SshClientResult {
+  const wire = opts.wireOutcome ?? wireReachOutcome(opts.sourceDevice, destIp, port);
+  if (wire !== 'open') return wireFailure(opts, host, destIp, port, wire);
+  return {
+    output: `${remoteUser}@${host}: Permission denied (publickey,password).\n`,
+    exitCode: 255,
+  };
+}
 
 export function runSshClient(opts: SshClientOpts): SshClientResult {
   const { positional, flags } = splitSshArgs(opts.args);
@@ -872,9 +858,9 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     // look like IPs but have out-of-range octets ("10.0.0.999") are
     // treated as hostnames by the resolver, so they keep the original
     // name-resolution error.
-    const isValidIPv4 = IPAddress.isValid(lookupHost);
+    const isLiteral = parseDialAddress(lookupHost) !== null;
     return {
-      output: isValidIPv4
+      output: isLiteral
         ? `ssh: connect to host ${host} port ${port}: ${sshUnreachableReason(opts.sourceDevice, lookupHost)}\n`
         : `ssh: Could not resolve hostname ${host}: Name or service not known\n`,
       exitCode: 255,
@@ -924,8 +910,6 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     return runCrossPlatformExec(found.device, remoteUser, positional, port, host, opts);
   }
 
-  // The discovered Equipment may be a router/switch — only LinuxMachine
-  // (PC or Server) ships a sshd; everything else refuses on principle.
   const machine = found.device as LinuxMachine & {
     isServiceActive?: (n: string) => boolean;
     scheduleSshLogout?: (user: string, fromIp: string, holdSeconds: number) => void;
@@ -941,10 +925,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     executor?: { execute: (cmd: string) => string; userMgr?: unknown; vfs?: unknown };
   };
   if (typeof machine.isServiceActive !== 'function') {
-    return {
-      output: `ssh: connect to host ${host} port 22: Connection refused\n`,
-      exitCode: 255,
-    };
+    return verdictFromWireAlone(opts, remoteUser, host, destIp, port);
   }
 
   const sshCtx = (machine as unknown as { getSshServerContext?: () => { isClientBlocked?: (ip: string) => boolean } }).getSshServerContext?.();
@@ -988,13 +969,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   }
 
   const wire = opts.wireOutcome ?? wireReachOutcome(opts.sourceDevice, destIp, port);
-  if (wire !== 'open') {
-    return {
-      output: `ssh: connect to host ${host} port ${port}: ${WIRE_FAILURE_TEXT[wire]}\n`,
-      exitCode: 255,
-      droppedSyn: { localIp: opts.sourceIp, peerIp: destIp, peerPort: port },
-    };
-  }
+  if (wire !== 'open') return wireFailure(opts, host, destIp, port, wire);
 
   // From here on, the TCP handshake has genuinely reached a live sshd —
   // everything past this point is an SSH/PAM-layer outcome, not a

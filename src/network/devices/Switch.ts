@@ -576,6 +576,7 @@ export abstract class Switch extends Equipment {
       ?? null,
     icmpUnreachablesEnabled: (vlan) =>
       !getSecurityConfig(this).ifaceFlags(`Vlan${vlan}`).noUnreachables,
+    acceptsSourceRouting: () => getSecurityConfig(this).ipSourceRoute,
     aclDeniesRouted: (vlan, direction, pkt) => {
       const engine = this.vaclEngine;
       if (!engine) return false;

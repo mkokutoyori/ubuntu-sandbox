@@ -14,6 +14,14 @@ export interface DatafileInfo {
   readonly tablespace: string;
 }
 
+export interface ArchivedLogRecord {
+  readonly thread:   number;
+  readonly sequence: number;
+  readonly path:     string;
+  readonly firstScn: number;
+  readonly nextScn:  number;
+}
+
 export interface VfsAdapter {
   /**
    * `declaredSizeBytes`, when given, is the logical size the backup
@@ -28,6 +36,14 @@ export interface VfsAdapter {
   availableBytes():                          number;
   ensureDirectory?(path: string):            Result<void, RmanError>;
   listFilesRecursively?(dir: string):        ReadonlyArray<string>;
+}
+
+/** Ce que `CONNECT TARGET user/pass@id` porte avant le `@`. */
+export interface RmanCredentials {
+  readonly username: string;
+  readonly password: string;
+  /** TARGET et AUXILIARY ouvrent une session SYSDBA ; CATALOG non. */
+  readonly asSysdba: boolean;
 }
 
 export type ConnectTargetOutcome =
@@ -54,6 +70,7 @@ export interface IRmanOracleContext {
   /** Optional: archivelog file paths the engine may delete after a
    *  `BACKUP ARCHIVELOG ALL DELETE INPUT`. Empty by default. */
   getArchivelogPaths?(): ReadonlyArray<string>;
+  getArchivedLogs?(): ReadonlyArray<ArchivedLogRecord>;
   /** Optional: a virtual control-file path (used by BACKUP CURRENT CONTROLFILE). */
   getControlFilePath?(): string;
   getControlFilePaths?(): ReadonlyArray<string>;
@@ -64,8 +81,8 @@ export interface IRmanOracleContext {
    * the same TCP connection `sqlplus` opens. Absent on contexts with no
    * device to dial from, in which case CONNECT stays local.
    */
-  connectTarget?(identifier: string): ConnectTargetOutcome;
-  connectPeer?(identifier: string): ConnectPeerOutcome;
+  connectTarget?(identifier: string, credentials?: RmanCredentials): ConnectTargetOutcome;
+  connectPeer?(identifier: string, credentials?: RmanCredentials): ConnectPeerOutcome;
   checkpointDatafiles?(): void;
   getCurrentScn?(): number;
   runSqlStatement?(statement: string): SqlStatementOutcome;

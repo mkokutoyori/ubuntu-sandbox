@@ -102,7 +102,7 @@ export const JobBuilder = {
                : opts.scope === 'DATAFILE'   ? `datafile ${opts.fileNo}`
                : opts.scope === 'BACKUPSET'  ? `backupset ${opts.bsKey}`
                :                                'database';
-    return _make('BACKUP_DATABASE', [
+    return _make('VALIDATE', [
       { name: 'start_validate', pct: 10, message: `channel ORA_DISK_1: starting validation of ${label}` },
       { name: 'validate_what',  pct: 60, message: `channel ORA_DISK_1: validating ${label}` },
     ], params);

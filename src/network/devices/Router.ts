@@ -143,6 +143,9 @@ import {
   DEFAULT_IPV4_TTL, ipv4HeaderOptionsOf, requiresNamedInterface, sendOnNamedInterface,
   type Ipv4SendRequest,
 } from '../layers/internet/Ipv4Egress';
+import {
+  advanceSourceRoute, recordRoute, sourceRouteState,
+} from '../layers/internet/Ipv4Options';
 import { selectIpv6SourceAddress } from '../layers/internet/Ipv6Egress';
 import type { ProtocolCounters } from '../layers/internet/ProtocolCounters';
 import {
@@ -409,9 +412,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
     e.setClockSource(() => this.getSystemClockMs());
     e.setTimeRangeResolver((name, now) => {
-      const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
-        Symbol.for('CiscoSecurityConfig')
-      ];
+      const sec = this.securityConfig();
       const tr = sec?.timeRanges.get(name);
       if (!tr) return false;
       return isTimeRangeActive(tr, now);
@@ -419,10 +420,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return e;
   })();
 
-  private interfaceUrpf(ifName: string): { mode: 'strict' | 'loose' | null; allowDefault?: boolean } | undefined {
-    const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
+  protected acceptsSourceRouting(): boolean {
+    return this.securityConfig()?.ipSourceRoute ?? true;
+  }
+
+  protected securityConfig(): CiscoSecurityConfig | undefined {
+    return (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
       Symbol.for('CiscoSecurityConfig')
     ];
+  }
+
+  private interfaceUrpf(ifName: string): { mode: 'strict' | 'loose' | null; allowDefault?: boolean } | undefined {
+    const sec = this.securityConfig();
     return sec?.ifaceFlags(ifName).urpf;
   }
 
@@ -438,17 +447,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   protected isIcmpRedirectsEnabled(ifName: string): boolean {
-    const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
-      Symbol.for('CiscoSecurityConfig')
-    ];
+    const sec = this.securityConfig();
     if (!sec) return true;
     return !sec.ifaceFlags(ifName).noRedirects;
   }
 
   protected isIcmpUnreachablesEnabled(ifName: string): boolean {
-    const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
-      Symbol.for('CiscoSecurityConfig')
-    ];
+    const sec = this.securityConfig();
     if (!sec) return true;
     return !sec.ifaceFlags(ifName).noUnreachables;
   }
@@ -2073,9 +2078,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       log: (ev) => { Logger.info(this.id, 'router:ipv6-acl-log', formatIpv6AclLogMessage(ev)); },
       now: () => this.getSystemClockMs(),
       timeRangeActive: (name, now) => {
-        const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
-          Symbol.for('CiscoSecurityConfig')
-        ];
+        const sec = this.securityConfig();
         const tr = sec?.timeRanges.get(name);
         if (!tr) return false;
         return isTimeRangeActive(tr, now);
@@ -2468,7 +2471,22 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return;
     }
 
-    if (this.addressedToUs(ipPkt) && this.receiveControlPlaneIpv4(inPort, ipPkt)) return;
+    const routedBySource = sourceRouteState(ipPkt, a => this.ownsIPv4Address(a));
+    if (routedBySource.kind !== 'absent' && !this.acceptsSourceRouting()) {
+      this.counters.ipInHdrErrors++;
+      Logger.info(this.id, 'router:source-route-denied',
+        `${this.name}: source-routed packet from ${ipPkt.sourceIP} dropped (no ip source-route)`);
+      return;
+    }
+    if (routedBySource.kind === 'malformed') {
+      this.counters.ipInHdrErrors++;
+      Logger.warn(this.id, 'router:source-route-malformed',
+        `${this.name}: malformed source route from ${ipPkt.sourceIP}, dropping`);
+      return;
+    }
+
+    if (routedBySource.kind !== 'pending'
+      && this.addressedToUs(ipPkt) && this.receiveControlPlaneIpv4(inPort, ipPkt)) return;
 
     const natInbound = this.natEngine.translateInbound(ipPkt, inPort);
     if (natInbound) ipPkt = natInbound;
@@ -2494,7 +2512,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return;
     }
     if (this.ownsIPv4Address(destIP)) {
-      this.handleLocalDelivery(inPort, ipPkt);
+      if (routedBySource.kind !== 'pending') {
+        this.handleLocalDelivery(inPort, ipPkt);
+        return;
+      }
+      if (!this.policeCar(inPort, 'input', ipPkt)) return;
+      this.forwardPacket(inPort, ipPkt, originalPkt);
       return;
     }
 
@@ -2957,6 +2980,20 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this.counters.ipForwDatagrams++;
       return;
     }
+    const sourceRoute = sourceRouteState(ipPkt, a => this.ownsIPv4Address(a));
+    if (sourceRoute.kind !== 'absent' && !this.acceptsSourceRouting()) {
+      this.counters.ipInHdrErrors++;
+      Logger.info(this.id, 'router:source-route-denied',
+        `${this.name}: source-routed packet from ${ipPkt.sourceIP} dropped (no ip source-route)`);
+      return;
+    }
+    if (sourceRoute.kind === 'malformed') {
+      this.counters.ipInHdrErrors++;
+      Logger.warn(this.id, 'router:source-route-malformed',
+        `${this.name}: malformed source route from ${ipPkt.sourceIP}, dropping`);
+      return;
+    }
+
     const decision = decrementForForwarding(ipPkt);
     if (decision.kind === 'expired') {
       Logger.info(this.id, 'router:ttl-expired',
@@ -2966,13 +3003,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
 
     // Phase C.2: FIB lookup (LPM)
-    const route = this.lookupRoute(ipPkt.destinationIP);
+    const lookupTarget = sourceRoute.kind === 'pending'
+      ? sourceRoute.nextHop : ipPkt.destinationIP;
+    const route = this.lookupRoute(lookupTarget);
     if (!route) {
       this.counters.ipInAddrErrors++;
       Logger.info(this.id, 'router:no-route',
-        `${this.name}: no route for ${ipPkt.destinationIP}`);
+        `${this.name}: no route for ${lookupTarget}`);
       this._debugService?.emitLine('ip.packet',
-        `IP: s=${ipPkt.sourceIP} (${inPort}), d=${ipPkt.destinationIP}, len ${ipPkt.totalLength}, unroutable`);
+        `IP: s=${ipPkt.sourceIP} (${inPort}), d=${lookupTarget}, len ${ipPkt.totalLength}, unroutable`);
       this.sendICMPError(inPort, ipPkt, 'destination-unreachable', 0);
       return;
     }
@@ -2993,14 +3032,35 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }
 
-    const nextHopIP = this.nextHopTarget(route.nextHop, ipPkt.destinationIP);
+    const nextHopIP = this.nextHopTarget(route.nextHop, lookupTarget);
+
+    const egressAddress = outPort.getIPAddress();
+    if (sourceRoute.kind === 'pending') {
+      if (sourceRoute.strict && !nextHopIP.equals(sourceRoute.nextHop)) {
+        Logger.info(this.id, 'router:strict-source-route-failed',
+          `${this.name}: ${sourceRoute.nextHop} is not directly connected, source route failed`);
+        this.sendICMPError(inPort, ipPkt, 'destination-unreachable', 5);
+        return;
+      }
+      if (egressAddress) fwdPkt = advanceSourceRoute(fwdPkt, sourceRoute, egressAddress);
+    }
+    if (egressAddress) {
+      const recorded = recordRoute(fwdPkt, egressAddress);
+      if (recorded.kind === 'error') {
+        this.counters.ipInHdrErrors++;
+        Logger.warn(this.id, 'router:record-route-malformed',
+          `${this.name}: record route from ${ipPkt.sourceIP} has no room for an address, dropping`);
+        return;
+      }
+      fwdPkt = recorded.packet;
+    }
 
     this._debugService?.emitLine('ip.packet',
       `IP: s=${ipPkt.sourceIP} (${inPort}), d=${ipPkt.destinationIP} (${route.iface}), g=${nextHopIP}, len ${fwdPkt.totalLength}, forward`);
 
     // Phase E.2a: ICMP Redirect (RFC 1812 §5.2.7.2)
     // Send redirect when egress == ingress and source is on-link — host can reach next-hop directly.
-    if (route.iface === inPort && route.nextHop) {
+    if (route.iface === inPort && route.nextHop && sourceRoute.kind === 'absent') {
       const inPortObj = this.ports.get(inPort);
       const inPortIP = inPortObj?.getIPAddress();
       const inPortMask = inPortObj?.getSubnetMask();
@@ -4260,9 +4320,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         ligneCandidate: () => this.getSshSessionRegistry().prochaineLigne(),
         transportParDefaut: () => this.vtyTransportInput,
         quietModeAccessClass: () => {
-          const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
-            Symbol.for('CiscoSecurityConfig')
-          ];
+          const sec = this.securityConfig();
           return sec?.login.quietModeAcl ?? null;
         },
       });

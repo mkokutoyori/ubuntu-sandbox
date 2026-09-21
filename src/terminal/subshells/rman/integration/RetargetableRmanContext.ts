@@ -1,6 +1,6 @@
 import type {
   IRmanOracleContext, VfsAdapter, DatafileInfo, ConnectTargetOutcome, ConnectPeerOutcome, RecordedBackupPiece,
-  SqlStatementOutcome,
+  SqlStatementOutcome, RmanCredentials, ArchivedLogRecord,
 } from './IRmanOracleContext';
 import type { DbId } from '../values/DbId';
 import type { Equipment } from '@/network';
@@ -24,6 +24,7 @@ export class RetargetableRmanContext implements IRmanOracleContext {
   getDatafiles(): ReadonlyArray<DatafileInfo> { return this._current.getDatafiles(); }
   getSpfileParam(name: string): string | undefined { return this._current.getSpfileParam(name); }
   getArchivelogPaths(): ReadonlyArray<string> { return this._current.getArchivelogPaths(); }
+  getArchivedLogs(): ReadonlyArray<ArchivedLogRecord> { return this._current.getArchivedLogs(); }
   getControlFilePath(): string { return this._current.getControlFilePath(); }
   getControlFilePaths(): ReadonlyArray<string> { return this._current.getControlFilePaths(); }
   getInstanceState(): 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN' {
@@ -37,8 +38,8 @@ export class RetargetableRmanContext implements IRmanOracleContext {
   }
   recordBackupPiece(piece: RecordedBackupPiece): void { this._current.recordBackupPiece(piece); }
 
-  connectPeer(identifier: string): ConnectPeerOutcome {
-    const resolved = LinuxRmanContext.forTarget(this._localDevice, identifier);
+  connectPeer(identifier: string, credentials?: RmanCredentials): ConnectPeerOutcome {
+    const resolved = LinuxRmanContext.forTarget(this._localDevice, identifier, credentials);
     if (resolved.ok === false) return { ok: false, error: resolved.error };
     const peer = resolved.ctx;
     return {
@@ -51,8 +52,8 @@ export class RetargetableRmanContext implements IRmanOracleContext {
     };
   }
 
-  connectTarget(identifier: string): ConnectTargetOutcome {
-    const resolved = LinuxRmanContext.forTarget(this._localDevice, identifier);
+  connectTarget(identifier: string, credentials?: RmanCredentials): ConnectTargetOutcome {
+    const resolved = LinuxRmanContext.forTarget(this._localDevice, identifier, credentials);
     if (resolved.ok === false) return { ok: false, error: resolved.error };
     this._current = resolved.ctx;
     this._onRetarget?.(resolved.deviceId);

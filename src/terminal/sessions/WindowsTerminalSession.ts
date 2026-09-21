@@ -40,7 +40,10 @@ import {
 } from '@/network/devices/windows/WinPathping';
 import type { PingResult, TracerouteHopResult } from '@/network/devices/EndHost';
 import { IPAddress } from '@/network/core/types';
-import { openWireSshConnection, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
+import {
+  openWireSshConnection, silentConnectIo, wireReachOutcome,
+} from '@/terminal/ssh/wireSshLogin';
+import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
 import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
 import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
@@ -57,7 +60,7 @@ import { PromiseInputBroker as PromiseInputBrokerCtor } from '@/shell/input';
 import { ShellFactory } from '@/shell/ShellFactory';
 import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
 import type { IShell } from '@/shell/IShell';
-import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
+import { verifyRemoteCredentials } from '@/terminal/ssh/remoteCredentials';
 import { parseRunasArgs, validateRunasUser, runasIncorrectPasswordMessage } from '@/network/devices/windows/WinRunas';
 import type { RunasUserSource } from '@/network/devices/windows/WinRunas';
 
@@ -1036,14 +1039,21 @@ export class WindowsTerminalSession extends TerminalSession {
       getSshHost?: () => { acceptsLogin?: (u: string) => { ok: boolean; reason?: string } };
     };
     const remote = found.device as unknown as RemoteSurface;
-    const sshActive = typeof remote.isSshActive === 'function'
+    const declared = typeof remote.isSshActive === 'function'
       ? remote.isSshActive()
       // Cross-vendor hosts expose service state through getSshHost().
-      : (remote.getSshHost?.() as unknown as { isSshActive?: () => boolean })?.isSshActive?.() ?? false;
-    if (!sshActive) {
+      : (remote.getSshHost?.() as unknown as { isSshActive?: () => boolean })?.isSshActive?.();
+    if (declared === false) {
       remote.recordSshLogin?.(user, sourceIp, dev.getHostname(), false);
       this.addLine(`ssh: connect to host ${host} port ${port}: Connection refused`);
       return true;
+    }
+    if (declared === undefined) {
+      const wire = wireReachOutcome(this.device, found.ip, port);
+      if (wire !== 'open') {
+        this.addLine(sshWireFailureLine(OPENSSH_SSH, wire, host, port));
+        return true;
+      }
     }
 
     const gate = remote.sshdAcceptsLogin?.(user)
@@ -1091,7 +1101,7 @@ export class WindowsTerminalSession extends TerminalSession {
         this.notify();
         return;
       }
-      const ok = this.verifyRemoteCredentials(pending.device, pending.user, pw);
+      const ok = this.remoteCredentialsAccepted(pending.device, pending.user, pw);
       const remote = pending.device as unknown as {
         recordSshLogin?: (u: string, fromIp: string, fromHost: string, accepted: boolean) => void;
       };
@@ -1142,7 +1152,7 @@ export class WindowsTerminalSession extends TerminalSession {
     const pending = this.pendingSshPush;
     if (!pending) return;
 
-    const ok = this.verifyRemoteCredentials(pending.device, pending.user, password);
+    const ok = this.remoteCredentialsAccepted(pending.device, pending.user, password);
     const remote = pending.device as unknown as {
       recordSshLogin?: (
         u: string, fromIp: string, fromHost: string, accepted: boolean,
@@ -1226,58 +1236,16 @@ export class WindowsTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  /**
-   * Validate <user, password> against whatever credential store the
-   * remote vendor exposes. Linux + Windows machines ship a direct
-   * `checkPassword`; routers route through the SSH host's AAA
-   * evaluator. Devices that expose neither (synthetic test doubles)
-   * accept the credentials so legacy tests don't break.
-   */
-  private verifyRemoteCredentials(
+  private remoteCredentialsAccepted(
     device: Equipment, user: string, password: string,
   ): boolean {
-    const dev = device as unknown as {
-      checkPassword?: (u: string, p: string) => boolean;
-      userMgr?: { checkPassword?: (u: string, p: string) => boolean };
-      tryDomainAuth?: (u: string, p: string) => { ok: boolean; sam: string; groups: string[] } | null;
-      getSshHost?: () => {
-        evaluate?: (req: unknown) => { outcome: string };
-      };
-      firstConfiguredIp?: () => string | null;
-    };
-    if (typeof dev.tryDomainAuth === 'function') {
-      const domainResult = dev.tryDomainAuth(user, password);
-      if (domainResult !== null) return domainResult.ok;
-    }
-    if (typeof dev.checkPassword === 'function') {
-      return dev.checkPassword(user, password);
-    }
-    if (typeof dev.userMgr?.checkPassword === 'function') {
-      return dev.userMgr.checkPassword(user, password);
-    }
-    // Router / Switch path — route through the SSH host's evaluator,
-    // which checks the local-user database AND the VTY's protocol
-    // gates (transport input, stelnet server enable, …).
-    if (typeof dev.getSshHost === 'function') {
-      try {
-        const localDev = this.device as unknown as { getHostname(): string };
-        const req = SshConnectionRequest.create({
-          requestedUser: user,
-          requestedHost: this.pendingSshPush?.host ?? '',
-          requestedPort: this.pendingSshPush?.port ?? 22,
-          sourceIp: this.firstLocalIp() ?? '0.0.0.0',
-          sourceHostname: localDev.getHostname(),
-          command: null,
-          offeredAuthMethods: ['password'],
-          credentials: { password },
-        });
-        const decision = dev.getSshHost()?.evaluate?.(req);
-        return decision?.outcome === 'accepted';
-      } catch {
-        return false;
-      }
-    }
-    return true;
+    return verifyRemoteCredentials(device, {
+      user, password,
+      host: this.pendingSshPush?.host ?? '',
+      port: this.pendingSshPush?.port ?? 22,
+      sourceIp: this.firstLocalIp() ?? '0.0.0.0',
+      sourceHostname: (this.device as unknown as { getHostname(): string }).getHostname(),
+    });
   }
 
   /**
@@ -1388,7 +1356,7 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
-    const ok = this.verifyRemoteCredentials(this.device, pending.userName, password);
+    const ok = this.remoteCredentialsAccepted(this.device, pending.userName, password);
     if (!ok) {
       this.addLine(runasIncorrectPasswordMessage(pending.command), 'error');
       this.notify();

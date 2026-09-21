@@ -17,15 +17,15 @@ registerView({
     }
     return queryResult(
       columns(),
-      runtime.archivedLogs.map((l, idx) => [
+      runtime.archivedLogs.map((l) => [
         l.recid,
         l.name,
-        1,                   // THREAD#
+        l.thread,
         l.sequence,
         1,                   // RESETLOGS_ID
         new Date(l.firstTime),
-        100 + idx,           // FIRST_CHANGE#
-        100 + idx + 1,       // NEXT_CHANGE#
+        l.firstScn,
+        l.nextScn,
         new Date(l.firstTime),
         'YES',
         'NO',

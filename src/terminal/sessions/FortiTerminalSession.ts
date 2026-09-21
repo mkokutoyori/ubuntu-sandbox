@@ -115,6 +115,13 @@ export class FortiTerminalSession extends CLITerminalSession {
     this.startFlowFromSteps(this.buildLoginSteps(), '', undefined, { authGate: true });
   }
 
+  protected override prepareAsRemoteUser(user: string): void {
+    this.loggedIn = true;
+    this.forti().getShell().setAdminIdentity(user);
+    this.isBooting = false;
+    this.updatePrompt();
+  }
+
   protected override exitClosesLocalSession(): boolean { return true; }
 
   protected override stripClientPrefix(line: string): string {
