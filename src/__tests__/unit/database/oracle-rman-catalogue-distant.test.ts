@@ -70,6 +70,15 @@
  *  - « sans catalogue, BACKUP et LIST marchent depuis le fichier de
  *    controle » : NON-REGRESSION. Brancher un catalogue distant ne doit
  *    rien changer a la marche sans catalogue, qui est le cas courant.
+ *
+ * DEUX AJUSTEMENTS DU LOT R7, et ce qu'ils disent. Le banc se passait
+ * d'un compte `rman` sur la base distante, et lisait les tables `RC_`
+ * dans le schema de SYS : les deux ne tenaient que parce que
+ * `CONNECT CATALOG` n'authentifiait RIEN et executait ses ordres en
+ * SYSDBA sur l'objet du pair. Depuis que la session s'ouvre par le fil,
+ * le proprietaire du catalogue est un compte REEL — un compte absent
+ * rend `ORA-01017` comme sur une vraie base — et ses tables vivent dans
+ * SON schema, ou ce banc les cherche desormais.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -88,6 +97,9 @@ beforeEach(async () => {
   resetAllOracleInstances();
   Logger.reset();
   lab = await buildRmanLab();
+  lab.sql(lab.dr, 'CREATE USER rman IDENTIFIED BY rman;');
+  lab.sql(lab.dr, 'GRANT RECOVERY_CATALOG_OWNER TO rman;');
+  lab.sql(lab.dr, 'GRANT CONNECT, RESOURCE TO rman;');
 });
 
 const rman = (script: string): string =>
@@ -96,7 +108,8 @@ const rman = (script: string): string =>
 const catalogOf = (): string => `rman/rman@${lab.drIp}:1521/ORCL`;
 
 const catalogTables = (): string =>
-  lab.sql(lab.dr, "SELECT table_name FROM user_tables WHERE table_name LIKE 'RC%';");
+  lab.sql(lab.dr,
+    "SELECT table_name FROM all_tables WHERE owner = 'RMAN' AND table_name LIKE 'RC%';");
 
 describe('CONNECT CATALOG joint vraiment une base, ou refuse', () => {
   it('un hote qui n existe pas est refuse par RMAN-04004', () => {
@@ -141,7 +154,7 @@ describe('le catalogue laisse une trace dans la base qui le porte', () => {
 
   it('REGISTER DATABASE insere la base, et refuse de la reinserer', () => {
     rman(`CONNECT CATALOG ${catalogOf()};\\nCREATE CATALOG;\\nREGISTER DATABASE;`);
-    expect(lab.sql(lab.dr, 'SELECT name FROM rc_database;')).toContain('ORCL');
+    expect(lab.sql(lab.dr, 'SELECT name FROM rman.rc_database;')).toContain('ORCL');
 
     const again = rman(`CONNECT CATALOG ${catalogOf()};\\nREGISTER DATABASE;`);
     expect(again).toContain('RMAN-20002');
@@ -149,17 +162,17 @@ describe('le catalogue laisse une trace dans la base qui le porte', () => {
 
   it('une sauvegarde faite sous catalogue arrive dans RC_BACKUP_SET', () => {
     rman(`CONNECT CATALOG ${catalogOf()};\\nCREATE CATALOG;\\nREGISTER DATABASE;\\nBACKUP DATABASE;`);
-    const rows = lab.sql(lab.dr, 'SELECT COUNT(*) FROM rc_backup_set;');
+    const rows = lab.sql(lab.dr, 'SELECT COUNT(*) FROM rman.rc_backup_set;');
     expect(rows).not.toMatch(/^\s*0\s*$/m);
-    expect(lab.sql(lab.dr, 'SELECT payload FROM rc_backup_set;')).toContain('bsKey');
+    expect(lab.sql(lab.dr, 'SELECT payload FROM rman.rc_backup_set;')).toContain('bsKey');
   });
 
   it('UNREGISTER DATABASE retire vraiment la ligne', () => {
     rman(`CONNECT CATALOG ${catalogOf()};\\nCREATE CATALOG;\\nREGISTER DATABASE;`);
-    expect(lab.sql(lab.dr, 'SELECT name FROM rc_database;')).toContain('ORCL');
+    expect(lab.sql(lab.dr, 'SELECT name FROM rman.rc_database;')).toContain('ORCL');
 
     rman(`CONNECT CATALOG ${catalogOf()};\\nUNREGISTER DATABASE NOPROMPT;`);
-    expect(lab.sql(lab.dr, 'SELECT name FROM rc_database;')).not.toContain('ORCL');
+    expect(lab.sql(lab.dr, 'SELECT name FROM rman.rc_database;')).not.toContain('ORCL');
   });
 });
 

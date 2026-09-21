@@ -40,12 +40,17 @@
  * mesures au-dessus portent sur la CIBLE du travail et non sur un
  * reseau mort.
  *
- * LIMITE MESUREE, pas contournee : la difference de trames entre
- * CONNECT seul et CONNECT + BACKUP est nulle. Le transfert des donnees
- * ne DOIT pas traverser — un vrai RMAN fait ecrire la piece par le
- * processus serveur de la CIBLE, sur le disque de la cible — mais
- * l'aller-retour de la COMMANDE n'est pas trame non plus, exactement
- * comme SQLPlusSession le documente deja pour sqlplus.
+ * LIMITE LEVEE (lot R7). Ce cas EPINGLAIT le defaut : il exigeait que
+ * la difference de trames entre CONNECT seul et CONNECT + BACKUP soit
+ * NULLE, ce qui contractualisait le fait que les commandes de RMAN
+ * n'allaient pas sur le fil. Depuis que la cible distante repond par sa
+ * session Oracle Net, la difference est POSITIVE, et c'est elle qu'on
+ * mesure.
+ *
+ * Ce qui reste vrai, et qui n'est pas la meme chose : les DONNEES ne
+ * traversent toujours pas, et ne doivent pas — un vrai RMAN fait ecrire
+ * la piece par le processus serveur de la CIBLE, sur le disque de la
+ * cible. C'est l'ALLER-RETOUR DE LA COMMANDE qui devait etre trame.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -145,7 +150,7 @@ describe('ce que le fil porte vraiment', () => {
     const connectPlusBackup = frames.length - mid;
 
     expect(connectOnly).toBeGreaterThan(0);
-    expect(connectPlusBackup - connectOnly).toBeLessThanOrEqual(1);
+    expect(connectPlusBackup - connectOnly).toBeGreaterThan(0);
     expect(lab.sh(lab.dr, FIND_PIECES).trim()).toContain('.bkp');
   });
 

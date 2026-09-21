@@ -25,13 +25,31 @@ import { formatOracleDate } from '../core/pureUtils';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanSession } from './IRmanSession';
 import type { RmanSessionOptions, RmanSessionState } from './types';
-import type { IRmanOracleContext } from '../integration/IRmanOracleContext';
+import type { IRmanOracleContext, RmanCredentials } from '../integration/IRmanOracleContext';
 import type { RmanObservable } from '../reactive/RmanSubject';
 import type { RmanEvent } from '../core/types';
 import { RmanSessionOptionsBuilder } from './RmanSessionOptionsBuilder';
 import { RmanConfig } from './RmanConfig';
 
 const NO_IDENTIFIER = 'ORA-12154: TNS:could not resolve the connect identifier specified';
+
+/**
+ * `CONNECT <role> user/pass@id` porte ses identifiants AVANT le `@`, que
+ * le role soit TARGET, CATALOG ou AUXILIARY. Ils n'etaient lus par
+ * personne : le processus serveur d'en face les exige pour ouvrir la
+ * session, et sans eux un mot de passe faux valait un mot de passe
+ * juste. Une seule lecture pour les trois portes.
+ */
+export function credentialsOf(ligne: string, asSysdba = true): RmanCredentials | undefined {
+  const jeton = ligne.split(/\s+/).find((mot) => mot.includes('@'));
+  const avant = jeton?.split('@')[0];
+  if (!avant) return undefined;
+  const barre = avant.indexOf('/');
+  if (barre < 0) return { username: avant, password: '', asSysdba };
+  return {
+    username: avant.slice(0, barre), password: avant.slice(barre + 1), asSysdba,
+  };
+}
 
 export class RmanSession implements IRmanSession {
   private readonly _bus:        RmanEventBus;
@@ -175,7 +193,7 @@ export class RmanSession implements IRmanSession {
     if (cleanedUpper.startsWith('CONNECT TARGET')) {
       const identifier = /@(\S+)/.exec(cleaned)?.[1]?.replace(/;$/, '');
       const outcome = identifier && this._ctx.connectTarget
-        ? this._ctx.connectTarget(identifier)
+        ? this._ctx.connectTarget(identifier, credentialsOf(cleaned))
         : null;
       if (outcome && outcome.ok === false) {
         return err({
@@ -223,7 +241,7 @@ export class RmanSession implements IRmanSession {
         message: 'CONNECT CATALOG requires a connect identifier',
       });
     }
-    const outcome = this._ctx.connectPeer?.(identifier);
+    const outcome = this._ctx.connectPeer?.(identifier, credentialsOf(line, false));
     if (!outcome || outcome.ok === false) {
       return err({
         code: 'RMAN_04004',
@@ -246,7 +264,7 @@ export class RmanSession implements IRmanSession {
     if (!identifier) {
       return ok([`connected to auxiliary database: ${this._ctx.dbName} (not started)`]);
     }
-    const outcome = this._ctx.connectPeer?.(identifier);
+    const outcome = this._ctx.connectPeer?.(identifier, credentialsOf(line));
     if (!outcome || outcome.ok === false) {
       return err({
         code: 'RMAN_04006',

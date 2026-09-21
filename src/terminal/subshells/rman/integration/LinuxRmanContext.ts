@@ -16,7 +16,7 @@ import { DbId } from '../values/DbId';
 import { ok, err, type Result } from '../core/Result';
 import type {
   IRmanOracleContext, DatafileInfo, VfsAdapter, ConnectTargetOutcome, RecordedBackupPiece,
-  SqlStatementOutcome,
+  SqlStatementOutcome, RmanCredentials,
 } from './IRmanOracleContext';
 import type { HostCapableDevice } from '@/network';
 import { resolveOracleConnectTarget } from '@/terminal/commands/oracleNet';
@@ -28,6 +28,11 @@ import { getRegisteredOracleDatabase } from '@/terminal/commands/database';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { recoveryAreaUsage } from '@/database/oracle/storage/RecoveryArea';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import type { OracleNetSession } from '@/network/oracle-net/OracleNetClient';
+import {
+  logonOverOracleNet, executeOverOracleNet,
+} from '@/network/oracle-net/OracleNetSqlClient';
+import { OracleNetCallStatus } from '@/network/oracle-net/wire/OracleNetCall';
 
 interface FsCapableEquipment {
   executeShellCommandSync?(command: string): string;
@@ -52,6 +57,7 @@ export class LinuxRmanContext implements IRmanOracleContext {
   private constructor(
     private readonly _device: Equipment,
     private readonly _oracle: OracleDatabase | null,
+    private readonly _netSession: OracleNetSession | null = null,
   ) {
     const sid = _oracle?.instance.config.sid ?? 'ORCL';
     // Live instances expose their real DBID (same value V$DATABASE
@@ -61,7 +67,7 @@ export class LinuxRmanContext implements IRmanOracleContext {
     this.vfs    = this._buildVfsAdapter();
   }
 
-  connectTarget(identifier: string): ConnectTargetOutcome {
+  connectTarget(identifier: string, credentials?: RmanCredentials): ConnectTargetOutcome {
     const local = this._device as unknown as HostCapableDevice;
     const resolved = resolveOracleConnectTarget(
       local, identifier, (id) => getRegisteredOracleDatabase(id) as OracleDatabase);
@@ -74,8 +80,8 @@ export class LinuxRmanContext implements IRmanOracleContext {
     };
   }
 
-  connectPeer(identifier: string): ConnectPeerOutcome {
-    const resolved = LinuxRmanContext.forTarget(this._device, identifier);
+  connectPeer(identifier: string, credentials?: RmanCredentials): ConnectPeerOutcome {
+    const resolved = LinuxRmanContext.forTarget(this._device, identifier, credentials);
     if (resolved.ok === false) return { ok: false, error: resolved.error };
     const peer = resolved.ctx;
     return {
@@ -91,6 +97,7 @@ export class LinuxRmanContext implements IRmanOracleContext {
   static forTarget(
     localDevice: Equipment,
     identifier: string,
+    credentials?: RmanCredentials,
   ): { ok: true; ctx: LinuxRmanContext; deviceId: string; remote: boolean }
      | { ok: false; error: string } {
     const resolved = resolveOracleConnectTarget(
@@ -99,12 +106,45 @@ export class LinuxRmanContext implements IRmanOracleContext {
     if (resolved.ok === false) return { ok: false, error: resolved.error };
     const deviceId = resolved.db.instance.getDeviceId();
     const targetDevice = EquipmentRegistry.getInstance().getById(deviceId) ?? localDevice;
+    const session = resolved.session ?? null;
+    if (session) {
+      const refus = LinuxRmanContext.logonOn(session, localDevice, credentials);
+      if (refus !== null) {
+        session.close();
+        return { ok: false, error: refus };
+      }
+    }
     return {
       ok: true,
-      ctx: new LinuxRmanContext(targetDevice, resolved.db),
+      ctx: new LinuxRmanContext(targetDevice, resolved.db, session),
       deviceId,
       remote: resolved.remote,
     };
+  }
+
+  /**
+   * Le processus serveur de la cible ouvre la session pour RMAN comme il
+   * l'ouvre pour sqlplus : par un appel Logon sur le MEME fil que les
+   * requetes qui suivront. Sans lui, la premiere requete arriverait sur
+   * une session que le serveur n'a jamais authentifiee.
+   */
+  private static logonOn(
+    session: OracleNetSession, localDevice: Equipment, credentials?: RmanCredentials,
+  ): string | null {
+    const hote = localDevice as unknown as { getHostname?: () => string };
+    const answer = logonOverOracleNet(session, {
+      username: credentials?.username || 'SYS',
+      password: credentials?.password ?? '',
+      asSysdba: credentials?.asSysdba ?? true,
+      identity: {
+        osUser: 'oracle',
+        osGroup: 'dba',
+        hostname: hote.getHostname?.() ?? 'unknown',
+        terminal: 'pts/0',
+        program: 'rman',
+      },
+    });
+    return answer.status === OracleNetCallStatus.Error ? answer.error : null;
   }
 
   static forDevice(device: Equipment): LinuxRmanContext {
@@ -121,6 +161,10 @@ export class LinuxRmanContext implements IRmanOracleContext {
   }
 
   getDatafiles(): ReadonlyArray<DatafileInfo> {
+    // Cible DISTANTE : la liste se DEMANDE, elle ne se lit pas sur
+    // l'objet du pair. C'est la meme vue, interrogee par le fil.
+    const parLeFil = this._netSession ? this.datafilesOverOracleNet() : null;
+    if (parLeFil) return parLeFil;
     // Live database: the canonical V$DATAFILE enumeration — a
     // tablespace created after boot is backed up / restored like any
     // other, and file numbers agree with the dictionary views.
@@ -146,6 +190,7 @@ export class LinuxRmanContext implements IRmanOracleContext {
   }
 
   runSqlStatement(statement: string): SqlStatementOutcome {
+    if (this._netSession) return this.runSqlOverOracleNet(statement);
     const oracle = this._oracle;
     if (!oracle) return { ok: false, error: 'ORA-01034: ORACLE not available' };
     try {
@@ -159,6 +204,46 @@ export class LinuxRmanContext implements IRmanOracleContext {
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
+  }
+
+  /**
+   * Une cible DISTANTE repond par le fil, jamais par son objet.
+   * `resolveOracleConnectTarget` a deja ouvert la session Oracle Net que
+   * `sqlplus` utilise ; RMAN la jetait et interrogeait la base du pair
+   * en memoire, si bien qu'aucune trame ne portait ses commandes.
+   */
+  private runSqlOverOracleNet(statement: string): SqlStatementOutcome {
+    const answer = executeOverOracleNet(this._netSession, statement.replace(/;$/, ''));
+    if (answer.status === OracleNetCallStatus.Error) {
+      return { ok: false, error: answer.error };
+    }
+    const result = answer.result;
+    if (!result) {
+      return { ok: false, error: 'ORA-03113: end-of-file on communication channel' };
+    }
+    const lines: string[] = [];
+    if (result.message) lines.push(...result.message.split('\n'));
+    for (const row of result.rows ?? []) lines.push(row.map(String).join(' '));
+    return { ok: true, lines: lines.map((l) => l.trim()).filter(Boolean) };
+  }
+
+  private datafilesOverOracleNet(): DatafileInfo[] | null {
+    const answer = executeOverOracleNet(this._netSession, 'SELECT * FROM V$DATAFILE');
+    if (answer.status === OracleNetCallStatus.Error || !answer.result) return null;
+    const { columns, rows } = answer.result;
+    const colonne = (nom: string): number =>
+      columns.findIndex((c) => c.name.toUpperCase() === nom);
+    const iFile = colonne('FILE#');
+    const iNom = colonne('NAME');
+    const iOctets = colonne('BYTES');
+    const iTs = colonne('TS#_NAME');
+    if (iFile < 0 || iNom < 0 || iOctets < 0 || iTs < 0) return null;
+    return rows.map((row) => ({
+      fileNo: Number(row[iFile]),
+      path: String(row[iNom]),
+      sizeBytes: Number(row[iOctets]),
+      tablespace: String(row[iTs]),
+    }));
   }
 
   recordBackupPiece(piece: RecordedBackupPiece): void {
