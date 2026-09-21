@@ -20,6 +20,7 @@ import { RmanSessionOptionsBuilder } from './session/RmanSessionOptionsBuilder';
 import { rmanErrorMessage, type RmanError } from './core/RmanError';
 import { formatOracleDate, formatElapsed, simulateBackupElapsedMs } from './core/pureUtils';
 import { LinuxRmanContext } from './integration/LinuxRmanContext';
+import { credentialsOf } from './session/RmanSession';
 import { RetargetableRmanContext } from './integration/RetargetableRmanContext';
 import { RmanLoggerActor } from './actors/RmanLoggerActor';
 import { OracleInstanceWatcherActor } from './actors/OracleInstanceWatcherActor';
@@ -77,8 +78,11 @@ export class ReactiveRmanSubShell implements ISubShell {
   ): { subShell: ReactiveRmanSubShell; banner: string[] } {
     const localId = (device as { id?: string }).id ?? 'default';
     const targetIdx = args.findIndex(a => a.toUpperCase() === 'TARGET');
-    const identifier = targetIdx === -1 ? undefined : /@(\S+)/.exec(args[targetIdx + 1] ?? '')?.[1];
-    const resolved = identifier ? LinuxRmanContext.forTarget(device, identifier) : null;
+    const cible = targetIdx === -1 ? '' : (args[targetIdx + 1] ?? '');
+    const identifier = targetIdx === -1 ? undefined : /@(\S+)/.exec(cible)?.[1];
+    const resolved = identifier
+      ? LinuxRmanContext.forTarget(device, identifier, credentialsOf(cible))
+      : null;
     const targetId = resolved?.ok === true ? resolved.deviceId : localId;
     const ctx = resolved?.ok === true ? resolved.ctx : LinuxRmanContext.forDevice(device);
     const bus = device.getBus();

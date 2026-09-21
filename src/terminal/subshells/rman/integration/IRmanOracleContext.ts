@@ -30,6 +30,14 @@ export interface VfsAdapter {
   listFilesRecursively?(dir: string):        ReadonlyArray<string>;
 }
 
+/** Ce que `CONNECT TARGET user/pass@id` porte avant le `@`. */
+export interface RmanCredentials {
+  readonly username: string;
+  readonly password: string;
+  /** TARGET et AUXILIARY ouvrent une session SYSDBA ; CATALOG non. */
+  readonly asSysdba: boolean;
+}
+
 export type ConnectTargetOutcome =
   | { readonly ok: true; readonly dbName: string; readonly dbId: number; readonly remote: boolean }
   | { readonly ok: false; readonly error: string };
@@ -64,8 +72,8 @@ export interface IRmanOracleContext {
    * the same TCP connection `sqlplus` opens. Absent on contexts with no
    * device to dial from, in which case CONNECT stays local.
    */
-  connectTarget?(identifier: string): ConnectTargetOutcome;
-  connectPeer?(identifier: string): ConnectPeerOutcome;
+  connectTarget?(identifier: string, credentials?: RmanCredentials): ConnectTargetOutcome;
+  connectPeer?(identifier: string, credentials?: RmanCredentials): ConnectPeerOutcome;
   checkpointDatafiles?(): void;
   getCurrentScn?(): number;
   runSqlStatement?(statement: string): SqlStatementOutcome;
