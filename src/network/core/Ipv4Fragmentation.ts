@@ -14,7 +14,7 @@
  * wire representation this codebase doesn't otherwise have.
  */
 
-import { IPv4Packet, computeIPv4Checksum } from './types';
+import { IPv4Packet, computeIPv4Checksum, ipv4HeaderBytesFor, optionsForFragment } from './types';
 import type { NetworkPdu } from './NetworkPdu';
 
 /** Header flag bits, matching the convention documented on `IPv4Packet.flags`. */
@@ -50,19 +50,31 @@ export function fragmentIPv4(pkt: IPv4Packet, mtu: number): IPv4Packet[] {
   const maxChunk = Math.floor((mtu - headerBytes) / 8) * 8;
   if (maxChunk <= 0) return [pkt];
 
+  const carriedOptions = pkt.options && pkt.options.length > 0
+    ? optionsForFragment(pkt.options) : undefined;
+  const laterHeaderBytes = pkt.options && pkt.options.length > 0
+    ? ipv4HeaderBytesFor(carriedOptions) : headerBytes;
+
   const fragments: IPv4Packet[] = [];
   let offsetBytes = 0;
   while (offsetBytes < totalPayloadBytes) {
     const chunk = Math.min(maxChunk, totalPayloadBytes - offsetBytes);
     const isLast = offsetBytes + chunk >= totalPayloadBytes;
+    const isFirst = offsetBytes === 0;
+    const fragHeaderBytes = isFirst ? headerBytes : laterHeaderBytes;
     const frag: IPv4Packet = {
       ...pkt,
-      totalLength: headerBytes + chunk,
+      ihl: fragHeaderBytes / 4,
+      totalLength: fragHeaderBytes + chunk,
       flags: isLast ? 0 : IPV4_FLAG_MF,
       fragmentOffset: offsetBytes / 8,
-      payload: offsetBytes === 0 ? pkt.payload : { type: 'ipv4-fragment-data', length: chunk },
+      payload: isFirst ? pkt.payload : { type: 'ipv4-fragment-data', length: chunk },
       headerChecksum: 0,
     };
+    if (!isFirst) {
+      if (carriedOptions) frag.options = carriedOptions;
+      else delete frag.options;
+    }
     frag.headerChecksum = computeIPv4Checksum(frag);
     fragments.push(frag);
     offsetBytes += chunk;

@@ -67,7 +67,7 @@ import { igmpSendRequest } from '@/network/igmp/frames';
 import { buildIpv4Packet } from '@/network/layers/internet/Ipv4Egress';
 import { buildEchoRequest } from '@/network/icmp/IcmpEcho';
 import { buildIpv4Frame } from '@/network/layers/internet/InternetLayer';
-import { verifyIPv4Checksum, type IPv4Packet, type EthernetFrame } from '@/network/core/types';
+import { ipv4HeaderBytesFor, verifyIPv4Checksum, type IPv4Packet, type EthernetFrame } from '@/network/core/types';
 
 beforeEach(() => {
   resetCounters();
@@ -154,7 +154,7 @@ describe('l\'exception qui reste, et celle qui a ete levee', () => {
       new IPAddress('224.0.0.1'),
       { type: 'igmp', version: 2, messageType: 'query', groupAddress: '0.0.0.0', maxRespTime: 100 },
     );
-    expect(request.headerBytes).toBe(24);
+    expect(ipv4HeaderBytesFor(request.ipOptions)).toBe(24);
     const packet = buildIpv4Packet(new IPAddress('10.0.0.1'), request);
     expect(packet.ihl).toBe(6);
     expect(packet.totalLength).toBe(24 + 8);

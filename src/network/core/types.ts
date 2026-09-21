@@ -783,6 +783,69 @@ export interface IPv4Packet extends NetworkPdu {
   destinationIP: IPAddress;
   /** Upper-layer payload (ICMP, UDP datagram, TCP segment, etc.). */
   payload: ICMPPacket | UDPPacket | TCPPacket | unknown;
+  options?: IPv4Option[];
+}
+
+export interface IPv4Option {
+  type: number;
+  data: number[];
+}
+
+export const IP_OPTION_END = 0;
+export const IP_OPTION_NOP = 1;
+export const IP_OPTION_RECORD_ROUTE = 7;
+export const IP_OPTION_LOOSE_SOURCE_ROUTE = 131;
+export const IP_OPTION_STRICT_SOURCE_ROUTE = 137;
+export const IP_OPTION_ROUTER_ALERT = 148;
+
+export function routerAlertOption(): IPv4Option {
+  return { type: IP_OPTION_ROUTER_ALERT, data: [0, 0] };
+}
+
+function isSingleOctetOption(type: number): boolean {
+  return type === IP_OPTION_END || type === IP_OPTION_NOP;
+}
+
+export function encodeIPv4Options(options: readonly IPv4Option[] | undefined): number[] {
+  if (!options || options.length === 0) return [];
+  const bytes: number[] = [];
+  for (const option of options) {
+    if (isSingleOctetOption(option.type)) { bytes.push(option.type & 0xff); continue; }
+    bytes.push(option.type & 0xff, (option.data.length + 2) & 0xff, ...option.data.map(b => b & 0xff));
+  }
+  while (bytes.length % 4 !== 0) bytes.push(IP_OPTION_END);
+  return bytes;
+}
+
+export function ipv4HeaderBytesFor(options: readonly IPv4Option[] | undefined): number {
+  return 20 + encodeIPv4Options(options).length;
+}
+
+function copiedOnFragmentation(type: number): boolean {
+  return (type & 0x80) !== 0;
+}
+
+export function optionsForFragment(
+  options: readonly IPv4Option[] | undefined,
+): IPv4Option[] | undefined {
+  if (!options || options.length === 0) return undefined;
+  const kept = options.filter(option => copiedOnFragmentation(option.type));
+  return kept.length > 0 ? kept : undefined;
+}
+
+export function decodeIPv4Options(bytes: readonly number[]): IPv4Option[] {
+  const options: IPv4Option[] = [];
+  let offset = 0;
+  while (offset < bytes.length) {
+    const type = bytes[offset];
+    if (type === IP_OPTION_END) break;
+    if (type === IP_OPTION_NOP) { options.push({ type, data: [] }); offset += 1; continue; }
+    const length = bytes[offset + 1];
+    if (length === undefined || length < 2 || offset + length > bytes.length) break;
+    options.push({ type, data: [...bytes.slice(offset + 2, offset + length)] });
+    offset += length;
+  }
+  return options;
 }
 
 // ─── IPv4 Checksum (RFC 791 §3.1) ──────────────────────────────────
@@ -804,6 +867,13 @@ export function resetIPv4IdCounter(): void {
  * Serialises the header into 10 × 16-bit words (IHL=5), sums them
  * using one's complement arithmetic, and returns the complement.
  */
+function ipv4OptionWords(pkt: IPv4Packet): number[] {
+  const bytes = encodeIPv4Options(pkt.options);
+  const words: number[] = [];
+  for (let i = 0; i < bytes.length; i += 2) words.push((bytes[i] << 8) | (bytes[i + 1] ?? 0));
+  return words;
+}
+
 export function computeIPv4Checksum(pkt: IPv4Packet): number {
   const srcOctets = pkt.sourceIP.getOctets();
   const dstOctets = pkt.destinationIP.getOctets();
@@ -820,6 +890,7 @@ export function computeIPv4Checksum(pkt: IPv4Packet): number {
     ((srcOctets[2] << 8) | srcOctets[3]),                     // word 7: src IP low
     ((dstOctets[0] << 8) | dstOctets[1]),                     // word 8: dst IP high
     ((dstOctets[2] << 8) | dstOctets[3]),                     // word 9: dst IP low
+    ...ipv4OptionWords(pkt),
   ];
 
   let sum = 0;
@@ -852,6 +923,7 @@ export function verifyIPv4Checksum(pkt: IPv4Packet): boolean {
     ((srcOctets[2] << 8) | srcOctets[3]),
     ((dstOctets[0] << 8) | dstOctets[1]),
     ((dstOctets[2] << 8) | dstOctets[3]),
+    ...ipv4OptionWords(pkt),
   ];
 
   let sum = 0;
@@ -873,6 +945,7 @@ export interface IPv4HeaderOptions {
   flags?: number;
   /** Header size in bytes, 20 with no options; 24 carries a 4-byte option. */
   headerBytes?: number;
+  ipOptions?: IPv4Option[];
 }
 
 /**
@@ -887,7 +960,7 @@ export function createIPv4Packet(
   payloadSize: number = 0,
   options: IPv4HeaderOptions = {},
 ): IPv4Packet {
-  const headerSize = options.headerBytes ?? 20;
+  const headerSize = options.headerBytes ?? ipv4HeaderBytesFor(options.ipOptions);
   const pkt: IPv4Packet = {
     type: 'ipv4',
     version: 4,
@@ -903,6 +976,7 @@ export function createIPv4Packet(
     sourceIP,
     destinationIP,
     payload,
+    ...(options.ipOptions && options.ipOptions.length > 0 ? { options: options.ipOptions } : {}),
   };
   pkt.headerChecksum = computeIPv4Checksum(pkt);
   return pkt;
