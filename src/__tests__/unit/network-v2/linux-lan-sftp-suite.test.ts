@@ -861,7 +861,7 @@ describe('§13 — bye / quit / exit terminate the session', () => {
     {
       name: 'after a bye script the remote dir was NOT touched',
       setup: async (l) => {
-        await l.pc1.executeCommand(`sftp alice@10.0.0.2 <<'EOF'\npwd\nbye\nmkdir /tmp/ghost-after-bye\nEOF`);
+        await l.pc1.executeCommand(`sftp alice@10.0.0.2 <<'EOF'\npwd\nbye\nmkdir /tmp/ghost-after-bye\nEOF`, 'admin\n');
       },
       on: l => l.pc2,
       cmd: 'ls /tmp',

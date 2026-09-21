@@ -106,7 +106,7 @@ describe('Scénario 11 — ACL Cisco étendue avec time-range', () => {
     vi.setSystemTime(new Date('2026-07-01T10:00:00')); // mercredi 10h local
     const { adminPc, router } = await buildLan();
     await installTimeBoundedAcl(router);
-    const out = await adminPc.executeCommand('ssh alice@10.0.30.10 whoami');
+    const out = await adminPc.executeCommand('ssh alice@10.0.30.10 whoami', 'admin\n');
     expect(out).toMatch(/^alice\s*$/m);
     expect(out).not.toMatch(/Connection timed out/);
   });
@@ -116,7 +116,7 @@ describe('Scénario 11 — ACL Cisco étendue avec time-range', () => {
     vi.setSystemTime(new Date('2026-07-01T22:00:00')); // mercredi 22h local
     const { adminPc, router } = await buildLan();
     await installTimeBoundedAcl(router);
-    const out = await adminPc.executeCommand('ssh alice@10.0.30.10 whoami');
+    const out = await adminPc.executeCommand('ssh alice@10.0.30.10 whoami', 'admin\n');
     expect(out).toMatch(/No route to host/);
     expect(out).not.toMatch(/Connection refused/);
     expect(out).not.toMatch(/^alice\s*$/m);
@@ -127,7 +127,7 @@ describe('Scénario 11 — ACL Cisco étendue avec time-range', () => {
     vi.setSystemTime(new Date('2026-07-05T10:00:00')); // dimanche
     const { adminPc, router } = await buildLan();
     await installTimeBoundedAcl(router);
-    const out = await adminPc.executeCommand('ssh alice@10.0.30.10 whoami');
+    const out = await adminPc.executeCommand('ssh alice@10.0.30.10 whoami', 'admin\n');
     expect(out).toMatch(/No route to host/);
   });
 
@@ -137,7 +137,7 @@ describe('Scénario 11 — ACL Cisco étendue avec time-range', () => {
     const { adminPc, router } = await buildLan();
     await installTimeBoundedAcl(router);
 
-    await adminPc.executeCommand('ssh alice@10.0.30.10 whoami');
+    await adminPc.executeCommand('ssh alice@10.0.30.10 whoami', 'admin\n');
 
     const out = await router.executeCommand('show access-lists 100');
     const denyLine = out.split('\n').find(l => /deny tcp any host 10\.0\.30\.10 eq 22/.test(l)) ?? '';
@@ -151,11 +151,11 @@ describe('Scénario 11 — ACL Cisco étendue avec time-range', () => {
     await installTimeBoundedAcl(router);
 
     vi.setSystemTime(new Date('2026-07-03T17:00:00')); // vendredi 17h
-    const friday = await adminPc.executeCommand('ssh alice@10.0.30.10 whoami');
+    const friday = await adminPc.executeCommand('ssh alice@10.0.30.10 whoami', 'admin\n');
     expect(friday).toMatch(/^alice\s*$/m);
 
     vi.setSystemTime(new Date('2026-07-04T10:00:00')); // samedi 10h
-    const saturday = await adminPc.executeCommand('ssh alice@10.0.30.10 whoami');
+    const saturday = await adminPc.executeCommand('ssh alice@10.0.30.10 whoami', 'admin\n');
     expect(saturday).toMatch(/No route to host/);
   });
 });

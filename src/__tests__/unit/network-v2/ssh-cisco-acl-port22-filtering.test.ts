@@ -125,7 +125,7 @@ describe('Scénario 3 — ACL Cisco étendue filtrant SSH (TCP/22) entre VLANs',
   it('la machine du sous-réseau d\'administration établit la session SSH', async () => {
     const { adminPc, server, router } = await buildLan();
     await installAcl(router);
-    const out = await adminPc.executeCommand('ssh alice@10.0.30.10 whoami');
+    const out = await adminPc.executeCommand('ssh alice@10.0.30.10 whoami', 'admin\n');
     expect(out).toMatch(/^alice\s*$/m);
     expect(out).not.toMatch(/Connection timed out/);
     expect(server).toBeDefined();
@@ -134,7 +134,7 @@ describe('Scénario 3 — ACL Cisco étendue filtrant SSH (TCP/22) entre VLANs',
   it('la machine hors plage est refusée par la liste (No route to host)', async () => {
     const { userPc, router } = await buildLan();
     await installAcl(router);
-    const out = await userPc.executeCommand('ssh alice@10.0.30.10 whoami');
+    const out = await userPc.executeCommand('ssh alice@10.0.30.10 whoami', 'admin\n');
     expect(out).toMatch(/No route to host/);
     expect(out).not.toMatch(/Connection refused/);
     expect(out).not.toMatch(/^alice\s*$/m);
@@ -147,7 +147,7 @@ describe('Scénario 3 — ACL Cisco étendue filtrant SSH (TCP/22) entre VLANs',
       'interface GigabitEthernet0/1', 'no ip unreachables', 'end']) {
       await router.executeCommand(cmd);
     }
-    const out = await userPc.executeCommand('ssh alice@10.0.30.10 whoami');
+    const out = await userPc.executeCommand('ssh alice@10.0.30.10 whoami', 'admin\n');
     expect(out).toMatch(/Connection timed out/);
     expect(out).not.toMatch(/Connection refused/);
   });
@@ -156,8 +156,8 @@ describe('Scénario 3 — ACL Cisco étendue filtrant SSH (TCP/22) entre VLANs',
     const { adminPc, userPc, router } = await buildLan();
     await installAcl(router);
 
-    await adminPc.executeCommand('ssh alice@10.0.30.10 whoami');
-    await userPc.executeCommand('ssh alice@10.0.30.10 whoami');
+    await adminPc.executeCommand('ssh alice@10.0.30.10 whoami', 'admin\n');
+    await userPc.executeCommand('ssh alice@10.0.30.10 whoami', 'admin\n');
 
     const out = await router.executeCommand('show ip access-lists 100');
     const permitLine = out.split('\n').find(l => /permit tcp 10\.0\.10\.0/.test(l)) ?? '';
@@ -171,7 +171,7 @@ describe('Scénario 3 — ACL Cisco étendue filtrant SSH (TCP/22) entre VLANs',
   it('tcpdump côté user-pc montre le SYN sortant sans SYN-ACK en retour', async () => {
     const { userPc, router } = await buildLan();
     await installAcl(router);
-    await userPc.executeCommand('ssh alice@10.0.30.10 whoami');
+    await userPc.executeCommand('ssh alice@10.0.30.10 whoami', 'admin\n');
 
     const tcpdump = await userPc.executeCommand('tcpdump -nn');
     // The exact line shape comes from PacketCaptureLog → cmdTcpdump
@@ -186,7 +186,7 @@ describe('Scénario 3 — ACL Cisco étendue filtrant SSH (TCP/22) entre VLANs',
     const { userPc, router } = await buildLan();
     // Pas d'ACL → tout passe.
     expect(router).toBeDefined();
-    const out = await userPc.executeCommand('ssh alice@10.0.30.10 whoami');
+    const out = await userPc.executeCommand('ssh alice@10.0.30.10 whoami', 'admin\n');
     expect(out).toMatch(/^alice\s*$/m);
     expect(out).not.toMatch(/Connection timed out/);
   });

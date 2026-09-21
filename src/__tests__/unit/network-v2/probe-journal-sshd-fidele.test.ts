@@ -124,10 +124,10 @@ async function labo(): Promise<{ srv: LinuxPC; cli: LinuxPC; journal: () => Prom
   await srv.executeCommand('echo "alice:secret" | sudo chpasswd');
   await srv.executeCommand('sudo systemctl start ssh');
 
-  await cli.executeCommand('ssh alice@10.0.0.1 whoami');
-  await r.executeCommand('ssh -l alice 10.0.0.1');
+  await cli.executeCommand('ssh alice@10.0.0.1 whoami', 'admin\n');
+  await r.executeCommand('ssh -l alice 10.0.0.1', { passwordInput: 'admin' });
   await hw.executeCommand('stelnet 10.0.0.1');
-  await win.executeCommand('ssh alice@10.0.0.1');
+  await win.executeCommand('ssh alice@10.0.0.1', 'admin\n');
 
   return {
     srv, cli,
@@ -224,7 +224,7 @@ describe('toute session ouverte se referme', () => {
     vi.useFakeTimers();
     try {
       const { srv, cli } = await labo();
-      await cli.executeCommand('ssh alice@10.0.0.1 sleep 60');
+      await cli.executeCommand('ssh alice@10.0.0.1 sleep 60', 'admin\n');
       expect(String(await srv.executeCommand('who'))).toContain('alice');
 
       vi.advanceTimersByTime(61_000);
@@ -239,7 +239,7 @@ describe('toute session ouverte se referme', () => {
   it('un `sleep` LOCAL ne tient aucune session SSH', async () => {
     const { srv, cli } = await labo();
     await srv.executeCommand('sleep 300');
-    await cli.executeCommand('ssh alice@10.0.0.1 whoami');
+    await cli.executeCommand('ssh alice@10.0.0.1 whoami', 'admin\n');
     expect(String(await srv.executeCommand('who'))).not.toContain('alice');
   });
 

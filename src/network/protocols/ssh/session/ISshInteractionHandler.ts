@@ -61,6 +61,13 @@ export interface ISshInteractionHandler {
  * password. Never writes to a terminal.
  */
 export class SilentSshInteractionHandler implements ISshInteractionHandler {
+  /**
+   * Ce que le serveur a dit sans qu'on le lui demande — la banniere
+   * d'avant authentification, notamment. Un appelant sans terminal n'a
+   * pas d'ecran ou l'ecrire, mais il en a besoin pour sa transcription.
+   */
+  readonly notices: string[] = [];
+
   constructor(
     private readonly password: string = '',
     private readonly autoAccept: boolean = true,
@@ -82,8 +89,8 @@ export class SilentSshInteractionHandler implements ISshInteractionHandler {
     /* silent */
   }
 
-  showInfo(_message: string): void {
-    /* silent */
+  showInfo(message: string): void {
+    if (message.trim().length > 0) this.notices.push(message);
   }
 
   onConnected(_info: SshConnectionInfo): void {

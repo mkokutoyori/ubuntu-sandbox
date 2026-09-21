@@ -106,7 +106,7 @@ describe('§1 — Linux faillock lockout is coherent across ssh/scp/sftp', () =>
   it('a non-interactive ssh (no sshpass) is also rejected once locked out', async () => {
     const { client } = await buildPair();
     await tripLockout(client);
-    const out = await client.executeCommand('ssh alice@10.0.0.10 whoami');
+    const out = await client.executeCommand('ssh alice@10.0.0.10 whoami', 'admin\n');
     expect(out).toMatch(/Permission denied/i);
   });
 
@@ -114,7 +114,7 @@ describe('§1 — Linux faillock lockout is coherent across ssh/scp/sftp', () =>
     const { client } = await buildPair();
     await client.executeCommand('echo hello > /tmp/payload.txt');
     await tripLockout(client);
-    const out = await client.executeCommand('scp /tmp/payload.txt alice@10.0.0.10:/tmp/payload.txt');
+    const out = await client.executeCommand('scp /tmp/payload.txt alice@10.0.0.10:/tmp/payload.txt', 'admin\n');
     expect(out).toMatch(/Permission denied/i);
   });
 
@@ -132,7 +132,7 @@ describe('§1 — Linux faillock lockout is coherent across ssh/scp/sftp', () =>
     const { client, srv } = await buildPair();
     await tripLockout(client);
     const before = (srv as unknown as { executor: { vfs: { exists(p: string): boolean } } }).executor.vfs;
-    const out = await client.executeCommand('scp /etc/hostname alice@10.0.0.10:/tmp/should-not-land.txt');
+    const out = await client.executeCommand('scp /etc/hostname alice@10.0.0.10:/tmp/should-not-land.txt', 'admin\n');
     expect(out).toMatch(/Permission denied/i);
     expect(before.exists('/tmp/should-not-land.txt')).toBe(false);
   });
@@ -161,7 +161,7 @@ describe('§2 — Windows net accounts lockout is coherent across ssh/scp/sftp',
 
   it('sanity: ssh/scp/sftp reach the Windows account before any failures', async () => {
     const { client } = await buildPair();
-    const out = await client.executeCommand('ssh User@10.0.0.10 hostname');
+    const out = await client.executeCommand('ssh User@10.0.0.10 hostname', 'admin\n');
     expect(out).toMatch(/WIN1/i);
   });
 
@@ -175,14 +175,14 @@ describe('§2 — Windows net accounts lockout is coherent across ssh/scp/sftp',
   it('ssh is rejected once the Windows account is locked out', async () => {
     const { client, win } = await buildPair();
     tripLockout(win);
-    const out = await client.executeCommand('ssh User@10.0.0.10 hostname');
+    const out = await client.executeCommand('ssh User@10.0.0.10 hostname', 'admin\n');
     expect(out).toMatch(/Permission denied/i);
   });
 
   it('scp is rejected once the Windows account is locked out', async () => {
     const { client, win } = await buildPair();
     tripLockout(win);
-    const out = await client.executeCommand('scp /etc/hostname User@10.0.0.10:/C:/Users/User/should-not-land.txt');
+    const out = await client.executeCommand('scp /etc/hostname User@10.0.0.10:/C:/Users/User/should-not-land.txt', 'admin\n');
     expect(out).toMatch(/Permission denied/i);
   });
 
@@ -224,13 +224,13 @@ describe('§3 — Windows password expiration is coherent across ssh/scp/sftp', 
 
   it('ssh is rejected once the Windows password has expired', async () => {
     const { client } = await buildExpiredPair();
-    const out = await client.executeCommand('ssh User@10.0.0.10 hostname');
+    const out = await client.executeCommand('ssh User@10.0.0.10 hostname', 'admin\n');
     expect(out).toMatch(/Permission denied/i);
   });
 
   it('scp is rejected once the Windows password has expired', async () => {
     const { client } = await buildExpiredPair();
-    const out = await client.executeCommand('scp /etc/hostname User@10.0.0.10:/C:/Users/User/should-not-land.txt');
+    const out = await client.executeCommand('scp /etc/hostname User@10.0.0.10:/C:/Users/User/should-not-land.txt', 'admin\n');
     expect(out).toMatch(/Permission denied/i);
   });
 

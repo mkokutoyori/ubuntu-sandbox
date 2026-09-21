@@ -209,7 +209,12 @@ describe('§2 — Cross-equipment SSH connectivity matrix (alice/alice everywher
     async ({ from, to, probeCmd, expectInclude }) => {
       const targetIp = IPS[to];
       const cmd = sshCommandFor(from, 'alice', targetIp, probeCmd);
-      const out = await cast[from].executeCommand(cmd);
+      const client = cast[from] as unknown as {
+        executeCommand: (c: string, a?: unknown) => Promise<string>;
+      };
+      const out = from === 'cisco' || from === 'huawei'
+        ? await client.executeCommand(cmd, { passwordInput: 'alice' })
+        : await client.executeCommand(cmd, 'alice\n');
       expect(out).toMatch(expectInclude);
     });
 });
@@ -224,14 +229,14 @@ describe('§3 — Unknown SSH user is uniformly rejected across the matrix', () 
 
   for (const target of SOURCES) {
     test(`linux → ${target}: unknown user is rejected with Permission denied`, async () => {
-      const out = await cast.linux.executeCommand(`ssh nobody@${IPS[target]} hostname`);
+      const out = await cast.linux.executeCommand(`ssh nobody@${IPS[target]} hostname`, 'admin\n');
       expect(out).toMatch(/Permission denied|denied|no such user|fail|refused|Authentication/i);
     });
   }
 
   for (const target of SOURCES) {
     test(`windows → ${target}: unknown user is rejected`, async () => {
-      const out = await cast.windows.executeCommand(`ssh nobody@${IPS[target]} hostname`);
+      const out = await cast.windows.executeCommand(`ssh nobody@${IPS[target]} hostname`, 'admin\n');
       expect(out).toMatch(/Permission denied|denied|no such user|fail|refused|Authentication/i);
     });
   }

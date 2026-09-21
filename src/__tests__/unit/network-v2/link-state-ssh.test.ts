@@ -44,17 +44,17 @@ function lan(): { a: LinuxPC; b: LinuxPC; cable: Cable } {
 describe('one-shot ssh over a severed link (docs/PRD-Link-State.md §4 #10, P6)', () => {
   it('reaches the remote while the cable is plugged in', async () => {
     const { a } = lan();
-    const out = await a.executeCommand('ssh alice@10.0.3.2 hostname');
+    const out = await a.executeCommand('ssh alice@10.0.3.2 hostname', 'admin\n');
     expect(out).toContain('pcb');
   }, 30000);
 
   it('fails once the cable is pulled instead of silently succeeding', async () => {
     const { a, cable } = lan();
-    expect(await a.executeCommand('ssh alice@10.0.3.2 hostname')).toContain('pcb');
+    expect(await a.executeCommand('ssh alice@10.0.3.2 hostname', 'admin\n')).toContain('pcb');
 
     cable.disconnect();
 
-    const out = await a.executeCommand('ssh alice@10.0.3.2 hostname');
+    const out = await a.executeCommand('ssh alice@10.0.3.2 hostname', 'admin\n');
     expect(out).not.toContain('pcb');
     expect(out).toMatch(/No route to host|Connection timed out|Network is unreachable/);
   }, 30000);
@@ -62,14 +62,14 @@ describe('one-shot ssh over a severed link (docs/PRD-Link-State.md §4 #10, P6)'
   it('scp fails the same way once the link is gone', async () => {
     const { a, cable } = lan();
     cable.disconnect();
-    const out = await a.executeCommand('scp /etc/hostname alice@10.0.3.2:/tmp/x');
+    const out = await a.executeCommand('scp /etc/hostname alice@10.0.3.2:/tmp/x', 'admin\n');
     expect(out).toMatch(/No route to host|Connection timed out|Network is unreachable/);
   }, 30000);
 
   it('sftp fails the same way once the link is gone', async () => {
     const { a, cable } = lan();
     cable.disconnect();
-    const out = await a.executeCommand('sftp alice@10.0.3.2');
+    const out = await a.executeCommand('sftp alice@10.0.3.2', 'admin\n');
     expect(out).toMatch(/No route to host|Connection timed out|Network is unreachable/);
   }, 30000);
 });

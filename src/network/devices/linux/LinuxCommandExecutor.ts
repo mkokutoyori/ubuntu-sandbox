@@ -1607,9 +1607,10 @@ export class LinuxCommandExecutor {
   private async connectWireSsh(
     host: string, user: string, password: string | undefined,
     port = 22, identities: string[] = [], strict: 'yes' | 'no' | 'accept-new' = 'accept-new',
-  ): Promise<{ session: SshSession | null; authRefused: boolean }> {
-    if (!this.tcpConnector) return { session: null, authRefused: false };
+  ): Promise<{ session: SshSession | null; authRefused: boolean; notices: string[] }> {
+    if (!this.tcpConnector) return { session: null, authRefused: false, notices: [] };
     const connector = this.tcpConnector;
+    const interaction = new SilentSshInteractionHandler(password ?? '', strict !== 'yes');
     const session = new SshSession({
       tcpConnector: ((h, p) => connector(h, p)) as unknown as TcpConnector,
       vfs: this.vfs as never,
@@ -1618,7 +1619,7 @@ export class LinuxCommandExecutor {
       localGid: this.userMgr.currentGid,
       knownHostsPath: `${this.sshHomeDir()}/.ssh/known_hosts`,
       credentialless: password === undefined,
-      interactionHandler: new SilentSshInteractionHandler(password ?? '', strict !== 'yes'),
+      interactionHandler: interaction,
     });
     const builder = SshConnectOptionsBuilder.create()
       .host(host).user(user).port(port).strictHostKeyChecking(strict);
@@ -1632,9 +1633,13 @@ export class LinuxCommandExecutor {
     const result = await session.connect(builder.build());
     if (!isOk(result)) {
       session.disconnect();
-      return { session: null, authRefused: result.error.kind === 'AUTH_FAILED' };
+      return {
+        session: null,
+        authRefused: result.error.kind === 'AUTH_FAILED',
+        notices: interaction.notices,
+      };
     }
-    return { session, authRefused: false };
+    return { session, authRefused: false, notices: interaction.notices };
   }
 
   private async tryOpenWireSftpFs(
@@ -1685,7 +1690,7 @@ export class LinuxCommandExecutor {
     const wire = reach === 'open' && target !== null
       ? await this.connectWireSsh(
         target.host, target.user, stdinPwd, target.port, target.identities, target.strict)
-      : { session: null, authRefused: false };
+      : { session: null, authRefused: false, notices: [] as string[] };
     const session = wire.session;
     if (!session) {
       return this.finishSshClientResult(
@@ -1695,9 +1700,18 @@ export class LinuxCommandExecutor {
     const settled = !linuxPeer && target !== null && target.command
       ? await this.relayOverWire(session, target.command)
       : null;
-    const settledShell = target !== null && !target.command
+    const relayedShell = target !== null && !target.command
       ? await this.relayShellOverWire(session, offeredPassword === undefined && stdinPwd ? 1 : 0)
       : null;
+    // La banniere d'avant authentification precede la session, comme sur
+    // une vraie machine : le serveur l'envoie avant que le mot de passe
+    // ne soit demande, et le client l'ecrit avant tout le reste.
+    const settledShell = relayedShell && wire.notices.length > 0
+      ? {
+        ...relayedShell,
+        output: [...wire.notices, relayedShell.output].filter(p => p.length > 0).join('\n'),
+      }
+      : relayedShell;
     try {
       return this.finishSshClientResult(runSshClient({
         ...opts,

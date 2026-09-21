@@ -458,18 +458,27 @@ function resolveSshAuthMethod(
  * that probe through this same function), not just ones that happen to
  * pass a password explicitly.
  */
+function grantsWithoutCredential(machine: unknown, remoteUser: string): boolean {
+  const context = (machine as {
+    getSshServerContext?: () => {
+      auth?: { acceptsWithoutCredential?: (u: string) => boolean };
+    } | undefined;
+  } | undefined)?.getSshServerContext?.();
+  return context?.auth?.acceptsWithoutCredential?.(remoteUser) ?? false;
+}
+
 function verifyOfferedPassword(
   exec: RemoteExecLike | undefined,
   remoteUser: string,
   offeredPassword: string | undefined,
   machine?: unknown,
-): 'ok' | 'wrong-password' {
+): 'ok' | 'wrong-password' | 'not-offered' {
   const mgr = exec?.userMgr as unknown as {
     checkPassword?: (u: string, p: string) => boolean;
     isAccountLockedOut?: (u: string) => boolean;
   } | undefined;
   if (mgr?.isAccountLockedOut?.(remoteUser)) return 'wrong-password';
-  if (offeredPassword === undefined) return 'ok';
+  if (offeredPassword === undefined) return 'not-offered';
   if (typeof mgr?.checkPassword === 'function') {
     return mgr.checkPassword(remoteUser, offeredPassword) ? 'ok' : 'wrong-password';
   }
@@ -1038,10 +1047,23 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // When the client supplied a password (via sshpass), validate it now.
   // Wrong passwords drive the brute-force detection chain: the
   // auth_failure event lands on the throttler which trips fail2ban.
-  if (auth.method === 'password' && verifyOfferedPassword(remoteExec, remoteUser, opts.offeredPassword, machine) === 'wrong-password') {
+  const offered = auth.method === 'password'
+    ? verifyOfferedPassword(remoteExec, remoteUser, opts.offeredPassword, machine)
+    : 'ok';
+  if (offered === 'wrong-password') {
     noteRefusal('password');
     return {
       output: `${remoteUser}@${host}: Permission denied, please try again.\n`,
+      exitCode: 255,
+      connection: connectedTuple,
+    };
+  }
+  if (offered === 'not-offered' && !grantsWithoutCredential(machine, remoteUser)) {
+    noteRefusal('password');
+    return {
+      output: `${remoteUser}@${host}: Permission denied (${
+        auth.clientMethods.join(',') || 'publickey,password'
+      }).`,
       exitCode: 255,
       connection: connectedTuple,
     };

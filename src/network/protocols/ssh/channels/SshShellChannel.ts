@@ -44,6 +44,7 @@ export class SshShellChannel
   private pendingEditor: ((v: EditorView | null) => void) | null = null;
   private inlineHelp = false;
   private openingPrompt: string | null = null;
+  private openingMotd: string | null = null;
   private posix = true;
 
   /** True when the remote treats `?` as a help key (network CLI). */
@@ -54,6 +55,8 @@ export class SshShellChannel
    * line ran. Null when it published none.
    */
   initialPrompt(): string | null { return this.openingPrompt; }
+
+  initialMotd(): string | null { return this.openingMotd; }
 
   /**
    * True when the remote is a POSIX shell — Ctrl+D is EOF and `clear`
@@ -238,6 +241,7 @@ export class SshShellChannel
       // record the capabilities the server advertised on open.
       if (typeof parsed.inlineHelp === 'boolean') this.inlineHelp = parsed.inlineHelp;
       if (typeof parsed.prompt === 'string') this.openingPrompt = parsed.prompt;
+      if (typeof parsed.motd === 'string') this.openingMotd = parsed.motd;
       if (typeof parsed.posixShell === 'boolean') this.posix = parsed.posixShell;
       return;
     }

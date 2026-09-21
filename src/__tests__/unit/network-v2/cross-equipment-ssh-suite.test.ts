@@ -160,9 +160,39 @@ interface Row {
   excludes?: (string | RegExp)[];
 }
 
+const SECRETS: ReadonlyArray<readonly [RegExp, string]> = [
+  // Le compte d'usine `Administrator` d'un Windows garde SON secret,
+  // distinct de celui de `User` sur la meme machine.
+  [/\bAdministrator@/, 'admin\n'],
+  [/[@\s]10\.0\.0\.(6|7|8)\b/, 'Admin@123\n'],
+  [/[@\s]10\.0\.0\.(4|5)\b/, 'user\n'],
+  [/./, 'admin\n'],
+];
+
+/** `MYVAR=1 ssh …` reste un appel client : l'affectation precede le verbe. */
+const APPEL_CLIENT = /(^|[|;&]\s*)(\w+=\S*\s+)*(ssh|scp|sftp|stelnet)\s/;
+
+function motDePasseTape(cmd: string): string | undefined {
+  if (!APPEL_CLIENT.test(cmd) || /\bsshpass\b/.test(cmd)) return undefined;
+  return SECRETS.find(([motif]) => motif.test(cmd))?.[1];
+}
+
+function tapeSurUneCli(dev: unknown): boolean {
+  return dev instanceof CiscoRouter || dev instanceof CiscoSwitch
+    || dev instanceof HuaweiRouter || dev instanceof HuaweiSwitch;
+}
+
 async function runRow(lan: XLan, row: Row): Promise<string> {
   if (row.setup) await row.setup(lan);
-  return (row.on(lan) as { executeCommand: (c: string) => Promise<string> }).executeCommand(row.cmd);
+  const client = row.on(lan);
+  const cible = client as { executeCommand: (c: string, a?: unknown) => Promise<string> };
+  const secret = motDePasseTape(row.cmd);
+  if (secret === undefined) return cible.executeCommand(row.cmd);
+  // Une CLI constructeur repond a l'invite du client `ssh` par une
+  // reponse de plan ; un shell Linux ou Windows la lit sur son entree.
+  return tapeSurUneCli(client)
+    ? cible.executeCommand(row.cmd, { passwordInput: secret.trimEnd() })
+    : cible.executeCommand(row.cmd, secret);
 }
 
 /** Enable SSH server on a Cisco IOS device with a local AAA user. */
@@ -826,7 +856,7 @@ describe('§11 — known_hosts coherence across platforms', () => {
       name: 'Linux: first connect with accept-new persists host key',
       setup: async (l) => {
         await l.linux1.executeCommand('rm -f ~/.ssh/known_hosts');
-        await l.linux1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 hostname');
+        await l.linux1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 hostname', 'admin\n');
       },
       on: l => l.linux1, cmd: 'cat ~/.ssh/known_hosts',
       contains: [/10\.0\.0\.2/, /ssh-(rsa|ed25519|ecdsa)/i],
@@ -834,7 +864,7 @@ describe('§11 — known_hosts coherence across platforms', () => {
     {
       name: 'Linux: second connect uses stored host key (no prompt)',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 hostname');
+        await l.linux1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 hostname', 'admin\n');
       },
       on: l => l.linux1,
       cmd: 'ssh -o StrictHostKeyChecking=yes alice@10.0.0.2 hostname',
@@ -843,7 +873,7 @@ describe('§11 — known_hosts coherence across platforms', () => {
     {
       name: 'Linux: regenerated remote host key triggers identification-changed',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 hostname');
+        await l.linux1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2 hostname', 'admin\n');
         for (const type of ['rsa', 'ed25519', 'ecdsa']) {
           await l.linux2.executeCommand(`sudo rm -f /etc/ssh/ssh_host_${type}_key /etc/ssh/ssh_host_${type}_key.pub`);
         }
@@ -858,7 +888,7 @@ describe('§11 — known_hosts coherence across platforms', () => {
     {
       name: 'Windows: ssh.exe stores host key in %USERPROFILE%\\.ssh\\known_hosts',
       setup: async (l) => {
-        await l.win1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.1 hostname');
+        await l.win1.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.1 hostname', 'admin\n');
       },
       on: l => l.win1, cmd: 'type %USERPROFILE%\\.ssh\\known_hosts',
       contains: [/10\.0\.0\.1/],
@@ -867,7 +897,7 @@ describe('§11 — known_hosts coherence across platforms', () => {
       name: 'Cisco: ip ssh known-hosts records server keys for outbound ssh',
       setup: async (l) => {
         await l.ciscoR1.executeCommand('enable');
-        await l.ciscoR1.executeCommand('ssh -l alice 10.0.0.1');
+        await l.ciscoR1.executeCommand('ssh -l alice 10.0.0.1', { passwordInput: 'admin' });
       },
       on: l => l.ciscoR1, cmd: 'show ip ssh known-hosts',
       contains: [/10\.0\.0\.1/],
@@ -1011,7 +1041,7 @@ describe('§14 — SSH port forwarding (-L / -R / -D)', () => {
     {
       name: '-L 9022:10.0.0.3:22 tunnels SSH to lxsrv1 via the local port',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh -f -N -L 9022:10.0.0.3:22 alice@10.0.0.2');
+        await l.linux1.executeCommand('ssh -f -N -L 9022:10.0.0.3:22 alice@10.0.0.2', 'admin\n');
       },
       on: l => l.linux1,
       cmd: 'ssh -p 9022 -o StrictHostKeyChecking=no alice@127.0.0.1 hostname',
@@ -1020,7 +1050,7 @@ describe('§14 — SSH port forwarding (-L / -R / -D)', () => {
     {
       name: '-R 9122:10.0.0.3:22 forwards the listener back onto the client',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh -f -N -R 9122:10.0.0.3:22 alice@10.0.0.2');
+        await l.linux1.executeCommand('ssh -f -N -R 9122:10.0.0.3:22 alice@10.0.0.2', 'admin\n');
       },
       on: l => l.linux2,
       cmd: 'ssh -p 9122 -o StrictHostKeyChecking=no alice@127.0.0.1 hostname',
@@ -1029,7 +1059,7 @@ describe('§14 — SSH port forwarding (-L / -R / -D)', () => {
     {
       name: '-D 1080 SOCKS proxy: ssh -o ProxyCommand uses it to reach lxsrv1',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh -f -N -D 1080 alice@10.0.0.2');
+        await l.linux1.executeCommand('ssh -f -N -D 1080 alice@10.0.0.2', 'admin\n');
       },
       on: l => l.linux1,
       cmd: 'ssh -o ProxyCommand="ssh -W %h:%p -p 1080 -o StrictHostKeyChecking=no" alice@10.0.0.3 hostname',
@@ -1038,7 +1068,7 @@ describe('§14 — SSH port forwarding (-L / -R / -D)', () => {
     {
       name: 'GatewayPorts no: -L bind is local-only, peer cannot reach it',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh -f -N -L 9222:10.0.0.3:22 alice@10.0.0.2');
+        await l.linux1.executeCommand('ssh -f -N -L 9222:10.0.0.3:22 alice@10.0.0.2', 'admin\n');
       },
       on: l => l.linux2,
       cmd: 'ssh -o ConnectTimeout=2 -p 9222 alice@10.0.0.1 hostname',
@@ -1221,7 +1251,7 @@ describe('§17 — Banner, MOTD and last-login per platform', () => {
     {
       name: 'Linux: last login line appears on subsequent connect',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh alice@10.0.0.2 exit');
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 exit', 'admin\n');
       },
       on: l => l.linux1, cmd: 'ssh alice@10.0.0.2',
       contains: [/Last login:.* from 10\.0\.0\.1/i],
@@ -1522,10 +1552,10 @@ describe('§22 — Reactive event bus: SSH lifecycle subscribers', () => {
     await enableCiscoSsh(lan.ciscoR1);
     await enableHuaweiSsh(lan.hwR1);
     // Trigger one successful login per platform to publish events.
-    await lan.linux1.executeCommand('ssh alice@10.0.0.2 exit');
-    await lan.linux1.executeCommand('ssh admin@10.0.0.6 "show version"');
-    await lan.linux1.executeCommand('ssh admin@10.0.0.8 "display version"');
-    await lan.linux1.executeCommand('ssh User@10.0.0.4 hostname');
+    await lan.linux1.executeCommand('ssh alice@10.0.0.2 exit', 'admin\n');
+    await lan.linux1.executeCommand('ssh admin@10.0.0.6 "show version"', 'Admin@123\n');
+    await lan.linux1.executeCommand('ssh admin@10.0.0.8 "display version"', 'Admin@123\n');
+    await lan.linux1.executeCommand('ssh User@10.0.0.4 hostname', 'user\n');
   });
 
   const rows: Row[] = [
@@ -1537,7 +1567,7 @@ describe('§22 — Reactive event bus: SSH lifecycle subscribers', () => {
     {
       name: 'Linux: failed login is logged with Failed password',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh -o NumberOfPasswordPrompts=1 ghost@10.0.0.2 hostname');
+        await l.linux1.executeCommand('ssh -o NumberOfPasswordPrompts=1 ghost@10.0.0.2 hostname', 'admin\n');
       },
       on: l => l.linux2, cmd: 'cat /var/log/auth.log',
       contains: [/sshd.*Failed password for (invalid user )?ghost from 10\.0\.0\.1/i],
@@ -1586,8 +1616,8 @@ describe('§23 — Concurrent SSH sessions are isolated', () => {
     {
       name: 'two parallel sessions: each cd does not bleed into the other',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh alice@10.0.0.2 "cd /tmp && pwd > /tmp/from-pc1"');
-        await l.lxsrv1.executeCommand('ssh alice@10.0.0.2 "cd /var && pwd > /tmp/from-srv"');
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "cd /tmp && pwd > /tmp/from-pc1"', 'admin\n');
+        await l.lxsrv1.executeCommand('ssh alice@10.0.0.2 "cd /var && pwd > /tmp/from-srv"', 'admin\n');
       },
       on: l => l.linux2, cmd: 'cat /tmp/from-pc1 /tmp/from-srv',
       contains: [/^\/tmp$/m, /^\/var$/m],
@@ -1596,9 +1626,9 @@ describe('§23 — Concurrent SSH sessions are isolated', () => {
       name: 'who lists every active SSH session in parallel',
       setup: async (l) => {
         // Keep three long-lived sessions open.
-        await l.linux1.executeCommand('ssh -f -N alice@10.0.0.2');
-        await l.lxsrv1.executeCommand('ssh -f -N alice@10.0.0.2');
-        await l.linux2.executeCommand('ssh -f -N alice@10.0.0.3');
+        await l.linux1.executeCommand('ssh -f -N alice@10.0.0.2', 'admin\n');
+        await l.lxsrv1.executeCommand('ssh -f -N alice@10.0.0.2', 'admin\n');
+        await l.linux2.executeCommand('ssh -f -N alice@10.0.0.3', 'admin\n');
       },
       on: l => l.linux2, cmd: 'who',
       contains: [/alice.*pts\/\d+.*10\.0\.0\.1/i, /alice.*pts\/\d+.*10\.0\.0\.3/i],
@@ -1606,7 +1636,7 @@ describe('§23 — Concurrent SSH sessions are isolated', () => {
     {
       name: 'env from session A does not leak into session B',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh alice@10.0.0.2 "export TAG=A && echo $TAG > /tmp/tagA"');
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "export TAG=A && echo $TAG > /tmp/tagA"', 'admin\n');
       },
       on: l => l.linux1,
       cmd: 'ssh alice@10.0.0.2 \'echo "${TAG:-empty}"\'',
@@ -1615,7 +1645,7 @@ describe('§23 — Concurrent SSH sessions are isolated', () => {
     {
       name: 'history on a per-session basis is not shared',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh alice@10.0.0.2 "history -c && ls /tmp"');
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "history -c && ls /tmp"', 'admin\n');
       },
       on: l => l.linux1,
       cmd: 'ssh alice@10.0.0.2 "history"',
@@ -2077,7 +2107,7 @@ describe('§31 — Filesystem coherence across SSH/local boundary', () => {
     {
       name: 'file created via SSH is visible to a local ls on the target',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh alice@10.0.0.2 "touch /tmp/remote-mark"');
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "touch /tmp/remote-mark"', 'admin\n');
       },
       on: l => l.linux2, cmd: 'ls -l /tmp/remote-mark',
       contains: [/remote-mark/, /alice/],
@@ -2085,7 +2115,7 @@ describe('§31 — Filesystem coherence across SSH/local boundary', () => {
     {
       name: 'chmod via SSH propagates to stat run locally on the target',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh alice@10.0.0.2 "touch /tmp/perm && chmod 600 /tmp/perm"');
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "touch /tmp/perm && chmod 600 /tmp/perm"', 'admin\n');
       },
       on: l => l.linux2, cmd: 'stat -c "%a %U" /tmp/perm',
       contains: [/^600 alice$/m],
@@ -2110,7 +2140,7 @@ describe('§31 — Filesystem coherence across SSH/local boundary', () => {
     {
       name: 'directory created via SSH appears with correct owner locally',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh alice@10.0.0.2 "mkdir -p /home/alice/work && touch /home/alice/work/.keep"');
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 "mkdir -p /home/alice/work && touch /home/alice/work/.keep"', 'admin\n');
       },
       on: l => l.linux2, cmd: 'stat -c "%U:%G" /home/alice/work',
       contains: [/^alice:alice$/m],
@@ -2220,8 +2250,8 @@ describe('§33 — Full SSH reachability matrix', () => {
   );
 
   test.each(matrix)('$name', async (m) => {
-    const dev = lan[m.client] as { executeCommand: (c: string) => Promise<string> };
-    const out = await dev.executeCommand(m.cmd);
+    const dev = lan[m.client] as { executeCommand: (c: string, s?: string) => Promise<string> };
+    const out = await dev.executeCommand(m.cmd, motDePasseTape(m.cmd));
     for (const c of m.contains) {
       if (c instanceof RegExp) expect(out).toMatch(c);
       else expect(out).toContain(c);
@@ -2619,7 +2649,7 @@ describe('§40 — Logs coherence for SSH activity', () => {
     {
       name: 'Linux: successful ssh login appears in /var/log/auth.log',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh alice@10.0.0.2 hostname');
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 hostname', 'admin\n');
       },
       on: l => l.linux2, cmd: 'grep -E "Accepted|sshd" /var/log/auth.log',
       contains: [/alice/i],
@@ -2627,7 +2657,7 @@ describe('§40 — Logs coherence for SSH activity', () => {
     {
       name: 'Linux: failed unknown-user attempt is logged',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh ghost@10.0.0.2 hostname');
+        await l.linux1.executeCommand('ssh ghost@10.0.0.2 hostname', 'admin\n');
       },
       on: l => l.linux2, cmd: 'grep -E "Failed|Invalid user|sshd" /var/log/auth.log',
       contains: [/ghost/i],
@@ -2635,7 +2665,7 @@ describe('§40 — Logs coherence for SSH activity', () => {
     {
       name: 'Windows: successful ssh login surfaces in the Security log',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh User@10.0.0.4 hostname');
+        await l.linux1.executeCommand('ssh User@10.0.0.4 hostname', 'user\n');
       },
       on: l => l.win1, cmd: 'wevtutil qe Security',
       contains: [/User|Logon|4624/i],
@@ -2643,7 +2673,7 @@ describe('§40 — Logs coherence for SSH activity', () => {
     {
       name: 'Linux: log line carries the client IP for auditability',
       setup: async (l) => {
-        await l.linux1.executeCommand('ssh alice@10.0.0.2 hostname');
+        await l.linux1.executeCommand('ssh alice@10.0.0.2 hostname', 'admin\n');
       },
       on: l => l.linux2, cmd: 'grep -E "10\\.0\\.0\\.1" /var/log/auth.log',
       contains: [/10\.0\.0\.1/],

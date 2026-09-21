@@ -75,7 +75,7 @@ describe('Scénario 5 — restriction d\'accès via sshd_config', () => {
     const { pc, srv } = await buildPair();
     await writeConfig(srv,
       'PermitRootLogin no\nAllowUsers admin1 admin2 root\nPasswordAuthentication yes\n');
-    const out = await pc.executeCommand('ssh root@10.0.0.2 whoami');
+    const out = await pc.executeCommand('ssh root@10.0.0.2 whoami', 'admin\n');
     expect(out).toMatch(/Permission denied/i);
 
     const log = srvVfs(srv).readFile('/var/log/auth.log') ?? '';
@@ -86,7 +86,7 @@ describe('Scénario 5 — restriction d\'accès via sshd_config', () => {
     const { pc, srv } = await buildPair();
     await writeConfig(srv,
       'AllowUsers admin1 admin2\nPasswordAuthentication yes\n');
-    const out = await pc.executeCommand('ssh bob@10.0.0.2 whoami');
+    const out = await pc.executeCommand('ssh bob@10.0.0.2 whoami', 'admin\n');
     expect(out).toMatch(/Permission denied/i);
 
     const log = srvVfs(srv).readFile('/var/log/auth.log') ?? '';
@@ -97,7 +97,7 @@ describe('Scénario 5 — restriction d\'accès via sshd_config', () => {
     const { pc, srv } = await buildPair();
     await writeConfig(srv,
       'AllowUsers admin1 admin2\nPasswordAuthentication yes\n');
-    const out = await pc.executeCommand('ssh admin1@10.0.0.2 whoami');
+    const out = await pc.executeCommand('ssh admin1@10.0.0.2 whoami', 'admin\n');
     expect(out).toMatch(/^admin1\s*$/m);
 
     const log = srvVfs(srv).readFile('/var/log/auth.log') ?? '';
@@ -108,7 +108,7 @@ describe('Scénario 5 — restriction d\'accès via sshd_config', () => {
     const { pc, srv } = await buildPair();
     await writeConfig(srv,
       'DenyUsers bob\nPasswordAuthentication yes\n');
-    const out = await pc.executeCommand('ssh bob@10.0.0.2 whoami');
+    const out = await pc.executeCommand('ssh bob@10.0.0.2 whoami', 'admin\n');
     expect(out).toMatch(/Permission denied/i);
 
     const log = srvVfs(srv).readFile('/var/log/auth.log') ?? '';
@@ -120,7 +120,7 @@ describe('Scénario 5 — restriction d\'accès via sshd_config', () => {
     // Policy permissive d'abord, REQUIRES reload pour être en vigueur.
     await writeConfig(srv, 'PermitRootLogin yes\nPasswordAuthentication yes\n');
     // Sanity : bob peut se connecter, on n'a pas d'AllowUsers.
-    const ok = await pc.executeCommand('ssh bob@10.0.0.2 whoami');
+    const ok = await pc.executeCommand('ssh bob@10.0.0.2 whoami', 'admin\n');
     expect(ok).toMatch(/^bob\s*$/m);
 
     // On écrit la policy stricte mais on NE recharge PAS.
@@ -129,12 +129,12 @@ describe('Scénario 5 — restriction d\'accès via sshd_config', () => {
       { reload: false });
     // Comportement réel sshd : tant que SIGHUP n'est pas envoyé, la
     // config en mémoire reste l'ancienne — bob passe encore.
-    const stillOk = await pc.executeCommand('ssh bob@10.0.0.2 whoami');
+    const stillOk = await pc.executeCommand('ssh bob@10.0.0.2 whoami', 'admin\n');
     expect(stillOk).toMatch(/^bob\s*$/m);
 
     // Reload → la nouvelle policy entre en vigueur.
     await srv.executeCommand('systemctl reload ssh');
-    const ko = await pc.executeCommand('ssh bob@10.0.0.2 whoami');
+    const ko = await pc.executeCommand('ssh bob@10.0.0.2 whoami', 'admin\n');
     expect(ko).toMatch(/Permission denied/i);
   });
 });

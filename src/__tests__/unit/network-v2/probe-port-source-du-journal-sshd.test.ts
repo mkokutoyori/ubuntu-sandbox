@@ -62,7 +62,7 @@ const portsDe = (journal: string): number[] =>
 describe('le port du journal est celui du client', () => {
   it('TEMOIN : la ligne `Accepted` porte deja un port ephemere', async () => {
     const { pc, srv } = await labo();
-    await pc.executeCommand(`ssh ${OPT} alice@10.0.0.2 whoami`);
+    await pc.executeCommand(`ssh ${OPT} alice@10.0.0.2 whoami`, 'admin\n');
     const journal = String(await srv.executeCommand('journalctl -u ssh'));
     const acceptee = journal.split('\n').find(l => l.includes('Accepted password')) ?? '';
     const { min, max } = srv.getTcpStack().getEphemeralRange();
@@ -73,7 +73,7 @@ describe('le port du journal est celui du client', () => {
 
   it('aucune ligne ssh2 n annonce le port 22 du serveur', async () => {
     const { pc, srv } = await labo();
-    await pc.executeCommand(`ssh ${OPT} alice@10.0.0.2 whoami`);
+    await pc.executeCommand(`ssh ${OPT} alice@10.0.0.2 whoami`, 'admin\n');
     const journal = String(await srv.executeCommand('journalctl -u ssh'));
     const ports = portsDe(journal);
     expect(ports.length).toBeGreaterThan(0);
@@ -82,7 +82,7 @@ describe('le port du journal est celui du client', () => {
 
   it('un echec et un succes du MEME pair citent le meme port', async () => {
     const { pc, srv } = await labo();
-    await pc.executeCommand(`ssh ${OPT} alice@10.0.0.2 whoami`);
+    await pc.executeCommand(`ssh ${OPT} alice@10.0.0.2 whoami`, 'admin\n');
     const journal = String(await srv.executeCommand('journalctl -u ssh'));
     const ports = new Set(portsDe(journal));
     expect(ports.size).toBe(1);
