@@ -93,15 +93,18 @@ export const JobBuilder = {
     tablespace?: string;
     fileNo?: number;
     bsKey?: number;
+    checkLogical?: boolean;
   }): RmanJob {
     const params: Record<string, string> = { validate: 'true', validateScope: opts.scope };
+    if (opts.checkLogical) params.checkLogical = 'true';
     if (opts.tablespace) params.tablespace = opts.tablespace.toUpperCase();
     if (opts.fileNo !== undefined) params.fileNo = String(opts.fileNo);
     if (opts.bsKey !== undefined)  params.bsKey  = String(opts.bsKey);
-    const label = opts.scope === 'TABLESPACE' ? `tablespace ${opts.tablespace}`
-               : opts.scope === 'DATAFILE'   ? `datafile ${opts.fileNo}`
-               : opts.scope === 'BACKUPSET'  ? `backupset ${opts.bsKey}`
-               :                                'database';
+    const portee = opts.scope === 'TABLESPACE' ? `tablespace ${opts.tablespace}`
+                 : opts.scope === 'DATAFILE'   ? `datafile ${opts.fileNo}`
+                 : opts.scope === 'BACKUPSET'  ? `backupset ${opts.bsKey}`
+                 :                                'database';
+    const label = opts.checkLogical ? `${portee} (check logical)` : portee;
     return _make('VALIDATE', [
       { name: 'start_validate', pct: 10, message: `channel ORA_DISK_1: starting validation of ${label}` },
       { name: 'validate_what',  pct: 60, message: `channel ORA_DISK_1: validating ${label}` },
@@ -220,12 +223,20 @@ export const JobBuilder = {
   },
 
   crosscheck(scope: 'BACKUP' | 'ARCHIVELOG' = 'BACKUP'): RmanJob {
-    const msg = scope === 'ARCHIVELOG'
-      ? "crosschecked archived log: found to be 'AVAILABLE'"
-      : "crosschecked backup piece: found to be 'AVAILABLE'";
-    return _make('CROSSCHECK', [
-      { name: 'crosscheck', pct: 80, message: msg },
-    ], { scope });
+    return _make('CROSSCHECK', [], { scope });
+  },
+
+  blockRecover(opts: { scope: 'CORRUPTION_LIST' | 'DATAFILE'; fileNo?: number; block?: number }): RmanJob {
+    const params: Record<string, string> = { blockScope: opts.scope };
+    if (opts.fileNo !== undefined) params.fileNo = String(opts.fileNo);
+    if (opts.block  !== undefined) params.block  = String(opts.block);
+    return _make('BLOCK_RECOVER', [
+      { name: 'restoring_blocks', pct: 20, message: 'channel ORA_DISK_1: restoring block(s)' },
+      {
+        name: 'specifying_blocks', pct: 30,
+        message: 'channel ORA_DISK_1: specifying block(s) to restore from backup set',
+      },
+    ], params);
   },
 
   deleteExpired(): RmanJob {

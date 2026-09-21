@@ -21,7 +21,9 @@ import type { RmanError } from '../core/RmanError';
 import type { IRmanJobEngine } from './IRmanJobEngine';
 import type { IChannelPool } from '../channel/IChannelPool';
 import type { IRmanCatalogRepository } from '../catalog/IRmanCatalogRepository';
-import type { IRmanOracleContext, ArchivedLogRecord } from '../integration/IRmanOracleContext';
+import type {
+  IRmanOracleContext, ArchivedLogRecord, BlockCorruptionType,
+} from '../integration/IRmanOracleContext';
 import {
   validateBackupPiece, pieceFaultMessage, bannerIsIntact, type PieceVerdict,
 } from '../core/pieceValidation';
@@ -44,6 +46,15 @@ import { parseDatafileImage, renderDatafileImage, datafileBannerOf } from '@/dat
 
 const bySequence = (a: ArchivedLogRecord, b: ArchivedLogRecord): number =>
   a.thread - b.thread || a.sequence - b.sequence;
+
+const SEGMENT_MARKER = 'ORACLE-SEGMENT-IMAGE';
+
+function logicalFaultOfDatafile(text: string, tablespace: string): 'LOGICAL' | null {
+  if (!text.includes(SEGMENT_MARKER)) return null;
+  const payload = parseDatafileImage(text);
+  if (payload === null) return 'LOGICAL';
+  return payload.tablespace.toUpperCase() === tablespace.toUpperCase() ? null : 'LOGICAL';
+}
 import type { TablespacePayload } from '@/database/oracle/OracleStorage';
 import { parseSize } from '@/database/oracle/views/_fileSize';
 import { BackupKey } from '../values/BackupKey';
@@ -127,6 +138,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       case 'BACKUP_ARCHIVELOG':  return this._doBackup(job, channelId, 'archivelog');
       case 'BACKUP_TABLESPACE':  return this._doBackup(job, channelId, `tablespace ${job.params?.tablespace ?? 'USERS'}`);
       case 'VALIDATE':           return this._doValidate(job);
+      case 'BLOCK_RECOVER':      return this._doBlockRecover(job);
       case 'RESTORE_DATABASE':   return this._doRestore(job, channelId);
       case 'RECOVER_DATABASE':   return this._doRecover(job);
       case 'DUPLICATE_DATABASE': return this._doDuplicate(job, channelId);
@@ -540,11 +552,17 @@ export class RmanJobEngine implements IRmanJobEngine {
   }
 
   private _doRestore(job: RmanJob, channelId: string): Result<void, RmanError> {
+    const params = job.params ?? {};
+    // PREVIEW et VALIDATE n'ecrivent aucun datafile : l'exigence de
+    // l'etat MOUNT ne porte que sur la forme qui en REECRIT.
+    const lectureSeule = params.preview === 'true' || params.validate === 'true';
     const inst = this._ctx.getInstanceState?.();
-    if (inst === 'OPEN' || inst === 'SHUTDOWN') {
+    if (!lectureSeule && (inst === 'OPEN' || inst === 'SHUTDOWN')) {
       return err({ code: 'RMAN_06403', message: 'database must be mounted (not open)' });
     }
-    const params = job.params ?? {};
+    if (lectureSeule && inst === 'SHUTDOWN') {
+      return err({ code: 'RMAN_04014', message: 'startup failed: ORA-01034: ORACLE not available' });
+    }
     const snap = this._catalog.listAll();
     if (snap.ok === false) return snap;
     let sets = [...snap.value.sets];
@@ -577,13 +595,30 @@ export class RmanJobEngine implements IRmanJobEngine {
       }
     }
 
-    // PREVIEW / VALIDATE — emit a progress line and skip the actual restore.
-    if (params.preview === 'true' || params.validate === 'true') {
-      const kind = params.preview === 'true' ? 'preview' : 'validate';
+    if (params.preview === 'true') {
       this._bus.emit({
-        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: kind, pct: 60,
-        message: `restore ${kind}: ${sets.length} backup set(s) examined`,
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'preview', pct: 60,
+        message: `restore preview: ${sets.length} backup set(s) examined`,
       });
+      return ok(undefined);
+    }
+    // RESTORE ... VALIDATE repond a la meme question que VALIDATE
+    // BACKUPSET — « ce jeu est-il restaurable ? » — et doit donc lire
+    // les pieces par le meme predicat, sans rien ecrire sur le disque.
+    if (params.validate === 'true') {
+      for (const set of sets) {
+        for (const piece of set.pieces) {
+          const verdict = validateBackupPiece(this._ctx.vfs, piece.path);
+          if (verdict.fault !== null) {
+            return err({ code: 'ERROR_STACK', message: pieceFaultMessage(verdict) });
+          }
+          this._bus.emit({
+            type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'validate_piece', pct: 70,
+            message: `channel ORA_DISK_1: reading from backup piece ${piece.path}`,
+          });
+        }
+      }
+      this._bus.emit({ type: 'VALIDATION_REPORT', jobId: job.id, files: [], elapsedMs: 1_000 });
       return ok(undefined);
     }
 
@@ -776,28 +811,45 @@ export class RmanJobEngine implements IRmanJobEngine {
     }
     const blockSize = Number(this._ctx.getSpfileParam('db_block_size') ?? 8192) || 8192;
     const highScn = this._ctx.getCurrentScn?.() ?? 0;
+    const absent = datafiles.find(df => !this._ctx.vfs.fileExists(df.path));
+    if (absent) {
+      return err({
+        code: 'ERROR_STACK',
+        message: `ORA-19505: failed to identify file "${absent.path}"\n`
+          + 'ORA-27037: unable to obtain file status',
+      });
+    }
+    const checkLogical = params.checkLogical === 'true';
+    const defauts = new Map<number, BlockCorruptionType>();
     const files: ValidatedFile[] = datafiles.map(df => {
       const read = this._ctx.vfs.readFile(df.path);
       const text = read.ok ? new TextDecoder().decode(read.value) : '';
-      const lisible = this._ctx.vfs.fileExists(df.path)
-        && bannerIsIntact(text, 'ORACLE DATAFILE');
+      const defaut = bannerIsIntact(text, 'ORACLE DATAFILE')
+        ? (checkLogical ? logicalFaultOfDatafile(text, df.tablespace) : null)
+        : 'CORRUPT';
+      if (defaut !== null) defauts.set(df.fileNo, defaut);
       const blocksExamined = Math.max(1, Math.ceil(df.sizeBytes / blockSize));
       const blocksUsed = Math.min(blocksExamined, Math.ceil(text.length / blockSize));
       return {
         fileNo: df.fileNo, path: df.path,
-        status: lisible ? 'OK' : 'FAILED',
-        markedCorrupt: lisible ? 0 : blocksExamined,
-        emptyBlocks: lisible ? blocksExamined - blocksUsed : 0,
+        status: defaut === null ? 'OK' : 'FAILED',
+        markedCorrupt: defaut === null ? 0 : blocksExamined,
+        emptyBlocks: defaut === null ? blocksExamined - blocksUsed : 0,
         blocksExamined, highScn,
       };
     });
     this._bus.emit({ type: 'VALIDATION_REPORT', jobId: job.id, files, elapsedMs: 1_000 });
-    const casse = files.find(f => f.status === 'FAILED');
-    if (casse) {
-      return err({
-        code: 'ERROR_STACK',
-        message: `ORA-19505: failed to identify file "${casse.path}"\n`
-          + 'ORA-27037: unable to obtain file status',
+    let corrompus = 0;
+    for (const f of files) {
+      const defaut = defauts.get(f.fileNo);
+      if (defaut === undefined) continue;
+      corrompus++;
+      this._ctx.recordBlockCorruption?.(f.fileNo, f.blocksExamined, defaut);
+    }
+    if (corrompus > 0) {
+      this._bus.emit({
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'validate_corrupt', pct: 95,
+        message: 'validate found one or more corrupt blocks',
       });
     }
     return ok(undefined);
@@ -827,6 +879,65 @@ export class RmanJobEngine implements IRmanJobEngine {
     return ok(undefined);
   }
 
+  private _doBlockRecover(job: RmanJob): Result<void, RmanError> {
+    const etat = this._ctx.getInstanceState?.();
+    if (etat === 'SHUTDOWN' || etat === 'NOMOUNT') {
+      return err({ code: 'RMAN_06403', message: 'database must be mounted or open' });
+    }
+    const params = job.params ?? {};
+    const registre = this._ctx.getBlockCorruptions?.() ?? [];
+    const cibles = params.blockScope === 'CORRUPTION_LIST'
+      ? registre
+      : [{ fileNo: Number(params.fileNo), blocks: 1 }];
+    if (cibles.length === 0) {
+      this._bus.emit({
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'no_corruption', pct: 50,
+        message: 'no corrupt blocks to recover',
+      });
+      return ok(undefined);
+    }
+    const snap = this._catalog.listAll();
+    if (snap.ok === false) return snap;
+    const utilisables = snap.value.sets.filter(set =>
+      set.pieces.every(p => validateBackupPiece(this._ctx.vfs, p.path).fault === null));
+    if (utilisables.length === 0) {
+      const premier = cibles[0]?.fileNo ?? 1;
+      return err({
+        code: 'ERROR_STACK',
+        message: 'RMAN-06026: some targets not found - aborting restore\n'
+          + `RMAN-06023: no backup or copy of datafile ${premier} found to restore`,
+      });
+    }
+    const images = this._readPieceImages(utilisables);
+    const parNumero = new Map(this._ctx.getDatafiles().map(df => [df.fileNo, df]));
+    const source = utilisables[utilisables.length - 1].pieces[0].path;
+    for (const cible of cibles) {
+      const df = parNumero.get(cible.fileNo);
+      if (df === undefined) {
+        return err({
+          code: 'ERROR_STACK',
+          message: `RMAN-06023: no backup or copy of datafile ${cible.fileNo} found to restore`,
+        });
+      }
+      const image = images[df.path];
+      if (image === undefined) {
+        return err({
+          code: 'ERROR_STACK',
+          message: `RMAN-06023: no backup or copy of datafile ${cible.fileNo} found to restore`,
+        });
+      }
+      const written = this._ctx.vfs.writeFile(df.path, new TextEncoder().encode(image));
+      if (written.ok === false) return written;
+      this._bus.emit({
+        type: 'BLOCK_RESTORED', jobId: job.id,
+        fileNo: cible.fileNo, blocks: cible.blocks, from: source,
+      });
+      this._ctx.clearBlockCorruption?.(cible.fileNo);
+    }
+    this._applyArchivedLogs(this._archivedLogs().map(l => l.path));
+    return ok(undefined);
+  }
+
   private _doCrosscheck(job?: RmanJob): Result<void, RmanError> {
     const scope = (job?.params?.scope ?? 'BACKUP').toUpperCase();
     const snap = this._catalog.listAll();
@@ -836,8 +947,14 @@ export class RmanJobEngine implements IRmanJobEngine {
       const set = snap.value.sets.find(s => s.bsKey === p.bsKey);
       if (scope === 'ARCHIVELOG' && set?.type !== 'ARCHIVELOG') continue;
       if (scope === 'BACKUP'     && set?.type === 'ARCHIVELOG') continue;
-      if (this._ctx.vfs.fileExists(p.path)) available++;
+      const intacte = validateBackupPiece(this._ctx.vfs, p.path).fault === null;
+      if (intacte) available++;
       else { this._catalog.expirePiece(p.key); expired++; }
+      this._bus.emit({
+        type: 'CROSSCHECK_PIECE', jobId: job?.id ?? '',
+        kind: scope === 'ARCHIVELOG' ? 'archived log' : 'backup piece',
+        status: intacte ? 'AVAILABLE' : 'EXPIRED',
+      });
     }
     this._bus.emit({ type: 'CROSSCHECK_DONE', available, expired });
     return ok(undefined);

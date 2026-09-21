@@ -1,14 +1,10 @@
 /**
- * BLOCKRECOVER / RECOVER COPY OF (12c+) — block-level recovery.
+ * BLOCKRECOVER / RECOVER — recuperation au niveau bloc.
  *
- *   BLOCKRECOVER DATAFILE <n> BLOCK <b>
- *   BLOCKRECOVER CORRUPTION LIST
+ *   BLOCKRECOVER DATAFILE <n> BLOCK <b>   RECOVER DATAFILE <n> BLOCK <b>
+ *   BLOCKRECOVER CORRUPTION LIST          RECOVER CORRUPTION LIST
  *   RECOVER COPY OF DATABASE
  *   RECOVER COPY OF DATAFILE <n>
- *
- * The simulator doesn't track block-level corruption, so these are
- * accepted as no-ops that emit the canonical "Starting / Finished"
- * recovery lines for the right scope.
  */
 
 import { ok, type Result } from '../core/Result';
@@ -23,19 +19,17 @@ export class BlockRecoverCommand implements IRmanCommand<void> {
   constructor(private readonly mode: BlockRecoverMode) {}
 
   execute(args: string[], { engine }: RmanCommandContext): Result<void, RmanError> {
-    // We re-use the regular recoverDatabase job and let the engine emit
-    // the canonical lifecycle events; the scope label is recorded in
-    // params.note so SubShell-side renderers can surface it.
-    const fileNo = this.mode === 'BY_BLOCK' || this.mode === 'COPY_OF_DATAFILE'
-      ? Number(args[0])
-      : undefined;
-    const note = this.mode === 'BY_BLOCK'         ? `BLOCK RECOVER datafile ${fileNo} block ${args[1] ?? '?'}`
-              :  this.mode === 'CORRUPTION_LIST'  ? 'BLOCK RECOVER all corrupt blocks from V$DATABASE_BLOCK_CORRUPTION'
-              :  this.mode === 'COPY_OF_DATABASE' ? 'RECOVER COPY OF DATABASE'
-              :                                     `RECOVER COPY OF DATAFILE ${fileNo}`;
+    if (this.mode === 'CORRUPTION_LIST') {
+      return engine.run(JobBuilder.blockRecover({ scope: 'CORRUPTION_LIST' }));
+    }
+    if (this.mode === 'BY_BLOCK') {
+      return engine.run(JobBuilder.blockRecover({
+        scope: 'DATAFILE', fileNo: Number(args[0]), block: Number(args[1]),
+      }));
+    }
+    const fileNo = this.mode === 'COPY_OF_DATAFILE' ? Number(args[0]) : undefined;
     return engine.run(JobBuilder.recoverDatabase({
       fileNo: Number.isFinite(fileNo) ? fileNo : undefined,
-      untilTime: note, // re-purpose untilTime to surface the note via PROGRESS_UPDATED
     }));
   }
 }

@@ -16,7 +16,7 @@ import { DbId } from '../values/DbId';
 import { ok, err, type Result } from '../core/Result';
 import type {
   IRmanOracleContext, DatafileInfo, VfsAdapter, ConnectTargetOutcome, RecordedBackupPiece,
-  SqlStatementOutcome, RmanCredentials, ArchivedLogRecord,
+  SqlStatementOutcome, RmanCredentials, ArchivedLogRecord, BlockCorruptionType,
 } from './IRmanOracleContext';
 import type { HostCapableDevice } from '@/network';
 import { resolveOracleConnectTarget } from '@/terminal/commands/oracleNet';
@@ -279,6 +279,37 @@ export class LinuxRmanContext implements IRmanOracleContext {
       sizeBytes: Number(row[iOctets]),
       tablespace: String(row[iTs]),
     }));
+  }
+
+  recordBlockCorruption(fileNo: number, blocks: number, type: BlockCorruptionType): void {
+    const oracle = this._oracle;
+    if (!oracle) return;
+    oracle.instance.getBus().publish({
+      topic: 'oracle.block-corruption.found',
+      payload: {
+        deviceId: (this._device as { id?: string }).id ?? '',
+        sid: oracle.instance.config.sid,
+        fileNo, blocks, type,
+      },
+    });
+  }
+
+  getBlockCorruptions(): ReadonlyArray<{ fileNo: number; blocks: number }> {
+    const enregistres = this._oracle?.instance.getRuntimeState().blockCorruptions ?? [];
+    return enregistres.map(c => ({ fileNo: c.fileNo, blocks: c.blocks }));
+  }
+
+  clearBlockCorruption(fileNo: number): void {
+    const oracle = this._oracle;
+    if (!oracle) return;
+    oracle.instance.getBus().publish({
+      topic: 'oracle.block-corruption.repaired',
+      payload: {
+        deviceId: (this._device as { id?: string }).id ?? '',
+        sid: oracle.instance.config.sid,
+        fileNo,
+      },
+    });
   }
 
   recordBackupPiece(piece: RecordedBackupPiece): void {
