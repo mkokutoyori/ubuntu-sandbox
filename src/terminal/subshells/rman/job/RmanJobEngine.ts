@@ -21,7 +21,8 @@ import type { RmanError } from '../core/RmanError';
 import type { IRmanJobEngine } from './IRmanJobEngine';
 import type { IChannelPool } from '../channel/IChannelPool';
 import type { IRmanCatalogRepository } from '../catalog/IRmanCatalogRepository';
-import type { IRmanOracleContext } from '../integration/IRmanOracleContext';
+import type { IRmanOracleContext, ArchivedLogRecord } from '../integration/IRmanOracleContext';
+import { archivedLogFromPath } from '../core/archivedLogNaming';
 import type { RmanEventBus } from '../reactive/RmanEventBus';
 import type { RmanJob } from './types';
 import type { DatafileEntry } from '../catalog/types';
@@ -36,6 +37,9 @@ import { renderBackupPieceImage, parseBackupPieceImage } from '../core/BackupPie
 import { renderControlFileImage, controlFileBody, type ControlFileImage } from '@/database/oracle/storage/ControlFileImage';
 import { parseRedoStream, applyRedoToTablespace, type RedoRecord } from '@/database/oracle/storage/RedoStream';
 import { parseDatafileImage, renderDatafileImage, datafileBannerOf } from '@/database/oracle/storage/DatafileImage';
+
+const bySequence = (a: ArchivedLogRecord, b: ArchivedLogRecord): number =>
+  a.thread - b.thread || a.sequence - b.sequence;
 import type { TablespacePayload } from '@/database/oracle/OracleStorage';
 import { parseSize } from '@/database/oracle/views/_fileSize';
 import { BackupKey } from '../values/BackupKey';
@@ -287,7 +291,9 @@ export class RmanJobEngine implements IRmanJobEngine {
     if (!isControlfile && !isSpfile) this._ctx.checkpointDatafiles?.();
     const image = (isControlfile || isSpfile)
       ? null
-      : { datafiles: this._readDatafileImages(datafiles), scn: this._ctx.getCurrentScn?.() };
+      : isArchivelog
+        ? { datafiles: {}, archivedLogs: this._readArchivedLogImages(), scn: this._ctx.getCurrentScn?.() }
+        : { datafiles: this._readDatafileImages(datafiles), scn: this._ctx.getCurrentScn?.() };
     const usedPaths = new Set<string>();
     for (let i = 1; i <= pieceCount; i++) {
       const candidate = i === 1
@@ -339,7 +345,7 @@ export class RmanJobEngine implements IRmanJobEngine {
 
     // ARCHIVELOG ALL DELETE INPUT — consume + delete every reported archivelog
     if (isArchivelog && deleteInput) {
-      const paths = this._ctx.getArchivelogPaths?.() ?? [];
+      const paths = this._archivedLogs().map(l => l.path);
       for (const p of paths) {
         this._ctx.vfs.deleteFile(p);
         this._bus.emit({ type: 'ARCHIVELOG_DELETED', jobId: job.id, path: p });
@@ -377,6 +383,40 @@ export class RmanJobEngine implements IRmanJobEngine {
       }
     }
     return {};
+  }
+
+  private _archivedLogs(): ReadonlyArray<ArchivedLogRecord> {
+    const declares = this._ctx.getArchivedLogs?.();
+    if (declares !== undefined) return [...declares].sort(bySequence);
+    const paths = this._ctx.getArchivelogPaths?.() ?? [];
+    return paths.map((p, i) => archivedLogFromPath(p, i)).sort(bySequence);
+  }
+
+  private _readArchivedLogImages(): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const log of this._archivedLogs()) {
+      const read = this._ctx.vfs.readFile(log.path);
+      if (read.ok) out[log.path] = new TextDecoder().decode(read.value);
+    }
+    return out;
+  }
+
+  private _restoreArchivedLogFromBackup(path: string): boolean {
+    const snap = this._catalog.listAll();
+    if (snap.ok === false) return false;
+    for (const set of snap.value.sets) {
+      if (set.type !== 'ARCHIVELOG') continue;
+      for (const piece of set.pieces) {
+        const read = this._ctx.vfs.readFile(piece.path);
+        if (read.ok === false) continue;
+        const image = parseBackupPieceImage(new TextDecoder().decode(read.value));
+        const body = image?.archivedLogs?.[path];
+        if (body === undefined) continue;
+        const written = this._ctx.vfs.writeFile(path, new TextEncoder().encode(body));
+        if (written.ok) return true;
+      }
+    }
+    return false;
   }
 
   private _applyArchivedLogs(paths: ReadonlyArray<string>, untilScn?: number): void {
@@ -687,28 +727,34 @@ export class RmanJobEngine implements IRmanJobEngine {
     //    as file /u01/.../arch_1_42_xxx.arc"
     // pour chaque log appliqué pendant le RECOVER. On synthétise un set
     // raisonnable autour des SCN from/to.
-    const arcPaths = this._ctx.getArchivelogPaths?.() ?? [];
-    // A RESTORE left the datafiles at an older checkpoint; without any
-    // archivelog to replay, there is nothing to bridge the gap with, and
-    // a real RMAN aborts media recovery rather than silently declaring
-    // the (still-stale) datafiles current.
-    if (this._pendingRecoveryGap && arcPaths.length === 0) {
+    const logs = this._archivedLogs();
+    if (this._pendingRecoveryGap && logs.length === 0) {
       return err({
         code: 'RMAN_06054',
-        message: 'media recovery requesting unknown archived log for thread 1 with sequence 1',
+        message: 'media recovery requesting unknown archived log for thread 1'
+          + ` with sequence 1 and starting SCN of ${this._restoredScn}`,
       });
     }
-    if (arcPaths.length > 0) {
-      const baseSeq = 1;
-      for (let i = 0; i < arcPaths.length; i++) {
-        const seq = baseSeq + i;
-        this._bus.emit({
-          type: 'ARCHIVELOG_APPLIED', jobId: job.id,
-          thread: 1, sequence: seq, path: arcPaths[i],
-          firstScn: fromValue - (arcPaths.length - i) * 100,
-          nextScn:  fromValue - (arcPaths.length - i - 1) * 100,
-        });
-      }
+    const absent = logs.filter(l =>
+      !this._ctx.vfs.fileExists(l.path) && !this._restoreArchivedLogFromBackup(l.path));
+    if (absent.length > 0) {
+      return err({
+        code: 'RMAN_06053',
+        message: ['unable to perform media recovery because of missing log']
+          .concat(absent.map(l => `RMAN-06025: no backup of archived log for thread ${l.thread}`
+            + ` with sequence ${l.sequence} and starting SCN of ${l.firstScn}`
+            + ' found to restore'))
+          .join('\n'),
+      });
+    }
+    const arcPaths = logs.map(l => l.path);
+    for (const log of logs) {
+      const firstScn = log.firstScn > 0 ? log.firstScn : log.sequence;
+      this._bus.emit({
+        type: 'ARCHIVELOG_APPLIED', jobId: job.id,
+        thread: log.thread, sequence: log.sequence, path: log.path,
+        firstScn, nextScn: log.nextScn > firstScn ? log.nextScn : firstScn + 1,
+      });
     }
     this._applyArchivedLogs(arcPaths, params.untilScn !== undefined ? Number(params.untilScn) : undefined);
     this._bus.emit({ type: 'RECOVER_COMPLETED', jobId: job.id, toScn:   to.ok   ? to.value   : Scn.ZERO, elapsedMs: 3_000 });

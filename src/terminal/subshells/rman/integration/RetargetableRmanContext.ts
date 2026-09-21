@@ -1,6 +1,6 @@
 import type {
   IRmanOracleContext, VfsAdapter, DatafileInfo, ConnectTargetOutcome, ConnectPeerOutcome, RecordedBackupPiece,
-  SqlStatementOutcome, RmanCredentials,
+  SqlStatementOutcome, RmanCredentials, ArchivedLogRecord,
 } from './IRmanOracleContext';
 import type { DbId } from '../values/DbId';
 import type { Equipment } from '@/network';
@@ -24,6 +24,7 @@ export class RetargetableRmanContext implements IRmanOracleContext {
   getDatafiles(): ReadonlyArray<DatafileInfo> { return this._current.getDatafiles(); }
   getSpfileParam(name: string): string | undefined { return this._current.getSpfileParam(name); }
   getArchivelogPaths(): ReadonlyArray<string> { return this._current.getArchivelogPaths(); }
+  getArchivedLogs(): ReadonlyArray<ArchivedLogRecord> { return this._current.getArchivedLogs(); }
   getControlFilePath(): string { return this._current.getControlFilePath(); }
   getControlFilePaths(): ReadonlyArray<string> { return this._current.getControlFilePaths(); }
   getInstanceState(): 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN' {

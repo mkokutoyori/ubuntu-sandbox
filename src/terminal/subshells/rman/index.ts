@@ -62,7 +62,7 @@ export { RmanSessionOptionsBuilder } from './session/RmanSessionOptionsBuilder';
 export type { RmanSessionOptions } from './session/types';
 
 // Integration
-export type { IRmanOracleContext, DatafileInfo, VfsAdapter } from './integration/IRmanOracleContext';
+export type { IRmanOracleContext, DatafileInfo, VfsAdapter, ArchivedLogRecord } from './integration/IRmanOracleContext';
 export { LinuxRmanContext } from './integration/LinuxRmanContext';
 
 // SubShell

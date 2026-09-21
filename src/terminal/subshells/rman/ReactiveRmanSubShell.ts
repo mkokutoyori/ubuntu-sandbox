@@ -228,7 +228,9 @@ export class ReactiveRmanSubShell implements ISubShell {
         this._push('RMAN-00571: ===========================================================');
         this._push('RMAN-00569: =============== ERROR MESSAGE STACK FOLLOWS ===============');
         this._push('RMAN-00571: ===========================================================');
-        this._push(`RMAN-03014: ${rmanErrorMessage(e.error)}`);
+        this._push(
+          `RMAN-03002: failure of ${this._opLabel(e.operation)} command at ${formatOracleDate()}`);
+        for (const ligne of rmanErrorMessage(e.error).split('\n')) this._push(ligne);
         break;
       // CONNECTED, SESSION_STATE_CHANGED, CATALOG_UPDATED, etc.
       // are internal — no terminal output.

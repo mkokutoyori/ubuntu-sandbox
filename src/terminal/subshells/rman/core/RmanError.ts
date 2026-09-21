@@ -19,6 +19,7 @@ export type RmanError =
   | { code: 'RMAN_04006'; message: string }   // error from target database (Oracle Net)
   | { code: 'RMAN_06172'; message: string }   // no autobackup found or specified handle is not a valid copy
   | { code: 'RMAN_06054'; message: string }   // media recovery requesting unknown archived log
+  | { code: 'RMAN_06053'; message: string }   // unable to perform media recovery because of missing log
   | { code: 'RMAN_06026'; message: string }   // no backup set found within the SET UNTIL bound
   | { code: 'RMAN_04004'; message: string }   // error from recovery catalog database (Oracle Net)
   | { code: 'RMAN_06428'; message: string }   // recovery catalog is not installed

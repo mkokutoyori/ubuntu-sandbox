@@ -90,6 +90,9 @@ export interface RuntimeArchivedLogRecord {
   recid: number;
   name: string;
   sequence: number;
+  thread: number;
+  firstScn: number;
+  nextScn: number;
   firstTime: number;
   nextTime: number;
 }

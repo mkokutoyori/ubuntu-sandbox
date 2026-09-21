@@ -385,10 +385,23 @@ Ne sont donc **pas** sourcés, et devront l'être avant d'être implantés :
 
 - le format exact d'une pièce de sauvegarde (il n'a pas à être imité
   octet pour octet, mais sa STRUCTURE — en-tête, jeu de blocs, somme de
-  contrôle — décide de ce que `VALIDATE` peut vérifier) ;
-- la nomenclature `%U`/`%d_%T_%s_%p` des noms de pièces ;
-- les seuils exacts de `REPORT NEED BACKUP` / `REPORT OBSOLETE` ;
-- le comportement précis de `RECOVER` quand il manque un archivelog.
+  contrôle — décide de ce que `VALIDATE` peut vérifier).
+
+~~la nomenclature `%U`/`%d_%T_%s_%p` des noms de pièces~~ **FAIT** —
+les 20 spécificateurs sont sourcés et appliqués.
+
+~~les seuils exacts de `REPORT NEED BACKUP` / `REPORT OBSOLETE`~~
+**FAIT** — la fenêtre de récupération garde l'ancre d'avant la fenêtre,
+la redondance se compte par DATAFILE.
+
+~~le comportement précis de `RECOVER` quand il manque un archivelog~~
+**FAIT** — les deux familles que RMAN distingue sont sourcées et
+appliquées : `RMAN-06054` quand le journal n'est pas connu du fichier
+de contrôle, `RMAN-06053` + un `RMAN-06025` par journal quand il est
+connu mais introuvable. La chaîne est désormais VÉRIFIÉE (un trou au
+milieu arrête la reprise au lieu de la déclarer complète), et
+`V$ARCHIVED_LOG`/`V$BACKUP_SET` survivent à un `SHUTDOWN`, ce sans quoi
+aucune de ces décisions n'avait d'autorité à lire.
 
 Pour chacun, la règle du §8 s'applique : une transcription capturée sur
 une vraie base vaut mieux qu'une documentation, et mieux vaut ne pas

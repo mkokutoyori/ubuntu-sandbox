@@ -5,6 +5,14 @@
  *    (le DeviceConfigRegistry partage l'instance RmanConfig).
  * 2. RECOVER émet un ARCHIVELOG_APPLIED par archivelog disponible,
  *    rendu par le SubShell comme la vraie Oracle.
+ *
+ * Le cas « N archivelogs → N events dans l'ordre » EPINGLAIT un defaut :
+ * il exigeait que `arch_1_42.arc` soit applique comme « sequence 1 »,
+ * parce que le moteur numerotait les logs par leur POSITION dans la
+ * liste. Le nom du fichier, V$ARCHIVED_LOG et la ligne imprimee par
+ * RMAN disaient alors trois choses differentes du meme journal. La
+ * sequence vient maintenant de l'enregistrement — 42, 43, 44 — et le
+ * cas est corrige ici plutot que conserve comme contrat.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -108,9 +116,9 @@ describe('ARCHIVELOG_APPLIED — RECOVER émet une ligne par log appliqué', () 
     s.events$.subscribe(e => { if (e.type === 'ARCHIVELOG_APPLIED') applied.push(e); });
     s.processLine('RECOVER DATABASE');
     expect(applied.length).toBe(3);
-    expect(applied[0].sequence).toBe(1);
-    expect(applied[1].sequence).toBe(2);
-    expect(applied[2].sequence).toBe(3);
+    expect(applied[0].sequence).toBe(42);
+    expect(applied[1].sequence).toBe(43);
+    expect(applied[2].sequence).toBe(44);
     expect(applied.map(a => a.path)).toEqual(arcs);
     expect(applied.every(a => a.thread === 1)).toBe(true);
   });
