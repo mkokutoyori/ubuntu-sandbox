@@ -75,15 +75,31 @@ sans relire les options de la requete, donc ni l'un ni l'autre n'est
 fait. Vu en ecrivant `probe-options-ipv4.test.ts`, qui mesure la route a
 l'ARRIVEE (chez B) precisement parce que le retour ne la porte pas.
 
-### [ip] les deux autres equipements de niveau 3 ignorent les options
-`SwitchSvi.forwardIpPacket` et `Firewall` acheminent sans consulter la
-zone d'options : ni insertion Record Route, ni routage par la source, ni
-`no ip source-route`. C'est la meme forme que le defaut de somme de
-controle ferme par `probe-somme-controle-entete-rfc1812.test.ts` — la
-regle vit dans `Router` et les deux autres plans de donnees de niveau 3
-ne l'appellent pas. `layers/internet/Ipv4Options.ts` est deja l'offre
-partagee ; il ne reste qu'a la brancher, ce que ce lot n'a pas fait pour
-garder la mesure sur un seul equipement.
+### [ip] le pare-feu ignore la zone d'options, et l'ouvrir le rendrait PLUS permissif
+Le commutateur de niveau 3 est FERME (`probe-options-ipv4-commutateur-l3
+.test.ts`) : `SwitchSvi` appelle desormais `layers/internet/Ipv4Options
+.ts`, note la route, honore les source routes lache et stricte, et
+`no ip source-route` y decide par le port etroit
+`SviHost.acceptsSourceRouting`. Le pare-feu, lui, reste dehors, et le
+laisser dehors est une DECISION plutot qu'un reste :
+
+`Firewall` a son propre pipeline (`classifyIpv4` → `processPipeline` →
+`forward`) et achemine aujourd'hui sur le champ destination, en ignorant
+l'option. Lui faire honorer une source route le rendrait PLUS permissif
+qu'aujourd'hui : un paquet vise sur l'adresse du pare-feu lui-meme
+repartirait vers l'interieur au lieu d'etre livre localement. C'est
+exactement le contournement que la RFC 1812 §5.3.13.4 decrit — « source
+routing may be used to bypass administrative and security controls
+within a network [...] Packet filtering can be defeated by source
+routing ». La reponse juste est d'implanter le comportement AVEC le
+bouton qui le refuse, et le bouton FortiOS correspondant n'est pas
+attestable depuis ce reseau : on ne l'invente pas (§8).
+
+Ce qui PEUT se faire sans ce bouton, et qui n'est pas fait ici :
+l'insertion Record Route, que la RFC 1812 §5.3.13.5 exige des routeurs
+(« MUST support the Record Route option in forwarded packets ») et qui
+n'ouvre aucun contournement. A prendre avec la mesure du pipeline, ou
+l'adresse d'egress se decide.
 
 ## Routeur Cisco (IOS)
 
