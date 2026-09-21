@@ -20,6 +20,7 @@ export type RmanOperation =
   | 'RECOVER_DATABASE'
   | 'DUPLICATE_DATABASE'
   | 'VALIDATE'
+  | 'BLOCK_RECOVER'
   | 'CROSSCHECK'
   | 'DELETE_EXPIRED'
   | 'DELETE_OBSOLETE'
@@ -70,6 +71,7 @@ export type RmanEvent =
   | { type: 'BACKUP_PIECE_CREATED'; jobId: string; channelId: string; piece: BackupPieceInfo }
   | { type: 'BACKUP_SET_COMPLETE';  jobId: string; bsKey: number; tag: RmanTag; sizeBytes: number }
   | { type: 'BACKUP_VALIDATED';     jobId: string; what: string }
+  | { type: 'BLOCK_RESTORED';       jobId: string; fileNo: number; blocks: number; from: string }
   | { type: 'CROSSCHECK_PIECE';     jobId: string; kind: 'backup piece' | 'archived log'; status: 'AVAILABLE' | 'EXPIRED' }
   | { type: 'VALIDATION_REPORT';    jobId: string; files: ReadonlyArray<ValidatedFile>; elapsedMs: number }
   | { type: 'ARCHIVELOG_DELETED';   jobId: string; path: string }

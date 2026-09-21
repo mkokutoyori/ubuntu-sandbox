@@ -303,6 +303,13 @@ export class OracleRuntimeStateActor {
         });
       })),
 
+      this.bus.subscribe('oracle.block-corruption.repaired', scoped<{
+        deviceId: string; fileNo: number;
+      }>((p) => {
+        const index = this.state.blockCorruptions.findIndex(c => c.fileNo === p.fileNo);
+        if (index >= 0) this.state.blockCorruptions.splice(index, 1);
+      })),
+
       this.bus.subscribe('oracle.backup.recorded', scoped<{
         deviceId: string; setId: number; pieceId: number; type: string;
         handle: string; bytes: number; startedAt: number; completedAt: number;

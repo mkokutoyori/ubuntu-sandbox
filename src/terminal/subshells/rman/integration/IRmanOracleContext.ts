@@ -88,6 +88,8 @@ export interface IRmanOracleContext {
   runSqlStatement?(statement: string): SqlStatementOutcome;
   recordBackupPiece?(piece: RecordedBackupPiece): void;
   recordBlockCorruption?(fileNo: number, blocks: number, type: 'CHECKSUM' | 'CORRUPT'): void;
+  getBlockCorruptions?(): ReadonlyArray<{ fileNo: number; blocks: number }>;
+  clearBlockCorruption?(fileNo: number): void;
   getRecoveryAreaUsedBytes?(): number;
 }
 

@@ -94,8 +94,8 @@ export class RmanCommandDispatcher {
       { pattern: /^SQL ("[^"]+"|'[^']+')$/i,                                     command: new SqlMacroCommand() },
       { pattern: /^SQL ([^;]+)$/i,                                               command: new SqlMacroCommand() },
       // Block-level recovery
-      { pattern: /^BLOCKRECOVER DATAFILE (\d+) BLOCK (\d+)$/i,                   command: new BlockRecoverCommand('BY_BLOCK') },
-      { pattern: /^BLOCKRECOVER CORRUPTION LIST$/i,                              command: new BlockRecoverCommand('CORRUPTION_LIST') },
+      { pattern: /^(?:BLOCKRECOVER|RECOVER) DATAFILE (\d+) BLOCK (\d+)$/i,        command: new BlockRecoverCommand('BY_BLOCK') },
+      { pattern: /^(?:BLOCKRECOVER|RECOVER) CORRUPTION LIST$/i,                   command: new BlockRecoverCommand('CORRUPTION_LIST') },
       { pattern: /^RECOVER COPY OF DATABASE$/i,                                  command: new BlockRecoverCommand('COPY_OF_DATABASE') },
       { pattern: /^RECOVER COPY OF DATAFILE (\d+)$/i,                            command: new BlockRecoverCommand('COPY_OF_DATAFILE') },
       // Stored scripts

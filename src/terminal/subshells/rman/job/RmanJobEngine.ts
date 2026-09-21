@@ -127,6 +127,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       case 'BACKUP_ARCHIVELOG':  return this._doBackup(job, channelId, 'archivelog');
       case 'BACKUP_TABLESPACE':  return this._doBackup(job, channelId, `tablespace ${job.params?.tablespace ?? 'USERS'}`);
       case 'VALIDATE':           return this._doValidate(job);
+      case 'BLOCK_RECOVER':      return this._doBlockRecover(job);
       case 'RESTORE_DATABASE':   return this._doRestore(job, channelId);
       case 'RECOVER_DATABASE':   return this._doRecover(job);
       case 'DUPLICATE_DATABASE': return this._doDuplicate(job, channelId);
@@ -835,6 +836,65 @@ export class RmanJobEngine implements IRmanJobEngine {
       }
     }
     this._bus.emit({ type: 'VALIDATION_REPORT', jobId: job.id, files: [], elapsedMs: 1_000 });
+    return ok(undefined);
+  }
+
+  private _doBlockRecover(job: RmanJob): Result<void, RmanError> {
+    const etat = this._ctx.getInstanceState?.();
+    if (etat === 'SHUTDOWN' || etat === 'NOMOUNT') {
+      return err({ code: 'RMAN_06403', message: 'database must be mounted or open' });
+    }
+    const params = job.params ?? {};
+    const registre = this._ctx.getBlockCorruptions?.() ?? [];
+    const cibles = params.blockScope === 'CORRUPTION_LIST'
+      ? registre
+      : [{ fileNo: Number(params.fileNo), blocks: 1 }];
+    if (cibles.length === 0) {
+      this._bus.emit({
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'no_corruption', pct: 50,
+        message: 'no corrupt blocks to recover',
+      });
+      return ok(undefined);
+    }
+    const snap = this._catalog.listAll();
+    if (snap.ok === false) return snap;
+    const utilisables = snap.value.sets.filter(set =>
+      set.pieces.every(p => validateBackupPiece(this._ctx.vfs, p.path).fault === null));
+    if (utilisables.length === 0) {
+      const premier = cibles[0]?.fileNo ?? 1;
+      return err({
+        code: 'ERROR_STACK',
+        message: 'RMAN-06026: some targets not found - aborting restore\n'
+          + `RMAN-06023: no backup or copy of datafile ${premier} found to restore`,
+      });
+    }
+    const images = this._readPieceImages(utilisables);
+    const parNumero = new Map(this._ctx.getDatafiles().map(df => [df.fileNo, df]));
+    const source = utilisables[utilisables.length - 1].pieces[0].path;
+    for (const cible of cibles) {
+      const df = parNumero.get(cible.fileNo);
+      if (df === undefined) {
+        return err({
+          code: 'ERROR_STACK',
+          message: `RMAN-06023: no backup or copy of datafile ${cible.fileNo} found to restore`,
+        });
+      }
+      const image = images[df.path];
+      if (image === undefined) {
+        return err({
+          code: 'ERROR_STACK',
+          message: `RMAN-06023: no backup or copy of datafile ${cible.fileNo} found to restore`,
+        });
+      }
+      const written = this._ctx.vfs.writeFile(df.path, new TextEncoder().encode(image));
+      if (written.ok === false) return written;
+      this._bus.emit({
+        type: 'BLOCK_RESTORED', jobId: job.id,
+        fileNo: cible.fileNo, blocks: cible.blocks, from: source,
+      });
+      this._ctx.clearBlockCorruption?.(cible.fileNo);
+    }
+    this._applyArchivedLogs(this._archivedLogs().map(l => l.path));
     return ok(undefined);
   }
 
