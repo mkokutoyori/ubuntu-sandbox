@@ -70,7 +70,6 @@ export const SOCLE: ContinuationTable = {
 /** Ce que seul un routeur IOS porte. */
 export const ROUTEUR_SEUL: ContinuationTable = {
   config: {
-    'class-map': ['inspect', 'match-all', 'match-any', 'type'],
     'crypto ipsec security-policy': ['dst', 'in', 'out', 'proto', 'src'],
     'crypto isakmp keepalive': ['on-demand'],
     'crypto isakmp key': ['hostname'],
@@ -84,7 +83,6 @@ export const ROUTEUR_SEUL: ContinuationTable = {
     'no ip nat inside source static': ['tcp', 'udp'],
     'no ip prefix-list': ['seq'],
     'no ip sla reaction-configuration': ['react'],
-    'policy-map': ['inspect', 'type'],
     'route-map': ['deny'],
     'router ospf': ['vrf'],
     'zone-pair security': ['destination', 'source'],
