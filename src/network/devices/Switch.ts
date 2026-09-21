@@ -1722,12 +1722,22 @@ export abstract class Switch extends Equipment {
   /** Huawei `traffic-filter inbound|outbound acl <N>` on a physical port. */
   private portAclPermits(portName: string, direction: 'in' | 'out', frame: EthernetFrame): boolean {
     if (!this.vaclEngine) return true;
-    const aclRef = this.vaclEngine.getInterfaceACL(portName, direction);
+    return this.trafficFilterPermits(
+      this.vaclEngine.getInterfaceACL(portName, direction), frame);
+  }
+
+  /** Huawei `traffic-filter vlan <N> inbound|outbound acl <N>`, the VRP VACL. */
+  private vlanAclPermits(vlan: number, direction: 'in' | 'out', frame: EthernetFrame): boolean {
+    if (!this.vaclEngine) return true;
+    return this.trafficFilterPermits(this.vaclEngine.getVlanACL(vlan, direction), frame);
+  }
+
+  private trafficFilterPermits(aclRef: number | string | null, frame: EthernetFrame): boolean {
     if (aclRef === null) return true;
     if (frame.etherType !== ETHERTYPE_IPV4) return true;
     const ip = frame.payload as IPv4Packet | undefined;
     if (!ip || ip.type !== 'ipv4') return true;
-    return this.vaclEngine.evaluateForDataPlane(aclRef, ip) !== 'deny';
+    return this.vaclEngine!.evaluateForDataPlane(aclRef, ip) !== 'deny';
   }
 
   // ─── MQC (Huawei traffic classifier/behavior/policy) API ──────────
@@ -2537,6 +2547,7 @@ export abstract class Switch extends Equipment {
 
     // ─── Step 2.7: VLAN-scoped filtering (Cisco VACL / Huawei MQC) ─
     if (!this.vaclPermits(ingressVlan, frame)
+      || !this.vlanAclPermits(ingressVlan, 'in', frame)
       || !this.mqcVlanPermits(ingressVlan, frame)
       || !this.mqcPortPermits(portName, ingressVlan, frame)) {
       Logger.debug(this.id, 'switch:vacl-drop',
@@ -2700,12 +2711,15 @@ export abstract class Switch extends Equipment {
   }
 
   private floodFrame(exceptPort: string, frame: EthernetFrame, vlan: number, cos: number = 0, isQinQ: boolean = false): void {
+    if (!this.vlanAclPermits(vlan, 'out', frame)) return;
     for (const [portName, cfg] of this.switchportConfigs) {
       if (portName === exceptPort) continue;
       if (this.aggregationEgressPort(portName, frame, exceptPort) !== portName) continue;
 
       const port = this.getPort(portName);
       if (!port || !port.getIsUp() || !port.isConnected()) continue;
+
+      if (!this.portAclPermits(portName, 'out', frame)) continue;
 
       const stpState = this.getStpVlanState(portName, vlan);
       if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening' || stpState === 'learning') continue;
@@ -2769,6 +2783,7 @@ export abstract class Switch extends Equipment {
 
     // ─── Port ACL (Huawei `traffic-filter outbound`) ────────────
     if (!this.portAclPermits(portName, 'out', frame)) return;
+    if (!this.vlanAclPermits(vlan, 'out', frame)) return;
 
     const stpState = this.getStpVlanState(portName, vlan);
     if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening' || stpState === 'learning') return;
