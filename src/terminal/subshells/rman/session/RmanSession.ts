@@ -67,6 +67,7 @@ export class RmanSession implements IRmanSession {
   private readonly _userChannels = new Map<string, import('../channel/types').ChannelHandle>();
   /** Rename map populated by SET NEWNAME FOR DATAFILE inside a RUN block. */
   private readonly _setNewname = new Map<number, string>();
+  private readonly _setMaxCorrupt = new Map<number, number>();
   /** UNTIL TIME / UNTIL SCN binding set inside a RUN block — cleared on block close. */
   private readonly _setUntil: { untilTime?: string; untilScn?: number } = {};
   private _state: RmanSessionState = 'IDLE';
@@ -289,6 +290,7 @@ export class RmanSession implements IRmanSession {
       pool:    this._pool,
       userChannels: this._userChannels,
       setNewname:   this._setNewname,
+      setMaxCorrupt: this._setMaxCorrupt,
       setUntil:     this._setUntil,
     };
   }
@@ -309,6 +311,7 @@ export class RmanSession implements IRmanSession {
     } finally {
       // RUN-block-scoped bindings die with the block, like Oracle's RMAN.
       this._setNewname.clear();
+      this._setMaxCorrupt.clear();
       this._setUntil.untilTime = undefined;
       this._setUntil.untilScn  = undefined;
     }

@@ -81,6 +81,7 @@ export class WindowsSshServerContext implements ISshServerContext {
     private readonly shellExecutor: WindowsShellExecutor | null = null,
     private readonly reportLogon: WindowsSshLogonReporter | null = null,
     private readonly reportLogoff: WindowsSshLogoffReporter | null = null,
+    private readonly legalNotice: (() => string) | null = null,
   ) {
     this.ensureSshDir();
     this.hostKey = this.loadOrGenerateHostKey();
@@ -94,7 +95,7 @@ export class WindowsSshServerContext implements ISshServerContext {
   }
 
   reloadConfig(): WindowsSshServerContext {
-    return new WindowsSshServerContext(this.wfs, this.userManager, this.hostname, {}, this.shellExecutor, this.reportLogon, this.reportLogoff);
+    return new WindowsSshServerContext(this.wfs, this.userManager, this.hostname, {}, this.shellExecutor, this.reportLogon, this.reportLogoff, this.legalNotice);
   }
 
   recordLogout(user: string, _fromIp: string): void {
@@ -102,7 +103,7 @@ export class WindowsSshServerContext implements ISshServerContext {
   }
 
   getBanner(): string | null {
-    if (!this.sshdConfig.banner) return null;
+    if (!this.sshdConfig.banner) return this.legalNotice?.() || null;
     const result = this.wfs.readFile(this.sshdConfig.banner);
     return result.ok ? result.content ?? null : null;
   }

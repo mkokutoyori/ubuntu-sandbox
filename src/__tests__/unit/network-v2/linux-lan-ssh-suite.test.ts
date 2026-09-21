@@ -79,11 +79,11 @@ function buildLan(): Lan {
     for (const u of ['alice', 'bob', 'carol', 'dave', 'admin', 'charlie']) {
       if (!um.getUser(u)) {
         um.useradd(u, { m: true, s: '/bin/bash' });
-        um.setPassword(u, 'admin');
         // alice and admin are sudoers (membership in the 'sudo' group);
         // bob/carol/dave/charlie deliberately are not.
         if (u === 'alice' || u === 'admin') um.usermod(u, { aG: 'sudo' });
       }
+      um.setPassword(u, 'admin');
     }
   }
 
@@ -119,9 +119,18 @@ function waitForRestartSec(ms = 250): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const MOT_DE_PASSE_OPERATEUR = 'admin\n';
+
+function inviteUnMotDePasse(cmd: string): boolean {
+  return /(^|[|;&]\s*)(ssh|scp|sftp|stelnet)\s/.test(cmd) && !/\bsshpass\b/.test(cmd);
+}
+
 async function runRow(lan: Lan, row: Row): Promise<string> {
   if (row.setup) await row.setup(lan);
-  return row.on(lan).executeCommand(row.cmd);
+  const cible = row.on(lan) as { executeCommand: (c: string, s?: string) => Promise<string> };
+  return inviteUnMotDePasse(row.cmd)
+    ? cible.executeCommand(row.cmd, MOT_DE_PASSE_OPERATEUR)
+    : cible.executeCommand(row.cmd);
 }
 
 function assertRow(out: string, row: Row): void {
@@ -751,7 +760,7 @@ describe('§11 — /var/log/auth.log matches SSH activity', () => {
   const rows: Row[] = [
     {
       name: 'successful login appends an "Accepted password" line on the remote',
-      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2', 'admin\n'); },
       on: l => l.pc2,
       cmd: 'cat /var/log/auth.log',
       contains: [/Accepted password for alice from 10\.0\.0\.1/],
@@ -760,7 +769,7 @@ describe('§11 — /var/log/auth.log matches SSH activity', () => {
       name: 'refused login (sshd stopped) appends a "Failed password" line',
       setup: async (l) => {
         await l.pc2.executeCommand('systemctl stop ssh');
-        await l.pc1.executeCommand('ssh alice@10.0.0.2');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2', 'admin\n');
         await l.pc2.executeCommand('systemctl start ssh');
       },
       on: l => l.pc2,
@@ -770,9 +779,9 @@ describe('§11 — /var/log/auth.log matches SSH activity', () => {
     {
       name: 'each login is a separate line (auth log grows monotonically)',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh alice@10.0.0.2');
-        await l.pc1.executeCommand('ssh bob@10.0.0.2');
-        await l.pc1.executeCommand('ssh carol@10.0.0.2');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2', 'admin\n');
+        await l.pc1.executeCommand('ssh bob@10.0.0.2', 'admin\n');
+        await l.pc1.executeCommand('ssh carol@10.0.0.2', 'admin\n');
       },
       on: l => l.pc2,
       cmd: 'grep -c Accepted /var/log/auth.log',
@@ -780,21 +789,21 @@ describe('§11 — /var/log/auth.log matches SSH activity', () => {
     },
     {
       name: 'auth.log names the source ADDRESS, as OpenSSH does — never a hostname',
-      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2', 'admin\n'); },
       on: l => l.pc2,
       cmd: 'cat /var/log/auth.log',
       contains: [/Accepted \w+ for alice from 10\.0\.0\.1 port \d+ ssh2/],
     },
     {
       name: 'auth.log records port and protocol info per OpenSSH',
-      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2', 'admin\n'); },
       on: l => l.pc2,
       cmd: 'grep sshd /var/log/auth.log',
       contains: [/port \d+ ssh2/],
     },
     {
       name: 'a refused root login is recorded as "Failed password for root"',
-      setup: async (l) => { await l.pc1.executeCommand('ssh root@10.0.0.2'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh root@10.0.0.2', 'admin\n'); },
       on: l => l.pc2,
       cmd: 'cat /var/log/auth.log',
       contains: [/Failed password for root from 10\.0\.0\.1/],
@@ -818,7 +827,7 @@ describe('§12 — auth.log + syslog when logging daemons are stopped', () => {
       setup: async (l) => {
         await l.pc2.executeCommand('sudo systemctl stop rsyslog');
         await l.pc2.executeCommand('sudo sh -c ": > /var/log/auth.log"');
-        await l.pc1.executeCommand('ssh alice@10.0.0.2');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2', 'admin\n');
       },
       on: l => l.pc2,
       cmd: 'wc -l /var/log/auth.log',
@@ -847,9 +856,9 @@ describe('§12 — auth.log + syslog when logging daemons are stopped', () => {
       name: 'after rsyslog is started again, new SSH events ARE logged',
       setup: async (l) => {
         await l.pc2.executeCommand('systemctl stop rsyslog');
-        await l.pc1.executeCommand('ssh alice@10.0.0.2');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2', 'admin\n');
         await l.pc2.executeCommand('systemctl start rsyslog');
-        await l.pc1.executeCommand('ssh bob@10.0.0.2');
+        await l.pc1.executeCommand('ssh bob@10.0.0.2', 'admin\n');
       },
       on: l => l.pc2,
       cmd: 'cat /var/log/auth.log',
@@ -1396,7 +1405,7 @@ describe('§21 — background ssh and job control', () => {
     },
     {
       name: 'jobs lists the background ssh',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &'); },
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &', 'admin\n'); },
       on: l => l.pc1,
       cmd: 'jobs',
       contains: [/\[1\][-+ ]+Running\s+ssh alice@10\.0\.0\.2/],
@@ -1404,7 +1413,7 @@ describe('§21 — background ssh and job control', () => {
     {
       name: 'kill %1 terminates the background ssh',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &', 'admin\n');
         await l.pc1.executeCommand('kill %1');
       },
       on: l => l.pc1,
@@ -1420,8 +1429,8 @@ describe('§21 — background ssh and job control', () => {
     {
       name: 'concurrent ssh sessions both appear in jobs',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &');
-        await l.pc1.executeCommand('ssh bob@10.0.0.10 sleep 60 &');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &', 'admin\n');
+        await l.pc1.executeCommand('ssh bob@10.0.0.10 sleep 60 &', 'admin\n');
       },
       on: l => l.pc1,
       cmd: 'jobs',
@@ -1429,7 +1438,7 @@ describe('§21 — background ssh and job control', () => {
     },
     {
       name: 'wait %1 returns when the background ssh finishes',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 true &'); },
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 true &', 'admin\n'); },
       on: l => l.pc1,
       cmd: 'wait %1',
       excludes: [/no such job/],
@@ -1452,10 +1461,10 @@ describe('§22 — concurrent SSH from multiple clients', () => {
       name: 'four clients to one target produce four auth.log entries',
       setup: async (l) => {
         await Promise.all([
-          l.pc1.executeCommand('ssh alice@10.0.0.10'),
-          l.pc2.executeCommand('ssh bob@10.0.0.10'),
-          l.pc3.executeCommand('ssh carol@10.0.0.10'),
-          l.pc4.executeCommand('ssh dave@10.0.0.10'),
+          l.pc1.executeCommand('ssh alice@10.0.0.10', 'admin\n'),
+          l.pc2.executeCommand('ssh bob@10.0.0.10', 'admin\n'),
+          l.pc3.executeCommand('ssh carol@10.0.0.10', 'admin\n'),
+          l.pc4.executeCommand('ssh dave@10.0.0.10', 'admin\n'),
         ]);
       },
       on: l => l.srv1,
@@ -1466,10 +1475,10 @@ describe('§22 — concurrent SSH from multiple clients', () => {
       name: 'the four sources are all distinct IPs in the log',
       setup: async (l) => {
         await Promise.all([
-          l.pc1.executeCommand('ssh alice@10.0.0.10'),
-          l.pc2.executeCommand('ssh alice@10.0.0.10'),
-          l.pc3.executeCommand('ssh alice@10.0.0.10'),
-          l.pc4.executeCommand('ssh alice@10.0.0.10'),
+          l.pc1.executeCommand('ssh alice@10.0.0.10', 'admin\n'),
+          l.pc2.executeCommand('ssh alice@10.0.0.10', 'admin\n'),
+          l.pc3.executeCommand('ssh alice@10.0.0.10', 'admin\n'),
+          l.pc4.executeCommand('ssh alice@10.0.0.10', 'admin\n'),
         ]);
       },
       on: l => l.srv1,
@@ -1479,8 +1488,8 @@ describe('§22 — concurrent SSH from multiple clients', () => {
     {
       name: 'who shows multiple sessions on the target while ssh holds',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &');
-        await l.pc2.executeCommand('ssh bob@10.0.0.10 sleep 60 &');
+        await l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &', 'admin\n');
+        await l.pc2.executeCommand('ssh bob@10.0.0.10 sleep 60 &', 'admin\n');
       },
       on: l => l.srv1,
       cmd: 'who',
@@ -1489,8 +1498,8 @@ describe('§22 — concurrent SSH from multiple clients', () => {
     {
       name: 'last shows recent successful logins',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh alice@10.0.0.10');
-        await l.pc2.executeCommand('ssh bob@10.0.0.10');
+        await l.pc1.executeCommand('ssh alice@10.0.0.10', 'admin\n');
+        await l.pc2.executeCommand('ssh bob@10.0.0.10', 'admin\n');
       },
       on: l => l.srv1,
       cmd: 'last -n 5',
@@ -1521,7 +1530,7 @@ describe('§23 — cron / at scheduling behind sshd', () => {
       name: 'crontab -l after ssh shows the remote crontab',
       setup: async (l) => {
         await l.srv1.executeCommand('echo "* * * * * /bin/echo ping" | crontab -');
-        await l.pc1.executeCommand('ssh alice@10.0.0.10 crontab -l');
+        await l.pc1.executeCommand('ssh alice@10.0.0.10 crontab -l', 'admin\n');
       },
       on: l => l.srv1,
       cmd: 'crontab -l',
@@ -1537,7 +1546,7 @@ describe('§23 — cron / at scheduling behind sshd', () => {
     {
       name: 'atq lists queued at jobs after ssh schedules one',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh alice@10.0.0.10 "echo \'date\' | at now + 1 minute"');
+        await l.pc1.executeCommand('ssh alice@10.0.0.10 "echo \'date\' | at now + 1 minute"', 'admin\n');
       },
       on: l => l.srv1,
       cmd: 'atq',
@@ -1643,21 +1652,21 @@ describe('§25 — full end-to-end audit story', () => {
   const rows: Row[] = [
     {
       name: 'after an ssh login, w on the remote lists the user',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &'); },
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &', 'admin\n'); },
       on: l => l.srv1,
       cmd: 'w',
       contains: [/alice.*pts\/\d+\s+10\.0\.0\.1/],
     },
     {
       name: 'cat /var/log/auth.log + ps -ef tell a coherent story (both PIDs match)',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &'); },
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &', 'admin\n'); },
       on: l => l.srv1,
       cmd: 'sh -c "tail -3 /var/log/auth.log; ps -ef | grep sshd | grep alice"',
       contains: [/Accepted password for alice/, /sshd.*alice/],
     },
     {
       name: 'logger writes a custom line and syslog records it',
-      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.10 logger "audit-trail-marker"'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.10 logger "audit-trail-marker"', 'admin\n'); },
       on: l => l.srv1,
       cmd: 'grep audit-trail-marker /var/log/syslog',
       contains: [/audit-trail-marker/],
@@ -1665,7 +1674,7 @@ describe('§25 — full end-to-end audit story', () => {
     {
       name: 'systemctl stop ssh during a session is reflected in journalctl',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &');
+        await l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &', 'admin\n');
         await l.srv1.executeCommand('systemctl stop ssh');
       },
       on: l => l.srv1,
@@ -1675,7 +1684,7 @@ describe('§25 — full end-to-end audit story', () => {
     {
       name: 'turn srv1 off mid-session → pc1\'s ssh job ends',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &');
+        await l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &', 'admin\n');
         l.srv1.powerOff();
       },
       on: l => l.pc1,
@@ -1687,7 +1696,7 @@ describe('§25 — full end-to-end audit story', () => {
       setup: async (l) => {
         await l.srv1.executeCommand('sudo iptables -A INPUT -s 10.0.0.1 -p tcp --dport 22 -j DROP');
         await l.srv1.executeCommand('sudo sh -c ": > /var/log/auth.log"');
-        await l.pc1.executeCommand('ssh alice@10.0.0.10');
+        await l.pc1.executeCommand('ssh alice@10.0.0.10', 'admin\n');
       },
       on: l => l.srv1,
       cmd: 'cat /var/log/auth.log',
@@ -1705,7 +1714,7 @@ describe('§25 — full end-to-end audit story', () => {
     },
     {
       name: 'a full audit query via ssh: who+last+ps in one line',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &'); },
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &', 'admin\n'); },
       on: l => l.pc2,
       cmd: 'ssh bob@10.0.0.10 "who; last -n 1; ps -ef | grep sshd | head -3"',
       contains: [/alice/, /sshd/],
@@ -1756,7 +1765,7 @@ describe('§26 — SSH public-key authentication', () => {
       setup: async (l) => {
         await l.pc1.executeCommand('ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q');
         await l.pc1.executeCommand('ssh-copy-id alice@10.0.0.2');
-        await l.pc1.executeCommand('ssh alice@10.0.0.2');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2', 'admin\n');
       },
       on: l => l.pc2,
       cmd: 'grep sshd /var/log/auth.log',
@@ -1934,7 +1943,7 @@ describe('§29 — ~/.ssh/known_hosts host-key tracking', () => {
   const rows: Row[] = [
     {
       name: 'first ssh appends a known_hosts entry for the remote',
-      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2', 'admin\n'); },
       on: l => l.pc1,
       cmd: 'cat ~/.ssh/known_hosts',
       contains: [/^10\.0\.0\.2 ssh-(ed25519|rsa) /m],
@@ -1942,8 +1951,8 @@ describe('§29 — ~/.ssh/known_hosts host-key tracking', () => {
     {
       name: 'second ssh to the same host reuses the entry (no prompt)',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh alice@10.0.0.2');
-        await l.pc1.executeCommand('ssh alice@10.0.0.2');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2', 'admin\n');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2', 'admin\n');
       },
       on: l => l.pc1,
       cmd: 'wc -l ~/.ssh/known_hosts',
@@ -1958,7 +1967,7 @@ describe('§29 — ~/.ssh/known_hosts host-key tracking', () => {
     {
       name: 'changed host key triggers a "REMOTE HOST IDENTIFICATION HAS CHANGED!" warning',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh alice@10.0.0.2');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2', 'admin\n');
         await l.pc2.executeCommand('sudo rm /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key.pub');
         await l.pc2.executeCommand('sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N "" -q');
         await l.pc2.executeCommand('sudo systemctl restart ssh');
@@ -1970,7 +1979,7 @@ describe('§29 — ~/.ssh/known_hosts host-key tracking', () => {
     {
       name: 'ssh-keygen -R 10.0.0.2 removes the offending entry',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh alice@10.0.0.2');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2', 'admin\n');
         await l.pc1.executeCommand('ssh-keygen -R 10.0.0.2');
       },
       on: l => l.pc1,
@@ -2025,7 +2034,7 @@ describe('§30 — network monitoring of SSH listener and sessions', () => {
     },
     {
       name: 'while session is active, ss -t shows an ESTABLISHED connection',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &'); },
+      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &', 'admin\n'); },
       on: l => l.pc2,
       cmd: 'ss -t state established',
       contains: [/10\.0\.0\.2:(ssh|22)\s+10\.0\.0\.1:\d+/],
@@ -2034,7 +2043,7 @@ describe('§30 — network monitoring of SSH listener and sessions', () => {
       name: 'a capture started before the connect holds its SYN/SYN-ACK',
       setup: async (l) => {
         await l.pc1.executeCommand('tcpdump -ni eth0 port 22 -w /tmp/connect.pcap &');
-        await l.pc1.executeCommand('ssh alice@10.0.0.2 hostname');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2 hostname', 'admin\n');
       },
       on: l => l.pc1,
       cmd: 'tcpdump -r /tmp/connect.pcap',
@@ -2211,7 +2220,7 @@ describe('§33 — SSH port forwarding (-L / -R / -D)', () => {
     },
     {
       name: 'after -L is up, ss -tln on pc1 shows port 8080 listening',
-      setup: (l) => { void l.pc1.executeCommand('ssh -fNL 8080:10.0.0.11:80 alice@10.0.0.10'); },
+      setup: (l) => { void l.pc1.executeCommand('ssh -fNL 8080:10.0.0.11:80 alice@10.0.0.10', 'admin\n'); },
       on: l => l.pc1,
       cmd: 'ss -tln',
       contains: [/127\.0\.0\.1:8080|0\.0\.0\.0:8080/],
@@ -2224,7 +2233,7 @@ describe('§33 — SSH port forwarding (-L / -R / -D)', () => {
     },
     {
       name: 'after -R is up, srv1 ss -tln shows 9090 listening',
-      setup: (l) => { void l.pc1.executeCommand('ssh -fNR 9090:localhost:22 alice@10.0.0.10'); },
+      setup: (l) => { void l.pc1.executeCommand('ssh -fNR 9090:localhost:22 alice@10.0.0.10', 'admin\n'); },
       on: l => l.srv1,
       cmd: 'ss -tln',
       contains: [/127\.0\.0\.1:9090|0\.0\.0\.0:9090/],
@@ -2281,14 +2290,14 @@ describe('§34 — sudo over ssh', () => {
     },
     {
       name: 'sudo over ssh is logged in /var/log/auth.log',
-      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2 sudo -n ls /'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2 sudo -n ls /', 'admin\n'); },
       on: l => l.pc2,
       cmd: 'grep sudo /var/log/auth.log',
       contains: [/sudo:\s+alice : TTY=.*PWD=.*USER=root/],
     },
     {
       name: 'sudo with bad password is rejected and audit logs the failure',
-      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2 \'echo wrong | sudo -S whoami\''); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.2 \'echo wrong | sudo -S whoami\'', 'admin\n'); },
       on: l => l.pc2,
       cmd: 'tail -5 /var/log/auth.log',
       contains: [/incorrect password|authentication failure/i],
@@ -2348,7 +2357,7 @@ describe('§35 — exit codes and disconnect semantics', () => {
     {
       name: 'remote killed mid-session prints "Connection closed by …"',
       setup: async (l) => {
-        await l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &');
+        await l.pc1.executeCommand('ssh alice@10.0.0.2 sleep 60 &', 'admin\n');
         l.pc2.powerOff();
       },
       on: l => l.pc1,

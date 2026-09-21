@@ -74,7 +74,7 @@ describe('Scénario 12 — SSH puis sudo : traçabilité complète', () => {
 
   it('SSH alice puis sudo whoami : deux lignes distinctes dans auth.log', async () => {
     const { pc, srv } = await buildPair();
-    const out = await pc.executeCommand('ssh alice@10.0.0.10 sudo whoami');
+    const out = await pc.executeCommand('ssh alice@10.0.0.10 sudo whoami', 'admin\n');
     expect(out).toMatch(/^root\s*$/m);
 
     const log = srvVfs(srv).readFile('/var/log/auth.log') ?? '';
@@ -84,7 +84,7 @@ describe('Scénario 12 — SSH puis sudo : traçabilité complète', () => {
 
   it('les deux événements (Accepted + sudo) sont distincts dans le journal', async () => {
     const { pc, srv } = await buildPair();
-    await pc.executeCommand('ssh alice@10.0.0.10 sudo cat /etc/shadow');
+    await pc.executeCommand('ssh alice@10.0.0.10 sudo cat /etc/shadow', 'admin\n');
 
     const log = srvVfs(srv).readFile('/var/log/auth.log') ?? '';
     const acceptedLines = log.split('\n').filter(l => /Accepted password for alice/.test(l));
@@ -95,7 +95,7 @@ describe('Scénario 12 — SSH puis sudo : traçabilité complète', () => {
 
   it('mallory (NOT in sudo group) : "not in the sudoers file" + ligne d\'échec dans auth.log', async () => {
     const { pc, srv } = await buildPair();
-    const out = await pc.executeCommand('ssh mallory@10.0.0.10 sudo cat /etc/shadow');
+    const out = await pc.executeCommand('ssh mallory@10.0.0.10 sudo cat /etc/shadow', 'admin\n');
     expect(out).toMatch(/is not in the sudoers file/);
 
     const log = srvVfs(srv).readFile('/var/log/auth.log') ?? '';
@@ -105,7 +105,7 @@ describe('Scénario 12 — SSH puis sudo : traçabilité complète', () => {
 
   it('horodatage cohérent : la ligne sudo arrive APRÈS la ligne Accepted', async () => {
     const { pc, srv } = await buildPair();
-    await pc.executeCommand('ssh alice@10.0.0.10 sudo id');
+    await pc.executeCommand('ssh alice@10.0.0.10 sudo id', 'admin\n');
 
     const log = srvVfs(srv).readFile('/var/log/auth.log') ?? '';
     const lines = log.split('\n');

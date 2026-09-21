@@ -92,6 +92,10 @@ export interface IRmanOracleContext {
   recordBlockCorruption?(fileNo: number, blocks: number, type: BlockCorruptionType): void;
   getBlockCorruptions?(): ReadonlyArray<{ fileNo: number; blocks: number }>;
   clearBlockCorruption?(fileNo: number): void;
+  recordBackupCorruption?(entry: {
+    setStamp: number; fileNo: number; blocks: number;
+    markedCorrupt: boolean; type: BlockCorruptionType; kind: 'BACKUPSET' | 'COPY';
+  }): void;
   getRecoveryAreaUsedBytes?(): number;
 }
 

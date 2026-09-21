@@ -107,8 +107,12 @@ export class RmanCommandDispatcher {
       { pattern: /^EXECUTE SCRIPT (\S+|'[^']+')$/i,                              command: new ExecuteScriptCommand() },
       { pattern: /^LIST SCRIPT NAMES$/i,                                         command: new ListScriptNamesCommand() },
       // VALIDATE / CONTROLFILE / INCREMENTAL — match before plain "BACKUP DATABASE"
-      { pattern: /^BACKUP VALIDATE CHECK LOGICAL DATABASE$/i,      command: new ValidateCommand('DATABASE', true) },
-      { pattern: /^BACKUP VALIDATE DATABASE$/i,                    command: new BackupCommand('validate') },
+      { pattern: /^BACKUP VALIDATE CHECK LOGICAL DATABASE$/i,      command: new ValidateCommand('DATABASE', true, 'BACKUP') },
+      { pattern: /^BACKUP VALIDATE CHECK LOGICAL TABLESPACE (\S+)$/i, command: new ValidateCommand('TABLESPACE', true, 'BACKUP') },
+      { pattern: /^BACKUP VALIDATE CHECK LOGICAL DATAFILE (\d+)$/i,   command: new ValidateCommand('DATAFILE', true, 'BACKUP') },
+      { pattern: /^BACKUP VALIDATE DATABASE$/i,                    command: new ValidateCommand('DATABASE', false, 'BACKUP') },
+      { pattern: /^BACKUP VALIDATE TABLESPACE (\S+)$/i,            command: new ValidateCommand('TABLESPACE', false, 'BACKUP') },
+      { pattern: /^BACKUP VALIDATE DATAFILE (\d+)$/i,              command: new ValidateCommand('DATAFILE', false, 'BACKUP') },
       { pattern: /^BACKUP CURRENT CONTROLFILE(.*)$/i,              command: new BackupCommand('controlfile') },
       { pattern: /^BACKUP INCREMENTAL LEVEL (\d)(?:\s+(CUMULATIVE))? DATABASE(.*)$/i, command: new BackupCommand('incremental') },
       { pattern: /^BACKUP COMPRESSED BACKUPSET DATABASE(.*)$/i,    command: new BackupCommand('database', true) },
@@ -189,6 +193,7 @@ export class RmanCommandDispatcher {
       { pattern: /^SET NEWNAME FOR DATAFILE (\d+) TO ('[^']+')$/i,  command: new SetCommand('NEWNAME') },
       // SET UNTIL — PITR precursor inherited by later RESTORE/RECOVER in
       // the same RUN block
+      { pattern: /^SET MAXCORRUPT FOR DATAFILE (\d+) TO (\d+)$/i,    command: new SetCommand('MAXCORRUPT') },
       { pattern: /^SET UNTIL TIME '([^']+)'$/i,                     command: new SetCommand('UNTIL_TIME') },
       { pattern: /^SET UNTIL SCN (\d+)$/i,                          command: new SetCommand('UNTIL_SCN')  },
       // CONNECT AUXILIARY — accepted no-op against the in-memory aux

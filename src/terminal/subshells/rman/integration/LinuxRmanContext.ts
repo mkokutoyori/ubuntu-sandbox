@@ -312,6 +312,22 @@ export class LinuxRmanContext implements IRmanOracleContext {
     });
   }
 
+  recordBackupCorruption(entry: {
+    setStamp: number; fileNo: number; blocks: number;
+    markedCorrupt: boolean; type: BlockCorruptionType; kind: 'BACKUPSET' | 'COPY';
+  }): void {
+    const oracle = this._oracle;
+    if (!oracle) return;
+    oracle.instance.getBus().publish({
+      topic: 'oracle.backup-corruption.found',
+      payload: {
+        deviceId: (this._device as { id?: string }).id ?? '',
+        sid: oracle.instance.config.sid,
+        ...entry,
+      },
+    });
+  }
+
   recordBackupPiece(piece: RecordedBackupPiece): void {
     const oracle = this._oracle;
     if (!oracle) return;

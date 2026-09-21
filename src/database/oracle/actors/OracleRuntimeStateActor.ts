@@ -303,6 +303,19 @@ export class OracleRuntimeStateActor {
         });
       })),
 
+      this.bus.subscribe('oracle.backup-corruption.found', scoped<{
+        deviceId: string; setStamp: number; fileNo: number; blocks: number;
+        markedCorrupt: boolean; type: 'CHECKSUM' | 'CORRUPT' | 'LOGICAL';
+        kind: 'BACKUPSET' | 'COPY';
+      }>((p) => {
+        this.state.backupCorruptions.push({
+          recid: this.state.backupCorruptions.length + 1,
+          setStamp: p.setStamp, piece: 1, fileNo: p.fileNo, block: 1,
+          blocks: p.blocks, changeScn: 0, markedCorrupt: p.markedCorrupt,
+          type: p.type, kind: p.kind,
+        });
+      })),
+
       this.bus.subscribe('oracle.block-corruption.repaired', scoped<{
         deviceId: string; fileNo: number;
       }>((p) => {

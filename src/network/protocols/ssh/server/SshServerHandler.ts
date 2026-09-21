@@ -506,6 +506,7 @@ export class SshServerHandler {
             // (docs/PRD-SSH-Unification.md §4bis B4).
             prompt: channels.get(channelId)?.shell?.getPrompt?.(),
             posixShell: channels.get(channelId)?.shell?.posixShell !== false,
+            motd: this.ctx.getMotd(),
           }));
           break;
         }

@@ -1175,6 +1175,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       sftpSource: () => this.sshSftpFileSource(),
       execIdleTimeoutMs: () => this.resolveVtyIdleTimeoutMs(),
       banner: () => this.sshBannerText || null,
+      motd: () => this.getBanner('motd') || null,
       aaaAuthenticate: (n, p) => this.authenticateViaAaa(n, p),
       // Reuse the exact admission/failure-tracking the cross-vendor bypass
       // used to gate on its own (login block-for / quiet-mode ACL /
@@ -1184,9 +1185,31 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       isClientBlocked: (ip, user) => !this.vtyAdmissionVerdict('ssh', ip).accept
         || (user !== undefined && this.perUserAdmissionRefusal(user, ip) !== null),
       recordAuthFailure: (user, ip) => this.recordSshLogin(user, ip, '', false),
-      recordLogin: (user, ip) => this.recordSshLogin(user, ip, '', true),
+      recordLogin: (user, ip) => {
+        this.recordSshLogin(user, ip, '', true);
+        this.openWireVtySession(user, ip);
+      },
+      recordLogout: (user, ip) => this.closeWireVtySession(user, ip),
     });
     return new SshServerHandler(ctx);
+  }
+
+  private openWireVtySession(user: string, fromIp: string): void {
+    this.getSshSessionRegistry().open({
+      user,
+      privilege: this.resolveVtyExecLevel(user || undefined),
+      fromIp,
+      authMethod: 'password',
+      localPort: 22,
+    });
+  }
+
+  private closeWireVtySession(user: string, fromIp: string): void {
+    const registry = this.getSshSessionRegistry();
+    const live = registry.list()
+      .filter((s) => s.user === user && s.fromIp === fromIp && s.state !== 'closed');
+    const last = live[live.length - 1];
+    if (last) registry.close(last.id, 'logout');
   }
 
   protected readonly tcpv2: TcpStack;

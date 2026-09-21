@@ -311,6 +311,7 @@ L'ordre n'est pas négociable : chaque lot a besoin du précédent.
 | **R7** | ~~`CONNECT TARGET …@tns` **sur le fil**~~ **FAIT** — plus R7b : les sept accesseurs d'une cible distante posent leur question au lieu de lire l'objet du pair | réseau | referme la violation du §4 |
 | **R8a** | ~~**Transfert des pièces entre sites**~~ **FAIT** — NFSv3 réel (XDR, ONC RPC, portmap, mountd, nfsd) plus son branchement : une pièce écrite sous un montage réseau est sur le disque du SERVEUR | réseau | ferme [G]/[H], la dernière violation du §4 sur le chemin de sauvegarde |
 | **R8b** | ~~Catalogue distant (`CONNECT CATALOG`) et `DUPLICATE`~~ **FAIT** — le catalogue est un jeu de tables `RC_` dans la base que `CONNECT CATALOG` a résolue, et `DUPLICATE` écrit par le VFS de la machine auxiliaire | réseau | le laboratoire DR est complet |
+| **R9** | ~~**La corruption**, de bout en bout~~ **FAIT** — la pièce porte une somme de contrôle et `VALIDATE` la lit (`ORA-19870`/`ORA-19501`) ; `V$DATABASE_BLOCK_CORRUPTION`, `V$BACKUP_CORRUPTION` et `V$COPY_CORRUPTION` portent ce qui a été trouvé ; `CROSSCHECK` contrôle l'en-tête ; `BLOCKRECOVER CORRUPTION LIST` répare et vide le registre ; `CHECK LOGICAL` est évalué ; `BACKUP` refuse ce qu'il ne peut pas lire (`ORA-19566`) sauf si `SET MAXCORRUPT` l'autorise | RMAN + applicative | c'est la chaîne « sauvegarder → vérifier → réparer » : chacune de ses commandes existait, presque aucune n'avait d'effet |
 
 ### 5.0 Lot R2b — la cible distante (fermé)
 

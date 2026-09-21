@@ -1582,6 +1582,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const line = commandLine.trim();
     if (!line) return null;
 
+    if (mode === 'user' || mode === 'privileged') {
+      const outbound = this.outboundSshClientPlan(line, ctx?.device as TDevice | undefined);
+      if (outbound) return outbound;
+    }
+
     if (!this.commandVisibleTo(line, mode, ctx)) return null;
 
     // `enable` vit dans les DEUX EXEC depuis qu'elle n'a plus qu'une
@@ -9773,7 +9778,27 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * router's first configured interface — runSshClient probes for it
    * automatically when sourceIp resolves to a known device.
    */
-  private runOutboundSshClient(args: string[]): string {
+  private outboundSshClientPlan(
+    commandLine: string, device: TDevice | undefined,
+  ): CommandInteractionPlan | null {
+    const toks = commandLine.trim().split(/\s+/).filter(Boolean);
+    if (toks[0]?.toLowerCase() !== 'ssh' || toks.length < 2 || !device) return null;
+    const args = toks.slice(1);
+    return {
+      steps: [
+        { kind: 'password', prompt: 'Password:', storeAs: 'ssh_password' },
+        {
+          kind: 'run',
+          run: async (rt) => {
+            rt.output(this.avecReferenceAppareil(device, () =>
+              this.runOutboundSshClient(args, rt.values.get('ssh_password'))));
+          },
+        },
+      ],
+    };
+  }
+
+  private runOutboundSshClient(args: string[], offeredPassword?: string): string {
     let user = 'admin';
     let port: string | null = null;
     const rest: string[] = [];
@@ -9820,6 +9845,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       sourceHostname: router._getHostnameInternal(),
       sourceIp,
       sourceUser: user,
+      offeredPassword,
       localVfs: {
         readFile: () => null,
         writeFile: () => undefined,

@@ -19,11 +19,6 @@ export function collectListeningSockets(router: Router): readonly ListeningSocke
   const ssh = mgmt.getSsh();
   if (ssh.enabled) sockets.push({ protocol: 'tcp', port: ssh.port, service: 'ssh', source: 'configured' });
 
-  const stelnet = mgmt.getStelnet();
-  if (stelnet.enabled && stelnet.port !== ssh.port) {
-    sockets.push({ protocol: 'tcp', port: stelnet.port, service: 'stelnet', source: 'configured' });
-  }
-
   const telnet = mgmt.getTelnet();
   if (telnet.enabled) sockets.push({ protocol: 'tcp', port: telnet.port, service: 'telnet', source: 'configured' });
 

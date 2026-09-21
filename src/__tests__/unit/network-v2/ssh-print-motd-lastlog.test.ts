@@ -42,7 +42,7 @@ describe('SSH server — PrintMotd / PrintLastLog gates', () => {
   it('PrintMotd=no suppresses /etc/motd in the interactive banner', async () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'PasswordAuthentication yes\nPrintMotd no\n');
-    const out = await pc.executeCommand('ssh alice@10.0.0.2');
+    const out = await pc.executeCommand('ssh alice@10.0.0.2', 'admin\n');
     expect(out).not.toMatch(/CUSTOM MOTD LINE/);
     expect(out).toMatch(/Last login:/);
   });
@@ -50,7 +50,7 @@ describe('SSH server — PrintMotd / PrintLastLog gates', () => {
   it('PrintLastLog=no suppresses the "Last login" line', async () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'PasswordAuthentication yes\nPrintLastLog no\n');
-    const out = await pc.executeCommand('ssh alice@10.0.0.2');
+    const out = await pc.executeCommand('ssh alice@10.0.0.2', 'admin\n');
     expect(out).not.toMatch(/Last login:/);
     expect(out).toMatch(/CUSTOM MOTD LINE/);
   });
@@ -58,7 +58,7 @@ describe('SSH server — PrintMotd / PrintLastLog gates', () => {
   it('defaults: both motd and last-login are present', async () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'PasswordAuthentication yes\n');
-    const out = await pc.executeCommand('ssh alice@10.0.0.2');
+    const out = await pc.executeCommand('ssh alice@10.0.0.2', 'admin\n');
     expect(out).toMatch(/Last login:/);
     expect(out).toMatch(/CUSTOM MOTD LINE/);
   });

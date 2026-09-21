@@ -7,7 +7,6 @@
  *   - 'tablespace'            BACKUP TABLESPACE <name>
  *   - 'incremental'           BACKUP INCREMENTAL LEVEL 0|1 DATABASE
  *   - 'controlfile'           BACKUP CURRENT CONTROLFILE
- *   - 'validate'              BACKUP VALIDATE DATABASE
  *
  * Optional clauses (parsed from the post-keyword text):
  *   TAG '<x>'      → set the backup tag
@@ -22,7 +21,7 @@ import { JobBuilder } from '../job/JobBuilder';
 
 export type BackupMode =
   | 'database' | 'archivelog' | 'tablespace' | 'incremental'
-  | 'controlfile' | 'validate' | 'datafile' | 'spfile' | 'recoveryArea';
+  | 'controlfile' | 'datafile' | 'spfile' | 'recoveryArea';
 
 export class BackupCommand implements IRmanCommand<void> {
   readonly name = 'BACKUP';
@@ -58,6 +57,10 @@ export class BackupCommand implements IRmanCommand<void> {
     // adding a second, parallel skip path. An explicit clause always wins.
     const optimizationOn = cmdCtx.config?.snapshot().backupOptimization === true;
     if (optimizationOn && opts.notBackedUpNTimes === undefined) opts.notBackedUpNTimes = 1;
+
+    const tolerances = [...(cmdCtx.setMaxCorrupt ?? new Map<number, number>())]
+      .map(([fichier, limite]) => `${fichier}:${limite}`).join(',');
+    if (tolerances) opts.maxCorrupt = tolerances;
 
     const plusArchivelog = /\bPLUS\s+ARCHIVELOG\b/i.test(all);
 
@@ -99,8 +102,6 @@ export class BackupCommand implements IRmanCommand<void> {
       case 'controlfile':
         // Explicit BACKUP CURRENT CONTROLFILE — never re-triggers autobackup
         return engine.run(JobBuilder.backupControlfile(opts));
-      case 'validate':
-        return engine.run(JobBuilder.backupValidate());
       case 'datafile': {
         // args[0] = "4" ou "1,2,3" (séparateur virgule)
         const list = (args[0] ?? '1').split(',')
@@ -130,22 +131,17 @@ export class BackupCommand implements IRmanCommand<void> {
 }
 
 /** Parse optional clauses from the trailing text of a BACKUP command. */
-export function parseBackupOptions(text: string): {
+export interface BackupOptions {
   tag?: string; format?: string; deleteInput?: boolean;
   compressed?: boolean; fromScn?: number;
   keepForever?: boolean; keepUntilTime?: string;
   cumulative?: boolean; maxPieceSize?: number;
   encrypted?: boolean; notBackedUpNTimes?: number;
-  asCopy?: boolean;
-} {
-  const out: {
-    tag?: string; format?: string; deleteInput?: boolean;
-    compressed?: boolean; fromScn?: number;
-    keepForever?: boolean; keepUntilTime?: string;
-    cumulative?: boolean; maxPieceSize?: number;
-    encrypted?: boolean; notBackedUpNTimes?: number;
-    asCopy?: boolean;
-  } = {};
+  asCopy?: boolean; maxCorrupt?: string;
+}
+
+export function parseBackupOptions(text: string): BackupOptions {
+  const out: BackupOptions = {};
   const tagMatch = text.match(/\bTAG\s+(?:'([^']+)'|"([^"]+)")/i);
   if (tagMatch) out.tag = (tagMatch[1] ?? tagMatch[2]).toUpperCase();
   const fmtMatch = text.match(/\bFORMAT\s+(?:'([^']+)'|"([^"]+)")/i);

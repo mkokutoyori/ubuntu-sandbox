@@ -81,10 +81,10 @@ describe('Scénario 4 — pare-feu local vs ACL réseau', () => {
       await server.executeCommand('iptables -A INPUT -p tcp --dport 22 -s 10.0.0.10 -j ACCEPT');
       await server.executeCommand('iptables -A INPUT -p tcp --dport 22 -j REJECT');
 
-      const ok = await adminPc.executeCommand('ssh alice@10.0.0.100 whoami');
+      const ok = await adminPc.executeCommand('ssh alice@10.0.0.100 whoami', 'admin\n');
       expect(ok).toMatch(/^alice\s*$/m);
 
-      const ko = await attackerPc.executeCommand('ssh alice@10.0.0.100 whoami');
+      const ko = await attackerPc.executeCommand('ssh alice@10.0.0.100 whoami', 'admin\n');
       expect(ko).toMatch(/Connection refused/);
       expect(ko).not.toMatch(/Connection timed out/);
       expect(ko).not.toMatch(/^alice\s*$/m);
@@ -96,7 +96,7 @@ describe('Scénario 4 — pare-feu local vs ACL réseau', () => {
       const before = await server.executeCommand('iptables -L INPUT -n -v');
       const beforeCount = parseInt(/^\s*(\d+)\s+\d+\s+REJECT/m.exec(before)?.[1] ?? '0', 10);
 
-      await attackerPc.executeCommand('ssh alice@10.0.0.100 whoami');
+      await attackerPc.executeCommand('ssh alice@10.0.0.100 whoami', 'admin\n');
 
       const after = await server.executeCommand('iptables -L INPUT -n -v');
       const afterCount = parseInt(/^\s*(\d+)\s+\d+\s+REJECT/m.exec(after)?.[1] ?? '0', 10);
@@ -110,7 +110,7 @@ describe('Scénario 4 — pare-feu local vs ACL réseau', () => {
       await server.executeCommand('iptables -A INPUT -p tcp --dport 22 -s 10.0.0.10 -j ACCEPT');
       await server.executeCommand('iptables -A INPUT -p tcp --dport 22 -j DROP');
 
-      const ko = await attackerPc.executeCommand('ssh alice@10.0.0.100 whoami');
+      const ko = await attackerPc.executeCommand('ssh alice@10.0.0.100 whoami', 'admin\n');
       expect(ko).toMatch(/Connection timed out/);
       expect(ko).not.toMatch(/Connection refused/);
     });
@@ -119,13 +119,13 @@ describe('Scénario 4 — pare-feu local vs ACL réseau', () => {
       const { attackerPc, server } = await buildLinuxLan();
       // REJECT
       await server.executeCommand('iptables -A INPUT -p tcp --dport 22 -j REJECT');
-      const rej = await attackerPc.executeCommand('ssh alice@10.0.0.100 whoami');
+      const rej = await attackerPc.executeCommand('ssh alice@10.0.0.100 whoami', 'admin\n');
       expect(rej).toMatch(/Connection refused/);
 
       // Bascule en DROP
       await server.executeCommand('iptables -F INPUT');
       await server.executeCommand('iptables -A INPUT -p tcp --dport 22 -j DROP');
-      const drp = await attackerPc.executeCommand('ssh alice@10.0.0.100 whoami');
+      const drp = await attackerPc.executeCommand('ssh alice@10.0.0.100 whoami', 'admin\n');
       expect(drp).toMatch(/Connection timed out/);
     });
   });
@@ -147,7 +147,7 @@ describe('Scénario 4 — pare-feu local vs ACL réseau', () => {
     it('Sans règle de blocage : la connexion SSH vers Windows passe', async () => {
       const { adminPc, winSrv } = await buildWindowsLan();
       expect(winSrv).toBeDefined();
-      const ok = await adminPc.executeCommand('ssh alice@10.0.0.100 hostname');
+      const ok = await adminPc.executeCommand('ssh alice@10.0.0.100 hostname', 'admin\n');
       expect(ok).not.toMatch(/Connection timed out/);
       expect(ok).not.toMatch(/Connection refused/);
     });
@@ -162,7 +162,7 @@ describe('Scénario 4 — pare-feu local vs ACL réseau', () => {
       );
       expect(created.trim()).toBe('Ok.');
 
-      const ko = await adminPc.executeCommand('ssh alice@10.0.0.100 hostname');
+      const ko = await adminPc.executeCommand('ssh alice@10.0.0.100 hostname', 'admin\n');
       expect(ko).toMatch(/Connection timed out/);
       expect(ko).not.toMatch(/Connection refused/);
 

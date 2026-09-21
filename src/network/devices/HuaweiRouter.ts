@@ -516,7 +516,6 @@ export class HuaweiRouter extends Router {
       // VRP emits "protocol inbound ssh" specifically when ssh is among
       // the permitted protocols (not just when 'all' is set), so the
       // grep-style assertions in operations notebooks keep working.
-      if (this.sshServerEnabled) lines.push('stelnet server enable');
       const admis = this._getVtyTransportInput();
       if (admis === 'all' || admis === 'ssh') {
         lines.push('protocol inbound ssh');

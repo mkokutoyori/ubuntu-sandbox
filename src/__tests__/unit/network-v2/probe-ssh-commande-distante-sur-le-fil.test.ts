@@ -125,8 +125,7 @@ describe('La commande distante traverse le cable', () => {
     const { pc, srv } = await labo();
     await srv.executeCommand('sudo useradd -m bob');
     await srv.executeCommand('echo "bob:motdepasse" | sudo chpasswd');
-    const sortie = await pc.executeCommand(
-      `ssh -o StrictHostKeyChecking=no bob@${SERVER_IP} whoami`);
+    const sortie = await pc.executeCommand(`ssh -o StrictHostKeyChecking=no bob@${SERVER_IP} whoami`, 'admin\n');
     expect(sortie.trim()).toBe('bob');
   });
 
