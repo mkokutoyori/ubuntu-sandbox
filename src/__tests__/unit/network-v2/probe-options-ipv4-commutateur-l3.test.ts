@@ -61,7 +61,7 @@ import {
   type EthernetFrame, type ICMPPacket, type IPv4Option, type IPv4Packet,
 } from '@/network/core/types';
 import {
-  buildRecordRouteOption, buildSourceRouteOption, recordRouteAddresses,
+  buildRecordRouteOption, buildSourceRouteOption, routeAddressesOf,
 } from '@/network/layers/internet/Ipv4Options';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -156,7 +156,7 @@ describe('a Catalyst records the route like the router beside it', () => {
     const arrived = atB();
     expect(arrived).toHaveLength(1);
     const option = optionOf(arrived[0], IP_OPTION_RECORD_ROUTE)!;
-    expect(recordRouteAddresses(option).map(ip => ip.toString()))
+    expect(routeAddressesOf(option).map(ip => ip.toString()))
       .toEqual(['10.0.1.1', '10.0.2.1']);
     expect(verifyIPv4Checksum(arrived[0])).toBe(true);
   });

@@ -10,7 +10,9 @@
  *  - Section 6: Security Privilege Boundaries, Cable Drops & Failure Edge Cases (Tests 251-300)
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';

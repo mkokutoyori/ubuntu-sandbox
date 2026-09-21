@@ -11,6 +11,7 @@ import {
 import {
   advanceSourceRoute, recordRoute, sourceRouteState,
 } from '../layers/internet/Ipv4Options';
+import { buildEchoReply } from '../icmp/IcmpEcho';
 import {
   buildICMPError, mayGenerateICMPError, ICMP_UNREACH_PORT, type ICMPErrorType,
 } from '../core/IcmpErrors';
@@ -819,12 +820,8 @@ export class SwitchSvi {
   private sendEchoReply(
     vlan: number, selfIp: IPAddress, reqIp: IPv4Packet, reqIcmp: ICMPPacket,
   ): void {
-    const targetMac = this.host.lookupArp(reqIp.sourceIP.toString());
-    const icmp: ICMPPacket = {
-      type: 'icmp', icmpType: 'echo-reply', code: 0,
-      id: reqIcmp.id, sequence: reqIcmp.sequence, dataSize: reqIcmp.dataSize,
-    };
-    const ipPkt = createIPv4Packet(selfIp, reqIp.sourceIP, IP_PROTO_ICMP, 255, icmp, 8 + reqIcmp.dataSize);
+    const ipPkt = buildEchoReply(reqIp, reqIcmp, selfIp, 255);
+    const targetMac = this.host.lookupArp(ipPkt.destinationIP.toString());
     this.host.egressOnVlan(vlan, {
       srcMAC: this.host.getBridgeMac(),
       dstMAC: targetMac ?? MACAddress.broadcast(),

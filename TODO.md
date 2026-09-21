@@ -65,16 +65,6 @@ des colonnes ni le libelle exact ne sont attestables depuis ce reseau
 (le §8 du CLAUDE.md : quand la source est injoignable, on le dit et on
 n'implante pas). A rouvrir avec une capture de `ping` etendu reel.
 
-### [ip] la reponse d'echo ne renvoie pas la route enregistree
-RFC 1122 §3.2.2.6, et les deux forces sont differentes : un Record Route
-ou un Timestamp recu dans une requete d'echo « SHOULD be updated to
-include the current host and included in the IP header of the Echo
-Reply », tandis qu'une source route recue « MUST be reversed and used as
-a Source Route option for the Echo Reply ». `Router` construit sa reponse
-sans relire les options de la requete, donc ni l'un ni l'autre n'est
-fait. Vu en ecrivant `probe-options-ipv4.test.ts`, qui mesure la route a
-l'ARRIVEE (chez B) precisement parce que le retour ne la porte pas.
-
 ### [ip] le pare-feu ignore la zone d'options, et l'ouvrir le rendrait PLUS permissif
 Le commutateur de niveau 3 est FERME (`probe-options-ipv4-commutateur-l3
 .test.ts`) : `SwitchSvi` appelle desormais `layers/internet/Ipv4Options
