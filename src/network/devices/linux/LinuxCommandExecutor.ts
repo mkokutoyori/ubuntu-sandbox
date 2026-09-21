@@ -154,6 +154,7 @@ import { SshdServerConfig } from '../../protocols/ssh/server/SshdServerConfig';
 import { WindowsSftpFileSystem } from '../../protocols/ssh/sftp/WindowsSftpFileSystem';
 import { RouterSftpFileSystem } from '../../protocols/ssh/sftp/RouterSftpFileSystem';
 import { ScpSession } from '../../protocols/ssh/scp/ScpSession';
+import { parseScpEndpoint, parseSshAuthority, type SshAuthority } from '../../protocols/ssh/Scp';
 import { SftpInteractiveSession } from '../../protocols/ssh/sftp/SftpInteractiveSession';
 import { SftpCommandScript } from '../../protocols/ssh/sftp/SftpCommandScript';
 import type { ISftpFileSystem } from '../../protocols/ssh/sftp/ISftpFileSystem';
@@ -337,6 +338,19 @@ function stateLabel(s: string): string {
 }
 
 const SSH_COPY_ID_VALUE_FLAGS: ReadonlySet<string> = new Set(['-p', '-o', '-F', '-t']);
+
+function transferAuthority(
+  cmd: 'scp' | 'sftp' | 'rsync', positional: readonly string[], dest: string,
+): SshAuthority | null {
+  if (cmd === 'sftp') return parseSshAuthority(dest);
+  for (const token of positional) {
+    const endpoint = parseScpEndpoint(token);
+    if (endpoint.remote && endpoint.host !== undefined) {
+      return { user: endpoint.user, host: endpoint.host };
+    }
+  }
+  return null;
+}
 
 export class LinuxCommandExecutor {
   readonly vfs: VirtualFileSystem;
@@ -1250,6 +1264,17 @@ export class LinuxCommandExecutor {
    * Mirrors real OpenSSH where these tools fail with the same
    * "Connection refused" / "Could not resolve hostname" as the parent.
    */
+  private runLocalScp(args: string[]): { output: string; exitCode: number } {
+    const localFs = new VfsSftpFileSystem(this.vfs, {
+      uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
+    });
+    return new ScpSession({
+      args,
+      local: { fs: localFs, cwd: this.cwd },
+      resolveRemote: () => null,
+    }).run();
+  }
+
   runSshTransport(
     cmd: 'scp' | 'sftp' | 'rsync', args: string[], stdinArg?: string, offeredPassword?: string,
   ): { output: string; exitCode: number } {
@@ -1268,12 +1293,14 @@ export class LinuxCommandExecutor {
           : 'rsync: no destination specified';
       return { output: usage, exitCode: 1 };
     }
-    const hostPart = dest.replace(/^([\w.-]+@)?/, '').split(':')[0];
-    // Pick the user from any remote endpoint so the probe authenticates
-    // against that account (matches scp/sftp's real behaviour) rather
-    // than the local shell user, who may not exist on the remote.
-    const userMatch = positional.map(p => /^([\w.-]+)@/.exec(p)).find((m): m is RegExpExecArray => m !== null);
-    const probeTarget = userMatch ? `${userMatch[1]}@${hostPart}` : hostPart;
+    const authority = transferAuthority(cmd, positional, dest);
+    if (!authority) {
+      if (cmd === 'scp') return this.runLocalScp(args);
+      return { output: `${cmd}: ${dest}: no route to host`, exitCode: 1 };
+    }
+    const hostPart = authority.host;
+    const userMatch = authority.user;
+    const probeTarget = userMatch ? `${userMatch}@${hostPart}` : hostPart;
     // scp / sftp select an alternate port with -P (rsync uses -e); translate
     // it into the ssh client's own -p so the probe targets the right port.
     const pIdx = args.indexOf('-P');
@@ -1303,7 +1330,7 @@ export class LinuxCommandExecutor {
       const session = new ScpSession({
         args,
         local: { fs: localFs, cwd: this.cwd },
-        resolveRemote: (host) => this.resolveRemoteSftpFs(host, userMatch ? userMatch[1] : undefined),
+        resolveRemote: (host) => this.resolveRemoteSftpFs(host, userMatch),
       });
       return session.run();
     }
@@ -1317,7 +1344,7 @@ export class LinuxCommandExecutor {
         stdin = batch;
       }
       const found = findHostByAddress(hostPart, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
-      const remoteUserName = userMatch ? userMatch[1] : this.userMgr.currentUser;
+      const remoteUserName = userMatch ?? this.userMgr.currentUser;
       let remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device, remoteUserName);
       if (!remoteFs) return { output: `sftp: ${hostPart}: no route to host`, exitCode: 1 };
       const remoteChroot = this.readChrootDirectory(found?.device, remoteUserName, this.firstConfiguredIp());
@@ -1448,9 +1475,13 @@ export class LinuxCommandExecutor {
         exitCode: 1,
       };
     }
-    const hostPart = dest.replace(/^([\w.-]+@)?/, '').split(':')[0];
-    const userMatch = positional.map(p => /^([\w.-]+)@/.exec(p)).find((m): m is RegExpExecArray => m !== null);
-    const remoteUser = userMatch ? userMatch[1] : this.userMgr.currentUser;
+    const authority = transferAuthority(cmd, positional, dest);
+    if (!authority) {
+      if (cmd === 'scp') return this.runLocalScp(args);
+      return { output: `${cmd}: ${dest}: no route to host`, exitCode: 1 };
+    }
+    const hostPart = authority.host;
+    const remoteUser = authority.user ?? this.userMgr.currentUser;
 
     const probeArgs: string[] = [];
     const identities: string[] = [];
