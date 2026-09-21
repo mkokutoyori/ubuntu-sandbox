@@ -6,6 +6,7 @@
  *   VALIDATE DATAFILE  <n>
  *   VALIDATE BACKUPSET <bsKey>
  *   VALIDATE CHECK LOGICAL <scope>
+ *   BACKUP VALIDATE [CHECK LOGICAL] <scope>
  *
  * Uses the engine's BACKUP_VALIDATED path so the channel allocation,
  * progress messages and JOB_COMPLETED emit pipeline are exercised — the
@@ -29,18 +30,20 @@ export class ValidateCommand implements IRmanCommand<void> {
   constructor(
     private readonly scope: ValidateScope,
     private readonly checkLogical = false,
+    private readonly flavor: 'BACKUP' | 'VALIDATE' = 'VALIDATE',
   ) {}
 
   execute(args: string[], cmdCtx: RmanCommandContext): Result<void, RmanError> {
     const { engine, catalog } = cmdCtx;
     switch (this.scope) {
       case 'DATABASE':
-        return engine.run(JobBuilder.validate({ scope: 'DATABASE', checkLogical: this.checkLogical }));
+        return engine.run(JobBuilder.validate({ scope: 'DATABASE', checkLogical: this.checkLogical, flavor: this.flavor }));
       case 'TABLESPACE': {
         const ts = (args[0] ?? '').toUpperCase();
         if (!ts) return err({ code: 'RMAN_01009', message: 'VALIDATE TABLESPACE requires a name' });
         return engine.run(JobBuilder.validate({
-          scope: 'TABLESPACE', tablespace: ts, checkLogical: this.checkLogical,
+          scope: 'TABLESPACE', tablespace: ts,
+          checkLogical: this.checkLogical, flavor: this.flavor,
         }));
       }
       case 'DATAFILE': {
@@ -49,7 +52,8 @@ export class ValidateCommand implements IRmanCommand<void> {
           return err({ code: 'RMAN_01009', message: 'VALIDATE DATAFILE requires a file number' });
         }
         return engine.run(JobBuilder.validate({
-          scope: 'DATAFILE', fileNo: n, checkLogical: this.checkLogical,
+          scope: 'DATAFILE', fileNo: n,
+          checkLogical: this.checkLogical, flavor: this.flavor,
         }));
       }
       case 'BACKUPSET': {
@@ -65,7 +69,8 @@ export class ValidateCommand implements IRmanCommand<void> {
           return err({ code: 'RMAN_06004', message: `backupset ${n} not found in catalog` });
         }
         return engine.run(JobBuilder.validate({
-          scope: 'BACKUPSET', bsKey: n, checkLogical: this.checkLogical,
+          scope: 'BACKUPSET', bsKey: n,
+          checkLogical: this.checkLogical, flavor: this.flavor,
         }));
       }
     }

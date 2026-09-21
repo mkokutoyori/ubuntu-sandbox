@@ -7,7 +7,6 @@
  *   - 'tablespace'            BACKUP TABLESPACE <name>
  *   - 'incremental'           BACKUP INCREMENTAL LEVEL 0|1 DATABASE
  *   - 'controlfile'           BACKUP CURRENT CONTROLFILE
- *   - 'validate'              BACKUP VALIDATE DATABASE
  *
  * Optional clauses (parsed from the post-keyword text):
  *   TAG '<x>'      → set the backup tag
@@ -22,7 +21,7 @@ import { JobBuilder } from '../job/JobBuilder';
 
 export type BackupMode =
   | 'database' | 'archivelog' | 'tablespace' | 'incremental'
-  | 'controlfile' | 'validate' | 'datafile' | 'spfile' | 'recoveryArea';
+  | 'controlfile' | 'datafile' | 'spfile' | 'recoveryArea';
 
 export class BackupCommand implements IRmanCommand<void> {
   readonly name = 'BACKUP';
@@ -99,8 +98,6 @@ export class BackupCommand implements IRmanCommand<void> {
       case 'controlfile':
         // Explicit BACKUP CURRENT CONTROLFILE — never re-triggers autobackup
         return engine.run(JobBuilder.backupControlfile(opts));
-      case 'validate':
-        return engine.run(JobBuilder.backupValidate());
       case 'datafile': {
         // args[0] = "4" ou "1,2,3" (séparateur virgule)
         const list = (args[0] ?? '1').split(',')

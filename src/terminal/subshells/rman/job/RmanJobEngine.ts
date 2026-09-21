@@ -133,6 +133,11 @@ export class RmanJobEngine implements IRmanJobEngine {
   // ── Operation dispatch ──────────────────────────────────────────
 
   private _executeOperation(job: RmanJob, channelId: string): Result<void, RmanError> {
+    // `BACKUP VALIDATE` porte l'operation BACKUP pour ses lignes de
+    // banniere, mais fait le travail de VALIDATE : une seule implantation.
+    if (job.params?.validate === 'true' && job.operation === 'BACKUP_DATABASE') {
+      return this._doValidate(job);
+    }
     switch (job.operation) {
       case 'BACKUP_DATABASE':    return this._doBackup(job, channelId, 'database');
       case 'BACKUP_ARCHIVELOG':  return this._doBackup(job, channelId, 'archivelog');
@@ -151,7 +156,6 @@ export class RmanJobEngine implements IRmanJobEngine {
 
   private _doBackup(job: RmanJob, channelId: string, what: string): Result<void, RmanError> {
     const params = job.params ?? {};
-    const validate = params.validate === 'true';
     const deleteInput = params.deleteInput === 'true';
     const compressed = params.compressed === 'true';
     const encrypted  = params.encrypted  === 'true';
@@ -219,11 +223,6 @@ export class RmanJobEngine implements IRmanJobEngine {
       : rawSize;
 
     this._bus.emit({ type: 'BACKUP_PIECE_STARTED', jobId: job.id, channelId, what });
-
-    if (validate) {
-      this._bus.emit({ type: 'BACKUP_VALIDATED', jobId: job.id, what });
-      return ok(undefined);
-    }
 
     // BACKUP NOT BACKED UP n TIMES — count existing FULL/INCREMENTAL sets;
     // if the file is already covered enough times, skip it (no piece, no

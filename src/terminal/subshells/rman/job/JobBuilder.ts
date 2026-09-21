@@ -80,13 +80,6 @@ export const JobBuilder = {
   },
 
   /** BACKUP VALIDATE DATABASE — no piece written, no catalog change. */
-  backupValidate(): RmanJob {
-    return _make('BACKUP_DATABASE', [
-      { name: 'start_validate', pct: 10, message: 'channel ORA_DISK_1: starting validation of datafile backup set' },
-      { name: 'validate_files', pct: 60, message: 'channel ORA_DISK_1: validating files in backup set' },
-    ], { validate: 'true' });
-  },
-
   /** VALIDATE (12c+) — scope-aware validation without backup write. */
   validate(opts: {
     scope: 'DATABASE' | 'TABLESPACE' | 'DATAFILE' | 'BACKUPSET';
@@ -94,6 +87,9 @@ export const JobBuilder = {
     fileNo?: number;
     bsKey?: number;
     checkLogical?: boolean;
+    /** `BACKUP VALIDATE` lit les memes fichiers et n'ecrit aucune piece :
+     *  seules ses lignes de banniere different de `VALIDATE`. */
+    flavor?: 'BACKUP' | 'VALIDATE';
   }): RmanJob {
     const params: Record<string, string> = { validate: 'true', validateScope: opts.scope };
     if (opts.checkLogical) params.checkLogical = 'true';
@@ -105,6 +101,18 @@ export const JobBuilder = {
                  : opts.scope === 'BACKUPSET'  ? `backupset ${opts.bsKey}`
                  :                                'database';
     const label = opts.checkLogical ? `${portee} (check logical)` : portee;
+    if (opts.flavor === 'BACKUP') {
+      return _make('BACKUP_DATABASE', [
+        {
+          name: 'start_validate', pct: 10,
+          message: 'channel ORA_DISK_1: starting validation of datafile backup set',
+        },
+        {
+          name: 'validate_what', pct: 60,
+          message: `channel ORA_DISK_1: validating files in backup set (${label})`,
+        },
+      ], params);
+    }
     return _make('VALIDATE', [
       { name: 'start_validate', pct: 10, message: `channel ORA_DISK_1: starting validation of ${label}` },
       { name: 'validate_what',  pct: 60, message: `channel ORA_DISK_1: validating ${label}` },
