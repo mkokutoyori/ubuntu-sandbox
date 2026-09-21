@@ -281,6 +281,37 @@ export class LinuxRmanContext implements IRmanOracleContext {
     }));
   }
 
+  recordBlockCorruption(fileNo: number, blocks: number, type: 'CHECKSUM' | 'CORRUPT'): void {
+    const oracle = this._oracle;
+    if (!oracle) return;
+    oracle.instance.getBus().publish({
+      topic: 'oracle.block-corruption.found',
+      payload: {
+        deviceId: (this._device as { id?: string }).id ?? '',
+        sid: oracle.instance.config.sid,
+        fileNo, blocks, type,
+      },
+    });
+  }
+
+  getBlockCorruptions(): ReadonlyArray<{ fileNo: number; blocks: number }> {
+    const enregistres = this._oracle?.instance.getRuntimeState().blockCorruptions ?? [];
+    return enregistres.map(c => ({ fileNo: c.fileNo, blocks: c.blocks }));
+  }
+
+  clearBlockCorruption(fileNo: number): void {
+    const oracle = this._oracle;
+    if (!oracle) return;
+    oracle.instance.getBus().publish({
+      topic: 'oracle.block-corruption.repaired',
+      payload: {
+        deviceId: (this._device as { id?: string }).id ?? '',
+        sid: oracle.instance.config.sid,
+        fileNo,
+      },
+    });
+  }
+
   recordBackupPiece(piece: RecordedBackupPiece): void {
     const oracle = this._oracle;
     if (!oracle) return;

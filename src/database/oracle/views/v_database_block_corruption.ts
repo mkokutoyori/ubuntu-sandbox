@@ -9,7 +9,7 @@ import { registerView } from './registry';
 registerView({
   name: 'V$DATABASE_BLOCK_CORRUPTION',
   comment: 'Persistent block corruption registry',
-  query() {
+  query({ runtime }) {
     return queryResult(
       [
         col.num('FILE#'),
@@ -18,7 +18,7 @@ registerView({
         col.num('CORRUPTION_CHANGE#'),
         col.str('CORRUPTION_TYPE', 9),
       ],
-      []
+      runtime.blockCorruptions.map(c => [c.fileNo, c.block, c.blocks, c.changeScn, c.type])
     );
   },
 });

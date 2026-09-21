@@ -288,6 +288,28 @@ export class OracleRuntimeStateActor {
         this.state.counters.executions++;
       })),
 
+      this.bus.subscribe('oracle.block-corruption.found', scoped<{
+        deviceId: string; fileNo: number; blocks: number;
+        type: 'CHECKSUM' | 'CORRUPT';
+      }>((p) => {
+        const deja = this.state.blockCorruptions.find(c => c.fileNo === p.fileNo);
+        if (deja) {
+          deja.blocks = p.blocks;
+          deja.type = p.type;
+          return;
+        }
+        this.state.blockCorruptions.push({
+          fileNo: p.fileNo, block: 1, blocks: p.blocks, changeScn: 0, type: p.type,
+        });
+      })),
+
+      this.bus.subscribe('oracle.block-corruption.repaired', scoped<{
+        deviceId: string; fileNo: number;
+      }>((p) => {
+        const index = this.state.blockCorruptions.findIndex(c => c.fileNo === p.fileNo);
+        if (index >= 0) this.state.blockCorruptions.splice(index, 1);
+      })),
+
       this.bus.subscribe('oracle.backup.recorded', scoped<{
         deviceId: string; setId: number; pieceId: number; type: string;
         handle: string; bytes: number; startedAt: number; completedAt: number;

@@ -235,6 +235,15 @@ export class ReactiveRmanSubShell implements ISubShell {
         }
         this._push(`channel ORA_DISK_1: validation complete, elapsed time: ${formatElapsed(e.elapsedMs)}`);
         break;
+      case 'BLOCK_RESTORED':
+        this._push(`restoring blocks of datafile ${String(e.fileNo).padStart(5, '0')}`);
+        this._push(`channel ORA_DISK_1: reading from backup piece ${e.from}`);
+        this._push(`channel ORA_DISK_1: restored block(s) from backup piece 1`);
+        this._push('channel ORA_DISK_1: block restore complete, elapsed time: 00:00:03');
+        break;
+      case 'CROSSCHECK_PIECE':
+        this._push(`crosschecked ${e.kind}: found to be '${e.status}'`);
+        break;
       case 'CROSSCHECK_DONE':
         this._push(`Crosschecked ${e.available + e.expired} objects`);
         if (e.expired > 0) this._push(`${e.expired} piece(s) marked EXPIRED`);
@@ -266,6 +275,7 @@ export class ReactiveRmanSubShell implements ISubShell {
       case 'BACKUP_TABLESPACE':    return 'backup';
       case 'RESTORE_DATABASE':     return 'restore';
       case 'VALIDATE':             return 'validate';
+      case 'BLOCK_RECOVER':        return 'recover';
       case 'RECOVER_DATABASE':     return 'recover';
       case 'DUPLICATE_DATABASE':   return 'Duplicate Db';
       case 'CROSSCHECK':           return 'crosscheck';

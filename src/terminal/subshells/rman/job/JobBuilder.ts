@@ -220,12 +220,20 @@ export const JobBuilder = {
   },
 
   crosscheck(scope: 'BACKUP' | 'ARCHIVELOG' = 'BACKUP'): RmanJob {
-    const msg = scope === 'ARCHIVELOG'
-      ? "crosschecked archived log: found to be 'AVAILABLE'"
-      : "crosschecked backup piece: found to be 'AVAILABLE'";
-    return _make('CROSSCHECK', [
-      { name: 'crosscheck', pct: 80, message: msg },
-    ], { scope });
+    return _make('CROSSCHECK', [], { scope });
+  },
+
+  blockRecover(opts: { scope: 'CORRUPTION_LIST' | 'DATAFILE'; fileNo?: number; block?: number }): RmanJob {
+    const params: Record<string, string> = { blockScope: opts.scope };
+    if (opts.fileNo !== undefined) params.fileNo = String(opts.fileNo);
+    if (opts.block  !== undefined) params.block  = String(opts.block);
+    return _make('BLOCK_RECOVER', [
+      { name: 'restoring_blocks', pct: 20, message: 'channel ORA_DISK_1: restoring block(s)' },
+      {
+        name: 'specifying_blocks', pct: 30,
+        message: 'channel ORA_DISK_1: specifying block(s) to restore from backup set',
+      },
+    ], params);
   },
 
   deleteExpired(): RmanJob {

@@ -127,6 +127,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       case 'BACKUP_ARCHIVELOG':  return this._doBackup(job, channelId, 'archivelog');
       case 'BACKUP_TABLESPACE':  return this._doBackup(job, channelId, `tablespace ${job.params?.tablespace ?? 'USERS'}`);
       case 'VALIDATE':           return this._doValidate(job);
+      case 'BLOCK_RECOVER':      return this._doBlockRecover(job);
       case 'RESTORE_DATABASE':   return this._doRestore(job, channelId);
       case 'RECOVER_DATABASE':   return this._doRecover(job);
       case 'DUPLICATE_DATABASE': return this._doDuplicate(job, channelId);
@@ -776,11 +777,18 @@ export class RmanJobEngine implements IRmanJobEngine {
     }
     const blockSize = Number(this._ctx.getSpfileParam('db_block_size') ?? 8192) || 8192;
     const highScn = this._ctx.getCurrentScn?.() ?? 0;
+    const absent = datafiles.find(df => !this._ctx.vfs.fileExists(df.path));
+    if (absent) {
+      return err({
+        code: 'ERROR_STACK',
+        message: `ORA-19505: failed to identify file "${absent.path}"\n`
+          + 'ORA-27037: unable to obtain file status',
+      });
+    }
     const files: ValidatedFile[] = datafiles.map(df => {
       const read = this._ctx.vfs.readFile(df.path);
       const text = read.ok ? new TextDecoder().decode(read.value) : '';
-      const lisible = this._ctx.vfs.fileExists(df.path)
-        && bannerIsIntact(text, 'ORACLE DATAFILE');
+      const lisible = bannerIsIntact(text, 'ORACLE DATAFILE');
       const blocksExamined = Math.max(1, Math.ceil(df.sizeBytes / blockSize));
       const blocksUsed = Math.min(blocksExamined, Math.ceil(text.length / blockSize));
       return {
@@ -792,12 +800,16 @@ export class RmanJobEngine implements IRmanJobEngine {
       };
     });
     this._bus.emit({ type: 'VALIDATION_REPORT', jobId: job.id, files, elapsedMs: 1_000 });
-    const casse = files.find(f => f.status === 'FAILED');
-    if (casse) {
-      return err({
-        code: 'ERROR_STACK',
-        message: `ORA-19505: failed to identify file "${casse.path}"\n`
-          + 'ORA-27037: unable to obtain file status',
+    let corrompus = 0;
+    for (const f of files) {
+      if (f.status !== 'FAILED') continue;
+      corrompus++;
+      this._ctx.recordBlockCorruption?.(f.fileNo, f.blocksExamined, 'CORRUPT');
+    }
+    if (corrompus > 0) {
+      this._bus.emit({
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'validate_corrupt', pct: 95,
+        message: 'validate found one or more corrupt blocks',
       });
     }
     return ok(undefined);
@@ -827,6 +839,65 @@ export class RmanJobEngine implements IRmanJobEngine {
     return ok(undefined);
   }
 
+  private _doBlockRecover(job: RmanJob): Result<void, RmanError> {
+    const etat = this._ctx.getInstanceState?.();
+    if (etat === 'SHUTDOWN' || etat === 'NOMOUNT') {
+      return err({ code: 'RMAN_06403', message: 'database must be mounted or open' });
+    }
+    const params = job.params ?? {};
+    const registre = this._ctx.getBlockCorruptions?.() ?? [];
+    const cibles = params.blockScope === 'CORRUPTION_LIST'
+      ? registre
+      : [{ fileNo: Number(params.fileNo), blocks: 1 }];
+    if (cibles.length === 0) {
+      this._bus.emit({
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'no_corruption', pct: 50,
+        message: 'no corrupt blocks to recover',
+      });
+      return ok(undefined);
+    }
+    const snap = this._catalog.listAll();
+    if (snap.ok === false) return snap;
+    const utilisables = snap.value.sets.filter(set =>
+      set.pieces.every(p => validateBackupPiece(this._ctx.vfs, p.path).fault === null));
+    if (utilisables.length === 0) {
+      const premier = cibles[0]?.fileNo ?? 1;
+      return err({
+        code: 'ERROR_STACK',
+        message: 'RMAN-06026: some targets not found - aborting restore\n'
+          + `RMAN-06023: no backup or copy of datafile ${premier} found to restore`,
+      });
+    }
+    const images = this._readPieceImages(utilisables);
+    const parNumero = new Map(this._ctx.getDatafiles().map(df => [df.fileNo, df]));
+    const source = utilisables[utilisables.length - 1].pieces[0].path;
+    for (const cible of cibles) {
+      const df = parNumero.get(cible.fileNo);
+      if (df === undefined) {
+        return err({
+          code: 'ERROR_STACK',
+          message: `RMAN-06023: no backup or copy of datafile ${cible.fileNo} found to restore`,
+        });
+      }
+      const image = images[df.path];
+      if (image === undefined) {
+        return err({
+          code: 'ERROR_STACK',
+          message: `RMAN-06023: no backup or copy of datafile ${cible.fileNo} found to restore`,
+        });
+      }
+      const written = this._ctx.vfs.writeFile(df.path, new TextEncoder().encode(image));
+      if (written.ok === false) return written;
+      this._bus.emit({
+        type: 'BLOCK_RESTORED', jobId: job.id,
+        fileNo: cible.fileNo, blocks: cible.blocks, from: source,
+      });
+      this._ctx.clearBlockCorruption?.(cible.fileNo);
+    }
+    this._applyArchivedLogs(this._archivedLogs().map(l => l.path));
+    return ok(undefined);
+  }
+
   private _doCrosscheck(job?: RmanJob): Result<void, RmanError> {
     const scope = (job?.params?.scope ?? 'BACKUP').toUpperCase();
     const snap = this._catalog.listAll();
@@ -836,8 +907,14 @@ export class RmanJobEngine implements IRmanJobEngine {
       const set = snap.value.sets.find(s => s.bsKey === p.bsKey);
       if (scope === 'ARCHIVELOG' && set?.type !== 'ARCHIVELOG') continue;
       if (scope === 'BACKUP'     && set?.type === 'ARCHIVELOG') continue;
-      if (this._ctx.vfs.fileExists(p.path)) available++;
+      const intacte = validateBackupPiece(this._ctx.vfs, p.path).fault === null;
+      if (intacte) available++;
       else { this._catalog.expirePiece(p.key); expired++; }
+      this._bus.emit({
+        type: 'CROSSCHECK_PIECE', jobId: job?.id ?? '',
+        kind: scope === 'ARCHIVELOG' ? 'archived log' : 'backup piece',
+        status: intacte ? 'AVAILABLE' : 'EXPIRED',
+      });
     }
     this._bus.emit({ type: 'CROSSCHECK_DONE', available, expired });
     return ok(undefined);

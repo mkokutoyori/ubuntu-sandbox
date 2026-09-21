@@ -28,6 +28,7 @@ import type { ISshShellChannel } from '@/network/protocols/ssh/channels/ISshChan
 import { peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import { sshLocalFsFor, knownHostsPathFor, sshLocalIdentityFor } from '@/network/protocols/ssh/localFs/sshLocalFsFor';
 import { IPAddress } from '@/network/core/types';
+import { parseDialAddress } from '@/network/tcp/dial';
 import type { TcpFlags, TcpWireOutcome } from '@/network/tcp/types';
 import type { StatelessProbeReply } from '@/network/tcp/TcpStack';
 
@@ -53,7 +54,7 @@ export function wireReachOutcome(
   if (!probe || typeof probe.getTcpStack !== 'function') return 'open';
   const stack = probe.getTcpStack();
   if (!stack || typeof stack.scanProbe !== 'function') return 'open';
-  if (IPAddress.tryParse(destIp) === null) return 'open';
+  if (parseDialAddress(destIp) === null) return 'open';
   const syn: TcpFlags = {
     fin: false, syn: true, rst: false, psh: false, ack: false, urg: false, ece: false, cwr: false,
   };

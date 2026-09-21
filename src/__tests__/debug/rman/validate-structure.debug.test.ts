@@ -86,7 +86,10 @@ describe('ce que VALIDATE verifie', () => {
     note(rman(srv, ['VALIDATE BACKUPSET 1;', 'EXIT;']).slice(-700));
 
     note('');
-    note('[g] V$DATABASE_BLOCK_CORRUPTION existe-t-elle ?');
+    note('[g] on corrompt un DATAFILE, puis VALIDATE DATABASE :');
+    note(sh(srv, 'echo "plus un datafile" > /u01/app/oracle/oradata/ORCL/users01.dbf'));
+    note(rman(srv, ['VALIDATE DATABASE;', 'EXIT;']).slice(-900));
+    note('[g-1] V$DATABASE_BLOCK_CORRUPTION :');
     note(lab.sql(srv, 'SELECT * FROM v$database_block_corruption;'));
 
     expect(true).toBe(true);
