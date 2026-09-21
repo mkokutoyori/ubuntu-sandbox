@@ -33,6 +33,26 @@ export interface PacketInfo {
   outIface?: string;        // outbound interface (only for FORWARD packets)
   macAddress?: string;      // source MAC address (for -m mac --mac-source)
   isV6?: boolean;           // true for IPv6 packets
+  icmpType?: number;        // ICMP message type, when protocol is ICMP
+  icmpId?: number;          // ICMP echo identifier, when the message carries one
+}
+
+const ICMP_REPLY_TYPE: Readonly<Record<number, number>> = {
+  8: 0, 13: 14, 15: 16, 17: 18,
+  128: 129, 133: 134, 135: 136,
+};
+
+function icmpReplyType(type: number): number {
+  return ICMP_REPLY_TYPE[type] ?? type;
+}
+
+function tupleKey(
+  protocol: number, srcIP: string, srcPort: number,
+  dstIP: string, dstPort: number, icmpType?: number, icmpId?: number,
+): string {
+  const base = `${protocol}:${srcIP}:${srcPort}:${dstIP}:${dstPort}`;
+  if (icmpType === undefined) return base;
+  return `${base}:${icmpType}:${icmpId ?? 0}`;
 }
 
 const IPTABLES_MATCH_MODULES = new Set([
@@ -264,7 +284,7 @@ export class LinuxIptablesManager {
     const verdict = this.evaluateChain(filterTable, chain, pkt, 0);
 
     // Track established connections for accepted packets
-    if (verdict === 'accept' && (pkt.direction === 'in' || pkt.direction === 'forward')) {
+    if (verdict === 'accept') {
       this.trackConnection(pkt);
     }
 
@@ -368,8 +388,11 @@ export class LinuxIptablesManager {
       if (now - ts > this.CONNTRACK_TIMEOUT) continue;
       const p = cle.split(':');
       if (p.length < 5) continue;
-      const [protocol, srcIP, srcPort, dstIP, dstPort] = p;
-      const inverse = `${protocol}:${dstIP}:${dstPort}:${srcIP}:${srcPort}`;
+      const [protocol, srcIP, srcPort, dstIP, dstPort, type, id] = p;
+      const inverse = tupleKey(
+        Number(protocol), dstIP, Number(dstPort), srcIP, Number(srcPort),
+        type === undefined ? undefined : icmpReplyType(Number(type)),
+        id === undefined ? undefined : Number(id));
       if (vus.has(cle) || vus.has(inverse)) continue;
       vus.add(cle);
       flux.push({
@@ -396,10 +419,13 @@ export class LinuxIptablesManager {
   /** Track a connection for state/conntrack matching (ESTABLISHED,RELATED) */
   private trackConnection(pkt: PacketInfo): void {
     // Track the reply direction: so the reply (dst→src) is ESTABLISHED
-    const replyKey = `${pkt.protocol}:${pkt.dstIP}:${pkt.dstPort}:${pkt.srcIP}:${pkt.srcPort}`;
+    const replyKey = tupleKey(
+      pkt.protocol, pkt.dstIP, pkt.dstPort, pkt.srcIP, pkt.srcPort,
+      pkt.icmpType === undefined ? undefined : icmpReplyType(pkt.icmpType), pkt.icmpId);
     this.conntrack.set(replyKey, Date.now());
     // Also track original direction
-    const origKey = `${pkt.protocol}:${pkt.srcIP}:${pkt.srcPort}:${pkt.dstIP}:${pkt.dstPort}`;
+    const origKey = tupleKey(
+      pkt.protocol, pkt.srcIP, pkt.srcPort, pkt.dstIP, pkt.dstPort, pkt.icmpType, pkt.icmpId);
     if (!this.conntrack.has(origKey)) this.conntrackStats.insert++;
     this.conntrack.set(origKey, Date.now());
     // Periodically clean old entries (keep it simple — clean on every 50th insert)
@@ -408,7 +434,8 @@ export class LinuxIptablesManager {
 
   /** Check if a packet matches an ESTABLISHED or RELATED connection */
   private isEstablished(pkt: PacketInfo): boolean {
-    const key = `${pkt.protocol}:${pkt.srcIP}:${pkt.srcPort}:${pkt.dstIP}:${pkt.dstPort}`;
+    const key = tupleKey(
+      pkt.protocol, pkt.srcIP, pkt.srcPort, pkt.dstIP, pkt.dstPort, pkt.icmpType, pkt.icmpId);
     const ts = this.conntrack.get(key);
     if (!ts) return false;
     if (Date.now() - ts > this.CONNTRACK_TIMEOUT) {
