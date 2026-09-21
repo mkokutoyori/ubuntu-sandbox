@@ -65,7 +65,7 @@ des colonnes ni le libelle exact ne sont attestables depuis ce reseau
 (le §8 du CLAUDE.md : quand la source est injoignable, on le dit et on
 n'implante pas). A rouvrir avec une capture de `ping` etendu reel.
 
-### [ip] le pare-feu ignore la zone d'options, et l'ouvrir le rendrait PLUS permissif
+### [ip] le pare-feu n'honore pas le routage par la source, et l'ouvrir le rendrait PLUS permissif
 Le commutateur de niveau 3 est FERME (`probe-options-ipv4-commutateur-l3
 .test.ts`) : `SwitchSvi` appelle desormais `layers/internet/Ipv4Options
 .ts`, note la route, honore les source routes lache et stricte, et
@@ -85,11 +85,19 @@ routing ». La reponse juste est d'implanter le comportement AVEC le
 bouton qui le refuse, et le bouton FortiOS correspondant n'est pas
 attestable depuis ce reseau : on ne l'invente pas (§8).
 
-Ce qui PEUT se faire sans ce bouton, et qui n'est pas fait ici :
-l'insertion Record Route, que la RFC 1812 §5.3.13.5 exige des routeurs
-(« MUST support the Record Route option in forwarded packets ») et qui
-n'ouvre aucun contournement. A prendre avec la mesure du pipeline, ou
-l'adresse d'egress se decide.
+L'insertion Record Route, elle, est FERMEE
+(`probe-record-route-pare-feu.test.ts`) : elle n'ouvre aucun
+contournement — elle ecrit une adresse dans une zone que l'emetteur a
+lui-meme reservee — et la RFC 1812 §5.3.13.5 l'exige des routeurs. Le
+pare-feu inscrit desormais l'adresse de l'interface par laquelle il EMET,
+sur le chemin de TRANSIT seul, ce que la RFC dit (« in forwarded
+packets ») : ni les erreurs ICMP qu'il emet, ni les paquets qu'il origine
+ne passent par la.
+
+Reste donc UNIQUEMENT le routage par la source, pour la raison ci-dessus.
+Aucune sonde n'epingle cette limite comme un contrat : ce serait fermer
+la porte au correctif du jour ou la documentation FortiOS sera
+atteignable.
 
 ## Routeur Cisco (IOS)
 

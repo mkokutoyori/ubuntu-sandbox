@@ -27,6 +27,7 @@ import {
   type IPv4Packet,
   type UDPPacket,
 } from '../../core/types';
+import { recordRoute } from '../../layers/internet/Ipv4Options';
 import {
   buildICMPError, mayGenerateICMPError,
   ICMP_TTL_EXPIRED_IN_TRANSIT, ICMP_UNREACH_FRAG_NEEDED,
@@ -2174,10 +2175,20 @@ export class Firewall extends Equipment {
     const forwarded = outcome.payload ?? context;
     if (this.interceptForDeepInspection(portName, packet, context)) return;
     if (forwarded.egressPort === undefined) return;
-    this.forward(forwarded.egressPort, forwarded.packet as IPv4Packet,
+    const recorded = this.recordRouteOnEgress(
+      forwarded.egressPort, forwarded.packet as IPv4Packet);
+    if (!recorded) return;
+    this.forward(forwarded.egressPort, recorded,
       forwarded.policyRouteGateway,
       bridgedFrameOf(frame, forwarded.bridged === true
         || vdom.settings.opmode === 'transparent'));
+  }
+
+  private recordRouteOnEgress(egressPort: string, packet: IPv4Packet): IPv4Packet | null {
+    const address = this.interfaces.get(egressPort)?.ip;
+    if (!address) return packet;
+    const outcome = recordRoute(packet, new IPAddress(address));
+    return outcome.kind === 'error' ? null : outcome.packet;
   }
 
   private sendTimeExceeded(ingressPort: string, packet: IPv4Packet): void {
