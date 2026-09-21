@@ -379,6 +379,17 @@ export class OracleInstance {
    * time; the simulator hashes deviceId+SID so every device gets a
    * distinct but reproducible DBID.
    */
+  /**
+   * `V$DATABASE.ACTIVATION#` — l'identifiant d'incarnation, que `%a`
+   * substitue dans un nom de piece RMAN. Il est DERIVE du DBID plutot
+   * que tire au hasard : cette base n'a qu'une incarnation (pas de
+   * RESETLOGS), donc une valeur qui changerait d'un appel a l'autre
+   * ferait mentir `%a` et `V$DATABASE` l'un envers l'autre.
+   */
+  getActivationId(): number {
+    return this.getDbId() % 1_000_000_000;
+  }
+
   getDbId(): number {
     if (this._dbid === null) {
       // FNV-1a 32-bit over "deviceId:SID".

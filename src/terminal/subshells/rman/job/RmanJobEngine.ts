@@ -149,7 +149,6 @@ export class RmanJobEngine implements IRmanJobEngine {
           : incLevel === 0      ? 'datafile-incremental-0'
             : incLevel === 1    ? 'datafile-incremental-1'
               : 'datafile-full';
-    const basePath = this._resolvePath(params.format, tag, omfKind);
     const maxPieceSize = params.maxPieceSize ? Number(params.maxPieceSize) : undefined;
 
     const allDatafiles = this._ctx.getDatafiles();
@@ -171,6 +170,14 @@ export class RmanJobEngine implements IRmanJobEngine {
       if (tsFilters   && !tsFilters.has(df.tablespace.toUpperCase())) return false;
       return true;
     });
+    // `%f` et `%N` ne valent que pour une COPIE IMAGE, qui porte un seul
+    // fichier : un jeu de sauvegarde en couvre plusieurs, et il n'y
+    // aurait aucun fichier ni aucun tablespace a nommer.
+    const fichierUnique = params.asCopy === 'true' && datafiles.length === 1
+      ? { fileNumber: datafiles[0].fileNo, tablespace: datafiles[0].tablespace }
+      : undefined;
+    const basePath = this._resolvePath(params.format, tag, omfKind, 1, fichierUnique);
+
     const cumulative = params.cumulative === 'true';
     const rawSize = isControlfile
       ? 9_650_176
@@ -285,7 +292,7 @@ export class RmanJobEngine implements IRmanJobEngine {
     for (let i = 1; i <= pieceCount; i++) {
       const candidate = i === 1
         ? basePath
-        : this._resolvePath(params.format, tag, omfKind, i);
+        : this._resolvePath(params.format, tag, omfKind, i, fichierUnique);
       const path = usedPaths.has(candidate) ? `${candidate}.p${i}` : candidate;
       usedPaths.add(path);
       const size = i === pieceCount
@@ -470,6 +477,7 @@ export class RmanJobEngine implements IRmanJobEngine {
   /** Resolve a piece file path from an optional FORMAT template + tag. */
   private _resolvePath(
     format: string | undefined, tag: RmanTag, kind: OmfBackupKind, pieceNumber = 1,
+    seul?: { fileNumber?: number; tablespace?: string },
   ): string {
     if (!format) {
       const dest = this._ctx.getSpfileParam('db_recovery_file_dest') ?? ORACLE_CONFIG.FRA;
@@ -478,13 +486,17 @@ export class RmanJobEngine implements IRmanJobEngine {
       return path;
     }
     return resolveFormatSpec(format, {
-      dbName:      this._ctx.dbName,
-      dbId:        this._ctx.dbId.value,
-      setNumber:   BackupKey.peekBsKey(),
+      dbName:       this._ctx.dbName,
+      dbId:         this._ctx.dbId.value,
+      activationId: this._ctx.dbId.value % 1_000_000_000,
+      setNumber:    BackupKey.peekBsKey(),
       pieceNumber,
-      copyNumber:  1,
-      logSequence: 1,
-      at:          new Date(),
+      copyNumber:   1,
+      logSequence:  1,
+      logThread:    1,
+      at:           new Date(),
+      fileNumber:   seul?.fileNumber,
+      tablespace:   seul?.tablespace,
     });
   }
 
