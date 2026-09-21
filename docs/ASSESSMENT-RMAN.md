@@ -383,9 +383,15 @@ environnement — comme `cisco.com`, `support.huawei.com`,
 
 Ne sont donc **pas** sourcés, et devront l'être avant d'être implantés :
 
-- le format exact d'une pièce de sauvegarde (il n'a pas à être imité
-  octet pour octet, mais sa STRUCTURE — en-tête, jeu de blocs, somme de
-  contrôle — décide de ce que `VALIDATE` peut vérifier).
+~~le format exact d'une pièce de sauvegarde — sa STRUCTURE décide de ce
+que `VALIDATE` peut vérifier~~ **FAIT** — la pièce porte une bannière,
+sa charge utile et désormais une SOMME DE CONTRÔLE ; `VALIDATE` lit les
+trois et refuse (`ORA-19870`/`ORA-19501`, ou `ORA-19505`/`ORA-27037`
+quand elle manque) au lieu de répondre « Finished » sans rien lire. Une
+pièce corrompue n'est plus restaurable non plus. Reste NON rendu, et
+c'est délibéré : la ventilation `Block Type / Data / Index / Other` du
+vrai rapport, que l'image d'un datafile de ce simulateur ne permet pas
+de décider (elle ne porte que des segments de tables).
 
 ~~la nomenclature `%U`/`%d_%T_%s_%p` des noms de pièces~~ **FAIT** —
 les 20 spécificateurs sont sourcés et appliqués.

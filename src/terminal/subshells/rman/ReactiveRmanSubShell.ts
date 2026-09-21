@@ -215,6 +215,26 @@ export class ReactiveRmanSubShell implements ISubShell {
       case 'RECOVER_COMPLETED':
         this._push('media recovery complete, elapsed time: 00:00:03');
         break;
+      case 'VALIDATION_REPORT':
+        if (e.files.length > 0) {
+          this._push('List of Datafiles');
+          this._push('=================');
+          this._push('File Status Marked Corrupt Empty Blocks Blocks Examined High SCN');
+          this._push('---- ------ -------------- ------------ --------------- ----------');
+          for (const f of e.files) {
+            this._push([
+              String(f.fileNo).padEnd(4),
+              f.status.padEnd(6),
+              String(f.markedCorrupt).padEnd(14),
+              String(f.emptyBlocks).padEnd(12),
+              String(f.blocksExamined).padEnd(15),
+              String(f.highScn),
+            ].join(' '));
+            this._push(`File Name: ${f.path}`);
+          }
+        }
+        this._push(`channel ORA_DISK_1: validation complete, elapsed time: ${formatElapsed(e.elapsedMs)}`);
+        break;
       case 'CROSSCHECK_DONE':
         this._push(`Crosschecked ${e.available + e.expired} objects`);
         if (e.expired > 0) this._push(`${e.expired} piece(s) marked EXPIRED`);
@@ -245,6 +265,7 @@ export class ReactiveRmanSubShell implements ISubShell {
       case 'BACKUP_ARCHIVELOG':
       case 'BACKUP_TABLESPACE':    return 'backup';
       case 'RESTORE_DATABASE':     return 'restore';
+      case 'VALIDATE':             return 'validate';
       case 'RECOVER_DATABASE':     return 'recover';
       case 'DUPLICATE_DATABASE':   return 'Duplicate Db';
       case 'CROSSCHECK':           return 'crosscheck';

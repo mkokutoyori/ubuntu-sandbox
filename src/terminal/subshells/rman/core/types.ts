@@ -19,6 +19,7 @@ export type RmanOperation =
   | 'RESTORE_DATABASE'
   | 'RECOVER_DATABASE'
   | 'DUPLICATE_DATABASE'
+  | 'VALIDATE'
   | 'CROSSCHECK'
   | 'DELETE_EXPIRED'
   | 'DELETE_OBSOLETE'
@@ -29,6 +30,16 @@ export type RmanOperation =
   | 'CONFIGURE';
 
 export type RmanSessionState = 'IDLE' | 'CONNECTING' | 'CONNECTED' | 'RUNNING_JOB' | 'DISCONNECTED';
+
+export interface ValidatedFile {
+  readonly fileNo:         number;
+  readonly path:           string;
+  readonly status:         'OK' | 'FAILED';
+  readonly markedCorrupt:  number;
+  readonly emptyBlocks:    number;
+  readonly blocksExamined: number;
+  readonly highScn:        number;
+}
 
 export interface BackupPieceInfo {
   readonly key:           BackupKey;
@@ -59,6 +70,7 @@ export type RmanEvent =
   | { type: 'BACKUP_PIECE_CREATED'; jobId: string; channelId: string; piece: BackupPieceInfo }
   | { type: 'BACKUP_SET_COMPLETE';  jobId: string; bsKey: number; tag: RmanTag; sizeBytes: number }
   | { type: 'BACKUP_VALIDATED';     jobId: string; what: string }
+  | { type: 'VALIDATION_REPORT';    jobId: string; files: ReadonlyArray<ValidatedFile>; elapsedMs: number }
   | { type: 'ARCHIVELOG_DELETED';   jobId: string; path: string }
   // Restore / Recover
   | { type: 'RESTORE_DATAFILE_STARTED';   jobId: string; channelId: string; fileNo: number; to: string }
