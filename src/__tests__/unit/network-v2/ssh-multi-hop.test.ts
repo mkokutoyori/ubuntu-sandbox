@@ -3,7 +3,6 @@ import { WindowsPC } from '@/network/devices/WindowsPC';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
 import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
 import type { TerminalSession, KeyEvent } from '@/terminal/sessions/TerminalSession';
@@ -15,6 +14,7 @@ function key(k: string, opts: { ctrlKey?: boolean } = {}): KeyEvent {
 const tick = () => new Promise<void>((r) => setTimeout(r, 30));
 async function sshFromHost(host: TerminalSession, line: string, password: string): Promise<void> {
   host.setInput(line);
+  host.setInputBuf(line);
   host.handleKey(key('Enter'));
   for (let i = 0; i < 8 && host.foreground.currentInputMode.type !== 'password'; i++) await tick();
   if (host.foreground.currentInputMode.type === 'password') {
@@ -54,25 +54,24 @@ async function buildLab() {
 }
 
 describe('SSH from inside a remote session works recursively', () => {
+  const subShellOf = (host: TerminalSession): { getPrompt(): string } | null =>
+    (host as unknown as { activeSubShell: { getPrompt(): string } | null }).activeSubShell;
+
   it('Win -> Linux -> Linux: the second (Linux target) hop is a REAL nested SshInteractiveSubShell', async () => {
     const { winA } = await buildLab();
     const host = new WindowsTerminalSession('h', winA);
     await host.init?.();
     await sshFromHost(host, 'ssh user@10.0.0.2', 'admin');
-    expect(host.foreground).toBeInstanceOf(LinuxTerminalSession);
-    const linuxHop = host.foreground;
     await sshFromHost(host, 'ssh user@10.0.0.3', 'admin');
-    // Linux↔Linux drives the interactive session over the real,
-    // authenticated SSH channel — no second child is pushed, so
-    // `foreground` stays the same linuxA session; the second hop is a
-    // REAL nested SshInteractiveSubShell (its own real SshSession to
-    // linuxB, opened FROM linuxA's own SSH channel to linuxB — see
-    // SshInteractiveSubShell.startNestedHop()), not a documented no-op.
-    expect(host.foreground).toBe(linuxHop);
-    expect(host.foreground.device.getName()).toBe('linuxA');
-    const hop1 = (host.foreground as unknown as { activeSubShell: unknown }).activeSubShell;
-    expect(hop1).toBeInstanceOf(SshInteractiveSubShell);
-    expect((hop1 as { getPrompt(): string }).getPrompt()).toMatch(/user@linuxB/);
+
+    // Both hops are driven over the real, authenticated SSH channel, so
+    // no child session is pushed and `foreground` stays the host; the
+    // sub-shell and its prompt are the tell
+    // (docs/PRD-SSH-Unification.md §4bis B4).
+    expect(host.foreground).toBe(host);
+    const hop = subShellOf(host);
+    expect(hop).toBeInstanceOf(SshInteractiveSubShell);
+    expect(hop!.getPrompt()).toMatch(/user@linuxB/);
   });
 
   it('exit from the nested ssh hop returns to the first hop, exit again pops to the host', async () => {
@@ -81,17 +80,16 @@ describe('SSH from inside a remote session works recursively', () => {
     await host.init?.();
     await sshFromHost(host, 'ssh user@10.0.0.2', 'admin');
     await sshFromHost(host, 'ssh user@10.0.0.3', 'admin');
-    expect(host.foreground.device.getName()).toBe('linuxA');
-    const hop1 = (host.foreground as unknown as { activeSubShell: { getPrompt(): string } }).activeSubShell;
-    expect(hop1.getPrompt()).toMatch(/user@linuxB/);
+    expect(subShellOf(host)!.getPrompt()).toMatch(/user@linuxB/);
+
     runOnForeground(host, 'exit');
     await tick();
-    // Back on hop1 (linuxA -> linuxB), the nested hop is gone.
-    expect(host.foreground.device.getName()).toBe('linuxA');
-    expect(hop1.getPrompt()).toMatch(/user@linuxB/);
+    expect(subShellOf(host)!.getPrompt()).toMatch(/user@linuxA/);
+
     runOnForeground(host, 'exit');
     await tick();
     expect(host.foreground).toBe(host);
+    expect(subShellOf(host)).toBeNull();
   });
 
   it('Win -> Linux -> Win runs hostname on the grandchild Windows box', async () => {
@@ -100,9 +98,6 @@ describe('SSH from inside a remote session works recursively', () => {
     await host.init?.();
     await sshFromHost(host, 'ssh user@10.0.0.2', 'admin');
     await sshFromHost(host, 'ssh User@10.0.0.4', 'user');
-    // What matters is that the grandchild really answers as winB — the
-    // hop is driven over the wire, so there is no local child session to
-    // be an instance of (docs/PRD-SSH-Unification.md §4bis B4).
     runOnForeground(host, 'hostname');
     await waitFor(host, (l) => l.some((t) => t === 'winB'));
     expect(texts(host)).toContain('winB');

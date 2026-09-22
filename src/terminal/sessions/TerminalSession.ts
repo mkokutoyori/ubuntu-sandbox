@@ -28,6 +28,7 @@ import { Equipment, type HostCapableDevice } from '@/network';
 import { IPAddress } from '@/network/core/types';
 import { SessionInputHost as SessionInputHostCtor } from './SessionInputHost';
 import { TerminalAsyncRuntime } from '@/terminal/async';
+import { parseAnsiToSegments } from '@/terminal/core/OutputFormatter';
 import type { AsyncJobContext, AsyncJobHandle, AsyncJobSpec } from '@/terminal/async';
 import { composeSshLoginBanner } from '@/network/protocols/ssh/loginBanner';
 import { QueuedTerminalIO } from '@/network/protocols/ssh/session/QueuedTerminalIO';
@@ -1002,6 +1003,18 @@ export abstract class TerminalSession {
    * apply its own vendor rendering). The plain `text` is computed from
    * the segments and is kept for transcripts / recording.
    */
+  /**
+   * A line produced by a remote shell on the wire. Its colours arrive as
+   * ANSI escapes, which a locally-run shell would already have turned
+   * into segments — rendering them verbatim would leak the escapes into
+   * the transcript (docs/PRD-SSH-Unification.md §4bis B4).
+   */
+  protected addShellOutputLine(text: string, type: string = 'normal'): void {
+    // eslint-disable-next-line no-control-regex
+    if (!/\x1b\[/.test(text)) { this.addLine(text, type); return; }
+    this.addStyledLine(parseAnsiToSegments(text), type);
+  }
+
   addStyledLine(segments: TextSegment[], type: string = 'normal'): void {
     const text = segments.map((s) => s.text).join('');
     this.pushLine(

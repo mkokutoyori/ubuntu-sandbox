@@ -798,7 +798,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     await typeSub(t, 'pwd');
     t.handleKey(key('ArrowUp'));
     await flush();
-    expect(t.foreground.input).toBe('pwd');
+    expect(t.getInputBuf()).toBe('pwd');
   });
 
   test('§67 — Windows→Linux: Ctrl+L is classified as clear-screen by inner shell', async () => {
@@ -818,9 +818,10 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
     t.setInput('ech');
+    t.setInputBuf('ech');
     t.handleKey(key('Tab'));
     await flush();
-    expect(t.foreground.input).toMatch(/^echo/);
+    expect(t.getInputBuf()).toMatch(/^echo/);
   });
 
   // ─── §K — sqlplus / rman over SSH chains ───────────────────────────

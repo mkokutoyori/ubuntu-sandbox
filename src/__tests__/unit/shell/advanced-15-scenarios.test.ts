@@ -219,9 +219,10 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    // The foreground is now the remote's own real session, driven over ssh.
-    expect(t.foreground).not.toBe(t);
-    expect(t.foreground.isRemoteChild).toBe(true);
+    // The hop is driven over the real SSH channel: no child session is
+    // pushed, so the sub-shell carries the connection it runs on.
+    expect(t.foreground).toBe(t);
+    expect(sshSubShell(t)?.connection).toBe('ssh');
   });
 
   // ── #4 — Password mode propagates through SSH ──────────────────
@@ -307,10 +308,11 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
     t.setInput('ls /et');
+    t.setInputBuf('ls /et');
     t.handleKey(key('Tab'));
     await flush();
-    // The remote bash's completion rewrites the foreground input buffer.
-    expect(t.foreground.input).toMatch(/\/etc/);
+    // The remote bash's completion rewrites the sub-shell input buffer.
+    expect(t.getInputBuf()).toMatch(/\/etc/);
   });
 
   // ── #10 — Ctrl+C cancels the current sub-shell line ────────────
@@ -320,9 +322,10 @@ describe('Shell layer — 15 advanced scenarios (TDD)', () => {
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
     t.setInput('some-long-typo');
+    t.setInputBuf('some-long-typo');
     t.handleKey(key('c', { ctrlKey: true }));
     await flush();
-    expect(t.foreground.input).toBe('');
+    expect(t.getInputBuf()).toBe('');
     expectAnyLine(t, /\^C/);
   });
 
@@ -424,6 +427,16 @@ function topShellKind(t: WindowsTerminalSession | LinuxTerminalSession): string 
   return a?.inner?.kind ?? a?.kind;
 }
 
+/**
+ * Le saut est-il piloté par le fil ? Un saut sur le canal réel ne pousse
+ * pas de session enfant : le sous-shell et sa connexion sont le fait à
+ * lire (docs/PRD-SSH-Unification.md §4bis B4).
+ */
+function sshSubShell(t: TerminalSession): { kind: string; connection: string } | null {
+  return (t as unknown as { activeSubShell: { kind: string; connection: string } | null })
+    .activeSubShell;
+}
+
 describe('Deep shell nesting — 4 to 5 levels', () => {
   // ── #D1 — Win cmd → SSH Linux → ssh Linux, nesting and unwinding cleanly ──
   test('§D1 — Win→SSH→Linux→SSH→Linux: two REAL nested SSH hops nest and unwind cleanly, sqlplus included', async () => {
@@ -495,7 +508,7 @@ describe('Deep shell nesting — 4 to 5 levels', () => {
     // L1 cmd
     // L1→L2 ssh linuxSrv
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    expect(topShellKind(t)).toBe('ssh-remote');
+    expect(topShellKind(t)).toBe('ssh-interactive-shell');
     // L2→L3 ssh from remote bash into winB
     await typeSshSub(t, 'ssh user@10.0.0.5', 'user');
     expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\User>/);
@@ -593,10 +606,11 @@ describe('Unified shell identity — every shell exposes kind+connection', () =>
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    // The remote is driven by its own real session, pushed as a child.
-    expect(t.foreground).not.toBe(t);
-    expect(t.foreground.isRemoteChild).toBe(true);
-    expect(t.foreground.getSessionType()).toBe('linux');
+    // The remote is driven over the wire, so there is no child session
+    // to interrogate: the sub-shell is the top shell.
+    expect(t.foreground).toBe(t);
+    expect(sshSubShell(t)?.kind).toBe('ssh-interactive-shell');
+    expect(sshSubShell(t)?.connection).toBe('ssh');
   });
 
   test('§U2 — session.activeShell returns the IShellBase the user is typing into', async () => {
@@ -606,10 +620,10 @@ describe('Unified shell identity — every shell exposes kind+connection', () =>
     // Native cmd at the root: the foreground is the host itself.
     expect(t.foreground).toBe(t);
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    // After the SSH push the foreground is the remote's real session.
-    expect(t.foreground).not.toBe(t);
-    expect(t.foreground.isRemoteChild).toBe(true);
-    expect(typeof t.foreground.getPrompt).toBe('function');
+    // After the SSH hop the shell the user types into is the sub-shell.
+    expect(t.foreground).toBe(t);
+    expect(t.activeShell).toBe(sshSubShell(t));
+    expect(typeof t.getPrompt).toBe('function');
   });
 });
 
@@ -1037,10 +1051,11 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
     // Type something then hit Ctrl+C without Enter.
     t.setInput('long-typo');
+    t.setInputBuf('long-typo');
     t.handleKey(key('c', { ctrlKey: true }));
     await flush();
     // Input cleared, session still usable.
-    expect(t.foreground.input).toBe('');
+    expect(t.getInputBuf()).toBe('');
     await typeSub(t, 'echo recovered');
     expectAnyLine(t, /^recovered$/);
   });
@@ -1089,10 +1104,11 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
     await typeSub(t, 'cd /');
     t.setInput('ls et');
+    t.setInputBuf('ls et');
     t.handleKey(key('Tab'));
     await flush();
     // Should complete `et` → `etc/`.
-    expect(t.foreground.input).toMatch(/etc/);
+    expect(t.getInputBuf()).toMatch(/etc/);
   });
 
   test('§F28 — \"history\" inside the SSH session lists commands previously typed', async () => {
@@ -1328,10 +1344,11 @@ describe('Linux→SSH→Windows: prompt format, clear, powershell, completion', 
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
     t.setInput('ls /et');
+    t.setInputBuf('ls /et');
     t.handleKey(key('Tab'));
     await flush();
     // The remote bash should expand /et → /etc.
-    expect(t.foreground.input).toMatch(/\/etc/);
+    expect(t.getInputBuf()).toMatch(/\/etc/);
   });
 });
 
@@ -1559,7 +1576,7 @@ describe('Root-cause shell/session integrity', () => {
     expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\/);
   });
 
-  test('§RC2 — Linux→Huawei→Linux : shell ownership never leaks (exec-mode nested ssh over the real-wire hop is a documented no-op)', async () => {
+  test('§RC2 — Linux→Huawei→Linux : shell ownership never leaks, exec-mode nested ssh included', async () => {
     const { linuxA, huawei } = await buildLan();
 
     huawei.setHostname('HW');
@@ -1614,12 +1631,13 @@ describe('Root-cause shell/session integrity', () => {
 
     expect(t.foreground.getPrompt()).toMatch(/@linuxSrv/);
 
-    // Exec-mode nested ssh ("ssh host cmd", a trailing command) is out of
-    // scope for the real second-hop support (SshInteractiveSubShell only
-    // intercepts the bare interactive form "ssh [user@]host"); this still
-    // runs remotely as a plain bash line via the existing device-batch ssh
-    // command, not a new interactive frame.
-    await typeSub(t, 'ssh user@10.0.0.5 mkdir C:\\RC2');
+    // Exec-mode nested ssh ("ssh host cmd") now opens the same real
+    // second hop as the bare interactive form, runs the command on its
+    // exec channel and hangs up — so it authenticates for real and stays
+    // in the current frame instead of pushing one
+    // (docs/PRD-SSH-Unification.md §4bis B4).
+    await typeSshSub(t, 'ssh user@10.0.0.5 mkdir C:\\RC2', 'user');
+    expect(t.foreground.getPrompt()).toMatch(/@linuxSrv/);
 
     expect(t.foreground.getPrompt()).toMatch(/@linuxSrv/);
 

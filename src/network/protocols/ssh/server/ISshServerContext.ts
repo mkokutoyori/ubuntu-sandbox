@@ -123,7 +123,10 @@ export interface ISshServerContext {
    * for a one-shot `exec` (no pty — no color, exits gracefully). Only
    * Linux's implementation currently distinguishes the two.
    */
-  getShell(userCtx: SshUserContext, cwd: string, opts?: { interactive?: boolean }): ILinuxShell;
+  getShell(
+    userCtx: SshUserContext, cwd: string,
+    opts?: { interactive?: boolean; clientIp?: string; clientPort?: number },
+  ): ILinuxShell;
   /**
    * Optional per-channel real-time job runtime (streaming `ping`, Ctrl+C
    * interrupt). SshServerHandler constructs one per `shell_open` and tries

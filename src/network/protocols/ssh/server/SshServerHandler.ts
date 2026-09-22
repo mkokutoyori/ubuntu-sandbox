@@ -479,7 +479,11 @@ export class SshServerHandler {
             // see LinuxSshServerContext.getShell(). `interactive: true`
             // since this is a real pty-like session (colorized output,
             // hung up on close), unlike a one-shot `exec`.
-            shell: this.ctx.getShell(userCtx, cwd, { interactive: true }),
+            shell: this.ctx.getShell(userCtx, cwd, {
+              interactive: true,
+              clientIp,
+              clientPort: 50_000 + (userCtx.username.length * 7 % 10_000),
+            }),
           });
           // A router talks back without being asked: `debug` traces and,
           // under `terminal monitor`, syslog. Pushing them as they happen

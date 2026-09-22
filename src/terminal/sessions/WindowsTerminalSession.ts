@@ -41,10 +41,11 @@ import {
 import type { PingResult, TracerouteHopResult } from '@/network/devices/EndHost';
 import { IPAddress } from '@/network/core/types';
 import {
-  openWireSshConnection, silentConnectIo, wireReachOutcome,
+  openWireSshShell, silentConnectIo, wireReachOutcome,
 } from '@/terminal/ssh/wireSshLogin';
+import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshells/SshInteractiveSubShell';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
-import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
+import { firstConfiguredIp, establishedSessionLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
@@ -228,6 +229,9 @@ export class WindowsTerminalSession extends TerminalSession {
     if ((this.pendingSshPush || this.pendingRunas) && this.inputMode.type === 'password') {
       return this.inputMode;
     }
+    if (this.inputMode.type === 'remote-editor') {
+      return this.inputMode;
+    }
     // A sub-shell that asked for a password challenge takes priority over
     // the normal interactive-text input — the host must mask keystrokes.
     if (this.activeSubShell && this.subShellPendingInput) {
@@ -267,6 +271,8 @@ export class WindowsTerminalSession extends TerminalSession {
     if (this.inputHostImpl.hasPendingRequest()) {
       if (this.handleBrokerKey(e)) return true;
     }
+
+    if (this.inputMode.type === 'remote-editor') return false;
 
     // SSH password challenge — when an `ssh user@host` push is waiting
     // for the password, every keystroke routes through the password
@@ -1134,7 +1140,7 @@ export class WindowsTerminalSession extends TerminalSession {
     const pending = this.pendingSshPush;
     if (!pending) return;
 
-    const outcome = await openWireSshConnection({
+    const outcome = await openWireSshShell({
       device: this.device,
       localUser: pending.localUser,
       user: pending.user,
@@ -1169,21 +1175,32 @@ export class WindowsTerminalSession extends TerminalSession {
     }
 
     this.endSshPrompt();
-    const wire = outcome.session;
-
-    const child = createSessionForDevice(pending.device, `${this.id}>ssh`);
-    if (child) {
-      child.registerTearDown(() => wire.disconnect());
-      const clientIp = this.firstLocalIp() ?? '0.0.0.0';
-      const serverIp = firstConfiguredIp(pending.device) ?? pending.host;
-      const clientPort = 50_000 + (pending.user.length * 7 % 10_000);
-      this.adoptRemoteChild(child, pending.user, pending.host, {
-        SSH_CONNECTION: `${clientIp} ${clientPort} ${serverIp} ${pending.port}`,
-        SSH_CLIENT: `${clientIp} ${clientPort} ${pending.port}`,
-      }, { quiet: pending.quiet });
-    } else {
-      wire.disconnect();
+    const session = outcome.session;
+    const sourceIp = this.firstLocalIp() ?? '0.0.0.0';
+    const sourceHost = (this.device as unknown as { getHostname(): string }).getHostname();
+    if (!pending.quiet) {
+      for (const line of this.composeLoginBanner(
+        pending.device, pending.user, sourceIp, sourceHost, false)) this.addLine(line);
     }
+    const promptHost = (pending.device as unknown as { getSshHostname?: () => string })
+      .getSshHostname?.() ?? pending.host;
+    this.activeSubShell = new SshInteractiveSubShell(
+      session, outcome.channel, pending.user, pending.host, `/home/${pending.user}`,
+      () => session.disconnect(),
+      promptHost, findLinuxMachineByIp(pending.host) ?? undefined,
+      establishedSessionLiveness(session, this.device, pending.host),
+      (footer) => this.onRemoteHangup(footer),
+      (line) => this.addLine(line),
+    );
+    this._inputBuf = '';
+    this.notify();
+  }
+
+  private onRemoteHangup(footer: string): void {
+    if (!this.activeSubShell) return;
+    this.addLine(footer);
+    this.exitSubShell();
+    this.addLine(this.getPrompt());
     this.notify();
   }
 
@@ -1572,7 +1589,10 @@ export class WindowsTerminalSession extends TerminalSession {
         }
       }
 
-      const maybePromise = this.activeSubShell.processLine(line);
+      if (this.tryOpenRemoteEditor(line)) return true;
+
+      const onProgress = (text: string) => { this.addShellOutputLine(text); this.notify(); };
+      const maybePromise = this.activeSubShell.processLine(line, onProgress);
 
       const applyResult = (result: SubShellResult & { _enterPowerShell?: boolean; _enterCmd?: boolean; childShell?: IShell }) => {
         if (result.clearScreen) {
