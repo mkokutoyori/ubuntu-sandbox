@@ -422,6 +422,18 @@ export class OracleInstance {
     for (const change of changes) this._redoBuffer.push({ ...change, scn });
   }
 
+  /**
+   * Une ecriture dans un tablespace NOLOGGING ne laisse pas de redo :
+   * elle laisse une TRACE, que V$NONLOGGED_BLOCK rend et que
+   * REPORT UNRECOVERABLE lit. C'est tout l'objet de ces deux vues.
+   */
+  recordNonlogged(tablespace: string, blocks: number, reason: string): void {
+    this.getBus().publish({
+      topic: 'oracle.nonlogged-block.recorded',
+      payload: { ...this.ref(), tablespace, blocks, scn: this.getCurrentScn(), reason },
+    });
+  }
+
   drainRedo(): RedoRecord[] {
     const drained = this._redoBuffer;
     this._redoBuffer = [];

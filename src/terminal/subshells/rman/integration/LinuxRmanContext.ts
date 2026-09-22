@@ -312,6 +312,28 @@ export class LinuxRmanContext implements IRmanOracleContext {
     });
   }
 
+  getUnrecoverableFiles(): ReadonlyArray<{ fileNo: number; path: string }> {
+    const plages = this._oracle?.instance.getRuntimeState().nonloggedRanges ?? [];
+    if (plages.length === 0) return [];
+    const touches = new Set(plages.map(r => r.tablespace.toUpperCase()));
+    return this.getDatafiles()
+      .filter(df => touches.has(df.tablespace.toUpperCase()))
+      .map(df => ({ fileNo: df.fileNo, path: df.path }));
+  }
+
+  clearUnrecoverable(tablespace: string): void {
+    const oracle = this._oracle;
+    if (!oracle) return;
+    oracle.instance.getBus().publish({
+      topic: 'oracle.nonlogged-block.cleared',
+      payload: {
+        deviceId: (this._device as { id?: string }).id ?? '',
+        sid: oracle.instance.config.sid,
+        tablespace,
+      },
+    });
+  }
+
   recordBackupCorruption(entry: {
     setStamp: number; fileNo: number; blocks: number;
     markedCorrupt: boolean; type: BlockCorruptionType; kind: 'BACKUPSET' | 'COPY';

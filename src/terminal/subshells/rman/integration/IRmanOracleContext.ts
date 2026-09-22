@@ -92,6 +92,9 @@ export interface IRmanOracleContext {
   recordBlockCorruption?(fileNo: number, blocks: number, type: BlockCorruptionType): void;
   getBlockCorruptions?(): ReadonlyArray<{ fileNo: number; blocks: number }>;
   clearBlockCorruption?(fileNo: number): void;
+  /** Fichiers touches par une ecriture NOLOGGING depuis leur derniere sauvegarde. */
+  getUnrecoverableFiles?(): ReadonlyArray<{ fileNo: number; path: string }>;
+  clearUnrecoverable?(tablespace: string): void;
   recordBackupCorruption?(entry: {
     setStamp: number; fileNo: number; blocks: number;
     markedCorrupt: boolean; type: BlockCorruptionType; kind: 'BACKUPSET' | 'COPY';

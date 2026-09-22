@@ -1,5 +1,5 @@
 /**
- * ReportCommand — REPORT SCHEMA / REPORT NEED BACKUP.
+ * ReportCommand — REPORT SCHEMA / NEED BACKUP / OBSOLETE / UNRECOVERABLE.
  *
  * Synchronous read from IRmanOracleContext (datafile list) and catalog.
  */
@@ -52,17 +52,21 @@ export class ReportCommand implements IRmanCommand<string[]> {
       return ok(lines);
     }
     if (this.mode === 'UNRECOVERABLE') {
-      // A datafile is "unrecoverable" if it has been touched with NOLOGGING
-      // since its last backup. The simulator has no NOLOGGING tracking, so
-      // the report is always empty.
-      return ok([
+      const lines = [
         '',
         'Report of files that need backup due to unrecoverable operations',
         'File Type of Backup Required Name',
         '---- ----------------------- -----------------------------------',
-        'no files require backup due to unrecoverable operations',
-        '',
-      ]);
+      ];
+      const touches = ctx.getUnrecoverableFiles?.() ?? [];
+      for (const df of touches) {
+        lines.push(`${String(df.fileNo).padEnd(4)} full or incremental     ${df.path}`);
+      }
+      if (touches.length === 0) {
+        lines.push('no files require backup due to unrecoverable operations');
+      }
+      lines.push('');
+      return ok(lines);
     }
     if (this.mode === 'SCHEMA') {
       const lines: string[] = [
@@ -87,23 +91,52 @@ export class ReportCommand implements IRmanCommand<string[]> {
         '');
       return ok(lines);
     }
-    // NEED_BACKUP: a file is "in need" when no backup covers it
+    // NEED_BACKUP — la politique DECIDE : sous REDUNDANCY n, un fichier
+    // est en defaut tant qu'il porte MOINS de n sauvegardes ; sous une
+    // fenetre de recuperation, tant qu'aucune sauvegarde ne precede son
+    // bord, puisqu'il faut une sauvegarde d'AVANT pour y revenir.
     const snap = catalog.listAll();
     if (snap.ok === false) return snap;
-    const covered = new Set<number>();
-    for (const s of snap.value.sets) for (const df of s.datafiles) covered.add(df.fileNo);
-
+    const comptes = new Map<number, number>();
+    const plusAncienne = new Map<number, number>();
+    for (const s of snap.value.sets) {
+      if (s.type === 'ARCHIVELOG') continue;
+      for (const df of s.datafiles) {
+        comptes.set(df.fileNo, (comptes.get(df.fileNo) ?? 0) + 1);
+        const connu = plusAncienne.get(df.fileNo);
+        if (connu === undefined || s.completionTime < connu) {
+          plusAncienne.set(df.fileNo, s.completionTime);
+        }
+      }
+    }
+    const fenetre = activePolicy.kind === 'recovery_window';
+    const seuil = activePolicy.value ?? 1;
+    const bord = Date.now() - seuil * 86_400_000;
     const lines = [
       '',
       'RMAN retention policy will be applied to the command',
       `RMAN retention policy is set to ${activePolicy.describe().toLowerCase()}`,
-      'Report of files with 0 redundant backups',
-      'File #backs Name',
-      '----- ------ ---------------------------------------------------',
+      fenetre
+        ? `Report of files that must be backed up to satisfy ${seuil} days recovery window`
+        : `Report of files with less than ${seuil} redundant backups`,
+      fenetre
+        ? 'File Days  Name'
+        : 'File #bkps Name',
+      '---- ----- -----------------------------------------------------',
     ];
     for (const df of ctx.getDatafiles()) {
-      if (covered.has(df.fileNo)) continue;
-      lines.push(`${String(df.fileNo).padEnd(5)} 0      ${df.path}`);
+      const nombre = comptes.get(df.fileNo) ?? 0;
+      if (fenetre) {
+        const ancienne = plusAncienne.get(df.fileNo);
+        if (ancienne !== undefined && ancienne <= bord) continue;
+        const jours = ancienne === undefined
+          ? seuil
+          : Math.floor((Date.now() - ancienne) / 86_400_000);
+        lines.push(`${String(df.fileNo).padEnd(4)} ${String(jours).padEnd(5)} ${df.path}`);
+        continue;
+      }
+      if (nombre >= seuil) continue;
+      lines.push(`${String(df.fileNo).padEnd(4)} ${String(nombre).padEnd(5)} ${df.path}`);
     }
     lines.push('');
     return ok(lines);
