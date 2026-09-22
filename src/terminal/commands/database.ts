@@ -13,6 +13,7 @@ import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { controlFileBody, mergeControlFileImage, parseControlFileImage, controlFileStructureOf } from '@/database/oracle/storage/ControlFileImage';
 import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
 import { OracleRedoTransport } from '@/adapters/OracleRedoTransport';
+import { OracleManagedRecovery } from '@/adapters/OracleManagedRecovery';
 import { OracleSystemdSync } from '@/adapters/OracleSystemdSync';
 import { OracleAuditSyslogSync } from '@/adapters/OracleAuditSyslogSync';
 import { OracleListenerTcpSync } from '@/adapters/OracleListenerTcpSync';
@@ -44,6 +45,7 @@ const oracleInstances: Map<string, OracleDatabase> = new Map();
 /** Per-device FS sync adapter — Phase 7c replaces the manual *ToDevice helpers. */
 const oracleFsSyncs: Map<string, OracleFilesystemSync> = new Map();
 const oracleRedoTransports: Map<string, OracleRedoTransport> = new Map();
+const oracleManagedRecoveries: Map<string, OracleManagedRecovery> = new Map();
 /** Per-device systemd sync adapter — wires oracle bus events to LinuxServiceManager. */
 const oracleSystemdSyncs: Map<string, OracleSystemdSync> = new Map();
 /** Per-device audit→syslog adapter — routes audit records to /var/log when AUDIT_SYSLOG_LEVEL is set. */
@@ -161,6 +163,13 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     });
     redoTransport.start();
     oracleRedoTransports.set(deviceId, redoTransport);
+
+    const managedRecovery = new OracleManagedRecovery(oracleBusFor(deviceId), {
+      resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
+      resolveDatabase: (id) => oracleInstances.get(id) ?? null,
+    });
+    managedRecovery.start();
+    oracleManagedRecoveries.set(deviceId, managedRecovery);
 
     const systemd = new OracleSystemdSync(oracleBusFor(deviceId), {
       resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
@@ -415,6 +424,8 @@ export function removeOracleDatabase(deviceId: string): void {
   oracleFsSyncs.delete(deviceId);
   oracleRedoTransports.get(deviceId)?.stop();
   oracleRedoTransports.delete(deviceId);
+  oracleManagedRecoveries.get(deviceId)?.stop();
+  oracleManagedRecoveries.delete(deviceId);
   oracleSystemdSyncs.get(deviceId)?.stop();
   oracleSystemdSyncs.delete(deviceId);
   oracleAuditSyslogSyncs.get(deviceId)?.stop();
@@ -455,6 +466,8 @@ export function resetAllOracleInstances(): void {
   for (const sync of oracleFsSyncs.values()) sync.stop();
   for (const t of oracleRedoTransports.values()) t.stop();
   oracleRedoTransports.clear();
+  for (const m of oracleManagedRecoveries.values()) m.stop();
+  oracleManagedRecoveries.clear();
   oracleFsSyncs.clear();
   for (const sync of oracleSystemdSyncs.values()) sync.stop();
   oracleSystemdSyncs.clear();

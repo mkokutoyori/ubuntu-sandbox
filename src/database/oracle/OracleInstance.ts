@@ -470,6 +470,46 @@ export class OracleInstance {
     this.logAlert(`Error ${error} received during archiving to LOG_ARCHIVE_DEST_${destId}`);
   }
 
+  private _managedRecovery = false;
+  private _appliedSequence = 0;
+
+  get managedRecoveryActive(): boolean { return this._managedRecovery; }
+  get appliedSequence(): number { return this._appliedSequence; }
+
+  /**
+   * MRP — le processus qui, sur une standby, applique ce que le RFS a
+   * ecrit. Il ne decide rien lui-meme : il publie, et l'adaptateur qui
+   * tient le disque rejoue les journaux recus.
+   */
+  startManagedRecovery(): string {
+    if (this._state !== 'MOUNT' && this._state !== 'OPEN') {
+      return ORACLE_ERRORS.ORA_01034;
+    }
+    this._managedRecovery = true;
+    this.logAlert('MRP0 started with pid=30, OS id=0');
+    this.getBus().publish({
+      topic: 'oracle.standby.managed-recovery-changed',
+      payload: { ...this.ref(), active: true },
+    });
+    return 'Database altered.';
+  }
+
+  stopManagedRecovery(): string {
+    this._managedRecovery = false;
+    this.logAlert('MRP0: Background Media Recovery cancelled');
+    this.getBus().publish({
+      topic: 'oracle.standby.managed-recovery-changed',
+      payload: { ...this.ref(), active: false },
+    });
+    return 'Database altered.';
+  }
+
+  noteRedoApplied(sequence: number, scn: number): void {
+    this._appliedSequence = Math.max(this._appliedSequence, sequence);
+    if (scn > this._currentScn) this._currentScn = scn;
+    this.logAlert(`Media Recovery Log applied, sequence ${sequence}`);
+  }
+
   receiveShippedRedo(
     name: string, thread: number, sequence: number, scn: number, body: string,
   ): void {

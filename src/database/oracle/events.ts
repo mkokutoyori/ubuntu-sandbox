@@ -215,6 +215,10 @@ export interface OracleBlockCorruptionFoundPayload extends OracleDeviceRef {
   type: 'CHECKSUM' | 'CORRUPT' | 'LOGICAL';
 }
 
+export interface OracleStandbyManagedRecoveryChangedPayload extends OracleDeviceRef {
+  active: boolean;
+}
+
 export interface OracleStandbyRedoReceivedPayload extends OracleDeviceRef {
   name: string;
   thread: number;
@@ -608,6 +612,7 @@ export type OracleDomainEvent =
   | { topic: 'oracle.block-corruption.repaired';         payload: OracleBlockCorruptionRepairedPayload }
   | { topic: 'oracle.backup-corruption.found';           payload: OracleBackupCorruptionFoundPayload }
   | { topic: 'oracle.standby.redo-received';             payload: OracleStandbyRedoReceivedPayload }
+  | { topic: 'oracle.standby.managed-recovery-changed';  payload: OracleStandbyManagedRecoveryChangedPayload }
   | { topic: 'oracle.nonlogged-block.recorded';          payload: OracleNonloggedBlockRecordedPayload }
   | { topic: 'oracle.nonlogged-block.cleared';           payload: OracleNonloggedBlockClearedPayload }
   | { topic: 'oracle.service.event';                     payload: OracleServiceEventPayload }

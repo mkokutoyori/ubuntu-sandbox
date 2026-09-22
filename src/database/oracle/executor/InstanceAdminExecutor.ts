@@ -118,6 +118,13 @@ export class InstanceAdminExecutor {
       this.instance.mountDatabase();
       return emptyResult('Database altered.');
     }
+    const managed = /^\s*RECOVER\s+MANAGED\s+STANDBY\s+DATABASE\b(.*)$/i.exec(stmt.action);
+    if (managed) {
+      const suite = managed[1].toUpperCase();
+      return emptyResult(/\bCANCEL\b/.test(suite)
+        ? this.instance.stopManagedRecovery()
+        : this.instance.startManagedRecovery());
+    }
     // RENAME FILE 'old' [, 'old2'] TO 'new' [, 'new2']
     // MOVE DATAFILE 'old' TO 'new' [KEEP|REUSE]
     const renameMatch = /^\s*(?:RENAME\s+FILE|MOVE\s+DATAFILE)\s+(.+)$/i.exec(stmt.action);
