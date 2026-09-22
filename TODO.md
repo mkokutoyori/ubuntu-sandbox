@@ -43,64 +43,27 @@ ne le signale. Retire avec la refutation ci-dessus.
 
 ## Pare-feu FortiGate
 
-### [ssh] une origine Windows ouvre une session que le fil REFUSE
-REPRODUIT sur la topologie signalee par un operateur. Un pare-feu dont
-port1 `192.168.1.99/24` porte `allowaccess ping https ssh http fgfm` et
-port2 `192.168.20.2/30` porte `allowaccess ping` SEUL. Un routeur Cisco
-tient le LAN (`192.168.1.1`, pool DHCP, `default-router 192.168.1.1`) et
-route `192.168.20.0/30` vers `192.168.1.99`. Un poste vise l'adresse de
-PORT2, qui n'autorise pas `ssh` :
-
-    client LINUX    ssh 192.168.20.2  ->  No route to host   (REFUSE)
-    client WINDOWS  ssh 192.168.20.2  ->  invite « FW1 # »   (OUVERTE)
-
-Deux clients, deux reponses OPPOSEES au meme pare-feu, sur la meme
-adresse, au meme instant. Et la trace dit pourquoi : du cote Windows, le
-premier plan est une `FortiTerminalSession`, c'est-a-dire la SESSION
-ENFANT EN MEMOIRE que le PRD SSH appelle le « bypass » (§4bis). Elle
-n'atteint jamais le fil, donc elle ne rencontre AUCUN controle reseau —
-ni `allowaccess`, ni `trusthost`, ni `admin-ssh-port`. Le chemin Linux,
-lui, traverse le cable, rencontre `allowaccess ping` sur port2 et se fait
-refuser comme il se doit.
-
-CE N'EST DONC PAS UN DEFAUT D'`allowaccess` : le controle fonctionne,
-c'est le chemin Windows qui passe a cote. La portee depasse ce cas — tout
-ce que le fil refuse, une origine Windows l'obtient.
-
-LIEN AVEC B4. `docs/PRD-SSH-Unification.md` §4bis.6 dit « reste pour
-clore B4 : les terminaux d'origine Windows et CLI vendeur », et §4bis.7
-donne le releve mesure de ces origines. Ce defaut EST la consequence de
-ce qui reste a faire, et il en donne l'argument de securite qui manquait :
-tant que le bypass existe, un poste Windows administre un equipement que
-le reseau lui interdit.
-
-NON TOUCHE : la bascule des origines Windows sur le fil est le chantier
-en cours de l'autre agent. Un correctif local (faire consulter
-`allowaccess` par le bypass) serait du travail jete, puisque B4 supprime
-le bypass.
-
-### [fortios] un refus d'`allowaccess` route est BAVARD, et il ment
-Sous-produit mesure de l'entree ci-dessus. Sur le segment propre de
-l'interface, un `ssh` vers une interface qui ne l'autorise pas rend
-`Connection timed out` — un silence, la forme que
+### [fortios] un refus d'`allowaccess` route est BAVARD
+Sous-produit du lot qui a ferme l'incoherence Windows/Linux. Sur le
+segment propre de l'interface, un `ssh` vers une interface qui ne
+l'autorise pas rend `Connection timed out` — un silence, la forme que
 `fortios-acces-ssh-admin.test.ts` decrit comme juste (« il n'obtient
 aucun refus, il n'obtient rien »). Le meme refus, atteint par ROUTAGE
-depuis un autre segment, rend `No route to host` : un refus bavard, et
-faux, puisque la route existe — le `ping` vers la meme adresse passe dans
-la meme seconde.
+depuis un autre segment, a longtemps rendu `No route to host`. Depuis
+que le parcours d'accessibilite trouve les adresses de l'equipement
+atteint, ce cas-la rend bien un silence ; reste a verifier qu'aucun
+autre chemin ne produit encore un refus bavard.
 
 ### [windows] un poste Windows ne route pas quand sa passerelle est le pare-feu
-MESURE, et elle CORRIGE une premiere redaction de cette entree qui
-disait « un poste Windows ne route pas hors sous-reseau ». C'est faux :
-avec un ROUTEUR comme passerelle, `netsh interface ip set address
-... static <ip> <masque> 192.168.1.1` installe bien la route et le ping
-vers l'autre sous-reseau passe. Ce qui echoue est le cas ou la passerelle
-est le PARE-FEU :
+MESURE :
 
     Linux,   defaut 192.168.1.99 (pare-feu)  -> ping 192.168.20.2  RECU
     Windows, defaut 192.168.1.99 (pare-feu)  -> ping 192.168.20.2  General failure
 
-Meme maquette, meme passerelle, deux hotes, deux reponses.
+Meme maquette, meme passerelle, deux hotes, deux reponses. Avec un
+ROUTEUR comme passerelle, les deux passent — `netsh interface ip set
+address ... static <ip> <masque> <routeur>` installe bien la route. Le
+cas fautif est donc etroit : la passerelle est le PARE-FEU.
 
 ## Pile TCP/IP
 
