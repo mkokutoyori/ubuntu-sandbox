@@ -98,10 +98,10 @@ describe('La commande distante traverse le cable', () => {
   });
 
   it('la commande coute des trames de plus qu une session refusee', async () => {
-    const trames = async (ligne: string): Promise<number> => {
+    const trames = async (ligne: string, entree?: string): Promise<number> => {
       const { pc, cable } = await labo();
       const avant = cable.getStats().framesTransmitted;
-      await pc.executeCommand(ligne);
+      await pc.executeCommand(ligne, entree);
       return cable.getStats().framesTransmitted - avant;
     };
     const avecCommande = await trames(
@@ -113,32 +113,32 @@ describe('La commande distante traverse le cable', () => {
 
   it('`whoami` rend l utilisateur SSH', async () => {
     const { pc } = await labo();
-    expect((await pc.executeCommand(ssh(' whoami'))).trim()).toBe('alice');
+    expect((await pc.executeCommand(ssh(' whoami'), 'secret123\n')).trim()).toBe('alice');
   });
 
   it('`pwd` rend le foyer de cet utilisateur', async () => {
     const { pc } = await labo();
-    expect((await pc.executeCommand(ssh(' pwd'))).trim()).toBe('/home/alice');
+    expect((await pc.executeCommand(ssh(' pwd'), 'secret123\n')).trim()).toBe('/home/alice');
   });
 
   it('un second compte repond POUR LUI, et non une constante', async () => {
     const { pc, srv } = await labo();
     await srv.executeCommand('sudo useradd -m bob');
     await srv.executeCommand('echo "bob:motdepasse" | sudo chpasswd');
-    const sortie = await pc.executeCommand(`ssh -o StrictHostKeyChecking=no bob@${SERVER_IP} whoami`, 'admin\n');
+    const sortie = await pc.executeCommand(`ssh -o StrictHostKeyChecking=no bob@${SERVER_IP} whoami`, 'motdepasse\n');
     expect(sortie.trim()).toBe('bob');
   });
 
   it('`sshpass` emprunte le MEME chemin, et non un raccourci', async () => {
-    const trames = async (ligne: string): Promise<number> => {
+    const trames = async (ligne: string, entree?: string): Promise<number> => {
       const { pc, cable } = await labo();
       const avant = cable.getStats().framesTransmitted;
-      await pc.executeCommand(ligne);
+      await pc.executeCommand(ligne, entree);
       return cable.getStats().framesTransmitted - avant;
     };
     const parSshpass = await trames(
       `sshpass -p secret123 ssh -o StrictHostKeyChecking=no alice@${SERVER_IP} whoami`);
-    const parSshNu = await trames(ssh(' whoami'));
+    const parSshNu = await trames(ssh(' whoami'), 'secret123\n');
     expect(parSshpass).toBe(parSshNu);
   });
 
@@ -151,6 +151,6 @@ describe('La commande distante traverse le cable', () => {
 
   it('le code de retour de la commande distante remonte', async () => {
     const { pc } = await labo();
-    expect((await pc.executeCommand(`${ssh(' false')}; echo rc=$?`)).trim()).toContain('rc=1');
+    expect((await pc.executeCommand(`${ssh(' false')}; echo rc=$?`, 'secret123\n')).trim()).toContain('rc=1');
   });
 });

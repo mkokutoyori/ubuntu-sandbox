@@ -25,10 +25,8 @@ async function buildLab(): Promise<Lab> {
     usermod: (u: string, o: object) => void;
     getUser: (u: string) => unknown;
   } } }).executor.userMgr;
-  if (!um.getUser('sftponly')) {
-    um.useradd('sftponly', { m: true, s: '/sbin/nologin' });
-    um.setPassword('sftponly', 'secret');
-  }
+  if (!um.getUser('sftponly')) um.useradd('sftponly', { m: true, s: '/sbin/nologin' });
+  um.setPassword('sftponly', 'secret');
   return { client, server, sw };
 }
 

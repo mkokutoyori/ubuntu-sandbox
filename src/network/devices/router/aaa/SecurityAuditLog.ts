@@ -17,6 +17,7 @@ export interface SecurityAuditLogOptions {
   bus: IEventBus;
   capacity?: number;
   now?: () => number;
+  syslog?: (entry: AuditLogEntry) => void;
 }
 
 export class SecurityAuditLog {
@@ -26,12 +27,14 @@ export class SecurityAuditLog {
   private readonly capacity: number;
   private readonly subs: Unsubscribe[] = [];
   private readonly now: () => number;
+  private readonly syslog: ((entry: AuditLogEntry) => void) | null;
 
   constructor(opts: SecurityAuditLogOptions) {
     this.deviceId = opts.deviceId;
     this.bus = opts.bus;
     this.capacity = opts.capacity ?? 1000;
     this.now = opts.now ?? Date.now;
+    this.syslog = opts.syslog ?? null;
     this.attach();
   }
 
@@ -79,8 +82,10 @@ export class SecurityAuditLog {
   }
 
   record(facility: AuditFacility, severity: number, mnemonic: string, message: string, at?: number): void {
-    this.buffer.push({ facility, severity, mnemonic, message, at: at ?? this.now() });
+    const entry: AuditLogEntry = { facility, severity, mnemonic, message, at: at ?? this.now() };
+    this.buffer.push(entry);
     while (this.buffer.length > this.capacity) this.buffer.shift();
+    this.syslog?.(entry);
   }
 
   entries(): readonly AuditLogEntry[] { return [...this.buffer]; }

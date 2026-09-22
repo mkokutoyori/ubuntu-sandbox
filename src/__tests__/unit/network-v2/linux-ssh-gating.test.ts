@@ -49,7 +49,8 @@ describe('ssh client — remote sshd gating', () => {
       getUser: (u: string) => unknown;
     } } }).executor.userMgr;
     for (const u of ['alice', 'user']) {
-      if (!um.getUser(u)) { um.useradd(u, { m: true, s: '/bin/bash' }); um.setPassword(u, 'x'); }
+      if (!um.getUser(u)) um.useradd(u, { m: true, s: '/bin/bash' });
+      um.setPassword(u, 'admin');
     }
   });
 
@@ -105,7 +106,8 @@ describe('ssh client — works identically from LinuxServer', () => {
     configure(a, '10.0.0.20');
     configure(b, '10.0.0.21');
     const um = (b as unknown as { executor: { userMgr: { useradd: (u: string, o?: object) => void; setPassword: (u: string, p: string) => void; getUser: (u: string) => unknown } } }).executor.userMgr;
-    if (!um.getUser('alice')) { um.useradd('alice', { m: true, s: '/bin/bash' }); um.setPassword('alice', 'x'); }
+    if (!um.getUser('alice')) um.useradd('alice', { m: true, s: '/bin/bash' });
+    um.setPassword('alice', 'admin');
     expect(await a.executeCommand('ssh alice@10.0.0.21', 'admin\n')).toContain('Welcome to Ubuntu');
     b.executeCommand('systemctl stop ssh');
     expect(await a.executeCommand('ssh alice@10.0.0.21', 'admin\n')).toMatch(/Connection refused/);

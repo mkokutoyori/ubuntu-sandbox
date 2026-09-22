@@ -41,7 +41,7 @@ describe('SSH server — AllowAgentForwarding gate', () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'PasswordAuthentication yes\nAllowAgentForwarding no\n');
     const out = await pc.executeCommand(
-      "ssh -A alice@10.0.0.2 'echo got:$SSH_AUTH_SOCK'",
+      "ssh -A alice@10.0.0.2 'echo got:$SSH_AUTH_SOCK'", 'admin\n',
     );
     expect(out).toMatch(/^got:\s*$/m);
   });
@@ -50,7 +50,7 @@ describe('SSH server — AllowAgentForwarding gate', () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'PasswordAuthentication yes\nAllowAgentForwarding yes\n');
     const out = await pc.executeCommand(
-      "ssh -A alice@10.0.0.2 'echo got:$SSH_AUTH_SOCK'",
+      "ssh -A alice@10.0.0.2 'echo got:$SSH_AUTH_SOCK'", 'admin\n',
     );
     expect(out).toMatch(/got:\/tmp\/ssh-alice\/agent\./);
   });
@@ -59,7 +59,7 @@ describe('SSH server — AllowAgentForwarding gate', () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'PasswordAuthentication yes\nAllowAgentForwarding no\n');
     const out = await pc.executeCommand(
-      "ssh alice@10.0.0.2 'echo done'",
+      "ssh alice@10.0.0.2 'echo done'", 'admin\n',
     );
     expect(out).toMatch(/^done/m);
     expect(out).not.toMatch(/SSH_AUTH_SOCK/);

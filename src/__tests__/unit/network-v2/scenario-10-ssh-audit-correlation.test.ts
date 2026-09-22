@@ -35,10 +35,8 @@ async function buildLab(): Promise<Lab> {
     setPassword: (u: string, p: string) => void;
     getUser: (u: string) => unknown;
   } } }).executor.userMgr;
-  if (!um.getUser('alice')) {
-    um.useradd('alice', { m: true, s: '/bin/bash' });
-    um.setPassword('alice', 'wonderland');
-  }
+  if (!um.getUser('alice')) um.useradd('alice', { m: true, s: '/bin/bash' });
+  um.setPassword('alice', 'wonderland');
   lxsrv.getSshServerContext();
   return { client, lxsrv, winsrv, sw };
 }
@@ -55,7 +53,7 @@ describe('Scenario 10 — Audit centralisé des accès SSH multi-équipements', 
     const { client, lxsrv } = await buildLab();
     await client.executeCommand(
       'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.20 "uname -a"',
-      'alice\n',
+      'wonderland\n',
     );
     const log = await lxsrv.executeCommand('cat /var/log/auth.log');
     expect(log).toMatch(/Accepted password for alice from 10\.0\.0\.10/);
@@ -76,8 +74,7 @@ describe('Scenario 10 — Audit centralisé des accès SSH multi-équipements', 
     const { client, lxsrv } = await buildLab();
     await client.executeCommand('echo "audit-payload" > /tmp/audit.txt');
     await client.executeCommand(
-      `sftp -o StrictHostKeyChecking=accept-new alice@10.0.0.20 <<'EOF'\nput /tmp/audit.txt audit.txt\nbye\nEOF`,
-      'alice\n',
+      `sshpass -p wonderland sftp -o StrictHostKeyChecking=accept-new alice@10.0.0.20 <<'EOF'\nput /tmp/audit.txt audit.txt\nbye\nEOF`,
     );
     const log = await lxsrv.executeCommand('cat /var/log/auth.log');
     expect(log).toMatch(/Accepted password for alice from 10\.0\.0\.10/);
@@ -122,7 +119,7 @@ describe('Scenario 10 — Audit centralisé des accès SSH multi-équipements', 
     await sw.executeCommand('enable');
     await client.executeCommand(
       'ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.20 "whoami"',
-      'alice\n',
+      'wonderland\n',
     );
     const log = await lxsrv.executeCommand('cat /var/log/auth.log');
     const m = log.match(/Accepted password for (\w+) from (\d+\.\d+\.\d+\.\d+)/);

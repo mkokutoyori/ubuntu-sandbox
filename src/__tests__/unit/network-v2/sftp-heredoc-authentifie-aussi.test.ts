@@ -70,6 +70,6 @@ describe('le document en ligne ne contourne pas l\'authentification', () => {
     await client.executeCommand(`sh -c 'echo charge > /tmp/c.txt'`);
     const out = await client.executeCommand(`scp /tmp/c.txt zoe@${SRV}:/home/zoe/c.txt; echo rc=$?`, 'admin\n');
     expect(out).toMatch(/Permission denied/);
-    expect(out).toMatch(/rc=1/);
+    expect(out).toMatch(/rc=255/);
   }, 60_000);
 });

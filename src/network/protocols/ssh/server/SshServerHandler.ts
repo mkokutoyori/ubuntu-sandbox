@@ -153,6 +153,12 @@ export class SshServerHandler {
     const channels = new Map<number, OpenChannelInfo>();
     const sftpWireSessions = new Map<number, SftpWireSession>();
     let userCtx: SshUserContext | null = null;
+    let logoutRecorded = false;
+    const recordLogoutOnce = (user: string): void => {
+      if (logoutRecorded) return;
+      logoutRecorded = true;
+      this.ctx.recordLogout?.(user, clientIp);
+    };
     let authFailures = 0;
     const preauth = preauthSlot(this.ctx);
     preauth.value += 1;
@@ -223,6 +229,7 @@ export class SshServerHandler {
     };
 
     conn.onClose?.((reason) => {
+      if (userCtx) recordLogoutOnce(userCtx.username);
       timers.clearAll();
       idleTimer = null;
       keepaliveTimer = null;
@@ -660,7 +667,7 @@ export class SshServerHandler {
             // channel closes the session is over from the user's point
             // of view, so record the logout. Linux uses this to append
             // wtmp; Windows turns it into a 4634 (Logoff) Security event.
-            this.ctx.recordLogout?.(userCtx.username, clientIp);
+            recordLogoutOnce(userCtx.username);
           }
           info?.offAsyncOutput?.();
           info?.interactiveShell?.dispose();

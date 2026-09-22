@@ -82,7 +82,8 @@ async function buildLan(): Promise<Lan> {
       getUser: (u: string) => unknown;
     } } }).executor.userMgr;
     for (const u of ['alice', 'bob', 'carol', 'dave']) {
-      if (!um.getUser(u)) { um.useradd(u, { m: true, s: '/bin/bash' }); um.setPassword(u, 'x'); }
+      if (!um.getUser(u)) um.useradd(u, { m: true, s: '/bin/bash' });
+      um.setPassword(u, 'admin');
     }
   }
 
