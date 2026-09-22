@@ -218,7 +218,10 @@ export async function openWireSshConnection(
     session.disconnect();
     if (errKind === 'AUTH_FAILED') return { kind: 'auth-failed' };
     if (errKind === 'CONNECTION_REFUSED') {
-      return { kind: 'unreachable', message: `ssh: connect to host ${req.host} port ${req.port}: No route to host` };
+      return { kind: 'rejected', message: `ssh: connect to host ${req.host} port ${req.port}: Connection refused` };
+    }
+    if (errKind === 'CONNECTION_TIMEOUT') {
+      return { kind: 'rejected', message: `ssh: connect to host ${req.host} port ${req.port}: Connection timed out` };
     }
     if (errKind === 'HOST_KEY_CHANGED') return { kind: 'host-key-changed' };
     if (errKind === 'HOST_KEY_REJECTED') {

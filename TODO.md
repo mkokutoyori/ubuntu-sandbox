@@ -3038,3 +3038,40 @@ vendor ». Ce portage est le lot B de `docs/PRD-SSH-Unification.md`
 collision avec son travail ; la mesure est donc posee ici pour qu'il la
 trouve, avec les nombres qui disent quand le lot est fini : la ligne
 Windows et la ligne Cisco doivent prendre la pente de la ligne Linux.
+
+### [ssh] le chemin non interactif de Windows ne s'authentifie pas sur le fil
+`ssh hote "commande"` tape sur un poste Windows rend la sortie de la
+commande a un client que l'`access-class` de la vty REFUSE. Le meme appel
+depuis Linux rend `ssh: connect to host … port 22: Connection refused`.
+
+**Mesure.** Maquette : poste Windows `10.0.0.1`, poste Linux `10.0.0.2`,
+routeur `10.0.0.9` avec `ip access-list standard ONLY` / `permit host
+<un seul des deux>` et `access-class ONLY in` sur `line vty 0 4`.
+
+    depuis Linux,   bloque   ssh: connect to host 10.0.0.9 port 22: Connection refused
+    depuis Windows, bloque   *15:32:27.000 UTC Tue Sep 22 2026
+
+**Cause.** `WindowsSshClient` retombe sur `remote.runSshCommand(...)` —
+un appel direct sur l'objet `Equipment` du pair, zero octet sur le fil —
+quand le relais du fil manque. Instrumentation de `WindowsPC.cmdSsh` sur
+ce cas : `reach=open` (le SYN recoit sa reponse, l'`access-class` ne
+tranche pas au niveau TCP) mais `wire=non`, la session etant refusee a
+l'ADMISSION.
+
+**Ce qui a ete essaye et RETIRE.** Une garde « `reach` ouvert et pas de
+session sur le fil ⇒ refuser » a fait tomber 33 cas sur 9 fichiers
+(`windows-lan-ssh-suite` 14, `probe-windows-honore-passwordauthentication
+-no` 5, `cross-equipment-ssh-suite` 3, …). La raison est instructive :
+sur ce chemin, `password` vient de `_scenarioStdin` et vaut le plus
+souvent `undefined`, donc « pas de session sur le fil » est l'etat
+ORDINAIRE et non le signe d'un refus. Les deux causes — « rien a offrir »
+et « refuse par la politique » — y sont indiscernables. La garde retiree,
+486/486 repassent sur ces neuf fichiers.
+
+**Report** : les rendre discernables demande que ce client porte son
+justificatif jusqu'au fil et traite l'echec comme un refus, c'est-a-dire
+le meme portage que l'entree voisine (`les commandes d'une session SSH ne
+traversent le fil QUE depuis Linux`) — le lot B de
+`docs/PRD-SSH-Unification.md` §4bis. Le cas de `probe-un-refus-du-fil-vaut
+-sur-windows-aussi` qui l'epinglerait a ete RETIRE plutot que laisse
+rouge : un test qui encode le defaut le fige.
