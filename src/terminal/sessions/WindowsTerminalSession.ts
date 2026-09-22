@@ -1096,31 +1096,12 @@ export class WindowsTerminalSession extends TerminalSession {
     for (;;) {
       const pw = await broker.password(promptText);
       if (pw === null) {
-        this.pendingSshPush = null;
-        this.sshPasswordAttempts = 0;
-        this.inputMode = { type: 'normal' };
+        this.endSshPrompt();
         this.notify();
         return;
       }
-      const ok = this.remoteCredentialsAccepted(pending.device, pending.user, pw);
-      const remote = pending.device as unknown as {
-        recordSshLogin?: (u: string, fromIp: string, fromHost: string, accepted: boolean) => void;
-      };
-      if (ok) {
-        await this.submitSshPassword(pw);
-        return;
-      }
-      this.sshPasswordAttempts++;
-      remote.recordSshLogin?.(pending.user, pending.sourceIp, pending.sourceHostname, false);
-      if (this.sshPasswordAttempts >= SSH_PASSWORD_PROMPTS) {
-        this.addLine(`${pending.user}@${pending.host}: Permission denied (publickey,password).`);
-        this.pendingSshPush = null;
-        this.sshPasswordAttempts = 0;
-        this.inputMode = { type: 'normal' };
-        this.notify();
-        return;
-      }
-      this.addLine('Permission denied, please try again.');
+      await this.submitSshPassword(pw);
+      if (this.pendingSshPush === null) return;
     }
   }
 
@@ -1153,57 +1134,6 @@ export class WindowsTerminalSession extends TerminalSession {
     const pending = this.pendingSshPush;
     if (!pending) return;
 
-    const ok = this.remoteCredentialsAccepted(pending.device, pending.user, password);
-    const remote = pending.device as unknown as {
-      recordSshLogin?: (
-        u: string, fromIp: string, fromHost: string, accepted: boolean,
-      ) => void;
-      sshBanner?: () => string;
-    };
-
-    if (!ok) {
-      this.sshPasswordAttempts++;
-      remote.recordSshLogin?.(
-        pending.user, pending.sourceIp, pending.sourceHostname, false,
-      );
-      if (this.sshPasswordAttempts < SSH_PASSWORD_PROMPTS) {
-        this.addLine('Permission denied, please try again.');
-        // Stay in password mode for the next attempt.
-        this.notify();
-        return;
-      }
-      this.addLine(`${pending.user}@${pending.host}: Permission denied (publickey,password).`);
-      this.pendingSshPush = null;
-      this.sshPasswordAttempts = 0;
-      this.inputMode = { type: 'normal' };
-      this.notify();
-      return;
-    }
-
-    this.pendingSshPush = null;
-    this.sshPasswordAttempts = 0;
-    this.inputMode = { type: 'normal' };
-
-    // Credentials are already known-good (verified above) — open the REAL
-    // wire connection they belong to so the remote sees a genuine TCP+SSH
-    // session (auth.log, tcpdump) instead of nothing at all, then hand the
-    // interactive experience to the existing in-memory child session — the
-    // real wire session has served its purpose (proving reachability and
-    // producing a real accept/auth log entry) while the interactive
-    // experience is served by the in-memory child session below, since
-    // the child-session machinery (tab completion, editors, nested-ssh,
-    // foreground streaming) isn't yet ported onto the wire shell channel
-    // for every vendor.
-    //
-    // Two things this must NOT do, both because a single `ssh` is a
-    // single login and the remote's `/var/log/syslog` is read by the
-    // learner:
-    //   - ask for a shell channel it will never type into (the server
-    //     would open a login session and SIGHUP the `-bash` it spawned
-    //     a moment later),
-    //   - hang the connection up before the user logs out (the server
-    //     would narrate a disconnect for a session still on screen).
-    // So: connection only, held open for as long as the child lives.
     const outcome = await openWireSshConnection({
       device: this.device,
       localUser: pending.localUser,
@@ -1212,16 +1142,38 @@ export class WindowsTerminalSession extends TerminalSession {
       port: pending.port,
       io: silentConnectIo(),
       password,
-      // 'accept-new' — not 'no' — so a first-seen host key is actually
-      // recorded (NoVerificationStrategy accepts silently but never
-      // saves); matches the manual known_hosts write this replaced.
       strict: 'accept-new',
     });
-    const wire = outcome.kind === 'connected' ? outcome.session : null;
+
+    if (outcome.kind === 'auth-failed') {
+      this.sshPasswordAttempts++;
+      if (this.sshPasswordAttempts < SSH_PASSWORD_PROMPTS) {
+        this.addLine('Permission denied, please try again.');
+        this.notify();
+        return;
+      }
+      this.endSshPrompt();
+      this.addLine(`${pending.user}@${pending.host}: Permission denied (publickey,password).`);
+      this.notify();
+      return;
+    }
+
+    if (outcome.kind !== 'connected') {
+      this.endSshPrompt();
+      const refusal = outcome.kind === 'host-key-changed'
+        ? 'Host key verification failed.'
+        : outcome.kind === 'cancelled' ? null : outcome.message;
+      if (refusal !== null) this.addLine(refusal);
+      this.notify();
+      return;
+    }
+
+    this.endSshPrompt();
+    const wire = outcome.session;
 
     const child = createSessionForDevice(pending.device, `${this.id}>ssh`);
     if (child) {
-      if (wire) child.registerTearDown(() => wire.disconnect());
+      child.registerTearDown(() => wire.disconnect());
       const clientIp = this.firstLocalIp() ?? '0.0.0.0';
       const serverIp = firstConfiguredIp(pending.device) ?? pending.host;
       const clientPort = 50_000 + (pending.user.length * 7 % 10_000);
@@ -1230,11 +1182,15 @@ export class WindowsTerminalSession extends TerminalSession {
         SSH_CLIENT: `${clientIp} ${clientPort} ${pending.port}`,
       }, { quiet: pending.quiet });
     } else {
-      // Nothing to attach the connection's lifetime to — let it go now
-      // rather than leak a socket the user can never close.
-      wire?.disconnect();
+      wire.disconnect();
     }
     this.notify();
+  }
+
+  private endSshPrompt(): void {
+    this.pendingSshPush = null;
+    this.sshPasswordAttempts = 0;
+    this.inputMode = { type: 'normal' };
   }
 
   private remoteCredentialsAccepted(
