@@ -10,6 +10,18 @@ export interface RawConfigEntry {
   recordedAtMs: number;
 }
 
+export const SSH_DEFAULT_PORT = 22;
+
+/**
+ * VRP : « The default listening port number of the SSH server is 22. A
+ * private port number ranges from 1025 to 65535. » Le 22 reste admis en
+ * plus de la plage privee, et rien d'autre en dessous de 1025.
+ */
+export function sshListenPortIsValid(port: number): boolean {
+  if (!Number.isInteger(port)) return false;
+  return port === SSH_DEFAULT_PORT || (port >= 1025 && port <= 65535);
+}
+
 export class RouterManagementService {
   domainName: string = '';
   ipDomainLookupEnabled: boolean = true;
@@ -74,13 +86,19 @@ export class RouterManagementService {
   }
   getTelnet(): typeof this.telnetServer { return this.telnetServer; }
 
-  configureSsh(args: string[]): void {
+  configureSsh(args: string[], negated = false): string | null {
     const head = (args[0] ?? '').toLowerCase();
     if (head === 'server' && args[1]?.toLowerCase() === 'enable') this.sshServer.enabled = true;
-    else if (head === 'server' && args[1]?.toLowerCase() === 'port' && args[2]) this.sshServer.port = parseInt(args[2], 10);
+    else if (head === 'server' && args[1]?.toLowerCase() === 'port') {
+      if (negated) { this.sshServer.port = SSH_DEFAULT_PORT; return null; }
+      const port = Number.parseInt(args[2] ?? '', 10);
+      if (!sshListenPortIsValid(port)) return args[2] ?? '';
+      this.sshServer.port = port;
+    }
     else if (head === 'server' && args[1]?.toLowerCase() === 'compatible-ssh1x') { /* ignored */ }
     else if (head === 'client' && args[1]?.toLowerCase() === 'first-time') { /* ignored */ }
     else this.recordRaw('ssh', args.join(' '));
+    return null;
   }
   getSsh(): typeof this.sshServer { return this.sshServer; }
 

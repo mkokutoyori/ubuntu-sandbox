@@ -1886,15 +1886,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       }
       return '';
     });
-    t.registerGreedy('ssh', 'SSH server configuration', (args) => {
-      const router = getRouter() as unknown as {
-        _configureSshAuthRetries?: (n: number) => void;
-      };
-      if (args[0] === 'server' && args[1] === 'authentication-retries' && /^\d+$/.test(args[2] ?? '')) {
-        router._configureSshAuthRetries?.(Number(args[2]));
-      }
-      return '';
-    });
     // `command-alias enable|disable` + `command-alias alias <h> <expansion>`
     // mirror the VRP CLI alias feature consumed by runSshCommandSync.
     t.registerGreedy('command-alias', 'CLI alias configuration', (args) => {
@@ -1966,15 +1957,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       undefined, undefined, (epochMs) => this.r()?._setSystemClock(epochMs));
     registerHuaweiCommonSecurityDisplay(t, () => new Map(), undefined,
       () => this.r()?.getSnmpService());
-    t.registerGreedy('ssh', 'SSH server configuration', (args) => {
-      const router = getRouter() as unknown as {
-        _configureSshAuthRetries?: (n: number) => void;
-      };
-      if (args[0] === 'server' && args[1] === 'authentication-retries' && /^\d+$/.test(args[2] ?? '')) {
-        router._configureSshAuthRetries?.(Number(args[2]));
-      }
-      return '';
-    });
 
     // `user-interface vty <first> [last]` — enter VTY user-interface view
     // so subsequent `protocol inbound {ssh|telnet|all|none}` toggles the

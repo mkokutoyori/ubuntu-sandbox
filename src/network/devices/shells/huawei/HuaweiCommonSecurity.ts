@@ -117,7 +117,21 @@ export function registerHuaweiCommonSecurity(
         break;
       }
       case 'telnet': mgmt.configureTelnet(args); break;
-      case 'ssh': mgmt.configureSsh(args); break;
+      case 'ssh': {
+        const dev = getRouter() as unknown as {
+          _configureSshAuthRetries?: (n: number) => void;
+          _syncSshListener?: () => void;
+        };
+        if (args[0] === 'server' && args[1] === 'authentication-retries'
+          && /^\d+$/.test(args[2] ?? '')) {
+          dev._configureSshAuthRetries?.(Number(args[2]));
+          break;
+        }
+        const refuse = mgmt.configureSsh(args);
+        if (refuse !== null) return HUAWEI_ERRORS.WRONG(refuse, 0);
+        dev._syncSshListener?.();
+        break;
+      }
       case 'ntp-service': mgmt.configureNtp(args); break;
       case 'clock': {
         const verdict = mgmt.configureClock(args);
