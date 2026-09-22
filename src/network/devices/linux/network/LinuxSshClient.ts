@@ -930,7 +930,14 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // Cross-platform dispatch (Windows / Cisco / Huawei). A target that
   // implements SshExecTarget but is *not* a LinuxMachine (no in-process
   // `executor` shortcut) handles its own auth + exec synchronously.
+  //
+  // La SONDE DU FIL decide d'abord. Sans elle, ce raccourci repondait
+  // quel que soit l'etat de l'ecoute : un serveur SSH deplace par
+  // `ssh server port` continuait de repondre sur l'ancien port, et la
+  // commande qui l'avait deplace devenait invisible depuis un client.
   if (!linuxLike && isSshExecTarget(found.device)) {
+    const wire = opts.wireOutcome ?? wireReachOutcome(opts.sourceDevice, destIp, port);
+    if (wire !== 'open') return wireFailure(opts, host, destIp, port, wire);
     return runCrossPlatformExec(found.device, remoteUser, positional, port, host, opts);
   }
 

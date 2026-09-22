@@ -1030,14 +1030,31 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.bindTelnetListener();
   }
 
+  /**
+   * Le port d'ecoute du serveur SSH. VRP le deplace par `ssh server
+   * port`, et la valeur vit dans le gestionnaire — la meme que
+   * `display current-configuration` rend et que `display tcp status`
+   * annonce. L'ecoute la LIT plutot que d'ecrire 22 en dur, sans quoi la
+   * commande serait acceptee, rendue, et sans effet.
+   */
+  sshListenPort(): number {
+    return this.getManagementService().getSsh().port || 22;
+  }
+
+  private _sshBoundPort: number | null = null;
+
   private bindSshListener(): void {
-    this.tcpv2.listen(22, {
+    const port = this.sshListenPort();
+    this.tcpv2.listen(port, {
       onAccept: (socket) => {
         const handler = this.buildRouterSshServerHandler();
         handler.register(socket as unknown as TcpStream, socket.remoteIp);
       },
     });
+    this._sshBoundPort = port;
   }
+
+  _syncSshListener(): void { this.syncSshListener(); }
 
   private bindTelnetListener(): void {
     this.tcpv2.listen(23, {
@@ -1129,13 +1146,19 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private syncSshListener(): void {
-    const sshBound = this.tcpv2.listListeners().some(l => l.localPort === 22);
+    const wanted = this.sshListenPort();
+    const bound = this._sshBoundPort;
+    const sshBound = bound !== null
+      && this.tcpv2.listListeners().some(l => l.localPort === bound);
     // Keys are part of "is the server up", not a separate switch: IOS
     // refuses to listen without them.
     const shouldListen = this.sshServerEnabled && this.hasSshHostKeys()
       && this.transportAdmisSurUneVty('ssh');
-    if (shouldListen && !sshBound) this.bindSshListener();
-    if (!shouldListen && sshBound) this.tcpv2.closeListener(22);
+    if (sshBound && (!shouldListen || bound !== wanted)) {
+      this.tcpv2.closeListener(bound!);
+      this._sshBoundPort = null;
+    }
+    if (shouldListen && this._sshBoundPort === null) this.bindSshListener();
     const telnetWanted = this.telnetAllowedByTransport();
     const telnetBound = this.tcpv2.listListeners().some(l => l.localPort === 23);
     if (telnetWanted && !telnetBound) this.bindTelnetListener();
@@ -5409,7 +5432,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   } {
     return Object.freeze({
       active: this.sshServerEnabled,
-      ports: Object.freeze([22]),
+      ports: Object.freeze([this.sshListenPort()]),
       permitRootLogin: true,
       passwordAuthentication: true,
       pubkeyAuthentication: true,

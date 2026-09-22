@@ -174,10 +174,12 @@ async function laboratoire() {
   ]);
 
   await runOn(huawei, [
-    'system-view', 'sysname AR1', 'stelnet server enable',
+    'system-view', 'sysname AR1',
+    'rsa local-key-pair create', 'stelnet server enable',
     `aaa`, `local-user bob password cipher ${SECRET}`,
     'local-user bob service-type ssh', 'local-user bob privilege level 15', 'quit',
     'ssh user bob authentication-type password',
+    'user-interface vty 0 4', 'authentication-mode aaa', 'protocol inbound ssh', 'quit',
     'interface GigabitEthernet0/0/0', `ip address ${HUAWEI} 255.255.255.0`,
     'quit', 'quit',
   ]);
