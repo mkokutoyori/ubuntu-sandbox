@@ -21,6 +21,7 @@ export type RmanOperation =
   | 'DUPLICATE_DATABASE'
   | 'VALIDATE'
   | 'BLOCK_RECOVER'
+  | 'RECOVER_COPY'
   | 'CROSSCHECK'
   | 'DELETE_EXPIRED'
   | 'DELETE_OBSOLETE'

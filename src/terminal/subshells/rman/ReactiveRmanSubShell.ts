@@ -276,6 +276,7 @@ export class ReactiveRmanSubShell implements ISubShell {
       case 'RESTORE_DATABASE':     return 'restore';
       case 'VALIDATE':             return 'validate';
       case 'BLOCK_RECOVER':        return 'recover';
+      case 'RECOVER_COPY':         return 'recover';
       case 'RECOVER_DATABASE':     return 'recover';
       case 'DUPLICATE_DATABASE':   return 'Duplicate Db';
       case 'CROSSCHECK':           return 'crosscheck';

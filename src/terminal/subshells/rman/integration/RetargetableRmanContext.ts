@@ -25,6 +25,7 @@ export class RetargetableRmanContext implements IRmanOracleContext {
   getSpfileParam(name: string): string | undefined { return this._current.getSpfileParam(name); }
   getArchivelogPaths(): ReadonlyArray<string> { return this._current.getArchivelogPaths(); }
   getArchivedLogs(): ReadonlyArray<ArchivedLogRecord> { return this._current.getArchivedLogs(); }
+  catalogArchivedLog(path: string): boolean { return this._current.catalogArchivedLog(path); }
   getControlFilePath(): string { return this._current.getControlFilePath(); }
   getControlFilePaths(): ReadonlyArray<string> { return this._current.getControlFilePaths(); }
   getInstanceState(): 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN' {
@@ -44,6 +45,10 @@ export class RetargetableRmanContext implements IRmanOracleContext {
     return this._current.getBlockCorruptions();
   }
   clearBlockCorruption(fileNo: number): void { this._current.clearBlockCorruption(fileNo); }
+  getUnrecoverableFiles(): ReadonlyArray<{ fileNo: number; path: string }> {
+    return this._current.getUnrecoverableFiles();
+  }
+  clearUnrecoverable(tablespace: string): void { this._current.clearUnrecoverable(tablespace); }
   recordBackupCorruption(entry: {
     setStamp: number; fileNo: number; blocks: number;
     markedCorrupt: boolean; type: BlockCorruptionType; kind: 'BACKUPSET' | 'COPY';

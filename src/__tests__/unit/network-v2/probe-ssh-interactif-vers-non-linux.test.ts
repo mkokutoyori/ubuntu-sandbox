@@ -74,15 +74,19 @@
  * `known_hosts' et l'`auth.log' n'etaient plus ecrits avant le `cat' qui
  * les lit. Mesure : 6 rouges avec la poignee de main inutile, 0 sans.
  *
- * Limite mesuree et NON fermee ici : `ISshServerContext.getMotd()' est
- * declare et n'est lu par personne -- l'accuse de `shell_open' publie le
- * prompt, jamais le motd. Le transcrit rend donc ce qui a vraiment
- * traverse le fil, sans banniere de connexion. La refermer voudrait dire
- * publier le motd a l'ouverture du canal, et l'`SshInteractiveSubShell'
- * compose deja la sienne par `composeSshLoginBanner' : les deux
- * s'ajouteraient. Aucune capture de reference n'etant joignable depuis
- * cet environnement pour arbitrer ce que chaque plateforme affiche, rien
- * n'est devine ici.
+ * Limite FERMEE DEPUIS, et la note est mise a jour plutot que laissee a
+ * induire en erreur : `ISshServerContext.getMotd()' etait declare et lu
+ * par personne, l'accuse de `shell_open' ne publiant que le prompt. Il
+ * publie desormais aussi le motd, et `relayScriptedShell' le rend.
+ *
+ * L'AVERTISSEMENT QUE PORTAIT CETTE NOTE ETAIT JUSTE, et il s'est
+ * realise : « les deux s'ajouteraient ». En preposant le motd pour TOUS
+ * les appelants, un lot l'a fait paraitre deux fois sur le chemin Linux,
+ * ou `LinuxSshClient' compose deja sa banniere. Le prefixe est depuis
+ * BORNE au chemin qui n'en compose aucune — celui des pairs non-Linux,
+ * ou le fil est le seul porteur du texte d'ouverture. `SshInteractive
+ * SubShell', qui compose la sienne par `composeSshLoginBanner', ne lit
+ * pas `initialMotd()' : il n'y a pas de second cumul de ce cote.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -228,9 +232,11 @@ describe('`ssh <equipement>` sans commande ouvre une vraie session', () => {
     expect(out).toContain('Cisco Adaptive Security Appliance');
   }, 30000);
 
-  it('l\'invite suit le mode : `FW1>enable` puis `FW1#show version`', async () => {
+  it('l\'invite suit le mode : `FW1#disable` puis `FW1>enable`', async () => {
     const pc = await asaLab();
-    const out = await pc.executeCommand('ssh admin@10.0.2.2', 'Secret123\nenable\n\nshow version\nexit\n');
+    const out = await pc.executeCommand(
+      'ssh admin@10.0.2.2', 'Secret123\ndisable\nenable\n\nshow version\nexit\n');
+    expect(out).toContain('FW1#disable');
     expect(out).toContain('FW1>enable');
     expect(out).toContain('FW1#show version');
   }, 30000);

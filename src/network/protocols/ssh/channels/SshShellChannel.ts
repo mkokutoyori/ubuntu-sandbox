@@ -24,6 +24,7 @@ import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import { AbstractSshChannel } from './AbstractSshChannel';
+import { isConnectionControlFrame } from './ConnectionControlFrame';
 import type { ExecResult, ISshShellChannel } from './ISshChannel';
 
 export class SshShellChannel
@@ -245,6 +246,7 @@ export class SshShellChannel
       if (typeof parsed.posixShell === 'boolean') this.posix = parsed.posixShell;
       return;
     }
+    if (isConnectionControlFrame(parsed)) return;
     if (parsed.op === 'shell_complete_result') {
       const candidates = Array.isArray(parsed.candidates)
         ? (parsed.candidates as unknown[]).filter((c): c is string => typeof c === 'string')

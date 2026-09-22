@@ -21,8 +21,10 @@ export class AsaFirewall extends Firewall {
   }
 
   protected override createManagementCli(user: string, origin: string): AsaShell {
-    void user; void origin;
-    return new AsaShell(this);
+    void origin;
+    const shell = new AsaShell(this);
+    if (this.getAdminAccount(user)?.profile === 'super_admin') shell.openAtPrivilegedExec();
+    return shell;
   }
 
   protected override managementRunningConfig(): string {

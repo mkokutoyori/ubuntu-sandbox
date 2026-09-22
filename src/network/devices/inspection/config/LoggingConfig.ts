@@ -2,6 +2,9 @@ import { Logger } from '@/network/core/Logger';
 import { DuplicateEventFilter } from '@/events/DuplicateEventFilter';
 import { isValidIPv4 } from '@/network/core/ip';
 import { ospfHelloMismatchLines } from '@/network/ospf/events';
+import {
+  getManagementService, getNtpAgent,
+} from '@/network/equipment/RouterServiceCapabilities';
 
 /**
  * LoggingConfig — config-driven syslog/logging state (Lot C).
@@ -365,18 +368,16 @@ export function deviceClockSource(device: unknown): LoggingClockSource {
   const dev = device as {
     getUptimeMs?: () => number;
     getSystemClockMs?: () => number;
-    getManagementService?: () => { getClock: () => { timezone: string; offsetMin: number } };
-    getNtpAgent?: () => { isSynced?: () => boolean; isLogging?: () => boolean };
   };
   return {
     uptimeMs: () => dev.getUptimeMs?.() ?? 0,
     epochMs: () => dev.getSystemClockMs?.() ?? Date.now(),
     zone: () => {
-      const c = dev.getManagementService?.().getClock();
+      const c = getManagementService(device)?.getClock();
       return { name: c?.timezone ?? 'UTC', offsetMin: c?.offsetMin ?? 0 };
     },
-    authoritative: () => dev.getNtpAgent?.().isSynced?.() ?? false,
-    ntpEventsLogged: () => dev.getNtpAgent?.().isLogging?.() ?? false,
+    authoritative: () => getNtpAgent(device)?.isSynced() ?? false,
+    ntpEventsLogged: () => getNtpAgent(device)?.isLogging() ?? false,
   };
 }
 

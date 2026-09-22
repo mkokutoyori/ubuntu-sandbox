@@ -353,6 +353,12 @@ export function cmdUndo(router: Router, ctx: HuaweiShellContext, args: string[])
     return '';
   }
 
+  if (args[0] === 'ssh') {
+    router.getManagementService().configureSsh(args.slice(1), true);
+    (router as unknown as { _syncSshListener?: () => void })._syncSshListener?.();
+    return '';
+  }
+
   /**
    * `undo interface LoopBack 0` — la commande était ACCEPTÉE et ne
    * supprimait rien : elle tombait dans la queue générique qui rend une

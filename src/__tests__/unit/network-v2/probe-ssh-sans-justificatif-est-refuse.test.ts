@@ -61,15 +61,16 @@
  * DEUX CHOSES MESUREES EN CHEMIN, dites ici plutot que laissees a
  * redecouvrir.
  *
- * L'ASA repond « % Invalid input detected at '^' marker. » a TOUT
+ * L'ASA repondait « % Invalid input detected at '^' marker. » a TOUT
  * `show` recu par SSH, alors que le meme `show version` tape sur sa
- * console rend sa banniere. Sa session SSH s'ouvre donc dans un mode ou
- * le vocabulaire `show` n'existe pas. C'est un defaut DISTINCT de
- * celui-ci — il porte sur le mode d'une session, pas sur
- * l'authentification — et le fermer ici aurait melange deux mesures. La
- * preuve retenue pour l'ASA est donc « la CLI a repondu », ce qui
- * etablit bien que la session s'est ouverte, et c'est tout ce que ce
- * lot mesure.
+ * console rendait sa banniere : sa session s'ouvrait dans un mode ou le
+ * vocabulaire `show` n'existe pas. Ce defaut etait DISTINCT de celui-ci
+ * — il porte sur le mode d'une session, pas sur l'authentification — et
+ * le fermer ici aurait melange deux mesures, d'ou la preuve « la CLI a
+ * repondu » retenue alors. Il a ete ferme depuis, dans son propre lot :
+ * l'ASA ouvre desormais au niveau que sa base locale donne au compte, et
+ * la preuve retenue ici est la BANNIERE, qui etablit la meme chose en
+ * plus fort.
  *
  * La clause d'exception de la RFC n'est demontree par AUCUN cas, et
  * c'est volontaire. Une `line vty` sans `login local` ne se laisse pas
@@ -173,10 +174,12 @@ async function laboratoire() {
   ]);
 
   await runOn(huawei, [
-    'system-view', 'sysname AR1', 'stelnet server enable',
+    'system-view', 'sysname AR1',
+    'rsa local-key-pair create', 'stelnet server enable',
     `aaa`, `local-user bob password cipher ${SECRET}`,
     'local-user bob service-type ssh', 'local-user bob privilege level 15', 'quit',
     'ssh user bob authentication-type password',
+    'user-interface vty 0 4', 'authentication-mode aaa', 'protocol inbound ssh', 'quit',
     'interface GigabitEthernet0/0/0', `ip address ${HUAWEI} 255.255.255.0`,
     'quit', 'quit',
   ]);
@@ -214,7 +217,7 @@ const CIBLES: readonly Cible[] = [
   { nom: 'huawei', ip: HUAWEI, compte: 'bob', commande: '"display version"', preuve: /Huawei|VRP/ },
   { nom: 'windows', ip: WINDOWS, compte: 'User', commande: 'hostname', preuve: /windows-pc|WIN/i },
   { nom: 'fortigate', ip: FORTI, compte: 'admin', commande: '"get system status"', preuve: /Version:/ },
-  { nom: 'asa', ip: ASA, compte: 'admin', commande: '"show version"', preuve: /% Invalid input/ },
+  { nom: 'asa', ip: ASA, compte: 'admin', commande: '"show version"', preuve: /Adaptive Security/ },
 ];
 
 beforeEach(() => {

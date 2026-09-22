@@ -1,10 +1,12 @@
-import { decodeAscii, encodeAscii } from './NsPacket';
+const CORPS = { encode: new TextEncoder(), decode: new TextDecoder() };
 
 export enum OracleNetCallId {
   Logon = 1,
   Execute = 2,
   Logoff = 3,
   ExecuteStatement = 4,
+  /** LNS -> RFS : le primaire expedie un journal archive a la standby. */
+  ShipRedo = 5,
 }
 
 export enum OracleNetCallStatus {
@@ -36,6 +38,25 @@ export interface OracleNetStatementRequest {
   readonly statement: unknown;
 }
 
+/**
+ * L'en-tete NS porte sa longueur sur 16 bits : un journal archive entier
+ * ne tient pas dans un paquet. Un envoi se DECOUPE, comme Oracle Net
+ * decoupe toute donnee plus grande que la SDU negociee, et le RFS
+ * rassemble.
+ */
+export const REDO_CHUNK_BYTES = 4000;
+
+export interface OracleNetShipRedoRequest {
+  readonly thread: number;
+  readonly sequence: number;
+  readonly name: string;
+  readonly scn: number;
+  readonly body: string;
+  readonly chunkIndex: number;
+  readonly chunkCount: number;
+  readonly fromDbUniqueName: string;
+}
+
 export interface OracleNetColumn {
   readonly name: string;
   readonly dataType: string;
@@ -53,6 +74,7 @@ export type OracleNetRequest =
   | { readonly call: OracleNetCallId.Logon; readonly body: OracleNetLogonRequest }
   | { readonly call: OracleNetCallId.Execute; readonly body: OracleNetExecuteRequest }
   | { readonly call: OracleNetCallId.ExecuteStatement; readonly body: OracleNetStatementRequest }
+  | { readonly call: OracleNetCallId.ShipRedo; readonly body: OracleNetShipRedoRequest }
   | { readonly call: OracleNetCallId.Logoff; readonly body: Record<string, never> };
 
 export type OracleNetResponse =
@@ -60,7 +82,7 @@ export type OracleNetResponse =
   | { readonly status: OracleNetCallStatus.Error; readonly error: string };
 
 export function encodeRequest(request: OracleNetRequest): Uint8Array {
-  const body = encodeAscii(JSON.stringify(request.body));
+  const body = CORPS.encode.encode(JSON.stringify(request.body));
   const out = new Uint8Array(1 + body.length);
   out[0] = request.call;
   out.set(body, 1);
@@ -72,7 +94,7 @@ export function decodeRequest(payload: Uint8Array): OracleNetRequest | null {
   const call = payload[0] as OracleNetCallId;
   let body: unknown;
   try {
-    body = JSON.parse(decodeAscii(payload.subarray(1)) || '{}');
+    body = JSON.parse(CORPS.decode.decode(payload.subarray(1)) || '{}');
   } catch {
     return null;
   }
@@ -85,6 +107,9 @@ export function decodeRequest(payload: Uint8Array): OracleNetRequest | null {
   if (call === OracleNetCallId.ExecuteStatement) {
     return { call, body: body as OracleNetStatementRequest };
   }
+  if (call === OracleNetCallId.ShipRedo) {
+    return { call, body: body as OracleNetShipRedoRequest };
+  }
   if (call === OracleNetCallId.Logoff) {
     return { call, body: {} };
   }
@@ -95,7 +120,7 @@ export function encodeResponse(response: OracleNetResponse): Uint8Array {
   const payload = response.status === OracleNetCallStatus.Ok
     ? JSON.stringify(response.result)
     : JSON.stringify({ error: response.error });
-  const body = encodeAscii(payload);
+  const body = CORPS.encode.encode(payload);
   const out = new Uint8Array(1 + body.length);
   out[0] = response.status;
   out.set(body, 1);
@@ -107,7 +132,7 @@ export function decodeResponse(payload: Uint8Array): OracleNetResponse | null {
   const status = payload[0] as OracleNetCallStatus;
   let parsed: unknown;
   try {
-    parsed = JSON.parse(decodeAscii(payload.subarray(1)) || 'null');
+    parsed = JSON.parse(CORPS.decode.decode(payload.subarray(1)) || 'null');
   } catch {
     return null;
   }

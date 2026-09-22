@@ -41,6 +41,82 @@ exactement comment `acl ipv6` a pu creer une liste IPv4 sans que rien
 ne le signale. Retire avec la refutation ci-dessus.
 
 
+## Diagnostic reseau
+
+### [traceroute] le MODE de sonde est analyse, documente, et jamais honore
+MESURE, depuis un PC Linux vers l'adresse d'une interface distante du
+pare-feu (deux sauts reels : le routeur puis le pare-feu) :
+
+    traceroute -I  (ICMP)      1 192.168.1.1   2 192.168.20.2   JUSTE
+    traceroute -T  (TCP)       1 192.168.20.2                   UN SEUL SAUT
+    traceroute -U  (UDP)       * * *                            RIEN
+    traceroute     (defaut)    * * *                            RIEN
+    tracert (Windows)          1 192.168.1.1   2 192.168.20.2   JUSTE
+
+Le mode par DEFAUT du `traceroute` de Linux ne rend rien, et c'est celui
+que tout le monde tape.
+
+LA CAUSE est structurelle et se lit dans la signature :
+`LinuxNetKernel.traceroute(target, maxHops, probesPerHop, firstTtl,
+timeoutMs)` — AUCUN parametre de methode. Le moteur ne peut donc pas
+distinguer ICMP d'UDP ni de TCP. Les drapeaux `-I`, `-U`, `-T` sont
+analyses (`parsed.method`), decrits dans l'aide (« Use TCP SYN for
+probes »), et n'atteignent jamais la sonde. C'est le §6 : toute
+l'apparence d'exister, sauf l'effet.
+
+TROIS CONSEQUENCES, toutes mesurees :
+
+1. `-T` rend UN saut vers une destination qui en compte deux : il saute
+   le routeur. Un vrai traceroute TCP sonde par TTL croissant et voit
+   chaque saut.
+
+2. Le mode UDP est decide par un ORACLE EN MEMOIRE, pas par le fil :
+   `tracerouteUdpDenied` appelle `transitUdpAclVerdict`, qui parcourt les
+   equipements et rend un verdict sans qu'aucun datagramme parte. Les
+   `sendUdpProbe` emis ensuite sont DECORATIFS — les sauts sont deja
+   calcules. C'est le §4.
+
+3. Quand la sonde ne rend rien, le code FABRIQUE des sauts : hop 1 =
+   la passerelle par defaut avec un RTT invente de 1 ms, puis des
+   `* * *`. Une sortie de diagnostic inventee est pire qu'une absence de
+   reponse, parce qu'elle se lit comme une mesure.
+
+MEME FAMILLE QUE `isPathReachable`, ferme par
+`probe-acces-admin-meme-verdict-partout.test.ts` : le client Linux decide
+hors du fil, par un parcours de la topologie en memoire. Ici l'oracle
+s'appelle `transitUdpAclVerdict` et vit dans le meme fichier
+(`HostLookup.ts`).
+
+CE QU'IL FAUT : que `traceroute` emette de VRAIES sondes a TTL croissant,
+du type demande, et lise les ICMP time-exceeded et port-unreachable qui
+reviennent. `Router.decrementForForwarding` et `IcmpErrors` portent deja
+la regle du TTL et la generation des erreurs ; il s'agit de les faire
+travailler, pas d'en ecrire une seconde.
+
+## Pare-feu FortiGate
+
+### [fortios] un refus d'`allowaccess` route est BAVARD
+Sous-produit du lot qui a ferme l'incoherence Windows/Linux. Sur le
+segment propre de l'interface, un `ssh` vers une interface qui ne
+l'autorise pas rend `Connection timed out` — un silence, la forme que
+`fortios-acces-ssh-admin.test.ts` decrit comme juste (« il n'obtient
+aucun refus, il n'obtient rien »). Le meme refus, atteint par ROUTAGE
+depuis un autre segment, a longtemps rendu `No route to host`. Depuis
+que le parcours d'accessibilite trouve les adresses de l'equipement
+atteint, ce cas-la rend bien un silence ; reste a verifier qu'aucun
+autre chemin ne produit encore un refus bavard.
+
+### [windows] un poste Windows ne route pas quand sa passerelle est le pare-feu
+MESURE :
+
+    Linux,   defaut 192.168.1.99 (pare-feu)  -> ping 192.168.20.2  RECU
+    Windows, defaut 192.168.1.99 (pare-feu)  -> ping 192.168.20.2  General failure
+
+Meme maquette, meme passerelle, deux hotes, deux reponses. Avec un
+ROUTEUR comme passerelle, les deux passent — `netsh interface ip set
+address ... static <ip> <masque> <routeur>` installe bien la route. Le
+cas fautif est donc etroit : la passerelle est le PARE-FEU.
+
 ## Pile TCP/IP
 
 ### [ip] l'option Timestamp n'est ni construite ni horodatee
@@ -2925,3 +3001,40 @@ peuvent redonner a un equipement une adresse qu'un autre porte encore.
 mesure. Le stabiliser demande de trouver le fichier avec lequel il se
 couple, ce qui est un lot en soi — et il ne bloque aucun autre travail
 tant qu'il est nomme ici.
+
+### [ssh] les commandes d'une session SSH ne traversent le fil QUE depuis Linux
+`LinuxTerminalSession` ouvre `session.openShellChannel()` et pilote la
+session par `SshInteractiveSubShell` : chaque commande tapee traverse le
+cable. `WindowsTerminalSession` et `CLITerminalSession` ouvrent bien une
+connexion SSH REELLE (`openWireSshConnection`, donc le login est
+authentifie sur le fil et la politique decide), puis greffent un enfant
+EN MEMOIRE sur l'objet `Equipment` du pair (`createSessionForDevice` +
+`adoptRemoteChild`). Le login traverse le fil, les commandes non.
+
+**Mesure** (methode du §4 : la DIFFERENCE entre le meme echange avec et
+sans la charge, puisqu'un vrai login met deja des trames sur le fil).
+Labo : poste ─ commutateur ─ cible Linux, `Cable.getStats()
+.framesTransmitted` releve juste apres le login, puis apres N `whoami` :
+
+    origine        enfant adopte   N=2    N=10   par commande
+    Linux (temoin)      non         10      48       ~4,75
+    Windows             oui          2       8       ~0,75
+    CLI Cisco           oui          6       6        0
+
+La CLI Cisco est PLATE — 6 trames a deux commandes, 6 a dix : zero trame
+par commande. Le temoin Linux monte de 10 a 48, ce qui prouve que
+l'instrument mesure bien quelque chose et que le labo n'est pas muet.
+
+**Consequence** : sur ces deux origines, ce que le §4 annonce ne tient
+pas. Un privilege ou une politique qui se decide APRES le login — ce que
+le shell distant autorise a cet utilisateur — n'est pas traverse, et rien
+n'est comptable sur le fil.
+
+**Report** : la cause est nommee dans le code lui-meme — « the
+child-session machinery (tab completion, nested-ssh, foreground
+streaming) isn't yet ported onto the wire shell channel for every
+vendor ». Ce portage est le lot B de `docs/PRD-SSH-Unification.md`
+§4bis, en cours chez le pair. Le refaire en parallele entrerait en
+collision avec son travail ; la mesure est donc posee ici pour qu'il la
+trouve, avec les nombres qui disent quand le lot est fini : la ligne
+Windows et la ligne Cisco doivent prendre la pente de la ligne Linux.

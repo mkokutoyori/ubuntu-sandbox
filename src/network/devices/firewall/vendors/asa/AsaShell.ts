@@ -243,6 +243,10 @@ export class AsaShell implements AsaShowHost {
     return this.mode;
   }
 
+  openAtPrivilegedExec(): void {
+    this.mode = 'privileged';
+  }
+
   private socle(): AsaSocle {
     if (!this.socleInstance) {
       this.socleInstance = new AsaSocle(() => this.fw.getName(), this.fw, () => this);

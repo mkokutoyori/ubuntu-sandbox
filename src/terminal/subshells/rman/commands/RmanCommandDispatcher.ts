@@ -96,8 +96,8 @@ export class RmanCommandDispatcher {
       // Block-level recovery
       { pattern: /^(?:BLOCKRECOVER|RECOVER) DATAFILE (\d+) BLOCK (\d+)$/i,        command: new BlockRecoverCommand('BY_BLOCK') },
       { pattern: /^(?:BLOCKRECOVER|RECOVER) CORRUPTION LIST$/i,                   command: new BlockRecoverCommand('CORRUPTION_LIST') },
-      { pattern: /^RECOVER COPY OF DATABASE$/i,                                  command: new BlockRecoverCommand('COPY_OF_DATABASE') },
-      { pattern: /^RECOVER COPY OF DATAFILE (\d+)$/i,                            command: new BlockRecoverCommand('COPY_OF_DATAFILE') },
+      { pattern: /^RECOVER COPY OF DATABASE(?:\s+WITH TAG\s+'([^']+)')?(?:\s+UNTIL TIME\s+'[^']+')?$/i, command: new BlockRecoverCommand('COPY_OF_DATABASE') },
+      { pattern: /^RECOVER COPY OF DATAFILE (\d+)(?:\s+WITH TAG\s+'([^']+)')?$/i, command: new BlockRecoverCommand('COPY_OF_DATAFILE') },
       // Stored scripts
       { pattern: /^CREATE SCRIPT (\S+)\s*\{.*\}\s*;?$/i,                         command: new CreateScriptCommand() },
       { pattern: /^CREATE SCRIPT (\S+)$/i,                                       command: new CreateScriptCommand() },
@@ -114,6 +114,8 @@ export class RmanCommandDispatcher {
       { pattern: /^BACKUP VALIDATE TABLESPACE (\S+)$/i,            command: new ValidateCommand('TABLESPACE', false, 'BACKUP') },
       { pattern: /^BACKUP VALIDATE DATAFILE (\d+)$/i,              command: new ValidateCommand('DATAFILE', false, 'BACKUP') },
       { pattern: /^BACKUP CURRENT CONTROLFILE(.*)$/i,              command: new BackupCommand('controlfile') },
+      { pattern: /^BACKUP INCREMENTAL LEVEL (\d) FOR RECOVER OF COPY WITH TAG '([^']+)' DATABASE(.*)$/i, command: new BackupCommand('incrementalForRecoverOfCopy') },
+      { pattern: /^BACKUP INCREMENTAL LEVEL (\d) FOR RECOVER OF COPY DATABASE(.*)$/i, command: new BackupCommand('incrementalForRecoverOfCopyNoTag') },
       { pattern: /^BACKUP INCREMENTAL LEVEL (\d)(?:\s+(CUMULATIVE))? DATABASE(.*)$/i, command: new BackupCommand('incremental') },
       { pattern: /^BACKUP COMPRESSED BACKUPSET DATABASE(.*)$/i,    command: new BackupCommand('database', true) },
       { pattern: /^BACKUP NOT BACKED UP (\d+) TIMES DATABASE(.*)$/i, command: new BackupCommand('database', false, true) },
@@ -183,6 +185,9 @@ export class RmanCommandDispatcher {
       // Manual catalog registration (DEF-RMAN-16)
       { pattern: /^CATALOG DATAFILECOPY (.+)$/i, command: new CatalogCommand('DATAFILECOPY') },
       { pattern: /^CATALOG BACKUPPIECE (.+)$/i,  command: new CatalogCommand('BACKUPPIECE')  },
+      { pattern: /^CATALOG ARCHIVELOG (.+)$/i,   command: new CatalogCommand('ARCHIVELOG')   },
+      { pattern: /^CATALOG RECOVERY AREA(?:\s+NOPROMPT)?$/i, command: new CatalogCommand('RECOVERY_AREA') },
+      { pattern: /^CATALOG START WITH ('[^']+')(?:\s+NOPROMPT)?$/i, command: new CatalogCommand('START_WITH') },
       // DUPLICATE DATABASE (DEF-RMAN-17) — wide pattern catches every Oracle clause
       { pattern: /^DUPLICATE (?:TARGET )?DATABASE TO (\S+)(?:\s+(.*))?$/i, command: new DuplicateCommand() },
       // CHANGE (UN)AVAILABLE + tag-scoped delete
@@ -198,7 +203,8 @@ export class RmanCommandDispatcher {
       { pattern: /^SET UNTIL SCN (\d+)$/i,                          command: new SetCommand('UNTIL_SCN')  },
       // CONNECT AUXILIARY — accepted no-op against the in-memory aux
       { pattern: /^CONNECT AUXILIARY(.*)$/i,                        command: new ConnectAuxiliaryCommand() },
-      // RESYNC CATALOG — accepted no-op against the in-memory catalog
+      // RESYNC CATALOG — recopie le repertoire du fichier de controle
+      // dans la base de catalogue que CONNECT CATALOG a resolue.
       { pattern: /^RESYNC CATALOG$/i,                               command: new ResyncCatalogCommand() },
     );
   }

@@ -139,6 +139,9 @@ export function findReachableHost(srcIp: string, dstIp: string, from?: Equipment
     for (const svi of sviPeer.getSvis?.() ?? []) {
       if (svi.ip && svi.ip.toString() === dstIp && sviPeer.isSviLineUp?.(svi)) return peerDev;
     }
+    for (const own of peerDev.getPorts()) {
+      if (portHoldsAddress(own, dstIp)) return peerDev;
+    }
     for (const sibling of peerDev.getPorts()) {
       if (sibling !== peerPort) queue.push(sibling);
     }

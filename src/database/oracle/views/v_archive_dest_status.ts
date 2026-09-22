@@ -8,22 +8,30 @@
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { readArchiveDestinations } from '../dataguard/ArchiveDestination';
 
 registerView({
   name: 'V$ARCHIVE_DEST_STATUS',
   comment: 'Archive destination runtime status',
   query({ instance, runtime }) {
     const rows: (string | number)[][] = [];
-    for (let i = 1; i <= 31; i++) {
-      const param = instance.getParameter(`log_archive_dest_${i}`);
-      const active = i === 1 && instance.archiveLogMode;
+    for (const dest of readArchiveDestinations(instance.getAllParameters())) {
+      const i = dest.destId;
+      const etat = instance.getTransportState(i);
+      const local = dest.kind === 'LOCATION' && instance.archiveLogMode;
+      const statut = dest.kind === 'UNSET' ? 'INACTIVE'
+        : dest.state === 'DEFER' ? 'DEFERRED'
+          : etat?.status === 'ERROR' ? 'ERROR'
+            : 'VALID';
       rows.push([
-        i, param ? 'ALTERNATE' : 'INACTIVE',
-        active ? 'VALID' : 'DEFERRED',
+        i, statut,
+        dest.kind === 'SERVICE' ? 'PHYSICAL' : 'LOCAL',
         instance.archiveLogMode ? 'PRIMARY' : 'NONE',
-        active ? runtime.counters.archiveLogs : 0,
-        active ? runtime.archivedLogs[runtime.archivedLogs.length - 1]?.sequence ?? 0 : 0,
-        '',
+        local ? runtime.counters.archiveLogs : etat?.sequence ?? 0,
+        local
+          ? runtime.archivedLogs[runtime.archivedLogs.length - 1]?.sequence ?? 0
+          : etat?.sequence ?? 0,
+        etat?.error ?? '',
       ]);
     }
     return queryResult(

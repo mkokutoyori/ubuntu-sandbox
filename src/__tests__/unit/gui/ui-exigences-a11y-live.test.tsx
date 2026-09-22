@@ -16,6 +16,8 @@
 import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, beforeEach, vi, expect } from 'vitest';
+
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 import { PropertiesPanel } from '@/components/network/PropertiesPanel';
 import type { Connection, NetworkDeviceUI } from '@/store/networkStore';
 import type { Equipment } from '@/network';

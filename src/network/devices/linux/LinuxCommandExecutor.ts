@@ -1656,12 +1656,13 @@ export class LinuxCommandExecutor {
   }
 
   private async relayShellOverWire(
-    session: SshSession, skipLines: number,
+    session: SshSession, skipLines: number, withMotd = false,
   ): Promise<{ output: string; exitCode: number } | null> {
     const channel = session.openShellChannel();
     if (!isOk(channel)) return null;
     const shell = channel.value;
-    const relayed = await relayScriptedShell(shell, this._scenarioStdin ?? '', skipLines);
+    const relayed = await relayScriptedShell(
+      shell, this._scenarioStdin ?? '', skipLines, withMotd);
     shell.close();
     return relayed;
   }
@@ -1703,24 +1704,18 @@ export class LinuxCommandExecutor {
     const settled = !linuxPeer && target !== null && target.command
       ? await this.relayOverWire(session, target.command)
       : null;
-    const relayedShell = target !== null && !target.command
-      ? await this.relayShellOverWire(session, offeredPassword === undefined && stdinPwd ? 1 : 0)
+    const interactif = target !== null && !target.command;
+    const relayedShell = interactif
+      ? await this.relayShellOverWire(
+        session, offeredPassword === undefined && stdinPwd ? 1 : 0, !linuxPeer)
       : null;
-    // La banniere d'avant authentification precede la session, comme sur
-    // une vraie machine : le serveur l'envoie avant que le mot de passe
-    // ne soit demande, et le client l'ecrit avant tout le reste.
-    const settledShell = relayedShell && wire.notices.length > 0
-      ? {
-        ...relayedShell,
-        output: [...wire.notices, relayedShell.output].filter(p => p.length > 0).join('\n'),
-      }
-      : relayedShell;
     try {
       return this.finishSshClientResult(runSshClient({
         ...opts,
         wireAuthenticated: true,
         wireOutcome: reach,
-        shellRelay: () => settledShell,
+        wireNotices: interactif ? wire.notices : undefined,
+        shellRelay: () => relayedShell,
         execRelay: (command) => {
           if (settled && target !== null && command === target.command) return settled;
           const channel = session.openExecChannel(command);

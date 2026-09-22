@@ -31,7 +31,7 @@ import { archivedLogFromPath } from '../core/archivedLogNaming';
 import type { RmanEventBus } from '../reactive/RmanEventBus';
 import type { RmanJob } from './types';
 import type { ValidatedFile } from '../core/types';
-import type { DatafileEntry } from '../catalog/types';
+import type { DatafileEntry, BackupSet } from '../catalog/types';
 import { BackupSetFactory } from '../catalog/BackupSetFactory';
 import { RmanTag } from '../values/RmanTag';
 import { Scn } from '../values/Scn';
@@ -137,6 +137,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       case 'BACKUP_TABLESPACE':  return this._doBackup(job, channelId, `tablespace ${job.params?.tablespace ?? 'USERS'}`);
       case 'VALIDATE':           return this._doValidate(job);
       case 'BLOCK_RECOVER':      return this._doBlockRecover(job);
+      case 'RECOVER_COPY':       return this._doRecoverCopy(job);
       case 'RESTORE_DATABASE':   return this._doRestore(job, channelId);
       case 'RECOVER_DATABASE':   return this._doRecover(job);
       case 'DUPLICATE_DATABASE': return this._doDuplicate(job, channelId);
@@ -250,14 +251,41 @@ export class RmanJobEngine implements IRmanJobEngine {
       });
     });
 
+    // BACKUP ... FOR RECOVER OF COPY : le premier tour n'a aucune copie
+    // a mettre a jour, donc il en POSE une (niveau 0). Les tours
+    // suivants produisent le niveau 1 qui lui sera applique.
+    let posePremiereCopie = false;
+    if (params.forRecoverOfCopy === 'true') {
+      posePremiereCopie = this._copiesOfTag(tag).length === 0;
+      if (posePremiereCopie) {
+        for (const df of datafiles) {
+          this._bus.emit({
+            type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'no_parent', pct: 15,
+            message: `no parent backup or copy of datafile ${df.fileNo} found`,
+          });
+        }
+      }
+    }
+
     // BACKUP AS COPY — un DATAFILECOPY par datafile, pas de set agrégé.
     // Chaque copie va dans son propre BackupSet de type DATAFILECOPY.
-    if (params.asCopy === 'true' && !isControlfile && !isSpfile && !isArchivelog) {
+    if ((params.asCopy === 'true' || posePremiereCopie)
+      && !isControlfile && !isSpfile && !isArchivelog) {
       const ckpR = Scn.of(1_892_354);
       const ckp = ckpR.ok ? ckpR.value : Scn.ZERO;
+      this._ctx.checkpointDatafiles?.();
+      const imagesCopiees = this._readDatafileImages(datafiles);
       for (const df of datafiles) {
         const copyPath = `${basePath}.df${df.fileNo}`;
-        const writeR = this._ctx.vfs.writeFile(copyPath, new Uint8Array(0), df.sizeBytes);
+        // Une copie image EST le datafile : elle porte son image, sans
+        // quoi elle ne serait restaurable ni applicable a rien.
+        const corps = renderBackupPieceImage(
+          `[ORACLE RMAN DATAFILE COPY - ${df.sizeBytes} bytes]`,
+          { datafiles: { [df.path]: imagesCopiees[df.path] ?? '' },
+            scn: this._ctx.getCurrentScn?.() },
+        );
+        const writeR = this._ctx.vfs.writeFile(
+          copyPath, new TextEncoder().encode(corps), df.sizeBytes);
         if (!writeR.ok) return writeR;
         const set = BackupSetFactory.createBackupSet({
           type: 'DATAFILECOPY', level: 0, path: copyPath,
@@ -349,6 +377,15 @@ export class RmanJobEngine implements IRmanJobEngine {
       });
 
       this._bus.emit({ type: 'BACKUP_SET_COMPLETE', jobId: job.id, bsKey: set.bsKey, tag, sizeBytes: size });
+    }
+
+    // Une sauvegarde rend a nouveau recuperables les fichiers qu'une
+    // ecriture NOLOGGING avait laisses sans redo : c'est exactement ce
+    // que REPORT UNRECOVERABLE cesse alors de signaler.
+    if (!isControlfile && !isSpfile && !isArchivelog) {
+      for (const ts of new Set(datafiles.map(df => df.tablespace))) {
+        this._ctx.clearUnrecoverable?.(ts);
+      }
     }
 
     this._refreshControlFiles();
@@ -920,6 +957,72 @@ export class RmanJobEngine implements IRmanJobEngine {
       }
     }
     this._bus.emit({ type: 'VALIDATION_REPORT', jobId: job.id, files: [], elapsedMs: 1_000 });
+    return ok(undefined);
+  }
+
+  private _copiesOfTag(tag: RmanTag): ReadonlyArray<BackupSet> {
+    const snap = this._catalog.listAll();
+    if (snap.ok === false) return [];
+    return snap.value.sets.filter(s =>
+      s.type === 'DATAFILECOPY' && s.tag.label.toUpperCase() === tag.label.toUpperCase());
+  }
+
+  private _doRecoverCopy(job: RmanJob): Result<void, RmanError> {
+    const params = job.params ?? {};
+    const etiquette = params.tag;
+    const fileFilter = params.fileNo === undefined ? undefined : Number(params.fileNo);
+    const snap = this._catalog.listAll();
+    if (snap.ok === false) return snap;
+    const copies = snap.value.sets.filter(s => {
+      if (s.type !== 'DATAFILECOPY') return false;
+      if (etiquette && s.tag.label.toUpperCase() !== etiquette.toUpperCase()) return false;
+      if (fileFilter !== undefined) return s.datafiles[0]?.fileNo === fileFilter;
+      return true;
+    });
+    if (copies.length === 0) {
+      for (const df of this._ctx.getDatafiles()) {
+        if (fileFilter !== undefined && df.fileNo !== fileFilter) continue;
+        this._bus.emit({
+          type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'no_copy', pct: 40,
+          message: `no copy of datafile ${df.fileNo} found to recover`,
+        });
+      }
+      return ok(undefined);
+    }
+    const increments = snap.value.sets.filter(s =>
+      s.type === 'INCREMENTAL_1'
+      && (!etiquette || s.tag.label.toUpperCase() === etiquette.toUpperCase()));
+    if (increments.length === 0) {
+      this._bus.emit({
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'no_increment', pct: 40,
+        message: 'no incremental backup found to apply to the copies',
+      });
+      return ok(undefined);
+    }
+    const images = this._readPieceImages(increments);
+    for (const copie of copies) {
+      const entree = copie.datafiles[0];
+      if (entree === undefined) continue;
+      const image = images[entree.path];
+      if (image === undefined) continue;
+      this._bus.emit({
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'apply_increment', pct: 60,
+        message: 'channel ORA_DISK_1: starting incremental datafile backup set restore\n'
+          + `destination for restore of datafile ${String(entree.fileNo).padStart(5, '0')}: `
+          + `${copie.pieces[0].path}`,
+      });
+      const corps = renderBackupPieceImage(
+        `[ORACLE RMAN DATAFILE COPY - ${copie.sizeBytes} bytes]`,
+        { datafiles: { [entree.path]: image }, scn: this._ctx.getCurrentScn?.() },
+      );
+      const ecrit = this._ctx.vfs.writeFile(
+        copie.pieces[0].path, new TextEncoder().encode(corps), copie.sizeBytes);
+      if (ecrit.ok === false) return ecrit;
+      this._bus.emit({
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'applied', pct: 80,
+        message: 'channel ORA_DISK_1: datafile copy complete, elapsed time: 00:00:01',
+      });
+    }
     return ok(undefined);
   }
 

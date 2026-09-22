@@ -3,7 +3,7 @@ import type { OracleExecutor } from '../OracleExecutor';
 import type { OracleNetCallContext, OracleNetCallHandler } from '@/network/oracle-net/OracleNetService';
 import {
   OracleNetCallId, OracleNetCallStatus, decodeRequest, encodeResponse,
-  type OracleNetLogonRequest, type OracleNetResult,
+  type OracleNetLogonRequest, type OracleNetResult, type OracleNetShipRedoRequest,
 } from '@/network/oracle-net/wire/OracleNetCall';
 import type { OsSecurityContext } from '../security/types';
 
@@ -19,6 +19,7 @@ function errorText(error: unknown): string {
 
 export class OracleNetServerHandler implements OracleNetCallHandler {
   private readonly sessions = new Map<string, ServerSession>();
+  private readonly redoEnCours = new Map<string, string>();
 
   constructor(private readonly resolveDatabase: () => OracleDatabase | null) {}
 
@@ -46,12 +47,52 @@ export class OracleNetServerHandler implements OracleNetCallHandler {
       return this.execute(database, key, (session) =>
         database.executeSql(session.executor, decoded.body.sql));
     }
+    if (decoded.call === OracleNetCallId.ShipRedo) {
+      return this.receiveRedo(database, decoded.body);
+    }
     if (decoded.call === OracleNetCallId.ExecuteStatement) {
       return this.execute(database, key, (session) =>
         session.executor.execute(
           decoded.body.statement as import('../../engine/parser/ASTNode').Statement));
     }
     return this.logoff(database, key);
+  }
+
+  /**
+   * RFS — le processus qui, sur la standby, ECRIT ce que le LNS du
+   * primaire lui envoie. Le journal atterrit sur le disque de CETTE
+   * machine et son enregistrement entre dans SON fichier de controle.
+   */
+  private receiveRedo(
+    database: OracleDatabase, body: OracleNetShipRedoRequest,
+  ): Uint8Array {
+    try {
+      const cle = `${body.fromDbUniqueName}:${body.thread}:${body.sequence}`;
+      const deja = body.chunkIndex === 0 ? '' : (this.redoEnCours.get(cle) ?? '');
+      const assemble = deja + body.body;
+      if (body.chunkIndex + 1 < body.chunkCount) {
+        this.redoEnCours.set(cle, assemble);
+        return encodeResponse({
+          status: OracleNetCallStatus.Ok,
+          result: {
+            columns: [], rows: [], isQuery: false,
+            message: `RFS: chunk ${body.chunkIndex + 1}/${body.chunkCount} received`,
+          },
+        });
+      }
+      this.redoEnCours.delete(cle);
+      database.instance.receiveShippedRedo(
+        body.name, body.thread, body.sequence, body.scn, assemble);
+      return encodeResponse({
+        status: OracleNetCallStatus.Ok,
+        result: {
+          columns: [], rows: [], isQuery: false,
+          message: `RFS: archived log thread ${body.thread} sequence ${body.sequence} received`,
+        },
+      });
+    } catch (error) {
+      return encodeResponse({ status: OracleNetCallStatus.Error, error: errorText(error) });
+    }
   }
 
   private logon(

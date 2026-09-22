@@ -75,6 +75,8 @@ export interface OracleArchiveLogCreatedPayload extends OracleDeviceRef {
   path: string;
   scn: number;
   redo: readonly unknown[];
+  /** SWITCH : l'instance l'a genere. CATALOG / RFS : elle l'a seulement enregistre. */
+  origin?: 'SWITCH' | 'CATALOG' | 'RFS';
 }
 
 // ── Session / transaction / DML / DDL ──────────────────────────────────
@@ -211,6 +213,34 @@ export interface OracleBlockCorruptionFoundPayload extends OracleDeviceRef {
   fileNo: number;
   blocks: number;
   type: 'CHECKSUM' | 'CORRUPT' | 'LOGICAL';
+}
+
+export interface OracleDataGuardSwitchoverRequestedPayload extends OracleDeviceRef {
+  target: string;
+  accept(issue: string): void;
+}
+
+export interface OracleStandbyManagedRecoveryChangedPayload extends OracleDeviceRef {
+  active: boolean;
+}
+
+export interface OracleStandbyRedoReceivedPayload extends OracleDeviceRef {
+  name: string;
+  thread: number;
+  sequence: number;
+  scn: number;
+  body: string;
+}
+
+export interface OracleNonloggedBlockRecordedPayload extends OracleDeviceRef {
+  tablespace: string;
+  blocks: number;
+  scn: number;
+  reason: string;
+}
+
+export interface OracleNonloggedBlockClearedPayload extends OracleDeviceRef {
+  tablespace: string;
 }
 
 export interface OracleBackupCorruptionFoundPayload extends OracleDeviceRef {
@@ -586,6 +616,11 @@ export type OracleDomainEvent =
   | { topic: 'oracle.block-corruption.found';            payload: OracleBlockCorruptionFoundPayload }
   | { topic: 'oracle.block-corruption.repaired';         payload: OracleBlockCorruptionRepairedPayload }
   | { topic: 'oracle.backup-corruption.found';           payload: OracleBackupCorruptionFoundPayload }
+  | { topic: 'oracle.standby.redo-received';             payload: OracleStandbyRedoReceivedPayload }
+  | { topic: 'oracle.standby.managed-recovery-changed';  payload: OracleStandbyManagedRecoveryChangedPayload }
+  | { topic: 'oracle.dataguard.switchover-requested';    payload: OracleDataGuardSwitchoverRequestedPayload }
+  | { topic: 'oracle.nonlogged-block.recorded';          payload: OracleNonloggedBlockRecordedPayload }
+  | { topic: 'oracle.nonlogged-block.cleared';           payload: OracleNonloggedBlockClearedPayload }
   | { topic: 'oracle.service.event';                     payload: OracleServiceEventPayload }
   | { topic: 'oracle.listener.event';                    payload: OracleListenerEventPayload }
   | { topic: 'oracle.session.longops';                   payload: OracleSessionLongopsPayload }

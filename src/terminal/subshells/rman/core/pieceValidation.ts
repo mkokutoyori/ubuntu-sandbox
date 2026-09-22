@@ -56,3 +56,16 @@ export function datafileFault(
     ? null
     : 'LOGICAL';
 }
+
+export type CatalogableKind = 'BACKUPPIECE' | 'DATAFILECOPY' | 'ARCHIVELOG' | null;
+
+export function classifyCatalogable(vfs: VfsAdapter, path: string): CatalogableKind {
+  if (!vfs.fileExists(path)) return null;
+  const read = vfs.readFile(path);
+  if (read.ok === false) return null;
+  const text = new TextDecoder().decode(read.value);
+  if (text.includes('ORACLE RMAN DATAFILE COPY')) return 'DATAFILECOPY';
+  if (text.includes('ORACLE RMAN BACKUP PIECE')) return 'BACKUPPIECE';
+  if (text.includes('ORACLE ARCHIVED REDO LOG')) return 'ARCHIVELOG';
+  return null;
+}

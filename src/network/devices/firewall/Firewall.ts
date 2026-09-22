@@ -2266,12 +2266,16 @@ export class Firewall extends Equipment {
         return udp?.type === 'udp' && this.dnsServer.handleUdp(iface, p, udp);
       },
       handleTcp: (iface, p) => { this.tcp.handleIp(iface, p.sourceIP, p); },
-      admitsTcp: (iface, p) => this.management.admitsTcp(iface, p),
+      admitsTcp: (iface, p) => this.management.admitsTcp(this.servingInterface(iface, p), p),
       allowsPing: (iface) => this.allowsAccess(iface, 'ping'),
       reply: (iface, p) => { this.forward(iface, p); },
       localInVerdict: (iface, p) => this.localInVerdict(iface, p),
       logLocalIn: (iface, p, accepted) => this.logLocalTraffic(iface, p, accepted),
     }, portName, packet);
+  }
+
+  private servingInterface(ingress: string, packet: IPv4Packet): string {
+    return this.interfaces.owningInterface(packet.destinationIP.toString()) ?? ingress;
   }
 
   localInVerdict(iface: string, packet: IPv4Packet): LocalInVerdict {
