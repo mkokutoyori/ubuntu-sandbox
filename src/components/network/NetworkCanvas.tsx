@@ -7,7 +7,7 @@ import { ZoomIn, ZoomOut, Maximize2, X } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { NetworkDevice } from './NetworkDevice';
 import { ConnectionLine } from './ConnectionLine';
-import { computeBundleSlots } from './connection-line-logic';
+import { computeCableRoutes } from './connection-line-logic';
 import { PacketAnimation, PacketLegend } from './PacketAnimation';
 import { useActivePackets } from '@/react/hooks/useActivePackets';
 import { Equipment } from '@/network';
@@ -53,7 +53,22 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
   // not a message on every re-render.
   const [announcement, setAnnouncement] = useState('');
   const prevDeviceCount = useRef(devices.length);
-  const bundleSlots = useMemo(() => computeBundleSlots(connections), [connections]);
+  const cableRoutes = useMemo(() => computeCableRoutes(
+    connections.flatMap(connection => {
+      const source = devices.find(d => d.id === connection.sourceDeviceId);
+      const target = devices.find(d => d.id === connection.targetDeviceId);
+      if (!source || !target) return [];
+      return [{
+        id: connection.id,
+        sourceDeviceId: connection.sourceDeviceId,
+        targetDeviceId: connection.targetDeviceId,
+        source: { x: source.x, y: source.y },
+        target: { x: target.x, y: target.y },
+        sourceInterface: connection.sourceInterfaceId,
+        targetInterface: connection.targetInterfaceId,
+      }];
+    }),
+  ), [connections, devices]);
 
   const prevConnectionCount = useRef(connections.length);
   const prevSelectedDeviceId = useRef(selectedDeviceId);
@@ -292,14 +307,18 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
         >
           {/* Connections SVG layer */}
           <svg className="absolute inset-0 w-full h-full pointer-events-auto" style={{ overflow: 'visible' }}>
-            {connections.map(connection => (
-              <ConnectionLine
-                key={connection.id}
-                connection={connection}
-                devices={devices}
-                slot={bundleSlots.get(connection.id)}
-              />
-            ))}
+            {connections.map(connection => {
+              const route = cableRoutes.get(connection.id);
+              if (!route) return null;
+              return (
+                <ConnectionLine
+                  key={connection.id}
+                  connection={connection}
+                  devices={devices}
+                  route={route}
+                />
+              );
+            })}
 
             {/* Drawing connection line */}
             {isConnecting && sourceDevice && (
@@ -319,13 +338,15 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
             {activePackets.map(packet => {
               const connection = connections.find(c => c.id === packet.connectionId);
               if (!connection) return null;
+              const route = cableRoutes.get(connection.id);
+              if (!route) return null;
               return (
                 <PacketAnimation
-                  slot={bundleSlots.get(connection.id)}
                   key={packet.id}
                   packet={packet}
                   connection={connection}
                   devices={devices}
+                  route={route}
                 />
               );
             })}

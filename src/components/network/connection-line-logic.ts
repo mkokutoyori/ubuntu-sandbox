@@ -13,53 +13,109 @@ export interface Point {
 export interface PathResult {
   path: string;
   points: Point[];
-  midX: number;
-  midY: number;
-  curveFactor: number;
 }
 
-export interface BundleSlot {
-  index: number;
-  size: number;
+export interface CableLanes {
+  sourceLane: number;
+  targetLane: number;
+}
+
+export interface RoutedLink {
+  id: string;
+  sourceDeviceId: string;
+  targetDeviceId: string;
+  source: Point;
+  target: Point;
+  sourceInterface: string;
+  targetInterface: string;
+}
+
+export interface CableRoute extends CableLanes, PathResult {
+  label: Point;
+  labelText: string;
+  labelVertical: boolean;
 }
 
 export const NODE_HALF_WIDTH = 30;
 export const NODE_HALF_HEIGHT = 30;
 export const NODE_CENTER_OFFSET_Y = -10;
-export const BUNDLE_SPACING = 18;
-export const BUNDLE_SPREAD_LIMIT = 72;
+export const LANE_SPACING = 18;
 export const CORNER_RADIUS = 10;
 
-export function bundleKey(aDeviceId: string, bDeviceId: string): string {
-  return aDeviceId < bDeviceId ? `${aDeviceId}|${bDeviceId}` : `${bDeviceId}|${aDeviceId}`;
+export type CardSide = 'left' | 'right' | 'top' | 'bottom';
+
+export function runIsHorizontal(from: Point, to: Point): boolean {
+  return Math.abs(to.x - from.x) >= Math.abs(to.y - from.y);
 }
 
-export function computeBundleSlots(
-  links: ReadonlyArray<{ id: string; sourceDeviceId: string; targetDeviceId: string }>,
-): Map<string, BundleSlot> {
-  const groups = new Map<string, string[]>();
+export function exitSide(from: Point, to: Point): CardSide {
+  if (runIsHorizontal(from, to)) return to.x >= from.x ? 'right' : 'left';
+  return to.y >= from.y ? 'bottom' : 'top';
+}
+
+function sideHalfExtent(side: CardSide): number {
+  return side === 'left' || side === 'right' ? NODE_HALF_HEIGHT : NODE_HALF_WIDTH;
+}
+
+function sideSpreadsAlongX(side: CardSide): boolean {
+  return side === 'top' || side === 'bottom';
+}
+
+export function laneSpacing(count: number, side: CardSide): number {
+  if (count < 2) return 0;
+  return Math.min(LANE_SPACING, (2 * sideHalfExtent(side)) / (count - 1));
+}
+
+interface PortSlot {
+  linkId: string;
+  end: 'source' | 'target';
+  towards: number;
+}
+
+export function assignCableLanes(
+  links: ReadonlyArray<RoutedLink>,
+): Map<string, CableLanes> {
+  const faces = new Map<string, { side: CardSide; slots: PortSlot[] }>();
+
+  const enrol = (
+    deviceId: string, side: CardSide, linkId: string,
+    end: 'source' | 'target', far: Point,
+  ) => {
+    const key = `${deviceId}|${side}`;
+    let face = faces.get(key);
+    if (!face) {
+      face = { side, slots: [] };
+      faces.set(key, face);
+    }
+    face.slots.push({
+      linkId, end,
+      towards: sideSpreadsAlongX(side) ? far.x : far.y,
+    });
+  };
+
   for (const link of links) {
-    const key = bundleKey(link.sourceDeviceId, link.targetDeviceId);
-    const group = groups.get(key);
-    if (group) group.push(link.id);
-    else groups.set(key, [link.id]);
+    enrol(link.sourceDeviceId, exitSide(link.source, link.target),
+      link.id, 'source', link.target);
+    enrol(link.targetDeviceId, exitSide(link.target, link.source),
+      link.id, 'target', link.source);
   }
-  const slots = new Map<string, BundleSlot>();
-  for (const ids of groups.values()) {
-    const ordered = [...ids].sort();
-    ordered.forEach((id, index) => slots.set(id, { index, size: ordered.length }));
+
+  const lanes = new Map<string, CableLanes>();
+  for (const link of links) lanes.set(link.id, { sourceLane: 0, targetLane: 0 });
+
+  for (const face of faces.values()) {
+    const ordered = [...face.slots].sort((a, b) =>
+      a.towards - b.towards || (a.linkId < b.linkId ? -1 : a.linkId > b.linkId ? 1 : 0));
+    const spacing = laneSpacing(ordered.length, face.side);
+    ordered.forEach((slot, index) => {
+      const offset = (index - (ordered.length - 1) / 2) * spacing;
+      const lane = lanes.get(slot.linkId)!;
+      if (slot.end === 'source') lane.sourceLane = offset;
+      else lane.targetLane = offset;
+    });
   }
-  return slots;
-}
 
-export function bundleSpacing(size: number): number {
-  if (size < 2) return 0;
-  return Math.min(BUNDLE_SPACING, BUNDLE_SPREAD_LIMIT / (size - 1));
-}
-
-export function bundleOffset(slot?: BundleSlot): number {
-  if (!slot || slot.size < 2) return 0;
-  return (slot.index - (slot.size - 1) / 2) * bundleSpacing(slot.size);
+  return lanes;
 }
 
 function cardCenter(p: Point): Point {
@@ -69,11 +125,13 @@ function cardCenter(p: Point): Point {
 export function computeOrthogonalPoints(
   source: Point,
   target: Point,
-  slot?: BundleSlot,
+  lanes?: CableLanes,
 ): Point[] {
   const a = cardCenter(source);
   const b = cardCenter(target);
-  const offset = bundleOffset(slot);
+  const sourceLane = lanes?.sourceLane ?? 0;
+  const targetLane = lanes?.targetLane ?? 0;
+  const corridorLane = (sourceLane + targetLane) / 2;
   const dx = b.x - a.x;
   const dy = b.y - a.y;
 
@@ -81,18 +139,18 @@ export function computeOrthogonalPoints(
     const dir = dx >= 0 ? 1 : -1;
     const ax = a.x + dir * NODE_HALF_WIDTH;
     const bx = b.x - dir * NODE_HALF_WIDTH;
-    const ay = a.y + offset;
-    const by = b.y + offset;
-    const corridor = (ax + bx) / 2 + offset;
+    const ay = a.y + sourceLane;
+    const by = b.y + targetLane;
+    const corridor = (ax + bx) / 2 + corridorLane;
     return [{ x: ax, y: ay }, { x: corridor, y: ay }, { x: corridor, y: by }, { x: bx, y: by }];
   }
 
   const dir = dy >= 0 ? 1 : -1;
   const ay = a.y + dir * NODE_HALF_HEIGHT;
   const by = b.y - dir * NODE_HALF_HEIGHT;
-  const ax = a.x + offset;
-  const bx = b.x + offset;
-  const corridor = (ay + by) / 2 + offset;
+  const ax = a.x + sourceLane;
+  const bx = b.x + targetLane;
+  const corridor = (ay + by) / 2 + corridorLane;
   return [{ x: ax, y: ay }, { x: ax, y: corridor }, { x: bx, y: corridor }, { x: bx, y: by }];
 }
 
@@ -100,7 +158,7 @@ function segmentLength(a: Point, b: Point): number {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
-export function roundedPolylinePath(points: Point[], radius: number = CORNER_RADIUS): string {
+export function roundedPolylinePath(points: ReadonlyArray<Point>, radius: number = CORNER_RADIUS): string {
   if (points.length === 0) return '';
   if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
 
@@ -128,7 +186,7 @@ export function roundedPolylinePath(points: Point[], radius: number = CORNER_RAD
   return d;
 }
 
-export function pointAlongPolyline(points: Point[], t: number): Point {
+export function pointAlongPolyline(points: ReadonlyArray<Point>, t: number): Point {
   if (points.length === 0) return { x: 0, y: 0 };
   if (points.length === 1) return points[0];
   const clamped = Math.max(0, Math.min(1, t));
@@ -154,35 +212,38 @@ export function pointAlongPolyline(points: Point[], t: number): Point {
   return points[points.length - 1];
 }
 
-export const BADGE_STAGGER = 28;
-
-export function polylineLength(points: Point[]): number {
+export function polylineLength(points: ReadonlyArray<Point>): number {
   let total = 0;
   for (let i = 1; i < points.length; i++) total += segmentLength(points[i - 1], points[i]);
   return total;
 }
 
-export function bundleMidpoint(points: Point[], slot?: BundleSlot): Point {
-  const total = polylineLength(points);
-  if (total === 0 || !slot || slot.size < 2) return pointAlongPolyline(points, 0.5);
-  const shift = (slot.index - (slot.size - 1) / 2) * BADGE_STAGGER;
-  return pointAlongPolyline(points, 0.5 + shift / total);
+export function distanceToPolyline(p: Point, points: ReadonlyArray<Point>): number {
+  if (points.length === 0) return Infinity;
+  if (points.length === 1) return Math.hypot(p.x - points[0].x, p.y - points[0].y);
+  let best = Infinity;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const vx = b.x - a.x;
+    const vy = b.y - a.y;
+    const squared = vx * vx + vy * vy;
+    const t = squared === 0
+      ? 0
+      : Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / squared));
+    const distance = Math.hypot(p.x - (a.x + vx * t), p.y - (a.y + vy * t));
+    if (distance < best) best = distance;
+  }
+  return best;
 }
 
 export function computeConnectionPath(
   source: Point,
   target: Point,
-  slot?: BundleSlot,
+  lanes?: CableLanes,
 ): PathResult {
-  const points = computeOrthogonalPoints(source, target, slot);
-  const mid = bundleMidpoint(points, slot);
-  return {
-    path: roundedPolylinePath(points),
-    points,
-    midX: mid.x,
-    midY: mid.y,
-    curveFactor: 0,
-  };
+  const points = computeOrthogonalPoints(source, target, lanes);
+  return { path: roundedPolylinePath(points), points };
 }
 
 /**
@@ -228,14 +289,6 @@ export function getLinkAppearance(
   return { color: DEAD_LINK_COLOR, dash: DEAD_LINK_DASH };
 }
 
-export interface LabelPositions {
-  source: Point;
-  target: Point;
-}
-
-export const LABEL_ANCHOR_DISTANCE = 30;
-export const LABEL_ANCHOR_DISTANCE_VERTICAL = 48;
-
 export const CONNECTOR_HALF_LENGTH = 5;
 export const TAG_CHAR_WIDTH = 5.42;
 export const TAG_PADDING = 7;
@@ -264,12 +317,7 @@ function unitToward(from: Point, toward: Point): Point {
   return { x: (toward.x - from.x) / len, y: (toward.y - from.y) / len };
 }
 
-export function computeEndpointAnchors(
-  source: Point,
-  target: Point,
-  slot?: BundleSlot,
-): EndpointAnchors {
-  const points = computeOrthogonalPoints(source, target, slot);
+export function computeEndpointAnchors(points: ReadonlyArray<Point>): EndpointAnchors {
   const last = points.length - 1;
   return {
     source: { point: points[0], direction: unitToward(points[0], points[1]) },
@@ -322,25 +370,124 @@ export function abbreviateInterfaceName(name: string): string {
   return name;
 }
 
-function labelPoint(from: Point, toward: Point, distance: number): Point {
-  const len = Math.hypot(toward.x - from.x, toward.y - from.y);
-  if (len === 0) return { x: from.x, y: from.y };
-  const ux = (toward.x - from.x) / len;
-  const uy = (toward.y - from.y) / len;
-  const reach = Math.min(distance, Math.max(len - 6, 0));
-  return { x: from.x + ux * reach, y: from.y + uy * reach };
+export const LABEL_END_MARGIN = 10;
+export const LABEL_SAMPLES = 25;
+export const LABEL_CLEARANCE_ENOUGH = 60;
+
+interface LabelBox {
+  at: Point;
+  halfWidth: number;
+  halfHeight: number;
 }
 
-export function computeInterfaceLabelPositions(
-  source: Point,
-  target: Point,
-  slot?: BundleSlot,
-): LabelPositions {
-  const points = computeOrthogonalPoints(source, target, slot);
-  const vertical = Math.abs(points[1].y - points[0].y) > Math.abs(points[1].x - points[0].x);
-  const distance = vertical ? LABEL_ANCHOR_DISTANCE_VERTICAL : LABEL_ANCHOR_DISTANCE;
+function boxClearance(box: LabelBox, other: LabelBox): number {
+  return Math.max(
+    Math.abs(box.at.x - other.at.x) - (box.halfWidth + other.halfWidth),
+    Math.abs(box.at.y - other.at.y) - (box.halfHeight + other.halfHeight),
+  );
+}
+
+function runsVerticallyAt(points: ReadonlyArray<Point>, at: Point): boolean {
+  let best = Infinity;
+  let vertical = false;
+  for (let i = 1; i < points.length; i++) {
+    const distance = distanceToPolyline(at, [points[i - 1], points[i]]);
+    if (distance < best) {
+      best = distance;
+      vertical = Math.abs(points[i].y - points[i - 1].y)
+        > Math.abs(points[i].x - points[i - 1].x);
+    }
+  }
+  return vertical;
+}
+
+function labelBoxAt(points: ReadonlyArray<Point>, at: Point, halfLength: number): LabelBox {
+  const vertical = runsVerticallyAt(points, at);
   return {
-    source: labelPoint(points[0], points[1], distance),
-    target: labelPoint(points[points.length - 1], points[points.length - 2], distance),
+    at,
+    halfWidth: vertical ? TAG_HEIGHT / 2 : halfLength,
+    halfHeight: vertical ? halfLength : TAG_HEIGHT / 2,
   };
+}
+
+function placeLabel(
+  points: ReadonlyArray<Point>,
+  others: ReadonlyArray<ReadonlyArray<Point>>,
+  placed: ReadonlyArray<LabelBox>,
+  halfLength: number,
+): LabelBox {
+  const total = polylineLength(points);
+  const margin = LABEL_END_MARGIN + halfLength;
+  const usable = total - 2 * margin;
+  if (usable <= 0) {
+    return labelBoxAt(points, pointAlongPolyline(points, 0.5), halfLength);
+  }
+
+  let best = labelBoxAt(points, pointAlongPolyline(points, 0.5), halfLength);
+  let bestScore = -Infinity;
+  let bestCentrality = -Infinity;
+
+  for (let i = 0; i < LABEL_SAMPLES; i++) {
+    const along = margin + (usable * i) / (LABEL_SAMPLES - 1);
+    const t = along / total;
+    const box = labelBoxAt(points, pointAlongPolyline(points, t), halfLength);
+    let clearance = Infinity;
+    for (const other of others) clearance = Math.min(clearance, distanceToPolyline(box.at, other));
+    for (const taken of placed) clearance = Math.min(clearance, boxClearance(box, taken));
+    const score = Math.min(Math.round(clearance), LABEL_CLEARANCE_ENOUGH);
+    const centrality = -Math.abs(t - 0.5);
+    if (score > bestScore || (score === bestScore && centrality > bestCentrality)) {
+      best = box;
+      bestScore = score;
+      bestCentrality = centrality;
+    }
+  }
+  return best;
+}
+
+function labelReadingOrder(link: RoutedLink, vertical: boolean): string {
+  const leading = vertical
+    ? link.source.y - link.target.y || link.source.x - link.target.x
+    : link.source.x - link.target.x || link.source.y - link.target.y;
+  return leading <= 0
+    ? linkSummaryLabel(link.sourceInterface, link.targetInterface)
+    : linkSummaryLabel(link.targetInterface, link.sourceInterface);
+}
+
+export function computeCableRoutes(
+  links: ReadonlyArray<RoutedLink>,
+): Map<string, CableRoute> {
+  const lanes = assignCableLanes(links);
+  const ordered = [...links].sort((a, b) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+  const drawn = new Map<string, PathResult>();
+  for (const link of ordered) {
+    drawn.set(link.id, computeConnectionPath(link.source, link.target, lanes.get(link.id)));
+  }
+
+  const routes = new Map<string, CableRoute>();
+  const placed: LabelBox[] = [];
+
+  for (const link of ordered) {
+    const { path, points } = drawn.get(link.id)!;
+    const others = ordered
+      .filter(other => other.id !== link.id)
+      .map(other => drawn.get(other.id)!.points);
+    const halfLength = interfaceTagWidth(
+      linkSummaryLabel(link.sourceInterface, link.targetInterface)) / 2;
+    const box = placeLabel(points, others, placed, halfLength);
+    placed.push(box);
+    const vertical = box.halfHeight > box.halfWidth;
+    routes.set(link.id, {
+      ...lanes.get(link.id)!,
+      path,
+      points,
+      label: box.at,
+      labelText: labelReadingOrder(link, vertical),
+      labelVertical: vertical,
+    });
+  }
+
+  return routes;
 }
