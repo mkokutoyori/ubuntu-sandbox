@@ -1,4 +1,4 @@
-import { IP_PROTO_TCP, type IPv4Packet } from '../../../core/types';
+import { IP_PROTO_ICMP, IP_PROTO_TCP, type IPv4Packet } from '../../../core/types';
 import { icmpEchoReply } from './FirewallEgress';
 import type { LocalInVerdict } from '../policy/LocalInPolicy';
 
@@ -9,7 +9,7 @@ export interface LocalDeliveryDeps {
   answeredByDnsServer(iface: string, packet: IPv4Packet): boolean;
   handleTcp(iface: string, packet: IPv4Packet): void;
   admitsTcp(iface: string, packet: IPv4Packet): boolean;
-  allowsPing(iface: string): boolean;
+  allowsPing(iface: string, packet: IPv4Packet): boolean;
   reply(iface: string, packet: IPv4Packet): void;
   localInVerdict?(iface: string, packet: IPv4Packet): LocalInVerdict;
   logLocalIn?(iface: string, packet: IPv4Packet, accepted: boolean): void;
@@ -42,12 +42,12 @@ export function deliverLocally(
     return;
   }
 
-  const echo = icmpEchoReply(packet);
-  if (!deps.allowsPing(iface)) {
+  if (packet.protocol === IP_PROTO_ICMP && !deps.allowsPing(iface, packet)) {
     deps.logLocalIn?.(iface, packet, false);
     return;
   }
 
   deps.logLocalIn?.(iface, packet, true);
+  const echo = icmpEchoReply(packet);
   if (echo) deps.reply(iface, echo);
 }

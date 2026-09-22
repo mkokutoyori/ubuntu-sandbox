@@ -115,7 +115,7 @@ export class FirewallIpv6 {
     if (!this.addressedToUs(packet.destinationIP)) return true;
     if (this.deps.localInVerdict?.(iface, localInTrafficOf(packet)) === 'deny') return false;
     if (!this.isEchoRequest(packet)) return true;
-    return this.allowsAccess(iface, 'ping');
+    return this.allowsAccess(this.servingInterface(iface, packet.destinationIP), 'ping');
   }
 
   private transitPermitted(
@@ -154,6 +154,13 @@ export class FirewallIpv6 {
   private isEchoRequest(packet: IPv6Packet): boolean {
     const payload = packet.payload as { type?: string; icmpType?: string } | undefined;
     return payload?.type === 'icmpv6' && payload.icmpType === 'echo-request';
+  }
+
+  private servingInterface(ingress: string, destination: IPv6Address): string {
+    for (const [name, port] of this.deps.ports()) {
+      if (port.hasIPv6Address(destination)) return name;
+    }
+    return ingress;
   }
 
   private addressedToUs(destination: IPv6Address): boolean {

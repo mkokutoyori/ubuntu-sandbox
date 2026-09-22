@@ -2267,7 +2267,7 @@ export class Firewall extends Equipment {
       },
       handleTcp: (iface, p) => { this.tcp.handleIp(iface, p.sourceIP, p); },
       admitsTcp: (iface, p) => this.management.admitsTcp(this.servingInterface(iface, p), p),
-      allowsPing: (iface) => this.allowsAccess(iface, 'ping'),
+      allowsPing: (iface, p) => this.allowsAccess(this.servingInterface(iface, p), 'ping'),
       reply: (iface, p) => { this.forward(iface, p); },
       localInVerdict: (iface, p) => this.localInVerdict(iface, p),
       logLocalIn: (iface, p, accepted) => this.logLocalTraffic(iface, p, accepted),
