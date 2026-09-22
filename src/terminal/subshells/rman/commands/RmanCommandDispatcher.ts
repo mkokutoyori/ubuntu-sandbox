@@ -185,6 +185,9 @@ export class RmanCommandDispatcher {
       // Manual catalog registration (DEF-RMAN-16)
       { pattern: /^CATALOG DATAFILECOPY (.+)$/i, command: new CatalogCommand('DATAFILECOPY') },
       { pattern: /^CATALOG BACKUPPIECE (.+)$/i,  command: new CatalogCommand('BACKUPPIECE')  },
+      { pattern: /^CATALOG ARCHIVELOG (.+)$/i,   command: new CatalogCommand('ARCHIVELOG')   },
+      { pattern: /^CATALOG RECOVERY AREA(?:\s+NOPROMPT)?$/i, command: new CatalogCommand('RECOVERY_AREA') },
+      { pattern: /^CATALOG START WITH ('[^']+')(?:\s+NOPROMPT)?$/i, command: new CatalogCommand('START_WITH') },
       // DUPLICATE DATABASE (DEF-RMAN-17) — wide pattern catches every Oracle clause
       { pattern: /^DUPLICATE (?:TARGET )?DATABASE TO (\S+)(?:\s+(.*))?$/i, command: new DuplicateCommand() },
       // CHANGE (UN)AVAILABLE + tag-scoped delete
@@ -200,7 +203,8 @@ export class RmanCommandDispatcher {
       { pattern: /^SET UNTIL SCN (\d+)$/i,                          command: new SetCommand('UNTIL_SCN')  },
       // CONNECT AUXILIARY — accepted no-op against the in-memory aux
       { pattern: /^CONNECT AUXILIARY(.*)$/i,                        command: new ConnectAuxiliaryCommand() },
-      // RESYNC CATALOG — accepted no-op against the in-memory catalog
+      // RESYNC CATALOG — recopie le repertoire du fichier de controle
+      // dans la base de catalogue que CONNECT CATALOG a resolue.
       { pattern: /^RESYNC CATALOG$/i,                               command: new ResyncCatalogCommand() },
     );
   }

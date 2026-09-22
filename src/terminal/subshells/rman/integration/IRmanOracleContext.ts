@@ -73,6 +73,9 @@ export interface IRmanOracleContext {
    *  `BACKUP ARCHIVELOG ALL DELETE INPUT`. Empty by default. */
   getArchivelogPaths?(): ReadonlyArray<string>;
   getArchivedLogs?(): ReadonlyArray<ArchivedLogRecord>;
+  /** `CATALOG ARCHIVELOG` — fait connaitre au fichier de controle un
+   *  journal qu'il n'avait pas enregistre. */
+  catalogArchivedLog?(path: string): boolean;
   /** Optional: a virtual control-file path (used by BACKUP CURRENT CONTROLFILE). */
   getControlFilePath?(): string;
   getControlFilePaths?(): ReadonlyArray<string>;

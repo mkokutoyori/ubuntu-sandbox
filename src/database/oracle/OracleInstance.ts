@@ -427,6 +427,18 @@ export class OracleInstance {
    * elle laisse une TRACE, que V$NONLOGGED_BLOCK rend et que
    * REPORT UNRECOVERABLE lit. C'est tout l'objet de ces deux vues.
    */
+  /**
+   * `CATALOG ARCHIVELOG` : le journal existe depuis longtemps sur le
+   * disque, c'est son ENREGISTREMENT dans le fichier de controle qui
+   * naît maintenant — d'ou le meme evenement que le switch.
+   */
+  catalogArchivedLog(path: string, sequence: number, scn: number): void {
+    this.getBus().publish({
+      topic: 'oracle.archive-log.created',
+      payload: { ...this.ref(), sequence, path, scn, redo: [] },
+    });
+  }
+
   recordNonlogged(tablespace: string, blocks: number, reason: string): void {
     this.getBus().publish({
       topic: 'oracle.nonlogged-block.recorded',

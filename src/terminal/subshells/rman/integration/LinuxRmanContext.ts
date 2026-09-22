@@ -428,6 +428,19 @@ export class LinuxRmanContext implements IRmanOracleContext {
     return this.getArchivedLogs().map(l => l.path);
   }
 
+  catalogArchivedLog(path: string): boolean {
+    const oracle = this._oracle;
+    if (!oracle) return false;
+    const connus = oracle.instance.getRuntimeState().archivedLogs;
+    if (connus.some(l => l.name === path)) return false;
+    const repere = archivedLogFromPath(path, connus.length);
+    const precedent = connus[connus.length - 1];
+    oracle.instance.catalogArchivedLog(
+      path, repere.sequence,
+      precedent ? precedent.nextScn + 1 : oracle.instance.getCurrentScn());
+    return true;
+  }
+
   getArchivedLogs(): ReadonlyArray<ArchivedLogRecord> {
     const distant = this.askRemote(
       'SELECT thread#, sequence#, name, first_change#, next_change# FROM V$ARCHIVED_LOG');

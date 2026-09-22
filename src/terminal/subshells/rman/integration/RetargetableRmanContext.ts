@@ -25,6 +25,7 @@ export class RetargetableRmanContext implements IRmanOracleContext {
   getSpfileParam(name: string): string | undefined { return this._current.getSpfileParam(name); }
   getArchivelogPaths(): ReadonlyArray<string> { return this._current.getArchivelogPaths(); }
   getArchivedLogs(): ReadonlyArray<ArchivedLogRecord> { return this._current.getArchivedLogs(); }
+  catalogArchivedLog(path: string): boolean { return this._current.catalogArchivedLog(path); }
   getControlFilePath(): string { return this._current.getControlFilePath(); }
   getControlFilePaths(): ReadonlyArray<string> { return this._current.getControlFilePaths(); }
   getInstanceState(): 'SHUTDOWN' | 'NOMOUNT' | 'MOUNT' | 'OPEN' {
