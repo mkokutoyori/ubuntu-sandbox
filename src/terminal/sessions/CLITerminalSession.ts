@@ -441,7 +441,8 @@ export abstract class CLITerminalSession extends TerminalSession {
     }
 
     // ? (inline help — intercepted before reaching input)
-    if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey
+      && this.telnetSubShell === null) {
       if (this.quoteNextKey) {
         this.quoteNextKey = false;
         return false;
@@ -839,6 +840,7 @@ export abstract class CLITerminalSession extends TerminalSession {
   // ── Tab completion ──────────────────────────────────────────────
 
   protected onTab(reverse: boolean = false): void {
+    if (this.telnetSubShell !== null) return;
     const source = new FullLineSource((line) => this.resolveCliTabCandidates(line));
     const out = this.cliCompletion.handleTab(this.input, source, reverse);
     if (!out.changed) return;
@@ -866,7 +868,7 @@ export abstract class CLITerminalSession extends TerminalSession {
   }
 
   protected override computeGhostSuggestion(): string | null {
-    if (this.isBooting || this.pagerLines !== null) return null;
+    if (this.isBooting || this.pagerLines !== null || this.telnetSubShell !== null) return null;
     const source = new FullLineSource((line) => this.resolveCliTabCandidates(line));
     return ghostRemainder(this.input, source);
   }

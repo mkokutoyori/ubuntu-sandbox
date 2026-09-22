@@ -371,6 +371,24 @@ mémoire, donc elles n'ont jamais emprunté le chemin défectueux — ce qui
 explique qu'elles complétaient juste, et interdit d'en conclure que le
 défaut était plus large qu'il n'était.
 
+**FERMÉ depuis** (`probe-telnet-ne-prete-pas-son-vocabulaire.test.ts`),
+et la mesure a corrigé deux choses de ce qui suit. Le constat était juste
+sur le fond — la CLI vendeur prêtait son vocabulaire — mais la mesure
+prescrite ici, `get sys int`, ne montrait RIEN : le Cisco n'a pas `get`,
+donc zéro candidat, donc rien ne bougeait. Le mot qui tranche est celui
+que LES DEUX vocabulaires connaissent : `conf`, que FortiOS complète en
+`config` et que le Cisco rendait `configure `. Une mauvaise réponse qui a
+l'air d'une bonne.
+
+Et `?` n'exigeait PAS le canal au niveau touche, contrairement à ce qui
+est écrit plus bas. Sur un client ligne à ligne c'est un caractère
+ordinaire : on tape `show ?`, on valide, et le distant répond son aide à
+lui — mesuré. Le correctif consiste donc à ne plus intercepter la touche,
+pas à la porter. Tab, lui, reste hors de portée pour la raison qui suit,
+et c'est le même prérequis que B3.
+
+Texte d'origine, conservé pour la trace :
+
 **Ce que ce lot NE ferme pas : telnet depuis une CLI vendeur.**
 `CLITerminalSession` porte un sous-shell TELNET (`telnetSubShell`), et
 son `onTab` ne le consulte pas — il interroge `cliDevice.cliTabCandidates`,
