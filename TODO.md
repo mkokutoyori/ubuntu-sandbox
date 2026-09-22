@@ -3001,3 +3001,40 @@ peuvent redonner a un equipement une adresse qu'un autre porte encore.
 mesure. Le stabiliser demande de trouver le fichier avec lequel il se
 couple, ce qui est un lot en soi — et il ne bloque aucun autre travail
 tant qu'il est nomme ici.
+
+### [ssh] les commandes d'une session SSH ne traversent le fil QUE depuis Linux
+`LinuxTerminalSession` ouvre `session.openShellChannel()` et pilote la
+session par `SshInteractiveSubShell` : chaque commande tapee traverse le
+cable. `WindowsTerminalSession` et `CLITerminalSession` ouvrent bien une
+connexion SSH REELLE (`openWireSshConnection`, donc le login est
+authentifie sur le fil et la politique decide), puis greffent un enfant
+EN MEMOIRE sur l'objet `Equipment` du pair (`createSessionForDevice` +
+`adoptRemoteChild`). Le login traverse le fil, les commandes non.
+
+**Mesure** (methode du §4 : la DIFFERENCE entre le meme echange avec et
+sans la charge, puisqu'un vrai login met deja des trames sur le fil).
+Labo : poste ─ commutateur ─ cible Linux, `Cable.getStats()
+.framesTransmitted` releve juste apres le login, puis apres N `whoami` :
+
+    origine        enfant adopte   N=2    N=10   par commande
+    Linux (temoin)      non         10      48       ~4,75
+    Windows             oui          2       8       ~0,75
+    CLI Cisco           oui          6       6        0
+
+La CLI Cisco est PLATE — 6 trames a deux commandes, 6 a dix : zero trame
+par commande. Le temoin Linux monte de 10 a 48, ce qui prouve que
+l'instrument mesure bien quelque chose et que le labo n'est pas muet.
+
+**Consequence** : sur ces deux origines, ce que le §4 annonce ne tient
+pas. Un privilege ou une politique qui se decide APRES le login — ce que
+le shell distant autorise a cet utilisateur — n'est pas traverse, et rien
+n'est comptable sur le fil.
+
+**Report** : la cause est nommee dans le code lui-meme — « the
+child-session machinery (tab completion, nested-ssh, foreground
+streaming) isn't yet ported onto the wire shell channel for every
+vendor ». Ce portage est le lot B de `docs/PRD-SSH-Unification.md`
+§4bis, en cours chez le pair. Le refaire en parallele entrerait en
+collision avec son travail ; la mesure est donc posee ici pour qu'il la
+trouve, avec les nombres qui disent quand le lot est fini : la ligne
+Windows et la ligne Cisco doivent prendre la pente de la ligne Linux.
