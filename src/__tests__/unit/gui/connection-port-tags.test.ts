@@ -12,12 +12,12 @@
  *  - LA PRISE : le point de sortie porte un trait court EN TRAVERS du
  *    cable, a l'endroit exact ou il quitte la carte. C'est ce qui dit
  *    « branche ICI ». Il tourne avec le cable ;
- *  - LA PASTILLE : sa largeur suit son texte, et son texte nomme les
- *    DEUX bouts du lien, abreges.
+ *  - LA PASTILLE : sa largeur suit son texte, et son texte est le nom
+ *    du PORT qu'elle touche, abrege.
  *
  * OU la pastille se pose, c'est `cable-routing.test.ts` qui le tient :
- * ce n'est plus une distance fixe depuis la carte mais une consequence
- * du dessin de tous les cables ensemble.
+ * ce n'est plus une distance fixe depuis la carte mais la position la
+ * plus proche de son interface qui degage tout le reste.
  *
  * Sonde ecrite AVANT le correctif : 12 cas sur 13 tombaient.
  */
@@ -25,8 +25,8 @@ import { describe, it, expect } from 'vitest';
 import {
   computeEndpointAnchors,
   interfaceTagWidth,
-  linkSummaryLabel,
   connectorSegment,
+  abbreviateInterfaceName,
   computeOrthogonalPoints,
   CONNECTOR_HALF_LENGTH,
 } from '@/components/network/connection-line-logic';
@@ -93,19 +93,20 @@ describe('la largeur de la pastille suit son texte', () => {
     expect(interfaceTagWidth(texte)).toBeGreaterThan(texte.length * 5);
   });
 
-  it('et une pastille qui nomme les deux bouts est plus large qu un seul', () => {
-    expect(interfaceTagWidth(linkSummaryLabel('GigabitEthernet0/1', 'eth0')))
-      .toBeGreaterThan(interfaceTagWidth('Gi0/1'));
+  it('et la pastille d un port abrege est plus etroite que le nom entier', () => {
+    expect(interfaceTagWidth(abbreviateInterfaceName('GigabitEthernet0/1')))
+      .toBeLessThan(interfaceTagWidth('GigabitEthernet0/1'));
   });
 });
 
-describe('le texte de la pastille nomme les deux bouts', () => {
-  it('abrege chacun d eux, dans l ordre donne', () => {
-    expect(linkSummaryLabel('GigabitEthernet0/1', 'FastEthernet0/3'))
-      .toBe('Gi0/1 ⟷ Fa0/3');
+describe('le texte de la pastille est le nom du port, abrege', () => {
+  it('abrege les familles que le simulateur connait', () => {
+    expect(abbreviateInterfaceName('GigabitEthernet0/1')).toBe('Gi0/1');
+    expect(abbreviateInterfaceName('FastEthernet0/3')).toBe('Fa0/3');
   });
 
   it('laisse tel quel un nom qu il ne sait pas abreger', () => {
-    expect(linkSummaryLabel('port1', 'lan2')).toBe('port1 ⟷ lan2');
+    expect(abbreviateInterfaceName('port1')).toBe('port1');
+    expect(abbreviateInterfaceName('eth0')).toBe('eth0');
   });
 });

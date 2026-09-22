@@ -61,6 +61,10 @@ describe('connection-line-logic', () => {
   });
 
   describe('cables leaving one device by the same face', () => {
+    const centres = (count: number) => [
+      { x: 100, y: 100 },
+      ...Array.from({ length: count }, (_, i) => ({ x: 500, y: 60 + i * 40 })),
+    ];
     const face = (count: number) => Array.from({ length: count }, (_, i) => ({
       id: `c${i}`,
       sourceDeviceId: 'A',
@@ -72,13 +76,13 @@ describe('connection-line-logic', () => {
     }));
 
     it('gives a lone cable no lane at all', () => {
-      const routes = computeCableRoutes(face(1));
+      const routes = computeCableRoutes(face(1), centres(1));
       expect(routes.get('c0')!.sourceLane).toBe(0);
       expect(routes.get('c0')!.targetLane).toBe(0);
     });
 
     it('centres the fan on the direct route', () => {
-      const routes = computeCableRoutes(face(4));
+      const routes = computeCableRoutes(face(4), centres(4));
       const lanes = [0, 1, 2, 3].map(i => routes.get(`c${i}`)!.sourceLane);
       expect(lanes[0]).toBeLessThan(0);
       expect(lanes[3]).toBeGreaterThan(0);
@@ -86,13 +90,13 @@ describe('connection-line-logic', () => {
     });
 
     it('separates every cable of the fan on the wire', () => {
-      const routes = computeCableRoutes(face(4));
+      const routes = computeCableRoutes(face(4), centres(4));
       const ys = [0, 1, 2, 3].map(i => routes.get(`c${i}`)!.points[0].y);
       expect(new Set(ys).size).toBe(4);
     });
 
     it('keeps a wide fan on the card rather than off it', () => {
-      const routes = computeCableRoutes(face(8));
+      const routes = computeCableRoutes(face(8), centres(8));
       for (let i = 0; i < 8; i++) {
         expect(Math.abs(routes.get(`c${i}`)!.sourceLane)).toBeLessThanOrEqual(NODE_HALF_HEIGHT);
       }

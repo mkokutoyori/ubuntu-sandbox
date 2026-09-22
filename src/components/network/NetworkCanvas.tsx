@@ -6,7 +6,7 @@ import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
 import { ZoomIn, ZoomOut, Maximize2, X } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { NetworkDevice } from './NetworkDevice';
-import { ConnectionLine } from './ConnectionLine';
+import { ConnectionLine, ConnectionLabel } from './ConnectionLine';
 import { computeCableRoutes } from './connection-line-logic';
 import { PacketAnimation, PacketLegend } from './PacketAnimation';
 import { useActivePackets } from '@/react/hooks/useActivePackets';
@@ -68,6 +68,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
         targetInterface: connection.targetInterfaceId,
       }];
     }),
+    devices.map(device => ({ x: device.x, y: device.y })),
   ), [connections, devices]);
 
   const prevConnectionCount = useRef(connections.length);
@@ -361,6 +362,25 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
               onOpenTerminal={onOpenTerminal}
             />
           ))}
+
+          <svg
+            className="absolute inset-0 w-full h-full pointer-events-none"
+            style={{ overflow: 'visible' }}
+          >
+            {connections.map(connection => {
+              const route = cableRoutes.get(connection.id);
+              if (!route) return null;
+              return (
+                <g key={connection.id} className="pointer-events-auto">
+                  <ConnectionLabel
+                    connection={connection}
+                    devices={devices}
+                    route={route}
+                  />
+                </g>
+              );
+            })}
+          </svg>
         </div>
       </div>
 

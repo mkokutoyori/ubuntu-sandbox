@@ -1,50 +1,44 @@
 /**
- * UN CABLE SORT PAR SON PROPRE PORT, ET PORTE UNE SEULE ETIQUETTE.
+ * UN CABLE SORT PAR SON PROPRE PORT, ET CHAQUE BOUT PORTE SON NOM.
  *
- * LE DEFAUT MESURE, sur capture Playwright : un routeur, trois machines
- * posees cote a cote dessous, chacune cablee au routeur. Les trois
- * cables quittent le routeur par le MEME point -- `computeOrthogonalPoints`
- * ancre la sortie au centre du bord de la carte sans regarder qui
- * d'autre sort par la -- et se superposent sur toute la descente. Pire
- * que de l'encombrement : les trois pastilles `Gi0/0`, `Gi0/1`, `Gi0/2`
- * sont empilees au pixel pres, la derniere rendue masque les deux
- * autres, et le lecteur voit UN cable etiquete `Gi0/2`. La toile ment.
+ * LE DEFAUT D'ORIGINE, releve sur capture Playwright : un routeur, trois
+ * machines posees cote a cote dessous, chacune cablee au routeur. Les
+ * trois cables quittaient le routeur par le MEME point -- l'ancrage se
+ * faisait au centre du bord de la carte sans regarder qui d'autre
+ * sortait par la -- et se superposaient sur toute la descente. Les trois
+ * etiquettes tombaient au pixel pres, la derniere rendue masquait les
+ * deux autres, et le lecteur voyait UN cable etiquete `Gi0/2`. La toile
+ * ne se contentait pas d'etre chargee, elle mentait.
  *
- * Le faisceau ne reglait qu'un cas particulier : plusieurs cables entre
- * la MEME paire d'equipements. Trois cables vers trois machines
- * differentes ne forment aucune paire commune, donc aucune voie.
- *
- * CE QUI EST RETENU, et les deux tiennent ensemble :
+ * CE QUI EST RETENU :
  *
  *  1. L'EVENTAIL PAR FACE. Ce qui doit etre ecarte, ce sont les cables
  *     qui quittent le MEME equipement par la MEME face, quelle que soit
  *     leur destination. Le faisceau meme-paire en devient un cas
- *     particulier -- un seul mecanisme au lieu de deux. Les cables
- *     d'une face sont ordonnes par la position du bout OPPOSE, ce qui
- *     leur evite de se croiser, et l'evasement est borne par la carte :
- *     un port est SUR l'equipement, pas a cote.
+ *     particulier -- un seul mecanisme au lieu de deux. Les cables d'une
+ *     face sont ordonnes par la position du bout OPPOSE, ce qui leur
+ *     evite de se croiser, et l'ecart se resserre quand la face se
+ *     remplit pour que l'evasement reste borne : un port est SUR
+ *     l'equipement, pas a cote.
  *
- *  2. UNE SEULE PASTILLE, LA OU LES CABLES SE SEPARENT. Deux etiquettes
- *     par cable, posees a distance fixe de chaque carte, se rencontrent
- *     precisement la ou les cables se rejoignent. Une seule pastille par
- *     cable, nommant ses DEUX interfaces, posee au point du trace le
- *     plus LOIN de tous les autres cables et de toutes les etiquettes
- *     deja posees : le placement devient une consequence du dessin au
- *     lieu d'une constante.
+ *  2. DEUX PASTILLES PAR CABLE, CHACUNE AU PLUS PRES DE SON INTERFACE.
+ *     Une pastille nomme UN port, pas un lien : elle n'a donc aucun
+ *     ordre de lecture a convenir, elle designe le bout qu'elle touche.
+ *     Ce qui se mesure est la proximite -- chaque pastille est plus
+ *     proche de SON bout que de l'autre -- et le fait qu'elle ne
+ *     s'eloigne pas plus que necessaire.
  *
- *  3. LA PASTILLE SE COUCHE LE LONG DU CABLE. Sur un segment vertical
- *     elle pivote d'un quart de tour et se lit de haut en bas ; sur un
- *     segment horizontal elle reste a plat. Une etiquette posee en
- *     travers de son fil laisse encore le lecteur choisir a quel fil
- *     elle appartient ; posee DANS son axe, elle ne le laisse plus.
+ *  3. UNE PASTILLE SE COUCHE LE LONG DU FIL, jamais en travers. Elle se
+ *     pose la ou un segment A LA PLACE de la porter et prend l'axe de CE
+ *     segment ; quand aucun segment ne le peut, elle prend l'axe du plus
+ *     long et deborde dans l'axe du cable.
  *
- *  4. L'ORDRE DES DEUX NOMS VIENT DE LA POSITION DES EQUIPEMENTS, pas
- *     d'une convention. Sur une pastille a plat, le nom ecrit en
- *     premier est l'interface de l'equipement le plus a GAUCHE ; sur
- *     une pastille couchee, celle de l'equipement le plus HAUT. Le
- *     corollaire est ce qui se mesure : cabler A vers B ou B vers A
- *     donne la MEME etiquette, parce que le dessin ne depend pas de
- *     l'ordre dans lequel l'operateur a clique.
+ *  4. ELLE NE CACHE RIEN. Les cartes, les etiquettes de nom qui pendent
+ *     dessous, les autres cables et les pastilles deja posees sont des
+ *     OBSTACLES : la position retenue est la plus proche de son
+ *     interface PARMI CELLES QUI DEGAGENT. Le rendu complete la regle en
+ *     posant les pastilles dans une couche au-dessus des equipements --
+ *     `canvas-cable-labels.spec.ts` le mesure dans le DOM.
  *
  * Sonde ecrite AVANT le correctif.
  */
@@ -53,10 +47,15 @@ import {
   computeCableRoutes,
   distanceToPolyline,
   interfaceTagWidth,
+  pointAlongPolyline,
   TAG_HEIGHT,
   NODE_HALF_WIDTH,
+  NODE_HALF_HEIGHT,
+  NODE_CENTER_OFFSET_Y,
+  DEVICE_BADGE_BOTTOM,
   type RoutedLink,
   type CableRoute,
+  type LabelPlacement,
 } from '@/components/network/connection-line-logic';
 
 const ROUTEUR = { x: 340, y: 120 };
@@ -82,23 +81,39 @@ const ETOILE: RoutedLink[] = [
   },
 ];
 
-function routesOf(links: RoutedLink[]): CableRoute[] {
-  const routes = computeCableRoutes(links);
+function centresOf(links: RoutedLink[]): { x: number; y: number }[] {
+  const seen = new Map<string, { x: number; y: number }>();
+  for (const link of links) {
+    seen.set(link.sourceDeviceId, link.source);
+    seen.set(link.targetDeviceId, link.target);
+  }
+  return [...seen.values()];
+}
+
+function routesOf(links: RoutedLink[], devices = centresOf(links)): CableRoute[] {
+  const routes = computeCableRoutes(links, devices);
   return links.map(link => routes.get(link.id)!);
 }
 
-function halfExtents(route: CableRoute): { x: number; y: number } {
-  const along = interfaceTagWidth(route.labelText) / 2;
-  const across = TAG_HEIGHT / 2;
-  return route.labelVertical ? { x: across, y: along } : { x: along, y: across };
+function everyLabel(routes: CableRoute[]): LabelPlacement[] {
+  return routes.flatMap(route => [route.sourceLabel, route.targetLabel]);
 }
 
-function boxesOverlap(a: CableRoute, b: CableRoute): boolean {
+function halfExtents(label: LabelPlacement): { x: number; y: number } {
+  const along = interfaceTagWidth(label.text) / 2;
+  const across = TAG_HEIGHT / 2;
+  return label.vertical ? { x: across, y: along } : { x: along, y: across };
+}
+
+function overlap(a: LabelPlacement, b: LabelPlacement): boolean {
   const halfA = halfExtents(a);
   const halfB = halfExtents(b);
-  return Math.abs(a.label.x - b.label.x) < halfA.x + halfB.x
-    && Math.abs(a.label.y - b.label.y) < halfA.y + halfB.y;
+  return Math.abs(a.at.x - b.at.x) < halfA.x + halfB.x
+    && Math.abs(a.at.y - b.at.y) < halfA.y + halfB.y;
 }
+
+const distance = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+  Math.hypot(a.x - b.x, a.y - b.y);
 
 describe('trois machines cote a cote sous un seul routeur', () => {
   it('les trois cables quittent le routeur par trois points DISTINCTS', () => {
@@ -118,55 +133,60 @@ describe('trois machines cote a cote sous un seul routeur', () => {
     expect(b.points[0].x).toBeLessThan(c.points[0].x);
   });
 
-  it('chaque cable porte UNE pastille qui nomme ses DEUX interfaces', () => {
+  it('chaque bout porte le nom de SON interface, abrege', () => {
     const [a, b, c] = routesOf(ETOILE);
-    expect(a.labelText).toContain('Gi0/0');
-    expect(a.labelText).toContain('eth0');
-    expect(b.labelText).toContain('Gi0/1');
-    expect(c.labelText).toContain('Gi0/2');
+    expect(a.sourceLabel.text).toBe('Gi0/0');
+    expect(a.targetLabel.text).toBe('eth0');
+    expect(b.sourceLabel.text).toBe('Gi0/1');
+    expect(c.sourceLabel.text).toBe('Gi0/2');
   });
 
-  it('les trois pastilles ne se recouvrent pas', () => {
-    const routes = routesOf(ETOILE);
-    for (let i = 0; i < routes.length; i++) {
-      for (let j = i + 1; j < routes.length; j++) {
-        expect(boxesOverlap(routes[i], routes[j])).toBe(false);
+  it('les six pastilles ne se recouvrent pas', () => {
+    const labels = everyLabel(routesOf(ETOILE));
+    for (let i = 0; i < labels.length; i++) {
+      for (let j = i + 1; j < labels.length; j++) {
+        expect(overlap(labels[i], labels[j]), `${i} et ${j}`).toBe(false);
       }
     }
   });
 
-  it('chaque pastille est posee LOIN des autres cables', () => {
-    const routes = routesOf(ETOILE);
-    routes.forEach((route, index) => {
-      routes.forEach((other, otherIndex) => {
-        if (index === otherIndex) return;
-        expect(distanceToPolyline(route.label, other.points))
-          .toBeGreaterThanOrEqual(TAG_HEIGHT);
-      });
-    });
-  });
-
-  it('tout en restant posee sur SON propre cable', () => {
+  it('chaque pastille reste posee sur SON propre cable', () => {
     for (const route of routesOf(ETOILE)) {
-      expect(distanceToPolyline(route.label, route.points)).toBeLessThan(0.5);
-    }
-  });
-
-  it('et jamais a cheval sur la carte : la pastille tient ENTIERE sur le fil', () => {
-    for (const route of routesOf(ETOILE)) {
-      const half = interfaceTagWidth(route.labelText) / 2;
-      const depuisLaSortie = Math.hypot(
-        route.label.x - route.points[0].x, route.label.y - route.points[0].y);
-      const jusqueALArrivee = Math.hypot(
-        route.label.x - route.points[route.points.length - 1].x,
-        route.label.y - route.points[route.points.length - 1].y);
-      expect(depuisLaSortie).toBeGreaterThan(half);
-      expect(jusqueALArrivee).toBeGreaterThan(half);
+      expect(distanceToPolyline(route.sourceLabel.at, route.points)).toBeLessThan(0.5);
+      expect(distanceToPolyline(route.targetLabel.at, route.points)).toBeLessThan(0.5);
     }
   });
 });
 
-describe('la pastille se couche le long de son cable', () => {
+describe('chaque pastille se tient au plus pres de SON interface', () => {
+  it('la pastille de sortie est plus pres de la sortie que de l arrivee', () => {
+    for (const route of routesOf(ETOILE)) {
+      const depart = route.points[0];
+      const arrivee = route.points[route.points.length - 1];
+      expect(distance(route.sourceLabel.at, depart))
+        .toBeLessThan(distance(route.sourceLabel.at, arrivee));
+    }
+  });
+
+  it('et la pastille d arrivee, plus pres de l arrivee', () => {
+    for (const route of routesOf(ETOILE)) {
+      const depart = route.points[0];
+      const arrivee = route.points[route.points.length - 1];
+      expect(distance(route.targetLabel.at, arrivee))
+        .toBeLessThan(distance(route.targetLabel.at, depart));
+    }
+  });
+
+  it('elle ne s eloigne pas plus que necessaire du bord de la carte', () => {
+    for (const route of routesOf(ETOILE)) {
+      const demi = interfaceTagWidth(route.sourceLabel.text) / 2;
+      expect(distance(route.sourceLabel.at, route.points[0]))
+        .toBeLessThan(demi + NODE_HALF_WIDTH * 2);
+    }
+  });
+});
+
+describe('une pastille se couche le long de son cable', () => {
   const lien = (
     source: { x: number; y: number }, target: { x: number; y: number },
   ): RoutedLink => ({
@@ -174,58 +194,87 @@ describe('la pastille se couche le long de son cable', () => {
     sourceInterface: 'GigabitEthernet0/0', targetInterface: 'eth0',
   });
 
-  it('sur un cable qui descend, elle pivote d un quart de tour', () => {
-    const [route] = routesOf([lien({ x: 200, y: 100 }, { x: 200, y: 500 })]);
-    expect(route.labelVertical).toBe(true);
+  it('sur un cable qui descend, les deux pastilles pivotent', () => {
+    const [route] = routesOf([lien({ x: 200, y: 100 }, { x: 200, y: 600 })]);
+    expect(route.sourceLabel.vertical).toBe(true);
+    expect(route.targetLabel.vertical).toBe(true);
   });
 
-  it('sur un cable qui court a plat, elle reste horizontale', () => {
-    const [route] = routesOf([lien({ x: 100, y: 200 }, { x: 600, y: 200 })]);
-    expect(route.labelVertical).toBe(false);
+  it('sur un cable qui court a plat, elles restent horizontales', () => {
+    const [route] = routesOf([lien({ x: 100, y: 200 }, { x: 700, y: 200 })]);
+    expect(route.sourceLabel.vertical).toBe(false);
+    expect(route.targetLabel.vertical).toBe(false);
+  });
+
+  it('un cable coude couche chaque pastille selon SON bout', () => {
+    const [route] = routesOf([lien({ x: 100, y: 200 }, { x: 700, y: 560 })]);
+    const last = route.points.length - 1;
+    const axeDuBout = (label: LabelPlacement, from: number, to: number) => {
+      const a = route.points[from];
+      const b = route.points[to];
+      return (Math.abs(b.y - a.y) > Math.abs(b.x - a.x)) === label.vertical;
+    };
+    expect(axeDuBout(route.sourceLabel, 0, 1)).toBe(true);
+    expect(axeDuBout(route.targetLabel, last, last - 1)).toBe(true);
+  });
+
+  it('meme sur un cable trop court, elle ne se met pas EN TRAVERS', () => {
+    const RAPPROCHES: RoutedLink[] = [
+      {
+        id: 'court', sourceDeviceId: 'R1', targetDeviceId: 'PC1',
+        source: { x: 150, y: 150 }, target: { x: 245, y: 150 },
+        sourceInterface: 'GigabitEthernet0/0', targetInterface: 'eth0',
+      },
+      {
+        id: 'long', sourceDeviceId: 'R1', targetDeviceId: 'SW1',
+        source: { x: 150, y: 150 }, target: { x: 420, y: 200 },
+        sourceInterface: 'GigabitEthernet0/2', targetInterface: 'FastEthernet0/1',
+      },
+    ];
+    const [court] = routesOf(RAPPROCHES);
+    expect(court.sourceLabel.vertical).toBe(false);
+    expect(court.targetLabel.vertical).toBe(false);
   });
 });
 
-describe('l ordre des deux noms vient de la position des equipements', () => {
-  const lien = (
-    id: string,
-    source: { x: number; y: number }, target: { x: number; y: number },
-  ): RoutedLink => ({
-    id, sourceDeviceId: 'A', targetDeviceId: 'B', source, target,
+describe('une pastille ne cache rien', () => {
+  const COUDE: RoutedLink[] = [{
+    id: 'coude', sourceDeviceId: 'A', targetDeviceId: 'C',
+    source: { x: 100, y: 200 }, target: { x: 700, y: 400 },
     sourceInterface: 'GigabitEthernet0/0', targetInterface: 'eth0',
+  }];
+
+  const dansLaBoite = (at: { x: number; y: number }, centre: { x: number; y: number }) => {
+    const carte = { x: centre.x, y: centre.y + NODE_CENTER_OFFSET_Y };
+    return Math.abs(at.x - carte.x) < NODE_HALF_WIDTH
+      && at.y > carte.y - NODE_HALF_HEIGHT
+      && at.y < carte.y + DEVICE_BADGE_BOTTOM;
+  };
+
+  it('un cable qui passe sous un equipement tiers n y pose pas de pastille', () => {
+    const geneur = { x: 400, y: 300 };
+    const [route] = routesOf(COUDE, [{ x: 100, y: 200 }, geneur, { x: 700, y: 400 }]);
+    expect(dansLaBoite(route.sourceLabel.at, geneur)).toBe(false);
+    expect(dansLaBoite(route.targetLabel.at, geneur)).toBe(false);
   });
 
-  const lit = (route: CableRoute) =>
-    route.labelText.indexOf('Gi0/0') < route.labelText.indexOf('eth0')
-      ? 'Gi0/0 en premier' : 'eth0 en premier';
-
-  it('a plat, l equipement le plus a GAUCHE est nomme en premier', () => {
-    const [versLaDroite] = routesOf([lien('x', { x: 100, y: 200 }, { x: 600, y: 200 })]);
-    expect(lit(versLaDroite)).toBe('Gi0/0 en premier');
-    const [versLaGauche] = routesOf([lien('x', { x: 600, y: 200 }, { x: 100, y: 200 })]);
-    expect(lit(versLaGauche)).toBe('eth0 en premier');
+  it('ni sous l etiquette de nom, qui pend SOUS la carte', () => {
+    const geneur = { x: 400, y: 258 };
+    const [route] = routesOf(COUDE, [{ x: 100, y: 200 }, geneur, { x: 700, y: 400 }]);
+    expect(dansLaBoite(route.sourceLabel.at, geneur)).toBe(false);
+    expect(dansLaBoite(route.targetLabel.at, geneur)).toBe(false);
   });
 
-  it('couchee, l equipement le plus HAUT est nomme en premier', () => {
-    const [versLeBas] = routesOf([lien('x', { x: 200, y: 100 }, { x: 200, y: 600 })]);
-    expect(lit(versLeBas)).toBe('Gi0/0 en premier');
-    const [versLeHaut] = routesOf([lien('x', { x: 200, y: 600 }, { x: 200, y: 100 })]);
-    expect(lit(versLeHaut)).toBe('eth0 en premier');
+  it('mais elles restent posees sur leur cable', () => {
+    const geneur = { x: 400, y: 300 };
+    const [route] = routesOf(COUDE, [{ x: 100, y: 200 }, geneur, { x: 700, y: 400 }]);
+    expect(distanceToPolyline(route.sourceLabel.at, route.points)).toBeLessThan(0.5);
+    expect(distanceToPolyline(route.targetLabel.at, route.points)).toBeLessThan(0.5);
   });
 
-  it('cabler A vers B ou B vers A donne la MEME etiquette', () => {
-    const gauche = { x: 120, y: 240 };
-    const droite = { x: 620, y: 240 };
-    const [aVersB] = routesOf([{
-      id: 'x', sourceDeviceId: 'A', targetDeviceId: 'B',
-      source: gauche, target: droite,
-      sourceInterface: 'GigabitEthernet0/0', targetInterface: 'eth0',
-    }]);
-    const [bVersA] = routesOf([{
-      id: 'x', sourceDeviceId: 'B', targetDeviceId: 'A',
-      source: droite, target: gauche,
-      sourceInterface: 'eth0', targetInterface: 'GigabitEthernet0/0',
-    }]);
-    expect(bVersA.labelText).toBe(aVersB.labelText);
+  it('et les deux pastilles d un meme cable ne se rencontrent jamais', () => {
+    const [route] = routesOf(COUDE);
+    expect(overlap(route.sourceLabel, route.targetLabel)).toBe(false);
   });
 });
 
@@ -259,9 +308,13 @@ describe('deux cables entre les memes equipements', () => {
     expect(sortie).not.toBe(0);
   });
 
-  it('et leurs deux pastilles ne se recouvrent pas non plus', () => {
-    const [a, b] = routesOf(PAIRE);
-    expect(boxesOverlap(a, b)).toBe(false);
+  it('et leurs quatre pastilles ne se recouvrent pas', () => {
+    const labels = everyLabel(routesOf(PAIRE));
+    for (let i = 0; i < labels.length; i++) {
+      for (let j = i + 1; j < labels.length; j++) {
+        expect(overlap(labels[i], labels[j]), `${i} et ${j}`).toBe(false);
+      }
+    }
   });
 });
 
@@ -283,5 +336,9 @@ describe('la distance d un point a un trace', () => {
 
   it('retient le segment le PLUS PROCHE, pas le premier', () => {
     expect(distanceToPolyline({ x: 90, y: 90 }, TRACE)).toBeCloseTo(10, 6);
+  });
+
+  it('et un point pris sur le trace y reste', () => {
+    expect(distanceToPolyline(pointAlongPolyline(TRACE, 0.5), TRACE)).toBeCloseTo(0, 6);
   });
 });

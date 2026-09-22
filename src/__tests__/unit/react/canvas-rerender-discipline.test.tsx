@@ -97,8 +97,10 @@ describe('ConnectionLine — memoized against unrelated parent re-renders', () =
     // didn't), unlike React.Profiler, which still fires once per commit
     // even for a subtree that bailed out below it.
     const pathSpy = vi.spyOn(connectionLineLogic, 'computeEndpointAnchors');
-    const route = connectionLineLogic.computeCableRoutes([routedLinkOf(connection, devices)])
-      .get(connection.id)!;
+    const route = connectionLineLogic.computeCableRoutes(
+      [routedLinkOf(connection, devices)],
+      devices.map(d => ({ x: d.x, y: d.y })),
+    ).get(connection.id)!;
 
     function Harness() {
       const [, setTick] = useState(0);
@@ -132,6 +134,7 @@ describe('ConnectionLine — memoized against unrelated parent re-renders', () =
     const pathSpy = vi.spyOn(connectionLineLogic, 'computeEndpointAnchors');
     const route = connectionLineLogic.computeCableRoutes(
       [routedLinkOf(useNetworkStore.getState().connections[0], devices)],
+      devices.map(d => ({ x: d.x, y: d.y })),
     ).get(useNetworkStore.getState().connections[0].id)!;
     function Harness({ connection }: { connection: ReturnType<typeof useNetworkStore.getState>['connections'][number] }) {
       return (

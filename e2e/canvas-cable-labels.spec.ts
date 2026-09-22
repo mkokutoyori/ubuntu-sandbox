@@ -10,14 +10,19 @@
  * `Gi0/2`. La toile ne se contentait pas d'etre chargee, elle mentait.
  *
  * Ce fichier verifie ce que la geometrie pure ne peut pas attester : que
- * le DOM rendu porte bien une etiquette par cable, qu'elles sont
- * toutes VISIBLES, qu'aucune n'en recouvre une autre, et que chacune
- * nomme les deux bouts de SON cable. Les captures deposees dans
- * `__shots__` servent a la relecture humaine.
+ * le DOM rendu porte bien DEUX etiquettes par cable -- une par
+ * interface --, qu'elles sont toutes VISIBLES, qu'aucune n'en recouvre
+ * une autre, et que chacune nomme le port qu'elle touche. Les captures
+ * deposees dans `__shots__` servent a la relecture humaine.
  *
  * Le labo est seme par le store, comme les autres specs de la toile ;
- * ce qui est mesure ici est le rendu, pas le gestee de cablage, que
+ * ce qui est mesure ici est le rendu, pas le geste de cablage, que
  * `canvas-cable-save-flow.spec.ts` couvre deja.
+ *
+ * Les pastilles vivent dans une COUCHE SVG posee APRES les equipements :
+ * un cable passe derriere une carte, jamais son etiquette. C'est pour
+ * cela qu'elles s'ancrent sur `data-label-for` et non sur le groupe du
+ * cable, qui reste dans la couche du dessous.
  */
 import { test, expect, type Page } from '@playwright/test';
 
@@ -83,8 +88,12 @@ async function seedParallelPair(page: Page): Promise<string[]> {
   });
 }
 
-function labelOf(page: Page, connectionId: string) {
-  return page.locator(`g[data-connection-id="${connectionId}"] g[data-port-label]`);
+function labelsOf(page: Page, connectionId: string) {
+  return page.locator(`g[data-label-for="${connectionId}"] g[data-port-label]`);
+}
+
+function labelOf(page: Page, connectionId: string, end: 0 | 1 = 0) {
+  return labelsOf(page, connectionId).nth(end);
 }
 
 async function exitPointOf(page: Page, connectionId: string): Promise<string> {
@@ -111,10 +120,12 @@ test('three machines side by side under one router each get their own port and t
 
   const boxes = [];
   for (const id of connectionIds) {
-    const label = labelOf(page, id);
-    await expect(label).toHaveCount(1);
-    await expect(label).toBeVisible();
-    boxes.push((await label.boundingBox())!);
+    const labels = labelsOf(page, id);
+    await expect(labels).toHaveCount(2);
+    for (const end of [0, 1] as const) {
+      await expect(labelOf(page, id, end)).toBeVisible();
+      boxes.push((await labelOf(page, id, end).boundingBox())!);
+    }
   }
 
   for (let i = 0; i < boxes.length; i++) {
@@ -134,17 +145,19 @@ test('three machines side by side under one router each get their own port and t
   });
 });
 
-test('each label names both ends of its own cable', async ({ page }) => {
+test('each end carries the name of its own interface', async ({ page }) => {
   const { connectionIds } = await seedStar(page);
 
-  const texts = await Promise.all(
-    connectionIds.map(id => labelOf(page, id).textContent()));
+  const pairs = await Promise.all(connectionIds.map(async id => [
+    await labelOf(page, id, 0).textContent(),
+    await labelOf(page, id, 1).textContent(),
+  ]));
 
-  expect(texts).toHaveLength(3);
-  expect(new Set(texts).size).toBe(3);
-  for (const text of texts) {
-    expect(text).toMatch(/Gi0\/\d/);
-    expect(text).toContain('eth0');
+  expect(pairs).toHaveLength(3);
+  expect(new Set(pairs.map(pair => pair[0])).size).toBe(3);
+  for (const [atRouter, atMachine] of pairs) {
+    expect(atRouter).toMatch(/^Gi0\/\d$/);
+    expect(atMachine).toBe('eth0');
   }
 });
 
@@ -155,11 +168,21 @@ test('two cables between the same pair stay apart at both ends and label each la
   const exits = await Promise.all(connectionIds.map(id => exitPointOf(page, id)));
   expect(new Set(exits).size).toBe(2);
 
-  const first = (await labelOf(page, connectionIds[0]).boundingBox())!;
-  const second = (await labelOf(page, connectionIds[1]).boundingBox())!;
-  const apart = first.x + first.width <= second.x || second.x + second.width <= first.x
-    || first.y + first.height <= second.y || second.y + second.height <= first.y;
-  expect(apart).toBe(true);
+  const boxes = [];
+  for (const id of connectionIds) {
+    for (const end of [0, 1] as const) {
+      boxes.push((await labelOf(page, id, end).boundingBox())!);
+    }
+  }
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i];
+      const b = boxes[j];
+      const apart = a.x + a.width <= b.x || b.x + b.width <= a.x
+        || a.y + a.height <= b.y || b.y + b.height <= a.y;
+      expect(apart, `labels ${i} and ${j} overlap`).toBe(true);
+    }
+  }
 
   await settle(page);
   await page.screenshot({
@@ -186,5 +209,80 @@ test('selecting a cable reveals its delete affordance beside its own label', asy
   await page.screenshot({
     path: `${SHOTS}/32-cable-selectionne.png`,
     clip: { x: 520, y: 150, width: 520, height: 400 },
+  });
+});
+
+test('a label a device card overlaps is still the thing on top', async ({ page }) => {
+  const connectionId = await page.evaluate(() => {
+    const store = (window as unknown as {
+      __networkStore: { getState: () => Record<string, (...args: unknown[]) => unknown> };
+    }).__networkStore;
+    const state = () => store.getState();
+    const router = state().addDevice('router-cisco', 300, 220) as {
+      id: string; interfaces: Array<{ id: string }>;
+    };
+    const pc = state().addDevice('linux-pc', 300, 335) as {
+      id: string; interfaces: Array<{ id: string }>;
+    };
+    return (state().addConnection(
+      router.id, router.interfaces[0].id,
+      pc.id, pc.interfaces[0].id, 'ethernet',
+    ) as { id: string }).id;
+  });
+
+  const label = labelOf(page, connectionId);
+  await expect(label).toBeVisible();
+  const box = (await label.boundingBox())!;
+
+  const onTop = await page.evaluate(({ x, y }) => {
+    const hit = document.elementFromPoint(x, y);
+    return !!hit?.closest('[data-port-label]');
+  }, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
+
+  expect(onTop).toBe(true);
+
+  await settle(page);
+  await page.screenshot({
+    path: `${SHOTS}/33-pastille-au-dessus.png`,
+    clip: { x: 520, y: 180, width: 380, height: 300 },
+  });
+});
+
+test('a label lies along its cable, never across it', async ({ page }) => {
+  const ids = await page.evaluate(() => {
+    const store = (window as unknown as {
+      __networkStore: { getState: () => Record<string, (...args: unknown[]) => unknown> };
+    }).__networkStore;
+    const state = () => store.getState();
+    const router = state().addDevice('router-cisco', 220, 250) as {
+      id: string; interfaces: Array<{ id: string }>;
+    };
+    const near = state().addDevice('linux-pc', 315, 250) as {
+      id: string; interfaces: Array<{ id: string }>;
+    };
+    const below = state().addDevice('linux-pc', 220, 420) as {
+      id: string; interfaces: Array<{ id: string }>;
+    };
+    return {
+      flat: (state().addConnection(
+        router.id, router.interfaces[0].id,
+        near.id, near.interfaces[0].id, 'ethernet') as { id: string }).id,
+      upright: (state().addConnection(
+        router.id, router.interfaces[1].id,
+        below.id, below.interfaces[0].id, 'ethernet') as { id: string }).id,
+    };
+  });
+
+  for (const end of [0, 1] as const) {
+    const flat = (await labelOf(page, ids.flat, end).boundingBox())!;
+    expect(flat.width).toBeGreaterThan(flat.height);
+    const upright = (await labelOf(page, ids.upright, end).boundingBox())!;
+    expect(upright.height).toBeGreaterThan(upright.width);
+  }
+
+  await settle(page);
+  await page.screenshot({
+    path: `${SHOTS}/34-pastille-dans-l-axe.png`,
+    clip: { x: 520, y: 200, width: 420, height: 340 },
   });
 });

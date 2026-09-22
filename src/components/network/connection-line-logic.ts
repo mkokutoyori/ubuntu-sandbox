@@ -30,10 +30,15 @@ export interface RoutedLink {
   targetInterface: string;
 }
 
+export interface LabelPlacement {
+  at: Point;
+  text: string;
+  vertical: boolean;
+}
+
 export interface CableRoute extends CableLanes, PathResult {
-  label: Point;
-  labelText: string;
-  labelVertical: boolean;
+  sourceLabel: LabelPlacement;
+  targetLabel: LabelPlacement;
 }
 
 export const NODE_HALF_WIDTH = 30;
@@ -294,7 +299,6 @@ export const TAG_CHAR_WIDTH = 5.42;
 export const TAG_PADDING = 7;
 export const TAG_MIN_WIDTH = 22;
 export const TAG_HEIGHT = 14;
-export const LINK_SUMMARY_SEPARATOR = '\u27f7';
 
 export interface EndpointAnchor {
   point: Point;
@@ -344,11 +348,6 @@ export function interfaceTagWidth(label: string): number {
   return Math.max(TAG_MIN_WIDTH, label.length * TAG_CHAR_WIDTH + TAG_PADDING * 2);
 }
 
-export function linkSummaryLabel(sourceName: string, targetName: string): string {
-  return `${abbreviateInterfaceName(sourceName)} ${LINK_SUMMARY_SEPARATOR}`
-    + ` ${abbreviateInterfaceName(targetName)}`;
-}
-
 const INTERFACE_ABBREVIATIONS: ReadonlyArray<readonly [RegExp, string]> = [
   [/^TenGigabitEthernet/i, 'Te'],
   [/^GigabitEthernet(\d+\/\d+\/\d+)$/i, 'GE$1'],
@@ -371,8 +370,11 @@ export function abbreviateInterfaceName(name: string): string {
 }
 
 export const LABEL_END_MARGIN = 10;
+export const DEVICE_BADGE_TOP = 33;
+export const DEVICE_BADGE_BOTTOM = 51;
+export const DEVICE_BADGE_HALF_WIDTH = 40;
 export const LABEL_SAMPLES = 25;
-export const LABEL_CLEARANCE_ENOUGH = 60;
+export const LABEL_CLEARANCE_MIN = 2;
 
 interface LabelBox {
   at: Point;
@@ -387,22 +389,52 @@ function boxClearance(box: LabelBox, other: LabelBox): number {
   );
 }
 
-function runsVerticallyAt(points: ReadonlyArray<Point>, at: Point): boolean {
-  let best = Infinity;
-  let vertical = false;
+interface LabelRange {
+  from: number;
+  to: number;
+  vertical: boolean;
+}
+
+function segmentIsVertical(from: Point, to: Point): boolean {
+  return Math.abs(to.y - from.y) > Math.abs(to.x - from.x);
+}
+
+function labelRanges(points: ReadonlyArray<Point>, halfLength: number): LabelRange[] {
+  const total = polylineLength(points);
+  const whole = total;
+  const first = LABEL_END_MARGIN + halfLength;
+  const last = total - LABEL_END_MARGIN - halfLength;
+  const ranges: LabelRange[] = [];
+  let at = 0;
   for (let i = 1; i < points.length; i++) {
-    const distance = distanceToPolyline(at, [points[i - 1], points[i]]);
-    if (distance < best) {
-      best = distance;
-      vertical = Math.abs(points[i].y - points[i - 1].y)
-        > Math.abs(points[i].x - points[i - 1].x);
+    const length = segmentLength(points[i - 1], points[i]);
+    const from = Math.max(first, at + halfLength);
+    const to = Math.min(last, at + length - halfLength);
+    if (to >= from) {
+      ranges.push({ from, to, vertical: segmentIsVertical(points[i - 1], points[i]) });
+    }
+    at += length;
+  }
+  if (ranges.length === 0) {
+    return [{ from: 0, to: whole, vertical: longestSegmentIsVertical(points) }];
+  }
+  return ranges;
+}
+
+function longestSegmentIsVertical(points: ReadonlyArray<Point>): boolean {
+  let vertical = false;
+  let bestLength = -1;
+  for (let i = 1; i < points.length; i++) {
+    const length = segmentLength(points[i - 1], points[i]);
+    if (length > bestLength) {
+      bestLength = length;
+      vertical = segmentIsVertical(points[i - 1], points[i]);
     }
   }
   return vertical;
 }
 
-function labelBoxAt(points: ReadonlyArray<Point>, at: Point, halfLength: number): LabelBox {
-  const vertical = runsVerticallyAt(points, at);
+function boxAlong(at: Point, vertical: boolean, halfLength: number): LabelBox {
   return {
     at,
     halfWidth: vertical ? TAG_HEIGHT / 2 : halfLength,
@@ -410,52 +442,72 @@ function labelBoxAt(points: ReadonlyArray<Point>, at: Point, halfLength: number)
   };
 }
 
-function placeLabel(
-  points: ReadonlyArray<Point>,
-  others: ReadonlyArray<ReadonlyArray<Point>>,
-  placed: ReadonlyArray<LabelBox>,
-  halfLength: number,
-): LabelBox {
-  const total = polylineLength(points);
-  const margin = LABEL_END_MARGIN + halfLength;
-  const usable = total - 2 * margin;
-  if (usable <= 0) {
-    return labelBoxAt(points, pointAlongPolyline(points, 0.5), halfLength);
-  }
+export function deviceObstacles(centre: Point): LabelBox[] {
+  const card = cardCenter(centre);
+  return [
+    { at: card, halfWidth: NODE_HALF_WIDTH, halfHeight: NODE_HALF_HEIGHT },
+    {
+      at: { x: card.x, y: card.y + (DEVICE_BADGE_TOP + DEVICE_BADGE_BOTTOM) / 2 },
+      halfWidth: DEVICE_BADGE_HALF_WIDTH,
+      halfHeight: (DEVICE_BADGE_BOTTOM - DEVICE_BADGE_TOP) / 2,
+    },
+  ];
+}
 
-  let best = labelBoxAt(points, pointAlongPolyline(points, 0.5), halfLength);
-  let bestScore = -Infinity;
-  let bestCentrality = -Infinity;
+function placeEndLabel(
+  points: ReadonlyArray<Point>,
+  ranges: ReadonlyArray<LabelRange>,
+  nearStart: boolean,
+  others: ReadonlyArray<ReadonlyArray<Point>>,
+  obstacles: ReadonlyArray<LabelBox>,
+  halfLength: number,
+): { box: LabelBox; vertical: boolean } {
+  const total = polylineLength(points);
+  const room = ranges.reduce((sum, range) => sum + (range.to - range.from), 0);
+
+  let best = { box: boxAlong(points[0], ranges[0].vertical, halfLength), vertical: ranges[0].vertical };
+  let bestClearance = -Infinity;
+  let bestProximity = -Infinity;
+  let cleared = false;
 
   for (let i = 0; i < LABEL_SAMPLES; i++) {
-    const along = margin + (usable * i) / (LABEL_SAMPLES - 1);
-    const t = along / total;
-    const box = labelBoxAt(points, pointAlongPolyline(points, t), halfLength);
+    let walk = room === 0 ? 0 : (room * i) / (LABEL_SAMPLES - 1);
+    let range = ranges[ranges.length - 1];
+    let along = range.to;
+    for (const candidate of ranges) {
+      const span = candidate.to - candidate.from;
+      if (walk <= span) {
+        range = candidate;
+        along = candidate.from + walk;
+        break;
+      }
+      walk -= span;
+    }
+    const box = boxAlong(
+      pointAlongPolyline(points, total === 0 ? 0 : along / total),
+      range.vertical, halfLength);
     let clearance = Infinity;
     for (const other of others) clearance = Math.min(clearance, distanceToPolyline(box.at, other));
-    for (const taken of placed) clearance = Math.min(clearance, boxClearance(box, taken));
-    const score = Math.min(Math.round(clearance), LABEL_CLEARANCE_ENOUGH);
-    const centrality = -Math.abs(t - 0.5);
-    if (score > bestScore || (score === bestScore && centrality > bestCentrality)) {
-      best = box;
-      bestScore = score;
-      bestCentrality = centrality;
+    for (const taken of obstacles) clearance = Math.min(clearance, boxClearance(box, taken));
+    const proximity = nearStart ? -along : along - total;
+    const clears = clearance >= LABEL_CLEARANCE_MIN;
+    const better = clears
+      ? !cleared || proximity > bestProximity
+      : !cleared && (clearance > bestClearance
+        || (clearance === bestClearance && proximity > bestProximity));
+    if (better) {
+      best = { box, vertical: range.vertical };
+      bestClearance = clearance;
+      bestProximity = proximity;
+      cleared = cleared || clears;
     }
   }
   return best;
 }
 
-function labelReadingOrder(link: RoutedLink, vertical: boolean): string {
-  const leading = vertical
-    ? link.source.y - link.target.y || link.source.x - link.target.x
-    : link.source.x - link.target.x || link.source.y - link.target.y;
-  return leading <= 0
-    ? linkSummaryLabel(link.sourceInterface, link.targetInterface)
-    : linkSummaryLabel(link.targetInterface, link.sourceInterface);
-}
-
 export function computeCableRoutes(
   links: ReadonlyArray<RoutedLink>,
+  devices: ReadonlyArray<Point>,
 ): Map<string, CableRoute> {
   const lanes = assignCableLanes(links);
   const ordered = [...links].sort((a, b) =>
@@ -467,25 +519,29 @@ export function computeCableRoutes(
   }
 
   const routes = new Map<string, CableRoute>();
-  const placed: LabelBox[] = [];
+  const obstacles: LabelBox[] = devices.flatMap(deviceObstacles);
 
   for (const link of ordered) {
     const { path, points } = drawn.get(link.id)!;
     const others = ordered
       .filter(other => other.id !== link.id)
       .map(other => drawn.get(other.id)!.points);
-    const halfLength = interfaceTagWidth(
-      linkSummaryLabel(link.sourceInterface, link.targetInterface)) / 2;
-    const box = placeLabel(points, others, placed, halfLength);
-    placed.push(box);
-    const vertical = box.halfHeight > box.halfWidth;
+
+    const place = (name: string, nearStart: boolean): LabelPlacement => {
+      const text = abbreviateInterfaceName(name);
+      const halfLength = interfaceTagWidth(text) / 2;
+      const placed = placeEndLabel(
+        points, labelRanges(points, halfLength), nearStart, others, obstacles, halfLength);
+      obstacles.push(placed.box);
+      return { at: placed.box.at, text, vertical: placed.vertical };
+    };
+
     routes.set(link.id, {
       ...lanes.get(link.id)!,
       path,
       points,
-      label: box.at,
-      labelText: labelReadingOrder(link, vertical),
-      labelVertical: vertical,
+      sourceLabel: place(link.sourceInterface, true),
+      targetLabel: place(link.targetInterface, false),
     });
   }
 

@@ -9,6 +9,7 @@ import {
   TAG_HEIGHT,
   type CableRoute,
   type EndpointAnchor,
+  type LabelPlacement,
 } from './connection-line-logic';
 import { cn } from '@/lib/utils';
 
@@ -45,8 +46,6 @@ function ConnectionLineImpl({ connection, devices, route }: ConnectionLineProps)
 
   const path = route.path;
   const anchors = computeEndpointAnchors(route.points);
-  const tagWidth = interfaceTagWidth(route.labelText);
-  const tagHalfAcrossX = route.labelVertical ? TAG_HEIGHT / 2 : tagWidth / 2;
 
   // The state belongs in the label, not only in the colour: a red line
   // says nothing to a screen reader, and nothing to a colour-blind
@@ -144,42 +143,52 @@ function ConnectionLineImpl({ connection, devices, route }: ConnectionLineProps)
       <Connector anchor={anchors.source} color={color} />
       <Connector anchor={anchors.target} color={color} />
 
-      <g
-        className="cursor-pointer select-none"
-        data-port-label=""
-        transform={route.labelVertical
-          ? `rotate(90 ${route.label.x} ${route.label.y})`
-          : undefined}
-        onClick={() => selectConnection(connection.id)}
-      >
-        <rect
-          x={route.label.x - tagWidth / 2}
-          y={route.label.y - TAG_HEIGHT / 2}
-          width={tagWidth}
-          height={TAG_HEIGHT}
-          rx={TAG_HEIGHT / 2}
-          fill="rgba(2,6,23,0.92)"
-          stroke={color}
-          strokeWidth={isSelected ? 1.8 : 1.1}
-        />
-        <text
-          x={route.label.x}
-          y={route.label.y}
-          textAnchor="middle"
-          dominantBaseline="central"
-          fill={color}
-          fontSize={9}
-          fontWeight="600"
-          fontFamily="monospace"
-          className="pointer-events-none"
-        >
-          {route.labelText}
-        </text>
-      </g>
+    </g>
+  );
+}
+
+export function ConnectionLabel({ connection, devices, route }: ConnectionLineProps) {
+  const selectedConnectionId = useNetworkStore(s => s.selectedConnectionId);
+  const selectConnection = useNetworkStore(s => s.selectConnection);
+  const removeConnection = useNetworkStore(s => s.removeConnection);
+
+  const isSelected = selectedConnectionId === connection.id;
+
+  const { sourceDevice, targetDevice } = useMemo(() => ({
+    sourceDevice: devices.find(d => d.id === connection.sourceDeviceId),
+    targetDevice: devices.find(d => d.id === connection.targetDeviceId)
+  }), [devices, connection]);
+
+  if (!sourceDevice || !targetDevice) return null;
+
+  const sourceIface = sourceDevice.interfaces.find(i => i.id === connection.sourceInterfaceId);
+  const targetIface = targetDevice.interfaces.find(i => i.id === connection.targetInterfaceId);
+  const isOperational = (sourceIface?.isOperational ?? true) && (targetIface?.isOperational ?? true);
+  const { color } = getLinkAppearance(connection.type, isOperational);
+
+  const removeAt = route.targetLabel;
+  const removeOffset = removeAt.vertical
+    ? TAG_HEIGHT / 2
+    : interfaceTagWidth(removeAt.text) / 2;
+
+  return (
+    <g data-label-for={connection.id}>
+      <PortTag
+        placement={route.sourceLabel}
+        color={color}
+        emphasised={isSelected}
+        onSelect={() => selectConnection(connection.id)}
+      />
+      <PortTag
+        placement={route.targetLabel}
+        color={color}
+        emphasised={isSelected}
+        onSelect={() => selectConnection(connection.id)}
+      />
 
       {isSelected && (
         <g
-          transform={`translate(${route.label.x + tagHalfAcrossX + 12}, ${route.label.y})`}
+          transform={`translate(${removeAt.at.x + removeOffset + 12}, ${removeAt.at.y})`}
           className="cursor-pointer"
           onClick={() => removeConnection(connection.id)}
         >
@@ -196,6 +205,50 @@ function ConnectionLineImpl({ connection, devices, route }: ConnectionLineProps)
           </text>
         </g>
       )}
+    </g>
+  );
+}
+
+function PortTag(
+  { placement, color, emphasised, onSelect }: {
+    placement: LabelPlacement;
+    color: string;
+    emphasised: boolean;
+    onSelect: () => void;
+  },
+) {
+  const width = interfaceTagWidth(placement.text);
+  const { x, y } = placement.at;
+  return (
+    <g
+      className="cursor-pointer select-none"
+      data-port-label=""
+      transform={placement.vertical ? `rotate(90 ${x} ${y})` : undefined}
+      onClick={onSelect}
+    >
+      <rect
+        x={x - width / 2}
+        y={y - TAG_HEIGHT / 2}
+        width={width}
+        height={TAG_HEIGHT}
+        rx={TAG_HEIGHT / 2}
+        fill="rgba(2,6,23,0.92)"
+        stroke={color}
+        strokeWidth={emphasised ? 1.8 : 1.1}
+      />
+      <text
+        x={x}
+        y={y}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill={color}
+        fontSize={9}
+        fontWeight="600"
+        fontFamily="monospace"
+        className="pointer-events-none"
+      >
+        {placement.text}
+      </text>
     </g>
   );
 }
