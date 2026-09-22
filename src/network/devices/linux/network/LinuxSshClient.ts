@@ -902,6 +902,14 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
 
+  // Les avis d'avant authentification — la banniere que le serveur
+  // envoie avant de demander le mot de passe, l'avis de `known_hosts` —
+  // precedent tout le reste du transcrit, et les DEUX sorties de cette
+  // fonction doivent les ecrire : celle des pairs non-Linux s'arrete
+  // avant l'en-tete commun.
+  const noticeBanner = (opts.wireNotices ?? [])
+    .map((n) => (n.endsWith('\n') ? n : `${n}\n`))
+    .join('');
   const linuxLike = (found.device as Partial<LinuxMachine & { executor: unknown }>).executor !== undefined;
   if (!linuxLike && opts.wireAuthenticated) {
     const wireCmd = joinRemoteCommand(positional.slice(1), remoteQuoting(found.device));
@@ -913,7 +921,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
         ? [relayed.output]
         : [relayed.output, connectionClosed(host)].filter(part => part.length > 0);
       return {
-        output: transcript.join('\n'),
+        output: noticeBanner + transcript.join('\n'),
         exitCode: relayed.exitCode,
         connection: { localIp: opts.sourceIp, peerIp: destIp, peerPort: port },
       };
@@ -1199,9 +1207,6 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       `debug1: Authentication succeeded (${auth.method}).\n`
     : '';
 
-  const noticeBanner = (opts.wireNotices ?? [])
-    .map((n) => (n.endsWith('\n') ? n : `${n}\n`))
-    .join('');
   const clientHeader = noticeBanner + warningBanner + verboseHeader + forwardingError;
   // If the user provided a remote command, execute it on the remote
   // through the user's login shell and return its output / exit code.
