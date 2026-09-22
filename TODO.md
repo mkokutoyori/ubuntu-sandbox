@@ -41,6 +41,51 @@ exactement comment `acl ipv6` a pu creer une liste IPv4 sans que rien
 ne le signale. Retire avec la refutation ci-dessus.
 
 
+## Coherence inter-equipements
+
+### [ssh] sept cas de `cross-equipment-ssh-suite` tombent depuis `748d62ca`
+BISSECTE, pas suppose :
+
+    82c80389  (dernier commit valide par un balayage complet vert)  234/234
+    1ccb2f7c  (748d62ca~1)                                          234/234
+    748d62ca  « Le serveur SSH de VRP est un seul fait, et la
+                session ouverte sur le fil existe »                 7 ECHECS
+    cc86be73  (apres fusion)                                        7 echecs
+
+Les sept, par leur nom dans la suite :
+
+  - §30 `Cisco: aliased show command via SSH runs the dispatcher entry`
+  - §43 `Windows: disabling a local user blocks...`
+  - `PowerShell can be invoked as remote shell...`
+  - `Huawei: ssh server authentication-retries...`
+  - `Cisco: show logging contains a %SEC_LOGIN...`
+  - `Huawei: display logbuffer contains an...`
+  - `Windows: Get-WinEvent Security/4624...`
+
+DEUX SONT DES DEFAUTS DE FOND, pas des libelles qui ont bouge :
+
+  `ssh admin@<cisco> "si"` apres `alias exec si show ip interface brief`
+  rend « Translating "si"...domain server », c'est-a-dire qu'IOS traite
+  `si` comme un nom d'hote a joindre — le chemin SSH ne consulte plus les
+  alias exec. L'alias est bien POSE : sur un routeur nu, le meme montage
+  le rend dans `show running-config` et `si` repond le tableau des
+  interfaces. Seul le passage par SSH le perd.
+
+  Un compte Windows DESACTIVE obtient quand meme une session : `hostname`
+  rend `win1` la ou le cas attend un refus. Celui-la est une porte
+  ouverte, pas un mot qui a change de forme.
+
+NON TOUCHE VOLONTAIREMENT. `748d62ca` fait 46 fichiers et 838 lignes sur
+toute la pile SSH, et la refonte est EN COURS ; y entrer maintenant
+entrerait en collision avec elle. L'entree est ici pour que la mesure ne
+se perde pas, et le commit qui la porte le dit a son auteur.
+
+A NOTER POUR LA PROCHAINE FOIS, c'est la moitie de ce defaut qui
+m'appartient : le balayage vert de 2696 fichiers portait sur
+`82c80389`, AVANT la fusion des cinq commits du pair. J'ai pousse
+`cc86be73` en ne verifiant que trois sondes sur l'arbre fusionne. Une
+fusion n'herite pas du vert de ce qu'elle fusionne.
+
 ## Pile TCP/IP
 
 ### [ip] l'option Timestamp n'est ni construite ni horodatee
