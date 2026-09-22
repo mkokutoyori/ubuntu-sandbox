@@ -187,6 +187,7 @@ import {
 import type { CiscoDnsConfig } from '../router/dns/CiscoDnsConfig';
 import type { RouterHostsTable } from '../router/dns/RouterHostsTable';
 import { CiscoConfigState, getConfigState } from '../inspection/config/CiscoConfigState';
+import type { IRouterShell } from './IRouterShell';
 import {
   AliasRepository, aliasModeForCliMode, type AliasMode,
 } from '../inspection/config/AliasRepository';
@@ -996,10 +997,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   /** Config-driven CLI aliases — real, working, projected by show. */
-  protected readonly aliases = new AliasRepository();
+  protected aliases = new AliasRepository();
 
   /** Config-driven syslog/logging state, projected by `show logging`. */
-  protected readonly logging = new LoggingConfig();
+  protected logging = new LoggingConfig();
+
+  adoptDeviceStores(source: IRouterShell): void {
+    if ((source as unknown) === (this as unknown)) return;
+    const other = source as unknown as {
+      aliases?: AliasRepository; logging?: LoggingConfig;
+    };
+    if (other.aliases instanceof AliasRepository) this.aliases = other.aliases;
+    if (other.logging instanceof LoggingConfig) this.logging = other.logging;
+  }
   protected readonly outgoingSessions = new OutgoingSessionRegistry();
   private reloadTimer: TimerHandle | null = null;
   private scheduledReloadAtMs: number | null = null;

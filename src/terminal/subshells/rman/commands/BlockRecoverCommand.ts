@@ -27,9 +27,13 @@ export class BlockRecoverCommand implements IRmanCommand<void> {
         scope: 'DATAFILE', fileNo: Number(args[0]), block: Number(args[1]),
       }));
     }
-    const fileNo = this.mode === 'COPY_OF_DATAFILE' ? Number(args[0]) : undefined;
-    return engine.run(JobBuilder.recoverDatabase({
+    if (this.mode === 'COPY_OF_DATABASE') {
+      return engine.run(JobBuilder.recoverCopy({ tag: args[0] }));
+    }
+    const fileNo = Number(args[0]);
+    return engine.run(JobBuilder.recoverCopy({
       fileNo: Number.isFinite(fileNo) ? fileNo : undefined,
+      tag: args[1],
     }));
   }
 }

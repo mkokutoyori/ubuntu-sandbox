@@ -228,9 +228,11 @@ describe('`ssh <equipement>` sans commande ouvre une vraie session', () => {
     expect(out).toContain('Cisco Adaptive Security Appliance');
   }, 30000);
 
-  it('l\'invite suit le mode : `FW1>enable` puis `FW1#show version`', async () => {
+  it('l\'invite suit le mode : `FW1#disable` puis `FW1>enable`', async () => {
     const pc = await asaLab();
-    const out = await pc.executeCommand('ssh admin@10.0.2.2', 'Secret123\nenable\n\nshow version\nexit\n');
+    const out = await pc.executeCommand(
+      'ssh admin@10.0.2.2', 'Secret123\ndisable\nenable\n\nshow version\nexit\n');
+    expect(out).toContain('FW1#disable');
     expect(out).toContain('FW1>enable');
     expect(out).toContain('FW1#show version');
   }, 30000);

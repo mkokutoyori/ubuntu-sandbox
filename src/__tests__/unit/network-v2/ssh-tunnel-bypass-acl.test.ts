@@ -163,7 +163,7 @@ describe('Scénario 14 — Tunnel SSH et contournement d\'ACL', () => {
     const { publicPc, router } = await buildLan();
     await installFilteringAcl(router);
     const out = await publicPc.executeCommand(
-      'ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10',
+      'ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10', 'admin\n',
     );
     expect(out).not.toMatch(/administratively prohibited/);
     const ss = await publicPc.executeCommand('ss -tln');
@@ -193,7 +193,7 @@ describe('Scénario 14 — Tunnel SSH et contournement d\'ACL', () => {
     await jump.executeCommand('systemctl reload ssh');
 
     const out = await publicPc.executeCommand(
-      'ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10',
+      'ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10', 'admin\n',
     );
     expect(out).toMatch(/administratively prohibited/i);
   });

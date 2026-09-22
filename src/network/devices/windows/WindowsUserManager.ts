@@ -520,7 +520,7 @@ export class WindowsUserManager {
    */
   checkPassword(name: string, password: string, logonType = 2, publishOnSuccess = true, publishOnFailure = true): boolean {
     const user = this.users.get(name.toLowerCase());
-    if (user && (this.isLockedOut(name) || this.isPasswordExpired(name))) {
+    if (user && (user.enabled === false || this.isLockedOut(name) || this.isPasswordExpired(name))) {
       if (publishOnFailure) {
         this.bus?.publish({
           topic: 'windows.account.logon',

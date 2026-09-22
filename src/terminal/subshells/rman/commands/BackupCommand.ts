@@ -21,7 +21,8 @@ import { JobBuilder } from '../job/JobBuilder';
 
 export type BackupMode =
   | 'database' | 'archivelog' | 'tablespace' | 'incremental'
-  | 'controlfile' | 'datafile' | 'spfile' | 'recoveryArea';
+  | 'controlfile' | 'datafile' | 'spfile' | 'recoveryArea'
+  | 'incrementalForRecoverOfCopy' | 'incrementalForRecoverOfCopyNoTag';
 
 export class BackupCommand implements IRmanCommand<void> {
   readonly name = 'BACKUP';
@@ -89,6 +90,23 @@ export class BackupCommand implements IRmanCommand<void> {
         result = engine.run(JobBuilder.backupTablespace(list, opts));
         break;
       }
+      // BACKUP INCREMENTAL LEVEL n FOR RECOVER OF COPY [WITH TAG 't'] DATABASE
+      // Le premier tour n'a aucune copie a mettre a jour : RMAN prend
+      // alors une COPIE IMAGE de niveau 0, et ne bascule en niveau 1
+      // qu'une fois la copie posee. C'est le moteur qui decide, parce
+      // que lui seul lit le catalogue.
+      case 'incrementalForRecoverOfCopy':
+      case 'incrementalForRecoverOfCopyNoTag': {
+        const avecEtiquette = this.mode === 'incrementalForRecoverOfCopy';
+        const level = (args[0] === '0' ? 0 : 1) as 0 | 1;
+        const etiquette = avecEtiquette ? args[1] : undefined;
+        const reste = args.slice(avecEtiquette ? 2 : 1).join(' ');
+        const clauseOpts = parseBackupOptions(reste);
+        if (etiquette) clauseOpts.tag = etiquette;
+        clauseOpts.forRecoverOfCopy = true;
+        result = engine.run(JobBuilder.backupIncremental(level, clauseOpts));
+        break;
+      }
       case 'incremental': {
         const level = (args[0] === '0' ? 0 : 1) as 0 | 1;
         // args[1] = "CUMULATIVE" if present, args[2] = post-clauses
@@ -137,7 +155,7 @@ export interface BackupOptions {
   keepForever?: boolean; keepUntilTime?: string;
   cumulative?: boolean; maxPieceSize?: number;
   encrypted?: boolean; notBackedUpNTimes?: number;
-  asCopy?: boolean; maxCorrupt?: string;
+  asCopy?: boolean; maxCorrupt?: string; forRecoverOfCopy?: boolean;
 }
 
 export function parseBackupOptions(text: string): BackupOptions {

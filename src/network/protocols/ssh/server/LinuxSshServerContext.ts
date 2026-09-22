@@ -506,6 +506,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   }
 
   getMotd(): string {
+    if (!this.effectiveSshdServerConfig().printMotd) return '';
     const motd = this.vfs.readFile('/etc/motd');
     return motd ?? `Welcome to ${this.hostname}\n`;
   }

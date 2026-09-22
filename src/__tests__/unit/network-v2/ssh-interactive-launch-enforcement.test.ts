@@ -79,10 +79,8 @@ describe('ssh interactif (terminal réel) — chroot / ForceCommand', () => {
     const um = (server as unknown as { executor: { userMgr: {
       useradd: (u: string, o?: object) => void; setPassword: (u: string, p: string) => void; getUser: (u: string) => unknown;
     } } }).executor.userMgr;
-    if (!um.getUser('sftponly')) {
-      um.useradd('sftponly', { m: true, s: '/sbin/nologin' });
-      um.setPassword('sftponly', 'secret');
-    }
+    if (!um.getUser('sftponly')) um.useradd('sftponly', { m: true, s: '/sbin/nologin' });
+    um.setPassword('sftponly', 'secret');
     await server.executeCommand('mkdir -p /srv/sftp/sftponly/upload');
     await server.executeCommand('chown root:root /srv/sftp /srv/sftp/sftponly');
     await server.executeCommand('chmod 755 /srv/sftp /srv/sftp/sftponly');

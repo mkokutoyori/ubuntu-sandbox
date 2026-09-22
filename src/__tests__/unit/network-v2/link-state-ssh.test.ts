@@ -33,10 +33,8 @@ function lan(): { a: LinuxPC; b: LinuxPC; cable: Cable } {
       getUser: (u: string) => unknown;
       setPassword: (u: string, p: string) => void;
     } } }).executor.userMgr;
-    if (!um.getUser('alice')) {
-      um.useradd('alice', { m: true, s: '/bin/bash' });
-      um.setPassword('alice', 'admin');
-    }
+    if (!um.getUser('alice')) um.useradd('alice', { m: true, s: '/bin/bash' });
+    um.setPassword('alice', 'admin');
   }
   return { a, b, cable };
 }

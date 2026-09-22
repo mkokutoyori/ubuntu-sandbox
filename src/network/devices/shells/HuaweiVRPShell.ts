@@ -195,11 +195,16 @@ function gardeLigneNonRendue(
 }
 
 export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiDisplayState, HuaweiIPSecContext, HuaweiACLContext, HuaweiPolicyShellCtx {
-  readonly logging = new LoggingConfig();
+  logging = new LoggingConfig();
   attachLoggingToBus(bus: import('@/events/EventBus').IEventBus, deviceId: string): void {
     this.logging.attachToBus(bus, deviceId);
   }
   getLoggingConfig(): LoggingConfig { return this.logging; }
+  adoptDeviceStores(source: IRouterShell): void {
+    if ((source as unknown) === (this as unknown)) return;
+    const other = source as unknown as { logging?: LoggingConfig };
+    if (other.logging instanceof LoggingConfig) this.logging = other.logging;
+  }
   private mode: HuaweiShellMode = 'user';
   private bgpAsn: number | null = null;
   private isisProcessId: number | null = null;

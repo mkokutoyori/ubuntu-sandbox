@@ -1186,22 +1186,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         || (user !== undefined && this.perUserAdmissionRefusal(user, ip) !== null),
       recordAuthFailure: (user, ip) => this.recordSshLogin(user, ip, '', false),
       recordLogin: (user, ip) => {
-        this.recordSshLogin(user, ip, '', true);
-        this.openWireVtySession(user, ip);
+        this.getCredentialStore().recordLoginSuccess(user, ip, 'password');
       },
       recordLogout: (user, ip) => this.closeWireVtySession(user, ip),
     });
     return new SshServerHandler(ctx);
-  }
-
-  private openWireVtySession(user: string, fromIp: string): void {
-    this.getSshSessionRegistry().open({
-      user,
-      privilege: this.resolveVtyExecLevel(user || undefined),
-      fromIp,
-      authMethod: 'password',
-      localPort: 22,
-    });
   }
 
   private closeWireVtySession(user: string, fromIp: string): void {
@@ -1650,6 +1639,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     dispose(): void;
   } {
     const shell = this.createShell();
+    shell.adoptDeviceStores?.(this.shell);
     shell.beginExecSession?.(this.resolveVtyExecLevel(user), user);
     let ended = false;
     return {
@@ -5030,7 +5020,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   getCredentialStore(): NetworkOsCredentialStore {
     if (!this._credentialStore) {
-      this._securityAuditLog = new SecurityAuditLog({ deviceId: this.id, bus: this.getBus() });
+      this._securityAuditLog = new SecurityAuditLog({
+        deviceId: this.id,
+        bus: this.getBus(),
+        syslog: (entry) => this.appendSecurityEventToSyslog(entry),
+      });
       this._sshSessionRegistry = new SshSessionRegistry({
         deviceId: this.id,
         bus: this.getBus(),
@@ -5062,6 +5056,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getSecurityAuditLog(): SecurityAuditLog {
     if (!this._securityAuditLog) this.getCredentialStore();
     return this._securityAuditLog!;
+  }
+
+  private appendSecurityEventToSyslog(
+    entry: { facility: string; severity: number; mnemonic: string; message: string },
+  ): void {
+    const severity = SEVERITY_NAMES[entry.severity];
+    if (!severity) return;
+    this.getLoggingConfig()?.append(
+      severity, entry.facility, entry.message, true, entry.mnemonic);
   }
 
   getSshSessionRegistry(): SshSessionRegistry {

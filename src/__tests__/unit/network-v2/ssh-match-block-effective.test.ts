@@ -48,7 +48,7 @@ describe('SSH server — Match block applies to forwarding directives', () => {
       '    AllowTcpForwarding no\n');
 
     const out = await pc.executeCommand(
-      'ssh -L 9100:127.0.0.1:80 -N alice@10.0.0.2',
+      'ssh -L 9100:127.0.0.1:80 -N alice@10.0.0.2', 'admin\n',
     );
     expect(out).toMatch(/administratively prohibited/i);
   });
@@ -62,7 +62,7 @@ describe('SSH server — Match block applies to forwarding directives', () => {
       '    AllowTcpForwarding no\n');
 
     const out = await pc.executeCommand(
-      'ssh -L 9101:127.0.0.1:80 -N bob@10.0.0.2',
+      'ssh -L 9101:127.0.0.1:80 -N bob@10.0.0.2', 'admin\n',
     );
     expect(out).not.toMatch(/administratively prohibited/i);
   });
@@ -76,7 +76,7 @@ describe('SSH server — Match block applies to forwarding directives', () => {
       '    AllowAgentForwarding no\n');
 
     const out = await pc.executeCommand(
-      "ssh -A alice@10.0.0.2 'echo got:$SSH_AUTH_SOCK'",
+      "ssh -A alice@10.0.0.2 'echo got:$SSH_AUTH_SOCK'", 'admin\n',
     );
     expect(out).toMatch(/^got:\s*$/m);
   });
@@ -90,7 +90,7 @@ describe('SSH server — Match block applies to forwarding directives', () => {
       '    AllowAgentForwarding no\n');
 
     const out = await pc.executeCommand(
-      "ssh -A bob@10.0.0.2 'echo got:$SSH_AUTH_SOCK'",
+      "ssh -A bob@10.0.0.2 'echo got:$SSH_AUTH_SOCK'", 'admin\n',
     );
     expect(out).toMatch(/got:\/tmp\/ssh-bob\/agent\./);
   });

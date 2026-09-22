@@ -1475,6 +1475,15 @@ export class LinuxCommandExecutor {
         exitCode: 1,
       };
     }
+    let batchVerbs: string | null = null;
+    if (cmd === 'sftp') {
+      const bIdx = args.indexOf('-b');
+      if (bIdx >= 0) {
+        const batch = this.readSftpBatch(args[bIdx + 1], stdinArg ?? '');
+        if (typeof batch !== 'string') return batch;
+        batchVerbs = batch;
+      }
+    }
     const authority = transferAuthority(cmd, positional, dest);
     if (!authority) {
       if (cmd === 'scp') return this.runLocalScp(args);
@@ -1541,13 +1550,7 @@ export class LinuxCommandExecutor {
     }
 
     // sftp
-    const bIdx = args.indexOf('-b');
-    let stdin = stdinArg ?? '';
-    if (bIdx >= 0) {
-      const batch = this.readSftpBatch(args[bIdx + 1], stdin);
-      if (typeof batch !== 'string') return batch;
-      stdin = batch;
-    }
+    const stdin = batchVerbs ?? stdinArg ?? '';
     const refusedSftp = unauthenticated();
     if (refusedSftp) return refusedSftp;
     let remoteFs = wireFs;

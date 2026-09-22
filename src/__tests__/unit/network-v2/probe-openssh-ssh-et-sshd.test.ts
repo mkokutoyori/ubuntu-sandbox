@@ -52,7 +52,8 @@ async function labo(): Promise<{ pc: LinuxPC; srv: LinuxServer }> {
   return { pc, srv };
 }
 
-const SSH = `ssh -o StrictHostKeyChecking=no alice@${SRV}`;
+const SECRET = 'secret123';
+const SSH = `sshpass -p ${SECRET} ssh -o StrictHostKeyChecking=no alice@${SRV}`;
 
 describe('ssh : le code de retour est CELUI de la commande distante', () => {
   it('une commande distante qui reussit rend 0', async () => {
@@ -100,13 +101,13 @@ describe('ssh : la commande distante tourne SUR le serveur, sous l identite ouve
 describe('ssh : les drapeaux que la page man decrit', () => {
   it('`-p` vise le port demande, et un port ferme est REFUSE', async () => {
     const { pc } = await labo();
-    const out = await pc.executeCommand(`ssh -o StrictHostKeyChecking=no -p 2222 alice@${SRV} true`, 'admin\n');
+    const out = await pc.executeCommand(`${SSH.replace('ssh -o', 'ssh -p 2222 -o')} true`);
     expect(out).toMatch(/Connection refused|Connection timed out/);
   });
 
   it('`-N` n execute AUCUNE commande distante', async () => {
     const { pc, srv } = await labo();
-    await pc.executeCommand(`ssh -o StrictHostKeyChecking=no -N alice@${SRV} "touch /tmp/ne-doit-pas-exister"`, 'admin\n');
+    await pc.executeCommand(`${SSH.replace('ssh -o', 'ssh -N -o')} "touch /tmp/ne-doit-pas-exister"`);
     expect(await srv.executeCommand('test -f /tmp/ne-doit-pas-exister && echo OUI || echo NON'))
       .toContain('NON');
   });
@@ -118,7 +119,7 @@ describe('ssh : les drapeaux que la page man decrit', () => {
 
   it('`-t` force un pseudo-terminal', async () => {
     const { pc } = await labo();
-    const out = await pc.executeCommand(`ssh -o StrictHostKeyChecking=no -t alice@${SRV} tty`, 'admin\n');
+    const out = await pc.executeCommand(`${SSH.replace('ssh -o', 'ssh -t -o')} tty`);
     expect(out).not.toContain('not a tty');
     expect(out).toMatch(/\/dev\/(pts\/\d+|tty\S*)/);
   });
@@ -134,7 +135,7 @@ describe('ssh : les drapeaux que la page man decrit', () => {
     await srv.executeCommand('sudo systemctl start ssh');
     await srv.executeCommand('sudo useradd -m alice');
     await srv.executeCommand('echo "alice:secret123" | sudo chpasswd');
-    expect((await win.executeCommand(`ssh -o StrictHostKeyChecking=no alice@${SRV} whoami`, 'admin\n')).trim())
+    expect((await win.executeCommand(`ssh -o StrictHostKeyChecking=no alice@${SRV} whoami`, 'secret123\n')).trim())
       .toBe('alice');
   });
 });

@@ -119,7 +119,7 @@ describe('Scénario 12 — SSH puis sudo : traçabilité complète', () => {
     const { pc, srv } = await buildPair();
     // SSH d'abord (capture l'Accepted), puis sudo -S avec WRONG.
     const out = await pc.executeCommand(
-      'ssh alice@10.0.0.10 "echo WRONG | sudo -S whoami"',
+      'ssh alice@10.0.0.10 "echo WRONG | sudo -S whoami"', 'admin\n',
     );
     expect(out).toMatch(/incorrect password/);
 
