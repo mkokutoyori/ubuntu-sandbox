@@ -1706,21 +1706,13 @@ export class LinuxCommandExecutor {
     const relayedShell = target !== null && !target.command
       ? await this.relayShellOverWire(session, offeredPassword === undefined && stdinPwd ? 1 : 0)
       : null;
-    // La banniere d'avant authentification precede la session, comme sur
-    // une vraie machine : le serveur l'envoie avant que le mot de passe
-    // ne soit demande, et le client l'ecrit avant tout le reste.
-    const settledShell = relayedShell && wire.notices.length > 0
-      ? {
-        ...relayedShell,
-        output: [...wire.notices, relayedShell.output].filter(p => p.length > 0).join('\n'),
-      }
-      : relayedShell;
     try {
       return this.finishSshClientResult(runSshClient({
         ...opts,
         wireAuthenticated: true,
         wireOutcome: reach,
-        shellRelay: () => settledShell,
+        wireNotices: wire.notices,
+        shellRelay: () => relayedShell,
         execRelay: (command) => {
           if (settled && target !== null && command === target.command) return settled;
           const channel = session.openExecChannel(command);

@@ -234,8 +234,6 @@ export async function relayScriptedShell(
   shell: ISshShellChannel, stdin: string, skipLines: number,
 ): Promise<{ output: string; exitCode: number }> {
   const lines: string[] = [];
-  const motd = (shell as { initialMotd?: () => string | null }).initialMotd?.() ?? '';
-  if (motd.trim().length > 0) lines.push(motd.replace(/\n+$/, ''));
   let prompt = shell.initialPrompt() ?? '';
   let awaitingChallenge = false;
   let remaining = skipLines;
