@@ -41,6 +41,52 @@ exactement comment `acl ipv6` a pu creer une liste IPv4 sans que rien
 ne le signale. Retire avec la refutation ci-dessus.
 
 
+## Pare-feu FortiGate
+
+### [fortios] la meme adresse repond en ICMP et refuse en TCP, selon le chemin
+MESURE. Pare-feu a deux interfaces : port1 `192.168.1.99/24` avec
+`allowaccess ping https ssh http fgfm`, port2 `192.168.20.2/30` avec
+`allowaccess ping` SEUL. Un client Linux pose sur le segment de port1,
+route par defaut vers `192.168.1.99`, vise l'adresse de port2 :
+
+    ping 192.168.20.2   1 recu, 0% de perte       <- le paquet ARRIVE
+    ssh  192.168.20.2   No route to host          <- la meme adresse
+
+La meme adresse, au meme instant, joignable par un protocole et
+injoignable par l'autre. Et la FORME du refus change avec le chemin :
+depuis le segment propre de port2, le meme `ssh` rend `Connection timed
+out`, c'est-a-dire un SILENCE — ce que `fortios-acces-ssh-admin.test.ts`
+decrit comme la bonne forme (« il n'obtient aucun refus, il n'obtient
+rien, donc pas meme une invite de mot de passe »). Un `No route to host`
+est un refus BAVARD, et il ment : la route existe, le ping vient de le
+prouver.
+
+Refuser `ssh` sur port2 est JUSTE — l'interface ne l'autorise pas. C'est
+la maniere qui ne l'est pas, et l'asymetrie ICMP/TCP l'est encore moins.
+
+CE QUI N'EST PAS TRANCHE, et pourquoi l'entree reste ouverte : le
+rapport d'origine montre une session qui S'OUVRE sur l'adresse de port2
+(invite `FW1 #`) avant de mourir en `Broken pipe`. Cette maquette-ci ne
+la reproduit pas, et la difference tient a la topologie de l'operateur —
+sa passerelle par defaut est `192.168.1.1`, qui n'est PAS le pare-feu
+(`.99`), donc un equipement tiers decide par quelle interface ses
+paquets entrent, et c'est l'interface d'ENTREE qui determine ce
+qu'`allowaccess` autorise. Sans ce fait, on ne peut pas dire si la
+session ouverte est le defaut ou un chemin legitime.
+
+### [windows] un poste Windows ne route pas hors sous-reseau
+MESURE, meme maquette, meme pare-feu, meme passerelle :
+
+    Linux   192.168.1.10/24, defaut .99  -> ping 192.168.20.2  RECU
+    Windows 192.168.1.2/24,  defaut .99  -> ping 192.168.20.2  General failure
+
+`ipconfig` montre pourtant la passerelle posee (`Default Gateway . . . :
+192.168.1.99`). Le poste Windows joint sans peine une adresse de son
+propre sous-reseau — il ping le pare-feu — et echoue des qu'il faut
+passer par la passerelle. Vu en construisant la mesure ci-dessus, ou
+il a d'abord fait croire a un refus du pare-feu alors que le paquet ne
+partait jamais.
+
 ## Pile TCP/IP
 
 ### [ip] l'option Timestamp n'est ni construite ni horodatee
