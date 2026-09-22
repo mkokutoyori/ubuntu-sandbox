@@ -17,19 +17,14 @@ import { CiscoRouter } from './CiscoRouter';
 import { HuaweiRouter } from './HuaweiRouter';
 import { AsaFirewall } from './firewall/vendors/asa/AsaFirewall';
 import { FortiGate } from './firewall/vendors/fortios/FortiGate';
-// eslint-disable-next-line no-restricted-imports -- the factory resets the registry it fills; it is not a device discovering peers
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import {
+  nextDeviceName, resetDeviceCounters, reserveDeviceName,
+} from './deviceNameCounters';
 
-const deviceCounters: Map<string, number> = new Map();
-
-function nextName(prefix: string): string {
-  const count = (deviceCounters.get(prefix) || 0) + 1;
-  deviceCounters.set(prefix, count);
-  return `${prefix}${count}`;
-}
+export { resetDeviceCounters, reserveDeviceName };
 
 export function createDevice(type: DeviceType, x: number = 0, y: number = 0, restoredName?: string): Equipment {
-  const name = restoredName ?? nextName(DEVICE_CATALOG[type]?.namePrefix ?? type);
+  const name = restoredName ?? nextDeviceName(DEVICE_CATALOG[type]?.namePrefix ?? type);
   switch (type) {
     // Computers
     case 'linux-pc':
@@ -86,18 +81,4 @@ export function hasTerminalSupport(type: DeviceType): boolean {
 
 export function isFullyImplemented(type: DeviceType): boolean {
   return DEVICE_CATALOG[type]?.fullyImplemented ?? false;
-}
-
-export function resetDeviceCounters(): void {
-  deviceCounters.clear();
-  EquipmentRegistry.getInstance().clear();
-}
-
-export function reserveDeviceName(name: string): void {
-  const match = /^(.*?)(\d+)$/.exec(name);
-  if (!match) return;
-  const [, prefix, digits] = match;
-  const value = parseInt(digits, 10);
-  if (!Number.isFinite(value)) return;
-  if (value > (deviceCounters.get(prefix) ?? 0)) deviceCounters.set(prefix, value);
 }

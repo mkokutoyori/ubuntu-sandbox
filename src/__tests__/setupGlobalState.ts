@@ -10,7 +10,7 @@
 // stay the responsibility of the tests that actually use them.
 import { beforeEach } from 'vitest';
 import { resetCounters } from '@/network/core/types';
-import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { resetDeviceCounters } from '@/network/devices/deviceNameCounters';
 import { Logger } from '@/network/core/Logger';
 import { __setDefaultEventBus } from '@/events/EventBus';
 import { __setDefaultScheduler } from '@/events/Scheduler';
