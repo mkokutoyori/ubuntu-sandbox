@@ -47,14 +47,13 @@ async function lab() {
 describe('le document en ligne ne contourne pas l\'authentification', () => {
   it('la référence : sans document en ligne, sans mot de passe, sftp est refusé', async () => {
     const { client } = await lab();
-    const out = await client.executeCommand(`sftp zoe@${SRV}`);
+    const out = await client.executeCommand(`sftp zoe@${SRV}`, 'admin\n');
     expect(out).toMatch(/Permission denied/);
   }, 60_000);
 
   it('avec un document en ligne, le même sftp est refusé de la même façon', async () => {
     const { client } = await lab();
-    const out = await client.executeCommand(
-      `sftp zoe@${SRV} <<'EOF'\npwd\nbye\nEOF`);
+    const out = await client.executeCommand(`sftp zoe@${SRV} <<'EOF'\npwd\nbye\nEOF`, 'admin\n');
     expect(out).toMatch(/Permission denied/);
   }, 60_000);
 
@@ -69,9 +68,8 @@ describe('le document en ligne ne contourne pas l\'authentification', () => {
   it('un scp dans une ligne composée est refusé lui aussi', async () => {
     const { client } = await lab();
     await client.executeCommand(`sh -c 'echo charge > /tmp/c.txt'`);
-    const out = await client.executeCommand(
-      `scp /tmp/c.txt zoe@${SRV}:/home/zoe/c.txt; echo rc=$?`);
+    const out = await client.executeCommand(`scp /tmp/c.txt zoe@${SRV}:/home/zoe/c.txt; echo rc=$?`, 'admin\n');
     expect(out).toMatch(/Permission denied/);
-    expect(out).toMatch(/rc=1/);
+    expect(out).toMatch(/rc=255/);
   }, 60_000);
 });

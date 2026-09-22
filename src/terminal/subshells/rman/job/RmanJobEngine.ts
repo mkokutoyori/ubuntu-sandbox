@@ -21,9 +21,11 @@ import type { RmanError } from '../core/RmanError';
 import type { IRmanJobEngine } from './IRmanJobEngine';
 import type { IChannelPool } from '../channel/IChannelPool';
 import type { IRmanCatalogRepository } from '../catalog/IRmanCatalogRepository';
-import type { IRmanOracleContext, ArchivedLogRecord } from '../integration/IRmanOracleContext';
+import type {
+  IRmanOracleContext, ArchivedLogRecord, BlockCorruptionType, DatafileInfo,
+} from '../integration/IRmanOracleContext';
 import {
-  validateBackupPiece, pieceFaultMessage, bannerIsIntact, type PieceVerdict,
+  validateBackupPiece, pieceFaultMessage, datafileFault, type PieceVerdict,
 } from '../core/pieceValidation';
 import { archivedLogFromPath } from '../core/archivedLogNaming';
 import type { RmanEventBus } from '../reactive/RmanEventBus';
@@ -44,6 +46,8 @@ import { parseDatafileImage, renderDatafileImage, datafileBannerOf } from '@/dat
 
 const bySequence = (a: ArchivedLogRecord, b: ArchivedLogRecord): number =>
   a.thread - b.thread || a.sequence - b.sequence;
+
+
 import type { TablespacePayload } from '@/database/oracle/OracleStorage';
 import { parseSize } from '@/database/oracle/views/_fileSize';
 import { BackupKey } from '../values/BackupKey';
@@ -122,6 +126,11 @@ export class RmanJobEngine implements IRmanJobEngine {
   // ── Operation dispatch ──────────────────────────────────────────
 
   private _executeOperation(job: RmanJob, channelId: string): Result<void, RmanError> {
+    // `BACKUP VALIDATE` porte l'operation BACKUP pour ses lignes de
+    // banniere, mais fait le travail de VALIDATE : une seule implantation.
+    if (job.params?.validate === 'true' && job.operation === 'BACKUP_DATABASE') {
+      return this._doValidate(job);
+    }
     switch (job.operation) {
       case 'BACKUP_DATABASE':    return this._doBackup(job, channelId, 'database');
       case 'BACKUP_ARCHIVELOG':  return this._doBackup(job, channelId, 'archivelog');
@@ -140,7 +149,6 @@ export class RmanJobEngine implements IRmanJobEngine {
 
   private _doBackup(job: RmanJob, channelId: string, what: string): Result<void, RmanError> {
     const params = job.params ?? {};
-    const validate = params.validate === 'true';
     const deleteInput = params.deleteInput === 'true';
     const compressed = params.compressed === 'true';
     const encrypted  = params.encrypted  === 'true';
@@ -186,6 +194,13 @@ export class RmanJobEngine implements IRmanJobEngine {
     const fichierUnique = params.asCopy === 'true' && datafiles.length === 1
       ? { fileNumber: datafiles[0].fileNo, tablespace: datafiles[0].tablespace }
       : undefined;
+    // Le controle de corruption lit le disque AVANT le point de
+    // controle : celui-ci reecrit l'image entiere du datafile depuis la
+    // memoire, donc il effacerait ce qu'on cherche a constater.
+    if (!isControlfile && !isSpfile && !isArchivelog) {
+      const refus = this._refuseCorruptDatafiles(job, datafiles);
+      if (refus !== null) return refus;
+    }
     const basePath = this._resolvePath(params.format, tag, omfKind, 1, fichierUnique);
 
     const cumulative = params.cumulative === 'true';
@@ -208,11 +223,6 @@ export class RmanJobEngine implements IRmanJobEngine {
       : rawSize;
 
     this._bus.emit({ type: 'BACKUP_PIECE_STARTED', jobId: job.id, channelId, what });
-
-    if (validate) {
-      this._bus.emit({ type: 'BACKUP_VALIDATED', jobId: job.id, what });
-      return ok(undefined);
-    }
 
     // BACKUP NOT BACKED UP n TIMES — count existing FULL/INCREMENTAL sets;
     // if the file is already covered enough times, skip it (no piece, no
@@ -541,11 +551,17 @@ export class RmanJobEngine implements IRmanJobEngine {
   }
 
   private _doRestore(job: RmanJob, channelId: string): Result<void, RmanError> {
+    const params = job.params ?? {};
+    // PREVIEW et VALIDATE n'ecrivent aucun datafile : l'exigence de
+    // l'etat MOUNT ne porte que sur la forme qui en REECRIT.
+    const lectureSeule = params.preview === 'true' || params.validate === 'true';
     const inst = this._ctx.getInstanceState?.();
-    if (inst === 'OPEN' || inst === 'SHUTDOWN') {
+    if (!lectureSeule && (inst === 'OPEN' || inst === 'SHUTDOWN')) {
       return err({ code: 'RMAN_06403', message: 'database must be mounted (not open)' });
     }
-    const params = job.params ?? {};
+    if (lectureSeule && inst === 'SHUTDOWN') {
+      return err({ code: 'RMAN_04014', message: 'startup failed: ORA-01034: ORACLE not available' });
+    }
     const snap = this._catalog.listAll();
     if (snap.ok === false) return snap;
     let sets = [...snap.value.sets];
@@ -578,13 +594,30 @@ export class RmanJobEngine implements IRmanJobEngine {
       }
     }
 
-    // PREVIEW / VALIDATE — emit a progress line and skip the actual restore.
-    if (params.preview === 'true' || params.validate === 'true') {
-      const kind = params.preview === 'true' ? 'preview' : 'validate';
+    if (params.preview === 'true') {
       this._bus.emit({
-        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: kind, pct: 60,
-        message: `restore ${kind}: ${sets.length} backup set(s) examined`,
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'preview', pct: 60,
+        message: `restore preview: ${sets.length} backup set(s) examined`,
       });
+      return ok(undefined);
+    }
+    // RESTORE ... VALIDATE repond a la meme question que VALIDATE
+    // BACKUPSET — « ce jeu est-il restaurable ? » — et doit donc lire
+    // les pieces par le meme predicat, sans rien ecrire sur le disque.
+    if (params.validate === 'true') {
+      for (const set of sets) {
+        for (const piece of set.pieces) {
+          const verdict = validateBackupPiece(this._ctx.vfs, piece.path);
+          if (verdict.fault !== null) {
+            return err({ code: 'ERROR_STACK', message: pieceFaultMessage(verdict) });
+          }
+          this._bus.emit({
+            type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'validate_piece', pct: 70,
+            message: `channel ORA_DISK_1: reading from backup piece ${piece.path}`,
+          });
+        }
+      }
+      this._bus.emit({ type: 'VALIDATION_REPORT', jobId: job.id, files: [], elapsedMs: 1_000 });
       return ok(undefined);
     }
 
@@ -762,6 +795,53 @@ export class RmanJobEngine implements IRmanJobEngine {
     return ok(undefined);
   }
 
+  private _maxCorruptOf(params: Readonly<Record<string, string>>): Map<number, number> {
+    const limites = new Map<number, number>();
+    for (const paire of (params.maxCorrupt ?? '').split(',')) {
+      const [fichier, limite] = paire.split(':');
+      if (fichier && limite) limites.set(Number(fichier), Number(limite));
+    }
+    return limites;
+  }
+
+  private _refuseCorruptDatafiles(
+    job: RmanJob,
+    datafiles: ReadonlyArray<DatafileInfo>,
+  ): Result<void, RmanError> | null {
+    const params = job.params ?? {};
+    const limites = this._maxCorruptOf(params);
+    const kind = params.asCopy === 'true' ? 'COPY' : 'BACKUPSET';
+    const setStamp = Math.floor(Date.now() / 1000);
+    const blockSize = Number(this._ctx.getSpfileParam('db_block_size') ?? 8192) || 8192;
+    for (const df of datafiles) {
+      const defaut = datafileFault(this._ctx.vfs, df, params.checkLogical === 'true');
+      if (defaut === null) continue;
+      const blocs = Math.max(1, Math.ceil(df.sizeBytes / blockSize));
+      const limite = limites.get(df.fileNo) ?? 0;
+      // Les blocs sont corrompus DANS LA BASE dans les deux cas :
+      // V$DATABASE_BLOCK_CORRUPTION les porte, refus ou non.
+      this._ctx.recordBlockCorruption?.(df.fileNo, blocs, defaut);
+      if (blocs > limite) {
+        return err({
+          code: 'ERROR_STACK',
+          message: `ORA-19566: exceeded limit of ${limite} corrupt blocks for file ${df.path}`,
+        });
+      }
+      // Tolere : ils partent DANS la piece, marques corrompus — et
+      // c'est cela seul que V$BACKUP_CORRUPTION enregistre, puisqu'un
+      // jeu refuse n'a produit aucune sauvegarde a decrire.
+      this._ctx.recordBackupCorruption?.({
+        setStamp, fileNo: df.fileNo, blocks: blocs,
+        markedCorrupt: true, type: defaut, kind,
+      });
+      this._bus.emit({
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'maxcorrupt', pct: 40,
+        message: `channel ORA_DISK_1: backing up blocks marked corrupt in datafile ${df.fileNo}`,
+      });
+    }
+    return null;
+  }
+
   private _doValidate(job: RmanJob): Result<void, RmanError> {
     const params = job.params ?? {};
     if (params.validateScope === 'BACKUPSET') return this._validateBackupset(job, params.bsKey);
@@ -785,26 +865,30 @@ export class RmanJobEngine implements IRmanJobEngine {
           + 'ORA-27037: unable to obtain file status',
       });
     }
+    const checkLogical = params.checkLogical === 'true';
+    const defauts = new Map<number, BlockCorruptionType>();
     const files: ValidatedFile[] = datafiles.map(df => {
       const read = this._ctx.vfs.readFile(df.path);
       const text = read.ok ? new TextDecoder().decode(read.value) : '';
-      const lisible = bannerIsIntact(text, 'ORACLE DATAFILE');
+      const defaut = datafileFault(this._ctx.vfs, df, checkLogical);
+      if (defaut !== null) defauts.set(df.fileNo, defaut);
       const blocksExamined = Math.max(1, Math.ceil(df.sizeBytes / blockSize));
       const blocksUsed = Math.min(blocksExamined, Math.ceil(text.length / blockSize));
       return {
         fileNo: df.fileNo, path: df.path,
-        status: lisible ? 'OK' : 'FAILED',
-        markedCorrupt: lisible ? 0 : blocksExamined,
-        emptyBlocks: lisible ? blocksExamined - blocksUsed : 0,
+        status: defaut === null ? 'OK' : 'FAILED',
+        markedCorrupt: defaut === null ? 0 : blocksExamined,
+        emptyBlocks: defaut === null ? blocksExamined - blocksUsed : 0,
         blocksExamined, highScn,
       };
     });
     this._bus.emit({ type: 'VALIDATION_REPORT', jobId: job.id, files, elapsedMs: 1_000 });
     let corrompus = 0;
     for (const f of files) {
-      if (f.status !== 'FAILED') continue;
+      const defaut = defauts.get(f.fileNo);
+      if (defaut === undefined) continue;
       corrompus++;
-      this._ctx.recordBlockCorruption?.(f.fileNo, f.blocksExamined, 'CORRUPT');
+      this._ctx.recordBlockCorruption?.(f.fileNo, f.blocksExamined, defaut);
     }
     if (corrompus > 0) {
       this._bus.emit({

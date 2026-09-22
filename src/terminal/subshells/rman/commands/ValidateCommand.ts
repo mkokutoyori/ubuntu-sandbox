@@ -5,6 +5,8 @@
  *   VALIDATE TABLESPACE <name>
  *   VALIDATE DATAFILE  <n>
  *   VALIDATE BACKUPSET <bsKey>
+ *   VALIDATE CHECK LOGICAL <scope>
+ *   BACKUP VALIDATE [CHECK LOGICAL] <scope>
  *
  * Uses the engine's BACKUP_VALIDATED path so the channel allocation,
  * progress messages and JOB_COMPLETED emit pipeline are exercised — the
@@ -25,24 +27,34 @@ export type ValidateScope = 'DATABASE' | 'TABLESPACE' | 'DATAFILE' | 'BACKUPSET'
 export class ValidateCommand implements IRmanCommand<void> {
   readonly name = 'VALIDATE';
 
-  constructor(private readonly scope: ValidateScope) {}
+  constructor(
+    private readonly scope: ValidateScope,
+    private readonly checkLogical = false,
+    private readonly flavor: 'BACKUP' | 'VALIDATE' = 'VALIDATE',
+  ) {}
 
   execute(args: string[], cmdCtx: RmanCommandContext): Result<void, RmanError> {
     const { engine, catalog } = cmdCtx;
     switch (this.scope) {
       case 'DATABASE':
-        return engine.run(JobBuilder.validate({ scope: 'DATABASE' }));
+        return engine.run(JobBuilder.validate({ scope: 'DATABASE', checkLogical: this.checkLogical, flavor: this.flavor }));
       case 'TABLESPACE': {
         const ts = (args[0] ?? '').toUpperCase();
         if (!ts) return err({ code: 'RMAN_01009', message: 'VALIDATE TABLESPACE requires a name' });
-        return engine.run(JobBuilder.validate({ scope: 'TABLESPACE', tablespace: ts }));
+        return engine.run(JobBuilder.validate({
+          scope: 'TABLESPACE', tablespace: ts,
+          checkLogical: this.checkLogical, flavor: this.flavor,
+        }));
       }
       case 'DATAFILE': {
         const n = Number(args[0]);
         if (!Number.isFinite(n)) {
           return err({ code: 'RMAN_01009', message: 'VALIDATE DATAFILE requires a file number' });
         }
-        return engine.run(JobBuilder.validate({ scope: 'DATAFILE', fileNo: n }));
+        return engine.run(JobBuilder.validate({
+          scope: 'DATAFILE', fileNo: n,
+          checkLogical: this.checkLogical, flavor: this.flavor,
+        }));
       }
       case 'BACKUPSET': {
         const n = Number(args[0]);
@@ -56,7 +68,10 @@ export class ValidateCommand implements IRmanCommand<void> {
         if (!found) {
           return err({ code: 'RMAN_06004', message: `backupset ${n} not found in catalog` });
         }
-        return engine.run(JobBuilder.validate({ scope: 'BACKUPSET', bsKey: n }));
+        return engine.run(JobBuilder.validate({
+          scope: 'BACKUPSET', bsKey: n,
+          checkLogical: this.checkLogical, flavor: this.flavor,
+        }));
       }
     }
   }

@@ -1,6 +1,6 @@
 import type {
   IRmanOracleContext, VfsAdapter, DatafileInfo, ConnectTargetOutcome, ConnectPeerOutcome, RecordedBackupPiece,
-  SqlStatementOutcome, RmanCredentials, ArchivedLogRecord,
+  SqlStatementOutcome, RmanCredentials, ArchivedLogRecord, BlockCorruptionType,
 } from './IRmanOracleContext';
 import type { DbId } from '../values/DbId';
 import type { Equipment } from '@/network';
@@ -37,13 +37,19 @@ export class RetargetableRmanContext implements IRmanOracleContext {
     return this._current.runSqlStatement(statement);
   }
   recordBackupPiece(piece: RecordedBackupPiece): void { this._current.recordBackupPiece(piece); }
-  recordBlockCorruption(fileNo: number, blocks: number, type: 'CHECKSUM' | 'CORRUPT'): void {
+  recordBlockCorruption(fileNo: number, blocks: number, type: BlockCorruptionType): void {
     this._current.recordBlockCorruption(fileNo, blocks, type);
   }
   getBlockCorruptions(): ReadonlyArray<{ fileNo: number; blocks: number }> {
     return this._current.getBlockCorruptions();
   }
   clearBlockCorruption(fileNo: number): void { this._current.clearBlockCorruption(fileNo); }
+  recordBackupCorruption(entry: {
+    setStamp: number; fileNo: number; blocks: number;
+    markedCorrupt: boolean; type: BlockCorruptionType; kind: 'BACKUPSET' | 'COPY';
+  }): void {
+    this._current.recordBackupCorruption(entry);
+  }
 
   connectPeer(identifier: string, credentials?: RmanCredentials): ConnectPeerOutcome {
     const resolved = LinuxRmanContext.forTarget(this._localDevice, identifier, credentials);

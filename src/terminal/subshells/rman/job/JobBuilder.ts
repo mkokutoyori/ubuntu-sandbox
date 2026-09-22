@@ -21,8 +21,10 @@ export const JobBuilder = {
     notBackedUpNTimes?: number;
     excludeTablespaces?: ReadonlyArray<string>;
     asCopy?: boolean;
+    maxCorrupt?: string;
   } = {}): RmanJob {
     const params: Record<string, string> = {};
+    if (opts.maxCorrupt)       params.maxCorrupt    = opts.maxCorrupt;
     if (opts.tag)              params.tag           = opts.tag;
     if (opts.format)           params.format        = opts.format;
     if (opts.compressed)       params.compressed    = 'true';
@@ -55,8 +57,9 @@ export const JobBuilder = {
   },
 
   /** Incremental level 0 (full baseline) or level 1 (changes since 0). */
-  backupIncremental(level: 0 | 1, opts: { tag?: string; format?: string; cumulative?: boolean; notBackedUpNTimes?: number } = {}): RmanJob {
+  backupIncremental(level: 0 | 1, opts: { tag?: string; format?: string; cumulative?: boolean; notBackedUpNTimes?: number; maxCorrupt?: string } = {}): RmanJob {
     const params: Record<string, string> = { incrementalLevel: String(level) };
+    if (opts.maxCorrupt) params.maxCorrupt = opts.maxCorrupt;
     if (opts.tag) params.tag = opts.tag;
     if (opts.format) params.format = opts.format;
     if (opts.cumulative) params.cumulative = 'true';
@@ -80,37 +83,49 @@ export const JobBuilder = {
   },
 
   /** BACKUP VALIDATE DATABASE — no piece written, no catalog change. */
-  backupValidate(): RmanJob {
-    return _make('BACKUP_DATABASE', [
-      { name: 'start_validate', pct: 10, message: 'channel ORA_DISK_1: starting validation of datafile backup set' },
-      { name: 'validate_files', pct: 60, message: 'channel ORA_DISK_1: validating files in backup set' },
-    ], { validate: 'true' });
-  },
-
   /** VALIDATE (12c+) — scope-aware validation without backup write. */
   validate(opts: {
     scope: 'DATABASE' | 'TABLESPACE' | 'DATAFILE' | 'BACKUPSET';
     tablespace?: string;
     fileNo?: number;
     bsKey?: number;
+    checkLogical?: boolean;
+    /** `BACKUP VALIDATE` lit les memes fichiers et n'ecrit aucune piece :
+     *  seules ses lignes de banniere different de `VALIDATE`. */
+    flavor?: 'BACKUP' | 'VALIDATE';
   }): RmanJob {
     const params: Record<string, string> = { validate: 'true', validateScope: opts.scope };
+    if (opts.checkLogical) params.checkLogical = 'true';
     if (opts.tablespace) params.tablespace = opts.tablespace.toUpperCase();
     if (opts.fileNo !== undefined) params.fileNo = String(opts.fileNo);
     if (opts.bsKey !== undefined)  params.bsKey  = String(opts.bsKey);
-    const label = opts.scope === 'TABLESPACE' ? `tablespace ${opts.tablespace}`
-               : opts.scope === 'DATAFILE'   ? `datafile ${opts.fileNo}`
-               : opts.scope === 'BACKUPSET'  ? `backupset ${opts.bsKey}`
-               :                                'database';
+    const portee = opts.scope === 'TABLESPACE' ? `tablespace ${opts.tablespace}`
+                 : opts.scope === 'DATAFILE'   ? `datafile ${opts.fileNo}`
+                 : opts.scope === 'BACKUPSET'  ? `backupset ${opts.bsKey}`
+                 :                                'database';
+    const label = opts.checkLogical ? `${portee} (check logical)` : portee;
+    if (opts.flavor === 'BACKUP') {
+      return _make('BACKUP_DATABASE', [
+        {
+          name: 'start_validate', pct: 10,
+          message: 'channel ORA_DISK_1: starting validation of datafile backup set',
+        },
+        {
+          name: 'validate_what', pct: 60,
+          message: `channel ORA_DISK_1: validating files in backup set (${label})`,
+        },
+      ], params);
+    }
     return _make('VALIDATE', [
       { name: 'start_validate', pct: 10, message: `channel ORA_DISK_1: starting validation of ${label}` },
       { name: 'validate_what',  pct: 60, message: `channel ORA_DISK_1: validating ${label}` },
     ], params);
   },
 
-  backupDatafile(fileNos: number | ReadonlyArray<number>, opts: { tag?: string; format?: string; compressed?: boolean; asCopy?: boolean; notBackedUpNTimes?: number } = {}): RmanJob {
+  backupDatafile(fileNos: number | ReadonlyArray<number>, opts: { tag?: string; format?: string; compressed?: boolean; asCopy?: boolean; notBackedUpNTimes?: number; maxCorrupt?: string } = {}): RmanJob {
     const list = Array.isArray(fileNos) ? fileNos : [fileNos as number];
     const params: Record<string, string> = { fileNo: list.join(',') };
+    if (opts.maxCorrupt) params.maxCorrupt = opts.maxCorrupt;
     if (opts.tag)        params.tag        = opts.tag;
     if (opts.format)     params.format     = opts.format;
     if (opts.compressed) params.compressed = 'true';
@@ -133,9 +148,10 @@ export const JobBuilder = {
     ], params);
   },
 
-  backupTablespace(tsName: string | ReadonlyArray<string>, opts: { tag?: string; format?: string; asCopy?: boolean; notBackedUpNTimes?: number } = {}): RmanJob {
+  backupTablespace(tsName: string | ReadonlyArray<string>, opts: { tag?: string; format?: string; asCopy?: boolean; notBackedUpNTimes?: number; maxCorrupt?: string } = {}): RmanJob {
     const list = (Array.isArray(tsName) ? tsName : [tsName as string]).map(s => s.toUpperCase());
     const params: Record<string, string> = { tablespace: list.join(',') };
+    if (opts.maxCorrupt) params.maxCorrupt = opts.maxCorrupt;
     if (opts.tag)    params.tag    = opts.tag;
     if (opts.format) params.format = opts.format;
     if (opts.asCopy) params.asCopy = 'true';

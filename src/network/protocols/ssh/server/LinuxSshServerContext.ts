@@ -506,6 +506,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   }
 
   getMotd(): string {
+    if (!this.effectiveSshdServerConfig().printMotd) return '';
     const motd = this.vfs.readFile('/etc/motd');
     return motd ?? `Welcome to ${this.hostname}\n`;
   }
@@ -727,15 +728,7 @@ export class LinuxSshServerContext implements ISshServerContext {
           .split('\n')
           .some((line) => line.trim().split(/\s+/)[1] === publicKey);
       },
-      acceptsWithoutCredential: (user: string) => {
-        if (!this.userAllowed(user)) return false;
-        if (!this.config.passwordAuthentication) return false;
-        const mgr = this.userManager as unknown as {
-          isAccountLockedOut?: (u: string) => boolean;
-        };
-        if (mgr.isAccountLockedOut?.(user) === true) return false;
-        return this.userManager.getUser(user) !== undefined;
-      },
+      acceptsWithoutCredential: () => false,
       getAttemptsRemaining: () => attemptsLeft,
       getAvailableMethods: (): readonly AuthMethodType[] => {
         const methods: AuthMethodType[] = [];

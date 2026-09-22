@@ -69,7 +69,7 @@ describe('Scénario 2 — bascule clé → mot de passe sur perms incorrectes', 
     await deployKey(pc);
 
     await srv.executeCommand('chmod 0666 /home/alice/.ssh/authorized_keys');
-    await pc.executeCommand('ssh alice@10.0.0.2 whoami');
+    await pc.executeCommand('ssh alice@10.0.0.2 whoami', 'admin\n');
 
     const log = srvVfs(srv).readFile('/var/log/auth.log') ?? '';
     expect(log).toMatch(/Authentication refused: bad ownership or modes for file \/home\/alice\/\.ssh\/authorized_keys/);
@@ -83,7 +83,7 @@ describe('Scénario 2 — bascule clé → mot de passe sur perms incorrectes', 
     // PreferredAuthentications par défaut = publickey,password. Le
     // simulateur doit refuser la clé (perms cassées) puis accepter via
     // password (alice a un mot de passe valide).
-    const out = await pc.executeCommand('ssh alice@10.0.0.2 whoami');
+    const out = await pc.executeCommand('ssh alice@10.0.0.2 whoami', 'admin\n');
     expect(out).toMatch(/^alice\s*$/m);
     expect(out).not.toMatch(/Permission denied/i);
 
@@ -109,7 +109,7 @@ describe('Scénario 2 — bascule clé → mot de passe sur perms incorrectes', 
     await deployKey(pc);
 
     await srv.executeCommand('chmod 0777 /home/alice');
-    const out = await pc.executeCommand('ssh alice@10.0.0.2 whoami');
+    const out = await pc.executeCommand('ssh alice@10.0.0.2 whoami', 'admin\n');
 
     expect(out).toMatch(/^alice\s*$/m);
 
@@ -123,7 +123,7 @@ describe('Scénario 2 — bascule clé → mot de passe sur perms incorrectes', 
     const { pc, srv } = await buildLan();
     await deployKey(pc);
 
-    const out = await pc.executeCommand('ssh alice@10.0.0.2 whoami');
+    const out = await pc.executeCommand('ssh alice@10.0.0.2 whoami', 'admin\n');
     expect(out).toMatch(/^alice\s*$/m);
 
     const log = srvVfs(srv).readFile('/var/log/auth.log') ?? '';

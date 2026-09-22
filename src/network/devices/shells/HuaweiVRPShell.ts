@@ -143,6 +143,8 @@ const JOURS_VRP: Record<string, string> = {
   fri: 'Friday', sat: 'Saturday', sun: 'Sunday',
 };
 
+const OUTBOUND_SSH_CLIENT_VERBS = ['stelnet', 'ssh'] as const;
+
 function analyserPeriodeVrp(args: string[]): TimeRangePeriodic | null {
   const debut = parseTimeOfDay(args[0]);
   if (!debut || args[1]?.toLowerCase() !== 'to') return null;
@@ -193,11 +195,16 @@ function gardeLigneNonRendue(
 }
 
 export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiDisplayState, HuaweiIPSecContext, HuaweiACLContext, HuaweiPolicyShellCtx {
-  readonly logging = new LoggingConfig();
+  logging = new LoggingConfig();
   attachLoggingToBus(bus: import('@/events/EventBus').IEventBus, deviceId: string): void {
     this.logging.attachToBus(bus, deviceId);
   }
   getLoggingConfig(): LoggingConfig { return this.logging; }
+  adoptDeviceStores(source: IRouterShell): void {
+    if ((source as unknown) === (this as unknown)) return;
+    const other = source as unknown as { logging?: LoggingConfig };
+    if (other.logging instanceof LoggingConfig) this.logging = other.logging;
+  }
   private mode: HuaweiShellMode = 'user';
   private bgpAsn: number | null = null;
   private isisProcessId: number | null = null;
@@ -451,8 +458,40 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   }
 
   /** Command-owned interactive flows (IoC) — see HuaweiInteractionPlans. */
-  interactionPlanFor(commandLine: string): CommandInteractionPlan | null {
+  interactionPlanFor(
+    commandLine: string, ctx?: { device?: unknown },
+  ): CommandInteractionPlan | null {
+    const outbound = this.outboundSshClientPlan(commandLine, ctx?.device as Router | undefined);
+    if (outbound) return outbound;
     return huaweiInteractionPlanFor(commandLine);
+  }
+
+  private outboundSshClientPlan(
+    commandLine: string, device: Router | undefined,
+  ): CommandInteractionPlan | null {
+    if (this.mode !== 'user') return null;
+    const toks = commandLine.trim().split(/\s+/).filter(Boolean);
+    const verb = toks[0]?.toLowerCase() ?? '';
+    if (!OUTBOUND_SSH_CLIENT_VERBS.some((v) => v === verb)) return null;
+    if (toks.length < 2 || !device) return null;
+    const args = toks.slice(1);
+    return {
+      steps: [
+        { kind: 'password', prompt: 'Enter password:', storeAs: 'stelnet_password' },
+        {
+          kind: 'run',
+          run: async (rt) => {
+            const previous = this.routerRef;
+            this.routerRef = device;
+            try {
+              rt.output(this.runOutboundSshClient(args, rt.values.get('stelnet_password')));
+            } finally {
+              this.routerRef = previous;
+            }
+          },
+        },
+      ],
+    };
   }
 
   /** Power-cycle the router and reset the shell to user view (VRP reboot). */
@@ -813,7 +852,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
    * [cmd]` and dispatch through the shared runSshClient. Source IP is
    * picked from the first up interface that has one.
    */
-  private runOutboundSshClient(args: string[]): string {
+  private runOutboundSshClient(args: string[], offeredPassword?: string): string {
     let user = 'admin';
     let port: string | null = null;
     const rest: string[] = [];
@@ -859,6 +898,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       args: clientArgs,
       sourceHostname: router._getHostnameInternal(),
       sourceIp, sourceUser: user,
+      offeredPassword,
       localVfs: { readFile: () => null, writeFile: () => undefined },
     });
     return result.output;
@@ -1529,7 +1569,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // `stelnet [user@]host [port]` and `ssh [-l user] host` — outbound
     // SSH client, dispatched through the shared runSshClient so every
     // gate (host key TOFU, sshd policy, VTY ACL) applies uniformly.
-    for (const verb of ['stelnet', 'ssh']) {
+    for (const verb of OUTBOUND_SSH_CLIENT_VERBS) {
       t.registerGreedy(verb, `${verb} client`, (args) => this.runOutboundSshClient(args));
     }
 

@@ -102,7 +102,20 @@ export interface RuntimeBlockCorruptionRecord {
   block: number;
   blocks: number;
   changeScn: number;
-  type: 'CHECKSUM' | 'CORRUPT';
+  type: 'CHECKSUM' | 'CORRUPT' | 'LOGICAL';
+}
+
+export interface RuntimeBackupCorruptionRecord {
+  recid: number;
+  setStamp: number;
+  piece: number;
+  fileNo: number;
+  block: number;
+  blocks: number;
+  changeScn: number;
+  markedCorrupt: boolean;
+  type: 'CHECKSUM' | 'CORRUPT' | 'LOGICAL';
+  kind: 'BACKUPSET' | 'COPY';
 }
 
 export interface RuntimeAlertRecord {
@@ -183,6 +196,7 @@ export class OracleRuntimeState {
   readonly locks: RuntimeLockRecord[] = [];
   readonly archivedLogs: RuntimeArchivedLogRecord[] = [];
   readonly blockCorruptions: RuntimeBlockCorruptionRecord[] = [];
+  readonly backupCorruptions: RuntimeBackupCorruptionRecord[] = [];
   readonly alertEntries: RuntimeAlertRecord[] = [];
   readonly latches: RuntimeLatchRecord[] = [];
   readonly backups: RuntimeBackupRecord[] = [];

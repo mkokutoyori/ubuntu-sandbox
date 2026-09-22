@@ -155,7 +155,7 @@ describe('Scénario 14 — Tunnel SSH et contournement d\'ACL', () => {
   it('SSH publicPC → jump:22 est autorisé (canal du tunnel)', async () => {
     const { publicPc, router } = await buildLan();
     await installFilteringAcl(router);
-    const out = await publicPc.executeCommand('ssh alice@10.0.30.10 echo ok');
+    const out = await publicPc.executeCommand('ssh alice@10.0.30.10 echo ok', 'admin\n');
     expect(out).toMatch(/^ok\s*$/m);
   });
 
@@ -163,7 +163,7 @@ describe('Scénario 14 — Tunnel SSH et contournement d\'ACL', () => {
     const { publicPc, router } = await buildLan();
     await installFilteringAcl(router);
     const out = await publicPc.executeCommand(
-      'ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10',
+      'ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10', 'admin\n',
     );
     expect(out).not.toMatch(/administratively prohibited/);
     const ss = await publicPc.executeCommand('ss -tln');
@@ -173,7 +173,7 @@ describe('Scénario 14 — Tunnel SSH et contournement d\'ACL', () => {
   it('nc -zv 127.0.0.1 13306 via tunnel : contournement réussi', async () => {
     const { publicPc, router } = await buildLan();
     await installFilteringAcl(router);
-    await publicPc.executeCommand('ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10');
+    await publicPc.executeCommand('ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10', 'admin\n');
     const out = await publicPc.executeCommand('nc -zv 127.0.0.1 13306');
     expect(out).toMatch(/succeeded/);
   });
@@ -193,7 +193,7 @@ describe('Scénario 14 — Tunnel SSH et contournement d\'ACL', () => {
     await jump.executeCommand('systemctl reload ssh');
 
     const out = await publicPc.executeCommand(
-      'ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10',
+      'ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10', 'admin\n',
     );
     expect(out).toMatch(/administratively prohibited/i);
   });
@@ -210,7 +210,7 @@ describe('Scénario 14 — Tunnel SSH et contournement d\'ACL', () => {
     );
     await jump.executeCommand('systemctl reload ssh');
 
-    await publicPc.executeCommand('ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10');
+    await publicPc.executeCommand('ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10', 'admin\n');
     const ss = await publicPc.executeCommand('ss -tln');
     expect(ss).not.toMatch(/127\.0\.0\.1:13306/);
   });
@@ -227,7 +227,7 @@ describe('Scénario 14 — Tunnel SSH et contournement d\'ACL', () => {
     );
     await jump.executeCommand('systemctl reload ssh');
 
-    await publicPc.executeCommand('ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10');
+    await publicPc.executeCommand('ssh -fNL 13306:10.0.30.20:3306 alice@10.0.30.10', 'admin\n');
     const out = await publicPc.executeCommand('nc -zv 127.0.0.1 13306');
     expect(out).not.toMatch(/succeeded/);
   });

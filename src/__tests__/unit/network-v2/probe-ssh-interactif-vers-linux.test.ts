@@ -152,7 +152,7 @@ describe('`ssh <hote Linux>` execute ce qu\'on lui tape', () => {
 
   it('non-regression : sans entree, le transcrit ne change pas', async () => {
     const { pc } = await lab();
-    const out = await pc.executeCommand(`ssh bob@${SRV_IP}`);
+    const out = await pc.executeCommand(`ssh bob@${SRV_IP}`, 'pw\n');
     expect(out).toContain('Welcome to Ubuntu');
     expect(out).toContain(`Connection to ${SRV_IP} closed.`);
     expect(out).not.toContain('bob@SRV:~$');

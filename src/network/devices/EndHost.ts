@@ -19,6 +19,7 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+import { buildEchoReply } from '../icmp/IcmpEcho';
 import {
   classifyIpv4Destination, decrementForForwarding, ipv4HeaderProblem,
   connectedPrefixesOfPort, martianSource, type ConnectedIpv4Prefix,
@@ -2647,33 +2648,10 @@ export abstract class EndHost extends Equipment {
       : port.getIPAddress();
     if (!myIP) return;
 
-    // Build ICMP echo reply
-    const replyICMP: ICMPPacket = {
-      type: 'icmp',
-      icmpType: 'echo-reply',
-      code: 0,
-      id: requestICMP.id,
-      sequence: requestICMP.sequence,
-      dataSize: requestICMP.dataSize,
-    };
-
-    const icmpSize = 8 + requestICMP.dataSize; // ICMP header + data
-    // Mirror the request's DF bit: an echo request that made it here
-    // unfragmented (DF unset) took a path whose MTU allows that size, so the
-    // reply — same size, reverse direction — should be free to do the same
-    // rather than picking up this stack's DF-by-default and bouncing.
-    const replyIP = createIPv4Packet(
-      myIP,
-      requestIP.sourceIP,
-      IP_PROTO_ICMP,
-      this.defaultTTL,
-      replyICMP,
-      icmpSize,
-      { flags: requestIP.flags },
-    );
+    const replyIP = buildEchoReply(requestIP, requestICMP, myIP, this.defaultTTL);
 
     // Route the reply — source may be on a different subnet (via default gateway)
-    const route = this.resolveRoute(requestIP.sourceIP);
+    const route = this.resolveRoute(replyIP.destinationIP);
     if (!route) return;
 
     const outPortName = route.port.getName();

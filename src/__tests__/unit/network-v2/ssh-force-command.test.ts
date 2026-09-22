@@ -40,7 +40,7 @@ describe('SSH server — ForceCommand directive', () => {
   it('replaces the user-supplied command with the configured one (exec mode)', async () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'ForceCommand whoami\nPasswordAuthentication yes\n');
-    const out = await pc.executeCommand('ssh alice@10.0.0.2 echo hello');
+    const out = await pc.executeCommand('ssh alice@10.0.0.2 echo hello', 'admin\n');
     expect(out).toMatch(/^alice/m);
     expect(out).not.toMatch(/hello/);
   });
@@ -48,14 +48,14 @@ describe('SSH server — ForceCommand directive', () => {
   it('exposes the user’s original command via $SSH_ORIGINAL_COMMAND', async () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'ForceCommand echo "got: $SSH_ORIGINAL_COMMAND"\nPasswordAuthentication yes\n');
-    const out = await pc.executeCommand('ssh alice@10.0.0.2 rm -rf /etc');
+    const out = await pc.executeCommand('ssh alice@10.0.0.2 rm -rf /etc', 'admin\n');
     expect(out).toMatch(/got: rm -rf \/etc/);
   });
 
   it('runs the forced command also for interactive login (no remote command)', async () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'ForceCommand whoami\nPasswordAuthentication yes\n');
-    const out = await pc.executeCommand('ssh alice@10.0.0.2');
+    const out = await pc.executeCommand('ssh alice@10.0.0.2', 'admin\n');
     expect(out).toMatch(/^alice/m);
     expect(out).not.toMatch(/Welcome to Ubuntu/);
   });
@@ -63,7 +63,7 @@ describe('SSH server — ForceCommand directive', () => {
   it('with no ForceCommand, the user’s command runs as-is', async () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'PasswordAuthentication yes\n');
-    const out = await pc.executeCommand('ssh alice@10.0.0.2 echo hello');
+    const out = await pc.executeCommand('ssh alice@10.0.0.2 echo hello', 'admin\n');
     expect(out).toMatch(/^hello/m);
   });
 });

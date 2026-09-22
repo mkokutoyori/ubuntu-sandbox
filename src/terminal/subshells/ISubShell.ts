@@ -102,6 +102,8 @@ export interface ISubShell extends IShellBase {
    */
   getCompletionsAsync?(line: string): Promise<string[]>;
 
+  completesWholeLine?(): boolean;
+
   /**
    * Continuation hook: after the host terminal collects the value
    * requested by a `pendingInput` directive, it calls this method with

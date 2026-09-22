@@ -301,16 +301,16 @@ describe('§G — Router wires CredentialStore + SecurityAuditLog into native CL
     await lab.ciscoR1.executeCommand('configure terminal');
     await lab.ciscoR1.executeCommand('username admin privilege 15 secret Admin@123');
     await lab.ciscoR1.executeCommand('end');
-    const out = lab.ciscoR1.runSshCommandSync('', 'show logging');
-    expect(out?.output).toMatch(/%SEC_LOGIN-6-CONFIG_CHANGE.*admin/);
+    const out = await lab.ciscoR1.executeCommand('show logging');
+    expect(out).toMatch(/%SEC_LOGIN-6-CONFIG_CHANGE.*admin/);
   });
 
-  test('Cisco show logging records an SSH login success', () => {
+  test('Cisco show logging records an SSH login success', async () => {
     lab.ciscoR1.getCredentialStore().upsert(NetworkOsAccount.create({ name: 'admin', privilege: 15 }));
     lab.ciscoR1.getCredentialStore().recordLoginSuccess('admin', '10.0.0.1', 'password');
-    const out = lab.ciscoR1.runSshCommandSync('', 'show logging');
-    expect(out?.output).toMatch(/%SEC_LOGIN-5-LOGIN_SUCCESS/);
-    expect(out?.output).toMatch(/10\.0\.0\.1/);
+    const out = await lab.ciscoR1.executeCommand('show logging');
+    expect(out).toMatch(/%SEC_LOGIN-5-LOGIN_SUCCESS/);
+    expect(out).toMatch(/10\.0\.0\.1/);
   });
 
   test('Huawei display logbuffer contains AAA events', async () => {
@@ -319,13 +319,13 @@ describe('§G — Router wires CredentialStore + SecurityAuditLog into native CL
     await lab.hwR1.executeCommand('local-user admin password cipher Admin@123');
     await lab.hwR1.executeCommand('quit');
     await lab.hwR1.executeCommand('quit');
-    const out = lab.hwR1.runSshCommandSync('', 'display logbuffer');
-    expect(out?.output).toMatch(/SEC_LOGIN|CONFIG_CHANGE|admin/);
+    const out = await lab.hwR1.executeCommand('display logbuffer');
+    expect(out).toMatch(/SEC_LOGIN|CONFIG_CHANGE|admin/);
   });
 
-  test('Cisco show logging is empty when nothing happened', () => {
-    const out = lab.ciscoR1.runSshCommandSync('', 'show logging');
-    expect(out?.output).toMatch(/Syslog logging:/);
+  test('Cisco show logging is empty when nothing happened', async () => {
+    const out = await lab.ciscoR1.executeCommand('show logging');
+    expect(out).toMatch(/Syslog logging:/);
   });
 });
 
@@ -450,7 +450,7 @@ describe('§J — SSH dispatch publishes lifecycle events on the bus', () => {
   test('successful SSH login emits router.aaa.account.login.success', async () => {
     const seen: string[] = [];
     (lab.ciscoR1 as any).getBus().subscribe('router.aaa.account.login.success', (e: any) => seen.push((e.payload as { account: { name: string } }).account.name));
-    await lab.linux1.executeCommand('ssh admin@10.0.0.6 "show version"');
+    await lab.linux1.executeCommand('ssh admin@10.0.0.6 "show version"', 'Admin@123\n');
     expect(seen).toContain('admin');
   });
 
@@ -463,9 +463,9 @@ describe('§J — SSH dispatch publishes lifecycle events on the bus', () => {
 
   test('show logging after a wrong login contains LOGIN_FAILED', async () => {
     await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"');
-    const out = lab.ciscoR1.runSshCommandSync('', 'show logging');
-    expect(out?.output).toMatch(/%SEC_LOGIN-4-LOGIN_FAILED/);
-    expect(out?.output).toMatch(/10\.0\.0\.1/);
+    const out = await lab.ciscoR1.executeCommand('show logging');
+    expect(out).toMatch(/%SEC_LOGIN-4-LOGIN_FAILED/);
+    expect(out).toMatch(/10\.0\.0\.1/);
   });
 
   test('login block-for refuses subsequent attempts after threshold', async () => {
@@ -575,7 +575,7 @@ describe('§L — Router wires SshSessionRegistry into show users / display user
   });
 
   test('Sessions are auto-closed at the end of one-shot exec mode', async () => {
-    await lab.linux1.executeCommand('ssh admin@10.0.0.6 "show version"');
+    await lab.linux1.executeCommand('ssh admin@10.0.0.6 "show version"', 'Admin@123\n');
     expect(lab.ciscoR1.getSshSessionRegistry().list().length).toBe(0);
     expect(lab.ciscoR1.getSshSessionRegistry().history().length).toBe(1);
   });

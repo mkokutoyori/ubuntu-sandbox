@@ -49,29 +49,30 @@ describe('ssh client — remote sshd gating', () => {
       getUser: (u: string) => unknown;
     } } }).executor.userMgr;
     for (const u of ['alice', 'user']) {
-      if (!um.getUser(u)) { um.useradd(u, { m: true, s: '/bin/bash' }); um.setPassword(u, 'x'); }
+      if (!um.getUser(u)) um.useradd(u, { m: true, s: '/bin/bash' });
+      um.setPassword(u, 'admin');
     }
   });
 
   it('connects when sshd is active on the remote', async () => {
-    const out = await client.executeCommand('ssh user@10.0.0.10');
+    const out = await client.executeCommand('ssh user@10.0.0.10', 'admin\n');
     expect(out).toContain('Welcome to Ubuntu');
     expect(out).toContain('Connection to 10.0.0.10 closed');
   });
 
   it('refuses when sshd is stopped on the remote', async () => {
     server.executeCommand('systemctl stop ssh');
-    const out = await client.executeCommand('ssh user@10.0.0.10');
+    const out = await client.executeCommand('ssh user@10.0.0.10', 'admin\n');
     expect(out).toMatch(/Connection refused/);
   });
 
   it('refuses with ENETUNREACH when no route reaches the IP', async () => {
-    const out = await client.executeCommand('ssh user@192.0.2.99');
+    const out = await client.executeCommand('ssh user@192.0.2.99', 'admin\n');
     expect(out).toMatch(/Network is unreachable/);
   });
 
   it('records a syslog line in /var/log/auth.log on the remote on success', async () => {
-    await client.executeCommand('ssh alice@10.0.0.10');
+    await client.executeCommand('ssh alice@10.0.0.10', 'admin\n');
     const log = await server.executeCommand('cat /var/log/auth.log');
     expect(log).toContain('Accepted password for alice');
     expect(log).toContain('from 10.0.0.2');
@@ -79,19 +80,19 @@ describe('ssh client — remote sshd gating', () => {
 
   it('records a Failed line on refusal', async () => {
     server.executeCommand('systemctl stop ssh');
-    await client.executeCommand('ssh alice@10.0.0.10');
+    await client.executeCommand('ssh alice@10.0.0.10', 'admin\n');
     const log = await server.executeCommand('cat /var/log/auth.log');
     expect(log).toContain('Failed password for alice');
   });
 
   it('PermitRootLogin no in sshd_config blocks root', async () => {
     // Default sshd_config already has PermitRootLogin no — confirm.
-    const out = await client.executeCommand('ssh root@10.0.0.10');
+    const out = await client.executeCommand('ssh root@10.0.0.10', 'admin\n');
     expect(out).toMatch(/Permission denied/);
   });
 
   it('non-root user is unaffected by PermitRootLogin no', async () => {
-    const out = await client.executeCommand('ssh user@10.0.0.10');
+    const out = await client.executeCommand('ssh user@10.0.0.10', 'admin\n');
     expect(out).toContain('Welcome to Ubuntu');
   });
 });
@@ -105,9 +106,10 @@ describe('ssh client — works identically from LinuxServer', () => {
     configure(a, '10.0.0.20');
     configure(b, '10.0.0.21');
     const um = (b as unknown as { executor: { userMgr: { useradd: (u: string, o?: object) => void; setPassword: (u: string, p: string) => void; getUser: (u: string) => unknown } } }).executor.userMgr;
-    if (!um.getUser('alice')) { um.useradd('alice', { m: true, s: '/bin/bash' }); um.setPassword('alice', 'x'); }
-    expect(await a.executeCommand('ssh alice@10.0.0.21')).toContain('Welcome to Ubuntu');
+    if (!um.getUser('alice')) um.useradd('alice', { m: true, s: '/bin/bash' });
+    um.setPassword('alice', 'admin');
+    expect(await a.executeCommand('ssh alice@10.0.0.21', 'admin\n')).toContain('Welcome to Ubuntu');
     b.executeCommand('systemctl stop ssh');
-    expect(await a.executeCommand('ssh alice@10.0.0.21')).toMatch(/Connection refused/);
+    expect(await a.executeCommand('ssh alice@10.0.0.21', 'admin\n')).toMatch(/Connection refused/);
   });
 });

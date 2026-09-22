@@ -6,6 +6,14 @@
  *   - TAG / FORMAT clauses             (DEF-RMAN-05)
  *   - BACKUP ARCHIVELOG ALL DELETE INPUT (DEF-RMAN-20)
  *   - ALLOCATE / RELEASE CHANNEL inside RUN { ... } (DEF-RMAN-07)
+ *
+ * Le `fileExists` de ce contexte ne connaissait que ce que RMAN avait
+ * ECRIT, si bien qu'il repondait « absent » des DATAFILES qu'il declare
+ * lui-meme. Tant que BACKUP VALIDATE ne lisait rien, cela ne se voyait
+ * pas ; depuis qu'il lit, un datafile introuvable fait echouer la
+ * validation — a juste titre. Les fichiers declares existent donc
+ * desormais dans ce faux disque, ce qui est ce que ferait n'importe
+ * quel vrai systeme de fichiers.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -14,8 +22,13 @@ import {
   type IRmanOracleContext,
 } from '@/terminal/subshells/rman';
 
+const DATAFILES = [
+  { fileNo: 1, path: '/u01/oradata/ORCL/system01.dbf', sizeBytes: 1, tablespace: 'SYSTEM' },
+  { fileNo: 2, path: '/u01/oradata/ORCL/users01.dbf',  sizeBytes: 1, tablespace: 'USERS'  },
+];
+
 function ctx(extra: { archivelogPaths?: string[] } = {}): IRmanOracleContext {
-  const written = new Set<string>();
+  const written = new Set<string>(DATAFILES.map(df => df.path));
   const deleted = new Set<string>();
   return {
     dbId: DbId.DEFAULT, dbName: 'ORCL',
@@ -26,10 +39,7 @@ function ctx(extra: { archivelogPaths?: string[] } = {}): IRmanOracleContext {
       deleteFile: (p) => { deleted.add(p); return ok(undefined); },
       availableBytes: () => 1e10,
     },
-    getDatafiles: () => [
-      { fileNo: 1, path: '/u01/oradata/ORCL/system01.dbf', sizeBytes: 1, tablespace: 'SYSTEM' },
-      { fileNo: 2, path: '/u01/oradata/ORCL/users01.dbf',  sizeBytes: 1, tablespace: 'USERS'  },
-    ],
+    getDatafiles: () => DATAFILES,
     getSpfileParam: () => undefined,
     // (extension hook for archivelog deletion test; ignored by core)
     getArchivelogPaths: () => extra.archivelogPaths ?? [],

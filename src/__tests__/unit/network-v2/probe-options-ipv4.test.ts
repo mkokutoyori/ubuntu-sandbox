@@ -46,6 +46,14 @@
  *     c'est-a-dire precisement ce que le lot ajoute — elle ne pouvait
  *     pas passer du cote parent, et ne temoignait donc de rien.
  *
+ * Le montage du cas « route complete » est arbitraire et il le dit : une
+ * source route epuisee ne peut pas naitre dans une maquette a un seul
+ * saut, donc elle est ecrite a la main. Son saut enregistre nomme A,
+ * l'emetteur, et non R1 : depuis que la reponse d'echo INVERSE la route
+ * (`probe-reponse-echo-renvoie-la-route.test.ts`), une route nommant R1
+ * ferait repartir la reponse vers R1 lui-meme, et le cas mesurerait le
+ * routage de la reponse au lieu du durcissement, qui est son sujet.
+ *
  * `no ip source-route` JETTE des l'entree et non au seul reacheminement,
  * parce que Cisco le decrit sur « any IP datagram containing a
  * source-route option » : une route COMPLETE visant le routeur lui-meme
@@ -86,7 +94,7 @@ import {
   type EthernetFrame, type ICMPPacket, type IPv4Option, type IPv4Packet,
 } from '@/network/core/types';
 import {
-  buildRecordRouteOption, buildSourceRouteOption, recordRouteAddresses,
+  buildRecordRouteOption, buildSourceRouteOption, routeAddressesOf,
 } from '@/network/layers/internet/Ipv4Options';
 import { buildIpv4Packet } from '@/network/layers/internet/Ipv4Egress';
 import { fragmentIPv4 } from '@/network/core/Ipv4Fragmentation';
@@ -257,7 +265,7 @@ describe('Record Route is filled by every hop that forwards', () => {
     const arrived = atB();
     expect(arrived).toHaveLength(1);
     const option = optionOf(arrived[0], IP_OPTION_RECORD_ROUTE)!;
-    expect(recordRouteAddresses(option).map(ip => ip.toString()))
+    expect(routeAddressesOf(option).map(ip => ip.toString()))
       .toEqual(['10.0.1.1', '10.0.2.1']);
     expect(verifyIPv4Checksum(arrived[0])).toBe(true);
   });
@@ -270,7 +278,7 @@ describe('Record Route is filled by every hop that forwards', () => {
     const arrived = atB();
     expect(arrived).toHaveLength(1);
     const option = optionOf(arrived[0], IP_OPTION_RECORD_ROUTE)!;
-    expect(recordRouteAddresses(option).map(ip => ip.toString())).toEqual(['10.0.1.1']);
+    expect(routeAddressesOf(option).map(ip => ip.toString())).toEqual(['10.0.1.1']);
   });
 });
 
@@ -349,7 +357,7 @@ describe('`no ip source-route` decides, instead of only being rendered', () => {
   });
 
   it('a completed route aimed at the router itself is dropped too, not delivered', async () => {
-    const exhausted: IPv4Option = { type: IP_OPTION_LOOSE_SOURCE_ROUTE, data: [8, 10, 0, 1, 1] };
+    const exhausted: IPv4Option = { type: IP_OPTION_LOOSE_SOURCE_ROUTE, data: [8, 10, 0, 0, 10] };
 
     const permissive = await lab();
     const toPermissiveA = watchIpv4(permissive.a.getPort('eth0')!);

@@ -1111,16 +1111,16 @@ function appendManagementConfig(lines: string[], router: Router): void {
   const mgmt = (router as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
   if (!mgmt) return;
 
-  const stelnet = mgmt.getStelnet();
-  if (stelnet.enabled) { lines.push('#'); lines.push('stelnet server enable'); }
   const telnet = mgmt.getTelnet();
   if (telnet.enabled) { lines.push('#'); lines.push('telnet server enable'); }
   const ssh = mgmt.getSsh();
   if (ssh.enabled) {
     lines.push('#');
-    lines.push('ssh server enable');
+    lines.push('stelnet server enable');
     if (ssh.port !== 22) lines.push(`ssh server port ${ssh.port}`);
   }
+  const retries = router.getSshAuthenticationRetries();
+  if (retries !== null) lines.push(`ssh server authentication-retries ${retries}`);
   if (router.isFtpServerEnabled()) { lines.push('#'); lines.push('ftp server enable'); }
   if (router._getGlobalToggle('telnet server')) { lines.push('#'); lines.push('telnet server enable'); }
 

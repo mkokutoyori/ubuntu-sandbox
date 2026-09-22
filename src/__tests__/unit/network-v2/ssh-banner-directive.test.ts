@@ -46,7 +46,7 @@ describe('SSH server — Banner directive', () => {
     srvVfs(srv).writeFile('/etc/my-banner', 'CUSTOM BANNER LINE\n', 0, 0, 0o022);
     await reload(srv, 'PasswordAuthentication yes\nBanner /etc/my-banner\n');
 
-    const out = await pc.executeCommand('ssh alice@10.0.0.2');
+    const out = await pc.executeCommand('ssh alice@10.0.0.2', 'admin\n');
     expect(out).toMatch(/CUSTOM BANNER LINE/);
     expect(out).not.toMatch(/OLD ISSUE/);
   });
@@ -56,7 +56,7 @@ describe('SSH server — Banner directive', () => {
     srvVfs(srv).writeFile('/etc/issue.net', 'OLD ISSUE\n', 0, 0, 0o022);
     await reload(srv, 'PasswordAuthentication yes\nBanner none\n');
 
-    const out = await pc.executeCommand('ssh alice@10.0.0.2');
+    const out = await pc.executeCommand('ssh alice@10.0.0.2', 'admin\n');
     expect(out).not.toMatch(/OLD ISSUE/);
     expect(out).toMatch(/Welcome to Ubuntu/);
   });
@@ -66,7 +66,7 @@ describe('SSH server — Banner directive', () => {
     srvVfs(srv).writeFile('/etc/issue.net', 'LEGACY ISSUE LINE\n', 0, 0, 0o022);
     await reload(srv, 'PasswordAuthentication yes\n');
 
-    const out = await pc.executeCommand('ssh alice@10.0.0.2');
+    const out = await pc.executeCommand('ssh alice@10.0.0.2', 'admin\n');
     expect(out).toMatch(/LEGACY ISSUE LINE/);
   });
 });

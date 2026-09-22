@@ -1,8 +1,9 @@
 import {
   ETHERTYPE_ARP, ETHERTYPE_IPV4, IP_PROTO_ICMP, IP_PROTO_UDP, IPAddress, MACAddress,
-  computeIPv4Checksum, createIPv4Packet,
+  createIPv4Packet,
   type ARPPacket, type EthernetFrame, type ICMPPacket, type IPv4Packet, type UDPPacket,
 } from '../../../core/types';
+import { buildEchoReply } from '../../../icmp/IcmpEcho';
 
 export function udpDatagram(
   source: string, destination: string,
@@ -95,14 +96,5 @@ export function icmpEchoReply(packet: IPv4Packet): IPv4Packet | null {
   const icmp = packet.payload as ICMPPacket | undefined;
   if (icmp?.type !== 'icmp' || icmp.icmpType !== 'echo-request') return null;
 
-  const reply: IPv4Packet = {
-    ...packet,
-    ttl: 64,
-    headerChecksum: 0,
-    sourceIP: packet.destinationIP,
-    destinationIP: packet.sourceIP,
-    payload: { ...icmp, icmpType: 'echo-reply' },
-  };
-  reply.headerChecksum = computeIPv4Checksum(reply);
-  return reply;
+  return buildEchoReply(packet, icmp, packet.destinationIP, 64);
 }

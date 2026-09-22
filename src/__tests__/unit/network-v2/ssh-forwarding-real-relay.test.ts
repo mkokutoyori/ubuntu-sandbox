@@ -81,7 +81,7 @@ describe('PRD-Port-Forwarding.md Phase 8 — ssh -L real relay', () => {
       },
     });
 
-    await client.executeCommand(`ssh -L 9001:${TARGET_IP}:80 -N alice@${SERVER_IP}`);
+    await client.executeCommand(`ssh -L 9001:${TARGET_IP}:80 -N alice@${SERVER_IP}`, 'admin\n');
 
     const received2: unknown[] = [];
     const clientSocket = client.getTcpStack().connect('127.0.0.1', 9001, {
@@ -106,7 +106,7 @@ describe('PRD-Port-Forwarding.md Phase 8 — ssh -R real relay', () => {
       onAccept: (s) => { acceptedRemoteIp = s.remoteIp; s.onData(() => s.send('pong')); },
     });
 
-    await client.executeCommand(`ssh -R 9002:${TARGET_IP}:81 -N alice@${SERVER_IP}`);
+    await client.executeCommand(`ssh -R 9002:${TARGET_IP}:81 -N alice@${SERVER_IP}`, 'admin\n');
 
     const received: unknown[] = [];
     const serverSideSocket = server.getTcpStack().connect('127.0.0.1', 9002, {
@@ -126,7 +126,7 @@ describe('PRD-Port-Forwarding.md Phase 8 — ssh -R real relay', () => {
 describe('PRD-Port-Forwarding.md Phase 8 — no regression when the destination refuses', () => {
   it('-L closes the client side when the real target has no listener', async () => {
     const { client, server } = buildLab();
-    await client.executeCommand(`ssh -L 9003:${TARGET_IP}:80 -N alice@${SERVER_IP}`);
+    await client.executeCommand(`ssh -L 9003:${TARGET_IP}:80 -N alice@${SERVER_IP}`, 'admin\n');
 
     const clientSocket = client.getTcpStack().connect('127.0.0.1', 9003);
     expect(clientSocket!.state).not.toBe('established');

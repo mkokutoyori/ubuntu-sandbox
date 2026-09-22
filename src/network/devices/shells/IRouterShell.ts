@@ -43,6 +43,14 @@ export interface IRouterShell {
   /** The shell's logging config — source of the `terminal monitor` syslog stream. */
   getLoggingConfig?(): import('../inspection/config/LoggingConfig').LoggingConfig;
   /**
+   * Take over the stores that belong to the MACHINE rather than to this
+   * line — the alias repository and the logging buffer. A per-session
+   * shell that keeps its own answers `show aliases` and `show logging`
+   * from a freshly-booted device while the console answers from the real
+   * one.
+   */
+  adoptDeviceStores?(source: IRouterShell): void;
+  /**
    * Which unprompted streams this line currently accepts. The streams are
    * device-wide but the choice is the line's own, so the gate lives here:
    * IOS opens both with `terminal monitor`, VRP wants `terminal monitor`

@@ -444,11 +444,6 @@ export class HuaweiRouter extends Router {
     if (/^display\s+version\s*$/i.test(cmd)) {
       return { output: `${displayVersion(this)}\n`, exitCode: 0 };
     }
-    if (/^display\s+logbuffer\s*$/i.test(cmd)) {
-      const audit = this.getSecurityAuditLog();
-      const header = 'Logging buffer configuration and contents: enabled\nAllowed max buffer size : 1024\nActual buffer size : 1024\nChannel number : 4, Channel name : logbuffer\nDropped messages : 0\nOverwritten messages : 0\nCurrent messages : ' + audit.entries().length + '\n';
-      return { output: `${header}${audit.format()}\n`, exitCode: 0 };
-    }
     // Le chemin SSH synchrone ne traverse pas le trie : la commande est
     // interceptee ici comme ses voisines. Ce n'est PAS un second rendu —
     // les deux routes appellent le meme `formatDisplayUsers`.
@@ -510,13 +505,10 @@ export class HuaweiRouter extends Router {
         lines.push(`local-user ${u.name} password cipher ${u.secret}`);
         lines.push(`local-user ${u.name} privilege level ${u.privilege}`);
       }
-      const retries = this.getSshAuthenticationRetries();
-      if (retries !== null) lines.push(`ssh server authentication-retries ${retries}`);
       // Append SSH-state directives so SSH-aware tests see them. Real
       // VRP emits "protocol inbound ssh" specifically when ssh is among
       // the permitted protocols (not just when 'all' is set), so the
       // grep-style assertions in operations notebooks keep working.
-      if (this.sshServerEnabled) lines.push('stelnet server enable');
       const admis = this._getVtyTransportInput();
       if (admis === 'all' || admis === 'ssh') {
         lines.push('protocol inbound ssh');

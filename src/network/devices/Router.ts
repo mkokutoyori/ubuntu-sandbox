@@ -146,6 +146,7 @@ import {
 import {
   advanceSourceRoute, recordRoute, sourceRouteState,
 } from '../layers/internet/Ipv4Options';
+import { buildEchoReply } from '../icmp/IcmpEcho';
 import { selectIpv6SourceAddress } from '../layers/internet/Ipv6Egress';
 import type { ProtocolCounters } from '../layers/internet/ProtocolCounters';
 import {
@@ -1174,6 +1175,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       sftpSource: () => this.sshSftpFileSource(),
       execIdleTimeoutMs: () => this.resolveVtyIdleTimeoutMs(),
       banner: () => this.sshBannerText || null,
+      motd: () => this.getBanner('motd') || null,
       aaaAuthenticate: (n, p) => this.authenticateViaAaa(n, p),
       // Reuse the exact admission/failure-tracking the cross-vendor bypass
       // used to gate on its own (login block-for / quiet-mode ACL /
@@ -1183,9 +1185,20 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       isClientBlocked: (ip, user) => !this.vtyAdmissionVerdict('ssh', ip).accept
         || (user !== undefined && this.perUserAdmissionRefusal(user, ip) !== null),
       recordAuthFailure: (user, ip) => this.recordSshLogin(user, ip, '', false),
-      recordLogin: (user, ip) => this.recordSshLogin(user, ip, '', true),
+      recordLogin: (user, ip) => {
+        this.getCredentialStore().recordLoginSuccess(user, ip, 'password');
+      },
+      recordLogout: (user, ip) => this.closeWireVtySession(user, ip),
     });
     return new SshServerHandler(ctx);
+  }
+
+  private closeWireVtySession(user: string, fromIp: string): void {
+    const registry = this.getSshSessionRegistry();
+    const live = registry.list()
+      .filter((s) => s.user === user && s.fromIp === fromIp && s.state !== 'closed');
+    const last = live[live.length - 1];
+    if (last) registry.close(last.id, 'logout');
   }
 
   protected readonly tcpv2: TcpStack;
@@ -1626,6 +1639,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     dispose(): void;
   } {
     const shell = this.createShell();
+    shell.adoptDeviceStores?.(this.shell);
     shell.beginExecSession?.(this.resolveVtyExecLevel(user), user);
     let ended = false;
     return {
@@ -2728,21 +2742,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         // (correct for loopback/virtual interfaces and transport mode IPSec)
         const replySourceIP = ipPkt.destinationIP;
 
-        const replyICMP: ICMPPacket = {
-          type: 'icmp', icmpType: 'echo-reply', code: 0,
-          id: icmp.id, sequence: icmp.sequence, dataSize: icmp.dataSize,
-        };
-
-        const replyIP = createIPv4Packet(
-          replySourceIP, ipPkt.sourceIP, IP_PROTO_ICMP, this.defaultTTL,
-          replyICMP, 8 + icmp.dataSize,
-        );
+        const replyIP = buildEchoReply(ipPkt, icmp, replySourceIP, this.defaultTTL);
 
         this.counters.icmpOutEchoReps++;
         this.counters.icmpOutMsgs++;
 
-        const sameSubnetMac = this.peerOnSameSubnet(inPort, ipPkt.sourceIP)
-          ? this.arpTable.get(ipPkt.sourceIP.toString())
+        const replyTarget = replyIP.destinationIP;
+        const sameSubnetMac = this.peerOnSameSubnet(inPort, replyTarget)
+          ? this.arpTable.get(replyTarget.toString())
           : undefined;
         if (sameSubnetMac && !this.ipsecEngine) {
           this.counters.ifOutOctets += replyIP.totalLength;
@@ -2750,7 +2757,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
             srcMAC: port.getMAC(), dstMAC: sameSubnetMac.mac,
             etherType: ETHERTYPE_IPV4, payload: replyIP,
           });
-        } else if (!this.sendSelfOriginatedIPv4(replyIP, ipPkt.sourceIP)) {
+        } else if (!this.sendSelfOriginatedIPv4(replyIP, replyTarget)) {
           this.forwardPacket(inPort, replyIP);
         }
       } else if (icmp.icmpType === 'destination-unreachable' && icmp.code === 4) {
@@ -5013,7 +5020,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   getCredentialStore(): NetworkOsCredentialStore {
     if (!this._credentialStore) {
-      this._securityAuditLog = new SecurityAuditLog({ deviceId: this.id, bus: this.getBus() });
+      this._securityAuditLog = new SecurityAuditLog({
+        deviceId: this.id,
+        bus: this.getBus(),
+        syslog: (entry) => this.appendSecurityEventToSyslog(entry),
+      });
       this._sshSessionRegistry = new SshSessionRegistry({
         deviceId: this.id,
         bus: this.getBus(),
@@ -5045,6 +5056,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getSecurityAuditLog(): SecurityAuditLog {
     if (!this._securityAuditLog) this.getCredentialStore();
     return this._securityAuditLog!;
+  }
+
+  private appendSecurityEventToSyslog(
+    entry: { facility: string; severity: number; mnemonic: string; message: string },
+  ): void {
+    const severity = SEVERITY_NAMES[entry.severity];
+    if (!severity) return;
+    this.getLoggingConfig()?.append(
+      severity, entry.facility, entry.message, true, entry.mnemonic);
   }
 
   getSshSessionRegistry(): SshSessionRegistry {

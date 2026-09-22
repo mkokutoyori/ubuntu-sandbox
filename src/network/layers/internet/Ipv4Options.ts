@@ -118,7 +118,7 @@ export function recordRoute(pkt: IPv4Packet, recorded: IPAddress): RecordRouteOu
   };
 }
 
-export function recordRouteAddresses(option: IPv4Option): IPAddress[] {
+export function routeAddressesOf(option: IPv4Option): IPAddress[] {
   const addresses: IPAddress[] = [];
   const pointer = option.data[0] ?? SMALLEST_LEGAL_POINTER;
   for (let p = SMALLEST_LEGAL_POINTER; p < pointer; p += ADDRESS_OCTETS) {
@@ -139,4 +139,34 @@ export function buildSourceRouteOption(hops: readonly IPAddress[], strict: boole
     type: strict ? IP_OPTION_STRICT_SOURCE_ROUTE : IP_OPTION_LOOSE_SOURCE_ROUTE,
     data,
   };
+}
+
+export function reflectRecordRoute(pkt: IPv4Packet, recorded: IPAddress): IPv4Option | null {
+  const option = findOption(pkt, type => type === IP_OPTION_RECORD_ROUTE);
+  if (!option) return null;
+  const carried: IPv4Packet = { ...pkt, options: [option] };
+  const outcome = recordRoute(carried, recorded);
+  if (outcome.kind === 'error') return option;
+  return outcome.packet.options?.[0] ?? option;
+}
+
+export interface ReversedSourceRoute {
+  readonly firstHop: IPAddress;
+  readonly option: IPv4Option;
+}
+
+export function reverseSourceRoute(
+  pkt: IPv4Packet, ultimateDestination: IPAddress,
+): ReversedSourceRoute | null {
+  const option = sourceRouteOption(pkt);
+  if (!option) return null;
+  const travelled = routeAddressesOf(option);
+  if (travelled.length === 0) return null;
+
+  const reversed = [...travelled].reverse();
+  const firstHop = reversed[0];
+  const remaining = [...reversed.slice(1), ultimateDestination];
+  const data: number[] = [SMALLEST_LEGAL_POINTER];
+  for (const hop of remaining) data.push(...hop.getOctets());
+  return { firstHop, option: { type: option.type, data } };
 }

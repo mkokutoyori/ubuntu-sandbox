@@ -177,7 +177,7 @@ export class CrossVendorSshHost {
       if (provided !== undefined) {
         if (account && this.authority.authenticate(account.name, provided)) return 'password';
         if (provided === '' && eff.permitEmptyPasswords && account && account.secret === '') return 'password';
-      } else if (account || this.authority.count() === 0) {
+      } else if (this.authority.count() === 0) {
         return 'password';
       }
     }

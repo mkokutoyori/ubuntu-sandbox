@@ -187,6 +187,7 @@ import {
 import type { CiscoDnsConfig } from '../router/dns/CiscoDnsConfig';
 import type { RouterHostsTable } from '../router/dns/RouterHostsTable';
 import { CiscoConfigState, getConfigState } from '../inspection/config/CiscoConfigState';
+import type { IRouterShell } from './IRouterShell';
 import {
   AliasRepository, aliasModeForCliMode, type AliasMode,
 } from '../inspection/config/AliasRepository';
@@ -996,10 +997,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   /** Config-driven CLI aliases — real, working, projected by show. */
-  protected readonly aliases = new AliasRepository();
+  protected aliases = new AliasRepository();
 
   /** Config-driven syslog/logging state, projected by `show logging`. */
-  protected readonly logging = new LoggingConfig();
+  protected logging = new LoggingConfig();
+
+  adoptDeviceStores(source: IRouterShell): void {
+    if ((source as unknown) === (this as unknown)) return;
+    const other = source as unknown as {
+      aliases?: AliasRepository; logging?: LoggingConfig;
+    };
+    if (other.aliases instanceof AliasRepository) this.aliases = other.aliases;
+    if (other.logging instanceof LoggingConfig) this.logging = other.logging;
+  }
   protected readonly outgoingSessions = new OutgoingSessionRegistry();
   private reloadTimer: TimerHandle | null = null;
   private scheduledReloadAtMs: number | null = null;
@@ -1581,6 +1591,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const mode = ctx?.mode ?? 'privileged';
     const line = commandLine.trim();
     if (!line) return null;
+
+    if (mode === 'user' || mode === 'privileged') {
+      const outbound = this.outboundSshClientPlan(line, ctx?.device as TDevice | undefined);
+      if (outbound) return outbound;
+    }
 
     if (!this.commandVisibleTo(line, mode, ctx)) return null;
 
@@ -9773,7 +9788,27 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * router's first configured interface — runSshClient probes for it
    * automatically when sourceIp resolves to a known device.
    */
-  private runOutboundSshClient(args: string[]): string {
+  private outboundSshClientPlan(
+    commandLine: string, device: TDevice | undefined,
+  ): CommandInteractionPlan | null {
+    const toks = commandLine.trim().split(/\s+/).filter(Boolean);
+    if (toks[0]?.toLowerCase() !== 'ssh' || toks.length < 2 || !device) return null;
+    const args = toks.slice(1);
+    return {
+      steps: [
+        { kind: 'password', prompt: 'Password:', storeAs: 'ssh_password' },
+        {
+          kind: 'run',
+          run: async (rt) => {
+            rt.output(this.avecReferenceAppareil(device, () =>
+              this.runOutboundSshClient(args, rt.values.get('ssh_password'))));
+          },
+        },
+      ],
+    };
+  }
+
+  private runOutboundSshClient(args: string[], offeredPassword?: string): string {
     let user = 'admin';
     let port: string | null = null;
     const rest: string[] = [];
@@ -9820,6 +9855,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       sourceHostname: router._getHostnameInternal(),
       sourceIp,
       sourceUser: user,
+      offeredPassword,
       localVfs: {
         readFile: () => null,
         writeFile: () => undefined,

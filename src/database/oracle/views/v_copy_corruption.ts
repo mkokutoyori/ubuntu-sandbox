@@ -9,7 +9,7 @@ import { registerView } from './registry';
 registerView({
   name: 'V$COPY_CORRUPTION',
   comment: 'Corrupt blocks in image copies',
-  query() {
+  query({ runtime }) {
     return queryResult(
       [
         col.num('RECID'),
@@ -18,7 +18,9 @@ registerView({
         col.num('BLOCKS'),
         col.str('CORRUPTION_TYPE', 9),
       ],
-      []
+      runtime.backupCorruptions
+        .filter(c => c.kind === 'COPY')
+        .map(c => [c.recid, c.fileNo, c.block, c.blocks, c.type])
     );
   },
 });

@@ -1,7 +1,8 @@
 import {
-  IPAddress, IP_PROTO_ICMP, computeIPv4Checksum,
-  type ICMPPacket, type IPv4Packet,
+  IPAddress, IP_PROTO_ICMP, computeIPv4Checksum, createIPv4Packet,
+  type ICMPPacket, type IPv4Option, type IPv4Packet,
 } from '../core/types';
+import { reflectRecordRoute, reverseSourceRoute } from '../layers/internet/Ipv4Options';
 
 export const ECHO_DATA_BYTES = 56;
 
@@ -33,6 +34,27 @@ export function buildEchoRequest(
   };
   packet.headerChecksum = computeIPv4Checksum(packet);
   return packet;
+}
+
+export function buildEchoReply(
+  request: IPv4Packet, requestIcmp: ICMPPacket, source: IPAddress, ttl: number,
+): IPv4Packet {
+  const reply: ICMPPacket = {
+    type: 'icmp', icmpType: 'echo-reply', code: 0,
+    id: requestIcmp.id, sequence: requestIcmp.sequence, dataSize: requestIcmp.dataSize,
+  };
+
+  const returnRoute = reverseSourceRoute(request, request.sourceIP);
+  const recorded = reflectRecordRoute(request, source);
+  const ipOptions: IPv4Option[] = [];
+  if (returnRoute) ipOptions.push(returnRoute.option);
+  if (recorded) ipOptions.push(recorded);
+
+  return createIPv4Packet(
+    source, returnRoute ? returnRoute.firstHop : request.sourceIP,
+    IP_PROTO_ICMP, ttl, reply, 8 + requestIcmp.dataSize,
+    { flags: request.flags, ...(ipOptions.length > 0 ? { ipOptions } : {}) },
+  );
 }
 
 export function echoReplyOf(packet: IPv4Packet): ICMPPacket | null {

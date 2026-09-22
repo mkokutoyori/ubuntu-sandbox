@@ -1,6 +1,6 @@
 [A] ping DB->BACKUP SANS politique : 2 packets transmitted, 0 received, 100% packet loss
 [B] ping apres politique ACCEPT : 2 packets transmitted, 2 received, 0% packet loss
-[C] RMAN vers une cible DISTANTE repond : connected to target database: ORCL (DBID=3238742099)
+[C] RMAN vers une cible DISTANTE repond : connected to target database: ORCL (DBID=1829734713)
 [D] sessions vues par le pare-feu : avant=4 apres=6
 [E] TEMOIN — ping apres politique DENY : 2 packets transmitted, 0 received, 100% packet loss
 [F] RMAN vers la MEME cible, pare-feu FERME : RMAN-04006: error from target database: ORA-12170: TNS:Connect timeout occurred
