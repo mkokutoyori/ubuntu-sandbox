@@ -4,7 +4,7 @@
 
 import { memo, useMemo } from 'react';
 import { NetworkDeviceUI, Connection } from '@/store/networkStore';
-import { computeOrthogonalPoints, pointAlongPolyline, type BundleSlot } from './connection-line-logic';
+import { pointAlongPolyline, type CableRoute } from './connection-line-logic';
 
 export type PacketKind = 'arp' | 'icmp' | 'broadcast' | 'data';
 
@@ -22,7 +22,7 @@ interface PacketAnimationProps {
   packet: ActivePacket;
   connection: Connection;
   devices: NetworkDeviceUI[];
-  slot?: BundleSlot;
+  route: CableRoute;
 }
 
 // Colors for different packet types
@@ -41,7 +41,7 @@ const PACKET_GLOWS = {
   data: 'rgba(59, 130, 246, 0.6)'
 };
 
-function PacketAnimationImpl({ packet, connection, devices, slot }: PacketAnimationProps) {
+function PacketAnimationImpl({ packet, connection, devices, route }: PacketAnimationProps) {
   const { sourceDevice, targetDevice, position } = useMemo(() => {
     const source = devices.find(d => d.id === connection.sourceDeviceId);
     const target = devices.find(d => d.id === connection.targetDeviceId);
@@ -50,20 +50,15 @@ function PacketAnimationImpl({ packet, connection, devices, slot }: PacketAnimat
       return { sourceDevice: null, targetDevice: null, position: { x: 0, y: 0 } };
     }
 
-    const points = computeOrthogonalPoints(
-      { x: source.x, y: source.y },
-      { x: target.x, y: target.y },
-      slot,
-    );
     const direction = packet.sourceDeviceId === source.id ? 'forward' : 'reverse';
     const t = direction === 'forward' ? packet.progress : (1 - packet.progress);
 
     return {
       sourceDevice: source,
       targetDevice: target,
-      position: pointAlongPolyline(points, t),
+      position: pointAlongPolyline(route.points, t),
     };
-  }, [packet, connection, devices, slot]);
+  }, [packet, connection, devices, route]);
 
   if (!sourceDevice || !targetDevice) return null;
 

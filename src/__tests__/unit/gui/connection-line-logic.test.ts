@@ -13,10 +13,8 @@ import {
   computeConnectionPath,
   getConnectionColor,
   getConnectionDash,
-  computeInterfaceLabelPositions,
-  computeOrthogonalPoints,
-  computeBundleSlots,
-  bundleOffset,
+  computeCableRoutes,
+  laneSpacing,
   pointAlongPolyline,
   abbreviateInterfaceName,
   NODE_HALF_WIDTH,
@@ -62,47 +60,59 @@ describe('connection-line-logic', () => {
     });
   });
 
-  describe('bundles between the same two devices', () => {
-    const links = [
-      { id: 'c3', sourceDeviceId: 'A', targetDeviceId: 'B' },
-      { id: 'c1', sourceDeviceId: 'B', targetDeviceId: 'A' },
-      { id: 'c2', sourceDeviceId: 'A', targetDeviceId: 'B' },
-      { id: 'solo', sourceDeviceId: 'A', targetDeviceId: 'C' },
+  describe('cables leaving one device by the same face', () => {
+    const centres = (count: number) => [
+      { x: 100, y: 100 },
+      ...Array.from({ length: count }, (_, i) => ({ x: 500, y: 60 + i * 40 })),
     ];
+    const face = (count: number) => Array.from({ length: count }, (_, i) => ({
+      id: `c${i}`,
+      sourceDeviceId: 'A',
+      targetDeviceId: `B${i}`,
+      source: { x: 100, y: 100 },
+      target: { x: 500, y: 60 + i * 40 },
+      sourceInterface: `Gi0/${i}`,
+      targetInterface: 'eth0',
+    }));
 
-    it('groups both directions into one bundle', () => {
-      const slots = computeBundleSlots(links);
-      expect(slots.get('c1')).toEqual({ index: 0, size: 3 });
-      expect(slots.get('c2')).toEqual({ index: 1, size: 3 });
-      expect(slots.get('c3')).toEqual({ index: 2, size: 3 });
-      expect(slots.get('solo')).toEqual({ index: 0, size: 1 });
+    it('gives a lone cable no lane at all', () => {
+      const routes = computeCableRoutes(face(1), centres(1));
+      expect(routes.get('c0')!.sourceLane).toBe(0);
+      expect(routes.get('c0')!.targetLane).toBe(0);
     });
 
-    it('gives a lone cable no offset at all', () => {
-      expect(bundleOffset({ index: 0, size: 1 })).toBe(0);
-      expect(bundleOffset(undefined)).toBe(0);
+    it('centres the fan on the direct route', () => {
+      const routes = computeCableRoutes(face(4), centres(4));
+      const lanes = [0, 1, 2, 3].map(i => routes.get(`c${i}`)!.sourceLane);
+      expect(lanes[0]).toBeLessThan(0);
+      expect(lanes[3]).toBeGreaterThan(0);
+      expect(lanes.reduce((a, b) => a + b, 0)).toBeCloseTo(0, 6);
     });
 
-    it('centres the bundle on the direct route', () => {
-      const offsets = [0, 1, 2, 3].map(i => bundleOffset({ index: i, size: 4 }));
-      expect(offsets[0]).toBeLessThan(0);
-      expect(offsets[3]).toBeGreaterThan(0);
-      expect(offsets.reduce((a, b) => a + b, 0)).toBeCloseTo(0, 6);
-    });
-
-    it('separates every cable of a bundle on the wire', () => {
-      const a = { x: 100, y: 100 };
-      const b = { x: 500, y: 100 };
-      const ys = [0, 1, 2, 3].map(
-        i => computeConnectionPath(a, b, { index: i, size: 4 }).points[0].y);
+    it('separates every cable of the fan on the wire', () => {
+      const routes = computeCableRoutes(face(4), centres(4));
+      const ys = [0, 1, 2, 3].map(i => routes.get(`c${i}`)!.points[0].y);
       expect(new Set(ys).size).toBe(4);
+    });
+
+    it('keeps a wide fan on the card rather than off it', () => {
+      const routes = computeCableRoutes(face(8), centres(8));
+      for (let i = 0; i < 8; i++) {
+        expect(Math.abs(routes.get(`c${i}`)!.sourceLane)).toBeLessThanOrEqual(NODE_HALF_HEIGHT);
+      }
     });
 
     it('a single cable keeps the direct route', () => {
       const plain = computeConnectionPath({ x: 100, y: 100 }, { x: 500, y: 100 });
       const solo = computeConnectionPath(
-        { x: 100, y: 100 }, { x: 500, y: 100 }, { index: 0, size: 1 });
+        { x: 100, y: 100 }, { x: 500, y: 100 }, { sourceLane: 0, targetLane: 0 });
       expect(solo.path).toBe(plain.path);
+    });
+
+    it('narrows the spacing only once the face is full', () => {
+      expect(laneSpacing(1, 'right')).toBe(0);
+      expect(laneSpacing(3, 'right')).toBe(18);
+      expect(laneSpacing(9, 'right')).toBeLessThan(18);
     });
   });
 
@@ -175,35 +185,6 @@ describe('connection-line-logic', () => {
     it('should return dotted-dash for console', () => {
       const dash = getConnectionDash('console');
       expect(dash).toBeTruthy(); // Console should have a dash pattern
-    });
-  });
-
-  // ── computeInterfaceLabelPositions ──────────────────────────────────
-
-  describe('computeInterfaceLabelPositions', () => {
-    it('should compute label positions near source and target', () => {
-      const positions = computeInterfaceLabelPositions(
-        { x: 100, y: 100 },
-        { x: 400, y: 100 }
-      );
-
-      // Source label should be near source point
-      expect(positions.source.x).toBeGreaterThan(100);
-      expect(positions.source.x).toBeLessThan(250); // Before midpoint
-
-      // Target label should be near target point
-      expect(positions.target.x).toBeGreaterThan(250); // After midpoint
-      expect(positions.target.x).toBeLessThan(400);
-    });
-
-    it('should centre labels on the run, not beside it', () => {
-      const source = { x: 100, y: 200 };
-      const target = { x: 400, y: 200 };
-      const points = computeOrthogonalPoints(source, target);
-      const positions = computeInterfaceLabelPositions(source, target);
-
-      expect(positions.source.y).toBeCloseTo(points[0].y, 5);
-      expect(positions.target.y).toBeCloseTo(points[points.length - 1].y, 5);
     });
   });
 
