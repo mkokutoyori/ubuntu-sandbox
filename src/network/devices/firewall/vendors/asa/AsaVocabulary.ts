@@ -3,7 +3,7 @@ import type { AsaMode } from './AsaShell';
 export const ASA_VOCABULARY: Readonly<Record<AsaMode, readonly string[]>> = Object.freeze({
   exec: Object.freeze(['enable', 'exit']),
   privileged: Object.freeze([
-    'clear', 'configure terminal', 'disable', 'exit', 'packet-tracer',
+    'clear', 'configure terminal', 'disable', 'enable', 'exit', 'packet-tracer',
     'show access-list', 'show conn', 'show nameif', 'show nat',
     'show logging', 'show running-config', 'show version', 'show xlate',
   ]),
