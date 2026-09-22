@@ -41,6 +41,58 @@ exactement comment `acl ipv6` a pu creer une liste IPv4 sans que rien
 ne le signale. Retire avec la refutation ci-dessus.
 
 
+## Diagnostic reseau
+
+### [traceroute] le MODE de sonde est analyse, documente, et jamais honore
+MESURE, depuis un PC Linux vers l'adresse d'une interface distante du
+pare-feu (deux sauts reels : le routeur puis le pare-feu) :
+
+    traceroute -I  (ICMP)      1 192.168.1.1   2 192.168.20.2   JUSTE
+    traceroute -T  (TCP)       1 192.168.20.2                   UN SEUL SAUT
+    traceroute -U  (UDP)       * * *                            RIEN
+    traceroute     (defaut)    * * *                            RIEN
+    tracert (Windows)          1 192.168.1.1   2 192.168.20.2   JUSTE
+
+Le mode par DEFAUT du `traceroute` de Linux ne rend rien, et c'est celui
+que tout le monde tape.
+
+LA CAUSE est structurelle et se lit dans la signature :
+`LinuxNetKernel.traceroute(target, maxHops, probesPerHop, firstTtl,
+timeoutMs)` — AUCUN parametre de methode. Le moteur ne peut donc pas
+distinguer ICMP d'UDP ni de TCP. Les drapeaux `-I`, `-U`, `-T` sont
+analyses (`parsed.method`), decrits dans l'aide (« Use TCP SYN for
+probes »), et n'atteignent jamais la sonde. C'est le §6 : toute
+l'apparence d'exister, sauf l'effet.
+
+TROIS CONSEQUENCES, toutes mesurees :
+
+1. `-T` rend UN saut vers une destination qui en compte deux : il saute
+   le routeur. Un vrai traceroute TCP sonde par TTL croissant et voit
+   chaque saut.
+
+2. Le mode UDP est decide par un ORACLE EN MEMOIRE, pas par le fil :
+   `tracerouteUdpDenied` appelle `transitUdpAclVerdict`, qui parcourt les
+   equipements et rend un verdict sans qu'aucun datagramme parte. Les
+   `sendUdpProbe` emis ensuite sont DECORATIFS — les sauts sont deja
+   calcules. C'est le §4.
+
+3. Quand la sonde ne rend rien, le code FABRIQUE des sauts : hop 1 =
+   la passerelle par defaut avec un RTT invente de 1 ms, puis des
+   `* * *`. Une sortie de diagnostic inventee est pire qu'une absence de
+   reponse, parce qu'elle se lit comme une mesure.
+
+MEME FAMILLE QUE `isPathReachable`, ferme par
+`probe-acces-admin-meme-verdict-partout.test.ts` : le client Linux decide
+hors du fil, par un parcours de la topologie en memoire. Ici l'oracle
+s'appelle `transitUdpAclVerdict` et vit dans le meme fichier
+(`HostLookup.ts`).
+
+CE QU'IL FAUT : que `traceroute` emette de VRAIES sondes a TTL croissant,
+du type demande, et lise les ICMP time-exceeded et port-unreachable qui
+reviennent. `Router.decrementForForwarding` et `IcmpErrors` portent deja
+la regle du TTL et la generation des erreurs ; il s'agit de les faire
+travailler, pas d'en ecrire une seconde.
+
 ## Pare-feu FortiGate
 
 ### [fortios] un refus d'`allowaccess` route est BAVARD
