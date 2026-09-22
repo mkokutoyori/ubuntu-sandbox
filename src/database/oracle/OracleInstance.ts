@@ -422,6 +422,197 @@ export class OracleInstance {
     for (const change of changes) this._redoBuffer.push({ ...change, scn });
   }
 
+  /**
+   * Une ecriture dans un tablespace NOLOGGING ne laisse pas de redo :
+   * elle laisse une TRACE, que V$NONLOGGED_BLOCK rend et que
+   * REPORT UNRECOVERABLE lit. C'est tout l'objet de ces deux vues.
+   */
+  /**
+   * `CATALOG ARCHIVELOG` : le journal existe depuis longtemps sur le
+   * disque, c'est son ENREGISTREMENT dans le fichier de controle qui
+   * naît maintenant — d'ou le meme evenement que le switch.
+   */
+  catalogArchivedLog(
+    path: string, sequence: number, scn: number,
+    origin: 'CATALOG' | 'RFS' = 'CATALOG',
+  ): void {
+    this.getBus().publish({
+      topic: 'oracle.archive-log.created',
+      payload: { ...this.ref(), sequence, path, scn, redo: [], origin },
+    });
+  }
+
+  /**
+   * RFS — ce que la standby fait du journal que le primaire lui a
+   * expedie : elle l'ecrit sur SON disque (par l'adaptateur qui ecoute
+   * cet evenement) et l'enregistre dans SON fichier de controle.
+   */
+  private readonly _transportState = new Map<number, {
+    status: 'VALID' | 'ERROR'; error: string | null; sequence: number;
+  }>();
+
+  /** Ce que V$ARCHIVE_DEST rapporte d'une destination : le RESULTAT, pas la declaration. */
+  getTransportState(destId: number): { status: 'VALID' | 'ERROR'; error: string | null; sequence: number } | undefined {
+    return this._transportState.get(destId);
+  }
+
+  recordTransportSuccess(destId: number, sequence: number, standbyName: string): void {
+    this._transportState.set(destId, { status: 'VALID', error: null, sequence });
+    this.dataGuard.noteTransport(standbyName, sequence);
+    this.logAlert(`LNS: Standby redo logfile shipped to ${standbyName} sequence ${sequence}`);
+  }
+
+  recordTransportFailure(destId: number, error: string): void {
+    const connu = this._transportState.get(destId);
+    this._transportState.set(destId, {
+      status: 'ERROR', error, sequence: connu?.sequence ?? 0,
+    });
+    this.logAlert(`Error ${error} received during archiving to LOG_ARCHIVE_DEST_${destId}`);
+  }
+
+  private _databaseRole: 'PRIMARY' | 'PHYSICAL STANDBY' = 'PRIMARY';
+
+  get databaseRole(): 'PRIMARY' | 'PHYSICAL STANDBY' { return this._databaseRole; }
+
+  /**
+   * SWITCHOVER_STATUS de V$DATABASE : ce que l'operateur interroge
+   * AVANT de basculer.
+   */
+  get switchoverStatus(): string {
+    if (this._databaseRole === 'PHYSICAL STANDBY') {
+      return this._managedRecovery ? 'TO PRIMARY' : 'NOT ALLOWED';
+    }
+    return this.dataGuard.getStandbys().length > 0 ? 'TO STANDBY' : 'NOT ALLOWED';
+  }
+
+  setDatabaseRole(role: 'PRIMARY' | 'PHYSICAL STANDBY'): void {
+    if (this._databaseRole === role) return;
+    this._databaseRole = role;
+    this.dataGuard.primaryRole = role;
+    this.logAlert(`Database role changed to ${role}`);
+  }
+
+  private _managedRecovery = false;
+  private _appliedSequence = 0;
+
+  get managedRecoveryActive(): boolean { return this._managedRecovery; }
+  get appliedSequence(): number { return this._appliedSequence; }
+
+  /**
+   * MRP — le processus qui, sur une standby, applique ce que le RFS a
+   * ecrit. Il ne decide rien lui-meme : il publie, et l'adaptateur qui
+   * tient le disque rejoue les journaux recus.
+   */
+  startManagedRecovery(): string {
+    if (this._state !== 'MOUNT' && this._state !== 'OPEN') {
+      return ORACLE_ERRORS.ORA_01034;
+    }
+    this._managedRecovery = true;
+    this.setDatabaseRole('PHYSICAL STANDBY');
+    this.logAlert('MRP0 started with pid=30, OS id=0');
+    this.getBus().publish({
+      topic: 'oracle.standby.managed-recovery-changed',
+      payload: { ...this.ref(), active: true },
+    });
+    return 'Database altered.';
+  }
+
+  stopManagedRecovery(): string {
+    this._managedRecovery = false;
+    this.logAlert('MRP0: Background Media Recovery cancelled');
+    this.getBus().publish({
+      topic: 'oracle.standby.managed-recovery-changed',
+      payload: { ...this.ref(), active: false },
+    });
+    return 'Database altered.';
+  }
+
+  /**
+   * SWITCHOVER — le primaire demande a la standby de prendre le role,
+   * puis prend le sien. L'ordre part SUR LE FIL : l'instance publie,
+   * l'adaptateur qui tient la machine compose et attend la reponse.
+   */
+  requestSwitchover(target: string): string {
+    if (this._databaseRole !== 'PRIMARY') {
+      return 'ORA-16416: Switchover target is not synchronized';
+    }
+    const destination = this.dataGuard.findStandby(target.toUpperCase());
+    if (!destination) {
+      return `ORA-16642: db_unique_name ${target.toUpperCase()} mismatch`;
+    }
+    let verdict = 'ORA-16664: unable to receive the result from a member';
+    this.getBus().publish({
+      topic: 'oracle.dataguard.switchover-requested',
+      payload: {
+        ...this.ref(),
+        target: target.toUpperCase(),
+        accept: (issue: string) => { verdict = issue; },
+      },
+    });
+    if (verdict === 'Database altered.') {
+      this.stopManagedRecovery();
+      this.setDatabaseRole('PHYSICAL STANDBY');
+      this.logAlert(`Switchover: Complete - Database shutdown required, role is now PHYSICAL STANDBY`);
+    }
+    return verdict;
+  }
+
+  /**
+   * FAILOVER — la standby prend le role SANS demander a l'ancien
+   * primaire, qui est presume perdu. C'est la difference avec un
+   * switchover : aucun aller-retour, et le redo non recu est perdu.
+   */
+  failover(): string {
+    if (this._databaseRole !== 'PHYSICAL STANDBY') {
+      return 'ORA-16649: database will open with a different role';
+    }
+    this._managedRecovery = false;
+    this.setDatabaseRole('PRIMARY');
+    this.logAlert('Failover: Complete - Database mounted as primary');
+    return 'Database altered.';
+  }
+
+  /** La seule destination declaree, quand la commande ne la nomme pas. */
+  soleStandbyName(): string | null {
+    const declares = this.dataGuard.getStandbys();
+    return declares.length === 1 ? declares[0].dbUniqueName : null;
+  }
+
+  /** Recu PAR la standby, sur le fil : elle devient primaire. */
+  acceptSwitchover(): string {
+    if (this._databaseRole !== 'PHYSICAL STANDBY') {
+      return 'ORA-16416: Switchover target is not synchronized';
+    }
+    this._managedRecovery = false;
+    this.setDatabaseRole('PRIMARY');
+    this.logAlert('Switchover: Complete - Database is now PRIMARY');
+    return 'Database altered.';
+  }
+
+  noteRedoApplied(sequence: number, scn: number): void {
+    this._appliedSequence = Math.max(this._appliedSequence, sequence);
+    if (scn > this._currentScn) this._currentScn = scn;
+    this.logAlert(`Media Recovery Log applied, sequence ${sequence}`);
+  }
+
+  receiveShippedRedo(
+    name: string, thread: number, sequence: number, scn: number, body: string,
+  ): void {
+    this.getBus().publish({
+      topic: 'oracle.standby.redo-received',
+      payload: { ...this.ref(), name, thread, sequence, scn, body },
+    });
+    this.logAlert(`RFS: Archived log thread ${thread} sequence ${sequence}`);
+    this.catalogArchivedLog(name, sequence, scn, 'RFS');
+  }
+
+  recordNonlogged(tablespace: string, blocks: number, reason: string): void {
+    this.getBus().publish({
+      topic: 'oracle.nonlogged-block.recorded',
+      payload: { ...this.ref(), tablespace, blocks, scn: this.getCurrentScn(), reason },
+    });
+  }
+
   drainRedo(): RedoRecord[] {
     const drained = this._redoBuffer;
     this._redoBuffer = [];
@@ -922,7 +1113,7 @@ export class OracleInstance {
         topic: 'oracle.archive-log.created',
         payload: {
           ...this.ref(), sequence: this._redoSequence - 1, path: archivePath,
-          scn: this.getCurrentScn(), redo: this.drainRedo(),
+          scn: this.getCurrentScn(), redo: this.drainRedo(), origin: 'SWITCH',
         },
       });
     }

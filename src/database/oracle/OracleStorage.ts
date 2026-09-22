@@ -25,7 +25,7 @@ export interface TablespaceMeta {
   status: 'ONLINE' | 'OFFLINE' | 'READ ONLY';
   datafiles: { path: string; size: string; autoextend: boolean; maxSize?: string }[];
   blockSize: number;
-  /** LOGGING / NOLOGGING — affects whether DML against the tablespace generates redo. */
+  /** LOGGING / NOLOGGING — decides whether DML against the tablespace generates redo. */
   logging: boolean;
   /** FORCE LOGGING overrides the per-segment NOLOGGING hint. */
   forceLogging: boolean;
@@ -174,6 +174,16 @@ export class OracleStorage extends BaseStorage {
 
   defaultTablespaceFor(schema: string): string {
     return DICTIONARY_SCHEMAS.has(schema.toUpperCase()) ? 'SYSTEM' : 'USERS';
+  }
+
+  tablespaceOfTable(schema: string, table: string): string | undefined {
+    const meta = this.tables.get(schema.toUpperCase())?.get(table.toUpperCase())?.meta;
+    return meta === undefined ? undefined : this.tablespaceOf(meta);
+  }
+
+  /** LOGGING est le defaut ; FORCE LOGGING, lui, se decide sur l'instance. */
+  tablespaceIsLogging(name: string): boolean {
+    return this.tablespaces.get(name.toUpperCase())?.logging ?? true;
   }
 
   tablespaceOf(meta: TableMeta): string {

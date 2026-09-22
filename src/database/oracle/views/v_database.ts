@@ -21,6 +21,7 @@ registerView({
         { name: 'LOG_MODE', dataType: oracleVarchar2(12) },
         { name: 'OPEN_MODE', dataType: oracleVarchar2(20) },
         { name: 'DATABASE_ROLE', dataType: oracleVarchar2(16) },
+        { name: 'SWITCHOVER_STATUS', dataType: oracleVarchar2(20) },
         { name: 'PLATFORM_NAME', dataType: oracleVarchar2(101) },
         { name: 'CONTROLFILE_TYPE', dataType: oracleVarchar2(7) },
         { name: 'CONTROLFILE_CREATED', dataType: oracleDate() },
@@ -41,8 +42,10 @@ registerView({
         instance.getDbId(), instance.getActivationId(),
         instance.config.sid, new Date().toISOString(),
         instance.archiveLogMode ? 'ARCHIVELOG' : 'NOARCHIVELOG',
-        instance.state === 'OPEN' ? 'READ WRITE' : 'MOUNTED',
-        'PRIMARY', 'Linux x86 64-bit', 'CURRENT',
+        instance.state !== 'OPEN' ? 'MOUNTED'
+          : instance.databaseRole === 'PHYSICAL STANDBY' ? 'READ ONLY WITH APPLY'
+            : 'READ WRITE',
+        instance.databaseRole, instance.switchoverStatus, 'Linux x86 64-bit', 'CURRENT',
         new Date('2026-01-01T00:00:00Z'),
         1, instance.getCheckpointScn(), instance.getCheckpointTime(),
         supp.min, supp.pk ? 'YES' : 'NO', supp.ui ? 'YES' : 'NO',

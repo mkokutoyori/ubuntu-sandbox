@@ -303,6 +303,28 @@ export class OracleRuntimeStateActor {
         });
       })),
 
+      this.bus.subscribe('oracle.nonlogged-block.recorded', scoped<{
+        deviceId: string; tablespace: string; blocks: number; scn: number; reason: string;
+      }>((p) => {
+        const deja = this.state.nonloggedRanges.find(r => r.tablespace === p.tablespace);
+        if (deja) {
+          deja.blocks += p.blocks;
+          deja.endScn = p.scn;
+          return;
+        }
+        this.state.nonloggedRanges.push({
+          tablespace: p.tablespace, blocks: p.blocks,
+          startScn: p.scn, endScn: p.scn, reason: p.reason,
+        });
+      })),
+
+      this.bus.subscribe('oracle.nonlogged-block.cleared', scoped<{
+        deviceId: string; tablespace: string;
+      }>((p) => {
+        const index = this.state.nonloggedRanges.findIndex(r => r.tablespace === p.tablespace);
+        if (index >= 0) this.state.nonloggedRanges.splice(index, 1);
+      })),
+
       this.bus.subscribe('oracle.backup-corruption.found', scoped<{
         deviceId: string; setStamp: number; fileNo: number; blocks: number;
         markedCorrupt: boolean; type: 'CHECKSUM' | 'CORRUPT' | 'LOGICAL';

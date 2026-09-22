@@ -118,6 +118,14 @@ export interface RuntimeBackupCorruptionRecord {
   kind: 'BACKUPSET' | 'COPY';
 }
 
+export interface RuntimeNonloggedRecord {
+  tablespace: string;
+  blocks: number;
+  startScn: number;
+  endScn: number;
+  reason: string;
+}
+
 export interface RuntimeAlertRecord {
   ts: number;
   line: string;
@@ -197,6 +205,7 @@ export class OracleRuntimeState {
   readonly archivedLogs: RuntimeArchivedLogRecord[] = [];
   readonly blockCorruptions: RuntimeBlockCorruptionRecord[] = [];
   readonly backupCorruptions: RuntimeBackupCorruptionRecord[] = [];
+  readonly nonloggedRanges: RuntimeNonloggedRecord[] = [];
   readonly alertEntries: RuntimeAlertRecord[] = [];
   readonly latches: RuntimeLatchRecord[] = [];
   readonly backups: RuntimeBackupRecord[] = [];

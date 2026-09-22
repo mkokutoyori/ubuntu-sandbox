@@ -17,6 +17,7 @@ export class StandbyDatabase {
   fastStartFailover: boolean;
   readonly destId: number;
   archiveDest: string;
+  lastShippedSequence = 0;
 
   constructor(init: {
     dbUniqueName: string; host: string; role: DatabaseRole;
@@ -78,6 +79,23 @@ export class DataGuardConfiguration {
 
   findStandby(dbUniqueName: string): StandbyDatabase | undefined {
     return this.standbys.find(s => s.dbUniqueName === dbUniqueName.toUpperCase());
+  }
+
+  /**
+   * Un journal vient d'arriver a bon port : la standby existe dans la
+   * configuration des lors qu'elle recoit, et son retard de transport
+   * se MESURE au lieu de se declarer.
+   */
+  noteTransport(dbUniqueName: string, sequence: number): void {
+    const nom = dbUniqueName.toUpperCase();
+    let cible = this.findStandby(nom);
+    if (!cible) {
+      cible = new StandbyDatabase({ dbUniqueName: nom, host: nom, role: 'PHYSICAL STANDBY' });
+      this.addStandby(cible);
+    }
+    cible.applyMode = 'WAITING FOR LOG';
+    cible.transportLagSeconds = 0;
+    cible.lastShippedSequence = sequence;
   }
 
   switchover(targetName: string): boolean {

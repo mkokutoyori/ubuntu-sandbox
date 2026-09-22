@@ -1,6 +1,6 @@
 /**
- * V$NONLOGGED_BLOCK — blocks flagged as nonlogged (e.g. by NOLOGGING
- * direct-path loads). Empty in a healthy simulator.
+ * V$NONLOGGED_BLOCK — blocks flagged as nonlogged, un par tablespace
+ * dont l'ecriture n'a pas laisse de redo.
  */
 
 import { queryResult } from '../../engine/executor/ResultSet';
@@ -10,7 +10,9 @@ import { registerView } from './registry';
 registerView({
   name: 'V$NONLOGGED_BLOCK',
   comment: 'Nonlogged blocks reported by datafiles',
-  query() {
+  query({ storage, runtime }) {
+    const parTablespace = new Map<string, number>(
+      storage.listDatafiles().map(df => [df.tablespace.toUpperCase(), df.fileNo]));
     return queryResult(
       [
         { name: 'FILE#', dataType: oracleNumber(10) },
@@ -22,7 +24,10 @@ registerView({
         { name: 'OBJECT#', dataType: oracleNumber(20) },
         { name: 'REASON', dataType: oracleVarchar2(64) },
       ],
-      []
+      runtime.nonloggedRanges.map(r => [
+        parTablespace.get(r.tablespace.toUpperCase()) ?? 0,
+        1, r.blocks, r.startScn, r.endScn, 1, 0, r.reason,
+      ])
     );
   },
 });

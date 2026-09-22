@@ -379,6 +379,15 @@ export class RmanJobEngine implements IRmanJobEngine {
       this._bus.emit({ type: 'BACKUP_SET_COMPLETE', jobId: job.id, bsKey: set.bsKey, tag, sizeBytes: size });
     }
 
+    // Une sauvegarde rend a nouveau recuperables les fichiers qu'une
+    // ecriture NOLOGGING avait laisses sans redo : c'est exactement ce
+    // que REPORT UNRECOVERABLE cesse alors de signaler.
+    if (!isControlfile && !isSpfile && !isArchivelog) {
+      for (const ts of new Set(datafiles.map(df => df.tablespace))) {
+        this._ctx.clearUnrecoverable?.(ts);
+      }
+    }
+
     this._refreshControlFiles();
 
     // ARCHIVELOG ALL DELETE INPUT — consume + delete every reported archivelog

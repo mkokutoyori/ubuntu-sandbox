@@ -5,10 +5,16 @@ import { registerView } from './registry';
 registerView({
   name: 'V$DATAGUARD_STATS',
   comment: 'Data Guard lag and apply statistics',
-  query({ instance }) {
+  query({ instance, runtime }) {
     const rows: (string | number)[][] = [];
+    const lag = (n: number) => `+00 ${String(Math.floor(n / 3600)).padStart(2, '0')}:${String(Math.floor((n % 3600) / 60)).padStart(2, '0')}:${String(n % 60).padStart(2, '0')}`;
+    const recu = runtime.archivedLogs[runtime.archivedLogs.length - 1]?.sequence ?? 0;
+    const retard = Math.max(0, recu - instance.appliedSequence);
+    if (instance.managedRecoveryActive || instance.appliedSequence > 0) {
+      rows.push([instance.config.sid.toUpperCase(), 'apply lag', lag(retard), 'day(2) to second(0) interval', 1]);
+      rows.push([instance.config.sid.toUpperCase(), 'apply finish time', lag(retard), 'day(2) to second(0) interval', 1]);
+    }
     for (const s of instance.dataGuard.getStandbys()) {
-      const lag = (n: number) => `+00 ${String(Math.floor(n / 3600)).padStart(2, '0')}:${String(Math.floor((n % 3600) / 60)).padStart(2, '0')}:${String(n % 60).padStart(2, '0')}`;
       rows.push([s.dbUniqueName, 'apply lag', lag(s.applyLagSeconds), 'day(2) to second(0) interval', 1]);
       rows.push([s.dbUniqueName, 'transport lag', lag(s.transportLagSeconds), 'day(2) to second(0) interval', 1]);
       rows.push([s.dbUniqueName, 'estimated startup time', String(s.estimatedFailoverTimeSeconds), 'seconds', 1]);

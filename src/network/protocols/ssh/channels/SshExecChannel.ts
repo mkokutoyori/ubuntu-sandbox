@@ -6,6 +6,7 @@
 
 import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import { AbstractSshChannel } from './AbstractSshChannel';
+import { isConnectionControlFrame } from './ConnectionControlFrame';
 import type { ExecResult, ISshExecChannel } from './ISshChannel';
 
 export class SshExecChannel
@@ -30,6 +31,7 @@ export class SshExecChannel
     this.offConn = this.conn.onData((data) => {
       try {
         const parsed = JSON.parse(data) as ExecResult;
+        if (isConnectionControlFrame(parsed)) return;
         this.result = parsed;
         this.resolveExec?.(parsed);
       } catch {

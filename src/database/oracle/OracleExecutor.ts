@@ -182,7 +182,21 @@ export class OracleExecutor extends BaseExecutor {
       onBegin: txId => this.emitTxnStarted(txId),
       onCommit: (txId, durationMs, changes) => {
         // Every commit advances the database SCN (V$DATABASE.CURRENT_SCN).
-        instance.appendRedo(changes, instance.advanceScn());
+        const scn = instance.advanceScn();
+        const journalises: typeof changes[number][] = [];
+        const nonJournalises = new Map<string, number>();
+        for (const change of changes) {
+          const ts = storage.tablespaceOfTable(change.schema, change.table);
+          const journalise = instance.forceLogging
+            || ts === undefined
+            || storage.tablespaceIsLogging(ts);
+          if (journalise) { journalises.push(change); continue; }
+          nonJournalises.set(ts, (nonJournalises.get(ts) ?? 0) + 1);
+        }
+        instance.appendRedo(journalises, scn);
+        for (const [ts, blocs] of nonJournalises) {
+          instance.recordNonlogged(ts, blocs, 'UNKNOWN');
+        }
         this.emitTxnCommitted(txId, durationMs);
       },
       onRollback: txId => this.emitTxnRolledBack(txId),
