@@ -437,12 +437,14 @@ describe('concept 7 — access-class sur les VTY', () => {
       'login local', 'end');
 
     const refuse = await tape(pcLnx,
-      `ssh -o ConnectTimeout=1 admin@192.168.10.1 whoami`);
-    expect(refuse).not.toContain('admin');
+      `sshpass -p Cisco123 ssh -o ConnectTimeout=1 admin@192.168.10.1 whoami`);
+    expect(refuse).toContain('Connection refused');
+    expect(refuse).not.toContain('admin@R1');
 
     const accepte = await tape(pcAdmin,
-      `ssh -o ConnectTimeout=1 admin@192.168.20.1 show clock`);
+      `sshpass -p Cisco123 ssh -o ConnectTimeout=1 admin@192.168.20.1 show clock`);
     expect(accepte).not.toMatch(/refused|closed|denied/i);
+    expect(accepte).toMatch(/\d{2}:\d{2}:\d{2}/);
   });
 });
 

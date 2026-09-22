@@ -229,6 +229,7 @@ describe('Scénario 10 (debug) — show commands avancés', () => {
 # Script de collecte de diagnostic Cisco depuis une machine Linux
 ROUTER_IP="192.168.10.254"
 ROUTER_USER="admin"
+ROUTER_PASS="Mandeng2025"
 DIAG_DIR="/tmp/cisco-diag"
 mkdir -p "$DIAG_DIR"
 
@@ -236,7 +237,8 @@ mkdir -p "$DIAG_DIR"
 cisco_show() {
     local cmd="$1"
     local safe_name=$(echo "$cmd" | tr ' /|' '_')
-    ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no \\
+    sshpass -p "$ROUTER_PASS" \\
+        ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no \\
         "$ROUTER_USER@$ROUTER_IP" "$cmd" 2>/dev/null \\
         > "$DIAG_DIR/\${safe_name}.txt"
     echo "OK $cmd -> $DIAG_DIR/\${safe_name}.txt"
