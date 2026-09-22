@@ -12,6 +12,7 @@ import { installAllDemoSchemas } from '@/database/oracle/demo/DemoSchemas';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { controlFileBody, mergeControlFileImage, parseControlFileImage, controlFileStructureOf } from '@/database/oracle/storage/ControlFileImage';
 import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
+import { OracleRedoTransport } from '@/adapters/OracleRedoTransport';
 import { OracleSystemdSync } from '@/adapters/OracleSystemdSync';
 import { OracleAuditSyslogSync } from '@/adapters/OracleAuditSyslogSync';
 import { OracleListenerTcpSync } from '@/adapters/OracleListenerTcpSync';
@@ -42,6 +43,7 @@ function oracleBusFor(deviceId: string): IEventBus {
 const oracleInstances: Map<string, OracleDatabase> = new Map();
 /** Per-device FS sync adapter — Phase 7c replaces the manual *ToDevice helpers. */
 const oracleFsSyncs: Map<string, OracleFilesystemSync> = new Map();
+const oracleRedoTransports: Map<string, OracleRedoTransport> = new Map();
 /** Per-device systemd sync adapter — wires oracle bus events to LinuxServiceManager. */
 const oracleSystemdSyncs: Map<string, OracleSystemdSync> = new Map();
 /** Per-device audit→syslog adapter — routes audit records to /var/log when AUDIT_SYSLOG_LEVEL is set. */
@@ -147,6 +149,18 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     });
     sync.start();
     oracleFsSyncs.set(deviceId, sync);
+
+    const redoTransport = new OracleRedoTransport(oracleBusFor(deviceId), {
+      resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
+      resolveDatabase: (id) => oracleInstances.get(id) ?? null,
+      dial: (local, identifier) => {
+        const r = resolveOracleConnectTarget(local, identifier, getOracleDatabase);
+        if (r.ok === false) return { ok: false, error: r.error };
+        return { ok: true, session: r.session as never };
+      },
+    });
+    redoTransport.start();
+    oracleRedoTransports.set(deviceId, redoTransport);
 
     const systemd = new OracleSystemdSync(oracleBusFor(deviceId), {
       resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
@@ -399,6 +413,8 @@ export function restoreOracleState(deviceId: string, state: OracleTopologyState)
 export function removeOracleDatabase(deviceId: string): void {
   oracleFsSyncs.get(deviceId)?.stop();
   oracleFsSyncs.delete(deviceId);
+  oracleRedoTransports.get(deviceId)?.stop();
+  oracleRedoTransports.delete(deviceId);
   oracleSystemdSyncs.get(deviceId)?.stop();
   oracleSystemdSyncs.delete(deviceId);
   oracleAuditSyslogSyncs.get(deviceId)?.stop();
@@ -437,6 +453,8 @@ function announceOracleInstances(): void {
 
 export function resetAllOracleInstances(): void {
   for (const sync of oracleFsSyncs.values()) sync.stop();
+  for (const t of oracleRedoTransports.values()) t.stop();
+  oracleRedoTransports.clear();
   oracleFsSyncs.clear();
   for (const sync of oracleSystemdSyncs.values()) sync.stop();
   oracleSystemdSyncs.clear();

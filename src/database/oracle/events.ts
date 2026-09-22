@@ -75,6 +75,8 @@ export interface OracleArchiveLogCreatedPayload extends OracleDeviceRef {
   path: string;
   scn: number;
   redo: readonly unknown[];
+  /** SWITCH : l'instance l'a genere. CATALOG / RFS : elle l'a seulement enregistre. */
+  origin?: 'SWITCH' | 'CATALOG' | 'RFS';
 }
 
 // ── Session / transaction / DML / DDL ──────────────────────────────────
@@ -211,6 +213,14 @@ export interface OracleBlockCorruptionFoundPayload extends OracleDeviceRef {
   fileNo: number;
   blocks: number;
   type: 'CHECKSUM' | 'CORRUPT' | 'LOGICAL';
+}
+
+export interface OracleStandbyRedoReceivedPayload extends OracleDeviceRef {
+  name: string;
+  thread: number;
+  sequence: number;
+  scn: number;
+  body: string;
 }
 
 export interface OracleNonloggedBlockRecordedPayload extends OracleDeviceRef {
@@ -597,6 +607,7 @@ export type OracleDomainEvent =
   | { topic: 'oracle.block-corruption.found';            payload: OracleBlockCorruptionFoundPayload }
   | { topic: 'oracle.block-corruption.repaired';         payload: OracleBlockCorruptionRepairedPayload }
   | { topic: 'oracle.backup-corruption.found';           payload: OracleBackupCorruptionFoundPayload }
+  | { topic: 'oracle.standby.redo-received';             payload: OracleStandbyRedoReceivedPayload }
   | { topic: 'oracle.nonlogged-block.recorded';          payload: OracleNonloggedBlockRecordedPayload }
   | { topic: 'oracle.nonlogged-block.cleared';           payload: OracleNonloggedBlockClearedPayload }
   | { topic: 'oracle.service.event';                     payload: OracleServiceEventPayload }

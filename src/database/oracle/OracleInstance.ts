@@ -432,11 +432,53 @@ export class OracleInstance {
    * disque, c'est son ENREGISTREMENT dans le fichier de controle qui
    * naît maintenant — d'ou le meme evenement que le switch.
    */
-  catalogArchivedLog(path: string, sequence: number, scn: number): void {
+  catalogArchivedLog(
+    path: string, sequence: number, scn: number,
+    origin: 'CATALOG' | 'RFS' = 'CATALOG',
+  ): void {
     this.getBus().publish({
       topic: 'oracle.archive-log.created',
-      payload: { ...this.ref(), sequence, path, scn, redo: [] },
+      payload: { ...this.ref(), sequence, path, scn, redo: [], origin },
     });
+  }
+
+  /**
+   * RFS — ce que la standby fait du journal que le primaire lui a
+   * expedie : elle l'ecrit sur SON disque (par l'adaptateur qui ecoute
+   * cet evenement) et l'enregistre dans SON fichier de controle.
+   */
+  private readonly _transportState = new Map<number, {
+    status: 'VALID' | 'ERROR'; error: string | null; sequence: number;
+  }>();
+
+  /** Ce que V$ARCHIVE_DEST rapporte d'une destination : le RESULTAT, pas la declaration. */
+  getTransportState(destId: number): { status: 'VALID' | 'ERROR'; error: string | null; sequence: number } | undefined {
+    return this._transportState.get(destId);
+  }
+
+  recordTransportSuccess(destId: number, sequence: number, standbyName: string): void {
+    this._transportState.set(destId, { status: 'VALID', error: null, sequence });
+    this.dataGuard.noteTransport(standbyName, sequence);
+    this.logAlert(`LNS: Standby redo logfile shipped to ${standbyName} sequence ${sequence}`);
+  }
+
+  recordTransportFailure(destId: number, error: string): void {
+    const connu = this._transportState.get(destId);
+    this._transportState.set(destId, {
+      status: 'ERROR', error, sequence: connu?.sequence ?? 0,
+    });
+    this.logAlert(`Error ${error} received during archiving to LOG_ARCHIVE_DEST_${destId}`);
+  }
+
+  receiveShippedRedo(
+    name: string, thread: number, sequence: number, scn: number, body: string,
+  ): void {
+    this.getBus().publish({
+      topic: 'oracle.standby.redo-received',
+      payload: { ...this.ref(), name, thread, sequence, scn, body },
+    });
+    this.logAlert(`RFS: Archived log thread ${thread} sequence ${sequence}`);
+    this.catalogArchivedLog(name, sequence, scn, 'RFS');
   }
 
   recordNonlogged(tablespace: string, blocks: number, reason: string): void {
@@ -946,7 +988,7 @@ export class OracleInstance {
         topic: 'oracle.archive-log.created',
         payload: {
           ...this.ref(), sequence: this._redoSequence - 1, path: archivePath,
-          scn: this.getCurrentScn(), redo: this.drainRedo(),
+          scn: this.getCurrentScn(), redo: this.drainRedo(), origin: 'SWITCH',
         },
       });
     }

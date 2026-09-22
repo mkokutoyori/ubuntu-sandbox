@@ -298,7 +298,14 @@ export class OracleFilesystemSync {
         );
       }),
 
+      this.bus.subscribe('oracle.standby.redo-received', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        writeAsOracle(dev, e.payload.name, e.payload.body);
+      }),
+
       this.bus.subscribe('oracle.archive-log.created', (e) => {
+        if ((e.payload.origin ?? 'SWITCH') !== 'SWITCH') return;
         const dev = this.dev(e.payload.deviceId);
         if (!dev) return;
         writeAsOracle(dev,
