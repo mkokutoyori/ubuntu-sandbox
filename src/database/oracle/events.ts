@@ -215,6 +215,11 @@ export interface OracleBlockCorruptionFoundPayload extends OracleDeviceRef {
   type: 'CHECKSUM' | 'CORRUPT' | 'LOGICAL';
 }
 
+export interface OracleDataGuardSwitchoverRequestedPayload extends OracleDeviceRef {
+  target: string;
+  accept(issue: string): void;
+}
+
 export interface OracleStandbyManagedRecoveryChangedPayload extends OracleDeviceRef {
   active: boolean;
 }
@@ -613,6 +618,7 @@ export type OracleDomainEvent =
   | { topic: 'oracle.backup-corruption.found';           payload: OracleBackupCorruptionFoundPayload }
   | { topic: 'oracle.standby.redo-received';             payload: OracleStandbyRedoReceivedPayload }
   | { topic: 'oracle.standby.managed-recovery-changed';  payload: OracleStandbyManagedRecoveryChangedPayload }
+  | { topic: 'oracle.dataguard.switchover-requested';    payload: OracleDataGuardSwitchoverRequestedPayload }
   | { topic: 'oracle.nonlogged-block.recorded';          payload: OracleNonloggedBlockRecordedPayload }
   | { topic: 'oracle.nonlogged-block.cleared';           payload: OracleNonloggedBlockClearedPayload }
   | { topic: 'oracle.service.event';                     payload: OracleServiceEventPayload }

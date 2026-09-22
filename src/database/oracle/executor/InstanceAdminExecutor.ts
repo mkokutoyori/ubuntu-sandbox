@@ -118,6 +118,28 @@ export class InstanceAdminExecutor {
       this.instance.mountDatabase();
       return emptyResult('Database altered.');
     }
+    if (/^\s*(?:FAILOVER\s+TO\s+\S+|ACTIVATE\s+(?:PHYSICAL\s+)?STANDBY\s+DATABASE)\s*$/i
+      .test(stmt.action)) {
+      return emptyResult(this.instance.failover());
+    }
+    const ancienneForme = /^\s*COMMIT\s+TO\s+SWITCHOVER\s+TO\s+(PRIMARY|PHYSICAL\s+STANDBY)\b/i
+      .exec(stmt.action);
+    if (ancienneForme) {
+      if (/PRIMARY/i.test(ancienneForme[1])) {
+        return emptyResult(this.instance.acceptSwitchover());
+      }
+      const seule = this.instance.soleStandbyName();
+      return emptyResult(seule === null
+        ? 'ORA-16642: db_unique_name mismatch'
+        : this.instance.requestSwitchover(seule));
+    }
+    const bascule = /^\s*SWITCHOVER\s+TO\s+(\S+)\s*$/i.exec(stmt.action);
+    if (bascule) {
+      const cible = bascule[1].toUpperCase();
+      return emptyResult(cible === 'PRIMARY'
+        ? this.instance.acceptSwitchover()
+        : this.instance.requestSwitchover(cible));
+    }
     const managed = /^\s*RECOVER\s+MANAGED\s+STANDBY\s+DATABASE\b(.*)$/i.exec(stmt.action);
     if (managed) {
       const suite = managed[1].toUpperCase();

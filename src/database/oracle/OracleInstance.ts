@@ -470,6 +470,28 @@ export class OracleInstance {
     this.logAlert(`Error ${error} received during archiving to LOG_ARCHIVE_DEST_${destId}`);
   }
 
+  private _databaseRole: 'PRIMARY' | 'PHYSICAL STANDBY' = 'PRIMARY';
+
+  get databaseRole(): 'PRIMARY' | 'PHYSICAL STANDBY' { return this._databaseRole; }
+
+  /**
+   * SWITCHOVER_STATUS de V$DATABASE : ce que l'operateur interroge
+   * AVANT de basculer.
+   */
+  get switchoverStatus(): string {
+    if (this._databaseRole === 'PHYSICAL STANDBY') {
+      return this._managedRecovery ? 'TO PRIMARY' : 'NOT ALLOWED';
+    }
+    return this.dataGuard.getStandbys().length > 0 ? 'TO STANDBY' : 'NOT ALLOWED';
+  }
+
+  setDatabaseRole(role: 'PRIMARY' | 'PHYSICAL STANDBY'): void {
+    if (this._databaseRole === role) return;
+    this._databaseRole = role;
+    this.dataGuard.primaryRole = role;
+    this.logAlert(`Database role changed to ${role}`);
+  }
+
   private _managedRecovery = false;
   private _appliedSequence = 0;
 
@@ -486,6 +508,7 @@ export class OracleInstance {
       return ORACLE_ERRORS.ORA_01034;
     }
     this._managedRecovery = true;
+    this.setDatabaseRole('PHYSICAL STANDBY');
     this.logAlert('MRP0 started with pid=30, OS id=0');
     this.getBus().publish({
       topic: 'oracle.standby.managed-recovery-changed',
@@ -501,6 +524,68 @@ export class OracleInstance {
       topic: 'oracle.standby.managed-recovery-changed',
       payload: { ...this.ref(), active: false },
     });
+    return 'Database altered.';
+  }
+
+  /**
+   * SWITCHOVER — le primaire demande a la standby de prendre le role,
+   * puis prend le sien. L'ordre part SUR LE FIL : l'instance publie,
+   * l'adaptateur qui tient la machine compose et attend la reponse.
+   */
+  requestSwitchover(target: string): string {
+    if (this._databaseRole !== 'PRIMARY') {
+      return 'ORA-16416: Switchover target is not synchronized';
+    }
+    const destination = this.dataGuard.findStandby(target.toUpperCase());
+    if (!destination) {
+      return `ORA-16642: db_unique_name ${target.toUpperCase()} mismatch`;
+    }
+    let verdict = 'ORA-16664: unable to receive the result from a member';
+    this.getBus().publish({
+      topic: 'oracle.dataguard.switchover-requested',
+      payload: {
+        ...this.ref(),
+        target: target.toUpperCase(),
+        accept: (issue: string) => { verdict = issue; },
+      },
+    });
+    if (verdict === 'Database altered.') {
+      this.stopManagedRecovery();
+      this.setDatabaseRole('PHYSICAL STANDBY');
+      this.logAlert(`Switchover: Complete - Database shutdown required, role is now PHYSICAL STANDBY`);
+    }
+    return verdict;
+  }
+
+  /**
+   * FAILOVER — la standby prend le role SANS demander a l'ancien
+   * primaire, qui est presume perdu. C'est la difference avec un
+   * switchover : aucun aller-retour, et le redo non recu est perdu.
+   */
+  failover(): string {
+    if (this._databaseRole !== 'PHYSICAL STANDBY') {
+      return 'ORA-16649: database will open with a different role';
+    }
+    this._managedRecovery = false;
+    this.setDatabaseRole('PRIMARY');
+    this.logAlert('Failover: Complete - Database mounted as primary');
+    return 'Database altered.';
+  }
+
+  /** La seule destination declaree, quand la commande ne la nomme pas. */
+  soleStandbyName(): string | null {
+    const declares = this.dataGuard.getStandbys();
+    return declares.length === 1 ? declares[0].dbUniqueName : null;
+  }
+
+  /** Recu PAR la standby, sur le fil : elle devient primaire. */
+  acceptSwitchover(): string {
+    if (this._databaseRole !== 'PHYSICAL STANDBY') {
+      return 'ORA-16416: Switchover target is not synchronized';
+    }
+    this._managedRecovery = false;
+    this.setDatabaseRole('PRIMARY');
+    this.logAlert('Switchover: Complete - Database is now PRIMARY');
     return 'Database altered.';
   }
 

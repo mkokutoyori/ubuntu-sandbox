@@ -10,6 +10,7 @@
  */
 
 import { OracleInstance } from './OracleInstance';
+import { standbyRefusesStatement, ORA_16000 } from './dataguard/StandbyWriteGuard';
 import {
   parseOracleTimeZone, type OracleTimeZoneSpec,
 } from './time/OracleTimeZone';
@@ -902,6 +903,11 @@ export class OracleDatabase implements SqlCommandHost {
     if (!trimmed) return emptyResult();
 
     const upper = trimmed.toUpperCase();
+
+    if (this.instance.databaseRole === 'PHYSICAL STANDBY'
+      && standbyRefusesStatement(trimmed)) {
+      return emptyResult(ORA_16000);
+    }
 
     // PL/SQL is a distinct language whose unit bodies contain semicolons
     // and cannot be tokenised by the SQL lexer, so PL/SQL constructs
