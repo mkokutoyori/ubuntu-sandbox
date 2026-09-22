@@ -14,7 +14,7 @@ import { pad2 } from '@/lib/format';
 import {
   clockReadingAt, DEFAULT_SUMMER_OFFSET_MIN, type DeviceClockConfig,
 } from '@/network/core/time/DeviceClock';
-import { getDeviceClock } from '@/network/equipment/RouterServiceCapabilities';
+import { getDeviceClock, getNtpAgent } from '@/network/equipment/RouterServiceCapabilities';
 import { CISCO_ERRORS } from '../cli-utils';
 import {
   tableauLignes, blocDetailLigne, REGLAGES_PAR_DEFAUT,
@@ -87,13 +87,10 @@ export function ciscoClockReading(
       local: arg, timezone: 'UTC', offsetMin: 0, synced: false,
     };
   }
-  const dev = arg as unknown as {
-    getSystemClockMs?: () => number;
-    getNtpAgent?: () => { isSynced?: () => boolean };
-  };
+  const dev = arg as unknown as { getSystemClockMs?: () => number };
   const clock = getDeviceClock(arg)?.get();
   const now = atMs ?? dev.getSystemClockMs?.() ?? Date.now();
-  const synced = dev.getNtpAgent?.().isSynced?.() ?? false;
+  const synced = getNtpAgent(arg)?.isSynced() ?? false;
   if (!clock) {
     return { local: new Date(now), timezone: 'UTC', offsetMin: 0, synced };
   }

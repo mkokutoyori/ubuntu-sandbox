@@ -5086,8 +5086,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   ): void {
     const severity = SEVERITY_NAMES[entry.severity];
     if (!severity) return;
+    if (!this.loginEventIsLogged(entry.mnemonic)) return;
     this.getLoggingConfig()?.append(
       severity, entry.facility, entry.message, true, entry.mnemonic);
+  }
+
+  private loginEventIsLogged(mnemonic: string): boolean {
+    const login = this.securityConfig()?.login;
+    if (mnemonic === 'LOGIN_SUCCESS') return login?.onSuccessLog === true;
+    if (mnemonic === 'LOGIN_FAILED') return login?.onFailureLog === true;
+    return true;
   }
 
   getSshSessionRegistry(): SshSessionRegistry {

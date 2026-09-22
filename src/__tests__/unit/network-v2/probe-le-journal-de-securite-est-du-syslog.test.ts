@@ -95,6 +95,7 @@ async function laboratoire(): Promise<{ r1: CiscoRouter; ar1: HuaweiRouter; post
     `ip address ${CISCO_IP} 255.255.255.0`,
     'no shutdown', 'exit',
     'line vty 0 4', 'login local', 'transport input ssh', 'exit',
+    'login on-success log', 'login on-failure log',
     'end',
   ]) await r1.executeCommand(c);
 
