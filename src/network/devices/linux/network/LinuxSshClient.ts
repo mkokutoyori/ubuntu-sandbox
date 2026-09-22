@@ -101,6 +101,13 @@ export interface SshClientOpts {
   wireOutcome?: TcpWireOutcome;
   shellRelay?: () => { output: string; exitCode: number } | null;
   /**
+   * Client-side messages produced BEFORE authentication — the
+   * known-hosts notice above all. OpenSSH writes them first, ahead of
+   * the server's login banner, so they cannot travel inside the relayed
+   * session's output.
+   */
+  wireNotices?: readonly string[];
+  /**
    * The local machine's port-forwarding table — `-L` / `-D` listeners are
    * bound here so the tunnel surfaces through `ss` / `netstat`.
    */
@@ -895,6 +902,14 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
 
+  // Les avis d'avant authentification — la banniere que le serveur
+  // envoie avant de demander le mot de passe, l'avis de `known_hosts` —
+  // precedent tout le reste du transcrit, et les DEUX sorties de cette
+  // fonction doivent les ecrire : celle des pairs non-Linux s'arrete
+  // avant l'en-tete commun.
+  const noticeBanner = (opts.wireNotices ?? [])
+    .map((n) => (n.endsWith('\n') ? n : `${n}\n`))
+    .join('');
   const linuxLike = (found.device as Partial<LinuxMachine & { executor: unknown }>).executor !== undefined;
   if (!linuxLike && opts.wireAuthenticated) {
     const wireCmd = joinRemoteCommand(positional.slice(1), remoteQuoting(found.device));
@@ -906,7 +921,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
         ? [relayed.output]
         : [relayed.output, connectionClosed(host)].filter(part => part.length > 0);
       return {
-        output: transcript.join('\n'),
+        output: noticeBanner + transcript.join('\n'),
         exitCode: relayed.exitCode,
         connection: { localIp: opts.sourceIp, peerIp: destIp, peerPort: port },
       };
@@ -1192,6 +1207,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       `debug1: Authentication succeeded (${auth.method}).\n`
     : '';
 
+  const clientHeader = noticeBanner + warningBanner + verboseHeader + forwardingError;
   // If the user provided a remote command, execute it on the remote
   // through the user's login shell and return its output / exit code.
   // This is OpenSSH's "exec mode" — no banner, no Last login. A bare
@@ -1320,7 +1336,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     // does) so a following local command starts on its own line.
     const normalised = execOut && !execOut.endsWith('\n') ? `${execOut}\n` : execOut;
     machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, sessionHold(machine));
-    return { output: warningBanner + verboseHeader + forwardingError + normalised, exitCode: execRc, connection };
+    return { output: clientHeader + normalised, exitCode: execRc, connection };
   }
 
   // ForceCommand also overrides the interactive shell: the user lands
@@ -1342,7 +1358,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       let out = '';
       try { out = execMod?.execute?.(forcedInteractive) ?? ''; } finally { restore?.(); }
       return {
-        output: warningBanner + verboseHeader + forwardingError + (out.endsWith('\n') ? out : out + '\n'),
+        output: clientHeader + (out.endsWith('\n') ? out : out + '\n'),
         exitCode: execMod?.lastExitCode ?? 0,
         connection,
       };
@@ -1369,7 +1385,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // OpenSSH: stay silent on success.
   const quiet = flags.some(a => a === '-q' || a === '-Q');
   if (quiet) {
-    return { output: warningBanner + verboseHeader + forwardingError, exitCode: 0, connection };
+    return { output: clientHeader, exitCode: 0, connection };
   }
 
   const printMotd     = remoteExec ? readRemoteSshdDirective(remoteExec, 'PrintMotd')    !== 'no' : true;
@@ -1388,7 +1404,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   if (relayedShell && relayedShell.output.length > 0) lines.push(relayedShell.output);
   lines.push(connectionClosed(host));
   machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, 0);
-  return { output: warningBanner + verboseHeader + forwardingError + lines.join('\n'), exitCode: 0, connection };
+  return { output: clientHeader + lines.join('\n'), exitCode: 0, connection };
 }
 
 function connectionClosed(host: string): string {
