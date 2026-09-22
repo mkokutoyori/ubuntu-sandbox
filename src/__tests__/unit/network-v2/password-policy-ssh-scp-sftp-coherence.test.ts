@@ -161,7 +161,7 @@ describe('§2 — Windows net accounts lockout is coherent across ssh/scp/sftp',
 
   it('sanity: ssh/scp/sftp reach the Windows account before any failures', async () => {
     const { client } = await buildPair();
-    const out = await client.executeCommand('ssh User@10.0.0.10 hostname', 'admin\n');
+    const out = await client.executeCommand('ssh User@10.0.0.10 hostname', 'user\n');
     expect(out).toMatch(/WIN1/i);
   });
 
@@ -175,7 +175,7 @@ describe('§2 — Windows net accounts lockout is coherent across ssh/scp/sftp',
   it('ssh is rejected once the Windows account is locked out', async () => {
     const { client, win } = await buildPair();
     tripLockout(win);
-    const out = await client.executeCommand('ssh User@10.0.0.10 hostname', 'admin\n');
+    const out = await client.executeCommand('ssh User@10.0.0.10 hostname', 'user\n');
     expect(out).toMatch(/Permission denied/i);
   });
 
@@ -224,7 +224,7 @@ describe('§3 — Windows password expiration is coherent across ssh/scp/sftp', 
 
   it('ssh is rejected once the Windows password has expired', async () => {
     const { client } = await buildExpiredPair();
-    const out = await client.executeCommand('ssh User@10.0.0.10 hostname', 'admin\n');
+    const out = await client.executeCommand('ssh User@10.0.0.10 hostname', 'user\n');
     expect(out).toMatch(/Permission denied/i);
   });
 

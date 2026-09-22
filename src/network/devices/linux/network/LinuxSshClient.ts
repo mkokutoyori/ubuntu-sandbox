@@ -897,7 +897,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
 
   const linuxLike = (found.device as Partial<LinuxMachine & { executor: unknown }>).executor !== undefined;
   if (!linuxLike && opts.wireAuthenticated) {
-    const wireCmd = joinRemoteCommand(positional.slice(1));
+    const wireCmd = joinRemoteCommand(positional.slice(1), remoteQuoting(found.device));
     const relayed = wireCmd
       ? opts.execRelay?.(wireCmd, {}) ?? null
       : opts.shellRelay?.() ?? null;
@@ -1402,6 +1402,13 @@ function sessionHold(machine: unknown): number {
   return held;
 }
 
+type RemoteQuoting = 'posix' | 'cmd';
+
+function remoteQuoting(device: unknown): RemoteQuoting {
+  const os = (device as { getOSType?: () => string } | undefined)?.getOSType?.();
+  return os === 'windows' ? 'cmd' : 'posix';
+}
+
 /**
  * Reconstruct the remote command from the positional argv that followed
  * the host. A single token is the whole command verbatim
@@ -1409,11 +1416,14 @@ function sessionHold(machine: unknown): number {
  * any containing whitespace are re-quoted to survive the remote shell's
  * re-parse intact (`ssh host bash -lc 'echo $0'`).
  */
-function joinRemoteCommand(tokens: string[]): string {
+function joinRemoteCommand(tokens: string[], quoting: RemoteQuoting = 'posix'): string {
   if (tokens.length === 0) return '';
   if (tokens.length === 1) return tokens[0].trim();
+  const quote = quoting === 'cmd'
+    ? (t: string) => `"${t.replace(/"/g, '\\"')}"`
+    : (t: string) => `'${t.replace(/'/g, "'\\''")}'`;
   return tokens
-    .map((t) => (/\s/.test(t) ? `'${t.replace(/'/g, "'\\''")}'` : t))
+    .map((t) => (/\s/.test(t) ? quote(t) : t))
     .join(' ')
     .trim();
 }
@@ -1556,7 +1566,7 @@ function runCrossPlatformExec(
     }
   }
 
-  const remoteCmd = joinRemoteCommand(positional.slice(1));
+  const remoteCmd = joinRemoteCommand(positional.slice(1), remoteQuoting(target));
 
   if (sshHost) {
     const admission = (router as unknown as {

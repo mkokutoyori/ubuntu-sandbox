@@ -55,7 +55,7 @@ describe('SSH server — authorized_keys per-key options', () => {
     await installKeyAndAuthorize(pc, srv, 'command="whoami"');
 
     const out = await pc.executeCommand(
-      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 echo hello',
+      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 echo hello', 'admin\n',
     );
     expect(out).toMatch(/^alice\s*$/m);
     expect(out).not.toMatch(/hello/);
@@ -70,7 +70,7 @@ describe('SSH server — authorized_keys per-key options', () => {
     await installKeyAndAuthorize(pc, srv, 'command="echo got:$SSH_ORIGINAL_COMMAND"');
 
     const out = await pc.executeCommand(
-      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 ls /tmp',
+      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 ls /tmp', 'admin\n',
     );
     expect(out).toMatch(/got:ls \/tmp/);
   });
@@ -83,7 +83,7 @@ describe('SSH server — authorized_keys per-key options', () => {
     await installKeyAndAuthorize(pc, srv, '');
 
     const out = await pc.executeCommand(
-      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 echo hello',
+      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 echo hello', 'admin\n',
     );
     expect(out).toMatch(/^hello/m);
     expect(out).not.toMatch(/Permission denied/i);
@@ -98,7 +98,7 @@ describe('SSH server — authorized_keys per-key options', () => {
     await installKeyAndAuthorize(pc, srv, 'command="hostname"');
 
     const out = await pc.executeCommand(
-      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 echo hi',
+      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 echo hi', 'admin\n',
     );
     expect(out).toMatch(/^alice\s*$/m);
     expect(out).not.toMatch(/linux-server/);
@@ -113,7 +113,7 @@ describe('SSH server — authorized_keys per-key options', () => {
     await installKeyAndAuthorize(pc, srv, 'from="192.168.42.*"');
 
     const out = await pc.executeCommand(
-      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 whoami',
+      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 whoami', 'admin\n',
     );
     expect(out).toMatch(/Permission denied/i);
   });
@@ -126,7 +126,7 @@ describe('SSH server — authorized_keys per-key options', () => {
     await installKeyAndAuthorize(pc, srv, 'no-port-forwarding');
 
     const out = await pc.executeCommand(
-      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no -L 9000:127.0.0.1:80 -N alice@10.0.0.2',
+      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no -L 9000:127.0.0.1:80 -N alice@10.0.0.2', 'admin\n',
     );
     expect(out).toMatch(/administratively prohibited/i);
   });
@@ -139,7 +139,7 @@ describe('SSH server — authorized_keys per-key options', () => {
     await installKeyAndAuthorize(pc, srv, 'environment="GREET=salut"');
 
     const out = await pc.executeCommand(
-      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 printenv GREET',
+      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 printenv GREET', 'admin\n',
     );
     expect(out).toMatch(/^salut\s*$/m);
   });
@@ -152,7 +152,7 @@ describe('SSH server — authorized_keys per-key options', () => {
     await installKeyAndAuthorize(pc, srv, 'restrict');
 
     const out = await pc.executeCommand(
-      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no -L 9000:127.0.0.1:80 -N alice@10.0.0.2',
+      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no -L 9000:127.0.0.1:80 -N alice@10.0.0.2', 'admin\n',
     );
     expect(out).toMatch(/administratively prohibited/i);
   });
@@ -164,7 +164,7 @@ describe('SSH server — authorized_keys per-key options', () => {
     await srv.executeCommand('systemctl reload ssh');
 
     await pc.executeCommand(
-      'ssh -f -N -R 0.0.0.0:9555:10.0.0.1:80 alice@10.0.0.2',
+      'ssh -f -N -R 0.0.0.0:9555:10.0.0.1:80 alice@10.0.0.2', 'admin\n',
     );
     const ss = await srv.executeCommand('ss -tln');
     expect(ss).toMatch(/127\.0\.0\.1:9555/);
@@ -178,7 +178,7 @@ describe('SSH server — authorized_keys per-key options', () => {
     await srv.executeCommand('systemctl reload ssh');
 
     await pc.executeCommand(
-      'ssh -f -N -R 0.0.0.0:9556:10.0.0.1:80 alice@10.0.0.2',
+      'ssh -f -N -R 0.0.0.0:9556:10.0.0.1:80 alice@10.0.0.2', 'admin\n',
     );
     const ss = await srv.executeCommand('ss -tln');
     expect(ss).toMatch(/0\.0\.0\.0:9556/);
@@ -192,7 +192,7 @@ describe('SSH server — authorized_keys per-key options', () => {
     await installKeyAndAuthorize(pc, srv, 'from="10.0.0.*"');
 
     const out = await pc.executeCommand(
-      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 whoami',
+      'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 whoami', 'admin\n',
     );
     expect(out).toMatch(/^alice\s*$/m);
     expect(out).not.toMatch(/Permission denied/i);

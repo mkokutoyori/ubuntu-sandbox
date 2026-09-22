@@ -56,7 +56,7 @@ describe('SSH server — PermitOpen gates -L destinations', () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'PasswordAuthentication yes\nPermitOpen 10.0.0.99:22\n');
     const out = await pc.executeCommand(
-      'ssh -L 9001:10.0.0.3:80 -N alice@10.0.0.2',
+      'ssh -L 9001:10.0.0.3:80 -N alice@10.0.0.2', 'admin\n',
     );
     expect(out).toMatch(/administratively prohibited/i);
   });
@@ -65,7 +65,7 @@ describe('SSH server — PermitOpen gates -L destinations', () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'PasswordAuthentication yes\nPermitOpen 10.0.0.3:80\n');
     const out = await pc.executeCommand(
-      'ssh -L 9002:10.0.0.3:80 -N alice@10.0.0.2',
+      'ssh -L 9002:10.0.0.3:80 -N alice@10.0.0.2', 'admin\n',
     );
     expect(out).not.toMatch(/administratively prohibited/i);
   });
@@ -74,7 +74,7 @@ describe('SSH server — PermitOpen gates -L destinations', () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'PasswordAuthentication yes\nPermitOpen any\n');
     const out = await pc.executeCommand(
-      'ssh -L 9003:10.0.0.5:443 -N alice@10.0.0.2',
+      'ssh -L 9003:10.0.0.5:443 -N alice@10.0.0.2', 'admin\n',
     );
     expect(out).not.toMatch(/administratively prohibited/i);
   });
@@ -83,7 +83,7 @@ describe('SSH server — PermitOpen gates -L destinations', () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'PasswordAuthentication yes\nPermitOpen none\n');
     const out = await pc.executeCommand(
-      'ssh -L 9004:10.0.0.3:80 -N alice@10.0.0.2',
+      'ssh -L 9004:10.0.0.3:80 -N alice@10.0.0.2', 'admin\n',
     );
     expect(out).toMatch(/administratively prohibited/i);
   });
@@ -92,7 +92,7 @@ describe('SSH server — PermitOpen gates -L destinations', () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'PasswordAuthentication yes\nPermitOpen 10.0.0.3:*\n');
     const out = await pc.executeCommand(
-      'ssh -L 9005:10.0.0.3:8443 -N alice@10.0.0.2',
+      'ssh -L 9005:10.0.0.3:8443 -N alice@10.0.0.2', 'admin\n',
     );
     expect(out).not.toMatch(/administratively prohibited/i);
   });
@@ -101,7 +101,7 @@ describe('SSH server — PermitOpen gates -L destinations', () => {
     const { pc, srv } = await buildPair();
     await reload(srv, 'PasswordAuthentication yes\nPermitOpen 10.0.0.99:22\n');
     const out = await pc.executeCommand(
-      'ssh -R 9006:10.0.0.3:80 -N alice@10.0.0.2',
+      'ssh -R 9006:10.0.0.3:80 -N alice@10.0.0.2', 'admin\n',
     );
     expect(out).not.toMatch(/administratively prohibited/i);
   });

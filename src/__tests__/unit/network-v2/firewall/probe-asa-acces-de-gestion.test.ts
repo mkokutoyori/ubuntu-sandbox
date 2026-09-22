@@ -44,13 +44,25 @@
  *     entrera.
  *
  * Deux precisions sur ce que les cas affirment, plutot que de les
- * laisser deviner. En SSH a UN COUP, la session s'ouvre au niveau EXEC
- * utilisateur et `show version` y est un mot du niveau privilegie : la
- * reponse attendue est donc le refus de l'ASA LUI-MEME
- * (`% Invalid input detected at '^' marker.`), qui ne peut venir que de
- * sa CLI -- c'est ce qui prouve que la session a abouti. En telnet, la
- * session etant interactive, `enable` precede `show version` comme sur
- * un vrai boitier, et la sortie complete revient.
+ * laisser deviner. En telnet, la session etant interactive, `enable`
+ * precede `show version` comme sur un vrai boitier, et la sortie
+ * complete revient.
+ *
+ * LE CAS SSH A CHANGE D'AFFIRMATION, et c'est dit ici plutot que
+ * corrige en silence. Il attendait le refus de l'ASA lui-meme
+ * (`% Invalid input detected at '^' marker.`) et s'en servait comme
+ * PREUVE DE VIE : la reponse ne pouvant venir que de la CLI, elle
+ * prouvait que la session avait abouti. Ce choix etait un pis-aller
+ * assume — le guide du constructeur etait alors injoignable (403 a
+ * travers le mandataire) et la capture de configuration ne dit rien du
+ * mode d'ouverture. Le guide est joignable depuis cet environnement
+ * (ASA Series General Operations, « Management Access ») et il tranche :
+ * l'ASA place l'utilisateur authentifie au niveau que sa base locale
+ * lui donne, et un niveau de 2 a 15 ouvre le mode EXEC privilegie des
+ * l'ouverture, sans second `enable`. Le compte de ce laboratoire est
+ * declare `privilege 15`. La preuve de vie devient donc la BANNIERE,
+ * qui prouve la meme chose en plus fort — la session a abouti ET elle
+ * s'est ouverte au bon niveau.
  *
  * Limite mesuree et NON fermee ici : `ssh <hote>' SANS commande distante
  * ne passe pas par le fil. `wireExecTarget' exige au moins deux
@@ -153,7 +165,7 @@ describe('l\'ASA a un acces de gestion', () => {
     const { pc } = await lab();
     const out = await pc.executeCommand(`ssh admin@${FW_IP} "show version"`, 'Secret123\n');
     expect(out).not.toContain('Connection refused');
-    expect(out).toContain("% Invalid input detected at '^' marker.");
+    expect(out).toContain('Cisco Adaptive Security Appliance');
   }, 30000);
 
   it('telnet ouvre la meme CLI, et `enable` y donne la sortie complete', async () => {
