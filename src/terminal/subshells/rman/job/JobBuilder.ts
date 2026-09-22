@@ -57,9 +57,10 @@ export const JobBuilder = {
   },
 
   /** Incremental level 0 (full baseline) or level 1 (changes since 0). */
-  backupIncremental(level: 0 | 1, opts: { tag?: string; format?: string; cumulative?: boolean; notBackedUpNTimes?: number; maxCorrupt?: string } = {}): RmanJob {
+  backupIncremental(level: 0 | 1, opts: { tag?: string; format?: string; cumulative?: boolean; notBackedUpNTimes?: number; maxCorrupt?: string; forRecoverOfCopy?: boolean } = {}): RmanJob {
     const params: Record<string, string> = { incrementalLevel: String(level) };
     if (opts.maxCorrupt) params.maxCorrupt = opts.maxCorrupt;
+    if (opts.forRecoverOfCopy) params.forRecoverOfCopy = 'true';
     if (opts.tag) params.tag = opts.tag;
     if (opts.format) params.format = opts.format;
     if (opts.cumulative) params.cumulative = 'true';
@@ -249,6 +250,16 @@ export const JobBuilder = {
         name: 'specifying_blocks', pct: 30,
         message: 'channel ORA_DISK_1: specifying block(s) to restore from backup set',
       },
+    ], params);
+  },
+
+  recoverCopy(opts: { tag?: string; fileNo?: number } = {}): RmanJob {
+    const params: Record<string, string> = {};
+    if (opts.tag) params.tag = opts.tag;
+    if (opts.fileNo !== undefined) params.fileNo = String(opts.fileNo);
+    const portee = opts.fileNo === undefined ? 'database' : `datafile ${opts.fileNo}`;
+    return _make('RECOVER_COPY', [
+      { name: 'recover_copy', pct: 20, message: `recovering copy of ${portee}` },
     ], params);
   },
 
