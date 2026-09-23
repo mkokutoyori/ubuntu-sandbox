@@ -40,6 +40,30 @@
  *     posant les pastilles dans une couche au-dessus des equipements --
  *     `canvas-cable-labels.spec.ts` le mesure dans le DOM.
  *
+ *  5. UNE PASTILLE GARDE SA TAILLE A L'ECRAN, quel que soit le zoom.
+ *     Tout est dans un `scale(zoom)`, donc a la moitie du zoom le texte
+ *     de neuf pixels en rendait quatre et demi : sur capture, `Gi0/0`
+ *     devient une tache rouge quand le nom de l'equipement, lui, reste
+ *     lisible. L'information disparait exactement quand la topologie
+ *     devient assez grande pour qu'on en ait besoin.
+ *
+ *     Contre-echeller la pastille au rendu ne suffit pas : le placement
+ *     raisonne en unites de TOILE, et une pastille rendue deux fois plus
+ *     grande recouvrirait ce que le placement croyait degage. Le zoom
+ *     entre donc dans le CALCUL -- la longueur de la pastille sur la
+ *     toile vaut son texte divise par le zoom -- et la garantie « elle
+ *     ne cache rien » tient alors a tous les zooms. Serrer le zoom
+ *     retrecit la pastille sur la toile, donc la rapproche de son port.
+ *
+ *     En dessous d'un plancher, meme contre-echellees les pastilles ne
+ *     tiennent plus : la toile montre alors la FORME du reseau et se
+ *     tait sur les noms de port, plutot que d'afficher un encombrement
+ *     illisible. Le plancher n'est pas deduit, il est MESURE sur le labo
+ *     temoin de ce fichier -- trois machines sous un routeur, six
+ *     pastilles : 1 recouvrement a 0,5 et 0,6, aucun a partir de 0,7.
+ *     Un labo plus dense se tairait plus tot ; c'est une limite du
+ *     reglage, pas une garantie universelle.
+ *
  * Sonde ecrite AVANT le correctif.
  */
 import { describe, it, expect } from 'vitest';
@@ -53,6 +77,8 @@ import {
   NODE_HALF_HEIGHT,
   NODE_CENTER_OFFSET_Y,
   DEVICE_BADGE_BOTTOM,
+  LABEL_MIN_ZOOM,
+  shouldShowPortLabels,
   type RoutedLink,
   type CableRoute,
   type LabelPlacement,
@@ -90,8 +116,10 @@ function centresOf(links: RoutedLink[]): { x: number; y: number }[] {
   return [...seen.values()];
 }
 
-function routesOf(links: RoutedLink[], devices = centresOf(links)): CableRoute[] {
-  const routes = computeCableRoutes(links, devices);
+function routesOf(
+  links: RoutedLink[], devices = centresOf(links), zoom = 1,
+): CableRoute[] {
+  const routes = computeCableRoutes(links, devices, zoom);
   return links.map(link => routes.get(link.id)!);
 }
 
@@ -99,15 +127,15 @@ function everyLabel(routes: CableRoute[]): LabelPlacement[] {
   return routes.flatMap(route => [route.sourceLabel, route.targetLabel]);
 }
 
-function halfExtents(label: LabelPlacement): { x: number; y: number } {
-  const along = interfaceTagWidth(label.text) / 2;
-  const across = TAG_HEIGHT / 2;
+function halfExtents(label: LabelPlacement, zoom = 1): { x: number; y: number } {
+  const along = label.halfLength;
+  const across = TAG_HEIGHT / (2 * zoom);
   return label.vertical ? { x: across, y: along } : { x: along, y: across };
 }
 
-function overlap(a: LabelPlacement, b: LabelPlacement): boolean {
-  const halfA = halfExtents(a);
-  const halfB = halfExtents(b);
+function overlap(a: LabelPlacement, b: LabelPlacement, zoom = 1): boolean {
+  const halfA = halfExtents(a, zoom);
+  const halfB = halfExtents(b, zoom);
   return Math.abs(a.at.x - b.at.x) < halfA.x + halfB.x
     && Math.abs(a.at.y - b.at.y) < halfA.y + halfB.y;
 }
@@ -340,5 +368,52 @@ describe('la distance d un point a un trace', () => {
 
   it('et un point pris sur le trace y reste', () => {
     expect(distanceToPolyline(pointAlongPolyline(TRACE, 0.5), TRACE)).toBeCloseTo(0, 6);
+  });
+});
+
+describe('une pastille garde sa taille a l ecran, quel que soit le zoom', () => {
+  it('a zoom 1, sa longueur sur la toile est celle de son texte', () => {
+    const [route] = routesOf(ETOILE);
+    expect(route.sourceLabel.halfLength)
+      .toBeCloseTo(interfaceTagWidth(route.sourceLabel.text) / 2, 5);
+  });
+
+  it('a zoom 2, elle occupe deux fois moins de place sur la toile', () => {
+    const [serre] = routesOf(ETOILE, centresOf(ETOILE), 2);
+    const [normal] = routesOf(ETOILE);
+    expect(serre.sourceLabel.halfLength).toBeCloseTo(normal.sourceLabel.halfLength / 2, 5);
+  });
+
+  it('et a zoom 0.5, deux fois plus', () => {
+    const [large] = routesOf(ETOILE, centresOf(ETOILE), 0.5);
+    const [normal] = routesOf(ETOILE);
+    expect(large.sourceLabel.halfLength).toBeCloseTo(normal.sourceLabel.halfLength * 2, 5);
+  });
+
+  it('plus serree, elle se tient plus pres de son port', () => {
+    const [serre] = routesOf(ETOILE, centresOf(ETOILE), 2);
+    const [normal] = routesOf(ETOILE);
+    expect(distance(serre.sourceLabel.at, serre.points[0]))
+      .toBeLessThanOrEqual(distance(normal.sourceLabel.at, normal.points[0]));
+  });
+
+  it('et la garantie de ne rien cacher tient DES le plancher', () => {
+    for (const zoom of [LABEL_MIN_ZOOM, 1, 2]) {
+      const routes = routesOf(ETOILE, centresOf(ETOILE), zoom);
+      const labels = everyLabel(routes);
+      for (let i = 0; i < labels.length; i++) {
+        for (let j = i + 1; j < labels.length; j++) {
+          expect(overlap(labels[i], labels[j], zoom), `zoom ${zoom}, ${i} et ${j}`)
+            .toBe(false);
+        }
+      }
+    }
+  });
+
+  it('sous le plancher, la toile se tait sur les noms de port', () => {
+    expect(shouldShowPortLabels(1)).toBe(true);
+    expect(shouldShowPortLabels(LABEL_MIN_ZOOM)).toBe(true);
+    expect(shouldShowPortLabels(LABEL_MIN_ZOOM - 0.01)).toBe(false);
+    expect(shouldShowPortLabels(0.25)).toBe(false);
   });
 });

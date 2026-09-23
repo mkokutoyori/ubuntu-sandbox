@@ -22,7 +22,13 @@
  * Les pastilles vivent dans une COUCHE SVG posee APRES les equipements :
  * un cable passe derriere une carte, jamais son etiquette. C'est pour
  * cela qu'elles s'ancrent sur `data-label-for` et non sur le groupe du
- * cable, qui reste dans la couche du dessous.
+ * cable, qui reste dans la couche du dessous. L'equipement SELECTIONNE
+ * repasse devant, parce que sa barre d'actions porte des commandes et
+ * qu'une etiquette n'en porte pas.
+ *
+ * Le zoom se mesure ici et nulle part ailleurs : une pastille garde sa
+ * taille A L'ECRAN, donc sa boite englobante ne bouge pas quand on
+ * zoome, alors que l'ecart entre deux equipements, lui, suit le zoom.
  */
 import { test, expect, type Page } from '@playwright/test';
 
@@ -284,5 +290,71 @@ test('a label lies along its cable, never across it', async ({ page }) => {
   await page.screenshot({
     path: `${SHOTS}/34-pastille-dans-l-axe.png`,
     clip: { x: 520, y: 200, width: 420, height: 340 },
+  });
+});
+
+test('a port label keeps its size on screen when the canvas is zoomed', async ({ page }) => {
+  const { connectionIds } = await seedStar(page);
+  const label = labelOf(page, connectionIds[0], 1);
+
+  const sizeAt = async (zoom: number) => {
+    await page.evaluate(z => (window as unknown as {
+      __networkStore: { getState: () => { setZoom: (z: number) => void } };
+    }).__networkStore.getState().setZoom(z), zoom);
+    await page.waitForTimeout(250);
+    const box = (await label.boundingBox())!;
+    return { width: box.width, height: box.height };
+  };
+
+  const atOne = await sizeAt(1);
+  const atTwo = await sizeAt(2);
+  const atThreeQuarters = await sizeAt(0.75);
+
+  expect(atTwo.width).toBeCloseTo(atOne.width, 0);
+  expect(atTwo.height).toBeCloseTo(atOne.height, 0);
+  expect(atThreeQuarters.width).toBeCloseTo(atOne.width, 0);
+
+  await page.evaluate(() => (window as unknown as {
+    __networkStore: { getState: () => { setZoom: (z: number) => void } };
+  }).__networkStore.getState().setZoom(0.75));
+  await settle(page);
+  await page.screenshot({
+    path: `${SHOTS}/35-pastilles-au-zoom.png`,
+    clip: { x: 500, y: 180, width: 480, height: 330 },
+  });
+});
+
+test('below the floor the canvas shows the shape and stays silent on port names', async ({ page }) => {
+  const { connectionIds } = await seedStar(page);
+  await expect(labelsOf(page, connectionIds[0])).toHaveCount(2);
+
+  await page.evaluate(() => (window as unknown as {
+    __networkStore: { getState: () => { setZoom: (z: number) => void } };
+  }).__networkStore.getState().setZoom(0.5));
+
+  await expect(labelsOf(page, connectionIds[0])).toHaveCount(0);
+  await expect(page.locator(`g[data-connection-id="${connectionIds[0]}"]`)).toBeVisible();
+});
+
+test('a selected device keeps its action bar above the labels', async ({ page }) => {
+  const { routerId, connectionIds } = await seedStar(page);
+  await page.locator(`[data-device-id="${routerId}"]`).click();
+
+  const remove = page.getByRole('button', { name: /^Delete / });
+  await expect(remove).toBeVisible();
+  const box = (await remove.boundingBox())!;
+
+  const onTop = await page.evaluate(({ x, y }) => {
+    const hit = document.elementFromPoint(x, y);
+    return !hit?.closest('[data-port-label]');
+  }, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
+
+  expect(onTop).toBe(true);
+  expect(connectionIds).toHaveLength(3);
+
+  await settle(page);
+  await page.screenshot({
+    path: `${SHOTS}/36-barre-d-actions.png`,
+    clip: { x: 520, y: 150, width: 520, height: 400 },
   });
 });

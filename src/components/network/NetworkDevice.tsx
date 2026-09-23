@@ -219,6 +219,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
           "group absolute flex flex-col items-center gap-1 cursor-pointer select-none",
           "transition-transform duration-75",
           "focus-visible:outline-none",
+          isSelected && "z-20",
           isDragging && "z-50"
         )}
         style={{
