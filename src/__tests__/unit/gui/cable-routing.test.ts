@@ -64,6 +64,24 @@
  *     Un labo plus dense se tairait plus tot ; c'est une limite du
  *     reglage, pas une garantie universelle.
  *
+ *  6. LE COUDE SE PLACE SELON CE QUE CHAQUE BRANCHE DOIT PORTER. Il
+ *     etait fige a MI-CHEMIN entre les deux cartes, sans rien savoir des
+ *     pastilles. Releve : un pare-feu en (340,90) cable a un routeur en
+ *     (180,270) donne un trace dont la premiere branche fait soixante
+ *     pixels ; l'etiquette de nom du pare-feu, qui pend sous sa carte,
+ *     en bloque quarante et un ; il reste dix-neuf pixels pour une
+ *     pastille qui en fait quarante et un. `port1` etait donc repoussee
+ *     sur le corridor, a 64 pixels sur 280, loin du port qu'elle nomme.
+ *
+ *     Le coude connait desormais le BESOIN de chaque bout -- la marge
+ *     de bout, la longueur de la pastille, et ce que l'etiquette de nom
+ *     bloque quand le cable sort par le BAS. Quand la course suffit, le
+ *     surplus est partage egalement et le coude retombe au milieu pour
+ *     un cable symetrique ; quand elle ne suffit pas, il partage AU
+ *     PRORATA des deux besoins plutot que de servir un bout au hasard.
+ *     Il reste toujours entre les deux cartes : un cable ne revient
+ *     jamais sur ses pas.
+ *
  * Sonde ecrite AVANT le correctif.
  */
 import { describe, it, expect } from 'vitest';
@@ -79,6 +97,7 @@ import {
   DEVICE_BADGE_BOTTOM,
   LABEL_MIN_ZOOM,
   shouldShowPortLabels,
+  endLabelNeed,
   type RoutedLink,
   type CableRoute,
   type LabelPlacement,
@@ -415,5 +434,70 @@ describe('une pastille garde sa taille a l ecran, quel que soit le zoom', () => 
     expect(shouldShowPortLabels(LABEL_MIN_ZOOM)).toBe(true);
     expect(shouldShowPortLabels(LABEL_MIN_ZOOM - 0.01)).toBe(false);
     expect(shouldShowPortLabels(0.25)).toBe(false);
+  });
+});
+
+describe('le coude se place selon ce que chaque branche doit porter', () => {
+  const lien = (
+    source: { x: number; y: number }, target: { x: number; y: number },
+  ): RoutedLink => ({
+    id: 'seul', sourceDeviceId: 'FW', targetDeviceId: 'R1', source, target,
+    sourceInterface: 'port1', targetInterface: 'GigabitEthernet0/0',
+  });
+
+  const legs = (route: CableRoute) => {
+    const length = (a: number, b: number) =>
+      Math.hypot(route.points[b].x - route.points[a].x, route.points[b].y - route.points[a].y);
+    return { first: length(0, 1), last: length(route.points.length - 2, route.points.length - 1) };
+  };
+
+  it('quand la course suffit, chaque branche recoit son besoin', () => {
+    const route = routesOf([lien({ x: 340, y: 90 }, { x: 180, y: 400 })])[0];
+    expect(legs(route).first)
+      .toBeGreaterThanOrEqual(endLabelNeed(route.sourceLabel.halfLength, 'bottom'));
+    expect(legs(route).last)
+      .toBeGreaterThanOrEqual(endLabelNeed(route.targetLabel.halfLength, 'top'));
+  });
+
+  it('la pastille se pose alors sur SA branche, pas sur le corridor', () => {
+    const route = routesOf([lien({ x: 340, y: 90 }, { x: 180, y: 400 })])[0];
+    expect(distanceToPolyline(route.sourceLabel.at, [route.points[0], route.points[1]]))
+      .toBeLessThan(0.5);
+  });
+
+  it('sur une course courte, la pastille de sortie tient sur SA branche', () => {
+    const route = routesOf([lien({ x: 340, y: 90 }, { x: 180, y: 270 })])[0];
+    expect(distanceToPolyline(route.sourceLabel.at, [route.points[0], route.points[1]]))
+      .toBeLessThan(0.5);
+  });
+
+  it('quand elle ne suffit pas, le coude partage AU PRORATA des besoins', () => {
+    const route = routesOf([lien({ x: 340, y: 90 }, { x: 180, y: 270 })])[0];
+    const { first, last } = legs(route);
+    const besoinSortie = endLabelNeed(route.sourceLabel.halfLength, 'bottom');
+    const besoinArrivee = endLabelNeed(route.targetLabel.halfLength, 'top');
+    expect(first / (first + last))
+      .toBeCloseTo(besoinSortie / (besoinSortie + besoinArrivee), 2);
+  });
+
+  it('un cable symetrique garde son coude au MILIEU', () => {
+    const route = routesOf([{
+      id: 'seul', sourceDeviceId: 'A', targetDeviceId: 'B',
+      source: { x: 200, y: 100 }, target: { x: 500, y: 400 },
+      sourceInterface: 'eth0', targetInterface: 'eth0',
+    }])[0];
+    const { first, last } = legs(route);
+    expect(first).toBeCloseTo(last, 5);
+  });
+
+  it('et il reste TOUJOURS entre les deux cartes', () => {
+    for (const cible of [{ x: 180, y: 190 }, { x: 180, y: 400 }, { x: 900, y: 95 }]) {
+      const route = routesOf([lien({ x: 340, y: 90 }, cible)])[0];
+      const [depart, , , arrivee] = route.points;
+      const borne = (valeur: number, a: number, b: number) =>
+        valeur >= Math.min(a, b) - 0.001 && valeur <= Math.max(a, b) + 0.001;
+      expect(borne(route.points[1].x, depart.x, arrivee.x)).toBe(true);
+      expect(borne(route.points[1].y, depart.y, arrivee.y)).toBe(true);
+    }
   });
 });

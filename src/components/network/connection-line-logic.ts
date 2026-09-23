@@ -59,6 +59,11 @@ export function exitSide(from: Point, to: Point): CardSide {
   return to.y >= from.y ? 'bottom' : 'top';
 }
 
+export interface CableNeeds {
+  source: number;
+  target: number;
+}
+
 function sideHalfExtent(side: CardSide): number {
   return side === 'left' || side === 'right' ? NODE_HALF_HEIGHT : NODE_HALF_WIDTH;
 }
@@ -128,10 +133,24 @@ function cardCenter(p: Point): Point {
   return { x: p.x, y: p.y + NODE_CENTER_OFFSET_Y };
 }
 
+function corridorAlong(span: number, needFrom: number, needTo: number): number {
+  const total = needFrom + needTo;
+  if (total <= 0) return span / 2;
+  if (total > span) return span * (needFrom / total);
+  return needFrom + (span - total) / 2;
+}
+
+function corridorBetween(from: number, to: number, needs: CableNeeds | undefined): number {
+  const span = Math.abs(to - from);
+  const direction = to >= from ? 1 : -1;
+  return from + direction * corridorAlong(span, needs?.source ?? 0, needs?.target ?? 0);
+}
+
 export function computeOrthogonalPoints(
   source: Point,
   target: Point,
   lanes?: CableLanes,
+  needs?: CableNeeds,
 ): Point[] {
   const a = cardCenter(source);
   const b = cardCenter(target);
@@ -147,7 +166,7 @@ export function computeOrthogonalPoints(
     const bx = b.x - dir * NODE_HALF_WIDTH;
     const ay = a.y + sourceLane;
     const by = b.y + targetLane;
-    const corridor = (ax + bx) / 2 + corridorLane;
+    const corridor = corridorBetween(ax, bx, needs) + corridorLane;
     return [{ x: ax, y: ay }, { x: corridor, y: ay }, { x: corridor, y: by }, { x: bx, y: by }];
   }
 
@@ -156,7 +175,7 @@ export function computeOrthogonalPoints(
   const by = b.y - dir * NODE_HALF_HEIGHT;
   const ax = a.x + sourceLane;
   const bx = b.x + targetLane;
-  const corridor = (ay + by) / 2 + corridorLane;
+  const corridor = corridorBetween(ay, by, needs) + corridorLane;
   return [{ x: ax, y: ay }, { x: ax, y: corridor }, { x: bx, y: corridor }, { x: bx, y: by }];
 }
 
@@ -247,8 +266,9 @@ export function computeConnectionPath(
   source: Point,
   target: Point,
   lanes?: CableLanes,
+  needs?: CableNeeds,
 ): PathResult {
-  const points = computeOrthogonalPoints(source, target, lanes);
+  const points = computeOrthogonalPoints(source, target, lanes, needs);
   return { path: roundedPolylinePath(points), points };
 }
 
@@ -380,6 +400,14 @@ export const LABEL_MIN_ZOOM = 0.7;
 
 export function shouldShowPortLabels(zoom: number): boolean {
   return zoom >= LABEL_MIN_ZOOM;
+}
+
+export function exitObstruction(side: CardSide): number {
+  return side === 'bottom' ? DEVICE_BADGE_BOTTOM - NODE_HALF_HEIGHT : 0;
+}
+
+export function endLabelNeed(halfLength: number, side: CardSide): number {
+  return LABEL_END_MARGIN + exitObstruction(side) + 2 * halfLength;
 }
 
 interface LabelBox {
@@ -517,6 +545,18 @@ function placeEndLabel(
   return best;
 }
 
+interface EndLabel {
+  text: string;
+  halfLength: number;
+  need: number;
+}
+
+function endLabelOf(name: string, side: CardSide, zoom: number): EndLabel {
+  const text = abbreviateInterfaceName(name);
+  const halfLength = interfaceTagWidth(text) / (2 * zoom);
+  return { text, halfLength, need: endLabelNeed(halfLength, side) };
+}
+
 export function computeCableRoutes(
   links: ReadonlyArray<RoutedLink>,
   devices: ReadonlyArray<Point>,
@@ -526,9 +566,17 @@ export function computeCableRoutes(
   const ordered = [...links].sort((a, b) =>
     a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
+  const ends = new Map<string, { source: EndLabel; target: EndLabel }>();
   const drawn = new Map<string, PathResult>();
   for (const link of ordered) {
-    drawn.set(link.id, computeConnectionPath(link.source, link.target, lanes.get(link.id)));
+    const pair = {
+      source: endLabelOf(link.sourceInterface, exitSide(link.source, link.target), zoom),
+      target: endLabelOf(link.targetInterface, exitSide(link.target, link.source), zoom),
+    };
+    ends.set(link.id, pair);
+    drawn.set(link.id, computeConnectionPath(
+      link.source, link.target, lanes.get(link.id),
+      { source: pair.source.need, target: pair.target.need }));
   }
 
   const routes = new Map<string, CableRoute>();
@@ -540,23 +588,25 @@ export function computeCableRoutes(
       .filter(other => other.id !== link.id)
       .map(other => drawn.get(other.id)!.points);
 
-    const place = (name: string, nearStart: boolean): LabelPlacement => {
-      const text = abbreviateInterfaceName(name);
-      const halfLength = interfaceTagWidth(text) / (2 * zoom);
+    const place = (end: EndLabel, nearStart: boolean): LabelPlacement => {
       const halfThickness = TAG_HEIGHT / (2 * zoom);
       const placed = placeEndLabel(
-        points, labelRanges(points, halfLength), nearStart, others, obstacles,
-        halfLength, halfThickness);
+        points, labelRanges(points, end.halfLength), nearStart, others, obstacles,
+        end.halfLength, halfThickness);
       obstacles.push(placed.box);
-      return { at: placed.box.at, text, vertical: placed.vertical, halfLength };
+      return {
+        at: placed.box.at, text: end.text,
+        vertical: placed.vertical, halfLength: end.halfLength,
+      };
     };
 
+    const pair = ends.get(link.id)!;
     routes.set(link.id, {
       ...lanes.get(link.id)!,
       path,
       points,
-      sourceLabel: place(link.sourceInterface, true),
-      targetLabel: place(link.targetInterface, false),
+      sourceLabel: place(pair.source, true),
+      targetLabel: place(pair.target, false),
     });
   }
 
