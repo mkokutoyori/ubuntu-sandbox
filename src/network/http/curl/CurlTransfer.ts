@@ -16,6 +16,7 @@ import { buildMultipart } from './CurlForm';
 import { isKnownMethod } from '../semantics/methods';
 import type { CurlOptions } from './CurlArgs';
 import type { CurlHost } from './CurlHost';
+import type { TcpSocket } from '@/network/tcp/TcpStack';
 
 export interface CurlUrl {
   readonly scheme: 'http' | 'https';
@@ -217,6 +218,40 @@ function resolveLocation(base: CurlUrl, location: string): UrlParse {
 
 class CurlConnectRefused extends Error {}
 
+type DialOutcome =
+  | { readonly kind: 'open'; readonly socket: TcpSocket }
+  | { readonly kind: 'refused' }
+  | { readonly kind: 'timeout'; readonly elapsedMs: number };
+
+async function dial(
+  host: CurlHost, address: string, port: number, connectTimeoutMs: number | null,
+): Promise<DialOutcome> {
+  const stack = host.tcpStack();
+  const socket = stack.connect(address, port);
+  if (!socket) return { kind: 'refused' };
+  if (socket.state === 'established') return { kind: 'open', socket };
+  if (socket.connectRefused || socket.connectProhibited || connectTimeoutMs === null) {
+    socket.close();
+    return { kind: 'refused' };
+  }
+  const startedAt = stack.clock().now();
+  await stack.clock().delay(connectTimeoutMs);
+  if (socket.everEstablished) return { kind: 'open', socket };
+  socket.close();
+  return { kind: 'timeout', elapsedMs: Math.round(stack.clock().now() - startedAt) };
+}
+
+function connectTimeoutFailure(
+  url: CurlUrl, elapsedMs: number, remoteIp: string, method: string,
+  numRedirects: number, trace: readonly string[],
+): CurlFailure {
+  return {
+    ok: false, code: 28,
+    message: `curl: (28) Failed to connect to ${url.host} port ${url.port} after ${elapsedMs} ms: Timeout was reached`,
+    url, remoteIp, method, numRedirects, trace,
+  };
+}
+
 export async function performCurlRequest(
   host: CurlHost,
   first: CurlUrl,
@@ -306,9 +341,12 @@ export async function performCurlRequest(
       const verifier = opts.insecure
         ? new InsecureCertificateVerifier({ trustAnchors: [] })
         : new CertificateVerifier({ trustAnchors: anchors });
-      const porte = host.tcpStack().connect(address, url.port);
-      const refuse = !porte || porte.state !== 'established';
-      porte?.close();
+      const porte = await dial(host, address, url.port, opts.connectTimeoutMs);
+      if (porte.kind === 'open') porte.socket.close();
+      const refuse = porte.kind !== 'open';
+      if (porte.kind === 'timeout') {
+        return connectTimeoutFailure(url, porte.elapsedMs, remoteIp, method, redirects, trace);
+      }
       if (refuse) {
         failure = {
           ok: false, code: 7,
@@ -368,6 +406,20 @@ export async function performCurlRequest(
       }
     } else {
       const session = new Http1ClientSession(host.tcpStack(), address, url.port);
+      if (opts.connectTimeoutMs !== null) {
+        const porte = await dial(host, address, url.port, opts.connectTimeoutMs);
+        if (porte.kind === 'timeout') {
+          return connectTimeoutFailure(url, porte.elapsedMs, remoteIp, method, redirects, trace);
+        }
+        if (porte.kind === 'refused') {
+          return {
+            ok: false, code: 7,
+            message: `curl: (7) Failed to connect to ${url.host} port ${url.port}: Connection refused`,
+            url, remoteIp, method, numRedirects: redirects, trace,
+          };
+        }
+        session.adopt(porte.socket);
+      }
       // `sendAsync` et non `send` : un serveur qui doit authentifier par
       // AAA répond après un aller-retour, et le contrat synchrone rendait
       // sa réponse invisible. Un serveur synchrone répond au premier tour,

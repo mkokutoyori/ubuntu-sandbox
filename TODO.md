@@ -315,6 +315,22 @@ n'evalue. C'est un chantier par knob, pas un correctif de commande.
 
 ---
 
+### [curl] un SYN sans reponse est annonce « Connection refused », au format d'avant curl 8
+Sans `--connect-timeout`, `CurlTransfer` traite un SYN jete en silence
+comme un refus et affiche `curl: (7) Failed to connect to H port P:
+Connection refused`. Deux ecarts avec curl 8.5.0 (`lib/connect.c`,
+`lib/strerror.c`) : le texte d'un echec de connexion y est `Failed to
+connect to H port P after N ms: Couldn't connect to server`, et un SYN
+sans reponse n'est pas un refus — il attend le delai TCP du noyau puis
+echoue en ETIMEDOUT, code 28.
+**Mesure** : `iptables -A INPUT -p tcp --dport 443 -j DROP` sur le
+serveur, puis `curl -sS https://10.0.0.2/` depuis le client — reponse
+immediate « Connection refused », code 7.
+**Pourquoi ce n'est pas ferme** : `--connect-timeout` est implemente et
+borne l'attente ; sans lui, le delai par defaut du noyau (reemissions du
+SYN, ~130 s sous Linux) n'est pas modele, et changer le texte du refus
+touche les tests qui l'attendent sous sa forme actuelle.
+
 ## Postes Windows
 
 ### [ping] les mots de `ping.exe` pour le code 13 restent non attestés

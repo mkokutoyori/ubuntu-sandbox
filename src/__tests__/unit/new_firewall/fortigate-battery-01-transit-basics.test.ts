@@ -218,7 +218,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'HTTP'); // uniquement HTTP
       await taper(srv as unknown as Cli, ['systemctl start nginx']);
-      const resHttps = await pc.executeCommand('curl -k -s --connect-timeout 1 https://203.0.113.9/');
+      const resHttps = await pc.executeCommand('curl -k -sS --connect-timeout 1 https://203.0.113.9/');
       expect(resHttps).toMatch(/Connection timed out|Connection refused|Failed to connect/i);
     });
 

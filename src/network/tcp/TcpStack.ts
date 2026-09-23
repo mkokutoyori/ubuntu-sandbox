@@ -571,6 +571,10 @@ export class TcpStack {
     socket.ownerPid = pid;
   }
 
+  clock(): IScheduler {
+    return this.getScheduler();
+  }
+
   connect(rawRemoteIp: string, remotePort: number, opts: TcpConnectOptions = {}): TcpSocket | null {
     if (!this.enabled) return null;
     const remoteIp = canonicalIpText(rawRemoteIp);
