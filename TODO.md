@@ -331,6 +331,29 @@ borne l'attente ; sans lui, le delai par defaut du noyau (reemissions du
 SYN, ~130 s sous Linux) n'est pas modele, et changer le texte du refus
 touche les tests qui l'attendent sous sa forme actuelle.
 
+### [iam] /etc/shadow stocke le mot de passe EN CLAIR derriere un faux prefixe SHA-512
+`echo user:Secret123 | chpasswd` ecrit `user:$6$simulated$Secret123:…` :
+le champ a la forme d'un hash crypt(3) SHA-512 (`$6$sel$…`) mais porte le
+mot de passe lui-meme. Tout lecteur de `/etc/shadow` (root, une sauvegarde,
+un `scp` du fichier) lit donc les mots de passe, et un exercice d'audit de
+robustesse (john, hashcat, comparaison de hashes) n'a aucun sens.
+**Mesure** : `chpasswd` puis `grep user /etc/shadow` sur un LinuxServer.
+**Pourquoi ce n'est pas ferme** : il faut un vrai SHA-512-crypt (sel,
+5000 tours par defaut) dans `src/crypto/` et migrer tous les lecteurs du
+champ (`checkPassword`, PAM, faillock, `passwd -S`, `chage`) ; hors du
+perimetre du correctif SSH qui l'a revele.
+
+### [ssh-keygen] le dessin « randomart » est plein, pas la marche du fou
+`ssh-keygen -t ed25519` imprime une grille dont chaque case porte un
+symbole. L'algorithme d'OpenSSH (sshkey.c, fingerprint_randomart, « drunken
+bishop ») fait avancer un fou sur la grille selon les bits de l'empreinte :
+la plupart des cases restent vides, et seules les cases visitees portent
+` .o+=*BOX@%&#/^`, avec `S` au depart et `E` a l'arrivee.
+**Mesure** : `ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519` sur un
+LinuxPC ; les 9 lignes de 17 colonnes sont entierement remplies.
+**Pourquoi ce n'est pas ferme** : releve en passant, sans lien avec le
+defaut SSH corrige.
+
 ## Postes Windows
 
 ### [ping] les mots de `ping.exe` pour le code 13 restent non attestés

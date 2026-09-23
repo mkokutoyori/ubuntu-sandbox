@@ -62,6 +62,19 @@ async function creerLaboTraverse(): Promise<LaboTraverse> {
   return { pc, sw, fw, srv };
 }
 
+async function grantKeyAccess(pc: LinuxPC, srv: LinuxServer): Promise<void> {
+  await pc.executeCommand('ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519');
+  const publicKey = (await pc.executeCommand('cat ~/.ssh/id_ed25519.pub')).trim();
+  await taper(srv as unknown as Cli, [
+    'useradd -m user',
+    'mkdir -p /home/user/.ssh',
+    `echo '${publicKey}' >> /home/user/.ssh/authorized_keys`,
+    'chown -R user:user /home/user/.ssh',
+    'chmod 700 /home/user/.ssh',
+    'chmod 600 /home/user/.ssh/authorized_keys',
+  ]);
+}
+
 // Active une politique FW générique LAN -> WAN
 async function autoriserTrafic(fw: Cli, service: string = 'ALL', nat: boolean = true): Promise<void> {
   await taper(fw, [
@@ -268,6 +281,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'SSH');
       await taper(srv as unknown as Cli, ['systemctl start sshd']);
+      await grantKeyAccess(pc, srv);
       const res = await pc.executeCommand('ssh -o StrictHostKeyChecking=no -o ConnectTimeout=2 203.0.113.9 "echo SSH_OK"');
       expect(res).toContain('SSH_OK');
     });
@@ -276,6 +290,8 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'SSH');
       await taper(srv as unknown as Cli, ['systemctl start sshd']);
+      await grantKeyAccess(pc, srv);
+      await taper(srv as unknown as Cli, ['hostnamectl set-hostname SRV-Prod']);
       const res = await pc.executeCommand('ssh -o StrictHostKeyChecking=no 203.0.113.9 "hostname"');
       expect(res.trim()).toBe('SRV-Prod');
     });
@@ -292,6 +308,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'SSH');
       await taper(srv as unknown as Cli, ['systemctl start sshd']);
+      await grantKeyAccess(pc, srv);
       await pc.executeCommand('ssh -o StrictHostKeyChecking=no 203.0.113.9 "true"');
       const table = await fw.executeCommand('diagnose sys session list');
       expect(table).toMatch(/dport=22/i);
@@ -300,6 +317,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('24. Redirection de port SSH via VIP (Port Forwarding WAN vers SRV)', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await taper(srv as unknown as Cli, ['systemctl start sshd']);
+      await grantKeyAccess(pc, srv);
       await taper(fw, [
         'config firewall vip',
         'edit "VIP_SSH"',
@@ -578,6 +596,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
         'systemctl start nginx',
         'systemctl start sshd',
       ]);
+      await grantKeyAccess(pc, srv);
 
       const [pPing, pHttp, pSsh] = await Promise.all([
         pc.executeCommand('ping -c 1 203.0.113.9'),

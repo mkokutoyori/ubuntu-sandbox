@@ -1935,14 +1935,14 @@ export abstract class LinuxMachine extends EndHost
       | undefined;
     if (!userEntry) return { ok: false, reason: 'no such user' };
 
-    // Locked account: either the userMgr's in-memory flag is on, or
-    // /etc/shadow stores "!<hash>" / "!".
-    if (userEntry.locked) return { ok: false, reason: 'account locked' };
-    if (userEntry.password === '!') return { ok: false, reason: 'no password set' };
-    const shadow = this.executor.vfs.readFile('/etc/shadow') ?? '';
-    const shadowLine = shadow.split('\n').find(l => l.startsWith(`${user}:`));
-    if (shadowLine && /^!/.test(shadowLine.split(':')[1] ?? '')) {
-      return { ok: false, reason: 'account locked' };
+    if (!config.usePam) {
+      if (userEntry.locked) return { ok: false, reason: 'account locked' };
+      if (userEntry.password === '!') return { ok: false, reason: 'account locked' };
+      const shadow = this.executor.vfs.readFile('/etc/shadow') ?? '';
+      const shadowLine = shadow.split('\n').find(l => l.startsWith(`${user}:`));
+      if (shadowLine && /^!/.test(shadowLine.split(':')[1] ?? '')) {
+        return { ok: false, reason: 'account locked' };
+      }
     }
     // Account/password expiry (chage -E / -M) is a PAM *account*-phase
     // concern, checked after credentials verify — see
