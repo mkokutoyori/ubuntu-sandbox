@@ -43,10 +43,10 @@ interface LaboSupervision {
 
 async function creerLaboSupervision(): Promise<LaboSupervision> {
   const pc = new LinuxPC('linux-pc', 'PC-Admin', 100, 0);
-  const sw1 = new CiscoSwitch('switch-cisco-1', 'SW-Core', 16, 300, 0);
+  const sw1 = new CiscoSwitch('switch-cisco', 'SW-Core', 16, 300, 0);
   const fw = createDevice('firewall-fortinet', 500, 0) as unknown as Cli;
-  const srvProd = new LinuxServer('linux-server-prod', 'SRV-PROD', 700, 0);
-  const siem = new LinuxServer('linux-server-siem', 'SRV-SIEM', 700, 200);
+  const srvProd = new LinuxServer('linux-server', 'SRV-PROD', 700, 0);
+  const siem = new LinuxServer('linux-server', 'SRV-SIEM', 700, 200);
 
   pc.powerOn();
   sw1.powerOn();
@@ -457,7 +457,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
     });
 
     it('181. Trap d\'échec d\'authentification (AuthenticationFailure) généré suite à une intrusion SNMP', async () => {
-      const { sw1 } = await creerLaboEntrepriseSupervision(sw1);
+      const { sw1 } = await creerLaboSupervision();
       const conf = await sw1.executeCommand('show snmp');
       expect(conf).not.toMatch(/error/i);
     });
@@ -718,8 +718,3 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
   });
 
 });
-
-// Helper pour compatibilité contextuelle
-async function creerLaboEntrepriseSupervision(sw: CiscoSwitch): Promise<CiscoSwitch> {
-  return sw;
-}

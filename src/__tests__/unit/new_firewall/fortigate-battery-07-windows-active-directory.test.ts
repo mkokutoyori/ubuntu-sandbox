@@ -65,11 +65,11 @@ interface LaboHybride {
 async function creerLaboHybride(): Promise<LaboHybride> {
   const winPc = new WindowsPC('windows-pc', 'WIN-CLI');
   const linuxPc = new LinuxPC('linux-pc', 'LINUX-CLI', 100, 0);
-  const swLan = new CiscoSwitch('switch-cisco-lan', 'SW-LAN', 16, 250, 0);
+  const swLan = new CiscoSwitch('switch-cisco', 'SW-LAN', 16, 250, 0);
   const fw = createDevice('firewall-fortinet', 500, 0) as unknown as Cli;
-  const swDmz = new CiscoSwitch('switch-cisco-dmz', 'SW-DMZ', 16, 750, 0);
+  const swDmz = new CiscoSwitch('switch-cisco', 'SW-DMZ', 16, 750, 0);
   const winDc = creerServeurWindows('DC01');
-  const linuxSrv = new LinuxServer('linux-server-prod', 'SRV-PROD', 900, 0);
+  const linuxSrv = new LinuxServer('linux-server', 'SRV-PROD', 900, 0);
 
   winPc.powerOn();
   linuxPc.powerOn();

@@ -64,13 +64,13 @@ interface LaboCyberDefense {
 
 async function creerLaboCyberDefense(): Promise<LaboCyberDefense> {
   const winAdmin = new WindowsPC('windows-pc', 'WIN-ADMIN');
-  const winRogue = new WindowsPC('windows-pc-rogue', 'WIN-ROGUE');
-  const swPvlan = new CiscoSwitch('switch-cisco-pvlan', 'SW-PVLAN', 16, 200, 0);
+  const winRogue = new WindowsPC('windows-pc', 'WIN-ROGUE');
+  const swPvlan = new CiscoSwitch('switch-cisco', 'SW-PVLAN', 16, 200, 0);
   const fw = createDevice('firewall-fortinet', 500, 0) as unknown as Cli;
-  const swCore = new CiscoSwitch('switch-cisco-core', 'SW-CORE', 16, 750, 0);
+  const swCore = new CiscoSwitch('switch-cisco', 'SW-CORE', 16, 750, 0);
   const dc01 = serveurWindows('DC01');
   const srvIis = serveurWindows('SRV-IIS');
-  const srvLinux = new LinuxServer('linux-server-prod', 'SRV-LINUX', 950, 0);
+  const srvLinux = new LinuxServer('linux-server', 'SRV-LINUX', 950, 0);
 
   winAdmin.powerOn();
   winRogue.powerOn();

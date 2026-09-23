@@ -44,13 +44,13 @@ interface LaboHA {
 
 async function creerLaboHA(): Promise<LaboHA> {
   const pc = new LinuxPC('linux-pc', 'PC-Client', 50, 0);
-  const swAccess = new CiscoSwitch('switch-cisco-acc', 'SW-Access', 16, 200, 0);
+  const swAccess = new CiscoSwitch('switch-cisco', 'SW-Access', 16, 200, 0);
   const fwMaster = createDevice('firewall-fortinet', 400, -100) as unknown as Cli;
   const fwSlave = createDevice('firewall-fortinet', 400, 100) as unknown as Cli;
-  const swCore = new CiscoSwitch('switch-cisco-core', 'SW-Core', 16, 600, 0);
-  const srvWeb = new LinuxServer('linux-server-web', 'SRV-WEB', 800, -100);
-  const srvDb = new LinuxServer('linux-server-db', 'SRV-DB', 800, 100);
-  const srvRadius = new LinuxServer('linux-server-rad', 'SRV-RADIUS', 800, 250);
+  const swCore = new CiscoSwitch('switch-cisco', 'SW-Core', 16, 600, 0);
+  const srvWeb = new LinuxServer('linux-server', 'SRV-WEB', 800, -100);
+  const srvDb = new LinuxServer('linux-server', 'SRV-DB', 800, 100);
+  const srvRadius = new LinuxServer('linux-server', 'SRV-RADIUS', 800, 250);
 
   pc.powerOn();
   swAccess.powerOn();

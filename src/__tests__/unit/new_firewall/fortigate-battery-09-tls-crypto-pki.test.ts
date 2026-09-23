@@ -63,12 +63,12 @@ interface LaboTls {
 async function creerLaboTls(): Promise<LaboTls> {
   const winPc = new WindowsPC('windows-pc', 'WIN-CLIENT');
   const linuxPc = new LinuxPC('linux-pc', 'LINUX-CLIENT', 100, 0);
-  const swAccess = new CiscoSwitch('switch-cisco-acc', 'SW-ACC', 16, 250, 0);
+  const swAccess = new CiscoSwitch('switch-cisco', 'SW-ACC', 16, 250, 0);
   const fw = createDevice('firewall-fortinet', 500, 0) as unknown as Cli;
-  const swCore = new CiscoSwitch('switch-cisco-core', 'SW-CORE', 16, 750, 0);
-  const srvNginx = new LinuxServer('linux-server-nginx', 'SRV-NGINX', 950, -100);
+  const swCore = new CiscoSwitch('switch-cisco', 'SW-CORE', 16, 750, 0);
+  const srvNginx = new LinuxServer('linux-server', 'SRV-NGINX', 950, -100);
   const srvWinIis = serveurWindows('SRV-IIS');
-  const srvPki = new LinuxServer('linux-server-pki', 'SRV-PKI', 950, 100);
+  const srvPki = new LinuxServer('linux-server', 'SRV-PKI', 950, 100);
 
   winPc.powerOn();
   linuxPc.powerOn();

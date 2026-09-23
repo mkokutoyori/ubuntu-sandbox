@@ -42,8 +42,8 @@ async function creerLaboAvance(): Promise<LaboAvance> {
   const pc = new LinuxPC('linux-pc', 'PC-Client', 100, 0);
   const sw = new CiscoSwitch('switch-cisco', 'SW1', 12, 250, 0);
   const fw = createDevice('firewall-fortinet', 450, 0) as unknown as Cli;
-  const dmzSrv = new LinuxServer('linux-server-dmz', 'SRV-DMZ', 650, 0);
-  const wanSrv = new LinuxServer('linux-server-wan', 'SRV-WAN', 850, 0);
+  const dmzSrv = new LinuxServer('linux-server', 'SRV-DMZ', 650, 0);
+  const wanSrv = new LinuxServer('linux-server', 'SRV-WAN', 850, 0);
 
   pc.powerOn();
   sw.powerOn();

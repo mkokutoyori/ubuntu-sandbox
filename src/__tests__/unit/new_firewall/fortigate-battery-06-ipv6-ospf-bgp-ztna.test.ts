@@ -41,10 +41,10 @@ interface LaboNextGen {
 
 async function creerLaboNextGen(): Promise<LaboNextGen> {
   const pc = new LinuxPC('linux-pc-ng', 'PC-DualStack', 50, 0);
-  const swDist = new CiscoSwitch('switch-cisco-dist', 'SW-Dist', 16, 250, 0);
+  const swDist = new CiscoSwitch('switch-cisco', 'SW-Dist', 16, 250, 0);
   const fw = createDevice('firewall-fortinet', 500, 0) as unknown as Cli;
-  const routerBgp = new CiscoSwitch('switch-cisco-bgp', 'R-BGP', 16, 750, 0);
-  const srvCluster = new LinuxServer('linux-server-cluster', 'SRV-Cluster', 950, 0);
+  const routerBgp = new CiscoSwitch('switch-cisco', 'R-BGP', 16, 750, 0);
+  const srvCluster = new LinuxServer('linux-server', 'SRV-Cluster', 950, 0);
 
   pc.powerOn();
   swDist.powerOn();

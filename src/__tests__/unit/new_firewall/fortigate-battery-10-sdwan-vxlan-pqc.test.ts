@@ -62,10 +62,10 @@ interface LaboNextGenSDWAN {
 async function creerLaboSDWAN(): Promise<LaboNextGenSDWAN> {
   const pc = new LinuxPC('linux-pc', 'PC-Linux', 100, 0);
   const winClient = new WindowsPC('windows-pc', 'WIN-CLI');
-  const swAccess = new CiscoSwitch('switch-cisco-acc', 'SW-ACC', 16, 250, 0);
+  const swAccess = new CiscoSwitch('switch-cisco', 'SW-ACC', 16, 250, 0);
   const fw = createDevice('firewall-fortinet', 500, 0) as unknown as Cli;
-  const swWan = new CiscoSwitch('switch-cisco-wan', 'SW-WAN', 16, 750, 0);
-  const srvLinux = new LinuxServer('linux-server-prod', 'SRV-LNX', 950, -100);
+  const swWan = new CiscoSwitch('switch-cisco', 'SW-WAN', 16, 750, 0);
+  const srvLinux = new LinuxServer('linux-server', 'SRV-LNX', 950, -100);
   const srvWin = serveurWindows('SRV-WIN');
 
   pc.powerOn();

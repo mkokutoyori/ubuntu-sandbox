@@ -63,12 +63,12 @@ interface LaboCloudHybride {
 async function creerLaboCloudHybride(): Promise<LaboCloudHybride> {
   const pc = new LinuxPC('linux-pc', 'PC-Dev', 50, 0);
   const winPc = new WindowsPC('windows-pc', 'WIN-USER');
-  const swAccess = new CiscoSwitch('switch-cisco-acc', 'SW-ACC', 16, 250, 0);
+  const swAccess = new CiscoSwitch('switch-cisco', 'SW-ACC', 16, 250, 0);
   const fw = createDevice('firewall-fortinet', 500, 0) as unknown as Cli;
-  const swCloud = new CiscoSwitch('switch-cisco-cloud', 'SW-CLOUD', 16, 750, 0);
-  const srvK8s = new LinuxServer('linux-server-k8s', 'SRV-K8S-APIGW', 950, -100);
+  const swCloud = new CiscoSwitch('switch-cisco', 'SW-CLOUD', 16, 750, 0);
+  const srvK8s = new LinuxServer('linux-server', 'SRV-K8S-APIGW', 950, -100);
   const winDc = serveurWindows('DC01-CLOUD');
-  const srvOtel = new LinuxServer('linux-server-otel', 'SRV-OTEL', 950, 150);
+  const srvOtel = new LinuxServer('linux-server', 'SRV-OTEL', 950, 150);
 
   pc.powerOn();
   winPc.powerOn();

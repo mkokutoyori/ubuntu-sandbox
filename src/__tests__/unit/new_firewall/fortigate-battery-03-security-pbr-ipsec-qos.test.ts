@@ -44,11 +44,11 @@ interface LaboEntreprise {
 async function creerLaboEntreprise(): Promise<LaboEntreprise> {
   const pc = new LinuxPC('linux-pc', 'PC-Compta', 100, 0);
   const rogue = new LinuxPC('linux-pc-rogue', 'PC-Attacker', 100, 150);
-  const sw1 = new CiscoSwitch('switch-cisco-1', 'SW-Access', 16, 300, 0);
+  const sw1 = new CiscoSwitch('switch-cisco', 'SW-Access', 16, 300, 0);
   const fw = createDevice('firewall-fortinet', 500, 0) as unknown as Cli;
-  const srvProd = new LinuxServer('linux-server-prod', 'SRV-PROD', 700, 0);
-  const srvBackup = new LinuxServer('linux-server-bkp', 'SRV-BACKUP', 700, 150);
-  const syslogSrv = new LinuxServer('linux-server-log', 'SRV-SYSLOG', 700, 300);
+  const srvProd = new LinuxServer('linux-server', 'SRV-PROD', 700, 0);
+  const srvBackup = new LinuxServer('linux-server', 'SRV-BACKUP', 700, 150);
+  const syslogSrv = new LinuxServer('linux-server', 'SRV-SYSLOG', 700, 300);
 
   pc.powerOn();
   rogue.powerOn();
