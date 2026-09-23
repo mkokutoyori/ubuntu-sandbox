@@ -141,10 +141,18 @@ describe('Sub-shells launched OVER SSH land in the right primary', () => {
     expect(term.foreground.getPrompt()).toMatch(/C:\\Users\\User>/);
   });
 
-  test('Windows → Cisco IOS exit-words `quit` and `exit` both close cleanly', async () => {
+  test('Windows → Cisco IOS closes on `exit`, and `quit` is IOS\'s own refusal', async () => {
     await sshLogin(term, 'ssh admin@10.0.0.5', 'Admin@123');
     expect(term.foreground.getPrompt()).toMatch(/cisco/);
+
+    // `quit` is not an IOS word — measured on the device itself, it
+    // answers `Translating "quit"… % Unknown command`. The in-memory
+    // bypass used to swallow it as a CLIENT-side exit word; over the
+    // wire the remote decides, which is the point (§4bis B4).
     await typeSub(term, 'quit');
+    expect(term.foreground.getPrompt()).toMatch(/cisco/);
+
+    await typeSub(term, 'exit');
     expect(term.foreground.getPrompt()).toMatch(/^[A-Z]:\\/);
   });
 

@@ -4,7 +4,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
-import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
+import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
 import type { TerminalSession, KeyEvent } from '@/terminal/sessions/TerminalSession';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
@@ -19,6 +19,7 @@ async function waitFor(s: TerminalSession, pred: (l: string[]) => boolean, ms = 
 }
 async function sshLogin(host: TerminalSession, line: string, password: string): Promise<void> {
   host.setInput(line);
+  host.setInputBuf(line);
   host.handleKey(key('Enter'));
   for (let i = 0; i < 4 && host.currentInputMode.type !== 'password'; i++) await tick();
   if (host.currentInputMode.type === 'password') {
@@ -28,10 +29,13 @@ async function sshLogin(host: TerminalSession, line: string, password: string): 
   for (let i = 0; i < 4; i++) await tick();
 }
 function runOnForeground(host: TerminalSession, line: string): void {
-  const fg = host.foreground;
-  fg.setInput(line);
+  host.foreground.setInput(line);
+  host.foreground.setInputBuf(line);
   host.handleKey(key('Enter'));
 }
+
+const subShellOf = (host: TerminalSession): unknown =>
+  (host as unknown as { activeSubShell: unknown }).activeSubShell;
 
 describe('SSH Windows -> Linux is a transparent transport for behaviour', () => {
   let win: WindowsPC;
@@ -51,41 +55,46 @@ describe('SSH Windows -> Linux is a transparent transport for behaviour', () => 
     await host.init?.();
   });
 
-  it('lands on a real LinuxTerminalSession after login (not a buffered proxy)', async () => {
+  it('lands on the real-wire sub-shell after login, not a local child session', async () => {
     await sshLogin(host, 'ssh user@192.168.1.20', 'admin');
-    expect(host.foreground).not.toBe(host);
-    expect(host.foreground).toBeInstanceOf(LinuxTerminalSession);
+
+    // The hop is driven over the real, authenticated SSH channel: no
+    // child session is pushed, so `foreground` stays the host and the
+    // sub-shell is the tell (docs/PRD-SSH-Unification.md §4bis B4).
+    expect(host.foreground).toBe(host);
+    expect(subShellOf(host)).toBeInstanceOf(SshInteractiveSubShell);
   });
 
   it('ping streams reply-by-reply over SSH, exactly like a local Linux terminal', async () => {
     await sshLogin(host, 'ssh user@192.168.1.20', 'admin');
     runOnForeground(host, 'ping 192.168.1.10');
-    await tick();
-    expect(host.foreground.hasForegroundAsyncJob).toBe(true);
+
     await waitFor(host, (l) => l.some((t) => /bytes from 192\.168\.1\.10/.test(t)));
     expect(texts(host).some((t) => /bytes from 192\.168\.1\.10/.test(t))).toBe(true);
+
     host.handleKey(key('c', { ctrlKey: true }));
-    await tick();
-    expect(host.foreground.hasForegroundAsyncJob).toBe(false);
+    await waitFor(host, (l) => l.some((t) => /ping statistics/.test(t)));
   });
 
-  it('journalctl -f follows the log over SSH (foreground stream holds the tty)', async () => {
+  it('journalctl -f follows the log over SSH', async () => {
     await sshLogin(host, 'ssh user@192.168.1.20', 'admin');
+    const before = texts(host).length;
     runOnForeground(host, 'journalctl -f');
-    await tick();
-    expect(host.foreground.hasForegroundAsyncJob).toBe(true);
-    expect(host.foreground.listAttachedStreams().length).toBeGreaterThan(0);
+
+    await waitFor(host, (l) => l.length > before);
     host.handleKey(key('c', { ctrlKey: true }));
     await tick();
-    expect(host.foreground.hasForegroundAsyncJob).toBe(false);
+    expect(subShellOf(host)).toBeInstanceOf(SshInteractiveSubShell);
   });
 
   it('exit closes the remote session and returns to the Windows host', async () => {
     await sshLogin(host, 'ssh user@192.168.1.20', 'admin');
-    expect(host.foreground).toBeInstanceOf(LinuxTerminalSession);
+    expect(subShellOf(host)).toBeInstanceOf(SshInteractiveSubShell);
+
     runOnForeground(host, 'exit');
     await tick();
     expect(host.foreground).toBe(host);
+    expect(subShellOf(host)).toBeNull();
     expect(texts(host)).toContain('Connection to 192.168.1.20 closed.');
   });
 });

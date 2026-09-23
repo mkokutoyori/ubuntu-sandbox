@@ -41,6 +41,7 @@ import { SshAuthThrottler } from '../security/SshAuthThrottler';
 import { Fail2banAgent } from '../security/Fail2banAgent';
 import { SshInteractiveShell } from './SshInteractiveShell';
 import { SubShellStack } from '@/shell/SubShellStack';
+import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
 import type { Equipment } from '@/network/equipment/Equipment';
 import { LinuxEditorFsContext } from '@/terminal/sessions/LinuxEditorFsContext';
 import { parseEditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
@@ -367,7 +368,10 @@ export class LinuxSshServerContext implements ISshServerContext {
     return cfg.chrootDirectory;
   }
 
-  getShell(userCtx: SshUserContext, cwd: string, opts?: { interactive?: boolean }): ILinuxShell {
+  getShell(
+    userCtx: SshUserContext, cwd: string,
+    opts?: { interactive?: boolean; clientIp?: string; clientPort?: number },
+  ): ILinuxShell {
     // Real per-session isolation: a dedicated LinuxShellSession (its own
     // cwd/env/su-stack, exactly like a real pty) so commands run as the
     // AUTHENTICATED user, not whatever user the device's single shared
@@ -386,6 +390,12 @@ export class LinuxSshServerContext implements ISshServerContext {
       // directory that isn't there.
       const startCwd = this.vfs.exists(cwd) ? cwd : '/';
       const session = device.openShellSession({ user: userCtx.username, cwd: startCwd });
+      const serverIp = firstConfiguredIp(device as unknown as Equipment) ?? '0.0.0.0';
+      if (opts?.clientIp) {
+        const clientPort = opts.clientPort ?? 0;
+        session.env.set('SSH_CONNECTION', `${opts.clientIp} ${clientPort} ${serverIp} 22`);
+        session.env.set('SSH_CLIENT', `${opts.clientIp} ${clientPort} 22`);
+      }
       // `sqlplus` / `rman` typed over SSH must push their REPL on this
       // side of the wire — the client only exchanges lines and a prompt,
       // so a client-side sub-shell stack would never see them.

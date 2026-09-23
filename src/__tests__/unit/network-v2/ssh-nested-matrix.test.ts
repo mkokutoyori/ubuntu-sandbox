@@ -100,34 +100,39 @@ async function buildLab() {
 
 describe('SSH is a transparent transport for every host vendor', () => {
   describe('Windows host', () => {
-    it('Win -> Win lands on a real WindowsTerminalSession', async () => {
+    it('Win -> Win lands on a real Windows prompt', async () => {
       const { winA } = await buildLab();
       const host = new WindowsTerminalSession('h', winA);
       await host.init?.();
       await sshLogin(host, 'ssh User@10.0.0.2', 'user');
-      expect(host.foreground).not.toBe(host);
-      expect(host.foreground).toBeInstanceOf(WindowsTerminalSession);
-      expect(host.foreground.isRemoteChild).toBe(true);
+      // A Windows-origin hop is driven over the wire now, so there is no
+      // local vendor TerminalSession to be an instance of. What must hold
+      // is that the session behaves like that vendor's terminal
+      // (docs/PRD-SSH-Unification.md §4bis B4).
+      expect(host.foreground).toBe(host);
+      expect((host as unknown as { activeSubShell: unknown }).activeSubShell)
+        .toBeInstanceOf(SshInteractiveSubShell);
+      expect(host.getPrompt()).toMatch(/^[A-Z]:\\/);
     });
 
-    it('Win -> Cisco lands on a real CiscoTerminalSession', async () => {
+    it('Win -> Cisco lands on a real IOS prompt', async () => {
       const { winA } = await buildLab();
       const host = new WindowsTerminalSession('h', winA);
       await host.init?.();
       await sshLogin(host, 'ssh admin@10.0.0.5', 'Admin@123');
-      expect(host.foreground).not.toBe(host);
-      expect(host.foreground).toBeInstanceOf(CiscoTerminalSession);
-      expect(host.foreground.isRemoteChild).toBe(true);
+      expect((host as unknown as { activeSubShell: unknown }).activeSubShell)
+        .toBeInstanceOf(SshInteractiveSubShell);
+      expect(host.getPrompt()).toMatch(/[>#]\s*$/);
     });
 
-    it('Win -> Huawei lands on a real HuaweiTerminalSession', async () => {
+    it('Win -> Huawei lands on a real VRP prompt', async () => {
       const { winA } = await buildLab();
       const host = new WindowsTerminalSession('h', winA);
       await host.init?.();
       await sshLogin(host, 'ssh admin@10.0.0.6', 'Admin@123');
-      expect(host.foreground).not.toBe(host);
-      expect(host.foreground).toBeInstanceOf(HuaweiTerminalSession);
-      expect(host.foreground.isRemoteChild).toBe(true);
+      expect((host as unknown as { activeSubShell: unknown }).activeSubShell)
+        .toBeInstanceOf(SshInteractiveSubShell);
+      expect(host.getPrompt()).toMatch(/^</);
     });
   });
 

@@ -4,9 +4,10 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
-import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import type { TerminalSession, KeyEvent } from '@/terminal/sessions/TerminalSession';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+
+interface RemoteEditorController { applyKey(k: { key: string }): void; exited: boolean }
 
 function key(k: string): KeyEvent {
   return { key: k, ctrlKey: false, altKey: false, metaKey: false, shiftKey: false };
@@ -51,7 +52,7 @@ describe('Editors open and save correctly when invoked through SSH', () => {
     await sshLogin(host, 'ssh user@10.0.0.2', 'admin');
     runOnForeground(host, 'nano hello.txt');
     await tick();
-    expect(host.currentInputMode.type).toBe('editor');
+    expect(host.currentInputMode.type).toBe('remote-editor');
     const mode = host.currentInputMode as { editorType: string; filePath: string };
     expect(mode.editorType).toBe('nano');
     expect(mode.filePath).toMatch(/hello\.txt$/);
@@ -61,7 +62,7 @@ describe('Editors open and save correctly when invoked through SSH', () => {
     await sshLogin(host, 'ssh user@10.0.0.2', 'admin');
     runOnForeground(host, 'vi hello.txt');
     await tick();
-    expect(host.currentInputMode.type).toBe('editor');
+    expect(host.currentInputMode.type).toBe('remote-editor');
     expect((host.currentInputMode as { editorType: string }).editorType).toBe('vi');
   });
 
@@ -69,31 +70,40 @@ describe('Editors open and save correctly when invoked through SSH', () => {
     await sshLogin(host, 'ssh user@10.0.0.2', 'admin');
     runOnForeground(host, 'vim hello.txt');
     await tick();
-    expect(host.currentInputMode.type).toBe('editor');
+    expect(host.currentInputMode.type).toBe('remote-editor');
     expect((host.currentInputMode as { editorType: string }).editorType).toBe('vim');
   });
 
-  it('saving via the host editor overlay writes the file on the remote VFS', async () => {
+  it('saving through the remote editor writes the file on the remote VFS', async () => {
     await sshLogin(host, 'ssh user@10.0.0.2', 'admin');
-    runOnForeground(host, 'nano /tmp/note.txt');
+    runOnForeground(host, 'vim /tmp/note.txt');
     await tick();
-    expect(host.currentInputMode.type).toBe('editor');
-    host.editorSave('hello over ssh\n', '/tmp/note.txt');
-    host.editorExit();
-    await tick();
-    const out = await linuxA.executeCommand('cat /tmp/note.txt');
-    expect(out).toMatch(/hello over ssh/);
-    expect(host.currentInputMode.type).not.toBe('editor');
+    expect(host.currentInputMode.type).toBe('remote-editor');
+
+    const controller = (host.currentInputMode as { controller: RemoteEditorController }).controller;
+    for (const k of [{ key: 'i' }, ...[...'hello over ssh'].map((c) => ({ key: c })),
+      { key: 'Escape' }, { key: ':' }, { key: 'w' }, { key: 'q' }, { key: 'Enter' }]) {
+      controller.applyKey(k);
+      await tick();
+    }
+
+    expect(await linuxA.executeCommand('cat /tmp/note.txt')).toMatch(/hello over ssh/);
+    expect(host.currentInputMode.type).not.toBe('remote-editor');
   });
 
-  it('exiting the editor without saving returns to the remote bash prompt', async () => {
+  it('exiting the editor without saving returns to the remote shell prompt', async () => {
     await sshLogin(host, 'ssh user@10.0.0.2', 'admin');
-    runOnForeground(host, 'nano /tmp/throwaway.txt');
+    runOnForeground(host, 'vim /tmp/throwaway.txt');
     await tick();
-    expect(host.currentInputMode.type).toBe('editor');
-    host.editorExit();
-    await tick();
-    expect(host.currentInputMode.type).not.toBe('editor');
-    expect(host.foreground).toBeInstanceOf(LinuxTerminalSession);
+    expect(host.currentInputMode.type).toBe('remote-editor');
+
+    const controller = (host.currentInputMode as { controller: RemoteEditorController }).controller;
+    for (const k of [{ key: ':' }, { key: 'q' }, { key: '!' }, { key: 'Enter' }]) {
+      controller.applyKey(k);
+      await tick();
+    }
+
+    expect(host.currentInputMode.type).not.toBe('remote-editor');
+    expect(host.getPrompt()).toMatch(/user@|\$|~/);
   });
 });

@@ -131,7 +131,7 @@ describe('un refus du fil vaut sur Windows aussi', () => {
     await host.init?.();
     await sshLogin(host, `ssh admin@${RTR}`, SECRET);
 
-    expect(host.foreground).not.toBe(host);
+    expect(host.getPrompt()).toMatch(/^R1[>#]/);
     expect(transcript(host)).toContain('R1#');
   }, 60_000);
 

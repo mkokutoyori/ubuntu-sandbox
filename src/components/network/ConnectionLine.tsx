@@ -2,28 +2,28 @@ import { memo, useMemo } from 'react';
 import { Connection, isConnectionActive } from '@/store/networkStore';
 import { NetworkDeviceUI, useNetworkStore } from '@/store/networkStore';
 import {
-  computeConnectionPath,
   getLinkAppearance,
-  computeInterfaceLabelPositions,
   computeEndpointAnchors,
   connectorSegment,
   interfaceTagWidth,
-  linkSummaryLabel,
-  abbreviateInterfaceName,
   TAG_HEIGHT,
-  type BundleSlot,
+  type CableRoute,
   type EndpointAnchor,
-  type Point,
+  type LabelPlacement,
 } from './connection-line-logic';
 import { cn } from '@/lib/utils';
 
 interface ConnectionLineProps {
   connection: Connection;
   devices: NetworkDeviceUI[];
-  slot?: BundleSlot;
+  route: CableRoute;
 }
 
-function ConnectionLineImpl({ connection, devices, slot }: ConnectionLineProps) {
+interface ConnectionLabelProps extends ConnectionLineProps {
+  zoom: number;
+}
+
+function ConnectionLineImpl({ connection, devices, route }: ConnectionLineProps) {
   // Scoped selectors, not a bare useNetworkStore() — this component
   // shouldn't re-render just because the user panned, zoomed, or moved
   // an unrelated device (rapport 09 audit, §1).
@@ -48,27 +48,8 @@ function ConnectionLineImpl({ connection, devices, slot }: ConnectionLineProps) 
 
   const { color, dash } = getLinkAppearance(connection.type, isOperational);
 
-  const { path, midX, midY } = computeConnectionPath(
-    { x: sourceDevice.x, y: sourceDevice.y },
-    { x: targetDevice.x, y: targetDevice.y },
-    slot,
-  );
-
-  const labelPositions = computeInterfaceLabelPositions(
-    { x: sourceDevice.x, y: sourceDevice.y },
-    { x: targetDevice.x, y: targetDevice.y },
-    slot,
-  );
-
-  const anchors = computeEndpointAnchors(
-    { x: sourceDevice.x, y: sourceDevice.y },
-    { x: targetDevice.x, y: targetDevice.y },
-    slot,
-  );
-
-  const summary = linkSummaryLabel(
-    connection.sourceInterfaceId, connection.targetInterfaceId);
-  const inBundle = (slot?.size ?? 1) > 1;
+  const path = route.path;
+  const anchors = computeEndpointAnchors(route.points);
 
   // The state belongs in the label, not only in the colour: a red line
   // says nothing to a screen reader, and nothing to a colour-blind
@@ -77,7 +58,6 @@ function ConnectionLineImpl({ connection, devices, slot }: ConnectionLineProps) 
     `${connection.type} cable: ${sourceDevice.name} ${connection.sourceInterfaceId} ` +
     `to ${targetDevice.name} ${connection.targetInterfaceId}` +
     `, ${isOperational ? 'link up' : 'link down'}` +
-    (inBundle ? `, link ${slot!.index + 1} of ${slot!.size} in bundle` : '') +
     `${isSelected ? ', selected' : ''}`;
 
   // A plain SVG shape has no way to receive keyboard focus or announce
@@ -104,11 +84,12 @@ function ConnectionLineImpl({ connection, devices, slot }: ConnectionLineProps) 
 
   return (
     <g
-      className="group focus-visible:outline-none"
+      className="group outline-none"
       role="button"
       tabIndex={0}
       aria-label={connectionLabel}
       aria-pressed={isSelected}
+      data-connection-id={connection.id}
       data-link-state={isOperational ? 'up' : 'down'}
       onFocus={() => selectConnection(connection.id)}
       onKeyDown={handleKeyDown}
@@ -166,108 +147,117 @@ function ConnectionLineImpl({ connection, devices, slot }: ConnectionLineProps) 
       <Connector anchor={anchors.source} color={color} />
       <Connector anchor={anchors.target} color={color} />
 
+    </g>
+  );
+}
+
+export function ConnectionLabel({ connection, devices, route, zoom }: ConnectionLabelProps) {
+  const selectedConnectionId = useNetworkStore(s => s.selectedConnectionId);
+  const selectConnection = useNetworkStore(s => s.selectConnection);
+  const removeConnection = useNetworkStore(s => s.removeConnection);
+
+  const isSelected = selectedConnectionId === connection.id;
+
+  const { sourceDevice, targetDevice } = useMemo(() => ({
+    sourceDevice: devices.find(d => d.id === connection.sourceDeviceId),
+    targetDevice: devices.find(d => d.id === connection.targetDeviceId)
+  }), [devices, connection]);
+
+  if (!sourceDevice || !targetDevice) return null;
+
+  const sourceIface = sourceDevice.interfaces.find(i => i.id === connection.sourceInterfaceId);
+  const targetIface = targetDevice.interfaces.find(i => i.id === connection.targetInterfaceId);
+  const isOperational = (sourceIface?.isOperational ?? true) && (targetIface?.isOperational ?? true);
+  const { color } = getLinkAppearance(connection.type, isOperational);
+
+  const removeAt = route.targetLabel;
+  const removeOffset = (removeAt.vertical
+    ? TAG_HEIGHT / 2
+    : interfaceTagWidth(removeAt.text) / 2) / zoom;
+
+  return (
+    <g data-label-for={connection.id}>
       <PortTag
-        at={labelPositions.source}
-        name={connection.sourceInterfaceId}
+        placement={route.sourceLabel}
+        zoom={zoom}
         color={color}
         emphasised={isSelected}
+        onSelect={() => selectConnection(connection.id)}
       />
       <PortTag
-        at={labelPositions.target}
-        name={connection.targetInterfaceId}
+        placement={route.targetLabel}
+        zoom={zoom}
         color={color}
         emphasised={isSelected}
+        onSelect={() => selectConnection(connection.id)}
       />
 
-      {inBundle ? (
-        <g
-          className="cursor-pointer"
-          onClick={() => selectConnection(connection.id)}
-        >
-          <rect
-            x={midX - 15}
-            y={midY - 8}
-            width={30}
-            height={16}
-            rx={8}
-            fill="rgba(2,6,23,0.85)"
-            stroke={color}
-            strokeWidth={isSelected ? 2 : 1.25}
-          />
-          <text
-            x={midX}
-            y={midY}
-            textAnchor="middle"
-            dominantBaseline="central"
-            fill={color}
-            fontSize={9}
-            fontWeight="700"
-            fontFamily="monospace"
-            className="pointer-events-none select-none"
-          >
-            {slot!.index + 1}/{slot!.size}
-          </text>
-        </g>
-      ) : (
-        <circle
-          cx={midX}
-          cy={midY}
-          r={isSelected ? 6 : 4}
-          fill={color}
-          stroke="rgba(2,6,23,0.75)"
-          strokeWidth={1.5}
-          className="transition-all cursor-pointer"
-          onClick={() => selectConnection(connection.id)}
-        />
-      )}
-
-      <g
-        opacity={isSelected ? 1 : 0}
-        className="pointer-events-none select-none transition-opacity group-hover:opacity-100"
-      >
-        <rect
-          x={midX - interfaceTagWidth(summary) / 2}
-          y={midY + (inBundle ? 12 : 8)}
-          width={interfaceTagWidth(summary)}
-          height={TAG_HEIGHT}
-          rx={TAG_HEIGHT / 2}
-          fill="rgba(2,6,23,0.92)"
-          stroke={color}
-          strokeWidth={1.25}
-        />
-        <text
-          x={midX}
-          y={midY + (inBundle ? 12 : 8) + TAG_HEIGHT / 2}
-          textAnchor="middle"
-          dominantBaseline="central"
-          fill={color}
-          fontSize={9}
-          fontWeight="600"
-          fontFamily="monospace"
-        >
-          {summary}
-        </text>
-      </g>
-
-      {/* Delete button when selected */}
       {isSelected && (
         <g
-          transform={`translate(${midX + (inBundle ? 24 : 15)}, ${midY - 15})`}
+          transform={`translate(${removeAt.at.x + removeOffset + 12 / zoom}, ${removeAt.at.y}) `
+            + `scale(${1 / zoom})`}
           className="cursor-pointer"
           onClick={() => removeConnection(connection.id)}
         >
-          <circle r={10} fill="#ef4444" className="hover:fill-red-600 transition-colors" />
+          <circle r={9} fill="#ef4444" className="hover:fill-red-600 transition-colors" />
           <text
             textAnchor="middle"
             dominantBaseline="central"
             fill="white"
-            fontSize={12}
+            fontSize={11}
             fontWeight="bold"
+            className="pointer-events-none select-none"
           >
             x
           </text>
         </g>
       )}
+    </g>
+  );
+}
+
+function PortTag(
+  { placement, zoom, color, emphasised, onSelect }: {
+    placement: LabelPlacement;
+    zoom: number;
+    color: string;
+    emphasised: boolean;
+    onSelect: () => void;
+  },
+) {
+  const width = interfaceTagWidth(placement.text);
+  const { x, y } = placement.at;
+  const upright = placement.vertical ? `rotate(90 ${x} ${y}) ` : '';
+  return (
+    <g
+      className="cursor-pointer select-none"
+      data-port-label=""
+      transform={`${upright}translate(${x} ${y}) scale(${1 / zoom}) translate(${-x} ${-y})`}
+      onClick={onSelect}
+    >
+      <rect
+        x={x - width / 2}
+        y={y - TAG_HEIGHT / 2}
+        width={width}
+        height={TAG_HEIGHT}
+        rx={TAG_HEIGHT / 2}
+        fill="rgba(2,6,23,0.92)"
+        stroke={color}
+        strokeWidth={emphasised ? 1.8 : 1.1}
+      />
+      <text
+        x={x}
+        y={y}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill={color}
+        fontSize={9}
+        fontWeight="600"
+        fontFamily="monospace"
+        className="pointer-events-none"
+      >
+        {placement.text}
+      </text>
     </g>
   );
 }
@@ -292,46 +282,4 @@ function Connector({ anchor, color }: { anchor: EndpointAnchor; color: string })
   );
 }
 
-function PortTag(
-  { at, name, color, emphasised }:
-  { at: Point; name: string; color: string; emphasised: boolean },
-) {
-  const label = abbreviateInterfaceName(name);
-  const width = interfaceTagWidth(label);
-  return (
-    <g
-      className="pointer-events-none select-none transition-opacity group-hover:opacity-100"
-      opacity={emphasised ? 1 : 0.92}
-    >
-      <rect
-        x={at.x - width / 2}
-        y={at.y - TAG_HEIGHT / 2}
-        width={width}
-        height={TAG_HEIGHT}
-        rx={TAG_HEIGHT / 2}
-        fill="rgba(2,6,23,0.92)"
-        stroke={color}
-        strokeWidth={emphasised ? 1.6 : 1.1}
-      />
-      <text
-        x={at.x}
-        y={at.y}
-        textAnchor="middle"
-        dominantBaseline="central"
-        fill={color}
-        fontSize={9}
-        fontWeight="600"
-        fontFamily="monospace"
-      >
-        {label}
-      </text>
-    </g>
-  );
-}
-
-// `devices`/`connection` are referentially stable across renders while
-// nothing they represent actually changed (networkStore.ts's snapshot
-// cache) — memoizing skips the per-frame re-render every ConnectionLine
-// otherwise took from NetworkCanvas re-rendering on packet animation
-// ticks alone (rapport 09 audit).
 export const ConnectionLine = memo(ConnectionLineImpl);

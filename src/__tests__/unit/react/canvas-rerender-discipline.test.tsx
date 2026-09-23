@@ -19,6 +19,23 @@ import { useNetworkStore } from '@/store/networkStore';
 import { NetworkCanvas } from '@/components/network/NetworkCanvas';
 import { ConnectionLine } from '@/components/network/ConnectionLine';
 import * as connectionLineLogic from '@/components/network/connection-line-logic';
+import type { Connection, NetworkDeviceUI } from '@/store/networkStore';
+
+function routedLinkOf(
+  connection: Connection, devices: NetworkDeviceUI[],
+): connectionLineLogic.RoutedLink {
+  const source = devices.find(d => d.id === connection.sourceDeviceId)!;
+  const target = devices.find(d => d.id === connection.targetDeviceId)!;
+  return {
+    id: connection.id,
+    sourceDeviceId: connection.sourceDeviceId,
+    targetDeviceId: connection.targetDeviceId,
+    source: { x: source.x, y: source.y },
+    target: { x: target.x, y: target.y },
+    sourceInterface: connection.sourceInterfaceId,
+    targetInterface: connection.targetInterfaceId,
+  };
+}
 
 beforeEach(() => {
   useNetworkStore.getState().clearAll();
@@ -75,18 +92,22 @@ describe('ConnectionLine — memoized against unrelated parent re-renders', () =
     const connection = useNetworkStore.getState().connections[0];
     const devices = useNetworkStore.getState().getDevices();
 
-    // computeConnectionPath only runs when ConnectionLineImpl's body
+    // computeEndpointAnchors only runs when ConnectionLineImpl's body
     // actually executes — a direct signal that memo() bailed out (or
     // didn't), unlike React.Profiler, which still fires once per commit
     // even for a subtree that bailed out below it.
-    const pathSpy = vi.spyOn(connectionLineLogic, 'computeConnectionPath');
+    const pathSpy = vi.spyOn(connectionLineLogic, 'computeEndpointAnchors');
+    const route = connectionLineLogic.computeCableRoutes(
+      [routedLinkOf(connection, devices)],
+      devices.map(d => ({ x: d.x, y: d.y })),
+    ).get(connection.id)!;
 
     function Harness() {
       const [, setTick] = useState(0);
       return (
         <>
           <svg>
-            <ConnectionLine connection={connection} devices={devices} />
+            <ConnectionLine connection={connection} devices={devices} route={route} />
           </svg>
           <button onClick={() => setTick(t => t + 1)}>bump</button>
         </>
@@ -110,11 +131,15 @@ describe('ConnectionLine — memoized against unrelated parent re-renders', () =
     useNetworkStore.getState().addConnection(a.id, ifaceA, b.id, ifaceB);
     const devices = useNetworkStore.getState().getDevices();
 
-    const pathSpy = vi.spyOn(connectionLineLogic, 'computeConnectionPath');
+    const pathSpy = vi.spyOn(connectionLineLogic, 'computeEndpointAnchors');
+    const route = connectionLineLogic.computeCableRoutes(
+      [routedLinkOf(useNetworkStore.getState().connections[0], devices)],
+      devices.map(d => ({ x: d.x, y: d.y })),
+    ).get(useNetworkStore.getState().connections[0].id)!;
     function Harness({ connection }: { connection: ReturnType<typeof useNetworkStore.getState>['connections'][number] }) {
       return (
         <svg>
-          <ConnectionLine connection={connection} devices={devices} />
+          <ConnectionLine connection={connection} devices={devices} route={route} />
         </svg>
       );
     }

@@ -3678,7 +3678,7 @@ export class LinuxTerminalSession extends TerminalSession {
       // an ordinary command (docs/PRD-SSH-Unification.md §4bis B3).
       if (this.tryOpenRemoteEditor(line)) return true;
 
-      const onProgress = (text: string) => { this.addLine(text); this.notify(); };
+      const onProgress = (text: string) => { this.addShellOutputLine(text); this.notify(); };
       const maybePromise = this.activeSubShell.processLine(line, onProgress);
 
       const applyResult = (result: import('@/terminal/subshells/ISubShell').SubShellResult & { childShell?: import('@/shell').IShell }) => {

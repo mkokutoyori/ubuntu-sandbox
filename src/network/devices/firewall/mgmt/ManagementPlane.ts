@@ -89,9 +89,8 @@ export class ManagementPlane {
   }
 
   allowsAccess(iface: string, service: string): boolean {
-    const declared = this.allowed.get(iface);
-    if (declared === undefined) return true;
-    return declared.has(service.toLowerCase());
+    if (this.allowed.size === 0) return true;
+    return this.allowed.get(iface)?.has(service.toLowerCase()) ?? false;
   }
 
   servedAnywhere(service: string): boolean {

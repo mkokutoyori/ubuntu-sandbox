@@ -176,6 +176,8 @@ interface PendingHopConnect {
   readonly interaction: HopInteractionHandler;
   readonly connectResult: ReturnType<ISshSession['connect']>;
   readonly session: SshSession;
+  /** Non-null for `ssh host cmd`: run it and stay in the current shell. */
+  readonly execCommand: string | null;
 }
 
 export class SshInteractiveSubShell implements ISubShell {
@@ -506,9 +508,10 @@ export class SshInteractiveSubShell implements ISubShell {
     // Bare `ssh [user@]host` — a real second hop (see class docs). Flagged
     // or exec-mode ("ssh host cmd") invocations fall through to the
     // generic passthrough below, unchanged.
-    const sshMatch = this.remoteDevice && /^ssh\s+(?:(\S+)@)?(\S+)$/.exec(trimmed);
+    const sshMatch = this.remoteDevice && /^ssh\s+(?:(\S+)@)?(\S+)(?:\s+(.+))?$/.exec(trimmed);
     if (sshMatch) {
-      return this.startNestedHop(sshMatch[1] ?? this.remoteUser, sshMatch[2]);
+      return this.startNestedHop(
+        sshMatch[1] ?? this.remoteUser, sshMatch[2], sshMatch[3]?.trim() || null);
     }
 
     const collected: string[] = [];
@@ -680,7 +683,9 @@ export class SshInteractiveSubShell implements ISubShell {
    * via HopInteractionHandler + pumpHopConnect() to this sub-shell's own
    * pendingInput/handleInput broker.
    */
-  private async startNestedHop(targetUser: string, targetHost: string): Promise<SubShellResult> {
+  private async startNestedHop(
+    targetUser: string, targetHost: string, execCommand: string | null = null,
+  ): Promise<SubShellResult> {
     const dev = this.remoteDevice as unknown as {
       tcpConnect: (host: string, port: number) => Promise<unknown>;
       executor?: {
@@ -711,6 +716,7 @@ export class SshInteractiveSubShell implements ISubShell {
     const pending: PendingHopConnect = {
       targetUser, targetHost, interaction, session: session2,
       connectResult: session2.connect(opts),
+      execCommand,
     };
     this.pendingHopConnect = pending;
     return this.pumpHopConnect(pending);
@@ -753,6 +759,20 @@ export class SshInteractiveSubShell implements ISubShell {
         );
       }
       return done(lines, this.getPrompt());
+    }
+
+    if (pending.execCommand !== null && pending.execCommand !== undefined) {
+      const execResult = pending.session.openExecChannel(pending.execCommand);
+      if (!isOk(execResult)) {
+        pending.session.disconnect();
+        return done([...infoLines, 'ssh: failed to open exec channel'], this.getPrompt());
+      }
+      const run = await execResult.value.execute();
+      execResult.value.close();
+      pending.session.disconnect();
+      const body = `${run.stdout}${run.stderr}`.replace(/\n+$/, '');
+      return done(
+        [...infoLines, ...(body.length > 0 ? body.split('\n') : [])], this.getPrompt());
     }
 
     const channelResult = pending.session.openShellChannel();

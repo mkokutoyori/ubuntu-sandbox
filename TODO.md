@@ -3002,12 +3002,12 @@ mesure. Le stabiliser demande de trouver le fichier avec lequel il se
 couple, ce qui est un lot en soi — et il ne bloque aucun autre travail
 tant qu'il est nomme ici.
 
-### [ssh] les commandes d'une session SSH ne traversent le fil QUE depuis Linux
-`LinuxTerminalSession` ouvre `session.openShellChannel()` et pilote la
-session par `SshInteractiveSubShell` : chaque commande tapee traverse le
-cable. `WindowsTerminalSession` et `CLITerminalSession` ouvrent bien une
-connexion SSH REELLE (`openWireSshConnection`, donc le login est
-authentifie sur le fil et la politique decide), puis greffent un enfant
+### [ssh] les commandes d'une session SSH ne traversent pas le fil depuis la CLI vendeur
+`LinuxTerminalSession` et `WindowsTerminalSession` ouvrent
+`session.openShellChannel()` et pilotent la session par
+`SshInteractiveSubShell` : chaque commande tapee traverse le cable.
+`CLITerminalSession` ouvre bien une connexion SSH REELLE — donc le login
+est authentifie sur le fil et la politique decide — puis greffe un enfant
 EN MEMOIRE sur l'objet `Equipment` du pair (`createSessionForDevice` +
 `adoptRemoteChild`). Le login traverse le fil, les commandes non.
 
@@ -3018,26 +3018,26 @@ Labo : poste ─ commutateur ─ cible Linux, `Cable.getStats()
 
     origine        enfant adopte   N=2    N=10   par commande
     Linux (temoin)      non         10      48       ~4,75
-    Windows             oui          2       8       ~0,75
+    Windows             non         10      48       ~4,75
     CLI Cisco           oui          6       6        0
 
 La CLI Cisco est PLATE — 6 trames a deux commandes, 6 a dix : zero trame
-par commande. Le temoin Linux monte de 10 a 48, ce qui prouve que
+par commande. Les deux autres lignes montent, ce qui prouve que
 l'instrument mesure bien quelque chose et que le labo n'est pas muet.
+La ligne Windows a rejoint celle de Linux avec la bascule de B4 ; c'est
+le meme nombre qui dira quand la CLI l'aura rejointe.
 
-**Consequence** : sur ces deux origines, ce que le §4 annonce ne tient
-pas. Un privilege ou une politique qui se decide APRES le login — ce que
-le shell distant autorise a cet utilisateur — n'est pas traverse, et rien
+**Consequence** : sur cette origine, ce que le §4 annonce ne tient pas.
+Un privilege ou une politique qui se decide APRES le login — ce que le
+shell distant autorise a cet utilisateur — n'est pas traverse, et rien
 n'est comptable sur le fil.
 
-**Report** : la cause est nommee dans le code lui-meme — « the
-child-session machinery (tab completion, nested-ssh, foreground
-streaming) isn't yet ported onto the wire shell channel for every
-vendor ». Ce portage est le lot B de `docs/PRD-SSH-Unification.md`
-§4bis, en cours chez le pair. Le refaire en parallele entrerait en
-collision avec son travail ; la mesure est donc posee ici pour qu'il la
-trouve, avec les nombres qui disent quand le lot est fini : la ligne
-Windows et la ligne Cisco doivent prendre la pente de la ligne Linux.
+**Report** : `CLITerminalSession` n'a AUCUNE machinerie de sous-shell
+(seulement `telnetSubShell`), et son `ssh` passe par un flow
+(`{type:'password', validation}` puis `{type:'execute'}`) dont la
+validation est un verdict en memoire. Lui donner un `activeSubShell` est
+un prealable a la bascule, et c'est un lot en soi — la bascule Windows,
+elle, a demande quatre capacites manquantes et la reecriture de 40 cas.
 
 ### [ssh] le chemin non interactif de Windows ne s'authentifie pas sur le fil
 `ssh hote "commande"` tape sur un poste Windows rend la sortie de la
@@ -3075,3 +3075,34 @@ traversent le fil QUE depuis Linux`) — le lot B de
 `docs/PRD-SSH-Unification.md` §4bis. Le cas de `probe-un-refus-du-fil-vaut
 -sur-windows-aussi` qui l'epinglerait a ete RETIRE plutot que laisse
 rouge : un test qui encode le defaut le fige.
+
+### [firewall] `allowaccess snmp` est accepte, rendu, et n'a aucun moteur
+`MANAGEMENT_SERVICES` declare six services — `ping, https, http, ssh,
+telnet, snmp` — et la CLI accepte `set allowaccess snmp`. Les quatre TCP
+sont juges par `ManagementPlane.admitsTcp` via `serviceOnPort`, le ping
+par `allowsPing`. **`snmp` n'est juge nulle part** : c'est de l'UDP 161,
+et aucun chemin UDP de `deliverLocally` n'interroge la table d'acces.
+
+**Portee, mesuree** : il n'y a AUCUN agent SNMP sur le pare-feu
+(`grep -rn "SnmpAgent" src/network/devices/firewall/` ne rend rien), donc
+rien n'ecoute sur 161 et le critere manquant n'ouvre aucun service
+joignable aujourd'hui. Ce n'est donc pas un contournement exploitable,
+c'est un critere que la CLI accepte et que `show` rend sans effet — le
+cas exact que le §6 nomme « la pire des trois ».
+
+**Report** : fermer proprement demande de choisir entre deux gestes, et
+le choix depend d'un besoin qui n'existe pas encore. Soit on REFUSE le
+mot-cle en nommant la brique absente (pas d'agent SNMP), au risque de
+faire perdre la ligne a un import de configuration ; soit on donne un
+agent SNMP au pare-feu et on gate l'UDP, ce qui est un lot en soi.
+La nuance du §6 sur l'import penche pour la seconde.
+
+**Ce qui a ete verifie autour et qui TIENT** — ecrit ici pour qu'une
+prochaine passe ne refasse pas le tour : transit refuse par defaut,
+`service` et `srcaddr` qui restreignent, `schedule` evalue et ferme en
+l'absence de resolveur, `firewall-session-dirty` juste dans ses deux
+modes (`check-all` purge la session, `check-policy-option` + `check-new`
+la laisse vivre), politique local-in qui vise le bon hote, politique
+IPv6 evaluee via `srcaddr6`/`dstaddr6` (l'objet « any » s'appelle
+`all6`), ordre des politiques au premier match avec `move` honore, et
+interfaces d'usine comme creees a chaud fermees a la naissance.
