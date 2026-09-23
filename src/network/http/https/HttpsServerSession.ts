@@ -32,7 +32,7 @@ export class HttpsServerSession {
   constructor(
     private readonly tcpStack: TcpStack,
     private readonly port: number,
-    private readonly tlsConfig: HttpsServerConfig,
+    private readonly tlsConfigSource: HttpsServerConfig | (() => HttpsServerConfig),
     private readonly handler: Http1RequestHandler,
     private readonly eventBus?: IEventBus,
   ) {}
@@ -57,14 +57,20 @@ export class HttpsServerSession {
     this.listener = null;
   }
 
+  private tlsConfig(): HttpsServerConfig {
+    return typeof this.tlsConfigSource === 'function' ? this.tlsConfigSource() : this.tlsConfigSource;
+  }
+
   private applyHsts(response: HttpMessage): void {
-    if (this.tlsConfig.hstsMaxAgeSeconds === undefined) return;
-    const suffix = this.tlsConfig.hstsIncludeSubDomains ? '; includeSubDomains' : '';
-    response.headers.set('Strict-Transport-Security', `max-age=${this.tlsConfig.hstsMaxAgeSeconds}${suffix}`);
+    const config = this.tlsConfig();
+    if (config.hstsMaxAgeSeconds === undefined) return;
+    const suffix = config.hstsIncludeSubDomains ? '; includeSubDomains' : '';
+    response.headers.set('Strict-Transport-Security', `max-age=${config.hstsMaxAgeSeconds}${suffix}`);
   }
 
   private handleConnection(socket: TcpSocket): void {
-    const tls = new TlsServerSession({ ...this.tlsConfig, alpnProtocols: this.tlsConfig.alpnProtocols ?? ['http/1.1'] });
+    const config = this.tlsConfig();
+    const tls = new TlsServerSession({ ...config, alpnProtocols: config.alpnProtocols ?? ['http/1.1'] });
     let clientSeq = 0;
     let serverSeq = 0;
     /*

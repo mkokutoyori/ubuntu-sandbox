@@ -131,7 +131,7 @@ import { classifyIpv4, ingressHostOf, type Ipv4IngressHost } from './l3/Ipv4Ingr
 import type { FirewallNtp } from './mgmt/FirewallNtp';
 import { buildManagementServices } from './mgmt/ManagementWiring';
 import type {
-  AdminHttpApp, AdminHttpServer, AdminServerCertificate,
+  AdminHttpApp, AdminHttpServer, AdminServerCertificate, AdminServerCertificateMaterial,
 } from './mgmt/AdminHttpServer';
 import type { ManagementCli } from './mgmt/FirewallCliServer';
 import { ManagementPlane, type PasswordExpiryPolicy } from './mgmt/ManagementPlane';
@@ -1317,11 +1317,20 @@ export class Firewall extends Equipment {
   protected adminHttpApp(): AdminHttpApp | null { return null; }
 
   private adminServerCertificate(): AdminServerCertificate | undefined {
-    const declared = this.getCertificateStore()
-      .local(this.management.adminServerCertificateName());
-    return declared === undefined
-      ? undefined
-      : { certificate: declared.certificate, privateKey: declared.privateKey };
+    const store = this.getCertificateStore();
+    const name = this.management.adminServerCertificateName();
+    if (!store.hasLocal(name)) return undefined;
+    let resolved: AdminServerCertificateMaterial | undefined;
+    return {
+      name,
+      material: () => {
+        if (resolved === undefined) {
+          const declared = store.local(name)!;
+          resolved = { certificate: declared.certificate, privateKey: declared.privateKey };
+        }
+        return resolved;
+      },
+    };
   }
 
 
