@@ -82,6 +82,49 @@
  *     Il reste toujours entre les deux cartes : un cable ne revient
  *     jamais sur ses pas.
  *
+ *  7. UNE PASTILLE QUI DEGAGE ENCORE NE BOUGE PAS. Le placement etait
+ *     rejoue entierement a chaque image ; pendant un glisser, une
+ *     position marginalement meilleure faisait TELEPORTER l'etiquette.
+ *
+ *     Releve en rejouant trois glissers pas a pas, un pixel a la fois,
+ *     sur le labo temoin : un glisser HORIZONTAL du routeur ne bouge
+ *     presque rien (3 pas sur 120 deplacent une pastille de plus de
+ *     deux pixels, au pire 13) et un glisser qui fait BASCULER la face
+ *     de sortie pas davantage (au pire 4 pixels, soit le pas lui-meme).
+ *     Le defaut est le glisser VERTICAL, qui raccourcit la course et
+ *     fait sauter les pastilles d'une branche a l'autre : 13 pas sur
+ *     120 au-dela de deux pixels, 5 au-dela de huit, et DEUX
+ *     TELEPORTATIONS au-dela de vingt-cinq, la pire de 92 pixels.
+ *
+ *     La position retenue est donc memorisee comme une DISTANCE LE LONG
+ *     DU FIL depuis son propre bout -- pas comme un point, qui ne veut
+ *     plus rien dire une fois le cable redessine. A l'image suivante,
+ *     si cette meme distance tient toujours dans un segment et degage
+ *     toujours tout, elle est CONSERVEE ; sinon seulement, on replace.
+ *     Le resultat depend donc de l'historique, et c'est assume : sans
+ *     memoire il reste exactement le placement direct, ce qu'un cas
+ *     temoin verifie.
+ *
+ *     PREMISSE FAUSSE, CORRIGEE ICI. Un premier jet de cette sonde
+ *     exigeait qu'AUCUN pas d'un glisser vertical ne deplace une
+ *     pastille de plus de huit pixels. La mesure a montre que les
+ *     quatre grands deplacements tombent tous au MEME pas, a distance
+ *     memorisee INCHANGEE : ce n'est pas l'etiquette qui saute, c'est le
+ *     CABLE qui change de face quand la dominance passe les 45 degres,
+ *     et l'etiquette suit son fil. Exiger zero grand deplacement aurait
+ *     fige un dessin faux. Ce qui est exige est donc : au plus UN pas de
+ *     discontinuite sur tout un glisser.
+ *
+ *  8. LE CABLE NE BASCULE PAS DE FACE POUR UN TREMBLEMENT. La face de
+ *     sortie se deduisait de `|dx| >= |dy|`, sans marge : une main qui
+ *     tremble autour de la diagonale faisait basculer tout le cable a
+ *     chaque pixel. Releve : soixante pas d'un tremblement de six
+ *     pixels autour de la ligne des 45 degres donnent QUARANTE-SEPT
+ *     basculements, l'etiquette se deplacant jusqu'a 115 pixels par
+ *     pas. L'axe est desormais CONSERVE tant que l'autre ne domine pas
+ *     d'une marge franche ; sans memoire, il reste exactement la
+ *     dominance simple.
+ *
  * Sonde ecrite AVANT le correctif.
  */
 import { describe, it, expect } from 'vitest';
@@ -98,6 +141,7 @@ import {
   LABEL_MIN_ZOOM,
   shouldShowPortLabels,
   endLabelNeed,
+  runIsHorizontal,
   type RoutedLink,
   type CableRoute,
   type LabelPlacement,
@@ -499,5 +543,163 @@ describe('le coude se place selon ce que chaque branche doit porter', () => {
       expect(borne(route.points[1].x, depart.x, arrivee.x)).toBe(true);
       expect(borne(route.points[1].y, depart.y, arrivee.y)).toBe(true);
     }
+  });
+});
+
+describe('une pastille qui degage encore ne bouge pas', () => {
+  const star = (rx: number, ry: number) => {
+    const routeur = { x: rx, y: ry };
+    const machines = [220, 400, 580].map(x => ({ x, y: 430 }));
+    return {
+      links: machines.map((machine, i) => ({
+        id: `c${i}`, sourceDeviceId: 'R1', targetDeviceId: `PC${i}`,
+        source: routeur, target: machine,
+        sourceInterface: `GigabitEthernet0/${i}`, targetInterface: 'eth0',
+      })) as RoutedLink[],
+      devices: [routeur, ...machines],
+    };
+  };
+
+  const worstStep = (positions: Array<{ x: number; y: number }>) => {
+    let previous: Map<string, CableRoute> | undefined;
+    let seen: Record<string, { x: number; y: number }> | null = null;
+    let worst = 0;
+    for (const at of positions) {
+      const { links, devices } = star(at.x, at.y);
+      const routes = computeCableRoutes(links, devices, 1, previous);
+      const now: Record<string, { x: number; y: number }> = {};
+      for (const [id, route] of routes) {
+        now[`${id}:s`] = route.sourceLabel.at;
+        now[`${id}:t`] = route.targetLabel.at;
+      }
+      if (seen) {
+        for (const key of Object.keys(now)) {
+          worst = Math.max(worst, Math.hypot(
+            now[key].x - seen[key].x, now[key].y - seen[key].y));
+        }
+      }
+      seen = now;
+      previous = routes;
+    }
+    return worst;
+  };
+
+  const noisySteps = (positions: Array<{ x: number; y: number }>) => {
+    let previous: Map<string, CableRoute> | undefined;
+    let seen: Record<string, { x: number; y: number }> | null = null;
+    let noisy = 0;
+    for (const at of positions) {
+      const { links, devices } = star(at.x, at.y);
+      const routes = computeCableRoutes(links, devices, 1, previous);
+      const now: Record<string, { x: number; y: number }> = {};
+      for (const [id, route] of routes) {
+        now[`${id}:s`] = route.sourceLabel.at;
+        now[`${id}:t`] = route.targetLabel.at;
+      }
+      if (seen) {
+        const moved = Object.keys(now).some(key => Math.hypot(
+          now[key].x - seen![key].x, now[key].y - seen![key].y) > 8);
+        if (moved) noisy++;
+      }
+      seen = now;
+      previous = routes;
+    }
+    return noisy;
+  };
+
+  it('un glisser vertical ne connait qu UN pas de discontinuite', () => {
+    expect(noisySteps(Array.from({ length: 121 }, (_, i) => ({ x: 340, y: 120 + i }))))
+      .toBeLessThanOrEqual(1);
+  });
+
+  it('ni un glisser horizontal, qui etait deja calme', () => {
+    expect(worstStep(Array.from({ length: 121 }, (_, i) => ({ x: 280 + i, y: 120 }))))
+      .toBeLessThan(8);
+  });
+
+  it('a entree identique, la memoire ne deplace rien', () => {
+    const { links, devices } = star(340, 120);
+    const first = computeCableRoutes(links, devices);
+    const second = computeCableRoutes(links, devices, 1, first);
+    for (const [id, route] of first) {
+      expect(second.get(id)!.sourceLabel.at).toEqual(route.sourceLabel.at);
+      expect(second.get(id)!.targetLabel.at).toEqual(route.targetLabel.at);
+    }
+  });
+
+  it('mais une position qui ne degage plus est abandonnee', () => {
+    const loin = star(340, 120);
+    const memoire = computeCableRoutes(loin.links, loin.devices);
+    const pres = star(340, 300);
+    const apres = computeCableRoutes(pres.links, pres.devices, 1, memoire);
+    for (const route of apres.values()) {
+      expect(distanceToPolyline(route.sourceLabel.at, route.points)).toBeLessThan(0.5);
+      expect(distanceToPolyline(route.targetLabel.at, route.points)).toBeLessThan(0.5);
+    }
+  });
+
+  it('et sans memoire, le resultat reste le placement direct', () => {
+    const { links, devices } = star(340, 120);
+    const direct = computeCableRoutes(links, devices);
+    const encore = computeCableRoutes(links, devices);
+    for (const [id, route] of direct) {
+      expect(encore.get(id)!.sourceLabel.at).toEqual(route.sourceLabel.at);
+    }
+  });
+});
+
+describe('le cable ne bascule pas de face pour un tremblement', () => {
+  const lab = (at: { x: number; y: number }) => ({
+    links: [{
+      id: 'x', sourceDeviceId: 'A', targetDeviceId: 'B',
+      source: at, target: { x: 580, y: 430 },
+      sourceInterface: 'GigabitEthernet0/0', targetInterface: 'eth0',
+    }] as RoutedLink[],
+    devices: [at, { x: 580, y: 430 }],
+  });
+
+  const drawnHorizontal = (route: CableRoute) =>
+    Math.abs(route.points[1].x - route.points[0].x)
+      > Math.abs(route.points[1].y - route.points[0].y);
+
+  const flipsAlong = (path: Array<{ x: number; y: number }>) => {
+    let previous: Map<string, CableRoute> | undefined;
+    let last: boolean | null = null;
+    let flips = 0;
+    for (const at of path) {
+      const { links, devices } = lab(at);
+      const routes = computeCableRoutes(links, devices, 1, previous);
+      const horizontal = drawnHorizontal(routes.get('x')!);
+      if (last !== null && horizontal !== last) flips++;
+      last = horizontal;
+      previous = routes;
+    }
+    return flips;
+  };
+
+  it('une main qui tremble autour des 45 degres ne le fait plus basculer', () => {
+    const tremblement = Array.from({ length: 60 }, (_, i) => ({
+      x: 340, y: 186 + (i % 2 === 0 ? 0 : 6),
+    }));
+    expect(flipsAlong(tremblement)).toBeLessThanOrEqual(1);
+  });
+
+  it('mais un glisser franc au-dela de la marge le fait bien basculer', () => {
+    const franc = Array.from({ length: 160 }, (_, i) => ({ x: 340, y: 120 + i }));
+    expect(flipsAlong(franc)).toBe(1);
+  });
+
+  it('l axe retenu est bien celui que le cable DESSINE', () => {
+    for (const y of [140, 186, 192, 300]) {
+      const { links, devices } = lab({ x: 340, y });
+      const route = computeCableRoutes(links, devices).get('x')!;
+      expect(route.horizontal).toBe(drawnHorizontal(route));
+    }
+  });
+
+  it('et sans memoire, l axe reste la dominance simple', () => {
+    expect(runIsHorizontal({ x: 0, y: 0 }, { x: 100, y: 40 })).toBe(true);
+    expect(runIsHorizontal({ x: 0, y: 0 }, { x: 40, y: 100 })).toBe(false);
+    expect(runIsHorizontal({ x: 0, y: 0 }, { x: 100, y: 100 })).toBe(true);
   });
 });

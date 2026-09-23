@@ -35,9 +35,11 @@ export interface LabelPlacement {
   text: string;
   vertical: boolean;
   halfLength: number;
+  along: number;
 }
 
 export interface CableRoute extends CableLanes, PathResult {
+  horizontal: boolean;
   sourceLabel: LabelPlacement;
   targetLabel: LabelPlacement;
 }
@@ -50,12 +52,18 @@ export const CORNER_RADIUS = 10;
 
 export type CardSide = 'left' | 'right' | 'top' | 'bottom';
 
-export function runIsHorizontal(from: Point, to: Point): boolean {
-  return Math.abs(to.x - from.x) >= Math.abs(to.y - from.y);
+export const AXIS_HYSTERESIS = 24;
+
+export function runIsHorizontal(from: Point, to: Point, previous?: boolean): boolean {
+  const dominance = Math.abs(to.x - from.x) - Math.abs(to.y - from.y);
+  if (previous === undefined) return dominance >= 0;
+  return previous ? dominance > -AXIS_HYSTERESIS : dominance >= AXIS_HYSTERESIS;
 }
 
-export function exitSide(from: Point, to: Point): CardSide {
-  if (runIsHorizontal(from, to)) return to.x >= from.x ? 'right' : 'left';
+export function exitSide(
+  from: Point, to: Point, horizontal = runIsHorizontal(from, to),
+): CardSide {
+  if (horizontal) return to.x >= from.x ? 'right' : 'left';
   return to.y >= from.y ? 'bottom' : 'top';
 }
 
@@ -85,6 +93,7 @@ interface PortSlot {
 
 export function assignCableLanes(
   links: ReadonlyArray<RoutedLink>,
+  axes?: ReadonlyMap<string, boolean>,
 ): Map<string, CableLanes> {
   const faces = new Map<string, { side: CardSide; slots: PortSlot[] }>();
 
@@ -105,9 +114,10 @@ export function assignCableLanes(
   };
 
   for (const link of links) {
-    enrol(link.sourceDeviceId, exitSide(link.source, link.target),
+    const horizontal = axes?.get(link.id);
+    enrol(link.sourceDeviceId, exitSide(link.source, link.target, horizontal),
       link.id, 'source', link.target);
-    enrol(link.targetDeviceId, exitSide(link.target, link.source),
+    enrol(link.targetDeviceId, exitSide(link.target, link.source, horizontal),
       link.id, 'target', link.source);
   }
 
@@ -151,6 +161,7 @@ export function computeOrthogonalPoints(
   target: Point,
   lanes?: CableLanes,
   needs?: CableNeeds,
+  horizontal = runIsHorizontal(source, target),
 ): Point[] {
   const a = cardCenter(source);
   const b = cardCenter(target);
@@ -160,7 +171,7 @@ export function computeOrthogonalPoints(
   const dx = b.x - a.x;
   const dy = b.y - a.y;
 
-  if (Math.abs(dx) >= Math.abs(dy)) {
+  if (horizontal) {
     const dir = dx >= 0 ? 1 : -1;
     const ax = a.x + dir * NODE_HALF_WIDTH;
     const bx = b.x - dir * NODE_HALF_WIDTH;
@@ -267,8 +278,9 @@ export function computeConnectionPath(
   target: Point,
   lanes?: CableLanes,
   needs?: CableNeeds,
+  horizontal?: boolean,
 ): PathResult {
-  const points = computeOrthogonalPoints(source, target, lanes, needs);
+  const points = computeOrthogonalPoints(source, target, lanes, needs, horizontal);
   return { path: roundedPolylinePath(points), points };
 }
 
@@ -490,6 +502,50 @@ export function deviceObstacles(centre: Point): LabelBox[] {
   ];
 }
 
+interface PlacedLabel {
+  box: LabelBox;
+  vertical: boolean;
+  along: number;
+}
+
+function rangeHolding(
+  ranges: ReadonlyArray<LabelRange>, along: number,
+): LabelRange | undefined {
+  return ranges.find(range => along >= range.from - 1e-6 && along <= range.to + 1e-6);
+}
+
+function clearanceOf(
+  box: LabelBox,
+  others: ReadonlyArray<ReadonlyArray<Point>>,
+  obstacles: ReadonlyArray<LabelBox>,
+): number {
+  let clearance = Infinity;
+  for (const other of others) clearance = Math.min(clearance, distanceToPolyline(box.at, other));
+  for (const taken of obstacles) clearance = Math.min(clearance, boxClearance(box, taken));
+  return clearance;
+}
+
+function keepPlacement(
+  points: ReadonlyArray<Point>,
+  ranges: ReadonlyArray<LabelRange>,
+  fromOwnEnd: number,
+  nearStart: boolean,
+  others: ReadonlyArray<ReadonlyArray<Point>>,
+  obstacles: ReadonlyArray<LabelBox>,
+  halfLength: number,
+  halfThickness: number,
+): PlacedLabel | undefined {
+  const total = polylineLength(points);
+  if (total === 0) return undefined;
+  const along = nearStart ? fromOwnEnd : total - fromOwnEnd;
+  const range = rangeHolding(ranges, along);
+  if (!range) return undefined;
+  const box = boxAlong(
+    pointAlongPolyline(points, along / total), range.vertical, halfLength, halfThickness);
+  if (clearanceOf(box, others, obstacles) < LABEL_CLEARANCE_MIN) return undefined;
+  return { box, vertical: range.vertical, along: fromOwnEnd };
+}
+
 function placeEndLabel(
   points: ReadonlyArray<Point>,
   ranges: ReadonlyArray<LabelRange>,
@@ -498,13 +554,14 @@ function placeEndLabel(
   obstacles: ReadonlyArray<LabelBox>,
   halfLength: number,
   halfThickness: number,
-): { box: LabelBox; vertical: boolean } {
+): PlacedLabel {
   const total = polylineLength(points);
   const room = ranges.reduce((sum, range) => sum + (range.to - range.from), 0);
 
-  let best = {
+  let best: PlacedLabel = {
     box: boxAlong(points[0], ranges[0].vertical, halfLength, halfThickness),
     vertical: ranges[0].vertical,
+    along: nearStart ? 0 : total,
   };
   let bestClearance = -Infinity;
   let bestProximity = -Infinity;
@@ -526,9 +583,7 @@ function placeEndLabel(
     const box = boxAlong(
       pointAlongPolyline(points, total === 0 ? 0 : along / total),
       range.vertical, halfLength, halfThickness);
-    let clearance = Infinity;
-    for (const other of others) clearance = Math.min(clearance, distanceToPolyline(box.at, other));
-    for (const taken of obstacles) clearance = Math.min(clearance, boxClearance(box, taken));
+    const clearance = clearanceOf(box, others, obstacles);
     const proximity = nearStart ? -along : along - total;
     const clears = clearance >= LABEL_CLEARANCE_MIN;
     const better = clears
@@ -536,7 +591,7 @@ function placeEndLabel(
       : !cleared && (clearance > bestClearance
         || (clearance === bestClearance && proximity > bestProximity));
     if (better) {
-      best = { box, vertical: range.vertical };
+      best = { box, vertical: range.vertical, along: nearStart ? along : total - along };
       bestClearance = clearance;
       bestProximity = proximity;
       cleared = cleared || clears;
@@ -561,22 +616,31 @@ export function computeCableRoutes(
   links: ReadonlyArray<RoutedLink>,
   devices: ReadonlyArray<Point>,
   zoom = 1,
+  previous?: ReadonlyMap<string, CableRoute>,
 ): Map<string, CableRoute> {
-  const lanes = assignCableLanes(links);
+  const axes = new Map<string, boolean>();
+  for (const link of links) {
+    axes.set(link.id, runIsHorizontal(
+      link.source, link.target, previous?.get(link.id)?.horizontal));
+  }
+  const lanes = assignCableLanes(links, axes);
   const ordered = [...links].sort((a, b) =>
     a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
   const ends = new Map<string, { source: EndLabel; target: EndLabel }>();
   const drawn = new Map<string, PathResult>();
   for (const link of ordered) {
+    const horizontal = axes.get(link.id)!;
     const pair = {
-      source: endLabelOf(link.sourceInterface, exitSide(link.source, link.target), zoom),
-      target: endLabelOf(link.targetInterface, exitSide(link.target, link.source), zoom),
+      source: endLabelOf(
+        link.sourceInterface, exitSide(link.source, link.target, horizontal), zoom),
+      target: endLabelOf(
+        link.targetInterface, exitSide(link.target, link.source, horizontal), zoom),
     };
     ends.set(link.id, pair);
     drawn.set(link.id, computeConnectionPath(
       link.source, link.target, lanes.get(link.id),
-      { source: pair.source.need, target: pair.target.need }));
+      { source: pair.source.need, target: pair.target.need }, horizontal));
   }
 
   const routes = new Map<string, CableRoute>();
@@ -588,25 +652,33 @@ export function computeCableRoutes(
       .filter(other => other.id !== link.id)
       .map(other => drawn.get(other.id)!.points);
 
-    const place = (end: EndLabel, nearStart: boolean): LabelPlacement => {
+    const remembered = previous?.get(link.id);
+    const place = (
+      end: EndLabel, nearStart: boolean, before: LabelPlacement | undefined,
+    ): LabelPlacement => {
       const halfThickness = TAG_HEIGHT / (2 * zoom);
-      const placed = placeEndLabel(
-        points, labelRanges(points, end.halfLength), nearStart, others, obstacles,
-        end.halfLength, halfThickness);
+      const ranges = labelRanges(points, end.halfLength);
+      const placed = (before && before.text === end.text
+        ? keepPlacement(points, ranges, before.along, nearStart, others, obstacles,
+          end.halfLength, halfThickness)
+        : undefined)
+        ?? placeEndLabel(points, ranges, nearStart, others, obstacles,
+          end.halfLength, halfThickness);
       obstacles.push(placed.box);
       return {
         at: placed.box.at, text: end.text,
-        vertical: placed.vertical, halfLength: end.halfLength,
+        vertical: placed.vertical, halfLength: end.halfLength, along: placed.along,
       };
     };
 
     const pair = ends.get(link.id)!;
     routes.set(link.id, {
       ...lanes.get(link.id)!,
+      horizontal: axes.get(link.id)!,
       path,
       points,
-      sourceLabel: place(pair.source, true),
-      targetLabel: place(pair.target, false),
+      sourceLabel: place(pair.source, true, remembered?.sourceLabel),
+      targetLabel: place(pair.target, false, remembered?.targetLabel),
     });
   }
 

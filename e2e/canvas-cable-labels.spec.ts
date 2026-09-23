@@ -29,6 +29,11 @@
  * Le zoom se mesure ici et nulle part ailleurs : une pastille garde sa
  * taille A L'ECRAN, donc sa boite englobante ne bouge pas quand on
  * zoome, alors que l'ecart entre deux equipements, lui, suit le zoom.
+ *
+ * Le GLISSER aussi : la geometrie pure peut rejouer un deplacement pas
+ * a pas, mais seul le vrai DOM dit ce que la souris produit reellement
+ * -- la carte est deplacee par un transform pendant que le magasin, lui,
+ * suit a son rythme.
  */
 import { test, expect, type Page } from '@playwright/test';
 
@@ -357,4 +362,39 @@ test('a selected device keeps its action bar above the labels', async ({ page })
     path: `${SHOTS}/36-barre-d-actions.png`,
     clip: { x: 520, y: 150, width: 520, height: 400 },
   });
+});
+
+test('a hand wobbling across the diagonal does not flip the cables', async ({ page }) => {
+  const { routerId, connectionIds } = await seedStar(page);
+  const card = page.locator(`[data-device-id="${routerId}"]`);
+  const start = (await card.boundingBox())!;
+  const centre = { x: start.x + start.width / 2, y: start.y + start.height / 2 };
+
+  const snapshot = async () => {
+    const boxes = [];
+    for (const id of connectionIds) {
+      for (const end of [0, 1] as const) {
+        boxes.push((await labelOf(page, id, end).boundingBox())!);
+      }
+    }
+    return boxes;
+  };
+
+  await page.mouse.move(centre.x, centre.y);
+  await page.mouse.down();
+  await page.mouse.move(centre.x, centre.y + 57, { steps: 12 });
+
+  let previous = await snapshot();
+  let noisy = 0;
+  for (let step = 0; step < 12; step++) {
+    await page.mouse.move(centre.x, centre.y + 57 + (step % 2 === 0 ? 8 : 0));
+    const now = await snapshot();
+    const moved = now.some((box, i) =>
+      Math.hypot(box.x - previous[i].x, box.y - previous[i].y) > 40);
+    if (moved) noisy++;
+    previous = now;
+  }
+  await page.mouse.up();
+
+  expect(noisy).toBeLessThanOrEqual(1);
 });

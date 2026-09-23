@@ -7,7 +7,7 @@ import { ZoomIn, ZoomOut, Maximize2, X } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { NetworkDevice } from './NetworkDevice';
 import { ConnectionLine, ConnectionLabel } from './ConnectionLine';
-import { computeCableRoutes, shouldShowPortLabels } from './connection-line-logic';
+import { computeCableRoutes, shouldShowPortLabels, type CableRoute } from './connection-line-logic';
 import { PacketAnimation, PacketLegend } from './PacketAnimation';
 import { useActivePackets } from '@/react/hooks/useActivePackets';
 import { Equipment } from '@/network';
@@ -53,6 +53,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
   // not a message on every re-render.
   const [announcement, setAnnouncement] = useState('');
   const prevDeviceCount = useRef(devices.length);
+  const previousRoutes = useRef<Map<string, CableRoute> | null>(null);
   const cableRoutes = useMemo(() => computeCableRoutes(
     connections.flatMap(connection => {
       const source = devices.find(d => d.id === connection.sourceDeviceId);
@@ -70,7 +71,9 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
     }),
     devices.map(device => ({ x: device.x, y: device.y })),
     zoom,
+    previousRoutes.current ?? undefined,
   ), [connections, devices, zoom]);
+  previousRoutes.current = cableRoutes;
 
   const prevConnectionCount = useRef(connections.length);
   const prevSelectedDeviceId = useRef(selectedDeviceId);
