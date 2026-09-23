@@ -1,33 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createDevice, resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { describe, it, expect } from 'vitest';
+import { createDevice } from '@/network/devices/DeviceFactory';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { MACAddress, resetCounters } from '@/network/core/types';
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { Logger } from '@/network/core/Logger';
-
-beforeEach(() => {
-  resetCounters();
-  resetDeviceCounters();
-  MACAddress.resetCounter();
-  Logger.reset();
-  EquipmentRegistry.resetInstance();
-});
-
-interface Cli {
-  executeCommand(command: string): Promise<string>;
-  getPortNames(): string[];
-  getPort(name: string): unknown;
-}
-
-const REFUS = /Unknown action|command parse error|Invalid|Incomplete|Command fail/i;
-const refuse = (sortie: string): boolean => REFUS.test(sortie);
-
-async function taper(device: Cli, lignes: readonly string[]): Promise<void> {
-  for (const ligne of lignes) await device.executeCommand(ligne);
-}
+import { type Cli, refuse, taper } from './fortigateBatteryHarness';
 
 // Topologie Haute Disponibilité & Inspection Réseau :
 // PC-Client <-> SW-Access <-> [FW-Master / FW-Slave (Cluster HA)] <-> SW-Core <-> SRV-Web, SRV-DB, SRV-Radius

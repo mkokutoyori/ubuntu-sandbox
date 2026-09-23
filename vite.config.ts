@@ -33,6 +33,9 @@ export default defineConfig(() => ({
     // cover. Additive: existing per-file manual resets are untouched and
     // remain harmless no-ops when this backstop already did the work.
     setupFiles: ['./src/__tests__/setupGlobalState.ts'],
+    experimental: {
+      fsModuleCache: true,
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
