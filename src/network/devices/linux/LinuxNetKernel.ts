@@ -126,6 +126,7 @@ export interface LinuxNetKernel {
   clearARPTable(): void;
   /** RFC 5227 gratuitous ARP broadcast (`arping -A`/`-U`). False if the interface has no cable. */
   sendGratuitousArp(iface: string, ip: IPAddress, mode: 'request' | 'reply'): boolean;
+  probeArp(iface: string, target: IPAddress, timeoutMs: number): Promise<MACAddress | null>;
 
   // ─── L3 probes ───────────────────────────────────────────────────
   /** True if the kernel has a route (default or specific) to reach `target`. */

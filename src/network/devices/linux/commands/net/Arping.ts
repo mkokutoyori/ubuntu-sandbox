@@ -1,7 +1,6 @@
 import { IPAddress } from '@/network/core/types';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { cmdArping } from '../../LinuxNetCommands';
 
 const ARPING_USAGE = 'Usage: arping [-fqbDUAV] [-c count] [-w timeout] [-I device] destination';
 
@@ -53,10 +52,38 @@ async function runArping(ctx: LinuxCommandContext, args: string[]): Promise<{ ou
 
   if (parsed.gratuitous) return runGratuitous(ctx, parsed);
 
-  const result = cmdArping(args, {
-    mac: (ip) => ctx.net.getArpTable().get(ip)?.mac.toString() ?? null,
-  });
-  return result;
+  return runProbe(ctx, parsed);
+}
+
+const PROBE_INTERVAL_MS = 1000;
+
+async function runProbe(ctx: LinuxCommandContext, parsed: ParsedArpingArgs): Promise<{ output: string; exitCode: number }> {
+  if (!IPAddress.isValid(parsed.target)) {
+    return { output: `arping: unknown host ${parsed.target}`, exitCode: 2 };
+  }
+  const targetIP = new IPAddress(parsed.target);
+  const ports = ctx.net.getPorts();
+  const iface = parsed.iface ?? ctx.net.resolveRouteFromTable(targetIP, null)?.iface;
+  if (!iface || !ports.has(iface)) {
+    return { output: `arping: ${parsed.iface ?? 'no suitable device found'}: invalid argument`, exitCode: 2 };
+  }
+  const source = ports.get(iface)!.getIPAddress();
+  const probes = parsed.count > 0 ? parsed.count : 1;
+  const scheduler = ctx.net.getScheduler();
+  const lines = [`ARPING ${parsed.target} from ${source?.toString() ?? '0.0.0.0'} ${iface}`];
+  let received = 0;
+  for (let i = 0; i < probes; i++) {
+    const sentAt = scheduler.now();
+    const mac = await ctx.net.probeArp(iface, targetIP, PROBE_INTERVAL_MS);
+    if (mac) {
+      received++;
+      const rtt = (scheduler.now() - sentAt).toFixed(3);
+      lines.push(`Unicast reply from ${parsed.target} [${mac.toString().toUpperCase()}]  ${rtt}ms`);
+    }
+  }
+  lines.push(`Sent ${probes} probes (${probes} broadcast(s))`);
+  lines.push(`Received ${received} response(s)`);
+  return { output: lines.join('\n'), exitCode: received > 0 ? 0 : 1 };
 }
 
 export const arpingCommand: LinuxCommand = {

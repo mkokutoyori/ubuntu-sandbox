@@ -3396,12 +3396,30 @@ export abstract class EndHost extends Equipment {
 
     const port = this.ports.get(portName);
     if (!port) throw new Error('Port not found');
-    const myIP = port.getIPAddress();
-    if (!myIP) throw new Error('No IP configured');
+    if (!port.getIPAddress()) throw new Error('No IP configured');
+
+    const learned = await this.probeArp(portName, targetIP, timeoutMs);
+    if (learned) return learned;
 
     const targetIpStr = targetIP.toString();
+    const prev = this.arpTable.get(targetIpStr);
+    if (!prev || prev.type !== 'static') {
+      this.arpTable.set(targetIpStr, {
+        mac: MACAddress.broadcast(),
+        iface: portName,
+        timestamp: Date.now(),
+        type: 'failed',
+      });
+    }
+    throw new Error('ARP timeout');
+  }
 
-    // Reactive wait: resolve when the bus reports a learn for this IP on this device.
+  async probeArp(portName: string, targetIP: IPAddress, timeoutMs: number): Promise<MACAddress | null> {
+    const port = this.ports.get(portName);
+    const myIP = port?.getIPAddress();
+    if (!port || !myIP) return null;
+
+    const targetIpStr = targetIP.toString();
     const waitPromise = waitForEvent(
       this.getBus(),
       'host.arp.entry-learned',
@@ -3409,7 +3427,6 @@ export abstract class EndHost extends Equipment {
       { timeoutMs, scheduler: this.getScheduler() },
     );
 
-    // Send ARP broadcast.
     const arpReq: ARPPacket = {
       type: 'arp',
       operation: 'request',
@@ -3430,18 +3447,7 @@ export abstract class EndHost extends Equipment {
       const learned = await waitPromise;
       return new MACAddress(learned.mac);
     } catch (err) {
-      if (err instanceof WaitForEventTimeoutError) {
-        const prev = this.arpTable.get(targetIpStr);
-        if (!prev || prev.type !== 'static') {
-          this.arpTable.set(targetIpStr, {
-            mac: MACAddress.broadcast(),
-            iface: portName,
-            timestamp: Date.now(),
-            type: 'failed',
-          });
-        }
-        throw new Error('ARP timeout');
-      }
+      if (err instanceof WaitForEventTimeoutError) return null;
       throw err;
     }
   }

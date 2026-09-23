@@ -3870,6 +3870,9 @@ export abstract class LinuxMachine extends EndHost
       sendGratuitousArp: (iface: string, ip: IPAddress, mode: 'request' | 'reply'): boolean => {
         return this.sendGratuitousArp(iface, ip, mode);
       },
+      probeArp: (iface: string, target: IPAddress, timeoutMs: number): Promise<MACAddress | null> => {
+        return this.probeArp(iface, target, timeoutMs);
+      },
       hasRoute: (target: IPAddress): boolean => {
         return this.hasRouteOrLocal(target);
       },
