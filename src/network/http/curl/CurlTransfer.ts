@@ -14,7 +14,8 @@ import { serializeCookieHeader } from '../cookies/SetCookie';
 import { jarFromArgument, serializeNetscapeCookies } from './CurlCookies';
 import { buildMultipart } from './CurlForm';
 import { isKnownMethod } from '../semantics/methods';
-import type { CurlOptions } from './CurlArgs';
+import type { CurlOptions, LocalPortRange } from './CurlArgs';
+import { MAX_PORT, PortNumber } from '@/network/core/ports/PortNumber';
 import type { CurlHost } from './CurlHost';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { performCurlFtp } from './CurlFtp';
@@ -35,6 +36,8 @@ export interface CurlSuccess {
   readonly ok: true;
   readonly url: CurlUrl;
   readonly remoteIp: string;
+  readonly localIp: string;
+  readonly localPort: number;
   readonly statusCode: number;
   readonly reasonPhrase: string;
   readonly httpVersion: string;
@@ -226,27 +229,38 @@ function resolveLocation(base: CurlUrl, location: string): UrlParse {
 
 export type DialOutcome =
   | { readonly kind: 'open'; readonly socket: TcpSocket }
+  | { readonly kind: 'bind-failed' }
   | { readonly kind: 'refused'; readonly elapsedMs: number }
   | { readonly kind: 'kernel-timeout'; readonly elapsedMs: number }
   | { readonly kind: 'timeout'; readonly elapsedMs: number };
 
 const CURL_DEFAULT_CONNECT_TIMEOUT_MS = 300_000;
 
-export interface ConnectBudget {
+export interface DialPolicy {
   readonly connectTimeoutMs: number | null;
   readonly maxTimeMs: number | null;
   readonly operationStartedAt: number;
+  readonly localPorts: LocalPortRange | null;
 }
 
-export function startOperation(host: CurlHost, opts: CurlOptions): ConnectBudget {
+export function startOperation(host: CurlHost, opts: CurlOptions): DialPolicy {
   return {
     connectTimeoutMs: opts.connectTimeoutMs,
     maxTimeMs: opts.maxTimeMs,
     operationStartedAt: host.tcpStack().clock().now(),
+    localPorts: opts.localPorts,
   };
 }
 
-function connectLimitMs(budget: ConnectBudget, now: number): number {
+function freeLocalPort(host: CurlHost, address: string, range: LocalPortRange): PortNumber | null {
+  for (let port = range.first; port < range.first + range.count && port <= MAX_PORT; port++) {
+    const candidate = PortNumber.of(port);
+    if (!host.tcpStack().localPortInUse(candidate, address)) return candidate;
+  }
+  return null;
+}
+
+function connectLimitMs(budget: DialPolicy, now: number): number {
   const connectLimit = budget.connectTimeoutMs ?? CURL_DEFAULT_CONNECT_TIMEOUT_MS;
   if (budget.maxTimeMs === null) return connectLimit;
   const operationLeft = budget.maxTimeMs - (now - budget.operationStartedAt);
@@ -254,14 +268,16 @@ function connectLimitMs(budget: ConnectBudget, now: number): number {
 }
 
 export async function dial(
-  host: CurlHost, address: string, port: number, budget: ConnectBudget,
+  host: CurlHost, address: string, port: number, budget: DialPolicy,
 ): Promise<DialOutcome> {
   const stack = host.tcpStack();
   const clock = stack.clock();
   const startedAt = clock.now();
   const limitMs = connectLimitMs(budget, startedAt);
   const elapsed = (): number => Math.round(clock.now() - startedAt);
-  const socket = stack.connect(address, port);
+  const localPort = budget.localPorts ? freeLocalPort(host, address, budget.localPorts) : undefined;
+  if (localPort === null) return { kind: 'bind-failed' };
+  const socket = stack.connect(address, port, { localPort });
   if (!socket) return { kind: 'refused', elapsedMs: elapsed() };
   const settled = await new Promise<'open' | 'closed' | 'deadline'>((resolve) => {
     if (socket.state === 'established') { resolve('open'); return; }
@@ -286,6 +302,12 @@ export function connectFailure(
 ): CurlFailure {
   if (outcome.kind === 'timeout') {
     return connectTimeoutFailure(url, outcome.elapsedMs, remoteIp, method, numRedirects, trace);
+  }
+  if (outcome.kind === 'bind-failed') {
+    return {
+      ok: false, code: 45, message: 'curl: (45) bind failed with errno 98: Address already in use',
+      url, remoteIp, method, numRedirects, trace,
+    };
   }
   const code = outcome.kind === 'kernel-timeout' ? 28 : 7;
   return {
@@ -392,6 +414,7 @@ export async function performCurlRequest(
 
     let response: HttpMessage | null = null;
     let failure: CurlFailure | null = null;
+    let local = { ip: '', port: 0 };
 
     if (url.scheme === 'https') {
       const verifier = opts.insecure
@@ -401,11 +424,12 @@ export async function performCurlRequest(
       if (porte.kind !== 'open') {
         return connectFailure(porte, url, url.port, remoteIp, method, redirects, trace);
       }
-      porte.socket.close();
+      local = { ip: porte.socket.localIp, port: porte.socket.localPort };
 
       let session: HttpsClientSession | null = null;
       try {
         session = new HttpsClientSession(host.tcpStack(), address, url.port, { verifier });
+        session.adopt(porte.socket);
         const result = await session.sendAsync(request);
         if (!result.ok || !result.response) {
           if (!opts.insecure) {
@@ -456,6 +480,7 @@ export async function performCurlRequest(
         return connectFailure(porte, url, url.port, remoteIp, method, redirects, trace);
       }
       session.adopt(porte.socket);
+      local = { ip: porte.socket.localIp, port: porte.socket.localPort };
       // `sendAsync` et non `send` : un serveur qui doit authentifier par
       // AAA répond après un aller-retour, et le contrat synchrone rendait
       // sa réponse invisible. Un serveur synchrone répond au premier tour,
@@ -533,6 +558,8 @@ export async function performCurlRequest(
       ok: true,
       url,
       remoteIp,
+      localIp: local.ip,
+      localPort: local.port,
       statusCode: status,
       reasonPhrase: response.reasonPhrase ?? '',
       httpVersion: response.httpVersion,

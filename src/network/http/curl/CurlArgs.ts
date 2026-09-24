@@ -44,6 +44,7 @@ export interface CurlOptions {
   retryAllErrors: boolean;
   connectTimeoutMs: number | null;
   maxTimeMs: number | null;
+  localPorts: LocalPortRange | null;
   urls: string[];
 }
 
@@ -105,6 +106,7 @@ const LONG_WITH_ARG: Record<string, string> = {
   retry: 'retry',
   'connect-timeout': 'connect-timeout',
   'max-time': 'm',
+  'local-port': 'local-port',
 };
 
 const UNSUPPORTED_SHORT: Record<string, true> = {
@@ -116,16 +118,20 @@ const UNSUPPORTED_SHORT: Record<string, true> = {
   K: true, r: true, P: true, Q: true, p: true, U: true,
 };
 
+const NEEDS_ABSENT_LIBCURL_FEATURE: ReadonlySet<string> = new Set([
+  'compressed', 'http2', 'http2-prior-knowledge', 'http3', 'http3-only',
+]);
+
 const UNSUPPORTED_LONG: Record<string, true> = {
   proxy: true, 'retry-delay': true,
   'retry-max-time': true,
-  http2: true, 'http2-prior-knowledge': true, http3: true, 'http0.9': true,
+  'http0.9': true,
   'limit-rate': true, 'continue-at': true, 'progress-bar': true, cert: true,
   // `--version` a quitté la liste des INCONNUES : curl la connaît, et
   // répondre « is unknown » à l'option la plus tapée de toutes était le
   // seul message de ce fichier qui mentait.
   key: true, capath: true, interface: true,
-  compressed: true, 'anyauth': true, ntlm: true,
+  'anyauth': true, ntlm: true,
   negotiate: true, digest: true, 'proxy-user': true, socks5: true, socks4: true,
   'tlsv1.2': true, 'tlsv1.3': true, 'ciphers': true, 'keepalive-time': true,
   'speed-limit': true, 'speed-time': true, range: true, 'time-cond': true,
@@ -133,6 +139,20 @@ const UNSUPPORTED_LONG: Record<string, true> = {
   config: true,
   'proxytunnel': true, 'ftp-port': true, quote: true, 'no-buffer': true,
 };
+
+export interface LocalPortRange {
+  readonly first: number;
+  readonly count: number;
+}
+
+function parseLocalPortRange(value: string): LocalPortRange | null {
+  const match = /^(\d+)(?:\s*-\s*(\d+))?$/.exec(value);
+  if (!match) return null;
+  const first = Number(match[1]);
+  const last = match[2] === undefined ? first : Number(match[2]);
+  if (first > 65535 || last > 65535 || last < first) return null;
+  return { first, count: last - first + 1 };
+}
 
 function defaults(): CurlOptions {
   return {
@@ -166,6 +186,7 @@ function defaults(): CurlOptions {
     retryAllErrors: false,
     connectTimeoutMs: null,
     maxTimeMs: null,
+    localPorts: null,
     urls: [],
   };
 }
@@ -266,6 +287,12 @@ function applyValued(
       opts.connectTimeoutMs = seconds === 0 ? null : Math.round(seconds * 1000);
       break;
     }
+    case 'local-port': {
+      const range = parseLocalPortRange(value);
+      if (!range) return usageFailure(`curl: option ${spelling}: is badly used here`);
+      opts.localPorts = range;
+      break;
+    }
     case 'm': {
       const seconds = Number(value);
       if (value.trim() === '' || !Number.isFinite(seconds) || seconds < 0) {
@@ -319,6 +346,9 @@ export function parseCurlArgs(args: readonly string[]): CurlParseResult {
       const name = eq === -1 ? arg.slice(2) : arg.slice(2, eq);
       const inline = eq === -1 ? null : arg.slice(eq + 1);
 
+      if (NEEDS_ABSENT_LIBCURL_FEATURE.has(name)) {
+        return usageFailure(`curl: option --${name}: the installed libcurl version doesn't support this`);
+      }
       if (UNSUPPORTED_LONG[name]) return unsupported(`--${name}`);
       if (LONG_NO_ARG[name] !== undefined) {
         applyFlag(opts, LONG_NO_ARG[name]);

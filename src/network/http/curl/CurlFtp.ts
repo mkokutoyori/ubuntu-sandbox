@@ -4,7 +4,7 @@ import type { CurlOptions } from './CurlArgs';
 import type { CurlHost } from './CurlHost';
 import {
   connectFailure, dial, resolvedOverride,
-  type ConnectBudget, type CurlFailure, type CurlOutcome, type CurlUrl,
+  type DialPolicy, type CurlFailure, type CurlOutcome, type CurlUrl,
 } from './CurlTransfer';
 
 const DEFAULT_USER = 'anonymous';
@@ -34,7 +34,7 @@ function baseName(localPath: string): string {
 }
 
 export async function performCurlFtp(
-  host: CurlHost, url: CurlUrl, opts: CurlOptions, uploadBody: string | null, budget: ConnectBudget,
+  host: CurlHost, url: CurlUrl, opts: CurlOptions, uploadBody: string | null, budget: DialPolicy,
 ): Promise<CurlOutcome> {
   const trace: string[] = [];
   const method = uploadBody !== null ? 'STOR' : 'RETR';
@@ -93,7 +93,8 @@ export async function performCurlFtp(
   };
 
   const success = (body: string, statusCode: number): CurlOutcome => ({
-    ok: true, url, remoteIp: address, statusCode, reasonPhrase: '', httpVersion: '',
+    ok: true, url, remoteIp: address, localIp: porte.socket.localIp, localPort: porte.socket.localPort,
+    statusCode, reasonPhrase: '', httpVersion: '',
     headers: [], body, method, numRedirects: 0, trace,
   });
 
