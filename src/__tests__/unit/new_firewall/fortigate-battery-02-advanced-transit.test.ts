@@ -588,7 +588,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
 
     it('89. Déconnexion brutale Telnet : le serveur ferme le socket localement lors du drop de session', async () => {
       const { pc, fw, wanSrv } = await creerLaboAvance();
-      await taper(wanSrv as unknown as Cli, ['systemctl start telnetd']);
+      await taper(wanSrv as unknown as Cli, ['systemctl start telnet']);
       await taper(fw, [
         'config firewall policy', 'edit 57',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',

@@ -419,7 +419,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('32. Ouverture réussie d\'une session Telnet (port 23) à travers le firewall', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'TELNET');
-      await taper(srv as unknown as Cli, ['systemctl start telnetd']);
+      await taper(srv as unknown as Cli, ['systemctl start telnet']);
       const res = await pc.executeCommand('nc -zv -w 2 203.0.113.9 23');
       expect(res).toMatch(/succeeded|open|Connected/i);
     });
@@ -427,7 +427,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('33. Envoi de commande et réception d\'écho sur une session Telnet traversante', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'TELNET');
-      await taper(srv as unknown as Cli, ['systemctl start telnetd']);
+      await taper(srv as unknown as Cli, ['systemctl start telnet']);
       const res = await pc.executeCommand('echo "quit" | telnet 203.0.113.9 23');
       expect(res).toMatch(/Connected|Escape character/i);
     });
@@ -435,7 +435,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('34. Rejet du flux Telnet par le pare-feu si le service TELNET n\'est pas listé', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'SSH');
-      await taper(srv as unknown as Cli, ['systemctl start telnetd']);
+      await taper(srv as unknown as Cli, ['systemctl start telnet']);
       const res = await pc.executeCommand('nc -zv -w 1 203.0.113.9 23');
       expect(res).toMatch(/timed out|refused/i);
     });
@@ -443,7 +443,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('35. Établissement simultané d\'une session Telnet et d\'une session SSH', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'ALL');
-      await taper(srv as unknown as Cli, ['systemctl start telnetd', 'systemctl start sshd']);
+      await taper(srv as unknown as Cli, ['systemctl start telnet', 'systemctl start sshd']);
       const t1 = await pc.executeCommand('nc -zv -w 2 203.0.113.9 23');
       const t2 = await pc.executeCommand('nc -zv -w 2 203.0.113.9 22');
       expect(t1).toMatch(/succeeded|open|Connected/i);
