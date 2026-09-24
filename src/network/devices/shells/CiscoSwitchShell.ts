@@ -3091,7 +3091,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
               : m.state === 'standalone' ? 'I' : 's';
             return `${this.abbreviateInterface(m.portName)}(${flag})`;
           }).join(' ');
-          lines.push(`${String(g.id).padEnd(7)}${g.name.padEnd(14)}${protocol.padEnd(12)}${portList}`);
+          const inUse = g.members.some(m => m.bundled) ? 'U' : 'D';
+          const bundle = `${this.abbreviateInterface(g.name)}(S${inUse})`;
+          lines.push(`${String(g.id).padEnd(7)}${bundle.padEnd(14)}${protocol.padEnd(12)}${portList}`);
         }
         return lines.join('\n');
       }
@@ -6624,6 +6626,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private abbreviateInterface(name: string): string {
     return name
       .replace('FastEthernet', 'Fa')
-      .replace('GigabitEthernet', 'Gi');
+      .replace('GigabitEthernet', 'Gi')
+      .replace('Port-channel', 'Po');
   }
 }

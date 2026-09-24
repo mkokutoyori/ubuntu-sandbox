@@ -161,7 +161,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
         'end',
       ]);
       const ether = await sw1.executeCommand('show etherchannel summary');
-      expect(ether).toMatch(/Po1\(SU\)|Po1/i);
+      expect(ether).toMatch(/^1\s+Po1\(S[UD]\)\s+LACP\s+Fa0\/11/m);
     });
 
     it('107. Isolation L2 Protected Port : deux PC sur le même VLAN ne peuvent dialoguer entre eux', async () => {
