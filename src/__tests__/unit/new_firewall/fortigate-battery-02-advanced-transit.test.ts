@@ -106,14 +106,14 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
     it('53. Architecture 3-Tiers : Le Web Nginx en DMZ requiert la DB Oracle en LAN/Zone privée', async () => {
       const { pc, fw, dmzSrv } = await creerLaboAvance();
       // On place Oracle sur le PC LAN et on autorise DMZ -> LAN uniquement sur le port 1521
-      await taper(pc as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(pc as unknown as Cli, ['systemctl start oracle-ohasd']);
       await taper(fw, [
         'config firewall policy', 'edit 11',
         'set srcintf "dmz"', 'set dstintf "port1"',
         'set srcaddr "all"', 'set dstaddr "all"',
         'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
-      const res = await dmzSrv.executeCommand('tnsping 192.168.1.10:1521/XE');
+      const res = await dmzSrv.executeCommand('tnsping 192.168.1.10:1521/ORCL');
       expect(res).toMatch(/OK/);
     });
 
@@ -550,26 +550,26 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
 
     it('86. Transaction Oracle PL/SQL : exécution d\'un bloc BEGIN...END traversant la passerelle', async () => {
       const { pc, fw, wanSrv } = await creerLaboAvance();
-      await taper(wanSrv as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(wanSrv as unknown as Cli, ['systemctl start oracle-ohasd']);
       await taper(fw, [
         'config firewall policy', 'edit 54',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
         'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
-      const plsql = 'echo "BEGIN NULL; END; /" | sqlplus -S system/oracle@203.0.113.9:1521/XE';
+      const plsql = 'echo "BEGIN NULL; END; /" | sqlplus -S system/oracle@203.0.113.9:1521/ORCL';
       const res = await pc.executeCommand(plsql);
       expect(res).toMatch(/PL\/SQL procedure successfully completed/i);
     });
 
     it('87. Oracle Connection Pool : le maintien KeepAlive empêche la déconnexion après inactivité', async () => {
       const { pc, fw, wanSrv } = await creerLaboAvance();
-      await taper(wanSrv as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(wanSrv as unknown as Cli, ['systemctl start oracle-ohasd']);
       await taper(fw, [
         'config firewall policy', 'edit 55',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
         'set action accept', 'next', 'end',
       ]);
-      const ping = await pc.executeCommand('tnsping 203.0.113.9:1521/XE');
+      const ping = await pc.executeCommand('tnsping 203.0.113.9:1521/ORCL');
       expect(ping).toContain('OK');
     });
 
@@ -613,13 +613,13 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
 
     it('91. Annulation Oracle Rollback : une transaction interrompue ne persiste aucune écriture', async () => {
       const { pc, fw, wanSrv } = await creerLaboAvance();
-      await taper(wanSrv as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(wanSrv as unknown as Cli, ['systemctl start oracle-ohasd']);
       await taper(fw, [
         'config firewall policy', 'edit 59',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
         'set action accept', 'next', 'end',
       ]);
-      const sql = 'echo "INSERT INTO t VALUES (1); ROLLBACK; EXIT;" | sqlplus -S system/oracle@203.0.113.9:1521/XE';
+      const sql = 'echo "INSERT INTO t VALUES (1); ROLLBACK; EXIT;" | sqlplus -S system/oracle@203.0.113.9:1521/ORCL';
       const res = await pc.executeCommand(sql);
       expect(res).toMatch(/Rollback complete/i);
     });
@@ -727,7 +727,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       await taper(wanSrv as unknown as Cli, [
         'systemctl start nginx',
         'systemctl start sshd',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
       ]);
       await taper(fw, [
         'config firewall policy',
@@ -740,7 +740,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
         pc.executeCommand('ping -c 3 203.0.113.9'),
         pc.executeCommand('curl -s http://10.0.0.5/'),
         pc.executeCommand('curl -s http://203.0.113.9/'),
-        pc.executeCommand('tnsping 203.0.113.9:1521/XE'),
+        pc.executeCommand('tnsping 203.0.113.9:1521/ORCL'),
         pc.executeCommand('ssh -o StrictHostKeyChecking=no 203.0.113.9 "echo CLUSTER_STABLE"'),
       ]);
 

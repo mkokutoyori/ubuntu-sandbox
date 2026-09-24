@@ -498,8 +498,8 @@ describe('Batterie 8 : Tests 351 à 400 — Cyber-Défense, MitM TLS, Détection
 
     it('392. Bascule transparente de session de base de données d\'un Oracle maître vers un Oracle secours', async () => {
       const { winAdmin, srvLinux } = await creerLaboCyberDefense();
-      await taper(srvLinux as unknown as Cli, ['systemctl start oracle-xe']);
-      const res = await pwsh(winAdmin)('tnsping 10.10.10.20:1521/XE');
+      await taper(srvLinux as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const res = await pwsh(winAdmin)('tnsping 10.10.10.20:1521/ORCL');
       expect(res).toContain('OK');
     });
 
@@ -558,7 +558,7 @@ describe('Batterie 8 : Tests 351 à 400 — Cyber-Défense, MitM TLS, Détection
       const { winAdmin, winRogue, fw, srvLinux } = await creerLaboCyberDefense();
       await taper(srvLinux as unknown as Cli, [
         'systemctl start nginx',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
       ]);
 
       // 1. Déclenchement de l'assaut malveillant depuis WIN-ROGUE
@@ -568,7 +568,7 @@ describe('Batterie 8 : Tests 351 à 400 — Cyber-Défense, MitM TLS, Détection
       ]);
 
       // 2. Transaction critique légitime exécutée en parallèle par WIN-ADMIN
-      const legitime = pwsh(winAdmin)('tnsping 10.10.10.20:1521/XE');
+      const legitime = pwsh(winAdmin)('tnsping 10.10.10.20:1521/ORCL');
 
       const [_, repLegitime] = await Promise.all([assaut, legitime]);
 
@@ -588,7 +588,7 @@ describe('Batterie 8 : Tests 351 à 400 — Cyber-Défense, MitM TLS, Détection
       // 2. Amorçage des services Linux (Nginx, Oracle, Syslog)
       await taper(srvLinux as unknown as Cli, [
         'systemctl start nginx',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
         'systemctl start rsyslog',
       ]);
 
@@ -609,7 +609,7 @@ describe('Batterie 8 : Tests 351 à 400 — Cyber-Défense, MitM TLS, Détection
       expect(webLinux).toBe('200');
 
       // 7. Transaction SQL critique vers le moteur Oracle XE
-      const oracleTx = await pwsh(winAdmin)('cmd.exe /c "echo SELECT \'RUN_400_MASTER_VALIDATED\' FROM DUAL; | sqlplus -S system/oracle@10.10.10.20:1521/XE"');
+      const oracleTx = await pwsh(winAdmin)('cmd.exe /c "echo SELECT \'RUN_400_MASTER_VALIDATED\' FROM DUAL; | sqlplus -S system/oracle@10.10.10.20:1521/ORCL"');
       expect(oracleTx).toContain('RUN_400_MASTER_VALIDATED');
 
       // 8. Télémétrie d'audit finalisée dans le SIEM Linux

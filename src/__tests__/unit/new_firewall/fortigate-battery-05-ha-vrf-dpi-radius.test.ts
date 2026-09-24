@@ -318,13 +318,13 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
 
     it('224. Inspection profonde Oracle TNS : blocage d\'une tentative d\'exploitation de buffer overflow listener', async () => {
       const { pc, fwMaster, srvDb } = await creerLaboHA();
-      await taper(srvDb as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srvDb as unknown as Cli, ['systemctl start oracle-ohasd']);
       await taper(fwMaster, [
         'config ips sensor', 'edit "SENSOR_DB"',
         'config entries', 'edit 1', 'set location server', 'set action block', 'next', 'end',
         'next', 'end',
       ]);
-      const res = await pc.executeCommand('tnsping 10.0.0.20:1521/XE');
+      const res = await pc.executeCommand('tnsping 10.0.0.20:1521/ORCL');
       expect(res).toContain('OK');
     });
 
@@ -535,9 +535,9 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
 
     it('247. Gigue sévère et latence variable (Jitter 100ms) : Oracle SQL complète sa transaction avec succès', async () => {
       const { pc, srvDb } = await creerLaboHA();
-      await taper(srvDb as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srvDb as unknown as Cli, ['systemctl start oracle-ohasd']);
       await pc.executeCommand('tc qdisc add dev eth0 root netem delay 50ms 20ms');
-      const res = await pc.executeCommand('echo "SELECT \'CHAOS_RESILIENT\' FROM DUAL;" | sqlplus -S system/oracle@10.0.0.20:1521/XE');
+      const res = await pc.executeCommand('echo "SELECT \'CHAOS_RESILIENT\' FROM DUAL;" | sqlplus -S system/oracle@10.0.0.20:1521/ORCL');
       expect(res).toContain('CHAOS_RESILIENT');
       await pc.executeCommand('tc qdisc del dev eth0 root');
     });
@@ -564,13 +564,13 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
       const { pc, fwMaster, srvWeb, srvDb, srvRadius } = await creerLaboHA();
       // 1. Démarrage des applications
       await taper(srvWeb as unknown as Cli, ['systemctl start nginx']);
-      await taper(srvDb as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srvDb as unknown as Cli, ['systemctl start oracle-ohasd']);
       await taper(srvRadius as unknown as Cli, ['systemctl start freeradius']);
 
       // 2. Déclenchement simultané du trafic
       const fluxPromesses = Promise.all([
         pc.executeCommand('curl -s http://10.0.0.10/'),
-        pc.executeCommand('echo "SELECT 999 FROM DUAL;" | sqlplus -S system/oracle@10.0.0.20:1521/XE'),
+        pc.executeCommand('echo "SELECT 999 FROM DUAL;" | sqlplus -S system/oracle@10.0.0.20:1521/ORCL'),
         pc.executeCommand('radtest bob BobPassword 10.0.0.50 1812 RadiusSharedSecret2026'),
         pc.executeCommand('ping -c 3 10.0.0.10'),
       ]);

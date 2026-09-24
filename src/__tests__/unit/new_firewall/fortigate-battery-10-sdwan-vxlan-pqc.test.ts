@@ -135,7 +135,7 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
 
     it('453. Détection de dégradation progressive (Brownout) et bascule instantanée du flux critique vers WAN2', async () => {
       const { pc, fw, srvLinux } = await creerLaboSDWAN();
-      await taper(srvLinux as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srvLinux as unknown as Cli, ['systemctl start oracle-ohasd']);
       // Simulation d'une gigue artificielle sur WAN1
       await fw.executeCommand('diagnose sys sdwan health-check set-jitter wan1 40');
       const ping = await pc.executeCommand('ping -c 2 10.50.0.10');
@@ -476,10 +476,10 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
   describe('L\'Épreuve Royale du Jubilé (Tests 491 à 500)', () => {
     it('491. SD-WAN Brownout Failover en temps réel sur une transaction Oracle SQL*Plus active', async () => {
       const { pc, fw, srvLinux } = await creerLaboSDWAN();
-      await taper(srvLinux as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srvLinux as unknown as Cli, ['systemctl start oracle-ohasd']);
       // Déclenchement de brownout simulé
       await fw.executeCommand('diagnose sys sdwan health-check set-loss wan1 20');
-      const sql = await pc.executeCommand('echo "SELECT \'SDWAN_RESILIENT\' FROM DUAL;" | sqlplus -S system/oracle@10.50.0.10:1521/XE');
+      const sql = await pc.executeCommand('echo "SELECT \'SDWAN_RESILIENT\' FROM DUAL;" | sqlplus -S system/oracle@10.50.0.10:1521/ORCL');
       expect(sql).toContain('SDWAN_RESILIENT');
     });
 
@@ -539,14 +539,14 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
       const { pc, winClient, srvLinux, srvWin } = await creerLaboSDWAN();
       await taper(srvLinux as unknown as Cli, [
         'systemctl start nginx',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
       ]);
       await pwsh(srvWin)('Install-WindowsFeature -Name Web-Server');
 
       const [resHttpLnx, resHttpWin, resSql] = await Promise.all([
         pc.executeCommand('curl -s http://10.50.0.10/'),
         pwsh(winClient)('(Invoke-WebRequest -Uri "http://10.50.0.20/").StatusCode'),
-        pc.executeCommand('echo "SELECT 500 FROM DUAL;" | sqlplus -S system/oracle@10.50.0.10:1521/XE'),
+        pc.executeCommand('echo "SELECT 500 FROM DUAL;" | sqlplus -S system/oracle@10.50.0.10:1521/ORCL'),
       ]);
 
       expect(resHttpLnx).toMatch(/Welcome to nginx|nginx/i);
@@ -560,7 +560,7 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
       // 1. Démarrage des briques serveurs
       await taper(srvLinux as unknown as Cli, [
         'systemctl start nginx-pqc',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
         'systemctl start rsyslog',
       ]);
       await pwsh(srvWin)('Install-WindowsFeature -Name AD-Domain-Services,DNS,Web-Server');
@@ -578,7 +578,7 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
       expect(pqcWeb).toMatch(/Welcome to nginx|nginx/i);
 
       // 5. Transaction SQL vers le moteur Oracle XE
-      const oracleRes = await pc.executeCommand('echo "SELECT \'500_TESTS_ACHIEVED_EXCELLENCE\' FROM DUAL;" | sqlplus -S system/oracle@10.50.0.10:1521/XE');
+      const oracleRes = await pc.executeCommand('echo "SELECT \'500_TESTS_ACHIEVED_EXCELLENCE\' FROM DUAL;" | sqlplus -S system/oracle@10.50.0.10:1521/ORCL');
       expect(oracleRes).toContain('500_TESTS_ACHIEVED_EXCELLENCE');
 
       // 6. Émission du log d\'audit final couronnant le succès des 500 tests

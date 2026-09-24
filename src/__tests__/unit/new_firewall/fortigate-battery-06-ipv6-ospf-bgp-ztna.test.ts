@@ -473,8 +473,8 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
 
     it('289. Chargement massif Oracle SQLLDR (SQL*Loader) : flux continu de données volumineuses sur port 1521', async () => {
       const { pc, srvCluster } = await creerLaboNextGen();
-      await taper(srvCluster as unknown as Cli, ['systemctl start oracle-xe']);
-      const res = await pc.executeCommand('tnsping 10.50.0.50:1521/XE');
+      await taper(srvCluster as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const res = await pc.executeCommand('tnsping 10.50.0.50:1521/ORCL');
       expect(res).toContain('OK');
     });
 
@@ -577,7 +577,7 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
       await taper(srvCluster as unknown as Cli, [
         'systemctl start named',
         'systemctl start nginx',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
         'systemctl start rsyslog-tls',
       ]);
 
@@ -590,7 +590,7 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
       expect(web).toMatch(/Welcome to nginx|nginx/i);
 
       // 4. Transaction Oracle SQL sur le chemin dynamique convergé
-      const query = 'echo "SELECT \'ULTIMATE_SYSTEM_VALIDATED\' FROM DUAL;" | sqlplus -S system/oracle@10.50.0.50:1521/XE';
+      const query = 'echo "SELECT \'ULTIMATE_SYSTEM_VALIDATED\' FROM DUAL;" | sqlplus -S system/oracle@10.50.0.50:1521/ORCL';
       const sqlRes = await pc.executeCommand(query);
       expect(sqlRes).toContain('ULTIMATE_SYSTEM_VALIDATED');
 

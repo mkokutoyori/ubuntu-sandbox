@@ -388,6 +388,32 @@ le drapeau `ra` pose ; le `allow-recursion` par defaut de BIND vaut
 `localnets; localhost;`, et un refus de recursion ne devrait pas annoncer
 `ra`.
 
+### [oracle] un outil client sur un poste provisionne une base locale
+`tnsping` et `sqlplus user/pw@hote:port/service`, tapes sur un LinuxPC
+(terminal comme `executeCommand`), passent par `getOracleDatabase(id)` du
+POSTE : l'arborescence `/u01/app/oracle/...` y est creee et une instance
+locale est construite, alors qu'un client Instant Client n'a ni l'une ni
+l'autre. `handleTnsping` n'en a besoin que pour reconnaitre le SID local,
+et `createSQLPlusSession` que lorsque l'identifiant ne designe pas une
+base distante.
+**Mesure** : `tnsping 10.0.0.2:1521/ORCL` sur un LinuxPC, puis `ls /u01`
+sur ce PC : `app`.
+**Pourquoi ce n'est pas ferme** : le correctif qui a relie `executeCommand`
+au meme chemin que le terminal ne change pas ce chemin ; le rendre
+paresseux touche `createSQLPlusSession`, `handleTnsping` et leurs lecteurs
+du SID local.
+
+### [sqlplus] une colonne NUMBER n'a pas la largeur `numwidth`, et FEEDBACK s'affiche des 1 ligne
+`SELECT 1 FROM DUAL` rend `1` / `-` / `1` puis « 1 row selected. ». Un
+vrai SQL*Plus cadre une colonne NUMBER a droite sur `NUMWIDTH` (10 par
+defaut : `         1` sur `----------`), et n'ecrit la ligne de retour
+qu'a partir de `SET FEEDBACK` lignes (6 par defaut).
+**Mesure** : `echo "SELECT 1 FROM DUAL;" | sqlplus -S system/oracle@10.0.0.2:1521/ORCL`
+depuis un LinuxPC.
+**Pourquoi ce n'est pas ferme** : releve en passant ; le rendu des
+colonnes est partage par tout le moteur SQL*Plus et merite sa propre
+mesure.
+
 ## Postes Windows
 
 ### [ping] les mots de `ping.exe` pour le code 13 restent non attestés

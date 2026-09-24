@@ -360,29 +360,29 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
   describe('Transactions Hybrides : Windows Server vers Base Oracle Linux', () => {
     it('330. Sondage du Listener Oracle (Port 1521) depuis PowerShell sur Windows Server', async () => {
       const { winDc, linuxSrv } = await creerLaboHybride();
-      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-ohasd']);
       const res = await pwsh(winDc)('Test-NetConnection -ComputerName 10.10.10.20 -Port 1521');
       expect(res).toMatch(/TcpTestSucceeded\s*:\s*True/i);
     });
 
     it('331. Exécution d\'une requête SQL*Plus depuis Windows Server vers la DB Oracle Linux distante', async () => {
       const { winDc, linuxSrv } = await creerLaboHybride();
-      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-xe']);
-      const query = 'cmd.exe /c "echo SELECT 777 FROM DUAL; | sqlplus -S system/oracle@10.10.10.20:1521/XE"';
+      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const query = 'cmd.exe /c "echo SELECT 777 FROM DUAL; | sqlplus -S system/oracle@10.10.10.20:1521/ORCL"';
       const sql = await pwsh(winDc)(query);
       expect(sql).toContain('777');
     });
 
     it('332. Maintien du Pool de Connexions applicatif entre le Web IIS et la Base Oracle Linux', async () => {
       const { winDc, linuxSrv } = await creerLaboHybride();
-      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-xe']);
-      const poolCheck = await pwsh(winDc)('tnsping 10.10.10.20:1521/XE');
+      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const poolCheck = await pwsh(winDc)('tnsping 10.10.10.20:1521/ORCL');
       expect(poolCheck).toMatch(/OK/);
     });
 
     it('333. Ségrégation de flux : la passerelle coupe Oracle 1521 sans couper le trafic Web IIS', async () => {
       const { winPc, fw, linuxSrv } = await creerLaboHybride();
-      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-ohasd']);
       await taper(fw, [
         'config firewall policy', 'edit 1',
         'set service "HTTP"', 'next', 'end',
@@ -395,17 +395,17 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
 
     it('334. Transaction Commit Windows -> Oracle Linux : persistance de données vérifiée côté Linux', async () => {
       const { winDc, linuxSrv } = await creerLaboHybride();
-      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-xe']);
-      const insert = 'cmd.exe /c "echo INSERT INTO aud (val) VALUES (42); COMMIT; | sqlplus -S system/oracle@10.10.10.20:1521/XE"';
+      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const insert = 'cmd.exe /c "echo INSERT INTO aud (val) VALUES (42); COMMIT; | sqlplus -S system/oracle@10.10.10.20:1521/ORCL"';
       await pwsh(winDc)(insert);
-      const verify = await linuxSrv.executeCommand('echo "SELECT val FROM aud;" | sqlplus -S system/oracle@localhost:1521/XE');
+      const verify = await linuxSrv.executeCommand('echo "SELECT val FROM aud;" | sqlplus -S system/oracle@localhost:1521/ORCL');
       expect(verify).toContain('42');
     });
 
     it('335. Détection de coupure Oracle Listener et remontée d\'erreur ORA dans l\'Event Viewer Windows', async () => {
       const { winDc, linuxSrv } = await creerLaboHybride();
-      await taper(linuxSrv as unknown as Cli, ['systemctl stop oracle-xe']);
-      const res = await pwsh(winDc)('cmd.exe /c "echo EXIT; | sqlplus -S system/oracle@10.10.10.20:1521/XE"');
+      await taper(linuxSrv as unknown as Cli, ['systemctl stop oracle-ohasd']);
+      const res = await pwsh(winDc)('cmd.exe /c "echo EXIT; | sqlplus -S system/oracle@10.10.10.20:1521/ORCL"');
       expect(res).toMatch(/ORA-12541|TNS:no listener/i);
     });
   });
@@ -542,7 +542,7 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
       await taper(linuxSrv as unknown as Cli, [
         'systemctl start named',
         'systemctl start nginx',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
         'systemctl start rsyslog',
       ]);
 
@@ -559,7 +559,7 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
       expect(apiRes).toMatch(/Welcome to nginx|nginx/i);
 
       // 6. Requête transactionnelle Oracle DB émise depuis Windows Server
-      const dbQuery = 'cmd.exe /c "echo SELECT \'HYBRID_CHAIN_2026_OK\' FROM DUAL; | sqlplus -S system/oracle@10.10.10.20:1521/XE"';
+      const dbQuery = 'cmd.exe /c "echo SELECT \'HYBRID_CHAIN_2026_OK\' FROM DUAL; | sqlplus -S system/oracle@10.10.10.20:1521/ORCL"';
       const dbRes = await pwsh(winDc)(dbQuery);
       expect(dbRes).toContain('HYBRID_CHAIN_2026_OK');
 

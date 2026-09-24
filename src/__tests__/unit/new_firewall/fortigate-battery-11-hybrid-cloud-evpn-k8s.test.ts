@@ -177,8 +177,8 @@ describe('Batterie 11 : Tests 501 à 550 — Cloud Hybride, EVPN-VXLAN, K8s, API
 
     it('508. Bascule automatique sans interruption de session Oracle lors d\'une panne simulée Direct Connect', async () => {
       const { pc, srvK8s } = await creerLaboCloudHybride();
-      await taper(srvK8s as unknown as Cli, ['systemctl start oracle-xe']);
-      const res = await pc.executeCommand('tnsping 10.100.0.10:1521/XE');
+      await taper(srvK8s as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const res = await pc.executeCommand('tnsping 10.100.0.10:1521/ORCL');
       expect(res).toContain('OK');
     });
   });
@@ -501,7 +501,7 @@ describe('Batterie 11 : Tests 501 à 550 — Cloud Hybride, EVPN-VXLAN, K8s, API
       const { pc, srvK8s } = await creerLaboCloudHybride();
       await taper(srvK8s as unknown as Cli, [
         'systemctl start api-gateway',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
       ]);
       const validToken = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJkZXYifQ.DUMMY_SIG';
       const res = await pc.executeCommand(`curl -s -H "Authorization: Bearer ${validToken}" http://10.100.0.10/api/v1/db-status`);
@@ -523,7 +523,7 @@ describe('Batterie 11 : Tests 501 à 550 — Cloud Hybride, EVPN-VXLAN, K8s, API
       // 1. Démarrage des micro-services Cloud et des services Windows/Linux
       await taper(srvK8s as unknown as Cli, [
         'systemctl start api-gateway',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
       ]);
       await taper(srvOtel as unknown as Cli, ['systemctl start otel-collector']);
       await pwsh(winDc)('Install-WindowsFeature -Name AD-Domain-Services,DNS');

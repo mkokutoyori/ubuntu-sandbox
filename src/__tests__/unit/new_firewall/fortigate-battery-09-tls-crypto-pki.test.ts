@@ -447,7 +447,7 @@ describe('Batterie 9 : Tests 401 à 450 — Cryptographie Réseau, Handshake TLS
     it('443. Oracle Database TCPS (Port 2484) : Transaction SQL chiffrée par portefeuille Oracle Wallet', async () => {
       const { linuxPc, srvNginx } = await creerLaboTls();
       await taper(srvNginx as unknown as Cli, ['systemctl start oracle-tcps']);
-      const res = await linuxPc.executeCommand('tnsping 10.10.10.10:2484/XE');
+      const res = await linuxPc.executeCommand('tnsping 10.10.10.10:2484/ORCL');
       expect(res).toContain('OK');
     });
 
@@ -528,7 +528,7 @@ describe('Batterie 9 : Tests 401 à 450 — Cryptographie Réseau, Handshake TLS
       expect(iisTls.trim()).toBe('200');
 
       // 5. Validation de la connexion chiffrée Oracle TCPS (port 2484)
-      const oracleTcps = await linuxPc.executeCommand('tnsping 10.10.10.10:2484/XE');
+      const oracleTcps = await linuxPc.executeCommand('tnsping 10.10.10.10:2484/ORCL');
       expect(oracleTcps).toContain('OK');
 
       // 6. Présence de la session chiffrée dans la table d\'état du pare-feu

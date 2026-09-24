@@ -319,14 +319,14 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
 
     it('118. Trafic Oracle SQL (1521) traversant le tunnel chiffré sans corruption', async () => {
       const { pc, fw, srvProd } = await creerLaboEntreprise();
-      await taper(srvProd as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srvProd as unknown as Cli, ['systemctl start oracle-ohasd']);
       await taper(fw, [
         'config firewall policy',
         'edit 71', 'set srcintf "port1"', 'set dstintf "wan1"',
         'set srcaddr "all"', 'set dstaddr "all"', 'set action accept',
         'next', 'end',
       ]);
-      const res = await pc.executeCommand('tnsping 203.0.113.10:1521/XE');
+      const res = await pc.executeCommand('tnsping 203.0.113.10:1521/ORCL');
       expect(res).toContain('OK');
     });
 
@@ -527,14 +527,14 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
 
     it('135. Oracle Data Guard : synchronisation de redo-logs entre base primaire et standby (port 1521)', async () => {
       const { srvProd, srvBackup, fw } = await creerLaboEntreprise();
-      await taper(srvProd as unknown as Cli, ['systemctl start oracle-xe']);
-      await taper(srvBackup as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srvProd as unknown as Cli, ['systemctl start oracle-ohasd']);
+      await taper(srvBackup as unknown as Cli, ['systemctl start oracle-ohasd']);
       await taper(fw, [
         'config firewall policy', 'edit 92',
         'set srcintf "wan1"', 'set dstintf "wan2"', 'set srcaddr "all"', 'set dstaddr "all"',
         'set action accept', 'next', 'end',
       ]);
-      const sync = await srvProd.executeCommand('tnsping 198.51.100.10:1521/XE');
+      const sync = await srvProd.executeCommand('tnsping 198.51.100.10:1521/ORCL');
       expect(sync).toContain('OK');
     });
 
@@ -601,7 +601,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
 
     it('141. Oracle Listener : rejet de connexion avec code ORA-12514 si le service DB est inconnu', async () => {
       const { pc, fw, srvProd } = await creerLaboEntreprise();
-      await taper(srvProd as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srvProd as unknown as Cli, ['systemctl start oracle-ohasd']);
       await taper(fw, [
         'config firewall policy', 'edit 97',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
@@ -716,7 +716,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(srvProd as unknown as Cli, [
         'systemctl start named',
         'systemctl start nginx',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
       ]);
       await taper(syslogSrv as unknown as Cli, ['systemctl start rsyslog']);
 
@@ -738,7 +738,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       expect(web).toMatch(/Welcome to nginx|nginx/i);
 
       // 5. Requête transactionnelle Oracle DB
-      const db = await pc.executeCommand(`echo "SELECT 'ALL_SYSTEMS_GO' FROM DUAL;" | sqlplus -S system/oracle@${ip}:1521/XE`);
+      const db = await pc.executeCommand(`echo "SELECT 'ALL_SYSTEMS_GO' FROM DUAL;" | sqlplus -S system/oracle@${ip}:1521/ORCL`);
       expect(db).toContain('ALL_SYSTEMS_GO');
 
       // 6. Présence des sessions dans la table de suivi

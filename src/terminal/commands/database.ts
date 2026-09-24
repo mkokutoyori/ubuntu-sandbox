@@ -247,6 +247,37 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
   return db;
 }
 
+const SQL_ARGUMENT = /\b(select|insert|update|delete|merge|begin|exec|create|drop|alter|commit|rollback|truncate|grant|revoke)\b/i;
+
+export interface SqlPlusInvocation {
+  readonly connArgs: string[] | null;
+  readonly sqlSource: string;
+  readonly isSysdba: boolean;
+}
+
+export function parseSqlPlusInvocation(args: readonly string[], stdin?: string): SqlPlusInvocation {
+  const isSysdba = /^\s*\/\s+as\s+sysdba\s*$/i.test(args.join(' '));
+  const connectArg = args.find(a => !a.startsWith('-') && (a.includes('/') || a.includes('@')));
+  const sqlSource = [
+    ...args.filter(a => a !== connectArg && !a.startsWith('-') && SQL_ARGUMENT.test(a)),
+    stdin ?? '',
+  ].join('\n').trim();
+  const connArgs = isSysdba ? ['/', 'as', 'sysdba'] : connectArg ? [connectArg] : null;
+  return { connArgs, sqlSource, isSysdba };
+}
+
+export function runSqlPlusScript(deviceId: string, connArgs: string[], sqlSource: string): string {
+  const { session, loginOutput } = createSQLPlusSession(deviceId, connArgs);
+  if (loginOutput.some(l => /^ERROR|ORA-\d/.test(l))) return loginOutput.join('\n');
+  const out: string[] = [];
+  for (const raw of sqlSource.split(';')) {
+    const stmt = raw.trim();
+    if (stmt) out.push(...session.processLine(`${stmt};`).output);
+  }
+  session.disconnect();
+  return out.join('\n');
+}
+
 /**
  * Create a SQL*Plus session for a device.
  * Parses the sqlplus command arguments to extract credentials.

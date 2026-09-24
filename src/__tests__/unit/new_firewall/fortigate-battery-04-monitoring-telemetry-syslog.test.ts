@@ -541,13 +541,13 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
 
     it('190. Contrôle synthétique périodique d\'Oracle DB Listener (check_oracle_health)', async () => {
       const { siem, fw, srvProd } = await creerLaboSupervision();
-      await taper(srvProd as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srvProd as unknown as Cli, ['systemctl start oracle-ohasd']);
       await taper(fw, [
         'config firewall policy', 'edit 190',
         'set srcintf "wan1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"',
         'set action accept', 'next', 'end',
       ]);
-      const res = await siem.executeCommand('tnsping 10.10.10.5:1521/XE');
+      const res = await siem.executeCommand('tnsping 10.10.10.5:1521/ORCL');
       expect(res).toContain('OK');
     });
 

@@ -5740,7 +5740,7 @@ export class LinuxCommandExecutor {
         // Oracle Server profile: actually boot the instance the first
         // time sqlplus is invoked, so ps -ef shows ora_pmon/ora_smon
         // and lsnrctl status can read the listener state.
-        if (this.isServer && this._oracleBootstrap) {
+        if (this._oracleBootstrap) {
           const out = this._oracleBootstrap(args, stdin);
           if (out !== null) return { output: out, exitCode: 0 };
         }
@@ -5769,7 +5769,7 @@ export class LinuxCommandExecutor {
         };
       }
       case 'tnsping': {
-        if (this.isServer && this._oracleTnsping) {
+        if (this._oracleTnsping) {
           const output = this._oracleTnsping(args);
           return { output, exitCode: /TNS-\d|TNS:/.test(output) ? 1 : 0 };
         }

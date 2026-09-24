@@ -483,7 +483,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('36. Le listener Oracle (port 1521) est joignable à travers la politique pare-feu', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'ALL');
-      await taper(srv as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srv as unknown as Cli, ['systemctl start oracle-ohasd']);
       const res = await pc.executeCommand('nc -zv -w 2 203.0.113.9 1521');
       expect(res).toMatch(/succeeded|open|Connected/i);
     });
@@ -491,24 +491,24 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('37. Contrôle du Listener via tnsping à travers le réseau', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'ALL');
-      await taper(srv as unknown as Cli, ['systemctl start oracle-xe']);
-      const res = await pc.executeCommand('tnsping 203.0.113.9:1521/XE');
+      await taper(srv as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const res = await pc.executeCommand('tnsping 203.0.113.9:1521/ORCL');
       expect(res).toMatch(/OK|msec/i);
     });
 
     it('38. Exécution d\'une requête SQL traversante (SELECT 1 FROM DUAL)', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'ALL');
-      await taper(srv as unknown as Cli, ['systemctl start oracle-xe']);
-      const query = 'echo "SELECT 1 FROM DUAL;" | sqlplus -S system/oracle@203.0.113.9:1521/XE';
+      await taper(srv as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const query = 'echo "SELECT 1 FROM DUAL;" | sqlplus -S system/oracle@203.0.113.9:1521/ORCL';
       const res = await pc.executeCommand(query);
-      expect(res).toMatch(/1/);
+      expect(res).toMatch(/^-+\n\s*1\s*$/m);
     });
 
     it('39. Blocage du trafic Oracle 1521 si la règle n\'autorise que le Web (port 80/443)', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'HTTP');
-      await taper(srv as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srv as unknown as Cli, ['systemctl start oracle-ohasd']);
       const res = await pc.executeCommand('nc -zv -w 1 203.0.113.9 1521');
       expect(res).toMatch(/timed out|refused/i);
     });
@@ -516,8 +516,8 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('40. Session Oracle coupée proprement lors de l\'envoi de la commande EXIT', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'ALL');
-      await taper(srv as unknown as Cli, ['systemctl start oracle-xe']);
-      const res = await pc.executeCommand('echo "EXIT;" | sqlplus -S system/oracle@203.0.113.9:1521/XE');
+      await taper(srv as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const res = await pc.executeCommand('echo "EXIT;" | sqlplus -S system/oracle@203.0.113.9:1521/ORCL');
       expect(res).not.toMatch(/ORA-|error/i);
     });
   });
