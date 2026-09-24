@@ -405,25 +405,24 @@ robustesse (john, hashcat, comparaison de hashes) n'a aucun sens.
 champ (`checkPassword`, PAM, faillock, `passwd -S`, `chage`) ; hors du
 perimetre du correctif SSH qui l'a revele.
 
-### [apt] `apt install` n'installe rien : il repond d'apres une base commune a toutes les machines
-`apt install <paquet>` consulte `PACKAGE_DB`, une table de MODULE partagee
-par toutes les machines, et repond « <paquet> is already the newest
-version » pour tout paquet connu, sans rien poser : ni binaire, ni unite
-systemd, ni entree dpkg propre a la machine. Deux vues de la meme machine
-se contredisent donc (CLAUDE.md §3) : sur un LinuxPC, `apt` declare nginx
-installe et `systemctl start nginx` repond « Unit nginx.service not found ».
-**Mesure** : batterie FortiGate, test 18 (un PC du LAN sert une page
-derriere un VIP) : `sudo apt install -y nginx` puis `systemctl start nginx`
-sur un LinuxPC.
-Meme defaut pour `vsftpd` : son binaire est declare livre par l'image (comme
-nginx), donc `apt list --installed` le montre partout, alors que l'unite, la
-configuration, le compte `ftp` et `/srv/ftp` n'apparaissent qu'a
-`apt install vsftpd`.
-**Ce qui manque** : un etat de paquets PAR MACHINE (dpkg status) dont
-l'installation pose les fichiers et enregistre les unites du paquet
-(nginx, apache2, bind9, vsftpd, …) aupres du gestionnaire de services de
-CETTE machine ; `apt`, `dpkg -l`, `apt list --installed` et `systemctl`
-liraient alors le meme etat. Le test 18 reste rouge d'ici la.
+### [apt] ce que l'etat de paquets par machine laisse encore ouvert
+`/var/lib/dpkg/status` est desormais l'etat de CHAQUE machine (apt, apt-get,
+dpkg -l, apt list, apt-cache le lisent), et `apt install` pose les unites du
+paquet puis les demarre. Restent :
+- l'unite `named` est livree par l'image de BASE (tous les postes), alors
+  que bind9 n'est installe nulle part tant que `apt install bind9` n'a pas
+  pose `/etc/bind/named.conf` : `systemctl start named` marche donc sans
+  paquet. Une vingtaine de tests demarrent `named` sans `apt install` ;
+  retirer l'unite de l'image demande de les faire installer d'abord ;
+- deux versions de nginx : le catalogue dit `1.18.0-6ubuntu14.4` (jammy),
+  `NGINX_VERSION` (http/nginx/NginxFiles.ts) dit `1.24.0`, que `nginx -v`
+  affiche ; un seul des deux doit rester ;
+- `apt install` ne demande pas root (un vrai apt refuse : « Could not open
+  lock file /var/lib/dpkg/lock-frontend ») ; l'exiger touche tous les
+  tests qui installent sans `sudo` ;
+- aucune archive n'est modelisee : les lignes de telechargement (« Need to
+  get », « Get: », « Fetched ») ne sont pas imprimees, et un paquet ne pose
+  que ses unites, ses fichiers de configuration connus et ses comptes.
 
 ### [bind9] le jeu de configuration du paquet n'est pose qu'en partie
 `apt install bind9` pose `named.conf`, `named.conf.options` et

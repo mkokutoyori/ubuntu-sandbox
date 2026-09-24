@@ -226,8 +226,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
 
     it('18. DNAT / VIP : Un client WAN interroge Nginx hébergé sur le LAN via IP publique', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
-      // Le PC devient le serveur web, le serveur distant devient le client WAN
-      await taper(pc as unknown as Cli, ['systemctl start nginx']);
+      await taper(pc as unknown as Cli, ['apt install -y nginx']);
       await taper(fw, [
         'config firewall vip',
         'edit "VIP_WEB"',

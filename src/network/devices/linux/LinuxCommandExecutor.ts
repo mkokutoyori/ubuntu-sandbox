@@ -93,13 +93,6 @@ import {
 import { FSTAB_PATH, renderFstab } from './fs/FstabFile';
 import { SysfsTree } from './Sysfs';
 import { cmdNetstat, cmdWget } from './LinuxNetCommands';
-import { PACKAGE_DB, findPackage } from './packages/PackageDatabase';
-
-function dpkgMatch(pattern: string, name: string): boolean {
-  const rx = new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '.*').replace(/\?/g, '.')}$`);
-  return rx.test(name);
-}
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import { publishWireSegment } from './network/WireCaptureBus';
 import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
@@ -193,7 +186,6 @@ import type { GetentResult } from './nss/GetentCommand';
 import type { NssHostEntry, NssServiceEntry } from './nss/types';
 import { IPAddress } from '../../core/types';
 import { openDescriptors, descriptorCount, type DescriptorSources } from './process/FileDescriptorTable';
-import { VSFTPD_CONF_PATH, VSFTPD_UPSTREAM_SAMPLE_CONF } from './ftp/LinuxVsftpdService';
 
 /** Commands that commonly read from stdin when piped. */
 const STDIN_COMMANDS = new Set([
@@ -5442,70 +5434,6 @@ export class LinuxCommandExecutor {
       }
 
       // ── Miscellaneous common commands ────────────────────────────────
-      case 'apt':
-      case 'apt-get': {
-        const sub = args[0] || '';
-        if (sub === 'update') return { output: 'Hit:1 http://archive.ubuntu.com/ubuntu jammy InRelease\nReading package lists... Done', exitCode: 0 };
-        if (sub === 'install' || sub === 'remove' || sub === 'purge') {
-          const noms = args.slice(1).filter(a => !a.startsWith('-'));
-          const entete = ['Reading package lists... Done', 'Building dependency tree... Done'];
-          if (noms.length === 0) {
-            return { output: [...entete, '0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.'].join('\n'), exitCode: 0 };
-          }
-          const inconnus = noms.filter((n) => !findPackage(n));
-          if (inconnus.length > 0) {
-            return {
-              output: [...entete,
-                ...inconnus.map((n) => `E: Unable to locate package ${n}`)].join('\n'),
-              exitCode: 100,
-            };
-          }
-          if (noms.includes('bind9')) this.provisionBind9Defaults();
-          if (sub === 'install' && noms.includes('bind9')) this.startBind9();
-          if (sub === 'install' && noms.includes('vsftpd')) this.provisionVsftpd();
-          const lignes = noms.map((n) => {
-            const p = findPackage(n)!;
-            return sub === 'install'
-              ? `${n} is already the newest version (${p.version}).`
-              : `Package '${n}' is not installed, so not removed`;
-          });
-          return {
-            output: [...entete, ...lignes,
-              '0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.'].join('\n'),
-            exitCode: 0,
-          };
-        }
-        if (sub === 'upgrade') return { output: 'Reading package lists... Done\nBuilding dependency tree... Done\nCalculating upgrade... Done\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.', exitCode: 0 };
-        if (sub === 'list' && args.includes('--installed')) {
-          const lignes = PACKAGE_DB.filter((p) => p.installed)
-            .map((p) => `${p.name}/jammy,now ${p.version} ${p.arch} [installed]`);
-          return { output: ['Listing... Done', ...lignes].join('\n'), exitCode: 0 };
-        }
-        return { output: `Usage: ${cmd} [update|install|upgrade|remove|list]`, exitCode: 0 };
-      }
-      case 'dpkg': {
-        if (args[0] === '-l' || args[0] === '--list') {
-          const entetes = [
-            'Desired=Unknown/Install/Remove/Purge/Hold',
-            '| Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend',
-            '||/ Name                Version          Architecture Description',
-            '+++-===================-================-============-================================',
-          ];
-          const motifs = args.slice(1).filter((a) => !a.startsWith('-'));
-          const retenus = PACKAGE_DB.filter((p) => p.installed)
-            .filter((p) => motifs.length === 0 || motifs.some((m) => dpkgMatch(m, p.name)));
-          if (motifs.length > 0 && retenus.length === 0) {
-            return {
-              output: motifs.map((m) => `dpkg-query: no packages found matching ${m}`).join('\n'),
-              exitCode: 1,
-            };
-          }
-          const lignes = retenus.map((p) =>
-            `ii  ${p.name.padEnd(19)} ${p.version.padEnd(16)} ${p.arch.padEnd(12)} ${p.summary}`);
-          return { output: [...entetes, ...lignes].join('\n'), exitCode: 0 };
-        }
-        return { output: 'dpkg: need an action option\nUse dpkg --help for help.', exitCode: 1 };
-      }
       case 'mkfs.ext4':
       case 'mkfs.xfs':
       case 'mkfs.btrfs':
@@ -7813,65 +7741,6 @@ export class LinuxCommandExecutor {
    * that writes named.conf.options/named.conf.local can validate/start
    * bind9 without also having to author the top-level include file itself.
    */
-  private provisionVsftpd(): void {
-    if (!this.userMgr.getUser('ftp')) {
-      this.userMgr.useradd('ftp', { r: true, M: true, d: '/srv/ftp', s: '/usr/sbin/nologin' });
-    }
-    const ftp = this.userMgr.getUser('ftp');
-    if (!this.vfs.exists('/srv/ftp')) this.vfs.mkdirp('/srv/ftp', 0o755, 0, ftp?.gid ?? 0);
-    if (this.vfs.readFile(VSFTPD_CONF_PATH) == null) {
-      this.vfs.writeFile(VSFTPD_CONF_PATH, VSFTPD_UPSTREAM_SAMPLE_CONF, 0, 0, 0o022);
-    }
-    const unitPath = '/lib/systemd/system/vsftpd.service';
-    if (this.vfs.readFile(unitPath) == null) {
-      this.vfs.writeFile(unitPath, [
-        '[Unit]',
-        'Description=vsftpd FTP server',
-        'After=network.target',
-        '',
-        '[Service]',
-        'Type=simple',
-        `ExecStart=/usr/sbin/vsftpd ${VSFTPD_CONF_PATH}`,
-        'ExecReload=/bin/kill -HUP $MAINPID',
-        '',
-        '[Install]',
-        'WantedBy=multi-user.target',
-        '',
-      ].join('\n'), 0, 0, 0o022);
-    }
-    this.serviceMgr.daemonReload();
-    this.serviceMgr.enable('vsftpd');
-    this.serviceMgr.start('vsftpd');
-  }
-
-  private provisionBind9Defaults(): void {
-    if (!this.vfs.exists('/etc/bind')) this.vfs.mkdirp('/etc/bind', 0o755, 0, 0);
-    if (!this.vfs.exists('/var/cache/bind')) this.vfs.mkdirp('/var/cache/bind', 0o775, 0, 0);
-    const defaults: ReadonlyArray<readonly [string, string]> = [
-      ['/etc/bind/named.conf',
-        'include "/etc/bind/named.conf.options";\n' +
-        'include "/etc/bind/named.conf.local";\n'],
-      ['/etc/bind/named.conf.options',
-        'options {\n' +
-        '\tdirectory "/var/cache/bind";\n' +
-        '\n' +
-        '\tdnssec-validation auto;\n' +
-        '\n' +
-        '\tlisten-on-v6 { any; };\n' +
-        '};\n'],
-      ['/etc/bind/named.conf.local', ''],
-    ];
-    for (const [path, content] of defaults) {
-      if (this.vfs.readFile(path) == null) this.vfs.writeFile(path, content, 0, 0, 0o022);
-    }
-  }
-
-  private startBind9(): void {
-    this.serviceMgr.daemonReload();
-    this.serviceMgr.enable('named');
-    this.serviceMgr.start('named');
-  }
-
   /** `file` — classify from the REAL inode/content, never canned. */
   private describeFile(target: string): string {
     const abs = this.vfs.normalizePath(target, this.cwd);
