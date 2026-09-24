@@ -164,15 +164,16 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       const { pc, fw, dmzSrv, wanSrv } = await creerLaboAvance();
       await taper(dmzSrv as unknown as Cli, ['systemctl start sshd']);
       await taper(wanSrv as unknown as Cli, ['systemctl start sshd']);
-      await grantKeyAccess(pc as unknown as Cli, dmzSrv as unknown as Cli, 'root');
-      await grantKeyAccess(pc as unknown as Cli, wanSrv as unknown as Cli, 'root');
+      await grantKeyAccess(pc as unknown as Cli, dmzSrv as unknown as Cli);
+      await grantKeyAccess(pc as unknown as Cli, wanSrv as unknown as Cli);
+      await taper(wanSrv as unknown as Cli, ['hostnamectl set-hostname SRV-WAN']);
       await taper(fw, [
         'config firewall policy',
         'edit 15', 'set srcintf "port1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set service "SSH"', 'next',
         'edit 16', 'set srcintf "dmz"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set service "SSH"', 'next',
         'end',
       ]);
-      const jump = await pc.executeCommand('ssh -J root@10.0.0.5 root@203.0.113.9 "hostname"');
+      const jump = await pc.executeCommand('ssh -J user@10.0.0.5 user@203.0.113.9 "hostname"');
       expect(jump).toContain('SRV-WAN');
     });
   });

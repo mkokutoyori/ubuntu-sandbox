@@ -67,9 +67,10 @@ export class SilentSshInteractionHandler implements ISshInteractionHandler {
    * pas d'ecran ou l'ecrire, mais il en a besoin pour sa transcription.
    */
   readonly notices: string[] = [];
+  readonly warnings: string[] = [];
 
   constructor(
-    private readonly password: string = '',
+    private readonly password: string | (() => string) = '',
     private readonly autoAccept: boolean = true,
   ) {}
 
@@ -78,15 +79,15 @@ export class SilentSshInteractionHandler implements ISshInteractionHandler {
   }
 
   async promptPassword(): Promise<string> {
-    return this.password;
+    return typeof this.password === 'function' ? this.password() : this.password;
   }
 
   canPromptAgain(): boolean {
     return false;
   }
 
-  showWarning(_message: string): void {
-    /* silent */
+  showWarning(message: string): void {
+    if (message.trim().length > 0) this.warnings.push(message);
   }
 
   showInfo(message: string): void {

@@ -37,6 +37,7 @@ import type { CrossVendorSshHost } from '../../../protocols/ssh/server/CrossVend
 import { SshConnectionRequest } from '../../../protocols/ssh/server/SshConnectionRequest';
 import { SshdServerConfig } from '../../../protocols/ssh/server/SshdServerConfig';
 import { parseAuthorizedKeysLine, type AuthorizedKey } from '../../../protocols/ssh/SshPureUtils';
+import { parseProxyJumpSpec, type ProxyHop } from '@/terminal/sessions/sshArgs';
 
 /** The four-tuple of a TCP handshake the SSH client performed. */
 export interface SshConnectionTuple {
@@ -629,6 +630,43 @@ export function wireExecTarget(
   };
 }
 
+export interface ProxyJumpRequest {
+  readonly hops: readonly ProxyHop[];
+  readonly remaining: string[];
+}
+
+export function proxyJumpRequest(args: readonly string[]): ProxyJumpRequest | null {
+  const remaining: string[] = [];
+  let spec: string | null = null;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (!arg.startsWith('-') || arg === '-') {
+      remaining.push(...args.slice(i));
+      break;
+    }
+    if (arg === '-J' && i + 1 < args.length) {
+      spec = args[++i];
+      continue;
+    }
+    if (arg.startsWith('-J') && arg.length > 2) {
+      spec = arg.slice(2);
+      continue;
+    }
+    const option = arg === '-o' ? args[i + 1] : arg.startsWith('-o') ? arg.slice(2) : null;
+    const proxyJump = option === null || option === undefined ? null : /^ProxyJump\s*[=\s]\s*(.+)$/i.exec(option.trim());
+    if (proxyJump) {
+      spec = proxyJump[1];
+      if (arg === '-o') i++;
+      continue;
+    }
+    remaining.push(arg);
+    if (SSH_VALUE_FLAGS.has(arg.slice(1)) && arg.length === 2 && i + 1 < args.length) remaining.push(args[++i]);
+  }
+  if (spec === null || spec.toLowerCase() === 'none') return null;
+  const hops = parseProxyJumpSpec(spec);
+  return hops.length > 0 ? { hops, remaining } : null;
+}
+
 function clientPort(args: string[]): number {
   const i = args.indexOf('-p');
   if (i >= 0 && args[i + 1]) {
@@ -672,7 +710,9 @@ function setupPortForwards(
   const policy = eff?.allowTcpForwarding
     ?? (remoteExec ? readRemoteSshdDirective(remoteExec, 'AllowTcpForwarding') : null);
   const keyBansForwarding = matchedKey?.options?.noPortForwarding === true;
-  const permitOpenList = remoteExec ? readPermitOpenList(remoteExec) : ['any'];
+  const permitOpen = remoteExec
+    ? SshdServerConfig.parse(remoteExec.vfs.readFile('/etc/ssh/sshd_config') ?? '')
+    : null;
   const permits = (f: SshPortForward): boolean => {
     if (keyBansForwarding) return false;
     if (policy === 'no') return false;
@@ -682,7 +722,7 @@ function setupPortForwards(
   };
   const destAllowed = (f: SshPortForward): boolean => {
     if (f.kind !== 'local' || !f.destHost || f.destPort === null) return true;
-    return matchPermitOpen(permitOpenList, f.destHost, f.destPort);
+    return permitOpen === null || permitOpen.permitOpenAllows(f.destHost, f.destPort);
   };
 
   const remoteForwarding = (machine as unknown as {
@@ -721,31 +761,6 @@ function setupPortForwards(
     }
   }
   return diagnostics;
-}
-
-function readPermitOpenList(exec: RemoteExecLike): string[] {
-  const raw = exec.vfs.readFile('/etc/ssh/sshd_config') ?? '';
-  const out: string[] = [];
-  for (const line of raw.split('\n')) {
-    const m = /^\s*PermitOpen\s+(.+?)\s*$/i.exec(line);
-    if (m) out.push(...m[1].split(/\s+/).filter(Boolean));
-  }
-  return out.length > 0 ? out : ['any'];
-}
-
-function matchPermitOpen(list: readonly string[], destHost: string, destPort: number): boolean {
-  if (list.includes('any')) return true;
-  if (list.includes('none')) return false;
-  for (const entry of list) {
-    const colon = entry.lastIndexOf(':');
-    if (colon < 0) continue;
-    const host = entry.slice(0, colon);
-    const port = entry.slice(colon + 1);
-    const portOk = port === '*' || port === String(destPort);
-    const hostOk = host === '*' || host === destHost;
-    if (portOk && hostOk) return true;
-  }
-  return false;
 }
 
 function rebindToLoopback(fwd: SshPortForward): SshPortForward {

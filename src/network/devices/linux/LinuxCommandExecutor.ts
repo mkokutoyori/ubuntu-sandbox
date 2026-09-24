@@ -160,8 +160,7 @@ import { SftpCommandScript } from '../../protocols/ssh/sftp/SftpCommandScript';
 import type { ISftpFileSystem } from '../../protocols/ssh/sftp/ISftpFileSystem';
 import { WireSftpFileSystem } from '../../protocols/ssh/sftp/WireSftpFileSystem';
 import { SshSession } from '../../protocols/ssh/session/SshSession';
-import { SilentSshInteractionHandler } from '../../protocols/ssh/session/ISshInteractionHandler';
-import { SshConnectOptionsBuilder } from '../../protocols/ssh/SshConnectOptions';
+import { connectWireSsh, type StrictHostKeyChecking, type WireSshClient } from './network/WireSshConnector';
 import { isOk } from '../../protocols/ssh/Result';
 import type { TcpConnector } from '@/network/tcp/types';
 import {
@@ -1610,40 +1609,28 @@ export class LinuxCommandExecutor {
 
   private async connectWireSsh(
     host: string, user: string, password: string | undefined,
-    port = 22, identities: string[] = [], strict: 'yes' | 'no' | 'accept-new' = 'accept-new',
+    port = 22, identities: string[] = [], strict: StrictHostKeyChecking = 'accept-new',
   ): Promise<{ session: SshSession | null; authRefused: boolean; notices: string[] }> {
     if (!this.tcpConnector) return { session: null, authRefused: false, notices: [] };
     const connector = this.tcpConnector;
-    const interaction = new SilentSshInteractionHandler(password ?? '', strict !== 'yes');
-    const session = new SshSession({
-      tcpConnector: ((h, p) => connector(h, p)) as unknown as TcpConnector,
+    const outcome = await connectWireSsh(
+      this.wireSshClient(), { host, user, port, password, identities, strict },
+      ((h, p) => connector(h, p)) as unknown as TcpConnector);
+    return {
+      session: outcome.session,
+      authRefused: outcome.failure?.kind === 'AUTH_FAILED',
+      notices: [...outcome.notices],
+    };
+  }
+
+  wireSshClient(): WireSshClient {
+    return {
       vfs: this.vfs as never,
-      localUser: this.userMgr.currentUser,
-      localUid: this.userMgr.currentUid,
-      localGid: this.userMgr.currentGid,
-      knownHostsPath: `${this.sshHomeDir()}/.ssh/known_hosts`,
-      credentialless: password === undefined,
-      interactionHandler: interaction,
-    });
-    const builder = SshConnectOptionsBuilder.create()
-      .host(host).user(user).port(port).strictHostKeyChecking(strict);
-    for (const path of identities) builder.addIdentityFile(path);
-    if (identities.length === 0) {
-      for (const candidate of ['id_ed25519', 'id_rsa', 'id_ecdsa']) {
-        const path = `${this.sshHomeDir()}/.ssh/${candidate}`;
-        if (this.vfs.readFile(path) !== null) builder.addIdentityFile(path);
-      }
-    }
-    const result = await session.connect(builder.build());
-    if (!isOk(result)) {
-      session.disconnect();
-      return {
-        session: null,
-        authRefused: result.error.kind === 'AUTH_FAILED',
-        notices: interaction.notices,
-      };
-    }
-    return { session, authRefused: false, notices: interaction.notices };
+      user: this.userMgr.currentUser,
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+      home: this.sshHomeDir(),
+    };
   }
 
   private async tryOpenWireSftpFs(
@@ -1896,15 +1883,17 @@ export class LinuxCommandExecutor {
         resolveInode: (p: string) => this.vfs.resolveInode(p),
         mkdirp: (p: string, perm: number, uid: number, gid: number) => this.vfs.mkdirp(p, perm, uid, gid),
       },
-      resolveName: (name: string): string | null => {
-        if (IPAddress.isValid(name)) return null;
-        const r = this.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, 2));
-        if (r.status === 'SUCCESS' && r.entry) {
-          for (const h of r.entry) if (h.addressFamily === 2) return h.address;
-        }
-        return null;
-      },
+      resolveName: (name: string): string | null =>
+        IPAddress.isValid(name) ? null : this.resolveHostIpv4(name),
     };
+  }
+
+  resolveHostIpv4(name: string): string | null {
+    const r = this.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, 2));
+    if (r.status === 'SUCCESS' && r.entry) {
+      for (const h of r.entry) if (h.addressFamily === 2) return h.address;
+    }
+    return null;
   }
 
   /**

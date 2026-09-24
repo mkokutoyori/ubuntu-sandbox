@@ -1,7 +1,7 @@
 import { IPAddress, IPv6Address } from '../core/types';
 import type { PortNumber } from '../core/ports/PortNumber';
 import type { TcpSocket, TcpStack } from './TcpStack';
-import type { TcpDialFailure } from './types';
+import { isDialFailure, type TcpDialFailure, type TcpStream } from './types';
 
 export type DialAddress = IPAddress | IPv6Address;
 
@@ -38,4 +38,24 @@ function dialFailureOf(socket: { connectRefused?: boolean }): TcpDialFailure {
   // rend comme tel. Seul le scanner, qui interroge `connectOutcome`,
   // distingue « rien n'ecoute » de « quelque chose l'interdit ».
   return { dialFailed: socket.connectRefused ? 'refused' : 'timeout' };
+}
+
+export function socketStream(socket: TcpSocket): TcpStream {
+  return {
+    localIp: socket.localIp,
+    localPort: socket.localPort,
+    remoteIp: socket.remoteIp,
+    remotePort: socket.remotePort,
+    write: (data) => socket.write(data),
+    close: () => socket.close(),
+    onData: (handler) => socket.onData((data) => handler(String(data))),
+    onClose: (handler) => socket.onClose((reason) => handler(reason)),
+  };
+}
+
+export async function dialStream(
+  stack: TcpStack, destination: DialAddress, port: PortNumber,
+): Promise<TcpStream | TcpDialFailure> {
+  const dialed = await dialTcp(stack, destination, port);
+  return isDialFailure(dialed) ? dialed : socketStream(dialed);
 }

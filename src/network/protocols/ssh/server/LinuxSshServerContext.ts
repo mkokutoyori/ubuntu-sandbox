@@ -36,6 +36,11 @@ import {
 } from './SshServerEvent';
 import { SshSyslogger } from '../logging/SshSyslogger';
 import { SshdServerConfig } from './SshdServerConfig';
+import type { DirectTcpipOutcome, DirectTcpipRequest } from './ISshServerContext';
+import { parseAuthorizedKeysLine } from '../SshPureUtils';
+import { parseDialAddress, socketStream } from '@/network/tcp/dial';
+import { isDialFailure } from '@/network/tcp/types';
+import { PortNumber } from '@/network/core/ports/PortNumber';
 import { LinuxUtmpProjection } from '../logging/LinuxUtmpProjection';
 import { SshAuthThrottler } from '../security/SshAuthThrottler';
 import { Fail2banAgent } from '../security/Fail2banAgent';
@@ -161,6 +166,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   readonly rawConfig: string;
   private cachedEffective: SshdServerConfig | null = null;
   private readonly device: unknown;
+  private readonly rootLoginOverride: boolean | undefined;
 
   constructor(
     private readonly vfs: VirtualFileSystem,
@@ -190,6 +196,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     this.auth = this.buildAuthContext();
     this.events = opts.bus ?? new SshServerEventBus();
     this.device = opts.device ?? null;
+    this.rootLoginOverride = config.permitRootLogin;
 
     // Reactive subsystems: each one is independent and only needs the bus.
     this.syslogger = (opts.enableSyslog ?? true)
@@ -331,6 +338,41 @@ export class LinuxSshServerContext implements ISshServerContext {
   effectiveSshdServerConfig(): SshdServerConfig {
     if (!this.cachedEffective) this.cachedEffective = SshdServerConfig.parse(this.rawConfig);
     return this.cachedEffective;
+  }
+
+  async openDirectTcpip(request: DirectTcpipRequest): Promise<DirectTcpipOutcome> {
+    const groups = this.userManager.getUserGroups(request.user.username).map((g) => g.name);
+    const policy = this.effectiveSshdServerConfig();
+    const permitted = policy.permitsLocalForward(
+      { user: request.user.username, groups, address: request.clientIp },
+      request.host, request.port,
+    );
+    if (!permitted || this.keyForbidsForwarding(request.user.homeDirectory, request.publicKey)) {
+      return { kind: 'prohibited' };
+    }
+    if (!(this.device instanceof LinuxMachine)) return { kind: 'prohibited' };
+    const address = parseDialAddress(request.host)
+      ?? parseDialAddress(this.executor?.resolveHostIpv4(request.host) ?? '');
+    if (!address) return { kind: 'connect-failed', reason: 'Name or service not known' };
+    if (!PortNumber.isValid(request.port)) return { kind: 'connect-failed', reason: 'Invalid argument' };
+    const dialed = await this.device.tcpDial(address, PortNumber.of(request.port));
+    if (!isDialFailure(dialed)) return { kind: 'open', stream: socketStream(dialed) };
+    const reasons = { refused: 'Connection refused', timeout: 'Connection timed out', unreachable: 'No route to host' };
+    return { kind: 'connect-failed', reason: reasons[dialed.dialFailed] };
+  }
+
+  private keyForbidsForwarding(home: string, publicKey: string | null): boolean {
+    if (publicKey === null) return false;
+    const content = this.vfs.readFile(AUTHORIZED_KEYS_PATH(home)) ?? '';
+    return content.split('\n')
+      .map((line) => parseAuthorizedKeysLine(line))
+      .some((key) => key !== null && key.material === publicKey && key.options?.noPortForwarding === true);
+  }
+
+  rootMayLogIn(method: 'password' | 'publickey'): boolean {
+    if (this.rootLoginOverride !== undefined) return this.rootLoginOverride;
+    const policy = this.effectiveSshdServerConfig().effectiveFor({ user: 'root' }).permitRootLogin;
+    return policy === 'yes' || (policy === 'prohibit-password' && method === 'publickey');
   }
 
   /** Banner text shown before authentication (SSH-07-R8). */
@@ -719,12 +761,12 @@ export class LinuxSshServerContext implements ISshServerContext {
     return {
       checkPassword: (user, password) => {
         attemptsLeft = Math.max(0, attemptsLeft - 1);
-        if (!this.userAllowed(user)) return false;
+        if (!this.userAllowed(user, 'password')) return false;
         if (!this.config.passwordAuthentication) return false;
         return this.userManager.checkPassword(user, password);
       },
       checkPublicKey: (user, publicKey) => {
-        if (!this.userAllowed(user)) return false;
+        if (!this.userAllowed(user, 'publickey')) return false;
         if (!this.config.pubkeyAuthentication) return false;
         const userEntry = this.userManager.getUser(user);
         if (!userEntry) return false;
@@ -758,8 +800,8 @@ export class LinuxSshServerContext implements ISshServerContext {
    *   4. AllowGroups — when set, at least one group must match.
    *   5. PermitRootLogin — root is gated last.
    */
-  private userAllowed(user: string): boolean {
-    if (user === 'root' && !this.config.permitRootLogin) return false;
+  private userAllowed(user: string, method: 'password' | 'publickey'): boolean {
+    if (user === 'root' && !this.rootMayLogIn(method)) return false;
 
     const { allowUsers, denyUsers, allowGroups, denyGroups } = this.sshdConfig;
     if (denyUsers.some((p) => matchesUserPattern(p, user))) return false;

@@ -153,6 +153,8 @@ export class SshServerHandler {
     const channels = new Map<number, OpenChannelInfo>();
     const sftpWireSessions = new Map<number, SftpWireSession>();
     let userCtx: SshUserContext | null = null;
+    let authenticatedKey: string | null = null;
+    let forwarded: TcpConnection | null = null;
     let logoutRecorded = false;
     const recordLogoutOnce = (user: string): void => {
       if (logoutRecorded) return;
@@ -229,6 +231,8 @@ export class SshServerHandler {
     };
 
     conn.onClose?.((reason) => {
+      forwarded?.close();
+      forwarded = null;
       if (userCtx) recordLogoutOnce(userCtx.username);
       timers.clearAll();
       idleTimer = null;
@@ -339,6 +343,7 @@ export class SshServerHandler {
             if (result.ok) {
               conn.write(JSON.stringify({ ok: true }));
               userCtx = result.userCtx;
+              authenticatedKey = parsed.method === 'publickey' ? (parsed.publicKey as string) : null;
               this.ctx.recordLogin(result.userCtx.username, clientIp);
               timers.clear(graceTimer);
               graceTimer = null;
@@ -412,6 +417,44 @@ export class SshServerHandler {
           info?.shell?.dispose?.();
           channels.delete(channelId);
           sftpWireSessions.delete(channelId);
+          break;
+        }
+
+        case 'direct_tcpip': {
+          const host = String(parsed.host ?? '');
+          const port = Number(parsed.port);
+          if (!userCtx || forwarded !== null || !this.ctx.openDirectTcpip) {
+            conn.write(JSON.stringify({ op: 'direct_tcpip_reply', ok: false, reason: 'administratively prohibited: open failed' }));
+            return;
+          }
+          void this.ctx.openDirectTcpip({ user: userCtx, clientIp, publicKey: authenticatedKey, host, port })
+            .then((outcome) => {
+              if (outcome.kind !== 'open') {
+                const reason = outcome.kind === 'prohibited'
+                  ? 'administratively prohibited: open failed'
+                  : `connect failed: ${outcome.reason}`;
+                conn.write(JSON.stringify({ op: 'direct_tcpip_reply', ok: false, reason }));
+                return;
+              }
+              forwarded = outcome.stream;
+              outcome.stream.onData((data) => conn.write(JSON.stringify({ op: 'tcpip_data', data })));
+              outcome.stream.onClose?.(() => {
+                forwarded = null;
+                conn.write(JSON.stringify({ op: 'tcpip_eof' }));
+              });
+              conn.write(JSON.stringify({ op: 'direct_tcpip_reply', ok: true }));
+            });
+          break;
+        }
+
+        case 'tcpip_data': {
+          forwarded?.write(String(parsed.data ?? ''));
+          break;
+        }
+
+        case 'tcpip_eof': {
+          forwarded?.close();
+          forwarded = null;
           break;
         }
 
@@ -766,7 +809,9 @@ export class SshServerHandler {
     }
 
     // Root-login policy is a separate reason from a generic auth failure.
-    if (user === 'root' && !this.ctx.config.permitRootLogin) {
+    const rootMethod = method === 'publickey' ? 'publickey' : 'password';
+    const rootAllowed = this.ctx.rootMayLogIn?.(rootMethod) ?? this.ctx.config.permitRootLogin;
+    if (user === 'root' && !rootAllowed) {
       this.eventBus.emit({
         kind: 'auth_failure',
         port: this.ctx.clientPort?.(clientIp),

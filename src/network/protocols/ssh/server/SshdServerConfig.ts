@@ -481,6 +481,26 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     return view;
   }
 
+  permitOpenAllows(destHost: string, destPort: number): boolean {
+    if (this.permitOpen.includes('any')) return true;
+    if (this.permitOpen.includes('none')) return false;
+    return this.permitOpen.some((entry) => {
+      const colon = entry.lastIndexOf(':');
+      if (colon < 0) return false;
+      const host = entry.slice(0, colon);
+      const port = entry.slice(colon + 1);
+      return (host === '*' || host === destHost) && (port === '*' || port === String(destPort));
+    });
+  }
+
+  permitsLocalForward(
+    ctx: { user: string; groups?: readonly string[]; host?: string; address?: string },
+    destHost: string, destPort: number,
+  ): boolean {
+    const allowed = this.effectiveFor(ctx).allowTcpForwarding;
+    return allowed !== 'no' && allowed !== 'remote' && this.permitOpenAllows(destHost, destPort);
+  }
+
   private matchApplies(criteria: readonly SshdMatchCriterion[], ctx: { user: string; groups?: readonly string[]; host?: string; address?: string; localPort?: number }): boolean {
     for (const c of criteria) {
       switch (c.keyword) {

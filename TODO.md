@@ -354,6 +354,33 @@ touche les tests qui l'attendent sous sa forme actuelle.
 Le meme texte sert au canal de donnees FTP (`curl ftp://`) quand il ne
 s'ouvre pas.
 
+### [ssh] deux modeles de `sshd_config`, et l'image ecrit `PermitRootLogin no`
+`SshSshdConfig` (booleens) et `SshdServerConfig` (valeurs OpenSSH, blocs
+`Match`) lisent le meme fichier. Le premier ecrit le fichier de l'image :
+`PermitRootLogin ${booleen ? 'yes' : 'no'}`, donc `no`, la ou Ubuntu laisse
+la ligne commentee et compile `prohibit-password`. Depuis le lot `ssh -J`,
+la decision de connexion de root sur le fil (handler et contexte) lit la
+valeur exacte via `rootMayLogIn` ; les autres drapeaux du serveur filaire
+viennent encore du modele booleen. Fermer le doublon demande de migrer
+les lecteurs de `SshSshdConfig` (une vingtaine de fichiers de test
+nomment `PermitRootLogin`) ; changer le defaut de l'image les touche tous.
+
+### [systemd] `sshd.service` n'est pas un alias de `ssh.service`
+Sur un `LinuxServer`, `systemctl stop sshd` repond « Unit sshd.service not
+found » et laisse le port 22 ouvert ; seul `ssh` agit. Ubuntu declare
+`Alias=sshd.service` dans `ssh.service`. Les batteries tapent
+`systemctl start sshd`, sans effet visible parce que `ssh` tourne deja.
+
+### [ssh] le serveur filaire ignore les options de `authorized_keys`
+`checkPublicKey` compare le DEUXIEME champ de chaque ligne a la cle
+offerte : une ligne avec options (`no-port-forwarding ssh-ed25519 ...`,
+`from=...`, `command=...`) n'authentifie donc jamais sur le fil. C'est
+ferme par accident (ces options ne sont pas evaluees, et la ligne est
+refusee), mais une cle legitime avec options est rejetee. Le canal
+`direct-tcpip` lit deja `no-port-forwarding` pour la cle authentifiee ;
+reste a evaluer `from=`, `command=` et les autres avant d'accepter la
+ligne.
+
 ### [iam] /etc/shadow stocke le mot de passe EN CLAIR derriere un faux prefixe SHA-512
 `echo user:Secret123 | chpasswd` ecrit `user:$6$simulated$Secret123:…` :
 le champ a la forme d'un hash crypt(3) SHA-512 (`$6$sel$…`) mais porte le
