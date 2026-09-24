@@ -5461,6 +5461,7 @@ export class LinuxCommandExecutor {
             };
           }
           if (noms.includes('bind9')) this.provisionBind9Defaults();
+          if (sub === 'install' && noms.includes('bind9')) this.startBind9();
           if (sub === 'install' && noms.includes('vsftpd')) this.provisionVsftpd();
           const lignes = noms.map((n) => {
             const p = findPackage(n)!;
@@ -7863,6 +7864,12 @@ export class LinuxCommandExecutor {
     for (const [path, content] of defaults) {
       if (this.vfs.readFile(path) == null) this.vfs.writeFile(path, content, 0, 0, 0o022);
     }
+  }
+
+  private startBind9(): void {
+    this.serviceMgr.daemonReload();
+    this.serviceMgr.enable('named');
+    this.serviceMgr.start('named');
   }
 
   /** `file` — classify from the REAL inode/content, never canned. */

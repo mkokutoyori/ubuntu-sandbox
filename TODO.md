@@ -435,11 +435,6 @@ consulte. A reprendre quand la source est joignable.
 le drapeau `ra` pose ; le `allow-recursion` par defaut de BIND vaut
 `localnets; localhost;`, et un refus de recursion ne devrait pas annoncer
 `ra`.
-**Second ecart mesure** : sur un `LinuxServer`, `apt install -y bind9` seul
-laisse le port 53 sans ecoute (`ss -lunp` ne montre que
-`systemd-resolved` sur 127.0.0.53) et `dig @127.0.0.1` expire ; il faut un
-`systemctl restart named` apres avoir pose une zone pour que `named`
-reponde.
 
 ### [sleep] `sleep` ne laisse pas passer le temps
 `sleep N` analyse sa duree et rend la main aussitot : sous l'horloge
