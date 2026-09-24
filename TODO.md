@@ -420,21 +420,21 @@ depuis un LinuxPC.
 colonnes est partage par tout le moteur SQL*Plus et merite sa propre
 mesure.
 
-### [fortigate] pas d'assistant de session FTP (`system session-helper`)
-Une politique limitee au service `FTP` (TCP/21) laisse passer le canal de
-controle mais pas le canal de donnees : un `PASV`/`EPSV` annonce un port
-dynamique que rien n'ouvre, et le transfert echoue. Un vrai FortiGate livre
-par defaut `config system session-helper` avec une entree `ftp` (protocole
-6, port 21) qui lit `PORT`/`PASV`/`EPRT`/`EPSV` sur le controle et ouvre la
-session de donnees attendue sous la meme politique (NAT compris).
-**Mesure** : batterie FortiGate, test 28 — politique `service "FTP"`, vsftpd
-installe, `curl ftp://203.0.113.9/test.txt` depuis le LAN : controle
-etabli, donnees bloquees.
-**Ce qui existe** : le routeur Cisco a un ALG FTP (router/nat/FtpAlg.ts,
-`NATEngine.openAlgPinhole`) ; le pare-feu n'a aucune table de sessions
-attendues. C'est la prochaine brique a poser.
-
-## Postes Windows
+### [fortigate] l'assistant de session FTP ne couvre que le mode passif sans DNAT
+L'assistant `ftp` (lecture de `227`/`229` sur une session vers le port 21,
+connexion de donnees admise sous la politique parente et rattachee a la
+session de controle) est pose. Il ne couvre pas encore :
+- le mode ACTIF (`PORT`/`EPRT`) : le serveur ouvre la connexion de donnees
+  vers le client, qu'il faudrait attendre dans l'autre sens et, sous SNAT,
+  reecrire l'adresse annoncee ;
+- une session de controle traduite en DESTINATION (VIP) : l'adresse privee
+  annoncee par `227` devrait etre reecrite et le port de donnees traduit ;
+- la table `config system session-helper` en CLI : ses valeurs par defaut
+  (numeros, protocoles, ports de chaque assistant) n'ont pas pu etre
+  consultees depuis cet environnement ; l'assistant ftp est donc toujours
+  actif, comme sur un boitier par defaut, mais ni affiche ni configurable.
+**Mesure** : batterie 1, test 28 (PASV sous politique `service "FTP"`),
+vert ; batterie 2, test 547 (`curl --no-pasv`) non couvert.
 
 ### [ping] les mots de `ping.exe` pour le code 13 restent non attestés
 Depuis le lot « le code ICMP decide de ce que ping ecrit », la moitie

@@ -34,6 +34,8 @@ import { flowKeyFromPacket, reverseFlowKey, type FlowKey } from '../../session/F
 import type { AssembledStream } from '../../inspection/StreamAssembler';
 import type { FirewallSession, SessionTable, SessionTranslation } from '../../session/SessionTable';
 import type { FlowDirection } from '../../session/TcpStateMachine';
+import { ftpExpectedDataFlow } from '../../session/FtpSessionHelper';
+import type { ExpectedFlowTable } from '../../session/ExpectedFlowTable';
 import {
   DEFAULT_TCP_TIMEOUTS, TcpStateMachine,
   type ObservedTcpFlags, type TcpTimeouts,
@@ -64,6 +66,7 @@ export interface VdomServices {
   opmode?: 'nat' | 'transparent';
   dos?: DosPolicyStore;
   dosSensor?: DosSensor;
+  expectedFlows?: ExpectedFlowTable;
 }
 
 export interface HaStandby {
@@ -158,6 +161,7 @@ function acceptsSessionWithoutSyn(context: PacketContext): boolean {
 }
 
 const pendingTranslations = new WeakMap<object, SessionTranslation>();
+const expectedParents = new WeakMap<object, number>();
 
 function deny(
   context: PacketContext, stage: string, reason: VerdictReason, ruleId?: string,
@@ -546,6 +550,31 @@ function translateForSession(
   context.packet = nat.reapply(packet, session.translation, direction);
 }
 
+function observeSessionHelpers(
+  services: FirewallServices, context: PacketContext,
+  session: FirewallSession, direction: FlowDirection, packet: IPv4Packet,
+): void {
+  if (packet.protocol !== IP_PROTO_TCP) return;
+  const tcp = packet.payload as TCPPacket | null | undefined;
+  if (tcp?.type !== 'tcp' || typeof tcp.payload !== 'string') return;
+  const expected = ftpExpectedDataFlow(session, direction, tcp.payload);
+  if (expected) vdom(services, context).expectedFlows?.expect(expected);
+}
+
+function takeExpectedFlow(
+  services: FirewallServices, context: PacketContext, packet: IPv4Packet,
+): { rule: SecurityRule; parentSessionId: number } | undefined {
+  if (!context.isFirstPacket || packet.protocol !== IP_PROTO_TCP) return undefined;
+  const arrived = originalIpv4(context) ?? packet;
+  const tcp = arrived.payload as TCPPacket | null | undefined;
+  if (tcp?.type !== 'tcp') return undefined;
+  const expected = vdom(services, context).expectedFlows?.take(
+    IP_PROTO_TCP, arrived.sourceIP.toString(), arrived.destinationIP.toString(), tcp.destinationPort);
+  if (!expected || vdom(services, context).sessions.byId(expected.parentSessionId) === undefined) return undefined;
+  const rule = vdom(services, context).policy.ordered().find((r) => r.id === expected.policyId);
+  return rule ? { rule, parentSessionId: expected.parentSessionId } : undefined;
+}
+
 function sessionLookupStage(services: FirewallServices): PipelineStage {
   return {
     name: 'session-lookup',
@@ -601,6 +630,7 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
         if (inspected.kind === 'drop') return inspected;
       }
 
+      observeSessionHelpers(services, context, found.session, found.direction, packet);
       translateForSession(services, context, found.session, found.direction);
 
       const expired = transitTtl(services, context, 'session-lookup');
@@ -927,6 +957,16 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
       const packet = ipv4(context);
       if (!packet) return proceed(context, 'policy-lookup', 'not-ipv4');
 
+      const expected = takeExpectedFlow(services, context, packet);
+      if (expected) {
+        context.matchedPolicy = expected.rule;
+        expectedParents.set(context, expected.parentSessionId);
+        context.trace.push({
+          stage: 'policy-lookup', verdict: 'match', matchedRuleId: expected.rule.id,
+        });
+        return Continue();
+      }
+
       const decision = vdom(services, context).evaluator.evaluate(
         vdom(services, context).policy.ordered(),
         {
@@ -987,7 +1027,8 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
       }
 
       const arrived = originalIpv4(context) ?? packet;
-      const session = vdom(services, context).sessions.install(flowKeyFromPacket(arrived), {
+      const parentSessionId = expectedParents.get(context);
+      const installOptions = {
         ingressZone: context.ingressZone ?? '',
         egressZone: context.egressZone ?? '',
         ingressInterface: context.ingressPort,
@@ -998,7 +1039,13 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
         policyId: context.matchedPolicy?.id,
         tcpState: tcpMachines.get(context)?.state,
         replyKey: reverseFlowKey(flowKeyFromPacket(packet)),
-      });
+      };
+      const sessions = vdom(services, context).sessions;
+      const key = flowKeyFromPacket(arrived);
+      const session = parentSessionId === undefined
+        ? sessions.install(key, installOptions)
+        : sessions.installPinhole(key, installOptions, parentSessionId, 'ftp');
+      if (parentSessionId !== undefined) sessions.consumePinhole(session);
       session.tcpMachine = tcpMachines.get(context);
 
       const translation = pendingTranslations.get(context);

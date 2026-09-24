@@ -11,6 +11,7 @@ import { RouteTable } from '../l3/RouteTable';
 import { PolicyRouteTable } from '../l3/PolicyRouteTable';
 import { SessionTtlTable } from '../session/SessionTtlTable';
 import { SessionTable, type FirewallSession, type SessionCloseReason } from '../session/SessionTable';
+import { ExpectedFlowTable } from '../session/ExpectedFlowTable';
 import { PolicyEvaluator } from '../policy/PolicyEvaluator';
 import { DosPolicyStore } from '../dos/DosPolicyStore';
 import { DosSensor } from '../dos/DosSensor';
@@ -57,6 +58,7 @@ export interface VdomContext {
   readonly policyRoutes: PolicyRouteTable;
   readonly sessionTtl: SessionTtlTable;
   readonly sessions: SessionTable;
+  readonly expectedFlows: ExpectedFlowTable;
   readonly evaluator: PolicyEvaluator;
   readonly schedules: ScheduleStore;
   readonly logs: FirewallLogStore;
@@ -209,10 +211,12 @@ export class VdomRegistry {
       isInterfaceUp: (iface) => deps.isInterfaceUp(iface),
     });
 
+    const expectedFlows = new ExpectedFlowTable();
     const sessions = new SessionTable({
       now: deps.now,
       onCreated: () => deps.onSessionCountChanged?.(sessions.count(), true),
       onClosed: (session, reason) => {
+        expectedFlows.forgetChildrenOf(session.id);
         deps.onSessionClosed(name, session, reason);
         deps.onSessionCountChanged?.(sessions.count(), false);
       },
@@ -266,6 +270,7 @@ export class VdomRegistry {
       policyRoutes: new PolicyRouteTable({ now: this.deps.now }),
       sessionTtl: new SessionTtlTable(),
       sessions,
+      expectedFlows,
       evaluator,
       schedules,
       logs: new FirewallLogStore(),
