@@ -3850,6 +3850,10 @@ export abstract class LinuxMachine extends EndHost
       clearDefaultGateway: (): void => {
         this.clearDefaultGateway();
       },
+      addDefaultRouteEntry: (gw: IPAddress, metric: number, mode: 'add' | 'append' | 'replace'): boolean =>
+        this.addDefaultRouteEntry(gw, metric, mode),
+      removeDefaultRouteEntry: (filter: { nextHop?: IPAddress; metric?: number }): boolean =>
+        this.removeDefaultRouteEntry(filter),
       getRoutingTableFor: (tableId: number): HostRouteEntry[] => {
         return this.getRoutingTableFor(tableId);
       },

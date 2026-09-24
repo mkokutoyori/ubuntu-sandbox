@@ -287,9 +287,8 @@ export function buildIpCtx(
         linkdown: r.linkdown,
       }));
     },
-    addDefaultRoute(gateway: IPAddress): string {
-      net.setDefaultGateway(gateway);
-      return '';
+    addDefaultRoute(gateway: IPAddress, metric?: number, mode: 'add' | 'append' | 'replace' = 'add'): string {
+      return net.addDefaultRouteEntry(gateway, metric ?? 0, mode) ? '' : 'RTNETLINK answers: File exists';
     },
     addStaticRoute(
       network: IPAddress,
@@ -335,10 +334,8 @@ export function buildIpCtx(
         return `Error: ${e instanceof Error ? e.message : String(e)}`;
       }
     },
-    deleteDefaultRoute(): string {
-      if (!net.getDefaultGateway()) return 'RTNETLINK answers: No such process';
-      net.clearDefaultGateway();
-      return '';
+    deleteDefaultRoute(filter: { nextHop?: IPAddress; metric?: number } = {}): string {
+      return net.removeDefaultRouteEntry(filter) ? '' : 'RTNETLINK answers: No such process';
     },
     deleteRoute(
       network: IPAddress,
