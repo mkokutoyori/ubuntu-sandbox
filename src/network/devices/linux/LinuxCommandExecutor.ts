@@ -7823,11 +7823,23 @@ export class LinuxCommandExecutor {
    */
   private provisionBind9Defaults(): void {
     if (!this.vfs.exists('/etc/bind')) this.vfs.mkdirp('/etc/bind', 0o755, 0, 0);
-    if (this.vfs.readFile('/etc/bind/named.conf') == null) {
-      this.vfs.writeFile('/etc/bind/named.conf',
+    if (!this.vfs.exists('/var/cache/bind')) this.vfs.mkdirp('/var/cache/bind', 0o775, 0, 0);
+    const defaults: ReadonlyArray<readonly [string, string]> = [
+      ['/etc/bind/named.conf',
         'include "/etc/bind/named.conf.options";\n' +
-        'include "/etc/bind/named.conf.local";\n',
-        0, 0, 0o022);
+        'include "/etc/bind/named.conf.local";\n'],
+      ['/etc/bind/named.conf.options',
+        'options {\n' +
+        '\tdirectory "/var/cache/bind";\n' +
+        '\n' +
+        '\tdnssec-validation auto;\n' +
+        '\n' +
+        '\tlisten-on-v6 { any; };\n' +
+        '};\n'],
+      ['/etc/bind/named.conf.local', ''],
+    ];
+    for (const [path, content] of defaults) {
+      if (this.vfs.readFile(path) == null) this.vfs.writeFile(path, content, 0, 0, 0o022);
     }
   }
 

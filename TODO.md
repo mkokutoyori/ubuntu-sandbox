@@ -370,6 +370,24 @@ l'installation pose les fichiers et enregistre les unites du paquet
 CETTE machine ; `apt`, `dpkg -l`, `apt list --installed` et `systemctl`
 liraient alors le meme etat. Le test 18 reste rouge d'ici la.
 
+### [bind9] le jeu de configuration du paquet n'est pose qu'en partie
+`apt install bind9` pose `named.conf`, `named.conf.options` et
+`named.conf.local`. Le paquet Ubuntu livre aussi `named.conf.default-zones`
+(inclus par `named.conf`, avec l'indice racine et les zones `localhost`,
+`127/0/255.in-addr.arpa`) et leurs fichiers `db.local`, `db.127`, `db.0`,
+`db.255`, `db.empty`, `zones.rfc1918`. `named.conf.options` ne porte que les
+directives certaines (`directory`, `dnssec-validation auto`,
+`listen-on-v6 { any; }`), sans les commentaires du paquet.
+**Pourquoi ce n'est pas ferme** : la source (paquet Ubuntu jammy sur
+launchpad.net, ou Debian sur salsa.debian.org) est refusee par le proxy de
+cet environnement ; CLAUDE.md §8 interdit de reconstituer un texte non
+consulte. A reprendre quand la source est joignable.
+**Ecart voisin mesure** : une requete recursive d'un client du reseau local
+(`dig @10.0.0.2 localhost` depuis 10.0.0.1) recoit `status: REFUSED` avec
+le drapeau `ra` pose ; le `allow-recursion` par defaut de BIND vaut
+`localnets; localhost;`, et un refus de recursion ne devrait pas annoncer
+`ra`.
+
 ## Postes Windows
 
 ### [ping] les mots de `ping.exe` pour le code 13 restent non attestés

@@ -62,6 +62,31 @@ async function creerLaboTraverse(): Promise<LaboTraverse> {
   return { pc, sw, fw, srv };
 }
 
+async function serveLabZone(srv: LinuxServer): Promise<void> {
+  const forward = [
+    '$TTL 3600',
+    '@ IN SOA ns1.lab.lan. admin.lab.lan. ( 1 3600 900 604800 300 )',
+    '@ IN NS ns1.lab.lan.',
+    'ns1 IN A 203.0.113.9',
+    'srv IN A 203.0.113.9',
+    'web IN A 203.0.113.9',
+  ].join('\\n');
+  const reverse = [
+    '$TTL 3600',
+    '@ IN SOA ns1.lab.lan. admin.lab.lan. ( 1 3600 900 604800 300 )',
+    '@ IN NS ns1.lab.lan.',
+    '9 IN PTR srv.lab.lan.',
+  ].join('\\n');
+  await taper(srv as unknown as Cli, [
+    'apt install -y bind9',
+    `printf '${forward}\\n' > /etc/bind/db.lab.lan`,
+    `printf '${reverse}\\n' > /etc/bind/db.203.0.113`,
+    `echo 'zone "lab.lan" { type master; file "/etc/bind/db.lab.lan"; };' >> /etc/bind/named.conf.local`,
+    `echo 'zone "113.0.203.in-addr.arpa" { type master; file "/etc/bind/db.203.0.113"; };' >> /etc/bind/named.conf.local`,
+    'systemctl start named',
+  ]);
+}
+
 async function grantKeyAccess(pc: LinuxPC, srv: LinuxServer): Promise<void> {
   await pc.executeCommand('ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519');
   const publicKey = (await pc.executeCommand('cat ~/.ssh/id_ed25519.pub')).trim();
@@ -504,7 +529,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('41. Requête DNS UDP (port 53) vers BIND9 traversant le pare-feu', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'DNS');
-      await taper(srv as unknown as Cli, ['systemctl start named']);
+      await serveLabZone(srv);
       const res = await pc.executeCommand('dig @203.0.113.9 web.lab.lan +short');
       expect(res).toMatch(/\d+\.\d+\.\d+\.\d+/);
     });
@@ -512,15 +537,15 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('42. Requête DNS inverse (PTR) traversant le pare-feu vers BIND9', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'DNS');
-      await taper(srv as unknown as Cli, ['systemctl start named']);
+      await serveLabZone(srv);
       const res = await pc.executeCommand('dig @203.0.113.9 -x 203.0.113.9 +short');
-      expect(res.length).toBeGreaterThan(0);
+      expect(res.trim()).toBe('srv.lab.lan.');
     });
 
     it('43. Échec de résolution DNS lorsque le trafic UDP 53 est refusé', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'PING'); // Seul le ping passe
-      await taper(srv as unknown as Cli, ['systemctl start named']);
+      await serveLabZone(srv);
       const res = await pc.executeCommand('dig @203.0.113.9 web.lab.lan +time=1 +tries=1');
       expect(res).toMatch(/no servers could be reached|connection timed out/i);
     });
@@ -536,10 +561,8 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('45. Résolution de nom BIND9 suivie immédiatement d\'un appel curl HTTP vers l\'IP résolue', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'ALL');
-      await taper(srv as unknown as Cli, [
-        'systemctl start named',
-        'systemctl start nginx',
-      ]);
+      await serveLabZone(srv);
+      await taper(srv as unknown as Cli, ['systemctl start nginx']);
       const ip = (await pc.executeCommand('dig @203.0.113.9 srv.lab.lan +short')).trim();
       expect(ip).toMatch(/\d+\.\d+\.\d+\.\d+/);
       const httpRes = await pc.executeCommand(`curl -s http://${ip}/`);
