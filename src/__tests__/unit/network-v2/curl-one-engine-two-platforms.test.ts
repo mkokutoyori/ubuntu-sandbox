@@ -120,9 +120,9 @@ describe('les deux plateformes disent la même chose de la même situation', () 
     const fromLinux = await l.linux.executeCommand(`curl ${url()}`);
     const fromWindows = await l.windows.executeCommand(`curl ${url()}`);
 
-    const refusal = `curl: (7) Failed to connect to ${SRV_IP} port ${PORT}: Connection refused`;
-    expect(fromLinux).toContain(refusal);
-    expect(fromWindows).toContain(refusal);
+    const refusal = new RegExp(`curl: \\(7\\) Failed to connect to ${SRV_IP.replace(/\./g, '\\.')} port ${PORT} after \\d+ ms: Couldn't connect to server`);
+    expect(fromLinux).toMatch(refusal);
+    expect(fromWindows).toMatch(refusal);
   });
 
   it('nom introuvable : le même (6) des deux côtés', async () => {

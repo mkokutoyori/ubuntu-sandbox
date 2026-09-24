@@ -100,9 +100,9 @@ describe('vsftpd on Linux, reached by curl ftp://', () => {
   it('a data channel that cannot open is an error, not an empty download', async () => {
     const { srv, pc } = await buildLab();
     await srv.executeCommand('iptables -A INPUT -p tcp --dport 1024:65535 -j DROP');
-    const out = await pc.executeCommand('curl -sS ftp://10.0.0.2/test.txt; echo EC=$?');
-    expect(out).toMatch(/curl: \(7\) Failed to connect to 10\.0\.0\.2 port \d+: Connection refused/);
-    expect(out).toContain('EC=7');
+    const out = await pc.executeCommand('curl -sS --connect-timeout 3 ftp://10.0.0.2/test.txt; echo EC=$?');
+    expect(out).toMatch(/curl: \(28\) Failed to connect to 10\.0\.0\.2 port \d+ after \d+ ms: Timeout was reached/);
+    expect(out).toContain('EC=28');
     expect(out).not.toContain('HELLO_FTP');
   });
 

@@ -118,7 +118,7 @@ describe('TP 8 — publier un serveur et observer le NAT', () => {
     async () => {
       const { pcLan, pcWan } = await laboratoire();
       await pcWan.executeCommand('systemctl start nginx');
-      expect(await pcLan.executeCommand('curl -sS http://192.168.100.50/'))
+      expect(await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.100.50/'))
         .toContain('Welcome to nginx!');
 
       const journal = await pcWan.executeCommand('cat /var/log/nginx/access.log');
@@ -141,7 +141,7 @@ describe('TP 8 — publier un serveur et observer le NAT', () => {
     await vip(fgt);
     propre(await politiqueFausse(fgt));
 
-    expect(await pcWan.executeCommand('curl -sS http://192.168.100.200/'))
+    expect(await pcWan.executeCommand('curl -sS --connect-timeout 3 http://192.168.100.200/'))
       .not.toContain('Welcome to nginx!');
   });
 
@@ -157,7 +157,7 @@ describe('TP 8 — publier un serveur et observer le NAT', () => {
       'next', 'end',
     ]));
 
-    expect(await pcWan.executeCommand('curl -sS http://192.168.100.200/'))
+    expect(await pcWan.executeCommand('curl -sS --connect-timeout 3 http://192.168.100.200/'))
       .toContain('Welcome to nginx!');
   });
 
@@ -169,7 +169,7 @@ describe('TP 8 — publier un serveur et observer le NAT', () => {
       'config firewall policy', 'edit 3',
       'set dstaddr "VIP-Serveur-Web"', 'set nat disable', 'next', 'end',
     ]);
-    await pcWan.executeCommand('curl -sS http://192.168.100.200/');
+    await pcWan.executeCommand('curl -sS --connect-timeout 3 http://192.168.100.200/');
 
     await fgt.executeCommand('diagnose sys session filter dst 192.168.100.200');
     const vue = await fgt.executeCommand('diagnose sys session list');
@@ -186,7 +186,7 @@ describe('TP 8 — publier un serveur et observer le NAT', () => {
       'config firewall policy', 'edit 3',
       'set dstaddr "VIP-Serveur-Web"', 'set nat disable', 'next', 'end',
     ]);
-    await pcWan.executeCommand('curl -sS http://192.168.100.200/');
+    await pcWan.executeCommand('curl -sS --connect-timeout 3 http://192.168.100.200/');
 
     const journal = await srvDmz.executeCommand('cat /var/log/nginx/access.log');
     expect(journal).toContain('192.168.100.50');
@@ -201,7 +201,7 @@ describe('TP 8 — publier un serveur et observer le NAT', () => {
       'config firewall policy', 'edit 3',
       'set dstaddr "VIP-Serveur-Web"', 'set nat enable', 'next', 'end',
     ]);
-    await pcWan.executeCommand('curl -sS http://192.168.100.200/');
+    await pcWan.executeCommand('curl -sS --connect-timeout 3 http://192.168.100.200/');
 
     const journal = await srvDmz.executeCommand('cat /var/log/nginx/access.log');
     expect(journal).toContain('192.168.20.1');
@@ -222,7 +222,7 @@ describe('TP 8 — publier un serveur et observer le NAT', () => {
       'set action accept', 'set nat disable', 'next', 'end',
     ]);
 
-    expect(await pcWan.executeCommand('curl -sS http://192.168.100.200/'))
+    expect(await pcWan.executeCommand('curl -sS --connect-timeout 3 http://192.168.100.200/'))
       .not.toContain('Welcome to nginx!');
   });
 

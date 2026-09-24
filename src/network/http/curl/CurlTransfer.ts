@@ -224,29 +224,54 @@ function resolveLocation(base: CurlUrl, location: string): UrlParse {
   return parseCurlUrl(`${base.scheme}://${authority}${dir}${location}`);
 }
 
-class CurlConnectRefused extends Error {}
-
 export type DialOutcome =
   | { readonly kind: 'open'; readonly socket: TcpSocket }
-  | { readonly kind: 'refused' }
+  | { readonly kind: 'refused'; readonly elapsedMs: number }
+  | { readonly kind: 'kernel-timeout'; readonly elapsedMs: number }
   | { readonly kind: 'timeout'; readonly elapsedMs: number };
+
+const CURL_DEFAULT_CONNECT_TIMEOUT_MS = 300_000;
 
 export async function dial(
   host: CurlHost, address: string, port: number, connectTimeoutMs: number | null,
 ): Promise<DialOutcome> {
   const stack = host.tcpStack();
+  const clock = stack.clock();
+  const startedAt = clock.now();
+  const elapsed = (): number => Math.round(clock.now() - startedAt);
   const socket = stack.connect(address, port);
-  if (!socket) return { kind: 'refused' };
-  if (socket.state === 'established') return { kind: 'open', socket };
-  if (socket.connectRefused || socket.connectProhibited || connectTimeoutMs === null) {
+  if (!socket) return { kind: 'refused', elapsedMs: elapsed() };
+  const settled = await new Promise<'open' | 'closed' | 'deadline'>((resolve) => {
+    if (socket.state === 'established') { resolve('open'); return; }
+    if (socket.closed) { resolve('closed'); return; }
+    const timer = clock.setTimeout(() => { offOpen(); offClose(); resolve('deadline'); },
+      connectTimeoutMs ?? CURL_DEFAULT_CONNECT_TIMEOUT_MS);
+    const offOpen = socket.onOpen(() => { clock.clear(timer); offOpen(); offClose(); resolve('open'); });
+    const offClose = socket.onClose(() => { clock.clear(timer); offOpen(); offClose(); resolve('closed'); });
+  });
+  if (settled === 'open') return { kind: 'open', socket };
+  if (settled === 'deadline') {
     socket.close();
-    return { kind: 'refused' };
+    return { kind: 'timeout', elapsedMs: elapsed() };
   }
-  const startedAt = stack.clock().now();
-  await stack.clock().delay(connectTimeoutMs);
-  if (socket.everEstablished) return { kind: 'open', socket };
-  socket.close();
-  return { kind: 'timeout', elapsedMs: Math.round(stack.clock().now() - startedAt) };
+  return socket.connectRefused || socket.connectProhibited
+    ? { kind: 'refused', elapsedMs: elapsed() }
+    : { kind: 'kernel-timeout', elapsedMs: elapsed() };
+}
+
+export function connectFailure(
+  outcome: Exclude<DialOutcome, { kind: 'open' }>, url: CurlUrl, port: number, remoteIp: string,
+  method: string, numRedirects: number, trace: readonly string[],
+): CurlFailure {
+  if (outcome.kind === 'timeout') {
+    return connectTimeoutFailure(url, outcome.elapsedMs, remoteIp, method, numRedirects, trace);
+  }
+  const code = outcome.kind === 'kernel-timeout' ? 28 : 7;
+  return {
+    ok: false, code,
+    message: `curl: (${code}) Failed to connect to ${url.host} port ${port} after ${outcome.elapsedMs} ms: Couldn't connect to server`,
+    url, remoteIp, method, numRedirects, trace,
+  };
 }
 
 export function connectTimeoutFailure(
@@ -351,22 +376,13 @@ export async function performCurlRequest(
         ? new InsecureCertificateVerifier({ trustAnchors: [] })
         : new CertificateVerifier({ trustAnchors: anchors });
       const porte = await dial(host, address, url.port, opts.connectTimeoutMs);
-      if (porte.kind === 'open') porte.socket.close();
-      const refuse = porte.kind !== 'open';
-      if (porte.kind === 'timeout') {
-        return connectTimeoutFailure(url, porte.elapsedMs, remoteIp, method, redirects, trace);
+      if (porte.kind !== 'open') {
+        return connectFailure(porte, url, url.port, remoteIp, method, redirects, trace);
       }
-      if (refuse) {
-        failure = {
-          ok: false, code: 7,
-          message: `curl: (7) Failed to connect to ${url.host} port ${url.port}: Connection refused`,
-          url, remoteIp, method, numRedirects: redirects, trace,
-        };
-      }
+      porte.socket.close();
 
       let session: HttpsClientSession | null = null;
       try {
-        if (refuse) throw new CurlConnectRefused();
         session = new HttpsClientSession(host.tcpStack(), address, url.port, { verifier });
         const result = await session.sendAsync(request);
         if (!result.ok || !result.response) {
@@ -402,33 +418,22 @@ export async function performCurlRequest(
             response = result.response;
           }
         }
-      } catch (error) {
-        if (!(error instanceof CurlConnectRefused)) {
-          failure = {
-            ok: false, code: 35,
-            message: `curl: (35) OpenSSL SSL_connect: SSL routines::wrong version number in connection to ${url.host}:${url.port}`,
-            url, remoteIp, method, numRedirects: redirects, trace,
-          };
-        }
+      } catch {
+        failure = {
+          ok: false, code: 35,
+          message: `curl: (35) OpenSSL SSL_connect: SSL routines::wrong version number in connection to ${url.host}:${url.port}`,
+          url, remoteIp, method, numRedirects: redirects, trace,
+        };
       } finally {
         session?.close();
       }
     } else {
       const session = new Http1ClientSession(host.tcpStack(), address, url.port);
-      if (opts.connectTimeoutMs !== null) {
-        const porte = await dial(host, address, url.port, opts.connectTimeoutMs);
-        if (porte.kind === 'timeout') {
-          return connectTimeoutFailure(url, porte.elapsedMs, remoteIp, method, redirects, trace);
-        }
-        if (porte.kind === 'refused') {
-          return {
-            ok: false, code: 7,
-            message: `curl: (7) Failed to connect to ${url.host} port ${url.port}: Connection refused`,
-            url, remoteIp, method, numRedirects: redirects, trace,
-          };
-        }
-        session.adopt(porte.socket);
+      const porte = await dial(host, address, url.port, opts.connectTimeoutMs);
+      if (porte.kind !== 'open') {
+        return connectFailure(porte, url, url.port, remoteIp, method, redirects, trace);
       }
+      session.adopt(porte.socket);
       // `sendAsync` et non `send` : un serveur qui doit authentifier par
       // AAA répond après un aller-retour, et le contrat synchrone rendait
       // sa réponse invisible. Un serveur synchrone répond au premier tour,
@@ -437,14 +442,12 @@ export async function performCurlRequest(
       session.close();
       if (!result.ok || !result.response) {
         const empty = result.error === 'Empty reply from server';
-        failure = {
-          ok: false,
-          code: empty ? 52 : 7,
-          message: empty
-            ? 'curl: (52) Empty reply from server'
-            : `curl: (7) Failed to connect to ${url.host} port ${url.port}: Connection refused`,
-          url, remoteIp, method, numRedirects: redirects, trace,
-        };
+        failure = empty
+          ? {
+            ok: false, code: 52, message: 'curl: (52) Empty reply from server',
+            url, remoteIp, method, numRedirects: redirects, trace,
+          }
+          : connectFailure({ kind: 'refused', elapsedMs: 0 }, url, url.port, remoteIp, method, redirects, trace);
       } else {
         trace.push(`* Connected to ${url.host} (${address}) port ${url.port}`);
         response = result.response;

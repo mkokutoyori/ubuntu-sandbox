@@ -823,8 +823,8 @@ describe('9. le pare-feu est une vraie machine du reseau', () => {
       'set allowaccess ping', 'next', 'end',
     ]);
 
-    expect(await pc.executeCommand('curl -k -sS https://192.168.1.1/'))
-      .toMatch(/refused|couldn't connect/i);
+    expect(await pc.executeCommand('curl -k -sS --connect-timeout 3 https://192.168.1.1/'))
+      .toMatch(/refused|couldn't connect|Timeout was reached/i);
   });
 
   it('et le ping passe toujours', async () => {

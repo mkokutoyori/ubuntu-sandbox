@@ -3320,11 +3320,14 @@ user@pc-lan:~$ curl http://192.168.20.10
 On a autorisé `PING` et `HTTP` seulement. Teste autre chose :
 
 ```bash
-user@pc-lan:~$ curl https://192.168.20.10
+user@pc-lan:~$ curl --connect-timeout 3 https://192.168.20.10
+curl: (28) Failed to connect to 192.168.20.10 port 443 after 3000 ms: Timeout was reached
 user@pc-lan:~$ ssh user@192.168.20.10
 ```
 
-Ces deux commandes **échouent** (ou restent bloquées). C'est le résultat attendu : le service n'est pas dans la liste, donc la politique ne s'applique pas, donc `Implicit Deny`.
+Ces deux commandes **échouent**. C'est le résultat attendu : le service n'est pas dans la liste, donc la politique ne s'applique pas, donc `Implicit Deny`.
+
+> 💡 Un pare-feu qui refuse **jette** le paquet sans répondre : `curl` attend. Sans `--connect-timeout`, il attend que le noyau abandonne le SYN (environ une minute) et dit alors `curl: (28) … Couldn't connect to server`. Un `curl: (7) … Couldn't connect to server` immédiat signifierait au contraire qu'un hôte a **répondu** par un RST : la porte existe, mais rien n'écoute derrière.
 
 **Tu viens de vérifier qu'un pare-feu filtre vraiment par service.**
 

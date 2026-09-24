@@ -1,10 +1,9 @@
 import { FtpClientSession } from '@/network/ftp/FtpClientSession';
 import type { FtpReply } from '@/network/ftp/types';
-import { decodeEpsvReplyArgument, decodePortArgument } from '@/network/ftp/DataChannel';
 import type { CurlOptions } from './CurlArgs';
 import type { CurlHost } from './CurlHost';
 import {
-  connectTimeoutFailure, dial, resolvedOverride,
+  connectFailure, dial, resolvedOverride,
   type CurlFailure, type CurlOutcome, type CurlUrl,
 } from './CurlTransfer';
 
@@ -49,11 +48,8 @@ export async function performCurlFtp(
   trace.push(`*   Trying ${address}:${url.port}...`);
 
   const porte = await dial(host, address, url.port, opts.connectTimeoutMs);
-  if (porte.kind === 'timeout') {
-    return connectTimeoutFailure(url, porte.elapsedMs, address, method, 0, trace);
-  }
-  if (porte.kind === 'refused') {
-    return failure(7, `Failed to connect to ${url.host} port ${url.port}: Connection refused`, address);
+  if (porte.kind !== 'open') {
+    return connectFailure(porte, url, url.port, address, method, 0, trace);
   }
   trace.push(`* Connected to ${url.host} (${address}) port ${url.port}`);
 
@@ -86,15 +82,14 @@ export async function performCurlFtp(
     }
   }
 
-  const passive = (): CurlFailure | null => {
-    const extended = client.enterExtendedPassiveMode();
-    const reply = code(extended) === 229 ? extended : client.enterPassiveMode();
-    if (code(reply) !== 229 && code(reply) !== 227) return failure(13, 'Weird PASV reply', address);
-    if (client.dataConnected) return null;
-    const line = reply!.lines[0];
-    const dataPort = code(reply) === 229 ? decodeEpsvReplyArgument(line)
-      : decodePortArgument(/\(([\d,]+)\)/.exec(line)?.[1] ?? '')?.port ?? null;
-    return failure(7, `Failed to connect to ${url.host} port ${dataPort ?? 0}: Connection refused`, address);
+  const passive = async (): Promise<CurlFailure | null> => {
+    const extended = client.requestPassiveEndpoint(true);
+    const endpoint = code(extended.reply) === 229 ? extended : client.requestPassiveEndpoint(false);
+    if (endpoint.address === null || endpoint.port === null) return failure(13, 'Weird PASV reply', address);
+    const data = await dial(host, endpoint.address, endpoint.port, opts.connectTimeoutMs);
+    if (data.kind !== 'open') return connectFailure(data, url, endpoint.port, address, method, 0, trace);
+    client.adoptDataSocket(data.socket);
+    return null;
   };
 
   const success = (body: string, statusCode: number): CurlOutcome => ({
@@ -105,7 +100,7 @@ export async function performCurlFtp(
   if (uploadBody !== null) {
     const target = file || baseName(opts.uploadFile ?? '');
     if (!target) return finish(failure(3, 'Uploading to a URL without a file name', address));
-    const storeChannel = passive();
+    const storeChannel = await passive();
     if (storeChannel) return finish(storeChannel);
     client.sendCommand({ verb: 'TYPE', argument: 'I' });
     const stored = client.storeFile(target, uploadBody);
@@ -116,7 +111,7 @@ export async function performCurlFtp(
   }
 
   if (file === '') {
-    const listChannel = passive();
+    const listChannel = await passive();
     if (listChannel) return finish(listChannel);
     client.sendCommand({ verb: 'TYPE', argument: 'A' });
     const listing = client.list(undefined, 'LIST');
@@ -127,7 +122,7 @@ export async function performCurlFtp(
     return finish(success(text, code(listing.reply)));
   }
 
-  const retrieveChannel = passive();
+  const retrieveChannel = await passive();
   if (retrieveChannel) return finish(retrieveChannel);
   client.sendCommand({ verb: 'TYPE', argument: 'I' });
   if (code(client.sendCommand({ verb: 'SIZE', argument: file })) === 550) {

@@ -32,6 +32,12 @@ import { encodePortArgument, decodePortArgument, encodeEprtArgument, decodeEpsvR
 import { encodeCompressedMode, decodeCompressedMode } from './compressedMode';
 import { startClientHandshake, stepHandshake, encryptText, decryptText, encodeFlight } from './ftps';
 
+export interface PassiveEndpoint {
+  readonly reply: FtpReply | null;
+  readonly address: string | null;
+  readonly port: number | null;
+}
+
 export class FtpClientSession {
   private socket: TcpSocket | null = null;
   private lastReply: FtpReply | null = null;
@@ -153,20 +159,37 @@ export class FtpClientSession {
 
   /** `PASV` — the server listens, and the client connects in immediately. */
   enterPassiveMode(): FtpReply | null {
+    return this.connectPassive(this.requestPassiveEndpoint(false));
+  }
+
+  requestPassiveEndpoint(extended: boolean): PassiveEndpoint {
     this.closeActiveListener();
     this.dataSocket = null;
     this.dataTls = null;
-    const r = this.sendCommand({ verb: 'PASV' });
-    if (r?.code === 227) {
-      const match = /\(([\d,]+)\)/.exec(r.lines[0]);
-      const parsed = match ? decodePortArgument(match[1]) : null;
-      if (parsed) {
-        const socket = this.tcpStack.connect(parsed.address, parsed.port);
-        this.dataSocket = socket && socket.state === 'established' ? socket : null;
-        this.startDataTlsIfProtected();
-      }
+    const reply = this.sendCommand({ verb: extended ? 'EPSV' : 'PASV' });
+    if (extended && reply?.code === 229) {
+      const port = decodeEpsvReplyArgument(reply.lines[0]);
+      return { reply, address: port === null ? null : this.targetIp, port };
     }
-    return r;
+    if (!extended && reply?.code === 227) {
+      const match = /\(([\d,]+)\)/.exec(reply.lines[0]);
+      const parsed = match ? decodePortArgument(match[1]) : null;
+      return { reply, address: parsed?.address ?? null, port: parsed?.port ?? null };
+    }
+    return { reply, address: null, port: null };
+  }
+
+  adoptDataSocket(socket: TcpSocket): void {
+    this.dataSocket = socket;
+    this.startDataTlsIfProtected();
+  }
+
+  private connectPassive(endpoint: PassiveEndpoint): FtpReply | null {
+    if (endpoint.address !== null && endpoint.port !== null) {
+      const socket = this.tcpStack.connect(endpoint.address, endpoint.port);
+      if (socket && socket.state === 'established') this.adoptDataSocket(socket);
+    }
+    return endpoint.reply;
   }
 
   /**
@@ -195,19 +218,7 @@ export class FtpClientSession {
 
   /** `EPSV` (RFC 2428) — like `enterPassiveMode()`, but via the protocol-agnostic extended command. */
   enterExtendedPassiveMode(): FtpReply | null {
-    this.closeActiveListener();
-    this.dataSocket = null;
-    this.dataTls = null;
-    const r = this.sendCommand({ verb: 'EPSV' });
-    if (r?.code === 229) {
-      const port = decodeEpsvReplyArgument(r.lines[0]);
-      if (port !== null) {
-        const socket = this.tcpStack.connect(this.targetIp, port);
-        this.dataSocket = socket && socket.state === 'established' ? socket : null;
-        this.startDataTlsIfProtected();
-      }
-    }
-    return r;
+    return this.connectPassive(this.requestPassiveEndpoint(true));
   }
 
   /** `EPRT` (RFC 2428) — like `enterActiveMode()`, but via the protocol-agnostic extended command; `protocol` is `1` for IPv4, `2` for IPv6. */

@@ -173,7 +173,7 @@ describe('§3 : le serveur SERT, et sert l\'EXEC', () => {
     await config(r, ['no ip http server']);
     expect(r.getTcpStack().listListeners().map((l) => l.localPort)).not.toContain(80);
     expect(String(await pc.executeCommand('curl -sS http://10.0.0.1/level/15/exec/show/clock')))
-      .toContain('Connection refused');
+      .toContain("Couldn't connect to server");
   });
 
   it('`ip http port` DÉPLACE le service, il ne le double pas', async () => {
