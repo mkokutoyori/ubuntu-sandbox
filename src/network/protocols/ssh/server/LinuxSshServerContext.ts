@@ -37,7 +37,10 @@ import {
 import { SshSyslogger } from '../logging/SshSyslogger';
 import { SshdServerConfig } from './SshdServerConfig';
 import type { DirectTcpipOutcome, DirectTcpipRequest } from './ISshServerContext';
-import { parseAuthorizedKeysLine } from '../SshPureUtils';
+import {
+  findAdmittedKey, permitOpenAllows,
+  type AuthorizedKey, type AuthorizedKeyOptions, type KeySource,
+} from '../SshPureUtils';
 import { parseDialAddress, socketStream } from '@/network/tcp/dial';
 import { isDialFailure } from '@/network/tcp/types';
 import { PortNumber } from '@/network/core/ports/PortNumber';
@@ -347,9 +350,11 @@ export class LinuxSshServerContext implements ISshServerContext {
       { user: request.user.username, groups, address: request.clientIp },
       request.host, request.port,
     );
-    if (!permitted || this.keyForbidsForwarding(request.user.homeDirectory, request.publicKey)) {
-      return { kind: 'prohibited' };
-    }
+    const keyOptions = request.keyOptions;
+    const keyRefuses = keyOptions?.noPortForwarding === true
+      || (keyOptions?.permitOpen !== undefined
+        && !permitOpenAllows(keyOptions.permitOpen, request.host, request.port));
+    if (!permitted || keyRefuses) return { kind: 'prohibited' };
     if (!(this.device instanceof LinuxMachine)) return { kind: 'prohibited' };
     const address = parseDialAddress(request.host)
       ?? parseDialAddress(this.executor?.resolveHostIpv4(request.host) ?? '');
@@ -361,12 +366,22 @@ export class LinuxSshServerContext implements ISshServerContext {
     return { kind: 'connect-failed', reason: reasons[dialed.dialFailed] };
   }
 
-  private keyForbidsForwarding(home: string, publicKey: string | null): boolean {
-    if (publicKey === null) return false;
-    const content = this.vfs.readFile(AUTHORIZED_KEYS_PATH(home)) ?? '';
-    return content.split('\n')
-      .map((line) => parseAuthorizedKeysLine(line))
-      .some((key) => key !== null && key.material === publicKey && key.options?.noPortForwarding === true);
+  admittedKey(user: string, publicKey: string, source: KeySource): AuthorizedKey | null {
+    if (!this.userAllowed(user, 'publickey')) return null;
+    if (!this.config.pubkeyAuthentication) return null;
+    const userEntry = this.userManager.getUser(user);
+    if (!userEntry) return null;
+    if (this.sshdConfig.strictModes && this.firstStrictModesViolation(userEntry.uid, userEntry.home) !== null) {
+      return null;
+    }
+    const content = this.vfs.readFile(AUTHORIZED_KEYS_PATH(userEntry.home));
+    return content ? findAdmittedKey(content, publicKey, source) : null;
+  }
+
+  forcedCommand(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): string | null {
+    const groups = this.userManager.getUserGroups(user.username).map((g) => g.name);
+    const view = this.effectiveSshdServerConfig().effectiveFor({ user: user.username, groups, address: clientIp });
+    return view.forceCommand ?? keyOptions?.command ?? null;
   }
 
   rootMayLogIn(method: 'password' | 'publickey'): boolean {
@@ -765,21 +780,7 @@ export class LinuxSshServerContext implements ISshServerContext {
         if (!this.config.passwordAuthentication) return false;
         return this.userManager.checkPassword(user, password);
       },
-      checkPublicKey: (user, publicKey) => {
-        if (!this.userAllowed(user, 'publickey')) return false;
-        if (!this.config.pubkeyAuthentication) return false;
-        const userEntry = this.userManager.getUser(user);
-        if (!userEntry) return false;
-        if (this.sshdConfig.strictModes && this.firstStrictModesViolation(userEntry.uid, userEntry.home) !== null) {
-          return false;
-        }
-        const path = AUTHORIZED_KEYS_PATH(userEntry.home);
-        const content = this.vfs.readFile(path);
-        if (!content) return false;
-        return content
-          .split('\n')
-          .some((line) => line.trim().split(/\s+/)[1] === publicKey);
-      },
+      checkPublicKey: (user, publicKey) => this.admittedKey(user, publicKey, { ip: '' }) !== null,
       acceptsWithoutCredential: () => false,
       getAttemptsRemaining: () => attemptsLeft,
       getAvailableMethods: (): readonly AuthMethodType[] => {

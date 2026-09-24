@@ -36,7 +36,7 @@ import { SshKnownHostsFile } from '../../../protocols/ssh/SshKnownHostsFile';
 import type { CrossVendorSshHost } from '../../../protocols/ssh/server/CrossVendorSshHost';
 import { SshConnectionRequest } from '../../../protocols/ssh/server/SshConnectionRequest';
 import { SshdServerConfig } from '../../../protocols/ssh/server/SshdServerConfig';
-import { parseAuthorizedKeysLine, type AuthorizedKey } from '../../../protocols/ssh/SshPureUtils';
+import { authorizedKeyAdmits, parseAuthorizedKeysLine, type AuthorizedKey } from '../../../protocols/ssh/SshPureUtils';
 import { parseProxyJumpSpec, type ProxyHop } from '@/terminal/sessions/sshArgs';
 
 /** The four-tuple of a TCP handshake the SSH client performed. */
@@ -315,22 +315,6 @@ function remoteAcceptsKey(exec: RemoteExecLike, remoteUser: string, identity: st
  * `from="patternList"` option. Comma-separated; entries prefixed with `!`
  * are negations; `*` and `?` glob; literal IPs match exactly.
  */
-function sourceMatchesFromPattern(sourceIp: string, sourceHost: string, pattern: string): boolean {
-  let allowed = false;
-  for (const raw of pattern.split(',')) {
-    const p = raw.trim();
-    if (!p) continue;
-    const negate = p.startsWith('!');
-    const body = negate ? p.slice(1) : p;
-    const re = new RegExp('^' + body.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
-    if (re.test(sourceIp) || re.test(sourceHost)) {
-      if (negate) return false;
-      allowed = true;
-    }
-  }
-  return allowed;
-}
-
 /**
  * Return the parsed authorized_keys entry that matches the offered
  * identity, so callers can apply per-key options (`command="..."`,
@@ -438,7 +422,7 @@ function resolveSshAuthMethod(
     if (identity) {
       const matchedKey = findMatchedAuthorizedKey(exec, remoteUser, identity, onStrictModesRefusal);
       if (matchedKey) {
-        if (matchedKey.options?.from && !sourceMatchesFromPattern(opts.sourceIp, opts.sourceHostname, matchedKey.options.from)) {
+        if (!authorizedKeyAdmits(matchedKey, { ip: opts.sourceIp, host: opts.sourceHostname })) {
           // fall through to password
         } else {
           return { method: 'publickey', clientMethods, matchedKey };

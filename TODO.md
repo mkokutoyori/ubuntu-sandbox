@@ -365,16 +365,6 @@ viennent encore du modele booleen. Fermer le doublon demande de migrer
 les lecteurs de `SshSshdConfig` (une vingtaine de fichiers de test
 nomment `PermitRootLogin`) ; changer le defaut de l'image les touche tous.
 
-### [ssh] le serveur filaire ignore les options de `authorized_keys`
-`checkPublicKey` compare le DEUXIEME champ de chaque ligne a la cle
-offerte : une ligne avec options (`no-port-forwarding ssh-ed25519 ...`,
-`from=...`, `command=...`) n'authentifie donc jamais sur le fil. C'est
-ferme par accident (ces options ne sont pas evaluees, et la ligne est
-refusee), mais une cle legitime avec options est rejetee. Le canal
-`direct-tcpip` lit deja `no-port-forwarding` pour la cle authentifiee ;
-reste a evaluer `from=`, `command=` et les autres avant d'accepter la
-ligne.
-
 ### [iam] /etc/shadow stocke le mot de passe EN CLAIR derriere un faux prefixe SHA-512
 `echo user:Secret123 | chpasswd` ecrit `user:$6$simulated$Secret123:…` :
 le champ a la forme d'un hash crypt(3) SHA-512 (`$6$sel$…`) mais porte le

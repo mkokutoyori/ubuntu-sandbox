@@ -15,6 +15,7 @@ import type { SshUserContext } from '../SshUserContext';
 import type { ISshServerEventBus } from './SshServerEvent';
 import type { SshInteractiveShell } from './SshInteractiveShell';
 import type { TcpStream } from '@/network/tcp/types';
+import type { AuthorizedKey, AuthorizedKeyOptions, KeySource } from '../SshPureUtils';
 export type { SshUserContext };
 
 export interface SshServerConfig {
@@ -191,12 +192,14 @@ export interface ISshServerContext {
   getBanner?(): string | null;
   openDirectTcpip?(request: DirectTcpipRequest): Promise<DirectTcpipOutcome>;
   rootMayLogIn?(method: 'password' | 'publickey'): boolean;
+  admittedKey?(user: string, publicKey: string, source: KeySource): AuthorizedKey | null;
+  forcedCommand?(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): string | null;
 }
 
 export interface DirectTcpipRequest {
   readonly user: SshUserContext;
   readonly clientIp: string;
-  readonly publicKey: string | null;
+  readonly keyOptions: AuthorizedKeyOptions | null;
   readonly host: string;
   readonly port: number;
 }
