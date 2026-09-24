@@ -1,4 +1,5 @@
 import type { ConsoleSettingsPatch } from '../../../mgmt/ConsoleSettings';
+import type { SessionHelperEntry } from '../../../session/SessionHelperTable';
 import type { ConfigSaveMode } from '../../../config/ConfigSaveMode';
 import type { ConserveThresholds } from '../../../health/SystemLoad';
 import type { LdbMonitorType } from '../../../health/LdbMonitor';
@@ -376,6 +377,8 @@ export interface FortiCommitDevice {
   applySessionTtlDefault(seconds: number): void;
   applySessionTtlPort(entry: FortiSessionTtlPort): void;
   removeSessionTtlPort(id: string): void;
+  applySessionHelper(entry: SessionHelperEntry): void;
+  removeSessionHelper(id: number): void;
   applyDnsZone(zone: FortiDnsZonePatch): void;
   removeDnsZone(name: string): void;
   resolveFqdnNow(fqdn: string): void;

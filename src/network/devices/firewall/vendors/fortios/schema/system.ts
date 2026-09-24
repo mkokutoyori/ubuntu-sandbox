@@ -4,6 +4,7 @@ import {
   type LldpSetting,
   type LldpVdomSetting,
 } from './types';
+import { FORTIOS_SESSION_HELPER_NAMES } from '../sessionHelpers';
 import {
   MANAGEMENT_SERVICES, type ManagementService,
 } from '../../../mgmt/ManagementAccess';
@@ -1094,6 +1095,39 @@ function sessionTtlSeconds(value: string): number | null {
   return seconds >= SESSION_TTL_MIN_SEC && seconds <= SESSION_TTL_MAX_SEC ? seconds : null;
 }
 
+export const SYSTEM_SESSION_HELPER: FortiTableSpec = {
+  path: ['system', 'session-helper'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: false,
+  scope: 'global',
+  accessGroup: 'sysgrp',
+  renderOrder: 79,
+  help: 'Configure session helper.',
+  attributes: [
+    {
+      name: 'id', help: 'Session helper ID.', quoted: false, readOnly: true,
+      parts: [{ name: 'id', type: 'INT', description: 'Session helper ID.', range: [0, 4294967295] }],
+    },
+    choice('name', 'Helper name.',
+      FORTIOS_SESSION_HELPER_NAMES.map(keyword => ({ keyword, description: `${keyword} session helper.` })),
+      'ftp'),
+    count('protocol', 'Protocol number.', 0, 255, 0),
+    count('port', 'Protocol port.', 0, 65535, 0),
+  ],
+  onCommit(object, context) {
+    context.device.applySessionHelper({
+      id: Number(object.key),
+      name: object.effective('name')[0] ?? 'ftp',
+      protocol: Number(object.effective('protocol')[0] ?? '0'),
+      port: Number(object.effective('port')[0] ?? '0'),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeSessionHelper(Number(key));
+  },
+};
+
 export const SYSTEM_SESSION_TTL: FortiTableSpec = {
   path: ['system', 'session-ttl'],
   kind: 'object',
@@ -1190,4 +1224,5 @@ export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_DHCP6_SERVER,
   SYSTEM_NTP,
   SYSTEM_SESSION_TTL,
+  SYSTEM_SESSION_HELPER,
 ]);

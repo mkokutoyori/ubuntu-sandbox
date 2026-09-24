@@ -239,6 +239,12 @@ export function buildCommitDevice(
       removeSessionTtlPort(id) {
         fw.getSessionTtl().removePort(id);
       },
+      applySessionHelper(entry) {
+        fw.getSessionHelpers().upsert(entry);
+      },
+      removeSessionHelper(id) {
+        fw.getSessionHelpers().remove(id);
+      },
       applyLdbMonitor(monitor) {
         fw.getLdbMonitors().set(monitor);
       },

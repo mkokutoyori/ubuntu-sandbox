@@ -1,3 +1,4 @@
+import type { SessionHelperEntry } from './session/SessionHelperTable';
 import type { AddressObject } from './model/AddressObject';
 import type { ServiceObject } from './model/ServiceObject';
 import type { FirewallSyslogCatalog } from './logging/SyslogCatalog';
@@ -75,6 +76,7 @@ export interface FirewallProfile {
   readonly predefinedServices?: readonly ServiceObject[];
 
   readonly timeouts: SessionTimeoutProfile;
+  readonly sessionHelpers?: readonly SessionHelperEntry[];
   readonly tcpSynCheckDefault: boolean;
 
   readonly deploymentScope: DeploymentScope;

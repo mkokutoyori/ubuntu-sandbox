@@ -94,6 +94,7 @@ export interface FirewallServices {
   macLookup?: (destination: MACAddress, ingress: string) => string | undefined;
   defaultTimeoutSec?: number;
   sessionTimeouts?: SessionTimeoutProfile;
+  sessionHelperFor?: (protocol: number, port: number) => string | undefined;
   discardTimeoutSec?: number;
   refusesNewSessions?: () => boolean;
   proxyInspectionPosture?: () => 'normal' | 'bypass' | 'block';
@@ -567,6 +568,7 @@ function observeSessionHelpers(
   if (packet.protocol !== IP_PROTO_TCP) return;
   const tcp = packet.payload as TCPPacket | null | undefined;
   if (tcp?.type !== 'tcp' || typeof tcp.payload !== 'string') return;
+  if (services.sessionHelperFor?.(session.c2s.protocol, session.c2s.destPort) !== 'ftp') return;
   const expected = ftpExpectedDataFlow(session, direction, tcp.payload);
   if (expected) vdom(services, context).expectedFlows?.expect(expected);
 }

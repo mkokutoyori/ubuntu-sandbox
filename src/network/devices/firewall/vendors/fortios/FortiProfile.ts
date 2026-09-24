@@ -1,3 +1,4 @@
+import { FORTIOS_DEFAULT_SESSION_HELPERS } from './sessionHelpers';
 import { PREDEFINED_ADDRESSES, PREDEFINED_SERVICES } from './schema/predefined';
 import type { RuleAction } from '../../model/SecurityRule';
 import type { ZoneType } from '../../model/SecurityZone';
@@ -106,6 +107,7 @@ export const FORTIOS_PROFILE: FirewallProfile = Object.freeze({
     icmp: 60,
     other: 180,
   }),
+  sessionHelpers: FORTIOS_DEFAULT_SESSION_HELPERS,
   tcpSynCheckDefault: true,
 
   deploymentScope: 'device',

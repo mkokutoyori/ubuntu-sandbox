@@ -4,15 +4,13 @@ import type { ExpectedFlow } from './ExpectedFlowTable';
 import type { FirewallSession } from './SessionTable';
 import type { FlowDirection } from './TcpStateMachine';
 
-export const FTP_HELPER_PORT = 21;
-
 const PASV_REPLY = /^227 [^(]*\(([\d,]+)\)/m;
 const EPSV_REPLY = /^229 .*$/m;
 
 export function ftpExpectedDataFlow(
   session: FirewallSession, direction: FlowDirection, payload: string,
 ): ExpectedFlow | null {
-  if (session.c2s.protocol !== IP_PROTO_TCP || session.c2s.destPort !== FTP_HELPER_PORT) return null;
+  if (session.c2s.protocol !== IP_PROTO_TCP) return null;
   if (direction !== 's2c') return null;
   const translation = session.translation;
   if (translation && translation.translatedDest !== translation.originalDest) return null;

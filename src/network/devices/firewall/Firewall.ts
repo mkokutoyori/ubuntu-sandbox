@@ -41,6 +41,7 @@ import {
 } from './l3/IngressInterfaceOptions';
 import { isIPv4Fragment } from '../../core/Ipv4Fragmentation';
 import { SystemClock, schedulerWallClock } from '../../core/SystemClock';
+import { SessionHelperTable, type SessionHelperEntry } from './session/SessionHelperTable';
 import { SystemLoad, type MemoryWorkload } from './health/SystemLoad';
 import { conserveLogDraft } from './health/ConserveEvent';
 import { vdomFootprint, cacheFootprint } from './health/MemoryFootprint';
@@ -234,6 +235,10 @@ const DEFAULT_INTERFACE_MTU = 1500;
 
 export type RebootReason = 'power cycle' | 'warm reboot';
 
+const GENERIC_SESSION_HELPERS: readonly SessionHelperEntry[] = Object.freeze([
+  { id: 1, name: 'ftp', protocol: 6, port: 21 },
+]);
+
 export class Firewall extends Equipment {
   private readonly logDisk = new LogDisk();
   private readonly savedConfig = new SavedConfiguration();
@@ -252,6 +257,7 @@ export class Firewall extends Equipment {
   private readonly bridges = new Map<string, BridgeFdb>();
   private readonly fragments = new FragmentReassembly();
   private readonly sessionTimers: { -readonly [K in keyof SessionTimeoutProfile]: number };
+  private readonly sessionHelpers: SessionHelperTable;
   private ingressOptions: IngressInterfaceOptionsReader =
     () => INGRESS_INTERFACE_DEFAULTS;
 
@@ -482,6 +488,7 @@ export class Firewall extends Equipment {
     });
 
     this.sessionTimers = { ...profile.timeouts };
+    this.sessionHelpers = new SessionHelperTable(profile.sessionHelpers ?? GENERIC_SESSION_HELPERS);
     this.services = {
       interfaces: this.interfaces,
       vdomOf: (iface) => vdomServices(this.vdoms.contextOfInterface(iface)),
@@ -489,6 +496,7 @@ export class Firewall extends Equipment {
       ha: () => ({ forwardsTransit: () => this.forwardsTransit() }),
       policyKeyedBy: profile.policyKeyedBy,
       sessionTimeouts: this.sessionTimers,
+      sessionHelperFor: (protocol, port) => this.sessionHelpers.helperFor(protocol, port),
       refusesNewSessions: () => this.load.refusesNewSessions(),
       proxyInspectionPosture: () => this.load.proxyInspectionPosture(),
       flowInspectionPosture: () => this.load.flowInspectionPosture(),
@@ -1241,6 +1249,8 @@ export class Firewall extends Equipment {
   }
 
   now(): number { return this.services.now(); }
+
+  getSessionHelpers(): SessionHelperTable { return this.sessionHelpers; }
 
   setSessionTimers(timers: Partial<SessionTimeoutProfile>): void {
     Object.assign(this.sessionTimers, timers);

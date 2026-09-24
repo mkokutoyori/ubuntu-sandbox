@@ -126,16 +126,17 @@ help.fortinet.com sont refuses par le proxy de cet environnement. Le
 simulateur ecrit `never` dans les deux champs ; c'est un choix, pas une
 transcription.
 
-### [fortios] `config system session-helper` n'existe pas
-La table qui dit quel assistant ecoute sur quel port est absente :
-`show system session-helper` repond `unknown configuration path`, et
-l'assistant FTP est cable en dur sur TCP/21. Le schema Ansible de Fortinet
-(joignable) donne la forme d'une entree (`id`, `name` parmi ftp, tftp,
-ras, h323, tns, mms, sip, pptp, rtsp, dns-udp, dns-tcp, pmap, rsh, dcerpc,
-mgcp, gtp-c, gtp-u, gtp-b, pfcp, `protocol`, `port`) mais PAS la liste
-livree par defaut, ni ses identifiants. La reconstituer de memoire serait
-contraire a CLAUDE.md §8. Seul `ftp` est implemente ; une table livree
-doit, de plus, REFUSER un nom dont l'assistant n'existe pas (§6).
+### [fortios] seul l'assistant de session `ftp` agit
+`config system session-helper` porte la table d'usine de FortiOS (vingt
+entrees, source : un `show full-configuration` FortiOS 5.04 publie dans
+Azure/Azure-vpn-config-samples) et c'est elle qui dit ou l'assistant FTP
+ecoute. Les dix-neuf autres noms (pptp, h323, ras, tns, tftp, rtsp, mms,
+pmap, sip, dns-udp, rsh, dcerpc, mgcp, ...) sont acceptes et affiches
+comme sur un vrai boitier, mais n'ouvrent aucune connexion attendue : un
+flux TNS redirige, un canal TFTP de donnees ou une session SIP media
+restent soumis a la politique comme n'importe quel flux. C'est le cote
+sur (un assistant ELARGIT ce qui passe), mais une maquette qui compte sur
+eux echouera.
 
 ## Pile TCP/IP
 
