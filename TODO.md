@@ -365,12 +365,6 @@ viennent encore du modele booleen. Fermer le doublon demande de migrer
 les lecteurs de `SshSshdConfig` (une vingtaine de fichiers de test
 nomment `PermitRootLogin`) ; changer le defaut de l'image les touche tous.
 
-### [systemd] `sshd.service` n'est pas un alias de `ssh.service`
-Sur un `LinuxServer`, `systemctl stop sshd` repond « Unit sshd.service not
-found » et laisse le port 22 ouvert ; seul `ssh` agit. Ubuntu declare
-`Alias=sshd.service` dans `ssh.service`. Les batteries tapent
-`systemctl start sshd`, sans effet visible parce que `ssh` tourne deja.
-
 ### [ssh] le serveur filaire ignore les options de `authorized_keys`
 `checkPublicKey` compare le DEUXIEME champ de chaque ligne a la cle
 offerte : une ligne avec options (`no-port-forwarding ssh-ed25519 ...`,
