@@ -5886,7 +5886,7 @@ Depuis le PC du LAN :
 
 ```bash
 user@pc-lan:~$ curl -m 10 http://neverssl.com
-curl: (28) Connection timed out
+curl: (28) Failed to connect to neverssl.com port 80 after 10000 ms: Timeout was reached
 ```
 
 **La navigation est morte.** Pourtant tu n'as rien bloqué en sortie : c'est le **retour** qui ne passe plus.

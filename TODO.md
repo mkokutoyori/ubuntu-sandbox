@@ -336,6 +336,21 @@ n'evalue. C'est un chantier par knob, pas un correctif de commande.
 
 ---
 
+### [curl] `-m` ne borne que la connexion : un serveur muet repond (52) au lieu de (28)
+`Http1ClientSession.sendAsync` attend la reponse pendant un nombre fixe
+de tours de micro-taches, sans horloge. Une fois la connexion ouverte, le
+transfert ne consomme donc aucun temps virtuel : `curl -m 5` vers un
+serveur qui accepte la connexion puis se tait repond aussitot
+`curl: (52) Empty reply from server`, la ou curl 8.5.0 (`lib/multi.c`,
+`multi_handle_timeout`) attendrait 5 s puis dirait `curl: (28) Operation
+timed out after 5000 milliseconds with 0 bytes received`.
+**Mesure** : `nc -l -p 8080` sur le serveur, `curl -m 5
+http://10.0.0.2:8080/` depuis le client.
+**Pourquoi ce n'est pas ferme** : borner le transfert demande que le
+client HTTP attende sur l'horloge de la pile au lieu de compter des tours
+de micro-taches, ce qui touche tous les lecteurs de `sendAsync` (IOS avec
+AAA, nginx, Apache, IIS). `-m` borne deja la connexion, HTTP, HTTPS et FTP.
+
 ### [ssh] deux modeles de `sshd_config` coexistent encore
 `SshSshdConfig` (celui du contexte serveur, de Windows et de la
 validation `sshd -t`) et `SshdServerConfig` (valeurs OpenSSH, blocs

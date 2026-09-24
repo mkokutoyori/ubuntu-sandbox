@@ -4,7 +4,7 @@ import type { CurlOptions } from './CurlArgs';
 import type { CurlHost } from './CurlHost';
 import {
   connectFailure, dial, resolvedOverride,
-  type CurlFailure, type CurlOutcome, type CurlUrl,
+  type ConnectBudget, type CurlFailure, type CurlOutcome, type CurlUrl,
 } from './CurlTransfer';
 
 const DEFAULT_USER = 'anonymous';
@@ -34,7 +34,7 @@ function baseName(localPath: string): string {
 }
 
 export async function performCurlFtp(
-  host: CurlHost, url: CurlUrl, opts: CurlOptions, uploadBody: string | null,
+  host: CurlHost, url: CurlUrl, opts: CurlOptions, uploadBody: string | null, budget: ConnectBudget,
 ): Promise<CurlOutcome> {
   const trace: string[] = [];
   const method = uploadBody !== null ? 'STOR' : 'RETR';
@@ -47,7 +47,7 @@ export async function performCurlFtp(
   if (!address) return failure(6, `Could not resolve host: ${url.host}`);
   trace.push(`*   Trying ${address}:${url.port}...`);
 
-  const porte = await dial(host, address, url.port, opts.connectTimeoutMs);
+  const porte = await dial(host, address, url.port, budget);
   if (porte.kind !== 'open') {
     return connectFailure(porte, url, url.port, address, method, 0, trace);
   }
@@ -86,7 +86,7 @@ export async function performCurlFtp(
     const extended = client.requestPassiveEndpoint(true);
     const endpoint = code(extended.reply) === 229 ? extended : client.requestPassiveEndpoint(false);
     if (endpoint.address === null || endpoint.port === null) return failure(13, 'Weird PASV reply', address);
-    const data = await dial(host, endpoint.address, endpoint.port, opts.connectTimeoutMs);
+    const data = await dial(host, endpoint.address, endpoint.port, budget);
     if (data.kind !== 'open') return connectFailure(data, url, endpoint.port, address, method, 0, trace);
     client.adoptDataSocket(data.socket);
     return null;

@@ -43,6 +43,7 @@ export interface CurlOptions {
   /** `--retry-all-errors` : réessayer même ce que curl juge définitif. */
   retryAllErrors: boolean;
   connectTimeoutMs: number | null;
+  maxTimeMs: number | null;
   urls: string[];
 }
 
@@ -63,7 +64,7 @@ export const LITTERAL = '\u0000';
 
 const SHORT_NO_ARG = 'IksSvfLOiV';
 
-const SHORT_WITH_ARG = 'owXdHuAbceDTF';
+const SHORT_WITH_ARG = 'owXdHuAbceDTFm';
 
 const LONG_NO_ARG: Record<string, string> = {
   head: 'I',
@@ -103,13 +104,14 @@ const LONG_WITH_ARG: Record<string, string> = {
   'form-string': 'form-string',
   retry: 'retry',
   'connect-timeout': 'connect-timeout',
+  'max-time': 'm',
 };
 
 const UNSUPPORTED_SHORT: Record<string, true> = {
   // `b` et `c` ont quitté cette liste : ils ouvrent la porte du bocal
   // à témoins (`http/cookies/`), un moteur RFC 6265 complet qui
   // n'avait aucun appelant.
-  x: true, C: true, m: true, '#': true,
+  x: true, C: true, '#': true,
   E: true, y: true, Y: true, z: true, R: true, j: true, N: true, g: true,
   K: true, r: true, P: true, Q: true, p: true, U: true,
 };
@@ -122,7 +124,7 @@ const UNSUPPORTED_LONG: Record<string, true> = {
   // `--version` a quitté la liste des INCONNUES : curl la connaît, et
   // répondre « is unknown » à l'option la plus tapée de toutes était le
   // seul message de ce fichier qui mentait.
-  key: true, capath: true, interface: true, 'max-time': true,
+  key: true, capath: true, interface: true,
   compressed: true, 'anyauth': true, ntlm: true,
   negotiate: true, digest: true, 'proxy-user': true, socks5: true, socks4: true,
   'tlsv1.2': true, 'tlsv1.3': true, 'ciphers': true, 'keepalive-time': true,
@@ -163,6 +165,7 @@ function defaults(): CurlOptions {
     retry: 0,
     retryAllErrors: false,
     connectTimeoutMs: null,
+    maxTimeMs: null,
     urls: [],
   };
 }
@@ -261,6 +264,14 @@ function applyValued(
         return usageFailure(`curl: option ${spelling}: expected a proper numerical parameter`);
       }
       opts.connectTimeoutMs = seconds === 0 ? null : Math.round(seconds * 1000);
+      break;
+    }
+    case 'm': {
+      const seconds = Number(value);
+      if (value.trim() === '' || !Number.isFinite(seconds) || seconds < 0) {
+        return usageFailure(`curl: option ${spelling}: expected a proper numerical parameter`);
+      }
+      opts.maxTimeMs = seconds === 0 ? null : Math.round(seconds * 1000);
       break;
     }
     case 'max-redirs': {

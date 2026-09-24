@@ -232,20 +232,41 @@ export type DialOutcome =
 
 const CURL_DEFAULT_CONNECT_TIMEOUT_MS = 300_000;
 
+export interface ConnectBudget {
+  readonly connectTimeoutMs: number | null;
+  readonly maxTimeMs: number | null;
+  readonly operationStartedAt: number;
+}
+
+export function startOperation(host: CurlHost, opts: CurlOptions): ConnectBudget {
+  return {
+    connectTimeoutMs: opts.connectTimeoutMs,
+    maxTimeMs: opts.maxTimeMs,
+    operationStartedAt: host.tcpStack().clock().now(),
+  };
+}
+
+function connectLimitMs(budget: ConnectBudget, now: number): number {
+  const connectLimit = budget.connectTimeoutMs ?? CURL_DEFAULT_CONNECT_TIMEOUT_MS;
+  if (budget.maxTimeMs === null) return connectLimit;
+  const operationLeft = budget.maxTimeMs - (now - budget.operationStartedAt);
+  return Math.max(0, Math.min(connectLimit, operationLeft));
+}
+
 export async function dial(
-  host: CurlHost, address: string, port: number, connectTimeoutMs: number | null,
+  host: CurlHost, address: string, port: number, budget: ConnectBudget,
 ): Promise<DialOutcome> {
   const stack = host.tcpStack();
   const clock = stack.clock();
   const startedAt = clock.now();
+  const limitMs = connectLimitMs(budget, startedAt);
   const elapsed = (): number => Math.round(clock.now() - startedAt);
   const socket = stack.connect(address, port);
   if (!socket) return { kind: 'refused', elapsedMs: elapsed() };
   const settled = await new Promise<'open' | 'closed' | 'deadline'>((resolve) => {
     if (socket.state === 'established') { resolve('open'); return; }
     if (socket.closed) { resolve('closed'); return; }
-    const timer = clock.setTimeout(() => { offOpen(); offClose(); resolve('deadline'); },
-      connectTimeoutMs ?? CURL_DEFAULT_CONNECT_TIMEOUT_MS);
+    const timer = clock.setTimeout(() => { offOpen(); offClose(); resolve('deadline'); }, limitMs);
     const offOpen = socket.onOpen(() => { clock.clear(timer); offOpen(); offClose(); resolve('open'); });
     const offClose = socket.onClose(() => { clock.clear(timer); offOpen(); offClose(); resolve('closed'); });
   });
@@ -302,7 +323,8 @@ export async function performCurlRequest(
       url: first, remoteIp: '', method: 'PUT', numRedirects: 0, trace: [],
     };
   }
-  if (first.scheme === 'ftp') return performCurlFtp(host, first, opts, body);
+  const budget = startOperation(host, opts);
+  if (first.scheme === 'ftp') return performCurlFtp(host, first, opts, body, budget);
   // Le corps multipart est construit AVANT toute connexion : un
   // fichier de partie absent doit échouer comme `-T`, sans ouvrir de
   // socket pour rien.
@@ -375,7 +397,7 @@ export async function performCurlRequest(
       const verifier = opts.insecure
         ? new InsecureCertificateVerifier({ trustAnchors: [] })
         : new CertificateVerifier({ trustAnchors: anchors });
-      const porte = await dial(host, address, url.port, opts.connectTimeoutMs);
+      const porte = await dial(host, address, url.port, budget);
       if (porte.kind !== 'open') {
         return connectFailure(porte, url, url.port, remoteIp, method, redirects, trace);
       }
@@ -429,7 +451,7 @@ export async function performCurlRequest(
       }
     } else {
       const session = new Http1ClientSession(host.tcpStack(), address, url.port);
-      const porte = await dial(host, address, url.port, opts.connectTimeoutMs);
+      const porte = await dial(host, address, url.port, budget);
       if (porte.kind !== 'open') {
         return connectFailure(porte, url, url.port, remoteIp, method, redirects, trace);
       }
