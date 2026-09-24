@@ -98,8 +98,10 @@ export const FORTIOS_PROFILE: FirewallProfile = Object.freeze({
 
   timeouts: Object.freeze({
     tcpEstablished: 3600,
-    tcpHandshake: 30,
-    tcpTimeWait: 120,
+    tcpHandshake: 10,
+    tcpTimeWait: 1,
+    tcpHalfClose: 120,
+    tcpReset: 5,
     udp: 180,
     icmp: 60,
     other: 180,

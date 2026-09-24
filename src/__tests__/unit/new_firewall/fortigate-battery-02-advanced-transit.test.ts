@@ -701,11 +701,11 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       const { fw } = await creerLaboAvance();
       await taper(fw, [
         'config system session-ttl',
-        'set default 5', // 5 secondes TTL
+        'set default 300',
         'end',
       ]);
       const conf = await fw.executeCommand('get system session-ttl');
-      expect(conf).toMatch(/default\s*:\s*5/);
+      expect(conf).toMatch(/default\s*:\s*300/);
     });
 
     it('98. Détection et journalisation d\'un balayage de ports (Port Scan)', async () => {

@@ -1,4 +1,5 @@
 import type { AddressObject } from '../model/AddressObject';
+import type { IScheduler } from '@/events/Scheduler';
 import type { ServiceObject } from '../model/ServiceObject';
 import { ZoneTable } from '../model/ZoneTable';
 import { ObjectStore } from '../model/ObjectStore';
@@ -75,6 +76,7 @@ export const ROOT_VDOM = 'root';
 
 export interface VdomRegistryDeps {
   readonly now: () => number;
+  readonly scheduler?: () => IScheduler;
   readonly timezone: () => TimeZone;
   readonly deviceId: string;
   readonly bus: () => IEventBus;
@@ -214,6 +216,7 @@ export class VdomRegistry {
     const expectedFlows = new ExpectedFlowTable();
     const sessions = new SessionTable({
       now: deps.now,
+      scheduler: deps.scheduler,
       onCreated: () => deps.onSessionCountChanged?.(sessions.count(), true),
       onClosed: (session, reason) => {
         expectedFlows.forgetChildrenOf(session.id);

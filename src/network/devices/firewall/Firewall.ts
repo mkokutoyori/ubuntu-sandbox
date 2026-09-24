@@ -40,7 +40,7 @@ import {
   type IngressInterfaceOptions, type IngressInterfaceOptionsReader,
 } from './l3/IngressInterfaceOptions';
 import { isIPv4Fragment } from '../../core/Ipv4Fragmentation';
-import { SystemClock } from '../../core/SystemClock';
+import { SystemClock, schedulerWallClock } from '../../core/SystemClock';
 import { SystemLoad, type MemoryWorkload } from './health/SystemLoad';
 import { conserveLogDraft } from './health/ConserveEvent';
 import { vdomFootprint, cacheFootprint } from './health/MemoryFootprint';
@@ -86,6 +86,7 @@ import {
 } from './pipeline/Simulation';
 import {
   GENERIC_PROFILE, type DeploymentMode, type FirewallProfile, type FirewallPortSpec,
+  type SessionTimeoutProfile,
 } from './FirewallProfile';
 import { ROOT_VDOM, VdomRegistry, type VdomContext } from './vdom/VdomRegistry';
 import { VdomLinkTable } from './vdom/VdomLinkTable';
@@ -250,6 +251,7 @@ export class Firewall extends Equipment {
   private readonly vdomLinks: VdomLinkTable;
   private readonly bridges = new Map<string, BridgeFdb>();
   private readonly fragments = new FragmentReassembly();
+  private readonly sessionTimers: { -readonly [K in keyof SessionTimeoutProfile]: number };
   private ingressOptions: IngressInterfaceOptionsReader =
     () => INGRESS_INTERFACE_DEFAULTS;
 
@@ -408,7 +410,7 @@ export class Firewall extends Equipment {
       },
     });
 
-    this.clock = new SystemClock(options.now ?? (() => Date.now()));
+    this.clock = new SystemClock(options.now ?? schedulerWallClock());
     const now = () => this.clock.now();
     this.load = new SystemLoad({
       now,
@@ -426,6 +428,7 @@ export class Firewall extends Equipment {
     this.syslogCollectors = new SyslogCollectorTable(() => this.syslog);
     this.vdoms = new VdomRegistry({
       now,
+      scheduler: () => getDefaultScheduler(),
       timezone: () => this.getTimeZone(),
       deviceId: this.id,
       bus: () => this.getBus(),
@@ -478,13 +481,14 @@ export class Firewall extends Equipment {
       onCacheChanged: () => { this.liveState.refresh(); },
     });
 
+    this.sessionTimers = { ...profile.timeouts };
     this.services = {
       interfaces: this.interfaces,
       vdomOf: (iface) => vdomServices(this.vdoms.contextOfInterface(iface)),
       sdwan: () => this.sdwan,
       ha: () => ({ forwardsTransit: () => this.forwardsTransit() }),
       policyKeyedBy: profile.policyKeyedBy,
-      sessionTimeouts: profile.timeouts,
+      sessionTimeouts: this.sessionTimers,
       refusesNewSessions: () => this.load.refusesNewSessions(),
       proxyInspectionPosture: () => this.load.proxyInspectionPosture(),
       flowInspectionPosture: () => this.load.flowInspectionPosture(),
@@ -1237,6 +1241,10 @@ export class Firewall extends Equipment {
   }
 
   now(): number { return this.services.now(); }
+
+  setSessionTimers(timers: Partial<SessionTimeoutProfile>): void {
+    Object.assign(this.sessionTimers, timers);
+  }
 
   getSystemClock(): SystemClock { return this.clock; }
 

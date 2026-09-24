@@ -37,7 +37,7 @@ import type { FlowDirection } from '../../session/TcpStateMachine';
 import { ftpExpectedDataFlow } from '../../session/FtpSessionHelper';
 import type { ExpectedFlowTable } from '../../session/ExpectedFlowTable';
 import {
-  DEFAULT_TCP_TIMEOUTS, TcpStateMachine,
+  TcpStateMachine,
   type ObservedTcpFlags, type TcpTimeouts,
 } from '../../session/TcpStateMachine';
 import type { FirewallNatEngine } from '../../nat/FirewallNatEngine';
@@ -607,7 +607,7 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
           return deny(context, 'session-lookup', verdict.reason as VerdictReason);
         }
         found.session.tcpState = machine.state;
-        if (machine.state === 'closed') {
+        if (machine.state === 'closed' && machine.timeoutSec === 0) {
           translateForSession(services, context, found.session, found.direction);
           const expiredOnClose = transitTtl(services, context, 'session-lookup');
           if (expiredOnClose) return expiredOnClose;
@@ -655,7 +655,8 @@ function tcpTimeoutsFor(
     established: ttl?.getDefault() ?? profile.tcpEstablished,
     handshake: profile.tcpHandshake,
     timeWait: profile.tcpTimeWait,
-    closing: DEFAULT_TCP_TIMEOUTS.closing,
+    closing: profile.tcpHalfClose,
+    reset: profile.tcpReset,
   };
 }
 

@@ -117,6 +117,26 @@ ROUTEUR comme passerelle, les deux passent — `netsh interface ip set
 address ... static <ip> <masque> <routeur>` installe bien la route. Le
 cas fautif est donc etroit : la passerelle est le PARE-FEU.
 
+### [fortios] `session-ttl default never` : le rendu d'une session sans echeance n'est pas atteste
+`set default never` est accepte et EVALUE : la session recoit une echeance
+infinie et la minuterie de vieillissement ne l'arme pas. Ce que
+`diagnose sys session list` affiche alors dans `timeout=` et `expire=`
+n'a pas pu etre lu : docs.fortinet.com, community.fortinet.com et
+help.fortinet.com sont refuses par le proxy de cet environnement. Le
+simulateur ecrit `never` dans les deux champs ; c'est un choix, pas une
+transcription.
+
+### [fortios] `config system session-helper` n'existe pas
+La table qui dit quel assistant ecoute sur quel port est absente :
+`show system session-helper` repond `unknown configuration path`, et
+l'assistant FTP est cable en dur sur TCP/21. Le schema Ansible de Fortinet
+(joignable) donne la forme d'une entree (`id`, `name` parmi ftp, tftp,
+ras, h323, tns, mms, sip, pptp, rtsp, dns-udp, dns-tcp, pmap, rsh, dcerpc,
+mgcp, gtp-c, gtp-u, gtp-b, pfcp, `protocol`, `port`) mais PAS la liste
+livree par defaut, ni ses identifiants. La reconstituer de memoire serait
+contraire a CLAUDE.md §8. Seul `ftp` est implemente ; une table livree
+doit, de plus, REFUSER un nom dont l'assistant n'existe pas (§6).
+
 ## Pile TCP/IP
 
 ### [ip] l'option Timestamp n'est ni construite ni horodatee
@@ -393,6 +413,21 @@ consulte. A reprendre quand la source est joignable.
 le drapeau `ra` pose ; le `allow-recursion` par defaut de BIND vaut
 `localnets; localhost;`, et un refus de recursion ne devrait pas annoncer
 `ra`.
+**Second ecart mesure** : sur un `LinuxServer`, `apt install -y bind9` seul
+laisse le port 53 sans ecoute (`ss -lunp` ne montre que
+`systemd-resolved` sur 127.0.0.53) et `dig @127.0.0.1` expire ; il faut un
+`systemctl restart named` apres avoir pose une zone pour que `named`
+reponde.
+
+### [sleep] `sleep` ne laisse pas passer le temps
+`sleep N` analyse sa duree et rend la main aussitot : sous l'horloge
+virtuelle, `sleep 2` dure 0 ms. Rien de ce qui vieillit (sessions d'un
+pare-feu, baux, caches) ne peut donc etre observe depuis un script. Le
+faire attendre vraiment sur l'ordonnanceur est juste, mais sous
+l'horloge REELLE qui est le defaut des tests, chaque `sleep` en ferait
+attendre autant ; le changement demande de passer d'abord ces tests a
+l'horloge virtuelle. Les sondes qui ont besoin d'une duree avancent
+l'horloge virtuelle directement.
 
 ### [oracle] un outil client sur un poste provisionne une base locale
 `tnsping` et `sqlplus user/pw@hote:port/service`, tapes sur un LinuxPC

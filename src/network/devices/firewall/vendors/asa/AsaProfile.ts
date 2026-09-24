@@ -53,6 +53,8 @@ export const ASA_PROFILE: FirewallProfile = Object.freeze({
     tcpEstablished: 3600,
     tcpHandshake: 30,
     tcpTimeWait: 120,
+    tcpHalfClose: 600,
+    tcpReset: 0,
     udp: 120,
     icmp: 2,
     other: 120,

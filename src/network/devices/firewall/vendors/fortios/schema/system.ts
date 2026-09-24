@@ -165,6 +165,15 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       DEFAULT_PASSWORD_HISTORY_THRESHOLD),
     enable('simulator-hints',
       '[simulator] Add a diagnostic line to refusals.', true),
+    count('tcp-halfopen-timer', 'Number of seconds the FortiGate unit should wait to close'
+      + ' a session after one peer has sent an open session packet but the other has not'
+      + ' responded.', 1, 86400, 10),
+    count('tcp-halfclose-timer', 'Number of seconds the FortiGate unit should wait to close'
+      + ' a session after one peer has sent a FIN packet but the other has not responded.',
+      1, 86400, 120),
+    count('tcp-timewait-timer', 'Length of the TCP TIME-WAIT state in seconds.', 1, 300, 1),
+    count('tcp-rst-timer', 'Length of the TCP CLOSE state in seconds.', 5, 300, 5),
+    count('udp-idle-timer', 'UDP connection session timeout.', 1, 86400, 180),
     {
       ...enable('auto-asic-offload', 'Enable/disable ASIC offloading.'),
       unimplemented: 'this simulator has no hardware acceleration model.',
@@ -209,6 +218,13 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       avFailopen: object.effective('av-failopen')[0] ?? 'pass',
       revisionOnLogout:
         object.effective('revision-backup-on-logout')[0] === 'enable',
+      sessionTimers: {
+        tcpHalfOpenSec: number('tcp-halfopen-timer', 10),
+        tcpHalfCloseSec: number('tcp-halfclose-timer', 120),
+        tcpTimeWaitSec: number('tcp-timewait-timer', 1),
+        tcpResetSec: number('tcp-rst-timer', 5),
+        udpIdleSec: number('udp-idle-timer', 180),
+      },
     });
   },
 };
@@ -1062,6 +1078,16 @@ const SESSION_TTL_PORT: FortiTableSpec = {
   },
 };
 
+const SESSION_TTL_MIN_SEC = 300;
+const SESSION_TTL_MAX_SEC = 2_764_800;
+
+function sessionTtlSeconds(value: string): number | null {
+  if (value === 'never') return Number.POSITIVE_INFINITY;
+  if (!/^\d+$/.test(value)) return null;
+  const seconds = Number(value);
+  return seconds >= SESSION_TTL_MIN_SEC && seconds <= SESSION_TTL_MAX_SEC ? seconds : null;
+}
+
 export const SYSTEM_SESSION_TTL: FortiTableSpec = {
   path: ['system', 'session-ttl'],
   kind: 'object',
@@ -1070,12 +1096,23 @@ export const SYSTEM_SESSION_TTL: FortiTableSpec = {
   renderOrder: 77,
   help: 'Configure the session timeouts.',
   attributes: [
-    count('default', 'Default session timeout for TCP, in seconds.', 300, 604800, 3600),
+    {
+      name: 'default',
+      help: 'Default timeout.',
+      quoted: false,
+      parts: [{
+        name: 'default', type: 'WORD',
+        description: 'Session timeout in seconds <300-2764800>, or `never`.',
+      }],
+      defaultValue: ['3600'],
+      acceptsValue: (value) => sessionTtlSeconds(value) !== null,
+      expectedValue: '<300-2764800> (minimum 300, maximum 2764800) or `never`.',
+    },
   ],
   children: [SESSION_TTL_PORT],
   onCommit(object, context) {
     context.device.applySessionTtlDefault(
-      Number(object.effective('default')[0] ?? '3600'));
+      sessionTtlSeconds(object.effective('default')[0] ?? '3600') ?? 3600);
   },
 };
 

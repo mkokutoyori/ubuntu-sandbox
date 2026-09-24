@@ -104,6 +104,13 @@ interface VirtualTask {
   cancelled: boolean;
 }
 
+function drainRunnableWork(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (typeof globalThis.setImmediate === 'function') globalThis.setImmediate(resolve);
+    else globalThis.setTimeout(resolve, 0);
+  });
+}
+
 export class VirtualTimeScheduler implements IScheduler {
   private currentTime = 0;
   private nextHandle = 1;
@@ -189,8 +196,7 @@ export class VirtualTimeScheduler implements IScheduler {
     this.drivingUnsettledWork = true;
     try {
       for (let turn = 0; turn < maxTurns && this.unsettledWork.size > 0; turn++) {
-        await Promise.resolve();
-        await Promise.resolve();
+        await drainRunnableWork();
         if (this.unsettledWork.size === 0) break;
         const due = this.msUntilNextTask();
         if (due !== null) this.advance(due);

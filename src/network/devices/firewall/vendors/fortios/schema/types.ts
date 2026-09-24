@@ -223,6 +223,14 @@ export interface FortiPolicyRoutePatch {
   readonly comment?: string;
 }
 
+export interface FortiSessionTimers {
+  readonly tcpHalfOpenSec: number;
+  readonly tcpHalfCloseSec: number;
+  readonly tcpTimeWaitSec: number;
+  readonly tcpResetSec: number;
+  readonly udpIdleSec: number;
+}
+
 export interface FortiGlobalSettings {
   readonly hostname?: string;
   readonly multiVdom: boolean;
@@ -248,6 +256,7 @@ export interface FortiGlobalSettings {
   readonly revisionOnLogout?: boolean;
   readonly adminHttpsRedirect?: boolean;
   readonly adminServerCertificate?: string;
+  readonly sessionTimers?: FortiSessionTimers;
 }
 
 export interface FortiIpsGlobalSettings {

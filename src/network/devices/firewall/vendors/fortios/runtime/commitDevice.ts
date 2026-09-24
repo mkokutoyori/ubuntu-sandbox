@@ -219,6 +219,15 @@ export function buildCommitDevice(
         if (settings.adminServerCertificate !== undefined) {
           fw.setAdminServerCertificate(settings.adminServerCertificate);
         }
+        if (settings.sessionTimers !== undefined) {
+          fw.setSessionTimers({
+            tcpHandshake: settings.sessionTimers.tcpHalfOpenSec,
+            tcpHalfClose: settings.sessionTimers.tcpHalfCloseSec,
+            tcpTimeWait: settings.sessionTimers.tcpTimeWaitSec,
+            tcpReset: settings.sessionTimers.tcpResetSec,
+            udp: settings.sessionTimers.udpIdleSec,
+          });
+        }
       },
       applySessionTtlDefault(seconds) {
         fw.getSessionTtl().setDefault(seconds);
