@@ -1409,16 +1409,7 @@ export abstract class EndHost extends Equipment {
     const previousDefault = this.routingTable.find(r => r.type === 'default');
     this.routingTable = this.routingTable.filter(r => r.type !== 'default');
 
-    // Find the interface the gateway is reachable through
-    let gwIface = '';
-    for (const [, port] of this.ports) {
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      if (ip && mask && ip.isInSameSubnet(gw, mask)) {
-        gwIface = port.getName();
-        break;
-      }
-    }
+    const gwIface = this.gatewayInterface(gw);
 
     this.addRouteEntry({
       network: new IPAddress('0.0.0.0'),
@@ -1445,6 +1436,52 @@ export abstract class EndHost extends Equipment {
       destination: '0.0.0.0', mask: '0.0.0.0',
       gateway: gw.toString(), iface: gwIface, metric, type: 'default',
     });
+  }
+
+  addDefaultRouteEntry(gw: IPAddress, metric: number, mode: 'add' | 'append' | 'replace'): boolean {
+    const sameMetric = this.routingTable.find(r => r.type === 'default' && r.metric === metric);
+    if (sameMetric && mode === 'add') return false;
+    if (sameMetric && mode === 'replace') this.removeDefaultRouteEntry({ metric });
+    const gwIface = this.gatewayInterface(gw);
+    this.addRouteEntry({
+      network: new IPAddress('0.0.0.0'), mask: new SubnetMask('0.0.0.0'),
+      nextHop: gw, iface: gwIface, type: 'default', metric,
+    });
+    this.defaultGatewayOrigin = 'static';
+    this.refreshDefaultGateway();
+    this.emitRouteAdded({
+      destination: '0.0.0.0', mask: '0.0.0.0',
+      gateway: gw.toString(), iface: gwIface, metric, type: 'default',
+    });
+    return true;
+  }
+
+  removeDefaultRouteEntry(filter: { nextHop?: IPAddress; metric?: number } = {}): boolean {
+    const victim = this.routingTable.find(r => r.type === 'default'
+      && (filter.nextHop === undefined || r.nextHop?.equals(filter.nextHop) === true)
+      && (filter.metric === undefined || r.metric === filter.metric));
+    if (!victim) return false;
+    this.routingTable = this.routingTable.filter(r => r !== victim);
+    this.refreshDefaultGateway();
+    this.emitRouteRemoved({ destination: '0.0.0.0', mask: '0.0.0.0', iface: victim.iface });
+    return true;
+  }
+
+  private refreshDefaultGateway(): void {
+    const best = this.routingTable
+      .filter(r => r.type === 'default')
+      .reduce<HostRouteEntry | null>((low, r) => (low === null || r.metric < low.metric ? r : low), null);
+    this.defaultGateway = best?.nextHop ?? null;
+    if (!best) this.defaultGatewayOrigin = null;
+  }
+
+  private gatewayInterface(gw: IPAddress): string {
+    for (const [, port] of this.ports) {
+      const ip = port.getIPAddress();
+      const mask = port.getSubnetMask();
+      if (ip && mask && ip.isInSameSubnet(gw, mask)) return port.getName();
+    }
+    return '';
   }
 
   clearDefaultGateway(): void {

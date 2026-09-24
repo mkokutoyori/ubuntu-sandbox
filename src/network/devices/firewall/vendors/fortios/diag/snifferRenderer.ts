@@ -1,6 +1,7 @@
 import { ETHERTYPE_ARP, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../../../../core/types';
-import type { ARPPacket, IPv4Packet, TCPPacket } from '../../../../../core/types';
+import type { ARPPacket, IPv4Packet } from '../../../../../core/types';
 import { icmpOf, portsOf, type CapturedFrame } from '../../../diag/PacketCapture';
+import type { TcpSegment } from '../../../../../tcp/types';
 
 export interface SnifferRequest {
   readonly iface: string;
@@ -64,15 +65,16 @@ function describeIcmp(packet: IPv4Packet): string {
 
 function describeTcp(packet: IPv4Packet): string {
   const ports = portsOf(packet);
-  const segment = packet.payload as TCPPacket | undefined;
-  const flags = segment?.type === 'tcp' ? tcpFlags(segment) : '';
-  const sequence = segment?.type === 'tcp' ? ` ${segment.sequenceNumber}` : '';
-  const acknowledged = segment?.type === 'tcp' && segment.flags.ack
-    ? ` ack ${segment.acknowledgementNumber}`
-    : '';
-
+  const segment = packet.payload as TcpSegment | undefined;
   return `${packet.sourceIP}.${ports.source} -> ${packet.destinationIP}.${ports.destination}:`
-    + ` ${flags}${sequence}${acknowledged}`;
+    + ` ${segment?.type === 'tcp' ? describeSegment(segment) : ''}`;
+}
+
+function describeSegment(segment: TcpSegment): string {
+  const flags = tcpFlags(segment);
+  const acknowledged = segment.flags.ack ? `ack ${segment.acknowledgement}` : '';
+  if (flags === 'ack') return acknowledged;
+  return acknowledged ? `${flags} ${segment.sequence} ${acknowledged}` : `${flags} ${segment.sequence}`;
 }
 
 function describeUdp(packet: IPv4Packet): string {
@@ -81,7 +83,7 @@ function describeUdp(packet: IPv4Packet): string {
     + ` udp ${Math.max(0, packet.totalLength - 28)}`;
 }
 
-function tcpFlags(segment: TCPPacket): string {
+function tcpFlags(segment: TcpSegment): string {
   const flags = segment.flags;
   if (flags.syn && flags.ack) return 'syn';
   if (flags.syn) return 'syn';

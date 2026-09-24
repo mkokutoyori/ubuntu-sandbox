@@ -1930,7 +1930,11 @@ export abstract class LinuxMachine extends EndHost
    *   - AllowUsers patterns (glob *) — when present, user must match one
    *   - DenyUsers takes precedence over AllowUsers
    */
-  sshdAcceptsLogin(user: string, ctx?: { address?: string; host?: string }): { ok: boolean; reason?: string } {
+  sshdAcceptsLogin(
+    user: string, ctx?: {
+      address?: string; host?: string; method?: 'publickey' | 'password' | 'pending'; keyForcesCommand?: boolean;
+    },
+  ): { ok: boolean; reason?: string } {
     // Use the live sshd-context-cached snapshot, NOT a fresh re-parse.
     // Real sshd holds its config in memory until SIGHUP / `systemctl
     // reload ssh`; editing /etc/ssh/sshd_config without reloading does
@@ -1939,7 +1943,12 @@ export abstract class LinuxMachine extends EndHost
     const config = this.getSshServerContext().effectiveSshdServerConfig();
 
     const policy = config.permitRootLogin;
-    if (user === 'root' && policy !== 'yes') {
+    const method = ctx?.method;
+    const rootAdmitted = policy === 'yes'
+      || ((policy === 'prohibit-password' || policy === 'forced-commands-only') && method === 'pending')
+      || (policy === 'prohibit-password' && method === 'publickey')
+      || (policy === 'forced-commands-only' && method === 'publickey' && ctx?.keyForcesCommand === true);
+    if (user === 'root' && !rootAdmitted) {
       return { ok: false, reason: `PermitRootLogin ${policy}` };
     }
     const userGroups = (this.executor.userMgr.getUserGroups?.(user) ?? []).map((g: { name: string }) => g.name);
@@ -3841,6 +3850,10 @@ export abstract class LinuxMachine extends EndHost
       clearDefaultGateway: (): void => {
         this.clearDefaultGateway();
       },
+      addDefaultRouteEntry: (gw: IPAddress, metric: number, mode: 'add' | 'append' | 'replace'): boolean =>
+        this.addDefaultRouteEntry(gw, metric, mode),
+      removeDefaultRouteEntry: (filter: { nextHop?: IPAddress; metric?: number }): boolean =>
+        this.removeDefaultRouteEntry(filter),
       getRoutingTableFor: (tableId: number): HostRouteEntry[] => {
         return this.getRoutingTableFor(tableId);
       },

@@ -85,6 +85,7 @@ export const COMMAND_PACKAGES: Readonly<Record<string, string>> = {
   wget: 'wget',
   addgroup: 'adduser', adduser: 'adduser', deluser: 'adduser', delgroup: 'adduser',
   'apt-cache': 'apt', 'apt-get': 'apt', apt: 'apt', 'apt-mark': 'apt',
+  dpkg: 'dpkg',
   arch: 'coreutils', cksum: 'coreutils', fmt: 'coreutils', pr: 'coreutils',
   tac: 'coreutils',
   blkid: 'util-linux', fdisk: 'util-linux', column: 'util-linux',

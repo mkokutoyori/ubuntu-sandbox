@@ -141,7 +141,7 @@ export interface IpNetworkContext {
     metric?: number,
   ): string;
   deleteIPv6Route?(prefix: string, prefixLength: number, gateway: string | null): string;
-  addDefaultRoute(gateway: IPAddress): string;
+  addDefaultRoute(gateway: IPAddress, metric?: number, mode?: 'add' | 'append' | 'replace'): string;
   addStaticRoute(
     network: IPAddress,
     cidr: number,
@@ -150,7 +150,7 @@ export interface IpNetworkContext {
     routeOpts?: { allowDuplicate?: boolean; table?: number },
   ): string;
   addDeviceRoute?(network: IPAddress, cidr: number, iface: string, table?: number): string;
-  deleteDefaultRoute(): string;
+  deleteDefaultRoute(filter?: { nextHop?: IPAddress; metric?: number }): string;
   deleteRoute(
     network: IPAddress,
     cidr: number,
@@ -1510,7 +1510,7 @@ function applyRouteSpec(ctx: IpNetworkContext, spec: ParsedRouteSpec, mode: Rout
       if (mode === 'change' && !ctx.getRoutingTable().some(r => r.type === 'default')) {
         return 'RTNETLINK answers: No such process';
       }
-      return ctx.addDefaultRoute(gateway!);
+      return ctx.addDefaultRoute(gateway!, metric, mode === 'change' ? 'replace' : mode);
     }
     if (mode === 'change' && !ctx.getRoutingTable(tableId).some(r => r.type === 'default')) {
       return 'RTNETLINK answers: No such process';
@@ -1564,7 +1564,15 @@ function ipRouteDel(ctx: IpNetworkContext, args: string[]): string {
   if (args.length === 0) return 'Error: need a valid prefix or "default".';
 
   if (args[0] === 'default') {
-    return ctx.deleteDefaultRoute();
+    const filter: { nextHop?: IPAddress; metric?: number } = {};
+    const viaIdx = args.indexOf('via');
+    if (viaIdx !== -1 && args[viaIdx + 1]) {
+      try { filter.nextHop = new IPAddress(args[viaIdx + 1]); }
+      catch { return `Error: inet address is expected rather than "${args[viaIdx + 1]}".`; }
+    }
+    const metricIdx = args.indexOf('metric');
+    if (metricIdx !== -1 && args[metricIdx + 1]) filter.metric = parseInt(args[metricIdx + 1], 10);
+    return ctx.deleteDefaultRoute(filter);
   }
 
   // Delete static: <net>/<cidr> [via <gw>] [metric <n>]

@@ -76,11 +76,11 @@ describe('§6 — le transfert traverse vraiment le câble intermédiaire', () =
     const url = `http://${SRV_IP}:${PORT}/`;
 
     uplink.resetStats();
-    expect(await linux.executeCommand(`curl -sS ${url}`)).toContain('over-the-wire');
+    expect(await linux.executeCommand(`curl -sS --connect-timeout 3 ${url}`)).toContain('over-the-wire');
     const afterLinux = uplink.getStats().framesTransmitted;
     expect(afterLinux).toBeGreaterThan(0);
 
-    expect(await windows.executeCommand(`curl -sS ${url}`)).toContain('over-the-wire');
+    expect(await windows.executeCommand(`curl -sS --connect-timeout 3 ${url}`)).toContain('over-the-wire');
     expect(uplink.getStats().framesTransmitted).toBeGreaterThan(afterLinux);
   });
 
@@ -99,15 +99,15 @@ describe('§6 — le transfert traverse vraiment le câble intermédiaire', () =
     new Http1ServerSession(server.getTcpStack(), PORT, () => ok('reachable')).start();
 
     const url = `http://${SRV_IP}:${PORT}/`;
-    expect(await client.executeCommand(`curl -sS ${url}`)).toContain('reachable');
+    expect(await client.executeCommand(`curl -sS --connect-timeout 3 ${url}`)).toContain('reachable');
 
     uplink.disconnect();
 
     // Si `curl` lisait l'équipement distant en mémoire, ce cas passerait
     // encore. C'est exactement la régression que §6 demande d'empêcher.
-    const out = await client.executeCommand(`curl -sS ${url}`);
+    const out = await client.executeCommand(`curl -sS --connect-timeout 3 ${url}`);
     expect(out).not.toContain('reachable');
-    expect(out).toContain('curl: (7)');
+    expect(out).toContain('curl: (28)');
   });
 });
 
@@ -130,14 +130,14 @@ describe('§P2 — IIS honore désormais la méthode HTTP', () => {
   it('GET sert la page par défaut', async () => {
     const { client } = await iisLab();
 
-    expect(await client.executeCommand(`curl -sS http://${SRV_IP}/`))
+    expect(await client.executeCommand(`curl -sS --connect-timeout 3 http://${SRV_IP}/`))
       .toContain('IIS Windows Server');
   });
 
   it('DELETE reçoit 405 avec la liste des verbes autorisés', async () => {
     const { client } = await iisLab();
 
-    const out = await client.executeCommand(`curl -sS -i -X DELETE http://${SRV_IP}/`);
+    const out = await client.executeCommand(`curl -sS --connect-timeout 3 -i -X DELETE http://${SRV_IP}/`);
 
     expect(out).toContain('HTTP/1.1 405 Method Not Allowed');
     expect(out).toContain('Allow: GET, HEAD, OPTIONS, TRACE');
@@ -148,7 +148,7 @@ describe('§P2 — IIS honore désormais la méthode HTTP', () => {
     const { client } = await iisLab();
 
     const out = await client.executeCommand(
-      `curl -s -o /dev/null -w "%{http_code}" -d "a=1" http://${SRV_IP}/`,
+      `curl -s --connect-timeout 3 -o /dev/null -w "%{http_code}" -d "a=1" http://${SRV_IP}/`,
     );
 
     expect(out.trim()).toBe('405');
@@ -157,7 +157,7 @@ describe('§P2 — IIS honore désormais la méthode HTTP', () => {
   it('OPTIONS répond 200 et annonce ce qu\'il accepte', async () => {
     const { client } = await iisLab();
 
-    const out = await client.executeCommand(`curl -sS -i -X OPTIONS http://${SRV_IP}/`);
+    const out = await client.executeCommand(`curl -sS --connect-timeout 3 -i -X OPTIONS http://${SRV_IP}/`);
 
     expect(out).toContain('HTTP/1.1 200 OK');
     expect(out).toContain('Allow: GET, HEAD, OPTIONS, TRACE');
@@ -166,7 +166,7 @@ describe('§P2 — IIS honore désormais la méthode HTTP', () => {
   it('HEAD reste servi, avec les en-têtes du GET et sans corps', async () => {
     const { client } = await iisLab();
 
-    const out = await client.executeCommand(`curl -sS -I http://${SRV_IP}/`);
+    const out = await client.executeCommand(`curl -sS --connect-timeout 3 -I http://${SRV_IP}/`);
 
     expect(out).toContain('HTTP/1.1 200 OK');
     expect(out).toContain('Server: Microsoft-IIS/10.0');
@@ -209,8 +209,8 @@ describe('§P3 — TLS : la même vérification de certificat sur les deux plate
     const { linux, windows } = tlsLab();
     const url = `https://${SRV_IP}/`;
 
-    expect(await linux.executeCommand(`curl -sS ${url}`)).toContain('curl: (60)');
-    expect(await windows.executeCommand(`curl -sS ${url}`)).toContain('curl: (60)');
+    expect(await linux.executeCommand(`curl -sS --connect-timeout 3 ${url}`)).toContain('curl: (60)');
+    expect(await windows.executeCommand(`curl -sS --connect-timeout 3 ${url}`)).toContain('curl: (60)');
   });
 
   it('avec l\'autorité installée, les deux acceptent et rendent le corps', async () => {
@@ -219,15 +219,15 @@ describe('§P3 — TLS : la même vérification de certificat sur les deux plate
     windows.addTrustedCertificateAuthority(ca.rootCertificate);
     const url = `https://${SRV_IP}/`;
 
-    expect(await linux.executeCommand(`curl -sS ${url}`)).toContain('tls-body');
-    expect(await windows.executeCommand(`curl -sS ${url}`)).toContain('tls-body');
+    expect(await linux.executeCommand(`curl -sS --connect-timeout 3 ${url}`)).toContain('tls-body');
+    expect(await windows.executeCommand(`curl -sS --connect-timeout 3 ${url}`)).toContain('tls-body');
   });
 
   it('-k passe outre la vérification, des deux côtés', async () => {
     const { linux, windows } = tlsLab();
     const url = `https://${SRV_IP}/`;
 
-    expect(await linux.executeCommand(`curl -sS -k ${url}`)).toContain('tls-body');
-    expect(await windows.executeCommand(`curl -sS -k ${url}`)).toContain('tls-body');
+    expect(await linux.executeCommand(`curl -sS --connect-timeout 3 -k ${url}`)).toContain('tls-body');
+    expect(await windows.executeCommand(`curl -sS --connect-timeout 3 -k ${url}`)).toContain('tls-body');
   });
 });

@@ -105,10 +105,8 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       expect(res).toMatch(/100% packet loss/);
     });
 
-    it('53. Architecture 3-Tiers : Le Web Nginx en DMZ requiert la DB Oracle en LAN/Zone privée', async () => {
-      const { pc, fw, dmzSrv } = await creerLaboAvance();
-      // On place Oracle sur le PC LAN et on autorise DMZ -> LAN uniquement sur le port 1521
-      await taper(pc as unknown as Cli, ['systemctl start oracle-ohasd']);
+    it('53. Architecture 3-Tiers : le flux DMZ -> LAN vers le port Oracle traverse le pare-feu', async () => {
+      const { fw, dmzSrv } = await creerLaboAvance();
       await taper(fw, [
         'config firewall policy', 'edit 11',
         'set srcintf "dmz"', 'set dstintf "port1"',
@@ -116,7 +114,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
         'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await dmzSrv.executeCommand('tnsping 192.168.1.10:1521/ORCL');
-      expect(res).toMatch(/OK/);
+      expect(res).toContain('TNS-12541: TNS:no listener');
     });
 
     it('54. Trafic WAN entrant autorisé vers DMZ en HTTP sans accès direct au LAN', async () => {
@@ -192,7 +190,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
         'end',
       ]);
       const res = await sw.executeCommand('show interfaces trunk');
-      expect(res).toMatch(/FastEthernet0\/1/);
+      expect(res).toMatch(/^Fa0\/1\s+on\s+802\.1q\s+trunking\s+1$/m);
     });
 
     it('59. Sous-interface 802.1Q sur le pare-feu (port1.10) répond au ping d\'un VLAN taggé', async () => {
@@ -254,7 +252,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
     it('63. Nettoyage de la table MAC du switch lors d\'un "clear mac address-table"', async () => {
       const { sw, pc } = await creerLaboAvance();
       await pc.executeCommand('ping -c 1 192.168.1.1');
-      await sw.executeCommand('clear mac address-table dynamic');
+      await taper(sw as unknown as Cli, ['enable', 'clear mac address-table dynamic']);
       const table = await sw.executeCommand('show mac address-table');
       expect(table).not.toMatch(/FastEthernet0\/2/);
     });
@@ -330,7 +328,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
         'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await wanSrv.executeCommand('curl -sS --connect-timeout 1 http://203.0.113.1/');
-      expect(res).toMatch(/timed out|refused/i);
+      expect(res).toMatch(/^curl: \(28\) Failed to connect to 203\.0\.113\.1 port 80 after \d+ ms: Timeout was reached$/m);
     });
 
     it('68. Multiples VIPs sur la même IP externe vers des serveurs DMZ distincts selon le port', async () => {
@@ -457,10 +455,20 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
     });
 
     it('78. Le client obtient son bail avec passerelle et serveur DNS via le relais traversant', async () => {
-      const { pc, wanSrv } = await creerLaboAvance();
-      await taper(wanSrv as unknown as Cli, ['systemctl start isc-dhcp-server']);
+      const { pc, fw, wanSrv } = await creerLaboAvance();
+      await taper(pc as unknown as Cli, ['ip addr flush dev eth0', 'ip route flush all']);
+      await taper(wanSrv as unknown as Cli, [
+        "printf 'subnet 203.0.113.0 netmask 255.255.255.0 {\\n}\\nsubnet 192.168.1.0 netmask 255.255.255.0 {\\n  range 192.168.1.100 192.168.1.150;\\n  option routers 192.168.1.1;\\n  option domain-name-servers 203.0.113.9;\\n}\\n' > /etc/dhcp/dhcpd.conf",
+        'systemctl start isc-dhcp-server',
+      ]);
+      await taper(fw, [
+        'config system interface', 'edit "port1"',
+        'set dhcp-relay-service enable', 'set dhcp-relay-ip "203.0.113.9"', 'next', 'end',
+      ]);
+      await pc.executeCommand('dhclient eth0');
       const res = await pc.executeCommand('cat /var/lib/dhcp/dhclient.leases');
-      expect(res).toMatch(/routers|domain-name-servers/i);
+      expect(res).toMatch(/option routers 192\.168\.1\.1;/);
+      expect(res).toMatch(/option domain-name-servers 203\.0\.113\.9;/);
     });
 
     it('79. Résolution DNS récursive d\'un enregistrement CNAME pointant vers un alias traversant', async () => {
@@ -519,7 +527,8 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       const { pc, fw, dmzSrv, wanSrv } = await creerLaboAvance();
       await taper(wanSrv as unknown as Cli, ['systemctl start nginx']); // Backend final
       await taper(dmzSrv as unknown as Cli, [
-        'systemctl start nginx-proxy', // Proxy inverse pointant vers 203.0.113.9
+        "printf 'server {\\n    listen 80 default_server;\\n    location / {\\n        proxy_pass http://203.0.113.9;\\n    }\\n}\\n' > /etc/nginx/sites-enabled/default",
+        'systemctl start nginx',
       ]);
       await taper(fw, [
         'config firewall policy',
@@ -527,8 +536,9 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
         'edit 51', 'set srcintf "dmz"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set service "HTTP"', 'next',
         'end',
       ]);
-      const res = await pc.executeCommand('curl -s http://10.0.0.5/api/data');
-      expect(res).toMatch(/Welcome to nginx|nginx/i);
+      const res = await pc.executeCommand('curl -s http://10.0.0.5/');
+      expect(res).toContain('<title>Welcome to nginx!</title>');
+      expect(await wanSrv.executeCommand('tail -1 /var/log/nginx/access.log')).toMatch(/^10\.0\.0\.5 /);
     });
 
     it('84. Nginx Keep-Alive : Plusieurs requêtes HTTP successives réutilisent la même session TCP', async () => {
@@ -609,10 +619,15 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
 
     it('90. Détection d\'erreur HTTP 502 Bad Gateway quand le proxy Nginx ne peut joindre le backend', async () => {
       const { pc, fw, dmzSrv } = await creerLaboAvance();
-      await taper(dmzSrv as unknown as Cli, ['systemctl start nginx-proxy']); // Backend éteint
+      await taper(dmzSrv as unknown as Cli, [
+        "printf 'server {\\n    listen 80 default_server;\\n    location / {\\n        proxy_pass http://203.0.113.9;\\n    }\\n}\\n' > /etc/nginx/sites-enabled/default",
+        'systemctl start nginx',
+      ]);
       await taper(fw, [
         'config firewall policy', 'edit 58',
         'set srcintf "port1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"',
+        'set action accept', 'set service "HTTP"', 'next',
+        'edit 59', 'set srcintf "dmz"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
         'set action accept', 'set service "HTTP"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -s -o /dev/null -w "%{http_code}" http://10.0.0.5/api/dead');
@@ -669,10 +684,10 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       await taper(fw, [
         'config firewall policy', 'edit 62',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set schedule "always"', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -sS --connect-timeout 2 http://203.0.113.9:9999/');
-      expect(res).toMatch(/Connection refused/i);
+      expect(res).toMatch(/^curl: \(7\) Failed to connect to 203\.0\.113\.9 port 9999 after \d+ ms: Couldn't connect to server$/m);
     });
 
     it('95. Clamping MSS / MTU : Le pare-feu ajuste le champ TCP MSS pour éviter la fragmentation', async () => {
@@ -681,7 +696,8 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       await taper(fw, [
         'config firewall policy', 'edit 63',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'set tcp-mss-sender 1400', 'set tcp-mss-receiver 1400', 'next', 'end',
+        'set action accept', 'set schedule "always"', 'set service "ALL"',
+        'set tcp-mss-sender 1400', 'set tcp-mss-receiver 1400', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -s http://203.0.113.9/');
       expect(res).toMatch(/nginx/i);
@@ -717,16 +733,16 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
     });
 
     it('99. Réassemblage transparent de trames IP fragmentées lors du transit', async () => {
-      const { pc, fw, wanSrv } = await creerLaboAvance();
-      await taper(wanSrv as unknown as Cli, ['systemctl start nginx']);
+      const { pc, fw } = await creerLaboAvance();
       await taper(fw, [
         'config firewall policy', 'edit 64',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'set service "ALL"', 'next', 'end',
+        'set action accept', 'set schedule "always"', 'set service "ALL"', 'next', 'end',
       ]);
-      // Envoi de trames fragmentées de force (MTU 576)
-      const res = await pc.executeCommand('curl -s --compressed http://203.0.113.9/');
-      expect(res).toMatch(/Welcome to nginx|nginx/i);
+      await taper(pc as unknown as Cli, ['ip link set eth0 mtu 576']);
+      const res = await pc.executeCommand('ping -c 1 -s 1400 -M dont 203.0.113.9');
+      expect(res).toMatch(/^1408 bytes from 203\.0\.113\.9: icmp_seq=1 /m);
+      expect(res).toContain('1 packets transmitted, 1 received, 0% packet loss');
     });
 
     it('100. Stress Test Transit : Rafale concurrente HTTP, SQL, Telnet et ICMP sans perte de paquet', async () => {

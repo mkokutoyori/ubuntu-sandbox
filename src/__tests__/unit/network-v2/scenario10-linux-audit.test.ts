@@ -35,6 +35,7 @@ describe('Scénario 10 — audit complet (linux-audit.sh)', () => {
     EquipmentRegistry.resetInstance();
     srv = new LinuxServer('linux-server', 'srv1', 0, 0);
     srv.powerOn();
+    await run("sed -i 's/^PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config");
     await installAudit();
   });
 

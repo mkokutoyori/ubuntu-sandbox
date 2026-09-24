@@ -65,6 +65,8 @@ import { buildConnection, type Connection } from './networkStore';
 /** Surfaced by Save/Export UI (rapport 09, item #55) so the user knows
  *  this before it happens, not after. Kept in sync with the capture
  *  list in the header comment above: anything not listed there. */
+const UNSET_IPV4 = '0.0.0.0';
+
 export const TOPOLOGY_SAVE_CAVEATS =
   "Terminal sessions, in-progress editors, and live TCP/SSH connections are not included — they close when this topology is loaded. " +
   "Dynamic state (DHCP leases, OSPF/BGP-learned routes) reconverges from config after loading rather than being restored directly.";
@@ -356,8 +358,10 @@ function captureInterface(port: Port): TopologyInterfaceExport {
   if (port.hasExplicitDelayUs()) entry.delayUs = port.getDelayUs();
   const ip = port.getIPAddress();
   const mask = port.getSubnetMask();
-  if (ip) entry.ipAddress = ip.toString();
-  if (mask) entry.subnetMask = mask.toString();
+  if (ip && ip.toString() !== UNSET_IPV4) {
+    entry.ipAddress = ip.toString();
+    if (mask) entry.subnetMask = mask.toString();
+  }
   if (!port.getIsUp()) entry.isUp = false;
   const desc = port.getDescriptionText();
   if (desc) entry.description = desc;
@@ -1132,7 +1136,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       const port = device.getPort(ifConfig.name);
       if (!port) continue;
 
-      if (ifConfig.ipAddress && ifConfig.subnetMask) {
+      if (ifConfig.ipAddress && ifConfig.subnetMask && ifConfig.ipAddress !== UNSET_IPV4) {
         const ip = new IPAddress(ifConfig.ipAddress);
         const mask = new SubnetMask(ifConfig.subnetMask);
         if (device instanceof EndHost || device instanceof Router) {

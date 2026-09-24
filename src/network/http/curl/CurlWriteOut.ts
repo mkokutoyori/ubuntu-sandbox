@@ -3,6 +3,8 @@ export interface WriteOutFacts {
   readonly urlEffective: string;
   readonly remoteIp: string;
   readonly remotePort: number;
+  readonly localIp: string;
+  readonly localPort: number;
   readonly sizeDownload: number;
   readonly sizeUpload: number;
   readonly contentType: string;
@@ -32,6 +34,8 @@ function variableValue(name: string, facts: WriteOutFacts): string | null {
     case 'url_effective': return facts.urlEffective;
     case 'remote_ip': return facts.remoteIp;
     case 'remote_port': return String(facts.remotePort);
+    case 'local_ip': return facts.localIp;
+    case 'local_port': return String(facts.localPort);
     case 'size_download': return String(facts.sizeDownload);
     case 'size_upload': return String(facts.sizeUpload);
     case 'content_type': return facts.contentType;

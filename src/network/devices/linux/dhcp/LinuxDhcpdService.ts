@@ -158,7 +158,7 @@ export class LinuxDhcpdService {
     const served = ready.served;
     const lines = ready.output.split('\n');
 
-    this.applyConfig(config, served);
+    this.applyConfig(config);
     this.served = served;
     this.lastConfig = config;
     this.engine.enable();
@@ -187,7 +187,7 @@ export class LinuxDhcpdService {
     return this.host.getPorts().find(port => port.getName() === iface)?.getMAC().toString() ?? '';
   }
 
-  private applyConfig(config: DhcpdConfig, served: readonly ServedInterface[]): void {
+  private applyConfig(config: DhcpdConfig): void {
     this.engine.setPingPacketCount(config.pingCheck ? 1 : 0);
     this.engine.setPingTimeoutMs(config.pingTimeoutSeconds * 1000);
     for (const [name] of this.engine.getAllPools()) this.engine.deletePool(name);
@@ -195,8 +195,7 @@ export class LinuxDhcpdService {
       this.engine.removeExcludedRange(range.start, range.end);
     }
 
-    for (const entry of served) {
-      const subnet = entry.subnet;
+    for (const subnet of config.subnets) {
       const name = poolNameFor(subnet);
       if (this.engine.getPool(name)) continue;
       const options = mergedOptions(config.globals, subnet.options);
@@ -217,10 +216,10 @@ export class LinuxDhcpdService {
 
     for (const host of config.hosts) {
       if (!host.hardwareEthernet || !host.fixedAddress) continue;
-      const pool = served.find(entry => this.holdsAddress(entry.subnet, host.fixedAddress!));
-      if (!pool) continue;
+      const subnet = config.subnets.find(entry => this.holdsAddress(entry, host.fixedAddress!));
+      if (!subnet) continue;
       this.engine.addStaticBinding(
-        poolNameFor(pool.subnet), host.hardwareEthernet, host.fixedAddress);
+        poolNameFor(subnet), host.hardwareEthernet, host.fixedAddress);
     }
   }
 

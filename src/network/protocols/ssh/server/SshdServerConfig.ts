@@ -1,3 +1,4 @@
+import { permitOpenAllows } from '../SshPureUtils';
 export type SshdAddressFamily = 'any' | 'inet' | 'inet6';
 export type SshdPermitRootLogin = 'yes' | 'no' | 'prohibit-password' | 'forced-commands-only';
 export type SshdLogLevel = 'QUIET' | 'FATAL' | 'ERROR' | 'INFO' | 'VERBOSE' | 'DEBUG' | 'DEBUG1' | 'DEBUG2' | 'DEBUG3';
@@ -482,15 +483,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   }
 
   permitOpenAllows(destHost: string, destPort: number): boolean {
-    if (this.permitOpen.includes('any')) return true;
-    if (this.permitOpen.includes('none')) return false;
-    return this.permitOpen.some((entry) => {
-      const colon = entry.lastIndexOf(':');
-      if (colon < 0) return false;
-      const host = entry.slice(0, colon);
-      const port = entry.slice(colon + 1);
-      return (host === '*' || host === destHost) && (port === '*' || port === String(destPort));
-    });
+    return permitOpenAllows(this.permitOpen, destHost, destPort);
   }
 
   permitsLocalForward(

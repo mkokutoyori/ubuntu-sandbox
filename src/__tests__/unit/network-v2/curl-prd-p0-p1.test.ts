@@ -135,7 +135,7 @@ describe('§P1 — le code de sortie fait partie de la commande', () => {
 
     const out = await client.executeCommand(`curl ${url()}`);
 
-    expect(out).toContain(`curl: (7) Failed to connect to ${SRV_IP} port ${PORT}: Connection refused`);
+    expect(out).toMatch(new RegExp(`curl: \\(7\\) Failed to connect to ${SRV_IP.replace(/\./g, '\\.')} port ${PORT} after \\d+ ms: Couldn't connect to server`));
     expect((await client.executeCommand('echo $?')).trim()).toBe('7');
   });
 

@@ -67,10 +67,16 @@ export class HttpsClientSession {
   }
 
 
+  adopt(socket: TcpSocket): void {
+    this.socket = socket;
+    this.tls = null;
+  }
+
   private connectIfNeeded(): boolean {
     if (this.socket && this.socket.state === 'established' && this.tls?.result === 'success') return true;
 
-    const socket = this.tcpStack.connect(this.targetIp, this.port);
+    const adopted = this.socket?.state === 'established' && this.tls === null ? this.socket : null;
+    const socket = adopted ?? this.tcpStack.connect(this.targetIp, this.port);
     if (!socket || socket.state !== 'established') return false;
 
     const tls = new TlsClientSession({ ...this.tlsConfig, alpn: this.tlsConfig.alpn ?? ['http/1.1'] });

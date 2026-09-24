@@ -6,7 +6,7 @@
  * `admin-port 80` et `admin-sport 443` sont declares, rendus par
  * `get system global`, gardes par `ManagementPlane.admitsTcp` — et lies
  * par PERSONNE : `FirewallCliServer.refresh()` ne lie que `ssh` et
- * `telnet`. `curl -sv http://<fw>/login` s'arrete a « Trying ... ».
+ * `telnet`. `curl -sv --connect-timeout 3 http://<fw>/login` s'arrete a « Trying ... ».
  *
  * Ecrite A L'AVEUGLE contre ce qu'un vrai FortiGate fait. Les references
  * sont du CODE SOURCE qui parle a de vraies machines, pas de la
@@ -114,7 +114,7 @@ async function countDispatchedFrames(fn: () => Promise<void>): Promise<number> {
 }
 
 async function curl(poste: Cmd, args: string): Promise<string> {
-  return poste.executeCommand(`curl ${args}`);
+  return poste.executeCommand(`curl --connect-timeout 3 ${args}`);
 }
 
 const API = '/api/v2/cmdb/system/admin';

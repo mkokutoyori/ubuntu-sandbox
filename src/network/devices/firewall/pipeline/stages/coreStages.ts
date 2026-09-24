@@ -3,7 +3,7 @@ import { decrementForForwarding } from '../../../../layers/internet/InternetLaye
 import { getPacketDstPort, getPacketSrcPort, rewriteSrcIP } from '../../../../nat/rewrite';
 import {
   IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP,
-  type ICMPPacket, type IPv4Packet, type MACAddress, type TCPPacket,
+  type ICMPPacket, type IPv4Packet, type MACAddress,
 } from '../../../../core/types';
 import { IPV4_FLAG_DF } from '../../../../core/Ipv4Fragmentation';
 import type { InterfaceTable } from '../../l3/InterfaceTable';
@@ -30,7 +30,7 @@ import { transportPorts } from '../../policy/probeFields';
 import { dosFinding, dosTrafficOfIpv4, type DosTraffic } from '../../dos/DosGate';
 import type { DosPolicyStore } from '../../dos/DosPolicyStore';
 import type { DosFinding, DosSensor } from '../../dos/DosSensor';
-import { flowKeyFromPacket, reverseFlowKey, type FlowKey } from '../../session/FlowKey';
+import { icmpErrorFlowKey, flowKeyFromPacket, reverseFlowKey, type FlowKey } from '../../session/FlowKey';
 import type { AssembledStream } from '../../inspection/StreamAssembler';
 import type { FirewallSession, SessionTable, SessionTranslation } from '../../session/SessionTable';
 import type { FlowDirection } from '../../session/TcpStateMachine';
@@ -46,6 +46,7 @@ import type { PolicyRouteTable } from '../../l3/PolicyRouteTable';
 import type { IngressInterfaceOptionsReader } from '../../l3/IngressInterfaceOptions';
 import type { PacketContext, VerdictReason } from '../PacketContext';
 import type { PipelineStage } from '../FirewallPipeline';
+import type { TcpSegment } from '../../../../tcp/types';
 
 export interface VdomServices {
   name: string;
@@ -204,7 +205,7 @@ function originalIpv4(context: PacketContext): IPv4Packet | undefined {
 
 function tcpFlagsOf(packet: IPv4Packet): ObservedTcpFlags | undefined {
   if (packet.protocol !== IP_PROTO_TCP) return undefined;
-  const payload = packet.payload as TCPPacket | null | undefined;
+  const payload = packet.payload as TcpSegment | null | undefined;
   return payload?.type === 'tcp' ? payload.flags : undefined;
 }
 
@@ -566,7 +567,7 @@ function observeSessionHelpers(
   session: FirewallSession, direction: FlowDirection, packet: IPv4Packet,
 ): void {
   if (packet.protocol !== IP_PROTO_TCP) return;
-  const tcp = packet.payload as TCPPacket | null | undefined;
+  const tcp = packet.payload as TcpSegment | null | undefined;
   if (tcp?.type !== 'tcp' || typeof tcp.payload !== 'string') return;
   if (services.sessionHelperFor?.(session.c2s.protocol, session.c2s.destPort) !== 'ftp') return;
   const expected = ftpExpectedDataFlow(session, direction, tcp.payload);
@@ -578,7 +579,7 @@ function takeExpectedFlow(
 ): { rule: SecurityRule; parentSessionId: number } | undefined {
   if (!context.isFirstPacket || packet.protocol !== IP_PROTO_TCP) return undefined;
   const arrived = originalIpv4(context) ?? packet;
-  const tcp = arrived.payload as TCPPacket | null | undefined;
+  const tcp = arrived.payload as TcpSegment | null | undefined;
   if (tcp?.type !== 'tcp') return undefined;
   const expected = vdom(services, context).expectedFlows?.take(
     IP_PROTO_TCP, arrived.sourceIP.toString(), arrived.destinationIP.toString(), tcp.destinationPort);
@@ -587,12 +588,45 @@ function takeExpectedFlow(
   return rule ? { rule, parentSessionId: expected.parentSessionId } : undefined;
 }
 
+function relatedIcmpError(
+  services: FirewallServices, context: PacketContext, packet: IPv4Packet,
+): FilterVerdict<PacketContext> | undefined {
+  const key = icmpErrorFlowKey(packet);
+  if (!key) return undefined;
+  const found = vdom(services, context).sessions.lookup(key);
+  if (!found || found.session.state === 'discard') return undefined;
+
+  context.session = found.session;
+  context.sessionDirection = found.direction;
+  context.isFirstPacket = false;
+  context.egressPort = found.direction === 'c2s' ? found.session.egressInterface : found.session.ingressInterface;
+  context.egressZone = found.direction === 'c2s' ? found.session.egressZone : found.session.ingressZone;
+
+  const nat = vdom(services, context).nat;
+  if (found.session.translation && nat) {
+    const embeddedDirection = found.direction === 'c2s' ? 's2c' : 'c2s';
+    const ownAddress = context.egressPort === undefined ? undefined : services.interfaces.get(context.egressPort)?.ip;
+    context.packet = nat.reapplyToIcmpError(packet, found.session.translation, embeddedDirection, ownAddress);
+  }
+  const expired = transitTtl(services, context, 'session-lookup');
+  if (expired) return expired;
+
+  context.trace.push({ stage: 'session-lookup', verdict: 'related' });
+  context.verdict = Object.freeze({
+    action: 'accept' as const, reason: 'policy-deny' as VerdictReason, stage: 'session-lookup',
+  });
+  return { kind: 'accept', payload: context };
+}
+
 function sessionLookupStage(services: FirewallServices): PipelineStage {
   return {
     name: 'session-lookup',
     apply(context) {
       const packet = ipv4(context);
       if (!packet) return proceed(context, 'session-lookup', 'not-ipv4');
+
+      const related = relatedIcmpError(services, context, packet);
+      if (related) return related;
 
       const found = vdom(services, context).sessions.lookup(flowKeyFromPacket(packet));
       if (!found) return proceed(context, 'session-lookup', 'miss');

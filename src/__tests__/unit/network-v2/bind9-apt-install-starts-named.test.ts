@@ -61,7 +61,7 @@ describe('apt install bind9 leaves a named that starts', () => {
     const { srv, cli } = await buildLab();
     await srv.executeCommand(`printf '${ZONE}\\n' > /etc/bind/db.lab.lan`);
     await srv.executeCommand(`echo 'zone "lab.lan" { type master; file "/etc/bind/db.lab.lan"; };' >> /etc/bind/named.conf.local`);
-    await srv.executeCommand('systemctl start named');
+    await srv.executeCommand('systemctl reload named');
     const out = await cli.executeCommand('dig @10.0.0.2 web.lab.lan');
     expect(out).toContain('status: NOERROR');
     expect(out).toMatch(/flags: qr aa/);

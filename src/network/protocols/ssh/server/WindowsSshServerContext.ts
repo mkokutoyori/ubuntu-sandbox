@@ -89,6 +89,7 @@ export class WindowsSshServerContext implements ISshServerContext {
     this.config = Object.freeze({
       ...DEFAULT_SSH_SERVER_CONFIG,
       ...this.sshdConfig,
+      permitRootLogin: this.sshdConfig.permitRootLogin !== 'no',
       ...config,
     });
     this.auth = this.buildAuthContext();

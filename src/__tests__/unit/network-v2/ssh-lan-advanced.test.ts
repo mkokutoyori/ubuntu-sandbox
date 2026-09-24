@@ -197,7 +197,7 @@ describe('SSH LAN — advanced scenarios', () => {
     // Auth should still work for "user" but fail for an unknown account.
     expect(reloaded.auth.checkPassword('user', 'admin')).toBe(true);
     expect(reloaded.auth.checkPassword('ghost', 'admin')).toBe(false);
-    expect(ctx.config.permitRootLogin).toBe(false);
+    expect(ctx.sshdConfig.permitRootLogin).toBe('prohibit-password');
   });
 
   // 76

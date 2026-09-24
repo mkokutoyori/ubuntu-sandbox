@@ -1,5 +1,6 @@
-import type { EthernetFrame, IPv4Packet, TCPPacket, UDPPacket, ICMPPacket } from '../../../core/types';
+import type { EthernetFrame, IPv4Packet, UDPPacket, ICMPPacket } from '../../../core/types';
 import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, ETHERTYPE_ARP, ETHERTYPE_IPV4 } from '../../../core/types';
+import type { TcpSegment } from '../../../tcp/types';
 
 export type CaptureDirection = 'in' | 'out';
 
@@ -153,7 +154,7 @@ export function frameMatches(frame: EthernetFrame, filter: CaptureFilter): boole
 }
 
 export function portsOf(packet: IPv4Packet): { source: number; destination: number } {
-  const payload = packet.payload as TCPPacket | UDPPacket | null | undefined;
+  const payload = packet.payload as TcpSegment | UDPPacket | null | undefined;
   if (payload?.type === 'tcp' || payload?.type === 'udp') {
     return { source: payload.sourcePort, destination: payload.destinationPort };
   }

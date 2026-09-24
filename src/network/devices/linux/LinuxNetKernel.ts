@@ -100,6 +100,8 @@ export interface LinuxNetKernel {
   setDefaultGateway(gw: IPAddress): void;
   getDefaultGateway(): IPAddress | null;
   clearDefaultGateway(): void;
+  addDefaultRouteEntry(gw: IPAddress, metric: number, mode: 'add' | 'append' | 'replace'): boolean;
+  removeDefaultRouteEntry(filter: { nextHop?: IPAddress; metric?: number }): boolean;
 
   // ─── Policy routing (`ip rule` + `ip route ... table <ID>`) ──────
   getRoutingTableFor(tableId: number): HostRouteEntry[];

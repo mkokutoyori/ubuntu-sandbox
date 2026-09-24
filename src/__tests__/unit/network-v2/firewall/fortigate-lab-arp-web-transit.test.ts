@@ -166,7 +166,7 @@ describe('l interface web du pare-feu, vue depuis la machine', () => {
 
   it('le port 80 repond aussi quand `http` est dans allowaccess', async () => {
     const { pc } = await labo();
-    const sortie = await pc.executeCommand('curl -s http://192.168.1.1/');
+    const sortie = await pc.executeCommand('curl -s --connect-timeout 3 http://192.168.1.1/');
 
     expect(sortie).not.toMatch(/Connection refused|couldn't connect/i);
   });
@@ -178,8 +178,8 @@ describe('l interface web du pare-feu, vue depuis la machine', () => {
       'set allowaccess ping', 'next', 'end',
     ]);
 
-    expect(await pc.executeCommand('curl -k -sS https://192.168.1.1/'))
-      .toMatch(/Connection refused|couldn't connect|refused/i);
+    expect(await pc.executeCommand('curl -k -sS --connect-timeout 3 https://192.168.1.1/'))
+      .toMatch(/Connection refused|couldn't connect|refused|Timeout was reached/i);
   });
 
   it('et le ping continue de passer — seul HTTPS est ferme', async () => {
@@ -284,7 +284,7 @@ describe('le trafic qui TRAVERSE le pare-feu', () => {
       'systemctl start nginx',
     ]);
 
-    const sortie = await pc.executeCommand('curl -s http://203.0.113.9/');
+    const sortie = await pc.executeCommand('curl -s --connect-timeout 3 http://203.0.113.9/');
     expect(sortie).not.toMatch(/Connection refused|couldn't connect/i);
     expect(sortie.length).toBeGreaterThan(0);
   });

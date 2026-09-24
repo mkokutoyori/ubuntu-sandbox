@@ -101,7 +101,7 @@ describe('TP 7 — la premiere politique, et lever le blocage', () => {
 
     expect(await pingOnSimulatedClock(pcLan, 'ping -c 2 192.168.20.10'))
       .toMatch(/ 0% packet loss/);
-    expect(await pcLan.executeCommand('curl -sS http://192.168.20.10/'))
+    expect(await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/'))
       .toContain('Welcome to nginx!');
   });
 
@@ -109,7 +109,7 @@ describe('TP 7 — la premiere politique, et lever le blocage', () => {
     async () => {
       const { fgt, pcLan } = await laboratoire();
       await politiqueDmz(fgt);
-      await pcLan.executeCommand('curl -sS http://192.168.20.10/');
+      await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/');
 
       const conf = await fgt.executeCommand('show firewall policy');
       expect(conf).not.toMatch(/set srcintf "port3"/);
@@ -120,8 +120,9 @@ describe('TP 7 — la premiere politique, et lever le blocage', () => {
     await srvDmz.executeCommand('systemctl start ssh');
     await politiqueDmz(fgt);
 
-    const ssh = await pcLan.executeCommand('curl -sS https://192.168.20.10/');
+    const ssh = await pcLan.executeCommand('curl -sS --connect-timeout 3 https://192.168.20.10/');
     expect(ssh).not.toContain('Welcome to nginx!');
+    expect(ssh).toMatch(/^curl: \(28\) Failed to connect to 192\.168\.20\.10 port 443 after \d+ ms: Timeout was reached$/m);
   });
 
   it('etape 4 : une regle de blocage PLACEE APRES n\'est jamais lue', async () => {
@@ -145,7 +146,7 @@ describe('TP 7 — la premiere politique, et lever le blocage', () => {
 
       expect(await pingOnSimulatedClock(pcLan, 'ping -c 2 192.168.20.10'))
         .toMatch(/ 100% packet loss/);
-      expect(await pcLan.executeCommand('curl -sS http://192.168.20.10/'))
+      expect(await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/'))
         .toContain('Welcome to nginx!');
     });
 
@@ -165,7 +166,7 @@ describe('TP 7 — la premiere politique, et lever le blocage', () => {
   it('etape 6 : la table de sessions nomme la politique qui a decide', async () => {
     const { fgt, pcLan } = await laboratoire();
     await politiqueDmz(fgt);
-    await pcLan.executeCommand('curl -sS http://192.168.20.10/');
+    await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/');
 
     await fgt.executeCommand('diagnose sys session filter dst 192.168.20.10');
     const vue = await fgt.executeCommand('diagnose sys session list');
@@ -178,7 +179,7 @@ describe('TP 7 — la premiere politique, et lever le blocage', () => {
     async () => {
       const { fgt, pcLan } = await laboratoire();
       await politiqueDmz(fgt);
-      await pcLan.executeCommand('curl -sS http://192.168.20.10/');
+      await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/');
       await pingOnSimulatedClock(pcLan, 'ping -c 1 192.168.20.1');
 
       await fgt.executeCommand('diagnose sys session filter dst 192.168.20.10');
@@ -219,7 +220,7 @@ describe('TP 7 — la premiere politique, et lever le blocage', () => {
     const avant = await fgt.executeCommand('diagnose firewall iprope show 100004 2');
     expect(avant).toContain('hit count:0');
 
-    await pcLan.executeCommand('curl -sS http://192.168.20.10/');
+    await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/');
     const apres = await fgt.executeCommand('diagnose firewall iprope show 100004 2');
     expect(apres).not.toContain('hit count:0');
     expect(apres).toMatch(/hit count:[1-9]/);

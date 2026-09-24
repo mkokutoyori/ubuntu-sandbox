@@ -10,7 +10,7 @@
  *
  * Measured before the fix (git stash of src/network): 2 of the 3 cases
  * fail, both with "curl: (28) … Timeout was reached" where a closed port
- * must answer "Connection refused".
+ * must answer "(7) … Couldn't connect to server".
  * Passing either way:
  *   - "a listening server behind a VIP" is the WITNESS: VIP, policy and
  *     routing are sound, so the refusals measure the closing segment only.
@@ -69,14 +69,14 @@ describe('a closing segment is translated like the rest of its session', () => {
   it('a closed port behind a VIP is refused, not timed out', async () => {
     const { wan } = await buildLab();
     const out = await wan.executeCommand('curl -sS --connect-timeout 2 http://203.0.113.1/; echo EC=$?');
-    expect(out).toContain('Connection refused');
+    expect(out).toContain("Couldn't connect to server");
     expect(out).toContain('EC=7');
   });
 
   it('a closed port reached through SNAT is refused, not timed out', async () => {
     const { lan } = await buildLab();
     const out = await lan.executeCommand('curl -sS --connect-timeout 2 http://203.0.113.9:81/; echo EC=$?');
-    expect(out).toContain('Connection refused');
+    expect(out).toContain("Couldn't connect to server");
     expect(out).toContain('EC=7');
   });
 });

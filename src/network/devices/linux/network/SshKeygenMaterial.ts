@@ -203,19 +203,41 @@ export function keygenFingerprint(publicLine: string, hash: string): string | nu
   return `${facts.bits} ${digest} ${facts.comment} (${facts.label})`;
 }
 
+const RANDOMART_WIDTH = 17;
+const RANDOMART_HEIGHT = 9;
+const RANDOMART_SYMBOLS = ' .o+=*BOX@%&#/^SE';
+
+function randomartBorder(label: string): string {
+  const left = Math.floor((RANDOMART_WIDTH - label.length) / 2);
+  return `+${'-'.repeat(Math.max(0, left))}${label}${'-'.repeat(Math.max(0, RANDOMART_WIDTH - left - label.length))}+`;
+}
+
 export function keygenRandomart(publicLine: string): string {
-  const tokens = publicLine.trim().split(/\s+/);
-  const label = ALGORITHM_LABELS[tokens[0] ?? ''] ?? 'KEY';
-  const digest = sha256(fromBase64(tokens[1] ?? ''));
-  const glyphs = ' .o+=*BOX@%&#/^';
-  const rows: string[] = [`+--[${label.padEnd(6)}]----+`];
-  for (let y = 0; y < 9; y++) {
-    let line = '|';
-    for (let x = 0; x < 17; x++) {
-      line += glyphs[digest[(y * 17 + x) % digest.length] % glyphs.length];
+  const facts = keygenKeyFacts(publicLine);
+  const digest = sha256(fromBase64(publicLine.trim().split(/\s+/)[1] ?? ''));
+  const field = Array.from({ length: RANDOMART_WIDTH }, () => new Array<number>(RANDOMART_HEIGHT).fill(0));
+  const last = RANDOMART_SYMBOLS.length - 1;
+  const startX = Math.floor(RANDOMART_WIDTH / 2);
+  const startY = Math.floor(RANDOMART_HEIGHT / 2);
+  let x = startX;
+  let y = startY;
+  for (const byte of digest) {
+    let input = byte;
+    for (let step = 0; step < 4; step++) {
+      x = Math.min(Math.max(x + ((input & 1) ? 1 : -1), 0), RANDOMART_WIDTH - 1);
+      y = Math.min(Math.max(y + ((input & 2) ? 1 : -1), 0), RANDOMART_HEIGHT - 1);
+      if (field[x][y] < last - 2) field[x][y]++;
+      input >>= 2;
     }
+  }
+  field[startX][startY] = last - 1;
+  field[x][y] = last;
+  const rows = [randomartBorder(`[${facts.label} ${facts.bits}]`)];
+  for (let row = 0; row < RANDOMART_HEIGHT; row++) {
+    let line = '|';
+    for (let col = 0; col < RANDOMART_WIDTH; col++) line += RANDOMART_SYMBOLS[Math.min(field[col][row], last)];
     rows.push(`${line}|`);
   }
-  rows.push('+----[SHA256]-----+');
+  rows.push(randomartBorder('[SHA256]'));
   return rows.join('\n');
 }

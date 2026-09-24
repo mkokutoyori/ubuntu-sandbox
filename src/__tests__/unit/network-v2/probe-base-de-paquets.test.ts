@@ -36,6 +36,12 @@
  * qu'on vient d'écrire dans `apt` dit la même chose que celui qui
  * existait déjà.
  *
+ * Deux cas ont changé de machine quand l'état de paquets est devenu
+ * PROPRE À CHAQUE MACHINE (/var/lib/dpkg/status) : nginx n'est livré que
+ * par l'image serveur, et bind9 n'est installé nulle part tant
+ * qu'`apt install bind9` n'a pas posé /etc/bind/named.conf. Ils
+ * prétendaient le contraire sur un LinuxPC, ce qui était le défaut même.
+ *
  * Une remarque sur la rédaction, écrite plutôt que tue : le cas de
  * l'option a d'abord passé des DEUX côtés parce qu'il se contentait de
  * chercher `curl is already the newest version` dans la sortie, or
@@ -44,6 +50,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
+import { LinuxServer } from '@/network/devices/LinuxServer';
 import { PACKAGE_DB, packageProvides } from '@/network/devices/linux/packages/PackageDatabase';
 import {
   packageOfCommand, shippedCommands, doublyDeclaredCommands,
@@ -65,7 +72,7 @@ describe('la base de paquets décrit la machine', () => {
   });
 
   it('apt install nomme la VERSION du paquet installé', async () => {
-    expect(await machine().executeCommand('apt install nginx'))
+    expect(await new LinuxServer('linux-server', 'srv1', 0, 0).executeCommand('apt install nginx'))
       .toContain('nginx is already the newest version (1.18.0-6ubuntu14.4).');
   });
 
@@ -84,9 +91,9 @@ describe('la base de paquets décrit la machine', () => {
   });
 
   it('apt-cache policy dit installé pour ce qui tourne vraiment', async () => {
-    const out = await machine().executeCommand('apt-cache policy bind9');
+    const out = await machine().executeCommand('apt-cache policy openssh-server');
     expect(out).not.toContain('Installed: (none)');
-    expect(out).toContain('Installed: 9.18.12-0ubuntu0.22.04.1');
+    expect(out).toContain('Installed: 1:8.9p1-3ubuntu0.1');
   });
 
   it('dpkg -l filtre sur son argument', async () => {
