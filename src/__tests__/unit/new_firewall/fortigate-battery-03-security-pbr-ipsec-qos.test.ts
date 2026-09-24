@@ -265,7 +265,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       ]);
       await pc.executeCommand('curl -s http://203.0.113.10/');
       await taper(fw, ['config router static', 'delete 1', 'end']);
-      const res = await pc.executeCommand('curl -s --connect-timeout 1 http://203.0.113.10/');
+      const res = await pc.executeCommand('curl -sS --connect-timeout 1 http://203.0.113.10/');
       expect(res).toMatch(/Network is unreachable|timed out|Failed to connect/i);
     });
   });

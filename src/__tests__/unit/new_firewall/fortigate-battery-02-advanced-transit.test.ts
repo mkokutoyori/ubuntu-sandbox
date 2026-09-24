@@ -128,7 +128,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       ]);
       const resDmz = await wanSrv.executeCommand('curl -s http://10.0.0.5/');
       expect(resDmz).toMatch(/nginx/i);
-      const resLan = await wanSrv.executeCommand('curl -s --connect-timeout 1 http://192.168.1.10/');
+      const resLan = await wanSrv.executeCommand('curl -sS --connect-timeout 1 http://192.168.1.10/');
       expect(resLan).toMatch(/Connection timed out|Failed to connect/i);
     });
 
@@ -324,7 +324,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
         'set srcaddr "198.51.100.22"', 'set dstaddr "VIP_RESTREINT"',
         'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
-      const res = await wanSrv.executeCommand('curl -s --connect-timeout 1 http://203.0.113.1/');
+      const res = await wanSrv.executeCommand('curl -sS --connect-timeout 1 http://203.0.113.1/');
       expect(res).toMatch(/timed out|refused/i);
     });
 
@@ -364,7 +364,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
     it('70. La suppression d\'un VIP interrompt immédiatement les connexions entrantes établies', async () => {
       const { fw, wanSrv } = await creerLaboAvance();
       await taper(fw, ['config firewall vip', 'delete "VIP_HAIRPIN"', 'end']);
-      const res = await wanSrv.executeCommand('curl -s --connect-timeout 1 http://203.0.113.100/');
+      const res = await wanSrv.executeCommand('curl -sS --connect-timeout 1 http://203.0.113.100/');
       expect(res).toMatch(/timed out|Failed to connect/i);
     });
   });
@@ -663,7 +663,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
         'set action accept', 'next', 'end',
       ]);
-      const res = await pc.executeCommand('curl -s --connect-timeout 2 http://203.0.113.9:9999/');
+      const res = await pc.executeCommand('curl -sS --connect-timeout 2 http://203.0.113.9:9999/');
       expect(res).toMatch(/Connection refused/i);
     });
 

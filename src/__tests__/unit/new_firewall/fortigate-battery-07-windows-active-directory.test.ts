@@ -487,7 +487,7 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
     it('344. Blocage par le pare-feu hôte Windows : un paquet accepté par FortiGate est détruit par Windows Defender', async () => {
       const { linuxPc, winDc } = await creerLaboHybride();
       await cmd(winDc, 'netsh advfirewall firewall add rule name="BlockLinux" dir=in action=block remoteip=192.168.1.10');
-      const res = await linuxPc.executeCommand('curl -s --connect-timeout 1 http://10.10.10.10/');
+      const res = await linuxPc.executeCommand('curl -sS --connect-timeout 1 http://10.10.10.10/');
       expect(res).toMatch(/Connection timed out|refused/i);
     });
 
