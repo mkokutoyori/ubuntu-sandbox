@@ -194,6 +194,7 @@ import type { GetentResult } from './nss/GetentCommand';
 import type { NssHostEntry, NssServiceEntry } from './nss/types';
 import { IPAddress } from '../../core/types';
 import { openDescriptors, descriptorCount, type DescriptorSources } from './process/FileDescriptorTable';
+import { VSFTPD_CONF_PATH, VSFTPD_UPSTREAM_SAMPLE_CONF } from './ftp/LinuxVsftpdService';
 
 /** Commands that commonly read from stdin when piped. */
 const STDIN_COMMANDS = new Set([
@@ -5471,6 +5472,7 @@ export class LinuxCommandExecutor {
             };
           }
           if (noms.includes('bind9')) this.provisionBind9Defaults();
+          if (sub === 'install' && noms.includes('vsftpd')) this.provisionVsftpd();
           const lignes = noms.map((n) => {
             const p = findPackage(n)!;
             return sub === 'install'
@@ -7821,6 +7823,37 @@ export class LinuxCommandExecutor {
    * that writes named.conf.options/named.conf.local can validate/start
    * bind9 without also having to author the top-level include file itself.
    */
+  private provisionVsftpd(): void {
+    if (!this.userMgr.getUser('ftp')) {
+      this.userMgr.useradd('ftp', { r: true, M: true, d: '/srv/ftp', s: '/usr/sbin/nologin' });
+    }
+    const ftp = this.userMgr.getUser('ftp');
+    if (!this.vfs.exists('/srv/ftp')) this.vfs.mkdirp('/srv/ftp', 0o755, 0, ftp?.gid ?? 0);
+    if (this.vfs.readFile(VSFTPD_CONF_PATH) == null) {
+      this.vfs.writeFile(VSFTPD_CONF_PATH, VSFTPD_UPSTREAM_SAMPLE_CONF, 0, 0, 0o022);
+    }
+    const unitPath = '/lib/systemd/system/vsftpd.service';
+    if (this.vfs.readFile(unitPath) == null) {
+      this.vfs.writeFile(unitPath, [
+        '[Unit]',
+        'Description=vsftpd FTP server',
+        'After=network.target',
+        '',
+        '[Service]',
+        'Type=simple',
+        `ExecStart=/usr/sbin/vsftpd ${VSFTPD_CONF_PATH}`,
+        'ExecReload=/bin/kill -HUP $MAINPID',
+        '',
+        '[Install]',
+        'WantedBy=multi-user.target',
+        '',
+      ].join('\n'), 0, 0, 0o022);
+    }
+    this.serviceMgr.daemonReload();
+    this.serviceMgr.enable('vsftpd');
+    this.serviceMgr.start('vsftpd');
+  }
+
   private provisionBind9Defaults(): void {
     if (!this.vfs.exists('/etc/bind')) this.vfs.mkdirp('/etc/bind', 0o755, 0, 0);
     if (!this.vfs.exists('/var/cache/bind')) this.vfs.mkdirp('/var/cache/bind', 0o775, 0, 0);

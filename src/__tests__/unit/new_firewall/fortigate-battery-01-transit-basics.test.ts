@@ -386,7 +386,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('26. Connexion initiale au port de commande FTP (port 21) traversant', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'FTP');
-      await taper(srv as unknown as Cli, ['systemctl start vsftpd']);
+      await taper(srv as unknown as Cli, ['apt install -y vsftpd']);
       const res = await pc.executeCommand('curl -s ftp://203.0.113.9/ --connect-timeout 2');
       expect(res).not.toMatch(/Connection refused|couldn't connect/i);
     });
@@ -394,7 +394,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('27. Le banner d\'accueil du service FTP traverse le réseau jusqu\'au client', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'FTP');
-      await taper(srv as unknown as Cli, ['systemctl start vsftpd']);
+      await taper(srv as unknown as Cli, ['apt install -y vsftpd']);
       const res = await pc.executeCommand('nc -zv -w 2 203.0.113.9 21');
       expect(res).toMatch(/succeeded|open|Connected/i);
     });
@@ -403,7 +403,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'FTP');
       await taper(srv as unknown as Cli, [
-        'systemctl start vsftpd',
+        'apt install -y vsftpd',
         'echo "FTP_TRAFFIC_DATA" > /srv/ftp/test.txt',
       ]);
       const res = await pc.executeCommand('curl -s ftp://203.0.113.9/test.txt');
@@ -413,27 +413,33 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('29. Téléversement d\'un fichier FTP (STOR) à travers la politique pare-feu', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'ALL');
-      await taper(srv as unknown as Cli, ['systemctl start vsftpd']);
+      await taper(srv as unknown as Cli, [
+        'apt install -y vsftpd',
+        "sed -i 's/^#write_enable=YES/write_enable=YES/; s/^#anon_upload_enable=YES/anon_upload_enable=YES/' /etc/vsftpd.conf",
+        'mkdir /srv/ftp/upload',
+        'chown ftp /srv/ftp/upload',
+        'systemctl restart vsftpd',
+      ]);
       await pc.executeCommand('echo "UPLOAD_PAYLOAD" > upload.txt');
-      await pc.executeCommand('curl -s -T upload.txt ftp://203.0.113.9/');
-      const check = await (srv as unknown as Cli).executeCommand('cat /srv/ftp/upload.txt');
+      await pc.executeCommand('curl -s -T upload.txt ftp://203.0.113.9/upload/');
+      const check = await (srv as unknown as Cli).executeCommand('cat /srv/ftp/upload/upload.txt');
       expect(check).toContain('UPLOAD_PAYLOAD');
     });
 
     it('30. Fermeture du port FTP par modification de policy bloque immédiatement le transfert', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'HTTP'); // Pas de FTP
-      await taper(srv as unknown as Cli, ['systemctl start vsftpd']);
-      const res = await pc.executeCommand('curl -s --connect-timeout 1 ftp://203.0.113.9/');
+      await taper(srv as unknown as Cli, ['apt install -y vsftpd']);
+      const res = await pc.executeCommand('curl -sS --connect-timeout 1 ftp://203.0.113.9/');
       expect(res).toMatch(/Failed to connect|Connection timed out|couldn't connect/i);
     });
 
     it('31. Tentative d\'accès à un fichier inexistant renvoie le code d\'erreur FTP 550', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'FTP');
-      await taper(srv as unknown as Cli, ['systemctl start vsftpd']);
-      const res = await pc.executeCommand('curl -s ftp://203.0.113.9/inexistant.txt');
-      expect(res).toMatch(/550|No such file/i);
+      await taper(srv as unknown as Cli, ['apt install -y vsftpd']);
+      const res = await pc.executeCommand('curl -sS ftp://203.0.113.9/inexistant.txt');
+      expect(res).toContain('curl: (78) The file does not exist');
     });
   });
 

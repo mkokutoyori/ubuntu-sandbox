@@ -51,7 +51,28 @@ export interface FtpServerConfig {
   readonly ftps?: TlsServerConfig;
   /** §2.1.12 observability — publishes `ftp.*`/`ftps.*` events (`events.ts`) if set. */
   readonly eventBus?: IEventBus;
+  readonly messages?: FtpServerMessages;
+  readonly sessionFor?: (username: string) => FtpUserSession | null;
+  readonly permitsWrite?: (username: string, verb: FtpWriteVerb) => boolean;
+  readonly rejectUser?: (username: string) => string | null;
+  readonly listLine?: (entry: SftpDirEntry) => string;
 }
+
+export interface FtpServerMessages {
+  readonly greeting?: string;
+  readonly passwordRequired?: string;
+  readonly loggedIn?: string;
+}
+
+export interface FtpUserSession {
+  readonly fs: ISftpFileSystem;
+  readonly cwd: string;
+}
+
+export type FtpWriteVerb = 'STOR' | 'STOU' | 'APPE' | 'MKD' | 'RMD' | 'DELE' | 'RNFR' | 'RNTO';
+
+const WRITE_VERBS: ReadonlySet<string> = new Set<FtpWriteVerb>(
+  ['STOR', 'STOU', 'APPE', 'MKD', 'RMD', 'DELE', 'RNFR', 'RNTO']);
 
 type SessionState = 'awaiting-user' | 'awaiting-password' | 'authenticated' | 'closed';
 
@@ -121,7 +142,7 @@ export class FtpServerSession {
 
   /** The unprompted `220` banner a real server sends right after accepting the TCP connection. */
   greeting(): FtpReply {
-    return reply(220, 'Ubuntu Sandbox FTP server ready.');
+    return reply(220, this.config.messages?.greeting ?? 'Ubuntu Sandbox FTP server ready.');
   }
 
   /** `FtpServer.ts` calls this right after writing the `234` reply in the clear, then starts the actual handshake. */
@@ -140,6 +161,10 @@ export class FtpServerSession {
     this.config.eventBus?.publish({
       topic: 'ftp.command.received', payload: { connectionId: this.connectionId, verb: cmd.verb },
     });
+    if (this.authenticated && WRITE_VERBS.has(cmd.verb) && this.config.permitsWrite
+      && !this.config.permitsWrite(this.username!, cmd.verb as FtpWriteVerb)) {
+      return [reply(550, 'Permission denied.')];
+    }
     switch (cmd.verb) {
       case 'USER': return [this.handleUser(cmd)];
       case 'PASS': return [this.handlePass(cmd)];
@@ -209,11 +234,18 @@ export class FtpServerSession {
 
   private handleUser(cmd: FtpCommand): FtpReply {
     if (!cmd.argument) return reply(501, 'Syntax error in parameters.');
+    const refusal = this.config.rejectUser?.(cmd.argument) ?? null;
+    if (refusal !== null) {
+      this.username = null;
+      this.authenticated = false;
+      this.state = 'awaiting-user';
+      return reply(530, refusal);
+    }
     this.username = cmd.argument;
     this.authenticated = false;
     this.state = 'awaiting-password';
     // Never reveal whether the username is actually known — same posture as a real server.
-    return reply(331, `Password required for ${cmd.argument}.`);
+    return reply(331, this.config.messages?.passwordRequired ?? `Password required for ${cmd.argument}.`);
   }
 
   private handlePass(cmd: FtpCommand): FtpReply {
@@ -229,15 +261,20 @@ export class FtpServerSession {
     }
     this.state = 'authenticated';
     this.authenticated = true;
+    const own = this.config.sessionFor?.(this.username!);
+    if (own) {
+      this.fs = own.fs;
+      this.cwd = own.cwd;
+    }
     const chrootDir = this.config.chroots?.get(this.username!);
     if (chrootDir !== undefined) {
-      this.fs = new ChrootedSftpFileSystem(this.config.fs, chrootDir);
+      this.fs = new ChrootedSftpFileSystem(this.fs, chrootDir);
       this.cwd = '/';
     }
     this.config.eventBus?.publish({
       topic: 'ftp.control.authenticated', payload: { connectionId: this.connectionId, username: this.username! },
     });
-    return reply(230, `User ${this.username} logged in.`);
+    return reply(230, this.config.messages?.loggedIn ?? `User ${this.username} logged in.`);
   }
 
   private handleAcct(): FtpReply {
@@ -461,7 +498,7 @@ export class FtpServerSession {
     const dataTls = this.dataTls;
 
     const entries = listing.value.filter((e) => e.name !== '.' && e.name !== '..');
-    const lines = format === 'long' ? entries.map(formatListLine) : entries.map((e) => e.name);
+    const lines = format === 'long' ? entries.map(this.config.listLine ?? formatListLine) : entries.map((e) => e.name);
     socket.write(this.encryptForDataChannel(dataTls, lines.length > 0 ? `${lines.join('\r\n')}\r\n` : ''));
     socket.close();
     this.closeDataChannel();

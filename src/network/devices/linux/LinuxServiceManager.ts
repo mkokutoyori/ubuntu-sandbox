@@ -552,6 +552,7 @@ export const SERVICE_LISTENERS: Readonly<Record<string, ServiceListenerSpec>> = 
     sockets: [{ port: 2049, protocol: 'tcp' }, { port: 20048, protocol: 'tcp' }],
   },
   'oracle-ohasd': { processName: 'tnslsnr', sockets: [{ port: 1521, protocol: 'tcp' }] },
+  vsftpd: { processName: 'vsftpd', sockets: [{ port: 21, protocol: 'tcp' }] },
 };
 
 /** A service plus the runtime data the port projection needs to bind it. */

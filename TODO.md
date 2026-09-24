@@ -330,6 +330,8 @@ immediate « Connection refused », code 7.
 borne l'attente ; sans lui, le delai par defaut du noyau (reemissions du
 SYN, ~130 s sous Linux) n'est pas modele, et changer le texte du refus
 touche les tests qui l'attendent sous sa forme actuelle.
+Le meme texte sert au canal de donnees FTP (`curl ftp://`) quand il ne
+s'ouvre pas.
 
 ### [iam] /etc/shadow stocke le mot de passe EN CLAIR derriere un faux prefixe SHA-512
 `echo user:Secret123 | chpasswd` ecrit `user:$6$simulated$Secret123:…` :
@@ -364,6 +366,10 @@ installe et `systemctl start nginx` repond « Unit nginx.service not found ».
 **Mesure** : batterie FortiGate, test 18 (un PC du LAN sert une page
 derriere un VIP) : `sudo apt install -y nginx` puis `systemctl start nginx`
 sur un LinuxPC.
+Meme defaut pour `vsftpd` : son binaire est declare livre par l'image (comme
+nginx), donc `apt list --installed` le montre partout, alors que l'unite, la
+configuration, le compte `ftp` et `/srv/ftp` n'apparaissent qu'a
+`apt install vsftpd`.
 **Ce qui manque** : un etat de paquets PAR MACHINE (dpkg status) dont
 l'installation pose les fichiers et enregistre les unites du paquet
 (nginx, apache2, bind9, vsftpd, …) aupres du gestionnaire de services de
@@ -413,6 +419,20 @@ depuis un LinuxPC.
 **Pourquoi ce n'est pas ferme** : releve en passant ; le rendu des
 colonnes est partage par tout le moteur SQL*Plus et merite sa propre
 mesure.
+
+### [fortigate] pas d'assistant de session FTP (`system session-helper`)
+Une politique limitee au service `FTP` (TCP/21) laisse passer le canal de
+controle mais pas le canal de donnees : un `PASV`/`EPSV` annonce un port
+dynamique que rien n'ouvre, et le transfert echoue. Un vrai FortiGate livre
+par defaut `config system session-helper` avec une entree `ftp` (protocole
+6, port 21) qui lit `PORT`/`PASV`/`EPRT`/`EPSV` sur le controle et ouvre la
+session de donnees attendue sous la meme politique (NAT compris).
+**Mesure** : batterie FortiGate, test 28 — politique `service "FTP"`, vsftpd
+installe, `curl ftp://203.0.113.9/test.txt` depuis le LAN : controle
+etabli, donnees bloquees.
+**Ce qui existe** : le routeur Cisco a un ALG FTP (router/nat/FtpAlg.ts,
+`NATEngine.openAlgPinhole`) ; le pare-feu n'a aucune table de sessions
+attendues. C'est la prochaine brique a poser.
 
 ## Postes Windows
 

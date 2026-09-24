@@ -69,10 +69,10 @@ describe('`--version` — une option que curl connaît', () => {
 
   it('n\'annonce que les protocoles réellement servis', async () => {
     const out = await cli.executeCommand('curl --version');
-    expect(out).toContain('Protocols: http https');
+    expect(out).toContain('Protocols: ftp http https');
     // Recopier la liste du vrai curl annoncerait une vingtaine de
     // schémas que la commande refuse — le décor que ce PRD retire.
-    for (const absent of ['ftp', 'gopher', 'imap', 'ldap', 'smtp', 'telnet']) {
+    for (const absent of ['gopher', 'imap', 'ldap', 'smtp', 'telnet']) {
       expect(out, absent).not.toContain(absent);
     }
   });

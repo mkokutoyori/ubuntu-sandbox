@@ -150,10 +150,10 @@ describe('les deux plateformes disent la même chose de la même situation', () 
     const l = lab();
 
     for (const out of [
-      await l.linux.executeCommand('curl ftp://files.example.com/x'),
-      await l.windows.executeCommand('curl ftp://files.example.com/x'),
+      await l.linux.executeCommand('curl gopher://files.example.com/x'),
+      await l.windows.executeCommand('curl gopher://files.example.com/x'),
     ]) {
-      expect(out).toContain('curl: (1) Protocol "ftp" not supported or disabled in libcurl');
+      expect(out).toContain('curl: (1) Protocol "gopher" not supported or disabled in libcurl');
     }
   });
 

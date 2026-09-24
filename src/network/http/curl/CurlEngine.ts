@@ -218,7 +218,7 @@ function versionBanner(): string {
   return [
     `${CURL_USER_AGENT.replace('/', ' ')} (x86_64-pc-linux-gnu) libcurl/8.5.0 OpenSSL/3.0.13`,
     'Release-Date: 2023-12-06',
-    'Protocols: http https',
+    'Protocols: ftp http https',
     // Ce que ce curl SAIT faire, et rien d'autre. Recopier la ligne du
     // vrai (`HTTPS-proxy TLS-SRP UnixSockets…`) annoncerait des
     // capacités que la commande refuse deux lignes plus bas — le décor

@@ -17,10 +17,13 @@ import { isKnownMethod } from '../semantics/methods';
 import type { CurlOptions } from './CurlArgs';
 import type { CurlHost } from './CurlHost';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
+import { performCurlFtp } from './CurlFtp';
 
 export interface CurlUrl {
-  readonly scheme: 'http' | 'https';
+  readonly scheme: 'http' | 'https' | 'ftp';
   readonly host: string;
+  readonly user?: string;
+  readonly password?: string;
   readonly port: number;
   readonly path: string;
   readonly effective: string;
@@ -61,7 +64,9 @@ class InsecureCertificateVerifier extends CertificateVerifier {
   }
 }
 
-const URL_RE = /^(?:([A-Za-z][A-Za-z0-9+.-]*):\/\/)?([^/?#:]+)(?::(\d+))?([/?#].*)?$/;
+const URL_RE = /^(?:([A-Za-z][A-Za-z0-9+.-]*):\/\/)?(?:([^/?#@]*)@)?([^/?#:@]+)(?::(\d+))?([/?#].*)?$/;
+
+const DEFAULT_PORTS: Readonly<Record<CurlUrl['scheme'], number>> = { http: 80, https: 443, ftp: 21 };
 
 export type UrlParse =
   | { ok: true; url: CurlUrl }
@@ -71,16 +76,19 @@ export function parseCurlUrl(raw: string): UrlParse {
   const m = URL_RE.exec(raw);
   if (!m) return { ok: false, code: 3, message: 'curl: (3) URL using bad/illegal format or missing URL' };
   const scheme = (m[1] ?? 'http').toLowerCase();
-  if (scheme !== 'http' && scheme !== 'https') {
+  if (scheme !== 'http' && scheme !== 'https' && scheme !== 'ftp') {
     return { ok: false, code: 1, message: `curl: (1) Protocol "${scheme}" not supported or disabled in libcurl` };
   }
-  const host = m[2];
-  const port = m[3] ? parseInt(m[3], 10) : scheme === 'https' ? 443 : 80;
-  const path = m[4] || '/';
-  const authority = (scheme === 'https' && port === 443) || (scheme === 'http' && port === 80)
-    ? host
-    : `${host}:${port}`;
-  return { ok: true, url: { scheme, host, port, path, effective: `${scheme}://${authority}${path}` } };
+  const userinfo = m[2];
+  const host = m[3];
+  const port = m[4] ? parseInt(m[4], 10) : DEFAULT_PORTS[scheme];
+  const path = m[5] || '/';
+  const authority = port === DEFAULT_PORTS[scheme] ? host : `${host}:${port}`;
+  const colon = userinfo === undefined ? -1 : userinfo.indexOf(':');
+  const credentials = userinfo === undefined ? {}
+    : colon < 0 ? { user: decodeURIComponent(userinfo) }
+    : { user: decodeURIComponent(userinfo.slice(0, colon)), password: decodeURIComponent(userinfo.slice(colon + 1)) };
+  return { ok: true, url: { scheme, host, port, path, effective: `${scheme}://${authority}${path}`, ...credentials } };
 }
 
 function headerPairs(message: HttpMessage): CurlHeaderPair[] {
@@ -99,7 +107,7 @@ function binaryStringToBytes(text: string): Uint8Array {
   return bytes;
 }
 
-function resolvedOverride(opts: CurlOptions, url: CurlUrl): string | null {
+export function resolvedOverride(opts: CurlOptions, url: CurlUrl): string | null {
   const entry = opts.resolve.find((r) => r.host === url.host && r.port === url.port);
   return entry ? entry.address : null;
 }
@@ -218,12 +226,12 @@ function resolveLocation(base: CurlUrl, location: string): UrlParse {
 
 class CurlConnectRefused extends Error {}
 
-type DialOutcome =
+export type DialOutcome =
   | { readonly kind: 'open'; readonly socket: TcpSocket }
   | { readonly kind: 'refused' }
   | { readonly kind: 'timeout'; readonly elapsedMs: number };
 
-async function dial(
+export async function dial(
   host: CurlHost, address: string, port: number, connectTimeoutMs: number | null,
 ): Promise<DialOutcome> {
   const stack = host.tcpStack();
@@ -241,7 +249,7 @@ async function dial(
   return { kind: 'timeout', elapsedMs: Math.round(stack.clock().now() - startedAt) };
 }
 
-function connectTimeoutFailure(
+export function connectTimeoutFailure(
   url: CurlUrl, elapsedMs: number, remoteIp: string, method: string,
   numRedirects: number, trace: readonly string[],
 ): CurlFailure {
@@ -269,6 +277,7 @@ export async function performCurlRequest(
       url: first, remoteIp: '', method: 'PUT', numRedirects: 0, trace: [],
     };
   }
+  if (first.scheme === 'ftp') return performCurlFtp(host, first, opts, body);
   // Le corps multipart est construit AVANT toute connexion : un
   // fichier de partie absent doit échouer comme `-T`, sans ouvrir de
   // socket pour rien.

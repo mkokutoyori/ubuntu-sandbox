@@ -58,6 +58,17 @@ export class FtpClientSession {
     private readonly ftpsConfig?: TlsClientConfig,
   ) {}
 
+  get dataConnected(): boolean {
+    return this.dataSocket !== null;
+  }
+
+  adopt(socket: TcpSocket): FtpReply | null {
+    this.lastReply = null;
+    socket.onData((data) => this.handleIncomingControlData(data));
+    this.socket = socket;
+    return this.lastReply;
+  }
+
   /** Opens the control connection and returns the server's unprompted `220` banner, or null on connection failure. */
   connect(): FtpReply | null {
     this.lastReply = null;

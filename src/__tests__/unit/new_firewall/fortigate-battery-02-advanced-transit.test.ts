@@ -147,7 +147,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
 
     it('56. Flux de sauvegarde : Serveur DMZ pousse une archive vers le serveur FTP LAN via port 21', async () => {
       const { pc, fw, dmzSrv } = await creerLaboAvance();
-      await taper(pc as unknown as Cli, ['systemctl start vsftpd']);
+      await taper(pc as unknown as Cli, ['apt install -y vsftpd']);
       await taper(fw, [
         'config firewall policy', 'edit 14',
         'set srcintf "dmz"', 'set dstintf "port1"',
@@ -537,7 +537,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
 
     it('85. FTP Active Mode : L\'ALG FTP du pare-feu ouvre dynamiquement le port de retour', async () => {
       const { pc, fw, wanSrv } = await creerLaboAvance();
-      await taper(wanSrv as unknown as Cli, ['systemctl start vsftpd']);
+      await taper(wanSrv as unknown as Cli, ['apt install -y vsftpd']);
       await taper(fw, [
         'config system session-helper', 'edit 1', 'set name "ftp"', 'set port 21', 'set protocol 6', 'next', 'end',
         'config firewall policy', 'edit 53',
