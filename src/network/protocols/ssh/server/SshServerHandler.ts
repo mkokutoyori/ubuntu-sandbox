@@ -902,7 +902,9 @@ export class SshServerHandler {
       const offered = (payload.publicKey as string) ?? '';
       if (this.ctx.admittedKey) {
         const admitted = this.ctx.admittedKey(user, offered, { ip: clientIp });
-        success = this.ctx.config.pubkeyAuthentication && admitted !== null;
+        const rootForced = user !== 'root'
+          || (this.ctx.rootMayLogIn?.('publickey', admitted?.options?.command !== undefined) ?? true);
+        success = this.ctx.config.pubkeyAuthentication && admitted !== null && rootForced;
         keyOptions = admitted?.options ?? null;
       } else {
         success = this.ctx.config.pubkeyAuthentication && this.ctx.auth.checkPublicKey(user, offered);

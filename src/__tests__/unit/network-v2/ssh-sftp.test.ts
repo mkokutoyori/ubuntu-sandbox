@@ -485,7 +485,7 @@ describe('SSH-07-R6 — sshd reloads /etc/ssh/sshd_config on restart', () => {
     const vfs = new VirtualFileSystem();
     const userManager = new LinuxUserManager(vfs);
     const ctx = new LinuxSshServerContext(vfs, userManager, 'host-a');
-    expect(ctx.config.permitRootLogin).toBe(false);
+    expect(ctx.sshdConfig.permitRootLogin).toBe('prohibit-password');
     // Edit the file as the user would via vim/echo > and reload.
     vfs.writeFile(
       '/etc/ssh/sshd_config',
@@ -493,7 +493,7 @@ describe('SSH-07-R6 — sshd reloads /etc/ssh/sshd_config on restart', () => {
       0, 0, 0o022,
     );
     const reloaded = ctx.reloadConfig();
-    expect(reloaded.config.permitRootLogin).toBe(true);
+    expect(reloaded.sshdConfig.permitRootLogin).toBe('yes');
   });
 });
 

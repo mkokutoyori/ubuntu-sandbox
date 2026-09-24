@@ -191,7 +191,7 @@ export interface ISshServerContext {
    */
   getBanner?(): string | null;
   openDirectTcpip?(request: DirectTcpipRequest): Promise<DirectTcpipOutcome>;
-  rootMayLogIn?(method: 'password' | 'publickey'): boolean;
+  rootMayLogIn?(method: 'password' | 'publickey', keyForcesCommand?: boolean): boolean;
   admittedKey?(user: string, publicKey: string, source: KeySource): AuthorizedKey | null;
   forcedCommand?(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): string | null;
 }

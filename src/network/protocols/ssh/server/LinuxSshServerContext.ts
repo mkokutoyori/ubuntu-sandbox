@@ -194,6 +194,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     this.config = Object.freeze({
       ...DEFAULT_SSH_SERVER_CONFIG,
       ...this.sshdConfig,
+      permitRootLogin: this.sshdConfig.permitRootLogin !== 'no',
       ...config,
     });
     this.auth = this.buildAuthContext();
@@ -384,10 +385,13 @@ export class LinuxSshServerContext implements ISshServerContext {
     return view.forceCommand ?? keyOptions?.command ?? null;
   }
 
-  rootMayLogIn(method: 'password' | 'publickey'): boolean {
+  rootMayLogIn(method: 'password' | 'publickey', keyForcesCommand?: boolean): boolean {
     if (this.rootLoginOverride !== undefined) return this.rootLoginOverride;
     const policy = this.effectiveSshdServerConfig().effectiveFor({ user: 'root' }).permitRootLogin;
-    return policy === 'yes' || (policy === 'prohibit-password' && method === 'publickey');
+    if (policy === 'yes') return true;
+    if (method !== 'publickey') return false;
+    if (policy === 'prohibit-password') return true;
+    return policy === 'forced-commands-only' && keyForcesCommand !== false;
   }
 
   /** Banner text shown before authentication (SSH-07-R8). */
