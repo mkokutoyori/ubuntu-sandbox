@@ -7,9 +7,9 @@ import {
   type ICMPPacket,
   type ICMPv6Type,
   type IPv4Packet,
-  type TCPPacket,
   type UDPPacket,
 } from '../../../core/types';
+import type { TcpSegment } from '../../../tcp/types';
 
 export { icmpTypeNumber };
 
@@ -51,7 +51,7 @@ function transportEndpoints(packet: IPv4Packet): { sourcePort: number; destPort:
   if (!payload) return NO_PORTS;
 
   if (packet.protocol === IP_PROTO_TCP && payload.type === 'tcp') {
-    const segment = payload as TCPPacket;
+    const segment = payload as TcpSegment;
     return { sourcePort: segment.sourcePort, destPort: segment.destinationPort };
   }
   if (packet.protocol === IP_PROTO_UDP && payload.type === 'udp') {

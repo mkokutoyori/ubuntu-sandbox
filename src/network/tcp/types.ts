@@ -175,7 +175,7 @@ export function flagsString(f: TcpFlags): string {
 }
 
 export function nextIsn(): number {
-  return (Date.now() & 0xffffffff) ^ Math.floor(Math.random() * 0xffffffff);
+  return ((Date.now() & 0xffffffff) ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
 }
 
 export function makeSocketKey(localIp: string, localPort: number, remoteIp: string, remotePort: number): string {

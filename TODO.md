@@ -351,6 +351,23 @@ client HTTP attende sur l'horloge de la pile au lieu de compter des tours
 de micro-taches, ce qui touche tous les lecteurs de `sendAsync` (IOS avec
 AAA, nginx, Apache, IIS). `-m` borne deja la connexion, HTTP, HTTPS et FTP.
 
+### [tcp] deux types pour un segment TCP : `TCPPacket` (core) et `TcpSegment` (pile)
+La pile (`tcp/TcpStack`) emet des `TcpSegment` (`sequence`,
+`acknowledgement`, `window`, `options`) ; `core/types.ts` declare encore
+`TCPPacket` (`sequenceNumber`, `acknowledgementNumber`, `windowSize`),
+qu'aucun emetteur reel ne produit. Le pare-feu lit desormais `TcpSegment`
+(le renifleur affichait « syn undefined » en lisant l'autre). Restent sur
+`TCPPacket` : `nat/rewrite.ts`, `devices/router/NATEngine.ts`,
+`router/nat/FtpAlg.ts`, `router/ACLEngine.ts`, `router/Ipv6AclEngine.ts`,
+`router/acl/ReflexiveSessions.ts`, `Router.ts`, `EndHost.ts`,
+`WindowsPC.ts`, `linux/network/HostLookup.ts`. Ils ne lisent que les
+ports et les drapeaux, communs aux deux formes — aucun defaut mesure
+aujourd'hui, mais tout nouveau lecteur de numero de sequence ou de fenetre
+y lirait `undefined`.
+**Pourquoi ce n'est pas ferme ici** : dix fichiers du routeur et de NAT,
+hors du sous-systeme corrige ; la migration consiste a supprimer
+`TCPPacket` et a faire importer `TcpSegment` partout.
+
 ### [ssh] deux modeles de `sshd_config` coexistent encore
 `SshSshdConfig` (celui du contexte serveur, de Windows et de la
 validation `sshd -t`) et `SshdServerConfig` (valeurs OpenSSH, blocs

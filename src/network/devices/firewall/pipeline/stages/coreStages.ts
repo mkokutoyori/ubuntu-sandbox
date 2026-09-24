@@ -3,7 +3,7 @@ import { decrementForForwarding } from '../../../../layers/internet/InternetLaye
 import { getPacketDstPort, getPacketSrcPort, rewriteSrcIP } from '../../../../nat/rewrite';
 import {
   IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP,
-  type ICMPPacket, type IPv4Packet, type MACAddress, type TCPPacket,
+  type ICMPPacket, type IPv4Packet, type MACAddress,
 } from '../../../../core/types';
 import { IPV4_FLAG_DF } from '../../../../core/Ipv4Fragmentation';
 import type { InterfaceTable } from '../../l3/InterfaceTable';
@@ -46,6 +46,7 @@ import type { PolicyRouteTable } from '../../l3/PolicyRouteTable';
 import type { IngressInterfaceOptionsReader } from '../../l3/IngressInterfaceOptions';
 import type { PacketContext, VerdictReason } from '../PacketContext';
 import type { PipelineStage } from '../FirewallPipeline';
+import type { TcpSegment } from '../../../../tcp/types';
 
 export interface VdomServices {
   name: string;
@@ -204,7 +205,7 @@ function originalIpv4(context: PacketContext): IPv4Packet | undefined {
 
 function tcpFlagsOf(packet: IPv4Packet): ObservedTcpFlags | undefined {
   if (packet.protocol !== IP_PROTO_TCP) return undefined;
-  const payload = packet.payload as TCPPacket | null | undefined;
+  const payload = packet.payload as TcpSegment | null | undefined;
   return payload?.type === 'tcp' ? payload.flags : undefined;
 }
 
@@ -566,7 +567,7 @@ function observeSessionHelpers(
   session: FirewallSession, direction: FlowDirection, packet: IPv4Packet,
 ): void {
   if (packet.protocol !== IP_PROTO_TCP) return;
-  const tcp = packet.payload as TCPPacket | null | undefined;
+  const tcp = packet.payload as TcpSegment | null | undefined;
   if (tcp?.type !== 'tcp' || typeof tcp.payload !== 'string') return;
   if (services.sessionHelperFor?.(session.c2s.protocol, session.c2s.destPort) !== 'ftp') return;
   const expected = ftpExpectedDataFlow(session, direction, tcp.payload);
@@ -578,7 +579,7 @@ function takeExpectedFlow(
 ): { rule: SecurityRule; parentSessionId: number } | undefined {
   if (!context.isFirstPacket || packet.protocol !== IP_PROTO_TCP) return undefined;
   const arrived = originalIpv4(context) ?? packet;
-  const tcp = arrived.payload as TCPPacket | null | undefined;
+  const tcp = arrived.payload as TcpSegment | null | undefined;
   if (tcp?.type !== 'tcp') return undefined;
   const expected = vdom(services, context).expectedFlows?.take(
     IP_PROTO_TCP, arrived.sourceIP.toString(), arrived.destinationIP.toString(), tcp.destinationPort);
