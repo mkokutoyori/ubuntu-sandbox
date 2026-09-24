@@ -244,6 +244,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
         'edit "VIP_WEB"',
         'set extip 203.0.113.1',
         'set mappedip "192.168.1.10"',
+        'set portforward enable',
         'set extport 80',
         'set mappedport 80',
         'next',
@@ -311,7 +312,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
       await grantKeyAccess(pc, srv);
       await pc.executeCommand('ssh -o StrictHostKeyChecking=no 203.0.113.9 "true"');
       const table = await fw.executeCommand('diagnose sys session list');
-      expect(table).toMatch(/dport=22/i);
+      expect(table).toMatch(/->203\.0\.113\.9:22\b/);
     });
 
     it('24. Redirection de port SSH via VIP (Port Forwarding WAN vers SRV)', async () => {
@@ -323,6 +324,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
         'edit "VIP_SSH"',
         'set extip 203.0.113.1',
         'set mappedip "203.0.113.9"',
+        'set portforward enable',
         'set extport 2222',
         'set mappedport 22',
         'next',

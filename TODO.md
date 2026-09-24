@@ -354,6 +354,22 @@ LinuxPC ; les 9 lignes de 17 colonnes sont entierement remplies.
 **Pourquoi ce n'est pas ferme** : releve en passant, sans lien avec le
 defaut SSH corrige.
 
+### [apt] `apt install` n'installe rien : il repond d'apres une base commune a toutes les machines
+`apt install <paquet>` consulte `PACKAGE_DB`, une table de MODULE partagee
+par toutes les machines, et repond « <paquet> is already the newest
+version » pour tout paquet connu, sans rien poser : ni binaire, ni unite
+systemd, ni entree dpkg propre a la machine. Deux vues de la meme machine
+se contredisent donc (CLAUDE.md §3) : sur un LinuxPC, `apt` declare nginx
+installe et `systemctl start nginx` repond « Unit nginx.service not found ».
+**Mesure** : batterie FortiGate, test 18 (un PC du LAN sert une page
+derriere un VIP) : `sudo apt install -y nginx` puis `systemctl start nginx`
+sur un LinuxPC.
+**Ce qui manque** : un etat de paquets PAR MACHINE (dpkg status) dont
+l'installation pose les fichiers et enregistre les unites du paquet
+(nginx, apache2, bind9, vsftpd, …) aupres du gestionnaire de services de
+CETTE machine ; `apt`, `dpkg -l`, `apt list --installed` et `systemctl`
+liraient alors le meme etat. Le test 18 reste rouge d'ici la.
+
 ## Postes Windows
 
 ### [ping] les mots de `ping.exe` pour le code 13 restent non attestés

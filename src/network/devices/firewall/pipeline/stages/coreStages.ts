@@ -32,7 +32,8 @@ import type { DosPolicyStore } from '../../dos/DosPolicyStore';
 import type { DosFinding, DosSensor } from '../../dos/DosSensor';
 import { flowKeyFromPacket, reverseFlowKey, type FlowKey } from '../../session/FlowKey';
 import type { AssembledStream } from '../../inspection/StreamAssembler';
-import type { SessionTable, SessionTranslation } from '../../session/SessionTable';
+import type { FirewallSession, SessionTable, SessionTranslation } from '../../session/SessionTable';
+import type { FlowDirection } from '../../session/TcpStateMachine';
 import {
   DEFAULT_TCP_TIMEOUTS, TcpStateMachine,
   type ObservedTcpFlags, type TcpTimeouts,
@@ -535,6 +536,16 @@ function srcCheckStage(services: FirewallServices): PipelineStage {
   };
 }
 
+function translateForSession(
+  services: FirewallServices, context: PacketContext,
+  session: FirewallSession, direction: FlowDirection,
+): void {
+  const packet = ipv4(context);
+  const nat = vdom(services, context).nat;
+  if (!packet || !session.translation || !nat) return;
+  context.packet = nat.reapply(packet, session.translation, direction);
+}
+
 function sessionLookupStage(services: FirewallServices): PipelineStage {
   return {
     name: 'session-lookup',
@@ -568,6 +579,9 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
         }
         found.session.tcpState = machine.state;
         if (machine.state === 'closed') {
+          translateForSession(services, context, found.session, found.direction);
+          const expiredOnClose = transitTtl(services, context, 'session-lookup');
+          if (expiredOnClose) return expiredOnClose;
           vdom(services, context).sessions.close(found.session, flags.rst ? 'tcp-rst' : 'tcp-fin');
           context.trace.push({ stage: 'session-lookup', verdict: 'closed' });
           context.verdict = Object.freeze({
@@ -587,10 +601,7 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
         if (inspected.kind === 'drop') return inspected;
       }
 
-      const translation = found.session.translation;
-      if (translation && vdom(services, context).nat) {
-        context.packet = vdom(services, context).nat.reapply(packet, translation, found.direction);
-      }
+      translateForSession(services, context, found.session, found.direction);
 
       const expired = transitTtl(services, context, 'session-lookup');
       if (expired) return expired;
