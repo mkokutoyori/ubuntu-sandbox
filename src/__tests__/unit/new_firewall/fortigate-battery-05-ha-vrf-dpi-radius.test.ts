@@ -272,7 +272,7 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
         'config ips sensor', 'edit "SENSOR_SQLI"',
         'config entries', 'edit 1', 'set rule 1001', 'set action block', 'next', 'end',
         'next', 'end',
-        'config firewall policy', 'edit 1', 'set utm-status enable', 'set ips-sensor "SENSOR_SQLI"', 'next', 'end',
+        'config firewall policy', 'edit 1', 'set utm-status enable', 'set ips-sensor "SENSOR_SQLI"', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -s -i "http://10.0.0.10/login?user=admin%27%20OR%201=1--"');
       expect(res).toMatch(/403 Forbidden|Connection reset|reset by peer/i);
@@ -282,7 +282,7 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
       const { pc, fwMaster, srvWeb } = await creerLaboHA();
       await taper(srvWeb as unknown as Cli, ['systemctl start nginx']);
       await taper(fwMaster, [
-        'config firewall policy', 'edit 1', 'set utm-status enable', 'next', 'end',
+        'config firewall policy', 'edit 1', 'set utm-status enable', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -s "http://10.0.0.10/download?file=../../../../etc/passwd"');
       expect(res).not.toContain('root:x:0:0');
@@ -303,7 +303,7 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
         'config application list', 'edit "BLOCK_P2P"',
         'config entries', 'edit 1', 'set category 2', 'set action block', 'next', 'end', // 2 = P2P
         'next', 'end',
-        'config firewall policy', 'edit 1', 'set app-list "BLOCK_P2P"', 'next', 'end',
+        'config firewall policy', 'edit 1', 'set app-list "BLOCK_P2P"', 'set service "ALL"', 'next', 'end',
       ]);
       const web = await pc.executeCommand('curl -s http://10.0.0.10/');
       expect(web).toMatch(/Welcome to nginx|nginx/i);
@@ -422,7 +422,7 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
       const { pc, fwMaster } = await creerLaboHA();
       await taper(fwMaster, [
         'config firewall policy', 'edit 1',
-        'set disclaimer enable', 'next', 'end',
+        'set disclaimer enable', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -s -I http://10.0.0.10/');
       expect(res).toMatch(/HTTP\/1\.[01] 302|Location:.*login/i);

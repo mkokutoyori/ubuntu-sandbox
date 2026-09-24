@@ -270,7 +270,7 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
         'config firewall policy', 'edit 10',
         'set srcintf "port1"', 'set dstintf "dmz"',
         'set srcaddr "all"', 'set dstaddr "VIP_RDP_WIN"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const vipTest = await pwsh(winPc)('Test-NetConnection -ComputerName 192.168.1.1 -Port 33389');
       expect(vipTest).toMatch(/TcpTestSucceeded\s*:\s*True/i);

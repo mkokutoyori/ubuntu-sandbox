@@ -372,7 +372,7 @@ describe('Batterie 9 : Tests 401 à 450 — Cryptographie Réseau, Handshake TLS
       await taper(srvNginx as unknown as Cli, ['systemctl start nginx']);
       await taper(fw, [
         'config firewall policy', 'edit 1',
-        'set utm-status enable', 'set av-profile "default"', 'next', 'end',
+        'set utm-status enable', 'set av-profile "default"', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await linuxPc.executeCommand('curl -k -s https://10.10.10.10/eicar.com.zip');
       expect(res).toMatch(/Blocked by Antivirus|Access Denied/i);
@@ -389,7 +389,7 @@ describe('Batterie 9 : Tests 401 à 450 — Cryptographie Réseau, Handshake TLS
       const { linuxPc, fw } = await creerLaboTls();
       await taper(fw, [
         'config firewall policy', 'edit 1',
-        'set webfilter-profile "block-gambling"', 'next', 'end',
+        'set webfilter-profile "block-gambling"', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await linuxPc.executeCommand('curl -k -s --connect-timeout 2 https://10.10.10.10/ -H "Host: poker.casino.lan"');
       expect(res).toMatch(/Web Page Blocked|Blocked by FortiGuard/i);

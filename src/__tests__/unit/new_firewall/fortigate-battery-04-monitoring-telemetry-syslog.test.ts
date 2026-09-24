@@ -199,7 +199,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
       await taper(fw, [
         'config firewall policy', 'edit 160',
         'set srcintf "port1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'set logtraffic all', 'next', 'end',
+        'set action accept', 'set logtraffic all', 'set service "ALL"', 'next', 'end',
       ]);
       await pc.executeCommand('curl -s http://10.0.10.5/');
       const logs = await fw.executeCommand('diagnose log test');
@@ -213,7 +213,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
         'config log syslogd setting', 'set status enable', 'set server "203.0.113.50"', 'end',
         'config firewall policy', 'edit 161',
         'set srcintf "port1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action deny', 'set logtraffic all', 'next', 'end',
+        'set action deny', 'set logtraffic all', 'set service "ALL"', 'next', 'end',
       ]);
       await pc.executeCommand('curl -s --connect-timeout 1 http://10.10.10.5/');
       const logs = await siem.executeCommand('tail -n 2 /var/log/syslog');
@@ -243,7 +243,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
       await taper(fw, [
         'config firewall policy', 'edit 163',
         'set srcintf "dmz"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       await srvProd.executeCommand('logger -n 203.0.113.50 -P 514 "ORACLE AUDIT: ACTION=LOGON STATUS=1017 USER=system"');
       const audit = await siem.executeCommand('tail -n 1 /var/log/syslog');
@@ -256,7 +256,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
       await taper(fw, [
         'config firewall policy', 'edit 164',
         'set srcintf "dmz"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       await srvProd.executeCommand('logger -p authpriv.alert -n 203.0.113.50 "sshd: Failed password for root from 192.168.1.99"');
       const res = await siem.executeCommand('tail -n 1 /var/log/syslog');
@@ -389,7 +389,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
       await taper(fw, [
         'config firewall policy', 'edit 176',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('snmpinform -v2c -c public 203.0.113.50 0 1.3.6.1.4.1.8072.4');
       expect(res).not.toMatch(/Timeout/i);
@@ -453,7 +453,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
         'set collector-ip 203.0.113.50', 'set collector-port 2055', 'set active-flow-timeout 1', 'end',
         'config firewall policy', 'edit 182',
         'set srcintf "port1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       await pc.executeCommand('curl -s http://10.10.10.5/');
       const status = await fw.executeCommand('diagnose test application netflow 1');
@@ -504,7 +504,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
       await taper(fw, [
         'config firewall policy', 'edit 187',
         'set srcintf "port1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       await pc.executeCommand('curl -s http://10.10.10.5/');
       const session = await fw.executeCommand('diagnose sys session list');
@@ -533,7 +533,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
       await taper(fw, [
         'config firewall policy', 'edit 189',
         'set srcintf "wan1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await siem.executeCommand('curl -s -o /dev/null -w "%{http_code}" http://10.10.10.5/');
       expect(res.trim()).toBe('200');
@@ -545,7 +545,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
       await taper(fw, [
         'config firewall policy', 'edit 190',
         'set srcintf "wan1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await siem.executeCommand('tnsping 10.10.10.5:1521/ORCL');
       expect(res).toContain('OK');
@@ -563,7 +563,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
       await taper(fw, [
         'config firewall policy', 'edit 192',
         'set srcintf "wan1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await siem.executeCommand('dig @10.10.10.5 app.lan +stats | grep "Query time"');
       expect(res).toMatch(/Query time: \d+ msec/);
@@ -582,7 +582,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
       await taper(fw, [
         'config firewall policy', 'edit 194',
         'set srcintf "wan1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const synProbe = await siem.executeCommand('nping --tcp -p 80 --flags syn -c 1 10.10.10.5');
       expect(synProbe).toMatch(/RCVD.*flags=SA/); // Syn-Ack reçu
@@ -638,7 +638,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
       await taper(fw, [
         'config firewall policy', 'edit 198',
         'set srcintf "port1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'set logtraffic all', 'next', 'end',
+        'set action accept', 'set logtraffic all', 'set service "ALL"', 'next', 'end',
       ]);
       await pc.executeCommand('curl -s http://10.10.10.5/');
       const syslogLines = await siem.executeCommand('grep -i "10.10.10.5" /var/log/syslog');
@@ -675,8 +675,8 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
       // 2. Politiques FW ouvertes pour les flux de management et applicatifs
       await taper(fw, [
         'config firewall policy',
-        'edit 200', 'set srcintf "port1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set logtraffic all', 'next',
-        'edit 201', 'set srcintf "dmz"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'next',
+        'edit 200', 'set srcintf "port1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set logtraffic all', 'set service "ALL"', 'next',
+        'edit 201', 'set srcintf "dmz"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set service "ALL"', 'next',
         'end',
       ]);
 

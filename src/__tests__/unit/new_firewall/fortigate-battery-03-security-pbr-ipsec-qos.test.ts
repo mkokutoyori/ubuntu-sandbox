@@ -200,7 +200,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(fw, [
         'config system interface', 'edit "wan1"', 'set status down', 'next', 'end',
         'config router static', 'edit 1', 'set dst 0.0.0.0 0.0.0.0', 'set gateway 198.51.100.1', 'set device "wan2"', 'next', 'end',
-        'config firewall policy', 'edit 1', 'set srcintf "port1"', 'set dstintf "wan2"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set nat enable', 'next', 'end',
+        'config firewall policy', 'edit 1', 'set srcintf "port1"', 'set dstintf "wan2"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set nat enable', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -s http://198.51.100.10/');
       expect(res).toMatch(/Welcome to nginx|nginx/i);
@@ -324,7 +324,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
         'config firewall policy',
         'edit 71', 'set srcintf "port1"', 'set dstintf "wan1"',
         'set srcaddr "all"', 'set dstaddr "all"', 'set action accept',
-        'next', 'end',
+        'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('tnsping 203.0.113.10:1521/ORCL');
       expect(res).toContain('OK');
@@ -336,7 +336,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
         'config firewall policy', 'edit 72',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
         'set action accept', 'set tcp-mss-sender 1360', 'set tcp-mss-receiver 1360',
-        'next', 'end',
+        'set service "ALL"', 'next', 'end',
       ]);
       const ping = await pc.executeCommand('ping -c 1 -M do -s 1332 203.0.113.10');
       expect(ping).not.toMatch(/Frag needed/i);
@@ -393,7 +393,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
         'set srcaddr "all"', 'set dstaddr "all"',
         'set action accept',
         'set session-ttl 60',
-        'next', 'end',
+        'set service "ALL"', 'next', 'end',
       ]);
       const pol = await fw.executeCommand('show firewall policy 80');
       expect(pol).toContain('set session-ttl 60');
@@ -406,7 +406,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
         'config firewall policy', 'edit 81',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
         'set action accept', 'set diffserv-forward enable', 'set diffservcode-forward 101110', // EF
-        'next', 'end',
+        'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -s http://203.0.113.10/');
       expect(res).toMatch(/Welcome to nginx|nginx/i);
@@ -487,7 +487,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(fw, [
         'config firewall policy', 'edit 90',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       await pc.executeCommand('curl -s http://203.0.113.10/');
       const sniff = await fw.executeCommand('diagnose sniffer packet wan1 "port 80" 1');
@@ -519,7 +519,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
         'next', 'end',
         'config firewall policy', 'edit 91',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "VIP_SSL_OFFLOAD"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -k -s https://203.0.113.1/');
       expect(res).toMatch(/Welcome to nginx|nginx/i);
@@ -532,7 +532,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(fw, [
         'config firewall policy', 'edit 92',
         'set srcintf "wan1"', 'set dstintf "wan2"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const sync = await srvProd.executeCommand('tnsping 198.51.100.10:1521/ORCL');
       expect(sync).toContain('OK');
@@ -546,7 +546,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(fw, [
         'config firewall policy', 'edit 93',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       await pc.executeCommand('curl -s http://203.0.113.10/login');
       const burst = await pc.executeCommand('curl -s -o /dev/null -w "%{http_code}" http://203.0.113.10/login');
@@ -559,7 +559,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(fw, [
         'config firewall policy', 'edit 94',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('wscat -c ws://203.0.113.10:8080/ws --connect-timeout 2');
       expect(res).not.toMatch(/Error: connect ECONNREFUSED/i);
@@ -571,7 +571,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(fw, [
         'config firewall policy', 'edit 95',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -k --ssl -s ftp://203.0.113.10/');
       expect(res).not.toMatch(/SSL: certificate subject name mismatch/i);
@@ -583,7 +583,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(fw, [
         'config firewall policy', 'edit 96',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const unauth = await pc.executeCommand('curl -s -o /dev/null -w "%{http_code}" http://203.0.113.10/private/');
       expect(unauth.trim()).toBe('401');
@@ -605,7 +605,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(fw, [
         'config firewall policy', 'edit 97',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('sqlplus -S system/oracle@203.0.113.10:1521/SERVICE_INCONNU');
       expect(res).toMatch(/ORA-12514|TNS:listener does not currently know of service/i);
@@ -617,7 +617,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(fw, [
         'config firewall policy', 'edit 98',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const resLan = await pc.executeCommand('dig @203.0.113.10 portal.lab.lan +short');
       expect(resLan).toMatch(/192\.168\.|10\./);
@@ -640,7 +640,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       expect(status).toContain('tcp-syn-flood-threshold');
       // Le client régulier peut toujours se connecter
       await taper(fw, [
-        'config firewall policy', 'edit 99', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'next', 'end',
+        'config firewall policy', 'edit 99', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -s http://203.0.113.10/');
       expect(res).toMatch(/Welcome to nginx|nginx/i);
@@ -690,7 +690,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
     it('148. Destruction des fragments IP anormaux et superposés (Teardrop Attack)', async () => {
       const { rogue, fw } = await creerLaboEntreprise();
       await taper(fw, [
-        'config firewall policy', 'edit 105', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'next', 'end',
+        'config firewall policy', 'edit 105', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       // Injection de fragments IP chevauchants
       const res = await rogue.executeCommand('hping3 --frag --mtu 8 -1 203.0.113.10 -c 2');

@@ -546,7 +546,7 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
     it('297. Protection contre la saturation de la table de session : SYN Proxy actif protégeant le serveur', async () => {
       const { fw } = await creerLaboNextGen();
       await taper(fw, [
-        'config firewall policy', 'edit 1', 'set tcp-session-without-syn enable', 'next', 'end',
+        'config firewall policy', 'edit 1', 'set tcp-session-without-syn enable', 'set service "ALL"', 'next', 'end',
       ]);
       const synStat = await fw.executeCommand('show firewall policy 1');
       expect(synStat).toContain('tcp-session-without-syn');

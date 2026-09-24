@@ -408,7 +408,7 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
       const { fw } = await creerLaboSDWAN();
       await taper(fw, [
         'config firewall policy', 'edit 1',
-        'set auto-asic-offload enable', 'next', 'end',
+        'set auto-asic-offload enable', 'set service "ALL"', 'next', 'end',
       ]);
       const pol = await fw.executeCommand('show firewall policy 1');
       expect(pol).toContain('auto-asic-offload enable');
@@ -451,7 +451,7 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
       await taper(fw, [
         'config firewall policy', 'edit 100',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'set inspection-mode flow', 'next', 'end',
+        'set action accept', 'set inspection-mode flow', 'set service "ALL"', 'next', 'end',
       ]);
       const mode = await fw.executeCommand('show firewall policy 100');
       expect(mode).toContain('inspection-mode flow');
@@ -514,7 +514,7 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
       await taper(fw, [
         'config firewall policy', 'edit 496',
         'set srcintf "wan1"', 'set dstintf "wan2"',
-        'set action deny', 'next', 'end',
+        'set action deny', 'set service "ALL"', 'next', 'end',
       ]);
       const pol = await fw.executeCommand('show firewall policy 496');
       expect(pol).toContain('set action deny');

@@ -270,7 +270,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
         'config firewall policy', 'edit 30',
         'set srcintf "port1"', 'set dstintf "dmz"',
         'set srcaddr "all"', 'set dstaddr "VIP_HAIRPIN"',
-        'set action accept', 'set nat enable', 'next', 'end',
+        'set action accept', 'set nat enable', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -s http://203.0.113.100/');
       expect(res).toMatch(/Welcome to nginx|nginx/i);
@@ -288,7 +288,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
         'config firewall policy', 'edit 31',
         'set srcintf "wan1"', 'set dstintf "dmz"',
         'set srcaddr "all"', 'set dstaddr "VIP_PORT_MAP"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await wanSrv.executeCommand('curl -s http://203.0.113.1:8080/');
       expect(res).toMatch(/Welcome to nginx|nginx/i);
@@ -305,7 +305,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
         'set srcintf "port1"', 'set dstintf "wan1"',
         'set srcaddr "all"', 'set dstaddr "all"',
         'set action accept', 'set nat enable', 'set ippool enable', 'set poolname "POOL_PUBLIC"',
-        'next', 'end',
+        'set service "ALL"', 'next', 'end',
       ]);
       await pc.executeCommand('curl -s http://203.0.113.9/');
       const log = await wanSrv.executeCommand('tail -n 1 /var/log/nginx/access.log');
@@ -322,7 +322,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
         'set srcintf "wan1"', 'set dstintf "dmz"',
         // Autorise uniquement une autre IP fictive
         'set srcaddr "198.51.100.22"', 'set dstaddr "VIP_RESTREINT"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await wanSrv.executeCommand('curl -s --connect-timeout 1 http://203.0.113.1/');
       expect(res).toMatch(/timed out|refused/i);
@@ -338,8 +338,8 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
         'edit "VIP_SSH_LAN"', 'set extip 203.0.113.1', 'set mappedip "192.168.1.10"', 'set portforward enable', 'set extport 2222', 'set mappedport 22', 'next',
         'end',
         'config firewall policy',
-        'edit 34', 'set srcintf "wan1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "VIP_HTTP"', 'set action accept', 'next',
-        'edit 35', 'set srcintf "wan1"', 'set dstintf "port1"', 'set srcaddr "all"', 'set dstaddr "VIP_SSH_LAN"', 'set action accept', 'next',
+        'edit 34', 'set srcintf "wan1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "VIP_HTTP"', 'set action accept', 'set service "ALL"', 'next',
+        'edit 35', 'set srcintf "wan1"', 'set dstintf "port1"', 'set srcaddr "all"', 'set dstaddr "VIP_SSH_LAN"', 'set action accept', 'set service "ALL"', 'next',
         'end',
       ]);
       const httpRes = await wanSrv.executeCommand('curl -s http://203.0.113.1/');
@@ -354,7 +354,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       await taper(fw, [
         'config firewall policy', 'edit 36',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'set nat enable', 'next', 'end',
+        'set action accept', 'set nat enable', 'set service "ALL"', 'next', 'end',
       ]);
       await pc.executeCommand('curl --local-port 45678 -s http://203.0.113.9/');
       const session = await fw.executeCommand('diagnose sys session list');
@@ -378,7 +378,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       await taper(fw, [
         'config firewall policy', 'edit 40',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('traceroute -n -w 1 203.0.113.9');
       expect(res).toMatch(/1\s+192\.168\.1\.1/);
@@ -567,7 +567,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       await taper(fw, [
         'config firewall policy', 'edit 55',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const ping = await pc.executeCommand('tnsping 203.0.113.9:1521/ORCL');
       expect(ping).toContain('OK');
@@ -617,7 +617,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       await taper(fw, [
         'config firewall policy', 'edit 59',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const sql = 'echo "INSERT INTO t VALUES (1); ROLLBACK; EXIT;" | sqlplus -S system/oracle@203.0.113.9:1521/ORCL';
       const res = await pc.executeCommand(sql);
@@ -635,7 +635,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       await taper(fw, [
         'config firewall policy', 'edit 60',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       // Injection directe d'un ACK sans SYN préalable via hping3
       const res = await pc.executeCommand('hping3 -A -p 80 -c 1 203.0.113.9');
@@ -648,7 +648,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       await taper(fw, [
         'config firewall policy', 'edit 61',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       await pc.executeCommand('curl -s http://203.0.113.9/');
       const sessions = await fw.executeCommand('diagnose sys session list');
@@ -714,7 +714,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       await taper(fw, [
         'config firewall policy', 'edit 64',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       // Envoi de trames fragmentées de force (MTU 576)
       const res = await pc.executeCommand('curl -s --compressed http://203.0.113.9/');
@@ -731,8 +731,8 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       ]);
       await taper(fw, [
         'config firewall policy',
-        'edit 100', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set nat enable', 'next',
-        'edit 101', 'set srcintf "port1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set nat enable', 'next',
+        'edit 100', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set nat enable', 'set service "ALL"', 'next',
+        'edit 101', 'set srcintf "port1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set nat enable', 'set service "ALL"', 'next',
         'end',
       ]);
 
