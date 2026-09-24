@@ -2,7 +2,7 @@ import { IP_PROTO_ESP, type EthernetFrame, type IPv4Packet } from '../../../core
 import type { VdomContext } from '../vdom/VdomRegistry';
 import type { CaptivePortalRedirect } from '../auth/CaptivePortalRedirect';
 import { claimedByControlPlane, type L3Services } from './L3ServiceWiring';
-import { flowKeyFromPacket } from '../session/FlowKey';
+import { icmpErrorFlowKey, flowKeyFromPacket } from '../session/FlowKey';
 
 export type IngressDecision =
   | { kind: 'consumed' }
@@ -34,7 +34,11 @@ export function ingressHostOf(wiring: IngressWiring): Ipv4IngressHost {
     captivePortal: wiring.captivePortal,
     ownsAddress: (a) => wiring.interfaces.owningInterface(a) !== undefined,
     decapsulate: (p) => wiring.decapsulate(p),
-    hasSession: (vdom, p) => vdom.sessions.lookup(flowKeyFromPacket(p)) !== undefined,
+    hasSession: (vdom, p) => {
+      if (vdom.sessions.lookup(flowKeyFromPacket(p)) !== undefined) return true;
+      const related = icmpErrorFlowKey(p);
+      return related !== undefined && vdom.sessions.lookup(related) !== undefined;
+    },
     destinedToSelf: (vdom, p) => destinedToSelf(wiring, vdom, p),
     destinationIsTranslated: (iface, p) =>
       destinationIsTranslated(wiring.vdomOf(iface), iface, p),

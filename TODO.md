@@ -368,6 +368,21 @@ y lirait `undefined`.
 hors du sous-systeme corrige ; la migration consiste a supprimer
 `TCPPacket` et a faire importer `TcpSegment` partout.
 
+### [udp] un port UDP ferme ne renvoie pas « port unreachable » visible des outils
+Sur le lab de l'utilisateur, `dig -p 9999 @192.168.30.4 example.com` depuis
+PC3 (meme LAN que Server1, rien n'ecoute sur 9999) repond `;; connection
+timed out; no servers could be reached`, et `nc -u -z -v -w 1
+192.168.30.4 9999` repond `succeeded!`. Un Linux reel renvoie un ICMP
+port unreachable (RFC 1122 §4.1.3.1) ; dig dit alors `communications
+error ... connection refused` et `nc -u -z` echoue. `dig @192.168.30.4`
+vers le port 53, lie seulement sur 127.0.0.53, se comporte de meme.
+Accessoirement, la banniere de dig ne reprend pas `-p 9999` parmi les
+arguments.
+**Pourquoi ce n'est pas ferme ici** : c'est la pile UDP de l'hote (emission
+de l'erreur) et les clients dig/nc (lecture de l'erreur), hors du
+pare-feu ; le pare-feu, lui, fait desormais suivre une erreur ICMP liee a
+une session (sonde fortigate-icmp-error-follows-its-session).
+
 ### [ssh] deux modeles de `sshd_config` coexistent encore
 `SshSshdConfig` (celui du contexte serveur, de Windows et de la
 validation `sshd -t`) et `SshdServerConfig` (valeurs OpenSSH, blocs

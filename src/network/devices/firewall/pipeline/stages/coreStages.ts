@@ -30,7 +30,7 @@ import { transportPorts } from '../../policy/probeFields';
 import { dosFinding, dosTrafficOfIpv4, type DosTraffic } from '../../dos/DosGate';
 import type { DosPolicyStore } from '../../dos/DosPolicyStore';
 import type { DosFinding, DosSensor } from '../../dos/DosSensor';
-import { flowKeyFromPacket, reverseFlowKey, type FlowKey } from '../../session/FlowKey';
+import { icmpErrorFlowKey, flowKeyFromPacket, reverseFlowKey, type FlowKey } from '../../session/FlowKey';
 import type { AssembledStream } from '../../inspection/StreamAssembler';
 import type { FirewallSession, SessionTable, SessionTranslation } from '../../session/SessionTable';
 import type { FlowDirection } from '../../session/TcpStateMachine';
@@ -588,12 +588,45 @@ function takeExpectedFlow(
   return rule ? { rule, parentSessionId: expected.parentSessionId } : undefined;
 }
 
+function relatedIcmpError(
+  services: FirewallServices, context: PacketContext, packet: IPv4Packet,
+): FilterVerdict<PacketContext> | undefined {
+  const key = icmpErrorFlowKey(packet);
+  if (!key) return undefined;
+  const found = vdom(services, context).sessions.lookup(key);
+  if (!found || found.session.state === 'discard') return undefined;
+
+  context.session = found.session;
+  context.sessionDirection = found.direction;
+  context.isFirstPacket = false;
+  context.egressPort = found.direction === 'c2s' ? found.session.egressInterface : found.session.ingressInterface;
+  context.egressZone = found.direction === 'c2s' ? found.session.egressZone : found.session.ingressZone;
+
+  const nat = vdom(services, context).nat;
+  if (found.session.translation && nat) {
+    const embeddedDirection = found.direction === 'c2s' ? 's2c' : 'c2s';
+    const ownAddress = context.egressPort === undefined ? undefined : services.interfaces.get(context.egressPort)?.ip;
+    context.packet = nat.reapplyToIcmpError(packet, found.session.translation, embeddedDirection, ownAddress);
+  }
+  const expired = transitTtl(services, context, 'session-lookup');
+  if (expired) return expired;
+
+  context.trace.push({ stage: 'session-lookup', verdict: 'related' });
+  context.verdict = Object.freeze({
+    action: 'accept' as const, reason: 'policy-deny' as VerdictReason, stage: 'session-lookup',
+  });
+  return { kind: 'accept', payload: context };
+}
+
 function sessionLookupStage(services: FirewallServices): PipelineStage {
   return {
     name: 'session-lookup',
     apply(context) {
       const packet = ipv4(context);
       if (!packet) return proceed(context, 'session-lookup', 'not-ipv4');
+
+      const related = relatedIcmpError(services, context, packet);
+      if (related) return related;
 
       const found = vdom(services, context).sessions.lookup(flowKeyFromPacket(packet));
       if (!found) return proceed(context, 'session-lookup', 'miss');
