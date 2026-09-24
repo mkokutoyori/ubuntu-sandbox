@@ -1542,6 +1542,10 @@ export class Firewall extends Equipment {
     this.getVdom(vdom).settings.tcpSessionWithoutSyn = allowed;
   }
 
+  setAsymmetricRouting(routing: { tcp: boolean; icmp: boolean }, vdom?: string): void {
+    this.getVdom(vdom).settings.asymmetricRouting = { ...routing };
+  }
+
   allowsTcpSessionWithoutSyn(vdom?: string): boolean {
     return this.getVdom(vdom).settings.tcpSessionWithoutSyn;
   }
@@ -2422,6 +2426,7 @@ function vdomServices(context: VdomContext): VdomServices {
     centralNat: context.settings.centralNat,
     opmode: context.settings.opmode,
     tcpSessionWithoutSyn: context.settings.tcpSessionWithoutSyn,
+    asymmetricRouting: context.settings.asymmetricRouting,
   };
 }
 

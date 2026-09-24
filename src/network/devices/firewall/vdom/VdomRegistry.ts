@@ -36,6 +36,7 @@ export interface VdomSettings {
   opmode: DeploymentMode;
   centralNat: boolean;
   tcpSessionWithoutSyn: boolean;
+  asymmetricRouting: { tcp: boolean; icmp: boolean };
   manageIP?: string;
   manageMask?: string;
   gateway?: string;
@@ -188,6 +189,7 @@ export class VdomRegistry {
     const settings: VdomSettings = {
       opmode: 'nat', centralNat: false,
       tcpSessionWithoutSyn: deps.tcpSessionWithoutSyn,
+      asymmetricRouting: { tcp: false, icmp: false },
     };
     const zones = new ZoneTable();
     const objects = new ObjectStore({

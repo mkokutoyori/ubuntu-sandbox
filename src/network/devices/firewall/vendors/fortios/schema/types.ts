@@ -304,9 +304,15 @@ export interface FortiBalancedVipPatch {
   readonly comment?: string;
 }
 
+export interface AsymmetricRouting {
+  readonly tcp: boolean;
+  readonly icmp: boolean;
+}
+
 export interface FortiVdomSettings {
   readonly centralNat: boolean;
   readonly tcpSessionWithoutSyn: boolean;
+  readonly asymmetricRouting: AsymmetricRouting;
   readonly opmode: 'nat' | 'transparent';
   readonly manageIP?: string;
   readonly manageMask?: string;

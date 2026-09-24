@@ -406,6 +406,8 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
       ], 'global'),
     enable('tcp-session-without-syn',
       'Enable/disable allowing TCP session without SYN flags.'),
+    enable('asymroute', 'Enable/disable IPv4 asymmetric routing.'),
+    enable('asymroute-icmp', 'Enable/disable ICMP asymmetric routing.'),
   ],
   onCommit(object, context) {
     const management = object.effective('manageip');
@@ -416,6 +418,10 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
       object.effective('firewall-session-dirty')[0] ?? 'check-all');
     context.device.applyVdomSettings({
       tcpSessionWithoutSyn: object.effective('tcp-session-without-syn')[0] === 'enable',
+      asymmetricRouting: {
+        tcp: object.effective('asymroute')[0] === 'enable',
+        icmp: object.effective('asymroute-icmp')[0] === 'enable',
+      },
       centralNat: object.effective('central-nat')[0] === 'enable',
       opmode: object.effective('opmode')[0] === 'transparent' ? 'transparent' : 'nat',
       manageIP: management[0],

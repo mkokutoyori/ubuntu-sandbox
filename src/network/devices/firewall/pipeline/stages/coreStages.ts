@@ -3,7 +3,7 @@ import { decrementForForwarding } from '../../../../layers/internet/InternetLaye
 import { getPacketDstPort, getPacketSrcPort, rewriteSrcIP } from '../../../../nat/rewrite';
 import {
   IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP,
-  type IPv4Packet, type MACAddress, type TCPPacket,
+  type ICMPPacket, type IPv4Packet, type MACAddress, type TCPPacket,
 } from '../../../../core/types';
 import { IPV4_FLAG_DF } from '../../../../core/Ipv4Fragmentation';
 import type { InterfaceTable } from '../../l3/InterfaceTable';
@@ -60,6 +60,7 @@ export interface VdomServices {
   policyRoutes?: PolicyRouteTable;
   sessionTtl?: SessionTtlTable;
   tcpSessionWithoutSyn?: boolean;
+  asymmetricRouting?: { tcp: boolean; icmp: boolean };
   utm?: UtmProfileStore;
   identities?: IdentityTable;
   centralNat?: boolean;
@@ -153,6 +154,15 @@ const DISCARD_TIMEOUT_SEC = 5;
 
 const tcpMachines = new WeakMap<object, TcpStateMachine>();
 const outOfState = new WeakSet<object>();
+const routedWithoutInspection = new WeakSet<object>();
+
+function routesIcmpAsymmetrically(services: FirewallServices, context: PacketContext, packet: IPv4Packet): boolean {
+  if (packet.protocol !== IP_PROTO_ICMP) return false;
+  const icmp = packet.payload as ICMPPacket | null | undefined;
+  if (icmp?.type !== 'icmp' || icmp.icmpType === 'echo-request') return false;
+  const routing = vdom(services, context).asymmetricRouting;
+  return routing?.tcp === true || routing?.icmp === true;
+}
 const matchedServices = new WeakMap<object, ServiceObject>();
 
 function acceptsSessionWithoutSyn(context: PacketContext): boolean {
@@ -665,6 +675,10 @@ function tcpStateCheckStage(services: FirewallServices): PipelineStage {
     name: 'tcp-state-check',
     apply(context) {
       const packet = ipv4(context);
+      if (packet && routesIcmpAsymmetrically(services, context, packet)) {
+        routedWithoutInspection.add(context);
+        return proceed(context, 'tcp-state-check', 'asymroute');
+      }
       const flags = packet ? tcpFlagsOf(packet) : undefined;
       if (!packet || !flags) return proceed(context, 'tcp-state-check', 'not-tcp');
 
@@ -673,6 +687,11 @@ function tcpStateCheckStage(services: FirewallServices): PipelineStage {
         synCheck: vdom(services, context).tcpSessionWithoutSyn !== true,
       });
       const verdict = machine.onFirstPacket(flags);
+      if (verdict.reason === 'no-session-non-syn'
+        && vdom(services, context).asymmetricRouting?.tcp === true) {
+        routedWithoutInspection.add(context);
+        return proceed(context, 'tcp-state-check', 'asymroute');
+      }
       if (!verdict.accepted) {
         return deny(context, 'tcp-state-check', verdict.reason as VerdictReason);
       }
@@ -746,6 +765,7 @@ function natDestinationStage(services: FirewallServices): PipelineStage {
     name: 'nat-destination',
     apply(context) {
       const packet = ipv4(context);
+      if (routedWithoutInspection.has(context)) return proceed(context, 'nat-destination', 'asymroute');
       if (!packet || !vdom(services, context).nat) return proceed(context, 'nat-destination', 'no-nat');
 
       const outcome = vdom(services, context).nat.translateInbound(packet, natContextOf(context));
@@ -957,6 +977,13 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
     apply(context) {
       const packet = ipv4(context);
       if (!packet) return proceed(context, 'policy-lookup', 'not-ipv4');
+      if (routedWithoutInspection.has(context)) {
+        context.trace.push({ stage: 'policy-lookup', verdict: 'asymroute' });
+        context.verdict = Object.freeze({
+          action: 'accept' as const, reason: 'policy-deny' as VerdictReason, stage: 'policy-lookup',
+        });
+        return { kind: 'accept', payload: context };
+      }
 
       const expected = takeExpectedFlow(services, context, packet);
       if (expected) {
