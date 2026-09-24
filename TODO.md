@@ -413,6 +413,14 @@ recherche) : docs.fortinet.com, community.fortinet.com et les sites qui
 citent la sortie complete sont bloques par le proxy de cet environnement.
 Non implementee plutot que devinee.
 
+### [fortios] pas de detection d'anomalie de fragments (teardrop)
+Batterie 03, test 148 : `hping3 --frag --mtu 8 -1 203.0.113.10 -c 2` a
+travers le pare-feu obtient une reponse (le serveur repond), alors qu'un
+FortiGate rejette par defaut les fragments superposes/teardrop. Le
+pare-feu simule a bien `drop-overlapped-fragment` (defaut disable, non
+active par ce test) et `Ipv4Fragmentation.overlaps`, mais aucune detection
+d'anomalie de fragments par defaut. Le test reste rouge.
+
 ### [ssh] deux modeles de `sshd_config` coexistent encore
 `SshSshdConfig` (celui du contexte serveur, de Windows et de la
 validation `sshd -t`) et `SshdServerConfig` (valeurs OpenSSH, blocs

@@ -36,6 +36,7 @@ import { namedCheckconfCommand } from './dns/NamedCheckconf';
 import { namedCheckzoneCommand } from './dns/NamedCheckzone';
 import { rndcCommand } from './dns/Rndc';
 import { nmapCommand } from './net/Nmap';
+import { hping3Command } from './net/Hping3';
 import { curlCommand } from './net/Curl';
 import { scpCommand } from './net/Scp';
 import { sshCommand } from './net/Ssh';
@@ -172,6 +173,7 @@ export {
   isDhcpLeasePath,
   applyIptablesNatHook,
   nmapCommand,
+  hping3Command,
   curlCommand,
   scpCommand,
   sshCommand,
@@ -328,6 +330,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   rndcCommand,
   dhclientCommand,
   nmapCommand,
+  hping3Command,
   curlCommand,
   scpCommand,
   sshCommand,

@@ -77,6 +77,8 @@ const CATALOGUE: readonly PackageEntry[] = [
     summary: 'administration tools for packet filtering and NAT', },
   { name: 'iputils-ping', version: '3:20211215-1', arch: 'amd64',
     summary: 'Tools to test the reachability of network hosts', },
+  { name: 'hping3', version: '3.a2.ds2-9', arch: 'amd64',
+    summary: 'Active Network Smashing Tool', },
   { name: 'isc-dhcp-server', version: '4.4.1-2.3ubuntu2.4', arch: 'amd64',
     summary: 'ISC DHCP server for automatic IP address assignment', units: ['isc-dhcp-server'] },
   { name: 'kmod', version: '29-1ubuntu1', arch: 'amd64',
