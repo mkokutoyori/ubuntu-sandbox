@@ -586,7 +586,25 @@ function resolveUnitAlias(name: string): string {
   return UNIT_ALIASES[name] ?? name;
 }
 
-export function cmdSystemctl(args: string[], sm: LinuxServiceManager, color = false): SysCtlResult {
+const QUIET_FLAGS: ReadonlySet<string> = new Set(['-q', '--quiet']);
+
+interface UnitQuery {
+  readonly state: (unit: string) => string;
+  readonly matches: (state: string) => boolean;
+  readonly failureCode: number;
+}
+
+function queryEveryUnit(units: readonly string[], query: UnitQuery, quiet: boolean): SysCtlResult {
+  const states = units.map((u) => query.state(resolveUnitAlias(u.replace(/\.service$/, ''))));
+  return {
+    output: quiet ? '' : states.join('\n'),
+    exitCode: states.some(query.matches) ? 0 : query.failureCode,
+  };
+}
+
+export function cmdSystemctl(rawArgs: string[], sm: LinuxServiceManager, color = false): SysCtlResult {
+  const quiet = rawArgs.some((a) => QUIET_FLAGS.has(a));
+  const args = rawArgs.filter((a) => !QUIET_FLAGS.has(a));
   let sub = (args[0] || '').toLowerCase();
   // Bare option invocations (`systemctl --failed`, `--type=service`,
   // `-t service`) are listing requests in real systemd.
@@ -689,17 +707,19 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager, color = fa
       };
     }
 
-    case 'is-active': {
-      const u = sm.status(unit);
-      const state = u?.state ?? 'inactive';
-      return { output: state, exitCode: state === 'active' ? 0 : 3 };
-    }
+    case 'is-active':
+      return queryEveryUnit(operands, {
+        state: (u) => sm.status(u)?.state ?? 'inactive',
+        matches: (state) => state === 'active',
+        failureCode: 3,
+      }, quiet);
 
-    case 'is-enabled': {
-      const u = sm.status(unit);
-      const en = u?.enabled ?? 'disabled';
-      return { output: en, exitCode: en === 'enabled' || en === 'static' ? 0 : 1 };
-    }
+    case 'is-enabled':
+      return queryEveryUnit(operands, {
+        state: (u) => sm.status(u)?.enabled ?? 'disabled',
+        matches: (state) => state === 'enabled' || state === 'static',
+        failureCode: 1,
+      }, quiet);
 
     case 'list-units':
     case 'list-unit-files': {
@@ -753,14 +773,11 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager, color = fa
       return { output: sm.defaultTarget(), exitCode: 0 };
 
     case 'is-failed': {
-      // `is-failed` prints the unit's ACTIVE STATE and exits 0 only when
-      // it is `failed`. It used to print `active` for anything that was
-      // not failed, so a stopped unit answered `inactive` to `is-active`
-      // and `active` to `is-failed` — the same unit, the same instant,
-      // two contradictory answers.
-      const u = sm.status(unit);
-      const state = u?.state ?? 'inactive';
-      return { output: state, exitCode: state === 'failed' ? 0 : 1 };
+      return queryEveryUnit(operands, {
+        state: (u) => sm.status(u)?.state ?? 'inactive',
+        matches: (state) => state === 'failed',
+        failureCode: 1,
+      }, quiet);
     }
 
     case 'mask':

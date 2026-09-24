@@ -81,3 +81,71 @@ describe('user lab — ssh -J through FW1', () => {
     expect(await lab.PC3.executeCommand('cat /var/log/auth.log')).toMatch(/Accepted publickey for user from 192\.168\.30\.4/);
   });
 });
+
+describe('user lab — everyday tools across FW1', () => {
+  it('ping crosses policy 1 and the answer comes back through the NAT', async () => {
+    const lab = await configuredLab();
+    const out = await lab.PC1.executeCommand('ping -c 2 192.168.30.4');
+    expect(out).toMatch(/^64 bytes from 192\.168\.30\.4: icmp_seq=1 ttl=62 /m);
+    expect(out).toContain('2 packets transmitted, 2 received, 0% packet loss');
+  });
+
+  it('ping from HQ to the LAN meets the implicit deny', async () => {
+    const lab = await configuredLab();
+    expect(await lab.PC3.executeCommand('ping -c 2 -W 1 192.168.1.10'))
+      .toContain('2 packets transmitted, 0 received, 100% packet loss');
+  });
+
+  it('arping finds FW1 and PC2 on the LAN', async () => {
+    const lab = await configuredLab();
+    expect(await lab.PC1.executeCommand('arping -c 1 -I eth0 192.168.1.99'))
+      .toMatch(/^Unicast reply from 192\.168\.1\.99 \[[0-9A-F:]{17}\]/im);
+    expect(await lab.PC1.executeCommand('arping -c 1 -I eth0 192.168.1.2'))
+      .toMatch(/^Unicast reply from 192\.168\.1\.2 /m);
+  });
+
+  it('traceroute lists FW1, R3 and the server', async () => {
+    const lab = await configuredLab();
+    const out = await lab.PC1.executeCommand('traceroute -n 192.168.30.4');
+    expect(out).toMatch(/^ 1  192\.168\.1\.99 /m);
+    expect(out).toMatch(/^ 2  192\.168\.20\.1 /m);
+    expect(out).toMatch(/^ 3  192\.168\.30\.4 /m);
+  });
+
+  it('ping -t 2 names R3 behind the NAT', async () => {
+    const lab = await configuredLab();
+    expect(await lab.PC1.executeCommand('ping -c 1 -t 2 192.168.30.4'))
+      .toContain('From 192.168.20.1 icmp_seq=1 Time to live exceeded');
+  });
+
+  it('tnsping reaches the listener of Server1 through FW1', async () => {
+    const lab = await configuredLab();
+    const out = await lab.PC1.executeCommand('tnsping 192.168.30.4:1521/ORCL');
+    expect(out).toContain('(HOST = 192.168.30.4)(PORT = 1521)');
+    expect(out).toMatch(/^OK \(\d+ msec\)$/m);
+  });
+
+  it('ssh logs in on Server1 with a key, through FW1', async () => {
+    const lab = await configuredLab();
+    await grantKeyAccess(lab.PC1, lab.Server1);
+    expect(await lab.PC1.executeCommand('ssh -o PasswordAuthentication=no user@192.168.30.4 whoami; echo EC=$?'))
+      .toMatch(/^user\nEC=0$/m);
+    expect(await lab.Server1.executeCommand('cat /var/log/auth.log')).toMatch(/Accepted publickey for user from 192\.168\.20\.2/);
+  });
+
+  it('curl ftp downloads and lists through the FTP session helper', async () => {
+    const lab = await configuredLab();
+    await taper(lab.Server1, ['apt install -y vsftpd', 'systemctl start vsftpd', 'echo HELLO_FTP > /srv/ftp/hello.txt']);
+    expect(await lab.PC1.executeCommand('curl -sS --connect-timeout 3 ftp://192.168.30.4/hello.txt; echo EC=$?'))
+      .toMatch(/^HELLO_FTP\nEC=0$/m);
+    expect(await lab.PC1.executeCommand('curl -sS --connect-timeout 3 ftp://192.168.30.4/'))
+      .toMatch(/ hello\.txt$/m);
+  });
+
+  it('systemctl is-active answers for every unit of Server1', async () => {
+    const lab = await configuredLab();
+    await taper(lab.Server1, ['systemctl stop vsftpd']);
+    expect(await lab.Server1.executeCommand('systemctl is-active nginx ssh vsftpd; echo EC=$?'))
+      .toBe('active\nactive\ninactive\nEC=0');
+  });
+});
