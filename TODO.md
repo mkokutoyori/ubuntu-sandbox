@@ -376,17 +376,6 @@ robustesse (john, hashcat, comparaison de hashes) n'a aucun sens.
 champ (`checkPassword`, PAM, faillock, `passwd -S`, `chage`) ; hors du
 perimetre du correctif SSH qui l'a revele.
 
-### [ssh-keygen] le dessin « randomart » est plein, pas la marche du fou
-`ssh-keygen -t ed25519` imprime une grille dont chaque case porte un
-symbole. L'algorithme d'OpenSSH (sshkey.c, fingerprint_randomart, « drunken
-bishop ») fait avancer un fou sur la grille selon les bits de l'empreinte :
-la plupart des cases restent vides, et seules les cases visitees portent
-` .o+=*BOX@%&#/^`, avec `S` au depart et `E` a l'arrivee.
-**Mesure** : `ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519` sur un
-LinuxPC ; les 9 lignes de 17 colonnes sont entierement remplies.
-**Pourquoi ce n'est pas ferme** : releve en passant, sans lien avec le
-defaut SSH corrige.
-
 ### [apt] `apt install` n'installe rien : il repond d'apres une base commune a toutes les machines
 `apt install <paquet>` consulte `PACKAGE_DB`, une table de MODULE partagee
 par toutes les machines, et repond « <paquet> is already the newest
