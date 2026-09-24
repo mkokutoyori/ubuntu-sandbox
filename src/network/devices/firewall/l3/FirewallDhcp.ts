@@ -10,6 +10,7 @@ import { DHCPPacket } from '../../../dhcp/DHCPPacket';
 import { buildDhcpServerReply } from '../../../dhcp/DhcpServerExchange';
 import type { IEventBus } from '../../../../events/EventBus';
 import { DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '@/network/core/WellKnownPorts';
+import { relayDhcpReply, relayDhcpRequest, type DhcpRelayHost } from '../../../dhcp/DhcpRelay';
 
 
 
@@ -40,9 +41,13 @@ export interface FirewallDhcpDeps {
     iface: string, ip: string, mask: string, gateway: string | null) => void;
   readonly clearInterface: (iface: string) => void;
   readonly systemDnsServers?: () => readonly string[];
+  readonly sendToServer?: (server: IPAddress, packet: IPv4Packet) => boolean;
+  readonly interfaceOwning?: (address: string) => string | null;
 }
 
 export class FirewallDhcp {
+  private readonly relays = new Map<string, readonly string[]>();
+
   private readonly server = new DHCPServer();
   private readonly scopes = new Map<string, DhcpScope>();
   private readonly client: DHCPClient;
@@ -194,11 +199,49 @@ export class FirewallDhcp {
     return undefined;
   }
 
+  setRelay(iface: string, servers: readonly string[] | null): void {
+    if (servers && servers.length > 0) this.relays.set(iface, [...servers]);
+    else this.relays.delete(iface);
+  }
+
+  relayServers(iface: string): readonly string[] {
+    return this.relays.get(iface) ?? [];
+  }
+
+  private relayHost(): DhcpRelayHost {
+    return {
+      deviceId: this.deps.deviceId,
+      hostname: () => this.deps.hostname(),
+      bus: () => this.deps.bus(),
+      interfaceAddress: (iface) => {
+        const ip = this.deps.interfaceAddress(iface)?.ip;
+        return ip ? new IPAddress(ip) : null;
+      },
+      interfaceOwning: (address) => this.deps.interfaceOwning?.(address) ?? null,
+      sendToServer: (server, packet) => this.deps.sendToServer?.(server, packet) ?? false,
+      broadcastReply: (iface, reply) => { this.emit(iface, reply, reply.chaddr); },
+      relayInformationOption: () => false,
+      countForward: () => undefined,
+      countReply: () => undefined,
+      countDrop: () => undefined,
+    };
+  }
+
   handleUdp(iface: string, packet: IPv4Packet, udp: UDPPacket): boolean {
     if (udp.destinationPort !== DHCP_SERVER_PORT) return false;
 
     const request = udp.payload as DHCPPacket | undefined;
-    if (!request || request.op !== 1) return true;
+    if (!request) return true;
+    if (request.op === 2) {
+      relayDhcpReply(this.relayHost(), request);
+      return true;
+    }
+    if (request.op !== 1) return true;
+    const relayServers = this.relays.get(iface);
+    if (relayServers) {
+      relayDhcpRequest(this.relayHost(), iface, request, relayServers);
+      return true;
+    }
     if (!this.server.isEnabled() || !this.scopeOfInterface(iface)) return true;
 
     const local = this.deps.interfaceAddress(iface);
@@ -324,6 +367,8 @@ export interface DhcpWiringHost {
   leaseGranted(iface: string, ip: string, mask: string, gateway: string | null): void;
   leaseLost(iface: string): void;
   systemDnsServers?(): readonly string[];
+  sendToServer?(server: IPAddress, packet: IPv4Packet): boolean;
+  interfaceOwning?(address: string): string | null;
 }
 
 export function createFirewallDhcp(host: DhcpWiringHost): FirewallDhcp {
@@ -339,5 +384,7 @@ export function createFirewallDhcp(host: DhcpWiringHost): FirewallDhcp {
       host.leaseGranted(iface, ip, mask, gateway);
     },
     clearInterface: (iface) => { host.leaseLost(iface); },
+    sendToServer: (server, packet) => host.sendToServer?.(server, packet) ?? false,
+    interfaceOwning: (address) => host.interfaceOwning?.(address) ?? null,
   });
 }

@@ -296,6 +296,9 @@ export function buildCommitDevice(
       applyReplacementMessage(message, buffer) {
         fw.getLoginBanners().setBuffer(message, buffer);
       },
+      setDhcpRelay(iface, servers) {
+        fw.getDhcp().setRelay(iface, servers);
+      },
       setCaptivePortalInterface(iface, on) {
         fw.setCaptivePortalInterface(iface, on);
       },

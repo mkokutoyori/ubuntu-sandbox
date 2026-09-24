@@ -383,6 +383,7 @@ export interface FortiCommitDevice {
   removeDnsZone(name: string): void;
   resolveFqdnNow(fqdn: string): void;
   setCaptivePortalInterface(iface: string, on: boolean): void;
+  setDhcpRelay(iface: string, servers: readonly string[] | null): void;
   refreshCaptivePortal(): void;
   applySyslogCollector(settings: SyslogCollectorSettings): string | void;
   applySyslogFilter(settings: SyslogFilterSettings): string | void;

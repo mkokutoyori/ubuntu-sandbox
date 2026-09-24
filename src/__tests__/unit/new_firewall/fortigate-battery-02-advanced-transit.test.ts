@@ -455,10 +455,20 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
     });
 
     it('78. Le client obtient son bail avec passerelle et serveur DNS via le relais traversant', async () => {
-      const { pc, wanSrv } = await creerLaboAvance();
-      await taper(wanSrv as unknown as Cli, ['systemctl start isc-dhcp-server']);
+      const { pc, fw, wanSrv } = await creerLaboAvance();
+      await taper(pc as unknown as Cli, ['ip addr flush dev eth0', 'ip route flush all']);
+      await taper(wanSrv as unknown as Cli, [
+        "printf 'subnet 203.0.113.0 netmask 255.255.255.0 {\\n}\\nsubnet 192.168.1.0 netmask 255.255.255.0 {\\n  range 192.168.1.100 192.168.1.150;\\n  option routers 192.168.1.1;\\n  option domain-name-servers 203.0.113.9;\\n}\\n' > /etc/dhcp/dhcpd.conf",
+        'systemctl start isc-dhcp-server',
+      ]);
+      await taper(fw, [
+        'config system interface', 'edit "port1"',
+        'set dhcp-relay-service enable', 'set dhcp-relay-ip "203.0.113.9"', 'next', 'end',
+      ]);
+      await pc.executeCommand('dhclient eth0');
       const res = await pc.executeCommand('cat /var/lib/dhcp/dhclient.leases');
-      expect(res).toMatch(/routers|domain-name-servers/i);
+      expect(res).toMatch(/option routers 192\.168\.1\.1;/);
+      expect(res).toMatch(/option domain-name-servers 203\.0\.113\.9;/);
     });
 
     it('79. Résolution DNS récursive d\'un enregistrement CNAME pointant vers un alias traversant', async () => {

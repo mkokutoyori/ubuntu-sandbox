@@ -35,6 +35,7 @@
  *   - SNMP-ready performance counters
  */
 
+import { relayDhcpReply, relayDhcpRequest, type DhcpRelayHost } from '../dhcp/DhcpRelay';
 import { Equipment } from '../equipment/Equipment';
 import {
   echoDataBytesForDatagram, CISCO_ECHO_DATAGRAM_BYTES,
@@ -4101,82 +4102,45 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (pkt.op === 1) {
       const helpers = this.dhcpServer.getHelperAddresses(inPort);
       if (helpers.length > 0) {
-        this.relayDhcpToHelpers(inPort, pkt, helpers);
+        relayDhcpRequest(this.dhcpRelayHost(), inPort, pkt, helpers);
         return;
       }
       if (this.dhcpServer.isEnabled()) this.serveDhcpOnWire(inPort, pkt);
       return;
     }
-    if (pkt.op === 2) {
-      for (const [name, port] of this.ports) {
-        const ip = port.getIPAddress();
-        if (ip && pkt.giaddr === ip.toString()) {
-          pkt.removeOption(82);
-          this.sendDhcpFrameOnPort(name, pkt, new IPAddress('255.255.255.255'), MACAddress.broadcast());
-          this.dhcpServer.countRelayReply();
-          this.getBus().publish({
-            topic: 'dhcp.relay.reply-forwarded',
-            payload: {
-              deviceId: this.id, hostname: this.getHostname(),
-              iface: name, clientMac: pkt.chaddr, assignedIp: pkt.yiaddr,
-            },
-          });
-          return;
-        }
-      }
-    }
+    if (pkt.op === 2) relayDhcpReply(this.dhcpRelayHost(), pkt);
   }
 
-  private relayDhcpToHelpers(inPort: string, pkt: DHCPPacket, helpers: string[]): void {
-    const inIp = this.ports.get(inPort)?.getIPAddress();
-    if (!inIp) return;
-    if (pkt.hops >= 16) {
-      this.dhcpServer.countRelayDrop();
-      this.getBus().publish({
-        topic: 'dhcp.relay.dropped',
-        payload: {
-          deviceId: this.id, hostname: this.getHostname(),
-          iface: inPort, reason: 'hops-exceeded', hops: pkt.hops,
-          clientMac: pkt.chaddr,
-        },
-      });
-      return;
-    }
-    pkt.hops++;
-    if (pkt.giaddr === '0.0.0.0') pkt.giaddr = inIp.toString();
-    let option82: { circuitId: string; remoteId: string } | null = null;
-    if (this.dhcpServer.isRelayInformationOptionEnabled()) {
-      option82 = { circuitId: inPort, remoteId: this.getHostname() };
-      pkt.setOption(82, option82);
-    }
-    for (const helper of helpers) {
-      const dst = new IPAddress(helper);
-      const route = this.lookupRoute(dst);
-      if (!route) continue;
-      const egress = this.ports.get(route.iface);
-      const srcIp = egress?.getIPAddress();
-      if (!egress || !srcIp) continue;
-      const udp: UDPPacket = {
-        type: 'udp', sourcePort: 67, destinationPort: 67,
-        length: 8 + 300, checksum: 0, payload: pkt,
-      };
-      const relayed = createIPv4Packet(new IPAddress(pkt.giaddr), dst, IP_PROTO_UDP, 64, udp, 8 + 300);
-      this.sendFrame(route.iface, {
-        srcMAC: egress.getMAC(), dstMAC: MACAddress.broadcast(),
-        etherType: ETHERTYPE_IPV4, payload: relayed,
-      });
-    }
-    this.dhcpServer.countRelayForward();
-    this.getBus().publish({
-      topic: 'dhcp.relay.forwarded',
-      payload: {
-        deviceId: this.id, hostname: this.getHostname(),
-        iface: inPort, giaddr: pkt.giaddr, helpers: [...helpers],
-        clientMac: pkt.chaddr, hops: pkt.hops,
-        circuitId: option82?.circuitId ?? null,
-        remoteId: option82?.remoteId ?? null,
+  private dhcpRelayHost(): DhcpRelayHost {
+    return {
+      deviceId: this.id,
+      hostname: () => this.getHostname(),
+      bus: () => this.getBus(),
+      interfaceAddress: (iface) => this.ports.get(iface)?.getIPAddress() ?? null,
+      interfaceOwning: (address) => {
+        for (const [name, port] of this.ports) {
+          if (port.getIPAddress()?.toString() === address) return name;
+        }
+        return null;
       },
-    });
+      sendToServer: (server, packet) => {
+        const route = this.lookupRoute(server);
+        const egress = route ? this.ports.get(route.iface) : undefined;
+        if (!route || !egress?.getIPAddress()) return false;
+        this.sendFrame(route.iface, {
+          srcMAC: egress.getMAC(), dstMAC: MACAddress.broadcast(),
+          etherType: ETHERTYPE_IPV4, payload: packet,
+        });
+        return true;
+      },
+      broadcastReply: (iface, reply) => {
+        this.sendDhcpFrameOnPort(iface, reply, new IPAddress('255.255.255.255'), MACAddress.broadcast());
+      },
+      relayInformationOption: () => this.dhcpServer.isRelayInformationOptionEnabled(),
+      countForward: () => this.dhcpServer.countRelayForward(),
+      countReply: () => this.dhcpServer.countRelayReply(),
+      countDrop: () => this.dhcpServer.countRelayDrop(),
+    };
   }
 
   private serveDhcpOnWire(inPort: string, pkt: DHCPPacket): void {

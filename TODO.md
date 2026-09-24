@@ -383,6 +383,36 @@ de l'erreur) et les clients dig/nc (lecture de l'erreur), hors du
 pare-feu ; le pare-feu, lui, fait desormais suivre une erreur ICMP liee a
 une session (sonde fortigate-icmp-error-follows-its-session).
 
+### [fortios] une entree refusee par `next` reste affichee
+`config firewall policy` / `edit 62` sans `set service` : `next` repond
+« Command fail. Return code -61 / entry not set for "service" », mais
+`show firewall policy 62` affiche encore l'entree (sans effet sur le
+trafic). Mesure en travaillant la batterie 02, test 94.
+
+### [nginx] un amont injoignable donne 502 tout de suite, pas 504 au bout de proxy_connect_timeout
+Le mandataire de `LinuxNginxService` envoie sa requete amont de facon
+synchrone : un SYN jete repond aussitot `502 Bad Gateway`, la ou nginx
+attend `proxy_connect_timeout` (60 s par defaut) puis rend `504 Gateway
+Time-out`. Un RST (port ferme) donne bien 502 des deux cotes. Meme cause
+que l'entree [curl] -m : le client HTTP n'attend pas sur l'horloge.
+
+### [curl] deux versions de curl et `gzip on` non evalue
+Le catalogue de paquets dit `curl 7.81.0-1ubuntu1.15` (jammy), `curl
+--version` dit `curl 8.5.0` ; un seul des deux doit rester. Et nginx
+accepte `gzip on;` (livre dans nginx.conf) sans jamais compresser : aucun
+codec DEFLATE n'existe ici, c'est pourquoi curl annonce `Features: IPv6
+SSL` et refuse `--compressed` comme un curl sans libz.
+
+### [fortios] `diagnose log test` n'existe pas
+La commande repond « unknown command » (batterie 02, test 98). Sur un vrai
+FortiGate, elle genere un message de test par type de journal
+(« generating a system event message with level - warning », puis virus,
+URL, DLP, IPS, trafic, VPN, HA…) et les ecrit dans chaque destination de
+journalisation. Seule la premiere ligne a pu etre confirmee (extrait de
+recherche) : docs.fortinet.com, community.fortinet.com et les sites qui
+citent la sortie complete sont bloques par le proxy de cet environnement.
+Non implementee plutot que devinee.
+
 ### [ssh] deux modeles de `sshd_config` coexistent encore
 `SshSshdConfig` (celui du contexte serveur, de Windows et de la
 validation `sshd -t`) et `SshdServerConfig` (valeurs OpenSSH, blocs

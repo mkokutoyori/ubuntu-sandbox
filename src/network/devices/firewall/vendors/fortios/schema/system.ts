@@ -578,6 +578,23 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       }],
       defaultValue: [],
     },
+    enable('dhcp-relay-service', 'Enable/disable allowing this interface to act as a DHCP relay.'),
+    {
+      ...choice('dhcp-relay-type', 'DHCP relay type (regular or IPsec).', [
+        { keyword: 'regular', description: 'Regular DHCP relay.' },
+        { keyword: 'ipsec', description: 'DHCP relay for IPsec.' },
+      ], 'regular'),
+      availableWhen: (object) => object.effective('dhcp-relay-service')[0] === 'enable',
+    },
+    {
+      name: 'dhcp-relay-ip',
+      help: 'DHCP relay IP address.',
+      quoted: true,
+      multiValue: true,
+      parts: [{ name: 'dhcp-relay-ip', type: 'IP_ADDR', description: 'DHCP relay IP address.' }],
+      defaultValue: [],
+      availableWhen: (object) => object.effective('dhcp-relay-service')[0] === 'enable',
+    },
     choice('status', 'Bring the interface up or shut it down.', [
       { keyword: 'up', description: 'Bring the interface up.' },
       { keyword: 'down', description: 'Shut down the interface.' },
@@ -633,6 +650,9 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     if (mode === 'dhcp') context.device.acquireDhcpLease(object.key);
     context.device.setCaptivePortalInterface(object.key,
       object.effective('security-mode')[0] === 'captive-portal');
+    const regularRelay = object.effective('dhcp-relay-service')[0] === 'enable'
+      && object.effective('dhcp-relay-type')[0] !== 'ipsec';
+    context.device.setDhcpRelay(object.key, regularRelay ? object.effective('dhcp-relay-ip') : null);
 
     const prefix = parseIpv6Prefix(object.childSetting('ipv6', 'ip6-address')[0] ?? '');
     if (prefix) {
