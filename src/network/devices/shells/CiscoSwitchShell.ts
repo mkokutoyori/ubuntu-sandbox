@@ -4674,7 +4674,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         port: this.abbreviateInterface(portName),
         name: (sw.getInterfaceDescription(portName) || '')
           .slice(0, INTERFACE_STATUS_NAME_WIDTH),
-        status: port.getIsUp() ? (connected ? 'connected' : 'notconnect') : 'disabled',
+        status: sw.isPortErrDisabled(portName) ? 'err-disabled'
+          : port.getIsUp() ? (connected ? 'connected' : 'notconnect') : 'disabled',
         vlan: cfg?.mode === 'trunk' ? 'trunk' : String(cfg?.accessVlan || 1),
         // Read the port rather than guess from its name. The `a-`
         // prefix is IOS's way of saying the value was AUTO-NEGOTIATED,

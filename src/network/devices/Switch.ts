@@ -871,12 +871,22 @@ export abstract class Switch extends Equipment {
     return true;
   }
 
+  private readonly stormErrDisabledPorts = new Set<string>();
+
   private stormErrDisablePort(portName: string): void {
     const port = this.getPort(portName);
     if (!port) return;
     port.setUp(false);
+    this.stormErrDisabledPorts.add(portName);
     Logger.warn(this.id, 'switch:storm-errdisable',
       `${this.name}: ${portName} err-disabled by storm-control`);
+  }
+
+  /** True when this port was shut by an err-disable cause, not by config. */
+  isPortErrDisabled(portName: string): boolean {
+    return this.psecErrDisabledPorts.has(portName)
+      || this.arpErrDisabledPorts.has(portName)
+      || this.stormErrDisabledPorts.has(portName);
   }
 
   private arpErrDisablePort(port: string): void {
