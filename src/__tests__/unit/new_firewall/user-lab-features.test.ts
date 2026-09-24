@@ -1,23 +1,21 @@
 /*
  * The user's lab (lan_with_firewall_fortigate.topology): every feature
- * delivered on this branch is exercised on that topology, unchanged —
- * only device configuration is added (a static route on FW1 and Router2,
- * PC1's address, nginx on Server1, SSH keys).
+ * delivered on this branch is exercised on that topology, imported as
+ * exported. Configuration is added afterwards through each device's CLI:
+ * addRoutesToHq types the routes to HQ on Router2 and FW1, and the tests
+ * add PC1's address, services and SSH keys.
  *
  * LAN 192.168.1.0/24 (PC1, PC2, Router2) — FW1 port1 / port2 — R3 —
  * HQ 192.168.30.0/24 (Server1, WinServer1, PC3). FW1 policy 1 allows
  * LAN_SUBNET -> HQ_ADDRESS with NAT; nothing allows HQ -> LAN.
  */
 import { describe, it, expect } from 'vitest';
-import { loadUserLab, type UserLab } from './userLab';
+import { addRoutesToHq, loadUserLab, type UserLab } from './userLab';
 import { taper, grantKeyAccess } from './fortigateBatteryHarness';
 
 async function configuredLab(): Promise<UserLab> {
   const lab = await loadUserLab();
-  await taper(lab.FW1, [
-    'config router static', 'edit 1', 'set dst 192.168.30.0 255.255.255.0',
-    'set gateway 192.168.20.1', 'set device "port2"', 'next', 'end',
-  ]);
+  await addRoutesToHq(lab);
   await taper(lab.PC1, ['ip addr add 192.168.1.10/24 dev eth0', 'ip route add default via 192.168.1.99']);
   await taper(lab.Server1, ['systemctl start nginx']);
   return lab;
@@ -147,5 +145,27 @@ describe('user lab — everyday tools across FW1', () => {
     await taper(lab.Server1, ['systemctl stop vsftpd']);
     expect(await lab.Server1.executeCommand('systemctl is-active nginx ssh vsftpd; echo EC=$?'))
       .toBe('active\nactive\ninactive\nEC=0');
+  });
+});
+
+describe('user lab — PC2 through Router2', () => {
+  it('the routes typed after the import are in both routing tables', async () => {
+    const lab = await loadUserLab();
+    await addRoutesToHq(lab);
+    await lab.Router2.executeCommand('enable');
+    expect(await lab.Router2.executeCommand('show ip route static')).toMatch(/^S\s+192\.168\.30\.0\/24 \[1\/0\] via 192\.168\.1\.99$/m);
+    expect(await lab.FW1.executeCommand('get router info routing-table static'))
+      .toMatch(/^S\s+192\.168\.30\.0\/24 \[10\/0\] via 192\.168\.20\.1, port2$/m);
+  });
+
+  it('PC2 reaches Server1 through Router2, FW1 and R3', async () => {
+    const lab = await loadUserLab();
+    await addRoutesToHq(lab);
+    const trace = await lab.PC2.executeCommand('tracert -d 192.168.30.4');
+    expect(trace).toMatch(/^\s+1\s.*192\.168\.1\.1$/m);
+    expect(trace).toMatch(/^\s+2\s.*192\.168\.1\.99$/m);
+    expect(trace).toMatch(/^\s+3\s.*192\.168\.20\.1$/m);
+    expect(trace).toMatch(/^\s+4\s.*192\.168\.30\.4$/m);
+    expect(await lab.PC2.executeCommand('ping -n 2 192.168.30.4')).toContain('Received = 2, Lost = 0 (0% loss)');
   });
 });

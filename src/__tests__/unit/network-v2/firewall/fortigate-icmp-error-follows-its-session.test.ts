@@ -32,7 +32,7 @@
  *     NAT carry the probes; only the errors were lost.
  */
 import { describe, it, expect } from 'vitest';
-import { loadUserLab, type UserLab } from '../../new_firewall/userLab';
+import { addRoutesToHq, loadUserLab, type UserLab } from '../../new_firewall/userLab';
 import { taper } from '../../new_firewall/fortigateBatteryHarness';
 import { FirewallNatEngine } from '@/network/devices/firewall/nat/FirewallNatEngine';
 import { NatPolicyStore } from '@/network/devices/firewall/nat/NatPolicyStore';
@@ -43,10 +43,7 @@ import { buildICMPError } from '@/network/core/IcmpErrors';
 
 async function configuredLab(nat: boolean): Promise<UserLab> {
   const lab = await loadUserLab();
-  await taper(lab.FW1, [
-    'config router static', 'edit 1', 'set dst 192.168.30.0 255.255.255.0',
-    'set gateway 192.168.20.1', 'set device "port2"', 'next', 'end',
-  ]);
+  await addRoutesToHq(lab);
   if (!nat) await taper(lab.FW1, ['config firewall policy', 'edit 1', 'set nat disable', 'next', 'end']);
   await taper(lab.PC1, ['ip addr add 192.168.1.10/24 dev eth0', 'ip route add default via 192.168.1.99']);
   return lab;
