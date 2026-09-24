@@ -1,36 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createDevice, resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { describe, it, expect } from 'vitest';
+import { createDevice } from '@/network/devices/DeviceFactory';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { WindowsServer } from '@/network/devices/WindowsServer';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { MACAddress, resetCounters } from '@/network/core/types';
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { Logger } from '@/network/core/Logger';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
-
-beforeEach(() => {
-  resetCounters();
-  resetDeviceCounters();
-  MACAddress.resetCounter();
-  Logger.reset();
-  EquipmentRegistry.resetInstance();
-});
-
-interface Cli {
-  executeCommand(command: string): Promise<string>;
-  getPortNames(): string[];
-  getPort(name: string): unknown;
-}
-
-const REFUS = /Unknown action|command parse error|Invalid|Incomplete|Command fail/i;
-const refuse = (sortie: string): boolean => REFUS.test(sortie);
-
-async function taper(device: Cli, lignes: readonly string[]): Promise<void> {
-  for (const ligne of lignes) await device.executeCommand(ligne);
-}
+import { type Cli, refuse, taper } from './fortigateBatteryHarness';
 
 function pwsh(dev: WindowsPC | WindowsServer) {
   const ps = PowerShellSubShell.create(dev as never).subShell;
@@ -63,12 +40,12 @@ interface LaboCloudHybride {
 async function creerLaboCloudHybride(): Promise<LaboCloudHybride> {
   const pc = new LinuxPC('linux-pc', 'PC-Dev', 50, 0);
   const winPc = new WindowsPC('windows-pc', 'WIN-USER');
-  const swAccess = new CiscoSwitch('switch-cisco-acc', 'SW-ACC', 16, 250, 0);
+  const swAccess = new CiscoSwitch('switch-cisco', 'SW-ACC', 16, 250, 0);
   const fw = createDevice('firewall-fortinet', 500, 0) as unknown as Cli;
-  const swCloud = new CiscoSwitch('switch-cisco-cloud', 'SW-CLOUD', 16, 750, 0);
-  const srvK8s = new LinuxServer('linux-server-k8s', 'SRV-K8S-APIGW', 950, -100);
+  const swCloud = new CiscoSwitch('switch-cisco', 'SW-CLOUD', 16, 750, 0);
+  const srvK8s = new LinuxServer('linux-server', 'SRV-K8S-APIGW', 950, -100);
   const winDc = serveurWindows('DC01-CLOUD');
-  const srvOtel = new LinuxServer('linux-server-otel', 'SRV-OTEL', 950, 150);
+  const srvOtel = new LinuxServer('linux-server', 'SRV-OTEL', 950, 150);
 
   pc.powerOn();
   winPc.powerOn();
@@ -200,8 +177,8 @@ describe('Batterie 11 : Tests 501 à 550 — Cloud Hybride, EVPN-VXLAN, K8s, API
 
     it('508. Bascule automatique sans interruption de session Oracle lors d\'une panne simulée Direct Connect', async () => {
       const { pc, srvK8s } = await creerLaboCloudHybride();
-      await taper(srvK8s as unknown as Cli, ['systemctl start oracle-xe']);
-      const res = await pc.executeCommand('tnsping 10.100.0.10:1521/XE');
+      await taper(srvK8s as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const res = await pc.executeCommand('tnsping 10.100.0.10:1521/ORCL');
       expect(res).toContain('OK');
     });
   });
@@ -524,7 +501,7 @@ describe('Batterie 11 : Tests 501 à 550 — Cloud Hybride, EVPN-VXLAN, K8s, API
       const { pc, srvK8s } = await creerLaboCloudHybride();
       await taper(srvK8s as unknown as Cli, [
         'systemctl start api-gateway',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
       ]);
       const validToken = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJkZXYifQ.DUMMY_SIG';
       const res = await pc.executeCommand(`curl -s -H "Authorization: Bearer ${validToken}" http://10.100.0.10/api/v1/db-status`);
@@ -546,7 +523,7 @@ describe('Batterie 11 : Tests 501 à 550 — Cloud Hybride, EVPN-VXLAN, K8s, API
       // 1. Démarrage des micro-services Cloud et des services Windows/Linux
       await taper(srvK8s as unknown as Cli, [
         'systemctl start api-gateway',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
       ]);
       await taper(srvOtel as unknown as Cli, ['systemctl start otel-collector']);
       await pwsh(winDc)('Install-WindowsFeature -Name AD-Domain-Services,DNS');

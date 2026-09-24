@@ -1,6 +1,8 @@
 import { flowKeyToString, reverseFlowKey, type FlowKey } from './FlowKey';
 import type { FlowDirection, ObservedTcpState, TcpStateMachine } from './TcpStateMachine';
 import { sessionFamily, type SessionFamily } from './SessionFamily';
+import type { IScheduler } from '@/events/Scheduler';
+import { TimerSet } from '@/events/TimerSet';
 
 export type SessionState = 'init' | 'opening' | 'active' | 'closing' | 'closed' | 'discard';
 
@@ -71,6 +73,7 @@ export interface SessionTableLimits {
 
 export interface SessionTableDeps {
   now?: () => number;
+  scheduler?: () => IScheduler;
   limits?: SessionTableLimits;
   onCreated?: (session: FirewallSession) => void;
   onClosed?: (session: FirewallSession, reason: SessionCloseReason) => void;
@@ -102,6 +105,14 @@ export interface SessionTableView {
   statistics(): SessionStatistics;
 }
 
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
+function retirementReason(session: FirewallSession): SessionCloseReason {
+  if (session.tcpState === 'closed') return 'tcp-rst';
+  if (session.tcpState === 'time-wait') return 'tcp-fin';
+  return 'timeout';
+}
+
 export class SessionTableFullError extends Error {
   constructor(readonly limit: number) {
     super(`session table full (${limit})`);
@@ -120,6 +131,9 @@ export class SessionTable {
   private createdCount = 0;
   private closedCount = 0;
   private discardedCount = 0;
+  private expiryDueAt: number | null = null;
+  private expiryTimer: symbol | null = null;
+  private readonly timers: TimerSet | null;
   private readonly familyCounts: Record<SessionFamily, { created: number; closed: number }> = {
     ipv4: { created: 0, closed: 0 },
     ipv6: { created: 0, closed: 0 },
@@ -129,6 +143,8 @@ export class SessionTable {
     this.deps = deps;
     this.now = deps.now ?? (() => Date.now());
     this.limits = deps.limits ?? {};
+    const scheduler = deps.scheduler;
+    this.timers = scheduler ? new TimerSet(scheduler) : null;
   }
 
   install(key: FlowKey, options: SessionInstallOptions): FirewallSession {
@@ -190,11 +206,13 @@ export class SessionTable {
   refresh(session: FirewallSession): void {
     session.lastSeenAt = this.now();
     session.expiresAt = session.lastSeenAt + session.timeoutSec * 1000;
+    this.armExpiry(session.expiresAt);
   }
 
   setTimeout(session: FirewallSession, timeoutSec: number): void {
     session.timeoutSec = timeoutSec;
     session.expiresAt = session.lastSeenAt + timeoutSec * 1000;
+    this.armExpiry(session.expiresAt);
   }
 
   close(session: FirewallSession, reason: SessionCloseReason): void {
@@ -223,11 +241,29 @@ export class SessionTable {
     let purged = 0;
     for (const session of [...this.sessions.values()]) {
       if (session.expiresAt <= deadline) {
-        this.close(session, 'timeout');
+        this.close(session, retirementReason(session));
         purged++;
       }
     }
     return purged;
+  }
+
+  private armExpiry(deadline: number): void {
+    if (!this.timers || !Number.isFinite(deadline)) return;
+    if (this.expiryDueAt !== null && this.expiryDueAt <= deadline) return;
+    this.timers.clear(this.expiryTimer);
+    const delay = Math.min(MAX_TIMER_DELAY_MS, Math.max(0, deadline - this.now()));
+    this.expiryTimer = this.timers.setTimeout(() => this.expireDue(), delay);
+    this.expiryDueAt = deadline;
+  }
+
+  private expireDue(): void {
+    this.expiryDueAt = null;
+    this.expiryTimer = null;
+    this.sweep();
+    let earliest = Number.POSITIVE_INFINITY;
+    for (const session of this.sessions.values()) earliest = Math.min(earliest, session.expiresAt);
+    this.armExpiry(earliest);
   }
 
   clear(): number {
@@ -298,6 +334,7 @@ export class SessionTable {
     this.createdCount++;
     this.familyCounts[sessionFamily(session)].created++;
     this.deps.onCreated?.(session);
+    this.armExpiry(session.expiresAt);
     return session;
   }
 }

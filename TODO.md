@@ -117,6 +117,27 @@ ROUTEUR comme passerelle, les deux passent — `netsh interface ip set
 address ... static <ip> <masque> <routeur>` installe bien la route. Le
 cas fautif est donc etroit : la passerelle est le PARE-FEU.
 
+### [fortios] `session-ttl default never` : le rendu d'une session sans echeance n'est pas atteste
+`set default never` est accepte et EVALUE : la session recoit une echeance
+infinie et la minuterie de vieillissement ne l'arme pas. Ce que
+`diagnose sys session list` affiche alors dans `timeout=` et `expire=`
+n'a pas pu etre lu : docs.fortinet.com, community.fortinet.com et
+help.fortinet.com sont refuses par le proxy de cet environnement. Le
+simulateur ecrit `never` dans les deux champs ; c'est un choix, pas une
+transcription.
+
+### [fortios] seul l'assistant de session `ftp` agit
+`config system session-helper` porte la table d'usine de FortiOS (vingt
+entrees, source : un `show full-configuration` FortiOS 5.04 publie dans
+Azure/Azure-vpn-config-samples) et c'est elle qui dit ou l'assistant FTP
+ecoute. Les dix-neuf autres noms (pptp, h323, ras, tns, tftp, rtsp, mms,
+pmap, sip, dns-udp, rsh, dcerpc, mgcp, ...) sont acceptes et affiches
+comme sur un vrai boitier, mais n'ouvrent aucune connexion attendue : un
+flux TNS redirige, un canal TFTP de donnees ou une session SIP media
+restent soumis a la politique comme n'importe quel flux. C'est le cote
+sur (un assistant ELARGIT ce qui passe), mais une maquette qui compte sur
+eux echouera.
+
 ## Pile TCP/IP
 
 ### [ip] l'option Timestamp n'est ni construite ni horodatee
@@ -315,7 +336,162 @@ n'evalue. C'est un chantier par knob, pas un correctif de commande.
 
 ---
 
-## Postes Windows
+### [curl] un SYN sans reponse est annonce « Connection refused », au format d'avant curl 8
+Sans `--connect-timeout`, `CurlTransfer` traite un SYN jete en silence
+comme un refus et affiche `curl: (7) Failed to connect to H port P:
+Connection refused`. Deux ecarts avec curl 8.5.0 (`lib/connect.c`,
+`lib/strerror.c`) : le texte d'un echec de connexion y est `Failed to
+connect to H port P after N ms: Couldn't connect to server`, et un SYN
+sans reponse n'est pas un refus — il attend le delai TCP du noyau puis
+echoue en ETIMEDOUT, code 28.
+**Mesure** : `iptables -A INPUT -p tcp --dport 443 -j DROP` sur le
+serveur, puis `curl -sS https://10.0.0.2/` depuis le client — reponse
+immediate « Connection refused », code 7.
+**Pourquoi ce n'est pas ferme** : `--connect-timeout` est implemente et
+borne l'attente ; sans lui, le delai par defaut du noyau (reemissions du
+SYN, ~130 s sous Linux) n'est pas modele, et changer le texte du refus
+touche les tests qui l'attendent sous sa forme actuelle.
+Le meme texte sert au canal de donnees FTP (`curl ftp://`) quand il ne
+s'ouvre pas.
+
+### [ssh] deux modeles de `sshd_config`, et l'image ecrit `PermitRootLogin no`
+`SshSshdConfig` (booleens) et `SshdServerConfig` (valeurs OpenSSH, blocs
+`Match`) lisent le meme fichier. Le premier ecrit le fichier de l'image :
+`PermitRootLogin ${booleen ? 'yes' : 'no'}`, donc `no`, la ou Ubuntu laisse
+la ligne commentee et compile `prohibit-password`. Depuis le lot `ssh -J`,
+la decision de connexion de root sur le fil (handler et contexte) lit la
+valeur exacte via `rootMayLogIn` ; les autres drapeaux du serveur filaire
+viennent encore du modele booleen. Fermer le doublon demande de migrer
+les lecteurs de `SshSshdConfig` (une vingtaine de fichiers de test
+nomment `PermitRootLogin`) ; changer le defaut de l'image les touche tous.
+
+### [ssh] le serveur filaire ignore les options de `authorized_keys`
+`checkPublicKey` compare le DEUXIEME champ de chaque ligne a la cle
+offerte : une ligne avec options (`no-port-forwarding ssh-ed25519 ...`,
+`from=...`, `command=...`) n'authentifie donc jamais sur le fil. C'est
+ferme par accident (ces options ne sont pas evaluees, et la ligne est
+refusee), mais une cle legitime avec options est rejetee. Le canal
+`direct-tcpip` lit deja `no-port-forwarding` pour la cle authentifiee ;
+reste a evaluer `from=`, `command=` et les autres avant d'accepter la
+ligne.
+
+### [iam] /etc/shadow stocke le mot de passe EN CLAIR derriere un faux prefixe SHA-512
+`echo user:Secret123 | chpasswd` ecrit `user:$6$simulated$Secret123:…` :
+le champ a la forme d'un hash crypt(3) SHA-512 (`$6$sel$…`) mais porte le
+mot de passe lui-meme. Tout lecteur de `/etc/shadow` (root, une sauvegarde,
+un `scp` du fichier) lit donc les mots de passe, et un exercice d'audit de
+robustesse (john, hashcat, comparaison de hashes) n'a aucun sens.
+**Mesure** : `chpasswd` puis `grep user /etc/shadow` sur un LinuxServer.
+**Pourquoi ce n'est pas ferme** : il faut un vrai SHA-512-crypt (sel,
+5000 tours par defaut) dans `src/crypto/` et migrer tous les lecteurs du
+champ (`checkPassword`, PAM, faillock, `passwd -S`, `chage`) ; hors du
+perimetre du correctif SSH qui l'a revele.
+
+### [ssh-keygen] le dessin « randomart » est plein, pas la marche du fou
+`ssh-keygen -t ed25519` imprime une grille dont chaque case porte un
+symbole. L'algorithme d'OpenSSH (sshkey.c, fingerprint_randomart, « drunken
+bishop ») fait avancer un fou sur la grille selon les bits de l'empreinte :
+la plupart des cases restent vides, et seules les cases visitees portent
+` .o+=*BOX@%&#/^`, avec `S` au depart et `E` a l'arrivee.
+**Mesure** : `ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519` sur un
+LinuxPC ; les 9 lignes de 17 colonnes sont entierement remplies.
+**Pourquoi ce n'est pas ferme** : releve en passant, sans lien avec le
+defaut SSH corrige.
+
+### [apt] `apt install` n'installe rien : il repond d'apres une base commune a toutes les machines
+`apt install <paquet>` consulte `PACKAGE_DB`, une table de MODULE partagee
+par toutes les machines, et repond « <paquet> is already the newest
+version » pour tout paquet connu, sans rien poser : ni binaire, ni unite
+systemd, ni entree dpkg propre a la machine. Deux vues de la meme machine
+se contredisent donc (CLAUDE.md §3) : sur un LinuxPC, `apt` declare nginx
+installe et `systemctl start nginx` repond « Unit nginx.service not found ».
+**Mesure** : batterie FortiGate, test 18 (un PC du LAN sert une page
+derriere un VIP) : `sudo apt install -y nginx` puis `systemctl start nginx`
+sur un LinuxPC.
+Meme defaut pour `vsftpd` : son binaire est declare livre par l'image (comme
+nginx), donc `apt list --installed` le montre partout, alors que l'unite, la
+configuration, le compte `ftp` et `/srv/ftp` n'apparaissent qu'a
+`apt install vsftpd`.
+**Ce qui manque** : un etat de paquets PAR MACHINE (dpkg status) dont
+l'installation pose les fichiers et enregistre les unites du paquet
+(nginx, apache2, bind9, vsftpd, …) aupres du gestionnaire de services de
+CETTE machine ; `apt`, `dpkg -l`, `apt list --installed` et `systemctl`
+liraient alors le meme etat. Le test 18 reste rouge d'ici la.
+
+### [bind9] le jeu de configuration du paquet n'est pose qu'en partie
+`apt install bind9` pose `named.conf`, `named.conf.options` et
+`named.conf.local`. Le paquet Ubuntu livre aussi `named.conf.default-zones`
+(inclus par `named.conf`, avec l'indice racine et les zones `localhost`,
+`127/0/255.in-addr.arpa`) et leurs fichiers `db.local`, `db.127`, `db.0`,
+`db.255`, `db.empty`, `zones.rfc1918`. `named.conf.options` ne porte que les
+directives certaines (`directory`, `dnssec-validation auto`,
+`listen-on-v6 { any; }`), sans les commentaires du paquet.
+**Pourquoi ce n'est pas ferme** : la source (paquet Ubuntu jammy sur
+launchpad.net, ou Debian sur salsa.debian.org) est refusee par le proxy de
+cet environnement ; CLAUDE.md §8 interdit de reconstituer un texte non
+consulte. A reprendre quand la source est joignable.
+**Ecart voisin mesure** : une requete recursive d'un client du reseau local
+(`dig @10.0.0.2 localhost` depuis 10.0.0.1) recoit `status: REFUSED` avec
+le drapeau `ra` pose ; le `allow-recursion` par defaut de BIND vaut
+`localnets; localhost;`, et un refus de recursion ne devrait pas annoncer
+`ra`.
+**Second ecart mesure** : sur un `LinuxServer`, `apt install -y bind9` seul
+laisse le port 53 sans ecoute (`ss -lunp` ne montre que
+`systemd-resolved` sur 127.0.0.53) et `dig @127.0.0.1` expire ; il faut un
+`systemctl restart named` apres avoir pose une zone pour que `named`
+reponde.
+
+### [sleep] `sleep` ne laisse pas passer le temps
+`sleep N` analyse sa duree et rend la main aussitot : sous l'horloge
+virtuelle, `sleep 2` dure 0 ms. Rien de ce qui vieillit (sessions d'un
+pare-feu, baux, caches) ne peut donc etre observe depuis un script. Le
+faire attendre vraiment sur l'ordonnanceur est juste, mais sous
+l'horloge REELLE qui est le defaut des tests, chaque `sleep` en ferait
+attendre autant ; le changement demande de passer d'abord ces tests a
+l'horloge virtuelle. Les sondes qui ont besoin d'une duree avancent
+l'horloge virtuelle directement.
+
+### [oracle] un outil client sur un poste provisionne une base locale
+`tnsping` et `sqlplus user/pw@hote:port/service`, tapes sur un LinuxPC
+(terminal comme `executeCommand`), passent par `getOracleDatabase(id)` du
+POSTE : l'arborescence `/u01/app/oracle/...` y est creee et une instance
+locale est construite, alors qu'un client Instant Client n'a ni l'une ni
+l'autre. `handleTnsping` n'en a besoin que pour reconnaitre le SID local,
+et `createSQLPlusSession` que lorsque l'identifiant ne designe pas une
+base distante.
+**Mesure** : `tnsping 10.0.0.2:1521/ORCL` sur un LinuxPC, puis `ls /u01`
+sur ce PC : `app`.
+**Pourquoi ce n'est pas ferme** : le correctif qui a relie `executeCommand`
+au meme chemin que le terminal ne change pas ce chemin ; le rendre
+paresseux touche `createSQLPlusSession`, `handleTnsping` et leurs lecteurs
+du SID local.
+
+### [sqlplus] une colonne NUMBER n'a pas la largeur `numwidth`, et FEEDBACK s'affiche des 1 ligne
+`SELECT 1 FROM DUAL` rend `1` / `-` / `1` puis « 1 row selected. ». Un
+vrai SQL*Plus cadre une colonne NUMBER a droite sur `NUMWIDTH` (10 par
+defaut : `         1` sur `----------`), et n'ecrit la ligne de retour
+qu'a partir de `SET FEEDBACK` lignes (6 par defaut).
+**Mesure** : `echo "SELECT 1 FROM DUAL;" | sqlplus -S system/oracle@10.0.0.2:1521/ORCL`
+depuis un LinuxPC.
+**Pourquoi ce n'est pas ferme** : releve en passant ; le rendu des
+colonnes est partage par tout le moteur SQL*Plus et merite sa propre
+mesure.
+
+### [fortigate] l'assistant de session FTP ne couvre que le mode passif sans DNAT
+L'assistant `ftp` (lecture de `227`/`229` sur une session vers le port 21,
+connexion de donnees admise sous la politique parente et rattachee a la
+session de controle) est pose. Il ne couvre pas encore :
+- le mode ACTIF (`PORT`/`EPRT`) : le serveur ouvre la connexion de donnees
+  vers le client, qu'il faudrait attendre dans l'autre sens et, sous SNAT,
+  reecrire l'adresse annoncee ;
+- une session de controle traduite en DESTINATION (VIP) : l'adresse privee
+  annoncee par `227` devrait etre reecrite et le port de donnees traduit ;
+- la table `config system session-helper` en CLI : ses valeurs par defaut
+  (numeros, protocoles, ports de chaque assistant) n'ont pas pu etre
+  consultees depuis cet environnement ; l'assistant ftp est donc toujours
+  actif, comme sur un boitier par defaut, mais ni affiche ni configurable.
+**Mesure** : batterie 1, test 28 (PASV sous politique `service "FTP"`),
+vert ; batterie 2, test 547 (`curl --no-pasv`) non couvert.
 
 ### [ping] les mots de `ping.exe` pour le code 13 restent non attestés
 Depuis le lot « le code ICMP decide de ce que ping ecrit », la moitie

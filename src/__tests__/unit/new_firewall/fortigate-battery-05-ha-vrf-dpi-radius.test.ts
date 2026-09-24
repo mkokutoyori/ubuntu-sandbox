@@ -1,33 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createDevice, resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { describe, it, expect } from 'vitest';
+import { createDevice } from '@/network/devices/DeviceFactory';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { MACAddress, resetCounters } from '@/network/core/types';
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { Logger } from '@/network/core/Logger';
-
-beforeEach(() => {
-  resetCounters();
-  resetDeviceCounters();
-  MACAddress.resetCounter();
-  Logger.reset();
-  EquipmentRegistry.resetInstance();
-});
-
-interface Cli {
-  executeCommand(command: string): Promise<string>;
-  getPortNames(): string[];
-  getPort(name: string): unknown;
-}
-
-const REFUS = /Unknown action|command parse error|Invalid|Incomplete|Command fail/i;
-const refuse = (sortie: string): boolean => REFUS.test(sortie);
-
-async function taper(device: Cli, lignes: readonly string[]): Promise<void> {
-  for (const ligne of lignes) await device.executeCommand(ligne);
-}
+import { type Cli, refuse, taper } from './fortigateBatteryHarness';
 
 // Topologie Haute Disponibilité & Inspection Réseau :
 // PC-Client <-> SW-Access <-> [FW-Master / FW-Slave (Cluster HA)] <-> SW-Core <-> SRV-Web, SRV-DB, SRV-Radius
@@ -44,13 +21,13 @@ interface LaboHA {
 
 async function creerLaboHA(): Promise<LaboHA> {
   const pc = new LinuxPC('linux-pc', 'PC-Client', 50, 0);
-  const swAccess = new CiscoSwitch('switch-cisco-acc', 'SW-Access', 16, 200, 0);
+  const swAccess = new CiscoSwitch('switch-cisco', 'SW-Access', 16, 200, 0);
   const fwMaster = createDevice('firewall-fortinet', 400, -100) as unknown as Cli;
   const fwSlave = createDevice('firewall-fortinet', 400, 100) as unknown as Cli;
-  const swCore = new CiscoSwitch('switch-cisco-core', 'SW-Core', 16, 600, 0);
-  const srvWeb = new LinuxServer('linux-server-web', 'SRV-WEB', 800, -100);
-  const srvDb = new LinuxServer('linux-server-db', 'SRV-DB', 800, 100);
-  const srvRadius = new LinuxServer('linux-server-rad', 'SRV-RADIUS', 800, 250);
+  const swCore = new CiscoSwitch('switch-cisco', 'SW-Core', 16, 600, 0);
+  const srvWeb = new LinuxServer('linux-server', 'SRV-WEB', 800, -100);
+  const srvDb = new LinuxServer('linux-server', 'SRV-DB', 800, 100);
+  const srvRadius = new LinuxServer('linux-server', 'SRV-RADIUS', 800, 250);
 
   pc.powerOn();
   swAccess.powerOn();
@@ -295,7 +272,7 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
         'config ips sensor', 'edit "SENSOR_SQLI"',
         'config entries', 'edit 1', 'set rule 1001', 'set action block', 'next', 'end',
         'next', 'end',
-        'config firewall policy', 'edit 1', 'set utm-status enable', 'set ips-sensor "SENSOR_SQLI"', 'next', 'end',
+        'config firewall policy', 'edit 1', 'set utm-status enable', 'set ips-sensor "SENSOR_SQLI"', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -s -i "http://10.0.0.10/login?user=admin%27%20OR%201=1--"');
       expect(res).toMatch(/403 Forbidden|Connection reset|reset by peer/i);
@@ -305,7 +282,7 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
       const { pc, fwMaster, srvWeb } = await creerLaboHA();
       await taper(srvWeb as unknown as Cli, ['systemctl start nginx']);
       await taper(fwMaster, [
-        'config firewall policy', 'edit 1', 'set utm-status enable', 'next', 'end',
+        'config firewall policy', 'edit 1', 'set utm-status enable', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -s "http://10.0.0.10/download?file=../../../../etc/passwd"');
       expect(res).not.toContain('root:x:0:0');
@@ -326,7 +303,7 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
         'config application list', 'edit "BLOCK_P2P"',
         'config entries', 'edit 1', 'set category 2', 'set action block', 'next', 'end', // 2 = P2P
         'next', 'end',
-        'config firewall policy', 'edit 1', 'set app-list "BLOCK_P2P"', 'next', 'end',
+        'config firewall policy', 'edit 1', 'set app-list "BLOCK_P2P"', 'set service "ALL"', 'next', 'end',
       ]);
       const web = await pc.executeCommand('curl -s http://10.0.0.10/');
       expect(web).toMatch(/Welcome to nginx|nginx/i);
@@ -341,13 +318,13 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
 
     it('224. Inspection profonde Oracle TNS : blocage d\'une tentative d\'exploitation de buffer overflow listener', async () => {
       const { pc, fwMaster, srvDb } = await creerLaboHA();
-      await taper(srvDb as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srvDb as unknown as Cli, ['systemctl start oracle-ohasd']);
       await taper(fwMaster, [
         'config ips sensor', 'edit "SENSOR_DB"',
         'config entries', 'edit 1', 'set location server', 'set action block', 'next', 'end',
         'next', 'end',
       ]);
-      const res = await pc.executeCommand('tnsping 10.0.0.20:1521/XE');
+      const res = await pc.executeCommand('tnsping 10.0.0.20:1521/ORCL');
       expect(res).toContain('OK');
     });
 
@@ -445,7 +422,7 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
       const { pc, fwMaster } = await creerLaboHA();
       await taper(fwMaster, [
         'config firewall policy', 'edit 1',
-        'set disclaimer enable', 'next', 'end',
+        'set disclaimer enable', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -s -I http://10.0.0.10/');
       expect(res).toMatch(/HTTP\/1\.[01] 302|Location:.*login/i);
@@ -558,9 +535,9 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
 
     it('247. Gigue sévère et latence variable (Jitter 100ms) : Oracle SQL complète sa transaction avec succès', async () => {
       const { pc, srvDb } = await creerLaboHA();
-      await taper(srvDb as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srvDb as unknown as Cli, ['systemctl start oracle-ohasd']);
       await pc.executeCommand('tc qdisc add dev eth0 root netem delay 50ms 20ms');
-      const res = await pc.executeCommand('echo "SELECT \'CHAOS_RESILIENT\' FROM DUAL;" | sqlplus -S system/oracle@10.0.0.20:1521/XE');
+      const res = await pc.executeCommand('echo "SELECT \'CHAOS_RESILIENT\' FROM DUAL;" | sqlplus -S system/oracle@10.0.0.20:1521/ORCL');
       expect(res).toContain('CHAOS_RESILIENT');
       await pc.executeCommand('tc qdisc del dev eth0 root');
     });
@@ -587,13 +564,13 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
       const { pc, fwMaster, srvWeb, srvDb, srvRadius } = await creerLaboHA();
       // 1. Démarrage des applications
       await taper(srvWeb as unknown as Cli, ['systemctl start nginx']);
-      await taper(srvDb as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srvDb as unknown as Cli, ['systemctl start oracle-ohasd']);
       await taper(srvRadius as unknown as Cli, ['systemctl start freeradius']);
 
       // 2. Déclenchement simultané du trafic
       const fluxPromesses = Promise.all([
         pc.executeCommand('curl -s http://10.0.0.10/'),
-        pc.executeCommand('echo "SELECT 999 FROM DUAL;" | sqlplus -S system/oracle@10.0.0.20:1521/XE'),
+        pc.executeCommand('echo "SELECT 999 FROM DUAL;" | sqlplus -S system/oracle@10.0.0.20:1521/ORCL'),
         pc.executeCommand('radtest bob BobPassword 10.0.0.50 1812 RadiusSharedSecret2026'),
         pc.executeCommand('ping -c 3 10.0.0.10'),
       ]);

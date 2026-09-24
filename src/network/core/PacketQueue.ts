@@ -11,8 +11,8 @@ import { ARP_TIMERS } from './constants';
 import {
   getDefaultScheduler,
   type IScheduler,
-  type TimerHandle,
 } from '@/events/Scheduler';
+import { TimerSet } from '@/events/TimerSet';
 
 /**
  * Queued packet entry with metadata for timeout management.
@@ -21,7 +21,7 @@ interface QueueEntry<TPacket, TAddress extends string> {
   packet: TPacket;
   outIface: string;
   nextHop: TAddress;
-  timer: TimerHandle;
+  timer: symbol;
   enqueuedAt: number;
   onExpire?: (nextHop: TAddress) => void;
 }
@@ -46,6 +46,7 @@ interface QueueEntry<TPacket, TAddress extends string> {
 export class PacketQueue<TPacket, TAddress extends string> {
   private entries: QueueEntry<TPacket, TAddress>[] = [];
   private schedulerOverride: IScheduler | null = null;
+  private readonly timers = new TimerSet(() => this.getScheduler());
 
   /**
    * @param maxSize - Maximum queue depth (prevents memory exhaustion)
@@ -78,13 +79,11 @@ export class PacketQueue<TPacket, TAddress extends string> {
     packet: TPacket, outIface: string, nextHop: TAddress, timeoutMs: number,
     onExpire?: (nextHop: TAddress) => void,
   ): void {
-    const scheduler = this.getScheduler();
-
     // Evict oldest if at capacity
     if (this.entries.length >= this.maxSize) {
       const evicted = this.entries.shift();
       if (evicted) {
-        scheduler.clear(evicted.timer);
+        this.timers.clear(evicted.timer);
         evicted.onExpire?.(evicted.nextHop);
       }
     }
@@ -93,12 +92,12 @@ export class PacketQueue<TPacket, TAddress extends string> {
       packet,
       outIface,
       nextHop,
-      timer: 0 as TimerHandle,
+      timer: Symbol('unarmed'),
       enqueuedAt: Date.now(),
       onExpire,
     };
 
-    entry.timer = scheduler.setTimeout(() => {
+    entry.timer = this.timers.setTimeout(() => {
       this.removeByRef(entry);
       entry.onExpire?.(entry.nextHop);
     }, timeoutMs);
@@ -115,11 +114,10 @@ export class PacketQueue<TPacket, TAddress extends string> {
   flush(address: TAddress, sendFn: (packet: TPacket, outIface: string) => void): number {
     let count = 0;
     const remaining: QueueEntry<TPacket, TAddress>[] = [];
-    const scheduler = this.getScheduler();
 
     for (const entry of this.entries) {
       if (entry.nextHop === address) {
-        scheduler.clear(entry.timer);
+        this.timers.clear(entry.timer);
         sendFn(entry.packet, entry.outIface);
         count++;
       } else {
@@ -139,10 +137,7 @@ export class PacketQueue<TPacket, TAddress extends string> {
     // Expiration is handled by individual timers, but this provides
     // a manual sweep for cleanup during power-off or shutdown.
     const before = this.entries.length;
-    const scheduler = this.getScheduler();
-    for (const entry of this.entries) {
-      scheduler.clear(entry.timer);
-    }
+    this.timers.clearAll();
     this.entries = [];
     return before;
   }
@@ -154,10 +149,7 @@ export class PacketQueue<TPacket, TAddress extends string> {
 
   /** Clear all queued packets (e.g., on device power-off) */
   clear(): void {
-    const scheduler = this.getScheduler();
-    for (const entry of this.entries) {
-      scheduler.clear(entry.timer);
-    }
+    this.timers.clearAll();
     this.entries = [];
   }
 
@@ -171,7 +163,7 @@ export class PacketQueue<TPacket, TAddress extends string> {
   private removeByRef(entry: QueueEntry<TPacket, TAddress>): void {
     const index = this.entries.indexOf(entry);
     if (index >= 0) {
-      this.getScheduler().clear(entry.timer);
+      this.timers.clear(entry.timer);
       this.entries.splice(index, 1);
     }
   }

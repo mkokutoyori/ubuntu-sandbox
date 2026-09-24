@@ -1,4 +1,5 @@
 import type { ConsoleSettingsPatch } from '../../../mgmt/ConsoleSettings';
+import type { SessionHelperEntry } from '../../../session/SessionHelperTable';
 import type { ConfigSaveMode } from '../../../config/ConfigSaveMode';
 import type { ConserveThresholds } from '../../../health/SystemLoad';
 import type { LdbMonitorType } from '../../../health/LdbMonitor';
@@ -223,6 +224,14 @@ export interface FortiPolicyRoutePatch {
   readonly comment?: string;
 }
 
+export interface FortiSessionTimers {
+  readonly tcpHalfOpenSec: number;
+  readonly tcpHalfCloseSec: number;
+  readonly tcpTimeWaitSec: number;
+  readonly tcpResetSec: number;
+  readonly udpIdleSec: number;
+}
+
 export interface FortiGlobalSettings {
   readonly hostname?: string;
   readonly multiVdom: boolean;
@@ -248,6 +257,7 @@ export interface FortiGlobalSettings {
   readonly revisionOnLogout?: boolean;
   readonly adminHttpsRedirect?: boolean;
   readonly adminServerCertificate?: string;
+  readonly sessionTimers?: FortiSessionTimers;
 }
 
 export interface FortiIpsGlobalSettings {
@@ -295,9 +305,15 @@ export interface FortiBalancedVipPatch {
   readonly comment?: string;
 }
 
+export interface AsymmetricRouting {
+  readonly tcp: boolean;
+  readonly icmp: boolean;
+}
+
 export interface FortiVdomSettings {
   readonly centralNat: boolean;
   readonly tcpSessionWithoutSyn: boolean;
+  readonly asymmetricRouting: AsymmetricRouting;
   readonly opmode: 'nat' | 'transparent';
   readonly manageIP?: string;
   readonly manageMask?: string;
@@ -361,6 +377,8 @@ export interface FortiCommitDevice {
   applySessionTtlDefault(seconds: number): void;
   applySessionTtlPort(entry: FortiSessionTtlPort): void;
   removeSessionTtlPort(id: string): void;
+  applySessionHelper(entry: SessionHelperEntry): void;
+  removeSessionHelper(id: number): void;
   applyDnsZone(zone: FortiDnsZonePatch): void;
   removeDnsZone(name: string): void;
   resolveFqdnNow(fqdn: string): void;

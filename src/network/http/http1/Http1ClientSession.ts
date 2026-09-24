@@ -25,6 +25,10 @@ export class Http1ClientSession {
     private readonly eventBus?: IEventBus,
   ) {}
 
+  adopt(socket: TcpSocket): void {
+    this.socket = socket;
+  }
+
   private connectIfNeeded(): TcpSocket | null {
     if (this.socket && this.socket.state === 'established') return this.socket;
     const socket = this.tcpStack.connect(this.targetIp, this.port);

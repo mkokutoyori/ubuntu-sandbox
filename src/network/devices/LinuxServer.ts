@@ -12,8 +12,9 @@
 import { IPAddress, type DeviceType, type EthernetFrame, type IPv4Packet } from '../core/types';
 import { LinuxMachine } from './LinuxMachine';
 import { LINUX_SERVER_PROFILE } from './linux/LinuxProfile';
-import { getOracleDatabase, createSQLPlusSession } from '@/terminal/commands/database';
-import { handleLsnrctl, handleTnsping, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
+import { getOracleDatabase, parseSqlPlusInvocation, runSqlPlusScript } from '@/terminal/commands/database';
+import { installOracleClientHooks } from './linux/oracleClientHooks';
+import { handleLsnrctl, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman';
 import type { HostCapableDevice } from '@/network';
 import { RadiusServerAgent } from '../radius/RadiusServerAgent';
@@ -115,6 +116,7 @@ export class LinuxServer extends LinuxMachine {
 
     // Wire Oracle bootstrap so `sqlplus` from the bash interpreter
     // actually boots the instance (pmon/smon/lgwr appear in ps -ef).
+    installOracleClientHooks(this as unknown as HostCapableDevice, this.id, this.executor);
     this.executor._oracleBootstrap = (args: string[], stdin?: string) => {
       const db = getOracleDatabase(this.id);
       const banner =
@@ -144,24 +146,9 @@ export class LinuxServer extends LinuxMachine {
       // `user/pass@conn "SQL"` and `… | sqlplus / as sysdba` (used to
       // drop the SQL on the sysdba path and fake "1 row selected" on the
       // password path).
-      const isSysdba = /^\s*\/\s+as\s+sysdba\s*$/i.test(args.join(' '));
-      const connectArg = args.find(a => !a.startsWith('-') && (a.includes('/') || a.includes('@')));
-      const sqlRe = /\b(select|insert|update|delete|merge|begin|exec|create|drop|alter|commit|rollback|truncate|grant|revoke)\b/i;
-      const sqlSource = [
-        ...args.filter(a => a !== connectArg && !a.startsWith('-') && sqlRe.test(a)),
-        stdin ?? '',
-      ].join('\n').trim();
-      const connArgs = isSysdba ? ['/', 'as', 'sysdba'] : connectArg ? [connectArg] : null;
+      const { connArgs, sqlSource, isSysdba } = parseSqlPlusInvocation(args, stdin);
       if (sqlSource && connArgs && db.instance.state === 'OPEN') {
-        const { session, loginOutput } = createSQLPlusSession(this.id, connArgs);
-        if (loginOutput.some(l => /^ERROR|ORA-\d/.test(l))) return loginOutput.join('\n');
-        const out: string[] = [];
-        for (const raw of sqlSource.split(';')) {
-          const stmt = raw.trim();
-          if (stmt) out.push(...session.processLine(`${stmt};`).output);
-        }
-        session.disconnect();
-        return out.join('\n');
+        return runSqlPlusScript(this.id, connArgs, sqlSource);
       }
       if (args.length === 0 || isSysdba) {
         return `${banner}\nSQL> Disconnected from Oracle Database 19c.`;
@@ -174,11 +161,6 @@ export class LinuxServer extends LinuxMachine {
     this.executor._oracleListener = (args: string[]) => {
       const lines: string[] = [];
       handleLsnrctl(this as unknown as HostCapableDevice, args, (text) => lines.push(text));
-      return lines.join('\n');
-    };
-    this.executor._oracleTnsping = (args: string[]) => {
-      const lines: string[] = [];
-      handleTnsping(this as unknown as HostCapableDevice, args, (text) => lines.push(text));
       return lines.join('\n');
     };
     this.executor._oracleUtil = (cmd: string, args: string[]) => {

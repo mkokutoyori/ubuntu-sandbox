@@ -578,6 +578,7 @@ const UNIT_ALIASES: Record<string, string> = {
   // trouver son service, pas un `Unit could not be found` qui ne lui
   // apprendrait rien sur NTP.
   chronyd: 'chrony',
+  sshd: 'ssh',
   strongswan: 'strongswan-starter',
 };
 

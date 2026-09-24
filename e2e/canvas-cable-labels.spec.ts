@@ -34,6 +34,16 @@
  * a pas, mais seul le vrai DOM dit ce que la souris produit reellement
  * -- la carte est deplacee par un transform pendant que le magasin, lui,
  * suit a son rythme.
+ *
+ * Une pastille est PARALLELE OU PERPENDICULAIRE au fil selon ce qui se
+ * lit le mieux : un texte horizontal se lit sans tourner la tete, donc
+ * elle ne pivote que lorsque, posee a plat, elle couvrirait un voisin.
+ * Sa boite englobante le dit -- plus large que haute quand elle est a
+ * plat, plus haute que large quand elle a pivote.
+ *
+ * Et quand rien ne tient, la toile ne s'encombre pas : une pastille qui
+ * ne peut se poser sans couvrir une autre etiquette ou une carte est
+ * RETIREE du DOM, le cable la rendant a la selection.
  */
 import { test, expect, type Page } from '@playwright/test';
 
@@ -223,7 +233,7 @@ test('selecting a cable reveals its delete affordance beside its own label', asy
   });
 });
 
-test('a label a device card overlaps is still the thing on top', async ({ page }) => {
+test('a cable too short to name reveals its ports on selection, above everything', async ({ page }) => {
   const connectionId = await page.evaluate(() => {
     const store = (window as unknown as {
       __networkStore: { getState: () => Record<string, (...args: unknown[]) => unknown> };
@@ -232,7 +242,7 @@ test('a label a device card overlaps is still the thing on top', async ({ page }
     const router = state().addDevice('router-cisco', 300, 220) as {
       id: string; interfaces: Array<{ id: string }>;
     };
-    const pc = state().addDevice('linux-pc', 300, 335) as {
+    const pc = state().addDevice('linux-pc', 300, 320) as {
       id: string; interfaces: Array<{ id: string }>;
     };
     return (state().addConnection(
@@ -241,9 +251,17 @@ test('a label a device card overlaps is still the thing on top', async ({ page }
     ) as { id: string }).id;
   });
 
-  const label = labelOf(page, connectionId);
-  await expect(label).toBeVisible();
-  const box = (await label.boundingBox())!;
+  await expect(labelsOf(page, connectionId)).toHaveCount(0);
+
+  await page.evaluate(id => (window as unknown as {
+    __networkStore: { getState: () => { selectConnection: (id: string) => void } };
+  }).__networkStore.getState().selectConnection(id), connectionId);
+  await expect(page.locator(`g[data-connection-id="${connectionId}"]`))
+    .toHaveAttribute('aria-pressed', 'true');
+
+  const revealed = labelsOf(page, connectionId);
+  await expect(revealed).toHaveCount(2);
+  const box = (await revealed.first().boundingBox())!;
 
   const onTop = await page.evaluate(({ x, y }) => {
     const hit = document.elementFromPoint(x, y);
@@ -255,46 +273,58 @@ test('a label a device card overlaps is still the thing on top', async ({ page }
   await settle(page);
   await page.screenshot({
     path: `${SHOTS}/33-pastille-au-dessus.png`,
-    clip: { x: 520, y: 180, width: 380, height: 300 },
+    clip: { x: 520, y: 200, width: 380, height: 280 },
   });
 });
 
-test('a label lies along its cable, never across it', async ({ page }) => {
+test('an uncrowded vertical wire keeps its labels horizontal, a fan turns them', async ({ page }) => {
   const ids = await page.evaluate(() => {
     const store = (window as unknown as {
       __networkStore: { getState: () => Record<string, (...args: unknown[]) => unknown> };
     }).__networkStore;
     const state = () => store.getState();
-    const router = state().addDevice('router-cisco', 220, 250) as {
+    const alone = state().addDevice('router-cisco', 180, 180) as {
       id: string; interfaces: Array<{ id: string }>;
     };
-    const near = state().addDevice('linux-pc', 315, 250) as {
+    const below = state().addDevice('linux-pc', 180, 500) as {
       id: string; interfaces: Array<{ id: string }>;
     };
-    const below = state().addDevice('linux-pc', 220, 420) as {
+    const hub = state().addDevice('switch-cisco', 480, 180) as {
       id: string; interfaces: Array<{ id: string }>;
     };
+    const fan = [400, 480, 560].map(x => state().addDevice('linux-pc', x, 500) as {
+      id: string; interfaces: Array<{ id: string }>;
+    });
     return {
-      flat: (state().addConnection(
-        router.id, router.interfaces[0].id,
-        near.id, near.interfaces[0].id, 'ethernet') as { id: string }).id,
-      upright: (state().addConnection(
-        router.id, router.interfaces[1].id,
+      lonely: (state().addConnection(
+        alone.id, alone.interfaces[0].id,
         below.id, below.interfaces[0].id, 'ethernet') as { id: string }).id,
+      crowded: fan.map((pc, i) => (state().addConnection(
+        hub.id, hub.interfaces[i].id,
+        pc.id, pc.interfaces[0].id, 'ethernet') as { id: string }).id),
     };
   });
 
   for (const end of [0, 1] as const) {
-    const flat = (await labelOf(page, ids.flat, end).boundingBox())!;
-    expect(flat.width).toBeGreaterThan(flat.height);
-    const upright = (await labelOf(page, ids.upright, end).boundingBox())!;
-    expect(upright.height).toBeGreaterThan(upright.width);
+    const box = (await labelOf(page, ids.lonely, end).boundingBox())!;
+    expect(box.width, 'an uncrowded label reads without tilting the head')
+      .toBeGreaterThan(box.height);
   }
+
+  const turned: boolean[] = [];
+  for (const id of ids.crowded) {
+    const labels = labelsOf(page, id);
+    for (let end = 0; end < await labels.count(); end++) {
+      const box = (await labels.nth(end).boundingBox())!;
+      turned.push(box.height > box.width);
+    }
+  }
+  expect(turned.some(Boolean), 'a crowded fan turns its labels').toBe(true);
 
   await settle(page);
   await page.screenshot({
     path: `${SHOTS}/34-pastille-dans-l-axe.png`,
-    clip: { x: 520, y: 200, width: 420, height: 340 },
+    clip: { x: 500, y: 180, width: 480, height: 420 },
   });
 });
 
@@ -397,4 +427,52 @@ test('a hand wobbling across the diagonal does not flip the cables', async ({ pa
   await page.mouse.up();
 
   expect(noisy).toBeLessThanOrEqual(1);
+});
+
+test('crowded devices drop what cannot be shown rather than pile it up', async ({ page }) => {
+  const ids = await page.evaluate(() => {
+    const store = (window as unknown as {
+      __networkStore: { getState: () => Record<string, (...args: unknown[]) => unknown> };
+    }).__networkStore;
+    const state = () => store.getState();
+    const add = (type: string, x: number, y: number) => state().addDevice(type, x, y) as {
+      id: string; interfaces: Array<{ id: string }>;
+    };
+    const cable = (a: ReturnType<typeof add>, ai: number,
+      b: ReturnType<typeof add>, bi: number) => (state().addConnection(
+        a.id, a.interfaces[ai].id, b.id, b.interfaces[bi].id, 'ethernet') as { id: string }).id;
+    const r = add('router-cisco', 180, 180);
+    const pc1 = add('linux-pc', 280, 180);
+    const pc2 = add('linux-pc', 180, 300);
+    const sw = add('switch-cisco', 300, 300);
+    return [
+      cable(r, 0, pc1, 0), cable(r, 1, pc2, 0),
+      cable(r, 2, sw, 0), cable(pc2, 1, sw, 1),
+    ];
+  });
+
+  const boxes = [];
+  for (const id of ids) {
+    const labels = labelsOf(page, id);
+    for (let end = 0; end < await labels.count(); end++) {
+      boxes.push((await labels.nth(end).boundingBox())!);
+    }
+  }
+
+  expect(boxes.length, 'the canvas still names most ports').toBeGreaterThanOrEqual(4);
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i];
+      const b = boxes[j];
+      const apart = a.x + a.width <= b.x || b.x + b.width <= a.x
+        || a.y + a.height <= b.y || b.y + b.height <= a.y;
+      expect(apart, `labels ${i} and ${j} overlap`).toBe(true);
+    }
+  }
+
+  await settle(page);
+  await page.screenshot({
+    path: `${SHOTS}/37-equipements-serres.png`,
+    clip: { x: 480, y: 180, width: 460, height: 340 },
+  });
 });

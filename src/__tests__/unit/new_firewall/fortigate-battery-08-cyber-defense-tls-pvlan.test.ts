@@ -1,36 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createDevice, resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { describe, it, expect } from 'vitest';
+import { createDevice } from '@/network/devices/DeviceFactory';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { WindowsServer } from '@/network/devices/WindowsServer';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { MACAddress, resetCounters } from '@/network/core/types';
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { Logger } from '@/network/core/Logger';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
-
-beforeEach(() => {
-  resetCounters();
-  resetDeviceCounters();
-  MACAddress.resetCounter();
-  Logger.reset();
-  EquipmentRegistry.resetInstance();
-});
-
-interface Cli {
-  executeCommand(command: string): Promise<string>;
-  getPortNames(): string[];
-  getPort(name: string): unknown;
-}
-
-const REFUS = /Unknown action|command parse error|Invalid|Incomplete|Command fail/i;
-const refuse = (sortie: string): boolean => REFUS.test(sortie);
-
-async function taper(device: Cli, lignes: readonly string[]): Promise<void> {
-  for (const ligne of lignes) await device.executeCommand(ligne);
-}
+import { type Cli, refuse, taper } from './fortigateBatteryHarness';
 
 function pwsh(dev: WindowsPC | WindowsServer) {
   const ps = PowerShellSubShell.create(dev as never).subShell;
@@ -64,13 +41,13 @@ interface LaboCyberDefense {
 
 async function creerLaboCyberDefense(): Promise<LaboCyberDefense> {
   const winAdmin = new WindowsPC('windows-pc', 'WIN-ADMIN');
-  const winRogue = new WindowsPC('windows-pc-rogue', 'WIN-ROGUE');
-  const swPvlan = new CiscoSwitch('switch-cisco-pvlan', 'SW-PVLAN', 16, 200, 0);
+  const winRogue = new WindowsPC('windows-pc', 'WIN-ROGUE');
+  const swPvlan = new CiscoSwitch('switch-cisco', 'SW-PVLAN', 16, 200, 0);
   const fw = createDevice('firewall-fortinet', 500, 0) as unknown as Cli;
-  const swCore = new CiscoSwitch('switch-cisco-core', 'SW-CORE', 16, 750, 0);
+  const swCore = new CiscoSwitch('switch-cisco', 'SW-CORE', 16, 750, 0);
   const dc01 = serveurWindows('DC01');
   const srvIis = serveurWindows('SRV-IIS');
-  const srvLinux = new LinuxServer('linux-server-prod', 'SRV-LINUX', 950, 0);
+  const srvLinux = new LinuxServer('linux-server', 'SRV-LINUX', 950, 0);
 
   winAdmin.powerOn();
   winRogue.powerOn();
@@ -521,8 +498,8 @@ describe('Batterie 8 : Tests 351 à 400 — Cyber-Défense, MitM TLS, Détection
 
     it('392. Bascule transparente de session de base de données d\'un Oracle maître vers un Oracle secours', async () => {
       const { winAdmin, srvLinux } = await creerLaboCyberDefense();
-      await taper(srvLinux as unknown as Cli, ['systemctl start oracle-xe']);
-      const res = await pwsh(winAdmin)('tnsping 10.10.10.20:1521/XE');
+      await taper(srvLinux as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const res = await pwsh(winAdmin)('tnsping 10.10.10.20:1521/ORCL');
       expect(res).toContain('OK');
     });
 
@@ -581,7 +558,7 @@ describe('Batterie 8 : Tests 351 à 400 — Cyber-Défense, MitM TLS, Détection
       const { winAdmin, winRogue, fw, srvLinux } = await creerLaboCyberDefense();
       await taper(srvLinux as unknown as Cli, [
         'systemctl start nginx',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
       ]);
 
       // 1. Déclenchement de l'assaut malveillant depuis WIN-ROGUE
@@ -591,7 +568,7 @@ describe('Batterie 8 : Tests 351 à 400 — Cyber-Défense, MitM TLS, Détection
       ]);
 
       // 2. Transaction critique légitime exécutée en parallèle par WIN-ADMIN
-      const legitime = pwsh(winAdmin)('tnsping 10.10.10.20:1521/XE');
+      const legitime = pwsh(winAdmin)('tnsping 10.10.10.20:1521/ORCL');
 
       const [_, repLegitime] = await Promise.all([assaut, legitime]);
 
@@ -611,7 +588,7 @@ describe('Batterie 8 : Tests 351 à 400 — Cyber-Défense, MitM TLS, Détection
       // 2. Amorçage des services Linux (Nginx, Oracle, Syslog)
       await taper(srvLinux as unknown as Cli, [
         'systemctl start nginx',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
         'systemctl start rsyslog',
       ]);
 
@@ -632,7 +609,7 @@ describe('Batterie 8 : Tests 351 à 400 — Cyber-Défense, MitM TLS, Détection
       expect(webLinux).toBe('200');
 
       // 7. Transaction SQL critique vers le moteur Oracle XE
-      const oracleTx = await pwsh(winAdmin)('cmd.exe /c "echo SELECT \'RUN_400_MASTER_VALIDATED\' FROM DUAL; | sqlplus -S system/oracle@10.10.10.20:1521/XE"');
+      const oracleTx = await pwsh(winAdmin)('cmd.exe /c "echo SELECT \'RUN_400_MASTER_VALIDATED\' FROM DUAL; | sqlplus -S system/oracle@10.10.10.20:1521/ORCL"');
       expect(oracleTx).toContain('RUN_400_MASTER_VALIDATED');
 
       // 8. Télémétrie d'audit finalisée dans le SIEM Linux

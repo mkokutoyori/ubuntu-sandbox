@@ -177,20 +177,18 @@ export function ConnectionLabel({ connection, devices, route, zoom }: Connection
 
   return (
     <g data-label-for={connection.id}>
-      <PortTag
-        placement={route.sourceLabel}
-        zoom={zoom}
-        color={color}
-        emphasised={isSelected}
-        onSelect={() => selectConnection(connection.id)}
-      />
-      <PortTag
-        placement={route.targetLabel}
-        zoom={zoom}
-        color={color}
-        emphasised={isSelected}
-        onSelect={() => selectConnection(connection.id)}
-      />
+      {[route.sourceLabel, route.targetLabel]
+        .filter(placement => placement.shown || isSelected)
+        .map(placement => (
+          <PortTag
+            key={placement.text + placement.along}
+            placement={placement}
+            zoom={zoom}
+            color={color}
+            emphasised={isSelected}
+            onSelect={() => selectConnection(connection.id)}
+          />
+        ))}
 
       {isSelected && (
         <g

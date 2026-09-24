@@ -1,33 +1,12 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createDevice, resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { describe, it, expect } from 'vitest';
+import { createDevice } from '@/network/devices/DeviceFactory';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { MACAddress, resetCounters } from '@/network/core/types';
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { Logger } from '@/network/core/Logger';
-
-beforeEach(() => {
-  resetCounters();
-  resetDeviceCounters();
-  MACAddress.resetCounter();
-  Logger.reset();
-  EquipmentRegistry.resetInstance();
-});
-
-interface Cli {
-  executeCommand(command: string): Promise<string>;
-  getPortNames(): string[];
-  getPort(name: string): unknown;
-}
-
-const REFUS = /Unknown action|command parse error|Invalid|Incomplete|Command fail/i;
-const refuse = (sortie: string): boolean => REFUS.test(sortie);
-
-async function taper(device: Cli, lignes: readonly string[]): Promise<void> {
-  for (const ligne of lignes) await device.executeCommand(ligne);
-}
+import {
+  type Cli, taper, serveZones, labZone, LAB_REVERSE_ZONE, grantKeyAccess,
+} from './fortigateBatteryHarness';
 
 // Topologie complète : [Client PC] -- (L2 Switch) -- [Port1 FW Wan1] -- [Serveur WAN/DMZ]
 interface LaboTraverse {
@@ -241,7 +220,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'HTTP'); // uniquement HTTP
       await taper(srv as unknown as Cli, ['systemctl start nginx']);
-      const resHttps = await pc.executeCommand('curl -k -s --connect-timeout 1 https://203.0.113.9/');
+      const resHttps = await pc.executeCommand('curl -k -sS --connect-timeout 1 https://203.0.113.9/');
       expect(resHttps).toMatch(/Connection timed out|Connection refused|Failed to connect/i);
     });
 
@@ -254,6 +233,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
         'edit "VIP_WEB"',
         'set extip 203.0.113.1',
         'set mappedip "192.168.1.10"',
+        'set portforward enable',
         'set extport 80',
         'set mappedport 80',
         'next',
@@ -291,6 +271,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'SSH');
       await taper(srv as unknown as Cli, ['systemctl start sshd']);
+      await grantKeyAccess(pc as unknown as Cli, srv as unknown as Cli);
       const res = await pc.executeCommand('ssh -o StrictHostKeyChecking=no -o ConnectTimeout=2 203.0.113.9 "echo SSH_OK"');
       expect(res).toContain('SSH_OK');
     });
@@ -299,6 +280,8 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'SSH');
       await taper(srv as unknown as Cli, ['systemctl start sshd']);
+      await grantKeyAccess(pc as unknown as Cli, srv as unknown as Cli);
+      await taper(srv as unknown as Cli, ['hostnamectl set-hostname SRV-Prod']);
       const res = await pc.executeCommand('ssh -o StrictHostKeyChecking=no 203.0.113.9 "hostname"');
       expect(res.trim()).toBe('SRV-Prod');
     });
@@ -315,19 +298,22 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'SSH');
       await taper(srv as unknown as Cli, ['systemctl start sshd']);
+      await grantKeyAccess(pc as unknown as Cli, srv as unknown as Cli);
       await pc.executeCommand('ssh -o StrictHostKeyChecking=no 203.0.113.9 "true"');
       const table = await fw.executeCommand('diagnose sys session list');
-      expect(table).toMatch(/dport=22/i);
+      expect(table).toMatch(/->203\.0\.113\.9:22\b/);
     });
 
     it('24. Redirection de port SSH via VIP (Port Forwarding WAN vers SRV)', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await taper(srv as unknown as Cli, ['systemctl start sshd']);
+      await grantKeyAccess(pc as unknown as Cli, srv as unknown as Cli);
       await taper(fw, [
         'config firewall vip',
         'edit "VIP_SSH"',
         'set extip 203.0.113.1',
         'set mappedip "203.0.113.9"',
+        'set portforward enable',
         'set extport 2222',
         'set mappedport 22',
         'next',
@@ -364,7 +350,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('26. Connexion initiale au port de commande FTP (port 21) traversant', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'FTP');
-      await taper(srv as unknown as Cli, ['systemctl start vsftpd']);
+      await taper(srv as unknown as Cli, ['apt install -y vsftpd']);
       const res = await pc.executeCommand('curl -s ftp://203.0.113.9/ --connect-timeout 2');
       expect(res).not.toMatch(/Connection refused|couldn't connect/i);
     });
@@ -372,7 +358,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('27. Le banner d\'accueil du service FTP traverse le réseau jusqu\'au client', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'FTP');
-      await taper(srv as unknown as Cli, ['systemctl start vsftpd']);
+      await taper(srv as unknown as Cli, ['apt install -y vsftpd']);
       const res = await pc.executeCommand('nc -zv -w 2 203.0.113.9 21');
       expect(res).toMatch(/succeeded|open|Connected/i);
     });
@@ -381,7 +367,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'FTP');
       await taper(srv as unknown as Cli, [
-        'systemctl start vsftpd',
+        'apt install -y vsftpd',
         'echo "FTP_TRAFFIC_DATA" > /srv/ftp/test.txt',
       ]);
       const res = await pc.executeCommand('curl -s ftp://203.0.113.9/test.txt');
@@ -391,27 +377,33 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('29. Téléversement d\'un fichier FTP (STOR) à travers la politique pare-feu', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'ALL');
-      await taper(srv as unknown as Cli, ['systemctl start vsftpd']);
+      await taper(srv as unknown as Cli, [
+        'apt install -y vsftpd',
+        "sed -i 's/^#write_enable=YES/write_enable=YES/; s/^#anon_upload_enable=YES/anon_upload_enable=YES/' /etc/vsftpd.conf",
+        'mkdir /srv/ftp/upload',
+        'chown ftp /srv/ftp/upload',
+        'systemctl restart vsftpd',
+      ]);
       await pc.executeCommand('echo "UPLOAD_PAYLOAD" > upload.txt');
-      await pc.executeCommand('curl -s -T upload.txt ftp://203.0.113.9/');
-      const check = await (srv as unknown as Cli).executeCommand('cat /srv/ftp/upload.txt');
+      await pc.executeCommand('curl -s -T upload.txt ftp://203.0.113.9/upload/');
+      const check = await (srv as unknown as Cli).executeCommand('cat /srv/ftp/upload/upload.txt');
       expect(check).toContain('UPLOAD_PAYLOAD');
     });
 
     it('30. Fermeture du port FTP par modification de policy bloque immédiatement le transfert', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'HTTP'); // Pas de FTP
-      await taper(srv as unknown as Cli, ['systemctl start vsftpd']);
-      const res = await pc.executeCommand('curl -s --connect-timeout 1 ftp://203.0.113.9/');
+      await taper(srv as unknown as Cli, ['apt install -y vsftpd']);
+      const res = await pc.executeCommand('curl -sS --connect-timeout 1 ftp://203.0.113.9/');
       expect(res).toMatch(/Failed to connect|Connection timed out|couldn't connect/i);
     });
 
     it('31. Tentative d\'accès à un fichier inexistant renvoie le code d\'erreur FTP 550', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'FTP');
-      await taper(srv as unknown as Cli, ['systemctl start vsftpd']);
-      const res = await pc.executeCommand('curl -s ftp://203.0.113.9/inexistant.txt');
-      expect(res).toMatch(/550|No such file/i);
+      await taper(srv as unknown as Cli, ['apt install -y vsftpd']);
+      const res = await pc.executeCommand('curl -sS ftp://203.0.113.9/inexistant.txt');
+      expect(res).toContain('curl: (78) The file does not exist');
     });
   });
 
@@ -422,7 +414,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('32. Ouverture réussie d\'une session Telnet (port 23) à travers le firewall', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'TELNET');
-      await taper(srv as unknown as Cli, ['systemctl start telnetd']);
+      await taper(srv as unknown as Cli, ['systemctl start telnet']);
       const res = await pc.executeCommand('nc -zv -w 2 203.0.113.9 23');
       expect(res).toMatch(/succeeded|open|Connected/i);
     });
@@ -430,7 +422,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('33. Envoi de commande et réception d\'écho sur une session Telnet traversante', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'TELNET');
-      await taper(srv as unknown as Cli, ['systemctl start telnetd']);
+      await taper(srv as unknown as Cli, ['systemctl start telnet']);
       const res = await pc.executeCommand('echo "quit" | telnet 203.0.113.9 23');
       expect(res).toMatch(/Connected|Escape character/i);
     });
@@ -438,7 +430,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('34. Rejet du flux Telnet par le pare-feu si le service TELNET n\'est pas listé', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'SSH');
-      await taper(srv as unknown as Cli, ['systemctl start telnetd']);
+      await taper(srv as unknown as Cli, ['systemctl start telnet']);
       const res = await pc.executeCommand('nc -zv -w 1 203.0.113.9 23');
       expect(res).toMatch(/timed out|refused/i);
     });
@@ -446,7 +438,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('35. Établissement simultané d\'une session Telnet et d\'une session SSH', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'ALL');
-      await taper(srv as unknown as Cli, ['systemctl start telnetd', 'systemctl start sshd']);
+      await taper(srv as unknown as Cli, ['systemctl start telnet', 'systemctl start sshd']);
       const t1 = await pc.executeCommand('nc -zv -w 2 203.0.113.9 23');
       const t2 = await pc.executeCommand('nc -zv -w 2 203.0.113.9 22');
       expect(t1).toMatch(/succeeded|open|Connected/i);
@@ -461,7 +453,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('36. Le listener Oracle (port 1521) est joignable à travers la politique pare-feu', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'ALL');
-      await taper(srv as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srv as unknown as Cli, ['systemctl start oracle-ohasd']);
       const res = await pc.executeCommand('nc -zv -w 2 203.0.113.9 1521');
       expect(res).toMatch(/succeeded|open|Connected/i);
     });
@@ -469,24 +461,24 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('37. Contrôle du Listener via tnsping à travers le réseau', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'ALL');
-      await taper(srv as unknown as Cli, ['systemctl start oracle-xe']);
-      const res = await pc.executeCommand('tnsping 203.0.113.9:1521/XE');
+      await taper(srv as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const res = await pc.executeCommand('tnsping 203.0.113.9:1521/ORCL');
       expect(res).toMatch(/OK|msec/i);
     });
 
     it('38. Exécution d\'une requête SQL traversante (SELECT 1 FROM DUAL)', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'ALL');
-      await taper(srv as unknown as Cli, ['systemctl start oracle-xe']);
-      const query = 'echo "SELECT 1 FROM DUAL;" | sqlplus -S system/oracle@203.0.113.9:1521/XE';
+      await taper(srv as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const query = 'echo "SELECT 1 FROM DUAL;" | sqlplus -S system/oracle@203.0.113.9:1521/ORCL';
       const res = await pc.executeCommand(query);
-      expect(res).toMatch(/1/);
+      expect(res).toMatch(/^-+\n\s*1\s*$/m);
     });
 
     it('39. Blocage du trafic Oracle 1521 si la règle n\'autorise que le Web (port 80/443)', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'HTTP');
-      await taper(srv as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srv as unknown as Cli, ['systemctl start oracle-ohasd']);
       const res = await pc.executeCommand('nc -zv -w 1 203.0.113.9 1521');
       expect(res).toMatch(/timed out|refused/i);
     });
@@ -494,8 +486,8 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('40. Session Oracle coupée proprement lors de l\'envoi de la commande EXIT', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'ALL');
-      await taper(srv as unknown as Cli, ['systemctl start oracle-xe']);
-      const res = await pc.executeCommand('echo "EXIT;" | sqlplus -S system/oracle@203.0.113.9:1521/XE');
+      await taper(srv as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const res = await pc.executeCommand('echo "EXIT;" | sqlplus -S system/oracle@203.0.113.9:1521/ORCL');
       expect(res).not.toMatch(/ORA-|error/i);
     });
   });
@@ -507,7 +499,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('41. Requête DNS UDP (port 53) vers BIND9 traversant le pare-feu', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'DNS');
-      await taper(srv as unknown as Cli, ['systemctl start named']);
+      await serveZones(srv as unknown as Cli, [labZone(), LAB_REVERSE_ZONE]);
       const res = await pc.executeCommand('dig @203.0.113.9 web.lab.lan +short');
       expect(res).toMatch(/\d+\.\d+\.\d+\.\d+/);
     });
@@ -515,15 +507,15 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('42. Requête DNS inverse (PTR) traversant le pare-feu vers BIND9', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'DNS');
-      await taper(srv as unknown as Cli, ['systemctl start named']);
+      await serveZones(srv as unknown as Cli, [labZone(), LAB_REVERSE_ZONE]);
       const res = await pc.executeCommand('dig @203.0.113.9 -x 203.0.113.9 +short');
-      expect(res.length).toBeGreaterThan(0);
+      expect(res.trim()).toBe('srv.lab.lan.');
     });
 
     it('43. Échec de résolution DNS lorsque le trafic UDP 53 est refusé', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'PING'); // Seul le ping passe
-      await taper(srv as unknown as Cli, ['systemctl start named']);
+      await serveZones(srv as unknown as Cli, [labZone(), LAB_REVERSE_ZONE]);
       const res = await pc.executeCommand('dig @203.0.113.9 web.lab.lan +time=1 +tries=1');
       expect(res).toMatch(/no servers could be reached|connection timed out/i);
     });
@@ -539,10 +531,8 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('45. Résolution de nom BIND9 suivie immédiatement d\'un appel curl HTTP vers l\'IP résolue', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'ALL');
-      await taper(srv as unknown as Cli, [
-        'systemctl start named',
-        'systemctl start nginx',
-      ]);
+      await serveZones(srv as unknown as Cli, [labZone(), LAB_REVERSE_ZONE]);
+      await taper(srv as unknown as Cli, ['systemctl start nginx']);
       const ip = (await pc.executeCommand('dig @203.0.113.9 srv.lab.lan +short')).trim();
       expect(ip).toMatch(/\d+\.\d+\.\d+\.\d+/);
       const httpRes = await pc.executeCommand(`curl -s http://${ip}/`);
@@ -601,6 +591,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
         'systemctl start nginx',
         'systemctl start sshd',
       ]);
+      await grantKeyAccess(pc as unknown as Cli, srv as unknown as Cli);
 
       const [pPing, pHttp, pSsh] = await Promise.all([
         pc.executeCommand('ping -c 1 203.0.113.9'),

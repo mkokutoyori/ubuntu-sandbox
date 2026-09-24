@@ -104,11 +104,20 @@ interface VirtualTask {
   cancelled: boolean;
 }
 
+function drainRunnableWork(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (typeof globalThis.setImmediate === 'function') globalThis.setImmediate(resolve);
+    else globalThis.setTimeout(resolve, 0);
+  });
+}
+
 export class VirtualTimeScheduler implements IScheduler {
   private currentTime = 0;
   private nextHandle = 1;
   private nextSeq = 1;
   private readonly tasks: VirtualTask[] = [];
+  private readonly unsettledWork = new Set<Promise<unknown>>();
+  private drivingUnsettledWork = false;
 
   now(): number {
     return this.currentTime;
@@ -181,17 +190,20 @@ export class VirtualTimeScheduler implements IScheduler {
    * settles — a failing test beats a hanging run.
    */
   async advanceUntilSettled<T>(work: Promise<T>, maxTurns = 10_000): Promise<T> {
-    let settled = false;
-    const tracked = work.then(
-      (v) => { settled = true; return v; },
-      (e) => { settled = true; throw e; },
-    );
-    for (let turn = 0; turn < maxTurns && !settled; turn++) {
-      await Promise.resolve();
-      await Promise.resolve();
-      if (settled) break;
-      const due = this.msUntilNextTask();
-      if (due !== null) this.advance(due);
+    const tracked: Promise<T> = work.finally(() => { this.unsettledWork.delete(tracked); });
+    this.unsettledWork.add(tracked);
+    if (this.drivingUnsettledWork) return tracked;
+    this.drivingUnsettledWork = true;
+    try {
+      for (let turn = 0; turn < maxTurns && this.unsettledWork.size > 0; turn++) {
+        await drainRunnableWork();
+        if (this.unsettledWork.size === 0) break;
+        const due = this.msUntilNextTask();
+        if (due !== null) this.advance(due);
+        else await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));
+      }
+    } finally {
+      this.drivingUnsettledWork = false;
     }
     return tracked;
   }

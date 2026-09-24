@@ -29,6 +29,7 @@ export interface TcpTimeouts {
   readonly handshake: number;
   readonly timeWait: number;
   readonly closing: number;
+  readonly reset: number;
 }
 
 export interface TcpStateMachineOptions {
@@ -41,6 +42,7 @@ export const DEFAULT_TCP_TIMEOUTS: TcpTimeouts = Object.freeze({
   handshake: 30,
   timeWait: 30,
   closing: 30,
+  reset: 0,
 });
 
 const ACCEPTED: TcpVerdict = Object.freeze({ accepted: true, refreshes: true });
@@ -81,6 +83,8 @@ export class TcpStateMachine {
         return this.timeouts.established;
       case 'time-wait':
         return this.timeouts.timeWait;
+      case 'closed':
+        return this.timeouts.reset;
       default:
         return this.timeouts.closing;
     }

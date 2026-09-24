@@ -40,7 +40,8 @@ const NORMALISE_DATE = (s: string) =>
         /(\w{3} \w{3} \d{2} \d{4} \d{2}:\d{2}:\d{2}|\w{3}, \d{2} \w{3} \d{4} \d{2}:\d{2}:\d{2} GMT)/g,
         '<DATE>',
       )
-      .replace(/Production on \S+ \S+ \S+/g, 'Production on <DATE>'),
+      .replace(/Production on \S+ \S+ \S+/g, 'Production on <DATE>')
+      .replace(/^OK \(\d+ msec\)$/gm, 'OK (<ELAPSED> msec)'),
   );
 
 async function expectStrict(
@@ -150,7 +151,7 @@ describe('SSH LAN — security, firewalls, editors, Oracle CLIs', () => {
 
   // SE11
   it('SE11 — `tnsping orcl` matches local byte-exact', async () => {
-    await expectStrict(lan, 'tnsping orcl');
+    await expectStrict(lan, 'tnsping orcl', NORMALISE_DATE);
   });
 
   // SE12

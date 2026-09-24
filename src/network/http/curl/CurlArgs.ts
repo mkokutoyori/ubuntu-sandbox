@@ -42,6 +42,7 @@ export interface CurlOptions {
   retry: number;
   /** `--retry-all-errors` : réessayer même ce que curl juge définitif. */
   retryAllErrors: boolean;
+  connectTimeoutMs: number | null;
   urls: string[];
 }
 
@@ -101,6 +102,7 @@ const LONG_WITH_ARG: Record<string, string> = {
   form: 'F',
   'form-string': 'form-string',
   retry: 'retry',
+  'connect-timeout': 'connect-timeout',
 };
 
 const UNSUPPORTED_SHORT: Record<string, true> = {
@@ -121,7 +123,7 @@ const UNSUPPORTED_LONG: Record<string, true> = {
   // répondre « is unknown » à l'option la plus tapée de toutes était le
   // seul message de ce fichier qui mentait.
   key: true, capath: true, interface: true, 'max-time': true,
-  'connect-timeout': true, compressed: true, 'anyauth': true, ntlm: true,
+  compressed: true, 'anyauth': true, ntlm: true,
   negotiate: true, digest: true, 'proxy-user': true, socks5: true, socks4: true,
   'tlsv1.2': true, 'tlsv1.3': true, 'ciphers': true, 'keepalive-time': true,
   'speed-limit': true, 'speed-time': true, range: true, 'time-cond': true,
@@ -160,6 +162,7 @@ function defaults(): CurlOptions {
     form: [],
     retry: 0,
     retryAllErrors: false,
+    connectTimeoutMs: null,
     urls: [],
   };
 }
@@ -252,6 +255,14 @@ function applyValued(
       break;
     }
     case 'cacert': opts.caCert = value; break;
+    case 'connect-timeout': {
+      const seconds = Number(value);
+      if (value.trim() === '' || !Number.isFinite(seconds) || seconds < 0) {
+        return usageFailure(`curl: option ${spelling}: expected a proper numerical parameter`);
+      }
+      opts.connectTimeoutMs = seconds === 0 ? null : Math.round(seconds * 1000);
+      break;
+    }
     case 'max-redirs': {
       const n = Number(value);
       if (!Number.isFinite(n)) return missingParam(spelling);

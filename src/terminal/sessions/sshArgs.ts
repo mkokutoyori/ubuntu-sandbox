@@ -84,6 +84,7 @@ export interface ParsedSshArgs {
 export interface ProxyHop {
   readonly user: string | null;
   readonly host: string;
+  readonly port?: number;
 }
 
 /**
@@ -98,9 +99,13 @@ export function parseProxyJumpSpec(spec: string): readonly ProxyHop[] {
     .filter((s) => s.length > 0)
     .map((entry) => {
       const at = entry.indexOf('@');
-      return at >= 0
-        ? { user: entry.slice(0, at), host: entry.slice(at + 1) }
-        : { user: null, host: entry };
+      const user = at >= 0 ? entry.slice(0, at) : null;
+      const endpoint = at >= 0 ? entry.slice(at + 1) : entry;
+      const bracketed = /^\[([^\]]+)\](?::(\d+))?$/.exec(endpoint);
+      const hostPort = bracketed ? null : /^([^:]+):(\d+)$/.exec(endpoint);
+      const host = bracketed?.[1] ?? hostPort?.[1] ?? endpoint;
+      const port = bracketed?.[2] ?? hostPort?.[2];
+      return port === undefined ? { user, host } : { user, host, port: Number(port) };
     });
 }
 

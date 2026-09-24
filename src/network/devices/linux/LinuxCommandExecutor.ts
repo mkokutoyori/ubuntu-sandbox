@@ -160,8 +160,7 @@ import { SftpCommandScript } from '../../protocols/ssh/sftp/SftpCommandScript';
 import type { ISftpFileSystem } from '../../protocols/ssh/sftp/ISftpFileSystem';
 import { WireSftpFileSystem } from '../../protocols/ssh/sftp/WireSftpFileSystem';
 import { SshSession } from '../../protocols/ssh/session/SshSession';
-import { SilentSshInteractionHandler } from '../../protocols/ssh/session/ISshInteractionHandler';
-import { SshConnectOptionsBuilder } from '../../protocols/ssh/SshConnectOptions';
+import { connectWireSsh, type StrictHostKeyChecking, type WireSshClient } from './network/WireSshConnector';
 import { isOk } from '../../protocols/ssh/Result';
 import type { TcpConnector } from '@/network/tcp/types';
 import {
@@ -194,6 +193,7 @@ import type { GetentResult } from './nss/GetentCommand';
 import type { NssHostEntry, NssServiceEntry } from './nss/types';
 import { IPAddress } from '../../core/types';
 import { openDescriptors, descriptorCount, type DescriptorSources } from './process/FileDescriptorTable';
+import { VSFTPD_CONF_PATH, VSFTPD_UPSTREAM_SAMPLE_CONF } from './ftp/LinuxVsftpdService';
 
 /** Commands that commonly read from stdin when piped. */
 const STDIN_COMMANDS = new Set([
@@ -1609,40 +1609,28 @@ export class LinuxCommandExecutor {
 
   private async connectWireSsh(
     host: string, user: string, password: string | undefined,
-    port = 22, identities: string[] = [], strict: 'yes' | 'no' | 'accept-new' = 'accept-new',
+    port = 22, identities: string[] = [], strict: StrictHostKeyChecking = 'accept-new',
   ): Promise<{ session: SshSession | null; authRefused: boolean; notices: string[] }> {
     if (!this.tcpConnector) return { session: null, authRefused: false, notices: [] };
     const connector = this.tcpConnector;
-    const interaction = new SilentSshInteractionHandler(password ?? '', strict !== 'yes');
-    const session = new SshSession({
-      tcpConnector: ((h, p) => connector(h, p)) as unknown as TcpConnector,
+    const outcome = await connectWireSsh(
+      this.wireSshClient(), { host, user, port, password, identities, strict },
+      ((h, p) => connector(h, p)) as unknown as TcpConnector);
+    return {
+      session: outcome.session,
+      authRefused: outcome.failure?.kind === 'AUTH_FAILED',
+      notices: [...outcome.notices],
+    };
+  }
+
+  wireSshClient(): WireSshClient {
+    return {
       vfs: this.vfs as never,
-      localUser: this.userMgr.currentUser,
-      localUid: this.userMgr.currentUid,
-      localGid: this.userMgr.currentGid,
-      knownHostsPath: `${this.sshHomeDir()}/.ssh/known_hosts`,
-      credentialless: password === undefined,
-      interactionHandler: interaction,
-    });
-    const builder = SshConnectOptionsBuilder.create()
-      .host(host).user(user).port(port).strictHostKeyChecking(strict);
-    for (const path of identities) builder.addIdentityFile(path);
-    if (identities.length === 0) {
-      for (const candidate of ['id_ed25519', 'id_rsa', 'id_ecdsa']) {
-        const path = `${this.sshHomeDir()}/.ssh/${candidate}`;
-        if (this.vfs.readFile(path) !== null) builder.addIdentityFile(path);
-      }
-    }
-    const result = await session.connect(builder.build());
-    if (!isOk(result)) {
-      session.disconnect();
-      return {
-        session: null,
-        authRefused: result.error.kind === 'AUTH_FAILED',
-        notices: interaction.notices,
-      };
-    }
-    return { session, authRefused: false, notices: interaction.notices };
+      user: this.userMgr.currentUser,
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+      home: this.sshHomeDir(),
+    };
   }
 
   private async tryOpenWireSftpFs(
@@ -1895,15 +1883,17 @@ export class LinuxCommandExecutor {
         resolveInode: (p: string) => this.vfs.resolveInode(p),
         mkdirp: (p: string, perm: number, uid: number, gid: number) => this.vfs.mkdirp(p, perm, uid, gid),
       },
-      resolveName: (name: string): string | null => {
-        if (IPAddress.isValid(name)) return null;
-        const r = this.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, 2));
-        if (r.status === 'SUCCESS' && r.entry) {
-          for (const h of r.entry) if (h.addressFamily === 2) return h.address;
-        }
-        return null;
-      },
+      resolveName: (name: string): string | null =>
+        IPAddress.isValid(name) ? null : this.resolveHostIpv4(name),
     };
+  }
+
+  resolveHostIpv4(name: string): string | null {
+    const r = this.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, 2));
+    if (r.status === 'SUCCESS' && r.entry) {
+      for (const h of r.entry) if (h.addressFamily === 2) return h.address;
+    }
+    return null;
   }
 
   /**
@@ -5471,6 +5461,7 @@ export class LinuxCommandExecutor {
             };
           }
           if (noms.includes('bind9')) this.provisionBind9Defaults();
+          if (sub === 'install' && noms.includes('vsftpd')) this.provisionVsftpd();
           const lignes = noms.map((n) => {
             const p = findPackage(n)!;
             return sub === 'install'
@@ -5740,7 +5731,7 @@ export class LinuxCommandExecutor {
         // Oracle Server profile: actually boot the instance the first
         // time sqlplus is invoked, so ps -ef shows ora_pmon/ora_smon
         // and lsnrctl status can read the listener state.
-        if (this.isServer && this._oracleBootstrap) {
+        if (this._oracleBootstrap) {
           const out = this._oracleBootstrap(args, stdin);
           if (out !== null) return { output: out, exitCode: 0 };
         }
@@ -5769,7 +5760,7 @@ export class LinuxCommandExecutor {
         };
       }
       case 'tnsping': {
-        if (this.isServer && this._oracleTnsping) {
+        if (this._oracleTnsping) {
           const output = this._oracleTnsping(args);
           return { output, exitCode: /TNS-\d|TNS:/.test(output) ? 1 : 0 };
         }
@@ -7821,13 +7812,56 @@ export class LinuxCommandExecutor {
    * that writes named.conf.options/named.conf.local can validate/start
    * bind9 without also having to author the top-level include file itself.
    */
+  private provisionVsftpd(): void {
+    if (!this.userMgr.getUser('ftp')) {
+      this.userMgr.useradd('ftp', { r: true, M: true, d: '/srv/ftp', s: '/usr/sbin/nologin' });
+    }
+    const ftp = this.userMgr.getUser('ftp');
+    if (!this.vfs.exists('/srv/ftp')) this.vfs.mkdirp('/srv/ftp', 0o755, 0, ftp?.gid ?? 0);
+    if (this.vfs.readFile(VSFTPD_CONF_PATH) == null) {
+      this.vfs.writeFile(VSFTPD_CONF_PATH, VSFTPD_UPSTREAM_SAMPLE_CONF, 0, 0, 0o022);
+    }
+    const unitPath = '/lib/systemd/system/vsftpd.service';
+    if (this.vfs.readFile(unitPath) == null) {
+      this.vfs.writeFile(unitPath, [
+        '[Unit]',
+        'Description=vsftpd FTP server',
+        'After=network.target',
+        '',
+        '[Service]',
+        'Type=simple',
+        `ExecStart=/usr/sbin/vsftpd ${VSFTPD_CONF_PATH}`,
+        'ExecReload=/bin/kill -HUP $MAINPID',
+        '',
+        '[Install]',
+        'WantedBy=multi-user.target',
+        '',
+      ].join('\n'), 0, 0, 0o022);
+    }
+    this.serviceMgr.daemonReload();
+    this.serviceMgr.enable('vsftpd');
+    this.serviceMgr.start('vsftpd');
+  }
+
   private provisionBind9Defaults(): void {
     if (!this.vfs.exists('/etc/bind')) this.vfs.mkdirp('/etc/bind', 0o755, 0, 0);
-    if (this.vfs.readFile('/etc/bind/named.conf') == null) {
-      this.vfs.writeFile('/etc/bind/named.conf',
+    if (!this.vfs.exists('/var/cache/bind')) this.vfs.mkdirp('/var/cache/bind', 0o775, 0, 0);
+    const defaults: ReadonlyArray<readonly [string, string]> = [
+      ['/etc/bind/named.conf',
         'include "/etc/bind/named.conf.options";\n' +
-        'include "/etc/bind/named.conf.local";\n',
-        0, 0, 0o022);
+        'include "/etc/bind/named.conf.local";\n'],
+      ['/etc/bind/named.conf.options',
+        'options {\n' +
+        '\tdirectory "/var/cache/bind";\n' +
+        '\n' +
+        '\tdnssec-validation auto;\n' +
+        '\n' +
+        '\tlisten-on-v6 { any; };\n' +
+        '};\n'],
+      ['/etc/bind/named.conf.local', ''],
+    ];
+    for (const [path, content] of defaults) {
+      if (this.vfs.readFile(path) == null) this.vfs.writeFile(path, content, 0, 0, 0o022);
     }
   }
 

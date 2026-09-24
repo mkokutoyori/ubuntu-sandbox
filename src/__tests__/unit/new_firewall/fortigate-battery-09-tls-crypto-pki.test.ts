@@ -1,36 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createDevice, resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { describe, it, expect } from 'vitest';
+import { createDevice } from '@/network/devices/DeviceFactory';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { WindowsServer } from '@/network/devices/WindowsServer';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { MACAddress, resetCounters } from '@/network/core/types';
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { Logger } from '@/network/core/Logger';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
-
-beforeEach(() => {
-  resetCounters();
-  resetDeviceCounters();
-  MACAddress.resetCounter();
-  Logger.reset();
-  EquipmentRegistry.resetInstance();
-});
-
-interface Cli {
-  executeCommand(command: string): Promise<string>;
-  getPortNames(): string[];
-  getPort(name: string): unknown;
-}
-
-const REFUS = /Unknown action|command parse error|Invalid|Incomplete|Command fail/i;
-const refuse = (sortie: string): boolean => REFUS.test(sortie);
-
-async function taper(device: Cli, lignes: readonly string[]): Promise<void> {
-  for (const ligne of lignes) await device.executeCommand(ligne);
-}
+import { type Cli, refuse, taper } from './fortigateBatteryHarness';
 
 function pwsh(dev: WindowsPC | WindowsServer) {
   const ps = PowerShellSubShell.create(dev as never).subShell;
@@ -63,12 +40,12 @@ interface LaboTls {
 async function creerLaboTls(): Promise<LaboTls> {
   const winPc = new WindowsPC('windows-pc', 'WIN-CLIENT');
   const linuxPc = new LinuxPC('linux-pc', 'LINUX-CLIENT', 100, 0);
-  const swAccess = new CiscoSwitch('switch-cisco-acc', 'SW-ACC', 16, 250, 0);
+  const swAccess = new CiscoSwitch('switch-cisco', 'SW-ACC', 16, 250, 0);
   const fw = createDevice('firewall-fortinet', 500, 0) as unknown as Cli;
-  const swCore = new CiscoSwitch('switch-cisco-core', 'SW-CORE', 16, 750, 0);
-  const srvNginx = new LinuxServer('linux-server-nginx', 'SRV-NGINX', 950, -100);
+  const swCore = new CiscoSwitch('switch-cisco', 'SW-CORE', 16, 750, 0);
+  const srvNginx = new LinuxServer('linux-server', 'SRV-NGINX', 950, -100);
   const srvWinIis = serveurWindows('SRV-IIS');
-  const srvPki = new LinuxServer('linux-server-pki', 'SRV-PKI', 950, 100);
+  const srvPki = new LinuxServer('linux-server', 'SRV-PKI', 950, 100);
 
   winPc.powerOn();
   linuxPc.powerOn();
@@ -395,7 +372,7 @@ describe('Batterie 9 : Tests 401 à 450 — Cryptographie Réseau, Handshake TLS
       await taper(srvNginx as unknown as Cli, ['systemctl start nginx']);
       await taper(fw, [
         'config firewall policy', 'edit 1',
-        'set utm-status enable', 'set av-profile "default"', 'next', 'end',
+        'set utm-status enable', 'set av-profile "default"', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await linuxPc.executeCommand('curl -k -s https://10.10.10.10/eicar.com.zip');
       expect(res).toMatch(/Blocked by Antivirus|Access Denied/i);
@@ -412,7 +389,7 @@ describe('Batterie 9 : Tests 401 à 450 — Cryptographie Réseau, Handshake TLS
       const { linuxPc, fw } = await creerLaboTls();
       await taper(fw, [
         'config firewall policy', 'edit 1',
-        'set webfilter-profile "block-gambling"', 'next', 'end',
+        'set webfilter-profile "block-gambling"', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await linuxPc.executeCommand('curl -k -s --connect-timeout 2 https://10.10.10.10/ -H "Host: poker.casino.lan"');
       expect(res).toMatch(/Web Page Blocked|Blocked by FortiGuard/i);
@@ -470,7 +447,7 @@ describe('Batterie 9 : Tests 401 à 450 — Cryptographie Réseau, Handshake TLS
     it('443. Oracle Database TCPS (Port 2484) : Transaction SQL chiffrée par portefeuille Oracle Wallet', async () => {
       const { linuxPc, srvNginx } = await creerLaboTls();
       await taper(srvNginx as unknown as Cli, ['systemctl start oracle-tcps']);
-      const res = await linuxPc.executeCommand('tnsping 10.10.10.10:2484/XE');
+      const res = await linuxPc.executeCommand('tnsping 10.10.10.10:2484/ORCL');
       expect(res).toContain('OK');
     });
 
@@ -551,7 +528,7 @@ describe('Batterie 9 : Tests 401 à 450 — Cryptographie Réseau, Handshake TLS
       expect(iisTls.trim()).toBe('200');
 
       // 5. Validation de la connexion chiffrée Oracle TCPS (port 2484)
-      const oracleTcps = await linuxPc.executeCommand('tnsping 10.10.10.10:2484/XE');
+      const oracleTcps = await linuxPc.executeCommand('tnsping 10.10.10.10:2484/ORCL');
       expect(oracleTcps).toContain('OK');
 
       // 6. Présence de la session chiffrée dans la table d\'état du pare-feu

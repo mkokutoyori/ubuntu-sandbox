@@ -32,6 +32,7 @@ import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equi
 import type { PathActor } from './linux/VfsPath';
 import { findHostByAddress } from './linux/network/HostLookup';
 import { LinuxNginxService } from './linux/http/nginx/LinuxNginxService';
+import { LinuxVsftpdService } from './linux/ftp/LinuxVsftpdService';
 import { LinuxNfsService, EXPORTS_PATH, DEBIAN_EXPORTS_FILE } from './linux/nfs/LinuxNfsService';
 import { NfsMountedFileSystem } from '@/network/nfs/NfsMountedFileSystem';
 import { NfsClient, TcpRpcTransport } from '@/network/nfs/NfsClient';
@@ -1272,6 +1273,22 @@ export abstract class LinuxMachine extends EndHost
     ));
     vfs.setRemoteMountPort(this.executor.nfsMounts);
 
+    this.vsftpdService = new LinuxVsftpdService({
+      vfs,
+      tcpStack: () => this.getTcpStack(),
+      account: (username) => {
+        const entry = this.executor.userMgr.getUser(username);
+        return entry ? { username: entry.username, uid: entry.uid, gid: entry.gid, home: entry.home } : null;
+      },
+      groupsOf: (username) => this.executor.userMgr.getUserGroups(username).map((g) => g.gid),
+      checkPassword: (username, password) => this.executor.userMgr.checkPassword(username, password),
+    });
+    this.executor.registerServiceSocketServer('vsftpd', this.vsftpdService);
+    this.executor.serviceMgr.registerConfigCheck('vsftpd', () => {
+      const loaded = this.vsftpdService?.loadSettings();
+      if (loaded && loaded.ok === false) return { ok: false, error: loaded.error, verbatim: true };
+      return { ok: true };
+    });
     this.executor.registerServiceSocketServer('nginx', this.nginxService);
     this.executor.nginxService = this.nginxService;
     this.installerRsyslog(vfs);
@@ -1430,6 +1447,7 @@ export abstract class LinuxMachine extends EndHost
   /** Le serveur nginx de cette machine — `null` avant l'amorçage. */
   nginxService: LinuxNginxService | null = null;
   nfsService: LinuxNfsService | null = null;
+  vsftpdService: LinuxVsftpdService | null = null;
 
   /** L'agent NTP de cette machine — le MÊME moteur que Cisco et Huawei. */
   private _ntpAgent: NtpAgent | null = null;
@@ -1935,14 +1953,14 @@ export abstract class LinuxMachine extends EndHost
       | undefined;
     if (!userEntry) return { ok: false, reason: 'no such user' };
 
-    // Locked account: either the userMgr's in-memory flag is on, or
-    // /etc/shadow stores "!<hash>" / "!".
-    if (userEntry.locked) return { ok: false, reason: 'account locked' };
-    if (userEntry.password === '!') return { ok: false, reason: 'no password set' };
-    const shadow = this.executor.vfs.readFile('/etc/shadow') ?? '';
-    const shadowLine = shadow.split('\n').find(l => l.startsWith(`${user}:`));
-    if (shadowLine && /^!/.test(shadowLine.split(':')[1] ?? '')) {
-      return { ok: false, reason: 'account locked' };
+    if (!config.usePam) {
+      if (userEntry.locked) return { ok: false, reason: 'account locked' };
+      if (userEntry.password === '!') return { ok: false, reason: 'account locked' };
+      const shadow = this.executor.vfs.readFile('/etc/shadow') ?? '';
+      const shadowLine = shadow.split('\n').find(l => l.startsWith(`${user}:`));
+      if (shadowLine && /^!/.test(shadowLine.split(':')[1] ?? '')) {
+        return { ok: false, reason: 'account locked' };
+      }
     }
     // Account/password expiry (chage -E / -M) is a PAM *account*-phase
     // concern, checked after credentials verify — see
@@ -3869,6 +3887,9 @@ export abstract class LinuxMachine extends EndHost
       },
       sendGratuitousArp: (iface: string, ip: IPAddress, mode: 'request' | 'reply'): boolean => {
         return this.sendGratuitousArp(iface, ip, mode);
+      },
+      probeArp: (iface: string, target: IPAddress, timeoutMs: number): Promise<MACAddress | null> => {
+        return this.probeArp(iface, target, timeoutMs);
       },
       hasRoute: (target: IPAddress): boolean => {
         return this.hasRouteOrLocal(target);

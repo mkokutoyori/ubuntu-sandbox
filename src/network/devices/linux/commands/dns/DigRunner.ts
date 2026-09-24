@@ -1,4 +1,5 @@
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
+import { getDefaultScheduler } from '@/events/Scheduler';
 import { DnsClass, RRType } from '@/network/dns/wire/RRType';
 import { encodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import { findOpt } from '@/network/dns/wire/EdnsOptRecord';
@@ -180,7 +181,7 @@ function shortOutput(answers: readonly ResourceRecord<ResourceRecordData>[]): st
   return answers.filter(isDisplayableRecord).map(formatRdata).join('\n');
 }
 
-function transferOutput(invocation: DigInvocation, message: DnsMessage): string {
+function transferOutput(invocation: DigInvocation, message: DnsMessage, elapsedMs: number): string {
   const lines: string[] = [
     `; <<>> DiG <<>> @${invocation.server} ${invocation.domain} ${invocation.qtype}`,
     ';; global options: +cmd',
@@ -191,7 +192,7 @@ function transferOutput(invocation: DigInvocation, message: DnsMessage): string 
     return lines.join('\n');
   }
   for (const rr of records) lines.push(formatRecordLine(rr));
-  lines.push(`;; Query time: ${Math.floor(Math.random() * 10) + 1} msec`);
+  lines.push(`;; Query time: ${Math.round(elapsedMs)} msec`);
   lines.push(`;; SERVER: ${invocation.server}#${digPort(invocation)}(${invocation.server})`);
   lines.push(`;; WHEN: ${new Date().toUTCString()}`);
   lines.push(`;; XFR size: ${records.length} records (messages 1, bytes ${encodeDnsMessage(message).length})`);
@@ -222,7 +223,7 @@ function pushSection(
   lines.push('');
 }
 
-function fullOutput(invocation: DigInvocation, message: DnsMessage): string {
+function fullOutput(invocation: DigInvocation, message: DnsMessage, elapsedMs: number): string {
   const lines: string[] = [
     `; <<>> DiG <<>> @${invocation.server} ${invocation.domain} ${invocation.qtype}`,
     ';; global options: +cmd',
@@ -256,7 +257,7 @@ function fullOutput(invocation: DigInvocation, message: DnsMessage): string {
   pushSection(lines, 'AUTHORITY', message.authorities);
   pushSection(lines, 'ADDITIONAL', message.additionals);
 
-  lines.push(`;; Query time: ${Math.floor(Math.random() * 10) + 1} msec`);
+  lines.push(`;; Query time: ${Math.round(elapsedMs)} msec`);
   lines.push(`;; SERVER: ${invocation.server}#${digPort(invocation)}(${invocation.server})`);
   lines.push(`;; WHEN: ${new Date().toUTCString()}`);
   lines.push(`;; MSG SIZE  rcvd: ${encodeDnsMessage(message).length}`);
@@ -290,13 +291,15 @@ async function resolveNsAddress(
 }
 
 /** Prints one `+trace` hop (the delegation or final answer received from one server) dig-trace style. */
-function pushTraceHop(lines: string[], server: string, port: number, message: DnsMessage): void {
+function pushTraceHop(
+  lines: string[], server: string, port: number, message: DnsMessage, elapsedMs: number,
+): void {
   const records = (message.answers.length > 0 ? message.answers : message.authorities).filter(isDisplayableRecord);
   for (const rr of records) lines.push(formatRecordLine(rr));
   for (const rr of message.additionals.filter(isDisplayableRecord)) lines.push(formatRecordLine(rr));
   lines.push(
     `;; Received ${encodeDnsMessage(message).length} bytes from ${server}#${port}(${server}) in ` +
-      `${Math.floor(Math.random() * 10) + 1} ms`,
+      `${Math.round(elapsedMs)} ms`,
   );
   lines.push('');
 }
@@ -316,11 +319,13 @@ async function traceOutput(invocation: DigInvocation, query: DnsQueryFn): Promis
   const port = invocation.port ?? 53;
   let server = invocation.server;
 
+  const rootStartedAt = getDefaultScheduler().now();
   const rootMessage = await query(server, '.', 'NS', timeoutMs, { recursionDesired: false, port: invocation.port });
+  const rootElapsedMs = getDefaultScheduler().now() - rootStartedAt;
   let nsRecords: ResourceRecord<NsRecordData>[] = [];
   let glue: readonly ResourceRecord<ResourceRecordData>[] = [];
   if (rootMessage && (rootMessage.answers.length > 0 || rootMessage.authorities.length > 0)) {
-    pushTraceHop(lines, server, port, rootMessage);
+    pushTraceHop(lines, server, port, rootMessage, rootElapsedMs);
     nsRecords = [...rootMessage.answers, ...rootMessage.authorities]
       .filter((rr): rr is ResourceRecord<NsRecordData> => rr.data.type === RRType.NS);
     glue = rootMessage.additionals;
@@ -340,15 +345,17 @@ async function traceOutput(invocation: DigInvocation, query: DnsQueryFn): Promis
       server = nextServer;
     }
 
+    const hopStartedAt = getDefaultScheduler().now();
     const message = await query(
       server, invocation.domain, invocation.qtype, timeoutMs,
       { recursionDesired: false, port: invocation.port ?? undefined },
     );
+    const hopElapsedMs = getDefaultScheduler().now() - hopStartedAt;
     if (!message) {
       lines.push(';; connection timed out; no servers could be reached');
       return lines.join('\n');
     }
-    pushTraceHop(lines, server, port, message);
+    pushTraceHop(lines, server, port, message, hopElapsedMs);
 
     if (message.answers.length > 0) return lines.join('\n');
     const referral = message.authorities.filter(
@@ -384,7 +391,9 @@ async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn):
     qclass: invocation.qclass,
   };
   let message: DnsMessage | null = null;
+  let startedAt = getDefaultScheduler().now();
   for (let attempt = 0; attempt < Math.max(1, invocation.tries); attempt++) {
+    startedAt = getDefaultScheduler().now();
     message = await query(
       invocation.server, invocation.domain, invocation.qtype,
       invocation.timeoutSeconds * 1000, options,
@@ -403,13 +412,13 @@ async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn):
   }
 
   if (invocation.qtype === 'AXFR' || invocation.qtype === 'IXFR') {
-    return transferOutput(invocation, message);
+    return transferOutput(invocation, message, getDefaultScheduler().now() - startedAt);
   }
   if (invocation.short) return shortOutput(message.answers);
   if (invocation.noAll && invocation.showAnswer) {
     return message.answers.filter(isDisplayableRecord).map(formatRecordLine).join('\n');
   }
-  return fullOutput(invocation, message);
+  return fullOutput(invocation, message, getDefaultScheduler().now() - startedAt);
 }
 
 /** Reads a `dig -f <file>` batch file: one query per non-empty, non-comment line. */

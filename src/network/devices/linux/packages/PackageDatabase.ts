@@ -140,6 +140,8 @@ const CATALOGUE: readonly PackageEntry[] = [
     summary: 'Vi IMproved - enhanced vi editor', },
   { name: 'vim-tiny', version: '2:8.2.3995-1ubuntu2', arch: 'amd64',
     summary: 'Vi IMproved - enhanced vi editor - compact version', },
+  { name: 'vsftpd', version: '3.0.5-0ubuntu1', arch: 'amd64',
+    summary: 'lightweight, efficient FTP server written for security', units: ['vsftpd'] },
   { name: 'wget', version: '1.21.2-2ubuntu1', arch: 'amd64',
     summary: 'retrieves files from the web', },
 ];

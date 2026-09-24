@@ -3,6 +3,8 @@ import type { ServiceEntry, ServiceObject } from '../../../model/ServiceObject';
 import type { FortiConfigTree } from '../runtime/FortiConfigTree';
 import { FIREWALL_ADDRESS, FIREWALL_ADDRESS6, FIREWALL_SERVICE_CUSTOM } from './firewallObjects';
 import { PREDEFINED_ADDRESSES, PREDEFINED_SERVICES } from './predefined';
+import { SYSTEM_SESSION_HELPER } from './system';
+import { FORTIOS_DEFAULT_SESSION_HELPERS } from '../sessionHelpers';
 
 function portRanges(entries: readonly ServiceEntry[], protocol: string): string[] {
   return entries
@@ -51,5 +53,12 @@ export function seedPredefinedConfig(tree: FortiConfigTree): void {
     const spec = address.family === 'ipv6' ? FIREWALL_ADDRESS6 : FIREWALL_ADDRESS;
     const object = tree.table(spec).ensure(address.name);
     for (const [name, values] of addressSettings(address)) object.set(name, values);
+  }
+
+  for (const helper of FORTIOS_DEFAULT_SESSION_HELPERS) {
+    const object = tree.table(SYSTEM_SESSION_HELPER).ensure(String(helper.id));
+    object.set('name', [helper.name]);
+    object.set('protocol', [String(helper.protocol)]);
+    object.set('port', [String(helper.port)]);
   }
 }

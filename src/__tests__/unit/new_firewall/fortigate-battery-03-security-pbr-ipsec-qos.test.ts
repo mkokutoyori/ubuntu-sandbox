@@ -1,33 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createDevice, resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { describe, it, expect } from 'vitest';
+import { createDevice } from '@/network/devices/DeviceFactory';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { MACAddress, resetCounters } from '@/network/core/types';
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { Logger } from '@/network/core/Logger';
-
-beforeEach(() => {
-  resetCounters();
-  resetDeviceCounters();
-  MACAddress.resetCounter();
-  Logger.reset();
-  EquipmentRegistry.resetInstance();
-});
-
-interface Cli {
-  executeCommand(command: string): Promise<string>;
-  getPortNames(): string[];
-  getPort(name: string): unknown;
-}
-
-const REFUS = /Unknown action|command parse error|Invalid|Incomplete|Command fail/i;
-const refuse = (sortie: string): boolean => REFUS.test(sortie);
-
-async function taper(device: Cli, lignes: readonly string[]): Promise<void> {
-  for (const ligne of lignes) await device.executeCommand(ligne);
-}
+import { type Cli, refuse, taper } from './fortigateBatteryHarness';
 
 // Topologie Entreprise Multi-Liens :
 // PC1 + Attaquant <-> Cisco SW1 <-> [FortiOS FW (port1, wan1, wan2, dmz)] <-> SW2 <-> SRV-Prod, SRV-Backup, Syslog
@@ -44,11 +21,11 @@ interface LaboEntreprise {
 async function creerLaboEntreprise(): Promise<LaboEntreprise> {
   const pc = new LinuxPC('linux-pc', 'PC-Compta', 100, 0);
   const rogue = new LinuxPC('linux-pc-rogue', 'PC-Attacker', 100, 150);
-  const sw1 = new CiscoSwitch('switch-cisco-1', 'SW-Access', 16, 300, 0);
+  const sw1 = new CiscoSwitch('switch-cisco', 'SW-Access', 16, 300, 0);
   const fw = createDevice('firewall-fortinet', 500, 0) as unknown as Cli;
-  const srvProd = new LinuxServer('linux-server-prod', 'SRV-PROD', 700, 0);
-  const srvBackup = new LinuxServer('linux-server-bkp', 'SRV-BACKUP', 700, 150);
-  const syslogSrv = new LinuxServer('linux-server-log', 'SRV-SYSLOG', 700, 300);
+  const srvProd = new LinuxServer('linux-server', 'SRV-PROD', 700, 0);
+  const srvBackup = new LinuxServer('linux-server', 'SRV-BACKUP', 700, 150);
+  const syslogSrv = new LinuxServer('linux-server', 'SRV-SYSLOG', 700, 300);
 
   pc.powerOn();
   rogue.powerOn();
@@ -223,7 +200,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(fw, [
         'config system interface', 'edit "wan1"', 'set status down', 'next', 'end',
         'config router static', 'edit 1', 'set dst 0.0.0.0 0.0.0.0', 'set gateway 198.51.100.1', 'set device "wan2"', 'next', 'end',
-        'config firewall policy', 'edit 1', 'set srcintf "port1"', 'set dstintf "wan2"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set nat enable', 'next', 'end',
+        'config firewall policy', 'edit 1', 'set srcintf "port1"', 'set dstintf "wan2"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set nat enable', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -s http://198.51.100.10/');
       expect(res).toMatch(/Welcome to nginx|nginx/i);
@@ -288,7 +265,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       ]);
       await pc.executeCommand('curl -s http://203.0.113.10/');
       await taper(fw, ['config router static', 'delete 1', 'end']);
-      const res = await pc.executeCommand('curl -s --connect-timeout 1 http://203.0.113.10/');
+      const res = await pc.executeCommand('curl -sS --connect-timeout 1 http://203.0.113.10/');
       expect(res).toMatch(/Network is unreachable|timed out|Failed to connect/i);
     });
   });
@@ -342,14 +319,14 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
 
     it('118. Trafic Oracle SQL (1521) traversant le tunnel chiffré sans corruption', async () => {
       const { pc, fw, srvProd } = await creerLaboEntreprise();
-      await taper(srvProd as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srvProd as unknown as Cli, ['systemctl start oracle-ohasd']);
       await taper(fw, [
         'config firewall policy',
         'edit 71', 'set srcintf "port1"', 'set dstintf "wan1"',
         'set srcaddr "all"', 'set dstaddr "all"', 'set action accept',
-        'next', 'end',
+        'set service "ALL"', 'next', 'end',
       ]);
-      const res = await pc.executeCommand('tnsping 203.0.113.10:1521/XE');
+      const res = await pc.executeCommand('tnsping 203.0.113.10:1521/ORCL');
       expect(res).toContain('OK');
     });
 
@@ -359,7 +336,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
         'config firewall policy', 'edit 72',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
         'set action accept', 'set tcp-mss-sender 1360', 'set tcp-mss-receiver 1360',
-        'next', 'end',
+        'set service "ALL"', 'next', 'end',
       ]);
       const ping = await pc.executeCommand('ping -c 1 -M do -s 1332 203.0.113.10');
       expect(ping).not.toMatch(/Frag needed/i);
@@ -416,7 +393,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
         'set srcaddr "all"', 'set dstaddr "all"',
         'set action accept',
         'set session-ttl 60',
-        'next', 'end',
+        'set service "ALL"', 'next', 'end',
       ]);
       const pol = await fw.executeCommand('show firewall policy 80');
       expect(pol).toContain('set session-ttl 60');
@@ -429,7 +406,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
         'config firewall policy', 'edit 81',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
         'set action accept', 'set diffserv-forward enable', 'set diffservcode-forward 101110', // EF
-        'next', 'end',
+        'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -s http://203.0.113.10/');
       expect(res).toMatch(/Welcome to nginx|nginx/i);
@@ -510,7 +487,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(fw, [
         'config firewall policy', 'edit 90',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       await pc.executeCommand('curl -s http://203.0.113.10/');
       const sniff = await fw.executeCommand('diagnose sniffer packet wan1 "port 80" 1');
@@ -542,7 +519,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
         'next', 'end',
         'config firewall policy', 'edit 91',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "VIP_SSL_OFFLOAD"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -k -s https://203.0.113.1/');
       expect(res).toMatch(/Welcome to nginx|nginx/i);
@@ -550,14 +527,14 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
 
     it('135. Oracle Data Guard : synchronisation de redo-logs entre base primaire et standby (port 1521)', async () => {
       const { srvProd, srvBackup, fw } = await creerLaboEntreprise();
-      await taper(srvProd as unknown as Cli, ['systemctl start oracle-xe']);
-      await taper(srvBackup as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srvProd as unknown as Cli, ['systemctl start oracle-ohasd']);
+      await taper(srvBackup as unknown as Cli, ['systemctl start oracle-ohasd']);
       await taper(fw, [
         'config firewall policy', 'edit 92',
         'set srcintf "wan1"', 'set dstintf "wan2"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
-      const sync = await srvProd.executeCommand('tnsping 198.51.100.10:1521/XE');
+      const sync = await srvProd.executeCommand('tnsping 198.51.100.10:1521/ORCL');
       expect(sync).toContain('OK');
     });
 
@@ -569,7 +546,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(fw, [
         'config firewall policy', 'edit 93',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       await pc.executeCommand('curl -s http://203.0.113.10/login');
       const burst = await pc.executeCommand('curl -s -o /dev/null -w "%{http_code}" http://203.0.113.10/login');
@@ -582,7 +559,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(fw, [
         'config firewall policy', 'edit 94',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('wscat -c ws://203.0.113.10:8080/ws --connect-timeout 2');
       expect(res).not.toMatch(/Error: connect ECONNREFUSED/i);
@@ -594,7 +571,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(fw, [
         'config firewall policy', 'edit 95',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -k --ssl -s ftp://203.0.113.10/');
       expect(res).not.toMatch(/SSL: certificate subject name mismatch/i);
@@ -606,7 +583,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(fw, [
         'config firewall policy', 'edit 96',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const unauth = await pc.executeCommand('curl -s -o /dev/null -w "%{http_code}" http://203.0.113.10/private/');
       expect(unauth.trim()).toBe('401');
@@ -624,11 +601,11 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
 
     it('141. Oracle Listener : rejet de connexion avec code ORA-12514 si le service DB est inconnu', async () => {
       const { pc, fw, srvProd } = await creerLaboEntreprise();
-      await taper(srvProd as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srvProd as unknown as Cli, ['systemctl start oracle-ohasd']);
       await taper(fw, [
         'config firewall policy', 'edit 97',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('sqlplus -S system/oracle@203.0.113.10:1521/SERVICE_INCONNU');
       expect(res).toMatch(/ORA-12514|TNS:listener does not currently know of service/i);
@@ -640,7 +617,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(fw, [
         'config firewall policy', 'edit 98',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const resLan = await pc.executeCommand('dig @203.0.113.10 portal.lab.lan +short');
       expect(resLan).toMatch(/192\.168\.|10\./);
@@ -663,7 +640,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       expect(status).toContain('tcp-syn-flood-threshold');
       // Le client régulier peut toujours se connecter
       await taper(fw, [
-        'config firewall policy', 'edit 99', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'next', 'end',
+        'config firewall policy', 'edit 99', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const res = await pc.executeCommand('curl -s http://203.0.113.10/');
       expect(res).toMatch(/Welcome to nginx|nginx/i);
@@ -713,7 +690,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
     it('148. Destruction des fragments IP anormaux et superposés (Teardrop Attack)', async () => {
       const { rogue, fw } = await creerLaboEntreprise();
       await taper(fw, [
-        'config firewall policy', 'edit 105', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'next', 'end',
+        'config firewall policy', 'edit 105', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       // Injection de fragments IP chevauchants
       const res = await rogue.executeCommand('hping3 --frag --mtu 8 -1 203.0.113.10 -c 2');
@@ -739,7 +716,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(srvProd as unknown as Cli, [
         'systemctl start named',
         'systemctl start nginx',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
       ]);
       await taper(syslogSrv as unknown as Cli, ['systemctl start rsyslog']);
 
@@ -761,7 +738,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       expect(web).toMatch(/Welcome to nginx|nginx/i);
 
       // 5. Requête transactionnelle Oracle DB
-      const db = await pc.executeCommand(`echo "SELECT 'ALL_SYSTEMS_GO' FROM DUAL;" | sqlplus -S system/oracle@${ip}:1521/XE`);
+      const db = await pc.executeCommand(`echo "SELECT 'ALL_SYSTEMS_GO' FROM DUAL;" | sqlplus -S system/oracle@${ip}:1521/ORCL`);
       expect(db).toContain('ALL_SYSTEMS_GO');
 
       // 6. Présence des sessions dans la table de suivi

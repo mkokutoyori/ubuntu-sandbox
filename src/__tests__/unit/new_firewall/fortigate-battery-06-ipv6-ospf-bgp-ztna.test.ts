@@ -1,33 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createDevice, resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { describe, it, expect } from 'vitest';
+import { createDevice } from '@/network/devices/DeviceFactory';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { MACAddress, resetCounters } from '@/network/core/types';
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { Logger } from '@/network/core/Logger';
-
-beforeEach(() => {
-  resetCounters();
-  resetDeviceCounters();
-  MACAddress.resetCounter();
-  Logger.reset();
-  EquipmentRegistry.resetInstance();
-});
-
-interface Cli {
-  executeCommand(command: string): Promise<string>;
-  getPortNames(): string[];
-  getPort(name: string): unknown;
-}
-
-const REFUS = /Unknown action|command parse error|Invalid|Incomplete|Command fail/i;
-const refuse = (sortie: string): boolean => REFUS.test(sortie);
-
-async function taper(device: Cli, lignes: readonly string[]): Promise<void> {
-  for (const ligne of lignes) await device.executeCommand(ligne);
-}
+import { type Cli, refuse, taper } from './fortigateBatteryHarness';
 
 // Topologie Hybride Dual-Stack IPv4/IPv6 & Routage Dynamique :
 // PC-DualStack <-> Cisco SW-Dist <-> [FortiGate-Core] <-> Cisco R-BGP <-> SRV-Cluster (Web, DB, Auth, Storage)
@@ -41,10 +18,10 @@ interface LaboNextGen {
 
 async function creerLaboNextGen(): Promise<LaboNextGen> {
   const pc = new LinuxPC('linux-pc-ng', 'PC-DualStack', 50, 0);
-  const swDist = new CiscoSwitch('switch-cisco-dist', 'SW-Dist', 16, 250, 0);
+  const swDist = new CiscoSwitch('switch-cisco', 'SW-Dist', 16, 250, 0);
   const fw = createDevice('firewall-fortinet', 500, 0) as unknown as Cli;
-  const routerBgp = new CiscoSwitch('switch-cisco-bgp', 'R-BGP', 16, 750, 0);
-  const srvCluster = new LinuxServer('linux-server-cluster', 'SRV-Cluster', 950, 0);
+  const routerBgp = new CiscoSwitch('switch-cisco', 'R-BGP', 16, 750, 0);
+  const srvCluster = new LinuxServer('linux-server', 'SRV-Cluster', 950, 0);
 
   pc.powerOn();
   swDist.powerOn();
@@ -496,8 +473,8 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
 
     it('289. Chargement massif Oracle SQLLDR (SQL*Loader) : flux continu de données volumineuses sur port 1521', async () => {
       const { pc, srvCluster } = await creerLaboNextGen();
-      await taper(srvCluster as unknown as Cli, ['systemctl start oracle-xe']);
-      const res = await pc.executeCommand('tnsping 10.50.0.50:1521/XE');
+      await taper(srvCluster as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const res = await pc.executeCommand('tnsping 10.50.0.50:1521/ORCL');
       expect(res).toContain('OK');
     });
 
@@ -569,7 +546,7 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
     it('297. Protection contre la saturation de la table de session : SYN Proxy actif protégeant le serveur', async () => {
       const { fw } = await creerLaboNextGen();
       await taper(fw, [
-        'config firewall policy', 'edit 1', 'set tcp-session-without-syn enable', 'next', 'end',
+        'config firewall policy', 'edit 1', 'set tcp-session-without-syn enable', 'set service "ALL"', 'next', 'end',
       ]);
       const synStat = await fw.executeCommand('show firewall policy 1');
       expect(synStat).toContain('tcp-session-without-syn');
@@ -600,7 +577,7 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
       await taper(srvCluster as unknown as Cli, [
         'systemctl start named',
         'systemctl start nginx',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
         'systemctl start rsyslog-tls',
       ]);
 
@@ -613,7 +590,7 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
       expect(web).toMatch(/Welcome to nginx|nginx/i);
 
       // 4. Transaction Oracle SQL sur le chemin dynamique convergé
-      const query = 'echo "SELECT \'ULTIMATE_SYSTEM_VALIDATED\' FROM DUAL;" | sqlplus -S system/oracle@10.50.0.50:1521/XE';
+      const query = 'echo "SELECT \'ULTIMATE_SYSTEM_VALIDATED\' FROM DUAL;" | sqlplus -S system/oracle@10.50.0.50:1521/ORCL';
       const sqlRes = await pc.executeCommand(query);
       expect(sqlRes).toContain('ULTIMATE_SYSTEM_VALIDATED');
 

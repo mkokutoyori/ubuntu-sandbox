@@ -1,3 +1,4 @@
+import { FORTIOS_DEFAULT_SESSION_HELPERS } from './sessionHelpers';
 import { PREDEFINED_ADDRESSES, PREDEFINED_SERVICES } from './schema/predefined';
 import type { RuleAction } from '../../model/SecurityRule';
 import type { ZoneType } from '../../model/SecurityZone';
@@ -98,12 +99,15 @@ export const FORTIOS_PROFILE: FirewallProfile = Object.freeze({
 
   timeouts: Object.freeze({
     tcpEstablished: 3600,
-    tcpHandshake: 30,
-    tcpTimeWait: 120,
+    tcpHandshake: 10,
+    tcpTimeWait: 1,
+    tcpHalfClose: 120,
+    tcpReset: 5,
     udp: 180,
     icmp: 60,
     other: 180,
   }),
+  sessionHelpers: FORTIOS_DEFAULT_SESSION_HELPERS,
   tcpSynCheckDefault: true,
 
   deploymentScope: 'device',

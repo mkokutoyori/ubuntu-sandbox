@@ -1,36 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createDevice, resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { describe, it, expect } from 'vitest';
+import { createDevice } from '@/network/devices/DeviceFactory';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { WindowsServer } from '@/network/devices/WindowsServer';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { MACAddress, resetCounters } from '@/network/core/types';
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { Logger } from '@/network/core/Logger';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
-
-beforeEach(() => {
-  resetCounters();
-  resetDeviceCounters();
-  MACAddress.resetCounter();
-  Logger.reset();
-  EquipmentRegistry.resetInstance();
-});
-
-interface Cli {
-  executeCommand(command: string): Promise<string>;
-  getPortNames(): string[];
-  getPort(name: string): unknown;
-}
-
-const REFUS = /Unknown action|command parse error|Invalid|Incomplete|Command fail/i;
-const refuse = (sortie: string): boolean => REFUS.test(sortie);
-
-async function taper(device: Cli, lignes: readonly string[]): Promise<void> {
-  for (const ligne of lignes) await device.executeCommand(ligne);
-}
+import { type Cli, refuse, taper } from './fortigateBatteryHarness';
 
 // Helpers PowerShell et CMD Windows
 function pwsh(dev: WindowsPC | WindowsServer) {
@@ -65,11 +42,11 @@ interface LaboHybride {
 async function creerLaboHybride(): Promise<LaboHybride> {
   const winPc = new WindowsPC('windows-pc', 'WIN-CLI');
   const linuxPc = new LinuxPC('linux-pc', 'LINUX-CLI', 100, 0);
-  const swLan = new CiscoSwitch('switch-cisco-lan', 'SW-LAN', 16, 250, 0);
+  const swLan = new CiscoSwitch('switch-cisco', 'SW-LAN', 16, 250, 0);
   const fw = createDevice('firewall-fortinet', 500, 0) as unknown as Cli;
-  const swDmz = new CiscoSwitch('switch-cisco-dmz', 'SW-DMZ', 16, 750, 0);
+  const swDmz = new CiscoSwitch('switch-cisco', 'SW-DMZ', 16, 750, 0);
   const winDc = creerServeurWindows('DC01');
-  const linuxSrv = new LinuxServer('linux-server-prod', 'SRV-PROD', 900, 0);
+  const linuxSrv = new LinuxServer('linux-server', 'SRV-PROD', 900, 0);
 
   winPc.powerOn();
   linuxPc.powerOn();
@@ -293,7 +270,7 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
         'config firewall policy', 'edit 10',
         'set srcintf "port1"', 'set dstintf "dmz"',
         'set srcaddr "all"', 'set dstaddr "VIP_RDP_WIN"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const vipTest = await pwsh(winPc)('Test-NetConnection -ComputerName 192.168.1.1 -Port 33389');
       expect(vipTest).toMatch(/TcpTestSucceeded\s*:\s*True/i);
@@ -383,29 +360,29 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
   describe('Transactions Hybrides : Windows Server vers Base Oracle Linux', () => {
     it('330. Sondage du Listener Oracle (Port 1521) depuis PowerShell sur Windows Server', async () => {
       const { winDc, linuxSrv } = await creerLaboHybride();
-      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-ohasd']);
       const res = await pwsh(winDc)('Test-NetConnection -ComputerName 10.10.10.20 -Port 1521');
       expect(res).toMatch(/TcpTestSucceeded\s*:\s*True/i);
     });
 
     it('331. Exécution d\'une requête SQL*Plus depuis Windows Server vers la DB Oracle Linux distante', async () => {
       const { winDc, linuxSrv } = await creerLaboHybride();
-      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-xe']);
-      const query = 'cmd.exe /c "echo SELECT 777 FROM DUAL; | sqlplus -S system/oracle@10.10.10.20:1521/XE"';
+      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const query = 'cmd.exe /c "echo SELECT 777 FROM DUAL; | sqlplus -S system/oracle@10.10.10.20:1521/ORCL"';
       const sql = await pwsh(winDc)(query);
       expect(sql).toContain('777');
     });
 
     it('332. Maintien du Pool de Connexions applicatif entre le Web IIS et la Base Oracle Linux', async () => {
       const { winDc, linuxSrv } = await creerLaboHybride();
-      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-xe']);
-      const poolCheck = await pwsh(winDc)('tnsping 10.10.10.20:1521/XE');
+      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const poolCheck = await pwsh(winDc)('tnsping 10.10.10.20:1521/ORCL');
       expect(poolCheck).toMatch(/OK/);
     });
 
     it('333. Ségrégation de flux : la passerelle coupe Oracle 1521 sans couper le trafic Web IIS', async () => {
       const { winPc, fw, linuxSrv } = await creerLaboHybride();
-      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-ohasd']);
       await taper(fw, [
         'config firewall policy', 'edit 1',
         'set service "HTTP"', 'next', 'end',
@@ -418,17 +395,17 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
 
     it('334. Transaction Commit Windows -> Oracle Linux : persistance de données vérifiée côté Linux', async () => {
       const { winDc, linuxSrv } = await creerLaboHybride();
-      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-xe']);
-      const insert = 'cmd.exe /c "echo INSERT INTO aud (val) VALUES (42); COMMIT; | sqlplus -S system/oracle@10.10.10.20:1521/XE"';
+      await taper(linuxSrv as unknown as Cli, ['systemctl start oracle-ohasd']);
+      const insert = 'cmd.exe /c "echo INSERT INTO aud (val) VALUES (42); COMMIT; | sqlplus -S system/oracle@10.10.10.20:1521/ORCL"';
       await pwsh(winDc)(insert);
-      const verify = await linuxSrv.executeCommand('echo "SELECT val FROM aud;" | sqlplus -S system/oracle@localhost:1521/XE');
+      const verify = await linuxSrv.executeCommand('echo "SELECT val FROM aud;" | sqlplus -S system/oracle@localhost:1521/ORCL');
       expect(verify).toContain('42');
     });
 
     it('335. Détection de coupure Oracle Listener et remontée d\'erreur ORA dans l\'Event Viewer Windows', async () => {
       const { winDc, linuxSrv } = await creerLaboHybride();
-      await taper(linuxSrv as unknown as Cli, ['systemctl stop oracle-xe']);
-      const res = await pwsh(winDc)('cmd.exe /c "echo EXIT; | sqlplus -S system/oracle@10.10.10.20:1521/XE"');
+      await taper(linuxSrv as unknown as Cli, ['systemctl stop oracle-ohasd']);
+      const res = await pwsh(winDc)('cmd.exe /c "echo EXIT; | sqlplus -S system/oracle@10.10.10.20:1521/ORCL"');
       expect(res).toMatch(/ORA-12541|TNS:no listener/i);
     });
   });
@@ -510,7 +487,7 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
     it('344. Blocage par le pare-feu hôte Windows : un paquet accepté par FortiGate est détruit par Windows Defender', async () => {
       const { linuxPc, winDc } = await creerLaboHybride();
       await cmd(winDc, 'netsh advfirewall firewall add rule name="BlockLinux" dir=in action=block remoteip=192.168.1.10');
-      const res = await linuxPc.executeCommand('curl -s --connect-timeout 1 http://10.10.10.10/');
+      const res = await linuxPc.executeCommand('curl -sS --connect-timeout 1 http://10.10.10.10/');
       expect(res).toMatch(/Connection timed out|refused/i);
     });
 
@@ -565,7 +542,7 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
       await taper(linuxSrv as unknown as Cli, [
         'systemctl start named',
         'systemctl start nginx',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
         'systemctl start rsyslog',
       ]);
 
@@ -582,7 +559,7 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
       expect(apiRes).toMatch(/Welcome to nginx|nginx/i);
 
       // 6. Requête transactionnelle Oracle DB émise depuis Windows Server
-      const dbQuery = 'cmd.exe /c "echo SELECT \'HYBRID_CHAIN_2026_OK\' FROM DUAL; | sqlplus -S system/oracle@10.10.10.20:1521/XE"';
+      const dbQuery = 'cmd.exe /c "echo SELECT \'HYBRID_CHAIN_2026_OK\' FROM DUAL; | sqlplus -S system/oracle@10.10.10.20:1521/ORCL"';
       const dbRes = await pwsh(winDc)(dbQuery);
       expect(dbRes).toContain('HYBRID_CHAIN_2026_OK');
 

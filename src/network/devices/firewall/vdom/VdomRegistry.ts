@@ -1,4 +1,5 @@
 import type { AddressObject } from '../model/AddressObject';
+import type { IScheduler } from '@/events/Scheduler';
 import type { ServiceObject } from '../model/ServiceObject';
 import { ZoneTable } from '../model/ZoneTable';
 import { ObjectStore } from '../model/ObjectStore';
@@ -11,6 +12,7 @@ import { RouteTable } from '../l3/RouteTable';
 import { PolicyRouteTable } from '../l3/PolicyRouteTable';
 import { SessionTtlTable } from '../session/SessionTtlTable';
 import { SessionTable, type FirewallSession, type SessionCloseReason } from '../session/SessionTable';
+import { ExpectedFlowTable } from '../session/ExpectedFlowTable';
 import { PolicyEvaluator } from '../policy/PolicyEvaluator';
 import { DosPolicyStore } from '../dos/DosPolicyStore';
 import { DosSensor } from '../dos/DosSensor';
@@ -34,6 +36,7 @@ export interface VdomSettings {
   opmode: DeploymentMode;
   centralNat: boolean;
   tcpSessionWithoutSyn: boolean;
+  asymmetricRouting: { tcp: boolean; icmp: boolean };
   manageIP?: string;
   manageMask?: string;
   gateway?: string;
@@ -57,6 +60,7 @@ export interface VdomContext {
   readonly policyRoutes: PolicyRouteTable;
   readonly sessionTtl: SessionTtlTable;
   readonly sessions: SessionTable;
+  readonly expectedFlows: ExpectedFlowTable;
   readonly evaluator: PolicyEvaluator;
   readonly schedules: ScheduleStore;
   readonly logs: FirewallLogStore;
@@ -73,6 +77,7 @@ export const ROOT_VDOM = 'root';
 
 export interface VdomRegistryDeps {
   readonly now: () => number;
+  readonly scheduler?: () => IScheduler;
   readonly timezone: () => TimeZone;
   readonly deviceId: string;
   readonly bus: () => IEventBus;
@@ -184,6 +189,7 @@ export class VdomRegistry {
     const settings: VdomSettings = {
       opmode: 'nat', centralNat: false,
       tcpSessionWithoutSyn: deps.tcpSessionWithoutSyn,
+      asymmetricRouting: { tcp: false, icmp: false },
     };
     const zones = new ZoneTable();
     const objects = new ObjectStore({
@@ -209,10 +215,13 @@ export class VdomRegistry {
       isInterfaceUp: (iface) => deps.isInterfaceUp(iface),
     });
 
+    const expectedFlows = new ExpectedFlowTable();
     const sessions = new SessionTable({
       now: deps.now,
+      scheduler: deps.scheduler,
       onCreated: () => deps.onSessionCountChanged?.(sessions.count(), true),
       onClosed: (session, reason) => {
+        expectedFlows.forgetChildrenOf(session.id);
         deps.onSessionClosed(name, session, reason);
         deps.onSessionCountChanged?.(sessions.count(), false);
       },
@@ -266,6 +275,7 @@ export class VdomRegistry {
       policyRoutes: new PolicyRouteTable({ now: this.deps.now }),
       sessionTtl: new SessionTtlTable(),
       sessions,
+      expectedFlows,
       evaluator,
       schedules,
       logs: new FirewallLogStore(),

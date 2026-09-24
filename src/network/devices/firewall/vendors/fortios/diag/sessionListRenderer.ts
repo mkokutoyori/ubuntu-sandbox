@@ -26,14 +26,16 @@ export interface SessionRenderDeps {
 const UNSPECIFIED = Object.freeze({ ipv4: '0.0.0.0', ipv6: '::' });
 
 const TCP_PROTO_STATE: Readonly<Record<string, string>> = Object.freeze({
+  established: '01',
   'syn-sent': '02',
   'syn-received': '03',
-  established: '01',
-  'fin-wait': '04',
-  'close-wait': '05',
-  'last-ack': '06',
-  'time-wait': '07',
-  closed: '00',
+  'fin-wait-1': '04',
+  'fin-wait-2': '04',
+  closing: '04',
+  'time-wait': '05',
+  closed: '06',
+  'close-wait': '07',
+  'last-ack': '08',
 });
 
 export interface OriginalFlow {
@@ -97,7 +99,9 @@ function familyOf(deps: SessionRenderDeps): SessionFamily {
 function renderSession(session: FirewallSession, deps: SessionRenderDeps): string[] {
   const flow = originalFlow(session);
   const duration = Math.max(0, Math.floor((deps.now() - session.createdAt) / 1000));
-  const expire = Math.max(0, Math.floor((session.expiresAt - deps.now()) / 1000));
+  const expire = Number.isFinite(session.expiresAt)
+    ? String(Math.max(0, Math.floor((session.expiresAt - deps.now()) / 1000))) : 'never';
+  const timeout = Number.isFinite(session.timeoutSec) ? String(session.timeoutSec) : 'never';
   const counters = session.counters;
 
   const ingress = ifIndex(deps.interfaces, session.ingressInterface);
@@ -108,7 +112,7 @@ function renderSession(session: FirewallSession, deps: SessionRenderDeps): strin
   return [
     `${family === 'ipv6' ? 'session6' : 'session'} info:`
     + ` proto=${flow.protocol} proto_state=${protoState(session)}`
-    + ` duration=${duration} expire=${expire} timeout=${session.timeoutSec}`,
+    + ` duration=${duration} expire=${expire} timeout=${timeout}`,
     'flags=00000000 sockflag=00000000 sockport=0 av_idx=0 use=3',
     'origin-shaper=',
     'reply-shaper=',

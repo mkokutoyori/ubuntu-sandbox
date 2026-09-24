@@ -36,6 +36,7 @@ export interface LabelPlacement {
   vertical: boolean;
   halfLength: number;
   along: number;
+  shown: boolean;
 }
 
 export interface CableRoute extends CableLanes, PathResult {
@@ -254,21 +255,23 @@ export function polylineLength(points: ReadonlyArray<Point>): number {
   return total;
 }
 
+export function nearestOnSegment(p: Point, a: Point, b: Point): Point {
+  const vx = b.x - a.x;
+  const vy = b.y - a.y;
+  const squared = vx * vx + vy * vy;
+  const t = squared === 0
+    ? 0
+    : Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / squared));
+  return { x: a.x + vx * t, y: a.y + vy * t };
+}
+
 export function distanceToPolyline(p: Point, points: ReadonlyArray<Point>): number {
   if (points.length === 0) return Infinity;
   if (points.length === 1) return Math.hypot(p.x - points[0].x, p.y - points[0].y);
   let best = Infinity;
   for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1];
-    const b = points[i];
-    const vx = b.x - a.x;
-    const vy = b.y - a.y;
-    const squared = vx * vx + vy * vy;
-    const t = squared === 0
-      ? 0
-      : Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / squared));
-    const distance = Math.hypot(p.x - (a.x + vx * t), p.y - (a.y + vy * t));
-    if (distance < best) best = distance;
+    const near = nearestOnSegment(p, points[i - 1], points[i]);
+    best = Math.min(best, Math.hypot(p.x - near.x, p.y - near.y));
   }
   return best;
 }
@@ -445,24 +448,32 @@ function segmentIsVertical(from: Point, to: Point): boolean {
   return Math.abs(to.y - from.y) > Math.abs(to.x - from.x);
 }
 
-function labelRanges(points: ReadonlyArray<Point>, halfLength: number): LabelRange[] {
+function labelRanges(
+  points: ReadonlyArray<Point>,
+  halfLength: number,
+  halfThickness: number,
+  rotated: boolean,
+): LabelRange[] {
   const total = polylineLength(points);
-  const whole = total;
-  const first = LABEL_END_MARGIN + halfLength;
-  const last = total - LABEL_END_MARGIN - halfLength;
+  const extentOf = (from: Point, to: Point) =>
+    segmentIsVertical(from, to) === rotated ? halfLength : halfThickness;
+  const last = points.length - 1;
+  const first = LABEL_END_MARGIN + extentOf(points[0], points[1]);
+  const ceiling = total - LABEL_END_MARGIN - extentOf(points[last - 1], points[last]);
   const ranges: LabelRange[] = [];
   let at = 0;
   for (let i = 1; i < points.length; i++) {
     const length = segmentLength(points[i - 1], points[i]);
-    const from = Math.max(first, at + halfLength);
-    const to = Math.min(last, at + length - halfLength);
+    const extent = extentOf(points[i - 1], points[i]);
+    const from = Math.max(first, at + extent);
+    const to = Math.min(ceiling, at + length - extent);
     if (to >= from) {
       ranges.push({ from, to, vertical: segmentIsVertical(points[i - 1], points[i]) });
     }
     at += length;
   }
   if (ranges.length === 0) {
-    return [{ from: 0, to: whole, vertical: longestSegmentIsVertical(points) }];
+    return [{ from: 0, to: total, vertical: longestSegmentIsVertical(points) }];
   }
   return ranges;
 }
@@ -506,6 +517,7 @@ interface PlacedLabel {
   box: LabelBox;
   vertical: boolean;
   along: number;
+  shown: boolean;
 }
 
 function rangeHolding(
@@ -514,21 +526,39 @@ function rangeHolding(
   return ranges.find(range => along >= range.from - 1e-6 && along <= range.to + 1e-6);
 }
 
+export function boxToPolylineDistance(
+  box: LabelBox, points: ReadonlyArray<Point>,
+): number {
+  let best = Infinity;
+  for (let i = 1; i < points.length; i++) {
+    const near = nearestOnSegment(box.at, points[i - 1], points[i]);
+    best = Math.min(best, Math.hypot(
+      Math.max(0, Math.abs(near.x - box.at.x) - box.halfWidth),
+      Math.max(0, Math.abs(near.y - box.at.y) - box.halfHeight)));
+  }
+  return best;
+}
+
+interface Clearance {
+  hard: number;
+  soft: number;
+}
+
 function clearanceOf(
   box: LabelBox,
   others: ReadonlyArray<ReadonlyArray<Point>>,
   obstacles: ReadonlyArray<LabelBox>,
-): number {
-  let clearance = Infinity;
-  for (const other of others) clearance = Math.min(clearance, distanceToPolyline(box.at, other));
-  for (const taken of obstacles) clearance = Math.min(clearance, boxClearance(box, taken));
-  return clearance;
+): Clearance {
+  let soft = Infinity;
+  let hard = Infinity;
+  for (const other of others) soft = Math.min(soft, boxToPolylineDistance(box, other));
+  for (const taken of obstacles) hard = Math.min(hard, boxClearance(box, taken));
+  return { hard, soft };
 }
 
 function keepPlacement(
   points: ReadonlyArray<Point>,
-  ranges: ReadonlyArray<LabelRange>,
-  fromOwnEnd: number,
+  before: LabelPlacement,
   nearStart: boolean,
   others: ReadonlyArray<ReadonlyArray<Point>>,
   obstacles: ReadonlyArray<LabelBox>,
@@ -536,45 +566,48 @@ function keepPlacement(
   halfThickness: number,
 ): PlacedLabel | undefined {
   const total = polylineLength(points);
-  if (total === 0) return undefined;
-  const along = nearStart ? fromOwnEnd : total - fromOwnEnd;
-  const range = rangeHolding(ranges, along);
-  if (!range) return undefined;
+  if (total === 0 || !before.shown) return undefined;
+  const along = nearStart ? before.along : total - before.along;
+  const ranges = labelRanges(points, halfLength, halfThickness, before.vertical);
+  if (!rangeHolding(ranges, along)) return undefined;
   const box = boxAlong(
-    pointAlongPolyline(points, along / total), range.vertical, halfLength, halfThickness);
-  if (clearanceOf(box, others, obstacles) < LABEL_CLEARANCE_MIN) return undefined;
-  return { box, vertical: range.vertical, along: fromOwnEnd };
+    pointAlongPolyline(points, along / total), before.vertical, halfLength, halfThickness);
+  if (clearanceOf(box, others, obstacles).hard < LABEL_CLEARANCE_MIN) return undefined;
+  return { box, vertical: before.vertical, along: before.along, shown: true };
 }
 
-function placeEndLabel(
+interface OrientationTry {
+  best: PlacedLabel;
+  clearance: number;
+  proximity: number;
+  cleared: boolean;
+}
+
+function tryOrientation(
   points: ReadonlyArray<Point>,
-  ranges: ReadonlyArray<LabelRange>,
+  rotated: boolean,
   nearStart: boolean,
   others: ReadonlyArray<ReadonlyArray<Point>>,
   obstacles: ReadonlyArray<LabelBox>,
   halfLength: number,
   halfThickness: number,
-): PlacedLabel {
+): OrientationTry {
   const total = polylineLength(points);
+  const ranges = labelRanges(points, halfLength, halfThickness, rotated);
   const room = ranges.reduce((sum, range) => sum + (range.to - range.from), 0);
 
-  let best: PlacedLabel = {
-    box: boxAlong(points[0], ranges[0].vertical, halfLength, halfThickness),
-    vertical: ranges[0].vertical,
-    along: nearStart ? 0 : total,
-  };
+  let best: PlacedLabel | undefined;
   let bestClearance = -Infinity;
   let bestProximity = -Infinity;
+  let bestSoft = -Infinity;
   let cleared = false;
 
   for (let i = 0; i < LABEL_SAMPLES; i++) {
     let walk = room === 0 ? 0 : (room * i) / (LABEL_SAMPLES - 1);
-    let range = ranges[ranges.length - 1];
-    let along = range.to;
+    let along = ranges[ranges.length - 1].to;
     for (const candidate of ranges) {
       const span = candidate.to - candidate.from;
       if (walk <= span) {
-        range = candidate;
         along = candidate.from + walk;
         break;
       }
@@ -582,22 +615,50 @@ function placeEndLabel(
     }
     const box = boxAlong(
       pointAlongPolyline(points, total === 0 ? 0 : along / total),
-      range.vertical, halfLength, halfThickness);
-    const clearance = clearanceOf(box, others, obstacles);
+      rotated, halfLength, halfThickness);
+    const { hard, soft } = clearanceOf(box, others, obstacles);
+    const clearance = Math.min(hard, soft);
     const proximity = nearStart ? -along : along - total;
-    const clears = clearance >= LABEL_CLEARANCE_MIN;
+    const clears = hard >= LABEL_CLEARANCE_MIN;
     const better = clears
-      ? !cleared || proximity > bestProximity
+      ? !cleared || (soft >= LABEL_CLEARANCE_MIN && bestSoft < LABEL_CLEARANCE_MIN)
+        || ((soft >= LABEL_CLEARANCE_MIN) === (bestSoft >= LABEL_CLEARANCE_MIN)
+          && proximity > bestProximity)
       : !cleared && (clearance > bestClearance
         || (clearance === bestClearance && proximity > bestProximity));
-    if (better) {
-      best = { box, vertical: range.vertical, along: nearStart ? along : total - along };
+    if (!best || better) {
+      best = {
+        box, vertical: rotated,
+        along: nearStart ? along : total - along,
+        shown: clears,
+      };
       bestClearance = clearance;
       bestProximity = proximity;
+      bestSoft = soft;
       cleared = cleared || clears;
     }
   }
-  return best;
+  return { best: best!, clearance: bestClearance, proximity: bestProximity, cleared };
+}
+
+function placeEndLabel(
+  points: ReadonlyArray<Point>,
+  nearStart: boolean,
+  others: ReadonlyArray<ReadonlyArray<Point>>,
+  obstacles: ReadonlyArray<LabelBox>,
+  halfLength: number,
+  halfThickness: number,
+): PlacedLabel {
+  const flat = tryOrientation(
+    points, false, nearStart, others, obstacles, halfLength, halfThickness);
+  const upright = tryOrientation(
+    points, true, nearStart, others, obstacles, halfLength, halfThickness);
+  if (flat.cleared && upright.cleared) {
+    return flat.proximity >= upright.proximity - halfLength ? flat.best : upright.best;
+  }
+  if (flat.cleared) return flat.best;
+  if (upright.cleared) return upright.best;
+  return flat.clearance >= upright.clearance ? flat.best : upright.best;
 }
 
 interface EndLabel {
@@ -657,17 +718,16 @@ export function computeCableRoutes(
       end: EndLabel, nearStart: boolean, before: LabelPlacement | undefined,
     ): LabelPlacement => {
       const halfThickness = TAG_HEIGHT / (2 * zoom);
-      const ranges = labelRanges(points, end.halfLength);
       const placed = (before && before.text === end.text
-        ? keepPlacement(points, ranges, before.along, nearStart, others, obstacles,
+        ? keepPlacement(points, before, nearStart, others, obstacles,
           end.halfLength, halfThickness)
         : undefined)
-        ?? placeEndLabel(points, ranges, nearStart, others, obstacles,
+        ?? placeEndLabel(points, nearStart, others, obstacles,
           end.halfLength, halfThickness);
-      obstacles.push(placed.box);
+      if (placed.shown) obstacles.push(placed.box);
       return {
-        at: placed.box.at, text: end.text,
-        vertical: placed.vertical, halfLength: end.halfLength, along: placed.along,
+        at: placed.box.at, text: end.text, vertical: placed.vertical,
+        halfLength: end.halfLength, along: placed.along, shown: placed.shown,
       };
     };
 

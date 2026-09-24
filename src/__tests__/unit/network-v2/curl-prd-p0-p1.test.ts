@@ -104,9 +104,9 @@ describe('§P0 — aucune option acceptée n\'est sans effet observable', () => 
   it('un protocole que ce simulateur n\'héberge pas est refusé, pas simulé', async () => {
     const { client } = lab();
 
-    const out = await client.executeCommand('curl ftp://ftp.example.com/pub/file');
+    const out = await client.executeCommand('curl gopher://gopher.example.com/pub/file');
 
-    expect(out).toContain('curl: (1) Protocol "ftp" not supported or disabled in libcurl');
+    expect(out).toContain('curl: (1) Protocol "gopher" not supported or disabled in libcurl');
     expect((await client.executeCommand('echo $?')).trim()).toBe('1');
   });
 

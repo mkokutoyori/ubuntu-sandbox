@@ -305,7 +305,7 @@ describe('TcpStateMachine — delais par etat', () => {
   });
 
   it('honore les delais fournis par le profil', () => {
-    const m = new TcpStateMachine({ timeouts: { established: 1800, handshake: 20, timeWait: 15, closing: 10 } });
+    const m = new TcpStateMachine({ timeouts: { established: 1800, handshake: 20, timeWait: 15, closing: 10, reset: 0 } });
     m.onFirstPacket(SYN);
     expect(m.timeoutSec).toBe(20);
 

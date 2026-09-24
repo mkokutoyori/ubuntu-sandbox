@@ -4,6 +4,7 @@ import {
   type LldpSetting,
   type LldpVdomSetting,
 } from './types';
+import { FORTIOS_SESSION_HELPER_NAMES } from '../sessionHelpers';
 import {
   MANAGEMENT_SERVICES, type ManagementService,
 } from '../../../mgmt/ManagementAccess';
@@ -165,6 +166,15 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       DEFAULT_PASSWORD_HISTORY_THRESHOLD),
     enable('simulator-hints',
       '[simulator] Add a diagnostic line to refusals.', true),
+    count('tcp-halfopen-timer', 'Number of seconds the FortiGate unit should wait to close'
+      + ' a session after one peer has sent an open session packet but the other has not'
+      + ' responded.', 1, 86400, 10),
+    count('tcp-halfclose-timer', 'Number of seconds the FortiGate unit should wait to close'
+      + ' a session after one peer has sent a FIN packet but the other has not responded.',
+      1, 86400, 120),
+    count('tcp-timewait-timer', 'Length of the TCP TIME-WAIT state in seconds.', 1, 300, 1),
+    count('tcp-rst-timer', 'Length of the TCP CLOSE state in seconds.', 5, 300, 5),
+    count('udp-idle-timer', 'UDP connection session timeout.', 1, 86400, 180),
     {
       ...enable('auto-asic-offload', 'Enable/disable ASIC offloading.'),
       unimplemented: 'this simulator has no hardware acceleration model.',
@@ -209,6 +219,13 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       avFailopen: object.effective('av-failopen')[0] ?? 'pass',
       revisionOnLogout:
         object.effective('revision-backup-on-logout')[0] === 'enable',
+      sessionTimers: {
+        tcpHalfOpenSec: number('tcp-halfopen-timer', 10),
+        tcpHalfCloseSec: number('tcp-halfclose-timer', 120),
+        tcpTimeWaitSec: number('tcp-timewait-timer', 1),
+        tcpResetSec: number('tcp-rst-timer', 5),
+        udpIdleSec: number('udp-idle-timer', 180),
+      },
     });
   },
 };
@@ -390,6 +407,8 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
       ], 'global'),
     enable('tcp-session-without-syn',
       'Enable/disable allowing TCP session without SYN flags.'),
+    enable('asymroute', 'Enable/disable IPv4 asymmetric routing.'),
+    enable('asymroute-icmp', 'Enable/disable ICMP asymmetric routing.'),
   ],
   onCommit(object, context) {
     const management = object.effective('manageip');
@@ -400,6 +419,10 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
       object.effective('firewall-session-dirty')[0] ?? 'check-all');
     context.device.applyVdomSettings({
       tcpSessionWithoutSyn: object.effective('tcp-session-without-syn')[0] === 'enable',
+      asymmetricRouting: {
+        tcp: object.effective('asymroute')[0] === 'enable',
+        icmp: object.effective('asymroute-icmp')[0] === 'enable',
+      },
       centralNat: object.effective('central-nat')[0] === 'enable',
       opmode: object.effective('opmode')[0] === 'transparent' ? 'transparent' : 'nat',
       manageIP: management[0],
@@ -1062,6 +1085,49 @@ const SESSION_TTL_PORT: FortiTableSpec = {
   },
 };
 
+const SESSION_TTL_MIN_SEC = 300;
+const SESSION_TTL_MAX_SEC = 2_764_800;
+
+function sessionTtlSeconds(value: string): number | null {
+  if (value === 'never') return Number.POSITIVE_INFINITY;
+  if (!/^\d+$/.test(value)) return null;
+  const seconds = Number(value);
+  return seconds >= SESSION_TTL_MIN_SEC && seconds <= SESSION_TTL_MAX_SEC ? seconds : null;
+}
+
+export const SYSTEM_SESSION_HELPER: FortiTableSpec = {
+  path: ['system', 'session-helper'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: false,
+  scope: 'global',
+  accessGroup: 'sysgrp',
+  renderOrder: 79,
+  help: 'Configure session helper.',
+  attributes: [
+    {
+      name: 'id', help: 'Session helper ID.', quoted: false, readOnly: true,
+      parts: [{ name: 'id', type: 'INT', description: 'Session helper ID.', range: [0, 4294967295] }],
+    },
+    choice('name', 'Helper name.',
+      FORTIOS_SESSION_HELPER_NAMES.map(keyword => ({ keyword, description: `${keyword} session helper.` })),
+      'ftp'),
+    count('protocol', 'Protocol number.', 0, 255, 0),
+    count('port', 'Protocol port.', 0, 65535, 0),
+  ],
+  onCommit(object, context) {
+    context.device.applySessionHelper({
+      id: Number(object.key),
+      name: object.effective('name')[0] ?? 'ftp',
+      protocol: Number(object.effective('protocol')[0] ?? '0'),
+      port: Number(object.effective('port')[0] ?? '0'),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeSessionHelper(Number(key));
+  },
+};
+
 export const SYSTEM_SESSION_TTL: FortiTableSpec = {
   path: ['system', 'session-ttl'],
   kind: 'object',
@@ -1070,12 +1136,23 @@ export const SYSTEM_SESSION_TTL: FortiTableSpec = {
   renderOrder: 77,
   help: 'Configure the session timeouts.',
   attributes: [
-    count('default', 'Default session timeout for TCP, in seconds.', 300, 604800, 3600),
+    {
+      name: 'default',
+      help: 'Default timeout.',
+      quoted: false,
+      parts: [{
+        name: 'default', type: 'WORD',
+        description: 'Session timeout in seconds <300-2764800>, or `never`.',
+      }],
+      defaultValue: ['3600'],
+      acceptsValue: (value) => sessionTtlSeconds(value) !== null,
+      expectedValue: '<300-2764800> (minimum 300, maximum 2764800) or `never`.',
+    },
   ],
   children: [SESSION_TTL_PORT],
   onCommit(object, context) {
     context.device.applySessionTtlDefault(
-      Number(object.effective('default')[0] ?? '3600'));
+      sessionTtlSeconds(object.effective('default')[0] ?? '3600') ?? 3600);
   },
 };
 
@@ -1147,4 +1224,5 @@ export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_DHCP6_SERVER,
   SYSTEM_NTP,
   SYSTEM_SESSION_TTL,
+  SYSTEM_SESSION_HELPER,
 ]);

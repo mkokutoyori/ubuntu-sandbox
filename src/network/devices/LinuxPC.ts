@@ -8,6 +8,8 @@
 import type { DeviceType } from '../core/types';
 import { LinuxMachine } from './LinuxMachine';
 import { LINUX_PC_PROFILE } from './linux/LinuxProfile';
+import { installOracleClientHooks } from './linux/oracleClientHooks';
+import type { HostCapableDevice } from '@/network';
 
 export class LinuxPC extends LinuxMachine {
   constructor(a?: DeviceType | string, b?: string | number, c?: number, d?: number) {
@@ -33,5 +35,6 @@ export class LinuxPC extends LinuxMachine {
       y = d ?? 0;
     }
     super(type, name, x, y, LINUX_PC_PROFILE);
+    installOracleClientHooks(this as unknown as HostCapableDevice, this.id, this.executor);
   }
 }

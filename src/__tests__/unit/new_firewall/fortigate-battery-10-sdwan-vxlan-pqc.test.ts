@@ -1,36 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createDevice, resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { describe, it, expect } from 'vitest';
+import { createDevice } from '@/network/devices/DeviceFactory';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { WindowsServer } from '@/network/devices/WindowsServer';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { MACAddress, resetCounters } from '@/network/core/types';
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { Logger } from '@/network/core/Logger';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
-
-beforeEach(() => {
-  resetCounters();
-  resetDeviceCounters();
-  MACAddress.resetCounter();
-  Logger.reset();
-  EquipmentRegistry.resetInstance();
-});
-
-interface Cli {
-  executeCommand(command: string): Promise<string>;
-  getPortNames(): string[];
-  getPort(name: string): unknown;
-}
-
-const REFUS = /Unknown action|command parse error|Invalid|Incomplete|Command fail/i;
-const refuse = (sortie: string): boolean => REFUS.test(sortie);
-
-async function taper(device: Cli, lignes: readonly string[]): Promise<void> {
-  for (const ligne of lignes) await device.executeCommand(ligne);
-}
+import { type Cli, refuse, taper } from './fortigateBatteryHarness';
 
 function pwsh(dev: WindowsPC | WindowsServer) {
   const ps = PowerShellSubShell.create(dev as never).subShell;
@@ -62,10 +39,10 @@ interface LaboNextGenSDWAN {
 async function creerLaboSDWAN(): Promise<LaboNextGenSDWAN> {
   const pc = new LinuxPC('linux-pc', 'PC-Linux', 100, 0);
   const winClient = new WindowsPC('windows-pc', 'WIN-CLI');
-  const swAccess = new CiscoSwitch('switch-cisco-acc', 'SW-ACC', 16, 250, 0);
+  const swAccess = new CiscoSwitch('switch-cisco', 'SW-ACC', 16, 250, 0);
   const fw = createDevice('firewall-fortinet', 500, 0) as unknown as Cli;
-  const swWan = new CiscoSwitch('switch-cisco-wan', 'SW-WAN', 16, 750, 0);
-  const srvLinux = new LinuxServer('linux-server-prod', 'SRV-LNX', 950, -100);
+  const swWan = new CiscoSwitch('switch-cisco', 'SW-WAN', 16, 750, 0);
+  const srvLinux = new LinuxServer('linux-server', 'SRV-LNX', 950, -100);
   const srvWin = serveurWindows('SRV-WIN');
 
   pc.powerOn();
@@ -158,7 +135,7 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
 
     it('453. Détection de dégradation progressive (Brownout) et bascule instantanée du flux critique vers WAN2', async () => {
       const { pc, fw, srvLinux } = await creerLaboSDWAN();
-      await taper(srvLinux as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srvLinux as unknown as Cli, ['systemctl start oracle-ohasd']);
       // Simulation d'une gigue artificielle sur WAN1
       await fw.executeCommand('diagnose sys sdwan health-check set-jitter wan1 40');
       const ping = await pc.executeCommand('ping -c 2 10.50.0.10');
@@ -431,7 +408,7 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
       const { fw } = await creerLaboSDWAN();
       await taper(fw, [
         'config firewall policy', 'edit 1',
-        'set auto-asic-offload enable', 'next', 'end',
+        'set auto-asic-offload enable', 'set service "ALL"', 'next', 'end',
       ]);
       const pol = await fw.executeCommand('show firewall policy 1');
       expect(pol).toContain('auto-asic-offload enable');
@@ -474,7 +451,7 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
       await taper(fw, [
         'config firewall policy', 'edit 100',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'set inspection-mode flow', 'next', 'end',
+        'set action accept', 'set inspection-mode flow', 'set service "ALL"', 'next', 'end',
       ]);
       const mode = await fw.executeCommand('show firewall policy 100');
       expect(mode).toContain('inspection-mode flow');
@@ -499,10 +476,10 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
   describe('L\'Épreuve Royale du Jubilé (Tests 491 à 500)', () => {
     it('491. SD-WAN Brownout Failover en temps réel sur une transaction Oracle SQL*Plus active', async () => {
       const { pc, fw, srvLinux } = await creerLaboSDWAN();
-      await taper(srvLinux as unknown as Cli, ['systemctl start oracle-xe']);
+      await taper(srvLinux as unknown as Cli, ['systemctl start oracle-ohasd']);
       // Déclenchement de brownout simulé
       await fw.executeCommand('diagnose sys sdwan health-check set-loss wan1 20');
-      const sql = await pc.executeCommand('echo "SELECT \'SDWAN_RESILIENT\' FROM DUAL;" | sqlplus -S system/oracle@10.50.0.10:1521/XE');
+      const sql = await pc.executeCommand('echo "SELECT \'SDWAN_RESILIENT\' FROM DUAL;" | sqlplus -S system/oracle@10.50.0.10:1521/ORCL');
       expect(sql).toContain('SDWAN_RESILIENT');
     });
 
@@ -537,7 +514,7 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
       await taper(fw, [
         'config firewall policy', 'edit 496',
         'set srcintf "wan1"', 'set dstintf "wan2"',
-        'set action deny', 'next', 'end',
+        'set action deny', 'set service "ALL"', 'next', 'end',
       ]);
       const pol = await fw.executeCommand('show firewall policy 496');
       expect(pol).toContain('set action deny');
@@ -562,14 +539,14 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
       const { pc, winClient, srvLinux, srvWin } = await creerLaboSDWAN();
       await taper(srvLinux as unknown as Cli, [
         'systemctl start nginx',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
       ]);
       await pwsh(srvWin)('Install-WindowsFeature -Name Web-Server');
 
       const [resHttpLnx, resHttpWin, resSql] = await Promise.all([
         pc.executeCommand('curl -s http://10.50.0.10/'),
         pwsh(winClient)('(Invoke-WebRequest -Uri "http://10.50.0.20/").StatusCode'),
-        pc.executeCommand('echo "SELECT 500 FROM DUAL;" | sqlplus -S system/oracle@10.50.0.10:1521/XE'),
+        pc.executeCommand('echo "SELECT 500 FROM DUAL;" | sqlplus -S system/oracle@10.50.0.10:1521/ORCL'),
       ]);
 
       expect(resHttpLnx).toMatch(/Welcome to nginx|nginx/i);
@@ -583,7 +560,7 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
       // 1. Démarrage des briques serveurs
       await taper(srvLinux as unknown as Cli, [
         'systemctl start nginx-pqc',
-        'systemctl start oracle-xe',
+        'systemctl start oracle-ohasd',
         'systemctl start rsyslog',
       ]);
       await pwsh(srvWin)('Install-WindowsFeature -Name AD-Domain-Services,DNS,Web-Server');
@@ -601,7 +578,7 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
       expect(pqcWeb).toMatch(/Welcome to nginx|nginx/i);
 
       // 5. Transaction SQL vers le moteur Oracle XE
-      const oracleRes = await pc.executeCommand('echo "SELECT \'500_TESTS_ACHIEVED_EXCELLENCE\' FROM DUAL;" | sqlplus -S system/oracle@10.50.0.10:1521/XE');
+      const oracleRes = await pc.executeCommand('echo "SELECT \'500_TESTS_ACHIEVED_EXCELLENCE\' FROM DUAL;" | sqlplus -S system/oracle@10.50.0.10:1521/ORCL');
       expect(oracleRes).toContain('500_TESTS_ACHIEVED_EXCELLENCE');
 
       // 6. Émission du log d\'audit final couronnant le succès des 500 tests

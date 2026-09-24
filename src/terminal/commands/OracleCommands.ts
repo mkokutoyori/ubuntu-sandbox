@@ -10,6 +10,7 @@ import { getOracleDatabase, initOracleFilesystem } from './database';
 import { parseConnectIdentifier, resolveOracleConnectTarget } from './oracleNet';
 import { ORACLE_CONFIG, ORACLE_BANNER, TNS_ERRORS } from '@/database/oracle/OracleConfig';
 import { DataPumpEngine, type TableExistsAction } from '@/database/oracle/datapump/DataPumpEngine';
+import { getDefaultScheduler } from '@/events/Scheduler';
 
 /** Callback to append a line to the terminal. */
 type OutputFn = (text: string, type?: string) => void;
@@ -276,6 +277,8 @@ export function handleTnsping(
   // tnsping only checks that a listener answers at the endpoint — it
   // does NOT validate the service (real tnsping says OK even for an
   // unknown service, because it never sends a CONNECT_DATA probe).
+  const clock = getDefaultScheduler();
+  const sentAt = clock.now();
   const probe = resolveOracleConnectTarget(
     device, `//${desc.host}:${desc.port}/${desc.service}`, getOracleDatabase);
   if (probe.ok === false && !/ORA-12514|ORA-12528/.test(probe.error)) {
@@ -284,8 +287,7 @@ export function handleTnsping(
   } else {
     // Listener answered; service-level refusals (ORA-12514/12528) are
     // invisible to tnsping — it never sends a CONNECT_DATA probe.
-    const latency = Math.floor(Math.random() * 5) + 1;
-    addLine(`OK (${latency} msec)`);
+    addLine(`OK (${Math.round(clock.now() - sentAt)} msec)`);
   }
 }
 

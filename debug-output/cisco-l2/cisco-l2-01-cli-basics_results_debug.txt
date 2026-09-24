@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-09-14T11:20:47.258Z
+Generated: 2026-09-24T08:07:50.417Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -149,7 +149,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *11:20:47.000 UTC Mon Sep 14 2026
+  *08:07:50.000 UTC Thu Sep 24 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -208,8 +208,8 @@ Total steps: 366
   Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
-  Gi0/1                        connected    trunk      a-full a-1000 1000BASE-T
-  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
+  Gi0/1                        connected    trunk      a-full a-1000 10/100/1000BaseTX
+  Gi0/2                        notconnect   1            auto   auto 10/100/1000BaseTX
 
 
 --- [17] § enter privileged EXEC ---
@@ -352,6 +352,7 @@ Total steps: 366
     spanning-tree  Restart protocol migration
 
 [22/366] sw1 SW1# debug ?
+    aaa                AAA accounting
     all                Enable all debugging
     arp                Enable ARP debug
     cdp                Debug CDP
@@ -364,7 +365,9 @@ Total steps: 366
     mac                Enable MAC table debugging
     mac-address-table  Enable MAC table debugging
     port-security      Debug port security
+    radius             Debug RADIUS
     spanning-tree      Enable STP debugging
+    tacacs             Debug TACACS+
     vxlan              Debug VXLAN
 
 [23/366] sw1 SW1# write ?
@@ -493,7 +496,7 @@ Total steps: 366
 
 [29/366] sw1 SW1# show inventory
   NAME: "WS-C3560-24TS-S chassis", DESCR: "Cisco Catalyst 3560 Multilayer Switch"
-  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC7514GHS5
+  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC9427RJ60
 
 [30/366] sw1 SW1# show flash:
   Directory of flash:/
@@ -1138,8 +1141,8 @@ Total steps: 366
   Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
-  Gi0/1                        connected    trunk      a-full a-1000 1000BASE-T
-  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
+  Gi0/1                        connected    trunk      a-full a-1000 10/100/1000BaseTX
+  Gi0/2                        notconnect   1            auto   auto 10/100/1000BaseTX
 
 [43/366] sw1 SW1# show interfaces trunk
   Port        Mode             Encapsulation  Status        Native vlan
@@ -1348,7 +1351,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *11:20:47.000 UTC Mon Sep 14 2026
+  *08:07:50.000 UTC Thu Sep 24 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1500,15 +1503,15 @@ Total steps: 366
   
   Log Buffer (4096 bytes):
   
-  *Sep 14 11:20:46.864: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Sep 14 11:20:46.865: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Sep 14 11:20:46.872: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Sep 14 11:20:46.872: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Sep 14 11:20:46.874: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Sep 14 11:20:46.874: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Sep 14 11:20:46.896: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 14 11:20:46.896: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 14 11:20:47.031: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 24 08:07:50.200: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Sep 24 08:07:50.200: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Sep 24 08:07:50.204: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Sep 24 08:07:50.204: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Sep 24 08:07:50.206: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Sep 24 08:07:50.206: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Sep 24 08:07:50.211: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 24 08:07:50.211: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 24 08:07:50.286: %SYS-5-CONFIG_I: Configured from console by console
 
 [60/366] sw1 SW1# show boot
   BOOT path-list      : 
@@ -1535,22 +1538,22 @@ Total steps: 366
   Current privilege level is 15
 
 [63/366] sw1 SW1# show ip arp
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  192.168.1.11     0           0200.0000.004f    ARPA   FastEthernet0/1
-  Internet  192.168.1.13     0           0200.0000.0057    ARPA   FastEthernet0/3
-  Internet  192.168.1.21     0           0200.0000.005b    ARPA   GigabitEthernet0/1
-  Internet  192.168.1.23     0           0200.0000.0063    ARPA   GigabitEthernet0/1
-  Internet  192.168.1.12     0           0200.0000.0053    ARPA   FastEthernet0/2
-  Internet  192.168.1.22     0           0200.0000.005f    ARPA   GigabitEthernet0/1
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  192.168.1.11         0              0200.0000.004f    ARPA      FastEthernet0/1
+  Internet  192.168.1.13         0              0200.0000.0057    ARPA      FastEthernet0/3
+  Internet  192.168.1.21         0              0200.0000.005b    ARPA      GigabitEthernet0/1
+  Internet  192.168.1.23         0              0200.0000.0063    ARPA      GigabitEthernet0/1
+  Internet  192.168.1.12         0              0200.0000.0053    ARPA      FastEthernet0/2
+  Internet  192.168.1.22         0              0200.0000.005f    ARPA      GigabitEthernet0/1
 
 [64/366] sw1 SW1# show arp
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  192.168.1.11     0           0200.0000.004f    ARPA   FastEthernet0/1
-  Internet  192.168.1.13     0           0200.0000.0057    ARPA   FastEthernet0/3
-  Internet  192.168.1.21     0           0200.0000.005b    ARPA   GigabitEthernet0/1
-  Internet  192.168.1.23     0           0200.0000.0063    ARPA   GigabitEthernet0/1
-  Internet  192.168.1.12     0           0200.0000.0053    ARPA   FastEthernet0/2
-  Internet  192.168.1.22     0           0200.0000.005f    ARPA   GigabitEthernet0/1
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  192.168.1.11         0              0200.0000.004f    ARPA      FastEthernet0/1
+  Internet  192.168.1.13         0              0200.0000.0057    ARPA      FastEthernet0/3
+  Internet  192.168.1.21         0              0200.0000.005b    ARPA      GigabitEthernet0/1
+  Internet  192.168.1.23         0              0200.0000.0063    ARPA      GigabitEthernet0/1
+  Internet  192.168.1.12         0              0200.0000.0053    ARPA      FastEthernet0/2
+  Internet  192.168.1.22         0              0200.0000.005f    ARPA      GigabitEthernet0/1
 
 
 --- [65] § terminal session settings ---
@@ -2030,8 +2033,8 @@ Total steps: 366
   Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
-  Gi0/1                        connected    trunk      a-full a-1000 1000BASE-T
-  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
+  Gi0/1                        connected    trunk      a-full a-1000 10/100/1000BaseTX
+  Gi0/2                        notconnect   1            auto   auto 10/100/1000BaseTX
 
 [109/366] sw1 SW1# sh mac add
   Mac Address Table
@@ -3009,8 +3012,8 @@ Total steps: 366
   Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
-  Gi0/1                        connected    trunk      a-full a-1000 1000BASE-T
-  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
+  Gi0/1                        connected    trunk      a-full a-1000 10/100/1000BaseTX
+  Gi0/2                        notconnect   1            auto   auto 10/100/1000BaseTX
 
 
 --- [180] § host inspection — L1 (Linux) ---
@@ -3197,11 +3200,11 @@ Total steps: 366
          valid_lft forever preferred_lft forever
 
 [195/366] srv1 srv1$ ip -br link
-  lo              UNKNOWN       00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP>
-  eth0            UP            02:00:00:00:00:57 <BROADCAST,UP,MULTICAST,LOWER_UP>
-  eth1            DOWN          02:00:00:00:00:58 <NO-CARRIER,BROADCAST,UP,MULTICAST>
-  eth2            DOWN          02:00:00:00:00:59 <NO-CARRIER,BROADCAST,UP,MULTICAST>
-  eth3            DOWN          02:00:00:00:00:5a <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  lo               UNKNOWN        00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP> 
+  eth0             UP             02:00:00:00:00:57 <BROADCAST,UP,MULTICAST,LOWER_UP> 
+  eth1             DOWN           02:00:00:00:00:58 <NO-CARRIER,BROADCAST,UP,MULTICAST> 
+  eth2             DOWN           02:00:00:00:00:59 <NO-CARRIER,BROADCAST,UP,MULTICAST> 
+  eth3             DOWN           02:00:00:00:00:5a <NO-CARRIER,BROADCAST,UP,MULTICAST> 
 
 [196/366] srv1 srv1$ ss -tlnp
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
@@ -3578,11 +3581,11 @@ Total steps: 366
   user
 
 [252/366] l1 l1$ ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            UP            192.168.1.11/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             UP             192.168.1.11/24 fe80::ff:fe00:4f/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 [253/366] l1 l1$ ip neigh
   192.168.1.13 dev eth0 lladdr 02:00:00:00:00:57 REACHABLE
@@ -3601,7 +3604,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   11:20:49 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   08:07:51 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [257/366] w1 w1$ hostname
   W1
@@ -3708,7 +3711,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          9/14/2026, 11:20:46 AM
+  System Boot Time:          9/24/2026, 8:07:50 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3741,11 +3744,11 @@ Total steps: 366
   root
 
 [265/366] srv1 srv1$ ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            UP            192.168.1.13/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             UP             192.168.1.13/24 fe80::ff:fe00:57/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 [266/366] srv1 srv1$ ip neigh
   192.168.1.11 dev eth0 lladdr 02:00:00:00:00:4f REACHABLE
@@ -3764,7 +3767,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   11:20:49 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   08:07:51 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -3773,11 +3776,11 @@ Total steps: 366
   user
 
 [272/366] l2 l2$ ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            UP            192.168.1.21/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             UP             192.168.1.21/24 fe80::ff:fe00:5b/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 [273/366] l2 l2$ ip neigh
   192.168.1.11 dev eth0 lladdr 02:00:00:00:00:4f REACHABLE
@@ -3796,7 +3799,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   11:20:49 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   08:07:51 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [277/366] w2 w2$ hostname
   W2
@@ -3903,7 +3906,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          9/14/2026, 11:20:46 AM
+  System Boot Time:          9/24/2026, 8:07:50 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3936,11 +3939,11 @@ Total steps: 366
   root
 
 [285/366] srv2 srv2$ ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            UP            192.168.1.23/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             UP             192.168.1.23/24 fe80::ff:fe00:63/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 [286/366] srv2 srv2$ ip neigh
   192.168.1.11 dev eth0 lladdr 02:00:00:00:00:4f REACHABLE
@@ -3959,27 +3962,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   11:20:49 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   08:07:51 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=4.089 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.910 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=7.585 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.440 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.910/2.499/4.089/1.590 ms
+  rtt min/avg/max/mdev = 0.440/4.012/7.585/3.572 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.389 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.946 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=5.031 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.542 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.946/1.168/1.389/0.222 ms
+  rtt min/avg/max/mdev = 0.542/2.787/5.031/2.244 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -4023,11 +4026,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       7 packets input, 632 bytes, 0 no buffer
-       Received 1 broadcasts (2 multicasts)
+       9 packets input, 784 bytes, 0 no buffer
+       Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       24 packets output, 1878 bytes, 0 underruns
+       39 packets output, 3102 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4044,11 +4047,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       6 packets input, 520 bytes, 0 no buffer
-       Received 1 broadcasts (3 multicasts)
+       10 packets input, 868 bytes, 0 no buffer
+       Received 1 broadcasts (7 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       19 packets output, 1444 bytes, 0 underruns
+       32 packets output, 2472 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4065,11 +4068,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 226 bytes, 0 no buffer
-       Received 1 broadcasts (2 multicasts)
+       5 packets input, 382 bytes, 0 no buffer
+       Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       16 packets output, 1192 bytes, 0 underruns
+       31 packets output, 2412 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4515,11 +4518,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       5 packets input, 428 bytes, 0 no buffer
-       Received 1 broadcasts (2 multicasts)
+       7 packets input, 580 bytes, 0 no buffer
+       Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       23 packets output, 1738 bytes, 0 underruns
+       38 packets output, 2962 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4536,11 +4539,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       4 packets input, 316 bytes, 0 no buffer
-       Received 1 broadcasts (3 multicasts)
+       8 packets input, 664 bytes, 0 no buffer
+       Received 1 broadcasts (7 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       18 packets output, 1304 bytes, 0 underruns
+       31 packets output, 2332 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4557,11 +4560,11 @@ Total steps: 366
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 226 bytes, 0 no buffer
-       Received 1 broadcasts (2 multicasts)
+       5 packets input, 382 bytes, 0 no buffer
+       Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       17 packets output, 1256 bytes, 0 underruns
+       32 packets output, 2476 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

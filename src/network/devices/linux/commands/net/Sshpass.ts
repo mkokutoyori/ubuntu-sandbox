@@ -1,4 +1,5 @@
 import type { LinuxCommand } from '../LinuxCommand';
+import { runSsh } from './Ssh';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
 
@@ -38,7 +39,7 @@ export const sshpassCommand: LinuxCommand = {
     const { password, wrapped } = splitSshpass(args);
     const verb = wrapped[0];
     if (verb === 'ssh') {
-      return ctx.executor.runSshExecAsync(wrapped.slice(1), password);
+      return runSsh(ctx, wrapped.slice(1), stdin, password);
     }
     if (verb === 'scp' || verb === 'sftp') {
       return ctx.executor.runSshTransportAsync(verb, wrapped.slice(1), password ?? '', stdin);

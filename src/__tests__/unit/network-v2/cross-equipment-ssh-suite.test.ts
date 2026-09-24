@@ -172,9 +172,15 @@ const SECRETS: ReadonlyArray<readonly [RegExp, string]> = [
 /** `MYVAR=1 ssh …` reste un appel client : l'affectation precede le verbe. */
 const APPEL_CLIENT = /(^|[|;&]\s*)(\w+=\S*\s+)*(ssh|scp|sftp|stelnet)\s/;
 
+function secretOf(destination: string): string | undefined {
+  return SECRETS.find(([motif]) => motif.test(destination))?.[1];
+}
+
 function motDePasseTape(cmd: string): string | undefined {
   if (!APPEL_CLIENT.test(cmd) || /\bsshpass\b/.test(cmd)) return undefined;
-  return SECRETS.find(([motif]) => motif.test(cmd))?.[1];
+  const rebond = /\s-J\s+(\S+)\s+(\S+)/.exec(cmd);
+  if (!rebond) return secretOf(cmd);
+  return [...rebond[1].split(','), rebond[2]].map((saut) => secretOf(` ${saut}`) ?? '').join('');
 }
 
 function tapeSurUneCli(dev: unknown): boolean {
