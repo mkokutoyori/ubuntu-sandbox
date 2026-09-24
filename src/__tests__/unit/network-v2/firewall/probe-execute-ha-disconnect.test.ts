@@ -124,7 +124,8 @@ describe('execute ha disconnect', () => {
       `execute ha disconnect ${b.fw.serialNumber()} port1 10.9.9.9 255.255.255.0`);
 
     expect(adresse(b, 'port1')).toBe('10.9.9.9');
-    expect(adresse(b, 'port2')).toBe('0.0.0.0');
+    expect(adresse(b, 'port2')).toBe('');
+    expect(b.fw.getInterfaceTable().connectedRoutes().map((r) => r.iface)).toEqual(['port1']);
   });
 
   it('tout acces de gestion est ouvert sur l\'interface nommee', () => {

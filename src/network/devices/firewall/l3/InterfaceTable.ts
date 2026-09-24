@@ -60,6 +60,12 @@ interface InterfaceRecord {
   description?: string;
 }
 
+const UNSET_ADDRESS = '0.0.0.0';
+
+function assignedAddress(ip: string | undefined): string | undefined {
+  return ip === UNSET_ADDRESS ? undefined : ip;
+}
+
 export class InterfaceTable {
   private readonly interfaces = new Map<string, InterfaceRecord>();
   private readonly portOf: InterfacePortLookup;
@@ -70,14 +76,15 @@ export class InterfaceTable {
 
   configure(name: string, config: InterfaceConfig): void {
     const existing = this.read(name);
+    const ip = assignedAddress(config.ip ?? existing?.ip);
     const mask = config.mask ?? (config.prefixLength !== undefined
       ? uint32ToIp(prefixLengthToMaskUint32(config.prefixLength))
       : existing?.mask);
 
     const record: InterfaceRecord = {
       name,
-      ip: config.ip ?? existing?.ip,
-      mask,
+      ip,
+      mask: ip === undefined ? undefined : mask,
       up: config.up ?? existing?.up ?? true,
       mtu: config.mtu ?? existing?.mtu ?? DEFAULT_MTU,
       description: config.description ?? existing?.description,
@@ -172,8 +179,10 @@ export class InterfaceTable {
     const description = port.getDescriptionText();
     return {
       name,
-      ip: port.getIPAddress()?.toString(),
-      mask: port.getSubnetMask()?.toString(),
+      ip: assignedAddress(port.getIPAddress()?.toString()),
+      mask: assignedAddress(port.getIPAddress()?.toString()) === undefined
+        ? undefined
+        : port.getSubnetMask()?.toString(),
       up: port.getIsUp(),
       mtu: port.getMTU(),
       description: description === '' ? undefined : description,
