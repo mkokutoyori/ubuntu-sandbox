@@ -4,7 +4,9 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { type Cli, taper } from './fortigateBatteryHarness';
+import {
+  type Cli, taper, serveZones, labZone, LAB_REVERSE_ZONE, grantKeyAccess,
+} from './fortigateBatteryHarness';
 
 // Topologie complète : [Client PC] -- (L2 Switch) -- [Port1 FW Wan1] -- [Serveur WAN/DMZ]
 interface LaboTraverse {
@@ -60,44 +62,6 @@ async function creerLaboTraverse(): Promise<LaboTraverse> {
   ]);
 
   return { pc, sw, fw, srv };
-}
-
-async function serveLabZone(srv: LinuxServer): Promise<void> {
-  const forward = [
-    '$TTL 3600',
-    '@ IN SOA ns1.lab.lan. admin.lab.lan. ( 1 3600 900 604800 300 )',
-    '@ IN NS ns1.lab.lan.',
-    'ns1 IN A 203.0.113.9',
-    'srv IN A 203.0.113.9',
-    'web IN A 203.0.113.9',
-  ].join('\\n');
-  const reverse = [
-    '$TTL 3600',
-    '@ IN SOA ns1.lab.lan. admin.lab.lan. ( 1 3600 900 604800 300 )',
-    '@ IN NS ns1.lab.lan.',
-    '9 IN PTR srv.lab.lan.',
-  ].join('\\n');
-  await taper(srv as unknown as Cli, [
-    'apt install -y bind9',
-    `printf '${forward}\\n' > /etc/bind/db.lab.lan`,
-    `printf '${reverse}\\n' > /etc/bind/db.203.0.113`,
-    `echo 'zone "lab.lan" { type master; file "/etc/bind/db.lab.lan"; };' >> /etc/bind/named.conf.local`,
-    `echo 'zone "113.0.203.in-addr.arpa" { type master; file "/etc/bind/db.203.0.113"; };' >> /etc/bind/named.conf.local`,
-    'systemctl start named',
-  ]);
-}
-
-async function grantKeyAccess(pc: LinuxPC, srv: LinuxServer): Promise<void> {
-  await pc.executeCommand('ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519');
-  const publicKey = (await pc.executeCommand('cat ~/.ssh/id_ed25519.pub')).trim();
-  await taper(srv as unknown as Cli, [
-    'useradd -m user',
-    'mkdir -p /home/user/.ssh',
-    `echo '${publicKey}' >> /home/user/.ssh/authorized_keys`,
-    'chown -R user:user /home/user/.ssh',
-    'chmod 700 /home/user/.ssh',
-    'chmod 600 /home/user/.ssh/authorized_keys',
-  ]);
 }
 
 // Active une politique FW générique LAN -> WAN
@@ -307,7 +271,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'SSH');
       await taper(srv as unknown as Cli, ['systemctl start sshd']);
-      await grantKeyAccess(pc, srv);
+      await grantKeyAccess(pc as unknown as Cli, srv as unknown as Cli);
       const res = await pc.executeCommand('ssh -o StrictHostKeyChecking=no -o ConnectTimeout=2 203.0.113.9 "echo SSH_OK"');
       expect(res).toContain('SSH_OK');
     });
@@ -316,7 +280,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'SSH');
       await taper(srv as unknown as Cli, ['systemctl start sshd']);
-      await grantKeyAccess(pc, srv);
+      await grantKeyAccess(pc as unknown as Cli, srv as unknown as Cli);
       await taper(srv as unknown as Cli, ['hostnamectl set-hostname SRV-Prod']);
       const res = await pc.executeCommand('ssh -o StrictHostKeyChecking=no 203.0.113.9 "hostname"');
       expect(res.trim()).toBe('SRV-Prod');
@@ -334,7 +298,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'SSH');
       await taper(srv as unknown as Cli, ['systemctl start sshd']);
-      await grantKeyAccess(pc, srv);
+      await grantKeyAccess(pc as unknown as Cli, srv as unknown as Cli);
       await pc.executeCommand('ssh -o StrictHostKeyChecking=no 203.0.113.9 "true"');
       const table = await fw.executeCommand('diagnose sys session list');
       expect(table).toMatch(/->203\.0\.113\.9:22\b/);
@@ -343,7 +307,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('24. Redirection de port SSH via VIP (Port Forwarding WAN vers SRV)', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await taper(srv as unknown as Cli, ['systemctl start sshd']);
-      await grantKeyAccess(pc, srv);
+      await grantKeyAccess(pc as unknown as Cli, srv as unknown as Cli);
       await taper(fw, [
         'config firewall vip',
         'edit "VIP_SSH"',
@@ -535,7 +499,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('41. Requête DNS UDP (port 53) vers BIND9 traversant le pare-feu', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'DNS');
-      await serveLabZone(srv);
+      await serveZones(srv as unknown as Cli, [labZone(), LAB_REVERSE_ZONE]);
       const res = await pc.executeCommand('dig @203.0.113.9 web.lab.lan +short');
       expect(res).toMatch(/\d+\.\d+\.\d+\.\d+/);
     });
@@ -543,7 +507,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('42. Requête DNS inverse (PTR) traversant le pare-feu vers BIND9', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'DNS');
-      await serveLabZone(srv);
+      await serveZones(srv as unknown as Cli, [labZone(), LAB_REVERSE_ZONE]);
       const res = await pc.executeCommand('dig @203.0.113.9 -x 203.0.113.9 +short');
       expect(res.trim()).toBe('srv.lab.lan.');
     });
@@ -551,7 +515,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('43. Échec de résolution DNS lorsque le trafic UDP 53 est refusé', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'PING'); // Seul le ping passe
-      await serveLabZone(srv);
+      await serveZones(srv as unknown as Cli, [labZone(), LAB_REVERSE_ZONE]);
       const res = await pc.executeCommand('dig @203.0.113.9 web.lab.lan +time=1 +tries=1');
       expect(res).toMatch(/no servers could be reached|connection timed out/i);
     });
@@ -567,7 +531,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
     it('45. Résolution de nom BIND9 suivie immédiatement d\'un appel curl HTTP vers l\'IP résolue', async () => {
       const { pc, fw, srv } = await creerLaboTraverse();
       await autoriserTrafic(fw, 'ALL');
-      await serveLabZone(srv);
+      await serveZones(srv as unknown as Cli, [labZone(), LAB_REVERSE_ZONE]);
       await taper(srv as unknown as Cli, ['systemctl start nginx']);
       const ip = (await pc.executeCommand('dig @203.0.113.9 srv.lab.lan +short')).trim();
       expect(ip).toMatch(/\d+\.\d+\.\d+\.\d+/);
@@ -627,7 +591,7 @@ describe('Batterie de 50 Tests de Trafic Réseau Traversant', () => {
         'systemctl start nginx',
         'systemctl start sshd',
       ]);
-      await grantKeyAccess(pc, srv);
+      await grantKeyAccess(pc as unknown as Cli, srv as unknown as Cli);
 
       const [pPing, pHttp, pSsh] = await Promise.all([
         pc.executeCommand('ping -c 1 203.0.113.9'),

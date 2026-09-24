@@ -4,7 +4,9 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { type Cli, refuse, taper } from './fortigateBatteryHarness';
+import {
+  type Cli, refuse, taper, serveZones, labZone, grantKeyAccess,
+} from './fortigateBatteryHarness';
 
 // Topologie Étendue : LAN Client <-> Cisco Switch <-> [FortiGate] <-> DMZ Server & WAN Server
 interface LaboAvance {
@@ -134,7 +136,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
 
     it('55. Le serveur DMZ résout les noms via le DNS BIND9 hébergé sur le WAN', async () => {
       const { fw, dmzSrv, wanSrv } = await creerLaboAvance();
-      await taper(wanSrv as unknown as Cli, ['systemctl start named']);
+      await serveZones(wanSrv as unknown as Cli, [{ name: 'service.com', records: ['api IN A 203.0.113.20'] }]);
       await taper(fw, [
         'config firewall policy', 'edit 13',
         'set srcintf "dmz"', 'set dstintf "wan1"',
@@ -162,6 +164,8 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
       const { pc, fw, dmzSrv, wanSrv } = await creerLaboAvance();
       await taper(dmzSrv as unknown as Cli, ['systemctl start sshd']);
       await taper(wanSrv as unknown as Cli, ['systemctl start sshd']);
+      await grantKeyAccess(pc as unknown as Cli, dmzSrv as unknown as Cli, 'root');
+      await grantKeyAccess(pc as unknown as Cli, wanSrv as unknown as Cli, 'root');
       await taper(fw, [
         'config firewall policy',
         'edit 15', 'set srcintf "port1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set service "SSH"', 'next',
@@ -460,7 +464,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
 
     it('79. Résolution DNS récursive d\'un enregistrement CNAME pointant vers un alias traversant', async () => {
       const { pc, fw, wanSrv } = await creerLaboAvance();
-      await taper(wanSrv as unknown as Cli, ['systemctl start named']);
+      await serveZones(wanSrv as unknown as Cli, [labZone(['alias IN CNAME web.lab.lan.'])]);
       await taper(fw, [
         'config firewall policy', 'edit 45',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
@@ -472,7 +476,10 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
 
     it('80. DNS TCP Fallback : Réponse DNS tronquée (>512 octets) traversant le pare-feu sur le port 53/TCP', async () => {
       const { pc, fw, wanSrv } = await creerLaboAvance();
-      await taper(wanSrv as unknown as Cli, ['systemctl start named']);
+      await serveZones(wanSrv as unknown as Cli, [{
+        name: 'largezone.lab.lan',
+        records: Array.from({ length: 40 }, (_, i) => `host${i} IN A 198.51.100.${i + 1}`),
+      }]);
       await taper(fw, [
         'config firewall policy', 'edit 46',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
@@ -484,7 +491,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
 
     it('81. Cache DNS : Seconde requête résolue instantanément avec un query time réduit', async () => {
       const { pc, fw, wanSrv } = await creerLaboAvance();
-      await taper(wanSrv as unknown as Cli, ['systemctl start named']);
+      await serveZones(wanSrv as unknown as Cli, [labZone(['host IN A 203.0.113.30'])]);
       await taper(fw, [
         'config firewall policy', 'edit 47',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
@@ -729,6 +736,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
         'systemctl start sshd',
         'systemctl start oracle-ohasd',
       ]);
+      await grantKeyAccess(pc as unknown as Cli, wanSrv as unknown as Cli);
       await taper(fw, [
         'config firewall policy',
         'edit 100', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set nat enable', 'set service "ALL"', 'next',
