@@ -5408,7 +5408,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       dhcpLease: () => this.showIpDhcpLease(),
       dhcpDatabase: () => dhcp().formatDatabaseShow(),
       dhcpSnoopingStatistics: () => this.showIpDhcpSnoopingStatistics(),
-      stormControl: (sorte) => this.showStormControl(sorte),
+      stormControl: (words) => this.showStormControl(words),
       etherChannel: (mots) => this.showEtherchannel([...mots]),
       interfacesTrunk: () => this.showTrunkTable(this.d().getPortNames()),
       interfacesCounters: (iface) => {
@@ -5440,11 +5440,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
    * inventer un pourcentage courant serait la seule facon de mentir ici.
    * Le seuil, lui, est exact.
    */
-  private showStormControl(sorte: string | null): string {
+  private showStormControl(words: readonly string[]): string {
+    const sorte = words.find((w) => (STORM_CONTROL_TYPES as readonly string[]).includes(w.toLowerCase())) ?? null;
+    const ifaceArg = words.find((w) => !(STORM_CONTROL_TYPES as readonly string[]).includes(w.toLowerCase()));
+    const portNames = this.d().getPortNames();
+    const cible = ifaceArg
+      ? portNames.find((n) => this.abbreviateInterface(n) === this.abbreviateInterface(ifaceArg))
+      : undefined;
+    if (ifaceArg && !cible) return CISCO_ERRORS.INVALID_INPUT;
     const voulu = sorte === null ? STORM_CONTROL_TYPES : [sorte];
     const lignes = ['Interface  Filter State   Upper        Lower        Current'];
     let trouve = false;
-    for (const nom of this.d().getPortNames()) {
+    for (const nom of portNames) {
+      if (cible && nom !== cible) continue;
       const conf = (this.ifExtra.get(nom) ?? []).filter((l) => l.startsWith('storm-control'));
       for (const type of voulu) {
         const seuil = conf.find((l) => l.startsWith(`storm-control ${type} level`));

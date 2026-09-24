@@ -123,7 +123,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
         'end',
       ]);
       const status = await sw1.executeCommand('show storm-control FastEthernet0/3 broadcast');
-      expect(status).toContain('10.00%');
+      expect(status).toMatch(/^Fa0\/3\s+Forwarding\s+10\.00%/m);
     });
 
     it('104. BPDU Guard : desactivation immediate d\'un port utilisateur (err-disable) recevant des BPDUs STP', async () => {
