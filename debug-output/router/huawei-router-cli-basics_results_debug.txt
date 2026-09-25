@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-09-25T18:31:03.275Z
+Generated: 2026-09-25T23:09:42.276Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,7 +27,7 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-09-25 18:31:03
+  2026-09-25 23:09:42
   Friday
   Time Zone(UTC) : UTC
 
@@ -58,13 +58,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-09-25 18:31:03
+  CPU Usage Stat. Time : 2026-09-25 23:09:42
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-09-25 18:31:03
+  Memory utilization statistics at 2026-09-25 23:09:42
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -351,7 +351,7 @@ Total steps: 304
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 18:31:03.434  Sep 25 2026(EE613C67.6F1A9FBE)
+  Reference time: 23:09:42.371  Sep 25 2026(EE617DB6.5EF9DB22)
 
 [36/304] r1 <R1> display lldp neighbor
   GigabitEthernet0/0/0 has 0 neighbors
@@ -376,10 +376,10 @@ Total steps: 304
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-09-25 18:31:03 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-09-25 18:31:03 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-09-25 18:31:03 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-09-25 18:31:03 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-09-25 23:09:42 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-09-25 23:09:42 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-09-25 23:09:42 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-09-25 23:09:42 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [39/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -414,15 +414,17 @@ Total steps: 304
   Info: No patch exists.
 
 [44/304] r1 <R1> display ssh server status
-  SSH server: Disabled
-
-[45/304] r1 <R1> display ssh user-information
   SSH version                     : 2.0
   SSH connection timeout          : 60 seconds
   SSH server key generating interval : 0 hours
   SSH authentication retries      : 3 times
   SFTP server                     : Disable
-  STELNET server                  : Enable
+  Stelnet server                  : Disable
+
+[45/304] r1 <R1> display ssh user-information
+  Error: Unrecognized command found at '^' position.
+  display ssh user-information
+          ^
 
 [46/304] r1 <R1> display aaa configuration
     Domain Name           : default
@@ -600,9 +602,8 @@ Total steps: 304
     sflow                   Display sFlow configuration
     snmp-agent              Display SNMP agent info
     sockets                 Display open sockets
-    ssh                     Display SSH server status
+    ssh                     Secure Shell
     startup                 Display startup configuration
-    stelnet                 Secure Telnet (SSH-based)
     tcp                     Transmission Control Protocol
     telnet                  Telnet protocol
     temperature             Display device temperature
@@ -1514,7 +1515,9 @@ Total steps: 304
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     snmp-agent     Remove SNMP agent configuration
+    ssh            Restore the SSH server defaults
     stelnet        Disable the STelnet server
+    telnet         Disable the Telnet server
     terminal       Set the terminal line characteristics
     time-range     Remove a time-range
     traffic        Display traffic statistics
@@ -2304,13 +2307,13 @@ Total steps: 304
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 18:31:05.434  Sep 25 2026(EE613C69.6F1A9FBE)
+  Reference time: 23:09:43.757  Sep 25 2026(EE617DB7.C1CAC083)
 
 [234/304] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [235/304] r1 <R1> display clock
-  2026-09-25 18:31:05
+  2026-09-25 23:09:43
   Friday
   Time Zone(UTC) : UTC
 
@@ -2336,13 +2339,13 @@ Total steps: 304
 [238/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-09-25 18:31:05
+  CPU Usage Stat. Time : 2026-09-25 23:09:43
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-09-25 18:31:05
+  Memory utilization statistics at 2026-09-25 23:09:43
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -2383,15 +2386,15 @@ Total steps: 304
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 9
-  2026-09-25 18:31:03 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-09-25 18:31:03 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-09-25 18:31:03 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-09-25 18:31:03 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-09-25 18:31:03 %01OSPF/4/WARNINGS: OSPF process 1 failed to allocate unique router-id and cannot start
-  2026-09-25 18:31:04 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
-  2026-09-25 18:31:04 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
-  2026-09-25 18:31:04 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-09-25 18:31:04 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-09-25 23:09:42 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-09-25 23:09:42 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-09-25 23:09:42 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-09-25 23:09:42 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-09-25 23:09:42 %01OSPF/4/WARNINGS: OSPF process 1 failed to allocate unique router-id and cannot start
+  2026-09-25 23:09:43 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
+  2026-09-25 23:09:43 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
+  2026-09-25 23:09:43 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-09-25 23:09:43 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [244/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -2576,15 +2579,17 @@ Total steps: 304
   Info: No online-fail record.
 
 [257/304] r1 <R1> display ssh server status
-  SSH server: Disabled
-
-[258/304] r1 <R1> display ssh user-information
   SSH version                     : 2.0
   SSH connection timeout          : 60 seconds
   SSH server key generating interval : 0 hours
   SSH authentication retries      : 3 times
   SFTP server                     : Disable
-  STELNET server                  : Enable
+  Stelnet server                  : Disable
+
+[258/304] r1 <R1> display ssh user-information
+  Error: Unrecognized command found at '^' position.
+  display ssh user-information
+          ^
 
 [259/304] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
@@ -2886,7 +2891,9 @@ Total steps: 304
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     snmp-agent     Remove SNMP agent configuration
+    ssh            Restore the SSH server defaults
     stelnet        Disable the STelnet server
+    telnet         Disable the Telnet server
     terminal       Set the terminal line characteristics
     time-range     Remove a time-range
     traffic        Display traffic statistics
