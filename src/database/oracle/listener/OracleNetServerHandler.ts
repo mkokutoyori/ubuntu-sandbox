@@ -4,6 +4,7 @@ import type { OracleNetCallContext, OracleNetCallHandler } from '@/network/oracl
 import {
   OracleNetCallId, OracleNetCallStatus, decodeRequest, encodeResponse,
   type OracleNetLogonRequest, type OracleNetResult, type OracleNetShipRedoRequest,
+  type OracleNetShipDatafileRequest,
 } from '@/network/oracle-net/wire/OracleNetCall';
 import type { OsSecurityContext } from '../security/types';
 
@@ -20,6 +21,7 @@ function errorText(error: unknown): string {
 export class OracleNetServerHandler implements OracleNetCallHandler {
   private readonly sessions = new Map<string, ServerSession>();
   private readonly redoEnCours = new Map<string, string>();
+  private readonly datafileInFlight = new Map<string, string>();
 
   constructor(private readonly resolveDatabase: () => OracleDatabase | null) {}
 
@@ -49,6 +51,9 @@ export class OracleNetServerHandler implements OracleNetCallHandler {
     }
     if (decoded.call === OracleNetCallId.ShipRedo) {
       return this.receiveRedo(database, decoded.body);
+    }
+    if (decoded.call === OracleNetCallId.ShipDatafile) {
+      return this.receiveDatafile(database, decoded.body);
     }
     if (decoded.call === OracleNetCallId.ExecuteStatement) {
       return this.execute(database, key, (session) =>
@@ -88,6 +93,47 @@ export class OracleNetServerHandler implements OracleNetCallHandler {
         result: {
           columns: [], rows: [], isQuery: false,
           message: `RFS: archived log thread ${body.thread} sequence ${body.sequence} received`,
+        },
+      });
+    } catch (error) {
+      return encodeResponse({ status: OracleNetCallStatus.Error, error: errorText(error) });
+    }
+  }
+
+  private receiveDatafile(
+    database: OracleDatabase, body: OracleNetShipDatafileRequest,
+  ): Uint8Array {
+    try {
+      const key = `${body.fromDbUniqueName}:${body.path}`;
+      const held = body.chunkIndex === 0 ? '' : (this.datafileInFlight.get(key) ?? '');
+      const assembled = held + body.body;
+      if (body.chunkIndex + 1 < body.chunkCount) {
+        this.datafileInFlight.set(key, assembled);
+        return encodeResponse({
+          status: OracleNetCallStatus.Ok,
+          result: {
+            columns: [], rows: [], isQuery: false,
+            message: `chunk ${body.chunkIndex + 1}/${body.chunkCount} received`,
+          },
+        });
+      }
+      this.datafileInFlight.delete(key);
+      database.receiveShippedDatafile({
+        kind: body.kind === 'CONTROLFILE' ? 'CONTROLFILE' : 'DATAFILE',
+        fileNo: body.fileNo,
+        path: body.path,
+        tablespace: body.tablespace,
+        tablespaceType: body.tablespaceType,
+        sizeBytes: body.sizeBytes,
+        body: assembled,
+        fromDbUniqueName: body.fromDbUniqueName,
+      });
+      return encodeResponse({
+        status: OracleNetCallStatus.Ok,
+        result: {
+          columns: [], rows: [], isQuery: false,
+          message: `${body.kind === 'CONTROLFILE' ? 'control file' : `datafile ${body.fileNo}`}`
+            + ` received to ${body.path}`,
         },
       });
     } catch (error) {

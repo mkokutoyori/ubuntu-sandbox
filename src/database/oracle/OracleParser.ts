@@ -987,7 +987,11 @@ export class OracleParser extends BaseParser {
       return { type: 'AlterDatabaseStatement', position: pos, action: 'OPEN', details: readOnly ? 'READ ONLY' : undefined };
     }
     if (this.matchKeyword('MOUNT')) {
-      return { type: 'AlterDatabaseStatement', position: pos, action: 'MOUNT' };
+      const standby = this.matchKeyword('STANDBY') ? (this.matchKeyword('DATABASE'), true) : false;
+      return {
+        type: 'AlterDatabaseStatement', position: pos, action: 'MOUNT',
+        details: standby ? 'STANDBY' : undefined,
+      };
     }
     if (this.matchKeyword('ARCHIVELOG')) {
       return { type: 'AlterDatabaseStatement', position: pos, action: 'ARCHIVELOG' };

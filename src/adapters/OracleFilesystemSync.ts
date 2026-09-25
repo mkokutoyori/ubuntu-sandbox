@@ -304,6 +304,12 @@ export class OracleFilesystemSync {
         writeAsOracle(dev, e.payload.name, e.payload.body);
       }),
 
+      this.bus.subscribe('oracle.standby.datafile-received', (e) => {
+        const dev = this.dev(e.payload.deviceId);
+        if (!dev) return;
+        writeAsOracle(dev, e.payload.path, e.payload.body);
+      }),
+
       this.bus.subscribe('oracle.archive-log.created', (e) => {
         if ((e.payload.origin ?? 'SWITCH') !== 'SWITCH') return;
         const dev = this.dev(e.payload.deviceId);

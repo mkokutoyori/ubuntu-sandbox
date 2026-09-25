@@ -22,7 +22,7 @@ import type { IRmanJobEngine } from './IRmanJobEngine';
 import type { IChannelPool } from '../channel/IChannelPool';
 import type { IRmanCatalogRepository } from '../catalog/IRmanCatalogRepository';
 import type {
-  IRmanOracleContext, ArchivedLogRecord, BlockCorruptionType, DatafileInfo,
+  IRmanOracleContext, ArchivedLogRecord, BlockCorruptionType, DatafileInfo, ShippedDatafile,
 } from '../integration/IRmanOracleContext';
 import {
   validateBackupPiece, pieceFaultMessage, datafileFault, type PieceVerdict,
@@ -40,6 +40,7 @@ import type { OmfBackupKind } from '@/database/oracle/storage/OracleManagedFiles
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { resolveFormatSpec } from '../core/formatSpec';
 import { renderBackupPieceImage, parseBackupPieceImage } from '../core/BackupPieceImage';
+import { restorePreviewLines } from '../core/backupSetReport';
 import { renderControlFileImage, controlFileBody, type ControlFileImage } from '@/database/oracle/storage/ControlFileImage';
 import { parseRedoStream, applyRedoToTablespace, type RedoRecord } from '@/database/oracle/storage/RedoStream';
 import { parseDatafileImage, renderDatafileImage, datafileBannerOf } from '@/database/oracle/storage/DatafileImage';
@@ -634,7 +635,8 @@ export class RmanJobEngine implements IRmanJobEngine {
     if (params.preview === 'true') {
       this._bus.emit({
         type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'preview', pct: 60,
-        message: `restore preview: ${sets.length} backup set(s) examined`,
+        message: restorePreviewLines(sets, this._archivedLogs(),
+          params.untilScn !== undefined ? Number(params.untilScn) : undefined).join('\n'),
       });
       return ok(undefined);
     }
@@ -724,6 +726,7 @@ export class RmanJobEngine implements IRmanJobEngine {
   }
 
   private _doDuplicate(job: RmanJob, channelId: string): Result<void, RmanError> {
+    if (job.params?.forStandby === 'true') return this._doDuplicateForStandby(job, channelId);
     const aux = (job.params?.auxiliary ?? 'AUX').toUpperCase();
     const snap = this._catalog.listAll();
     if (snap.ok === false) return snap;
@@ -749,6 +752,119 @@ export class RmanJobEngine implements IRmanJobEngine {
       });
     }
     return ok(undefined);
+  }
+
+  private _standbyRefusal(reason: string): RmanError {
+    return {
+      code: 'ERROR_STACK',
+      message: `RMAN-05501: aborting duplication of target database\n${reason}`,
+    };
+  }
+
+  private _doDuplicateForStandby(job: RmanJob, channelId: string): Result<void, RmanError> {
+    const params = job.params ?? {};
+    const aux = this._auxiliaryContext;
+    if (!aux) {
+      return err(this._standbyRefusal('RMAN-06171: not connected to auxiliary database'));
+    }
+    const auxState = aux.getInstanceState?.() ?? 'NOMOUNT';
+    if (auxState === 'MOUNT' || auxState === 'OPEN') {
+      return err(this._standbyRefusal(
+        'RMAN-05500: the auxiliary database must be not mounted when issuing a DUPLICATE command'));
+    }
+    const fromActive = params.fromActive === 'true';
+    let images: Record<string, string> = {};
+    if (!fromActive) {
+      const snap = this._catalog.listAll();
+      if (snap.ok === false) return snap;
+      if (snap.value.sets.length === 0) {
+        return err({ code: 'RMAN_06023', message: 'No backup found to duplicate' });
+      }
+      images = this._readPieceImages(snap.value.sets);
+    } else {
+      this._ctx.checkpointDatafiles?.();
+    }
+    const datafiles = this._ctx.getDatafiles();
+    if (params.noFilenameCheck !== 'true') {
+      const shared = datafiles[0];
+      if (shared) {
+        return err(this._standbyRefusal(
+          `RMAN-05001: auxiliary file name ${shared.path} conflicts with a file used by the target database`));
+      }
+    }
+    const dbUniqueName = this._ctx.getSpfileParam('db_unique_name') ?? this._ctx.dbName;
+    for (const path of this._controlFilePaths()) {
+      const body = this._localFileBody(path);
+      if (body === null) continue;
+      const sent = this._sendToAuxiliary(aux, {
+        fileNo: 0, path, tablespace: '', tablespaceType: 'CONTROLFILE',
+        sizeBytes: body.length, body, fromDbUniqueName: dbUniqueName, kind: 'CONTROLFILE',
+      });
+      if (sent.ok === false) return sent;
+    }
+    for (const df of datafiles) {
+      const body = fromActive ? this._localFileBody(df.path) : (images[df.path] ?? null);
+      if (body === null) {
+        return err(this._standbyRefusal(
+          `ORA-01110: data file ${df.fileNo}: '${df.path}'`));
+      }
+      this._bus.emit({
+        type: 'RESTORE_DATAFILE_STARTED', jobId: job.id, channelId,
+        fileNo: df.fileNo, to: df.path,
+      });
+      const sent = this._sendToAuxiliary(aux, {
+        fileNo: df.fileNo, path: df.path, tablespace: df.tablespace,
+        tablespaceType: 'PERMANENT', sizeBytes: df.sizeBytes, body,
+        fromDbUniqueName: dbUniqueName, kind: 'DATAFILE',
+      });
+      if (sent.ok === false) return sent;
+      this._bus.emit({
+        type: 'RESTORE_DATAFILE_COMPLETED', jobId: job.id,
+        fileNo: df.fileNo, elapsedMs: 4_000,
+      });
+    }
+    const mounted = aux.runSqlStatement?.('ALTER DATABASE MOUNT STANDBY DATABASE');
+    if (!mounted) {
+      return err(this._standbyRefusal('RMAN-06171: not connected to auxiliary database'));
+    }
+    if (mounted.ok === false) {
+      return err(this._standbyRefusal(mounted.error));
+    }
+    this._bus.emit({
+      type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'mount_standby', pct: 80,
+      message: 'sql statement: alter database mount standby database',
+    });
+    if (params.doRecover === 'true') {
+      aux.runSqlStatement?.('ALTER DATABASE RECOVER MANAGED STANDBY DATABASE');
+      aux.runSqlStatement?.('ALTER DATABASE RECOVER MANAGED STANDBY DATABASE CANCEL');
+      this._bus.emit({
+        type: 'PROGRESS_UPDATED', jobId: job.id, stepName: 'recover_standby', pct: 90,
+        message: 'recover clone database',
+      });
+    }
+    return ok(undefined);
+  }
+
+  private _controlFilePaths(): ReadonlyArray<string> {
+    const declared = this._ctx.getControlFilePaths?.();
+    if (declared && declared.length > 0) return declared;
+    const single = this._ctx.getControlFilePath?.();
+    return single ? [single] : [];
+  }
+
+  private _localFileBody(path: string): string | null {
+    const read = this._ctx.vfs.readFile(path);
+    if (read.ok === false) return null;
+    const body = new TextDecoder().decode(read.value);
+    return body.length === 0 ? null : body;
+  }
+
+  private _sendToAuxiliary(
+    aux: IRmanOracleContext, file: ShippedDatafile,
+  ): Result<void, RmanError> {
+    if (aux.receiveDatafile) return aux.receiveDatafile(file);
+    aux.vfs.ensureDirectory?.(file.path.slice(0, file.path.lastIndexOf('/')));
+    return aux.vfs.writeFile(file.path, new TextEncoder().encode(file.body), file.sizeBytes);
   }
 
   private _doRecover(job: RmanJob): Result<void, RmanError> {

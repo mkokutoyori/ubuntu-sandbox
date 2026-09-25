@@ -11,10 +11,12 @@
 
 import { OracleInstance } from './OracleInstance';
 import { standbyRefusesStatement, ORA_16000 } from './dataguard/StandbyWriteGuard';
+import { mountedRefusesQuery, ORA_01219 } from './MountedStateGuard';
 import {
   parseOracleTimeZone, type OracleTimeZoneSpec,
 } from './time/OracleTimeZone';
 import { OracleStorage } from './OracleStorage';
+import { parseDatafileImage } from './storage/DatafileImage';
 import { OracleCatalog } from './OracleCatalog';
 import { OracleLexer } from './OracleLexer';
 import { OracleParser } from './OracleParser';
@@ -894,6 +896,35 @@ export class OracleDatabase implements SqlCommandHost {
     return null;
   }
 
+  receiveShippedDatafile(shipped: {
+    kind: 'DATAFILE' | 'CONTROLFILE';
+    fileNo: number; path: string; tablespace: string; tablespaceType: string;
+    sizeBytes: number; body: string; fromDbUniqueName: string;
+  }): void {
+    if (shipped.kind === 'CONTROLFILE') {
+      this.instance.noteDatafileShipped(0, shipped.path, shipped.body);
+      return;
+    }
+    const name = shipped.tablespace.toUpperCase();
+    if (!this.storage.tablespaceExists(name)) {
+      this.storage.createTablespace({
+        name,
+        type: shipped.tablespaceType === 'TEMPORARY' || shipped.tablespaceType === 'UNDO'
+          ? shipped.tablespaceType : 'PERMANENT',
+        status: 'ONLINE',
+        datafiles: [{
+          path: shipped.path,
+          size: `${Math.max(1, Math.round(shipped.sizeBytes / 1_048_576))}M`,
+          autoextend: false,
+        }],
+        blockSize: 8192,
+      });
+    }
+    const payload = parseDatafileImage(shipped.body);
+    if (payload) this.storage.loadTablespace(payload);
+    this.instance.noteDatafileShipped(shipped.fileNo, shipped.path, shipped.body);
+  }
+
   /**
    * Parse and execute a SQL statement string.
    * Handles both regular SQL and PL/SQL anonymous blocks.
@@ -904,9 +935,14 @@ export class OracleDatabase implements SqlCommandHost {
 
     const upper = trimmed.toUpperCase();
 
-    if (this.instance.databaseRole === 'PHYSICAL STANDBY'
+    if ((this.instance.databaseRole === 'PHYSICAL STANDBY' || this.instance.openReadOnly)
       && standbyRefusesStatement(trimmed)) {
       return emptyResult(ORA_16000);
+    }
+
+    if ((this.instance.state === 'MOUNT' || this.instance.state === 'NOMOUNT')
+      && mountedRefusesQuery(trimmed)) {
+      return emptyResult(ORA_01219);
     }
 
     // PL/SQL is a distinct language whose unit bodies contain semicolons

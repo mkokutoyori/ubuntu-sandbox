@@ -461,12 +461,6 @@ export async function finalisePendingAuth(
   const clientPort = 50_000 + (auth.user.length * 7 % 10_000);
   const sshConnection = `${clientIp} ${clientPort} ${serverIp} ${auth.port}`;
   const sshClient = `${clientIp} ${clientPort} ${auth.port}`;
-  const registry = (auth.target as unknown as {
-    getSshSessionRegistry?: () => {
-      open: (input: { user: string; fromIp: string; fromHost?: string; peerPort?: number }) => { id: string } | null;
-      close: (id: string, reason?: string) => unknown;
-    };
-  }).getSshSessionRegistry?.();
   if (!auth.sourceDevice) {
     // Without the device that typed `ssh` there is nothing to connect
     // FROM. Dialling the target from itself would look fine and prove
@@ -506,13 +500,6 @@ export async function finalisePendingAuth(
     return { kind: 'refused', message: outcome.message };
   }
 
-  const session = registry?.open({
-    user: auth.user,
-    fromIp: clientIp,
-    fromHost: auth.sourceHostname,
-    peerPort: clientPort,
-  }) ?? null;
-
   const promptHost = (auth.target as unknown as { getSshHostname?: () => string })
     .getSshHostname?.() ?? auth.host;
   const wire = new SshInteractiveSubShell(
@@ -535,7 +522,6 @@ export async function finalisePendingAuth(
     wire,
     sshConnection,
     sshClient,
-    onClose: () => { if (session) registry?.close(session.id, 'logout'); },
   });
   return { kind: 'success', shell, banner };
 }

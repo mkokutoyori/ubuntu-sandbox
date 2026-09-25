@@ -182,7 +182,7 @@ describe('service faults, in each vendor\'s own vocabulary', () => {
     expect(backHome(t)).toBe(false);
     expect(screen(t)).not.toContain('Broken pipe');
     // …while the listener really is gone for anyone arriving now.
-    expect(await cli.executeCommand('ssh admin@10.0.0.2 show version'))
+    expect(await cli.executeCommand('ssh admin@10.0.0.2 show version', 'Admin@123\n'))
       .toMatch(/Connection refused/i);
   });
 
@@ -197,7 +197,7 @@ describe('service faults, in each vendor\'s own vocabulary', () => {
     // router counterpart of deleting a Linux host's ssh_host_*_key
     // (docs/PRD-Pannes.md §F7.2) — and the classic way to lock yourself
     // out of a box you are reaching over ssh.
-    expect(await cli.executeCommand('ssh admin@10.0.0.2 show version'))
+    expect(await cli.executeCommand('ssh admin@10.0.0.2 show version', 'Admin@123\n'))
       .toMatch(/Connection refused/i);
     // The session already open is untouched, exactly like every other
     // "the listener died" fault.
@@ -210,7 +210,7 @@ describe('service faults, in each vendor\'s own vocabulary', () => {
     for (const c of ['enable', 'configure terminal', 'crypto key zeroize rsa', 'end']) {
       await target.executeCommand(c);
     }
-    expect(await cli.executeCommand('ssh admin@10.0.0.2 show version'))
+    expect(await cli.executeCommand('ssh admin@10.0.0.2 show version', 'Admin@123\n'))
       .toMatch(/Connection refused/i);
 
     for (const c of ['enable', 'configure terminal', 'crypto key generate rsa modulus 2048', 'end']) {
@@ -218,7 +218,7 @@ describe('service faults, in each vendor\'s own vocabulary', () => {
     }
 
     // No residue: generating the keys is what turns the server back on.
-    expect(await cli.executeCommand('ssh admin@10.0.0.2 show version'))
+    expect(await cli.executeCommand('ssh admin@10.0.0.2 show version', 'Admin@123\n'))
       .toContain('Cisco IOS Software');
   });
 
@@ -242,7 +242,7 @@ describe('service faults, in each vendor\'s own vocabulary', () => {
     await type(t, 'display clock');
     expect(backHome(t)).toBe(false);
     expect(screen(t)).not.toContain('Broken pipe');
-    expect(await cli.executeCommand('ssh admin@10.0.0.2 display version'))
+    expect(await cli.executeCommand('ssh admin@10.0.0.2 display version', 'Admin@123\n'))
       .toMatch(/Connection refused/i);
   });
 
@@ -257,7 +257,7 @@ describe('service faults, in each vendor\'s own vocabulary', () => {
     // `stelnet server enable` is still configured; it is the KEY that is
     // gone, and VRP has nothing to present without one — the exact
     // counterpart of `crypto key zeroize rsa` above.
-    expect(await cli.executeCommand('ssh admin@10.0.0.2 display version'))
+    expect(await cli.executeCommand('ssh admin@10.0.0.2 display version', 'Admin@123\n'))
       .toMatch(/Connection refused/i);
     await type(t, 'display clock');
     expect(backHome(t)).toBe(false);
@@ -268,14 +268,14 @@ describe('service faults, in each vendor\'s own vocabulary', () => {
     await target.executeCommand('system-view');
     await target.executeCommand('rsa local-key-pair destroy');
     await target.executeCommand('quit');
-    expect(await cli.executeCommand('ssh admin@10.0.0.2 display version'))
+    expect(await cli.executeCommand('ssh admin@10.0.0.2 display version', 'Admin@123\n'))
       .toMatch(/Connection refused/i);
 
     await target.executeCommand('system-view');
     await target.executeCommand('rsa local-key-pair create');
     await target.executeCommand('quit');
 
-    expect(await cli.executeCommand('ssh admin@10.0.0.2 display version'))
+    expect(await cli.executeCommand('ssh admin@10.0.0.2 display version', 'Admin@123\n'))
       .toMatch(/VRP|Huawei/i);
   });
 

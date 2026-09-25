@@ -52,6 +52,13 @@
  *    separation. Le defaut logique ne doit pas remonter dans le
  *    controle par defaut, sinon CHECK LOGICAL ne voudrait plus rien
  *    dire.
+ *
+ * CORRECTION (lot R16) : ce fichier EPINGLAIT un defaut. Son cas
+ * PREVIEW exigeait la ligne « restore preview: n backup set(s)
+ * examined », un COMPTE que le vrai RMAN n'imprime jamais — il liste les
+ * sauvegardes qu'il emploierait puis les SCN de reprise. Le cas verifie
+ * desormais ce que la commande DOIT rendre ; ce qu'il mesure vraiment,
+ * « PREVIEW n'ecrit aucun datafile », est inchange.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { LinuxServer } from '@/network/devices/LinuxServer';
@@ -170,7 +177,8 @@ describe('RESTORE VALIDATE et VALIDATE BACKUPSET repondent pareil', () => {
     const avant = sh(srv, `cat ${USERS}`);
     const out = rman(srv, ['RESTORE DATABASE PREVIEW;', 'EXIT;']);
     expect(out).not.toContain('RMAN-06403');
-    expect(out).toMatch(/restore preview: \d+ backup set\(s\) examined/);
+    expect(out).toContain('List of Backup Sets');
+    expect(out).toMatch(/Media recovery start SCN is \d+/);
     expect(sh(srv, `cat ${USERS}`)).toBe(avant);
   });
 });

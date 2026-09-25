@@ -43,8 +43,9 @@ registerView({
         instance.config.sid, new Date().toISOString(),
         instance.archiveLogMode ? 'ARCHIVELOG' : 'NOARCHIVELOG',
         instance.state !== 'OPEN' ? 'MOUNTED'
-          : instance.databaseRole === 'PHYSICAL STANDBY' ? 'READ ONLY WITH APPLY'
-            : 'READ WRITE',
+          : instance.databaseRole === 'PHYSICAL STANDBY'
+            ? (instance.managedRecoveryActive ? 'READ ONLY WITH APPLY' : 'READ ONLY')
+            : instance.openReadOnly ? 'READ ONLY' : 'READ WRITE',
         instance.databaseRole, instance.switchoverStatus, 'Linux x86 64-bit', 'CURRENT',
         new Date('2026-01-01T00:00:00Z'),
         1, instance.getCheckpointScn(), instance.getCheckpointTime(),

@@ -111,11 +111,11 @@ export class InstanceAdminExecutor {
       return emptyResult(this.instance.setArchiveLogMode(false));
     }
     if (stmt.action === 'OPEN') {
-      this.instance.openDatabase();
+      this.instance.openDatabase(stmt.details === 'READ ONLY');
       return emptyResult('Database altered.');
     }
     if (stmt.action === 'MOUNT') {
-      this.instance.mountDatabase();
+      this.instance.mountDatabase(stmt.details === 'STANDBY');
       return emptyResult('Database altered.');
     }
     if (/^\s*(?:FAILOVER\s+TO\s+\S+|ACTIVATE\s+(?:PHYSICAL\s+)?STANDBY\s+DATABASE)\s*$/i

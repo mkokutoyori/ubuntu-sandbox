@@ -175,7 +175,7 @@ async function sshRepond(acl: readonly string[]): Promise<string> {
   await srv.executeCommand('sudo useradd -m alice');
   await srv.executeCommand('echo "alice:secret123" | sudo chpasswd');
   return (await pc.executeCommand(
-    'ssh -o StrictHostKeyChecking=no alice@10.0.2.10 whoami')).trim();
+    'ssh -o StrictHostKeyChecking=no alice@10.0.2.10 whoami', 'secret123\n')).trim();
 }
 
 function serveurFtp(srv: LinuxServer, chiffre: boolean) {

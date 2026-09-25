@@ -7,6 +7,7 @@ export enum OracleNetCallId {
   ExecuteStatement = 4,
   /** LNS -> RFS : le primaire expedie un journal archive a la standby. */
   ShipRedo = 5,
+  ShipDatafile = 6,
 }
 
 export enum OracleNetCallStatus {
@@ -44,13 +45,26 @@ export interface OracleNetStatementRequest {
  * decoupe toute donnee plus grande que la SDU negociee, et le RFS
  * rassemble.
  */
-export const REDO_CHUNK_BYTES = 4000;
+export const WIRE_CHUNK_BYTES = 4000;
 
 export interface OracleNetShipRedoRequest {
   readonly thread: number;
   readonly sequence: number;
   readonly name: string;
   readonly scn: number;
+  readonly body: string;
+  readonly chunkIndex: number;
+  readonly chunkCount: number;
+  readonly fromDbUniqueName: string;
+}
+
+export interface OracleNetShipDatafileRequest {
+  readonly kind: 'DATAFILE' | 'CONTROLFILE';
+  readonly fileNo: number;
+  readonly path: string;
+  readonly tablespace: string;
+  readonly tablespaceType: string;
+  readonly sizeBytes: number;
   readonly body: string;
   readonly chunkIndex: number;
   readonly chunkCount: number;
@@ -75,6 +89,7 @@ export type OracleNetRequest =
   | { readonly call: OracleNetCallId.Execute; readonly body: OracleNetExecuteRequest }
   | { readonly call: OracleNetCallId.ExecuteStatement; readonly body: OracleNetStatementRequest }
   | { readonly call: OracleNetCallId.ShipRedo; readonly body: OracleNetShipRedoRequest }
+  | { readonly call: OracleNetCallId.ShipDatafile; readonly body: OracleNetShipDatafileRequest }
   | { readonly call: OracleNetCallId.Logoff; readonly body: Record<string, never> };
 
 export type OracleNetResponse =
@@ -109,6 +124,9 @@ export function decodeRequest(payload: Uint8Array): OracleNetRequest | null {
   }
   if (call === OracleNetCallId.ShipRedo) {
     return { call, body: body as OracleNetShipRedoRequest };
+  }
+  if (call === OracleNetCallId.ShipDatafile) {
+    return { call, body: body as OracleNetShipDatafileRequest };
   }
   if (call === OracleNetCallId.Logoff) {
     return { call, body: {} };

@@ -232,6 +232,12 @@ export interface OracleStandbyRedoReceivedPayload extends OracleDeviceRef {
   body: string;
 }
 
+export interface OracleStandbyDatafileReceivedPayload extends OracleDeviceRef {
+  fileNo: number;
+  path: string;
+  body: string;
+}
+
 export interface OracleNonloggedBlockRecordedPayload extends OracleDeviceRef {
   tablespace: string;
   blocks: number;
@@ -617,6 +623,7 @@ export type OracleDomainEvent =
   | { topic: 'oracle.block-corruption.repaired';         payload: OracleBlockCorruptionRepairedPayload }
   | { topic: 'oracle.backup-corruption.found';           payload: OracleBackupCorruptionFoundPayload }
   | { topic: 'oracle.standby.redo-received';             payload: OracleStandbyRedoReceivedPayload }
+  | { topic: 'oracle.standby.datafile-received';          payload: OracleStandbyDatafileReceivedPayload }
   | { topic: 'oracle.standby.managed-recovery-changed';  payload: OracleStandbyManagedRecoveryChangedPayload }
   | { topic: 'oracle.dataguard.switchover-requested';    payload: OracleDataGuardSwitchoverRequestedPayload }
   | { topic: 'oracle.nonlogged-block.recorded';          payload: OracleNonloggedBlockRecordedPayload }

@@ -55,7 +55,7 @@ describe('Scénario 6 — /var/log/wtmp, btmp, lastlog : fichiers binaires', () 
   it('une connexion SSH augmente la taille de wtmp d\'exactement 384 octets', async () => {
     const { pc1, srv } = await buildLan();
     const before = Number((await srv.executeCommand("stat -c '%s' /var/log/wtmp")).trim());
-    await pc1.executeCommand('ssh alice@10.0.0.10 whoami');
+    await pc1.executeCommand('ssh alice@10.0.0.10 whoami', 'admin\n');
     const after = Number((await srv.executeCommand("stat -c '%s' /var/log/wtmp")).trim());
     expect(after - before).toBe(384);
   });
@@ -63,7 +63,7 @@ describe('Scénario 6 — /var/log/wtmp, btmp, lastlog : fichiers binaires', () 
   it('trois connexions SSH ajoutent exactement 3*384 octets à wtmp', async () => {
     const { pc1, srv } = await buildLan();
     const before = Number((await srv.executeCommand("stat -c '%s' /var/log/wtmp")).trim());
-    for (let i = 0; i < 3; i++) await pc1.executeCommand('ssh alice@10.0.0.10 whoami');
+    for (let i = 0; i < 3; i++) await pc1.executeCommand('ssh alice@10.0.0.10 whoami', 'admin\n');
     const after = Number((await srv.executeCommand("stat -c '%s' /var/log/wtmp")).trim());
     expect(after - before).toBe(3 * 384);
   });
@@ -112,7 +112,7 @@ describe('Scénario 6 — /var/log/wtmp, btmp, lastlog : fichiers binaires', () 
 
   it('cohérence globale : nombre d\'entrées wtmp/384 == nombre de lignes last (hors footer)', async () => {
     const { pc1, srv } = await buildLan();
-    await pc1.executeCommand('ssh alice@10.0.0.10 whoami');
+    await pc1.executeCommand('ssh alice@10.0.0.10 whoami', 'admin\n');
     const size = Number((await srv.executeCommand("stat -c '%s' /var/log/wtmp")).trim());
     const lastCount = Number(
       (await srv.executeCommand("last | grep -v 'begins\\|^$' | wc -l")).trim(),
