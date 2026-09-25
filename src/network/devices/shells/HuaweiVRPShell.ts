@@ -2228,7 +2228,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // était ce qui faisait proposer `enable` — décrit `Toggle:
     // info-center enable` — derrière chacun de ses sous-mots.
     for (const kw of [
-      'ntp-service enable', 'telnet server enable', 'http server',
+      'ntp-service enable', 'http server',
       'icmp ttl-exceeded send', 'icmp host-unreachable send']) {
       t.register(kw, `Toggle: ${kw}`, () => {
         this.r()._setGlobalToggle?.(kw.replace(/\s+enable\s*$/, ''), true);

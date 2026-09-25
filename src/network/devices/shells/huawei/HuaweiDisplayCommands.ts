@@ -1122,7 +1122,6 @@ function appendManagementConfig(lines: string[], router: Router): void {
   const retries = router.getSshAuthenticationRetries();
   if (retries !== null) lines.push(`ssh server authentication-retries ${retries}`);
   if (router.isFtpServerEnabled()) { lines.push('#'); lines.push('ftp server enable'); }
-  if (router._getGlobalToggle('telnet server')) { lines.push('#'); lines.push('telnet server enable'); }
 
   const snmpLines = lignesConfigSnmpVrp(router.getSnmpService?.());
   if (snmpLines.length > 0) { lines.push('#'); lines.push(...snmpLines); }
