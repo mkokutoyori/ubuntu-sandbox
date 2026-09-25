@@ -43,7 +43,7 @@ async function buildLan() {
 describe('Scénario 2 — last / lastb : historique des connexions', () => {
   it('last liste une session SSH réussie : user, tty, ip, "still logged in"', async () => {
     const { pc1, srv } = await buildLan();
-    await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60');
+    await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60', 'admin\n');
     const out = await srv.executeCommand('last');
     expect(out).toMatch(/alice\s+pts\/\d+\s+10\.0\.0\.1\s+\w{3} \w{3}\s+\d+ \d{2}:\d{2}\s+still logged in/);
   });
@@ -51,7 +51,7 @@ describe('Scénario 2 — last / lastb : historique des connexions', () => {
   it('last -n limite le nombre de lignes affichées', async () => {
     const { pc1, srv } = await buildLan();
     for (let i = 0; i < 3; i++) {
-      await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60');
+      await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60', 'admin\n');
     }
     const out = await srv.executeCommand('last -n 1');
     const sessionLines = out.split('\n').filter((l) => /^alice/.test(l));
@@ -60,7 +60,7 @@ describe('Scénario 2 — last / lastb : historique des connexions', () => {
 
   it('last <user> filtre par utilisateur', async () => {
     const { pc1, srv } = await buildLan();
-    await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60');
+    await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60', 'admin\n');
     const out = await srv.executeCommand('last alice');
     expect(out).toContain('alice');
     expect(out).not.toMatch(/^mallory/m);
@@ -68,7 +68,7 @@ describe('Scénario 2 — last / lastb : historique des connexions', () => {
 
   it('last -F affiche l\'heure complète avec secondes et année', async () => {
     const { pc1, srv } = await buildLan();
-    await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60');
+    await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60', 'admin\n');
     const out = await srv.executeCommand('last -F');
     expect(out).toMatch(/alice.*\d{2}:\d{2}:\d{2} \d{4}/);
   });
@@ -97,7 +97,7 @@ describe('Scénario 2 — last / lastb : historique des connexions', () => {
 
   it('cohérence : la taille de /var/log/wtmp divisée par 384 correspond au nombre de lignes de last', async () => {
     const { pc1, srv } = await buildLan();
-    await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60');
+    await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60', 'admin\n');
     const size = Number((await srv.executeCommand("stat -c '%s' /var/log/wtmp")).trim());
     const wtmpEntries = size / 384;
     const lastEntries = Number(

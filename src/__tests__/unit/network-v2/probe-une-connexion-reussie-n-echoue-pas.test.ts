@@ -74,27 +74,27 @@ const OPT = '-o StrictHostKeyChecking=no';
 describe('un `ssh` qui aboutit n inscrit aucun echec', () => {
   it('TEMOIN : la ligne `Accepted` est bien ecrite', async () => {
     const { pc, srv } = await labo();
-    await pc.executeCommand(`ssh ${OPT} alice@10.0.0.2 whoami`);
+    await pc.executeCommand(`ssh ${OPT} alice@10.0.0.2 whoami`, 'secret123\n');
     expect(await srv.executeCommand('sudo cat /var/log/auth.log')).toContain('Accepted');
   });
 
   it('un appelant non interactif n essaie le mot de passe QU UNE FOIS', async () => {
     const { pc, srv } = await labo();
-    await pc.executeCommand(`ssh ${OPT} alice@10.0.0.2 whoami`);
+    await pc.executeCommand(`ssh ${OPT} alice@10.0.0.2 whoami`, 'secret123\n');
     const journal = String(await srv.executeCommand('journalctl -u ssh'));
     expect([...journal.matchAll(/Failed password/g)].length).toBeLessThanOrEqual(1);
   });
 
   it('trois tentatives ne sont plus inscrites pour une seule connexion', async () => {
     const { pc, srv } = await labo();
-    await pc.executeCommand(`ssh ${OPT} alice@10.0.0.2 whoami`);
+    await pc.executeCommand(`ssh ${OPT} alice@10.0.0.2 whoami`, 'secret123\n');
     const journal = String(await srv.executeCommand('journalctl -u ssh'));
     expect([...journal.matchAll(/ ssh2$/gm)].length).toBeLessThanOrEqual(2);
   });
 
   it('`lastb` reste vide apres une connexion reussie', async () => {
     const { pc, srv } = await labo();
-    await pc.executeCommand(`ssh ${OPT} alice@10.0.0.2 whoami`);
+    await pc.executeCommand(`ssh ${OPT} alice@10.0.0.2 whoami`, 'secret123\n');
     expect(String(await srv.executeCommand('sudo lastb'))).not.toContain('alice');
   });
 });
