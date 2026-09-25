@@ -56,6 +56,7 @@ import {
   AR2220_HARDWARE_PROFILE, renderHardwareVersion,
 } from './HuaweiHardwareProfile';
 import { normVrpSeverity, VRP_SEVERITIES } from '../../router/management/InfoCenterConfig';
+import { TELNET_DEFAULT_PORT } from '../../router/management/RouterManagementService';
 import { renderDisplayUserInterface } from './HuaweiUserInterfaceCommands';
 import { getSessionRegistry, getVtyLineConfig } from '../../../equipment/RouterServiceCapabilities';
 import { interfacePoolName } from './HuaweiDhcpCommands';
@@ -1113,6 +1114,7 @@ function appendManagementConfig(lines: string[], router: Router): void {
 
   const telnet = mgmt.getTelnet();
   if (telnet.enabled) { lines.push('#'); lines.push('telnet server enable'); }
+  if (telnet.port !== TELNET_DEFAULT_PORT) lines.push(`telnet server port ${telnet.port}`);
   const ssh = mgmt.getSsh();
   if (ssh.enabled) {
     lines.push('#');

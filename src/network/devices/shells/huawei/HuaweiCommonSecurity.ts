@@ -116,7 +116,12 @@ export function registerHuaweiCommonSecurity(
         }
         break;
       }
-      case 'telnet': mgmt.configureTelnet(args); break;
+      case 'telnet': {
+        const refuse = mgmt.configureTelnet(args);
+        if (refuse !== null) return HUAWEI_ERRORS.WRONG(refuse, 0);
+        (getRouter() as unknown as { _syncSshListener?: () => void })._syncSshListener?.();
+        break;
+      }
       case 'ssh': {
         const dev = getRouter() as unknown as {
           _configureSshAuthRetries?: (n: number) => void;
@@ -153,6 +158,11 @@ export function registerHuaweiCommonSecurity(
     const line = raw ?? `undo telnet ${args.join(' ')}`;
     const [first, second] = args.map((a) => a.toLowerCase());
     if (first === 'server' && second === 'enable') return dispatch('telnet', ['server', 'disable']);
+    if (first === 'server' && second === 'port') {
+      getRouter().getManagementService().configureTelnet(['server', 'port'], true);
+      (getRouter() as unknown as { _syncSshListener?: () => void })._syncSshListener?.();
+      return '';
+    }
     const wrong = first === 'server' ? args[1] : args[0];
     if (wrong === undefined) return HUAWEI_ERRORS.INCOMPLETE(line);
     return HUAWEI_ERRORS.UNRECOGNIZED(line, line.toLowerCase().lastIndexOf(wrong.toLowerCase()));
