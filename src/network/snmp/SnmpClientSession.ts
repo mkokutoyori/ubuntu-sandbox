@@ -27,6 +27,7 @@ export class SnmpClientSession {
         payloadBytes: 48 + packet.varBindings.length * 16,
       }),
       () => host.getScheduler(),
+      'request-id',
     );
   }
 

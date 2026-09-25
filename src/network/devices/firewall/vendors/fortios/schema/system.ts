@@ -31,6 +31,7 @@ const ACCESS_SERVICE_HELP: Readonly<Record<ManagementService, string>> = Object.
   ssh: 'SSH access.',
   telnet: 'TELNET access.',
   snmp: 'SNMP access.',
+  fgfm: 'FortiManager access.',
 });
 
 const ACCESS_SERVICES = MANAGEMENT_SERVICES.map(service => ({

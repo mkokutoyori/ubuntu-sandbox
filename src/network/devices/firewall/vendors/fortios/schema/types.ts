@@ -22,6 +22,9 @@ import type {
   SyslogCollectorSettings, SyslogFilterSettings,
 } from '../../../logging/SyslogCollectors';
 import type { NtpSettings } from '../../../mgmt/FirewallNtp';
+import type {
+  SnmpCommunitySettings, SnmpMibViewSettings, SnmpSysinfoSettings,
+} from '../../../mgmt/FirewallSnmp';
 import type { FirewallDnsSettings } from '../../../l3/FirewallDnsClient';
 import type { DnsServerInterface } from '../../../l3/FirewallDnsServer';
 
@@ -438,11 +441,6 @@ export interface FortiCommitDevice {
   }): void;
   applyDhcp6Scope(scope: Dhcp6Scope): void;
   removeDhcp6Scope(id: string): void;
-  applyIpv6RouterAdvertisement(iface: string, options: {
-    send: boolean; managed: boolean; other: boolean;
-  }): void;
-  applyDhcp6Scope(scope: Dhcp6Scope): void;
-  removeDhcp6Scope(id: string): void;
   acquireDhcpLease(iface: string): void;
   applyOnetimeSchedule(schedule: {
     name: string; start: string; end: string;
@@ -451,6 +449,11 @@ export interface FortiCommitDevice {
     name: string; members: readonly string[];
   }): string | void;
   applyNtp(settings: NtpSettings): string | void;
+  applySnmpSysinfo(settings: SnmpSysinfoSettings): void;
+  applySnmpCommunity(settings: SnmpCommunitySettings): void;
+  removeSnmpCommunity(id: string): void;
+  applySnmpMibView(view: SnmpMibViewSettings): void;
+  removeSnmpMibView(name: string): void;
   hasInterface(name: string): boolean;
   applyLocalCertificate(entry: FortiLocalCertificatePatch): string | void;
   removeLocalCertificate(name: string): void;

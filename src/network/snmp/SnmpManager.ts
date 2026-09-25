@@ -15,6 +15,8 @@ export interface SnmpQuery {
   readonly oids: readonly string[];
 }
 
+export type SnmpResponseMatching = 'request-id' | 'request-id-and-peer';
+
 export interface SnmpRetransmission {
   readonly timeoutMs: number;
   readonly retries: number;
@@ -41,6 +43,7 @@ export class SnmpManager {
   constructor(
     private readonly transmit: (query: SnmpQuery, packet: SnmpPacket) => boolean,
     scheduler: () => IScheduler,
+    private readonly matching: SnmpResponseMatching,
   ) {
     this.timers = new TimerSet(scheduler);
   }
@@ -77,7 +80,9 @@ export class SnmpManager {
   accept(sender: IPAddress, senderPort: PortNumber, packet: SnmpPacket): boolean {
     if (packet.pduType !== 'get-response') return false;
     const entry = this.pending.get(packet.requestId);
-    if (!entry || entry.serverIp !== sender.toString() || entry.serverPort !== senderPort.value) return false;
+    if (!entry) return false;
+    if (this.matching === 'request-id-and-peer'
+      && (entry.serverIp !== sender.toString() || entry.serverPort !== senderPort.value)) return false;
     this.settle(packet.requestId, { kind: 'response', packet });
     return true;
   }
