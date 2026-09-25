@@ -1341,20 +1341,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (s.hwtacacsTemplates.size === 0) return ' No HWTACACS template configured.';
       return [...s.hwtacacsTemplates.keys()].map(n => ` HWTACACS template: ${n}`).join('\n');
     });
-    t.register('display ssh server session', 'Display SSH server sessions', () => {
-      const ssh = this.r().getManagementService().getSsh();
-      if (!ssh.enabled) return 'SSH server is not enabled.';
-      const header = 'Conn   Ver  Idle    User       IP';
-      const sessions = this.r().getSshSessionRegistry().list();
-      if (sessions.length === 0) return `${header}\n(none) ${ssh.version}    --      --         --`;
-      const rows = sessions.map((s, i) => {
-        const h = Math.floor(s.idleSeconds / 3600).toString().padStart(2, '0');
-        const m = Math.floor((s.idleSeconds % 3600) / 60).toString().padStart(2, '0');
-        const sec = Math.floor(s.idleSeconds % 60).toString().padStart(2, '0');
-        return `${(i + 1).toString().padEnd(6)} ${ssh.version}    ${h}:${m}:${sec}  ${s.user.padEnd(10)} ${s.fromIp}`;
-      });
-      return [header, ...rows].join('\n');
-    });
     t.register('display rsa local-key-pair public', 'Display RSA public key', () => {
       const ks = this.r().getKeypairService();
       const pair = ks.list().find((k) => k.algo === 'rsa');

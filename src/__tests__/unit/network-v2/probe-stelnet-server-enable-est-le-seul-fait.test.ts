@@ -34,6 +34,13 @@
  * allumer separement. Le format des vues n'est pas touche ici : seul
  * l'etat qu'elles lisent change.
  *
+ * (Depuis la sonde `probe-le-serveur-ssh-vrp-obeit-a-sa-configuration`,
+ * le drapeau de l'equipement a disparu a son tour : l'ecoute lit le
+ * gestionnaire, et `display stelnet server`, qu'aucune reference VRP ne
+ * cite, n'existe plus. Le temoin de la vue juste est donc retire, et les
+ * assertions lisent le champ `Stelnet server` de `display ssh server
+ * status`, dans les mots de VRP.)
+ *
  * Ecrite a l'aveugle contre cette reference, avant de lire les magasins.
  *
  * Discriminee contre l'etat d'avant (`git stash push -- src/network`) :
@@ -118,16 +125,10 @@ describe('la machine ecoute vraiment — le TEMOIN', () => {
 });
 
 describe('toutes les vues du serveur SSH disent la meme chose', () => {
-  it('`display stelnet server` l\'annonce en service — le TEMOIN', async () => {
-    const { ar1 } = await laboratoire();
-
-    expect(await ar1.executeCommand('display stelnet server')).toMatch(/Enabled/);
-  });
-
   it('`display ssh server status` ne le dit plus hors service', async () => {
     const { ar1 } = await laboratoire();
 
-    expect(await ar1.executeCommand('display ssh server status')).not.toMatch(/Disabled/);
+    expect(await ar1.executeCommand('display ssh server status')).toMatch(/Stelnet server\s*: Enable$/m);
   });
 
   it('`display ssh server session` repond au lieu de nier le serveur', async () => {
@@ -160,8 +161,7 @@ describe('ce que le correctif ne doit pas casser', () => {
   it('un routeur NEUF garde ses vues hors service', async () => {
     const neuf = new HuaweiRouter('AR9');
 
-    expect(await neuf.executeCommand('display ssh server status')).toMatch(/Disabled/);
-    expect(await neuf.executeCommand('display stelnet server')).toMatch(/Disabled/);
+    expect(await neuf.executeCommand('display ssh server status')).toMatch(/Stelnet server\s*: Disable$/m);
   });
 
   it('la configuration courante ecrit `stelnet server enable` une seule fois', async () => {

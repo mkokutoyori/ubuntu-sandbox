@@ -49,6 +49,7 @@ import { TacacsServerAgent } from '../tacacs/TacacsServerAgent';
 import { VxlanAgent } from '../vxlan/VxlanAgent';
 import { UDP_PORT_VXLAN } from '../vxlan/types';
 import { TcpStack } from '../tcp/TcpStack';
+import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext';
 import type { EthernetFrame, IPv4Packet, UDPPacket, IPAddress } from '../core/types';
 import { IP_PROTO_TCP } from '../core/types';
 import { dispatchControlPlaneIpv4 } from './router/controlPlaneIpv4';
@@ -308,6 +309,14 @@ export class HuaweiRouter extends Router {
    */
   override hasSshHostKeys(): boolean {
     return this.getKeypairService().list().length > 0;
+  }
+
+  protected override sshServerTurnedOn(): boolean {
+    return this.getManagementService().getSsh().enabled;
+  }
+
+  protected override sshServerLimits(): Partial<SshServerConfig> {
+    return this.getManagementService().sshServerLimits();
   }
 
   protected override controlPlaneUdpOwner(port: number): string | null {

@@ -45,7 +45,7 @@ describe('commutateur VRP — la gestion atteint enfin son magasin', () => {
   it('`stelnet server enable` et `telnet server enable` atteignent le service', async () => {
     const sw = await commutateur(['stelnet server enable', 'telnet server enable']);
     const mgmt = sw.getManagementService();
-    expect(mgmt.getStelnet().enabled).toBe(true);
+    expect(mgmt.getSsh().enabled).toBe(true);
     expect(mgmt.getTelnet().enabled).toBe(true);
     const l = await config(sw);
     expect(l).toContain('stelnet server enable');

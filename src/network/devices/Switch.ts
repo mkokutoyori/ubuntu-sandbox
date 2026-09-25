@@ -57,6 +57,7 @@ import { TelnetServerHandler } from '../protocols/telnet/TelnetServerHandler';
 import { RouterTelnetServerContext } from '../protocols/telnet/RouterTelnetServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
+import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext';
 import { SshHostKey } from '../protocols/ssh/SshHostKey';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import type { SshExecTarget } from '../protocols/ssh/server/SshExecTarget';
@@ -2929,18 +2930,13 @@ export abstract class Switch extends Equipment {
 
   hasSshHostKeys(): boolean { return this.hasRsaKeys(); }
 
-  private sshServerEnabled = true;
-
-  _setSshServerEnabled(enabled: boolean): void {
-    if (this.sshServerEnabled === enabled) return;
-    this.sshServerEnabled = enabled;
-    this.syncManagementListeners();
-  }
+  protected sshServerTurnedOn(): boolean { return true; }
+  protected sshServerLimits(): Partial<SshServerConfig> { return {}; }
 
   _refreshSshAvailability(): void { this.syncManagementListeners(); }
 
   isSshActive(): boolean {
-    return this.sshServerEnabled
+    return this.sshServerTurnedOn()
       && this.hasSshHostKeys()
       && this._getVtyLineConfig().admetQuelquePart('ssh');
   }
@@ -3024,7 +3020,7 @@ export abstract class Switch extends Equipment {
       motd: () => this.getBanner('motd') || undefined,
       isClientBlocked: () => !this._getVtyLineConfig().incomingVerdict().accept,
       recordLogin: (user, fromIp) => this.recordSshLogin(user, fromIp, '', true),
-    }));
+    }, this.sshServerLimits()));
   }
 
   private buildTelnetServerHandler(): TelnetServerHandler {

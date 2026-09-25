@@ -152,6 +152,7 @@ describe('Huawei over the wire (docs/PRD-SSH-Unification.md §4 #7, A2)', () => 
     await r.executeCommand('quit');
     // VRP ne fait tourner aucun serveur STelnet sans paire de clés locale.
     await r.executeCommand('rsa local-key-pair create');
+    await r.executeCommand('stelnet server enable');
     await r.executeCommand('quit');
 
     const ch = await openWireShell(pc, '10.0.5.2', 'admin', 'adminpw');

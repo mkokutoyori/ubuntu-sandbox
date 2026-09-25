@@ -1163,8 +1163,7 @@ describe('SSH realism — banners, exec mode, error messages, env', () => {
 
   test('§F22 — ssh into router refused when SSH server is disabled', async () => {
     const { winA, cisco } = await buildLan();
-    // Forcibly disable the SSH server.
-    (cisco as unknown as { sshServerEnabled: boolean }).sshServerEnabled = false;
+    for (const c of ['configure terminal', 'crypto key zeroize rsa', 'end']) await cisco.executeCommand(c);
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await typeRoot(t, 'ssh admin@10.0.0.6');

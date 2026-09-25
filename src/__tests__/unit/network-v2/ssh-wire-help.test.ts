@@ -109,6 +109,7 @@ describe('Huawei contextual help over the wire', () => {
     await r.executeCommand('quit');
     // VRP ne fait tourner aucun serveur STelnet sans paire de clés locale.
     await r.executeCommand('rsa local-key-pair create');
+    await r.executeCommand('stelnet server enable');
     await r.executeCommand('quit');
 
     const ch = await shellTo(r as never, '10.0.11.3', 'admin', 'adminpw');
