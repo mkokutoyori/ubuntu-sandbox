@@ -463,7 +463,7 @@ describe('§J — SSH dispatch publishes lifecycle events on the bus', () => {
   test('failed SSH login (unknown user) emits router.aaa.account.login.failure', async () => {
     const seen: string[] = [];
     (lab.ciscoR1 as any).getBus().subscribe('router.aaa.account.login.failure', (e: any) => seen.push((e.payload as { account: { name: string } }).account.name));
-    await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"');
+    await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"', 'Admin@123\n');
     expect(seen).toContain('ghost');
   });
 
@@ -471,7 +471,7 @@ describe('§J — SSH dispatch publishes lifecycle events on the bus', () => {
     await lab.ciscoR1.executeCommand('configure terminal');
     await lab.ciscoR1.executeCommand('login on-failure log');
     await lab.ciscoR1.executeCommand('end');
-    await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"');
+    await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"', 'Admin@123\n');
     const out = await lab.ciscoR1.executeCommand('show logging');
     expect(out).toMatch(/%SEC_LOGIN-4-LOGIN_FAILED/);
     expect(out).toMatch(/10\.0\.0\.1/);
@@ -481,10 +481,10 @@ describe('§J — SSH dispatch publishes lifecycle events on the bus', () => {
     await lab.ciscoR1.executeCommand('configure terminal');
     await lab.ciscoR1.executeCommand('login block-for 60 attempts 2 within 30');
     await lab.ciscoR1.executeCommand('end');
-    await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"');
-    await lab.linux1.executeCommand('ssh ghost2@10.0.0.6 "show version"');
-    const blocked = await lab.linux1.executeCommand('ssh admin@10.0.0.6 "show version"');
-    expect(blocked).toMatch(/Connection (closed|refused)|denied|Quiet-Mode/i);
+    await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"', 'Admin@123\n');
+    await lab.linux1.executeCommand('ssh ghost2@10.0.0.6 "show version"', 'Admin@123\n');
+    const blocked = await lab.linux1.executeCommand('ssh admin@10.0.0.6 "show version"', 'Admin@123\n');
+    expect(blocked).toMatch(/Connection refused \(Quiet-Mode\)/);
   });
 });
 
