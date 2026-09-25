@@ -4979,14 +4979,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.getCredentialStore().setMaxFailedAttempts(n);
   }
 
-  _configureSshAuthRetries(retries: number): void {
-    if (this._loginBlocker) this._loginBlocker.detach();
-    this._loginBlocker = new LoginBlocker({
-      deviceId: this.id, bus: this.getBus(),
-      attempts: retries, withinSeconds: 60, blockSeconds: 60,
-    });
-  }
-
   private _sshSessionRegistry: SshSessionRegistry | null = null;
   private _sshHost: CrossVendorSshHost | null = null;
 

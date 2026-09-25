@@ -5,7 +5,6 @@ import { SSH_DEFAULTS, type SshConfig } from '../../router/security/CiscoSecurit
 export interface IpSshHost {
   sshConfig(): SshConfig;
   hasRsaKeys(): boolean;
-  onAuthRetriesChanged(retries: number): void;
 }
 
 export const SSH_TIMEOUT_RANGE: readonly [number, number] = [1, 120];
@@ -110,17 +109,8 @@ export function ipSshSpecs(ctx: () => IpSshHost): CommandSpec[] {
 
     spec('authentication-retries', ['ip', 'ssh', 'authentication-retries', REESSAIS],
       'Number of authentication retries',
-      (_session, args) => {
-        const retries = Number(args.reessais);
-        ctx().sshConfig().authRetries = retries;
-        ctx().onAuthRetriesChanged(retries);
-        return '';
-      },
-      () => {
-        ctx().sshConfig().authRetries = SSH_DEFAULTS.authRetries;
-        ctx().onAuthRetriesChanged(SSH_DEFAULTS.authRetries);
-        return '';
-      }),
+      (_session, args) => { ctx().sshConfig().authRetries = Number(args.reessais); return ''; },
+      () => { ctx().sshConfig().authRetries = SSH_DEFAULTS.authRetries; return ''; }),
 
     spec('source-interface', ['ip', 'ssh', 'source-interface', INTERFACE_SOURCE],
       'Interface the SSH client sources from',
