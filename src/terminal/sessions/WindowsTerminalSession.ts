@@ -1713,6 +1713,13 @@ export class WindowsTerminalSession extends TerminalSession {
       return true;
     }
 
+    if (e.key === 'd' && e.ctrlKey) {
+      const endsSubShell = !!(this.activeSubShell as { handleKey?: (k: KeyEvent) => boolean })
+        .handleKey?.(e);
+      if (endsSubShell) this.exitSubShell();
+      return true;
+    }
+
     // Tab completion in sub-shell (Shift+Tab cycles backwards, like PS).
     if (e.key === 'Tab') {
       this.onSubShellTab(e.shiftKey);
