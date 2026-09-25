@@ -192,6 +192,7 @@ import { DmvpnService } from './router/nhrp/DmvpnService';
 import { NhrpEngine } from '../nhrp/NhrpEngine';
 import { IP_PROTO_NHRP, type NhrpPacket } from '../nhrp/types';
 import { RouterManagementService, TELNET_DEFAULT_PORT } from './router/management/RouterManagementService';
+import { RemoteAccessListeners } from './router/management/RemoteAccessListeners';
 import { CiscoHttpService } from './router/management/CiscoHttpService';
 import { CiscoHttpUi } from './router/management/CiscoHttpUi';
 import { Http1ServerSession } from '../http/http1/Http1ServerSession';
@@ -1035,8 +1036,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // unconditionally and gating everywhere else would leave a fresh
     // router listening while `show crypto key mypubkey rsa` says there is
     // no key — the two must not be able to disagree.
-    if (this.sshServerEnabled && this.hasSshHostKeys()) this.bindSshListener();
-    this.bindTelnetListener();
+    this.remoteAccessListeners().sync();
   }
 
   /**
@@ -1050,36 +1050,33 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.getManagementService().getSsh().port || 22;
   }
 
-  private _sshBoundPort: number | null = null;
-
-  private bindSshListener(): void {
-    const port = this.sshListenPort();
-    this.tcpv2.listen(port, {
-      onAccept: (socket) => {
-        const handler = this.buildRouterSshServerHandler();
-        handler.register(socket as unknown as TcpStream, socket.remoteIp);
-      },
-    });
-    this._sshBoundPort = port;
-  }
-
   _syncSshListener(): void { this.syncSshListener(); }
 
   telnetListenPort(): number {
     return this.getManagementService().getTelnet().port || TELNET_DEFAULT_PORT;
   }
 
-  private _telnetBoundPort: number | null = null;
+  private _remoteAccessListeners: RemoteAccessListeners | null = null;
 
-  private bindTelnetListener(): void {
-    const port = this.telnetListenPort();
-    this.tcpv2.listen(port, {
-      onAccept: (socket) => {
-        const handler = this.buildRouterTelnetServerHandler();
-        handler.register(socket as unknown as TcpStream, socket.remoteIp);
+  private remoteAccessListeners(): RemoteAccessListeners {
+    this._remoteAccessListeners ??= new RemoteAccessListeners({
+      stack: () => this.tcpv2,
+      ssh: {
+        wanted: () => this.sshServerEnabled && this.hasSshHostKeys() && this.transportAdmisSurUneVty('ssh'),
+        port: () => this.sshListenPort(),
+        onAccept: (socket) => {
+          this.buildRouterSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+        },
+      },
+      telnet: {
+        wanted: () => this.telnetAllowedByTransport(),
+        port: () => this.telnetListenPort(),
+        onAccept: (socket) => {
+          this.buildRouterTelnetServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+        },
       },
     });
-    this._telnetBoundPort = port;
+    return this._remoteAccessListeners;
   }
 
   /**
@@ -1163,29 +1160,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private syncSshListener(): void {
-    const wanted = this.sshListenPort();
-    const bound = this._sshBoundPort;
-    const sshBound = bound !== null
-      && this.tcpv2.listListeners().some(l => l.localPort === bound);
-    // Keys are part of "is the server up", not a separate switch: IOS
-    // refuses to listen without them.
-    const shouldListen = this.sshServerEnabled && this.hasSshHostKeys()
-      && this.transportAdmisSurUneVty('ssh');
-    if (sshBound && (!shouldListen || bound !== wanted)) {
-      this.tcpv2.closeListener(bound!);
-      this._sshBoundPort = null;
-    }
-    if (shouldListen && this._sshBoundPort === null) this.bindSshListener();
-    const telnetWanted = this.telnetAllowedByTransport();
-    const telnetPort = this._telnetBoundPort;
-    const telnetBound = telnetPort !== null
-      && this.tcpv2.listListeners().some(l => l.localPort === telnetPort);
-    if (!telnetBound) this._telnetBoundPort = null;
-    if (telnetBound && (!telnetWanted || telnetPort !== this.telnetListenPort())) {
-      this.tcpv2.closeListener(telnetPort!);
-      this._telnetBoundPort = null;
-    }
-    if (telnetWanted && this._telnetBoundPort === null) this.bindTelnetListener();
+    this.remoteAccessListeners().sync();
   }
 
   /**
