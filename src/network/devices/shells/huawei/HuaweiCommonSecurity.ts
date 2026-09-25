@@ -1,6 +1,9 @@
 import { registerInfoCenterCommands } from './HuaweiInfoCenterCommands';
-import { HUAWEI_ERRORS } from '../cli-utils';
+import { HUAWEI_ERRORS, resolveHuaweiInterfaceName } from '../cli-utils';
 import { InfoCenterConfig } from '../../router/management/InfoCenterConfig';
+import {
+  SSH_DEFAULT_PORT, TELNET_DEFAULT_PORT, type RouterManagementService,
+} from '../../router/management/RouterManagementService';
 /**
  * HuaweiCommonSecurity — management-plane commands common to the Huawei
  * switch and router CLIs: SSH/Telnet servers, SNMP, NTP, info-center
@@ -45,6 +48,23 @@ export function displayLocalUser(users: ReadonlyMap<string, LocalUser>): string 
   return [...head, ...rows,
     '  ----------------------------------------------------------------------',
     `  Total ${users.size} user(s)`].join('\n');
+}
+
+export function remoteAccessConfigBlocksVrp(mgmt: RouterManagementService): string[][] {
+  const telnet = mgmt.getTelnet();
+  const ssh = mgmt.getSsh();
+  const telnetBlock = [
+    ...(telnet.enabled ? ['telnet server enable'] : []),
+    ...(telnet.port !== TELNET_DEFAULT_PORT ? [`telnet server port ${telnet.port}`] : []),
+    ...(telnet.acl ? [`telnet server acl ${telnet.acl}`] : []),
+    ...(telnet.source ? [`telnet server-source -i ${telnet.source}`] : []),
+    ...(telnet.ipv6Enabled ? ['telnet ipv6 server enable'] : []),
+  ];
+  const stelnetBlock = [
+    ...(ssh.enabled ? ['stelnet server enable'] : []),
+    ...(ssh.port !== SSH_DEFAULT_PORT ? [`ssh server port ${ssh.port}`] : []),
+  ];
+  return [telnetBlock, stelnetBlock].filter((block) => block.length > 0);
 }
 
 export function displaySshServerStatus(): string {
@@ -116,7 +136,19 @@ export function registerHuaweiCommonSecurity(
         }
         break;
       }
-      case 'telnet': mgmt.configureTelnet(args); break;
+      case 'telnet': {
+        if ((args[0] ?? '').toLowerCase() === 'server-source' && args[1]?.toLowerCase() === '-i') {
+          const ports = (getRouter() as unknown as { getPorts?: () => { getName(): string }[] })
+            .getPorts?.().map((p) => p.getName()) ?? [];
+          const named = resolveHuaweiInterfaceName(ports, args.slice(2).join(''));
+          if (!named) return HUAWEI_ERRORS.WRONG(args.slice(2).join(' '), 0);
+          args = ['server-source', '-i', named];
+        }
+        const refuse = mgmt.configureTelnet(args);
+        if (refuse !== null) return HUAWEI_ERRORS.WRONG(refuse, 0);
+        (getRouter() as unknown as { _syncSshListener?: () => void })._syncSshListener?.();
+        break;
+      }
       case 'ssh': {
         const dev = getRouter() as unknown as {
           _configureSshAuthRetries?: (n: number) => void;
@@ -153,6 +185,19 @@ export function registerHuaweiCommonSecurity(
     const line = raw ?? `undo telnet ${args.join(' ')}`;
     const [first, second] = args.map((a) => a.toLowerCase());
     if (first === 'server' && second === 'enable') return dispatch('telnet', ['server', 'disable']);
+    if (first === 'ipv6' && second === 'server' && args[2]?.toLowerCase() === 'enable') {
+      getRouter().getManagementService().configureTelnet(['ipv6', 'server', 'enable'], true);
+      return '';
+    }
+    if (first === 'server-source') {
+      getRouter().getManagementService().configureTelnet(['server-source'], true);
+      return '';
+    }
+    if (first === 'server' && (second === 'port' || second === 'acl')) {
+      getRouter().getManagementService().configureTelnet(['server', second], true);
+      (getRouter() as unknown as { _syncSshListener?: () => void })._syncSshListener?.();
+      return '';
+    }
     const wrong = first === 'server' ? args[1] : args[0];
     if (wrong === undefined) return HUAWEI_ERRORS.INCOMPLETE(line);
     return HUAWEI_ERRORS.UNRECOGNIZED(line, line.toLowerCase().lastIndexOf(wrong.toLowerCase()));
