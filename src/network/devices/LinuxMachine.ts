@@ -3951,6 +3951,10 @@ export abstract class LinuxMachine extends EndHost
           target, destinationPort, sourcePort, payload ?? null,
           payload?.length ?? 0, emission);
       },
+      sendCraftedIcmpEcho: (
+        target: IPAddress,
+        options?: { sourceIp?: IPAddress; ttl?: number; dataSize?: number },
+      ): boolean => this.sendCraftedIcmpEcho(target, options ?? {}),
       getResolvedService: () => this.getResolvedService(),
       publishResolvedState: () => this.publishResolvedState(),
       syncLinkLocalResponders: () => this.syncLinkLocalResponders(),

@@ -3084,6 +3084,48 @@ export abstract class EndHost extends Equipment {
   }
 
   /**
+   * A single crafted ICMP echo request with an optional forged source
+   * address and TTL — what `hping3 -1` (and its `-a`/`--spoof`) puts on the
+   * wire. It reaches the wire exactly like `emitUdpDatagram`'s unicast tail
+   * (route, ARP, out filter), but composes an ICMP echo and never waits for
+   * a reply: a forged source means the answer, if any, goes elsewhere.
+   * Returns whether a frame left this host.
+   */
+  public sendCraftedIcmpEcho(
+    destinationIP: IPAddress,
+    options: { sourceIp?: IPAddress; ttl?: number; id?: number; sequence?: number; dataSize?: number } = {},
+  ): boolean {
+    const route = this.resolveRoute(destinationIP);
+    if (!route) return false;
+    const srcIP = options.sourceIp ?? route.port.getIPAddress();
+    if (!srcIP) return false;
+
+    const dataSize = options.dataSize ?? 0;
+    const icmp: ICMPPacket = {
+      type: 'icmp', icmpType: 'echo-request', code: 0,
+      id: options.id ?? ((++this.pingIdCounter) & 0xffff), sequence: options.sequence ?? 0, dataSize,
+    };
+    const ipPkt = createIPv4Packet(
+      srcIP, destinationIP, IP_PROTO_ICMP, options.ttl ?? this.defaultTTL, icmp, 8 + dataSize,
+    );
+
+    const outPortName = route.port.getName();
+    const verdict = this.firewallFilter(outPortName, ipPkt, 'out');
+    if (verdict === 'drop' || verdict === 'reject') return false;
+
+    const cached = this.arpTable.get(route.nextHopIP.toString());
+    if (cached) {
+      this.sendFrame(outPortName, {
+        srcMAC: route.port.getMAC(), dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      });
+    } else {
+      this.fwdQueueAndResolve(ipPkt, outPortName, route.nextHopIP, route.port);
+    }
+    return true;
+  }
+
+  /**
    * Émission vers un groupe (ou le broadcast limité). Sans interface
    * nommée, la trame part sur chaque lien monté qui porte une adresse —
    * c'est le comportement d'un démon qui a rejoint le groupe sur tous ses

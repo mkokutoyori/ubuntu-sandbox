@@ -161,6 +161,12 @@ export interface LinuxNetKernel {
     },
   ): boolean;
 
+  /** A single crafted ICMP echo (optionally source-forged), for `hping3 -1`. */
+  sendCraftedIcmpEcho(
+    target: IPAddress,
+    options?: { sourceIp?: IPAddress; ttl?: number; dataSize?: number },
+  ): boolean;
+
   /**
    * Synchronous TCP handshake probe used by nc / nmap-style service
    * discovery. Accepts an IPv4 dotted string OR an IPv6 literal.

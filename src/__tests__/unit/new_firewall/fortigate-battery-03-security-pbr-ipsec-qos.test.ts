@@ -123,21 +123,25 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
         'end',
       ]);
       const status = await sw1.executeCommand('show storm-control FastEthernet0/3 broadcast');
-      expect(status).toContain('10.00%');
+      expect(status).toMatch(/^Fa0\/3\s+Forwarding\s+10\.00%/m);
     });
 
-    it('104. BPDU Guard : désactivation immédiate d\'un port utilisateur (err-disable) recevant des BPDUs STP', async () => {
-      const { sw1, rogue } = await creerLaboEntreprise();
+    it('104. BPDU Guard : desactivation immediate d\'un port utilisateur (err-disable) recevant des BPDUs STP', async () => {
+      const { sw1 } = await creerLaboEntreprise();
+      // Un commutateur pirate, racine par sa priorite basse, emet des BPDUs
+      // sur le port protege : c'est ce qu'un vrai poste ne fait jamais.
+      const rogueSwitch = new CiscoSwitch('switch-cisco', 'SW-Rogue', 8, 900, 0);
+      rogueSwitch.powerOn();
+      await taper(rogueSwitch as unknown as Cli, ['enable', 'configure terminal', 'spanning-tree vlan 1 priority 0', 'end']);
       await taper(sw1 as unknown as Cli, [
         'enable', 'configure terminal',
-        'interface FastEthernet0/3',
+        'interface FastEthernet0/5',
         'spanning-tree bpduguard enable',
         'end',
       ]);
-      // Le rogue injecte un BPDU STP forgé
-      await rogue.executeCommand('send_bpdu --interface eth0');
-      const err = await sw1.executeCommand('show interfaces FastEthernet0/3 status');
-      expect(err).toMatch(/err-disabled|down/i);
+      new Cable('c-rogue-bpdu').connect(sw1.getPort('FastEthernet0/5') as never, rogueSwitch.getPort('FastEthernet0/1') as never);
+      const err = await sw1.executeCommand('show interfaces FastEthernet0/5 status');
+      expect(err).toMatch(/^Fa0\/5\s+err-disabled/m);
     });
 
     it('105. Dynamic ARP Inspection (DAI) : destruction des paquets ARP non concordants avec le bail DHCP', async () => {
@@ -161,7 +165,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
         'end',
       ]);
       const ether = await sw1.executeCommand('show etherchannel summary');
-      expect(ether).toMatch(/Po1\(SU\)|Po1/i);
+      expect(ether).toMatch(/^1\s+Po1\(S[UD]\)\s+LACP\s+Fa0\/11/m);
     });
 
     it('107. Isolation L2 Protected Port : deux PC sur le même VLAN ne peuvent dialoguer entre eux', async () => {

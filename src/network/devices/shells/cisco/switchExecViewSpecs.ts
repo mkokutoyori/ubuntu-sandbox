@@ -8,7 +8,7 @@ export interface SwitchExecViewHost {
   dhcpLease(): string;
   dhcpDatabase(): string;
   dhcpSnoopingStatistics(): string;
-  stormControl(type: string | null): string;
+  stormControl(words: readonly string[]): string;
   etherChannel(words: readonly string[]): string;
   interfacesTrunk(): string;
   interfacesCounters(iface: string | null): string;
@@ -64,12 +64,30 @@ const VUES_ETHERCHANNEL: ReadonlyArray<readonly [string, string]> = [
   ['summary', 'One-line summary per channel-group'],
 ];
 
+const SORTE_DE_TEMPETE_VALEURS = STORM_CONTROL_TYPES.map((mot) => ({
+  keyword: mot, description: `${mot[0].toUpperCase()}${mot.slice(1)} storm control`,
+}));
+
 const SORTE_DE_TEMPETE: ArgumentSpec = {
   name: 'sorte', type: 'ENUM', optional: true,
   description: 'Traffic type the view is restricted to',
-  values: STORM_CONTROL_TYPES.map((mot) => ({
-    keyword: mot, description: `${mot[0].toUpperCase()}${mot.slice(1)} storm control`,
-  })),
+  values: SORTE_DE_TEMPETE_VALEURS,
+};
+
+const STORM_ARG1: ArgumentSpec = {
+  name: 'arg1', type: 'WORD', optional: true,
+  description: 'Interface, or a traffic type',
+  formsAreExhaustive: true,
+  alternatives: [
+    { keyword: 'Ethernet', description: 'Interface to restrict to' },
+    ...SORTE_DE_TEMPETE_VALEURS,
+  ],
+};
+
+const STORM_ARG2: ArgumentSpec = {
+  name: 'arg2', type: 'ENUM', optional: true,
+  description: 'Traffic type the view is restricted to',
+  values: SORTE_DE_TEMPETE_VALEURS,
 };
 
 type VueSansArgument = {
@@ -102,10 +120,11 @@ export function switchExecViewSpecs(ctx: () => SwitchExecViewHost): CommandSpec[
     })),
     {
       id: 'show-storm-control',
-      path: ['show', 'storm-control', SORTE_DE_TEMPETE],
+      path: ['show', 'storm-control', STORM_ARG1, STORM_ARG2],
       description: 'Display storm-control settings',
       modes: EXEC, minPrivilege: 1,
-      run: (_session, args) => ctx().stormControl(args.sorte || null),
+      run: (_session, args) => ctx().stormControl(
+        [args.arg1, args.arg2].filter((w): w is string => typeof w === 'string')),
     },
     {
       id: 'show-interfaces-trunk',

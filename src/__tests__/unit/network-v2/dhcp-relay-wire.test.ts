@@ -3,7 +3,7 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { EventBus } from '@/events/EventBus';
-import { MACAddress, resetCounters } from '@/network/core/types';
+import { IPAddress, MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { WireDhcpChannel } from '@/network/dhcp/DhcpServerChannel';
@@ -150,20 +150,25 @@ describe('DHCP on the wire — relay agent (RFC 3046)', () => {
   });
 
   it('drops the request and emits dhcp.relay.dropped once hops reaches 16 (RFC 951 §3 loop guard)', async () => {
-    const { relay } = await buildRelayLab();
     const bus = new EventBus();
-    relay.setEventBus(bus);
     const drops: Array<{ reason: string; hops: number }> = [];
     bus.subscribe('dhcp.relay.dropped', (e) =>
       drops.push(e.payload as { reason: string; hops: number }));
 
-    type RelayInternals = {
-      relayDhcpToHelpers: (port: string, pkt: DHCPPacket, helpers: string[]) => void;
-    };
+    const { relayDhcpRequest } = await import('@/network/dhcp/DhcpRelay');
     const Pkt = (await import('@/network/dhcp/DHCPPacket')).DHCPPacket;
     const pkt = Pkt.createDiscover('aa:bb:cc:dd:ee:ff', 0xCAFEBABE);
     pkt.hops = 16;
-    (relay as unknown as RelayInternals).relayDhcpToHelpers('GigabitEthernet0/0', pkt, ['10.0.12.2']);
+    const host = {
+      deviceId: 'r', hostname: () => 'R', bus: () => bus,
+      interfaceAddress: () => new IPAddress('10.0.1.1'),
+      interfaceOwning: () => null,
+      sendToServer: () => { throw new Error('a hops-exceeded request must not be forwarded'); },
+      broadcastReply: () => undefined,
+      relayInformationOption: () => false,
+      countForward: () => undefined, countReply: () => undefined, countDrop: () => undefined,
+    };
+    relayDhcpRequest(host, 'GigabitEthernet0/0', pkt, ['10.0.12.2']);
 
     expect(drops.length).toBe(1);
     expect(drops[0].reason).toBe('hops-exceeded');
