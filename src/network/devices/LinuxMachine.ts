@@ -204,6 +204,7 @@ import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureF
 import { SSH_SERVER_IDENTIFICATION_LINE } from '@/network/protocols/ssh/serverIdentification';
 import { buildLinuxInteractionPlan } from './linux/interaction/LinuxInteractionPlanner';
 import type { CommandInteractionPlan, InteractionPlanContext } from '@/shell/interaction/CommandInteraction';
+import { SnmpClientSession } from '@/network/snmp/SnmpClientSession';
 
 /**
  * Minimal sshd-style glob matcher: `*` matches any sequence including
@@ -3955,6 +3956,12 @@ export abstract class LinuxMachine extends EndHost
         target: IPAddress,
         options?: { sourceIp?: IPAddress; ttl?: number; dataSize?: number },
       ): boolean => this.sendCraftedIcmpEcho(target, options ?? {}),
+      openSnmpSession: (processName: string): SnmpClientSession | null => SnmpClientSession.open({
+        udpBind: (port, listener, name) => this.udpBind(port, listener, name),
+        udpClose: (port) => this.udpClose(port),
+        sendUdpDatagram: (request) => this.sendUdpDatagram(request),
+        getScheduler: () => this.getScheduler(),
+      }, processName),
       getResolvedService: () => this.getResolvedService(),
       publishResolvedState: () => this.publishResolvedState(),
       syncLinkLocalResponders: () => this.syncLinkLocalResponders(),

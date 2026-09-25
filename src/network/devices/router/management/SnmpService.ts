@@ -109,11 +109,15 @@ export interface SnmpStats {
   badCommunityNames: number;
   badCommunityUses: number;
   asn1ParseErrors: number;
-  silentDrops: number;
-  proxyDrops: number;
-  getRequests: number;
-  getNextRequests: number;
-  setRequests: number;
+  requestedVariables: number;
+  alteredVariables: number;
+  getRequestPdus: number;
+  getNextPdus: number;
+  setRequestPdus: number;
+  tooBigs: number;
+  noSuchNames: number;
+  badValues: number;
+  genErrs: number;
   getResponses: number;
   trapsSent: number;
   informsSent: number;
@@ -387,11 +391,21 @@ export class SnmpService {
       bus.subscribeWhere('snmp.packet.sent', isOurs, () => { this.stats.pktsOut++; }),
       bus.subscribeWhere('snmp.request.served', isOurs, (e) => {
         const p = e.payload;
-        if (p.pduType === 'get-request') this.stats.getRequests += p.oidCount;
-        else if (p.pduType === 'get-next-request') this.stats.getNextRequests += p.oidCount;
-        else if (p.pduType === 'set-request') this.stats.setRequests += p.oidCount;
+        if (p.pduType === 'get-request') {
+          this.stats.getRequestPdus++;
+          this.stats.requestedVariables += p.oidCount;
+        } else if (p.pduType === 'get-next-request') {
+          this.stats.getNextPdus++;
+          this.stats.requestedVariables += p.oidCount;
+        } else if (p.pduType === 'set-request') {
+          this.stats.setRequestPdus++;
+          this.stats.alteredVariables += p.oidCount;
+        }
         this.stats.getResponses++;
-        if (p.errorStatus !== 'no-error') this.stats.silentDrops++;
+        if (p.errorStatus === 'too-big') this.stats.tooBigs++;
+        else if (p.errorStatus === 'no-such-name') this.stats.noSuchNames++;
+        else if (p.errorStatus === 'bad-value') this.stats.badValues++;
+        else if (p.errorStatus === 'gen-err') this.stats.genErrs++;
       }),
       bus.subscribeWhere('snmp.auth.rejected', isOurs, (e) => {
         if (e.payload.reason === 'unknown-community') this.stats.badCommunityNames++;
@@ -555,9 +569,10 @@ export class SnmpService {
   private static zeroStats(): SnmpStats {
     return {
       pktsIn: 0, pktsOut: 0, badVersions: 0,
-      badCommunityNames: 0, badCommunityUses: 0,
-      asn1ParseErrors: 0, silentDrops: 0, proxyDrops: 0,
-      getRequests: 0, getNextRequests: 0, setRequests: 0,
+      badCommunityNames: 0, badCommunityUses: 0, asn1ParseErrors: 0,
+      requestedVariables: 0, alteredVariables: 0,
+      getRequestPdus: 0, getNextPdus: 0, setRequestPdus: 0,
+      tooBigs: 0, noSuchNames: 0, badValues: 0, genErrs: 0,
       getResponses: 0, trapsSent: 0, informsSent: 0,
     };
   }

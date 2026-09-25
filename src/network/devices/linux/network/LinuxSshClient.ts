@@ -937,6 +937,12 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   if (!linuxLike && isSshExecTarget(found.device)) {
     const wire = opts.wireOutcome ?? wireReachOutcome(opts.sourceDevice, destIp, port);
     if (wire !== 'open') return wireFailure(opts, host, destIp, port, wire);
+    if (opts.wireAuthRefused) {
+      return {
+        output: `${remoteUser}@${host}: Permission denied (publickey,password).\n`,
+        exitCode: 255,
+      };
+    }
     return runCrossPlatformExec(found.device, remoteUser, positional, port, host, opts);
   }
 

@@ -20,6 +20,12 @@ beforeEach(() => {
   Logger.reset();
 });
 
+async function grantCommunity(router: CiscoRouter): Promise<void> {
+  for (const command of ['enable', 'configure terminal', 'snmp-server community public RO', 'end']) {
+    await router.executeCommand(command);
+  }
+}
+
 describe('SNMP — pure helpers', () => {
   it('SNMP_PDU_TYPE matches RFC 1905 wire tags', () => {
     expect(SNMP_PDU_TYPE['get-request']).toBe(0xa0);
@@ -53,6 +59,7 @@ describe('SNMP — system MIB get', () => {
     new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
+    await grantCommunity(router);
 
     const vbs = await nms.getSnmpAgent().get('10.0.0.1', 'public', [OID_SYS_NAME]);
     expect(vbs).not.toBeNull();
@@ -72,6 +79,7 @@ describe('SNMP — system MIB get', () => {
     new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
+    await grantCommunity(router);
 
     const vbs = await nms.getSnmpAgent().get('10.0.0.1', 'public', [OID_SYS_DESCR, OID_SYS_UPTIME]);
     expect(vbs).not.toBeNull();
@@ -91,6 +99,7 @@ describe('SNMP — system MIB get', () => {
     new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
+    await grantCommunity(router);
 
     const vbs = await nms.getSnmpAgent().get('10.0.0.1', 'public', [OID_IF_NUMBER]);
     expect(vbs).not.toBeNull();
@@ -130,6 +139,7 @@ describe('SNMP — get-next walks the MIB', () => {
     new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
+    await grantCommunity(router);
 
     const vbs = await nms.getSnmpAgent().getNext('10.0.0.1', 'public', ['1.3.6.1.2.1.1']);
     expect(vbs).not.toBeNull();
@@ -148,6 +158,7 @@ describe('SNMP — interface table', () => {
     new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
+    await grantCommunity(router);
 
     const vbs = await nms.getSnmpAgent().get('10.0.0.1', 'public', [`${OID_IF_DESCR_PREFIX}.1`]);
     expect(vbs).not.toBeNull();
@@ -164,6 +175,7 @@ describe('SNMP — interface table', () => {
     new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
+    await grantCommunity(router);
 
     const upVbs = await nms.getSnmpAgent().get('10.0.0.1', 'public', [`${OID_IF_ADMIN_STATUS_PREFIX}.2`]);
     expect(Number(upVbs![0].value.value)).toBe(1);
@@ -185,6 +197,7 @@ describe('SNMP — sysLocation / sysContact', () => {
     new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
+    await grantCommunity(router);
 
     router.getSnmpAgent().setLocation('rack-42');
     const vbs = await nms.getSnmpAgent().get('10.0.0.1', 'public', [OID_SYS_LOCATION]);

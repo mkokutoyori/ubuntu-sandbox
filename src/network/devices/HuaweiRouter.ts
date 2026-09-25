@@ -350,7 +350,7 @@ export class HuaweiRouter extends Router {
         return true;
       }
       if ((udp.destinationPort === UDP_PORT_SNMP || udp.sourcePort === UDP_PORT_SNMP)) {
-        this.snmpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+        this.snmpAgent.handleUdp(inPort, ipPkt.sourceIP, udp, ipPkt.destinationIP);
         return true;
       }
       if (udp.destinationPort === UDP_PORT_VXLAN) {

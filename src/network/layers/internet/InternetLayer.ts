@@ -29,12 +29,15 @@ export interface ConnectedIpv4Prefix {
   readonly mask: SubnetMask;
 }
 
+const POINT_TO_POINT_PREFIX_LENGTH = 31;
+
 export function isDirectedBroadcast(
   destination: IPAddress, connected: readonly ConnectedIpv4Prefix[],
 ): boolean {
   if (classifyIpv4Destination(destination) !== 'unicast') return false;
   return connected.some(({ address, mask }) =>
-    destination.isBroadcastFor(mask)
+    mask.toCIDR() < POINT_TO_POINT_PREFIX_LENGTH
+    && destination.isBroadcastFor(mask)
     && destination.networkAddress(mask).equals(address.networkAddress(mask)));
 }
 

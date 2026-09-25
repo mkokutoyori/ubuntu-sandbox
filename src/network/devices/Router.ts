@@ -612,6 +612,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // NAT debug, …) until something happens to call the internal
     // `getLoggingConfig()` accessor first, which no real CLI command does.
     this.attachLoggingBus(this.getBus());
+    this.attachSnmpStatistics();
     this.natEngine.setDeviceId(this.id, this.name);
     // An engine left on the process-wide default bus meets every other
     // router's events there, and its actors then have to filter by device
@@ -1005,10 +1006,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
   }
 
+  private detachSnmpStatistics: (() => void) | null = null;
+
+  private attachSnmpStatistics(): void {
+    this.detachSnmpStatistics?.();
+    this.detachSnmpStatistics = this.getSnmpService().attachToBus(this.getBus(), this.id);
+  }
+
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
     if (bus) this.attachLoggingBus(bus);
-    if (bus) this.getSnmpService().attachToBus(bus, this.id);
+    this.attachSnmpStatistics();
     this._debugService?.attachToBus(this.getBus(), this.id, this);
     this.ipsecEngine?.setEventBus(this.getBus());
     this.natEngine?.setEventBus(this.getBus());
@@ -5010,7 +5018,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this._securityAuditLog = new SecurityAuditLog({
         deviceId: this.id,
         bus: this.getBus(),
-        syslog: (entry) => this.appendSecurityEventToSyslog(entry),
       });
       this._sshSessionRegistry = new SshSessionRegistry({
         deviceId: this.id,
@@ -5043,23 +5050,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getSecurityAuditLog(): SecurityAuditLog {
     if (!this._securityAuditLog) this.getCredentialStore();
     return this._securityAuditLog!;
-  }
-
-  private appendSecurityEventToSyslog(
-    entry: { facility: string; severity: number; mnemonic: string; message: string },
-  ): void {
-    const severity = SEVERITY_NAMES[entry.severity];
-    if (!severity) return;
-    if (!this.loginEventIsLogged(entry.mnemonic)) return;
-    this.getLoggingConfig()?.append(
-      severity, entry.facility, entry.message, true, entry.mnemonic);
-  }
-
-  private loginEventIsLogged(mnemonic: string): boolean {
-    const login = this.securityConfig()?.login;
-    if (mnemonic === 'LOGIN_SUCCESS') return login?.onSuccessLog === true;
-    if (mnemonic === 'LOGIN_FAILED') return login?.onFailureLog === true;
-    return true;
   }
 
   getSshSessionRegistry(): SshSessionRegistry {
