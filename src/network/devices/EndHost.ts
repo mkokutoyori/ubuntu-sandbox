@@ -22,7 +22,7 @@ import { Equipment } from '../equipment/Equipment';
 import { buildEchoReply } from '../icmp/IcmpEcho';
 import {
   classifyIpv4Destination, decrementForForwarding, ipv4HeaderProblem,
-  connectedPrefixesOfPort, martianSource, type ConnectedIpv4Prefix,
+  connectedPrefixesOfPort, isDirectedBroadcast, martianSource, type ConnectedIpv4Prefix,
 } from '../layers/internet/InternetLayer';
 import { linkDestinationFor } from '../layers/internet/Ipv4Egress';
 import { newProtocolCounters, countIcmpIn, countIcmpOut, type ProtocolCounters } from '../layers/internet/ProtocolCounters';
@@ -2238,16 +2238,14 @@ export abstract class EndHost extends Equipment {
     // Check if packet is for us
     const port = this.ports.get(portName);
     if (!port) return;
-    const myIP = port.getIPAddress();
 
     const isForUs = this.isLocalDestination(portName, ipPkt.destinationIP);
     // Also accept if destination is the broadcast for our subnet, or the
     // limited broadcast 255.255.255.255 — RFC 1122 §3.3.6 requires accepting
     // it even on an unconfigured interface (DHCP clients depend on this).
-    const mask = port.getSubnetMask();
     const destClass = classifyIpv4Destination(ipPkt.destinationIP);
     const isBroadcast = destClass === 'limited-broadcast'
-      || (myIP && mask && ipPkt.destinationIP.isBroadcastFor(mask));
+      || isDirectedBroadcast(ipPkt.destinationIP, connectedPrefixesOfPort(port));
     // Un datagramme multicast n'est adressé à personne en particulier :
     // sans cette branche il tombait dans le « pas pour nous » et l'hôte
     // le jetait, alors que le filtre L2 l'avait justement laissé monter
@@ -2697,18 +2695,7 @@ export abstract class EndHost extends Equipment {
     const verdict = this.firewallFilter(outPortName, replyIP, 'out');
     if (verdict === 'drop' || verdict === 'reject') return;
 
-    const nextHopMAC = this.arpTable.get(route.nextHopIP.toString());
-    if (nextHopMAC) {
-      this.sendFrame(outPortName, {
-        srcMAC: route.port.getMAC(),
-        dstMAC: nextHopMAC.mac,
-        etherType: ETHERTYPE_IPV4,
-        payload: replyIP,
-      });
-    } else {
-      // Next-hop MAC unknown — queue the reply and resolve via ARP
-      this.fwdQueueAndResolve(replyIP, outPortName, route.nextHopIP, route.port);
-    }
+    this.sendIpv4FrameArpAware(outPortName, replyIP, route.nextHopIP);
   }
 
   /**
@@ -2782,19 +2769,7 @@ export abstract class EndHost extends Equipment {
     const verdict = this.firewallFilter(outPortName, errorIP, 'out');
     if (verdict === 'drop' || verdict === 'reject') return;
 
-    const cached = this.arpTable.get(route.nextHopIP.toString());
-    if (cached) {
-      this.sendFrame(outPortName, {
-        srcMAC: route.port.getMAC(),
-        dstMAC: cached.mac,
-        etherType: ETHERTYPE_IPV4,
-        payload: errorIP,
-      });
-    } else {
-      // Next-hop MAC unknown — queue the error and resolve via ARP instead
-      // of dropping it on a cold cache.
-      this.fwdQueueAndResolve(errorIP, outPortName, route.nextHopIP, route.port);
-    }
+    this.sendIpv4FrameArpAware(outPortName, errorIP, route.nextHopIP);
   }
 
   // ─── TCP Transport (RFC 793) ───────────────────────────────────
@@ -3068,18 +3043,7 @@ export abstract class EndHost extends Equipment {
     const verdict = this.firewallFilter(outPortName, ipPkt, 'out');
     if (verdict === 'drop' || verdict === 'reject') return false;
 
-    const cached = this.arpTable.get(route.nextHopIP.toString());
-    if (cached) {
-      this.sendFrame(outPortName, {
-        srcMAC: route.port.getMAC(),
-        dstMAC: cached.mac,
-        etherType: ETHERTYPE_IPV4,
-        payload: ipPkt,
-      });
-    } else {
-      // Cold ARP cache: queue the datagram and resolve asynchronously.
-      this.fwdQueueAndResolve(ipPkt, outPortName, route.nextHopIP, route.port);
-    }
+    this.sendIpv4FrameArpAware(outPortName, ipPkt, route.nextHopIP);
     return true;
   }
 
@@ -3113,15 +3077,7 @@ export abstract class EndHost extends Equipment {
     const verdict = this.firewallFilter(outPortName, ipPkt, 'out');
     if (verdict === 'drop' || verdict === 'reject') return false;
 
-    const cached = this.arpTable.get(route.nextHopIP.toString());
-    if (cached) {
-      this.sendFrame(outPortName, {
-        srcMAC: route.port.getMAC(), dstMAC: cached.mac,
-        etherType: ETHERTYPE_IPV4, payload: ipPkt,
-      });
-    } else {
-      this.fwdQueueAndResolve(ipPkt, outPortName, route.nextHopIP, route.port);
-    }
+    this.sendIpv4FrameArpAware(outPortName, ipPkt, route.nextHopIP);
     return true;
   }
 
