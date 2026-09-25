@@ -186,7 +186,7 @@ export class ReactiveRmanSubShell implements ISubShell {
         this._push(`channel ${e.channelId}: SID=${e.sid} device type=${e.deviceType}`);
         break;
       case 'PROGRESS_UPDATED':
-        this._push(e.message);
+        for (const line of e.message.split('\n')) this._push(line);
         break;
       case 'BACKUP_PIECE_CREATED':
         this._push(`piece handle=${e.piece.path} tag=${e.piece.tag.label}`);

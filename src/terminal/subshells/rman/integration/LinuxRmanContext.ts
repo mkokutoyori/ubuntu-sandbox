@@ -16,7 +16,7 @@ import { DbId } from '../values/DbId';
 import { ok, err, type Result } from '../core/Result';
 import type {
   IRmanOracleContext, DatafileInfo, VfsAdapter, ConnectTargetOutcome, RecordedBackupPiece,
-  SqlStatementOutcome, RmanCredentials, ArchivedLogRecord, BlockCorruptionType,
+  SqlStatementOutcome, RmanCredentials, ArchivedLogRecord, BlockCorruptionType, ShippedDatafile,
 } from './IRmanOracleContext';
 import type { HostCapableDevice } from '@/network';
 import { resolveOracleConnectTarget } from '@/terminal/commands/oracleNet';
@@ -31,7 +31,7 @@ import { recoveryAreaUsage } from '@/database/oracle/storage/RecoveryArea';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { OracleNetSession } from '@/network/oracle-net/OracleNetClient';
 import {
-  logonOverOracleNet, executeOverOracleNet,
+  logonOverOracleNet, executeOverOracleNet, shipDatafileOverOracleNet,
 } from '@/network/oracle-net/OracleNetSqlClient';
 import { OracleNetCallStatus } from '@/network/oracle-net/wire/OracleNetCall';
 
@@ -186,6 +186,25 @@ export class LinuxRmanContext implements IRmanOracleContext {
     const distant = this.askRemoteScalar('SELECT current_scn FROM V$DATABASE', 'CURRENT_SCN');
     if (distant !== null) return Number(distant);
     return this._oracle?.instance.getCurrentScn() ?? 0;
+  }
+
+  receiveDatafile(datafile: ShippedDatafile): Result<void, RmanError> {
+    if (this._netSession) {
+      const answer = shipDatafileOverOracleNet(this._netSession, datafile);
+      if (answer.status === OracleNetCallStatus.Error) {
+        return err({
+          code: 'VFS_WRITE_ERROR',
+          message: `ORA-17628: Oracle error returned by remote Oracle server\n${answer.error}`,
+          path: datafile.path,
+        });
+      }
+      return ok(undefined);
+    }
+    const written = this.vfs.writeFile(
+      datafile.path, new TextEncoder().encode(datafile.body), datafile.sizeBytes);
+    if (written.ok === false) return written;
+    this._oracle?.receiveShippedDatafile(datafile);
+    return ok(undefined);
   }
 
   checkpointDatafiles(): void {

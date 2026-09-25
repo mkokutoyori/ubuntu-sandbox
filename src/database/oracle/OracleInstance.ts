@@ -493,7 +493,10 @@ export class OracleInstance {
   }
 
   private _managedRecovery = false;
+  private _openReadOnly = false;
   private _appliedSequence = 0;
+
+  get openReadOnly(): boolean { return this._openReadOnly; }
 
   get managedRecoveryActive(): boolean { return this._managedRecovery; }
   get appliedSequence(): number { return this._appliedSequence; }
@@ -604,6 +607,14 @@ export class OracleInstance {
     });
     this.logAlert(`RFS: Archived log thread ${thread} sequence ${sequence}`);
     this.catalogArchivedLog(name, sequence, scn, 'RFS');
+  }
+
+  noteDatafileShipped(fileNo: number, path: string, body: string): void {
+    this.getBus().publish({
+      topic: 'oracle.standby.datafile-received',
+      payload: { ...this.ref(), fileNo, path, body },
+    });
+    this.logAlert(`Datafile ${fileNo} received from primary: ${path}`);
   }
 
   recordNonlogged(tablespace: string, blocks: number, reason: string): void {
@@ -831,7 +842,8 @@ export class OracleInstance {
   }
 
   /** Shared OPEN transition: redo state, alert log, service events. */
-  private markOpen(): void {
+  private markOpen(readOnly = false): void {
+    this._openReadOnly = readOnly;
     this.transitionTo('OPEN');
     this._redoLogGroups[0].status = 'CURRENT';
     this.performCheckpoint();
@@ -857,7 +869,7 @@ export class OracleInstance {
   }
 
   /** ALTER DATABASE MOUNT — legal only from NOMOUNT (ORA-01100 otherwise). */
-  mountDatabase(): void {
+  mountDatabase(asStandby = false): void {
     if (this._state === 'MOUNT' || this._state === 'OPEN') {
       throw new OracleError(1100, 'database already mounted');
     }
@@ -872,10 +884,14 @@ export class OracleInstance {
     }
     this.transitionTo('MOUNT');
     this.logAlert('Database mounted');
+    if (asStandby) {
+      this.setDatabaseRole('PHYSICAL STANDBY');
+      this.logAlert('Physical standby database mounted');
+    }
   }
 
   /** ALTER DATABASE OPEN — legal only from MOUNT (ORA-01507 / ORA-01531). */
-  openDatabase(): void {
+  openDatabase(readOnly = false): void {
     if (this._state === 'OPEN') {
       throw new OracleError(1531, 'a database already open by the instance');
     }
@@ -890,7 +906,7 @@ export class OracleInstance {
         `cannot identify/lock data file ${m.fileNo} - see DBWR trace file\n` +
         `ORA-01110: data file ${m.fileNo}: '${m.path}'`);
     }
-    this.markOpen();
+    this.markOpen(readOnly);
   }
 
   shutdown(mode?: 'NORMAL' | 'IMMEDIATE' | 'TRANSACTIONAL' | 'ABORT'): string[] {
@@ -1382,12 +1398,25 @@ export class OracleInstance {
       const procs = this.getBackgroundProcesses();
       return procs.length > 0 ? procs[procs.length - 1].pid + 1 : BOOT_LISTENER_PID;
     },
+    staticServices: () => this.readStaticListenerServices(),
   });
 
   get listener(): ListenerControl { return this._listener; }
 
   get listenerStatus(): 'running' | 'stopped' {
     return this._listener.running ? 'running' : 'stopped';
+  }
+
+  private readStaticListenerServices(): string[] {
+    const content = this._deviceFileReader?.(`${ORACLE_CONFIG.HOME}/network/admin/listener.ora`);
+    if (!content) return [];
+    const list = /SID_LIST_LISTENER\s*=([\s\S]*?)(?:\n\s*\n|$)/i.exec(content)?.[1];
+    if (!list) return [];
+    const names: string[] = [];
+    for (const match of list.matchAll(/\(\s*(?:GLOBAL_DBNAME|SID_NAME)\s*=\s*([^)\s]+)\s*\)/gi)) {
+      names.push(match[1]);
+    }
+    return names.filter((n, i) => names.findIndex(a => a.toUpperCase() === n.toUpperCase()) === i);
   }
 
   private readListenerOraPort(): number | null {

@@ -62,12 +62,22 @@ export class ListenerControl {
     instanceState: () => InstanceState;
     pdbServices?: () => string[];
     allocatePid?: () => number;
+    staticServices?: () => string[];
   }) {}
 
   private registeredServices(): string[] {
     const sid = this.env.sid();
     const pdbs = this.env.pdbServices?.() ?? [];
-    return [sid, ...pdbs];
+    const known = [sid, ...pdbs, ...this.staticServices()];
+    return known.filter((s, i) => known.findIndex(a => a.toUpperCase() === s.toUpperCase()) === i);
+  }
+
+  private staticServices(): string[] {
+    return this.env.staticServices?.() ?? [];
+  }
+
+  private staticallyRegistered(service: string): boolean {
+    return this.staticServices().some(s => s.toUpperCase() === service.toUpperCase());
   }
 
   get running(): boolean { return this._running; }
@@ -157,7 +167,8 @@ export class ListenerControl {
       };
     }
     const status = this.serviceStatus();
-    if (status === null) {
+    const staticallyKnown = this.staticallyRegistered(service);
+    if (status === null && !staticallyKnown) {
       this._refused++;
       this.recordConnection(sourceIp, service, 'refused', 12514);
       return {
@@ -165,7 +176,7 @@ export class ListenerControl {
         error: 'ORA-12514: TNS:listener does not currently know of service requested in connect descriptor',
       };
     }
-    if (status === 'BLOCKED') {
+    if (status === 'BLOCKED' && !staticallyKnown) {
       this._refused++;
       this.recordConnection(sourceIp, service, 'refused', 12528);
       return {
@@ -228,12 +239,14 @@ export class ListenerControl {
 
   private servicesSummary(withHandlers = false): string[] {
     const sid = this.env.sid();
-    const status = this.serviceStatus();
-    if (status === null) {
+    const dynamicStatus = this.serviceStatus();
+    if (dynamicStatus === null && this.staticServices().length === 0) {
       return ['The listener supports no services'];
     }
     const out = ['Services Summary...'];
     for (const service of this.registeredServices()) {
+      const status = dynamicStatus === 'READY' || !this.staticallyRegistered(service)
+        ? dynamicStatus : 'UNKNOWN';
       out.push(
         `Service "${service}" has 1 instance(s).`,
         `  Instance "${sid}", status ${status}, has 1 handler(s) for this service...`,

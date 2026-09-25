@@ -24,6 +24,17 @@ export interface ArchivedLogRecord {
   readonly nextScn:  number;
 }
 
+export interface ShippedDatafile {
+  readonly fileNo:         number;
+  readonly path:           string;
+  readonly tablespace:     string;
+  readonly tablespaceType: string;
+  readonly sizeBytes:      number;
+  readonly body:           string;
+  readonly fromDbUniqueName: string;
+  readonly kind:           'DATAFILE' | 'CONTROLFILE';
+}
+
 export interface VfsAdapter {
   /**
    * `declaredSizeBytes`, when given, is the logical size the backup
@@ -88,6 +99,7 @@ export interface IRmanOracleContext {
    */
   connectTarget?(identifier: string, credentials?: RmanCredentials): ConnectTargetOutcome;
   connectPeer?(identifier: string, credentials?: RmanCredentials): ConnectPeerOutcome;
+  receiveDatafile?(datafile: ShippedDatafile): Result<void, RmanError>;
   checkpointDatafiles?(): void;
   getCurrentScn?(): number;
   runSqlStatement?(statement: string): SqlStatementOutcome;
