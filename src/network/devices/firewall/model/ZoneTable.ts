@@ -97,6 +97,21 @@ export class ZoneTable {
     return ZONE_OK;
   }
 
+  setInterfaces(zoneName: string, members: readonly string[]): ZoneMutation {
+    const zone = this.zones.get(zoneName);
+    if (!zone) return zoneFailure({ kind: 'unknown-zone', zone: zoneName });
+
+    const wanted = new Set(members);
+    for (const iface of [...zone.interfaces]) {
+      if (!wanted.has(iface)) this.removeInterface(iface);
+    }
+    for (const iface of members) {
+      const outcome = this.assignInterface(zoneName, iface);
+      if (!outcome.ok) return outcome;
+    }
+    return ZONE_OK;
+  }
+
   setIntraZoneAction(zoneName: string, action: IntraZoneAction): ZoneMutation {
     const zone = this.zones.get(zoneName);
     if (!zone) return zoneFailure({ kind: 'unknown-zone', zone: zoneName });

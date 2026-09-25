@@ -941,12 +941,8 @@ export class Firewall extends Equipment {
       if (!zones.getZone(name)) zones.createZone(name);
       this.sdwanZoneNames.add(name);
 
-      const members = new Set(
-        this.sdwan.getTable().membersOfZone(name).map(member => member.iface));
-      for (const iface of zones.interfacesOf(name)) {
-        if (!members.has(iface)) zones.removeInterface(iface);
-      }
-      for (const iface of members) zones.assignInterface(name, iface);
+      zones.setInterfaces(name,
+        [...new Set(this.sdwan.getTable().membersOfZone(name).map(member => member.iface))]);
     }
   }
 

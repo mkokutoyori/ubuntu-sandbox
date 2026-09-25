@@ -3104,5 +3104,10 @@ l'absence de resolveur, `firewall-session-dirty` juste dans ses deux
 modes (`check-all` purge la session, `check-policy-option` + `check-new`
 la laisse vivre), politique local-in qui vise le bon hote, politique
 IPv6 evaluee via `srcaddr6`/`dstaddr6` (l'objet « any » s'appelle
-`all6`), ordre des politiques au premier match avec `move` honore, et
-interfaces d'usine comme creees a chaud fermees a la naissance.
+`all6`), ordre des politiques au premier match avec `move` honore,
+interfaces d'usine comme creees a chaud fermees a la naissance,
+`srcaddr-negate` et `service-negate` de la bonne polarite, groupes
+d'adresses developpes, VIP qui n'ouvre rien sans politique et traduit
+avec. Les zones n'y figurent pas : elles etaient CASSEES (une interface
+retiree restait admise) et ont ete corrigees, voir la sonde
+`probe-une-zone-perd-vraiment-ses-membres`.

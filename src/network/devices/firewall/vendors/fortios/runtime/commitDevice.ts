@@ -52,7 +52,7 @@ export function buildCommitDevice(
         if (!zones.getZone(name)) {
           zones.createZone(name, { intraZoneAction: intrazone === 'allow' ? 'allow' : 'deny' });
         }
-        for (const member of members) zones.assignInterface(name, member);
+        zones.setInterfaces(name, members);
       },
       removeZone(name) {
         fw.getZoneTable().deleteZone(name);
