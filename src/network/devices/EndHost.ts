@@ -166,6 +166,9 @@ export interface PingResult {
   success: boolean;
   rttMs: number;
   ttl: number;
+  ipId?: number;
+  tos?: number;
+  ipLen?: number;
   /** ICMP error message (e.g. "Time to live exceeded", "Destination unreachable") */
   error?: string;
   seq: number;
@@ -785,6 +788,7 @@ export abstract class EndHost extends Equipment {
   /** Bus emission helper for ICMP echo reply received. */
   protected emitIcmpEchoReply(payload: {
     fromIp: string; toIp: string; id: number; seq: number; ttl: number; rttMs: number;
+    ipId?: number; tos?: number; ipLen?: number;
   }): void {
     this.icmpEchosReceived++;
     this.getBus().publish({
@@ -2580,6 +2584,9 @@ export abstract class EndHost extends Equipment {
         seq: icmp.sequence,
         ttl: ipPkt.ttl,
         rttMs: 0,
+        ipId: ipPkt.identification,
+        tos: ipPkt.tos,
+        ipLen: ipPkt.totalLength,
       });
     } else if (icmp.icmpType === 'time-exceeded' || icmp.icmpType === 'destination-unreachable') {
       const reason = icmp.icmpType === 'time-exceeded'
@@ -3595,6 +3602,9 @@ export abstract class EndHost extends Equipment {
         seq,
         bytes: icmpSize,
         fromIP: targetIpStr,
+        ...(winner.r.ipId === undefined ? {} : { ipId: winner.r.ipId }),
+        ...(winner.r.tos === undefined ? {} : { tos: winner.r.tos }),
+        ...(winner.r.ipLen === undefined ? {} : { ipLen: winner.r.ipLen }),
       };
     } catch (err) {
       if (err instanceof WaitForEventTimeoutError) {

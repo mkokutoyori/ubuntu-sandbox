@@ -50,9 +50,18 @@
  *    (regle 4). Les deux repondaient « 0% packet loss » comme TCP ;
  *  - `-p ++80`, `-k`, `--flood`, `-w` : « unknown option ».
  *
- * `-N`/`--id`, `-M`/`--setseq`, `-L`/`--setack` restent refusees : le
- * simulateur ne sait pas encore poser ces champs sur le fil, et les
- * accepter pour les ignorer serait precisement le defaut de la regle 6.
+ * `-N`/`--id`, `-M`/`--setseq`, `-L`/`--setack` etaient refusees quand ce
+ * fichier a ete ecrit : le simulateur ne savait pas poser ces champs sur
+ * le fil, et les accepter pour les ignorer aurait ete le defaut de la
+ * regle 6. LE LOT SUIVANT LES A RENDUS POSABLES
+ * (`ScanProbeShape.sequence`/`acknowledgement`/`tos`/`identification`,
+ * `IPv4HeaderOptions.identification`), donc deux cas d'ici ont ete
+ * corriges plutot que gardes : celui qui epinglait « unknown option -N »
+ * verifie desormais que l'option est honoree et nomme `-O`/`--tcpoff`,
+ * qui reste vraiment refuse ; et celui du mode ICMP n'epingle plus
+ * « id=0 », puisque `id=` est passe du COMPTEUR de paquets a
+ * l'identification de la reponse. Les deux epinglaient un etat que le
+ * lot suivant a corrige : c'est le test qui avait tort, pas le moteur.
  *
  * Discrimination par `git stash push -- src/network` : 8 cas sur 10
  * tombent avant (mesure). Le cas UDP a du etre RENFORCE pour y arriver :
@@ -119,7 +128,7 @@ describe('hping3 : la ligne de reponse dit ce que la reponse porte', () => {
     const { pc } = await directLink();
     const lignes = replyLines(await pc.executeCommand('hping3 -1 -c 2 10.0.0.2'));
     expect(lignes).toHaveLength(2);
-    expect(lignes[0]).toMatch(/^len=28 ip=10\.0\.0\.2 ttl=\d+ id=0 icmp_seq=0 rtt=\d+\.\d ms$/);
+    expect(lignes[0]).toMatch(/^len=28 ip=10\.0\.0\.2 ttl=\d+ id=\d+ icmp_seq=0 rtt=\d+\.\d ms$/);
     expect(lignes[1]).toContain('icmp_seq=1');
     for (const l of lignes) {
       expect(l).not.toContain('flags=');
@@ -181,7 +190,9 @@ describe('hping3 : les options que le source definit', () => {
     const out = await pc.executeCommand('hping3 -S -p 80 -w 1024 -c 1 10.0.0.2');
     expect(out).toContain('flags=SA');
     expect(await pc.executeCommand('hping3 -S -p 80 -N 42 -c 1 10.0.0.2'))
-      .toBe('hping3: unknown option -N');
+      .toContain('flags=SA');
+    expect(await pc.executeCommand('hping3 -S -p 80 -O 6 -c 1 10.0.0.2'))
+      .toBe('hping3: unknown option -O');
   });
 });
 
