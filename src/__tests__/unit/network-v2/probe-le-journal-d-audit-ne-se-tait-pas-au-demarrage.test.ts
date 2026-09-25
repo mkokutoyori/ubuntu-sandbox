@@ -16,6 +16,21 @@
  * chaine d'audit fonctionne une fois la construction finie, donc que les
  * six refus mesurent la fenetre de construction et non un labo muet.
  * Une sonde faite de six refus seuls ne prouverait rien.
+ *
+ * REVISION. Les cas 3 et 7 affirmaient que `show logging` porte
+ * `%SEC_LOGIN-6-CONFIG_CHANGE: Account … created`. Ce mnemonique n'est
+ * source par aucune documentation Cisco joignable d'ici ; les messages
+ * `SEC_LOGIN` documentes sont ceux de Login Enhancements (reussite, echec,
+ * mode silencieux), et un changement de configuration s'ecrit
+ * `%SYS-5-CONFIG_I`. La ligne n'arrivait au journal que par un pont
+ * `SecurityAuditLog -> syslog` qui doublait aussi `%SEC_LOGIN-5-LOGIN_SUCCESS`
+ * (deux lignes, deux formulations, pour une ouverture mesuree) ; ce pont
+ * est supprime. Les deux cas mesurent donc le REGISTRE d'audit, ou ces
+ * entrees vivent, et affirment que le journal ne les invente pas.
+ * Mesure contre l'etat d'avant la suppression : les cas 3 et 7 tombent,
+ * par leur moitie « le journal ne l'invente pas ». Sans le pont, plus rien
+ * ne jette pendant la construction : les cas 1 et 2 passent des deux
+ * cotes et restent comme non-regressions ; 4 a 6 gardent le port.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -47,7 +62,7 @@ describe('le journal d audit ne se tait pas au demarrage', () => {
     expect(countBusHandlerThrows(() => { new HuaweiRouter('R2'); })).toBe(0);
   });
 
-  it('the factory accounts reach show logging', async () => {
+  it('the factory accounts reach the audit ledger, and show logging invents no line for them', async () => {
     const r = new CiscoRouter('R3');
     r.powerOn();
     await r.executeCommand('enable');
@@ -55,10 +70,11 @@ describe('le journal d audit ne se tait pas au demarrage', () => {
     await r.executeCommand('logging buffered 100000 debug');
     await r.executeCommand('end');
 
-    const log = await r.executeCommand('show logging');
+    const audited = r.getSecurityAuditLog().entries().map(e => e.message);
     for (const user of ['alice', 'bob', 'carl', 'dave']) {
-      expect(log).toContain(`%SEC_LOGIN-6-CONFIG_CHANGE: Account ${user} created`);
+      expect(audited).toContain(`Account ${user} created with privilege 1`);
     }
+    expect(await r.executeCommand('show logging')).not.toContain('%SEC_LOGIN-6-CONFIG_CHANGE');
   });
 
   it('the clock source answers when the NTP agent is absent', () => {
@@ -76,7 +92,7 @@ describe('le journal d audit ne se tait pas au demarrage', () => {
     expect(source.zone()).toEqual({ name: 'UTC', offsetMin: 0 });
   });
 
-  it('an account created after boot reaches show logging', async () => {
+  it('an account created after boot reaches the audit ledger, and show logging says CONFIG_I', async () => {
     const r = new CiscoRouter('R4');
     r.powerOn();
     await r.executeCommand('enable');
@@ -85,7 +101,10 @@ describe('le journal d audit ne se tait pas au demarrage', () => {
     await r.executeCommand('username zoe privilege 15 secret Zoe12345');
     await r.executeCommand('end');
 
+    expect(r.getSecurityAuditLog().entries().map(e => e.message))
+      .toContain('Account zoe created with privilege 15');
     const log = await r.executeCommand('show logging');
-    expect(log).toContain('%SEC_LOGIN-6-CONFIG_CHANGE: Account zoe created with privilege 15');
+    expect(log).toMatch(/%SYS-5-CONFIG_I: Configured from console/);
+    expect(log).not.toContain('%SEC_LOGIN-6-CONFIG_CHANGE');
   });
 });

@@ -5018,7 +5018,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this._securityAuditLog = new SecurityAuditLog({
         deviceId: this.id,
         bus: this.getBus(),
-        syslog: (entry) => this.appendSecurityEventToSyslog(entry),
       });
       this._sshSessionRegistry = new SshSessionRegistry({
         deviceId: this.id,
@@ -5051,23 +5050,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getSecurityAuditLog(): SecurityAuditLog {
     if (!this._securityAuditLog) this.getCredentialStore();
     return this._securityAuditLog!;
-  }
-
-  private appendSecurityEventToSyslog(
-    entry: { facility: string; severity: number; mnemonic: string; message: string },
-  ): void {
-    const severity = SEVERITY_NAMES[entry.severity];
-    if (!severity) return;
-    if (!this.loginEventIsLogged(entry.mnemonic)) return;
-    this.getLoggingConfig()?.append(
-      severity, entry.facility, entry.message, true, entry.mnemonic);
-  }
-
-  private loginEventIsLogged(mnemonic: string): boolean {
-    const login = this.securityConfig()?.login;
-    if (mnemonic === 'LOGIN_SUCCESS') return login?.onSuccessLog === true;
-    if (mnemonic === 'LOGIN_FAILED') return login?.onFailureLog === true;
-    return true;
   }
 
   getSshSessionRegistry(): SshSessionRegistry {
