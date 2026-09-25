@@ -99,8 +99,7 @@ export const SYSTEM_ADMIN: FortiTableSpec = {
     },
     reference('accprofile', 'Access profile for this administrator.',
       ['system accprofile']),
-    refList('vdom', 'Virtual domains this administrator can access.',
-      ['system vdom']),
+    refList('vdom', 'Virtual domains this administrator can access.', ['vdom']),
     ...trustHostAttributes(),
     {
       ...choice('two-factor', 'Enable/disable two-factor authentication.', [

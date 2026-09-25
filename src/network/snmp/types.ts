@@ -1,5 +1,6 @@
 import type { MibViewEntry } from './mibView';
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
+import type { PortNumber } from '@/network/core/ports/PortNumber';
 export const UDP_PORT_SNMP = 161;
 export const UDP_PORT_SNMP_TRAP = 162;
 
@@ -85,6 +86,8 @@ export interface SnmpCommunityAcl {
   access: 'ro' | 'rw';
   aclName?: string;
   viewName?: string;
+  queryPorts?: Partial<Record<SnmpVersion, PortNumber>>;
+  interfaceNames?: readonly string[];
 }
 
 export interface SnmpTrapHost {
@@ -151,3 +154,4 @@ export const OID_IF_MTU_PREFIX = '1.3.6.1.2.1.2.2.1.4';
 export const OID_IF_PHYS_ADDR_PREFIX = '1.3.6.1.2.1.2.2.1.6';
 export const OID_IF_ADMIN_STATUS_PREFIX = '1.3.6.1.2.1.2.2.1.7';
 export const OID_IF_OPER_STATUS_PREFIX = '1.3.6.1.2.1.2.2.1.8';
+export const OID_IF_NAME_PREFIX = '1.3.6.1.2.1.31.1.1.1.1';

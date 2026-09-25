@@ -149,6 +149,14 @@ export function registerHuaweiCommonSecurity(
     return dispatch('stelnet', ['server', 'disable']);
   });
   trie.registerGreedy('telnet', 'Telnet configuration', (args) => dispatch('telnet', args));
+  trie.registerGreedy('undo telnet', 'Disable the Telnet server', (args, raw) => {
+    const line = raw ?? `undo telnet ${args.join(' ')}`;
+    const [first, second] = args.map((a) => a.toLowerCase());
+    if (first === 'server' && second === 'enable') return dispatch('telnet', ['server', 'disable']);
+    const wrong = first === 'server' ? args[1] : args[0];
+    if (wrong === undefined) return HUAWEI_ERRORS.INCOMPLETE(line);
+    return HUAWEI_ERRORS.UNRECOGNIZED(line, line.toLowerCase().lastIndexOf(wrong.toLowerCase()));
+  });
   trie.registerGreedy('ssh', 'SSH configuration', (args) => dispatch('ssh', args));
   const snmpService = (): SnmpService | undefined =>
     (getRouter?.() as unknown as { getSnmpService?: () => SnmpService })?.getSnmpService?.()

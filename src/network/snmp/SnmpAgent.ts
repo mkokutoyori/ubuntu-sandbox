@@ -10,7 +10,8 @@ import {
   OID_SYS_CONTACT, OID_SYS_NAME, OID_SYS_LOCATION, OID_SYS_SERVICES,
   OID_IF_NUMBER, OID_IF_INDEX_PREFIX, OID_IF_DESCR_PREFIX,
   OID_IF_TYPE_PREFIX, OID_IF_MTU_PREFIX, OID_IF_PHYS_ADDR_PREFIX,
-  OID_IF_ADMIN_STATUS_PREFIX, OID_IF_OPER_STATUS_PREFIX,
+  OID_IF_ADMIN_STATUS_PREFIX, OID_IF_OPER_STATUS_PREFIX, OID_IF_NAME_PREFIX,
+  type SnmpVersion,
 } from './types';
 import {
   IPAddress,
@@ -18,6 +19,7 @@ import {
 } from '../core/types';
 import { Logger } from '../core/Logger';
 import type { UdpSendRequest } from '../layers/transport/UdpEgress';
+import type { Port } from '../hardware/Port';
 import {
   classifyIpv4Destination, connectedPrefixesOfPort, isDirectedBroadcast,
 } from '../layers/internet/InternetLayer';
@@ -28,14 +30,54 @@ export interface SnmpHost {
   readonly id: string;
   readonly name: string;
   getHostname(): string;
-  getPort(name: string): import('../hardware/Port').Port | undefined;
-  getPorts(): import('../hardware/Port').Port[];
+  getPort(name: string): Port | undefined;
+  getPorts(): Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
   getSysDescr(): string;
   getSysObjectId(): string;
   sendUdpDatagram(request: UdpSendRequest): boolean;
-  evaluateAclPermit?(aclName: string, sourceIp: string): boolean;
+  evaluateAclPermit?(aclName: string, sourceIp: string, inPort: string): boolean;
+  describeInterface?(port: Port): SnmpInterfaceRow;
 }
+
+export interface SnmpInterfaceRow {
+  readonly descr: string;
+  readonly name?: string;
+  readonly type?: number;
+}
+
+interface InterfaceEntry {
+  readonly index: number;
+  readonly port: Port;
+  readonly row: SnmpInterfaceRow;
+}
+
+interface InterfaceColumn {
+  readonly prefix: string;
+  value(entry: InterfaceEntry): SnmpValue | null;
+}
+
+const ETHERNET_CSMACD = 6;
+
+const INTERFACE_COLUMNS: readonly InterfaceColumn[] = [
+  { prefix: OID_IF_INDEX_PREFIX, value: (entry) => v('integer', entry.index) },
+  { prefix: OID_IF_DESCR_PREFIX, value: (entry) => v('octet-string', entry.row.descr) },
+  { prefix: OID_IF_TYPE_PREFIX, value: (entry) => v('integer', entry.row.type ?? ETHERNET_CSMACD) },
+  { prefix: OID_IF_MTU_PREFIX, value: (entry) => v('integer', entry.port.getMTU()) },
+  {
+    prefix: OID_IF_PHYS_ADDR_PREFIX,
+    value: (entry) => v('octet-string', Uint8Array.from(entry.port.getMAC().getOctets())),
+  },
+  { prefix: OID_IF_ADMIN_STATUS_PREFIX, value: (entry) => v('integer', entry.port.getIsUp() ? 1 : 2) },
+  {
+    prefix: OID_IF_OPER_STATUS_PREFIX,
+    value: (entry) => v('integer', entry.port.getIsUp() && entry.port.isConnected() ? 1 : 2),
+  },
+  {
+    prefix: OID_IF_NAME_PREFIX,
+    value: (entry) => (entry.row.name === undefined ? null : v('octet-string', entry.row.name)),
+  },
+];
 
 interface SnmpAnswer {
   readonly errorStatus: SnmpErrorStatus;
@@ -62,6 +104,7 @@ export class SnmpAgent {
       (query, packet) => this.transmitRouted(
         query.server, null, query.port.value, 49152 + (packet.requestId & 0x3fff), packet),
       () => this.getScheduler(),
+      'request-id-and-peer',
     );
   }
 
@@ -78,6 +121,12 @@ export class SnmpAgent {
   }
 
   getConfig(): Readonly<SnmpAgentConfig> { return this.config; }
+
+  setEnabled(enabled: boolean): void { this.config.enabled = enabled; }
+
+  replaceCommunities(entries: readonly SnmpCommunityAcl[]): void {
+    this.config.communities = entries.map((entry) => ({ ...entry }));
+  }
 
   setContact(s: string): void { this.config.contact = s; }
   setLocation(s: string): void { this.config.location = s; }
@@ -119,13 +168,27 @@ export class SnmpAgent {
    * absente est une restriction, pas une permission.
    */
   private communitySees(entry: SnmpCommunityAcl, oid: string): boolean {
+    if (entry.interfaceNames && !this.interfaceRowVisible(entry.interfaceNames, oid)) return false;
     if (!entry.viewName) return true;
     return oidInMibView(oid, this.config.mibViews.get(entry.viewName) ?? []);
   }
 
-  private communityAdmits(entry: SnmpCommunityAcl, srcIp: IPAddress): boolean {
+  private interfaceRowVisible(visible: readonly string[], oid: string): boolean {
+    const column = INTERFACE_COLUMNS.find((candidate) => oidStartsWith(oid, candidate.prefix));
+    if (!column || oid === column.prefix) return true;
+    const index = Number(oid.slice(column.prefix.length + 1));
+    const entry = this.interfaceEntries().find((candidate) => candidate.index === index);
+    return !entry || visible.includes(entry.port.getName());
+  }
+
+  private communityServes(entry: SnmpCommunityAcl, version: SnmpVersion, port: PortNumber): boolean {
+    if (!entry.queryPorts) return port.value === UDP_PORT_SNMP;
+    return entry.queryPorts[version]?.equals(port) ?? false;
+  }
+
+  private communityAdmits(entry: SnmpCommunityAcl, srcIp: IPAddress, inPort: string): boolean {
     if (!entry.aclName) return true;
-    return this.host.evaluateAclPermit?.(entry.aclName, srcIp.toString()) ?? false;
+    return this.host.evaluateAclPermit?.(entry.aclName, srcIp.toString(), inPort) ?? false;
   }
 
   removeCommunity(community: string): void {
@@ -164,9 +227,8 @@ export class SnmpAgent {
       this.manager.accept(srcIp, PortNumber.of(udp.sourcePort), payload);
       return;
     }
-    if ((payload.pduType === 'get-request' || payload.pduType === 'get-next-request')
-      && udp.destinationPort === UDP_PORT_SNMP) {
-      this.serveQuery(inPort, srcIp, udp.sourcePort, destinationIp, payload);
+    if (payload.pduType === 'get-request' || payload.pduType === 'get-next-request') {
+      this.serveQuery(inPort, srcIp, udp.sourcePort, destinationIp, PortNumber.of(udp.destinationPort), payload);
     }
   }
 
@@ -225,10 +287,10 @@ export class SnmpAgent {
 
   private serveQuery(
     inPort: string, srcIp: IPAddress, requesterPort: number, destinationIp: IPAddress,
-    request: SnmpPacket,
+    destinationPort: PortNumber, request: SnmpPacket,
   ): void {
-    const acl = this.config.communities.find((c) => c.community === request.community);
-    if (!acl) {
+    const named = this.config.communities.filter((c) => c.community === request.community);
+    if (named.length === 0) {
       this.getBus().publish({
         topic: 'snmp.auth.rejected',
         payload: {
@@ -239,7 +301,9 @@ export class SnmpAgent {
       });
       return;
     }
-    if (!this.communityAdmits(acl, srcIp)) {
+    const acl = named.find((c) =>
+      this.communityServes(c, request.version, destinationPort) && this.communityAdmits(c, srcIp, inPort));
+    if (!acl) {
       this.getBus().publish({
         topic: 'snmp.auth.rejected',
         payload: {
@@ -263,7 +327,7 @@ export class SnmpAgent {
     };
     const replySource = this.replySource(inPort, destinationIp);
     if (!replySource) return;
-    if (!this.transmitRouted(srcIp, replySource, requesterPort, UDP_PORT_SNMP, reply)) return;
+    if (!this.transmitRouted(srcIp, replySource, requesterPort, destinationPort.value, reply)) return;
     this.getBus().publish({
       topic: 'snmp.request.served',
       payload: {
@@ -325,17 +389,22 @@ export class SnmpAgent {
     if (builtin) return vb(oid, builtin());
     const custom = this.customMib.get(oid);
     if (custom) return vb(oid, custom());
-    for (let i = 1; i <= this.host.getPorts().length; i++) {
-      const port = this.host.getPorts()[i - 1];
-      if (oid === `${OID_IF_INDEX_PREFIX}.${i}`) return vb(oid, v('integer', i));
-      if (oid === `${OID_IF_DESCR_PREFIX}.${i}`) return vb(oid, v('octet-string', port.getName()));
-      if (oid === `${OID_IF_TYPE_PREFIX}.${i}`) return vb(oid, v('integer', 6));
-      if (oid === `${OID_IF_MTU_PREFIX}.${i}`) return vb(oid, v('integer', 1500));
-      if (oid === `${OID_IF_PHYS_ADDR_PREFIX}.${i}`) return vb(oid, v('octet-string', Uint8Array.from(port.getMAC().getOctets())));
-      if (oid === `${OID_IF_ADMIN_STATUS_PREFIX}.${i}`) return vb(oid, v('integer', port.getIsUp() ? 1 : 2));
-      if (oid === `${OID_IF_OPER_STATUS_PREFIX}.${i}`) return vb(oid, v('integer', port.getIsUp() && port.isConnected() ? 1 : 2));
+    for (const entry of this.interfaceEntries()) {
+      for (const column of INTERFACE_COLUMNS) {
+        if (oid !== `${column.prefix}.${entry.index}`) continue;
+        const value = column.value(entry);
+        return value === null ? null : vb(oid, value);
+      }
     }
     return null;
+  }
+
+  private interfaceEntries(): InterfaceEntry[] {
+    return this.host.getPorts().map((port, position) => ({
+      index: position + 1,
+      port,
+      row: this.host.describeInterface?.(port) ?? { descr: port.getName() },
+    }));
   }
 
   private resolveOidNext(oid: string, admits: (found: SnmpVarBinding) => boolean): SnmpVarBinding | null {
@@ -350,15 +419,10 @@ export class SnmpAgent {
   private allKnownOids(): string[] {
     const out = Array.from(this.builtins().keys());
     for (const k of this.customMib.keys()) out.push(k);
-    const ports = this.host.getPorts();
-    for (let i = 1; i <= ports.length; i++) {
-      out.push(`${OID_IF_INDEX_PREFIX}.${i}`);
-      out.push(`${OID_IF_DESCR_PREFIX}.${i}`);
-      out.push(`${OID_IF_TYPE_PREFIX}.${i}`);
-      out.push(`${OID_IF_MTU_PREFIX}.${i}`);
-      out.push(`${OID_IF_PHYS_ADDR_PREFIX}.${i}`);
-      out.push(`${OID_IF_ADMIN_STATUS_PREFIX}.${i}`);
-      out.push(`${OID_IF_OPER_STATUS_PREFIX}.${i}`);
+    for (const entry of this.interfaceEntries()) {
+      for (const column of INTERFACE_COLUMNS) {
+        if (column.value(entry) !== null) out.push(`${column.prefix}.${entry.index}`);
+      }
     }
     out.sort(oidCompare);
     return out;

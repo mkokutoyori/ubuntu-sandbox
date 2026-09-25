@@ -8,6 +8,10 @@ import { seedPredefinedConfig } from './schema/seedPredefined';
 import { FortiAdminApp } from './admin/FortiAdminApp';
 import type { AdminHttpApp } from '../../mgmt/AdminHttpServer';
 import { daemonMemoryKib } from './diag/sysTopRenderer';
+import { fortiGateSnmpIdentity } from './FortiSnmpObjects';
+import { FORTI_FIRMWARE, fortiFirmwareVersion, fortiVersionSuffix } from './FortiFirmware';
+import type { FirewallSnmpIdentity } from '../../mgmt/FirewallSnmp';
+import { sessionFamily } from '../../session/SessionFamily';
 
 const FACTORY_ADMIN = 'admin';
 
@@ -28,6 +32,38 @@ export class FortiGate extends Firewall {
       });
     }
     return this.adminApp;
+  }
+
+  protected override snmpIdentity(): FirewallSnmpIdentity {
+    return fortiGateSnmpIdentity({
+      model: () => this.getProfile().model,
+      firmwareVersion: () => fortiFirmwareVersion({
+        version: FORTIOS_PROFILE.defaultVersion,
+        build: FORTI_FIRMWARE.build,
+        buildDate: FORTI_FIRMWARE.buildDate,
+        versionSuffix: fortiVersionSuffix(FORTI_FIRMWARE),
+      }),
+      managementVdomIndex: () => this.vdomNames().indexOf('root') + 1,
+      cpuUsagePercent: () => 100 - this.getSystemLoad().cpuStates().idle,
+      memory: () => this.getSystemLoad().memory(),
+      logDisk: () => {
+        const disk = this.getProfile().logDisk;
+        return disk === undefined ? null
+          : { usedBytes: this.logDiskUsedBytes(), capacityBytes: disk.partitionBytes };
+      },
+      activeSessions: (family) => this.vdomNames().reduce((total, vdom) =>
+        total + this.getSessionTable(vdom).view().all()
+          .filter((session) => sessionFamily(session) === family).length, 0),
+      setupRate: (minutes) => this.getSystemLoad().averageSetupRate(minutes),
+      uptimeHundredths: () => Math.floor(this.getUptimeMs() / 10),
+      serial: () => this.serialNumber(),
+    });
+  }
+
+  protected override interfaceDescription(name: string): string {
+    const tree = this.configTree();
+    const spec = tree.spec(['system', 'interface']);
+    return spec === undefined ? '' : tree.table(spec).get(name)?.effective('description')[0] ?? '';
   }
 
   configTree(): FortiConfigTree {
