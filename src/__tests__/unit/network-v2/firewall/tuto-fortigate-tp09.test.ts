@@ -87,7 +87,7 @@ describe('TP 9 — voir le pare-feu penser avec `debug flow`', () => {
   it('etape 2 : un trafic AUTORISE trace la politique qui a decide', async () => {
     const { fgt, pcLan } = await laboratoire();
     await armerTrace(fgt, '192.168.20.10');
-    await pcLan.executeCommand('curl -sS http://192.168.20.10/');
+    await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/');
 
     const trace = await fgt.executeCommand('diagnose debug enable');
     expect(trace).toMatch(/received a packet\(proto=6,\s*192\.168\.10\.10/);
@@ -100,7 +100,7 @@ describe('TP 9 — voir le pare-feu penser avec `debug flow`', () => {
   it('etape 2 : `show function-name enable` ajoute le nom de fonction', async () => {
     const { fgt, pcLan } = await laboratoire();
     await armerTrace(fgt, '192.168.20.10');
-    await pcLan.executeCommand('curl -sS http://192.168.20.10/');
+    await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/');
 
     const trace = await fgt.executeCommand('diagnose debug enable');
     expect(trace).toContain('func=print_pkt_detail');
@@ -110,7 +110,7 @@ describe('TP 9 — voir le pare-feu penser avec `debug flow`', () => {
   it('etape 3 : un trafic REFUSE trace la politique 0', async () => {
     const { fgt, pcLan } = await laboratoire();
     await armerTrace(fgt, '192.168.20.10');
-    await pcLan.executeCommand('curl -sS https://192.168.20.10/');
+    await pcLan.executeCommand('curl -sS --connect-timeout 3 https://192.168.20.10/');
 
     const trace = await fgt.executeCommand('diagnose debug enable');
     expect(trace).toMatch(/Denied by forward policy check \(policy 0\)/);
@@ -125,7 +125,7 @@ describe('TP 9 — voir le pare-feu penser avec `debug flow`', () => {
       'diagnose debug reset',
     ]));
 
-    await pcLan.executeCommand('curl -sS http://192.168.20.10/');
+    await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/');
     expect(await fgt.executeCommand('diagnose debug flow filter'))
       .not.toContain('192.168.20.10');
   });
@@ -199,7 +199,7 @@ describe('TP 9 — voir le pare-feu penser avec `debug flow`', () => {
   it('etape 7 : un filtre BPF compose est honore', async () => {
     const { fgt, pcLan } = await laboratoire();
     await pingOnSimulatedClock(pcLan, 'ping -c 2 192.168.20.10');
-    await pcLan.executeCommand('curl -sS http://192.168.20.10/');
+    await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/');
 
     const seulementIcmp = await fgt.executeCommand(
       "diagnose sniffer packet any 'host 192.168.10.10 and not port 80' 4 50");
@@ -210,7 +210,7 @@ describe('TP 9 — voir le pare-feu penser avec `debug flow`', () => {
     await armerTrace(fgt, '192.168.20.10');
     await fgt.executeCommand('diagnose debug flow show function-name disable');
     await fgt.executeCommand('diagnose debug flow show console enable');
-    await pcLan.executeCommand('curl -sS http://192.168.20.10/');
+    await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/');
 
     expect(await fgt.executeCommand('diagnose debug enable'))
       .not.toContain('func=');
@@ -220,7 +220,7 @@ describe('TP 9 — voir le pare-feu penser avec `debug flow`', () => {
     const { fgt, pcLan } = await laboratoire();
     await armerTrace(fgt, '192.168.20.10');
     await fgt.executeCommand('diagnose debug flow show console disable');
-    await pcLan.executeCommand('curl -sS http://192.168.20.10/');
+    await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/');
 
     expect(await fgt.executeCommand('diagnose debug enable')).toBe('');
   });
@@ -228,7 +228,7 @@ describe('TP 9 — voir le pare-feu penser avec `debug flow`', () => {
   it('`show console` est ACTIVE par defaut — la trace se lit sans la demander', async () => {
     const { fgt, pcLan } = await laboratoire();
     await armerTrace(fgt, '192.168.20.10');
-    await pcLan.executeCommand('curl -sS http://192.168.20.10/');
+    await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/');
 
     expect(await fgt.executeCommand('diagnose debug enable'))
       .toMatch(/Allowed by Policy-2/);

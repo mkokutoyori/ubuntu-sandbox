@@ -85,6 +85,7 @@ export const COMMAND_PACKAGES: Readonly<Record<string, string>> = {
   wget: 'wget',
   addgroup: 'adduser', adduser: 'adduser', deluser: 'adduser', delgroup: 'adduser',
   'apt-cache': 'apt', 'apt-get': 'apt', apt: 'apt', 'apt-mark': 'apt',
+  dpkg: 'dpkg',
   arch: 'coreutils', cksum: 'coreutils', fmt: 'coreutils', pr: 'coreutils',
   tac: 'coreutils',
   blkid: 'util-linux', fdisk: 'util-linux', column: 'util-linux',
@@ -95,6 +96,7 @@ export const COMMAND_PACKAGES: Readonly<Record<string, string>> = {
   mkfs: 'util-linux', 'mkfs.ext4': 'e2fsprogs',
   'mkfs.xfs': 'xfsprogs', 'mkfs.btrfs': 'btrfs-progs',
   'named-checkconf': 'bind9', 'named-checkzone': 'bind9', rndc: 'bind9',
+  vsftpd: 'vsftpd',
 };
 /**
  * Le paquet qui livre cette commande. La commande le déclare elle-même

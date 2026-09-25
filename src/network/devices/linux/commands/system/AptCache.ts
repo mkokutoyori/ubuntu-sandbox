@@ -16,6 +16,8 @@
 
 import type { LinuxCommand } from '../LinuxCommand';
 import { PACKAGE_DB, searchPackages, findPackage } from '../../packages/PackageDatabase';
+import { packageRecords } from '../../packages/PackageState';
+import { packageHostOf } from './Apt';
 
 const USAGE = `Usage: apt-cache [options] command
        apt-cache [options] show pkg1 [pkg2 ...]
@@ -37,7 +39,9 @@ export const aptCacheCommand: LinuxCommand = {
   manSection: 8,
   usage: 'apt-cache [options] {search|show|showpkg|policy|stats|pkgnames} ...',
   help: 'Query the APT package cache.',
-  runWithStatusSync: (_ctx, args) => {
+  runWithStatusSync: (ctx, args) => {
+    const installed = new Set(packageRecords(packageHostOf(ctx))
+      .filter((record) => record.state === 'installed').map((record) => record.entry.name));
     const sub = args.find((a) => !a.startsWith('-')) ?? '';
     const reste = args.filter((a) => !a.startsWith('-') && a !== sub);
 
@@ -59,7 +63,7 @@ export const aptCacheCommand: LinuxCommand = {
     }
 
     if (sub === 'stats') {
-      const installes = PACKAGE_DB.filter((p) => p.installed).length;
+      const installes = installed.size;
       return {
         output: [
           `Total package names: ${PACKAGE_DB.length} (${PACKAGE_DB.length * 20} B)`,
@@ -91,10 +95,10 @@ export const aptCacheCommand: LinuxCommand = {
         if (sub === 'policy') {
           blocs.push([
             `${p.name}:`,
-            `  Installed: ${p.installed ? p.version : '(none)'}`,
+            `  Installed: ${installed.has(p.name) ? p.version : '(none)'}`,
             `  Candidate: ${p.version}`,
             '  Version table:',
-            `${p.installed ? ' *** ' : '     '}${p.version} 500`,
+            `${installed.has(p.name) ? ' *** ' : '     '}${p.version} 500`,
             '        500 http://archive.ubuntu.com/ubuntu jammy/main amd64 Packages',
           ].join('\n'));
         } else if (sub === 'showpkg') {

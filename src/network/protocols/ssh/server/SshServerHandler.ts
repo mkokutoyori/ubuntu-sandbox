@@ -32,6 +32,7 @@ import {
   ephemeralPublicKey, sharedSecretFrom,
 } from '../transport/SshRecordLayer';
 import type { ILinuxShell, ISshServerContext } from './ISshServerContext';
+import type { AuthorizedKeyOptions } from '../SshPureUtils';
 import type { SshInteractiveShell } from './SshInteractiveShell';
 import {
   type ISshServerEventBus,
@@ -153,6 +154,8 @@ export class SshServerHandler {
     const channels = new Map<number, OpenChannelInfo>();
     const sftpWireSessions = new Map<number, SftpWireSession>();
     let userCtx: SshUserContext | null = null;
+    let authenticatedKeyOptions: AuthorizedKeyOptions | null = null;
+    let forwarded: TcpConnection | null = null;
     let logoutRecorded = false;
     const recordLogoutOnce = (user: string): void => {
       if (logoutRecorded) return;
@@ -229,6 +232,8 @@ export class SshServerHandler {
     };
 
     conn.onClose?.((reason) => {
+      forwarded?.close();
+      forwarded = null;
       if (userCtx) recordLogoutOnce(userCtx.username);
       timers.clearAll();
       idleTimer = null;
@@ -339,6 +344,7 @@ export class SshServerHandler {
             if (result.ok) {
               conn.write(JSON.stringify({ ok: true }));
               userCtx = result.userCtx;
+              authenticatedKeyOptions = result.keyOptions;
               this.ctx.recordLogin(result.userCtx.username, clientIp);
               timers.clear(graceTimer);
               graceTimer = null;
@@ -415,6 +421,44 @@ export class SshServerHandler {
           break;
         }
 
+        case 'direct_tcpip': {
+          const host = String(parsed.host ?? '');
+          const port = Number(parsed.port);
+          if (!userCtx || forwarded !== null || !this.ctx.openDirectTcpip) {
+            conn.write(JSON.stringify({ op: 'direct_tcpip_reply', ok: false, reason: 'administratively prohibited: open failed' }));
+            return;
+          }
+          void this.ctx.openDirectTcpip({ user: userCtx, clientIp, keyOptions: authenticatedKeyOptions, host, port })
+            .then((outcome) => {
+              if (outcome.kind !== 'open') {
+                const reason = outcome.kind === 'prohibited'
+                  ? 'administratively prohibited: open failed'
+                  : `connect failed: ${outcome.reason}`;
+                conn.write(JSON.stringify({ op: 'direct_tcpip_reply', ok: false, reason }));
+                return;
+              }
+              forwarded = outcome.stream;
+              outcome.stream.onData((data) => conn.write(JSON.stringify({ op: 'tcpip_data', data })));
+              outcome.stream.onClose?.(() => {
+                forwarded = null;
+                conn.write(JSON.stringify({ op: 'tcpip_eof' }));
+              });
+              conn.write(JSON.stringify({ op: 'direct_tcpip_reply', ok: true }));
+            });
+          break;
+        }
+
+        case 'tcpip_data': {
+          forwarded?.write(String(parsed.data ?? ''));
+          break;
+        }
+
+        case 'tcpip_eof': {
+          forwarded?.close();
+          forwarded = null;
+          break;
+        }
+
         case 'exec': {
           // BRD SSH-05: non-interactive command execution. Also used by the
           // interactive shell sub-shell, which routes one exec per line.
@@ -428,7 +472,15 @@ export class SshServerHandler {
             );
             return;
           }
-          const command = (parsed.command as string | undefined) ?? '';
+          const asked = (parsed.command as string | undefined) ?? '';
+          const forced = this.ctx.forcedCommand?.(userCtx, clientIp, authenticatedKeyOptions) ?? null;
+          if (forced === 'internal-sftp') {
+            conn.write(JSON.stringify({
+              stdout: 'This service allows sftp connections only.\n', stderr: '', exitCode: 1,
+            }));
+            return;
+          }
+          const command = forced === null ? asked : withOriginalCommand(forced, asked);
           const channelId = parsed.channelId as number | undefined;
           const cwd =
             (channelId !== undefined && channels.get(channelId)?.cwd) ||
@@ -468,6 +520,18 @@ export class SshServerHandler {
           const channelId = parsed.channelId as number;
           const cwd =
             channels.get(channelId)?.cwd ?? userCtx.homeDirectory;
+          const forcedShell = this.ctx.forcedCommand?.(userCtx, clientIp, authenticatedKeyOptions) ?? null;
+          if (forcedShell !== null) {
+            conn.write(JSON.stringify({ ok: true, channelId, posixShell: true, motd: this.ctx.getMotd() }));
+            const runner = this.ctx.getShell(userCtx, cwd);
+            void runner.execute(forcedShell === 'internal-sftp' ? 'echo This service allows sftp connections only.' : forcedShell)
+              .then((result) => {
+                runner.dispose?.();
+                conn.write(JSON.stringify({ op: 'shell_output', channelId, chunk: result.stdout }));
+                conn.close();
+              });
+            return;
+          }
           channels.set(channelId, {
             type: 'shell',
             userCtx,
@@ -744,7 +808,7 @@ export class SshServerHandler {
     clientIp: string,
   ): Promise<
     | { ok: false }
-    | { ok: true; userCtx: SshUserContext }
+    | { ok: true; userCtx: SshUserContext; keyOptions: AuthorizedKeyOptions | null }
   > {
     const method = payload.method as string | undefined;
     const user = (payload.user as string | undefined) ?? '';
@@ -766,7 +830,9 @@ export class SshServerHandler {
     }
 
     // Root-login policy is a separate reason from a generic auth failure.
-    if (user === 'root' && !this.ctx.config.permitRootLogin) {
+    const rootMethod = method === 'publickey' ? 'publickey' : 'password';
+    const rootAllowed = this.ctx.rootMayLogIn?.(rootMethod) ?? this.ctx.config.permitRootLogin;
+    if (user === 'root' && !rootAllowed) {
       this.eventBus.emit({
         kind: 'auth_failure',
         port: this.ctx.clientPort?.(clientIp),
@@ -823,6 +889,7 @@ export class SshServerHandler {
     }
 
     let success = false;
+    let keyOptions: AuthorizedKeyOptions | null = null;
     if (credentialless) {
       success = this.ctx.auth.acceptsWithoutCredential?.(user) ?? false;
     } else if (method === 'password') {
@@ -832,9 +899,16 @@ export class SshServerHandler {
           : this.ctx.auth.checkPassword(user, password)
       );
     } else if (method === 'publickey') {
-      success =
-        this.ctx.config.pubkeyAuthentication &&
-        this.ctx.auth.checkPublicKey(user, (payload.publicKey as string) ?? '');
+      const offered = (payload.publicKey as string) ?? '';
+      if (this.ctx.admittedKey) {
+        const admitted = this.ctx.admittedKey(user, offered, { ip: clientIp });
+        const rootForced = user !== 'root'
+          || (this.ctx.rootMayLogIn?.('publickey', admitted?.options?.command !== undefined) ?? true);
+        success = this.ctx.config.pubkeyAuthentication && admitted !== null && rootForced;
+        keyOptions = admitted?.options ?? null;
+      } else {
+        success = this.ctx.config.pubkeyAuthentication && this.ctx.auth.checkPublicKey(user, offered);
+      }
     }
     if (!success) {
       this.eventBus.emit({
@@ -878,7 +952,7 @@ export class SshServerHandler {
     const userCtx =
       this.ctx.buildUserContext(user) ??
       new SshUserContext(user, 1000, 1000, [], `/home/${user}`);
-    return { ok: true, userCtx };
+    return { ok: true, userCtx, keyOptions };
   }
 }
 
@@ -921,4 +995,9 @@ function errorToMessage(error: unknown): string {
   }
 
   return e.message ?? e.kind ?? 'error';
+}
+
+function withOriginalCommand(forced: string, asked: string): string {
+  if (!asked) return forced;
+  return `export SSH_ORIGINAL_COMMAND='${asked.replace(/'/g, "'\\''")}'; ${forced}`;
 }

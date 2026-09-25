@@ -231,12 +231,17 @@ export class FortiShell {
   }
 
   private seedFactoryCertificates(): void {
-    for (const name of this.fw.getCertificateStore().localNames()) {
-      const entry = this.fw.getCertificateStore().local(name);
-      if (!entry || entry.source !== 'factory') continue;
-      this.declareLocalCertificate(
-        name, entry.certificatePem, entry.privateKeyPem, 'factory');
-    }
+    const spec = this.tree.spec(['vpn', 'certificate', 'local']);
+    if (!spec) return;
+    const store = this.fw.getCertificateStore();
+    this.tree.seedOnFirstRead(spec, () => {
+      for (const name of store.localNames()) {
+        const entry = store.local(name);
+        if (!entry || entry.source !== 'factory') continue;
+        this.declareLocalCertificate(
+          name, entry.certificatePem, entry.privateKeyPem, 'factory');
+      }
+    });
   }
 
   private seedFactoryAdmin(): void {

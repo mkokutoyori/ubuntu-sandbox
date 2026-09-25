@@ -29,13 +29,31 @@ export interface TrustAnchor {
   readonly trusted: boolean;
 }
 
+type Deferred<T> = T | (() => T);
+
+function resolved<T extends object>(entries: Map<string, Deferred<T>>, name: string): T | undefined {
+  const entry = entries.get(name);
+  if (typeof entry !== 'function') return entry;
+  const value = entry();
+  entries.set(name, value);
+  return value;
+}
+
 export class CertificateStore {
-  private readonly locals = new Map<string, LocalCertificate>();
-  private readonly authorities = new Map<string, TrustAnchor>();
+  private readonly locals = new Map<string, Deferred<LocalCertificate>>();
+  private readonly authorities = new Map<string, Deferred<TrustAnchor>>();
   private readonly requests = new Map<string, LocalCertificateRequest>();
 
   setLocal(entry: LocalCertificate): void {
     this.locals.set(entry.name, entry);
+  }
+
+  setLocalOnFirstRead(name: string, build: () => LocalCertificate): void {
+    this.locals.set(name, build);
+  }
+
+  hasLocal(name: string): boolean {
+    return this.locals.has(name);
   }
 
   removeLocal(name: string): boolean {
@@ -43,7 +61,7 @@ export class CertificateStore {
   }
 
   local(name: string): LocalCertificate | undefined {
-    return this.locals.get(name);
+    return resolved(this.locals, name);
   }
 
   localNames(): readonly string[] {
@@ -70,12 +88,16 @@ export class CertificateStore {
     this.authorities.set(entry.name, entry);
   }
 
+  setAuthorityOnFirstRead(name: string, build: () => TrustAnchor): void {
+    this.authorities.set(name, build);
+  }
+
   removeAuthority(name: string): boolean {
     return this.authorities.delete(name);
   }
 
   authority(name: string): TrustAnchor | undefined {
-    return this.authorities.get(name);
+    return resolved(this.authorities, name);
   }
 
   authorityNames(): readonly string[] {
@@ -83,7 +105,8 @@ export class CertificateStore {
   }
 
   trustAnchors(): readonly X509Certificate[] {
-    return Object.freeze([...this.authorities.values()]
+    return Object.freeze([...this.authorities.keys()]
+      .map(name => resolved(this.authorities, name)!)
       .filter(entry => entry.trusted)
       .map(entry => entry.certificate));
   }

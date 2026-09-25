@@ -12,7 +12,7 @@ import {
 } from './FirewallDhcp';
 import { deliverToRoutingProtocol } from '../routing/RoutingWiring';
 import { SdwanService } from '../sdwan/SdwanService';
-import type { IPv4Packet, IPAddress } from '../../../core/types';
+import { IPAddress, type IPv4Packet } from '../../../core/types';
 
 export interface L3ServiceHost {
   readonly deviceId: string;
@@ -66,6 +66,13 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
     },
     leaseLost: (iface) => { host.routes().removeStaticById(`dhcp:${iface}`); },
     systemDnsServers: () => host.systemDnsServers?.() ?? [],
+    sendToServer: (server, packet) => {
+      const hop = host.routes().resolveNextHop(server.toString());
+      if (!hop) return false;
+      host.emitArpAware(hop.iface, packet, new IPAddress(hop.nextHop));
+      return true;
+    },
+    interfaceOwning: (address) => host.interfaces().owningInterface(address) ?? null,
   });
 
   const sdwan = new SdwanService({

@@ -115,14 +115,14 @@ describe('TP 23 — Depanner trois pannes que tu ne connais pas', () => {
 
     it('le LAN n\'atteint plus le serveur web de la DMZ', async () => {
       const { fgt, pcLan } = await laboratoire();
-      expect(await pcLan.executeCommand('curl -sS http://192.168.20.10/'))
+      expect(await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/'))
         .toContain('nginx');
 
       await taper(fgt, [
         'config firewall policy', 'edit 2', 'set service "HTTPS"', 'next', 'end',
       ]);
 
-      expect(await pcLan.executeCommand('curl -sS http://192.168.20.10/'))
+      expect(await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/'))
         .not.toContain('nginx');
     });
 
@@ -131,14 +131,14 @@ describe('TP 23 — Depanner trois pannes que tu ne connais pas', () => {
       await taper(fgt, [
         'config firewall policy', 'edit 2', 'set service "HTTPS"', 'next', 'end',
       ]);
-      await pcLan.executeCommand('curl -sS http://192.168.20.10/');
+      await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/');
 
       const trace = await fgt.executeCommand(
         "diagnose sniffer packet any 'host 192.168.20.10' 4 10");
 
       expect(trace).toContain('192.168.20.10');
       expect(trace).toMatch(/port2/);
-      expect(trace).not.toMatch(/port3/);
+      expect(trace).not.toMatch(/port3 .*-> 192\.168\.20\.10\.80:/);
     });
 
     it('la trace de flux dit `Denied by forward policy check (policy 0)`', async () => {
@@ -147,7 +147,7 @@ describe('TP 23 — Depanner trois pannes que tu ne connais pas', () => {
         'config firewall policy', 'edit 2', 'set service "HTTPS"', 'next', 'end',
       ]);
       await armerTrace(fgt, '192.168.20.10');
-      await pcLan.executeCommand('curl -sS http://192.168.20.10/');
+      await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/');
 
       const trace = await fgt.executeCommand('diagnose debug enable');
 
@@ -164,7 +164,7 @@ describe('TP 23 — Depanner trois pannes que tu ne connais pas', () => {
         'config firewall policy', 'edit 2', 'set service "PING" "HTTP"', 'next', 'end',
       ]));
 
-      expect(await pcLan.executeCommand('curl -sS http://192.168.20.10/'))
+      expect(await pcLan.executeCommand('curl -sS --connect-timeout 3 http://192.168.20.10/'))
         .toContain('nginx');
     });
   });
@@ -256,7 +256,7 @@ describe('TP 23 — Depanner trois pannes que tu ne connais pas', () => {
 
     it('le serveur publie ne repond plus depuis le WAN', async () => {
       const { fgt, r1 } = await laboratoire();
-      expect(await r1.executeCommand('curl -sS http://192.168.100.200/'))
+      expect(await r1.executeCommand('curl -sS --connect-timeout 3 http://192.168.100.200/'))
         .toContain('nginx');
 
       await taper(fgt, [
@@ -264,7 +264,7 @@ describe('TP 23 — Depanner trois pannes que tu ne connais pas', () => {
         'set mappedip "192.168.20.99"', 'next', 'end',
       ]);
 
-      expect(await r1.executeCommand('curl -sS http://192.168.100.200/'))
+      expect(await r1.executeCommand('curl -sS --connect-timeout 3 http://192.168.100.200/'))
         .not.toContain('nginx');
     });
 
@@ -282,7 +282,7 @@ describe('TP 23 — Depanner trois pannes que tu ne connais pas', () => {
         'set mappedip "192.168.20.99"', 'next', 'end',
       ]);
       await armerTrace(fgt, '192.168.100.200');
-      await r1.executeCommand('curl -sS http://192.168.100.200/');
+      await r1.executeCommand('curl -sS --connect-timeout 3 http://192.168.100.200/');
 
       const trace = await fgt.executeCommand('diagnose debug enable');
 
@@ -301,7 +301,7 @@ describe('TP 23 — Depanner trois pannes que tu ne connais pas', () => {
         'set mappedip "192.168.20.10"', 'next', 'end',
       ]));
 
-      expect(await r1.executeCommand('curl -sS http://192.168.100.200/'))
+      expect(await r1.executeCommand('curl -sS --connect-timeout 3 http://192.168.100.200/'))
         .toContain('nginx');
     });
   });

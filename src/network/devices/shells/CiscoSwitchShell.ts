@@ -3091,7 +3091,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
               : m.state === 'standalone' ? 'I' : 's';
             return `${this.abbreviateInterface(m.portName)}(${flag})`;
           }).join(' ');
-          lines.push(`${String(g.id).padEnd(7)}${g.name.padEnd(14)}${protocol.padEnd(12)}${portList}`);
+          const inUse = g.members.some(m => m.bundled) ? 'U' : 'D';
+          const bundle = `${this.abbreviateInterface(g.name)}(S${inUse})`;
+          lines.push(`${String(g.id).padEnd(7)}${bundle.padEnd(14)}${protocol.padEnd(12)}${portList}`);
         }
         return lines.join('\n');
       }
@@ -4672,7 +4674,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         port: this.abbreviateInterface(portName),
         name: (sw.getInterfaceDescription(portName) || '')
           .slice(0, INTERFACE_STATUS_NAME_WIDTH),
-        status: port.getIsUp() ? (connected ? 'connected' : 'notconnect') : 'disabled',
+        status: sw.isPortErrDisabled(portName) ? 'err-disabled'
+          : port.getIsUp() ? (connected ? 'connected' : 'notconnect') : 'disabled',
         vlan: cfg?.mode === 'trunk' ? 'trunk' : String(cfg?.accessVlan || 1),
         // Read the port rather than guess from its name. The `a-`
         // prefix is IOS's way of saying the value was AUTO-NEGOTIATED,
@@ -5405,7 +5408,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       dhcpLease: () => this.showIpDhcpLease(),
       dhcpDatabase: () => dhcp().formatDatabaseShow(),
       dhcpSnoopingStatistics: () => this.showIpDhcpSnoopingStatistics(),
-      stormControl: (sorte) => this.showStormControl(sorte),
+      stormControl: (words) => this.showStormControl(words),
       etherChannel: (mots) => this.showEtherchannel([...mots]),
       interfacesTrunk: () => this.showTrunkTable(this.d().getPortNames()),
       interfacesCounters: (iface) => {
@@ -5437,11 +5440,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
    * inventer un pourcentage courant serait la seule facon de mentir ici.
    * Le seuil, lui, est exact.
    */
-  private showStormControl(sorte: string | null): string {
+  private showStormControl(words: readonly string[]): string {
+    const sorte = words.find((w) => (STORM_CONTROL_TYPES as readonly string[]).includes(w.toLowerCase())) ?? null;
+    const ifaceArg = words.find((w) => !(STORM_CONTROL_TYPES as readonly string[]).includes(w.toLowerCase()));
+    const portNames = this.d().getPortNames();
+    const cible = ifaceArg
+      ? portNames.find((n) => this.abbreviateInterface(n) === this.abbreviateInterface(ifaceArg))
+      : undefined;
+    if (ifaceArg && !cible) return CISCO_ERRORS.INVALID_INPUT;
     const voulu = sorte === null ? STORM_CONTROL_TYPES : [sorte];
     const lignes = ['Interface  Filter State   Upper        Lower        Current'];
     let trouve = false;
-    for (const nom of this.d().getPortNames()) {
+    for (const nom of portNames) {
+      if (cible && nom !== cible) continue;
       const conf = (this.ifExtra.get(nom) ?? []).filter((l) => l.startsWith('storm-control'));
       for (const type of voulu) {
         const seuil = conf.find((l) => l.startsWith(`storm-control ${type} level`));
@@ -6624,6 +6635,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private abbreviateInterface(name: string): string {
     return name
       .replace('FastEthernet', 'Fa')
-      .replace('GigabitEthernet', 'Gi');
+      .replace('GigabitEthernet', 'Gi')
+      .replace('Port-channel', 'Po');
   }
 }

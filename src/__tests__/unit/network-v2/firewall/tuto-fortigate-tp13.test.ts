@@ -88,7 +88,7 @@ async function laboratoirePareFeu() {
 describe('TP 13 — prouver l\'absence de memoire', () => {
   it('temoin : sans ACL la navigation fonctionne a travers R1', async () => {
     const { pcLan } = await laboratoireRouteur();
-    expect(await pcLan.executeCommand('curl -sS http://203.0.113.50/'))
+    expect(await pcLan.executeCommand('curl -sS --connect-timeout 3 http://203.0.113.50/'))
       .toContain('Welcome to nginx!');
   });
 
@@ -102,7 +102,7 @@ describe('TP 13 — prouver l\'absence de memoire', () => {
       'ip access-group DEPUIS-INTERNET in', 'exit', 'end',
     ]);
 
-    expect(await pcLan.executeCommand('curl -sS http://203.0.113.50/'))
+    expect(await pcLan.executeCommand('curl -sS --connect-timeout 3 http://203.0.113.50/'))
       .not.toContain('Welcome to nginx!');
   });
 
@@ -115,7 +115,7 @@ describe('TP 13 — prouver l\'absence de memoire', () => {
       'interface GigabitEthernet0/0',
       'ip access-group DEPUIS-INTERNET in', 'exit', 'end',
     ]);
-    await pcLan.executeCommand('curl -sS http://203.0.113.50/');
+    await pcLan.executeCommand('curl -sS --connect-timeout 3 http://203.0.113.50/');
 
     const vue = await r1.executeCommand('show ip access-lists DEPUIS-INTERNET');
     expect(vue).toContain('deny ip any any');
@@ -134,7 +134,7 @@ describe('TP 13 — prouver l\'absence de memoire', () => {
       'ip access-group DEPUIS-INTERNET in', 'exit', 'end',
     ]);
 
-    expect(await pcLan.executeCommand('curl -sS http://203.0.113.50/'))
+    expect(await pcLan.executeCommand('curl -sS --connect-timeout 3 http://203.0.113.50/'))
       .toContain('Welcome to nginx!');
   });
 
@@ -173,7 +173,7 @@ describe('TP 13 — prouver l\'absence de memoire', () => {
       ]);
       await pcLan.executeCommand('nc -l -p 8080 &');
 
-      expect(await pcLan.executeCommand('curl -sS http://203.0.113.50/'))
+      expect(await pcLan.executeCommand('curl -sS --connect-timeout 3 http://203.0.113.50/'))
         .toContain('Welcome to nginx!');
       expect(await externe.executeCommand('nmap -p 8080 192.168.10.10'))
         .not.toMatch(/8080\/tcp\s+open/);
@@ -202,7 +202,7 @@ describe('TP 13 — prouver l\'absence de memoire', () => {
     async () => {
       const { fgt, pcLan } = await laboratoirePareFeu();
 
-      expect(await pcLan.executeCommand('curl -sS http://203.0.113.50/'))
+      expect(await pcLan.executeCommand('curl -sS --connect-timeout 3 http://203.0.113.50/'))
         .toContain('Welcome to nginx!');
       expect(await fgt.executeCommand('show firewall policy'))
         .not.toMatch(/set srcintf "port1"/);

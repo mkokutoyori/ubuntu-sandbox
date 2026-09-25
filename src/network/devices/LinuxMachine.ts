@@ -32,6 +32,7 @@ import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equi
 import type { PathActor } from './linux/VfsPath';
 import { findHostByAddress } from './linux/network/HostLookup';
 import { LinuxNginxService } from './linux/http/nginx/LinuxNginxService';
+import { LinuxVsftpdService } from './linux/ftp/LinuxVsftpdService';
 import { LinuxNfsService, EXPORTS_PATH, DEBIAN_EXPORTS_FILE } from './linux/nfs/LinuxNfsService';
 import { NfsMountedFileSystem } from '@/network/nfs/NfsMountedFileSystem';
 import { NfsClient, TcpRpcTransport } from '@/network/nfs/NfsClient';
@@ -1272,6 +1273,22 @@ export abstract class LinuxMachine extends EndHost
     ));
     vfs.setRemoteMountPort(this.executor.nfsMounts);
 
+    this.vsftpdService = new LinuxVsftpdService({
+      vfs,
+      tcpStack: () => this.getTcpStack(),
+      account: (username) => {
+        const entry = this.executor.userMgr.getUser(username);
+        return entry ? { username: entry.username, uid: entry.uid, gid: entry.gid, home: entry.home } : null;
+      },
+      groupsOf: (username) => this.executor.userMgr.getUserGroups(username).map((g) => g.gid),
+      checkPassword: (username, password) => this.executor.userMgr.checkPassword(username, password),
+    });
+    this.executor.registerServiceSocketServer('vsftpd', this.vsftpdService);
+    this.executor.serviceMgr.registerConfigCheck('vsftpd', () => {
+      const loaded = this.vsftpdService?.loadSettings();
+      if (loaded && loaded.ok === false) return { ok: false, error: loaded.error, verbatim: true };
+      return { ok: true };
+    });
     this.executor.registerServiceSocketServer('nginx', this.nginxService);
     this.executor.nginxService = this.nginxService;
     this.installerRsyslog(vfs);
@@ -1430,6 +1447,7 @@ export abstract class LinuxMachine extends EndHost
   /** Le serveur nginx de cette machine — `null` avant l'amorçage. */
   nginxService: LinuxNginxService | null = null;
   nfsService: LinuxNfsService | null = null;
+  vsftpdService: LinuxVsftpdService | null = null;
 
   /** L'agent NTP de cette machine — le MÊME moteur que Cisco et Huawei. */
   private _ntpAgent: NtpAgent | null = null;
@@ -1912,7 +1930,11 @@ export abstract class LinuxMachine extends EndHost
    *   - AllowUsers patterns (glob *) — when present, user must match one
    *   - DenyUsers takes precedence over AllowUsers
    */
-  sshdAcceptsLogin(user: string, ctx?: { address?: string; host?: string }): { ok: boolean; reason?: string } {
+  sshdAcceptsLogin(
+    user: string, ctx?: {
+      address?: string; host?: string; method?: 'publickey' | 'password' | 'pending'; keyForcesCommand?: boolean;
+    },
+  ): { ok: boolean; reason?: string } {
     // Use the live sshd-context-cached snapshot, NOT a fresh re-parse.
     // Real sshd holds its config in memory until SIGHUP / `systemctl
     // reload ssh`; editing /etc/ssh/sshd_config without reloading does
@@ -1921,7 +1943,12 @@ export abstract class LinuxMachine extends EndHost
     const config = this.getSshServerContext().effectiveSshdServerConfig();
 
     const policy = config.permitRootLogin;
-    if (user === 'root' && policy !== 'yes') {
+    const method = ctx?.method;
+    const rootAdmitted = policy === 'yes'
+      || ((policy === 'prohibit-password' || policy === 'forced-commands-only') && method === 'pending')
+      || (policy === 'prohibit-password' && method === 'publickey')
+      || (policy === 'forced-commands-only' && method === 'publickey' && ctx?.keyForcesCommand === true);
+    if (user === 'root' && !rootAdmitted) {
       return { ok: false, reason: `PermitRootLogin ${policy}` };
     }
     const userGroups = (this.executor.userMgr.getUserGroups?.(user) ?? []).map((g: { name: string }) => g.name);
@@ -1935,14 +1962,14 @@ export abstract class LinuxMachine extends EndHost
       | undefined;
     if (!userEntry) return { ok: false, reason: 'no such user' };
 
-    // Locked account: either the userMgr's in-memory flag is on, or
-    // /etc/shadow stores "!<hash>" / "!".
-    if (userEntry.locked) return { ok: false, reason: 'account locked' };
-    if (userEntry.password === '!') return { ok: false, reason: 'no password set' };
-    const shadow = this.executor.vfs.readFile('/etc/shadow') ?? '';
-    const shadowLine = shadow.split('\n').find(l => l.startsWith(`${user}:`));
-    if (shadowLine && /^!/.test(shadowLine.split(':')[1] ?? '')) {
-      return { ok: false, reason: 'account locked' };
+    if (!config.usePam) {
+      if (userEntry.locked) return { ok: false, reason: 'account locked' };
+      if (userEntry.password === '!') return { ok: false, reason: 'account locked' };
+      const shadow = this.executor.vfs.readFile('/etc/shadow') ?? '';
+      const shadowLine = shadow.split('\n').find(l => l.startsWith(`${user}:`));
+      if (shadowLine && /^!/.test(shadowLine.split(':')[1] ?? '')) {
+        return { ok: false, reason: 'account locked' };
+      }
     }
     // Account/password expiry (chage -E / -M) is a PAM *account*-phase
     // concern, checked after credentials verify — see
@@ -3823,6 +3850,10 @@ export abstract class LinuxMachine extends EndHost
       clearDefaultGateway: (): void => {
         this.clearDefaultGateway();
       },
+      addDefaultRouteEntry: (gw: IPAddress, metric: number, mode: 'add' | 'append' | 'replace'): boolean =>
+        this.addDefaultRouteEntry(gw, metric, mode),
+      removeDefaultRouteEntry: (filter: { nextHop?: IPAddress; metric?: number }): boolean =>
+        this.removeDefaultRouteEntry(filter),
       getRoutingTableFor: (tableId: number): HostRouteEntry[] => {
         return this.getRoutingTableFor(tableId);
       },
@@ -3869,6 +3900,9 @@ export abstract class LinuxMachine extends EndHost
       },
       sendGratuitousArp: (iface: string, ip: IPAddress, mode: 'request' | 'reply'): boolean => {
         return this.sendGratuitousArp(iface, ip, mode);
+      },
+      probeArp: (iface: string, target: IPAddress, timeoutMs: number): Promise<MACAddress | null> => {
+        return this.probeArp(iface, target, timeoutMs);
       },
       hasRoute: (target: IPAddress): boolean => {
         return this.hasRouteOrLocal(target);
@@ -3917,6 +3951,10 @@ export abstract class LinuxMachine extends EndHost
           target, destinationPort, sourcePort, payload ?? null,
           payload?.length ?? 0, emission);
       },
+      sendCraftedIcmpEcho: (
+        target: IPAddress,
+        options?: { sourceIp?: IPAddress; ttl?: number; dataSize?: number },
+      ): boolean => this.sendCraftedIcmpEcho(target, options ?? {}),
       getResolvedService: () => this.getResolvedService(),
       publishResolvedState: () => this.publishResolvedState(),
       syncLinkLocalResponders: () => this.syncLinkLocalResponders(),

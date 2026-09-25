@@ -19,6 +19,10 @@ interface ConnectionLineProps {
   route: CableRoute;
 }
 
+interface ConnectionLabelProps extends ConnectionLineProps {
+  zoom: number;
+}
+
 function ConnectionLineImpl({ connection, devices, route }: ConnectionLineProps) {
   // Scoped selectors, not a bare useNetworkStore() — this component
   // shouldn't re-render just because the user panned, zoomed, or moved
@@ -147,7 +151,7 @@ function ConnectionLineImpl({ connection, devices, route }: ConnectionLineProps)
   );
 }
 
-export function ConnectionLabel({ connection, devices, route }: ConnectionLineProps) {
+export function ConnectionLabel({ connection, devices, route, zoom }: ConnectionLabelProps) {
   const selectedConnectionId = useNetworkStore(s => s.selectedConnectionId);
   const selectConnection = useNetworkStore(s => s.selectConnection);
   const removeConnection = useNetworkStore(s => s.removeConnection);
@@ -167,28 +171,29 @@ export function ConnectionLabel({ connection, devices, route }: ConnectionLinePr
   const { color } = getLinkAppearance(connection.type, isOperational);
 
   const removeAt = route.targetLabel;
-  const removeOffset = removeAt.vertical
+  const removeOffset = (removeAt.vertical
     ? TAG_HEIGHT / 2
-    : interfaceTagWidth(removeAt.text) / 2;
+    : interfaceTagWidth(removeAt.text) / 2) / zoom;
 
   return (
     <g data-label-for={connection.id}>
-      <PortTag
-        placement={route.sourceLabel}
-        color={color}
-        emphasised={isSelected}
-        onSelect={() => selectConnection(connection.id)}
-      />
-      <PortTag
-        placement={route.targetLabel}
-        color={color}
-        emphasised={isSelected}
-        onSelect={() => selectConnection(connection.id)}
-      />
+      {[route.sourceLabel, route.targetLabel]
+        .filter(placement => placement.shown || isSelected)
+        .map(placement => (
+          <PortTag
+            key={placement.text + placement.along}
+            placement={placement}
+            zoom={zoom}
+            color={color}
+            emphasised={isSelected}
+            onSelect={() => selectConnection(connection.id)}
+          />
+        ))}
 
       {isSelected && (
         <g
-          transform={`translate(${removeAt.at.x + removeOffset + 12}, ${removeAt.at.y})`}
+          transform={`translate(${removeAt.at.x + removeOffset + 12 / zoom}, ${removeAt.at.y}) `
+            + `scale(${1 / zoom})`}
           className="cursor-pointer"
           onClick={() => removeConnection(connection.id)}
         >
@@ -210,8 +215,9 @@ export function ConnectionLabel({ connection, devices, route }: ConnectionLinePr
 }
 
 function PortTag(
-  { placement, color, emphasised, onSelect }: {
+  { placement, zoom, color, emphasised, onSelect }: {
     placement: LabelPlacement;
+    zoom: number;
     color: string;
     emphasised: boolean;
     onSelect: () => void;
@@ -219,11 +225,12 @@ function PortTag(
 ) {
   const width = interfaceTagWidth(placement.text);
   const { x, y } = placement.at;
+  const upright = placement.vertical ? `rotate(90 ${x} ${y}) ` : '';
   return (
     <g
       className="cursor-pointer select-none"
       data-port-label=""
-      transform={placement.vertical ? `rotate(90 ${x} ${y})` : undefined}
+      transform={`${upright}translate(${x} ${y}) scale(${1 / zoom}) translate(${-x} ${-y})`}
       onClick={onSelect}
     >
       <rect

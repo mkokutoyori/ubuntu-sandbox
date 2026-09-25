@@ -15,9 +15,10 @@
  *  - LA PASTILLE : sa largeur suit son texte, et son texte est le nom
  *    du PORT qu'elle touche, abrege.
  *
- * OU la pastille se pose, c'est `cable-routing.test.ts` qui le tient :
- * ce n'est plus une distance fixe depuis la carte mais la position la
- * plus proche de son interface qui degage tout le reste.
+ * OU la pastille se pose, et si elle est A PLAT ou PIVOTEE, c'est
+ * `cable-routing.test.ts` qui le tient : ce n'est plus une distance
+ * fixe depuis la carte mais la position la plus proche de son interface
+ * qui degage tout le reste, prise a plat tant que cela se peut.
  *
  * Sonde ecrite AVANT le correctif : 12 cas sur 13 tombaient.
  */

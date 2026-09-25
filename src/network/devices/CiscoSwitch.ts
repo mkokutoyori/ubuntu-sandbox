@@ -265,6 +265,10 @@ export class CiscoSwitch extends Switch {
     return new Set(this.bpduGuardErrDisabled.keys());
   }
 
+  override isPortErrDisabled(portName: string): boolean {
+    return this.bpduGuardErrDisabled.has(portName) || super.isPortErrDisabled(portName);
+  }
+
   _clearBpduGuardErrDisable(portName: string): boolean {
     if (!this.bpduGuardErrDisabled.delete(portName)) return false;
     const p = this.getPort(portName);

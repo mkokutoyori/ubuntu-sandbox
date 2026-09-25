@@ -14,6 +14,8 @@ import type { SshHostKey } from '../SshHostKey';
 import type { SshUserContext } from '../SshUserContext';
 import type { ISshServerEventBus } from './SshServerEvent';
 import type { SshInteractiveShell } from './SshInteractiveShell';
+import type { TcpStream } from '@/network/tcp/types';
+import type { AuthorizedKey, AuthorizedKeyOptions, KeySource } from '../SshPureUtils';
 export type { SshUserContext };
 
 export interface SshServerConfig {
@@ -188,7 +190,24 @@ export interface ISshServerContext {
    * SSH_MSG_USERAUTH_BANNER).
    */
   getBanner?(): string | null;
+  openDirectTcpip?(request: DirectTcpipRequest): Promise<DirectTcpipOutcome>;
+  rootMayLogIn?(method: 'password' | 'publickey', keyForcesCommand?: boolean): boolean;
+  admittedKey?(user: string, publicKey: string, source: KeySource): AuthorizedKey | null;
+  forcedCommand?(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): string | null;
 }
+
+export interface DirectTcpipRequest {
+  readonly user: SshUserContext;
+  readonly clientIp: string;
+  readonly keyOptions: AuthorizedKeyOptions | null;
+  readonly host: string;
+  readonly port: number;
+}
+
+export type DirectTcpipOutcome =
+  | { readonly kind: 'open'; readonly stream: TcpStream }
+  | { readonly kind: 'prohibited' }
+  | { readonly kind: 'connect-failed'; readonly reason: string };
 
 export const DEFAULT_SSH_SERVER_CONFIG: SshServerConfig = Object.freeze({
   listenPort: 22,

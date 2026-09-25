@@ -140,6 +140,7 @@ export interface TcpOpenHandler {
 }
 
 export interface TcpConnectOptions {
+  localPort?: PortNumber;
   onOpen?: TcpOpenHandler;
   onData?: TcpDataHandler;
   onClose?: TcpCloseHandler;
@@ -571,13 +572,32 @@ export class TcpStack {
     socket.ownerPid = pid;
   }
 
+  clock(): IScheduler {
+    return this.getScheduler();
+  }
+
+  localPortInUse(port: PortNumber, rawRemoteIp: string): boolean {
+    const localIp = this.resolveEgress(canonicalIpText(rawRemoteIp))?.srcIp;
+    for (const socket of this.sockets.values()) {
+      if (socket.localPort === port.value && socket.localIp === localIp) return true;
+    }
+    for (const listener of this.listeners.values()) {
+      if (listener.localPort === port.value && (listener.localIp === localIp || listener.localIp === '0.0.0.0')) return true;
+    }
+    return false;
+  }
+
   connect(rawRemoteIp: string, remotePort: number, opts: TcpConnectOptions = {}): TcpSocket | null {
     if (!this.enabled) return null;
     const remoteIp = canonicalIpText(rawRemoteIp);
     const egress = this.resolveEgress(remoteIp);
     if (!egress) { this.dropped(remoteIp, remotePort, 'no-egress'); return null; }
     const localIp = egress.srcIp;
-    const localPort = this.nextEphemeral(localIp);
+    if (opts.localPort && this.localPortInUse(opts.localPort, remoteIp)) {
+      this.dropped(remoteIp, remotePort, 'addr-in-use');
+      return null;
+    }
+    const localPort = opts.localPort?.value ?? this.nextEphemeral(localIp);
     if (localPort === -1) {
       this.dropped(remoteIp, remotePort, 'no-ephemeral');
       return null;
@@ -2081,7 +2101,7 @@ export class TcpStack {
     return inUse.size < size;
   }
 
-  private dropped(remoteIp: string, remotePort: number, reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum' | 'no-ephemeral' | 'listen-ignores-segment'): void {
+  private dropped(remoteIp: string, remotePort: number, reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum' | 'no-ephemeral' | 'addr-in-use' | 'listen-ignores-segment'): void {
     this.getBus().publish({
       topic: 'tcp.segment.dropped',
       payload: {

@@ -1,4 +1,4 @@
-import type { IPv4Packet } from '../../../core/types';
+import { IP_PROTO_ICMP, type ICMPPacket, type IPv4Packet } from '../../../core/types';
 import {
   getPacketDstPort,
   getPacketSrcPort,
@@ -62,6 +62,58 @@ export interface NatStatistics {
 
 const DEFAULT_PORT_RANGE: PortRange = Object.freeze({ from: 1024, to: 65535 });
 const ANY = 'any';
+
+interface Endpoint { readonly address: string; readonly port: number }
+interface EndpointPair { readonly source: Endpoint; readonly dest: Endpoint }
+
+function beforeTranslation(translation: SessionTranslation, direction: FlowDirection): EndpointPair {
+  return direction === 'c2s'
+    ? {
+      source: { address: translation.originalSource, port: translation.originalSourcePort },
+      dest: { address: translation.originalDest, port: translation.originalDestPort },
+    }
+    : {
+      source: { address: translation.translatedDest, port: translation.translatedDestPort },
+      dest: { address: translation.translatedSource, port: translation.translatedSourcePort },
+    };
+}
+
+function afterTranslation(translation: SessionTranslation, direction: FlowDirection): EndpointPair {
+  const opposite = beforeTranslation(translation, direction === 'c2s' ? 's2c' : 'c2s');
+  return { source: opposite.dest, dest: opposite.source };
+}
+
+function restoreEmbedded(
+  embedded: IPv4Packet, translation: SessionTranslation, direction: FlowDirection,
+): IPv4Packet {
+  const before = beforeTranslation(translation, direction);
+  const after = afterTranslation(translation, direction);
+  const isIcmp = embedded.protocol === IP_PROTO_ICMP;
+  let result = embedded;
+  if (before.source.address !== after.source.address || before.source.port !== after.source.port) {
+    result = rewriteSrcIP(result, before.source.address, before.source.port);
+  }
+  if (before.dest.address !== after.dest.address || before.dest.port !== after.dest.port) {
+    result = rewriteDestIP(result, before.dest.address, isIcmp ? undefined : before.dest.port);
+  }
+  return result;
+}
+
+function senderRealm(
+  translation: SessionTranslation, embeddedDirection: FlowDirection,
+): { isPrivate: boolean; privateAddress: string; publicAddress: string } {
+  return embeddedDirection === 'c2s'
+    ? {
+      isPrivate: translation.translatedDest !== translation.originalDest,
+      privateAddress: translation.translatedDest,
+      publicAddress: translation.originalDest,
+    }
+    : {
+      isPrivate: translation.translatedSource !== translation.originalSource,
+      privateAddress: translation.originalSource,
+      publicAddress: translation.translatedSource,
+    };
+}
 
 export class FirewallNatEngine {
   private readonly deps: FirewallNatEngineDeps;
@@ -355,6 +407,27 @@ export class FirewallNatEngine {
     if (translation.translatedDest !== translation.originalDest
       || translation.translatedDestPort !== translation.originalDestPort) {
       result = rewriteSrcIP(result, translation.originalDest, translation.originalDestPort);
+    }
+    return result;
+  }
+
+  reapplyToIcmpError(
+    error: IPv4Packet, translation: SessionTranslation, embeddedDirection: FlowDirection,
+    ownAddress?: string,
+  ): IPv4Packet {
+    const icmp = error.payload as ICMPPacket;
+    if (!icmp.originalPacket) return error;
+    const restored = restoreEmbedded(icmp.originalPacket, translation, embeddedDirection);
+    let result: IPv4Packet = { ...error, payload: { ...icmp, originalPacket: restored } };
+    const sender = senderRealm(translation, embeddedDirection);
+    if (sender.isPrivate) {
+      const source = result.sourceIP.toString() === sender.privateAddress
+        ? sender.publicAddress
+        : ownAddress ?? sender.publicAddress;
+      result = rewriteSrcIP(result, source);
+    }
+    if (result.destinationIP.toString() !== restored.sourceIP.toString()) {
+      result = rewriteDestIP(result, restored.sourceIP.toString());
     }
     return result;
   }

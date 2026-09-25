@@ -117,6 +117,27 @@ ROUTEUR comme passerelle, les deux passent — `netsh interface ip set
 address ... static <ip> <masque> <routeur>` installe bien la route. Le
 cas fautif est donc etroit : la passerelle est le PARE-FEU.
 
+### [fortios] `session-ttl default never` : le rendu d'une session sans echeance n'est pas atteste
+`set default never` est accepte et EVALUE : la session recoit une echeance
+infinie et la minuterie de vieillissement ne l'arme pas. Ce que
+`diagnose sys session list` affiche alors dans `timeout=` et `expire=`
+n'a pas pu etre lu : docs.fortinet.com, community.fortinet.com et
+help.fortinet.com sont refuses par le proxy de cet environnement. Le
+simulateur ecrit `never` dans les deux champs ; c'est un choix, pas une
+transcription.
+
+### [fortios] seul l'assistant de session `ftp` agit
+`config system session-helper` porte la table d'usine de FortiOS (vingt
+entrees, source : un `show full-configuration` FortiOS 5.04 publie dans
+Azure/Azure-vpn-config-samples) et c'est elle qui dit ou l'assistant FTP
+ecoute. Les dix-neuf autres noms (pptp, h323, ras, tns, tftp, rtsp, mms,
+pmap, sip, dns-udp, rsh, dcerpc, mgcp, ...) sont acceptes et affiches
+comme sur un vrai boitier, mais n'ouvrent aucune connexion attendue : un
+flux TNS redirige, un canal TFTP de donnees ou une session SIP media
+restent soumis a la politique comme n'importe quel flux. C'est le cote
+sur (un assistant ELARGIT ce qui passe), mais une maquette qui compte sur
+eux echouera.
+
 ## Pile TCP/IP
 
 ### [ip] l'option Timestamp n'est ni construite ni horodatee
@@ -315,7 +336,201 @@ n'evalue. C'est un chantier par knob, pas un correctif de commande.
 
 ---
 
-## Postes Windows
+### [curl] `-m` ne borne que la connexion : un serveur muet repond (52) au lieu de (28)
+`Http1ClientSession.sendAsync` attend la reponse pendant un nombre fixe
+de tours de micro-taches, sans horloge. Une fois la connexion ouverte, le
+transfert ne consomme donc aucun temps virtuel : `curl -m 5` vers un
+serveur qui accepte la connexion puis se tait repond aussitot
+`curl: (52) Empty reply from server`, la ou curl 8.5.0 (`lib/multi.c`,
+`multi_handle_timeout`) attendrait 5 s puis dirait `curl: (28) Operation
+timed out after 5000 milliseconds with 0 bytes received`.
+**Mesure** : `nc -l -p 8080` sur le serveur, `curl -m 5
+http://10.0.0.2:8080/` depuis le client.
+**Pourquoi ce n'est pas ferme** : borner le transfert demande que le
+client HTTP attende sur l'horloge de la pile au lieu de compter des tours
+de micro-taches, ce qui touche tous les lecteurs de `sendAsync` (IOS avec
+AAA, nginx, Apache, IIS). `-m` borne deja la connexion, HTTP, HTTPS et FTP.
+
+### [tcp] deux types pour un segment TCP : `TCPPacket` (core) et `TcpSegment` (pile)
+La pile (`tcp/TcpStack`) emet des `TcpSegment` (`sequence`,
+`acknowledgement`, `window`, `options`) ; `core/types.ts` declare encore
+`TCPPacket` (`sequenceNumber`, `acknowledgementNumber`, `windowSize`),
+qu'aucun emetteur reel ne produit. Le pare-feu lit desormais `TcpSegment`
+(le renifleur affichait « syn undefined » en lisant l'autre). Restent sur
+`TCPPacket` : `nat/rewrite.ts`, `devices/router/NATEngine.ts`,
+`router/nat/FtpAlg.ts`, `router/ACLEngine.ts`, `router/Ipv6AclEngine.ts`,
+`router/acl/ReflexiveSessions.ts`, `Router.ts`, `EndHost.ts`,
+`WindowsPC.ts`, `linux/network/HostLookup.ts`. Ils ne lisent que les
+ports et les drapeaux, communs aux deux formes — aucun defaut mesure
+aujourd'hui, mais tout nouveau lecteur de numero de sequence ou de fenetre
+y lirait `undefined`.
+**Pourquoi ce n'est pas ferme ici** : dix fichiers du routeur et de NAT,
+hors du sous-systeme corrige ; la migration consiste a supprimer
+`TCPPacket` et a faire importer `TcpSegment` partout.
+
+### [udp] un port UDP ferme ne renvoie pas « port unreachable » visible des outils
+Sur le lab de l'utilisateur, `dig -p 9999 @192.168.30.4 example.com` depuis
+PC3 (meme LAN que Server1, rien n'ecoute sur 9999) repond `;; connection
+timed out; no servers could be reached`, et `nc -u -z -v -w 1
+192.168.30.4 9999` repond `succeeded!`. Un Linux reel renvoie un ICMP
+port unreachable (RFC 1122 §4.1.3.1) ; dig dit alors `communications
+error ... connection refused` et `nc -u -z` echoue. `dig @192.168.30.4`
+vers le port 53, lie seulement sur 127.0.0.53, se comporte de meme.
+Accessoirement, la banniere de dig ne reprend pas `-p 9999` parmi les
+arguments.
+**Pourquoi ce n'est pas ferme ici** : c'est la pile UDP de l'hote (emission
+de l'erreur) et les clients dig/nc (lecture de l'erreur), hors du
+pare-feu ; le pare-feu, lui, fait desormais suivre une erreur ICMP liee a
+une session (sonde fortigate-icmp-error-follows-its-session).
+
+### [fortios] une entree refusee par `next` reste affichee
+`config firewall policy` / `edit 62` sans `set service` : `next` repond
+« Command fail. Return code -61 / entry not set for "service" », mais
+`show firewall policy 62` affiche encore l'entree (sans effet sur le
+trafic). Mesure en travaillant la batterie 02, test 94.
+
+### [nginx] un amont injoignable donne 502 tout de suite, pas 504 au bout de proxy_connect_timeout
+Le mandataire de `LinuxNginxService` envoie sa requete amont de facon
+synchrone : un SYN jete repond aussitot `502 Bad Gateway`, la ou nginx
+attend `proxy_connect_timeout` (60 s par defaut) puis rend `504 Gateway
+Time-out`. Un RST (port ferme) donne bien 502 des deux cotes. Meme cause
+que l'entree [curl] -m : le client HTTP n'attend pas sur l'horloge.
+
+### [curl] deux versions de curl et `gzip on` non evalue
+Le catalogue de paquets dit `curl 7.81.0-1ubuntu1.15` (jammy), `curl
+--version` dit `curl 8.5.0` ; un seul des deux doit rester. Et nginx
+accepte `gzip on;` (livre dans nginx.conf) sans jamais compresser : aucun
+codec DEFLATE n'existe ici, c'est pourquoi curl annonce `Features: IPv6
+SSL` et refuse `--compressed` comme un curl sans libz.
+
+### [fortios] `diagnose log test` n'existe pas
+La commande repond « unknown command » (batterie 02, test 98). Sur un vrai
+FortiGate, elle genere un message de test par type de journal
+(« generating a system event message with level - warning », puis virus,
+URL, DLP, IPS, trafic, VPN, HA…) et les ecrit dans chaque destination de
+journalisation. Seule la premiere ligne a pu etre confirmee (extrait de
+recherche) : docs.fortinet.com, community.fortinet.com et les sites qui
+citent la sortie complete sont bloques par le proxy de cet environnement.
+Non implementee plutot que devinee.
+
+### [fortios] pas de detection d'anomalie de fragments (teardrop)
+Batterie 03, test 148 : `hping3 --frag --mtu 8 -1 203.0.113.10 -c 2` a
+travers le pare-feu obtient une reponse (le serveur repond), alors qu'un
+FortiGate rejette par defaut les fragments superposes/teardrop. Le
+pare-feu simule a bien `drop-overlapped-fragment` (defaut disable, non
+active par ce test) et `Ipv4Fragmentation.overlaps`, mais aucune detection
+d'anomalie de fragments par defaut. Le test reste rouge.
+
+### [ssh] deux modeles de `sshd_config` coexistent encore
+`SshSshdConfig` (celui du contexte serveur, de Windows et de la
+validation `sshd -t`) et `SshdServerConfig` (valeurs OpenSSH, blocs
+`Match`, `sshd -T`, politique de connexion) lisent le meme fichier.
+`PermitRootLogin` est desormais une seule valeur OpenSSH dans les deux
+(defaut `prohibit-password`, ecrit tel quel dans l'image) ; les autres
+directives restent lues deux fois. Fermer le doublon demande de faire
+porter au contexte serveur le seul `SshdServerConfig` et de migrer ses
+lecteurs (`config.*` du gestionnaire, WindowsSshServerContext, validation).
+
+### [iam] /etc/shadow stocke le mot de passe EN CLAIR derriere un faux prefixe SHA-512
+`echo user:Secret123 | chpasswd` ecrit `user:$6$simulated$Secret123:…` :
+le champ a la forme d'un hash crypt(3) SHA-512 (`$6$sel$…`) mais porte le
+mot de passe lui-meme. Tout lecteur de `/etc/shadow` (root, une sauvegarde,
+un `scp` du fichier) lit donc les mots de passe, et un exercice d'audit de
+robustesse (john, hashcat, comparaison de hashes) n'a aucun sens.
+**Mesure** : `chpasswd` puis `grep user /etc/shadow` sur un LinuxServer.
+**Pourquoi ce n'est pas ferme** : il faut un vrai SHA-512-crypt (sel,
+5000 tours par defaut) dans `src/crypto/` et migrer tous les lecteurs du
+champ (`checkPassword`, PAM, faillock, `passwd -S`, `chage`) ; hors du
+perimetre du correctif SSH qui l'a revele.
+
+### [apt] ce que l'etat de paquets par machine laisse encore ouvert
+`/var/lib/dpkg/status` est desormais l'etat de CHAQUE machine (apt, apt-get,
+dpkg -l, apt list, apt-cache le lisent), et `apt install` pose les unites du
+paquet puis les demarre. Restent :
+- l'unite `named` est livree par l'image de BASE (tous les postes), alors
+  que bind9 n'est installe nulle part tant que `apt install bind9` n'a pas
+  pose `/etc/bind/named.conf` : `systemctl start named` marche donc sans
+  paquet. Une vingtaine de tests demarrent `named` sans `apt install` ;
+  retirer l'unite de l'image demande de les faire installer d'abord ;
+- deux versions de nginx : le catalogue dit `1.18.0-6ubuntu14.4` (jammy),
+  `NGINX_VERSION` (http/nginx/NginxFiles.ts) dit `1.24.0`, que `nginx -v`
+  affiche ; un seul des deux doit rester ;
+- `apt install` ne demande pas root (un vrai apt refuse : « Could not open
+  lock file /var/lib/dpkg/lock-frontend ») ; l'exiger touche tous les
+  tests qui installent sans `sudo` ;
+- aucune archive n'est modelisee : les lignes de telechargement (« Need to
+  get », « Get: », « Fetched ») ne sont pas imprimees, et un paquet ne pose
+  que ses unites, ses fichiers de configuration connus et ses comptes.
+
+### [bind9] le jeu de configuration du paquet n'est pose qu'en partie
+`apt install bind9` pose `named.conf`, `named.conf.options` et
+`named.conf.local`. Le paquet Ubuntu livre aussi `named.conf.default-zones`
+(inclus par `named.conf`, avec l'indice racine et les zones `localhost`,
+`127/0/255.in-addr.arpa`) et leurs fichiers `db.local`, `db.127`, `db.0`,
+`db.255`, `db.empty`, `zones.rfc1918`. `named.conf.options` ne porte que les
+directives certaines (`directory`, `dnssec-validation auto`,
+`listen-on-v6 { any; }`), sans les commentaires du paquet.
+**Pourquoi ce n'est pas ferme** : la source (paquet Ubuntu jammy sur
+launchpad.net, ou Debian sur salsa.debian.org) est refusee par le proxy de
+cet environnement ; CLAUDE.md §8 interdit de reconstituer un texte non
+consulte. A reprendre quand la source est joignable.
+**Ecart voisin mesure** : une requete recursive d'un client du reseau local
+(`dig @10.0.0.2 localhost` depuis 10.0.0.1) recoit `status: REFUSED` avec
+le drapeau `ra` pose ; le `allow-recursion` par defaut de BIND vaut
+`localnets; localhost;`, et un refus de recursion ne devrait pas annoncer
+`ra`.
+
+### [sleep] `sleep` ne laisse pas passer le temps
+`sleep N` analyse sa duree et rend la main aussitot : sous l'horloge
+virtuelle, `sleep 2` dure 0 ms. Rien de ce qui vieillit (sessions d'un
+pare-feu, baux, caches) ne peut donc etre observe depuis un script. Le
+faire attendre vraiment sur l'ordonnanceur est juste, mais sous
+l'horloge REELLE qui est le defaut des tests, chaque `sleep` en ferait
+attendre autant ; le changement demande de passer d'abord ces tests a
+l'horloge virtuelle. Les sondes qui ont besoin d'une duree avancent
+l'horloge virtuelle directement.
+
+### [oracle] un outil client sur un poste provisionne une base locale
+`tnsping` et `sqlplus user/pw@hote:port/service`, tapes sur un LinuxPC
+(terminal comme `executeCommand`), passent par `getOracleDatabase(id)` du
+POSTE : l'arborescence `/u01/app/oracle/...` y est creee et une instance
+locale est construite, alors qu'un client Instant Client n'a ni l'une ni
+l'autre. `handleTnsping` n'en a besoin que pour reconnaitre le SID local,
+et `createSQLPlusSession` que lorsque l'identifiant ne designe pas une
+base distante.
+**Mesure** : `tnsping 10.0.0.2:1521/ORCL` sur un LinuxPC, puis `ls /u01`
+sur ce PC : `app`.
+**Pourquoi ce n'est pas ferme** : le correctif qui a relie `executeCommand`
+au meme chemin que le terminal ne change pas ce chemin ; le rendre
+paresseux touche `createSQLPlusSession`, `handleTnsping` et leurs lecteurs
+du SID local.
+
+### [sqlplus] une colonne NUMBER n'a pas la largeur `numwidth`, et FEEDBACK s'affiche des 1 ligne
+`SELECT 1 FROM DUAL` rend `1` / `-` / `1` puis « 1 row selected. ». Un
+vrai SQL*Plus cadre une colonne NUMBER a droite sur `NUMWIDTH` (10 par
+defaut : `         1` sur `----------`), et n'ecrit la ligne de retour
+qu'a partir de `SET FEEDBACK` lignes (6 par defaut).
+**Mesure** : `echo "SELECT 1 FROM DUAL;" | sqlplus -S system/oracle@10.0.0.2:1521/ORCL`
+depuis un LinuxPC.
+**Pourquoi ce n'est pas ferme** : releve en passant ; le rendu des
+colonnes est partage par tout le moteur SQL*Plus et merite sa propre
+mesure.
+
+### [fortigate] l'assistant de session FTP ne couvre que le mode passif sans DNAT
+L'assistant `ftp` (lecture de `227`/`229` sur une session vers le port 21,
+connexion de donnees admise sous la politique parente et rattachee a la
+session de controle) est pose. Il ne couvre pas encore :
+- le mode ACTIF (`PORT`/`EPRT`) : le serveur ouvre la connexion de donnees
+  vers le client, qu'il faudrait attendre dans l'autre sens et, sous SNAT,
+  reecrire l'adresse annoncee ;
+- une session de controle traduite en DESTINATION (VIP) : l'adresse privee
+  annoncee par `227` devrait etre reecrite et le port de donnees traduit ;
+- la table `config system session-helper` en CLI : ses valeurs par defaut
+  (numeros, protocoles, ports de chaque assistant) n'ont pas pu etre
+  consultees depuis cet environnement ; l'assistant ftp est donc toujours
+  actif, comme sur un boitier par defaut, mais ni affiche ni configurable.
+**Mesure** : batterie 1, test 28 (PASV sous politique `service "FTP"`),
+vert ; batterie 2, test 547 (`curl --no-pasv`) non couvert.
 
 ### [ping] les mots de `ping.exe` pour le code 13 restent non attestés
 Depuis le lot « le code ICMP decide de ce que ping ecrit », la moitie

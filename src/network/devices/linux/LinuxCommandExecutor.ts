@@ -93,13 +93,6 @@ import {
 import { FSTAB_PATH, renderFstab } from './fs/FstabFile';
 import { SysfsTree } from './Sysfs';
 import { cmdNetstat, cmdWget } from './LinuxNetCommands';
-import { PACKAGE_DB, findPackage } from './packages/PackageDatabase';
-
-function dpkgMatch(pattern: string, name: string): boolean {
-  const rx = new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '.*').replace(/\?/g, '.')}$`);
-  return rx.test(name);
-}
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import { publishWireSegment } from './network/WireCaptureBus';
 import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
@@ -160,8 +153,7 @@ import { SftpCommandScript } from '../../protocols/ssh/sftp/SftpCommandScript';
 import type { ISftpFileSystem } from '../../protocols/ssh/sftp/ISftpFileSystem';
 import { WireSftpFileSystem } from '../../protocols/ssh/sftp/WireSftpFileSystem';
 import { SshSession } from '../../protocols/ssh/session/SshSession';
-import { SilentSshInteractionHandler } from '../../protocols/ssh/session/ISshInteractionHandler';
-import { SshConnectOptionsBuilder } from '../../protocols/ssh/SshConnectOptions';
+import { connectWireSsh, type StrictHostKeyChecking, type WireSshClient } from './network/WireSshConnector';
 import { isOk } from '../../protocols/ssh/Result';
 import type { TcpConnector } from '@/network/tcp/types';
 import {
@@ -1609,40 +1601,28 @@ export class LinuxCommandExecutor {
 
   private async connectWireSsh(
     host: string, user: string, password: string | undefined,
-    port = 22, identities: string[] = [], strict: 'yes' | 'no' | 'accept-new' = 'accept-new',
+    port = 22, identities: string[] = [], strict: StrictHostKeyChecking = 'accept-new',
   ): Promise<{ session: SshSession | null; authRefused: boolean; notices: string[] }> {
     if (!this.tcpConnector) return { session: null, authRefused: false, notices: [] };
     const connector = this.tcpConnector;
-    const interaction = new SilentSshInteractionHandler(password ?? '', strict !== 'yes');
-    const session = new SshSession({
-      tcpConnector: ((h, p) => connector(h, p)) as unknown as TcpConnector,
+    const outcome = await connectWireSsh(
+      this.wireSshClient(), { host, user, port, password, identities, strict },
+      ((h, p) => connector(h, p)) as unknown as TcpConnector);
+    return {
+      session: outcome.session,
+      authRefused: outcome.failure?.kind === 'AUTH_FAILED',
+      notices: [...outcome.notices],
+    };
+  }
+
+  wireSshClient(): WireSshClient {
+    return {
       vfs: this.vfs as never,
-      localUser: this.userMgr.currentUser,
-      localUid: this.userMgr.currentUid,
-      localGid: this.userMgr.currentGid,
-      knownHostsPath: `${this.sshHomeDir()}/.ssh/known_hosts`,
-      credentialless: password === undefined,
-      interactionHandler: interaction,
-    });
-    const builder = SshConnectOptionsBuilder.create()
-      .host(host).user(user).port(port).strictHostKeyChecking(strict);
-    for (const path of identities) builder.addIdentityFile(path);
-    if (identities.length === 0) {
-      for (const candidate of ['id_ed25519', 'id_rsa', 'id_ecdsa']) {
-        const path = `${this.sshHomeDir()}/.ssh/${candidate}`;
-        if (this.vfs.readFile(path) !== null) builder.addIdentityFile(path);
-      }
-    }
-    const result = await session.connect(builder.build());
-    if (!isOk(result)) {
-      session.disconnect();
-      return {
-        session: null,
-        authRefused: result.error.kind === 'AUTH_FAILED',
-        notices: interaction.notices,
-      };
-    }
-    return { session, authRefused: false, notices: interaction.notices };
+      user: this.userMgr.currentUser,
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+      home: this.sshHomeDir(),
+    };
   }
 
   private async tryOpenWireSftpFs(
@@ -1895,15 +1875,17 @@ export class LinuxCommandExecutor {
         resolveInode: (p: string) => this.vfs.resolveInode(p),
         mkdirp: (p: string, perm: number, uid: number, gid: number) => this.vfs.mkdirp(p, perm, uid, gid),
       },
-      resolveName: (name: string): string | null => {
-        if (IPAddress.isValid(name)) return null;
-        const r = this.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, 2));
-        if (r.status === 'SUCCESS' && r.entry) {
-          for (const h of r.entry) if (h.addressFamily === 2) return h.address;
-        }
-        return null;
-      },
+      resolveName: (name: string): string | null =>
+        IPAddress.isValid(name) ? null : this.resolveHostIpv4(name),
     };
+  }
+
+  resolveHostIpv4(name: string): string | null {
+    const r = this.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, 2));
+    if (r.status === 'SUCCESS' && r.entry) {
+      for (const h of r.entry) if (h.addressFamily === 2) return h.address;
+    }
+    return null;
   }
 
   /**
@@ -5452,68 +5434,6 @@ export class LinuxCommandExecutor {
       }
 
       // ── Miscellaneous common commands ────────────────────────────────
-      case 'apt':
-      case 'apt-get': {
-        const sub = args[0] || '';
-        if (sub === 'update') return { output: 'Hit:1 http://archive.ubuntu.com/ubuntu jammy InRelease\nReading package lists... Done', exitCode: 0 };
-        if (sub === 'install' || sub === 'remove' || sub === 'purge') {
-          const noms = args.slice(1).filter(a => !a.startsWith('-'));
-          const entete = ['Reading package lists... Done', 'Building dependency tree... Done'];
-          if (noms.length === 0) {
-            return { output: [...entete, '0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.'].join('\n'), exitCode: 0 };
-          }
-          const inconnus = noms.filter((n) => !findPackage(n));
-          if (inconnus.length > 0) {
-            return {
-              output: [...entete,
-                ...inconnus.map((n) => `E: Unable to locate package ${n}`)].join('\n'),
-              exitCode: 100,
-            };
-          }
-          if (noms.includes('bind9')) this.provisionBind9Defaults();
-          const lignes = noms.map((n) => {
-            const p = findPackage(n)!;
-            return sub === 'install'
-              ? `${n} is already the newest version (${p.version}).`
-              : `Package '${n}' is not installed, so not removed`;
-          });
-          return {
-            output: [...entete, ...lignes,
-              '0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.'].join('\n'),
-            exitCode: 0,
-          };
-        }
-        if (sub === 'upgrade') return { output: 'Reading package lists... Done\nBuilding dependency tree... Done\nCalculating upgrade... Done\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.', exitCode: 0 };
-        if (sub === 'list' && args.includes('--installed')) {
-          const lignes = PACKAGE_DB.filter((p) => p.installed)
-            .map((p) => `${p.name}/jammy,now ${p.version} ${p.arch} [installed]`);
-          return { output: ['Listing... Done', ...lignes].join('\n'), exitCode: 0 };
-        }
-        return { output: `Usage: ${cmd} [update|install|upgrade|remove|list]`, exitCode: 0 };
-      }
-      case 'dpkg': {
-        if (args[0] === '-l' || args[0] === '--list') {
-          const entetes = [
-            'Desired=Unknown/Install/Remove/Purge/Hold',
-            '| Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend',
-            '||/ Name                Version          Architecture Description',
-            '+++-===================-================-============-================================',
-          ];
-          const motifs = args.slice(1).filter((a) => !a.startsWith('-'));
-          const retenus = PACKAGE_DB.filter((p) => p.installed)
-            .filter((p) => motifs.length === 0 || motifs.some((m) => dpkgMatch(m, p.name)));
-          if (motifs.length > 0 && retenus.length === 0) {
-            return {
-              output: motifs.map((m) => `dpkg-query: no packages found matching ${m}`).join('\n'),
-              exitCode: 1,
-            };
-          }
-          const lignes = retenus.map((p) =>
-            `ii  ${p.name.padEnd(19)} ${p.version.padEnd(16)} ${p.arch.padEnd(12)} ${p.summary}`);
-          return { output: [...entetes, ...lignes].join('\n'), exitCode: 0 };
-        }
-        return { output: 'dpkg: need an action option\nUse dpkg --help for help.', exitCode: 1 };
-      }
       case 'mkfs.ext4':
       case 'mkfs.xfs':
       case 'mkfs.btrfs':
@@ -5740,7 +5660,7 @@ export class LinuxCommandExecutor {
         // Oracle Server profile: actually boot the instance the first
         // time sqlplus is invoked, so ps -ef shows ora_pmon/ora_smon
         // and lsnrctl status can read the listener state.
-        if (this.isServer && this._oracleBootstrap) {
+        if (this._oracleBootstrap) {
           const out = this._oracleBootstrap(args, stdin);
           if (out !== null) return { output: out, exitCode: 0 };
         }
@@ -5769,7 +5689,7 @@ export class LinuxCommandExecutor {
         };
       }
       case 'tnsping': {
-        if (this.isServer && this._oracleTnsping) {
+        if (this._oracleTnsping) {
           const output = this._oracleTnsping(args);
           return { output, exitCode: /TNS-\d|TNS:/.test(output) ? 1 : 0 };
         }
@@ -7821,16 +7741,6 @@ export class LinuxCommandExecutor {
    * that writes named.conf.options/named.conf.local can validate/start
    * bind9 without also having to author the top-level include file itself.
    */
-  private provisionBind9Defaults(): void {
-    if (!this.vfs.exists('/etc/bind')) this.vfs.mkdirp('/etc/bind', 0o755, 0, 0);
-    if (this.vfs.readFile('/etc/bind/named.conf') == null) {
-      this.vfs.writeFile('/etc/bind/named.conf',
-        'include "/etc/bind/named.conf.options";\n' +
-        'include "/etc/bind/named.conf.local";\n',
-        0, 0, 0o022);
-    }
-  }
-
   /** `file` — classify from the REAL inode/content, never canned. */
   private describeFile(target: string): string {
     const abs = this.vfs.normalizePath(target, this.cwd);

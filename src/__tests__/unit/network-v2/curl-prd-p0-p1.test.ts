@@ -104,9 +104,9 @@ describe('§P0 — aucune option acceptée n\'est sans effet observable', () => 
   it('un protocole que ce simulateur n\'héberge pas est refusé, pas simulé', async () => {
     const { client } = lab();
 
-    const out = await client.executeCommand('curl ftp://ftp.example.com/pub/file');
+    const out = await client.executeCommand('curl gopher://gopher.example.com/pub/file');
 
-    expect(out).toContain('curl: (1) Protocol "ftp" not supported or disabled in libcurl');
+    expect(out).toContain('curl: (1) Protocol "gopher" not supported or disabled in libcurl');
     expect((await client.executeCommand('echo $?')).trim()).toBe('1');
   });
 
@@ -135,7 +135,7 @@ describe('§P1 — le code de sortie fait partie de la commande', () => {
 
     const out = await client.executeCommand(`curl ${url()}`);
 
-    expect(out).toContain(`curl: (7) Failed to connect to ${SRV_IP} port ${PORT}: Connection refused`);
+    expect(out).toMatch(new RegExp(`curl: \\(7\\) Failed to connect to ${SRV_IP.replace(/\./g, '\\.')} port ${PORT} after \\d+ ms: Couldn't connect to server`));
     expect((await client.executeCommand('echo $?')).trim()).toBe('7');
   });
 

@@ -214,6 +214,7 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   modprobe: '/usr/sbin/modprobe',
   swapon: '/usr/sbin/swapon', swapoff: '/usr/sbin/swapoff',
   lid: '/usr/sbin/lid', conntrack: '/usr/sbin/conntrack',
+  vsftpd: '/usr/sbin/vsftpd',
   // The two HTTP servers and their control tool. They are here for two
   // reasons that meet: their systemd units name these paths in
   // `ExecStart` (§F5.10 judges a service on the existence of its

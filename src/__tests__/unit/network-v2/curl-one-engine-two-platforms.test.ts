@@ -120,9 +120,9 @@ describe('les deux plateformes disent la même chose de la même situation', () 
     const fromLinux = await l.linux.executeCommand(`curl ${url()}`);
     const fromWindows = await l.windows.executeCommand(`curl ${url()}`);
 
-    const refusal = `curl: (7) Failed to connect to ${SRV_IP} port ${PORT}: Connection refused`;
-    expect(fromLinux).toContain(refusal);
-    expect(fromWindows).toContain(refusal);
+    const refusal = new RegExp(`curl: \\(7\\) Failed to connect to ${SRV_IP.replace(/\./g, '\\.')} port ${PORT} after \\d+ ms: Couldn't connect to server`);
+    expect(fromLinux).toMatch(refusal);
+    expect(fromWindows).toMatch(refusal);
   });
 
   it('nom introuvable : le même (6) des deux côtés', async () => {
@@ -150,10 +150,10 @@ describe('les deux plateformes disent la même chose de la même situation', () 
     const l = lab();
 
     for (const out of [
-      await l.linux.executeCommand('curl ftp://files.example.com/x'),
-      await l.windows.executeCommand('curl ftp://files.example.com/x'),
+      await l.linux.executeCommand('curl gopher://files.example.com/x'),
+      await l.windows.executeCommand('curl gopher://files.example.com/x'),
     ]) {
-      expect(out).toContain('curl: (1) Protocol "ftp" not supported or disabled in libcurl');
+      expect(out).toContain('curl: (1) Protocol "gopher" not supported or disabled in libcurl');
     }
   });
 

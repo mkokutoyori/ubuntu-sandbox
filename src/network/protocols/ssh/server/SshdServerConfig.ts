@@ -1,3 +1,4 @@
+import { permitOpenAllows } from '../SshPureUtils';
 export type SshdAddressFamily = 'any' | 'inet' | 'inet6';
 export type SshdPermitRootLogin = 'yes' | 'no' | 'prohibit-password' | 'forced-commands-only';
 export type SshdLogLevel = 'QUIET' | 'FATAL' | 'ERROR' | 'INFO' | 'VERBOSE' | 'DEBUG' | 'DEBUG1' | 'DEBUG2' | 'DEBUG3';
@@ -479,6 +480,18 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       view = { ...view, ...block.overrides } as SshdEffectiveView;
     }
     return view;
+  }
+
+  permitOpenAllows(destHost: string, destPort: number): boolean {
+    return permitOpenAllows(this.permitOpen, destHost, destPort);
+  }
+
+  permitsLocalForward(
+    ctx: { user: string; groups?: readonly string[]; host?: string; address?: string },
+    destHost: string, destPort: number,
+  ): boolean {
+    const allowed = this.effectiveFor(ctx).allowTcpForwarding;
+    return allowed !== 'no' && allowed !== 'remote' && this.permitOpenAllows(destHost, destPort);
   }
 
   private matchApplies(criteria: readonly SshdMatchCriterion[], ctx: { user: string; groups?: readonly string[]; host?: string; address?: string; localPort?: number }): boolean {

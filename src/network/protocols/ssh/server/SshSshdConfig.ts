@@ -14,6 +14,7 @@
  */
 
 import type { SshServerConfig } from './ISshServerContext';
+import type { SshdPermitRootLogin } from './SshdServerConfig';
 import { SSHD_CONFIG_KEYWORDS } from './SshdConfigKeywords';
 
 export type SshLogLevel =
@@ -29,7 +30,8 @@ export type SshLogLevel =
 
 export type TcpForwardingValue = 'yes' | 'no' | 'local' | 'remote' | 'all';
 
-export interface SshdConfig extends SshServerConfig {
+export interface SshdConfig extends Omit<SshServerConfig, 'permitRootLogin'> {
+  readonly permitRootLogin: SshdPermitRootLogin;
   readonly allowUsers: readonly string[];
   readonly denyUsers: readonly string[];
   readonly allowGroups: readonly string[];
@@ -116,7 +118,7 @@ function cidrContains(base: string, bits: number, ip: string): boolean {
 export const DEFAULT_SSHD_CONFIG: SshdConfig = Object.freeze({
   listenPort: 22,
   maxAuthTries: 6,
-  permitRootLogin: false,
+  permitRootLogin: 'prohibit-password',
   passwordAuthentication: true,
   pubkeyAuthentication: true,
   allowUsers: Object.freeze([]),
@@ -153,7 +155,7 @@ const TCP_FWD_VALUES: readonly TcpForwardingValue[] = [
 const DIRECTIVE_PARSERS: Record<string, (value: string) => Partial<SshdConfig>> = {
   port: (v) => ({ listenPort: Number.parseInt(v, 10) }),
   maxauthtries: (v) => ({ maxAuthTries: Number.parseInt(v, 10) }),
-  permitrootlogin: (v) => ({ permitRootLogin: parseBool(v) }),
+  permitrootlogin: (v) => ({ permitRootLogin: parsePermitRootLogin(v) }),
   passwordauthentication: (v) => ({ passwordAuthentication: parseBool(v) }),
   pubkeyauthentication: (v) => ({ pubkeyAuthentication: parseBool(v) }),
   allowusers: (v) => ({ allowUsers: splitList(v) }),
@@ -307,7 +309,7 @@ export function serializeSshdConfig(cfg: SshdConfig): string {
     `LoginGraceTime ${cfg.loginGraceTime}`,
     `MaxAuthTries ${cfg.maxAuthTries}`,
     `MaxSessions ${cfg.maxSessions}`,
-    `PermitRootLogin ${cfg.permitRootLogin ? 'yes' : 'no'}`,
+    `PermitRootLogin ${cfg.permitRootLogin}`,
     `PasswordAuthentication ${cfg.passwordAuthentication ? 'yes' : 'no'}`,
     `PubkeyAuthentication ${cfg.pubkeyAuthentication ? 'yes' : 'no'}`,
     `PermitEmptyPasswords ${cfg.permitEmptyPasswords ? 'yes' : 'no'}`,
@@ -326,6 +328,13 @@ export function serializeSshdConfig(cfg: SshdConfig): string {
   if (cfg.denyGroups.length > 0) lines.push(`DenyGroups ${cfg.denyGroups.join(' ')}`);
   if (cfg.banner) lines.push(`Banner ${cfg.banner}`);
   return lines.join('\n') + '\n';
+}
+
+function parsePermitRootLogin(value: string): SshdPermitRootLogin {
+  const v = value.trim().toLowerCase();
+  if (v === 'yes' || v === 'forced-commands-only' || v === 'prohibit-password') return v;
+  if (v === 'without-password') return 'prohibit-password';
+  return 'no';
 }
 
 function parseBool(value: string): boolean {

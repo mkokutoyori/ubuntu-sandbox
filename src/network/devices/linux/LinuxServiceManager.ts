@@ -404,6 +404,18 @@ const BASE_UNITS: DefaultUnit[] = [
   },
 ];
 
+const PACKAGED_UNITS: DefaultUnit[] = [
+  {
+    name: 'vsftpd',
+    description: 'vsftpd FTP server',
+    type: 'simple',
+    execStart: '/usr/sbin/vsftpd /etc/vsftpd.conf',
+    execReload: '/bin/kill -HUP $MAINPID',
+    after: ['network.target'],
+    enabledByDefault: false,
+  },
+];
+
 /** Extra units only installed on machines flagged as servers. */
 const SERVER_UNITS: DefaultUnit[] = [
   {
@@ -552,6 +564,7 @@ export const SERVICE_LISTENERS: Readonly<Record<string, ServiceListenerSpec>> = 
     sockets: [{ port: 2049, protocol: 'tcp' }, { port: 20048, protocol: 'tcp' }],
   },
   'oracle-ohasd': { processName: 'tnslsnr', sockets: [{ port: 1521, protocol: 'tcp' }] },
+  vsftpd: { processName: 'vsftpd', sockets: [{ port: 21, protocol: 'tcp' }] },
 };
 
 /** A service plus the runtime data the port projection needs to bind it. */
@@ -1201,6 +1214,23 @@ export class LinuxServiceManager {
    * Re-scan unit files from /etc/systemd/system (overrides) and
    * /lib/systemd/system. Preserves runtime state of already-loaded units.
    */
+  hasUnitFile(name: string): boolean {
+    return this.vfs.exists(`${SYSTEM_UNIT_DIR}/${name}.service`)
+      || this.vfs.exists(`${ETC_UNIT_DIR}/${name}.service`);
+  }
+
+  installPackagedUnit(name: string): boolean {
+    const vendor = [...BASE_UNITS, ...SERVER_UNITS, ...PACKAGED_UNITS].find((u) => u.name === name);
+    const path = `${SYSTEM_UNIT_DIR}/${name}.service`;
+    if (vendor && !this.vfs.exists(path)) this.vfs.writeFile(path, renderUnitFile(vendor), 0, 0, 0o022);
+    return this.hasUnitFile(name);
+  }
+
+  removePackagedUnit(name: string): void {
+    const path = `${SYSTEM_UNIT_DIR}/${name}.service`;
+    if (this.vfs.exists(path)) this.vfs.deleteFile(path);
+  }
+
   daemonReload(): void {
     const etcUnits = this.scanDir(ETC_UNIT_DIR);
     const libUnits = this.scanDir(SYSTEM_UNIT_DIR);

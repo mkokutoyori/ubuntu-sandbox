@@ -33,18 +33,17 @@ function buildLab() {
 }
 
 describe('Scénario 4 — sshd_config: dérive fichier vs configuration en mémoire', () => {
-  it('sshd -T reflète encore l\'ancienne valeur tant que "systemctl reload ssh" n\'a pas tourné', async () => {
+  it('sshd -T lit le fichier, le démon garde l\'ancienne valeur tant que "systemctl reload ssh" n\'a pas tourné', async () => {
     const { server } = buildLab();
     const before = await server.executeCommand('sshd -T');
     expect(before).toMatch(/passwordauthentication yes/);
 
     await server.executeCommand("sed -i 's/^PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config");
-    const stillOld = await server.executeCommand('sshd -T');
-    expect(stillOld).toMatch(/passwordauthentication yes/);
+    expect(await server.executeCommand('sshd -T')).toMatch(/passwordauthentication no/);
+    expect(server.getSshServerContext().config.passwordAuthentication).toBe(true);
 
     await server.executeCommand('systemctl reload ssh');
-    const afterReload = await server.executeCommand('sshd -T');
-    expect(afterReload).toMatch(/passwordauthentication no/);
+    expect(server.getSshServerContext().config.passwordAuthentication).toBe(false);
   });
 
   it('"systemctl reload ssh" journalise Received SIGHUP; restarting sans couper les sessions', async () => {

@@ -7,9 +7,10 @@ import {
   type ICMPPacket,
   type ICMPv6Type,
   type IPv4Packet,
-  type TCPPacket,
   type UDPPacket,
 } from '../../../core/types';
+import type { TcpSegment } from '../../../tcp/types';
+import { isICMPErrorMessage } from '../../../core/IcmpErrors';
 
 export { icmpTypeNumber };
 
@@ -51,7 +52,7 @@ function transportEndpoints(packet: IPv4Packet): { sourcePort: number; destPort:
   if (!payload) return NO_PORTS;
 
   if (packet.protocol === IP_PROTO_TCP && payload.type === 'tcp') {
-    const segment = payload as TCPPacket;
+    const segment = payload as TcpSegment;
     return { sourcePort: segment.sourcePort, destPort: segment.destinationPort };
   }
   if (packet.protocol === IP_PROTO_UDP && payload.type === 'udp') {
@@ -63,6 +64,12 @@ function transportEndpoints(packet: IPv4Packet): { sourcePort: number; destPort:
     return { sourcePort: message.id, destPort: icmpTypeNumber(message.icmpType) };
   }
   return NO_PORTS;
+}
+
+export function icmpErrorFlowKey(packet: IPv4Packet): FlowKey | undefined {
+  if (!isICMPErrorMessage(packet)) return undefined;
+  const embedded = (packet.payload as ICMPPacket).originalPacket;
+  return embedded ? reverseFlowKey(flowKeyFromPacket(embedded)) : undefined;
 }
 
 export function reverseFlowKey(key: FlowKey): FlowKey {

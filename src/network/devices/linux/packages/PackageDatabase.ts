@@ -26,6 +26,7 @@ export interface PackageEntry {
   readonly summary: string;
   /** Les unités systemd que ce paquet livre, s'il en a. */
   readonly units?: readonly string[];
+  readonly files?: readonly string[];
 }
 
 const CATALOGUE: readonly PackageEntry[] = [
@@ -41,7 +42,7 @@ const CATALOGUE: readonly PackageEntry[] = [
   { name: 'bash', version: '5.1-6ubuntu1', arch: 'amd64',
     summary: 'GNU Bourne Again SHell', },
   { name: 'bind9', version: '9.18.12-0ubuntu0.22.04.1', arch: 'amd64',
-    summary: 'Internet Domain Name Server', units: ['named'] },
+    summary: 'Internet Domain Name Server', units: ['named'], files: ['/etc/bind/named.conf'] },
   { name: 'ca-certificates', version: '20230311ubuntu0.22.04.1', arch: 'amd64',
     summary: 'Common CA certificates', },
   { name: 'chrony', version: '4.2-2ubuntu2', arch: 'amd64',
@@ -58,6 +59,8 @@ const CATALOGUE: readonly PackageEntry[] = [
     summary: 'Miscellaneous utilities specific to Debian', },
   { name: 'dnsutils', version: '9.18.12-0ubuntu0.22.04.1', arch: 'amd64',
     summary: 'Clients provided with BIND 9', },
+  { name: 'dpkg', version: '1.21.1ubuntu2', arch: 'amd64',
+    summary: 'Debian package management system', },
   { name: 'e2fsprogs', version: '1.46.5-2ubuntu1.1', arch: 'amd64',
     summary: 'ext2/ext3/ext4 file system utilities', },
   { name: 'findutils', version: '4.8.0-1ubuntu3', arch: 'amd64',
@@ -74,6 +77,8 @@ const CATALOGUE: readonly PackageEntry[] = [
     summary: 'administration tools for packet filtering and NAT', },
   { name: 'iputils-ping', version: '3:20211215-1', arch: 'amd64',
     summary: 'Tools to test the reachability of network hosts', },
+  { name: 'hping3', version: '3.a2.ds2-9', arch: 'amd64',
+    summary: 'Active Network Smashing Tool', },
   { name: 'isc-dhcp-server', version: '4.4.1-2.3ubuntu2.4', arch: 'amd64',
     summary: 'ISC DHCP server for automatic IP address assignment', units: ['isc-dhcp-server'] },
   { name: 'kmod', version: '29-1ubuntu1', arch: 'amd64',
@@ -140,6 +145,9 @@ const CATALOGUE: readonly PackageEntry[] = [
     summary: 'Vi IMproved - enhanced vi editor', },
   { name: 'vim-tiny', version: '2:8.2.3995-1ubuntu2', arch: 'amd64',
     summary: 'Vi IMproved - enhanced vi editor - compact version', },
+  { name: 'vsftpd', version: '3.0.5-0ubuntu1', arch: 'amd64',
+    summary: 'lightweight, efficient FTP server written for security', units: ['vsftpd'],
+    files: ['/etc/vsftpd.conf'] },
   { name: 'wget', version: '1.21.2-2ubuntu1', arch: 'amd64',
     summary: 'retrieves files from the web', },
 ];
@@ -163,8 +171,10 @@ export function packageProvides(name: string): string[] {
 
 export type InstalledPackage = PackageEntry & { readonly installed: boolean };
 
-export const PACKAGE_DB: readonly InstalledPackage[] =
-  CATALOGUE.map(p => ({ ...p, installed: packageIsInstalled(p) }));
+export const PACKAGE_DB: readonly InstalledPackage[] = CATALOGUE.map((p) => ({
+  ...p,
+  get installed(): boolean { return packageIsInstalled(p); },
+}));
 
 /** `apt-cache search` : le motif est cherché dans le nom **et** le résumé. */
 export function searchPackages(pattern: string): InstalledPackage[] {

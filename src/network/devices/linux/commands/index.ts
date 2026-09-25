@@ -36,6 +36,7 @@ import { namedCheckconfCommand } from './dns/NamedCheckconf';
 import { namedCheckzoneCommand } from './dns/NamedCheckzone';
 import { rndcCommand } from './dns/Rndc';
 import { nmapCommand } from './net/Nmap';
+import { hping3Command } from './net/Hping3';
 import { curlCommand } from './net/Curl';
 import { scpCommand } from './net/Scp';
 import { sshCommand } from './net/Ssh';
@@ -131,6 +132,8 @@ import { anacronCommand } from './system/Anacron';
 import { systemdAnalyzeCommand } from './system/SystemdAnalyze';
 import { fuserCommand } from './system/Fuser';
 import { aptCacheCommand } from './system/AptCache';
+import { aptCommand, aptGetCommand } from './system/Apt';
+import { dpkgCommand } from './system/Dpkg';
 import { newgrpCommand } from './iam/Newgrp';
 import { tracepathCommand } from './net/Tracepath';
 import { mtrCommand } from './net/MtrReport';
@@ -170,6 +173,7 @@ export {
   isDhcpLeasePath,
   applyIptablesNatHook,
   nmapCommand,
+  hping3Command,
   curlCommand,
   scpCommand,
   sshCommand,
@@ -273,6 +277,9 @@ export {
   systemdAnalyzeCommand,
   fuserCommand,
   aptCacheCommand,
+  aptCommand,
+  aptGetCommand,
+  dpkgCommand,
   newgrpCommand,
   tracepathCommand,
   mtrCommand,
@@ -323,6 +330,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   rndcCommand,
   dhclientCommand,
   nmapCommand,
+  hping3Command,
   curlCommand,
   scpCommand,
   sshCommand,
@@ -426,6 +434,9 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   systemdAnalyzeCommand,
   fuserCommand,
   aptCacheCommand,
+  aptCommand,
+  aptGetCommand,
+  dpkgCommand,
   newgrpCommand,
   tracepathCommand,
   mtrCommand,

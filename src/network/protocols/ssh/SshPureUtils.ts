@@ -31,6 +31,8 @@ export interface AuthorizedKeyOptions {
   readonly noX11Forwarding?: boolean;
   readonly restrict?: boolean;
   readonly environment?: ReadonlyArray<readonly [string, string]>;
+  readonly permitOpen?: readonly string[];
+  readonly unsupported?: readonly string[];
 }
 
 export interface SshHostConfig {
@@ -194,6 +196,8 @@ function splitAuthorizedKeyLine(line: string): { optionsRaw: string | null; algo
 function parseAuthorizedKeyOptions(raw: string): AuthorizedKeyOptions {
   const opts: { -readonly [K in keyof AuthorizedKeyOptions]: AuthorizedKeyOptions[K] } = {};
   const env: Array<readonly [string, string]> = [];
+  const permitOpen: string[] = [];
+  const unsupported: string[] = [];
   for (const tok of splitOptionList(raw)) {
     const eq = tok.indexOf('=');
     const key = (eq < 0 ? tok : tok.slice(0, eq)).toLowerCase();
@@ -210,14 +214,25 @@ function parseAuthorizedKeyOptions(raw: string): AuthorizedKeyOptions {
         opts.restrict = true;
         opts.noPty = opts.noPortForwarding = opts.noAgentForwarding = opts.noX11Forwarding = true;
         break;
+      case 'pty': opts.noPty = false; break;
+      case 'port-forwarding': opts.noPortForwarding = false; break;
+      case 'agent-forwarding': opts.noAgentForwarding = false; break;
+      case 'x11-forwarding': opts.noX11Forwarding = false; break;
+      case 'user-rc':
+      case 'no-user-rc':
+        break;
+      case 'permitopen': permitOpen.push(val); break;
       case 'environment': {
         const m = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(val);
         if (m) env.push([m[1], m[2]]);
         break;
       }
+      default: unsupported.push(key);
     }
   }
   if (env.length > 0) opts.environment = env;
+  if (permitOpen.length > 0) opts.permitOpen = permitOpen;
+  if (unsupported.length > 0) opts.unsupported = unsupported;
   return opts;
 }
 
@@ -337,4 +352,54 @@ export function pipe<A, B, C, D>(
 ): (a: A) => D;
 export function pipe(...fns: Array<(x: unknown) => unknown>) {
   return (input: unknown) => fns.reduce((acc, fn) => fn(acc), input);
+}
+
+export interface KeySource {
+  readonly ip: string;
+  readonly host?: string;
+}
+
+export function sourceMatchesFromPattern(sourceIp: string, sourceHost: string, pattern: string): boolean {
+  let allowed = false;
+  for (const raw of pattern.split(',')) {
+    const p = raw.trim();
+    if (!p) continue;
+    const negate = p.startsWith('!');
+    const body = negate ? p.slice(1) : p;
+    const re = new RegExp('^' + body.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
+    if (re.test(sourceIp) || re.test(sourceHost)) {
+      if (negate) return false;
+      allowed = true;
+    }
+  }
+  return allowed;
+}
+
+export function authorizedKeyAdmits(key: AuthorizedKey, source: KeySource): boolean {
+  const options = key.options;
+  if (!options) return true;
+  if ((options.unsupported?.length ?? 0) > 0) return false;
+  return !options.from || sourceMatchesFromPattern(source.ip, source.host ?? '', options.from);
+}
+
+export function findAdmittedKey(
+  authorizedKeys: string, material: string, source: KeySource,
+): AuthorizedKey | null {
+  for (const line of authorizedKeys.split('\n')) {
+    const key = parseAuthorizedKeysLine(line);
+    if (key && key.material === material && authorizedKeyAdmits(key, source)) return key;
+  }
+  return null;
+}
+
+export function permitOpenAllows(patterns: readonly string[], destHost: string, destPort: number): boolean {
+  if (patterns.includes('any')) return true;
+  if (patterns.includes('none')) return false;
+  return patterns.some((entry) => {
+    const colon = entry.lastIndexOf(':');
+    if (colon < 0) return false;
+    const host = entry.slice(0, colon);
+    const port = entry.slice(colon + 1);
+    return (host === '*' || host === destHost) && (port === '*' || port === String(destPort));
+  });
 }

@@ -1,3 +1,4 @@
+import type { SessionHelperEntry } from './session/SessionHelperTable';
 import type { AddressObject } from './model/AddressObject';
 import type { ServiceObject } from './model/ServiceObject';
 import type { FirewallSyslogCatalog } from './logging/SyslogCatalog';
@@ -27,6 +28,8 @@ export interface SessionTimeoutProfile {
   readonly tcpEstablished: number;
   readonly tcpHandshake: number;
   readonly tcpTimeWait: number;
+  readonly tcpHalfClose: number;
+  readonly tcpReset: number;
   readonly udp: number;
   readonly icmp: number;
   readonly other: number;
@@ -73,6 +76,7 @@ export interface FirewallProfile {
   readonly predefinedServices?: readonly ServiceObject[];
 
   readonly timeouts: SessionTimeoutProfile;
+  readonly sessionHelpers?: readonly SessionHelperEntry[];
   readonly tcpSynCheckDefault: boolean;
 
   readonly deploymentScope: DeploymentScope;
@@ -165,6 +169,7 @@ export const GENERIC_PROFILE: FirewallProfile = Object.freeze({
 
   timeouts: Object.freeze({
     tcpEstablished: 3600, tcpHandshake: 30, tcpTimeWait: 30,
+    tcpHalfClose: 30, tcpReset: 0,
     udp: 180, icmp: 30, other: 60,
   }),
   tcpSynCheckDefault: true,

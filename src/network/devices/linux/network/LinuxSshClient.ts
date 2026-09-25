@@ -36,7 +36,8 @@ import { SshKnownHostsFile } from '../../../protocols/ssh/SshKnownHostsFile';
 import type { CrossVendorSshHost } from '../../../protocols/ssh/server/CrossVendorSshHost';
 import { SshConnectionRequest } from '../../../protocols/ssh/server/SshConnectionRequest';
 import { SshdServerConfig } from '../../../protocols/ssh/server/SshdServerConfig';
-import { parseAuthorizedKeysLine, type AuthorizedKey } from '../../../protocols/ssh/SshPureUtils';
+import { authorizedKeyAdmits, parseAuthorizedKeysLine, type AuthorizedKey } from '../../../protocols/ssh/SshPureUtils';
+import { parseProxyJumpSpec, type ProxyHop } from '@/terminal/sessions/sshArgs';
 
 /** The four-tuple of a TCP handshake the SSH client performed. */
 export interface SshConnectionTuple {
@@ -314,22 +315,6 @@ function remoteAcceptsKey(exec: RemoteExecLike, remoteUser: string, identity: st
  * `from="patternList"` option. Comma-separated; entries prefixed with `!`
  * are negations; `*` and `?` glob; literal IPs match exactly.
  */
-function sourceMatchesFromPattern(sourceIp: string, sourceHost: string, pattern: string): boolean {
-  let allowed = false;
-  for (const raw of pattern.split(',')) {
-    const p = raw.trim();
-    if (!p) continue;
-    const negate = p.startsWith('!');
-    const body = negate ? p.slice(1) : p;
-    const re = new RegExp('^' + body.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
-    if (re.test(sourceIp) || re.test(sourceHost)) {
-      if (negate) return false;
-      allowed = true;
-    }
-  }
-  return allowed;
-}
-
 /**
  * Return the parsed authorized_keys entry that matches the offered
  * identity, so callers can apply per-key options (`command="..."`,
@@ -437,7 +422,7 @@ function resolveSshAuthMethod(
     if (identity) {
       const matchedKey = findMatchedAuthorizedKey(exec, remoteUser, identity, onStrictModesRefusal);
       if (matchedKey) {
-        if (matchedKey.options?.from && !sourceMatchesFromPattern(opts.sourceIp, opts.sourceHostname, matchedKey.options.from)) {
+        if (!authorizedKeyAdmits(matchedKey, { ip: opts.sourceIp, host: opts.sourceHostname })) {
           // fall through to password
         } else {
           return { method: 'publickey', clientMethods, matchedKey };
@@ -629,6 +614,43 @@ export function wireExecTarget(
   };
 }
 
+export interface ProxyJumpRequest {
+  readonly hops: readonly ProxyHop[];
+  readonly remaining: string[];
+}
+
+export function proxyJumpRequest(args: readonly string[]): ProxyJumpRequest | null {
+  const remaining: string[] = [];
+  let spec: string | null = null;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (!arg.startsWith('-') || arg === '-') {
+      remaining.push(...args.slice(i));
+      break;
+    }
+    if (arg === '-J' && i + 1 < args.length) {
+      spec = args[++i];
+      continue;
+    }
+    if (arg.startsWith('-J') && arg.length > 2) {
+      spec = arg.slice(2);
+      continue;
+    }
+    const option = arg === '-o' ? args[i + 1] : arg.startsWith('-o') ? arg.slice(2) : null;
+    const proxyJump = option === null || option === undefined ? null : /^ProxyJump\s*[=\s]\s*(.+)$/i.exec(option.trim());
+    if (proxyJump) {
+      spec = proxyJump[1];
+      if (arg === '-o') i++;
+      continue;
+    }
+    remaining.push(arg);
+    if (SSH_VALUE_FLAGS.has(arg.slice(1)) && arg.length === 2 && i + 1 < args.length) remaining.push(args[++i]);
+  }
+  if (spec === null || spec.toLowerCase() === 'none') return null;
+  const hops = parseProxyJumpSpec(spec);
+  return hops.length > 0 ? { hops, remaining } : null;
+}
+
 function clientPort(args: string[]): number {
   const i = args.indexOf('-p');
   if (i >= 0 && args[i + 1]) {
@@ -672,7 +694,9 @@ function setupPortForwards(
   const policy = eff?.allowTcpForwarding
     ?? (remoteExec ? readRemoteSshdDirective(remoteExec, 'AllowTcpForwarding') : null);
   const keyBansForwarding = matchedKey?.options?.noPortForwarding === true;
-  const permitOpenList = remoteExec ? readPermitOpenList(remoteExec) : ['any'];
+  const permitOpen = remoteExec
+    ? SshdServerConfig.parse(remoteExec.vfs.readFile('/etc/ssh/sshd_config') ?? '')
+    : null;
   const permits = (f: SshPortForward): boolean => {
     if (keyBansForwarding) return false;
     if (policy === 'no') return false;
@@ -682,7 +706,7 @@ function setupPortForwards(
   };
   const destAllowed = (f: SshPortForward): boolean => {
     if (f.kind !== 'local' || !f.destHost || f.destPort === null) return true;
-    return matchPermitOpen(permitOpenList, f.destHost, f.destPort);
+    return permitOpen === null || permitOpen.permitOpenAllows(f.destHost, f.destPort);
   };
 
   const remoteForwarding = (machine as unknown as {
@@ -721,31 +745,6 @@ function setupPortForwards(
     }
   }
   return diagnostics;
-}
-
-function readPermitOpenList(exec: RemoteExecLike): string[] {
-  const raw = exec.vfs.readFile('/etc/ssh/sshd_config') ?? '';
-  const out: string[] = [];
-  for (const line of raw.split('\n')) {
-    const m = /^\s*PermitOpen\s+(.+?)\s*$/i.exec(line);
-    if (m) out.push(...m[1].split(/\s+/).filter(Boolean));
-  }
-  return out.length > 0 ? out : ['any'];
-}
-
-function matchPermitOpen(list: readonly string[], destHost: string, destPort: number): boolean {
-  if (list.includes('any')) return true;
-  if (list.includes('none')) return false;
-  for (const entry of list) {
-    const colon = entry.lastIndexOf(':');
-    if (colon < 0) continue;
-    const host = entry.slice(0, colon);
-    const port = entry.slice(colon + 1);
-    const portOk = port === '*' || port === String(destPort);
-    const hostOk = host === '*' || host === destHost;
-    if (portOk && hostOk) return true;
-  }
-  return false;
 }
 
 function rebindToLoopback(fwd: SshPortForward): SshPortForward {
@@ -944,7 +943,11 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const machine = found.device as LinuxMachine & {
     isServiceActive?: (n: string) => boolean;
     scheduleSshLogout?: (user: string, fromIp: string, holdSeconds: number) => void;
-    sshdAcceptsLogin?: (u: string, ctx?: { address?: string; host?: string }) => { ok: boolean; reason?: string };
+    sshdAcceptsLogin?: (
+      u: string, ctx?: {
+        address?: string; host?: string; method?: 'publickey' | 'password' | 'pending'; keyForcesCommand?: boolean;
+      },
+    ) => { ok: boolean; reason?: string };
     recordSshLogin?: (
       u: string,
       fromIp: string,
@@ -1022,7 +1025,8 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   };
 
   // Login policy gate (root login, allowed users, etc.).
-  const login = machine.sshdAcceptsLogin?.(remoteUser, { address: opts.sourceIp, host: opts.sourceHostname }) ?? { ok: true };
+  const login = machine.sshdAcceptsLogin?.(
+    remoteUser, { address: opts.sourceIp, host: opts.sourceHostname, method: 'pending' }) ?? { ok: true };
   if (!login.ok) {
     noteRefusal();
     // Surface the specific policy in /var/log/auth.log via the bus —
@@ -1066,6 +1070,20 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       port: 22,
     });
   });
+  const methodGate = auth.method === null ? { ok: true } : machine.sshdAcceptsLogin?.(remoteUser, {
+    address: opts.sourceIp, host: opts.sourceHostname, method: auth.method,
+    keyForcesCommand: auth.matchedKey?.options?.command !== undefined,
+  }) ?? { ok: true };
+  if (!methodGate.ok) {
+    noteRefusal(auth.method ?? undefined);
+    return {
+      output: `${remoteUser}@${host}: Permission denied (${
+        auth.clientMethods.join(',') || 'publickey,password'
+      }).`,
+      exitCode: 255,
+      connection: connectedTuple,
+    };
+  }
   // When the client supplied a password (via sshpass), validate it now.
   // Wrong passwords drive the brute-force detection chain: the
   // auth_failure event lands on the throttler which trips fail2ban.

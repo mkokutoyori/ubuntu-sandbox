@@ -22,7 +22,28 @@
  * Les pastilles vivent dans une COUCHE SVG posee APRES les equipements :
  * un cable passe derriere une carte, jamais son etiquette. C'est pour
  * cela qu'elles s'ancrent sur `data-label-for` et non sur le groupe du
- * cable, qui reste dans la couche du dessous.
+ * cable, qui reste dans la couche du dessous. L'equipement SELECTIONNE
+ * repasse devant, parce que sa barre d'actions porte des commandes et
+ * qu'une etiquette n'en porte pas.
+ *
+ * Le zoom se mesure ici et nulle part ailleurs : une pastille garde sa
+ * taille A L'ECRAN, donc sa boite englobante ne bouge pas quand on
+ * zoome, alors que l'ecart entre deux equipements, lui, suit le zoom.
+ *
+ * Le GLISSER aussi : la geometrie pure peut rejouer un deplacement pas
+ * a pas, mais seul le vrai DOM dit ce que la souris produit reellement
+ * -- la carte est deplacee par un transform pendant que le magasin, lui,
+ * suit a son rythme.
+ *
+ * Une pastille est PARALLELE OU PERPENDICULAIRE au fil selon ce qui se
+ * lit le mieux : un texte horizontal se lit sans tourner la tete, donc
+ * elle ne pivote que lorsque, posee a plat, elle couvrirait un voisin.
+ * Sa boite englobante le dit -- plus large que haute quand elle est a
+ * plat, plus haute que large quand elle a pivote.
+ *
+ * Et quand rien ne tient, la toile ne s'encombre pas : une pastille qui
+ * ne peut se poser sans couvrir une autre etiquette ou une carte est
+ * RETIREE du DOM, le cable la rendant a la selection.
  */
 import { test, expect, type Page } from '@playwright/test';
 
@@ -212,7 +233,7 @@ test('selecting a cable reveals its delete affordance beside its own label', asy
   });
 });
 
-test('a label a device card overlaps is still the thing on top', async ({ page }) => {
+test('a cable too short to name reveals its ports on selection, above everything', async ({ page }) => {
   const connectionId = await page.evaluate(() => {
     const store = (window as unknown as {
       __networkStore: { getState: () => Record<string, (...args: unknown[]) => unknown> };
@@ -221,7 +242,7 @@ test('a label a device card overlaps is still the thing on top', async ({ page }
     const router = state().addDevice('router-cisco', 300, 220) as {
       id: string; interfaces: Array<{ id: string }>;
     };
-    const pc = state().addDevice('linux-pc', 300, 335) as {
+    const pc = state().addDevice('linux-pc', 300, 320) as {
       id: string; interfaces: Array<{ id: string }>;
     };
     return (state().addConnection(
@@ -230,9 +251,17 @@ test('a label a device card overlaps is still the thing on top', async ({ page }
     ) as { id: string }).id;
   });
 
-  const label = labelOf(page, connectionId);
-  await expect(label).toBeVisible();
-  const box = (await label.boundingBox())!;
+  await expect(labelsOf(page, connectionId)).toHaveCount(0);
+
+  await page.evaluate(id => (window as unknown as {
+    __networkStore: { getState: () => { selectConnection: (id: string) => void } };
+  }).__networkStore.getState().selectConnection(id), connectionId);
+  await expect(page.locator(`g[data-connection-id="${connectionId}"]`))
+    .toHaveAttribute('aria-pressed', 'true');
+
+  const revealed = labelsOf(page, connectionId);
+  await expect(revealed).toHaveCount(2);
+  const box = (await revealed.first().boundingBox())!;
 
   const onTop = await page.evaluate(({ x, y }) => {
     const hit = document.elementFromPoint(x, y);
@@ -244,45 +273,206 @@ test('a label a device card overlaps is still the thing on top', async ({ page }
   await settle(page);
   await page.screenshot({
     path: `${SHOTS}/33-pastille-au-dessus.png`,
-    clip: { x: 520, y: 180, width: 380, height: 300 },
+    clip: { x: 520, y: 200, width: 380, height: 280 },
   });
 });
 
-test('a label lies along its cable, never across it', async ({ page }) => {
+test('an uncrowded vertical wire keeps its labels horizontal, a fan turns them', async ({ page }) => {
   const ids = await page.evaluate(() => {
     const store = (window as unknown as {
       __networkStore: { getState: () => Record<string, (...args: unknown[]) => unknown> };
     }).__networkStore;
     const state = () => store.getState();
-    const router = state().addDevice('router-cisco', 220, 250) as {
+    const alone = state().addDevice('router-cisco', 180, 180) as {
       id: string; interfaces: Array<{ id: string }>;
     };
-    const near = state().addDevice('linux-pc', 315, 250) as {
+    const below = state().addDevice('linux-pc', 180, 500) as {
       id: string; interfaces: Array<{ id: string }>;
     };
-    const below = state().addDevice('linux-pc', 220, 420) as {
+    const hub = state().addDevice('switch-cisco', 480, 180) as {
       id: string; interfaces: Array<{ id: string }>;
     };
+    const fan = [400, 480, 560].map(x => state().addDevice('linux-pc', x, 500) as {
+      id: string; interfaces: Array<{ id: string }>;
+    });
     return {
-      flat: (state().addConnection(
-        router.id, router.interfaces[0].id,
-        near.id, near.interfaces[0].id, 'ethernet') as { id: string }).id,
-      upright: (state().addConnection(
-        router.id, router.interfaces[1].id,
+      lonely: (state().addConnection(
+        alone.id, alone.interfaces[0].id,
         below.id, below.interfaces[0].id, 'ethernet') as { id: string }).id,
+      crowded: fan.map((pc, i) => (state().addConnection(
+        hub.id, hub.interfaces[i].id,
+        pc.id, pc.interfaces[0].id, 'ethernet') as { id: string }).id),
     };
   });
 
   for (const end of [0, 1] as const) {
-    const flat = (await labelOf(page, ids.flat, end).boundingBox())!;
-    expect(flat.width).toBeGreaterThan(flat.height);
-    const upright = (await labelOf(page, ids.upright, end).boundingBox())!;
-    expect(upright.height).toBeGreaterThan(upright.width);
+    const box = (await labelOf(page, ids.lonely, end).boundingBox())!;
+    expect(box.width, 'an uncrowded label reads without tilting the head')
+      .toBeGreaterThan(box.height);
   }
+
+  const turned: boolean[] = [];
+  for (const id of ids.crowded) {
+    const labels = labelsOf(page, id);
+    for (let end = 0; end < await labels.count(); end++) {
+      const box = (await labels.nth(end).boundingBox())!;
+      turned.push(box.height > box.width);
+    }
+  }
+  expect(turned.some(Boolean), 'a crowded fan turns its labels').toBe(true);
 
   await settle(page);
   await page.screenshot({
     path: `${SHOTS}/34-pastille-dans-l-axe.png`,
-    clip: { x: 520, y: 200, width: 420, height: 340 },
+    clip: { x: 500, y: 180, width: 480, height: 420 },
+  });
+});
+
+test('a port label keeps its size on screen when the canvas is zoomed', async ({ page }) => {
+  const { connectionIds } = await seedStar(page);
+  const label = labelOf(page, connectionIds[0], 1);
+
+  const sizeAt = async (zoom: number) => {
+    await page.evaluate(z => (window as unknown as {
+      __networkStore: { getState: () => { setZoom: (z: number) => void } };
+    }).__networkStore.getState().setZoom(z), zoom);
+    await page.waitForTimeout(250);
+    const box = (await label.boundingBox())!;
+    return { width: box.width, height: box.height };
+  };
+
+  const atOne = await sizeAt(1);
+  const atTwo = await sizeAt(2);
+  const atThreeQuarters = await sizeAt(0.75);
+
+  expect(atTwo.width).toBeCloseTo(atOne.width, 0);
+  expect(atTwo.height).toBeCloseTo(atOne.height, 0);
+  expect(atThreeQuarters.width).toBeCloseTo(atOne.width, 0);
+
+  await page.evaluate(() => (window as unknown as {
+    __networkStore: { getState: () => { setZoom: (z: number) => void } };
+  }).__networkStore.getState().setZoom(0.75));
+  await settle(page);
+  await page.screenshot({
+    path: `${SHOTS}/35-pastilles-au-zoom.png`,
+    clip: { x: 500, y: 180, width: 480, height: 330 },
+  });
+});
+
+test('below the floor the canvas shows the shape and stays silent on port names', async ({ page }) => {
+  const { connectionIds } = await seedStar(page);
+  await expect(labelsOf(page, connectionIds[0])).toHaveCount(2);
+
+  await page.evaluate(() => (window as unknown as {
+    __networkStore: { getState: () => { setZoom: (z: number) => void } };
+  }).__networkStore.getState().setZoom(0.5));
+
+  await expect(labelsOf(page, connectionIds[0])).toHaveCount(0);
+  await expect(page.locator(`g[data-connection-id="${connectionIds[0]}"]`)).toBeVisible();
+});
+
+test('a selected device keeps its action bar above the labels', async ({ page }) => {
+  const { routerId, connectionIds } = await seedStar(page);
+  await page.locator(`[data-device-id="${routerId}"]`).click();
+
+  const remove = page.getByRole('button', { name: /^Delete / });
+  await expect(remove).toBeVisible();
+  const box = (await remove.boundingBox())!;
+
+  const onTop = await page.evaluate(({ x, y }) => {
+    const hit = document.elementFromPoint(x, y);
+    return !hit?.closest('[data-port-label]');
+  }, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
+
+  expect(onTop).toBe(true);
+  expect(connectionIds).toHaveLength(3);
+
+  await settle(page);
+  await page.screenshot({
+    path: `${SHOTS}/36-barre-d-actions.png`,
+    clip: { x: 520, y: 150, width: 520, height: 400 },
+  });
+});
+
+test('a hand wobbling across the diagonal does not flip the cables', async ({ page }) => {
+  const { routerId, connectionIds } = await seedStar(page);
+  const card = page.locator(`[data-device-id="${routerId}"]`);
+  const start = (await card.boundingBox())!;
+  const centre = { x: start.x + start.width / 2, y: start.y + start.height / 2 };
+
+  const snapshot = async () => {
+    const boxes = [];
+    for (const id of connectionIds) {
+      for (const end of [0, 1] as const) {
+        boxes.push((await labelOf(page, id, end).boundingBox())!);
+      }
+    }
+    return boxes;
+  };
+
+  await page.mouse.move(centre.x, centre.y);
+  await page.mouse.down();
+  await page.mouse.move(centre.x, centre.y + 57, { steps: 12 });
+
+  let previous = await snapshot();
+  let noisy = 0;
+  for (let step = 0; step < 12; step++) {
+    await page.mouse.move(centre.x, centre.y + 57 + (step % 2 === 0 ? 8 : 0));
+    const now = await snapshot();
+    const moved = now.some((box, i) =>
+      Math.hypot(box.x - previous[i].x, box.y - previous[i].y) > 40);
+    if (moved) noisy++;
+    previous = now;
+  }
+  await page.mouse.up();
+
+  expect(noisy).toBeLessThanOrEqual(1);
+});
+
+test('crowded devices drop what cannot be shown rather than pile it up', async ({ page }) => {
+  const ids = await page.evaluate(() => {
+    const store = (window as unknown as {
+      __networkStore: { getState: () => Record<string, (...args: unknown[]) => unknown> };
+    }).__networkStore;
+    const state = () => store.getState();
+    const add = (type: string, x: number, y: number) => state().addDevice(type, x, y) as {
+      id: string; interfaces: Array<{ id: string }>;
+    };
+    const cable = (a: ReturnType<typeof add>, ai: number,
+      b: ReturnType<typeof add>, bi: number) => (state().addConnection(
+        a.id, a.interfaces[ai].id, b.id, b.interfaces[bi].id, 'ethernet') as { id: string }).id;
+    const r = add('router-cisco', 180, 180);
+    const pc1 = add('linux-pc', 280, 180);
+    const pc2 = add('linux-pc', 180, 300);
+    const sw = add('switch-cisco', 300, 300);
+    return [
+      cable(r, 0, pc1, 0), cable(r, 1, pc2, 0),
+      cable(r, 2, sw, 0), cable(pc2, 1, sw, 1),
+    ];
+  });
+
+  const boxes = [];
+  for (const id of ids) {
+    const labels = labelsOf(page, id);
+    for (let end = 0; end < await labels.count(); end++) {
+      boxes.push((await labels.nth(end).boundingBox())!);
+    }
+  }
+
+  expect(boxes.length, 'the canvas still names most ports').toBeGreaterThanOrEqual(4);
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i];
+      const b = boxes[j];
+      const apart = a.x + a.width <= b.x || b.x + b.width <= a.x
+        || a.y + a.height <= b.y || b.y + b.height <= a.y;
+      expect(apart, `labels ${i} and ${j} overlap`).toBe(true);
+    }
+  }
+
+  await settle(page);
+  await page.screenshot({
+    path: `${SHOTS}/37-equipements-serres.png`,
+    clip: { x: 480, y: 180, width: 460, height: 340 },
   });
 });

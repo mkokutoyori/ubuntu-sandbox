@@ -125,6 +125,7 @@ export function buildCommitDevice(
       applyVdomSettings(settings) {
         fw.setCentralNat(settings.centralNat);
         fw.setTcpSessionWithoutSyn(settings.tcpSessionWithoutSyn);
+        fw.setAsymmetricRouting(settings.asymmetricRouting);
         fw.setOperationMode(settings.opmode);
         if (settings.manageIP && settings.manageIP !== '0.0.0.0') {
           fw.setManagementAddress(settings.manageIP,
@@ -219,6 +220,15 @@ export function buildCommitDevice(
         if (settings.adminServerCertificate !== undefined) {
           fw.setAdminServerCertificate(settings.adminServerCertificate);
         }
+        if (settings.sessionTimers !== undefined) {
+          fw.setSessionTimers({
+            tcpHandshake: settings.sessionTimers.tcpHalfOpenSec,
+            tcpHalfClose: settings.sessionTimers.tcpHalfCloseSec,
+            tcpTimeWait: settings.sessionTimers.tcpTimeWaitSec,
+            tcpReset: settings.sessionTimers.tcpResetSec,
+            udp: settings.sessionTimers.udpIdleSec,
+          });
+        }
       },
       applySessionTtlDefault(seconds) {
         fw.getSessionTtl().setDefault(seconds);
@@ -228,6 +238,12 @@ export function buildCommitDevice(
       },
       removeSessionTtlPort(id) {
         fw.getSessionTtl().removePort(id);
+      },
+      applySessionHelper(entry) {
+        fw.getSessionHelpers().upsert(entry);
+      },
+      removeSessionHelper(id) {
+        fw.getSessionHelpers().remove(id);
       },
       applyLdbMonitor(monitor) {
         fw.getLdbMonitors().set(monitor);
@@ -279,6 +295,9 @@ export function buildCommitDevice(
       },
       applyReplacementMessage(message, buffer) {
         fw.getLoginBanners().setBuffer(message, buffer);
+      },
+      setDhcpRelay(iface, servers) {
+        fw.getDhcp().setRelay(iface, servers);
       },
       setCaptivePortalInterface(iface, on) {
         fw.setCaptivePortalInterface(iface, on);

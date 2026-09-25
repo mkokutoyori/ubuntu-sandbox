@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-09-14T11:15:19.295Z
+Generated: 2026-09-24T08:06:59.220Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -965,7 +965,7 @@ Total steps: 370
     Certificate Serial Number: 0000000000001002
     Subject: CN=R1.lab.local
     Issuer: CN=http://10.0.0.5:80
-    Validity: 2026-09-14T11:15:22.344Z to 2027-09-14T11:15:22.344Z
+    Validity: 2026-09-24T08:07:00.872Z to 2027-09-24T08:07:00.872Z
   CA Certificate (Trustpoint CA1):
     Status: Available
     Certificate Serial Number: 0000000000001001
@@ -1058,7 +1058,7 @@ Total steps: 370
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3436QFPF
+  Processor board ID FTX1769TDUC
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1070,7 +1070,7 @@ Total steps: 370
   
   Current configuration : 4054 bytes
   !
-  ! Last configuration change at 11:15:22 UTC Mon Sep 14 2026 by console
+  ! Last configuration change at 08:07:00 UTC Thu Sep 24 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1445,10 +1445,22 @@ Total steps: 370
   No routing protocol is configured.
 
 [270/370] r1 R1# show ip arp
-  No ARP entries.
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  192.168.1.1          -              0200.0000.0001    ARPA      GigabitEthernet0/0
+  Internet  10.0.0.1             -              0200.0000.0002    ARPA      GigabitEthernet0/1
+  Internet  1.1.1.1              -              0200.0000.0011    ARPA      Loopback0
+  Internet  172.16.0.1           -              0200.0000.0012    ARPA      Tunnel0
+  Internet  172.16.0.5           -              0200.0000.0013    ARPA      Tunnel1
+  Internet  172.20.0.1           -              0200.0000.0015    ARPA      Tunnel100
 
 [271/370] r1 R1# show arp
-  No ARP entries.
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  192.168.1.1          -              0200.0000.0001    ARPA      GigabitEthernet0/0
+  Internet  10.0.0.1             -              0200.0000.0002    ARPA      GigabitEthernet0/1
+  Internet  1.1.1.1              -              0200.0000.0011    ARPA      Loopback0
+  Internet  172.16.0.1           -              0200.0000.0012    ARPA      Tunnel0
+  Internet  172.16.0.5           -              0200.0000.0013    ARPA      Tunnel1
+  Internet  172.20.0.1           -              0200.0000.0015    ARPA      Tunnel100
 
 [272/370] r1 R1# show ip ospf
 <empty>
@@ -1602,11 +1614,11 @@ Total steps: 370
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 12 messages logged, xml disabled,
+      Console logging: level debugging, 16 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 12 messages logged, xml disabled,
+      Monitor logging: level debugging, 16 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 12 messages logged, xml disabled,
+      Buffer logging:  level debugging, 16 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -1615,23 +1627,27 @@ Total steps: 370
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 12 message lines logged
+      Trap logging: level informational, 16 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Sep 14 11:15:19.280: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 14 11:15:19.281: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 14 11:15:19.285: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 14 11:15:19.285: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 14 11:15:19.622: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:15:20.218: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:15:20.629: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:15:21.113: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:15:21.481: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:15:21.836: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:15:22.190: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:15:22.364: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 24 08:06:59.087: %SEC_LOGIN-6-CONFIG_CHANGE: Account alice created with privilege 1
+  *Sep 24 08:06:59.088: %SEC_LOGIN-6-CONFIG_CHANGE: Account bob created with privilege 1
+  *Sep 24 08:06:59.088: %SEC_LOGIN-6-CONFIG_CHANGE: Account carl created with privilege 1
+  *Sep 24 08:06:59.088: %SEC_LOGIN-6-CONFIG_CHANGE: Account dave created with privilege 1
+  *Sep 24 08:06:59.216: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 24 08:06:59.217: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 24 08:06:59.218: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 24 08:06:59.218: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 24 08:06:59.345: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 24 08:06:59.637: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 24 08:06:59.892: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 24 08:07:00.121: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 24 08:07:00.339: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 24 08:07:00.604: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 24 08:07:00.779: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 24 08:07:00.881: %SYS-5-CONFIG_I: Configured from console by console
 
 [297/370] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1642,8 +1658,8 @@ Total steps: 370
 [298/370] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 300 (1/100 of seconds), resolution is 4001
-  reference time is EE5255CA.E5A1CAC0 (11:15:22.897 UTC Mon Sep 14 2026)
+  ntp uptime is 200 (1/100 of seconds), resolution is 4001
+  reference time is EE5F58A5.4353F7CE (08:07:01.263 UTC Thu Sep 24 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1654,14 +1670,14 @@ Total steps: 370
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [300/370] r1 R1# show clock
-  *11:15:22.000 UTC Mon Sep 14 2026
+  *08:07:01.000 UTC Thu Sep 24 2026
 
 [301/370] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  R2               Gig 0/1           177        R           Cisco 291 Gig 0/1
+  R2               Gig 0/1           178        R           Cisco 291 Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -1840,7 +1856,7 @@ Total steps: 370
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3436QFPF
+  Processor board ID FTX1769TDUC
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1852,7 +1868,7 @@ Total steps: 370
   
   Current configuration : 4054 bytes
   !
-  ! Last configuration change at 11:15:22 UTC Mon Sep 14 2026 by console
+  ! Last configuration change at 08:07:00 UTC Thu Sep 24 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2258,11 +2274,11 @@ Total steps: 370
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 12 messages logged, xml disabled,
+      Console logging: level debugging, 16 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 12 messages logged, xml disabled,
+      Monitor logging: level debugging, 16 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 12 messages logged, xml disabled,
+      Buffer logging:  level debugging, 16 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2271,27 +2287,31 @@ Total steps: 370
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 12 message lines logged
+      Trap logging: level informational, 16 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Sep 14 11:15:19.280: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 14 11:15:19.281: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 14 11:15:19.285: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 14 11:15:19.285: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 14 11:15:19.622: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:15:20.218: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:15:20.629: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:15:21.113: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:15:21.481: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:15:21.836: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:15:22.190: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:15:22.364: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 24 08:06:59.087: %SEC_LOGIN-6-CONFIG_CHANGE: Account alice created with privilege 1
+  *Sep 24 08:06:59.088: %SEC_LOGIN-6-CONFIG_CHANGE: Account bob created with privilege 1
+  *Sep 24 08:06:59.088: %SEC_LOGIN-6-CONFIG_CHANGE: Account carl created with privilege 1
+  *Sep 24 08:06:59.088: %SEC_LOGIN-6-CONFIG_CHANGE: Account dave created with privilege 1
+  *Sep 24 08:06:59.216: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 24 08:06:59.217: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 24 08:06:59.218: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 24 08:06:59.218: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 24 08:06:59.345: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 24 08:06:59.637: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 24 08:06:59.892: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 24 08:07:00.121: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 24 08:07:00.339: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 24 08:07:00.604: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 24 08:07:00.779: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 24 08:07:00.881: %SYS-5-CONFIG_I: Configured from console by console
 
 [314/370] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX3436QFPF
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX1769TDUC
 
 [315/370] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2759,6 +2779,7 @@ Total steps: 370
     banner         Remove a banner
     boot           Specify system image to load
     cdp            Enable CDP globally
+    class-map      Remove a class map
     clock          Remove hardware calendar is a valid time source
     crypto         Encryption module
     enable         Set enable secret
@@ -2775,6 +2796,7 @@ Total steps: 370
     ntp            Authenticate time sources
     object-group   Remove a network object group
     parser         Remove a CLI view
+    policy-map     Remove a policy map
     priority-list  Remove build a priority list
     privilege      Remove a command privilege rule
     queue-list     Remove build a custom queue list

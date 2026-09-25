@@ -217,6 +217,73 @@ export class SshSession implements ISshSession {
     return ok(channel);
   }
 
+  openDirectTcpip(host: string, port: number): Promise<Result<TcpConnection>> {
+    const conn = this.conn;
+    if (!conn || !this.isConnected) return Promise.resolve(err({ kind: 'NOT_AUTHENTICATED' }));
+    const dataHandlers: Array<(data: string) => void> = [];
+    const closeHandlers: Array<(reason: string) => void> = [];
+    let open = true;
+    const finish = (reason: string): void => {
+      if (!open) return;
+      open = false;
+      offFrames();
+      offConn?.();
+      for (const handler of closeHandlers) handler(reason);
+    };
+    let settle: ((result: Result<TcpConnection>) => void) | null = null;
+    const stream: TcpConnection = {
+      localIp: conn.localIp,
+      localPort: conn.localPort,
+      remoteIp: host,
+      remotePort: port,
+      write: (data) => { if (open) conn.write(JSON.stringify({ op: 'tcpip_data', data })); },
+      close: () => {
+        if (open) conn.write(JSON.stringify({ op: 'tcpip_eof' }));
+        finish('fin');
+      },
+      onData: (handler) => {
+        dataHandlers.push(handler);
+        return () => { dataHandlers.splice(dataHandlers.indexOf(handler), 1); };
+      },
+      onClose: (handler) => {
+        closeHandlers.push(handler);
+        return () => { closeHandlers.splice(closeHandlers.indexOf(handler), 1); };
+      },
+    };
+    const offFrames = conn.onData((frame) => {
+      let parsed: { op?: string; ok?: boolean; reason?: string; data?: string };
+      try { parsed = JSON.parse(frame) as typeof parsed; } catch { return; }
+      if (parsed.op === 'tcpip_data') {
+        for (const handler of [...dataHandlers]) handler(String(parsed.data ?? ''));
+      } else if (parsed.op === 'tcpip_eof') {
+        finish('fin');
+      } else if (parsed.op === 'direct_tcpip_reply' && settle) {
+        const reply = settle;
+        settle = null;
+        if (parsed.ok === true) {
+          reply(ok(stream));
+        } else {
+          open = false;
+          offFrames();
+          offConn?.();
+          reply(err({ kind: 'CHANNEL_ERROR', channelId: 0, message: parsed.reason ?? 'open failed' }));
+        }
+      }
+    });
+    const offConn = conn.onClose?.(() => {
+      if (settle) {
+        const reply = settle;
+        settle = null;
+        reply(err({ kind: 'CHANNEL_ERROR', channelId: 0, message: 'connection closed' }));
+      }
+      finish('fin');
+    });
+    return new Promise((resolve) => {
+      settle = resolve;
+      conn.write(JSON.stringify({ op: 'direct_tcpip', host, port }));
+    });
+  }
+
   disconnect(): void {
     this.channelManager.closeAll();
     this.conn?.close();

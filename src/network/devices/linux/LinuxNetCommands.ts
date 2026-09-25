@@ -748,51 +748,6 @@ export function formatTcpdumpPacket(p: CapturedPacket): string {
     `Flags [${p.flags}], seq ${p.seq}${ackPart}, win ${win}, length ${p.length}`;
 }
 
-// ─── arping ─────────────────────────────────────────────────────────
-
-/**
- * `arping` — probe a host at the link layer with ARP requests.
- *
- * The simulator has no live ARP responder on this path, so a probe to an
- * unreachable / powered-off target faithfully reports zero responses. The
- * `Sent N probes (N broadcast(s))` summary line matches real `arping`.
- */
-export interface ArpingResult {
-  output: string;
-  exitCode: number;
-}
-
-export function cmdArping(args: string[], ctx?: { mac?: (ip: string) => string | null }): ArpingResult {
-  let count = 0;
-  let target = '';
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '-c') { count = parseInt(args[++i], 10) || 0; continue; }
-    if (a === '-I' || a === '-i' || a === '-s' || a === '-w') { i++; continue; }
-    if (!a.startsWith('-')) target = a;
-  }
-  if (!target) {
-    return {
-      output: 'Usage: arping [-fqbDUAV] [-c count] [-w timeout] [-I device] destination',
-      exitCode: 2,
-    };
-  }
-  const probes = count > 0 ? count : 1;
-  const mac = ctx?.mac?.(target) ?? null;
-  const lines = [`ARPING ${target}`];
-  if (mac) {
-    for (let i = 0; i < probes; i++) {
-      lines.push(`Unicast reply from ${target} [${mac}]  0.${String(500 + i).padStart(3, '0')}ms`);
-    }
-    lines.push(`Sent ${probes} probes (${probes} broadcast(s))`);
-    lines.push(`Received ${probes} response(s)`);
-    return { output: lines.join('\n'), exitCode: 0 };
-  }
-  lines.push(`Sent ${probes} probes (${probes} broadcast(s))`);
-  lines.push(`Received 0 response(s)`);
-  return { output: lines.join('\n'), exitCode: 1 };
-}
-
 // ─── wget ───────────────────────────────────────────────────────────
 
 export function cmdWget(args: string[]): string {

@@ -100,6 +100,8 @@ export interface LinuxNetKernel {
   setDefaultGateway(gw: IPAddress): void;
   getDefaultGateway(): IPAddress | null;
   clearDefaultGateway(): void;
+  addDefaultRouteEntry(gw: IPAddress, metric: number, mode: 'add' | 'append' | 'replace'): boolean;
+  removeDefaultRouteEntry(filter: { nextHop?: IPAddress; metric?: number }): boolean;
 
   // ─── Policy routing (`ip rule` + `ip route ... table <ID>`) ──────
   getRoutingTableFor(tableId: number): HostRouteEntry[];
@@ -126,6 +128,7 @@ export interface LinuxNetKernel {
   clearARPTable(): void;
   /** RFC 5227 gratuitous ARP broadcast (`arping -A`/`-U`). False if the interface has no cable. */
   sendGratuitousArp(iface: string, ip: IPAddress, mode: 'request' | 'reply'): boolean;
+  probeArp(iface: string, target: IPAddress, timeoutMs: number): Promise<MACAddress | null>;
 
   // ─── L3 probes ───────────────────────────────────────────────────
   /** True if the kernel has a route (default or specific) to reach `target`. */
@@ -156,6 +159,12 @@ export interface LinuxNetKernel {
     options?: {
       ttl?: number; badChecksum?: boolean; sourceIp?: IPAddress; payload?: Uint8Array;
     },
+  ): boolean;
+
+  /** A single crafted ICMP echo (optionally source-forged), for `hping3 -1`. */
+  sendCraftedIcmpEcho(
+    target: IPAddress,
+    options?: { sourceIp?: IPAddress; ttl?: number; dataSize?: number },
   ): boolean;
 
   /**

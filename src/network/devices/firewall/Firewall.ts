@@ -40,7 +40,8 @@ import {
   type IngressInterfaceOptions, type IngressInterfaceOptionsReader,
 } from './l3/IngressInterfaceOptions';
 import { isIPv4Fragment } from '../../core/Ipv4Fragmentation';
-import { SystemClock } from '../../core/SystemClock';
+import { SystemClock, schedulerWallClock } from '../../core/SystemClock';
+import { SessionHelperTable, type SessionHelperEntry } from './session/SessionHelperTable';
 import { SystemLoad, type MemoryWorkload } from './health/SystemLoad';
 import { conserveLogDraft } from './health/ConserveEvent';
 import { vdomFootprint, cacheFootprint } from './health/MemoryFootprint';
@@ -86,6 +87,7 @@ import {
 } from './pipeline/Simulation';
 import {
   GENERIC_PROFILE, type DeploymentMode, type FirewallProfile, type FirewallPortSpec,
+  type SessionTimeoutProfile,
 } from './FirewallProfile';
 import { ROOT_VDOM, VdomRegistry, type VdomContext } from './vdom/VdomRegistry';
 import { VdomLinkTable } from './vdom/VdomLinkTable';
@@ -131,7 +133,7 @@ import { classifyIpv4, ingressHostOf, type Ipv4IngressHost } from './l3/Ipv4Ingr
 import type { FirewallNtp } from './mgmt/FirewallNtp';
 import { buildManagementServices } from './mgmt/ManagementWiring';
 import type {
-  AdminHttpApp, AdminHttpServer, AdminServerCertificate,
+  AdminHttpApp, AdminHttpServer, AdminServerCertificate, AdminServerCertificateMaterial,
 } from './mgmt/AdminHttpServer';
 import type { ManagementCli } from './mgmt/FirewallCliServer';
 import { ManagementPlane, type PasswordExpiryPolicy } from './mgmt/ManagementPlane';
@@ -233,6 +235,10 @@ const DEFAULT_INTERFACE_MTU = 1500;
 
 export type RebootReason = 'power cycle' | 'warm reboot';
 
+const GENERIC_SESSION_HELPERS: readonly SessionHelperEntry[] = Object.freeze([
+  { id: 1, name: 'ftp', protocol: 6, port: 21 },
+]);
+
 export class Firewall extends Equipment {
   private readonly logDisk = new LogDisk();
   private readonly savedConfig = new SavedConfiguration();
@@ -250,6 +256,8 @@ export class Firewall extends Equipment {
   private readonly vdomLinks: VdomLinkTable;
   private readonly bridges = new Map<string, BridgeFdb>();
   private readonly fragments = new FragmentReassembly();
+  private readonly sessionTimers: { -readonly [K in keyof SessionTimeoutProfile]: number };
+  private readonly sessionHelpers: SessionHelperTable;
   private ingressOptions: IngressInterfaceOptionsReader =
     () => INGRESS_INTERFACE_DEFAULTS;
 
@@ -408,7 +416,7 @@ export class Firewall extends Equipment {
       },
     });
 
-    this.clock = new SystemClock(options.now ?? (() => Date.now()));
+    this.clock = new SystemClock(options.now ?? schedulerWallClock());
     const now = () => this.clock.now();
     this.load = new SystemLoad({
       now,
@@ -426,6 +434,7 @@ export class Firewall extends Equipment {
     this.syslogCollectors = new SyslogCollectorTable(() => this.syslog);
     this.vdoms = new VdomRegistry({
       now,
+      scheduler: () => getDefaultScheduler(),
       timezone: () => this.getTimeZone(),
       deviceId: this.id,
       bus: () => this.getBus(),
@@ -478,13 +487,16 @@ export class Firewall extends Equipment {
       onCacheChanged: () => { this.liveState.refresh(); },
     });
 
+    this.sessionTimers = { ...profile.timeouts };
+    this.sessionHelpers = new SessionHelperTable(profile.sessionHelpers ?? GENERIC_SESSION_HELPERS);
     this.services = {
       interfaces: this.interfaces,
       vdomOf: (iface) => vdomServices(this.vdoms.contextOfInterface(iface)),
       sdwan: () => this.sdwan,
       ha: () => ({ forwardsTransit: () => this.forwardsTransit() }),
       policyKeyedBy: profile.policyKeyedBy,
-      sessionTimeouts: profile.timeouts,
+      sessionTimeouts: this.sessionTimers,
+      sessionHelperFor: (protocol, port) => this.sessionHelpers.helperFor(protocol, port),
       refusesNewSessions: () => this.load.refusesNewSessions(),
       proxyInspectionPosture: () => this.load.proxyInspectionPosture(),
       flowInspectionPosture: () => this.load.flowInspectionPosture(),
@@ -1234,6 +1246,12 @@ export class Firewall extends Equipment {
 
   now(): number { return this.services.now(); }
 
+  getSessionHelpers(): SessionHelperTable { return this.sessionHelpers; }
+
+  setSessionTimers(timers: Partial<SessionTimeoutProfile>): void {
+    Object.assign(this.sessionTimers, timers);
+  }
+
   getSystemClock(): SystemClock { return this.clock; }
 
   private timezone = TimeZone.of('Europe/Paris');
@@ -1313,11 +1331,20 @@ export class Firewall extends Equipment {
   protected adminHttpApp(): AdminHttpApp | null { return null; }
 
   private adminServerCertificate(): AdminServerCertificate | undefined {
-    const declared = this.getCertificateStore()
-      .local(this.management.adminServerCertificateName());
-    return declared === undefined
-      ? undefined
-      : { certificate: declared.certificate, privateKey: declared.privateKey };
+    const store = this.getCertificateStore();
+    const name = this.management.adminServerCertificateName();
+    if (!store.hasLocal(name)) return undefined;
+    let resolved: AdminServerCertificateMaterial | undefined;
+    return {
+      name,
+      material: () => {
+        if (resolved === undefined) {
+          const declared = store.local(name)!;
+          resolved = { certificate: declared.certificate, privateKey: declared.privateKey };
+        }
+        return resolved;
+      },
+    };
   }
 
 
@@ -1519,6 +1546,10 @@ export class Firewall extends Equipment {
 
   setTcpSessionWithoutSyn(allowed: boolean, vdom?: string): void {
     this.getVdom(vdom).settings.tcpSessionWithoutSyn = allowed;
+  }
+
+  setAsymmetricRouting(routing: { tcp: boolean; icmp: boolean }, vdom?: string): void {
+    this.getVdom(vdom).settings.asymmetricRouting = { ...routing };
   }
 
   allowsTcpSessionWithoutSyn(vdom?: string): boolean {
@@ -2401,6 +2432,7 @@ function vdomServices(context: VdomContext): VdomServices {
     centralNat: context.settings.centralNat,
     opmode: context.settings.opmode,
     tcpSessionWithoutSyn: context.settings.tcpSessionWithoutSyn,
+    asymmetricRouting: context.settings.asymmetricRouting,
   };
 }
 

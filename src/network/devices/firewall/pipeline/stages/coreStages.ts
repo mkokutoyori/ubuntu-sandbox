@@ -3,7 +3,7 @@ import { decrementForForwarding } from '../../../../layers/internet/InternetLaye
 import { getPacketDstPort, getPacketSrcPort, rewriteSrcIP } from '../../../../nat/rewrite';
 import {
   IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP,
-  type IPv4Packet, type MACAddress, type TCPPacket,
+  type ICMPPacket, type IPv4Packet, type MACAddress,
 } from '../../../../core/types';
 import { IPV4_FLAG_DF } from '../../../../core/Ipv4Fragmentation';
 import type { InterfaceTable } from '../../l3/InterfaceTable';
@@ -30,11 +30,14 @@ import { transportPorts } from '../../policy/probeFields';
 import { dosFinding, dosTrafficOfIpv4, type DosTraffic } from '../../dos/DosGate';
 import type { DosPolicyStore } from '../../dos/DosPolicyStore';
 import type { DosFinding, DosSensor } from '../../dos/DosSensor';
-import { flowKeyFromPacket, reverseFlowKey, type FlowKey } from '../../session/FlowKey';
+import { icmpErrorFlowKey, flowKeyFromPacket, reverseFlowKey, type FlowKey } from '../../session/FlowKey';
 import type { AssembledStream } from '../../inspection/StreamAssembler';
-import type { SessionTable, SessionTranslation } from '../../session/SessionTable';
+import type { FirewallSession, SessionTable, SessionTranslation } from '../../session/SessionTable';
+import type { FlowDirection } from '../../session/TcpStateMachine';
+import { ftpExpectedDataFlow } from '../../session/FtpSessionHelper';
+import type { ExpectedFlowTable } from '../../session/ExpectedFlowTable';
 import {
-  DEFAULT_TCP_TIMEOUTS, TcpStateMachine,
+  TcpStateMachine,
   type ObservedTcpFlags, type TcpTimeouts,
 } from '../../session/TcpStateMachine';
 import type { FirewallNatEngine } from '../../nat/FirewallNatEngine';
@@ -43,6 +46,7 @@ import type { PolicyRouteTable } from '../../l3/PolicyRouteTable';
 import type { IngressInterfaceOptionsReader } from '../../l3/IngressInterfaceOptions';
 import type { PacketContext, VerdictReason } from '../PacketContext';
 import type { PipelineStage } from '../FirewallPipeline';
+import type { TcpSegment } from '../../../../tcp/types';
 
 export interface VdomServices {
   name: string;
@@ -57,12 +61,14 @@ export interface VdomServices {
   policyRoutes?: PolicyRouteTable;
   sessionTtl?: SessionTtlTable;
   tcpSessionWithoutSyn?: boolean;
+  asymmetricRouting?: { tcp: boolean; icmp: boolean };
   utm?: UtmProfileStore;
   identities?: IdentityTable;
   centralNat?: boolean;
   opmode?: 'nat' | 'transparent';
   dos?: DosPolicyStore;
   dosSensor?: DosSensor;
+  expectedFlows?: ExpectedFlowTable;
 }
 
 export interface HaStandby {
@@ -89,6 +95,7 @@ export interface FirewallServices {
   macLookup?: (destination: MACAddress, ingress: string) => string | undefined;
   defaultTimeoutSec?: number;
   sessionTimeouts?: SessionTimeoutProfile;
+  sessionHelperFor?: (protocol: number, port: number) => string | undefined;
   discardTimeoutSec?: number;
   refusesNewSessions?: () => boolean;
   proxyInspectionPosture?: () => 'normal' | 'bypass' | 'block';
@@ -149,6 +156,15 @@ const DISCARD_TIMEOUT_SEC = 5;
 
 const tcpMachines = new WeakMap<object, TcpStateMachine>();
 const outOfState = new WeakSet<object>();
+const routedWithoutInspection = new WeakSet<object>();
+
+function routesIcmpAsymmetrically(services: FirewallServices, context: PacketContext, packet: IPv4Packet): boolean {
+  if (packet.protocol !== IP_PROTO_ICMP) return false;
+  const icmp = packet.payload as ICMPPacket | null | undefined;
+  if (icmp?.type !== 'icmp' || icmp.icmpType === 'echo-request') return false;
+  const routing = vdom(services, context).asymmetricRouting;
+  return routing?.tcp === true || routing?.icmp === true;
+}
 const matchedServices = new WeakMap<object, ServiceObject>();
 
 function acceptsSessionWithoutSyn(context: PacketContext): boolean {
@@ -157,6 +173,7 @@ function acceptsSessionWithoutSyn(context: PacketContext): boolean {
 }
 
 const pendingTranslations = new WeakMap<object, SessionTranslation>();
+const expectedParents = new WeakMap<object, number>();
 
 function deny(
   context: PacketContext, stage: string, reason: VerdictReason, ruleId?: string,
@@ -188,7 +205,7 @@ function originalIpv4(context: PacketContext): IPv4Packet | undefined {
 
 function tcpFlagsOf(packet: IPv4Packet): ObservedTcpFlags | undefined {
   if (packet.protocol !== IP_PROTO_TCP) return undefined;
-  const payload = packet.payload as TCPPacket | null | undefined;
+  const payload = packet.payload as TcpSegment | null | undefined;
   return payload?.type === 'tcp' ? payload.flags : undefined;
 }
 
@@ -535,12 +552,81 @@ function srcCheckStage(services: FirewallServices): PipelineStage {
   };
 }
 
+function translateForSession(
+  services: FirewallServices, context: PacketContext,
+  session: FirewallSession, direction: FlowDirection,
+): void {
+  const packet = ipv4(context);
+  const nat = vdom(services, context).nat;
+  if (!packet || !session.translation || !nat) return;
+  context.packet = nat.reapply(packet, session.translation, direction);
+}
+
+function observeSessionHelpers(
+  services: FirewallServices, context: PacketContext,
+  session: FirewallSession, direction: FlowDirection, packet: IPv4Packet,
+): void {
+  if (packet.protocol !== IP_PROTO_TCP) return;
+  const tcp = packet.payload as TcpSegment | null | undefined;
+  if (tcp?.type !== 'tcp' || typeof tcp.payload !== 'string') return;
+  if (services.sessionHelperFor?.(session.c2s.protocol, session.c2s.destPort) !== 'ftp') return;
+  const expected = ftpExpectedDataFlow(session, direction, tcp.payload);
+  if (expected) vdom(services, context).expectedFlows?.expect(expected);
+}
+
+function takeExpectedFlow(
+  services: FirewallServices, context: PacketContext, packet: IPv4Packet,
+): { rule: SecurityRule; parentSessionId: number } | undefined {
+  if (!context.isFirstPacket || packet.protocol !== IP_PROTO_TCP) return undefined;
+  const arrived = originalIpv4(context) ?? packet;
+  const tcp = arrived.payload as TcpSegment | null | undefined;
+  if (tcp?.type !== 'tcp') return undefined;
+  const expected = vdom(services, context).expectedFlows?.take(
+    IP_PROTO_TCP, arrived.sourceIP.toString(), arrived.destinationIP.toString(), tcp.destinationPort);
+  if (!expected || vdom(services, context).sessions.byId(expected.parentSessionId) === undefined) return undefined;
+  const rule = vdom(services, context).policy.ordered().find((r) => r.id === expected.policyId);
+  return rule ? { rule, parentSessionId: expected.parentSessionId } : undefined;
+}
+
+function relatedIcmpError(
+  services: FirewallServices, context: PacketContext, packet: IPv4Packet,
+): FilterVerdict<PacketContext> | undefined {
+  const key = icmpErrorFlowKey(packet);
+  if (!key) return undefined;
+  const found = vdom(services, context).sessions.lookup(key);
+  if (!found || found.session.state === 'discard') return undefined;
+
+  context.session = found.session;
+  context.sessionDirection = found.direction;
+  context.isFirstPacket = false;
+  context.egressPort = found.direction === 'c2s' ? found.session.egressInterface : found.session.ingressInterface;
+  context.egressZone = found.direction === 'c2s' ? found.session.egressZone : found.session.ingressZone;
+
+  const nat = vdom(services, context).nat;
+  if (found.session.translation && nat) {
+    const embeddedDirection = found.direction === 'c2s' ? 's2c' : 'c2s';
+    const ownAddress = context.egressPort === undefined ? undefined : services.interfaces.get(context.egressPort)?.ip;
+    context.packet = nat.reapplyToIcmpError(packet, found.session.translation, embeddedDirection, ownAddress);
+  }
+  const expired = transitTtl(services, context, 'session-lookup');
+  if (expired) return expired;
+
+  context.trace.push({ stage: 'session-lookup', verdict: 'related' });
+  context.verdict = Object.freeze({
+    action: 'accept' as const, reason: 'policy-deny' as VerdictReason, stage: 'session-lookup',
+  });
+  return { kind: 'accept', payload: context };
+}
+
 function sessionLookupStage(services: FirewallServices): PipelineStage {
   return {
     name: 'session-lookup',
     apply(context) {
       const packet = ipv4(context);
       if (!packet) return proceed(context, 'session-lookup', 'not-ipv4');
+
+      const related = relatedIcmpError(services, context, packet);
+      if (related) return related;
 
       const found = vdom(services, context).sessions.lookup(flowKeyFromPacket(packet));
       if (!found) return proceed(context, 'session-lookup', 'miss');
@@ -567,7 +653,10 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
           return deny(context, 'session-lookup', verdict.reason as VerdictReason);
         }
         found.session.tcpState = machine.state;
-        if (machine.state === 'closed') {
+        if (machine.state === 'closed' && machine.timeoutSec === 0) {
+          translateForSession(services, context, found.session, found.direction);
+          const expiredOnClose = transitTtl(services, context, 'session-lookup');
+          if (expiredOnClose) return expiredOnClose;
           vdom(services, context).sessions.close(found.session, flags.rst ? 'tcp-rst' : 'tcp-fin');
           context.trace.push({ stage: 'session-lookup', verdict: 'closed' });
           context.verdict = Object.freeze({
@@ -587,10 +676,8 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
         if (inspected.kind === 'drop') return inspected;
       }
 
-      const translation = found.session.translation;
-      if (translation && vdom(services, context).nat) {
-        context.packet = vdom(services, context).nat.reapply(packet, translation, found.direction);
-      }
+      observeSessionHelpers(services, context, found.session, found.direction, packet);
+      translateForSession(services, context, found.session, found.direction);
 
       const expired = transitTtl(services, context, 'session-lookup');
       if (expired) return expired;
@@ -614,7 +701,8 @@ function tcpTimeoutsFor(
     established: ttl?.getDefault() ?? profile.tcpEstablished,
     handshake: profile.tcpHandshake,
     timeWait: profile.tcpTimeWait,
-    closing: DEFAULT_TCP_TIMEOUTS.closing,
+    closing: profile.tcpHalfClose,
+    reset: profile.tcpReset,
   };
 }
 
@@ -623,6 +711,10 @@ function tcpStateCheckStage(services: FirewallServices): PipelineStage {
     name: 'tcp-state-check',
     apply(context) {
       const packet = ipv4(context);
+      if (packet && routesIcmpAsymmetrically(services, context, packet)) {
+        routedWithoutInspection.add(context);
+        return proceed(context, 'tcp-state-check', 'asymroute');
+      }
       const flags = packet ? tcpFlagsOf(packet) : undefined;
       if (!packet || !flags) return proceed(context, 'tcp-state-check', 'not-tcp');
 
@@ -631,6 +723,11 @@ function tcpStateCheckStage(services: FirewallServices): PipelineStage {
         synCheck: vdom(services, context).tcpSessionWithoutSyn !== true,
       });
       const verdict = machine.onFirstPacket(flags);
+      if (verdict.reason === 'no-session-non-syn'
+        && vdom(services, context).asymmetricRouting?.tcp === true) {
+        routedWithoutInspection.add(context);
+        return proceed(context, 'tcp-state-check', 'asymroute');
+      }
       if (!verdict.accepted) {
         return deny(context, 'tcp-state-check', verdict.reason as VerdictReason);
       }
@@ -704,6 +801,7 @@ function natDestinationStage(services: FirewallServices): PipelineStage {
     name: 'nat-destination',
     apply(context) {
       const packet = ipv4(context);
+      if (routedWithoutInspection.has(context)) return proceed(context, 'nat-destination', 'asymroute');
       if (!packet || !vdom(services, context).nat) return proceed(context, 'nat-destination', 'no-nat');
 
       const outcome = vdom(services, context).nat.translateInbound(packet, natContextOf(context));
@@ -915,6 +1013,23 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
     apply(context) {
       const packet = ipv4(context);
       if (!packet) return proceed(context, 'policy-lookup', 'not-ipv4');
+      if (routedWithoutInspection.has(context)) {
+        context.trace.push({ stage: 'policy-lookup', verdict: 'asymroute' });
+        context.verdict = Object.freeze({
+          action: 'accept' as const, reason: 'policy-deny' as VerdictReason, stage: 'policy-lookup',
+        });
+        return { kind: 'accept', payload: context };
+      }
+
+      const expected = takeExpectedFlow(services, context, packet);
+      if (expected) {
+        context.matchedPolicy = expected.rule;
+        expectedParents.set(context, expected.parentSessionId);
+        context.trace.push({
+          stage: 'policy-lookup', verdict: 'match', matchedRuleId: expected.rule.id,
+        });
+        return Continue();
+      }
 
       const decision = vdom(services, context).evaluator.evaluate(
         vdom(services, context).policy.ordered(),
@@ -976,7 +1091,8 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
       }
 
       const arrived = originalIpv4(context) ?? packet;
-      const session = vdom(services, context).sessions.install(flowKeyFromPacket(arrived), {
+      const parentSessionId = expectedParents.get(context);
+      const installOptions = {
         ingressZone: context.ingressZone ?? '',
         egressZone: context.egressZone ?? '',
         ingressInterface: context.ingressPort,
@@ -987,7 +1103,13 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
         policyId: context.matchedPolicy?.id,
         tcpState: tcpMachines.get(context)?.state,
         replyKey: reverseFlowKey(flowKeyFromPacket(packet)),
-      });
+      };
+      const sessions = vdom(services, context).sessions;
+      const key = flowKeyFromPacket(arrived);
+      const session = parentSessionId === undefined
+        ? sessions.install(key, installOptions)
+        : sessions.installPinhole(key, installOptions, parentSessionId, 'ftp');
+      if (parentSessionId !== undefined) sessions.consumePinhole(session);
       session.tcpMachine = tcpMachines.get(context);
 
       const translation = pendingTranslations.get(context);

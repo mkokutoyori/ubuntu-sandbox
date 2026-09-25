@@ -1409,16 +1409,7 @@ export abstract class EndHost extends Equipment {
     const previousDefault = this.routingTable.find(r => r.type === 'default');
     this.routingTable = this.routingTable.filter(r => r.type !== 'default');
 
-    // Find the interface the gateway is reachable through
-    let gwIface = '';
-    for (const [, port] of this.ports) {
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      if (ip && mask && ip.isInSameSubnet(gw, mask)) {
-        gwIface = port.getName();
-        break;
-      }
-    }
+    const gwIface = this.gatewayInterface(gw);
 
     this.addRouteEntry({
       network: new IPAddress('0.0.0.0'),
@@ -1445,6 +1436,52 @@ export abstract class EndHost extends Equipment {
       destination: '0.0.0.0', mask: '0.0.0.0',
       gateway: gw.toString(), iface: gwIface, metric, type: 'default',
     });
+  }
+
+  addDefaultRouteEntry(gw: IPAddress, metric: number, mode: 'add' | 'append' | 'replace'): boolean {
+    const sameMetric = this.routingTable.find(r => r.type === 'default' && r.metric === metric);
+    if (sameMetric && mode === 'add') return false;
+    if (sameMetric && mode === 'replace') this.removeDefaultRouteEntry({ metric });
+    const gwIface = this.gatewayInterface(gw);
+    this.addRouteEntry({
+      network: new IPAddress('0.0.0.0'), mask: new SubnetMask('0.0.0.0'),
+      nextHop: gw, iface: gwIface, type: 'default', metric,
+    });
+    this.defaultGatewayOrigin = 'static';
+    this.refreshDefaultGateway();
+    this.emitRouteAdded({
+      destination: '0.0.0.0', mask: '0.0.0.0',
+      gateway: gw.toString(), iface: gwIface, metric, type: 'default',
+    });
+    return true;
+  }
+
+  removeDefaultRouteEntry(filter: { nextHop?: IPAddress; metric?: number } = {}): boolean {
+    const victim = this.routingTable.find(r => r.type === 'default'
+      && (filter.nextHop === undefined || r.nextHop?.equals(filter.nextHop) === true)
+      && (filter.metric === undefined || r.metric === filter.metric));
+    if (!victim) return false;
+    this.routingTable = this.routingTable.filter(r => r !== victim);
+    this.refreshDefaultGateway();
+    this.emitRouteRemoved({ destination: '0.0.0.0', mask: '0.0.0.0', iface: victim.iface });
+    return true;
+  }
+
+  private refreshDefaultGateway(): void {
+    const best = this.routingTable
+      .filter(r => r.type === 'default')
+      .reduce<HostRouteEntry | null>((low, r) => (low === null || r.metric < low.metric ? r : low), null);
+    this.defaultGateway = best?.nextHop ?? null;
+    if (!best) this.defaultGatewayOrigin = null;
+  }
+
+  private gatewayInterface(gw: IPAddress): string {
+    for (const [, port] of this.ports) {
+      const ip = port.getIPAddress();
+      const mask = port.getSubnetMask();
+      if (ip && mask && ip.isInSameSubnet(gw, mask)) return port.getName();
+    }
+    return '';
   }
 
   clearDefaultGateway(): void {
@@ -3047,6 +3084,48 @@ export abstract class EndHost extends Equipment {
   }
 
   /**
+   * A single crafted ICMP echo request with an optional forged source
+   * address and TTL — what `hping3 -1` (and its `-a`/`--spoof`) puts on the
+   * wire. It reaches the wire exactly like `emitUdpDatagram`'s unicast tail
+   * (route, ARP, out filter), but composes an ICMP echo and never waits for
+   * a reply: a forged source means the answer, if any, goes elsewhere.
+   * Returns whether a frame left this host.
+   */
+  public sendCraftedIcmpEcho(
+    destinationIP: IPAddress,
+    options: { sourceIp?: IPAddress; ttl?: number; id?: number; sequence?: number; dataSize?: number } = {},
+  ): boolean {
+    const route = this.resolveRoute(destinationIP);
+    if (!route) return false;
+    const srcIP = options.sourceIp ?? route.port.getIPAddress();
+    if (!srcIP) return false;
+
+    const dataSize = options.dataSize ?? 0;
+    const icmp: ICMPPacket = {
+      type: 'icmp', icmpType: 'echo-request', code: 0,
+      id: options.id ?? ((++this.pingIdCounter) & 0xffff), sequence: options.sequence ?? 0, dataSize,
+    };
+    const ipPkt = createIPv4Packet(
+      srcIP, destinationIP, IP_PROTO_ICMP, options.ttl ?? this.defaultTTL, icmp, 8 + dataSize,
+    );
+
+    const outPortName = route.port.getName();
+    const verdict = this.firewallFilter(outPortName, ipPkt, 'out');
+    if (verdict === 'drop' || verdict === 'reject') return false;
+
+    const cached = this.arpTable.get(route.nextHopIP.toString());
+    if (cached) {
+      this.sendFrame(outPortName, {
+        srcMAC: route.port.getMAC(), dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      });
+    } else {
+      this.fwdQueueAndResolve(ipPkt, outPortName, route.nextHopIP, route.port);
+    }
+    return true;
+  }
+
+  /**
    * Émission vers un groupe (ou le broadcast limité). Sans interface
    * nommée, la trame part sur chaque lien monté qui porte une adresse —
    * c'est le comportement d'un démon qui a rejoint le groupe sur tous ses
@@ -3396,12 +3475,30 @@ export abstract class EndHost extends Equipment {
 
     const port = this.ports.get(portName);
     if (!port) throw new Error('Port not found');
-    const myIP = port.getIPAddress();
-    if (!myIP) throw new Error('No IP configured');
+    if (!port.getIPAddress()) throw new Error('No IP configured');
+
+    const learned = await this.probeArp(portName, targetIP, timeoutMs);
+    if (learned) return learned;
 
     const targetIpStr = targetIP.toString();
+    const prev = this.arpTable.get(targetIpStr);
+    if (!prev || prev.type !== 'static') {
+      this.arpTable.set(targetIpStr, {
+        mac: MACAddress.broadcast(),
+        iface: portName,
+        timestamp: Date.now(),
+        type: 'failed',
+      });
+    }
+    throw new Error('ARP timeout');
+  }
 
-    // Reactive wait: resolve when the bus reports a learn for this IP on this device.
+  async probeArp(portName: string, targetIP: IPAddress, timeoutMs: number): Promise<MACAddress | null> {
+    const port = this.ports.get(portName);
+    const myIP = port?.getIPAddress();
+    if (!port || !myIP) return null;
+
+    const targetIpStr = targetIP.toString();
     const waitPromise = waitForEvent(
       this.getBus(),
       'host.arp.entry-learned',
@@ -3409,7 +3506,6 @@ export abstract class EndHost extends Equipment {
       { timeoutMs, scheduler: this.getScheduler() },
     );
 
-    // Send ARP broadcast.
     const arpReq: ARPPacket = {
       type: 'arp',
       operation: 'request',
@@ -3430,18 +3526,7 @@ export abstract class EndHost extends Equipment {
       const learned = await waitPromise;
       return new MACAddress(learned.mac);
     } catch (err) {
-      if (err instanceof WaitForEventTimeoutError) {
-        const prev = this.arpTable.get(targetIpStr);
-        if (!prev || prev.type !== 'static') {
-          this.arpTable.set(targetIpStr, {
-            mac: MACAddress.broadcast(),
-            iface: portName,
-            timestamp: Date.now(),
-            type: 'failed',
-          });
-        }
-        throw new Error('ARP timeout');
-      }
+      if (err instanceof WaitForEventTimeoutError) return null;
       throw err;
     }
   }

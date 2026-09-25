@@ -166,7 +166,7 @@ describe('sshd : le mode TEST de la page man', () => {
 
   it('une directive posee dans sshd_config se relit dans `sshd -T`', async () => {
     const { srv } = await labo();
-    await srv.executeCommand('echo "PermitRootLogin no" | sudo tee -a /etc/ssh/sshd_config');
+    await srv.executeCommand("sudo sed -i 's/^PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config");
     expect(await srv.executeCommand('sudo sshd -T')).toMatch(/^permitrootlogin no$/m);
   });
 

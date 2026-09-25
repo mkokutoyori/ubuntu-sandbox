@@ -6,9 +6,14 @@ import type { X509Certificate } from '../../../pki/X509Certificate';
 import type { PkiPrivateKey } from '../../../pki/PkiKeyPair';
 import type { ManagementPorts } from './ManagementAccess';
 
-export interface AdminServerCertificate {
+export interface AdminServerCertificateMaterial {
   readonly certificate: X509Certificate;
   readonly privateKey: PkiPrivateKey;
+}
+
+export interface AdminServerCertificate {
+  readonly name: string;
+  material(): AdminServerCertificateMaterial;
 }
 
 export interface AdminHttpPeer {
@@ -120,17 +125,20 @@ export class AdminHttpServer {
   }
 
   private rebindHttps(port: number | null): void {
-    const material = this.deps.serverCertificate();
-    const name = material === undefined ? '' : material.certificate.subject;
+    const declared = this.deps.serverCertificate();
+    const name = declared === undefined ? '' : declared.name;
     if (this.https?.port === port && this.certificateName === name) return;
     this.https?.session.stop();
     this.https = null;
     this.certificateName = name;
-    if (port === null || material === undefined) return;
+    if (port === null || declared === undefined) return;
 
     const session = new HttpsServerSession(
       this.deps.tcp(), port,
-      { serverCert: material.certificate, serverPrivateKey: material.privateKey },
+      () => {
+        const material = declared.material();
+        return { serverCert: material.certificate, serverPrivateKey: material.privateKey };
+      },
       (request, peer) => this.serve(request, {
         ip: peer?.ip ?? '0.0.0.0', port: peer?.port ?? 0, secure: true,
       }));

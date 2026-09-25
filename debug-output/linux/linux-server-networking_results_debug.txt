@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-networking
-Generated: 2026-09-14T10:39:40.507Z
+Generated: 2026-09-24T07:57:51.862Z
 Engine: linux
 host=L-SRV-NET-DBG (linux-server) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -41,11 +41,11 @@ $ [2/302]> ip link show
       link/ether 02:00:00:00:00:08 brd ff:ff:ff:ff:ff:ff
 
 $ [3/302]> ip -br link
-  lo              UNKNOWN       00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP>
-  eth0            DOWN          02:00:00:00:00:05 <NO-CARRIER,BROADCAST,UP,MULTICAST>
-  eth1            DOWN          02:00:00:00:00:06 <NO-CARRIER,BROADCAST,UP,MULTICAST>
-  eth2            DOWN          02:00:00:00:00:07 <NO-CARRIER,BROADCAST,UP,MULTICAST>
-  eth3            DOWN          02:00:00:00:00:08 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  lo               UNKNOWN        00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP> 
+  eth0             DOWN           02:00:00:00:00:05 <NO-CARRIER,BROADCAST,UP,MULTICAST> 
+  eth1             DOWN           02:00:00:00:00:06 <NO-CARRIER,BROADCAST,UP,MULTICAST> 
+  eth2             DOWN           02:00:00:00:00:07 <NO-CARRIER,BROADCAST,UP,MULTICAST> 
+  eth3             DOWN           02:00:00:00:00:08 <NO-CARRIER,BROADCAST,UP,MULTICAST> 
 
 $ [4/302]> ip -s link
   1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
@@ -181,11 +181,11 @@ $ [21/302]> ip address show
       link/ether 02:00:00:00:00:08 brd ff:ff:ff:ff:ff:ff
 
 $ [22/302]> ip -br address
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            DOWN          
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             DOWN           fe80::ff:fe00:5/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 $ [23/302]> ip -4 address show
   1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
@@ -243,11 +243,7 @@ $ [27/302]> ip addr show eth0
          valid_lft forever preferred_lft forever
 
 $ [28/302]> ip -br addr show eth0
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            DOWN          192.168.10.2/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  eth0             DOWN           192.168.10.2/24 fe80::ff:fe00:5/64 
 
 $ [29/302]> ip addr add 192.168.10.3/24 dev eth0
 <empty>
@@ -299,10 +295,10 @@ $ [37/302]> ip addr add 192.168.10.2/24 dev eth0
 <empty>
 
 $ [38/302]> ip addr add 256.1.1.1/24 dev eth0
-  Error: 256.1.1.1 is not a valid IPv4 address.
+  Error: any valid prefix is expected rather than "256.1.1.1/24".
 
 $ [39/302]> ip addr add 192.168.10.5 dev interface_inexistante_xyz
-  Error: either "local" or "peer" address is required.
+  Cannot find device "interface_inexistante_xyz"
 
 
 --- [40] § config legacy — ifconfig ---
@@ -1082,18 +1078,18 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-09-14 10:39:43--  http://192.168.10.1
+  --2026-09-24 07:57:54--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [172/302]> wget -q http://192.168.10.1
 <empty>
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-09-14 10:39:43--  http://192.168.10.1
+  --2026-09-24 07:57:54--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-09-14 10:39:43--  http://192.168.10.99
+  --2026-09-24 07:57:54--  http://192.168.10.99
   Connecting to 192.168.10.99:80... failed: Connection refused.
 
 $ [175/302]> curl
@@ -1157,13 +1153,13 @@ $ [188/302]> iptables -L -n
   target     prot opt source               destination
 
 $ [189/302]> iptables -L -v -n
-  Chain INPUT (policy ACCEPT)
+  Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
    pkts bytes target     prot opt in     out     source               destination
   
-  Chain FORWARD (policy ACCEPT)
+  Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
    pkts bytes target     prot opt in     out     source               destination
   
-  Chain OUTPUT (policy ACCEPT)
+  Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
    pkts bytes target     prot opt in     out     source               destination
 
 $ [190/302]> iptables -t nat -L
@@ -1245,15 +1241,15 @@ $ [204/302]> ufw status verbose
   Status: inactive
 
 $ [205/302]> ufw allow 22/tcp
-  Rule added
-  Rule added (v6)
+  Rules updated
+  Rules updated (v6)
 
 $ [206/302]> ufw status
   Status: inactive
 
 $ [207/302]> ufw deny 23
-  Rule added
-  Rule added (v6)
+  Rules updated
+  Rules updated (v6)
 
 $ [208/302]> ufw status numbered
   Status: inactive
@@ -1296,19 +1292,15 @@ $ [214/302]> tcpdump -D
   6.lo [Up, Running]
 
 $ [215/302]> arping -c 1 192.168.10.1
-  ARPING 192.168.10.1
-  Sent 1 probes (1 broadcast(s))
-  Received 0 response(s)
+  arping: no suitable device found: invalid argument
 
 $ [216/302]> arping -c 2 -I eth0 192.168.10.1
-  ARPING 192.168.10.1
+  ARPING 192.168.10.1 from 192.168.20.2 eth0
   Sent 2 probes (2 broadcast(s))
   Received 0 response(s)
 
 $ [217/302]> arping -c 1 192.168.10.99
-  ARPING 192.168.10.99
-  Sent 1 probes (1 broadcast(s))
-  Received 0 response(s)
+  arping: no suitable device found: invalid argument
 
 
 --- [218] § clés & SSH ---
@@ -1317,44 +1309,44 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
   Your identification has been saved in /tmp/id_rsa
   Your public key has been saved in /tmp/id_rsa.pub
   The key fingerprint is:
-  SHA256:J+P4OsGrajlu3ExwhxZ/KIelQ+qwy9/O62aYN/Owezw root@linux-server (RSA)
+  SHA256:kV/OlzE2AIOOwCupojAKbI0fMDEYmr3lSErXqWjxAAQ root@linux-server (RSA)
   The key's randomart image is:
   +--[RSA   ]----+
-  |@oX//B.#*%.O OO% |
-  | O@&X/&%#o%+&+ @o|
-  |X//B.#*%.O OO%  O|
-  |@&X/&%#o%+&+ @oX/|
-  |/B.#*%.O OO%  O@&|
-  |X/&%#o%+&+ @oX//B|
-  |.#*%.O OO%  O@&X/|
-  |&%#o%+&+ @oX//B.#|
-  |*%.O OO%  O@&X/&%|
+  |%*&.=@ &O#/=#+%+B|
+  |.+=@=@=#^*=^. =%*|
+  |&.=@ &O#/=#+%+B.+|
+  |=@=@=#^*=^. =%*&.|
+  |=@ &O#/=#+%+B.+=@|
+  |=@=#^*=^. =%*&.=@|
+  | &O#/=#+%+B.+=@=@|
+  |=#^*=^. =%*&.=@ &|
+  |O#/=#+%+B.+=@=@=#|
   +----[SHA256]-----+
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 root root 638 Sep 14 10:39 /tmp/id_rsa
-  -rw-r--r-- 1 root root 399 Sep 14 10:39 /tmp/id_rsa.pub
+  -rw------- 1 root root 638 Sep 24 07:58 /tmp/id_rsa
+  -rw-r--r-- 1 root root 399 Sep 24 07:58 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAGEv6soDQUV5F5Fe55Ljn10+Q4YHOz/CW8pqwkM8uoM6yTwgc9+0GYQexRkWYsHSOC0VyR8C42stXpB6N7eSNijzq/wgVRazEyUn6X/e1Y/6mVpwFhFWdBcsDhNhDtg9HPepfhRVb4HONPEJzdTJNFSG9zz/b28IBmb6jhvmQW2qS0/ZvkweQlFK7mqF4XxjH9OLTVEvhUyG9XvrDcREK4SOYVjMZu20tNAejYm+4kFhjUrpfieNLwqEs8NoYOIT0V2/msV/2/C2f2axwgnks5ZjUDGcIXGDs3Nn2YajUHH7khvX6WsnnswHdbH4L2t1WRN84CzhgDqEMmwU3OMU3Hk= root@linux-server
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABADreWNdvrkUuFGXveicqTARd5KopQwKKNp9jtauzGHeoEU417HhCIGZS6EVs9rs9qYO+1pSU08H/p5i+lyRL4ErOUYkrkFDMdLDF8RYVz6n+gCCInCDPe1U/23p5xU94LB6KX/9I90BEHC2k0drIhD86qBd5zk4LCqYcA8JQlDS562q4Kr7s34PuqO1yhdFCFXknXTkZS8ikXYeD7vVN7KXxFQLaKuzRG2TBup5s64dsjB5q2gX9Y//Q5iDqZX7Ftl1Aq2RI5b+S1tmRPPYd9P2zT9X6wQYRQPDmquE27xNWtaylEwE6eoVevYrEQamQDMPhaPhB/3jPJJG2EXkMnbo= root@linux-server
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
   Generating public/private ed25519 key pair.
   Your identification has been saved in /tmp/id_ed25519
   Your public key has been saved in /tmp/id_ed25519.pub
   The key fingerprint is:
-  SHA256:vWTo3NcvkjUxWaVtn/tAVeHFCwOd9rFkqUqWzteXJMA root@linux-server (ED25519)
+  SHA256:+PLGSxBdGuhdvSJeO5OzBkonYmNZuawlrBqcjVbTOHc root@linux-server (ED25519)
   The key's randomart image is:
   +--[ED25519]----+
-  |@%O%*o&X=^ =@&=% |
-  |o&+OB#%=^ &*.B#@%|
-  |O%*o&X=^ =@&=% o&|
-  |+OB#%=^ &*.B#@%O%|
-  |*o&X=^ =@&=% o&+O|
-  |B#%=^ &*.B#@%O%*o|
-  |&X=^ =@&=% o&+OB#|
-  |%=^ &*.B#@%O%*o&X|
-  |=^ =@&=% o&+OB#%=|
+  |Xo+ .+&O+@==^#^B^|
+  |@X@^*OOO&BB&.&^Xo|
+  |+ .+&O+@==^#^B^@X|
+  |@^*OOO&BB&.&^Xo+ |
+  |.+&O+@==^#^B^@X@^|
+  |*OOO&BB&.&^Xo+ .+|
+  |&O+@==^#^B^@X@^*O|
+  |OO&BB&.&^Xo+ .+&O|
+  |+@==^#^B^@X@^*OOO|
   +----[SHA256]-----+
 
 $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
@@ -1362,22 +1354,22 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
   Your identification has been saved in /root/.ssh/id_ed25519
   Your public key has been saved in /root/.ssh/id_ed25519.pub
   The key fingerprint is:
-  SHA256:a236920u8e2WGdAms9LSz+KpgIz116OHMOX1UNTYkv0 root@linux-server (ED25519)
+  SHA256:Q4/rujizIsCfiGbbQxZ43GxfozoxVDku05xwEwxGCKo root@linux-server (ED25519)
   The key's randomart image is:
   +--[ED25519]----+
-  |o=%O=..# %/X^  #.|
-  |=X***/ +=**oB&/o=|
-  |%O=..# %/X^  #.=X|
-  |***/ +=**oB&/o=%O|
-  |=..# %/X^  #.=X**|
-  |*/ +=**oB&/o=%O=.|
-  |.# %/X^  #.=X***/|
-  | +=**oB&/o=%O=..#|
-  | %/X^  #.=X***/ +|
+  |OX%B&^=#@.#@OO %+|
+  |*//=@#..BO=#%X*OX|
+  |%B&^=#@.#@OO %+*/|
+  |/=@#..BO=#%X*OX%B|
+  |&^=#@.#@OO %+*//=|
+  |@#..BO=#%X*OX%B&^|
+  |=#@.#@OO %+*//=@#|
+  |..BO=#%X*OX%B&^=#|
+  |@.#@OO %+*//=@#..|
   +----[SHA256]-----+
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAGEv6soDQUV5F5Fe55Ljn10+Q4YHOz/CW8pqwkM8uoM6yTwgc9+0GYQexRkWYsHSOC0VyR8C42stXpB6N7eSNijzq/wgVRazEyUn6X/e1Y/6mVpwFhFWdBcsDhNhDtg9HPepfhRVb4HONPEJzdTJNFSG9zz/b28IBmb6jhvmQW2qS0/ZvkweQlFK7mqF4XxjH9OLTVEvhUyG9XvrDcREK4SOYVjMZu20tNAejYm+4kFhjUrpfieNLwqEs8NoYOIT0V2/msV/2/C2f2axwgnks5ZjUDGcIXGDs3Nn2YajUHH7khvX6WsnnswHdbH4L2t1WRN84CzhgDqEMmwU3OMU3Hk= root@linux-server
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABADreWNdvrkUuFGXveicqTARd5KopQwKKNp9jtauzGHeoEU417HhCIGZS6EVs9rs9qYO+1pSU08H/p5i+lyRL4ErOUYkrkFDMdLDF8RYVz6n+gCCInCDPe1U/23p5xU94LB6KX/9I90BEHC2k0drIhD86qBd5zk4LCqYcA8JQlDS562q4Kr7s34PuqO1yhdFCFXknXTkZS8ikXYeD7vVN7KXxFQLaKuzRG2TBup5s64dsjB5q2gX9Y//Q5iDqZX7Ftl1Aq2RI5b+S1tmRPPYd9P2zT9X6wQYRQPDmquE27xNWtaylEwE6eoVevYrEQamQDMPhaPhB/3jPJJG2EXkMnbo= root@linux-server
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]
@@ -1455,11 +1447,11 @@ $ [239/302]> ip neigh
 <empty>
 
 $ [240/302]> ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            DOWN          192.168.50.10/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             DOWN           192.168.50.10/24 fe80::ff:fe00:5/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 $ [241/302]> ip route get 192.168.50.1
   192.168.50.1 dev eth0 src 192.168.50.10
@@ -1474,18 +1466,18 @@ $ [243/302]> ip route
 
 --- [244] § inventaire réseau consolidé ---
 $ [244/302]> ip -br link
-  lo              UNKNOWN       00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP>
-  eth0            DOWN          02:00:00:aa:bb:cc <NO-CARRIER,BROADCAST,UP,MULTICAST>
-  eth1            DOWN          02:00:00:00:00:06 <NO-CARRIER,BROADCAST,UP,MULTICAST>
-  eth2            DOWN          02:00:00:00:00:07 <NO-CARRIER,BROADCAST,UP,MULTICAST>
-  eth3            DOWN          02:00:00:00:00:08 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  lo               UNKNOWN        00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP> 
+  eth0             DOWN           02:00:00:aa:bb:cc <NO-CARRIER,BROADCAST,UP,MULTICAST> 
+  eth1             DOWN           02:00:00:00:00:06 <NO-CARRIER,BROADCAST,UP,MULTICAST> 
+  eth2             DOWN           02:00:00:00:00:07 <NO-CARRIER,BROADCAST,UP,MULTICAST> 
+  eth3             DOWN           02:00:00:00:00:08 <NO-CARRIER,BROADCAST,UP,MULTICAST> 
 
 $ [245/302]> ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            DOWN          192.168.50.10/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             DOWN           192.168.50.10/24 fe80::ff:fe00:5/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 $ [246/302]> ip route show | wc -l
   2
@@ -1784,7 +1776,7 @@ $ [288/302]> ethtool -S eth0
        rx_errors: 0
        tx_errors: 0
        rx_dropped: 0
-       tx_dropped: 4
+       tx_dropped: 6
        rx_crc_errors: 0
        collisions: 0
 

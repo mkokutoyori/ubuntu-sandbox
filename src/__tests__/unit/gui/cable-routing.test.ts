@@ -28,10 +28,18 @@
  *     proche de SON bout que de l'autre -- et le fait qu'elle ne
  *     s'eloigne pas plus que necessaire.
  *
- *  3. UNE PASTILLE SE COUCHE LE LONG DU FIL, jamais en travers. Elle se
- *     pose la ou un segment A LA PLACE de la porter et prend l'axe de CE
- *     segment ; quand aucun segment ne le peut, elle prend l'axe du plus
- *     long et deborde dans l'axe du cable.
+ *  3. UNE PASTILLE EST PARALLELE OU PERPENDICULAIRE AU FIL, selon ce
+ *     qui se LIT le mieux. Un texte horizontal se lit sans tourner la
+ *     tete : c'est donc l'orientation preferee, et la pastille ne
+ *     pivote d'un quart de tour que lorsque, posee a plat, elle
+ *     couvrirait un voisin. Sur un fil vertical isole elle reste donc
+ *     horizontale -- perpendiculaire au fil -- et dans un faisceau
+ *     serre elle se couche le long du fil.
+ *
+ *     Le choix change aussi ce qu'elle OCCUPE du fil : posee a plat sur
+ *     un fil vertical, elle n'en consomme que son EPAISSEUR, pas sa
+ *     longueur. Elle tient donc sur des cables bien plus courts, ce qui
+ *     est exactement le cas des equipements rapproches.
  *
  *  4. ELLE NE CACHE RIEN. Les cartes, les etiquettes de nom qui pendent
  *     dessous, les autres cables et les pastilles deja posees sont des
@@ -39,6 +47,100 @@
  *     interface PARMI CELLES QUI DEGAGENT. Le rendu complete la regle en
  *     posant les pastilles dans une couche au-dessus des equipements --
  *     `canvas-cable-labels.spec.ts` le mesure dans le DOM.
+ *
+ *  5. UNE PASTILLE GARDE SA TAILLE A L'ECRAN, quel que soit le zoom.
+ *     Tout est dans un `scale(zoom)`, donc a la moitie du zoom le texte
+ *     de neuf pixels en rendait quatre et demi : sur capture, `Gi0/0`
+ *     devient une tache rouge quand le nom de l'equipement, lui, reste
+ *     lisible. L'information disparait exactement quand la topologie
+ *     devient assez grande pour qu'on en ait besoin.
+ *
+ *     Contre-echeller la pastille au rendu ne suffit pas : le placement
+ *     raisonne en unites de TOILE, et une pastille rendue deux fois plus
+ *     grande recouvrirait ce que le placement croyait degage. Le zoom
+ *     entre donc dans le CALCUL -- la longueur de la pastille sur la
+ *     toile vaut son texte divise par le zoom -- et la garantie « elle
+ *     ne cache rien » tient alors a tous les zooms. Serrer le zoom
+ *     retrecit la pastille sur la toile, donc la rapproche de son port.
+ *
+ *     En dessous d'un plancher, meme contre-echellees les pastilles ne
+ *     tiennent plus : la toile montre alors la FORME du reseau et se
+ *     tait sur les noms de port, plutot que d'afficher un encombrement
+ *     illisible. Le plancher n'est pas deduit, il est MESURE sur le labo
+ *     temoin de ce fichier -- trois machines sous un routeur, six
+ *     pastilles : 1 recouvrement a 0,5 et 0,6, aucun a partir de 0,7.
+ *     Un labo plus dense se tairait plus tot ; c'est une limite du
+ *     reglage, pas une garantie universelle.
+ *
+ *  6. LE COUDE SE PLACE SELON CE QUE CHAQUE BRANCHE DOIT PORTER. Il
+ *     etait fige a MI-CHEMIN entre les deux cartes, sans rien savoir des
+ *     pastilles. Releve : un pare-feu en (340,90) cable a un routeur en
+ *     (180,270) donne un trace dont la premiere branche fait soixante
+ *     pixels ; l'etiquette de nom du pare-feu, qui pend sous sa carte,
+ *     en bloque quarante et un ; il reste dix-neuf pixels pour une
+ *     pastille qui en fait quarante et un. `port1` etait donc repoussee
+ *     sur le corridor, a 64 pixels sur 280, loin du port qu'elle nomme.
+ *
+ *     Le coude connait desormais le BESOIN de chaque bout -- la marge
+ *     de bout, la longueur de la pastille, et ce que l'etiquette de nom
+ *     bloque quand le cable sort par le BAS. Quand la course suffit, le
+ *     surplus est partage egalement et le coude retombe au milieu pour
+ *     un cable symetrique ; quand elle ne suffit pas, il partage AU
+ *     PRORATA des deux besoins plutot que de servir un bout au hasard.
+ *     Il reste toujours entre les deux cartes : un cable ne revient
+ *     jamais sur ses pas.
+ *
+ *  7. UNE PASTILLE QUI DEGAGE ENCORE NE BOUGE PAS. Le placement etait
+ *     rejoue entierement a chaque image ; pendant un glisser, une
+ *     position marginalement meilleure faisait TELEPORTER l'etiquette.
+ *
+ *     Releve en rejouant trois glissers pas a pas, un pixel a la fois,
+ *     sur le labo temoin : un glisser HORIZONTAL du routeur ne bouge
+ *     presque rien (3 pas sur 120 deplacent une pastille de plus de
+ *     deux pixels, au pire 13) et un glisser qui fait BASCULER la face
+ *     de sortie pas davantage (au pire 4 pixels, soit le pas lui-meme).
+ *     Le defaut est le glisser VERTICAL, qui raccourcit la course et
+ *     fait sauter les pastilles d'une branche a l'autre : 13 pas sur
+ *     120 au-dela de deux pixels, 5 au-dela de huit, et DEUX
+ *     TELEPORTATIONS au-dela de vingt-cinq, la pire de 92 pixels.
+ *
+ *     La position retenue est donc memorisee comme une DISTANCE LE LONG
+ *     DU FIL depuis son propre bout -- pas comme un point, qui ne veut
+ *     plus rien dire une fois le cable redessine. A l'image suivante,
+ *     si cette meme distance tient toujours dans un segment et degage
+ *     toujours tout, elle est CONSERVEE ; sinon seulement, on replace.
+ *     Le resultat depend donc de l'historique, et c'est assume : sans
+ *     memoire il reste exactement le placement direct, ce qu'un cas
+ *     temoin verifie.
+ *
+ *     PREMISSE FAUSSE, CORRIGEE ICI. Un premier jet de cette sonde
+ *     exigeait qu'AUCUN pas d'un glisser vertical ne deplace une
+ *     pastille de plus de huit pixels. La mesure a montre que les
+ *     quatre grands deplacements tombent tous au MEME pas, a distance
+ *     memorisee INCHANGEE : ce n'est pas l'etiquette qui saute, c'est le
+ *     CABLE qui change de face quand la dominance passe les 45 degres,
+ *     et l'etiquette suit son fil. Exiger zero grand deplacement aurait
+ *     fige un dessin faux. Ce qui est exige est donc : au plus UN pas de
+ *     discontinuite sur tout un glisser.
+ *
+ *  8. LE CABLE NE BASCULE PAS DE FACE POUR UN TREMBLEMENT. La face de
+ *     sortie se deduisait de `|dx| >= |dy|`, sans marge : une main qui
+ *     tremble autour de la diagonale faisait basculer tout le cable a
+ *     chaque pixel. Releve : soixante pas d'un tremblement de six
+ *     pixels autour de la ligne des 45 degres donnent QUARANTE-SEPT
+ *     basculements, l'etiquette se deplacant jusqu'a 115 pixels par
+ *     pas. L'axe est desormais CONSERVE tant que l'autre ne domine pas
+ *     d'une marge franche ; sans memoire, il reste exactement la
+ *     dominance simple.
+ *
+ *  9. LE SCHEMA RESTE LISIBLE QUAND LES EQUIPEMENTS SE TOUCHENT PRESQUE.
+ *     Releve sur capture, six cables entre cinq equipements espaces de
+ *     cent pixels : les pastilles s'empilaient les unes sur les autres,
+ *     se posaient sur les cartes, et `Gi0/1` se lisait `Gi`. Quand rien
+ *     ne tient, la toile ne doit pas empiler : une pastille qui ne peut
+ *     se poser sans en couvrir une autre est RETIREE, et le cable la
+ *     rend au survol ou a la selection. Montrer huit etiquettes justes
+ *     vaut mieux qu'en empiler douze illisibles.
  *
  * Sonde ecrite AVANT le correctif.
  */
@@ -53,6 +155,10 @@ import {
   NODE_HALF_HEIGHT,
   NODE_CENTER_OFFSET_Y,
   DEVICE_BADGE_BOTTOM,
+  LABEL_MIN_ZOOM,
+  shouldShowPortLabels,
+  endLabelNeed,
+  runIsHorizontal,
   type RoutedLink,
   type CableRoute,
   type LabelPlacement,
@@ -90,8 +196,10 @@ function centresOf(links: RoutedLink[]): { x: number; y: number }[] {
   return [...seen.values()];
 }
 
-function routesOf(links: RoutedLink[], devices = centresOf(links)): CableRoute[] {
-  const routes = computeCableRoutes(links, devices);
+function routesOf(
+  links: RoutedLink[], devices = centresOf(links), zoom = 1,
+): CableRoute[] {
+  const routes = computeCableRoutes(links, devices, zoom);
   return links.map(link => routes.get(link.id)!);
 }
 
@@ -99,15 +207,15 @@ function everyLabel(routes: CableRoute[]): LabelPlacement[] {
   return routes.flatMap(route => [route.sourceLabel, route.targetLabel]);
 }
 
-function halfExtents(label: LabelPlacement): { x: number; y: number } {
-  const along = interfaceTagWidth(label.text) / 2;
-  const across = TAG_HEIGHT / 2;
+function halfExtents(label: LabelPlacement, zoom = 1): { x: number; y: number } {
+  const along = label.halfLength;
+  const across = TAG_HEIGHT / (2 * zoom);
   return label.vertical ? { x: across, y: along } : { x: along, y: across };
 }
 
-function overlap(a: LabelPlacement, b: LabelPlacement): boolean {
-  const halfA = halfExtents(a);
-  const halfB = halfExtents(b);
+function overlap(a: LabelPlacement, b: LabelPlacement, zoom = 1): boolean {
+  const halfA = halfExtents(a, zoom);
+  const halfB = halfExtents(b, zoom);
   return Math.abs(a.at.x - b.at.x) < halfA.x + halfB.x
     && Math.abs(a.at.y - b.at.y) < halfA.y + halfB.y;
 }
@@ -186,7 +294,7 @@ describe('chaque pastille se tient au plus pres de SON interface', () => {
   });
 });
 
-describe('une pastille se couche le long de son cable', () => {
+describe('une pastille est parallele ou perpendiculaire, selon ce qui se lit', () => {
   const lien = (
     source: { x: number; y: number }, target: { x: number; y: number },
   ): RoutedLink => ({
@@ -194,46 +302,32 @@ describe('une pastille se couche le long de son cable', () => {
     sourceInterface: 'GigabitEthernet0/0', targetInterface: 'eth0',
   });
 
-  it('sur un cable qui descend, les deux pastilles pivotent', () => {
+  it('sur un fil vertical DEGAGE, elle reste horizontale : on lit sans tourner la tete', () => {
     const [route] = routesOf([lien({ x: 200, y: 100 }, { x: 200, y: 600 })]);
-    expect(route.sourceLabel.vertical).toBe(true);
-    expect(route.targetLabel.vertical).toBe(true);
+    expect(route.sourceLabel.vertical).toBe(false);
+    expect(route.targetLabel.vertical).toBe(false);
   });
 
-  it('sur un cable qui court a plat, elles restent horizontales', () => {
+  it('sur un fil horizontal, elle reste horizontale aussi', () => {
     const [route] = routesOf([lien({ x: 100, y: 200 }, { x: 700, y: 200 })]);
     expect(route.sourceLabel.vertical).toBe(false);
     expect(route.targetLabel.vertical).toBe(false);
   });
 
-  it('un cable coude couche chaque pastille selon SON bout', () => {
-    const [route] = routesOf([lien({ x: 100, y: 200 }, { x: 700, y: 560 })]);
-    const last = route.points.length - 1;
-    const axeDuBout = (label: LabelPlacement, from: number, to: number) => {
-      const a = route.points[from];
-      const b = route.points[to];
-      return (Math.abs(b.y - a.y) > Math.abs(b.x - a.x)) === label.vertical;
-    };
-    expect(axeDuBout(route.sourceLabel, 0, 1)).toBe(true);
-    expect(axeDuBout(route.targetLabel, last, last - 1)).toBe(true);
+  it('mais dans un faisceau serre elle PIVOTE pour ne pas couvrir le voisin', () => {
+    const faisceau: RoutedLink[] = [0, 1, 2].map(i => ({
+      id: `f${i}`, sourceDeviceId: 'R1', targetDeviceId: `PC${i}`,
+      source: { x: 340, y: 120 }, target: { x: 220 + i * 180, y: 430 },
+      sourceInterface: `GigabitEthernet0/${i}`, targetInterface: 'eth0',
+    }));
+    const routes = routesOf(faisceau);
+    expect(routes.some(route => route.sourceLabel.vertical)).toBe(true);
   });
 
-  it('meme sur un cable trop court, elle ne se met pas EN TRAVERS', () => {
-    const RAPPROCHES: RoutedLink[] = [
-      {
-        id: 'court', sourceDeviceId: 'R1', targetDeviceId: 'PC1',
-        source: { x: 150, y: 150 }, target: { x: 245, y: 150 },
-        sourceInterface: 'GigabitEthernet0/0', targetInterface: 'eth0',
-      },
-      {
-        id: 'long', sourceDeviceId: 'R1', targetDeviceId: 'SW1',
-        source: { x: 150, y: 150 }, target: { x: 420, y: 200 },
-        sourceInterface: 'GigabitEthernet0/2', targetInterface: 'FastEthernet0/1',
-      },
-    ];
-    const [court] = routesOf(RAPPROCHES);
+  it('posee a plat sur un fil vertical, elle ne consomme que son EPAISSEUR', () => {
+    const [court] = routesOf([lien({ x: 200, y: 150 }, { x: 200, y: 290 })]);
     expect(court.sourceLabel.vertical).toBe(false);
-    expect(court.targetLabel.vertical).toBe(false);
+    expect(distanceToPolyline(court.sourceLabel.at, court.points)).toBeLessThan(0.5);
   });
 });
 
@@ -340,5 +434,334 @@ describe('la distance d un point a un trace', () => {
 
   it('et un point pris sur le trace y reste', () => {
     expect(distanceToPolyline(pointAlongPolyline(TRACE, 0.5), TRACE)).toBeCloseTo(0, 6);
+  });
+});
+
+describe('une pastille garde sa taille a l ecran, quel que soit le zoom', () => {
+  it('a zoom 1, sa longueur sur la toile est celle de son texte', () => {
+    const [route] = routesOf(ETOILE);
+    expect(route.sourceLabel.halfLength)
+      .toBeCloseTo(interfaceTagWidth(route.sourceLabel.text) / 2, 5);
+  });
+
+  it('a zoom 2, elle occupe deux fois moins de place sur la toile', () => {
+    const [serre] = routesOf(ETOILE, centresOf(ETOILE), 2);
+    const [normal] = routesOf(ETOILE);
+    expect(serre.sourceLabel.halfLength).toBeCloseTo(normal.sourceLabel.halfLength / 2, 5);
+  });
+
+  it('et a zoom 0.5, deux fois plus', () => {
+    const [large] = routesOf(ETOILE, centresOf(ETOILE), 0.5);
+    const [normal] = routesOf(ETOILE);
+    expect(large.sourceLabel.halfLength).toBeCloseTo(normal.sourceLabel.halfLength * 2, 5);
+  });
+
+  it('plus serree, elle se tient plus pres de son port', () => {
+    const [serre] = routesOf(ETOILE, centresOf(ETOILE), 2);
+    const [normal] = routesOf(ETOILE);
+    expect(distance(serre.sourceLabel.at, serre.points[0]))
+      .toBeLessThanOrEqual(distance(normal.sourceLabel.at, normal.points[0]));
+  });
+
+  it('et la garantie de ne rien cacher tient DES le plancher', () => {
+    for (const zoom of [LABEL_MIN_ZOOM, 1, 2]) {
+      const routes = routesOf(ETOILE, centresOf(ETOILE), zoom);
+      const labels = everyLabel(routes);
+      for (let i = 0; i < labels.length; i++) {
+        for (let j = i + 1; j < labels.length; j++) {
+          expect(overlap(labels[i], labels[j], zoom), `zoom ${zoom}, ${i} et ${j}`)
+            .toBe(false);
+        }
+      }
+    }
+  });
+
+  it('sous le plancher, la toile se tait sur les noms de port', () => {
+    expect(shouldShowPortLabels(1)).toBe(true);
+    expect(shouldShowPortLabels(LABEL_MIN_ZOOM)).toBe(true);
+    expect(shouldShowPortLabels(LABEL_MIN_ZOOM - 0.01)).toBe(false);
+    expect(shouldShowPortLabels(0.25)).toBe(false);
+  });
+});
+
+describe('le coude se place selon ce que chaque branche doit porter', () => {
+  const lien = (
+    source: { x: number; y: number }, target: { x: number; y: number },
+  ): RoutedLink => ({
+    id: 'seul', sourceDeviceId: 'FW', targetDeviceId: 'R1', source, target,
+    sourceInterface: 'port1', targetInterface: 'GigabitEthernet0/0',
+  });
+
+  const legs = (route: CableRoute) => {
+    const length = (a: number, b: number) =>
+      Math.hypot(route.points[b].x - route.points[a].x, route.points[b].y - route.points[a].y);
+    return { first: length(0, 1), last: length(route.points.length - 2, route.points.length - 1) };
+  };
+
+  it('quand la course suffit, chaque branche recoit son besoin', () => {
+    const route = routesOf([lien({ x: 340, y: 90 }, { x: 180, y: 400 })])[0];
+    expect(legs(route).first)
+      .toBeGreaterThanOrEqual(endLabelNeed(route.sourceLabel.halfLength, 'bottom'));
+    expect(legs(route).last)
+      .toBeGreaterThanOrEqual(endLabelNeed(route.targetLabel.halfLength, 'top'));
+  });
+
+  it('la pastille se pose alors sur SA branche, pas sur le corridor', () => {
+    const route = routesOf([lien({ x: 340, y: 90 }, { x: 180, y: 400 })])[0];
+    expect(distanceToPolyline(route.sourceLabel.at, [route.points[0], route.points[1]]))
+      .toBeLessThan(0.5);
+  });
+
+  it('sur une course courte, la pastille de sortie tient sur SA branche', () => {
+    const route = routesOf([lien({ x: 340, y: 90 }, { x: 180, y: 270 })])[0];
+    expect(distanceToPolyline(route.sourceLabel.at, [route.points[0], route.points[1]]))
+      .toBeLessThan(0.5);
+  });
+
+  it('quand elle ne suffit pas, le coude partage AU PRORATA des besoins', () => {
+    const route = routesOf([lien({ x: 340, y: 90 }, { x: 180, y: 270 })])[0];
+    const { first, last } = legs(route);
+    const besoinSortie = endLabelNeed(route.sourceLabel.halfLength, 'bottom');
+    const besoinArrivee = endLabelNeed(route.targetLabel.halfLength, 'top');
+    expect(first / (first + last))
+      .toBeCloseTo(besoinSortie / (besoinSortie + besoinArrivee), 2);
+  });
+
+  it('un cable symetrique garde son coude au MILIEU', () => {
+    const route = routesOf([{
+      id: 'seul', sourceDeviceId: 'A', targetDeviceId: 'B',
+      source: { x: 200, y: 100 }, target: { x: 500, y: 400 },
+      sourceInterface: 'eth0', targetInterface: 'eth0',
+    }])[0];
+    const { first, last } = legs(route);
+    expect(first).toBeCloseTo(last, 5);
+  });
+
+  it('et il reste TOUJOURS entre les deux cartes', () => {
+    for (const cible of [{ x: 180, y: 190 }, { x: 180, y: 400 }, { x: 900, y: 95 }]) {
+      const route = routesOf([lien({ x: 340, y: 90 }, cible)])[0];
+      const [depart, , , arrivee] = route.points;
+      const borne = (valeur: number, a: number, b: number) =>
+        valeur >= Math.min(a, b) - 0.001 && valeur <= Math.max(a, b) + 0.001;
+      expect(borne(route.points[1].x, depart.x, arrivee.x)).toBe(true);
+      expect(borne(route.points[1].y, depart.y, arrivee.y)).toBe(true);
+    }
+  });
+});
+
+describe('une pastille qui degage encore ne bouge pas', () => {
+  const star = (rx: number, ry: number) => {
+    const routeur = { x: rx, y: ry };
+    const machines = [220, 400, 580].map(x => ({ x, y: 430 }));
+    return {
+      links: machines.map((machine, i) => ({
+        id: `c${i}`, sourceDeviceId: 'R1', targetDeviceId: `PC${i}`,
+        source: routeur, target: machine,
+        sourceInterface: `GigabitEthernet0/${i}`, targetInterface: 'eth0',
+      })) as RoutedLink[],
+      devices: [routeur, ...machines],
+    };
+  };
+
+  const worstStep = (positions: Array<{ x: number; y: number }>) => {
+    let previous: Map<string, CableRoute> | undefined;
+    let seen: Record<string, { x: number; y: number }> | null = null;
+    let worst = 0;
+    for (const at of positions) {
+      const { links, devices } = star(at.x, at.y);
+      const routes = computeCableRoutes(links, devices, 1, previous);
+      const now: Record<string, { x: number; y: number }> = {};
+      for (const [id, route] of routes) {
+        now[`${id}:s`] = route.sourceLabel.at;
+        now[`${id}:t`] = route.targetLabel.at;
+      }
+      if (seen) {
+        for (const key of Object.keys(now)) {
+          worst = Math.max(worst, Math.hypot(
+            now[key].x - seen[key].x, now[key].y - seen[key].y));
+        }
+      }
+      seen = now;
+      previous = routes;
+    }
+    return worst;
+  };
+
+  const noisySteps = (positions: Array<{ x: number; y: number }>) => {
+    let previous: Map<string, CableRoute> | undefined;
+    let seen: Record<string, { x: number; y: number }> | null = null;
+    let noisy = 0;
+    for (const at of positions) {
+      const { links, devices } = star(at.x, at.y);
+      const routes = computeCableRoutes(links, devices, 1, previous);
+      const now: Record<string, { x: number; y: number }> = {};
+      for (const [id, route] of routes) {
+        now[`${id}:s`] = route.sourceLabel.at;
+        now[`${id}:t`] = route.targetLabel.at;
+      }
+      if (seen) {
+        const moved = Object.keys(now).some(key => Math.hypot(
+          now[key].x - seen![key].x, now[key].y - seen![key].y) > 8);
+        if (moved) noisy++;
+      }
+      seen = now;
+      previous = routes;
+    }
+    return noisy;
+  };
+
+  it('un glisser vertical ne connait qu UN pas de discontinuite', () => {
+    expect(noisySteps(Array.from({ length: 121 }, (_, i) => ({ x: 340, y: 120 + i }))))
+      .toBeLessThanOrEqual(1);
+  });
+
+  it('ni un glisser horizontal, qui etait deja calme', () => {
+    expect(worstStep(Array.from({ length: 121 }, (_, i) => ({ x: 280 + i, y: 120 }))))
+      .toBeLessThan(8);
+  });
+
+  it('a entree identique, la memoire ne deplace rien', () => {
+    const { links, devices } = star(340, 120);
+    const first = computeCableRoutes(links, devices);
+    const second = computeCableRoutes(links, devices, 1, first);
+    for (const [id, route] of first) {
+      expect(second.get(id)!.sourceLabel.at).toEqual(route.sourceLabel.at);
+      expect(second.get(id)!.targetLabel.at).toEqual(route.targetLabel.at);
+    }
+  });
+
+  it('mais une position qui ne degage plus est abandonnee', () => {
+    const loin = star(340, 120);
+    const memoire = computeCableRoutes(loin.links, loin.devices);
+    const pres = star(340, 300);
+    const apres = computeCableRoutes(pres.links, pres.devices, 1, memoire);
+    for (const route of apres.values()) {
+      expect(distanceToPolyline(route.sourceLabel.at, route.points)).toBeLessThan(0.5);
+      expect(distanceToPolyline(route.targetLabel.at, route.points)).toBeLessThan(0.5);
+    }
+  });
+
+  it('et sans memoire, le resultat reste le placement direct', () => {
+    const { links, devices } = star(340, 120);
+    const direct = computeCableRoutes(links, devices);
+    const encore = computeCableRoutes(links, devices);
+    for (const [id, route] of direct) {
+      expect(encore.get(id)!.sourceLabel.at).toEqual(route.sourceLabel.at);
+    }
+  });
+});
+
+describe('le cable ne bascule pas de face pour un tremblement', () => {
+  const lab = (at: { x: number; y: number }) => ({
+    links: [{
+      id: 'x', sourceDeviceId: 'A', targetDeviceId: 'B',
+      source: at, target: { x: 580, y: 430 },
+      sourceInterface: 'GigabitEthernet0/0', targetInterface: 'eth0',
+    }] as RoutedLink[],
+    devices: [at, { x: 580, y: 430 }],
+  });
+
+  const drawnHorizontal = (route: CableRoute) =>
+    Math.abs(route.points[1].x - route.points[0].x)
+      > Math.abs(route.points[1].y - route.points[0].y);
+
+  const flipsAlong = (path: Array<{ x: number; y: number }>) => {
+    let previous: Map<string, CableRoute> | undefined;
+    let last: boolean | null = null;
+    let flips = 0;
+    for (const at of path) {
+      const { links, devices } = lab(at);
+      const routes = computeCableRoutes(links, devices, 1, previous);
+      const horizontal = drawnHorizontal(routes.get('x')!);
+      if (last !== null && horizontal !== last) flips++;
+      last = horizontal;
+      previous = routes;
+    }
+    return flips;
+  };
+
+  it('une main qui tremble autour des 45 degres ne le fait plus basculer', () => {
+    const tremblement = Array.from({ length: 60 }, (_, i) => ({
+      x: 340, y: 186 + (i % 2 === 0 ? 0 : 6),
+    }));
+    expect(flipsAlong(tremblement)).toBeLessThanOrEqual(1);
+  });
+
+  it('mais un glisser franc au-dela de la marge le fait bien basculer', () => {
+    const franc = Array.from({ length: 160 }, (_, i) => ({ x: 340, y: 120 + i }));
+    expect(flipsAlong(franc)).toBe(1);
+  });
+
+  it('l axe retenu est bien celui que le cable DESSINE', () => {
+    for (const y of [140, 186, 192, 300]) {
+      const { links, devices } = lab({ x: 340, y });
+      const route = computeCableRoutes(links, devices).get('x')!;
+      expect(route.horizontal).toBe(drawnHorizontal(route));
+    }
+  });
+
+  it('et sans memoire, l axe reste la dominance simple', () => {
+    expect(runIsHorizontal({ x: 0, y: 0 }, { x: 100, y: 40 })).toBe(true);
+    expect(runIsHorizontal({ x: 0, y: 0 }, { x: 40, y: 100 })).toBe(false);
+    expect(runIsHorizontal({ x: 0, y: 0 }, { x: 100, y: 100 })).toBe(true);
+  });
+});
+
+describe('le schema reste lisible quand les equipements se touchent presque', () => {
+  const SERRE: RoutedLink[] = [
+    {
+      id: 'a', sourceDeviceId: 'R1', targetDeviceId: 'PC1',
+      source: { x: 180, y: 180 }, target: { x: 280, y: 180 },
+      sourceInterface: 'GigabitEthernet0/0', targetInterface: 'eth0',
+    },
+    {
+      id: 'b', sourceDeviceId: 'R1', targetDeviceId: 'PC2',
+      source: { x: 180, y: 180 }, target: { x: 180, y: 300 },
+      sourceInterface: 'GigabitEthernet0/1', targetInterface: 'eth0',
+    },
+    {
+      id: 'c', sourceDeviceId: 'R1', targetDeviceId: 'SW1',
+      source: { x: 180, y: 180 }, target: { x: 300, y: 300 },
+      sourceInterface: 'GigabitEthernet0/2', targetInterface: 'FastEthernet0/1',
+    },
+    {
+      id: 'd', sourceDeviceId: 'PC2', targetDeviceId: 'SW1',
+      source: { x: 180, y: 300 }, target: { x: 300, y: 300 },
+      sourceInterface: 'eth1', targetInterface: 'FastEthernet0/2',
+    },
+  ];
+  const CENTRES = [
+    { x: 180, y: 180 }, { x: 280, y: 180 }, { x: 180, y: 300 }, { x: 300, y: 300 },
+  ];
+
+  it('aucune pastille rendue n en recouvre une autre', () => {
+    const shown = everyLabel(routesOf(SERRE, CENTRES)).filter(label => label.shown);
+    for (let i = 0; i < shown.length; i++) {
+      for (let j = i + 1; j < shown.length; j++) {
+        expect(overlap(shown[i], shown[j]), `${shown[i].text} et ${shown[j].text}`).toBe(false);
+      }
+    }
+  });
+
+  it('ni ne se pose sur la carte d un equipement', () => {
+    const routes = routesOf(SERRE, CENTRES);
+    for (const label of everyLabel(routes).filter(l => l.shown)) {
+      for (const centre of CENTRES) {
+        const carte = { x: centre.x, y: centre.y + NODE_CENTER_OFFSET_Y };
+        const dedans = Math.abs(label.at.x - carte.x) < NODE_HALF_WIDTH
+          && Math.abs(label.at.y - carte.y) < NODE_HALF_HEIGHT;
+        expect(dedans, `${label.text} sur une carte`).toBe(false);
+      }
+    }
+  });
+
+  it('et la toile en garde quand meme la plupart', () => {
+    const labels = everyLabel(routesOf(SERRE, CENTRES));
+    expect(labels.filter(label => label.shown).length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('un labo aere les montre TOUTES', () => {
+    const labels = everyLabel(routesOf(ETOILE));
+    expect(labels.every(label => label.shown)).toBe(true);
   });
 });

@@ -55,7 +55,8 @@ describe('curl: typed vs scripted must agree (real topology, no hardcoded host)'
     );
     const scripted = await pc1.executeCommand('bash /tmp/__dispatch_test.sh');
 
-    expect(scripted.trim()).toBe(typed.trim());
+    const withoutElapsed = (out: string) => out.trim().replace(/after \d+ ms/, 'after N ms');
+    expect(withoutElapsed(scripted)).toBe(withoutElapsed(typed));
     // The legacy switch path hardcoded this message regardless of the
     // real topology; a real dial against an unreachable/refusing peer
     // must not say that.

@@ -8,9 +8,9 @@ import {
   type ICMPPacket,
   type ICMPType,
   type IPv4Packet,
-  type TCPPacket,
   type UDPPacket,
 } from '../../../core/types';
+import type { TcpSegment } from '../../../tcp/types';
 
 export type SimulatedProtocol = 'tcp' | 'udp' | 'icmp';
 
@@ -81,7 +81,7 @@ function payloadBytes(flow: SimulatedFlow): number {
   }
 }
 
-function buildPayload(flow: SimulatedFlow): TCPPacket | UDPPacket | ICMPPacket {
+function buildPayload(flow: SimulatedFlow): TcpSegment | UDPPacket | ICMPPacket {
   switch (flow.protocol) {
     case 'tcp': return simulatedSegment(flow);
     case 'udp': return simulatedDatagram(flow);
@@ -89,21 +89,24 @@ function buildPayload(flow: SimulatedFlow): TCPPacket | UDPPacket | ICMPPacket {
   }
 }
 
-function simulatedSegment(flow: SimulatedFlow): TCPPacket {
+function simulatedSegment(flow: SimulatedFlow): TcpSegment {
   return {
     type: 'tcp',
     sourcePort: flow.sourcePort,
     destinationPort: flow.destinationPort,
-    sequenceNumber: 0,
-    acknowledgementNumber: flow.ackOnly === true ? 1 : 0,
+    sequence: 0,
+    acknowledgement: flow.ackOnly === true ? 1 : 0,
+    dataOffset: 5,
     flags: {
       syn: flow.ackOnly !== true, ack: flow.ackOnly === true,
-      fin: false, rst: false, psh: false, urg: false,
+      fin: false, rst: false, psh: false, urg: false, ece: false, cwr: false,
     },
-    windowSize: 65535,
+    window: 65535,
     checksum: 0,
+    urgentPointer: 0,
+    options: [],
     payload: null,
-  } as TCPPacket;
+  };
 }
 
 function simulatedDatagram(flow: SimulatedFlow): UDPPacket {

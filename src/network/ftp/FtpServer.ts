@@ -9,6 +9,7 @@
  * (`FtpServerSession.ts`'s doc comment on `onUnsolicitedReply`).
  */
 import type { TcpStack, TcpSocket, TcpListener } from '@/network/tcp/TcpStack';
+import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import { TlsServerSession } from '@/network/tls/TlsServerSession';
 import { FtpServerSession, type FtpServerConfig } from './FtpServerSession';
 import type { FtpReply } from './types';
@@ -29,8 +30,11 @@ export class FtpServer {
     private readonly port: number = FTP_CONTROL_PORT,
   ) {}
 
-  start(): void {
-    this.listener = this.tcpStack.listen(this.port, { onAccept: (socket) => this.handleConnection(socket) });
+  start(identity?: ListenerIdentity): void {
+    this.listener = this.tcpStack.listen(this.port, {
+      onAccept: (socket) => this.handleConnection(socket),
+      identity,
+    });
   }
 
   stop(): void {
@@ -56,7 +60,7 @@ export class FtpServer {
       }
     };
 
-    const session = new FtpServerSession(this.config, this.tcpStack, this.localIp, writeReply);
+    const session = new FtpServerSession(this.config, this.tcpStack, socket.localIp || this.localIp, writeReply);
     this.config.eventBus?.publish({
       topic: 'ftp.control.connected', payload: { connectionId: session.connectionId },
     });
