@@ -61,7 +61,7 @@ export type SnmpValueType =
 
 export interface SnmpValue {
   type: SnmpValueType;
-  value: string | number | null;
+  value: string | number | Uint8Array | null;
 }
 
 export interface SnmpVarBinding {
@@ -108,14 +108,14 @@ export interface SnmpAgentConfig {
 export function createDefaultAgentConfig(): SnmpAgentConfig {
   return {
     enabled: true, port: UDP_PORT_SNMP,
-    communities: [{ community: 'public', access: 'ro' }],
+    communities: [],
     mibViews: new Map(),
     contact: '', location: '', trapSourceInterface: null,
     trapHosts: [],
   };
 }
 
-export function v(type: SnmpValueType, value: string | number | null): SnmpValue {
+export function v(type: SnmpValueType, value: string | number | Uint8Array | null): SnmpValue {
   return { type, value };
 }
 

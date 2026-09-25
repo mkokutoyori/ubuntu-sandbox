@@ -612,6 +612,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // NAT debug, …) until something happens to call the internal
     // `getLoggingConfig()` accessor first, which no real CLI command does.
     this.attachLoggingBus(this.getBus());
+    this.attachSnmpStatistics();
     this.natEngine.setDeviceId(this.id, this.name);
     // An engine left on the process-wide default bus meets every other
     // router's events there, and its actors then have to filter by device
@@ -1005,10 +1006,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
   }
 
+  private detachSnmpStatistics: (() => void) | null = null;
+
+  private attachSnmpStatistics(): void {
+    this.detachSnmpStatistics?.();
+    this.detachSnmpStatistics = this.getSnmpService().attachToBus(this.getBus(), this.id);
+  }
+
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
     if (bus) this.attachLoggingBus(bus);
-    if (bus) this.getSnmpService().attachToBus(bus, this.id);
+    this.attachSnmpStatistics();
     this._debugService?.attachToBus(this.getBus(), this.id, this);
     this.ipsecEngine?.setEventBus(this.getBus());
     this.natEngine?.setEventBus(this.getBus());

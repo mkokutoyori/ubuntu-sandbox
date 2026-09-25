@@ -1,6 +1,6 @@
 import { oidInMibView, type MibViewEntry } from './mibView';
 import type { IEventBus } from '@/events/EventBus';
-import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import {
   type SnmpAgentConfig, type SnmpPacket, type SnmpVarBinding, type SnmpValue,
   type SnmpCommunityAcl, type SnmpTrapHost, type SnmpErrorStatus,
@@ -14,10 +14,15 @@ import {
 } from './types';
 import {
   IPAddress,
-  type EthernetFrame, type IPv4Packet, type UDPPacket,
+  type EthernetFrame, type UDPPacket,
 } from '../core/types';
 import { Logger } from '../core/Logger';
-import { buildUdpOverIpv4, type UdpSendRequest } from '../layers/transport/UdpEgress';
+import type { UdpSendRequest } from '../layers/transport/UdpEgress';
+import {
+  classifyIpv4Destination, connectedPrefixesOfPort, isDirectedBroadcast,
+} from '../layers/internet/InternetLayer';
+import { SnmpManager, type SnmpQueryPdu } from './SnmpManager';
+import { PortNumber } from '../core/ports/PortNumber';
 
 export interface SnmpHost {
   readonly id: string;
@@ -28,33 +33,37 @@ export interface SnmpHost {
   sendFrame(portName: string, frame: EthernetFrame): void;
   getSysDescr(): string;
   getSysObjectId(): string;
-  /** ARP-aware send (queues on a cold cache instead of broadcasting) — falls back to broadcast when absent (mirrors `TcpHost`). */
-  sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
   sendUdpDatagram(request: UdpSendRequest): boolean;
   evaluateAclPermit?(aclName: string, sourceIp: string): boolean;
 }
 
-interface PendingRequest {
-  requestId: number;
-  serverIp: string;
-  resolve: (vbs: SnmpVarBinding[] | null) => void;
-  timer: TimerHandle | null;
+interface SnmpAnswer {
+  readonly errorStatus: SnmpErrorStatus;
+  readonly errorIndex: number;
+  readonly varBindings: SnmpVarBinding[];
 }
+
+const NMS_QUERY_TIMEOUT_MS = 5000;
 
 export class SnmpAgent {
   private config: SnmpAgentConfig = createDefaultAgentConfig();
   private startedAtMs = Date.now();
-  private pending = new Map<number, PendingRequest>();
-  private nextRequestId = 1;
-  private scheduler: IScheduler | null = null;
+  private nextTrapRequestId = 1;
   private running = false;
   private customMib = new Map<string, () => SnmpValue>();
+  private readonly manager: SnmpManager;
 
   constructor(
     private readonly host: SnmpHost,
     private readonly getBus: () => IEventBus,
     private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
-  ) {}
+  ) {
+    this.manager = new SnmpManager(
+      (query, packet) => this.transmitRouted(
+        query.server, null, query.port.value, 49152 + (packet.requestId & 0x3fff), packet),
+      () => this.getScheduler(),
+    );
+  }
 
   start(): void {
     if (this.running) return;
@@ -65,11 +74,7 @@ export class SnmpAgent {
   stop(): void {
     if (!this.running) return;
     this.running = false;
-    for (const p of this.pending.values()) {
-      if (p.timer !== null) (this.scheduler ?? this.getScheduler()).clear(p.timer);
-      p.resolve(null);
-    }
-    this.pending.clear();
+    this.manager.abandonAll();
   }
 
   getConfig(): Readonly<SnmpAgentConfig> { return this.config; }
@@ -141,7 +146,7 @@ export class SnmpAgent {
     this.customMib.set(oid, fn);
   }
 
-  handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
+  handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket, destinationIp: IPAddress): void {
     if (!this.running || !this.config.enabled) return;
     const payload = udp.payload as SnmpPacket | undefined;
     if (!payload || payload.type !== 'snmp') return;
@@ -156,21 +161,21 @@ export class SnmpAgent {
     });
 
     if (payload.pduType === 'get-response') {
-      this.deliverResponse(senderIp, payload);
+      this.manager.accept(srcIp, PortNumber.of(udp.sourcePort), payload);
       return;
     }
-    if (payload.pduType === 'get-request' || payload.pduType === 'get-next-request') {
-      this.serveQuery(inPort, srcIp, payload);
-      return;
+    if ((payload.pduType === 'get-request' || payload.pduType === 'get-next-request')
+      && udp.destinationPort === UDP_PORT_SNMP) {
+      this.serveQuery(inPort, srcIp, udp.sourcePort, destinationIp, payload);
     }
   }
 
   get(serverIp: string, community: string, oids: string[]): Promise<SnmpVarBinding[] | null> {
-    return this.sendRequest(serverIp, community, 'get-request', oids);
+    return this.query(serverIp, community, 'get-request', oids);
   }
 
   getNext(serverIp: string, community: string, oids: string[]): Promise<SnmpVarBinding[] | null> {
-    return this.sendRequest(serverIp, community, 'get-next-request', oids);
+    return this.query(serverIp, community, 'get-next-request', oids);
   }
 
   getLocalOidValue(oid: string): SnmpValue | null {
@@ -189,11 +194,11 @@ export class SnmpAgent {
         type: 'snmp', version: 'v2c',
         community: t.community,
         pduType: 'trap-v2',
-        requestId: this.nextRequestId++ & 0x7fffffff,
+        requestId: this.nextTrapRequestId++ & 0x7fffffff,
         errorStatus: 'no-error', errorIndex: 0,
         varBindings: standard,
       };
-      this.transmitRouted(new IPAddress(t.ip), srcIp, t.port, payload);
+      this.transmitRouted(new IPAddress(t.ip), srcIp, t.port, UDP_PORT_SNMP, payload);
       this.getBus().publish({
         topic: 'snmp.trap.sent',
         payload: {
@@ -204,39 +209,24 @@ export class SnmpAgent {
     }
   }
 
-  private sendRequest(serverIp: string, community: string, pduType: 'get-request' | 'get-next-request', oids: string[]): Promise<SnmpVarBinding[] | null> {
-    if (!this.running || !this.config.enabled) return Promise.resolve(null);
-    const requestId = this.nextRequestId++ & 0x7fffffff;
-    const payload: SnmpPacket = {
-      type: 'snmp', version: 'v2c', community,
-      pduType, requestId,
-      errorStatus: 'no-error', errorIndex: 0,
-      varBindings: oids.map((o) => vb(o, v('null', null))),
-    };
-    return new Promise<SnmpVarBinding[] | null>((resolve) => {
-      const pending: PendingRequest = { requestId, serverIp, resolve, timer: null };
-      this.pending.set(requestId, pending);
-      this.transmitRouted(new IPAddress(serverIp), null, UDP_PORT_SNMP, payload);
-      const s = this.getScheduler();
-      this.scheduler = s;
-      pending.timer = s.setTimeout(() => {
-        if (this.pending.has(requestId)) {
-          this.pending.delete(requestId);
-          resolve(null);
-        }
-      }, 5000);
-    });
+  private async query(
+    serverIp: string, community: string, pduType: SnmpQueryPdu, oids: string[],
+  ): Promise<SnmpVarBinding[] | null> {
+    if (!this.running || !this.config.enabled) return null;
+    const exchange = await this.manager.exchange(
+      {
+        server: new IPAddress(serverIp), port: PortNumber.of(UDP_PORT_SNMP),
+        community, version: 'v2c', pduType, oids,
+      },
+      { timeoutMs: NMS_QUERY_TIMEOUT_MS, retries: 0 },
+    );
+    return exchange.kind === 'response' ? exchange.packet.varBindings.slice() : null;
   }
 
-  private deliverResponse(senderIp: string, payload: SnmpPacket): void {
-    const pending = this.pending.get(payload.requestId);
-    if (!pending || pending.serverIp !== senderIp) return;
-    if (pending.timer !== null) (this.scheduler ?? this.getScheduler()).clear(pending.timer);
-    this.pending.delete(payload.requestId);
-    pending.resolve(payload.varBindings.slice());
-  }
-
-  private serveQuery(inPort: string, srcIp: IPAddress, request: SnmpPacket): void {
+  private serveQuery(
+    inPort: string, srcIp: IPAddress, requesterPort: number, destinationIp: IPAddress,
+    request: SnmpPacket,
+  ): void {
     const acl = this.config.communities.find((c) => c.community === request.community);
     if (!acl) {
       this.getBus().publish({
@@ -261,48 +251,73 @@ export class SnmpAgent {
       return;
     }
 
-    let errorStatus: SnmpErrorStatus = 'no-error';
-    let errorIndex = 0;
-    const replyVbs: SnmpVarBinding[] = [];
-    for (let i = 0; i < request.varBindings.length; i++) {
-      const reqVb = request.varBindings[i];
-      let resolved: SnmpVarBinding | null;
-      if (request.pduType === 'get-request') {
-        resolved = this.communitySees(acl, reqVb.oid) ? this.resolveOid(reqVb.oid) : null;
-        if (!resolved) {
-          resolved = vb(reqVb.oid, v('no-such-object', null));
-          if (errorStatus === 'no-error') { errorStatus = 'no-such-name'; errorIndex = i + 1; }
-        }
-      } else {
-        resolved = this.resolveOidNext(reqVb.oid, (oid) => this.communitySees(acl, oid));
-        if (!resolved) {
-          resolved = vb(reqVb.oid, v('end-of-mib-view', null));
-        }
-      }
-      replyVbs.push(resolved);
-    }
-
+    const answer = request.version === 'v1'
+      ? this.answerV1(request, acl)
+      : this.answerV2c(request, acl);
     const reply: SnmpPacket = {
-      type: 'snmp', version: 'v2c', community: request.community,
+      type: 'snmp', version: request.version, community: request.community,
       pduType: 'get-response',
-      requestId: request.requestId, errorStatus, errorIndex,
-      varBindings: replyVbs,
+      requestId: request.requestId,
+      errorStatus: answer.errorStatus, errorIndex: answer.errorIndex,
+      varBindings: answer.varBindings,
     };
-    const port = this.host.getPort(inPort);
-    if (!port) return;
-    const replySrc = port.getIPAddress();
-    if (!replySrc) return;
-    this.transmitVia(inPort, srcIp, replySrc, UDP_PORT_SNMP, reply);
+    const replySource = this.replySource(inPort, destinationIp);
+    if (!replySource) return;
+    if (!this.transmitRouted(srcIp, replySource, requesterPort, UDP_PORT_SNMP, reply)) return;
     this.getBus().publish({
       topic: 'snmp.request.served',
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
         fromIp: srcIp.toString(), pduType: request.pduType,
-        requestId: request.requestId, errorStatus, oidCount: replyVbs.length,
+        requestId: request.requestId, errorStatus: answer.errorStatus,
+        oidCount: answer.varBindings.length,
       },
     });
     Logger.info(this.host.id, 'snmp:reply',
-      `${this.host.name}: ${request.pduType} req ${request.requestId} from ${srcIp} → ${errorStatus}`);
+      `${this.host.name}: ${request.pduType} req ${request.requestId} from ${srcIp} → ${answer.errorStatus}`);
+  }
+
+  private answerV2c(request: SnmpPacket, acl: SnmpCommunityAcl): SnmpAnswer {
+    const visible = (oid: string): boolean => this.communitySees(acl, oid);
+    const varBindings = request.varBindings.map((requested) => {
+      if (request.pduType === 'get-next-request') {
+        return this.resolveOidNext(requested.oid, (found) => visible(found.oid))
+          ?? vb(requested.oid, v('end-of-mib-view', null));
+      }
+      return (visible(requested.oid) ? this.resolveOid(requested.oid) : null)
+        ?? vb(requested.oid, v(this.absenceOf(requested.oid, visible), null));
+    });
+    return { errorStatus: 'no-error', errorIndex: 0, varBindings };
+  }
+
+  private answerV1(request: SnmpPacket, acl: SnmpCommunityAcl): SnmpAnswer {
+    const representable = (found: SnmpVarBinding): boolean =>
+      this.communitySees(acl, found.oid) && found.value.type !== 'counter64';
+    const varBindings: SnmpVarBinding[] = [];
+    for (let i = 0; i < request.varBindings.length; i++) {
+      const requested = request.varBindings[i];
+      const found = request.pduType === 'get-next-request'
+        ? this.resolveOidNext(requested.oid, representable)
+        : this.resolveOid(requested.oid);
+      if (!found || !representable(found)) {
+        return { errorStatus: 'no-such-name', errorIndex: i + 1, varBindings: request.varBindings.slice() };
+      }
+      varBindings.push(found);
+    }
+    return { errorStatus: 'no-error', errorIndex: 0, varBindings };
+  }
+
+  private absenceOf(oid: string, visible: (oid: string) => boolean): 'no-such-instance' | 'no-such-object' {
+    const objectTypeExists = this.allKnownOids().some((known) =>
+      visible(known) && oidStartsWith(oid, known.slice(0, known.lastIndexOf('.'))));
+    return objectTypeExists ? 'no-such-instance' : 'no-such-object';
+  }
+
+  private replySource(inPort: string, destinationIp: IPAddress): IPAddress | null {
+    const connected = this.host.getPorts().flatMap((port) => connectedPrefixesOfPort(port));
+    const unicast = classifyIpv4Destination(destinationIp) === 'unicast'
+      && !isDirectedBroadcast(destinationIp, connected);
+    return unicast ? destinationIp : this.host.getPort(inPort)?.getIPAddress() ?? null;
   }
 
   private resolveOid(oid: string): SnmpVarBinding | null {
@@ -316,23 +331,20 @@ export class SnmpAgent {
       if (oid === `${OID_IF_DESCR_PREFIX}.${i}`) return vb(oid, v('octet-string', port.getName()));
       if (oid === `${OID_IF_TYPE_PREFIX}.${i}`) return vb(oid, v('integer', 6));
       if (oid === `${OID_IF_MTU_PREFIX}.${i}`) return vb(oid, v('integer', 1500));
-      if (oid === `${OID_IF_PHYS_ADDR_PREFIX}.${i}`) return vb(oid, v('octet-string', port.getMAC().toString()));
+      if (oid === `${OID_IF_PHYS_ADDR_PREFIX}.${i}`) return vb(oid, v('octet-string', Uint8Array.from(port.getMAC().getOctets())));
       if (oid === `${OID_IF_ADMIN_STATUS_PREFIX}.${i}`) return vb(oid, v('integer', port.getIsUp() ? 1 : 2));
       if (oid === `${OID_IF_OPER_STATUS_PREFIX}.${i}`) return vb(oid, v('integer', port.getIsUp() && port.isConnected() ? 1 : 2));
     }
     return null;
   }
 
-  private resolveOidNext(oid: string, visible?: (oid: string) => boolean): SnmpVarBinding | null {
-    const known = this.allKnownOids();
-    let best: string | null = null;
-    for (const k of known) {
-      if (oidCompare(k, oid) <= 0) continue;
-      if (visible && !visible(k)) continue;
-      if (best === null || oidCompare(k, best) < 0) best = k;
+  private resolveOidNext(oid: string, admits: (found: SnmpVarBinding) => boolean): SnmpVarBinding | null {
+    for (const candidate of this.allKnownOids()) {
+      if (oidCompare(candidate, oid) <= 0) continue;
+      const found = this.resolveOid(candidate);
+      if (found && admits(found)) return found;
     }
-    if (!best) return null;
-    return this.resolveOid(best);
+    return null;
   }
 
   private allKnownOids(): string[] {
@@ -369,31 +381,19 @@ export class SnmpAgent {
     return Math.floor((Date.now() - this.startedAtMs) / 10);
   }
 
-  private datagramme(dstIp: IPAddress, srcIp: IPAddress | null, dstPort: number,
-                     payload: SnmpPacket): UdpSendRequest {
-    return {
+  private transmitRouted(dstIp: IPAddress, srcIp: IPAddress | null, dstPort: number,
+                         srcPort: number, payload: SnmpPacket): boolean {
+    const datagram: UdpSendRequest = {
       destination: dstIp,
       destinationPort: dstPort,
-      sourcePort: dstPort === UDP_PORT_SNMP
-        ? 49152 + (payload.requestId & 0x3fff) : UDP_PORT_SNMP,
+      sourcePort: srcPort,
       payload,
       payloadBytes: 48 + payload.varBindings.length * 16,
       ...(srcIp ? { source: srcIp } : {}),
     };
-  }
-
-  private transmitRouted(dstIp: IPAddress, srcIp: IPAddress | null, dstPort: number,
-                         payload: SnmpPacket): void {
-    if (!this.host.sendUdpDatagram(this.datagramme(dstIp, srcIp, dstPort, payload))) return;
+    if (!this.host.sendUdpDatagram(datagram)) return false;
     this.annoncerEmission(dstIp, payload);
-  }
-
-  private transmitVia(portName: string, dstIp: IPAddress, srcIp: IPAddress,
-                      dstPort: number, payload: SnmpPacket): void {
-    if (!this.host.sendIpv4FrameArpAware) return;
-    this.host.sendIpv4FrameArpAware(
-      portName, buildUdpOverIpv4(srcIp, this.datagramme(dstIp, srcIp, dstPort, payload)), dstIp);
-    this.annoncerEmission(dstIp, payload);
+    return true;
   }
 
   private annoncerEmission(dstIp: IPAddress, payload: SnmpPacket): void {
