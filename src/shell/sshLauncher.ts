@@ -15,7 +15,6 @@
 
 import { Equipment } from '@/network/equipment/Equipment';
 import { IPAddress } from '@/network/core/types';
-import { isCredentialAuthenticator } from '@/network/equipment/HostCapabilities';
 import { findEquipmentByIp, findEquipmentByHostname } from './hostResolution';
 import { primaryShellKindFor } from './shellKind';
 import { WireRemoteShell } from './WireRemoteShell';
@@ -385,12 +384,6 @@ function checkKnownHosts(auth: PendingSshAuth): 'changed' | 'ok' | 'unsupported'
   return 'ok';
 }
 
-/**
- * Verify the supplied password against the target device, then apply the
- * same server-side policy `LinuxSshClient`'s exec-mode path enforces
- * (host-key change, ForceCommand=internal-sftp) before handing back a
- * live interactive shell.
- */
 export async function finalisePendingAuth(
   auth: PendingSshAuth,
   password: string,
@@ -412,14 +405,8 @@ export async function finalisePendingAuth(
   );
   const alreadyDisconnected = tooManyAuthFailures();
   if (alreadyDisconnected) return alreadyDisconnected;
-
-  if (!verifyCredentials(auth.target, auth.user, password)) {
+  const refusedByServer = (): FinaliseAuthOutcome => {
     auth.attempts++;
-    // Best-effort: record the failure for auth.log realism -- this is also
-    // what feeds a device-wide `login block-for` LoginBlocker, so a failure
-    // recorded HERE (not just OpenSSH's own 3-attempts cap) can be the one
-    // that trips device-wide quiet-mode.
-    tryRecordSshLogin(auth, false);
     const blocker = (auth.target as unknown as {
       getLoginBlocker?: () => { isBlocked: () => boolean; remainingBlockSeconds: () => number } | null;
     }).getLoginBlocker?.();
@@ -429,10 +416,8 @@ export async function finalisePendingAuth(
         message: `% Blocking new login for ${blocker.remainingBlockSeconds()} secs (quota exceeded)`,
       };
     }
-    const disconnected = tooManyAuthFailures();
-    if (disconnected) return disconnected;
-    return { kind: 'bad-password' };
-  }
+    return tooManyAuthFailures() ?? { kind: 'bad-password' };
+  };
 
   // known_hosts is compared once, here: this check reads the target's
   // real host key and records it on first connection, so the connection
@@ -441,18 +426,9 @@ export async function finalisePendingAuth(
     return { kind: 'refused', message: HOST_KEY_CHANGED_MESSAGE };
   }
 
-  const forced = readForceCommand(
-    auth.target as unknown as Parameters<typeof readForceCommand>[0],
-    auth.user, auth.sourceIp, auth.sourceHostname,
-  );
-  if (forced === 'internal-sftp') {
-    return { kind: 'refused', message: 'This service allows sftp connections only.' };
-  }
-
   // Build the banner BEFORE recording — the OpenSSH "Last login" line
   // must reflect the PREVIOUS login, not this one.
   const banner = buildLoginBanner(auth);
-  tryRecordSshLogin(auth, true);
   const serverIp = firstConfiguredIp(auth.target) ?? auth.host;
   const clientIp = auth.sourceIp ?? '0.0.0.0';
   // OpenSSH exposes synthetic ephemeral client port and the canonical
@@ -472,15 +448,9 @@ export async function finalisePendingAuth(
   }
 
   if (auth.execCommand !== undefined) {
-    return runExecOverTheWire(auth, banner, password);
+    return runExecOverTheWire(auth, banner, password, refusedByServer);
   }
 
-  // The credentials were accepted, so open the connection they belong to
-  // and drive the remote over it. Its prompt, completion, sub-shells,
-  // editors and challenges are answered by the server on this channel
-  // rather than reproduced locally.
-  // The line is taken only once the connection is really up, so a login
-  // that fails on the wire does not hold one.
   const outcome = await openWireSshShell({
     device: auth.sourceDevice,
     localUser: auth.sourceUser ?? auth.user,
@@ -495,9 +465,18 @@ export async function finalisePendingAuth(
     if (outcome.kind === 'host-key-changed') {
       return { kind: 'refused', message: HOST_KEY_CHANGED_MESSAGE };
     }
-    if (outcome.kind === 'auth-failed') return { kind: 'bad-password' };
+    if (outcome.kind === 'auth-failed') return refusedByServer();
     if (outcome.kind === 'cancelled') return { kind: 'refused', message: '' };
     return { kind: 'refused', message: outcome.message };
+  }
+
+  const forced = readForceCommand(
+    auth.target as unknown as Parameters<typeof readForceCommand>[0],
+    auth.user, auth.sourceIp, auth.sourceHostname,
+  );
+  if (forced === 'internal-sftp') {
+    outcome.session.disconnect();
+    return { kind: 'refused', message: 'This service allows sftp connections only.' };
   }
 
   const promptHost = (auth.target as unknown as { getSshHostname?: () => string })
@@ -530,6 +509,7 @@ async function runExecOverTheWire(
   auth: PendingSshAuth,
   banner: string[],
   password: string,
+  refusedByServer: () => FinaliseAuthOutcome,
 ): Promise<FinaliseAuthOutcome> {
   const outcome = await openWireSshConnection({
     device: auth.sourceDevice!,
@@ -543,7 +523,7 @@ async function runExecOverTheWire(
   });
   if (outcome.kind !== 'connected') {
     if (outcome.kind === 'host-key-changed') return { kind: 'refused', message: HOST_KEY_CHANGED_MESSAGE };
-    if (outcome.kind === 'auth-failed') return { kind: 'bad-password' };
+    if (outcome.kind === 'auth-failed') return refusedByServer();
     if (outcome.kind === 'cancelled') return { kind: 'refused', message: '' };
     return { kind: 'refused', message: outcome.message };
   }
@@ -571,25 +551,6 @@ function firstConfiguredIp(dev: Equipment): string | undefined {
     if (ip) return ip.toString();
   }
   return undefined;
-}
-
-/** Record success/failure on the target device so /var/log/auth.log and
- *  the lastlog tracker stay coherent with what the user observes. */
-function tryRecordSshLogin(auth: PendingSshAuth, accepted: boolean): void {
-  const dev = auth.target as unknown as {
-    recordSshLogin?: (
-      u: string, ip: string, host: string, ok: boolean, method?: 'password' | 'publickey',
-    ) => void;
-  };
-  if (typeof dev.recordSshLogin === 'function') {
-    dev.recordSshLogin(
-      auth.user,
-      auth.sourceIp ?? '0.0.0.0',
-      auth.sourceHostname ?? '',
-      accepted,
-      'password',
-    );
-  }
 }
 
 /** Build the banner lines OpenSSH prints once authentication succeeds. */
@@ -650,18 +611,6 @@ function formatLoginDate(d: Date): string {
   const ss = d.getSeconds().toString().padStart(2, '0');
   return `${dow} ${mon} ${day} ${hh}:${mm}:${ss} ${d.getFullYear()}`;
 }
-
-function verifyCredentials(
-  device: Equipment, user: string, password: string,
-): boolean {
-  if (isCredentialAuthenticator(device)) return device.checkPassword(user, password);
-  const dev = device as unknown as {
-    userMgr?: { checkPassword?: (u: string, p: string) => boolean };
-  };
-  if (typeof dev.userMgr?.checkPassword === 'function') return dev.userMgr.checkPassword(user, password);
-  return true;
-}
-
 
 // ─── Equipment lookup helpers (shared with the Oracle Net client) ────
 
