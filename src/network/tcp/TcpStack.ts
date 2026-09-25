@@ -49,6 +49,11 @@ export interface ScanProbeShape {
   sourceIp?: string;
   payload?: Uint8Array;
   iface?: string;
+  /**
+   * `hping3 -w`/`--win` : la fenetre ANNONCEE par la sonde. Absente, la
+   * pile pose la sienne.
+   */
+  window?: number;
 }
 
 /** La duree de vie qu'une pile TCP pose sur ses propres segments. */
@@ -684,11 +689,23 @@ export class TcpStack {
     remoteIp: string, remotePort: number, flags: TcpFlags,
     shape: ScanProbeShape = {},
   ): StatelessProbeReply {
+    return this.scanProbeDetail(remoteIp, remotePort, flags, shape).reply;
+  }
+
+  /**
+   * Le meme sondage, mais qui rend AUSSI la fenetre annoncee par la
+   * reponse : `hping3` l'imprime (`waitpacket.c:389`, « win=%d »), la
+   * collapser en « rst-window » suffisait a nmap et pas a lui.
+   */
+  scanProbeDetail(
+    remoteIp: string, remotePort: number, flags: TcpFlags,
+    shape: ScanProbeShape = {},
+  ): { reply: StatelessProbeReply; window: number } {
     const target = canonicalIpText(remoteIp);
     const egress = this.resolveEgress(target, shape.iface);
-    if (!egress) return 'none';
+    if (!egress) return { reply: 'none', window: 0 };
     const localPort = shape.sourcePort ?? this.nextEphemeral(egress.srcIp);
-    if (localPort < 0) return 'none';
+    if (localPort < 0) return { reply: 'none', window: 0 };
 
     // La trace est posee sur l'adresse REELLEMENT emise : une source
     // forgee ne peut recevoir aucune reponse, et la garder ici serait
@@ -706,7 +723,7 @@ export class TcpStack {
       type: 'tcp',
       sourcePort: localPort, destinationPort: remotePort,
       sequence: nextIsn(), acknowledgement: 0,
-      dataOffset: 5, flags, window: TCP_DEFAULT_WINDOW,
+      dataOffset: 5, flags, window: shape.window ?? TCP_DEFAULT_WINDOW,
       checksum: 0, urgentPointer: 0, options: [], payload: shape.payload,
     };
     const sum = computeTcpChecksum(seg, srcIp, target);
@@ -716,8 +733,11 @@ export class TcpStack {
     } finally {
       this.statelessProbes.delete(key);
     }
-    if (watch.seen !== 'rst') return watch.seen;
-    return watch.window > 0 ? 'rst-window' : 'rst';
+    if (watch.seen !== 'rst') return { reply: watch.seen, window: watch.window };
+    return {
+      reply: watch.window > 0 ? 'rst-window' : 'rst',
+      window: watch.window,
+    };
   }
 
   private noteStatelessUnreachable(
@@ -952,7 +972,10 @@ export class TcpStack {
       return true;
     }
     const probe = this.statelessProbes.get(socketKey);
-    if (probe && seg.flags.syn && seg.flags.ack) probe.seen = 'syn-ack';
+    if (probe && seg.flags.syn && seg.flags.ack) {
+      probe.seen = 'syn-ack';
+      probe.window = seg.window;
+    }
     if (seg.flags.rst) {
       if (probe) {
         probe.seen = 'rst';
