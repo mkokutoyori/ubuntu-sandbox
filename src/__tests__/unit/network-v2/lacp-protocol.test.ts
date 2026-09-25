@@ -193,7 +193,7 @@ describe('LACP — show etherchannel', () => {
                             s2.getPort('FastEthernet0/1')!);
     const out = await s1.executeCommand('show etherchannel summary');
     expect(out).toMatch(/Number of channel-groups in use: 1/);
-    expect(out).toMatch(/1\s+Port-channel1\s+LACP/);
+    expect(out).toMatch(/^1\s+Po1\(SU\)\s+LACP/m);
     expect(out).toMatch(/Fa0\/1\(P\)/);
   });
 

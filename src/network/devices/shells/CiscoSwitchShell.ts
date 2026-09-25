@@ -3078,22 +3078,37 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           'Flags:  D - down        P - bundled in port-channel',
           '        I - stand-alone s - suspended',
           '        H - Hot-standby (LACP only)',
-          '        s - suspended',
+          '        R - Layer3      S - Layer2',
+          '        U - in use      f - failed to allocate aggregator',
+          '',
+          '        M - not in use, minimum links not met',
+          '        u - unsuitable for bundling',
+          '        w - waiting to be aggregated',
+          '        d - default port',
+          '',
+          '',
           `Number of channel-groups in use: ${groups.length}`,
+          `Number of aggregators:           ${groups.length}`,
+          '',
           'Group  Port-channel  Protocol    Ports',
-          '------+-------------+-----------+-----------------------------------------',
+          '------+-------------+-----------+-----------------------------------------------',
         ];
+        const portsPerLine = 3;
         for (const g of groups) {
           const protocol = g.members.every(m => m.mode === 'on') ? '-' : 'LACP';
-          const portList = g.members.map(m => {
+          const ports = g.members.map(m => {
             const flag = m.bundled ? 'P'
               : m.state === 'standby' ? 'H'
               : m.state === 'standalone' ? 'I' : 's';
-            return `${this.abbreviateInterface(m.portName)}(${flag})`;
-          }).join(' ');
+            return `${this.abbreviateInterface(m.portName)}(${flag})`.padEnd(15);
+          });
           const inUse = g.members.some(m => m.bundled) ? 'U' : 'D';
           const bundle = `${this.abbreviateInterface(g.name)}(S${inUse})`;
-          lines.push(`${String(g.id).padEnd(7)}${bundle.padEnd(14)}${protocol.padEnd(12)}${portList}`);
+          const head = `${String(g.id).padEnd(7)}${bundle.padEnd(16)}${protocol.padEnd(10)}`;
+          for (let i = 0; i < Math.max(ports.length, 1); i += portsPerLine) {
+            const lead = i === 0 ? head : ' '.repeat(head.length);
+            lines.push(`${lead}${ports.slice(i, i + portsPerLine).join('')}`.trimEnd());
+          }
         }
         return lines.join('\n');
       }

@@ -89,7 +89,7 @@ describe('un membre ne distribue que si le partenaire a pose Sync', () => {
     const { a, b } = await labo(2);
     for (const sw of [a, b]) {
       expect(await sw.executeCommand('show etherchannel summary'))
-        .toContain('Fa0/1(P) Fa0/2(P)');
+        .toMatch(/Fa0\/1\(P\)\s+Fa0\/2\(P\)/);
     }
   }, 30_000);
 
