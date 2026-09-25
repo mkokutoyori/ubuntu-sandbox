@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-03-trunk-dtp-vtp
-Generated: 2026-09-14T11:17:58.358Z
+Generated: 2026-09-25T18:32:07.347Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=trunk encapsulation/allowed-vlan/native, DTP modes, VTP server/client/transparent, propagation
 Total steps: 357
@@ -1270,13 +1270,13 @@ Total steps: 357
 
 [185/357] l1 l1$ ping -c 3 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=6.791 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.321 ms
-  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=5.496 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=5.071 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.260 ms
+  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=0.967 ms
   
   --- 192.168.1.21 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.321/4.536/6.791/2.334 ms
+  rtt min/avg/max/mdev = 0.967/2.433/5.071/1.869 ms
 
 [186/357] l2 l2$ arp -a
   ? (192.168.1.11) at 02:00:00:00:00:4f [ether] on eth0
@@ -1294,7 +1294,7 @@ Total steps: 357
   VTP Pruning Mode                : Enabled
   VTP Traps Generation            : Disabled
   Device ID                       : 0200.0000.0035
-  Configuration last modified by 0.0.0.0 at 9-14-26 11:17:59
+  Configuration last modified by 0.0.0.0 at 9-25-26 18:32:07
   Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
@@ -1367,7 +1367,7 @@ Total steps: 357
   VTP Pruning Mode                : Disabled
   VTP Traps Generation            : Disabled
   Device ID                       : 0200.0000.0001
-  Configuration last modified by 0.0.0.0 at 9-14-26 11:17:59
+  Configuration last modified by 0.0.0.0 at 9-25-26 18:32:07
   Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
@@ -1461,8 +1461,10 @@ Total steps: 357
   1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
   10      02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
   10      02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
+  99      02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  99      02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
   
-  Total Mac Addresses for this criterion: 7
+  Total Mac Addresses for this criterion: 9
 
 [198/357] sw2 SW2# show vtp status
   VTP Version capable             : 1 to 2
@@ -2136,11 +2138,11 @@ Total steps: 357
 
 --- [273] § host verification ---
 [274/357] l1 l1$ ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            UP            192.168.1.11/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             UP             192.168.1.11/24 fe80::ff:fe00:4f/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 [275/357] l1 l1$ ip neigh
   192.168.1.13 dev eth0 lladdr 02:00:00:00:00:57 REACHABLE
@@ -2150,11 +2152,11 @@ Total steps: 357
   192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f REACHABLE
 
 [276/357] l2 l2$ ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            UP            192.168.1.21/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             UP             192.168.1.21/24 fe80::ff:fe00:5b/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 [277/357] l2 l2$ ip neigh
   192.168.1.11 dev eth0 lladdr 02:00:00:00:00:4f REACHABLE
@@ -2164,11 +2166,11 @@ Total steps: 357
   192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f REACHABLE
 
 [278/357] srv1 srv1$ ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            UP            192.168.1.13/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             UP             192.168.1.13/24 fe80::ff:fe00:57/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 [279/357] srv1 srv1$ ip neigh
   192.168.1.11 dev eth0 lladdr 02:00:00:00:00:4f REACHABLE
@@ -2178,11 +2180,11 @@ Total steps: 357
   192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f REACHABLE
 
 [280/357] srv2 srv2$ ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            UP            192.168.1.23/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             UP             192.168.1.23/24 fe80::ff:fe00:63/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 [281/357] srv2 srv2$ ip neigh
   192.168.1.11 dev eth0 lladdr 02:00:00:00:00:4f REACHABLE
@@ -2394,11 +2396,11 @@ Total steps: 357
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       6 packets input, 530 bytes, 0 no buffer
-       Received 1 broadcasts (2 multicasts)
+       8 packets input, 682 bytes, 0 no buffer
+       Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       23 packets output, 1776 bytes, 0 underruns
+       26 packets output, 1992 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2415,11 +2417,11 @@ Total steps: 357
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       4 packets input, 316 bytes, 0 no buffer
-       Received 1 broadcasts (3 multicasts)
+       8 packets input, 664 bytes, 0 no buffer
+       Received 1 broadcasts (7 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       17 packets output, 1240 bytes, 0 underruns
+       20 packets output, 1460 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2436,11 +2438,11 @@ Total steps: 357
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 226 bytes, 0 no buffer
-       Received 1 broadcasts (2 multicasts)
+       5 packets input, 382 bytes, 0 no buffer
+       Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       16 packets output, 1192 bytes, 0 underruns
+       21 packets output, 1604 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2881,11 +2883,11 @@ Total steps: 357
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       6 packets input, 530 bytes, 0 no buffer
-       Received 1 broadcasts (2 multicasts)
+       8 packets input, 682 bytes, 0 no buffer
+       Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       24 packets output, 1840 bytes, 0 underruns
+       33 packets output, 2440 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2902,11 +2904,11 @@ Total steps: 357
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       4 packets input, 316 bytes, 0 no buffer
-       Received 1 broadcasts (3 multicasts)
+       8 packets input, 664 bytes, 0 no buffer
+       Received 1 broadcasts (7 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       18 packets output, 1304 bytes, 0 underruns
+       33 packets output, 2412 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2923,11 +2925,11 @@ Total steps: 357
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 226 bytes, 0 no buffer
-       Received 1 broadcasts (2 multicasts)
+       5 packets input, 382 bytes, 0 no buffer
+       Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       17 packets output, 1256 bytes, 0 underruns
+       34 packets output, 2556 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

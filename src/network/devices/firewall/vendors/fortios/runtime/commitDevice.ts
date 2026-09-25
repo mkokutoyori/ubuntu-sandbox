@@ -122,6 +122,21 @@ export function buildCommitDevice(
       applyNtp(settings) {
         return fw.getNtp().apply(settings);
       },
+      applySnmpSysinfo(settings) {
+        fw.getSnmp().applySysinfo(settings);
+      },
+      applySnmpCommunity(settings) {
+        fw.getSnmp().applyCommunity(settings);
+      },
+      removeSnmpCommunity(id) {
+        fw.getSnmp().removeCommunity(id);
+      },
+      applySnmpMibView(view) {
+        fw.getSnmp().applyMibView(view);
+      },
+      removeSnmpMibView(name) {
+        fw.getSnmp().removeMibView(name);
+      },
       applyVdomSettings(settings) {
         fw.setCentralNat(settings.centralNat);
         fw.setTcpSessionWithoutSyn(settings.tcpSessionWithoutSyn);

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-static-routing
-Generated: 2026-09-24T08:06:47.009Z
+Generated: 2026-09-25T18:31:10.516Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
 Total steps: 325
@@ -1637,7 +1637,7 @@ Total steps: 325
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1453LYXV
+  Processor board ID FTX16094W35
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1649,7 +1649,7 @@ Total steps: 325
   
   Current configuration : 5593 bytes
   !
-  ! Last configuration change at 08:06:48 UTC Thu Sep 24 2026 by console
+  ! Last configuration change at 18:31:13 UTC Fri Sep 25 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2155,11 +2155,11 @@ Total steps: 325
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 17 messages logged, xml disabled,
+      Console logging: level debugging, 13 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 17 messages logged, xml disabled,
+      Monitor logging: level debugging, 13 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 17 messages logged, xml disabled,
+      Buffer logging:  level debugging, 13 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2168,28 +2168,24 @@ Total steps: 325
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 17 message lines logged
+      Trap logging: level informational, 13 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Sep 24 08:06:46.850: %SEC_LOGIN-6-CONFIG_CHANGE: Account alice created with privilege 1
-  *Sep 24 08:06:46.851: %SEC_LOGIN-6-CONFIG_CHANGE: Account bob created with privilege 1
-  *Sep 24 08:06:46.851: %SEC_LOGIN-6-CONFIG_CHANGE: Account carl created with privilege 1
-  *Sep 24 08:06:46.851: %SEC_LOGIN-6-CONFIG_CHANGE: Account dave created with privilege 1
-  *Sep 24 08:06:47.004: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 24 08:06:47.004: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 24 08:06:47.006: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 24 08:06:47.006: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 24 08:06:47.135: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 24 08:06:47.586: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 24 08:06:47.850: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 24 08:06:47.943: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 24 08:06:48.169: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 24 08:06:48.507: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 24 08:06:48.552: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 24 08:06:48.642: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 24 08:06:48.690: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:10.509: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 25 18:31:10.510: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 25 18:31:10.511: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 25 18:31:10.512: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 25 18:31:10.700: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:11.447: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:11.773: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:11.970: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:12.372: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:12.890: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:12.953: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:13.094: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:13.168: %SYS-5-CONFIG_I: Configured from console by console
 
 [252/325] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -2200,8 +2196,8 @@ Total steps: 325
 [253/325] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 200 (1/100 of seconds), resolution is 4001
-  reference time is EE5F5898.FE76C8B4 (08:06:48.994 UTC Thu Sep 24 2026)
+  ntp uptime is 300 (1/100 of seconds), resolution is 4001
+  reference time is EE613C71.A49BA5E3 (18:31:13.643 UTC Fri Sep 25 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -2212,14 +2208,14 @@ Total steps: 325
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [255/325] r1 R1# show clock
-  *08:06:49.000 UTC Thu Sep 24 2026
+  *18:31:13.000 UTC Fri Sep 25 2026
 
 [256/325] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  R2               Gig 0/1           178        R           Cisco 291 Gig 0/1
+  R2               Gig 0/1           177        R           Cisco 291 Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -2440,7 +2436,7 @@ Total steps: 325
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1453LYXV
+  Processor board ID FTX16094W35
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2452,7 +2448,7 @@ Total steps: 325
   
   Current configuration : 5593 bytes
   !
-  ! Last configuration change at 08:06:48 UTC Thu Sep 24 2026 by console
+  ! Last configuration change at 18:31:13 UTC Fri Sep 25 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2849,11 +2845,11 @@ Total steps: 325
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 17 messages logged, xml disabled,
+      Console logging: level debugging, 13 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 17 messages logged, xml disabled,
+      Monitor logging: level debugging, 13 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 17 messages logged, xml disabled,
+      Buffer logging:  level debugging, 13 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2862,32 +2858,28 @@ Total steps: 325
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 17 message lines logged
+      Trap logging: level informational, 13 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Sep 24 08:06:46.850: %SEC_LOGIN-6-CONFIG_CHANGE: Account alice created with privilege 1
-  *Sep 24 08:06:46.851: %SEC_LOGIN-6-CONFIG_CHANGE: Account bob created with privilege 1
-  *Sep 24 08:06:46.851: %SEC_LOGIN-6-CONFIG_CHANGE: Account carl created with privilege 1
-  *Sep 24 08:06:46.851: %SEC_LOGIN-6-CONFIG_CHANGE: Account dave created with privilege 1
-  *Sep 24 08:06:47.004: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 24 08:06:47.004: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 24 08:06:47.006: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 24 08:06:47.006: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 24 08:06:47.135: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 24 08:06:47.586: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 24 08:06:47.850: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 24 08:06:47.943: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 24 08:06:48.169: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 24 08:06:48.507: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 24 08:06:48.552: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 24 08:06:48.642: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 24 08:06:48.690: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:10.509: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 25 18:31:10.510: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 25 18:31:10.511: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 25 18:31:10.512: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 25 18:31:10.700: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:11.447: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:11.773: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:11.970: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:12.372: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:12.890: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:12.953: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:13.094: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:31:13.168: %SYS-5-CONFIG_I: Configured from console by console
 
 [269/325] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX1453LYXV
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX16094W35
 
 [270/325] r1 R1# show environment
   Number of Critical alarms:  0

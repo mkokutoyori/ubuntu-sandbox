@@ -378,8 +378,10 @@ describe('ALTER SYSTEM KILL SESSION', () => {
     const serial = userSession!.serial;
     exec(`ALTER SYSTEM KILL SESSION '${sid},${serial}'`);
 
-    const afterSessions = engine().sessions.getAllSessions();
-    expect(afterSessions.find(s => s.sid === sid)).toBeUndefined();
+    const marked = engine().sessions.getAllSessions().find(s => s.sid === sid);
+    expect(marked?.status).toBe('KILLED');
+    expect(() => db.executeSql(conn.executor, 'SELECT 1 FROM DUAL')).toThrow(/ORA-00028/);
+    expect(engine().sessions.getAllSessions().find(s => s.sid === sid)).toBeUndefined();
   });
 
   test('killing non-existent session throws ORA-00031', () => {
@@ -394,6 +396,8 @@ describe('ALTER SYSTEM KILL SESSION', () => {
     const sess = sessions.find(s => s.username === 'DISC_USER');
     expect(sess).toBeDefined();
     exec(`ALTER SYSTEM DISCONNECT SESSION '${sess!.sid},${sess!.serial}' IMMEDIATE`);
+    expect(engine().sessions.getAllSessions().find(s => s.sid === sess!.sid)?.status).toBe('KILLED');
+    expect(() => db.executeSql(conn.executor, 'SELECT 1 FROM DUAL')).toThrow(/ORA-00028/);
     expect(engine().sessions.getAllSessions().find(s => s.sid === sess!.sid)).toBeUndefined();
   });
 });

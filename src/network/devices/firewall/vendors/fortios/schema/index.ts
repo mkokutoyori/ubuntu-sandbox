@@ -24,10 +24,12 @@ import { VPN_SPECS } from './vpn';
 import { SDWAN_SPECS } from './sdwan';
 import { HA_SPECS } from './ha';
 import { ROUTER_DYNAMIC_SPECS } from './routerDynamic';
+import { SNMP_SPECS } from './snmp';
 
 export const FORTIOS_SCHEMA: readonly FortiTableSpec[] = Object.freeze([
   ...VDOM_SPECS,
   ...SYSTEM_SPECS,
+  ...SNMP_SPECS,
   ...SDWAN_SPECS,
   ...HA_SPECS,
   ...ROUTER_DYNAMIC_SPECS,

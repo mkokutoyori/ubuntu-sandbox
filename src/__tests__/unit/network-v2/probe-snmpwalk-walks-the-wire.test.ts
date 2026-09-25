@@ -33,14 +33,23 @@
  * qui prouve que les cas du gestionnaire derriere une passerelle et de
  * l'adresse interrogee tombent pour la raison qu'ils nomment, pas parce
  * que l'API du gestionnaire serait cassee.
+ *
+ * Ajout du lot FortiGate : net-snmp apparie une reponse v1/v2c a sa
+ * requete par le seul request-id (`_sess_process_packet`, snmp_api.c ;
+ * la socket UDP du client n'est pas connectee, elle recoit de n'importe
+ * quel port). Le gestionnaire exigeait en plus l'adresse et le port
+ * interroges, et perdait une reponse que net-snmp aurait lue. Mesure sur
+ * b1e74ce2 : « net-snmp takes a response by its request-id alone » tombe ;
+ * « WITNESS: an agent answering from the queried port is heard » passe des
+ * deux cotes et prouve que le faux agent du banc est entendu.
  */
 import { describe, it, expect } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { EventBus } from '@/events/EventBus';
-import type { IPv4Packet, UDPPacket } from '@/network/core/types';
-import type { SnmpPacket, SnmpVarBinding } from '@/network/snmp/types';
+import type { IPAddress, IPv4Packet, UDPPacket } from '@/network/core/types';
+import { v, vb, type SnmpPacket, type SnmpVarBinding } from '@/network/snmp/types';
 
 const SYS_NAME = '1.3.6.1.2.1.1.5.0';
 const IF_PHYS_ADDRESS_1 = '1.3.6.1.2.1.2.2.1.6.1';
@@ -238,5 +247,36 @@ describe('the agent answers the way a real one does', () => {
     expect(show).toContain('    2 Get-next PDUs');
     expect(show).toContain('    0 No such name errors');
     expect(show).toContain('    3 Response PDUs');
+  });
+});
+
+describe('net-snmp matches a response the way snmp_api.c does', () => {
+  async function agentAnsweringFrom(sourcePort: number) {
+    const pc = new LinuxPC('PC1');
+    const agent = new LinuxPC('AGENT');
+    new Cable('pc-agent').connect(pc.getPorts()[0], agent.getPorts()[0]);
+    await type(pc, ['sudo ip addr add 10.0.0.10/24 dev eth0', 'sudo ip link set eth0 up']);
+    await type(agent, ['sudo ip addr add 10.0.0.1/24 dev eth0', 'sudo ip link set eth0 up']);
+    agent.udpBind(161, ({ sourceIP, udp }) => {
+      const request = udp.payload as SnmpPacket;
+      const answer = request.varBindings[0]?.oid === '1.3.6.1.2.1.1.5'
+        ? vb(SYS_NAME, v('octet-string', 'lab-agent'))
+        : vb('1.3.6.1.2.1.1.6.0', v('octet-string', 'Paris'));
+      const response: SnmpPacket = { ...request, pduType: 'get-response', varBindings: [answer] };
+      agent.sendUdpDatagram(sourceIP as IPAddress, udp.sourcePort, sourcePort, response, 64);
+    }, 'agent');
+    return pc;
+  }
+
+  it('WITNESS: an agent answering from the queried port is heard', async () => {
+    const pc = await agentAnsweringFrom(161);
+    expect(await pc.executeCommand('snmpwalk -v2c -c public -t 1 -r 0 10.0.0.1 1.3.6.1.2.1.1.5'))
+      .toBe('iso.3.6.1.2.1.1.5.0 = STRING: "lab-agent"');
+  });
+
+  it('net-snmp takes a response by its request-id alone, whatever port it comes from', async () => {
+    const pc = await agentAnsweringFrom(1161);
+    expect(await pc.executeCommand('snmpwalk -v2c -c public -t 1 -r 0 10.0.0.1 1.3.6.1.2.1.1.5'))
+      .toBe('iso.3.6.1.2.1.1.5.0 = STRING: "lab-agent"');
   });
 });

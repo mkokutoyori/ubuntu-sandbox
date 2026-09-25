@@ -1,21 +1,20 @@
 import { IP_PROTO_TCP, type IPv4Packet } from '../../../core/types';
 
 export type ManagementService =
-  'ping' | 'https' | 'http' | 'ssh' | 'telnet' | 'snmp';
+  'ping' | 'https' | 'http' | 'ssh' | 'telnet' | 'snmp' | 'fgfm';
 
 export const MANAGEMENT_SERVICES: readonly ManagementService[] =
-  Object.freeze(['ping', 'https', 'http', 'ssh', 'telnet', 'snmp'] as const);
+  Object.freeze(['ping', 'https', 'http', 'ssh', 'telnet', 'snmp', 'fgfm'] as const);
 
 export interface ManagementPorts {
   readonly ssh: number;
   readonly telnet: number;
   readonly http: number;
   readonly https: number;
-  readonly snmp: number;
 }
 
 export const DEFAULT_MANAGEMENT_PORTS: ManagementPorts = Object.freeze({
-  ssh: 22, telnet: 23, http: 80, https: 443, snmp: 161,
+  ssh: 22, telnet: 23, http: 80, https: 443,
 });
 
 export const MANAGEMENT_LOCKOUT_THRESHOLD = 3;
@@ -29,7 +28,6 @@ export function serviceOnPort(
   if (port === ports.telnet) return 'telnet';
   if (port === ports.https) return 'https';
   if (port === ports.http) return 'http';
-  if (port === ports.snmp) return 'snmp';
   return undefined;
 }
 
@@ -41,7 +39,6 @@ export function withManagementPorts(
     telnet: patch.telnet ?? base.telnet,
     http: patch.http ?? base.http,
     https: patch.https ?? base.https,
-    snmp: patch.snmp ?? base.snmp,
   });
 }
 

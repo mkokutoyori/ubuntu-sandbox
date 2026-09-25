@@ -131,6 +131,7 @@ import type { FirewallRouting } from './routing/FirewallRouting';
 import { buildL3Services, type L3Services } from './l3/L3ServiceWiring';
 import { classifyIpv4, ingressHostOf, type Ipv4IngressHost } from './l3/Ipv4Ingress';
 import type { FirewallNtp } from './mgmt/FirewallNtp';
+import { FirewallSnmp, type FirewallSnmpIdentity } from './mgmt/FirewallSnmp';
 import { buildManagementServices } from './mgmt/ManagementWiring';
 import type {
   AdminHttpApp, AdminHttpServer, AdminServerCertificate, AdminServerCertificateMaterial,
@@ -548,6 +549,9 @@ export class Firewall extends Equipment {
     this.tacacs = agents.tacacs;
 
     this.management = new ManagementPlane(this.access, now);
+    for (const declared of Firewall.chassisPorts(profile)) {
+      if (declared.allowaccess) this.management.setAllowedAccess(declared.name, declared.allowaccess);
+    }
 
     const mgmt = buildManagementServices({
       deviceId: this.id, deviceName: name, hostname: () => this.getName(),
@@ -857,6 +861,47 @@ export class Firewall extends Equipment {
   }
 
   getHa(): HaAgent { return this.haService.agent; }
+
+  private snmpService: FirewallSnmp | null = null;
+
+  getSnmp(): FirewallSnmp {
+    if (!this.snmpService) {
+      this.snmpService = new FirewallSnmp({
+        deviceId: this.id,
+        deviceName: this.name,
+        hostname: () => this.getName(),
+        port: (name) => this.getPort(name),
+        ports: () => this.getPorts(),
+        sendFrame: (name, frame) => { this.sendFrame(name, frame); },
+        sendUdpDatagram: (request) => this.sendUdpDatagram(request),
+        bus: () => this.getBus(),
+        scheduler: () => this.getScheduler(),
+        identity: () => this.snmpIdentity(),
+        vdomOfInterface: (name) => this.vdoms.vdomOfInterface(name),
+        interfaceDescription: (name) => this.interfaceDescription(name),
+        haManagementInterfaces: () => {
+          const configuration = this.haService.agent.getConfiguration();
+          return configuration.mode !== 'standalone' && configuration.managementStatus
+            ? configuration.managementInterfaces : [];
+        },
+      });
+    }
+    return this.snmpService;
+  }
+
+  protected snmpIdentity(): FirewallSnmpIdentity {
+    return { sysObjectId: '0.0', objects: new Map() };
+  }
+
+  protected interfaceDescription(name: string): string {
+    return this.getPort(name)?.getDescriptionText() ?? '';
+  }
+
+  logDiskUsedBytes(): number {
+    let used = 0;
+    for (const name of this.vdomNames()) used += this.getLogStore(name).usedBytes();
+    return used + this.getLogDisk().rolledBytes();
+  }
 
   forwardsTransit(): boolean {
     const ha = this.haService.agent;
@@ -2292,6 +2337,9 @@ export class Firewall extends Equipment {
         const udp = p.payload as UDPPacket | undefined;
         return udp?.type === 'udp' && this.dnsServer.handleUdp(iface, p, udp);
       },
+      snmpListens: (p) => this.snmpService?.listensOn(p) ?? false,
+      allowsSnmp: (iface, p) => this.allowsAccess(this.servingInterface(iface, p), 'snmp'),
+      handleSnmp: (iface, p) => { this.snmpService?.handleUdp(iface, p); },
       handleTcp: (iface, p) => { this.tcp.handleIp(iface, p.sourceIP, p); },
       admitsTcp: (iface, p) => this.management.admitsTcp(this.servingInterface(iface, p), p),
       allowsPing: (iface, p) => this.allowsAccess(this.servingInterface(iface, p), 'ping'),

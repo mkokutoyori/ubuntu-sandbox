@@ -104,14 +104,14 @@ describe('la cle d\'un acteur LACP est locale', () => {
 
   it('deux commutateurs aux numeros de groupe differents se groupent', async () => {
     const { a, b } = await deuxCommutateurs(1, 2);
-    expect(await a.executeCommand('show etherchannel summary')).toContain('Fa0/1(P) Fa0/2(P)');
-    expect(await b.executeCommand('show etherchannel summary')).toContain('Fa0/1(P) Fa0/2(P)');
+    expect(await a.executeCommand('show etherchannel summary')).toMatch(/Fa0\/1\(P\)\s+Fa0\/2\(P\)/);
+    expect(await b.executeCommand('show etherchannel summary')).toMatch(/Fa0\/1\(P\)\s+Fa0\/2\(P\)/);
   });
 
   it('TEMOIN : a numeros egaux ils se groupent aussi', async () => {
     const { a, b } = await deuxCommutateurs(1, 1);
-    expect(await a.executeCommand('show etherchannel summary')).toContain('Fa0/1(P) Fa0/2(P)');
-    expect(await b.executeCommand('show etherchannel summary')).toContain('Fa0/1(P) Fa0/2(P)');
+    expect(await a.executeCommand('show etherchannel summary')).toMatch(/Fa0\/1\(P\)\s+Fa0\/2\(P\)/);
+    expect(await b.executeCommand('show etherchannel summary')).toMatch(/Fa0\/1\(P\)\s+Fa0\/2\(P\)/);
   });
 
   it('le trafic traverse une agregation aux numeros differents', async () => {
@@ -141,7 +141,7 @@ describe('la cle d\'un acteur LACP est locale', () => {
     for (const n of ['eth0', 'eth1']) {
       expect(agentDe(srv).getPortInfo(n)?.bundled).toBe(true);
     }
-    expect(await sw.executeCommand('show etherchannel summary')).toContain('Fa0/1(P) Fa0/2(P)');
+    expect(await sw.executeCommand('show etherchannel summary')).toMatch(/Fa0\/1\(P\)\s+Fa0\/2\(P\)/);
   });
 
   it('la cle annoncee encode la vitesse et le duplex', async () => {

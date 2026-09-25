@@ -207,7 +207,7 @@ describe('une agregation survit a un enregistrement', () => {
 
     const back = parNom(await allerRetour([sw]), 'CSW') as unknown as Cmd;
 
-    expect(await back.executeCommand('show etherchannel summary')).toContain('Port-channel1');
+    expect(await back.executeCommand('show etherchannel summary')).toMatch(/^1\s+Po1\(/m);
   });
 
   it('les adresses des interfaces reviennent, comme avant', async () => {

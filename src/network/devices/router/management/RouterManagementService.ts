@@ -2,6 +2,7 @@ import { InfoCenterConfig, type InfoCenterError } from './InfoCenterConfig';
 import { vrpDatetimeToEpochMs } from '../../shells/huawei/huaweiClockDatetime';
 import { parseVrpDaylightSaving } from '../../shells/huawei/huaweiDaylightSaving';
 import { DeviceClockStore, type DeviceClockConfig } from '../../../core/time/DeviceClock';
+import { PortNumber, PORT_ANY } from '../../../core/ports/PortNumber';
 
 export interface RawConfigEntry {
   feature: string;
@@ -22,12 +23,18 @@ export function sshListenPortIsValid(port: number): boolean {
   return port === SSH_DEFAULT_PORT || (port >= 1025 && port <= 65535);
 }
 
+export const TELNET_DEFAULT_PORT = 23;
+
+export function telnetListenPortIsValid(port: number): boolean {
+  return PortNumber.isValid(port) && port !== PORT_ANY;
+}
+
 export class RouterManagementService {
   domainName: string = '';
   ipDomainLookupEnabled: boolean = true;
   nameServers: string[] = [];
   private stelnetAcl: string | undefined;
-  private readonly telnetServer = { enabled: false, port: 23, acl: undefined as string | undefined };
+  private readonly telnetServer = { enabled: false, port: TELNET_DEFAULT_PORT, acl: undefined as string | undefined };
   /**
    * Le serveur SSH, cote GESTIONNAIRE : ce qu'il porte seul, c'est-a-dire
    * l'etat d'ecoute et le port. Le reste de la configuration `ip ssh`
@@ -77,12 +84,19 @@ export class RouterManagementService {
     return { enabled: this.sshServer.enabled, port: this.sshServer.port, acl: this.stelnetAcl };
   }
 
-  configureTelnet(args: string[]): void {
+  configureTelnet(args: string[], negated = false): string | null {
     const head = (args[0] ?? '').toLowerCase();
     if (head === 'server' && args[1]?.toLowerCase() === 'enable') this.telnetServer.enabled = true;
     else if (head === 'server' && args[1]?.toLowerCase() === 'disable') this.telnetServer.enabled = false;
+    else if (head === 'server' && args[1]?.toLowerCase() === 'port') {
+      if (negated) { this.telnetServer.port = TELNET_DEFAULT_PORT; return null; }
+      const port = PortNumber.tryParse(args[2] ?? '');
+      if (!port || !telnetListenPortIsValid(port.value)) return args[2] ?? '';
+      this.telnetServer.port = port.value;
+    }
     else if (head === 'server-source' && args[1]) this.telnetServer.acl = args[1];
     else this.recordRaw('telnet', args.join(' '));
+    return null;
   }
   getTelnet(): typeof this.telnetServer { return this.telnetServer; }
 

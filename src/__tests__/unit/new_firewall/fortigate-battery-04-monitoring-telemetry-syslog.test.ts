@@ -304,7 +304,13 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
     });
 
     it('168. Parcours d\'arbre MIB (SNMPWALK) sur le sous-système IP à travers le switch', async () => {
-      const { pc } = await creerLaboSupervision();
+      const { pc, fw } = await creerLaboSupervision();
+      await taper(fw, [
+        'config system snmp sysinfo', 'set status enable', 'end',
+        'config system snmp community', 'edit 1', 'set name "public"',
+        'config hosts', 'edit 1', 'set ip 192.168.1.10 255.255.255.255', 'next', 'end',
+        'next', 'end',
+      ]);
       const res = await pc.executeCommand('snmpwalk -v2c -c public 192.168.1.1 1.3.6.1.2.1.4');
       expect(res).not.toMatch(/Timeout: No Response/i);
     });

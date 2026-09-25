@@ -16,16 +16,18 @@
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { liveSessionCounts } from './_sessionCounts';
 
 registerView({
   name: 'V$LICENSE',
   comment: 'License limits and current/high-water session counts',
-  query({ instance, runtime }) {
-    const current = runtime.sessions.size;
+  query({ instance, runtime, catalog }) {
+    const counts = liveSessionCounts(catalog, runtime);
+    const current = counts.current;
     // The high-water mark is monotone non-decreasing: cumulative
     // connections is a safe upper bound when sessions never disconnect
     // in our simulator, otherwise we keep current as the floor.
-    const highWater = Math.max(current, runtime.counters.logonsCumulative);
+    const highWater = counts.highWater;
     const sessionsLimit = Number(instance.getParameter('sessions') ?? '0') || 0;
     const usersMax = Number(instance.getParameter('license_max_users') ?? '0') || 0;
     return queryResult(

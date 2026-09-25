@@ -1,3 +1,4 @@
+import { fortiFirmwareVersion } from '../FortiFirmware';
 import { ospfRouteCode } from '@/network/ospf/routeCodes';
 import { cpuStatesLines, memoryLine } from './systemLoad';
 import type { SystemLoad } from '../../../health/SystemLoad';
@@ -63,8 +64,7 @@ export interface SystemStatusFacts {
 
 export function renderSystemStatus(facts: SystemStatusFacts): string {
   return [
-    `Version: ${facts.model} v${facts.version},build${facts.build},`
-    + `${facts.buildDate} (${facts.versionSuffix})`,
+    `Version: ${facts.model} ${fortiFirmwareVersion(facts)}`,
     ...facts.fortiguard,
     `Serial-Number: ${facts.serial}`,
     `License Status: ${facts.licenseStatus}`,

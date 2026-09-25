@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-networking
-Generated: 2026-09-24T07:57:34.678Z
+Generated: 2026-09-25T18:28:59.673Z
 Engine: linux
 host=L-PC-NET-DBG (linux-pc) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -1020,44 +1020,43 @@ $ [162/302]> ss -tln sport = :22
 
 --- [163] § HTTP — curl / wget ---
 $ [163/302]> curl http://192.168.10.1
-  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 2 ms: Couldn't connect to server
 
 $ [164/302]> curl -I http://192.168.10.1
-  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
 
 $ [165/302]> curl -s http://192.168.10.1
 <empty>
 
 $ [166/302]> curl -v http://192.168.10.1
   *   Trying 192.168.10.1:80...
-  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 3 ms: Couldn't connect to server
 
 $ [167/302]> curl -o /tmp/page.html http://192.168.10.1
-  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 0 ms: Couldn't connect to server
 
 $ [168/302]> curl -L http://192.168.10.1
-  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
 
 $ [169/302]> curl --max-time 2 http://192.168.10.99
-  curl: option --max-time: is not implemented in this simulator
-  curl: try 'curl --help' for more information
+  curl: (7) Failed to connect to 192.168.10.99 port 80 after 0 ms: Couldn't connect to server
 
 $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-09-24 07:57:37--  http://192.168.10.1
+  --2026-09-25 18:29:02--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [172/302]> wget -q http://192.168.10.1
 <empty>
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-09-24 07:57:37--  http://192.168.10.1
+  --2026-09-25 18:29:02--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-09-24 07:57:37--  http://192.168.10.99
+  --2026-09-25 18:29:02--  http://192.168.10.99
   Connecting to 192.168.10.99:80... failed: Connection refused.
 
 $ [175/302]> curl
@@ -1221,44 +1220,44 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
   Your identification has been saved in /tmp/id_rsa
   Your public key has been saved in /tmp/id_rsa.pub
   The key fingerprint is:
-  SHA256:cxnm1F3C2YDuOSe8s7VrZKN1CQpoR3fcF2OgjBOxqB4 user@linux-pc (RSA)
+  SHA256:SeT16o6i57+6IKf9/vqmq4iFCWFy0laaog3TtMX9xq0 user@linux-pc (RSA)
   The key's randomart image is:
-  +--[RSA   ]----+
-  |%%*o+^OX/#@X^.o%/|
-  |#@%^&^%X@%*=#+ %%|
-  |*o+^OX/#@X^.o%/#@|
-  |%^&^%X@%*=#+ %%*o|
-  |+^OX/#@X^.o%/#@%^|
-  |&^%X@%*=#+ %%*o+^|
-  |OX/#@X^.o%/#@%^&^|
-  |%X@%*=#+ %%*o+^OX|
-  |/#@X^.o%/#@%^&^%X|
+  +---[RSA 2048]----+
+  |  ..o.  . .      |
+  | + *. .o . .     |
+  |B.O    oo.  .    |
+  |+X     .+...     |
+  |o .    .S..      |
+  |.o      E.       |
+  |o o o     .      |
+  | o * .o .o       |
+  |. o +BX%*..      |
   +----[SHA256]-----+
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 user user 630 Sep 24 07:57 /tmp/id_rsa
-  -rw-r--r-- 1 user user 395 Sep 24 07:57 /tmp/id_rsa.pub
+  -rw------- 1 user user 630 Sep 25 18:29 /tmp/id_rsa
+  -rw-r--r-- 1 user user 395 Sep 25 18:29 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAD0tVBrOG9Un5Uuwb14UMyRlEg/wXUFSHE3vLE7iTIindJFK81/AMd01s3+SlCybm5zdDhj2sJN08hk8hTdMcCSWmdfphrDdtLILmLrSjXbRE7Bd7jzgbmP81/87XKkIQ5QhBhBlTMndQEGfPcfz/AIyPHO+YZiuqoh8o9BmrOQvSFZTd0SvHnyeGuNMH0KhH5KCN700lznyCzmqXblCiADYce2BIQS19ECemYf1NV45SY8PYeb2yxtWAQHhH0+d1SSYEQRmEhC5G2iFehWe90+jbx7rc+2MPPon+FvVZ0N5RUS9dUi1bqE8ua6YU5gYVVCBJKvyF4Y4plArxKQTfzE= user@linux-pc
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABANohI3etFJkxyg7loBhlsbvTGT1jhbf8WT//mGt/ehf5a0zzpQLFDV8u1aNlYpIZfb8BqrwjIGLHj6FEy6iINbjfxX2ZeW/5vujKwStky/cRC9acF5rPBitM09G9Ynz8QURFccru951wDIMPHQs+S8FeREzgK62oZApugsEcb10FyxLxPpZKybewq10HtdRl2uKfa+4T/DwRgBAmESuXT7Dg48wdUm+mJrirrqDwagABbUuSkmtvmQdY+oqz6nW72M0vz4oDUyi6rRbSzNjTjdoenHjenGVzRAVTgBPmXYXzUrq8BIhfkWyQCOFpS0/KHiB6bQhSr/l58fVOVZIzgiQ= user@linux-pc
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
   Generating public/private ed25519 key pair.
   Your identification has been saved in /tmp/id_ed25519
   Your public key has been saved in /tmp/id_ed25519.pub
   The key fingerprint is:
-  SHA256:XO6I2DFS9x89r78qhRr0SXW1fiAVQ5UR8m4sGCzOXmA user@linux-pc (ED25519)
+  SHA256:pIy6oC+v0pbgkmT4O1FeSHpLeBY/eFBPCOeMFXxySjQ user@linux-pc (ED25519)
   The key's randomart image is:
-  +--[ED25519]----+
-  |o/.B=OO..%&#/&=/#|
-  |.BoBO^oo*^@^&=Bo/|
-  |.B=OO..%&#/&=/#.B|
-  |oBO^oo*^@^&=Bo/.B|
-  |=OO..%&#/&=/#.BoB|
-  |O^oo*^@^&=Bo/.B=O|
-  |O..%&#/&=/#.BoBO^|
-  |oo*^@^&=Bo/.B=OO.|
-  |.%&#/&=/#.BoBO^oo|
+  +--[ED25519 256]--+
+  |    .=Eo.        |
+  |    +*=+o        |
+  |   +.Bo=o        |
+  |  o Oo*o         |
+  |.  B.+o.S        |
+  |oo..o            |
+  |==.o             |
+  |*o*.             |
+  |=*=o             |
   +----[SHA256]-----+
 
 $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
@@ -1266,22 +1265,22 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
   Your identification has been saved in /home/user/.ssh/id_ed25519
   Your public key has been saved in /home/user/.ssh/id_ed25519.pub
   The key fingerprint is:
-  SHA256:mJLZDdzixOCqZoZrhA6ui00IcnU9RWr1K0xWq7LzvxE user@linux-pc (ED25519)
+  SHA256:KfUPsNE4OVEcuRufl2wk0qMyO5C8PCzyHfjXIYKKBJM user@linux-pc (ED25519)
   The key's randomart image is:
-  +--[ED25519]----+
-  |o&O/%..^*#^o#^@=o|
-  |X@#.@.*/.&B/+&oo&|
-  |O/%..^*#^o#^@=oX@|
-  |#.@.*/.&B/+&oo&O/|
-  |%..^*#^o#^@=oX@#.|
-  |@.*/.&B/+&oo&O/%.|
-  |.^*#^o#^@=oX@#.@.|
-  |*/.&B/+&oo&O/%..^|
-  |*#^o#^@=oX@#.@.*/|
+  +--[ED25519 256]--+
+  |        .ooo     |
+  |         =o      |
+  | .      O .o     |
+  |E      . O+ + .  |
+  |..   o..S o* * . |
+  | .  ..=.+ +oo =  |
+  |.. ..o.+ * ..o   |
+  |. o .o=.+ .      |
+  |   o..oo .       |
   +----[SHA256]-----+
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAD0tVBrOG9Un5Uuwb14UMyRlEg/wXUFSHE3vLE7iTIindJFK81/AMd01s3+SlCybm5zdDhj2sJN08hk8hTdMcCSWmdfphrDdtLILmLrSjXbRE7Bd7jzgbmP81/87XKkIQ5QhBhBlTMndQEGfPcfz/AIyPHO+YZiuqoh8o9BmrOQvSFZTd0SvHnyeGuNMH0KhH5KCN700lznyCzmqXblCiADYce2BIQS19ECemYf1NV45SY8PYeb2yxtWAQHhH0+d1SSYEQRmEhC5G2iFehWe90+jbx7rc+2MPPon+FvVZ0N5RUS9dUi1bqE8ua6YU5gYVVCBJKvyF4Y4plArxKQTfzE= user@linux-pc
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABANohI3etFJkxyg7loBhlsbvTGT1jhbf8WT//mGt/ehf5a0zzpQLFDV8u1aNlYpIZfb8BqrwjIGLHj6FEy6iINbjfxX2ZeW/5vujKwStky/cRC9acF5rPBitM09G9Ynz8QURFccru951wDIMPHQs+S8FeREzgK62oZApugsEcb10FyxLxPpZKybewq10HtdRl2uKfa+4T/DwRgBAmESuXT7Dg48wdUm+mJrirrqDwagABbUuSkmtvmQdY+oqz6nW72M0vz4oDUyi6rRbSzNjTjdoenHjenGVzRAVTgBPmXYXzUrq8BIhfkWyQCOFpS0/KHiB6bQhSr/l58fVOVZIzgiQ= user@linux-pc
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]
@@ -1333,7 +1332,7 @@ $ [234/302]> ip addr add 192.168.50.10/24 dev eth0
 <empty>
 
 $ [235/302]> ip route add default via 192.168.50.1
-<empty>
+  RTNETLINK answers: File exists
 
 $ [236/302]> ip addr show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
@@ -1345,7 +1344,7 @@ $ [236/302]> ip addr show eth0
 
 $ [237/302]> ip route
   192.168.50.0/24 dev eth0 proto kernel scope link src 192.168.50.10 metric 0 linkdown
-  default via 192.168.50.1 dev eth0 proto static linkdown
+  default via 192.168.10.1 dev  proto static
 
 $ [238/302]> ping -c 1 192.168.50.10
   PING 192.168.50.10 (192.168.50.10) 56(84) bytes of data.
@@ -1373,7 +1372,7 @@ $ [242/302]> ip route flush table main
 
 $ [243/302]> ip route
   192.168.50.0/24 dev eth0 proto kernel scope link src 192.168.50.10 metric 0 linkdown
-  default via 192.168.50.1 dev eth0 proto static linkdown
+  default via 192.168.10.1 dev  proto static
 
 
 --- [244] § inventaire réseau consolidé ---

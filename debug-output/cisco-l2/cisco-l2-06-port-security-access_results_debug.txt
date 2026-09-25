@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-06-port-security-access
-Generated: 2026-09-14T11:13:35.184Z
+Generated: 2026-09-25T18:35:24.475Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=port-security/sticky/violation, errdisable, dot1x, DHCP snooping, DAI, storm-control
 Total steps: 421
@@ -743,12 +743,12 @@ Total steps: 421
 
 [211/421] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=4.126 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.052 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=4.740 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.744 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.052/2.589/4.126/1.537 ms
+  rtt min/avg/max/mdev = 0.744/2.742/4.740/1.998 ms
 
 [212/421] sw1 SW1# show port-security interface FastEthernet0/1
   Port Security              : Enabled
@@ -772,9 +772,10 @@ Total steps: 421
   1       0200.0000.004f    SecureSticky                  Fa0/1   5m
   1       0000.1111.2222    SecureConfigured              Fa0/2   5m
   1       0000.1111.3333    SecureConfigured              Fa0/2   5m
+  1       0200.0000.0053    SecureSticky                  Fa0/2   5m
   1       0200.0000.0057    SecureSticky                  Fa0/3   5m
   
-  Total Addresses: 4
+  Total Addresses: 5
 
 [214/421] sw1 SW1# show mac address-table secure
   Mac Address Table
@@ -1524,10 +1525,10 @@ Total steps: 421
   Aging Type                 : Inactivity
   SecureStatic Address Aging : Disabled
   Maximum MAC Addresses      : 3
-  Total MAC Addresses        : 2
+  Total MAC Addresses        : 3
   Configured MAC Addresses   : 2
-  Sticky MAC Addresses       : 0
-  Last Source Address:Vlan   : 0000.1111.3333:1
+  Sticky MAC Addresses       : 1
+  Last Source Address:Vlan   : 0200.0000.0053:1
   Security Violation Count   : 0
 
 [388/421] sw1 SW1# show port-security interface FastEthernet0/3
@@ -1801,7 +1802,7 @@ Total steps: 421
 [408/421] sw1 SW1# show ip arp inspection statistics
    Vlan  Forwarded     Dropped       DHCP-Drops    ACL-Drops
    ----  ---------     -------       ----------    ---------
-   (all) 6             0             0             0
+   1     6             0             0             0
   
    Interface          Packets Received  Permitted  Dropped
    ----------------   ----------------  ---------  -------
@@ -1818,11 +1819,11 @@ Total steps: 421
 
 --- [410] § host verification ---
 [411/421] l1 l1$ ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            UP            192.168.1.11/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             UP             192.168.1.11/24 fe80::ff:fe00:4f/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 [412/421] l1 l1$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -1833,11 +1834,11 @@ Total steps: 421
   192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
 
 [413/421] srv1 srv1$ ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            UP            192.168.1.13/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             UP             192.168.1.13/24 fe80::ff:fe00:57/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 [414/421] srv1 srv1$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -1848,11 +1849,11 @@ Total steps: 421
   192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
 
 [415/421] l2 l2$ ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            UP            192.168.1.21/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             UP             192.168.1.21/24 fe80::ff:fe00:5b/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 [416/421] l2 l2$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -1863,11 +1864,11 @@ Total steps: 421
   192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
 
 [417/421] srv2 srv2$ ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            UP            192.168.1.23/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             UP             192.168.1.23/24 fe80::ff:fe00:63/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 [418/421] srv2 srv2$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -1917,7 +1918,7 @@ Total steps: 421
 [421/421] sw1 SW1# show running-config
   Building configuration...
   
-  Current configuration : 8766 bytes
+  Current configuration : 8826 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1961,6 +1962,7 @@ Total steps: 421
    switchport port-security mac-address sticky
    switchport port-security mac-address 0000.1111.2222
    switchport port-security mac-address 0000.1111.3333
+   switchport port-security mac-address sticky 0200.0000.0053
    switchport port-security aging time 5
    switchport port-security aging type inactivity
    dot1x pae authenticator

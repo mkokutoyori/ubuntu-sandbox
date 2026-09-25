@@ -1237,6 +1237,9 @@ export class FortiShell {
     this.seedFactoryCertificates();
     this.seedFactoryAdmin();
     this.seedFactoryVdoms();
+    this.seedChassisInterfaces();
+    const interfaces = this.tree.spec(['system', 'interface']);
+    if (interfaces) this.nav.commitEntries(interfaces);
   }
 
   private batchControlWords(line: string): readonly string[] | null {
@@ -1269,11 +1272,6 @@ export class FortiShell {
     }
   }
 
-  private logDiskUsedBytes(): number {
-    let used = 0;
-    for (const name of this.fw.vdomNames()) used += this.fw.getLogStore(name).usedBytes();
-    return used + this.fw.getLogDisk().rolledBytes();
-  }
 
   private executeEraseDisk(rest: readonly string[]): string {
     const disk = this.fw.getProfile().logDisk;
@@ -1298,7 +1296,7 @@ export class FortiShell {
     const disk = this.fw.getProfile().logDisk;
     if (disk === undefined) return NO_LOG_DISK;
     if (resolved.name === 'list') {
-      return renderDiskList(disk, this.fw.serialNumber(), this.logDiskUsedBytes());
+      return renderDiskList(disk, this.fw.serialNumber(), this.fw.logDiskUsedBytes());
     }
     if (rest[1] === undefined) return FortiMessages.incomplete('a partition reference');
     if (rest[1] !== String(disk.partitionRef)) {

@@ -28,6 +28,7 @@ import type { HostCommandRunner } from './HostCommandRunner';
 import { QueryResultRenderer, type ColumnFormat } from './QueryResultRenderer';
 import type { OracleNetSession } from '@/network/oracle-net/OracleNetClient';
 const CONNECTION_LOST_ERRORS = ['ORA-03113', 'ORA-03114', 'ORA-03135', 'ORA-12571'];
+const SERVER_TERMINATION_CODES: ReadonlySet<string> = new Set(['ORA-00028', 'ORA-02396', 'ORA-02399']);
 
 function connectionWasLost(answer: OracleNetResponse): boolean {
   return answer.status === OracleNetCallStatus.Error
@@ -912,6 +913,9 @@ export class SQLPlusSession {
       }
     } catch (err: unknown) {
       output.push(...this.renderSqlError(sql, err));
+      if (SERVER_TERMINATION_CODES.has((err as { code?: string }).code ?? '')) {
+        this.connected = false;
+      }
     }
 
     return { output, exit: false, needsMoreInput: false, prompt: this.getPrompt() };

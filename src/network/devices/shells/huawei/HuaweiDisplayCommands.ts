@@ -56,6 +56,7 @@ import {
   AR2220_HARDWARE_PROFILE, renderHardwareVersion,
 } from './HuaweiHardwareProfile';
 import { normVrpSeverity, VRP_SEVERITIES } from '../../router/management/InfoCenterConfig';
+import { TELNET_DEFAULT_PORT } from '../../router/management/RouterManagementService';
 import { renderDisplayUserInterface } from './HuaweiUserInterfaceCommands';
 import { getSessionRegistry, getVtyLineConfig } from '../../../equipment/RouterServiceCapabilities';
 import { interfacePoolName } from './HuaweiDhcpCommands';
@@ -1113,6 +1114,7 @@ function appendManagementConfig(lines: string[], router: Router): void {
 
   const telnet = mgmt.getTelnet();
   if (telnet.enabled) { lines.push('#'); lines.push('telnet server enable'); }
+  if (telnet.port !== TELNET_DEFAULT_PORT) lines.push(`telnet server port ${telnet.port}`);
   const ssh = mgmt.getSsh();
   if (ssh.enabled) {
     lines.push('#');
@@ -1122,7 +1124,6 @@ function appendManagementConfig(lines: string[], router: Router): void {
   const retries = router.getSshAuthenticationRetries();
   if (retries !== null) lines.push(`ssh server authentication-retries ${retries}`);
   if (router.isFtpServerEnabled()) { lines.push('#'); lines.push('ftp server enable'); }
-  if (router._getGlobalToggle('telnet server')) { lines.push('#'); lines.push('telnet server enable'); }
 
   const snmpLines = lignesConfigSnmpVrp(router.getSnmpService?.());
   if (snmpLines.length > 0) { lines.push('#'); lines.push(...snmpLines); }

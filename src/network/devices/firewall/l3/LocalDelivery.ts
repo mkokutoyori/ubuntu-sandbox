@@ -7,6 +7,9 @@ export interface LocalDeliveryDeps {
   handleIke(iface: string, packet: IPv4Packet, datagram: unknown): void;
   observedBySdwan(packet: IPv4Packet): boolean;
   answeredByDnsServer(iface: string, packet: IPv4Packet): boolean;
+  snmpListens(packet: IPv4Packet): boolean;
+  allowsSnmp(iface: string, packet: IPv4Packet): boolean;
+  handleSnmp(iface: string, packet: IPv4Packet): void;
   handleTcp(iface: string, packet: IPv4Packet): void;
   admitsTcp(iface: string, packet: IPv4Packet): boolean;
   allowsPing(iface: string, packet: IPv4Packet): boolean;
@@ -32,6 +35,13 @@ export function deliverLocally(
   if (deps.observedBySdwan(packet)) return;
   if (deps.answeredByDnsServer(iface, packet)) {
     deps.logLocalIn?.(iface, packet, true);
+    return;
+  }
+
+  if (deps.snmpListens(packet)) {
+    const admitted = deps.allowsSnmp(iface, packet);
+    deps.logLocalIn?.(iface, packet, admitted);
+    if (admitted) deps.handleSnmp(iface, packet);
     return;
   }
 

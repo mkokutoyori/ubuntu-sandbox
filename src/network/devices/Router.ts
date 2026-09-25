@@ -191,7 +191,7 @@ import { NhrpService } from './router/nhrp/NhrpService';
 import { DmvpnService } from './router/nhrp/DmvpnService';
 import { NhrpEngine } from '../nhrp/NhrpEngine';
 import { IP_PROTO_NHRP, type NhrpPacket } from '../nhrp/types';
-import { RouterManagementService } from './router/management/RouterManagementService';
+import { RouterManagementService, TELNET_DEFAULT_PORT } from './router/management/RouterManagementService';
 import { CiscoHttpService } from './router/management/CiscoHttpService';
 import { CiscoHttpUi } from './router/management/CiscoHttpUi';
 import { Http1ServerSession } from '../http/http1/Http1ServerSession';
@@ -1065,13 +1065,21 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   _syncSshListener(): void { this.syncSshListener(); }
 
+  telnetListenPort(): number {
+    return this.getManagementService().getTelnet().port || TELNET_DEFAULT_PORT;
+  }
+
+  private _telnetBoundPort: number | null = null;
+
   private bindTelnetListener(): void {
-    this.tcpv2.listen(23, {
+    const port = this.telnetListenPort();
+    this.tcpv2.listen(port, {
       onAccept: (socket) => {
         const handler = this.buildRouterTelnetServerHandler();
         handler.register(socket as unknown as TcpStream, socket.remoteIp);
       },
     });
+    this._telnetBoundPort = port;
   }
 
   /**
@@ -1169,9 +1177,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
     if (shouldListen && this._sshBoundPort === null) this.bindSshListener();
     const telnetWanted = this.telnetAllowedByTransport();
-    const telnetBound = this.tcpv2.listListeners().some(l => l.localPort === 23);
-    if (telnetWanted && !telnetBound) this.bindTelnetListener();
-    if (!telnetWanted && telnetBound) this.tcpv2.closeListener(23);
+    const telnetPort = this._telnetBoundPort;
+    const telnetBound = telnetPort !== null
+      && this.tcpv2.listListeners().some(l => l.localPort === telnetPort);
+    if (!telnetBound) this._telnetBoundPort = null;
+    if (telnetBound && (!telnetWanted || telnetPort !== this.telnetListenPort())) {
+      this.tcpv2.closeListener(telnetPort!);
+      this._telnetBoundPort = null;
+    }
+    if (telnetWanted && this._telnetBoundPort === null) this.bindTelnetListener();
   }
 
   /**

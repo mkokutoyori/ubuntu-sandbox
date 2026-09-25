@@ -63,10 +63,23 @@ describe('Shell special-key contract over SSH', () => {
     const term = new WindowsTerminalSession('t', winA);
     await term.init();
     await sshLogin(term, 'ssh user@10.0.0.1', 'admin');
-    expect(term.foreground).not.toBe(term);
+    expect(term.getPrompt()).toMatch(/^user@linuxA/);
     term.handleKey(key('d', { ctrlKey: true }));
     await flush();
-    expect(term.foreground).toBe(term);
+    expect(term.getPrompt()).toMatch(/^[A-Z]:\\/);
+  });
+
+  test('Ctrl+D in a local PowerShell is ignored, as on Windows', async () => {
+    const { winA } = await buildPair();
+    const term = new WindowsTerminalSession('t', winA);
+    await term.init();
+    term.setInput('powershell');
+    term.handleKey(key('Enter'));
+    await flush(30);
+    expect(term.getPrompt()).toMatch(/^PS /);
+    term.handleKey(key('d', { ctrlKey: true }));
+    await flush(30);
+    expect(term.getPrompt()).toMatch(/^PS /);
   });
 
   test('Tab completion on the remote runs against the remote device', async () => {
@@ -74,10 +87,10 @@ describe('Shell special-key contract over SSH', () => {
     const term = new WindowsTerminalSession('t', winA);
     await term.init();
     await sshLogin(term, 'ssh user@10.0.0.1', 'admin');
-    term.setInput('ec');
+    term.setInputBuf('ec');
     term.handleKey(key('Tab'));
     await flush();
-    expect(term.foreground.input).toMatch(/^echo/);
+    expect(term.getInputBuf()).toMatch(/^echo/);
   });
 
   test('ShellFactory reset wipes the registry; reinstall restores all built-ins', () => {

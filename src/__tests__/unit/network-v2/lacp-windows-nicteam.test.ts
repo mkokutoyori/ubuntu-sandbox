@@ -155,7 +155,7 @@ describe('New-NetLbfoTeam cree un vrai agregat', () => {
   it('le commutateur voit les deux ports groupes', async () => {
     const { sw } = await labo();
     expect(await sw.executeCommand('show etherchannel summary'))
-      .toMatch(/Fa0\/1\(P\) Fa0\/2\(P\)/);
+      .toMatch(/Fa0\/1\(P\)\s+Fa0\/2\(P\)/);
   }, 30_000);
 
   it('`Get-NetLbfoTeamMember` rend les colonnes de la classe CIM', async () => {
@@ -309,7 +309,7 @@ describe('l\'exploitation d\'un team', () => {
     expect(ps.execute('Add-NetLbfoTeamMember -Name "Ethernet 1" -Team Team1')).toBe('');
     await vi.advanceTimersByTimeAsync(LACP_PERIODIC_MS);
     expect(await sw.executeCommand('show etherchannel summary'))
-      .toMatch(/Fa0\/1\(P\) Fa0\/2\(P\)/);
+      .toMatch(/Fa0\/1\(P\)\s+Fa0\/2\(P\)/);
   }, 30_000);
 
   it('`Set-NetLbfoTeam -LacpTimer Fast` change la cadence des LACPDU', async () => {
