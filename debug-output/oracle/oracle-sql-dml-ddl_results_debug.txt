@@ -1,6 +1,6 @@
 ============================================================
 Oracle debug transcript — oracle-sql-dml-ddl
-Generated: 2026-09-25T18:50:00.610Z
+Generated: 2026-09-25T19:40:47.737Z
 Topology:  LinuxServer ora-sql — Oracle ORCL OPEN
 Total commands: 461
 ============================================================
@@ -1727,7 +1727,7 @@ SQL [272/461]> SELECT * FROM v$database WHERE rownum < 5;
   
         DBID ACTIVATION# NAME CREATED   LOG_MODE     OPEN_MODE  DATABASE_ROLE SWITCHOVER_STATUS PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON CURRENT_SCN CHECKPOINT_CHANGE#
   ---------- ----------- ---- --------- ------------ ---------- ------------- ----------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------ ----------- ------------------
-  2207091163   207091163 ORCL 25-SEP-26 NOARCHIVELOG READ WRITE PRIMARY       NOT ALLOWED       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 25-SEP-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000452            1000001
+  3608557395   608557395 ORCL 25-SEP-26 NOARCHIVELOG READ WRITE PRIMARY       NOT ALLOWED       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 25-SEP-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000452            1000001
   
   1 row selected.
 
@@ -1755,7 +1755,7 @@ SQL [275/461]> SELECT * FROM v$license WHERE rownum < 5;
   
   SESSIONS_MAX SESSIONS_WARNING SESSIONS_CURRENT SESSIONS_HIGHWATER USERS_MAX CPU_COUNT_CURRENT CPU_CORE_COUNT_CURRENT CPU_SOCKET_COUNT_CURRENT CPU_COUNT_HIGHWATER CPU_CORE_COUNT_HIGHWATER CPU_SOCKET_COUNT_HIGHWATER
   ------------ ---------------- ---------------- ------------------ --------- ----------------- ---------------------- ------------------------ ------------------- ------------------------ --------------------------
-           472                0                1                  1         0                 1                      1                        1                   1                        1                          1
+           472                0                5                  5         0                 1                      1                        1                   1                        1                          1
   
   1 row selected.
 
@@ -1876,7 +1876,7 @@ SQL [286/461]> SELECT * FROM v$pgastat WHERE rownum < 5;
   aggregate PGA target parameter 134217728 bytes
   aggregate PGA auto target      120795955 bytes
   global memory bound             13421772 bytes
-  total PGA inuse                 34668544 bytes
+  total PGA inuse                 35454976 bytes
   
   4 rows selected.
 
@@ -1925,7 +1925,7 @@ SQL [291/461]> SELECT * FROM v$buffer_pool_statistics WHERE rownum < 5;
   
   ID NAME    SET_MSIZE FREE_BUFFER_WAIT BUFFER_BUSY_WAIT PHYSICAL_READS PHYSICAL_WRITES DB_BLOCK_GETS CONSISTENT_GETS DB_BLOCK_CHANGE
   -- ------- --------- ---------------- ---------------- -------------- --------------- ------------- --------------- ---------------
-   3 DEFAULT     16384                0                0              0              52           917             917             318
+   3 DEFAULT     16384                0                0              0              52           929             929             318
   
   1 row selected.
 
@@ -2013,23 +2013,73 @@ SQL [299/461]> SELECT * FROM v$open_cursor WHERE rownum < 5;
 
 SQL [300/461]> SELECT * FROM v$sqlarea WHERE rownum < 5;
   
-  SQL_TEXT                                            SQL_ID        VERSION_COUNT EXECUTIONS SORTS DISK_READS BUFFER_GETS ROWS_PROCESSED
-  --------------------------------------------------- ------------- ------------- ---------- ----- ---------- ----------- --------------
-  INSERT INTO HR.COUNTRIES VALUES ('CN', 'China', 3)  0wcn17ca3xqw0             1          1     0          0           1              1
-  INSERT INTO HR.COUNTRIES VALUES ('IN', 'India', 3)  1cmu11ea3xqw0             1          1     0          0           1              1
-  INSERT INTO HR.COUNTRIES VALUES ('BR', 'Brazil', 2) 1ppp7cta3xqw0             1          1     0          0           1              1
-  INSERT INTO HR.COUNTRIES VALUES ('MX', 'Mexico', 2) 0e0st2xa3xqw0             1          1     0          0           1              1
+  SQL_TEXT                                                                         SQL_ID        VERSION_COUNT EXECUTIONS SORTS DISK_READS BUFFER_GETS ROWS_PROCESSED
+  -------------------------------------------------------------------------------- ------------- ------------- ---------- ----- ---------- ----------- --------------
+  CREATE TABLE HR.EMPLOYEES (
+         EMPLOYEE_ID NUMBER(6) PRIMARY KEY,
+         FIR 13iiq67a3xqw0             1          1     0          0           1              0
+  ST_NAME VARCHAR2(20),
+         LAST_NAME VARCHAR2(25) NOT NULL,
+         EMAIL VARCH                                                                                   
+  AR2(25) NOT NULL,
+         PHONE_NUMBER VARCHAR2(20),
+         HIRE_DATE DATE NOT NU                                                                                   
+  LL,
+         JOB_ID VARCHAR2(10) NOT NULL,
+         SALARY NUMBER(8,2),
+         COMMI                                                                                   
+  SSION_PCT NUMBER(2,2),
+         MANAGER_ID NUMBER(6),
+         DEPARTMENT_ID NUMBER(                                                                                   
+  4)
+       )                                                                                                                                                          
+  CREATE TABLE HR.JOB_HISTORY (
+         EMPLOYEE_ID NUMBER(6) NOT NULL,
+         STAR 09yjycba3xqw0             1          1     0          0           1              0
+  T_DATE DATE NOT NULL,
+         END_DATE DATE NOT NULL,
+         JOB_ID VARCHAR2(10)                                                                                    
+  NOT NULL,
+         DEPARTMENT_ID NUMBER(4)
+       )                                                                                                                    
+  INSERT INTO HR.REGIONS VALUES (1, 'Europe')                                      1bbre0pa3xqw0             1          1     0          0           1              1
+  INSERT INTO HR.REGIONS VALUES (2, 'Americas')                                    1rj844la3xqw0             1          1     0          0           1              1
   
   4 rows selected.
 
 SQL [301/461]> SELECT * FROM v$sql WHERE rownum < 5;
   
-  SQL_ID        SQL_TEXT                                            EXECUTIONS ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME FIRST_LOAD_TIME    
-  ------------- --------------------------------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
-  0wcn17ca3xqw0 INSERT INTO HR.COUNTRIES VALUES ('CN', 'China', 3)           1          157      126           1          0              1 SYS                 2026-09-25T18:50:00
-  1cmu11ea3xqw0 INSERT INTO HR.COUNTRIES VALUES ('IN', 'India', 3)           1           77       61           1          0              1 SYS                 2026-09-25T18:50:00
-  1ppp7cta3xqw0 INSERT INTO HR.COUNTRIES VALUES ('BR', 'Brazil', 2)          1          160      128           1          0              1 SYS                 2026-09-25T18:50:00
-  0e0st2xa3xqw0 INSERT INTO HR.COUNTRIES VALUES ('MX', 'Mexico', 2)          1           72       58           1          0              1 SYS                 2026-09-25T18:50:00
+  SQL_ID        SQL_TEXT                                                                         EXECUTIONS ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME FIRST_LOAD_TIME    
+  ------------- -------------------------------------------------------------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
+  13iiq67a3xqw0 CREATE TABLE HR.EMPLOYEES (
+         EMPLOYEE_ID NUMBER(6) PRIMARY KEY,
+         FIR          1          276      221           1          0              0 SYS                 2026-09-25T19:40:47
+                ST_NAME VARCHAR2(20),
+         LAST_NAME VARCHAR2(25) NOT NULL,
+         EMAIL VARCH                                                                                                               
+                AR2(25) NOT NULL,
+         PHONE_NUMBER VARCHAR2(20),
+         HIRE_DATE DATE NOT NU                                                                                                               
+                LL,
+         JOB_ID VARCHAR2(10) NOT NULL,
+         SALARY NUMBER(8,2),
+         COMMI                                                                                                               
+                SSION_PCT NUMBER(2,2),
+         MANAGER_ID NUMBER(6),
+         DEPARTMENT_ID NUMBER(                                                                                                               
+                4)
+       )                                                                                                                                                                                      
+  09yjycba3xqw0 CREATE TABLE HR.JOB_HISTORY (
+         EMPLOYEE_ID NUMBER(6) NOT NULL,
+         STAR          1          121       97           1          0              0 SYS                 2026-09-25T19:40:47
+                T_DATE DATE NOT NULL,
+         END_DATE DATE NOT NULL,
+         JOB_ID VARCHAR2(10)                                                                                                                
+                NOT NULL,
+         DEPARTMENT_ID NUMBER(4)
+       )                                                                                                                                                
+  1bbre0pa3xqw0 INSERT INTO HR.REGIONS VALUES (1, 'Europe')                                               1         2441     1953           1          0              1 SYS                 2026-09-25T19:40:47
+  1rj844la3xqw0 INSERT INTO HR.REGIONS VALUES (2, 'Americas')                                             1          489      391           1          0              1 SYS                 2026-09-25T19:40:47
   
   4 rows selected.
 
@@ -2037,10 +2087,10 @@ SQL [302/461]> SELECT * FROM v$sqlstats WHERE rownum < 5;
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ----------------
-  0wcn17ca3xqw0               0           1          1       1          157      126           1          0              1 SYS                 25-SEP-26       
-  1cmu11ea3xqw0               0           1          1       1           77       61           1          0              1 SYS                 25-SEP-26       
-  1ppp7cta3xqw0               0           1          1       1          160      128           1          0              1 SYS                 25-SEP-26       
-  0e0st2xa3xqw0               0           1          1       1           72       58           1          0              1 SYS                 25-SEP-26       
+  13iiq67a3xqw0               0           1          1       1          276      221           1          0              0 SYS                 25-SEP-26       
+  09yjycba3xqw0               0           1          1       1          121       97           1          0              0 SYS                 25-SEP-26       
+  1bbre0pa3xqw0               0           1          1       1         2441     1953           1          0              1 SYS                 25-SEP-26       
+  1rj844la3xqw0               0           1          1       1          489      391           1          0              1 SYS                 25-SEP-26       
   
   4 rows selected.
 
@@ -2059,10 +2109,10 @@ SQL [304/461]> SELECT * FROM v$sql_workarea WHERE rownum < 5;
   
   SQL_ID        CHILD_NUMBER OPERATION_TYPE OPTIMAL_EXECUTIONS ONEPASS_EXECUTIONS MULTIPASSES_EXECUTIONS ESTIMATED_OPTIMAL_SIZE LAST_MEMORY_USED
   ------------- ------------ -------------- ------------------ ------------------ ---------------------- ---------------------- ----------------
-  0wcn17ca3xqw0            0 SORT                            1                  0                      0                  65536            65536
-  1cmu11ea3xqw0            0 SORT                            1                  0                      0                  65536            65536
-  1ppp7cta3xqw0            0 SORT                            1                  0                      0                  65536            65536
-  0e0st2xa3xqw0            0 SORT                            1                  0                      0                  65536            65536
+  13iiq67a3xqw0            0 SORT                            1                  0                      0                  65536            65536
+  09yjycba3xqw0            0 SORT                            1                  0                      0                  65536            65536
+  1bbre0pa3xqw0            0 SORT                            1                  0                      0                  65536            65536
+  1rj844la3xqw0            0 SORT                            1                  0                      0                  65536            65536
   
   4 rows selected.
 
@@ -2237,10 +2287,10 @@ SQL [326/461]> SELECT * FROM v$filestat WHERE rownum < 5;
   
   FILE# PHYRDS PHYWRTS PHYBLKRD PHYBLKWRT READTIM WRITETIM AVGIOTIM
   ----- ------ ------- -------- --------- ------- -------- --------
-      1      0     111      208       111       0     1110      100
-      1      0     111      208       111       0     1110      100
-      1      0     111      208       111       0     1110      100
-      1      0     111      208       111       0     1110      100
+      1      0     114      211       114       0     1140      100
+      1      0     114      211       114       0     1140      100
+      1      0     114      211       114       0     1140      100
+      1      0     114      211       114       0     1140      100
   
   4 rows selected.
 
@@ -2392,10 +2442,10 @@ SQL [346/461]> SELECT * FROM v$services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   CREATION_DATE            CREATION_DATE_HASH
   ---------- -------------- -------------- ------------------------ ------------------
-           1 ORCL           ORCL           2026-09-25T18:50:00.435Z         -639161997
-           2 SYS$USERS      SYS$USERS      2026-09-25T18:50:00.429Z         -639162003
-           3 SYS$BACKGROUND SYS$BACKGROUND 2026-09-25T18:50:00.429Z         -639162003
-           4 ORCLPDB1       ORCLPDB1       2026-09-25T18:50:00.429Z         -639162003
+           1 ORCL           ORCL           2026-09-25T19:40:47.546Z         -636114886
+           2 SYS$USERS      SYS$USERS      2026-09-25T19:40:47.542Z         -636114890
+           3 SYS$BACKGROUND SYS$BACKGROUND 2026-09-25T19:40:47.542Z         -636114890
+           4 ORCLPDB1       ORCLPDB1       2026-09-25T19:40:47.542Z         -636114890
   
   4 rows selected.
 
@@ -2403,10 +2453,10 @@ SQL [347/461]> SELECT * FROM v$active_services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   SID  CREATION_DATE           
   ---------- -------------- -------------- ---- ------------------------
-           1 ORCL           ORCL           ORCL 2026-09-25T18:50:00.435Z
-           2 SYS$USERS      SYS$USERS      ORCL 2026-09-25T18:50:00.429Z
-           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-09-25T18:50:00.429Z
-           4 ORCLPDB1       ORCLPDB1       ORCL 2026-09-25T18:50:00.429Z
+           1 ORCL           ORCL           ORCL 2026-09-25T19:40:47.546Z
+           2 SYS$USERS      SYS$USERS      ORCL 2026-09-25T19:40:47.542Z
+           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-09-25T19:40:47.542Z
+           4 ORCLPDB1       ORCLPDB1       ORCL 2026-09-25T19:40:47.542Z
   
   4 rows selected.
 
@@ -2426,7 +2476,7 @@ SQL [349/461]> SELECT * FROM v$mystat WHERE rownum < 5;
   100          0     1
   100          1     1
   100          2   621
-  100          3   592
+  100          3   604
   
   4 rows selected.
 
@@ -2445,7 +2495,7 @@ SQL [351/461]> SELECT * FROM v$sess_io WHERE rownum < 5;
   
   SID BLOCK_GETS CONSISTENT_GETS PHYSICAL_READS BLOCK_CHANGES CONSISTENT_CHANGES OPTIMIZED_PHYSICAL_READS
   --- ---------- --------------- -------------- ------------- ------------------ ------------------------
-  100       1122            1122              0           318                 13                        0
+  100       1134            1134              0           318                 13                        0
   
   1 row selected.
 
@@ -2453,10 +2503,10 @@ SQL [352/461]> SELECT * FROM v$sess_time_model WHERE rownum < 5;
   
   SID    STAT_ID STAT_NAME                VALUE
   --- ---------- ----------------------- ------
-  100 3649082374 DB time                 268731
-  100 3712030189 DB CPU                  214997
-  100 1561673735 background elapsed time  67182
-  100 4157170894 background cpu time      53749
+  100 3649082374 DB time                 326082
+  100 3712030189 DB CPU                  260855
+  100 1561673735 background elapsed time  81520
+  100 4157170894 background cpu time      65213
   
   4 rows selected.
 
@@ -2549,10 +2599,10 @@ SQL [362/461]> SELECT * FROM dba_objects WHERE rownum < 5;
   
   OWNER OBJECT_NAME SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED   LAST_DDL_TIME TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ----------- -------------- --------- -------------- ----------- --------- ------------- ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$VERSION                        100                VIEW        25-SEP-26 25-SEP-26     2026-09-25:18:50:00 VALID  N         N         N                 1 Y                
-  SYS   V$INSTANCE                       101                VIEW        25-SEP-26 25-SEP-26     2026-09-25:18:50:00 VALID  N         N         N                 1 Y                
-  SYS   V$DATABASE                       102                VIEW        25-SEP-26 25-SEP-26     2026-09-25:18:50:00 VALID  N         N         N                 1 Y                
-  SYS   V$SESSION                        103                VIEW        25-SEP-26 25-SEP-26     2026-09-25:18:50:00 VALID  N         N         N                 1 Y                
+  SYS   V$VERSION                        100                VIEW        25-SEP-26 25-SEP-26     2026-09-25:19:40:47 VALID  N         N         N                 1 Y                
+  SYS   V$INSTANCE                       101                VIEW        25-SEP-26 25-SEP-26     2026-09-25:19:40:47 VALID  N         N         N                 1 Y                
+  SYS   V$DATABASE                       102                VIEW        25-SEP-26 25-SEP-26     2026-09-25:19:40:47 VALID  N         N         N                 1 Y                
+  SYS   V$SESSION                        103                VIEW        25-SEP-26 25-SEP-26     2026-09-25:19:40:47 VALID  N         N         N                 1 Y                
   
   4 rows selected.
 
@@ -2849,12 +2899,12 @@ SQL [394/461]> SELECT * FROM unified_audit_trail WHERE rownum < 5;
 
 SQL [395/461]> SELECT * FROM dba_outstanding_alerts WHERE rownum < 5;
   
-  SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME MESSAGE                                                 
-  ----------- ----------------- -------- ----------- ------------- --------------------------------------------------------
-           15 DDL_ON_SYS_OBJECT HIGH     Security    25-SEP-26     DDL (CREATE TABLE) targeted SYS-owned object REGIONS    
-           16 DDL_ON_SYS_OBJECT HIGH     Security    25-SEP-26     DDL (CREATE TABLE) targeted SYS-owned object COUNTRIES  
-           17 DDL_ON_SYS_OBJECT HIGH     Security    25-SEP-26     DDL (CREATE TABLE) targeted SYS-owned object LOCATIONS  
-           18 DDL_ON_SYS_OBJECT HIGH     Security    25-SEP-26     DDL (CREATE TABLE) targeted SYS-owned object DEPARTMENTS
+  SEQUENCE_ID REASON_ID            SEVERITY OBJECT_TYPE CREATION_TIME MESSAGE                                               
+  ----------- -------------------- -------- ----------- ------------- ------------------------------------------------------
+           49 UNUSUAL_LOGIN_SOURCE LOW      Security    25-SEP-26     Successful logon outside business hours               
+           50 DDL_ON_SYS_OBJECT    HIGH     Security    25-SEP-26     DDL (CREATE TABLE) targeted SYS-owned object REGIONS  
+           51 DDL_ON_SYS_OBJECT    HIGH     Security    25-SEP-26     DDL (CREATE TABLE) targeted SYS-owned object COUNTRIES
+           52 DDL_ON_SYS_OBJECT    HIGH     Security    25-SEP-26     DDL (CREATE TABLE) targeted SYS-owned object LOCATIONS
   
   4 rows selected.
 
@@ -2862,10 +2912,10 @@ SQL [396/461]> SELECT * FROM dba_alert_history WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID SEVERITY CREATION_TIME RESOLUTION_TIME MESSAGE                                                          
   ----------- --------- -------- ------------- --------------- -----------------------------------------------------------------
-            1 Info      NORMAL   25-SEP-26     25-SEP-26       2026-09-25 18:50:00: Starting ORACLE instance (normal)           
-            2 Info      NORMAL   25-SEP-26     25-SEP-26       2026-09-25 18:50:00: Database mounted                            
-            3 Info      NORMAL   25-SEP-26     25-SEP-26       2026-09-25 18:50:00: Completed checkpoint up to RBA, SCN: 1000001
-            4 Info      NORMAL   25-SEP-26     25-SEP-26       2026-09-25 18:50:00: Database opened                             
+            1 Info      NORMAL   25-SEP-26     25-SEP-26       2026-09-25 19:40:47: Starting ORACLE instance (normal)           
+            2 Info      NORMAL   25-SEP-26     25-SEP-26       2026-09-25 19:40:47: Database mounted                            
+            3 Info      NORMAL   25-SEP-26     25-SEP-26       2026-09-25 19:40:47: Completed checkpoint up to RBA, SCN: 1000001
+            4 Info      NORMAL   25-SEP-26     25-SEP-26       2026-09-25 19:40:47: Database opened                             
   
   4 rows selected.
 
@@ -2903,10 +2953,10 @@ SQL [400/461]> SELECT * FROM dba_hist_sysstat WHERE rownum < 5;
   
   SNAP_ID       DBID INSTANCE_NUMBER STAT_ID STAT_NAME                 VALUE
   ------- ---------- --------------- ------- ------------------------- -----
-        1 2207091163               1       0 logons cumulative             1
-        1 2207091163               1       1 logons current                1
-        1 2207091163               1       2 opened cursors cumulative   672
-        1 2207091163               1       3 opened cursors current      520
+        1 3608557395               1       0 logons cumulative             1
+        1 3608557395               1       1 logons current                1
+        1 3608557395               1       2 opened cursors cumulative   672
+        1 3608557395               1       3 opened cursors current      537
   
   4 rows selected.
 
@@ -2914,10 +2964,10 @@ SQL [401/461]> SELECT * FROM dba_hist_sqlstat WHERE rownum < 5;
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-        1 19sbi4la3xqw0               0                1                 83             67                 1                0                    1
-        1 0zhdpwda3xqw0               0                1                143            115                 1                0                    1
-        1 1uwhnz9a3xqw0               0                1                 83             66                 1                0                    1
-        1 0nr03dxa3xqw0               0                1                111             89                 1                0                    1
+        1 0hijvs3a3xqw0               0                1                 85             68                 1                0                    0
+        1 195jghra3xqw0               0                1                 50             40                 1                0                    0
+        1 1l8pyjsa3xqw0               0                1                170            136                 1                0                    0
+        1 1q6k9cxa3xqw0               0                1                 51             40                 1                0                    0
   
   4 rows selected.
 
@@ -3312,7 +3362,7 @@ SQL [458/461]> SELECT systimestamp FROM dual;
   
   SYSTIMESTAMP                  
   ------------------------------
-  2026-09-25 18:50:00.997 +00:00
+  2026-09-25 19:40:48.200 +00:00
   
   1 row selected.
 
