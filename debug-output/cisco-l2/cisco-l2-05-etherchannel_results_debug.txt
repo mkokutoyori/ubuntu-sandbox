@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-05-etherchannel
-Generated: 2026-09-14T11:17:30.529Z
+Generated: 2026-09-25T18:34:58.524Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=LACP/PAgP/static bundles, port-channel interfaces, load-balance, teardown
 Total steps: 340
@@ -219,11 +219,11 @@ Total steps: 340
   Number of channel-groups in use: 5
   Group  Port-channel  Protocol    Ports
   ------+-------------+-----------+-----------------------------------------
-  1      Port-channel1 LACP        Fa0/4(I) Fa0/5(I)
-  2      Port-channel2 LACP        Fa0/6(I) Fa0/7(I)
-  3      Port-channel3 LACP        Fa0/8(I) Fa0/9(I)
-  4      Port-channel4 LACP        Fa0/10(I) Fa0/11(I)
-  5      Port-channel5 LACP        Fa0/12(I) Fa0/13(I)
+  1      Po1(SD)       LACP        Fa0/4(I) Fa0/5(I)
+  2      Po2(SD)       LACP        Fa0/6(I) Fa0/7(I)
+  3      Po3(SD)       LACP        Fa0/8(I) Fa0/9(I)
+  4      Po4(SD)       LACP        Fa0/10(I) Fa0/11(I)
+  5      Po5(SD)       LACP        Fa0/12(I) Fa0/13(I)
 
 
 --- [64] § PAgP bundles loop (channel-groups 6..8, mode desirable) ---
@@ -286,11 +286,11 @@ Total steps: 340
   Number of channel-groups in use: 5
   Group  Port-channel  Protocol    Ports
   ------+-------------+-----------+-----------------------------------------
-  1      Port-channel1 LACP        Fa0/4(I) Fa0/5(I)
-  2      Port-channel2 LACP        Fa0/6(I) Fa0/7(I)
-  3      Port-channel3 LACP        Fa0/8(I) Fa0/9(I)
-  4      Port-channel4 LACP        Fa0/10(I) Fa0/11(I)
-  5      Port-channel5 LACP        Fa0/12(I) Fa0/13(I)
+  1      Po1(SD)       LACP        Fa0/4(I) Fa0/5(I)
+  2      Po2(SD)       LACP        Fa0/6(I) Fa0/7(I)
+  3      Po3(SD)       LACP        Fa0/8(I) Fa0/9(I)
+  4      Po4(SD)       LACP        Fa0/10(I) Fa0/11(I)
+  5      Po5(SD)       LACP        Fa0/12(I) Fa0/13(I)
 
 
 --- [82] § static (mode on) bundle ---
@@ -320,12 +320,12 @@ Total steps: 340
   Number of channel-groups in use: 6
   Group  Port-channel  Protocol    Ports
   ------+-------------+-----------+-----------------------------------------
-  1      Port-channel1 LACP        Fa0/4(I) Fa0/5(I)
-  2      Port-channel2 LACP        Fa0/6(I) Fa0/7(I)
-  3      Port-channel3 LACP        Fa0/8(I) Fa0/9(I)
-  4      Port-channel4 LACP        Fa0/10(I) Fa0/11(I)
-  5      Port-channel5 LACP        Fa0/12(I) Fa0/13(I)
-  9      Port-channel9 -           Fa0/20(I) Fa0/21(I)
+  1      Po1(SD)       LACP        Fa0/4(I) Fa0/5(I)
+  2      Po2(SD)       LACP        Fa0/6(I) Fa0/7(I)
+  3      Po3(SD)       LACP        Fa0/8(I) Fa0/9(I)
+  4      Po4(SD)       LACP        Fa0/10(I) Fa0/11(I)
+  5      Po5(SD)       LACP        Fa0/12(I) Fa0/13(I)
+  9      Po9(SD)       -           Fa0/20(I) Fa0/21(I)
 
 
 --- [89] § LACP per-port tuning loop ---
@@ -502,7 +502,7 @@ Total steps: 340
   Number of channel-groups in use: 1
   Group  Port-channel  Protocol    Ports
   ------+-------------+-----------+-----------------------------------------
-  10     Port-channel10LACP        Gi0/1(I)
+  10     Po10(SD)      LACP        Gi0/1(I)
 
 [143/340] core CORE# show etherchannel 10 detail
        ^
@@ -730,12 +730,12 @@ Total steps: 340
   Number of channel-groups in use: 6
   Group  Port-channel  Protocol    Ports
   ------+-------------+-----------+-----------------------------------------
-  1      Port-channel1 LACP        Fa0/22(I)
-  2      Port-channel2 LACP        Fa0/6(I) Fa0/7(I)
-  3      Port-channel3 LACP        Fa0/8(I) Fa0/9(I)
-  4      Port-channel4 LACP        Fa0/10(I) Fa0/11(I)
-  5      Port-channel5 LACP        Fa0/12(I) Fa0/13(I)
-  9      Port-channel9 -           Fa0/20(I) Fa0/21(I)
+  1      Po1(SD)       LACP        Fa0/22(I)
+  2      Po2(SD)       LACP        Fa0/6(I) Fa0/7(I)
+  3      Po3(SD)       LACP        Fa0/8(I) Fa0/9(I)
+  4      Po4(SD)       LACP        Fa0/10(I) Fa0/11(I)
+  5      Po5(SD)       LACP        Fa0/12(I) Fa0/13(I)
+  9      Po9(SD)       -           Fa0/20(I) Fa0/21(I)
 
 
 --- [180] § full inspection ---
@@ -747,12 +747,12 @@ Total steps: 340
   Number of channel-groups in use: 6
   Group  Port-channel  Protocol    Ports
   ------+-------------+-----------+-----------------------------------------
-  1      Port-channel1 LACP        Fa0/22(I)
-  2      Port-channel2 LACP        Fa0/6(I) Fa0/7(I)
-  3      Port-channel3 LACP        Fa0/8(I) Fa0/9(I)
-  4      Port-channel4 LACP        Fa0/10(I) Fa0/11(I)
-  5      Port-channel5 LACP        Fa0/12(I) Fa0/13(I)
-  9      Port-channel9 -           Fa0/20(I) Fa0/21(I)
+  1      Po1(SD)       LACP        Fa0/22(I)
+  2      Po2(SD)       LACP        Fa0/6(I) Fa0/7(I)
+  3      Po3(SD)       LACP        Fa0/8(I) Fa0/9(I)
+  4      Po4(SD)       LACP        Fa0/10(I) Fa0/11(I)
+  5      Po5(SD)       LACP        Fa0/12(I) Fa0/13(I)
+  9      Po9(SD)       -           Fa0/20(I) Fa0/21(I)
 
 [182/340] sw1 SW1# show etherchannel detail
   Group: 1
@@ -904,8 +904,8 @@ Total steps: 340
   Fa0/22                       notconnect   trunk        auto   auto 10/100BaseTX
   Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
-  Gi0/1                        connected    trunk      a-full a-1000 1000BASE-T
-  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
+  Gi0/1                        connected    trunk      a-full a-1000 10/100/1000BaseTX
+  Gi0/2                        notconnect   1            auto   auto 10/100/1000BaseTX
 
 [189/340] sw1 SW1# show spanning-tree summary
   Switch is in pvst mode
@@ -1392,11 +1392,11 @@ Total steps: 340
   Number of channel-groups in use: 5
   Group  Port-channel  Protocol    Ports
   ------+-------------+-----------+-----------------------------------------
-  1      Port-channel1 LACP        Fa0/4(I) Fa0/5(I)
-  2      Port-channel2 LACP        Fa0/6(I) Fa0/7(I)
-  3      Port-channel3 LACP        Fa0/8(I) Fa0/9(I)
-  4      Port-channel4 LACP        Fa0/10(I) Fa0/11(I)
-  10     Port-channel10LACP        Gi0/1(I)
+  1      Po1(SD)       LACP        Fa0/4(I) Fa0/5(I)
+  2      Po2(SD)       LACP        Fa0/6(I) Fa0/7(I)
+  3      Po3(SD)       LACP        Fa0/8(I) Fa0/9(I)
+  4      Po4(SD)       LACP        Fa0/10(I) Fa0/11(I)
+  10     Po10(SD)      LACP        Gi0/1(I)
 
 [254/340] sw2 SW2# show etherchannel detail
   Group: 1
@@ -1483,11 +1483,11 @@ Total steps: 340
 
 --- [256] § host verification ---
 [257/340] l1 l1$ ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            UP            192.168.1.11/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             UP             192.168.1.11/24 fe80::ff:fe00:4f/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 [258/340] l1 l1$ ethtool eth0
   Settings for eth0:
@@ -1518,11 +1518,11 @@ Total steps: 340
   	Link detected: yes
 
 [259/340] l2 l2$ ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            UP            192.168.1.21/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             UP             192.168.1.21/24 fe80::ff:fe00:5b/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 [260/340] l2 l2$ ethtool eth0
   Settings for eth0:
@@ -1553,11 +1553,11 @@ Total steps: 340
   	Link detected: yes
 
 [261/340] srv1 srv1$ ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            UP            192.168.1.13/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             UP             192.168.1.13/24 fe80::ff:fe00:57/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 [262/340] srv1 srv1$ ethtool eth0
   Settings for eth0:
@@ -1588,11 +1588,11 @@ Total steps: 340
   	Link detected: yes
 
 [263/340] srv2 srv2$ ip -br addr
-  lo              UNKNOWN       127.0.0.1/8
-  eth0            UP            192.168.1.23/24
-  eth1            DOWN          
-  eth2            DOWN          
-  eth3            DOWN          
+  lo               UNKNOWN        127.0.0.1/8 ::1/128 
+  eth0             UP             192.168.1.23/24 fe80::ff:fe00:63/64 
+  eth1             DOWN           
+  eth2             DOWN           
+  eth3             DOWN           
 
 [264/340] srv2 srv2$ ethtool eth0
   Settings for eth0:
@@ -1651,12 +1651,12 @@ Total steps: 340
 
 [266/340] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=3.356 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.867 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=3.741 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.654 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.867/2.112/3.356/1.245 ms
+  rtt min/avg/max/mdev = 0.654/2.197/3.741/1.543 ms
 
 [267/340] sw1 SW1# show running-config
   Building configuration...
@@ -1823,11 +1823,11 @@ Total steps: 340
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       5 packets input, 428 bytes, 0 no buffer
-       Received 1 broadcasts (2 multicasts)
+       7 packets input, 580 bytes, 0 no buffer
+       Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       22 packets output, 1674 bytes, 0 underruns
+       37 packets output, 2898 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1844,11 +1844,11 @@ Total steps: 340
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       4 packets input, 316 bytes, 0 no buffer
-       Received 1 broadcasts (3 multicasts)
+       8 packets input, 664 bytes, 0 no buffer
+       Received 1 broadcasts (7 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       17 packets output, 1240 bytes, 0 underruns
+       30 packets output, 2268 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1865,11 +1865,11 @@ Total steps: 340
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       5 packets input, 430 bytes, 0 no buffer
-       Received 1 broadcasts (2 multicasts)
+       7 packets input, 586 bytes, 0 no buffer
+       Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       18 packets output, 1396 bytes, 0 underruns
+       33 packets output, 2616 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2310,11 +2310,11 @@ Total steps: 340
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 224 bytes, 0 no buffer
-       Received 1 broadcasts (2 multicasts)
+       5 packets input, 376 bytes, 0 no buffer
+       Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       21 packets output, 1534 bytes, 0 underruns
+       36 packets output, 2758 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2331,11 +2331,11 @@ Total steps: 340
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       4 packets input, 316 bytes, 0 no buffer
-       Received 1 broadcasts (3 multicasts)
+       8 packets input, 664 bytes, 0 no buffer
+       Received 1 broadcasts (7 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       18 packets output, 1304 bytes, 0 underruns
+       31 packets output, 2332 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2352,11 +2352,11 @@ Total steps: 340
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 226 bytes, 0 no buffer
-       Received 1 broadcasts (2 multicasts)
+       5 packets input, 382 bytes, 0 no buffer
+       Received 1 broadcasts (4 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       17 packets output, 1256 bytes, 0 underruns
+       32 packets output, 2476 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

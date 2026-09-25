@@ -147,20 +147,20 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ? ve
 [5/64] PC1 PC1$ ping -n 1 192.168.10.1
   
   Pinging 192.168.10.1 with 32 bytes of data:
-  Reply from 192.168.10.1: bytes=32 time=1ms TTL=255
+  Reply from 192.168.10.1: bytes=32 time=2ms TTL=255
   
   Ping statistics for 192.168.10.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 2ms, Maximum = 2ms, Average = 2ms
 
 [6/64] Server1 Server1$ ping -c 1 192.168.40.1
   PING 192.168.40.1 (192.168.40.1) 56(84) bytes of data.
-  64 bytes from 192.168.40.1: icmp_seq=1 ttl=255 time=0.901 ms
+  64 bytes from 192.168.40.1: icmp_seq=1 ttl=255 time=1.049 ms
   
   --- 192.168.40.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.901/0.901/0.901/0.000 ms
+  rtt min/avg/max/mdev = 1.049/1.049/1.049/0.000 ms
 
 [7/64] Server1 Server1$ ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
@@ -206,8 +206,8 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ? ve
 
 [14/64] Server1 Server1$ traceroute 192.168.10.2
   traceroute to 192.168.10.2 (192.168.10.2), 30 hops max, 60 byte packets
-   1  192.168.40.1 (192.168.40.1)  0.785 ms  0.656 ms  0.692 ms
-   2  192.168.40.1 (192.168.40.1)  0.716 ms !N (Net unreachable)  0.698 ms !N (Net unreachable)  0.601 ms !N (Net unreachable)
+   1  192.168.40.1 (192.168.40.1)  0.982 ms  0.769 ms  0.627 ms
+   2  192.168.40.1 (192.168.40.1)  0.786 ms !N (Net unreachable)  0.677 ms !N (Net unreachable)  0.922 ms !N (Net unreachable)
 
 
 --- [15] § Jusqu'où le paquet passe-t-il ? ---
@@ -648,14 +648,14 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ? ve
   10.0.20.1       10.0.20.1       0           0x80000027        0x681e      2
   10.0.50.1       10.0.50.1       0           0x8000003b        0x539a      2
   10.0.60.1       10.0.60.1       0           0x8000001f        0x7446      2
-  10.0.30.1       10.0.30.1       0           0x800000f8        0x883a      1
+  10.0.30.1       10.0.30.1       0           0x800000fe        0x8eb8      1
   
                   Net Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum
   10.0.10.1       192.168.10.1    0           0x80000070        0x2f16
   10.0.40.2       192.168.10.1    0           0x80000071        0x6d8b
-  10.0.60.2       10.0.30.1       0           0x800000f9        0x7d52
+  10.0.60.2       10.0.30.1       0           0x800000ff        0x83b8
   10.0.50.1       10.0.50.1       0           0x8000003c        0xdccc
   
 
@@ -665,12 +665,12 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ? ve
                   Router Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  10.0.30.1       10.0.30.1       0           0x80000100        0x52dc      2
+  10.0.30.1       10.0.30.1       0           0x80000106        0x58a3      2
   
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  10.0.30.1       10.0.30.1       0           0x80000101        0x91f8      1
+  10.0.30.1       10.0.30.1       0           0x80000107        0x9777      1
   10.0.60.1       10.0.60.1       0           0x80000020        0x7567      2
   10.0.50.1       10.0.50.1       0           0x8000003d        0x55dc      2
   192.168.10.1    192.168.10.1    0           0x80000072        0x2e96      3
@@ -679,7 +679,7 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ? ve
                   Net Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum
-  10.0.60.2       10.0.30.1       0           0x80000102        0x86ec
+  10.0.60.2       10.0.30.1       0           0x80000108        0x8c53
   10.0.50.1       10.0.50.1       0           0x8000003e        0xdeee
   10.0.10.1       192.168.10.1    0           0x80000073        0x3249
   10.0.40.2       192.168.10.1    0           0x80000074        0x70be
