@@ -47,6 +47,7 @@ export class RouterManagementService {
     port: TELNET_DEFAULT_PORT,
     acl: undefined as string | undefined,
     source: undefined as string | undefined,
+    ipv6Enabled: false,
   };
   /**
    * Le serveur SSH, cote GESTIONNAIRE : ce qu'il porte seul, c'est-a-dire
@@ -113,6 +114,10 @@ export class RouterManagementService {
       if (!telnetServerAclIsValid(acl)) return acl;
       this.telnetServer.acl = acl;
     }
+    else if (head === 'ipv6' && args[1]?.toLowerCase() === 'server' && args[2]?.toLowerCase() === 'enable') {
+      this.telnetServer.ipv6Enabled = !negated;
+    }
+    else if (head === 'server' || head === 'ipv6') return args[1] ?? head;
     else if (head === 'server-source') {
       if (negated) { this.telnetServer.source = undefined; return null; }
       if (args[1]?.toLowerCase() !== '-i' || !args[2]) return args[1] ?? '';

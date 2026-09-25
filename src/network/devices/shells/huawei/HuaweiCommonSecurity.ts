@@ -58,6 +58,7 @@ export function remoteAccessConfigBlocksVrp(mgmt: RouterManagementService): stri
     ...(telnet.port !== TELNET_DEFAULT_PORT ? [`telnet server port ${telnet.port}`] : []),
     ...(telnet.acl ? [`telnet server acl ${telnet.acl}`] : []),
     ...(telnet.source ? [`telnet server-source -i ${telnet.source}`] : []),
+    ...(telnet.ipv6Enabled ? ['telnet ipv6 server enable'] : []),
   ];
   const stelnetBlock = [
     ...(ssh.enabled ? ['stelnet server enable'] : []),
@@ -184,6 +185,10 @@ export function registerHuaweiCommonSecurity(
     const line = raw ?? `undo telnet ${args.join(' ')}`;
     const [first, second] = args.map((a) => a.toLowerCase());
     if (first === 'server' && second === 'enable') return dispatch('telnet', ['server', 'disable']);
+    if (first === 'ipv6' && second === 'server' && args[2]?.toLowerCase() === 'enable') {
+      getRouter().getManagementService().configureTelnet(['ipv6', 'server', 'enable'], true);
+      return '';
+    }
     if (first === 'server-source') {
       getRouter().getManagementService().configureTelnet(['server-source'], true);
       return '';
