@@ -128,7 +128,7 @@ describe('un membre PREND la configuration du faisceau', () => {
     }
     await vi.advanceTimersByTimeAsync(LACP_PERIODIC_MS);
     expect(await a.executeCommand('show etherchannel summary'))
-      .toMatch(/Fa0\/1\(P\) Fa0\/2\(P\)/);
+      .toMatch(/Fa0\/1\(P\)\s+Fa0\/2\(P\)/);
     expect(await a.executeCommand('show interfaces FastEthernet0/1 switchport'))
       .toContain('Operational Mode: trunk');
   }, 30_000);

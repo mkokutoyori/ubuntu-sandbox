@@ -67,6 +67,7 @@ export abstract class AbstractShell implements IShell {
    * are strict about this; the simulator must mirror it.
    */
   protected clearWords: ReadonlySet<string> = new Set();
+  protected eofEndsSession = true;
 
   /** Whether this shell has been disposed (idempotency guard). */
   private _disposed = false;
@@ -215,7 +216,7 @@ export abstract class AbstractShell implements IShell {
   classifyKey(e: ShellKeyEvent): ShellSpecialAction {
     if (e.ctrlKey && e.key === 'c') return { kind: 'cancel' };
     if (e.ctrlKey && e.key === 'l') return { kind: 'clear-screen' };
-    if (e.ctrlKey && e.key === 'd') return { kind: 'eof' };
+    if (e.ctrlKey && e.key === 'd') return this.eofEndsSession ? { kind: 'eof' } : { kind: 'none' };
     if (e.key === 'ArrowUp') return { kind: 'history-prev' };
     if (e.key === 'ArrowDown') return { kind: 'history-next' };
     return this.extraKeyMappings(e);

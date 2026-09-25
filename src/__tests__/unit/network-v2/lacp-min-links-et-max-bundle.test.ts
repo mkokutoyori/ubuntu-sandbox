@@ -120,7 +120,7 @@ describe('Cisco — `port-channel min-links` decide si le faisceau monte', () =>
       'port-channel min-links 2', 'end']);
     await vi.advanceTimersByTimeAsync(LACP_PERIODIC_MS);
     expect(await a.executeCommand('show etherchannel summary'))
-      .toMatch(/Fa0\/1\(P\) Fa0\/2\(P\)/);
+      .toMatch(/Fa0\/1\(P\)\s+Fa0\/2\(P\)/);
   }, 30_000);
 
   it('`lacp max-bundle` met les membres en trop en Hot-standby', async () => {

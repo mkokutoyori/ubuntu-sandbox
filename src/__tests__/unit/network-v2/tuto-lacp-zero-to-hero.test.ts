@@ -76,7 +76,7 @@ async function laboCisco(
 }
 
 function ligneGroupe(sortie: string): string {
-  return sortie.split('\n').find((l) => /^1\s+Port-channel1/.test(l.trim())) ?? '';
+  return sortie.split('\n').find((l) => /^1\s+Po1\(/.test(l.trim())) ?? '';
 }
 
 function drapeauDe(sortie: string, port: string): string {
@@ -162,7 +162,8 @@ describe('Partie 2 — les concepts LACP', () => {
 
   it('§2.2 le lien logique porte le nom Port-channel<N> cote Cisco', async () => {
     const { a } = await laboCisco('active', 'active', 2);
-    expect(await a.executeCommand('show etherchannel summary')).toContain('Port-channel1');
+    expect(await a.executeCommand('show running-config')).toContain('interface Port-channel1');
+    expect(ligneGroupe(await a.executeCommand('show etherchannel summary'))).toMatch(/^1\s+Po1\(/);
   });
 
   it('§2.3 ACTIVE + ACTIVE forme le groupe', async () => {

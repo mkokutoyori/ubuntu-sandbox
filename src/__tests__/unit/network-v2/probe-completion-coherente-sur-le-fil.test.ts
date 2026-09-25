@@ -52,6 +52,29 @@
  *     qui est le cas que le correctif pouvait le plus plausiblement
  *     casser.
  *
+ * REVISION, apres `8a1f4f4d` (B4 : le terminal Windows pilote ses
+ * sessions SSH sur le fil). Le paragraphe ci-dessus sur les deux cas
+ * Windows ne vaut plus : Windows n'ouvre plus de session enfant en
+ * memoire, il passe par le meme sous-shell du fil que Linux, et ces cas
+ * rougissaient depuis — ils lisaient `input`, le tampon du terminal,
+ * quand la ligne vit desormais dans celui du sous-shell. Mesure : par ce
+ * sous-shell, Windows complete `get system interface ` vers le pare-feu
+ * et `ls /tmp/zzuniqueremote/` vers Linux, exactement comme Linux. Ils
+ * lisent donc le tampon du sous-shell, et le cas qui AFFIRMAIT la
+ * session enfant (« through a child session, not a sub-shell ») est
+ * retire : il epinglait un mecanisme que B4 a remplace a dessein, et son
+ * comportement — Windows complete la ligne entiere du pare-feu — est
+ * porte par le cas de reference renomme. La reference, c'est desormais
+ * la liste des candidats du pare-feu (premier cas) : la console elle-meme
+ * s'ouvre sur une invite de connexion, ou Tab ne complete rien. Windows
+ * empruntant le fil, ses deux cas DISCRIMINENT a present le correctif
+ * d'origine au meme titre que ceux de Linux. Mesure, le correctif
+ * d'origine retire (`git show 5ce4267a -- src | git apply -R`) sur
+ * l'architecture de B4 : 4 des 6 cas tombent — Windows et Linux vers le
+ * pare-feu, Windows vers Linux, le routeur Cisco. Les deux autres sont le
+ * temoin des candidats et « un distant POSIX complete le dernier mot »
+ * depuis Linux, que le correctif ne devait pas toucher.
+ *
  * DEUX FAUSSES PISTES, gardees parce qu'elles sont instructives. On a
  * d'abord conclu que « Windows ne complete rien par SSH », en injectant
  * a la main un `activeSubShell` dans une session Windows — une
@@ -172,13 +195,13 @@ describe('the firewall answers the same Tab, console or SSH', () => {
     expect(fw.cliTabCandidates('get sys int')).toEqual(['get system interface']);
   }, 30000);
 
-  it('its own console completes the whole line — REFERENCE WITNESS', async () => {
+  it('reached over SSH from Windows, it completes the whole line', async () => {
     const { win } = await lab();
     const host = new WindowsTerminalSession('w', win);
     await host.init?.();
     await sshLogin(host, 'ssh admin@192.168.1.1', 'Secret123');
     const after = await tabOn(host, 'get sys int');
-    expect(after.input).toBe('get system interface ');
+    expect(after.buffer).toBe('get system interface ');
   }, 30000);
 
   it('reached over SSH from Linux, it completes identically', async () => {
@@ -201,23 +224,13 @@ describe('what the fix must not disturb', () => {
     expect(after.buffer).toBe('ls /tmp/zzuniqueremote/');
   }, 30000);
 
-  it('Windows reaches the firewall through a child session, not a sub-shell', async () => {
-    const { win } = await lab();
-    const host = new WindowsTerminalSession('w2', win);
-    await host.init?.();
-    await sshLogin(host, 'ssh admin@192.168.1.1', 'Secret123');
-    const fg = host.foreground as unknown as { activeSubShell: unknown };
-    expect(fg.activeSubShell).toBeFalsy();
-    expect(host.foreground.constructor.name).toBe('FortiTerminalSession');
-  }, 30000);
-
   it('Windows to a POSIX host completes too', async () => {
     const { win } = await lab();
     const host = new WindowsTerminalSession('w3', win);
     await host.init?.();
     await sshLogin(host, 'ssh admin@192.168.1.20', 'Secret123');
     const after = await tabOn(host, 'ls /tmp/zzuniqueremot');
-    expect(after.input).toBe('ls /tmp/zzuniqueremote/');
+    expect(after.buffer).toBe('ls /tmp/zzuniqueremote/');
   }, 30000);
 });
 

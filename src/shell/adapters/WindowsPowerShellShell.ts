@@ -54,6 +54,7 @@ export interface WindowsPowerShellOptions extends AbstractShellOptions {
 
 export class WindowsPowerShellShell extends AbstractShell {
   readonly kind = 'powershell';
+  protected override eofEndsSession = false;
 
   private subShell: PowerShellSubShell;
   private banner: readonly string[];
