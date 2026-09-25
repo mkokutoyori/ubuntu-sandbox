@@ -50,6 +50,7 @@ import { VxlanAgent } from '../vxlan/VxlanAgent';
 import { UDP_PORT_VXLAN } from '../vxlan/types';
 import { TcpStack } from '../tcp/TcpStack';
 import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext';
+import type { AccountServiceType } from './router/aaa/NetworkOsAccount';
 import type { EthernetFrame, IPv4Packet, UDPPacket, IPAddress } from '../core/types';
 import { IP_PROTO_TCP } from '../core/types';
 import { dispatchControlPlaneIpv4 } from './router/controlPlaneIpv4';
@@ -314,6 +315,9 @@ export class HuaweiRouter extends Router {
   protected override sshServerTurnedOn(): boolean {
     return this.getManagementService().getSsh().enabled;
   }
+
+  protected override unsetServiceTypeAdmits(): boolean { return false; }
+  protected override factoryAccountServiceTypes(): AccountServiceType[] { return ['ssh']; }
 
   protected override sshServerLimits(): Partial<SshServerConfig> {
     return this.getManagementService().sshServerLimits();

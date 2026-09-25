@@ -94,7 +94,7 @@ async function lab(withKeys = true): Promise<{ pc: LinuxPC; sw: HuaweiSwitch }> 
     'system-view', 'sysname HW2',
     'interface Vlanif1', `ip address ${SW_IP} 255.255.255.0`, 'undo shutdown', 'quit',
     'aaa', 'local-user admin password cipher Admin@123',
-    'local-user admin service-type ssh', 'local-user admin privilege level 15', 'quit',
+    'local-user admin service-type ssh telnet', 'local-user admin privilege level 15', 'quit',
   ];
   if (withKeys) lines.push('rsa local-key-pair create');
   lines.push(

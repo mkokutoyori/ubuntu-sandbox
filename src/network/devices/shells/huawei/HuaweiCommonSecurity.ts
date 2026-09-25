@@ -17,7 +17,9 @@ import { SSH_SERVER_IDENTIFICATION } from '../../../protocols/ssh/serverIdentifi
  * HuaweiVRPShell don't duplicate the wiring (DRY).
  */
 import type { CommandTrie } from '../CommandTrie';
-import { getNtpAgent, getManagementService, getSessionRegistry } from '../../../equipment/RouterServiceCapabilities';
+import {
+  getNtpAgent, getManagementService, getSessionRegistry, getCredentialStore,
+} from '../../../equipment/RouterServiceCapabilities';
 import { rendreErreurVrp } from '../cli-utils';
 import {
   displayNtpServiceStatus, displayNtpServiceSessions, displayNtpStatisticsPacket,
@@ -30,26 +32,22 @@ import { projectSnmpServiceOntoAgent } from '../../../snmp/snmpProjection';
 import { getSnmpAgent } from '../../../equipment/RouterServiceCapabilities';
 import type { SnmpService } from '../../router/management/SnmpService';
 
-export interface LocalUser {
-  password?: string;
-  privilege?: string;
-  serviceType?: string;
-}
-
-/** `display local-user` table. */
-export function displayLocalUser(users: ReadonlyMap<string, LocalUser>): string {
+export function displayLocalUser(device: unknown): string {
+  const accounts = getCredentialStore(device)?.list() ?? [];
   const head = [
     '  ----------------------------------------------------------------------',
     '  User-name                State  AuthMask  AdminLevel',
     '  ----------------------------------------------------------------------',
   ];
-  const rows = users.size === 0
+  const rows = accounts.length === 0
     ? ['  (no local users configured)']
-    : [...users.entries()].map(([n, u]) =>
-        `  ${n.padEnd(24)}A      ${(u.serviceType ?? '-').padEnd(9)} ${u.privilege ?? '-'}`);
+    : accounts.map((a) => {
+        const services = a.serviceTypes.length > 0 ? a.serviceTypes.join(',') : '-';
+        return `  ${a.name.padEnd(24)}${a.disabled ? 'B' : 'A'}      ${services.padEnd(9)} ${a.privilege}`;
+      });
   return [...head, ...rows,
     '  ----------------------------------------------------------------------',
-    `  Total ${users.size} user(s)`].join('\n');
+    `  Total ${accounts.length} user(s)`].join('\n');
 }
 
 export function remoteAccessConfigBlocksVrp(mgmt: RouterManagementService): string[][] {
@@ -306,7 +304,6 @@ export function registerHuaweiCommonSecurity(
 /** Register the shared management `display` commands. */
 export function registerHuaweiCommonSecurityDisplay(
   trie: CommandTrie,
-  getUsers: () => ReadonlyMap<string, LocalUser>,
   /**
    * L'agent NTP, quand la machine en a un.
    *
@@ -321,7 +318,7 @@ export function registerHuaweiCommonSecurityDisplay(
   getDevice?: () => unknown,
 ): void {
   trie.register('display local-user', 'Display local users', () =>
-    displayLocalUser(getUsers()));
+    displayLocalUser(getDevice?.()));
   trie.register('display telnet server status', 'Display Telnet server status', () =>
     displayTelnetServerStatusVrp(getDevice?.()));
   trie.register('display ssh server status', 'Display SSH server status', () =>

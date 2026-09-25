@@ -177,7 +177,7 @@ import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore'
 import { SecurityAuditLog } from './router/aaa/SecurityAuditLog';
 import {
   NetworkOsAccount, applyCiscoUsernamePatch,
-  type CiscoUsernamePatch, type PasswordHashAlgorithm,
+  type AccountServiceType, type CiscoUsernamePatch, type PasswordHashAlgorithm,
 } from './router/aaa/NetworkOsAccount';
 import { LoginBlocker } from './router/aaa/LoginBlocker';
 import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
@@ -1118,8 +1118,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       loginBanner: () => this.getBanner('login') || null,
       motd: () => this.getBanner('motd') || null,
       admit: (ip, localIp) => this.vtyAdmissionVerdict('telnet', ip, localIp),
-      authenticateLocal: (user, password) => this.getCredentialStore().authenticate(user, password),
-      authenticateAaa: (user, password) => this.authenticateViaAaa(user, password),
+      authenticateLocal: (user, password) =>
+        this.accountAdmits(user, 'telnet') && this.getCredentialStore().authenticate(user, password),
+      authenticateAaa: (user, password) => (this.accountAdmits(user, 'telnet')
+        ? this.authenticateViaAaa(user, password)
+        : Promise.resolve(false)),
       createVtyShell: (user) => this.createVtyShell(user),
       openSession: (user, fromIp, peerPort) => {
         const record = this.getSshSessionRegistry().open({
@@ -1184,7 +1187,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       hostname: () => this.hostname,
       hostKey: () => this._sshHostKeyCache!,
       credentials: () => ({
-        authenticate: (n, p) => credentials.authenticate(n, p),
+        authenticate: (n, p) => this.accountAdmits(n, 'ssh') && credentials.authenticate(n, p),
         has: (n) => credentials.get(n) !== undefined,
         get: (n) => {
           const a = credentials.get(n);
@@ -1196,7 +1199,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       execIdleTimeoutMs: () => this.resolveVtyIdleTimeoutMs(),
       banner: () => this.sshBannerText || null,
       motd: () => this.getBanner('motd') || null,
-      aaaAuthenticate: (n, p) => this.authenticateViaAaa(n, p),
+      aaaAuthenticate: (n, p) => (this.accountAdmits(n, 'ssh')
+        ? this.authenticateViaAaa(n, p)
+        : Promise.resolve(false)),
       // Reuse the exact admission/failure-tracking the cross-vendor bypass
       // used to gate on its own (login block-for / quiet-mode ACL /
       // LoginBlocker) so real-wire SSH enforces the same security policy a
@@ -4275,6 +4280,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   // the per-vendor subclasses (CiscoRouter, HuaweiRouter).
 
   protected sshServerTurnedOn(): boolean { return true; }
+  protected unsetServiceTypeAdmits(): boolean { return true; }
+  protected factoryAccountServiceTypes(): AccountServiceType[] { return []; }
+  private accountAdmits(user: string, service: AccountServiceType): boolean {
+    return this.getCredentialStore().admits(user, service, this.unsetServiceTypeAdmits());
+  }
   protected sshServerLimits(): Partial<SshServerConfig> { return {}; }
   protected sshBannerText: string = '';
   _setSshBanner(text: string): void {
@@ -5021,6 +5031,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       for (const u of ['alice', 'bob', 'carl', 'dave']) {
         const acc = NetworkOsAccount.create({
           name: u, privilege: 1, secret: u, passwordHashAlgorithm: 'md5',
+          serviceTypes: this.factoryAccountServiceTypes(),
         }).asFactoryDefault();
         this._credentialStore.upsert(acc);
       }

@@ -18,8 +18,7 @@ import {
 import { IPAddress, IPv6Address } from '../../../core/types';
 import { renderTable, VRP_TABLE, type TableColumn } from '../cli/TextTable';
 import type { IPv6AddressEntry } from '../../../hardware/Port';
-import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
-import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
+import { localUserConfigLinesVrp } from './huaweiLocalUser';
 import { vrpInterfaceCounterLines } from './HuaweiCounterViews';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras, huaweiDisplayInterfaceName, HUAWEI_ERRORS } from '../cli-utils';
 import { displayNtpServiceStatus, displayNtpServiceSessions, lignesConfigNtpVrp, displayNtpStatisticsPacket } from './huaweiNtpCommands';
@@ -739,11 +738,8 @@ export function displayCurrentConfig(
     if (vty.length > 0) lines.push(...vty);
   }
 
-  const listUsers = (router as unknown as {
-    _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: string; factoryDefault?: boolean; serviceTypes?: readonly string[] }>;
-  })._listLocalUsers;
-  if (listUsers) {
-    const users = listUsers.call(router);
+  {
+    const users = router.getCredentialStore().list();
     const p = router.getHuaweiAaaService().passwordPolicy;
     const hasPasswordPolicy = Object.keys(p).length > 0;
     if (users.length > 0 || hasPasswordPolicy) {
@@ -753,20 +749,7 @@ export function displayCurrentConfig(
       if (p.expireDays) lines.push(` password-policy expire ${p.expireDays}`);
       if (p.alertBeforeExpireDays) lines.push(` password-policy alert-before-expire ${p.alertBeforeExpireDays}`);
       if (p.historyMaxRecords) lines.push(` password-policy history-record max-record-number ${p.historyMaxRecords}`);
-      for (const u of users) {
-        // Real VRP never echoes the cleartext: 'cipher' is reversible
-        // (AES), everything else is hashed one-way (irreversible-cipher).
-        // Le secret RANGE est deja sous sa forme rendue depuis que le
-        // parseur reconnait la valeur transformee ; le re-transformer
-        // ici donnait un texte que le rejeu ne pouvait pas reproduire.
-        const field = u.secretAlgo === 'cipher'
-          ? `password cipher ${looksLikeReversibleCipher(u.secret) ? u.secret : huaweiCipher(u.secret)}`
-          : `password irreversible-cipher ${looksLikeIrreversibleCipher(u.secret) ? u.secret : huaweiIrreversibleCipher(u.secret)}`;
-        lines.push(` local-user ${u.name} ${field}`);
-        lines.push(` local-user ${u.name} privilege level ${u.privilege}`);
-        const types = u.serviceTypes && u.serviceTypes.length > 0 ? u.serviceTypes : ['ssh'];
-        lines.push(` local-user ${u.name} service-type ${types.join(' ')}`);
-      }
+      lines.push(...localUserConfigLinesVrp(users));
       lines.push('#');
     }
   }
