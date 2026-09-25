@@ -4335,6 +4335,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         loginBlocker: () => this.getLoginBlocker(),
         ligneCandidate: () => this.getSshSessionRegistry().prochaineLigne(),
         transportParDefaut: () => this.vtyTransportInput,
+        serverAcl: (transport) => (transport === 'telnet'
+          ? this.getManagementService().getTelnet().acl ?? null
+          : null),
         quietModeAccessClass: () => {
           const sec = this.securityConfig();
           return sec?.login.quietModeAcl ?? null;

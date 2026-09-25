@@ -56,7 +56,7 @@ import {
   AR2220_HARDWARE_PROFILE, renderHardwareVersion,
 } from './HuaweiHardwareProfile';
 import { normVrpSeverity, VRP_SEVERITIES } from '../../router/management/InfoCenterConfig';
-import { TELNET_DEFAULT_PORT } from '../../router/management/RouterManagementService';
+import { remoteAccessConfigBlocksVrp } from './HuaweiCommonSecurity';
 import { renderDisplayUserInterface } from './HuaweiUserInterfaceCommands';
 import { getSessionRegistry, getVtyLineConfig } from '../../../equipment/RouterServiceCapabilities';
 import { interfacePoolName } from './HuaweiDhcpCommands';
@@ -1112,14 +1112,9 @@ function appendManagementConfig(lines: string[], router: Router): void {
   const mgmt = (router as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
   if (!mgmt) return;
 
-  const telnet = mgmt.getTelnet();
-  if (telnet.enabled) { lines.push('#'); lines.push('telnet server enable'); }
-  if (telnet.port !== TELNET_DEFAULT_PORT) lines.push(`telnet server port ${telnet.port}`);
-  const ssh = mgmt.getSsh();
-  if (ssh.enabled) {
+  for (const block of remoteAccessConfigBlocksVrp(mgmt)) {
     lines.push('#');
-    lines.push('stelnet server enable');
-    if (ssh.port !== 22) lines.push(`ssh server port ${ssh.port}`);
+    lines.push(...block);
   }
   const retries = router.getSshAuthenticationRetries();
   if (retries !== null) lines.push(`ssh server authentication-retries ${retries}`);

@@ -1,6 +1,9 @@
 import { registerInfoCenterCommands } from './HuaweiInfoCenterCommands';
 import { HUAWEI_ERRORS } from '../cli-utils';
 import { InfoCenterConfig } from '../../router/management/InfoCenterConfig';
+import {
+  SSH_DEFAULT_PORT, TELNET_DEFAULT_PORT, type RouterManagementService,
+} from '../../router/management/RouterManagementService';
 /**
  * HuaweiCommonSecurity — management-plane commands common to the Huawei
  * switch and router CLIs: SSH/Telnet servers, SNMP, NTP, info-center
@@ -45,6 +48,21 @@ export function displayLocalUser(users: ReadonlyMap<string, LocalUser>): string 
   return [...head, ...rows,
     '  ----------------------------------------------------------------------',
     `  Total ${users.size} user(s)`].join('\n');
+}
+
+export function remoteAccessConfigBlocksVrp(mgmt: RouterManagementService): string[][] {
+  const telnet = mgmt.getTelnet();
+  const ssh = mgmt.getSsh();
+  const telnetBlock = [
+    ...(telnet.enabled ? ['telnet server enable'] : []),
+    ...(telnet.port !== TELNET_DEFAULT_PORT ? [`telnet server port ${telnet.port}`] : []),
+    ...(telnet.acl ? [`telnet server acl ${telnet.acl}`] : []),
+  ];
+  const stelnetBlock = [
+    ...(ssh.enabled ? ['stelnet server enable'] : []),
+    ...(ssh.port !== SSH_DEFAULT_PORT ? [`ssh server port ${ssh.port}`] : []),
+  ];
+  return [telnetBlock, stelnetBlock].filter((block) => block.length > 0);
 }
 
 export function displaySshServerStatus(): string {
@@ -158,8 +176,8 @@ export function registerHuaweiCommonSecurity(
     const line = raw ?? `undo telnet ${args.join(' ')}`;
     const [first, second] = args.map((a) => a.toLowerCase());
     if (first === 'server' && second === 'enable') return dispatch('telnet', ['server', 'disable']);
-    if (first === 'server' && second === 'port') {
-      getRouter().getManagementService().configureTelnet(['server', 'port'], true);
+    if (first === 'server' && (second === 'port' || second === 'acl')) {
+      getRouter().getManagementService().configureTelnet(['server', second], true);
       (getRouter() as unknown as { _syncSshListener?: () => void })._syncSshListener?.();
       return '';
     }

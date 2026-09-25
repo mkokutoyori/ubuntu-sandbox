@@ -74,7 +74,7 @@ import {
 } from './huawei/HuaweiConfigCommands';
 import { VRP_STATIC_PREFERENCE } from '../SwitchSvi';
 import {
-  registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
+  registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay, remoteAccessConfigBlocksVrp,
 } from './huawei/HuaweiCommonSecurity';
 import { registerHuaweiKeypairCommands } from './huawei/HuaweiKeypairCommands';
 import { lignesConfigSnmpVrp } from './huawei/huaweiSnmpCommands';
@@ -4582,10 +4582,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const mgmt = sw.getManagementService?.();
     const snmpLignes = lignesConfigSnmpVrp(sw.getSnmpService?.());
     if (snmpLignes.length > 0) { lines.push(...snmpLignes); lines.push('#'); }
-    const stelnet = mgmt?.getStelnet();
-    if (stelnet?.enabled) { lines.push('stelnet server enable'); lines.push('#'); }
-    const telnet = mgmt?.getTelnet();
-    if (telnet?.enabled) { lines.push('telnet server enable'); lines.push('#'); }
+    for (const block of mgmt ? remoteAccessConfigBlocksVrp(mgmt) : []) {
+      lines.push(...block);
+      lines.push('#');
+    }
 
     const aclLignes = runningConfigAclLines(
       sw.getVaclEngine().getAccessLists(), sw.getVaclEngine().getDefaultStep?.() ?? 5);

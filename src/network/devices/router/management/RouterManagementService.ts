@@ -29,12 +29,25 @@ export function telnetListenPortIsValid(port: number): boolean {
   return PortNumber.isValid(port) && port !== PORT_ANY;
 }
 
+export function telnetServerAclIsValid(acl: string): boolean {
+  if (/^\d+$/.test(acl)) {
+    const n = Number(acl);
+    return n >= 2000 && n <= 3999;
+  }
+  return /^[A-Za-z][\w-]*$/.test(acl);
+}
+
 export class RouterManagementService {
   domainName: string = '';
   ipDomainLookupEnabled: boolean = true;
   nameServers: string[] = [];
   private stelnetAcl: string | undefined;
-  private readonly telnetServer = { enabled: false, port: TELNET_DEFAULT_PORT, acl: undefined as string | undefined };
+  private readonly telnetServer = {
+    enabled: false,
+    port: TELNET_DEFAULT_PORT,
+    acl: undefined as string | undefined,
+    source: undefined as string | undefined,
+  };
   /**
    * Le serveur SSH, cote GESTIONNAIRE : ce qu'il porte seul, c'est-a-dire
    * l'etat d'ecoute et le port. Le reste de la configuration `ip ssh`
@@ -94,7 +107,13 @@ export class RouterManagementService {
       if (!port || !telnetListenPortIsValid(port.value)) return args[2] ?? '';
       this.telnetServer.port = port.value;
     }
-    else if (head === 'server-source' && args[1]) this.telnetServer.acl = args[1];
+    else if (head === 'server' && args[1]?.toLowerCase() === 'acl') {
+      if (negated) { this.telnetServer.acl = undefined; return null; }
+      const acl = args[2] ?? '';
+      if (!telnetServerAclIsValid(acl)) return acl;
+      this.telnetServer.acl = acl;
+    }
+    else if (head === 'server-source' && args[1]) this.telnetServer.source = args.slice(1).join(' ');
     else this.recordRaw('telnet', args.join(' '));
     return null;
   }

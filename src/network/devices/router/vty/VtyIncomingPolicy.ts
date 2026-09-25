@@ -37,6 +37,7 @@ export interface VtyIncomingPolicyDeps {
   ligneCandidate?: () => number | null;
   /** Reglage d'equipement, utilise par les lignes qui n'en declarent pas. */
   transportParDefaut?: () => VtyTransport;
+  serverAcl?: (transport: VtyTransportKind) => string | null;
 }
 
 export class VtyIncomingPolicy {
@@ -48,6 +49,10 @@ export class VtyIncomingPolicy {
     if (transportRefusal) return transportRefusal;
     const quietModeRefusal = this.quietModeRefusal(sourceIp);
     if (quietModeRefusal) return quietModeRefusal;
+    const serverAcl = this.deps.serverAcl?.(transport) ?? null;
+    if (serverAcl !== null && this.aclDenies(serverAcl, sourceIp)) {
+      return { accept: false, kind: 'acl', reason: `refused by ${transport} server acl ${serverAcl}` };
+    }
     const aclRefusal = this.aclRefusal(sourceIp, ligne);
     if (aclRefusal) return aclRefusal;
     if (this.deps.hasFreeLine && !this.deps.hasFreeLine()) {
@@ -84,6 +89,13 @@ export class VtyIncomingPolicy {
     if (aclName && this.aclPermits(aclName, sourceIp)) return null;
     const remaining = blocker.remainingBlockSeconds();
     return { accept: false, kind: 'quiet-mode', reason: `Blocking new login for ${remaining} secs (quota exceeded)` };
+  }
+
+  private aclDenies(aclName: string, sourceIp: string): boolean {
+    const src = IPAddress.tryParse(sourceIp);
+    if (!src) return true;
+    const dst = IPAddress.tryParse(this.deps.localIp() ?? '') ?? new IPAddress('0.0.0.0');
+    return this.deps.evaluateAcl(aclName, synthTcpPacket(src, dst)) === 'deny';
   }
 
   private aclPermits(aclName: string, sourceIp: string): boolean {
