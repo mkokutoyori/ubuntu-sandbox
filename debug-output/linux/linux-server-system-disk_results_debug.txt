@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-system-disk
-Generated: 2026-09-24T08:14:41.631Z
+Generated: 2026-09-25T18:29:22.114Z
 Engine: linux
 host=L-SRV-SYS-DBG (linux-server) — focus: système, disque, noyau & paquets
 Total commands: 300
@@ -109,39 +109,39 @@ $ [23/300]> cat /etc/hostname
   linux-server
 
 $ [24/300]> date
-  Thu Sep 24 08:14:41 UTC 2026
+  Fri Sep 25 18:29:22 UTC 2026
 
 $ [25/300]> date -u
-  Thu Sep 24 08:14:41 UTC 2026
+  Fri Sep 25 18:29:22 UTC 2026
 
 $ [26/300]> date +%Y-%m-%d
-  2026-09-24
+  2026-09-25
 
 $ [27/300]> date "+%H:%M:%S"
-  08:14:41
+  18:29:22
 
 $ [28/300]> date +%s
-  1790237681
+  1790360962
 
 $ [29/300]> date -d "2026-01-01"
   Thu Jan 01 00:00:00 UTC 2026
 
 $ [30/300]> date --iso-8601=seconds
-  Thu Sep 24 08:14:41 UTC 2026
+  Fri Sep 25 18:29:22 UTC 2026
 
 $ [31/300]> timedatectl
-                 Local time: Thu 2026-09-24 08:14:41 UTC
-             Universal time: Thu 2026-09-24 08:14:41 UTC
-                   RTC time: Thu 2026-09-24 08:14:41
+                 Local time: Fri 2026-09-25 18:29:22 UTC
+             Universal time: Fri 2026-09-25 18:29:22 UTC
+                   RTC time: Fri 2026-09-25 18:29:22
                   Time zone: Etc/UTC (UTC, +0000)
   System clock synchronized: no
                 NTP service: active
             RTC in local TZ: no
 
 $ [32/300]> timedatectl status
-                 Local time: Thu 2026-09-24 08:14:41 UTC
-             Universal time: Thu 2026-09-24 08:14:41 UTC
-                   RTC time: Thu 2026-09-24 08:14:41
+                 Local time: Fri 2026-09-25 18:29:22 UTC
+             Universal time: Fri 2026-09-25 18:29:22 UTC
+                   RTC time: Fri 2026-09-25 18:29:22
                   Time zone: Etc/UTC (UTC, +0000)
   System clock synchronized: no
                 NTP service: active
@@ -158,16 +158,16 @@ $ [33/300]> cal
                         
 
 $ [34/300]> uptime
-   08:14:41 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   18:29:22 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 $ [35/300]> uptime -p
   up 0 minutes
 
 $ [36/300]> uptime -s
-  2026-09-24 08:14:41
+  2026-09-25 18:29:22
 
 $ [37/300]> date --truc
-  Thu Sep 24 08:14:41 UTC 2026
+  Fri Sep 25 18:29:22 UTC 2026
 
 
 --- [38] § CPU — lscpu/nproc/proc ---
@@ -655,16 +655,16 @@ $ [108/300]> dmesg | head
   [    0.400000] usbcore: registered new interface driver usbfs
 
 $ [109/300]> dmesg -T | head
-  [Thu Sep 24 08:14:11 2026] Linux version 5.15.0-130-generic (buildd@lcy02-amd64-001) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025
-  [Thu Sep 24 08:14:11 2026] Command line: BOOT_IMAGE=/vmlinuz-5.15.0-130-generic root=/dev/sda1 ro quiet splash
-  [Thu Sep 24 08:14:11 2026] DMI: QEMU Standard PC (Q35 + ICH9, 2009), BIOS 1.16.0-1 04/01/2014
-  [Thu Sep 24 08:14:11 2026] Memory: 3948633K/4194304K available (14339K kernel code, 5992K rwdata, 8384K rodata, 3168K init, 796K bss, 212992K reserved, 0K cma-reserved)
-  [Thu Sep 24 08:14:11 2026] PCI: Using configuration type 1 for base access
-  [Thu Sep 24 08:14:11 2026] pci 0000:00:01.0: PIIX/ICH IDE controller
-  [Thu Sep 24 08:14:11 2026] smpboot: CPU0: Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz (family: 0x6, model: 0x4f, stepping: 0x1)
-  [Thu Sep 24 08:14:11 2026] NET: Registered PF_INET protocol family
-  [Thu Sep 24 08:14:11 2026] NET: Registered PF_INET6 protocol family
-  [Thu Sep 24 08:14:11 2026] usbcore: registered new interface driver usbfs
+  [Fri Sep 25 18:28:52 2026] Linux version 5.15.0-130-generic (buildd@lcy02-amd64-001) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025
+  [Fri Sep 25 18:28:52 2026] Command line: BOOT_IMAGE=/vmlinuz-5.15.0-130-generic root=/dev/sda1 ro quiet splash
+  [Fri Sep 25 18:28:52 2026] DMI: QEMU Standard PC (Q35 + ICH9, 2009), BIOS 1.16.0-1 04/01/2014
+  [Fri Sep 25 18:28:52 2026] Memory: 3948633K/4194304K available (14339K kernel code, 5992K rwdata, 8384K rodata, 3168K init, 796K bss, 212992K reserved, 0K cma-reserved)
+  [Fri Sep 25 18:28:52 2026] PCI: Using configuration type 1 for base access
+  [Fri Sep 25 18:28:52 2026] pci 0000:00:01.0: PIIX/ICH IDE controller
+  [Fri Sep 25 18:28:52 2026] smpboot: CPU0: Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz (family: 0x6, model: 0x4f, stepping: 0x1)
+  [Fri Sep 25 18:28:52 2026] NET: Registered PF_INET protocol family
+  [Fri Sep 25 18:28:52 2026] NET: Registered PF_INET6 protocol family
+  [Fri Sep 25 18:28:52 2026] usbcore: registered new interface driver usbfs
 
 $ [110/300]> dmesg --level=err
 <empty>
@@ -928,16 +928,14 @@ $ [140/300]> echo $LANG
 
 --- [141] § paquets — apt/dpkg ---
 $ [141/300]> apt --version
-  Usage: apt [update|install|upgrade|remove|list]
+  Usage: apt [update|install|upgrade|remove|purge|list]
 
 $ [142/300]> apt list --installed
   Listing... Done
-  anacron/jammy,now 2.3-31ubuntu2 amd64 [installed]
   apache2/jammy,now 2.4.52-1ubuntu4 amd64 [installed]
   at/jammy,now 3.2.5-1ubuntu1 amd64 [installed]
   auditd/jammy,now 1:3.0.7-1build1 amd64 [installed]
   bash/jammy,now 5.1-6ubuntu1 amd64 [installed]
-  bind9/jammy,now 9.18.12-0ubuntu0.22.04.1 amd64 [installed]
   ca-certificates/jammy,now 20230311ubuntu0.22.04.1 amd64 [installed]
   chrony/jammy,now 4.2-2ubuntu2 amd64 [installed]
   conntrack/jammy,now 1:1.4.6-2build2 amd64 [installed]
@@ -946,6 +944,7 @@ $ [142/300]> apt list --installed
   curl/jammy,now 7.81.0-1ubuntu1.15 amd64 [installed]
   debianutils/jammy,now 5.5-1ubuntu2 amd64 [installed]
   dnsutils/jammy,now 9.18.12-0ubuntu0.22.04.1 amd64 [installed]
+  dpkg/jammy,now 1.21.1ubuntu2 amd64 [installed]
   e2fsprogs/jammy,now 1.46.5-2ubuntu1.1 amd64 [installed]
   findutils/jammy,now 4.8.0-1ubuntu3 amd64 [installed]
   gawk/jammy,now 1:5.1.0-1ubuntu0.1 amd64 [installed]
@@ -954,6 +953,7 @@ $ [142/300]> apt list --installed
   iproute2/jammy,now 5.15.0-1ubuntu2 amd64 [installed]
   iptables/jammy,now 1.8.7-1ubuntu5 amd64 [installed]
   iputils-ping/jammy,now 3:20211215-1 amd64 [installed]
+  hping3/jammy,now 3.a2.ds2-9 amd64 [installed]
   isc-dhcp-server/jammy,now 4.4.1-2.3ubuntu2.4 amd64 [installed]
   kmod/jammy,now 29-1ubuntu1 amd64 [installed]
   libuser/jammy,now 1:0.62~dfsg-0.1ubuntu2 amd64 [installed]
@@ -975,6 +975,7 @@ $ [142/300]> apt list --installed
   psmisc/jammy,now 23.4-2build3 amd64 [installed]
   rsyslog/jammy,now 8.2112.0-2ubuntu2 amd64 [installed]
   sed/jammy,now 4.8-1ubuntu2 amd64 [installed]
+  snmp/jammy,now 5.9.1+dfsg-1ubuntu2.8 amd64 [installed]
   sshpass/jammy,now 1.09-1 amd64 [installed]
   strongswan/jammy,now 5.9.5-2ubuntu2 amd64 [installed]
   sudo/jammy,now 1.9.9-1ubuntu2.4 amd64 [installed]
@@ -987,26 +988,25 @@ $ [142/300]> apt list --installed
   util-linux/jammy,now 2.37.2-4ubuntu3 amd64 [installed]
   vim/jammy,now 2:8.2.3995-1ubuntu2 amd64 [installed]
   vim-tiny/jammy,now 2:8.2.3995-1ubuntu2 amd64 [installed]
-  vsftpd/jammy,now 3.0.5-0ubuntu1 amd64 [installed]
   wget/jammy,now 1.21.2-2ubuntu1 amd64 [installed]
 
 $ [143/300]> apt list --installed 2>/dev/null | head
   Listing... Done
-  anacron/jammy,now 2.3-31ubuntu2 amd64 [installed]
   apache2/jammy,now 2.4.52-1ubuntu4 amd64 [installed]
   at/jammy,now 3.2.5-1ubuntu1 amd64 [installed]
   auditd/jammy,now 1:3.0.7-1build1 amd64 [installed]
   bash/jammy,now 5.1-6ubuntu1 amd64 [installed]
-  bind9/jammy,now 9.18.12-0ubuntu0.22.04.1 amd64 [installed]
   ca-certificates/jammy,now 20230311ubuntu0.22.04.1 amd64 [installed]
   chrony/jammy,now 4.2-2ubuntu2 amd64 [installed]
   conntrack/jammy,now 1:1.4.6-2build2 amd64 [installed]
+  coreutils/jammy,now 8.32-4.1ubuntu1 amd64 [installed]
+  cron/jammy,now 3.0pl1-137ubuntu3 amd64 [installed]
 
 $ [144/300]> apt-cache search bash
   bash - GNU Bourne Again SHell
 
 $ [145/300]> apt-get --version
-  Usage: apt-get [update|install|upgrade|remove|list]
+  Usage: apt-get [update|install|upgrade|remove|purge|list]
 
 $ [146/300]> dpkg --version
   dpkg: need an action option
@@ -1017,12 +1017,10 @@ $ [147/300]> dpkg -l
   | Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend
   ||/ Name                Version          Architecture Description
   +++-===================-================-============-================================
-  ii  anacron             2.3-31ubuntu2    amd64        cron-like program that does not go by time
   ii  apache2             2.4.52-1ubuntu4  amd64        Apache HTTP Server
   ii  at                  3.2.5-1ubuntu1   amd64        Delayed job execution and batch processing
   ii  auditd              1:3.0.7-1build1  amd64        User space tools for security auditing
   ii  bash                5.1-6ubuntu1     amd64        GNU Bourne Again SHell
-  ii  bind9               9.18.12-0ubuntu0.22.04.1 amd64        Internet Domain Name Server
   ii  ca-certificates     20230311ubuntu0.22.04.1 amd64        Common CA certificates
   ii  chrony              4.2-2ubuntu2     amd64        Versatile implementation of the Network Time Protocol
   ii  conntrack           1:1.4.6-2build2  amd64        Program to modify the conntrack tables
@@ -1031,6 +1029,7 @@ $ [147/300]> dpkg -l
   ii  curl                7.81.0-1ubuntu1.15 amd64        command line tool for transferring data with URL syntax
   ii  debianutils         5.5-1ubuntu2     amd64        Miscellaneous utilities specific to Debian
   ii  dnsutils            9.18.12-0ubuntu0.22.04.1 amd64        Clients provided with BIND 9
+  ii  dpkg                1.21.1ubuntu2    amd64        Debian package management system
   ii  e2fsprogs           1.46.5-2ubuntu1.1 amd64        ext2/ext3/ext4 file system utilities
   ii  findutils           4.8.0-1ubuntu3   amd64        utilities for finding files
   ii  gawk                1:5.1.0-1ubuntu0.1 amd64        GNU awk, a pattern scanning and processing language
@@ -1039,6 +1038,7 @@ $ [147/300]> dpkg -l
   ii  iproute2            5.15.0-1ubuntu2  amd64        networking and traffic control tools
   ii  iptables            1.8.7-1ubuntu5   amd64        administration tools for packet filtering and NAT
   ii  iputils-ping        3:20211215-1     amd64        Tools to test the reachability of network hosts
+  ii  hping3              3.a2.ds2-9       amd64        Active Network Smashing Tool
   ii  isc-dhcp-server     4.4.1-2.3ubuntu2.4 amd64        ISC DHCP server for automatic IP address assignment
   ii  kmod                29-1ubuntu1      amd64        tools for managing Linux kernel modules
   ii  libuser             1:0.62~dfsg-0.1ubuntu2 amd64        user and group account administration library
@@ -1060,6 +1060,7 @@ $ [147/300]> dpkg -l
   ii  psmisc              23.4-2build3     amd64        utilities that use the proc file system
   ii  rsyslog             8.2112.0-2ubuntu2 amd64        reliable system and kernel logging daemon
   ii  sed                 4.8-1ubuntu2     amd64        GNU stream editor for filtering/transforming text
+  ii  snmp                5.9.1+dfsg-1ubuntu2.8 amd64        SNMP (Simple Network Management Protocol) applications
   ii  sshpass             1.09-1           amd64        Non-interactive ssh password authentication
   ii  strongswan          5.9.5-2ubuntu2   amd64        IPsec VPN solution
   ii  sudo                1.9.9-1ubuntu2.4 amd64        Provide limited super user privileges to specific users
@@ -1072,7 +1073,6 @@ $ [147/300]> dpkg -l
   ii  util-linux          2.37.2-4ubuntu3  amd64        miscellaneous system utilities
   ii  vim                 2:8.2.3995-1ubuntu2 amd64        Vi IMproved - enhanced vi editor
   ii  vim-tiny            2:8.2.3995-1ubuntu2 amd64        Vi IMproved - enhanced vi editor - compact version
-  ii  vsftpd              3.0.5-0ubuntu1   amd64        lightweight, efficient FTP server written for security
   ii  wget                1.21.2-2ubuntu1  amd64        retrieves files from the web
 
 $ [148/300]> dpkg -l | head
@@ -1080,12 +1080,12 @@ $ [148/300]> dpkg -l | head
   | Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend
   ||/ Name                Version          Architecture Description
   +++-===================-================-============-================================
-  ii  anacron             2.3-31ubuntu2    amd64        cron-like program that does not go by time
   ii  apache2             2.4.52-1ubuntu4  amd64        Apache HTTP Server
   ii  at                  3.2.5-1ubuntu1   amd64        Delayed job execution and batch processing
   ii  auditd              1:3.0.7-1build1  amd64        User space tools for security auditing
   ii  bash                5.1-6ubuntu1     amd64        GNU Bourne Again SHell
-  ii  bind9               9.18.12-0ubuntu0.22.04.1 amd64        Internet Domain Name Server
+  ii  ca-certificates     20230311ubuntu0.22.04.1 amd64        Common CA certificates
+  ii  chrony              4.2-2ubuntu2     amd64        Versatile implementation of the Network Time Protocol
 
 $ [149/300]> dpkg -l bash
   Desired=Unknown/Install/Remove/Purge/Hold
@@ -1107,10 +1107,10 @@ $ [152/300]> dpkg --get-selections | head
   Use dpkg --help for help.
 
 $ [153/300]> apt show bash
-  Usage: apt [update|install|upgrade|remove|list]
+  Usage: apt [update|install|upgrade|remove|purge|list]
 
 $ [154/300]> apt policy bash
-  Usage: apt [update|install|upgrade|remove|list]
+  Usage: apt [update|install|upgrade|remove|purge|list]
 
 $ [155/300]> apt update
   Hit:1 http://archive.ubuntu.com/ubuntu jammy InRelease
@@ -1119,6 +1119,7 @@ $ [155/300]> apt update
 $ [156/300]> apt install paquet_inexistant_xyz
   Reading package lists... Done
   Building dependency tree... Done
+  Reading state information... Done
   E: Unable to locate package paquet_inexistant_xyz
 
 $ [157/300]> dpkg -l paquet_inexistant_xyz
@@ -1140,7 +1141,7 @@ $ [161/300]> tar -cf arch.tar arch_src
 <empty>
 
 $ [162/300]> ls -l arch.tar
-  -rw-r--r-- 1 root root 330 Sep 24 08:14 arch.tar
+  -rw-r--r-- 1 root root 330 Sep 25 18:29 arch.tar
 
 $ [163/300]> tar -tf arch.tar
   arch_src/
@@ -1151,7 +1152,7 @@ $ [164/300]> tar -czf arch.tar.gz arch_src
 <empty>
 
 $ [165/300]> ls -l arch.tar.gz
-  -rw-r--r-- 1 root root 456 Sep 24 08:14 arch.tar.gz
+  -rw-r--r-- 1 root root 456 Sep 25 18:29 arch.tar.gz
 
 $ [166/300]> tar -tzf arch.tar.gz
   arch_src/
@@ -1173,25 +1174,25 @@ $ [169/300]> gzip arch_src/a.txt
 
 $ [170/300]> ls -l arch_src
   total 16
-  -rw-r--r-- 1 root root 67 Sep 24 08:14 a.txt.gz
-  -rw-r--r-- 1 root root  6 Sep 24 08:14 b.txt
+  -rw-r--r-- 1 root root 67 Sep 25 18:29 a.txt.gz
+  -rw-r--r-- 1 root root  6 Sep 25 18:29 b.txt
 
 $ [171/300]> gunzip arch_src/a.txt.gz
 <empty>
 
 $ [172/300]> ls -l arch_src
   total 16
-  -rw-r--r-- 1 root root 6 Sep 24 08:14 a.txt
-  -rw-r--r-- 1 root root 6 Sep 24 08:14 b.txt
+  -rw-r--r-- 1 root root 6 Sep 25 18:29 a.txt
+  -rw-r--r-- 1 root root 6 Sep 25 18:29 b.txt
 
 $ [173/300]> gzip -k arch_src/b.txt
 <empty>
 
 $ [174/300]> ls -l arch_src
   total 24
-  -rw-r--r-- 1 root root  6 Sep 24 08:14 a.txt
-  -rw-r--r-- 1 root root  6 Sep 24 08:14 b.txt
-  -rw-r--r-- 1 root root 67 Sep 24 08:14 b.txt.gz
+  -rw-r--r-- 1 root root  6 Sep 25 18:29 a.txt
+  -rw-r--r-- 1 root root  6 Sep 25 18:29 b.txt
+  -rw-r--r-- 1 root root 67 Sep 25 18:29 b.txt.gz
 
 $ [175/300]> zip -r arch.zip arch_src
     adding: arch_src/ (stored 0%)
@@ -1200,16 +1201,16 @@ $ [175/300]> zip -r arch.zip arch_src
     adding: arch_src/b.txt.gz (deflated 23%)
 
 $ [176/300]> ls -l arch.zip
-  -rw-r--r-- 1 root root 514 Sep 24 08:14 arch.zip
+  -rw-r--r-- 1 root root 514 Sep 25 18:29 arch.zip
 
 $ [177/300]> unzip -l arch.zip
   Archive:  arch.zip
     Length      Date    Time    Name
   ---------  ---------- -----   ----
-          0  2026-09-24 08:14   arch_src/
-          6  2026-09-24 08:14   arch_src/b.txt
-          6  2026-09-24 08:14   arch_src/a.txt
-         67  2026-09-24 08:14   arch_src/b.txt.gz
+          0  2026-09-25 18:29   arch_src/
+          6  2026-09-25 18:29   arch_src/b.txt
+          6  2026-09-25 18:29   arch_src/a.txt
+         67  2026-09-25 18:29   arch_src/b.txt.gz
   ---------                     -------
          79                     4 files
 
@@ -1253,61 +1254,61 @@ $ [188/300]> logger -t debugtag "tag debug"
 <empty>
 
 $ [189/300]> journalctl -n 10 --no-pager
-  -- Logs begin at Thu Sep 24 08:14:11 2026, end at Thu Sep 24 08:14:41 2026. --
-  Sep 24 08:14:41 linux-server chrony[103]: Listening on UDP 0.0.0.0:123
-  Sep 24 08:14:41 linux-server oracle-ohasd[104]: Listening on TCP 0.0.0.0:1521
-  Sep 24 08:14:41 linux-server chrony[105]: Listening on UDP 0.0.0.0:123
-  Sep 24 08:14:41 linux-server systemd-resolved[106]: Listening on UDP 127.0.0.53:53
-  Sep 24 08:14:41 linux-server systemd-resolved[107]: Listening on TCP 127.0.0.53:53
-  Sep 24 08:14:41 linux-server oracle-ohasd[108]: Listening on TCP 0.0.0.0:1521
-  Sep 24 08:14:41 linux-server tcp-1812[109]: Server listening on 0.0.0.0 port 1812.
-  Sep 24 08:14:41 linux-server root: message de test debug
-  Sep 24 08:14:41 linux-server root: info debug
-  Sep 24 08:14:41 linux-server debugtag: tag debug
+  -- Logs begin at Fri Sep 25 18:28:52 2026, end at Fri Sep 25 18:29:22 2026. --
+  Sep 25 18:29:22 linux-server chrony[103]: Listening on UDP 0.0.0.0:123
+  Sep 25 18:29:22 linux-server oracle-ohasd[104]: Listening on TCP 0.0.0.0:1521
+  Sep 25 18:29:22 linux-server chrony[105]: Listening on UDP 0.0.0.0:123
+  Sep 25 18:29:22 linux-server systemd-resolved[106]: Listening on UDP 127.0.0.53:53
+  Sep 25 18:29:22 linux-server systemd-resolved[107]: Listening on TCP 127.0.0.53:53
+  Sep 25 18:29:22 linux-server oracle-ohasd[108]: Listening on TCP 0.0.0.0:1521
+  Sep 25 18:29:22 linux-server tcp-1812[109]: Server listening on 0.0.0.0 port 1812.
+  Sep 25 18:29:22 linux-server root: message de test debug
+  Sep 25 18:29:22 linux-server root: info debug
+  Sep 25 18:29:22 linux-server debugtag: tag debug
 
 $ [190/300]> journalctl -p err -n 5
   -- No entries --
 
 $ [191/300]> journalctl -b
-  -- Logs begin at Thu Sep 24 08:14:11 2026, end at Thu Sep 24 08:14:41 2026. --
-  Sep 24 08:14:11 localhost kernel: Linux version 5.15.0-130-generic (buildd@lcy02-amd64-001) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025
-  Sep 24 08:14:11 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-130-generic root=/dev/sda1 ro quiet splash
-  Sep 24 08:14:11 localhost kernel: DMI: QEMU Standard PC (Q35 + ICH9, 2009), BIOS 1.16.0-1 04/01/2014
-  Sep 24 08:14:11 localhost kernel: Memory: 3948633K/4194304K available (14339K kernel code, 5992K rwdata, 8384K rodata, 3168K init, 796K bss, 212992K reserved, 0K cma-reserved)
-  Sep 24 08:14:11 localhost kernel: PCI: Using configuration type 1 for base access
-  Sep 24 08:14:11 localhost kernel: pci 0000:00:01.0: PIIX/ICH IDE controller
-  Sep 24 08:14:11 localhost kernel: smpboot: CPU0: Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz (family: 0x6, model: 0x4f, stepping: 0x1)
-  Sep 24 08:14:11 localhost kernel: NET: Registered PF_INET protocol family
-  Sep 24 08:14:11 localhost kernel: NET: Registered PF_INET6 protocol family
-  Sep 24 08:14:11 localhost kernel: usbcore: registered new interface driver usbfs
-  Sep 24 08:14:11 localhost kernel: usbcore: registered new interface driver hub
-  Sep 24 08:14:12 localhost kernel: e1000: Intel(R) PRO/1000 Network Driver
-  Sep 24 08:14:12 localhost kernel: e1000 0000:00:03.0 eth0: (PCI:33MHz:32-bit) link up
-  Sep 24 08:14:12 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
-  Sep 24 08:14:12 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
-  Sep 24 08:14:13 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
-  Sep 24 08:14:13 localhost systemd[1]: Started systemd-journald.service - Journal Service.
-  Sep 24 08:14:13 localhost systemd[1]: Started systemd-logind.service - User Login Management.
-  Sep 24 08:14:13 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
-  Sep 24 08:14:14 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
-  Sep 24 08:14:14 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
-  Sep 24 08:14:14 localhost systemd-logind[456]: New seat seat0.
-  Sep 24 08:14:14 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
-  Sep 24 08:14:41 linux-server chrony[100]: Listening on UDP 0.0.0.0:123
-  Sep 24 08:14:41 linux-server chrony[101]: Listening on UDP 0.0.0.0:123
-  Sep 24 08:14:41 linux-server sshd[22]: Server listening on 0.0.0.0 port 22.
-  Sep 24 08:14:41 linux-server sshd[22]: Server listening on :: port 22.
-  Sep 24 08:14:41 linux-server tcp-53[102]: Server listening on 127.0.0.53 port 53.
-  Sep 24 08:14:41 linux-server chrony[103]: Listening on UDP 0.0.0.0:123
-  Sep 24 08:14:41 linux-server oracle-ohasd[104]: Listening on TCP 0.0.0.0:1521
-  Sep 24 08:14:41 linux-server chrony[105]: Listening on UDP 0.0.0.0:123
-  Sep 24 08:14:41 linux-server systemd-resolved[106]: Listening on UDP 127.0.0.53:53
-  Sep 24 08:14:41 linux-server systemd-resolved[107]: Listening on TCP 127.0.0.53:53
-  Sep 24 08:14:41 linux-server oracle-ohasd[108]: Listening on TCP 0.0.0.0:1521
-  Sep 24 08:14:41 linux-server tcp-1812[109]: Server listening on 0.0.0.0 port 1812.
-  Sep 24 08:14:41 linux-server root: message de test debug
-  Sep 24 08:14:41 linux-server root: info debug
-  Sep 24 08:14:41 linux-server debugtag: tag debug
+  -- Logs begin at Fri Sep 25 18:28:52 2026, end at Fri Sep 25 18:29:22 2026. --
+  Sep 25 18:28:52 localhost kernel: Linux version 5.15.0-130-generic (buildd@lcy02-amd64-001) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025
+  Sep 25 18:28:52 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-130-generic root=/dev/sda1 ro quiet splash
+  Sep 25 18:28:52 localhost kernel: DMI: QEMU Standard PC (Q35 + ICH9, 2009), BIOS 1.16.0-1 04/01/2014
+  Sep 25 18:28:52 localhost kernel: Memory: 3948633K/4194304K available (14339K kernel code, 5992K rwdata, 8384K rodata, 3168K init, 796K bss, 212992K reserved, 0K cma-reserved)
+  Sep 25 18:28:52 localhost kernel: PCI: Using configuration type 1 for base access
+  Sep 25 18:28:52 localhost kernel: pci 0000:00:01.0: PIIX/ICH IDE controller
+  Sep 25 18:28:52 localhost kernel: smpboot: CPU0: Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz (family: 0x6, model: 0x4f, stepping: 0x1)
+  Sep 25 18:28:52 localhost kernel: NET: Registered PF_INET protocol family
+  Sep 25 18:28:52 localhost kernel: NET: Registered PF_INET6 protocol family
+  Sep 25 18:28:52 localhost kernel: usbcore: registered new interface driver usbfs
+  Sep 25 18:28:52 localhost kernel: usbcore: registered new interface driver hub
+  Sep 25 18:28:52 localhost kernel: e1000: Intel(R) PRO/1000 Network Driver
+  Sep 25 18:28:52 localhost kernel: e1000 0000:00:03.0 eth0: (PCI:33MHz:32-bit) link up
+  Sep 25 18:28:53 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  Sep 25 18:28:53 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  Sep 25 18:28:54 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  Sep 25 18:28:54 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  Sep 25 18:28:54 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  Sep 25 18:28:54 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  Sep 25 18:28:54 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  Sep 25 18:28:54 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  Sep 25 18:28:54 localhost systemd-logind[456]: New seat seat0.
+  Sep 25 18:28:54 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+  Sep 25 18:29:22 linux-server chrony[100]: Listening on UDP 0.0.0.0:123
+  Sep 25 18:29:22 linux-server chrony[101]: Listening on UDP 0.0.0.0:123
+  Sep 25 18:29:22 linux-server sshd[22]: Server listening on 0.0.0.0 port 22.
+  Sep 25 18:29:22 linux-server sshd[22]: Server listening on :: port 22.
+  Sep 25 18:29:22 linux-server tcp-53[102]: Server listening on 127.0.0.53 port 53.
+  Sep 25 18:29:22 linux-server chrony[103]: Listening on UDP 0.0.0.0:123
+  Sep 25 18:29:22 linux-server oracle-ohasd[104]: Listening on TCP 0.0.0.0:1521
+  Sep 25 18:29:22 linux-server chrony[105]: Listening on UDP 0.0.0.0:123
+  Sep 25 18:29:22 linux-server systemd-resolved[106]: Listening on UDP 127.0.0.53:53
+  Sep 25 18:29:22 linux-server systemd-resolved[107]: Listening on TCP 127.0.0.53:53
+  Sep 25 18:29:22 linux-server oracle-ohasd[108]: Listening on TCP 0.0.0.0:1521
+  Sep 25 18:29:22 linux-server tcp-1812[109]: Server listening on 0.0.0.0 port 1812.
+  Sep 25 18:29:22 linux-server root: message de test debug
+  Sep 25 18:29:22 linux-server root: info debug
+  Sep 25 18:29:22 linux-server debugtag: tag debug
 
 $ [192/300]> journalctl --disk-usage
   Archived and active journals take up 4.8K in the file system.
@@ -1325,26 +1326,26 @@ $ [193/300]> dmesg | tail
   [    1.200000] EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
 
 $ [194/300]> tail -n 5 /var/log/syslog
-  Sep 24 08:14:41 linux-server oracle-ohasd[108]: Listening on TCP 0.0.0.0:1521
-  Sep 24 08:14:41 linux-server tcp-1812[109]: Server listening on 0.0.0.0 port 1812.
-  Sep 24 08:14:41 linux-server root: message de test debug
-  Sep 24 08:14:41 linux-server root: info debug
-  Sep 24 08:14:41 linux-server debugtag: tag debug
+  Sep 25 18:29:22 linux-server oracle-ohasd[108]: Listening on TCP 0.0.0.0:1521
+  Sep 25 18:29:22 linux-server tcp-1812[109]: Server listening on 0.0.0.0 port 1812.
+  Sep 25 18:29:22 linux-server root: message de test debug
+  Sep 25 18:29:22 linux-server root: info debug
+  Sep 25 18:29:22 linux-server debugtag: tag debug
 
 $ [195/300]> ls -l /var/log
   total 96
-  drwxr-xr-x 2 root root    0 Sep 24 08:14 apache2
-  drwxr-x--- 2 root root    0 Sep 24 08:14 audit
-  -rw-r----- 1 root adm   303 Sep 24 08:14 auth.log
-  -rw-r----- 1 root adm  2157 Sep 24 08:14 boot.log
-  -rw------- 1 root root    0 Sep 24 08:14 btmp
-  drwxr-xr-x 2 root root    0 Sep 24 08:14 chrony
-  -rw-r----- 1 root adm  1567 Sep 24 08:14 kern.log
-  -rw-r--r-- 1 root root   67 Sep 24 08:14 lastlog
-  -rw-r--r-- 1 root root  332 Sep 24 08:14 messages
-  drwxr-xr-x 2 root root    0 Sep 24 08:14 nginx
-  -rw-r----- 1 root adm  3080 Sep 24 08:14 syslog
-  -rw-r--r-- 1 root root  768 Sep 24 08:14 wtmp
+  drwxr-xr-x 2 root root    0 Sep 25 18:29 apache2
+  drwxr-x--- 2 root root    0 Sep 25 18:29 audit
+  -rw-r----- 1 root adm   303 Sep 25 18:29 auth.log
+  -rw-r----- 1 root adm  2157 Sep 25 18:29 boot.log
+  -rw------- 1 root root    0 Sep 25 18:29 btmp
+  drwxr-xr-x 2 root root    0 Sep 25 18:29 chrony
+  -rw-r----- 1 root adm  1567 Sep 25 18:29 kern.log
+  -rw-r--r-- 1 root root   67 Sep 25 18:29 lastlog
+  -rw-r--r-- 1 root root  332 Sep 25 18:29 messages
+  drwxr-xr-x 2 root root    0 Sep 25 18:29 nginx
+  -rw-r----- 1 root adm  3080 Sep 25 18:29 syslog
+  -rw-r--r-- 1 root root  768 Sep 25 18:29 wtmp
 
 
 --- [196] § utilitaires divers ---
@@ -1387,7 +1388,7 @@ $ [204/300]> yes | head -3
   y
 
 $ [205/300]> watch -n 1 -c 1 date
-  Every 1s: 1 date	linux-server: 08:14:41
+  Every 1s: 1 date	linux-server: 18:29:22
   
   1: command not found
 
@@ -1413,7 +1414,7 @@ $ [209/300]> echo "=== HOST ==="; hostname; uname -r
 $ [210/300]> echo "=== CPU ==="; nproc; uptime
   === CPU ===
   2
-   08:14:41 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   18:29:22 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 $ [211/300]> echo "=== MEM ==="; free -h | head -2
   === MEM ===
@@ -1422,7 +1423,7 @@ $ [211/300]> echo "=== MEM ==="; free -h | head -2
 
 $ [212/300]> echo "=== DISK ==="; df -h / | tail -1
   === DISK ===
-  /dev/sda1        48G   68K   48G   1% /
+  /dev/sda1        48G   76K   48G   1% /
 
 $ [213/300]> echo "=== TOP DIRS ==="; du -sh /etc /var /tmp 2>/dev/null
   === TOP DIRS ===
@@ -1433,7 +1434,7 @@ $ [214/300]> echo "kernel=$(uname -r) host=$(hostname)"
 
 $ [215/300]> df -h | awk 'NR==1 || /\/$/'
   Filesystem      Size  Used Avail Use% Mounted on
-  /dev/sda1        48G   68K   48G   1% /
+  /dev/sda1        48G   76K   48G   1% /
 
 $ [216/300]> free -m | awk '/Mem/ {printf "RAM: %d/%d MB\n", $3, $2}'
   RAM: 1229/3888 MB
@@ -1546,31 +1547,31 @@ $ [241/300]> cat /sys/kernel/hostname 2>/dev/null || hostname
 
 --- [242] § formats de date avancés ---
 $ [242/300]> date "+%A %d %B %Y"
-  Thursday 24 September 2026
+  Friday 25 September 2026
 
 $ [243/300]> date "+%j"
-  267
+  268
 
 $ [244/300]> date "+%V"
   39
 
 $ [245/300]> date "+%u"
-  4
+  5
 
 $ [246/300]> date "+%Z %z"
   UTC +0000
 
 $ [247/300]> date -u "+%Y-%m-%dT%H:%M:%SZ"
-  2026-09-24T08:14:41Z
+  2026-09-25T18:29:22Z
 
 $ [248/300]> date -d "next monday"
   date: invalid date 'next monday'
 
 $ [249/300]> date -d "yesterday"
-  Wed Sep 23 00:00:00 UTC 2026
+  Thu Sep 24 00:00:00 UTC 2026
 
 $ [250/300]> date -d "1 hour ago"
-  Thu Sep 24 07:14:41 UTC 2026
+  Fri Sep 25 17:29:22 UTC 2026
 
 $ [251/300]> date -d "@0"
   Thu Jan 01 00:00:00 UTC 1970
@@ -1579,7 +1580,7 @@ $ [252/300]> date -d "@1700000000"
   Tue Nov 14 22:13:20 UTC 2023
 
 $ [253/300]> TZ=UTC date
-  Thu Sep 24 08:14:41 UTC 2026
+  Fri Sep 25 18:29:22 UTC 2026
 
 $ [254/300]> cal -3
                               2026
@@ -1739,27 +1740,27 @@ $ [276/300]> getconf -a | head
 --- [277] § snapshot processus & charge ---
 $ [277/300]> ps aux | head
   USER       PID %CPU %MEM     VSZ    RSS TTY      STAT START      TIME COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    08:14      0:00 /sbin/init
-  root         2  0.0  0.0       0      0 ?        S    08:14      0:00 [kthreadd]
-  root         3  0.0  0.0       0      0 ?        S    08:14      0:00 [rcu_gp]
-  root         4  0.0  0.0       0      0 ?        S    08:14      0:00 [rcu_par_gp]
-  root         5  0.0  0.0       0      0 ?        I    08:14      0:00 [slub_flushwq]
-  root         6  0.0  0.0       0      0 ?        S    08:14      0:00 [netns]
-  root         7  0.0  0.0       0      0 ?        I    08:14      0:00 [kworker/0:0-events]
-  root         8  0.0  0.0       0      0 ?        I    08:14      0:00 [kworker/0:1-events]
-  root         9  0.0  0.0       0      0 ?        I    08:14      0:00 [kworker/1:0-events]
+  root         1  0.0  0.3  169000  13000 ?        S    18:29      0:00 /sbin/init
+  root         2  0.0  0.0       0      0 ?        S    18:29      0:00 [kthreadd]
+  root         3  0.0  0.0       0      0 ?        S    18:29      0:00 [rcu_gp]
+  root         4  0.0  0.0       0      0 ?        S    18:29      0:00 [rcu_par_gp]
+  root         5  0.0  0.0       0      0 ?        I    18:29      0:00 [slub_flushwq]
+  root         6  0.0  0.0       0      0 ?        S    18:29      0:00 [netns]
+  root         7  0.0  0.0       0      0 ?        I    18:29      0:00 [kworker/0:0-events]
+  root         8  0.0  0.0       0      0 ?        I    18:29      0:00 [kworker/0:1-events]
+  root         9  0.0  0.0       0      0 ?        I    18:29      0:00 [kworker/1:0-events]
 
 $ [278/300]> ps -ef | head
   UID        PID  PPID  C STIME TTY          TIME CMD
-  root         1     0  0 08:14 ?        00:00:00 /sbin/init
-  root         2     0  0 08:14 ?        00:00:00 [kthreadd]
-  root         3     2  0 08:14 ?        00:00:00 [rcu_gp]
-  root         4     2  0 08:14 ?        00:00:00 [rcu_par_gp]
-  root         5     2  0 08:14 ?        00:00:00 [slub_flushwq]
-  root         6     2  0 08:14 ?        00:00:00 [netns]
-  root         7     2  0 08:14 ?        00:00:00 [kworker/0:0-events]
-  root         8     2  0 08:14 ?        00:00:00 [kworker/0:1-events]
-  root         9     2  0 08:14 ?        00:00:00 [kworker/1:0-events]
+  root         1     0  0 18:29 ?        00:00:00 /sbin/init
+  root         2     0  0 18:29 ?        00:00:00 [kthreadd]
+  root         3     2  0 18:29 ?        00:00:00 [rcu_gp]
+  root         4     2  0 18:29 ?        00:00:00 [rcu_par_gp]
+  root         5     2  0 18:29 ?        00:00:00 [slub_flushwq]
+  root         6     2  0 18:29 ?        00:00:00 [netns]
+  root         7     2  0 18:29 ?        00:00:00 [kworker/0:0-events]
+  root         8     2  0 18:29 ?        00:00:00 [kworker/0:1-events]
+  root         9     2  0 18:29 ?        00:00:00 [kworker/1:0-events]
 
 $ [279/300]> ps -eo pid,ppid,pcpu,pmem,comm --sort=-pcpu | head -5
     PID  PPID %CPU %MEM COMMAND
@@ -1769,7 +1770,7 @@ $ [279/300]> ps -eo pid,ppid,pcpu,pmem,comm --sort=-pcpu | head -5
       4     2  0.0  0.0 [rcu_par_gp]
 
 $ [280/300]> top -b -n 1 | head -12
-  top - 08:14:41 up  0 min,  1 user,  load average: 0.00, 0.00, 0.00
+  top - 18:29:22 up  0 min,  1 user,  load average: 0.00, 0.00, 0.00
   Tasks: 42 total,  1 running, 41 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3888.0 total,  1434.0 free,  1229.0 used,  1225.0 buff/cache
@@ -1783,7 +1784,7 @@ $ [280/300]> top -b -n 1 | head -12
         5 root       20    0       0      0      0 I   0.0   0.0   0:00.00 slub_flus+
 
 $ [281/300]> uptime
-   08:14:41 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   18:29:22 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 $ [282/300]> cat /proc/loadavg
   0.00 0.00 0.00 1/41 41
@@ -1805,7 +1806,7 @@ $ [285/300]> free -m && df -h /
   Mem:            3888        1229        1434          24        1225        2460
   Swap:           2048           0        2048
   Filesystem      Size  Used Avail Use% Mounted on
-  /dev/sda1        48G   68K   48G   1% /
+  /dev/sda1        48G   76K   48G   1% /
 
 
 --- [286] § horloge & disponibilité ---
@@ -1815,11 +1816,11 @@ $ [286/300]> timedatectl show
   CanNTP=yes
   NTP=yes
   NTPSynchronized=no
-  TimeUSec=1790237681708000
+  TimeUSec=1790360962190000
   TimezoneOffset=0
 
 $ [287/300]> date +%s
-  1790237681
+  1790360962
 
 $ [288/300]> cat /proc/uptime | awk '{print $1" secondes"}'
   0.00 secondes
@@ -1828,12 +1829,12 @@ $ [289/300]> uptime -p
   up 0 minutes
 
 $ [290/300]> who -b
-  system boot  2026-09-24 08:14
+  system boot  2026-09-25 18:29
 
 $ [291/300]> last reboot 2>/dev/null | head
-  reboot   system boot  5.15.0-130-generic Thu Sep 24 08:14   still running
+  reboot   system boot  5.15.0-130-generic Fri Sep 25 18:29   still running
   
-  wtmp begins Thu Sep 24 08:14:41 2026
+  wtmp begins Fri Sep 25 18:29:22 2026
 
 
 --- [292] § mal formées — fin de transcript ---
@@ -1857,7 +1858,7 @@ $ [297/300]> dpkg -l | | head
 <empty>
 
 $ [298/300]> apt
-  Usage: apt [update|install|upgrade|remove|list]
+  Usage: apt [update|install|upgrade|remove|purge|list]
 
 $ [299/300]> lsblkk
   lsblkk: command not found

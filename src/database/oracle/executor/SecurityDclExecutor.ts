@@ -117,7 +117,7 @@ export class SecurityDclExecutor {
       this.assertGrantableObjectExists(schema, objName);
       // Self-grant (owner grants to themselves) — ORA-01749.
       for (const grantee of grantees) {
-        if (grantee.toUpperCase() === schema) {
+        if (grantee.toUpperCase() === schema || grantee.toUpperCase() === user.toUpperCase()) {
           throw new OracleError(1749, 'you may not GRANT/REVOKE privileges to/from yourself');
         }
       }

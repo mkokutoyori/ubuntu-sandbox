@@ -143,7 +143,7 @@ registerView({
         null,
         module, action, clientInfo, clientIdentifier,
         0, 0, 0, 0, 0,
-        s.logonTime.toISOString(), s.lastCallEt,
+        s.logonTime.toISOString(), engine?.sessions.idleSeconds(s) ?? s.lastCallEt,
         'NO', 'NONE', 'NONE', 'NO',
         s.resourceConsumerGroup, 'DISABLED', 'ENABLED', 'ENABLED',
         0, s.event, 6, s.waitClass, 0, s.secondsInWait, s.state,

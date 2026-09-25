@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-09-14T11:11:35.068Z
+Generated: 2026-09-25T18:30:55.085Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -1097,7 +1097,7 @@ Total steps: 355
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX4364SD2X
+  Processor board ID FTX13566F2H
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1109,7 +1109,7 @@ Total steps: 355
   
   Current configuration : 4756 bytes
   !
-  ! Last configuration change at 11:11:37 UTC Mon Sep 14 2026 by console
+  ! Last configuration change at 18:30:57 UTC Fri Sep 25 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1466,10 +1466,14 @@ Total steps: 355
       10.0.0.1 remote-as unset
 
 [255/355] r1 R1# show ip arp
-  No ARP entries.
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  192.168.1.1          -              0200.0000.0001    ARPA      GigabitEthernet0/0
+  Internet  10.0.0.1             -              0200.0000.0002    ARPA      GigabitEthernet0/1
 
 [256/355] r1 R1# show arp
-  No ARP entries.
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  192.168.1.1          -              0200.0000.0001    ARPA      GigabitEthernet0/0
+  Internet  10.0.0.1             -              0200.0000.0002    ARPA      GigabitEthernet0/1
 
 [257/355] r1 R1# show ip ospf
 <empty>
@@ -1613,16 +1617,16 @@ Total steps: 355
   
   Log Buffer (4096 bytes):
   
-  *Sep 14 11:11:35.061: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 14 11:11:35.062: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 14 11:11:35.064: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 14 11:11:35.064: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 14 11:11:35.373: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:11:35.924: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:11:36.499: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:11:36.918: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:11:37.633: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up
-  *Sep 14 11:11:37.971: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:30:55.078: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 25 18:30:55.079: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 25 18:30:55.081: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 25 18:30:55.081: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 25 18:30:55.285: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:30:55.778: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:30:56.192: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:30:56.491: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:30:57.060: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up
+  *Sep 25 18:30:57.412: %SYS-5-CONFIG_I: Configured from console by console
 
 [282/355] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1634,7 +1638,7 @@ Total steps: 355
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 300 (1/100 of seconds), resolution is 4001
-  reference time is EE5254EA.B2B020C4 (11:11:38.698 UTC Mon Sep 14 2026)
+  reference time is EE613C62.072B020C (18:30:58.028 UTC Fri Sep 25 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1645,14 +1649,14 @@ Total steps: 355
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [285/355] r1 R1# show clock
-  *11:11:38.000 UTC Mon Sep 14 2026
+  *18:30:58.000 UTC Fri Sep 25 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  R2               Gig 0/1           177        R           Cisco 291 Gig 0/1
+  R2               Gig 0/1           178        R           Cisco 291 Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -1828,7 +1832,7 @@ Total steps: 355
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX4364SD2X
+  Processor board ID FTX13566F2H
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1840,7 +1844,7 @@ Total steps: 355
   
   Current configuration : 4756 bytes
   !
-  ! Last configuration change at 11:11:37 UTC Mon Sep 14 2026 by console
+  ! Last configuration change at 18:30:57 UTC Fri Sep 25 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2198,20 +2202,20 @@ Total steps: 355
   
   Log Buffer (4096 bytes):
   
-  *Sep 14 11:11:35.061: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Sep 14 11:11:35.062: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Sep 14 11:11:35.064: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 14 11:11:35.064: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 14 11:11:35.373: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:11:35.924: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:11:36.499: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:11:36.918: %SYS-5-CONFIG_I: Configured from console by console
-  *Sep 14 11:11:37.633: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up
-  *Sep 14 11:11:37.971: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:30:55.078: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Sep 25 18:30:55.079: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Sep 25 18:30:55.081: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 25 18:30:55.081: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 25 18:30:55.285: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:30:55.778: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:30:56.192: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:30:56.491: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:30:57.060: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up
+  *Sep 25 18:30:57.412: %SYS-5-CONFIG_I: Configured from console by console
 
 [299/355] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX4364SD2X
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX13566F2H
 
 [300/355] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2723,6 +2727,7 @@ Total steps: 355
     banner         Remove a banner
     boot           Specify system image to load
     cdp            Enable CDP globally
+    class-map      Remove a class map
     clock          Remove hardware calendar is a valid time source
     crypto         Encryption module
     enable         Set enable secret
@@ -2739,6 +2744,7 @@ Total steps: 355
     ntp            Authenticate time sources
     object-group   Remove a network object group
     parser         Remove a CLI view
+    policy-map     Remove a policy map
     priority-list  Remove build a priority list
     privilege      Remove a command privilege rule
     queue-list     Remove build a custom queue list

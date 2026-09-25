@@ -355,61 +355,78 @@ Total steps: 339
 
 --- [42] § ARP — tables initiales (routeurs Cisco) ---
 [42/339] rhq R-HQ# show ip arp
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  172.16.13.2      0           0200.0000.000a    ARPA   GigabitEthernet0/2
-  Internet  172.16.12.2      0           0200.0000.0006    ARPA   GigabitEthernet0/1
-  Internet  10.1.1.10        0           0200.0000.0047    ARPA   GigabitEthernet0/0
-  Internet  10.1.1.11        0           0200.0000.004b    ARPA   GigabitEthernet0/0
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  10.1.1.1             -              0200.0000.0001    ARPA      GigabitEthernet0/0
+  Internet  172.16.12.1          -              0200.0000.0002    ARPA      GigabitEthernet0/1
+  Internet  172.16.13.1          -              0200.0000.0003    ARPA      GigabitEthernet0/2
+  Internet  172.16.13.2          0              0200.0000.000a    ARPA      GigabitEthernet0/2
+  Internet  172.16.12.2          0              0200.0000.0006    ARPA      GigabitEthernet0/1
+  Internet  10.1.1.10            0              0200.0000.0047    ARPA      GigabitEthernet0/0
+  Internet  10.1.1.11            0              0200.0000.004b    ARPA      GigabitEthernet0/0
 
 [43/339] rhq R-HQ# show ip arp
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  172.16.13.2      0           0200.0000.000a    ARPA   GigabitEthernet0/2
-  Internet  172.16.12.2      0           0200.0000.0006    ARPA   GigabitEthernet0/1
-  Internet  10.1.1.10        0           0200.0000.0047    ARPA   GigabitEthernet0/0
-  Internet  10.1.1.11        0           0200.0000.004b    ARPA   GigabitEthernet0/0
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  10.1.1.1             -              0200.0000.0001    ARPA      GigabitEthernet0/0
+  Internet  172.16.12.1          -              0200.0000.0002    ARPA      GigabitEthernet0/1
+  Internet  172.16.13.1          -              0200.0000.0003    ARPA      GigabitEthernet0/2
+  Internet  172.16.13.2          0              0200.0000.000a    ARPA      GigabitEthernet0/2
+  Internet  172.16.12.2          0              0200.0000.0006    ARPA      GigabitEthernet0/1
+  Internet  10.1.1.10            0              0200.0000.0047    ARPA      GigabitEthernet0/0
+  Internet  10.1.1.11            0              0200.0000.004b    ARPA      GigabitEthernet0/0
 
 [44/339] rhq R-HQ# show arp
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  172.16.13.2      0           0200.0000.000a    ARPA   GigabitEthernet0/2
-  Internet  172.16.12.2      0           0200.0000.0006    ARPA   GigabitEthernet0/1
-  Internet  10.1.1.10        0           0200.0000.0047    ARPA   GigabitEthernet0/0
-  Internet  10.1.1.11        0           0200.0000.004b    ARPA   GigabitEthernet0/0
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  10.1.1.1             -              0200.0000.0001    ARPA      GigabitEthernet0/0
+  Internet  172.16.12.1          -              0200.0000.0002    ARPA      GigabitEthernet0/1
+  Internet  172.16.13.1          -              0200.0000.0003    ARPA      GigabitEthernet0/2
+  Internet  172.16.13.2          0              0200.0000.000a    ARPA      GigabitEthernet0/2
+  Internet  172.16.12.2          0              0200.0000.0006    ARPA      GigabitEthernet0/1
+  Internet  10.1.1.10            0              0200.0000.0047    ARPA      GigabitEthernet0/0
+  Internet  10.1.1.11            0              0200.0000.004b    ARPA      GigabitEthernet0/0
 
 [45/339] rhq R-HQ# show arp summary
-  Total number of entries in the arp table: 4.
+  Total number of entries in the arp table: 7.
   Total number of Dynamic entries: 4.
   Total number of Static entries: 0.
-  Total number of Interface entries: 0.
+  Total number of Interface entries: 3.
 
 [46/339] rhq R-HQ# show ip arp GigabitEthernet0/0
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  10.1.1.10        0           0200.0000.0047    ARPA   GigabitEthernet0/0
-  Internet  10.1.1.11        0           0200.0000.004b    ARPA   GigabitEthernet0/0
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  10.1.1.1             -              0200.0000.0001    ARPA      GigabitEthernet0/0
+  Internet  10.1.1.10            0              0200.0000.0047    ARPA      GigabitEthernet0/0
+  Internet  10.1.1.11            0              0200.0000.004b    ARPA      GigabitEthernet0/0
 
 [47/339] rdc R-DC# show ip arp
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  172.16.23.2      0           0200.0000.0007    ARPA   GigabitEthernet0/2
-  Internet  10.3.3.10        0           0200.0000.0057    ARPA   GigabitEthernet0/0
-  Internet  10.3.3.11        0           0200.0000.005b    ARPA   GigabitEthernet0/0
-  Internet  172.16.13.1      0           0200.0000.0003    ARPA   GigabitEthernet0/1
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  10.3.3.1             -              0200.0000.0009    ARPA      GigabitEthernet0/0
+  Internet  172.16.13.2          -              0200.0000.000a    ARPA      GigabitEthernet0/1
+  Internet  172.16.23.1          -              0200.0000.000b    ARPA      GigabitEthernet0/2
+  Internet  172.16.23.2          0              0200.0000.0007    ARPA      GigabitEthernet0/2
+  Internet  10.3.3.10            0              0200.0000.0057    ARPA      GigabitEthernet0/0
+  Internet  10.3.3.11            0              0200.0000.005b    ARPA      GigabitEthernet0/0
+  Internet  172.16.13.1          0              0200.0000.0003    ARPA      GigabitEthernet0/1
 
 [48/339] rdc R-DC# show arp
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  172.16.23.2      0           0200.0000.0007    ARPA   GigabitEthernet0/2
-  Internet  10.3.3.10        0           0200.0000.0057    ARPA   GigabitEthernet0/0
-  Internet  10.3.3.11        0           0200.0000.005b    ARPA   GigabitEthernet0/0
-  Internet  172.16.13.1      0           0200.0000.0003    ARPA   GigabitEthernet0/1
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  10.3.3.1             -              0200.0000.0009    ARPA      GigabitEthernet0/0
+  Internet  172.16.13.2          -              0200.0000.000a    ARPA      GigabitEthernet0/1
+  Internet  172.16.23.1          -              0200.0000.000b    ARPA      GigabitEthernet0/2
+  Internet  172.16.23.2          0              0200.0000.0007    ARPA      GigabitEthernet0/2
+  Internet  10.3.3.10            0              0200.0000.0057    ARPA      GigabitEthernet0/0
+  Internet  10.3.3.11            0              0200.0000.005b    ARPA      GigabitEthernet0/0
+  Internet  172.16.13.1          0              0200.0000.0003    ARPA      GigabitEthernet0/1
 
 [49/339] rdc R-DC# show arp summary
-  Total number of entries in the arp table: 4.
+  Total number of entries in the arp table: 7.
   Total number of Dynamic entries: 4.
   Total number of Static entries: 0.
-  Total number of Interface entries: 0.
+  Total number of Interface entries: 3.
 
 [50/339] rdc R-DC# show ip arp GigabitEthernet0/0
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  10.3.3.10        0           0200.0000.0057    ARPA   GigabitEthernet0/0
-  Internet  10.3.3.11        0           0200.0000.005b    ARPA   GigabitEthernet0/0
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  10.3.3.1             -              0200.0000.0009    ARPA      GigabitEthernet0/0
+  Internet  10.3.3.10            0              0200.0000.0057    ARPA      GigabitEthernet0/0
+  Internet  10.3.3.11            0              0200.0000.005b    ARPA      GigabitEthernet0/0
 
 
 --- [51] § ARP — tables initiales (Huawei) ---
@@ -653,11 +670,11 @@ Total steps: 339
 
 [90/339] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=1.066 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.866 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.066/1.066/1.066/0.000 ms
+  rtt min/avg/max/mdev = 0.866/0.866/0.866/0.000 ms
 
 [91/339] lhq lhq$ arp -n 10.1.1.11
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -677,11 +694,11 @@ Total steps: 339
 
 [96/339] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.746 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.936 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.746/0.746/0.746/0.000 ms
+  rtt min/avg/max/mdev = 0.936/0.936/0.936/0.000 ms
 
 [97/339] lbr lbr$ arp -n 10.2.2.10
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -701,11 +718,11 @@ Total steps: 339
 
 [102/339] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.668 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.779 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.668/0.668/0.668/0.000 ms
+  rtt min/avg/max/mdev = 0.779/0.779/0.779/0.000 ms
 
 [103/339] ldc ldc$ arp -n 10.3.3.10
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -725,11 +742,11 @@ Total steps: 339
 
 [108/339] srvdc srvdc$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.639 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.839 ms
   
   --- 10.3.3.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.639/0.639/0.639/0.000 ms
+  rtt min/avg/max/mdev = 0.839/0.839/0.839/0.000 ms
 
 [109/339] srvdc srvdc$ arp -n 10.3.3.11
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -747,12 +764,12 @@ Total steps: 339
 [113/339] whq whq$ ping -n 1 10.1.1.10
   
   Pinging 10.1.1.10 with 32 bytes of data:
-  Reply from 10.1.1.10: bytes=32 time=<1ms TTL=64
+  Reply from 10.1.1.10: bytes=32 time=3ms TTL=64
   
   Ping statistics for 10.1.1.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 3ms, Maximum = 3ms, Average = 3ms
 
 [114/339] whq whq$ arp -a
   
@@ -789,11 +806,11 @@ Total steps: 339
 
 [120/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.636 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.663 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.636/0.636/0.636/0.000 ms
+  rtt min/avg/max/mdev = 0.663/0.663/0.663/0.000 ms
 
 [121/339] lhq lhq$ ip neigh show 10.1.1.1 dev eth0
   10.1.1.1 dev eth0 lladdr 02:00:00:00:00:01 REACHABLE
@@ -807,11 +824,11 @@ Total steps: 339
 
 [124/339] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.718 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.789 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.718/0.718/0.718/0.000 ms
+  rtt min/avg/max/mdev = 0.789/0.789/0.789/0.000 ms
 
 [125/339] lbr lbr$ ip neigh show 10.2.2.1 dev eth0
   10.2.2.1 dev eth0 lladdr 02:00:00:00:00:05 REACHABLE
@@ -825,11 +842,11 @@ Total steps: 339
 
 [128/339] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.759 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.909 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.759/0.759/0.759/0.000 ms
+  rtt min/avg/max/mdev = 0.909/0.909/0.909/0.000 ms
 
 [129/339] ldc ldc$ ip neigh show 10.3.3.1 dev eth0
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -843,11 +860,11 @@ Total steps: 339
 
 [132/339] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.400 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.452 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.400/0.400/0.400/0.000 ms
+  rtt min/avg/max/mdev = 0.452/0.452/0.452/0.000 ms
 
 [133/339] srvdc srvdc$ ip neigh show 10.3.3.1 dev eth0
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -859,18 +876,24 @@ Total steps: 339
 
 --- [135] § ARP — caches routeurs après trafic ---
 [135/339] rhq R-HQ# show ip arp
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  172.16.13.2      0           0200.0000.000a    ARPA   GigabitEthernet0/2
-  Internet  172.16.12.2      0           0200.0000.0006    ARPA   GigabitEthernet0/1
-  Internet  10.1.1.10        0           0200.0000.0047    ARPA   GigabitEthernet0/0
-  Internet  10.1.1.11        0           0200.0000.004b    ARPA   GigabitEthernet0/0
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  10.1.1.1             -              0200.0000.0001    ARPA      GigabitEthernet0/0
+  Internet  172.16.12.1          -              0200.0000.0002    ARPA      GigabitEthernet0/1
+  Internet  172.16.13.1          -              0200.0000.0003    ARPA      GigabitEthernet0/2
+  Internet  172.16.13.2          0              0200.0000.000a    ARPA      GigabitEthernet0/2
+  Internet  172.16.12.2          0              0200.0000.0006    ARPA      GigabitEthernet0/1
+  Internet  10.1.1.10            0              0200.0000.0047    ARPA      GigabitEthernet0/0
+  Internet  10.1.1.11            0              0200.0000.004b    ARPA      GigabitEthernet0/0
 
 [136/339] rdc R-DC# show ip arp
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  172.16.23.2      0           0200.0000.0007    ARPA   GigabitEthernet0/2
-  Internet  10.3.3.10        0           0200.0000.0057    ARPA   GigabitEthernet0/0
-  Internet  10.3.3.11        0           0200.0000.005b    ARPA   GigabitEthernet0/0
-  Internet  172.16.13.1      0           0200.0000.0003    ARPA   GigabitEthernet0/1
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  10.3.3.1             -              0200.0000.0009    ARPA      GigabitEthernet0/0
+  Internet  172.16.13.2          -              0200.0000.000a    ARPA      GigabitEthernet0/1
+  Internet  172.16.23.1          -              0200.0000.000b    ARPA      GigabitEthernet0/2
+  Internet  172.16.23.2          0              0200.0000.0007    ARPA      GigabitEthernet0/2
+  Internet  10.3.3.10            0              0200.0000.0057    ARPA      GigabitEthernet0/0
+  Internet  10.3.3.11            0              0200.0000.005b    ARPA      GigabitEthernet0/0
+  Internet  172.16.13.1          0              0200.0000.0003    ARPA      GigabitEthernet0/1
 
 [137/339] rbr <R-BR> display arp all
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
@@ -879,12 +902,12 @@ Total steps: 339
   172.16.12.1     0200-0000-0002  0          D         GigabitEthernet0/0/1
 
 [138/339] rhq R-HQ# show ip arp 10.1.1.10
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  10.1.1.10        0           0200.0000.0047    ARPA   GigabitEthernet0/0
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  10.1.1.10            0              0200.0000.0047    ARPA      GigabitEthernet0/0
 
 [139/339] rhq R-HQ# show ip arp 10.1.1.11
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  10.1.1.11        0           0200.0000.004b    ARPA   GigabitEthernet0/0
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  10.1.1.11            0              0200.0000.004b    ARPA      GigabitEthernet0/0
 
 [140/339] rbr <R-BR> display arp | include 10.2.2
   10.2.2.11       0200-0000-0053  0          D         GigabitEthernet0/0/0
@@ -1066,9 +1089,8 @@ Total steps: 339
 <empty>
 
 [188/339] rhq R-HQ# show ip arp 10.9.9.9
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  10.9.9.9         -           0200.00de.ad01    ARPA   GigabitEthernet0/0
-                                                         static
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  10.9.9.9             -              0200.00de.ad01    ARPA      GigabitEthernet0/0
 
 [189/339] rhq R-HQ# show ip arp | include Static
 <empty>
@@ -1092,9 +1114,8 @@ Total steps: 339
 <empty>
 
 [196/339] rdc R-DC# show ip arp 10.9.9.9
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  10.9.9.9         -           0200.00de.ad01    ARPA   GigabitEthernet0/0
-                                                         static
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  10.9.9.9             -              0200.00de.ad01    ARPA      GigabitEthernet0/0
 
 [197/339] rdc R-DC# show ip arp | include Static
 <empty>
@@ -1272,14 +1293,15 @@ Total steps: 339
   Sent 2 probes (2 broadcast(s))
 
 [232/339] lhq lhq$ arping -c 1 -D -I eth0 10.1.1.11
-  ARPING 10.1.1.11
+  ARPING 10.1.1.11 from 10.1.1.10 eth0
+  Unicast reply from 10.1.1.11 [02:00:00:00:00:4B]  4.703ms
   Sent 1 probes (1 broadcast(s))
-  Received 0 response(s)
+  Received 1 response(s)
 
 [233/339] lhq lhq$ arping -c 2 -I eth0 10.1.1.1
-  ARPING 10.1.1.1
-  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.500ms
-  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.501ms
+  ARPING 10.1.1.1 from 10.1.1.10 eth0
+  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.687ms
+  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.697ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1292,14 +1314,15 @@ Total steps: 339
   Sent 2 probes (2 broadcast(s))
 
 [236/339] lbr lbr$ arping -c 1 -D -I eth0 10.2.2.10
-  ARPING 10.2.2.10
+  ARPING 10.2.2.10 from 10.2.2.11 eth0
+  Unicast reply from 10.2.2.10 [02:00:00:00:00:4F]  0.757ms
   Sent 1 probes (1 broadcast(s))
-  Received 0 response(s)
+  Received 1 response(s)
 
 [237/339] lbr lbr$ arping -c 2 -I eth0 10.2.2.1
-  ARPING 10.2.2.1
-  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.500ms
-  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.501ms
+  ARPING 10.2.2.1 from 10.2.2.11 eth0
+  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.593ms
+  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.394ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1312,15 +1335,15 @@ Total steps: 339
   Sent 2 probes (2 broadcast(s))
 
 [240/339] ldc ldc$ arping -c 1 -D -I eth0 10.3.3.10
-  ARPING 10.3.3.10
-  Unicast reply from 10.3.3.10 [02:00:00:00:00:57]  0.500ms
+  ARPING 10.3.3.10 from 10.3.3.11 eth0
+  Unicast reply from 10.3.3.10 [02:00:00:00:00:57]  0.556ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [241/339] ldc ldc$ arping -c 2 -I eth0 10.3.3.1
-  ARPING 10.3.3.1
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.500ms
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.501ms
+  ARPING 10.3.3.1 from 10.3.3.11 eth0
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.536ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.496ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1333,15 +1356,15 @@ Total steps: 339
   Sent 2 probes (2 broadcast(s))
 
 [244/339] srvdc srvdc$ arping -c 1 -D -I eth0 10.3.3.11
-  ARPING 10.3.3.11
-  Unicast reply from 10.3.3.11 [02:00:00:00:00:5b]  0.500ms
+  ARPING 10.3.3.11 from 10.3.3.10 eth0
+  Unicast reply from 10.3.3.11 [02:00:00:00:00:5B]  0.466ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [245/339] srvdc srvdc$ arping -c 2 -I eth0 10.3.3.1
-  ARPING 10.3.3.1
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.500ms
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.501ms
+  ARPING 10.3.3.1 from 10.3.3.10 eth0
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.607ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.361ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1357,11 +1380,14 @@ Total steps: 339
 <empty>
 
 [249/339] rhq R-HQ(config-if)# do show ip arp
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  172.16.13.2      0           0200.0000.000a    ARPA   GigabitEthernet0/2
-  Internet  172.16.12.2      0           0200.0000.0006    ARPA   GigabitEthernet0/1
-  Internet  10.1.1.10        0           0200.0000.0047    ARPA   GigabitEthernet0/0
-  Internet  10.1.1.11        0           0200.0000.004b    ARPA   GigabitEthernet0/0
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  10.1.1.1             -              0200.0000.0001    ARPA      GigabitEthernet0/0
+  Internet  172.16.12.1          -              0200.0000.0002    ARPA      GigabitEthernet0/1
+  Internet  172.16.13.1          -              0200.0000.0003    ARPA      GigabitEthernet0/2
+  Internet  172.16.13.2          0              0200.0000.000a    ARPA      GigabitEthernet0/2
+  Internet  172.16.12.2          0              0200.0000.0006    ARPA      GigabitEthernet0/1
+  Internet  10.1.1.10            0              0200.0000.0047    ARPA      GigabitEthernet0/0
+  Internet  10.1.1.11            0              0200.0000.004b    ARPA      GigabitEthernet0/0
 
 [250/339] rhq R-HQ(config-if)# arp timeout 14400
 <empty>
@@ -1429,12 +1455,12 @@ Total steps: 339
 
 [264/339] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.697 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.763 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.769 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=1.123 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.697/0.730/0.763/0.033 ms
+  rtt min/avg/max/mdev = 0.769/0.946/1.123/0.177 ms
 
 [265/339] srvdc srvdc$ sysctl -w net.ipv4.conf.all.arp_ignore=0
   net.ipv4.conf.all.arp_ignore = 0
@@ -1447,12 +1473,12 @@ Total steps: 339
 
 [268/339] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.452 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.395 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.745 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.464 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.395/0.423/0.452/0.029 ms
+  rtt min/avg/max/mdev = 0.464/0.604/0.745/0.141 ms
 
 
 --- [269] § L2 — corrélation MAC/ARP sur switchs ---
@@ -1604,27 +1630,27 @@ Total steps: 339
 --- [298] § ARP — re-résolution complète après flush ---
 [298/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.750 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.600 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.750/0.750/0.750/0.000 ms
+  rtt min/avg/max/mdev = 0.600/0.600/0.600/0.000 ms
 
 [299/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.681 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.533 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.681/0.681/0.681/0.000 ms
+  rtt min/avg/max/mdev = 0.533/0.533/0.533/0.000 ms
 
 [300/339] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.707 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.726 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.707/0.707/0.707/0.000 ms
+  rtt min/avg/max/mdev = 0.726/0.726/0.726/0.000 ms
 
 [301/339] lhq lhq$ ip -s neigh
   10.1.1.250 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
@@ -1633,19 +1659,19 @@ Total steps: 339
 
 [302/339] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.800 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.569 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.800/0.800/0.800/0.000 ms
+  rtt min/avg/max/mdev = 0.569/0.569/0.569/0.000 ms
 
 [303/339] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.494 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.477 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.494/0.494/0.494/0.000 ms
+  rtt min/avg/max/mdev = 0.477/0.477/0.477/0.000 ms
 
 [304/339] lbr lbr$ ip -s neigh
   10.2.2.1 dev eth0 lladdr 02:00:00:00:00:05 REACHABLE
@@ -1653,19 +1679,19 @@ Total steps: 339
 
 [305/339] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.406 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.354 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.406/0.406/0.406/0.000 ms
+  rtt min/avg/max/mdev = 0.354/0.354/0.354/0.000 ms
 
 [306/339] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.534 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.319 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.534/0.534/0.534/0.000 ms
+  rtt min/avg/max/mdev = 0.319/0.319/0.319/0.000 ms
 
 [307/339] ldc ldc$ ip -s neigh
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -1673,19 +1699,19 @@ Total steps: 339
 
 [308/339] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.478 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.448 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.478/0.478/0.478/0.000 ms
+  rtt min/avg/max/mdev = 0.448/0.448/0.448/0.000 ms
 
 [309/339] srvdc srvdc$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.482 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.400 ms
   
   --- 10.3.3.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.482/0.482/0.482/0.000 ms
+  rtt min/avg/max/mdev = 0.400/0.400/0.400/0.000 ms
 
 [310/339] srvdc srvdc$ ip -s neigh
   10.3.3.11 dev eth0 lladdr 02:00:00:00:00:5b REACHABLE
@@ -1772,13 +1798,19 @@ Total steps: 339
   Info: 1 debugging switch(es) have been turned off.
 
 [323/339] rhq R-HQ# show ip arp
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  10.1.1.10        0           0200.0000.0047    ARPA   GigabitEthernet0/0
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  10.1.1.1             -              0200.0000.0001    ARPA      GigabitEthernet0/0
+  Internet  172.16.12.1          -              0200.0000.0002    ARPA      GigabitEthernet0/1
+  Internet  172.16.13.1          -              0200.0000.0003    ARPA      GigabitEthernet0/2
+  Internet  10.1.1.10            0              0200.0000.0047    ARPA      GigabitEthernet0/0
 
 [324/339] rdc R-DC# show ip arp
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  10.3.3.11        0           0200.0000.005b    ARPA   GigabitEthernet0/0
-  Internet  10.3.3.10        0           0200.0000.0057    ARPA   GigabitEthernet0/0
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  10.3.3.1             -              0200.0000.0009    ARPA      GigabitEthernet0/0
+  Internet  172.16.13.2          -              0200.0000.000a    ARPA      GigabitEthernet0/1
+  Internet  172.16.23.1          -              0200.0000.000b    ARPA      GigabitEthernet0/2
+  Internet  10.3.3.11            0              0200.0000.005b    ARPA      GigabitEthernet0/0
+  Internet  10.3.3.10            0              0200.0000.0057    ARPA      GigabitEthernet0/0
 
 [325/339] rbr <R-BR> display arp all
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
@@ -1866,7 +1898,7 @@ Total steps: 339
                        filtering disabled
       Monitor logging: level debugging, 11 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 24 messages logged, xml disabled,
+      Buffer logging:  level debugging, 29 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -1900,6 +1932,11 @@ Total steps: 339
   *Jun  6 08:00:00.000: IP ARP: rcvd rep src 10.1.1.10 0200.0000.0047, dst 10.1.1.10 ffff.ffff.ffff GigabitEthernet0/0
   *Jun  6 08:00:00.000: IP ARP: rcvd req src 10.1.1.10 0200.0000.0047, dst 10.1.1.10 0000.0000.0000 GigabitEthernet0/0
   *Jun  6 08:00:00.000: IP ARP: rcvd req src 10.1.1.10 0200.0000.0047, dst 10.1.1.10 0000.0000.0000 GigabitEthernet0/0
+  *Jun  6 08:00:00.000: IP ARP: rcvd req src 10.1.1.10 0200.0000.0047, dst 10.1.1.11 0000.0000.0000 GigabitEthernet0/0
+  *Jun  6 08:00:00.000: IP ARP: rcvd req src 10.1.1.10 0200.0000.0047, dst 10.1.1.1 0000.0000.0000 GigabitEthernet0/0
+  *Jun  6 08:00:00.000: IP ARP: sent rep src 10.1.1.1 0200.0000.0001, dst 10.1.1.10 0200.0000.0047 GigabitEthernet0/0
+  *Jun  6 08:00:00.000: IP ARP: rcvd req src 10.1.1.10 0200.0000.0047, dst 10.1.1.1 0000.0000.0000 GigabitEthernet0/0
+  *Jun  6 08:00:00.000: IP ARP: sent rep src 10.1.1.1 0200.0000.0001, dst 10.1.1.10 0200.0000.0047 GigabitEthernet0/0
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: IP ARP: rcvd req src 10.1.1.10 0200.0000.0047, dst 10.1.1.1 0000.0000.0000 GigabitEthernet0/0
   *Jun  6 08:00:00.000: IP ARP: sent rep src 10.1.1.1 0200.0000.0001, dst 10.1.1.10 0200.0000.0047 GigabitEthernet0/0

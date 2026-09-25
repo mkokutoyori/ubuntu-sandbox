@@ -842,7 +842,7 @@ Total steps: 401
   
   Pinging 10.2.2.11 with 32 bytes of data:
   Reply from 10.2.2.11: bytes=32 time=2ms TTL=64
-  Reply from 10.2.2.11: bytes=32 time=<1ms TTL=64
+  Reply from 10.2.2.11: bytes=32 time=1ms TTL=64
   
   Ping statistics for 10.2.2.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
@@ -851,12 +851,12 @@ Total steps: 401
 
 [190/401] lbr lbr$ ping -c 2 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.879 ms
-  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.770 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.944 ms
+  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.643 ms
   
   --- 10.2.2.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.770/0.824/0.879/0.055 ms
+  rtt min/avg/max/mdev = 0.643/0.793/0.944/0.151 ms
 
 
 --- [191] § inter-VLAN routé — router-on-a-stick HQ (Cisco, fonctionnel) ---
@@ -1017,43 +1017,43 @@ Total steps: 401
 
 [230/401] lhq lhq$ ping -c 2 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.969 ms
-  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=1.151 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=1.029 ms
+  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.736 ms
   
   --- 10.1.1.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.969/1.060/1.151/0.091 ms
+  rtt min/avg/max/mdev = 0.736/0.882/1.029/0.147 ms
 
 [231/401] lhq lhq$ ping -c 2 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.622 ms
-  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.538 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.579 ms
+  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.451 ms
   
   --- 10.1.20.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.538/0.580/0.622/0.042 ms
+  rtt min/avg/max/mdev = 0.451/0.515/0.579/0.064 ms
 
 [232/401] lhq lhq$ ping -c 3 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=3.565 ms
-  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=1.597 ms
-  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=1.987 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=2.673 ms
+  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=1.056 ms
+  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=1.104 ms
   
   --- 10.1.20.11 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.597/2.383/3.565/0.851 ms
+  rtt min/avg/max/mdev = 1.056/1.611/2.673/0.751 ms
 
 [233/401] whq whq$ ping -n 3 10.1.1.10
   
   Pinging 10.1.1.10 with 32 bytes of data:
   Reply from 10.1.1.10: bytes=32 time=1ms TTL=63
-  Reply from 10.1.1.10: bytes=32 time=2ms TTL=63
   Reply from 10.1.1.10: bytes=32 time=1ms TTL=63
+  Reply from 10.1.1.10: bytes=32 time=<1ms TTL=63
   
   Ping statistics for 10.1.1.10:
       Packets: Sent = 3, Received = 3, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 2ms, Average = 1ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [234/401] whq whq$ ping -n 2 10.1.20.1
   
@@ -1064,16 +1064,16 @@ Total steps: 401
   Ping statistics for 10.1.20.1:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 1ms, Average = 1ms
 
 [235/401] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.544 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.398 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=2.000 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.203 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.398/1.471/1.544/0.073 ms
+  rtt min/avg/max/mdev = 1.203/1.602/2.000/0.399 ms
 
 [236/401] rhq R-HQ# show ip route connected
   Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
@@ -1096,12 +1096,16 @@ Total steps: 401
   C        172.16.13.0/30 is directly connected, GigabitEthernet0/2
 
 [237/401] rhq R-HQ# show ip arp
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  172.16.13.2      0           0200.0000.000a    ARPA   GigabitEthernet0/2
-  Internet  172.16.12.2      0           0200.0000.0006    ARPA   GigabitEthernet0/1
-  Internet  10.1.1.10        0           0200.0000.0047    ARPA   GigabitEthernet0/0.10
-  Internet  10.1.1.11        0           0200.0000.004b    ARPA   GigabitEthernet0/0
-  Internet  10.1.20.11       0           0200.0000.004b    ARPA   GigabitEthernet0/0.20
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  172.16.12.1          -              0200.0000.0002    ARPA      GigabitEthernet0/1
+  Internet  172.16.13.1          -              0200.0000.0003    ARPA      GigabitEthernet0/2
+  Internet  10.1.1.1             -              0200.0000.0001    ARPA      GigabitEthernet0/0.10
+  Internet  10.1.20.1            -              0200.0000.0001    ARPA      GigabitEthernet0/0.20
+  Internet  172.16.13.2          0              0200.0000.000a    ARPA      GigabitEthernet0/2
+  Internet  172.16.12.2          0              0200.0000.0006    ARPA      GigabitEthernet0/1
+  Internet  10.1.1.10            0              0200.0000.0047    ARPA      GigabitEthernet0/0.10
+  Internet  10.1.1.11            0              0200.0000.004b    ARPA      GigabitEthernet0/0
+  Internet  10.1.20.11           0              0200.0000.004b    ARPA      GigabitEthernet0/0.20
 
 [238/401] rhq R-HQ# show vlans
   No Virtual LAN sub-interfaces are configured
@@ -1453,8 +1457,9 @@ Total steps: 401
   0200-0000-0053 1          GigabitEthernet0/0/1  dynamic
   0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
   0200-0000-004f 10         GigabitEthernet0/0/1  dynamic
+  0200-0000-0053 10         GigabitEthernet0/0/1  dynamic
   -------------------------------------------------------------------------------
-  Total items displayed = 4
+  Total items displayed = 5
 
 
 --- [295] § VLAN — spanning-tree par VLAN ---
@@ -1474,10 +1479,10 @@ Total steps: 401
   
   Interface           Role Sts Cost      Prio.Nbr Type
   ------------------- ---- --- --------- -------- --------------------------------
-  Fa0/1               Disa DIS 19        128.1    P2p
-  Fa0/2               Disa DIS 19        128.2    P2p Edge
-  Fa0/4               Disa DIS 19        128.4    P2p
-  Fa0/5               Disa DIS 19        128.5    P2p
+  Fa0/1               Desg FWD 19        128.1    P2p
+  Fa0/2               Desg FWD 19        128.2    P2p Edge
+  Fa0/4               Desg FWD 19        128.4    P2p
+  Fa0/5               Desg FWD 19        128.5    P2p
 
 [296/401] swhq SW-HQ# show spanning-tree vlan 20
   VLAN0020
@@ -1495,10 +1500,10 @@ Total steps: 401
   
   Interface           Role Sts Cost      Prio.Nbr Type
   ------------------- ---- --- --------- -------- --------------------------------
-  Fa0/1               Disa DIS 19        128.1    P2p
-  Fa0/3               Disa DIS 19        128.3    P2p
-  Fa0/4               Disa DIS 19        128.4    P2p
-  Fa0/5               Disa DIS 19        128.5    P2p
+  Fa0/1               Desg FWD 19        128.1    P2p
+  Fa0/3               Desg FWD 19        128.3    P2p
+  Fa0/4               Desg FWD 19        128.4    P2p
+  Fa0/5               Desg FWD 19        128.5    P2p
 
 [297/401] swhq SW-HQ# show spanning-tree vlan 10 brief
             ^
@@ -1508,9 +1513,9 @@ Total steps: 401
   VLAN0010
     Spanning tree enabled protocol ieee
     Root ID    Priority    32778
-               Address     0200.0000.005f
-               Cost        0
-               This bridge is the root
+               Address     0200.0000.000d
+               Cost        19
+               Port        1 (FastEthernet0/1)
                Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
     Bridge ID  Priority    32778  (priority 32768 sys-id-ext 10)
@@ -1520,8 +1525,8 @@ Total steps: 401
   
   Interface           Role Sts Cost      Prio.Nbr Type
   ------------------- ---- --- --------- -------- --------------------------------
-  Fa0/1               Disa DIS 19        128.1    P2p
-  Fa0/2               Disa DIS 19        128.2    P2p
+  Fa0/1               Root FWD 19        128.1    P2p
+  Fa0/2               Desg FWD 19        128.2    P2p
 
 [299/401] swbr <SW-BR> display stp instance 0
    MSTID  Port                        Role  STP State     Protection
@@ -1632,8 +1637,8 @@ Total steps: 401
   Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
-  Gi0/1                        notconnect   1            auto   auto 1000BASE-T
-  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
+  Gi0/1                        notconnect   1            auto   auto 10/100/1000BaseTX
+  Gi0/2                        notconnect   1            auto   auto 10/100/1000BaseTX
 
 [304/401] dsw1 DSW-HQ-1# show interfaces trunk
   Port        Mode             Encapsulation  Status        Native vlan
@@ -1811,8 +1816,8 @@ Total steps: 401
   Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
-  Gi0/1                        notconnect   1            auto   auto 1000BASE-T
-  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
+  Gi0/1                        notconnect   1            auto   auto 10/100/1000BaseTX
+  Gi0/2                        notconnect   1            auto   auto 10/100/1000BaseTX
 
 [315/401] swhq SW-HQ# show mac address-table
   Mac Address Table
@@ -1890,8 +1895,8 @@ Total steps: 401
   Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
-  Gi0/1                        notconnect   1            auto   auto 1000BASE-T
-  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
+  Gi0/1                        notconnect   1            auto   auto 10/100/1000BaseTX
+  Gi0/2                        notconnect   1            auto   auto 10/100/1000BaseTX
 
 [321/401] dsw1 DSW-HQ-1# show mac address-table
   Mac Address Table
@@ -1971,8 +1976,8 @@ Total steps: 401
   Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
   Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
-  Gi0/1                        notconnect   1            auto   auto 1000BASE-T
-  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
+  Gi0/1                        notconnect   1            auto   auto 10/100/1000BaseTX
+  Gi0/2                        notconnect   1            auto   auto 10/100/1000BaseTX
 
 [327/401] dsw2 DSW-HQ-2# show mac address-table
   Mac Address Table
@@ -2109,15 +2114,16 @@ Total steps: 401
   0200-0000-0053 1          GigabitEthernet0/0/1  dynamic
   0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
   0200-0000-004f 10         GigabitEthernet0/0/1  dynamic
+  0200-0000-0053 10         GigabitEthernet0/0/1  dynamic
   -------------------------------------------------------------------------------
-  Total items displayed = 4
+  Total items displayed = 5
 
 
 --- [339] § VLAN — connectivité L2 intra-VLAN (matrice) ---
 [339/401] wbr wbr$ ping -n 1 10.2.2.11
   
   Pinging 10.2.2.11 with 32 bytes of data:
-  Reply from 10.2.2.11: bytes=32 time=1ms TTL=64
+  Reply from 10.2.2.11: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 10.2.2.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
@@ -2126,19 +2132,19 @@ Total steps: 401
 
 [340/401] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.633 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.695 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.633/0.633/0.633/0.000 ms
+  rtt min/avg/max/mdev = 0.695/0.695/0.695/0.000 ms
 
 [341/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.779 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.492 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.779/1.779/1.779/0.000 ms
+  rtt min/avg/max/mdev = 1.492/1.492/1.492/0.000 ms
 
 [342/401] whq whq$ ping -n 1 10.1.1.10
   
@@ -2161,12 +2167,16 @@ Total steps: 401
     10.1.20.1             02-00-00-00-00-01     dynamic
 
 [345/401] rhq R-HQ# show ip arp
-  Protocol  Address          Age (min)   Hardware Addr   Type   Interface
-  Internet  172.16.13.2      0           0200.0000.000a    ARPA   GigabitEthernet0/2
-  Internet  172.16.12.2      0           0200.0000.0006    ARPA   GigabitEthernet0/1
-  Internet  10.1.1.10        0           0200.0000.0047    ARPA   GigabitEthernet0/0.10
-  Internet  10.1.1.11        0           0200.0000.004b    ARPA   GigabitEthernet0/0
-  Internet  10.1.20.11       0           0200.0000.004b    ARPA   GigabitEthernet0/0.20
+  Protocol  Address              Age(min)       Hardware Addr     Type      Interface
+  Internet  172.16.12.1          -              0200.0000.0002    ARPA      GigabitEthernet0/1
+  Internet  172.16.13.1          -              0200.0000.0003    ARPA      GigabitEthernet0/2
+  Internet  10.1.1.1             -              0200.0000.0001    ARPA      GigabitEthernet0/0.10
+  Internet  10.1.20.1            -              0200.0000.0001    ARPA      GigabitEthernet0/0.20
+  Internet  172.16.13.2          0              0200.0000.000a    ARPA      GigabitEthernet0/2
+  Internet  172.16.12.2          0              0200.0000.0006    ARPA      GigabitEthernet0/1
+  Internet  10.1.1.10            0              0200.0000.0047    ARPA      GigabitEthernet0/0.10
+  Internet  10.1.1.11            0              0200.0000.004b    ARPA      GigabitEthernet0/0
+  Internet  10.1.20.11           0              0200.0000.004b    ARPA      GigabitEthernet0/0.20
 
 [346/401] rhq R-HQ# show vlans
   No Virtual LAN sub-interfaces are configured
@@ -2557,19 +2567,19 @@ Total steps: 401
 
 [384/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.925 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.607 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.925/1.925/1.925/0.000 ms
+  rtt min/avg/max/mdev = 1.607/1.607/1.607/0.000 ms
 
 [385/401] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.796 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.472 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.796/1.796/1.796/0.000 ms
+  rtt min/avg/max/mdev = 1.472/1.472/1.472/0.000 ms
 
 [386/401] wbr wbr$ ping -n 1 10.2.2.11
   
@@ -2705,11 +2715,11 @@ Total steps: 401
 
 [397/401] lhq lhq$ ping -c 1 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=1.299 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.895 ms
   
   --- 10.1.20.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.299/1.299/1.299/0.000 ms
+  rtt min/avg/max/mdev = 0.895/0.895/0.895/0.000 ms
 
 [398/401] whq whq$ ping -n 1 10.1.1.1
   

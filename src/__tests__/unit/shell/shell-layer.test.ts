@@ -259,10 +259,10 @@ describe('§D — Reported bugs that the new shell layer fixes', () => {
     await sshLogin(term, 'ssh user@10.0.0.1', 'admin');
     // Completion runs against the remote's own session: a partial command
     // typed at the foreground completes using the remote device.
-    term.setInput('ech');
+    term.setInputBuf('ech');
     term.handleKey(key('Tab'));
     await flush();
-    expect(term.foreground.input).toMatch(/^echo/);
+    expect(term.getInputBuf()).toMatch(/^echo/);
   });
 });
 

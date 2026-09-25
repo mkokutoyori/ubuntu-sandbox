@@ -211,11 +211,15 @@ export class OracleExecutor extends BaseExecutor {
     });
     this.instanceAdmin = new InstanceAdminExecutor({
       storage, catalog, instance, privileges: this.privileges,
+      killSession: (sid, serial, immediate) =>
+        this.commandHost?.killSession(sid, serial, immediate) ?? null,
     });
   }
 
   /** Bind this executor to a session id for the oracle.session.* / tx events. */
   setSessionId(sessionId: string): void { this._sessionId = sessionId; }
+
+  get boundSid(): number { return parseInt(this._sessionId, 10) || 0; }
 
   /** Current container of the bound session (CDB$ROOT by default). */
   getCurrentContainer(): { name: string; id: number } {

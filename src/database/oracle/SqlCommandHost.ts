@@ -45,4 +45,5 @@ export interface SqlCommandHost {
    * The requesting user must hold READ on the directory (ORA-29913).
    */
   reloadExternalTable(schema: string, table: string, requestingUser: string): void;
+  killSession(sid: number, serial: number, immediate: boolean): boolean;
 }

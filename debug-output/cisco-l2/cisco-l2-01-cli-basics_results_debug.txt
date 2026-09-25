@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-09-24T08:07:50.417Z
+Generated: 2026-09-25T18:33:30.443Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -149,7 +149,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *08:07:50.000 UTC Thu Sep 24 2026
+  *18:33:30.000 UTC Fri Sep 25 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -496,7 +496,7 @@ Total steps: 366
 
 [29/366] sw1 SW1# show inventory
   NAME: "WS-C3560-24TS-S chassis", DESCR: "Cisco Catalyst 3560 Multilayer Switch"
-  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC9427RJ60
+  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC5732P2WS
 
 [30/366] sw1 SW1# show flash:
   Directory of flash:/
@@ -1351,7 +1351,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *08:07:50.000 UTC Thu Sep 24 2026
+  *18:33:30.000 UTC Fri Sep 25 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1503,15 +1503,15 @@ Total steps: 366
   
   Log Buffer (4096 bytes):
   
-  *Sep 24 08:07:50.200: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Sep 24 08:07:50.200: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Sep 24 08:07:50.204: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Sep 24 08:07:50.204: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Sep 24 08:07:50.206: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Sep 24 08:07:50.206: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Sep 24 08:07:50.211: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Sep 24 08:07:50.211: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Sep 24 08:07:50.286: %SYS-5-CONFIG_I: Configured from console by console
+  *Sep 25 18:33:30.146: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Sep 25 18:33:30.146: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Sep 25 18:33:30.152: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Sep 25 18:33:30.152: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Sep 25 18:33:30.155: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Sep 25 18:33:30.155: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Sep 25 18:33:30.161: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Sep 25 18:33:30.161: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Sep 25 18:33:30.262: %SYS-5-CONFIG_I: Configured from console by console
 
 [60/366] sw1 SW1# show boot
   BOOT path-list      : 
@@ -3216,7 +3216,15 @@ Total steps: 366
   LISTEN     0       0        0.0.0.0:1812           0.0.0.0:*          users:(("freeradius",pid=40,fd=3))
 
 [197/366] srv1 srv1$ systemctl status sshd
-  Unit sshd.service could not be found.
+  [0;1;32m●[0m ssh.service - OpenBSD Secure Shell server
+       Loaded: loaded (/usr/lib/systemd/system/ssh.service; enabled; vendor preset: enabled)
+       Active: [0;1;32mactive (running)[0m since Fri, 25 Sep 2026 18:33:29 GMT
+     Main PID: 22 (sshd)
+        Tasks: 1
+       Memory: 4.2M
+          CPU: 32ms
+       CGroup: /system.slice/ssh.service
+               └─22 /usr/sbin/sshd -D
 
 [198/366] srv1 srv1$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -3604,7 +3612,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   08:07:51 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   18:33:32 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [257/366] w1 w1$ hostname
   W1
@@ -3711,7 +3719,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          9/24/2026, 8:07:50 AM
+  System Boot Time:          9/25/2026, 6:33:29 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3767,7 +3775,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   08:07:51 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   18:33:32 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -3799,7 +3807,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   08:07:51 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   18:33:32 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 [277/366] w2 w2$ hostname
   W2
@@ -3906,7 +3914,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          9/24/2026, 8:07:50 AM
+  System Boot Time:          9/25/2026, 6:33:30 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3962,27 +3970,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   08:07:51 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   18:33:32 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=7.585 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.440 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=3.966 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.827 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.440/4.012/7.585/3.572 ms
+  rtt min/avg/max/mdev = 0.827/2.397/3.966/1.570 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=5.031 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.542 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.026 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.728 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.542/2.787/5.031/2.244 ms
+  rtt min/avg/max/mdev = 0.728/0.877/1.026/0.149 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
