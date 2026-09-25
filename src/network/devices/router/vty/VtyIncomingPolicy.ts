@@ -38,15 +38,20 @@ export interface VtyIncomingPolicyDeps {
   /** Reglage d'equipement, utilise par les lignes qui n'en declarent pas. */
   transportParDefaut?: () => VtyTransport;
   serverAcl?: (transport: VtyTransportKind) => string | null;
+  serverSourceAddresses?: (transport: VtyTransportKind) => readonly string[] | null;
 }
 
 export class VtyIncomingPolicy {
   constructor(private readonly deps: VtyIncomingPolicyDeps) {}
 
-  admit(transport: VtyTransportKind, sourceIp: string): VtyAdmissionVerdict {
+  admit(transport: VtyTransportKind, sourceIp: string, localIp?: string): VtyAdmissionVerdict {
     const ligne = this.deps.ligneCandidate ? this.deps.ligneCandidate() : null;
     const transportRefusal = this.transportRefusal(transport, ligne);
     if (transportRefusal) return transportRefusal;
+    const serverSource = this.deps.serverSourceAddresses?.(transport) ?? null;
+    if (serverSource !== null && localIp !== undefined && !serverSource.includes(localIp)) {
+      return { accept: false, kind: 'acl', reason: `${transport} server-source does not accept ${localIp}` };
+    }
     const quietModeRefusal = this.quietModeRefusal(sourceIp);
     if (quietModeRefusal) return quietModeRefusal;
     const serverAcl = this.deps.serverAcl?.(transport) ?? null;

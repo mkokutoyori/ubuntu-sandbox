@@ -1121,7 +1121,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       authHeader: () => this.getVtyAuthHeader(),
       loginBanner: () => this.getBanner('login') || null,
       motd: () => this.getBanner('motd') || null,
-      admit: (ip) => this.vtyAdmissionVerdict('telnet', ip),
+      admit: (ip, localIp) => this.vtyAdmissionVerdict('telnet', ip, localIp),
       authenticateLocal: (user, password) => this.getCredentialStore().authenticate(user, password),
       authenticateAaa: (user, password) => this.authenticateViaAaa(user, password),
       createVtyShell: (user) => this.createVtyShell(user),
@@ -4323,7 +4323,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   readonly vtyLineConfig = new VtyLineConfigStore();
   _getVtyLineConfig(): VtyLineConfigStore { return this.vtyLineConfig; }
   private _vtyIncomingPolicy: VtyIncomingPolicy | null = null;
-  vtyAdmissionVerdict(transport: VtyTransportKind, sourceIp: string): VtyAdmissionVerdict {
+  vtyAdmissionVerdict(transport: VtyTransportKind, sourceIp: string, localIp?: string): VtyAdmissionVerdict {
     if (!this._vtyIncomingPolicy) {
       this._vtyIncomingPolicy = new VtyIncomingPolicy({
         lines: () => this.vtyLineConfig,
@@ -4338,13 +4338,19 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         serverAcl: (transport) => (transport === 'telnet'
           ? this.getManagementService().getTelnet().acl ?? null
           : null),
+        serverSourceAddresses: (transport) => {
+          const source = transport === 'telnet' ? this.getManagementService().getTelnet().source : undefined;
+          if (!source) return null;
+          const ip = this.getPort(source)?.getIPAddress();
+          return ip ? [ip.toString()] : [];
+        },
         quietModeAccessClass: () => {
           const sec = this.securityConfig();
           return sec?.login.quietModeAcl ?? null;
         },
       });
     }
-    return this._vtyIncomingPolicy.admit(transport, sourceIp);
+    return this._vtyIncomingPolicy.admit(transport, sourceIp, localIp);
   }
 
   perUserAdmissionRefusal(user: string, sourceIp: string): string | null {

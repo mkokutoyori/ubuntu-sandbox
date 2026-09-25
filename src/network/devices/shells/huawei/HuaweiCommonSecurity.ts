@@ -1,5 +1,5 @@
 import { registerInfoCenterCommands } from './HuaweiInfoCenterCommands';
-import { HUAWEI_ERRORS } from '../cli-utils';
+import { HUAWEI_ERRORS, resolveHuaweiInterfaceName } from '../cli-utils';
 import { InfoCenterConfig } from '../../router/management/InfoCenterConfig';
 import {
   SSH_DEFAULT_PORT, TELNET_DEFAULT_PORT, type RouterManagementService,
@@ -57,6 +57,7 @@ export function remoteAccessConfigBlocksVrp(mgmt: RouterManagementService): stri
     ...(telnet.enabled ? ['telnet server enable'] : []),
     ...(telnet.port !== TELNET_DEFAULT_PORT ? [`telnet server port ${telnet.port}`] : []),
     ...(telnet.acl ? [`telnet server acl ${telnet.acl}`] : []),
+    ...(telnet.source ? [`telnet server-source -i ${telnet.source}`] : []),
   ];
   const stelnetBlock = [
     ...(ssh.enabled ? ['stelnet server enable'] : []),
@@ -135,6 +136,13 @@ export function registerHuaweiCommonSecurity(
         break;
       }
       case 'telnet': {
+        if ((args[0] ?? '').toLowerCase() === 'server-source' && args[1]?.toLowerCase() === '-i') {
+          const ports = (getRouter() as unknown as { getPorts?: () => { getName(): string }[] })
+            .getPorts?.().map((p) => p.getName()) ?? [];
+          const named = resolveHuaweiInterfaceName(ports, args.slice(2).join(''));
+          if (!named) return HUAWEI_ERRORS.WRONG(args.slice(2).join(' '), 0);
+          args = ['server-source', '-i', named];
+        }
         const refuse = mgmt.configureTelnet(args);
         if (refuse !== null) return HUAWEI_ERRORS.WRONG(refuse, 0);
         (getRouter() as unknown as { _syncSshListener?: () => void })._syncSshListener?.();
@@ -176,6 +184,10 @@ export function registerHuaweiCommonSecurity(
     const line = raw ?? `undo telnet ${args.join(' ')}`;
     const [first, second] = args.map((a) => a.toLowerCase());
     if (first === 'server' && second === 'enable') return dispatch('telnet', ['server', 'disable']);
+    if (first === 'server-source') {
+      getRouter().getManagementService().configureTelnet(['server-source'], true);
+      return '';
+    }
     if (first === 'server' && (second === 'port' || second === 'acl')) {
       getRouter().getManagementService().configureTelnet(['server', second], true);
       (getRouter() as unknown as { _syncSshListener?: () => void })._syncSshListener?.();

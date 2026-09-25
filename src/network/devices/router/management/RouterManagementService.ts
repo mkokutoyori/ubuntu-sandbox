@@ -113,7 +113,11 @@ export class RouterManagementService {
       if (!telnetServerAclIsValid(acl)) return acl;
       this.telnetServer.acl = acl;
     }
-    else if (head === 'server-source' && args[1]) this.telnetServer.source = args.slice(1).join(' ');
+    else if (head === 'server-source') {
+      if (negated) { this.telnetServer.source = undefined; return null; }
+      if (args[1]?.toLowerCase() !== '-i' || !args[2]) return args[1] ?? '';
+      this.telnetServer.source = args.slice(2).join('');
+    }
     else this.recordRaw('telnet', args.join(' '));
     return null;
   }
