@@ -64,7 +64,7 @@ describe('Scénario 3 — lastlog : dernière connexion par compte', () => {
 
   it('après une connexion SSH, le compte n\'est plus "Never logged in"', async () => {
     const { pc1, srv } = await buildLan();
-    await pc1.executeCommand('ssh alice@10.0.0.10 whoami');
+    await pc1.executeCommand('ssh alice@10.0.0.10 whoami', 'admin\n');
     const out = await srv.executeCommand('lastlog -u alice');
     expect(out).not.toMatch(/Never logged in/);
     expect(out).toMatch(/alice\s+pts\/\d+\s+10\.0\.0\.1/);
@@ -79,7 +79,7 @@ describe('Scénario 3 — lastlog : dernière connexion par compte', () => {
 
   it('lastlog -b <jours> exclut les connexions plus récentes que le seuil', async () => {
     const { pc1, srv } = await buildLan();
-    await pc1.executeCommand('ssh alice@10.0.0.10 whoami');
+    await pc1.executeCommand('ssh alice@10.0.0.10 whoami', 'admin\n');
     const out = await srv.executeCommand('lastlog -b 30 -u alice');
     // alice vient de se connecter — pas "avant 30 jours" — donc absente.
     const lines = out.split('\n').filter((l) => l.trim());
@@ -88,14 +88,14 @@ describe('Scénario 3 — lastlog : dernière connexion par compte', () => {
 
   it('lastlog -t <jours> inclut les connexions récentes', async () => {
     const { pc1, srv } = await buildLan();
-    await pc1.executeCommand('ssh alice@10.0.0.10 whoami');
+    await pc1.executeCommand('ssh alice@10.0.0.10 whoami', 'admin\n');
     const out = await srv.executeCommand('lastlog -t 7 -u alice');
     expect(out).toMatch(/alice/);
   });
 
   it('cohérence lastlog vs last : même IP source pour la dernière connexion d\'un utilisateur', async () => {
     const { pc1, srv } = await buildLan();
-    await pc1.executeCommand('ssh alice@10.0.0.10 whoami');
+    await pc1.executeCommand('ssh alice@10.0.0.10 whoami', 'admin\n');
     const lastlogOut = await srv.executeCommand('lastlog -u alice');
     const lastOut = await srv.executeCommand('last alice');
     expect(lastlogOut).toContain('10.0.0.1');
@@ -104,7 +104,7 @@ describe('Scénario 3 — lastlog : dernière connexion par compte', () => {
 
   it('deux connexions successives : lastlog ne garde que la plus récente', async () => {
     const { pc1, srv } = await buildLan();
-    await pc1.executeCommand('ssh alice@10.0.0.10 whoami');
+    await pc1.executeCommand('ssh alice@10.0.0.10 whoami', 'admin\n');
     const out = await srv.executeCommand('lastlog -u alice');
     const occurrences = out.split('\n').filter((l) => /^alice/.test(l)).length;
     expect(occurrences).toBe(1);
