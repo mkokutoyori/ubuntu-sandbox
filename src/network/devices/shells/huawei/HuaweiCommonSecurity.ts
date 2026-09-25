@@ -198,27 +198,33 @@ export function registerHuaweiCommonSecurity(
     return dispatch('stelnet', ['server', 'disable']);
   });
   trie.registerGreedy('telnet', 'Telnet configuration', (args) => dispatch('telnet', args));
+  const undoTelnetForms: ReadonlyArray<readonly string[]> = [
+    ['server', 'enable'], ['server', 'port'], ['server', 'acl'],
+    ['server-source'], ['ipv6', 'server', 'enable'],
+  ];
   trie.registerGreedy('undo telnet', 'Disable the Telnet server', (args, raw) => {
     const line = raw ?? `undo telnet ${args.join(' ')}`;
-    const [first, second] = args.map((a) => a.toLowerCase());
-    if (first === 'server' && second === 'enable') return dispatch('telnet', ['server', 'disable']);
-    if (first === 'ipv6' && second === 'server' && args[2]?.toLowerCase() === 'enable') {
-      getRouter().getManagementService().configureTelnet(['ipv6', 'server', 'enable'], true);
-      return '';
-    }
-    if (first === 'server-source') {
-      getRouter().getManagementService().configureTelnet(['server-source'], true);
-      return '';
-    }
-    if (first === 'server' && (second === 'port' || second === 'acl')) {
-      getRouter().getManagementService().configureTelnet(['server', second], true);
+    const words = args.map((a) => a.toLowerCase());
+    const form = undoTelnetForms.find((f) => f.length === words.length && f.every((w, i) => w === words[i]));
+    if (form) {
+      getRouter().getManagementService().configureTelnet([...form], true);
       (getRouter() as unknown as { _syncSshListener?: () => void })._syncSshListener?.();
       return '';
     }
-    const wrong = first === 'server' ? args[1] : args[0];
-    if (wrong === undefined) return HUAWEI_ERRORS.INCOMPLETE(line);
+    if (undoTelnetForms.some((f) => f.length > words.length && words.every((w, i) => w === f[i]))) {
+      return HUAWEI_ERRORS.INCOMPLETE(line);
+    }
+    const wrongAt = words.findIndex((w, i) => !undoTelnetForms.some(
+      (f) => f[i] === w && words.slice(0, i).every((p, j) => p === f[j])));
+    const wrong = args[Math.max(wrongAt, 0)] ?? '';
     return HUAWEI_ERRORS.UNRECOGNIZED(line, line.toLowerCase().lastIndexOf(wrong.toLowerCase()));
   });
+  trie.requireArgs('undo telnet', 1);
+  trie.addCompletionKeywords('undo telnet', [
+    { keyword: 'server', description: 'Telnet server' },
+    { keyword: 'server-source', description: 'Source interface of the Telnet server' },
+    { keyword: 'ipv6', description: 'IPv6 Telnet server' },
+  ]);
   trie.registerGreedy('ssh', 'SSH configuration', (args) => dispatch('ssh', args));
   const snmpService = (): SnmpService | undefined =>
     (getRouter?.() as unknown as { getSnmpService?: () => SnmpService })?.getSnmpService?.()

@@ -100,7 +100,7 @@ export class RouterManagementService {
 
   configureTelnet(args: string[], negated = false): string | null {
     const head = (args[0] ?? '').toLowerCase();
-    if (head === 'server' && args[1]?.toLowerCase() === 'enable') this.telnetServer.enabled = true;
+    if (head === 'server' && args[1]?.toLowerCase() === 'enable') this.telnetServer.enabled = !negated;
     else if (head === 'server' && args[1]?.toLowerCase() === 'disable') this.telnetServer.enabled = false;
     else if (head === 'server' && args[1]?.toLowerCase() === 'port') {
       if (negated) { this.telnetServer.port = TELNET_DEFAULT_PORT; return null; }
