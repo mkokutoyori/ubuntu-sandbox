@@ -6,6 +6,16 @@
 
 import type { OsSecurityContext } from './types';
 
+export type SessionStatus = 'ACTIVE' | 'INACTIVE' | 'KILLED' | 'SNIPED' | 'CACHED';
+
+export const SESSION_KILLED = { code: 28, message: 'your session has been killed' };
+export const SESSION_IDLE_SNIPED = {
+  code: 2396, message: 'exceeded maximum idle time, please connect again',
+};
+export const SESSION_CONNECT_TIME_EXCEEDED = {
+  code: 2399, message: 'exceeded maximum connect time, you are being logged off',
+};
+
 export interface ActiveSessionInfo {
   sessionId: string;
   sid: number;
@@ -19,7 +29,9 @@ export interface ActiveSessionInfo {
   terminal: string;
   program: string;
   logonTime: Date;
-  status: 'ACTIVE' | 'INACTIVE';
+  status: SessionStatus;
+  lastCallAt: Date;
+  terminationError: { code: number; message: string } | null;
   type: 'USER' | 'BACKGROUND';
   lastCallEt: number; // seconds since last call
   sqlId: string | null;
@@ -71,6 +83,8 @@ export class SessionLimitTracker {
       status: 'ACTIVE',
       type,
       lastCallEt: 0,
+      lastCallAt: new Date(),
+      terminationError: null,
       sqlId: null,
       sqlExecStart: null,
       sqlChildNumber: null,
@@ -106,9 +120,46 @@ export class SessionLimitTracker {
     info.lastCallEt = 0;
   }
 
-  setStatus(sessionId: string, status: 'ACTIVE' | 'INACTIVE'): void {
+  setStatus(sessionId: string, status: SessionStatus): void {
     const info = this.sessions.get(sessionId);
     if (info) info.status = status;
+  }
+
+  noteCall(sessionId: string): void {
+    const info = this.sessions.get(sessionId);
+    if (!info) return;
+    info.lastCallAt = new Date();
+    info.lastCallEt = 0;
+  }
+
+  idleSeconds(info: ActiveSessionInfo, now: Date = new Date()): number {
+    return Math.max(info.lastCallEt,
+      Math.floor((now.getTime() - info.lastCallAt.getTime()) / 1000));
+  }
+
+  connectedSeconds(info: ActiveSessionInfo, now: Date = new Date()): number {
+    return Math.floor((now.getTime() - info.logonTime.getTime()) / 1000);
+  }
+
+  terminate(
+    sid: number, serial: number | null,
+    status: 'KILLED' | 'SNIPED', error: { code: number; message: string },
+  ): ActiveSessionInfo | null {
+    for (const info of this.sessions.values()) {
+      if (info.sid !== sid) continue;
+      if (serial !== null && info.serial !== serial) continue;
+      info.status = status;
+      info.terminationError = error;
+      return info;
+    }
+    return null;
+  }
+
+  pendingTermination(sid: number): ActiveSessionInfo | null {
+    for (const info of this.sessions.values()) {
+      if (info.sid === sid && info.terminationError !== null) return info;
+    }
+    return null;
   }
 
   // ── Session counting ──────────────────────────────────────────────
@@ -118,7 +169,7 @@ export class SessionLimitTracker {
     const upper = username.toUpperCase();
     let count = 0;
     for (const s of this.sessions.values()) {
-      if (s.username === upper && s.type === 'USER') count++;
+      if (s.username === upper && s.type === 'USER' && s.terminationError === null) count++;
     }
     return count;
   }
@@ -142,13 +193,7 @@ export class SessionLimitTracker {
   }
 
   killSession(sid: number, serial: number): boolean {
-    for (const [key, s] of this.sessions.entries()) {
-      if (s.sid === sid && s.serial === serial) {
-        this.sessions.delete(key);
-        return true;
-      }
-    }
-    return false;
+    return this.terminate(sid, serial, 'KILLED', SESSION_KILLED) !== null;
   }
 
   killBySid(sid: number): boolean {

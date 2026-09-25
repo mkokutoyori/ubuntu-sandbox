@@ -20,6 +20,9 @@
 import type { IEventBus } from '@/events/EventBus';
 import type { SecurityEngine } from '../SecurityEngine';
 import type { OracleCatalog } from '../../OracleCatalog';
+import {
+  SESSION_IDLE_SNIPED, SESSION_CONNECT_TIME_EXCEEDED,
+} from '../SessionLimitTracker';
 
 export class IdleSessionMonitor {
   constructor(
@@ -37,23 +40,28 @@ export class IdleSessionMonitor {
    */
   sweep(now: Date = new Date()): number[] {
     const sniped: number[] = [];
-    for (const s of this.engine.sessions.getAllSessions()) {
+    const tracker = this.engine.sessions;
+    for (const s of tracker.getAllSessions()) {
+      if (s.type !== 'USER' || s.terminationError !== null) continue;
       const user = this.catalog.getUser(s.username);
       if (!user) continue;
       const idleMin = this.engine.profiles.resolveIdleTimeMinutes(user.profile);
-      if (!isFinite(idleMin)) continue;       // UNLIMITED — nothing to do
-      const thresholdSec = idleMin * 60;
-      if (s.lastCallEt < thresholdSec) continue;
-
-      // Mark as SNIPED in the tracker so V$SESSION shows it.
-      (s as unknown as { status: string }).status = 'SNIPED';
-      this.engine.sessions.unregisterSession(s.sessionId);
+      const connectMin = this.engine.profiles.resolveConnectTimeMinutes(user.profile);
+      const idleSeconds = tracker.idleSeconds(s, now);
+      const connectedSeconds = tracker.connectedSeconds(s, now);
+      const overIdle = isFinite(idleMin) && idleSeconds >= idleMin * 60;
+      const overConnect = isFinite(connectMin) && connectedSeconds >= connectMin * 60;
+      if (!overIdle && !overConnect) continue;
+      const thresholdSec = (overIdle ? idleMin : connectMin) * 60;
+      tracker.terminate(s.sid, s.serial, 'SNIPED',
+        overIdle ? SESSION_IDLE_SNIPED : SESSION_CONNECT_TIME_EXCEEDED);
       this.bus.publish({
         topic: 'oracle.session.idle-sniped',
         payload: {
           deviceId: this.deviceId, sid: this.sid,
           sessionId: s.sid, username: s.username,
-          idleSeconds: s.lastCallEt, thresholdSeconds: thresholdSec,
+          idleSeconds: overIdle ? idleSeconds : connectedSeconds,
+          thresholdSeconds: thresholdSec,
           timestamp: now,
         },
       });
@@ -69,6 +77,13 @@ export class IdleSessionMonitor {
    */
   bumpIdle(sessionId: string, idleSeconds: number): void {
     const s = this.engine.sessions.getSession(sessionId);
-    if (s) (s as unknown as { lastCallEt: number }).lastCallEt = idleSeconds;
+    if (!s) return;
+    s.lastCallEt = idleSeconds;
+    s.lastCallAt = new Date(Date.now() - idleSeconds * 1000);
+  }
+
+  bumpConnected(sessionId: string, connectedSeconds: number): void {
+    const s = this.engine.sessions.getSession(sessionId);
+    if (s) s.logonTime = new Date(Date.now() - connectedSeconds * 1000);
   }
 }

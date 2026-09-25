@@ -27,12 +27,14 @@ import type { OracleCatalog } from '../OracleCatalog';
 import type { OracleInstance } from '../OracleInstance';
 import type { PrivilegeEnforcer } from '../security/PrivilegeEnforcer';
 import { ORACLE_CONFIG } from '../OracleConfig';
+import { isStaticParameter } from '../staticParameters';
 
 export interface InstanceAdminDeps {
   storage: OracleStorage;
   catalog: OracleCatalog;
   instance: OracleInstance;
   privileges: PrivilegeEnforcer;
+  killSession?(sid: number, serial: number, immediate: boolean): boolean | null;
 }
 
 export class InstanceAdminExecutor {
@@ -60,7 +62,11 @@ export class InstanceAdminExecutor {
   executeAlterSystem(stmt: AlterSystemStatement): ResultSet {
     this.deps.privileges.requireSystemPrivilege('ALTER SYSTEM');
     if (stmt.action === 'SET' && stmt.parameter && stmt.value) {
-      this.instance.setParameter(stmt.parameter, stmt.value, stmt.scope as 'MEMORY' | 'SPFILE' | 'BOTH' | undefined);
+      const scope = stmt.scope as 'MEMORY' | 'SPFILE' | 'BOTH' | undefined;
+      if (isStaticParameter(stmt.parameter) && scope !== 'SPFILE') {
+        throw new OracleError(2095, 'specified initialization parameter cannot be modified');
+      }
+      this.instance.setParameter(stmt.parameter, stmt.value, scope);
       return emptyResult('System altered.');
     }
     if (stmt.action === 'SWITCH LOGFILE') {
@@ -80,14 +86,11 @@ export class InstanceAdminExecutor {
       const parts = sessionId.split(',');
       const sid = parseInt(parts[0] ?? '0', 10);
       const serial = parseInt(parts[1] ?? '0', 10);
-      const engine = this.deps.catalog.getSecurityEngine();
-      if (engine) {
-        const killed = engine.sessions.killSession(sid, serial);
-        if (!killed) {
-          throw new OracleError(31, `no such session: ${sessionId}`);
-        }
+      const byHost = this.deps.killSession?.(sid, serial, stmt.immediate === true);
+      const killed = byHost ?? this.deps.catalog.getSecurityEngine()?.sessions.killSession(sid, serial);
+      if (killed !== true) {
+        throw new OracleError(31, `no such session: ${sessionId}`);
       }
-      this.instance.releaseServerProcess(sid);
       return emptyResult('System altered.');
     }
     if (stmt.action === 'ARCHIVE LOG') {

@@ -658,3 +658,52 @@ Windows ; privilèges communs et locaux une fois qu'`OracleStorage` aura une
 notion de CON_ID (préalable documenté dans `CLAUDE.md`) ; Database Vault, qui
 ne prend son sens qu'au-dessus d'un modèle de rôles réellement activable —
 c'est-à-dire au-dessus de la phase P1 de ce document.
+
+---
+
+## 9. Lot « une session terminée doit l'apprendre » (fermé)
+
+Mesuré sur le moteur, pas déduit du code : les bancs `src/__tests__/debug/oracle/`
+ont parcouru les quatre familles de ce PRD — privilèges, sessions, comptes,
+journalisation. Le socle tient : ORA-01045 sans `CREATE SESSION`, ORA-00942 vs
+ORA-01031 selon la doctrine de dissimulation, privilèges de colonne évalués,
+rôles réellement porteurs (`SET ROLE`, `DEFAULT ROLE NONE`, `WITH ADMIN
+OPTION`), verrouillage après `FAILED_LOGIN_ATTEMPTS`, `AUDIT` classique et
+politiques unifiées alimentant leurs vues.
+
+**Le manque était ailleurs, et toujours le même : la victime n'apprenait rien.**
+
+| Ordre | Avant | Maintenant |
+| --- | --- | --- |
+| `ALTER SYSTEM KILL SESSION 'sid,serial#'` | « System altered. », la ligne disparaissait de `V$SESSION` — et la session tuée continuait à lire, insérer et valider | la ligne reste avec `STATUS = KILLED`, le travail non validé est annulé et les verrous rendus ; au prochain appel la victime reçoit `ORA-00028`, puis `ORA-01012` |
+| `ALTER SYSTEM DISCONNECT SESSION ... IMMEDIATE` | idem | idem |
+| `IDLE_TIME` (profil) | le balayage DÉSINSCRIVAIT la session : jamais `SNIPED` dans `V$SESSION`, victime intacte | `STATUS = SNIPED`, puis `ORA-02396` |
+| `CONNECT_TIME` (profil) | résolu par `ProfileManager`, **aucun appelant** — lu, rendu par `DBA_PROFILES`, jamais évalué | `ORA-02399` |
+| `V$SESSION.LAST_CALL_ET` | compteur figé à zéro | temps réellement écoulé depuis le dernier appel |
+| `ALTER SYSTEM SET audit_trail\|sessions = ...` | accepté à chaud | `ORA-02095` ; seul `SCOPE=SPFILE` est recevable pour un paramètre statique |
+| `GRANT ... TO <soi-même>` | accepté | `ORA-01749`, comme pour le propriétaire de l'objet (le simulateur ne fermait que cette seconde moitié) |
+
+**Autorité** : `docs.oracle.com` est injoignable depuis l'environnement de
+développement ; les formulations viennent d'extraits de recherche citant
+*Terminating Sessions* — « the transaction is rolled back and the user
+immediately receives ORA-00028 », « if … a user submits additional statements
+before reconnecting, Oracle Database returns ORA-01012 », « a session marked to
+be terminated is indicated in V$SESSION with a status of KILLED », et « a
+killed session waits for a SQLNet message from client … only when this message
+is received, PMON will take ownership of the process ».
+
+**Une mesure laissée telle quelle** : un ordre refusé pour privilèges
+insuffisants (`ORA-01031`) n'apparaît pas dans `DBA_AUDIT_TRAIL`, même sous
+`AUDIT ... WHENEVER NOT SUCCESSFUL`. Le relevé l'a constaté et la recherche
+montre que le vrai Oracle ne l'enregistre pas non plus. Le simulateur reste
+donc comme il est : « corriger » ici l'aurait rendu faux.
+
+**Limite assumée** : `KILL SESSION` sans `IMMEDIATE` attend, sur une vraie
+base, la fin de l'appel en cours ; le moteur étant synchrone, aucune session
+n'est jamais en cours d'appel quand une autre s'exécute, et les deux formes se
+comportent donc identiquement.
+
+Sonde : `src/__tests__/audit/oracle-sessions-terminees-preuves.test.ts`
+(10 cas discriminants sur 14). Trois tests épinglaient le défaut — ils
+exigeaient la disparition immédiate de la ligne et du processus serveur ; ils
+vérifient désormais la séquence réelle, et leur en-tête le dit.

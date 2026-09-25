@@ -462,11 +462,13 @@ describe('SessionLimitTracker', () => {
     expect(info?.terminal).toBe(DEFAULT_OS_CONTEXT.terminal);
   });
 
-  test('killSession removes by sid/serial', () => {
+  test('killSession marks by sid/serial and leaves the row for the victim', () => {
     const info = tracker.registerSession('s1', 'HR', 'HR', DEFAULT_OS_CONTEXT);
     const killed = tracker.killSession(info.sid, info.serial);
     expect(killed).toBe(true);
-    expect(tracker.getAllSessions()).toHaveLength(0);
+    expect(tracker.getAllSessions()).toHaveLength(1);
+    expect(tracker.getAllSessions()[0].status).toBe('KILLED');
+    expect(tracker.pendingTermination(info.sid)?.terminationError?.code).toBe(28);
   });
 
   test('killSession returns false for unknown sid', () => {

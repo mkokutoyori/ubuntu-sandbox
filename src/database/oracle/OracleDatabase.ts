@@ -12,6 +12,7 @@
 import { OracleInstance } from './OracleInstance';
 import { standbyRefusesStatement, ORA_16000 } from './dataguard/StandbyWriteGuard';
 import { mountedRefusesQuery, ORA_01219 } from './MountedStateGuard';
+import { SESSION_KILLED } from './security/SessionLimitTracker';
 import {
   parseOracleTimeZone, type OracleTimeZoneSpec,
 } from './time/OracleTimeZone';
@@ -260,6 +261,30 @@ export class OracleDatabase implements SqlCommandHost {
     executor.setCommandHost(this);
     executor.setDatabaseRef(this);
     executor.refreshMaterializedView(o, name);
+  }
+
+  killSession(sid: number, serial: number, immediate: boolean): boolean {
+    const victim = this.securityEngine.sessions.getSessionBySerial(sid, serial);
+    if (!victim) return false;
+    const rolledBack = this.connections.get(sid)?.executor?.rollbackOnDeadConnection() ?? false;
+    this.instance.lockManager.releaseSession(String(sid));
+    this.securityEngine.sessions.terminate(sid, serial, 'KILLED', SESSION_KILLED);
+    this.instance.logAlertEvent(
+      `${immediate ? 'Immediate ' : ''}Kill Session#: ${sid}, Serial#: ${serial}`
+      + (rolledBack ? '; uncommitted transaction rolled back' : ''));
+    return true;
+  }
+
+  private noticeSessionTermination(executor: OracleExecutor): void {
+    const sid = executor.boundSid;
+    if (sid <= 0) return;
+    const victim = this.securityEngine.sessions.pendingTermination(sid);
+    if (!victim) return;
+    const error = victim.terminationError!;
+    this.securityEngine.sessions.unregisterSession(victim.sessionId);
+    this.connections.delete(sid);
+    this.closeSession(sid);
+    throw new OracleError(error.code, error.message);
   }
 
   /** Close an OracleSession (called on disconnect). */
@@ -932,6 +957,10 @@ export class OracleDatabase implements SqlCommandHost {
   executeSql(executor: OracleExecutor, sql: string): ResultSet {
     const trimmed = sql.trim().replace(/;\s*$/, '');
     if (!trimmed) return emptyResult();
+
+    this.idleMonitor.sweep();
+    this.noticeSessionTermination(executor);
+    this.securityEngine.sessions.noteCall(String(executor.boundSid));
 
     const upper = trimmed.toUpperCase();
 
