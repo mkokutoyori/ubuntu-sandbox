@@ -1116,8 +1116,6 @@ function appendManagementConfig(lines: string[], router: Router): void {
     lines.push('#');
     lines.push(...block);
   }
-  const retries = router.getSshAuthenticationRetries();
-  if (retries !== null) lines.push(`ssh server authentication-retries ${retries}`);
   if (router.isFtpServerEnabled()) { lines.push('#'); lines.push('ftp server enable'); }
 
   const snmpLines = lignesConfigSnmpVrp(router.getSnmpService?.());
@@ -1705,25 +1703,6 @@ export function registerDisplayCommands(
 
   trie.register('display vrrp brief', 'Display VRRP brief', () =>
     rendreDisplayVrrpBrief(huaweiVrrpAgent(getRouter())?.listGroups() ?? []));
-
-  trie.register('display ssh server status', 'Display SSH server status', () => {
-    const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
-    const ssh = mgmt?.getSsh();
-    if (!ssh || !ssh.enabled) return 'SSH server: Disabled';
-    return [
-      `SSH version: ${ssh.version}`,
-      `SSH authentication retries: ${ssh.retries}`,
-      `SSH server timeout (sec): ${ssh.timeout}`,
-      `SSH server port: ${ssh.port}`,
-    ].join('\n');
-  });
-
-  trie.register('display stelnet server', 'Display STelnet server status', () => {
-    const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
-    const st = mgmt?.getStelnet();
-    if (!st || !st.enabled) return 'STelnet server: Disabled';
-    return `STelnet server: Enabled\nSTelnet server port: ${st.port}`;
-  });
 
   trie.register('display snmp-agent local-engineid', 'Display SNMP engine ID', () => {
     const snmp = (getRouter() as unknown as { getSnmpService?: () => import('../../router/management/SnmpService').SnmpService }).getSnmpService?.();

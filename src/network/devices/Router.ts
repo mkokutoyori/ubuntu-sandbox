@@ -81,6 +81,7 @@ import type { DeviceClockStore } from '../core/time/DeviceClock';
 import { PortNumber } from '../core/ports/PortNumber';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
+import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext';
 import type { RouterSftpSource } from '../protocols/ssh/sftp/RouterSftpFileSystem';
 import { TelnetServerHandler } from '../protocols/telnet/TelnetServerHandler';
 import { RouterTelnetServerContext } from '../protocols/telnet/RouterTelnetServerContext';
@@ -1050,8 +1051,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.getManagementService().getSsh().port || 22;
   }
 
-  _syncSshListener(): void { this.syncSshListener(); }
-
   telnetListenPort(): number {
     return this.getManagementService().getTelnet().port || TELNET_DEFAULT_PORT;
   }
@@ -1062,7 +1061,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this._remoteAccessListeners ??= new RemoteAccessListeners({
       stack: () => this.tcpv2,
       ssh: {
-        wanted: () => this.sshServerEnabled && this.hasSshHostKeys() && this.transportAdmisSurUneVty('ssh'),
+        wanted: () => this.isSshActive(),
         port: () => this.sshListenPort(),
         onAccept: (socket) => {
           this.buildRouterSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
@@ -1210,7 +1209,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.getCredentialStore().recordLoginSuccess(user, ip, 'password');
       },
       recordLogout: (user, ip) => this.closeWireVtySession(user, ip),
-    });
+    }, this.sshServerLimits());
     return new SshServerHandler(ctx);
   }
 
@@ -4263,7 +4262,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _undoGlobalToggle(commandTail: string): void {
     const key = commandTail.replace(/\s+enable\s*$/, '').trim();
     this._globalToggles.set(key, false);
-    if (key === 'ssh' || /^stelnet/.test(commandTail)) this._setSshServerEnabled(false);
     if (key === 'dhcp') this._getDHCPServerInternal().disable();
     if (key === 'ftp server' || key === 'ftp') this._setFtpServerEnabled(false);
   }
@@ -4275,13 +4273,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   // cross-platform client dispatch can talk to them uniformly.
   // Concrete answers to vendor commands (show / display) come from
   // the per-vendor subclasses (CiscoRouter, HuaweiRouter).
-  //
-  // Defaults below assume a freshly-provisioned device: SSH is
-  // enabled by default but the per-vendor `transport input none`
-  // path can flip the flag through `_setSshServerEnabled`.
 
-  /** Whether ssh/stelnet is currently advertised on the VTY. */
-  protected sshServerEnabled: boolean = true;
+  protected sshServerTurnedOn(): boolean { return true; }
+  protected sshServerLimits(): Partial<SshServerConfig> { return {}; }
   protected sshBannerText: string = '';
   _setSshBanner(text: string): void {
     this.sshBannerText = text;
@@ -4965,13 +4959,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private _securityAuditLog: SecurityAuditLog | null = null;
   private _loginBlocker: LoginBlocker | null = null;
   private _loginBlockConfig: { attempts: number; withinSeconds: number; blockSeconds: number } | null = null;
-  private _sshAuthRetries: number | null = null;
 
   getLoginBlocker(): LoginBlocker | null { return this._loginBlocker; }
   getLoginBlockConfig(): { attempts: number; withinSeconds: number; blockSeconds: number } | null {
     return this._loginBlockConfig;
   }
-  getSshAuthenticationRetries(): number | null { return this._sshAuthRetries; }
 
   _configureLoginBlock(blockSeconds: number, attempts: number, withinSeconds: number): void {
     this._loginBlockConfig = { attempts, withinSeconds, blockSeconds };
@@ -4988,7 +4980,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   _configureSshAuthRetries(retries: number): void {
-    this._sshAuthRetries = retries;
     if (this._loginBlocker) this._loginBlocker.detach();
     this._loginBlocker = new LoginBlocker({
       deviceId: this.id, bus: this.getBus(),
@@ -5032,7 +5023,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         vendor: this.sshVendorTag(),
         bus: this.getBus(),
         authority: this._credentialStore,
-        active: this.sshServerEnabled,
+        active: this.sshServerTurnedOn(),
         banner: this.sshBannerText,
       });
       for (const u of ['alice', 'bob', 'carl', 'dave']) {
@@ -5099,12 +5090,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       // `ssh` apres rechargement.
       serviceTypes: a.serviceTypes,
     }));
-  }
-
-  _setSshServerEnabled(enabled: boolean): void {
-    this.sshServerEnabled = enabled;
-    if (this._sshHost) this._sshHost.setSshActive(enabled);
-    this.syncSshListener();
   }
 
   /**
@@ -5350,7 +5335,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   /** SshExecTarget. */
   getSshHostname(): string { return this.hostname; }
   isSshActive(): boolean {
-    return this.sshServerEnabled && this.hasSshHostKeys() && this.transportAdmisSurUneVty('ssh');
+    return this.sshServerTurnedOn() && this.hasSshHostKeys() && this.transportAdmisSurUneVty('ssh');
   }
   sshdAcceptsLogin(user: string): { ok: boolean; reason?: string } {
     return this.getSshHost().acceptsLogin(user);
@@ -5391,7 +5376,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     readonly permitEmptyPasswords: boolean;
   } {
     return Object.freeze({
-      active: this.sshServerEnabled,
+      active: this.sshServerTurnedOn(),
       ports: Object.freeze([this.sshListenPort()]),
       permitRootLogin: true,
       passwordAuthentication: true,

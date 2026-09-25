@@ -2,8 +2,10 @@ import { registerInfoCenterCommands } from './HuaweiInfoCenterCommands';
 import { HUAWEI_ERRORS, resolveHuaweiInterfaceName } from '../cli-utils';
 import { InfoCenterConfig } from '../../router/management/InfoCenterConfig';
 import {
-  SSH_DEFAULT_PORT, TELNET_DEFAULT_PORT, type RouterManagementService,
+  SSH_DEFAULT_PORT, SSH_DEFAULT_TIMEOUT_SEC, SSH_DEFAULT_AUTH_RETRIES, TELNET_DEFAULT_PORT,
+  type RouterManagementService,
 } from '../../router/management/RouterManagementService';
+import { SSH_SERVER_IDENTIFICATION } from '../../../protocols/ssh/serverIdentification';
 /**
  * HuaweiCommonSecurity — management-plane commands common to the Huawei
  * switch and router CLIs: SSH/Telnet servers, SNMP, NTP, info-center
@@ -15,7 +17,7 @@ import {
  * HuaweiVRPShell don't duplicate the wiring (DRY).
  */
 import type { CommandTrie } from '../CommandTrie';
-import { getNtpAgent, getManagementService } from '../../../equipment/RouterServiceCapabilities';
+import { getNtpAgent, getManagementService, getSessionRegistry } from '../../../equipment/RouterServiceCapabilities';
 import { rendreErreurVrp } from '../cli-utils';
 import {
   displayNtpServiceStatus, displayNtpServiceSessions, displayNtpStatisticsPacket,
@@ -63,6 +65,8 @@ export function remoteAccessConfigBlocksVrp(mgmt: RouterManagementService): stri
   const stelnetBlock = [
     ...(ssh.enabled ? ['stelnet server enable'] : []),
     ...(ssh.port !== SSH_DEFAULT_PORT ? [`ssh server port ${ssh.port}`] : []),
+    ...(ssh.timeout !== SSH_DEFAULT_TIMEOUT_SEC ? [`ssh server timeout ${ssh.timeout}`] : []),
+    ...(ssh.retries !== SSH_DEFAULT_AUTH_RETRIES ? [`ssh server authentication-retries ${ssh.retries}`] : []),
   ];
   return [telnetBlock, stelnetBlock].filter((block) => block.length > 0);
 }
@@ -84,15 +88,31 @@ export function displayTelnetServerStatusVrp(device: unknown): string {
   ].join('\n');
 }
 
-export function displaySshServerStatus(): string {
+export function displaySshServerStatusVrp(device: unknown): string {
+  const ssh = getManagementService(device)?.getSsh();
   return [
-    'SSH version                     : 2.0',
-    'SSH connection timeout          : 60 seconds',
+    `SSH version                     : ${SSH_SERVER_IDENTIFICATION.split('-')[1]}`,
+    `SSH connection timeout          : ${ssh?.timeout ?? SSH_DEFAULT_TIMEOUT_SEC} seconds`,
     'SSH server key generating interval : 0 hours',
-    'SSH authentication retries      : 3 times',
+    `SSH authentication retries      : ${ssh?.retries ?? SSH_DEFAULT_AUTH_RETRIES} times`,
     'SFTP server                     : Disable',
-    'STELNET server                  : Enable',
+    `Stelnet server                  : ${ssh?.enabled ? 'Enable' : 'Disable'}`,
   ].join('\n');
+}
+
+export function displaySshServerSessionVrp(device: unknown): string {
+  const ssh = getManagementService(device)?.getSsh();
+  if (!ssh?.enabled) return 'SSH server is not enabled.';
+  const header = 'Conn   Ver  Idle    User       IP';
+  const sessions = getSessionRegistry(device)?.list() ?? [];
+  if (sessions.length === 0) return `${header}\n(none) ${ssh.version}    --      --         --`;
+  const rows = sessions.map((s, i) => {
+    const h = Math.floor(s.idleSeconds / 3600).toString().padStart(2, '0');
+    const m = Math.floor((s.idleSeconds % 3600) / 60).toString().padStart(2, '0');
+    const sec = Math.floor(s.idleSeconds % 60).toString().padStart(2, '0');
+    return `${(i + 1).toString().padEnd(6)} ${ssh.version}    ${h}:${m}:${sec}  ${s.user.padEnd(10)} ${s.fromIp}`;
+  });
+  return [header, ...rows].join('\n');
 }
 
 export function displayNtpStatus(): string {
@@ -139,18 +159,17 @@ export function registerHuaweiCommonSecurity(
   getSnmpServiceDirect?: () => SnmpService | undefined,
   setSystemClock?: (epochMs: number) => void,
 ): void {
+  const resyncListeners = (): void => {
+    (getRouter?.() as unknown as { _refreshSshAvailability?: () => void })._refreshSshAvailability?.();
+  };
   const dispatch = (feature: 'stelnet' | 'telnet' | 'ssh' | 'ntp-service' | 'clock' | 'sflow', args: string[]) => {
     if (!getRouter) return '';
     const mgmt = getRouter().getManagementService();
     switch (feature) {
       case 'stelnet': {
-        mgmt.configureStelnet(args);
-        const head = (args[0] ?? '').toLowerCase();
-        const verb = (args[1] ?? '').toLowerCase();
-        if (head === 'server' && (verb === 'enable' || verb === 'disable')) {
-          const dev = getRouter() as unknown as { _setSshServerEnabled?: (on: boolean) => void };
-          dev._setSshServerEnabled?.(verb === 'enable');
-        }
+        const refuse = mgmt.configureStelnet(args);
+        if (refuse !== null) return HUAWEI_ERRORS.WRONG(refuse, 0);
+        resyncListeners();
         break;
       }
       case 'telnet': {
@@ -163,22 +182,13 @@ export function registerHuaweiCommonSecurity(
         }
         const refuse = mgmt.configureTelnet(args);
         if (refuse !== null) return HUAWEI_ERRORS.WRONG(refuse, 0);
-        (getRouter() as unknown as { _syncSshListener?: () => void })._syncSshListener?.();
+        resyncListeners();
         break;
       }
       case 'ssh': {
-        const dev = getRouter() as unknown as {
-          _configureSshAuthRetries?: (n: number) => void;
-          _syncSshListener?: () => void;
-        };
-        if (args[0] === 'server' && args[1] === 'authentication-retries'
-          && /^\d+$/.test(args[2] ?? '')) {
-          dev._configureSshAuthRetries?.(Number(args[2]));
-          break;
-        }
         const refuse = mgmt.configureSsh(args);
         if (refuse !== null) return HUAWEI_ERRORS.WRONG(refuse, 0);
-        dev._syncSshListener?.();
+        resyncListeners();
         break;
       }
       case 'ntp-service': mgmt.configureNtp(args); break;
@@ -192,34 +202,51 @@ export function registerHuaweiCommonSecurity(
     }
     return '';
   };
+  const registerUndoForms = (
+    root: string, description: string,
+    forms: ReadonlyArray<readonly string[]>,
+    keywords: ReadonlyArray<{ keyword: string; description: string }>,
+    apply: (form: readonly string[]) => string | null,
+  ): void => {
+    trie.registerGreedy(`undo ${root}`, description, (args, raw) => {
+      const line = raw ?? `undo ${root} ${args.join(' ')}`;
+      const words = args.map((a) => a.toLowerCase());
+      const form = forms.find((f) => f.length === words.length && f.every((w, i) => w === words[i]));
+      if (form) {
+        const refuse = apply(form);
+        if (refuse !== null) return HUAWEI_ERRORS.WRONG(refuse, 0);
+        resyncListeners();
+        return '';
+      }
+      if (forms.some((f) => f.length > words.length && words.every((w, i) => w === f[i]))) {
+        return HUAWEI_ERRORS.INCOMPLETE(line);
+      }
+      const wrongAt = words.findIndex((w, i) => !forms.some(
+        (f) => f[i] === w && words.slice(0, i).every((p, j) => p === f[j])));
+      const wrong = args[Math.max(wrongAt, 0)] ?? '';
+      return HUAWEI_ERRORS.UNRECOGNIZED(line, line.toLowerCase().lastIndexOf(wrong.toLowerCase()));
+    });
+    trie.requireArgs(`undo ${root}`, 1);
+    trie.addCompletionKeywords(`undo ${root}`, [...keywords]);
+  };
   trie.registerGreedy('stelnet', 'STelnet configuration', (args) => dispatch('stelnet', args));
-  trie.registerGreedy('undo stelnet', 'Disable the STelnet server', (args) => {
-    if ((args[0] ?? '').toLowerCase() !== 'server') return '';
-    return dispatch('stelnet', ['server', 'disable']);
-  });
+  registerUndoForms('stelnet', 'Disable the STelnet server', [['server', 'enable']],
+    [{ keyword: 'server', description: 'STelnet server' }],
+    (form) => getRouter().getManagementService().configureStelnet([...form], true));
   trie.registerGreedy('telnet', 'Telnet configuration', (args) => dispatch('telnet', args));
-  trie.registerGreedy('undo telnet', 'Disable the Telnet server', (args, raw) => {
-    const line = raw ?? `undo telnet ${args.join(' ')}`;
-    const [first, second] = args.map((a) => a.toLowerCase());
-    if (first === 'server' && second === 'enable') return dispatch('telnet', ['server', 'disable']);
-    if (first === 'ipv6' && second === 'server' && args[2]?.toLowerCase() === 'enable') {
-      getRouter().getManagementService().configureTelnet(['ipv6', 'server', 'enable'], true);
-      return '';
-    }
-    if (first === 'server-source') {
-      getRouter().getManagementService().configureTelnet(['server-source'], true);
-      return '';
-    }
-    if (first === 'server' && (second === 'port' || second === 'acl')) {
-      getRouter().getManagementService().configureTelnet(['server', second], true);
-      (getRouter() as unknown as { _syncSshListener?: () => void })._syncSshListener?.();
-      return '';
-    }
-    const wrong = first === 'server' ? args[1] : args[0];
-    if (wrong === undefined) return HUAWEI_ERRORS.INCOMPLETE(line);
-    return HUAWEI_ERRORS.UNRECOGNIZED(line, line.toLowerCase().lastIndexOf(wrong.toLowerCase()));
-  });
+  registerUndoForms('telnet', 'Disable the Telnet server', [
+    ['server', 'enable'], ['server', 'port'], ['server', 'acl'],
+    ['server-source'], ['ipv6', 'server', 'enable'],
+  ], [
+    { keyword: 'server', description: 'Telnet server' },
+    { keyword: 'server-source', description: 'Source interface of the Telnet server' },
+    { keyword: 'ipv6', description: 'IPv6 Telnet server' },
+  ], (form) => getRouter().getManagementService().configureTelnet([...form], true));
   trie.registerGreedy('ssh', 'SSH configuration', (args) => dispatch('ssh', args));
+  registerUndoForms('ssh', 'Restore the SSH server defaults', [
+    ['server', 'enable'], ['server', 'port'], ['server', 'timeout'], ['server', 'authentication-retries'],
+  ], [{ keyword: 'server', description: 'SSH server' }],
+  (form) => getRouter().getManagementService().configureSsh([...form], true));
   const snmpService = (): SnmpService | undefined =>
     (getRouter?.() as unknown as { getSnmpService?: () => SnmpService })?.getSnmpService?.()
     ?? getSnmpServiceDirect?.();
@@ -297,8 +324,10 @@ export function registerHuaweiCommonSecurityDisplay(
     displayLocalUser(getUsers()));
   trie.register('display telnet server status', 'Display Telnet server status', () =>
     displayTelnetServerStatusVrp(getDevice?.()));
-  trie.registerGreedy('display ssh', 'Display SSH server status', () =>
-    displaySshServerStatus());
+  trie.register('display ssh server status', 'Display SSH server status', () =>
+    displaySshServerStatusVrp(getDevice?.()));
+  trie.register('display ssh server session', 'Display SSH server sessions', () =>
+    displaySshServerSessionVrp(getDevice?.()));
   trie.registerGreedy('display snmp-agent', 'Display SNMP agent info', () =>
     displaySnmpSysInfoVrp(getSnmpServiceDirect?.()));
   trie.registerGreedy('display ntp-service', 'Display NTP status', (args) => {
