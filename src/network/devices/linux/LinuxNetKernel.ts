@@ -25,6 +25,7 @@ import type { DnsQueryFn } from '../../dns/compat/DnsWireCompat';
 import type { TcpStack } from '../../tcp/TcpStack';
 import type { TcpdumpDeps } from './network/tcpdump/TcpdumpRunner';
 import type { IScheduler } from '@/events/Scheduler';
+import type { SnmpClientSession } from '@/network/snmp/SnmpClientSession';
 
 export interface TracerouteProbe {
   /** True if this probe got a response (Time Exceeded, echo-reply, Port Unreachable, …). */
@@ -166,6 +167,8 @@ export interface LinuxNetKernel {
     target: IPAddress,
     options?: { sourceIp?: IPAddress; ttl?: number; dataSize?: number },
   ): boolean;
+
+  openSnmpSession(processName: string): SnmpClientSession | null;
 
   /**
    * Synchronous TCP handshake probe used by nc / nmap-style service

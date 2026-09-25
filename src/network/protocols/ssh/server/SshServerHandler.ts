@@ -867,6 +867,7 @@ export class SshServerHandler {
         ip: clientIp,
         method,
       });
+      this.ctx.recordAuthFailure?.(user, clientIp, 'invalid user');
       return { ok: false };
     }
 

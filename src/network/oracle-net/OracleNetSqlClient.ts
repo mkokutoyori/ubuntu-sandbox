@@ -1,6 +1,6 @@
 import type { OracleNetSession } from './OracleNetClient';
 import {
-  OracleNetCallId, OracleNetCallStatus, encodeRequest, decodeResponse, REDO_CHUNK_BYTES,
+  OracleNetCallId, OracleNetCallStatus, encodeRequest, decodeResponse, WIRE_CHUNK_BYTES,
   type OracleNetClientIdentity, type OracleNetRequest, type OracleNetResponse,
 } from './wire/OracleNetCall';
 
@@ -50,6 +50,21 @@ export function executeOverOracleNet(
   });
 }
 
+function shipChunked(
+  session: OracleNetSession | null,
+  body: string,
+  frame: (chunk: string, index: number, count: number) => OracleNetRequest,
+): OracleNetResponse {
+  const count = Math.max(1, Math.ceil(body.length / WIRE_CHUNK_BYTES));
+  let last: OracleNetResponse = CHANNEL_LOST;
+  for (let i = 0; i < count; i++) {
+    const chunk = body.slice(i * WIRE_CHUNK_BYTES, (i + 1) * WIRE_CHUNK_BYTES);
+    last = callOverOracleNet(session, frame(chunk, i, count));
+    if (last.status === OracleNetCallStatus.Error) return last;
+  }
+  return last;
+}
+
 export function shipRedoOverOracleNet(
   session: OracleNetSession | null,
   journal: {
@@ -57,23 +72,40 @@ export function shipRedoOverOracleNet(
     body: string; fromDbUniqueName: string;
   },
 ): OracleNetResponse {
-  const morceaux = Math.max(1, Math.ceil(journal.body.length / REDO_CHUNK_BYTES));
-  let derniere: OracleNetResponse = CHANNEL_LOST;
-  for (let i = 0; i < morceaux; i++) {
-    derniere = callOverOracleNet(session, {
-      call: OracleNetCallId.ShipRedo,
-      body: {
-        thread: journal.thread,
-        sequence: journal.sequence,
-        name: journal.name,
-        scn: journal.scn,
-        body: journal.body.slice(i * REDO_CHUNK_BYTES, (i + 1) * REDO_CHUNK_BYTES),
-        chunkIndex: i,
-        chunkCount: morceaux,
-        fromDbUniqueName: journal.fromDbUniqueName,
-      },
-    });
-    if (derniere.status === OracleNetCallStatus.Error) return derniere;
-  }
-  return derniere;
+  return shipChunked(session, journal.body, (chunk, chunkIndex, chunkCount) => ({
+    call: OracleNetCallId.ShipRedo,
+    body: {
+      thread: journal.thread,
+      sequence: journal.sequence,
+      name: journal.name,
+      scn: journal.scn,
+      body: chunk,
+      chunkIndex, chunkCount,
+      fromDbUniqueName: journal.fromDbUniqueName,
+    },
+  }));
+}
+
+export function shipDatafileOverOracleNet(
+  session: OracleNetSession | null,
+  datafile: {
+    kind: 'DATAFILE' | 'CONTROLFILE';
+    fileNo: number; path: string; tablespace: string; tablespaceType: string;
+    sizeBytes: number; body: string; fromDbUniqueName: string;
+  },
+): OracleNetResponse {
+  return shipChunked(session, datafile.body, (chunk, chunkIndex, chunkCount) => ({
+    call: OracleNetCallId.ShipDatafile,
+    body: {
+      kind: datafile.kind,
+      fileNo: datafile.fileNo,
+      path: datafile.path,
+      tablespace: datafile.tablespace,
+      tablespaceType: datafile.tablespaceType,
+      sizeBytes: datafile.sizeBytes,
+      body: chunk,
+      chunkIndex, chunkCount,
+      fromDbUniqueName: datafile.fromDbUniqueName,
+    },
+  }));
 }

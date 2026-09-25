@@ -297,15 +297,21 @@ describe('§G — Router wires CredentialStore + SecurityAuditLog into native CL
   let lab: Lab;
   beforeEach(async () => { lab = await buildLab(); });
 
-  test('Cisco show logging contains a CONFIG_CHANGE entry after username admin', async () => {
+  test('username admin reaches the audit ledger, and show logging says CONFIG_I', async () => {
     await lab.ciscoR1.executeCommand('configure terminal');
     await lab.ciscoR1.executeCommand('username admin privilege 15 secret Admin@123');
     await lab.ciscoR1.executeCommand('end');
+    const audited = lab.ciscoR1.getSecurityAuditLog().entries();
+    expect(audited.some(e => e.mnemonic === 'CONFIG_CHANGE' && /admin/.test(e.message))).toBe(true);
     const out = await lab.ciscoR1.executeCommand('show logging');
-    expect(out).toMatch(/%SEC_LOGIN-6-CONFIG_CHANGE.*admin/);
+    expect(out).toMatch(/%SYS-5-CONFIG_I: Configured from console/);
+    expect(out).not.toMatch(/%SEC_LOGIN-6-CONFIG_CHANGE/);
   });
 
-  test('Cisco show logging records an SSH login success', async () => {
+  test('Cisco show logging records an SSH login success under login on-success log', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('login on-success log');
+    await lab.ciscoR1.executeCommand('end');
     lab.ciscoR1.getCredentialStore().upsert(NetworkOsAccount.create({ name: 'admin', privilege: 15 }));
     lab.ciscoR1.getCredentialStore().recordLoginSuccess('admin', '10.0.0.1', 'password');
     const out = await lab.ciscoR1.executeCommand('show logging');
@@ -313,14 +319,14 @@ describe('§G — Router wires CredentialStore + SecurityAuditLog into native CL
     expect(out).toMatch(/10\.0\.0\.1/);
   });
 
-  test('Huawei display logbuffer contains AAA events', async () => {
+  test('Huawei local-user admin reaches the audit ledger', async () => {
     await lab.hwR1.executeCommand('system-view');
     await lab.hwR1.executeCommand('aaa');
     await lab.hwR1.executeCommand('local-user admin password cipher Admin@123');
     await lab.hwR1.executeCommand('quit');
     await lab.hwR1.executeCommand('quit');
-    const out = await lab.hwR1.executeCommand('display logbuffer');
-    expect(out).toMatch(/SEC_LOGIN|CONFIG_CHANGE|admin/);
+    const audited = lab.hwR1.getSecurityAuditLog().entries();
+    expect(audited.some(e => /admin/.test(e.message))).toBe(true);
   });
 
   test('Cisco show logging is empty when nothing happened', async () => {
@@ -457,12 +463,15 @@ describe('§J — SSH dispatch publishes lifecycle events on the bus', () => {
   test('failed SSH login (unknown user) emits router.aaa.account.login.failure', async () => {
     const seen: string[] = [];
     (lab.ciscoR1 as any).getBus().subscribe('router.aaa.account.login.failure', (e: any) => seen.push((e.payload as { account: { name: string } }).account.name));
-    await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"');
+    await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"', 'Admin@123\n');
     expect(seen).toContain('ghost');
   });
 
-  test('show logging after a wrong login contains LOGIN_FAILED', async () => {
-    await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"');
+  test('show logging after a wrong login contains LOGIN_FAILED under login on-failure log', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('login on-failure log');
+    await lab.ciscoR1.executeCommand('end');
+    await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"', 'Admin@123\n');
     const out = await lab.ciscoR1.executeCommand('show logging');
     expect(out).toMatch(/%SEC_LOGIN-4-LOGIN_FAILED/);
     expect(out).toMatch(/10\.0\.0\.1/);
@@ -472,10 +481,10 @@ describe('§J — SSH dispatch publishes lifecycle events on the bus', () => {
     await lab.ciscoR1.executeCommand('configure terminal');
     await lab.ciscoR1.executeCommand('login block-for 60 attempts 2 within 30');
     await lab.ciscoR1.executeCommand('end');
-    await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"');
-    await lab.linux1.executeCommand('ssh ghost2@10.0.0.6 "show version"');
-    const blocked = await lab.linux1.executeCommand('ssh admin@10.0.0.6 "show version"');
-    expect(blocked).toMatch(/Connection (closed|refused)|denied|Quiet-Mode/i);
+    await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"', 'Admin@123\n');
+    await lab.linux1.executeCommand('ssh ghost2@10.0.0.6 "show version"', 'Admin@123\n');
+    const blocked = await lab.linux1.executeCommand('ssh admin@10.0.0.6 "show version"', 'Admin@123\n');
+    expect(blocked).toMatch(/Connection refused \(Quiet-Mode\)/);
   });
 });
 

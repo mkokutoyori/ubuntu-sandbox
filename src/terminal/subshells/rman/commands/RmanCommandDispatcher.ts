@@ -190,6 +190,8 @@ export class RmanCommandDispatcher {
       { pattern: /^CATALOG START WITH ('[^']+')(?:\s+NOPROMPT)?$/i, command: new CatalogCommand('START_WITH') },
       // DUPLICATE DATABASE (DEF-RMAN-17) — wide pattern catches every Oracle clause
       { pattern: /^DUPLICATE (?:TARGET )?DATABASE TO (\S+)(?:\s+(.*))?$/i, command: new DuplicateCommand() },
+      { pattern: /^DUPLICATE (?:TARGET )?DATABASE FOR STANDBY$/i,          command: new DuplicateCommand('STANDBY') },
+      { pattern: /^DUPLICATE (?:TARGET )?DATABASE FOR STANDBY\s+(.+)$/i,   command: new DuplicateCommand('STANDBY') },
       // CHANGE (UN)AVAILABLE + tag-scoped delete
       { pattern: /^CHANGE BACKUPSET (\d+) UNAVAILABLE$/i,           command: new ChangeCommand('UNAVAILABLE')  },
       { pattern: /^CHANGE BACKUPSET (\d+) AVAILABLE$/i,             command: new ChangeCommand('AVAILABLE')    },

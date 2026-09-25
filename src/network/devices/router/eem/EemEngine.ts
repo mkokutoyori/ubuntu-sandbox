@@ -5,6 +5,7 @@ import { CronSchedule } from '../../linux/LinuxCronManager';
 import { partsAtOffset } from '../../../core/time/TimeZoneRegistry';
 import { getManagementService } from '../../../equipment/RouterServiceCapabilities';
 import type { SnmpAgent } from '../../../snmp/SnmpAgent';
+import type { SnmpValue } from '../../../snmp/types';
 import { EemService, type EemAction, type EemApplet, type EemTrigger } from './EemService';
 import { syslogFullLine } from '@/network/syslog/types';
 
@@ -256,7 +257,7 @@ export class EemEngine {
     }
   }
 
-  private snmpObjectMatches(op: string, current: string | number | null, expected: string): boolean {
+  private snmpObjectMatches(op: string, current: SnmpValue['value'], expected: string): boolean {
     const curNum = typeof current === 'number' ? current : Number.parseFloat(String(current));
     const expNum = Number.parseFloat(expected);
     const numeric = !Number.isNaN(curNum) && !Number.isNaN(expNum);

@@ -9,7 +9,11 @@ import { ok, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
 import type { BackupSet } from '../catalog/types';
-import { formatOracleDate, formatSize, formatElapsed } from '../core/pureUtils';
+import { formatOracleDate } from '../core/pureUtils';
+import { backupSetLines } from '../core/backupSetReport';
+import { renderTable, type TableColumn, type TableStyle } from '@/network/devices/shells/cli/TextTable';
+
+const RMAN_TABLE: TableStyle = { gap: 1, rule: true };
 
 /** Render the LV column (TY column already always 'B' for backupset). */
 function lvCode(s: BackupSet): string {
@@ -23,18 +27,6 @@ function lvCode(s: BackupSet): string {
   }
 }
 
-/** Render the Type column in detail view. */
-function typeOf(s: BackupSet): string {
-  switch (s.type) {
-    case 'FULL':           return 'Full';
-    case 'INCREMENTAL_0':  return 'Incr-0';
-    case 'INCREMENTAL_1':  return 'Incr-1';
-    case 'ARCHIVELOG':     return 'ArchLog';
-    case 'CONTROLFILE':    return 'Ctrl';
-    case 'DATAFILECOPY':   return 'DFCopy';
-  }
-}
-
 export type ListVariant = 'SUMMARY' | 'DETAIL' | 'ARCHIVELOG' | 'EXPIRED' | 'OBSOLETE' | 'COPY' | 'INCARNATION';
 
 export class ListBackupCommand implements IRmanCommand<string[]> {
@@ -43,18 +35,27 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
 
   execute(_args: string[], { catalog, policy, ctx }: RmanCommandContext): Result<string[], RmanError> {
     if (this.variant === 'INCARNATION') {
-      const dbName = ctx.dbName;
-      const dbId   = String(ctx.dbId.value);
-      return ok([
-        '',
-        'List of Database Incarnations',
-        '=============================',
-        'DB Key  Inc Key DB Name  DB ID            STATUS  Reset SCN  Reset Time',
-        '------- ------- -------- ---------------- ------- ---------- ----------',
-        `1       1       ${dbName.padEnd(8)} ${dbId.padEnd(16)} PARENT  1          ${new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)}`,
-        `1       2       ${dbName.padEnd(8)} ${dbId.padEnd(16)} CURRENT 1892354    ${new Date().toISOString().slice(0, 10)}`,
-        '',
-      ]);
+      const rows = [
+        {
+          incKey: 1, status: 'PARENT', resetScn: 1,
+          resetTime: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10),
+        },
+        {
+          incKey: 2, status: 'CURRENT', resetScn: 1_892_354,
+          resetTime: new Date().toISOString().slice(0, 10),
+        },
+      ];
+      const columns: ReadonlyArray<TableColumn<typeof rows[number]>> = [
+        { header: 'DB Key',     width: 7,  value: () => '1' },
+        { header: 'Inc Key',    width: 7,  value: row => String(row.incKey) },
+        { header: 'DB Name',    width: 8,  value: () => ctx.dbName },
+        { header: 'DB ID',      width: 16, value: () => String(ctx.dbId.value) },
+        { header: 'STATUS',     width: 7,  value: row => row.status },
+        { header: 'Reset SCN',  width: 10, value: row => String(row.resetScn) },
+        { header: 'Reset Time',            value: row => row.resetTime },
+      ];
+      return ok(['', 'List of Database Incarnations', '=============================',
+        ...renderTable(rows, columns, RMAN_TABLE), '']);
     }
     const snap = catalog.listAll();
     if (snap.ok === false) return snap;
@@ -96,56 +97,23 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
   }
 
   private _summary(sets: ReadonlyArray<BackupSet>): string[] {
-    const lines: string[] = [
-      '',
-      'List of Backups',
-      '===============',
-      'Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag',
-      '------- -- -- - ----------- ------------------- ------- ------- ---------- ---',
+    const columns: ReadonlyArray<TableColumn<BackupSet>> = [
+      { header: 'Key',             width: 7,  value: set => String(set.bsKey) },
+      { header: 'TY',              width: 2,  value: () => 'B' },
+      { header: 'LV',              width: 2,  value: lvCode },
+      { header: 'S',               width: 1,  value: () => 'A' },
+      { header: 'Device Type',     width: 11, value: () => 'DISK' },
+      { header: 'Completion Time', width: 20, value: set => formatOracleDate(new Date(set.completionTime)) },
+      { header: '#Pieces',         width: 7,  value: set => String(set.pieces.length) },
+      { header: '#Copies',         width: 7,  value: () => '1' },
+      { header: 'Compressed',      width: 10, value: set => set.pieces.some(p => p.compressed) ? 'YES' : 'NO' },
+      { header: 'Tag',                        value: set => set.tag.label },
     ];
-    for (const s of sets) {
-      const ts = formatOracleDate(new Date(s.completionTime));
-      const lv = lvCode(s);
-      lines.push(`${String(s.bsKey).padEnd(7)} B  ${lv}  A DISK        ${ts}  1       1       NO         ${s.tag.label}`);
-    }
-    lines.push('');
-    return lines;
+    return ['', 'List of Backups', '===============',
+      ...renderTable(sets, columns, RMAN_TABLE), ''];
   }
 
   private _detail(sets: ReadonlyArray<BackupSet>): string[] {
-    const lines: string[] = ['', 'List of Backup Sets', '===================', ''];
-    lines.push(
-      'BS Key  Type LV Size       Device Type Elapsed Time Completion Time',
-      '------- ---- -- ---------- ----------- ------------ ---------------',
-    );
-    for (const s of sets) {
-      const ts = formatOracleDate(new Date(s.completionTime));
-      const elapsed = formatElapsed(s.completionTime - s.startTime);
-      const size = formatSize(s.sizeBytes);
-      const typeLabel = typeOf(s).padEnd(7);
-      lines.push(`${String(s.bsKey).padEnd(7)} ${typeLabel} ${size.padEnd(10)} DISK        ${elapsed}     ${ts}`);
-      if (s.keepNote) lines.push(`  Keep: ${s.keepNote}`);
-      for (const p of s.pieces) {
-        const comp = p.compressed ? 'YES' : 'NO';
-        const enc  = p.encrypted  ? 'YES' : 'NO';
-        lines.push(`        BP Key: ${p.key.bpKey}   Status: ${p.status}  Compressed: ${comp}  Encrypted: ${enc}  Tag: ${p.tag.label}`);
-        lines.push(`          Piece Name: ${p.path}`);
-      }
-      if (s.type === 'CONTROLFILE') {
-        lines.push('  Control File Included: Ckp SCN: 1892354    Ckp time: ' +
-          formatOracleDate(new Date(s.completionTime)));
-      }
-      if (s.datafiles.length > 0) {
-        lines.push(`  List of Datafiles in backup set ${s.bsKey}`);
-        lines.push('  File LV Type Ckp SCN    Ckp Time        Name');
-        lines.push('  ---- -- ---- ---------- --------------- ----');
-        for (const df of s.datafiles) {
-          const dfTs = formatOracleDate(new Date(df.ckpTime));
-          lines.push(`  ${String(df.fileNo).padStart(4)}    Full ${String(df.ckpScn.value).padEnd(10)} ${dfTs}  ${df.path}`);
-        }
-      }
-    }
-    lines.push('');
-    return lines;
+    return backupSetLines(sets);
   }
 }

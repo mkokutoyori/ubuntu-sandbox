@@ -45,7 +45,7 @@ async function afterOneLogin(): Promise<LinuxServer> {
   new Cable('c1').connect(pc.getPorts()[0], srv.getPorts()[0]);
   pc.powerOn(); srv.powerOn();
 
-  await pc.executeCommand('ssh alice@10.0.0.2 hostname');
+  await pc.executeCommand('ssh alice@10.0.0.2 hostname', 'alice\n');
   return srv;
 }
 

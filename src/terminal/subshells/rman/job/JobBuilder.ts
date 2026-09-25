@@ -214,11 +214,28 @@ export const JobBuilder = {
 
   duplicateDatabase(targetDbName: string): RmanJob {
     return _make('DUPLICATE_DATABASE', [
-      { name: 'start_duplicate',  pct: 10, message: `Starting Duplicate Db at ${new Date().toISOString()}` },
       { name: 'set_auxiliary',    pct: 20, message: `contents of Memory Script: { set newname for datafiles }` },
       { name: 'restore_clone',    pct: 60, message: 'restore clone database' },
       { name: 'switch_clone',     pct: 80, message: 'switch clone datafile' },
     ], { auxiliary: targetDbName });
+  },
+
+  duplicateForStandby(opts: {
+    fromActive?: boolean; doRecover?: boolean; noFilenameCheck?: boolean;
+  } = {}): RmanJob {
+    const params: Record<string, string> = { forStandby: 'true' };
+    if (opts.fromActive)      params.fromActive      = 'true';
+    if (opts.doRecover)       params.doRecover       = 'true';
+    if (opts.noFilenameCheck) params.noFilenameCheck = 'true';
+    const steps: JobStep[] = [
+      { name: 'standby_controlfile', pct: 25,
+        message: 'contents of Memory Script:\n{\n   restore clone standby controlfile;\n'
+          + '   sql clone "alter database mount standby database";\n}\nexecuting Memory Script' },
+    ];
+    if (opts.fromActive) {
+      steps.push({ name: 'copy_active', pct: 50, message: 'duplicating Online Logs' });
+    }
+    return _make('DUPLICATE_DATABASE', steps, params);
   },
 
   recoverDatabase(opts: {
