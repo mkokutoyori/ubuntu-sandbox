@@ -15,7 +15,7 @@ import {
  * HuaweiVRPShell don't duplicate the wiring (DRY).
  */
 import type { CommandTrie } from '../CommandTrie';
-import { getNtpAgent } from '../../../equipment/RouterServiceCapabilities';
+import { getNtpAgent, getManagementService } from '../../../equipment/RouterServiceCapabilities';
 import { rendreErreurVrp } from '../cli-utils';
 import {
   displayNtpServiceStatus, displayNtpServiceSessions, displayNtpStatisticsPacket,
@@ -65,6 +65,23 @@ export function remoteAccessConfigBlocksVrp(mgmt: RouterManagementService): stri
     ...(ssh.port !== SSH_DEFAULT_PORT ? [`ssh server port ${ssh.port}`] : []),
   ];
   return [telnetBlock, stelnetBlock].filter((block) => block.length > 0);
+}
+
+export function displayTelnetServerStatusVrp(device: unknown): string {
+  const telnet = getManagementService(device)?.getTelnet();
+  const row = (label: string, value: string | number): string => ` ${label.padEnd(41)}:${value}`;
+  const sourceIp = telnet?.source
+    ? (device as { getPort?: (name: string) => { getIPAddress(): { toString(): string } | null } | undefined })
+      .getPort?.(telnet.source)?.getIPAddress()?.toString()
+    : undefined;
+  return [
+    row('TELNET IPv4 server', telnet?.enabled ? 'Enable' : 'Disable'),
+    row('TELNET IPv6 server', telnet?.ipv6Enabled ? 'Enable' : 'Disable'),
+    row('TELNET server port', telnet?.port ?? TELNET_DEFAULT_PORT),
+    row('TELNET server source address', sourceIp ?? '0.0.0.0'),
+    row('ACL4 number', telnet?.acl ?? 0),
+    row('ACL6 number', 0),
+  ].join('\n');
 }
 
 export function displaySshServerStatus(): string {
@@ -274,9 +291,12 @@ export function registerHuaweiCommonSecurityDisplay(
    */
   getNtpAgentDirect?: () => import('../../../ntp/NtpAgent').NtpAgent | undefined,
   getSnmpServiceDirect?: () => SnmpService | undefined,
+  getDevice?: () => unknown,
 ): void {
   trie.register('display local-user', 'Display local users', () =>
     displayLocalUser(getUsers()));
+  trie.register('display telnet server status', 'Display Telnet server status', () =>
+    displayTelnetServerStatusVrp(getDevice?.()));
   trie.registerGreedy('display ssh', 'Display SSH server status', () =>
     displaySshServerStatus());
   trie.registerGreedy('display snmp-agent', 'Display SNMP agent info', () =>

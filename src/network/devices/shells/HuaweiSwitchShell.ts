@@ -2958,7 +2958,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // Shared management `display` commands (DRY).
     registerHuaweiCommonSecurityDisplay(trie, () => this.localUsers,
       () => this.swRef?.getNtpAgent(),
-      () => this.swRef?.getSnmpService());
+      () => this.swRef?.getSnmpService(),
+      () => this.swRef);
 
     // Real DHCP snooping binding table — shadows the generic hardcoded
     // `display dhcp ...` catch-all above with the switch's actual bindings.

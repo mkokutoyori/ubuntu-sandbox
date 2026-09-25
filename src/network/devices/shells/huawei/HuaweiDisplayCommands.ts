@@ -1725,13 +1725,6 @@ export function registerDisplayCommands(
     return `STelnet server: Enabled\nSTelnet server port: ${st.port}`;
   });
 
-  trie.register('display telnet server status', 'Display Telnet server status', () => {
-    const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
-    const tn = mgmt?.getTelnet();
-    if (!tn || !tn.enabled) return 'Telnet server: Disabled';
-    return `Telnet server: Enabled\nTelnet server port: ${tn.port}`;
-  });
-
   trie.register('display snmp-agent local-engineid', 'Display SNMP engine ID', () => {
     const snmp = (getRouter() as unknown as { getSnmpService?: () => import('../../router/management/SnmpService').SnmpService }).getSnmpService?.();
     return snmp ? `SNMP local EngineID: ${snmp.getEngineId()}` : 'SNMP is not enabled';

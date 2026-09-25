@@ -1588,7 +1588,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
     this.registerScreenSizeCommands(t);
     registerHuaweiCommonSecurityDisplay(t, () => new Map(), undefined,
-      () => this.r()?.getSnmpService());
+      () => this.r()?.getSnmpService(), () => this.r());
 
     // OSPF display commands
     registerOSPFDisplayCommands(t, getRouter);
@@ -1956,7 +1956,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       () => this.r() as unknown as { getManagementService: () => import('../router/management/RouterManagementService').RouterManagementService },
       undefined, undefined, (epochMs) => this.r()?._setSystemClock(epochMs));
     registerHuaweiCommonSecurityDisplay(t, () => new Map(), undefined,
-      () => this.r()?.getSnmpService());
+      () => this.r()?.getSnmpService(), () => this.r());
 
     // `user-interface vty <first> [last]` — enter VTY user-interface view
     // so subsequent `protocol inbound {ssh|telnet|all|none}` toggles the
