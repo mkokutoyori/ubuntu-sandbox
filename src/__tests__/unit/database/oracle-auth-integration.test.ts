@@ -114,6 +114,8 @@ describe('Full authentication lifecycle', () => {
     exec("CREATE USER appuser IDENTIFIED BY apppass DEFAULT TABLESPACE USERS");
     exec("GRANT CREATE SESSION TO appuser");
     exec("GRANT CREATE TABLE TO appuser");
+    // Une vue fixe ne se lit pas sans privilege de catalogue.
+    exec("GRANT SELECT_CATALOG_ROLE TO appuser");
 
     const { sid, executor } = db.connect('APPUSER', 'apppass');
     expect(sid).toBeGreaterThan(0);

@@ -1544,6 +1544,7 @@ export class OracleCatalog extends BaseCatalog {
   // ── V$ Dynamic Performance Views ─────────────────────────────────
 
   private queryVDollar(name: string, _currentUser: string, instanceOverride?: OracleInstance): ResultSet | null {
+    if (!this.canAccessFixedView(_currentUser, name)) return null;
     const inst = instanceOverride ?? this.instance;
     // Every V$ view is self-registered under views/*.ts.
     const fromRegistry = queryView(name, {
@@ -1562,7 +1563,11 @@ export class OracleCatalog extends BaseCatalog {
   // ── DBA_ views ───────────────────────────────────────────────────
 
   private queryDBA(viewName: string, currentUser: string): ResultSet | null {
-    if (!this.canAccessDbaViews(currentUser)) return null;
+    if (!this.canAccessDictionaryViews(currentUser)) return null;
+    return this.dictionaryRows(viewName, currentUser);
+  }
+
+  private dictionaryRows(viewName: string, currentUser: string): ResultSet | null {
     const fromRegistry = queryView(viewName, {
       instance: this.instance,
       storage: this.storage,
@@ -1573,13 +1578,23 @@ export class OracleCatalog extends BaseCatalog {
     return fromRegistry ?? null; // Unknown view — fall through to table lookup
   }
 
-  private canAccessDbaViews(user: string): boolean {
+  private canAccessDictionaryViews(user: string): boolean {
     if (user === 'SYS') return true;
     const engine = this.getSecurityEngine();
     if (!engine) return true;
     if (engine.privileges.isDba(user)) return true;
     if (engine.privileges.hasSystemPrivilege(user, 'SELECT ANY DICTIONARY')) return true;
     return engine.privileges.getGrantedRoles(user).includes('SELECT_CATALOG_ROLE');
+  }
+
+  private canAccessFixedView(user: string, name: string): boolean {
+    if (this.canAccessDictionaryViews(user)) return true;
+    if (user.toUpperCase() === 'PUBLIC') return true;
+    const engine = this.getSecurityEngine();
+    if (!engine) return true;
+    const underscored = name.replace(/^(G?V)\$/, '$1_$');
+    return engine.privileges.hasObjectPrivilege(user, 'SELECT', 'SYS', underscored)
+      || engine.privileges.hasObjectPrivilege(user, 'SELECT', 'SYS', name);
   }
 
 
@@ -1782,7 +1797,7 @@ export class OracleCatalog extends BaseCatalog {
 
     // ALL_OBJECTS — same scoping as ALL_VIEWS.
     if (viewName === 'ALL_OBJECTS') {
-      const dba = this.queryDBA('DBA_OBJECTS', currentUser)!;
+      const dba = this.dictionaryRows('DBA_OBJECTS', currentUser)!;
       const upper = currentUser.toUpperCase();
       dba.rows = dba.rows.filter(r => {
         const owner = String(r[0]).toUpperCase();
@@ -1791,10 +1806,31 @@ export class OracleCatalog extends BaseCatalog {
       return dba;
     }
 
-    // ALL_ views show objects accessible to the current user
-    // For simplicity, show same as DBA_ for now (will filter later)
     const dbaName = viewName.replace('ALL_', 'DBA_');
-    return this.queryDBA(dbaName, currentUser);
+    const rows = this.dictionaryRows(dbaName, currentUser);
+    if (!rows || !rows.isQuery) return rows;
+    return this.visibleToUser(rows, currentUser);
+  }
+
+  private visibleToUser(result: ResultSet, currentUser: string): ResultSet {
+    const upper = currentUser.toUpperCase();
+    if (this.canAccessDictionaryViews(upper)) return result;
+    const ownerIdx = result.columns.findIndex(c => c.name === 'OWNER');
+    if (ownerIdx < 0) return result;
+    const nameIdx = result.columns.findIndex(
+      c => c.name === 'TABLE_NAME' || c.name === 'OBJECT_NAME' || c.name === 'VIEW_NAME');
+    const engine = this.getSecurityEngine();
+    const granted = (owner: string, object: string): boolean => {
+      if (!engine || object === '') return false;
+      return ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'READ', 'EXECUTE'].some(
+        priv => engine.privileges.hasObjectPrivilege(upper, priv, owner, object));
+    };
+    const kept = result.rows.filter(row => {
+      const owner = String(row[ownerIdx]).toUpperCase();
+      if (owner === upper || owner === 'SYS' || owner === 'PUBLIC') return true;
+      return granted(owner, nameIdx < 0 ? '' : String(row[nameIdx]).toUpperCase());
+    });
+    return queryResult(result.columns, kept);
   }
 
   // ── USER_ views (current user's objects) ─────────────────────────
@@ -1823,7 +1859,7 @@ export class OracleCatalog extends BaseCatalog {
 
     // USER_OBJECTS — objects owned by the current user; drops OWNER.
     if (viewName === 'USER_OBJECTS') {
-      const dba = this.queryDBA('DBA_OBJECTS', currentUser)!;
+      const dba = this.dictionaryRows('DBA_OBJECTS', currentUser)!;
       const ownerIdx = dba.columns.findIndex(c => c.name === 'OWNER');
       const filtered = dba.rows.filter(r => String(r[ownerIdx]).toUpperCase() === upper);
       const cols = dba.columns.filter((_, i) => i !== ownerIdx);
@@ -1860,7 +1896,7 @@ export class OracleCatalog extends BaseCatalog {
 
     // USER_ views show objects owned by the current user
     const dbaName = viewName.replace('USER_', 'DBA_');
-    const result = this.queryDBA(dbaName, currentUser);
+    const result = this.dictionaryRows(dbaName, currentUser);
     if (!result || !result.isQuery) return result;
     // Filter to current user's schema
     const ownerIdx = result.columns.findIndex(c => c.name === 'OWNER' || c.name === 'SEQUENCE_OWNER');

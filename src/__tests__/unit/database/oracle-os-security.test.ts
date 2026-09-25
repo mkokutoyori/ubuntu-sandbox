@@ -97,6 +97,9 @@ describe('OS context in V$SESSION', () => {
   it('regular user connect stores correct machine in V$SESSION', () => {
     exec("CREATE USER testuser IDENTIFIED BY pass123");
     exec("GRANT CREATE SESSION TO testuser");
+    // V$SESSION ne se lit pas sans privilege de catalogue : c'est la
+    // recette reelle d'un DBA qui ouvre UNE vue fixe a UN utilisateur.
+    exec("GRANT SELECT ON v_$session TO testuser");
     const ctx: OsSecurityContext = {
       osUser: 'appuser',
       osGroup: 'oracle',

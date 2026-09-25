@@ -21,6 +21,7 @@ import type {
   AdministerKeyManagementStatement, CommentStatement,
 } from '../../engine/parser/ASTNode';
 import { OracleError } from '../../engine/types/DatabaseError';
+import { findView } from '../views/registry';
 import type { OracleStorage } from '../OracleStorage';
 import type { OracleCatalog } from '../OracleCatalog';
 import type { PrivilegeEnforcer } from '../security/PrivilegeEnforcer';
@@ -82,6 +83,7 @@ export class SecurityDclExecutor {
     const viewExists = this.storage.getViewMeta?.(schema, objName) != null;
     const sequenceExists = this.storage.getSequence?.(schema, objName) != null;
     if (tableExists || viewExists || sequenceExists) return;
+    if (schema === 'SYS' && findView(objName) !== undefined) return;
     // Could still be a PL/SQL object — query the catalog provider.
     const procExists = this.catalog.getStoredUnits().some(u => u.schema === schema && u.name === objName);
     if (!procExists) {

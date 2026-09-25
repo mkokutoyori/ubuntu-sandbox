@@ -707,3 +707,39 @@ Sonde : `src/__tests__/audit/oracle-sessions-terminees-preuves.test.ts`
 (10 cas discriminants sur 14). Trois tests épinglaient le défaut — ils
 exigeaient la disparition immédiate de la ligne et du processus serveur ; ils
 vérifient désormais la séquence réelle, et leur en-tête le dit.
+
+---
+
+## 10. Lot « qui a le droit de lire les vues » (fermé)
+
+Recensement mesuré, pas déduit : les 450 vues enregistrées ont été
+interrogées comme SYS, puis comme un utilisateur n'ayant que
+`CREATE SESSION` (`src/__tests__/debug/oracle/vues-recensement.debug.test.ts`).
+Deux défauts **symétriques**, et un troisième de cohérence.
+
+| Famille | Avant | Maintenant |
+| --- | --- | --- |
+| `V$` / `GV$` | lisibles par **n'importe qui** : `V$SESSION`, `V$DATABASE`, `V$PARAMETER`, `V$DATAFILE` rendaient leurs lignes à un utilisateur sans aucun privilège de catalogue | `ORA-00942` sans droit ; ouvertes par `SELECT_CATALOG_ROLE`, `SELECT ANY DICTIONARY`, le rôle DBA, une connexion SYSOPER, ou un `GRANT SELECT ON v_$<vue>` ciblé |
+| `DBA_` | correctement refusées | inchangé — c'est le témoin de non-régression |
+| `ALL_` / `USER_` | refusées à **tout le monde** sauf aux DBA : elles dérivaient de la vue `DBA_` et héritaient de son contrôle | publiques, et **filtrées par ligne** : `USER_TABLES` ne montre que les objets du demandeur, `ALL_TABLES` y ajoute ce qu'il a le droit de voir |
+| `GRANT SELECT ON v_$session TO app_user` | `ORA-00942` — la vérification d'existence ignorait les vues fixes | accepté, et n'ouvre **que** cette vue |
+
+Le contrôle est écrit **une fois** (`canAccessDictionaryViews`) et partagé
+par les deux familles ; les `V$` y ajoutent le chemin d'octroi explicite.
+
+**Le défaut de cohérence** : trois vues comptaient les sessions et
+donnaient trois réponses — `V$SESSION` en listait 9, `V$LICENSE` en
+annonçait 0, `V$RESOURCE_LIMIT` 1. Cette dernière portait des lignes
+**écrites en dur**, limite comprise, sans lire le paramètre `sessions`.
+Les trois lisent désormais le même compte (`views/_sessionCounts.ts`), et
+`V$RESOURCE_LIMIT` tire ses limites des paramètres et son utilisation des
+processus et verrous vivants.
+
+**Trois tests épinglaient la permissivité** — ils lisaient `V$SESSION`
+depuis la session d'un utilisateur ordinaire. Deux reçoivent maintenant le
+droit explicitement (c'est la recette réelle, et le test la documente) ;
+le troisième, une connexion SYSOPER, passe sans changement parce qu'un
+opérateur doit pouvoir interroger l'instance qu'il démarre.
+
+Sonde : `src/__tests__/audit/oracle-acces-vues-preuves.test.ts`
+(8 cas discriminants sur 14, les six témoins nommés dans son en-tête).

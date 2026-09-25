@@ -15,6 +15,7 @@ import { queryResult } from '../../engine/executor/ResultSet';
 import { oracleVarchar2, oracleNumber, oracleDate } from '../../engine/catalog/DataType';
 import { registerView } from './registry';
 import { processAddr } from './_processAddr';
+import { BACKGROUND_SESSIONS } from './_sessionCounts';
 
 registerView({
   name: 'V$SESSION',
@@ -114,12 +115,8 @@ registerView({
       'NO HOLDER', null, 'DISABLED', 'orcl', 1,
     ];
 
-    const bgRows: (string | number | null)[][] = [
-      bgRow(1, 'PMON'),
-      bgRow(2, 'SMON'),
-      bgRow(3, 'DBW0'),
-      bgRow(4, 'LGWR'),
-    ];
+    const bgRows: (string | number | null)[][] =
+      BACKGROUND_SESSIONS.map((name, index) => bgRow(index + 1, name));
 
     if (activeSessions.length > 0) {
       const userRows = activeSessions.map(s => {
