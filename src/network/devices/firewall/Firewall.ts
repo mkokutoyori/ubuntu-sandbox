@@ -42,7 +42,7 @@ import {
 import { isIPv4Fragment } from '../../core/Ipv4Fragmentation';
 import { SystemClock, schedulerWallClock } from '../../core/SystemClock';
 import { SessionHelperTable, type SessionHelperEntry } from './session/SessionHelperTable';
-import { SystemLoad, type MemoryWorkload } from './health/SystemLoad';
+import { SystemLoad, type InspectionPosture, type MemoryWorkload } from './health/SystemLoad';
 import { conserveLogDraft } from './health/ConserveEvent';
 import { vdomFootprint, cacheFootprint } from './health/MemoryFootprint';
 import { StreamAssembler, oversizeLimitBytes } from './inspection/StreamAssembler';
@@ -106,7 +106,7 @@ import {
 } from './l3/FirewallEgress';
 import { deliverLocally } from './l3/LocalDelivery';
 import { ControlPlaneUdpEndpoint } from '../udp/ControlPlaneUdpEndpoint';
-import type { FirewallDhcp } from './l3/FirewallDhcp';
+import { dhcpServerId, type FirewallDhcp } from './l3/FirewallDhcp';
 import type { TcpSocket, TcpStack } from '../../tcp/TcpStack';
 import { buildFirewallAgents } from './FirewallAgents';
 import { AccessMatrix } from './authz/AccessMatrix';
@@ -120,6 +120,11 @@ import type { PolicyProbe } from './policy/PolicyProbe';
 import { isDenyAction } from './model/SecurityRule';
 import { FirewallPing6 } from './diag/FirewallPing6';
 import { getDefaultScheduler } from '@/events/Scheduler';
+import type { IEventBus } from '@/events/EventBus';
+import type { BgpNeighborStateChangedPayload } from '../../bgp/events';
+import { NO_BGP_ERROR } from '../../bgp/messages';
+import type { OspfNeighborStateChangedPayload } from '../../ospf/events';
+import { isBgpFsmState } from '../../snmp/Bgp4MibNotifications';
 import type { Ipv6Counters } from '../router/IPv6DataPlane';
 import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
 import type { TacacsClientAgent } from '../../tacacs/TacacsClientAgent';
@@ -131,7 +136,9 @@ import type { FirewallRouting } from './routing/FirewallRouting';
 import { buildL3Services, type L3Services } from './l3/L3ServiceWiring';
 import { classifyIpv4, ingressHostOf, type Ipv4IngressHost } from './l3/Ipv4Ingress';
 import type { FirewallNtp } from './mgmt/FirewallNtp';
-import { FirewallSnmp, type FirewallSnmpIdentity } from './mgmt/FirewallSnmp';
+import {
+  FirewallSnmp, type DhcpTrapType, type FirewallSnmpIdentity, type FirewallTrapFact,
+} from './mgmt/FirewallSnmp';
 import { buildManagementServices } from './mgmt/ManagementWiring';
 import type {
   AdminHttpApp, AdminHttpServer, AdminServerCertificate, AdminServerCertificateMaterial,
@@ -163,7 +170,7 @@ import {
 import { FirewallDnsServer } from './l3/FirewallDnsServer';
 import { transferTransportOf } from '../../dns/transfer/ZoneTransferClient';
 import type { SdwanService } from './sdwan/SdwanService';
-import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
+import { ETHERTYPE_FGCP, type HaAgent, type HaTransition } from './ha/HaAgent';
 import { serialNumberOf, type FirewallHa } from './ha/FirewallHa';
 import { HA_DEFAULTS, type HaConfiguration } from './ha/HaTypes';
 import type {
@@ -191,9 +198,9 @@ import {
   localInTrafficOfIpv4, localInVerdict,
   type LocalInTraffic, type LocalInVerdict,
 } from './policy/LocalInPolicy';
-import { anomalyDefaultThresholds } from './dos/AnomalyCatalog';
+import { anomalyDefaultThresholds, anomalyIndex } from './dos/AnomalyCatalog';
 import type { DosPolicyStore } from './dos/DosPolicyStore';
-import type { AnomalyAction, DosFinding } from './dos/DosSensor';
+import { DOS_DETECTION_WINDOW_MS, type AnomalyAction, type DosFinding } from './dos/DosSensor';
 import { dosFinding, type DosTraffic } from './dos/DosGate';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { SyslogAgent } from '../../syslog/SyslogAgent';
@@ -232,6 +239,8 @@ function frameBytes(frame: EthernetFrame): number {
 }
 
 const ICMP_ERROR_TTL = 64;
+const ROUTING_VRFS: readonly number[] = Object.freeze([0]);
+const UNSPECIFIED_IPV4 = '0.0.0.0';
 const DEFAULT_INTERFACE_MTU = 1500;
 
 export type RebootReason = 'power cycle' | 'warm reboot';
@@ -427,7 +436,9 @@ export class Firewall extends Equipment {
       packetsPerSecondPerCpu: profile.chassis.packetsPerSecondPerCpu,
       onConserveChange: (transition) => {
         this.getLogStore().append(conserveLogDraft(now(), transition));
+        if (transition.entered) this.snmpService?.raise({ kind: 'conserve-entered' });
       },
+      onActivity: () => { this.sampleLoadForTraps(); },
     });
     this.load.addWorkload(() => this.measureWorkload());
     this.revisions = new RevisionStore({ now });
@@ -444,6 +455,14 @@ export class Firewall extends Equipment {
         this.assignInterfaceToVdom(tunnel, vdom);
       },
       onTunnelRemoved: (_vdom, tunnel) => { this.interfaces.remove(tunnel); },
+      onTunnelStatus: (_vdom, tunnel, status) => {
+        const local = this.interfaces.get(tunnel.boundInterface)?.ip;
+        if (local === undefined || IPAddress.tryParse(tunnel.remoteGateway) === null) return;
+        this.snmpService?.raise({
+          kind: 'vpn-tunnel', up: status === 'up', phase1: tunnel.name,
+          local: new IPAddress(local), remote: new IPAddress(tunnel.remoteGateway),
+        });
+      },
       policyKeyedBy: profile.policyKeyedBy,
       policyNamesZones: profile.policyNamesZones,
       implicitPolicy: profile.implicitPolicy,
@@ -499,12 +518,17 @@ export class Firewall extends Equipment {
       sessionTimeouts: this.sessionTimers,
       sessionHelperFor: (protocol, port) => this.sessionHelpers.helperFor(protocol, port),
       refusesNewSessions: () => this.load.refusesNewSessions(),
-      proxyInspectionPosture: () => this.load.proxyInspectionPosture(),
-      flowInspectionPosture: () => this.load.flowInspectionPosture(),
+      proxyInspectionPosture: () => this.observePosture('proxy', this.load.proxyInspectionPosture()),
+      flowInspectionPosture: () => this.observePosture('flow', this.load.flowInspectionPosture()),
       assembleStream: (key, chunk, limitMb) =>
         this.streams.append(key, chunk, oversizeLimitBytes(limitMb)),
       onInspection: () => { this.load.recordPacket('inspection'); },
+      onUtmVerdict: (verdict, context) => {
+        if (verdict.kind === 'virus') this.raiseOncePerSession(context, { kind: 'virus', name: verdict.detail });
+      },
+      onOversize: (blocked, context) => { this.raiseOncePerSession(context, { kind: 'oversize', blocked }); },
       onDosAnomaly: (finding, iface, packet) => {
+        this.raiseAnomalyTrap(finding, packet);
         if (!finding.log) return;
         this.trafficLogger?.onDosAnomaly?.(finding, iface, packet);
       },
@@ -615,6 +639,7 @@ export class Firewall extends Equipment {
     this.portal = mgmt.portals.auth;
     this.sslVpn = mgmt.portals.sslVpn;
     this.haService = mgmt.ha;
+    this.haService.agent.onTransition((transition) => { this.raiseHaTrap(transition); });
     this.ntp = mgmt.ntp;
     this.captivePortal = mgmt.captivePortal;
     this.management.attachCliServer(mgmt.cli);
@@ -654,6 +679,85 @@ export class Firewall extends Equipment {
         this.getVdom().routes.prefixLengthTowards(iface, destination),
     });
     this.sdwan.onHealthChange((changes) => { this.onSdwanHealthChange(changes); });
+    this.attachTrapSources();
+  }
+
+  private detachTrapSources: (() => void) | null = null;
+
+  private attachTrapSources(): void {
+    this.detachTrapSources?.();
+    const bus = this.getBus();
+    const ours = (payload: { deviceId?: string }) => payload.deviceId === this.id;
+    const unsubscribers = [
+      bus.subscribeWhere('bgp.neighbor.state-changed', ours, (event) => { this.raiseBgpPeerTrap(event.payload); }),
+      bus.subscribeWhere('ospf.neighbor.state-changed', ours, (event) => {
+        this.raiseOspfNeighborTrap(event.payload);
+      }),
+      bus.subscribeWhere('dhcp.pool.utilization', ours, (event) => {
+        if (event.payload.crossing === 'high') this.raiseDhcpServerTrap('pool-usage', event.payload.pool);
+      }),
+      bus.subscribeWhere('dhcp.pool.conflict', ours, (event) => {
+        if (event.payload.pool !== null) this.raiseDhcpServerTrap('conflict', event.payload.pool);
+      }),
+      bus.subscribeWhere('dhcp.nak.received', ours, (event) => {
+        this.raiseDhcpTrap('nak', event.payload.iface, null);
+      }),
+    ];
+    this.detachTrapSources = () => { for (const unsubscribe of unsubscribers) unsubscribe(); };
+  }
+
+  override setEventBus(bus: IEventBus | null): void {
+    super.setEventBus(bus);
+    this.attachTrapSources();
+  }
+
+  vdomIndex(name: string): number {
+    return this.vdomNames().indexOf(name) + 1;
+  }
+
+  private raiseDhcpServerTrap(trapType: DhcpTrapType, pool: string): void {
+    const scope = this.dhcp.scopeOfPool(pool);
+    if (scope !== undefined) this.raiseDhcpTrap(trapType, scope.iface, dhcpServerId(scope));
+  }
+
+  private raiseDhcpTrap(trapType: DhcpTrapType, iface: string, serverId: number | null): void {
+    const vdomName = this.vdoms.vdomOfInterface(iface);
+    this.snmpService?.raise({
+      kind: 'dhcp', trapType, iface, serverId, vdomName, vdomIndex: this.vdomIndex(vdomName),
+    });
+  }
+
+  private raiseBgpPeerTrap(payload: BgpNeighborStateChangedPayload): void {
+    const snmp = this.snmpService;
+    const remoteAddress = IPAddress.tryParse(payload.neighborIp);
+    if (!snmp || remoteAddress === null) return;
+    if (!isBgpFsmState(payload.oldState) || !isBgpFsmState(payload.newState)) return;
+    const engine = this.routing.getBgp().getEngine();
+    snmp.raise({
+      kind: 'bgp-peer',
+      transition: {
+        remoteAddress, from: payload.oldState, to: payload.newState,
+        lastError: engine === null ? NO_BGP_ERROR : engine.peerLastError(payload.neighborIp),
+      },
+    });
+  }
+
+  private raiseOspfNeighborTrap(payload: OspfNeighborStateChangedPayload): void {
+    const snmp = this.snmpService;
+    const iface = this.routing.getOspf()?.getInterfaces().get(payload.iface);
+    const neighbor = iface?.neighbors.get(payload.neighborId);
+    const routerId = IPAddress.tryParse(payload.routerId);
+    const neighborAddress = IPAddress.tryParse(neighbor?.ipAddress ?? '');
+    const neighborRouterId = IPAddress.tryParse(payload.neighborId);
+    if (!snmp || !iface || routerId === null || neighborAddress === null || neighborRouterId === null) return;
+    snmp.raise({
+      kind: 'ospf-neighbor',
+      transition: {
+        routerId, neighborAddress, neighborRouterId, from: payload.oldState, to: payload.newState,
+        multiAccess: iface.networkType === 'broadcast' || iface.networkType === 'nbma',
+        designatedRouter: iface.state === 'DR',
+      },
+    });
   }
 
   private processPipeline(context: PacketContext) {
@@ -874,6 +978,11 @@ export class Firewall extends Equipment {
         ports: () => this.getPorts(),
         sendFrame: (name, frame) => { this.sendFrame(name, frame); },
         sendUdpDatagram: (request) => this.sendUdpDatagram(request),
+        sourceAddressFor: (destination, iface) => this.sourceAddressFor(destination, iface),
+        sdwanEgress: (destination, sourcePort, destinationPort) => this.localOutSteering({
+          destination, protocol: IP_PROTO_UDP, sourcePort, destinationPort,
+        }),
+        vrfs: () => this.routingVrfs(),
         bus: () => this.getBus(),
         scheduler: () => this.getScheduler(),
         identity: () => this.snmpIdentity(),
@@ -890,7 +999,90 @@ export class Firewall extends Equipment {
   }
 
   protected snmpIdentity(): FirewallSnmpIdentity {
-    return { sysObjectId: '0.0', objects: new Map() };
+    return { sysObjectId: '0.0', objects: new Map(), tables: () => new Map(), traps: () => [] };
+  }
+
+  private raiseHaTrap(transition: HaTransition): void {
+    const snmp = this.snmpService;
+    if (!snmp) return;
+    if (transition.kind === 'takeover') {
+      snmp.raise({ kind: 'ha-switch' });
+      return;
+    }
+    if (transition.kind === 'member-lost') snmp.raise({ kind: 'ha-heartbeat-failure' });
+    snmp.raise({ kind: 'ha-member', up: transition.kind === 'member-joined', serial: transition.serial });
+  }
+
+  private sampleLoadForTraps(): void {
+    const snmp = this.snmpService;
+    if (!snmp?.watchesLoad()) return;
+    const memory = this.load.memory();
+    const share = (kib: number) => (kib / memory.totalKib) * 100;
+    const disk = this.getProfile().logDisk;
+    snmp.observeLoad({
+      cpuPercent: this.load.cpuUsagePercent(),
+      memoryUsedPercent: share(memory.usedKib),
+      memoryFreePercent: share(memory.freeKib),
+      memoryFreeablePercent: share(memory.freeableKib),
+      logDiskPercent: disk === undefined ? null : (this.logDiskUsedBytes() / disk.partitionBytes) * 100,
+    });
+  }
+
+  private readonly trappedSessions = new WeakSet<object>();
+  private readonly trappedAnomalies = new Map<string, number>();
+  private readonly inspectionPostures = new Map<'proxy' | 'flow', InspectionPosture>();
+
+  private raiseOncePerSession(context: PacketContext, fact: FirewallTrapFact): void {
+    const session = context.session;
+    if (session !== undefined) {
+      if (this.trappedSessions.has(session)) return;
+      this.trappedSessions.add(session);
+    }
+    this.snmpService?.raise(fact);
+  }
+
+  private raiseAnomalyTrap(finding: DosFinding, traffic: DosTraffic): void {
+    const snmp = this.snmpService;
+    const source = IPAddress.tryParse(traffic.sourceIP);
+    const signatureId = anomalyIndex(finding.anomaly);
+    if (!snmp || source === null || signatureId < 0) return;
+    const key = `${finding.anomaly}|${traffic.sourceIP}`;
+    const at = this.services.now();
+    const last = this.trappedAnomalies.get(key);
+    if (last !== undefined && at - last < DOS_DETECTION_WINDOW_MS) return;
+    this.trappedAnomalies.set(key, at);
+    snmp.raise({ kind: 'anomaly', signatureId, anomaly: finding.anomaly, source });
+  }
+
+  private observePosture(kind: 'proxy' | 'flow', posture: InspectionPosture): InspectionPosture {
+    const previous = this.inspectionPostures.get(kind) ?? 'normal';
+    this.inspectionPostures.set(kind, posture);
+    if (posture === 'bypass' && previous !== 'bypass') {
+      this.snmpService?.raise({ kind: kind === 'proxy' ? 'av-bypass' : 'ips-fail-open' });
+    }
+    return posture;
+  }
+
+  routingVrfs(): readonly number[] {
+    return ROUTING_VRFS;
+  }
+
+  localOutSteering(flow: {
+    destination: IPAddress; protocol: number; sourcePort: PortNumber; destinationPort: PortNumber;
+  }): string | null {
+    const vdom = this.getVdom();
+    const destination = flow.destination.toString();
+    const source = this.sourceAddressFor(flow.destination)?.toString() ?? UNSPECIFIED_IPV4;
+    const decision = vdom.policyRoutes?.evaluate({
+      ingressInterface: '', sourceIP: source, destinationIP: destination, protocol: flow.protocol,
+      sourcePort: flow.sourcePort.value, destinationPort: flow.destinationPort.value,
+    });
+    if (decision && decision.action !== 'deny' && decision.outputDevice !== undefined) {
+      return this.interfaces.isUp(decision.outputDevice) ? decision.outputDevice : null;
+    }
+    const steered = this.sdwan.steer({ sourceIP: source, destinationIP: destination },
+      (names, candidate) => vdom.objects.matchesAnyAddress(names, candidate));
+    return steered !== undefined && this.interfaces.isUp(steered.iface) ? steered.iface : null;
   }
 
   protected interfaceDescription(name: string): string {
@@ -1181,25 +1373,34 @@ export class Firewall extends Equipment {
     });
   }
 
-  sourceAddressFor(destination: IPAddress): IPAddress | null {
-    const target = destination.toString();
-    const route = this.getVdom().routes.resolveNextHop(target);
-    const iface = route?.iface ?? this.interfaces.interfaceForDestination(target);
-    const source = iface === undefined ? undefined : this.interfaces.get(iface)?.ip;
+  sourceAddressFor(destination: IPAddress, iface?: string): IPAddress | null {
+    const egress = this.localEgress(destination.toString(), iface)?.iface;
+    const source = egress === undefined ? undefined : this.interfaces.get(egress)?.ip;
     return source === undefined ? null : new IPAddress(source);
   }
 
+  private localEgress(target: string, iface?: string): { iface: string; nextHop?: string } | undefined {
+    const routes = this.getVdom().routes;
+    if (iface !== undefined) {
+      const via = routes.resolveNextHopVia(target, iface);
+      return via === undefined ? undefined : { iface, nextHop: via.nextHop };
+    }
+    const route = routes.resolveNextHop(target);
+    if (route) return { iface: route.iface, nextHop: route.nextHop };
+    const connected = this.interfaces.interfaceForDestination(target);
+    return connected === undefined ? undefined : { iface: connected };
+  }
+
   sendUdpDatagram(request: UdpSendRequest): boolean {
-    const target = request.destination.toString();
-    const route = this.getVdom().routes.resolveNextHop(target);
-    const iface = route?.iface ?? this.interfaces.interfaceForDestination(target);
+    const egress = this.localEgress(request.destination.toString(), request.iface);
+    const iface = egress?.iface;
     const source = request.source?.toString()
       ?? (iface === undefined ? undefined : this.interfaces.get(iface)?.ip);
     if (iface === undefined || source === undefined) return false;
 
     const packet = buildUdpOverIpv4(new IPAddress(source), request);
     this.logLocalOut(iface, packet);
-    this.forward(iface, packet, route?.nextHop);
+    this.forward(iface, packet, egress?.nextHop);
     return true;
   }
 
@@ -1263,8 +1464,20 @@ export class Firewall extends Equipment {
   }
 
   configureInterface(name: string, config: InterfaceConfig): void {
+    const before = this.interfaces.get(name);
     this.interfaces.configure(name, config);
     this.routing.refreshInterfaces();
+    const after = this.interfaces.get(name);
+    if (before?.ip !== after?.ip || before?.mask !== after?.mask) {
+      this.snmpService?.raise({ kind: 'interface-address', port: name });
+    }
+  }
+
+  protected override addPort(port: Port): void {
+    super.addPort(port);
+    port.onLinkChange((state) => {
+      this.snmpService?.raise({ kind: 'link', port: port.getName(), up: state === 'up' });
+    });
   }
 
   simulate(request: SimulationRequest): SimulationResult {
@@ -2123,7 +2336,12 @@ export class Firewall extends Equipment {
         const alive = await this.ldbMonitors.check(
           monitors, `${name}|${server.id}`,
           { address: server.address, port: server.port });
+        const wentDown = !alive && !pool.isDead(server.id);
         pool.markDead(server.id, !alive);
+        const address = IPAddress.tryParse(server.address);
+        if (wentDown && address !== null) {
+          this.snmpService?.raise({ kind: 'real-server-down', server: address, virtualServer: name });
+        }
       }
     }
   }
@@ -2391,6 +2609,7 @@ export class Firewall extends Equipment {
       zoneOf: (name) => context.zones.zoneOf(name) ?? '',
     }, iface, traffic);
     if (!finding) return 'none';
+    this.raiseAnomalyTrap(finding, traffic);
     if (finding.log) this.trafficLogger?.onDosAnomaly?.(finding, iface, traffic);
     return finding.action;
   }

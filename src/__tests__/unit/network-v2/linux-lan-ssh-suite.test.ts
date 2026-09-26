@@ -2046,7 +2046,7 @@ describe('§30 — network monitoring of SSH listener and sessions', () => {
         await l.pc1.executeCommand('ssh alice@10.0.0.2 hostname', 'admin\n');
       },
       on: l => l.pc1,
-      cmd: 'tcpdump -r /tmp/connect.pcap',
+      cmd: 'tcpdump -nn -r /tmp/connect.pcap',
       contains: [/Flags \[S\]|Flags \[S\.\]/, /10\.0\.0\.2\.22/],
     },
     {

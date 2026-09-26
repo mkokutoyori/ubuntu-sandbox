@@ -178,7 +178,7 @@ export interface LinuxCommand {
     ctx: LinuxCommandContext,
     args: string[],
     stdin?: string,
-  ): Promise<{ output: string; exitCode: number; stderr?: string }>;
+  ): Promise<{ output: string; exitCode: number; stderr?: string; interleaved?: string }>;
 
   /**
    * Synchronous counterpart to `runWithStatus`, for commands whose logic

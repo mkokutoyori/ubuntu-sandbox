@@ -97,6 +97,17 @@ export interface BgpNotificationMessage {
   readonly data?: string;
 }
 
+export interface BgpErrorCode {
+  readonly code: number;
+  readonly subcode: number;
+}
+
+export const NO_BGP_ERROR: BgpErrorCode = Object.freeze({ code: 0, subcode: 0 });
+
+export function errorCodeOf(notification: BgpNotificationMessage): BgpErrorCode {
+  return Object.freeze({ code: notification.errorCode, subcode: notification.errorSubcode });
+}
+
 export type BgpMessage =
   | BgpOpenMessage
   | BgpUpdateMessage

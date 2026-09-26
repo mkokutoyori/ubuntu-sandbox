@@ -173,6 +173,12 @@ export interface DhcpPoolExhaustedPayload extends DhcpDeviceRef {
   clientMac: string;
 }
 
+export interface DhcpPoolConflictPayload extends DhcpDeviceRef {
+  pool: string | null;
+  ip: string;
+  method: string;
+}
+
 export interface DhcpPoolUtilizationPayload extends DhcpDeviceRef {
   pool: string;
   crossing: 'high' | 'low';
@@ -209,4 +215,5 @@ export type DhcpDomainEvent =
   | { topic: 'dhcp.server.option82-received'; payload: DhcpServerOption82ReceivedPayload }
   | { topic: 'dhcp.server.reply-undeliverable'; payload: DhcpServerReplyUndeliverablePayload }
   | { topic: 'dhcp.pool.exhausted'; payload: DhcpPoolExhaustedPayload }
-  | { topic: 'dhcp.pool.utilization'; payload: DhcpPoolUtilizationPayload };
+  | { topic: 'dhcp.pool.utilization'; payload: DhcpPoolUtilizationPayload }
+  | { topic: 'dhcp.pool.conflict'; payload: DhcpPoolConflictPayload };

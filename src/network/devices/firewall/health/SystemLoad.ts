@@ -56,6 +56,7 @@ export interface SystemLoadDeps {
   readonly packetsPerSecondPerCpu: number;
   readonly baseMemoryKib?: number;
   readonly onConserveChange?: (transition: ConserveTransition) => void;
+  readonly onActivity?: () => void;
 }
 
 const MINUTE_MS = 60_000;
@@ -95,6 +96,7 @@ export class SystemLoad {
     this.processed++;
     if (kind === 'inspection') this.inspectionPackets.add(1);
     else this.kernelPackets.add(1);
+    this.deps.onActivity?.();
   }
 
   recordBytes(direction: 'in' | 'out', bytes: number): void {
@@ -104,6 +106,7 @@ export class SystemLoad {
 
   recordSessionCreated(): void {
     this.sessionsCreated.add(1);
+    this.deps.onActivity?.();
   }
 
   observeSessionCount(count: number): void {
@@ -121,6 +124,10 @@ export class SystemLoad {
 
   cpuCount(): number {
     return this.deps.cpuCount;
+  }
+
+  cpuUsagePercent(): number {
+    return 100 - this.cpuStates().idle;
   }
 
   cpuStates(): CpuStates {

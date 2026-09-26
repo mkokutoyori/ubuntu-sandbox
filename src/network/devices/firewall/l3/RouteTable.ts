@@ -75,6 +75,28 @@ function outranks(candidate: FirewallRoute, held: FirewallRoute): boolean {
   return candidate.priority < held.priority;
 }
 
+function longestMatch(routes: readonly FirewallRoute[], destination: string): FirewallRoute | undefined {
+  const value = tryIpToUint32(destination);
+  if (value === null) return undefined;
+
+  let best: FirewallRoute | undefined;
+  let bestPrefix = -1;
+  for (const route of routes) {
+    const mask = tryIpToUint32(route.mask);
+    const network = tryIpToUint32(route.network);
+    if (mask === null || network === null) continue;
+    if (((value & mask) >>> 0) !== ((network & mask) >>> 0)) continue;
+
+    const prefix = prefixBits(mask);
+    if (prefix > bestPrefix
+      || (prefix === bestPrefix && best !== undefined && route.distance < best.distance)) {
+      best = route;
+      bestPrefix = prefix;
+    }
+  }
+  return best;
+}
+
 export class RouteTable {
   private readonly statics: StaticRecord[] = [];
   private readonly deps: RouteTableDeps;
@@ -136,26 +158,7 @@ export class RouteTable {
   }
 
   lookup(destination: string): FirewallRoute | undefined {
-    const value = tryIpToUint32(destination);
-    if (value === null) return undefined;
-
-    let best: FirewallRoute | undefined;
-    let bestPrefix = -1;
-
-    for (const route of this.selected()) {
-      const mask = tryIpToUint32(route.mask);
-      const network = tryIpToUint32(route.network);
-      if (mask === null || network === null) continue;
-      if (((value & mask) >>> 0) !== ((network & mask) >>> 0)) continue;
-
-      const prefix = prefixBits(mask);
-      if (prefix > bestPrefix
-        || (prefix === bestPrefix && best !== undefined && route.distance < best.distance)) {
-        best = route;
-        bestPrefix = prefix;
-      }
-    }
-    return best;
+    return longestMatch(this.selected(), destination);
   }
 
   resolveNextHop(destination: string): ResolvedNextHop | undefined {
@@ -169,22 +172,16 @@ export class RouteTable {
     });
   }
 
+  resolveNextHopVia(destination: string, iface: string): ResolvedNextHop | undefined {
+    const route = longestMatch(this.all().filter((candidate) => candidate.iface === iface), destination);
+    if (!route) return undefined;
+    return Object.freeze({ route, nextHop: route.nextHop ?? destination, iface });
+  }
+
   prefixLengthTowards(iface: string, destination: string): number | undefined {
-    const value = tryIpToUint32(destination);
-    if (value === null) return undefined;
-
-    let longest: number | undefined;
-    for (const route of this.selected()) {
-      if (route.iface !== iface) continue;
-      const mask = tryIpToUint32(route.mask);
-      const network = tryIpToUint32(route.network);
-      if (mask === null || network === null) continue;
-      if (((value & mask) >>> 0) !== ((network & mask) >>> 0)) continue;
-
-      const prefix = prefixBits(mask);
-      if (longest === undefined || prefix > longest) longest = prefix;
-    }
-    return longest;
+    const route = longestMatch(this.selected().filter((candidate) => candidate.iface === iface), destination);
+    const mask = route === undefined ? null : tryIpToUint32(route.mask);
+    return mask === null ? undefined : prefixBits(mask);
   }
 
   all(): readonly FirewallRoute[] {

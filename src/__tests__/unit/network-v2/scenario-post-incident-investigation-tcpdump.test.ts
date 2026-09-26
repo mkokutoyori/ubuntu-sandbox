@@ -81,9 +81,9 @@ describe('Scénario 10 — Investigation post-incident par corrélation tcpdump 
     const lab = buildLab();
     await runIncident(lab, '-vvv');
     const out = await lab.target.executeCommand('tcpdump -nn -r /tmp/incident.pcap');
-    expect(out).not.toMatch(/tcpdump: error/);
-    expect(out).toMatch(/packets captured/);
-    expect(Number(/(\d+) packets captured/.exec(out)?.[1] ?? 0)).toBeGreaterThan(0);
+    expect(out).toMatch(/^reading from file \/tmp\/incident\.pcap, link-type EN10MB \(Ethernet\)/);
+    const counted = await lab.target.executeCommand('tcpdump -nn -r /tmp/incident.pcap --count');
+    expect(Number(/(\d+) packets?$/m.exec(counted)?.[1] ?? 0)).toBeGreaterThan(0);
   });
 
   describe('extraction de la chronologie réseau depuis le pcap', () => {
@@ -211,7 +211,7 @@ Machine analysée : $(hostname)
 
 --- RÉSUMÉ ---
 Paquets capturés :
-$(tcpdump -nn -r /tmp/incident.pcap 2>&1 | grep captured)
+$(tcpdump -nn -r /tmp/incident.pcap --count 2>/dev/null)
 
 Tentatives SSH échouées :
 $(grep -c 'Failed\\|Invalid' /var/log/auth.log || echo 0)
@@ -229,7 +229,7 @@ cat /tmp/rapport-incident.txt`,
       );
 
       expect(report).toMatch(/=== RAPPORT D'INCIDENT RÉSEAU ===/);
-      expect(report).toMatch(/captured/);
+      expect(report).toMatch(/Paquets capturés :\n\d+ packets?\n/);
       expect(report).toMatch(/Tentatives SSH échouées :\s*\n\s*\d+/);
       expect(report).toMatch(new RegExp(ATTACKER_IP.replace(/\./g, '\\.')));
       expect(report).toMatch(/192\.168\.10\.200\/24/);

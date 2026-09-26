@@ -5,8 +5,6 @@ import { Cable } from '@/network/hardware/Cable';
 import { MACAddress, resetCounters } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { PacketCaptureLog } from '@/network/devices/linux/network/PacketCaptureLog';
-import { cmdTcpdump } from '@/network/devices/linux/LinuxNetCommands';
 
 interface TcpConnector {
   getTcpStack(): {
@@ -65,7 +63,8 @@ describe('tcpdump P8 cleanup: -Q, snaplen truncation, -D, -r+-c, multicast/broad
     const pc1 = new LinuxPC('PC1', 0, 0);
     await pc1.executeCommand('ifconfig eth0 down');
     const output = await pc1.executeCommand('tcpdump -D');
-    expect(output).toMatch(/eth0 \[Down\]/);
+    expect(output).toMatch(/^\d+\.eth0 \[none, Disconnected\]$/m);
+    expect(output.split('\n')[0]).toBe('1.any (Pseudo-device that captures on all interfaces) [Up, Running]');
   });
 
   it('a broadcast ARP request matches the broadcast filter; a unicast reply does not', async () => {
@@ -82,21 +81,21 @@ describe('tcpdump P8 cleanup: -Q, snaplen truncation, -D, -r+-c, multicast/broad
   });
 
   it('-r combined with -c stops after the requested number of packets from the file', async () => {
-    const pc1 = new LinuxPC('PC1', 0, 0);
+    const { pc1, pc2 } = buildLan();
     await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
+    await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
+    (pc2 as unknown as TcpConnector).getTcpStack().listen(9000, { onAccept: () => {} });
 
-    const log = new PacketCaptureLog();
-    log.captureTcpHandshake({ ip: '10.0.0.1', port: 1111 }, { ip: '10.0.0.2', port: 80 });
-    log.captureTcpHandshake({ ip: '10.0.0.1', port: 2222 }, { ip: '10.0.0.2', port: 80 });
-    const vfs = (pc1 as unknown as {
-      executor: { vfs: { writeFile: (p: string, c: string, u: number, g: number, m: number) => boolean } };
-    }).executor.vfs;
-    cmdTcpdump(['-w', 'multi.cap'], log, {
-      read: () => null,
-      write: (p, c) => { vfs.writeFile(`/home/user/${p}`, c, 0, 0, 0o022); },
-    });
+    const writing = pc1.executeCommand('tcpdump -w multi.cap -c 6 tcp');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    (pc1 as unknown as TcpConnector).getTcpStack().connect('10.0.0.2', 9000);
+    (pc1 as unknown as TcpConnector).getTcpStack().connect('10.0.0.2', 9000);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await writing;
 
-    const output = await pc1.executeCommand('tcpdump -r multi.cap -c 1');
+    const all = await pc1.executeCommand('tcpdump -nn -r multi.cap');
+    expect(all.split('\n').filter((l) => l.includes('Flags [')).length).toBe(6);
+    const output = await pc1.executeCommand('tcpdump -nn -r multi.cap -c 1');
     const packetLines = output.split('\n').filter((l) => l.includes('Flags ['));
     expect(packetLines.length).toBe(1);
   });

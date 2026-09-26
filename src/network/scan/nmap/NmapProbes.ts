@@ -16,6 +16,7 @@ import { NULL_PROBE, matchProbeResponse, probesForPort } from './ServiceProbes';
 import type { NmapRoute } from './NmapIfList';
 import { serviceFromProcess } from './ProcessServiceMap';
 import type { HostProbes, HostState, ResolvedTarget } from './ScanEngine';
+import type { DiscoveryProbe } from './NmapOptions';
 
 /**
  * Ce dont `nmap` a besoin d'une machine pour SONDER, et rien de plus.
@@ -43,6 +44,7 @@ export interface ScanHost {
   scanProbe(
     ip: string, port: number, flags: ScanProbeFlags, shape?: ScanProbeShape,
   ): StatelessProbeReply;
+  sendRawIpProbe?(ip: string, protocol: number): boolean;
   /**
    * Ce que `arpping()` demande a la machine. Les TROIS issues sont
    * distinctes : `null` veut dire que la cible n'est pas sur ce segment,
@@ -144,7 +146,7 @@ interface Discovery {
   reasonPort?: number;
 }
 
-async function discoverHost(host: ScanHost, ip: string): Promise<Discovery> {
+async function echoDiscovery(host: ScanHost, ip: string): Promise<Discovery> {
   let echo: Array<{ success: boolean; rttMs?: number; ttl?: number }> = [];
   try {
     echo = await host.ping(ip, DISCOVERY_TIMEOUT_MS);
@@ -152,16 +154,100 @@ async function discoverHost(host: ScanHost, ip: string): Promise<Discovery> {
     echo = [];
   }
   const reply = echo.find((r) => r.success);
-  if (reply) {
-    return { up: true, latencyMs: reply.rttMs, ttl: reply.ttl, reason: 'echo-reply' };
-  }
+  return reply
+    ? { up: true, latencyMs: reply.rttMs, ttl: reply.ttl, reason: 'echo-reply' }
+    : { up: false };
+}
 
+function connectDiscovery(host: ScanHost, ip: string): Discovery {
   for (const port of DISCOVERY_PORTS) {
     const outcome = host.tcpOutcome(ip, port);
     if (outcome === 'open') return { up: true, reason: 'syn-ack', reasonPort: port };
     if (outcome === 'refused') return { up: true, reason: 'reset', reasonPort: port };
   }
   return { up: false };
+}
+
+function tcpPingDiscovery(
+  host: ScanHost, ip: string, ports: readonly number[], flags: ScanProbeFlags,
+): Discovery {
+  for (const port of ports) {
+    const reply = host.scanProbe(ip, port, flags);
+    if (reply === 'syn-ack') return { up: true, reason: 'syn-ack', reasonPort: port };
+    if (reply === 'rst' || reply === 'rst-window') {
+      return { up: true, reason: 'reset', reasonPort: port };
+    }
+  }
+  return { up: false };
+}
+
+function udpPingDiscovery(
+  host: ScanHost, ip: string, ports: readonly number[],
+): Discovery {
+  for (const port of ports) {
+    const state = probeUdpPort(host, ip, port);
+    if (state === 'closed') return { up: true, reason: 'port-unreach', reasonPort: port };
+    if (state === 'open') return { up: true, reason: 'udp-response', reasonPort: port };
+  }
+  return { up: false };
+}
+
+function protoPingDiscovery(
+  host: ScanHost, ip: string, protocols: readonly number[],
+): Discovery {
+  const device = host.device;
+  if (!device || !host.sendRawIpProbe) return { up: false };
+  for (const protocol of protocols) {
+    let answered: Discovery = { up: false };
+    const stop = device.getBus().subscribe('host.icmp.unreachable', (event) => {
+      const p = event.payload;
+      if (p.deviceId !== device.getId()) return;
+      if (p.fromIp !== ip) return;
+      if (p.origProtocol !== undefined && p.origProtocol !== protocol) return;
+      answered = { up: true, reason: 'proto-unreach' };
+    });
+    try {
+      host.sendRawIpProbe(ip, protocol);
+    } finally {
+      stop();
+    }
+    if (answered.up) return answered;
+  }
+  return { up: false };
+}
+
+async function runDiscoveryPlan(
+  host: ScanHost, ip: string, plan: readonly DiscoveryProbe[],
+): Promise<Discovery> {
+  for (const probe of plan) {
+    let found: Discovery;
+    switch (probe.kind) {
+      case 'icmp-echo':
+        found = await echoDiscovery(host, ip);
+        break;
+      case 'tcp-syn':
+        found = tcpPingDiscovery(host, ip, probe.ports ?? [], SCAN_PROBE_FLAGS.syn);
+        break;
+      case 'tcp-ack':
+        found = tcpPingDiscovery(host, ip, probe.ports ?? [], SCAN_PROBE_FLAGS.ack);
+        break;
+      case 'udp':
+        found = udpPingDiscovery(host, ip, probe.ports ?? []);
+        break;
+      default:
+        found = protoPingDiscovery(host, ip, probe.protocols ?? []);
+    }
+    if (found.up) return found;
+  }
+  return { up: false };
+}
+
+async function discoverHost(
+  host: ScanHost, ip: string, plan?: readonly DiscoveryProbe[],
+): Promise<Discovery> {
+  if (plan && plan.length > 0) return runDiscoveryPlan(host, ip, plan);
+  const echo = await echoDiscovery(host, ip);
+  return echo.up ? echo : connectDiscovery(host, ip);
 }
 
 /**
@@ -173,9 +259,43 @@ async function discoverHost(host: ScanHost, ip: string): Promise<Discovery> {
  */
 export function osFromInitialTtl(observed: number): string | undefined {
   if (observed <= 0) return undefined;
-  if (observed <= 64) return 'Linux 3.2 - 5.4';
-  if (observed <= 128) return 'Microsoft Windows';
-  return 'Cisco IOS or Huawei VRP';
+  if (observed <= 64) return 'Linux 4.15 - 5.19';
+  if (observed <= 128) return 'Microsoft Windows 10 - 11';
+  return 'Cisco IOS 15';
+}
+
+export interface OsClassRecord {
+  deviceTypes: readonly string[];
+  vendorFamily: string;
+  generations: readonly string[];
+  cpes: readonly string[];
+}
+
+export const OS_CLASS_BY_NAME: Readonly<Record<string, OsClassRecord>> = {
+  'Linux 4.15 - 5.19': {
+    deviceTypes: ['general purpose'],
+    vendorFamily: 'Linux',
+    generations: ['4.X', '5.X'],
+    cpes: ['cpe:/o:linux:linux_kernel:4', 'cpe:/o:linux:linux_kernel:5'],
+  },
+  'Microsoft Windows 10 - 11': {
+    deviceTypes: ['general purpose'],
+    vendorFamily: 'Microsoft Windows',
+    generations: ['10', '11'],
+    cpes: ['cpe:/o:microsoft:windows_10', 'cpe:/o:microsoft:windows_11'],
+  },
+  'Cisco IOS 15': {
+    deviceTypes: ['router'],
+    vendorFamily: 'Cisco IOS',
+    generations: ['15.X'],
+    cpes: ['cpe:/o:cisco:ios:15'],
+  },
+};
+
+export function initialTtlOf(observed: number): number {
+  if (observed <= 64) return 64;
+  if (observed <= 128) return 128;
+  return 255;
 }
 
 function isNumericAddress(target: string): boolean {
@@ -264,8 +384,10 @@ export function buildScanProbes(
       const viaResolver = await host.resolveName(target);
       return viaResolver ? { ip: viaResolver, hostname: noDns ? undefined : target } : null;
     },
-    async hostState(target: ResolvedTarget): Promise<HostState> {
-      const alive = await discoverHost(host, target.ip);
+    async hostState(
+      target: ResolvedTarget, plan?: readonly DiscoveryProbe[],
+    ): Promise<HostState> {
+      const alive = await discoverHost(host, target.ip, plan);
       return {
         ip: target.ip,
         hostname: target.hostname,

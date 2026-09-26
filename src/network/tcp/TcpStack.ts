@@ -58,11 +58,15 @@ export interface ScanProbeShape {
   acknowledgement?: number;
   tos?: number;
   identification?: number;
+  dontFragment?: boolean;
 }
 
 export interface StatelessProbeDetail {
   reply: StatelessProbeReply;
   window: number;
+  icmpType?: number;
+  icmpCode?: number;
+  icmpFrom?: string;
   flags: TcpFlags;
   sequence: number;
   acknowledgement: number;
@@ -83,12 +87,18 @@ export interface ReceivedIpHeader {
   dontFragment: boolean;
 }
 
+const ICMP_TYPE_DEST_UNREACH = 3;
+const ICMP_TYPE_TIME_EXCEEDED = 11;
+
 /** La duree de vie qu'une pile TCP pose sur ses propres segments. */
 const TCP_DEFAULT_TTL = 64;
 
 interface StatelessProbeWatch {
   seen: 'rst' | 'syn-ack' | 'icmp-prohibited' | 'icmp-unreachable' | 'none';
   window: number;
+  icmpType?: number;
+  icmpCode?: number;
+  icmpFrom?: string;
   flags: TcpFlags;
   sequence: number;
   acknowledgement: number;
@@ -788,12 +798,15 @@ export class TcpStack {
       sequence: watch.sequence, acknowledgement: watch.acknowledgement,
       checksum: watch.checksum, urgentPointer: watch.urgentPointer,
       ...watch.ip,
+      ...(watch.icmpType === undefined ? {} : { icmpType: watch.icmpType }),
+      ...(watch.icmpCode === undefined ? {} : { icmpCode: watch.icmpCode }),
+      ...(watch.icmpFrom === undefined ? {} : { icmpFrom: watch.icmpFrom }),
     };
   }
 
   private noteStatelessUnreachable(
     origSourcePort: number, origDestPort: number, origDestIp: string,
-    icmpCode: number | undefined,
+    icmpCode: number | undefined, icmpFrom?: string,
   ): void {
     for (const watch of this.statelessProbes.values()) {
       if (watch.localPort !== origSourcePort) continue;
@@ -802,6 +815,25 @@ export class TcpStack {
       watch.seen = icmpCode !== undefined && PROHIBITED_UNREACH_CODES.has(icmpCode)
         ? 'icmp-prohibited'
         : 'icmp-unreachable';
+      watch.icmpType = ICMP_TYPE_DEST_UNREACH;
+      watch.icmpCode = icmpCode;
+      watch.icmpFrom = icmpFrom;
+      return;
+    }
+  }
+
+  noteProbeTimeExceeded(
+    origSourcePort: number, origDestPort: number, origDestIp: string,
+    icmpCode: number, icmpFrom: string,
+  ): void {
+    for (const watch of this.statelessProbes.values()) {
+      if (watch.localPort !== origSourcePort) continue;
+      if (watch.destPort !== origDestPort) continue;
+      if (watch.destIp !== origDestIp) continue;
+      watch.seen = 'icmp-unreachable';
+      watch.icmpType = ICMP_TYPE_TIME_EXCEEDED;
+      watch.icmpCode = icmpCode;
+      watch.icmpFrom = icmpFrom;
       return;
     }
   }
@@ -821,7 +853,7 @@ export class TcpStack {
    */
   onIcmpUnreachable(
     origSourcePort: number, origDestPort: number, origDestIp: string,
-    icmpCode?: number,
+    icmpCode?: number, icmpFrom?: string,
   ): void {
     for (const socket of this.sockets.values()) {
       if (socket.localPort !== origSourcePort) continue;
@@ -835,7 +867,8 @@ export class TcpStack {
       this._teardown(socket, 'rst');
       return;
     }
-    this.noteStatelessUnreachable(origSourcePort, origDestPort, origDestIp, icmpCode);
+    this.noteStatelessUnreachable(
+      origSourcePort, origDestPort, origDestIp, icmpCode, icmpFrom);
   }
 
   /**
@@ -2140,7 +2173,7 @@ export class TcpStack {
       new IPAddress(srcIp), new IPAddress(dstIp), IP_PROTO_TCP, ttl,
       seg, tcpHeaderBytes + payloadBytes(seg.payload).length,
       {
-        flags: fragmentMtu === undefined ? IPV4_FLAG_DF : 0,
+        flags: fragmentMtu === undefined && shape?.dontFragment !== false ? IPV4_FLAG_DF : 0,
         ...(shape?.tos === undefined ? {} : { tos: shape.tos }),
         ...(shape?.identification === undefined
           ? {} : { identification: shape.identification }),
