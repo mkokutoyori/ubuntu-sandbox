@@ -49,6 +49,10 @@ export function anomalySpec(name: string): AnomalySpec | undefined {
   return BY_NAME.get(name);
 }
 
+export function anomalyIndex(name: string): number {
+  return ANOMALY_CATALOG.findIndex((entry) => entry.name === name);
+}
+
 export function anomalyNames(): readonly string[] {
   return ANOMALY_CATALOG.map(entry => entry.name);
 }

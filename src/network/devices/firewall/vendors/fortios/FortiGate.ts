@@ -44,7 +44,7 @@ export class FortiGate extends Firewall {
         versionSuffix: fortiVersionSuffix(FORTI_FIRMWARE),
       }),
       managementVdomIndex: () => this.vdomNames().indexOf('root') + 1,
-      cpuUsagePercent: () => 100 - this.getSystemLoad().cpuStates().idle,
+      cpuUsagePercent: () => this.getSystemLoad().cpuUsagePercent(),
       memory: () => this.getSystemLoad().memory(),
       logDisk: () => {
         const disk = this.getProfile().logDisk;

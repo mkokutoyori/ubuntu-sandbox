@@ -8,14 +8,14 @@ export interface SnmpDeviceRef {
 export interface SnmpPacketSentPayload extends SnmpDeviceRef {
   destinationIp: string;
   pduType: SnmpPduType;
-  requestId: number;
+  requestId?: number;
   community: string;
 }
 
 export interface SnmpPacketReceivedPayload extends SnmpDeviceRef {
   fromIp: string;
   pduType: SnmpPduType;
-  requestId: number;
+  requestId?: number;
   community: string;
 }
 

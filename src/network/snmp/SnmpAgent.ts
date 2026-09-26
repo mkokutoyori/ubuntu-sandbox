@@ -2,7 +2,7 @@ import { oidInMibView, type MibViewEntry } from './mibView';
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import {
-  type SnmpAgentConfig, type SnmpPacket, type SnmpVarBinding, type SnmpValue,
+  type SnmpAgentConfig, type SnmpMessage, type SnmpPacket, type SnmpVarBinding, type SnmpValue,
   type SnmpCommunityAcl, type SnmpTrapHost, type SnmpErrorStatus,
   createDefaultAgentConfig, v, vb, oidCompare, oidStartsWith,
   UDP_PORT_SNMP, UDP_PORT_SNMP_TRAP,
@@ -24,6 +24,9 @@ import {
   classifyIpv4Destination, connectedPrefixesOfPort, isDirectedBroadcast,
 } from '../layers/internet/InternetLayer';
 import { SnmpManager, type SnmpQueryPdu } from './SnmpManager';
+import {
+  trapV1Pdu, trapV2Pdu, type SnmpNotification, type SnmpNotificationTarget,
+} from './SnmpNotification';
 import { PortNumber } from '../core/ports/PortNumber';
 
 export interface SnmpHost {
@@ -38,6 +41,7 @@ export interface SnmpHost {
   sendUdpDatagram(request: UdpSendRequest): boolean;
   evaluateAclPermit?(aclName: string, sourceIp: string, inPort: string): boolean;
   describeInterface?(port: Port): SnmpInterfaceRow;
+  sourceAddressFor?(destination: IPAddress, iface?: string): IPAddress | null;
 }
 
 export interface SnmpInterfaceRow {
@@ -89,7 +93,7 @@ const NMS_QUERY_TIMEOUT_MS = 5000;
 
 export class SnmpAgent {
   private config: SnmpAgentConfig = createDefaultAgentConfig();
-  private startedAtMs = Date.now();
+  private startedAtMs = 0;
   private nextTrapRequestId = 1;
   private running = false;
   private customMib = new Map<string, () => SnmpValue>();
@@ -106,12 +110,13 @@ export class SnmpAgent {
       () => this.getScheduler(),
       'request-id-and-peer',
     );
+    this.startedAtMs = this.getScheduler().now();
   }
 
   start(): void {
     if (this.running) return;
     this.running = true;
-    this.startedAtMs = Date.now();
+    this.startedAtMs = this.getScheduler().now();
   }
 
   stop(): void {
@@ -211,7 +216,7 @@ export class SnmpAgent {
 
   handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket, destinationIp: IPAddress): void {
     if (!this.running || !this.config.enabled) return;
-    const payload = udp.payload as SnmpPacket | undefined;
+    const payload = udp.payload as SnmpMessage | undefined;
     if (!payload || payload.type !== 'snmp') return;
     const senderIp = srcIp.toString();
     this.getBus().publish({
@@ -219,7 +224,8 @@ export class SnmpAgent {
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
         fromIp: senderIp, pduType: payload.pduType,
-        requestId: payload.requestId, community: payload.community,
+        ...(payload.pduType === 'trap-v1' ? {} : { requestId: payload.requestId }),
+        community: payload.community,
       },
     });
 
@@ -245,30 +251,43 @@ export class SnmpAgent {
   }
 
   sendTrap(trapOid: string, varBindings: SnmpVarBinding[] = []): void {
-    for (const t of this.config.trapHosts) {
-      const srcIp = this.trapSourceIp();
-      const standard: SnmpVarBinding[] = [
-        vb('1.3.6.1.2.1.1.3.0', v('timeticks', this.uptimeTicks())),
-        vb('1.3.6.1.6.3.1.1.4.1.0', v('object-id', trapOid)),
-        ...varBindings,
-      ];
-      const payload: SnmpPacket = {
-        type: 'snmp', version: 'v2c',
-        community: t.community,
-        pduType: 'trap-v2',
-        requestId: this.nextTrapRequestId++ & 0x7fffffff,
-        errorStatus: 'no-error', errorIndex: 0,
-        varBindings: standard,
-      };
-      this.transmitRouted(new IPAddress(t.ip), srcIp, t.port, UDP_PORT_SNMP, payload);
-      this.getBus().publish({
-        topic: 'snmp.trap.sent',
-        payload: {
-          deviceId: this.host.id, hostname: this.host.getHostname(),
-          destinationIp: t.ip, community: t.community, trapOid,
-        },
-      });
+    const source = this.trapSourceIp();
+    for (const host of this.config.trapHosts) {
+      this.notify({
+        version: 'v2c', community: host.community, destination: new IPAddress(host.ip),
+        destinationPort: PortNumber.of(host.port), sourcePort: PortNumber.of(UDP_PORT_SNMP),
+        ...(source ? { source } : {}),
+      }, { oid: trapOid, objects: varBindings });
     }
+  }
+
+  notify(target: SnmpNotificationTarget, notification: SnmpNotification): boolean {
+    const packet = this.notificationPdu(target, notification);
+    if (!packet) return false;
+    const sent = this.transmitRouted(target.destination, target.source ?? null,
+      target.destinationPort.value, target.sourcePort.value, packet, target.iface);
+    if (!sent) return false;
+    this.getBus().publish({
+      topic: 'snmp.trap.sent',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        destinationIp: target.destination.toString(), community: target.community,
+        trapOid: notification.oid,
+      },
+    });
+    return true;
+  }
+
+  interfaceIndexOf(name: string): number | null {
+    return this.interfaceEntries().find((entry) => entry.port.getName() === name)?.index ?? null;
+  }
+
+  private notificationPdu(target: SnmpNotificationTarget, notification: SnmpNotification): SnmpMessage | null {
+    if (target.version === 'v2c') {
+      return trapV2Pdu(target.community, this.nextTrapRequestId++ & 0x7fffffff, this.uptimeTicks(), notification);
+    }
+    const agentAddress = target.source ?? this.host.sourceAddressFor?.(target.destination, target.iface) ?? null;
+    return agentAddress === null ? null : trapV1Pdu(target.community, agentAddress, this.uptimeTicks(), notification);
   }
 
   private async query(
@@ -441,12 +460,12 @@ export class SnmpAgent {
     return m;
   }
 
-  private uptimeTicks(): number {
-    return Math.floor((Date.now() - this.startedAtMs) / 10);
+  uptimeTicks(): number {
+    return Math.floor((this.getScheduler().now() - this.startedAtMs) / 10);
   }
 
   private transmitRouted(dstIp: IPAddress, srcIp: IPAddress | null, dstPort: number,
-                         srcPort: number, payload: SnmpPacket): boolean {
+                         srcPort: number, payload: SnmpMessage, iface?: string): boolean {
     const datagram: UdpSendRequest = {
       destination: dstIp,
       destinationPort: dstPort,
@@ -454,19 +473,21 @@ export class SnmpAgent {
       payload,
       payloadBytes: 48 + payload.varBindings.length * 16,
       ...(srcIp ? { source: srcIp } : {}),
+      ...(iface ? { iface } : {}),
     };
     if (!this.host.sendUdpDatagram(datagram)) return false;
     this.annoncerEmission(dstIp, payload);
     return true;
   }
 
-  private annoncerEmission(dstIp: IPAddress, payload: SnmpPacket): void {
+  private annoncerEmission(dstIp: IPAddress, payload: SnmpMessage): void {
     this.getBus().publish({
       topic: 'snmp.packet.sent',
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
         destinationIp: dstIp.toString(), pduType: payload.pduType,
-        requestId: payload.requestId, community: payload.community,
+        ...(payload.pduType === 'trap-v1' ? {} : { requestId: payload.requestId }),
+        community: payload.community,
       },
     });
   }

@@ -680,6 +680,10 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
 
       // 2. Politiques FW ouvertes pour les flux de management et applicatifs
       await taper(fw, [
+        'config system snmp sysinfo', 'set status enable', 'end',
+        'config system snmp community', 'edit 1', 'set name "public"',
+        'config hosts', 'edit 1', 'set ip 192.168.1.10 255.255.255.255', 'next', 'end',
+        'next', 'end',
         'config firewall policy',
         'edit 200', 'set srcintf "port1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set logtraffic all', 'set service "ALL"', 'next',
         'edit 201', 'set srcintf "dmz"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set service "ALL"', 'next',

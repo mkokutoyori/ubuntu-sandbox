@@ -1,6 +1,7 @@
 import type { MibViewEntry } from './mibView';
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
 import type { PortNumber } from '@/network/core/ports/PortNumber';
+import type { IPAddress } from '@/network/core/types';
 export const UDP_PORT_SNMP = 161;
 export const UDP_PORT_SNMP_TRAP = 162;
 
@@ -13,7 +14,8 @@ export type SnmpPduType =
   | 'set-request'
   | 'get-bulk-request'
   | 'inform-request'
-  | 'trap-v2';
+  | 'trap-v2'
+  | 'trap-v1';
 
 export const SNMP_PDU_TYPE: Record<SnmpPduType, number> = {
   'get-request': 0xa0,
@@ -23,6 +25,7 @@ export const SNMP_PDU_TYPE: Record<SnmpPduType, number> = {
   'get-bulk-request': 0xa5,
   'inform-request': 0xa6,
   'trap-v2': 0xa7,
+  'trap-v1': 0xa4,
 };
 
 export type SnmpErrorStatus =
@@ -70,16 +73,30 @@ export interface SnmpVarBinding {
   value: SnmpValue;
 }
 
-export interface SnmpPacket extends NetworkPdu {
+interface SnmpMessageHeader extends NetworkPdu {
   type: 'snmp';
   version: SnmpVersion;
   community: string;
-  pduType: SnmpPduType;
+  varBindings: SnmpVarBinding[];
+}
+
+export interface SnmpPacket extends SnmpMessageHeader {
+  pduType: Exclude<SnmpPduType, 'trap-v1'>;
   requestId: number;
   errorStatus: SnmpErrorStatus;
   errorIndex: number;
-  varBindings: SnmpVarBinding[];
 }
+
+export interface SnmpTrapV1Packet extends SnmpMessageHeader {
+  pduType: 'trap-v1';
+  enterprise: string;
+  agentAddress: IPAddress;
+  genericTrap: number;
+  specificTrap: number;
+  timestamp: number;
+}
+
+export type SnmpMessage = SnmpPacket | SnmpTrapV1Packet;
 
 export interface SnmpCommunityAcl {
   community: string;
