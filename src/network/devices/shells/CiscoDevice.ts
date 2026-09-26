@@ -22,6 +22,7 @@ export type CiscoARPEntry = ARPEntry;
  */
 export interface ARPProvider {
   _getArpTableInternal(): Map<string, CiscoARPEntry>;
+  getMonotonicClockMs(): number;
   _addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void;
   _deleteARP(ip: IPAddress): boolean;
   _clearARPCache(): void;

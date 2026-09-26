@@ -45,7 +45,7 @@ describe('ICMP/ARP CLI gaps', () => {
     await r.executeCommand('arp expire-time 600');
     const undo = await r.executeCommand('undo arp expire-time');
     expect(undo).not.toMatch(/Invalid input/);
-    const port = r.getPort('GE0/0/0');
-    expect(port?.getArpTimeoutSec()).toBe(4 * 60 * 60);
+    expect(r.getPort('GE0/0/0')?.getArpTimeoutSec()).toBeNull();
+    expect(r.arpTimeoutSecFor('GE0/0/0')).toBe(1200);
   });
 });

@@ -136,7 +136,7 @@ export class Port {
   private bandwidthKbps: number = 0;
   /** Explicit `delay` override; null = IOS default for the link speed. */
   private delayUs: number | null = null;
-  private arpTimeoutSec: number = 4 * 60 * 60;
+  private arpTimeoutSec: number | null = null;
   private keepaliveSec: number = 10;
   private keepaliveEnabled: boolean = true;
   private directedBroadcast: boolean = false;
@@ -183,8 +183,8 @@ export class Port {
       ? this.bandwidthKbps
       : this.getNegotiatedSpeed() * 1000;
   }
-  getArpTimeoutSec(): number { return this.arpTimeoutSec; }
-  setArpTimeoutSec(v: number): void { this.arpTimeoutSec = v; }
+  getArpTimeoutSec(): number | null { return this.arpTimeoutSec; }
+  setArpTimeoutSec(seconds: number | null): void { this.arpTimeoutSec = seconds; }
   getKeepaliveSec(): number { return this.keepaliveSec; }
   setKeepalive(seconds: number | null): void {
     if (seconds === null) { this.keepaliveEnabled = false; return; }

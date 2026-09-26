@@ -22,6 +22,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { SocleLegend } from './CiscoShellBase';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { dhcpClientFamily, type DhcpClientLeaseView } from '@/cli/commands/dhcp/dhcpClientFamily';
+import { arpTimeoutFamily } from '@/cli/commands/arp/arpTimeoutFamily';
 import type { DebugPair } from '@/cli/commands/debug/debugFamily';
 import { ALL_TUNNEL } from '@/cli/commands/tunnel/tunnelFamily';
 import {
@@ -469,6 +470,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...negationSpecs(() => this.negationHost()),
       ...zoneSpecs(() => this.zoneHost()),
       ...dhcpClientFamily(),
+      ...arpTimeoutFamily(),
       ...hsrpShowSpecs(this, () => this.fhrp),
       ...trackShowSpecs(this),
       showViewSpec('show-ip-route-ospf', ['show', 'ip', 'route', 'ospf'],
@@ -1189,6 +1191,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   selectedInterfaceName(): string | null {
     return this.selectedInterface ?? null;
+  }
+
+  setInterfaceArpTimeout(iface: string, seconds: number | null): void {
+    this.d().setArpTimeoutSec(iface, seconds);
   }
 
   dhcpClientEnable(iface: string, line: string): void {

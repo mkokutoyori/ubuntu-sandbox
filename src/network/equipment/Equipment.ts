@@ -125,6 +125,7 @@ export abstract class Equipment {
   }
 
   getUptimeMs(): number { return Math.max(0, this.machineClock() - this.bootedAtMs); }
+  getMonotonicClockMs(): number { return this.machineClock(); }
   getSystemClock(): SystemClock { return this.systemClock; }
   getSystemClockMs(): number { return this.systemClock.now(); }
   _setSystemClock(epochMs: number): void { this.systemClock.set(epochMs); }

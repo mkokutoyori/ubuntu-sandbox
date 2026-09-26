@@ -51,6 +51,14 @@ export class MACAddress {
     });
   }
 
+  static tryParse(mac: string): MACAddress | null {
+    try {
+      return new MACAddress(mac);
+    } catch {
+      return null;
+    }
+  }
+
   static generate(): MACAddress {
     macCounter++;
     const b3 = (macCounter >> 16) & 0xff;
