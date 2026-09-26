@@ -2928,6 +2928,8 @@ export abstract class Switch extends Equipment {
   private accountAdmits(user: string, service: AccountServiceType): boolean {
     return this.getCredentialStore().admits(user, service, this.unsetServiceTypeAdmits());
   }
+  protected sshPasswordAllowed(_user: string): boolean { return true; }
+  protected sshForcedCommand(_user: string): string | null { return null; }
   protected sshServerLimits(): Partial<SshServerConfig> { return {}; }
 
   _refreshSshAvailability(): void { this.syncManagementListeners(); }
@@ -3004,7 +3006,8 @@ export abstract class Switch extends Equipment {
       hostname: () => this.getHostname(),
       hostKey: () => this.sshHostKey(),
       credentials: () => ({
-        authenticate: (n, p) => this.accountAdmits(n, 'ssh') && credentials.authenticate(n, p),
+        authenticate: (n, p) => this.accountAdmits(n, 'ssh') && this.sshPasswordAllowed(n)
+          && credentials.authenticate(n, p),
         has: (n) => credentials.get(n) !== undefined,
         get: (n) => {
           const a = credentials.get(n);
@@ -3017,6 +3020,7 @@ export abstract class Switch extends Equipment {
       motd: () => this.getBanner('motd') || undefined,
       isClientBlocked: () => !this._getVtyLineConfig().incomingVerdict().accept,
       recordLogin: (user, fromIp) => this.recordSshLogin(user, fromIp, '', true),
+      forcedCommand: (user) => this.sshForcedCommand(user),
     }, this.sshServerLimits()));
   }
 

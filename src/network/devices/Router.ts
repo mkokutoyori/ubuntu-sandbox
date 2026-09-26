@@ -1186,7 +1186,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       hostname: () => this.hostname,
       hostKey: () => this._sshHostKeyCache!,
       credentials: () => ({
-        authenticate: (n, p) => this.accountAdmits(n, 'ssh') && credentials.authenticate(n, p),
+        authenticate: (n, p) => this.sshPasswordLoginAdmitted(n) && credentials.authenticate(n, p),
         has: (n) => credentials.get(n) !== undefined,
         get: (n) => {
           const a = credentials.get(n);
@@ -1195,10 +1195,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }),
       execTarget: () => this as unknown as SshExecTarget,
       sftpSource: () => this.sshSftpFileSource(),
+      forcedCommand: (user) => this.sshForcedCommand(user),
       execIdleTimeoutMs: () => this.resolveVtyIdleTimeoutMs(),
       banner: () => this.sshBannerText || null,
       motd: () => this.getBanner('motd') || null,
-      aaaAuthenticate: (n, p) => (this.accountAdmits(n, 'ssh')
+      aaaAuthenticate: (n, p) => (this.sshPasswordLoginAdmitted(n)
         ? this.authenticateViaAaa(n, p)
         : Promise.resolve(false)),
       // Reuse the exact admission/failure-tracking the cross-vendor bypass
@@ -4281,6 +4282,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   protected factoryAccountServiceTypes(): AccountServiceType[] { return []; }
   private accountAdmits(user: string, service: AccountServiceType): boolean {
     return this.getCredentialStore().admits(user, service, this.unsetServiceTypeAdmits());
+  }
+  protected sshPasswordAllowed(_user: string): boolean { return true; }
+  protected sshForcedCommand(_user: string): string | null { return null; }
+  private sshPasswordLoginAdmitted(user: string): boolean {
+    return this.accountAdmits(user, 'ssh') && this.sshPasswordAllowed(user);
   }
   protected sshServerLimits(): Partial<SshServerConfig> { return {}; }
   protected sshBannerText: string = '';

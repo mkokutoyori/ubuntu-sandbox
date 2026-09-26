@@ -50,6 +50,8 @@ export function displayLocalUser(device: unknown): string {
     `  Total ${accounts.length} user(s)`].join('\n');
 }
 
+const ANY_WORD = '*';
+
 export function remoteAccessConfigBlocksVrp(mgmt: RouterManagementService): string[][] {
   const telnet = mgmt.getTelnet();
   const ssh = mgmt.getSsh();
@@ -65,6 +67,12 @@ export function remoteAccessConfigBlocksVrp(mgmt: RouterManagementService): stri
     ...(ssh.port !== SSH_DEFAULT_PORT ? [`ssh server port ${ssh.port}`] : []),
     ...(ssh.timeout !== SSH_DEFAULT_TIMEOUT_SEC ? [`ssh server timeout ${ssh.timeout}`] : []),
     ...(ssh.retries !== SSH_DEFAULT_AUTH_RETRIES ? [`ssh server authentication-retries ${ssh.retries}`] : []),
+    ...(mgmt.sshDefaultPasswordAuthenticationEnabled() ? [] : ['undo ssh authentication-type default password']),
+    ...[...mgmt.getSshUsers()].flatMap(([name, user]) => [
+      `ssh user ${name}`,
+      ...(user.authenticationType ? [`ssh user ${name} authentication-type ${user.authenticationType}`] : []),
+      ...(user.serviceType ? [`ssh user ${name} service-type ${user.serviceType}`] : []),
+    ]),
   ];
   return [telnetBlock, stelnetBlock].filter((block) => block.length > 0);
 }
@@ -204,23 +212,25 @@ export function registerHuaweiCommonSecurity(
     root: string, description: string,
     forms: ReadonlyArray<readonly string[]>,
     keywords: ReadonlyArray<{ keyword: string; description: string }>,
-    apply: (form: readonly string[]) => string | null,
+    apply: (args: readonly string[]) => string | null,
   ): void => {
+    const fits = (expected: string | undefined, word: string): boolean =>
+      expected === ANY_WORD ? true : expected === word;
     trie.registerGreedy(`undo ${root}`, description, (args, raw) => {
       const line = raw ?? `undo ${root} ${args.join(' ')}`;
       const words = args.map((a) => a.toLowerCase());
-      const form = forms.find((f) => f.length === words.length && f.every((w, i) => w === words[i]));
+      const form = forms.find((f) => f.length === words.length && f.every((w, i) => fits(w, words[i])));
       if (form) {
-        const refuse = apply(form);
+        const refuse = apply(args);
         if (refuse !== null) return HUAWEI_ERRORS.WRONG(refuse, 0);
         resyncListeners();
         return '';
       }
-      if (forms.some((f) => f.length > words.length && words.every((w, i) => w === f[i]))) {
+      if (forms.some((f) => f.length > words.length && words.every((w, i) => fits(f[i], w)))) {
         return HUAWEI_ERRORS.INCOMPLETE(line);
       }
       const wrongAt = words.findIndex((w, i) => !forms.some(
-        (f) => f[i] === w && words.slice(0, i).every((p, j) => p === f[j])));
+        (f) => fits(f[i], w) && words.slice(0, i).every((p, j) => fits(f[j], p))));
       const wrong = args[Math.max(wrongAt, 0)] ?? '';
       return HUAWEI_ERRORS.UNRECOGNIZED(line, line.toLowerCase().lastIndexOf(wrong.toLowerCase()));
     });
@@ -230,7 +240,7 @@ export function registerHuaweiCommonSecurity(
   trie.registerGreedy('stelnet', 'STelnet configuration', (args) => dispatch('stelnet', args));
   registerUndoForms('stelnet', 'Disable the STelnet server', [['server', 'enable']],
     [{ keyword: 'server', description: 'STelnet server' }],
-    (form) => getRouter().getManagementService().configureStelnet([...form], true));
+    (args) => getRouter().getManagementService().configureStelnet([...args], true));
   trie.registerGreedy('telnet', 'Telnet configuration', (args) => dispatch('telnet', args));
   registerUndoForms('telnet', 'Disable the Telnet server', [
     ['server', 'enable'], ['server', 'port'], ['server', 'acl'],
@@ -239,12 +249,18 @@ export function registerHuaweiCommonSecurity(
     { keyword: 'server', description: 'Telnet server' },
     { keyword: 'server-source', description: 'Source interface of the Telnet server' },
     { keyword: 'ipv6', description: 'IPv6 Telnet server' },
-  ], (form) => getRouter().getManagementService().configureTelnet([...form], true));
+  ], (args) => getRouter().getManagementService().configureTelnet([...args], true));
   trie.registerGreedy('ssh', 'SSH configuration', (args) => dispatch('ssh', args));
   registerUndoForms('ssh', 'Restore the SSH server defaults', [
     ['server', 'enable'], ['server', 'port'], ['server', 'timeout'], ['server', 'authentication-retries'],
-  ], [{ keyword: 'server', description: 'SSH server' }],
-  (form) => getRouter().getManagementService().configureSsh([...form], true));
+    ['user', ANY_WORD], ['user', ANY_WORD, 'authentication-type'], ['user', ANY_WORD, 'service-type'],
+    ['authentication-type', 'default', 'password'],
+  ], [
+    { keyword: 'server', description: 'SSH server' },
+    { keyword: 'user', description: 'SSH user' },
+    { keyword: 'authentication-type', description: 'Default authentication type of SSH users' },
+  ],
+  (args) => getRouter().getManagementService().configureSsh([...args], true));
   const snmpService = (): SnmpService | undefined =>
     (getRouter?.() as unknown as { getSnmpService?: () => SnmpService })?.getSnmpService?.()
     ?? getSnmpServiceDirect?.();
