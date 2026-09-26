@@ -5800,7 +5800,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private showAdjacency(args: string[]): string {
     const sub = args[0]?.toLowerCase();
-    const entries = Array.from(this.d()._getArpTableInternal().entries())
+    const cache = this.d()._getArpTableInternal();
+    const entries = Array.from(cache.entries())
       .filter(([, e]) => e.type !== 'failed');
 
     if (sub === 'summary') {
@@ -5815,7 +5816,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (entries.length === 0) return '';
       const lines: string[] = [];
       for (const [ip, e] of entries) {
-        lines.push(`IP  ${e.iface}  ${ip}(${Math.floor((Date.now() - e.timestamp) / 60000)})`);
+        lines.push(`IP  ${e.iface}  ${ip}(${Math.floor(cache.ageMs(e) / 60000)})`);
         lines.push(`  ${e.mac.toCiscoString()}`);
         lines.push('  ARPA');
         lines.push('  Epoch: 0');
@@ -5826,7 +5827,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (entries.length === 0) return '';
     const lines = ['Protocol  Interface        Address              Age(min)  Hardware Addr    Encap  Out'];
     for (const [ip, e] of entries) {
-      const age = String(Math.floor((Date.now() - e.timestamp) / 60000));
+      const age = String(Math.floor(cache.ageMs(e) / 60000));
       lines.push(
         `IP        ${e.iface.padEnd(17)}${ip.padEnd(21)}${age.padEnd(10)}${e.mac.toCiscoString().padEnd(17)}ARPA   ${e.iface}`,
       );

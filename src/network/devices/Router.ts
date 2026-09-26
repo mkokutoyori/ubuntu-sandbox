@@ -63,6 +63,7 @@ import { TrafficPolicyStore } from './router/policy/TrafficPolicy';
 import { NqaService } from '../nqa/NqaService';
 import { ControlPlaneUdpEndpoint } from './udp/ControlPlaneUdpEndpoint';
 import { addressAnswersOnLink } from '../arp/AddressProbe';
+import { ArpCache, ARP_TIMEOUT_DEFAULT_SEC } from '../arp/ArpCache';
 import { CiscoDnsConfig } from './router/dns/CiscoDnsConfig';
 import { RouterDnsService, DNS_PORT, type DnsTransport } from './router/dns/RouterDnsService';
 import { encodeDnsMessage, decodeDnsMessage } from '../dns/wire/DnsMessageCodec';
@@ -117,7 +118,6 @@ import {
   DeviceType,
   IPv6Address, IPv6Packet, createIPv6Packet,
 } from '../core/types';
-import type { ARPEntry } from '../core/types';
 import type { IIPv4Route } from '../core/interfaces';
 import { ipv4MulticastToMac, tryIpToUint32 } from '../core/ip';
 import { Logger } from '../core/Logger';
@@ -371,7 +371,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (pose !== undefined) return pose;
     return Router.MAX_PATHS_DEFAUT[proto] ?? Infinity;
   }
-  private arpTable: Map<string, ARPEntry> = new Map();
+  private readonly arpTable = new ArpCache({
+    now: () => this.getMonotonicClockMs(),
+    timeoutSecFor: (iface) => this.arpTimeoutSecFor(iface),
+  });
   protected ipv6AccessLists: IPv6ACL[] = [];
 
   getIpv6AccessLists(): IPv6ACL[] { return this.ipv6AccessLists; }
@@ -684,7 +687,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.getEemEngine();
     this.getCredentialStore();
     this.mountSshDaemon();
-    this.startArpAgingTimer();
     this.ipSlaEngine.start();
     this.trackService.start();
     this.subscribeNqaResults();
@@ -993,19 +995,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     void varBindings;
   }
 
-  private arpAgingTimer: symbol | null = null;
-
-  private startArpAgingTimer(): void {
-    if (this.arpAgingTimer !== null) return;
-    this.arpAgingTimer = this.routerTimers.setInterval(() => this.ageArpEntries(), 5_000);
+  defaultArpTimeoutSec(): number {
+    return ARP_TIMEOUT_DEFAULT_SEC;
   }
 
-  protected ageArpEntries(): void {
-    const now = Date.now();
-    for (const [ip, entry] of this.arpTable) {
-      if (entry.type === 'static') continue;
-      if (now - entry.timestamp > 60_000) this.arpTable.delete(ip);
-    }
+  arpTimeoutSecFor(iface: string): number {
+    return this.getPort(iface)?.getArpTimeoutSec() ?? this.defaultArpTimeoutSec();
+  }
+
+  setArpTimeoutSec(iface: string, seconds: number | null): void {
+    this.getPort(iface)?.setArpTimeoutSec(seconds);
   }
 
   private detachSnmpStatistics: (() => void) | null = null;
@@ -2419,11 +2418,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
 
     // Learn sender (don't overwrite static entries)
-    const existing = this.arpTable.get(arp.senderIP.toString());
-    if (!existing || existing.type !== 'static') {
-      this.arpTable.set(arp.senderIP.toString(), {
-        mac: arp.senderMAC, iface: portName, timestamp: Date.now(), type: 'dynamic',
-      });
+    if (this.arpTable.learn(arp.senderIP.toString(), arp.senderMAC, portName)) {
       this.emitArpLearned({
         ip: arp.senderIP.toString(),
         mac: arp.senderMAC.toString(),
@@ -3859,7 +3854,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getKnownMacAddresses(): string[] {
     const seen = new Set<string>();
     const out: string[] = [];
-    for (const entry of this.arpTable.values()) {
+    for (const entry of this._getArpTableInternal().values()) {
       const mac = entry.mac.toString();
       if (seen.has(mac)) continue;
       seen.add(mac);
@@ -4010,7 +4005,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   /** @internal Used by CLI shells */
   _getRoutingTableInternal(): RouteEntry[] { return this.routingTable; }
   /** @internal Used by CLI shells */
-  _getArpTableInternal(): Map<string, ARPEntry> { return this.arpTable; }
+  _getArpTableInternal(): ArpCache {
+    this.arpTable.expire();
+    return this.arpTable;
+  }
 
   /**
    * Real RIB lookup (LPM) exposed to UDP/TCP agents hosted on this router
@@ -4028,7 +4026,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   /** Add a static ARP entry */
   _addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void {
-    this.arpTable.set(ip.toString(), { mac, iface, timestamp: Date.now(), type: 'static' });
+    this.arpTable.addStatic(ip.toString(), mac, iface);
   }
 
   /** Delete an ARP entry by IP */
@@ -4038,11 +4036,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   /** Clear all dynamic ARP entries (preserves static) */
   _clearARPCache(): void {
-    for (const [ip, entry] of this.arpTable) {
-      if (entry.type !== 'static') {
-        this.arpTable.delete(ip);
-      }
-    }
+    this.arpTable.clearDynamic();
   }
   /** @internal Used by CLI shells */
   _getPortsInternal(): Map<string, Port> { return this.ports; }

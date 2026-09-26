@@ -7,6 +7,7 @@
 
 import { C2900_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
 import { OSPF_DEFAULT_REFERENCE_BANDWIDTH } from '../../../ospf/types';
+import { ARP_TIMEOUT_DEFAULT_SEC } from '../../../arp/ArpCache';
 import type { Router } from '../../Router';
 import { iosClockConfigLines } from './CiscoCommonShow';
 import { getDeviceClock } from '@/network/equipment/RouterServiceCapabilities';
@@ -386,7 +387,7 @@ function formatArpTimeout(totalSec: number): string {
  * lives on the switch's own bookkeeping, not on the Port this renderer
  * is handed.
  */
-export function showInterface(router: { _getPortsInternal: () => Map<string, import('../../../hardware/Port').Port>; getInterfaceDescription?: (n: string) => string | undefined }, ifName: string, catalyst = false): string {
+export function showInterface(router: { _getPortsInternal: () => Map<string, import('../../../hardware/Port').Port>; getInterfaceDescription?: (n: string) => string | undefined; arpTimeoutSecFor?: (iface: string) => number }, ifName: string, catalyst = false): string {
   const ports = router._getPortsInternal();
   const port = ports.get(ifName);
   if (!port) {
@@ -485,7 +486,7 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
     lines.push(`  Encapsulation ARPA, loopback not set`);
     lines.push(`  ${duplex}, ${speedMbps}Mbps, media type is RJ45`);
     lines.push(`  output flow-control is unsupported, input flow-control is unsupported`);
-    lines.push(`  ARP type: ARPA, ARP Timeout ${formatArpTimeout(port.getArpTimeoutSec())}`);
+    lines.push(`  ARP type: ARPA, ARP Timeout ${formatArpTimeout(router.arpTimeoutSecFor?.(ifName) ?? ARP_TIMEOUT_DEFAULT_SEC)}`);
   }
 
   if (!isTunnel && !isLoopback) {
@@ -1135,6 +1136,8 @@ function interfaceConfigLines(
   if (port.getMTU() !== 1500) lines.push(` mtu ${port.getMTU()}`);
   if (port.getBandwidthKbps() > 0) lines.push(` bandwidth ${port.getBandwidthKbps()}`);
   if (port.hasExplicitDelayUs()) lines.push(` delay ${Math.round(port.getDelayUs() / 10)}`);
+  const arpTimeout = port.getArpTimeoutSec();
+  if (arpTimeout !== null && arpTimeout !== router.defaultArpTimeoutSec()) lines.push(` arp timeout ${arpTimeout}`);
   if (!port.getIsUp()) lines.push(` shutdown`);
   // Le durcissement d'une interface se REJOUE : sans cette ligne, un
   // `ntp disable` posé sur un lien exterieur disparaissait a l'import

@@ -55,7 +55,7 @@ import { iosInterfaceStatus } from '../inspection/InterfaceStatusView';
 import {
   type LigneIpBrief, type LigneInterface, protocoleVrp, rendreIpInterfaceBrief,
   rendreInterfaceBrief, rendreInterfaceDescription, huaweiMacAddress,
-  type LigneArp, rendreArpSwitch, rendreMacAddress,
+  type LigneArp, rendreArpSwitch, rendreMacAddress, vrpArpExpire,
 } from './huawei/huaweiTableLayouts';
 import { analyserStp, STP_SYSTEME, STP_INTERFACE, borneTimerStp, declarerAideStp,
 } from './huawei/HuaweiStpGrammar';
@@ -2826,13 +2826,14 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!this.swRef) return '';
       const filter = (args[0] ?? '').toLowerCase();
       const lignes: LigneArp[] = [];
-      for (const [ip, e] of this.swRef._getArpTableInternal()) {
+      const cache = this.swRef._getArpTableInternal();
+      for (const [ip, e] of cache) {
         if (filter === 'static' && e.type !== 'static') continue;
         if (filter === 'dynamic' && e.type !== 'dynamic') continue;
         lignes.push({
           ip,
           mac: huaweiMacAddress(e.mac),
-          expire: e.type === 'static' ? '-' : '20',
+          expire: vrpArpExpire(cache, e),
           type: e.type,
           iface: huaweiDisplayInterfaceName(e.iface),
         });

@@ -15,7 +15,7 @@ import { nqaRunningConfigLines } from './HuaweiNqaCommands';
 import {
   getHuaweiRoutingExtras, getSwitchSecurityService,
 } from '../../../equipment/RouterServiceCapabilities';
-import { IPAddress, IPv6Address } from '../../../core/types';
+import { IPAddress, IPv6Address, type ARPEntry } from '../../../core/types';
 import { renderTable, VRP_TABLE, type TableColumn } from '../cli/TextTable';
 import type { IPv6AddressEntry } from '../../../hardware/Port';
 import { localUserConfigLinesVrp } from './huaweiLocalUser';
@@ -32,7 +32,7 @@ import {
   type LigneIpBrief, type LigneInterface, type LigneArp,
   protocoleVrp, protocoleSpoofe, rendreIpInterfaceBrief,
   rendreInterfaceBrief, rendreInterfaceDescription,
-  huaweiMacAddress, rendreArp,
+  huaweiMacAddress, rendreArp, vrpArpExpire,
 } from './huaweiTableLayouts';
 import { runningConfigACL, runningConfigInterfaceACL } from './HuaweiAclCommands';
 import { isInterfacePoolName } from './HuaweiDhcpCommands';
@@ -438,44 +438,31 @@ export function displayInterfaceDescription(router: Router, filtre?: string): st
   return typeof retenues === 'string' ? retenues : rendreInterfaceDescription(retenues);
 }
 
+function vrpArpRow(router: Router, ip: string, entry: ARPEntry): LigneArp {
+  return {
+    ip, mac: huaweiMacAddress(entry.mac),
+    expire: vrpArpExpire(router._getArpTableInternal(), entry),
+    type: entry.type === 'static' ? 'static' : 'D',
+    iface: huaweiDisplayInterfaceName(entry.iface),
+  };
+}
+
 export function displayArp(router: Router): string {
-  const arpTable = router._getArpTableInternal();
-  const lignes: LigneArp[] = [];
-  for (const [ip, entry] of arpTable) {
-    const age = Math.floor((Date.now() - entry.timestamp) / 60000);
-    const type = (entry as { type?: string }).type === 'static' ? 'static' : 'D';
-    lignes.push({ ip, mac: huaweiMacAddress(entry.mac), expire: String(age), type,
-      iface: huaweiDisplayInterfaceName(entry.iface) });
-  }
+  const lignes = [...router._getArpTableInternal()].map(([ip, entry]) => vrpArpRow(router, ip, entry));
   return rendreArp(lignes, 'No ARP entries found.');
 }
 
 export function displayArpFiltered(router: Router, filterType: 'static' | 'dynamic'): string {
-  const arpTable = router._getArpTableInternal();
-  const lignes: LigneArp[] = [];
-  for (const [ip, entry] of arpTable) {
-    const isStatic = (entry as any).type === 'static';
-    if (filterType === 'static' && !isStatic) continue;
-    if (filterType === 'dynamic' && isStatic) continue;
-    const age = Math.floor((Date.now() - entry.timestamp) / 60000);
-    const type = isStatic ? 'static' : 'D';
-    lignes.push({ ip, mac: huaweiMacAddress(entry.mac), expire: String(age), type,
-      iface: huaweiDisplayInterfaceName(entry.iface) });
-  }
+  const lignes = [...router._getArpTableInternal()]
+    .filter(([, entry]) => (entry.type === 'static') === (filterType === 'static'))
+    .map(([ip, entry]) => vrpArpRow(router, ip, entry));
   return rendreArp(lignes, `No ${filterType} ARP entries found.`);
 }
 
 export function displayArpInterface(router: Router, ifName: string): string {
-  const arpTable = router._getArpTableInternal();
-  const lignes: LigneArp[] = [];
-  for (const [ip, entry] of arpTable) {
-    const et = (entry as { type?: string }).type;
-    if (entry.iface !== ifName && !entry.iface.endsWith(ifName)) continue;
-    const age = Math.floor((Date.now() - entry.timestamp) / 60000);
-    const type = et === 'static' ? 'static' : 'D';
-    lignes.push({ ip, mac: huaweiMacAddress(entry.mac), expire: String(age), type,
-      iface: huaweiDisplayInterfaceName(entry.iface) });
-  }
+  const lignes = [...router._getArpTableInternal()]
+    .filter(([, entry]) => entry.iface === ifName || entry.iface.endsWith(ifName))
+    .map(([ip, entry]) => vrpArpRow(router, ip, entry));
   return rendreArp(lignes, 'No ARP entries found.');
 }
 
@@ -1365,8 +1352,9 @@ export function renderHuaweiInterfaceExtras(router: Router, port: any, portName:
   if (typeof port.isProxyArpExplicit === 'function' && port.isProxyArpExplicit() && port.isProxyArpEnabled?.()) {
     lines.push(` arp-proxy enable`);
   }
-  if (port.arpTimeoutSec !== undefined && port.arpTimeoutSec !== 4 * 60 * 60 && typeof port.getArpTimeoutSec === 'function') {
-    lines.push(` arp expire-time ${port.getArpTimeoutSec()}`);
+  const arpExpireTime = port.getArpTimeoutSec?.() ?? null;
+  if (arpExpireTime !== null && arpExpireTime !== router.defaultArpTimeoutSec()) {
+    lines.push(` arp expire-time ${arpExpireTime}`);
   }
   if (typeof port.getMTU === 'function' && port.getMTU() !== 1500) lines.push(` mtu ${port.getMTU()}`);
   if (typeof port.getBandwidthKbps === 'function' && port.getBandwidthKbps() > 0) lines.push(` bandwidth ${port.getBandwidthKbps()}`);
