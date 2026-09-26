@@ -151,6 +151,7 @@ export type { ARPEntry } from '../core/types';
 
 /** Linux reachable time default (RFC 4861 §10): 30 seconds */
 const NEIGHBOR_QUEUE_TIMEOUT_MS = 2000;
+const UNSPECIFIED_IPV4 = '0.0.0.0';
 export const ARP_REACHABLE_TIME_MS = 30_000;
 export const ARP_GC_STALE_TIME_MS = 60_000;
 export const ARP_AGING_INTERVAL_MS = 5_000;
@@ -1357,6 +1358,27 @@ export abstract class EndHost extends Equipment {
     return true;
   }
 
+  protected addressAnsweredOnLink(ifName: string, candidate: string): boolean {
+    const port = this.ports.get(ifName);
+    const target = IPAddress.tryParse(candidate);
+    if (!port || !port.isConnected() || target === null) return false;
+    let answered = false;
+    const stop = this.getBus().subscribeWhere('host.arp.entry-learned',
+      (learned) => learned.deviceId === this.id && learned.ip === candidate,
+      () => { answered = true; });
+    this.sendFrame(ifName, {
+      srcMAC: port.getMAC(),
+      dstMAC: MACAddress.broadcast(),
+      etherType: ETHERTYPE_ARP,
+      payload: {
+        type: 'arp', operation: 'request', senderMAC: port.getMAC(), senderIP: new IPAddress(UNSPECIFIED_IPV4),
+        targetMAC: MACAddress.broadcast(), targetIP: target,
+      } satisfies ARPPacket,
+    });
+    stop();
+    return answered;
+  }
+
   /**
    * Remove the IPv4 configuration from an interface: clears the address
    * AND drops the connected route {@link configureInterface} added, so the
@@ -1994,7 +2016,7 @@ export abstract class EndHost extends Equipment {
 
     const existing = this.arpTable.get(arp.senderIP.toString());
     const isGratuitous = arp.operation === 'request' && arp.senderIP.equals(arp.targetIP);
-    if (!existing || existing.type !== 'static') {
+    if (!arp.senderIP.isUnspecified() && (!existing || existing.type !== 'static')) {
       this.arpTable.set(arp.senderIP.toString(), {
         mac: arp.senderMAC,
         iface: portName,

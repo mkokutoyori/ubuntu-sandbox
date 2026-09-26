@@ -1049,12 +1049,7 @@ export class DHCPServer implements IProtocolEngine {
   processDecline(params: DHCPDeclineParams): void {
     this.stats.declines++;
 
-    // Record the conflict
-    this.conflicts.push({
-      ipAddress: params.declinedIP,
-      detectionMethod: 'DHCP Decline',
-      detectionTime: Date.now(),
-    });
+    this.recordConflict(params.declinedIP, 'DHCP Decline');
 
     // Remove the binding
     const binding = this.bindings.get(params.declinedIP);
@@ -1169,10 +1164,18 @@ export class DHCPServer implements IProtocolEngine {
 
   /** Record a conflict detected by the server (e.g., via ping/ARP before offering) */
   addConflict(ip: string, method: string): void {
+    this.recordConflict(ip, method);
+  }
+
+  private recordConflict(ip: string, method: string): void {
     this.conflicts.push({
       ipAddress: ip,
       detectionMethod: method,
       detectionTime: Date.now(),
+    });
+    this.getBus().publish({
+      topic: 'dhcp.pool.conflict',
+      payload: { ...this.deviceRef(), pool: this.findPoolForIP(ip)?.name ?? null, ip, method },
     });
   }
 

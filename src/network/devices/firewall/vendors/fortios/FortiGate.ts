@@ -12,6 +12,7 @@ import { fortiGateSnmpIdentity } from './FortiSnmpObjects';
 import { FORTI_FIRMWARE, fortiFirmwareVersion, fortiVersionSuffix } from './FortiFirmware';
 import type { FirewallSnmpIdentity } from '../../mgmt/FirewallSnmp';
 import { sessionFamily } from '../../session/SessionFamily';
+import { dhcpServerId } from '../../l3/FirewallDhcp';
 
 const FACTORY_ADMIN = 'admin';
 
@@ -43,7 +44,7 @@ export class FortiGate extends Firewall {
         buildDate: FORTI_FIRMWARE.buildDate,
         versionSuffix: fortiVersionSuffix(FORTI_FIRMWARE),
       }),
-      managementVdomIndex: () => this.vdomNames().indexOf('root') + 1,
+      managementVdomIndex: () => this.vdomIndex('root'),
       cpuUsagePercent: () => this.getSystemLoad().cpuUsagePercent(),
       memory: () => this.getSystemLoad().memory(),
       logDisk: () => {
@@ -57,6 +58,11 @@ export class FortiGate extends Firewall {
       setupRate: (minutes) => this.getSystemLoad().averageSetupRate(minutes),
       uptimeHundredths: () => Math.floor(this.getUptimeMs() / 10),
       serial: () => this.serialNumber(),
+      dhcpLeaseUsage: () => this.getDhcp().leaseUsage().flatMap(({ scope, percent }) => {
+        const serverId = dhcpServerId(scope);
+        return serverId === null
+          ? [] : [{ vdomIndex: this.vdomIndex(this.vdomOfInterface(scope.iface)), serverId, percent }];
+      }),
     });
   }
 

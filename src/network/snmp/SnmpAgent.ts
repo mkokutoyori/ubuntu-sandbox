@@ -97,6 +97,7 @@ export class SnmpAgent {
   private nextTrapRequestId = 1;
   private running = false;
   private customMib = new Map<string, () => SnmpValue>();
+  private readonly subtrees: Array<() => ReadonlyMap<string, () => SnmpValue>> = [];
   private readonly manager: SnmpManager;
 
   constructor(
@@ -208,6 +209,10 @@ export class SnmpAgent {
 
   removeTrapHost(ip: string): void {
     this.config.trapHosts = this.config.trapHosts.filter((t) => t.ip !== ip);
+  }
+
+  registerSubtree(rows: () => ReadonlyMap<string, () => SnmpValue>): void {
+    this.subtrees.push(rows);
   }
 
   registerMib(oid: string, fn: () => SnmpValue): void {
@@ -408,6 +413,10 @@ export class SnmpAgent {
     if (builtin) return vb(oid, builtin());
     const custom = this.customMib.get(oid);
     if (custom) return vb(oid, custom());
+    for (const rows of this.subtrees) {
+      const read = rows().get(oid);
+      if (read) return vb(oid, read());
+    }
     for (const entry of this.interfaceEntries()) {
       for (const column of INTERFACE_COLUMNS) {
         if (oid !== `${column.prefix}.${entry.index}`) continue;
@@ -438,6 +447,7 @@ export class SnmpAgent {
   private allKnownOids(): string[] {
     const out = Array.from(this.builtins().keys());
     for (const k of this.customMib.keys()) out.push(k);
+    for (const rows of this.subtrees) out.push(...rows().keys());
     for (const entry of this.interfaceEntries()) {
       for (const column of INTERFACE_COLUMNS) {
         if (column.value(entry) !== null) out.push(`${column.prefix}.${entry.index}`);

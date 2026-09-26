@@ -106,7 +106,7 @@ import {
 } from './l3/FirewallEgress';
 import { deliverLocally } from './l3/LocalDelivery';
 import { ControlPlaneUdpEndpoint } from '../udp/ControlPlaneUdpEndpoint';
-import type { FirewallDhcp } from './l3/FirewallDhcp';
+import { dhcpServerId, type FirewallDhcp } from './l3/FirewallDhcp';
 import type { TcpSocket, TcpStack } from '../../tcp/TcpStack';
 import { buildFirewallAgents } from './FirewallAgents';
 import { AccessMatrix } from './authz/AccessMatrix';
@@ -136,7 +136,9 @@ import type { FirewallRouting } from './routing/FirewallRouting';
 import { buildL3Services, type L3Services } from './l3/L3ServiceWiring';
 import { classifyIpv4, ingressHostOf, type Ipv4IngressHost } from './l3/Ipv4Ingress';
 import type { FirewallNtp } from './mgmt/FirewallNtp';
-import { FirewallSnmp, type FirewallSnmpIdentity, type FirewallTrapFact } from './mgmt/FirewallSnmp';
+import {
+  FirewallSnmp, type DhcpTrapType, type FirewallSnmpIdentity, type FirewallTrapFact,
+} from './mgmt/FirewallSnmp';
 import { buildManagementServices } from './mgmt/ManagementWiring';
 import type {
   AdminHttpApp, AdminHttpServer, AdminServerCertificate, AdminServerCertificateMaterial,
@@ -677,13 +679,13 @@ export class Firewall extends Equipment {
         this.getVdom().routes.prefixLengthTowards(iface, destination),
     });
     this.sdwan.onHealthChange((changes) => { this.onSdwanHealthChange(changes); });
-    this.attachRoutingTrapSources();
+    this.attachTrapSources();
   }
 
-  private detachRoutingTrapSources: (() => void) | null = null;
+  private detachTrapSources: (() => void) | null = null;
 
-  private attachRoutingTrapSources(): void {
-    this.detachRoutingTrapSources?.();
+  private attachTrapSources(): void {
+    this.detachTrapSources?.();
     const bus = this.getBus();
     const ours = (payload: { deviceId?: string }) => payload.deviceId === this.id;
     const unsubscribers = [
@@ -691,13 +693,38 @@ export class Firewall extends Equipment {
       bus.subscribeWhere('ospf.neighbor.state-changed', ours, (event) => {
         this.raiseOspfNeighborTrap(event.payload);
       }),
+      bus.subscribeWhere('dhcp.pool.utilization', ours, (event) => {
+        if (event.payload.crossing === 'high') this.raiseDhcpServerTrap('pool-usage', event.payload.pool);
+      }),
+      bus.subscribeWhere('dhcp.pool.conflict', ours, (event) => {
+        if (event.payload.pool !== null) this.raiseDhcpServerTrap('conflict', event.payload.pool);
+      }),
+      bus.subscribeWhere('dhcp.nak.received', ours, (event) => {
+        this.raiseDhcpTrap('nak', event.payload.iface, null);
+      }),
     ];
-    this.detachRoutingTrapSources = () => { for (const unsubscribe of unsubscribers) unsubscribe(); };
+    this.detachTrapSources = () => { for (const unsubscribe of unsubscribers) unsubscribe(); };
   }
 
   override setEventBus(bus: IEventBus | null): void {
     super.setEventBus(bus);
-    this.attachRoutingTrapSources();
+    this.attachTrapSources();
+  }
+
+  vdomIndex(name: string): number {
+    return this.vdomNames().indexOf(name) + 1;
+  }
+
+  private raiseDhcpServerTrap(trapType: DhcpTrapType, pool: string): void {
+    const scope = this.dhcp.scopeOfPool(pool);
+    if (scope !== undefined) this.raiseDhcpTrap(trapType, scope.iface, dhcpServerId(scope));
+  }
+
+  private raiseDhcpTrap(trapType: DhcpTrapType, iface: string, serverId: number | null): void {
+    const vdomName = this.vdoms.vdomOfInterface(iface);
+    this.snmpService?.raise({
+      kind: 'dhcp', trapType, iface, serverId, vdomName, vdomIndex: this.vdomIndex(vdomName),
+    });
   }
 
   private raiseBgpPeerTrap(payload: BgpNeighborStateChangedPayload): void {
@@ -972,7 +999,7 @@ export class Firewall extends Equipment {
   }
 
   protected snmpIdentity(): FirewallSnmpIdentity {
-    return { sysObjectId: '0.0', objects: new Map(), traps: () => [] };
+    return { sysObjectId: '0.0', objects: new Map(), tables: () => new Map(), traps: () => [] };
   }
 
   private raiseHaTrap(transition: HaTransition): void {

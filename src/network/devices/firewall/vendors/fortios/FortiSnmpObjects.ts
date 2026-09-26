@@ -7,8 +7,8 @@ import { OID_BGP_ESTABLISHED_NOTIFICATION, bgpPeerNotification } from '../../../
 import { ospfNbrStateChange } from '../../../../snmp/OspfTrapMibNotifications';
 import type { IPAddress } from '../../../../core/types';
 import type {
-  FirewallSnmpIdentity, FirewallTrap, FirewallTrapContext, FirewallTrapFact, MemoryTrapCondition,
-  SnmpTrapEvent,
+  DhcpTrapType, FirewallSnmpIdentity, FirewallTrap, FirewallTrapContext, FirewallTrapFact,
+  MemoryTrapCondition, SnmpTrapEvent,
 } from '../../mgmt/FirewallSnmp';
 
 const FORTINET = '1.3.6.1.4.1.12356';
@@ -24,9 +24,19 @@ const FG_ANTIVIRUS_TRAP_OBJECTS = `${FORTINET}.101.8.3`;
 const FG_IPS_TRAP_OBJECTS = `${FORTINET}.101.9.3`;
 const FG_VPN_TRAP_OBJECTS = `${FORTINET}.101.12.3`;
 const FG_LOAD_BALANCE_TRAP_OBJECTS = `${FORTINET}.101.16.1`;
+const FG_VD_ENT_NAME = `${FORTINET}.101.3.2.1.1.2`;
+const FG_DHCP = `${FORTINET}.101.23`;
+const FG_DHCP_SERVER_NUMBER = `${FG_DHCP}.1.1.0`;
+const FG_DHCP_LEASE_USAGE = `${FG_DHCP}.2.1.1.2`;
+const FG_DHCP_TRAP_TYPE = `${FG_DHCP}.3.1.0`;
+const FG_DHCP_SERVER_ID = `${FG_DHCP}.3.3.0`;
 const ENT_CONFIG_CHANGE = '1.3.6.1.2.1.47.2.0.1';
 const IPV6_ADDRESS_OCTETS = 16;
 const UNSPECIFIED_ADDRESS = '0.0.0.0';
+
+const DHCP_TRAP_TYPES: Readonly<Record<DhcpTrapType, number>> = Object.freeze({
+  'pool-usage': 1, 'conflict': 2, 'nak': 3,
+});
 
 const MEMORY_MESSAGES: Readonly<Record<MemoryTrapCondition, string | null>> = Object.freeze({
   'used-high': null,
@@ -51,6 +61,7 @@ export interface FortiSnmpFacts {
   setupRate(minutes: number): number;
   uptimeHundredths(): number;
   serial(): string;
+  dhcpLeaseUsage(): ReadonlyArray<{ readonly vdomIndex: number; readonly serverId: number; readonly percent: number }>;
 }
 
 function trap(event: SnmpTrapEvent | null, oid: string, objects: readonly SnmpVarBinding[]): FirewallTrap {
@@ -173,6 +184,16 @@ export function fortiGateTraps(fact: FirewallTrapFact, context: FirewallTrapCont
       const notification = ospfNbrStateChange(fact.transition);
       return notification === null ? [] : [{ event: 'ospf-nbr-state-change', notification }];
     }
+    case 'dhcp': {
+      const index = context.interfaceIndex(fact.iface);
+      return [trap('dhcp', `${FG_TRAPS}.1301`, [
+        ...sender,
+        ...(index === null ? [] : instances(context, [`${OID_IF_NAME_PREFIX}.${index}`])),
+        vb(`${FG_VD_ENT_NAME}.${fact.vdomIndex}`, v('octet-string', fact.vdomName)),
+        ...(fact.serverId === null ? [] : [vb(FG_DHCP_SERVER_ID, v('integer', fact.serverId))]),
+        vb(FG_DHCP_TRAP_TYPE, v('integer', DHCP_TRAP_TYPES[fact.trapType])),
+      ])];
+    }
   }
 }
 
@@ -195,6 +216,7 @@ export function fortiGateSnmpIdentity(facts: FortiSnmpFacts): FirewallSnmpIdenti
     [`${FG_SYSTEM_INFO}.14.0`, () => v('gauge32', facts.setupRate(60))],
     [`${FG_SYSTEM_INFO}.15.0`, () => v('gauge32', facts.activeSessions('ipv6'))],
     [`${FG_SYSTEM_INFO}.20.0`, () => v('counter64', facts.uptimeHundredths())],
+    [FG_DHCP_SERVER_NUMBER, () => v('integer', facts.dhcpLeaseUsage().length)],
   ]);
   if (facts.logDisk() !== null) {
     objects.set(`${FG_SYSTEM_INFO}.6.0`,
@@ -205,6 +227,10 @@ export function fortiGateSnmpIdentity(facts: FortiSnmpFacts): FirewallSnmpIdenti
   return {
     sysObjectId: modelNumber === undefined ? FG_MODEL : `${FG_MODEL}.${modelNumber}`,
     objects,
+    tables: () => new Map(facts.dhcpLeaseUsage().map((server) => [
+      `${FG_DHCP_LEASE_USAGE}.${server.vdomIndex}.${server.serverId}`,
+      () => v('integer', server.percent),
+    ])),
     traps: fortiGateTraps,
   };
 }

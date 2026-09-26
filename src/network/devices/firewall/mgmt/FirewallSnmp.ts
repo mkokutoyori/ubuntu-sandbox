@@ -97,6 +97,8 @@ export interface SnmpMibViewSettings {
 
 export type MemoryTrapCondition = 'used-high' | 'free-low' | 'freeable-high';
 
+export type DhcpTrapType = 'pool-usage' | 'conflict' | 'nak';
+
 export type FirewallTrapFact =
   | { readonly kind: 'link'; readonly port: string; readonly up: boolean }
   | { readonly kind: 'interface-address'; readonly port: string }
@@ -121,7 +123,11 @@ export type FirewallTrapFact =
   | { readonly kind: 'av-bypass' }
   | { readonly kind: 'ips-fail-open' }
   | { readonly kind: 'bgp-peer'; readonly transition: BgpPeerTransition }
-  | { readonly kind: 'ospf-neighbor'; readonly transition: OspfNeighborTransition };
+  | { readonly kind: 'ospf-neighbor'; readonly transition: OspfNeighborTransition }
+  | {
+    readonly kind: 'dhcp'; readonly trapType: DhcpTrapType; readonly iface: string;
+    readonly vdomIndex: number; readonly vdomName: string; readonly serverId: number | null;
+  };
 
 export interface FirewallTrap {
   readonly event: SnmpTrapEvent | null;
@@ -137,6 +143,7 @@ export interface FirewallTrapContext {
 export interface FirewallSnmpIdentity {
   readonly sysObjectId: string;
   readonly objects: ReadonlyMap<string, () => SnmpValue>;
+  tables(): ReadonlyMap<string, () => SnmpValue>;
   traps(fact: FirewallTrapFact, context: FirewallTrapContext): readonly FirewallTrap[];
 }
 
@@ -201,6 +208,7 @@ export class FirewallSnmp {
       }),
     }, () => host.bus(), () => host.scheduler());
     for (const [oid, read] of host.identity().objects) this.agent.registerMib(oid, read);
+    this.agent.registerSubtree(() => host.identity().tables());
     this.agent.start();
     this.project();
   }

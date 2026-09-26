@@ -45,6 +45,17 @@ export interface FirewallDhcpDeps {
   readonly interfaceOwning?: (address: string) => string | null;
 }
 
+const POOL_USAGE_TRAP_PERCENT = 90;
+
+function poolNameOf(scope: DhcpScope): string {
+  return `scope-${scope.id}`;
+}
+
+export function dhcpServerId(scope: DhcpScope): number | null {
+  const id = Number.parseInt(scope.id, 10);
+  return Number.isInteger(id) ? id : null;
+}
+
 export class FirewallDhcp {
   private readonly relays = new Map<string, readonly string[]>();
 
@@ -135,8 +146,7 @@ export class FirewallDhcp {
       iface: string; ip: string; mac: string; hostName: string; expiresAt: number;
     }> = [];
     for (const [ip, binding] of this.server.getBindings()) {
-      const scope = [...this.scopes.values()]
-        .find(entry => `scope-${entry.id}` === binding.poolName);
+      const scope = this.scopeOfPool(binding.poolName);
       found.push({
         iface: scope?.iface ?? '',
         ip,
@@ -266,7 +276,7 @@ export class FirewallDhcp {
     const network = networkOf(anchor, mask);
     if (network === null) return;
 
-    const name = `scope-${scope.id}`;
+    const name = poolNameOf(scope);
     this.server.createPool(name);
     this.server.configurePoolNetwork(name, network, mask);
     if (scope.defaultGateway !== '0.0.0.0' && scope.defaultGateway.length > 0) {
@@ -285,6 +295,20 @@ export class FirewallDhcp {
       if (reservation.mac.length === 0 || reservation.ip === '0.0.0.0') continue;
       this.server.addStaticBinding(name, reservation.mac, reservation.ip);
     }
+
+    this.server.configurePoolUtilizationMark(name, 'high', POOL_USAGE_TRAP_PERCENT, false);
+    this.server.configurePoolUtilizationMark(name, 'low', POOL_USAGE_TRAP_PERCENT - 1, false);
+  }
+
+  scopeOfPool(pool: string): DhcpScope | undefined {
+    return [...this.scopes.values()].find((scope) => poolNameOf(scope) === pool);
+  }
+
+  leaseUsage(): ReadonlyArray<{ readonly scope: DhcpScope; readonly percent: number }> {
+    return [...this.scopes.values()].map((scope) => {
+      const pool = this.server.getAllPools().get(poolNameOf(scope));
+      return { scope, percent: pool === undefined ? 0 : this.server.poolUtilizationPercent(pool) };
+    });
   }
 
   private emit(iface: string, reply: DHCPPacket, clientMac: string): void {

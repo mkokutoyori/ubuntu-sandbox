@@ -450,6 +450,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // Windows (Vista+) uses the strong host model on IPv4: packets are only
     // accepted when addressed to the ingress interface (RFC 1122 §3.3.4.2).
     this.hostModel = 'strong';
+    this.dhcpClient.setAddressConflictChecker((iface, ip) => this.addressAnsweredOnLink(iface, ip));
     this.createPorts();
     this.fs = new WindowsFileSystem(name);
     this.seedVolumesFromHardware();
