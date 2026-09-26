@@ -170,7 +170,7 @@ describe('TCP urgent mechanism (RFC 9293 §3.8.5, MUST-30)', () => {
     let accepted: TcpSocket | null = null;
     server.getTcpStack().listen(8203, { onAccept: (s) => { accepted = s; } });
     void bus;
-    const pending = client.executeCommand('tcpdump -c 20 -nn tcp and port 8203');
+    const pending = client.executeCommand('sudo tcpdump -c 20 -nn tcp and port 8203');
     await new Promise((r) => setTimeout(r, 20));
     const socket = client.getTcpStack().connect(SERVER_IP, 8203)!;
     socket.sendUrgent('boom');

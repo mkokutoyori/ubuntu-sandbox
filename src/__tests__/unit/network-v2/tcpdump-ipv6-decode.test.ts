@@ -43,7 +43,7 @@ describe('tcpdump IPv4/IPv6 decode parity (PRD-tcpdump.md P3)', () => {
     const { pc, srv } = buildLan();
     (srv as unknown as Ipv6TcpHost).getTcpStack().listen(8080, { onAccept: () => {} });
 
-    const output = await captureWithTraffic(pc, 'tcpdump -c 1 -nn ip6 and tcp', async () => {
+    const output = await captureWithTraffic(pc, 'sudo tcpdump -c 1 -nn ip6 and tcp', async () => {
       (pc as unknown as Ipv6TcpHost).getTcpStack().connect('2001:db8::2', 8080);
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
@@ -55,7 +55,7 @@ describe('tcpdump IPv4/IPv6 decode parity (PRD-tcpdump.md P3)', () => {
 
   it('an ICMPv6 packet decodes a real type/code instead of an empty stub', async () => {
     const { pc } = buildLan();
-    const output = await captureWithTraffic(pc, 'tcpdump -c 1 -nn icmp6', async () => {
+    const output = await captureWithTraffic(pc, 'sudo tcpdump -c 1 -nn icmp6', async () => {
       await pc.executeCommand('ping6 -c 1 2001:db8::2');
     });
 
@@ -66,7 +66,7 @@ describe('tcpdump IPv4/IPv6 decode parity (PRD-tcpdump.md P3)', () => {
     const { pc, srv } = buildLan();
     (srv as unknown as Ipv6TcpHost).getTcpStack().listen(8081, { onAccept: () => {} });
 
-    const output = await captureWithTraffic(pc, 'tcpdump -c 1 -x ip6 and tcp', async () => {
+    const output = await captureWithTraffic(pc, 'sudo tcpdump -c 1 -x ip6 and tcp', async () => {
       (pc as unknown as Ipv6TcpHost).getTcpStack().connect('2001:db8::2', 8081);
       await new Promise((resolve) => setTimeout(resolve, 20));
     });

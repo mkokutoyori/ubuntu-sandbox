@@ -86,7 +86,7 @@ describe('`-6` choisit la famille de la resolution', () => {
   it('un NOM se resout en IPv6 et non en IPv4', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -6 -Pn -p 22 CIBLE');
+    const sortie = await taper(scanner, 'sudo nmap -6 -Pn -p 22 CIBLE');
 
     expect(sortie).toContain('2001:db8::2');
     expect(sortie).not.toContain('10.0.0.2');
@@ -95,7 +95,7 @@ describe('`-6` choisit la famille de la resolution', () => {
   it('un hote SANS adresse IPv6 n est pas une cible IPv6', async () => {
     const { scanner } = await segment({ v6OnTarget: false });
 
-    const sortie = await taper(scanner, 'nmap -6 -Pn -p 22 CIBLE');
+    const sortie = await taper(scanner, 'sudo nmap -6 -Pn -p 22 CIBLE');
 
     expect(sortie).not.toContain('10.0.0.2');
     expect(sortie).toMatch(/0 hosts up|Failed to resolve|0 IP addresses/);
@@ -104,7 +104,7 @@ describe('`-6` choisit la famille de la resolution', () => {
   it('TEMOIN: sans `-6`, le meme nom se resout en IPv4', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -p 22 CIBLE');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -p 22 CIBLE');
 
     expect(sortie).toContain('10.0.0.2');
   });
@@ -120,7 +120,7 @@ describe('la decouverte d hote EMET un echo ICMPv6', () => {
     const { scanner, cible } = await segment();
     await taper(cible, 'sudo tcpdump -i eth0 -w /tmp/d6.pcap &');
 
-    await taper(scanner, 'nmap -6 --disable-arp-ping -sn 2001:db8::2');
+    await taper(scanner, 'sudo nmap -6 --disable-arp-ping -sn 2001:db8::2');
 
     const vu = await taper(cible, 'sudo tcpdump -r /tmp/d6.pcap -nn');
     // Un ECHO, et pas seulement la sollicitation de voisin qui le precede.
@@ -130,7 +130,7 @@ describe('la decouverte d hote EMET un echo ICMPv6', () => {
   it('`-O` conjecture le systeme depuis la reponse d echo', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -6 -O -p 22 2001:db8::2');
+    const sortie = await taper(scanner, 'sudo nmap -6 -O -p 22 2001:db8::2');
 
     expect(sortie).toMatch(/Linux/);
   });
@@ -138,7 +138,7 @@ describe('la decouverte d hote EMET un echo ICMPv6', () => {
   it('la latence rendue est celle qui a ete MESUREE', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -6 --disable-arp-ping -sn 2001:db8::2');
+    const sortie = await taper(scanner, 'sudo nmap -6 --disable-arp-ping -sn 2001:db8::2');
 
     expect(sortie).toMatch(/Host is up/);
     expect(sortie).not.toMatch(/\(0\.0010s latency\)/);
@@ -147,7 +147,7 @@ describe('la decouverte d hote EMET un echo ICMPv6', () => {
   it('TEMOIN: la decouverte IPv4 continue de fonctionner', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -sn 10.0.0.2');
 
     expect(sortie).toMatch(/Host is up/);
   });

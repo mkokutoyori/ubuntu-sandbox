@@ -10,15 +10,27 @@ import {
   ALL_VERSION_INTENSITY, DEFAULT_VERSION_INTENSITY, LIGHT_VERSION_INTENSITY,
 } from './ServiceProbes';
 
-/**
- * `NmapOps.cc:527` et `nmap.cc:1833` : les options qui composent le
- * paquet exigent l'acces BRUT, et un balayage connecte laisse le noyau
- * composer — nmap les accepte alors, avertit, et ne les honore pas.
- */
-const RAW_OPTIONS_WARNING = [
-  'You have specified some options that require raw socket access.',
-  'These options will not be honored for TCP Connect scan.',
-];
+function rawOptionsWarning(privileged: boolean): string[] {
+  return [
+    'You have specified some options that require raw socket access.',
+    `These options will not be honored ${privileged
+      ? 'for TCP Connect scan' : 'without the necessary privileges'}.`,
+  ];
+}
+
+const ROOT_PRIVILEGES = 'root privileges.';
+const RAW_RESPONSES = '(because we need to read raw responses off the wire)';
+const NOT_ROOT_ICMP_WARNING = 'Warning:  You are not root -- using TCP pingscan rather than ICMP';
+const DEFAULT_PING_CONNECT_PORTS: readonly number[] = [80, 443];
+const DEFAULT_PING_SYN_PORT = 443;
+const DEFAULT_PING_ACK_PORT = 80;
+const SPOOF_WITH_PING_WARNING = 'WARNING: If -S is being used to fake your source address,'
+  + ' you may also have to use -e <interface> and -Pn .  If you are using it to specify'
+  + ' your real source address, you can ignore this warning.';
+const SPOOF_WITH_CONNECT_WARNING = 'WARNING: -S will only affect the source address used in'
+  + ' a connect() scan if you specify one of your own addresses.  Use -sS or another raw'
+  + ' scan if you want to completely spoof your source address, but then you need to know'
+  + " what you're doing to obtain meaningful results.";
 
 const SOURCE_PORT_CONNECT_WARNING = 'WARNING: -g is incompatible with the'
   + ' default connect() scan (-sT).  Use a raw scan such as -sS if you want'
@@ -112,7 +124,7 @@ export type ScanType =
   'tcp' | 'syn' | 'udp' | 'ack' | 'fin' | 'null' | 'xmas' | 'maimon' | 'window';
 
 export type DiscoveryProbeKind =
-  'icmp-echo' | 'tcp-syn' | 'tcp-ack' | 'udp' | 'ip-proto';
+  'icmp-echo' | 'tcp-syn' | 'tcp-ack' | 'tcp-connect' | 'udp' | 'ip-proto';
 
 export interface DiscoveryProbe {
   kind: DiscoveryProbeKind;
@@ -158,16 +170,10 @@ export interface NmapOptions {
   /**
    * `--traceroute` : le chemin jusqu'a chaque hote, releve APRES le
    * balayage et avec la sonde qui a fait repondre la cible.
-   *
-   * Sur une vraie machine l'option exige les privileges (`nmap.cc:1590`,
-   * « Traceroute has to be run as root »), tout comme `-sS`, `-sU` et
-   * `-O`. Ce simulateur ne modelise ce partage pour AUCUNE d'elles — un
-   * balayage SYN y fonctionne sans `sudo` — donc `--traceroute` suit ses
-   * soeurs plutot que de porter seule une garde que rien d'autre ne
-   * porte. C'est la meme raison qui fait `-A` l'activer ici sans
-   * condition la ou `nmap` l'active « if (o.isr00t) ».
    */
   traceroute: boolean;
+  privileged: boolean;
+  lateWarnings: string[];
   /**
    * `--packet-trace` : chaque paquet emis et recu par le balayage, dans
    * la forme de `PacketTrace` (`tcpip.cc`). Un balayage CONNECTE ne rend
@@ -257,6 +263,8 @@ export const NMAP_USAGE = 'Nmap 7.94 ( https://nmap.org )\n'
  * pas ici, donc elles sont OMISES plutot qu'inventees.
  */
 export const NMAP_VERSION_TEXT = 'Nmap version 7.94 ( https://nmap.org )';
+
+export const NMAP_BANNER = 'Starting Nmap 7.94 ( https://nmap.org )';
 
 const UNKNOWN_TAIL = 'See the output of nmap -h for a summary of options.';
 
@@ -415,7 +423,42 @@ function refuseUnrecognized(arg: string): void {
   refuseUnimplemented(`-${letter}`);
 }
 
-export function parseNmapArgs(args: string[]): NmapOptions {
+function mergedPorts(...lists: ReadonlyArray<readonly number[] | undefined>): number[] {
+  return [...new Set(lists.flatMap((list) => list ?? []))];
+}
+
+function discoveryPlanFor(
+  explicit: readonly DiscoveryProbe[], privileged: boolean, warnings: string[],
+): DiscoveryProbe[] {
+  if (explicit.length === 0) {
+    return privileged
+      ? [
+        { kind: 'icmp-echo' },
+        { kind: 'tcp-syn', ports: [DEFAULT_PING_SYN_PORT] },
+        { kind: 'tcp-ack', ports: [DEFAULT_PING_ACK_PORT] },
+      ]
+      : [{ kind: 'tcp-connect', ports: DEFAULT_PING_CONNECT_PORTS }];
+  }
+  if (privileged) return [...explicit];
+  const synOf = (plan: readonly DiscoveryProbe[]) => plan.find((probe) => probe.kind === 'tcp-syn');
+  let plan = [...explicit];
+  if (plan.some((probe) => probe.kind === 'icmp-echo')) {
+    warnings.push(NOT_ROOT_ICMP_WARNING);
+    plan = plan.filter((probe) => probe.kind !== 'icmp-echo');
+    if (synOf(plan) === undefined) plan.push({ kind: 'tcp-syn', ports: [DEFAULT_TCP_PROBE_PORT] });
+  }
+  const ack = plan.find((probe) => probe.kind === 'tcp-ack');
+  const syn = synOf(plan);
+  const rest = plan.filter((probe) => probe.kind !== 'tcp-syn' && probe.kind !== 'tcp-ack');
+  if (syn === undefined && ack === undefined) return rest;
+  return [{ kind: 'tcp-connect', ports: mergedPorts(syn?.ports, ack?.ports) }, ...rest];
+}
+
+function quitting(warnings: readonly string[], ...lines: string[]): never {
+  throw new NmapOptionError([...warnings, ...lines, 'QUITTING!']);
+}
+
+export function parseNmapArgs(args: string[], privileged: boolean): NmapOptions {
   const targets: string[] = [];
   let ports: number[] | undefined;
   let scanType: ScanType = 'tcp';
@@ -458,6 +501,8 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   const warnings: string[] = [];
   const discovery: DiscoveryProbe[] = [];
   let listScan = false;
+  let advanced = false;
+  let privilegeOverride: boolean | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -520,7 +565,9 @@ export function parseNmapArgs(args: string[]): NmapOptions {
     if (a === '--version-light') { versionIntensity = LIGHT_VERSION_INTENSITY; continue; }
     if (a === '--version-all') { versionIntensity = ALL_VERSION_INTENSITY; continue; }
     if (a === '-O') { osScan = true; continue; }
-    if (a === '-A') { versionScan = true; osScan = true; traceroute = true; continue; }
+    if (a === '-A') { versionScan = true; advanced = true; continue; }
+    if (a === '--privileged') { privilegeOverride = true; continue; }
+    if (a === '--unprivileged') { privilegeOverride = false; continue; }
     if (a === '--traceroute') { traceroute = true; continue; }
     if (a === '--packet-trace') { packetTrace = true; continue; }
 
@@ -676,11 +723,25 @@ export function parseNmapArgs(args: string[]): NmapOptions {
     targets.push(a);
   }
 
-  // « If you don't specify a base type, SYN scan is used. » Le defaut
-  // ORDINAIRE reste le balayage connecte ; c'est `--scanflags` qui le
-  // deplace, parce qu'un balayage connecte ne compose aucun segment et
-  // n'aurait donc rien a faire de ces drapeaux.
-  if (scanFlags && !scanTypeGiven) scanType = 'syn';
+  const isRoot = privilegeOverride ?? privileged;
+  if (advanced && isRoot) { osScan = true; traceroute = true; }
+  if (!scanTypeGiven) scanType = isRoot ? 'syn' : 'tcp';
+  const plan = skipDiscovery ? [] : discoveryPlanFor(discovery, isRoot, warnings);
+
+  if (spoofSource !== undefined && !skipDiscovery) warnings.push(SPOOF_WITH_PING_WARNING);
+  if (spoofSource !== undefined && scanType === 'tcp') warnings.push(SPOOF_WITH_CONNECT_WARNING);
+  if (!isRoot) {
+    if (plan.some((probe) => probe.kind === 'udp')) {
+      quitting(warnings, `Sorry, UDP Ping (-PU) only works if you are root ${RAW_RESPONSES}`);
+    }
+    if (plan.some((probe) => probe.kind === 'ip-proto')) {
+      quitting(warnings, `Sorry, IPProto Ping (-PO) only works if you are root ${RAW_RESPONSES}`);
+    }
+    if (scanType !== 'tcp') quitting(warnings, `You requested a scan type which requires ${ROOT_PRIVILEGES}`);
+    if (decoySpec !== undefined) quitting(warnings, `Sorry, but decoys (-D) require ${ROOT_PRIVILEGES}`);
+    if (fragmentMtu > 0) quitting(warnings, `Sorry, but fragscan requires ${ROOT_PRIVILEGES}`);
+    if (osScan) quitting(warnings, `TCP/IP fingerprinting (for OS scan) requires ${ROOT_PRIVILEGES}`);
+  }
 
   // `NmapOps.h:127` : `packetTrace()` rend vrai des le niveau de
   // debogage 3, que `--packet-trace` ait ete ecrit ou non.
@@ -691,9 +752,10 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   // l'ecrit par paquet, depuis la fonction d'emission ; ici la sonde a la
   // meme taille pour tous les ports d'un balayage, donc la repeter par
   // port enfouirait le rapport sans rien apprendre de plus.
+  const lateWarnings: string[] = [];
   const payload = probePayloadBytes(scanType) + (extraPayload?.length ?? 0);
   if (fragmentMtu > 0 && payload <= fragmentMtu) {
-    warnings.push(`Warning: fragmentation (mtu=${fragmentMtu}) requested but`
+    lateWarnings.push(`Warning: fragmentation (mtu=${fragmentMtu}) requested but`
       + ` the payload is too small already (${payload})`);
     fragmentMtu = 0;
   }
@@ -702,15 +764,14 @@ export function parseNmapArgs(args: string[]): NmapOptions {
     || probeTtl !== undefined || fragmentMtu > 0
     || spoofSource !== undefined || decoySpec !== undefined
     || extraPayload !== undefined;
-  // Un balayage CONNECTE ne compose pas son paquet, donc il n'honore
-  // aucune des trois. L'avertissement propre a `-g` precede le
-  // generique, `ValidateOptions()` (`nmap.cc:1535`) etant appele avant
-  // le controle de `nmap.cc:1833`.
   const connectScan = scanType === 'tcp';
   if (sourcePort !== undefined && connectScan) {
     warnings.push(SOURCE_PORT_CONNECT_WARNING);
   }
-  if (shapesTheProbe && connectScan) warnings.push(...RAW_OPTIONS_WARNING);
+  if (traceroute && !isRoot) quitting(warnings, NMAP_BANNER, 'Traceroute has to be run as root');
+  if ((shapesTheProbe || scanFlags !== undefined) && connectScan) {
+    lateWarnings.push(...rawOptionsWarning(isRoot));
+  }
   const probeShape: ScanProbeShape | undefined =
     (shapesTheProbe || device !== undefined) && !connectScan
       ? {
@@ -722,12 +783,14 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   const decoys = shapesTheProbe && !connectScan ? decoySpec : undefined;
 
   return {
-    targets, ports, scanType, scanFlags, pingOnly, skipDiscovery, versionScan,
+    targets, ports, scanType, scanFlags: connectScan ? undefined : scanFlags,
+    pingOnly, skipDiscovery, versionScan,
     versionIntensity, ifList, device, allPorts, excludedPorts,
     osScan, openOnly, ipv6, disableArpPing, alwaysResolve, traceroute, packetTrace,
     showReason, noDns, verbose, debugLevel, stylesheet, probeShape, decoys, warnings,
+    lateWarnings, privileged: isRoot,
     outputNormal, outputGreppable, outputXml,
     inputFile, excludeFile, excludeSpecs, randomTargets, listScan,
-    ...(discovery.length > 0 ? { discovery } : {}),
+    ...(plan.length > 0 ? { discovery: plan } : {}),
   };
 }

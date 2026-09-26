@@ -106,7 +106,7 @@ describe('la decouverte d hote EMET quelque chose', () => {
     await taper(cible, 'sudo systemctl start ssh');
     await capturer(cible, '/tmp/sn.pcap');
 
-    await taper(scanner, 'nmap -sn 10.0.0.2');
+    await taper(scanner, 'sudo nmap -sn 10.0.0.2');
 
     const vu = await relire(cible, '/tmp/sn.pcap');
     expect(vu).toMatch(/10\.0\.0\.1/);
@@ -118,7 +118,7 @@ describe('la decouverte d hote EMET quelque chose', () => {
     isole.powerOn();
     await taper(isole, 'ip link set eth0 up', 'ip addr add 192.0.2.50/24 dev eth0');
 
-    const sortie = await taper(scanner, 'nmap -sn 192.0.2.50');
+    const sortie = await taper(scanner, 'sudo nmap -sn 192.0.2.50');
 
     expect(sortie).not.toMatch(/Host is up/);
   });
@@ -126,7 +126,7 @@ describe('la decouverte d hote EMET quelque chose', () => {
   it('TEMOIN: une machine du meme segment EST declaree vivante', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -sn 10.0.0.2');
 
     expect(sortie).toMatch(/Host is up/);
   });
@@ -137,7 +137,7 @@ describe('un balayage de port passe par la pile', () => {
     const { scanner, cible } = await segment();
     await taper(cible, 'sudo systemctl start ssh');
 
-    const sortie = await taper(scanner, 'nmap -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -p 22 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+open\s+ssh/);
   });
@@ -145,7 +145,7 @@ describe('un balayage de port passe par la pile', () => {
   it('TEMOIN: un port ferme est vu ferme', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -p 8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -p 8888 10.0.0.2');
 
     expect(sortie).toMatch(/8888\/tcp\s+closed/);
   });
@@ -155,7 +155,7 @@ describe('un balayage de port passe par la pile', () => {
     await taper(cible, 'sudo systemctl start ssh');
     await capturer(cible, '/tmp/p22.pcap');
 
-    await taper(scanner, 'nmap -Pn -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -p 22 10.0.0.2');
 
     const vu = await relire(cible, '/tmp/p22.pcap');
     expect(vu).toMatch(/\.22\b/);
@@ -168,7 +168,7 @@ describe('la detection de version LIT la banniere sur une vraie connexion', () =
     await taper(cible, 'sudo systemctl start ssh');
     await capturer(cible, '/tmp/sv.pcap');
 
-    await taper(scanner, 'nmap -Pn -sV -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -sV -p 22 10.0.0.2');
 
     const vu = await relire(cible, '/tmp/sv.pcap');
     expect(vu).toMatch(/Flags \[S\]|\[S\]|SYN/);
@@ -179,7 +179,7 @@ describe('la detection de version LIT la banniere sur une vraie connexion', () =
     await taper(cible, 'sudo systemctl start ssh');
     await capturer(cible, '/tmp/sv.pcap');
 
-    const sortie = await taper(scanner, 'nmap -Pn -sV -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sV -p 22 10.0.0.2');
     const capture = await taper(cible, 'sudo tcpdump -r /tmp/sv.pcap -A');
 
     // Ce que le serveur a REELLEMENT annonce, lu dans la capture, doit se
@@ -193,7 +193,7 @@ describe('la detection de version LIT la banniere sur une vraie connexion', () =
   it('un port ouvert par AUCUN service ne recoit pas de version inventee', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sV -p 8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sV -p 8888 10.0.0.2');
 
     expect(sortie).toMatch(/8888\/tcp\s+closed/);
     expect(sortie).not.toMatch(/8888\/tcp\s+open/);
@@ -203,7 +203,7 @@ describe('la detection de version LIT la banniere sur une vraie connexion', () =
     const { scanner, cible } = await segment();
     await taper(cible, 'sudo systemctl start ssh');
 
-    const sortie = await taper(scanner, 'nmap -Pn -sV -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sV -p 22 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+open\s+ssh\s+\S/);
   });
@@ -229,7 +229,7 @@ describe('un balayage UDP lit l ICMP, il ne lit pas l objet distant', () => {
     const { scanner, cible } = await segment();
     await capturer(scanner, '/tmp/udp.pcap');
 
-    const sortie = await taper(scanner, 'nmap -Pn -sU -p 9999 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sU -p 9999 10.0.0.2');
 
     const vu = await relire(scanner, '/tmp/udp.pcap');
     expect(vu).toMatch(/unreachable|ICMP|icmp/);
@@ -240,7 +240,7 @@ describe('un balayage UDP lit l ICMP, il ne lit pas l objet distant', () => {
     const { scanner, cible } = await segment();
     await taper(cible, 'sudo iptables -A OUTPUT -p icmp -j DROP');
 
-    const sortie = await taper(scanner, 'nmap -Pn -sU -p 9999 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sU -p 9999 10.0.0.2');
 
     expect(sortie).toMatch(/9999\/udp\s+open\|filtered/);
   });
@@ -251,7 +251,7 @@ describe('la conjecture de systeme ne LIT pas le type de l objet', () => {
     const { scanner, cible } = await segment();
     await taper(cible, 'sudo systemctl start ssh');
 
-    const sortie = await taper(scanner, 'nmap -Pn -O -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -O -p 22 10.0.0.2');
 
     expect(sortie).toMatch(/Linux/);
   });

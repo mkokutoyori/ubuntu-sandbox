@@ -60,6 +60,7 @@ import {
   type PrivilegeRequirement,
 } from './iam/policy/CommandPrivilegePolicy';
 import { createDefaultCommandPrivileges } from './iam/policy/defaultCommandPrivileges';
+import { holdsCapability, type LinuxCapability } from './iam/capabilities/LinuxCapabilities';
 import { parseAdduserArgs, type AdduserRequest } from './iam/adduserOptions';
 import { IamAuthLogProjection } from './iam/fs/IamAuthLogProjection';
 import { IamPolicyFilesProjection } from './iam/fs/IamPolicyFilesProjection';
@@ -2339,6 +2340,10 @@ export class LinuxCommandExecutor {
   }
 
   readonly commandPrivileges: CommandPrivilegePolicy = createDefaultCommandPrivileges();
+
+  holdsCapability(capability: LinuxCapability): boolean {
+    return holdsCapability(this.privilegeActor(), capability);
+  }
 
   private privilegeActor(): PrivilegeActor {
     return {

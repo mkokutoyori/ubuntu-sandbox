@@ -81,7 +81,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('listening on eth0');
@@ -92,7 +92,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -i eth0 -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -i eth0 -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('listening on eth0');
@@ -100,7 +100,7 @@ describe('tcpdump Command Suite', () => {
 
     it('3. should support loopback capture (-i lo)', async () => {
       const { pc1 } = setupLAN();
-      const output = await captureWithTraffic(pc1, 'tcpdump -i lo -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -i lo -c 1', async () => {
         await pingOnSimulatedClock(pc1, 'ping -c 1 127.0.0.1');
       });
       expect(output).toContain('listening on lo');
@@ -108,20 +108,20 @@ describe('tcpdump Command Suite', () => {
 
     it('4. should reject capture on non-existent interface', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -i eth99');
+      const output = await pc1.executeCommand('sudo tcpdump -i eth99');
       expect(output).toBe('tcpdump: eth99: No such device exists\n(SIOCGIFHWADDR: No such device)');
     });
 
     it('5. should reject command if interface argument is missing after -i', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -i');
+      const output = await pc1.executeCommand('sudo tcpdump -i');
       expect(output).toMatch(/^tcpdump: option requires an argument -- 'i'\ntcpdump version 4\.99\.1\n/);
       expect(output).toContain('Usage: tcpdump [-AbdDefhHIJKlLnNOpqStuUvxX#]');
     });
 
     it('6. should display help manual on --help', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump --help');
+      const output = await pc1.executeCommand('sudo tcpdump --help');
       expect(output).toContain('Usage: tcpdump');
       expect(output).toContain('-i');
       expect(output).toContain('-c');
@@ -129,26 +129,26 @@ describe('tcpdump Command Suite', () => {
 
     it('7. should show version information on -h', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -h');
+      const output = await pc1.executeCommand('sudo tcpdump -h');
       expect(output.toLowerCase()).toContain('tcpdump version');
     });
 
     it('8. should show version information on --version', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump --version');
+      const output = await pc1.executeCommand('sudo tcpdump --version');
       expect(output.toLowerCase()).toContain('tcpdump version');
     });
 
     it('9. should fail to capture on an interface that is administratively down', async () => {
       const { pc1 } = setupLAN();
       await pc1.executeCommand('ifconfig eth0 down');
-      const output = await pc1.executeCommand('tcpdump -i eth0');
+      const output = await pc1.executeCommand('sudo tcpdump -i eth0');
       expect(output).toBe('tcpdump: eth0: That device is not up');
     });
 
     it('10. should report error if multiple interfaces are provided to a single -i flag', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -i eth0 eth1');
+      const output = await pc1.executeCommand('sudo tcpdump -i eth0 eth1');
       expect(output).toBe("tcpdump: unknown host 'eth1'");
     });
 
@@ -157,7 +157,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -i any -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -i any -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('listening on any');
@@ -165,29 +165,29 @@ describe('tcpdump Command Suite', () => {
 
     it('12. should list available capture interfaces with --list-interfaces', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump --list-interfaces');
+      const output = await pc1.executeCommand('sudo tcpdump --list-interfaces');
       expect(output).toContain('eth0');
       expect(output).toContain('lo');
     });
 
     it('13. should list available capture interfaces with alternative -D flag', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -D');
+      const output = await pc1.executeCommand('sudo tcpdump -D');
       expect(output).toContain('eth0');
       expect(output).toContain('lo');
     });
 
     it('14. should handle capture initialization when loopback has no assigned IP', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -i lo');
+      const output = await pc1.executeCommand('sudo tcpdump -i lo');
       expect(output).toContain('listening on lo');
     });
 
     it('15. should fail gracefully on unrecognized command-line switches', async () => {
       const { pc1 } = setupLAN();
-      expect(await pc1.executeCommand('tcpdump -z')).toMatch(/^tcpdump: option requires an argument -- 'z'\n/);
-      expect(await pc1.executeCommand('tcpdump -g')).toMatch(/^tcpdump: invalid option -- 'g'\n/);
-      expect(await pc1.executeCommand('tcpdump --frobnicate')).toMatch(/^tcpdump: unrecognized option '--frobnicate'\n/);
+      expect(await pc1.executeCommand('sudo tcpdump -z')).toMatch(/^tcpdump: option requires an argument -- 'z'\n/);
+      expect(await pc1.executeCommand('sudo tcpdump -g')).toMatch(/^tcpdump: invalid option -- 'g'\n/);
+      expect(await pc1.executeCommand('sudo tcpdump --frobnicate')).toMatch(/^tcpdump: unrecognized option '--frobnicate'\n/);
     });
   });
 
@@ -199,7 +199,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 3 10.0.0.1');
       });
       expect(output).toContain('1 packet captured');
@@ -210,7 +210,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 3', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 3', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 5 10.0.0.1');
       });
       expect(output).toContain('3 packets captured');
@@ -218,38 +218,38 @@ describe('tcpdump Command Suite', () => {
 
     it('18. rejects a zero packet count, as tcpdump 4.99.1 does for cnt <= 0', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -c 0');
+      const output = await pc1.executeCommand('sudo tcpdump -c 0');
       expect(output).toBe('tcpdump: invalid packet count 0');
     });
 
     it('19. should reject negative packet count (-c -5)', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -c -5');
+      const output = await pc1.executeCommand('sudo tcpdump -c -5');
       expect(output.toLowerCase()).toMatch(/invalid|error|must be positive/);
     });
 
     it('20. should reject non-numeric packet count (-c abc)', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -c abc');
+      const output = await pc1.executeCommand('sudo tcpdump -c abc');
       expect(output.toLowerCase()).toMatch(/invalid|error|numeric/);
     });
 
     it('21. reads -c 2.5 the way atoi does, as a count of 2', async () => {
       const { pc1 } = setupLAN();
-      expect(await pc1.executeCommand('tcpdump -c 2.5')).toContain('listening on eth0');
-      expect(await pc1.executeCommand('tcpdump -c 0')).toBe('tcpdump: invalid packet count 0');
-      expect(await pc1.executeCommand('tcpdump -c x')).toBe('tcpdump: invalid packet count x');
+      expect(await pc1.executeCommand('sudo tcpdump -c 2.5')).toContain('listening on eth0');
+      expect(await pc1.executeCommand('sudo tcpdump -c 0')).toBe('tcpdump: invalid packet count 0');
+      expect(await pc1.executeCommand('sudo tcpdump -c x')).toBe('tcpdump: invalid packet count x');
     });
 
     it('22. should report syntax error if count argument is completely omitted after -c', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -c');
+      const output = await pc1.executeCommand('sudo tcpdump -c');
       expect(output.toLowerCase()).toContain('option requires an argument');
     });
 
     it('23. should count exact loopback packets', async () => {
       const { pc1 } = setupLAN();
-      const output = await captureWithTraffic(pc1, 'tcpdump -i lo -c 2', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -i lo -c 2', async () => {
         await pingOnSimulatedClock(pc1, 'ping -c 2 127.0.0.1');
       });
       expect(output).toContain('2 packets captured');
@@ -260,7 +260,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toMatch(/^1 packet captured\n1 packet received by filter\n0 packets dropped by kernel$/m);
@@ -271,7 +271,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 2 -v', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 2 -v', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 4 10.0.0.1');
       });
       expect(output).toContain('2 packets captured');
@@ -286,7 +286,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       // Match typical HH:MM:SS format
@@ -298,7 +298,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -t -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -t -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).not.toMatch(/^\d{2}:\d{2}:\d{2}/);
@@ -309,7 +309,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -tt -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -tt -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       // Epoch seconds format: digits followed by dot and microseconds
@@ -321,7 +321,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -ttt -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -ttt -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toMatch(/\d{2}:\d{2}:\d{2}/); // relative delta representation
@@ -332,7 +332,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -tttt -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -tttt -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       // Expect YYYY-MM-DD
@@ -344,7 +344,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -n -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -n -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('10.0.0.2');
@@ -353,7 +353,7 @@ describe('tcpdump Command Suite', () => {
     it('32. should format ports numerically with -nn', async () => {
       const { pc1, pc2 } = setupWindowsLAN(); // utilizing netsh if needed, or simply port checks
       await pc1.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.1 255.255.255.0');
-      const output = await pc1.executeCommand('tcpdump -nn -c 0');
+      const output = await pc1.executeCommand('sudo tcpdump -nn -c 0');
       expect(output).toBeDefined();
     });
 
@@ -362,7 +362,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -q -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -q -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       // Quiet format reduces protocol details
@@ -374,7 +374,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -e -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -e -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toMatch(/[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}/);
@@ -385,7 +385,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -v -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -v -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('ttl');
@@ -396,7 +396,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -vv -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -vv -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('id');
@@ -408,7 +408,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -vvv -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -vvv -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toMatch(/checksum|len|ttl/);
@@ -419,7 +419,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -nt -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -nt -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('10.0.0.2');
@@ -431,7 +431,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -neq -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -neq -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toMatch(/[0-9a-fA-F]{2}:[0-9a-fA-F]{2}/);
@@ -440,7 +440,7 @@ describe('tcpdump Command Suite', () => {
 
     it('40. should support combined verbose and interface flags (-v -i eth0)', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -v -i eth0');
+      const output = await pc1.executeCommand('sudo tcpdump -v -i eth0');
       expect(output).toContain('listening on eth0');
     });
 
@@ -449,7 +449,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output.toLowerCase()).toContain('length');
@@ -457,19 +457,19 @@ describe('tcpdump Command Suite', () => {
 
     it('42. should report warning on using obsolete options gracefully', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -S'); // Absolute TCP sequence numbers
+      const output = await pc1.executeCommand('sudo tcpdump -S'); // Absolute TCP sequence numbers
       expect(output).toBeDefined(); // Optional support verification
     });
 
     it('43. should display link-layer type in startup banner', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump');
+      const output = await pc1.executeCommand('sudo tcpdump');
       expect(output.toLowerCase()).toMatch(/link-type/);
     });
 
     it('44. should display snaplen parameters in initial configuration banner', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump');
+      const output = await pc1.executeCommand('sudo tcpdump');
       // Real tcpdump's banner says "snapshot length", not "capture size"
       // (audit 05, constat A8) — pinned here so the wording can't drift back.
       expect(output.toLowerCase()).toContain('snapshot length');
@@ -477,7 +477,7 @@ describe('tcpdump Command Suite', () => {
 
     it('45. should show correct output structures when filtering out local loopback ping', async () => {
       const { pc1 } = setupLAN();
-      const output = await captureWithTraffic(pc1, 'tcpdump -i lo -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -i lo -c 1', async () => {
         await pingOnSimulatedClock(pc1, 'ping -c 1 127.0.0.1');
       });
       expect(output).toMatch(/IP localhost > localhost: ICMP echo request/);
@@ -492,7 +492,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -A -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -A -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1'); // ping payload contains sequence / printable patterns
       });
       expect(output).toBeDefined();
@@ -503,7 +503,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -X -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -X -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       // Hex representation verification
@@ -515,7 +515,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -XX -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -XX -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toMatch(/0x0000:/); // Start from offset zero
@@ -526,7 +526,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -x -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -x -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toMatch(/0x[0-9a-fA-F]{4}:/);
@@ -537,7 +537,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -xx -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -xx -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toMatch(/0x0000:/);
@@ -548,7 +548,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -X -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -X -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('....');
@@ -559,7 +559,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -qX -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -qX -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toMatch(/0x[0-9a-fA-F]{4}:/);
@@ -567,7 +567,7 @@ describe('tcpdump Command Suite', () => {
 
     it('53. should show empty hex block if packet contains no data payload', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -X -c 0');
+      const output = await pc1.executeCommand('sudo tcpdump -X -c 0');
       expect(output).toBeDefined();
     });
 
@@ -576,7 +576,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -X -s 16 -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -X -s 16 -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       // The hex dump should contain fewer lines because of limited size snaplen
@@ -585,7 +585,7 @@ describe('tcpdump Command Suite', () => {
 
     it('55. should fail if negative or non-integer snaplen value is passed', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -s abc');
+      const output = await pc1.executeCommand('sudo tcpdump -s abc');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
   });
@@ -598,7 +598,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 icmp', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 icmp', async () => {
         // Run ping to generate ICMP
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
@@ -612,7 +612,7 @@ describe('tcpdump Command Suite', () => {
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
       await pc1.executeCommand('arp -d 10.0.0.2');
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 arp', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 arp', async () => {
         // Trigger ARP request by resolving target address
         await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.0.2');
       });
@@ -621,7 +621,7 @@ describe('tcpdump Command Suite', () => {
 
     it('58. should filter and capture tcp packets only', async () => {
       const { pc1 } = setupLAN();
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 tcp', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 tcp', async () => {
         // Mock TCP activity or perform standard connection sequence
         await pingOnSimulatedClock(pc1, 'ping -c 1 127.0.0.1'); // ICMP, should not be captured
       });
@@ -630,7 +630,7 @@ describe('tcpdump Command Suite', () => {
 
     it('59. should filter and capture udp packets only', async () => {
       const { pc1 } = setupLAN();
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 udp', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 udp', async () => {
         await pingOnSimulatedClock(pc1, 'ping -c 1 127.0.0.1');
       });
       expect(output).not.toContain('ICMP');
@@ -641,7 +641,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 ip', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 ip', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('10.0.0.2');
@@ -649,62 +649,62 @@ describe('tcpdump Command Suite', () => {
 
     it('61. should capture packets targeting general port keyword', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -c 1 port 80');
+      const output = await pc1.executeCommand('sudo tcpdump -c 1 port 80');
       expect(output).toBeDefined();
     });
 
     it('62. should capture packets targeting source port explicitly (src port)', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -c 1 src port 1234');
+      const output = await pc1.executeCommand('sudo tcpdump -c 1 src port 1234');
       expect(output).toBeDefined();
     });
 
     it('63. should capture packets targeting destination port explicitly (dst port)', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -c 1 dst port 53');
+      const output = await pc1.executeCommand('sudo tcpdump -c 1 dst port 53');
       expect(output).toBeDefined();
     });
 
     it('64. should combine protocols with ports (tcp port 80)', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -c 1 tcp port 80');
+      const output = await pc1.executeCommand('sudo tcpdump -c 1 tcp port 80');
       expect(output).toBeDefined();
     });
 
     it('65. should combine protocols with ports (udp port 53)', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -c 1 udp port 53');
+      const output = await pc1.executeCommand('sudo tcpdump -c 1 udp port 53');
       expect(output).toBeDefined();
     });
 
     it('66. should reject invalid protocol filters', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump invalid_proto');
+      const output = await pc1.executeCommand('sudo tcpdump invalid_proto');
       expect(output).toBe("tcpdump: unknown host 'invalid_proto'");
     });
 
     it('67. should reject invalid port range bounds (port 70000)', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump port 70000');
+      const output = await pc1.executeCommand('sudo tcpdump port 70000');
       expect(output).toBe('tcpdump: illegal port number 70000 > 65535');
     });
 
     it('68. resolves a service name through /etc/services and refuses an unknown one', async () => {
       const { pc1 } = setupLAN();
-      expect(await pc1.executeCommand('tcpdump port http')).toContain('listening on eth0');
-      const output = await pc1.executeCommand('tcpdump port nosuchservice');
+      expect(await pc1.executeCommand('sudo tcpdump port http')).toContain('listening on eth0');
+      const output = await pc1.executeCommand('sudo tcpdump port nosuchservice');
       expect(output).toBe("tcpdump: unknown port 'nosuchservice'");
     });
 
     it('69. should support port range syntax (portrange 20-25)', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump portrange 20-25');
+      const output = await pc1.executeCommand('sudo tcpdump portrange 20-25');
       expect(output).toBeDefined();
     });
 
     it('70. accepts a reversed port range, as gen_portrange swaps its bounds', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump portrange 80-20');
+      const output = await pc1.executeCommand('sudo tcpdump portrange 80-20');
       expect(output).toContain('listening on eth0');
     });
 
@@ -714,7 +714,7 @@ describe('tcpdump Command Suite', () => {
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
       await pc1.executeCommand('arp -d 10.0.0.2');
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 arp', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 arp', async () => {
         await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.0.2');
       });
       expect(output).toContain('Request who-has');
@@ -722,7 +722,7 @@ describe('tcpdump Command Suite', () => {
 
     it('72. should match correct TCP flags in output representation if simulated', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -c 0 tcp');
+      const output = await pc1.executeCommand('sudo tcpdump -c 0 tcp');
       expect(output).toBeDefined();
     });
 
@@ -731,7 +731,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 tcp', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 tcp', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1'); // ICMP: does not match tcp
       });
       // Verification that the ICMP traffic is excluded from capturing
@@ -740,7 +740,7 @@ describe('tcpdump Command Suite', () => {
 
     it('74. should handle protocol-specific uppercase syntax errors', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump ICMP');
+      const output = await pc1.executeCommand('sudo tcpdump ICMP');
       expect(output).toBe("tcpdump: unknown host 'ICMP'");
     });
 
@@ -749,7 +749,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 proto 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 proto 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('10.0.0.2');
@@ -764,7 +764,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 host 10.0.0.2', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 host 10.0.0.2', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('10.0.0.2');
@@ -775,7 +775,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 src 10.0.0.2', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 src 10.0.0.2', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('10.0.0.2');
@@ -786,7 +786,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 dst 10.0.0.1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 dst 10.0.0.1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('10.0.0.1');
@@ -797,7 +797,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 net 10.0.0.0/24', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 net 10.0.0.0/24', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('10.0.0.2');
@@ -808,7 +808,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 src net 10.0.0.0/24', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 src net 10.0.0.0/24', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('10.0.0.2');
@@ -819,7 +819,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 dst net 10.0.0.0/24', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 dst net 10.0.0.0/24', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('10.0.0.1');
@@ -827,19 +827,19 @@ describe('tcpdump Command Suite', () => {
 
     it('82. should reject invalid IP address parameter in host filter', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump host 300.300.300.300');
+      const output = await pc1.executeCommand('sudo tcpdump host 300.300.300.300');
       expect(output).toBe("tcpdump: invalid IPv4 address '300.300.300.300'");
     });
 
     it('83. should reject invalid CIDR format in network filter', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump net 10.0.0.0/35');
+      const output = await pc1.executeCommand('sudo tcpdump net 10.0.0.0/35');
       expect(output).toBe('tcpdump: mask length must be <= 32');
     });
 
     it('84. should reject missing network parameter after net keyword', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump net');
+      const output = await pc1.executeCommand('sudo tcpdump net');
       expect(output.toLowerCase()).toMatch(/error|syntax/);
     });
 
@@ -848,7 +848,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 net 10.0.0.0 mask 255.255.255.0', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 net 10.0.0.0 mask 255.255.255.0', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('10.0.0.2');
@@ -856,31 +856,31 @@ describe('tcpdump Command Suite', () => {
 
     it('86. should support filtering packets by source and destination MAC addresses', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump ether src 00:11:22:33:44:55');
+      const output = await pc1.executeCommand('sudo tcpdump ether src 00:11:22:33:44:55');
       expect(output).toBeDefined();
     });
 
     it('87. should reject malformed MAC address in ether filter', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump ether src 00:11:22:33:44:ZZ');
+      const output = await pc1.executeCommand('sudo tcpdump ether src 00:11:22:33:44:ZZ');
       expect(output).toBe('tcpdump: bogus ethernet address 00:11:22:33:44:ZZ');
     });
 
     it('88. should capture multicast packets explicitly using multicast filter', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump multicast');
+      const output = await pc1.executeCommand('sudo tcpdump multicast');
       expect(output).toBeDefined();
     });
 
     it('89. should capture broadcast packets explicitly using broadcast filter', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump broadcast');
+      const output = await pc1.executeCommand('sudo tcpdump broadcast');
       expect(output).toBeDefined();
     });
 
     it('90. should reject incomplete host statements', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump host');
+      const output = await pc1.executeCommand('sudo tcpdump host');
       expect(output.toLowerCase()).toMatch(/invalid|error|syntax/);
     });
   });
@@ -893,7 +893,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 "ip and host 10.0.0.2"', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 "ip and host 10.0.0.2"', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('10.0.0.2');
@@ -904,7 +904,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 "ip && host 10.0.0.2"', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 "ip && host 10.0.0.2"', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('10.0.0.2');
@@ -915,7 +915,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 "arp or icmp"', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 "arp or icmp"', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toBeDefined();
@@ -926,7 +926,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 "not tcp"', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 "not tcp"', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).not.toContain('TCP');
@@ -937,7 +937,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -c 1 "icmp and (src 10.0.0.2 or dst 10.0.0.1)"', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 "icmp and (src 10.0.0.2 or dst 10.0.0.1)"', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output).toContain('10.0.0.2');
@@ -945,7 +945,7 @@ describe('tcpdump Command Suite', () => {
 
     it('96. should reject unmatched parentheses inside logic filter expressions', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump "icmp and (src 10.0.0.2"');
+      const output = await pc1.executeCommand('sudo tcpdump "icmp and (src 10.0.0.2"');
       expect(output.toLowerCase()).toContain('error');
     });
 
@@ -954,7 +954,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-      const output = await captureWithTraffic(pc1, 'tcpdump -w capture.pcap -c 1', async () => {
+      const output = await captureWithTraffic(pc1, 'sudo tcpdump -w capture.pcap -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
       expect(output.toLowerCase()).toContain('packet captured');
@@ -966,24 +966,24 @@ describe('tcpdump Command Suite', () => {
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
       // Create a capture file first
-      await captureWithTraffic(pc1, 'tcpdump -w capture.pcap -c 1', async () => {
+      await captureWithTraffic(pc1, 'sudo tcpdump -w capture.pcap -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
 
       // Read from the capture file
-      const output = await pc1.executeCommand('tcpdump -r capture.pcap');
+      const output = await pc1.executeCommand('sudo tcpdump -r capture.pcap');
       expect(output).toContain('reading from file capture.pcap');
     });
 
     it('99. should report file-not-found when reading non-existent capture files via -r', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -r nonexistent.pcap');
+      const output = await pc1.executeCommand('sudo tcpdump -r nonexistent.pcap');
       expect(output.toLowerCase()).toMatch(/error|no such file|not found/);
     });
 
     it('100. should ignore filter specifications if capturing file input from a different flow with conflicts', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -r nonexistent.pcap icmp');
+      const output = await pc1.executeCommand('sudo tcpdump -r nonexistent.pcap icmp');
       expect(output).toBe('tcpdump: nonexistent.pcap: No such file or directory');
     });
   });

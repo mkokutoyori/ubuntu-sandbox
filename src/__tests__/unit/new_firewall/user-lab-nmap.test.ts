@@ -60,14 +60,14 @@ async function configuredLab(): Promise<UserLab> {
 describe('user lab — nmap host discovery puts the asked-for packet on the wire', () => {
   it('-PS80 finds Server1 through policy 1, on its syn-ack', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC1.executeCommand(`nmap -PS80 --reason -p 80 ${SERVER1}`);
+    const out = await lab.PC1.executeCommand(`sudo nmap -PS80 --reason -p 80 ${SERVER1}`);
     expect(out).toMatch(/^Host is up, received syn-ack \(/m);
     expect(out).toMatch(/^80\/tcp open {2}http {4}syn-ack$/m);
   });
 
   it('-PA80 reports the host DOWN, because FW1 drops a session-less ACK', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC1.executeCommand(`nmap -PA80 --reason -p 80 ${SERVER1}`);
+    const out = await lab.PC1.executeCommand(`sudo nmap -PA80 --reason -p 80 ${SERVER1}`);
     expect(out).toContain('[host down, received no-response]');
     expect(out).toContain('Note: Host seems down. If it is really up,'
       + ' but blocking our ping probes, try -Pn');
@@ -75,30 +75,30 @@ describe('user lab — nmap host discovery puts the asked-for packet on the wire
 
   it('-PE names the ttl of the reply, two hops down from what Server1 emitted', async () => {
     const lab = await configuredLab();
-    expect(await lab.PC1.executeCommand(`nmap -PE --reason -p 80 ${SERVER1}`))
+    expect(await lab.PC1.executeCommand(`sudo nmap -PE --reason -p 80 ${SERVER1}`))
       .toMatch(/^Host is up, received echo-reply ttl 62 \(/m);
   });
 
   it('-PU on the default probe port is up on the port-unreachable it draws', async () => {
     const lab = await configuredLab();
-    expect(await lab.PC1.executeCommand(`nmap -PU --reason -p 80 ${SERVER1}`))
+    expect(await lab.PC1.executeCommand(`sudo nmap -PU --reason -p 80 ${SERVER1}`))
       .toMatch(/^Host is up, received port-unreach \(/m);
   });
 
   it('-PO is up on the protocol-unreachable RFC 1122 makes Server1 send', async () => {
     const lab = await configuredLab();
-    expect(await lab.PC1.executeCommand(`nmap -PO --reason -p 80 ${SERVER1}`))
+    expect(await lab.PC1.executeCommand(`sudo nmap -PO --reason -p 80 ${SERVER1}`))
       .toMatch(/^Host is up, received proto-unreach \(/m);
   });
 
   it('a -P form this simulator cannot build is refused by name', async () => {
     const lab = await configuredLab();
-    expect(await lab.PC1.executeCommand(`nmap -PM ${SERVER1}`))
+    expect(await lab.PC1.executeCommand(`sudo nmap -PM ${SERVER1}`))
       .toBe('nmap: option -PM: this simulator cannot build'
         + ' an ICMP address-mask request (type 17)');
-    expect(await lab.PC1.executeCommand(`nmap -PZ ${SERVER1}`))
+    expect(await lab.PC1.executeCommand(`sudo nmap -PZ ${SERVER1}`))
       .toBe('Unknown -P option -PZ.');
-    expect(await lab.PC1.executeCommand(`nmap -PS22 -PS80 ${SERVER1}`))
+    expect(await lab.PC1.executeCommand(`sudo nmap -PS22 -PS80 ${SERVER1}`))
       .toBe('Only one -PS option is allowed. Combine port ranges with commas.');
   });
 });
@@ -106,7 +106,7 @@ describe('user lab — nmap host discovery puts the asked-for packet on the wire
 describe('user lab — nmap -sL lists without touching the wire', () => {
   it('every address of the HQ range is listed, and none counts as up', async () => {
     const lab = await configuredLab();
-    const out = (await lab.PC1.executeCommand('nmap -sL 192.168.30.1-4')).split('\n');
+    const out = (await lab.PC1.executeCommand('sudo nmap -sL 192.168.30.1-4')).split('\n');
     expect(out[0]).toBe('Starting Nmap 7.94 ( https://nmap.org )');
     expect(out.slice(1, 5)).toEqual([
       'Nmap scan report for 192.168.30.1',
@@ -119,7 +119,7 @@ describe('user lab — nmap -sL lists without touching the wire', () => {
 
   it('the list carries no port table and no host-status line', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC1.executeCommand(`nmap -sL ${SERVER1}`);
+    const out = await lab.PC1.executeCommand(`sudo nmap -sL ${SERVER1}`);
     expect(out).toContain(`Nmap scan report for ${SERVER1}`);
     expect(out).not.toContain('Host is up');
     expect(out).not.toContain('PORT');
@@ -129,7 +129,7 @@ describe('user lab — nmap -sL lists without touching the wire', () => {
 describe('user lab — nmap -O across three hops', () => {
   it('the OS block carries its class, its CPEs and the hop distance', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC1.executeCommand(`nmap -O -p 80 ${SERVER1}`);
+    const out = await lab.PC1.executeCommand(`sudo nmap -O -p 80 ${SERVER1}`);
     expect(out).toMatch(/^Device type: general purpose$/m);
     expect(out).toMatch(/^Running: Linux 4\.X\|5\.X$/m);
     expect(out).toMatch(
@@ -140,7 +140,7 @@ describe('user lab — nmap -O across three hops', () => {
 
   it('the hop distance agrees with the path --traceroute walks', async () => {
     const lab = await configuredLab();
-    const trace = await lab.PC1.executeCommand(`nmap --traceroute -p 80 ${SERVER1}`);
+    const trace = await lab.PC1.executeCommand(`sudo nmap --traceroute -p 80 ${SERVER1}`);
     expect(trace).toMatch(/^1\s+[\d.]+ ms 192\.168\.1\.99$/m);
     expect(trace).toMatch(/^2\s+[\d.]+ ms 192\.168\.20\.1$/m);
     expect(trace).toMatch(/^3\s+[\d.]+ ms 192\.168\.30\.4$/m);
@@ -150,7 +150,7 @@ describe('user lab — nmap -O across three hops', () => {
 describe('user lab — nmap through and against the policy', () => {
   it('the port table names what HQ really serves', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC1.executeCommand(`nmap -p 22,80,81 ${SERVER1}`);
+    const out = await lab.PC1.executeCommand(`sudo nmap -p 22,80,81 ${SERVER1}`);
     expect(out).toMatch(/^22\/tcp open {3}ssh$/m);
     expect(out).toMatch(/^80\/tcp open {3}http$/m);
     expect(out).toMatch(/^81\/tcp closed hosts2-ns$/m);
@@ -158,14 +158,14 @@ describe('user lab — nmap through and against the policy', () => {
 
   it('-sV reads the versions of both HQ services through the NAT', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC1.executeCommand(`nmap -sV -p 22,80 ${SERVER1}`);
+    const out = await lab.PC1.executeCommand(`sudo nmap -sV -p 22,80 ${SERVER1}`);
     expect(out).toMatch(/^22\/tcp open {2}ssh {5}OpenSSH_8\.9p1 \(protocol 2\.0\)$/m);
     expect(out).toMatch(/^80\/tcp open {2}http {4}nginx 1\.24\.0$/m);
   });
 
   it('-sn reports the host without a port table', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC1.executeCommand(`nmap -sn ${SERVER1}`);
+    const out = await lab.PC1.executeCommand(`sudo nmap -sn ${SERVER1}`);
     expect(out).toMatch(/^Host is up \(/m);
     expect(out).not.toContain('PORT');
     expect(out).toMatch(/^Nmap done: 1 IP address \(1 host up\) scanned in /m);
@@ -173,7 +173,7 @@ describe('user lab — nmap through and against the policy', () => {
 
   it('a scan from HQ towards the LAN meets the implicit deny', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC3.executeCommand(`nmap -p 80 --reason ${PC1_ADDRESS}`);
+    const out = await lab.PC3.executeCommand(`sudo nmap -p 80 --reason ${PC1_ADDRESS}`);
     expect(out).toContain('[host down, received no-response]');
     expect(out).toMatch(/^Nmap done: 1 IP address \(0 hosts up\) scanned in /m);
   });
@@ -183,7 +183,7 @@ describe('user lab — nmap against FW1 own interfaces', () => {
   it('allowaccess decides: a served port is open, a refused one FILTERED, an unserved one closed', async () => {
     const lab = await configuredLab();
     const out = await lab.PC1.executeCommand(
-      `nmap -p 22,23,80,443,541 --reason ${FW1_PORT1}`);
+      `sudo nmap -p 22,23,80,443,541 --reason ${FW1_PORT1}`);
     expect(out).toMatch(/^Host is up, received arp-response \(/m);
     expect(out).toMatch(/^22\/tcp {2}open {5}ssh {5}syn-ack$/m);
     expect(out).toMatch(/^23\/tcp {2}filtered telnet {2}no-response$/m);
@@ -194,7 +194,7 @@ describe('user lab — nmap against FW1 own interfaces', () => {
 
   it('the two FW1 interfaces do not allow the same services', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC1.executeCommand(`nmap -p 22,80,443 ${FW1_PORT2}`);
+    const out = await lab.PC1.executeCommand(`sudo nmap -p 22,80,443 ${FW1_PORT2}`);
     expect(out).toMatch(/^22\/tcp {2}open {5}ssh$/m);
     expect(out).toMatch(/^80\/tcp {2}filtered http$/m);
     expect(out).toMatch(/^443\/tcp filtered https$/m);
@@ -202,7 +202,7 @@ describe('user lab — nmap against FW1 own interfaces', () => {
 
   it('FW1 is one hop away, where Server1 is three', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC1.executeCommand(`nmap -O -p 443 ${FW1_PORT1}`);
+    const out = await lab.PC1.executeCommand(`sudo nmap -O -p 443 ${FW1_PORT1}`);
     expect(out).toMatch(/^Network Distance: 1 hop$/m);
     expect(out).toMatch(/^MAC Address: [0-9A-F:]{17} \(Unknown\)$/m);
     // Le doigt de gant est une DEDUCTION PAR TTL et rien d'autre : FortiOS

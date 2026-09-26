@@ -93,7 +93,7 @@ const synsFrom = (segs: Segment[], sport: number): Segment[] =>
 
 async function sessionCapture(): Promise<{ pc: LinuxPC; srv: LinuxServer; clientSide: Segment[]; serverSide: Segment[]; journal: string }> {
   const { pc, srv } = await labo();
-  await pc.executeCommand('tcpdump -ni eth0 port 22 -w /tmp/client.pcap &');
+  await pc.executeCommand('sudo tcpdump -ni eth0 port 22 -w /tmp/client.pcap &');
   await srv.executeCommand('tcpdump -ni eth0 port 22 -w /tmp/server.pcap &');
   await pc.executeCommand(`ssh ${OPT} alice@10.0.0.2 whoami`, 'secret123\n');
   const clientSide = segments(String(await pc.executeCommand('tcpdump -nn -r /tmp/client.pcap')));

@@ -84,7 +84,7 @@ describe('un port a l ECOUTE se tait devant un segment sans SYN ni ACK', () => {
   it('le balayage FIN distingue le port ouvert du port ferme', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sF -p 22,8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sF -p 22,8888 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+open\|filtered/);
     expect(sortie).toMatch(/8888\/tcp\s+closed/);
@@ -93,7 +93,7 @@ describe('un port a l ECOUTE se tait devant un segment sans SYN ni ACK', () => {
   it('le balayage NULL fait de meme', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sN -p 22,8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sN -p 22,8888 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+open\|filtered/);
     expect(sortie).toMatch(/8888\/tcp\s+closed/);
@@ -102,7 +102,7 @@ describe('un port a l ECOUTE se tait devant un segment sans SYN ni ACK', () => {
   it('le balayage Xmas fait de meme', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sX -p 22,8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sX -p 22,8888 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+open\|filtered/);
     expect(sortie).toMatch(/8888\/tcp\s+closed/);
@@ -121,7 +121,7 @@ describe('un port a l ECOUTE se tait devant un segment sans SYN ni ACK', () => {
   it('le balayage Maimon ne distingue rien sur une pile CONFORME', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sM -p 22,8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sM -p 22,8888 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+closed/);
     expect(sortie).toMatch(/8888\/tcp\s+closed/);
@@ -130,7 +130,7 @@ describe('un port a l ECOUTE se tait devant un segment sans SYN ni ACK', () => {
   it('la RAISON rendue est le silence d un cote, le RST de l autre', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sF --reason -p 22,8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sF --reason -p 22,8888 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+open\|filtered\s+\S+\s+no-response/);
     expect(sortie).toMatch(/8888\/tcp\s+closed\s+\S+\s+reset/);
@@ -143,7 +143,7 @@ describe('les drapeaux emis sont ceux de nmap', () => {
     await taper(scanner, 'ping -c 1 10.0.0.2');
     await taper(cible, 'sudo tcpdump -i eth0 -w /tmp/xmas.pcap &');
 
-    await taper(scanner, 'nmap -Pn -sX -p 8888 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -sX -p 8888 10.0.0.2');
 
     const vu = await taper(cible, 'sudo tcpdump -r /tmp/xmas.pcap -nn');
     expect(vu).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.2\.8888: Flags \[FP\.?U\]|Flags \[FPU\]/);
@@ -154,7 +154,7 @@ describe('les drapeaux emis sont ceux de nmap', () => {
     await taper(scanner, 'ping -c 1 10.0.0.2');
     await taper(cible, 'sudo tcpdump -i eth0 -w /tmp/fin.pcap &');
 
-    await taper(scanner, 'nmap -Pn -sF -p 8888 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -sF -p 8888 10.0.0.2');
 
     const vu = await taper(cible, 'sudo tcpdump -r /tmp/fin.pcap -nn');
     expect(vu).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.2\.8888: Flags \[F\]/);
@@ -165,7 +165,7 @@ describe('les drapeaux emis sont ceux de nmap', () => {
     await taper(scanner, 'ping -c 1 10.0.0.2');
     await taper(cible, 'sudo tcpdump -i eth0 -w /tmp/disc.pcap &');
 
-    await taper(scanner, 'nmap -Pn -sF -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -sF -p 22 10.0.0.2');
 
     const vu = await taper(cible, 'sudo tcpdump -r /tmp/disc.pcap -nn');
     expect(vu).not.toMatch(/Flags \[S\]/);
@@ -187,7 +187,7 @@ describe('le balayage par FENETRE lit la fenetre du RST', () => {
   it('il ne rend jamais `unfiltered`, contrairement au balayage ACK', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sW -p 22,8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sW -p 22,8888 10.0.0.2');
 
     expect(sortie).not.toMatch(/unfiltered/);
     expect(sortie).toMatch(/22\/tcp\s+closed/);
@@ -199,7 +199,7 @@ describe('les temoins', () => {
   it('TEMOIN: le balayage connecte distingue toujours ouvert et ferme', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -p 22,8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -p 22,8888 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+open\s+ssh/);
     expect(sortie).toMatch(/8888\/tcp\s+closed/);
@@ -208,7 +208,7 @@ describe('les temoins', () => {
   it('TEMOIN: le balayage ACK rend `unfiltered` des deux cotes', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sA -p 22,8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sA -p 22,8888 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+unfiltered/);
     expect(sortie).toMatch(/8888\/tcp\s+unfiltered/);

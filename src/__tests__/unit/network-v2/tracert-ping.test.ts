@@ -858,7 +858,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('106. should use TCP SYN method instead of UDP using -T', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -T 10.0.2.10'));
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('sudo traceroute -T 10.0.2.10'));
       expect(output).toContain('traceroute to 10.0.2.10');
     });
 

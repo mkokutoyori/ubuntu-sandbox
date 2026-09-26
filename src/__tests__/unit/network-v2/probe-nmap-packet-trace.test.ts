@@ -106,7 +106,7 @@ describe('un balayage a segments montre ce qu il emet', () => {
   it('le SYN et le SYN/ACK paraissent dans la forme de nmap', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS --packet-trace -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS --packet-trace -p 22 10.0.0.2');
 
     expect(sortie).toMatch(
       /^SENT \(\d+\.\d{4}s\) TCP \[10\.0\.0\.1:\d+ > 10\.0\.0\.2:22 S seq=\d+\] IP \[ttl=\d+ id=\d+ iplen=\d+ \]$/m);
@@ -118,7 +118,7 @@ describe('un balayage a segments montre ce qu il emet', () => {
     const { scanner } = await segment();
 
     const sortie = await taper(scanner,
-      'nmap -Pn --scanflags SYNFIN --packet-trace -p 22 10.0.0.2');
+      'sudo nmap -Pn --scanflags SYNFIN --packet-trace -p 22 10.0.0.2');
 
     expect(sortie).toMatch(/> 10\.0\.0\.2:22 SF seq=/);
     expect(sortie).not.toMatch(/> 10\.0\.0\.2:22 FS seq=/);
@@ -127,7 +127,7 @@ describe('un balayage a segments montre ce qu il emet', () => {
   it('la trace precede le rapport', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS --packet-trace -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS --packet-trace -p 22 10.0.0.2');
 
     const premiere = sortie.split('\n').findIndex((l) => /^SENT \(/.test(l));
     const rapport = sortie.split('\n').findIndex((l) => l.startsWith('Nmap scan report'));
@@ -140,7 +140,7 @@ describe('la resolution de couche lien parait aussi', () => {
   it('la demande et la reponse ARP, la MAC en majuscules', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap --packet-trace -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap --packet-trace -p 22 10.0.0.2');
 
     expect(sortie).toMatch(
       /^SENT \(\d+\.\d{4}s\) ARP who-has 10\.0\.0\.2 tell 10\.0\.0\.1$/m);
@@ -153,7 +153,7 @@ describe('un balayage CONNECTE ne montre que ses appels', () => {
   it('un port ouvert rend `Connected`', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sT --packet-trace -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sT --packet-trace -p 22 10.0.0.2');
 
     expect(sortie).toMatch(
       /^CONN \(\d+\.\d{4}s\) TCP localhost > 10\.0\.0\.2:22 => Connected$/m);
@@ -162,7 +162,7 @@ describe('un balayage CONNECTE ne montre que ses appels', () => {
   it('un port ferme rend le message de l errno', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sT --packet-trace -p 8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sT --packet-trace -p 8888 10.0.0.2');
 
     expect(sortie).toMatch(
       /^CONN \(\d+\.\d{4}s\) TCP localhost > 10\.0\.0\.2:8888 => Connection refused$/m);
@@ -171,8 +171,8 @@ describe('un balayage CONNECTE ne montre que ses appels', () => {
   it('et AUCUNE ligne de segment pour ces sondes', async () => {
     const { scanner } = await segment();
 
-    const connecte = await taper(scanner, 'nmap -Pn -sT --packet-trace -p 22 10.0.0.2');
-    const demiOuvert = await taper(scanner, 'nmap -Pn -sS --packet-trace -p 22 10.0.0.2');
+    const connecte = await taper(scanner, 'sudo nmap -Pn -sT --packet-trace -p 22 10.0.0.2');
+    const demiOuvert = await taper(scanner, 'sudo nmap -Pn -sS --packet-trace -p 22 10.0.0.2');
 
     // La decouverte de couche lien, elle, reste visible des deux cotes :
     // c'est `nmap` qui l'emet, pas le noyau.
@@ -186,7 +186,7 @@ describe('la decouverte par echo se montre aussi', () => {
     const { scanner } = await segment();
 
     const sortie = await taper(scanner,
-      'nmap --disable-arp-ping -sn --packet-trace 10.0.0.2');
+      'sudo nmap --disable-arp-ping -sn --packet-trace 10.0.0.2');
 
     expect(sortie).toMatch(
       /^SENT \(\d+\.\d{4}s\) ICMP \[10\.0\.0\.1 > 10\.0\.0\.2 Echo request \(type=8\/code=0\) id=\d+ seq=\d+\] IP \[ttl=\d+ id=\d+ iplen=\d+ \]$/m);
@@ -199,7 +199,7 @@ describe('le niveau de debogage l allume tout seul', () => {
   it('`-d3` trace sans que l option soit ecrite', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS -d3 -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS -d3 -p 22 10.0.0.2');
 
     expect(traces(sortie).some((l) => l.includes('TCP ['))).toBe(true);
   });
@@ -207,7 +207,7 @@ describe('le niveau de debogage l allume tout seul', () => {
   it('`-d` seul ne suffit pas, il ne monte que d un cran', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS -d -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS -d -p 22 10.0.0.2');
 
     expect(traces(sortie)).toHaveLength(0);
   });
@@ -215,7 +215,7 @@ describe('le niveau de debogage l allume tout seul', () => {
   it('`-ddd` monte de trois crans et suffit', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS -ddd -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS -ddd -p 22 10.0.0.2');
 
     expect(traces(sortie).some((l) => l.includes('TCP ['))).toBe(true);
   });
@@ -225,8 +225,8 @@ describe('les temoins', () => {
   it('TEMOIN: sans l option, aucune ligne de trace', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS --packet-trace -p 22 10.0.0.2');
-    const sans = await taper(scanner, 'nmap -Pn -sS -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS --packet-trace -p 22 10.0.0.2');
+    const sans = await taper(scanner, 'sudo nmap -Pn -sS -p 22 10.0.0.2');
 
     expect(traces(sortie).length).toBeGreaterThan(0);
     expect(traces(sans)).toHaveLength(0);
@@ -235,7 +235,7 @@ describe('les temoins', () => {
   it('TEMOIN: le rapport lui-meme ne change pas', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS --packet-trace -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS --packet-trace -p 22 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+open\s+ssh/);
     expect(sortie).not.toContain('not implemented');

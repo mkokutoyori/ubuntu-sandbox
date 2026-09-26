@@ -56,7 +56,7 @@ function packets(out: string): string[] {
 describe('user lab — tcpdump on the HQ side', () => {
   it('Server1 sees PC1\'s handshake from FW1\'s NAT address, ISNs absolute with -S', async () => {
     const lab = await configuredLab();
-    const out = await captureWhile(lab.Server1, 'tcpdump -c 3 -nn -S -i eth0 tcp port 80',
+    const out = await captureWhile(lab.Server1, 'sudo tcpdump -c 3 -nn -S -i eth0 tcp port 80',
       () => lab.PC1.executeCommand(`curl -s -o /dev/null http://${SERVER1}/`));
     const [syn, synAck, ack] = packets(out);
     expect(syn).toMatch(/IP 192\.168\.20\.2\.(\d+) > 192\.168\.30\.4\.80: Flags \[S\], seq (\d+), win \d+, options \[mss 1460,sackOK,TS val \d+ ecr 0,wscale 7\], length 0$/);
@@ -67,7 +67,7 @@ describe('user lab — tcpdump on the HQ side', () => {
 
   it('without -n the service is named from /etc/services and the unresolved address stays numeric', async () => {
     const lab = await configuredLab();
-    const out = await captureWhile(lab.Server1, 'tcpdump -c 1 -i eth0 tcp port 80',
+    const out = await captureWhile(lab.Server1, 'sudo tcpdump -c 1 -i eth0 tcp port 80',
       () => lab.PC1.executeCommand(`curl -s -o /dev/null http://${SERVER1}/`));
     expect(packets(out)[0]).toMatch(/IP 192\.168\.20\.2\.\d+ > 192\.168\.30\.4\.http: Flags \[S\], seq \d+,/);
   });
@@ -75,16 +75,16 @@ describe('user lab — tcpdump on the HQ side', () => {
   it('a filter names a service and an /etc/hosts entry the way libpcap resolves them', async () => {
     const lab = await configuredLab();
     await lab.Server1.executeCommand("bash -c 'echo \"192.168.30.2 winserver1\" >> /etc/hosts'");
-    const out = await captureWhile(lab.Server1, 'tcpdump -c 1 -i eth0 icmp and host winserver1',
+    const out = await captureWhile(lab.Server1, 'sudo tcpdump -c 1 -i eth0 icmp and host winserver1',
       () => lab.WinServer1.executeCommand(`ping -n 1 ${SERVER1}`));
     expect(packets(out)[0]).toMatch(/IP winserver1 > 192\.168\.30\.4: ICMP echo request, id \d+, seq 1, length 40$/);
-    expect(await lab.Server1.executeCommand('tcpdump -i eth0 host nosuchhost'))
+    expect(await lab.Server1.executeCommand('sudo tcpdump -i eth0 host nosuchhost'))
       .toBe("tcpdump: unknown host 'nosuchhost'");
   });
 
   it('-i any captures in Linux cooked v2, each line naming the interface and the direction', async () => {
     const lab = await configuredLab();
-    const out = await captureWhile(lab.Server1, 'tcpdump -i any -c 2 -n icmp',
+    const out = await captureWhile(lab.Server1, 'sudo tcpdump -i any -c 2 -n icmp',
       () => lab.WinServer1.executeCommand(`ping -n 1 ${SERVER1}`));
     expect(out).toContain('listening on any, link-type LINUX_SLL2 (Linux cooked v2), snapshot length 262144 bytes');
     const [request, reply] = packets(out);
@@ -95,7 +95,7 @@ describe('user lab — tcpdump on the HQ side', () => {
   it('-e names Broadcast and the unknown OUI, and prints captured lengths, not wire lengths', async () => {
     const lab = await configuredLab();
     await lab.PC3.executeCommand('ip neigh flush all');
-    const out = await captureWhile(lab.PC3, 'tcpdump -e -c 2 arp',
+    const out = await captureWhile(lab.PC3, 'sudo tcpdump -e -c 2 arp',
       () => lab.PC3.executeCommand(`ping -c 1 ${WINSERVER1}`));
     const [request, reply] = packets(out);
     expect(request).toMatch(/ ([0-9a-f:]{17}) \(oui Unknown\) > Broadcast, ethertype ARP \(0x0806\), length 42: ARP, Request who-has 192\.168\.30\.2 tell 192\.168\.30\.3, length 28$/);
@@ -104,18 +104,18 @@ describe('user lab — tcpdump on the HQ side', () => {
 
   it('-w -C -W writes a numbered ring file that -r --count reads back', async () => {
     const lab = await configuredLab();
-    const out = await captureWhile(lab.Server1, 'tcpdump -i eth0 -w /tmp/ring.pcap -C 1 -W 3 -c 2 icmp',
+    const out = await captureWhile(lab.Server1, 'sudo tcpdump -i eth0 -w /tmp/ring.pcap -C 1 -W 3 -c 2 icmp',
       () => lab.WinServer1.executeCommand(`ping -n 1 ${SERVER1}`));
     expect(out).toBe('tcpdump: listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes\n'
       + '2 packets captured\n2 packets received by filter\n0 packets dropped by kernel');
     expect(await lab.Server1.executeCommand('ls /tmp/ring.pcap0')).toBe('/tmp/ring.pcap0');
-    expect(await lab.Server1.executeCommand('tcpdump -r /tmp/ring.pcap0 --count'))
+    expect(await lab.Server1.executeCommand('sudo tcpdump -r /tmp/ring.pcap0 --count'))
       .toBe('reading from file /tmp/ring.pcap0, link-type EN10MB (Ethernet), snapshot length 262144\n2 packets');
   });
 
   it('-D orders the interfaces the way libpcap ranks them', async () => {
     const lab = await configuredLab();
-    expect(await lab.Server1.executeCommand('tcpdump -D')).toBe([
+    expect(await lab.Server1.executeCommand('sudo tcpdump -D')).toBe([
       '1.eth0 [Up, Running, Connected]',
       '2.any (Pseudo-device that captures on all interfaces) [Up, Running]',
       '3.lo [Up, Running, Loopback]',

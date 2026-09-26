@@ -97,7 +97,7 @@ describe('`-v` nomme les PHASES du balayage', () => {
   it('un seul port se dit au SINGULIER', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -v -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -v -p 22 10.0.0.2');
 
     expect(sortie).toContain('Scanning 10.0.0.2 [1 port]');
     expect(sortie).not.toContain('[1 ports]');
@@ -106,7 +106,7 @@ describe('`-v` nomme les PHASES du balayage', () => {
   it('la decouverte par ARP est une phase A PART', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -v -sn 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -v -sn 10.0.0.2');
 
     expect(sortie).toMatch(/Initiating ARP Ping Scan at \d{2}:\d{2}/);
     expect(sortie).toMatch(/Completed ARP Ping Scan at \d{2}:\d{2}, \d+\.\d{2}s elapsed \(1 total host\)/);
@@ -129,7 +129,7 @@ describe('`-v` nomme les PHASES du balayage', () => {
     await taper(cible, 'ip link set eth0 up', 'ip addr add 10.0.1.1/24 dev eth0',
       'ip route add default via 10.0.1.254');
 
-    const sortie = await taper(scanner, 'nmap -v -sn 10.0.1.1');
+    const sortie = await taper(scanner, 'sudo nmap -v -sn 10.0.1.1');
 
     expect(sortie).toMatch(/Initiating Ping Scan at \d{2}:\d{2}/);
     expect(sortie).not.toContain('ARP Ping Scan');
@@ -138,19 +138,19 @@ describe('`-v` nomme les PHASES du balayage', () => {
   it('chaque balayage porte le nom que `scantype2str` lui donne', async () => {
     const { scanner } = await segment();
 
-    const syn = await taper(scanner, 'nmap -v -sS -p 22 10.0.0.2');
+    const syn = await taper(scanner, 'sudo nmap -v -sS -p 22 10.0.0.2');
     expect(syn).toContain('Initiating SYN Stealth Scan');
 
-    const xmas = await taper(scanner, 'nmap -v -sX -p 22 10.0.0.2');
+    const xmas = await taper(scanner, 'sudo nmap -v -sX -p 22 10.0.0.2');
     expect(xmas).toContain('Initiating XMAS Scan');
 
-    const maimon = await taper(scanner, 'nmap -v -sM -p 22 10.0.0.2');
+    const maimon = await taper(scanner, 'sudo nmap -v -sM -p 22 10.0.0.2');
     expect(maimon).toContain('Initiating Maimon Scan');
 
-    const fenetre = await taper(scanner, 'nmap -v -sW -p 22 10.0.0.2');
+    const fenetre = await taper(scanner, 'sudo nmap -v -sW -p 22 10.0.0.2');
     expect(fenetre).toContain('Initiating Window Scan');
 
-    const udp = await taper(scanner, 'nmap -v -sU -p 53 10.0.0.2');
+    const udp = await taper(scanner, 'sudo nmap -v -sU -p 53 10.0.0.2');
     expect(udp).toContain('Initiating UDP Scan');
   });
 
@@ -168,7 +168,7 @@ describe('`-v` rapporte aussi ce qui est MORT', () => {
   it('un hote injoignable est rapporte sous `-sn -v`', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -v -sn 10.0.0.77');
+    const sortie = await taper(scanner, 'sudo nmap -v -sn 10.0.0.77');
 
     expect(sortie).toContain('Nmap scan report for 10.0.0.77 [host down]');
   });
@@ -176,7 +176,7 @@ describe('`-v` rapporte aussi ce qui est MORT', () => {
   it('TEMOIN: sans `-v`, le meme hote n est pas liste', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn 10.0.0.77');
+    const sortie = await taper(scanner, 'sudo nmap -sn 10.0.0.77');
 
     expect(sortie).not.toContain('10.0.0.77');
     expect(sortie).toContain('(0 hosts up)');
@@ -187,7 +187,7 @@ describe('les temoins', () => {
   it('TEMOIN: sans `-v`, aucune ligne de phase ne parait', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -p 22,8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -p 22,8888 10.0.0.2');
 
     expect(sortie).not.toContain('Initiating');
     expect(sortie).not.toContain('Scanning');
@@ -197,7 +197,7 @@ describe('les temoins', () => {
   it('TEMOIN: `-v` ne change RIEN au verdict des ports', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -v -p 22,8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -v -p 22,8888 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+open\s+ssh/);
     expect(sortie).toMatch(/8888\/tcp\s+closed/);

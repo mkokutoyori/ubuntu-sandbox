@@ -35,7 +35,7 @@ export async function runNmap(host: ScanHost, args: string[]): Promise<NmapRunRe
 
   let options;
   try {
-    options = parseNmapArgs(args);
+    options = parseNmapArgs(args, host.privileged);
   } catch (e) {
     // Une option refusee n'est pas un balayage rate, c'est un balayage
     // qui n'a pas eu lieu : rien n'est emis et aucun fichier n'est ecrit.

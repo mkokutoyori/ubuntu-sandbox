@@ -1,9 +1,7 @@
-import type { NmapOptions } from './NmapOptions';
+import { NMAP_BANNER, type NmapOptions } from './NmapOptions';
 import type { HostReport, NmapReport, PortResult } from './ScanEngine';
 import { renderPhase } from './ScanPhases';
 import { renderTrace } from './Traceroute';
-
-const NMAP_BANNER = 'Starting Nmap 7.94 ( https://nmap.org )';
 
 /**
  * `num_to_string_sigdigits` (`output.cc:1362`) : arrondir a la puissance
@@ -156,10 +154,7 @@ function tally(report: NmapReport): string {
 }
 
 export function renderNormal(report: NmapReport, options: NmapOptions, _commandLine: string): string {
-  // `error()` ecrit sur la sortie d'erreur, donc AVANT la banniere : les
-  // trois controles qui les produisent (`nmap.cc:1088`, `1535`, `1833`)
-  // precedent tous l'ouverture du journal.
-  const lines: string[] = [...options.warnings, NMAP_BANNER];
+  const lines: string[] = [...options.warnings, NMAP_BANNER, ...options.lateWarnings];
   for (const target of report.unresolved) lines.push(`Failed to resolve "${target}".`);
   if (options.verbose) {
     const at = new Date(report.startedAt);

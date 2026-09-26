@@ -35,7 +35,7 @@ describe('tcpdump — unified command routing (PRD-tcpdump.md P1)', () => {
     await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
     await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-    const piped = await captureWithTraffic(pc1, 'tcpdump -c 1 -nn icmp | grep ICMP', async () => {
+    const piped = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 -nn icmp | grep ICMP', async () => {
       await pc1.executeCommand('ping -c 1 10.0.0.2');
     });
     expect(piped).toContain('ICMP echo request');
@@ -46,7 +46,7 @@ describe('tcpdump — unified command routing (PRD-tcpdump.md P1)', () => {
     await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
     await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-    const output = await captureWithTraffic(pc1, 'tcpdump -c 1 -nn icmp > /tmp/out.txt; cat /tmp/out.txt', async () => {
+    const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 -nn icmp > /tmp/out.txt; cat /tmp/out.txt', async () => {
       await pc1.executeCommand('ping -c 1 10.0.0.2');
     });
     expect(output).toContain('ICMP echo request');
@@ -57,7 +57,7 @@ describe('tcpdump — unified command routing (PRD-tcpdump.md P1)', () => {
     await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
     await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-    const output = await captureWithTraffic(pc1, 'tcpdump -c 1 "icmp and host 10.0.0.2"', async () => {
+    const output = await captureWithTraffic(pc1, 'sudo tcpdump -c 1 "icmp and host 10.0.0.2"', async () => {
       await pc1.executeCommand('ping -c 1 10.0.0.2');
     });
     expect(output).toContain('ICMP echo request');
@@ -65,7 +65,7 @@ describe('tcpdump — unified command routing (PRD-tcpdump.md P1)', () => {
 
   it('--help still renders real usage text mentioning -i and -c through the registered-command dispatch', async () => {
     const { pc1 } = setupLAN();
-    const output = await pc1.executeCommand('tcpdump --help');
+    const output = await pc1.executeCommand('sudo tcpdump --help');
     expect(output).toContain('Usage: tcpdump');
     expect(output).toContain('-i');
     expect(output).toContain('-c');

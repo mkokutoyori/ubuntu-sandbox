@@ -73,40 +73,40 @@ async function directLink(): Promise<{ pc: LinuxPC; srv: LinuxServer }> {
 describe('hping3', () => {
   it('a SYN to an open port is answered', async () => {
     const { pc } = await directLink();
-    const out = await pc.executeCommand('hping3 -S -p 80 -c 1 10.0.0.2');
+    const out = await pc.executeCommand('sudo hping3 -S -p 80 -c 1 10.0.0.2');
     expect(out).toContain('HPING 10.0.0.2 (eth0 10.0.0.2): S set, 40 headers + 0 data bytes');
     expect(out).toContain('1 packets transmitted, 1 packets received, 0% packet loss');
   });
 
   it('an ACK with no prior SYN is dropped by the stateful firewall', async () => {
     const { pc } = await throughFirewall();
-    const out = await pc.executeCommand('hping3 -A -p 80 -c 1 203.0.113.10');
+    const out = await pc.executeCommand('sudo hping3 -A -p 80 -c 1 203.0.113.10');
     expect(out).toContain('A set, 40 headers + 0 data bytes');
     expect(out).toContain('1 packets transmitted, 0 packets received, 100% packet loss');
   });
 
   it('a closed port answers with a RST', async () => {
     const { pc } = await directLink();
-    const out = await pc.executeCommand('hping3 -S -p 81 -c 1 10.0.0.2');
+    const out = await pc.executeCommand('sudo hping3 -S -p 81 -c 1 10.0.0.2');
     expect(out).toContain('1 packets transmitted, 1 packets received, 0% packet loss');
   });
 
   it('a forged source gets no reply', async () => {
     const { pc } = await throughFirewall();
-    const out = await pc.executeCommand('hping3 -a 203.0.113.88 -1 -c 1 203.0.113.10');
+    const out = await pc.executeCommand('sudo hping3 -a 203.0.113.88 -1 -c 1 203.0.113.10');
     expect(out).toContain('icmp mode set, 28 headers + 0 data bytes');
     expect(out).toContain('1 packets transmitted, 0 packets received, 100% packet loss');
   });
 
   it('a land attack (source = destination) gets no reply', async () => {
     const { pc } = await throughFirewall();
-    const out = await pc.executeCommand('hping3 -a 203.0.113.10 -S -p 80 -c 1 203.0.113.10');
+    const out = await pc.executeCommand('sudo hping3 -a 203.0.113.10 -S -p 80 -c 1 203.0.113.10');
     expect(out).toContain('100% packet loss');
   });
 
   it('an ICMP echo to a reachable host is answered', async () => {
     const { pc } = await directLink();
-    const out = await pc.executeCommand('hping3 -1 -c 2 10.0.0.2');
+    const out = await pc.executeCommand('sudo hping3 -1 -c 2 10.0.0.2');
     expect(out).toContain('2 packets transmitted, 2 packets received, 0% packet loss');
   });
 });

@@ -19,7 +19,7 @@ const type = async (d: Cli, lines: readonly string[]) => {
 };
 
 async function collectorFor(device: Cli, stimulus: readonly string[]): Promise<string> {
-  const pending = (collector as unknown as Cli).executeCommand('tcpdump -nn -e -c 1 udp port 514');
+  const pending = (collector as unknown as Cli).executeCommand('sudo tcpdump -nn -e -c 1 udp port 514');
   await new Promise((r) => setTimeout(r, 20));
   await type(device, stimulus);
   await new Promise((r) => setTimeout(r, 40));

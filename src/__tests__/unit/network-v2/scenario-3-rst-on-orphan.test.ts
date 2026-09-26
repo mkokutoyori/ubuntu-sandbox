@@ -78,7 +78,7 @@ describe('Scenario 3 — RST on packets to a port whose service was killed', () 
     const clientStack = client.getTcpStack();
     serverStack.listen(7001, { onAccept: () => undefined });
 
-    const pending = client.executeCommand('tcpdump -n -c 5 port 7001');
+    const pending = client.executeCommand('sudo tcpdump -n -c 5 port 7001');
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     const clientSocket = clientStack.connect('10.0.0.2', 7001);

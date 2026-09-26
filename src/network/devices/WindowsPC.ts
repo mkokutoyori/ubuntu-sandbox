@@ -4223,6 +4223,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private scanHost(): ScanHost {
     return {
+      privileged: true,
       device: this,
       readFile: (p) => {
         const r = this.fs.readFile(this.fs.normalizePath(p, this.cwd));

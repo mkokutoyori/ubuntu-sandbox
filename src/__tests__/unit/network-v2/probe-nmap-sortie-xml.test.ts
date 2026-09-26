@@ -104,7 +104,7 @@ describe('le fichier XML existe et porte la forme de nmap', () => {
   it('la declaration, le DOCTYPE et la racine', async () => {
     const { scanner } = await segment();
 
-    await taper(scanner, 'nmap -Pn -oX sortie.xml -p 22,80 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -oX sortie.xml -p 22,80 10.0.0.2');
     const xml = await taper(scanner, 'cat sortie.xml');
 
     const lignes = xml.split('\n');
@@ -117,7 +117,7 @@ describe('le fichier XML existe et porte la forme de nmap', () => {
   it('le commentaire d en-tete reprend la ligne de commande', async () => {
     const { scanner } = await segment();
 
-    await taper(scanner, 'nmap -Pn -oX sortie.xml -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -oX sortie.xml -p 22 10.0.0.2');
     const xml = await taper(scanner, 'cat sortie.xml');
 
     expect(xml).toMatch(
@@ -127,7 +127,7 @@ describe('le fichier XML existe et porte la forme de nmap', () => {
   it('la feuille de style est l URL relative que nmap emet faute de fichier', async () => {
     const { scanner } = await segment();
 
-    await taper(scanner, 'nmap -Pn -oX sortie.xml -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -oX sortie.xml -p 22 10.0.0.2');
     const xml = await taper(scanner, 'cat sortie.xml');
 
     expect(xml.split('\n')[2]).toBe('<?xml-stylesheet href="nmap.xsl" type="text/xsl"?>');
@@ -136,8 +136,8 @@ describe('le fichier XML existe et porte la forme de nmap', () => {
   it('--no-stylesheet la supprime et --webxml la pointe chez nmap.org', async () => {
     const { scanner } = await segment();
 
-    await taper(scanner, 'nmap -Pn --no-stylesheet -oX sans.xml -p 22 10.0.0.2');
-    await taper(scanner, 'nmap -Pn --webxml -oX web.xml -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn --no-stylesheet -oX sans.xml -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn --webxml -oX web.xml -p 22 10.0.0.2');
 
     expect(await taper(scanner, 'cat sans.xml')).not.toContain('xml-stylesheet');
     expect(await taper(scanner, 'cat web.xml')).toContain(
@@ -159,8 +159,8 @@ describe('le XML decrit le balayage et l hote', () => {
   it('un balayage SYN et un balayage UDP se nomment par leur type', async () => {
     const { scanner } = await segment();
 
-    await taper(scanner, 'nmap -Pn -sS -oX syn.xml -p 22 10.0.0.2');
-    await taper(scanner, 'nmap -Pn -sU -oX udp.xml -p 53 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -sS -oX syn.xml -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -sU -oX udp.xml -p 53 10.0.0.2');
 
     expect(await taper(scanner, 'cat syn.xml')).toContain('<scaninfo type="syn" protocol="tcp"');
     expect(await taper(scanner, 'cat udp.xml')).toContain('<scaninfo type="udp" protocol="udp"');
@@ -169,7 +169,7 @@ describe('le XML decrit le balayage et l hote', () => {
   it('l etat de l hote porte toujours sa raison et son TTL', async () => {
     const { scanner } = await segment();
 
-    await taper(scanner, 'nmap -oX sortie.xml -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -oX sortie.xml -p 22 10.0.0.2');
     const xml = await taper(scanner, 'cat sortie.xml');
 
     expect(xml).toMatch(/<host starttime="\d+" endtime="\d+"><status state="up" reason="\S+" reason_ttl="\d+"\/>/);
@@ -180,7 +180,7 @@ describe('le XML decrit le balayage et l hote', () => {
   it('un port ouvert porte son etat et son service sur la meme ligne', async () => {
     const { scanner } = await segment();
 
-    await taper(scanner, 'nmap -Pn -oX sortie.xml -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -oX sortie.xml -p 22 10.0.0.2');
     const xml = await taper(scanner, 'cat sortie.xml');
 
     // `xml_start_tag("ports")` n'est suivi d'AUCUN retour a la ligne, donc
@@ -192,7 +192,7 @@ describe('le XML decrit le balayage et l hote', () => {
   it('l identification de version passe la methode a probed', async () => {
     const { scanner } = await segment();
 
-    await taper(scanner, 'nmap -Pn -sV -oX sortie.xml -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -sV -oX sortie.xml -p 22 10.0.0.2');
     const xml = await taper(scanner, 'cat sortie.xml');
 
     expect(xml).toMatch(/<service name="ssh"[^>]*method="probed" conf="10"\/>/);
@@ -201,7 +201,7 @@ describe('le XML decrit le balayage et l hote', () => {
   it('les temps sont en microsecondes', async () => {
     const { scanner } = await segment();
 
-    await taper(scanner, 'nmap -oX sortie.xml -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -oX sortie.xml -p 22 10.0.0.2');
     const xml = await taper(scanner, 'cat sortie.xml');
 
     const m = /<times srtt="(\d+)" rttvar="(\d+)" to="(\d+)"\/>/.exec(xml);
@@ -213,7 +213,7 @@ describe('le XML decrit le balayage et l hote', () => {
   it('runstats compte les hotes et clot le document', async () => {
     const { scanner } = await segment();
 
-    await taper(scanner, 'nmap -Pn -oX sortie.xml -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -oX sortie.xml -p 22 10.0.0.2');
     const xml = await taper(scanner, 'cat sortie.xml');
 
     expect(xml).toMatch(/<runstats><finished time="\d+" timestr="[^"]+" summary="Nmap done at [^"]+; 1 IP address \(1 host up\) scanned in [\d.]+ seconds" elapsed="[\d.]+" exit="success"\/><hosts up="1" down="0" total="1"\/>/);
@@ -224,7 +224,7 @@ describe('les ports replies gardent leur raison', () => {
   it('la ligne humaine nomme le protocole et la raison', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -p 1-100 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -p 1-100 10.0.0.2');
 
     expect(sortie).toMatch(/^Not shown: \d+ closed tcp ports \(reset\)$/m);
   });
@@ -232,7 +232,7 @@ describe('les ports replies gardent leur raison', () => {
   it('un seul port replie se dit au singulier', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn --open -p 22,81 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn --open -p 22,81 10.0.0.2');
 
     expect(sortie).toMatch(/^Not shown: 1 closed tcp port \(reset\)$/m);
   });
@@ -240,7 +240,7 @@ describe('les ports replies gardent leur raison', () => {
   it('extraports et extrareasons portent le compte et la liste', async () => {
     const { scanner } = await segment();
 
-    await taper(scanner, 'nmap -Pn --open -oX sortie.xml -p 22,81,82 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn --open -oX sortie.xml -p 22,81,82 10.0.0.2');
     const xml = await taper(scanner, 'cat sortie.xml');
 
     expect(xml).toContain('<extraports state="closed" count="2">');
@@ -254,7 +254,7 @@ describe('les trois fichiers de -oA', () => {
   it('-oA ecrit le XML en plus du normal et du greppable', async () => {
     const { scanner } = await segment();
 
-    await taper(scanner, 'nmap -Pn -oA balayage -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -oA balayage -p 22 10.0.0.2');
     const liste = await taper(scanner, 'ls');
 
     expect(liste).toContain('balayage.nmap');
@@ -265,7 +265,7 @@ describe('les trois fichiers de -oA', () => {
   it('-oN reste ce qu il etait', async () => {
     const { scanner } = await segment();
 
-    await taper(scanner, 'nmap -Pn -oN normal.txt -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -oN normal.txt -p 22 10.0.0.2');
     const normal = await taper(scanner, 'cat normal.txt');
 
     expect(normal).toContain('Nmap scan report for 10.0.0.2');
@@ -277,7 +277,7 @@ describe('un hote mort et un nom resolu', () => {
   it('un hote qui ne repond pas est down et ne porte aucun port', async () => {
     const { scanner } = await segment();
 
-    await taper(scanner, 'nmap -oX mort.xml -p 22 10.0.0.44');
+    await taper(scanner, 'sudo nmap -oX mort.xml -p 22 10.0.0.44');
     const xml = await taper(scanner, 'cat mort.xml');
 
     expect(xml).toMatch(/<status state="down" reason="no-response" reason_ttl="0"\/>/);
@@ -289,7 +289,7 @@ describe('un hote mort et un nom resolu', () => {
     const { scanner } = await segment();
     await taper(scanner, 'sudo sh -c "echo 10.0.0.2 cible.lab >> /etc/hosts"');
 
-    await taper(scanner, 'nmap -Pn -oX nomme.xml -p 22 cible.lab');
+    await taper(scanner, 'sudo nmap -Pn -oX nomme.xml -p 22 cible.lab');
     const xml = await taper(scanner, 'cat nomme.xml');
 
     // `write_xml_initial_hostinfo` ecrit les DEUX noms sans les comparer

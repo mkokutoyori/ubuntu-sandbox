@@ -78,7 +78,7 @@ describe('Scénario 9 — Analyse des messages ICMP avancés avec tcpdump natif'
       await configureLab(lab);
 
       const pending = lab.attacker.executeCommand(
-        `tcpdump -i eth0 -nn -vvv 'icmp or (udp and portrange 33434-33534)' -w /tmp/traceroute.pcap`,
+        `sudo tcpdump -i eth0 -nn -vvv 'icmp or (udp and portrange 33434-33534)' -w /tmp/traceroute.pcap`,
       );
       await new Promise((r) => setTimeout(r, 20));
       await lab.attacker.executeCommand(`traceroute -n ${TARGET_IP}`);
@@ -86,7 +86,7 @@ describe('Scénario 9 — Analyse des messages ICMP avancés avec tcpdump natif'
       await pending;
 
       const analysis = await lab.attacker.executeCommand(
-        `tcpdump -nn -vvv -r /tmp/traceroute.pcap | grep -A 3 'time exceeded'`,
+        `sudo tcpdump -nn -vvv -r /tmp/traceroute.pcap | grep -A 3 'time exceeded'`,
       );
       expect(analysis).toMatch(/time exceeded in-transit/);
       // Type 11 code 0 is exactly what real tcpdump renders as "time exceeded
@@ -104,14 +104,14 @@ describe('Scénario 9 — Analyse des messages ICMP avancés avec tcpdump natif'
       await configureLab(lab);
 
       const pending = lab.attacker.executeCommand(
-        `tcpdump -i eth0 -nn -vvv 'icmp or (udp and portrange 33434-33534)' -w /tmp/traceroute2.pcap`,
+        `sudo tcpdump -i eth0 -nn -vvv 'icmp or (udp and portrange 33434-33534)' -w /tmp/traceroute2.pcap`,
       );
       await new Promise((r) => setTimeout(r, 20));
       await lab.attacker.executeCommand(`traceroute -n ${TARGET_IP}`);
       await new Promise((r) => setTimeout(r, 30));
       await pending;
 
-      const full = await lab.attacker.executeCommand(`tcpdump -nn -vvv -r /tmp/traceroute2.pcap`);
+      const full = await lab.attacker.executeCommand(`sudo tcpdump -nn -vvv -r /tmp/traceroute2.pcap`);
       const lines = dataLines(full);
 
       // TTL croissant sur les échos sortants de l'attaquant — le TTL est sur
@@ -154,21 +154,21 @@ describe('Scénario 9 — Analyse des messages ICMP avancés avec tcpdump natif'
       await lab.r1.executeCommand('end');
 
       const pending = lab.attacker.executeCommand(
-        `tcpdump -i eth0 -nn -vvv 'icmp[icmptype] == 3 and icmp[icmpcode] == 4' -w /tmp/pmtud.pcap`,
+        `sudo tcpdump -i eth0 -nn -vvv 'icmp[icmptype] == 3 and icmp[icmpcode] == 4' -w /tmp/pmtud.pcap`,
       );
       await new Promise((r) => setTimeout(r, 20));
       await lab.attacker.executeCommand(`ping -M do -s 1000 -c 3 ${TARGET_IP}`);
       await new Promise((r) => setTimeout(r, 30));
       await pending;
 
-      const analysis = await lab.attacker.executeCommand(`tcpdump -nn -vvv -r /tmp/pmtud.pcap`);
+      const analysis = await lab.attacker.executeCommand(`sudo tcpdump -nn -vvv -r /tmp/pmtud.pcap`);
       expect(analysis).not.toMatch(/tcpdump: error/);
       const lines = dataLines(analysis).filter((l) => l.trim().length > 0);
       expect(lines.length).toBeGreaterThan(0);
       expect(analysis).toMatch(new RegExp(`${R1_NEAR_IP} > ${ATTACKER_IP}: ICMP ${TARGET_IP} unreachable - need to frag \\(mtu 576\\)`));
 
       const grep = await lab.attacker.executeCommand(
-        `tcpdump -nn -vvv -r /tmp/pmtud.pcap | awk '/unreachable/ || /frag/ || /mtu/ {print}'`,
+        `sudo tcpdump -nn -vvv -r /tmp/pmtud.pcap | awk '/unreachable/ || /frag/ || /mtu/ {print}'`,
       );
       expect(grep).toMatch(/need to frag \(mtu 576\)/);
     });
@@ -180,7 +180,7 @@ describe('Scénario 9 — Analyse des messages ICMP avancés avec tcpdump natif'
       await configureLab(lab);
 
       const pending = lab.attacker.executeCommand(
-        `tcpdump -i eth0 -nn -vvv 'icmp[icmptype] == 3' -w /tmp/unreach.pcap`,
+        `sudo tcpdump -i eth0 -nn -vvv 'icmp[icmptype] == 3' -w /tmp/unreach.pcap`,
       );
       await new Promise((r) => setTimeout(r, 20));
       await lab.attacker.executeCommand(`echo "test" | nc -u ${TARGET_IP} 19999`);
@@ -188,7 +188,7 @@ describe('Scénario 9 — Analyse des messages ICMP avancés avec tcpdump natif'
       await pending;
 
       const analysis = await lab.attacker.executeCommand(
-        `tcpdump -nn -vvv -r /tmp/unreach.pcap | awk '
+        `sudo tcpdump -nn -vvv -r /tmp/unreach.pcap | awk '
           /unreachable/ {
             if (/port/) print "Code 3: Port Unreachable"
             else if (/host/) print "Code 1: Host Unreachable"
@@ -206,7 +206,7 @@ describe('Scénario 9 — Analyse des messages ICMP avancés avec tcpdump natif'
       await configureLab(lab);
 
       const pending = lab.attacker.executeCommand(
-        `tcpdump -i eth0 -nn -vvv 'icmp[icmptype] == 3' -w /tmp/unreach2.pcap`,
+        `sudo tcpdump -i eth0 -nn -vvv 'icmp[icmptype] == 3' -w /tmp/unreach2.pcap`,
       );
       await new Promise((r) => setTimeout(r, 20));
       await lab.attacker.executeCommand(`echo "test" | nc -u ${TARGET_IP} 19999`);
@@ -214,7 +214,7 @@ describe('Scénario 9 — Analyse des messages ICMP avancés avec tcpdump natif'
       await pending;
 
       const analysis = await lab.attacker.executeCommand(
-        `tcpdump -nn -vvv -r /tmp/unreach2.pcap | grep -A 10 'unreachable'`,
+        `sudo tcpdump -nn -vvv -r /tmp/unreach2.pcap | grep -A 10 'unreachable'`,
       );
       // Le paquet déclencheur encapsulé : IP source (attaquant) / IP
       // destination (cible) et port UDP 19999.
@@ -235,7 +235,7 @@ describe('Scénario 9 — Analyse des messages ICMP avancés avec tcpdump natif'
       await lab.r1.executeCommand('end');
 
       const pending = lab.attacker.executeCommand(
-        `tcpdump -i eth0 -nn -vvv 'icmp or (udp and portrange 33434-33534)' -w /tmp/full-incident.pcap`,
+        `sudo tcpdump -i eth0 -nn -vvv 'icmp or (udp and portrange 33434-33534)' -w /tmp/full-incident.pcap`,
       );
       await new Promise((r) => setTimeout(r, 20));
       await lab.attacker.executeCommand(`traceroute -n ${TARGET_IP}`);
@@ -244,7 +244,7 @@ describe('Scénario 9 — Analyse des messages ICMP avancés avec tcpdump natif'
       await new Promise((r) => setTimeout(r, 40));
       await pending;
 
-      const full = await lab.attacker.executeCommand(`tcpdump -nn -vvv -r /tmp/full-incident.pcap`);
+      const full = await lab.attacker.executeCommand(`sudo tcpdump -nn -vvv -r /tmp/full-incident.pcap`);
 
       // Type et code ICMP natifs (aucun outil externe) :
       expect(full).toMatch(/ICMP time exceeded in-transit/);

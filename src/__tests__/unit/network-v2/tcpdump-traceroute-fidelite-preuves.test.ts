@@ -57,12 +57,12 @@ function packets(out: string): string[] {
 describe('tcpdump — the filter compiles the way libpcap compiles it', () => {
   it('a full dotted net is a /32, a short one is promoted by its octet count, stray host bits are refused', async () => {
     const { pc1, pc2 } = await pair();
-    const exact = await captureWhile(pc1, 'tcpdump -c 1 -nn net 10.0.0.2', () => pc1.executeCommand('ping -c 1 10.0.0.2'));
+    const exact = await captureWhile(pc1, 'sudo tcpdump -c 1 -nn net 10.0.0.2', () => pc1.executeCommand('ping -c 1 10.0.0.2'));
     expect(packets(exact)).toHaveLength(1);
-    const promoted = await captureWhile(pc1, 'tcpdump -c 2 -nn icmp and net 10.0.0', () => pc1.executeCommand('ping -c 1 10.0.0.2'));
+    const promoted = await captureWhile(pc1, 'sudo tcpdump -c 2 -nn icmp and net 10.0.0', () => pc1.executeCommand('ping -c 1 10.0.0.2'));
     expect(packets(promoted)).toHaveLength(2);
-    expect(await pc1.executeCommand('tcpdump net 10.0.0.1/24')).toBe('tcpdump: non-network bits set in "10.0.0.1/24"');
-    expect(await pc1.executeCommand('tcpdump net 10.0.0.1 mask 255.255.255.0'))
+    expect(await pc1.executeCommand('sudo tcpdump net 10.0.0.1/24')).toBe('tcpdump: non-network bits set in "10.0.0.1/24"');
+    expect(await pc1.executeCommand('sudo tcpdump net 10.0.0.1 mask 255.255.255.0'))
       .toBe('tcpdump: non-network bits set in "10.0.0.1 mask 255.255.255.0"');
     void pc2;
   });
@@ -70,18 +70,18 @@ describe('tcpdump — the filter compiles the way libpcap compiles it', () => {
   it('service names, escaped protocol names and out-of-range offsets compile; bare keywords do not', async () => {
     const { pc1 } = await pair();
     for (const filter of ['port ssh', 'tcp portrange 22-ssh', 'proto \\\\tcp', "'ip proto \\tcp'", '"ip[9000] == 1"']) {
-      expect(await pc1.executeCommand(`tcpdump ${filter}`)).toContain('listening on eth0');
+      expect(await pc1.executeCommand(`sudo tcpdump ${filter}`)).toContain('listening on eth0');
     }
-    expect(await pc1.executeCommand('tcpdump proto tcp')).toBe("tcpdump: can't parse filter expression: syntax error");
-    expect(await pc1.executeCommand('tcpdump proto \\\\nosuch')).toBe("tcpdump: unknown ip proto 'nosuch'");
+    expect(await pc1.executeCommand('sudo tcpdump proto tcp')).toBe("tcpdump: can't parse filter expression: syntax error");
+    expect(await pc1.executeCommand('sudo tcpdump proto \\\\nosuch')).toBe("tcpdump: unknown ip proto 'nosuch'");
   });
 
   it('-F reads the expression from a file, comments stripped, and ignores the command line', async () => {
     const { pc1 } = await pair();
     await pc1.executeCommand("bash -c 'printf \"icmp # only echo traffic\\n\" > /tmp/f.bpf'");
-    const out = await captureWhile(pc1, 'tcpdump -c 1 -nn -F /tmp/f.bpf tcp', () => pc1.executeCommand('ping -c 1 10.0.0.2'));
+    const out = await captureWhile(pc1, 'sudo tcpdump -c 1 -nn -F /tmp/f.bpf tcp', () => pc1.executeCommand('ping -c 1 10.0.0.2'));
     expect(packets(out)[0]).toContain('ICMP echo request');
-    expect(await pc1.executeCommand('tcpdump -F /tmp/none.bpf'))
+    expect(await pc1.executeCommand('sudo tcpdump -F /tmp/none.bpf'))
       .toBe("tcpdump: can't open /tmp/none.bpf: No such file or directory");
   });
 });
@@ -89,22 +89,22 @@ describe('tcpdump — the filter compiles the way libpcap compiles it', () => {
 describe('tcpdump — every accepted flag does what it says', () => {
   it('--count prints only the counters, --print prints while writing', async () => {
     const { pc1 } = await pair();
-    const counted = await captureWhile(pc1, 'tcpdump -c 2 -nn --count icmp', () => pc1.executeCommand('ping -c 1 10.0.0.2'));
+    const counted = await captureWhile(pc1, 'sudo tcpdump -c 2 -nn --count icmp', () => pc1.executeCommand('ping -c 1 10.0.0.2'));
     expect(packets(counted)).toHaveLength(0);
     expect(counted).toContain('2 packets captured');
-    const printed = await captureWhile(pc1, 'tcpdump -c 2 -nn -w /tmp/p.cap --print icmp', () => pc1.executeCommand('ping -c 1 10.0.0.2'));
+    const printed = await captureWhile(pc1, 'sudo tcpdump -c 2 -nn -w /tmp/p.cap --print icmp', () => pc1.executeCommand('ping -c 1 10.0.0.2'));
     expect(packets(printed)).toHaveLength(2);
-    expect(await pc1.executeCommand('tcpdump -r /tmp/p.cap --count')).toMatch(/\n2 packets$/);
+    expect(await pc1.executeCommand('sudo tcpdump -r /tmp/p.cap --count')).toMatch(/\n2 packets$/);
   });
 
   it('-V reads each file of a list, a reading line per file', async () => {
     const { pc1 } = await pair();
-    await captureWhile(pc1, 'tcpdump -c 2 -w /tmp/a.cap icmp', () => pc1.executeCommand('ping -c 1 10.0.0.2'));
+    await captureWhile(pc1, 'sudo tcpdump -c 2 -w /tmp/a.cap icmp', () => pc1.executeCommand('ping -c 1 10.0.0.2'));
     await pc1.executeCommand("bash -c 'printf \"/tmp/a.cap\\n/tmp/a.cap\\n\" > /tmp/list'");
-    const out = await pc1.executeCommand('tcpdump -nn -V /tmp/list');
+    const out = await pc1.executeCommand('sudo tcpdump -nn -V /tmp/list');
     expect(out.match(/^reading from file \/tmp\/a\.cap, link-type EN10MB \(Ethernet\), snapshot length 262144$/gm)).toHaveLength(2);
     expect(packets(out)).toHaveLength(4);
-    expect(await pc1.executeCommand('tcpdump -V /tmp/list -r /tmp/a.cap')).toBe('tcpdump: -V and -r are mutually exclusive.');
+    expect(await pc1.executeCommand('sudo tcpdump -V /tmp/list -r /tmp/a.cap')).toBe('tcpdump: -V and -r are mutually exclusive.');
   });
 
   it('-Z drops to the named user, who then owns the capture file', async () => {
@@ -117,21 +117,21 @@ describe('tcpdump — every accepted flag does what it says', () => {
 
   it('--nano prints nine fractional digits; -ttt prints the delta with its leading sign column', async () => {
     const { pc1 } = await pair();
-    const nano = await captureWhile(pc1, 'tcpdump -c 1 -nn --nano icmp', () => pc1.executeCommand('ping -c 1 10.0.0.2'));
+    const nano = await captureWhile(pc1, 'sudo tcpdump -c 1 -nn --nano icmp', () => pc1.executeCommand('ping -c 1 10.0.0.2'));
     expect(nano).toMatch(/^\d\d:\d\d:\d\d\.\d{9} IP 10\.0\.0\.1 > 10\.0\.0\.2/m);
-    const delta = await captureWhile(pc1, 'tcpdump -c 1 -nn -ttt icmp', () => pc1.executeCommand('ping -c 1 10.0.0.2'));
+    const delta = await captureWhile(pc1, 'sudo tcpdump -c 1 -nn -ttt icmp', () => pc1.executeCommand('ping -c 1 10.0.0.2'));
     expect(delta).toMatch(/^ 00:00:00\.000000 IP 10\.0\.0\.1 > 10\.0\.0\.2/m);
   });
 
   it('options follow getopt_long: abbreviations, ambiguity, late -i for -L, and a refused brick is named', async () => {
     const { pc1 } = await pair();
-    expect(await pc1.executeCommand('tcpdump --vers')).toMatch(/^tcpdump version 4\.99\.1\n/);
-    expect(await pc1.executeCommand('tcpdump --p')).toMatch(/^tcpdump: option '--p' is ambiguous; possibilities: '--packet-buffered' '--print'\n/);
-    expect(await pc1.executeCommand('tcpdump -L -i lo')).toBe('Data link types for lo (use option -y to set):\n  EN10MB (Ethernet)');
-    expect(await pc1.executeCommand('tcpdump -h')).toMatch(/^tcpdump version 4\.99\.1\nlibpcap version 1\.10\.1 \(with TPACKET_V3\)\nOpenSSL 3\.0\.2 15 Mar 2022\nUsage: tcpdump /);
-    expect(await pc1.executeCommand('tcpdump -T snmp')).toBe('tcpdump: -T snmp: this simulator has no snmp printer');
-    expect(await pc1.executeCommand('tcpdump -T nosuch')).toBe("tcpdump: unknown packet type `nosuch'");
-    expect(await pc1.executeCommand('tcpdump -m SNMPv2-MIB -c 1 -i lo'))
+    expect(await pc1.executeCommand('sudo tcpdump --vers')).toMatch(/^tcpdump version 4\.99\.1\n/);
+    expect(await pc1.executeCommand('sudo tcpdump --p')).toMatch(/^tcpdump: option '--p' is ambiguous; possibilities: '--packet-buffered' '--print'\n/);
+    expect(await pc1.executeCommand('sudo tcpdump -L -i lo')).toBe('Data link types for lo (use option -y to set):\n  EN10MB (Ethernet)');
+    expect(await pc1.executeCommand('sudo tcpdump -h')).toMatch(/^tcpdump version 4\.99\.1\nlibpcap version 1\.10\.1 \(with TPACKET_V3\)\nOpenSSL 3\.0\.2 15 Mar 2022\nUsage: tcpdump /);
+    expect(await pc1.executeCommand('sudo tcpdump -T snmp')).toBe('tcpdump: -T snmp: this simulator has no snmp printer');
+    expect(await pc1.executeCommand('sudo tcpdump -T nosuch')).toBe("tcpdump: unknown packet type `nosuch'");
+    expect(await pc1.executeCommand('sudo tcpdump -m SNMPv2-MIB -c 1 -i lo'))
       .toMatch(/^tcpdump: ignoring option `-m SNMPv2-MIB' \(no libsmi support\)\n/);
   });
 });
@@ -145,7 +145,10 @@ describe('the interactive terminal runs the same tcpdump', () => {
     const { pc1 } = await pair();
     pc1.powerOn();
     const session = new LinuxTerminalSession('t', pc1);
-    session.setInput('tcpdump -nn -Q in icmp');
+    session.setInput('sudo tcpdump -nn -Q in icmp');
+    session.handleKey(key('Enter'));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    session.setPasswordBuf('admin');
     session.handleKey(key('Enter'));
     await new Promise((resolve) => setTimeout(resolve, 20));
     await pc1.executeCommand('ping -c 1 10.0.0.2');
@@ -181,9 +184,9 @@ describe('traceroute — Butskoy\'s own parsing and probes on a direct link', ()
 
   it('-P sends the raw protocol and ends on the target\'s protocol-unreachable', async () => {
     const { pc1, pc2 } = await pair();
-    const out = await captureWhile(pc2, 'tcpdump -c 1 -nn -v ip proto 253', () => pc1.executeCommand('traceroute -n -P 253 -q 1 10.0.0.2'));
+    const out = await captureWhile(pc2, 'sudo tcpdump -c 1 -nn -v ip proto 253', () => pc1.executeCommand('sudo traceroute -n -P 253 -q 1 10.0.0.2'));
     expect(out).toMatch(/proto unknown \(253\), length 60\)/);
-    expect((await pc1.executeCommand('traceroute -n -P 253 -q 1 10.0.0.2')).split('\n')[1])
+    expect((await pc1.executeCommand('sudo traceroute -n -P 253 -q 1 10.0.0.2')).split('\n')[1])
       .toMatch(/^ 1 {2}10\.0\.0\.2 {2}\d+\.\d{3} ms !P$/);
   });
 });
