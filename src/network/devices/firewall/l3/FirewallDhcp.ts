@@ -23,6 +23,7 @@ export interface DhcpScope {
   readonly dnsServers: readonly string[];
   readonly domain: string;
   readonly leaseTimeSec: number;
+  readonly conflictedIpTimeoutSec?: number;
   readonly ranges: ReadonlyArray<{ startIp: string; endIp: string }>;
   readonly dnsService?: string;
   readonly reservations?: ReadonlyArray<{
@@ -32,6 +33,7 @@ export interface DhcpScope {
 
 export interface FirewallDhcpDeps {
   readonly deviceId: string;
+  readonly now: () => number;
   readonly hostname: () => string;
   readonly bus: () => IEventBus;
   readonly interfaceAddress: (iface: string) => { ip: string; mask: string } | undefined;
@@ -45,6 +47,18 @@ export interface FirewallDhcpDeps {
   readonly interfaceOwning?: (address: string) => string | null;
 }
 
+const POOL_USAGE_TRAP_PERCENT = 90;
+const UNLIMITED_LEASE = 0;
+
+function poolNameOf(scope: DhcpScope): string {
+  return `scope-${scope.id}`;
+}
+
+export function dhcpServerId(scope: DhcpScope): number | null {
+  const id = Number.parseInt(scope.id, 10);
+  return Number.isInteger(id) ? id : null;
+}
+
 export class FirewallDhcp {
   private readonly relays = new Map<string, readonly string[]>();
 
@@ -56,12 +70,14 @@ export class FirewallDhcp {
   constructor(private readonly deps: FirewallDhcpDeps) {
     this.server.setDeviceId(deps.deviceId, deps.hostname());
     this.server.setEventBus(deps.bus());
+    this.server.setClock(deps.now);
     this.client = new DHCPClient(
       (iface) => deps.portMac(iface)?.toString() ?? '00:00:00:00:00:00',
       (iface, ip, mask, gateway) => { deps.configureInterface(iface, ip, mask, gateway); },
       (iface) => { deps.clearInterface(iface); });
     this.client.setDeviceId(deps.deviceId, deps.hostname());
     this.client.setEventBus(deps.bus());
+    this.client.setClock(deps.now);
     this.client.setWireChannelFactory((iface) => this.channelFor(iface));
   }
 
@@ -91,7 +107,7 @@ export class FirewallDhcp {
 
     const channel = new WireDhcpChannel(iface, (name, pkt) => {
       this.emitClientFrame(name, pkt);
-    });
+    }, this.deps.now);
     this.channels.set(iface, channel);
     return channel;
   }
@@ -135,8 +151,7 @@ export class FirewallDhcp {
       iface: string; ip: string; mac: string; hostName: string; expiresAt: number;
     }> = [];
     for (const [ip, binding] of this.server.getBindings()) {
-      const scope = [...this.scopes.values()]
-        .find(entry => `scope-${entry.id}` === binding.poolName);
+      const scope = this.scopeOfPool(binding.poolName);
       found.push({
         iface: scope?.iface ?? '',
         ip,
@@ -266,7 +281,7 @@ export class FirewallDhcp {
     const network = networkOf(anchor, mask);
     if (network === null) return;
 
-    const name = `scope-${scope.id}`;
+    const name = poolNameOf(scope);
     this.server.createPool(name);
     this.server.configurePoolNetwork(name, network, mask);
     if (scope.defaultGateway !== '0.0.0.0' && scope.defaultGateway.length > 0) {
@@ -275,7 +290,11 @@ export class FirewallDhcp {
     const dns = this.resolvedDnsServers(scope, local?.ip);
     if (dns.length > 0) this.server.configurePoolDNS(name, dns);
     if (scope.domain.length > 0) this.server.configurePoolDomain(name, scope.domain);
-    this.server.configurePoolLease(name, scope.leaseTimeSec);
+    if (scope.leaseTimeSec === UNLIMITED_LEASE) this.server.configurePoolLeaseInfinite(name);
+    else this.server.configurePoolLease(name, scope.leaseTimeSec);
+    if (scope.conflictedIpTimeoutSec !== undefined) {
+      this.server.configurePoolConflictTtl(name, scope.conflictedIpTimeoutSec);
+    }
 
     for (const gap of gapsOutsideRanges(network, mask, scope.ranges)) {
       this.server.addExcludedRange(gap.start, gap.end);
@@ -285,6 +304,20 @@ export class FirewallDhcp {
       if (reservation.mac.length === 0 || reservation.ip === '0.0.0.0') continue;
       this.server.addStaticBinding(name, reservation.mac, reservation.ip);
     }
+
+    this.server.configurePoolUtilizationMark(name, 'high', POOL_USAGE_TRAP_PERCENT, false);
+    this.server.configurePoolUtilizationMark(name, 'low', POOL_USAGE_TRAP_PERCENT - 1, false);
+  }
+
+  scopeOfPool(pool: string): DhcpScope | undefined {
+    return [...this.scopes.values()].find((scope) => poolNameOf(scope) === pool);
+  }
+
+  leaseUsage(): ReadonlyArray<{ readonly scope: DhcpScope; readonly percent: number }> {
+    return [...this.scopes.values()].map((scope) => {
+      const pool = this.server.getAllPools().get(poolNameOf(scope));
+      return { scope, percent: pool === undefined ? 0 : this.server.poolUtilizationPercent(pool) };
+    });
   }
 
   private emit(iface: string, reply: DHCPPacket, clientMac: string): void {
@@ -359,6 +392,7 @@ export function dhcpReplyDatagram(packet: IPv4Packet): UDPPacket | null {
 
 export interface DhcpWiringHost {
   readonly deviceId: string;
+  now(): number;
   hostname(): string;
   bus(): IEventBus;
   interfaceAddress(iface: string): { ip: string; mask: string } | undefined;
@@ -375,6 +409,7 @@ export function createFirewallDhcp(host: DhcpWiringHost): FirewallDhcp {
   return new FirewallDhcp({
     systemDnsServers: () => host.systemDnsServers?.() ?? [],
     deviceId: host.deviceId,
+    now: () => host.now(),
     hostname: () => host.hostname(),
     bus: () => host.bus(),
     interfaceAddress: (iface) => host.interfaceAddress(iface),

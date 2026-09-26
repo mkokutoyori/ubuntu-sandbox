@@ -68,6 +68,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
   constructor(
     private readonly iface: string,
     private readonly sendFrame: DhcpFrameSender,
+    private readonly clock: () => number = () => Date.now(),
   ) {}
 
   get serverIP(): string | null { return this.lastServerIp; }
@@ -161,7 +162,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
 
     this.lastServerIp = serverIdentifier;
     const leaseDuration = num(reply.getOption(DHCP_OPTION.LEASE_TIME)) ?? 86400;
-    const now = Date.now();
+    const now = this.clock();
     return {
       type: 'ACK',
       binding: {

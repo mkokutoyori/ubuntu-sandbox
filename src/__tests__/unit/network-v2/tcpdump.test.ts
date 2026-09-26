@@ -109,15 +109,14 @@ describe('tcpdump Command Suite', () => {
     it('4. should reject capture on non-existent interface', async () => {
       const { pc1 } = setupLAN();
       const output = await pc1.executeCommand('tcpdump -i eth99');
-      expect(output.toLowerCase()).toContain('error');
-      expect(output.toLowerCase()).toMatch(/interface|device/);
+      expect(output).toBe('tcpdump: eth99: No such device exists\n(SIOCGIFHWADDR: No such device)');
     });
 
     it('5. should reject command if interface argument is missing after -i', async () => {
       const { pc1 } = setupLAN();
       const output = await pc1.executeCommand('tcpdump -i');
-      expect(output.toLowerCase()).toContain('error');
-      expect(output.toLowerCase()).toContain('option requires an argument');
+      expect(output).toMatch(/^tcpdump: option requires an argument -- 'i'\ntcpdump version 4\.99\.1\n/);
+      expect(output).toContain('Usage: tcpdump [-AbdDefhHIJKlLnNOpqStuUvxX#]');
     });
 
     it('6. should display help manual on --help', async () => {
@@ -144,13 +143,13 @@ describe('tcpdump Command Suite', () => {
       const { pc1 } = setupLAN();
       await pc1.executeCommand('ifconfig eth0 down');
       const output = await pc1.executeCommand('tcpdump -i eth0');
-      expect(output.toLowerCase()).toContain('is down');
+      expect(output).toBe('tcpdump: eth0: That device is not up');
     });
 
     it('10. should report error if multiple interfaces are provided to a single -i flag', async () => {
       const { pc1 } = setupLAN();
       const output = await pc1.executeCommand('tcpdump -i eth0 eth1');
-      expect(output.toLowerCase()).toMatch(/syntax|error|invalid/);
+      expect(output).toBe("tcpdump: unknown host 'eth1'");
     });
 
     it('11. should accept any as interface to capture on all interfaces if supported', async () => {
@@ -180,14 +179,15 @@ describe('tcpdump Command Suite', () => {
 
     it('14. should handle capture initialization when loopback has no assigned IP', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -i lo -c 0');
+      const output = await pc1.executeCommand('tcpdump -i lo');
       expect(output).toContain('listening on lo');
     });
 
     it('15. should fail gracefully on unrecognized command-line switches', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -z');
-      expect(output.toLowerCase()).toMatch(/invalid option|unrecognized/);
+      expect(await pc1.executeCommand('tcpdump -z')).toMatch(/^tcpdump: option requires an argument -- 'z'\n/);
+      expect(await pc1.executeCommand('tcpdump -g')).toMatch(/^tcpdump: invalid option -- 'g'\n/);
+      expect(await pc1.executeCommand('tcpdump --frobnicate')).toMatch(/^tcpdump: unrecognized option '--frobnicate'\n/);
     });
   });
 
@@ -216,12 +216,10 @@ describe('tcpdump Command Suite', () => {
       expect(output).toContain('3 packets captured');
     }, 10000);
 
-    it('18. should reject zero packet count (-c 0) or interpret it as infinite', async () => {
+    it('18. rejects a zero packet count, as tcpdump 4.99.1 does for cnt <= 0', async () => {
       const { pc1 } = setupLAN();
       const output = await pc1.executeCommand('tcpdump -c 0');
-      // If simulated as infinite, it might timeout or require a fast exit. 
-      // Let's assume simulator rejects or parses 0 with validation.
-      expect(output.toLowerCase()).toMatch(/invalid|error|range|listening/);
+      expect(output).toBe('tcpdump: invalid packet count 0');
     });
 
     it('19. should reject negative packet count (-c -5)', async () => {
@@ -236,10 +234,11 @@ describe('tcpdump Command Suite', () => {
       expect(output.toLowerCase()).toMatch(/invalid|error|numeric/);
     });
 
-    it('21. should reject float values for packet count (-c 2.5)', async () => {
+    it('21. reads -c 2.5 the way atoi does, as a count of 2', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -c 2.5');
-      expect(output.toLowerCase()).toMatch(/invalid|error|integer/);
+      expect(await pc1.executeCommand('tcpdump -c 2.5')).toContain('listening on eth0');
+      expect(await pc1.executeCommand('tcpdump -c 0')).toBe('tcpdump: invalid packet count 0');
+      expect(await pc1.executeCommand('tcpdump -c x')).toBe('tcpdump: invalid packet count x');
     });
 
     it('22. should report syntax error if count argument is completely omitted after -c', async () => {
@@ -264,8 +263,7 @@ describe('tcpdump Command Suite', () => {
       const output = await captureWithTraffic(pc1, 'tcpdump -c 1', async () => {
         await pingOnSimulatedClock(pc2, 'ping -c 1 10.0.0.1');
       });
-      expect(output).toContain('packets received by filter');
-      expect(output).toContain('packets dropped by kernel');
+      expect(output).toMatch(/^1 packet captured\n1 packet received by filter\n0 packets dropped by kernel$/m);
     });
 
     it('25. should prioritize explicitly specified -c over other flow parameters', async () => {
@@ -442,7 +440,7 @@ describe('tcpdump Command Suite', () => {
 
     it('40. should support combined verbose and interface flags (-v -i eth0)', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -v -i eth0 -c 0');
+      const output = await pc1.executeCommand('tcpdump -v -i eth0');
       expect(output).toContain('listening on eth0');
     });
 
@@ -465,13 +463,13 @@ describe('tcpdump Command Suite', () => {
 
     it('43. should display link-layer type in startup banner', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -c 0');
+      const output = await pc1.executeCommand('tcpdump');
       expect(output.toLowerCase()).toMatch(/link-type/);
     });
 
     it('44. should display snaplen parameters in initial configuration banner', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump -c 0');
+      const output = await pc1.executeCommand('tcpdump');
       // Real tcpdump's banner says "snapshot length", not "capture size"
       // (audit 05, constat A8) — pinned here so the wording can't drift back.
       expect(output.toLowerCase()).toContain('snapshot length');
@@ -482,7 +480,7 @@ describe('tcpdump Command Suite', () => {
       const output = await captureWithTraffic(pc1, 'tcpdump -i lo -c 1', async () => {
         await pingOnSimulatedClock(pc1, 'ping -c 1 127.0.0.1');
       });
-      expect(output).toContain('127.0.0.1');
+      expect(output).toMatch(/IP localhost > localhost: ICMP echo request/);
     });
   });
 
@@ -682,20 +680,20 @@ describe('tcpdump Command Suite', () => {
     it('66. should reject invalid protocol filters', async () => {
       const { pc1 } = setupLAN();
       const output = await pc1.executeCommand('tcpdump invalid_proto');
-      expect(output.toLowerCase()).toContain('error');
+      expect(output).toBe("tcpdump: unknown host 'invalid_proto'");
     });
 
     it('67. should reject invalid port range bounds (port 70000)', async () => {
       const { pc1 } = setupLAN();
       const output = await pc1.executeCommand('tcpdump port 70000');
-      expect(output.toLowerCase()).toMatch(/invalid|error|range|out of range/);
+      expect(output).toBe('tcpdump: illegal port number 70000 > 65535');
     });
 
-    it('68. should reject non-numeric port strings', async () => {
+    it('68. resolves a service name through /etc/services and refuses an unknown one', async () => {
       const { pc1 } = setupLAN();
-      const output = await pc1.executeCommand('tcpdump port http');
-      // If service names are unmapped, should trigger validation error
-      expect(output.toLowerCase()).toMatch(/invalid|error|unknown/);
+      expect(await pc1.executeCommand('tcpdump port http')).toContain('listening on eth0');
+      const output = await pc1.executeCommand('tcpdump port nosuchservice');
+      expect(output).toBe("tcpdump: unknown port 'nosuchservice'");
     });
 
     it('69. should support port range syntax (portrange 20-25)', async () => {
@@ -704,10 +702,10 @@ describe('tcpdump Command Suite', () => {
       expect(output).toBeDefined();
     });
 
-    it('70. should reject invalid port ranges (portrange 80-20)', async () => {
+    it('70. accepts a reversed port range, as gen_portrange swaps its bounds', async () => {
       const { pc1 } = setupLAN();
       const output = await pc1.executeCommand('tcpdump portrange 80-20');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toContain('listening on eth0');
     });
 
     it('71. should capture broadcast ARP packets on physical interfaces', async () => {
@@ -743,7 +741,7 @@ describe('tcpdump Command Suite', () => {
     it('74. should handle protocol-specific uppercase syntax errors', async () => {
       const { pc1 } = setupLAN();
       const output = await pc1.executeCommand('tcpdump ICMP');
-      expect(output.toLowerCase()).toContain('error');
+      expect(output).toBe("tcpdump: unknown host 'ICMP'");
     });
 
     it('75. should allow capturing specific IP protocol types by numeric ID (proto 1 for ICMP)', async () => {
@@ -830,13 +828,13 @@ describe('tcpdump Command Suite', () => {
     it('82. should reject invalid IP address parameter in host filter', async () => {
       const { pc1 } = setupLAN();
       const output = await pc1.executeCommand('tcpdump host 300.300.300.300');
-      expect(output.toLowerCase()).toContain('error');
+      expect(output).toBe("tcpdump: invalid IPv4 address '300.300.300.300'");
     });
 
     it('83. should reject invalid CIDR format in network filter', async () => {
       const { pc1 } = setupLAN();
       const output = await pc1.executeCommand('tcpdump net 10.0.0.0/35');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe('tcpdump: mask length must be <= 32');
     });
 
     it('84. should reject missing network parameter after net keyword', async () => {
@@ -865,7 +863,7 @@ describe('tcpdump Command Suite', () => {
     it('87. should reject malformed MAC address in ether filter', async () => {
       const { pc1 } = setupLAN();
       const output = await pc1.executeCommand('tcpdump ether src 00:11:22:33:44:ZZ');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe('tcpdump: bogus ethernet address 00:11:22:33:44:ZZ');
     });
 
     it('88. should capture multicast packets explicitly using multicast filter', async () => {
@@ -986,7 +984,7 @@ describe('tcpdump Command Suite', () => {
     it('100. should ignore filter specifications if capturing file input from a different flow with conflicts', async () => {
       const { pc1 } = setupLAN();
       const output = await pc1.executeCommand('tcpdump -r nonexistent.pcap icmp');
-      expect(output.toLowerCase()).toMatch(/error|cannot open/);
+      expect(output).toBe('tcpdump: nonexistent.pcap: No such file or directory');
     });
   });
 });

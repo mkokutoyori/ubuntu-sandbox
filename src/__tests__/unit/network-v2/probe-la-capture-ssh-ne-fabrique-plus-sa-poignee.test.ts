@@ -96,8 +96,8 @@ async function sessionCapture(): Promise<{ pc: LinuxPC; srv: LinuxServer; client
   await pc.executeCommand('tcpdump -ni eth0 port 22 -w /tmp/client.pcap &');
   await srv.executeCommand('tcpdump -ni eth0 port 22 -w /tmp/server.pcap &');
   await pc.executeCommand(`ssh ${OPT} alice@10.0.0.2 whoami`, 'secret123\n');
-  const clientSide = segments(String(await pc.executeCommand('tcpdump -r /tmp/client.pcap')));
-  const serverSide = segments(String(await srv.executeCommand('tcpdump -r /tmp/server.pcap')));
+  const clientSide = segments(String(await pc.executeCommand('tcpdump -nn -r /tmp/client.pcap')));
+  const serverSide = segments(String(await srv.executeCommand('tcpdump -nn -r /tmp/server.pcap')));
   const journal = String(await srv.executeCommand('cat /var/log/auth.log'));
   return { pc, srv, clientSide, serverSide, journal };
 }

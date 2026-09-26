@@ -2,6 +2,7 @@ import type { WinCommandContext } from './WinCommandExecutor';
 import { IPAddress, IPv6Address } from '../../core/types';
 import { isValidIPv4 } from '@/network/core/ip';
 import { unquote } from '@/lib/format';
+import { winUnreachText } from './WinPing';
 
 function isIPv6Literal(target: string): boolean {
   try { new IPv6Address(target); return true; } catch { return false; }
@@ -27,6 +28,7 @@ interface TracertHopView {
   rttMs?: number;
   timeout: boolean;
   unreachable?: boolean;
+  icmpCode?: number;
   probes?: Array<{ responded: boolean; rttMs?: number }>;
 }
 
@@ -143,116 +145,106 @@ export function parseWinTracertArgs(args: string[]): ParsedWinTracert {
 }
 
 export function formatWinTracertHeader(target: IPAddress, maxHops: number, hostname?: string): string[] {
-  const dest = hostname ? `${hostname} [${target}]` : `${target}`;
-  return ['', `Tracing route to ${dest} over a maximum of ${maxHops} hops:`, ''];
+  if (hostname) {
+    return ['', `Tracing route to ${hostname} [${target}]`, `over a maximum of ${maxHops} hops:`, ''];
+  }
+  return ['', `Tracing route to ${target} over a maximum of ${maxHops} hops`, ''];
 }
 
-export function formatWinTracertHop(hop: TracertHopView): string {
-  const num = String(hop.hop).padStart(2);
-  const slot = '*'.padStart(5).padEnd(8);
+const TRACERT_TIMEOUT_CELL = '     *   ';
 
+function tracertTimeCell(rttMs: number | undefined): string {
+  const ms = Math.round(rttMs ?? 0);
+  return `${ms < 1 ? '<1' : String(ms)} ms`.padStart(9);
+}
+
+export function formatWinTracertHop(hop: TracertHopView, nameOf?: (ip: string) => string | null): string {
+  const num = String(hop.hop).padStart(3);
+  const shown = (ip: string) => {
+    const name = nameOf?.(ip) ?? null;
+    return name === null ? ip : `${name} [${ip}]`;
+  };
+  if (hop.unreachable && hop.ip !== undefined) {
+    return `${num}  ${shown(hop.ip)}  reports: ${winUnreachText(hop.icmpCode)}`;
+  }
   if (hop.timeout && (!hop.probes || hop.probes.every(p => !p.responded))) {
-    return `  ${num}     * * *     Request timed out.`;
+    return `${num}${TRACERT_TIMEOUT_CELL.repeat(3)}  Request timed out.`;
+  }
+  let cells: string[];
+  if (hop.probes && hop.probes.length > 0) {
+    cells = hop.probes.map((probe) =>
+      probe.responded ? tracertTimeCell(probe.rttMs) : TRACERT_TIMEOUT_CELL);
+    while (cells.length < 3) cells.push(TRACERT_TIMEOUT_CELL);
+  } else {
+    cells = [0, 1, 2].map(() => tracertTimeCell(hop.rttMs));
+  }
+  return `${num}${cells.join('')}  ${shown(hop.ip ?? '')}`;
+}
+
+export interface TracertHost {
+  resolveHostname(name: string): Promise<IPAddress | null>;
+  reverseLookup?(ip: string): string | null;
+  trace(
+    target: IPAddress, maxHops: number, timeoutMs: number,
+    onHop: (hop: TracertHopView) => void, shouldStop: () => boolean,
+  ): Promise<number>;
+}
+
+const PROBE_WAIT_CAP_MS = 80;
+
+export async function runTracert(
+  args: string[], host: TracertHost, emit: (line: string) => void,
+  shouldStop: () => boolean = () => false,
+): Promise<void> {
+  if (args.length === 0) { emit(TRACERT_HELP); return; }
+  const parsed = parseWinTracertArgs(args);
+  if (parsed.showHelp) { emit(TRACERT_HELP); return; }
+  if (parsed.parseError) { emit(parsed.parseError); return; }
+  if (parsed.extraTargets.length > 0) { emit(`Invalid parameter: ${parsed.extraTargets[0]}.`); return; }
+  if (!parsed.targetStr) { emit(TRACERT_HELP); return; }
+  if (parsed.looseSourceRoute !== undefined) {
+    emit('tracert: -j: this simulator has no loose source route IP option on its probes');
+    return;
   }
 
-  let line: string;
-  if (hop.probes && hop.probes.length > 0) {
-    const cols: string[] = [];
-    for (const probe of hop.probes) {
-      if (!probe.responded) cols.push(slot);
-      else {
-        const ms = Math.round(probe.rttMs ?? 0);
-        cols.push((ms < 1 ? '<1 ms' : `${ms} ms`).padEnd(8));
-      }
-    }
-    while (cols.length < 3) cols.push(slot);
-    line = `  ${num}    ${cols.join(' ')} ${hop.ip}`;
-  } else {
-    const ms = Math.round(hop.rttMs ?? 0);
-    const msStr = (ms < 1 ? '<1 ms' : `${ms} ms`).padEnd(8);
-    line = `  ${num}    ${msStr} ${msStr} ${msStr} ${hop.ip}`;
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(parsed.targetStr) && !isValidIPv4(parsed.targetStr)) {
+    emit(`Unable to resolve target system name ${parsed.targetStr}. Invalid address.`);
+    return;
   }
-  if (hop.unreachable) line += '\n        Destination net unreachable.';
-  return line;
+  if (parsed.targetStr.length > 253 || parsed.targetStr.split('.').some(lbl => lbl.length > 63)) {
+    emit(`Unable to resolve target system name ${parsed.targetStr}. Failed to resolve.`);
+    return;
+  }
+  if (isIPv6Literal(parsed.targetStr)) { emit('Unable to contact IP driver. General failure.'); return; }
+
+  const targetIP = await host.resolveHostname(parsed.targetStr);
+  if (!targetIP) { emit(`Unable to resolve target system name ${parsed.targetStr}.`); return; }
+
+  const nameOf = parsed.numeric ? undefined : (ip: string) => host.reverseLookup?.(ip) ?? null;
+  const hostname = parsed.targetStr !== targetIP.toString()
+    ? parsed.targetStr
+    : nameOf?.(targetIP.toString()) ?? undefined;
+  for (const line of formatWinTracertHeader(targetIP, parsed.maxHops, hostname)) emit(line);
+  const traced = await host.trace(
+    targetIP, parsed.maxHops, Math.min(parsed.timeoutMs, PROBE_WAIT_CAP_MS),
+    (hop) => emit(formatWinTracertHop(hop, nameOf)), shouldStop);
+  if (shouldStop()) return;
+  if (traced === 0) emit('  1  Transmit error: code 1231.');
+  emit('');
+  emit('Trace complete.');
 }
 
 export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promise<string> {
-  if (args.length === 0) return TRACERT_HELP;
-
-  const parsed = parseWinTracertArgs(args);
-
-  if (parsed.showHelp) return TRACERT_HELP;
-  if (parsed.parseError) return parsed.parseError;
-
-  if (parsed.extraTargets.length > 0) {
-    return `Invalid parameter: ${parsed.extraTargets[0]}.`;
-  }
-
-  if (!parsed.targetStr) return TRACERT_HELP;
-
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(parsed.targetStr) && !isValidIPv4(parsed.targetStr)) {
-    return `Unable to resolve target system name ${parsed.targetStr}. Invalid address.`;
-  }
-
-  if (parsed.targetStr.length > 253 ||
-      parsed.targetStr.split('.').some(lbl => lbl.length > 63)) {
-    return `Unable to resolve target system name ${parsed.targetStr}. Failed to resolve.`;
-  }
-
-  if (isIPv6Literal(parsed.targetStr)) {
-    return `Unable to contact IP driver. General failure.`;
-  }
-
-  const targetIP = await ctx.resolveHostname(parsed.targetStr);
-  if (!targetIP) {
-    return `Unable to resolve target system name ${parsed.targetStr}.`;
-  }
-
-  // Probe budget is bounded for responsiveness: a live hop answers in
-  // ~1 ms, so a short per-probe wait never loses a real reply, and we only
-  // probe up to PROBE_HOP_LIMIT hops (well beyond any simulated topology).
-  // Crucially this is a PROBING bound, not a display bound — honest timeout
-  // rows are still shown up to the real -h, and no hop is ever fabricated.
-  const PROBE_HOP_LIMIT = 8;
-  const probeTimeoutMs = Math.min(parsed.timeoutMs, 80);
-  const probeMaxHops = Math.min(parsed.maxHops, PROBE_HOP_LIMIT);
-  const targetStr = targetIP.toString();
-  const isLoopback = targetStr === '127.0.0.1' || targetStr.startsWith('127.') || targetStr === '::1';
-
-  const hops = await ctx.executeTraceroute(targetIP, probeMaxHops, probeTimeoutMs);
-  if (hops.length === 0 && isLoopback) {
-    // Loopback always answers itself — the network layer just cannot
-    // trace it, so report the one real hop.
-    hops.push({ hop: 1, ip: targetStr, rttMs: 0, timeout: false, probes: [{ responded: true, rttMs: 0 }, { responded: true, rttMs: 0 }, { responded: true, rttMs: 0 }] } as (typeof hops)[0]);
-  }
-
-  // Never invent hops: when the trace did not reach the destination, every
-  // remaining TTL up to -h is an honest "Request timed out." row — exactly
-  // what real tracert prints while its probes die in silence.
-  const reached = hops.some((h) => (h as TracertHopView).ip === targetStr && !(h as TracertHopView).timeout);
-  if (!reached) {
-    for (let n = hops.length + 1; n <= parsed.maxHops; n++) {
-      hops.push({ hop: n, timeout: true, probes: [] } as unknown as (typeof hops)[0]);
-    }
-  }
-
-  const hostname = parsed.targetStr !== targetIP.toString() ? parsed.targetStr : undefined;
-
-  // -d only disables reverse name resolution — header/trailer are identical.
-  const lines = [...formatWinTracertHeader(targetIP, parsed.maxHops, hostname)];
-  for (const hop of hops) {
-    const view = hop as TracertHopView;
-    let line = formatWinTracertHop(view);
-    if (!parsed.numeric && view.ip && ctx.reverseLookup) {
-      const name = ctx.reverseLookup(view.ip);
-      if (name) {
-        const esc = view.ip.replace(/\./g, '\\.');
-        line = line.replace(new RegExp(`${esc}$`), `${name} [${view.ip}]`);
-      }
-    }
-    lines.push(line);
-  }
-  lines.push('');
-  lines.push('Trace complete.');
+  const lines: string[] = [];
+  await runTracert(args, tracertHostOf(ctx), (line) => lines.push(line));
   return lines.join('\n');
+}
+
+export function tracertHostOf(ctx: WinCommandContext): TracertHost {
+  return {
+    resolveHostname: (name) => ctx.resolveHostname(name),
+    reverseLookup: ctx.reverseLookup === undefined ? undefined : (ip) => ctx.reverseLookup!(ip),
+    trace: async (target, maxHops, timeoutMs, onHop, stop) =>
+      (await ctx.executeTraceroute(target, maxHops, timeoutMs, { onHop, shouldStop: stop })).length,
+  };
 }

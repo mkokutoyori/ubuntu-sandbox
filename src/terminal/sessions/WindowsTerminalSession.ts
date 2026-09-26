@@ -22,7 +22,7 @@ import {
 import { createSessionForDevice } from './sessionFactory';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { parseWinPingArgs, formatWinPingHeader, formatWinPingReplyLine, formatWinPingStats } from '@/network/devices/windows/WinPing';
-import { formatWinTracertHeader, formatWinTracertHop } from '@/network/devices/windows/WinTracert';
+import { runTracert } from '@/network/devices/windows/WinTracert';
 import {
   parseGetCounterArgs, sampleCounterSet, formatCounterSnapshot, formatCounterSet,
   newRateState, GET_COUNTER_HELP,
@@ -461,41 +461,16 @@ export class WindowsTerminalSession extends TerminalSession {
     const toks = commandLine.trim().split(/\s+/);
     if (toks[0].toLowerCase() !== 'tracert') return false;
     if (/[|<>&]/.test(commandLine)) return false;
-    if (toks.includes('/?') || toks.includes('/help')) return false;
 
-    let targetStr = '';
-    let maxHops = 30;
-    const rest = toks.slice(1);
-    for (let i = 0; i < rest.length; i++) {
-      const a = rest[i].toLowerCase();
-      if (a === '-h' && rest[i + 1]) { maxHops = parseInt(rest[i + 1], 10) || 30; i++; }
-      else if ((a === '-w' || a === '-j' || a === '-s') && rest[i + 1]) { i++; }
-      else if (!a.startsWith('-') && !a.startsWith('/')) { targetStr = rest[i]; }
-    }
-    if (!targetStr) return false;
-
-    let hopCount = 0;
     const job = this.startAsyncCommand({
       mode: 'foreground',
       kind: 'streaming',
       command: commandLine,
       run: async (ctx) => {
-        const outcome = await dev.tracerouteStreamInSession(targetStr, {
-          maxHops,
-          timeoutMs: 2000,
-          onResolved: (ip, hostname) => {
-            for (const line of formatWinTracertHeader(ip, maxHops, hostname)) ctx.sink.line(line);
-          },
-          onHop: (hop) => { hopCount++; for (const l of formatWinTracertHop(hop).split('\n')) ctx.sink.line(l); },
-          shouldStop: () => ctx.cancelled(),
-        });
-        if (ctx.cancelled()) return;
-        if (!outcome.resolved || hopCount === 0) {
-          ctx.sink.error(`Unable to resolve target system name ${targetStr}.`);
-          return;
-        }
-        ctx.sink.line('');
-        ctx.sink.line('Trace complete.');
+        await runTracert(
+          toks.slice(1), dev.tracertHost(),
+          (text) => { for (const line of text.split('\n')) ctx.sink.line(line); },
+          () => ctx.cancelled());
       },
     });
     return job !== null;

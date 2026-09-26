@@ -157,10 +157,10 @@ describe('--iflist decrit la machine et ne balaye rien', () => {
     await taper(cible, 'tcpdump -nn -i eth0 tcp -w iflist.pcap &');
 
     const sortie = await taper(scanner, 'nmap --iflist -p 22 10.0.0.2');
-    const capture = await taper(cible, 'tcpdump -r iflist.pcap -nn');
+    const capture = await taper(cible, 'tcpdump -r iflist.pcap -nn --count');
 
     expect(sortie).not.toContain('Nmap scan report');
-    expect(capture).toContain('0 packets captured');
+    expect(capture).toMatch(/^0 packets$/m);
   });
 });
 

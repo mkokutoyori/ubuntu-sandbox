@@ -231,6 +231,7 @@ import { showAdjacency } from './cisco/CiscoCommonShow';
 import { showIpRouteOspf } from './cisco/CiscoOspfCommands';
 import { clearAccessListCounters } from './cisco/CiscoAclCommands';
 import { IPV4_PLACE, valeurGlobaleSpecs } from './cisco/ipGlobalSpecs';
+import { formatDhcpBindings } from '@/cli/commands/show/showIpDhcp';
 
 
 const VRF_ARGUMENTS:
@@ -2187,7 +2188,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         section('show ip nat translations', showNATTranslations(getRouter())),
         section('show ip nat statistics', showNATStatistics(getRouter())),
         section('show ip ospf neighbor', showIpOspfNeighbor(getRouter())),
-        section('show ip dhcp binding', getRouter()._getDHCPServerInternal().formatBindingsShow()),
+        section('show ip dhcp binding', formatDhcpBindings(getRouter()._getDHCPServerInternal())),
         section('show logging', this.logging.render()),
       ].join('\n\n');
     });

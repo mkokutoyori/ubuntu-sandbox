@@ -17,7 +17,7 @@ import { parseDialAddress, type DialAddress } from '@/network/tcp/dial';
 import { HostsFile } from '@/network/devices/HostsFile';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
-import { parseTracerouteArgs } from '@/network/devices/linux/commands/net/Traceroute';
+import { runTraceroute } from '@/network/devices/linux/commands/net/Traceroute';
 import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type MtrHopProbe } from '@/network/devices/linux/Mtr';
 import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
 import { parseIpMonitorSpec } from '@/network/devices/linux/LinuxIpCommand';
@@ -45,10 +45,8 @@ import {
   parseDstatArgs, formatDstatHeader, formatDstatRow, newDstatRateState,
   DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING,
 } from '@/network/devices/linux/system/Dstat';
-import { parseInvocation } from '@/network/devices/linux/network/tcpdump/TcpdumpCli';
-import { compileFilter } from '@/network/devices/linux/network/tcpdump/TcpdumpFilter';
-import { banner as tcpdumpBanner, footer as tcpdumpFooterLines, formatFrame as formatCaptureFrame } from '@/network/devices/linux/network/tcpdump/TcpdumpFormat';
-import { formatPingHeader, formatPing6Header, formatPingReplyLine, formatPingStats, formatTracerouteHeader, formatTracerouteHopLine } from '@/network/devices/linux/LinuxFormatHelpers';
+import { interleaveTcpdumpStreams, runTcpdump } from '@/network/devices/linux/network/tcpdump/TcpdumpRunner';
+import { formatPingHeader, formatPing6Header, formatPingReplyLine, formatPingStats } from '@/network/devices/linux/LinuxFormatHelpers';
 import type { PingResult } from '@/network/devices/EndHost';
 import type { AsyncJobContext } from '@/terminal/async';
 import { primaryShellKindFor } from '@/shell/shellKind';
@@ -993,27 +991,17 @@ export class LinuxTerminalSession extends TerminalSession {
     if (!(dev instanceof LinuxMachine)) return false;
     const toks = commandLine.trim().split(/\s+/);
     if (toks[0] !== 'traceroute') return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const parsed = parseTracerouteArgs(toks.slice(1));
-    if (!parsed.targetStr) return false;
+    if (/[|<>&;]/.test(commandLine)) return false;
 
     const job = this.startAsyncCommand({
       mode: 'foreground',
       kind: 'streaming',
       command: commandLine,
       run: async (ctx) => {
-        let hopCount = 0;
-        const outcome = await dev.tracerouteStreamInSession(parsed.targetStr, {
-          maxHops: parsed.maxHops,
-          probesPerHop: parsed.probesPerHop,
-          firstTtl: parsed.firstTtl,
-          onResolved: (ip, hostname) => ctx.sink.line(formatTracerouteHeader(ip, parsed.maxHops, hostname)),
-          onHop: (hop) => { hopCount++; ctx.sink.line(formatTracerouteHopLine(hop)); },
-          shouldStop: () => ctx.cancelled(),
-        });
-        if (ctx.cancelled()) return;
-        if (!outcome.resolved) { ctx.sink.error(`traceroute: unknown host ${parsed.targetStr}`); return; }
-        if (hopCount === 0) ctx.sink.line(' * * * Network is unreachable');
+        await runTraceroute(
+          toks.slice(1), dev.tracerouteHost(),
+          (text) => { for (const line of text.split('\n')) ctx.sink.line(line); },
+          () => ctx.cancelled());
       },
     });
     return job !== null;
@@ -1154,57 +1142,21 @@ export class LinuxTerminalSession extends TerminalSession {
     if (!(dev instanceof LinuxMachine) || !this.shell) return false;
     const toks = commandLine.trim().split(/\s+/);
     if (toks[0] !== 'tcpdump') return false;
-    if (/[|<>]/.test(commandLine)) return false;
-
-    const inv = parseInvocation(toks.slice(1));
-    if (inv.kind !== 'capture' || inv.options.readFile || inv.options.writeFile) {
-      const job = this.startAsyncCommand({
-        mode: 'foreground',
-        kind: 'streaming',
-        command: commandLine,
-        prepare: () => true,
-        run: async (ctx) => {
-          const out = await dev.executeCommand(commandLine);
-          if (out) for (const l of out.split('\n')) ctx.sink.line(l);
-        },
-      });
-      return job !== null;
-    }
-
-    const opts = inv.options;
-    const filter = compileFilter(opts.filterTokens);
-    let captured = 0;
-    let prev: Date | null = null;
-    let unsubscribe: (() => void) | null = null;
-    const footer = (ctx: AsyncJobContext) => { for (const l of tcpdumpFooterLines(captured, captured)) ctx.sink.line(l); };
+    if (/[|<>&;]/.test(commandLine)) return false;
 
     const job = this.startAsyncCommand({
       mode: 'foreground',
       kind: 'streaming',
       command: commandLine,
-      prepare: (ctx) => {
-        if (filter.ok === false) { ctx.sink.line(filter.message); return false; }
-        for (const h of tcpdumpBanner(opts)) ctx.sink.line(h);
-        return true;
-      },
       run: async (ctx) => {
-        if (filter.ok === false) return;
-        if (opts.count === 0) { footer(ctx); return; }
-        await new Promise<void>((resolve) => {
-          const finish = () => { unsubscribe?.(); unsubscribe = null; resolve(); };
-          if (ctx.cancelled()) { resolve(); return; }
-          unsubscribe = dev.openTcpdumpCapture(opts.iface, (frame) => {
-            if (filter.ok && !filter.predicate(frame)) return;
-            ctx.sink.line(formatCaptureFrame(frame, opts, prev));
-            prev = frame.at;
-            captured++;
-            if (opts.count !== null && captured >= opts.count) finish();
-          });
-          ctx.onCancel(finish);
+        const result = await runTcpdump(toks.slice(1), {
+          ...dev.buildTcpdumpDeps(),
+          stream: { line: (text) => ctx.sink.line(text) },
+          onCancelRequested: (cb) => { ctx.onCancel(cb); return () => {}; },
         });
-        if (!ctx.cancelled()) footer(ctx);
+        const rest = interleaveTcpdumpStreams(result);
+        if (rest) for (const line of rest.split('\n')) ctx.sink.line(line);
       },
-      onInterrupt: (ctx) => footer(ctx),
     });
     return job !== null;
   }

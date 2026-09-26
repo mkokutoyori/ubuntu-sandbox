@@ -59,10 +59,11 @@ describe('tcpdump Command Suite - Advanced & Edge Scenarios', () => {
   // ─── Link-Type Management & VLAN Filtering (Tests 101-110) ────────
 
   describe('8. Link-Type Management & VLAN Filtering', () => {
-    it('101. should list supported link types with --list-link-types', async () => {
+    it('101. lists the link types with --list-data-link-types, and refuses a name tcpdump does not know', async () => {
       const { pc1 } = setupAdvancedLAN();
-      const output = await pc1.executeCommand('tcpdump -i eth0 --list-link-types');
-      expect(output.toLowerCase()).toContain('en10mb'); // Standard Ethernet DLT
+      const output = await pc1.executeCommand('tcpdump -i eth0 --list-data-link-types');
+      expect(output).toBe('Data link types for eth0 (use option -y to set):\n  EN10MB (Ethernet)\n  DOCSIS (DOCSIS)');
+      expect(await pc1.executeCommand('tcpdump -i eth0 --list-link-types')).toMatch(/^tcpdump: unrecognized option '--list-link-types'\n/);
     });
 
     it('102. should change data link type with -y', async () => {
@@ -123,7 +124,8 @@ describe('tcpdump Command Suite - Advanced & Edge Scenarios', () => {
     it('110. should reject VLAN filtering with out-of-bounds VLAN IDs (vlan 5000)', async () => {
       const { pc1 } = setupAdvancedLAN();
       const output = await pc1.executeCommand('tcpdump vlan 5000');
-      expect(output.toLowerCase()).toMatch(/invalid|error|range/);
+      expect(output).toBe('tcpdump: VLAN tag 5000 greater than maximum 4095');
+      expect(await pc1.executeCommand('tcpdump vlan 4095')).toContain('listening on eth0');
     });
   });
 
@@ -177,7 +179,7 @@ describe('tcpdump Command Suite - Advanced & Edge Scenarios', () => {
 
     it('116. should verify payload truncation visualization in outputs', async () => {
       const { pc1 } = setupAdvancedLAN();
-      const output = await pc1.executeCommand('tcpdump -c 0 -s 10');
+      const output = await pc1.executeCommand('tcpdump -s 10');
       expect(output).toContain('listening on eth0');
     });
 
@@ -193,10 +195,11 @@ describe('tcpdump Command Suite - Advanced & Edge Scenarios', () => {
       expect(output).toBeDefined();
     });
 
-    it('119. should reject offset slices out of packet boundaries', async () => {
+    it('119. compiles an offset beyond the packet, which then matches nothing', async () => {
       const { pc1 } = setupAdvancedLAN();
       const output = await pc1.executeCommand('tcpdump "ip[9000] == 1"');
-      expect(output.toLowerCase()).toMatch(/error|out of bounds|invalid/);
+      expect(output).toContain('listening on eth0');
+      expect(output).toContain('0 packets captured');
     });
 
     it('120. should support bitwise masking within BPF offset filters (ip[0] & 0xf != 5)', async () => {
@@ -272,7 +275,7 @@ describe('tcpdump Command Suite - Advanced & Edge Scenarios', () => {
     it('131. should reject unrecognized protocol identifiers', async () => {
       const { pc1 } = setupAdvancedLAN();
       const output = await pc1.executeCommand('tcpdump unknownproto');
-      expect(output.toLowerCase()).toContain('error');
+      expect(output).toBe("tcpdump: unknown host 'unknownproto'");
     });
 
     it('132. should isolate broadcast transmissions specifically', async () => {
@@ -319,7 +322,7 @@ describe('tcpdump Command Suite - Advanced & Edge Scenarios', () => {
 
     it('138. should support packet line-buffering mode with -l', async () => {
       const { pc1 } = setupAdvancedLAN();
-      const output = await pc1.executeCommand('tcpdump -l -c 0');
+      const output = await pc1.executeCommand('tcpdump -l');
       expect(output).toContain('listening on eth0');
     });
 
@@ -379,7 +382,7 @@ describe('tcpdump Command Suite - Advanced & Edge Scenarios', () => {
       const { pc1 } = setupAdvancedLAN();
       await pc1.executeCommand('ifconfig eth0 down');
       await pc1.executeCommand('ifconfig eth0 up');
-      const output = await pc1.executeCommand('tcpdump -i eth0 -c 0');
+      const output = await pc1.executeCommand('tcpdump -i eth0');
       expect(output).toContain('listening on eth0');
     });
 
@@ -397,8 +400,8 @@ describe('tcpdump Command Suite - Advanced & Edge Scenarios', () => {
 
     it('148. should print capture metrics when zero traffic is observed', async () => {
       const { pc1 } = setupAdvancedLAN();
-      const output = await pc1.executeCommand('tcpdump -c 0');
-      expect(output).toContain('0 packets dropped');
+      const output = await pc1.executeCommand('tcpdump');
+      expect(output).toContain('0 packets dropped by kernel');
     });
 
     it('149. should reject completely empty filter strings gracefully', async () => {
@@ -411,7 +414,7 @@ describe('tcpdump Command Suite - Advanced & Edge Scenarios', () => {
       const { pc1 } = setupAdvancedLAN();
       const longCommand = 'tcpdump ' + 'arg '.repeat(100);
       const output = await pc1.executeCommand(longCommand);
-      expect(output.toLowerCase()).toMatch(/error|too many arguments|invalid/);
+      expect(output).toBe("tcpdump: unknown host 'arg'");
     });
   });
 });

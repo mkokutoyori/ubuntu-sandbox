@@ -142,7 +142,7 @@ describe('--data-string pose le texte tel quel', () => {
 
 describe('--data pose des octets donnes en hexadecimal', () => {
   it('les trois ecritures du meme nombre donnent la meme charge', async () => {
-    for (const spec of ['0xDEADBEEF', 'DEADBEEF', '\\xDE\\xAD\\xBE\\xEF']) {
+    for (const spec of ['0xDEADBEEF', 'DEADBEEF', "'\\xDE\\xAD\\xBE\\xEF'"]) {
       const { capture } = await captureDuBalayage(
         `nmap -Pn -sS --data ${spec} -p 22 10.0.0.2`);
       expect(longueurDeLaSonde(capture)).toBe(4);

@@ -899,55 +899,58 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
       const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -n 10.0.2.10'));
-      expect(output).not.toMatch(/[a-zA-Z]/); // Should exclude text names in hops
+      const hops = output.split('\n').slice(1).map((l) => l.replace(/ ms/g, ''));
+      expect(hops.length).toBeGreaterThan(0);
+      for (const hop of hops) expect(hop).not.toMatch(/[a-zA-Z()]/);
     });
 
     it('113. should reject negative max-hops values (-m -5)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('traceroute -m -5 127.0.0.1');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe('max hops cannot be more than 255');
     });
 
     it('114. should reject zero max-hops values (-m 0)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('traceroute -m 0 127.0.0.1');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe('first hop out of range');
     });
 
     it('115. should reject negative queries count (-q -3)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('traceroute -q -3 127.0.0.1');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe('no more than 10 probes per hop');
     });
 
     it('116. should reject zero queries count (-q 0)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('traceroute -q 0 127.0.0.1');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe('no more than 10 probes per hop');
     });
 
     it('117. should reject invalid timeout values (-w -2)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('traceroute -w -2 127.0.0.1');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe("bad wait specifications `-2,0,0' used");
     });
 
     it('118. should reject out-of-range port values (-p 70000)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('traceroute -p 70000 127.0.0.1');
-      expect(output.toLowerCase()).toMatch(/invalid|error|range/);
+      expect(output).toMatch(/^traceroute to 127\.0\.0\.1 \(127\.0\.0\.1\), 30 hops max, 60 byte packets\n 1 {2}localhost \(127\.0\.0\.1\)/);
     });
 
     it('119. should reject negative port values (-p -80)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('traceroute -p -80 127.0.0.1');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toMatch(/^traceroute to 127\.0\.0\.1 \(127\.0\.0\.1\)/);
     });
 
     it('120. should reject binding to non-existent interface (-i eth99)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('traceroute -i eth99 127.0.0.1');
-      expect(output.toLowerCase()).toMatch(/invalid|error|not found/);
+      expect(output).toBe('traceroute to 127.0.0.1 (127.0.0.1), 30 hops max, 60 byte packets\n'
+        + 'setsockopt SO_BINDTODEVICE: No such device');
     });
 
     it('121. should support gateway list option using -g', async () => {
@@ -967,7 +970,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('123. should reject starting TTL larger than maximum TTL (-f 30 -m 20)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('traceroute -f 30 -m 20 127.0.0.1');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe('first hop out of range');
     });
 
     it('124. should support timeout response markers (* * *) for hops that never answer', async () => {
@@ -1024,7 +1027,9 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
       const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -n -I 10.0.2.10'));
-      expect(output).not.toMatch(/[a-zA-Z]/);
+      const hops = output.split('\n').slice(1).map((l) => l.replace(/ ms/g, ''));
+      expect(hops.length).toBeGreaterThan(0);
+      for (const hop of hops) expect(hop).not.toMatch(/[a-zA-Z()]/);
     });
 
     it('128. should support combining interface and maximum TTL options (-i eth0 -m 10)', async () => {
@@ -1059,7 +1064,8 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('132. should reject resolving nonexistent hostnames inside traceroute', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('traceroute nonexistenthost');
-      expect(output.toLowerCase()).toMatch(/unknown host|failed to resolve/);
+      expect(output).toBe('nonexistenthost: Name or service not known\n'
+        + 'Cannot handle "host" cmdline arg `nonexistenthost\' on position 1 (argc 1)');
     });
 
     it('133. should support tracing Class A addresses dynamically', async () => {
@@ -1102,7 +1108,8 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('138. should reject tracing invalid IP formats (such as 256.0.0.1)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('traceroute 256.0.0.1');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe('256.0.0.1: Name or service not known\n'
+        + 'Cannot handle "host" cmdline arg `256.0.0.1\' on position 1 (argc 1)');
     });
 
     it('139. should reject tracing if destination IP parameter is completely omitted', async () => {
@@ -1162,8 +1169,9 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
 
     it('147. should support showing timeout statistics correctly when total route loss is observed', async () => {
       const pc = new LinuxPC('PC', 0, 0);
-      const output = await pc.executeCommand('traceroute -w 1 1.1.1.1'); // timeout simulated
-      expect(output).toContain('* * *');
+      const output = await pc.executeCommand('traceroute -w 1 1.1.1.1');
+      expect(output).toBe('traceroute to 1.1.1.1 (1.1.1.1), 30 hops max, 60 byte packets\n'
+        + 'connect: Network is unreachable');
     });
 
     it('148. should support bypassed local socket loopback trace validations', async () => {
@@ -1175,7 +1183,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('149. should reject tracing if multiple targets are specified (traceroute 10.0.1.1 10.0.2.10)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('traceroute 10.0.1.1 10.0.2.10');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe('Cannot handle "packetlen" cmdline arg `10.0.2.10\' on position 2 (argc 2)');
     });
 
     it('150. should execute successfully and return status 0 on default traceroute runs', async () => {
@@ -1337,7 +1345,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       expect(output.toLowerCase()).toContain('unreachable');
     });
 
-    it('172. should support timeout response markers (* * *) if gateway drops ICMP inside tracert', async () => {
+    it('172. stops on the router that reports the destination network unreachable', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
       // Shutdown r2 interface GigabitEthernet0/1 to simulate drops
@@ -1348,7 +1356,8 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.r2.executeCommand('end');
 
       const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert -w 500 10.0.1.10'));
-      expect(output).toContain('* * *');
+      expect(output).toMatch(/^ {2}\d {2}10\.0\.\d+\.\d+ {2}reports: Destination net unreachable\.\n\nTrace complete\.$/m);
+      expect(output).not.toContain('Request timed out.');
     });
 
     it('173. should show intermediate hops IP addresses correctly inside Windows detailed tables', async () => {
@@ -1447,7 +1456,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('186. should support timeout response markers with custom hops ranges (* * *) on total loss', async () => {
       const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert -h 2 -w 500 1.1.1.1');
-      expect(output).toContain('* * *');
+      expect(output).toContain('  1  Transmit error: code 1231.\n\nTrace complete.');
     });
 
     it('187. should support loose source route list option inside Windows tracert alias (-j)', async () => {
@@ -1517,7 +1526,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('197. should support timeout response markers if gateways drop ICMP over multiple hops', async () => {
       const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert -w 100 1.1.1.1');
-      expect(output).toContain('* * *');
+      expect(output).toContain('  1  Transmit error: code 1231.\n\nTrace complete.');
     });
 
     it('198. should handle long customized device paths safely inside tracert rules', async () => {
@@ -1624,12 +1633,12 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       expect(output).toContain('100% packet loss');
     });
 
-    it('210. should show destination host unreachable on traceroute if destination host is shut down', async () => {
+    it('210. marks the last router\'s host-unreachable with !H when the destination host is shut down', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
       await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('netsh interface set interface "Ethernet" admin=disabled'));
       const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
-      expect(output.toLowerCase()).toContain('unreachable');
+      expect(output).toMatch(/ {2}\d+\.\d+ ms !H {2}\d+\.\d+ ms !H {2}\d+\.\d+ ms !H$/m);
     });
 
     it('211. should show TTL expired in transit inside traceroute output logs', async () => {
@@ -1694,7 +1703,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       expect(output.toLowerCase()).toMatch(/local error|too long|frag needed/);
     });
 
-    it('218. should trace path successfully showing asterisks if intermediate Cisco router drops UDP probes but accepts ICMP', async () => {
+    it('218. an IOS ACL denying the UDP probes answers each with an administratively-prohibited !X', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
       // Configure Cisco ACL to block UDP probes but allow ICMP echo
@@ -1706,8 +1715,8 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.r1.executeCommand('ip access-group 100 in');
       await topo.r1.executeCommand('end');
 
-      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10')); // Default is UDP
-      expect(output).toContain('* * *');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
+      expect(output).toMatch(/^ 1 {2}10\.0\.1\.1 \(10\.0\.1\.1\) {2}\d+\.\d+ ms !X {2}\d+\.\d+ ms !X {2}\d+\.\d+ ms !X$/m);
     });
 
     it('219. should resolve and trace path successfully if ICMP method is forced (-I) even when UDP is blocked', async () => {
@@ -1815,19 +1824,19 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
       const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10 100'));
-      expect(output).toContain('100 bytes packets');
+      expect(output).toContain('30 hops max, 100 byte packets');
     });
 
     it('232. should reject traceroute packet size if value is out of bounds (greater than 65535)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('traceroute 127.0.0.1 70000');
-      expect(output.toLowerCase()).toMatch(/invalid|error|range/);
+      expect(output).toBe('too big packetlen 70000 specified');
     });
 
     it('233. should reject traceroute packet size if value is negative', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('traceroute 127.0.0.1 -100');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe("Bad option `-1' (argc 2)");
     });
 
     it('234. should support Windows ping with specific routing option flags (-r 9)', async () => {
@@ -2027,7 +2036,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('258. should reject traceroute commands with invalid target domain syntax', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('traceroute -m 30 10.0.0.300');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toMatch(/^10\.0\.0\.300: Name or service not known\n/);
     });
 
     it('259. should reject tracert commands with invalid target domain syntax', async () => {
@@ -2251,7 +2260,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('287. should reject Linux traceroute if starting TTL is too high (-f 99)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('traceroute -f 99 127.0.0.1');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe('first hop out of range');
     });
 
     it('288. should reject Windows tracert if max-hops is too high (-h 256)', async () => {

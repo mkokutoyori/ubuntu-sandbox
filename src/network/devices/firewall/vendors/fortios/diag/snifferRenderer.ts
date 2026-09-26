@@ -1,5 +1,6 @@
+import { icmpTimeExceededPhrase, icmpUnreachablePhrase } from '@/network/core/IcmpPhrase';
 import { ETHERTYPE_ARP, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../../../../core/types';
-import type { ARPPacket, IPv4Packet } from '../../../../../core/types';
+import type { ARPPacket, ICMPPacket, IPv4Packet } from '../../../../../core/types';
 import { icmpOf, portsOf, type CapturedFrame } from '../../../diag/PacketCapture';
 import type { TcpSegment } from '../../../../../tcp/types';
 
@@ -57,10 +58,29 @@ function describe(entry: CapturedFrame): string {
   return `${packet.sourceIP} -> ${packet.destinationIP}: ip-proto-${packet.protocol}`;
 }
 
+function icmpKind(icmp: ICMPPacket | undefined): string {
+  if (!icmp) return 'unknown';
+  if (icmp.icmpType === 'echo-reply') return 'echo reply';
+  if (icmp.icmpType === 'echo-request') return 'echo request';
+  if (icmp.icmpType === 'time-exceeded') return icmpTimeExceededPhrase(icmp.code);
+  if (icmp.icmpType === 'destination-unreachable') {
+    const quoted = icmp.originalPacket;
+    const transport = quoted?.payload as { type?: string; destinationPort?: number } | undefined;
+    const kind = transport?.type === 'tcp' || transport?.type === 'udp' ? transport.type : 'other';
+    return icmpUnreachablePhrase({
+      code: icmp.code,
+      quotedDestination: quoted?.destinationIP.toString() ?? '',
+      quotedProtocol: quoted?.protocol,
+      quotedTransport: kind,
+      quotedDestinationPort: transport?.destinationPort,
+      nextHopMtu: icmp.mtu,
+    });
+  }
+  return icmp.icmpType;
+}
+
 function describeIcmp(packet: IPv4Packet): string {
-  const icmp = icmpOf(packet);
-  const kind = icmp?.icmpType === 'echo-reply' ? 'echo reply' : 'echo request';
-  return `${packet.sourceIP} -> ${packet.destinationIP}: icmp: ${kind}`;
+  return `${packet.sourceIP} -> ${packet.destinationIP}: icmp: ${icmpKind(icmpOf(packet))}`;
 }
 
 function describeTcp(packet: IPv4Packet): string {

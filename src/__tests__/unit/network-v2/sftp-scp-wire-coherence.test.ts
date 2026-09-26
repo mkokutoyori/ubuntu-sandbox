@@ -82,7 +82,7 @@ describe('sftp transfer crosses the wire, coherent in three views', () => {
     sftp.disconnect();
 
     expect(await srv.executeCommand('journalctl -u ssh --no-pager')).toMatch(/Accepted password for alice/);
-    expect(await pc.executeCommand('tcpdump -r /tmp/s.pcap')).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.10\.22: Flags \[S\]/);
+    expect(await pc.executeCommand('tcpdump -nn -r /tmp/s.pcap')).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.10\.22: Flags \[S\]/);
   });
 
   it('DISCRIMINATION: a deny-ACL router blocks the transfer on the wire', async () => {

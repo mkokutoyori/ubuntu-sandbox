@@ -1,10 +1,82 @@
 import { IPAddress, SubnetMask } from '../../../../../core/types';
 import { PortNumber } from '../../../../../core/ports/PortNumber';
-import type { SnmpManagerHost, SnmpManagerHostType } from '../../../mgmt/FirewallSnmp';
 import {
-  addressMask, choice, count, enable, reference, refList, text, word,
+  SNMP_TRAP_EVENTS, type SnmpInterfaceSelectMethod, type SnmpManagerHost, type SnmpManagerHostType,
+  type SnmpTrapChannel, type SnmpTrapEvent,
+} from '../../../mgmt/FirewallSnmp';
+import {
+  address, addressMask, choice, count, enable, reference, refList, text, word,
   type FortiObjectView, type FortiTableSpec,
 } from './types';
+
+const TRAP_EVENT_HELP: Readonly<Record<SnmpTrapEvent, string>> = Object.freeze({
+  'cpu-high': 'Send a trap when CPU usage is high.',
+  'mem-low': 'Send a trap when used memory is high, free memory is low, or freeable memory is high.',
+  'log-full': 'Send a trap when log disk space becomes low.',
+  'intf-ip': 'Send a trap when an interface IP address is changed.',
+  'vpn-tun-up': 'Send a trap when a VPN tunnel comes up.',
+  'vpn-tun-down': 'Send a trap when a VPN tunnel goes down.',
+  'ha-switch': 'Send a trap after an HA failover when the backup unit has taken over.',
+  'ha-hb-failure': 'Send a trap when HA heartbeats are not received.',
+  'ips-signature': 'Send a trap when IPS detects an attack.',
+  'ips-anomaly': 'Send a trap when IPS finds an anomaly.',
+  'av-virus': 'Send a trap when AntiVirus finds a virus.',
+  'av-oversize': 'Send a trap when AntiVirus finds an oversized file.',
+  'av-pattern': 'Send a trap when AntiVirus finds file matching pattern.',
+  'av-fragmented': 'Send a trap when AntiVirus finds a fragmented file.',
+  'fm-if-change': 'Send a trap when FortiManager interface changes. Send a FortiManager trap.',
+  'fm-conf-change': 'Send a trap when a configuration change is made by a FortiGate administrator '
+    + 'and the FortiGate is managed by FortiManager.',
+  'bgp-established': 'Send a trap when a BGP FSM transitions to the established state.',
+  'bgp-backward-transition': 'Send a trap when a BGP FSM goes from a high numbered state to a lower numbered state.',
+  'ha-member-up': 'Send a trap when an HA cluster member goes up.',
+  'ha-member-down': 'Send a trap when an HA cluster member goes down.',
+  'ent-conf-change': 'Send a trap when an entity MIB change occurs (RFC4133).',
+  'av-conserve': 'Send a trap when the FortiGate enters conserve mode.',
+  'av-bypass': 'Send a trap when the FortiGate enters bypass mode.',
+  'av-oversize-passed': 'Send a trap when AntiVirus passes an oversized file.',
+  'av-oversize-blocked': 'Send a trap when AntiVirus blocks an oversized file.',
+  'ips-pkg-update': 'Send a trap when the IPS signature database or engine is updated.',
+  'ips-fail-open': 'Send a trap when the IPS network buffer is full.',
+  'temperature-high': 'Send a trap when a temperature sensor registers a temperature that is too high.',
+  'voltage-alert': 'Send a trap when a voltage sensor registers a voltage that is outside of the normal range.',
+  'power-supply': 'Send a trap when a power supply fails or restores.',
+  'faz-disconnect': 'Send a trap when a FortiAnalyzer disconnects from the FortiGate.',
+  'faz': 'Send a trap when Fortianalyzer main server failover and alternate server take over, '
+    + 'or alternate server failover and main server take over.',
+  'fan-failure': 'Send a trap when a fan fails.',
+  'wc-ap-up': 'Send a trap when a managed FortiAP comes up.',
+  'wc-ap-down': 'Send a trap when a managed FortiAP goes down.',
+  'fswctl-session-up': 'Send a trap when a FortiSwitch controller session comes up.',
+  'fswctl-session-down': 'Send a trap when a FortiSwitch controller session goes down.',
+  'load-balance-real-server-down': 'Send a trap when a server load balance real server goes down.',
+  'device-new': 'Send a trap when a new device is found.',
+  'per-cpu-high': 'Send a trap when per-CPU usage is high.',
+  'dhcp': 'Send a trap when the DHCP server exhausts the IP pool, an IP address already is in use, '
+    + 'or a DHCP client interface received a DHCP-NAK.',
+  'pool-usage': 'Send a trap about ippool usage.',
+  'ippool': 'Send a trap for ippool events.',
+  'interface': 'Send a trap for interface event.',
+  'ospf-nbr-state-change': 'Send a trap when there has been a change in the state of a non-virtual OSPF neighbor.',
+  'ospf-virtnbr-state-change': 'Send a trap when there has been a change in the state of an OSPF virtual neighbor.',
+  'enter-intf-bypass': 'Enter interface bypass mode.',
+  'exit-intf-bypass': 'Exit interface bypass mode.',
+  'dio': 'Send a trap when a digital io event happens.',
+});
+
+const EVENTS_OFF_BY_DEFAULT: readonly SnmpTrapEvent[] = Object.freeze([
+  'fm-conf-change', 'device-new', 'enter-intf-bypass', 'exit-intf-bypass', 'dio',
+]);
+
+const DEFAULT_TRAP_EVENTS: readonly string[] = Object.freeze(
+  SNMP_TRAP_EVENTS.filter((event) => !EVENTS_OFF_BY_DEFAULT.includes(event)));
+
+const PERCENT_MIN = 1;
+const PERCENT_MAX = 100;
+
+function percent(object: FortiObjectView, attribute: string, byDefault: number): number {
+  return Number.parseInt(object.effective(attribute)[0] ?? String(byDefault), 10);
+}
 
 export const SYSTEM_SNMP_SYSINFO: FortiTableSpec = {
   path: ['system', 'snmp', 'sysinfo'],
@@ -18,6 +90,12 @@ export const SYSTEM_SNMP_SYSINFO: FortiTableSpec = {
     text('description', 'System description.'),
     text('location', 'System location.'),
     enable('status', 'Enable/disable SNMP.'),
+    count('trap-free-memory-threshold', 'Free memory usage when trap is sent.', PERCENT_MIN, PERCENT_MAX, 5),
+    count('trap-freeable-memory-threshold', 'Freeable memory usage when trap is sent.',
+      PERCENT_MIN, PERCENT_MAX, 60),
+    count('trap-high-cpu-threshold', 'CPU usage when trap is sent.', PERCENT_MIN, PERCENT_MAX, 80),
+    count('trap-log-full-threshold', 'Log disk usage when trap is sent.', PERCENT_MIN, PERCENT_MAX, 90),
+    count('trap-low-memory-threshold', 'Memory usage when trap is sent.', PERCENT_MIN, PERCENT_MAX, 80),
   ],
   onCommit(object, context) {
     context.device.applySnmpSysinfo({
@@ -25,6 +103,13 @@ export const SYSTEM_SNMP_SYSINFO: FortiTableSpec = {
       description: object.effective('description')[0] ?? '',
       contactInfo: object.effective('contact-info')[0] ?? '',
       location: object.effective('location')[0] ?? '',
+      thresholds: {
+        freeMemoryPercent: percent(object, 'trap-free-memory-threshold', 5),
+        freeableMemoryPercent: percent(object, 'trap-freeable-memory-threshold', 60),
+        highCpuPercent: percent(object, 'trap-high-cpu-threshold', 80),
+        logFullPercent: percent(object, 'trap-log-full-threshold', 90),
+        lowMemoryPercent: percent(object, 'trap-low-memory-threshold', 80),
+      },
     });
   },
 };
@@ -87,21 +172,48 @@ const SNMP_COMMUNITY_HOSTS: FortiTableSpec = {
         description: 'Send traps to this SNMP manager but do not accept SNMP queries from this SNMP manager.',
       },
     ], 'any'),
+    {
+      ...reference('interface', 'Specify outgoing interface to reach server.', ['system interface']),
+      availableWhen: (object) => object.effective('interface-select-method')[0] === 'specify',
+    },
+    choice('interface-select-method', 'Specify how to select outgoing interface to reach server.', [
+      { keyword: 'auto', description: 'Set outgoing interface automatically.' },
+      { keyword: 'sdwan', description: 'Set outgoing interface by SD-WAN or policy routing rules.' },
+      { keyword: 'specify', description: 'Set outgoing interface manually.' },
+    ], 'auto'),
     addressMask('ip', 'IPv4 address of the SNMP manager (host).', ['0.0.0.0', '0.0.0.0']),
+    address('source-ip', 'Source IPv4 address for SNMP traps.', '0.0.0.0'),
+    count('vrf-select', 'VRF ID used for connection to server.', 0, 511, 0),
   ],
 };
 
+const UNSET_ADDRESS = '0.0.0.0';
+
 function managerHosts(object: FortiObjectView): SnmpManagerHost[] {
   return object.childEntries('hosts').map((entry) => {
-    const [address, mask] = entry.effective('ip');
+    const [ip, mask] = entry.effective('ip');
+    const source = entry.effective('source-ip')[0] ?? UNSET_ADDRESS;
+    const method = (entry.effective('interface-select-method')[0] ?? 'auto') as SnmpInterfaceSelectMethod;
     return {
       id: entry.key,
-      address: new IPAddress(address ?? '0.0.0.0'),
-      mask: new SubnetMask(mask ?? '0.0.0.0'),
+      address: new IPAddress(ip ?? UNSET_ADDRESS),
+      mask: new SubnetMask(mask ?? UNSET_ADDRESS),
       hostType: (entry.effective('host-type')[0] ?? 'any') as SnmpManagerHostType,
       haDirect: entry.effective('ha-direct')[0] === 'enable',
+      source: source === UNSET_ADDRESS ? null : new IPAddress(source),
+      interfaceSelectMethod: method,
+      iface: method === 'specify' ? entry.effective('interface')[0] ?? null : null,
+      vrf: Number.parseInt(entry.effective('vrf-select')[0] ?? '0', 10),
     };
   });
+}
+
+function trapChannel(object: FortiObjectView, version: 'v1' | 'v2c'): SnmpTrapChannel {
+  return {
+    enabled: object.effective(`trap-${version}-status`)[0] === 'enable',
+    localPort: PortNumber.of(Number.parseInt(object.effective(`trap-${version}-lport`)[0] ?? '162', 10)),
+    remotePort: PortNumber.of(Number.parseInt(object.effective(`trap-${version}-rport`)[0] ?? '162', 10)),
+  };
 }
 
 function queryPort(object: FortiObjectView, attribute: string): PortNumber {
@@ -126,6 +238,23 @@ export const SYSTEM_SNMP_COMMUNITY: FortiTableSpec = {
     count('query-v2c-port', 'SNMP v2c query port (default = 161).', 0, 65535, 161),
     enable('query-v2c-status', 'Enable/disable SNMP v2c queries.', true),
     enable('status', 'Enable/disable this SNMP community.', true),
+    {
+      name: 'events',
+      help: 'SNMP trap events.',
+      quoted: false,
+      multiValue: true,
+      parts: [{
+        name: 'events', type: 'ENUM', description: 'SNMP trap event.',
+        values: SNMP_TRAP_EVENTS.map((event) => ({ keyword: event, description: TRAP_EVENT_HELP[event] })),
+      }],
+      defaultValue: DEFAULT_TRAP_EVENTS,
+    },
+    count('trap-v1-lport', 'SNMP v1 trap local port (default = 162).', 1, 65535, 162),
+    count('trap-v1-rport', 'SNMP v1 trap remote port (default = 162).', 1, 65535, 162),
+    enable('trap-v1-status', 'Enable/disable SNMP v1 traps.', true),
+    count('trap-v2c-lport', 'SNMP v2c trap local port (default = 162).', 1, 65535, 162),
+    count('trap-v2c-rport', 'SNMP v2c trap remote port (default = 162).', 1, 65535, 162),
+    enable('trap-v2c-status', 'Enable/disable SNMP v2c traps.', true),
     refList('vdoms', 'SNMP access control VDOMs.', ['vdom']),
   ],
   children: [SNMP_COMMUNITY_HOSTS],
@@ -146,6 +275,9 @@ export const SYSTEM_SNMP_COMMUNITY: FortiTableSpec = {
       },
       mibView: object.effective('mib-view')[0] ?? '',
       vdoms: [...object.effective('vdoms')],
+      events: object.effective('events') as readonly SnmpTrapEvent[],
+      trapV1: trapChannel(object, 'v1'),
+      trapV2c: trapChannel(object, 'v2c'),
     });
   },
   onDelete(key, context) {

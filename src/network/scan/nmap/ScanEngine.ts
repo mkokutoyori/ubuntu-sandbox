@@ -1,4 +1,5 @@
-import type { NmapOptions, ScanType } from './NmapOptions';
+import type { DiscoveryProbe, NmapOptions, ScanType } from './NmapOptions';
+import { OS_CLASS_BY_NAME, initialTtlOf, type OsClassRecord } from './NmapProbes';
 import { IPAddress } from '@/network/core/types';
 import type { TcpWireOutcome } from '@/network/tcp/types';
 import type { ScanProbeShape } from '@/network/tcp/TcpStack';
@@ -60,7 +61,9 @@ export interface HostProbes {
   /** Name to address. A lookup, never a liveness test. */
   resolveTarget(target: string): ResolvedTarget | null | Promise<ResolvedTarget | null>;
   /** Emits the discovery probes and reports what came back. */
-  hostState(target: ResolvedTarget): Promise<HostState>;
+  hostState(
+    target: ResolvedTarget, discovery?: readonly DiscoveryProbe[],
+  ): Promise<HostState>;
   /**
    * La decouverte de couche lien d'une cible du MEME segment — ARP en
    * IPv4, decouverte de voisin en IPv6. Les TROIS issues sont distinctes
@@ -180,6 +183,8 @@ export interface HostReport {
   up: boolean;
   latencyMs: number;
   osGuess?: string;
+  osClass?: OsClassRecord;
+  distanceHops?: number;
   downReason?: string;
   mac?: string;
   discoveryReason?: string;
@@ -203,6 +208,7 @@ export interface NmapReport {
   phases: ScanPhase[];
   /** Ce que `--packet-trace` rend visible, dans l'ordre des paquets. */
   packetTrace: string[];
+  listScan: boolean;
 }
 
 const COLLAPSE_THRESHOLD = 24;
@@ -429,7 +435,7 @@ async function scanHost(
       }
     : options.skipDiscovery
       ? { ...identified, up: true, reason: 'user-set' }
-      : await probes.hostState(resolved);
+      : await probes.hostState(resolved, options.discovery);
 
   const discovery = discoveryPhase(resolved.ip, onLink, options.skipDiscovery);
   if (discovery) phases.push(discovery);
@@ -437,6 +443,10 @@ async function scanHost(
   const latencyMs = info.latencyMs ?? 0.001;
   const osGuess = options.osScan
     ? info.osHint ?? await probes.fingerprint?.(info.ip)
+    : undefined;
+  const osClass = osGuess === undefined ? undefined : OS_CLASS_BY_NAME[osGuess];
+  const distanceHops = options.osScan
+    ? hopDistance(probes, info)
     : undefined;
 
   // docs/nmap.1 : la resolution inverse est faite par defaut sur les hotes
@@ -460,6 +470,7 @@ async function scanHost(
   if (options.pingOnly) {
     return {
       ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess,
+      osClass, distanceHops,
       ...identity, ports: [],
       trace: options.traceroute
         ? await buildTrace(options, probes, info, latencyMs, rdnsName, [], hopCache)
@@ -482,12 +493,39 @@ async function scanHost(
   const { ports, notShown } = partition(options, all);
   return {
     ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess,
+    osClass, distanceHops,
     ...identity, ports, notShown,
     trace: options.traceroute
       ? await buildTrace(options, probes, info, latencyMs, rdnsName, all, hopCache)
       : undefined,
   };
 
+}
+
+async function listedHost(
+  options: NmapOptions, probes: HostProbes, target: string, address: string,
+): Promise<HostReport | null> {
+  const resolved = isIpLiteral(address)
+    ? { ip: address, hostname: undefined }
+    : await probes.resolveTarget(target === address ? target : address);
+  if (!resolved) return null;
+  const rdnsName = options.noDns || !probes.reverseName
+    ? undefined
+    : await probes.reverseName(resolved.ip) ?? undefined;
+  return {
+    ip: resolved.ip,
+    hostname: resolved.hostname,
+    rdnsName,
+    up: true,
+    latencyMs: 0,
+    ports: [],
+  };
+}
+
+function hopDistance(probes: HostProbes, info: HostState): number | undefined {
+  if (probes.directlyConnected?.(info.ip)) return 1;
+  if (info.replyTtl === undefined) return undefined;
+  return initialTtlOf(info.replyTtl) - info.replyTtl + 1;
 }
 
 function isIpLiteral(target: string): boolean {
@@ -524,6 +562,16 @@ export async function scan(
   for (const target of options.targets) {
     for (const address of enumerateTargets(target)) {
       if (options.excluded && addrSetContains(options.excluded, address)) continue;
+      if (options.listScan) {
+        const listed = await listedHost(options, probes, target, address);
+        if (!listed) {
+          if (target === address) unresolved.push(address);
+          continue;
+        }
+        targetsScanned++;
+        hosts.push(listed);
+        continue;
+      }
       const report = await scanHost(options, probes, address, phases, hopCache, trace)
         ?? (target === address && isIpLiteral(address)
           ? { ip: address, up: false, latencyMs: 0, downReason: 'no-response', ports: [] }
@@ -546,10 +594,11 @@ export async function scan(
   return {
     startedAt: new Date().toISOString(),
     targetsScanned,
-    hostsUp: hosts.filter((h) => h.up).length,
+    hostsUp: options.listScan ? 0 : hosts.filter((h) => h.up).length,
     hosts,
     unresolved,
     phases,
+    listScan: options.listScan,
     packetTrace: trace?.lines ?? [],
   };
 }

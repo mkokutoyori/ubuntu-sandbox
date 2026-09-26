@@ -19,7 +19,7 @@
 import type { Port } from '../../hardware/Port';
 import type { TcpWireOutcome } from '../../tcp/types';
 import type { IPAddress, IPv6Address, SubnetMask, MACAddress, IPv4Packet } from '../../core/types';
-import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, HostPolicyRule, PingResult } from '../EndHost';
+import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, HostPolicyRule, PingResult, TraceProbeMethod, TraceSocketOptions } from '../EndHost';
 import type { DHCPClient } from '../../dhcp/DHCPClient';
 import type { DnsQueryFn } from '../../dns/compat/DnsWireCompat';
 import type { TcpStack } from '../../tcp/TcpStack';
@@ -152,7 +152,13 @@ export interface LinuxNetKernel {
     timeoutMs?: number,
   ): Promise<PingResult[]>;
 
-  traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number, timeoutMs?: number): Promise<TracerouteHop[]>;
+  traceroute(
+    target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number,
+    timeoutMs?: number, method?: TraceProbeMethod, socket?: TraceSocketOptions,
+    hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean },
+  ): Promise<TracerouteHop[]>;
+
+  canTraceTo(target: IPAddress, socket: TraceSocketOptions): boolean;
 
   /** Emit a single locally-originated UDP probe (for UDP-mode traceroute and the like). */
   sendUdpProbe(

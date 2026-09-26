@@ -82,8 +82,8 @@ describe('SSH coherence across ssh / journalctl / tcpdump', () => {
     expect(journal).toMatch(/session opened for user alice/);
 
     const dump = await pc.executeCommand('tcpdump -r /tmp/s.pcap');
-    expect(dump).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.10\.22: Flags \[S\]/);
-    expect(dump).toMatch(/10\.0\.0\.10\.22 > 10\.0\.0\.1\.\d+: Flags \[S\.\]/);
+    expect(dump).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.10\.ssh: Flags \[S\]/);
+    expect(dump).toMatch(/10\.0\.0\.10\.ssh > 10\.0\.0\.1\.\d+: Flags \[S\.\]/);
   });
 
   it('DISCRIMINATION: a wrong password still crossed the wire', async () => {
@@ -93,7 +93,7 @@ describe('SSH coherence across ssh / journalctl / tcpdump', () => {
     await expect(openSshSession(pc, '10.0.0.10', 'alice', 'wrong')).rejects.toThrow();
 
     expect(await srv.executeCommand('journalctl -u ssh --no-pager')).toMatch(/Failed password for alice/);
-    expect(await pc.executeCommand('tcpdump -r /tmp/s.pcap')).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.10\.22: Flags \[S\]/);
+    expect(await pc.executeCommand('tcpdump -r /tmp/s.pcap')).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.10\.ssh: Flags \[S\]/);
   });
 
   it('DISCRIMINATION: a deny-ACL session is absent from journal and never establishes', async () => {

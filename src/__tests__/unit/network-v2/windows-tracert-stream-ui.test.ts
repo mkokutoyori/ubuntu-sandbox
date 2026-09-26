@@ -86,7 +86,7 @@ describe('Windows ping/tracert headers — host [ip] for named targets', () => {
   });
 
   it('tracert header shows host [ip] for a named target', () => {
-    expect(formatWinTracertHeader(new IPAddress('10.0.0.5'), 30, 'web')[1])
-      .toBe('Tracing route to web [10.0.0.5] over a maximum of 30 hops:');
+    expect(formatWinTracertHeader(new IPAddress('10.0.0.5'), 30, 'web'))
+      .toEqual(['', 'Tracing route to web [10.0.0.5]', 'over a maximum of 30 hops:', '']);
   });
 });

@@ -1,3 +1,4 @@
+import { splitShellWords } from './ShellWords';
 /**
  * AliasTable — the backing store for the shell's `alias` / `unalias`
  * builtins and command-position alias expansion.
@@ -92,30 +93,6 @@ export class AliasTable {
   }
 }
 
-/**
- * Split an alias replacement string into argv words, honouring single
- * and double quotes (the quotes themselves are stripped).
- */
 export function tokenizeAliasValue(value: string): string[] {
-  const tokens: string[] = [];
-  let cur = '';
-  let quote: '"' | "'" | null = null;
-  let hasWord = false;
-  for (let i = 0; i < value.length; i++) {
-    const ch = value[i];
-    if (quote) {
-      if (ch === quote) quote = null;
-      else cur += ch;
-      continue;
-    }
-    if (ch === '"' || ch === "'") { quote = ch; hasWord = true; continue; }
-    if (/\s/.test(ch)) {
-      if (hasWord) { tokens.push(cur); cur = ''; hasWord = false; }
-      continue;
-    }
-    cur += ch;
-    hasWord = true;
-  }
-  if (hasWord) tokens.push(cur);
-  return tokens;
+  return splitShellWords(value).words;
 }

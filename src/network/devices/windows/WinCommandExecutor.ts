@@ -156,7 +156,10 @@ export interface WinCommandContext {
   resolvePingEgress?(target: IPAddress): { port: Port; onLink: boolean } | null;
   executePingSequence(target: IPAddress, count: number, timeout?: number, ttl?: number,
     opts?: { dataSize?: number; df?: boolean }): Promise<PingResult[]>;
-  executeTraceroute(target: IPAddress, maxHops?: number, timeoutMs?: number): Promise<TracerouteHop[]>;
+  executeTraceroute(
+    target: IPAddress, maxHops?: number, timeoutMs?: number,
+    hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean },
+  ): Promise<TracerouteHop[]>;
 
   // TCP/IP stack reset
   resetStack(): void;

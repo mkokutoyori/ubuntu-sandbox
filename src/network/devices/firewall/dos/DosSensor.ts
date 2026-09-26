@@ -33,7 +33,7 @@ export interface DosSensorDeps {
   readonly sessions: () => SessionTableView;
 }
 
-const WINDOW_MS = 1000;
+export const DOS_DETECTION_WINDOW_MS = 1000;
 
 function rateKey(kind: AnomalyKind, subject: DosSubject): string {
   return kind === 'flood' ? subject.destIP : subject.sourceIP;
@@ -66,7 +66,7 @@ export class DosSensor {
   private countRate(key: string): number {
     const at = this.deps.now();
     const bucket = this.buckets.get(key);
-    if (!bucket || at - bucket.startedAt >= WINDOW_MS) {
+    if (!bucket || at - bucket.startedAt >= DOS_DETECTION_WINDOW_MS) {
       this.buckets.set(key, { startedAt: at, count: 1 });
       return 1;
     }

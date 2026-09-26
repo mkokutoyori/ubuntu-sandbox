@@ -243,7 +243,7 @@ export function formatWinPingHeader(targetIP: IPAddress, size: number, hostname?
   return `\nPinging ${dest} with ${size} bytes of data:`;
 }
 
-function winUnreachText(code: number | undefined): string {
+export function winUnreachText(code: number | undefined): string {
   switch (code) {
     case 0: return 'Destination net unreachable.';
     case 4: return 'Packet needs to be fragmented but DF set.';

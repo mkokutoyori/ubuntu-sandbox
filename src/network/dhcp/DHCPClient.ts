@@ -25,8 +25,8 @@ import { DHCPServer } from './DHCPServer';
 import { encodeNetbiosNodeType } from './DHCPPacket';
 import {
   DHCPClientState, DHCPClientIfaceState, DHCPClientLease,
-  DHCPOfferResult, DHCPAckResult,
-  createDefaultClientState,
+  DHCPOfferResult, DHCPAckResult, DHCPRequestWithNakResult,
+  ackOf, createDefaultClientState,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
 import { type IEventBus } from '@/events/EventBus';
@@ -139,6 +139,7 @@ export class DHCPClient implements IProtocolEngine {
   private requestsSent = 0;
   private acksReceived = 0;
   private naksReceived = 0;
+  private clock: () => number = () => Date.now();
   private leasesGranted = 0;
   private leasesExpired = 0;
   private leasesReleased = 0;
@@ -204,6 +205,14 @@ export class DHCPClient implements IProtocolEngine {
   }
 
   /** Internal: emit a state-change event on the bus. */
+  private recordNak(iface: string, serverIp: string, reason: string | undefined): void {
+    this.naksReceived++;
+    this.getBus().publish({
+      topic: 'dhcp.nak.received',
+      payload: { ...this.deviceRef(), iface, serverIp, reason },
+    });
+  }
+
   private emitStateChange(iface: string, oldState: string, newState: string, cause: string): void {
     if (oldState === newState) return;
     this.getBus().publish({
@@ -267,6 +276,10 @@ export class DHCPClient implements IProtocolEngine {
    * Register an ARP probe callback for address conflict detection.
    * RFC 2131 §4.4.1: Client SHOULD perform ARP check after receiving ACK.
    */
+  setClock(clock: () => number): void {
+    this.clock = clock;
+  }
+
   setAddressConflictChecker(checker: (iface: string, ip: string) => boolean): void {
     this.checkAddressConflict = checker;
   }
@@ -330,7 +343,7 @@ export class DHCPClient implements IProtocolEngine {
     // DISCOVER. Only an expired record sends us back to INIT.
     if (!options.fromInitReboot) {
       const recorded = state.lease ?? state.lastKnownLease;
-      if (recorded && recorded.expiration > Date.now()) {
+      if (recorded && recorded.expiration > this.clock()) {
         return this.initReboot(iface, state, recorded, mac, clientIdentifier, verbose);
       }
       if (state.lastKnownLease) state.lastKnownLease = null;
@@ -435,26 +448,26 @@ export class DHCPClient implements IProtocolEngine {
       clientIdentifier,
       ...this.clientIdentity(),
     });
-    const ackResult = replyResult && replyResult.type === 'ACK' && replyResult.binding
-      ? { binding: replyResult.binding, serverIdentifier: replyResult.serverIdentifier, xid: replyResult.xid, renewalTime: replyResult.renewalTime, rebindingTime: replyResult.rebindingTime, serverMac: replyResult.serverMac }
-      : null;
+    const ackResult = ackOf(replyResult);
 
-    if (!ackResult) {
-      this.naksReceived++;
-      const nakMessage = replyResult && replyResult.type === 'NAK' ? replyResult.message : undefined;
-      this.getBus().publish({
-        topic: 'dhcp.nak.received',
-        payload: { ...this.deviceRef(), iface, serverIp: offer.serverIdentifier, reason: nakMessage },
-      });
+    if (replyResult?.type === 'NAK') {
+      this.recordNak(iface, offer.serverIdentifier, replyResult.message);
       this.emitStateChange(iface, 'REQUESTING', 'INIT', 'NAK');
       state.state = 'INIT';
-      const reason = nakMessage ? ` (${nakMessage})` : '';
+      const reason = replyResult.message ? ` (${replyResult.message})` : '';
       state.logs.push(`DHCPNAK from ${offer.serverIdentifier}${reason} - restarting`);
       if (verbose) {
         lines.push(`DHCPREQUEST of ${offer.ip} on ${iface} to 255.255.255.255 port 67`);
         lines.push(`DHCPNAK from ${offer.serverIdentifier}${reason} (${iface})`);
         lines.push(`DHCPDISCOVER on ${iface} - restarting`);
       }
+      return lines.join('\n');
+    }
+    if (!ackResult) {
+      this.emitStateChange(iface, 'REQUESTING', 'INIT', 'TIMEOUT');
+      state.state = 'INIT';
+      state.logs.push(`no DHCPACK from ${offer.serverIdentifier} - restarting`);
+      if (verbose) lines.push(`DHCPREQUEST of ${offer.ip} on ${iface} to 255.255.255.255 port 67`);
       return lines.join('\n');
     }
     this.acksReceived++;
@@ -609,7 +622,7 @@ export class DHCPClient implements IProtocolEngine {
     if (verbose) lines.push('No DHCPOFFERS received.');
 
     const recorded = state.lease ?? state.lastKnownLease;
-    if (recorded && recorded.expiration > Date.now()) {
+    if (recorded && recorded.expiration > this.clock()) {
       state.state = 'BOUND';
       state.lease = recorded;
       state.lastKnownLease = { ...recorded };
@@ -664,8 +677,10 @@ export class DHCPClient implements IProtocolEngine {
     let ackResult: DHCPAckResult | null = null;
     let respondingChannel: DhcpServerChannel | null = null;
 
+    let nak: DHCPRequestWithNakResult | null = null;
+
     for (const channel of this.channelsFor(iface)) {
-      const result = channel.processRequest({
+      const result = channel.processRequestWithNak({
         clientMAC: mac,
         xid: state.xid,
         requestedIP: lastLease.ipAddress,    // Option 50
@@ -673,13 +688,20 @@ export class DHCPClient implements IProtocolEngine {
         clientIdentifier,                     // Option 61
         ...this.clientIdentity(),
       });
-      if (result && result.xid === state.xid) {
-        ackResult = result;
+      if (result?.xid !== state.xid) continue;
+      if (result.type === 'NAK') {
+        nak = result;
+        break;
+      }
+      const ack = ackOf(result);
+      if (ack) {
+        ackResult = ack;
         respondingChannel = channel;
         break;
       }
     }
 
+    if (nak) this.recordNak(iface, nak.serverIdentifier, nak.message);
     if (!ackResult || !respondingChannel) {
       // NAK or no response — fall back to normal INIT. The record itself is
       // kept: if DISCOVER finds nothing either, an unexpired lease is still
@@ -687,7 +709,9 @@ export class DHCPClient implements IProtocolEngine {
       state.state = 'INIT';
       state.logs.push('INIT-REBOOT failed - reverting to INIT');
       if (verbose) {
-        lines.push(`DHCPNAK or no response - reverting to DHCPDISCOVER`);
+        lines.push(nak
+          ? `DHCPNAK from ${nak.serverIdentifier} (${iface})`
+          : `DHCPNAK or no response - reverting to DHCPDISCOVER`);
       }
       const retry = this.requestLease(iface, { verbose, fromInitReboot: true });
       return retry ? lines.join('\n') + '\n' + retry : lines.join('\n');
@@ -877,7 +901,7 @@ export class DHCPClient implements IProtocolEngine {
     const octet4 = parseInt(macParts[5] || '02', 16);              // 0-255
     const ip = `169.254.${octet3}.${octet4}`;
     const mask = '255.255.0.0';
-    const now = Date.now();
+    const now = this.clock();
     const leaseDuration = 86400; // APIPA doesn't have a real lease, but we set one for consistency
 
     const lease: DHCPClientLease = {

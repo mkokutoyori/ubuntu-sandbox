@@ -95,11 +95,8 @@ describe('Scénario 9 — Analyse des messages ICMP avancés avec tcpdump natif'
       // phrase itself is the faithful equivalent of the scenario's
       // "icmp type-11 code-0 (time exceeded in-transit)".
       expect(analysis).toMatch(new RegExp(`${R1_NEAR_IP} > ${ATTACKER_IP}: ICMP time exceeded in-transit`));
-      // Encapsulated original datagram — real tcpdump nests it as a second
-      // "IP (...)\n    src > dst: ..." block right under the ICMP line,
-      // carrying the offending echo request's own src/dst/ttl/proto.
-      expect(analysis).toMatch(/\tIP \(tos 0x0, ttl 1, id \d+, offset 0, flags \[[^\]]+\], proto ICMP \(1\), length \d+\)/);
-      expect(analysis).toMatch(new RegExp(`${ATTACKER_IP} > ${TARGET_IP}: ICMP`));
+      expect(analysis).toMatch(/\tIP \(tos 0x0, ttl 1, id \d+, offset 0, flags \[[^\]]+\], proto UDP \(17\), length 60\)/);
+      expect(analysis).toMatch(new RegExp(`${ATTACKER_IP}\\.\\d+ > ${TARGET_IP}\\.334\\d\\d: UDP, length 32`));
     });
 
     it('reconstitue la séquence traceroute depuis la capture : TTL croissant → Time Exceeded par saut → réponse finale', async () => {
@@ -121,10 +118,10 @@ describe('Scénario 9 — Analyse des messages ICMP avancés avec tcpdump natif'
       // la ligne d'en-tête "IP (...)", le src/dst/type sur la ligne suivante.
       const outboundTtls: number[] = [];
       for (let i = 0; i < lines.length - 1; i++) {
-        const ttlMatch = /IP \(tos 0x0, ttl (\d+),.*proto ICMP/.exec(lines[i]);
+        const ttlMatch = /^\S.*IP \(tos 0x0, ttl (\d+),.*proto UDP/.exec(lines[i]);
         if (!ttlMatch) continue;
         const next = lines[i + 1];
-        if (next.includes(`${ATTACKER_IP} > `) && next.includes('echo request')) {
+        if (next.includes(`${ATTACKER_IP}.`) && /: UDP, cksum 0x[0-9a-f]+ \(correct\), length 32$/.test(next)) {
           outboundTtls.push(Number(ttlMatch[1]));
         }
       }

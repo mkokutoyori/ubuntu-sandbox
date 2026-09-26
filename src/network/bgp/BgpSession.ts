@@ -19,8 +19,8 @@
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import {
-  type BgpMessage, type BgpOpenMessage, type BgpUpdateMessage,
-  keepalive,
+  type BgpErrorCode, type BgpMessage, type BgpOpenMessage, type BgpUpdateMessage,
+  errorCodeOf, keepalive,
   BGP_VERSION, BGP_DEFAULT_HOLD_SEC, BGP_DEFAULT_KEEPALIVE_SEC,
   BGP_ERROR, BGP_OPEN_ERROR,
 } from './messages';
@@ -54,6 +54,7 @@ export interface BgpSessionCallbacks {
   onEstablished?(peerAsn: number, peerRouterId: string): void;
   onUpdate?(update: BgpUpdateMessage): void;
   onClose?(): void;
+  onNotification?(error: BgpErrorCode): void;
 }
 
 export interface BgpMessageCounts {
@@ -131,7 +132,10 @@ export class BgpSession {
 
   private emit(msg: BgpMessage): void {
     this.messagesOut++;
-    if (msg.message === 'notification') this.notificationsOut++;
+    if (msg.message === 'notification') {
+      this.notificationsOut++;
+      this.cb.onNotification?.(errorCodeOf(msg));
+    }
     this.transport.send(msg);
   }
 
@@ -146,7 +150,10 @@ export class BgpSession {
   // ── inbound ────────────────────────────────────────────────────────
   private receive(msg: BgpMessage): void {
     this.messagesIn++;
-    if (msg.message === 'notification') this.notificationsIn++;
+    if (msg.message === 'notification') {
+      this.notificationsIn++;
+      this.cb.onNotification?.(errorCodeOf(msg));
+    }
     this.armHoldTimer();   // any message resets the Hold Timer (§4.4)
     switch (msg.message) {
       case 'open': this.handleOpen(msg); break;

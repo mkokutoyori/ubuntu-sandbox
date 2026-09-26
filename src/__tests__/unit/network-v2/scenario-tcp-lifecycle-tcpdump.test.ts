@@ -159,7 +159,7 @@ describe('Scénario 1 — Analyse complète du cycle de vie TCP par dissection p
 
     it('le troisième paquet ACK finalise le handshake avec ack = server_isn+1', async () => {
       const lan = buildHttpLan();
-      const pending = lan.pc.executeCommand(`tcpdump -c 3 -nn -vvv tcp and port ${HTTP_PORT}`);
+      const pending = lan.pc.executeCommand(`tcpdump -c 3 -nn -S -vvv tcp and port ${HTTP_PORT}`);
       await new Promise((r) => setTimeout(r, 20));
       lan.pc.getTcpStack().connect(SERVER_IP, HTTP_PORT);
       await new Promise((r) => setTimeout(r, 20));

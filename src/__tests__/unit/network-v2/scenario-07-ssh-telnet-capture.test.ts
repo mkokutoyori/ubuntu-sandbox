@@ -56,7 +56,7 @@ describe('Scenario 7 — Capture et analyse de paquets sur un lien SSH', () => {
     await client.executeCommand('ssh -o StrictHostKeyChecking=no alice@10.0.0.20 "cat /etc/shadow"', 'ssh-secret-PW!\n');
 
     const tcpdumpOut = await capture.executeCommand('tcpdump -r /tmp/ssh.pcap -A');
-    expect(tcpdumpOut).toMatch(/10\.0\.0\.20\.22/);
+    expect(tcpdumpOut).toMatch(/10\.0\.0\.20\.ssh/);
     expect(tcpdumpOut).toMatch(/SSH-2\.0/);
     expect(tcpdumpOut).not.toContain('ssh-secret-PW!');
     expect(tcpdumpOut).not.toContain('cat /etc/shadow');
@@ -79,7 +79,7 @@ describe('Scenario 7 — Capture et analyse de paquets sur un lien SSH', () => {
     await client.executeCommand('telnet 10.0.0.20', 'bob\ntelnet-cleartext\nls /etc/shadow\nexit\n');
 
     const tcpdumpOut = await capture.executeCommand('tcpdump -r /tmp/telnet.pcap -A');
-    expect(tcpdumpOut).toMatch(/10\.0\.0\.20\.23/);
+    expect(tcpdumpOut).toMatch(/10\.0\.0\.20\.telnet/);
     expect(tcpdumpOut).toContain('telnet-cleartext');
     expect(tcpdumpOut).toContain('ls /etc/shadow');
   });
@@ -107,11 +107,11 @@ describe('Scenario 7 — Capture et analyse de paquets sur un lien SSH', () => {
     await client.executeCommand('telnet 10.0.0.20', 'carol\ncarolsecret123\nuname -a\nexit\n');
     const telnetAscii = await capture.executeCommand('tcpdump -r /tmp/telnet2.pcap -A');
 
-    expect(sshAscii).toMatch(/10\.0\.0\.20\.22/);
+    expect(sshAscii).toMatch(/10\.0\.0\.20\.ssh/);
     expect(sshAscii).not.toContain('carolsecret123');
     expect(sshAscii).not.toContain('uname -a');
 
-    expect(telnetAscii).toMatch(/10\.0\.0\.20\.23/);
+    expect(telnetAscii).toMatch(/10\.0\.0\.20\.telnet/);
     expect(telnetAscii).toContain('carolsecret123');
     expect(telnetAscii).toContain('uname -a');
   });

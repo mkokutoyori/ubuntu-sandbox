@@ -13,6 +13,7 @@ export interface UdpSendRequest {
   readonly iface?: string;
   readonly ttl?: number;
   readonly tos?: number;
+  readonly dontFragment?: boolean;
 }
 
 export interface UdpEgressHost {
@@ -29,6 +30,7 @@ export interface UdpEmissionOptions {
   df?: boolean;
   iface?: string;
   ttl?: number;
+  tos?: number;
   badChecksum?: boolean;
   /** Une adresse source FORGEE, celle que `nmap -S`/`-D` compose. */
   sourceIp?: IPAddress;

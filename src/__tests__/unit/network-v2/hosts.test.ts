@@ -249,8 +249,8 @@ describe('H-05 — traceroute with hostname resolution', () => {
   it('traceroute unresolvable hostname returns proper error', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     const out = await pc.executeCommand('traceroute nosuchhost');
-    expect(out).toContain('nosuchhost');
-    expect(out).toContain('unknown host');
+    expect(out).toBe('nosuchhost: Name or service not known\n'
+      + 'Cannot handle "host" cmdline arg `nosuchhost\' on position 1 (argc 1)');
   });
 
   it('traceroute by IP still works', async () => {

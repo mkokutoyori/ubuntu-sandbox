@@ -90,8 +90,9 @@ describe('Scénario 7 — Analyse statistique de trafic LAN', () => {
     const { pc, srv } = await buildLanLab();
     await captureLanStats(pc, srv);
     const out = await pc.executeCommand('tcpdump -nn -r /tmp/lan-stats.pcap');
-    expect(out).not.toMatch(/tcpdump: error/);
-    expect(out).toContain('packets captured');
+    expect(out).toMatch(/^reading from file \/tmp\/lan-stats\.pcap, link-type EN10MB \(Ethernet\)/);
+    expect(out).not.toContain('packets captured');
+    expect(await pc.executeCommand('tcpdump -nn -r /tmp/lan-stats.pcap --count')).toMatch(/^[1-9]\d* packets?$/m);
   });
 
   describe('top talkers par volume de paquets', () => {

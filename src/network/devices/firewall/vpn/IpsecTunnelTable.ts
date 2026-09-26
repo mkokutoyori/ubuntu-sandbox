@@ -100,6 +100,7 @@ export interface IpsecTunnelTableDeps {
   readonly now?: () => number;
   readonly onInterfaceCreated?: (name: string, boundTo: string) => void;
   readonly onInterfaceRemoved?: (name: string) => void;
+  readonly onStatusChange?: (tunnel: Phase1Tunnel, status: TunnelStatus) => void;
 }
 
 export class IpsecTunnelTable {
@@ -189,19 +190,28 @@ export class IpsecTunnelTable {
   markUp(name: string, natTraversalUsed = false): void {
     const state = this.states.get(name);
     if (!state) return;
+    const changed = state.status !== 'up';
     state.status = 'up';
     state.gatewayUp = true;
     state.establishedAt = this.now();
     state.failure = null;
     state.natTraversalUsed = natTraversalUsed;
+    if (changed) this.announce(name, 'up');
   }
 
   markDown(name: string, failure: string | null = null): void {
     const state = this.states.get(name);
     if (!state) return;
+    const changed = state.status !== 'down';
     state.status = 'down';
     state.establishedAt = null;
     state.failure = failure;
+    if (changed) this.announce(name, 'down');
+  }
+
+  private announce(name: string, status: TunnelStatus): void {
+    const tunnel = this.phase1.get(name);
+    if (tunnel) this.deps.onStatusChange?.(tunnel, status);
   }
 
   recordTraffic(name: string, direction: 'in' | 'out', bytes: number): void {

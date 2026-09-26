@@ -6371,12 +6371,20 @@ export class LinuxCommandExecutor {
 
   /** Check if current user has permission (r/w/x) on an inode */
   private currentPathActor(): import('./VfsPath').PathActor {
-    const groups = this.userMgr.getUserGroups(this.userMgr.currentUser);
+    return this.pathActorOf(this.userMgr.currentUser)
+      ?? { uid: this.userMgr.currentUid, gid: this.userMgr.currentGid };
+  }
+
+  pathActorOf(username: string): import('./VfsPath').PathActor | null {
+    const current = username === this.userMgr.currentUser;
+    const entry = current ? undefined : this.userMgr.getUser(username);
+    if (!current && entry === undefined) return null;
+    const groups = this.userMgr.getUserGroups(username);
     return {
-      uid: this.userMgr.currentUid,
-      gid: this.userMgr.currentGid,
+      uid: current ? this.userMgr.currentUid : entry!.uid,
+      gid: current ? this.userMgr.currentGid : entry!.gid,
       gids: groups.map((g) => g.gid),
-      user: this.userMgr.currentUser,
+      user: username,
       groupNames: groups.map((g) => g.name),
     };
   }

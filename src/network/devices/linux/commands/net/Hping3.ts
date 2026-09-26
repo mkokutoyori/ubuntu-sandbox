@@ -15,6 +15,7 @@ const TCPHDR_SIZE = 20;
 const UDPHDR_SIZE = 8;
 const ICMPHDR_SIZE = 8;
 const IPPROTO_RAW = 0;
+const ICMP_TYPE_TIME_EXCEEDED = 11;
 const MAXPORT = 65535;
 const RELEASE_VERSION = '3.0.0-alpha-1';
 const RELEASE_DATE = '$Id: release.h,v 1.4 2004/04/09 23:38:56 antirez Exp $';
@@ -313,6 +314,37 @@ interface ReplyIpFields {
   dontFragment: boolean;
 }
 
+const ICMP_UNREACH_MESSAGES: ReadonlyArray<string | null> = [
+  'Network Unreachable from',
+  'Host Unreachable from',
+  'Protocol Unreachable from',
+  'Port Unreachable from',
+  'Fragmentation Needed/DF set from',
+  'Source Route failed from',
+  null, null, null, null, null, null, null,
+  'Packet filtered from',
+  'Precedence violation from',
+  'precedence cut off from',
+];
+
+const ICMP_EXC_MESSAGES: ReadonlyArray<string | null> = [
+  'TTL 0 during transit from',
+  'TTL 0 during reassembly from',
+];
+
+function icmpErrorLine(
+  detail: { icmpType?: number; icmpCode?: number; icmpFrom?: string },
+  target: string,
+): string | null {
+  const from = detail.icmpFrom ?? target;
+  if (detail.icmpType === ICMP_TYPE_TIME_EXCEEDED) {
+    const text = ICMP_EXC_MESSAGES[detail.icmpCode ?? 0];
+    return text === undefined || text === null ? null : `${text} ip=${from}`;
+  }
+  const text = ICMP_UNREACH_MESSAGES[detail.icmpCode ?? 3];
+  return text === undefined || text === null ? null : `ICMP ${text} ip=${from}`;
+}
+
 function ipPartLines(fields: ReplyIpFields, ip: string, verbose: boolean): string[] {
   const head = `len=${fields.totalLength} ip=${ip} ttl=${fields.ttl} `
     + `${fields.dontFragment ? 'DF ' : ''}id=${fields.identification} `;
@@ -356,11 +388,9 @@ function tcpEmission(
       : appendToLast(ipPart, protocolPart);
     return { received: true, lines };
   }
-  if (detail.reply === 'icmp-prohibited') {
-    return { received: false, lines: [`ICMP Packet filtered from ip=${ip}`] };
-  }
-  if (detail.reply === 'icmp-unreachable') {
-    return { received: false, lines: [`ICMP Port Unreachable from ip=${ip}`] };
+  if (detail.reply === 'icmp-prohibited' || detail.reply === 'icmp-unreachable') {
+    const line = icmpErrorLine(detail, ip);
+    return line === null ? { received: false } : { received: false, lines: [line] };
   }
   return { received: false };
 }

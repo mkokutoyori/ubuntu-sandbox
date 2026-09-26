@@ -7,7 +7,7 @@ import {
   IP_PROTO_TCP,
   IP_PROTO_UDP,
   encodeIPv4Options,
-  ethernetFrameBytes,
+  ethernetFrameBytesWithoutFcs,
   icmpTypeNumber,
   icmpv6TypeNumber,
   verifyIPv4Checksum,
@@ -59,6 +59,7 @@ export interface CaptureFrame {
   dstIp?: string;
   ttl?: number;
   ipId?: number;
+  ipTos?: number;
   ipProtocol?: number;
   ipTotalLength?: number;
   ipHeaderLen?: number;
@@ -119,6 +120,7 @@ export interface IcmpOrigInfo {
   dstIp: string;
   ttl: number;
   ipId: number;
+  ipTos: number;
   protocol: number;
   ipFlags: number;
   ipTotalLength: number;
@@ -360,6 +362,8 @@ function withEthernet(frame: EthernetFrame, l3Bytes: number[]): { raw: number[];
   return { raw: [...eth, ...l3Bytes], offset: eth.length };
 }
 
+const MINIMUM_RECEIVED_FRAME_BYTES = 60;
+
 export function decodeEthernetFrame(
   frame: EthernetFrame,
   iface: string,
@@ -377,7 +381,9 @@ export function decodeEthernetFrame(
     etherType: frame.etherType,
     l3: 'other',
     l4: 'none',
-    length: ethernetFrameBytes(frame),
+    length: direction === 'in'
+      ? Math.max(MINIMUM_RECEIVED_FRAME_BYTES, ethernetFrameBytesWithoutFcs(frame))
+      : ethernetFrameBytesWithoutFcs(frame),
     raw: [],
     rawLinkOffset: 0,
     vlanId: tag?.vid,
@@ -406,6 +412,7 @@ export function decodeEthernetFrame(
     base.dstIp = ip.destinationIP.toString();
     base.ttl = ip.ttl;
     base.ipId = ip.identification;
+    base.ipTos = ip.tos;
     base.ipProtocol = ip.protocol;
     base.ipTotalLength = ip.totalLength;
     base.ipHeaderLen = (ip.ihl ?? 5) * 4;
@@ -448,6 +455,7 @@ function decodeIcmpOrig(orig: IPv4Packet): IcmpOrigInfo {
     dstIp: orig.destinationIP.toString(),
     ttl: orig.ttl,
     ipId: orig.identification,
+    ipTos: orig.tos ?? 0,
     protocol: orig.protocol,
     ipFlags: orig.flags,
     ipTotalLength: orig.totalLength,
@@ -488,7 +496,7 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
     base.icmpCode = icmp.code;
     base.icmpId = icmp.id;
     base.icmpSeq = icmp.sequence;
-    base.payloadLength = (icmp.dataSize ?? 0) + 8;
+    base.payloadLength = Math.max(0, ip.totalLength - (ip.ihl ?? 5) * 4);
     base.icmpNextHopMtu = icmp.mtu;
     if (icmp.originalPacket) base.icmpOrig = decodeIcmpOrig(icmp.originalPacket);
     return;

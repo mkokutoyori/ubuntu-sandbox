@@ -153,6 +153,32 @@ export function mayGenerateICMPv6Error(
 export interface ICMPErrorOptions {
   /** RFC 1191 §4: Next-Hop MTU for Fragmentation Needed (Type 3, Code 4). */
   nextHopMTU?: number;
+  quote?: IcmpErrorQuote;
+}
+
+export interface IcmpErrorQuote {
+  maxOriginalBytes: number | null;
+  tosFor(offendingPkt: IPv4Packet): number;
+  dontFragment: boolean;
+}
+
+export const RFC792_ICMP_ERROR_QUOTE: IcmpErrorQuote = {
+  maxOriginalBytes: null, tosFor: () => 0, dontFragment: true,
+};
+
+const LINUX_ICMP_ROOM = 576 - 20 - 8;
+const IPTOS_PREC_INTERNETCONTROL = 0xc0;
+const RT_TOS_MASK = 0x1e;
+
+export const LINUX_ICMP_ERROR_QUOTE: IcmpErrorQuote = {
+  maxOriginalBytes: LINUX_ICMP_ROOM,
+  tosFor: (offendingPkt) => (offendingPkt.tos & RT_TOS_MASK) | IPTOS_PREC_INTERNETCONTROL,
+  dontFragment: false,
+};
+
+function quotedPayloadSize(offendingPkt: IPv4Packet, quote: IcmpErrorQuote): number {
+  if (quote.maxOriginalBytes === null) return ICMP_ERROR_PAYLOAD_SIZE;
+  return 8 + Math.min(offendingPkt.totalLength, quote.maxOriginalBytes);
 }
 
 /**
@@ -183,12 +209,14 @@ export function buildICMPError(
     originalPacket: offendingPkt,
   };
 
+  const quote = options.quote ?? RFC792_ICMP_ERROR_QUOTE;
   return createIPv4Packet(
     sourceIP,
     offendingPkt.sourceIP,
     IP_PROTO_ICMP,
     ttl,
     icmpError,
-    ICMP_ERROR_PAYLOAD_SIZE,
+    quotedPayloadSize(offendingPkt, quote),
+    { tos: quote.tosFor(offendingPkt), flags: quote.dontFragment ? 0b010 : 0 },
   );
 }

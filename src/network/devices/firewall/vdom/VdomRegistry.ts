@@ -23,7 +23,7 @@ import { LogSettings } from '../logging/LogSettings';
 import { UtmProfileStore } from '../inspection/UtmProfiles';
 import { IdentityTable } from '../identity/IdentityTable';
 import { UserDirectory } from '../identity/UserDirectory';
-import { IpsecTunnelTable } from '../vpn/IpsecTunnelTable';
+import { IpsecTunnelTable, type Phase1Tunnel, type TunnelStatus } from '../vpn/IpsecTunnelTable';
 import { CertificateStore } from '../vpn/CertificateStore';
 import { seedFactoryCertificates } from '../vpn/FactoryCertificates';
 import { NetworkOsCredentialStore } from '../../router/aaa/NetworkOsCredentialStore';
@@ -83,6 +83,7 @@ export interface VdomRegistryDeps {
   readonly bus: () => IEventBus;
   readonly onTunnelInterface?: (vdom: string, tunnel: string, boundTo: string) => void;
   readonly onTunnelRemoved?: (vdom: string, tunnel: string) => void;
+  readonly onTunnelStatus?: (vdom: string, tunnel: Phase1Tunnel, status: TunnelStatus) => void;
   readonly policyKeyedBy: 'zone' | 'interface';
   readonly implicitPolicy: 'deny-all' | 'security-level';
   readonly applicationShift: boolean;
@@ -287,6 +288,7 @@ export class VdomRegistry {
         onInterfaceCreated: (tunnel, boundTo) =>
           this.deps.onTunnelInterface?.(name, tunnel, boundTo),
         onInterfaceRemoved: (tunnel) => this.deps.onTunnelRemoved?.(name, tunnel),
+        onStatusChange: (tunnel, status) => this.deps.onTunnelStatus?.(name, tunnel, status),
       }),
       certificates: buildCertificateStore(this.deps.now()),
       users: new UserDirectory({

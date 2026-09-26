@@ -6039,24 +6039,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   /** IOS `show ip dhcp binding` table — leases currently held by the server. */
-  private showIpDhcpBinding(): string {
-    const dhcp = this.d()._getDHCPServerInternal();
-    const bindings = Array.from(dhcp.getBindings().values());
-    const lines: string[] = [
-      'Bindings from all pools not associated with VRF:',
-      'IP address          Client-ID/              Lease expiration        Type',
-      '                    Hardware address/',
-      '                    User name',
-    ];
-    for (const b of bindings) {
-      const expire = b.leaseExpiration
-        ? new Date(b.leaseExpiration).toUTCString().slice(5, 25)
-        : 'Infinite';
-      lines.push(`${b.ipAddress.padEnd(20)}01${b.clientId.replace(/:/g, '').toLowerCase().padEnd(22)}${expire.padEnd(24)}Automatic`);
-    }
-    return lines.join('\n');
-  }
-
   private ipInSubnet(ip: string, network: string, mask: string): boolean {
     try {
       const ipN = new IPAddress(ip);
@@ -6071,7 +6053,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (bindings.length === 0) return 'There are no leases.';
     const lines = ['IP address       Expires              Hardware address'];
     for (const b of bindings) {
-      const expire = b.leaseExpiration
+      const expire = Number.isFinite(b.leaseExpiration)
         ? new Date(b.leaseExpiration).toUTCString().slice(5, 25)
         : 'Infinite';
       lines.push(`${b.ipAddress.padEnd(17)}${expire.padEnd(21)}${b.clientId}`);

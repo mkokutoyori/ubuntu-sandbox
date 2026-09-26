@@ -111,6 +111,19 @@ function parseDecoys(spec: string): DecoySource[] {
 export type ScanType =
   'tcp' | 'syn' | 'udp' | 'ack' | 'fin' | 'null' | 'xmas' | 'maimon' | 'window';
 
+export type DiscoveryProbeKind =
+  'icmp-echo' | 'tcp-syn' | 'tcp-ack' | 'udp' | 'ip-proto';
+
+export interface DiscoveryProbe {
+  kind: DiscoveryProbeKind;
+  ports?: readonly number[];
+  protocols?: readonly number[];
+}
+
+export const DEFAULT_TCP_PROBE_PORT = 80;
+export const DEFAULT_UDP_PROBE_PORT = 40125;
+export const DEFAULT_PROTO_PROBE_PROTOCOLS: readonly number[] = [1, 2, 4];
+
 const SCAN_TYPE_OPTIONS: Readonly<Record<string, ScanType>> = {
   '-sT': 'tcp', '-sS': 'syn', '-sU': 'udp', '-sA': 'ack', '-sF': 'fin',
   '-sN': 'null', '-sX': 'xmas', '-sM': 'maimon', '-sW': 'window',
@@ -204,6 +217,8 @@ export interface NmapOptions {
   excludeSpecs?: string[];
   randomTargets?: number;
   excluded?: AddrSet;
+  discovery?: readonly DiscoveryProbe[];
+  listScan: boolean;
 }
 
 /**
@@ -254,6 +269,112 @@ const UNKNOWN_TAIL = 'See the output of nmap -h for a summary of options.';
  */
 function acceptedWithoutEffect(arg: string): boolean {
   return arg === '-r' || /^-T[0-5]?$/.test(arg);
+}
+
+const PING_TYPE_NAMES: Readonly<Record<string, DiscoveryProbeKind>> = {
+  E: 'icmp-echo', I: 'icmp-echo', S: 'tcp-syn', A: 'tcp-ack', T: 'tcp-ack',
+  U: 'udp', O: 'ip-proto',
+};
+
+const SINGLE_USE_MESSAGE: Readonly<Record<string, string>> = {
+  S: 'Only one -PS option is allowed. Combine port ranges with commas.',
+  A: 'Only one -PA or -PB option is allowed. Combine port ranges with commas.',
+  U: 'Only one -PU option is allowed. Combine port ranges with commas.',
+};
+
+const DEPRECATED_PING_FORMS: Readonly<Record<string, string>> = {
+  I: '-PE', T: '-PA',
+};
+
+const UNBUILDABLE_PING_FORMS: Readonly<Record<string, string>> = {
+  M: 'an ICMP address-mask request (type 17)',
+  P: 'an ICMP timestamp request (type 13)',
+  Y: 'an SCTP INIT chunk',
+};
+
+function parseProtocolList(spec: string): number[] | null {
+  const out: number[] = [];
+  for (const item of spec.split(',')) {
+    if (item.includes('-')) {
+      const [lowText, highText] = item.split('-');
+      const low = Number(lowText);
+      const high = Number(highText);
+      if (!Number.isInteger(low) || !Number.isInteger(high)) return null;
+      if (low < 0 || high > 255 || low > high) return null;
+      for (let p = low; p <= high; p++) out.push(p);
+      continue;
+    }
+    const proto = Number(item);
+    if (!Number.isInteger(proto) || proto < 0 || proto > 255) return null;
+    out.push(proto);
+  }
+  return out.length > 0 ? out : null;
+}
+
+function applyDiscoveryOption(
+  arg: string, plan: DiscoveryProbe[], warnings: string[],
+): void {
+  const suffix = arg.slice(2);
+  if (suffix === '') {
+    warnings.push('WARNING: The -P option is deprecated. Use -PE instead.');
+    plan.push({ kind: 'icmp-echo' });
+    return;
+  }
+  const letter = suffix[0];
+  const rest = suffix.slice(1);
+
+  if (letter === 'R') {
+    warnings.push('The -PR option is deprecated.'
+      + ' ARP scan is always done when possible.');
+    return;
+  }
+  const unbuildable = UNBUILDABLE_PING_FORMS[letter];
+  if (unbuildable !== undefined) {
+    throw new NmapOptionError([`nmap: option -P${letter}: this simulator cannot`
+      + ` build ${unbuildable}`]);
+  }
+  const kind = PING_TYPE_NAMES[letter];
+  if (kind === undefined) throw new NmapOptionError([`Unknown -P option -P${suffix}.`]);
+
+  const deprecated = DEPRECATED_PING_FORMS[letter];
+  if (deprecated !== undefined) {
+    warnings.push(`WARNING: The -P${letter} option is deprecated.`
+      + ` Use ${deprecated} instead.`);
+  }
+  const single = SINGLE_USE_MESSAGE[letter];
+  if (single !== undefined && plan.some((probe) => probe.kind === kind)) {
+    throw new NmapOptionError([single]);
+  }
+
+  if (kind === 'icmp-echo') {
+    if (rest !== '') throw new NmapOptionError([`Unknown -P option -P${suffix}.`]);
+    plan.push({ kind });
+    return;
+  }
+  if (kind === 'ip-proto') {
+    const protocols = rest === ''
+      ? DEFAULT_PROTO_PROBE_PROTOCOLS : parseProtocolList(rest);
+    if (protocols === null) {
+      throw new NmapOptionError([`Bogus argument to -PO: ${rest}`]);
+    }
+    plan.push({ kind, protocols });
+    return;
+  }
+  const fallback = kind === 'udp' ? DEFAULT_UDP_PROBE_PORT : DEFAULT_TCP_PROBE_PORT;
+  let ports: number[];
+  if (rest === '') {
+    ports = [fallback];
+  } else {
+    try {
+      ports = parsePortSpec(rest);
+    } catch {
+      ports = [];
+    }
+    if (ports.length === 0) {
+      throw new NmapOptionError([`Bogus argument to -P${letter}: ${rest}`]);
+    }
+  }
+  plan.push({ kind, ports });
 }
 
 function refuseUnknown(arg: string): never {
@@ -335,6 +456,8 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   let randomTargets: number | undefined;
   let extraPayload: Uint8Array | undefined;
   const warnings: string[] = [];
+  const discovery: DiscoveryProbe[] = [];
+  let listScan = false;
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -362,8 +485,16 @@ export function parseNmapArgs(args: string[]): NmapOptions {
       continue;
     }
 
+    if (a === '-sL') { listScan = true; continue; }
     if (a === '-sn' || a === '-sP') { pingOnly = true; continue; }
-    if (a === '-Pn' || a === '-P0') { skipDiscovery = true; continue; }
+    if (a === '-Pn' || a === '-P0' || a === '-PN' || a === '-PD') {
+      skipDiscovery = true;
+      continue;
+    }
+    if (a.startsWith('-P')) {
+      applyDiscoveryOption(a, discovery, warnings);
+      continue;
+    }
 
     if (a === '-sV') { versionScan = true; continue; }
     if (a === '--iflist') { ifList = true; continue; }
@@ -596,6 +727,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
     osScan, openOnly, ipv6, disableArpPing, alwaysResolve, traceroute, packetTrace,
     showReason, noDns, verbose, debugLevel, stylesheet, probeShape, decoys, warnings,
     outputNormal, outputGreppable, outputXml,
-    inputFile, excludeFile, excludeSpecs, randomTargets,
+    inputFile, excludeFile, excludeSpecs, randomTargets, listScan,
+    ...(discovery.length > 0 ? { discovery } : {}),
   };
 }
