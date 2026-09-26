@@ -28,7 +28,7 @@ import {
   DHCPReleaseParams, DHCPDeclineParams,
   DHCPInformParams, DHCPInformResult,
   DHCPRequestWithNakResult, DHCPStaticBinding,
-  createDefaultPoolConfig, createDefaultStats,
+  ackOf, createDefaultPoolConfig, createDefaultStats,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
 import { DHCP_CONSTANTS } from '../core/constants';
@@ -59,6 +59,7 @@ export type DhcpUtilizationSink = (crossing: DhcpUtilizationCrossing) => void;
 
 /** Default conflict TTL: infinite (0 = never expire) */
 const DEFAULT_CONFLICT_TTL = 0;
+export const INFINITE_LEASE_EXPIRATION = Number.POSITIVE_INFINITY;
 
 function formatChaddr(mac: string | undefined): string {
   const hex = (mac ?? '').replace(/[^0-9a-fA-F]/g, '').toLowerCase().padStart(12, '0').slice(-12);
@@ -113,6 +114,7 @@ export class DHCPServer implements IProtocolEngine {
 
   /** Conflict TTL in seconds (0 = never expire) */
   private conflictTTL: number = DEFAULT_CONFLICT_TTL;
+  private clock: () => number = () => Date.now();
 
   /** Debug flags */
   private debug: DHCPDebugFlags = { serverPacket: false, serverEvents: false };
@@ -620,7 +622,7 @@ export class DHCPServer implements IProtocolEngine {
       ? { clientMAC: paramsOrMAC, xid: 0, clientIdentifier: '01' + paramsOrMAC.replace(/:/g, ''), parameterRequestList: [] }
       : paramsOrMAC;
 
-    // Clean expired pending offers
+    this.expireStale();
     this.cleanExpiredPendingOffers();
 
     // Subnet anchor for pool selection: giaddr when relayed, otherwise the
@@ -727,7 +729,7 @@ export class DHCPServer implements IProtocolEngine {
           ip,
           clientMAC: params.clientMAC,
           poolName: pool.name,
-          expiresAt: Date.now() + PENDING_OFFER_TIMEOUT_MS,
+          expiresAt: this.clock() + PENDING_OFFER_TIMEOUT_MS,
         });
 
         this.stats.offers++;
@@ -767,95 +769,7 @@ export class DHCPServer implements IProtocolEngine {
   }
 
   private processRequestInternal(paramsOrMAC: DHCPRequestParams | string, legacyRequestedIP?: string): DHCPAckResult | null {
-    if (!this.enabled) return null;
-
-    // Normalize params (backward compat)
-    const params: DHCPRequestParams = typeof paramsOrMAC === 'string'
-      ? {
-          clientMAC: paramsOrMAC,
-          xid: 0,
-          requestedIP: legacyRequestedIP!,
-          clientIdentifier: '01' + paramsOrMAC.replace(/:/g, ''),
-        }
-      : paramsOrMAC;
-
-    // If server identifier is specified (SELECTING state), verify it matches us
-    // Do NOT count requests destined for other servers (BUG FIX: no more stats.requests--)
-    if (!this.isOurServerId(params.serverIdentifier)) {
-      return null;
-    }
-
-    // Count this as our request only after verifying it's for us
-    this.stats.requests++;
-
-    // RFC compliance: Check if the requested IP is in an excluded range
-    if (this.isExcluded(params.requestedIP)
-      && !this.isReservedFor(params.clientMAC, params.requestedIP)) {
-      this.stats.naks++;
-      return null;
-    }
-
-    // Check for conflicts
-    if (this.isConflicted(params.requestedIP)) {
-      this.stats.naks++;
-      return null;
-    }
-
-    // Find pool for this IP
-    for (const [, pool] of this.pools) {
-      if (!pool.network || !pool.mask) continue;
-      if (!this.isIPInPool(params.requestedIP, pool)) continue;
-
-      if (this.isClientDenied(params.clientMAC, pool)) {
-        this.stats.naks++;
-        return null;
-      }
-
-      // Check that no other client holds this IP
-      const existingBinding = this.bindings.get(params.requestedIP);
-      if (existingBinding && existingBinding.clientId !== params.clientMAC) {
-        this.stats.naks++;
-        return null;
-      }
-
-      // Remove pending offer (if any)
-      this.pendingOffers.delete(params.requestedIP);
-
-      const binding: DHCPBinding = {
-        ipAddress: params.requestedIP,
-        clientId: params.clientMAC,
-        hostName: params.hostName,
-        leaseStart: Date.now(),
-        leaseExpiration: Date.now() + pool.leaseDuration * 1000,
-        poolName: pool.name,
-        type: 'automatic',
-      };
-
-      this.bindings.set(params.requestedIP, binding);
-      this.stats.acks++;
-      this.getBus().publish({
-        topic: 'dhcp.pool.lease-allocated',
-        payload: {
-          ...this.deviceRef(),
-          pool: pool.name,
-          clientMac: params.clientMAC,
-          ip: params.requestedIP,
-          leaseTimeSec: pool.leaseDuration,
-        },
-      });
-      this.refreshServerSignals();
-
-      return {
-        binding,
-        serverIdentifier: this.resolveServerId(pool),
-        xid: params.xid,
-        renewalTime: pool.renewalTime,
-        rebindingTime: pool.rebindingTime,
-      };
-    }
-
-    this.stats.naks++;
-    return null;
+    return ackOf(this.processRequestWithNakInternal(paramsOrMAC, legacyRequestedIP));
   }
 
   /**
@@ -903,6 +817,7 @@ export class DHCPServer implements IProtocolEngine {
       return null; // Not for us, don't count
     }
 
+    this.expireStale();
     this.stats.requests++;
 
     // Check excluded
@@ -956,12 +871,13 @@ export class DHCPServer implements IProtocolEngine {
 
       this.pendingOffers.delete(params.requestedIP);
 
+      const leaseStart = this.clock();
       const binding: DHCPBinding = {
         ipAddress: params.requestedIP,
         clientId: params.clientMAC,
         hostName: params.hostName,
-        leaseStart: Date.now(),
-        leaseExpiration: Date.now() + pool.leaseDuration * 1000,
+        leaseStart,
+        leaseExpiration: pool.leaseInfinite ? INFINITE_LEASE_EXPIRATION : leaseStart + pool.leaseDuration * 1000,
         poolName: pool.name,
         type: 'automatic',
       };
@@ -1095,6 +1011,7 @@ export class DHCPServer implements IProtocolEngine {
   // ─── Lease Bindings ───────────────────────────────────────────────
 
   getBindings(): Map<string, DHCPBinding> {
+    this.cleanExpiredBindings();
     return this.bindings;
   }
 
@@ -1111,15 +1028,23 @@ export class DHCPServer implements IProtocolEngine {
 
   /** Remove bindings whose lease has expired */
   cleanExpiredBindings(): void {
-    const now = Date.now();
+    const now = this.clock();
     let removed = false;
     for (const [ip, binding] of this.bindings) {
-      if (binding.leaseExpiration <= now) {
-        this.bindings.delete(ip);
-        removed = true;
-      }
+      if (binding.leaseExpiration > now) continue;
+      this.bindings.delete(ip);
+      removed = true;
+      this.getBus().publish({
+        topic: 'dhcp.pool.lease-released',
+        payload: { ...this.deviceRef(), pool: binding.poolName, ip, reason: 'expired' },
+      });
     }
     if (removed) this.refreshServerSignals();
+  }
+
+  private expireStale(): void {
+    this.cleanExpiredBindings();
+    this.cleanExpiredConflicts();
   }
 
   // ─── Statistics ───────────────────────────────────────────────────
@@ -1171,7 +1096,7 @@ export class DHCPServer implements IProtocolEngine {
     this.conflicts.push({
       ipAddress: ip,
       detectionMethod: method,
-      detectionTime: Date.now(),
+      detectionTime: this.clock(),
     });
     this.getBus().publish({
       topic: 'dhcp.pool.conflict',
@@ -1186,10 +1111,22 @@ export class DHCPServer implements IProtocolEngine {
 
   /** Remove conflicts that have exceeded their TTL */
   cleanExpiredConflicts(): void {
-    if (this.conflictTTL <= 0) return; // No expiration
-    const now = Date.now();
-    const ttlMs = this.conflictTTL * 1000;
-    this.conflicts = this.conflicts.filter(c => (now - c.detectionTime) < ttlMs);
+    const now = this.clock();
+    this.conflicts = this.conflicts.filter((conflict) => {
+      const ttlSec = this.findPoolForIP(conflict.ipAddress)?.conflictTtlSec ?? this.conflictTTL;
+      return ttlSec <= 0 || now - conflict.detectionTime < ttlSec * 1000;
+    });
+  }
+
+  setClock(clock: () => number): void {
+    this.clock = clock;
+  }
+
+  configurePoolConflictTtl(name: string, seconds: number): boolean {
+    const pool = this.pools.get(name);
+    if (!pool || !Number.isInteger(seconds) || seconds < 0) return false;
+    pool.conflictTtlSec = seconds;
+    return true;
   }
 
   /** Test helper: set detection time for a specific conflict */
@@ -1427,12 +1364,12 @@ export class DHCPServer implements IProtocolEngine {
       'IP address       Client-id/              Lease expiration        Type',
       '                 Hardware address',
     ];
-    if (this.bindings.size === 0) {
+    if (this.getBindings().size === 0) {
       return lines.join('\n');
     }
-    for (const [ip, binding] of this.bindings) {
-      const expDate = new Date(binding.leaseExpiration);
-      const expStr = expDate.toLocaleString();
+    for (const [ip, binding] of this.getBindings()) {
+      const expStr = Number.isFinite(binding.leaseExpiration)
+        ? new Date(binding.leaseExpiration).toLocaleString() : 'Infinite';
       lines.push(`${ip.padEnd(17)}${binding.clientId.padEnd(24)}${expStr.padEnd(24)}${binding.type}`);
     }
     return lines.join('\n');
@@ -1607,7 +1544,7 @@ export class DHCPServer implements IProtocolEngine {
   }
 
   private cleanExpiredPendingOffers(): void {
-    const now = Date.now();
+    const now = this.clock();
     for (const [ip, pending] of this.pendingOffers) {
       if (pending.expiresAt <= now) {
         this.pendingOffers.delete(ip);

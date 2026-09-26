@@ -1946,7 +1946,7 @@ export class FortiShell {
     if (rest[0] === 'lease-list') {
       return renderDhcpLeases(
         this.leasesOnInterface(dhcp.leases(), rest[1]),
-        (at) => fortiSystemTime(this.fw, at));
+        (at) => (Number.isFinite(at) ? fortiSystemTime(this.fw, at) : ''));
     }
     if (rest[0] === 'lease-clear') {
       if (rest.length < 2) return FortiMessages.incomplete('an IP address');

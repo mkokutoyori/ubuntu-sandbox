@@ -310,7 +310,7 @@ export class LinuxDhcpdService {
     const body = [
       `lease ${reply.yiaddr} {`,
       `  starts ${leaseStamp(binding.leaseStart)};`,
-      `  ends ${leaseStamp(binding.leaseExpiration)};`,
+      `  ends ${Number.isFinite(binding.leaseExpiration) ? leaseStamp(binding.leaseExpiration) : 'never'};`,
       '  binding state active;',
       '  next binding state free;',
       `  hardware ethernet ${request.chaddr.toLowerCase()};`,

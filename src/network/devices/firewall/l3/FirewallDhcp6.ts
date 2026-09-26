@@ -16,6 +16,7 @@ export interface Dhcp6Scope {
 
 export interface FirewallDhcp6Deps {
   readonly systemDnsServers?: () => readonly string[];
+  readonly now?: () => number;
 }
 
 export interface Dhcp6Lease {
@@ -39,7 +40,9 @@ export class FirewallDhcp6 {
   private readonly server = new DHCPv6Server();
   private readonly scopes = new Map<string, Dhcp6Scope>();
 
-  constructor(private readonly deps: FirewallDhcp6Deps = {}) {}
+  constructor(private readonly deps: FirewallDhcp6Deps = {}) {
+    if (deps.now) this.server.setClock(deps.now);
+  }
 
   getServer(): DHCPv6Server { return this.server; }
 

@@ -26,7 +26,7 @@ import { encodeNetbiosNodeType } from './DHCPPacket';
 import {
   DHCPClientState, DHCPClientIfaceState, DHCPClientLease,
   DHCPOfferResult, DHCPAckResult, DHCPRequestWithNakResult,
-  createDefaultClientState,
+  ackOf, createDefaultClientState,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
 import { type IEventBus } from '@/events/EventBus';
@@ -42,14 +42,6 @@ import {
 } from './observables';
 import { DHCPClientSignalRefreshActor } from './actors';
 import type { DhcpServerChannel } from './DhcpServerChannel';
-
-function ackOf(result: DHCPRequestWithNakResult | null): DHCPAckResult | null {
-  if (result?.type !== 'ACK' || !result.binding) return null;
-  return {
-    binding: result.binding, serverIdentifier: result.serverIdentifier, xid: result.xid,
-    renewalTime: result.renewalTime, rebindingTime: result.rebindingTime, serverMac: result.serverMac,
-  };
-}
 
 /** In-memory channel to a DHCPServer object — fallback for uncabled topologies. */
 class DirectServerChannel implements DhcpServerChannel {
@@ -147,6 +139,7 @@ export class DHCPClient implements IProtocolEngine {
   private requestsSent = 0;
   private acksReceived = 0;
   private naksReceived = 0;
+  private clock: () => number = () => Date.now();
   private leasesGranted = 0;
   private leasesExpired = 0;
   private leasesReleased = 0;
@@ -283,6 +276,10 @@ export class DHCPClient implements IProtocolEngine {
    * Register an ARP probe callback for address conflict detection.
    * RFC 2131 §4.4.1: Client SHOULD perform ARP check after receiving ACK.
    */
+  setClock(clock: () => number): void {
+    this.clock = clock;
+  }
+
   setAddressConflictChecker(checker: (iface: string, ip: string) => boolean): void {
     this.checkAddressConflict = checker;
   }
@@ -346,7 +343,7 @@ export class DHCPClient implements IProtocolEngine {
     // DISCOVER. Only an expired record sends us back to INIT.
     if (!options.fromInitReboot) {
       const recorded = state.lease ?? state.lastKnownLease;
-      if (recorded && recorded.expiration > Date.now()) {
+      if (recorded && recorded.expiration > this.clock()) {
         return this.initReboot(iface, state, recorded, mac, clientIdentifier, verbose);
       }
       if (state.lastKnownLease) state.lastKnownLease = null;
@@ -625,7 +622,7 @@ export class DHCPClient implements IProtocolEngine {
     if (verbose) lines.push('No DHCPOFFERS received.');
 
     const recorded = state.lease ?? state.lastKnownLease;
-    if (recorded && recorded.expiration > Date.now()) {
+    if (recorded && recorded.expiration > this.clock()) {
       state.state = 'BOUND';
       state.lease = recorded;
       state.lastKnownLease = { ...recorded };
@@ -904,7 +901,7 @@ export class DHCPClient implements IProtocolEngine {
     const octet4 = parseInt(macParts[5] || '02', 16);              // 0-255
     const ip = `169.254.${octet3}.${octet4}`;
     const mask = '255.255.0.0';
-    const now = Date.now();
+    const now = this.clock();
     const leaseDuration = 86400; // APIPA doesn't have a real lease, but we set one for consistency
 
     const lease: DHCPClientLease = {
