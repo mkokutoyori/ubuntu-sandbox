@@ -32,7 +32,7 @@ import { SocketTable } from '../core/SocketTable';
 import { TcpStack } from '../tcp/TcpStack';
 import type { TcpSegment, TcpDialFailure, TcpWireOutcome } from '../tcp/types';
 import type { UdpChecksumInput } from '@/network/layers/transport/UdpChecksum';
-import { computeTcpChecksum, isDialFailure } from '../tcp/types';
+import { isDialFailure, noFlags } from '../tcp/types';
 import {
   computeUdpChecksum, verifyUdpChecksum, stampUdpChecksum,
 } from '@/network/layers/transport/UdpChecksum';
@@ -96,6 +96,8 @@ import {
   unreachableCodeName,
   isHardTcpUnreachCode,
   type ICMPErrorType,
+  type IcmpErrorQuote,
+  RFC792_ICMP_ERROR_QUOTE,
 } from '../core/IcmpErrors';
 import { fragmentIPv4, IPv4Reassembler, IPV4_FLAG_DF } from '../core/Ipv4Fragmentation';
 import { isMulticastIpv4, ipv4MulticastToMac } from '../core/ip';
@@ -184,6 +186,35 @@ export interface TracerouteProbeResult {
   unreachable?: boolean;
   icmpCode?: number;
 }
+
+export type TraceProbeMethod =
+  | { kind: 'icmp'; tos?: number }
+  | { kind: 'default-udp'; port: number; tos?: number }
+  | { kind: 'udp'; port: number; tos?: number }
+  | { kind: 'tcp'; port: number; tos?: number }
+  | { kind: 'raw'; protocol: number; tos?: number };
+
+export interface TraceSocketOptions {
+  iface?: string;
+  sourceIp?: IPAddress;
+  sourcePort?: number;
+  dontFragment?: boolean;
+  direct?: boolean;
+}
+
+interface TraceProbeOutcome {
+  timeout: boolean;
+  reached: boolean;
+  ip?: string;
+  rttMs?: number;
+  unreachable?: boolean;
+  icmpCode?: number;
+}
+
+const TRACE_UDP_DATA_BYTES = 32;
+const TRACE_RAW_DATA_BYTES = 40;
+const LOCAL_DELIVERY_RTT_MS = 0.02;
+const ICMP_TYPE_TIME_EXCEEDED_VALUE = 11;
 
 export interface TracerouteHopResult {
   hop: number;
@@ -2480,7 +2511,7 @@ export abstract class EndHost extends Equipment {
       }, request);
     }
 
-    const route = this.resolveRoute(request.destination);
+    const route = this.resolveRoute(request.destination, request.iface);
     if (!route || !route.port.isOperationallyUp()) {
       this.protocolCounters.ipOutNoRoutes++;
       return false;
@@ -2790,6 +2821,10 @@ export abstract class EndHost extends Equipment {
    * Sourced from the ingress interface IP when it has one (the address the
    * sender was actually talking to), otherwise from the egress interface.
    */
+  protected icmpErrorQuote(): IcmpErrorQuote {
+    return RFC792_ICMP_ERROR_QUOTE;
+  }
+
   protected sendICMPError(
     inPort: string,
     offendingPkt: IPv4Packet,
@@ -2805,7 +2840,9 @@ export abstract class EndHost extends Equipment {
     const srcIP = this.ports.get(inPort)?.getIPAddress() ?? route.port.getIPAddress();
     if (!srcIP) return;
 
-    const errorIP = buildICMPError(srcIP, offendingPkt, icmpType, code, this.defaultTTL, { nextHopMTU });
+    const errorIP = buildICMPError(srcIP, offendingPkt, icmpType, code, this.defaultTTL, {
+      nextHopMTU, quote: this.icmpErrorQuote(),
+    });
 
     const outPortName = route.port.getName();
     const verdict = this.firewallFilter(outPortName, errorIP, 'out');
@@ -2999,7 +3036,10 @@ export abstract class EndHost extends Equipment {
       return this.emitUdpDatagram(
         first.destination, first.destinationPort, first.sourcePort,
         first.payload, first.payloadBytes,
-        { iface: first.iface, ttl: first.ttl });
+        {
+          iface: first.iface, ttl: first.ttl, tos: first.tos, sourceIp: first.source,
+          ...(first.dontFragment === undefined ? {} : { df: first.dontFragment }),
+        });
     }
     return this.emitUdpDatagram(first, port as number, source as number, body, bytes, opts);
   }
@@ -3066,7 +3106,7 @@ export abstract class EndHost extends Equipment {
       return this.sendUdpToGroup(destinationIP, udpBase, flags, options.iface);
     }
 
-    const route = this.resolveRoute(destinationIP);
+    const route = this.resolveRoute(destinationIP, options.iface);
     if (!route) return false;
     const srcIP = options.sourceIp ?? route.port.getIPAddress();
     if (!srcIP) return false;
@@ -3078,7 +3118,7 @@ export abstract class EndHost extends Equipment {
     };
     const ipPkt = createIPv4Packet(
       srcIP, destinationIP, IP_PROTO_UDP, options.ttl ?? this.defaultTTL,
-      udp, udp.length, { flags },
+      udp, udp.length, { flags, ...(options.tos === undefined ? {} : { tos: options.tos }) },
     );
 
     const outPortName = route.port.getName();
@@ -3768,8 +3808,10 @@ export abstract class EndHost extends Equipment {
    *
    * Returns: { port, nextHopIP } or null if unreachable.
    */
-  protected resolveRoute(targetIP: IPAddress): { port: Port; iface: string; nextHopIP: IPAddress } | null {
-    const table = this.buildFullRoutingTable();
+  protected resolveRoute(
+    targetIP: IPAddress, iface?: string,
+  ): { port: Port; iface: string; nextHopIP: IPAddress } | null {
+    const table = this.buildFullRoutingTable().filter((route) => iface === undefined || route.iface === iface);
     const destInt = targetIP.toUint32();
 
     let bestRoute: HostRouteEntry | null = null;
@@ -4161,41 +4203,21 @@ export abstract class EndHost extends Equipment {
       probesPerHop?: number;
       firstTtl?: number;
       timeoutMs?: number;
+      method?: TraceProbeMethod;
+      socket?: TraceSocketOptions;
       onResolved?: (ip: IPAddress, hostname?: string) => void;
       onHop: (hop: TracerouteHopResult) => void;
       shouldStop: () => boolean;
     },
-  ): Promise<{ resolved: boolean }> {
+  ): Promise<{ resolved: boolean; routed: boolean }> {
     const ip = await this.resolveHostForCommand(targetStr);
-    if (!ip) return { resolved: false };
+    if (!ip) return { resolved: false, routed: false };
     opts.onResolved?.(ip, targetStr !== ip.toString() ? targetStr : undefined);
-
-    // Loopback / one of the host's own addresses never goes through
-    // `resolveRoute()` — there's no next hop to ARP for, exactly like
-    // `executePingStream()` already special-cases this below. Without this,
-    // `executeTraceroute()` finds no route and returns zero hops, which the
-    // terminal layer reports as a bogus "Unable to resolve target system
-    // name" instead of the single, instant self-hop real tracert/traceroute
-    // print for 127.0.0.1/localhost.
-    if (ip.isLoopback() || this.getPortOwningIP(ip)) {
-      opts.onHop({
-        hop: opts.firstTtl ?? 1,
-        ip: ip.toString(),
-        timeout: false,
-        probes: [
-          { responded: true, rttMs: 0.02, ip: ip.toString() },
-          { responded: true, rttMs: 0.02, ip: ip.toString() },
-          { responded: true, rttMs: 0.02, ip: ip.toString() },
-        ],
-      });
-      return { resolved: true };
-    }
-
-    await this.executeTraceroute(
+    const hops = await this.executeTraceroute(
       ip, opts.maxHops, opts.timeoutMs ?? 2000, opts.probesPerHop, opts.firstTtl,
-      { onHop: opts.onHop, shouldStop: opts.shouldStop },
+      { onHop: opts.onHop, shouldStop: opts.shouldStop }, opts.method, opts.socket,
     );
-    return { resolved: true };
+    return { resolved: true, routed: hops.length > 0 };
   }
 
   protected async executePingStream(
@@ -4256,6 +4278,128 @@ export abstract class EndHost extends Equipment {
    * Each router along the path returns ICMP Time Exceeded.
    * probesPerHop controls how many probes are sent per TTL value (default 3, like real Linux traceroute).
    */
+  private tcpTraceProbe(
+    targetIP: IPAddress, port: number, ttl: number, tos: number | undefined, socket: TraceSocketOptions,
+  ): TraceProbeOutcome {
+    const flags = noFlags();
+    flags.syn = true;
+    const sentAt = performance.now();
+    const detail = this.tcpv2.scanProbeDetail(targetIP.toString(), port, flags, {
+      ttl,
+      dontFragment: socket.dontFragment === true,
+      ...(tos === undefined ? {} : { tos }),
+      ...(socket.iface === undefined ? {} : { iface: socket.iface }),
+      ...(socket.sourceIp === undefined ? {} : { sourceIp: socket.sourceIp.toString() }),
+      ...(socket.sourcePort === undefined ? {} : { sourcePort: socket.sourcePort }),
+    });
+    const rttMs = performance.now() - sentAt;
+    if (detail.reply === 'syn-ack' || detail.reply === 'rst' || detail.reply === 'rst-window') {
+      return { timeout: false, reached: true, ip: targetIP.toString(), rttMs };
+    }
+    if (detail.icmpType === ICMP_TYPE_TIME_EXCEEDED_VALUE) {
+      return { timeout: false, reached: false, ip: detail.icmpFrom, rttMs };
+    }
+    if (detail.reply === 'icmp-unreachable' || detail.reply === 'icmp-prohibited') {
+      return {
+        timeout: false, reached: false, ip: detail.icmpFrom, rttMs,
+        unreachable: true, icmpCode: detail.icmpCode,
+      };
+    }
+    return { timeout: true, reached: false };
+  }
+
+  private async udpTraceProbe(
+    targetIP: IPAddress, port: number, sourcePort: number, ttl: number, timeoutMs: number,
+    tos: number | undefined, socket: TraceSocketOptions,
+  ): Promise<TraceProbeOutcome> {
+    return this.awaitTraceError(
+      targetIP, timeoutMs,
+      (pl) => pl.origProtocol === IP_PROTO_UDP && pl.origDestPort === port,
+      (code) => code === 'port-unreachable',
+      () => this.sendUdpDatagram({
+        destination: targetIP, destinationPort: port, sourcePort,
+        payload: null, payloadBytes: TRACE_UDP_DATA_BYTES, ttl,
+        dontFragment: socket.dontFragment === true,
+        ...(tos === undefined ? {} : { tos }),
+        ...(socket.iface === undefined ? {} : { iface: socket.iface }),
+        ...(socket.sourceIp === undefined ? {} : { source: socket.sourceIp }),
+      }),
+    );
+  }
+
+  private async rawTraceProbe(
+    targetIP: IPAddress, protocol: number, ttl: number, timeoutMs: number,
+    tos: number | undefined, socket: TraceSocketOptions,
+  ): Promise<TraceProbeOutcome> {
+    return this.awaitTraceError(
+      targetIP, timeoutMs,
+      (pl) => pl.origProtocol === protocol,
+      () => false,
+      () => this.sendIpv4Packet({
+        destination: targetIP, protocol,
+        payload: new Uint8Array(TRACE_RAW_DATA_BYTES), payloadBytes: TRACE_RAW_DATA_BYTES, ttl,
+        flags: socket.dontFragment === true ? IPV4_FLAG_DF : 0,
+        ...(tos === undefined ? {} : { tos }),
+        ...(socket.iface === undefined ? {} : { iface: socket.iface }),
+        ...(socket.sourceIp === undefined ? {} : { source: socket.sourceIp }),
+      }),
+    );
+  }
+
+  private async awaitTraceError(
+    targetIP: IPAddress, timeoutMs: number,
+    quotesProbe: (pl: { origProtocol?: number; origDestPort?: number }) => boolean,
+    isArrival: (code: string) => boolean,
+    send: () => void,
+  ): Promise<TraceProbeOutcome> {
+    const sentAt = performance.now();
+    const answer = waitForEvent(
+      this.getBus(),
+      'host.icmp.unreachable',
+      (pl) => pl.deviceId === this.id && quotesProbe(pl),
+      { timeoutMs, scheduler: this.getScheduler() },
+    );
+    answer.catch(() => {});
+    send();
+    try {
+      const pl = await answer;
+      const rttMs = performance.now() - sentAt;
+      if (pl.code === 'ttl-exceeded') {
+        return { timeout: false, reached: false, ip: pl.fromIp, rttMs };
+      }
+      if (isArrival(pl.code) && pl.fromIp === targetIP.toString()) {
+        return { timeout: false, reached: true, ip: pl.fromIp, rttMs };
+      }
+      return {
+        timeout: false, reached: pl.fromIp === targetIP.toString(), ip: pl.fromIp, rttMs,
+        unreachable: true, icmpCode: pl.icmpCode,
+      };
+    } catch (err) {
+      if (err instanceof WaitForEventTimeoutError) return { timeout: true, reached: false };
+      throw err;
+    }
+  }
+
+  canTraceTo(targetIP: IPAddress, socket: TraceSocketOptions): boolean {
+    if (targetIP.isLoopback() || this.getPortOwningIP(targetIP)) return true;
+    return this.traceRouteFor(targetIP, socket) !== null;
+  }
+
+  private traceRouteFor(
+    targetIP: IPAddress, socket: TraceSocketOptions,
+  ): { port: Port; iface: string; nextHopIP: IPAddress } | null {
+    const route = this.resolveRoute(targetIP, socket.iface);
+    if (route === null || !socket.direct) return route;
+    const onLink = [...this.ports.values()].find((port) => {
+      if (socket.iface !== undefined && port.getName() !== socket.iface) return false;
+      const address = port.getIPAddress();
+      const mask = port.getSubnetMask();
+      return address !== null && address !== undefined && mask !== null && mask !== undefined
+        && address.networkAddress(mask).equals(targetIP.networkAddress(mask));
+    });
+    return onLink === undefined ? null : { port: onLink, iface: onLink.getName(), nextHopIP: targetIP };
+  }
+
   protected async executeTraceroute(
     targetIP: IPAddress,
     maxHops: number = 30,
@@ -4263,24 +4407,47 @@ export abstract class EndHost extends Equipment {
     probesPerHop: number = 3,
     firstTtl: number = 1,
     hooks?: { onHop?: (hop: TracerouteHopResult) => void; shouldStop?: () => boolean },
+    method: TraceProbeMethod = { kind: 'icmp' },
+    socket: TraceSocketOptions = {},
   ): Promise<TracerouteHopResult[]> {
-    const route = this.resolveRoute(targetIP);
+    if (targetIP.isLoopback() || this.getPortOwningIP(targetIP)) {
+      const self = targetIP.toString();
+      const hop: TracerouteHopResult = {
+        hop: firstTtl, ip: self, timeout: false,
+        probes: Array.from({ length: probesPerHop }, () => ({
+          responded: true, rttMs: LOCAL_DELIVERY_RTT_MS, ip: self,
+        })),
+      };
+      hooks?.onHop?.(hop);
+      return [hop];
+    }
+    const route = this.traceRouteFor(targetIP, socket);
     if (!route) return [];
 
     const portName = route.port.getName();
-    const myIP = route.port.getIPAddress()!;
+    const myIP = socket.sourceIp ?? route.port.getIPAddress()!;
 
     // ARP resolve next hop
     let nextHopMAC: MACAddress;
     try {
       nextHopMAC = await this.resolveARP(portName, route.nextHopIP, timeoutMs);
     } catch {
-      const unresolved: TracerouteHopResult = { hop: firstTtl, timeout: true, probes: [{ responded: false }] };
-      hooks?.onHop?.(unresolved);
-      return [unresolved];
+      const silent: TracerouteHopResult[] = [];
+      for (let ttl = firstTtl; ttl <= maxHops; ttl++) {
+        if (hooks?.shouldStop?.()) break;
+        const hop: TracerouteHopResult = {
+          hop: ttl, timeout: true,
+          probes: Array.from({ length: probesPerHop }, () => ({ responded: false })),
+        };
+        silent.push(hop);
+        hooks?.onHop?.(hop);
+      }
+      return silent;
     }
 
     const hops: TracerouteHopResult[] = [];
+    let udpPort = method.kind === 'default-udp' ? method.port : 0;
+    const sourcePort = socket.sourcePort ?? 32768 + (this.pingIdCounter % 28000);
 
     for (let ttl = firstTtl; ttl <= maxHops; ttl++) {
       if (hooks?.shouldStop?.()) break;
@@ -4288,6 +4455,23 @@ export abstract class EndHost extends Equipment {
       let destinationReached = false;
 
       for (let p = 0; p < probesPerHop; p++) {
+        if (method.kind !== 'icmp') {
+          const port = method.kind === 'default-udp' ? udpPort++ : method.kind === 'raw' ? 0 : method.port;
+          const outcome = method.kind === 'tcp'
+            ? this.tcpTraceProbe(targetIP, port, ttl, method.tos, socket)
+            : method.kind === 'raw'
+              ? await this.rawTraceProbe(targetIP, method.protocol, ttl, timeoutMs, method.tos, socket)
+              : await this.udpTraceProbe(targetIP, port, sourcePort, ttl, timeoutMs, method.tos, socket);
+          probes.push({
+            responded: !outcome.timeout,
+            rttMs: outcome.rttMs,
+            ip: outcome.ip,
+            unreachable: outcome.unreachable,
+            icmpCode: outcome.icmpCode,
+          });
+          if (outcome.reached) destinationReached = true;
+          continue;
+        }
         this.pingIdCounter++;
         const id = this.pingIdCounter;
         const seq = p + 1;
@@ -4312,7 +4496,10 @@ export abstract class EndHost extends Equipment {
           type: 'icmp', icmpType: 'echo-request', code: 0,
           id, sequence: seq, dataSize: 56,
         };
-        const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64);
+        const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64, {
+          flags: socket.dontFragment === true ? IPV4_FLAG_DF : 0,
+          ...(method.tos === undefined ? {} : { tos: method.tos }),
+        });
 
         this.sendFrame(portName, {
           srcMAC: route.port.getMAC(),

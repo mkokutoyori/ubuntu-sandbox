@@ -130,7 +130,7 @@ describe('Scénario 4 — Routage inter-VLAN sur routeur Huawei AR-series', () =
       expect(routeGet).toMatch(/via 192\.168\.10\.254/);
 
       const traceroute = await pc10.executeCommand('traceroute -n 192.168.20.101');
-      const lines = traceroute.split('\n').filter((l) => l.trim());
+      const lines = traceroute.split('\n').filter((l) => l.trim() && !l.startsWith('traceroute to '));
       const hop1 = lines.find((l) => /^\s*1\s/.test(l));
       const hop2 = lines.find((l) => /^\s*2\s/.test(l));
       expect(hop1).toContain('192.168.10.254');
@@ -204,7 +204,7 @@ describe('Scénario 4 — Routage inter-VLAN sur routeur Huawei AR-series', () =
       expect(routes).toMatch(/192\.168\.20\.0\/24/);
 
       const traceroute = await pc10.executeCommand('traceroute -n 192.168.20.101');
-      const lines = traceroute.split('\n').filter((l) => l.trim());
+      const lines = traceroute.split('\n').filter((l) => l.trim() && !l.startsWith('traceroute to '));
       const hopNumbers = new Set(lines.map((l) => l.trim().split(/\s+/)[0]));
       expect(hopNumbers.size).toBe(2);
     });

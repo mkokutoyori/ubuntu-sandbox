@@ -1,39 +1,87 @@
 import { IPAddress } from '@/network/core/types';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import type { TraceProbeMethod, TraceSocketOptions } from '../../../EndHost';
 import type { TracerouteHop } from '../../LinuxNetKernel';
 import { isValidIPv4 } from '@/network/core/ip';
 import { unquote } from '@/lib/format';
-import { icmpCodeAnnotation } from '../../LinuxFormatHelpers';
 import { makeArgCompleter } from '../completionHelpers';
-import { transitUdpAclVerdict } from '../../network/HostLookup';
 import { reverseNameOf } from '../../network/ReverseName';
+import type { NssProtocolEntry } from '../../nss/types';
+import {
+  TRACEROUTE_VERSION_TEXT, tracerouteHeader, tracerouteHopLine,
+} from '../../network/TracerouteRender';
 
-const TRACEROUTE_VERSION = 'Modern traceroute for Linux, version 2.1.0 (iputils-s20221126)';
+const DEF_START_PORT = 33434;
+const DEF_UDP_PORT = 53;
+const DEF_TCP_PORT = 80;
+const DEF_HOPS = 30;
+const DEF_NUM_PROBES = 3;
+const DEF_PACKET_BYTES = 60;
+const DEF_RAW_PROT = 253;
+const PROBE_WAIT_CAP_MS = 100;
 
-const TRACEROUTE_USAGE = `
-Usage: traceroute [-46dFITUnreAV] [-f first_ttl] [-g gate,...]
-                  [-i device] [-m max_ttl] [-N squeries] [-p port]
-                  [-t tos] [-l flow_label] [-w waittime]
-                  [-q nqueries] [-s src_addr] [-z sendwait]
-                  host [packetlen]
-Options:
-  -m maxhops        Maximum number of hops (1-255).
-  -q nqueries       Number of probes per hop (default 3).
-  -f first_ttl      Start probing from this TTL.
-  -w waittime       Seconds to wait for a response (default 5.0).
-  -n                Print numeric addresses (no DNS).
-  -I                Use ICMP ECHO for probes.
-  -U                Use UDP datagrams.
-  -T                Use TCP SYN.
-  -p port           Destination port for probes.
-  -i iface          Send probes on the specified interface.
-  -g gateway        Loose source route via gateway.
-  -r                Bypass routing tables.
-  -4 / -6           Force IPv4 / IPv6.
-  -V / --version    Print version and exit.
-  --help            Print this help and exit.
-`.trim();
+export const TRACEROUTE_USAGE = [
+  'Usage:',
+  '  traceroute [ -4dFITnreU ] [ -f first_ttl ] [ -i device ] [ -m max_ttl ]'
+    + ' [ -N squeries ] [ -p port ] [ -t tos ] [ -w MAX ] [ -q nqueries ]'
+    + ' [ -s src_addr ] [ -z sendwait ] [ -M method ] [ -P proto ] [ --sport=port ]'
+    + ' host [ packetlen ]',
+  'Options:',
+  '  -4                          Use IPv4',
+  '  -d  --debug                 Enable socket level debugging',
+  '  -F  --dont-fragment         Do not fragment packets',
+  '  -f first_ttl  --first=first_ttl',
+  '                              Start from the first_ttl hop (instead from 1)',
+  '  -I  --icmp                  Use ICMP ECHO for tracerouting',
+  '  -T  --tcp                   Use TCP SYN for tracerouting (default port is 80)',
+  '  -i device  --interface=device',
+  '                              Specify a network interface to operate with',
+  '  -m max_ttl  --max-hops=max_ttl',
+  '                              Set the max number of hops (max TTL to be',
+  '                              reached). Default is 30',
+  '  -N squeries  --sim-queries=squeries',
+  '                              Set the number of probes to be tried',
+  '                              simultaneously (default is 16)',
+  '  -n                          Do not resolve IP addresses to their domain names',
+  '  -p port  --port=port        Set the destination port to use. It is either',
+  '                              initial udp port value for "default" method',
+  '                              (incremented by each probe, default is 33434),',
+  '                              or constant destination port for "udp" and',
+  '                              "tcp" methods',
+  '  -t tos  --tos=tos           Set the TOS (IPv4 type of service) value for',
+  '                              outgoing packets',
+  '  -w MAX  --wait=MAX          Wait for a probe no more than MAX seconds',
+  '                              (default 5.0)',
+  '  -q nqueries  --queries=nqueries',
+  '                              Set the number of probes per each hop. Default',
+  '                              is 3',
+  '  -r                          Bypass the normal routing and send directly to a',
+  '                              host on an attached network',
+  '  -s src_addr  --source=src_addr',
+  '                              Use source src_addr for outgoing packets',
+  '  -z sendwait  --sendwait=sendwait',
+  '                              Minimal time interval between probes',
+  '  -e  --extensions            Show ICMP extensions (if present), including MPLS',
+  '  -M name  --module=name      Use specified module for traceroute operations',
+  '                              (default, icmp, tcp, udp, raw)',
+  '  --sport=num                 Use source port num for outgoing packets.',
+  "                              Implies `-N 1'",
+  '  -U  --udp                   Use UDP to particular port for tracerouting',
+  '                              (default port is 53)',
+  '  -P prot  --protocol=prot    Use raw packet of protocol prot for',
+  '                              tracerouting',
+  '  -V  --version               Print version info and exit',
+  '  --help                      Read this help and exit',
+  '',
+  'Arguments:',
+  '+     host          The host to traceroute to',
+  '      packetlen     The full packet length (default is the length of an IP',
+  '                    header plus 40). Can be ignored or increased to a minimal',
+  '                    allowed value',
+].join('\n');
+
+type MethodName = string;
 
 export interface ParsedTracerouteArgs {
   targetStr: string;
@@ -43,375 +91,430 @@ export interface ParsedTracerouteArgs {
   packetSize: number;
   waitMs: number;
   port?: number;
-  numeric: boolean;
+  tos?: number;
+  waitSpec: [number, number, number];
+  sendSeconds: number;
+  namedPorts: Array<{ flag: string; name: string; position: number }>;
+  protocol?: string;
   iface?: string;
-  method: 'icmp' | 'udp' | 'tcp';
-  gateway?: string;
-  forceV4: boolean;
-  forceV6: boolean;
+  sourceStr?: string;
+  sourcePort?: number;
+  dontFragment: boolean;
+  direct: boolean;
+  numeric: boolean;
+  method: MethodName;
   showVersion: boolean;
   showHelp: boolean;
   parseError?: string;
-  extraTargets: string[];
 }
 
-function isInteger(s: string, allowNegative = false): boolean {
-  if (allowNegative) return /^-?\d+$/.test(s);
-  return /^\d+$/.test(s);
+const UNBUILDABLE: Readonly<Record<string, string>> = {
+  '-6': 'an IPv6 trace (this simulator traces over IPv4 only)',
+  '-g': 'a loose source route (no LSRR IP option on these probes)',
+  '-A': 'an AS path lookup (no routing registry is reachable)',
+  '-l': 'an IPv6 flow label (this simulator traces over IPv4 only)',
+  '-O': 'a module-specific option',
+  '-D': 'a DCCP Request',
+  '--UL': 'a UDPLITE datagram',
+  '--mtu': 'a path MTU discovery (no F= annotation is produced)',
+  '--back': 'a backward-path hop estimate',
+  '--fwmark': 'a firewall mark on outgoing packets',
+};
+
+const LONG_TO_SHORT: Readonly<Record<string, string>> = {
+  '--icmp': '-I', '--tcp': '-T', '--udp': '-U', '--debug': '-d',
+  '--extensions': '-e', '--dont-fragment': '-F', '--as-path-lookups': '-A',
+  '--first': '-f', '--max-hops': '-m', '--sim-queries': '-N', '--port': '-p',
+  '--tos': '-t', '--wait': '-w', '--queries': '-q', '--sendwait': '-z',
+  '--module': '-M', '--interface': '-i', '--gateway': '-g', '--source': '-s',
+  '--flowlabel': '-l', '--options': '-O', '--protocol': '-P', '--dccp': '-D',
+};
+
+const TAKES_VALUE = new Set(['-f', '-m', '-N', '-p', '-t', '-w', '-q', '-z', '-M',
+  '-i', '-g', '-s', '-l', '-O', '-P', '--sport']);
+
+function refuse(option: string): string {
+  return `traceroute: option ${option}: this simulator cannot build ${UNBUILDABLE[option]}`;
+}
+
+function badOption(arg: string, position: number): string {
+  return `Bad option \`${arg.slice(0, 2)}' (argc ${position})`;
+}
+
+function cannotHandle(option: string, argName: string, value: string, position: number): string {
+  return `Cannot handle \`${option}' option with arg \`${value}' (argc ${position})`;
+}
+
+function splitArgs(args: string[]): Array<{ flag: string; value?: string; position: number }> {
+  const out: Array<{ flag: string; value?: string; position: number }> = [];
+  for (let i = 0; i < args.length; i++) {
+    const raw = args[i];
+    if (raw.startsWith('--') && raw.length > 2) {
+      const [name, inline] = raw.split('=', 2);
+      if (name === '--help' || name === '--version') {
+        out.push({ flag: name, position: i + 1 });
+        continue;
+      }
+      if (UNBUILDABLE[name] !== undefined) { out.push({ flag: name, position: i + 1 }); continue; }
+      const short = name === '--sport' ? name : LONG_TO_SHORT[name];
+      if (short === undefined) { out.push({ flag: raw, position: i + 1 }); continue; }
+      if (TAKES_VALUE.has(short)) {
+        const value = inline ?? args[++i];
+        out.push({ flag: short, value, position: i + 1 });
+      } else {
+        out.push({ flag: short, position: i + 1 });
+      }
+      continue;
+    }
+    if (raw.startsWith('-') && raw.length > 1) {
+      const flag = raw.slice(0, 2);
+      if (TAKES_VALUE.has(flag)) {
+        const value = raw.length > 2 ? raw.slice(2) : args[++i];
+        out.push({ flag, value, position: i + 1 });
+        continue;
+      }
+      for (const letter of raw.slice(1)) out.push({ flag: `-${letter}`, position: i + 1 });
+      continue;
+    }
+    out.push({ flag: '', value: raw, position: i + 1 });
+  }
+  return out;
+}
+
+const UINT_RANGE = 2 ** 32;
+
+function cNumberPrefix(text: string): { negative: boolean; digits: string; base: number } | null {
+  const match = /^\s*([+-]?)(0[xX][0-9a-fA-F]+|0[0-7]*|[1-9]\d*)$/.exec(text);
+  if (match === null) return null;
+  const body = match[2];
+  const base = /^0[xX]/.test(body) ? 16 : body.length > 1 && body.startsWith('0') ? 8 : 10;
+  const digits = base === 16 ? body.slice(2) : body;
+  return { negative: match[1] === '-', digits, base };
+}
+
+function strtoul(value: string | undefined): number | null {
+  const parsed = value === undefined ? null : cNumberPrefix(value);
+  if (parsed === null) return null;
+  const magnitude = parseInt(parsed.digits, parsed.base) % UINT_RANGE;
+  return parsed.negative ? (UINT_RANGE - magnitude) % UINT_RANGE : magnitude;
+}
+
+function strtol(value: string | undefined): number | null {
+  const parsed = value === undefined ? null : cNumberPrefix(value);
+  if (parsed === null) return null;
+  const magnitude = parseInt(parsed.digits, parsed.base);
+  return parsed.negative ? -magnitude : magnitude;
+}
+
+function strtod(value: string): number | null {
+  if (!/^\s*[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(value)) return null;
+  return Number(value);
+}
+
+function formatG(value: number): string {
+  if (Number.isInteger(value) && Math.abs(value) < 1e6) return String(value);
+  return String(Number(value.toPrecision(6)));
+}
+
+function waitSpecOf(value: string): [number, number, number] | null {
+  const parts = value.split(',');
+  if (parts.length > 3) return null;
+  const numbers = parts.map(strtod);
+  if (numbers.some((n) => n === null)) return null;
+  return [numbers[0]!, numbers[1] ?? 0, numbers[2] ?? 0];
+}
+
+const BUILT_MODULES = new Set(['default', 'icmp', 'tcp', 'udp', 'raw']);
+const UNBUILT_MODULES: Readonly<Record<string, string>> = {
+  tcpconn: 'a connect()-based TCP trace',
+  udplite: 'a UDPLITE datagram',
+  dccp: 'a DCCP Request',
+};
+
+function mainValidationError(parsed: ParsedTracerouteArgs): string | null {
+  if (!BUILT_MODULES.has(parsed.method)) {
+    const unbuilt = UNBUILT_MODULES[parsed.method];
+    return unbuilt === undefined
+      ? `Unknown traceroute module ${parsed.method}`
+      : `traceroute: module ${parsed.method}: this simulator cannot build ${unbuilt}`;
+  }
+  if (parsed.firstTtl === 0 || parsed.firstTtl > parsed.maxHops) return 'first hop out of range';
+  if (parsed.maxHops > 255) return 'max hops cannot be more than 255';
+  if (parsed.probesPerHop === 0 || parsed.probesPerHop > 10) return 'no more than 10 probes per hop';
+  const [max, here, near] = parsed.waitSpec;
+  if (max < 0 || here < 0 || near < 0) {
+    return `bad wait specifications \`${formatG(max)},${formatG(here)},${formatG(near)}' used`;
+  }
+  if (parsed.packetSize > 65000) return `too big packetlen ${parsed.packetSize} specified`;
+  if (parsed.sendSeconds < 0) return `bad sendtime \`${formatG(parsed.sendSeconds)}' specified`;
+  return null;
 }
 
 export function parseTracerouteArgs(args: string[]): ParsedTracerouteArgs {
   const result: ParsedTracerouteArgs = {
-    targetStr: '',
-    maxHops: 30,
-    probesPerHop: 3,
-    firstTtl: 1,
-    packetSize: 60,
-    waitMs: 5000,
-    numeric: false,
-    method: 'udp',
-    forceV4: false,
-    forceV6: false,
-    showVersion: false,
-    showHelp: false,
-    extraTargets: [],
+    targetStr: '', maxHops: DEF_HOPS, probesPerHop: DEF_NUM_PROBES, firstTtl: 1,
+    packetSize: DEF_PACKET_BYTES, waitMs: 5000, waitSpec: [5, 3, 10], sendSeconds: 0, namedPorts: [],
+    numeric: false, method: 'default', dontFragment: false, direct: false,
+    showVersion: false, showHelp: false,
+  };
+  const fail = (message: string): ParsedTracerouteArgs => ({ ...result, parseError: message });
+  const unsigned = (flag: string, name: string, value: string | undefined, position: number) => {
+    const n = strtoul(value);
+    return n === null ? cannotHandle(flag, name, value ?? '', position) : n;
   };
 
-  const expanded: string[] = [];
-  for (const a of args) {
-    const m = a.match(/^(-[mqfwpi])(.+)$/);
-    if (m && /^[0-9]/.test(m[2])) {
-      expanded.push(m[1], m[2]);
-    } else {
-      expanded.push(a);
-    }
-  }
-
-  for (let i = 0; i < expanded.length; i++) {
-    const a = expanded[i];
-    const next = expanded[i + 1];
-
-    if (a === '-V' || a === '--version') { result.showVersion = true; continue; }
-    if (a === '-h' || a === '--help') { result.showHelp = true; continue; }
-    if (a === '-n') { result.numeric = true; continue; }
-    if (a === '-I') { result.method = 'icmp'; continue; }
-    if (a === '-U') { result.method = 'udp'; continue; }
-    if (a === '-T') { result.method = 'tcp'; continue; }
-    if (a === '-r') { continue; }
-    if (a === '-4') { result.forceV4 = true; continue; }
-    if (a === '-6') { result.forceV6 = true; continue; }
-    if (a === '-A' || a === '-d' || a === '-F' || a === '-e') { continue; }
-
-    if (a === '-m' || a === '-t') {
-      if (!next || !isInteger(next, true)) {
-        result.parseError = `traceroute: invalid value '${next}' for option ${a}`; return result;
+  for (const { flag, value, position } of splitArgs(args)) {
+    if (flag === '') {
+      const cleaned = unquote(value ?? '');
+      if (cleaned === '') continue;
+      if (result.targetStr === '') { result.targetStr = cleaned; continue; }
+      const length = strtol(cleaned);
+      if (length === null) {
+        return fail(`Cannot handle "packetlen" cmdline arg \`${cleaned}' on position 2`
+          + ` (argc ${position})`);
       }
-      const v = parseInt(next, 10);
-      if (v < 1 || v > 255) {
-        result.parseError = `traceroute: invalid value '${next}' for option ${a} (valid range 1-255)`; return result;
-      }
-      result.maxHops = v; i++; continue;
-    }
-
-    if (a === '-q' || a === '-N') {
-      if (!next || !isInteger(next, true)) {
-        result.parseError = `traceroute: invalid value '${next}' for option ${a}`; return result;
-      }
-      const v = parseInt(next, 10);
-      if (v < 1) {
-        result.parseError = `traceroute: invalid value '${next}' for option ${a} (must be > 0)`; return result;
-      }
-      result.probesPerHop = v; i++; continue;
-    }
-
-    if (a === '-f') {
-      if (!next || !isInteger(next, true)) {
-        result.parseError = `traceroute: invalid value '${next}' for option -f`; return result;
-      }
-      const v = parseInt(next, 10);
-      if (v < 1 || v > 255) {
-        result.parseError = `traceroute: invalid value '${next}' for option -f (valid range 1-255)`; return result;
-      }
-      result.firstTtl = v; i++; continue;
-    }
-
-    if (a === '-w') {
-      if (!next || !/^-?[\d.]+$/.test(next)) {
-        result.parseError = `traceroute: invalid value '${next}' for option -w`; return result;
-      }
-      const v = parseFloat(next);
-      if (isNaN(v) || v < 0) {
-        result.parseError = `traceroute: invalid value '${next}' for option -w`; return result;
-      }
-      result.waitMs = Math.round(v * 1000); i++; continue;
-    }
-
-    if (a === '-p') {
-      if (!next || !isInteger(next, true)) {
-        result.parseError = `traceroute: invalid value '${next}' for option -p`; return result;
-      }
-      const v = parseInt(next, 10);
-      if (v < 1 || v > 65535) {
-        result.parseError = `traceroute: invalid value '${next}' for option -p (valid range 1-65535)`; return result;
-      }
-      result.port = v; i++; continue;
-    }
-
-    if (a === '-i') {
-      if (!next) {
-        result.parseError = `traceroute: option requires an argument -- 'i'`; return result;
-      }
-      result.iface = next; i++; continue;
-    }
-
-    if (a === '-g') {
-      if (!next) {
-        result.parseError = `traceroute: option requires an argument -- 'g'`; return result;
-      }
-      if (!isValidIPv4(unquote(next))) {
-        result.parseError = `traceroute: invalid gateway address '${next}'`; return result;
-      }
-      result.gateway = unquote(next); i++; continue;
-    }
-
-    if (a === '-s' || a === '-z' || a === '-l') {
-      if (next) i++;
+      result.packetSize = length;
       continue;
     }
-
-    if (a.startsWith('-') && /^-\d+$/.test(a) && result.targetStr !== '') {
-      result.parseError = `traceroute: invalid packet length: ${a}`; return result;
-    }
-    if (a.startsWith('-')) continue;
-
-    const cleaned = unquote(a);
-    if (!cleaned) continue;
-    if (result.targetStr === '') {
-      result.targetStr = cleaned;
-    } else if (isInteger(cleaned, true)) {
-      const v = parseInt(cleaned, 10);
-      if (v < 0) {
-        result.parseError = `traceroute: invalid packet length: ${cleaned}`; return result;
+    if (flag === '--help') { result.showHelp = true; return result; }
+    if (flag === '-V' || flag === '--version') { result.showVersion = true; return result; }
+    if (UNBUILDABLE[flag] !== undefined) return fail(refuse(flag));
+    switch (flag) {
+      case '-4': case '-d': case '-e': break;
+      case '-n': result.numeric = true; break;
+      case '-F': result.dontFragment = true; break;
+      case '-r': result.direct = true; break;
+      case '-i': result.iface = value ?? ''; break;
+      case '-s': result.sourceStr = value ?? ''; break;
+      case '-P': result.method = 'raw'; result.protocol = value ?? ''; break;
+      case '-I': result.method = 'icmp'; break;
+      case '-T': result.method = 'tcp'; break;
+      case '-U': result.method = 'udp'; break;
+      case '-M': result.method = value ?? ''; break;
+      case '--sport': case '-p': {
+        const n = strtoul(value);
+        if (n === null) {
+          result.namedPorts.push({ flag, name: value ?? '', position });
+          break;
+        }
+        if (flag === '-p') result.port = n & 0xffff; else result.sourcePort = n & 0xffff;
+        break;
       }
-      if (v > 65535) {
-        result.parseError = `traceroute: invalid packet length: ${cleaned} (out of range)`; return result;
+      case '-m': {
+        const n = unsigned('-m', 'max_ttl', value, position);
+        if (typeof n === 'string') return fail(n);
+        result.maxHops = n;
+        break;
       }
-      result.packetSize = v;
-    } else {
-      result.extraTargets.push(cleaned);
+      case '-f': {
+        const n = unsigned('-f', 'first_ttl', value, position);
+        if (typeof n === 'string') return fail(n);
+        result.firstTtl = n;
+        break;
+      }
+      case '-q': {
+        const n = unsigned('-q', 'nqueries', value, position);
+        if (typeof n === 'string') return fail(n);
+        result.probesPerHop = n;
+        break;
+      }
+      case '-N': {
+        const n = unsigned('-N', 'squeries', value, position);
+        if (typeof n === 'string') return fail(n);
+        break;
+      }
+      case '-t': {
+        const n = unsigned('-t', 'tos', value, position);
+        if (typeof n === 'string') return fail(n);
+        result.tos = n & 0xff;
+        break;
+      }
+      case '-w': {
+        const spec = value === undefined ? null : waitSpecOf(value);
+        if (spec === null) return fail(cannotHandle('-w', 'MAX,HERE,NEAR', value ?? '', position));
+        result.waitSpec = spec;
+        result.waitMs = Math.max(0, Math.round(spec[0] * 1000));
+        break;
+      }
+      case '-z': {
+        const seconds = value === undefined ? null : strtod(value);
+        if (seconds === null) return fail(cannotHandle('-z', 'sendwait', value ?? '', position));
+        result.sendSeconds = seconds;
+        break;
+      }
+      default:
+        return fail(badOption(flag, position));
     }
   }
-
-  if (result.firstTtl > result.maxHops) {
-    result.parseError = `traceroute: invalid value: first hop (-f ${result.firstTtl}) exceeds max hops (-m ${result.maxHops})`;
-  }
-
   return result;
 }
 
-
-function formatNumericHopLine(hop: TracerouteHop): string {
-  const probes = hop.probes && hop.probes.length > 0 ? hop.probes : null;
-  if (hop.timeout && (!probes || probes.every(p => !p.responded))) {
-    return ` ${hop.hop}  * * *`;
+function probeMethod(parsed: ParsedTracerouteArgs, protocol: number): TraceProbeMethod {
+  const tos = parsed.tos === undefined ? {} : { tos: parsed.tos };
+  switch (parsed.method) {
+    case 'icmp': return { kind: 'icmp', ...tos };
+    case 'tcp': return { kind: 'tcp', port: parsed.port ?? DEF_TCP_PORT, ...tos };
+    case 'udp': return { kind: 'udp', port: parsed.port ?? DEF_UDP_PORT, ...tos };
+    case 'raw': return { kind: 'raw', protocol, ...tos };
+    default: return { kind: 'default-udp', port: parsed.port ?? DEF_START_PORT, ...tos };
   }
-  if (probes && probes.length > 0) {
-    const ip = hop.ip ?? '*';
-    let line = ` ${hop.hop}  ${ip}`;
-    for (const probe of probes) {
-      if (!probe.responded) {
-        line += '  *';
-      } else {
-        line += `  ${(probe.rttMs ?? 0).toFixed(3)}${icmpCodeAnnotation(probe.icmpCode)}`;
-      }
-    }
-    return line;
-  }
-  if (hop.unreachable) {
-    return ` ${hop.hop}  ${hop.ip}  ${(hop.rttMs ?? 0).toFixed(3)}${icmpCodeAnnotation(hop.icmpCode)}`;
-  }
-  return ` ${hop.hop}  ${hop.ip}  ${(hop.rttMs ?? 0).toFixed(3)}`;
 }
 
-async function formatNumericOutput(target: IPAddress, hops: TracerouteHop[]): Promise<string> {
-  if (hops.length === 0) {
-    return ` 1  ${target}  *`;
+export interface TracerouteHost {
+  resolveHostname(name: string): Promise<IPAddress | null>;
+  interfaceExists(name: string): boolean;
+  ownsAddress(address: IPAddress): boolean;
+  canReach(target: IPAddress, socket: TraceSocketOptions): boolean;
+  protocolNumber(name: string): number | null;
+  servicePort(name: string): number | null;
+  reverseName(ip: string): string | null;
+  trace(
+    target: IPAddress, parsed: ParsedTracerouteArgs, method: TraceProbeMethod, socket: TraceSocketOptions,
+    onHop: (hop: TracerouteHop) => void, shouldStop: () => boolean,
+  ): Promise<void>;
+}
+
+function unknownHost(name: string): string {
+  return `${name}: Name or service not known\n`
+    + `Cannot handle "host" cmdline arg \`${name}' on position 1 (argc 1)`;
+}
+
+function rawProtocolOf(parsed: ParsedTracerouteArgs, host: TracerouteHost, args: string[]): number | string {
+  if (parsed.method !== 'raw') return 0;
+  const spec = parsed.protocol ?? '';
+  if (spec === '') return DEF_RAW_PROT;
+  if (/^\d+$/.test(spec) && Number(spec) <= 255) return Number(spec);
+  const named = host.protocolNumber(spec);
+  if (named !== null) return named;
+  const position = args.findIndex((a) => a === spec || a.endsWith(spec)) + 1;
+  return cannotHandle('-P', 'prot', spec, position);
+}
+
+async function sourceOf(
+  parsed: ParsedTracerouteArgs, host: TracerouteHost, args: string[],
+): Promise<IPAddress | null | string> {
+  if (parsed.sourceStr === undefined) return null;
+  const text = parsed.sourceStr;
+  const address = isValidIPv4(text) ? new IPAddress(text) : await host.resolveHostname(text);
+  if (address !== null) return address;
+  const position = args.findIndex((a) => a === text || a.endsWith(text)) + 1;
+  return `${text}: Name or service not known\n${cannotHandle('-s', 'src_addr', text, position)}`;
+}
+
+function socketErrorOf(
+  target: IPAddress, socket: TraceSocketOptions, host: TracerouteHost,
+): string | null {
+  if (socket.iface !== undefined && !host.interfaceExists(socket.iface)) {
+    return 'setsockopt SO_BINDTODEVICE: No such device';
   }
-  const lines = hops.map(formatNumericHopLine);
-  return lines.join('\n');
+  if (socket.sourceIp !== undefined && !host.ownsAddress(socket.sourceIp)) {
+    return 'bind: Cannot assign requested address';
+  }
+  if (!host.canReach(target, socket)) return 'connect: Network is unreachable';
+  return null;
+}
+
+export async function runTraceroute(
+  args: string[], host: TracerouteHost, emit: (line: string) => void,
+  shouldStop: () => boolean = () => false,
+): Promise<number> {
+  if (args.length === 0) { emit(TRACEROUTE_USAGE); return 0; }
+  const parsed = parseTracerouteArgs(args);
+  if (parsed.showVersion) { emit(TRACEROUTE_VERSION_TEXT); return 0; }
+  if (parsed.showHelp) { emit(TRACEROUTE_USAGE); return 0; }
+  if (parsed.parseError) { emit(parsed.parseError); return 2; }
+  if (!parsed.targetStr) { emit(TRACEROUTE_USAGE); return 2; }
+
+  for (const named of parsed.namedPorts) {
+    const port = host.servicePort(named.name);
+    if (port === null) {
+      emit(cannotHandle(named.flag, named.flag === '-p' ? 'port' : 'num', named.name, named.position));
+      return 2;
+    }
+    if (named.flag === '-p') parsed.port = port; else parsed.sourcePort = port;
+  }
+  const protocol = rawProtocolOf(parsed, host, args);
+  if (typeof protocol === 'string') { emit(protocol); return 2; }
+  const source = await sourceOf(parsed, host, args);
+  if (typeof source === 'string') { emit(source); return 2; }
+
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(parsed.targetStr) && !isValidIPv4(parsed.targetStr)) {
+    emit(unknownHost(parsed.targetStr));
+    return 2;
+  }
+  if (parsed.targetStr.includes(':')) { emit(refuse('-6')); return 2; }
+  let target = await host.resolveHostname(parsed.targetStr);
+  if (!target && parsed.targetStr.toLowerCase() === 'localhost') target = new IPAddress('127.0.0.1');
+  if (!target) { emit(unknownHost(parsed.targetStr)); return 2; }
+  const invalid = mainValidationError(parsed);
+  if (invalid !== null) { emit(invalid); return 2; }
+
+  const socket: TraceSocketOptions = {
+    dontFragment: parsed.dontFragment,
+    direct: parsed.direct,
+    ...(parsed.iface === undefined ? {} : { iface: parsed.iface }),
+    ...(source === null ? {} : { sourceIp: source }),
+    ...(parsed.sourcePort === undefined ? {} : { sourcePort: parsed.sourcePort }),
+  };
+  const header = tracerouteHeader(parsed.targetStr, target.toString(), parsed.maxHops, parsed.packetSize);
+  const socketError = socketErrorOf(target, socket, host);
+  if (socketError !== null) {
+    const perProbeSocket = parsed.method === 'default' || parsed.method === 'udp';
+    emit(perProbeSocket ? `${header}\n${socketError}` : `\n${socketError}`);
+    return 1;
+  }
+
+  emit(header);
+  const render = { numeric: parsed.numeric, nameOf: (ip: string) => host.reverseName(ip) };
+  await host.trace(
+    target, parsed, probeMethod(parsed, protocol), socket,
+    (hop) => emit(tracerouteHopLine(hop, render)), shouldStop);
+  return 0;
+}
+
+export function tracerouteHostOf(ctx: LinuxCommandContext): TracerouteHost {
+  return {
+    resolveHostname: (name) => ctx.net.resolveHostname(name),
+    interfaceExists: (name) => ctx.net.getPorts().has(name),
+    ownsAddress: (address) => [...ctx.net.getPorts().values()]
+      .some((port) => port.getIPAddress()?.equals(address) === true) || address.isLoopback(),
+    canReach: (target, socket) => ctx.net.canTraceTo(target, socket),
+    protocolNumber: (name) => {
+      const found = ctx.executor.nss.lookup<NssProtocolEntry>('protocols', (src) => src.getprotobyname?.(name));
+      return found.status === 'SUCCESS' && found.entry ? found.entry.number : null;
+    },
+    servicePort: (name) => ctx.executor.resolveServicePort(name),
+    reverseName: (ip) => reverseNameOf(ctx.executor.nss, ip),
+    trace: async (target, parsed, method, socket, onHop, shouldStop) => {
+      await ctx.net.traceroute(
+        target, parsed.maxHops, parsed.probesPerHop, parsed.firstTtl,
+        Math.min(parsed.waitMs, PROBE_WAIT_CAP_MS), method, socket, { onHop, shouldStop });
+    },
+  };
 }
 
 export const tracerouteCommand: LinuxCommand = {
   name: 'traceroute',
   needsNetworkContext: true,
   complete: makeArgCompleter({
-    flags: ['-4', '-6', '-A', '-F', '-I', '-N', '-T', '-U', '-V', '-d', '-e',
-      '-f', '-g', '-i', '-m', '-n', '-p', '-q', '-r', '-s', '-t', '-w', '-z',
-      '--help', '--version'],
+    flags: ['-4', '-F', '-I', '-M', '-N', '-P', '-T', '-U', '-V', '-d', '-e', '-f', '-i', '-m', '-n',
+      '-p', '-q', '-r', '-s', '-t', '-w', '-z', '--sport', '--help', '--version'],
     interfacesAfter: ['-i'],
     hostsAtBarePosition: true,
   }),
   manSection: 8,
-  usage: 'traceroute [-46dFInrUV] [-f first_ttl] [-g gate] [-i iface] [-m maxhops] [-p port] [-q nqueries] [-w waittime] host [packetlen]',
+  usage: 'traceroute [ -4dFITnreU ] [ -f first_ttl ] [ -i device ] [ -m max_ttl ] [ -N squeries ]'
+    + ' [ -p port ] [ -t tos ] [ -w MAX ] [ -q nqueries ] [ -s src_addr ] [ -z sendwait ]'
+    + ' [ -M method ] [ -P proto ] [ --sport=port ] host [ packetlen ]',
   help:
-    'Print the route packets trace to network host.\n\n' +
-    'Traces the path that an IP packet follows from the local host to a\n' +
-    'remote destination by sending probe packets with increasing TTL values.',
-  options: [
-    { flag: '-n', description: 'Print numeric addresses without DNS lookup.', takesArg: false },
-    { flag: '-I', description: 'Use ICMP ECHO for probes (default is UDP).', takesArg: false },
-    { flag: '-U', description: 'Use UDP datagrams for probes.', takesArg: false },
-    { flag: '-T', description: 'Use TCP SYN for probes.', takesArg: false },
-    { flag: '-m', description: 'Maximum TTL value for outbound probes.', takesArg: true, argName: 'maxhops' },
-    { flag: '-q', description: 'Number of probes per hop (default 3).', takesArg: true, argName: 'nqueries' },
-    { flag: '-f', description: 'Start from the first_ttl hop (default 1).', takesArg: true, argName: 'first_ttl' },
-    { flag: '-w', description: 'Seconds to wait for a response.', takesArg: true, argName: 'waittime' },
-    { flag: '-p', description: 'Destination port.', takesArg: true, argName: 'port' },
-    { flag: '-i', description: 'Bind to specific interface.', takesArg: true, argName: 'iface' },
-    { flag: '-g', description: 'Loose source-routing gateway.', takesArg: true, argName: 'gateway' },
-    { flag: '-V', description: 'Print version and exit.', takesArg: false },
-  ],
+    'Print the route packets trace to network host.\n\n'
+    + 'Traces the path that an IP packet follows from the local host to a\n'
+    + 'remote destination by sending probe packets with increasing TTL values.',
+  helpText: TRACEROUTE_USAGE,
 
   async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
-    if (args.length === 0) return TRACEROUTE_USAGE;
-
-    const parsed = parseTracerouteArgs(args);
-
-    if (parsed.showVersion) return TRACEROUTE_VERSION;
-    if (parsed.showHelp) return TRACEROUTE_USAGE;
-    if (parsed.parseError) return parsed.parseError;
-
-    if (parsed.extraTargets.length > 0) {
-      return `traceroute: invalid argument: '${parsed.extraTargets[0]}'`;
-    }
-
-    if (!parsed.targetStr) return TRACEROUTE_USAGE;
-
-    if (/^\d+\.\d+\.\d+\.\d+$/.test(parsed.targetStr) && !isValidIPv4(parsed.targetStr)) {
-      return `traceroute: invalid address: ${parsed.targetStr}`;
-    }
-
-    if (parsed.iface) {
-      const ports = ctx.net.getPorts();
-      if (!ports.has(parsed.iface)) {
-        return `traceroute: invalid interface "${parsed.iface}" — device not found`;
-      }
-    }
-
-    if (parsed.forceV6 || parsed.targetStr.includes(':')) {
-      return `traceroute to ${parsed.targetStr} (${parsed.targetStr}), ${parsed.maxHops} hops max, ${parsed.packetSize} byte packets`;
-    }
-
-    let targetIP = await ctx.net.resolveHostname(parsed.targetStr);
-    if (!targetIP && parsed.targetStr.toLowerCase() === 'localhost') {
-      try { targetIP = new IPAddress('127.0.0.1'); } catch { targetIP = null; }
-    }
-    if (!targetIP) {
-      return `traceroute: unknown host ${parsed.targetStr} (failed to resolve)`;
-    }
-
-    const isHostname = parsed.targetStr !== targetIP.toString();
-    const probeTimeoutMs = Math.min(parsed.waitMs, 100);
-    const effectiveMaxHops = Math.min(parsed.maxHops, 8);
-    let hops: TracerouteHop[];
-    const srcIp = ctx.net.getPorts && [...ctx.net.getPorts().values()]
-      .map((p) => p.getIPAddress()?.toString()).find((a): a is string => !!a);
-    if (parsed.method === 'udp'
-        && tracerouteUdpDenied(ctx, srcIp ?? '', targetIP.toString(), parsed.port ?? 33434)) {
-      hops = [];
-      for (let i = parsed.firstTtl; i <= Math.min(3, effectiveMaxHops); i++) {
-        hops.push({ hop: i, timeout: true, probes: [] });
-      }
-    } else {
-      hops = await ctx.net.traceroute(targetIP, effectiveMaxHops, Math.min(parsed.probesPerHop, 3), parsed.firstTtl, probeTimeoutMs);
-    }
-
-    // RFC 1393 §3 — UDP-mode traceroute (Linux default) emits one UDP datagram
-    // per probe to ports 33434+seq so transit routers create per-flow state
-    // (e.g. NAT translations) for the probe stream.
-    if (parsed.method === 'udp') {
-      const basePort = parsed.port ?? 33434;
-      const ephemeral = 32768 + Math.floor(Math.random() * 32767);
-      const probesEmitted = Math.min(parsed.probesPerHop, 3) * effectiveMaxHops;
-      for (let i = 0; i < probesEmitted; i++) {
-        ctx.net.sendUdpProbe(targetIP, basePort + i, ephemeral);
-      }
-    }
-
-    if (hops.length === 0) {
-      const targetIpStr = targetIP.toString();
-      const isLoopback = targetIpStr === '127.0.0.1' || targetIpStr.startsWith('127.') || targetIpStr === '::1';
-      const synthHops: typeof hops = [];
-      if (isLoopback) {
-        synthHops.push({
-          hop: 1,
-          ip: targetIpStr,
-          rttMs: 0,
-          timeout: false,
-          probes: Array.from({ length: parsed.probesPerHop }, () => ({ responded: true, ip: targetIpStr, rttMs: 0 })),
-        });
-      } else {
-        const gw = ctx.net.getDefaultGateway();
-        if (gw) {
-          synthHops.push({
-            hop: 1,
-            ip: gw.toString(),
-            rttMs: 1,
-            timeout: false,
-            probes: Array.from({ length: parsed.probesPerHop }, () => ({ responded: true, ip: gw.toString(), rttMs: 1 })),
-          });
-          for (let i = 2; i <= Math.min(3, parsed.maxHops); i++) {
-            synthHops.push({ hop: i, timeout: true, probes: [] });
-          }
-        }
-      }
-      hops = synthHops;
-    }
-
-    if (parsed.numeric) {
-      return await formatNumericOutput(targetIP, hops);
-    }
-
-    const standardLines = ctx.fmt.formatTracerouteOutput(targetIP, hops, parsed.maxHops, isHostname ? parsed.targetStr : undefined).split('\n');
-    const headerLine = standardLines[0];
-    const restLines = standardLines.slice(1);
-    const ips = new Set<string>();
-    for (const h of hops) {
-      if (h.ip) ips.add(h.ip);
-      for (const p of (h.probes ?? [])) if (p.ip) ips.add(p.ip);
-    }
-    let restJoined = restLines.join('\n');
-    for (const ip of ips) {
-      const name = reverseLookup(ctx, ip);
-      if (name) {
-        const esc = ip.replace(/\./g, '\\.');
-        restJoined = restJoined.replace(new RegExp(`${esc} \\(${esc}\\)`, 'g'), `${name} (${ip})`);
-      }
-    }
-    const standardOut = `${headerLine}\n${restJoined}`;
-
-    if (parsed.packetSize !== 60) {
-      return standardOut.replace(/60 byte packets/, `${parsed.packetSize} bytes packets`);
-    }
-    return standardOut;
+    const lines: string[] = [];
+    await runTraceroute(args, tracerouteHostOf(ctx), (line) => lines.push(line));
+    return lines.join('\n');
   },
 };
-
-/**
- * Does a router the probe actually crosses deny the traceroute UDP
- * range? Evaluated by walking the path from this machine, so an ACL on
- * a device that is not on the route has no effect — which used to be
- * the case, because every device in the simulation was inspected
- * (docs/PRD-Frame-Only-Refactor.md P7).
- */
-function tracerouteUdpDenied(
-  ctx: LinuxCommandContext, srcIp: string, dstIp: string, basePort: number,
-): boolean {
-  if (!srcIp) return false;
-  const from = (ctx.executor as unknown as { getLocalDevice?: () => object | null }).getLocalDevice?.();
-  return transitUdpAclVerdict(srcIp, dstIp, basePort, new Date(), from as never) === 'deny';
-}
-
-function reverseLookup(ctx: LinuxCommandContext, ip: string): string | null {
-  return reverseNameOf(ctx.executor.nss, ip);
-}

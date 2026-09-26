@@ -195,7 +195,7 @@ describe('Scénario 5 — Corrélation règles / trafic observé', () => {
 
     await client.executeCommand('tcpdump -ni eth0 port 22 -w /tmp/ssh-attempt.pcap &');
     await client.executeCommand('ssh -o StrictHostKeyChecking=no alice@10.0.0.2 whoami', 'wonderland\n');
-    const sniffed = await client.executeCommand('tcpdump -r /tmp/ssh-attempt.pcap');
+    const sniffed = await client.executeCommand('tcpdump -nn -r /tmp/ssh-attempt.pcap');
 
     const syslog = await server.executeCommand('cat /var/log/syslog');
     expect(syslog).toMatch(/SSH-ATTEMPT: IN=eth0.*SRC=10\.0\.0\.1.*PROTO=TCP.*DPT=22/);

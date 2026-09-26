@@ -437,16 +437,8 @@ export class NATEngine {
     if (proto === IP_PROTO_ICMP) {
       const icmp = ipPkt.payload as ICMPPacket;
       if (icmp && icmp.type === 'icmp' && icmp.originalPacket) {
-        const translated = this.translateIcmpEmbedded(icmp.originalPacket, 'inbound');
-        if (translated) {
-          const newPkt: IPv4Packet = {
-            ...ipPkt,
-            payload: { ...icmp, originalPacket: translated },
-            headerChecksum: 0,
-          };
-          newPkt.headerChecksum = computeIPv4Checksum(newPkt);
-          return newPkt;
-        }
+        const translated = this.translateIcmpError(ipPkt, icmp, icmp.originalPacket, 'inbound');
+        if (translated) return translated;
       }
     }
 
@@ -539,16 +531,8 @@ export class NATEngine {
     if (proto === IP_PROTO_ICMP) {
       const icmp = pkt.payload as ICMPPacket;
       if (icmp && icmp.type === 'icmp' && icmp.originalPacket) {
-        const translated = this.translateIcmpEmbedded(icmp.originalPacket, 'outbound');
-        if (translated) {
-          const newPkt: IPv4Packet = {
-            ...pkt,
-            payload: { ...icmp, originalPacket: translated },
-            headerChecksum: 0,
-          };
-          newPkt.headerChecksum = computeIPv4Checksum(newPkt);
-          return newPkt;
-        }
+        const translated = this.translateIcmpError(pkt, icmp, icmp.originalPacket, 'outbound');
+        if (translated) return translated;
       }
     }
 
@@ -935,32 +919,52 @@ export class NATEngine {
    * For outbound errors: the embedded packet's dst is a global IP that we NATted →
    *   rewrite the src (local) to global so the outside sender can correlate.
    */
-  private translateIcmpEmbedded(inner: IPv4Packet, dir: 'inbound' | 'outbound'): IPv4Packet | null {
-    if (dir === 'inbound') {
-      // The inner packet was sent outbound by an inside host and got an error back.
-      // Its source is the globalIP:globalPort assigned by PAT → restore to localIP:localPort.
-      const srcIP   = inner.sourceIP.toString();
-      const srcPort = getPacketSrcPort(inner);
-      const revKey  = makeKey(inner.protocol, srcIP, srcPort);
-      const session = this.reverseSessions.get(revKey);
-      if (session) {
-        return rewriteSrcIP(inner, session.localIP, session.localPort);
-      }
-    } else {
-      // The inner packet arrived inbound and the router is generating an error.
-      // Its destination is our global IP → restore to local IP so inside host understands.
-      const dstIP   = inner.destinationIP.toString();
-      const dstPort = getPacketDstPort(inner);
-      for (const entry of this.staticEntries) {
-        if (entry.globalIP === dstIP && !entry.protocol) {
-          return rewriteDestIP(inner, entry.localIP);
-        }
-        if (entry.globalIP === dstIP && entry.globalPort === dstPort) {
-          return rewriteDestIP(inner, entry.localIP, entry.localPort);
-        }
-      }
-    }
-    return null;
+  private translateIcmpError(
+    outer: IPv4Packet, icmp: ICMPPacket, inner: IPv4Packet, dir: 'inbound' | 'outbound',
+  ): IPv4Packet | null {
+    const binding = dir === 'inbound' ? this.bindingForQuotedOutbound(inner) : this.bindingForQuotedInbound(inner);
+    if (binding === null) return null;
+    const quoted = dir === 'inbound'
+      ? rewriteSrcIP(inner, binding.localIP, binding.localPort)
+      : rewriteDestIP(inner, binding.globalIP, binding.globalPort);
+    const carried: IPv4Packet = { ...outer, payload: { ...icmp, originalPacket: quoted } };
+    const rewritten = dir === 'inbound'
+      ? rewriteDestIP(carried, binding.localIP)
+      : rewriteSrcIP(carried, binding.globalIP);
+    rewritten.headerChecksum = computeIPv4Checksum(rewritten);
+    this.hitCount++;
+    return rewritten;
+  }
+
+  private bindingForQuotedOutbound(
+    inner: IPv4Packet,
+  ): { localIP: string; localPort?: number; globalIP: string; globalPort?: number } | null {
+    const srcIP = inner.sourceIP.toString();
+    const srcPort = getPacketSrcPort(inner);
+    const session = this.reverseSessions.get(makeKey(inner.protocol, srcIP, srcPort));
+    if (session) return session;
+    const entry = this.staticEntries.find((e) => e.globalIP === srcIP
+      && (!e.protocol || e.globalPort === srcPort));
+    if (!entry) return null;
+    return entry.protocol
+      ? { localIP: entry.localIP, localPort: entry.localPort, globalIP: entry.globalIP, globalPort: entry.globalPort }
+      : { localIP: entry.localIP, globalIP: entry.globalIP };
+  }
+
+  private bindingForQuotedInbound(
+    inner: IPv4Packet,
+  ): { localIP: string; localPort?: number; globalIP: string; globalPort?: number } | null {
+    const dstIP = inner.destinationIP.toString();
+    const dstPort = getPacketDstPort(inner);
+    const session = this.sessions.get(makeKey4(
+      inner.protocol, dstIP, dstPort, inner.sourceIP.toString(), getPacketSrcPort(inner)));
+    if (session) return session;
+    const entry = this.staticEntries.find((e) => e.localIP === dstIP
+      && (!e.protocol || e.localPort === dstPort));
+    if (!entry) return null;
+    return entry.protocol
+      ? { localIP: entry.localIP, localPort: entry.localPort, globalIP: entry.globalIP, globalPort: entry.globalPort }
+      : { localIP: entry.localIP, globalIP: entry.globalIP };
   }
 
   private sessionTimeout(session: NatSession): number {
