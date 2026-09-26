@@ -24,6 +24,7 @@ function formatOptionLine(opt: LinuxCommandOption): string {
 
 /** Text shown by `<cmd> --help`. */
 export function renderHelp(cmd: LinuxCommand): string {
+  if (cmd.helpText !== undefined) return cmd.helpText;
   const lines: string[] = [];
   const usage = cmd.usage ?? cmd.name;
   lines.push(`Usage: ${usage}`);

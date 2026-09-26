@@ -6,13 +6,18 @@
  * tests 92 and 96, battery 03 test 144): a stateful firewall could not be
  * exercised with an ACK-without-SYN, a spoofed source, or a land attack.
  *
- * Authority: the reachable ancestor antirez/hping (fetched: main.c banner
- * "HPING %s (%s %s): %s set, %d headers + %d data bytes", statistics.c
- * "--- %s hping statistic ---" then the transmitted/received/loss line and
- * "round-trip min/avg/max"). hping3's own source (salsa.debian.org) is not
- * reachable from here, so the only change from the ancestor is its known
- * fix of the "tramitted" typo to "transmitted", and TCP header size 40 /
- * ICMP 28 / raw 20 per the IP+L4 header sizes. The wire behaviour is the
+ * Authority: antirez/hping, CLONED and read for the fidelity lot that
+ * followed this file. CORRECTION: this header used to claim "hping3's own
+ * source is not reachable from here" — that was false. The repository IS
+ * reachable and it IS hping3 (`release.h`: RELEASE_VERSION
+ * "3.0.0-alpha-1"; `Makefile.in` builds `hping3`), not an ancestor.
+ * Banner `main.c:348` "HPING %s (%s %s): %s set, %d headers + %d data
+ * bytes"; `statistics.c:32-39` "--- %s hping statistic ---" then the
+ * counts line and "round-trip min/avg/max"; header sizes from
+ * `main.c:326-345` (TCP 40 / ICMP 28 / UDP 28 / raw 20). Upstream still
+ * prints the "tramitted" typo (`statistics.c:33`); the shipped binaries
+ * fixed it and real transcripts show "transmitted", which is what a
+ * learner compares against (rule 8) — so "transmitted" is kept. The wire behaviour is the
  * simulator's own: TCP via TcpStack.scanProbe (the stateless segment nmap
  * already uses), ICMP via pingSequence or a crafted echo. A forged source
  * receives no reply, which is the point of -a/--spoof.

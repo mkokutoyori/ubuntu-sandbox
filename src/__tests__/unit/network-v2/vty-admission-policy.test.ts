@@ -58,6 +58,7 @@ async function buildHuaweiLan(): Promise<{ pc: LinuxPC; huawei: HuaweiRouter }> 
     // VRP ne fait tourner aucun serveur STelnet sans paire de clés
     // locale : la créer fait partie de la configuration réelle.
     'rsa local-key-pair create',
+    'stelnet server enable',
     'quit',
   ]) await huawei.executeCommand(cmd);
   return { pc, huawei };

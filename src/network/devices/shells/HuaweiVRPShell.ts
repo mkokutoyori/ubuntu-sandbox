@@ -42,12 +42,12 @@ import {
 import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress, isPathReachable } from '../linux/network/HostLookup';
-import { huaweiIrreversibleCipher, huaweiCipher, huaweiDecipher, looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
+import { huaweiDecipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras, huaweiDisplayInterfaceName, normaliserErreurVrp, tropDeParametres, rendreErreurVrp } from './cli-utils';
 import { analyserVrrp, appliquerVrrp } from './huawei/huaweiVrrpViews';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
-import { NetworkOsAccount, type AccountServiceType, type PasswordHashAlgorithm } from '../router/aaa/NetworkOsAccount';
+import { applyVrpLocalUser } from './huawei/huaweiLocalUser';
 import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
@@ -1341,20 +1341,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (s.hwtacacsTemplates.size === 0) return ' No HWTACACS template configured.';
       return [...s.hwtacacsTemplates.keys()].map(n => ` HWTACACS template: ${n}`).join('\n');
     });
-    t.register('display ssh server session', 'Display SSH server sessions', () => {
-      const ssh = this.r().getManagementService().getSsh();
-      if (!ssh.enabled) return 'SSH server is not enabled.';
-      const header = 'Conn   Ver  Idle    User       IP';
-      const sessions = this.r().getSshSessionRegistry().list();
-      if (sessions.length === 0) return `${header}\n(none) ${ssh.version}    --      --         --`;
-      const rows = sessions.map((s, i) => {
-        const h = Math.floor(s.idleSeconds / 3600).toString().padStart(2, '0');
-        const m = Math.floor((s.idleSeconds % 3600) / 60).toString().padStart(2, '0');
-        const sec = Math.floor(s.idleSeconds % 60).toString().padStart(2, '0');
-        return `${(i + 1).toString().padEnd(6)} ${ssh.version}    ${h}:${m}:${sec}  ${s.user.padEnd(10)} ${s.fromIp}`;
-      });
-      return [header, ...rows].join('\n');
-    });
     t.register('display rsa local-key-pair public', 'Display RSA public key', () => {
       const ks = this.r().getKeypairService();
       const pair = ks.list().find((k) => k.algo === 'rsa');
@@ -1587,8 +1573,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
     this.registerScreenSizeCommands(t);
-    registerHuaweiCommonSecurityDisplay(t, () => new Map(), undefined,
-      () => this.r()?.getSnmpService());
+    registerHuaweiCommonSecurityDisplay(t, undefined,
+      () => this.r()?.getSnmpService(), () => this.r());
 
     // OSPF display commands
     registerOSPFDisplayCommands(t, getRouter);
@@ -1955,8 +1941,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerHuaweiCommonSecurity(t,
       () => this.r() as unknown as { getManagementService: () => import('../router/management/RouterManagementService').RouterManagementService },
       undefined, undefined, (epochMs) => this.r()?._setSystemClock(epochMs));
-    registerHuaweiCommonSecurityDisplay(t, () => new Map(), undefined,
-      () => this.r()?.getSnmpService());
+    registerHuaweiCommonSecurityDisplay(t, undefined,
+      () => this.r()?.getSnmpService(), () => this.r());
 
     // `user-interface vty <first> [last]` — enter VTY user-interface view
     // so subsequent `protocol inbound {ssh|telnet|all|none}` toggles the
@@ -2560,58 +2546,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   private handleLocalUserCommand(args: string[]): string {
     const router = this.r();
-    const name = args[0];
-    if (!name || args.length < 2) return 'Error: Incomplete command.';
-    const store = router.getCredentialStore();
-    const existing = store.get(name) ?? NetworkOsAccount.create({ name });
-    const kw = args[1].toLowerCase();
-    let next = existing;
-    if (kw === 'password') {
-      const idx = args.indexOf('cipher') >= 0 ? args.indexOf('cipher') : args.indexOf('irreversible-cipher');
-      const algo: PasswordHashAlgorithm = idx >= 0
-        ? (args[idx] === 'irreversible-cipher' ? 'irreversible-cipher' : 'cipher')
-        : 'plain';
-      const raw = args[idx >= 0 ? idx + 1 : args.length - 1] ?? existing.secret;
-      // Ce que l'on RANGE est toujours ce que la configuration rendra :
-      // l'empreinte pour `irreversible-cipher`, le chiffre pour
-      // `cipher`. L'operateur tape le clair, un rejeu de configuration
-      // repasse la valeur deja transformee — d'ou la reconnaissance de
-      // forme, faute de quoi le rejeu prend le condense pour un mot de
-      // passe et le compte n'ouvre plus.
-      const stored = algo === 'irreversible-cipher'
-        ? (looksLikeIrreversibleCipher(raw) ? raw : huaweiIrreversibleCipher(raw))
-        : algo === 'cipher'
-          ? (looksLikeReversibleCipher(raw) ? raw : huaweiCipher(raw))
-          : raw;
-      const policy = router.getHuaweiAaaService().passwordPolicy;
-      // Length only applies to a cleartext entry — a cipher/irreversible-cipher
-      // value is already hashed, exactly like Cisco's `secret 5|8|9` forms.
-      if (algo === 'plain' && policy.minLength && raw.length < policy.minLength) {
-        return `Error: The password must contain at least ${policy.minLength} characters.`;
-      }
-      if (existing.wouldReuseSecret(raw, policy.historyMaxRecords ?? 0)) {
-        return 'Error: The password has been used before. Please choose a different one.';
-      }
-      next = existing.withSecretRetainingHistory(stored, algo, policy.historyMaxRecords ?? 0);
-      if (policy.expireDays) {
-        next = next.withPasswordExpireAt(Date.now() + policy.expireDays * 86_400_000);
-      }
-    } else if (kw === 'privilege' && args[2] === 'level' && args[3]) {
-      next = existing.withPrivilege(Number(args[3]) || existing.privilege);
-    } else if (kw === 'service-type') {
-      const types = args.slice(2).filter(t => t.length > 0) as AccountServiceType[];
-      next = existing.withServiceTypes(types);
-    } else if (kw === 'state') {
-      next = args[2] === 'active' ? existing.enable() : args[2] === 'block' ? existing.disable() : existing;
-    } else if (kw === 'ftp-directory' && args[2]) {
-      next = existing.withFtpDirectory(args[2]);
-    } else if (kw === 'idle-timeout' && args[2]) {
-      next = existing.withIdleTimeout(Number(args[2]) * 60);
-    } else if (kw === 'access-limit' && args[2]) {
-      next = existing.withMaxSessions(Number(args[2]));
-    }
-    store.upsert(next);
-    return '';
+    return applyVrpLocalUser(router.getCredentialStore(), args, router.getHuaweiAaaService().passwordPolicy);
   }
 
   // ─── BFD Sub-Views ──────────────────────────────────────────

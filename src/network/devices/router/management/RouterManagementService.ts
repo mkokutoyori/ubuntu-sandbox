@@ -23,18 +23,38 @@ export function sshListenPortIsValid(port: number): boolean {
   return port === SSH_DEFAULT_PORT || (port >= 1025 && port <= 65535);
 }
 
+export const SSH_DEFAULT_TIMEOUT_SEC = 60;
+export const SSH_DEFAULT_AUTH_RETRIES = 3;
+
+function positiveInteger(text: string | undefined): number | null {
+  return /^\d+$/.test(text ?? '') && Number(text) > 0 ? Number(text) : null;
+}
+
 export const TELNET_DEFAULT_PORT = 23;
 
 export function telnetListenPortIsValid(port: number): boolean {
   return PortNumber.isValid(port) && port !== PORT_ANY;
 }
 
+export function telnetServerAclIsValid(acl: string): boolean {
+  if (/^\d+$/.test(acl)) {
+    const n = Number(acl);
+    return n >= 2000 && n <= 3999;
+  }
+  return /^[A-Za-z][\w-]*$/.test(acl);
+}
+
 export class RouterManagementService {
   domainName: string = '';
   ipDomainLookupEnabled: boolean = true;
   nameServers: string[] = [];
-  private stelnetAcl: string | undefined;
-  private readonly telnetServer = { enabled: false, port: TELNET_DEFAULT_PORT, acl: undefined as string | undefined };
+  private readonly telnetServer = {
+    enabled: false,
+    port: TELNET_DEFAULT_PORT,
+    acl: undefined as string | undefined,
+    source: undefined as string | undefined,
+    ipv6Enabled: false,
+  };
   /**
    * Le serveur SSH, cote GESTIONNAIRE : ce qu'il porte seul, c'est-a-dire
    * l'etat d'ecoute et le port. Le reste de la configuration `ip ssh`
@@ -42,7 +62,13 @@ export class RouterManagementService {
    * `CiscoSecurityConfig.ssh`, le magasin que la CLI ecrit -- il y en
    * avait deux, avec des defauts qui se contredisaient.
    */
-  private readonly sshServer = { enabled: false, port: 22, version: 2, timeout: 60, retries: 3 };
+  private readonly sshServer = {
+    enabled: false,
+    port: SSH_DEFAULT_PORT,
+    version: 2,
+    timeout: SSH_DEFAULT_TIMEOUT_SEC,
+    retries: SSH_DEFAULT_AUTH_RETRIES,
+  };
   private readonly ntpService = {
     enabled: true,
     sourceInterface: '',
@@ -72,21 +98,18 @@ export class RouterManagementService {
     return feature ? this.raw.filter(r => r.feature === feature) : [...this.raw];
   }
 
-  configureStelnet(args: string[]): void {
+  configureStelnet(args: string[], negated = false): string | null {
     const head = (args[0] ?? '').toLowerCase();
-    if (head === 'server' && args[1]?.toLowerCase() === 'enable') this.sshServer.enabled = true;
+    if (head === 'server' && args[1]?.toLowerCase() === 'enable') this.sshServer.enabled = !negated;
     else if (head === 'server' && args[1]?.toLowerCase() === 'disable') this.sshServer.enabled = false;
-    else if (head === 'server' && args[1]?.toLowerCase() === 'port' && args[2]) this.sshServer.port = parseInt(args[2], 10);
+    else if (head === 'server') return args[1] ?? head;
     else this.recordRaw('stelnet', args.join(' '));
-  }
-
-  getStelnet(): { enabled: boolean; port: number; acl: string | undefined } {
-    return { enabled: this.sshServer.enabled, port: this.sshServer.port, acl: this.stelnetAcl };
+    return null;
   }
 
   configureTelnet(args: string[], negated = false): string | null {
     const head = (args[0] ?? '').toLowerCase();
-    if (head === 'server' && args[1]?.toLowerCase() === 'enable') this.telnetServer.enabled = true;
+    if (head === 'server' && args[1]?.toLowerCase() === 'enable') this.telnetServer.enabled = !negated;
     else if (head === 'server' && args[1]?.toLowerCase() === 'disable') this.telnetServer.enabled = false;
     else if (head === 'server' && args[1]?.toLowerCase() === 'port') {
       if (negated) { this.telnetServer.port = TELNET_DEFAULT_PORT; return null; }
@@ -94,7 +117,21 @@ export class RouterManagementService {
       if (!port || !telnetListenPortIsValid(port.value)) return args[2] ?? '';
       this.telnetServer.port = port.value;
     }
-    else if (head === 'server-source' && args[1]) this.telnetServer.acl = args[1];
+    else if (head === 'server' && args[1]?.toLowerCase() === 'acl') {
+      if (negated) { this.telnetServer.acl = undefined; return null; }
+      const acl = args[2] ?? '';
+      if (!telnetServerAclIsValid(acl)) return acl;
+      this.telnetServer.acl = acl;
+    }
+    else if (head === 'ipv6' && args[1]?.toLowerCase() === 'server' && args[2]?.toLowerCase() === 'enable') {
+      this.telnetServer.ipv6Enabled = !negated;
+    }
+    else if (head === 'server' || head === 'ipv6') return args[1] ?? head;
+    else if (head === 'server-source') {
+      if (negated) { this.telnetServer.source = undefined; return null; }
+      if (args[1]?.toLowerCase() !== '-i' || !args[2]) return args[1] ?? '';
+      this.telnetServer.source = args.slice(2).join('');
+    }
     else this.recordRaw('telnet', args.join(' '));
     return null;
   }
@@ -102,19 +139,35 @@ export class RouterManagementService {
 
   configureSsh(args: string[], negated = false): string | null {
     const head = (args[0] ?? '').toLowerCase();
-    if (head === 'server' && args[1]?.toLowerCase() === 'enable') this.sshServer.enabled = true;
+    if (head === 'server' && args[1]?.toLowerCase() === 'enable') this.sshServer.enabled = !negated;
     else if (head === 'server' && args[1]?.toLowerCase() === 'port') {
       if (negated) { this.sshServer.port = SSH_DEFAULT_PORT; return null; }
       const port = Number.parseInt(args[2] ?? '', 10);
       if (!sshListenPortIsValid(port)) return args[2] ?? '';
       this.sshServer.port = port;
     }
-    else if (head === 'server' && args[1]?.toLowerCase() === 'compatible-ssh1x') { /* ignored */ }
+    else if (head === 'server' && args[1]?.toLowerCase() === 'timeout') {
+      if (negated) { this.sshServer.timeout = SSH_DEFAULT_TIMEOUT_SEC; return null; }
+      const seconds = positiveInteger(args[2]);
+      if (seconds === null) return args[2] ?? '';
+      this.sshServer.timeout = seconds;
+    }
+    else if (head === 'server' && args[1]?.toLowerCase() === 'authentication-retries') {
+      if (negated) { this.sshServer.retries = SSH_DEFAULT_AUTH_RETRIES; return null; }
+      const retries = positiveInteger(args[2]);
+      if (retries === null) return args[2] ?? '';
+      this.sshServer.retries = retries;
+    }
+    else if (head === 'server') return args[1] ?? head;
     else if (head === 'client' && args[1]?.toLowerCase() === 'first-time') { /* ignored */ }
     else this.recordRaw('ssh', args.join(' '));
     return null;
   }
   getSsh(): typeof this.sshServer { return this.sshServer; }
+
+  sshServerLimits(): { maxAuthTries: number; loginGraceTime: number } {
+    return { maxAuthTries: this.sshServer.retries, loginGraceTime: this.sshServer.timeout };
+  }
 
   configureNtp(args: string[]): void {
     const head = (args[0] ?? '').toLowerCase();

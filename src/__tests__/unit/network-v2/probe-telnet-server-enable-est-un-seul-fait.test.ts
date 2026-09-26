@@ -8,6 +8,10 @@
  *   display current-configuration   telnet server enable     <- active
  *   display telnet server status    Telnet server: Disabled  <- ETEINT
  *
+ * (La vue parle desormais la forme capturee de VRP — `TELNET IPv4
+ * server :Enable` — depuis la sonde `probe-display-telnet-server-status-
+ * comme-vrp` ; les assertions lisent ce champ-la.)
+ *
  * La MEME machine, au MEME instant, repond deux choses opposees a la
  * question « le serveur telnet est-il en service ? ». C'est le defaut que
  * la regle 3 de `CLAUDE.md` nomme, et celui que ce depot referme le plus
@@ -109,7 +113,7 @@ describe('les deux vues du serveur telnet disent la meme chose', () => {
     const ar1 = await routeurAvecTelnet();
 
     expect(await ar1.executeCommand('display telnet server status'))
-      .toMatch(/Enabled/);
+      .toMatch(/TELNET IPv4 server\s+:Enable$/m);
   }, 30000);
 
   it('et la configuration courante porte la ligne — le TEMOIN', async () => {
@@ -132,7 +136,7 @@ describe('ce que le correctif ne doit pas casser', () => {
     const neuf = new HuaweiRouter('AR9');
 
     expect(await neuf.executeCommand('display telnet server status'))
-      .toMatch(/Disabled/);
+      .toMatch(/TELNET IPv4 server\s+:Disable$/m);
   }, 30000);
 
   it('`undo telnet server enable` le remet hors service', async () => {
@@ -142,7 +146,7 @@ describe('ce que le correctif ne doit pas casser', () => {
     }
 
     expect(await ar1.executeCommand('display telnet server status'))
-      .toMatch(/Disabled/);
+      .toMatch(/TELNET IPv4 server\s+:Disable$/m);
   }, 30000);
 });
 

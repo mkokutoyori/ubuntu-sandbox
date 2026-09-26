@@ -42,6 +42,8 @@ import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 import type { TimerHandle } from '@/events/Scheduler';
 import { Logger } from '../core/Logger';
+import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
+import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext';
 import { RouterDebugService } from './router/diag/RouterDebugService';
 import { ArchiveService } from './router/archive/ArchiveService';
 
@@ -456,6 +458,10 @@ export class CiscoSwitch extends Switch {
   }
 
   getOSType(): string { return 'cisco-ios'; }
+
+  protected override sshServerLimits(): Partial<SshServerConfig> {
+    return getSecurityConfig(this).sshServerLimits();
+  }
 
   getBootSequence(): string {
     return [

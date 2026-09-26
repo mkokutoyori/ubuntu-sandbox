@@ -25,7 +25,7 @@ export interface RouterTelnetServerDeps {
   authHeader(): string | null;
   loginBanner(): string | null;
   motd(): string | null;
-  admit(sourceIp: string): TelnetAdmission;
+  admit(sourceIp: string, localIp?: string): TelnetAdmission;
   authenticateLocal(username: string, password: string): boolean;
   authenticateAaa(username: string, password: string): Promise<boolean>;
   createVtyShell(username?: string): TelnetVtyShell;
@@ -57,7 +57,7 @@ export class RouterTelnetServerContext implements ITelnetServerContext {
     }
   }
 
-  admit(sourceIp: string): TelnetAdmission { return this.deps.admit(sourceIp); }
+  admit(sourceIp: string, localIp?: string): TelnetAdmission { return this.deps.admit(sourceIp, localIp); }
 
   async authenticate(username: string | null, password: string): Promise<boolean> {
     switch (this.deps.loginMode()) {

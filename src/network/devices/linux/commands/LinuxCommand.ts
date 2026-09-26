@@ -142,6 +142,8 @@ export interface LinuxCommand {
   /** Multi-line description shown by `man <cmd>`. */
   readonly help?: string;
 
+  readonly helpText?: string;
+
   /** Man section number (1 = user commands, 8 = admin commands). Default: 8. */
   readonly manSection?: number;
 

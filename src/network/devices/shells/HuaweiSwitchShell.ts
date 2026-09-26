@@ -17,7 +17,7 @@ import { CommandTrie } from './CommandTrie';
 import {
   parseSuppressionRule, parseVrpCarRule, parseMqcCarRule, SUPPRESSION_KINDS,
 } from '../../qos/CarPolicer';
-import { NetworkOsAccount } from '../router/aaa/NetworkOsAccount';
+import { applyVrpLocalUser, localUserConfigLinesVrp } from './huawei/huaweiLocalUser';
 import {
   withVrpCommonHelp, withVrpCommonCandidates,
   type VrpViewKind,
@@ -74,7 +74,7 @@ import {
 } from './huawei/HuaweiConfigCommands';
 import { VRP_STATIC_PREFERENCE } from '../SwitchSvi';
 import {
-  registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
+  registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay, remoteAccessConfigBlocksVrp,
 } from './huawei/HuaweiCommonSecurity';
 import { registerHuaweiKeypairCommands } from './huawei/HuaweiKeypairCommands';
 import { lignesConfigSnmpVrp } from './huawei/huaweiSnmpCommands';
@@ -250,7 +250,6 @@ export class HuaweiSwitchShell implements ISwitchShell {
    * interroger le moteur. Les REGLES, elles, ne vivent que dans le moteur.
    */
   private selectedAclType: 'basic' | 'adv' = 'basic';
-  private localUsers = new Map<string, import('./huawei/HuaweiCommonSecurity').LocalUser>();
 
   private swRef: HuaweiSwitchDevice | null = null;
 
@@ -2218,63 +2217,16 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return [...new Set(sorties)].join('\n');
   }
 
-  private magasinComptes(): {
-    get(n: string): unknown;
-    upsert(a: NetworkOsAccount): unknown;
-    remove(n: string): void;
-  } | null {
-    return getCredentialStore(this.swRef) ?? null;
-  }
-
-  /**
-   * Poser ou completer le compte dans le magasin partage. Le secret est
-   * garde tel qu'il a ete saisi, sinon `local-user` declarerait un
-   * compte que personne ne peut authentifier — ce qui etait exactement
-   * l'etat precedent.
-   */
-  private declarerCompteLocal(nom: string, kv: { secret?: string; privilege?: number }): void {
-    const store = this.magasinComptes();
-    if (!store) return;
-    let compte = (store.get(nom) as NetworkOsAccount | undefined)
-      ?? NetworkOsAccount.create({ name: nom });
-    if (kv.secret !== undefined) compte = compte.withSecret(kv.secret, 'plain');
-    if (kv.privilege !== undefined) compte = compte.withPrivilege(kv.privilege);
-    store.upsert(compte);
-  }
-
   /** AAA sub-view ([host-aaa]) — local-user / scheme / domain. */
   private buildAaaCommands(): void {
     const t = this.aaaTrie;
-    // `local-user` DECLARE un compte, il ne remplit pas un tableau
-    // d'affichage. Il rangeait dans une carte locale au shell en
-    // remplacant le mot de passe par `******` : le compte n'existait pour
-    // personne, donc rien ne pouvait l'authentifier et `display users`
-    // ne pouvait jamais le nommer. Il alimente desormais le MEME magasin
-    // que le routeur, tout en gardant sa carte pour le rendu de la
-    // configuration (VRP y ecrit le condense, pas le secret).
     t.registerGreedy('local-user', 'Configure a local user', (args) => {
-      if (args.length < 2) return 'Error: Incomplete command.';
-      const name = args[0];
-      const u = this.localUsers.get(name) ?? {};
-      const kw = args[1].toLowerCase();
-      if (kw === 'password') {
-        u.password = '******';
-        this.declarerCompteLocal(name, { secret: args[args.length - 1] });
-      } else if (kw === 'privilege') {
-        u.privilege = args[args.length - 1];
-        const lvl = parseInt(args[args.length - 1], 10);
-        if (Number.isFinite(lvl)) this.declarerCompteLocal(name, { privilege: lvl });
-      } else if (kw === 'service-type') {
-        u.serviceType = args.slice(2).join(',');
-        this.declarerCompteLocal(name, {});
-      }
-      this.localUsers.set(name, u);
-      return '';
+      const store = getCredentialStore(this.swRef);
+      return store ? applyVrpLocalUser(store, args, {}) : '';
     });
     t.registerGreedy('undo', 'aaa undo', (args, raw) => {
       if ((args[0] ?? '').toLowerCase() === 'local-user' && args[1]) {
-        this.localUsers.delete(args[1]);
-        this.magasinComptes()?.remove(args[1]);
+        getCredentialStore(this.swRef)?.remove(args[1]);
         return '';
       }
       const cfg = this.aaaExtraConfig ?? (this.aaaExtraConfig = {
@@ -2956,9 +2908,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.registerMqcDisplay(trie);
 
     // Shared management `display` commands (DRY).
-    registerHuaweiCommonSecurityDisplay(trie, () => this.localUsers,
+    registerHuaweiCommonSecurityDisplay(trie,
       () => this.swRef?.getNtpAgent(),
-      () => this.swRef?.getSnmpService());
+      () => this.swRef?.getSnmpService(),
+      () => this.swRef);
 
     // Real DHCP snooping binding table — shadows the generic hardcoded
     // `display dhcp ...` catch-all above with the switch's actual bindings.
@@ -4582,10 +4535,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const mgmt = sw.getManagementService?.();
     const snmpLignes = lignesConfigSnmpVrp(sw.getSnmpService?.());
     if (snmpLignes.length > 0) { lines.push(...snmpLignes); lines.push('#'); }
-    const stelnet = mgmt?.getStelnet();
-    if (stelnet?.enabled) { lines.push('stelnet server enable'); lines.push('#'); }
-    const telnet = mgmt?.getTelnet();
-    if (telnet?.enabled) { lines.push('telnet server enable'); lines.push('#'); }
+    for (const block of mgmt ? remoteAccessConfigBlocksVrp(mgmt) : []) {
+      lines.push(...block);
+      lines.push('#');
+    }
+    const localUsers = localUserConfigLinesVrp(getCredentialStore(sw)?.list() ?? []);
+    if (localUsers.length > 0) { lines.push('aaa', ...localUsers, '#'); }
 
     const aclLignes = runningConfigAclLines(
       sw.getVaclEngine().getAccessLists(), sw.getVaclEngine().getDefaultStep?.() ?? 5);

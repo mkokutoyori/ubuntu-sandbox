@@ -105,6 +105,9 @@ export interface HostIcmpEchoReplyPayload extends HostDeviceRef {
   seq: number;
   ttl: number;
   rttMs: number;
+  ipId?: number;
+  tos?: number;
+  ipLen?: number;
 }
 
 export interface HostIcmpEchoTimeoutPayload extends HostDeviceRef {

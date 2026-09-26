@@ -46,7 +46,7 @@ export class TelnetServerHandler {
   constructor(private readonly ctx: ITelnetServerContext) {}
 
   register(conn: TcpStream, clientIp: string): void {
-    const admission = this.ctx.admit(clientIp);
+    const admission = this.ctx.admit(clientIp, conn.localIp);
     if (!admission.accept) {
       if (admission.kind === 'line-password' && admission.reason) {
         conn.write(toNvtText(`\n[${admission.reason}]\n`));

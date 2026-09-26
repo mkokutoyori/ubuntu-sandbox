@@ -3956,6 +3956,20 @@ export abstract class LinuxMachine extends EndHost
         target: IPAddress,
         options?: { sourceIp?: IPAddress; ttl?: number; dataSize?: number },
       ): boolean => this.sendCraftedIcmpEcho(target, options ?? {}),
+      sendRawIpPacket: (
+        target: IPAddress, protocol: number,
+        options: { sourceIp?: IPAddress; ttl?: number; dataSize?: number } = {},
+      ): boolean => {
+        const bytes = Math.max(0, options.dataSize ?? 0);
+        return this.sendIpv4Packet({
+          destination: target,
+          protocol,
+          payload: bytes > 0 ? new Uint8Array(bytes) : null,
+          payloadBytes: bytes,
+          ...(options.sourceIp === undefined ? {} : { source: options.sourceIp }),
+          ...(options.ttl === undefined ? {} : { ttl: options.ttl }),
+        });
+      },
       openSnmpSession: (processName: string): SnmpClientSession | null => SnmpClientSession.open({
         udpBind: (port, listener, name) => this.udpBind(port, listener, name),
         udpClose: (port) => this.udpClose(port),

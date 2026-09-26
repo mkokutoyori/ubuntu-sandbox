@@ -402,6 +402,10 @@ export class CiscoSecurityConfig {
   tacacsDefaults: TacacsGlobalDefaults = {};
 
   ssh: SshConfig = { ...SSH_DEFAULTS };
+
+  sshServerLimits(): { maxAuthTries: number; loginGraceTime: number } {
+    return { maxAuthTries: this.ssh.authRetries, loginGraceTime: this.ssh.timeoutSec };
+  }
   cryptoKeys: CryptoRsaKey[] = [];
   enableSecret?: string;
   servicePasswordEncryption = false;

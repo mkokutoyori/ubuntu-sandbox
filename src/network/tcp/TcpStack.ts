@@ -49,6 +49,38 @@ export interface ScanProbeShape {
   sourceIp?: string;
   payload?: Uint8Array;
   iface?: string;
+  /**
+   * `hping3 -w`/`--win` : la fenetre ANNONCEE par la sonde. Absente, la
+   * pile pose la sienne.
+   */
+  window?: number;
+  sequence?: number;
+  acknowledgement?: number;
+  tos?: number;
+  identification?: number;
+}
+
+export interface StatelessProbeDetail {
+  reply: StatelessProbeReply;
+  window: number;
+  flags: TcpFlags;
+  sequence: number;
+  acknowledgement: number;
+  checksum: number;
+  urgentPointer: number;
+  ttl: number;
+  identification: number;
+  tos: number;
+  totalLength: number;
+  dontFragment: boolean;
+}
+
+export interface ReceivedIpHeader {
+  ttl: number;
+  identification: number;
+  tos: number;
+  totalLength: number;
+  dontFragment: boolean;
 }
 
 /** La duree de vie qu'une pile TCP pose sur ses propres segments. */
@@ -57,9 +89,26 @@ const TCP_DEFAULT_TTL = 64;
 interface StatelessProbeWatch {
   seen: 'rst' | 'syn-ack' | 'icmp-prohibited' | 'icmp-unreachable' | 'none';
   window: number;
+  flags: TcpFlags;
+  sequence: number;
+  acknowledgement: number;
+  checksum: number;
+  urgentPointer: number;
+  ip: ReceivedIpHeader;
   localPort: number;
   destIp: string;
   destPort: number;
+}
+
+const NO_REPLY_IP_HEADER: ReceivedIpHeader = {
+  ttl: 0, identification: 0, tos: 0, totalLength: 0, dontFragment: false,
+};
+
+function emptyProbeDetail(reply: StatelessProbeReply): StatelessProbeDetail {
+  return {
+    reply, window: 0, flags: noFlags(), sequence: 0, acknowledgement: 0,
+    checksum: 0, urgentPointer: 0, ...NO_REPLY_IP_HEADER,
+  };
 }
 
 import {
@@ -684,11 +733,23 @@ export class TcpStack {
     remoteIp: string, remotePort: number, flags: TcpFlags,
     shape: ScanProbeShape = {},
   ): StatelessProbeReply {
+    return this.scanProbeDetail(remoteIp, remotePort, flags, shape).reply;
+  }
+
+  /**
+   * Le meme sondage, mais qui rend AUSSI la fenetre annoncee par la
+   * reponse : `hping3` l'imprime (`waitpacket.c:389`, « win=%d »), la
+   * collapser en « rst-window » suffisait a nmap et pas a lui.
+   */
+  scanProbeDetail(
+    remoteIp: string, remotePort: number, flags: TcpFlags,
+    shape: ScanProbeShape = {},
+  ): StatelessProbeDetail {
     const target = canonicalIpText(remoteIp);
     const egress = this.resolveEgress(target, shape.iface);
-    if (!egress) return 'none';
+    if (!egress) return emptyProbeDetail('none');
     const localPort = shape.sourcePort ?? this.nextEphemeral(egress.srcIp);
-    if (localPort < 0) return 'none';
+    if (localPort < 0) return emptyProbeDetail('none');
 
     // La trace est posee sur l'adresse REELLEMENT emise : une source
     // forgee ne peut recevoir aucune reponse, et la garder ici serait
@@ -697,7 +758,9 @@ export class TcpStack {
       ? egress.srcIp : canonicalIpText(shape.sourceIp);
     const key = makeSocketKey(srcIp, localPort, target, remotePort);
     const watch: StatelessProbeWatch = {
-      seen: 'none', window: 0,
+      seen: 'none', window: 0, flags: noFlags(),
+      sequence: 0, acknowledgement: 0, checksum: 0, urgentPointer: 0,
+      ip: { ...NO_REPLY_IP_HEADER },
       localPort, destIp: target, destPort: remotePort,
     };
     this.statelessProbes.set(key, watch);
@@ -705,8 +768,9 @@ export class TcpStack {
     const seg: TcpSegment = {
       type: 'tcp',
       sourcePort: localPort, destinationPort: remotePort,
-      sequence: nextIsn(), acknowledgement: 0,
-      dataOffset: 5, flags, window: TCP_DEFAULT_WINDOW,
+      sequence: shape.sequence ?? nextIsn(),
+      acknowledgement: shape.acknowledgement ?? 0,
+      dataOffset: 5, flags, window: shape.window ?? TCP_DEFAULT_WINDOW,
       checksum: 0, urgentPointer: 0, options: [], payload: shape.payload,
     };
     const sum = computeTcpChecksum(seg, srcIp, target);
@@ -716,8 +780,15 @@ export class TcpStack {
     } finally {
       this.statelessProbes.delete(key);
     }
-    if (watch.seen !== 'rst') return watch.seen;
-    return watch.window > 0 ? 'rst-window' : 'rst';
+    const reply: StatelessProbeReply = watch.seen === 'rst'
+      ? (watch.window > 0 ? 'rst-window' : 'rst')
+      : watch.seen;
+    return {
+      reply, window: watch.window, flags: watch.flags,
+      sequence: watch.sequence, acknowledgement: watch.acknowledgement,
+      checksum: watch.checksum, urgentPointer: watch.urgentPointer,
+      ...watch.ip,
+    };
   }
 
   private noteStatelessUnreachable(
@@ -872,7 +943,13 @@ export class TcpStack {
     if (ipPkt.protocol !== IP_PROTO_TCP) return false;
     const seg = ipPkt.payload as TcpSegment | undefined;
     if (!seg || seg.type !== 'tcp') return false;
-    return this.handleSegment(srcIp.toString(), ipPkt.destinationIP.toString(), seg);
+    return this.handleSegment(srcIp.toString(), ipPkt.destinationIP.toString(), seg, {
+      ttl: ipPkt.ttl,
+      identification: ipPkt.identification,
+      tos: ipPkt.tos,
+      totalLength: ipPkt.totalLength,
+      dontFragment: (ipPkt.flags & 0b010) !== 0,
+    });
   }
 
   handleIp6(_inPort: string, srcIp: IPv6Address, ipv6: IPv6Packet): boolean {
@@ -883,7 +960,9 @@ export class TcpStack {
     return this.handleSegment(srcIp.toString(), ipv6.destinationIP.toString(), seg);
   }
 
-  private handleSegment(senderIp: string, dstIp: string, seg: TcpSegment): boolean {
+  private handleSegment(
+    senderIp: string, dstIp: string, seg: TcpSegment, ipHeader?: ReceivedIpHeader,
+  ): boolean {
     // RFC 9293 §3.1 — a corrupted segment is discarded silently.
     if (!verifyTcpChecksum(seg, senderIp, dstIp)) {
       this.dropped(senderIp, seg.sourcePort, 'bad-checksum');
@@ -952,12 +1031,20 @@ export class TcpStack {
       return true;
     }
     const probe = this.statelessProbes.get(socketKey);
-    if (probe && seg.flags.syn && seg.flags.ack) probe.seen = 'syn-ack';
+    const noteProbe = (verdict: StatelessProbeWatch['seen']): void => {
+      if (!probe) return;
+      probe.seen = verdict;
+      probe.window = seg.window;
+      probe.flags = { ...seg.flags };
+      probe.sequence = seg.sequence;
+      probe.acknowledgement = seg.acknowledgement;
+      probe.checksum = seg.checksum;
+      probe.urgentPointer = seg.urgentPointer;
+      if (ipHeader) probe.ip = { ...ipHeader };
+    };
+    if (probe && seg.flags.syn && seg.flags.ack) noteProbe('syn-ack');
     if (seg.flags.rst) {
-      if (probe) {
-        probe.seen = 'rst';
-        probe.window = seg.window;
-      }
+      noteProbe('rst');
       return true;
     }
     // RFC 9293 §3.10.7.2, etat LISTEN, quatrieme controle : un segment qui
@@ -1997,7 +2084,7 @@ export class TcpStack {
     const local = this.isLocalDestination(dstIp, family);
     const l3Packet = family === 'ipv6'
       ? this.buildIpv6Segment(srcIp, dstIp, seg, shape?.ttl)
-      : this.buildIpv4Segment(srcIp, dstIp, seg, shape?.ttl, shape?.fragmentMtu);
+      : this.buildIpv4Segment(srcIp, dstIp, seg, shape?.ttl, shape?.fragmentMtu, shape);
     this.getBus().publish({
       topic: 'tcp.segment.sent',
       payload: {
@@ -2011,7 +2098,14 @@ export class TcpStack {
       },
     });
     if (local) {
-      this.handleSegment(srcIp, dstIp, seg);
+      const ipv4 = family === 'ipv6' ? undefined : l3Packet as IPv4Packet;
+      this.handleSegment(srcIp, dstIp, seg, ipv4 === undefined ? undefined : {
+        ttl: ipv4.ttl,
+        identification: ipv4.identification,
+        tos: ipv4.tos,
+        totalLength: ipv4.totalLength,
+        dontFragment: (ipv4.flags & 0b010) !== 0,
+      });
       return;
     }
     const nextHopIp = egress.nextHopIp ?? dstIp;
@@ -2036,7 +2130,7 @@ export class TcpStack {
 
   private buildIpv4Segment(
     srcIp: string, dstIp: string, seg: TcpSegment, ttl = TCP_DEFAULT_TTL,
-    fragmentMtu?: number,
+    fragmentMtu?: number, shape?: ScanProbeShape,
   ): IPv4Packet {
     const tcpHeaderBytes = seg.dataOffset * 4;
     // PRD-TCP.md P7 (RFC 1191 §1) — DF set, matching real TCP stacks:
@@ -2045,7 +2139,12 @@ export class TcpStack {
     return createIPv4Packet(
       new IPAddress(srcIp), new IPAddress(dstIp), IP_PROTO_TCP, ttl,
       seg, tcpHeaderBytes + payloadBytes(seg.payload).length,
-      { flags: fragmentMtu === undefined ? IPV4_FLAG_DF : 0 });
+      {
+        flags: fragmentMtu === undefined ? IPV4_FLAG_DF : 0,
+        ...(shape?.tos === undefined ? {} : { tos: shape.tos }),
+        ...(shape?.identification === undefined
+          ? {} : { identification: shape.identification }),
+      });
   }
 
   private buildIpv6Segment(

@@ -81,6 +81,7 @@ import type { DeviceClockStore } from '../core/time/DeviceClock';
 import { PortNumber } from '../core/ports/PortNumber';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
+import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext';
 import type { RouterSftpSource } from '../protocols/ssh/sftp/RouterSftpFileSystem';
 import { TelnetServerHandler } from '../protocols/telnet/TelnetServerHandler';
 import { RouterTelnetServerContext } from '../protocols/telnet/RouterTelnetServerContext';
@@ -176,7 +177,7 @@ import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore'
 import { SecurityAuditLog } from './router/aaa/SecurityAuditLog';
 import {
   NetworkOsAccount, applyCiscoUsernamePatch,
-  type CiscoUsernamePatch, type PasswordHashAlgorithm,
+  type AccountServiceType, type CiscoUsernamePatch, type PasswordHashAlgorithm,
 } from './router/aaa/NetworkOsAccount';
 import { LoginBlocker } from './router/aaa/LoginBlocker';
 import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
@@ -192,6 +193,7 @@ import { DmvpnService } from './router/nhrp/DmvpnService';
 import { NhrpEngine } from '../nhrp/NhrpEngine';
 import { IP_PROTO_NHRP, type NhrpPacket } from '../nhrp/types';
 import { RouterManagementService, TELNET_DEFAULT_PORT } from './router/management/RouterManagementService';
+import { RemoteAccessListeners } from './router/management/RemoteAccessListeners';
 import { CiscoHttpService } from './router/management/CiscoHttpService';
 import { CiscoHttpUi } from './router/management/CiscoHttpUi';
 import { Http1ServerSession } from '../http/http1/Http1ServerSession';
@@ -1035,8 +1037,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // unconditionally and gating everywhere else would leave a fresh
     // router listening while `show crypto key mypubkey rsa` says there is
     // no key — the two must not be able to disagree.
-    if (this.sshServerEnabled && this.hasSshHostKeys()) this.bindSshListener();
-    this.bindTelnetListener();
+    this.remoteAccessListeners().sync();
   }
 
   /**
@@ -1050,36 +1051,31 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.getManagementService().getSsh().port || 22;
   }
 
-  private _sshBoundPort: number | null = null;
-
-  private bindSshListener(): void {
-    const port = this.sshListenPort();
-    this.tcpv2.listen(port, {
-      onAccept: (socket) => {
-        const handler = this.buildRouterSshServerHandler();
-        handler.register(socket as unknown as TcpStream, socket.remoteIp);
-      },
-    });
-    this._sshBoundPort = port;
-  }
-
-  _syncSshListener(): void { this.syncSshListener(); }
-
   telnetListenPort(): number {
     return this.getManagementService().getTelnet().port || TELNET_DEFAULT_PORT;
   }
 
-  private _telnetBoundPort: number | null = null;
+  private _remoteAccessListeners: RemoteAccessListeners | null = null;
 
-  private bindTelnetListener(): void {
-    const port = this.telnetListenPort();
-    this.tcpv2.listen(port, {
-      onAccept: (socket) => {
-        const handler = this.buildRouterTelnetServerHandler();
-        handler.register(socket as unknown as TcpStream, socket.remoteIp);
+  private remoteAccessListeners(): RemoteAccessListeners {
+    this._remoteAccessListeners ??= new RemoteAccessListeners({
+      stack: () => this.tcpv2,
+      ssh: {
+        wanted: () => this.isSshActive(),
+        port: () => this.sshListenPort(),
+        onAccept: (socket) => {
+          this.buildRouterSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+        },
+      },
+      telnet: {
+        wanted: () => this.telnetAllowedByTransport(),
+        port: () => this.telnetListenPort(),
+        onAccept: (socket) => {
+          this.buildRouterTelnetServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+        },
       },
     });
-    this._telnetBoundPort = port;
+    return this._remoteAccessListeners;
   }
 
   /**
@@ -1121,9 +1117,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       authHeader: () => this.getVtyAuthHeader(),
       loginBanner: () => this.getBanner('login') || null,
       motd: () => this.getBanner('motd') || null,
-      admit: (ip) => this.vtyAdmissionVerdict('telnet', ip),
-      authenticateLocal: (user, password) => this.getCredentialStore().authenticate(user, password),
-      authenticateAaa: (user, password) => this.authenticateViaAaa(user, password),
+      admit: (ip, localIp) => this.vtyAdmissionVerdict('telnet', ip, localIp),
+      authenticateLocal: (user, password) =>
+        this.accountAdmits(user, 'telnet') && this.getCredentialStore().authenticate(user, password),
+      authenticateAaa: (user, password) => (this.accountAdmits(user, 'telnet')
+        ? this.authenticateViaAaa(user, password)
+        : Promise.resolve(false)),
       createVtyShell: (user) => this.createVtyShell(user),
       openSession: (user, fromIp, peerPort) => {
         const record = this.getSshSessionRegistry().open({
@@ -1163,29 +1162,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private syncSshListener(): void {
-    const wanted = this.sshListenPort();
-    const bound = this._sshBoundPort;
-    const sshBound = bound !== null
-      && this.tcpv2.listListeners().some(l => l.localPort === bound);
-    // Keys are part of "is the server up", not a separate switch: IOS
-    // refuses to listen without them.
-    const shouldListen = this.sshServerEnabled && this.hasSshHostKeys()
-      && this.transportAdmisSurUneVty('ssh');
-    if (sshBound && (!shouldListen || bound !== wanted)) {
-      this.tcpv2.closeListener(bound!);
-      this._sshBoundPort = null;
-    }
-    if (shouldListen && this._sshBoundPort === null) this.bindSshListener();
-    const telnetWanted = this.telnetAllowedByTransport();
-    const telnetPort = this._telnetBoundPort;
-    const telnetBound = telnetPort !== null
-      && this.tcpv2.listListeners().some(l => l.localPort === telnetPort);
-    if (!telnetBound) this._telnetBoundPort = null;
-    if (telnetBound && (!telnetWanted || telnetPort !== this.telnetListenPort())) {
-      this.tcpv2.closeListener(telnetPort!);
-      this._telnetBoundPort = null;
-    }
-    if (telnetWanted && this._telnetBoundPort === null) this.bindTelnetListener();
+    this.remoteAccessListeners().sync();
   }
 
   /**
@@ -1210,7 +1187,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       hostname: () => this.hostname,
       hostKey: () => this._sshHostKeyCache!,
       credentials: () => ({
-        authenticate: (n, p) => credentials.authenticate(n, p),
+        authenticate: (n, p) => this.accountAdmits(n, 'ssh') && credentials.authenticate(n, p),
         has: (n) => credentials.get(n) !== undefined,
         get: (n) => {
           const a = credentials.get(n);
@@ -1222,7 +1199,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       execIdleTimeoutMs: () => this.resolveVtyIdleTimeoutMs(),
       banner: () => this.sshBannerText || null,
       motd: () => this.getBanner('motd') || null,
-      aaaAuthenticate: (n, p) => this.authenticateViaAaa(n, p),
+      aaaAuthenticate: (n, p) => (this.accountAdmits(n, 'ssh')
+        ? this.authenticateViaAaa(n, p)
+        : Promise.resolve(false)),
       // Reuse the exact admission/failure-tracking the cross-vendor bypass
       // used to gate on its own (login block-for / quiet-mode ACL /
       // LoginBlocker) so real-wire SSH enforces the same security policy a
@@ -1235,7 +1214,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.getCredentialStore().recordLoginSuccess(user, ip, 'password');
       },
       recordLogout: (user, ip) => this.closeWireVtySession(user, ip),
-    });
+    }, this.sshServerLimits());
     return new SshServerHandler(ctx);
   }
 
@@ -4288,7 +4267,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _undoGlobalToggle(commandTail: string): void {
     const key = commandTail.replace(/\s+enable\s*$/, '').trim();
     this._globalToggles.set(key, false);
-    if (key === 'ssh' || /^stelnet/.test(commandTail)) this._setSshServerEnabled(false);
     if (key === 'dhcp') this._getDHCPServerInternal().disable();
     if (key === 'ftp server' || key === 'ftp') this._setFtpServerEnabled(false);
   }
@@ -4300,13 +4278,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   // cross-platform client dispatch can talk to them uniformly.
   // Concrete answers to vendor commands (show / display) come from
   // the per-vendor subclasses (CiscoRouter, HuaweiRouter).
-  //
-  // Defaults below assume a freshly-provisioned device: SSH is
-  // enabled by default but the per-vendor `transport input none`
-  // path can flip the flag through `_setSshServerEnabled`.
 
-  /** Whether ssh/stelnet is currently advertised on the VTY. */
-  protected sshServerEnabled: boolean = true;
+  protected sshServerTurnedOn(): boolean { return true; }
+  protected unsetServiceTypeAdmits(): boolean { return true; }
+  protected factoryAccountServiceTypes(): AccountServiceType[] { return []; }
+  private accountAdmits(user: string, service: AccountServiceType): boolean {
+    return this.getCredentialStore().admits(user, service, this.unsetServiceTypeAdmits());
+  }
+  protected sshServerLimits(): Partial<SshServerConfig> { return {}; }
   protected sshBannerText: string = '';
   _setSshBanner(text: string): void {
     this.sshBannerText = text;
@@ -4323,7 +4302,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   readonly vtyLineConfig = new VtyLineConfigStore();
   _getVtyLineConfig(): VtyLineConfigStore { return this.vtyLineConfig; }
   private _vtyIncomingPolicy: VtyIncomingPolicy | null = null;
-  vtyAdmissionVerdict(transport: VtyTransportKind, sourceIp: string): VtyAdmissionVerdict {
+  vtyAdmissionVerdict(transport: VtyTransportKind, sourceIp: string, localIp?: string): VtyAdmissionVerdict {
     if (!this._vtyIncomingPolicy) {
       this._vtyIncomingPolicy = new VtyIncomingPolicy({
         lines: () => this.vtyLineConfig,
@@ -4335,13 +4314,22 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         loginBlocker: () => this.getLoginBlocker(),
         ligneCandidate: () => this.getSshSessionRegistry().prochaineLigne(),
         transportParDefaut: () => this.vtyTransportInput,
+        serverAcl: (transport) => (transport === 'telnet'
+          ? this.getManagementService().getTelnet().acl ?? null
+          : null),
+        serverSourceAddresses: (transport) => {
+          const source = transport === 'telnet' ? this.getManagementService().getTelnet().source : undefined;
+          if (!source) return null;
+          const ip = this.getPort(source)?.getIPAddress();
+          return ip ? [ip.toString()] : [];
+        },
         quietModeAccessClass: () => {
           const sec = this.securityConfig();
           return sec?.login.quietModeAcl ?? null;
         },
       });
     }
-    return this._vtyIncomingPolicy.admit(transport, sourceIp);
+    return this._vtyIncomingPolicy.admit(transport, sourceIp, localIp);
   }
 
   perUserAdmissionRefusal(user: string, sourceIp: string): string | null {
@@ -4981,13 +4969,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private _securityAuditLog: SecurityAuditLog | null = null;
   private _loginBlocker: LoginBlocker | null = null;
   private _loginBlockConfig: { attempts: number; withinSeconds: number; blockSeconds: number } | null = null;
-  private _sshAuthRetries: number | null = null;
 
   getLoginBlocker(): LoginBlocker | null { return this._loginBlocker; }
   getLoginBlockConfig(): { attempts: number; withinSeconds: number; blockSeconds: number } | null {
     return this._loginBlockConfig;
   }
-  getSshAuthenticationRetries(): number | null { return this._sshAuthRetries; }
 
   _configureLoginBlock(blockSeconds: number, attempts: number, withinSeconds: number): void {
     this._loginBlockConfig = { attempts, withinSeconds, blockSeconds };
@@ -5001,15 +4987,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   /** `aaa local authentication attempts max-fail <n>` — per-account lockout. */
   _configureLocalAuthMaxFail(n: number): void {
     this.getCredentialStore().setMaxFailedAttempts(n);
-  }
-
-  _configureSshAuthRetries(retries: number): void {
-    this._sshAuthRetries = retries;
-    if (this._loginBlocker) this._loginBlocker.detach();
-    this._loginBlocker = new LoginBlocker({
-      deviceId: this.id, bus: this.getBus(),
-      attempts: retries, withinSeconds: 60, blockSeconds: 60,
-    });
   }
 
   private _sshSessionRegistry: SshSessionRegistry | null = null;
@@ -5048,12 +5025,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         vendor: this.sshVendorTag(),
         bus: this.getBus(),
         authority: this._credentialStore,
-        active: this.sshServerEnabled,
+        active: this.sshServerTurnedOn(),
         banner: this.sshBannerText,
       });
       for (const u of ['alice', 'bob', 'carl', 'dave']) {
         const acc = NetworkOsAccount.create({
           name: u, privilege: 1, secret: u, passwordHashAlgorithm: 'md5',
+          serviceTypes: this.factoryAccountServiceTypes(),
         }).asFactoryDefault();
         this._credentialStore.upsert(acc);
       }
@@ -5115,12 +5093,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       // `ssh` apres rechargement.
       serviceTypes: a.serviceTypes,
     }));
-  }
-
-  _setSshServerEnabled(enabled: boolean): void {
-    this.sshServerEnabled = enabled;
-    if (this._sshHost) this._sshHost.setSshActive(enabled);
-    this.syncSshListener();
   }
 
   /**
@@ -5366,7 +5338,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   /** SshExecTarget. */
   getSshHostname(): string { return this.hostname; }
   isSshActive(): boolean {
-    return this.sshServerEnabled && this.hasSshHostKeys() && this.transportAdmisSurUneVty('ssh');
+    return this.sshServerTurnedOn() && this.hasSshHostKeys() && this.transportAdmisSurUneVty('ssh');
   }
   sshdAcceptsLogin(user: string): { ok: boolean; reason?: string } {
     return this.getSshHost().acceptsLogin(user);
@@ -5407,7 +5379,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     readonly permitEmptyPasswords: boolean;
   } {
     return Object.freeze({
-      active: this.sshServerEnabled,
+      active: this.sshServerTurnedOn(),
       ports: Object.freeze([this.sshListenPort()]),
       permitRootLogin: true,
       passwordAuthentication: true,

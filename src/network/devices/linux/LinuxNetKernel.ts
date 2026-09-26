@@ -162,6 +162,16 @@ export interface LinuxNetKernel {
     },
   ): boolean;
 
+  /**
+   * `hping3 -0`/`--rawip` : un datagramme IPv4 BRUT, dont le protocole
+   * est celui que l'operateur a demande (`--ipproto`). Aucune couche 4
+   * n'est posee au-dessus : c'est tout l'objet du mode.
+   */
+  sendRawIpPacket(
+    target: IPAddress, protocol: number,
+    options?: { sourceIp?: IPAddress; ttl?: number; dataSize?: number },
+  ): boolean;
+
   /** A single crafted ICMP echo (optionally source-forged), for `hping3 -1`. */
   sendCraftedIcmpEcho(
     target: IPAddress,

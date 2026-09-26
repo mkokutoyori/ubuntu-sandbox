@@ -18,8 +18,7 @@ import {
 import { IPAddress, IPv6Address } from '../../../core/types';
 import { renderTable, VRP_TABLE, type TableColumn } from '../cli/TextTable';
 import type { IPv6AddressEntry } from '../../../hardware/Port';
-import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
-import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
+import { localUserConfigLinesVrp } from './huaweiLocalUser';
 import { vrpInterfaceCounterLines } from './HuaweiCounterViews';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras, huaweiDisplayInterfaceName, HUAWEI_ERRORS } from '../cli-utils';
 import { displayNtpServiceStatus, displayNtpServiceSessions, lignesConfigNtpVrp, displayNtpStatisticsPacket } from './huaweiNtpCommands';
@@ -56,7 +55,7 @@ import {
   AR2220_HARDWARE_PROFILE, renderHardwareVersion,
 } from './HuaweiHardwareProfile';
 import { normVrpSeverity, VRP_SEVERITIES } from '../../router/management/InfoCenterConfig';
-import { TELNET_DEFAULT_PORT } from '../../router/management/RouterManagementService';
+import { remoteAccessConfigBlocksVrp } from './HuaweiCommonSecurity';
 import { renderDisplayUserInterface } from './HuaweiUserInterfaceCommands';
 import { getSessionRegistry, getVtyLineConfig } from '../../../equipment/RouterServiceCapabilities';
 import { interfacePoolName } from './HuaweiDhcpCommands';
@@ -739,11 +738,8 @@ export function displayCurrentConfig(
     if (vty.length > 0) lines.push(...vty);
   }
 
-  const listUsers = (router as unknown as {
-    _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: string; factoryDefault?: boolean; serviceTypes?: readonly string[] }>;
-  })._listLocalUsers;
-  if (listUsers) {
-    const users = listUsers.call(router);
+  {
+    const users = router.getCredentialStore().list();
     const p = router.getHuaweiAaaService().passwordPolicy;
     const hasPasswordPolicy = Object.keys(p).length > 0;
     if (users.length > 0 || hasPasswordPolicy) {
@@ -753,20 +749,7 @@ export function displayCurrentConfig(
       if (p.expireDays) lines.push(` password-policy expire ${p.expireDays}`);
       if (p.alertBeforeExpireDays) lines.push(` password-policy alert-before-expire ${p.alertBeforeExpireDays}`);
       if (p.historyMaxRecords) lines.push(` password-policy history-record max-record-number ${p.historyMaxRecords}`);
-      for (const u of users) {
-        // Real VRP never echoes the cleartext: 'cipher' is reversible
-        // (AES), everything else is hashed one-way (irreversible-cipher).
-        // Le secret RANGE est deja sous sa forme rendue depuis que le
-        // parseur reconnait la valeur transformee ; le re-transformer
-        // ici donnait un texte que le rejeu ne pouvait pas reproduire.
-        const field = u.secretAlgo === 'cipher'
-          ? `password cipher ${looksLikeReversibleCipher(u.secret) ? u.secret : huaweiCipher(u.secret)}`
-          : `password irreversible-cipher ${looksLikeIrreversibleCipher(u.secret) ? u.secret : huaweiIrreversibleCipher(u.secret)}`;
-        lines.push(` local-user ${u.name} ${field}`);
-        lines.push(` local-user ${u.name} privilege level ${u.privilege}`);
-        const types = u.serviceTypes && u.serviceTypes.length > 0 ? u.serviceTypes : ['ssh'];
-        lines.push(` local-user ${u.name} service-type ${types.join(' ')}`);
-      }
+      lines.push(...localUserConfigLinesVrp(users));
       lines.push('#');
     }
   }
@@ -1112,17 +1095,10 @@ function appendManagementConfig(lines: string[], router: Router): void {
   const mgmt = (router as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
   if (!mgmt) return;
 
-  const telnet = mgmt.getTelnet();
-  if (telnet.enabled) { lines.push('#'); lines.push('telnet server enable'); }
-  if (telnet.port !== TELNET_DEFAULT_PORT) lines.push(`telnet server port ${telnet.port}`);
-  const ssh = mgmt.getSsh();
-  if (ssh.enabled) {
+  for (const block of remoteAccessConfigBlocksVrp(mgmt)) {
     lines.push('#');
-    lines.push('stelnet server enable');
-    if (ssh.port !== 22) lines.push(`ssh server port ${ssh.port}`);
+    lines.push(...block);
   }
-  const retries = router.getSshAuthenticationRetries();
-  if (retries !== null) lines.push(`ssh server authentication-retries ${retries}`);
   if (router.isFtpServerEnabled()) { lines.push('#'); lines.push('ftp server enable'); }
 
   const snmpLines = lignesConfigSnmpVrp(router.getSnmpService?.());
@@ -1710,32 +1686,6 @@ export function registerDisplayCommands(
 
   trie.register('display vrrp brief', 'Display VRRP brief', () =>
     rendreDisplayVrrpBrief(huaweiVrrpAgent(getRouter())?.listGroups() ?? []));
-
-  trie.register('display ssh server status', 'Display SSH server status', () => {
-    const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
-    const ssh = mgmt?.getSsh();
-    if (!ssh || !ssh.enabled) return 'SSH server: Disabled';
-    return [
-      `SSH version: ${ssh.version}`,
-      `SSH authentication retries: ${ssh.retries}`,
-      `SSH server timeout (sec): ${ssh.timeout}`,
-      `SSH server port: ${ssh.port}`,
-    ].join('\n');
-  });
-
-  trie.register('display stelnet server', 'Display STelnet server status', () => {
-    const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
-    const st = mgmt?.getStelnet();
-    if (!st || !st.enabled) return 'STelnet server: Disabled';
-    return `STelnet server: Enabled\nSTelnet server port: ${st.port}`;
-  });
-
-  trie.register('display telnet server status', 'Display Telnet server status', () => {
-    const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
-    const tn = mgmt?.getTelnet();
-    if (!tn || !tn.enabled) return 'Telnet server: Disabled';
-    return `Telnet server: Enabled\nTelnet server port: ${tn.port}`;
-  });
 
   trie.register('display snmp-agent local-engineid', 'Display SNMP engine ID', () => {
     const snmp = (getRouter() as unknown as { getSnmpService?: () => import('../../router/management/SnmpService').SnmpService }).getSnmpService?.();

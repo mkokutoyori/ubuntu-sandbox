@@ -6,7 +6,7 @@ import {
   SshConnectionDecision,
 } from './SshConnectionRequest';
 import type { IAccountAuthority, AccountSnapshot } from './IAccountAuthority';
-import type { SshAuthMethod } from '../../../devices/router/aaa/NetworkOsAccount';
+import { serviceTypesAdmit, type SshAuthMethod } from '../../../devices/router/aaa/NetworkOsAccount';
 
 export type CrossVendorSshVendor = 'cisco' | 'huawei' | 'linux' | 'windows' | 'generic';
 
@@ -155,12 +155,7 @@ export class CrossVendorSshHost {
   }
 
   private serviceTypeAllowed(account: AccountSnapshot): boolean {
-    if (account.serviceTypes.length === 0) return true;
-    const want = this.vendor === 'huawei' ? 'stelnet' : 'ssh';
-    if (account.serviceTypes.includes(want)) return true;
-    if (want === 'ssh' && account.serviceTypes.includes('stelnet')) return true;
-    if (want === 'stelnet' && account.serviceTypes.includes('ssh')) return true;
-    return false;
+    return serviceTypesAdmit(account.serviceTypes, 'ssh', this.vendor !== 'huawei');
   }
 
   private negotiateAuth(

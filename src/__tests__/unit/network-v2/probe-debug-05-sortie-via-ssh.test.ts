@@ -129,6 +129,7 @@ async function labHuawei(): Promise<{ routeur: HuaweiRouter; poste: LinuxPC }> {
     // VRP ne fait tourner aucun serveur STelnet sans paire de clés
     // locale : la créer fait partie de la configuration réelle.
     'rsa local-key-pair create',
+    'stelnet server enable',
     'quit',
   ]) await routeur.executeCommand(c);
 

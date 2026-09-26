@@ -63,6 +63,7 @@ import type { IEventBus } from '@/events/EventBus';
 import { CertificateVerifier as CertificateVerifierImpl } from '../pki/CertificateVerifier';
 import { TcpMssClamper as TcpMssClamperImpl } from '../ipsec/TcpMssClamper';
 import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
+import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext';
 import {
   algorithmesRetenus, chassisSerial, CISCO_HARDWARE_PROFILES, licenseTable,
   formatIosUptime,
@@ -101,6 +102,10 @@ export class CiscoRouter extends Router {
    */
   override hasSshHostKeys(): boolean {
     return getSecurityConfig(this).cryptoKeys.length > 0;
+  }
+
+  protected override sshServerLimits(): Partial<SshServerConfig> {
+    return getSecurityConfig(this).sshServerLimits();
   }
 
   /**

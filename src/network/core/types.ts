@@ -946,6 +946,7 @@ export interface IPv4HeaderOptions {
   /** Header size in bytes, 20 with no options; 24 carries a 4-byte option. */
   headerBytes?: number;
   ipOptions?: IPv4Option[];
+  identification?: number;
 }
 
 /**
@@ -967,7 +968,7 @@ export function createIPv4Packet(
     ihl: headerSize >> 2,
     tos: options.tos ?? 0,
     totalLength: headerSize + payloadSize,
-    identification: nextIPv4Id(),
+    identification: options.identification ?? nextIPv4Id(),
     flags: options.flags ?? 0b010, // DF (Don't Fragment) set by default
     fragmentOffset: 0,
     ttl,

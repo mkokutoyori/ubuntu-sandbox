@@ -37,7 +37,10 @@ import {
 import { CiscoFileSystem } from './shells/cisco/CiscoFileSystem';
 import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
-import { getSessionRegistry } from '../equipment/RouterServiceCapabilities';
+import { getSessionRegistry, getManagementService } from '../equipment/RouterServiceCapabilities';
+import { RemoteAccessListeners } from './router/management/RemoteAccessListeners';
+import { VtyIncomingPolicy } from './router/vty/VtyIncomingPolicy';
+import { SSH_DEFAULT_PORT, TELNET_DEFAULT_PORT } from './router/management/RouterManagementService';
 import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet,
   ethernetFrameBytes,
 } from '../core/types';
@@ -54,6 +57,7 @@ import { TelnetServerHandler } from '../protocols/telnet/TelnetServerHandler';
 import { RouterTelnetServerContext } from '../protocols/telnet/RouterTelnetServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
+import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext';
 import { SshHostKey } from '../protocols/ssh/SshHostKey';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import type { SshExecTarget } from '../protocols/ssh/server/SshExecTarget';
@@ -118,7 +122,7 @@ import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
 import { CiscoDnsConfig } from './router/dns/CiscoDnsConfig';
 import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { NetworkOsAccount, applyCiscoUsernamePatch } from './router/aaa/NetworkOsAccount';
-import type { CiscoUsernamePatch, PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
+import type { AccountServiceType, CiscoUsernamePatch, PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { vtyLoginModeOf } from './router/vty/VtyLineConfig';
 import { KeypairService } from './router/security/KeypairService';
@@ -592,8 +596,7 @@ export abstract class Switch extends Equipment {
       this.getNATEngine()?.translateOutbound(pkt, outIface, inIface, opts) ?? null,
     natIsOutsideInterface: (iface) => this.getNATEngine()?.isOutsideInterface(iface) ?? false,
     deliverLocalTcp: (inVlan, sourceIP, pkt) => {
-      this.syncTelnetListener();
-      this.syncSshListener();
+      this.syncManagementListeners();
       return this.getTcpStack().handleIp(`Vlanif${inVlan}`, sourceIP, pkt);
     },
     deliverLocalUdp: (sourceIP, destinationPort, sourcePort, payload) => {
@@ -2927,18 +2930,17 @@ export abstract class Switch extends Equipment {
 
   hasSshHostKeys(): boolean { return this.hasRsaKeys(); }
 
-  private sshServerEnabled = true;
-
-  _setSshServerEnabled(enabled: boolean): void {
-    if (this.sshServerEnabled === enabled) return;
-    this.sshServerEnabled = enabled;
-    this.syncManagementListeners();
+  protected sshServerTurnedOn(): boolean { return true; }
+  protected unsetServiceTypeAdmits(): boolean { return true; }
+  private accountAdmits(user: string, service: AccountServiceType): boolean {
+    return this.getCredentialStore().admits(user, service, this.unsetServiceTypeAdmits());
   }
+  protected sshServerLimits(): Partial<SshServerConfig> { return {}; }
 
   _refreshSshAvailability(): void { this.syncManagementListeners(); }
 
   isSshActive(): boolean {
-    return this.sshServerEnabled
+    return this.sshServerTurnedOn()
       && this.hasSshHostKeys()
       && this._getVtyLineConfig().admetQuelquePart('ssh');
   }
@@ -3009,7 +3011,7 @@ export abstract class Switch extends Equipment {
       hostname: () => this.getHostname(),
       hostKey: () => this.sshHostKey(),
       credentials: () => ({
-        authenticate: (n, p) => credentials.authenticate(n, p),
+        authenticate: (n, p) => this.accountAdmits(n, 'ssh') && credentials.authenticate(n, p),
         has: (n) => credentials.get(n) !== undefined,
         get: (n) => {
           const a = credentials.get(n);
@@ -3022,24 +3024,7 @@ export abstract class Switch extends Equipment {
       motd: () => this.getBanner('motd') || undefined,
       isClientBlocked: () => !this._getVtyLineConfig().incomingVerdict().accept,
       recordLogin: (user, fromIp) => this.recordSshLogin(user, fromIp, '', true),
-    }));
-  }
-
-  private syncSshListener(): void {
-    const stack = this.getTcpStack();
-    const wanted = this.isSshActive()
-      && this.getSvis().some((svi) => svi.ip && svi.adminUp);
-    const bound = stack.listListeners().some((l) => l.localPort === 22);
-    if (wanted === bound) return;
-    if (wanted) {
-      stack.listen(22, {
-        onAccept: (socket) => {
-          this.buildSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
-        },
-      });
-    } else {
-      stack.closeListener(22);
-    }
+    }, this.sshServerLimits()));
   }
 
   private buildTelnetServerHandler(): TelnetServerHandler {
@@ -3059,14 +3044,11 @@ export abstract class Switch extends Equipment {
       authHeader: () => null,
       loginBanner: () => this.getBanner('login') || null,
       motd: () => this.getBanner('motd') || null,
-      admit: (ip) => {
-        void ip;
-        const verdict = this._getVtyLineConfig().incomingVerdict();
-        return verdict.accept ? { accept: true } : { accept: false, kind: 'no-line', reason: verdict.reason };
-      },
-      authenticateLocal: (user, password) => this.getCredentialStore().authenticate(user, password),
+      admit: (ip, localIp) => this.vtyIncomingPolicy().admit('telnet', ip, localIp),
+      authenticateLocal: (user, password) =>
+        this.accountAdmits(user, 'telnet') && this.getCredentialStore().authenticate(user, password),
       authenticateAaa: (user, password) => Promise.resolve(
-        this.getCredentialStore().authenticate(user, password),
+        this.accountAdmits(user, 'telnet') && this.getCredentialStore().authenticate(user, password),
       ),
       createVtyShell: () => this.createVtyShell(),
       openSession: (user, fromIp, peerPort) => {
@@ -3088,21 +3070,48 @@ export abstract class Switch extends Equipment {
     }));
   }
 
-  private syncTelnetListener(): void {
-    const wanted = this._getVtyLineConfig().admetQuelquePart('telnet')
-      && this.getSvis().some((svi) => svi.ip && svi.adminUp);
-    const stack = this.getTcpStack();
-    const bound = stack.listListeners().some((l) => l.localPort === 23);
-    if (wanted === bound) return;
-    if (wanted) {
-      stack.listen(23, {
+  private _vtyIncomingPolicy: VtyIncomingPolicy | null = null;
+
+  private vtyIncomingPolicy(): VtyIncomingPolicy {
+    this._vtyIncomingPolicy ??= new VtyIncomingPolicy({
+      lines: () => this._getVtyLineConfig(),
+      evaluateAcl: (name, packet) => this.getVaclEngine().evaluateACLByName(name, packet),
+      localIp: () => this.getSvis().find((svi) => svi.ip)?.ip?.toString() ?? null,
+      serverAcl: (transport) => (transport === 'telnet'
+        ? getManagementService(this)?.getTelnet().acl ?? null
+        : null),
+      serverSourceAddresses: (transport) => {
+        const source = transport === 'telnet' ? getManagementService(this)?.getTelnet().source : undefined;
+        if (!source) return null;
+        const ip = this.sviPort(source)?.getIPAddress();
+        return ip ? [ip.toString()] : [];
+      },
+    });
+    return this._vtyIncomingPolicy;
+  }
+
+  private _remoteAccessListeners: RemoteAccessListeners | null = null;
+
+  private remoteAccessListeners(): RemoteAccessListeners {
+    const reachable = (): boolean => this.getSvis().some((svi) => svi.ip && svi.adminUp);
+    this._remoteAccessListeners ??= new RemoteAccessListeners({
+      stack: () => this.getTcpStack(),
+      ssh: {
+        wanted: () => this.isSshActive() && reachable(),
+        port: () => getManagementService(this)?.getSsh().port ?? SSH_DEFAULT_PORT,
+        onAccept: (socket) => {
+          this.buildSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
+        },
+      },
+      telnet: {
+        wanted: () => this._getVtyLineConfig().admetQuelquePart('telnet') && reachable(),
+        port: () => getManagementService(this)?.getTelnet().port ?? TELNET_DEFAULT_PORT,
         onAccept: (socket) => {
           this.buildTelnetServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
         },
-      });
-    } else {
-      stack.closeListener(23);
-    }
+      },
+    });
+    return this._remoteAccessListeners;
   }
 
   private readonly _sviPorts = new Map<number, Port>();
@@ -4244,8 +4253,7 @@ export abstract class Switch extends Equipment {
   }
 
   private syncManagementListeners(): void {
-    this.syncTelnetListener();
-    this.syncSshListener();
+    this.remoteAccessListeners().sync();
   }
 
   private async runCliCommand(command: string, answers?: HeadlessAnswers): Promise<string> {

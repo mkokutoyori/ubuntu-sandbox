@@ -21,6 +21,7 @@ import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 import { HuaweiDebugService } from './router/diag/HuaweiDebugService';
 import { RouterManagementService } from './router/management/RouterManagementService';
+import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext';
 
 export class HuaweiSwitch extends Switch {
   static readonly MAX_PORT_GROUPS = 32;
@@ -299,6 +300,16 @@ export class HuaweiSwitch extends Switch {
 
   override hasSshHostKeys(): boolean {
     return this.getKeypairService().list().length > 0;
+  }
+
+  protected override sshServerTurnedOn(): boolean {
+    return this.getManagementService().getSsh().enabled;
+  }
+
+  protected override unsetServiceTypeAdmits(): boolean { return false; }
+
+  protected override sshServerLimits(): Partial<SshServerConfig> {
+    return this.getManagementService().sshServerLimits();
   }
 
   getBootSequence(): string {

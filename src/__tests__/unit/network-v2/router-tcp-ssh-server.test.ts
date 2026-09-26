@@ -62,6 +62,7 @@ async function buildLan(): Promise<Lan> {
     // VRP ne fait tourner aucun serveur STelnet sans paire de clés
     // locale : la créer fait partie de la configuration réelle.
     'rsa local-key-pair create',
+    'stelnet server enable',
     'quit',
   ]) await huawei.executeCommand(c);
 
