@@ -1,6 +1,8 @@
 import { SnmpAgent } from '../../../snmp/SnmpAgent';
 import type { MibViewEntry } from '../../../snmp/mibView';
 import type { SnmpNotification } from '../../../snmp/SnmpNotification';
+import type { BgpPeerTransition } from '../../../snmp/Bgp4MibNotifications';
+import type { OspfNeighborTransition } from '../../../snmp/OspfTrapMibNotifications';
 import type { SnmpCommunityAcl, SnmpValue, SnmpVersion } from '../../../snmp/types';
 import { IPAddress, IP_PROTO_UDP, type EthernetFrame, type IPv4Packet, type SubnetMask, type UDPPacket } from '../../../core/types';
 import type { PortNumber } from '../../../core/ports/PortNumber';
@@ -117,7 +119,9 @@ export type FirewallTrapFact =
   | { readonly kind: 'virus'; readonly name: string }
   | { readonly kind: 'oversize'; readonly blocked: boolean }
   | { readonly kind: 'av-bypass' }
-  | { readonly kind: 'ips-fail-open' };
+  | { readonly kind: 'ips-fail-open' }
+  | { readonly kind: 'bgp-peer'; readonly transition: BgpPeerTransition }
+  | { readonly kind: 'ospf-neighbor'; readonly transition: OspfNeighborTransition };
 
 export interface FirewallTrap {
   readonly event: SnmpTrapEvent | null;

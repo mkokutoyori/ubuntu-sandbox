@@ -31,8 +31,8 @@ import {
   BgpSession, type BgpFsmState, type BgpMessageCounts,
 } from './BgpSession';
 import {
-  BGP_DEFAULT_CONNECT_RETRY_SEC,
-  type BgpUpdateMessage, type BgpNlri, type BgpPathAttributes,
+  BGP_DEFAULT_CONNECT_RETRY_SEC, NO_BGP_ERROR,
+  type BgpErrorCode, type BgpUpdateMessage, type BgpNlri, type BgpPathAttributes,
 } from './messages';
 import { TimerSet } from '@/events/TimerSet';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
@@ -145,6 +145,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
   /** Neighbours we have reached over TCP (link existed) but did not
    *  finish peering with — they read Active rather than Idle. */
   private readonly attempted = new Set<string>();
+  private readonly lastErrors = new Map<string, BgpErrorCode>();
   /** Re-entrancy guard for the synchronous triggered-update cascade. */
   private propagating = false;
   /** True while {@link refreshFromCache} runs: recompute, never dial. */
@@ -374,6 +375,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
         onEstablished: () => this.onEstablished(ip),
         onUpdate: (u) => this.onUpdate(ip, u),
         onClose: () => this.onPeerClosed(ip),
+        onNotification: (error) => { this.lastErrors.set(ip, error); },
       }),
     };
     this.peers.set(ip, ps);
@@ -463,6 +465,10 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
 
   messageCountsFor(peerIp: string): BgpMessageCounts {
     return this.peers.get(peerIp)?.session.messageCounts() ?? NO_BGP_MESSAGES;
+  }
+
+  peerLastError(peerIp: string): BgpErrorCode {
+    return this.lastErrors.get(peerIp) ?? NO_BGP_ERROR;
   }
 
   remoteRouterIdOf(peerIp: string): string {

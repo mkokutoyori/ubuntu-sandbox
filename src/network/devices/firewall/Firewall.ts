@@ -120,6 +120,11 @@ import type { PolicyProbe } from './policy/PolicyProbe';
 import { isDenyAction } from './model/SecurityRule';
 import { FirewallPing6 } from './diag/FirewallPing6';
 import { getDefaultScheduler } from '@/events/Scheduler';
+import type { IEventBus } from '@/events/EventBus';
+import type { BgpNeighborStateChangedPayload } from '../../bgp/events';
+import { NO_BGP_ERROR } from '../../bgp/messages';
+import type { OspfNeighborStateChangedPayload } from '../../ospf/events';
+import { isBgpFsmState } from '../../snmp/Bgp4MibNotifications';
 import type { Ipv6Counters } from '../router/IPv6DataPlane';
 import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
 import type { TacacsClientAgent } from '../../tacacs/TacacsClientAgent';
@@ -672,6 +677,60 @@ export class Firewall extends Equipment {
         this.getVdom().routes.prefixLengthTowards(iface, destination),
     });
     this.sdwan.onHealthChange((changes) => { this.onSdwanHealthChange(changes); });
+    this.attachRoutingTrapSources();
+  }
+
+  private detachRoutingTrapSources: (() => void) | null = null;
+
+  private attachRoutingTrapSources(): void {
+    this.detachRoutingTrapSources?.();
+    const bus = this.getBus();
+    const ours = (payload: { deviceId?: string }) => payload.deviceId === this.id;
+    const unsubscribers = [
+      bus.subscribeWhere('bgp.neighbor.state-changed', ours, (event) => { this.raiseBgpPeerTrap(event.payload); }),
+      bus.subscribeWhere('ospf.neighbor.state-changed', ours, (event) => {
+        this.raiseOspfNeighborTrap(event.payload);
+      }),
+    ];
+    this.detachRoutingTrapSources = () => { for (const unsubscribe of unsubscribers) unsubscribe(); };
+  }
+
+  override setEventBus(bus: IEventBus | null): void {
+    super.setEventBus(bus);
+    this.attachRoutingTrapSources();
+  }
+
+  private raiseBgpPeerTrap(payload: BgpNeighborStateChangedPayload): void {
+    const snmp = this.snmpService;
+    const remoteAddress = IPAddress.tryParse(payload.neighborIp);
+    if (!snmp || remoteAddress === null) return;
+    if (!isBgpFsmState(payload.oldState) || !isBgpFsmState(payload.newState)) return;
+    const engine = this.routing.getBgp().getEngine();
+    snmp.raise({
+      kind: 'bgp-peer',
+      transition: {
+        remoteAddress, from: payload.oldState, to: payload.newState,
+        lastError: engine === null ? NO_BGP_ERROR : engine.peerLastError(payload.neighborIp),
+      },
+    });
+  }
+
+  private raiseOspfNeighborTrap(payload: OspfNeighborStateChangedPayload): void {
+    const snmp = this.snmpService;
+    const iface = this.routing.getOspf()?.getInterfaces().get(payload.iface);
+    const neighbor = iface?.neighbors.get(payload.neighborId);
+    const routerId = IPAddress.tryParse(payload.routerId);
+    const neighborAddress = IPAddress.tryParse(neighbor?.ipAddress ?? '');
+    const neighborRouterId = IPAddress.tryParse(payload.neighborId);
+    if (!snmp || !iface || routerId === null || neighborAddress === null || neighborRouterId === null) return;
+    snmp.raise({
+      kind: 'ospf-neighbor',
+      transition: {
+        routerId, neighborAddress, neighborRouterId, from: payload.oldState, to: payload.newState,
+        multiAccess: iface.networkType === 'broadcast' || iface.networkType === 'nbma',
+        designatedRouter: iface.state === 'DR',
+      },
+    });
   }
 
   private processPipeline(context: PacketContext) {

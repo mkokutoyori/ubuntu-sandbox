@@ -3,6 +3,8 @@ import {
   OID_SYS_NAME, v, vb, type SnmpValue, type SnmpVarBinding,
 } from '../../../../snmp/types';
 import { OID_LINK_DOWN, OID_LINK_UP, type SnmpNotification } from '../../../../snmp/SnmpNotification';
+import { OID_BGP_ESTABLISHED_NOTIFICATION, bgpPeerNotification } from '../../../../snmp/Bgp4MibNotifications';
+import { ospfNbrStateChange } from '../../../../snmp/OspfTrapMibNotifications';
 import type { IPAddress } from '../../../../core/types';
 import type {
   FirewallSnmpIdentity, FirewallTrap, FirewallTrapContext, FirewallTrapFact, MemoryTrapCondition,
@@ -161,6 +163,16 @@ export function fortiGateTraps(fact: FirewallTrapFact, context: FirewallTrapCont
       return [trap('av-bypass', `${FG_TRAPS}.606`, sender)];
     case 'ips-fail-open':
       return [trap('ips-fail-open', `${FG_TRAPS}.506`, sender)];
+    case 'bgp-peer': {
+      const notification = bgpPeerNotification(fact.transition);
+      if (notification === null) return [];
+      const established = notification.oid === OID_BGP_ESTABLISHED_NOTIFICATION;
+      return [{ event: established ? 'bgp-established' : 'bgp-backward-transition', notification }];
+    }
+    case 'ospf-neighbor': {
+      const notification = ospfNbrStateChange(fact.transition);
+      return notification === null ? [] : [{ event: 'ospf-nbr-state-change', notification }];
+    }
   }
 }
 
