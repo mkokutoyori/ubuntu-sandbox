@@ -43,6 +43,11 @@ const NO_ANSWER: HaCommandOutcome = Object.freeze({
   answered: false, accepted: false, token: '', output: '',
 });
 
+export type HaTransition =
+  | { readonly kind: 'takeover' }
+  | { readonly kind: 'member-joined'; readonly serial: string }
+  | { readonly kind: 'member-lost'; readonly serial: string };
+
 export interface HaElectionRecord {
   readonly at: number;
   readonly serial: string;
@@ -62,6 +67,10 @@ export class HaAgent {
   private grantCounter = 0;
   private readonly pending = new Map<number, HaCommandOutcome>();
   private readonly granted = new Map<string, string>();
+  private readonly transitionListeners: Array<(transition: HaTransition) => void> = [];
+  private readonly heldTransitions: HaTransition[] = [];
+  private holdingTransitions = false;
+  private knownPrimary: string | null = null;
 
   constructor(private readonly deps: HaAgentDeps) {
     this.startedAt = deps.now();
@@ -72,12 +81,30 @@ export class HaAgent {
     if (config.mode === 'standalone') {
       this.currentRole = 'standalone';
       this.peers.clear();
+      this.knownPrimary = null;
       return;
     }
     if (this.currentRole === 'standalone') this.currentRole = 'slave';
   }
 
   getConfiguration(): HaConfiguration { return this.config; }
+
+  onTransition(listener: (transition: HaTransition) => void): void {
+    this.transitionListeners.push(listener);
+  }
+
+  private announce(transition: HaTransition): void {
+    if (this.holdingTransitions) {
+      this.heldTransitions.push(transition);
+      return;
+    }
+    for (const listener of this.transitionListeners) listener(transition);
+  }
+
+  private releaseTransitions(): void {
+    this.holdingTransitions = false;
+    for (const transition of this.heldTransitions.splice(0)) this.announce(transition);
+  }
 
   role(): HaRole { return this.currentRole; }
 
@@ -186,9 +213,11 @@ export class HaAgent {
 
     this.noteMonitoredLoss();
 
+    this.holdingTransitions = true;
     this.emitHeartbeat();
     this.ageOutPeers();
     this.elect();
+    this.releaseTransitions();
   }
 
   receive(frame: EthernetFrame): boolean {
@@ -213,6 +242,7 @@ export class HaAgent {
     if (beat.passwordDigest !== digestOf(this.config.password)) return true;
     if (beat.serial === this.deps.serial()) return true;
 
+    const joined = !this.peers.has(beat.serial);
     this.peers.set(beat.serial, {
       serial: beat.serial,
       hostname: beat.hostname,
@@ -227,8 +257,10 @@ export class HaAgent {
       silentTicks: 0,
       lastSeenAt: this.deps.now(),
     });
+    if (joined) this.announce({ kind: 'member-joined', serial: beat.serial });
 
     if (beat.role === 'master' && this.currentRole !== 'master') {
+      this.knownPrimary = beat.serial;
       this.deps.applyConfiguration(beat.configuration);
       if (this.config.sessionPickup && beat.sessionPickup) {
         this.deps.importSessions(beat.sessions);
@@ -357,7 +389,9 @@ export class HaAgent {
   private ageOutPeers(): void {
     for (const [serial, peer] of [...this.peers]) {
       peer.silentTicks += 1;
-      if (peer.silentTicks > this.config.lostThreshold) this.peers.delete(serial);
+      if (peer.silentTicks <= this.config.lostThreshold) continue;
+      this.peers.delete(serial);
+      this.announce({ kind: 'member-lost', serial });
     }
   }
 
@@ -419,7 +453,12 @@ export class HaAgent {
 
   private settleRole(winner: string, reason: HaElectionReason): void {
     const nextRole: HaRole = winner === this.deps.serial() ? 'master' : 'slave';
+    const previous = this.currentRole;
     this.currentRole = nextRole;
+    if (previous === 'slave' && nextRole === 'master' && this.knownPrimary !== null) {
+      this.announce({ kind: 'takeover' });
+    }
+    if (nextRole === 'master') this.knownPrimary = null;
     if (nextRole !== 'master') return;
 
     const last = this.electionRecords[this.electionRecords.length - 1];

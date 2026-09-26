@@ -10,7 +10,7 @@ import {
 import { ipv4MulticastToMac } from '../../../core/ip';
 import { OSPFEngine } from '../../../ospf/OSPFEngine';
 import type {
-  OSPFPacket, LSA, RouterLSA, SummaryLSA, ExternalLSA,
+  OSPFNetworkType, OSPFPacket, LSA, RouterLSA, SummaryLSA, ExternalLSA,
 } from '../../../ospf/types';
 
 import { RIPEngine } from '../../../rip/RIPEngine';
@@ -273,10 +273,10 @@ export class FirewallRouting {
         broadcast: broadcastOf(iface.ipAddress, iface.mask),
         areaId: iface.areaId,
         routerId: engine.getRouterId(),
-        networkType: iface.networkType.toUpperCase(),
+        networkType: NETWORK_TYPE_LABELS[iface.networkType],
         cost: iface.cost,
         transmitDelay: iface.transmitDelay,
-        state: iface.state,
+        state: iface.state === 'PointToPoint' ? 'Point-To-Point' : iface.state,
         priority: iface.priority,
         drRouterId: routerIdAt(neighbours, iface.dr, engine.getRouterId(), iface.ipAddress),
         drAddress: iface.dr === '0.0.0.0' ? undefined : iface.dr,
@@ -311,6 +311,7 @@ export class FirewallRouting {
         settings === undefined ? undefined : {
           cost: settings.cost,
           priority: settings.priority,
+          networkType: engineNetworkType(settings.networkType),
           helloInterval: settings.helloIntervalSec,
           deadInterval: settings.deadIntervalSec,
         });
@@ -455,6 +456,20 @@ function engineAreaType(type: string): 'normal' | 'stub' | 'nssa' {
   if (type === 'stub') return 'stub';
   if (type === 'nssa') return 'nssa';
   return 'normal';
+}
+
+const NETWORK_TYPE_LABELS: Readonly<Record<OSPFNetworkType, string>> = Object.freeze({
+  'broadcast': 'BROADCAST',
+  'point-to-point': 'POINTOPOINT',
+  'nbma': 'NBMA',
+  'point-to-multipoint': 'POINTOMULTIPOINT',
+  'loopback': 'LOOPBACK',
+});
+
+function engineNetworkType(type: string): OSPFNetworkType {
+  if (type === 'point-to-point') return 'point-to-point';
+  if (type === 'non-broadcast') return 'nbma';
+  return 'broadcast';
 }
 
 function wildcardOf(mask: string): string {

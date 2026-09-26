@@ -24,6 +24,12 @@
  *  - « sans `log`, aucune ligne de journal » : c'est le TEMOIN, dont
  *    l'objet est de passer des deux cotes.
  *  - « aucune notification quand les traps ne sont pas armes » : idem.
+ *
+ * Le gestionnaire etait d'abord 10.0.0.50, qu'aucune route de R1 ne
+ * joint : l'agent publiait `snmp.trap.sent` sans qu'aucun datagramme ne
+ * parte. L'agent ne l'annonce plus que pour une trap posee sur le fil ;
+ * le gestionnaire est donc place sur le reseau connecte, dans la plage
+ * exclue du pool, et les deux cas ne different que par l'armement.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -169,7 +175,7 @@ describe('le franchissement se declenche', () => {
   it('la notification part quand `snmp-server enable traps dhcp` l\'arme', async () => {
     const { pc, r } = await lab(['utilization mark high 50 log'], [
       'snmp-server community public RO',
-      'snmp-server host 10.0.0.50 version 2c public',
+      'snmp-server host 192.168.1.100 version 2c public',
       'snmp-server enable traps dhcp pool',
     ]);
     const traps = observeTraps(r);
@@ -180,7 +186,7 @@ describe('le franchissement se declenche', () => {
   it('aucune notification quand les traps ne sont pas armes', async () => {
     const { pc, r } = await lab(['utilization mark high 50 log'], [
       'snmp-server community public RO',
-      'snmp-server host 10.0.0.50 version 2c public',
+      'snmp-server host 192.168.1.100 version 2c public',
     ]);
     const traps = observeTraps(r);
     await pc.executeCommand('sudo dhclient eth0');

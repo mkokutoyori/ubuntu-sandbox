@@ -4,7 +4,7 @@ import { PORT_ANY, PortNumber } from '../core/ports/PortNumber';
 import { IPAddress } from '../core/types';
 import type { UdpSendRequest } from '../layers/transport/UdpEgress';
 import { SnmpManager, type SnmpExchange, type SnmpQuery, type SnmpRetransmission } from './SnmpManager';
-import type { SnmpPacket } from './types';
+import type { SnmpMessage } from './types';
 
 export interface SnmpClientHost {
   udpBind(port: number, listener: UdpListener, processName?: string): number | false;
@@ -34,8 +34,8 @@ export class SnmpClientSession {
   static open(host: SnmpClientHost, processName: string): SnmpClientSession | null {
     let session: SnmpClientSession | null = null;
     const bound = host.udpBind(PORT_ANY, ({ sourceIP, udp }) => {
-      const packet = udp.payload as SnmpPacket | undefined;
-      if (packet?.type !== 'snmp' || !(sourceIP instanceof IPAddress)) return;
+      const packet = udp.payload as SnmpMessage | undefined;
+      if (packet?.type !== 'snmp' || packet.pduType === 'trap-v1' || !(sourceIP instanceof IPAddress)) return;
       session?.manager.accept(sourceIP, PortNumber.of(udp.sourcePort), packet);
     }, processName);
     if (bound === false) return null;

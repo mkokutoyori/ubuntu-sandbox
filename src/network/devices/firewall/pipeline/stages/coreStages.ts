@@ -102,6 +102,8 @@ export interface FirewallServices {
   flowInspectionPosture?: () => 'normal' | 'bypass' | 'block';
   assembleStream?: StreamJoiner;
   onInspection?: () => void;
+  onUtmVerdict?: (verdict: UtmVerdict, context: PacketContext) => void;
+  onOversize?: (blocked: boolean, context: PacketContext) => void;
   onDosAnomaly?: (finding: DosFinding, iface: string, traffic: DosTraffic) => void;
   ingressOptions?: IngressInterfaceOptionsReader;
 }
@@ -314,6 +316,7 @@ function inspectUtm(
   const options = profiles.getProtocolOptions(rule.protocolOptions);
   const flow = inspectedFlowOf(packet, options, services.assembleStream);
   if (!flow) return proceed(context, stage, 'no-payload');
+  if (flow.oversize) services.onOversize?.(options.blockOversize, context);
   if (flow.oversize && options.blockOversize) {
     return deny(context, stage, 'oversize-blocked', rule.id);
   }
@@ -329,6 +332,7 @@ function inspectUtm(
   if (!verdict) return proceed(context, stage, 'clean');
 
   context.utmVerdict = verdict;
+  services.onUtmVerdict?.(verdict, context);
   if (!verdict.blocked) return proceed(context, stage, `monitor:${verdict.detail}`);
   return deny(context, stage, UTM_REASON[verdict.kind], rule.id);
 }
