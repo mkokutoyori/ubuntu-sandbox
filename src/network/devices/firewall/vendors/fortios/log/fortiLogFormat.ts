@@ -44,7 +44,7 @@ export function orderedFields(
     ['type', record.type],
     ['subtype', record.subtype],
     ['level', record.level],
-    ['vd', 'root'],
+    ['vd', record.vdom],
     ['devname', context.hostname],
     ['devid', context.serial],
   ];

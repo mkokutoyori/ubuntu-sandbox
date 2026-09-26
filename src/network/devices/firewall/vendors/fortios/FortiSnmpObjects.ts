@@ -25,6 +25,8 @@ const FG_IPS_TRAP_OBJECTS = `${FORTINET}.101.9.3`;
 const FG_VPN_TRAP_OBJECTS = `${FORTINET}.101.12.3`;
 const FG_LOAD_BALANCE_TRAP_OBJECTS = `${FORTINET}.101.16.1`;
 const FG_VD_ENT_NAME = `${FORTINET}.101.3.2.1.1.2`;
+const FG_INTF_TRAP_TYPE = `${FORTINET}.101.7.6.1.0`;
+const FG_INTF_TRAP_IP_CONFLICT = 1;
 const FG_DHCP = `${FORTINET}.101.23`;
 const FG_DHCP_SERVER_NUMBER = `${FG_DHCP}.1.1.0`;
 const FG_DHCP_LEASE_USAGE = `${FG_DHCP}.2.1.1.2`;
@@ -183,6 +185,14 @@ export function fortiGateTraps(fact: FirewallTrapFact, context: FirewallTrapCont
     case 'ospf-neighbor': {
       const notification = ospfNbrStateChange(fact.transition);
       return notification === null ? [] : [{ event: 'ospf-nbr-state-change', notification }];
+    }
+    case 'interface-ip-conflict': {
+      const index = context.interfaceIndex(fact.iface);
+      return [trap('interface', `${FG_TRAPS}.1601`, [
+        ...sender,
+        vb(FG_INTF_TRAP_TYPE, v('integer', FG_INTF_TRAP_IP_CONFLICT)),
+        ...(index === null ? [] : instances(context, [`${OID_IF_NAME_PREFIX}.${index}`])),
+      ])];
     }
     case 'dhcp': {
       const index = context.interfaceIndex(fact.iface);

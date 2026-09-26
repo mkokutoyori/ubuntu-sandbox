@@ -10,6 +10,7 @@ export interface FirewallLogRecord {
   readonly subtype: string;
   readonly level: FirewallLogLevel;
   readonly id: string;
+  readonly vdom: string;
   readonly fields: ReadonlyMap<string, string>;
 }
 
@@ -56,7 +57,7 @@ export class FirewallLogStore {
   private announced = new Set<LogFullLevel>();
   private announcing = false;
 
-  constructor(capacity = DEFAULT_CAPACITY) {
+  constructor(private readonly vdom: string, capacity = DEFAULT_CAPACITY) {
     this.capacity = Math.max(1, capacity);
   }
 
@@ -131,6 +132,7 @@ export class FirewallLogStore {
       subtype: draft.subtype,
       level: draft.level,
       id: draft.id,
+      vdom: this.vdom,
       fields,
     });
 

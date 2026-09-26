@@ -64,6 +64,7 @@ import {
   ProxyArpTable, proxyOwnerKey, publishPoolProxyArp, type ProxyArpEntry,
 } from './l3/ProxyArpTable';
 import { ArpService } from './l3/ArpService';
+import { IpConflictDetection } from './l3/IpConflictDetection';
 import { ZoneTable } from './model/ZoneTable';
 import { ObjectStore } from './model/ObjectStore';
 import { PolicyStore } from './model/PolicyStore';
@@ -319,6 +320,7 @@ export class Firewall extends Equipment {
   private rebootReason: RebootReason = 'power cycle';
   private readonly fortiguard = new FortiGuardDatabases({ now: () => this.now() });
   private readonly arp: ArpService;
+  private readonly ipConflicts: IpConflictDetection;
   private readonly registry = new PipelineStageRegistry();
   private readonly pipelines: PipelineCache;
   private readonly services: FirewallServices;
@@ -496,11 +498,28 @@ export class Firewall extends Equipment {
         this.load.reassess();
       },
     });
+    this.ipConflicts = new IpConflictDetection({
+      ownAddresses: () => this.interfaces.all()
+        .filter((iface) => iface.ip !== undefined && iface.ip !== '0.0.0.0')
+        .map((iface) => ({ iface: iface.name, address: iface.ip! })),
+      owningInterface: (address) => this.interfaces.owningInterface(address),
+      hardwareAddressOf: (iface) => {
+        const port = this.getPort(iface);
+        return port && !port.isLoopback() ? port.getMAC() : null;
+      },
+      indexOf: (iface) => this.interfaceIndex(iface),
+      vdomOf: (iface) => this.vdoms.vdomOfInterface(iface),
+      emitArp: (packet, iface) => { this.emitArp(packet, iface); },
+      now,
+      log: (vdom, draft) => { this.getLogStore(vdom).append(draft); },
+      trap: (iface) => { this.snmpService?.raise({ kind: 'interface-ip-conflict', iface }); },
+    });
     this.arp = new ArpService({
       interfaces: this.interfaces,
       macOf: (iface) => this.portMac(iface),
       now,
       onRequestNeeded: (request, iface) => this.emitArp(request, iface),
+      onDuplicateAddress: (report) => { this.ipConflicts.report(report); },
       proxyOwns: (address, iface) => this.proxyArpAnswers(address, iface),
       onCacheChanged: () => { this.liveState.refresh(); },
     });
@@ -832,7 +851,10 @@ export class Firewall extends Equipment {
   powerOn(): void {
     super.powerOn();
     this.rebootReason = 'power cycle';
+    this.ipConflicts?.probeWhenEnabled();
   }
+
+  getIpConflictDetection(): IpConflictDetection { return this.ipConflicts; }
 
   private resolveEgress(destination: string): FirewallPingEgress | null {
     const route = this.getVdom().routes.resolveNextHop(destination);
@@ -1469,6 +1491,7 @@ export class Firewall extends Equipment {
     const after = this.interfaces.get(name);
     if (before?.ip !== after?.ip || before?.mask !== after?.mask) {
       this.snmpService?.raise({ kind: 'interface-address', port: name });
+      this.ipConflicts.probeWhenEnabled(name);
     }
   }
 
@@ -1497,8 +1520,10 @@ export class Firewall extends Equipment {
   }
 
   setInterfaceUp(name: string, up: boolean): void {
+    const wasUp = this.interfaces.get(name)?.up === true;
     this.adminIntent.set(name, up);
     this.interfaces.setUp(name, up);
+    if (up && !wasUp) this.ipConflicts.probeWhenEnabled(name);
   }
 
   now(): number { return this.services.now(); }

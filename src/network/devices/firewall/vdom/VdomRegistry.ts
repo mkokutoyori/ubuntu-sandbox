@@ -279,7 +279,7 @@ export class VdomRegistry {
       expectedFlows,
       evaluator,
       schedules,
-      logs: new FirewallLogStore(),
+      logs: new FirewallLogStore(name),
       logSettings: new LogSettings(),
       utm: new UtmProfileStore(),
       identities,
