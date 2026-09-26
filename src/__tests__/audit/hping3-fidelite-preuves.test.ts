@@ -110,8 +110,8 @@ const replyLines = (out: string): string[] => out.split('\n').filter((l) => l.st
 describe('hping3 : la ligne de reponse dit ce que la reponse porte', () => {
   it('un port OUVERT repond SA avec sa fenetre, un port FERME repond RA win=0', async () => {
     const { pc } = await directLink();
-    const ouvert = replyLines(await pc.executeCommand('hping3 -S -p 80 -c 1 10.0.0.2'))[0];
-    const ferme = replyLines(await pc.executeCommand('hping3 -S -p 81 -c 1 10.0.0.2'))[0];
+    const ouvert = replyLines(await pc.executeCommand('sudo hping3 -S -p 80 -c 1 10.0.0.2'))[0];
+    const ferme = replyLines(await pc.executeCommand('sudo hping3 -S -p 81 -c 1 10.0.0.2'))[0];
     expect(ouvert).toMatch(/sport=80 flags=SA seq=0 win=(\d+) rtt=/);
     expect(Number(/win=(\d+)/.exec(ouvert)?.[1])).toBeGreaterThan(0);
     expect(ferme).toMatch(/sport=81 flags=RA seq=0 win=0 rtt=/);
@@ -119,14 +119,14 @@ describe('hping3 : la ligne de reponse dit ce que la reponse porte', () => {
 
   it('le ttl imprime est celui de la REPONSE, pas celui de ma requete', async () => {
     const { pc } = await directLink();
-    const ligne = replyLines(await pc.executeCommand('hping3 -S -p 80 -t 5 -c 1 10.0.0.2'))[0];
+    const ligne = replyLines(await pc.executeCommand('sudo hping3 -S -p 80 -t 5 -c 1 10.0.0.2'))[0];
     expect(ligne).toContain('ttl=64');
     expect(ligne).not.toContain('ttl=5');
   });
 
   it('le mode ICMP a SA PROPRE ligne (icmp_seq), pas celle de TCP', async () => {
     const { pc } = await directLink();
-    const lignes = replyLines(await pc.executeCommand('hping3 -1 -c 2 10.0.0.2'));
+    const lignes = replyLines(await pc.executeCommand('sudo hping3 -1 -c 2 10.0.0.2'));
     expect(lignes).toHaveLength(2);
     expect(lignes[0]).toMatch(/^len=28 ip=10\.0\.0\.2 ttl=\d+ id=\d+ icmp_seq=0 rtt=\d+\.\d ms$/);
     expect(lignes[1]).toContain('icmp_seq=1');
@@ -143,7 +143,7 @@ describe('hping3 : chaque mode pose sur le fil le paquet qu il annonce', () => {
     await pc.executeCommand('ping -c 1 10.0.0.2');
     const emisesParLeClient = framesOut(pc);
     const emisesParLaCible = framesOut(srv);
-    const out = await pc.executeCommand('hping3 -2 -p 9999 -c 2 10.0.0.2');
+    const out = await pc.executeCommand('sudo hping3 -2 -p 9999 -c 2 10.0.0.2');
     expect(out).toContain('udp mode set, 28 headers + 0 data bytes');
     expect(framesOut(pc) - emisesParLeClient).toBeGreaterThanOrEqual(2);
     // Un datagramme UDP vers un port ferme fait repondre la pile de la
@@ -156,7 +156,7 @@ describe('hping3 : chaque mode pose sur le fil le paquet qu il annonce', () => {
   it('-0 pose un paquet IP BRUT, dont le protocole est celui demande', async () => {
     const { pc } = await directLink();
     const avant = framesOut(pc);
-    const out = await pc.executeCommand('hping3 -0 --ipproto 47 -c 2 10.0.0.2');
+    const out = await pc.executeCommand('sudo hping3 -0 --ipproto 47 -c 2 10.0.0.2');
     const apres = framesOut(pc);
     expect(out).toContain('raw IP mode set, 20 headers + 0 data bytes');
     expect(apres - avant).toBeGreaterThanOrEqual(2);
@@ -167,7 +167,7 @@ describe('hping3 : chaque mode pose sur le fil le paquet qu il annonce', () => {
 describe('hping3 : les options que le source definit', () => {
   it('-p ++N incremente le port de destination a chaque ENVOI', async () => {
     const { pc } = await directLink();
-    const lignes = replyLines(await pc.executeCommand('hping3 -S -p ++79 -c 3 10.0.0.2'));
+    const lignes = replyLines(await pc.executeCommand('sudo hping3 -S -p ++79 -c 3 10.0.0.2'));
     expect(lignes.map((l) => /sport=(\d+)/.exec(l)?.[1])).toEqual(['79', '80', '81']);
     expect(lignes[0]).toContain('flags=RA');
     expect(lignes[1]).toContain('flags=SA');
@@ -176,10 +176,10 @@ describe('hping3 : les options que le source definit', () => {
 
   it('-k garde le port fixe, et --flood tait les reponses', async () => {
     const { pc } = await directLink();
-    const garde = replyLines(await pc.executeCommand('hping3 -S -p 80 -k -c 2 10.0.0.2'));
+    const garde = replyLines(await pc.executeCommand('sudo hping3 -S -p 80 -k -c 2 10.0.0.2'));
     expect(garde.map((l) => /sport=(\d+)/.exec(l)?.[1])).toEqual(['80', '80']);
 
-    const flood = await pc.executeCommand('hping3 -S -p 80 --flood -c 2 10.0.0.2');
+    const flood = await pc.executeCommand('sudo hping3 -S -p 80 --flood -c 2 10.0.0.2');
     expect(flood).toContain('hping in flood mode, no replies will be shown');
     expect(replyLines(flood)).toHaveLength(0);
     expect(flood).toContain('2 packets transmitted, 2 packets received, 0% packet loss');
@@ -187,11 +187,11 @@ describe('hping3 : les options que le source definit', () => {
 
   it('-w passe la fenetre EMISE, et un champ non posable reste refuse', async () => {
     const { pc } = await directLink();
-    const out = await pc.executeCommand('hping3 -S -p 80 -w 1024 -c 1 10.0.0.2');
+    const out = await pc.executeCommand('sudo hping3 -S -p 80 -w 1024 -c 1 10.0.0.2');
     expect(out).toContain('flags=SA');
-    expect(await pc.executeCommand('hping3 -S -p 80 -N 42 -c 1 10.0.0.2'))
+    expect(await pc.executeCommand('sudo hping3 -S -p 80 -N 42 -c 1 10.0.0.2'))
       .toContain('flags=SA');
-    expect(await pc.executeCommand('hping3 -S -p 80 -O 6 -c 1 10.0.0.2'))
+    expect(await pc.executeCommand('sudo hping3 -S -p 80 -O 6 -c 1 10.0.0.2'))
       .toBe('hping3: unknown option -O');
   });
 });
@@ -199,7 +199,7 @@ describe('hping3 : les options que le source definit', () => {
 describe('temoins', () => {
   it('TEMOIN — la banniere garde sa forme', async () => {
     const { pc } = await directLink();
-    const out = await pc.executeCommand('hping3 -S -p 80 -c 1 10.0.0.2');
+    const out = await pc.executeCommand('sudo hping3 -S -p 80 -c 1 10.0.0.2');
     expect(out).toContain('HPING 10.0.0.2 (eth0 10.0.0.2): S set, 40 headers + 0 data bytes');
     expect(out).toContain('--- 10.0.0.2 hping statistic ---');
     expect(out).toContain('round-trip min/avg/max = 0.0/0.0/0.0 ms');
@@ -207,7 +207,7 @@ describe('temoins', () => {
 
   it('TEMOIN — un SYN vers un port ouvert est repondu', async () => {
     const { pc } = await directLink();
-    expect(await pc.executeCommand('hping3 -S -p 80 -c 1 10.0.0.2'))
+    expect(await pc.executeCommand('sudo hping3 -S -p 80 -c 1 10.0.0.2'))
       .toContain('1 packets transmitted, 1 packets received, 0% packet loss');
   });
 });

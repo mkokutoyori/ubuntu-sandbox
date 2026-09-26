@@ -42,12 +42,12 @@ async function linkedPair(): Promise<{ pc1: LinuxPC; pc2: LinuxPC }> {
 describe('tcpdump capture files (tcpdump 4.99.1 / libpcap 1.10.1)', () => {
   it('a file written by -w reads back with -r, packet for packet', async () => {
     const { pc1 } = await linkedPair();
-    const writing = pc1.executeCommand('tcpdump -w echo.cap -c 2 icmp');
+    const writing = pc1.executeCommand('sudo tcpdump -w echo.cap -c 2 icmp');
     await new Promise((resolve) => setTimeout(resolve, 30));
     await pc1.executeCommand('ping -c 1 10.0.0.2');
     await writing;
 
-    const output = await pc1.executeCommand('tcpdump -nn -r echo.cap');
+    const output = await pc1.executeCommand('sudo tcpdump -nn -r echo.cap');
     expect(output).toContain('reading from file echo.cap, link-type EN10MB (Ethernet), snapshot length 262144');
     expect(output).toMatch(/IP 10\.0\.0\.1 > 10\.0\.0\.2: ICMP echo request/);
     expect(output).toMatch(/IP 10\.0\.0\.2 > 10\.0\.0\.1: ICMP echo reply/);
@@ -58,25 +58,25 @@ describe('tcpdump capture files (tcpdump 4.99.1 / libpcap 1.10.1)', () => {
     await pc2.executeCommand('nc -l -p 9000 &');
     await pc1.executeCommand('nc -z 10.0.0.2 9000');
 
-    const output = await pc1.executeCommand('tcpdump -r missing.cap');
+    const output = await pc1.executeCommand('sudo tcpdump -r missing.cap');
     expect(output).toBe('tcpdump: missing.cap: No such file or directory');
   });
 
   it('a file that is not a capture is refused in libpcap\'s own words', async () => {
     const pc1 = new LinuxPC('PC1', 0, 0);
     await pc1.executeCommand('echo "not a capture file" > garbage.cap');
-    const output = await pc1.executeCommand('tcpdump -r garbage.cap');
+    const output = await pc1.executeCommand('sudo tcpdump -r garbage.cap');
     expect(output).toBe('tcpdump: unknown file format');
   });
 
   it('-r compiles the filter, and an unparsable one stops the read', async () => {
     const { pc1 } = await linkedPair();
-    const writing = pc1.executeCommand('tcpdump -w echo.cap -c 2 icmp');
+    const writing = pc1.executeCommand('sudo tcpdump -w echo.cap -c 2 icmp');
     await new Promise((resolve) => setTimeout(resolve, 30));
     await pc1.executeCommand('ping -c 1 10.0.0.2');
     await writing;
 
-    const output = await pc1.executeCommand('tcpdump -r echo.cap host');
+    const output = await pc1.executeCommand('sudo tcpdump -r echo.cap host');
     expect(output).toBe('tcpdump: can\'t parse filter expression: syntax error');
   });
 });

@@ -71,7 +71,7 @@ describe('le balayage SYN ne va pas au bout', () => {
     const { scanner, cible } = await segment();
     await taper(cible, 'sudo tcpdump -i eth0 -w /tmp/syn.pcap &');
 
-    await taper(scanner, 'nmap -Pn -sS -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -sS -p 22 10.0.0.2');
 
     const vu = await taper(cible, 'sudo tcpdump -r /tmp/syn.pcap -nn');
     expect(vu).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.2\.22: Flags \[S\]/);
@@ -84,7 +84,7 @@ describe('le balayage SYN ne va pas au bout', () => {
     const { scanner, cible } = await segment();
     await taper(cible, 'sudo tcpdump -i eth0 -w /tmp/connect.pcap &');
 
-    await taper(scanner, 'nmap -Pn -sT -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -sT -p 22 10.0.0.2');
 
     const vu = await taper(cible, 'sudo tcpdump -r /tmp/connect.pcap -nn');
     expect(vu).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.2\.22: Flags \[S\]/);
@@ -94,7 +94,7 @@ describe('le balayage SYN ne va pas au bout', () => {
   it('un port ouvert est ouvert, un port ferme est ferme', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS -p 22,8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS -p 22,8888 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+open\s+ssh/);
     expect(sortie).toMatch(/8888\/tcp\s+closed/);
@@ -103,7 +103,7 @@ describe('le balayage SYN ne va pas au bout', () => {
   it('la RAISON rendue est celle du balayage SYN', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS --reason -p 22,8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS --reason -p 22,8888 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+open\s+ssh\s+syn-ack/);
     expect(sortie).toMatch(/8888\/tcp\s+closed\s+\S+\s+reset/);
@@ -113,7 +113,7 @@ describe('le balayage SYN ne va pas au bout', () => {
     const { scanner, cible } = await segment();
     await taper(cible, 'sudo iptables -A INPUT -p tcp -j DROP');
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS -p 22 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+filtered/);
   });

@@ -83,7 +83,7 @@ import {
 } from '../core/types';
 
 // Linux kernel / userspace
-import { LinuxCommandExecutor, type SudoAuthorization } from './linux/LinuxCommandExecutor';
+import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import { sampleVmstat } from './linux/system/Vmstat';
 import { sampleMpstat, mpstatBanner, type MpstatArgs } from './linux/system/Mpstat';
 import { sampleIostatCpu, sampleIostatDevices, iostatBanner, type IostatArgs } from './linux/system/Iostat';
@@ -175,6 +175,7 @@ import {
 import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
 import { splitRegistryStdin } from './linux/commands/registryStdin';
 import { evaluatePrivilegeRequirement, type PrivilegeRequirement } from './linux/iam/policy/CommandPrivilegePolicy';
+import { holdsCapability } from './linux/iam/capabilities/LinuxCapabilities';
 import { buildIpCtx } from './linux/commands/net/Ip';
 import { GreAgent, type GreHost } from '../gre/GreAgent';
 import type { DHCPClient } from '../dhcp/DHCPClient';
@@ -614,22 +615,8 @@ export abstract class LinuxMachine extends EndHost
       // ligne composée (`sudo iptables -L; echo $?`) alors qu'elle passait
       // seule, et l'autorisation sudoers n'était jamais consultée.
       if (viaSudo) {
-        const auth = this.executor.authorizeSudo(argv[0], args, 'root');
-        if (auth.reason === 'not-in-sudoers' || auth.reason === 'unknown-target-user') {
-          this.executor.writeSudoAuditLine('not-in-sudoers', auth, argv.join(' '));
-          return Promise.resolve({
-            output: `${auth.invokingUser} is not in the sudoers file. This incident will be reported.`,
-            exitCode: 1,
-          });
-        }
-        if (auth.reason === 'command-not-allowed') {
-          this.executor.writeSudoAuditLine('command-not-allowed', auth, argv.join(' '));
-          return Promise.resolve({
-            output: `Sorry, user ${auth.invokingUser} is not allowed to execute '${argv.join(' ')}' as ${auth.runasUser} on ${auth.hostname}.`,
-            exitCode: 1,
-          });
-        }
-        this.executor.writeSudoAuditLine('success', auth, argv.join(' '));
+        const refusal = this.sudoRefusal(argv[0], args);
+        if (refusal !== null) return Promise.resolve({ output: refusal, exitCode: 1 });
       }
       const userMgr = this.executor.userMgr;
       const saved = viaSudo
@@ -815,8 +802,11 @@ export abstract class LinuxMachine extends EndHost
     return `${this.getHostname()} ${k.sysname} ${k.release} ${k.machine}`;
   }
 
-  tracerouteHost(): TracerouteHost {
-    return tracerouteHostOf(this.buildCommandContext());
+  tracerouteHost(asUser?: string): TracerouteHost {
+    const ctx = this.buildCommandContext();
+    if (asUser === undefined) return tracerouteHostOf(ctx);
+    const actor = this.executor.pathActorOf(asUser);
+    return tracerouteHostOf(ctx, actor !== null && holdsCapability(actor, 'CAP_NET_RAW'));
   }
 
   getLlmnrAgent(): LlmnrAgent {
@@ -3499,6 +3489,36 @@ export abstract class LinuxMachine extends EndHost
    * `commandPrivileges.check()` only runs for commands that fall through
    * to the bash interpreter).
    */
+  private sudoRefusal(firstCmd: string, args: readonly string[]): string | null {
+    const commandLine = [firstCmd, ...args].join(' ');
+    const auth = this.executor.authorizeSudo(firstCmd, args, 'root');
+    if (auth.reason === 'not-in-sudoers' || auth.reason === 'unknown-target-user') {
+      this.executor.writeSudoAuditLine('not-in-sudoers', auth, commandLine);
+      return `${auth.invokingUser} is not in the sudoers file. This incident will be reported.`;
+    }
+    if (auth.reason === 'command-not-allowed') {
+      this.executor.writeSudoAuditLine('command-not-allowed', auth, commandLine);
+      return `Sorry, user ${auth.invokingUser} is not allowed to execute '${commandLine}' as ${auth.runasUser} on ${auth.hostname}.`;
+    }
+    this.executor.writeSudoAuditLine('success', auth, commandLine);
+    return null;
+  }
+
+  sudoRefusalInSession(argv: readonly string[], session: LinuxShellSession): string | null {
+    return this.sessionSwap.withinSync(
+      session, () => this.sudoRefusal(argv[0], argv.slice(1)), { capture: false });
+  }
+
+  tcpdumpDepsInSession(session: LinuxShellSession, asRoot: boolean): TcpdumpDeps {
+    return this.sessionSwap.withinSync(
+      session, () => this.buildTcpdumpDeps(asRoot ? 'root' : undefined), { capture: false });
+  }
+
+  tracerouteHostInSession(session: LinuxShellSession, asRoot: boolean): TracerouteHost {
+    return this.sessionSwap.withinSync(
+      session, () => this.tracerouteHost(asRoot ? 'root' : session.user), { capture: false });
+  }
+
   private async withSudoAndPrivilegeGate(
     firstCmd: string,
     args: string[],
@@ -3507,17 +3527,9 @@ export abstract class LinuxMachine extends EndHost
     run: () => Promise<string> | string,
   ): Promise<string> {
     const userMgr = this.executor.userMgr;
-    let auth: SudoAuthorization | null = null;
     if (isSudo) {
-      auth = this.executor.authorizeSudo(firstCmd, args, 'root');
-      if (auth.reason === 'not-in-sudoers' || auth.reason === 'unknown-target-user') {
-        this.executor.writeSudoAuditLine('not-in-sudoers', auth, [firstCmd, ...args].join(' '));
-        return `${auth.invokingUser} is not in the sudoers file. This incident will be reported.`;
-      }
-      if (auth.reason === 'command-not-allowed') {
-        this.executor.writeSudoAuditLine('command-not-allowed', auth, [firstCmd, ...args].join(' '));
-        return `Sorry, user ${auth.invokingUser} is not allowed to execute '${[firstCmd, ...args].join(' ')}' as ${auth.runasUser} on ${auth.hostname}.`;
-      }
+      const refusal = this.sudoRefusal(firstCmd, args);
+      if (refusal !== null) return refusal;
     }
     const savedUser = isSudo
       ? { user: userMgr.currentUser, uid: userMgr.currentUid, gid: userMgr.currentGid }
@@ -3526,7 +3538,6 @@ export abstract class LinuxMachine extends EndHost
       userMgr.currentUser = 'root';
       userMgr.currentUid = 0;
       userMgr.currentGid = 0;
-      this.executor.writeSudoAuditLine('success', auth!, [firstCmd, ...args].join(' '));
     }
     try {
       const actor = {
@@ -4776,14 +4787,15 @@ export abstract class LinuxMachine extends EndHost
     return this.executor.captureLog.subscribe(listener);
   }
 
-  buildTcpdumpDeps(): TcpdumpDeps {
+  buildTcpdumpDeps(asUser?: string): TcpdumpDeps {
     const pid = this.executor.currentPid();
     const detached = this.executor.runsDetached();
     const cwd = this.executor.getCwd();
-    const actor = this.executor.pathActorOf(this.executor.userMgr.currentUser)
+    const actor = this.executor.pathActorOf(asUser ?? this.executor.userMgr.currentUser)
       ?? { uid: this.executor.userMgr.currentUid, gid: this.executor.userMgr.currentGid };
     const umask = this.executor.getUmask();
     return {
+      capturePermitted: holdsCapability(actor, 'CAP_NET_RAW'),
       interfaceNames: (): string[] => {
         return ['lo', ...[...this.ports.keys()].filter((name) => name !== 'lo')];
       },

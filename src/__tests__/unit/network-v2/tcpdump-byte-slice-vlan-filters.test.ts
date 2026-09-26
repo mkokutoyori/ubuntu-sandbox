@@ -84,7 +84,7 @@ describe('tcpdump byte-slice + vlan filters (PRD-tcpdump.md P4)', () => {
     await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
     (pc2 as unknown as TcpConnector).getTcpStack().listen(9000, { onAccept: () => {} });
 
-    const pending = pc1.executeCommand('tcpdump -c 1 -nn "tcp[tcpflags] & tcp-syn != 0"');
+    const pending = pc1.executeCommand('sudo tcpdump -c 1 -nn "tcp[tcpflags] & tcp-syn != 0"');
     await new Promise((resolve) => setTimeout(resolve, 50));
     (pc1 as unknown as TcpConnector).getTcpStack().connect('10.0.0.2', 9000);
     await new Promise((resolve) => setTimeout(resolve, 20));

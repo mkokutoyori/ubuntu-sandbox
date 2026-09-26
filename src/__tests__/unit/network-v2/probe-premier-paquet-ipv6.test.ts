@@ -119,7 +119,7 @@ describe('un cache de voisins FROID ne mange pas le paquet', () => {
   it('`nmap -sS` sur une cible v6 jamais contactee voit le port ouvert', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -6 -Pn -sS -p 22 2001:db8::2');
+    const sortie = await taper(scanner, 'sudo nmap -6 -Pn -sS -p 22 2001:db8::2');
 
     expect(sortie).toMatch(/22\/tcp\s+open\s+ssh/);
   });

@@ -26,6 +26,7 @@ import type { DiscoveryProbe } from './NmapOptions';
  */
 export interface ScanHost {
   readonly device: Equipment | null;
+  readonly privileged: boolean;
   readFile(path: string): string | null;
   ping(ip: string, timeoutMs: number): Promise<Array<{
     success: boolean; rttMs?: number; ttl?: number;
@@ -159,11 +160,15 @@ async function echoDiscovery(host: ScanHost, ip: string): Promise<Discovery> {
     : { up: false };
 }
 
-function connectDiscovery(host: ScanHost, ip: string): Discovery {
-  for (const port of DISCOVERY_PORTS) {
+function connectDiscovery(
+  host: ScanHost, ip: string, ports: readonly number[] = DISCOVERY_PORTS,
+): Discovery {
+  for (const port of ports) {
+    const started = performance.now();
     const outcome = host.tcpOutcome(ip, port);
-    if (outcome === 'open') return { up: true, reason: 'syn-ack', reasonPort: port };
-    if (outcome === 'refused') return { up: true, reason: 'reset', reasonPort: port };
+    const latencyMs = performance.now() - started;
+    if (outcome === 'open') return { up: true, latencyMs, reason: 'syn-ack', reasonPort: port };
+    if (outcome === 'refused') return { up: true, latencyMs, reason: 'conn-refused', reasonPort: port };
   }
   return { up: false };
 }
@@ -172,10 +177,12 @@ function tcpPingDiscovery(
   host: ScanHost, ip: string, ports: readonly number[], flags: ScanProbeFlags,
 ): Discovery {
   for (const port of ports) {
+    const started = performance.now();
     const reply = host.scanProbe(ip, port, flags);
-    if (reply === 'syn-ack') return { up: true, reason: 'syn-ack', reasonPort: port };
+    const latencyMs = performance.now() - started;
+    if (reply === 'syn-ack') return { up: true, latencyMs, reason: 'syn-ack', reasonPort: port };
     if (reply === 'rst' || reply === 'rst-window') {
-      return { up: true, reason: 'reset', reasonPort: port };
+      return { up: true, latencyMs, reason: 'reset', reasonPort: port };
     }
   }
   return { up: false };
@@ -230,6 +237,9 @@ async function runDiscoveryPlan(
         break;
       case 'tcp-ack':
         found = tcpPingDiscovery(host, ip, probe.ports ?? [], SCAN_PROBE_FLAGS.ack);
+        break;
+      case 'tcp-connect':
+        found = connectDiscovery(host, ip, probe.ports ?? []);
         break;
       case 'udp':
         found = udpPingDiscovery(host, ip, probe.ports ?? []);

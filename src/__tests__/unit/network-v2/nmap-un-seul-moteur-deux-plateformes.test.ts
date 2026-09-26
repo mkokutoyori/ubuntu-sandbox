@@ -146,7 +146,7 @@ describe('les deux plateformes rendent le meme verdict', () => {
   it('`-O` nomme la meme famille des deux cotes', async () => {
     const { linux, windows } = await lab();
 
-    const cotelinux = await linux.executeCommand(`nmap -O -p 22 ${SRV_IP}`);
+    const cotelinux = await linux.executeCommand(`sudo nmap -O -p 22 ${SRV_IP}`);
     const coteWindows = await windows.executeCommand(`nmap -O -p 22 ${SRV_IP}`);
 
     expect(cotelinux).toMatch(/Linux/);

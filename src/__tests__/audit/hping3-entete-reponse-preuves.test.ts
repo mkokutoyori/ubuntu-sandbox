@@ -74,28 +74,28 @@ function replyLines(out: string): string[] {
 
 describe('hping3 : la ligne dit l en-tete de la reponse', () => {
   it('TEMOIN le port ouvert reste distinct du port ferme', async () => {
-    const open = replyLines(await pc.executeCommand('hping3 -S -p 80 -c 1 10.0.0.2'));
-    const closed = replyLines(await pc.executeCommand('hping3 -S -p 81 -c 1 10.0.0.2'));
+    const open = replyLines(await pc.executeCommand('sudo hping3 -S -p 80 -c 1 10.0.0.2'));
+    const closed = replyLines(await pc.executeCommand('sudo hping3 -S -p 81 -c 1 10.0.0.2'));
     expect(open[0]).toContain('flags=SA');
     expect(closed[0]).toContain('flags=RA');
   });
 
   it('un RST SANS ACK s imprime R, parce que la pile en envoie un', async () => {
-    const line = replyLines(await pc.executeCommand('hping3 -A -p 81 -c 1 10.0.0.2'))[0];
+    const line = replyLines(await pc.executeCommand('sudo hping3 -A -p 81 -c 1 10.0.0.2'))[0];
     expect(line).toContain('flags=R ');
     expect(line).not.toContain('flags=RA');
   });
 
   it('len= est la longueur du paquet RECU, pas une constante', async () => {
-    const synAck = replyLines(await pc.executeCommand('hping3 -S -p 80 -c 1 10.0.0.2'))[0];
-    const rst = replyLines(await pc.executeCommand('hping3 -S -p 81 -c 1 10.0.0.2'))[0];
+    const synAck = replyLines(await pc.executeCommand('sudo hping3 -S -p 80 -c 1 10.0.0.2'))[0];
+    const rst = replyLines(await pc.executeCommand('sudo hping3 -S -p 81 -c 1 10.0.0.2'))[0];
     const lengthOf = (l: string): number => Number(/^len=(\d+)/.exec(l)?.[1]);
     expect(lengthOf(synAck)).toBeGreaterThan(lengthOf(rst));
     expect(lengthOf(rst)).toBe(40);
   });
 
   it('id= est l identification de la reponse, donc elle change d un paquet a l autre', async () => {
-    const lines = replyLines(await pc.executeCommand('hping3 -S -p 80 -c 3 10.0.0.2'));
+    const lines = replyLines(await pc.executeCommand('sudo hping3 -S -p 80 -c 3 10.0.0.2'));
     const ids = lines.map((l) => Number(/ id=(\d+) /.exec(l)?.[1]));
     expect(ids).toHaveLength(3);
     expect(new Set(ids).size).toBe(3);
@@ -103,12 +103,12 @@ describe('hping3 : la ligne dit l en-tete de la reponse', () => {
   });
 
   it('DF parait quand la reponse porte le bit', async () => {
-    const line = replyLines(await pc.executeCommand('hping3 -S -p 80 -c 1 10.0.0.2'))[0];
+    const line = replyLines(await pc.executeCommand('sudo hping3 -S -p 80 -c 1 10.0.0.2'))[0];
     expect(line).toMatch(/ttl=\d+ DF id=/);
   });
 
   it('-V coupe la ligne apres tos=/iplen= et ajoute seq/ack/sum/urp', async () => {
-    const out = (await pc.executeCommand('hping3 -S -p 80 -c 1 -V 10.0.0.2')).split('\n');
+    const out = (await pc.executeCommand('sudo hping3 -S -p 80 -c 1 -V 10.0.0.2')).split('\n');
     const ipLine = out.find((l) => l.startsWith('len='));
     expect(ipLine).toMatch(/tos=0 iplen=\d+$/);
     expect(out.some((l) => l.startsWith('sport=80 flags=SA'))).toBe(true);
@@ -116,28 +116,29 @@ describe('hping3 : la ligne dit l en-tete de la reponse', () => {
   });
 
   it('-Q remplace la ligne par la sequence recue et son ecart', async () => {
-    const out = (await pc.executeCommand('hping3 -S -p 80 -c 2 -Q 10.0.0.2')).split('\n');
+    const out = (await pc.executeCommand('sudo hping3 -S -p 80 -c 2 -Q 10.0.0.2')).split('\n');
     expect(replyLines(out.join('\n'))).toHaveLength(0);
     const rows = out.filter((l) => /^\s*\d+ \+\d+$/.test(l));
     expect(rows).toHaveLength(2);
   });
 
   it('-M et -L posent la sequence et l acquittement sur le fil, et la CIBLE les renvoie', async () => {
-    const fromSyn = await pc.executeCommand('hping3 -S -p 81 -c 1 -M 12345 -V 10.0.0.2');
+    const fromSyn = await pc.executeCommand('sudo hping3 -S -p 81 -c 1 -M 12345 -V 10.0.0.2');
     expect(fromSyn).not.toContain('unknown option');
     const synReply = fromSyn.split('\n').find((l) => l.startsWith('seq='));
     expect(Number(/ ack=(\d+)/.exec(synReply as string)?.[1])).toBe(12346);
 
-    const fromAck = await pc.executeCommand('hping3 -A -p 81 -c 1 -L 99 -V 10.0.0.2');
+    const fromAck = await pc.executeCommand('sudo hping3 -A -p 81 -c 1 -L 99 -V 10.0.0.2');
     const ackReply = fromAck.split('\n').find((l) => l.startsWith('seq='));
     expect(Number(/^seq=(\d+)/.exec(ackReply as string)?.[1])).toBe(99);
   });
 
   it('--scan pose la table amont et ne montre que les ports qui repondent SYN', async () => {
-    const out = await pc.executeCommand('hping3 --scan 21-23,80 -S 10.0.0.2');
+    const out = await pc.executeCommand('sudo hping3 --scan 21-23,80 -S 10.0.0.2');
     const lines = out.split('\n');
-    expect(lines[0]).toBe('4 ports to scan, use -V to see all the replies');
-    expect(lines[2]).toBe('|port| serv name |  flags  |ttl| id  | win | len |');
+    expect(lines[0]).toBe('Scanning 10.0.0.2 (10.0.0.2), port 21-23,80');
+    expect(lines[1]).toBe('4 ports to scan, use -V to see all the replies');
+    expect(lines[3]).toBe('|port| serv name |  flags  |ttl| id  | win | len |');
     const rows = lines.filter((l) => /^\s+\d+ \S+\s*: /.test(l));
     expect(rows.map((r) => r.trim().split(/\s+/)[0])).toEqual(['22', '80']);
     expect(rows[0]).toContain('ssh');
@@ -146,14 +147,14 @@ describe('hping3 : la ligne dit l en-tete de la reponse', () => {
   });
 
   it('--scan -V montre AUSSI les ports fermes, avec leur colonne de drapeaux', async () => {
-    const out = await pc.executeCommand('hping3 --scan 80,81 -S -V 10.0.0.2');
+    const out = await pc.executeCommand('sudo hping3 --scan 80,81 -S -V 10.0.0.2');
     const rows = out.split('\n').filter((l) => /^\s+\d+ \S+\s*: /.test(l));
     expect(rows).toHaveLength(2);
     expect(rows[1]).toContain('..R.A...');
   });
 
   it('-p ++ incremente a chaque envoi', async () => {
-    const out = await pc.executeCommand('hping3 -S -p ++79 -c 3 10.0.0.2');
+    const out = await pc.executeCommand('sudo hping3 -S -p ++79 -c 3 10.0.0.2');
     const ports = replyLines(out).map((l) => /sport=(\d+)/.exec(l)?.[1]);
     expect(ports).toEqual(['79', '80', '81']);
   });

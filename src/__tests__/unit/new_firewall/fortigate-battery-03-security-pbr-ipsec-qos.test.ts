@@ -653,7 +653,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
     it('144. Détection et destruction d\'une Land Attack (IP source = IP destination)', async () => {
       const { rogue, fw } = await creerLaboEntreprise();
       // Le rogue envoie un paquet avec IP source = IP dest = 203.0.113.10
-      const res = await rogue.executeCommand('hping3 -a 203.0.113.10 -S -p 80 -c 1 203.0.113.10');
+      const res = await rogue.executeCommand('sudo hping3 -a 203.0.113.10 -S -p 80 -c 1 203.0.113.10');
       expect(res).toMatch(/100% packet loss|0 packets received/i);
     });
 
@@ -697,7 +697,7 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
         'config firewall policy', 'edit 105', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       // Injection de fragments IP chevauchants
-      const res = await rogue.executeCommand('hping3 --frag --mtu 8 -1 203.0.113.10 -c 2');
+      const res = await rogue.executeCommand('sudo hping3 --frag --mtu 8 -1 203.0.113.10 -c 2');
       expect(res).toMatch(/100% packet loss|0 packets received/i);
     });
 

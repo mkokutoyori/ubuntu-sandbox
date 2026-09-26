@@ -70,7 +70,7 @@ async function legitimateSession(attacker: LinuxPC): Promise<void> {
 
 async function runFloodCapture(attacker: LinuxPC, observer: LinuxPC, captureFlags: string): Promise<void> {
   const pending = observer.executeCommand(
-    `tcpdump -c 3000 -nn ${captureFlags} 'icmp or (tcp and port ${TCP_PORT})' -w /tmp/flood-capture.pcap`,
+    `sudo tcpdump -c 3000 -nn ${captureFlags} 'icmp or (tcp and port ${TCP_PORT})' -w /tmp/flood-capture.pcap`,
   );
   await new Promise((r) => setTimeout(r, 20));
   await Promise.all([
@@ -85,7 +85,7 @@ describe('Scénario 8 — Détection de flood réseau et mesure d\'impact', () =
   it('la génération du flood et la capture concurrente réussissent sans erreur', async () => {
     const { attacker, target, observer } = buildFloodLab();
     await runFloodCapture(attacker, observer, '');
-    const out = await observer.executeCommand('tcpdump -nn -r /tmp/flood-capture.pcap');
+    const out = await observer.executeCommand('sudo tcpdump -nn -r /tmp/flood-capture.pcap');
     expect(out).not.toMatch(/tcpdump: error/);
     void target;
   });
@@ -96,7 +96,7 @@ describe('Scénario 8 — Détection de flood réseau et mesure d\'impact', () =
       await runFloodCapture(attacker, observer, '-tt');
 
       const report = await observer.executeCommand(
-        `tcpdump -tt -nn -r /tmp/flood-capture.pcap 'icmp' | ` +
+        `sudo tcpdump -tt -nn -r /tmp/flood-capture.pcap 'icmp' | ` +
         `awk '{split($1, t, "."); sec=int(t[1]); count[sec]++} END {for (s in count) print s, count[s]}' | sort -n`,
       );
       const rates = report.split('\n')
@@ -106,7 +106,7 @@ describe('Scénario 8 — Détection de flood réseau et mesure d\'impact', () =
       expect(Math.max(...rates)).toBeGreaterThan(100);
 
       const total = await observer.executeCommand(
-        `tcpdump -tt -nn -r /tmp/flood-capture.pcap 'icmp' | awk 'END {print NR, "paquets ICMP capturés"}'`,
+        `sudo tcpdump -tt -nn -r /tmp/flood-capture.pcap 'icmp' | awk 'END {print NR, "paquets ICMP capturés"}'`,
       );
       expect(total).toMatch(new RegExp(`${FLOOD_COUNT * 2} paquets ICMP capturés`));
     });
@@ -118,13 +118,13 @@ describe('Scénario 8 — Détection de flood réseau et mesure d\'impact', () =
       await runFloodCapture(attacker, observer, '-tt');
 
       const icmpTimes = parseEpochTimes(await observer.executeCommand(
-        `tcpdump -tt -nn -r /tmp/flood-capture.pcap 'icmp' | awk '{print $1}'`,
+        `sudo tcpdump -tt -nn -r /tmp/flood-capture.pcap 'icmp' | awk '{print $1}'`,
       ));
       const floodStart = Math.min(...icmpTimes);
       const floodEnd = Math.max(...icmpTimes);
 
       const tcpTimes = parseEpochTimes(await observer.executeCommand(
-        `tcpdump -tt -nn -r /tmp/flood-capture.pcap 'tcp and port ${TCP_PORT}' | awk '{print $1}'`,
+        `sudo tcpdump -tt -nn -r /tmp/flood-capture.pcap 'tcp and port ${TCP_PORT}' | awk '{print $1}'`,
       ));
 
       // The legitimate session was scheduled to send every ~10ms; under
@@ -154,7 +154,7 @@ describe('Scénario 8 — Détection de flood réseau et mesure d\'impact', () =
       await runFloodCapture(attacker, observer, '-tt');
 
       const report = await observer.executeCommand(
-        `tcpdump -tt -nn -r /tmp/flood-capture.pcap 'icmp' | awk '
+        `sudo tcpdump -tt -nn -r /tmp/flood-capture.pcap 'icmp' | awk '
           BEGIN {bytes=0; first=0; last=0}
           {
             match($0, /length ([0-9]+)/, arr)
@@ -183,18 +183,18 @@ describe('Scénario 8 — Détection de flood réseau et mesure d\'impact', () =
       await runFloodCapture(attacker, observer, '-tt');
 
       const icmpCount = Number((await observer.executeCommand(
-        `tcpdump -tt -nn -r /tmp/flood-capture.pcap 'icmp' | wc -l`,
+        `sudo tcpdump -tt -nn -r /tmp/flood-capture.pcap 'icmp' | wc -l`,
       )).split('\n')[0].trim());
       expect(icmpCount).toBe(FLOOD_COUNT * 2);
 
       const icmpTimes = parseEpochTimes(await observer.executeCommand(
-        `tcpdump -tt -nn -r /tmp/flood-capture.pcap 'icmp' | awk '{print $1}'`,
+        `sudo tcpdump -tt -nn -r /tmp/flood-capture.pcap 'icmp' | awk '{print $1}'`,
       ));
       const durationS = Math.max(...icmpTimes) - Math.min(...icmpTimes);
       const rate = durationS > 0 ? icmpCount / durationS : Infinity;
 
       const tcpTimes = parseEpochTimes(await observer.executeCommand(
-        `tcpdump -tt -nn -r /tmp/flood-capture.pcap 'tcp and port ${TCP_PORT}' | awk '{print $1}'`,
+        `sudo tcpdump -tt -nn -r /tmp/flood-capture.pcap 'tcp and port ${TCP_PORT}' | awk '{print $1}'`,
       ));
       expect(tcpTimes.length).toBeGreaterThan(0);
 

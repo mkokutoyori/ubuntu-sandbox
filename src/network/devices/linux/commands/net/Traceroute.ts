@@ -225,6 +225,7 @@ function waitSpecOf(value: string): [number, number, number] | null {
 }
 
 const BUILT_MODULES = new Set(['default', 'icmp', 'tcp', 'udp', 'raw']);
+const RAW_SOCKET_METHODS: ReadonlySet<string> = new Set(['tcp', 'raw']);
 const UNBUILT_MODULES: Readonly<Record<string, string>> = {
   tcpconn: 'a connect()-based TCP trace',
   udplite: 'a UDPLITE datagram',
@@ -361,6 +362,7 @@ function probeMethod(parsed: ParsedTracerouteArgs, protocol: number): TraceProbe
 }
 
 export interface TracerouteHost {
+  rawSocketsPermitted: boolean;
   resolveHostname(name: string): Promise<IPAddress | null>;
   interfaceExists(name: string): boolean;
   ownsAddress(address: IPAddress): boolean;
@@ -449,6 +451,11 @@ export async function runTraceroute(
   const invalid = mainValidationError(parsed);
   if (invalid !== null) { emit(invalid); return 2; }
 
+  if (RAW_SOCKET_METHODS.has(parsed.method) && !host.rawSocketsPermitted) {
+    emit('You do not have enough privileges to use this traceroute method.\nsocket: Operation not permitted');
+    return 1;
+  }
+
   const socket: TraceSocketOptions = {
     dontFragment: parsed.dontFragment,
     direct: parsed.direct,
@@ -472,8 +479,11 @@ export async function runTraceroute(
   return 0;
 }
 
-export function tracerouteHostOf(ctx: LinuxCommandContext): TracerouteHost {
+export function tracerouteHostOf(
+  ctx: LinuxCommandContext, rawSocketsPermitted = ctx.executor.holdsCapability('CAP_NET_RAW'),
+): TracerouteHost {
   return {
+    rawSocketsPermitted,
     resolveHostname: (name) => ctx.net.resolveHostname(name),
     interfaceExists: (name) => ctx.net.getPorts().has(name),
     ownsAddress: (address) => [...ctx.net.getPorts().values()]

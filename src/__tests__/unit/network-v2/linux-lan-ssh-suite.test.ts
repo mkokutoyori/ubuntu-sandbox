@@ -2042,7 +2042,7 @@ describe('§30 — network monitoring of SSH listener and sessions', () => {
     {
       name: 'a capture started before the connect holds its SYN/SYN-ACK',
       setup: async (l) => {
-        await l.pc1.executeCommand('tcpdump -ni eth0 port 22 -w /tmp/connect.pcap &');
+        await l.pc1.executeCommand('sudo tcpdump -ni eth0 port 22 -w /tmp/connect.pcap &');
         await l.pc1.executeCommand('ssh alice@10.0.0.2 hostname', 'admin\n');
       },
       on: l => l.pc1,

@@ -111,7 +111,7 @@ async function captureDuBalayage(commande: string): Promise<{
 }> {
   const { scanner, cible } = await segment();
   await taper(cible, 'tcpdump -nn -i eth0 tcp port 22 -w leurres.pcap &');
-  const rapport = await taper(scanner, commande);
+  const rapport = await taper(scanner, `sudo ${commande}`);
   const capture = await taper(cible, 'tcpdump -r leurres.pcap -nn');
   return { sources: sourcesDesSyn(capture), rapport };
 }
@@ -167,7 +167,7 @@ describe('-D met de vraies trames sur le fil depuis des sources forgees', () => 
   it('ME deux fois est refuse', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS -D ME,10.0.0.7,ME -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS -D ME,10.0.0.7,ME -p 22 10.0.0.2');
 
     expect(sortie).toContain("Can only use 'ME' as a decoy once.");
     expect(sortie).not.toContain('Nmap scan report');
@@ -176,7 +176,7 @@ describe('-D met de vraies trames sur le fil depuis des sources forgees', () => 
   it('un leurre qui ne se resout pas est refuse en le nommant', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS -D zorglub -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS -D zorglub -p 22 10.0.0.2');
 
     expect(sortie).toContain('Failed to resolve decoy host "zorglub"');
     expect(sortie).not.toContain('Nmap scan report');
@@ -185,7 +185,7 @@ describe('-D met de vraies trames sur le fil depuis des sources forgees', () => 
   it('la liste est bornee a 128', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS -D RND:200 -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS -D RND:200 -p 22 10.0.0.2');
 
     expect(sortie).toContain('You are only allowed 128 decoys');
     expect(sortie).not.toContain('Nmap scan report');
@@ -206,7 +206,7 @@ describe('-S forge la source, et la reponse ne revient plus', () => {
     const { scanner, cible } = await segment();
 
     await taper(cible, 'tcpdump -nn -i eth0 -w usurpe.pcap &');
-    await taper(scanner, 'nmap -Pn -sS -S 10.0.0.99 -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -sS -S 10.0.0.99 -p 22 10.0.0.2');
     const capture = await taper(cible, 'tcpdump -r usurpe.pcap -nn');
 
     expect(capture).toContain('IP 10.0.0.99.32768 > 10.0.0.2.22: Flags [S]');
@@ -218,7 +218,7 @@ describe('-S forge la source, et la reponse ne revient plus', () => {
     const { scanner } = await segment();
 
     const sortie = await taper(scanner,
-      'nmap -Pn -sS -S 10.0.0.99 -S 10.0.0.98 -p 22 10.0.0.2');
+      'sudo nmap -Pn -sS -S 10.0.0.99 -S 10.0.0.98 -p 22 10.0.0.2');
 
     expect(sortie).toContain('You can only use the source option once!'
       + '  Use -D <decoy1> -D <decoy2> etc. for decoys');

@@ -108,7 +108,7 @@ function parseSegments(dump: string): ParsedSegment[] {
 async function captureFullSession(
   lan: HttpLan, drive: (sock: TcpSocket) => Promise<void> | void,
 ): Promise<string> {
-  const pending = lan.pc.executeCommand(`tcpdump -c 100 -nn -vvv -S "tcp and host ${SERVER_IP} and port ${HTTP_PORT}"`);
+  const pending = lan.pc.executeCommand(`sudo tcpdump -c 100 -nn -vvv -S "tcp and host ${SERVER_IP} and port ${HTTP_PORT}"`);
   await new Promise((r) => setTimeout(r, 20));
   const sock = lan.pc.getTcpStack().connect(SERVER_IP, HTTP_PORT)!;
   await drive(sock);
@@ -119,7 +119,7 @@ describe('Scénario 1 — Analyse complète du cycle de vie TCP par dissection p
   it('la commande de capture -nn -S -vvv -XX avec écriture pcap réussit sans erreur', async () => {
     const lan = buildHttpLan();
     const output = await lan.pc.executeCommand(
-      `tcpdump -i eth0 -nn -S -vvv -XX 'tcp and host ${SERVER_IP} and port 80' -w /tmp/tcp-session.pcap`,
+      `sudo tcpdump -i eth0 -nn -S -vvv -XX 'tcp and host ${SERVER_IP} and port 80' -w /tmp/tcp-session.pcap`,
     );
     expect(output).not.toMatch(/tcpdump: error/);
     expect(output).toContain('packets captured');
@@ -128,7 +128,7 @@ describe('Scénario 1 — Analyse complète du cycle de vie TCP par dissection p
   describe('phase handshake', () => {
     it('le SYN client expose MSS, SACK_PERM, TS val/ecr 0 et WS', async () => {
       const lan = buildHttpLan();
-      const pending = lan.pc.executeCommand(`tcpdump -c 3 -nn -vvv tcp and port ${HTTP_PORT}`);
+      const pending = lan.pc.executeCommand(`sudo tcpdump -c 3 -nn -vvv tcp and port ${HTTP_PORT}`);
       await new Promise((r) => setTimeout(r, 20));
       lan.pc.getTcpStack().connect(SERVER_IP, HTTP_PORT);
       await new Promise((r) => setTimeout(r, 20));
@@ -144,7 +144,7 @@ describe('Scénario 1 — Analyse complète du cycle de vie TCP par dissection p
 
     it('le SYN-ACK expose ses propres options et acquitte client_isn+1', async () => {
       const lan = buildHttpLan();
-      const pending = lan.pc.executeCommand(`tcpdump -c 3 -nn -vvv tcp and port ${HTTP_PORT}`);
+      const pending = lan.pc.executeCommand(`sudo tcpdump -c 3 -nn -vvv tcp and port ${HTTP_PORT}`);
       await new Promise((r) => setTimeout(r, 20));
       lan.pc.getTcpStack().connect(SERVER_IP, HTTP_PORT);
       await new Promise((r) => setTimeout(r, 20));
@@ -159,7 +159,7 @@ describe('Scénario 1 — Analyse complète du cycle de vie TCP par dissection p
 
     it('le troisième paquet ACK finalise le handshake avec ack = server_isn+1', async () => {
       const lan = buildHttpLan();
-      const pending = lan.pc.executeCommand(`tcpdump -c 3 -nn -S -vvv tcp and port ${HTTP_PORT}`);
+      const pending = lan.pc.executeCommand(`sudo tcpdump -c 3 -nn -S -vvv tcp and port ${HTTP_PORT}`);
       await new Promise((r) => setTimeout(r, 20));
       lan.pc.getTcpStack().connect(SERVER_IP, HTTP_PORT);
       await new Promise((r) => setTimeout(r, 20));
@@ -191,7 +191,7 @@ describe('Scénario 1 — Analyse complète du cycle de vie TCP par dissection p
 
     it('le contrôle de flux fait apparaître une fenêtre (win) qui décroît puis croît sur les ACK du récepteur', async () => {
       const lan = buildHttpLan();
-      const pending = lan.pc.executeCommand(`tcpdump -c 100 -nn -vvv -S "tcp and host ${SERVER_IP} and port ${HTTP_PORT}"`);
+      const pending = lan.pc.executeCommand(`sudo tcpdump -c 100 -nn -vvv -S "tcp and host ${SERVER_IP} and port ${HTTP_PORT}"`);
       await new Promise((r) => setTimeout(r, 20));
 
       // Deux connexions distinctes (récepteur saturé, puis fenêtre par

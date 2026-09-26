@@ -139,7 +139,7 @@ export interface TraceContext {
 
 export const TCP_SCAN_REASON: Readonly<Record<TcpWireOutcome, string>> = {
   open: 'syn-ack',
-  refused: 'reset',
+  refused: 'conn-refused',
   prohibited: 'admin-prohibited',
   timeout: 'no-response',
   unreachable: 'net-unreach',
@@ -426,7 +426,8 @@ async function scanHost(
   // as -Pn or -PE are used » — donc une adresse locale que personne ne
   // porte ressort `down` sous `-Pn` aussi. `--disable-arp-ping` la
   // desarme, et `-Pn` retrouve alors son sens litteral.
-  const onLink = options.disableArpPing ? null : probes.linkDiscovery?.(resolved.ip);
+  const onLink = options.disableArpPing || !options.privileged
+    ? null : probes.linkDiscovery?.(resolved.ip);
   const identified = { ip: resolved.ip, hostname: resolved.hostname };
   const info: HostState = onLink
     ? {

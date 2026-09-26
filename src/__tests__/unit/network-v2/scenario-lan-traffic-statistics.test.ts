@@ -78,7 +78,7 @@ async function generateTraffic(pc: LinuxPC, srv: LinuxServer): Promise<void> {
 }
 
 async function captureLanStats(pc: LinuxPC, srv: LinuxServer): Promise<void> {
-  const pending = pc.executeCommand(`tcpdump -c 200 -nn -w /tmp/lan-stats.pcap`);
+  const pending = pc.executeCommand(`sudo tcpdump -c 200 -nn -w /tmp/lan-stats.pcap`);
   await new Promise((r) => setTimeout(r, 20));
   await generateTraffic(pc, srv);
   await new Promise((r) => setTimeout(r, 30));
@@ -89,10 +89,10 @@ describe('Scénario 7 — Analyse statistique de trafic LAN', () => {
   it('la génération de trafic varié et la capture globale réussissent sans erreur', async () => {
     const { pc, srv } = await buildLanLab();
     await captureLanStats(pc, srv);
-    const out = await pc.executeCommand('tcpdump -nn -r /tmp/lan-stats.pcap');
+    const out = await pc.executeCommand('sudo tcpdump -nn -r /tmp/lan-stats.pcap');
     expect(out).toMatch(/^reading from file \/tmp\/lan-stats\.pcap, link-type EN10MB \(Ethernet\)/);
     expect(out).not.toContain('packets captured');
-    expect(await pc.executeCommand('tcpdump -nn -r /tmp/lan-stats.pcap --count')).toMatch(/^[1-9]\d* packets?$/m);
+    expect(await pc.executeCommand('sudo tcpdump -nn -r /tmp/lan-stats.pcap --count')).toMatch(/^[1-9]\d* packets?$/m);
   });
 
   describe('top talkers par volume de paquets', () => {
@@ -101,7 +101,7 @@ describe('Scénario 7 — Analyse statistique de trafic LAN', () => {
       await captureLanStats(pc, srv);
 
       const report = await pc.executeCommand(
-        `tcpdump -nn -r /tmp/lan-stats.pcap 'ip' | awk '{print $3}' | cut -d. -f1-4 | sort | uniq -c | sort -rn | head -10`,
+        `sudo tcpdump -nn -r /tmp/lan-stats.pcap 'ip' | awk '{print $3}' | cut -d. -f1-4 | sort | uniq -c | sort -rn | head -10`,
       );
       expect(report).toContain(PC_IP);
     });
@@ -116,7 +116,7 @@ describe('Scénario 7 — Analyse statistique de trafic LAN', () => {
       // verbeux l'affiche, et il double alors le compte de lignes par paquet) ;
       // "Flags [" est le marqueur fiable à verbosité par défaut.
       const report = await pc.executeCommand(
-        `tcpdump -nn -r /tmp/lan-stats.pcap | ` +
+        `sudo tcpdump -nn -r /tmp/lan-stats.pcap | ` +
         `awk '{ if ($0 ~ /ICMP/) proto="ICMP"; else if ($0 ~ /ARP/) proto="ARP"; ` +
         `else if ($0 ~ /Flags \\[/) proto="TCP"; else if ($0 ~ /UDP/) proto="UDP"; else proto="AUTRE"; ` +
         `count[proto]++; total++ } END { for (p in count) printf "%s: %d paquets (%.1f%%)\\n", p, count[p], count[p]/total*100 }' | sort -t: -k2 -rn`,
@@ -137,7 +137,7 @@ describe('Scénario 7 — Analyse statistique de trafic LAN', () => {
       await captureLanStats(pc, srv);
 
       const report = await pc.executeCommand(
-        `tcpdump -nn -r /tmp/lan-stats.pcap 'tcp' | awk '{print $5}' | grep -oP '\\.\\d+:$' | ` +
+        `sudo tcpdump -nn -r /tmp/lan-stats.pcap 'tcp' | awk '{print $5}' | grep -oP '\\.\\d+:$' | ` +
         `tr -d '.:' | sort -n | uniq -c | sort -rn | head -10`,
       );
       expect(report).toMatch(new RegExp(`\\d+\\s+${TCP_PORT}\\b`));
@@ -150,7 +150,7 @@ describe('Scénario 7 — Analyse statistique de trafic LAN', () => {
       await captureLanStats(pc, srv);
 
       const report = await pc.executeCommand(
-        `tcpdump -nn -r /tmp/lan-stats.pcap | ` +
+        `sudo tcpdump -nn -r /tmp/lan-stats.pcap | ` +
         `awk '{ if (match($0, /length ([0-9]+)/, arr)) { bytes=arr[1]; ` +
         `if ($0 ~ /ICMP/) vol["ICMP"]+=bytes; else if ($0 ~ /Flags \\[/) vol["TCP"]+=bytes } } ` +
         `END { for (p in vol) printf "%s: %.1f KB\\n", p, vol[p]/1024 }'`,
@@ -172,7 +172,7 @@ describe('Scénario 7 — Analyse statistique de trafic LAN', () => {
       await captureLanStats(pc, srv);
 
       const icmpCount = await pc.executeCommand(
-        `tcpdump -nn -r /tmp/lan-stats.pcap 'icmp' | wc -l`,
+        `sudo tcpdump -nn -r /tmp/lan-stats.pcap 'icmp' | wc -l`,
       );
       // `wc -l`'s real stdout is the first line; tcpdump's own summary
       // footer (fd 2, bypasses the pipe) trails after it, exactly like a
@@ -180,7 +180,7 @@ describe('Scénario 7 — Analyse statistique de trafic LAN', () => {
       expect(Number(icmpCount.split('\n')[0].trim())).toBe(PING_COUNT * 2);
 
       const volumeReport = await pc.executeCommand(
-        `tcpdump -nn -r /tmp/lan-stats.pcap | ` +
+        `sudo tcpdump -nn -r /tmp/lan-stats.pcap | ` +
         `awk '{ if (match($0, /length ([0-9]+)/, arr)) { bytes=arr[1]; ` +
         `if ($0 ~ /Flags \\[/) vol["TCP"]+=bytes } } END { for (p in vol) printf "%s: %.1f KB\\n", p, vol[p]/1024 }'`,
       );

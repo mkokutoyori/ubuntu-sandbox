@@ -68,7 +68,7 @@ async function denyLab() {
 describe('sftp transfer crosses the wire, coherent in three views', () => {
   it('WITNESS: put lands on the server VFS, get reads it back, all three views agree', async () => {
     const { pc, srv } = await directLab();
-    await pc.executeCommand('tcpdump -i eth0 -w /tmp/s.pcap &');
+    await pc.executeCommand('sudo tcpdump -i eth0 -w /tmp/s.pcap &');
 
     const { sftp, localVfs } = await openSftpSession(pc, '10.0.0.10', 'alice', 'secret123');
     localVfs.writeFile('/payload.txt', 'payload-over-the-wire', 0, 0, 0o022);
@@ -82,7 +82,7 @@ describe('sftp transfer crosses the wire, coherent in three views', () => {
     sftp.disconnect();
 
     expect(await srv.executeCommand('journalctl -u ssh --no-pager')).toMatch(/Accepted password for alice/);
-    expect(await pc.executeCommand('tcpdump -nn -r /tmp/s.pcap')).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.10\.22: Flags \[S\]/);
+    expect(await pc.executeCommand('sudo tcpdump -nn -r /tmp/s.pcap')).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.10\.22: Flags \[S\]/);
   });
 
   it('DISCRIMINATION: a deny-ACL router blocks the transfer on the wire', async () => {

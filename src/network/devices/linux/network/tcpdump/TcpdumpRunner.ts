@@ -16,6 +16,7 @@ import { CaptureFileWriter } from './CaptureFileWriter';
 import { CaptureNamer, filterNamesFor, type CaptureNames } from './TcpdumpNames';
 
 export interface TcpdumpDeps {
+  capturePermitted: boolean;
   interfaceNames(): string[];
   interfaceExists(name: string): boolean;
   interfaceUp(name: string): boolean;
@@ -117,6 +118,10 @@ function linkTypesOf(iface: string): string[] {
 
 function listLinkTypes(iface: string, deps: TcpdumpDeps, transcript: Transcript): TcpdumpResult {
   const physical = iface !== 'any' && iface !== 'lo';
+  if (!deps.capturePermitted) {
+    transcript.err(permissionDenied(iface));
+    return transcript.result(1);
+  }
   if (physical && !deps.interfaceExists(iface)) {
     transcript.err(noSuchDevice(iface));
     return transcript.result(1);
@@ -125,6 +130,10 @@ function listLinkTypes(iface: string, deps: TcpdumpDeps, transcript: Transcript)
   for (const type of linkTypesOf(iface)) lines.push(`  ${type} (${linkTypeDescription(type)})`);
   transcript.err(lines.join('\n'));
   return transcript.result(0);
+}
+
+function permissionDenied(iface: string): string {
+  return `tcpdump: ${iface}: You don't have permission to capture on that device\n(socket: Operation not permitted)`;
 }
 
 function noSuchDevice(iface: string): string {
@@ -194,6 +203,7 @@ async function compileCaptureFilter(
 
 function activationErrorOf(opt: TcpdumpOptions, deps: TcpdumpDeps): string | null {
   const physical = opt.iface !== 'any' && opt.iface !== 'lo';
+  if (!deps.capturePermitted) return permissionDenied(opt.iface);
   if (physical && !deps.interfaceExists(opt.iface)) return noSuchDevice(opt.iface);
   if (opt.monitorMode) return `tcpdump: ${opt.iface}: That device doesn't support monitor mode`;
   if (physical && !deps.interfaceUp(opt.iface)) return `tcpdump: ${opt.iface}: That device is not up`;

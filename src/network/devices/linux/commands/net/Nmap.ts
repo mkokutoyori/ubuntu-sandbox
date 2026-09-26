@@ -13,6 +13,7 @@ export { detectServiceFromBanner };
 function scanHost(ctx: LinuxCommandContext): ScanHost {
   return {
     device: localDeviceOf(ctx),
+    privileged: ctx.executor.holdsCapability('CAP_NET_RAW'),
     readFile: (p) => ctx.executor.vfs.readFile(
       ctx.executor.vfs.normalizePath(p, ctx.executor.getCwd())),
     ping: (ip, timeoutMs) => (ip.includes(':')

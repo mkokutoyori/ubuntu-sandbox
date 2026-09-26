@@ -80,12 +80,12 @@ async function sshCapture(command = 'cat /etc/shadow'): Promise<{ capture: strin
   await server.executeCommand('useradd alice');
   await server.executeCommand(`echo "alice:${SECRET}" | chpasswd`);
   await server.executeCommand('systemctl start ssh');
-  await sniffer.executeCommand('tcpdump -i eth0 -w /tmp/ssh.pcap &');
+  await sniffer.executeCommand('sudo tcpdump -i eth0 -w /tmp/ssh.pcap &');
   const output = await client.executeCommand(
     `ssh -o StrictHostKeyChecking=no alice@10.0.0.20 "${command}"`,
     `${SECRET}\n`,
   );
-  return { capture: await sniffer.executeCommand('tcpdump -r /tmp/ssh.pcap -A'), output };
+  return { capture: await sniffer.executeCommand('sudo tcpdump -r /tmp/ssh.pcap -A'), output };
 }
 
 beforeEach(() => {
@@ -130,9 +130,9 @@ describe('une session SSH ne laisse rien de lisible sur le fil', () => {
     await server.executeCommand('useradd bob');
     await server.executeCommand('echo "bob:telnet-cleartext" | chpasswd');
     await server.executeCommand('systemctl start telnet');
-    await sniffer.executeCommand('tcpdump -i eth0 -w /tmp/telnet.pcap &');
+    await sniffer.executeCommand('sudo tcpdump -i eth0 -w /tmp/telnet.pcap &');
     await client.executeCommand('telnet 10.0.0.20', 'bob\ntelnet-cleartext\nls /etc\nexit\n');
-    const capture = await sniffer.executeCommand('tcpdump -r /tmp/telnet.pcap -A');
+    const capture = await sniffer.executeCommand('sudo tcpdump -r /tmp/telnet.pcap -A');
     expect(capture).toContain('telnet-cleartext');
   }, 30000);
 });

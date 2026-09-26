@@ -509,9 +509,22 @@ async function runHping3(ctx: LinuxCommandContext, args: readonly string[]): Pro
   const egress = egressFor(ctx, target);
   if (!egress) return `[open_sockraw] socket(): no route to ${target.toString()}`;
 
-  if (parsed.mode === 'scan') return scanMain(ctx, parsed, target);
-
   const lines: string[] = [];
+  if (parsed.verbose) {
+    const mtu = ctx.net.getPorts().get(egress.iface)?.getMTU() ?? 1500;
+    lines.push(`using ${egress.iface}, addr: ${egress.ip}, MTU: ${mtu}`);
+  }
+  if (!ctx.executor.holdsCapability('CAP_NET_RAW')) {
+    lines.push('[open_sockraw] socket(): Operation not permitted', "[main] can't open raw socket");
+    return lines.join('\n');
+  }
+
+  if (parsed.mode === 'scan') {
+    lines.push(`Scanning ${parsed.target} (${target.toString()}), port ${parsed.scanPorts ?? ''}`);
+    lines.push(scanMain(ctx, parsed, target));
+    return lines.join('\n');
+  }
+
   lines.push(`HPING ${parsed.target} (${egress.iface} ${target.toString()}): `
     + `${setFlagsLabel(parsed)} set, ${headerBytes(parsed.mode)} headers + ${parsed.dataSize} data bytes`);
   if (parsed.flood) lines.push('hping in flood mode, no replies will be shown');

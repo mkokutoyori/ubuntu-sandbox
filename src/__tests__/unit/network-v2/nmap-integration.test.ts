@@ -116,14 +116,14 @@ describe('nmap — intégration sur topologie réelle', () => {
   // par `--disable-arp-ping`, qui rend a l'option son sens litteral.
   it('-Pn ne dispense pas de l ARP sur le segment local', async () => {
     const lab = await buildLab();
-    const out = await lab.attacker.executeCommand(`nmap -Pn -p 1521 192.168.50.200`);
+    const out = await lab.attacker.executeCommand(`sudo nmap -Pn -p 1521 192.168.50.200`);
     expect(out).toMatch(/Host seems down/);
   });
 
   it('--disable-arp-ping rend a -Pn son sens litteral', async () => {
     const lab = await buildLab();
     const out = await lab.attacker.executeCommand(
-      'nmap -Pn --disable-arp-ping -p 1521 192.168.50.200');
+      'sudo nmap -Pn --disable-arp-ping -p 1521 192.168.50.200');
     expect(out).toMatch(/1521\/tcp\s+(filtered|closed)/);
   });
 

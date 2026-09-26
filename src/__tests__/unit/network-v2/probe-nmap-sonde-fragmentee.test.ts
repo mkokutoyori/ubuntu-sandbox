@@ -112,7 +112,7 @@ describe('la sonde se decoupe et la cible la recolle', () => {
     const { scanner } = await segment();
 
     const sortie = await taper(scanner,
-      'nmap -Pn -sS --packet-trace -p 22 10.0.0.2');
+      'sudo nmap -Pn -sS --packet-trace -p 22 10.0.0.2');
 
     expect(envoisDeLaSonde(sortie)).toHaveLength(1);
     expect(etatDuPort(sortie, 22)).toBe('open');
@@ -121,7 +121,7 @@ describe('la sonde se decoupe et la cible la recolle', () => {
   it('-f decoupe les vingt octets du SYN en trois fragments', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS -f --packet-trace -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS -f --packet-trace -p 22 10.0.0.2');
 
     expect(sortie).not.toContain('not implemented');
     expect(envoisDeLaSonde(sortie)).toHaveLength(3);
@@ -131,7 +131,7 @@ describe('la sonde se decoupe et la cible la recolle', () => {
   it('les fragments portent leur decalage et le drapeau MF, sauf le dernier', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS -f --packet-trace -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS -f --packet-trace -p 22 10.0.0.2');
     const lignes = envoisDeLaSonde(sortie);
 
     expect(lignes[0]).toContain('frag offset=0+');
@@ -143,7 +143,7 @@ describe('la sonde se decoupe et la cible la recolle', () => {
   it('-ff decoupe plus large : deux fragments de seize et quatre', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS -ff --packet-trace -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS -ff --packet-trace -p 22 10.0.0.2');
 
     expect(envoisDeLaSonde(sortie)).toHaveLength(2);
     expect(envoisDeLaSonde(sortie)[1]).toContain('frag offset=16');
@@ -153,7 +153,7 @@ describe('la sonde se decoupe et la cible la recolle', () => {
     const { scanner } = await segment();
 
     const sortie = await taper(scanner,
-      'nmap -Pn -sS --mtu 8 --packet-trace -p 22 10.0.0.2');
+      'sudo nmap -Pn -sS --mtu 8 --packet-trace -p 22 10.0.0.2');
 
     expect(envoisDeLaSonde(sortie)).toHaveLength(3);
   });
@@ -164,7 +164,7 @@ describe('la cible voit passer des fragments, pas un segment', () => {
     const { scanner, cible } = await segment();
 
     await taper(cible, 'tcpdump -nn -i eth0 -w frag.pcap &');
-    await taper(scanner, 'nmap -Pn -sS -f -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -sS -f -p 22 10.0.0.2');
     const capture = await taper(cible, 'tcpdump -r frag.pcap -nn -v');
 
     // Les trois fragments d'une meme sonde partagent son identifiant.
@@ -188,7 +188,7 @@ describe('ce que la commande refuse et ce dont elle avertit', () => {
   it('une MTU qui n est pas un multiple de 8 est refusee', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS --mtu 10 -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS --mtu 10 -p 22 10.0.0.2');
 
     expect(sortie).toContain('Data payload MTU must be >0 and multiple of 8');
     expect(sortie).not.toContain('Nmap scan report');
@@ -197,7 +197,7 @@ describe('ce que la commande refuse et ce dont elle avertit', () => {
   it('une MTU nulle est refusee', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS --mtu 0 -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS --mtu 0 -p 22 10.0.0.2');
 
     expect(sortie).toContain('Data payload MTU must be >0 and multiple of 8');
   });
@@ -206,7 +206,7 @@ describe('ce que la commande refuse et ce dont elle avertit', () => {
     const { scanner } = await segment();
 
     const sortie = await taper(scanner,
-      'nmap -Pn -sS --mtu 24 --packet-trace -p 22 10.0.0.2');
+      'sudo nmap -Pn -sS --mtu 24 --packet-trace -p 22 10.0.0.2');
 
     expect(sortie).toContain(
       'Warning: fragmentation (mtu=24) requested but the payload is too small already (20)');
@@ -217,7 +217,7 @@ describe('ce que la commande refuse et ce dont elle avertit', () => {
   it('un balayage CONNECTE avertit et ne decoupe rien', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sT -f -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sT -f -p 22 10.0.0.2');
 
     expect(sortie).toContain(
       'You have specified some options that require raw socket access.');

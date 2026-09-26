@@ -109,7 +109,7 @@ describe('un octet se decrit par une plage, une liste ou un joker', () => {
   it('une plage couvre ses deux bornes incluses', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn 10.0.0.1-3');
+    const sortie = await taper(scanner, 'sudo nmap -sn 10.0.0.1-3');
 
     expect(sortie).not.toContain('Failed to resolve');
     expect(adressesBalayees(sortie)).toBe(3);
@@ -119,7 +119,7 @@ describe('un octet se decrit par une plage, une liste ou un joker', () => {
   it('une liste enumere, et l ordre reste croissant', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn 10.0.0.3,1,2');
+    const sortie = await taper(scanner, 'sudo nmap -sn 10.0.0.3,1,2');
 
     expect(adressesBalayees(sortie)).toBe(3);
     expect(cibles(sortie)).toEqual(['10.0.0.2', '10.0.0.3']);
@@ -128,7 +128,7 @@ describe('un octet se decrit par une plage, une liste ou un joker', () => {
   it('un joker vaut 0-255', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn 10.0.0.*');
+    const sortie = await taper(scanner, 'sudo nmap -sn 10.0.0.*');
 
     expect(adressesBalayees(sortie)).toBe(256);
     expect(cibles(sortie)).toEqual(['10.0.0.2', '10.0.0.3']);
@@ -137,14 +137,14 @@ describe('un octet se decrit par une plage, une liste ou un joker', () => {
   it('une borne gauche absente vaut 0, une borne droite absente vaut 255', async () => {
     const { scanner } = await segment();
 
-    expect(adressesBalayees(await taper(scanner, 'nmap -sn 10.0.0.-3'))).toBe(4);
-    expect(adressesBalayees(await taper(scanner, 'nmap -sn 10.0.0.253-'))).toBe(3);
+    expect(adressesBalayees(await taper(scanner, 'sudo nmap -sn 10.0.0.-3'))).toBe(4);
+    expect(adressesBalayees(await taper(scanner, 'sudo nmap -sn 10.0.0.253-'))).toBe(3);
   });
 
   it('la plage n est pas reservee au dernier octet', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn 10.0.0-1.2');
+    const sortie = await taper(scanner, 'sudo nmap -sn 10.0.0-1.2');
 
     expect(adressesBalayees(sortie)).toBe(2);
     expect(cibles(sortie)).toEqual(['10.0.0.2']);
@@ -153,7 +153,7 @@ describe('un octet se decrit par une plage, une liste ou un joker', () => {
   it('un masque ELARGIT la plage au lieu de la restreindre', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn 10.0.0.1-3/24');
+    const sortie = await taper(scanner, 'sudo nmap -sn 10.0.0.1-3/24');
 
     expect(adressesBalayees(sortie)).toBe(256);
   });
@@ -161,7 +161,7 @@ describe('un octet se decrit par une plage, une liste ou un joker', () => {
   it('une borne hors bornes retombe sur la resolution de nom, qui echoue', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn 10.0.0.1-999');
+    const sortie = await taper(scanner, 'sudo nmap -sn 10.0.0.1-999');
 
     expect(sortie).toContain('Failed to resolve "10.0.0.1-999".');
     expect(adressesBalayees(sortie)).toBe(0);
@@ -170,7 +170,7 @@ describe('un octet se decrit par une plage, une liste ou un joker', () => {
   it('une plage a l envers est refusee de la meme facon', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn 10.0.0.9-2');
+    const sortie = await taper(scanner, 'sudo nmap -sn 10.0.0.9-2');
 
     expect(sortie).toContain('Failed to resolve "10.0.0.9-2".');
   });
@@ -183,7 +183,7 @@ describe('les cibles peuvent venir d un fichier', () => {
       'echo "10.0.0.2 10.0.0.3" > cibles.txt',
       'echo "# 10.0.0.9 un commentaire" >> cibles.txt');
 
-    const sortie = await taper(scanner, 'nmap -sn -iL cibles.txt');
+    const sortie = await taper(scanner, 'sudo nmap -sn -iL cibles.txt');
 
     expect(sortie).not.toContain('not implemented');
     expect(adressesBalayees(sortie)).toBe(2);
@@ -194,7 +194,7 @@ describe('les cibles peuvent venir d un fichier', () => {
     const { scanner } = await segment();
     await taper(scanner, 'echo "10.0.0.3" > cibles.txt');
 
-    const sortie = await taper(scanner, 'nmap -sn -iL cibles.txt 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -sn -iL cibles.txt 10.0.0.2');
 
     expect(adressesBalayees(sortie)).toBe(2);
     expect(cibles(sortie)).toEqual(['10.0.0.2', '10.0.0.3']);
@@ -204,7 +204,7 @@ describe('les cibles peuvent venir d un fichier', () => {
     const { scanner } = await segment();
     await taper(scanner, 'echo "10.0.0.2" > cibles.txt');
 
-    const sortie = await taper(scanner, 'nmap -sn -iL cibles.txt -iL cibles.txt');
+    const sortie = await taper(scanner, 'sudo nmap -sn -iL cibles.txt -iL cibles.txt');
 
     expect(sortie).toContain('Only one input filename allowed');
     expect(sortie).not.toContain('Nmap scan report');
@@ -213,7 +213,7 @@ describe('les cibles peuvent venir d un fichier', () => {
   it('un fichier illisible est un refus qui le nomme', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn -iL /absent.txt');
+    const sortie = await taper(scanner, 'sudo nmap -sn -iL /absent.txt');
 
     expect(sortie).toContain('Failed to open input file /absent.txt for reading');
     expect(sortie).not.toContain('Nmap scan report');
@@ -224,7 +224,7 @@ describe('une cible peut etre RETIREE', () => {
   it('--exclude retire une adresse de la plage', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn --exclude 10.0.0.3 10.0.0.1-3');
+    const sortie = await taper(scanner, 'sudo nmap -sn --exclude 10.0.0.3 10.0.0.1-3');
 
     expect(sortie).not.toContain('not implemented');
     expect(adressesBalayees(sortie)).toBe(2);
@@ -234,7 +234,7 @@ describe('une cible peut etre RETIREE', () => {
   it('--exclude accepte la meme grammaire que la cible', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn --exclude 10.0.0.2-3 10.0.0.*');
+    const sortie = await taper(scanner, 'sudo nmap -sn --exclude 10.0.0.2-3 10.0.0.*');
 
     expect(adressesBalayees(sortie)).toBe(254);
     expect(cibles(sortie)).toEqual([]);
@@ -243,7 +243,7 @@ describe('une cible peut etre RETIREE', () => {
   it('--exclude decoupe sur les virgules AVANT d analyser, verrue comprise', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn --exclude 10.0.0.2,3 10.0.0.1-3');
+    const sortie = await taper(scanner, 'sudo nmap -sn --exclude 10.0.0.2,3 10.0.0.1-3');
 
     expect(sortie).toContain('Invalid address specification: 3');
     expect(sortie).not.toContain('Nmap scan report');
@@ -253,7 +253,7 @@ describe('une cible peut etre RETIREE', () => {
     const { scanner } = await segment();
     await taper(scanner, 'echo "10.0.0.2 # le serveur A" > horsjeu.txt');
 
-    const sortie = await taper(scanner, 'nmap -sn --excludefile horsjeu.txt 10.0.0.1-3');
+    const sortie = await taper(scanner, 'sudo nmap -sn --excludefile horsjeu.txt 10.0.0.1-3');
 
     expect(adressesBalayees(sortie)).toBe(2);
     expect(cibles(sortie)).toEqual(['10.0.0.3']);
@@ -264,7 +264,7 @@ describe('-iR tire des adresses au hasard', () => {
   it('il en tire le nombre demande, et aucune n est reservee', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn -iR 3');
+    const sortie = await taper(scanner, 'sudo nmap -sn -iR 3');
 
     expect(sortie).not.toContain('not implemented');
     expect(adressesBalayees(sortie)).toBe(3);
@@ -275,7 +275,7 @@ describe('-iR tire des adresses au hasard', () => {
   it('un nombre qui n en est pas un est un refus', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn -iR zorglub');
+    const sortie = await taper(scanner, 'sudo nmap -sn -iR zorglub');
 
     expect(sortie).toContain('ERROR: -iR argument must be the maximum number'
       + ' of random IPs you wish to scan');
@@ -287,7 +287,7 @@ describe('TEMOINS', () => {
   it('une cible unique reste une cible unique', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -sn 10.0.0.2');
 
     expect(adressesBalayees(sortie)).toBe(1);
     expect(cibles(sortie)).toEqual(['10.0.0.2']);
@@ -296,7 +296,7 @@ describe('TEMOINS', () => {
   it('un /29 s etend comme avant', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -sn 10.0.0.0/29');
+    const sortie = await taper(scanner, 'sudo nmap -sn 10.0.0.0/29');
 
     expect(adressesBalayees(sortie)).toBe(8);
     expect(cibles(sortie)).toEqual(['10.0.0.2', '10.0.0.3']);

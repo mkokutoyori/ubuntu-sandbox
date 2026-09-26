@@ -75,7 +75,7 @@ describe('le balayage ACK mesure le FILTRAGE', () => {
     const { scanner, cible } = await segment();
     await taper(cible, 'sudo systemctl start ssh');
 
-    const sortie = await taper(scanner, 'nmap -Pn -sA -p 22,8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sA -p 22,8888 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+unfiltered/);
     expect(sortie).toMatch(/8888\/tcp\s+unfiltered/);
@@ -86,7 +86,7 @@ describe('le balayage ACK mesure le FILTRAGE', () => {
     const { scanner, cible } = await segment();
     await taper(cible, 'sudo tcpdump -i eth0 -w /tmp/ack.pcap &');
 
-    await taper(scanner, 'nmap -Pn -sA -p 4242 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -sA -p 4242 10.0.0.2');
 
     const vu = await taper(cible, 'sudo tcpdump -r /tmp/ack.pcap -nn');
     expect(vu).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.2\.4242: Flags \[\.\]/);
@@ -97,7 +97,7 @@ describe('le balayage ACK mesure le FILTRAGE', () => {
     const { scanner, cible } = await segment();
     await taper(cible, 'sudo iptables -A INPUT -p tcp -j DROP');
 
-    const sortie = await taper(scanner, 'nmap -Pn -sA -p 4242 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sA -p 4242 10.0.0.2');
 
     expect(sortie).toMatch(/4242\/tcp\s+filtered/);
   });
@@ -105,7 +105,7 @@ describe('le balayage ACK mesure le FILTRAGE', () => {
   it('une adresse sans route est `filtered`, aucun segment n etant emis', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sA -p 22 203.0.113.7');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sA -p 22 203.0.113.7');
 
     expect(sortie).toMatch(/22\/tcp\s+filtered/);
   });
@@ -114,7 +114,7 @@ describe('le balayage ACK mesure le FILTRAGE', () => {
     const { scanner, cible } = await segment();
     await taper(cible, 'sudo systemctl start ssh');
 
-    const sortie = await taper(scanner, 'nmap -Pn -p 22,8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -p 22,8888 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+open/);
     expect(sortie).toMatch(/8888\/tcp\s+closed/);

@@ -78,7 +78,7 @@ beforeEach(() => {
 });
 
 async function captureDns(pc: LinuxPC, filter: string, stimulus: () => Promise<unknown>): Promise<string> {
-  const pending = pc.executeCommand(`tcpdump -nn -vvv ${filter}`);
+  const pending = pc.executeCommand(`sudo tcpdump -nn -vvv ${filter}`);
   await new Promise((r) => setTimeout(r, 20));
   await stimulus();
   await new Promise((r) => setTimeout(r, 30));
@@ -89,7 +89,7 @@ describe('Scénario 2 — Capture et décodage du trafic DNS', () => {
   it('la commande de capture DNS (port 53 UDP/TCP) réussit sans erreur, avec écriture pcap', async () => {
     const { pc } = await buildDnsLab();
     const output = await pc.executeCommand(
-      `tcpdump -i eth0 -nn -vvv 'port 53 or (tcp and port 53)' -w /tmp/dns-capture.pcap`,
+      `sudo tcpdump -i eth0 -nn -vvv 'port 53 or (tcp and port 53)' -w /tmp/dns-capture.pcap`,
     );
     expect(output).not.toMatch(/tcpdump: error/);
     expect(output).toContain('packets captured');

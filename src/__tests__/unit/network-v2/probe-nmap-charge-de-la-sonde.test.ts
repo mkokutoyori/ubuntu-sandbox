@@ -81,7 +81,7 @@ async function captureDuBalayage(
   const { scanner, cible } = await segment();
   const filtre = options.filtre ?? 'tcp port 22';
   await taper(cible, `tcpdump -nn -i eth0 ${filtre} -w charge.pcap &`);
-  const rapport = await taper(scanner, commande);
+  const rapport = await taper(scanner, `sudo ${commande}`);
   const capture = await taper(cible,
     `tcpdump -r charge.pcap -nn ${options.lecture ?? ''}`);
   return { capture, rapport };
@@ -106,7 +106,7 @@ describe('--data-length pose des octets aleatoires', () => {
   it('une longueur hors bornes est un refus', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS --data-length 70000 -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS --data-length 70000 -p 22 10.0.0.2');
 
     expect(sortie).toContain('data-length must be between 0 and 65435');
     expect(sortie).not.toContain('Nmap scan report');
@@ -115,7 +115,7 @@ describe('--data-length pose des octets aleatoires', () => {
   it('au-dela de 1400 c est un avertissement, pas un refus', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS --data-length 1500 -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS --data-length 1500 -p 22 10.0.0.2');
 
     expect(sortie).toContain(
       'WARNING: Payloads bigger than 1400 bytes may not be sent successfully.');
@@ -152,7 +152,7 @@ describe('--data pose des octets donnes en hexadecimal', () => {
   it('un nombre impair de chiffres est un refus', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS --data 0xABC -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS --data 0xABC -p 22 10.0.0.2');
 
     expect(sortie).toContain('Invalid hex string specified');
     expect(sortie).not.toContain('Nmap scan report');
@@ -161,7 +161,7 @@ describe('--data pose des octets donnes en hexadecimal', () => {
   it('un caractere qui n est pas hexadecimal est un refus', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS --data zorglub -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS --data zorglub -p 22 10.0.0.2');
 
     expect(sortie).toContain('Invalid hex string specified');
   });
@@ -172,7 +172,7 @@ describe('les trois options ne se cumulent pas', () => {
     const { scanner } = await segment();
 
     const sortie = await taper(scanner,
-      'nmap -Pn -sS --data-length 10 --data-string SALUT -p 22 10.0.0.2');
+      'sudo nmap -Pn -sS --data-length 10 --data-string SALUT -p 22 10.0.0.2');
 
     expect(sortie).toContain(
       "Can't use the --data option(s) multiple times, or together.");
@@ -183,7 +183,7 @@ describe('les trois options ne se cumulent pas', () => {
     const { scanner } = await segment();
 
     const sortie = await taper(scanner,
-      'nmap -Pn -sS --data-length 10 --data-length 20 -p 22 10.0.0.2');
+      'sudo nmap -Pn -sS --data-length 10 --data-length 20 -p 22 10.0.0.2');
 
     expect(sortie).toContain(
       "Can't use the --data option(s) multiple times, or together.");

@@ -88,8 +88,8 @@ async function captureOn(pc: LinuxPC, cmd: string, stimulus: () => Promise<unkno
 describe('Scénario 4 — Détection de scan de ports par analyse des flags TCP', () => {
   it('les commandes de capture SYN et RST réussissent sans erreur, avec écriture pcap', async () => {
     const { observer } = buildScanLab();
-    const synOut = await observer.executeCommand(`tcpdump -i eth0 -nn -S 'tcp[tcpflags] == tcp-syn' -w /tmp/syn-capture.pcap`);
-    const rstOut = await observer.executeCommand(`tcpdump -i eth0 -nn 'tcp[tcpflags] & tcp-rst != 0' -w /tmp/rst-capture.pcap`);
+    const synOut = await observer.executeCommand(`sudo tcpdump -i eth0 -nn -S 'tcp[tcpflags] == tcp-syn' -w /tmp/syn-capture.pcap`);
+    const rstOut = await observer.executeCommand(`sudo tcpdump -i eth0 -nn 'tcp[tcpflags] & tcp-rst != 0' -w /tmp/rst-capture.pcap`);
     expect(synOut).not.toMatch(/tcpdump: error/);
     expect(rstOut).not.toMatch(/tcpdump: error/);
   });
@@ -99,14 +99,14 @@ describe('Scénario 4 — Détection de scan de ports par analyse des flags TCP'
       const { attacker, observer } = buildScanLab();
       const ports = [21, 22, 23, 25, 80, 443, 3306];
 
-      const pending = observer.executeCommand(`tcpdump -c 50 -nn 'tcp[tcpflags] == tcp-syn' -w /tmp/syn-capture.pcap`);
+      const pending = observer.executeCommand(`sudo tcpdump -c 50 -nn 'tcp[tcpflags] == tcp-syn' -w /tmp/syn-capture.pcap`);
       await new Promise((r) => setTimeout(r, 20));
       await Promise.all(ports.map((p) => attacker.executeCommand(`nc -z -w 1 ${TARGET_IP} ${p}`).catch(() => {})));
       await new Promise((r) => setTimeout(r, 30));
       await pending;
 
       const report = await observer.executeCommand(
-        `tcpdump -nn -r /tmp/syn-capture.pcap | awk '{print $3}' | cut -d. -f1-4 | sort | uniq -c | sort -rn`,
+        `sudo tcpdump -nn -r /tmp/syn-capture.pcap | awk '{print $3}' | cut -d. -f1-4 | sort | uniq -c | sort -rn`,
       );
 
       expect(report).toMatch(new RegExp(`${ports.length}\\s+${ATTACKER_IP.replace(/\./g, '\\.')}`));
@@ -116,14 +116,14 @@ describe('Scénario 4 — Détection de scan de ports par analyse des flags TCP'
       const { attacker, observer } = buildScanLab();
       const ports = [21, 22, 23, 25, 80, 443, 3306];
 
-      const pending = observer.executeCommand(`tcpdump -c 50 -nn 'tcp[tcpflags] == tcp-syn' -w /tmp/syn-capture.pcap`);
+      const pending = observer.executeCommand(`sudo tcpdump -c 50 -nn 'tcp[tcpflags] == tcp-syn' -w /tmp/syn-capture.pcap`);
       await new Promise((r) => setTimeout(r, 20));
       await Promise.all(ports.map((p) => attacker.executeCommand(`nc -z -w 1 ${TARGET_IP} ${p}`).catch(() => {})));
       await new Promise((r) => setTimeout(r, 30));
       await pending;
 
       const portList = await observer.executeCommand(
-        `tcpdump -nn -r /tmp/syn-capture.pcap | grep -oP '\\.\\d+:' | tr -d '.:' | sort -n | uniq`,
+        `sudo tcpdump -nn -r /tmp/syn-capture.pcap | grep -oP '\\.\\d+:' | tr -d '.:' | sort -n | uniq`,
       );
       const seen = portList.split('\n').map(Number).filter((n) => !Number.isNaN(n));
       for (const p of ports) expect(seen).toContain(p);
@@ -135,14 +135,14 @@ describe('Scénario 4 — Détection de scan de ports par analyse des flags TCP'
       // only 21/23/25 have no service modeled and are genuinely closed.
       const closedPorts = [21, 23, 25];
 
-      const pending = observer.executeCommand(`tcpdump -c 50 -nn 'tcp[tcpflags] & tcp-rst != 0' -w /tmp/rst-capture.pcap`);
+      const pending = observer.executeCommand(`sudo tcpdump -c 50 -nn 'tcp[tcpflags] & tcp-rst != 0' -w /tmp/rst-capture.pcap`);
       await new Promise((r) => setTimeout(r, 20));
       await Promise.all([...closedPorts, 80].map((p) => attacker.executeCommand(`nc -z -w 1 ${TARGET_IP} ${p}`).catch(() => {})));
       await new Promise((r) => setTimeout(r, 30));
       await pending;
 
       const rstCount = await observer.executeCommand(
-        `tcpdump -nn -r /tmp/rst-capture.pcap | awk '{print $3}' | grep -oP '\\.\\d+$' | tr -d '.' | sort -n | uniq -c`,
+        `sudo tcpdump -nn -r /tmp/rst-capture.pcap | awk '{print $3}' | grep -oP '\\.\\d+$' | tr -d '.' | sort -n | uniq -c`,
       );
       for (const p of closedPorts) expect(rstCount).toMatch(new RegExp(`1 ${p}\\b`));
       expect(rstCount).not.toMatch(/\b80\b/);
@@ -152,7 +152,7 @@ describe('Scénario 4 — Détection de scan de ports par analyse des flags TCP'
   describe('détection de flags TCP anormaux', () => {
     it('NULL scan : tcp[tcpflags] == 0 capture le segment sans aucun flag, sans faux positif sur le trafic légitime', async () => {
       const { attacker, target, observer } = buildScanLab();
-      const dump = await captureOn(observer, `tcpdump -nn 'tcp[tcpflags] == 0'`, async () => {
+      const dump = await captureOn(observer, `sudo tcpdump -nn 'tcp[tcpflags] == 0'`, async () => {
         sendCraftedSegment(attacker, target, 9999, {});
         await attacker.executeCommand(`nc -z -w 1 ${TARGET_IP} 80`).catch(() => {});
       });
@@ -163,7 +163,7 @@ describe('Scénario 4 — Détection de scan de ports par analyse des flags TCP'
 
     it('XMAS scan : tcp[tcpflags] == (tcp-fin|tcp-push|tcp-urg) isole exactement FIN+PSH+URG', async () => {
       const { attacker, target, observer } = buildScanLab();
-      const dump = await captureOn(observer, `tcpdump -nn -c 5 'tcp[tcpflags] == (tcp-fin|tcp-push|tcp-urg)'`, async () => {
+      const dump = await captureOn(observer, `sudo tcpdump -nn -c 5 'tcp[tcpflags] == (tcp-fin|tcp-push|tcp-urg)'`, async () => {
         sendCraftedSegment(attacker, target, 9999, { fin: true, psh: true, urg: true });
         sendCraftedSegment(attacker, target, 9998, { fin: true });
         await attacker.executeCommand(`nc -z -w 1 ${TARGET_IP} 80`).catch(() => {});
@@ -177,7 +177,7 @@ describe('Scénario 4 — Détection de scan de ports par analyse des flags TCP'
 
     it('FIN scan : tcp[tcpflags] == tcp-fin isole exactement FIN seul, sans PSH ni URG', async () => {
       const { attacker, target, observer } = buildScanLab();
-      const dump = await captureOn(observer, `tcpdump -nn -c 5 'tcp[tcpflags] == tcp-fin'`, async () => {
+      const dump = await captureOn(observer, `sudo tcpdump -nn -c 5 'tcp[tcpflags] == tcp-fin'`, async () => {
         sendCraftedSegment(attacker, target, 9998, { fin: true });
         sendCraftedSegment(attacker, target, 9999, { fin: true, psh: true, urg: true });
         await attacker.executeCommand(`nc -z -w 1 ${TARGET_IP} 80`).catch(() => {});
@@ -194,19 +194,19 @@ describe('Scénario 4 — Détection de scan de ports par analyse des flags TCP'
       const { attacker, target, observer } = buildScanLab();
       const ports = [21, 22, 23, 25, 80];
 
-      const pending = observer.executeCommand(`tcpdump -c 50 -nn 'tcp[tcpflags] == tcp-syn' -w /tmp/syn-capture.pcap`);
+      const pending = observer.executeCommand(`sudo tcpdump -c 50 -nn 'tcp[tcpflags] == tcp-syn' -w /tmp/syn-capture.pcap`);
       await new Promise((r) => setTimeout(r, 20));
       await Promise.all(ports.map((p) => attacker.executeCommand(`nc -z -w 1 ${TARGET_IP} ${p}`).catch(() => {})));
       await new Promise((r) => setTimeout(r, 30));
       await pending;
 
       const topTalkers = await observer.executeCommand(
-        `tcpdump -nn -r /tmp/syn-capture.pcap | awk '{print $3}' | cut -d. -f1-4 | sort | uniq -c | sort -rn | head -1`,
+        `sudo tcpdump -nn -r /tmp/syn-capture.pcap | awk '{print $3}' | cut -d. -f1-4 | sort | uniq -c | sort -rn | head -1`,
       );
       expect(topTalkers).toContain(ATTACKER_IP);
       expect(topTalkers.trim().startsWith(String(ports.length))).toBe(true);
 
-      const nullDump = await captureOn(observer, `tcpdump -nn 'tcp[tcpflags] == 0'`, async () => {
+      const nullDump = await captureOn(observer, `sudo tcpdump -nn 'tcp[tcpflags] == 0'`, async () => {
         await attacker.executeCommand(`nc -z -w 1 ${TARGET_IP} 80`).catch(() => {});
       });
       expect(nullDump.split('\n').some((l) => l.includes('Flags ['))).toBe(false);
