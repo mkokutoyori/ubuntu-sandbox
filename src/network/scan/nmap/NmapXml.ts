@@ -67,20 +67,6 @@ function addressType(ip: string): 'ipv4' | 'ipv6' {
 }
 
 /**
- * `adjust_timeouts2` (`timing.cc:120`) sur un PREMIER echantillon :
- * `srtt` est l'aller-retour mesure, `rttvar` le meme borne a
- * [5 ms, 2 s], et le delai `srtt + 4 * rttvar` borne a
- * [`MIN_RTT_TIMEOUT`, `MAX_RTT_TIMEOUT`], soit [100 ms, 10 s]
- * (`nmap.h:187`). Les trois sont en MICROSECONDES.
- */
-function timesOf(latencyMs: number): { srtt: number; rttvar: number; to: number } {
-  const srtt = Math.round(latencyMs * 1000);
-  const rttvar = Math.min(2000000, Math.max(5000, srtt));
-  const to = Math.min(10000000, Math.max(100000, srtt + rttvar * 4));
-  return { srtt, rttvar, to };
-}
-
-/**
  * `print_xml_service` (`output.cc:178`). `method` distingue la table des
  * services de la SONDE qui a lu une banniere, et `conf` est la confiance
  * que `nmap` accorde au nom : 3 pour une deduction de table, 10 pour un
@@ -212,8 +198,8 @@ function hostSection(
     lines.push(...portsSection(host, options));
     lines.push(...osSection(host));
     lines.push(...traceSection(host));
-    const { srtt, rttvar, to } = timesOf(host.latencyMs);
-    lines.push(emptyTag('times', [['srtt', srtt], ['rttvar', rttvar], ['to', to]]));
+    const { srtt, rttvar, timeout } = host.times;
+    lines.push(emptyTag('times', [['srtt', srtt], ['rttvar', rttvar], ['to', timeout]]));
   }
   lines.push('</host>');
   return lines;

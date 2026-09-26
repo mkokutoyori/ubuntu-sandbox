@@ -2,6 +2,7 @@ import { NMAP_BANNER, NMAP_VERSION, type NmapOptions } from './NmapOptions';
 import type { HostReport, NmapReport, PortResult } from './ScanEngine';
 import { renderPhase } from './ScanPhases';
 import { renderTrace } from './Traceroute';
+import { isMeasured } from './TimeoutInfo';
 
 /**
  * `num_to_string_sigdigits` (`output.cc:1362`) : arrondir a la puissance
@@ -30,10 +31,6 @@ export const CTIME_FORMAT = '%a %b %e %H:%M:%S %Y';
 const BANNER_TIME_FORMAT = '%Y-%m-%d %H:%M %Z';
 const HOST_SEEMS_DOWN = 'Note: Host seems down. If it is really up, but blocking our ping probes, try -Pn';
 
-/** Le compteur d'aller-retour est en millisecondes, la sortie en secondes. */
-function latencyText(latencyMs: number): string {
-  return numToStringSigdigits(latencyMs / 1000, 2);
-}
 
 /**
  * `Target::NameIP` (Target.cc:364) : le nom TAPE par l'operateur
@@ -113,7 +110,9 @@ function renderHost(host: HostReport, options: NmapOptions): string[] {
   const received = options.showReason && host.discoveryReason
     ? `, received ${host.discoveryReason}` : '';
   const ttl = options.showReason && host.replyTtl ? ` ttl ${host.replyTtl}` : '';
-  lines.push(`Host is up${received}${ttl} (${latencyText(host.latencyMs)}s latency).`);
+  const latency = isMeasured(host.times)
+    ? ` (${numToStringSigdigits(host.times.srtt / 1_000_000, 2)}s latency)` : '';
+  lines.push(`Host is up${received}${ttl}${latency}.`);
   const notShown = notShownLine(host);
   if (notShown) lines.push(notShown);
   lines.push(...renderTable(host, options));

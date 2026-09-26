@@ -101,6 +101,23 @@ export function directlyConnectedOf(device: Equipment | null, ip: string): boole
   return target !== null && resolver.isDirectlyConnected(target);
 }
 
+interface LocalAddressOwner {
+  isLocalAddress(ip: IPAddress): boolean;
+  isLocalAddress6(ip: IPv6Address): boolean;
+}
+
+export function routesViaLoopbackOf(device: Equipment | null, ip: string): boolean {
+  const owner = device as unknown as Partial<LocalAddressOwner> | null;
+  if (!owner || typeof owner.isLocalAddress !== 'function' || typeof owner.isLocalAddress6 !== 'function') {
+    return false;
+  }
+  if (ip.includes(':')) {
+    try { return owner.isLocalAddress6(new IPv6Address(ip)); } catch { return false; }
+  }
+  const target = IPAddress.tryParse(ip);
+  return target !== null && owner.isLocalAddress(target);
+}
+
 /**
  * Ce que `arpping()` demande a la machine, ecrit une fois pour les deux
  * plateformes : `nmap` n'est pas une commande Linux, et un voisin se
@@ -419,6 +436,9 @@ export function buildScanProbes(
     },
     directlyConnected(ip: string) {
       return directlyConnectedOf(host.device, ip);
+    },
+    routesViaLoopback(ip: string) {
+      return routesViaLoopbackOf(host.device, ip);
     },
     observeWire(sink) {
       const device = host.device;

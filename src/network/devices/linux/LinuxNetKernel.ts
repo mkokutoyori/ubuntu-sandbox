@@ -161,6 +161,8 @@ export interface LinuxNetKernel {
 
   canTraceTo(target: IPAddress, socket: TraceSocketOptions): boolean;
 
+  isLocalAddress(ip: IPAddress): boolean;
+
   /** Emit a single locally-originated UDP probe (for UDP-mode traceroute and the like). */
   sendUdpProbe(
     target: IPAddress, destinationPort: number, sourcePort: number,
