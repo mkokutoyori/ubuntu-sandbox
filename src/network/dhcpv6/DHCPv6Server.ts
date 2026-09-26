@@ -25,6 +25,9 @@ export class DHCPv6Server {
   private bindings: Map<string, DHCPv6Binding> = new Map();
   /** Address reserved between SOLICIT and REQUEST (RFC 8415 §18.3.1). */
   private pendingOffers: Map<string, { clientDuid: string; iaid: number; poolName: string }> = new Map();
+  private clock: () => number = () => Date.now();
+
+  setClock(clock: () => number): void { this.clock = clock; }
 
   enable(): void { this.enabled = true; }
   disable(): void { this.enabled = false; }
@@ -191,7 +194,7 @@ export class DHCPv6Server {
         || (alreadyBound && alreadyBound.address === params.requestedAddress);
       if (!owned) continue;
       this.pendingOffers.delete(params.requestedAddress);
-      const now = Date.now();
+      const now = this.clock();
       this.bindings.set(params.requestedAddress, {
         clientDuid: params.clientDuid, iaid: params.iaid, address: params.requestedAddress,
         poolName: pool.name, leaseStart: now, leaseExpiration: now + pool.validLifetime * 1000,

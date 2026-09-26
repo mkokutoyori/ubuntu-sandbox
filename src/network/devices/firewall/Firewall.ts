@@ -299,6 +299,7 @@ export class Firewall extends Equipment {
       const settings = this.dnsClient.getSettings();
       return [settings.primary, settings.secondary].filter(server => server.length > 0);
     },
+    now: () => this.clock.now(),
   });
 
   getDhcp6(): FirewallDhcp6 { return this.dhcp6; }
@@ -648,6 +649,7 @@ export class Firewall extends Equipment {
 
     const l3 = buildL3Services({
       deviceId: this.id,
+      now,
       hostname: () => this.getName(),
       bus: () => this.getBus(),
       tcp: () => this.tcp,

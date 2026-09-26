@@ -23,6 +23,7 @@ export interface DhcpScope {
   readonly dnsServers: readonly string[];
   readonly domain: string;
   readonly leaseTimeSec: number;
+  readonly conflictedIpTimeoutSec?: number;
   readonly ranges: ReadonlyArray<{ startIp: string; endIp: string }>;
   readonly dnsService?: string;
   readonly reservations?: ReadonlyArray<{
@@ -32,6 +33,7 @@ export interface DhcpScope {
 
 export interface FirewallDhcpDeps {
   readonly deviceId: string;
+  readonly now: () => number;
   readonly hostname: () => string;
   readonly bus: () => IEventBus;
   readonly interfaceAddress: (iface: string) => { ip: string; mask: string } | undefined;
@@ -46,6 +48,7 @@ export interface FirewallDhcpDeps {
 }
 
 const POOL_USAGE_TRAP_PERCENT = 90;
+const UNLIMITED_LEASE = 0;
 
 function poolNameOf(scope: DhcpScope): string {
   return `scope-${scope.id}`;
@@ -67,12 +70,14 @@ export class FirewallDhcp {
   constructor(private readonly deps: FirewallDhcpDeps) {
     this.server.setDeviceId(deps.deviceId, deps.hostname());
     this.server.setEventBus(deps.bus());
+    this.server.setClock(deps.now);
     this.client = new DHCPClient(
       (iface) => deps.portMac(iface)?.toString() ?? '00:00:00:00:00:00',
       (iface, ip, mask, gateway) => { deps.configureInterface(iface, ip, mask, gateway); },
       (iface) => { deps.clearInterface(iface); });
     this.client.setDeviceId(deps.deviceId, deps.hostname());
     this.client.setEventBus(deps.bus());
+    this.client.setClock(deps.now);
     this.client.setWireChannelFactory((iface) => this.channelFor(iface));
   }
 
@@ -102,7 +107,7 @@ export class FirewallDhcp {
 
     const channel = new WireDhcpChannel(iface, (name, pkt) => {
       this.emitClientFrame(name, pkt);
-    });
+    }, this.deps.now);
     this.channels.set(iface, channel);
     return channel;
   }
@@ -285,7 +290,11 @@ export class FirewallDhcp {
     const dns = this.resolvedDnsServers(scope, local?.ip);
     if (dns.length > 0) this.server.configurePoolDNS(name, dns);
     if (scope.domain.length > 0) this.server.configurePoolDomain(name, scope.domain);
-    this.server.configurePoolLease(name, scope.leaseTimeSec);
+    if (scope.leaseTimeSec === UNLIMITED_LEASE) this.server.configurePoolLeaseInfinite(name);
+    else this.server.configurePoolLease(name, scope.leaseTimeSec);
+    if (scope.conflictedIpTimeoutSec !== undefined) {
+      this.server.configurePoolConflictTtl(name, scope.conflictedIpTimeoutSec);
+    }
 
     for (const gap of gapsOutsideRanges(network, mask, scope.ranges)) {
       this.server.addExcludedRange(gap.start, gap.end);
@@ -383,6 +392,7 @@ export function dhcpReplyDatagram(packet: IPv4Packet): UDPPacket | null {
 
 export interface DhcpWiringHost {
   readonly deviceId: string;
+  now(): number;
   hostname(): string;
   bus(): IEventBus;
   interfaceAddress(iface: string): { ip: string; mask: string } | undefined;
@@ -399,6 +409,7 @@ export function createFirewallDhcp(host: DhcpWiringHost): FirewallDhcp {
   return new FirewallDhcp({
     systemDnsServers: () => host.systemDnsServers?.() ?? [],
     deviceId: host.deviceId,
+    now: () => host.now(),
     hostname: () => host.hostname(),
     bus: () => host.bus(),
     interfaceAddress: (iface) => host.interfaceAddress(iface),

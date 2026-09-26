@@ -29,7 +29,7 @@ function clientIdText(clientId: string): string {
 }
 
 function leaseExpirationText(at: number): string {
-  if (!at) return 'Infinite';
+  if (!Number.isFinite(at)) return 'Infinite';
   return new Date(at).toUTCString().slice(5, 25);
 }
 

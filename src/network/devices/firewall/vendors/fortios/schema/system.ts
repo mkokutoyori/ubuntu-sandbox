@@ -849,6 +849,8 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
     address('default-gateway', 'Default gateway IP address assigned by the DHCP server.'),
     address('netmask', 'Netmask assigned by the DHCP server.'),
     count('lease-time', 'Lease time in seconds, 0 means unlimited.', 0, 8640000, 604800),
+    count('conflicted-ip-timeout', 'Time in seconds to wait after a conflicted IP address is removed '
+      + 'from the DHCP range before it can be reused.', 60, 8640000, 1800),
     choice('dns-service', 'Options for assigning DNS servers to DHCP clients.', [
       { keyword: 'local', description: 'Use the FortiGate as the DNS server.' },
       { keyword: 'default', description: 'Use the system DNS servers.' },
@@ -917,6 +919,7 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
       })),
       domain: object.effective('domain')[0] ?? '',
       leaseTimeSec: Number.parseInt(object.effective('lease-time')[0] ?? '604800', 10),
+      conflictedIpTimeoutSec: Number.parseInt(object.effective('conflicted-ip-timeout')[0] ?? '1800', 10),
       ranges: object.childEntries('ip-range').map(range => ({
         startIp: range.effective('start-ip')[0] ?? '0.0.0.0',
         endIp: range.effective('end-ip')[0] ?? '0.0.0.0',

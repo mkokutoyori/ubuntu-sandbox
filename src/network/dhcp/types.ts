@@ -69,6 +69,7 @@ export interface DHCPPoolConfig {
   netbiosNodeType?: string;
   /** true ⇒ lease never expires (`lease infinite`) */
   leaseInfinite?: boolean;
+  conflictTtlSec?: number;
   /** Raw DHCP options configured via `option <code> …` */
   options?: Array<{ code: number; kind: 'ip' | 'ascii' | 'hex'; value: string }>;
   /** Manual single-host reservation pool (Cisco `host`/`hardware-address`/…) */
@@ -155,6 +156,14 @@ export interface DHCPAckResult {
   renewalTime?: number;
   /** Option 59: T2 rebinding time in seconds */
   rebindingTime?: number;
+}
+
+export function ackOf(result: DHCPRequestWithNakResult | null): DHCPAckResult | null {
+  if (result?.type !== 'ACK' || !result.binding) return null;
+  return {
+    binding: result.binding, serverIdentifier: result.serverIdentifier, xid: result.xid,
+    renewalTime: result.renewalTime, rebindingTime: result.rebindingTime, serverMac: result.serverMac,
+  };
 }
 
 /** Parameters sent in DHCPRELEASE (client → server) */

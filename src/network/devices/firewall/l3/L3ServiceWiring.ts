@@ -28,6 +28,7 @@ export interface L3ServiceHost {
   assignAddress(iface: string, ip: string, mask: string): void;
   forward(iface: string, packet: IPv4Packet, gateway?: string): void;
   systemDnsServers?(): readonly string[];
+  now(): number;
 }
 
 export interface L3Services {
@@ -52,6 +53,7 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
 
   const dhcp = createFirewallDhcp({
     deviceId: host.deviceId,
+    now: () => host.now(),
     hostname: () => host.hostname(),
     bus: () => host.bus(),
     interfaceAddress: (iface) => {
