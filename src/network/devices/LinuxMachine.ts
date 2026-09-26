@@ -28,6 +28,7 @@ import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import { adOperPortKey, buildActorState } from '@/network/lacp/types';
 import { LinuxBond, renderProcNetBonding, slaveViewFrom, xmitHashToLoadBalance } from './linux/net/LinuxBonding';
+import type { PortNumber } from '../core/ports/PortNumber';
 import type { TcpWireOutcome } from '../tcp/types';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
@@ -343,6 +344,9 @@ export abstract class LinuxMachine extends EndHost
     this.executor.vfs.writeFile('/proc/sys/net/ipv4/ip_local_port_range', '32768\t60999\n', 0, 0, 0o022);
     this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/ip_forward',
       () => `${this.ipForwardEnabled ? 1 : 0}\n`, 0o644);
+    this.executor.setPortBindingPolicy(this.portBindingPolicy);
+    this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/ip_unprivileged_port_start',
+      () => `${this.portBindingPolicy.unprivilegedPortStart}\n`, 0o644);
     this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/tcp_tw_reuse',
       () => `${this.socketTable.getTcpTwReuse() ? 1 : 0}\n`, 0o644);
     this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts',
@@ -802,11 +806,15 @@ export abstract class LinuxMachine extends EndHost
     return `${this.getHostname()} ${k.sysname} ${k.release} ${k.machine}`;
   }
 
+  uidOfUser(name: string): number | null {
+    return this.executor.pathActorOf(name)?.uid ?? null;
+  }
+
   tracerouteHost(asUser?: string): TracerouteHost {
     const ctx = this.buildCommandContext();
     if (asUser === undefined) return tracerouteHostOf(ctx);
     const actor = this.executor.pathActorOf(asUser);
-    return tracerouteHostOf(ctx, actor !== null && holdsCapability(actor, 'CAP_NET_RAW'));
+    return tracerouteHostOf(ctx, actor !== null && holdsCapability(actor, 'CAP_NET_RAW'), actor?.uid ?? -1);
   }
 
   getLlmnrAgent(): LlmnrAgent {
@@ -3941,9 +3949,9 @@ export abstract class LinuxMachine extends EndHost
         this.getTcpStack().grabGreeting(target, port),
       probeService: (target: string, port: number, payload: string): string | null =>
         this.getTcpStack().probeService(target, port, payload),
-      tcpConnectOutcome: (target: string, port: number): TcpWireOutcome => {
-        if (target.includes(':')) return this.tcpConnectOutcome6(new IPv6Address(target), port);
-        return this.tcpConnectOutcome(new IPAddress(target), port);
+      tcpConnectOutcome: (target: string, port: number, sourcePort?: PortNumber): TcpWireOutcome => {
+        if (target.includes(':')) return this.tcpConnectOutcome6(new IPv6Address(target), port, sourcePort);
+        return this.tcpConnectOutcome(new IPAddress(target), port, sourcePort);
       },
       ping6Sequence: (
         target: IPv6Address,

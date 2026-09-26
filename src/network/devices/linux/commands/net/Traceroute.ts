@@ -363,6 +363,7 @@ function probeMethod(parsed: ParsedTracerouteArgs, protocol: number): TraceProbe
 
 export interface TracerouteHost {
   rawSocketsPermitted: boolean;
+  mayBindPort(port: number): boolean;
   resolveHostname(name: string): Promise<IPAddress | null>;
   interfaceExists(name: string): boolean;
   ownsAddress(address: IPAddress): boolean;
@@ -404,13 +405,16 @@ async function sourceOf(
 }
 
 function socketErrorOf(
-  target: IPAddress, socket: TraceSocketOptions, host: TracerouteHost,
+  target: IPAddress, socket: TraceSocketOptions, host: TracerouteHost, bindsSourcePort: boolean,
 ): string | null {
   if (socket.iface !== undefined && !host.interfaceExists(socket.iface)) {
     return 'setsockopt SO_BINDTODEVICE: No such device';
   }
   if (socket.sourceIp !== undefined && !host.ownsAddress(socket.sourceIp)) {
     return 'bind: Cannot assign requested address';
+  }
+  if (bindsSourcePort && socket.sourcePort !== undefined && !host.mayBindPort(socket.sourcePort)) {
+    return 'bind: Permission denied';
   }
   if (!host.canReach(target, socket)) return 'connect: Network is unreachable';
   return null;
@@ -464,9 +468,9 @@ export async function runTraceroute(
     ...(parsed.sourcePort === undefined ? {} : { sourcePort: parsed.sourcePort }),
   };
   const header = tracerouteHeader(parsed.targetStr, target.toString(), parsed.maxHops, parsed.packetSize);
-  const socketError = socketErrorOf(target, socket, host);
+  const perProbeSocket = parsed.method === 'default' || parsed.method === 'udp';
+  const socketError = socketErrorOf(target, socket, host, perProbeSocket);
   if (socketError !== null) {
-    const perProbeSocket = parsed.method === 'default' || parsed.method === 'udp';
     emit(perProbeSocket ? `${header}\n${socketError}` : `\n${socketError}`);
     return 1;
   }
@@ -481,9 +485,11 @@ export async function runTraceroute(
 
 export function tracerouteHostOf(
   ctx: LinuxCommandContext, rawSocketsPermitted = ctx.executor.holdsCapability('CAP_NET_RAW'),
+  uid = ctx.executor.userMgr.currentUid,
 ): TracerouteHost {
   return {
     rawSocketsPermitted,
+    mayBindPort: (port) => ctx.executor.portBindPermitted(port, uid),
     resolveHostname: (name) => ctx.net.resolveHostname(name),
     interfaceExists: (name) => ctx.net.getPorts().has(name),
     ownsAddress: (address) => [...ctx.net.getPorts().values()]

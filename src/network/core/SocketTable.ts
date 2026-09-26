@@ -14,6 +14,7 @@
 
 import { EPHEMERAL_PORT_MIN, EPHEMERAL_PORT_MAX } from './WellKnownPorts';
 import { allocateEphemeralPort } from '../layers/transport/EphemeralPorts';
+import type { PortBindingPolicy } from './ports/PortBindingPolicy';
 
 export type SocketProtocol = 'tcp' | 'udp';
 
@@ -100,8 +101,12 @@ export class SocketTable {
     pid?: number,
     processName?: string,
     banner?: string,
-    options?: { reuseAddr?: boolean },
+    options?: { reuseAddr?: boolean; ownerUid?: number },
   ): SocketEntry {
+    if (localPort !== 0 && options?.ownerUid !== undefined && this.bindingPolicy !== null
+      && !this.bindingPolicy.permits(localPort, { uid: options.ownerUid })) {
+      throw new Error(`EACCES: Permission denied binding port ${localPort}/${protocol}`);
+    }
     const key = this.bindKey(protocol, localPort, localAddress);
     if (this.bindings.has(key)) {
       const holder = this.findByBinding(protocol, localPort, localAddress);
@@ -209,6 +214,12 @@ export class SocketTable {
   /** Brancher le garde de descripteurs (§F9.3). */
   setDescriptorGuard(guard: (pid: number) => boolean): void {
     this.descriptorGuard = guard;
+  }
+
+  private bindingPolicy: PortBindingPolicy | null = null;
+
+  setBindingPolicy(policy: PortBindingPolicy): void {
+    this.bindingPolicy = policy;
   }
 
   private twReuseEnabled = false;

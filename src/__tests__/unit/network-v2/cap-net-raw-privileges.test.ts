@@ -49,7 +49,7 @@ beforeEach(() => {
 
 async function lab(): Promise<{ pc: LinuxPC; srv: LinuxServer }> {
   const pc = new LinuxPC('PC1', 0, 0);
-  const srv = new LinuxServer('SRV', 100, 0);
+  const srv = new LinuxServer('linux-server', 'SRV', 100, 0);
   new Cable('c1').connect(pc.getPort('eth0')!, srv.getPort('eth0')!);
   await pc.executeCommand('sudo ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
   await srv.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');

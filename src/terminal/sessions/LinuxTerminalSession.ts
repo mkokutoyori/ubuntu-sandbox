@@ -127,6 +127,8 @@ import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, ha
 import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
+import { localListenerFailure, NO_LOCAL_FORWARDING, remoteForwardFailure } from '@/network/protocols/ssh/ForwardOpening';
+
 type CaptureTool = 'tcpdump' | 'traceroute';
 
 // ─── Theme ────────────────────────────────────────────────────────
@@ -3063,11 +3065,16 @@ export class LinuxTerminalSession extends TerminalSession {
     // OpenSSH `-D`: SOCKS proxy on a local port — symmetric placement to
     // `-L` (always on the local device).
     const dynamicForwarders = this.installDynamicForwards(session, host, meta, dialPeer);
+    const localRequested = (meta.localForwards?.length ?? 0) + (meta.dynamicForwards?.length ?? 0);
+    if (localRequested > 0 && forwarders.length + dynamicForwarders.length === 0) {
+      this.addLine(NO_LOCAL_FORWARDING);
+    }
     // OpenSSH `-R`: needs the remote device — registered only when the
     // SSH peer resolves to a local Equipment instance (the common case
     // for the tutorial LAN).
     const remoteForwarders = linuxRemoteDevice
-      ? this.installRemoteForwards(session, host, linuxRemoteDevice, meta)
+      ? this.installRemoteForwards(session, host, linuxRemoteDevice, meta,
+        linuxRemoteDevice.uidOfUser(user) ?? undefined)
       : [];
     const agentForwarding = linuxRemoteDevice
       ? this.installAgentForwarding(linuxRemoteDevice, meta)
@@ -4024,10 +4031,11 @@ export class LinuxTerminalSession extends TerminalSession {
         remotePort: fwd.remotePort,
         sshHost,
       }, dialDevice);
-      forwarder.register();
-      this.addLine(
-        `Forwarding TCP ${fwd.localPort} → ${fwd.remoteHost}:${fwd.remotePort} via ${sshHost}`,
-      );
+      const opening = forwarder.register(this.shell?.uid);
+      if (opening !== 'opened') {
+        for (const line of localListenerFailure('127.0.0.1', fwd.localPort, opening)) this.addLine(line);
+        continue;
+      }
       out.push(forwarder);
     }
     return out;
@@ -4058,10 +4066,13 @@ export class LinuxTerminalSession extends TerminalSession {
         bindAddress: fwd.bindAddress,
         sshHost,
       }, dialDevice);
-      forwarder.register();
-      this.addLine(
-        `SOCKS proxy listening on ${fwd.bindAddress ?? '*'}:${fwd.socksPort} via ${sshHost}`,
-      );
+      const opening = forwarder.register(this.shell?.uid);
+      if (opening !== 'opened') {
+        const shown = fwd.bindAddress === null || fwd.bindAddress === undefined ? '127.0.0.1'
+          : fwd.bindAddress === '*' ? '0.0.0.0' : fwd.bindAddress;
+        for (const line of localListenerFailure(shown, fwd.socksPort, opening)) this.addLine(line);
+        continue;
+      }
       out.push(forwarder);
     }
     return out;
@@ -4078,6 +4089,7 @@ export class LinuxTerminalSession extends TerminalSession {
     sshHost: string,
     remoteDeviceRaw: Equipment,
     meta: { remoteForwards?: readonly RemoteForward[] },
+    remoteUid: number | undefined,
   ): SshRemoteForwarder[] {
     const forwards = meta.remoteForwards ?? [];
     if (forwards.length === 0) return [];
@@ -4094,10 +4106,10 @@ export class LinuxTerminalSession extends TerminalSession {
         localPort: fwd.localPort,
         sshHost,
       }, asDialDevice(this.getLocalDevice()));
-      forwarder.register();
-      this.addLine(
-        `Forwarding ${sshHost}:${fwd.remotePort} → ${fwd.localHost}:${fwd.localPort} (reverse)`,
-      );
+      if (forwarder.register(remoteUid) !== 'opened') {
+        this.addLine(remoteForwardFailure(fwd.remotePort));
+        continue;
+      }
       out.push(forwarder);
     }
     return out;

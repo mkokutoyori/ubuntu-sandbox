@@ -19,6 +19,7 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { IPAddress } from '../../../../core/types';
 import { findHostByAddress, localDeviceOf, resolveNatHairpinHost } from '../../network/HostLookup';
 import { makeArgCompleter } from '../completionHelpers';
+import { PortNumber } from '../../../../core/ports/PortNumber';
 
 function isIPv6Literal(host: string): boolean {
   return host.includes(':') && /^[0-9a-fA-F:]+(%[a-zA-Z0-9_-]+)?$/.test(host);
@@ -88,29 +89,31 @@ function runListen(
   }
   const table = ctx.executor.getSocketTable();
   if (!table) return { output: 'nc: no socket table available', exitCode: 1 };
+  const ownerUid = ctx.executor.userMgr.currentUid;
   try {
-    table.bind(udp ? 'udp' : 'tcp', '0.0.0.0', port, ctx.executor.currentPid(), 'nc');
-  } catch {
-    return { output: `nc: Address already in use`, exitCode: 1 };
+    table.bind(udp ? 'udp' : 'tcp', '0.0.0.0', port, ctx.executor.currentPid(), 'nc', undefined, { ownerUid });
+  } catch (error) {
+    const denied = error instanceof Error && error.message.startsWith('EACCES');
+    return { output: denied ? 'nc: Permission denied' : 'nc: Address already in use', exitCode: 1 };
   }
-  if (!udp && !openTcpListener(ctx, port)) {
+  if (!udp && !openTcpListener(ctx, port, ownerUid)) {
     table.unbind('tcp', '0.0.0.0', port);
     return { output: `nc: Address already in use`, exitCode: 1 };
   }
   return { output: verbose ? `Listening on 0.0.0.0 ${port}` : '', exitCode: 0 };
 }
 
-function openTcpListener(ctx: LinuxCommandContext, port: number): boolean {
+function openTcpListener(ctx: LinuxCommandContext, port: number, ownerUid: number): boolean {
   const device = localDeviceOf(ctx) as unknown as {
     getTcpStack?: () => {
-      listen(localPort: number, opts: { onAccept: (socket: unknown) => void }): unknown;
+      listen(localPort: number, opts: { onAccept: (socket: unknown) => void; ownerUid?: number }): unknown;
     };
   } | null;
   const stack = device?.getTcpStack?.();
   if (!stack) return true;
 
   try {
-    stack.listen(port, { onAccept: () => undefined });
+    stack.listen(port, { onAccept: () => undefined, ownerUid });
     return true;
   } catch {
     return false;
@@ -153,6 +156,12 @@ export const ncCommand: LinuxCommand = {
       return `nc: port number invalid: ${portToken}`;
     }
 
+    const sourcePort = parsed.port !== undefined && PortNumber.isValid(parsed.port)
+      ? PortNumber.of(parsed.port) : undefined;
+    if (sourcePort !== undefined && !ctx.executor.portBindPermitted(sourcePort.value)) {
+      return 'nc: bind failed: Permission denied';
+    }
+
     if (udp) {
       // Connectionless: there is no handshake to probe, so this just puts a
       // real datagram on the wire — including whatever ICMP error a closed
@@ -162,7 +171,7 @@ export const ncCommand: LinuxCommand = {
       if (found.poweredOff || found.interfaceDown) {
         return `nc: connect to ${host} port ${port} (udp) failed: No route to host`;
       }
-      const srcPort = ctx.executor.getSocketTable()?.allocateEphemeralPort()
+      const srcPort = sourcePort?.value ?? ctx.executor.getSocketTable()?.allocateEphemeralPort()
         ?? 49152 + Math.floor(Math.random() * 16000);
       ctx.net.sendUdpProbe(new IPAddress(found.ip), port, srcPort);
       if (verbose) return `Connection to ${host} ${port} port [udp/*] succeeded!`;
@@ -232,7 +241,7 @@ export const ncCommand: LinuxCommand = {
       const msg = `nc: connect to ${found.ip} port ${port} (tcp) failed: Cannot assign requested address`;
       return verbose ? msg : '';
     }
-    const outcome = ctx.net.tcpConnectOutcome(found.ip, effectivePort);
+    const outcome = ctx.net.tcpConnectOutcome(found.ip, effectivePort, sourcePort);
     if (outcome === 'timeout') {
       if (verbose) return `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection timed out`;
       return '';
