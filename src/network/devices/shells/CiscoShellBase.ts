@@ -2075,10 +2075,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return {
       sshConfig: () => getSecurityConfig(this.d()).ssh,
       hasRsaKeys: () => getSecurityConfig(this.d()).cryptoKeys.length > 0,
-      onAuthRetriesChanged: (retries) => {
-        (this.d() as unknown as { _configureSshAuthRetries?: (n: number) => void })
-          ._configureSshAuthRetries?.(retries);
-      },
     };
   }
 

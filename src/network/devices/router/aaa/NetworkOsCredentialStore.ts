@@ -1,5 +1,5 @@
 import type { IEventBus } from '@/events/EventBus';
-import { NetworkOsAccount, publishAccountEvent } from './NetworkOsAccount';
+import { NetworkOsAccount, publishAccountEvent, type AccountServiceType } from './NetworkOsAccount';
 import type { IAccountAuthority, AccountSnapshot } from '../../../protocols/ssh/server/IAccountAuthority';
 import { fromNetworkOsAccount } from '../../../protocols/ssh/server/IAccountAuthority';
 
@@ -45,6 +45,10 @@ export class NetworkOsCredentialStore implements IAccountAuthority {
   authenticate(name: string, password: string): boolean {
     const account = this.accounts.get(name);
     return account ? account.authenticate(password) : false;
+  }
+
+  admits(name: string, service: AccountServiceType, whenUnset: boolean): boolean {
+    return this.accounts.get(name)?.allowsService(service, whenUnset) ?? true;
   }
 
   list(): readonly NetworkOsAccount[] {

@@ -306,6 +306,8 @@ export class HuaweiSwitch extends Switch {
     return this.getManagementService().getSsh().enabled;
   }
 
+  protected override unsetServiceTypeAdmits(): boolean { return false; }
+
   protected override sshServerLimits(): Partial<SshServerConfig> {
     return this.getManagementService().sshServerLimits();
   }

@@ -122,7 +122,7 @@ import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
 import { CiscoDnsConfig } from './router/dns/CiscoDnsConfig';
 import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { NetworkOsAccount, applyCiscoUsernamePatch } from './router/aaa/NetworkOsAccount';
-import type { CiscoUsernamePatch, PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
+import type { AccountServiceType, CiscoUsernamePatch, PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { vtyLoginModeOf } from './router/vty/VtyLineConfig';
 import { KeypairService } from './router/security/KeypairService';
@@ -2931,6 +2931,10 @@ export abstract class Switch extends Equipment {
   hasSshHostKeys(): boolean { return this.hasRsaKeys(); }
 
   protected sshServerTurnedOn(): boolean { return true; }
+  protected unsetServiceTypeAdmits(): boolean { return true; }
+  private accountAdmits(user: string, service: AccountServiceType): boolean {
+    return this.getCredentialStore().admits(user, service, this.unsetServiceTypeAdmits());
+  }
   protected sshServerLimits(): Partial<SshServerConfig> { return {}; }
 
   _refreshSshAvailability(): void { this.syncManagementListeners(); }
@@ -3007,7 +3011,7 @@ export abstract class Switch extends Equipment {
       hostname: () => this.getHostname(),
       hostKey: () => this.sshHostKey(),
       credentials: () => ({
-        authenticate: (n, p) => credentials.authenticate(n, p),
+        authenticate: (n, p) => this.accountAdmits(n, 'ssh') && credentials.authenticate(n, p),
         has: (n) => credentials.get(n) !== undefined,
         get: (n) => {
           const a = credentials.get(n);
@@ -3041,9 +3045,10 @@ export abstract class Switch extends Equipment {
       loginBanner: () => this.getBanner('login') || null,
       motd: () => this.getBanner('motd') || null,
       admit: (ip, localIp) => this.vtyIncomingPolicy().admit('telnet', ip, localIp),
-      authenticateLocal: (user, password) => this.getCredentialStore().authenticate(user, password),
+      authenticateLocal: (user, password) =>
+        this.accountAdmits(user, 'telnet') && this.getCredentialStore().authenticate(user, password),
       authenticateAaa: (user, password) => Promise.resolve(
-        this.getCredentialStore().authenticate(user, password),
+        this.accountAdmits(user, 'telnet') && this.getCredentialStore().authenticate(user, password),
       ),
       createVtyShell: () => this.createVtyShell(),
       openSession: (user, fromIp, peerPort) => {

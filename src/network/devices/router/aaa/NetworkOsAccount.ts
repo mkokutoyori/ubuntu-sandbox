@@ -11,6 +11,15 @@ export type PasswordHashAlgorithm =
 export type AccountServiceType =
   | 'ssh' | 'stelnet' | 'telnet' | 'ftp' | 'http' | 'terminal' | 'web' | 'snmp' | 'ppp' | 'mail';
 
+export function serviceTypesAdmit(
+  serviceTypes: readonly string[], service: AccountServiceType, whenUnset: boolean,
+): boolean {
+  if (serviceTypes.length === 0) return whenUnset;
+  if (service === 'ssh' && serviceTypes.includes('stelnet')) return true;
+  if (service === 'stelnet' && serviceTypes.includes('ssh')) return true;
+  return serviceTypes.includes(service);
+}
+
 export interface NetworkOsAccountSnapshot {
   readonly name: string;
   readonly secret: string;
@@ -385,11 +394,8 @@ export class NetworkOsAccount {
     return ciscoPasswordMatches(password, this.secret, this.passwordHashAlgorithm);
   }
 
-  allowsService(service: AccountServiceType): boolean {
-    if (this.serviceTypes.length === 0) return true;
-    if (service === 'ssh' && this.serviceTypes.includes('stelnet')) return true;
-    if (service === 'stelnet' && this.serviceTypes.includes('ssh')) return true;
-    return this.serviceTypes.includes(service);
+  allowsService(service: AccountServiceType, whenUnset = true): boolean {
+    return serviceTypesAdmit(this.serviceTypes, service, whenUnset);
   }
 }
 
