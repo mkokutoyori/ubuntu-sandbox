@@ -174,9 +174,9 @@ describe('traceroute — Butskoy\'s own parsing and probes on a direct link', ()
   it('-p takes a service name and -r reaches an on-link host', async () => {
     const { pc1 } = await pair();
     const named = await pc1.executeCommand('traceroute -n -U -p domain -q 1 10.0.0.2');
-    expect(named.split('\n')[1]).toMatch(/^ 1  10\.0\.0\.2  \d+\.\d{3} ms$/);
+    expect(named.split('\n')[1]).toMatch(/^ 1 {2}10\.0\.0\.2 {2}\d+\.\d{3} ms$/);
     const direct = await pc1.executeCommand('traceroute -n -r -q 1 10.0.0.2');
-    expect(direct.split('\n')[1]).toMatch(/^ 1  10\.0\.0\.2  \d+\.\d{3} ms$/);
+    expect(direct.split('\n')[1]).toMatch(/^ 1 {2}10\.0\.0\.2 {2}\d+\.\d{3} ms$/);
   });
 
   it('-P sends the raw protocol and ends on the target\'s protocol-unreachable', async () => {
@@ -184,6 +184,6 @@ describe('traceroute — Butskoy\'s own parsing and probes on a direct link', ()
     const out = await captureWhile(pc2, 'tcpdump -c 1 -nn -v ip proto 253', () => pc1.executeCommand('traceroute -n -P 253 -q 1 10.0.0.2'));
     expect(out).toMatch(/proto unknown \(253\), length 60\)/);
     expect((await pc1.executeCommand('traceroute -n -P 253 -q 1 10.0.0.2')).split('\n')[1])
-      .toMatch(/^ 1  10\.0\.0\.2  \d+\.\d{3} ms !P$/);
+      .toMatch(/^ 1 {2}10\.0\.0\.2 {2}\d+\.\d{3} ms !P$/);
   });
 });

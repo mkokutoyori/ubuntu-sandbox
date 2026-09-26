@@ -937,7 +937,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('118. should reject out-of-range port values (-p 70000)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('traceroute -p 70000 127.0.0.1');
-      expect(output).toMatch(/^traceroute to 127\.0\.0\.1 \(127\.0\.0\.1\), 30 hops max, 60 byte packets\n 1  localhost \(127\.0\.0\.1\)/);
+      expect(output).toMatch(/^traceroute to 127\.0\.0\.1 \(127\.0\.0\.1\), 30 hops max, 60 byte packets\n 1 {2}localhost \(127\.0\.0\.1\)/);
     });
 
     it('119. should reject negative port values (-p -80)', async () => {
@@ -1356,7 +1356,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.r2.executeCommand('end');
 
       const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert -w 500 10.0.1.10'));
-      expect(output).toMatch(/^  \d  10\.0\.\d+\.\d+  reports: Destination net unreachable\.\n\nTrace complete\.$/m);
+      expect(output).toMatch(/^ {2}\d {2}10\.0\.\d+\.\d+ {2}reports: Destination net unreachable\.\n\nTrace complete\.$/m);
       expect(output).not.toContain('Request timed out.');
     });
 
@@ -1638,7 +1638,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await configureWANIPs(topo);
       await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('netsh interface set interface "Ethernet" admin=disabled'));
       const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
-      expect(output).toMatch(/  \d+\.\d+ ms !H  \d+\.\d+ ms !H  \d+\.\d+ ms !H$/m);
+      expect(output).toMatch(/ {2}\d+\.\d+ ms !H {2}\d+\.\d+ ms !H {2}\d+\.\d+ ms !H$/m);
     });
 
     it('211. should show TTL expired in transit inside traceroute output logs', async () => {
@@ -1716,7 +1716,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.r1.executeCommand('end');
 
       const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
-      expect(output).toMatch(/^ 1  10\.0\.1\.1 \(10\.0\.1\.1\)  \d+\.\d+ ms !X  \d+\.\d+ ms !X  \d+\.\d+ ms !X$/m);
+      expect(output).toMatch(/^ 1 {2}10\.0\.1\.1 \(10\.0\.1\.1\) {2}\d+\.\d+ ms !X {2}\d+\.\d+ ms !X {2}\d+\.\d+ ms !X$/m);
     });
 
     it('219. should resolve and trace path successfully if ICMP method is forced (-I) even when UDP is blocked', async () => {

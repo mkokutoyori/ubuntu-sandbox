@@ -88,8 +88,8 @@ describe('user lab — tcpdump on the HQ side', () => {
       () => lab.WinServer1.executeCommand(`ping -n 1 ${SERVER1}`));
     expect(out).toContain('listening on any, link-type LINUX_SLL2 (Linux cooked v2), snapshot length 262144 bytes');
     const [request, reply] = packets(out);
-    expect(request).toMatch(/ eth0  In  IP 192\.168\.30\.2 > 192\.168\.30\.4: ICMP echo request/);
-    expect(reply).toMatch(/ eth0  Out IP 192\.168\.30\.4 > 192\.168\.30\.2: ICMP echo reply/);
+    expect(request).toMatch(/ eth0 {2}In {2}IP 192\.168\.30\.2 > 192\.168\.30\.4: ICMP echo request/);
+    expect(reply).toMatch(/ eth0 {2}Out IP 192\.168\.30\.4 > 192\.168\.30\.2: ICMP echo reply/);
   });
 
   it('-e names Broadcast and the unknown OUI, and prints captured lengths, not wire lengths', async () => {

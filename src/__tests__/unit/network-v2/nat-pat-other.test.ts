@@ -1724,7 +1724,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
 
       const trace = await topo.inside_pc1.executeCommand('traceroute -n 198.51.100.10');
       const table = await topo.r1.executeCommand('show ip nat translations');
-      expect(trace).toMatch(/^ 3  198\.51\.100\.10  /m);
+      expect(trace).toMatch(/^ 3 {2}198\.51\.100\.10 {2}/m);
       expect(table).not.toContain(':33436 ');
       expect(table).toMatch(/^udp\s+203\.0\.113\.1:\d+\s+192\.168\.1\.10:\d+\s+198\.51\.100\.10:33437\s+198\.51\.100\.10:33437$/m);
     });

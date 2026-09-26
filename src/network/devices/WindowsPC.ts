@@ -14,7 +14,7 @@
  * session level, not at the device level. This device only handles cmd.exe.
  */
 
-import { EndHost, PingResult, type TracerouteHopResult } from './EndHost';
+import { EndHost, type TracerouteHopResult } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import type { NicTeam, TeamMember, TeamNic } from './windows/WindowsNicTeam';
 import {

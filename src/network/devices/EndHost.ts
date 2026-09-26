@@ -32,7 +32,7 @@ import { SocketTable } from '../core/SocketTable';
 import { TcpStack } from '../tcp/TcpStack';
 import type { TcpSegment, TcpDialFailure, TcpWireOutcome } from '../tcp/types';
 import type { UdpChecksumInput } from '@/network/layers/transport/UdpChecksum';
-import { computeTcpChecksum, isDialFailure, noFlags } from '../tcp/types';
+import { isDialFailure, noFlags } from '../tcp/types';
 import {
   computeUdpChecksum, verifyUdpChecksum, stampUdpChecksum,
 } from '@/network/layers/transport/UdpChecksum';

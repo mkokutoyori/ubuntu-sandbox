@@ -67,9 +67,9 @@ describe('user lab — Linux traceroute crosses FW1 and R3 with the probe it ann
     expect(out.split('\n')[0]).toBe('traceroute to 192.168.30.4 (192.168.30.4), 30 hops max, 60 byte packets');
     const lines = hops(out);
     expect(lines).toHaveLength(3);
-    expect(lines[0]).toMatch(/^ 1  192\.168\.1\.99 \(192\.168\.1\.99\)  \d+\.\d{3} ms  \d+\.\d{3} ms  \d+\.\d{3} ms$/);
-    expect(lines[1]).toMatch(/^ 2  192\.168\.20\.1 \(192\.168\.20\.1\)  /);
-    expect(lines[2]).toMatch(/^ 3  192\.168\.30\.4 \(192\.168\.30\.4\)  \d+\.\d{3} ms  \d+\.\d{3} ms  \d+\.\d{3} ms$/);
+    expect(lines[0]).toMatch(/^ 1 {2}192\.168\.1\.99 \(192\.168\.1\.99\) {2}\d+\.\d{3} ms {2}\d+\.\d{3} ms {2}\d+\.\d{3} ms$/);
+    expect(lines[1]).toMatch(/^ 2 {2}192\.168\.20\.1 \(192\.168\.20\.1\) {2}/);
+    expect(lines[2]).toMatch(/^ 3 {2}192\.168\.30\.4 \(192\.168\.30\.4\) {2}\d+\.\d{3} ms {2}\d+\.\d{3} ms {2}\d+\.\d{3} ms$/);
   });
 
   it('ICMP, TCP SYN and fixed-port UDP each reach WinServer1 or Server1 in three hops', async () => {
@@ -85,14 +85,14 @@ describe('user lab — Linux traceroute crosses FW1 and R3 with the probe it ann
   it('a raw protocol-253 probe ends on Server1\'s protocol-unreachable, printed !P', async () => {
     const lab = await configuredLab();
     const lines = hops(await lab.PC1.executeCommand(`traceroute -n -P 253 -q 1 ${SERVER1}`));
-    expect(lines[2]).toMatch(/^ 3  192\.168\.30\.4  \d+\.\d{3} ms !P$/);
+    expect(lines[2]).toMatch(/^ 3 {2}192\.168\.30\.4 {2}\d+\.\d{3} ms !P$/);
   });
 
   it('-t, -F and --sport are on the wire; without -F the probe carries no DF', async () => {
     const lab = await configuredLab();
     const shaped = await captureWhile(lab.PC1, 'tcpdump -c 1 -n -v -i eth0 udp',
       () => lab.PC1.executeCommand(`traceroute -n -q 1 -m 1 -F -t 16 --sport=4444 ${SERVER1}`));
-    expect(shaped).toMatch(/IP \(tos 0x10, ttl 1, id \d+, offset 0, flags \[DF\], proto UDP \(17\), length 60\)\n    192\.168\.1\.10\.4444 > 192\.168\.30\.4\.33434: UDP/);
+    expect(shaped).toMatch(/IP \(tos 0x10, ttl 1, id \d+, offset 0, flags \[DF\], proto UDP \(17\), length 60\)\n {4}192\.168\.1\.10\.4444 > 192\.168\.30\.4\.33434: UDP/);
     const plain = await captureWhile(lab.PC1, 'tcpdump -c 1 -n -v -i eth0 udp',
       () => lab.PC1.executeCommand(`traceroute -n -q 1 -m 1 ${SERVER1}`));
     expect(plain).toMatch(/IP \(tos 0x0, ttl 1, id \d+, offset 0, flags \[none\], proto UDP \(17\), length 60\)/);
@@ -102,16 +102,16 @@ describe('user lab — Linux traceroute crosses FW1 and R3 with the probe it ann
     const lab = await configuredLab();
     const seen = await captureWhile(lab.Server1, 'tcpdump -c 1 -n -v -i eth0 udp',
       () => lab.PC1.executeCommand(`traceroute -n -q 1 -f 3 -m 3 --sport=4444 -t 16 ${SERVER1}`));
-    expect(seen).toMatch(/IP \(tos 0x10, ttl 1, .*proto UDP \(17\), length 60\)\n    192\.168\.20\.2\.4444 > 192\.168\.30\.4\.33434: UDP/);
+    expect(seen).toMatch(/IP \(tos 0x10, ttl 1, .*proto UDP \(17\), length 60\)\n {4}192\.168\.20\.2\.4444 > 192\.168\.30\.4\.33434: UDP/);
   });
 
   it('each hop answers in its own way: routers quote 8 bytes, Linux quotes the whole datagram under tos 0xc0', async () => {
     const lab = await configuredLab();
     const out = await captureWhile(lab.PC1, 'tcpdump -c 3 -n -v -i eth0 icmp',
       () => lab.PC1.executeCommand(`traceroute -n -q 1 -m 3 ${SERVER1}`));
-    expect(out).toMatch(/length 56\)\n    192\.168\.1\.99 > 192\.168\.1\.10: ICMP time exceeded in-transit, length 36\n\tIP \(tos 0x0, ttl 1, id \d+, offset 0, flags \[none\], proto UDP \(17\), length 60\)/);
-    expect(out).toMatch(/ttl 254, .*length 56\)\n    192\.168\.20\.1 > 192\.168\.1\.10: ICMP time exceeded in-transit, length 36/);
-    expect(out).toMatch(/IP \(tos 0xc0, ttl 62, id \d+, offset 0, flags \[none\], proto ICMP \(1\), length 88\)\n    192\.168\.30\.4 > 192\.168\.1\.10: ICMP 192\.168\.30\.4 udp port 33436 unreachable, length 68/);
+    expect(out).toMatch(/length 56\)\n {4}192\.168\.1\.99 > 192\.168\.1\.10: ICMP time exceeded in-transit, length 36\n\tIP \(tos 0x0, ttl 1, id \d+, offset 0, flags \[none\], proto UDP \(17\), length 60\)/);
+    expect(out).toMatch(/ttl 254, .*length 56\)\n {4}192\.168\.20\.1 > 192\.168\.1\.10: ICMP time exceeded in-transit, length 36/);
+    expect(out).toMatch(/IP \(tos 0xc0, ttl 62, id \d+, offset 0, flags \[none\], proto ICMP \(1\), length 88\)\n {4}192\.168\.30\.4 > 192\.168\.1\.10: ICMP 192\.168\.30\.4 udp port 33436 unreachable, length 68/);
   });
 
   it('socket options fail where Butskoy fails them: before the header for ICMP, after it for UDP', async () => {
@@ -130,7 +130,7 @@ describe('user lab — Linux traceroute crosses FW1 and R3 with the probe it ann
   it('-i and -s accept what the machine really has', async () => {
     const lab = await configuredLab();
     for (const cmd of [`traceroute -n -q 1 -i eth0 ${SERVER1}`, `traceroute -n -q 1 -s ${PC1} ${SERVER1}`]) {
-      expect(hops(await lab.PC1.executeCommand(cmd))[2]).toMatch(/^ 3  192\.168\.30\.4  /);
+      expect(hops(await lab.PC1.executeCommand(cmd))[2]).toMatch(/^ 3 {2}192\.168\.30\.4 {2}/);
     }
   });
 });
@@ -166,7 +166,7 @@ describe('user lab — WinServer1 traces from the HQ side', () => {
     const lab = await configuredLab();
     const out = await captureWhile(lab.Server1, 'tcpdump -c 2 -nn -v -i eth0 icmp',
       () => lab.WinServer1.executeCommand(`ping -n 1 ${SERVER1}`));
-    expect(out).toMatch(/IP \(tos 0x0, ttl 128, id \d+, offset 0, flags \[none\], proto ICMP \(1\), length 60\)\n    192\.168\.30\.2 > 192\.168\.30\.4: ICMP echo request, id \d+, seq 1, length 40/);
-    expect(out).toMatch(/IP \(tos 0x0, ttl 64, id \d+, offset 0, flags \[none\], proto ICMP \(1\), length 60\)\n    192\.168\.30\.4 > 192\.168\.30\.2: ICMP echo reply, id \d+, seq 1, length 40/);
+    expect(out).toMatch(/IP \(tos 0x0, ttl 128, id \d+, offset 0, flags \[none\], proto ICMP \(1\), length 60\)\n {4}192\.168\.30\.2 > 192\.168\.30\.4: ICMP echo request, id \d+, seq 1, length 40/);
+    expect(out).toMatch(/IP \(tos 0x0, ttl 64, id \d+, offset 0, flags \[none\], proto ICMP \(1\), length 60\)\n {4}192\.168\.30\.4 > 192\.168\.30\.2: ICMP echo reply, id \d+, seq 1, length 40/);
   });
 });
