@@ -61,8 +61,8 @@ describe('user lab — nmap host discovery puts the asked-for packet on the wire
   it('-PS80 finds Server1 through policy 1, on its syn-ack', async () => {
     const lab = await configuredLab();
     const out = await lab.PC1.executeCommand(`sudo nmap -PS80 --reason -p 80 ${SERVER1}`);
-    expect(out).toMatch(/^Host is up, received syn-ack \(/m);
-    expect(out).toMatch(/^80\/tcp open {2}http {4}syn-ack$/m);
+    expect(out).toMatch(/^Host is up, received syn-ack ttl 62 \(/m);
+    expect(out).toMatch(/^80\/tcp open {2}http {4}syn-ack ttl 62$/m);
   });
 
   it('-PA80 reports the host DOWN, because FW1 drops a session-less ACK', async () => {
@@ -82,7 +82,7 @@ describe('user lab — nmap host discovery puts the asked-for packet on the wire
   it('-PU on the default probe port is up on the port-unreachable it draws', async () => {
     const lab = await configuredLab();
     expect(await lab.PC1.executeCommand(`sudo nmap -PU --reason -p 80 ${SERVER1}`))
-      .toMatch(/^Host is up, received port-unreach \(/m);
+      .toMatch(/^Host is up, received port-unreach ttl 62 \(/m);
   });
 
   it('-PO is up on the protocol-unreachable RFC 1122 makes Server1 send', async () => {
@@ -185,11 +185,11 @@ describe('user lab — nmap against FW1 own interfaces', () => {
     const out = await lab.PC1.executeCommand(
       `sudo nmap -p 22,23,80,443,541 --reason ${FW1_PORT1}`);
     expect(out).toMatch(/^Host is up, received arp-response \(/m);
-    expect(out).toMatch(/^22\/tcp {2}open {5}ssh {5}syn-ack$/m);
+    expect(out).toMatch(/^22\/tcp {2}open {5}ssh {5}syn-ack ttl 64$/m);
     expect(out).toMatch(/^23\/tcp {2}filtered telnet {2}no-response$/m);
-    expect(out).toMatch(/^80\/tcp {2}open {5}http {4}syn-ack$/m);
-    expect(out).toMatch(/^443\/tcp open {5}https {3}syn-ack$/m);
-    expect(out).toMatch(/^541\/tcp closed {3}unknown reset$/m);
+    expect(out).toMatch(/^80\/tcp {2}open {5}http {4}syn-ack ttl 64$/m);
+    expect(out).toMatch(/^443\/tcp open {5}https {3}syn-ack ttl 64$/m);
+    expect(out).toMatch(/^541\/tcp closed {3}unknown reset ttl 64$/m);
   });
 
   it('the two FW1 interfaces do not allow the same services', async () => {

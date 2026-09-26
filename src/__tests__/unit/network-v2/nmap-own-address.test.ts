@@ -67,7 +67,7 @@ describe('root scanning its own address goes through lo', () => {
   it('a port scan measures the round trip from its replies', async () => {
     const { srv } = await lab();
     const out = await srv.executeCommand('nmap --reason -p 22 10.0.0.2');
-    expect(out).toMatch(/\nHost is up, received localhost-response \(\d\.\d+s latency\)\.\nPORT {3}STATE SERVICE REASON\n22\/tcp open {2}ssh {5}syn-ack\n/);
+    expect(out).toMatch(/\nHost is up, received localhost-response \(\d\.\d+s latency\)\.\nPORT {3}STATE SERVICE REASON\n22\/tcp open {2}ssh {5}syn-ack ttl 64\n/);
   });
 
   it('-O and --traceroute: distance 0, no trace, no MAC line', async () => {
@@ -87,7 +87,7 @@ describe('root scanning its own address goes through lo', () => {
   it('-sU: the port unreachable comes back through lo and closes the port', async () => {
     const { srv } = await lab();
     expect(await srv.executeCommand('nmap -sU --reason -p 53 10.0.0.2'))
-      .toMatch(/\n53\/udp closed domain {2}port-unreach\n/);
+      .toMatch(/\n53\/udp closed domain {2}port-unreach ttl 64\n/);
   });
 
   it('Windows scans its own address the same way', async () => {

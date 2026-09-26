@@ -30,6 +30,11 @@ function statelessKindOf(scanType: ScanType): StatelessScanKind | undefined {
 
 export type PortState = 'open' | 'closed' | 'filtered' | 'open|filtered' | 'unfiltered';
 
+export interface UdpVerdict {
+  state: 'open' | 'closed' | 'open|filtered';
+  replyTtl?: number;
+}
+
 export interface HostState {
   ip: string;
   hostname?: string;
@@ -98,7 +103,7 @@ export interface HostProbes {
   ): ScanVerdict;
   udpState(
     ip: string, port: number, shape?: ScanProbeShape,
-  ): 'open' | 'closed' | 'open|filtered';
+  ): UdpVerdict;
   banner(
     ip: string, port: number, intensity: number,
   ): { service: string; version?: string } | null;
@@ -154,6 +159,8 @@ export interface PortResult {
   service: string;
   version?: string;
   reason: string;
+  replyTtl?: number;
+  reasonFrom?: string;
 }
 
 /**
@@ -265,9 +272,13 @@ function tcpResult(
     : null;
   let state: PortState;
   let reason: string;
+  let replyTtl: number | undefined;
+  let reasonFrom: string | undefined;
   if (stateless) {
     state = stateless.state;
     reason = stateless.reason;
+    replyTtl = stateless.replyTtl;
+    reasonFrom = stateless.reasonFrom;
   } else {
     const outcome = probes.tcpOutcome(ip, port);
     if (trace) {
@@ -290,14 +301,17 @@ function tcpResult(
       version = detected.version;
     }
   }
-  return { result: { port, protocol: 'tcp', state, service, version, reason }, rttMs };
+  return {
+    result: { port, protocol: 'tcp', state, service, version, reason, replyTtl, reasonFrom },
+    rttMs,
+  };
 }
 
 function udpResult(
   options: NmapOptions, probes: HostProbes, ip: string, port: number,
 ): ProbedPort {
   const sent = performance.now();
-  const state = probes.udpState(ip, port, options.probeShape);
+  const { state, replyTtl } = probes.udpState(ip, port, options.probeShape);
   const rttMs = state === 'open|filtered' ? undefined : performance.now() - sent;
   const reason = state === 'open' ? 'udp-response' : state === 'closed' ? 'port-unreach' : 'no-response';
   let service = serviceName(port, 'udp');
@@ -309,7 +323,7 @@ function udpResult(
       version = detected.version;
     }
   }
-  return { result: { port, protocol: 'udp', state, service, version, reason }, rttMs };
+  return { result: { port, protocol: 'udp', state, service, version, reason, replyTtl }, rttMs };
 }
 
 function partition(options: NmapOptions, all: PortResult[]): Pick<HostReport, 'ports' | 'notShown'> {

@@ -89,6 +89,8 @@ export function parseScanFlags(arg: string): ScanProbeFlags | null {
 export interface ScanVerdict {
   state: PortState;
   reason: string;
+  replyTtl?: number;
+  reasonFrom?: string;
 }
 
 export function readStatelessReply(

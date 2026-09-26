@@ -83,12 +83,10 @@ function serviceTag(port: PortResult, versionScan: boolean): string {
 }
 
 function portTag(port: PortResult, versionScan: boolean): string {
-  // `state_reason_init` (`portreasons.cc:398`) part d'un TTL nul, et un
-  // balayage CONNECTE n'en observe jamais : ce simulateur ne releve le
-  // TTL d'aucune reponse de port, donc zero est ce qu'il a mesure.
   return openTag('port', [['protocol', port.protocol], ['portid', port.port]])
     + emptyTag('state', [
-      ['state', port.state], ['reason', port.reason], ['reason_ttl', 0],
+      ['state', port.state], ['reason', port.reason], ['reason_ttl', port.replyTtl ?? 0],
+      ['reason_ip', port.reasonFrom],
     ])
     + serviceTag(port, versionScan)
     + '</port>';

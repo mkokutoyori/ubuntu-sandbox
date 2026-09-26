@@ -4253,7 +4253,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           payload?.length ?? 0, emission);
       },
       scanProbe: (ip, port, flags, shape) =>
-        this.getTcpStack().scanProbe(ip, port, flags, shape),
+        this.getTcpStack().scanProbeDetail(ip, port, flags, shape),
       linkNeighbour: (ip) => linkNeighbourOf(this, ip),
       reverseName: (ip) => this.resolveAddressNameAsync(ip),
       resolveName: async (name) => (await this.resolveHostname(name))?.toString() ?? null,

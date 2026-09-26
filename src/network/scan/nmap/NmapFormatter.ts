@@ -69,13 +69,19 @@ function notShownLine(host: HostReport): string | null {
   return `Not shown: ${parts.join(', ')}`;
 }
 
+function portReasonText(port: PortResult): string {
+  const from = port.reasonFrom === undefined ? '' : ` from ${port.reasonFrom}`;
+  const ttl = port.replyTtl ? ` ttl ${port.replyTtl}` : '';
+  return `${port.reason}${from}${ttl}`;
+}
+
 function columns(options: NmapOptions): { headers: string[]; cell: (p: PortResult) => string[] } {
   const headers = ['PORT', 'STATE', 'SERVICE'];
   if (options.showReason) headers.push('REASON');
   if (options.versionScan) headers.push('VERSION');
   const cell = (p: PortResult): string[] => {
     const row = [`${p.port}/${p.protocol}`, p.state, p.service];
-    if (options.showReason) row.push(p.reason);
+    if (options.showReason) row.push(portReasonText(p));
     if (options.versionScan) row.push(p.version ?? '');
     return row;
   };

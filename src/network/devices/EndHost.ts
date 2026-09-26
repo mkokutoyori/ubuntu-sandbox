@@ -29,7 +29,7 @@ import { newProtocolCounters, countIcmpIn, countIcmpOut, type ProtocolCounters }
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
-import { TcpStack } from '../tcp/TcpStack';
+import { TcpStack, receivedIpHeaderOf } from '../tcp/TcpStack';
 import type { TcpSegment, TcpDialFailure, TcpWireOutcome } from '../tcp/types';
 import type { UdpChecksumInput } from '@/network/layers/transport/UdpChecksum';
 import { isDialFailure, noFlags } from '../tcp/types';
@@ -878,6 +878,7 @@ export abstract class EndHost extends Equipment {
         code: icmp.icmpType === 'time-exceeded'
           ? 'ttl-exceeded' : unreachableCodeName(icmp.code),
         icmpCode: icmp.code,
+        ttl: ipPkt.ttl,
         origProtocol: original?.protocol,
         origDestPort: transport?.destinationPort,
       },
@@ -2686,7 +2687,7 @@ export abstract class EndHost extends Equipment {
           this.tcpv2.onIcmpUnreachable(
             origSeg.sourcePort, origSeg.destinationPort,
             icmp.originalPacket.destinationIP.toString(),
-            icmp.code, ipPkt.sourceIP.toString(),
+            icmp.code, ipPkt.sourceIP.toString(), receivedIpHeaderOf(ipPkt),
           );
         }
       } else if (icmp.icmpType === 'time-exceeded' && icmp.originalPacket) {
@@ -2695,7 +2696,7 @@ export abstract class EndHost extends Equipment {
           this.tcpv2.noteProbeTimeExceeded(
             origSeg.sourcePort, origSeg.destinationPort,
             icmp.originalPacket.destinationIP.toString(),
-            icmp.code, ipPkt.sourceIP.toString(),
+            icmp.code, ipPkt.sourceIP.toString(), receivedIpHeaderOf(ipPkt),
           );
         }
       } else if (isFragNeeded && icmp.originalPacket && icmp.mtu !== undefined) {

@@ -26,7 +26,7 @@ function probes(): HostProbes {
       return 'refused';
     },
     udpState(_ip, port) {
-      return port === 53 ? 'open' : 'closed';
+      return { state: port === 53 ? 'open' : 'closed' };
     },
     banner(_ip, port) {
       if (port === 443) return { service: 'ssh', version: 'OpenSSH 8.9 (protocol 2.0)' };

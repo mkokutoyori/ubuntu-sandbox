@@ -31,7 +31,7 @@ function scanHost(ctx: LinuxCommandContext): ScanHost {
     sendUdpProbe: (ip, port, sourcePort, options) =>
       ctx.net.sendUdpProbe(new IPAddress(ip), port, sourcePort, options),
     scanProbe: (ip, port, flags, shape) =>
-      ctx.net.getTcpStack().scanProbe(ip, port, flags, shape),
+      ctx.net.getTcpStack().scanProbeDetail(ip, port, flags, shape),
     sendRawIpProbe: (ip, protocol) =>
       ctx.net.sendRawIpPacket(new IPAddress(ip), protocol),
     linkNeighbour: (ip) => linkNeighbourOf(localDeviceOf(ctx), ip),
