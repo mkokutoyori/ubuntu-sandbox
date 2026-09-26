@@ -139,6 +139,7 @@ export interface GreDecapsulator {
 // ─── Internal Types ────────────────────────────────────────────────
 
 import type { ARPEntry } from '../core/types';
+import { PortBindingPolicy } from '../core/ports/PortBindingPolicy';
 import type { TaggedEthernetFrame } from './Switch';
 
 const CLIENT_DDNS_TTL = 1200;
@@ -435,6 +436,7 @@ export abstract class EndHost extends Equipment {
   protected ipv6RoutingTable: HostIPv6RouteEntry[] = [];
 
   protected readonly tcpv2: TcpStack;
+  protected readonly portBindingPolicy: PortBindingPolicy;
 
   // ─── DHCP Client (RFC 2131) ─────────────────────────────────────
   protected dhcpClient: DHCPClient;
@@ -969,9 +971,13 @@ export abstract class EndHost extends Equipment {
     this.tcpv2 = new TcpStack(hostBase, () => this.getBus(), () => this.getScheduler());
     this.tcpv2.start();
     this.attachListenerProjection();
+    const platform = String(type).includes('windows') ? 'windows' : 'linux';
+    this.portBindingPolicy = platform === 'windows' ? PortBindingPolicy.windows() : PortBindingPolicy.linux();
+    this.socketTable.setBindingPolicy(this.portBindingPolicy);
+    this.tcpv2.setBindingPolicy(this.portBindingPolicy);
     this.hardware = HardwareProfile.defaultFor(
       String(type).includes('server') ? 'server' : 'workstation',
-      String(type).includes('windows') ? 'windows' : 'linux',
+      platform,
     );
     this.hardware.identify(this.name);
     this.lifecycle = new HostLifecycle();
@@ -4180,14 +4186,14 @@ export abstract class EndHost extends Equipment {
    * clients (nc, telnet, ssh) distinguish a filtered port from a closed
    * one without inspecting the peer's firewall state.
    */
-  tcpConnectOutcome(targetIP: IPAddress, port: number): TcpWireOutcome {
+  tcpConnectOutcome(targetIP: IPAddress, port: number, sourcePort?: PortNumber): TcpWireOutcome {
     this.resolveArpSync(targetIP);
-    return this.tcpv2.connectOutcome(targetIP.toString(), port);
+    return this.tcpv2.connectOutcome(targetIP.toString(), port, sourcePort);
   }
 
-  tcpConnectOutcome6(targetIP: IPv6Address, port: number): TcpWireOutcome {
+  tcpConnectOutcome6(targetIP: IPv6Address, port: number, sourcePort?: PortNumber): TcpWireOutcome {
     this.resolveNdpSync(targetIP);
-    return this.tcpv2.connectOutcome(targetIP.toString(), port);
+    return this.tcpv2.connectOutcome(targetIP.toString(), port, sourcePort);
   }
 
   tcpProbeSyncIPv6(targetAddr: string, port: number): boolean {

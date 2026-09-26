@@ -18,6 +18,7 @@
 import type { SocketTable } from '../../../core/SocketTable';
 import type { TcpStack, TcpSocket } from '../../../tcp/TcpStack';
 import type { SshPortForward } from './SshPortForward';
+import { forwardFailureOf, type ForwardOpening } from '../../../protocols/ssh/ForwardOpening';
 
 export class SshForwardingTable {
   /** Forwards currently live on this machine, in insertion order. */
@@ -40,26 +41,24 @@ export class SshForwardingTable {
    * Open a forward on this machine: record it and bind its listening
    * socket. `processName` is `ssh` for client-side (`-L`/`-D`) listeners
    * and `sshd` for server-side (`-R`) ones.
-   *
-   * Returns false when the listen port is already taken by an unrelated
-   * socket (mirrors `bind(): EADDRINUSE`); a port already held by an
-   * identical forward is treated as success (idempotent re-open).
    */
-  open(fwd: SshPortForward, pid: number, processName: string, dialStack?: TcpStack): boolean {
+  open(
+    fwd: SshPortForward, pid: number, processName: string, dialStack?: TcpStack, ownerUid?: number,
+  ): ForwardOpening {
     if (this.sockets.isPortBound(fwd.listenPort, 'tcp')) {
       const ownedByForward = this.active.some(
         (f) => f.listenPort === fwd.listenPort,
       );
       if (ownedByForward) {
         this.active.push(fwd);
-        return true;
+        return 'opened';
       }
-      return false;
+      return 'address-in-use';
     }
     try {
-      this.sockets.bind('tcp', fwd.bindAddress, fwd.listenPort, pid, processName);
-    } catch {
-      return false;
+      this.sockets.bind('tcp', fwd.bindAddress, fwd.listenPort, pid, processName, undefined, { ownerUid });
+    } catch (error) {
+      return forwardFailureOf(error);
     }
     this.active.push(fwd);
     if (this.ownTcpStack && dialStack && fwd.destHost && fwd.destPort !== null) {
@@ -71,7 +70,7 @@ export class SshForwardingTable {
         );
       } catch { /* already listening */ }
     }
-    return true;
+    return 'opened';
   }
 
   /** Bridge one accepted connection to a fresh one dialed from the tunnel's other end. */

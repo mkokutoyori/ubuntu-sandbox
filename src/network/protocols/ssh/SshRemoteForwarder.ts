@@ -13,6 +13,7 @@
  * Reference: SSH-IMPLEMENTATION-ANALYSIS.md §5 P6.
  */
 
+import { forwardFailureOf, type ForwardOpening } from './ForwardOpening';
 import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import type { EndHost } from '@/network/devices/EndHost';
 import type { SshSession } from './session/SshSession';
@@ -47,13 +48,18 @@ export class SshRemoteForwarder {
     return this.spec;
   }
 
-  /** Idempotent — registering twice is a no-op. */
-  register(): void {
-    if (this.registered) return;
-    this.remoteDevice.getTcpStack().listen(this.spec.remotePort, {
-      onAccept: (socket) => this.handleAccept(socket as unknown as TcpConnection),
-    });
+  register(ownerUid?: number): ForwardOpening {
+    if (this.registered) return 'opened';
+    try {
+      this.remoteDevice.getTcpStack().listen(this.spec.remotePort, {
+        onAccept: (socket) => this.handleAccept(socket as unknown as TcpConnection),
+        ownerUid,
+      });
+    } catch (error) {
+      return forwardFailureOf(error);
+    }
     this.registered = true;
+    return 'opened';
   }
 
   /**

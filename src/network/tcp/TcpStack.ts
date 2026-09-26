@@ -12,6 +12,7 @@ import { bogusChecksum, payloadBytes } from '@/network/layers/transport/L4Checks
 import { type StreamPayload, isStreamPayload, sliceStream, appendStream } from './StreamPayload';
 import { fragmentIPv4, IPV4_FLAG_DF } from '@/network/core/Ipv4Fragmentation';
 import { PortNumber, PORT_ANY } from '@/network/core/ports/PortNumber';
+import type { PortBindingPolicy } from '@/network/core/ports/PortBindingPolicy';
 import { PROHIBITED_UNREACH_CODES } from '@/network/core/IcmpErrors';
 
 /**
@@ -214,6 +215,7 @@ export interface TcpListenOptions {
    * les deux tables ne peuvent plus en diverger.
    */
   identity?: ListenerIdentity;
+  ownerUid?: number;
 }
 
 export class TcpSocket {
@@ -555,9 +557,19 @@ export class TcpStack {
 
   private socketSink: ListenerSocketSink | null = null;
 
+  private bindingPolicy: PortBindingPolicy | null = null;
+
+  setBindingPolicy(policy: PortBindingPolicy): void {
+    this.bindingPolicy = policy;
+  }
+
   listen(localPort: number, opts: TcpListenOptions, localIp = '0.0.0.0'): TcpListener {
     if (!PortNumber.isValid(localPort)) {
       throw new Error(`TCP listener port out of range: ${localPort} (EINVAL)`);
+    }
+    if (localPort !== PORT_ANY && opts.ownerUid !== undefined && this.bindingPolicy !== null
+      && !this.bindingPolicy.permits(localPort, { uid: opts.ownerUid })) {
+      throw new Error(`TCP listener on ${localIp}:${localPort} needs CAP_NET_BIND_SERVICE (EACCES)`);
     }
     const boundPort = localPort === PORT_ANY ? this.nextEphemeral(localIp) : localPort;
     if (boundPort < 0) {
@@ -691,8 +703,8 @@ export class TcpStack {
    * 'unreachable' when the attempt never left this machine because no
    * route resolves — ENETUNREACH, which a real stack reports at once.
    */
-  connectOutcome(remoteIp: string, remotePort: number): TcpWireOutcome {
-    const socket = this.connect(remoteIp, remotePort);
+  connectOutcome(remoteIp: string, remotePort: number, localPort?: PortNumber): TcpWireOutcome {
+    const socket = this.connect(remoteIp, remotePort, localPort === undefined ? {} : { localPort });
     if (!socket) return this.hasEgressTo(remoteIp) ? 'timeout' : 'unreachable';
     if (socket.everEstablished) {
       socket.close();
