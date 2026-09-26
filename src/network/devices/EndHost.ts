@@ -2293,6 +2293,10 @@ export abstract class EndHost extends Equipment {
         if (inner) this.handleIPv4(portName, inner, srcMac);
       } else {
         this.protocolCounters.ipInUnknownProtos++;
+        if (mayGenerateICMPError(ipPkt) && !isBroadcast && !isMulticast) {
+          this.sendICMPError(
+            portName, ipPkt, 'destination-unreachable', ICMP_UNREACH_PROTO);
+        }
       }
       return;
     }
@@ -2610,7 +2614,16 @@ export abstract class EndHost extends Equipment {
           this.tcpv2.onIcmpUnreachable(
             origSeg.sourcePort, origSeg.destinationPort,
             icmp.originalPacket.destinationIP.toString(),
-            icmp.code,
+            icmp.code, ipPkt.sourceIP.toString(),
+          );
+        }
+      } else if (icmp.icmpType === 'time-exceeded' && icmp.originalPacket) {
+        const origSeg = icmp.originalPacket.payload as TCPPacket | undefined;
+        if (origSeg && origSeg.type === 'tcp') {
+          this.tcpv2.noteProbeTimeExceeded(
+            origSeg.sourcePort, origSeg.destinationPort,
+            icmp.originalPacket.destinationIP.toString(),
+            icmp.code, ipPkt.sourceIP.toString(),
           );
         }
       } else if (isFragNeeded && icmp.originalPacket && icmp.mtu !== undefined) {

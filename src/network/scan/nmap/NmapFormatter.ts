@@ -122,8 +122,18 @@ function renderHost(host: HostReport, options: NmapOptions): string[] {
   // enregistres a l'IEEE, et toute adresse de ce simulateur porte le bit
   // local (RFC 7042 §2.1), donc aucune n'y figure.
   if (host.mac) lines.push(`MAC Address: ${host.mac.toUpperCase()} (Unknown)`);
+  if (options.osScan && host.osClass) {
+    lines.push(`Device type: ${host.osClass.deviceTypes.join('|')}`);
+    lines.push(`Running: ${host.osClass.vendorFamily} `
+      + `${host.osClass.generations.join('|')}`);
+    lines.push(`OS CPE: ${host.osClass.cpes.join(' ')}`);
+  }
   if (options.osScan && host.osGuess) {
     lines.push(`OS details: ${host.osGuess}`);
+  }
+  if (host.distanceHops !== undefined) {
+    lines.push(`Network Distance: ${host.distanceHops} `
+      + `${host.distanceHops === 1 ? 'hop' : 'hops'}`);
   }
   // nmap.cc:2345 : la trace vient apres l'identification du service et
   // avant les temps, et un hote sans aucun saut n'a pas de section.
@@ -163,6 +173,13 @@ export function renderNormal(report: NmapReport, options: NmapOptions, _commandL
   // Les paquets sont emis PENDANT le balayage, donc leurs lignes
   // precedent le rapport de chaque hote.
   lines.push(...report.packetTrace);
+  if (report.listScan) {
+    for (const host of report.hosts) {
+      lines.push(`Nmap scan report for ${hostLabel(host)}`);
+    }
+    lines.push(tally(report));
+    return lines.join('\n');
+  }
   for (const host of report.hosts) {
     lines.push('');
     lines.push(...renderHost(host, options));
