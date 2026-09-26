@@ -14,7 +14,7 @@
  * session level, not at the device level. This device only handles cmd.exe.
  */
 
-import { EndHost, PingResult } from './EndHost';
+import { EndHost, PingResult, type TracerouteHopResult } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import type { NicTeam, TeamMember, TeamNic } from './windows/WindowsNicTeam';
 import {
@@ -112,7 +112,7 @@ import { cmdNetsh } from './windows/WinNetsh';
 import { cmdPing } from './windows/WinPing';
 import { cmdArp } from './windows/WinArp';
 import { cmdGetmac } from './windows/WinGetmac';
-import { cmdTracert } from './windows/WinTracert';
+import { cmdTracert, tracertHostOf, type TracertHost } from './windows/WinTracert';
 import { cmdRoute } from './windows/WinRoute';
 import { cmdWevtutil } from './windows/WinWevtutil';
 import { cmdWhoami } from './windows/WinWhoami';
@@ -3497,6 +3497,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return '';
   }
 
+  tracertHost(): TracertHost {
+    return tracertHostOf(this.buildNetContext());
+  }
+
   private buildNetContext(): WinCommandContext {
     // The gateway is read through a getter, not snapshotted: `ipconfig
     // /renew` obtains the lease and then re-displays the adapter within the
@@ -3548,8 +3552,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       executePingSequence: (target: IPAddress, count: number, timeout?: number, ttl?: number,
         opts?: { dataSize?: number; df?: boolean }) =>
         this.executePingSequence(target, count, timeout, ttl, opts),
-      executeTraceroute: (target: IPAddress, maxHops?: number, timeoutMs?: number) =>
-        this.executeTraceroute(target, maxHops, timeoutMs ?? 500) as Promise<TracerouteHop[]>,
+      executeTraceroute: (
+        target: IPAddress, maxHops?: number, timeoutMs?: number,
+        hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean },
+      ) => this.executeTraceroute(
+        target, maxHops, timeoutMs ?? 500, 3, 1,
+        hooks as { onHop?: (hop: TracerouteHopResult) => void; shouldStop?: () => boolean } | undefined,
+      ) as Promise<TracerouteHop[]>,
 
       reverseLookup: (ip: string): string | null => this.resolveAddressName(ip),
 

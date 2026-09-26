@@ -721,17 +721,24 @@ export interface EthernetFrame {
 
 export const ETHERNET_FRAME_OVERHEAD_BYTES = 18;
 
-export function ethernetFrameBytes(frame: EthernetFrame): number {
-  let overhead = ETHERNET_FRAME_OVERHEAD_BYTES;
-  if ((frame as { dot1q?: unknown }).dot1q) overhead += 4;
-  if ((frame as { outerDot1q?: unknown }).outerDot1q) overhead += 4;
+const ETHERNET_FCS_BYTES = 4;
+const ETHERNET_MINIMUM_FRAME_BYTES = 64;
+
+export function ethernetFrameBytesWithoutFcs(frame: EthernetFrame): number {
+  let header = ETHERNET_FRAME_OVERHEAD_BYTES - ETHERNET_FCS_BYTES;
+  if ((frame as { dot1q?: unknown }).dot1q) header += 4;
+  if ((frame as { outerDot1q?: unknown }).outerDot1q) header += 4;
   const p = frame.payload as { totalLength?: number; payloadLength?: number } | undefined;
   let payloadBytes: number;
   if (frame.etherType === ETHERTYPE_ARP) payloadBytes = 28;
   else if (frame.etherType === ETHERTYPE_IPV4 && typeof p?.totalLength === 'number') payloadBytes = p.totalLength;
   else if (frame.etherType === ETHERTYPE_IPV6 && typeof p?.payloadLength === 'number') payloadBytes = 40 + p.payloadLength;
   else payloadBytes = 46;
-  return Math.max(64, overhead + payloadBytes);
+  return header + payloadBytes;
+}
+
+export function ethernetFrameBytes(frame: EthernetFrame): number {
+  return Math.max(ETHERNET_MINIMUM_FRAME_BYTES, ethernetFrameBytesWithoutFcs(frame) + ETHERNET_FCS_BYTES);
 }
 
 // ─── L3: IPv4 Packet (RFC 791) ──────────────────────────────────────

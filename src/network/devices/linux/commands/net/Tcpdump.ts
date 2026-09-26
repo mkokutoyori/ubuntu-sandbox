@@ -1,6 +1,6 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { runTcpdump } from '../../network/tcpdump/TcpdumpRunner';
+import { interleaveTcpdumpStreams, runTcpdump } from '../../network/tcpdump/TcpdumpRunner';
 import { makeArgCompleter } from '../completionHelpers';
 
 export const tcpdumpCommand: LinuxCommand = {
@@ -35,11 +35,14 @@ export const tcpdumpCommand: LinuxCommand = {
 
   async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
     const result = await runTcpdump(args, ctx.net.buildTcpdumpDeps());
-    return [result.stdout, result.stderr].filter((s) => s.length > 0).join('\n');
+    return interleaveTcpdumpStreams(result);
   },
 
   async runWithStatus(ctx: LinuxCommandContext, args: string[]) {
     const result = await runTcpdump(args, ctx.net.buildTcpdumpDeps());
-    return { output: result.stdout, exitCode: result.exitCode, stderr: result.stderr };
+    return {
+      output: result.stdout, exitCode: result.exitCode, stderr: result.stderr,
+      interleaved: interleaveTcpdumpStreams(result),
+    };
   },
 };

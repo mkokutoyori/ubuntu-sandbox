@@ -1722,9 +1722,11 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       await topo.r1.executeCommand('ip nat inside source list 1 interface GigabitEthernet0/1 overload');
       await topo.r1.executeCommand('end');
 
-      await topo.inside_pc1.executeCommand('traceroute 198.51.100.10');
+      const trace = await topo.inside_pc1.executeCommand('traceroute -n 198.51.100.10');
       const table = await topo.r1.executeCommand('show ip nat translations');
-      expect(table).toContain(':33434'); // standard starting UDP port for traceroute
+      expect(trace).toMatch(/^ 3  198\.51\.100\.10  /m);
+      expect(table).not.toContain(':33436 ');
+      expect(table).toMatch(/^udp\s+203\.0\.113\.1:\d+\s+192\.168\.1\.10:\d+\s+198\.51\.100\.10:33437\s+198\.51\.100\.10:33437$/m);
     });
 
     it('144. should display statistics details correctly inside show ip nat statistics', async () => {

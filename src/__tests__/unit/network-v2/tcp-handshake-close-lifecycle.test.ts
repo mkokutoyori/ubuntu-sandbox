@@ -112,7 +112,7 @@ async function capturer(
 ): Promise<string> {
   await pc.executeCommand(`tcpdump -nn port 8080 -w ${fichier} &`);
   trafic();
-  return pc.executeCommand(`tcpdump -r ${fichier} -nn`);
+  return pc.executeCommand(`tcpdump -r ${fichier} -nn -S`);
 }
 
 describe('Scénario 1 — Cycle de vie complet d\'une connexion TCP', () => {

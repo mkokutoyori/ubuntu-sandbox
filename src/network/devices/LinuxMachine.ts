@@ -22,7 +22,8 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
-import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, getNUDState } from './EndHost';
+import { tracerouteHostOf, type TracerouteHost } from './linux/commands/net/Traceroute';
+import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, getNUDState } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import { adOperPortKey, buildActorState } from '@/network/lacp/types';
@@ -199,7 +200,9 @@ import { TcpSocketStateProjection } from './linux/network/TcpSocketStateProjecti
 import { TcpdumpCaptureProjection } from './linux/network/TcpdumpCaptureProjection';
 import { LogindStateSync } from './linux/network/LogindStateSync';
 import type { TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
-import { serializeCaptureFile } from './linux/network/tcpdump/CaptureFileFormat';
+import { nssCaptureNames } from './linux/network/tcpdump/NssCaptureNames';
+import { splitShellWords } from '@/bash/runtime/ShellWords';
+import { LINUX_ICMP_ERROR_QUOTE, type IcmpErrorQuote } from '../core/IcmpErrors';
 import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
 import { SSH_SERVER_IDENTIFICATION_LINE } from '@/network/protocols/ssh/serverIdentification';
 import { buildLinuxInteractionPlan } from './linux/interaction/LinuxInteractionPlanner';
@@ -803,9 +806,17 @@ export abstract class LinuxMachine extends EndHost
    * simples réglages : chacun tient un vrai port UDP sur son groupe
    * multicast et répond pour le nom de cet hôte.
    */
+  protected override icmpErrorQuote(): IcmpErrorQuote {
+    return LINUX_ICMP_ERROR_QUOTE;
+  }
+
   protected override lldpSystemDescription(): string {
     const k = this.executor.identity.kernel;
     return `${this.getHostname()} ${k.sysname} ${k.release} ${k.machine}`;
+  }
+
+  tracerouteHost(): TracerouteHost {
+    return tracerouteHostOf(this.buildCommandContext());
   }
 
   getLlmnrAgent(): LlmnrAgent {
@@ -3597,6 +3608,7 @@ export abstract class LinuxMachine extends EndHost
           if (cmd.runWithStatus) {
             const result = await cmd.runWithStatus(this.buildCommandContext(), cmdArgs);
             this.executor.lastExitCode = result.exitCode;
+            if (result.interleaved !== undefined) return result.interleaved;
             return [result.output, result.stderr].filter((s) => s).join('\n');
           }
           this.executor.lastExitCode = 0;
@@ -3684,16 +3696,8 @@ export abstract class LinuxMachine extends EndHost
 
   /** Same as {@link tokenizeArgs}, plus whether a quote was left unclosed. */
   private static tokenizeArgsDetailed(input: string): { tokens: string[]; unterminatedQuote: boolean } {
-    const tokens: string[] = [];
-    let cur = '', inQ = false, qc = '', hasToken = false;
-    for (const ch of input) {
-      if (inQ) { if (ch === qc) inQ = false; else cur += ch; }
-      else if (ch === '"' || ch === "'") { inQ = true; qc = ch; hasToken = true; }
-      else if (ch === ' ' || ch === '\t') { if (hasToken) { tokens.push(cur); cur = ''; hasToken = false; } }
-      else { cur += ch; hasToken = true; }
-    }
-    if (hasToken) tokens.push(cur);
-    return { tokens, unterminatedQuote: inQ };
+    const split = splitShellWords(input);
+    return { tokens: split.words, unterminatedQuote: split.unterminatedQuote };
   }
 
   // ─── Hostname resolution (shared between buildNetKernel & commands) ─
@@ -3937,10 +3941,16 @@ export abstract class LinuxMachine extends EndHost
       ): Promise<PingResult[]> => {
         return this.executePing6Sequence(target, count, timeoutMs);
       },
-      traceroute: async (target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number, timeoutMs?: number): Promise<TracerouteHop[]> => {
-        const hops = await this.executeTraceroute(target, maxHops, timeoutMs ?? 2000, probesPerHop, firstTtl);
+      traceroute: async (
+        target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number,
+        timeoutMs?: number, method?: TraceProbeMethod, socket?: TraceSocketOptions,
+        hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean },
+      ): Promise<TracerouteHop[]> => {
+        const hops = await this.executeTraceroute(
+          target, maxHops, timeoutMs ?? 2000, probesPerHop, firstTtl, hooks, method, socket);
         return hops as TracerouteHop[];
       },
+      canTraceTo: (target: IPAddress, socket: TraceSocketOptions): boolean => this.canTraceTo(target, socket),
       sendUdpProbe: (
         target: IPAddress, destinationPort: number, sourcePort: number,
         options: {
@@ -4766,10 +4776,20 @@ export abstract class LinuxMachine extends EndHost
     return this.executor.captureLog.subscribe(listener);
   }
 
-  private buildTcpdumpDeps(): TcpdumpDeps {
+  buildTcpdumpDeps(): TcpdumpDeps {
+    const pid = this.executor.currentPid();
+    const detached = this.executor.runsDetached();
+    const cwd = this.executor.getCwd();
+    const actor = this.executor.pathActorOf(this.executor.userMgr.currentUser)
+      ?? { uid: this.executor.userMgr.currentUid, gid: this.executor.userMgr.currentGid };
+    const umask = this.executor.getUmask();
     return {
       interfaceNames: (): string[] => {
-        return ['lo', ...this.ports.keys()];
+        return ['lo', ...[...this.ports.keys()].filter((name) => name !== 'lo')];
+      },
+      interfaceCarrier: (name: string): boolean => {
+        if (name === 'lo') return true;
+        return this.ports.get(name)?.hasCarrier() ?? false;
       },
       interfaceExists: (name: string): boolean => {
         return name === 'lo' || this.ports.has(name);
@@ -4788,29 +4808,37 @@ export abstract class LinuxMachine extends EndHost
         return new Promise((resolve) => setTimeout(resolve, ms));
       },
       onCancelRequested: (cb: () => void): () => void => {
-        const pid = this.executor.currentPid();
         return this.getBus().subscribeWhere('linux.process.exited',
           (p) => p.deviceId === this.id && p.pid === pid,
           () => cb());
       },
-      runsDetached: (): boolean => this.executor.runsDetached(),
+      runsDetached: (): boolean => detached,
       readFile: (path: string): string | null => {
-        const v = this.executor.vfs.readFile(this.executor.vfs.normalizePath(path, this.executor.getCwd()));
-        if (v != null) return v;
-        const cap = this.executor.captureLog.all();
-        if (cap.length === 0) return null;
-        const fakeFrames = cap.map(pkt => makeTcpFrame(pkt, 'eth0'));
-        return serializeCaptureFile(fakeFrames);
+        return this.executor.vfs.readFile(this.executor.vfs.normalizePath(path, cwd));
       },
-      writeFile: (path: string, content: string): boolean => {
-        const abs = this.executor.vfs.normalizePath(path, this.executor.getCwd());
-        return this.executor.vfs.writeFile(abs, content, 0, 0, 0o022);
+      userExists: (name: string): boolean => this.executor.pathActorOf(name) !== null,
+      writeFile: (path: string, content: string, asUser?: string): boolean => {
+        const writer = asUser === undefined ? actor : this.executor.pathActorOf(asUser) ?? actor;
+        const abs = this.executor.vfs.normalizePath(path, cwd);
+        return this.executor.vfs.writeFile(abs, content, writer.uid, writer.gid, umask);
       },
-      dirWritable: (path: string): boolean => {
-        const abs = this.executor.vfs.normalizePath(path, this.executor.getCwd());
-        const dir = abs.slice(0, abs.lastIndexOf('/')) || '/';
-        return this.executor.vfs.exists(dir) && !dir.startsWith('/sys') && !dir.startsWith('/proc');
+      dirWritable: (path: string, asUser?: string): boolean => {
+        const writer = asUser === undefined ? actor : this.executor.pathActorOf(asUser) ?? actor;
+        const target = this.executor.vfs.path(path, cwd, writer);
+        const dir = target.dirname;
+        if (dir.startsWith('/sys') || dir.startsWith('/proc')) return false;
+        return target.parent().isWritableDir();
       },
+      interfaceNetwork: (name: string): { address: string; mask: string } | null => {
+        const port = this.ports.get(name);
+        const address = port?.getIPAddress();
+        const mask = port?.getSubnetMask();
+        return address && mask ? { address: address.toString(), mask: mask.toString() } : null;
+      },
+      interfaceMac: (name: string): string | null => {
+        return this.ports.get(name)?.getMAC()?.toString() ?? null;
+      },
+      names: nssCaptureNames(this.executor.nss),
     };
   }
 

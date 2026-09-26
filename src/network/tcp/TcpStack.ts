@@ -58,6 +58,7 @@ export interface ScanProbeShape {
   acknowledgement?: number;
   tos?: number;
   identification?: number;
+  dontFragment?: boolean;
 }
 
 export interface StatelessProbeDetail {
@@ -2172,7 +2173,7 @@ export class TcpStack {
       new IPAddress(srcIp), new IPAddress(dstIp), IP_PROTO_TCP, ttl,
       seg, tcpHeaderBytes + payloadBytes(seg.payload).length,
       {
-        flags: fragmentMtu === undefined ? IPV4_FLAG_DF : 0,
+        flags: fragmentMtu === undefined && shape?.dontFragment !== false ? IPV4_FLAG_DF : 0,
         ...(shape?.tos === undefined ? {} : { tos: shape.tos }),
         ...(shape?.identification === undefined
           ? {} : { identification: shape.identification }),
