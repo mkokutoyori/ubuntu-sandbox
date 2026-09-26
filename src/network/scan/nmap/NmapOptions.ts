@@ -174,6 +174,7 @@ export interface NmapOptions {
   traceroute: boolean;
   privileged: boolean;
   lateWarnings: string[];
+  fatalAfterBanner?: string;
   /**
    * `--packet-trace` : chaque paquet emis et recu par le balayage, dans
    * la forme de `PacketTrace` (`tcpip.cc`). Un balayage CONNECTE ne rend
@@ -254,7 +255,9 @@ export class NmapImmediateOutput extends Error {
   }
 }
 
-export const NMAP_USAGE = 'Nmap 7.94 ( https://nmap.org )\n'
+export const NMAP_VERSION = '7.94';
+
+export const NMAP_USAGE = `Nmap ${NMAP_VERSION} ( https://nmap.org )\n`
   + 'Usage: nmap [Scan Type(s)] [Options] {target specification}';
 
 /**
@@ -262,9 +265,9 @@ export const NMAP_USAGE = 'Nmap 7.94 ( https://nmap.org )\n'
  * `Compiled with:` qui suivent decrivent une construction qui n'existe
  * pas ici, donc elles sont OMISES plutot qu'inventees.
  */
-export const NMAP_VERSION_TEXT = 'Nmap version 7.94 ( https://nmap.org )';
+export const NMAP_VERSION_TEXT = `Nmap version ${NMAP_VERSION} ( https://nmap.org )`;
 
-export const NMAP_BANNER = 'Starting Nmap 7.94 ( https://nmap.org )';
+export const NMAP_BANNER = `Starting Nmap ${NMAP_VERSION} ( https://nmap.org )`;
 
 const UNKNOWN_TAIL = 'See the output of nmap -h for a summary of options.';
 
@@ -768,7 +771,7 @@ export function parseNmapArgs(args: string[], privileged: boolean): NmapOptions 
   if (sourcePort !== undefined && connectScan) {
     warnings.push(SOURCE_PORT_CONNECT_WARNING);
   }
-  if (traceroute && !isRoot) quitting(warnings, NMAP_BANNER, 'Traceroute has to be run as root');
+  const fatalAfterBanner = traceroute && !isRoot ? 'Traceroute has to be run as root' : undefined;
   if ((shapesTheProbe || scanFlags !== undefined) && connectScan) {
     lateWarnings.push(...rawOptionsWarning(isRoot));
   }
@@ -789,6 +792,7 @@ export function parseNmapArgs(args: string[], privileged: boolean): NmapOptions 
     osScan, openOnly, ipv6, disableArpPing, alwaysResolve, traceroute, packetTrace,
     showReason, noDns, verbose, debugLevel, stylesheet, probeShape, decoys, warnings,
     lateWarnings, privileged: isRoot,
+    ...(fatalAfterBanner === undefined ? {} : { fatalAfterBanner }),
     outputNormal, outputGreppable, outputXml,
     inputFile, excludeFile, excludeSpecs, randomTargets, listScan,
     ...(plan.length > 0 ? { discovery: plan } : {}),

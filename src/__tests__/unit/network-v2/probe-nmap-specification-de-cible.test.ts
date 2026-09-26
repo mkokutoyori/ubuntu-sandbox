@@ -113,7 +113,7 @@ describe('un octet se decrit par une plage, une liste ou un joker', () => {
 
     expect(sortie).not.toContain('Failed to resolve');
     expect(adressesBalayees(sortie)).toBe(3);
-    expect(cibles(sortie)).toEqual(['10.0.0.2', '10.0.0.3']);
+    expect(cibles(sortie)).toEqual(['10.0.0.1', '10.0.0.2', '10.0.0.3']);
   });
 
   it('une liste enumere, et l ordre reste croissant', async () => {
@@ -122,7 +122,7 @@ describe('un octet se decrit par une plage, une liste ou un joker', () => {
     const sortie = await taper(scanner, 'sudo nmap -sn 10.0.0.3,1,2');
 
     expect(adressesBalayees(sortie)).toBe(3);
-    expect(cibles(sortie)).toEqual(['10.0.0.2', '10.0.0.3']);
+    expect(cibles(sortie)).toEqual(['10.0.0.1', '10.0.0.2', '10.0.0.3']);
   });
 
   it('un joker vaut 0-255', async () => {
@@ -131,7 +131,7 @@ describe('un octet se decrit par une plage, une liste ou un joker', () => {
     const sortie = await taper(scanner, 'sudo nmap -sn 10.0.0.*');
 
     expect(adressesBalayees(sortie)).toBe(256);
-    expect(cibles(sortie)).toEqual(['10.0.0.2', '10.0.0.3']);
+    expect(cibles(sortie)).toEqual(['10.0.0.1', '10.0.0.2', '10.0.0.3']);
   });
 
   it('une borne gauche absente vaut 0, une borne droite absente vaut 255', async () => {
@@ -228,7 +228,7 @@ describe('une cible peut etre RETIREE', () => {
 
     expect(sortie).not.toContain('not implemented');
     expect(adressesBalayees(sortie)).toBe(2);
-    expect(cibles(sortie)).toEqual(['10.0.0.2']);
+    expect(cibles(sortie)).toEqual(['10.0.0.1', '10.0.0.2']);
   });
 
   it('--exclude accepte la meme grammaire que la cible', async () => {
@@ -237,7 +237,7 @@ describe('une cible peut etre RETIREE', () => {
     const sortie = await taper(scanner, 'sudo nmap -sn --exclude 10.0.0.2-3 10.0.0.*');
 
     expect(adressesBalayees(sortie)).toBe(254);
-    expect(cibles(sortie)).toEqual([]);
+    expect(cibles(sortie)).toEqual(['10.0.0.1']);
   });
 
   it('--exclude decoupe sur les virgules AVANT d analyser, verrue comprise', async () => {
@@ -256,7 +256,7 @@ describe('une cible peut etre RETIREE', () => {
     const sortie = await taper(scanner, 'sudo nmap -sn --excludefile horsjeu.txt 10.0.0.1-3');
 
     expect(adressesBalayees(sortie)).toBe(2);
-    expect(cibles(sortie)).toEqual(['10.0.0.3']);
+    expect(cibles(sortie)).toEqual(['10.0.0.1', '10.0.0.3']);
   });
 });
 
@@ -299,6 +299,6 @@ describe('TEMOINS', () => {
     const sortie = await taper(scanner, 'sudo nmap -sn 10.0.0.0/29');
 
     expect(adressesBalayees(sortie)).toBe(8);
-    expect(cibles(sortie)).toEqual(['10.0.0.2', '10.0.0.3']);
+    expect(cibles(sortie)).toEqual(['10.0.0.1', '10.0.0.2', '10.0.0.3']);
   });
 });

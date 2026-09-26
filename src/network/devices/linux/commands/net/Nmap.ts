@@ -7,6 +7,7 @@ import { detectServiceFromBanner } from '@/network/scan/nmap/BannerAnalyzer';
 import { linkNeighbourOf, type ScanHost } from '@/network/scan/nmap/NmapProbes';
 import { runNmap } from '@/network/scan/nmap/NmapRun';
 import { makeArgCompleter } from '../completionHelpers';
+import { formatLocalTime } from '../../system/SystemInfo';
 
 export { detectServiceFromBanner };
 
@@ -14,6 +15,7 @@ function scanHost(ctx: LinuxCommandContext): ScanHost {
   return {
     device: localDeviceOf(ctx),
     privileged: ctx.executor.holdsCapability('CAP_NET_RAW'),
+    localTime: (format, atMs) => formatLocalTime(format, atMs, ctx.executor.identity.timezone),
     readFile: (p) => ctx.executor.vfs.readFile(
       ctx.executor.vfs.normalizePath(p, ctx.executor.getCwd())),
     ping: (ip, timeoutMs) => (ip.includes(':')
@@ -29,7 +31,7 @@ function scanHost(ctx: LinuxCommandContext): ScanHost {
     sendUdpProbe: (ip, port, sourcePort, options) =>
       ctx.net.sendUdpProbe(new IPAddress(ip), port, sourcePort, options),
     scanProbe: (ip, port, flags, shape) =>
-      ctx.net.getTcpStack().scanProbe(ip, port, flags, shape),
+      ctx.net.getTcpStack().scanProbeDetail(ip, port, flags, shape),
     sendRawIpProbe: (ip, protocol) =>
       ctx.net.sendRawIpPacket(new IPAddress(ip), protocol),
     linkNeighbour: (ip) => linkNeighbourOf(localDeviceOf(ctx), ip),

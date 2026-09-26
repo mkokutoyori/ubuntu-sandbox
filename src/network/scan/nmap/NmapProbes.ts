@@ -1,6 +1,6 @@
 import type { Equipment } from '@/network/equipment/Equipment';
 import type { TcpWireOutcome } from '@/network/tcp/types';
-import type { ScanProbeShape, StatelessProbeReply } from '@/network/tcp/TcpStack';
+import type { ScanProbeShape, StatelessProbeDetail } from '@/network/tcp/TcpStack';
 import {
   SCAN_PROBE_FLAGS, readStatelessReply,
   type ScanProbeFlags, type StatelessScanKind,
@@ -15,7 +15,7 @@ import { detectServiceFromBanner } from './BannerAnalyzer';
 import { NULL_PROBE, matchProbeResponse, probesForPort } from './ServiceProbes';
 import type { NmapRoute } from './NmapIfList';
 import { serviceFromProcess } from './ProcessServiceMap';
-import type { HostProbes, HostState, ResolvedTarget } from './ScanEngine';
+import type { HostProbes, HostState, ResolvedTarget, UdpVerdict } from './ScanEngine';
 import type { DiscoveryProbe } from './NmapOptions';
 
 /**
@@ -27,6 +27,7 @@ import type { DiscoveryProbe } from './NmapOptions';
 export interface ScanHost {
   readonly device: Equipment | null;
   readonly privileged: boolean;
+  localTime(format: string, atMs: number): string;
   readFile(path: string): string | null;
   ping(ip: string, timeoutMs: number): Promise<Array<{
     success: boolean; rttMs?: number; ttl?: number;
@@ -44,7 +45,7 @@ export interface ScanHost {
   /** Un segment hors connexion, et ce qui revient — la lecture est au moteur. */
   scanProbe(
     ip: string, port: number, flags: ScanProbeFlags, shape?: ScanProbeShape,
-  ): StatelessProbeReply;
+  ): StatelessProbeDetail;
   sendRawIpProbe?(ip: string, protocol: number): boolean;
   /**
    * Ce que `arpping()` demande a la machine. Les TROIS issues sont
@@ -98,6 +99,23 @@ export function directlyConnectedOf(device: Equipment | null, ip: string): boole
   }
   const target = IPAddress.tryParse(ip);
   return target !== null && resolver.isDirectlyConnected(target);
+}
+
+interface LocalAddressOwner {
+  isLocalAddress(ip: IPAddress): boolean;
+  isLocalAddress6(ip: IPv6Address): boolean;
+}
+
+export function routesViaLoopbackOf(device: Equipment | null, ip: string): boolean {
+  const owner = device as unknown as Partial<LocalAddressOwner> | null;
+  if (!owner || typeof owner.isLocalAddress !== 'function' || typeof owner.isLocalAddress6 !== 'function') {
+    return false;
+  }
+  if (ip.includes(':')) {
+    try { return owner.isLocalAddress6(new IPv6Address(ip)); } catch { return false; }
+  }
+  const target = IPAddress.tryParse(ip);
+  return target !== null && owner.isLocalAddress(target);
 }
 
 /**
@@ -178,11 +196,11 @@ function tcpPingDiscovery(
 ): Discovery {
   for (const port of ports) {
     const started = performance.now();
-    const reply = host.scanProbe(ip, port, flags);
+    const { reply, ttl } = host.scanProbe(ip, port, flags);
     const latencyMs = performance.now() - started;
-    if (reply === 'syn-ack') return { up: true, latencyMs, reason: 'syn-ack', reasonPort: port };
+    if (reply === 'syn-ack') return { up: true, latencyMs, ttl, reason: 'syn-ack', reasonPort: port };
     if (reply === 'rst' || reply === 'rst-window') {
-      return { up: true, latencyMs, reason: 'reset', reasonPort: port };
+      return { up: true, latencyMs, ttl, reason: 'reset', reasonPort: port };
     }
   }
   return { up: false };
@@ -192,9 +210,11 @@ function udpPingDiscovery(
   host: ScanHost, ip: string, ports: readonly number[],
 ): Discovery {
   for (const port of ports) {
-    const state = probeUdpPort(host, ip, port);
-    if (state === 'closed') return { up: true, reason: 'port-unreach', reasonPort: port };
-    if (state === 'open') return { up: true, reason: 'udp-response', reasonPort: port };
+    const started = performance.now();
+    const { state, replyTtl: ttl } = probeUdpPort(host, ip, port);
+    const latencyMs = performance.now() - started;
+    if (state === 'closed') return { up: true, latencyMs, ttl, reason: 'port-unreach', reasonPort: port };
+    if (state === 'open') return { up: true, latencyMs, ttl, reason: 'udp-response', reasonPort: port };
   }
   return { up: false };
 }
@@ -319,18 +339,20 @@ function isNumericAddress(target: string): boolean {
  */
 function probeUdpPort(
   host: ScanHost, ip: string, port: number, shape: ScanProbeShape = {},
-): 'open' | 'closed' | 'open|filtered' {
+): UdpVerdict {
   const device = host.device;
-  if (!device) return 'open|filtered';
+  if (!device) return { state: 'open|filtered' };
 
-  let verdict: 'open' | 'closed' | 'open|filtered' = 'open|filtered';
+  let verdict: UdpVerdict = { state: 'open|filtered' };
   const stop = device.getBus().subscribe('host.icmp.unreachable', (event) => {
     const p = event.payload;
     if (p.deviceId !== device.getId()) return;
     if (p.fromIp !== ip) return;
     if (p.origProtocol !== undefined && p.origProtocol !== IP_PROTO_UDP) return;
     if (p.origDestPort !== undefined && p.origDestPort !== port) return;
-    verdict = p.icmpCode === ICMP_UNREACH_PORT ? 'closed' : 'open|filtered';
+    verdict = p.icmpCode === ICMP_UNREACH_PORT
+      ? { state: 'closed', replyTtl: p.ttl }
+      : { state: 'open|filtered' };
   });
 
   try {
@@ -343,7 +365,7 @@ function probeUdpPort(
     });
   } catch {
     stop();
-    return 'open|filtered';
+    return { state: 'open|filtered' };
   }
   stop();
   return verdict;
@@ -362,6 +384,17 @@ function globalIpv6Of(device: Equipment | null): string | null {
     }
   }
   return null;
+}
+
+function replyOrigin(
+  detail: StatelessProbeDetail, target: string,
+): { replyTtl?: number; reasonFrom?: string } {
+  if (detail.reply === 'none') return {};
+  const from = detail.icmpFrom !== undefined && detail.icmpFrom !== target ? detail.icmpFrom : undefined;
+  return {
+    ...(detail.ttl > 0 ? { replyTtl: detail.ttl } : {}),
+    ...(from === undefined ? {} : { reasonFrom: from }),
+  };
 }
 
 export function buildScanProbes(
@@ -419,6 +452,9 @@ export function buildScanProbes(
     directlyConnected(ip: string) {
       return directlyConnectedOf(host.device, ip);
     },
+    routesViaLoopback(ip: string) {
+      return routesViaLoopbackOf(host.device, ip);
+    },
     observeWire(sink) {
       const device = host.device;
       if (!device) return () => {};
@@ -452,8 +488,8 @@ export function buildScanProbes(
       ip: string, port: number, kind: StatelessScanKind, flags?: ScanProbeFlags,
       shape?: ScanProbeShape,
     ) {
-      return readStatelessReply(
-        kind, host.scanProbe(ip, port, flags ?? SCAN_PROBE_FLAGS[kind], shape));
+      const detail = host.scanProbe(ip, port, flags ?? SCAN_PROBE_FLAGS[kind], shape);
+      return { ...readStatelessReply(kind, detail.reply), ...replyOrigin(detail, ip) };
     },
     udpState(ip: string, port: number, shape?: ScanProbeShape) {
       return probeUdpPort(host, ip, port, shape);

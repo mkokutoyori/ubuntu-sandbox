@@ -33,7 +33,7 @@ function fakeProbes(spec: FakeSpec): HostProbes {
       return spec.hosts?.[ip]?.tcp?.[port] ?? 'refused';
     },
     udpState(ip, port) {
-      return spec.hosts?.[ip]?.udp?.[port] ?? 'closed';
+      return { state: spec.hosts?.[ip]?.udp?.[port] ?? 'closed' };
     },
     banner(ip, port) {
       return spec.hosts?.[ip]?.banners?.[port] ?? null;

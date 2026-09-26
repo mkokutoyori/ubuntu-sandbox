@@ -174,7 +174,8 @@ describe('l ARP se fait MEME sous -Pn', () => {
 
     const sortie = await taper(scanner, 'sudo nmap -Pn -p 22 10.0.0.77');
 
-    expect(sortie).toMatch(/Host seems down/);
+    expect(sortie).toMatch(/\(0 hosts up\)/);
+    expect(sortie).not.toContain('Host is up');
   });
 
   it('`--disable-arp-ping` rend a `-Pn` son sens litteral', async () => {

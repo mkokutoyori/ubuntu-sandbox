@@ -155,7 +155,7 @@ describe('un hote mort porte sa raison dans le crochet', () => {
   it('`--reason` la nomme', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'sudo nmap --reason -p 22 10.0.0.77');
+    const sortie = await taper(scanner, 'sudo nmap -v --reason -p 22 10.0.0.77');
 
     expect(sortie).toContain('[host down, received no-response]');
   });
@@ -163,7 +163,7 @@ describe('un hote mort porte sa raison dans le crochet', () => {
   it('TEMOIN: sans `--reason` le crochet reste nu', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'sudo nmap -p 22 10.0.0.77');
+    const sortie = await taper(scanner, 'sudo nmap -v -p 22 10.0.0.77');
 
     expect(sortie).toContain('[host down]');
     expect(sortie).not.toContain('no-response');

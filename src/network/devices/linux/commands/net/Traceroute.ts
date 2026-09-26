@@ -492,8 +492,7 @@ export function tracerouteHostOf(
     mayBindPort: (port) => ctx.executor.portBindPermitted(port, uid),
     resolveHostname: (name) => ctx.net.resolveHostname(name),
     interfaceExists: (name) => ctx.net.getPorts().has(name),
-    ownsAddress: (address) => [...ctx.net.getPorts().values()]
-      .some((port) => port.getIPAddress()?.equals(address) === true) || address.isLoopback(),
+    ownsAddress: (address) => ctx.net.isLocalAddress(address),
     canReach: (target, socket) => ctx.net.canTraceTo(target, socket),
     protocolNumber: (name) => {
       const found = ctx.executor.nss.lookup<NssProtocolEntry>('protocols', (src) => src.getprotobyname?.(name));

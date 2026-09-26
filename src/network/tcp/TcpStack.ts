@@ -111,6 +111,16 @@ interface StatelessProbeWatch {
   destPort: number;
 }
 
+export function receivedIpHeaderOf(ipPkt: IPv4Packet): ReceivedIpHeader {
+  return {
+    ttl: ipPkt.ttl,
+    identification: ipPkt.identification,
+    tos: ipPkt.tos,
+    totalLength: ipPkt.totalLength,
+    dontFragment: (ipPkt.flags & 0b010) !== 0,
+  };
+}
+
 const NO_REPLY_IP_HEADER: ReceivedIpHeader = {
   ttl: 0, identification: 0, tos: 0, totalLength: 0, dontFragment: false,
 };
@@ -818,7 +828,7 @@ export class TcpStack {
 
   private noteStatelessUnreachable(
     origSourcePort: number, origDestPort: number, origDestIp: string,
-    icmpCode: number | undefined, icmpFrom?: string,
+    icmpCode: number | undefined, icmpFrom?: string, icmpHeader?: ReceivedIpHeader,
   ): void {
     for (const watch of this.statelessProbes.values()) {
       if (watch.localPort !== origSourcePort) continue;
@@ -830,13 +840,14 @@ export class TcpStack {
       watch.icmpType = ICMP_TYPE_DEST_UNREACH;
       watch.icmpCode = icmpCode;
       watch.icmpFrom = icmpFrom;
+      if (icmpHeader) watch.ip = { ...icmpHeader };
       return;
     }
   }
 
   noteProbeTimeExceeded(
     origSourcePort: number, origDestPort: number, origDestIp: string,
-    icmpCode: number, icmpFrom: string,
+    icmpCode: number, icmpFrom: string, icmpHeader?: ReceivedIpHeader,
   ): void {
     for (const watch of this.statelessProbes.values()) {
       if (watch.localPort !== origSourcePort) continue;
@@ -846,6 +857,7 @@ export class TcpStack {
       watch.icmpType = ICMP_TYPE_TIME_EXCEEDED;
       watch.icmpCode = icmpCode;
       watch.icmpFrom = icmpFrom;
+      if (icmpHeader) watch.ip = { ...icmpHeader };
       return;
     }
   }
@@ -865,7 +877,7 @@ export class TcpStack {
    */
   onIcmpUnreachable(
     origSourcePort: number, origDestPort: number, origDestIp: string,
-    icmpCode?: number, icmpFrom?: string,
+    icmpCode?: number, icmpFrom?: string, icmpHeader?: ReceivedIpHeader,
   ): void {
     for (const socket of this.sockets.values()) {
       if (socket.localPort !== origSourcePort) continue;
@@ -880,7 +892,7 @@ export class TcpStack {
       return;
     }
     this.noteStatelessUnreachable(
-      origSourcePort, origDestPort, origDestIp, icmpCode, icmpFrom);
+      origSourcePort, origDestPort, origDestIp, icmpCode, icmpFrom, icmpHeader);
   }
 
   /**
@@ -988,13 +1000,8 @@ export class TcpStack {
     if (ipPkt.protocol !== IP_PROTO_TCP) return false;
     const seg = ipPkt.payload as TcpSegment | undefined;
     if (!seg || seg.type !== 'tcp') return false;
-    return this.handleSegment(srcIp.toString(), ipPkt.destinationIP.toString(), seg, {
-      ttl: ipPkt.ttl,
-      identification: ipPkt.identification,
-      tos: ipPkt.tos,
-      totalLength: ipPkt.totalLength,
-      dontFragment: (ipPkt.flags & 0b010) !== 0,
-    });
+    return this.handleSegment(
+      srcIp.toString(), ipPkt.destinationIP.toString(), seg, receivedIpHeaderOf(ipPkt));
   }
 
   handleIp6(_inPort: string, srcIp: IPv6Address, ipv6: IPv6Packet): boolean {

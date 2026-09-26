@@ -17,6 +17,7 @@ import {
   traceConnectLine, traceFrameLine, type TraceDirection,
 } from './PacketTrace';
 import type { EthernetFrame } from '@/network/core/types';
+import { adjustTimeouts, isMeasured, UNMEASURED, type TimeoutInfo } from './TimeoutInfo';
 
 const STATELESS_KINDS: Readonly<Partial<Record<ScanType, StatelessScanKind>>> = {
   syn: 'syn', ack: 'ack', fin: 'fin', null: 'null',
@@ -28,6 +29,11 @@ function statelessKindOf(scanType: ScanType): StatelessScanKind | undefined {
 }
 
 export type PortState = 'open' | 'closed' | 'filtered' | 'open|filtered' | 'unfiltered';
+
+export interface UdpVerdict {
+  state: 'open' | 'closed' | 'open|filtered';
+  replyTtl?: number;
+}
 
 export interface HostState {
   ip: string;
@@ -97,7 +103,7 @@ export interface HostProbes {
   ): ScanVerdict;
   udpState(
     ip: string, port: number, shape?: ScanProbeShape,
-  ): 'open' | 'closed' | 'open|filtered';
+  ): UdpVerdict;
   banner(
     ip: string, port: number, intensity: number,
   ): { service: string; version?: string } | null;
@@ -107,6 +113,7 @@ export interface HostProbes {
    * n'emet alors AUCUNE sonde.
    */
   directlyConnected?(ip: string): boolean;
+  routesViaLoopback?(ip: string): boolean;
   /** La marche par duree de vie limitee, celle de la machine. */
   tracePath?(ip: string): Promise<Array<{
     ttl: number; ip?: string; rttMs?: number;
@@ -152,6 +159,8 @@ export interface PortResult {
   service: string;
   version?: string;
   reason: string;
+  replyTtl?: number;
+  reasonFrom?: string;
 }
 
 /**
@@ -181,7 +190,7 @@ export interface HostReport {
   ip: string;
   hostname?: string;
   up: boolean;
-  latencyMs: number;
+  times: TimeoutInfo;
   osGuess?: string;
   osClass?: OsClassRecord;
   distanceHops?: number;
@@ -246,20 +255,30 @@ function withDecoys<T>(
   return real as T;
 }
 
+interface ProbedPort {
+  result: PortResult;
+  rttMs?: number;
+}
+
 function tcpResult(
   options: NmapOptions, probes: HostProbes, ip: string, port: number,
   trace?: TraceContext,
-): PortResult {
+): ProbedPort {
   const kind = statelessKindOf(options.scanType);
+  const sent = performance.now();
   const stateless = kind && probes.statelessOutcome
     ? withDecoys(options, (shape) =>
       probes.statelessOutcome!(ip, port, kind, options.scanFlags, shape))
     : null;
   let state: PortState;
   let reason: string;
+  let replyTtl: number | undefined;
+  let reasonFrom: string | undefined;
   if (stateless) {
     state = stateless.state;
     reason = stateless.reason;
+    replyTtl = stateless.replyTtl;
+    reasonFrom = stateless.reasonFrom;
   } else {
     const outcome = probes.tcpOutcome(ip, port);
     if (trace) {
@@ -272,6 +291,7 @@ function tcpResult(
     state = outcome === 'open' ? 'open' : outcome === 'refused' ? 'closed' : 'filtered';
     reason = TCP_SCAN_REASON[outcome];
   }
+  const rttMs = reason === 'no-response' ? undefined : performance.now() - sent;
   let service = serviceName(port, 'tcp');
   let version: string | undefined;
   if (options.versionScan && state === 'open' && versionScanAllowed(options, port)) {
@@ -281,13 +301,18 @@ function tcpResult(
       version = detected.version;
     }
   }
-  return { port, protocol: 'tcp', state, service, version, reason };
+  return {
+    result: { port, protocol: 'tcp', state, service, version, reason, replyTtl, reasonFrom },
+    rttMs,
+  };
 }
 
 function udpResult(
   options: NmapOptions, probes: HostProbes, ip: string, port: number,
-): PortResult {
-  const state = probes.udpState(ip, port, options.probeShape);
+): ProbedPort {
+  const sent = performance.now();
+  const { state, replyTtl } = probes.udpState(ip, port, options.probeShape);
+  const rttMs = state === 'open|filtered' ? undefined : performance.now() - sent;
   const reason = state === 'open' ? 'udp-response' : state === 'closed' ? 'port-unreach' : 'no-response';
   let service = serviceName(port, 'udp');
   let version: string | undefined;
@@ -298,7 +323,7 @@ function udpResult(
       version = detected.version;
     }
   }
-  return { port, protocol: 'udp', state, service, version, reason };
+  return { result: { port, protocol: 'udp', state, service, version, reason, replyTtl }, rttMs };
 }
 
 function partition(options: NmapOptions, all: PortResult[]): Pick<HostReport, 'ports' | 'notShown'> {
@@ -374,7 +399,7 @@ function traceCandidates(info: HostState, ports: readonly PortResult[]): TraceCa
 
 async function buildTrace(
   options: NmapOptions, probes: HostProbes, info: HostState,
-  latencyMs: number, rdnsName: string | undefined,
+  times: TimeoutInfo, rdnsName: string | undefined,
   ports: readonly PortResult[], cache: Map<string, string>,
 ): Promise<HostTrace | undefined> {
   const family: 4 | 6 = info.ip.includes(':') ? 6 : 4;
@@ -383,7 +408,7 @@ async function buildTrace(
     return {
       probe: { kind: 'none' },
       hops: [{
-        ttl: 1, ip: info.ip, rttMs: latencyMs,
+        ttl: 1, ip: info.ip, rttMs: isMeasured(times) ? times.srtt / 1000 : undefined,
         name: info.hostname ?? rdnsName, tag: info.ip,
       }],
     };
@@ -426,7 +451,8 @@ async function scanHost(
   // as -Pn or -PE are used » — donc une adresse locale que personne ne
   // porte ressort `down` sous `-Pn` aussi. `--disable-arp-ping` la
   // desarme, et `-Pn` retrouve alors son sens litteral.
-  const onLink = options.disableArpPing || !options.privileged
+  const viaLoopback = options.privileged && probes.routesViaLoopback?.(resolved.ip) === true;
+  const onLink = options.disableArpPing || !options.privileged || viaLoopback
     ? null : probes.linkDiscovery?.(resolved.ip);
   const identified = { ip: resolved.ip, hostname: resolved.hostname };
   const info: HostState = onLink
@@ -436,19 +462,21 @@ async function scanHost(
       }
     : options.skipDiscovery
       ? { ...identified, up: true, reason: 'user-set' }
-      : await probes.hostState(resolved, options.discovery);
+      : viaLoopback
+        ? { ...identified, up: true, reason: 'localhost-response' }
+        : await probes.hostState(resolved, options.discovery);
 
-  const discovery = discoveryPhase(resolved.ip, onLink, options.skipDiscovery);
+  const discovery = discoveryPhase(resolved.ip, onLink, options.skipDiscovery || viaLoopback);
   if (discovery) phases.push(discovery);
 
-  const latencyMs = info.latencyMs ?? 0.001;
+  let times = info.latencyMs === undefined ? UNMEASURED : adjustTimeouts(UNMEASURED, info.latencyMs);
   const osGuess = options.osScan
     ? info.osHint ?? await probes.fingerprint?.(info.ip)
     : undefined;
   const osClass = osGuess === undefined ? undefined : OS_CLASS_BY_NAME[osGuess];
-  const distanceHops = options.osScan
-    ? hopDistance(probes, info)
-    : undefined;
+  const distanceHops = !options.osScan
+    ? undefined
+    : viaLoopback ? 0 : hopDistance(probes, info);
 
   // docs/nmap.1 : la resolution inverse est faite par defaut sur les hotes
   // trouves EN LIGNE, `-n` l'interdit et `-R` l'etend a ceux qui ne
@@ -459,7 +487,7 @@ async function scanHost(
 
   if (!info.up) {
     return {
-      ip: info.ip, hostname: info.hostname, up: false, latencyMs,
+      ip: info.ip, hostname: info.hostname, up: false, times,
       downReason: 'no-response', rdnsName, ports: [],
     };
   }
@@ -468,13 +496,14 @@ async function scanHost(
     mac: info.mac, discoveryReason: info.reason, rdnsName, replyTtl: info.replyTtl,
   };
 
+  const traced = options.traceroute && !viaLoopback;
   if (options.pingOnly) {
     return {
-      ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess,
+      ip: info.ip, hostname: info.hostname, up: true, times, osGuess,
       osClass, distanceHops,
       ...identity, ports: [],
-      trace: options.traceroute
-        ? await buildTrace(options, probes, info, latencyMs, rdnsName, [], hopCache)
+      trace: traced
+        ? await buildTrace(options, probes, info, times, rdnsName, [], hopCache)
         : undefined,
     };
   }
@@ -488,16 +517,19 @@ async function scanHost(
 
   const all: PortResult[] = [];
   for (const port of scanned) {
-    if (options.scanType === 'udp') all.push(udpResult(options, probes, info.ip, port));
-    else all.push(tcpResult(options, probes, info.ip, port, trace));
+    const probed = options.scanType === 'udp'
+      ? udpResult(options, probes, info.ip, port)
+      : tcpResult(options, probes, info.ip, port, trace);
+    all.push(probed.result);
+    if (probed.rttMs !== undefined) times = adjustTimeouts(times, probed.rttMs);
   }
   const { ports, notShown } = partition(options, all);
   return {
-    ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess,
+    ip: info.ip, hostname: info.hostname, up: true, times, osGuess,
     osClass, distanceHops,
     ...identity, ports, notShown,
-    trace: options.traceroute
-      ? await buildTrace(options, probes, info, latencyMs, rdnsName, all, hopCache)
+    trace: traced
+      ? await buildTrace(options, probes, info, times, rdnsName, all, hopCache)
       : undefined,
   };
 
@@ -518,7 +550,7 @@ async function listedHost(
     hostname: resolved.hostname,
     rdnsName,
     up: true,
-    latencyMs: 0,
+    times: UNMEASURED,
     ports: [],
   };
 }
@@ -575,7 +607,7 @@ export async function scan(
       }
       const report = await scanHost(options, probes, address, phases, hopCache, trace)
         ?? (target === address && isIpLiteral(address)
-          ? { ip: address, up: false, latencyMs: 0, downReason: 'no-response', ports: [] }
+          ? { ip: address, up: false, times: UNMEASURED, downReason: 'no-response', ports: [] }
           : null);
       if (!report) {
         if (target === address) unresolved.push(address);

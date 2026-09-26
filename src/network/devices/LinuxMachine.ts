@@ -3970,6 +3970,7 @@ export abstract class LinuxMachine extends EndHost
         return hops as TracerouteHop[];
       },
       canTraceTo: (target: IPAddress, socket: TraceSocketOptions): boolean => this.canTraceTo(target, socket),
+      isLocalAddress: (ip: IPAddress): boolean => this.isLocalAddress(ip),
       sendUdpProbe: (
         target: IPAddress, destinationPort: number, sourcePort: number,
         options: {

@@ -122,6 +122,7 @@ export interface HostIcmpUnreachablePayload extends HostDeviceRef {
   code: 'host-unreachable' | 'net-unreachable' | 'port-unreachable' | 'ttl-exceeded'
     | 'protocol-unreachable' | 'admin-prohibited' | 'frag-needed' | 'other';
   icmpCode?: number;
+  ttl?: number;
   origProtocol?: number;
   origDestPort?: number;
 }
