@@ -614,7 +614,7 @@ export class CiscoRouter extends Router {
       'Technical Support: http://www.cisco.com/techsupport',
       `Copyright (c) 1986-2025 by Cisco Systems, Inc.`,
       '',
-      `${this.hostname} uptime is ${formatIosUptime(this._getUptimeMs?.() ?? 0)}`,
+      `${this.hostname} uptime is ${formatIosUptime(this.getUptimeMs())}`,
       'System returned to ROM by power-on',
       'Last reload reason: power-on',
       '',

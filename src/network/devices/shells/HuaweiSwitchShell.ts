@@ -24,6 +24,7 @@ import {
 } from './huawei/vrpCommonCommands';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { huaweiInteractionPlanFor } from './huawei/HuaweiInteractionPlans';
+import { renderHardwareVersion, S5720_HARDWARE_PROFILE } from './huawei/HuaweiHardwareProfile';
 import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteraction';
 import {
   registerVrpLldpDisplayCommands, applyVrpLldpAdminStatus,
@@ -2481,7 +2482,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private registerDisplayCommands(trie: CommandTrie): void {
     trie.register('display version', 'Display VRP version information', () => {
       if (!this.swRef) return '';
-      return this.displayVersion(this.swRef);
+      return renderHardwareVersion(this.swRef.getUptimeMs(), S5720_HARDWARE_PROFILE);
     });
     // La forme globale marchait, la forme PAR-INTERFACE était refusée
     // (audit 12, §3.3). Elle filtre la même vue plutôt que d'en rendre
@@ -4183,19 +4184,6 @@ export class HuaweiSwitchShell implements ISwitchShell {
   }
 
   // ─── Display Implementations ──────────────────────────────────────
-
-  private displayVersion(sw: Switch): string {
-    return [
-      'Huawei Versatile Routing Platform Software',
-      'VRP (R) software, Version 5.170 (S5720 V200R019C10SPC500)',
-      'Copyright (C) 2000-2025 HUAWEI TECH CO., LTD',
-      '',
-      `BOARD TYPE:          S5720-28X-LI-AC`,
-      `CPLD Version:        1.0`,
-      `BootROM Version:     1.0`,
-      `${sw.getHostname()} uptime is 0 days, 0 hours, 0 minutes`,
-    ].join('\n');
-  }
 
   private displayVlan(sw: Switch): string {
     const vlans = sw.getVLANs();

@@ -1651,9 +1651,9 @@ export function showStacks(): string {
   ].join('\n');
 }
 
-export function showReload(scheduledAtMs?: number | null): string {
-  if (scheduledAtMs === null || scheduledAtMs === undefined) return 'No reload is scheduled.';
-  const sec = Math.max(0, Math.floor((scheduledAtMs - Date.now()) / 1000));
+export function showReload(remainingMs?: number | null): string {
+  if (remainingMs === null || remainingMs === undefined) return 'No reload is scheduled.';
+  const sec = Math.max(0, Math.floor(remainingMs / 1000));
   return `Reload scheduled in ${Math.floor(sec / 60)} minutes ${sec % 60} seconds`;
 }
 

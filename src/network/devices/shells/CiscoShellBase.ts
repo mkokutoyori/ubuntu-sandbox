@@ -177,7 +177,7 @@ import {
   showVrfDetail, showVrfInterfaces, showRedundancy, showFileSystems, showCalendar, showTerminal,
   showBuffers, showTcpBrief, showSockets, type TcpBriefSource,
   showStacks, showReload, showAaa, showEnvironment, showControllers,
-  chassisSerial, CISCO_HARDWARE_PROFILES, licenseTable,
+  chassisSerial, CISCO_HARDWARE_PROFILES, licenseTable, ciscoClockReading,
   type ShowStateDevice,
 } from './cisco/CiscoCommonShow';
 import {
@@ -1012,7 +1012,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
   protected readonly outgoingSessions = new OutgoingSessionRegistry();
   private reloadTimer: TimerHandle | null = null;
-  private scheduledReloadAtMs: number | null = null;
+  private reloadAtUptimeMs: number | null = null;
 
   private schedulerFor(device: TDevice): IScheduler {
     const dev = device as unknown as { getScheduler?: () => IScheduler };
@@ -1023,16 +1023,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const device = this.d();
     const scheduler = this.schedulerFor(device);
     if (this.reloadTimer !== null) scheduler.clear(this.reloadTimer);
-    this.scheduledReloadAtMs = Date.now() + ms;
+    this.reloadAtUptimeMs = device.getUptimeMs() + ms;
     this.reloadTimer = scheduler.setTimeout(() => {
       this.reloadTimer = null;
-      this.scheduledReloadAtMs = null;
+      this.reloadAtUptimeMs = null;
       this.performScheduledReload(device);
     }, ms);
   }
 
-  protected getScheduledReloadMs(): number | null {
-    return this.scheduledReloadAtMs;
+  protected reloadRemainingMs(): number | null {
+    return this.reloadAtUptimeMs === null ? null : this.reloadAtUptimeMs - this.d().getUptimeMs();
   }
 
   /**
@@ -3777,7 +3777,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           this.schedulerFor(this.d()).clear(this.reloadTimer);
           this.reloadTimer = null;
         }
-        this.scheduledReloadAtMs = null;
+        this.reloadAtUptimeMs = null;
         return 'Reload cancelled.';
       },
       scheduleReloadIn: (minutes) => {
@@ -5465,7 +5465,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       vue(['show', 'sockets'], 'Display open sockets', 1, () => showSockets()),
       vue(['show', 'stacks'], 'Display process stacks', 1, () => showStacks()),
       vue(['show', 'reload'], 'Display reload schedule', 1,
-        () => showReload(this.getScheduledReloadMs())),
+        () => showReload(this.reloadRemainingMs())),
       vue(['show', 'sntp'], 'Display SNTP information', 1, () => this.showSntp()),
       vue(['show', 'terminal'], 'Display terminal configuration parameters', 1, () =>
         `${showTerminal(this.terminalLength, this.terminalWidth, this.terminalHistorySize)}\n`
@@ -5908,7 +5908,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.debugSpecs(),
       ...ciscoExecSpecs(() => this.execHost()),
       ...showConfigViewSpecs(() => this),
-      ...showIpDhcpSpecs(() => this.dhcpViewServer()),
+      ...showIpDhcpSpecs(() => this.dhcpViewServer(), (epochMs) => ciscoClockReading(this.cs(), epochMs).local),
       ...this.discoverySpecs(),
       ...this.loggingSpecs(),
       ...this.ntpSpecs(),

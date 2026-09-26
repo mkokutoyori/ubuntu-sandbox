@@ -244,6 +244,15 @@ export class VirtualTimeScheduler implements IScheduler {
     this.purgeCancelled();
   }
 
+  jump(ms: number): void {
+    if (ms < 0) throw new Error('VirtualTimeScheduler.jump: ms must be ≥ 0');
+    const target = this.currentTime + ms;
+    for (const task of this.tasks) {
+      if (task.due < target) task.due = target;
+    }
+    this.advance(ms);
+  }
+
   /**
    * Run every pending task immediately (without advancing time beyond the
    * latest due). Useful for tests that want to flush all microtasks.
@@ -317,6 +326,10 @@ export class OwnedScheduler implements IScheduler {
   private nextToken = 1;
 
   constructor(private readonly resolve: () => IScheduler) {}
+
+  underlying(): IScheduler {
+    return this.resolve();
+  }
 
   now(): number {
     return this.resolve().now();

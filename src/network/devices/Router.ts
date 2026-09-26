@@ -76,7 +76,6 @@ import type { TcpStream, TcpDialFailure } from '../tcp/types';
 import { isDialFailure } from '../tcp/types';
 import { verifyUdpChecksum, stampUdpChecksum } from '@/network/layers/transport/UdpChecksum';
 import { dialTcp, parseDialAddress, type DialAddress } from '../tcp/dial';
-import { SystemClock } from '../core/SystemClock';
 import type { DeviceClockStore } from '../core/time/DeviceClock';
 import { PortNumber } from '../core/ports/PortNumber';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
@@ -623,6 +622,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.natEngine.setEventBus(this.getBus());
     this.dhcpServer.setEventBus(this.getBus());
     this.dhcpServer.setDeviceId(this.id, this.name);
+    this.dhcpServer.setClock(() => this.getSystemClockMs());
     this.dhcpServer.setUtilizationSink((crossing) => this.emitDhcpUtilizationTrap(crossing));
     this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {
       const pkt = realPkt ?? sourceProbePacket(new IPAddress(srcIP));
@@ -1446,6 +1446,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   /** Return the active scheduler — injected one, or the singleton default. */
   protected getRouterScheduler(): IScheduler {
     return this.routerScheduler ?? this.getScheduler();
+  }
+
+  protected override clockScheduler(): IScheduler {
+    return this.getRouterScheduler();
   }
 
   override dispose(): void {
@@ -4086,7 +4090,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
   /** @internal Used by CLI shells */
   _getHostnameInternal(): string { return this.hostname; }
-  _getUptimeMs(): number { return this.getUptimeMs(); }
   /** @internal Used by CLI shells and OSPF */
   _getIPv6RoutingTableInternal() { return this.ipv6Engine.getRoutingTableInternal(); }
   /** @internal Used by CLI shells */
@@ -4450,7 +4453,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _setRipVersion(v: 1 | 2): void { this._ripVersion = v; }
 
   private readonly _unhandledConfigLines: string[] = [];
-  private readonly _systemClock = new SystemClock();
 
   getUnhandledConfigLines(): readonly string[] { return [...this._unhandledConfigLines]; }
   _recordUnhandledConfigLine(line: string): void {
@@ -4474,13 +4476,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
   getInterfaceAddressMode(iface: string): 'negotiated' | undefined {
     return this._ifAddressMode.get(iface);
-  }
-
-  _setSystemClock(epochMs: number): void {
-    this._systemClock.set(epochMs);
-  }
-  getSystemClockMs(): number {
-    return this._systemClock.now();
   }
 
   /**

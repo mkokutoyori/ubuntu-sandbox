@@ -28,7 +28,6 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
-import { SystemClock } from '../core/SystemClock';
 import { DeviceClockStore } from '../core/time/DeviceClock';
 import {
   CarPolicer, suppressionKindOf, cloneCarRule,
@@ -347,10 +346,6 @@ export abstract class Switch extends Equipment {
    * de gestion du commutateur Huawei recoit CETTE instance plutot que
    * d'en fabriquer une seconde.
    */
-  private readonly _systemClock = new SystemClock();
-  getSystemClockMs(): number { return this._systemClock.now(); }
-  _setSystemClock(epochMs: number): void { this._systemClock.set(epochMs); }
-
   private readonly _deviceClock = new DeviceClockStore();
   getDeviceClock(): DeviceClockStore { return this._deviceClock; }
 
@@ -655,6 +650,7 @@ export abstract class Switch extends Equipment {
     this.initDhcpSnooping();
     this.dhcpServer.setEventBus(this.getBus());
     this.dhcpServer.setDeviceId(this.id, this.name);
+    this.dhcpServer.setClock(() => this.getSystemClockMs());
   }
 
   private initPortSecurity(): void {

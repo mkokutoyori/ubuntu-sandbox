@@ -50,5 +50,6 @@ export interface CiscoDevice extends ARPProvider {
   powerOff(): void;
   /** Power on the device */
   powerOn(): void;
+  getUptimeMs(): number;
   defaultHostname(): string;
 }

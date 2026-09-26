@@ -112,7 +112,7 @@ import {
 
 // Extracted command modules
 import * as Show from './cisco/CiscoShowCommands';
-import { showProcessesCpu } from './cisco/CiscoCommonShow';
+import { showProcessesCpu, ciscoClockReading } from './cisco/CiscoCommonShow';
 import {
   showNATTranslations, showNATStatistics, networkPrefixLength, natErrorMessageFor,
 } from './cisco/CiscoNATCommands';
@@ -2188,7 +2188,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         section('show ip nat translations', showNATTranslations(getRouter())),
         section('show ip nat statistics', showNATStatistics(getRouter())),
         section('show ip ospf neighbor', showIpOspfNeighbor(getRouter())),
-        section('show ip dhcp binding', formatDhcpBindings(getRouter()._getDHCPServerInternal())),
+        section('show ip dhcp binding', formatDhcpBindings(getRouter()._getDHCPServerInternal(), undefined,
+          (epochMs) => ciscoClockReading(this.cs(), epochMs).local)),
         section('show logging', this.logging.render()),
       ].join('\n\n');
     });

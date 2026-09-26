@@ -31,6 +31,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
 
 beforeEach(() => { EquipmentRegistry.resetInstance(); });
 afterEach(() => { vi.useRealTimers(); });
@@ -155,7 +156,7 @@ describe('service timestamps — la ligne écrite', () => {
     await r.executeCommand('service timestamps log uptime');
     // Le compteur doit avancer : à zéro, une vraie mesure et une
     // constante seraient indiscernables.
-    vi.setSystemTime(Date.now() + 3_723_000);
+    vi.advanceTimersByTime(3_723_000);
     const ligne = await messageDeLien(r);
     expect(ligne).toMatch(/^01:02:03: %/);
   });
@@ -164,20 +165,21 @@ describe('service timestamps — la ligne écrite', () => {
     vi.useFakeTimers();
     const r = await routeur();
     await r.executeCommand('service timestamps log uptime msec');
-    vi.setSystemTime(Date.now() + 65_400);
+    vi.advanceTimersByTime(65_400);
     expect(await messageDeLien(r)).toMatch(/^00:01:05\.400: %/);
   });
 
   it('au-delà d\'un jour IOS abrège en `1d02h`, puis en `1w2d`', async () => {
-    vi.useFakeTimers();
+    const clock = new VirtualTimeScheduler();
+    __setDefaultScheduler(clock);
     const r = await routeur();
     await r.executeCommand('service timestamps log uptime');
-    vi.setSystemTime(Date.now() + 26 * 3_600_000);
+    clock.jump(26 * 3_600_000);
     expect(await messageDeLien(r)).toMatch(/^1d02h: %/);
 
     const r2 = await routeur();
     await r2.executeCommand('service timestamps log uptime');
-    vi.setSystemTime(Date.now() + 9 * 86_400_000);
+    clock.jump(9 * 86_400_000);
     expect(await messageDeLien(r2)).toMatch(/^1w2d: %/);
   });
 

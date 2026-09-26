@@ -81,6 +81,30 @@ describe('VirtualTimeScheduler', () => {
     const sched = new VirtualTimeScheduler();
     expect(() => sched.advance(-1)).toThrow();
   });
+
+  it('jump() moves the clock and fires each due timer once, at the arrival time', () => {
+    const sched = new VirtualTimeScheduler();
+    const ticks: number[] = [];
+    const fired: number[] = [];
+    sched.setInterval(() => ticks.push(sched.now()), 50);
+    sched.setTimeout(() => fired.push(sched.now()), 120);
+    sched.setTimeout(() => fired.push(sched.now()), 900);
+
+    sched.jump(500);
+    expect(sched.now()).toBe(500);
+    expect(ticks).toEqual([500]);
+    expect(fired).toEqual([500]);
+
+    sched.advance(100);
+    expect(ticks).toEqual([500, 550, 600]);
+    sched.advance(300);
+    expect(fired).toEqual([500, 900]);
+  });
+
+  it('throws on negative jump', () => {
+    const sched = new VirtualTimeScheduler();
+    expect(() => sched.jump(-1)).toThrow();
+  });
 });
 
 describe('RealTimeScheduler', () => {

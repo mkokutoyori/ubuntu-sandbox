@@ -69,7 +69,7 @@ export function showVersion(
   const ports = router._getPortsInternal();
   const giPorts = [...ports.keys()].filter(n => n.startsWith('Gig') && !n.includes('.'));
   const hw = CISCO_HARDWARE_PROFILES[profile];
-  const uptimeMs = router._getUptimeMs?.() ?? 0;
+  const uptimeMs = router.getUptimeMs();
   return [
     ciscoSoftwareDescriptor(C2900_SOFTWARE),
     `Copyright (c) 1986-2025 by Cisco Systems, Inc.`,

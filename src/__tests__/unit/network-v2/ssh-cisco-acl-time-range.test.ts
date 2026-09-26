@@ -146,15 +146,14 @@ describe('Scénario 11 — ACL Cisco étendue avec time-range', () => {
   });
 
   it('basculer le jour vendredi 17h → samedi 10h change le verdict', async () => {
-    vi.useFakeTimers();
     const { adminPc, router } = await buildLan();
     await installTimeBoundedAcl(router);
 
-    vi.setSystemTime(new Date('2026-07-03T17:00:00')); // vendredi 17h
+    await router.executeCommand('clock set 17:00:00 3 Jul 2026');
     const friday = await adminPc.executeCommand('ssh alice@10.0.30.10 whoami', 'admin\n');
     expect(friday).toMatch(/^alice\s*$/m);
 
-    vi.setSystemTime(new Date('2026-07-04T10:00:00')); // samedi 10h
+    await router.executeCommand('clock set 10:00:00 4 Jul 2026');
     const saturday = await adminPc.executeCommand('ssh alice@10.0.30.10 whoami', 'admin\n');
     expect(saturday).toMatch(/No route to host/);
   });

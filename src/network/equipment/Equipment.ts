@@ -23,6 +23,7 @@ import { EquipmentRegistry } from './EquipmentRegistry';
 import { DEVICE_CATALOG } from '../core/deviceCatalog';
 import { EventBus, type IEventBus } from '@/events/EventBus';
 import { OwnedScheduler, getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { SystemClock, schedulerWallClock } from '../core/SystemClock';
 
 export abstract class Equipment {
   readonly id: string;
@@ -33,7 +34,9 @@ export abstract class Equipment {
   protected y: number;
   protected isPoweredOn: boolean = true;
   protected ports: Map<string, Port> = new Map();
-  protected readonly bootedAtMs: number = Date.now();
+  private readonly machineClock: () => number;
+  private readonly systemClock: SystemClock;
+  private bootedAtMs: number;
 
   private _enableSecret: { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' } | null = null;
   private _enablePassword: { value: string; algo: 'plain' | 'type-7' } | null = null;
@@ -121,8 +124,10 @@ export abstract class Equipment {
       .map(([level, v]) => ({ level, ...v }));
   }
 
-  getUptimeMs(): number { return Math.max(0, Date.now() - this.bootedAtMs); }
-  getBootedAtMs(): number { return this.bootedAtMs; }
+  getUptimeMs(): number { return Math.max(0, this.machineClock() - this.bootedAtMs); }
+  getSystemClock(): SystemClock { return this.systemClock; }
+  getSystemClockMs(): number { return this.systemClock.now(); }
+  _setSystemClock(epochMs: number): void { this.systemClock.set(epochMs); }
 
   /** Optional bus override (Phase 2 of the reactive refactor). */
   private busOverride: IEventBus | null = null;
@@ -132,7 +137,10 @@ export abstract class Equipment {
   private linkLayer: LinkLayer | null = null;
   private readonly captureTap = new TapPoint();
 
-  constructor(deviceType: DeviceType, name: string, x: number = 0, y: number = 0) {
+  constructor(deviceType: DeviceType, name: string, x: number = 0, y: number = 0, timeSource?: () => number) {
+    this.machineClock = timeSource ?? schedulerWallClock(() => this.clockScheduler());
+    this.systemClock = new SystemClock(this.machineClock);
+    this.bootedAtMs = this.machineClock();
     this.id = generateId();
     this.deviceType = deviceType;
     this.name = typeof name === 'string' ? name : String(name);
@@ -162,6 +170,10 @@ export abstract class Equipment {
       this.machineScheduler = new OwnedScheduler(() => getDefaultScheduler());
     }
     return this.machineScheduler;
+  }
+
+  protected clockScheduler(): IScheduler {
+    return this.getScheduler();
   }
 
   dispose(): void {
@@ -276,6 +288,7 @@ export abstract class Equipment {
       // A real power-cycle resets the "boot already rendered" flag so the
       // very next terminal opens at boot-banner stage.
       this._bootShown = false;
+      this.bootedAtMs = this.machineClock();
     }
     Logger.info(this.id, 'equipment:power', `${this.name}: powered ON`);
     for (const port of this.ports.values()) port.setDevicePowered(true);

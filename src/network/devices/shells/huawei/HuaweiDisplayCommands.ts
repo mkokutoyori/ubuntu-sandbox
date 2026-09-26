@@ -71,11 +71,7 @@ export interface HuaweiDisplayState {
 // ─── Pure Display Functions ──────────────────────────────────────────
 
 export function displayVersion(router: Router): string {
-  return renderHardwareVersion(
-    router._getHostnameInternal(),
-    '0 days, 0 hours, 0 minutes',
-    AR2220_HARDWARE_PROFILE,
-  );
+  return renderHardwareVersion(router.getUptimeMs(), AR2220_HARDWARE_PROFILE);
 }
 
 export function displayInterface(router: Router, ifName: string): string {

@@ -40,7 +40,6 @@ import {
   type IngressInterfaceOptions, type IngressInterfaceOptionsReader,
 } from './l3/IngressInterfaceOptions';
 import { isIPv4Fragment } from '../../core/Ipv4Fragmentation';
-import { SystemClock, schedulerWallClock } from '../../core/SystemClock';
 import { SessionHelperTable, type SessionHelperEntry } from './session/SessionHelperTable';
 import { SystemLoad, type InspectionPosture, type MemoryWorkload } from './health/SystemLoad';
 import { conserveLogDraft } from './health/ConserveEvent';
@@ -299,7 +298,7 @@ export class Firewall extends Equipment {
       const settings = this.dnsClient.getSettings();
       return [settings.primary, settings.secondary].filter(server => server.length > 0);
     },
-    now: () => this.clock.now(),
+    now: () => this.getSystemClockMs(),
   });
 
   getDhcp6(): FirewallDhcp6 { return this.dhcp6; }
@@ -325,7 +324,6 @@ export class Firewall extends Equipment {
   private readonly services: FirewallServices;
   protected readonly profile: FirewallProfile;
   private readonly logging = new LoggingConfig();
-  private readonly clock: SystemClock;
   private readonly syslog: SyslogAgent;
   private readonly syslogCollectors: SyslogCollectorTable;
   private readonly boundPolicyInterfaces = new Set<string>();
@@ -398,7 +396,7 @@ export class Firewall extends Equipment {
   constructor(
     deviceType: DeviceType, name: string, x = 0, y = 0, options: FirewallOptions = {},
   ) {
-    super(deviceType, name, x, y);
+    super(deviceType, name, x, y, options.now);
 
     this.attachReassemblyTimeout();
 
@@ -427,8 +425,7 @@ export class Firewall extends Equipment {
       },
     });
 
-    this.clock = new SystemClock(options.now ?? schedulerWallClock());
-    const now = () => this.clock.now();
+    const now = () => this.getSystemClockMs();
     this.load = new SystemLoad({
       now,
       cpuCount: profile.chassis.cpuCount,
@@ -1512,8 +1509,6 @@ export class Firewall extends Equipment {
     Object.assign(this.sessionTimers, timers);
   }
 
-  getSystemClock(): SystemClock { return this.clock; }
-
   private timezone = TimeZone.of('Europe/Paris');
 
   setTimezone(name: string): void {
@@ -1537,7 +1532,7 @@ export class Firewall extends Equipment {
   localTimeOf(at: number): number { return localMsAt(this.timezone, at); }
 
   setLocalClock(localMs: number): void {
-    this.clock.set(utcMsForLocal(this.timezone, localMs));
+    this._setSystemClock(utcMsForLocal(this.timezone, localMs));
   }
 
   managementIdleTimeoutMs(): number { return this.management.idleTimeoutMs(); }

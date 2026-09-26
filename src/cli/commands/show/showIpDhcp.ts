@@ -1,4 +1,6 @@
 import type { CommandSpec } from '../../CommandTable';
+import { pad2 } from '@/lib/format';
+import { IOS_MONTHS } from '@/network/devices/shells/cisco/CiscoCommonShow';
 
 export interface DhcpBindingRow {
   ipAddress: string;
@@ -28,12 +30,25 @@ function clientIdText(clientId: string): string {
   return (hex.match(/.{1,4}/g) ?? [hex]).join('.');
 }
 
-function leaseExpirationText(at: number): string {
+export type LocalClockReading = (epochMs: number) => Date;
+
+const UTC_READING: LocalClockReading = (epochMs) => new Date(epochMs);
+
+function leaseExpirationText(at: number, localTime: LocalClockReading): string {
   if (!Number.isFinite(at)) return 'Infinite';
-  return new Date(at).toUTCString().slice(5, 25);
+  const local = localTime(at);
+  const hour = local.getUTCHours();
+  return `${IOS_MONTHS[local.getUTCMonth()]} ${pad2(local.getUTCDate())} ${local.getUTCFullYear()} `
+    + `${pad2(hour % 12 || 12)}:${pad2(local.getUTCMinutes())} ${hour < 12 ? 'AM' : 'PM'}`;
 }
 
-export function formatDhcpBindings(server: DhcpViewServer, filter?: string): string {
+function bindingTypeText(type: string): string {
+  return type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+export function formatDhcpBindings(
+  server: DhcpViewServer, filter?: string, localTime: LocalClockReading = UTC_READING,
+): string {
   const lines: string[] = [
     'Bindings from all pools not associated with VRF:',
     'IP address          Client-ID/              Lease expiration        Type',
@@ -45,8 +60,8 @@ export function formatDhcpBindings(server: DhcpViewServer, filter?: string): str
     lines.push(
       binding.ipAddress.padEnd(20)
       + clientIdText(binding.clientId).padEnd(24)
-      + leaseExpirationText(binding.leaseExpiration).padEnd(24)
-      + binding.type);
+      + leaseExpirationText(binding.leaseExpiration, localTime).padEnd(24)
+      + bindingTypeText(binding.type));
   }
   return lines.join('\n');
 }
@@ -63,7 +78,9 @@ export function formatDhcpRelayStats(server: DhcpViewServer): string {
   ].join('\n');
 }
 
-export function showIpDhcpSpecs(server: () => DhcpViewServer | undefined): CommandSpec[] {
+export function showIpDhcpSpecs(
+  server: () => DhcpViewServer | undefined, localTime: LocalClockReading = UTC_READING,
+): CommandSpec[] {
   const withServer = (render: (s: DhcpViewServer) => string) => (): string => {
     const engine = server();
     return engine ? render(engine) : '';
@@ -85,7 +102,7 @@ export function showIpDhcpSpecs(server: () => DhcpViewServer | undefined): Comma
       description: 'DHCP address bindings',
       modes: EXEC, minPrivilege: 1,
       run: (_session, args) => withServer(s => formatDhcpBindings(
-        s, args.adresse ? String(args.adresse) : undefined))(),
+        s, args.adresse ? String(args.adresse) : undefined, localTime))(),
     },
     {
       id: 'show-ip-dhcp-conflict',
