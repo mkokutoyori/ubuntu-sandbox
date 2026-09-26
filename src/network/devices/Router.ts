@@ -373,7 +373,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
   private readonly arpTable = new ArpCache({
     now: () => this.getMonotonicClockMs(),
-    timeoutSecFor: (iface) => this.arpTimeoutSecFor(iface),
+    timeoutSecFor: (entry) => this.arpTimeoutSecFor(entry.iface),
   });
   protected ipv6AccessLists: IPv6ACL[] = [];
 

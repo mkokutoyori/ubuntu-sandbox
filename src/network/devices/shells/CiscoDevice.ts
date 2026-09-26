@@ -28,6 +28,7 @@ export interface ARPProvider {
   _clearARPCache(): void;
   _getPortsInternal(): Map<string, Port>;
   _getSviVlanIds?(): number[];
+  _getSviArpAddresses?(): ReadonlyArray<{ vlan: number; ip: string; mac: MACAddress }>;
 }
 
 // ─── CiscoDevice (full shell contract) ──────────────────────────────

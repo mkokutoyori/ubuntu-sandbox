@@ -34,6 +34,7 @@ import {
 } from './cisco/switchPortPhysicalSpecs';
 import { stpInterfaceSpecs, type StpInterfaceHost } from './cisco/stpInterfaceSpecs';
 import { dhcpClientFamily, type DhcpClientLeaseView } from '@/cli/commands/dhcp/dhcpClientFamily';
+import { arpTimeoutFamily } from '@/cli/commands/arp/arpTimeoutFamily';
 
 const SVI_SANS_SECONDAIRE =
   '% Secondary addresses are not supported on this platform.';
@@ -122,7 +123,7 @@ import {
 } from './cisco/CiscoConfigCommands';
 import { getNtpAgent, getSnmpService } from '../../equipment/RouterServiceCapabilities';
 import { fhrpRunningConfigLines } from '../../fhrp/runningConfig';
-import { fhrpViewOf } from './cisco/CiscoShowCommands';
+import { fhrpViewOf, formatArpTimeout } from './cisco/CiscoShowCommands';
 import { hsrpMaxGroup } from '../../hsrp/types';
 import {
   buildIdentityConfigCommands, buildIdentitySubmodeCommands, getSecurityConfig,
@@ -2075,6 +2076,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   selectedInterfaceName(): string | null { return this.selectedInterface ?? null; }
 
+  setInterfaceArpTimeout(iface: string, seconds: number | null): void {
+    const vlan = this.sviVlanId(iface);
+    if (vlan !== null) this.d().setSviArpTimeout(vlan, seconds);
+  }
+
   dhcpClientEnable(iface: string, line: string): void {
     this.d().getDhcpClientAgent().enable(iface, line);
   }
@@ -2361,6 +2367,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...stpInterfaceSpecs(() => this.stpInterfaceHost()),
       ...this.dot1xPaeSpecs(),
       ...dhcpClientFamily(),
+      ...arpTimeoutFamily(),
       ...this.stpShowSpecs(),
       ...dhcpPoolSpecs(this.dhcpPoolContext()),
       ...this.vlanVtpShowSpecs(),
@@ -4334,6 +4341,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       for (const helper of svi.helperAddresses) {
         lines.push(` ip helper-address ${helper}`);
       }
+      if (svi.arpTimeoutSec != null && svi.arpTimeoutSec !== sw.defaultArpTimeoutSec()) {
+        lines.push(` arp timeout ${svi.arpTimeoutSec}`);
+      }
       lines.push(...runningConfigInterfaceACLFrom(
         sw.getVaclEngine().getInterfaceACLBindingsInternal(), `Vlan${svi.vlan}`));
       lines.push(...getSecurityConfig(sw).asInterfaceRunningConfigLines(`Vlan${svi.vlan}`));
@@ -5794,7 +5804,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     lines.push('  MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,');
     lines.push('     reliability 255/255, txload 1/255, rxload 1/255');
     lines.push('  Encapsulation ARPA, loopback not set');
-    lines.push('  ARP type: ARPA, ARP Timeout 04:00:00');
+    lines.push(`  ARP type: ARPA, ARP Timeout ${formatArpTimeout(this.d().sviArpTimeoutSec(vlan))}`);
     return lines.join('\n');
   }
 

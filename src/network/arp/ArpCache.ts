@@ -4,7 +4,7 @@ export const ARP_TIMEOUT_DEFAULT_SEC = 14_400;
 
 export interface ArpCachePolicy {
   now(): number;
-  timeoutSecFor(iface: string): number;
+  timeoutSecFor(entry: ARPEntry): number;
 }
 
 export class ArpCache extends Map<string, ARPEntry> {
@@ -23,9 +23,11 @@ export class ArpCache extends Map<string, ARPEntry> {
     return this.get(ip) !== undefined;
   }
 
-  learn(ip: string, mac: MACAddress, iface: string): boolean {
+  learn(ip: string, mac: MACAddress, iface: string, vlan?: number): boolean {
     if (super.get(ip)?.type === 'static') return false;
-    this.set(ip, { mac, iface, timestamp: this.policy.now(), type: 'dynamic' });
+    this.set(ip, {
+      mac, iface, timestamp: this.policy.now(), type: 'dynamic', ...(vlan === undefined ? {} : { vlan }),
+    });
     return true;
   }
 
@@ -49,7 +51,7 @@ export class ArpCache extends Map<string, ARPEntry> {
   }
 
   remainingMs(entry: ARPEntry): number {
-    return this.policy.timeoutSecFor(entry.iface) * 1000 - this.ageMs(entry);
+    return this.policy.timeoutSecFor(entry) * 1000 - this.ageMs(entry);
   }
 
   expire(): void {

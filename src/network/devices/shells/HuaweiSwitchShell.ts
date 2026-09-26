@@ -72,6 +72,7 @@ import {
 import type { HuaweiShellContext } from './huawei/HuaweiConfigCommands';
 import {
   analyserTeteRouteStatiqueVrp, lireQueueRouteStatiqueVrp, QUEUE_PARAMETRE_INVALIDE,
+  parseVrpArpExpireTime, VRP_WRONG_PARAMETER,
 } from './huawei/HuaweiConfigCommands';
 import { VRP_STATIC_PREFERENCE } from '../SwitchSvi';
 import {
@@ -1546,6 +1547,21 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (vlanIfMatch) { this.swRef.setSviAdminUp(parseInt(vlanIfMatch[1], 10), true); return ''; }
       const port = this.swRef.getPort(this.selectedInterface);
       if (port) port.setAdminShutdown(false);
+      return '';
+    });
+
+    this.interfaceTrie.registerGreedy('arp expire-time', 'Set ARP expire time (seconds)', (args, raw) => {
+      const vlan = /^Vlanif(\d+)$/.exec(this.selectedInterface ?? '');
+      if (!this.swRef || !vlan) return refuseMotInattenduVrp(raw ?? `arp expire-time ${args.join(' ')}`, 'expire-time');
+      const seconds = parseVrpArpExpireTime(args);
+      if (seconds === null) return VRP_WRONG_PARAMETER;
+      this.swRef.setSviArpTimeout(Number(vlan[1]), seconds);
+      return '';
+    });
+    this.interfaceTrie.register('undo arp expire-time', 'Reset ARP expire time', () => {
+      const vlan = /^Vlanif(\d+)$/.exec(this.selectedInterface ?? '');
+      if (!this.swRef || !vlan) return refuseMotInattenduVrp('undo arp expire-time', 'expire-time');
+      this.swRef.setSviArpTimeout(Number(vlan[1]), null);
       return '';
     });
 
@@ -4562,6 +4578,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
         lines.push(`interface ${name}`);
         if (svi.dhcpClient) lines.push(' ip address dhcp-alloc');
         else if (svi.ip && svi.mask) lines.push(` ip address ${svi.ip} ${svi.mask}`);
+        if (svi.arpTimeoutSec != null && svi.arpTimeoutSec !== sw.defaultArpTimeoutSec()) {
+          lines.push(` arp expire-time ${svi.arpTimeoutSec}`);
+        }
         for (const l of this.renderVlanifVrrpLines(sw, name)) lines.push(l);
         for (const natLine of runningConfigNATHuawei(commeRouteur(sw), name)) lines.push(natLine);
         lines.push('#');

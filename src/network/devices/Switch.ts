@@ -507,7 +507,8 @@ export abstract class Switch extends Equipment {
   // ─── Management ARP Table ──────────────────────────────────────
   private readonly arpTable = new ArpCache({
     now: () => this.getMonotonicClockMs(),
-    timeoutSecFor: () => this.defaultArpTimeoutSec(),
+    timeoutSecFor: (entry) => (entry.vlan === undefined
+      ? this.defaultArpTimeoutSec() : this.sviArpTimeoutSec(entry.vlan)),
   });
   private readonly arpStats = new ArpStats();
   private ipRoutingEnabled = false;
@@ -563,7 +564,7 @@ export abstract class Switch extends Equipment {
     },
     lookupArp: (ip) => this.arpTable.get(ip)?.mac ?? null,
     forgetArp: (ip: string) => { this.arpTable.forgetDynamic(ip); },
-    learnArp: (ip, mac, iface) => { this.arpTable.learn(ip, mac, iface); },
+    learnArp: (ip, mac, iface, vlan) => { this.arpTable.learn(ip, mac, iface, vlan); },
     fhrpVipArpOwner: (vlanIf, targetIp, requesterIp) =>
       this._vrrpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
       ?? this._hsrpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
@@ -3892,7 +3893,7 @@ export abstract class Switch extends Equipment {
     const unchanged = existing !== undefined
       && existing.mac.toString().toLowerCase() === senderMacStr
       && existing.iface === ingressPort;
-    if (!this.arpTable.learn(ip, arp.senderMAC, ingressPort) || unchanged) return;
+    if (!this.arpTable.learn(ip, arp.senderMAC, ingressPort, vlan) || unchanged) return;
     this.getBus().publish({
       topic: 'arp.snoop.learned',
       payload: {
@@ -3993,6 +3994,20 @@ export abstract class Switch extends Equipment {
 
   defaultArpTimeoutSec(): number {
     return ARP_TIMEOUT_DEFAULT_SEC;
+  }
+
+  _getSviArpAddresses(): Array<{ vlan: number; ip: string; mac: MACAddress }> {
+    return this.getSvis()
+      .filter((svi) => svi.ip !== undefined)
+      .map((svi) => ({ vlan: svi.vlan, ip: svi.ip!.toString(), mac: this.getBridgeMac() }));
+  }
+
+  sviArpTimeoutSec(vlan: number): number {
+    return this.svi.getSvi(vlan)?.arpTimeoutSec ?? this.defaultArpTimeoutSec();
+  }
+
+  setSviArpTimeout(vlan: number, seconds: number | null): void {
+    this.svi.setArpTimeout(vlan, seconds);
   }
 
   _getArpStats(): ArpStats { return this.arpStats; }

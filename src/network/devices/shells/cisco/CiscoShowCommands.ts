@@ -370,7 +370,7 @@ export function showIpIntBrief(router: Router): string {
 }
 
 /** IOS prints the ARP timeout as hh:mm:ss (default 04:00:00). */
-function formatArpTimeout(totalSec: number): string {
+export function formatArpTimeout(totalSec: number): string {
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   const s = Math.floor(totalSec % 60);

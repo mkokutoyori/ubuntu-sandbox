@@ -1018,6 +1018,7 @@ export interface ARPEntry {
   timestamp: number;
   /** Dynamic = learned, static = manual, failed = resolution timed out (NUD FAILED). */
   type: 'dynamic' | 'static' | 'failed';
+  vlan?: number;
 }
 
 // ─── ICMP (L4, inside IPv4, protocol 1) ─────────────────────────────

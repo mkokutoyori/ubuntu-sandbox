@@ -47,6 +47,13 @@ export type HuaweiShellMode =
 
 export const VRP_ARP_EXPIRE_TIME_DEFAULT_SEC = 1_200;
 const VRP_ARP_EXPIRE_TIME_RANGE: readonly [number, number] = [60, 86_400];
+export const VRP_WRONG_PARAMETER = `Error: Wrong parameter found at '^' position.`;
+
+export function parseVrpArpExpireTime(args: readonly string[]): number | null {
+  const [min, max] = VRP_ARP_EXPIRE_TIME_RANGE;
+  const seconds = /^\d+$/.test(args[0] ?? '') ? Number(args[0]) : NaN;
+  return args.length === 1 && seconds >= min && seconds <= max ? seconds : null;
+}
 
 export interface HuaweiShellContext {
   r(): Router;
@@ -933,11 +940,8 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
   trie.registerGreedy('arp expire-time', 'Set ARP expire time (seconds)', (args) => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
-    const [min, max] = VRP_ARP_EXPIRE_TIME_RANGE;
-    const seconds = /^\d+$/.test(args[0] ?? '') ? Number(args[0]) : NaN;
-    if (!(seconds >= min && seconds <= max) || args.length > 1) {
-      return `Error: Wrong parameter found at '^' position.`;
-    }
+    const seconds = parseVrpArpExpireTime(args);
+    if (seconds === null) return VRP_WRONG_PARAMETER;
     ctx.r().setArpTimeoutSec(ifName, seconds);
     return '';
   });

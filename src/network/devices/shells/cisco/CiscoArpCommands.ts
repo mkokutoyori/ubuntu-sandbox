@@ -50,6 +50,13 @@ function interfaceLines(provider: ARPProvider): ArpLine[] {
       iface: name, vrf: ARP_DEFAULT_VRF, kind: 'interface',
     });
   }
+  for (const svi of provider._getSviArpAddresses?.() ?? []) {
+    out.push({
+      protocol: ARP_PROTOCOL, address: svi.ip, age: ARP_NO_AGE,
+      mac: svi.mac.toCiscoString(), type: ARP_ENCAPSULATION,
+      iface: `Vlan${svi.vlan}`, vrf: ARP_DEFAULT_VRF, kind: 'interface',
+    });
+  }
   return out;
 }
 
@@ -63,7 +70,7 @@ function tableLine(nowMs: number, [ip, entry]: [string, CiscoARPEntry]): ArpLine
       : String(Math.floor((nowMs - entry.timestamp) / ARP_AGE_UNIT_MS)),
     mac: entry.mac.toCiscoString(),
     type: ARP_ENCAPSULATION,
-    iface: entry.iface,
+    iface: entry.vlan === undefined ? entry.iface : `Vlan${entry.vlan}`,
     vrf: ARP_DEFAULT_VRF,
     kind: isStatic ? 'static' : 'dynamic',
   };
