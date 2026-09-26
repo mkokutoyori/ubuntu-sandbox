@@ -126,9 +126,8 @@ describe('nmap — isr00t decides the scan, the discovery and what is refused', 
     expect(out).toContain('80/tcp closed http    reset');
     expect(out).toContain('MAC Address: ');
     const connect = await srv.executeCommand('nmap -sT --ttl 5 -p 22 10.0.0.1');
-    expect(connect).toContain('Starting Nmap 7.94 ( https://nmap.org )\n'
-      + 'You have specified some options that require raw socket access.\n'
-      + 'These options will not be honored for TCP Connect scan.');
+    expect(connect).toMatch(/ UTC\nYou have specified some options that require raw socket access\.\n/);
+    expect(connect).toContain('These options will not be honored for TCP Connect scan.');
   });
 
   it('the raw scan types, -O, -D and -PU are fatal for user, before the banner', async () => {
@@ -145,8 +144,9 @@ describe('nmap — isr00t decides the scan, the discovery and what is refused', 
 
   it('--traceroute is refused after the banner; -A quietly drops -O and --traceroute', async () => {
     const { pc } = await lab();
-    expect(await pc.executeCommand('nmap --traceroute -p 22 10.0.0.2'))
-      .toBe('Starting Nmap 7.94 ( https://nmap.org )\nTraceroute has to be run as root\nQUITTING!');
+    const refused = (await pc.executeCommand('nmap --traceroute -p 22 10.0.0.2')).split('\n');
+    expect(refused[0]).toMatch(/^Starting Nmap 7\.94 \( https:\/\/nmap\.org \) at \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/);
+    expect(refused.slice(1)).toEqual(['Traceroute has to be run as root', 'QUITTING!']);
     const advanced = await pc.executeCommand('nmap -A -p 22 10.0.0.2');
     expect(advanced).toContain('22/tcp open  ssh     OpenSSH_8.9p1 (protocol 2.0)');
     expect(advanced).not.toContain('OS details');
@@ -155,12 +155,12 @@ describe('nmap — isr00t decides the scan, the discovery and what is refused', 
 
   it('-PE falls back to a TCP pingscan with nmap\'s warning; raw options are not honored', async () => {
     const { pc } = await lab();
-    expect((await pc.executeCommand('nmap -PE -p 22 10.0.0.2')).split('\n').slice(0, 2)).toEqual([
-      'Warning:  You are not root -- using TCP pingscan rather than ICMP',
-      'Starting Nmap 7.94 ( https://nmap.org )',
-    ]);
-    expect((await pc.executeCommand('nmap --ttl 5 -p 22 10.0.0.2')).split('\n').slice(0, 3)).toEqual([
-      'Starting Nmap 7.94 ( https://nmap.org )',
+    const pingscan = (await pc.executeCommand('nmap -PE -p 22 10.0.0.2')).split('\n');
+    expect(pingscan[0]).toBe('Warning:  You are not root -- using TCP pingscan rather than ICMP');
+    expect(pingscan[1]).toMatch(/^Starting Nmap 7\.94 \( https:\/\/nmap\.org \) at \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/);
+    const raw = (await pc.executeCommand('nmap --ttl 5 -p 22 10.0.0.2')).split('\n');
+    expect(raw[0]).toMatch(/^Starting Nmap 7\.94 \( https:\/\/nmap\.org \) at \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/);
+    expect(raw.slice(1, 3)).toEqual([
       'You have specified some options that require raw socket access.',
       'These options will not be honored without the necessary privileges.',
     ]);

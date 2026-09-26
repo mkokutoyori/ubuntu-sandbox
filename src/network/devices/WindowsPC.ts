@@ -210,6 +210,8 @@ import type { DnsQueryFn } from '../dns/compat/DnsWireCompat';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
 import { SessionSwapWindow } from './host/session/SessionSwapWindow';
 import * as WinSys from './windows/WinSystemCommands';
+import { formatLocalTime } from './linux/system/SystemInfo';
+import { windowsZoneNameAt } from '../core/time/WindowsTimeZones';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { cmdDir } from './windows/WinDir';
 import { cmdFsutil } from './windows/Fsutil';
@@ -4224,6 +4226,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private scanHost(): ScanHost {
     return {
       privileged: true,
+      localTime: (format, atMs) => formatLocalTime(
+        format, atMs, this.identity.timezone, windowsZoneNameAt(this.identity.timezone, atMs)),
       device: this,
       readFile: (p) => {
         const r = this.fs.readFile(this.fs.normalizePath(p, this.cwd));

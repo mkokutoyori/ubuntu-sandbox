@@ -1,4 +1,4 @@
-import { NMAP_BANNER, type NmapOptions } from './NmapOptions';
+import { NMAP_BANNER, NMAP_VERSION, type NmapOptions } from './NmapOptions';
 import type { HostReport, NmapReport, PortResult } from './ScanEngine';
 import { renderPhase } from './ScanPhases';
 import { renderTrace } from './Traceroute';
@@ -23,6 +23,12 @@ export function numToStringSigdigits(value: number, digits: number): string {
   }
   return d.toFixed(Math.max(0, -shift));
 }
+
+export type NmapClock = (format: string, atMs: number) => string;
+
+export const CTIME_FORMAT = '%a %b %e %H:%M:%S %Y';
+const BANNER_TIME_FORMAT = '%Y-%m-%d %H:%M %Z';
+const HOST_SEEMS_DOWN = 'Note: Host seems down. If it is really up, but blocking our ping probes, try -Pn';
 
 /** Le compteur d'aller-retour est en millisecondes, la sortie en secondes. */
 function latencyText(latencyMs: number): string {
@@ -100,10 +106,7 @@ function renderHost(host: HostReport, options: NmapOptions): string[] {
   const lines: string[] = [`Nmap scan report for ${hostLabel(host)}${host.up ? '' : down}`];
   const rdns = rdnsLine(host);
   if (rdns) lines.push(rdns);
-  if (!host.up) {
-    lines.push('Note: Host seems down. If it is really up, but blocking our ping probes, try -Pn');
-    return lines;
-  }
+  if (!host.up) return lines;
   // output.cc, `write_host_header` : la raison se glisse entre l'etat et
   // la latence, et le TTL de la reponse la suit quand elle en portait un
   // — `Host is up, received echo-reply ttl 64 (0.00058s latency).`
@@ -147,49 +150,100 @@ function phaseSeconds(report: NmapReport): number {
   return report.phases.length === 0 ? 0 : totalSeconds(report) / report.phases.length;
 }
 
-function tally(report: NmapReport): string {
+function doneCounts(report: NmapReport): string {
   const ips = `${report.targetsScanned} IP ${report.targetsScanned === 1 ? 'address' : 'addresses'}`;
   const up = `${report.hostsUp} ${report.hostsUp === 1 ? 'host up' : 'hosts up'}`;
-  return `Nmap done: ${ips} (${up}) scanned in ${totalSeconds(report).toFixed(2)} seconds`;
+  return `${ips} (${up}) scanned in ${totalSeconds(report).toFixed(2)} seconds`;
 }
 
-export function renderNormal(report: NmapReport, options: NmapOptions, _commandLine: string): string {
-  const lines: string[] = [...options.warnings, NMAP_BANNER, ...options.lateWarnings];
-  for (const target of report.unresolved) lines.push(`Failed to resolve "${target}".`);
+function detectionNote(report: NmapReport, options: NmapOptions): string | null {
+  if (report.hostsUp === 0) return null;
+  const tail = 'Please report any incorrect results at https://nmap.org/submit/ .';
+  if (options.osScan && options.versionScan) return `OS and Service detection performed. ${tail}`;
+  if (options.osScan) return `OS detection performed. ${tail}`;
+  if (options.versionScan) return `Service detection performed. ${tail}`;
+  return null;
+}
+
+function reportBody(report: NmapReport, options: NmapOptions): string[] {
+  // Les paquets sont emis PENDANT le balayage, donc leurs lignes
+  // precedent le rapport de chaque hote.
+  const lines: string[] = [...report.packetTrace];
+  if (report.listScan) {
+    for (const host of report.hosts) lines.push(`Nmap scan report for ${hostLabel(host)}`);
+    return lines;
+  }
+  for (const host of report.hosts) {
+    if (!host.up && !options.verbose && !options.alwaysResolve) continue;
+    lines.push(...renderHost(host, options), '');
+  }
+  const note = detectionNote(report, options);
+  if (note) lines.push(note);
+  return lines;
+}
+
+function startMs(report: NmapReport): number {
+  return new Date(report.startedAt).getTime();
+}
+
+function endMs(report: NmapReport): number {
+  return startMs(report) + Math.round(totalSeconds(report) * 1000);
+}
+
+function unresolvedLines(report: NmapReport): string[] {
+  return report.unresolved.map((target) => `Failed to resolve "${target}".`);
+}
+
+export function bannerLine(clock: NmapClock, atMs: number): string {
+  return `${NMAP_BANNER} at ${clock(BANNER_TIME_FORMAT, atMs)}`;
+}
+
+export function renderNormal(
+  report: NmapReport, options: NmapOptions, _commandLine: string, clock: NmapClock,
+): string {
+  const lines: string[] = [
+    ...options.warnings,
+    bannerLine(clock, startMs(report)),
+    ...options.lateWarnings,
+    ...unresolvedLines(report),
+  ];
   if (options.verbose) {
-    const at = new Date(report.startedAt);
+    const hhmm = clock('%H:%M', startMs(report));
     // Une phase ne mesure rien ici — les trames sont livrees de facon
     // synchrone — donc sa duree est celle que le rapport annonce deja,
     // repartie sur les phases : deux estimations differentes pour une
     // meme sortie se contrediraient.
     const each = phaseSeconds(report);
-    for (const phase of report.phases) lines.push(...renderPhase(phase, at, each));
+    for (const phase of report.phases) lines.push(...renderPhase(phase, hhmm, each));
   }
-  // Les paquets sont emis PENDANT le balayage, donc leurs lignes
-  // precedent le rapport de chaque hote.
-  lines.push(...report.packetTrace);
-  if (report.listScan) {
-    for (const host of report.hosts) {
-      lines.push(`Nmap scan report for ${hostLabel(host)}`);
-    }
-    lines.push(tally(report));
-    return lines.join('\n');
-  }
-  for (const host of report.hosts) {
-    lines.push('');
-    lines.push(...renderHost(host, options));
-  }
-  lines.push('');
-  lines.push(tally(report));
+  lines.push(...reportBody(report, options));
+  const seemsDown = report.targetsScanned === 1 && report.hostsUp === 0
+    && !report.listScan && !options.skipDiscovery;
+  if (seemsDown) lines.push(HOST_SEEMS_DOWN);
+  lines.push(`Nmap done: ${doneCounts(report)}`);
   return lines.join('\n');
+}
+
+export function renderNormalFile(
+  report: NmapReport, options: NmapOptions, commandLine: string, clock: NmapClock,
+): string {
+  return [
+    `# Nmap ${NMAP_VERSION} scan initiated ${clock(CTIME_FORMAT, startMs(report))} as: ${commandLine}`,
+    ...options.lateWarnings,
+    ...unresolvedLines(report),
+    ...reportBody(report, options),
+    `# Nmap done at ${clock(CTIME_FORMAT, endMs(report))} -- ${doneCounts(report)}`,
+  ].join('\n');
 }
 
 function greppablePort(p: PortResult): string {
   return `${p.port}/${p.state}/${p.protocol}//${p.service}//${p.version ?? ''}/`;
 }
 
-export function renderGreppable(report: NmapReport, commandLine: string): string {
-  const lines: string[] = [`# Nmap 7.94 scan initiated as: ${commandLine}`];
+export function renderGreppable(report: NmapReport, commandLine: string, clock: NmapClock): string {
+  const lines: string[] = [
+    `# Nmap ${NMAP_VERSION} scan initiated ${clock(CTIME_FORMAT, startMs(report))} as: ${commandLine}`,
+  ];
   for (const host of report.hosts) {
     const label = `Host: ${host.ip} (${host.hostname ?? ''})`;
     lines.push(`${label}\tStatus: ${host.up ? 'Up' : 'Down'}`);
@@ -207,6 +261,6 @@ export function renderGreppable(report: NmapReport, commandLine: string): string
     }
     lines.push(line);
   }
-  lines.push(`# Nmap done -- ${report.targetsScanned} IP ${report.targetsScanned === 1 ? 'address' : 'addresses'} (${report.hostsUp} ${report.hostsUp === 1 ? 'host up' : 'hosts up'}) scanned`);
+  lines.push(`# Nmap done at ${clock(CTIME_FORMAT, endMs(report))} -- ${doneCounts(report)}`);
   return lines.join('\n');
 }

@@ -128,15 +128,12 @@ describe('un hote vivant est nomme par la resolution inverse', () => {
     expect(sortie).not.toContain('cible.lab');
   });
 
-  // Le rapport d'un hote MORT n'est rendu que hors `-sn` — un balayage de
-  // decouverte ne liste que ce qu'il a trouve — donc c'est `-p` qui montre
-  // ici la difference que `-R` fait.
   it('un hote MORT n est pas resolu, sauf sous `-R`', async () => {
     const { scanner } = await segment();
     await nommerDansHosts(scanner, '10.0.0.77', 'fantome.lab');
 
     const sans = await taper(scanner, 'nmap -p 22 10.0.0.77');
-    expect(sans).toContain('Nmap scan report for 10.0.0.77 [host down]');
+    expect(sans).not.toContain('Nmap scan report for');
     expect(sans).not.toContain('fantome.lab');
 
     const avec = await taper(scanner, 'nmap -R -p 22 10.0.0.77');

@@ -67,7 +67,7 @@ describe('user lab — nmap host discovery puts the asked-for packet on the wire
 
   it('-PA80 reports the host DOWN, because FW1 drops a session-less ACK', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC1.executeCommand(`sudo nmap -PA80 --reason -p 80 ${SERVER1}`);
+    const out = await lab.PC1.executeCommand(`sudo nmap -v -PA80 --reason -p 80 ${SERVER1}`);
     expect(out).toContain('[host down, received no-response]');
     expect(out).toContain('Note: Host seems down. If it is really up,'
       + ' but blocking our ping probes, try -Pn');
@@ -107,7 +107,7 @@ describe('user lab — nmap -sL lists without touching the wire', () => {
   it('every address of the HQ range is listed, and none counts as up', async () => {
     const lab = await configuredLab();
     const out = (await lab.PC1.executeCommand('sudo nmap -sL 192.168.30.1-4')).split('\n');
-    expect(out[0]).toBe('Starting Nmap 7.94 ( https://nmap.org )');
+    expect(out[0]).toMatch(/^Starting Nmap 7\.94 \( https:\/\/nmap\.org \) at \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/);
     expect(out.slice(1, 5)).toEqual([
       'Nmap scan report for 192.168.30.1',
       'Nmap scan report for 192.168.30.2',
@@ -173,7 +173,7 @@ describe('user lab — nmap through and against the policy', () => {
 
   it('a scan from HQ towards the LAN meets the implicit deny', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC3.executeCommand(`sudo nmap -p 80 --reason ${PC1_ADDRESS}`);
+    const out = await lab.PC3.executeCommand(`sudo nmap -v -p 80 --reason ${PC1_ADDRESS}`);
     expect(out).toContain('[host down, received no-response]');
     expect(out).toMatch(/^Nmap done: 1 IP address \(0 hosts up\) scanned in /m);
   });

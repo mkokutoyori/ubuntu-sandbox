@@ -27,6 +27,7 @@ import type { DiscoveryProbe } from './NmapOptions';
 export interface ScanHost {
   readonly device: Equipment | null;
   readonly privileged: boolean;
+  localTime(format: string, atMs: number): string;
   readFile(path: string): string | null;
   ping(ip: string, timeoutMs: number): Promise<Array<{
     success: boolean; rttMs?: number; ttl?: number;

@@ -1,5 +1,5 @@
-import { fmtHumanDate } from '@/network/devices/linux/LinuxLogManager';
-import type { NmapOptions, ScanType } from './NmapOptions';
+import { NMAP_VERSION, type NmapOptions, type ScanType } from './NmapOptions';
+import { CTIME_FORMAT, type NmapClock } from './NmapFormatter';
 import { effectivePorts } from './ScanEngine';
 import type { HostReport, NmapReport, PortResult } from './ScanEngine';
 import { formatPortRanges } from './PortSpec';
@@ -14,7 +14,6 @@ import { formatPortRanges } from './PortSpec';
  */
 
 export const NMAP_XML_OUTPUT_VERSION = '1.05';
-export const NMAP_XML_VERSION = '7.94';
 
 /**
  * `escape` (`xml.cc:222`) : les cinq entites, puis `--` dans un
@@ -231,14 +230,14 @@ export const NMAP_WEB_STYLESHEET = 'https://svn.nmap.org/nmap/docs/nmap.xsl';
 
 export function renderXml(
   report: NmapReport, options: NmapOptions, commandLine: string,
-  elapsedSeconds: number,
+  elapsedSeconds: number, clock: NmapClock,
 ): string {
   const started = new Date(report.startedAt);
   const startedSec = Math.floor(started.getTime() / 1000);
-  const startedStr = fmtHumanDate(started);
+  const startedStr = clock(CTIME_FORMAT, started.getTime());
   const finished = new Date(started.getTime() + Math.round(elapsedSeconds * 1000));
   const finishedSec = Math.floor(finished.getTime() / 1000);
-  const finishedStr = fmtHumanDate(finished);
+  const finishedStr = clock(CTIME_FORMAT, finished.getTime());
 
   const lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -247,12 +246,12 @@ export function renderXml(
   if (options.stylesheet !== null) {
     lines.push(`<?xml-stylesheet href="${escapeXml(options.stylesheet)}" type="text/xsl"?>`);
   }
-  lines.push(`<!-- Nmap ${NMAP_XML_VERSION} scan initiated ${escapeXml(startedStr)}`
+  lines.push(`<!-- Nmap ${NMAP_VERSION} scan initiated ${escapeXml(startedStr)}`
     + ` as: ${escapeXml(commandLine)} -->`);
   lines.push(openTag('nmaprun', [
     ['scanner', 'nmap'], ['args', commandLine],
     ['start', startedSec], ['startstr', startedStr],
-    ['version', NMAP_XML_VERSION],
+    ['version', NMAP_VERSION],
     ['xmloutputversion', NMAP_XML_OUTPUT_VERSION],
   ]));
 
