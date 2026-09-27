@@ -54,7 +54,7 @@ describe('NetworkDevice — focusable, labelled, keyboard-operable (rapport 09)'
 
   it('exposes role=button, tabIndex=0, and a descriptive aria-label', () => {
     const device = addAndGetDevice();
-    render(<NetworkDevice device={device} zoom={1} />);
+    render(<NetworkDevice device={device} />);
 
     const node = screen.getByRole('button', { name: new RegExp(device.name) });
     expect(node.getAttribute('tabindex')).toBe('0');
@@ -64,7 +64,7 @@ describe('NetworkDevice — focusable, labelled, keyboard-operable (rapport 09)'
 
   it('Delete removes the device', () => {
     const device = addAndGetDevice();
-    render(<NetworkDevice device={device} zoom={1} />);
+    render(<NetworkDevice device={device} />);
 
     const node = screen.getByRole('button', { name: new RegExp(device.name) });
     fireEvent.keyDown(node, { key: 'Delete' });
@@ -74,7 +74,7 @@ describe('NetworkDevice — focusable, labelled, keyboard-operable (rapport 09)'
 
   it('ArrowRight nudges the device position via moveDevice', () => {
     const device = addAndGetDevice();
-    render(<NetworkDevice device={device} zoom={1} />);
+    render(<NetworkDevice device={device} />);
 
     const node = screen.getByRole('button', { name: new RegExp(device.name) });
     fireEvent.keyDown(node, { key: 'ArrowRight' });
@@ -85,7 +85,7 @@ describe('NetworkDevice — focusable, labelled, keyboard-operable (rapport 09)'
 
   it('focusing the device selects it (aria-pressed reflects selection)', () => {
     const device = addAndGetDevice();
-    render(<NetworkDevice device={device} zoom={1} />);
+    render(<NetworkDevice device={device} />);
 
     const node = screen.getByRole('button', { name: new RegExp(device.name) });
     expect(node.getAttribute('aria-pressed')).toBe('false');
@@ -98,7 +98,7 @@ describe('NetworkDevice — focusable, labelled, keyboard-operable (rapport 09)'
   it('quick-action buttons carry aria-labels independent of the title attribute', () => {
     const device = addAndGetDevice();
     useNetworkStore.getState().selectDevice(device.id);
-    render(<NetworkDevice device={device} zoom={1} />);
+    render(<NetworkDevice device={device} />);
 
     expect(screen.getByRole('button', { name: `Delete ${device.name}` })).toBeTruthy();
     expect(screen.getByRole('button', { name: `Connect ${device.name} to another device` })).toBeTruthy();
