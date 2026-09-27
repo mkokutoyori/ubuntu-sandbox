@@ -79,7 +79,7 @@ const sequenceLine = (database: string, linkId: string) =>
 describe('each LSA has its own sequence and changes only with its contents', () => {
   it('WITNESS: the adjacency teaches R2 the loopback of R1', async () => {
     const { r2 } = await pair();
-    expect(await r2.executeCommand('show ip route ospf')).toContain('1.1.1.1/32');
+    expect(await r2.executeCommand('show ip route ospf')).toMatch(/^O\s+1\.1\.1\.1 \[110\//m);
   });
 
   it('a lone router originates its router-LSA at 0x80000001', async () => {
@@ -147,6 +147,6 @@ describe('origination follows MinLSInterval and takes back stale instances', () 
       'router ospf 1', 'router-id 1.1.1.1', 'network 10.0.12.0 0.0.0.255 area 0', 'end']);
     clock.advance(60_000);
     expect(routerLsaOf(r2, '1.1.1.1')!.lsSequenceNumber).toBeGreaterThan(before);
-    expect(await r2.executeCommand('show ip route ospf')).not.toContain('1.1.1.1/32');
+    expect(await r2.executeCommand('show ip route ospf')).not.toMatch(/1\.1\.1\.1(?:\/32)? \[/);
   });
 });

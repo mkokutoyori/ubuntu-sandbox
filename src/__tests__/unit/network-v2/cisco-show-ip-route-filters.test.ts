@@ -101,11 +101,11 @@ describe('show ip route <protocole>', () => {
   it("conserve les en-têtes `is subnetted` qui structurent la sortie", async () => {
     const r = await lab();
     const out = await r.executeCommand('show ip route static');
-    expect(out).toMatch(/172\.16\.0\.0\/16 is subnetted, 1 subnets/);
-    expect(out).toMatch(/S {8}172\.16\.5\.0\/24 \[1\/0\] via 10\.0\.12\.2/);
+    expect(out).toMatch(/^ {6}172\.16\.0\.0\/24 is subnetted, 1 subnets$/m);
+    expect(out).toMatch(/^S {8}172\.16\.5\.0 \[1\/0\] via 10\.0\.12\.2$/m);
     // Et une route qui EST son réseau par classe n'en porte pas :
     // l'en-tête décrit un découpage, il ne décore pas la sortie.
-    expect(out).toMatch(/S {4}192\.168\.50\.0\/24 \[1\/0\] via 10\.0\.12\.2/);
+    expect(out).toMatch(/^S {5}192\.168\.50\.0\/24 \[1\/0\] via 10\.0\.12\.2$/m);
     expect(out).not.toMatch(/192\.168\.50\.0\/24 is subnetted/);
   }, 30_000);
 

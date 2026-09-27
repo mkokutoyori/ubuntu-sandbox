@@ -320,7 +320,7 @@ describe('Cisco IOS EIGRP Protocol Unit Tests', () => {
 
       const routes = await r1.executeCommand('show ip route eigrp');
       // EIGRP Administrative Distance = 90
-      expect(routes).toContain('D    192.168.2.0/24 [90/');
+      expect(routes).toContain('D     192.168.2.0/24 [90/');
     });
 
     it('15. "show ip eigrp topology" should display Feasible Distance (FD) and Reported Distance (RD)', async () => {

@@ -22,12 +22,16 @@ async function run(dev: CiscoRouter, cmds: string[]): Promise<void> {
 }
 
 function ribPrefixes(showIpRoute: string): string[] {
-  return showIpRoute
-    .split('\n')
-    .map((l) => /^([A-Z][A-Za-z0-9*\s]*?)\s+(\d+\.\d+\.\d+\.\d+\/\d+)\s/.exec(l))
-    .filter((m): m is RegExpExecArray => !!m)
-    .filter((m) => m[1].trim() !== 'L')
-    .map((m) => m[2]);
+  const prefixes: string[] = [];
+  let sharedLength: string | null = null;
+  for (const line of showIpRoute.split('\n')) {
+    const header = /^\s+\d+\.\d+\.\d+\.\d+\/(\d+) is (variably )?subnetted/.exec(line);
+    if (header) { sharedLength = header[2] ? null : header[1]; continue; }
+    const route = /^([A-Za-z][A-Za-z0-9*]{0,3}(?: [A-Z][A-Z0-9]{1,2})?)\s+(\d+\.\d+\.\d+\.\d+)(\/\d+)?\s/.exec(line);
+    if (!route || route[1].trim() === 'L') continue;
+    prefixes.push(route[3] ? `${route[2]}${route[3]}` : `${route[2]}/${sharedLength}`);
+  }
+  return prefixes;
 }
 
 function fibPrefixes(showIpCef: string): string[] {
@@ -116,7 +120,7 @@ describe('RIB and FIB are one table', () => {
 
   it('Null0 is an interface, not a next hop', async () => {
     const { r } = await lab();
-    expect(await r.executeCommand('show ip route')).toContain('192.168.53.0/24 [1/0] is directly connected, Null0');
+    expect(await r.executeCommand('show ip route')).toMatch(/^S {5}192\.168\.53\.0\/24 is directly connected, Null0$/m);
     expect(await r.executeCommand('show ip cef')).toMatch(/192\.168\.53\.0\/24\s+attached\s+Null0/);
   });
 

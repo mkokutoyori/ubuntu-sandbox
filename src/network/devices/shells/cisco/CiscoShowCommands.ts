@@ -147,7 +147,44 @@ interface RenderedRoute {
   code: string;
   networkInt: number;
   prefixLength: number;
-  text: string;
+  network: string;
+  reaches: string[];
+}
+
+const TOP_LEVEL_CODE_WIDTH = 6;
+const SUBNET_CODE_WIDTH = 9;
+
+interface TableRoute {
+  network: { toString(): string; toUint32?: () => number };
+  mask: { toCIDR?: () => number; toString(): string };
+  type: string;
+  nextHop?: unknown;
+  iface?: string;
+  ifaceConfigured?: boolean;
+  ad?: number;
+  metric?: number;
+  installedAt?: number;
+}
+
+function reachOf(r: TableRoute, nowMs: number | undefined): string {
+  const attached = !r.nextHop || String(r.nextHop) === '0.0.0.0';
+  const staticRoute = r.type === 'static' || r.type === 'default';
+  if (r.type === 'connected' || r.type === 'local' || (staticRoute && attached)) {
+    return `is directly connected, ${r.iface}`;
+  }
+  const metric = `[${r.ad ?? 1}/${r.metric ?? 0}]`;
+  if (attached) return `${metric} is directly connected, ${r.iface}`;
+  const age = isLearnedRouteType(r.type) && r.installedAt !== undefined && nowMs !== undefined
+    ? `, ${formatRouteAge(nowMs - r.installedAt)}` : '';
+  const exit = r.type === 'bgp' || (staticRoute && !r.ifaceConfigured) ? '' : `, ${r.iface}`;
+  return `${metric} via ${r.nextHop}${age}${exit}`;
+}
+
+function renderedLines(entry: RenderedRoute, codeWidth: number, withLength: boolean): string[] {
+  const head = `${entry.code.padEnd(codeWidth)}${entry.network}${withLength ? `/${entry.prefixLength}` : ''}`;
+  const [first, ...alternates] = entry.reaches;
+  const indent = ' '.repeat(head.length + 1);
+  return [`${head} ${first}`, ...alternates.map((reach) => `${indent}${reach}`)];
 }
 
 function routeCode(type: string): string {
@@ -251,6 +288,7 @@ export function routerRouteTableHost(router: Router): RouteTableHost {
         const ip = port.getIPAddress();
         if (!ip || !router.isRouteInterfaceUsable(name)) continue;
         yield [name, ip] as const;
+        for (const secondary of port.getSecondaryIPs()) yield [name, secondary.ip] as const;
       }
     },
   };
@@ -258,16 +296,7 @@ export function routerRouteTableHost(router: Router): RouteTableHost {
 
 export function renderIpRouteTable(
   host: RouteTableHost,
-  table: ReadonlyArray<{
-    network: { toString(): string; toUint32?: () => number };
-    mask: { toCIDR?: () => number; toString(): string };
-    type: string;
-    nextHop?: unknown;
-    iface?: string;
-    ad?: number;
-    metric?: number;
-    installedAt?: number;
-  }>,
+  table: ReadonlyArray<TableRoute>,
   codeOverride?: (route: unknown) => string | null,
 ): string {
   const lines = [...ROUTE_LEGEND, ''];
@@ -279,78 +308,71 @@ export function renderIpRouteTable(
     lines.push('Gateway of last resort is not set', '');
   }
 
-  const rendered: RenderedRoute[] = [];
-  const defaults: string[] = [];
+  const byPrefix = new Map<string, RenderedRoute>();
 
   for (const r of table) {
     const prefixLength = r.mask.toCIDR
       ? r.mask.toCIDR()
       : maskTextToCidr(r.mask.toString());
-    const attachee = !r.nextHop || String(r.nextHop) === '0.0.0.0';
-    const learnedAt = isLearnedRouteType(r.type) && !attachee ? r.installedAt : undefined;
-    const age = learnedAt !== undefined && host.nowMs ? `, ${formatRouteAge(host.nowMs() - learnedAt)}` : '';
-    const via = attachee ? 'is directly connected' : `via ${r.nextHop}${age}`;
-    const metricStr = r.type === 'connected' || r.type === 'local'
-      ? '' : ` [${r.ad ?? 1}/${r.metric ?? 0}]`;
-    const suffix = (r.type === 'static' || r.type === 'default' || (r.type === 'bgp' && age !== '')) && !attachee
-      ? '' : `, ${r.iface}`;
-    if (r.type === 'default' || (r.network.toString() === '0.0.0.0' && prefixLength === 0)) {
-      const code = codeOverride?.(r) ?? `${routeCode(r.type === 'default' ? 'static' : r.type)}*`;
-      defaults.push(`${code.padEnd(6)}0.0.0.0/0${metricStr} ${via}${suffix}`);
+    const networkInt = r.network.toUint32 ? r.network.toUint32() : dottedToInt(r.network.toString());
+    const reach = r.type === 'rip' && (r.metric ?? 0) >= RIP_METRIC_INFINITY
+      ? `is possibly down,\n         routing via ${r.nextHop}, ${r.iface}`
+      : reachOf(r, host.nowMs?.());
+    const candidateDefault = r.type === 'default' || (networkInt === 0 && prefixLength === 0);
+    const code = codeOverride?.(r)
+      ?? (candidateDefault ? `${routeCode(r.type === 'default' ? 'static' : r.type)}*` : routeCode(r.type));
+    const key = `${networkInt}/${prefixLength}`;
+    const held = byPrefix.get(key);
+    if (held) {
+      if (!held.reaches.includes(reach)) held.reaches.push(reach);
       continue;
     }
-    const invalide = r.type === 'rip' && (r.metric ?? 0) >= RIP_METRIC_INFINITY;
-    rendered.push({
-      code: codeOverride?.(r) ?? routeCode(r.type),
-      networkInt: r.network.toUint32 ? r.network.toUint32() : dottedToInt(r.network.toString()),
-      prefixLength,
-      text: invalide
-        ? `${r.network}/${prefixLength} is possibly down,\n         routing via ${r.nextHop}, ${r.iface}`
-        : `${r.network}/${prefixLength}${metricStr} ${via}${suffix}`,
-    });
+    byPrefix.set(key, { code, networkInt, prefixLength, network: String(r.network), reaches: [reach] });
   }
 
   // Les routes locales /32 : une par adresse d'interface utilisable.
   for (const [name, ip] of host.localAddresses()) {
     // Une interface en /32 (une loopback, typiquement) a déjà sa route
     // connectée à la même adresse : IOS n'en affiche pas deux.
-    const already = rendered.some((entry) =>
-      entry.networkInt === ip.toUint32() && entry.prefixLength === 32);
-    if (already) continue;
-    rendered.push({
-      code: 'L',
-      networkInt: ip.toUint32(),
-      prefixLength: 32,
-      text: `${ip}/32 is directly connected, ${name}`,
+    const key = `${ip.toUint32()}/32`;
+    if (byPrefix.has(key)) continue;
+    byPrefix.set(key, {
+      code: 'L', networkInt: ip.toUint32(), prefixLength: 32,
+      network: String(ip), reaches: [`is directly connected, ${name}`],
     });
   }
 
-  rendered.sort((a, b) => a.networkInt - b.networkInt || a.prefixLength - b.prefixLength);
-
-  const groups = new Map<string, RenderedRoute[]>();
-  for (const entry of rendered) {
+  const blocks: Array<{ networkInt: number; prefixLength: number; lines: string[] }> = [];
+  const groups = new Map<number, { prefix: number; members: RenderedRoute[] }>();
+  for (const entry of byPrefix.values()) {
     const parent = classfulParent(entry.networkInt);
-    const key = `${parent.base}/${parent.prefix}`;
-    const bucket = groups.get(key) ?? [];
-    bucket.push(entry);
-    groups.set(key, bucket);
-  }
-
-  for (const line of defaults) lines.push(line);
-  for (const [key, bucket] of [...groups.entries()]
-    .sort((a, b) => Number(a[0].split('/')[0]) - Number(b[0].split('/')[0]))) {
-    const [baseText, parentPrefix] = key.split('/');
-    const base = intToDotted(Number(baseText));
-    const masks = new Set(bucket.map((entry) => entry.prefixLength));
-    if (bucket.every((entry) => entry.prefixLength === Number(parentPrefix))) {
-      for (const entry of bucket) lines.push(`${entry.code.padEnd(2)}   ${entry.text}`);
+    if (entry.prefixLength < parent.prefix) {
+      blocks.push({ networkInt: entry.networkInt, prefixLength: entry.prefixLength,
+        lines: renderedLines(entry, TOP_LEVEL_CODE_WIDTH, true) });
       continue;
     }
-    lines.push(masks.size > 1
-      ? `      ${base}/${parentPrefix} is variably subnetted, ${bucket.length} subnets, ${masks.size} masks`
-      : `      ${base}/${parentPrefix} is subnetted, ${bucket.length} subnets`);
-    for (const entry of bucket) lines.push(`${entry.code.padEnd(2)}       ${entry.text}`);
+    const group = groups.get(parent.base) ?? { prefix: parent.prefix, members: [] };
+    group.members.push(entry);
+    groups.set(parent.base, group);
   }
+
+  for (const [base, { prefix, members }] of groups) {
+    members.sort((a, b) => a.networkInt - b.networkInt || a.prefixLength - b.prefixLength);
+    const [only] = members;
+    if (members.length === 1 && only.prefixLength === prefix) {
+      blocks.push({ networkInt: base, prefixLength: prefix, lines: renderedLines(only, TOP_LEVEL_CODE_WIDTH, true) });
+      continue;
+    }
+    const masks = new Set(members.map((entry) => entry.prefixLength));
+    const header = masks.size > 1
+      ? `      ${intToDotted(base)}/${prefix} is variably subnetted, ${members.length} subnets, ${masks.size} masks`
+      : `      ${intToDotted(base)}/${only.prefixLength} is subnetted, ${members.length} subnets`;
+    blocks.push({ networkInt: base, prefixLength: prefix, lines: [header,
+      ...members.flatMap((entry) => renderedLines(entry, SUBNET_CODE_WIDTH, masks.size > 1))] });
+  }
+
+  blocks.sort((a, b) => a.networkInt - b.networkInt || a.prefixLength - b.prefixLength);
+  for (const block of blocks) lines.push(...block.lines);
 
   return lines.join('\n');
 }

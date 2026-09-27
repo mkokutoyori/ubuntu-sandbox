@@ -127,7 +127,7 @@ async function apprisDeR2(acl: readonly string[], protocole: readonly string[],
                           code: string): Promise<boolean> {
   const { r1 } = await deuxRouteurs(acl, protocole);
   const table = await r1.executeCommand('show ip route');
-  return new RegExp(`^${code}\\s+2\\.2\\.2\\.0/24`, 'm').test(table);
+  return new RegExp(`^${code}\\s+2\\.2\\.2\\.0(?:/24)?\\s`, 'm').test(table);
 }
 
 async function voisinEigrp(acl: readonly string[]): Promise<boolean> {
