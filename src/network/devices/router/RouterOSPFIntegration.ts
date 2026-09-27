@@ -393,10 +393,10 @@ export class RouterOSPFIntegration {
           peer.sendPacket(ifaceName, packet, destIP);
           return;
         }
-        const iface = peer.ospfEngine!.getInterface(ifaceName);
-        const delay = iface?.propagationDelayMs ?? 0;
+        const engine = peer.ospfEngine!;
+        const delay = engine.getInterface(ifaceName)?.propagationDelayMs ?? 0;
         if (delay > 0) {
-          setTimeout(() => peer.sendPacket(ifaceName, packet, destIP), delay);
+          engine.defer(() => peer.sendPacket(ifaceName, packet, destIP), delay);
         } else {
           peer.sendPacket(ifaceName, packet, destIP);
         }
@@ -437,7 +437,7 @@ export class RouterOSPFIntegration {
       lsRequestList: [],
       lsRetransmissionList: [],
       dbSummaryList: [],
-      lastHelloReceived: Date.now(),
+      lastHelloReceived: engine.now(),
       options: 0,
       ddRetransmitTimer: null,
       lsrRetransmitTimer: null,

@@ -20,7 +20,7 @@ import type { Router } from '../../Router';
 import { estAdresseIPv4, refuseMotInattenduVrp } from '../cli-utils';
 import { CommandTrie } from '../CommandTrie';
 import { SubnetMask } from '../../../core/types';
-import { parseAreaId } from '@/network/ospf/types';
+import { parseAreaId, type LSAHeader, type OSPFNeighbor } from '@/network/ospf/types';
 
 const VRP_IMPORTABLE_PROTOCOLS = new Set([
   'direct', 'connected', 'static', 'rip', 'isis', 'bgp', 'ospf', 'unr',
@@ -127,8 +127,9 @@ export function buildOSPFViewCommands(
     if (args.length < 1) return 'Error: Incomplete command.';
     const ospf = ctx.r()._getOSPFEngineInternal();
     if (!ospf) return 'Error: OSPF is not enabled.';
-    if (parseAreaId(args[0]) === null) return 'Error: Wrong parameter.';
-    setOSPFArea(args[0]);
+    const areaId = parseAreaId(args[0]);
+    if (areaId === null) return 'Error: Wrong parameter.';
+    setOSPFArea(areaId);
     ctx.setMode('ospf-area');
     return '';
   });
@@ -381,6 +382,7 @@ export function buildOSPFAreaViewCommands(
       return 'Error: Wrong parameter.';
     }
     ospf.addNetwork(network, wildcard, areaId);
+    ctx.r()._ospfAutoConverge();
     return '';
   });
   // `network <adresse> <masque-generique>` : forme close.
@@ -803,8 +805,10 @@ export function registerOSPFDisplayCommands(trie: CommandTrie, getRouter: () => 
     return out.join('\n');
   });
   trie.register('display ospf error', 'Display OSPF error statistics', () => 'OSPF errors: 0');
-  trie.register('display ospf request-queue', 'Display OSPF request queue', () => 'OSPF request queue is empty.');
-  trie.register('display ospf retrans-queue', 'Display OSPF retransmission queue', () => 'OSPF retransmission queue is empty.');
+  trie.register('display ospf request-queue', 'Display OSPF request queue',
+    () => displayOspfNeighborQueue(getRouter(), 'Request', (_ospf, nbr) => nbr.lsRequestList));
+  trie.register('display ospf retrans-queue', 'Display OSPF retransmission queue',
+    () => displayOspfNeighborQueue(getRouter(), 'Retransmit', (ospf, nbr) => ospf.lsuRetransmissionOf(nbr).queue));
   trie.registerGreedy('display ospf interface', 'Display OSPF interface (by name)', (args) => {
     if (args.length === 0) return displayOspfInterface(getRouter());
     if ((args[0] || '').toLowerCase() === 'all') return displayOspfInterface(getRouter());
@@ -819,6 +823,45 @@ export function registerOSPFDisplayCommands(trie: CommandTrie, getRouter: () => 
     if (args.includes('process')) return 'OSPF process reset.';
     return '';
   });
+}
+
+type OspfEngineOf = NonNullable<ReturnType<Router['_getOSPFEngineInternal']>>;
+
+const VRP_LSA_TYPE_NAMES: Readonly<Record<number, string>> = {
+  1: 'Router', 2: 'Network', 3: 'Sum-Net', 4: 'Sum-Asbr', 5: 'External',
+};
+
+function vrpLsaTypeName(lsType: number): string {
+  return VRP_LSA_TYPE_NAMES[lsType] ?? String(lsType);
+}
+
+function vrpLsdbHeader(ospf: OspfEngineOf): string {
+  return `         OSPF Process ${ospf.getProcessId()} with Router ID ${ospf.getRouterId()}`;
+}
+
+function displayOspfNeighborQueue(
+  router: Router,
+  list: 'Request' | 'Retransmit',
+  queueOf: (ospf: OspfEngineOf, neighbor: OSPFNeighbor) => readonly LSAHeader[],
+): string {
+  const ospf = router._getOSPFEngineInternal();
+  if (!ospf) return 'Error: OSPF is not configured.';
+  const lines = ['', vrpLsdbHeader(ospf), `                 OSPF ${list} List`, ''];
+  for (const iface of ospf.getInterfaces().values()) {
+    for (const neighbor of iface.neighbors.values()) {
+      const queue = queueOf(ospf, neighbor);
+      if (queue.length === 0) continue;
+      lines.push(`  The Router's Neighbor is Router ID ${neighbor.routerId}  Address ${neighbor.ipAddress}`);
+      lines.push(`  Interface ${iface.ipAddress.padEnd(17)}Area ${iface.areaId}`);
+      lines.push(`  ${list} list:`);
+      lines.push('       Type       LinkState ID      AdvRouter         Sequence   Age');
+      for (const lsa of queue) {
+        lines.push(`       ${vrpLsaTypeName(lsa.lsType).padEnd(11)}${lsa.linkStateId.padEnd(18)}`
+          + `${lsa.advertisingRouter.padEnd(18)}${lsa.lsSequenceNumber.toString(16).padStart(8, '0').padEnd(11)}${lsa.lsAge}`);
+      }
+    }
+  }
+  return lines.join('\n');
 }
 
 function displayOspfBrief(router: Router): string {
@@ -873,7 +916,7 @@ function displayOspfLsdb(router: Router): string {
 
   const lsdb = ospf.getLSDB();
   const lines = [
-    `         OSPF Process ${ospf.getProcessId()} with Router ID ${ospf.getRouterId()}`,
+    vrpLsdbHeader(ospf),
     `                  Link State Database`,
     '',
   ];
@@ -883,9 +926,8 @@ function displayOspfLsdb(router: Router): string {
     lines.push(' Type      LinkState ID    AdvRouter       Age   Len   Sequence');
 
     for (const [, lsa] of areaDB) {
-      const typeNames: Record<number, string> = { 1: 'Router', 2: 'Network', 3: 'Sum-Net', 4: 'Sum-Asbr', 5: 'External' };
       lines.push(
-        ` ${(typeNames[lsa.lsType] ?? String(lsa.lsType)).padEnd(10)}` +
+        ` ${vrpLsaTypeName(lsa.lsType).padEnd(10)}` +
         `${lsa.linkStateId.padEnd(16)}${lsa.advertisingRouter.padEnd(16)}` +
         `${String(lsa.lsAge).padEnd(6)}${String(lsa.length).padEnd(6)}` +
         `0x${lsa.lsSequenceNumber.toString(16)}`
@@ -958,13 +1000,12 @@ function displayOspfLsdbTyped(router: Router, lsType: number): string {
 
   router._ospfAutoConverge();
 
-  const typeNames: Record<number, string> = { 1: 'Router', 2: 'Network', 3: 'Sum-Net', 4: 'Sum-Asbr', 5: 'External' };
   const lsdb = ospf.getLSDB();
   const lines = [
-    `         OSPF Process ${ospf.getProcessId()} with Router ID ${ospf.getRouterId()}`,
+    vrpLsdbHeader(ospf),
     `                  Link State Database`,
     '',
-    `                     Type: ${typeNames[lsType] ?? String(lsType)}`,
+    `                     Type: ${vrpLsaTypeName(lsType)}`,
     ' Type      LinkState ID    AdvRouter       Age   Len   Sequence',
   ];
 
@@ -972,7 +1013,7 @@ function displayOspfLsdbTyped(router: Router, lsType: number): string {
     for (const [, lsa] of areaDB) {
       if (lsa.lsType !== lsType) continue;
       lines.push(
-        ` ${(typeNames[lsa.lsType] ?? String(lsa.lsType)).padEnd(10)}` +
+        ` ${vrpLsaTypeName(lsa.lsType).padEnd(10)}` +
         `${lsa.linkStateId.padEnd(16)}${lsa.advertisingRouter.padEnd(16)}` +
         `${String(lsa.lsAge).padEnd(6)}${String(lsa.length).padEnd(6)}` +
         `0x${lsa.lsSequenceNumber.toString(16)}`

@@ -106,6 +106,8 @@ export class OSPFv3Engine implements IProtocolEngine {
   setDeviceId(id: string | undefined): void { this.deviceId = id; }
   private getBus(): IEventBus { return this.busHolder.get(); }
   private getScheduler(): IScheduler { return this.schedulerOverride ?? getDefaultScheduler(); }
+
+  now(): number { return this.getScheduler().now(); }
   private routerRef() {
     return {
       routerId: this.config.routerId,
@@ -551,7 +553,7 @@ export class OSPFv3Engine implements IProtocolEngine {
     neighbor.priority = hello.priority;
     neighbor.neighborDR = hello.designatedRouter;
     neighbor.neighborBDR = hello.backupDesignatedRouter;
-    neighbor.lastHelloReceived = Date.now();
+    neighbor.lastHelloReceived = this.now();
     neighbor.options = hello.options;
 
     // HelloReceived
@@ -603,7 +605,7 @@ export class OSPFv3Engine implements IProtocolEngine {
       lsRequestList: [],
       lsRetransmissionList: [],
       dbSummaryList: [],
-      lastHelloReceived: Date.now(),
+      lastHelloReceived: this.now(),
       options: hello.options,
       ddRetransmitTimer: null,
       lsrRetransmitTimer: null,

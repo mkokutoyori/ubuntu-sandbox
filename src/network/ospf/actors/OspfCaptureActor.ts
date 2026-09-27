@@ -17,12 +17,12 @@
  */
 
 import type { IEventBus, Unsubscribe as BusUnsubscribe } from '@/events/EventBus';
+import { getDefaultScheduler } from '@/events/Scheduler';
 import type { OSPFPacket } from '../types';
 
 export interface CapturedOspfPacket {
   /** 'in' = ingress (received), 'out' = egress (sent or to be sent). */
   readonly direction: 'in' | 'out';
-  /** Wall-clock timestamp when the actor observed the event. */
   readonly timestamp: number;
   readonly routerId: string;
   readonly processId: number;
@@ -58,7 +58,7 @@ export class OspfCaptureActor {
       this.bus.subscribe('ospf.packet.outgoing', (e) => {
         this.append({
           direction: 'out',
-          timestamp: Date.now(),
+          timestamp: getDefaultScheduler().now(),
           routerId: e.payload.routerId,
           processId: e.payload.processId,
           iface: e.payload.iface,
@@ -69,7 +69,7 @@ export class OspfCaptureActor {
       this.bus.subscribe('ospf.packet.received', (e) => {
         this.append({
           direction: 'in',
-          timestamp: Date.now(),
+          timestamp: getDefaultScheduler().now(),
           routerId: e.payload.routerId,
           processId: e.payload.processId,
           iface: e.payload.iface,
