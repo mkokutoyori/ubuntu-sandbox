@@ -232,7 +232,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'exit', 'help', 'ps', 'top', 'htop', 'free', 'vmstat', 'mpstat', 'pidstat', 'iostat', 'dstat', 'df', 'du', 'mount', 'umount', 'findmnt',
   'pkill', 'pgrep', 'pidof', 'killall', 'pgid',
   'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
-  'renice', 'timeout', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
+  'renice', 'timeout', 'nohup', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
   'getconf', 'lsb_release', 'swapon', 'swapoff', 'lsmod', 'modinfo', 'pmap', 'sensors',
   'conntrack',
   'arch', 'lspci', 'lsusb', 'dmidecode', 'lshw', 'hwinfo', 'lsblk', 'fdisk', 'parted', 'blkid', 'hdparm',
@@ -3400,7 +3400,9 @@ export class LinuxCommandExecutor {
       this._cmdEnv = env;
       const pending = effective.length > 0 ? this.networkRunner(effective, env, viaSudo, stdin, outputPiped) : null;
       if (pending) return pending.finally(() => { this._cmdEnv = previousEnv; });
-      const suPending = this.trySuNetworkCommand(argv, env);
+      const wrapped = this.networkCommandBehindWrapper(effective, env, viaSudo, stdin, outputPiped);
+      if (wrapped) return wrapped.finally(() => { this._cmdEnv = previousEnv; });
+      const suPending = this.trySuNetworkCommand(argv, env, stdin ?? this._scenarioStdin);
       if (suPending) return suPending.finally(() => { this._cmdEnv = previousEnv; });
       this._cmdEnv = previousEnv;
     }
@@ -5066,27 +5068,7 @@ export class LinuxCommandExecutor {
       //   env -u NAME … cmd         → run cmd with NAME removed
       //   env VAR=v … cmd args      → run cmd with VAR overlaid
       case 'env': {
-        let i = 0;
-        let ignoreEnv = false;
-        const unset: string[] = [];
-        const overlay: Record<string, string> = {};
-        for (; i < args.length; i++) {
-          const a = args[i];
-          if (a === '-i' || a === '--ignore-environment' || a === '-') { ignoreEnv = true; continue; }
-          if (a === '-u' || a === '--unset') { if (args[i + 1] !== undefined) unset.push(args[++i]); continue; }
-          if (a.startsWith('-')) continue;       // -0, -C <dir>, … accepted as no-ops
-          const eq = a.indexOf('=');
-          if (eq > 0 && /^[A-Za-z_][A-Za-z_0-9]*$/.test(a.slice(0, eq))) {
-            overlay[a.slice(0, eq)] = a.slice(eq + 1);
-            continue;
-          }
-          break;                                  // first plain word → the command
-        }
-        const base = ignoreEnv ? {} : { ...(this._cmdEnv ?? Object.fromEntries(this.env)) };
-        for (const u of unset) delete base[u];
-        const resultEnv: Record<string, string> = { ...base, ...overlay };
-
-        const cmdline = args.slice(i);
+        const { env: resultEnv, command: cmdline } = parseEnvInvocation(args, this._cmdEnv ?? Object.fromEntries(this.env));
         if (cmdline.length === 0) {
           return {
             output: Object.entries(resultEnv).map(([k, v]) => `${k}=${v}`).join('\n'),
@@ -5288,22 +5270,9 @@ export class LinuxCommandExecutor {
       // body's effect (exit 130 + the trap echo) so cross-equipment
       // signal-relay tests stay coherent without an event-loop.
       case 'timeout': {
-        // Les options qui consomment une valeur, et les autres. Sauter
-        // toute option sans distinguer les deux faisait prendre la
-        // valeur de `-s` pour le délai, et le délai pour la commande :
-        // `timeout -s TERM 1 sleep 5` répondait `1: command not found`.
-        const AVEC_VALEUR = new Set(['-s', '--signal', '-k', '--kill-after']);
-        let i = 0;
-        while (i < args.length && args[i].startsWith('-')) {
-          const opt = args[i];
-          i++;
-          // `--signal=TERM` porte sa valeur avec lui.
-          if (AVEC_VALEUR.has(opt) && !opt.includes('=')) i++;
-        }
-        if (i >= args.length) return { output: 'timeout: missing operand', exitCode: 1 };
-        i++; // le délai
-        const inner = args.slice(i).join(' ');
-        if (!inner) return { output: 'timeout: missing command', exitCode: 1 };
+        const parsed = parseTimeoutInvocation(args);
+        if ('error' in parsed) return { output: parsed.error, exitCode: 1 };
+        const inner = parsed.command.join(' ');
         // Detect the canonical ssh-trap-INT-sleep pattern and emit the
         // trap's effect, exactly as a real timeout → ssh → trap chain
         // would produce.
@@ -5313,6 +5282,8 @@ export class LinuxCommandExecutor {
         const out = this.execute(inner);
         return { output: out, exitCode: this.lastExitCode };
       }
+
+      case 'nohup': return this.runNohup(args, stdin, outputPiped);
 
       // `truncate` lives in `commands/fs/Truncate.ts` as a `LinuxCommand`;
       // this case only routes to it, so there is one implementation.
@@ -6561,23 +6532,28 @@ export class LinuxCommandExecutor {
    * call chain.
    */
   private trySuNetworkCommand(
-    argv: string[], env?: Record<string, string>,
+    argv: string[], env?: Record<string, string>, stdin?: string,
   ): Promise<{ output: string; exitCode: number }> | null {
     if (argv[0] !== 'su' || !this.networkRunner) return null;
     const { loginShell, targetUser, command } = LinuxCommandExecutor.parseSuArgs(argv.slice(1));
-    if (command === null || /[|;&<>]/.test(command)) return null;
+    if (command === null) return null;
     const innerArgv = command.trim().split(/\s+/).filter(Boolean);
     if (innerArgv.length === 0 || !this.isNetworkCommandName(innerArgv[0])) return null;
 
-    return this.runSuNetworkCommand(targetUser, loginShell, innerArgv, env);
+    return this.runSuNetworkCommand(targetUser, loginShell, command, innerArgv, env, stdin);
   }
 
   private async runSuNetworkCommand(
-    targetUser: string, loginShell: boolean, innerArgv: string[], env?: Record<string, string>,
+    targetUser: string, loginShell: boolean, command: string, innerArgv: string[],
+    env?: Record<string, string>, stdin?: string,
   ): Promise<{ output: string; exitCode: number }> {
-    const session = this.beginSuSession(targetUser, loginShell, undefined);
+    const session = this.beginSuSession(targetUser, loginShell, stdin);
     if (session.ok === false) return session.result;
     try {
+      if (/[|;&<>]/.test(command)) {
+        const output = await this.executeAsync(command);
+        return { output, exitCode: this.lastExitCode };
+      }
       const pending = this.networkRunner!(innerArgv, env);
       return await (pending ?? { output: '', exitCode: 0 });
     } finally {
@@ -7709,6 +7685,70 @@ export class LinuxCommandExecutor {
     return unique.filter(c => c.startsWith(prefix)).sort();
   }
 
+  private runNohup(args: string[], stdin: string | undefined, outputPiped: boolean): { output: string; exitCode: number } {
+    if (args.length === 0) {
+      return nohupResult('', 125, "nohup: missing operand\nTry 'nohup --help' for more information.");
+    }
+    const target = outputPiped ? null : this.nohupOutputFile();
+    if (!outputPiped && target === null) {
+      return nohupResult('', 125, `nohup: failed to open '${this.getHomeDir()}/nohup.out': Permission denied`);
+    }
+    const output = this.execute(args.join(' '));
+    return this.nohupDeliver({ output, exitCode: this.lastExitCode }, stdin, target);
+  }
+
+  private nohupDeliver(
+    run: { output: string; exitCode: number; stderr?: string },
+    stdin: string | undefined,
+    target: { path: string; shown: string } | null,
+  ): { output: string; exitCode: number } {
+    const ignoring = stdin === undefined ? 'ignoring input and ' : '';
+    const merged = [run.output, run.stderr].filter(Boolean).join('\n');
+    if (target === null) return nohupResult(merged, run.exitCode, `nohup: ${ignoring}redirecting stderr to stdout`);
+    const body = merged && !merged.endsWith('\n') ? `${merged}\n` : merged;
+    this.vfs.writeFile(target.path, body, this.ctx().uid, this.ctx().gid, NOHUP_OUT_UMASK, true, undefined, false);
+    return nohupResult('', run.exitCode, `nohup: ${ignoring}appending output to '${target.shown}'`);
+  }
+
+  private networkCommandBehindWrapper(
+    argv: string[], env: Record<string, string> | undefined, viaSudo: boolean,
+    stdin: string | undefined, outputPiped: boolean | undefined,
+  ): Promise<{ output: string; exitCode: number; stderr?: string }> | null {
+    const run = (inner: string[], innerEnv: Record<string, string> | undefined, piped: boolean | undefined) =>
+      inner.length > 0 && this.isNetworkCommandName(inner[0])
+        ? this.networkRunner?.(inner, innerEnv, viaSudo, stdin, piped) ?? null
+        : null;
+    const args = argv.slice(1);
+    switch (argv[0]) {
+      case 'timeout': {
+        const parsed = parseTimeoutInvocation(args);
+        return 'command' in parsed ? run(parsed.command, env, outputPiped) : null;
+      }
+      case 'env': {
+        const parsed = parseEnvInvocation(args, env ?? Object.fromEntries(this.env));
+        return run(parsed.command, parsed.env, outputPiped);
+      }
+      case 'nohup': {
+        const target = outputPiped ? null : this.nohupOutputFile();
+        if (!outputPiped && target === null) return null;
+        return run(args, env, true)?.then((r) => this.nohupDeliver(r, stdin, target)) ?? null;
+      }
+      default:
+        return null;
+    }
+  }
+
+  private nohupOutputFile(): { path: string; shown: string } | null {
+    const home = this.getHomeDir();
+    for (const [dir, shown] of [[this.cwd, 'nohup.out'], [home, `${home}/nohup.out`]]) {
+      const parent = this.vfs.resolveInode(dir);
+      if (parent?.type === 'directory' && this.checkPermission(parent, 'w')) {
+        return { path: this.vfs.normalizePath('nohup.out', dir), shown };
+      }
+    }
+    return null;
+  }
+
   private getHomeDir(): string {
     return this.userMgr.currentUid === 0 ? '/root' : `/home/${this.userMgr.currentUser}`;
   }
@@ -7925,6 +7965,50 @@ function niceWrappedCommand(argv: string[]): { argv: string[]; adjustment: numbe
  * (optionally surrounded by whitespace) in the range 000..0777. Returns
  * the numeric mask, or null when the value is not a valid umask.
  */
+const NOHUP_OUT_UMASK = 0o177;
+
+const TIMEOUT_OPTIONS_WITH_VALUE = new Set(['-s', '--signal', '-k', '--kill-after']);
+
+function parseTimeoutInvocation(args: readonly string[]): { command: string[] } | { error: string } {
+  let i = 0;
+  while (i < args.length && args[i].startsWith('-')) {
+    const option = args[i];
+    i++;
+    if (TIMEOUT_OPTIONS_WITH_VALUE.has(option) && !option.includes('=')) i++;
+  }
+  if (i >= args.length) return { error: 'timeout: missing operand' };
+  const command = args.slice(i + 1);
+  return command.length === 0 ? { error: 'timeout: missing command' } : { command };
+}
+
+function parseEnvInvocation(
+  args: readonly string[], inherited: Record<string, string>,
+): { env: Record<string, string>; command: string[] } {
+  let i = 0;
+  let ignoreEnv = false;
+  const unset: string[] = [];
+  const overlay: Record<string, string> = {};
+  for (; i < args.length; i++) {
+    const a = args[i];
+    if (a === '-i' || a === '--ignore-environment' || a === '-') { ignoreEnv = true; continue; }
+    if (a === '-u' || a === '--unset') { if (args[i + 1] !== undefined) unset.push(args[++i]); continue; }
+    if (a.startsWith('-')) continue;
+    const eq = a.indexOf('=');
+    if (eq > 0 && /^[A-Za-z_][A-Za-z_0-9]*$/.test(a.slice(0, eq))) {
+      overlay[a.slice(0, eq)] = a.slice(eq + 1);
+      continue;
+    }
+    break;
+  }
+  const base = ignoreEnv ? {} : { ...inherited };
+  for (const u of unset) delete base[u];
+  return { env: { ...base, ...overlay }, command: args.slice(i) };
+}
+
+function nohupResult(output: string, exitCode: number, stderr: string): { output: string; exitCode: number } {
+  return { output, exitCode, stderr } as { output: string; exitCode: number };
+}
+
 function extractCommandHead(input: string): string | null {
   let s = input.trimStart();
   while (/^[A-Za-z_][A-Za-z_0-9]*=/.test(s)) {
