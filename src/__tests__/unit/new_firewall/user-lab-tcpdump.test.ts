@@ -33,8 +33,7 @@ async function configuredLab(): Promise<UserLab> {
   const lab = await loadUserLab();
   await addRoutesToHq(lab);
   await taper(lab.PC1, [
-    'ip addr add 192.168.1.10/24 dev eth0',
-    'ip route add default via 192.168.1.99',
+    'ip route replace default via 192.168.1.99',
   ]);
   await taper(lab.Server1, ['systemctl start nginx', 'systemctl start ssh']);
   return lab;
@@ -98,7 +97,7 @@ describe('user lab — tcpdump on the HQ side', () => {
     const out = await captureWhile(lab.PC3, 'sudo tcpdump -e -c 2 arp',
       () => lab.PC3.executeCommand(`ping -c 1 ${WINSERVER1}`));
     const [request, reply] = packets(out);
-    expect(request).toMatch(/ ([0-9a-f:]{17}) \(oui Unknown\) > Broadcast, ethertype ARP \(0x0806\), length 42: ARP, Request who-has 192\.168\.30\.2 tell 192\.168\.30\.3, length 28$/);
+    expect(request).toMatch(/ ([0-9a-f:]{17}) \(oui Unknown\) > Broadcast, ethertype ARP \(0x0806\), length 42: ARP, Request who-has 192\.168\.30\.2 tell 192\.168\.30\.6, length 28$/);
     expect(reply).toMatch(/ \(oui Unknown\) > [0-9a-f:]{17} \(oui Unknown\), ethertype ARP \(0x0806\), length 60: ARP, Reply 192\.168\.30\.2 is-at [0-9a-f:]{17} \(oui Unknown\), length 46$/);
   });
 

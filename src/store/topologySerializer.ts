@@ -123,6 +123,16 @@ interface TopologyStaticArpExport {
 interface TopologyFileExport {
   path: string;
   content: string;
+  uid?: number;
+  gid?: number;
+  mode?: number;
+}
+
+interface TopologyDirectoryExport {
+  path: string;
+  uid: number;
+  gid: number;
+  mode: number;
 }
 
 interface TopologyVlanExport {
@@ -231,6 +241,7 @@ interface TopologyDeviceExport {
   staticRoutes?: TopologyRouteExport[];
   staticArp?: TopologyStaticArpExport[];
   files?: TopologyFileExport[];
+  directories?: TopologyDirectoryExport[];
   /**
    * `iptables-save` / `ip6tables-save` text.
    *
@@ -393,18 +404,42 @@ function captureStaticArp(device: EndHost): TopologyStaticArpExport[] {
  * populates identically. `pristine` is a bare `VirtualFileSystem` (no
  * device attached) so this has no registry/topology side effects.
  */
+function linuxVfs(device: LinuxMachine): VirtualFileSystem {
+  return (device as unknown as { executor: { vfs: VirtualFileSystem } }).executor.vfs;
+}
+
 function captureLinuxFiles(device: LinuxMachine): TopologyFileExport[] {
-  const vfs = (device as unknown as { executor: { vfs: VirtualFileSystem } }).executor.vfs;
+  const vfs = linuxVfs(device);
   const pristine = new VirtualFileSystem();
   const out: TopologyFileExport[] = [];
   for (const path of vfs.find('/', { type: 'f' })) {
     if (!isCapturableVfsPath(path)) continue;
-    if (vfs.resolveInode(path)?.generator) continue; // synthetic — regenerated on read, not real content
+    const inode = vfs.resolveInode(path);
+    if (!inode || inode.generator) continue; // synthetic — regenerated on read, not real content
     const content = vfs.readFile(path);
     if (content === null) continue;
-    const baseline = pristine.exists(path) ? pristine.readFile(path) : null;
-    if (content === baseline) continue; // unmodified from a fresh boot — nothing to persist
-    out.push({ path, content });
+    const baseline = pristine.resolveInode(path);
+    const unchanged = baseline !== null && pristine.readFile(path) === content
+      && baseline.uid === inode.uid && baseline.gid === inode.gid && baseline.permissions === inode.permissions;
+    if (unchanged) continue; // unmodified from a fresh boot — nothing to persist
+    out.push({ path, content, uid: inode.uid, gid: inode.gid, mode: inode.permissions });
+  }
+  return out;
+}
+
+function captureLinuxDirectories(device: LinuxMachine): TopologyDirectoryExport[] {
+  const vfs = linuxVfs(device);
+  const pristine = new VirtualFileSystem();
+  const out: TopologyDirectoryExport[] = [];
+  for (const path of vfs.find('/', { type: 'd' })) {
+    if (path === '/' || !isCapturableVfsPath(path)) continue;
+    const inode = vfs.resolveInode(path);
+    if (!inode) continue;
+    const baseline = pristine.resolveInode(path);
+    const unchanged = baseline !== null && baseline.type === 'directory'
+      && baseline.uid === inode.uid && baseline.gid === inode.gid && baseline.permissions === inode.permissions;
+    if (unchanged) continue;
+    out.push({ path, uid: inode.uid, gid: inode.gid, mode: inode.permissions });
   }
   return out;
 }
@@ -889,6 +924,8 @@ export function exportTopology(
     if (device instanceof LinuxMachine) {
       const files = captureLinuxFiles(device);
       if (files.length > 0) entry.files = files;
+      const directories = captureLinuxDirectories(device);
+      if (directories.length > 0) entry.directories = directories;
       const { v4, v6 } = captureIptables(device);
       if (v4) entry.iptablesRules = v4;
       if (v6) entry.ip6tablesRules = v6;
@@ -971,10 +1008,33 @@ export interface ImportResult {
   connections: Connection[];
 }
 
-function restoreLinuxFiles(device: LinuxMachine, files: TopologyFileExport[]): void {
-  const vfs = (device as unknown as { executor: { vfs: { writeFile(p: string, c: string, uid: number, gid: number, umask: number): void } } }).executor.vfs;
+function nearestExistingOwner(vfs: VirtualFileSystem, path: string): { uid: number; gid: number } {
+  for (let dir = path; dir !== '/' && dir !== ''; dir = dir.slice(0, dir.lastIndexOf('/')) || '/') {
+    const inode = vfs.resolveInode(dir);
+    if (inode) return { uid: inode.uid, gid: inode.gid };
+  }
+  return { uid: 0, gid: 0 };
+}
+
+function restoreLinuxFiles(
+  device: LinuxMachine, files: TopologyFileExport[], directories: TopologyDirectoryExport[] = [],
+): void {
+  const vfs = linuxVfs(device);
+  for (const d of [...directories].sort((a, b) => a.path.length - b.path.length)) {
+    const owner = nearestExistingOwner(vfs, d.path);
+    if (!vfs.exists(d.path)) vfs.mkdirp(d.path, d.mode, owner.uid, owner.gid);
+    vfs.chown(d.path, d.uid, d.gid);
+    vfs.chmod(d.path, d.mode);
+  }
   for (const f of files) {
-    try { vfs.writeFile(f.path, f.content, 0, 0, 0o022); } catch { /* unwritable path — skip */ }
+    const owner = f.uid !== undefined && f.gid !== undefined
+      ? { uid: f.uid, gid: f.gid }
+      : nearestExistingOwner(vfs, f.path);
+    try {
+      if (!vfs.writeFile(f.path, f.content, owner.uid, owner.gid, 0o022)) continue;
+      vfs.chown(f.path, owner.uid, owner.gid);
+      if (f.mode !== undefined) vfs.chmod(f.path, f.mode);
+    } catch { /* unwritable path — skip */ }
   }
 }
 
@@ -1209,7 +1269,9 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       }
     }
     if (device instanceof LinuxMachine) {
-      if (devData.files) restoreLinuxFiles(device, devData.files);
+      if (devData.files || devData.directories) {
+        restoreLinuxFiles(device, devData.files ?? [], devData.directories ?? []);
+      }
       restoreIptables(device, devData.iptablesRules, devData.ip6tablesRules);
       // After the files, because a unit file the lab wrote has to exist
       // before the manager can be asked to enable or start it.

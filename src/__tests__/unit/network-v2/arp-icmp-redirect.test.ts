@@ -4,7 +4,7 @@
  * Tests:
  *   8.01 – ip neigh show reflects NUD states (REACHABLE / STALE / PERMANENT)
  *   8.02 – Gratuitous ARP updates neighbor caches on connected devices
- *   8.03 – ICMP Redirect: router sends Type 5, host installs host route
+ *   8.03 – ICMP Redirect toward an unknown gateway: the host probes it and keeps its route
  *   8.04 – ip neigh add inserts a static (PERMANENT) entry
  *   8.05 – ip neigh del removes an entry
  *   8.06 – ip neigh flush [dev] removes dynamic entries
@@ -16,6 +16,8 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { ARP_REACHABLE_TIME_MS } from '@/network/devices/EndHost';
 import { pingOnSimulatedClock } from '../../support/fastPing';
+
+afterEach(() => { vi.useRealTimers(); });
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -84,19 +86,15 @@ describe('ARP NUD States', () => {
   });
 
   it('8.01b – entry older than 30 s shows as STALE', async () => {
-    vi.useFakeTimers();
     const { pc1 } = await buildTwoRouterTopology();
 
     await pingOnSimulatedClock(pc1, 'ping -c 1 192.168.1.1');
 
-    // Advance time past the reachable threshold
-    vi.advanceTimersByTime(ARP_REACHABLE_TIME_MS + 1000);
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + ARP_REACHABLE_TIME_MS + 1000 });
 
     const neigh = await pc1.executeCommand('ip neigh show');
     expect(neigh).toContain('192.168.1.1');
     expect(neigh).toContain('STALE');
-
-    vi.useRealTimers();
   });
 
   it('8.01c – static entry shows as PERMANENT', async () => {
@@ -152,28 +150,7 @@ describe('Gratuitous ARP', () => {
 
 describe('ICMP Redirect', () => {
 
-  it('8.03 – router sends ICMP redirect when egress == ingress; host installs host route', async () => {
-    /**
-     * Redirect topology (RFC 1812 §5.2.7):
-     *
-     *   PC1 (192.168.1.10/24) ──[eth0]── R1.Gi0/0 (192.168.1.1/24)
-     *
-     *   R1 has a host route:  10.0.0.99/32 via 192.168.1.2
-     *
-     *   When PC1 pings 10.0.0.99 (outside PC1's /24, so PC1 uses its default
-     *   gateway):
-     *     • ICMP echo request sent to R1 (192.168.1.1) via ARP
-     *     • Packet arrives on R1's Gi0/0 (inPort = Gi0/0)
-     *     • LPM selects the /32 static route → nextHop = 192.168.1.2, iface = Gi0/0
-     *     • egress (Gi0/0) == ingress (Gi0/0) and nextHop is non-null
-     *     • Source 192.168.1.10 is on-link (192.168.1.0/24)
-     *     ⟹ R1 sends ICMP Redirect (Type 5, Code 1) to PC1: "use 192.168.1.2 for 10.0.0.99"
-     *     ⟹ PC1 installs a /32 host route: 10.0.0.99 via 192.168.1.2
-     *
-     *   Note: 10.0.0.99 and 192.168.1.2 don't exist as real hosts; the ping
-     *   times out, but the redirect is sent synchronously (during forwardPacket)
-     *   before the ARP timeout fires, so the routing table is already updated.
-     */
+  it('8.03 – ICMP redirect toward an unknown gateway: the host probes it and keeps its route', async () => {
     const r1 = new CiscoRouter('R1');
     const pc1 = new LinuxPC('linux-pc', 'PC1');
 
@@ -185,23 +162,20 @@ describe('ICMP Redirect', () => {
     await r1.executeCommand('ip address 192.168.1.1 255.255.255.0');
     await r1.executeCommand('no shutdown');
     await r1.executeCommand('exit');
-    // Host route via 192.168.1.2 — resolved to Gi0/0 (same subnet), triggers redirect
     await r1.executeCommand('ip route 10.0.0.99 255.255.255.255 192.168.1.2');
     await r1.executeCommand('end');
 
     await pc1.executeCommand('sudo ip addr add 192.168.1.10/24 dev eth0');
     await pc1.executeCommand('sudo ip route add default via 192.168.1.1');
 
-    // 10.0.0.99 is outside PC1's /24, so PC1 sends the echo via the default gateway (R1).
-    // R1's LPM hit is the /32 static route on Gi0/0 == inPort → ICMP redirect sent to PC1.
-    // The ARP for 192.168.1.2 fails (no such host), so ping returns 0 received,
-    // but the redirect is already processed synchronously before the timeout.
+    const probed: string[] = [];
+    const stop = pc1.getBus().subscribe('host.arp.request-sent', (event) => { probed.push(event.payload.targetIp); });
     await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.0.99');
+    stop();
 
-    const routes = await pc1.executeCommand('ip route show');
-    // PC1 should have a /32 host route installed by the ICMP redirect
-    expect(routes).toContain('10.0.0.99');
-    expect(routes).toContain('192.168.1.2'); // via the redirect gateway
+    expect(probed).toContain('192.168.1.2');
+    expect(await pc1.executeCommand('ip route show')).not.toContain('10.0.0.99');
+    expect(await pc1.executeCommand('ip route get 10.0.0.99')).toMatch(/^10\.0\.0\.99 via 192\.168\.1\.1 dev eth0 /);
   });
 });
 

@@ -42,7 +42,7 @@ import { addRoutesToHq, loadUserLab, type UserLab } from './userLab';
 import { taper } from './fortigateBatteryHarness';
 
 const SERVER1 = '192.168.30.4';
-const PC1_ADDRESS = '192.168.1.10';
+const PC1_ADDRESS = '192.168.1.3';
 const FW1_PORT1 = '192.168.1.99';
 const FW1_PORT2 = '192.168.20.2';
 
@@ -50,8 +50,7 @@ async function configuredLab(): Promise<UserLab> {
   const lab = await loadUserLab();
   await addRoutesToHq(lab);
   await taper(lab.PC1, [
-    'ip addr add 192.168.1.10/24 dev eth0',
-    'ip route add default via 192.168.1.99',
+    'ip route replace default via 192.168.1.99',
   ]);
   await taper(lab.Server1, ['systemctl start nginx', 'systemctl start ssh']);
   return lab;

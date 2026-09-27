@@ -1168,7 +1168,7 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('clear ip route rip *');
 
       const routes = await r1.executeCommand('show ip route static');
-      expect(routes).toContain('1.1.1.0/24');
+      expect(routes).toMatch(/^ {6}1\.0\.0\.0\/24 is subnetted, 1 subnets\nS {8}1\.1\.1\.0 is directly connected, Null0$/m);
     });
 
     it('73. should verify multicast address 224.0.0.9 is used for RIPv2', async () => {

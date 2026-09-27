@@ -209,14 +209,24 @@ export interface EchoRoute {
   mtuLocked: boolean;
 }
 
-export interface PathMtuException {
-  readonly mtu: number;
+export interface RouteException {
+  readonly gateway: IPAddress | null;
+  readonly mtu: number | null;
   readonly locked: boolean;
   readonly expiresInMs: number;
 }
 
+interface StoredRouteException {
+  readonly redirect: { readonly gateway: IPAddress; readonly replaces: IPAddress; readonly iface: string } | null;
+  readonly mtu: number | null;
+  readonly locked: boolean;
+  readonly expiresAt: number;
+}
+
 const MIN_PMTU = 552;
 const PMTU_EXPIRES_MS = 600_000;
+const REDIRECT_EXPIRES_MS = 300_000;
+const REDIRECT_CODES = new Set([0, 1, 2, 3]);
 
 class IcmpErrorReply extends Error {}
 
@@ -1871,7 +1881,8 @@ export abstract class EndHost extends Equipment {
       }
       const best = pickBestRouteInTable(destInt, this.getRoutingTableFor(rule.table));
       if (!best) continue;
-      return { iface: best.iface, nextHopIP: best.nextHop || targetIP, table: rule.table };
+      const nextHopIP = this.redirectedNextHop(targetIP, best) ?? best.nextHop ?? targetIP;
+      return { iface: best.iface, nextHopIP, table: rule.table };
     }
     return null;
   }
@@ -2789,27 +2800,7 @@ export abstract class EndHost extends Equipment {
         reason,
       });
     } else if (icmp.icmpType === 'redirect' && icmp.gateway && icmp.originalPacket) {
-      // RFC 792: host updates its routing table to use the new gateway for this destination
-      const dest = icmp.originalPacket.destinationIP;
-      const gw = icmp.gateway;
-      const hostMask = new SubnetMask('255.255.255.255');
-      // Remove any existing host route for this specific destination
-      this.routingTable = this.routingTable.filter(
-        r => !(r.network.equals(dest) && r.mask.toCIDR() === 32),
-      );
-      // Find which interface the gateway is reachable on
-      const gwRoute = this.resolveRoute(gw);
-      const iface = gwRoute?.port.getName() ?? portName;
-      this.addRouteEntry({
-        network: dest,
-        mask: hostMask,
-        nextHop: gw,
-        iface,
-        type: 'static',
-        metric: 1,
-      });
-      Logger.info(this.id, 'icmp:redirect',
-        `${this.name}: ICMP Redirect from ${ipPkt.sourceIP} — use ${gw} for ${dest}`);
+      this.acceptRedirect(ipPkt.sourceIP, icmp.gateway, icmp.originalPacket.destinationIP, icmp.code);
     }
   }
 
@@ -3061,27 +3052,37 @@ export abstract class EndHost extends Equipment {
 
   private readonly connectedUdpPeers = new Map<number, ConnectedUdpPeer>();
 
-  private readonly pmtuExceptions = new Map<string, { mtu: number; locked: boolean; expiresAt: number }>();
+  private readonly routeExceptions = new Map<string, StoredRouteException>();
 
-  public pathMtuException(destination: IPAddress): PathMtuException | null {
+  private liveRouteException(destination: IPAddress): StoredRouteException | null {
     const key = destination.toString();
-    const entry = this.pmtuExceptions.get(key);
+    const entry = this.routeExceptions.get(key);
     if (!entry) return null;
-    const expiresInMs = entry.expiresAt - this.getScheduler().now();
-    if (expiresInMs <= 0) {
-      this.pmtuExceptions.delete(key);
+    if (entry.expiresAt <= this.getScheduler().now()) {
+      this.routeExceptions.delete(key);
       return null;
     }
-    return { mtu: entry.mtu, locked: entry.locked, expiresInMs };
+    return entry;
   }
 
-  public flushPathMtuExceptions(): void {
-    this.pmtuExceptions.clear();
+  public routeException(destination: IPAddress): RouteException | null {
+    const entry = this.liveRouteException(destination);
+    if (!entry) return null;
+    return {
+      gateway: entry.redirect?.gateway ?? null,
+      mtu: entry.mtu,
+      locked: entry.locked,
+      expiresInMs: entry.expiresAt - this.getScheduler().now(),
+    };
+  }
+
+  public flushRouteExceptions(): void {
+    this.routeExceptions.clear();
   }
 
   private pathMtuTo(destination: IPAddress, linkMtu: number): number {
-    const exception = this.pathMtuException(destination);
-    return exception ? Math.min(linkMtu, exception.mtu) : linkMtu;
+    const mtu = this.liveRouteException(destination)?.mtu;
+    return mtu ? Math.min(linkMtu, mtu) : linkMtu;
   }
 
   private recordPathMtu(destination: IPAddress, reported: number): void {
@@ -3090,11 +3091,51 @@ export abstract class EndHost extends Equipment {
     const current = this.pathMtuTo(destination, route.port.getMTU());
     if (current < reported) return;
     const locked = reported < MIN_PMTU;
-    this.pmtuExceptions.set(destination.toString(), {
+    this.routeExceptions.set(destination.toString(), {
+      redirect: this.liveRouteException(destination)?.redirect ?? null,
       mtu: locked ? Math.min(current, MIN_PMTU) : reported,
       locked,
       expiresAt: this.getScheduler().now() + PMTU_EXPIRES_MS,
     });
+  }
+
+  private acceptRedirect(oldGateway: IPAddress, newGateway: IPAddress, destination: IPAddress, code: number): void {
+    if (!REDIRECT_CODES.has(code & 7)) return;
+    const route = this.resolveRoute(destination);
+    if (!route || route.nextHopIP.equals(destination) || !route.nextHopIP.equals(oldGateway)) return;
+    if (newGateway.equals(oldGateway) || !this.isUnicastGateway(newGateway)) return;
+
+    const neighbour = this.arpTable.get(newGateway.toString());
+    if (!neighbour || neighbour.type === 'failed' || neighbour.iface !== route.iface) {
+      this.sendArpRequest(route.port, newGateway);
+      return;
+    }
+
+    const fibRoute = this.bestHostRoute(destination);
+    if (!fibRoute?.nextHop) return;
+    const previous = this.liveRouteException(destination);
+    this.routeExceptions.set(destination.toString(), {
+      redirect: { gateway: newGateway, replaces: fibRoute.nextHop, iface: fibRoute.iface },
+      mtu: previous?.mtu ?? null,
+      locked: previous?.locked ?? false,
+      expiresAt: this.getScheduler().now() + REDIRECT_EXPIRES_MS,
+    });
+    Logger.info(this.id, 'icmp:redirect',
+      `${this.name}: ICMP Redirect from ${oldGateway} — use ${newGateway} for ${destination}`);
+  }
+
+  private isUnicastGateway(gateway: IPAddress): boolean {
+    return classifyIpv4Destination(gateway) === 'unicast'
+      && gateway.getOctets()[0] !== 0
+      && !this.isLocalAddress(gateway)
+      && !isDirectedBroadcast(gateway, this.connectedIpv4Prefixes());
+  }
+
+  private redirectedNextHop(targetIP: IPAddress, route: HostRouteEntry): IPAddress | null {
+    if (!route.nextHop) return null;
+    const redirect = this.liveRouteException(targetIP)?.redirect;
+    if (!redirect || redirect.iface !== route.iface || !redirect.replaces.equals(route.nextHop)) return null;
+    return redirect.gateway;
   }
 
   private fragmentsForEgress(ipPkt: IPv4Packet, linkMtu: number): IPv4Packet[] | null {
@@ -4021,35 +4062,20 @@ export abstract class EndHost extends Equipment {
   protected resolveRoute(
     targetIP: IPAddress, iface?: string,
   ): { port: Port; iface: string; nextHopIP: IPAddress } | null {
-    const table = this.buildFullRoutingTable().filter((route) => iface === undefined || route.iface === iface);
-    const destInt = targetIP.toUint32();
-
-    let bestRoute: HostRouteEntry | null = null;
-    let bestPrefix = -1;
-
-    for (const route of table) {
-      const netInt = route.network.toUint32();
-      const maskInt = route.mask.toUint32();
-      const prefix = route.mask.toCIDR();
-
-      if ((destInt & maskInt) === (netInt & maskInt)) {
-        if (prefix > bestPrefix ||
-            (prefix === bestPrefix && bestRoute && route.metric < bestRoute.metric)) {
-          bestPrefix = prefix;
-          bestRoute = route;
-        }
-      }
-    }
-
+    const bestRoute = this.bestHostRoute(targetIP, iface);
     if (!bestRoute) return null;
 
     const port = this.ports.get(bestRoute.iface);
     if (!port) return null;
 
-    // For connected routes (nextHop is null), the next-hop is the destination itself
-    const nextHopIP = bestRoute.nextHop || targetIP;
+    const nextHopIP = this.redirectedNextHop(targetIP, bestRoute) ?? bestRoute.nextHop ?? targetIP;
 
     return { port, iface: bestRoute.iface, nextHopIP };
+  }
+
+  private bestHostRoute(targetIP: IPAddress, iface?: string): HostRouteEntry | null {
+    const table = this.buildFullRoutingTable().filter((route) => iface === undefined || route.iface === iface);
+    return pickBestRouteInTable(targetIP.toUint32(), table);
   }
 
   /**
@@ -4214,7 +4240,7 @@ export abstract class EndHost extends Equipment {
       source: socket.sourceIp ?? route.port.getIPAddress() ?? null,
       iface: route.iface,
       mtu: this.pathMtuTo(targetIP, route.port.getMTU()),
-      mtuLocked: this.pathMtuException(targetIP)?.locked ?? false,
+      mtuLocked: this.routeException(targetIP)?.locked ?? false,
     };
   }
 

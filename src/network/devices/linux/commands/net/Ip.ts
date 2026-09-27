@@ -121,11 +121,11 @@ export function buildIpCtx(
 ): IpNetworkContext {
   return {
     routeLookupFacts(dest: IPAddress) {
-      return { local: net.isLocalAddress(dest), uid: currentUid(), pmtu: net.pathMtuException(dest) };
+      return { local: net.isLocalAddress(dest), uid: currentUid(), exception: net.routeException(dest) };
     },
     flushRouteCache(): string {
       if (currentUid() !== 0) return 'Cannot open "/proc/sys/net/ipv4/route/flush": Permission denied';
-      net.flushPathMtuExceptions();
+      net.flushRouteExceptions();
       return '';
     },
     // Any local port answers this: a port belongs to the machine that

@@ -146,7 +146,7 @@ describe('EIGRP over the physical plant', () => {
     // R1 learned a TWO-hop prefix, via R2 (real distance-vector
     // propagation, impossible with single-hop originated-only models).
     expect(await r1.executeCommand('show ip route'))
-      .toMatch(/D\s+172\.16\.0\.0\/24 \[90\/\d+\] via 10\.0\.12\.2/);
+      .toMatch(/^ {6}172\.16\.0\.0\/24 is subnetted, 1 subnets\nD {8}172\.16\.0\.0 \[90\/\d+\] via 10\.0\.12\.2/m);
 
     // …and the packets really get there.
     await r1.executeCommand('enable');

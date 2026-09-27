@@ -66,14 +66,14 @@ const ospfRoutes = (router: CiscoRouter) => router.executeCommand('show ip route
 describe('Cisco: no network … area', () => {
   it('WITNESS: the adjacency teaches R2 the loopback of R1', async () => {
     const { r2 } = await pair();
-    expect(await ospfRoutes(r2)).toContain('1.1.1.1/32');
+    expect(await ospfRoutes(r2)).toMatch(/^O\s+1\.1\.1\.1 \[110\//m);
   });
 
   it('withdrawing the loopback network withdraws the route from R2', async () => {
     const { r1, r2 } = await pair();
     await type(r1, ['configure terminal', 'router ospf 1', 'no network 1.1.1.1 0.0.0.0 area 0', 'end']);
     clock.advance(10_000);
-    expect(await ospfRoutes(r2)).not.toContain('1.1.1.1/32');
+    expect(await ospfRoutes(r2)).not.toMatch(/1\.1\.1\.1(?:\/32)? \[/);
   });
 
   it('the statement leaves the running configuration and the interface leaves OSPF', async () => {
@@ -95,7 +95,7 @@ describe('Cisco: ip ospf <pid> area <area> on an interface', () => {
     const { r1, r2 } = await pair();
     await type(r1, ['configure terminal', 'interface Loopback5', 'ip ospf 1 area 0', 'end']);
     clock.advance(10_000);
-    expect(await ospfRoutes(r2)).toContain('5.5.5.5/32');
+    expect(await ospfRoutes(r2)).toMatch(/^O\s+5\.5\.5\.5 \[110\//m);
     expect(await r1.executeCommand('show running-config')).toMatch(/interface Loopback5\n(?: .*\n)* ip ospf 1 area 0\n/);
   });
 
@@ -105,7 +105,7 @@ describe('Cisco: ip ospf <pid> area <area> on an interface', () => {
     clock.advance(10_000);
     await type(r1, ['configure terminal', 'interface Loopback5', 'no ip ospf 1 area 0', 'end']);
     clock.advance(10_000);
-    expect(await ospfRoutes(r2)).not.toContain('5.5.5.5/32');
+    expect(await ospfRoutes(r2)).not.toMatch(/5\.5\.5\.5(?:\/32)? \[/);
   });
 
   it('moving an interface to another area re-announces it from there', async () => {
@@ -113,7 +113,7 @@ describe('Cisco: ip ospf <pid> area <area> on an interface', () => {
     await type(r1, ['configure terminal', 'interface Loopback0', 'ip ospf 1 area 1', 'end']);
     clock.advance(10_000);
     expect(await r1.executeCommand('show ip ospf interface Loopback0')).toMatch(/Area 1\b/);
-    expect(await ospfRoutes(r2)).toMatch(/O IA\s+1\.1\.1\.1\/32/);
+    expect(await ospfRoutes(r2)).toMatch(/^O IA\s+1\.1\.1\.1 \[110\//m);
   });
 });
 

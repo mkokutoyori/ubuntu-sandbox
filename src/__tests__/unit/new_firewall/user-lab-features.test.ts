@@ -16,7 +16,7 @@ import { taper, grantKeyAccess } from './fortigateBatteryHarness';
 async function configuredLab(): Promise<UserLab> {
   const lab = await loadUserLab();
   await addRoutesToHq(lab);
-  await taper(lab.PC1, ['ip addr add 192.168.1.10/24 dev eth0', 'ip route add default via 192.168.1.99']);
+  await taper(lab.PC1, ['ip route replace default via 192.168.1.99']);
   await taper(lab.Server1, ['systemctl start nginx']);
   return lab;
 }
@@ -36,14 +36,14 @@ describe('user lab — curl through FW1', () => {
 
   it('HQ -> LAN is dropped by the implicit deny: --connect-timeout gives 28', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC3.executeCommand('curl -sS --connect-timeout 3 http://192.168.1.10/; echo EC=$?');
-    expect(out).toMatch(/^curl: \(28\) Failed to connect to 192\.168\.1\.10 port 80 after 30\d\d ms: Timeout was reached$/m);
+    const out = await lab.PC3.executeCommand('curl -sS --connect-timeout 3 http://192.168.1.3/; echo EC=$?');
+    expect(out).toMatch(/^curl: \(28\) Failed to connect to 192\.168\.1\.3 port 80 after 30\d\d ms: Timeout was reached$/m);
     expect(out).toContain('EC=28');
   });
 
   it('-m bounds the same dropped connection', async () => {
     const lab = await configuredLab();
-    expect(await lab.PC3.executeCommand('curl -sS -m 2 http://192.168.1.10/'))
+    expect(await lab.PC3.executeCommand('curl -sS -m 2 http://192.168.1.3/'))
       .toMatch(/after 20\d\d ms: Timeout was reached/);
   });
 });
@@ -60,7 +60,7 @@ describe('user lab — FW1 diagnostics', () => {
     const lab = await configuredLab();
     await lab.PC1.executeCommand('curl -s -o /dev/null --connect-timeout 3 http://192.168.30.4/');
     const trace = await lab.FW1.executeCommand("diagnose sniffer packet any 'host 192.168.30.4' 4 20");
-    expect(trace).toMatch(/port1 .*192\.168\.1\.10\.\d+ -> 192\.168\.30\.4\.80: syn \d+$/m);
+    expect(trace).toMatch(/port1 .*192\.168\.1\.3\.\d+ -> 192\.168\.30\.4\.80: syn \d+$/m);
     expect(trace).toMatch(/port2 .*192\.168\.20\.2\.\d+ -> 192\.168\.30\.4\.80: syn \d+$/m);
     expect(trace).toMatch(/192\.168\.30\.4\.80 -> 192\.168\.20\.2\.\d+: syn \d+ ack \d+$/m);
     expect(trace).not.toMatch(/undefined|: syn -/);
@@ -73,7 +73,7 @@ describe('user lab — ssh -J through FW1', () => {
     await taper(lab.PC3, ['systemctl start ssh', 'hostnamectl set-hostname PC3-HQ']);
     await grantKeyAccess(lab.PC1, lab.Server1);
     await grantKeyAccess(lab.PC1, lab.PC3);
-    const out = await lab.PC1.executeCommand('ssh -o PasswordAuthentication=no -J user@192.168.30.4 user@192.168.30.3 hostname; echo EC=$?');
+    const out = await lab.PC1.executeCommand('ssh -o PasswordAuthentication=no -J user@192.168.30.4 user@192.168.30.6 hostname; echo EC=$?');
     expect(out).toMatch(/^PC3-HQ$/m);
     expect(out).toContain('EC=0');
     expect(await lab.PC3.executeCommand('cat /var/log/auth.log')).toMatch(/Accepted publickey for user from 192\.168\.30\.4/);
@@ -90,7 +90,7 @@ describe('user lab — everyday tools across FW1', () => {
 
   it('ping from HQ to the LAN meets the implicit deny', async () => {
     const lab = await configuredLab();
-    expect(await lab.PC3.executeCommand('ping -c 2 -W 1 192.168.1.10'))
+    expect(await lab.PC3.executeCommand('ping -c 2 -W 1 192.168.1.3'))
       .toContain('2 packets transmitted, 0 received, 100% packet loss');
   });
 
