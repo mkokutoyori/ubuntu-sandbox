@@ -2,7 +2,7 @@ import type { EthernetFrame, IPv4Packet, IPAddress } from '../../../core/types';
 import type { IEventBus } from '../../../../events/EventBus';
 import type { TcpStack } from '../../../tcp/TcpStack';
 import type { Port } from '../../../hardware/Port';
-import type { SessionTable } from '../session/SessionTable';
+import type { VdomSessions } from '../ha/HaTypes';
 import type { VdomContext } from '../vdom/VdomRegistry';
 import type { CertificateStore } from '../vpn/CertificateStore';
 import type { RemoteAuthOutcome } from '../auth/AuthPortal';
@@ -33,8 +33,9 @@ export interface ManagementHost {
   tcp(): TcpStack;
   vdom(name?: string): VdomContext;
   certificates(): CertificateStore;
+  vdomOfClient(address: string): string;
   remoteAuthenticate(
-    server: string, user: string, password: string,
+    vdom: string, server: string, user: string, password: string,
   ): Promise<RemoteAuthOutcome>;
   serial(): string;
   cpuStates(): { user: number; nice: number; system: number; idle: number };
@@ -43,7 +44,7 @@ export interface ManagementHost {
   ports(): Port[];
   sendFrame(iface: string, frame: EthernetFrame): void;
   sendArpAware(iface: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
-  sessions(): SessionTable;
+  sessions(): readonly VdomSessions[];
   connectedRoutes(): ReadonlyArray<{ network: string; mask: string; iface: string }>;
   addressOf(iface: string): string | undefined;
   authenticated(iface: string, address: string): boolean;
@@ -104,8 +105,9 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     now: () => host.now(),
     vdom: (name?: string) => host.vdom(name),
     certificates: () => host.certificates(),
-    remoteAuthenticate: (server, user, password) =>
-      host.remoteAuthenticate(server, user, password),
+    vdomOfClient: (address) => host.vdomOfClient(address),
+    remoteAuthenticate: (vdom, server, user, password) =>
+      host.remoteAuthenticate(vdom, server, user, password),
   });
 
   const ha = buildFirewallHa({

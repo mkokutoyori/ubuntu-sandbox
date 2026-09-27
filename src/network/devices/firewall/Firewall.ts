@@ -130,7 +130,7 @@ import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
 import type { TacacsClientAgent } from '../../tacacs/TacacsClientAgent';
 import type { IdentityTable } from './identity/IdentityTable';
 import type { UserDirectory } from './identity/UserDirectory';
-import type { IpsecTunnelTable } from './vpn/IpsecTunnelTable';
+import type { IpsecTunnelTable, Phase1Tunnel } from './vpn/IpsecTunnelTable';
 import type { CertificateStore } from './vpn/CertificateStore';
 import type { FirewallRouting } from './routing/FirewallRouting';
 import { buildL3Services, type L3Services } from './l3/L3ServiceWiring';
@@ -294,7 +294,7 @@ export class Firewall extends Equipment {
     transitPermitted: (probe) => this.ipv6TransitPermitted(probe),
     localInVerdict: (iface, traffic) => this.localInVerdict6(iface, traffic),
     dosVerdict: (iface, traffic) => this.dosVerdict6(iface, traffic),
-    sessions: () => this.getSessionTable(),
+    sessions: (iface) => this.vdoms.contextOfInterface(iface).sessions,
     dhcpv6Server: () => this.dhcp6.getServer(),
     dhcpv6PoolFor: (iface) => this.dhcp6.poolOfInterface(iface),
   });
@@ -604,7 +604,8 @@ export class Firewall extends Equipment {
       bus: () => this.getBus(), now, tcp: () => this.tcp,
       vdom: (v?: string) => this.getVdom(v),
       certificates: () => this.getCertificateStore(),
-      remoteAuthenticate: (s1, u, p) => this.remoteAuthenticate(s1, u, p),
+      vdomOfClient: (address) => this.vdomOfClient(address),
+      remoteAuthenticate: (vdom, s1, u, p) => this.remoteAuthenticate(vdom, s1, u, p),
       serial: () => this.serialNumber(),
       cpuStates: () => this.getSystemLoad().cpuStates(),
       memoryPercent: () => {
@@ -616,13 +617,13 @@ export class Firewall extends Equipment {
       sendArpAware: (iface, ipPkt, nextHopIP) =>
         this.sendIpv4FrameArpAware(iface, ipPkt, nextHopIP),
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
-      sessions: () => this.getVdom().sessions,
+      sessions: () => this.vdoms.names().map((vdom) => ({ vdom, table: this.getVdom(vdom).sessions })),
       connectedRoutes: () => this.interfaces.connectedRoutes(),
       addressOf: (iface) => this.interfaces.get(iface)?.ip,
       authenticated: (iface, address) =>
         this.vdoms.contextOfInterface(iface).identities.lookup(address) !== undefined,
-      authRequiredByPolicy: () => this.getVdom().policy.ordered()
-        .some(r => (r.authUsers?.length ?? 0) > 0 || (r.authGroups?.length ?? 0) > 0),
+      authRequiredByPolicy: () => this.vdoms.names().some((vdom) => this.getVdom(vdom).policy.ordered()
+        .some(r => (r.authUsers?.length ?? 0) > 0 || (r.authGroups?.length ?? 0) > 0)),
       portalUsesHttps: () => this.authPortalSecureHttp,
       managementPorts: () => this.management.managementPorts(),
       createManagementCli: (user, origin) => this.createManagementCli(user, origin),
@@ -1314,12 +1315,12 @@ export class Firewall extends Equipment {
   ): IkeConfigReply | string | undefined {
     if (!request.wantAddress) return undefined;
 
-    const tunnel = this.getVdom().tunnels.all()
-      .find(entry => this.modeCfg.configuredFor(entry));
-    if (!tunnel) return 'IPv4 pool is not configured';
+    const owned = this.modeCfgTunnelFor(peer);
+    if (!owned) return 'IPv4 pool is not configured';
+    const { tunnel, vdom } = owned;
 
     if (tunnel.authUserGroup !== undefined) {
-      const directory = this.getUserDirectory();
+      const directory = this.getUserDirectory(vdom);
       const user = request.identity ?? '';
       const admitted = user.length > 0
         && directory.authenticateLocal(user, request.credential ?? '')
@@ -1334,14 +1335,26 @@ export class Firewall extends Equipment {
     return {
       address: assignment.address,
       netmask: assignment.netmask,
-      splitInclude: this.splitSubnetsOf(assignment.splitInclude),
+      splitInclude: this.splitSubnetsOf(vdom, assignment.splitInclude),
       dnsServers: assignment.dnsServers,
     };
   }
 
-  private splitSubnetsOf(name: string | undefined): readonly string[] {
+  private modeCfgTunnelFor(peer: string): { tunnel: Phase1Tunnel; vdom: string } | undefined {
+    let fallback: { tunnel: Phase1Tunnel; vdom: string } | undefined;
+    for (const vdom of this.vdoms.names()) {
+      for (const tunnel of this.getVdom(vdom).tunnels.all()) {
+        if (!this.modeCfg.configuredFor(tunnel)) continue;
+        if (tunnel.remoteGateway === peer) return { tunnel, vdom };
+        fallback ??= { tunnel, vdom };
+      }
+    }
+    return fallback;
+  }
+
+  private splitSubnetsOf(vdom: string, name: string | undefined): readonly string[] {
     if (name === undefined) return [];
-    const object = this.getObjectStore().getAddress(name);
+    const object = this.getObjectStore(vdom).getAddress(name);
     if (object?.value === undefined) return [];
     return object.careMask === undefined
       ? [object.value]
@@ -1430,6 +1443,11 @@ export class Firewall extends Equipment {
 
   managementVdom(): string { return ROOT_VDOM; }
 
+  private vdomOfClient(address: string): string {
+    const iface = this.interfaces.interfaceForDestination(address);
+    return iface === undefined ? this.managementVdom() : this.vdoms.vdomOfInterface(iface);
+  }
+
   private routedEgress(
     target: string, vdom: string, iface?: string,
   ): { iface: string; nextHop?: string } | undefined {
@@ -1464,11 +1482,11 @@ export class Firewall extends Equipment {
   }
 
   private remoteAuthenticate(
-    server: string, user: string, password: string,
+    vdom: string, server: string, user: string, password: string,
   ): Promise<RemoteAuthOutcome> {
     return remoteAuthenticate({
       tcp: this.tcp,
-      server: (n) => this.getVdom().users.getServer(n),
+      server: (n) => this.getVdom(vdom).users.getServer(n),
       radius: this.radius,
       tacacs: this.tacacs,
     }, server, user, password);
@@ -2333,7 +2351,7 @@ export class Firewall extends Equipment {
   getPing6(): FirewallPing6 { return this.ping6; }
 
   private ipv6TransitPermitted(probe: PolicyProbe): boolean {
-    const vdom = this.getVdom();
+    const vdom = this.vdoms.contextOfInterface(probe.ingressInterface || probe.egressInterface);
     const decision = vdom.evaluator.evaluate(vdom.policy.ordered(), probe);
     return !isDenyAction(decision.action);
   }
@@ -2674,7 +2692,7 @@ export class Firewall extends Equipment {
   private forward(
     egressPort: string, packet: IPv4Packet, gateway?: string, bridged?: BridgedFrame,
   ): void {
-    if (this.getVdom().tunnels.isTunnelInterface(egressPort)) {
+    if (this.vdoms.contextOfInterface(egressPort).tunnels.isTunnelInterface(egressPort)) {
       this.forwardThroughTunnel(egressPort, packet);
       return;
     }
@@ -2700,7 +2718,7 @@ export class Firewall extends Equipment {
   }
 
   private forwardThroughTunnel(tunnelName: string, packet: IPv4Packet): void {
-    const vdom = this.getVdom();
+    const vdom = this.vdoms.contextOfInterface(tunnelName);
     for (const leg of sealedLegs(
       this.ipsec, vdom.tunnels, vdom.routes, tunnelName, packet)) {
       this.forward(leg.iface, leg.packet, leg.gateway);
@@ -2731,7 +2749,7 @@ export class Firewall extends Equipment {
       captivePortal: this.captivePortal,
       interfaces: this.interfaces,
       vdomOf: (iface) => this.vdoms.contextOfInterface(iface),
-      decapsulate: (p) => decryptFromTunnel(this.ipsec, this.getVdom().tunnels, p) ?? null,
+      decapsulate: (vdom, p) => decryptFromTunnel(this.ipsec, vdom.tunnels, p) ?? null,
     });
   }
 }

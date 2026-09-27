@@ -25,7 +25,7 @@ export interface SslVpnPortalDeps {
   readonly tcp: TcpStack;
   readonly authenticate: (
     address: string, credentials: PortalCredentials) => Promise<PortalOutcome>;
-  readonly groupsOf: (user: string) => readonly string[];
+  readonly groupsOf: (user: string, address: string) => readonly string[];
   readonly certificate: (name: string) => SslVpnServerCertificate | undefined;
   readonly now?: () => number;
 }
@@ -97,16 +97,16 @@ export class SslVpnPortal {
   async authenticate(
     address: string, credentials: PortalCredentials,
   ): Promise<PortalOutcome> {
-    if (!this.admittedByRule(credentials.username)) {
+    if (!this.admittedByRule(credentials.username, address)) {
       return { ok: false, reason: 'no-such-user' };
     }
     return this.deps.authenticate(address, credentials);
   }
 
-  private admittedByRule(user: string): boolean {
+  private admittedByRule(user: string, address: string): boolean {
     if (this.settings.rules.length === 0) return false;
 
-    const groups = this.deps.groupsOf(user);
+    const groups = this.deps.groupsOf(user, address);
     return this.settings.rules.some(rule =>
       rule.users.includes(user) || rule.groups.some(group => groups.includes(group)));
   }
@@ -126,7 +126,7 @@ export class SslVpnPortal {
       if (!outcome.ok) return page(401, 'Authorization Required', deniedPage());
       this.sessions.open({
         user: outcome.user,
-        group: this.deps.groupsOf(outcome.user)[0] ?? '',
+        group: this.deps.groupsOf(outcome.user, peer?.ip ?? '0.0.0.0')[0] ?? '',
         sourceIp: peer?.ip ?? '0.0.0.0',
         mode: 'web',
       });
