@@ -1,11 +1,10 @@
 import { IP_PROTO_UDP, UDP_PORT_IKE, UDP_PORT_IKE_NAT_T } from '../../../core/types';
 import type { IPv4Packet, UDPPacket } from '../../../core/types';
 import type { InterfaceTable } from '../l3/InterfaceTable';
-import type { RouteTable } from '../l3/RouteTable';
 
 export interface IpsecHostFactDeps {
   readonly interfaces: InterfaceTable;
-  readonly routes: () => RouteTable;
+  readonly egressFor: (peerIp: string) => string | undefined;
   readonly connected: (iface: string) => boolean | undefined;
 }
 
@@ -24,8 +23,7 @@ export function ipsecHostFacts(deps: IpsecHostFactDeps): IpsecHostFacts {
     localIps: () => deps.interfaces.all()
       .map(entry => entry.ip).filter((ip): ip is string => ip !== undefined),
     interfaceDown: (iface) => deps.connected(iface) === false,
-    egressFor: (peerIp) => deps.routes().resolveNextHop(peerIp)?.iface
-      ?? deps.interfaces.interfaceForDestination(peerIp),
+    egressFor: (peerIp) => deps.egressFor(peerIp),
   };
 }
 

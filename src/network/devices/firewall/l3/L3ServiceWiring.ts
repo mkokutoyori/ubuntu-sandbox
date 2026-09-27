@@ -20,6 +20,7 @@ export interface L3ServiceHost {
   bus(): IEventBus;
   tcp(): TcpStack;
   routes(): RouteTable;
+  routesOf(iface: string | undefined): RouteTable;
   interfaces(): InterfaceTable;
   port(iface: string): Port | undefined;
   resolvedMac(ip: string): MACAddress | undefined;
@@ -64,12 +65,13 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
     emitFrame: (iface, frame) => { host.emitFrame(iface, frame); },
     leaseGranted: (iface, ip, mask, gateway) => {
       host.assignAddress(iface, ip, mask);
-      if (gateway) host.routes().addDefault(gateway, { id: `dhcp:${iface}` });
+      if (gateway) host.routesOf(iface).addDefault(gateway, { id: `dhcp:${iface}` });
     },
-    leaseLost: (iface) => { host.routes().removeStaticById(`dhcp:${iface}`); },
+    leaseLost: (iface) => { host.routesOf(iface).removeStaticById(`dhcp:${iface}`); },
     systemDnsServers: () => host.systemDnsServers?.() ?? [],
     sendToServer: (server, packet) => {
-      const hop = host.routes().resolveNextHop(server.toString());
+      const relaying = host.interfaces().owningInterface(packet.sourceIP.toString());
+      const hop = host.routesOf(relaying).resolveNextHop(server.toString());
       if (!hop) return false;
       host.emitArpAware(hop.iface, packet, new IPAddress(hop.nextHop));
       return true;

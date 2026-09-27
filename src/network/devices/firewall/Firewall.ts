@@ -245,6 +245,11 @@ const DEFAULT_INTERFACE_MTU = 1500;
 
 export type RebootReason = 'power cycle' | 'warm reboot';
 
+interface LocalTrafficOrigin {
+  readonly iface?: string;
+  readonly source?: string;
+}
+
 const GENERIC_SESSION_HELPERS: readonly SessionHelperEntry[] = Object.freeze([
   { id: 1, name: 'ftp', protocol: 6, port: 21 },
 ]);
@@ -580,7 +585,7 @@ export class Firewall extends Equipment {
       sendUdp: (destIp, port, payload) => this.sendUdpToPeer(destIp, port, payload),
       ...ipsecHostFacts({
         interfaces: this.interfaces,
-        routes: () => this.getVdom().routes,
+        egressFor: (peer) => this.tunnelInterfaceTowards(peer) ?? this.localEgress(peer, {})?.iface,
         connected: (iface) => this.getPort(iface)?.isConnected(),
       }),
     });
@@ -639,7 +644,7 @@ export class Firewall extends Equipment {
             .find(name => this.interfaces.get(name)?.ip === session.local.ip) ?? '',
           local: session.local,
           remote: session.remote,
-          vdom: this.activeVdom,
+          vdom: this.getAccessMatrix().getAdmin(session.username)?.vdoms[0] ?? this.managementVdom(),
         });
       },
       onAdminLogout: (user) => { this.onAdminLogout(user); },
@@ -670,6 +675,7 @@ export class Firewall extends Equipment {
       bus: () => this.getBus(),
       tcp: () => this.tcp,
       routes: () => this.getVdom().routes,
+      routesOf: (iface) => this.getVdom(this.vdomOfLocalTraffic({ iface })).routes,
       interfaces: () => this.interfaces,
       port: (iface) => this.getPort(iface),
       resolvedMac: (ip) => this.arp.resolved(ip) ?? undefined,
@@ -694,7 +700,7 @@ export class Firewall extends Equipment {
     this.sdwan = l3.sdwan;
     this.sdwan.getTable().setRouteReach({
       prefixLengthTowards: (iface, destination) =>
-        this.getVdom().routes.prefixLengthTowards(iface, destination),
+        this.vdoms.contextOfInterface(iface).routes.prefixLengthTowards(iface, destination),
     });
     this.sdwan.onHealthChange((changes) => { this.onSdwanHealthChange(changes); });
     this.attachTrapSources();
@@ -857,7 +863,7 @@ export class Firewall extends Equipment {
   getIpConflictDetection(): IpConflictDetection { return this.ipConflicts; }
 
   private resolveEgress(destination: string): FirewallPingEgress | null {
-    const egress = this.routedEgress(destination);
+    const egress = this.routedEgress(destination, this.activeVdom);
     const source = egress === undefined ? undefined : this.interfaces.get(egress.iface)?.ip;
     if (egress === undefined || source === undefined) {
       this.rememberUnroutable(destination);
@@ -944,7 +950,7 @@ export class Firewall extends Equipment {
       if (source === undefined) return;
       this.forward(iface,
         udpDatagram(source, to, DNS_PORT, port, payload),
-        this.getVdom().routes.resolveNextHop(to)?.nextHop);
+        this.vdoms.contextOfInterface(iface).routes.resolveNextHop(to)?.nextHop);
     },
   });
 
@@ -1090,7 +1096,7 @@ export class Firewall extends Equipment {
   localOutSteering(flow: {
     destination: IPAddress; protocol: number; sourcePort: PortNumber; destinationPort: PortNumber;
   }): string | null {
-    const vdom = this.getVdom();
+    const vdom = this.getVdom(this.managementVdom());
     const destination = flow.destination.toString();
     const source = this.sourceAddressFor(flow.destination)?.toString() ?? UNSPECIFIED_IPV4;
     const decision = vdom.policyRoutes?.evaluate({
@@ -1283,7 +1289,7 @@ export class Firewall extends Equipment {
   }
 
   private closeSessionsOn(iface: string): void {
-    this.getVdom().sessions.clearMatching(
+    this.vdoms.contextOfInterface(iface).sessions.clearMatching(
       session => session.egressInterface === iface);
   }
 
@@ -1386,29 +1392,48 @@ export class Firewall extends Equipment {
   }
 
   private sendUdpToPeer(destIp: string, port: number, payload: unknown): boolean {
+    const iface = this.tunnelInterfaceTowards(destIp);
     return this.sendUdpDatagram({
       destination: new IPAddress(destIp),
       destinationPort: port, sourcePort: port, payload,
       payloadBytes: payload instanceof Uint8Array ? payload.length : 64,
+      ...(iface === undefined ? {} : { iface }),
     });
   }
 
+  private tunnelInterfaceTowards(peer: string): string | undefined {
+    for (const vdom of this.vdoms.names()) {
+      const tunnel = this.getVdom(vdom).tunnels.all()
+        .find((entry) => entry.remoteGateway === peer && entry.boundInterface.length > 0);
+      if (tunnel !== undefined) return tunnel.boundInterface;
+    }
+    return undefined;
+  }
+
   sourceAddressFor(destination: IPAddress, iface?: string): IPAddress | null {
-    const egress = this.localEgress(destination.toString(), iface)?.iface;
+    const egress = this.localEgress(destination.toString(), { iface })?.iface;
     const source = egress === undefined ? undefined : this.interfaces.get(egress)?.ip;
     return source === undefined ? null : new IPAddress(source);
   }
 
-  private localEgress(target: string, iface?: string): { iface: string; nextHop?: string } | undefined {
-    if (iface !== undefined) return this.routedEgress(target, iface);
-    const routed = this.routedEgress(target);
-    if (routed) return routed;
-    const connected = this.interfaces.interfaceForDestination(target);
-    return connected === undefined ? undefined : { iface: connected };
+  private localEgress(
+    target: string, from: LocalTrafficOrigin,
+  ): { iface: string; nextHop?: string } | undefined {
+    return this.routedEgress(target, this.vdomOfLocalTraffic(from), from.iface);
   }
 
-  private routedEgress(target: string, iface?: string): { iface: string; nextHop?: string } | undefined {
-    const routes = this.getVdom().routes;
+  private vdomOfLocalTraffic(from: LocalTrafficOrigin): string {
+    if (from.iface !== undefined) return this.vdoms.vdomOfInterface(from.iface);
+    const owner = from.source === undefined ? undefined : this.interfaces.owningInterface(from.source);
+    return owner === undefined ? this.managementVdom() : this.vdoms.vdomOfInterface(owner);
+  }
+
+  managementVdom(): string { return ROOT_VDOM; }
+
+  private routedEgress(
+    target: string, vdom: string, iface?: string,
+  ): { iface: string; nextHop?: string } | undefined {
+    const routes = this.getVdom(vdom).routes;
     if (iface !== undefined) {
       const via = routes.resolveNextHopVia(target, iface);
       return via === undefined ? undefined : { iface, nextHop: via.nextHop };
@@ -1418,7 +1443,9 @@ export class Firewall extends Equipment {
   }
 
   sendUdpDatagram(request: UdpSendRequest): boolean {
-    const egress = this.localEgress(request.destination.toString(), request.iface);
+    const egress = this.localEgress(request.destination.toString(), {
+      iface: request.iface, source: request.source?.toString(),
+    });
     const iface = egress?.iface;
     const source = request.source?.toString()
       ?? (iface === undefined ? undefined : this.interfaces.get(iface)?.ip);
@@ -2525,7 +2552,8 @@ export class Firewall extends Equipment {
 
     const error = buildICMPError(
       new IPAddress(source), packet, kind, code, ICMP_ERROR_TTL, options);
-    const route = this.getVdom().routes.resolveNextHop(packet.sourceIP.toString());
+    const route = this.vdoms.contextOfInterface(ingressPort).routes
+      .resolveNextHop(packet.sourceIP.toString());
     this.forward(route?.iface ?? ingressPort, error, route?.nextHop);
   }
 
