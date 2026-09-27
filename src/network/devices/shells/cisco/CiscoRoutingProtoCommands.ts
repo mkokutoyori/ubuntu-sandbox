@@ -212,7 +212,7 @@ export function buildRouterSubmodeOn(
     if (proto === 'eigrp') {
       const wildcard = toWildcard(args[1]);
       if (pushOnce(eigrp().networks, [args[0], wildcard].filter(Boolean).join(' '))) {
-        eigrpEng().getConfig().networks.push({ network: args[0], wildcard });
+        eigrpEng().addNetwork({ network: args[0], wildcard });
       }
     } else {
       const proc = bgp();
@@ -239,8 +239,7 @@ export function buildRouterSubmodeOn(
     if (proto === 'eigrp') {
       const p = eigrp();
       p.networks = p.networks.filter((n) => n.split(/\s+/)[0] !== args[0]);
-      const ec = eigrpEng().getConfig();
-      ec.networks = ec.networks.filter((n) => n.network !== args[0]);
+      eigrpEng().removeNetwork(args[0]);
       converge();
       return '';
     }
@@ -291,14 +290,9 @@ export function buildRouterSubmodeOn(
       if (passive) { repo.rip.passive.add(ifName); ctx.r().ripSetPassiveInterface(ifName); }
       else { repo.rip.passive.delete(ifName); ctx.r().ripRemovePassiveInterface(ifName); }
     } else if (p === 'eigrp') {
-      if (passive) {
-        eigrp().passive.add(ifName);
-        eigrpEng().getConfig().passive.add(ifName);
-        eigrpEng().onInterfacePassive(ifName);
-      } else {
-        eigrp().passive.delete(ifName);
-        eigrpEng().getConfig().passive.delete(ifName);
-      }
+      if (passive) eigrp().passive.add(ifName);
+      else eigrp().passive.delete(ifName);
+      eigrpEng().setPassive(ifName, passive);
       converge();
     }
   };
