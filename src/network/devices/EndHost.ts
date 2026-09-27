@@ -944,8 +944,15 @@ export abstract class EndHost extends Equipment {
     });
   }
 
+  private readonly solicitedNeighbours = new Set<string>();
+
+  protected acceptsUnsolicitedArp(_iface: string, _sender: IPAddress, _gratuitousOrReply: boolean): boolean {
+    return true;
+  }
+
   /** Bus emission helper for ARP request sent. */
   protected emitArpRequestSent(iface: string, targetIp: string): void {
+    this.solicitedNeighbours.add(targetIp);
     this.arpRequestsSent++;
     this.getBus().publish({
       topic: 'host.arp.request-sent',
@@ -2100,10 +2107,16 @@ export abstract class EndHost extends Equipment {
     const port = this.ports.get(portName);
     if (!port) return;
 
-    const existing = this.arpTable.get(arp.senderIP.toString());
+    const sender = arp.senderIP.toString();
+    const existing = this.arpTable.get(sender);
     const isGratuitous = arp.operation === 'request' && arp.senderIP.equals(arp.targetIP);
-    if (!arp.senderIP.isUnspecified() && (!existing || existing.type !== 'static')) {
-      this.arpTable.set(arp.senderIP.toString(), {
+    const learns = existing !== undefined
+      || this.solicitedNeighbours.has(sender)
+      || (arp.operation === 'request' && this.answersArpFor(port, arp.targetIP))
+      || this.acceptsUnsolicitedArp(portName, arp.senderIP, isGratuitous || arp.operation === 'reply');
+    if (!arp.senderIP.isUnspecified() && learns && (!existing || existing.type !== 'static')) {
+      this.solicitedNeighbours.delete(sender);
+      this.arpTable.set(sender, {
         mac: arp.senderMAC,
         iface: portName,
         timestamp: Date.now(),
@@ -3019,6 +3032,7 @@ export abstract class EndHost extends Equipment {
     if (!port) return false;
     return addressAnswersOnLink({
       sendOnLink: (request) => this.getLinkLayer().send(request),
+      arpRequestSent: (iface, target) => this.emitArpRequestSent(iface, target),
       hasNeighbour: (ip) => this.arpTable.has(ip),
       neighbourMac: (ip) => this.arpTable.get(ip)?.mac,
       answersEcho: (from, send) => {

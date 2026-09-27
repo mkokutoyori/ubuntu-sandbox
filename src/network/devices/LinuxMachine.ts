@@ -825,6 +825,21 @@ export abstract class LinuxMachine extends EndHost
     return LINUX_ICMP_ERROR_QUOTE;
   }
 
+  protected override acceptsUnsolicitedArp(iface: string, sender: IPAddress, gratuitousOrReply: boolean): boolean {
+    if (!gratuitousOrReply) return false;
+    const level = Math.max(this.arpAcceptLevel('all'), this.arpAcceptLevel(iface));
+    if (level === 1) return true;
+    if (level !== 2) return false;
+    const port = this.ports.get(iface);
+    const address = port?.getIPAddress();
+    const mask = port?.getSubnetMask();
+    return !!address && !!mask && address.isInSameSubnet(sender, mask);
+  }
+
+  private arpAcceptLevel(scope: string): number {
+    return Number.parseInt(this.executor.vfs.readFile(`/proc/sys/net/ipv4/conf/${scope}/arp_accept`) ?? '0', 10) || 0;
+  }
+
   protected override lldpSystemDescription(): string {
     const k = this.executor.identity.kernel;
     return `${this.getHostname()} ${k.sysname} ${k.release} ${k.machine}`;

@@ -12,6 +12,7 @@ export interface AddressProbePort {
 
 export interface AddressProbeSink {
   sendOnLink(request: LinkSendRequest): boolean;
+  arpRequestSent(iface: string, target: string): void;
   hasNeighbour(ip: string): boolean;
   neighbourMac(ip: string): MACAddress | undefined;
   answersEcho(from: string, send: () => void): boolean;
@@ -32,6 +33,7 @@ export function addressAnswersOnLink(
       senderMAC: port.getMAC(), senderIP: myIP,
       targetMAC: MACAddress.broadcast(), targetIP: target,
     };
+    sink.arpRequestSent(iface, key);
     sink.sendOnLink({
       iface, destination: MACAddress.broadcast(),
       etherType: ETHERTYPE_ARP, payload: request,
