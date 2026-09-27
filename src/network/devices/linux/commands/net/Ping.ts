@@ -505,7 +505,8 @@ export function createPing(
       if (args.deadlineMs !== undefined && args.count > 0 && received >= args.count) break;
       if (args.deadlineMs !== undefined && errors > 0) break;
       if (deadlineHit() || shouldStop()) break;
-      if (args.intervalMs > 0) await host.sleep(args.intervalMs);
+      const untilNextSend = args.intervalMs - (host.now() - sendTimes[sendTimes.length - 1]);
+      if (untilNextSend > 0) await host.sleep(untilNextSend);
       if (deadlineHit()) break;
     }
     if (finished) return results.some((r) => r.success) ? 0 : 1;
