@@ -78,20 +78,20 @@ describe('the redirect lives in the cache, not in the table', () => {
   it('the ping goes through and the host learns the better hop — WITNESS', async () => {
     const pc = await lab();
 
-    expect(await pc.executeCommand('ping -c 2 192.168.30.4')).toMatch(/2 received/);
+    expect(await pc.executeCommand('ping -c 4 192.168.30.4')).toMatch(/, 0% packet loss/);
     expect(await pc.executeCommand('ip route get 192.168.30.4')).toMatch(/^192\.168\.30\.4 via 192\.168\.1\.99 dev eth0 /);
   }, 30000);
 
   it('`ip route` does not list the redirect', async () => {
     const pc = await lab();
-    await pc.executeCommand('ping -c 2 192.168.30.4');
+    await pc.executeCommand('ping -c 4 192.168.30.4');
 
     expect(await pc.executeCommand('ip route')).not.toMatch(/192\.168\.30\.4/);
   }, 30000);
 
   it('`ip route get` shows it in its cache', async () => {
     const pc = await lab();
-    await pc.executeCommand('ping -c 2 192.168.30.4');
+    await pc.executeCommand('ping -c 4 192.168.30.4');
 
     expect(await pc.executeCommand('ip route get 192.168.30.4'))
       .toMatch(/\n {4}cache <redirected> expires \d+sec/);
@@ -99,7 +99,7 @@ describe('the redirect lives in the cache, not in the table', () => {
 
   it('`ip route flush cache` erases it', async () => {
     const pc = await lab();
-    await pc.executeCommand('ping -c 2 192.168.30.4');
+    await pc.executeCommand('ping -c 4 192.168.30.4');
     await pc.executeCommand('sudo ip route flush cache');
 
     expect(await pc.executeCommand('ip route get 192.168.30.4')).toMatch(/^192\.168\.30\.4 via 192\.168\.1\.1 dev eth0 /);
@@ -109,7 +109,7 @@ describe('the redirect lives in the cache, not in the table', () => {
     const scheduler = new VirtualTimeScheduler();
     __setDefaultScheduler(scheduler);
     const pc = await lab();
-    await scheduler.advanceUntilSettled(Promise.resolve(pc.executeCommand('ping -c 2 192.168.30.4')));
+    await scheduler.advanceUntilSettled(Promise.resolve(pc.executeCommand('ping -c 4 192.168.30.4')));
     expect(await pc.executeCommand('ip route get 192.168.30.4')).toMatch(/^192\.168\.30\.4 via 192\.168\.1\.99 /);
 
     scheduler.advance(301_000);
@@ -119,7 +119,7 @@ describe('the redirect lives in the cache, not in the table', () => {
 
   it('the topology export does not save it', async () => {
     const pc = await lab();
-    await pc.executeCommand('ping -c 2 192.168.30.4');
+    await pc.executeCommand('ping -c 4 192.168.30.4');
 
     const exported = exportTopology('lab', new Map([[pc.getId(), pc as never]]), []);
     const routes = exported.devices[0].staticRoutes ?? [];

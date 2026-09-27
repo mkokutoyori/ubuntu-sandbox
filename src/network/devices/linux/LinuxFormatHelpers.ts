@@ -13,7 +13,7 @@
  */
 
 import type { IPAddress, IPv6Address } from '../../core/types';
-import type { PingResult } from '../EndHost';
+import type { IcmpRedirectNotice, PingResult } from '../EndHost';
 import type { Port } from '../../hardware/Port';
 import { formatIfconfigInterface } from './LinuxNetCommands';
 import { readIcmpUnreachable } from '../../core/icmpUnreachable';
@@ -74,6 +74,25 @@ export function formatPingHeader(
 export function isIcmpErrorResult(r: PingResult): boolean {
   return !r.success && !!r.error
     && /unreachable|Time to live exceeded|local error/i.test(r.error);
+}
+
+export function pingErrorCount(results: readonly PingResult[]): number {
+  return results.reduce((n, r) => n + (isIcmpErrorResult(r) ? 1 : 0) + (r.redirects?.length ?? 0), 0);
+}
+
+const ICMP_REDIRECT_TEXT: Readonly<Record<number, string>> = {
+  0: 'Redirect Network',
+  1: 'Redirect Host',
+  2: 'Redirect Type of Service and Network',
+  3: 'Redirect Type of Service and Host',
+};
+
+export function formatPingRedirectLine(
+  seq: number, notice: IcmpRedirectNotice, renderAddress: PingAddressRenderer = numericAddress,
+): string {
+  const text = ICMP_REDIRECT_TEXT[notice.code] ?? `Redirect, Bad Code: ${notice.code}`;
+  return `From ${renderAddress(notice.from.toString())} icmp_seq=${seq} `
+    + `${text}(New nexthop: ${renderAddress(notice.gateway.toString())})`;
 }
 
 export function icmpUnreachText(code: number | undefined, mtu: number | undefined): string {
@@ -157,7 +176,7 @@ export function formatPingStats(
   options: PingStatsOptions = {},
 ): string[] {
   const received = results.filter(r => r.success);
-  const errors = results.filter(isIcmpErrorResult).length;
+  const errors = pingErrorCount(results);
   const summary = [
     `${count} packets transmitted`,
     `${received.length} received`,

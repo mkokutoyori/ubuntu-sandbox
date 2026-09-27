@@ -171,6 +171,12 @@ export function getNUDState(entry: ARPEntry): string {
   return Date.now() - entry.timestamp < ARP_REACHABLE_TIME_MS ? 'REACHABLE' : 'STALE';
 }
 
+export interface IcmpRedirectNotice {
+  from: IPAddress;
+  gateway: IPAddress;
+  code: number;
+}
+
 export interface PingResult {
   success: boolean;
   rttMs: number;
@@ -183,6 +189,7 @@ export interface PingResult {
   seq: number;
   bytes: number;
   fromIP: string;
+  redirects?: IcmpRedirectNotice[];
 }
 
 export interface TracerouteProbeResult {
@@ -2814,6 +2821,21 @@ export abstract class EndHost extends Equipment {
       });
     } else if (icmp.icmpType === 'redirect' && icmp.gateway && icmp.originalPacket) {
       this.acceptRedirect(ipPkt.sourceIP, icmp.gateway, icmp.originalPacket.destinationIP, icmp.code);
+      const echo = icmp.originalPacket.payload as ICMPPacket | undefined;
+      if (echo?.type === 'icmp' && echo.icmpType === 'echo-request') {
+        this.getBus().publish({
+          topic: 'host.icmp.echo-redirected',
+          payload: {
+            ...this.hostRef(),
+            fromIp: ipPkt.sourceIP.toString(),
+            gateway: icmp.gateway.toString(),
+            code: icmp.code,
+            toIp: icmp.originalPacket.destinationIP.toString(),
+            id: echo.id,
+            seq: echo.sequence,
+          },
+        });
+      }
     }
   }
 
@@ -4191,14 +4213,15 @@ export abstract class EndHost extends Equipment {
     // Send pings
     const results: PingResult[] = [];
     for (let seq = firstSeq; seq < firstSeq + count; seq++) {
+      const redirects = this.collectEchoRedirects(targetIP, seq, opts?.ident);
       try {
         const result = await this.sendPing(portName, targetIP, nextHopMAC, seq, timeoutMs, ttl, opts);
-        results.push(result);
+        results.push(redirects.attachTo(result));
       } catch (err: any) {
         const errorMsg = typeof err === 'string'
           ? err
           : (err instanceof Error ? err.message : String(err));
-        results.push({
+        results.push(redirects.attachTo({
           success: false,
           rttMs: 0,
           ttl: 0,
@@ -4206,13 +4229,31 @@ export abstract class EndHost extends Equipment {
           bytes: 0,
           fromIP: '',
           error: errorMsg,
-        });
+        }));
         if (err instanceof IcmpErrorReply && opts?.pauseAfterErrorReplyMs && seq < firstSeq + count - 1) {
           await this.getScheduler().delay(opts.pauseAfterErrorReplyMs);
         }
       }
     }
     return results;
+  }
+
+  private collectEchoRedirects(
+    target: IPAddress, seq: number, ident: number | undefined,
+  ): { attachTo(result: PingResult): PingResult } {
+    const notices: IcmpRedirectNotice[] = [];
+    const targetText = target.toString();
+    const stop = this.getBus().subscribe('host.icmp.echo-redirected', ({ payload }) => {
+      if (payload.deviceId !== this.id || payload.seq !== seq || payload.toIp !== targetText) return;
+      if (ident !== undefined && payload.id !== ident) return;
+      notices.push({ from: new IPAddress(payload.fromIp), gateway: new IPAddress(payload.gateway), code: payload.code });
+    });
+    return {
+      attachTo: (result) => {
+        stop();
+        return notices.length === 0 ? result : { ...result, redirects: notices };
+      },
+    };
   }
 
   async pingStreamInSession(
