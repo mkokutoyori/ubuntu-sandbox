@@ -195,6 +195,22 @@ export type TraceProbeMethod =
   | { kind: 'tcp'; port: number; tos?: number }
   | { kind: 'raw'; protocol: number; tos?: number };
 
+const LOOPBACK_ECHO_MTU = 65536;
+
+export interface EchoRoute {
+  source: IPAddress | null;
+  iface: string;
+  mtu: number;
+}
+
+export interface EchoOptions {
+  dataSize?: number;
+  df?: boolean;
+  firstSeq?: number;
+  ident?: number;
+  socket?: TraceSocketOptions;
+}
+
 export interface TraceSocketOptions {
   iface?: string;
   sourceIp?: IPAddress;
@@ -3612,11 +3628,11 @@ export abstract class EndHost extends Equipment {
     seq: number = 1,
     timeoutMs: number = 2000,
     ttl?: number,
-    opts?: { dataSize?: number; df?: boolean },
+    opts?: EchoOptions,
   ): Promise<PingResult> {
     const port = this.ports.get(portName);
     if (!port) throw new Error('Port not found');
-    const myIP = port.getIPAddress();
+    const myIP = opts?.socket?.sourceIp ?? port.getIPAddress();
     if (!myIP) throw new Error('No IP configured');
 
     // No carrier means the kernel fails the send outright with EHOSTUNREACH
@@ -3628,8 +3644,7 @@ export abstract class EndHost extends Equipment {
       throw new Error(`Destination unreachable from ${myIP}`);
     }
 
-    this.pingIdCounter++;
-    const id = this.pingIdCounter;
+    const id = opts?.ident ?? this.allocateEchoIdent();
 
     const targetIpStr = targetIP.toString();
     const sentAt = performance.now();
@@ -3897,12 +3912,16 @@ export abstract class EndHost extends Equipment {
    * Returns an array of PingResult (one per ping attempt).
    */
   /** Fabricate successful echo results for traffic that never leaves the host. */
-  private localEchoResults(targetIP: IPAddress, count: number): PingResult[] {
+  allocateEchoIdent(): number {
+    this.pingIdCounter++;
+    return this.pingIdCounter;
+  }
+
+  private localEchoResults(targetIP: IPAddress, count: number, firstSeq = 1, ident?: number): PingResult[] {
     const results: PingResult[] = [];
     const ip = targetIP.toString();
-    for (let seq = 1; seq <= count; seq++) {
-      this.pingIdCounter++;
-      const id = this.pingIdCounter;
+    for (let seq = firstSeq; seq < firstSeq + count; seq++) {
+      const id = ident ?? this.allocateEchoIdent();
       this.emitIcmpEchoSent({ fromIp: ip, toIp: ip, id, seq, ttl: this.defaultTTL, size: 64 });
       this.emitIcmpEchoReply({ fromIp: ip, toIp: ip, id, seq, ttl: this.defaultTTL, rttMs: 0.01 });
       results.push({
@@ -3917,10 +3936,10 @@ export abstract class EndHost extends Equipment {
     return results;
   }
 
-  private unreachableResults(localIP: IPAddress | null, count: number): PingResult[] {
+  private unreachableResults(localIP: IPAddress | null, count: number, firstSeq = 1): PingResult[] {
     const from = localIP ? localIP.toString() : '';
     const results: PingResult[] = [];
-    for (let seq = 1; seq <= count; seq++) {
+    for (let seq = firstSeq; seq < firstSeq + count; seq++) {
       results.push({
         success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: from,
         error: `Destination unreachable from ${from} code 1`,
@@ -3934,16 +3953,17 @@ export abstract class EndHost extends Equipment {
     count: number = 4,
     timeoutMs: number = 2000,
     ttl?: number,
-    opts?: { dataSize?: number; df?: boolean },
+    opts?: EchoOptions,
   ): Promise<PingResult[]> {
+    const firstSeq = opts?.firstSeq ?? 1;
     // Local delivery without touching the wire: loopback (127/8) and any
     // address owned by one of our interfaces (self-ping), like a real kernel.
     if (this.isLocalAddress(targetIP)) {
-      return this.localEchoResults(targetIP, count);
+      return this.localEchoResults(targetIP, count, firstSeq, opts?.ident);
     }
 
     // Route resolution
-    const route = this.resolveRoute(targetIP);
+    const route = this.traceRouteFor(targetIP, opts?.socket ?? {});
     if (!route) {
       return []; // Empty = unreachable, caller formats the error
     }
@@ -3959,13 +3979,13 @@ export abstract class EndHost extends Equipment {
       try {
         nextHopMAC = await this.resolveARP(portName, route.nextHopIP, timeoutMs);
       } catch {
-        return this.unreachableResults(route.port.getIPAddress(), count);
+        return this.unreachableResults(opts?.socket?.sourceIp ?? route.port.getIPAddress(), count, firstSeq);
       }
     }
 
     // Send pings
     const results: PingResult[] = [];
-    for (let seq = 1; seq <= count; seq++) {
+    for (let seq = firstSeq; seq < firstSeq + count; seq++) {
       try {
         const result = await this.sendPing(portName, targetIP, nextHopMAC, seq, timeoutMs, ttl, opts);
         results.push(result);
@@ -4005,6 +4025,28 @@ export abstract class EndHost extends Equipment {
     opts.onResolved?.(ip, targetStr !== ip.toString() ? targetStr : undefined);
     const outcome = await this.executePingStream(ip, opts);
     return outcome.resolved ? { resolved: true } : { resolved: false, reason: 'unreachable' };
+  }
+
+  isBroadcastDestination(targetIP: IPAddress): boolean {
+    return targetIP.toString() === '255.255.255.255'
+      || isDirectedBroadcast(targetIP, this.connectedIpv4Prefixes());
+  }
+
+  canReach6(targetIP: IPv6Address): boolean {
+    return this.isLocalAddress6(targetIP) || this.resolveIPv6Route(targetIP) !== null;
+  }
+
+  echoRouteFor(targetIP: IPAddress, socket: TraceSocketOptions): EchoRoute | null {
+    if (this.isLocalAddress(targetIP)) {
+      return { source: socket.sourceIp ?? targetIP, iface: 'lo', mtu: LOOPBACK_ECHO_MTU };
+    }
+    const route = this.traceRouteFor(targetIP, socket);
+    if (route === null || !route.port.getIsUp()) return null;
+    return {
+      source: socket.sourceIp ?? route.port.getIPAddress() ?? null,
+      iface: route.iface,
+      mtu: route.port.getMTU(),
+    };
   }
 
   getEgressIPFor(targetIP: IPAddress): IPAddress | null {

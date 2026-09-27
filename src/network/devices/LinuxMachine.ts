@@ -23,7 +23,8 @@
  */
 
 import { tracerouteHostOf, type TracerouteHost } from './linux/commands/net/Traceroute';
-import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions } from './EndHost';
+import { pingHostOf, type PingHost, type PingTiming } from './linux/commands/net/Ping';
+import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type EchoRoute } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import { adOperPortKey, buildActorState } from '@/network/lacp/types';
@@ -808,6 +809,14 @@ export abstract class LinuxMachine extends EndHost
 
   uidOfUser(name: string): number | null {
     return this.executor.pathActorOf(name)?.uid ?? null;
+  }
+
+  pingHost(timing?: PingTiming): PingHost {
+    return pingHostOf(this.buildCommandContext(), timing);
+  }
+
+  pingHostInSession(session: LinuxShellSession, timing: PingTiming): PingHost {
+    return this.sessionSwap.withinSync(session, () => this.pingHost(timing), { capture: false });
   }
 
   tracerouteHost(asUser?: string): TracerouteHost {
@@ -3937,10 +3946,15 @@ export abstract class LinuxMachine extends EndHost
         count: number,
         timeoutMs = 2000,
         ttl?: number,
-        opts?: { dataSize?: number; df?: boolean },
+        opts?: EchoOptions,
       ): Promise<PingResult[]> => {
         return this.executePingSequence(target, count, timeoutMs, ttl, opts);
       },
+      echoRouteFor: (target: IPAddress, socket: TraceSocketOptions): EchoRoute | null =>
+        this.echoRouteFor(target, socket),
+      allocateEchoIdent: (): number => this.allocateEchoIdent(),
+      isBroadcastDestination: (target: IPAddress): boolean => this.isBroadcastDestination(target),
+      canReach6: (target: IPv6Address): boolean => this.canReach6(target),
       tcpProbe: (target: string, port: number): boolean => {
         if (target.includes(':')) return this.tcpProbeSyncIPv6(target, port);
         return this.tcpProbeSync(new IPAddress(target), port);

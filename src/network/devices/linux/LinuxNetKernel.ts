@@ -20,7 +20,7 @@ import type { Port } from '../../hardware/Port';
 import type { TcpWireOutcome } from '../../tcp/types';
 import type { PortNumber } from '../../core/ports/PortNumber';
 import type { IPAddress, IPv6Address, SubnetMask, MACAddress, IPv4Packet } from '../../core/types';
-import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, HostPolicyRule, PingResult, TraceProbeMethod, TraceSocketOptions } from '../EndHost';
+import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, HostPolicyRule, PingResult, TraceProbeMethod, TraceSocketOptions, EchoOptions, EchoRoute } from '../EndHost';
 import type { DHCPClient } from '../../dhcp/DHCPClient';
 import type { DnsQueryFn } from '../../dns/compat/DnsWireCompat';
 import type { TcpStack } from '../../tcp/TcpStack';
@@ -143,8 +143,16 @@ export interface LinuxNetKernel {
     count: number,
     timeoutMs?: number,
     ttl?: number,
-    opts?: { dataSize?: number; df?: boolean },
+    opts?: EchoOptions,
   ): Promise<PingResult[]>;
+
+  echoRouteFor(target: IPAddress, socket: TraceSocketOptions): EchoRoute | null;
+
+  allocateEchoIdent(): number;
+
+  isBroadcastDestination(target: IPAddress): boolean;
+
+  canReach6(target: IPv6Address): boolean;
 
   /** ICMPv6 echo through the real NDP/route resolution path (`ping6`). */
   ping6Sequence(

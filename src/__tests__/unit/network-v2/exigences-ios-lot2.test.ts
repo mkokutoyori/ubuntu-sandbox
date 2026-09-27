@@ -358,7 +358,7 @@ describe('L2-10 — table NAT/PAT comme table d\'état', () => {
 
     const t = await run(r, 'show ip nat translations');
     expect(t).toMatch(/^icmp\s+203\.0\.113\.1:\d+\s+192\.168\.1\.10:\d+/m);
-    expect(await run(r, 'show ip nat statistics')).toMatch(/Total active translations: 2/);
+    expect(await run(r, 'show ip nat statistics')).toMatch(/Total active translations: 1/);
   });
 
   it('les timeouts par protocole sont ceux d\'IOS', async () => {

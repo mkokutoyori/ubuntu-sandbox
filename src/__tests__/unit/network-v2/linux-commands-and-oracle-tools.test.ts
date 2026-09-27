@@ -323,9 +323,9 @@ describe('ping', () => {
     expect(out).toContain('Network is unreachable');
   });
 
-  it('ping with no host shows usage', async () => {
+  it('ping with no host says the destination is required', async () => {
     const out = await server.executeCommand('ping');
-    expect(out).toContain('Usage: ping');
+    expect(out).toBe('ping: usage error: Destination address required');
   });
 });
 

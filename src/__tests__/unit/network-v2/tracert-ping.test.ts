@@ -255,22 +255,22 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
-    it('19. should reject invalid timeout values (-W abc)', async () => {
+    it('19. warns on a garbage timeout (-W abc) and goes on, as iputils ping_strtod does', async () => {
       const pc = setupWANTopology().pc1;
-      const output = await pc.executeCommand('ping -W abc 127.0.0.1');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      const output = await pc.executeCommand('ping -c 1 -W abc 127.0.0.1');
+      expect(output).toMatch(/^ping: option argument contains garbage: abc\nping: this will become fatal error in the future\nPING 127\.0\.0\.1/);
     });
 
     it('20. should reject invalid pattern format (-p zz)', async () => {
       const pc = setupWANTopology().pc1;
       const output = await pc.executeCommand('ping -p zz 127.0.0.1');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe('ping: patterns must be specified as hex digits: zz');
     });
 
     it('21. should reject binding to non-existent interface (-I eth99)', async () => {
       const pc = setupWANTopology().pc1;
       const output = await pc.executeCommand('ping -I eth99 127.0.0.1');
-      expect(output.toLowerCase()).toMatch(/invalid|error|not found/);
+      expect(output).toBe('ping: SO_BINDTODEVICE eth99: No such device');
     });
 
     it('22. should support printing timestamps with ping -D', async () => {
@@ -390,7 +390,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('38. should reject pinging invalid IP formats (such as 256.0.0.1)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('ping -c 1 256.0.0.1');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe('ping: 256.0.0.1: Name or service not known');
     });
 
     it('39. should reject pinging if destination IP parameter is missing', async () => {
@@ -1572,9 +1572,8 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('203. should fail ping with fragmentation error if DF is set and packet size exceeds MTU (1500)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      // Linux: -M want (use DF), -s size
-      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -M want -s 2000 10.0.2.10'));
-      expect(output.toLowerCase()).toMatch(/local error|too long|frag needed/);
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -M do -s 2000 10.0.2.10'));
+      expect(output).toContain('\nping: local error: message too long, mtu=1500\n');
     });
 
     it('204. should fail Windows ping with fragmentation error if -f is set and size exceeds MTU (1500)', async () => {
@@ -1972,13 +1971,13 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('251. should restrict flood ping option on Linux to root user (-f)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('su user -c "ping -f 127.0.0.1"');
-      expect(output.toLowerCase()).toMatch(/permission denied|error|privileged/);
+      expect(output).toContain('ping: cannot flood; minimal interval allowed for user is 2ms');
     });
 
-    it('252. should restrict low ping intervals (less than 0.2s) on Linux to root user (-i 0.1)', async () => {
+    it('252. lets a user go down to -i 0.1: iputils 20221126 only refuses under 2 ms', async () => {
       const pc = new LinuxPC('PC', 0, 0);
-      const output = await pc.executeCommand('su user -c "ping -i 0.1 127.0.0.1"');
-      expect(output.toLowerCase()).toMatch(/permission denied|error|privileged/);
+      const output = await pc.executeCommand('su user -c "ping -c 2 -i 0.1 127.0.0.1"');
+      expect(output).toMatch(/2 packets transmitted, 2 received, 0% packet loss/);
     });
 
     it('253. should show packet drops dynamically when physical network cable is unplugged mid-run', async () => {
@@ -2030,7 +2029,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('257. should handle blank command inputs on Linux ping gracefully', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('ping ""');
-      expect(output.toLowerCase()).toMatch(/unknown host|invalid|error/);
+      expect(output).toBe('ping: : Name or service not known');
     });
 
     it('258. should reject traceroute commands with invalid target domain syntax', async () => {
@@ -2100,7 +2099,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('266. should reject Linux ping if multiple targets are specified (ping -c 1 127.0.0.1 127.0.0.2)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('ping -c 1 127.0.0.1 127.0.0.2');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe('ping: 2 destinations: this simulator cannot build IP source routing');
     });
 
     it('267. should reject Windows ping if multiple targets are specified (ping 127.0.0.1 127.0.0.2)', async () => {
@@ -2204,7 +2203,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('279. should reject pinging if target is not a valid address format (ping -c 1 255.255.255.256)', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('ping -c 1 255.255.255.256');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toBe('ping: 255.255.255.256: Name or service not known');
     });
 
     it('280. should reject Windows ping if target is not a valid address format (ping 255.255.255.256)', async () => {
@@ -2239,8 +2238,8 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('284. should log error if the target interface is administratively down on Linux PC', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       await pc.executeCommand('ifconfig eth0 down');
-      const output = await pc.executeCommand('ping -c 1 127.0.0.1');
-      expect(output.toLowerCase()).toMatch(/network is unreachable|error/);
+      const output = await pc.executeCommand('ping -c 1 10.0.99.99');
+      expect(output).toBe('ping: connect: Network is unreachable');
     });
 
     it('285. should support Windows tracert loose source route with single target IP (-j 10.0.2.1)', async () => {
@@ -2321,10 +2320,10 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       expect(status).toBeDefined();
     });
 
-    it('296. should reject Linux ping if pattern value is empty (-p "")', async () => {
+    it('296. accepts an empty pattern (-p ""): fill() finds no bad digit and prints an empty PATTERN', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('ping -p "" 127.0.0.1');
-      expect(output.toLowerCase()).toMatch(/invalid|error/);
+      expect(output).toMatch(/^PATTERN: 0x\nPING 127\.0\.0\.1 /);
     });
 
     it('297. should reject Windows ping if source address has quote mismatch (-S "10.0.0.1)', async () => {

@@ -1,421 +1,606 @@
-import { formatPingFailureLine, formatPingStats } from '@/network/devices/linux/LinuxFormatHelpers';
+import {
+  formatPingHeader, formatPing6Header, formatPingReplyLine, formatPingStats,
+  PING_TIMING_MIN_SIZE, type PingAddressRenderer,
+} from '@/network/devices/linux/LinuxFormatHelpers';
 import { IPv6Address, IPAddress } from '@/network/core/types';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import type { PingResult } from '../../../EndHost';
-import { isValidIPv4 } from '@/network/core/ip';
+import type { EchoRoute, PingResult, TraceSocketOptions } from '../../../EndHost';
+import { reverseNameOf } from '../../network/ReverseName';
 
-const IPUTILS_VERSION = 'ping utility, iputils-s20221126, https://github.com/iputils/iputils/';
+const IPUTILS_VERSION_LINE = 'from iputils 20221126';
 const DEFAULT_SIZE = 56;
-// This default is only actually used by the non-interactive `runPing()`
-// below, which loops `parsed.count` times synchronously and returns — it
-// cannot support real "continuous until Ctrl+C" (there's no interactive
-// context to interrupt it, so 0/infinite would hang forever). The
-// interactive terminal path (`LinuxTerminalSession.tryStartPingStream`)
-// overrides this to the real Linux "continuous by default" behavior
-// itself, using `countGiven` to tell "no -c" apart from an explicit one.
-const DEFAULT_COUNT = 4;
+const DETACHED_DEFAULT_COUNT = 4;
 const DEFAULT_TIMEOUT_MS = 500;
 const DEFAULT_INTERVAL_MS = 1000;
-const MIN_UNPRIVILEGED_INTERVAL_MS = 200;
-const DEFAULT_MTU = 1500;
-const ICMP_HEADER_SIZE = 8;
-const IP_HEADER_SIZE = 20;
+const MIN_USER_INTERVAL_MS = 2;
+const MIN_USER_BROADCAST_INTERVAL_MS = 1000;
+const IP_AND_ICMP_HEADERS = 28;
+const INT_MAX = 2147483647;
+const LONG_MAX = '9223372036854775807';
+const MAX_PATTERN_BYTES = 16;
 
-const PING_USAGE = `Usage: ping [-aAbBdDfhLnOqrRUvV64] [-c count] [-i interval] [-I interface]
-            [-M pmtudisc_opt] [-p pattern] [-s packetsize] [-S sndbuf]
-            [-t ttl] [-w deadline] [-W timeout] destination
+const OPTSTRING = 'h?4bRT:6F:N:aABc:CdDe:fi:I:l:Lm:M:nOp:qQ:rs:S:t:UvVw:W:';
 
-Options:
-  -c count         Stop after sending count ECHO_REQUEST packets.
-  -s packetsize    Specifies the number of data bytes to be sent.
-  -t ttl           Set the IP Time to Live.
-  -w deadline      Time to wait before exiting, regardless of packet count.
-  -W timeout       Time to wait for a response, in seconds.
-  -i interval      Wait interval seconds between sending each packet.
-  -I interface     Set source address to specified interface address.
-  -p pattern       Fill ECHO_REQUEST packet with given hex pattern.
-  -q               Quiet output (only summary at end).
-  -v               Verbose output.
-  -n               Numeric output only.
-  -D               Print timestamp (unix time) before each line.
-  -b               Allow pinging a broadcast address.
-  -M pmtudisc_opt  Select Path MTU Discovery strategy: do, want, dont.
-  -f               Flood ping. Root privilege required.
-  -L               Suppress loopback of multicast packets. (deprecated)
-  -V               Print version and exit.
-  -4               Use IPv4 only.
-  -6               Use IPv6 only.
-`.trim();
+const UNBUILDABLE: Readonly<Record<string, string>> = {
+  a: 'an audible bell',
+  A: 'an adaptive interval',
+  e: 'a chosen ICMP identifier',
+  l: 'a preload of unanswered probes',
+  m: 'SO_MARK',
+  Q: 'a TOS byte on ICMP echo',
+  r: 'SO_DONTROUTE',
+  R: 'the IP record-route option',
+  T: 'the IP timestamp option',
+  U: 'user-to-user latency',
+  F: 'an IPv6 flow label',
+  N: 'ICMPv6 node information queries',
+};
+
+export const PING_USAGE = [
+  '',
+  'Usage',
+  '  ping [options] <destination>',
+  '',
+  'Options:',
+  '  <destination>      dns name or ip address',
+  '  -a                 use audible ping',
+  '  -A                 use adaptive ping',
+  '  -B                 sticky source address',
+  '  -c <count>         stop after <count> replies',
+  '  -C                 call connect() syscall on socket creation',
+  '  -D                 print timestamps',
+  '  -d                 use SO_DEBUG socket option',
+  '  -e <identifier>    define identifier for ping session, default is random for',
+  '                     SOCK_RAW and kernel defined for SOCK_DGRAM',
+  '                     Imply using SOCK_RAW (for IPv4 only for identifier 0)',
+  '  -f                 flood ping',
+  '  -h                 print help and exit',
+  '  -I <interface>     either interface name or address',
+  '  -i <interval>      seconds between sending each packet',
+  '  -L                 suppress loopback of multicast packets',
+  '  -l <preload>       send <preload> number of packages while waiting replies',
+  '  -m <mark>          tag the packets going out',
+  '  -M <pmtud opt>     define mtu discovery, can be one of <do|dont|want>',
+  '  -n                 no dns name resolution',
+  '  -O                 report outstanding replies',
+  '  -p <pattern>       contents of padding byte',
+  '  -q                 quiet output',
+  '  -Q <tclass>        use quality of service <tclass> bits',
+  '  -s <size>          use <size> as number of data bytes to be sent',
+  '  -S <size>          use <size> as SO_SNDBUF socket option value',
+  '  -t <ttl>           define time to live',
+  '  -U                 print user-to-user latency',
+  '  -v                 verbose output',
+  '  -V                 print version and exit',
+  '  -w <deadline>      reply wait <deadline> in seconds',
+  '  -W <timeout>       time to wait for response',
+  '',
+  'IPv4 options:',
+  '  -4                 use IPv4',
+  '  -b                 allow pinging broadcast',
+  '  -R                 record route',
+  '  -T <timestamp>     define timestamp, can be one of <tsonly|tsandaddr|tsprespec>',
+  '',
+  'IPv6 options:',
+  '  -6                 use IPv6',
+  '  -F <flowlabel>     define flow label, default is random',
+  '  -N <nodeinfo opt>  use icmp6 node info query, try <help> as argument',
+  '',
+  'For more details see ping(8).',
+].join('\n');
 
 export interface ParsedPingArgs {
   count: number;
-  /** True once `-c` has been explicitly given — lets callers that support
-   *  real unbounded pinging (the interactive terminal) tell "no -c" apart
-   *  from a defaulted `count`, instead of treating both the same way. */
   countGiven: boolean;
   ttl?: number;
   size: number;
   timeoutMs: number;
+  timeoutGiven: boolean;
   intervalMs: number;
-  /** `-w deadline` — stop after this many milliseconds, regardless of `-c`. */
+  intervalGiven: boolean;
   deadlineMs?: number;
-  targetStr: string;
-  /** True once a destination positional argument has been seen — distinguishes "omitted" from "given as an empty string". */
-  targetGiven: boolean;
-  v6: boolean;
-  iface?: string;
+  targets: string[];
+  family?: 4 | 6;
+  device?: string;
+  source?: IPAddress;
   pattern?: string;
   quiet: boolean;
-  verbose: boolean;
   numeric: boolean;
   timestamp: boolean;
   broadcast: boolean;
+  outstanding: boolean;
   mtuDisc?: 'do' | 'want' | 'dont';
   flood: boolean;
-  showVersion: boolean;
-  showHelp: boolean;
-  parseError?: string;
-  extraTargets: string[];
 }
 
-function isValidHexPattern(p: string): boolean {
-  return /^[0-9a-fA-F]+$/.test(p) && p.length > 0;
+type ParseOutcome =
+  | { kind: 'parsed'; args: ParsedPingArgs; warnings: string[] }
+  | { kind: 'exit'; lines: string[]; code: number };
+
+function strtolPrefix(text: string): { value: bigint; rest: string } | null {
+  const m = /^\s*([+-]?\d+)/.exec(text);
+  if (m === null) return null;
+  return { value: BigInt(m[1]), rest: text.slice(m[0].length) };
 }
 
-function isBroadcastAddress(ip: string): boolean {
-  if (ip === '255.255.255.255') return true;
-  return /\.255$/.test(ip);
+function strtolOrErr(
+  cmd: string, text: string, message: string, min: bigint, max: bigint,
+): { value: number } | { error: string } {
+  const parsed = text === '' ? null : strtolPrefix(text);
+  if (parsed === null || parsed.rest !== '') return { error: `${cmd}: ${message}: '${text}'` };
+  if (parsed.value > BigInt(LONG_MAX) || parsed.value < -BigInt(LONG_MAX) - 1n) {
+    return { error: `${cmd}: ${message}: '${text}': Numerical result out of range` };
+  }
+  if (parsed.value < min || parsed.value > max) {
+    return { error: `${cmd}: ${message}: '${text}': out of range: ${min} <= value <= ${max}` };
+  }
+  return { value: Number(parsed.value) };
 }
 
-export function parsePingArgs(args: string[], cmdName: 'ping' | 'ping6' = 'ping'): ParsedPingArgs {
-  const result: ParsedPingArgs = {
-    count: DEFAULT_COUNT,
-    countGiven: false,
-    size: DEFAULT_SIZE,
-    timeoutMs: DEFAULT_TIMEOUT_MS,
-    intervalMs: DEFAULT_INTERVAL_MS,
-    targetStr: '',
-    targetGiven: false,
-    v6: cmdName === 'ping6',
-    quiet: false,
-    verbose: false,
-    numeric: false,
-    timestamp: false,
-    broadcast: false,
-    flood: false,
-    showVersion: false,
-    showHelp: false,
-    extraTargets: [],
+function pingStrtod(
+  cmd: string, text: string, message: string, warnings: string[],
+): { value: number } | { error: string } {
+  if (text === '') return { error: `${cmd}: ${message}: ` };
+  const m = /^\s*[+-]?((\d+\.?\d*|\.\d+)([eE][+-]?\d+)?)/.exec(text);
+  const value = m === null ? 0 : Number(m[0]);
+  const rest = m === null ? text : text.slice(m[0].length);
+  if (rest !== '') {
+    warnings.push(`${cmd}: option argument contains garbage: ${rest}`);
+    warnings.push(`${cmd}: this will become fatal error in the future`);
+  }
+  if (!Number.isFinite(value)) return { error: `${cmd}: ${message}: ${text}: Numerical result out of range` };
+  return { value };
+}
+
+function inetAton(text: string): IPAddress | null {
+  const parts = text.split('.');
+  if (parts.length < 1 || parts.length > 4) return null;
+  const values: number[] = [];
+  for (const part of parts) {
+    let value: number;
+    if (/^0[xX][0-9a-fA-F]+$/.test(part)) value = parseInt(part.slice(2), 16);
+    else if (/^0[0-7]*$/.test(part)) value = parseInt(part, 8);
+    else if (/^[1-9]\d*$/.test(part)) value = parseInt(part, 10);
+    else return null;
+    values.push(value);
+  }
+  const last = values[values.length - 1];
+  const leading = values.slice(0, -1);
+  if (leading.some((v) => v > 255)) return null;
+  const lastMax = 2 ** (8 * (4 - leading.length)) - 1;
+  if (last > lastMax) return null;
+  let address = 0;
+  leading.forEach((v, i) => { address += v * 2 ** (8 * (3 - i)); });
+  address += last;
+  return new IPAddress([
+    Math.floor(address / 2 ** 24) % 256, Math.floor(address / 2 ** 16) % 256,
+    Math.floor(address / 2 ** 8) % 256, address % 256,
+  ].join('.'));
+}
+
+function usageExit(prefix: string[]): ParseOutcome {
+  return { kind: 'exit', lines: [...prefix, PING_USAGE], code: 2 };
+}
+
+export function parsePingArgs(args: readonly string[], cmd: 'ping' | 'ping6' = 'ping'): ParseOutcome {
+  const parsed: ParsedPingArgs = {
+    count: 0, countGiven: false, size: DEFAULT_SIZE,
+    timeoutMs: DEFAULT_TIMEOUT_MS, timeoutGiven: false,
+    intervalMs: DEFAULT_INTERVAL_MS, intervalGiven: false,
+    targets: [], family: cmd === 'ping6' ? 6 : undefined,
+    quiet: false, numeric: false, timestamp: false, broadcast: false,
+    outstanding: false, flood: false,
+  };
+  const warnings: string[] = [];
+  const fail = (line: string): ParseOutcome => ({ kind: 'exit', lines: [...warnings, line], code: 2 });
+
+  const apply = (ch: string, arg: string | undefined): ParseOutcome | null => {
+    switch (ch) {
+      case '4':
+        if (parsed.family === 6) return fail(`${cmd}: only one -4 or -6 option may be specified`);
+        parsed.family = 4; return null;
+      case '6':
+        if (parsed.family === 4) return fail(`${cmd}: only one -4 or -6 option may be specified`);
+        parsed.family = 6; return null;
+      case 'b': parsed.broadcast = true; return null;
+      case 'B': case 'C': case 'd': case 'L': case 'v': return null;
+      case 'c': {
+        const r = strtolOrErr(cmd, arg!, 'invalid argument', 1n, BigInt(LONG_MAX));
+        if ('error' in r) return fail(r.error);
+        parsed.count = r.value; parsed.countGiven = true; return null;
+      }
+      case 'D': parsed.timestamp = true; return null;
+      case 'f': parsed.flood = true; parsed.numeric = true; return null;
+      case 'i': {
+        const r = pingStrtod(cmd, arg!, 'bad timing interval', warnings);
+        if ('error' in r) return fail(r.error);
+        if (r.value > INT_MAX / 1000) return fail(`${cmd}: bad timing interval: ${arg}`);
+        parsed.intervalMs = Math.trunc(r.value * 1000); parsed.intervalGiven = true; return null;
+      }
+      case 'I': {
+        if (arg!.includes(':')) {
+          return fail(`${cmd}: option -I: this simulator cannot build an IPv6 source or interface binding`);
+        }
+        const address = inetAton(arg!);
+        if (address !== null) parsed.source = address;
+        else parsed.device = arg;
+        return null;
+      }
+      case 'M':
+        if (arg === 'do' || arg === 'dont' || arg === 'want') { parsed.mtuDisc = arg; return null; }
+        return fail(`${cmd}: invalid -M argument: ${arg}`);
+      case 'n': parsed.numeric = true; return null;
+      case 'O': parsed.outstanding = true; return null;
+      case 'p': parsed.pattern = arg; return null;
+      case 'q': parsed.quiet = true; return null;
+      case 's': {
+        const r = strtolOrErr(cmd, arg!, 'invalid argument', 0n, BigInt(INT_MAX));
+        if ('error' in r) return fail(r.error);
+        parsed.size = r.value; return null;
+      }
+      case 'S': {
+        const r = strtolOrErr(cmd, arg!, 'invalid argument', 1n, BigInt(INT_MAX));
+        return 'error' in r ? fail(r.error) : null;
+      }
+      case 't': {
+        const r = strtolOrErr(cmd, arg!, 'invalid argument', 0n, 255n);
+        if ('error' in r) return fail(r.error);
+        parsed.ttl = r.value; return null;
+      }
+      case 'V':
+        return { kind: 'exit', lines: [...warnings, `${cmd} ${IPUTILS_VERSION_LINE}`], code: 0 };
+      case 'w': {
+        const r = strtolOrErr(cmd, arg!, 'invalid argument', 0n, BigInt(INT_MAX));
+        if ('error' in r) return fail(r.error);
+        parsed.deadlineMs = r.value * 1000; return null;
+      }
+      case 'W': {
+        const r = pingStrtod(cmd, arg!, 'bad linger time', warnings);
+        if ('error' in r) return fail(r.error);
+        if (r.value < 0 || r.value > INT_MAX / 1000) return fail(`${cmd}: bad linger time: ${arg}`);
+        parsed.timeoutMs = Math.trunc(r.value * 1000); parsed.timeoutGiven = true; return null;
+      }
+      case 'h': case '?':
+        return usageExit(warnings);
+      default:
+        return fail(`${cmd}: option -${ch}: this simulator cannot build ${UNBUILDABLE[ch]}`);
+    }
   };
 
+  let optionsEnded = false;
   for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    const next = args[i + 1];
-
-    if (a === '-V') { result.showVersion = true; continue; }
-    if (a === '-h' || a === '--help') { result.showHelp = true; continue; }
-    if (a === '-q') { result.quiet = true; continue; }
-    if (a === '-v') { result.verbose = true; continue; }
-    if (a === '-n') { result.numeric = true; continue; }
-    if (a === '-D') { result.timestamp = true; continue; }
-    if (a === '-b') { result.broadcast = true; continue; }
-    if (a === '-f') { result.flood = true; continue; }
-    if (a === '-L') { continue; }
-    if (a === '-4') { result.v6 = false; continue; }
-    if (a === '-6') { result.v6 = true; continue; }
-
-    if (a === '-c') {
-      if (!next) { result.parseError = 'ping: option requires an argument -- c\n' + PING_USAGE; return result; }
-      const v = parseInt(next, 10);
-      if (isNaN(v) || String(parseInt(next, 10)) !== next.replace(/^-/, '-')) {
-        result.parseError = `ping: invalid argument: '${next}'`; return result;
+    const token = args[i];
+    if (optionsEnded || token === '-' || !token.startsWith('-')) { parsed.targets.push(token); continue; }
+    if (token === '--') { optionsEnded = true; continue; }
+    for (let j = 1; j < token.length; j++) {
+      const ch = token[j];
+      const at = OPTSTRING.indexOf(ch);
+      if (at < 0 || ch === ':') return usageExit([...warnings, `${cmd}: invalid option -- '${ch}'`]);
+      let arg: string | undefined;
+      if (OPTSTRING[at + 1] === ':') {
+        if (j + 1 < token.length) arg = token.slice(j + 1);
+        else if (i + 1 < args.length) arg = args[++i];
+        else return usageExit([...warnings, `${cmd}: option requires an argument -- '${ch}'`]);
+        j = token.length;
       }
-      if (v <= 0) {
-        result.parseError = `ping: invalid argument: '${next}' (must be > 0)`; return result;
-      }
-      result.count = v; result.countGiven = true; i++; continue;
-    }
-
-    if (a === '-s') {
-      if (!next) { result.parseError = 'ping: option requires an argument -- s\n' + PING_USAGE; return result; }
-      const v = parseInt(next, 10);
-      if (isNaN(v) || !Number.isInteger(parseFloat(next))) {
-        result.parseError = `ping: invalid argument: '${next}'`; return result;
-      }
-      if (v < 0) {
-        result.parseError = `ping: invalid argument: '${next}' (must be >= 0)`; return result;
-      }
-      result.size = v; i++; continue;
-    }
-
-    if (a === '-t') {
-      if (!next) { result.parseError = 'ping: option requires an argument -- t\n' + PING_USAGE; return result; }
-      const v = parseInt(next, 10);
-      if (isNaN(v) || !Number.isInteger(parseFloat(next))) {
-        result.parseError = `ping: invalid argument: '${next}'`; return result;
-      }
-      if (v < 1 || v > 255) {
-        result.parseError = `ping: invalid argument: '${next}' for option -t (valid range: 1-255)`; return result;
-      }
-      result.ttl = v; i++; continue;
-    }
-
-    if (a === '-W') {
-      if (!next) { result.parseError = 'ping: option requires an argument -- W\n' + PING_USAGE; return result; }
-      const v = parseFloat(next);
-      if (isNaN(v) || !/^[\d.]+$/.test(next)) {
-        result.parseError = `ping: invalid argument: '${next}'`; return result;
-      }
-      result.timeoutMs = Math.round(v * 1000); i++; continue;
-    }
-
-    if (a === '-i') {
-      if (!next) { result.parseError = 'ping: option requires an argument -- i\n' + PING_USAGE; return result; }
-      const v = parseFloat(next);
-      if (isNaN(v) || !/^[\d.]+$/.test(next)) {
-        result.parseError = `ping: invalid argument: '${next}'`; return result;
-      }
-      result.intervalMs = Math.round(v * 1000); i++; continue;
-    }
-
-    if (a === '-w') {
-      if (!next) { result.parseError = 'ping: option requires an argument -- w\n' + PING_USAGE; return result; }
-      const v = parseFloat(next);
-      if (isNaN(v) || !/^[\d.]+$/.test(next)) {
-        result.parseError = `ping: invalid argument: '${next}'`; return result;
-      }
-      result.deadlineMs = Math.round(v * 1000); i++; continue;
-    }
-
-    if (a === '-I') {
-      if (!next) { result.parseError = 'ping: option requires an argument -- I\n' + PING_USAGE; return result; }
-      if ((next.startsWith('"') && !next.endsWith('"')) ||
-          (next.startsWith("'") && !next.endsWith("'"))) {
-        result.parseError = `ping: invalid syntax — unclosed quote in interface name '${next}'`; return result;
-      }
-      result.iface = next; i++; continue;
-    }
-
-    if (a === '-p') {
-      if (next === undefined) { result.parseError = 'ping: option requires an argument -- p\n' + PING_USAGE; return result; }
-      if (next === '') {
-        result.parseError = `ping: invalid argument: pattern cannot be empty`; return result;
-      }
-      if (!isValidHexPattern(next)) {
-        result.parseError = `ping: invalid argument: '${next}' for option -p (must be hex digits)`; return result;
-      }
-      result.pattern = next.toLowerCase(); i++; continue;
-    }
-
-    if (a === '-M') {
-      if (!next) { result.parseError = 'ping: option requires an argument -- M\n' + PING_USAGE; return result; }
-      if (next !== 'do' && next !== 'want' && next !== 'dont') {
-        result.parseError = `ping: invalid argument: '${next}' for option -M (valid: do, want, dont)`; return result;
-      }
-      result.mtuDisc = next as 'do' | 'want' | 'dont'; i++; continue;
-    }
-
-    if (a.startsWith('-')) {
-      continue;
-    }
-
-    if (!result.targetGiven) {
-      result.targetStr = a;
-      result.targetGiven = true;
-    } else {
-      result.extraTargets.push(a);
+      const outcome = apply(ch, arg);
+      if (outcome !== null) return outcome;
     }
   }
-
-  return result;
+  return { kind: 'parsed', args: parsed, warnings };
 }
 
-function formatPingHeader(target: string, size: number, hostname?: string): string {
-  const totalSize = size + IP_HEADER_SIZE + ICMP_HEADER_SIZE;
-  const displayName = hostname ?? target;
-  return `PING ${displayName} (${target}) ${size}(${totalSize}) bytes of data.`;
+export interface EchoProbe {
+  ident: number;
+  timeoutMs: number;
+  ttl?: number;
+  dataSize: number;
+  df: boolean;
+  socket: TraceSocketOptions;
 }
 
-function formatReplyLine(r: PingResult, size: number, timestamp: boolean): string {
-  const replySize = size + ICMP_HEADER_SIZE;
-  let line: string;
-  if (r.success) {
-    const ms = r.rttMs.toFixed(3);
-    line = `${replySize} bytes from ${r.fromIP}: icmp_seq=${r.seq} ttl=${r.ttl} time=${ms} ms`;
-  } else {
-    const echec = formatPingFailureLine(r);
-    if (!echec) return '';
-    line = echec;
-  }
-  if (timestamp) {
-    const ts = (Date.now() / 1000).toFixed(6);
-    return `[${ts}] ${line}`;
-  }
-  return line;
+export interface PingHost {
+  readonly uid: number;
+  interfaceExists(name: string): boolean;
+  isLocalAddress(ip: IPAddress): boolean;
+  isBroadcast(ip: IPAddress): boolean;
+  route(target: IPAddress, socket: TraceSocketOptions): EchoRoute | null;
+  canReach6(target: IPv6Address): boolean;
+  resolveHostname(name: string): Promise<IPAddress | null>;
+  resolveHostname6(name: string): Promise<IPv6Address | null>;
+  reverseName(ip: string): string | null;
+  allocateIdent(): number;
+  echo(target: IPAddress, seq: number, probe: EchoProbe): Promise<PingResult>;
+  echo6(target: IPv6Address, seq: number, timeoutMs: number): Promise<PingResult>;
+  sleep(ms: number): Promise<void>;
+  now(): number;
 }
 
+export interface PingRun {
+  run(shouldStop: () => boolean): Promise<number>;
+  interrupt(): void;
+}
 
-async function runPing(
-  ctx: LinuxCommandContext,
-  args: string[],
-  cmdName: 'ping' | 'ping6',
-): Promise<string> {
-  const parsed = parsePingArgs(args, cmdName);
-
-  if (parsed.showVersion) return IPUTILS_VERSION;
-  if (parsed.showHelp) return PING_USAGE;
-  if (parsed.parseError) return parsed.parseError;
-
-  if (parsed.extraTargets.length > 0) {
-    return `ping: invalid argument: '${parsed.extraTargets[0]}'`;
+function patternBytes(pattern: string): number[] {
+  const bytes: number[] = [];
+  let rest = pattern;
+  while (rest.length > 0 && bytes.length < MAX_PATTERN_BYTES) {
+    const m = /^[0-9a-fA-F]{1,2}/.exec(rest);
+    if (m === null) break;
+    bytes.push(parseInt(m[0], 16));
+    rest = rest.slice(m[0].length);
   }
+  return bytes;
+}
 
-  if (!parsed.targetGiven) return `Usage: ping [-c count] [-t ttl] [-s size] <destination>\n\n${PING_USAGE}`;
-  const rawTarget = parsed.targetStr.replace(/^['"]|['"]$/g, '').trim();
-  if (rawTarget === '') {
-    return `ping: invalid argument: empty hostname`;
-  }
+function timestampPrefix(enabled: boolean): string {
+  if (!enabled) return '';
+  const nowMs = Date.now();
+  return `[${Math.floor(nowMs / 1000)}.${String((nowMs % 1000) * 1000).padStart(6, '0')}] `;
+}
 
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(rawTarget) && !isValidIPv4(rawTarget)) {
-    return `ping: invalid address: ${rawTarget}`;
-  }
+interface PingPlan {
+  label: string;
+  header: string;
+  renderAddress: PingAddressRenderer;
+  echo: (seq: number) => Promise<PingResult>;
+  localError?: string;
+}
 
-  const isRoot = ctx.executor.userMgr.currentUid === 0;
-
-  if (parsed.flood && !isRoot) {
-    return 'ping: -f flood: Permission denied (privileged operation, must run as root)';
-  }
-  if (parsed.intervalMs < MIN_UNPRIVILEGED_INTERVAL_MS && !parsed.flood && !isRoot) {
-    return `ping: -i ${(parsed.intervalMs / 1000).toFixed(1)}: Permission denied (privileged operation, interval < 200ms requires root)`;
-  }
-
-  if (parsed.iface) {
-    const ports = ctx.net.getPorts();
-    if (!ports.has(parsed.iface)) {
-      return `ping: ${parsed.iface}: invalid argument — device not found`;
-    }
-  }
-
-  {
-    const ports = ctx.net.getPorts();
-    const primary = ports.get('eth0');
-    if (primary && !primary.getIsUp()) {
-      return `ping: connect: Network is unreachable`;
-    }
-  }
-
-  const dfSet = parsed.mtuDisc === 'do' || parsed.mtuDisc === 'want';
-  const totalPktSize = parsed.size + IP_HEADER_SIZE + ICMP_HEADER_SIZE;
-
-  // The kernel knows its own outbound interface MTU before ever sending, so
-  // a locally-oversized DF packet is refused without touching the wire —
-  // but path MTU beyond this host is genuinely unknown until a router along
-  // the way replies with Fragmentation Needed (RFC 1191), so that part is
-  // left to the real send/receive path below, not guessed from every
-  // device's MTU in the topology.
-  if (dfSet) {
-    let pathMtu = DEFAULT_MTU;
-    const ports = ctx.net.getPorts();
-    if (parsed.iface && ports.has(parsed.iface)) {
-      const p = ports.get(parsed.iface)!;
-      pathMtu = p.getMTU();
-    } else if (ports.size > 0) {
-      for (const [name, p] of ports) {
-        if (name !== 'lo') { pathMtu = p.getMTU(); break; }
-      }
-    }
-    if (totalPktSize > pathMtu) {
-      return `ping: local error: Message too long, mtu=${pathMtu}`;
-    }
-  }
-
-  if (parsed.v6 || rawTarget.includes(':')) {
-    const targetIP6 = await ctx.net.resolveHostname6(rawTarget);
-    if (!targetIP6) {
-      return `${cmdName}: ${rawTarget}: Name or service not known`;
-    }
-    const results = await ctx.net.ping6Sequence(targetIP6, parsed.count, parsed.timeoutMs);
-    const isHostname6 = rawTarget !== targetIP6.toString();
-    return ctx.fmt.formatPing6Output(targetIP6, parsed.count, results, parsed.size, isHostname6 ? rawTarget : undefined);
-  }
-
-  const targetIP = await ctx.net.resolveHostname(rawTarget);
-  if (!targetIP) {
-    return `${cmdName}: ${rawTarget}: Name or service not known`;
-  }
-
-  const targetStr = targetIP.toString();
-  if (isBroadcastAddress(targetStr) && !parsed.broadcast) {
-    return `WARNING: pinging broadcast address ${targetStr}\n` +
-           `Do you want to ping broadcast? Then -b. If not, check your command.`;
-  }
-
-  if (dfSet && totalPktSize > DEFAULT_MTU) {
-    return `ping: local error: Message too long, mtu=${DEFAULT_MTU}`;
-  }
-
-  if (!ctx.net.hasRoute(targetIP)) {
-    return `ping: connect: Network is unreachable`;
-  }
-
-  const isHostname = rawTarget !== targetStr;
-  // -f sends as fast as the wire allows instead of waiting -i seconds
-  // between echoes — that's the whole point of a flood ping.
-  const sendIntervalMs = parsed.flood ? 0 : parsed.intervalMs;
-  // Real ping only sets DF when explicitly asked (-M do/want) — unlike this
-  // simulator's IPv4 default (DF set unless told otherwise), so this always
-  // states the bit explicitly instead of falling through to that default.
-  const dfOverride = dfSet;
+export function createPing(
+  argv: readonly string[], host: PingHost, emit: (line: string) => void,
+  options: { cmd?: 'ping' | 'ping6'; detached?: boolean } = {},
+): PingRun {
+  const cmd = options.cmd ?? 'ping';
   const results: PingResult[] = [];
-  for (let seq = 1; seq <= parsed.count; seq++) {
-    const batch = await ctx.net.pingSequence(
-      targetIP, 1, parsed.timeoutMs, parsed.ttl,
-      { dataSize: parsed.size, df: dfOverride },
-    );
-    if (batch.length > 0) {
-      results.push({ ...batch[0], seq });
-    } else {
-      results.push({ success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '', error: 'Destination unreachable' });
-    }
-    if (seq < parsed.count && sendIntervalMs > 0) {
-      await ctx.net.getScheduler().delay(sendIntervalMs);
-    }
-  }
+  const sendTimes: number[] = [];
+  let parsed: ParsedPingArgs | null = null;
+  let plan: PingPlan | null = null;
+  let finished = false;
+  let dots = '';
+  let ewmaUs8: number | undefined;
 
-  return formatPingOutput(targetStr, parsed.count, results, parsed, isHostname ? rawTarget : undefined);
+  const summary = (interrupted = false): number => {
+    if (finished || plan === null || parsed === null) return finished ? 0 : 2;
+    finished = true;
+    const elapsed = sendTimes.length === 0 ? 0 : sendTimes[sendTimes.length - 1] - sendTimes[0];
+    const stats = formatPingStats(plan.label, results.length, results, elapsed, {
+      timing: parsed.size >= PING_TIMING_MIN_SIZE,
+      flood: parsed.flood,
+      dots,
+      ewmaMs: ewmaUs8 === undefined ? undefined : ewmaUs8 / 8 / 1000,
+    });
+    for (const line of interrupted && !parsed.flood ? stats.slice(1) : stats) emit(line);
+    const received = results.filter((r) => r.success).length;
+    return received === 0 || (parsed.deadlineMs !== undefined && parsed.countGiven && received < parsed.count) ? 1 : 0;
+  };
+
+  const prepare = async (): Promise<number | null> => {
+    const outcome = parsePingArgs(argv, cmd);
+    if (outcome.kind === 'exit') {
+      for (const line of outcome.lines) emit(line);
+      return outcome.code;
+    }
+    for (const line of outcome.warnings) emit(line);
+    const args = outcome.args;
+    parsed = args;
+    if (args.targets.length === 0) { emit(`${cmd}: usage error: Destination address required`); return 1; }
+    if (args.targets.length > 1) {
+      emit(`${cmd}: ${args.targets.length} destinations: this simulator cannot build IP source routing`);
+      return 2;
+    }
+    if (!options.detached || args.countGiven || args.deadlineMs !== undefined) {
+      if (!args.countGiven) args.count = 0;
+    } else {
+      args.count = DETACHED_DEFAULT_COUNT;
+    }
+    if (args.pattern !== undefined) {
+      const bad = /[^0-9a-fA-F]/.exec(args.pattern);
+      if (bad !== null) {
+        emit(`${cmd}: patterns must be specified as hex digits: ${args.pattern.slice(bad.index)}`);
+        return 2;
+      }
+      if (!args.quiet) {
+        emit(`PATTERN: 0x${patternBytes(args.pattern).map((b) => b.toString(16).padStart(2, '0')).join('')}`);
+      }
+    }
+    const target = args.targets[0];
+    const v6 = args.family === 6 || (args.family !== 4 && target.includes(':'));
+    const prepared = v6 ? await prepareV6(args, target) : await prepareV4(args, target);
+    if (typeof prepared === 'number') return prepared;
+    plan = prepared;
+    emit(plan.header);
+    const interval = args.flood && !args.intervalGiven ? 0 : args.intervalMs;
+    args.intervalMs = interval;
+    if (host.uid !== 0 && interval < MIN_USER_INTERVAL_MS) {
+      emit(`${cmd}: cannot flood; minimal interval allowed for user is ${MIN_USER_INTERVAL_MS}ms`);
+      return 2;
+    }
+    return null;
+  };
+
+  const prepareV4 = async (args: ParsedPingArgs, target: string): Promise<PingPlan | number> => {
+    const literal = inetAton(target);
+    const address = literal ?? await host.resolveHostname(target);
+    if (address === null) { emit(`${cmd}: ${target}: Name or service not known`); return 2; }
+    const numeric = args.numeric || literal !== null;
+    const socket: TraceSocketOptions = { iface: args.device, sourceIp: args.source };
+    if (args.device !== undefined && !host.interfaceExists(args.device)) {
+      emit(`${cmd}: SO_BINDTODEVICE ${args.device}: No such device`);
+      return 2;
+    }
+    const broadcast = host.isBroadcast(address);
+    if (args.source === undefined && broadcast) {
+      if (!args.broadcast) {
+        emit(`${cmd}: Do you want to ping broadcast? Then -b. If not, check your local firewall rules`);
+        return 2;
+      }
+      emit('WARNING: pinging broadcast address');
+    }
+    const route = host.route(address, socket);
+    if (args.source === undefined && (route === null || route.source === null)) {
+      emit(`${cmd}: connect: Network is unreachable`);
+      return 2;
+    }
+    if (broadcast && host.uid !== 0) {
+      if (args.intervalMs < MIN_USER_BROADCAST_INTERVAL_MS) {
+        emit(`${cmd}: broadcast ping with too short interval: ${args.intervalMs}`);
+        return 2;
+      }
+      if (args.mtuDisc !== undefined && args.mtuDisc !== 'do') {
+        emit(`${cmd}: broadcast ping does not fragment`);
+        return 2;
+      }
+    }
+    if (args.source !== undefined && !host.isLocalAddress(args.source)) {
+      emit(`${cmd}: bind: Cannot assign requested address`);
+      return 2;
+    }
+    const mtuDisc = args.mtuDisc ?? (broadcast ? 'do' : 'want');
+    const packetSize = args.size + IP_AND_ICMP_HEADERS;
+    const mtu = route?.mtu ?? Number.MAX_SAFE_INTEGER;
+    const ident = host.allocateIdent();
+    const renderAddress: PingAddressRenderer = numeric
+      ? (ip) => ip
+      : (ip) => `${host.reverseName(ip) ?? ip} (${ip})`;
+    const bound = args.device !== undefined || args.source !== undefined
+      ? { source: (args.source ?? route?.source)!.toString(), device: args.device }
+      : undefined;
+    return {
+      label: target,
+      header: formatPingHeader(address, args.size, target === address.toString() ? undefined : target, bound),
+      renderAddress,
+      localError: mtuDisc === 'do' && packetSize > mtu ? `local error: message too long, mtu=${mtu}` : undefined,
+      echo: (seq) => host.echo(address, seq, {
+        ident, timeoutMs: args.timeoutMs, ttl: args.ttl, dataSize: args.size,
+        df: mtuDisc !== 'dont' && packetSize <= mtu, socket,
+      }),
+    };
+  };
+
+  const prepareV6 = async (args: ParsedPingArgs, target: string): Promise<PingPlan | number> => {
+    if (args.device !== undefined || args.source !== undefined) {
+      emit(`${cmd}: option -I: this simulator cannot build an IPv6 source or interface binding`);
+      return 2;
+    }
+    let address: IPv6Address | null = null;
+    try { address = new IPv6Address(target); } catch { address = await host.resolveHostname6(target); }
+    if (address === null) { emit(`${cmd}: ${target}: Name or service not known`); return 2; }
+    if (!host.canReach6(address)) { emit(`${cmd}: connect: Network is unreachable`); return 2; }
+    const resolved = address;
+    return {
+      label: target,
+      header: formatPing6Header(resolved, args.size, target === resolved.toString() ? undefined : target),
+      renderAddress: (ip) => ip,
+      echo: (seq) => host.echo6(resolved, seq, args.timeoutMs),
+    };
+  };
+
+  const report = (r: PingResult, args: ParsedPingArgs, current: PingPlan): void => {
+    if (r.success) {
+      const us = Math.round(r.rttMs * 1000);
+      ewmaUs8 = ewmaUs8 === undefined ? us * 8 : ewmaUs8 + us - Math.trunc(ewmaUs8 / 8);
+    }
+    if (args.flood) {
+      if (!r.success) dots += r.error !== undefined && formatPingReplyLine(r, args.size) !== null ? 'E' : '.';
+      return;
+    }
+    if (args.quiet) return;
+    if (r.error?.startsWith('local error')) { emit(`${cmd}: ${r.error}`); return; }
+    const line = formatPingReplyLine(r, args.size, current.renderAddress);
+    if (line !== null) emit(`${timestampPrefix(args.timestamp)}${line}`);
+  };
+
+  const run = async (shouldStop: () => boolean): Promise<number> => {
+    const early = await prepare();
+    if (early !== null) { finished = true; return early; }
+    const args = parsed!;
+    const current = plan!;
+    const startedAt = host.now();
+    const deadlineHit = () => args.deadlineMs !== undefined && host.now() - startedAt >= args.deadlineMs;
+    for (let seq = 1; ; seq++) {
+      if (shouldStop() || finished) break;
+      if (args.outstanding && seq > 1 && !results[results.length - 1].success && !args.quiet && !args.flood) {
+        emit(`${timestampPrefix(args.timestamp)}no answer yet for icmp_seq=${seq - 1}`);
+      }
+      sendTimes.push(host.now());
+      const r = current.localError !== undefined
+        ? { success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '', error: current.localError }
+        : { ...(await current.echo(seq)), seq };
+      if (finished) break;
+      results.push(r);
+      report(r, args, current);
+      const received = results.filter((x) => x.success).length;
+      const errors = results.filter((x) => !x.success && x.error !== undefined).length;
+      if (args.deadlineMs === undefined && args.count > 0 && results.length >= args.count) break;
+      if (args.deadlineMs !== undefined && args.count > 0 && received >= args.count) break;
+      if (args.deadlineMs !== undefined && errors > 0) break;
+      if (deadlineHit() || shouldStop()) break;
+      if (args.intervalMs > 0) await host.sleep(args.intervalMs);
+      if (deadlineHit()) break;
+    }
+    if (finished) return results.some((r) => r.success) ? 0 : 1;
+    return summary();
+  };
+
+  return {
+    run,
+    interrupt: () => { if (plan !== null) summary(true); finished = true; },
+  };
 }
 
-function formatPingOutput(
-  targetStr: string,
-  count: number,
-  results: PingResult[],
-  opts: ParsedPingArgs,
-  hostname?: string,
-): string {
-  const { size, quiet, timestamp, pattern } = opts;
-  const lines: string[] = [formatPingHeader(targetStr, size, hostname)];
+export interface PingTiming {
+  sleep(ms: number): Promise<void>;
+  now(): number;
+}
 
-  if (pattern) {
-    lines.push(`PATTERN: 0x${pattern}`);
-  }
+export function pingHostOf(
+  ctx: LinuxCommandContext,
+  timing: PingTiming = {
+    sleep: (ms) => ctx.net.getScheduler().delay(ms),
+    now: () => ctx.net.getScheduler().now(),
+  },
+  uid = ctx.executor.userMgr.currentUid,
+): PingHost {
+  return {
+    uid,
+    interfaceExists: (name) => ctx.net.getPorts().has(name),
+    isLocalAddress: (ip) => ctx.net.isLocalAddress(ip),
+    isBroadcast: (ip) => ctx.net.isBroadcastDestination(ip),
+    route: (target, socket) => ctx.net.echoRouteFor(target, socket),
+    canReach6: (target) => ctx.net.canReach6(target),
+    resolveHostname: (name) => ctx.net.resolveHostname(name),
+    resolveHostname6: (name) => ctx.net.resolveHostname6(name),
+    reverseName: (ip) => reverseNameOf(ctx.executor.nss, ip),
+    allocateIdent: () => ctx.net.allocateEchoIdent(),
+    echo: async (target, seq, probe) => {
+      const [result] = await ctx.net.pingSequence(target, 1, probe.timeoutMs, probe.ttl, {
+        dataSize: probe.dataSize, df: probe.df, firstSeq: seq, ident: probe.ident, socket: probe.socket,
+      });
+      return result ?? { success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '' };
+    },
+    echo6: async (target, seq, timeoutMs) => {
+      const [result] = await ctx.net.ping6Sequence(target, 1, timeoutMs);
+      return { ...(result ?? { success: false, rttMs: 0, ttl: 0, bytes: 0, fromIP: '' }), seq };
+    },
+    sleep: timing.sleep,
+    now: timing.now,
+  };
+}
 
-  if (results.length === 0) {
-    lines.push('connect: Network is unreachable');
-  } else if (!quiet) {
-    for (const r of results) {
-      const line = formatReplyLine(r, size, timestamp);
-      if (line) lines.push(line);
-    }
-  }
-
-  lines.push(...formatPingStats(targetStr, count, results));
-  return lines.join('\n');
+async function runDetached(
+  ctx: LinuxCommandContext, args: string[], cmd: 'ping' | 'ping6',
+): Promise<{ output: string; exitCode: number }> {
+  const lines: string[] = [];
+  const exitCode = await createPing(args, pingHostOf(ctx), (line) => lines.push(line), { cmd, detached: true })
+    .run(() => false);
+  return { output: lines.join('\n'), exitCode };
 }
 
 const PING_FLAGS_LIST = [
-  '-c', '-s', '-t', '-w', '-W', '-i', '-I', '-p', '-q', '-v', '-n',
-  '-D', '-b', '-M', '-f', '-L', '-V', '-h', '-4', '-6',
+  '-4', '-6', '-B', '-b', '-C', '-c', '-D', '-d', '-f', '-h', '-I', '-i', '-L', '-M', '-n',
+  '-O', '-p', '-q', '-S', '-s', '-t', '-V', '-v', '-W', '-w',
 ];
 
 function completePingFlags(_ctx: LinuxCommandContext, args: string[]): string[] {
@@ -430,22 +615,25 @@ export const pingCommand: LinuxCommand = {
   name: 'ping',
   needsNetworkContext: true,
   manSection: 8,
-  usage: 'ping [-aAbBdDfhLnOqrRUvV64] [-c count] [-i interval] [-I interface] [-M pmtudisc_opt] [-p pattern] [-s packetsize] [-t ttl] [-w deadline] [-W timeout] destination',
+  usage: 'ping [options] <destination>',
   help: 'Send ICMP ECHO_REQUEST packets to network hosts.',
+  helpText: PING_USAGE,
   options: [
-    { flag: '-c', description: 'Stop after sending count packets.', takesArg: true, argName: 'count' },
-    { flag: '-s', description: 'Specifies the number of data bytes to be sent (default 56).', takesArg: true, argName: 'packetsize' },
-    { flag: '-t', description: 'Set the IP Time to Live.', takesArg: true, argName: 'ttl' },
-    { flag: '-w', description: 'Stop after deadline seconds, regardless of packets sent/received.', takesArg: true, argName: 'deadline' },
-    { flag: '-W', description: 'Time to wait for a response, in seconds.', takesArg: true, argName: 'timeout' },
-    { flag: '-i', description: 'Wait interval seconds between packets (default 1).', takesArg: true, argName: 'interval' },
-    { flag: '-I', description: 'Bind to a specific interface address.', takesArg: true, argName: 'interface' },
-    { flag: '-p', description: 'Fill ECHO_REQUEST packet with given hex pattern.', takesArg: true, argName: 'pattern' },
-    { flag: '-M', description: 'Select Path MTU Discovery strategy (do/want/dont).', takesArg: true, argName: 'pmtudisc_opt' },
-    { flag: '-q', description: 'Quiet output (only summary at end).' },
-    { flag: '-D', description: 'Print Unix timestamp before each line.' },
-    { flag: '-b', description: 'Allow pinging a broadcast address.' },
-    { flag: '-f', description: 'Flood ping. Root privilege required.' },
+    { flag: '-c', description: 'Stop after <count> replies.', takesArg: true, argName: 'count' },
+    { flag: '-s', description: 'Use <size> as number of data bytes to be sent.', takesArg: true, argName: 'size' },
+    { flag: '-t', description: 'Define time to live.', takesArg: true, argName: 'ttl' },
+    { flag: '-w', description: 'Reply wait <deadline> in seconds.', takesArg: true, argName: 'deadline' },
+    { flag: '-W', description: 'Time to wait for response.', takesArg: true, argName: 'timeout' },
+    { flag: '-i', description: 'Seconds between sending each packet.', takesArg: true, argName: 'interval' },
+    { flag: '-I', description: 'Either interface name or address.', takesArg: true, argName: 'interface' },
+    { flag: '-p', description: 'Contents of padding byte.', takesArg: true, argName: 'pattern' },
+    { flag: '-M', description: 'Define mtu discovery, can be one of <do|dont|want>.', takesArg: true, argName: 'pmtud opt' },
+    { flag: '-q', description: 'Quiet output.' },
+    { flag: '-D', description: 'Print timestamps.' },
+    { flag: '-O', description: 'Report outstanding replies.' },
+    { flag: '-b', description: 'Allow pinging broadcast.' },
+    { flag: '-f', description: 'Flood ping.' },
+    { flag: '-n', description: 'No dns name resolution.' },
     { flag: '-V', description: 'Print version and exit.' },
     { flag: '-4', description: 'Use IPv4.' },
     { flag: '-6', description: 'Use IPv6.' },
@@ -453,46 +641,34 @@ export const pingCommand: LinuxCommand = {
 
   complete: completePingFlags,
 
-  run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
-    for (const sc of ['socket', 'connect', 'bind', 'sendto', 'recvfrom', 'close']) {
-      ctx.executor.publishAuditSyscall(sc);
-    }
-    return runPing(ctx, args, 'ping');
+  async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
+    return (await pingCommand.runWithStatus!(ctx, args)).output;
   },
 
   async runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
-    const output = await pingCommand.run(ctx, args) as string;
-    return { output, exitCode: pingExitCode(output) };
+    for (const sc of ['socket', 'connect', 'bind', 'sendto', 'recvfrom', 'close']) {
+      ctx.executor.publishAuditSyscall(sc);
+    }
+    return runDetached(ctx, args, 'ping');
   },
 };
-
-export function pingExitCode(output: string): number {
-  const received = /(\d+) (?:packets )?received/.exec(output);
-  if (received) return Number(received[1]) > 0 ? 0 : 1;
-  return 2;
-}
 
 export const ping6Command: LinuxCommand = {
   name: 'ping6',
   needsNetworkContext: true,
   manSection: 8,
-  usage: 'ping6 [-c count] [-s size] [-W timeout] [-i interval] <destination>',
+  usage: 'ping6 [options] <destination>',
   help: 'Send ICMPv6 ECHO_REQUEST packets to network hosts (alias for ping -6).',
-  options: [
-    { flag: '-c', description: 'Stop after sending count packets.', takesArg: true, argName: 'count' },
-    { flag: '-s', description: 'ICMP payload size in bytes (default 56).', takesArg: true, argName: 'size' },
-    { flag: '-W', description: 'Time to wait for a response, in seconds.', takesArg: true, argName: 'timeout' },
-    { flag: '-i', description: 'Wait interval seconds between packets.', takesArg: true, argName: 'interval' },
-  ],
+  helpText: PING_USAGE,
+  options: pingCommand.options,
 
   complete: completePingFlags,
 
-  run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
-    return runPing(ctx, args, 'ping6');
+  async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
+    return (await ping6Command.runWithStatus!(ctx, args)).output;
   },
 
   async runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
-    const output = await ping6Command.run(ctx, args) as string;
-    return { output, exitCode: pingExitCode(output) };
+    return runDetached(ctx, args, 'ping6');
   },
 };

@@ -129,7 +129,8 @@ describe('get system session', () => {
 
   it('compte les sessions reellement ouvertes', async () => {
     const { sh, a } = await laboratoire();
-    await runOn(a, 'ping -c 2 10.2.2.10');
+    await runOn(a, 'ping -c 1 10.2.2.10');
+    await runOn(a, 'ping -c 1 10.2.2.10');
 
     expect(sh.execute('get system session status'))
       .toBe('The total number of sessions for the current VDOM: 2');
