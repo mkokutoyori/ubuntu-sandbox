@@ -67,8 +67,8 @@ async function leftInsideAnAddress(fw: FortiGate): Promise<void> {
   for (const line of ['config firewall address', 'edit "BONAM_SUBNET"']) await fw.executeCommand(line);
 }
 
-describe('la configuration exportee ne depend pas du terminal', () => {
-  it('a la racine, l\'export porte interfaces et routes — TEMOIN', async () => {
+describe('the exported configuration does not depend on the terminal', () => {
+  it('at the root, the export carries interfaces and routes — WITNESS', async () => {
     const fw = await configured();
 
     const text = fw.getRunningConfig();
@@ -76,7 +76,7 @@ describe('la configuration exportee ne depend pas du terminal', () => {
     expect(text).toMatch(/set dst 192\.168\.30\.0 255\.255\.255\.0/);
   }, 30000);
 
-  it('CLI laissee dans `edit "BONAM_SUBNET"` : l\'export porte encore tout', async () => {
+  it('CLI left inside `edit "BONAM_SUBNET"`: the export still carries everything', async () => {
     const fw = await configured();
     await leftInsideAnAddress(fw);
 
@@ -86,7 +86,7 @@ describe('la configuration exportee ne depend pas du terminal', () => {
     expect(text).toMatch(/edit "BONAM_SUBNET"/);
   }, 30000);
 
-  it('l\'export de la topologie aussi', async () => {
+  it('so does the topology export', async () => {
     const fw = await configured();
     await leftInsideAnAddress(fw);
 
@@ -95,7 +95,7 @@ describe('la configuration exportee ne depend pas du terminal', () => {
     expect(entry?.runningConfigText).toMatch(/set ip 192\.168\.1\.99 255\.255\.255\.0/);
   }, 30000);
 
-  it('et l\'export ne sort pas l\'operateur de son bloc', async () => {
+  it('and the export does not move the operator out of the block', async () => {
     const fw = await configured();
     await leftInsideAnAddress(fw);
     const before = fw.getPrompt();
@@ -107,14 +107,14 @@ describe('la configuration exportee ne depend pas du terminal', () => {
   }, 30000);
 });
 
-describe('l\'ASA exporte sa configuration quel que soit le mode du terminal', () => {
-  it('terminal jamais passe en `enable`', async () => {
+describe('the ASA exports its configuration whatever the terminal mode', () => {
+  it('terminal never in `enable`', async () => {
     const fw = new AsaFirewall('firewall-cisco', 'ASA1', 0, 0);
 
     expect(fw.getRunningConfig()).toMatch(/^hostname ASA1$/m);
   }, 30000);
 
-  it('terminal rendu au mode utilisateur apres une configuration', async () => {
+  it('terminal back to user mode after a configuration', async () => {
     const fw = new AsaFirewall('firewall-cisco', 'ASA1', 0, 0);
     for (const line of ['enable', '', 'configure terminal', 'hostname ASA-LAB', 'end', 'disable']) {
       await fw.executeCommand(line);

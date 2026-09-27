@@ -52,8 +52,8 @@ async function roundTrip(pc: LinuxPC): Promise<LinuxPC> {
   return [...imported.deviceInstances.values()][0] as unknown as LinuxPC;
 }
 
-describe('un fichier revient a qui l\'a cree, avec son mode', () => {
-  it('~/.ssh et sa cle restent a `user`, en 0700 et 0600', async () => {
+describe('a file comes back to whoever created it, with its mode', () => {
+  it('~/.ssh and its key stay owned by `user`, 0700 and 0600', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
     await pc.executeCommand('ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519');
 
@@ -63,7 +63,7 @@ describe('un fichier revient a qui l\'a cree, avec son mode', () => {
       .toBe('user:user 700\nuser:user 600\nuser:user 644');
   }, 30000);
 
-  it('apres import, `user` peut encore ecrire dans son ~/.ssh', async () => {
+  it('after import, `user` can still write in its ~/.ssh', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
     await pc.executeCommand('ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519');
 
@@ -72,7 +72,7 @@ describe('un fichier revient a qui l\'a cree, avec son mode', () => {
     expect(await back.executeCommand('touch ~/.ssh/config; echo EC=$?')).toBe('EC=0');
   }, 30000);
 
-  it('un fichier de root garde proprietaire et mode — TEMOIN', async () => {
+  it('a root file keeps owner and mode — WITNESS', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
     await pc.executeCommand('sudo bash -c "echo 10.0.0.9 lab >> /etc/hosts"');
     const before = await pc.executeCommand('stat -c "%U:%G %a" /etc/hosts');
@@ -84,8 +84,8 @@ describe('un fichier revient a qui l\'a cree, avec son mode', () => {
   }, 30000);
 });
 
-describe('un export ancien, sans proprietaire, herite du repertoire existant', () => {
-  it('~/.ssh/known_hosts revient a `user`', async () => {
+describe('an older export, without owners, inherits the existing directory', () => {
+  it('~/.ssh/known_hosts comes back to `user`', async () => {
     const legacy: TopologyExport = {
       version: 1, projectName: 'lab', exportedAt: '2026-09-27T00:00:00Z',
       devices: [{
