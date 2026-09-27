@@ -140,9 +140,11 @@ describe('an LSU lost on the wire is retransmitted until acknowledged', () => {
       'interface GigabitEthernet0/1', 'ip ospf retransmit-interval 2', 'end']);
     await announceLoopback2();
     clock.advance(1_500);
-    expect(await ospfRoutes(firewall)).not.toContain('172.21.0.1/32');
+    expect(await neighbour.executeCommand('show ip ospf retransmission-list'))
+      .toMatch(/Link state retransmission due in 500 msec, Queue length [1-9]/);
     clock.advance(1_000);
-    expect(await ospfRoutes(firewall)).toContain('172.21.0.1/32');
+    expect(await firewall.executeCommand('get router info ospf database'))
+      .toMatch(/2\.2\.2\.2 +2\.2\.2\.2 +\d+ 0x[0-9a-f]+ 0x[0-9a-f]+ 3\n/);
   });
 
   it('the Huawei neighbour resends it once RxmtInterval elapses', async () => {

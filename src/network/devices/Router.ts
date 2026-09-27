@@ -6115,17 +6115,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   /** Trigger OSPF convergence. @internal */
   _ospfAutoConverge(): void { this.ospfIntegration.autoConverge(); }
 
-  /**
-   * Send an OSPF packet out an interface (encapsulated in IP).
-   * Called by OSPFEngine sendCallback.
-   * @internal
-   */
-  ospfSendPacket(outIface: string, ospfPkt: any, destIP: string): void {
-    // Packet sending is now handled internally by RouterOSPFIntegration.
-    // This method is kept for backward compatibility if anything calls it directly.
-    this._ospfAutoConverge();
-  }
-
   // ─── OS Info ───────────────────────────────────────────────────
 
   getOSType(): string { return this.shell.getOSType(); }

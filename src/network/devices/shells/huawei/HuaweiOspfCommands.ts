@@ -21,6 +21,7 @@ import { estAdresseIPv4, refuseMotInattenduVrp } from '../cli-utils';
 import { CommandTrie } from '../CommandTrie';
 import { SubnetMask } from '../../../core/types';
 import { parseAreaId, type LSAHeader, type OSPFNeighbor } from '@/network/ospf/types';
+import type { OspfInterfaceSettings } from '../../router/RouterOSPFIntegration';
 
 const VRP_IMPORTABLE_PROTOCOLS = new Set([
   'direct', 'connected', 'static', 'rip', 'isis', 'bgp', 'ospf', 'unr',
@@ -141,6 +142,7 @@ export function buildOSPFViewCommands(
     const ospf = ctx.r()._getOSPFEngineInternal();
     if (!ospf) return 'Error: OSPF is not enabled.';
     ospf.setPassiveInterface(args.join(' '));
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -149,6 +151,7 @@ export function buildOSPFViewCommands(
     const ospf = ctx.r()._getOSPFEngineInternal();
     if (!ospf) return 'Error: OSPF is not enabled.';
     ospf.removePassiveInterface(args.join(' '));
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -164,6 +167,7 @@ export function buildOSPFViewCommands(
       else if (a === 'cost' && args[i + 1]) { extra.defaultRouteAdvertise.cost = parseInt(args[++i], 10); }
       else if (a === 'type' && args[i + 1]) { extra.defaultRouteAdvertise.metricType = parseInt(args[++i], 10); }
     }
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -187,6 +191,7 @@ export function buildOSPFViewCommands(
       (ctx.r()._getOSPFExtraConfig() as any).maximumPaths = n;
       ctx.r().setMaximumPaths('ospf', n);
     }
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -198,6 +203,7 @@ export function buildOSPFViewCommands(
     const extra = ctx.r()._getOSPFExtraConfig() as any;
     if (!isNaN(ad)) extra.preference = ad;
     if (ase !== undefined && !isNaN(ase)) extra.preferenceAse = ase;
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -205,6 +211,7 @@ export function buildOSPFViewCommands(
     if (args.length < 1) return '';
     const extra = ctx.r()._getOSPFExtraConfig();
     extra.virtualLinks.set('0', args[0]);
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -223,6 +230,7 @@ export function buildOSPFViewCommands(
     const bw = parseInt(args[0], 10);
     if (isNaN(bw) || bw < 1) return 'Error: Invalid bandwidth value.';
     ospf.setReferenceBandwidth(bw);
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -240,6 +248,7 @@ export function buildOSPFViewCommands(
     } else if (protocol === 'direct' || protocol === 'connected') {
       extra.redistributeConnected = { subnets: true };
     }
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -249,6 +258,7 @@ export function buildOSPFViewCommands(
     if (protocol === 'static') extra.redistributeStatic = undefined;
     else if (protocol === 'direct' || protocol === 'connected') extra.redistributeConnected = undefined;
     else { extra.redistributeStatic = undefined; extra.redistributeConnected = undefined; }
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -263,6 +273,7 @@ export function buildOSPFViewCommands(
       ...(isIpPrefix ? { prefixListName: filterArg } : { aclId: filterArg }),
       direction: direction === 'export' ? 'out' : direction === 'import' ? 'in' : (direction as 'in' | 'out'),
     };
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -310,12 +321,14 @@ export function buildOSPFViewCommands(
       onStartup = parseInt(args[1], 10);
     }
     extra.maxMetric = { enabled: true, onStartup };
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
   trie.registerGreedy('undo stub-router', 'Remove stub router configuration', (_args) => {
     const extra = ctx.r()._getOSPFExtraConfig();
     extra.maxMetric = { enabled: false };
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -341,11 +354,13 @@ export function buildOSPFViewCommands(
     const entry = { ip, priority, pollInterval };
     if (existing >= 0) extra.nbmaNeighbors[existing] = entry;
     else extra.nbmaNeighbors.push(entry);
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
   trie.registerGreedy('bfd all-interfaces enable', 'Enable BFD on all OSPF interfaces', (_args) => {
     ctx.r()._getOSPFExtraConfig().bfdAllInterfaces = true;
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -354,6 +369,7 @@ export function buildOSPFViewCommands(
     const extra = ctx.r()._getOSPFExtraConfig();
     if (!extra.summaryAddresses) extra.summaryAddresses = [];
     extra.summaryAddresses.push({ network: args[0], mask: args[1] });
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -399,6 +415,7 @@ export function buildOSPFAreaViewCommands(
     } else {
       ospf.setAreaType(areaId, 'stub');
     }
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -417,6 +434,7 @@ export function buildOSPFAreaViewCommands(
       else if (k === 'no-summary') opt.noSummary = true;
     }
     nssa.set(areaId, opt);
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -425,6 +443,7 @@ export function buildOSPFAreaViewCommands(
     if (!areaId) return '';
     const n = parseInt(args[0] ?? '', 10);
     if (!isNaN(n)) ctx.r()._getOSPFExtraConfig().areaDefaultCost.set(areaId, n);
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -436,6 +455,7 @@ export function buildOSPFAreaViewCommands(
     if (mode === 'md5' || mode === 'hmac-sha256' || mode === 'hmac-md5') authMap.set(areaId, 'message-digest');
     else if (mode === 'simple') authMap.set(areaId, 'simple' as any);
     else if (mode === 'null' || mode === 'none') authMap.set(areaId, 'null');
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -446,6 +466,7 @@ export function buildOSPFAreaViewCommands(
     const ospf = ctx.r()._getOSPFEngineInternal();
     const advertise = !args.some(a => a.toLowerCase() === 'not-advertise' || a.toLowerCase() === 'suppress-vlink');
     ospf?.addAreaRange(areaId, args[0], args[1], advertise);
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -453,6 +474,7 @@ export function buildOSPFAreaViewCommands(
     const areaId = getOSPFArea();
     if (!areaId) return 'Error: Not in area view.';
     ctx.r()._getOSPFEngineInternal()?.removeAreaRange(areaId, args[0], args[1]);
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -462,6 +484,7 @@ export function buildOSPFAreaViewCommands(
     if (!areaId) return 'Error: Not in area view.';
     const extra = ctx.r()._getOSPFExtraConfig();
     extra.virtualLinks.set(areaId, args[0]);
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 }
@@ -497,6 +520,7 @@ export function buildOSPFv3ViewCommands(
     const v3 = ctx.r()._getOSPFv3EngineInternal();
     if (!v3) return 'Error: OSPFv3 is not enabled.';
     v3.setDefaultInformationOriginate(true);
+    ctx.r()._ospfAutoConverge();
     return '';
   });
 
@@ -519,27 +543,8 @@ export function registerOSPFInterfaceCommands(
   trie: CommandTrie,
   ctx: HuaweiOSPFShellContext,
 ): void {
-  const setPendingOspfIf = (ifName: string, updates: Record<string, any>) => {
-    const extra = ctx.r()._getOSPFExtraConfig();
-    const pending = extra.pendingIfConfig.get(ifName) || {};
-    Object.assign(pending, updates);
-    extra.pendingIfConfig.set(ifName, pending);
-
-    const ospf = ctx.r()._getOSPFEngineInternal();
-    if (ospf) {
-      const iface = ospf.getInterface(ifName);
-      if (iface) {
-        if (updates.cost !== undefined) iface.cost = updates.cost;
-        if (updates.priority !== undefined) iface.priority = updates.priority;
-        if (updates.helloInterval !== undefined) iface.helloInterval = updates.helloInterval;
-        if (updates.deadInterval !== undefined) iface.deadInterval = updates.deadInterval;
-        if (updates.authType !== undefined) iface.authType = updates.authType;
-        if (updates.authKey !== undefined) iface.authKey = updates.authKey;
-        if (updates.networkType !== undefined) iface.networkType = updates.networkType;
-        if (updates.retransmitInterval !== undefined) iface.retransmitInterval = updates.retransmitInterval;
-        if (updates.transmitDelay !== undefined) iface.transmitDelay = updates.transmitDelay;
-      }
-    }
+  const setPendingOspfIf = (ifName: string, updates: OspfInterfaceSettings) => {
+    ctx.r()._getOSPFIntegration().applyInterfaceSettings(ifName, updates);
   };
 
   trie.registerGreedy('ospf cost', 'Set OSPF cost on interface', (args) => {
@@ -636,8 +641,14 @@ export function registerOSPFInterfaceCommands(
     return '';
   });
 
-  const undoOspfIf: Record<string, Record<string, unknown>> = {
-    'undo ospf cost': { cost: 1 },
+  trie.registerGreedy('undo ospf cost', 'Restore the bandwidth-derived OSPF cost', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return 'Error: No interface selected.';
+    ctx.r()._getOSPFIntegration().resetInterfaceCost(ifName);
+    return '';
+  });
+
+  const undoOspfIf: Record<string, OspfInterfaceSettings> = {
     'undo ospf dr-priority': { priority: 1 },
     'undo ospf network-type': { networkType: 'broadcast' },
     'undo ospf authentication-mode': { authType: 0, authKey: '' },
@@ -943,8 +954,6 @@ function displayOspfInterface(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return 'Error: OSPF is not configured.';
 
-  router._ospfAutoConverge();
-
   const lines: string[] = [];
   for (const [name, iface] of ospf.getInterfaces()) {
     lines.push(` ${name} (${iface.ipAddress})`);
@@ -963,8 +972,6 @@ function displayOspfInterface(router: Router): string {
 function displayOspfPeerVerbose(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return 'Error: OSPF is not configured.';
-
-  router._ospfAutoConverge();
 
   const neighbors = ospf.getNeighbors();
   if (neighbors.length === 0) {
@@ -998,8 +1005,6 @@ function displayOspfLsdbTyped(router: Router, lsType: number): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return 'Error: OSPF is not configured.';
 
-  router._ospfAutoConverge();
-
   const lsdb = ospf.getLSDB();
   const lines = [
     vrpLsdbHeader(ospf),
@@ -1028,8 +1033,6 @@ function displayOspfInterfaceBrief(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return 'Error: OSPF is not configured.';
 
-  router._ospfAutoConverge();
-
   const lines = [
     'Interface       PID   Area            IP Address/Mask    Cost  State Nbrs',
   ];
@@ -1052,8 +1055,6 @@ function displayOspfInterfaceBrief(router: Router): string {
 function displayOspfVlink(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return 'Error: OSPF is not configured.';
-
-  router._ospfAutoConverge();
 
   const extra = router._getOSPFExtraConfig();
   const configVLs = extra.virtualLinks;
@@ -1095,8 +1096,6 @@ function displayOspfVlink(router: Router): string {
 function displayOspfAbrAsbr(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return 'Error: OSPF is not configured.';
-
-  router._ospfAutoConverge();
 
   const lsdb = ospf.getLSDB();
   const lines = [
@@ -1145,8 +1144,6 @@ function displayOspfStatistics(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return 'Error: OSPF is not configured.';
 
-  router._ospfAutoConverge();
-
   const lsdb = ospf.getLSDB();
   let lsaCount = 0;
   for (const [, areaDB] of lsdb.areas) {
@@ -1177,7 +1174,6 @@ function displayOspfStatistics(router: Router): string {
 }
 
 function displayRoutingTableOspf(router: Router): string {
-  router._ospfAutoConverge();
   const rt = (router as any).routingTable as any[];
   const lines: string[] = ['OSPF Routing Table:'];
   for (const r of rt) {
@@ -1195,7 +1191,6 @@ function displayRoutingTableOspf(router: Router): string {
 export function displayOspfRouting(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return 'Info: OSPF is not running.';
-  router._ospfAutoConverge();
   const rt = router.getRoutingTable();
   const rows: string[] = [];
   let count = 0;
@@ -1225,7 +1220,6 @@ export function displayOspfRouting(router: Router): string {
 function displayOspfv3Peer(router: Router): string {
   const v3 = router._getOSPFv3EngineInternal();
   if (!v3) return 'Info: OSPFv3 is not configured.';
-  router._ospfAutoConverge();
   const neighbors = v3.getNeighbors();
   const lines = [
     `OSPFv3 Process ${v3.getProcessId()} with Router ID ${v3.getRouterId()}`,
@@ -1247,7 +1241,6 @@ function displayOspfv3Lsdb(router: Router): string {
 function displayOspfv3Interface(router: Router): string {
   const v3 = router._getOSPFv3EngineInternal();
   if (!v3) return 'Info: OSPFv3 is not configured.';
-  router._ospfAutoConverge();
   const lines: string[] = [];
   for (const [name, iface] of v3.getInterfaces()) {
     lines.push(` ${name} is up`);
