@@ -10,10 +10,11 @@
  */
 
 import type { Router } from '../../Router';
+import type { OspfInterfaceSettings } from '../../router/RouterOSPFIntegration';
 import { normalizeOspfRouteType, ospfRouteCode } from '@/network/ospf/routeCodes';
-import { renderIpRouteTable, routerRouteTableHost } from './CiscoShowCommands';
+import { formatRouteAge, isLearnedRouteType, renderIpRouteTable, routerRouteTableHost } from './CiscoShowCommands';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
-import { isAreaId } from '../../../ospf/types';
+import { isAreaId, isBackboneAreaId, type LSAHeader } from '../../../ospf/types';
 import { boundedInteger } from '@/cli/ArgumentTypes';
 
 import { CISCO_ERRORS } from '../cli-utils';
@@ -58,6 +59,7 @@ export function setOspfv3InterfaceParams(
   for (const [key, value] of Object.entries(updates)) {
     if (value !== undefined && key in live) live[key] = value;
   }
+  router._ospfAutoConverge();
 }
 
 export function enableOspfv3OnInterface(
@@ -82,11 +84,13 @@ export function enableOspfv3OnInterface(
     helloInterval: pending?.helloInterval,
     deadInterval: pending?.deadInterval,
   });
+  router._ospfAutoConverge();
 }
 
 export function disableOspfv3OnInterface(router: Router, ifName: string): void {
   router._getOSPFv3EngineInternal()?.deactivateInterface(ifName);
   router._getOSPFExtraConfig().pendingV3IfConfig.delete(ifName);
+  router._ospfAutoConverge();
 }
 
 export function setOspfv3InterfaceAuthentication(
@@ -96,13 +100,7 @@ export function setOspfv3InterfaceAuthentication(
   const pending = extra.pendingV3IfConfig.get(ifName) || {};
   pending.ipsecAuth = protege;
   extra.pendingV3IfConfig.set(ifName, pending);
-}
-
-function isBackboneArea(areaId: string): boolean {
-  const t = areaId.trim();
-  if (/^\d+$/.test(t)) return Number(t) === 0;
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(t)) return t.split('.').every((o) => Number(o) === 0);
-  return false;
+  router._ospfAutoConverge();
 }
 
 // ─── Config Mode: "router ospf <id>" ─────────────────────────────────
@@ -158,15 +156,18 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     if (isNaN(n) || n < 1) return '';
     extra().maximumPaths = n;
     ctx.r().setMaximumPaths('ospf', n);
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
   trie.registerGreedy('compatible', 'Compatibility mode', (args) => {
     if (args[0]?.toLowerCase() === 'rfc1583') extra().compatibleRfc1583 = true;
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
   trie.registerGreedy('default-metric', 'Default metric', (args) => {
     const n = parseInt(args[0], 10);
     if (!isNaN(n)) extra().defaultMetric = n;
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
   trie.registerGreedy('distance', 'Administrative distance', (args) => {
@@ -178,6 +179,7 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
       if (args[i] === 'external' && args[i + 1]) d.external = parseInt(args[i + 1], 10);
     }
     extra().distance = d;
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
   trie.registerGreedy('timers throttle lsa', 'LSA throttle timers', (args) => {
@@ -242,6 +244,14 @@ function adresseReseau(ip: string, wildcard: string): string {
     return '';
   });
 
+  trie.registerGreedy('no network', 'Remove an OSPF network/area', (args) => {
+    if (args.length < 4) return '% Incomplete command.';
+    if (!'area'.startsWith(args[2].toLowerCase())) return '% Invalid input. Expected "area" keyword.';
+    if (!isAreaId(args[3])) throw new CliInvalidInput({ token: args[3] });
+    ctx.r()._getOSPFIntegration().removeNetwork(adresseReseau(args[0], args[1]), args[1], args[3]);
+    return '';
+  });
+
   trie.registerGreedy('router-id', 'Set OSPF Router ID', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     if (!isValidIPv4(args[0])) return "% Invalid input detected at '^' marker.";
@@ -274,6 +284,7 @@ function adresseReseau(ip: string, wildcard: string): string {
       if (!ifName) return `% Invalid interface "${args.join(' ')}"`;
       ospf.setPassiveInterface(ifName);
     }
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
 
@@ -284,6 +295,7 @@ function adresseReseau(ip: string, wildcard: string): string {
     const ifName = ctx.resolveInterfaceName(args.join(' '));
     if (!ifName) return `% Invalid interface "${args.join(' ')}"`;
     ospf.removePassiveInterface(ifName);
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
 
@@ -302,6 +314,7 @@ function adresseReseau(ip: string, wildcard: string): string {
     const bw = parseInt(args[1], 10);
     if (isNaN(bw) || bw < 1) return '% Invalid bandwidth value';
     ospf.setReferenceBandwidth(bw);
+    ctx.r()._ospfAutoConverge?.();
     return `% OSPF: Reference bandwidth is changed.\n        Please ensure reference bandwidth is consistent across all routers.`;
   });
 
@@ -362,6 +375,7 @@ function adresseReseau(ip: string, wildcard: string): string {
     if (args.length < 2) return '% Incomplete command.';
     const extra = ctx.r()._getOSPFExtraConfig();
     extra.distributeList = { aclId: args[0], direction: args[1].toLowerCase() as 'in' | 'out' };
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
 
@@ -435,6 +449,7 @@ function adresseReseau(ip: string, wildcard: string): string {
       const extra = ctx.r()._getOSPFExtraConfig();
       extra.bfdAllInterfaces = true;
     }
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
 
@@ -463,12 +478,14 @@ function adresseReseau(ip: string, wildcard: string): string {
       }
     }
     extra.maxMetric = { enabled: true, onStartup };
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
 
   trie.registerGreedy('no max-metric router-lsa', 'Remove stub router configuration', (_args) => {
     const extra = ctx.r()._getOSPFExtraConfig();
     extra.maxMetric = { enabled: false };
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
 
@@ -488,6 +505,7 @@ function adresseReseau(ip: string, wildcard: string): string {
     const entry = { ip, priority, pollInterval };
     if (existing >= 0) extra.nbmaNeighbors[existing] = entry;
     else extra.nbmaNeighbors.push(entry);
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
 
@@ -499,6 +517,7 @@ function adresseReseau(ip: string, wildcard: string): string {
     if (!extra.summaryAddresses) extra.summaryAddresses = [];
     const existing = extra.summaryAddresses.findIndex(s => s.network === network && s.mask === mask);
     if (existing < 0) extra.summaryAddresses.push({ network, mask });
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
 
@@ -546,6 +565,7 @@ export function buildConfigRouterOSPFv3Commands(trie: CommandTrie, ctx: CiscoShe
     const ifName = ctx.resolveInterfaceName(args.join(' '));
     if (!ifName) return `% Invalid interface`;
     v3.setPassiveInterface(ifName);
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
 
@@ -560,6 +580,7 @@ export function buildConfigRouterOSPFv3Commands(trie: CommandTrie, ctx: CiscoShe
     const ifName = ctx.resolveInterfaceName(args.join(' '));
     if (!ifName) return `% Invalid interface`;
     v3.unsetPassiveInterface?.(ifName);
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
 
@@ -568,6 +589,7 @@ export function buildConfigRouterOSPFv3Commands(trie: CommandTrie, ctx: CiscoShe
     if (!v3) return '% OSPFv3 is not enabled.';
     const always = args[0]?.toLowerCase() === 'always';
     v3.setDefaultInformationOriginate(always ? 'always' : true);
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
 
@@ -577,6 +599,7 @@ export function buildConfigRouterOSPFv3Commands(trie: CommandTrie, ctx: CiscoShe
     if (protocol === 'static') {
       ctx.r()._getOSPFExtraConfig().redistributeV3Static = true;
     }
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
 
@@ -590,25 +613,25 @@ export function buildConfigRouterOSPFv3Commands(trie: CommandTrie, ctx: CiscoShe
     const v3e = ctx.r()._getOSPFv3EngineInternal()!;
     const areaId = args[0];
     const subCmd = args[1].toLowerCase();
-    if (subCmd === 'stub' && isBackboneArea(areaId)) {
+    if (subCmd === 'stub' && isBackboneAreaId(areaId)) {
       // Same rule as OSPFv2 — the backbone is not a stub area.
       return '% OSPF: Area 0 is the backbone area and cannot be a stub area.';
     }
     if (subCmd === 'stub') {
       v3e.addArea(areaId, 'stub');
       v3e.setAreaType(areaId, 'stub');
-      return '';
+      return convergeOnSuccess(ctx, '');
     } else if (subCmd === 'range') {
       if (args.length < 3) return '% Incomplete command.';
       const extra = ctx.r()._getOSPFExtraConfig();
       if (!extra.v3AreaRanges.has(areaId)) extra.v3AreaRanges.set(areaId, []);
       extra.v3AreaRanges.get(areaId)!.push({ prefix: args[2] });
-      return '';
+      return convergeOnSuccess(ctx, '');
     } else if (subCmd === 'virtual-link') {
       if (args.length < 3) return '% Incomplete command.';
       const extra = ctx.r()._getOSPFExtraConfig();
       extra.v3VirtualLinks.set(areaId, args[2]);
-      return '';
+      return convergeOnSuccess(ctx, '');
     }
     return '';
   });
@@ -628,6 +651,7 @@ export function buildConfigRouterOSPFv3Commands(trie: CommandTrie, ctx: CiscoShe
     // distribute-list prefix-list <name> in
     const extra = ctx.r()._getOSPFExtraConfig();
     extra.v3DistributeList = { aclId: args[1], direction: args[2].toLowerCase() as 'in' | 'out' };
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
 
@@ -635,19 +659,12 @@ export function buildConfigRouterOSPFv3Commands(trie: CommandTrie, ctx: CiscoShe
     if (args.length >= 1 && args[0].toLowerCase() === 'all-interfaces') {
       ctx.r()._getOSPFExtraConfig().bfdAllInterfaces = true;
     }
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
 }
 
 // ─── Config-If Mode: OSPF interface commands ─────────────────────────
-
-function normalizeOspfAreaId(token: string): string {
-  if (/^\d+$/.test(token)) {
-    const n = parseInt(token, 10);
-    return `${(n >>> 24) & 0xff}.${(n >>> 16) & 0xff}.${(n >>> 8) & 0xff}.${n & 0xff}`;
-  }
-  return token;
-}
 
 function enableOspfOnInterface(
   ctx: CiscoShellContext,
@@ -655,23 +672,7 @@ function enableOspfOnInterface(
   processId: number,
   areaId: string,
 ): void {
-  const router = ctx.r();
-  router._enableOSPF(processId);
-  const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return;
-  const ports = router._getPortsInternal();
-  const port = ports.get(ifName);
-  if (!port) return;
-  const ip = port.getIPAddress()?.toString();
-  const mask = port.getSubnetMask()?.toString();
-  if (!ip || !mask) return;
-  const existing = ospf.getInterface(ifName);
-  if (existing) {
-    existing.areaId = areaId;
-  } else {
-    ospf.activateInterface(ifName, ip, mask, areaId);
-  }
-  router._ospfAutoConverge();
+  ctx.r()._getOSPFIntegration().setInterfaceArea(ifName, processId, areaId);
 }
 
 /**
@@ -766,33 +767,8 @@ export function ospfInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
 
 export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: CiscoShellContext): void {
   // Helper to store pending OSPF interface config + apply immediately if interface exists
-  const setPendingOspfIf = (ifName: string, updates: Record<string, any>) => {
-    const extra = ctx.r()._getOSPFExtraConfig();
-    const pending = extra.pendingIfConfig.get(ifName) || {};
-    Object.assign(pending, updates);
-    extra.pendingIfConfig.set(ifName, pending);
-
-    // Also apply immediately if OSPF interface already exists
-    const ospf = ctx.r()._getOSPFEngineInternal();
-    if (ospf) {
-      const iface = ospf.getInterface(ifName);
-      if (iface) {
-        if (updates.cost !== undefined) iface.cost = updates.cost;
-        if (updates.priority !== undefined) iface.priority = updates.priority;
-        if (updates.helloInterval !== undefined) iface.helloInterval = updates.helloInterval;
-        if (updates.deadInterval !== undefined) iface.deadInterval = updates.deadInterval;
-        if (updates.authType !== undefined) iface.authType = updates.authType;
-        if (updates.authKey !== undefined) iface.authKey = updates.authKey;
-        // Le type de réseau passe par le moteur, qui relance la machine
-        // à états : l'écrire ici laissait l'interface dans l'état
-        // d'avant, minuteurs compris.
-        if (updates.networkType !== undefined) {
-          ospf.setInterfaceNetworkType(ifName, updates.networkType);
-        }
-        if (updates.retransmitInterval !== undefined) iface.retransmitInterval = updates.retransmitInterval;
-        if (updates.transmitDelay !== undefined) iface.transmitDelay = updates.transmitDelay;
-      }
-    }
+  const setPendingOspfIf = (ifName: string, updates: OspfInterfaceSettings) => {
+    ctx.r()._getOSPFIntegration().applyInterfaceSettings(ifName, updates);
   };
 
   const ifPending = (ifName: string) => {
@@ -830,8 +806,8 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     if (args.length < 1) return '% Incomplete command.';
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '% No interface selected';
-    const areaId = normalizeOspfAreaId(args[0]);
-    enableOspfOnInterface(ctx, ifName, 1, areaId);
+    if (!isAreaId(args[0])) throw new CliInvalidInput({ token: args[0] });
+    enableOspfOnInterface(ctx, ifName, 1, args[0]);
     return '';
   });
   configIfTrie.registerGreedy('ip ospf', 'OSPF interface configuration', (args) => {
@@ -840,11 +816,23 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
       if (isNaN(pid)) return '% Invalid process ID';
       const ifName = ctx.getSelectedInterface();
       if (!ifName) return '% No interface selected';
-      const areaId = normalizeOspfAreaId(args[2]);
-      enableOspfOnInterface(ctx, ifName, pid, areaId);
+      if (!isAreaId(args[2])) throw new CliInvalidInput({ token: args[2] });
+      enableOspfOnInterface(ctx, ifName, pid, args[2]);
       return '';
     }
     return "% Invalid input detected at '^' marker.";
+  });
+
+  configIfTrie.registerGreedy('no ip ospf', 'Disable OSPF on this interface', (args) => {
+    const [first, second] = args.map((word) => word.toLowerCase());
+    const processForm = /^\d+$/.test(first ?? '');
+    if (first === undefined || (processForm && second === undefined)) return '% Incomplete command.';
+    const areaForm = first === 'area' || (processForm && second === 'area');
+    if (!areaForm) return "% Invalid input detected at '^' marker.";
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '% No interface selected';
+    ctx.r()._getOSPFIntegration().clearInterfaceArea(ifName);
+    return '';
   });
 
   configIfTrie.registerGreedy('ip ospf cost', 'Set OSPF cost on interface', (args) => {
@@ -935,7 +923,7 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     return '';
   });
 
-  const noOspfIfDefaults: Record<string, Record<string, unknown>> = {
+  const noOspfIfDefaults: Record<string, OspfInterfaceSettings> = {
     'no ip ospf priority': { priority: 1 },
     'no ip ospf hello-interval': { helloInterval: 10 },
     'no ip ospf dead-interval': { deadInterval: 40 },
@@ -956,7 +944,6 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
       const ifName = ctx.getSelectedInterface();
       if (!ifName) return '% No interface selected';
       setPendingOspfIf(ifName, defaults);
-      ctx.r()._ospfAutoConverge?.();
       return '';
     });
   }
@@ -964,10 +951,7 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
   configIfTrie.registerGreedy('no ip ospf cost', 'Restore the bandwidth-derived OSPF cost', () => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '% No interface selected';
-    const pending = ctx.r()._getOSPFExtraConfig().pendingIfConfig.get(ifName);
-    if (pending) delete (pending as Record<string, unknown>).cost;
-    ctx.r()._getOSPFEngineInternal()?.resetInterfaceCost(ifName);
-    ctx.r()._ospfAutoConverge?.();
+    ctx.r()._getOSPFIntegration().resetInterfaceCost(ifName);
     return '';
   });
 
@@ -1233,7 +1217,7 @@ function appliquerAire(ctx: CiscoShellContext, args: string[]): string {
       // Area 0 carries the inter-area LSAs a stub/NSSA area exists to
       // suppress, so the backbone can be neither (RFC 2328 §3.6). IOS
       // refuses in these exact words rather than storing a contradiction.
-      if (isBackboneArea(areaId)) {
+      if (isBackboneAreaId(areaId)) {
         return `% OSPF: Area 0 is the backbone area and cannot be a ${
           subCmd === 'stub' ? 'stub' : 'NSSA'} area.`;
       }
@@ -1370,16 +1354,21 @@ const SOUS_COMMANDES_AIRE: ReadonlyArray<{
   },
 ];
 
+function convergeOnSuccess(ctx: CiscoShellContext, reply: string): string {
+  if (reply === '') ctx.r()._ospfAutoConverge?.();
+  return reply;
+}
+
 function aireSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return SOUS_COMMANDES_AIRE.map(({ mot, description, places }) => ({
     id: `ospf-area-${mot}`,
     path: ['area', AIRE, mot, ...places],
     description,
     modes: ['config-router-ospf'], minPrivilege: 15,
-    run: (_s: unknown, args: Record<string, string>) => appliquerAire(ctx, [
+    run: (_s: unknown, args: Record<string, string>) => convergeOnSuccess(ctx, appliquerAire(ctx, [
       args.aire, mot,
       ...places.map(place => args[place.name]).filter(v => v !== undefined),
-    ]),
+    ])),
     undo: (_s: unknown, args: Record<string, string>) => retirerAire(ctx, [
       args.aire, mot,
       ...places.map(place => args[place.name]).filter(v => v !== undefined),
@@ -1745,9 +1734,6 @@ export function showIpOspfNeighbor(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
 
-  // Trigger convergence to ensure neighbors are up-to-date
-  router._ospfAutoConverge();
-
   const neighbors = ospf.getNeighbors();
   const lines = [
     'Neighbor ID     Pri   State           Dead Time   Address         Interface',
@@ -1757,7 +1743,7 @@ export function showIpOspfNeighbor(router: Router): string {
     const iface = ospf.getInterface(n.iface);
     if (!iface || iface.state === 'Down') continue;
     const stateStr = `${n.state.toUpperCase()}/  -`;
-    const deadTime = compteARebours(iface, n.lastHelloReceived);
+    const deadTime = compteARebours(iface, n.lastHelloReceived, ospf.now());
 
     lines.push(
       `${n.routerId.padEnd(16)}${String(n.priority).padEnd(6)}` +
@@ -1769,9 +1755,11 @@ export function showIpOspfNeighbor(router: Router): string {
   return lines.join('\n');
 }
 
-function compteARebours(iface: { deadInterval?: number } | undefined, lastHelloMs: number): string {
+function compteARebours(
+  iface: { deadInterval?: number } | undefined, lastHelloMs: number, nowMs: number,
+): string {
   const dead = iface?.deadInterval ?? 40;
-  const ecoule = Math.max(0, Date.now() - lastHelloMs) / 1000;
+  const ecoule = Math.max(0, nowMs - lastHelloMs) / 1000;
   const restant = Math.max(0, Math.min(dead, Math.floor(dead - ecoule)));
   const pad = (v: number) => String(v).padStart(2, '0');
   return `${pad(Math.floor(restant / 3600))}:${pad(Math.floor((restant % 3600) / 60))}:${pad(restant % 60)}`;
@@ -1780,10 +1768,9 @@ function compteARebours(iface: { deadInterval?: number } | undefined, lastHelloM
 function showIpOspfDatabaseSummaryCounts(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
-  router._ospfAutoConverge();
   const lsdb = ospf.getLSDB();
   const lines = [
-    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    ospfProcessHeader(ospf),
     '',
   ];
   const totals: Record<number, number> = {};
@@ -1823,12 +1810,9 @@ function showIpOspfDatabase(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
 
-  // Trigger convergence
-  router._ospfAutoConverge();
-
   const lsdb = ospf.getLSDB();
   const lines = [
-    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    ospfProcessHeader(ospf),
     '',
   ];
 
@@ -1874,12 +1858,11 @@ function showIpOspfDatabaseExternal(router: Router, args: string[]): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
 
-  router._ospfAutoConverge();
   const lsdb = ospf.getLSDB();
   const detail = args.includes('detail');
 
   const lines = [
-    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    ospfProcessHeader(ospf),
     '',
     '                Type-5 AS External Link States',
     '',
@@ -1986,9 +1969,6 @@ function showIpOspfInterface(router: Router, ifName?: string): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
 
-  // Trigger convergence
-  router._ospfAutoConverge();
-
   const extra = router._getOSPFExtraConfig();
   const lines: string[] = [];
   const ifaces = ospf.getInterfaces();
@@ -2041,8 +2021,6 @@ function showIpOspfInterfaceBrief(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
 
-  router._ospfAutoConverge();
-
   // La colonne `Interface` fait douze caractères, ce qui n'entre que si
   // le nom est abrégé comme IOS l'abrège — `Gi0/0`. En entier,
   // `GigabitEthernet0/0` débordait et décalait toute la ligne.
@@ -2085,8 +2063,6 @@ function showIpOspfNeighborDetail(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
 
-  router._ospfAutoConverge();
-
   const neighbors = ospf.getNeighbors();
   if (neighbors.length === 0) {
     return `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})\n\n (No neighbors)`;
@@ -2108,9 +2084,10 @@ function showIpOspfNeighborDetail(router: Router): string {
     lines.push(`    Options is 0x${(n.options ?? 0x02).toString(16).padStart(2, '0')}`);
     lines.push(`    Dead timer due in 00:00:${String(deadInterval).padStart(2, '0')}`);
     lines.push(`    Neighbor is up for 00:00:00`);
-    lines.push(`    Index 1/1, retransmission queue length ${n.lsRetransmissionList?.length ?? 0}, number of retransmission 0`);
+    const resent = ospf.lsuRetransmissionOf(n);
+    lines.push(`    Index 1/1, retransmission queue length ${resent.queue.length}, number of retransmission ${resent.packets}`);
     lines.push(`    First 0x0(0)/0x0(0) Next 0x0(0)/0x0(0)`);
-    lines.push(`    Last retransmission scan length is 0, maximum is 0`);
+    lines.push(`    Last retransmission scan length is ${resent.lastLength}, maximum is ${resent.maxLength}`);
     lines.push(`    Last retransmission scan time is 0 msec, maximum is 0 msec`);
     lines.push(`    Retransmit interval ${retransmitInterval}`);
     lines.push('');
@@ -2123,11 +2100,10 @@ function showIpOspfDatabaseRouter(router: Router, detail: boolean): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
 
-  router._ospfAutoConverge();
   const lsdb = ospf.getLSDB();
 
   const lines = [
-    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    ospfProcessHeader(ospf),
     '',
   ];
 
@@ -2190,11 +2166,10 @@ function showIpOspfDatabaseNetwork(router: Router, detail: boolean): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
 
-  router._ospfAutoConverge();
   const lsdb = ospf.getLSDB();
 
   const lines = [
-    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    ospfProcessHeader(ospf),
     '',
   ];
 
@@ -2244,11 +2219,10 @@ function showIpOspfDatabaseSummary(router: Router, detail: boolean): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
 
-  router._ospfAutoConverge();
   const lsdb = ospf.getLSDB();
 
   const lines = [
-    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    ospfProcessHeader(ospf),
     '',
   ];
 
@@ -2297,8 +2271,6 @@ function showIpOspfDatabaseSummary(router: Router, detail: boolean): string {
 function showIpOspfVirtualLinks(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
-
-  router._ospfAutoConverge();
 
   const extra = router._getOSPFExtraConfig();
   const configVLs = extra.virtualLinks; // Map<transitAreaId, peerRouterId>
@@ -2351,12 +2323,11 @@ function showIpOspfBorderRouters(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
 
-  router._ospfAutoConverge();
   const lsdb = ospf.getLSDB();
   const routes = ospf.getRoutes();
 
   const lines = [
-    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    ospfProcessHeader(ospf),
     '',
     `                Base Topology (MTRIC 0)`,
   ];
@@ -2447,7 +2418,6 @@ function showIpOspfStatistics(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
 
-  router._ospfAutoConverge();
   const lsdb = ospf.getLSDB();
 
   // Count total LSAs
@@ -2534,37 +2504,48 @@ function showIpOspfTimers(router: Router): string {
 function showIpOspfRequestList(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
-  const lines: string[] = ['Neighbor                Interface  Area'];
-  let any = false;
+  const lines = ['', ospfProcessHeader(ospf), ''];
   for (const iface of ospf.getInterfaces().values()) {
     for (const nbr of iface.neighbors.values()) {
       if (nbr.lsRequestList.length === 0) continue;
-      any = true;
-      lines.push(`${nbr.routerId.padEnd(24)}${iface.name.padEnd(11)}${iface.areaId}`);
-      for (const lsr of nbr.lsRequestList) {
-        lines.push(`  Type ${lsr.lsType} LS-ID ${lsr.linkStateId} ADV-Router ${lsr.advertisingRouter}`);
-      }
+      lines.push(`  Neighbor ${nbr.routerId}, interface ${iface.name} address ${nbr.ipAddress}`, '');
+      lines.push(...lsaQueueTable(nbr.lsRequestList), '');
     }
   }
-  if (!any) lines.push('(no LS Request list entries)');
   return lines.join('\n');
 }
 
 function showIpOspfRetransmissionList(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
-  const lines: string[] = ['Neighbor                Interface  Area  Queue length'];
-  let any = false;
+  const lines = ['', ospfProcessHeader(ospf), ''];
   for (const iface of ospf.getInterfaces().values()) {
     for (const nbr of iface.neighbors.values()) {
-      const q = nbr.lsRetransmissionList?.length ?? 0;
-      if (q === 0) continue;
-      any = true;
-      lines.push(`${nbr.routerId.padEnd(24)}${iface.name.padEnd(11)}${iface.areaId.padEnd(6)}${q}`);
+      const pending = ospf.lsuRetransmissionOf(nbr);
+      if (pending.queue.length === 0) continue;
+      lines.push(`  Neighbor ${nbr.routerId}, interface ${iface.name} address ${nbr.ipAddress}`);
+      lines.push(`  Link state retransmission due in ${pending.dueInMs ?? 0} msec, Queue length ${pending.queue.length}`, '');
+      lines.push(...lsaQueueTable(pending.queue), '');
     }
   }
-  if (!any) lines.push('(no LS Retransmission list entries)');
   return lines.join('\n');
+}
+
+function lsaQueueTable(queue: readonly LSAHeader[]): string[] {
+  return [
+    '  Type  LS ID             ADV RTR           Seq NO      Age    Checksum',
+    ...queue.map((lsa) => `${String(lsa.lsType).padStart(6)}  ${lsa.linkStateId.padEnd(18)}`
+      + `${lsa.advertisingRouter.padEnd(18)}${iosHex(lsa.lsSequenceNumber).padEnd(12)}`
+      + `${String(lsa.lsAge).padEnd(7)}${iosHex(lsa.checksum)}`),
+  ];
+}
+
+function iosHex(value: number): string {
+  return `0x${value.toString(16).toUpperCase()}`;
+}
+
+function ospfProcessHeader(ospf: { getRouterId(): string; getProcessId(): number }): string {
+  return `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`;
 }
 
 function showIpOspfFloodList(router: Router): string {
@@ -2687,18 +2668,20 @@ export function bestRoutesPerPrefix(routes: any[]): any[] {
   const protoAd: Record<string, number> = {
     connected: 0, static: 1, eigrp: 90, ospf: 110, rip: 120, bgp: 20, default: 1,
   };
-  const best = new Map<string, any>();
+  const best = new Map<string, any[]>();
   const order: string[] = [];
+  const distanceOf = (r: { ad?: number; type: string }) => r.ad ?? protoAd[r.type] ?? 255;
   for (const r of routes) {
     const key = `${r.network?.toString?.() ?? r.network}/${r.mask?.toString?.() ?? r.mask}`;
-    const ad = r.ad ?? protoAd[r.type] ?? 255;
-    const existing = best.get(key);
-    if (!existing) { best.set(key, r); order.push(key); continue; }
-    const existingAd = existing.ad ?? protoAd[existing.type] ?? 255;
-    if (ad < existingAd) { best.set(key, r); continue; }
-    if (ad === existingAd && (r.metric ?? 0) < (existing.metric ?? 0)) { best.set(key, r); }
+    const held = best.get(key);
+    if (!held) { best.set(key, [r]); order.push(key); continue; }
+    const [first] = held;
+    const better = distanceOf(r) < distanceOf(first)
+      || (distanceOf(r) === distanceOf(first) && (r.metric ?? 0) < (first.metric ?? 0));
+    if (better) best.set(key, [r]);
+    else if (distanceOf(r) === distanceOf(first) && (r.metric ?? 0) === (first.metric ?? 0)) held.push(r);
   }
-  return order.map(k => best.get(k));
+  return order.flatMap((k) => best.get(k)!);
 }
 
 
@@ -2720,6 +2703,7 @@ export const ROUTE_FILTER_CODES: Readonly<Record<string, readonly string[]>> = {
   connected: ['C'],
   local: ['L'],
   static: ['S'],
+  ospf: ['O'],
   rip: ['R'],
   eigrp: ['D'],
   bgp: ['B'],
@@ -2761,7 +2745,6 @@ export function filterRouteTableByCode(all: string, codes: readonly string[]): s
 }
 
 function showIpRouteAll(router: Router): string {
-  router._ospfAutoConverge();
   router.convergeDynamicRouting();
   const rt = bestRoutesPerPrefix(
     ((router as any).routingTable as any[]).filter((r) => router.isRouteUsable(r)),
@@ -2774,23 +2757,7 @@ function showIpRouteAll(router: Router): string {
   });
 }
 
-export function showIpRouteOspf(router: Router): string {
-  router._ospfAutoConverge();
-  const rt = (router as any).routingTable as any[];
-  const lines: string[] = [];
-  for (const r of rt) {
-    if (r.type === 'ospf') {
-      const netStr = r.network.toString();
-      const cidr = maskToCIDR(r.mask.toString());
-      const code = getOSPFRouteCode(router, netStr, cidr, r);
-      lines.push(`${code} ${netStr}/${cidr} [110/${r.metric}] via ${r.nextHop || 'directly connected'}, ${r.iface}`);
-    }
-  }
-  return lines.length > 0 ? lines.join('\n') : '';
-}
-
 function showIpRouteSummary(router: Router): string {
-  router._ospfAutoConverge();
   const perPrefix = new Map<string, any>();
   for (const r of router.installedRoutes() as any[]) {
     const key = `${r.network}/${r.mask.toCIDR()}`;
@@ -2853,16 +2820,6 @@ function showIpRouteVrf(router: Router, vrfName: string): string {
   return [...codes, ...lines].join('\n');
 }
 
-function formatRouteAge(elapsedMs: number): string {
-  const total = Math.max(0, Math.floor(elapsedMs / 1000));
-  if (total >= 86400) {
-    const days = Math.floor(total / 86400);
-    return `${days}d${String(Math.floor((total % 86400) / 3600)).padStart(2, '0')}h`;
-  }
-  const two = (n: number) => String(n).padStart(2, '0');
-  return `${two(Math.floor(total / 3600))}:${two(Math.floor((total % 3600) / 60))}:${two(total % 60)}`;
-}
-
 const DEFAULT_DISTANCE: Record<string, number> = {
   connected: 0, static: 1, default: 1, eigrp: 90, ospf: 110, rip: 120, bgp: 20,
 };
@@ -2886,6 +2843,7 @@ const OSPF_ROUTE_TYPE_NAME: Record<string, string> = {
 export interface RouteDetailHooks {
   readonly sourceName?: (route: { type: string }) => string | null;
   readonly typeSuffix?: (route: { type: string }, distance: number) => string | null;
+  readonly nowMs?: number;
 }
 
 export function renderRouteEntryDetail(
@@ -2922,9 +2880,9 @@ export function renderRouteEntryDetail(
   else if (best.type === 'connected') header += ' (connected, via interface)';
   lines.push(header);
 
-  if (best.nextHop && best.type !== 'connected') {
-    const age = best.installedAt !== undefined
-      ? ` , ${formatRouteAge(Date.now() - best.installedAt)} ago`.replace(' ,', ',')
+  if (best.nextHop && isLearnedRouteType(best.type)) {
+    const age = best.installedAt !== undefined && hooks.nowMs !== undefined
+      ? `, ${formatRouteAge(hooks.nowMs - best.installedAt)} ago`
       : '';
     lines.push(`  Last update from ${best.nextHop} on ${best.iface}${age}`);
   }
@@ -2943,11 +2901,11 @@ export function renderRouteEntryDetail(
 }
 
 function showIpRouteSpecific(router: Router, destIP: string): string {
-  router._ospfAutoConverge();
   const rt = ((router as any).routingTable as any[]).filter((r) => router.isRouteUsable(r));
   const eigrpAsn = router.getEIGRPEngine?.()?.getConfig().asn;
 
   return renderRouteEntryDetail(rt, destIP, {
+    nowMs: router.getMonotonicClockMs(),
     sourceName: (route) => {
       if (route.type === 'ospf') return `ospf ${getOSPFProcessId(router)}`;
       if (route.type === 'eigrp' && eigrpAsn) return `eigrp ${eigrpAsn}`;
@@ -3027,7 +2985,6 @@ function showIpv6Ospf(router: Router, processId?: number): string {
 function showIpv6OspfNeighbor(router: Router): string {
   const v3 = router._getOSPFv3EngineInternal();
   if (!v3) return '% OSPFv3 is not configured';
-  router._ospfAutoConverge();
   const neighbors = v3.getNeighbors();
   const lines = ['Neighbor ID     Pri   State           Dead Time   Interface'];
   for (const n of neighbors) {
@@ -3039,7 +2996,6 @@ function showIpv6OspfNeighbor(router: Router): string {
 function showIpv6OspfInterface(router: Router, ifName?: string): string {
   const v3 = router._getOSPFv3EngineInternal();
   if (!v3) return '% OSPFv3 is not configured';
-  router._ospfAutoConverge();
   const extra = router._getOSPFExtraConfig();
   const lines: string[] = [];
   const resolvedIfName = ifName ? resolveOSPFIfName(ifName) : undefined;
@@ -3101,7 +3057,6 @@ function showIpv6OspfDatabase(router: Router): string {
 }
 
 function showIpv6Route(router: Router): string {
-  router._ospfAutoConverge();
   const rt = router._getIPv6RoutingTableInternal() as any[] || [];
   const lines: string[] = ['IPv6 Routing Table'];
   for (const r of rt) {
@@ -3126,7 +3081,6 @@ function showIpv6Route(router: Router): string {
  * Every number is COUNTED on the live table; nothing here is a constant.
  */
 function showIpv6RouteSummary(router: Router): string {
-  router._ospfAutoConverge();
   const rt = (router._getIPv6RoutingTableInternal() as Array<{ type?: string }>) || [];
   const parSource = new Map<string, number>();
   for (const r of rt) {
@@ -3151,7 +3105,6 @@ function showIpv6RouteSummary(router: Router): string {
 }
 
 function showIpv6RouteSpecific(router: Router, dest: string): string {
-  router._ospfAutoConverge();
   const rt = router._getIPv6RoutingTableInternal() as any[] || [];
 
   // Parse destination: either "prefix/length" or just "prefix"
@@ -3300,7 +3253,6 @@ export function routerIpRouteView(router: Router, args: readonly string[]): stri
     if (!args[1]) return '% Incomplete command.';
     return showIpRouteVrf(router, args[1]);
   }
-  if (first === 'ospf') return showIpRouteOspf(router);
   if (first === 'summary') return showIpRouteSummary(router);
   const codes = ROUTE_FILTER_CODES[first];
   if (codes) return filterRouteTableByCode(showIpRouteAll(router), codes);

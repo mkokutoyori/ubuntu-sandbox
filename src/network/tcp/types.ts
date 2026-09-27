@@ -2,6 +2,7 @@ import {
   IP_PROTO_TCP_NUMBER, onesComplement, payloadBytes,
   pushBytesAsWords, pushPseudoHeader,
 } from '@/network/layers/transport/L4Checksum';
+import type { Errno } from '@/network/core/Errno';
 
 
 export type TcpState =
@@ -77,7 +78,20 @@ export interface TcpStream {
   setNoDelay?(enabled: boolean): void;
 }
 
-export type TcpWireOutcome = 'open' | 'refused' | 'prohibited' | 'timeout' | 'unreachable';
+export type TcpWireOutcome =
+  | 'open' | 'refused' | 'prohibited' | 'timeout' | 'unreachable' | 'host-unreachable';
+
+const CONNECT_ERRNO: Readonly<Record<Exclude<TcpWireOutcome, 'open'>, Errno>> = {
+  refused: 'ECONNREFUSED',
+  prohibited: 'EACCES',
+  timeout: 'ETIMEDOUT',
+  unreachable: 'ENETUNREACH',
+  'host-unreachable': 'EHOSTUNREACH',
+};
+
+export function connectErrno(outcome: Exclude<TcpWireOutcome, 'open'>): Errno {
+  return CONNECT_ERRNO[outcome];
+}
 
 export interface TcpDialFailure {
   readonly dialFailed: 'refused' | 'timeout' | 'unreachable';
@@ -119,6 +133,7 @@ export interface UnackedSegment {
 }
 
 export const TCP_DEFAULT_MSS = 1460;
+export const TCP_BASE_HEADER_BYTES = 20;
 export const TCP_DEFAULT_WINDOW = 65535;
 
 /** Floor for Path MTU Discovery's MSS shrinkage (PRD-TCP.md P7) — real stacks never let a reported Next-Hop MTU drive MSS to something absurdly tiny. */

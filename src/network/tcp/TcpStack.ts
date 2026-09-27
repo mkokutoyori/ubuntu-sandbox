@@ -6,7 +6,7 @@ import {
   type UnackedSegment, type TcpOption, type TcpWireOutcome,
   noFlags, flagsString, nextIsn, makeSocketKey, makeListenerKey,
   computeTcpChecksum, verifyTcpChecksum, seqLt,
-  TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS, TCP_MIN_MSS,
+  TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS, TCP_MIN_MSS, TCP_BASE_HEADER_BYTES,
 } from './types';
 import { bogusChecksum, payloadBytes } from '@/network/layers/transport/L4Checksum';
 import { type StreamPayload, isStreamPayload, sliceStream, appendStream } from './StreamPayload';
@@ -211,6 +211,7 @@ export interface TcpOpenHandler {
 
 export interface TcpConnectOptions {
   localPort?: PortNumber;
+  localIp?: string;
   onOpen?: TcpOpenHandler;
   onData?: TcpDataHandler;
   onClose?: TcpCloseHandler;
@@ -673,7 +674,7 @@ export class TcpStack {
     const remoteIp = canonicalIpText(rawRemoteIp);
     const egress = this.resolveEgress(remoteIp);
     if (!egress) { this.dropped(remoteIp, remotePort, 'no-egress'); return null; }
-    const localIp = egress.srcIp;
+    const localIp = opts.localIp ?? egress.srcIp;
     if (opts.localPort && this.localPortInUse(opts.localPort, remoteIp)) {
       this.dropped(remoteIp, remotePort, 'addr-in-use');
       return null;
@@ -713,15 +714,10 @@ export class TcpStack {
    * 'unreachable' when the attempt never left this machine because no
    * route resolves — ENETUNREACH, which a real stack reports at once.
    */
-  connectOutcome(remoteIp: string, remotePort: number, localPort?: PortNumber): TcpWireOutcome {
-    const socket = this.connect(remoteIp, remotePort, localPort === undefined ? {} : { localPort });
-    if (!socket) return this.hasEgressTo(remoteIp) ? 'timeout' : 'unreachable';
-    if (socket.everEstablished) {
-      socket.close();
-      return 'open';
-    }
-    if (socket.connectProhibited) return 'prohibited';
-    return socket.connectRefused ? 'refused' : 'timeout';
+  connectOutcome(
+    remoteIp: string, remotePort: number, localPort?: PortNumber, localIp?: string,
+  ): TcpWireOutcome {
+    return this.exchange(remoteIp, remotePort, '', { localPort, localIp }).outcome;
   }
 
   /**
@@ -736,18 +732,33 @@ export class TcpStack {
   }
 
   probeService(remoteIp: string, remotePort: number, payload: string): string | null {
-    const socket = this.connect(remoteIp, remotePort);
-    if (!socket) return null;
-    if (!socket.everEstablished) { socket.close(); return null; }
-    let text = '';
+    const { received } = this.exchange(remoteIp, remotePort, payload);
+    return received === '' ? null : received;
+  }
+
+  exchange(
+    remoteIp: string, remotePort: number, payload: string,
+    opts: { localPort?: PortNumber; localIp?: string } = {},
+  ): { outcome: TcpWireOutcome; received: string } {
+    const socket = this.connect(remoteIp, remotePort, {
+      ...(opts.localPort === undefined ? {} : { localPort: opts.localPort }),
+      ...(opts.localIp === undefined ? {} : { localIp: opts.localIp }),
+    });
+    if (!socket) return { outcome: this.hasEgressTo(remoteIp) ? 'timeout' : 'unreachable', received: '' };
+    if (!socket.everEstablished) {
+      const outcome = socket.connectProhibited ? 'prohibited' : socket.connectRefused ? 'refused' : 'timeout';
+      socket.close();
+      return { outcome, received: '' };
+    }
+    let received = '';
     const stop = socket.onData((chunk) => {
-      if (typeof chunk === 'string') text += chunk;
-      else if (chunk instanceof Uint8Array) text += new TextDecoder().decode(chunk);
+      if (typeof chunk === 'string') received += chunk;
+      else if (chunk instanceof Uint8Array) received += new TextDecoder().decode(chunk);
     });
     if (payload.length > 0) socket.write(payload);
     stop();
     socket.close();
-    return text === '' ? null : text;
+    return { outcome: 'open', received };
   }
 
   /**
@@ -916,11 +927,8 @@ export class TcpStack {
       // under-estimate the real on-wire size, computing a "corrected" MSS
       // that's still too big and bounces off the very same hop forever
       // (the guard below then blocks ever retrying the same value again).
-      const dataSegmentOptions: TcpOption[] = socket.timestampsEnabled
-        ? [{ kind: 'timestamp', tsVal: 0, tsEcr: 0 }] : [];
-      const tcpHeaderBytes = optionsDataOffset(dataSegmentOptions) * 4;
       const ipHeaderBytes = socket.family === 'ipv6' ? 40 : 20;
-      const newMss = Math.max(TCP_MIN_MSS, nextHopMtu - ipHeaderBytes - tcpHeaderBytes);
+      const newMss = Math.max(TCP_MIN_MSS, nextHopMtu - ipHeaderBytes - TCP_BASE_HEADER_BYTES);
       // Never grow MSS off this signal, but still attempt resegmentation
       // even when it doesn't need to shrink further: an already-queued
       // segment chunked at an *earlier*, larger MSS (before a previous
@@ -950,14 +958,14 @@ export class TcpStack {
   private resegmentAndRetransmit(socket: TcpSocket, origSequence: number): void {
     const head = socket.unackedQueue[0];
     if (!head || head.sequence !== origSequence) return;
-    if (!isStreamPayload(head.payload) || head.length <= socket.mss) return;
+    if (!isStreamPayload(head.payload) || head.length <= this.sendMss(socket)) return;
     const bounced = head.payload;
     socket.unackedQueue.shift();
     socket.sendNext = head.sequence;
     const resegmented: Array<{ payload: StreamPayload; psh: boolean }> = [];
     let offset = 0;
     while (offset < bounced.length) {
-      const chunk = sliceStream(bounced, offset, offset + socket.mss);
+      const chunk = sliceStream(bounced, offset, offset + this.sendMss(socket));
       offset += chunk.length;
       resegmented.push({ payload: chunk, psh: head.flags.psh && offset >= bounced.length });
     }
@@ -1177,7 +1185,7 @@ export class TcpStack {
     } else {
       let offset = 0;
       while (offset < data.length) {
-        const chunk = sliceStream(data, offset, offset + socket.mss);
+        const chunk = sliceStream(data, offset, offset + this.sendMss(socket));
         offset += chunk.length;
         this.queueForSend(socket, chunk, offset >= data.length);
       }
@@ -1196,11 +1204,18 @@ export class TcpStack {
    * or `resegmentAndRetransmit` pushed back onto the FRONT keeps its place
    * in the stream.
    */
+  private sendMss(socket: TcpSocket): number {
+    const dataSegmentOptions: TcpOption[] = socket.timestampsEnabled
+      ? [{ kind: 'timestamp', tsVal: 0, tsEcr: 0 }] : [];
+    return socket.mss - (optionsDataOffset(dataSegmentOptions) * 4 - TCP_BASE_HEADER_BYTES);
+  }
+
   private queueForSend(socket: TcpSocket, payload: StreamPayload, psh: boolean): void {
     let rest = payload;
     const tail = socket.sendBacklog[socket.sendBacklog.length - 1];
-    if (tail && tail.payload.length < socket.mss) {
-      const room = socket.mss - tail.payload.length;
+    const segmentBytes = this.sendMss(socket);
+    if (tail && tail.payload.length < segmentBytes) {
+      const room = segmentBytes - tail.payload.length;
       const merged = sliceStream(rest, 0, room);
       tail.payload = appendStream(tail.payload, merged);
       tail.psh = psh && merged.length === rest.length;
@@ -1281,10 +1296,11 @@ export class TcpStack {
    */
   private nagleHolds(socket: TcpSocket, headLength: number, take: number, overrideNagle: boolean): boolean {
     if (overrideNagle || socket.noDelay) return false;
-    if (headLength === 0 || take >= socket.mss) return false;
+    const segmentBytes = this.sendMss(socket);
+    if (headLength === 0 || take >= segmentBytes) return false;
     let queued = 0;
     for (const entry of socket.sendBacklog) queued += entry.payload.length;
-    if (queued >= socket.mss) return false;
+    if (queued >= segmentBytes) return false;
     return seqLt(socket.sendUnacked, socket.sendNext);
   }
 

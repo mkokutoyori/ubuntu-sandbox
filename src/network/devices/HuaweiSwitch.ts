@@ -311,6 +311,14 @@ export class HuaweiSwitch extends Switch {
 
   protected override unsetServiceTypeAdmits(): boolean { return false; }
 
+  protected override sshPasswordAllowed(user: string): boolean {
+    return this.getManagementService().sshPasswordAllowed(user);
+  }
+
+  protected override sshForcedCommand(user: string): string | null {
+    return this.getManagementService().sshForcedCommand(user);
+  }
+
   protected override sshServerLimits(): Partial<SshServerConfig> {
     return this.getManagementService().sshServerLimits();
   }

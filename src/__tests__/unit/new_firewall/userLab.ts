@@ -9,7 +9,8 @@ export interface LabDevice extends Cli {
 }
 
 export type UserLab = Record<
-  'PC1' | 'PC2' | 'Switch1' | 'FW1' | 'Router2' | 'R3' | 'Switch2' | 'Server1' | 'WinServer1' | 'PC3',
+  'PC1' | 'PC2' | 'Switch1' | 'FW1' | 'Router2' | 'R3' | 'HQ_MAIN_SW' | 'Server1' | 'WinServer1' | 'PC3'
+  | 'R4' | 'PC9' | 'Server3',
   LabDevice
 >;
 

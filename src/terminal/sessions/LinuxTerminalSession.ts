@@ -16,7 +16,7 @@ import { PortNumber } from '@/network/core/ports/PortNumber';
 import { parseDialAddress, type DialAddress } from '@/network/tcp/dial';
 import { HostsFile } from '@/network/devices/HostsFile';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
-import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
+import { createPing, type PingRun } from '@/network/devices/linux/commands/net/Ping';
 import { runTraceroute } from '@/network/devices/linux/commands/net/Traceroute';
 import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type MtrHopProbe } from '@/network/devices/linux/Mtr';
 import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
@@ -46,8 +46,6 @@ import {
   DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING,
 } from '@/network/devices/linux/system/Dstat';
 import { interleaveTcpdumpStreams, runTcpdump } from '@/network/devices/linux/network/tcpdump/TcpdumpRunner';
-import { formatPingHeader, formatPing6Header, formatPingReplyLine, formatPingStats } from '@/network/devices/linux/LinuxFormatHelpers';
-import type { PingResult } from '@/network/devices/EndHost';
 import type { AsyncJobContext } from '@/terminal/async';
 import { primaryShellKindFor } from '@/shell/shellKind';
 import {
@@ -906,85 +904,22 @@ export class LinuxTerminalSession extends TerminalSession {
   private tryStartPingStream(commandLine: string): boolean {
     if (this.hasForegroundAsyncJob) return false;
     const dev = this.device;
-    if (!(dev instanceof LinuxMachine)) return false;
+    const shell = this.shell;
+    if (!(dev instanceof LinuxMachine) || !shell) return false;
     const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'ping') return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const parsed = parsePingArgs(toks.slice(1), 'ping');
-    if (!parsed.targetStr) return false;
-
-    // Real Linux ping has no Windows-style "-t" — it's continuous by
-    // default and only stops on `-c`, `-w`, or Ctrl+C. `parsePingArgs`
-    // defaults `count` to a finite number for the non-interactive
-    // `runPing()` path (which can't support a real Ctrl+C), but here — the
-    // real interactive terminal — an omitted `-c` means unbounded. Applies
-    // to `ping -6` too, not just IPv4.
-    const streamCount = parsed.countGiven ? parsed.count : 0;
-    const deadlineAtMs = parsed.deadlineMs !== undefined ? Date.now() + parsed.deadlineMs : null;
-    const deadlineHit = () => deadlineAtMs !== null && Date.now() >= deadlineAtMs;
-
-    let targetLabel = parsed.targetStr;
-    const results: PingResult[] = [];
-    // Real ping reports the wall time of the whole run in its summary.
-    const pingStartedAt = Date.now();
-    const emitStats = (ctx: AsyncJobContext) => {
-      for (const line of formatPingStats(targetLabel, results.length, results, Date.now() - pingStartedAt)) ctx.sink.line(line);
-    };
-
-    if (parsed.v6) {
-      const job = this.startAsyncCommand({
-        mode: 'foreground',
-        kind: 'streaming',
-        command: commandLine,
-        run: async (ctx) => {
-          const outcome = await dev.ping6StreamInSession(parsed.targetStr, {
-            count: streamCount,
-            timeoutMs: parsed.timeoutMs,
-            intervalMs: parsed.intervalMs,
-            onResolved: (ip) => { targetLabel = ip.toString(); ctx.sink.line(formatPing6Header(ip, parsed.size, parsed.targetStr !== ip.toString() ? parsed.targetStr : undefined)); },
-            onResult: (r) => { results.push(r); const line = formatPingReplyLine(r, parsed.size); if (line !== null) ctx.sink.line(line); },
-            shouldStop: () => ctx.cancelled() || deadlineHit(),
-            sleep: (ms) => ctx.delay(ms),
-          });
-          if (ctx.cancelled()) return;
-          if (!outcome.resolved && results.length === 0) {
-            ctx.sink.error(outcome.reason === 'name'
-              ? `ping6: ${parsed.targetStr}: Name or service not known`
-              : 'connect: Network is unreachable');
-            return;
-          }
-          emitStats(ctx);
-        },
-        onInterrupt: (ctx) => emitStats(ctx),
-      });
-      return job !== null;
-    }
-
+    if (toks[0] !== 'ping' && toks[0] !== 'ping6') return false;
+    if (/[|<>&;]/.test(commandLine)) return false;
+    let ping: PingRun | null = null;
     const job = this.startAsyncCommand({
       mode: 'foreground',
       kind: 'streaming',
       command: commandLine,
       run: async (ctx) => {
-        const outcome = await dev.pingStreamInSession(parsed.targetStr, {
-          count: streamCount,
-          timeoutMs: parsed.timeoutMs,
-          ttl: parsed.ttl,
-          intervalMs: parsed.intervalMs,
-          onResolved: (ip) => { targetLabel = ip.toString(); ctx.sink.line(formatPingHeader(ip, parsed.size, parsed.targetStr !== ip.toString() ? parsed.targetStr : undefined)); },
-          onResult: (r) => { results.push(r); const line = formatPingReplyLine(r, parsed.size); if (line !== null) ctx.sink.line(line); },
-          shouldStop: () => ctx.cancelled() || deadlineHit(),
-          sleep: (ms) => ctx.delay(ms),
-        });
-        if (ctx.cancelled()) return;
-        if (!outcome.resolved && results.length === 0) {
-          ctx.sink.error(outcome.reason === 'name'
-            ? `ping: ${parsed.targetStr}: Name or service not known`
-            : 'ping: connect: Network is unreachable');
-          return;
-        }
-        emitStats(ctx);
+        const host = dev.pingHostInSession(shell, { sleep: (ms) => ctx.delay(ms), now: () => Date.now() });
+        ping = createPing(toks.slice(1), host, (line) => ctx.sink.line(line), { cmd: toks[0] as 'ping' | 'ping6' });
+        await ping.run(() => ctx.cancelled());
       },
-      onInterrupt: (ctx) => emitStats(ctx),
+      onInterrupt: () => { ping?.interrupt(); },
     });
     return job !== null;
   }

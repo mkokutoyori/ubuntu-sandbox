@@ -34,14 +34,13 @@ import { taper } from './fortigateBatteryHarness';
 
 const SERVER1 = '192.168.30.4';
 const WINSERVER1 = '192.168.30.2';
-const PC1 = '192.168.1.10';
+const PC1 = '192.168.1.3';
 
 async function configuredLab(): Promise<UserLab> {
   const lab = await loadUserLab();
   await addRoutesToHq(lab);
   await taper(lab.PC1, [
-    'ip addr add 192.168.1.10/24 dev eth0',
-    'ip route add default via 192.168.1.99',
+    'ip route replace default via 192.168.1.99',
   ]);
   await taper(lab.Server1, ['systemctl start nginx', 'systemctl start ssh']);
   return lab;
@@ -92,7 +91,7 @@ describe('user lab — Linux traceroute crosses FW1 and R3 with the probe it ann
     const lab = await configuredLab();
     const shaped = await captureWhile(lab.PC1, 'sudo tcpdump -c 1 -n -v -i eth0 udp',
       () => lab.PC1.executeCommand(`traceroute -n -q 1 -m 1 -F -t 16 --sport=4444 ${SERVER1}`));
-    expect(shaped).toMatch(/IP \(tos 0x10, ttl 1, id \d+, offset 0, flags \[DF\], proto UDP \(17\), length 60\)\n {4}192\.168\.1\.10\.4444 > 192\.168\.30\.4\.33434: UDP/);
+    expect(shaped).toMatch(/IP \(tos 0x10, ttl 1, id \d+, offset 0, flags \[DF\], proto UDP \(17\), length 60\)\n {4}192\.168\.1\.3\.4444 > 192\.168\.30\.4\.33434: UDP/);
     const plain = await captureWhile(lab.PC1, 'sudo tcpdump -c 1 -n -v -i eth0 udp',
       () => lab.PC1.executeCommand(`traceroute -n -q 1 -m 1 ${SERVER1}`));
     expect(plain).toMatch(/IP \(tos 0x0, ttl 1, id \d+, offset 0, flags \[none\], proto UDP \(17\), length 60\)/);
@@ -109,9 +108,9 @@ describe('user lab — Linux traceroute crosses FW1 and R3 with the probe it ann
     const lab = await configuredLab();
     const out = await captureWhile(lab.PC1, 'sudo tcpdump -c 3 -n -v -i eth0 icmp',
       () => lab.PC1.executeCommand(`traceroute -n -q 1 -m 3 ${SERVER1}`));
-    expect(out).toMatch(/length 56\)\n {4}192\.168\.1\.99 > 192\.168\.1\.10: ICMP time exceeded in-transit, length 36\n\tIP \(tos 0x0, ttl 1, id \d+, offset 0, flags \[none\], proto UDP \(17\), length 60\)/);
-    expect(out).toMatch(/ttl 254, .*length 56\)\n {4}192\.168\.20\.1 > 192\.168\.1\.10: ICMP time exceeded in-transit, length 36/);
-    expect(out).toMatch(/IP \(tos 0xc0, ttl 62, id \d+, offset 0, flags \[none\], proto ICMP \(1\), length 88\)\n {4}192\.168\.30\.4 > 192\.168\.1\.10: ICMP 192\.168\.30\.4 udp port 33436 unreachable, length 68/);
+    expect(out).toMatch(/length 56\)\n {4}192\.168\.1\.99 > 192\.168\.1\.3: ICMP time exceeded in-transit, length 36\n\tIP \(tos 0x0, ttl 1, id \d+, offset 0, flags \[none\], proto UDP \(17\), length 60\)/);
+    expect(out).toMatch(/ttl 254, .*length 56\)\n {4}192\.168\.20\.1 > 192\.168\.1\.3: ICMP time exceeded in-transit, length 36/);
+    expect(out).toMatch(/IP \(tos 0xc0, ttl 62, id \d+, offset 0, flags \[none\], proto ICMP \(1\), length 88\)\n {4}192\.168\.30\.4 > 192\.168\.1\.3: ICMP 192\.168\.30\.4 udp port 33436 unreachable, length 68/);
   });
 
   it('socket options fail where Butskoy fails them: before the header for ICMP, after it for UDP', async () => {
@@ -140,7 +139,7 @@ describe('user lab — WinServer1 traces from the HQ side', () => {
     const lab = await configuredLab();
     const out = await lab.WinServer1.executeCommand(`tracert -d -h 4 ${PC1}`);
     const lines = out.split('\n');
-    expect(lines[1]).toBe('Tracing route to 192.168.1.10 over a maximum of 4 hops');
+    expect(lines[1]).toBe('Tracing route to 192.168.1.3 over a maximum of 4 hops');
     expect(lines[3]).toMatch(/^ {2}1 {3,5}(<1|\d+) ms {3,5}(<1|\d+) ms {3,5}(<1|\d+) ms {2}192\.168\.30\.1$/);
     expect(lines[4]).toMatch(/ {2}192\.168\.20\.2$/);
     expect(lines[5]).toBe('  3     *        *        *     Request timed out.');

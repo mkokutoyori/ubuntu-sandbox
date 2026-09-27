@@ -596,7 +596,7 @@ export class BashInterpreter {
         const savedNonLastStage = this.nonLastPipelineStage;
         if (!isLast) this.nonLastPipelineStage = true;
         try {
-          if (cmd.type === 'SimpleCommand' && pipeInput) {
+          if (cmd.type === 'SimpleCommand' && i > 0) {
             yield* this.visitSimpleCommandWithInput(cmd, pipeInput);
           } else if (pipeInput && (cmd.type === 'WhileClause' || cmd.type === 'UntilClause')) {
             // `producer | while read line; do …; done` — feed the prior
@@ -630,7 +630,7 @@ export class BashInterpreter {
     if (pipeInput) this.output.push(pipeInput);
     // Every stage's fd 2 bypasses the pipe and reaches the terminal
     // directly, like real concurrent processes sharing the inherited fd 2.
-    const pipelineStderr = this.stderrParts.slice(stderrMarker).join('');
+    const pipelineStderr = this.stderrParts.slice(stderrMarker).map(ensureTrailingNewline).join('');
     if (pipelineStderr) this.output.push(pipelineStderr);
     if (this.isPipefail()) {
       const nonZero = stageCodes.filter(c => c !== 0);
@@ -659,7 +659,7 @@ export class BashInterpreter {
   // ─── Simple Command ───────────────────────────────────────────
 
   private *visitSimpleCommand(node: SimpleCommand): Effects<void> {
-    yield* this.visitSimpleCommandWithInput(node, '');
+    yield* this.visitSimpleCommandWithInput(node, undefined);
   }
 
   private procSubCounter = 63;
@@ -733,12 +733,12 @@ export class BashInterpreter {
     }
   }
 
-  private *visitSimpleCommandWithInput(rawNode: SimpleCommand, pipeInput: string): Effects<void> {
+  private *visitSimpleCommandWithInput(rawNode: SimpleCommand, pipeInput: string | undefined): Effects<void> {
     yield* this.fireSignalTrap('DEBUG');
     const node = this.materializeProcSubs(rawNode);
 
     // Check for input redirection (< file), herestring (<<<), or heredoc (<<)
-    if (!pipeInput) {
+    if (pipeInput === undefined) {
       for (const redir of node.redirections) {
         if (redir.op === '<' && this.io) {
           const target = yield* this.expandWordG(redir.target);
@@ -755,7 +755,7 @@ export class BashInterpreter {
       }
     }
 
-    if (!pipeInput && this.loopStdin) {
+    if (pipeInput === undefined && this.loopStdin) {
       const head = node.words[0];
       if (head && head.type === 'LiteralWord' && head.value === 'read') {
         pipeInput = this.loopStdin.length > 0 ? this.loopStdin.shift()! + '\n' : '';
@@ -871,7 +871,7 @@ export class BashInterpreter {
       const outputPiped = stdoutRedirected || this.nonLastPipelineStage;
       const result = normalizeResult(yield {
         argv: fullArgs, env: envSnapshot, background, outputPiped,
-        stdin: pipeInput || undefined,
+        stdin: pipeInput,
       });
       if (result.backgroundPid !== undefined) {
         this.env.set('!', String(result.backgroundPid));
@@ -1045,7 +1045,7 @@ export class BashInterpreter {
     const fullArgs = pipeInput ? [...target, pipeInput] : target;
     const envSnapshot = this.childEnvironment([]);
     const result = normalizeResult(yield {
-      argv: fullArgs, env: envSnapshot, stdin: pipeInput || undefined,
+      argv: fullArgs, env: envSnapshot, stdin: pipeInput,
     });
     if (result.output) this.output.push(result.output);
     this.env.lastExitCode = result.exitCode;
@@ -1200,30 +1200,48 @@ export class BashInterpreter {
       if (stderr) { this.output.push(stderr); this.stderrParts.push(stderr); }
       return;
     }
-    let stdoutHandled = false;
-    let stderrHandled = false;
+    type Sink = { kind: 'fd1' } | { kind: 'fd2' } | { kind: 'file'; path: string; append: boolean };
+    let fd1: Sink = { kind: 'fd1' };
+    let fd2: Sink = { kind: 'fd2' };
     for (const redir of redirections) {
       const target = yield* this.expandWordG(redir.target);
-      const path = this.io.resolvePath(target);
-      const append = redir.op === '>>';
+      const fd = redir.fd ?? 1;
+      if (redir.op === '>&' && /^\d+$/.test(target)) {
+        const source = target === '1' ? fd1 : target === '2' ? fd2 : null;
+        if (source === null) continue;
+        if (fd === 1) fd1 = source;
+        else if (fd === 2) fd2 = source;
+      } else if (redir.op === '>&') {
+        fd1 = fd2 = { kind: 'file', path: this.io.resolvePath(target), append: false };
+      } else if (redir.op === '>' || redir.op === '>>') {
+        const sink: Sink = { kind: 'file', path: this.io.resolvePath(target), append: redir.op === '>>' };
+        if (fd === 1) fd1 = sink;
+        else if (fd === 2) fd2 = sink;
+      }
+    }
+    const opened = new Set<string>();
+    const deliver = (content: string, sink: Sink): boolean => {
+      if (sink.kind === 'fd1') {
+        if (content) this.output.push(ensureTrailingNewline(content));
+        return true;
+      }
+      if (sink.kind === 'fd2') {
+        if (!content) return true;
+        this.stderrParts.push(content);
+        if (this.pipelineDepth === 0) this.output.push(ensureTrailingNewline(content));
+        return true;
+      }
       try {
-        if (redir.op === '>&' && /^\d+$/.test(target)) {
-          // fd dup (`>&2`): treat as stderr-handled so the stdout stream
-          // is the only thing left to flush to the terminal.
-          stderrHandled = stderrHandled || target === '2';
-        } else if (redir.op === '>' || redir.op === '>>') {
-          const fd = redir.fd ?? 1;
-          if (fd === 1) { this.io.writeFile(path, stdout, append); stdoutHandled = true; }
-          else if (fd === 2) { this.io.writeFile(path, stderr, append); stderrHandled = true; }
-        }
+        this.io!.writeFile(sink.path, content, sink.append || opened.has(sink.path));
+        opened.add(sink.path);
+        return true;
       } catch (e) {
         if (e instanceof Error) this.output.push(e.message + '\n');
         this.env.lastExitCode = 1;
-        return;
+        return false;
       }
-    }
-    if (!stdoutHandled && stdout) this.output.push(stdout);
-    if (!stderrHandled && stderr) { this.output.push(stderr); this.stderrParts.push(stderr); }
+    };
+    if (deliver(stdout, fd1)) deliver(stderr, fd2);
   }
 
   // ─── If ───────────────────────────────────────────────────────

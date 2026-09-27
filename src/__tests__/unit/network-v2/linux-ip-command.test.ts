@@ -97,6 +97,14 @@ function createMockContext(overrides: Partial<IpNetworkContext> = {}): IpNetwork
       return '';
     },
     getRoutingTable: () => routes,
+    resolveRouteWithRules: (dest: IPAddress) => {
+      const covering = routes.filter((r) => {
+        const mask = r.cidr === 0 ? 0 : (0xFFFFFFFF << (32 - r.cidr)) >>> 0;
+        return ((dest.toUint32() & mask) >>> 0) === ((new IPAddress(r.network).toUint32() & mask) >>> 0);
+      }).sort((a, b) => b.cidr - a.cidr || a.metric - b.metric);
+      const best = covering[0];
+      return best ? { iface: best.iface, nextHopIP: best.nextHop ?? dest.toString(), table: 254 } : null;
+    },
     addDefaultRoute: (gateway: IPAddress) => {
       routes.push({
         network: '0.0.0.0',

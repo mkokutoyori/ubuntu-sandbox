@@ -220,6 +220,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     const g = defaultSchedulerGeneration_();
     if (g === this.schedulerGeneration) return;
     this.schedulerGeneration = g;
+    this.timers.clearAll();
     this.helloTimers.clear();
     if (!this.isEnabled()) return;
     this.armHelloTimers();
@@ -545,22 +546,59 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
    * timings change; interfaces that dropped out lose their timer.
    */
   private armHelloTimers(): void {
+    this.clearHelloTimers();
+    this.syncHelloTimers();
+  }
+
+  private syncHelloTimers(): void {
     const active = new Set(this.activeInterfaces().map((c) => c.iface));
     for (const [iface, token] of [...this.helloTimers]) {
-      if (!active.has(iface)) {
-        this.timers.clear(token);
-        this.helloTimers.delete(iface);
-      }
+      if (active.has(iface)) continue;
+      this.timers.clear(token);
+      this.helloTimers.delete(iface);
     }
     for (const iface of active) {
-      // Re-arm unconditionally so an interval change takes effect; a
-      // no-op re-arm just restarts the period, as IOS does on config.
-      this.timers.clear(this.helloTimers.get(iface));
+      if (this.helloTimers.has(iface)) continue;
       this.helloTimers.set(iface, this.timers.setInterval(
         () => this.sendPeriodicHello(iface),
         this.helloSecFor(iface) * 1000,
       ));
     }
+  }
+
+  addNetwork(statement: EigrpNetworkStmt): void {
+    if (this.config.networks.some((held) => held.network === statement.network
+      && held.wildcard === statement.wildcard)) return;
+    this.config.networks.push(statement);
+    if (this.isEnabled()) this.syncHelloTimers();
+  }
+
+  removeNetwork(network: string): void {
+    this.config.networks = this.config.networks.filter((held) => held.network !== network);
+    this.leaveInactiveInterfaces();
+  }
+
+  setPassive(iface: string, passive: boolean): void {
+    if (passive) {
+      this.config.passive.add(iface);
+      this.onInterfacePassive(iface);
+      return;
+    }
+    this.config.passive.delete(iface);
+    if (this.isEnabled()) this.syncHelloTimers();
+  }
+
+  private leaveInactiveInterfaces(): void {
+    const active = new Set(this.activeInterfaces().map((c) => c.iface));
+    let lost = false;
+    for (const n of [...this.wireNeighbors.values()]) {
+      if (active.has(n.iface)) continue;
+      this.timers.clear(n.holdTimer);
+      this.dropNeighbor(n);
+      lost = true;
+    }
+    if (this.isEnabled()) this.syncHelloTimers();
+    if (lost) this.recomputeAfterNeighborChange();
   }
 
   private clearHelloTimers(): void {
@@ -656,6 +694,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     this.checkSchedulerGeneration();
     if (this.converging) return;
     if (!this.isEnabled() || !this.wire) { super.converge(); return; }
+    this.syncHelloTimers();
     this.converging = true;
     try {
       this.round += 1;

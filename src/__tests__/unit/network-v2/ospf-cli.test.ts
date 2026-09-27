@@ -444,7 +444,7 @@ describe('Huawei VRP — OSPF CLI', () => {
     expect(config.networks).toHaveLength(1);
     expect(config.networks[0].network).toBe('10.0.0.0');
     expect(config.networks[0].wildcard).toBe('0.0.0.255');
-    expect(config.networks[0].areaId).toBe('0');
+    expect(config.networks[0].areaId).toBe('0.0.0.0');
   });
 
   // ─── 31. Multiple areas ───────────────────────────────────────
@@ -507,7 +507,7 @@ describe('Huawei VRP — OSPF CLI', () => {
     await exec(r1, 'network 172.16.0.0 0.0.0.255');
     await exec(r1, 'stub');
 
-    const area = r1._getOSPFEngineInternal()!.getConfig().areas.get('1');
+    const area = r1._getOSPFEngineInternal()!.getConfig().areas.get('0.0.0.1');
     expect(area!.type).toBe('stub');
   });
 
@@ -519,7 +519,7 @@ describe('Huawei VRP — OSPF CLI', () => {
     await exec(r1, 'network 172.16.0.0 0.0.0.255');
     await exec(r1, 'stub no-summary');
 
-    const area = r1._getOSPFEngineInternal()!.getConfig().areas.get('1');
+    const area = r1._getOSPFEngineInternal()!.getConfig().areas.get('0.0.0.1');
     expect(area!.type).toBe('totally-stubby');
   });
 
@@ -531,7 +531,7 @@ describe('Huawei VRP — OSPF CLI', () => {
     await exec(r1, 'network 172.16.0.0 0.0.0.255');
     await exec(r1, 'nssa');
 
-    const area = r1._getOSPFEngineInternal()!.getConfig().areas.get('2');
+    const area = r1._getOSPFEngineInternal()!.getConfig().areas.get('0.0.0.2');
     expect(area!.type).toBe('nssa');
   });
 

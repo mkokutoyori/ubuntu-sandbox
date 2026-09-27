@@ -218,8 +218,8 @@ describe('Cisco : OSPF et les loopbacks', () => {
 
     // Loopback10 porte un /24 ; le voisin la voit en /32.
     const table = await ios(r2, ['show ip route']);
-    expect(table).toMatch(/O\s+172\.16\.1\.1\/32/);
-    expect(table).not.toMatch(/O\s+172\.16\.1\.0\/24/);
+    expect(table).toMatch(/^ {6}172\.16\.0\.0\/32 is subnetted, 1 subnets\nO {8}172\.16\.1\.1 \[110\/\d+\]/m);
+    expect(table).not.toMatch(/O\s+172\.16\.1\.0(?:\/24)? \[/);
   });
 
   it('`ip ospf network point-to-point` fait annoncer le préfixe configuré', async () => {
@@ -233,8 +233,8 @@ describe('Cisco : OSPF et les loopbacks', () => {
     expect(vue).toContain('State PointToPoint');
 
     const table = await ios(r2, ['show ip route']);
-    expect(table).toMatch(/O\s+172\.16\.1\.0\/24/);
-    expect(table).not.toMatch(/O\s+172\.16\.1\.1\/32/);
+    expect(table).toMatch(/^ {6}172\.16\.0\.0\/24 is subnetted, 1 subnets\nO {8}172\.16\.1\.0 \[110\/\d+\]/m);
+    expect(table).not.toMatch(/O\s+172\.16\.1\.1(?:\/32)? \[/);
   });
 });
 

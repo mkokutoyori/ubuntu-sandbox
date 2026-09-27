@@ -192,8 +192,21 @@ export interface OSPFNeighbor {
   ddRetransmitTimer: symbol | null;
   /** LSR retransmission timer handle (RFC 2328 §10.9) */
   lsrRetransmitTimer: symbol | null;
+  lsuRetransmitTimer?: symbol | null;
+  lsuResent?: OSPFLsuResentCount;
   /** Last DD packet sent (for retransmission on timeout) */
   lastSentDD: OSPFDDPacket | null;
+}
+
+export interface OSPFLsuResentCount {
+  packets: number;
+  lastLength: number;
+  maxLength: number;
+}
+
+export interface OSPFLsuRetransmission extends OSPFLsuResentCount {
+  queue: readonly LSA[];
+  dueInMs: number | null;
 }
 
 // ─── Interface State Machine (RFC 2328 §9.1) ────────────────────────

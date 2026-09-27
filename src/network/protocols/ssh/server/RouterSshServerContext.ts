@@ -80,6 +80,7 @@ export interface RouterSshServerDeps {
   isClientBlocked?(ip: string, user?: string): boolean;
   /** Optional auth-failure hook for the audit log. */
   recordAuthFailure?(user: string, fromIp: string, reason: string): void;
+  forcedCommand?(user: string): string | null;
 }
 
 export class RouterSshServerContext implements ISshServerContext {
@@ -190,6 +191,10 @@ export class RouterSshServerContext implements ISshServerContext {
     const present = cred.has?.(username) ?? cred.get?.(username) !== undefined;
     if (!present) return null;
     return new SshUserContext(username, 0, 0, [], `/`);
+  }
+
+  forcedCommand(userCtx: SshUserContext): string | null {
+    return this.deps.forcedCommand?.(userCtx.username) ?? null;
   }
 
   isClientBlocked(ip: string, user?: string): boolean {

@@ -5,6 +5,8 @@ import { requireWindowsService } from './WinFeatureGate';
 import { isValidIPv4 } from '@/network/core/ip';
 import { unquote } from '@/lib/format';
 
+const WINDOWS_PING_INTERVAL_MS = 1000;
+
 const PING_HELP = `
 Usage: ping [-t] [-a] [-n count] [-l size] [-f] [-i TTL] [-v TOS]
             [-r count] [-s count] [[-j host-list] | [-k host-list]]
@@ -256,6 +258,9 @@ export function formatWinPingReplyLine(r: PingResult, size: number): string {
     const ms = r.rttMs < 1 ? '<1ms' : `${Math.round(r.rttMs)}ms`;
     return `Reply from ${r.fromIP}: bytes=${size} time=${ms} TTL=${r.ttl}`;
   }
+  if (r.error?.startsWith('local error: message too long')) {
+    return winUnreachText(4);
+  }
   if (r.error?.includes('Time to live exceeded')) {
     const match = r.error.match(/from ([\d.]+)/);
     return `Reply from ${match ? match[1] : 'unknown'}: TTL expired in transit.`;
@@ -358,7 +363,7 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
   }
 
   const results = await ctx.executePingSequence(targetIP, parsed.count, parsed.timeoutMs, parsed.ttl,
-    { dataSize: parsed.size, df: parsed.dontFragment });
+    { dataSize: parsed.size, df: parsed.dontFragment, pauseAfterErrorReplyMs: WINDOWS_PING_INTERVAL_MS });
   const hostname = parsed.targetStr !== targetIP.toString() ? parsed.targetStr : undefined;
 
   // `-r`/`-s` record the REAL forward path. Derive it once from a short

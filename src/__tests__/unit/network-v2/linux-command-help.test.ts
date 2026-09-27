@@ -89,7 +89,7 @@ describe('LinuxCommand — help & usage', () => {
   describe('--help flag', () => {
     it('should show usage for ping --help', async () => {
       const out = await pc.executeCommand('ping --help');
-      expect(out).toContain('Usage:');
+      expect(out).toContain('\nUsage\n  ping [options] <destination>');
       expect(out).toContain('ping');
     });
 
@@ -127,10 +127,9 @@ describe('LinuxCommand — help & usage', () => {
   // ── Error messages ─────────────────────────────────────────────
 
   describe('error messages', () => {
-    it('ping without target should show usage', async () => {
+    it('ping without target says the destination is required', async () => {
       const out = await pc.executeCommand('ping');
-      expect(out).toContain('Usage:');
-      expect(out).toContain('ping');
+      expect(out).toBe('ping: usage error: Destination address required');
     });
 
     it('ping with invalid IP should show clear error', async () => {
@@ -184,7 +183,7 @@ describe('LinuxCommand — man on LinuxServer', () => {
 
   it('should show --help for ping on a server', async () => {
     const out = await server.executeCommand('ping --help');
-    expect(out).toContain('Usage:');
+    expect(out).toContain('\nUsage\n  ping [options] <destination>');
     expect(out).toContain('ping');
   });
 });

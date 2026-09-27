@@ -23,6 +23,7 @@ import type { IScheduler, TimerHandle } from './Scheduler';
 interface OwnedTimer {
   scheduler: IScheduler;
   handle: TimerHandle;
+  dueAt: number | null;
 }
 
 export class TimerSet {
@@ -38,7 +39,7 @@ export class TimerSet {
       this.entries.delete(token);
       fn();
     }, delayMs);
-    this.entries.set(token, { scheduler, handle });
+    this.entries.set(token, { scheduler, handle, dueAt: scheduler.now() + delayMs });
     return token;
   }
 
@@ -47,8 +48,14 @@ export class TimerSet {
     const scheduler = this.schedulerProvider();
     const token = Symbol('interval');
     const handle = scheduler.setInterval(fn, periodMs);
-    this.entries.set(token, { scheduler, handle });
+    this.entries.set(token, { scheduler, handle, dueAt: null });
     return token;
+  }
+
+  remaining(token: symbol | null | undefined): number | null {
+    const owned = token ? this.entries.get(token) : undefined;
+    if (!owned || owned.dueAt === null) return null;
+    return Math.max(0, owned.dueAt - owned.scheduler.now());
   }
 
   /** Cancel a single timer using the scheduler that scheduled it. */

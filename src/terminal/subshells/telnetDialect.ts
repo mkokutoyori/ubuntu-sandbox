@@ -159,6 +159,7 @@ const SAYS: Readonly<Record<
   timeout: 'timedOut',
   prohibited: 'noRoute',
   unreachable: 'unreachable',
+  'host-unreachable': 'noRoute',
 };
 
 export function telnetWireFailure(

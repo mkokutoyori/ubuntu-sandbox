@@ -297,11 +297,11 @@ describe('TCP — segmentation and reassembly (RFC 793)', () => {
         segmentsSent.push(e.payload.payloadSize);
       }
     });
-    const big = 'x'.repeat(1460 * 2 + 200);
+    const big = 'x'.repeat(1448 * 2 + 200);
     cs.send(big);
     expect(segmentsSent.length).toBe(3);
-    expect(segmentsSent[0]).toBe(1460);
-    expect(segmentsSent[1]).toBe(1460);
+    expect(segmentsSent[0]).toBe(1448);
+    expect(segmentsSent[1]).toBe(1448);
     expect(segmentsSent[2]).toBe(200);
     expect(received).toEqual([big]);
   });

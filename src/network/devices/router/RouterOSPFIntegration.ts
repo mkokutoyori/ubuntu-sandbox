@@ -22,8 +22,9 @@ import { ipv4MulticastToMac } from '../../core/ip';
 import { Logger } from '../../core/Logger';
 import { OSPFEngine } from '../../ospf/OSPFEngine';
 import { OSPFv3Engine } from '../../ospf/OSPFv3Engine';
-import type { OSPFNeighbor, OSPFPacket, OSPFInterface } from '../../ospf/types';
-import { OSPF_ROUTER_ID_ABSENT } from '../../ospf/types';
+import type { OSPFNeighbor, OSPFPacket, OSPFInterface, OSPFNetworkType } from '../../ospf/types';
+import { OSPF_ROUTER_ID_ABSENT, areasEqual } from '../../ospf/types';
+import { carriedInstallTime } from '../../routing/RouteInstallTime';
 import type { ACLEngine } from './ACLEngine';
 import type { IPv6DataPlane } from './IPv6DataPlane';
 import type { RouteEntry } from '../Router';
@@ -33,6 +34,19 @@ import type { Equipment } from '@/network/equipment/Equipment';
 // ─── OSPF Extra Config Type ─────────────────────────────────────
 
 /** Advanced OSPF configuration not stored in OSPFEngine itself */
+export interface OspfInterfaceSettings {
+  cost?: number; priority?: number;
+  helloInterval?: number; deadInterval?: number;
+  authType?: number; authKey?: string;
+  demandCircuit?: boolean; networkType?: string;
+  mtuIgnore?: boolean; retransmitInterval?: number; transmitDelay?: number;
+  authKeyId?: number; silent?: boolean;
+  bfd?: boolean; bfdEchoDisabled?: boolean; bfdInterval?: number;
+  bfdMinRx?: number; bfdMultiplier?: number; bfdTemplate?: string;
+  floodReduction?: boolean; databaseFilterAllOut?: boolean;
+  area?: string; processId?: number;
+}
+
 export interface OSPFExtraConfig {
   spfThrottle?: { initial: number; hold: number; max: number };
   maxLsa?: number;
@@ -48,16 +62,7 @@ export interface OSPFExtraConfig {
   distributeList?: { aclId?: string; prefixListName?: string; direction: 'in' | 'out' };
   defaultInfoMetricType?: number;
   defaultInfoAlways?: boolean;
-  pendingIfConfig: Map<string, {
-    cost?: number; priority?: number;
-    helloInterval?: number; deadInterval?: number;
-    authType?: number; authKey?: string;
-    demandCircuit?: boolean; networkType?: string;
-    mtuIgnore?: boolean; retransmitInterval?: number; transmitDelay?: number;
-    authKeyId?: number; silent?: boolean;
-    bfd?: boolean; bfdEchoDisabled?: boolean; bfdInterval?: number;
-    bfdMinRx?: number; bfdMultiplier?: number; bfdTemplate?: string;
-  }>;
+  pendingIfConfig: Map<string, OspfInterfaceSettings>;
   pendingV3IfConfig: Map<string, {
     cost?: number; priority?: number;
     networkType?: string; ipsecAuth?: boolean;
@@ -393,10 +398,10 @@ export class RouterOSPFIntegration {
           peer.sendPacket(ifaceName, packet, destIP);
           return;
         }
-        const iface = peer.ospfEngine!.getInterface(ifaceName);
-        const delay = iface?.propagationDelayMs ?? 0;
+        const engine = peer.ospfEngine!;
+        const delay = engine.getInterface(ifaceName)?.propagationDelayMs ?? 0;
         if (delay > 0) {
-          setTimeout(() => peer.sendPacket(ifaceName, packet, destIP), delay);
+          engine.defer(() => peer.sendPacket(ifaceName, packet, destIP), delay);
         } else {
           peer.sendPacket(ifaceName, packet, destIP);
         }
@@ -437,7 +442,7 @@ export class RouterOSPFIntegration {
       lsRequestList: [],
       lsRetransmissionList: [],
       dbSummaryList: [],
-      lastHelloReceived: Date.now(),
+      lastHelloReceived: engine.now(),
       options: 0,
       ddRetransmitTimer: null,
       lsrRetransmitTimer: null,
@@ -598,6 +603,80 @@ export class RouterOSPFIntegration {
     this.ospfEngine.deactivateInterface(portName);
   }
 
+  applyInterfaceSettings(ifName: string, updates: OspfInterfaceSettings): void {
+    const pending = this.extraConfig.pendingIfConfig.get(ifName) ?? {};
+    Object.assign(pending, updates);
+    this.extraConfig.pendingIfConfig.set(ifName, pending);
+    const engine = this.ospfEngine;
+    const iface = engine?.getInterface(ifName);
+    if (engine && iface) {
+      if (updates.cost !== undefined) engine.setInterfaceCost(ifName, updates.cost);
+      if (updates.priority !== undefined) engine.setInterfacePriority(ifName, updates.priority);
+      if (updates.networkType !== undefined) {
+        engine.setInterfaceNetworkType(ifName, updates.networkType as OSPFNetworkType);
+      }
+      if (updates.helloInterval !== undefined) iface.helloInterval = updates.helloInterval;
+      if (updates.deadInterval !== undefined) iface.deadInterval = updates.deadInterval;
+      if (updates.authType !== undefined) iface.authType = updates.authType;
+      if (updates.authKey !== undefined) iface.authKey = updates.authKey;
+      if (updates.retransmitInterval !== undefined) iface.retransmitInterval = updates.retransmitInterval;
+      if (updates.transmitDelay !== undefined) iface.transmitDelay = updates.transmitDelay;
+    }
+    this.autoConverge();
+  }
+
+  removeNetwork(network: string, wildcard: string, areaId: string): void {
+    this.ospfEngine?.removeNetwork(network, wildcard, areaId);
+    this.withdrawUncoveredInterfaces();
+    this.autoConverge();
+  }
+
+  setInterfaceArea(ifName: string, processId: number, areaId: string): void {
+    this.enableOSPF(processId);
+    const pending = this.extraConfig.pendingIfConfig.get(ifName) ?? {};
+    pending.area = areaId;
+    pending.processId = processId;
+    this.extraConfig.pendingIfConfig.set(ifName, pending);
+    const iface = this.ospfEngine?.getInterface(ifName);
+    if (iface && !areasEqual(iface.areaId, areaId)) this.ospfEngine!.removeInterface(ifName);
+    this.autoConverge();
+  }
+
+  clearInterfaceArea(ifName: string): void {
+    const pending = this.extraConfig.pendingIfConfig.get(ifName);
+    if (pending) {
+      delete pending.area;
+      delete pending.processId;
+    }
+    this.withdrawUncoveredInterfaces();
+    this.autoConverge();
+  }
+
+  private withdrawUncoveredInterfaces(): void {
+    const engine = this.ospfEngine;
+    if (!engine) return;
+    for (const [name, iface] of [...engine.getInterfaces()]) {
+      const wanted = this.areaWantedFor(name);
+      if (wanted === undefined || !areasEqual(wanted, iface.areaId)) engine.removeInterface(name);
+    }
+  }
+
+  private areaWantedFor(ifName: string): string | undefined {
+    const interfaceLevel = this.extraConfig.pendingIfConfig.get(ifName)?.area;
+    if (interfaceLevel !== undefined) return interfaceLevel;
+    const port = this.ctx.getPorts().get(ifName);
+    const ip = port?.getIPAddress();
+    const mask = port?.getSubnetMask();
+    if (!ip || !mask || !this.ospfEngine) return undefined;
+    return this.ospfEngine.matchInterfaces([{ name: ifName, ip: ip.toString(), mask: mask.toString() }])[0]?.areaId;
+  }
+
+  resetInterfaceCost(ifName: string): void {
+    delete this.extraConfig.pendingIfConfig.get(ifName)?.cost;
+    this.ospfEngine?.resetInterfaceCost(ifName);
+    this.autoConverge();
+  }
+
   autoConverge(): void {
     if (!this.ospfEngine && !this.ospfv3Engine) return;
     // OSPFv3-only mode: skip OSPFv2 steps, jump straight to v3
@@ -618,8 +697,12 @@ export class RouterOSPFIntegration {
       }
     }
 
-    const matches = this.ospfEngine.matchInterfaces(routerIfaces);
-    for (const m of matches) {
+    const matches = new Map(this.ospfEngine.matchInterfaces(routerIfaces).map((m) => [m.name, m]));
+    for (const ri of routerIfaces) {
+      const area = this.extraConfig.pendingIfConfig.get(ri.name)?.area;
+      if (area !== undefined) matches.set(ri.name, { ...ri, areaId: area });
+    }
+    for (const m of matches.values()) {
       if (!this.ospfEngine.getInterface(m.name)) {
         const pending = this.extraConfig.pendingIfConfig.get(m.name);
         this.ospfEngine.activateInterface(m.name, m.ip, m.mask, m.areaId, {
@@ -914,7 +997,7 @@ export class RouterOSPFIntegration {
     this.pumpHellosV3(allPeers);
 
     this.floodV3LinkLSAs(allPeers);
-    this.v3ComputeRoutes(allPeers);
+    for (const peer of allPeers) peer.v3ComputeRoutes(allPeers);
   }
 
   /**
@@ -1732,6 +1815,7 @@ export class RouterOSPFIntegration {
 
   /** Install OSPF-computed routes into the router's RIB */
   private installRoutes(routes: any[]): void {
+    const previous = this.ctx.getRoutingTable().filter(r => r.type === 'ospf');
     // Remove old OSPF routes
     this.ctx.setRoutingTable(this.ctx.getRoutingTable().filter(r => r.type !== 'ospf'));
 
@@ -1786,6 +1870,7 @@ export class RouterOSPFIntegration {
         if (route._metricType) entry._metricType = route._metricType;
         if (route._isDefault) entry._isDefault = route._isDefault;
         if (route._isStubDefault) entry._isStubDefault = route._isStubDefault;
+        entry.installedAt = carriedInstallTime(previous, entry);
         this.ctx.pushRoute(entry);
       }
     }

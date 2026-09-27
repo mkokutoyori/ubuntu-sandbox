@@ -119,7 +119,7 @@ describe('--data-length pose des octets aleatoires', () => {
 
     expect(sortie).toContain(
       'WARNING: Payloads bigger than 1400 bytes may not be sent successfully.');
-    expect(sortie).toMatch(/22\/tcp\s+open\s+ssh/);
+    expect(sortie).toMatch(/22\/tcp\s+filtered\s+ssh/);
   });
 });
 

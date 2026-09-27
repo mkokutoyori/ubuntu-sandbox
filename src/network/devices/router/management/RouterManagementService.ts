@@ -30,6 +30,23 @@ function positiveInteger(text: string | undefined): number | null {
   return /^\d+$/.test(text ?? '') && Number(text) > 0 ? Number(text) : null;
 }
 
+export const SSH_USER_AUTHENTICATION_TYPES = [
+  'password', 'rsa', 'dsa', 'ecc', 'password-rsa', 'password-dsa', 'password-ecc', 'all',
+] as const;
+export type SshUserAuthenticationType = typeof SSH_USER_AUTHENTICATION_TYPES[number];
+export const SSH_USER_SERVICE_TYPES = ['stelnet', 'sftp', 'all'] as const;
+export type SshUserServiceType = typeof SSH_USER_SERVICE_TYPES[number];
+
+export interface SshUser {
+  authenticationType?: SshUserAuthenticationType;
+  serviceType?: SshUserServiceType;
+}
+
+function oneOf<T extends string>(allowed: readonly T[], text: string | undefined): T | null {
+  const lowered = (text ?? '').toLowerCase();
+  return (allowed as readonly string[]).includes(lowered) ? lowered as T : null;
+}
+
 export const TELNET_DEFAULT_PORT = 23;
 
 export function telnetListenPortIsValid(port: number): boolean {
@@ -69,6 +86,8 @@ export class RouterManagementService {
     timeout: SSH_DEFAULT_TIMEOUT_SEC,
     retries: SSH_DEFAULT_AUTH_RETRIES,
   };
+  private readonly sshUsers = new Map<string, SshUser>();
+  private sshDefaultPasswordAuthentication = true;
   private readonly ntpService = {
     enabled: true,
     sourceInterface: '',
@@ -159,11 +178,56 @@ export class RouterManagementService {
       this.sshServer.retries = retries;
     }
     else if (head === 'server') return args[1] ?? head;
+    else if (head === 'user') return this.configureSshUser(args.slice(1), negated);
+    else if (head === 'authentication-type') {
+      if (args[1]?.toLowerCase() !== 'default' || args[2]?.toLowerCase() !== 'password') return args[1] ?? head;
+      this.sshDefaultPasswordAuthentication = !negated;
+    }
     else if (head === 'client' && args[1]?.toLowerCase() === 'first-time') { /* ignored */ }
     else this.recordRaw('ssh', args.join(' '));
     return null;
   }
   getSsh(): typeof this.sshServer { return this.sshServer; }
+
+  private configureSshUser(args: string[], negated: boolean): string | null {
+    const name = args[0];
+    if (!name) return 'user';
+    const attribute = args[1]?.toLowerCase();
+    if (attribute === undefined) {
+      if (negated) this.sshUsers.delete(name);
+      else if (!this.sshUsers.has(name)) this.sshUsers.set(name, {});
+      return null;
+    }
+    const user = this.sshUsers.get(name) ?? {};
+    if (attribute === 'authentication-type') {
+      if (negated) { delete user.authenticationType; return null; }
+      const type = oneOf(SSH_USER_AUTHENTICATION_TYPES, args[2]);
+      if (type === null) return args[2] ?? attribute;
+      user.authenticationType = type;
+    } else if (attribute === 'service-type') {
+      if (negated) { delete user.serviceType; return null; }
+      const type = oneOf(SSH_USER_SERVICE_TYPES, args[2]);
+      if (type === null) return args[2] ?? attribute;
+      user.serviceType = type;
+    } else {
+      return args[1];
+    }
+    this.sshUsers.set(name, user);
+    return null;
+  }
+
+  getSshUsers(): ReadonlyMap<string, Readonly<SshUser>> { return this.sshUsers; }
+  sshDefaultPasswordAuthenticationEnabled(): boolean { return this.sshDefaultPasswordAuthentication; }
+
+  sshPasswordAllowed(user: string): boolean {
+    const type = this.sshUsers.get(user)?.authenticationType;
+    if (type === undefined) return this.sshDefaultPasswordAuthentication;
+    return type === 'password' || type === 'all';
+  }
+
+  sshForcedCommand(user: string): string | null {
+    return this.sshUsers.get(user)?.serviceType === 'sftp' ? 'internal-sftp' : null;
+  }
 
   sshServerLimits(): { maxAuthTries: number; loginGraceTime: number } {
     return { maxAuthTries: this.sshServer.retries, loginGraceTime: this.sshServer.timeout };

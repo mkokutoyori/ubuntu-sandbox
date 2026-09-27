@@ -117,8 +117,17 @@ export function buildIpCtx(
   linkOps?: IpLinkOpsContext,
   netns?: IpNetnsContext,
   maddr?: IpMaddrContext,
+  currentUid: () => number = () => 0,
 ): IpNetworkContext {
   return {
+    routeLookupFacts(dest: IPAddress) {
+      return { local: net.isLocalAddress(dest), uid: currentUid(), exception: net.routeException(dest) };
+    },
+    flushRouteCache(): string {
+      if (currentUid() !== 0) return 'Cannot open "/proc/sys/net/ipv4/route/flush": Permission denied';
+      net.flushRouteExceptions();
+      return '';
+    },
     // Any local port answers this: a port belongs to the machine that
     // owns it, so there is nothing further to inject.
     getLocalDevice(): object | null {
@@ -470,7 +479,8 @@ export const ipCommand: LinuxCommand = {
       if (!name || !cmdLine) return 'Usage: ip netns exec NAME cmd...';
       return ctx.netns.exec(name, cmdLine);
     }
-    const ipCtx = buildIpCtx(ctx.net, ctx.xfrm, ctx.greAgent, ctx.linkOps, ctx.netns, ctx.maddr);
+    const ipCtx = buildIpCtx(ctx.net, ctx.xfrm, ctx.greAgent, ctx.linkOps, ctx.netns, ctx.maddr,
+      () => ctx.executor.userMgr.currentUid);
     // Seul `-c=auto` consulte ce drapeau ; les autres formes de `-c`
     // tranchent d'elles-mêmes.
     const out = executeIpCommand(ipCtx, args, ctx.outputPiped === true);

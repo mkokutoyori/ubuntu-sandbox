@@ -598,6 +598,7 @@ export const base64Command = coreutil(
     const got = inputs(ctx, args.filter(a => !a.startsWith('-') || a === '-'), stdin, 'base64');
     if (!Array.isArray(got)) return got;
     const input = got.join('');
+    if (input === '') return '';
 
     try {
       if (decode) {

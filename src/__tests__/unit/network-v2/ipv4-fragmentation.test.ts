@@ -204,7 +204,7 @@ describe('router forwarding fragments oversized UDP across an MTU boundary', () 
     const received: unknown[] = [];
     srv.udpBind(9301, (d) => received.push(d.udp.payload));
 
-    const payload = 'B'.repeat(3000);
+    const payload = 'B'.repeat(1000);
     cli.sendUdpDatagram(new IPAddress('10.0.2.10'), 9301, 40001, payload, payload.length, { df: true });
 
     expect(received).toEqual([]);
@@ -251,7 +251,7 @@ describe('Linux NAT-gateway forwarding also fragments across an MTU boundary', (
     const received: unknown[] = [];
     dst.udpBind(9401, (d) => received.push(d.udp.payload));
 
-    const payload = 'E'.repeat(3000);
+    const payload = 'E'.repeat(1000);
     src.sendUdpDatagram(new IPAddress('10.0.2.2'), 9401, 41001, payload, payload.length, { df: true });
 
     expect(received).toEqual([]);

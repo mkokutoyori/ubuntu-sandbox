@@ -309,14 +309,15 @@ describe('Group 3 — MinLSInterval (5s rate-limit on self-originated flooding)'
     vi.useRealTimers();
   });
 
-  it('3.01 — first origination is always sent (no prior flood)', () => {
+  it('3.01 — the activation counts as an origination: the changed instance goes out once MinLSInterval elapses', () => {
     sentLSUs = [];
     engine.originateRouterLSA(OSPF_BACKBONE_AREA);
-    // The flood should be sent to the Full neighbor
+    expect(sentLSUs.some(lsu => lsu.lsas.some(lsa => lsa.advertisingRouter === '1.1.1.1'))).toBe(false);
+    vi.advanceTimersByTime(OSPF_MIN_LS_INTERVAL * 1000);
     expect(sentLSUs.some(lsu => lsu.lsas.some(lsa => lsa.advertisingRouter === '1.1.1.1'))).toBe(true);
   });
 
-  it('3.02 — second origination within MinLSInterval (5s) is rate-limited (flood suppressed)', () => {
+  it('3.02 — second origination within MinLSInterval (5s) is deferred, not flooded yet', () => {
     // First origination
     engine.originateRouterLSA(OSPF_BACKBONE_AREA);
     const countAfterFirst = sentLSUs.filter(lsu => lsu.lsas.some(l => l.advertisingRouter === '1.1.1.1')).length;

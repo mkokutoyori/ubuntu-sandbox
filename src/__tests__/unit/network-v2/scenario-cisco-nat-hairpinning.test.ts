@@ -125,11 +125,8 @@ describe('Scénario 6 (Cisco) — NAT Hairpinning : accès interne via l\'IP pub
 
     it('une connexion nc directe vers 203.0.113.10:1521 depuis PC-Linux-1 échoue sans configuration de hairpinning', async () => {
       const { pcLinux1 } = await buildLab();
-      const out = await pcLinux1.executeCommand(`nc -z -w 1 ${ORACLE_PUBLIC_IP} 1521`);
-      // 203.0.113.10 n'est l'IP d'aucune interface réelle (seulement une
-      // cible de traduction NAT statique) : nc échoue dès la résolution
-      // d'hôte, avant même d'atteindre la logique de traduction.
-      expect(out).toMatch(/getaddrinfo/i);
+      const out = await pcLinux1.executeCommand(`nc -z -v -w 1 ${ORACLE_PUBLIC_IP} 1521; echo rc=$?`);
+      expect(out).toBe(`nc: connect to ${ORACLE_PUBLIC_IP} port 1521 (tcp) failed: Connection timed out\nrc=1`);
     });
   });
 

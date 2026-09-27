@@ -124,7 +124,7 @@ describe('Scénario 16 — Dérive de registre de service (annonce vs réalité)
     await baseFirewall(server);
     bindActual(server, ACTUAL_PORT);
     const noRegistry = await client.executeCommand(`nc -zv 10.0.0.20 unknownsvc`);
-    expect(noRegistry).toMatch(/invalid|Name or service not known|port number invalid/i);
+    expect(noRegistry).toBe('nc: service "unknownsvc" unknown');
     await declareService(client, 'myapp', DECLARED_PORT);
     const refused = await client.executeCommand(`nc -zv 10.0.0.20 myapp`);
     expect(refused).toMatch(/refused|closed/i);

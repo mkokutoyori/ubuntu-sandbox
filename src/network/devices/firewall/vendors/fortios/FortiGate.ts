@@ -119,7 +119,7 @@ export class FortiGate extends Firewall {
   }
 
   protected override managementRunningConfig(): string {
-    return this.getShell().execute('show');
+    return new FortiShell(this).execute('show');
   }
 
   executeCommand(command: string): Promise<string> {

@@ -13,7 +13,7 @@ import type { IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import { stampUdpChecksum } from '../../layers/transport/UdpChecksum';
 import { selectIpv6SourceAddress } from '../../layers/internet/Ipv6Egress';
-import { mayGenerateICMPv6Error } from '../../core/IcmpErrors';
+import { ICMPV6_UNREACH_PORT, mayGenerateICMPv6Error } from '../../core/IcmpErrors';
 import {
   IPv6Address, IPv6Packet, ICMPv6Packet, MACAddress, UDPPacket,
   NDPNeighborSolicitation, NDPNeighborAdvertisement, NDPRouterSolicitation,
@@ -84,6 +84,8 @@ export interface IPv6RouterContext {
   getBus(): IEventBus;
   /** Scheduler accessor (Phase 5.10 — RA intervals run through TimerSet). */
   getScheduler(): IScheduler;
+  admitIcmpv6Error(): boolean;
+  onIcmpv6Error?(ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void;
   /** DHCPv6 (RFC 8415) server engine, shared with the router's CLI layer. */
   getDhcpv6Server(): DHCPv6Server;
   deliverTcp6?(inPort: string, ipv6: IPv6Packet): void;
@@ -166,7 +168,6 @@ export function emptyIpv6Counters(): Ipv6Counters {
 }
 
 /** Where a locally-originated IPv6 packet leaves, once resolved. */
-const ICMPV6_UNREACH_PORT = 4;
 
 export interface IPv6PathResolution {
   iface: string;
@@ -699,6 +700,22 @@ export class IPv6DataPlane {
     });
   }
 
+  sendUdpProbe(
+    egress: IPv6EgressResolution, destIP: IPv6Address,
+    sourcePort: number, destinationPort: number, hopLimit: number,
+  ): void {
+    this.v6Counters.outRequests++;
+    const source = egress.sourceIP.toString();
+    const datagram: UDPPacket = { type: 'udp', sourcePort, destinationPort, length: 8, checksum: 0, payload: null };
+    const udp = stampUdpChecksum(datagram, source, destIP.toString());
+    this.ctx.sendFrame(egress.iface, {
+      srcMAC: egress.port.getMAC(),
+      dstMAC: egress.nextHopMAC,
+      etherType: ETHERTYPE_IPV6,
+      payload: createIPv6Packet(egress.sourceIP, destIP, IP_PROTO_UDP, hopLimit, udp, udp.length),
+    });
+  }
+
   private handleICMPv6(inPort: string, ipv6: IPv6Packet): void {
     const icmpv6 = ipv6.payload as ICMPv6Packet;
     if (!icmpv6 || icmpv6.type !== 'icmpv6') return;
@@ -748,6 +765,7 @@ export class IPv6DataPlane {
       ? 'ttl-exceeded'
       : (icmpv6.icmpType === 'packet-too-big' ? 'frag-needed' : 'unreachable');
     this.ctx.onIcmpv6EchoFailed?.({ fromIp: ipv6.sourceIP.toString(), reason });
+    this.ctx.onIcmpv6Error?.(ipv6, icmpv6);
   }
 
   private handleEchoRequest(inPort: string, ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
@@ -1105,6 +1123,7 @@ export class IPv6DataPlane {
     mtu?: number,
   ): void {
     if (!mayGenerateICMPv6Error(offendingPkt, errorType)) return;
+    if (!this.ctx.admitIcmpv6Error()) return;
     const port = this.ctx.getPorts().get(inPort);
     if (!port) return;
     // RFC 4443 §2.2: a unicast address of the interface the packet came
@@ -1119,6 +1138,7 @@ export class IPv6DataPlane {
       icmpType: errorType,
       code,
       mtu,
+      invokingPacket: offendingPkt,
     };
 
     const errorPkt = createIPv6Packet(

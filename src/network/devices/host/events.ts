@@ -125,6 +125,8 @@ export interface HostIcmpUnreachablePayload extends HostDeviceRef {
   ttl?: number;
   origProtocol?: number;
   origDestPort?: number;
+  icmpType?: 'time-exceeded' | 'destination-unreachable';
+  mtu?: number;
 }
 
 /**

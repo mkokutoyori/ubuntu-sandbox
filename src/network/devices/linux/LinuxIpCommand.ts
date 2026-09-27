@@ -13,6 +13,7 @@ import {
   type IpColorizer, type IpColorMode,
 } from './LinuxIpColor';
 import { IPAddress, MACAddress, SubnetMask } from '../../core/types';
+import type { RouteException } from '../EndHost';
 import { broadcastAddress } from '../../core/ip';
 import { parseIpv6Prefix } from '../../core/Ipv6Arithmetic';
 import {
@@ -174,10 +175,11 @@ export interface IpNetworkContext {
   linkOps?: IpLinkOpsContext;
   /** Optional policy-routing rule context for ip rule */
   rule?: IpRuleContext;
-  /** Optional rule-aware route resolution, for `ip route get from SRC DST` */
-  resolveRouteWithRules?(
+  resolveRouteWithRules(
     dest: IPAddress, from: IPAddress | null,
   ): { iface: string; nextHopIP: string; table: number } | null;
+  routeLookupFacts?(dest: IPAddress): { local: boolean; uid: number; exception: RouteException | null };
+  flushRouteCache?(): string;
   /** Optional network namespace CRUD for ip netns (list/add/del only — exec is handled upstream) */
   netns?: IpNetnsContext;
   /** Optional IPv4 multicast membership context for `ip maddr` (IGMP). */
@@ -1286,6 +1288,10 @@ function ipRoute(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): 
   if (args[0] === 'change') return ipRouteChange(ctx, args.slice(1));
   if (args[0] === 'del' || args[0] === 'delete') return ipRouteDel(ctx, args.slice(1));
   if (args[0] === 'get') return ipRouteGet(ctx, args.slice(1));
+  if (args[0] === 'flush') {
+    if (args[1] === 'cache' && args.length === 2 && ctx.flushRouteCache) return ctx.flushRouteCache();
+    return `ip route flush ${args.slice(1).join(' ')}: this simulator cannot flush routes by selector`.trimEnd();
+  }
   if (args[0] === 'help') return IP_ROUTE_HELP;
   return `Command "${args[0]}" is unknown, try "ip route help".`;
 }
@@ -1612,57 +1618,34 @@ function ipRouteGet(ctx: IpNetworkContext, args: string[]): string {
   if (!destAddr) return `Error: ${dest} is not a valid IPv4 address.`;
 
   const fromIdx = args.indexOf('from');
-  if (fromIdx !== -1 && args[fromIdx + 1] && ctx.resolveRouteWithRules) {
-    const fromAddr = IPAddress.tryParse(args[fromIdx + 1]);
+  let fromAddr: IPAddress | null = null;
+  if (fromIdx !== -1 && args[fromIdx + 1]) {
+    fromAddr = IPAddress.tryParse(args[fromIdx + 1]);
     if (!fromAddr) return `Error: ${args[fromIdx + 1]} is not a valid IPv4 address.`;
-    const resolved = ctx.resolveRouteWithRules(destAddr, fromAddr);
-    if (!resolved) return `RTNETLINK answers: Network is unreachable`;
-    const iface = ctx.getInterfaceInfo(resolved.iface);
-    const src = iface?.ip ?? undefined;
-    const suffix = src ? ` src ${src}` : '';
-    const tableSuffix = resolved.table !== 254 ? ` table ${resolved.table}` : '';
-    if (resolved.nextHopIP === dest) {
-      return `${dest} from ${fromAddr} dev ${resolved.iface}${suffix}${tableSuffix}`;
-    }
-    return `${dest} from ${fromAddr} via ${resolved.nextHopIP} dev ${resolved.iface}${suffix}${tableSuffix}`;
   }
 
-  const table = ctx.getRoutingTable();
-  const best = pickBestRoute(destAddr, table);
-  if (!best) return `RTNETLINK answers: Network is unreachable`;
-
-  const iface = ctx.getInterfaceInfo(best.iface);
-  const src = iface?.ip ?? undefined;
-
-  if (best.type === 'default') {
-    const suffix = src ? ` src ${src}` : '';
-    return `${dest} via ${best.nextHop} dev ${best.iface}${suffix}`;
+  const facts = ctx.routeLookupFacts?.(destAddr) ?? { local: false, uid: 0, exception: null };
+  const from = fromAddr ? `from ${fromAddr} ` : '';
+  if (facts.local) {
+    const src = fromAddr ? '' : `src ${dest} `;
+    return `local ${dest} ${from}dev lo table local ${src}uid ${facts.uid} \n    cache <local> `;
   }
-  if (best.nextHop) {
-    const suffix = src ? ` src ${src}` : '';
-    return `${dest} via ${best.nextHop} dev ${best.iface}${suffix}`;
-  }
-  const suffix = src ? ` src ${src}` : (best.srcIp ? ` src ${best.srcIp}` : '');
-  return `${dest} dev ${best.iface}${suffix}`;
+
+  const resolved = ctx.resolveRouteWithRules(destAddr, fromAddr);
+  if (!resolved) return 'RTNETLINK answers: Network is unreachable';
+  const via = resolved.nextHopIP === dest ? '' : `via ${resolved.nextHopIP} `;
+  const table = resolved.table !== 254 ? `table ${resolved.table} ` : '';
+  const prefSrc = ctx.getInterfaceInfo(resolved.iface)?.ip;
+  const src = !fromAddr && prefSrc ? `src ${prefSrc} ` : '';
+  return `${dest} ${from}${via}dev ${resolved.iface} ${table}${src}uid ${facts.uid} \n    cache ${routeCacheLine(facts.exception)}`;
 }
 
-function pickBestRoute(dest: IPAddress, table: IpRouteEntry[]): IpRouteEntry | null {
-  const destInt = dest.toUint32();
-  let best: IpRouteEntry | null = null;
-  let bestPrefix = -1;
-  for (const route of table) {
-    const cidr = route.type === 'default' ? 0 : route.cidr;
-    const mask = SubnetMask.fromCIDR(cidr).toUint32();
-    const netParsed = IPAddress.tryParse(route.network);
-    const netInt = netParsed ? netParsed.toUint32() : 0;
-    if ((destInt & mask) !== (netInt & mask)) continue;
-    if (cidr > bestPrefix
-      || (cidr === bestPrefix && best !== null && route.metric < best.metric)) {
-      bestPrefix = cidr;
-      best = route;
-    }
-  }
-  return best;
+function routeCacheLine(exception: RouteException | null): string {
+  if (!exception) return '';
+  const flags = exception.gateway ? '<redirected> ' : '';
+  const expires = `expires ${Math.floor(exception.expiresInMs / 1000)}sec `;
+  const mtu = exception.mtu ? `mtu ${exception.locked ? 'lock ' : ''}${exception.mtu} ` : '';
+  return `${flags}${expires}${mtu}`;
 }
 
 function isInSubnet(ip: string, network: string, cidr: number): boolean {

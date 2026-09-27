@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
-import { MACAddress, resetCounters } from '@/network/core/types';
+import { IPAddress, MACAddress, SubnetMask, resetCounters } from '@/network/core/types';
+import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 
@@ -95,19 +96,24 @@ describe('show ip route <address> renders the IOS detail block', () => {
     expect(out).not.toContain('intra area');
   });
 
-  it('the age is measured, not a constant', async () => {
+  it('the age of a learned route is measured on the router clock, not a constant', async () => {
+    const clock = new VirtualTimeScheduler();
+    __setDefaultScheduler(clock);
     const r = await routerWithRoutes();
-    const now = Date.now();
-    const realNow = Date.now;
-    try {
-      Date.now = () => now + 125_000;
-      const out = await r.executeCommand('show ip route 10.1.2.3');
-      expect(out).toContain('Last update from 192.168.10.2 on GigabitEthernet0/0');
-      expect(out).toMatch(/00:02:05 ago/);
-      expect(out).not.toMatch(/00:00:00 ago/);
-    } finally {
-      Date.now = realNow;
-    }
+    (r as unknown as { routingTable: unknown[] }).routingTable.push({
+      network: new IPAddress('172.31.0.0'), mask: new SubnetMask('255.255.0.0'),
+      type: 'rip', nextHop: new IPAddress('192.168.10.2'), iface: 'GigabitEthernet0/0',
+      ad: 120, metric: 2, installedAt: r.getMonotonicClockMs(),
+    });
+    clock.advance(125_000);
+
+    const out = await r.executeCommand('show ip route 172.31.5.5');
+    expect(out).toContain('Last update from 192.168.10.2 on GigabitEthernet0/0, 00:02:05 ago');
+  });
+
+  it('a static route has no update source, so it claims no last update', async () => {
+    const r = await routerWithRoutes();
+    expect(await r.executeCommand('show ip route 10.1.2.3')).not.toContain('Last update');
   });
 
   it('a route with no known install time claims no age at all', async () => {

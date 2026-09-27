@@ -28,7 +28,9 @@ export class AsaFirewall extends Firewall {
   }
 
   protected override managementRunningConfig(): string {
-    return this.getShell().execute('show running-config');
+    const shell = new AsaShell(this);
+    shell.openAtPrivilegedExec();
+    return shell.execute('show running-config');
   }
 
   executeCommand(command: string): Promise<string> {

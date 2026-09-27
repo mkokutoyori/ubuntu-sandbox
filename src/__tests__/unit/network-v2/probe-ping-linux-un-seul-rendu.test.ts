@@ -25,8 +25,8 @@ async function laboratoire() {
   const routeur = new CiscoRouter('router-cisco', 'R1', 0, 0);
   const a = new LinuxPC('linux-pc', 'A', -200, 0);
   new Cable('a').connect(a.getPort('eth0')!, routeur.getPort('GigabitEthernet0/0')!);
-  await taper(routeur, ['enable', 'configure terminal', 'interface GigabitEthernet0/0',
-    'ip address 192.168.10.1 255.255.255.0', 'no shutdown', 'end']);
+  await taper(routeur, ['enable', 'configure terminal', 'no ip icmp rate-limit unreachable',
+    'interface GigabitEthernet0/0', 'ip address 192.168.10.1 255.255.255.0', 'no shutdown', 'end']);
   await taper(a, ['ip link set eth0 up', 'ip addr add 192.168.10.10/24 dev eth0',
     'ip route add default via 192.168.10.1']);
   return { routeur, a };
@@ -115,6 +115,6 @@ describe('le terminal et le script rendent la meme ligne', () => {
   it('un silence n\'est pas une erreur', () => {
     const r: PingResult = { success: false, rttMs: 0, ttl: 0, seq: 1, bytes: 0, fromIP: '' };
     expect(formatPingFailureLine(r)).toBeNull();
-    expect(formatPingReplyLine(r, 56)).toBe('Request timeout for icmp_seq 1');
+    expect(formatPingReplyLine(r, 56)).toBeNull();
   });
 });

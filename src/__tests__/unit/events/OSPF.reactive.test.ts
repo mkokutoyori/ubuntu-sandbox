@@ -154,7 +154,7 @@ describe('OSPFEngine reactive primitives', () => {
 
     // Should NOT be flushed — only refreshed (lsAge reset to 0 then re-aged).
     expect(trace.find((e) => e.topic === 'ospf.lsa.flushed')).toBeUndefined();
-    expect(lsa.lsAge).toBeLessThan(10);
+    expect(engine.lookupLSA(OSPF_BACKBONE_AREA, 1, '1.1.1.1', '1.1.1.1')!.lsAge).toBeLessThan(10);
   });
 
   it('emits ospf.spf.run + ospf.routes-recomputed when SPF runs', () => {

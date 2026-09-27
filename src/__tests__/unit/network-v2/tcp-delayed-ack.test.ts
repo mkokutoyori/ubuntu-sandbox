@@ -174,7 +174,7 @@ describe('TCP delayed ACK (RFC 5681 §4.2)', () => {
     const socket = client.getTcpStack().connect(SERVER_IP, 7600)!;
     const acks = pureAcksFrom(bus, SERVER_IP);
 
-    socket.send('A'.repeat(3 * socket.mss));
+    socket.send('A'.repeat(3 * 1448));
 
     expect(acks.length).toBe(2);
   });

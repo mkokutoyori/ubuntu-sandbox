@@ -5,7 +5,8 @@ import {
   type UDPPacket,
 } from '@/network/core/types';
 import { IPV4_FLAG_MF } from '@/network/core/Ipv4Fragmentation';
-import type { TcpSegment, TcpWireOutcome } from '@/network/tcp/types';
+import { connectErrno, type TcpSegment, type TcpWireOutcome } from '@/network/tcp/types';
+import { strerror } from '@/network/core/Errno';
 
 /**
  * `--packet-trace` : ce que le balayage met sur le fil, rendu comme
@@ -161,23 +162,10 @@ export function traceFrameLine(
   return `${direction} ${stamp(elapsed)} ${block} ${ipBlock(packet)}`;
 }
 
-/**
- * `socket_strerror` de l'errno que `connect()` a rendu. Un balayage
- * CONNECTE ne produit que cette ligne : `connect()` laisse le noyau
- * emettre les paquets, donc `nmap` ne les voit jamais passer.
- */
-const CONNECT_ERRNO: Readonly<Record<TcpWireOutcome, string>> = {
-  open: 'Connected',
-  refused: 'Connection refused',
-  timeout: 'Connection timed out',
-  unreachable: 'Network is unreachable',
-  prohibited: 'Permission denied',
-};
-
 export function traceConnectLine(
   elapsed: number, proto: 'TCP' | 'UDP', ip: string, port: number,
   outcome: TcpWireOutcome,
 ): string {
   return `CONN ${stamp(elapsed)} ${proto} localhost > ${ip}:${port}`
-    + ` => ${CONNECT_ERRNO[outcome]}`;
+    + ` => ${outcome === 'open' ? 'Connected' : strerror(connectErrno(outcome))}`;
 }

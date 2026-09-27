@@ -61,8 +61,8 @@ describe('IOS ping marks each probe with the reason it ended', () => {
     const out = await r1.executeCommand('ping 192.0.2.7 repeat 3');
     expect(
       marks(out),
-      'a router replied with an error — that is a U, not a silent timeout',
-    ).toBe('UUU');
+      'a router replied with an error — a U, and the probe IOS rate-limits (one unreachable per 500 ms) is a dot',
+    ).toBe('U.U');
     expect(out).toContain('Success rate is 0 percent (0/3)');
   }, 30000);
 
@@ -81,8 +81,8 @@ describe('IOS ping marks each probe with the reason it ended', () => {
     const out = await r1.executeCommand('ping 192.0.2.7 repeat 2');
     expect(
       marks(out),
-      'administratively prohibited is still an ICMP unreachable',
-    ).toBe('UU');
+      'administratively prohibited is still an ICMP unreachable, rate-limited like any other',
+    ).toBe('U.');
   }, 30000);
 
   // The same U, for an echo aimed at the router's own interface rather

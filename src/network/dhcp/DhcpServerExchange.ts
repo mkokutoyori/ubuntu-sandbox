@@ -60,13 +60,11 @@ export function buildDhcpServerReply(pkt: DHCPPacket, ctx: DhcpServeContext): DH
     };
     let offer = server.processDiscover(params);
     if (offer && server.getPingPacketCount() > 0 && ctx.isAddressInUse) {
-      let attemptsLeft = 4;
-      while (offer && attemptsLeft > 0 && ctx.isAddressInUse(offer.ip)) {
+      while (offer && ctx.isAddressInUse(offer.ip)) {
         server.addConflict(offer.ip, 'ping');
         server.cancelPendingOffer(offer.ip);
         const next = server.processDiscover(params);
         offer = (next && next.ip !== offer.ip) ? next : null;
-        attemptsLeft--;
       }
     }
     return offer ? offerPacket(pkt, offer) : null;

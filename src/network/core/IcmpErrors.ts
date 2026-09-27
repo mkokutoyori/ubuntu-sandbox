@@ -17,7 +17,9 @@ import {
   createIPv4Packet,
   IP_PROTO_ICMP,
   IP_PROTO_ICMPV6,
+  type ICMPType,
 } from './types';
+import type { Errno } from './Errno';
 
 // ─── ICMP codes (RFC 792 / RFC 1812) ─────────────────────────────────
 
@@ -50,6 +52,26 @@ export function unreachableCodeName(code: number | undefined): UnreachableCodeNa
   return (code === undefined ? undefined : UNREACHABLE_CODE_NAMES[code]) ?? 'other';
 }
 
+export const ICMPV6_UNREACH_NO_ROUTE = 0;
+export const ICMPV6_UNREACH_ADMIN_PROHIBITED = 1;
+export const ICMPV6_UNREACH_ADDRESS = 3;
+export const ICMPV6_UNREACH_PORT = 4;
+export const ICMPV6_UNREACH_POLICY_FAILED = 5;
+export const ICMPV6_UNREACH_REJECT_ROUTE = 6;
+
+const ICMPV6_UNREACHABLE_CODE_NAMES: Readonly<Record<number, UnreachableCodeName>> = {
+  [ICMPV6_UNREACH_NO_ROUTE]: 'net-unreachable',
+  [ICMPV6_UNREACH_ADMIN_PROHIBITED]: 'admin-prohibited',
+  [ICMPV6_UNREACH_ADDRESS]: 'host-unreachable',
+  [ICMPV6_UNREACH_PORT]: 'port-unreachable',
+  [ICMPV6_UNREACH_POLICY_FAILED]: 'admin-prohibited',
+  [ICMPV6_UNREACH_REJECT_ROUTE]: 'admin-prohibited',
+};
+
+export function icmpv6UnreachableCodeName(code: number | undefined): UnreachableCodeName {
+  return (code === undefined ? undefined : ICMPV6_UNREACHABLE_CODE_NAMES[code]) ?? 'other';
+}
+
 export const PROHIBITED_UNREACH_CODES: ReadonlySet<number> = new Set([
   ICMP_UNREACH_NET_PROHIBITED,
   ICMP_UNREACH_HOST_PROHIBITED,
@@ -59,6 +81,36 @@ export const PROHIBITED_UNREACH_CODES: ReadonlySet<number> = new Set([
 export function isHardTcpUnreachCode(code: number | undefined): boolean {
   if (code === undefined) return false;
   return code === ICMP_UNREACH_PORT || PROHIBITED_UNREACH_CODES.has(code);
+}
+
+interface SocketError {
+  readonly errno: Errno;
+  readonly fatal: boolean;
+}
+
+const UNREACH_SOCKET_ERRORS: readonly SocketError[] = [
+  { errno: 'ENETUNREACH', fatal: false },
+  { errno: 'EHOSTUNREACH', fatal: false },
+  { errno: 'ENOPROTOOPT', fatal: true },
+  { errno: 'ECONNREFUSED', fatal: true },
+  { errno: 'EMSGSIZE', fatal: true },
+  { errno: 'EOPNOTSUPP', fatal: false },
+  { errno: 'ENETUNREACH', fatal: true },
+  { errno: 'EHOSTDOWN', fatal: true },
+  { errno: 'ENONET', fatal: true },
+  { errno: 'ENETUNREACH', fatal: true },
+  { errno: 'EHOSTUNREACH', fatal: true },
+  { errno: 'ENETUNREACH', fatal: false },
+  { errno: 'EHOSTUNREACH', fatal: false },
+  { errno: 'EHOSTUNREACH', fatal: true },
+  { errno: 'EHOSTUNREACH', fatal: true },
+  { errno: 'EHOSTUNREACH', fatal: true },
+];
+
+export function udpSocketErrorFor(icmpType: ICMPType, code: number): SocketError | null {
+  if (icmpType === 'time-exceeded') return { errno: 'EHOSTUNREACH', fatal: false };
+  if (icmpType !== 'destination-unreachable') return null;
+  return UNREACH_SOCKET_ERRORS[code] ?? { errno: 'EHOSTUNREACH', fatal: false };
 }
 
 /** Time Exceeded (Type 11) codes */

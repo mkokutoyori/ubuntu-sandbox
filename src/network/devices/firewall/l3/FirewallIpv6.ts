@@ -96,6 +96,7 @@ export class FirewallIpv6 {
       getCounters: () => this.counters,
       getBus: () => this.deps.bus(),
       getScheduler: () => this.deps.scheduler(),
+      admitIcmpv6Error: () => true,
       advertisesWithoutConfig: () => false,
       getDhcpv6Server: () => this.deps.dhcpv6Server(),
       getDhcpv6ServerPool: (iface) => this.deps.dhcpv6PoolFor(iface),

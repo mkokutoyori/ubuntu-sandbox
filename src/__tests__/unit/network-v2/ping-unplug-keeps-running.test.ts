@@ -135,15 +135,16 @@ async function transcript(
   return [...lines, ...stats];
 }
 
-describe('the terminal shows every lost probe, not a silent gap', () => {
-  it('linux prints a line for each timed-out sequence', async () => {
+describe('what the terminal shows once the peer stops answering', () => {
+  it('linux stays silent on the lost probes, as iputils does, and the summary counts them', async () => {
     const { linux, peerCable } = lab();
     const out = await transcript(linux, '192.168.10.20', peerCable, 'linux');
     const perProbe = out.filter((l) => /icmp_seq/.test(l));
-    expect(perProbe.length, 'ten probes, ten lines — no silent gap').toBe(10);
+    expect(perProbe.length).toBe(5);
     for (const seq of [6, 7, 8, 9, 10]) {
-      expect(out.join('\n')).toMatch(new RegExp(`icmp_seq[= ]${seq}\\b`));
+      expect(out.join('\n')).not.toMatch(new RegExp(`icmp_seq[= ]${seq}\\b`));
     }
+    expect(out.find((l) => /packets transmitted/.test(l))).toMatch(/^10 packets transmitted, 5 received, 50% packet loss/);
   }, 30000);
 
   it('linux summarises transmitted, received, errors, loss and elapsed time', async () => {

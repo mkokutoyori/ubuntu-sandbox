@@ -348,6 +348,15 @@ export class IPv6Address {
     }
   }
 
+  static tryParse(addr: string): IPv6Address | null {
+    if (!addr.includes(':')) return null;
+    try {
+      return new IPv6Address(addr);
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Parse an IPv6 address string (supports full, compressed, and zone ID).
    * Examples:
@@ -1363,6 +1372,7 @@ export interface ICMPv6Packet extends NetworkPdu {
   mtu?: number;
   /** NDP-specific fields (for NS/NA/RS/RA) */
   ndp?: NDPMessage;
+  invokingPacket?: IPv6Packet;
 }
 
 // ─── Neighbor Discovery Protocol (RFC 4861) ─────────────────────────

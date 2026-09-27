@@ -204,7 +204,7 @@ describe('TCP Nagle (RFC 9293 §3.7.4)', () => {
 
     expect(received.join('')).toBe('A'.repeat(20_000));
     expect(sizes.length).toBe(14);
-    expect(sizes.slice(0, 13).every((n) => n === socket.mss)).toBe(true);
+    expect(sizes.slice(0, 13).every((n) => n === 1448)).toBe(true);
   });
 
   it('WITNESS: a receive window smaller than the MSS still completes', () => {
