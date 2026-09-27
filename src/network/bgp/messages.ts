@@ -124,6 +124,14 @@ export const BGP_ERROR = {
   CEASE: 6,
 } as const;
 
+export const CEASE_SUBCODE = {
+  ADMINISTRATIVE_SHUTDOWN: 2,
+  PEER_DECONFIGURED: 3,
+  ADMINISTRATIVE_RESET: 4,
+  OTHER_CONFIGURATION_CHANGE: 6,
+  CONNECTION_COLLISION_RESOLUTION: 7,
+} as const;
+
 /** OPEN Message Error subcodes (RFC 4271 §6.2). */
 export const BGP_OPEN_ERROR = {
   UNSUPPORTED_VERSION: 1,

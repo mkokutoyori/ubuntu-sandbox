@@ -1,7 +1,7 @@
 import { IPAddress, SubnetMask } from '../../../core/types';
 import { ipToUint32, tryIpToUint32, prefixLengthToMaskUint32 } from '../../../core/ip';
 import { BGPEngine, type BgpPeerLink, type BgpNeighborCfg } from '../../../bgp/BGPEngine';
-import { BGP_PORT } from '../../../bgp/messages';
+import { BGP_PORT, CEASE_SUBCODE } from '../../../bgp/messages';
 import { bgpTransport } from '../../../bgp/bgpTransport';
 import type { TcpSocket, TcpStack } from '../../../tcp/TcpStack';
 import type { IEventBus } from '../../../../events/EventBus';
@@ -60,7 +60,7 @@ export class FirewallBgp {
     const previous = this.config;
     this.config = config;
     if (!config.enabled) {
-      this.engine?.shutdownTimers();
+      this.engine?.disable(CEASE_SUBCODE.PEER_DECONFIGURED);
       this.engine = null;
       this.deps.removeRoutes();
       return undefined;
@@ -72,6 +72,7 @@ export class FirewallBgp {
       return undefined;
     }
 
+    live?.disable(CEASE_SUBCODE.OTHER_CONFIGURATION_CHANGE);
     const engine = new BGPEngine(this.deps.deviceId);
     engine.setBus(this.deps.bus());
     engine.setDeviceContext({

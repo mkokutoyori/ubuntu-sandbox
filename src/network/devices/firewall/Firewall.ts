@@ -122,7 +122,6 @@ import { FirewallPing6 } from './diag/FirewallPing6';
 import { getDefaultScheduler } from '@/events/Scheduler';
 import type { IEventBus } from '@/events/EventBus';
 import type { BgpNeighborStateChangedPayload } from '../../bgp/events';
-import { NO_BGP_ERROR } from '../../bgp/messages';
 import type { OspfNeighborStateChangedPayload } from '../../ospf/events';
 import { isBgpFsmState } from '../../snmp/Bgp4MibNotifications';
 import type { Ipv6Counters } from '../router/IPv6DataPlane';
@@ -756,13 +755,11 @@ export class Firewall extends Equipment {
     const remoteAddress = IPAddress.tryParse(payload.neighborIp);
     if (!snmp || remoteAddress === null) return;
     if (!isBgpFsmState(payload.oldState) || !isBgpFsmState(payload.newState)) return;
-    const engine = this.l3.routings().map((routing) => routing.getBgp().getEngine())
-      .find((candidate) => candidate?.hasNeighbor(payload.neighborIp));
     snmp.raise({
       kind: 'bgp-peer',
       transition: {
         remoteAddress, from: payload.oldState, to: payload.newState,
-        lastError: engine ? engine.peerLastError(payload.neighborIp) : NO_BGP_ERROR,
+        lastError: payload.lastError,
       },
     });
   }
