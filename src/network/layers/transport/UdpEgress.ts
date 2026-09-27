@@ -38,6 +38,8 @@ export interface UdpEmissionOptions {
 
 const DEFAULT_TTL = 64;
 
+export const UDP_OVER_IPV4_HEADER_BYTES = 28;
+
 export function buildUdpDatagram(request: UdpSendRequest): UDPPacket {
   return {
     type: 'udp',

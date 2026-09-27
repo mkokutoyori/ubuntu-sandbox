@@ -8,8 +8,8 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 import type { EchoRoute, PingResult, TraceSocketOptions } from '../../../EndHost';
 import { reverseNameOf } from '../../network/ReverseName';
 import { getoptDiagnostic, shortOptions } from '../Getopt';
+import { INT_MAX, IPUTILS_VERSION_LINE, LONG_MAX, strtolOrErr } from './IputilsCommon';
 
-const IPUTILS_VERSION_LINE = 'from iputils 20221126';
 const DEFAULT_SIZE = 56;
 const DETACHED_DEFAULT_COUNT = 4;
 const DEFAULT_TIMEOUT_MS = 500;
@@ -17,8 +17,6 @@ const DEFAULT_INTERVAL_MS = 1000;
 const MIN_USER_INTERVAL_MS = 2;
 const MIN_USER_BROADCAST_INTERVAL_MS = 1000;
 const IP_AND_ICMP_HEADERS = 28;
-const INT_MAX = 2147483647;
-const LONG_MAX = '9223372036854775807';
 const MAX_PATTERN_BYTES = 16;
 
 const OPTSTRING = 'h?4bRT:6F:N:aABc:CdDe:fi:I:l:Lm:M:nOp:qQ:rs:S:t:UvVw:W:';
@@ -118,26 +116,6 @@ export interface ParsedPingArgs {
 type ParseOutcome =
   | { kind: 'parsed'; args: ParsedPingArgs; warnings: string[] }
   | { kind: 'exit'; lines: string[]; code: number };
-
-function strtolPrefix(text: string): { value: bigint; rest: string } | null {
-  const m = /^\s*([+-]?\d+)/.exec(text);
-  if (m === null) return null;
-  return { value: BigInt(m[1]), rest: text.slice(m[0].length) };
-}
-
-function strtolOrErr(
-  cmd: string, text: string, message: string, min: bigint, max: bigint,
-): { value: number } | { error: string } {
-  const parsed = text === '' ? null : strtolPrefix(text);
-  if (parsed === null || parsed.rest !== '') return { error: `${cmd}: ${message}: '${text}'` };
-  if (parsed.value > BigInt(LONG_MAX) || parsed.value < -BigInt(LONG_MAX) - 1n) {
-    return { error: `${cmd}: ${message}: '${text}': Numerical result out of range` };
-  }
-  if (parsed.value < min || parsed.value > max) {
-    return { error: `${cmd}: ${message}: '${text}': out of range: ${min} <= value <= ${max}` };
-  }
-  return { value: Number(parsed.value) };
-}
 
 function pingStrtod(
   cmd: string, text: string, message: string, warnings: string[],

@@ -1,133 +1,283 @@
-/**
- * `tracepath(8)` — trace le chemin ET découvre la MTU du trajet.
- *
- * Ce que `traceroute` ne fait pas : `tracepath` n'a besoin d'aucun
- * privilège, et sa raison d'être est la colonne `pmtu` — il annonce la
- * MTU au départ, puis la révise à la baisse chaque fois qu'un routeur
- * répond « Fragmentation Needed ». La dernière ligne, `Resume: pmtu N`,
- * est ce qu'on vient y chercher.
- *
- * Le nom était déclaré dans `KNOWN_LINUX_COMMANDS` sans implémentation,
- * si bien que `which tracepath` rendait `/usr/bin/tracepath` pendant que
- * la commande répondait `command not found` — une machine qui se
- * contredit sur ce qu'elle possède (audit 11, §2).
- *
- * Le trajet vient du même moteur que `traceroute` (`ctx.net.traceroute`),
- * la MTU de l'interface de sortie. La découverte de MTU par ICMP
- * Fragmentation Needed le long du chemin n'est pas simulée ici : la
- * colonne `pmtu` ne bouge donc pas d'un bout à l'autre du trajet, et le
- * `Resume:` rend la MTU de l'interface locale. C'est une simplification
- * assumée, pas un oubli — le simulateur sait produire un « Frag needed »
- * (`Ipv4Fragmentation.ts`) mais aucun chemin ne le remonte à un client.
- */
-
-import { IPAddress } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
+import { strerror, type Errno } from '@/network/core/Errno';
+import { UDP_OVER_IPV4_HEADER_BYTES } from '@/network/layers/transport/UdpEgress';
 import type { LinuxCommand } from '../LinuxCommand';
-import type { TracerouteHop } from '../../LinuxNetKernel';
-import { isValidIPv4 } from '@/network/core/ip';
+import type { LinuxCommandContext } from '../LinuxCommandContext';
+import type { UdpErrorReport } from '../../../EndHost';
 import { makeArgCompleter } from '../completionHelpers';
+import { getoptDiagnostic, shortOptions } from '../Getopt';
+import { reverseNameOf } from '../../network/ReverseName';
+import { INT_MAX, IPUTILS_VERSION_LINE, strtolOrErr } from './IputilsCommon';
 
-const USAGE = 'Usage: tracepath [-4] [-6] [-n] [-b] [-l pktlen] [-m max_hops] [-p port] <destination>';
+const OPTSTRING = '46nbh?l:m:p:V';
+const MAX_PROBES = 10;
+const MAX_HOPS_DEFAULT = 30;
+const MAX_HOPS_LIMIT = 255;
+const HOST_COLUMN_SIZE = 52;
+const HIS_ARRAY_SIZE = 64;
+const DEFAULT_MTU_IPV4 = 65535;
+const DEFAULT_BASEPORT = 44444;
+const PROBE_WAIT_MS = 1000;
 
-interface Args {
-  target: string;
-  maxHops: number;
+export const TRACEPATH_USAGE = [
+  '',
+  'Usage',
+  '  tracepath [options] <destination>',
+  '',
+  'Options:',
+  '  -4             use IPv4',
+  '  -6             use IPv6',
+  '  -b             print both name and ip',
+  '  -l <length>    use packet <length>',
+  '  -m <hops>      use maximum <hops>',
+  '  -n             no dns name resolution',
+  '  -p <port>      use destination <port>',
+  '  -V             print version and exit',
+  '  <destination>  dns name or ip address',
+  '',
+  'For more details see tracepath(8).',
+].join('\n');
+
+interface TracepathArgs {
+  family: 4 | 6 | null;
   numeric: boolean;
   showBoth: boolean;
-  parseError?: string;
-  showHelp: boolean;
+  mtu: number;
+  maxHops: number;
+  basePort: number;
+  target: string;
 }
 
-export function parseTracepathArgs(args: string[]): Args {
-  const out: Args = { target: '', maxHops: 30, numeric: false, showBoth: false, showHelp: false };
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '-h' || a === '--help') { out.showHelp = true; continue; }
-    if (a === '-n') { out.numeric = true; continue; }
-    if (a === '-b') { out.showBoth = true; continue; }
-    if (a === '-4' || a === '-6') continue;
-    if (a === '-m') {
-      const v = Number(args[++i]);
-      if (!Number.isInteger(v) || v < 1) { out.parseError = `tracepath: invalid max hops: ${args[i]}`; return out; }
-      out.maxHops = v; continue;
-    }
-    if (a === '-l' || a === '-p') { i++; continue; }
-    if (a.startsWith('-')) { out.parseError = `tracepath: unrecognized option '${a}'`; return out; }
-    if (!out.target) out.target = a;
-  }
-  return out;
+interface TracepathResult {
+  stdout: string[];
+  stderr: string[];
+  exitCode: number;
 }
 
-/**
- * Une ligne de `tracepath`. Le format est celui du vrai, y compris le
- * numéro de saut suivi d'un deux-points et l'alignement de `pmtu` :
- *
- *      1?: [LOCALHOST]                      pmtu 1500
- *      1:  192.168.1.1                       0.412ms
- *      2:  10.0.0.1                          1.203ms reached
- *     Resume: pmtu 1500 hops 2 back 2
- */
-export function formatTracepathLines(
-  hops: readonly TracerouteHop[], mtu: number, reachedAt: number | null,
-): string[] {
-  const lines = [` 1?: [LOCALHOST]${' '.repeat(24)}pmtu ${mtu}`];
-  for (const hop of hops) {
-    const num = String(hop.hop).padStart(2, ' ');
-    if (hop.timeout || !hop.probes || hop.probes.length === 0) {
-      lines.push(`${num}:  no reply`);
-      continue;
-    }
-    const ip = hop.probes[0].ip ?? '???';
-    const rtt = hop.probes.find((p) => p.rttMs !== undefined)?.rttMs;
-    const temps = rtt === undefined ? '' : `${rtt.toFixed(3)}ms`;
-    const atteint = reachedAt === hop.hop ? ' reached' : '';
-    lines.push(`${num}:  ${ip.padEnd(32)}${temps}${atteint}`);
+class TracepathExit extends Error {
+  constructor(readonly stderr: string[], readonly exitCode: number, readonly stdout: string[] = []) {
+    super(stderr.join('\n'));
   }
-  return lines;
+}
+
+function usage(before: string[] = []): TracepathExit {
+  return new TracepathExit([...before, TRACEPATH_USAGE], 255);
+}
+
+function numberOrExit(text: string, min: bigint, max: bigint): number {
+  const r = strtolOrErr('tracepath', text, 'invalid argument', min, max);
+  if ('error' in r) throw new TracepathExit([r.error], 1);
+  return r.value;
+}
+
+export function parseTracepathArgs(args: readonly string[]): TracepathArgs {
+  const parsed: TracepathArgs = {
+    family: null, numeric: false, showBoth: false, mtu: 0, maxHops: MAX_HOPS_DEFAULT, basePort: 0, target: '',
+  };
+  const operands: string[] = [];
+  for (const token of shortOptions(args, OPTSTRING)) {
+    if (token.kind === 'operand') { operands.push(token.value); continue; }
+    if (token.kind !== 'option') throw usage([getoptDiagnostic('tracepath', token)]);
+    switch (token.letter) {
+      case '4':
+      case '6': {
+        const family = token.letter === '4' ? 4 : 6;
+        if (parsed.family !== null && parsed.family !== family) {
+          throw new TracepathExit(['tracepath: Only one -4 or -6 option may be specified'], 2);
+        }
+        parsed.family = family;
+        break;
+      }
+      case 'n': parsed.numeric = true; break;
+      case 'b': parsed.showBoth = true; break;
+      case 'l': parsed.mtu = numberOrExit(token.argument!, 0n, BigInt(INT_MAX)); break;
+      case 'm': parsed.maxHops = numberOrExit(token.argument!, 0n, BigInt(MAX_HOPS_LIMIT)); break;
+      case 'p': parsed.basePort = numberOrExit(token.argument!, 0n, 65535n); break;
+      case 'V': throw new TracepathExit([], 0, [`tracepath ${IPUTILS_VERSION_LINE}`]);
+      default: throw usage();
+    }
+  }
+  if (operands.length !== 1) throw usage();
+  let target = operands[0];
+  if (parsed.basePort === 0) {
+    const slash = target.indexOf('/');
+    if (slash >= 0) {
+      parsed.basePort = numberOrExit(target.slice(slash + 1), 0n, 65535n);
+      target = target.slice(0, slash);
+    } else {
+      parsed.basePort = DEFAULT_BASEPORT;
+    }
+  }
+  parsed.target = target;
+  return parsed;
+}
+
+function formatRtt(rttMs: number): string {
+  const us = Math.round(rttMs * 1000);
+  return `${String(Math.trunc(us / 1000)).padStart(3)}.${String(us % 1000).padStart(3, '0')}ms `;
+}
+
+function returnHops(replyTtl: number | undefined): number {
+  const ttl = replyTtl ?? -1;
+  if (ttl <= 64) return 65 - ttl;
+  if (ttl <= 128) return 129 - ttl;
+  return 256 - ttl;
+}
+
+interface RunState {
+  mtu: number;
+  ttl: number;
+  hisptr: number;
+  hopsTo: number;
+  hopsFrom: number;
+}
+
+async function runTracepath(ctx: LinuxCommandContext, args: string[]): Promise<TracepathResult> {
+  const out: string[] = [];
+  const err: string[] = [];
+  let parsed: TracepathArgs;
+  try {
+    parsed = parseTracepathArgs(args);
+  } catch (e) {
+    if (e instanceof TracepathExit) return { stdout: e.stdout, stderr: e.stderr, exitCode: e.exitCode };
+    throw e;
+  }
+
+  const literal4 = IPAddress.tryParse(parsed.target);
+  const literal6 = literal4 ? null : IPv6Address.tryParse(parsed.target);
+  if (parsed.family === 6 || literal6) {
+    return { stdout: [], stderr: ['tracepath: option -6: this simulator cannot build an IPv6 probe socket with IPV6_RECVERR'], exitCode: 1 };
+  }
+  const target = literal4 ?? await ctx.net.resolveHostname(parsed.target);
+  if (!target) {
+    return { stdout: [], stderr: [`tracepath: ${parsed.target}: Name or service not known`], exitCode: 1 };
+  }
+
+  const state: RunState = { mtu: parsed.mtu || DEFAULT_MTU_IPV4, ttl: 1, hisptr: 0, hopsTo: -1, hopsFrom: -1 };
+  if (state.mtu <= UDP_OVER_IPV4_HEADER_BYTES) {
+    return {
+      stdout: [], stderr: [`tracepath: pktlen must be within: ${UDP_OVER_IPV4_HEADER_BYTES} < value <= ${INT_MAX}`], exitCode: 1,
+    };
+  }
+  const sourcePort = ctx.executor.getSocketTable()?.allocateEphemeralPort() ?? 32768;
+
+  const hostColumn = (address: string): string => {
+    const name = parsed.numeric && !parsed.showBoth ? '' : reverseNameOf(ctx.executor.nss, address) ?? address;
+    const shown = parsed.numeric
+      ? `${address}${parsed.showBoth ? ` (${name})` : ''}`
+      : `${name}${parsed.showBoth ? ` (${address})` : ''}`;
+    const width = Math.min(shown.length, HOST_COLUMN_SIZE - 1);
+    return shown + ' '.repeat(HOST_COLUMN_SIZE - width);
+  };
+
+  const recverr = (report: UdpErrorReport, sentTtl: number): number => {
+    if (report.origin === 'none') return -1;
+    if (report.origin === 'local' && report.errno !== 'EMSGSIZE') return -1;
+    let line: string;
+    if (report.origin === 'local') {
+      line = `${String(state.ttl).padStart(2)}?: ${'[LOCALHOST]'.padEnd(32)} `;
+    } else {
+      line = `${String(sentTtl).padStart(2)}:  ${hostColumn(report.from)}${formatRtt(report.rttMs)}`;
+    }
+    const rethops = report.origin === 'icmp' ? returnHops(report.replyTtl) : returnHops(undefined);
+    const errno: Errno = report.errno;
+    switch (errno) {
+      case 'EMSGSIZE':
+        state.mtu = report.mtu ?? state.mtu;
+        out.push(`${line}pmtu ${state.mtu}`);
+        return state.mtu;
+      case 'ECONNREFUSED':
+        out.push(`${line}reached`);
+        state.hopsTo = sentTtl;
+        state.hopsFrom = rethops;
+        return 0;
+      case 'EPROTO':
+        out.push(`${line}!P`);
+        return 0;
+      case 'EHOSTUNREACH':
+        if (report.origin === 'icmp' && report.timeExceeded) {
+          const asymm = rethops >= 0 && rethops !== sentTtl ? `asymm ${String(rethops).padStart(2)} ` : '';
+          out.push(`${line}${asymm}`);
+          return state.mtu;
+        }
+        out.push(`${line}!H`);
+        return 0;
+      case 'ENETUNREACH':
+        out.push(`${line}!N`);
+        return 0;
+      case 'EACCES':
+        out.push(`${line}!A`);
+        return 0;
+      default:
+        out.push(line);
+        err.push(`tracepath: NET ERROR: ${strerror(errno)}`);
+        return 0;
+    }
+  };
+
+  const probeTtl = async (): Promise<number> => {
+    let attempt = 0;
+    while (attempt < MAX_PROBES) {
+      const port = parsed.basePort + state.hisptr;
+      const report = await ctx.net.udpErrorProbe(target, {
+        destinationPort: port, sourcePort, ttl: state.ttl,
+        payloadBytes: state.mtu - UDP_OVER_IPV4_HEADER_BYTES, timeoutMs: PROBE_WAIT_MS,
+      });
+      if (report.origin !== 'local') {
+        state.hisptr = (state.hisptr + 1) & (HIS_ARRAY_SIZE - 1);
+        return recverr(report, state.ttl);
+      }
+      const res = recverr(report, state.ttl);
+      if (res === 0) return 0;
+      if (res > 0) { attempt = 0; continue; }
+      attempt++;
+    }
+    state.hisptr = (state.hisptr + 1) & (HIS_ARRAY_SIZE - 1);
+    out.push(`${String(state.ttl).padStart(2)}:  send failed`);
+    return 0;
+  };
+
+  let done = false;
+  for (state.ttl = 1; state.ttl <= parsed.maxHops && !done; state.ttl++) {
+    let res = -1;
+    for (let i = 0; i < 3; i++) {
+      const oldMtu = state.mtu;
+      res = await probeTtl();
+      if (state.mtu !== oldMtu) { i = -1; continue; }
+      if (res === 0) { done = true; break; }
+      if (res > 0) break;
+    }
+    if (done) break;
+    if (res < 0) out.push(`${String(state.ttl).padStart(2)}:  no reply`);
+  }
+  if (!done) out.push(`     Too many hops: pmtu ${state.mtu}`);
+  out.push(`     Resume: pmtu ${state.mtu} ${state.hopsTo >= 0 ? `hops ${state.hopsTo} ` : ''}`
+    + `${state.hopsFrom >= 0 ? `back ${state.hopsFrom} ` : ''}`);
+  return { stdout: out, stderr: err, exitCode: 0 };
 }
 
 export const tracepathCommand: LinuxCommand = {
   name: 'tracepath',
   needsNetworkContext: true,
+  ownsHelpOption: true,
   manSection: 8,
-  usage: USAGE,
+  usage: 'tracepath [options] <destination>',
   help: 'Traces path to a network host discovering MTU along this path.',
+  helpText: TRACEPATH_USAGE,
   options: [
-    { flag: '-n', description: 'Print numeric addresses without DNS lookup.' },
-    { flag: '-b', description: 'Print both host names and numeric addresses.' },
-    { flag: '-m', description: 'Maximum number of hops.', takesArg: true, argName: 'max_hops' },
-    { flag: '-l', description: 'Initial packet length.', takesArg: true, argName: 'pktlen' },
-    { flag: '-p', description: 'Initial destination port.', takesArg: true, argName: 'port' },
+    { flag: '-n', description: 'no dns name resolution' },
+    { flag: '-b', description: 'print both name and ip' },
+    { flag: '-m', description: 'use maximum <hops>', takesArg: true, argName: 'hops' },
+    { flag: '-l', description: 'use packet <length>', takesArg: true, argName: 'length' },
+    { flag: '-p', description: 'use destination <port>', takesArg: true, argName: 'port' },
   ],
-  complete: makeArgCompleter({ flags: ['-4', '-6', '-n', '-b', '-l', '-m', '-p'], hostsAtBarePosition: true }),
+  complete: makeArgCompleter({ flags: ['-4', '-6', '-b', '-l', '-m', '-n', '-p', '-V'], hostsAtBarePosition: true }),
   run: async (ctx, args) => {
-    const parsed = parseTracepathArgs(args);
-    if (parsed.showHelp) return USAGE;
-    if (parsed.parseError) return parsed.parseError;
-    if (!parsed.target) return USAGE;
-    if (/^\d+\.\d+\.\d+\.\d+$/.test(parsed.target) && !isValidIPv4(parsed.target)) {
-      return `tracepath: invalid address: ${parsed.target}`;
-    }
-
-    let ip = await ctx.net.resolveHostname(parsed.target);
-    if (!ip && parsed.target.toLowerCase() === 'localhost') {
-      try { ip = new IPAddress('127.0.0.1'); } catch { /* rien */ }
-    }
-    if (!ip) return `tracepath: ${parsed.target}: Name or service not known`;
-
-    const maxHops = Math.min(parsed.maxHops, 8);
-    const hops = await ctx.net.traceroute(ip, maxHops, 1, 1, 100);
-    // La MTU rendue est celle de l'interface de sortie : c'est la seule
-    // que la machine connaisse réellement (voir l'en-tête).
-    const mtu = [...ctx.net.getPorts().values()]
-      .map((p) => (p as unknown as { getMTU?: () => number }).getMTU?.())
-      .find((m): m is number => typeof m === 'number') ?? 1500;
-
-    const cible = ip.toString();
-    const reachedAt = hops.find((h) => h.probes?.some((p) => p.ip === cible))?.hop ?? null;
-    const lines = formatTracepathLines(hops, mtu, reachedAt);
-    const back = reachedAt ?? hops.length;
-    lines.push(`     Resume: pmtu ${mtu} hops ${back} back ${back}`);
-    return lines.join('\n');
+    const result = await runTracepath(ctx, args);
+    return [...result.stdout, ...result.stderr].join('\n');
+  },
+  runWithStatus: async (ctx, args) => {
+    const result = await runTracepath(ctx, args);
+    return { output: result.stdout.join('\n'), stderr: result.stderr.join('\n'), exitCode: result.exitCode };
   },
 };
