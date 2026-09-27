@@ -53,6 +53,7 @@ import { renderIpConflictCache, renderIpConflictProbes } from './ipConflictRende
 import { interfaceType } from '../schema/system';
 import type { FortiScope } from '../schema/types';
 import { renderIpFrags } from './ipFragsRenderer';
+import { renderDeviceList } from './deviceListRenderer';
 import { renderSysTop } from './sysTopRenderer';
 import { renderBridgeList, renderBridgeHosts } from './brctlRenderer';
 import {
@@ -259,6 +260,7 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   if (family === 'netlink') return diagnoseNetlink(tail, deps);
   if (family === 'lldprx') return diagnoseLldpRx(tail, deps);
   if (family === 'snmp') return diagnoseSnmp(tail, deps);
+  if (family === 'user') return diagnoseUser(tail, deps);
   if (family === 'hardware') {
     if (tail[0] === 'sysinfo' && tail[1] === 'conserve') {
       return conserveModeLines(deps.fw.getSystemLoad()).join('\n');
@@ -347,6 +349,14 @@ function diagnoseTest(rest: readonly string[], deps: FortiDiagDeps): string {
 function configuredVlanId(deps: FortiDiagDeps, iface: string): string | undefined {
   const config = deps.configTree().existingTable(['system', 'interface'])?.get(iface);
   return config && interfaceType(config) === 'vlan' ? config.effective('vlanid')[0] : undefined;
+}
+
+function diagnoseUser(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] !== 'device' || rest[1] !== 'list') {
+    return FortiMessages.unknownPath(`user ${rest.join(' ')}`);
+  }
+  return renderDeviceList(deps.fw.getDeviceInventory().list(),
+    (vdom) => deps.fw.vdomKernelIndex(vdom), deps.fw.getMonotonicClockMs());
 }
 
 function diagnoseSnmp(rest: readonly string[], deps: FortiDiagDeps): string {

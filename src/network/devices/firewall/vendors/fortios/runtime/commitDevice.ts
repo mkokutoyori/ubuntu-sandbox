@@ -35,6 +35,9 @@ export function buildCommitDevice(
         if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);
         fw.setInterfaceMtu(name, patch.mtu);
         if (patch.lldp) fw.setInterfaceLldp(name, patch.lldp.transmission, patch.lldp.reception);
+        if (patch.deviceIdentification !== undefined) {
+          fw.getDeviceInventory().setIdentification(name, patch.deviceIdentification);
+        }
         if (patch.aggregate) {
           fw.declareAggregate(name, {
             members: [...patch.aggregate.members],
