@@ -12,7 +12,7 @@
 import type { Router } from '../../Router';
 import type { OspfInterfaceSettings } from '../../router/RouterOSPFIntegration';
 import { normalizeOspfRouteType, ospfRouteCode } from '@/network/ospf/routeCodes';
-import { renderIpRouteTable, routerRouteTableHost } from './CiscoShowCommands';
+import { formatRouteAge, isLearnedRouteType, renderIpRouteTable, routerRouteTableHost } from './CiscoShowCommands';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { isAreaId, isBackboneAreaId, type LSAHeader } from '../../../ospf/types';
 import { boundedInteger } from '@/cli/ArgumentTypes';
@@ -2701,6 +2701,7 @@ export const ROUTE_FILTER_CODES: Readonly<Record<string, readonly string[]>> = {
   connected: ['C'],
   local: ['L'],
   static: ['S'],
+  ospf: ['O'],
   rip: ['R'],
   eigrp: ['D'],
   bgp: ['B'],
@@ -2752,20 +2753,6 @@ function showIpRouteAll(router: Router): string {
     if (r.type !== 'ospf') return null;
     return getOSPFRouteCode(router, r.network.toString(), maskToCIDR(r.mask.toString()), r);
   });
-}
-
-export function showIpRouteOspf(router: Router): string {
-  const rt = (router as any).routingTable as any[];
-  const lines: string[] = [];
-  for (const r of rt) {
-    if (r.type === 'ospf') {
-      const netStr = r.network.toString();
-      const cidr = maskToCIDR(r.mask.toString());
-      const code = getOSPFRouteCode(router, netStr, cidr, r);
-      lines.push(`${code} ${netStr}/${cidr} [110/${r.metric}] via ${r.nextHop || 'directly connected'}, ${r.iface}`);
-    }
-  }
-  return lines.length > 0 ? lines.join('\n') : '';
 }
 
 function showIpRouteSummary(router: Router): string {
@@ -2831,16 +2818,6 @@ function showIpRouteVrf(router: Router, vrfName: string): string {
   return [...codes, ...lines].join('\n');
 }
 
-function formatRouteAge(elapsedMs: number): string {
-  const total = Math.max(0, Math.floor(elapsedMs / 1000));
-  if (total >= 86400) {
-    const days = Math.floor(total / 86400);
-    return `${days}d${String(Math.floor((total % 86400) / 3600)).padStart(2, '0')}h`;
-  }
-  const two = (n: number) => String(n).padStart(2, '0');
-  return `${two(Math.floor(total / 3600))}:${two(Math.floor((total % 3600) / 60))}:${two(total % 60)}`;
-}
-
 const DEFAULT_DISTANCE: Record<string, number> = {
   connected: 0, static: 1, default: 1, eigrp: 90, ospf: 110, rip: 120, bgp: 20,
 };
@@ -2864,6 +2841,7 @@ const OSPF_ROUTE_TYPE_NAME: Record<string, string> = {
 export interface RouteDetailHooks {
   readonly sourceName?: (route: { type: string }) => string | null;
   readonly typeSuffix?: (route: { type: string }, distance: number) => string | null;
+  readonly nowMs?: number;
 }
 
 export function renderRouteEntryDetail(
@@ -2900,9 +2878,9 @@ export function renderRouteEntryDetail(
   else if (best.type === 'connected') header += ' (connected, via interface)';
   lines.push(header);
 
-  if (best.nextHop && best.type !== 'connected') {
-    const age = best.installedAt !== undefined
-      ? ` , ${formatRouteAge(Date.now() - best.installedAt)} ago`.replace(' ,', ',')
+  if (best.nextHop && isLearnedRouteType(best.type)) {
+    const age = best.installedAt !== undefined && hooks.nowMs !== undefined
+      ? `, ${formatRouteAge(hooks.nowMs - best.installedAt)} ago`
       : '';
     lines.push(`  Last update from ${best.nextHop} on ${best.iface}${age}`);
   }
@@ -2925,6 +2903,7 @@ function showIpRouteSpecific(router: Router, destIP: string): string {
   const eigrpAsn = router.getEIGRPEngine?.()?.getConfig().asn;
 
   return renderRouteEntryDetail(rt, destIP, {
+    nowMs: router.getMonotonicClockMs(),
     sourceName: (route) => {
       if (route.type === 'ospf') return `ospf ${getOSPFProcessId(router)}`;
       if (route.type === 'eigrp' && eigrpAsn) return `eigrp ${eigrpAsn}`;
@@ -3272,7 +3251,6 @@ export function routerIpRouteView(router: Router, args: readonly string[]): stri
     if (!args[1]) return '% Incomplete command.';
     return showIpRouteVrf(router, args[1]);
   }
-  if (first === 'ospf') return showIpRouteOspf(router);
   if (first === 'summary') return showIpRouteSummary(router);
   const codes = ROUTE_FILTER_CODES[first];
   if (codes) return filterRouteTableByCode(showIpRouteAll(router), codes);

@@ -231,7 +231,6 @@ import {
   parseRouteMapClause, type RouteMapClauseKind,
 } from '../router/policy/routeMapClauses';
 import { showAdjacency } from './cisco/CiscoCommonShow';
-import { showIpRouteOspf } from './cisco/CiscoOspfCommands';
 import { clearAccessListCounters } from './cisco/CiscoAclCommands';
 import { IPV4_PLACE, valeurGlobaleSpecs } from './cisco/ipGlobalSpecs';
 import { formatDhcpBindings } from '@/cli/commands/show/showIpDhcp';
@@ -480,7 +479,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...hsrpShowSpecs(this, () => this.fhrp),
       ...trackShowSpecs(this),
       showViewSpec('show-ip-route-ospf', ['show', 'ip', 'route', 'ospf'],
-        'Display OSPF routes', () => showIpRouteOspf(this.d())),
+        'Display OSPF routes', () => routerIpRouteView(this.d(), ['ospf'])),
       showAdjacencySpec(
         () => showAdjacency(this.d() as unknown as Parameters<typeof showAdjacency>[0]),
         false),

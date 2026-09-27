@@ -35,6 +35,7 @@ export interface RIPRouterContext {
   evaluateRoutePolicy?(name: string, network: IPAddress, mask: SubnetMask): 'permit' | 'deny' | null;
   setRoutingTable(table: RouteEntry[]): void;
   pushRoute(route: RouteEntry): void;
+  getMonotonicClockMs(): number;
   sendFrame(iface: string, frame: EthernetFrame): void;
   getRipVersion?(): 1 | 2;
   getInterfaceRipAuth?(iface: string): { mode: 'md5' | 'text'; keyId: number; key: string } | null;
@@ -183,6 +184,6 @@ export class RouterRIPEngine {
     const idx = table.findIndex((r) =>
       r.type === 'rip' && r.network.equals(network)
       && r.mask.toCIDR() === mask.toCIDR());
-    if (idx >= 0) table[idx] = route as RouteEntry;
+    if (idx >= 0) table[idx] = { ...route as RouteEntry, installedAt: this.ctx.getMonotonicClockMs() };
   }
 }

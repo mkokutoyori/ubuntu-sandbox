@@ -29,3 +29,25 @@ export function renderInterfaceCounters(rows: readonly CounterRow[]): string {
   ], FIXED_TABLE);
   return `${entree}\n\n${sortie}`;
 }
+
+export interface ErrorCounterRow {
+  port: string;
+  alignErr: number;
+  fcsErr: number;
+  xmitErr: number;
+  rcvErr: number;
+  underSize: number;
+  outDiscards: number;
+}
+
+export function renderInterfaceErrorCounters(rows: readonly ErrorCounterRow[]): string {
+  return renderTableText(rows, [
+    { header: 'Port', width: 15, value: (r) => r.port },
+    { header: 'Align-Err', width: 9, align: 'right', value: (r) => String(r.alignErr) },
+    { header: 'FCS-Err', width: 10, align: 'right', value: (r) => String(r.fcsErr) },
+    { header: 'Xmit-Err', width: 10, align: 'right', value: (r) => String(r.xmitErr) },
+    { header: 'Rcv-Err', width: 10, align: 'right', value: (r) => String(r.rcvErr) },
+    { header: 'UnderSize', width: 10, align: 'right', value: (r) => String(r.underSize) },
+    { header: 'OutDiscards', width: 12, align: 'right', value: (r) => String(r.outDiscards) },
+  ], FIXED_TABLE);
+}
