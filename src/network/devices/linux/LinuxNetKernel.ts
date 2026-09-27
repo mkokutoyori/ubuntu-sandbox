@@ -20,7 +20,7 @@ import type { Port } from '../../hardware/Port';
 import type { TcpWireOutcome } from '../../tcp/types';
 import type { PortNumber } from '../../core/ports/PortNumber';
 import type { IPAddress, IPv6Address, SubnetMask, MACAddress, IPv4Packet } from '../../core/types';
-import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, HostPolicyRule, PingResult, TraceProbeMethod, TraceSocketOptions, EchoOptions, EchoRoute, ConnectedUdpSocket, PathMtuException, UdpErrorReport } from '../EndHost';
+import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, HostPolicyRule, PingResult, TraceProbeMethod, TraceSocketOptions, EchoOptions, EchoRoute, ConnectedUdpSocket, RouteException, UdpErrorReport } from '../EndHost';
 import type { Errno } from '../../core/Errno';
 import type { DHCPClient } from '../../dhcp/DHCPClient';
 import type { DnsQueryFn } from '../../dns/compat/DnsWireCompat';
@@ -218,14 +218,14 @@ export interface LinuxNetKernel {
 
   udpListen(port: number, processName: string, owner: { pid?: number; uid?: number }): Errno | null;
 
-  pathMtuException(target: IPAddress): PathMtuException | null;
+  routeException(target: IPAddress): RouteException | null;
 
   udpErrorProbe(
     target: IPAddress,
     options: { destinationPort: number; sourcePort: number; ttl: number; payloadBytes: number; timeoutMs: number },
   ): Promise<UdpErrorReport>;
 
-  flushPathMtuExceptions(): void;
+  flushRouteExceptions(): void;
 
   /**
    * Opens a real connection and reads what the service volunteers, then
