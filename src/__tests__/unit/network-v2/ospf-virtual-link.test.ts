@@ -252,6 +252,7 @@ describe('Group 3: Router-LSA type 4 link + V-bit when VL Full', () => {
     engine.processDD('Gi0/1', '10.0.12.2', peerDD1);
     const peerDD2: OSPFDDPacket = { ...peerDD1, flags: 0, ddSequenceNumber: 100000 };
     engine.processDD('Gi0/1', '10.0.12.2', peerDD2);
+    vi.advanceTimersByTime(5_000);
   }
 
   it('3.1: backbone Router-LSA has type 4 link when VL is Full', () => {
