@@ -672,21 +672,7 @@ export class OSPFEngine implements IProtocolEngine {
     const already = this.config.networks.some((n) =>
       n.network === network && n.wildcard === wildcard && areasEqual(n.areaId, areaId));
     if (!already) this.config.networks.push({ network, wildcard, areaId });
-
-    // Ensure area exists
-    if (!this.config.areas.has(areaId)) {
-      this.config.areas.set(areaId, {
-        areaId,
-        type: 'normal',
-        interfaces: [],
-        isBackbone: isBackboneAreaId(areaId),
-      });
-    }
-
-    // Ensure LSDB area entry exists
-    if (!this.lsdb.areas.has(areaId)) {
-      this.lsdb.areas.set(areaId, new Map());
-    }
+    this.ensureArea(areaId);
   }
 
   removeNetwork(network: string, wildcard: string, areaId: string): void {
@@ -717,10 +703,8 @@ export class OSPFEngine implements IProtocolEngine {
         isBackbone: isBackboneAreaId(areaId),
       };
       this.config.areas.set(areaId, area);
-      if (!this.lsdb.areas.has(areaId)) {
-        this.lsdb.areas.set(areaId, new Map());
-      }
     }
+    if (!this.lsdb.areas.has(areaId)) this.lsdb.areas.set(areaId, new Map());
     return area;
   }
 
@@ -929,6 +913,7 @@ export class OSPFEngine implements IProtocolEngine {
       bandwidthBps?: number;
     }
   ): OSPFInterface {
+    this.ensureArea(areaId);
     const bandwidth = options?.bandwidthBps ?? OSPFEngine.inferInterfaceBandwidthBps(name);
     const defaultCost = bandwidth > 0
       ? Math.max(1, Math.floor(this.config.referenceBandwidth / bandwidth))
@@ -1095,6 +1080,14 @@ export class OSPFEngine implements IProtocolEngine {
     if (wasDR) this.flushOwnLSA(areaId, 2, iface.ipAddress);
     this.refreshRouterLSAForArea(areaId);
     this.scheduleSPF();
+  }
+
+  removeInterface(name: string): void {
+    if (!this.interfaces.has(name)) return;
+    this.deactivateInterface(name);
+    this.interfaces.delete(name);
+    this.rebuildInterfaceSignal();
+    this.rebuildNeighborSignal();
   }
 
   private hasInterfaceInArea(areaId: string): boolean {
@@ -3190,7 +3183,7 @@ export class OSPFEngine implements IProtocolEngine {
     for (const [areaId] of this.config.areas) {
       this.spfRunsByArea.set(areaId, (this.spfRunsByArea.get(areaId) ?? 0) + 1);
       const { routes: areaRoutes, tree } = this.runSPFForArea(areaId);
-      intraAreaRoutesByArea.set(areaId, areaRoutes);
+      intraAreaRoutesByArea.set(areaId, [...areaRoutes, ...this.attachedStubRoutes(areaId)]);
       this.spfTreeCache.set(areaId, tree);
       this.ospfRoutes.push(...areaRoutes);
     }
@@ -3486,6 +3479,22 @@ export class OSPFEngine implements IProtocolEngine {
    * Build intra-area + inter-area routes from a pre-computed SPF tree.
    * Used by both full SPF (fresh tree) and partial SPF (cached tree).
    */
+  private attachedStubRoutes(areaId: string): OSPFRouteEntry[] {
+    const own = this.lookupLSA(areaId, 1, this.config.routerId, this.config.routerId) as RouterLSA | undefined;
+    if (!own) return [];
+    return own.links.filter((link) => link.type === 3).map((link) => ({
+      network: link.linkId,
+      mask: link.linkData,
+      routeType: 'intra-area' as const,
+      areaId,
+      nextHop: '',
+      iface: [...this.interfaces.values()].find((iface) => areasEqual(iface.areaId, areaId)
+        && this.computeNetwork(iface.ipAddress, link.linkData) === link.linkId)?.name ?? '',
+      cost: link.metric,
+      advertisingRouter: this.config.routerId,
+    }));
+  }
+
   private buildRoutesFromTree(areaId: string, tree: Map<string, SPFVertex>): OSPFRouteEntry[] {
     const routes: OSPFRouteEntry[] = [];
     const areaDB = this.lsdb.areas.get(areaId);
