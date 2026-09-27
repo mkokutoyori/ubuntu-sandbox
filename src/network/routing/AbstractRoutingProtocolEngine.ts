@@ -13,6 +13,8 @@
  * and bus event happen as a side-effect of each pull.
  */
 import type { IEventBus } from '@/events/EventBus';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { SchedulerBinding } from '@/events/SchedulerBinding';
 import type { IRoutingProtocolEngine } from './IRoutingProtocolEngine';
 import {
   type RoutingPeerLocator, NULL_PEER_LOCATOR,
@@ -30,7 +32,10 @@ implements IRoutingProtocolEngine<TConfig> {
   abstract readonly protocol: string;
 
   protected config: TConfig;
-  protected readonly neighbors = new RoutingNeighborTable();
+  private schedulerOverride: IScheduler | null = null;
+  protected readonly clockBinding = new SchedulerBinding(
+    () => this.getScheduler(), (shiftMs) => { this.onClockRebound(shiftMs); });
+  protected readonly neighbors = new RoutingNeighborTable(() => this.clockBinding.now());
   private enabled = false;
   private locator: RoutingPeerLocator = NULL_PEER_LOCATOR;
   protected deviceCtx: RoutingDeviceContext = NULL_DEVICE_CONTEXT;
@@ -45,6 +50,19 @@ implements IRoutingProtocolEngine<TConfig> {
     this.config = this.defaultConfig();
     // Re-project whenever the neighbour table mutates (reactive).
     this.neighbors.onChange(() => this.reproject());
+  }
+
+  setScheduler(scheduler: IScheduler | null): void {
+    this.schedulerOverride = scheduler;
+    this.clockBinding.follow();
+  }
+
+  protected getScheduler(): IScheduler {
+    return this.schedulerOverride ?? getDefaultScheduler();
+  }
+
+  protected onClockRebound(shiftMs: number): void {
+    this.neighbors.shiftInstants(shiftMs);
   }
 
   // ── Template-method hooks (protocol-specific, small) ─────────────
@@ -105,6 +123,7 @@ implements IRoutingProtocolEngine<TConfig> {
   }
 
   converge(): void {
+    this.clockBinding.follow();
     if (!this.enabled) { this.reproject(); return; }
     const peers = this.locator.locatePeers();
     this.computeNeighbors(peers);          // mutates neighbour table

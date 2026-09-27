@@ -42,8 +42,6 @@
 import { IPAddress, SubnetMask } from '../core/types';
 import { Logger } from '../core/Logger';
 import { TimerSet } from '@/events/TimerSet';
-import { SchedulerBinding } from '@/events/SchedulerBinding';
-import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import {
   AbstractRoutingProtocolEngine,
 } from '../routing/AbstractRoutingProtocolEngine';
@@ -202,18 +200,10 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
   private round = 0;
 
   // ── Timers (RFC 7868 §5.3.1) ───────────────────────────────────────
-  private schedulerOverride: IScheduler | null = null;
-  /** Inject a scheduler (virtual time in tests, real time in the app). */
-  setScheduler(scheduler: IScheduler | null): void {
-    this.schedulerOverride = scheduler;
-    this.clockBinding.follow();
+  protected override onClockRebound(shiftMs: number): void {
+    super.onClockRebound(shiftMs);
+    this.rehomeTimers();
   }
-  private getScheduler(): IScheduler {
-    return this.schedulerOverride ?? getDefaultScheduler();
-  }
-
-  private readonly clockBinding = new SchedulerBinding(
-    () => this.getScheduler(), () => { this.rehomeTimers(); });
 
   private rehomeTimers(): void {
     this.timers.clearAll();
