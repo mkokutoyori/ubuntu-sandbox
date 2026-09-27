@@ -648,7 +648,7 @@ export class OSPFEngine implements IProtocolEngine {
       numLSAs: lsas.length,
       lsas,
     }, neighbor.ipAddress);
-    this.startLSURetransmitTimer(iface, neighbor);
+    if (neighbor.lsRetransmissionList.length > 0) this.startLSURetransmitTimer(iface, neighbor);
   }
 
   lsuRetransmissionOf(neighbor: OSPFNeighbor): OSPFLsuRetransmission {

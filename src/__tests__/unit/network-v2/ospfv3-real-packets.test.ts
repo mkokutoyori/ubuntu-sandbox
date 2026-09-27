@@ -19,6 +19,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { Cable } from '@/network/hardware/Cable';
 import { IPv6Packet } from '@/network/core/types';
+import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
 
 const IP_PROTO_OSPF = 89;
 
@@ -96,10 +97,8 @@ async function twoRouterLab(
   await setUpOspfv3(r1, '1.1.1.1', '2001:db8:12::1', { ipsec: options.ipsecSurR1 });
   await setUpOspfv3(r2, '1.1.1.2', '2001:db8:12::2', { passive: options.passiveSurR2 });
   new Cable('c12').connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
-  // Observation starts AFTER cabling: what is counted is what the
-  // convergence triggered by the next command produces.
   const wire = observeWire(r1, r2);
-  await r1.executeCommand('show ipv6 ospf neighbor');
+  clock.advance(HELLO_ROUND_MS);
   return { r1, r2, wire };
 }
 
@@ -109,8 +108,13 @@ function neighbours(r: CiscoRouter): string[] {
   return eng.getNeighbors().map((n) => n.routerId);
 }
 
+const HELLO_ROUND_MS = 30_000;
+
+let clock: VirtualTimeScheduler;
+
 beforeEach(() => {
-  // The shared resets come from setupGlobalState.ts.
+  clock = new VirtualTimeScheduler();
+  __setDefaultScheduler(clock);
 });
 
 describe('an OSPFv3 Hello really travels', () => {
@@ -202,7 +206,7 @@ describe('what stops a packet stops the adjacency', () => {
     await setUpOspfv3(r2, '1.1.1.2', '2001:db8:12::2');
     new Cable('c12').connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
     const wire = observeWire(r1, r2);
-    await r1.executeCommand('show ipv6 ospf neighbor');
+    clock.advance(HELLO_ROUND_MS);
 
     // R2 does send: the Hello ARRIVES on R1's passive interface.
     expect(wire.sent.some((t) => t.deviceId === r2.getId())).toBe(true);
@@ -219,7 +223,7 @@ describe('what stops a packet stops the adjacency', () => {
     await setUpOspfv3(r2, '1.1.1.2', '2001:db8:12::2');
     new Cable('c12').connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
     const wire = observeWire(r1, r2);
-    await r1.executeCommand('show ipv6 ospf neighbor');
+    clock.advance(HELLO_ROUND_MS);
 
     // Both send: RECEPTION is what refuses, not sending.
     expect(new Set(wire.sent.map((t) => t.deviceId)).size).toBe(2);
@@ -233,7 +237,7 @@ describe('what stops a packet stops the adjacency', () => {
     await setUpOspfv3(r1, '1.1.1.1', '2001:db8:12::1');
     await setUpOspfv3(r2, '1.1.1.2', '2001:db8:12::2');
     const wire = observeWire(r1, r2);
-    await r1.executeCommand('show ipv6 ospf neighbor');
+    clock.advance(HELLO_ROUND_MS);
     expect(wire.sent).toEqual([]);
     expect(neighbours(r1)).toEqual([]);
   });

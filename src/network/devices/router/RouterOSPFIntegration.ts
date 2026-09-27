@@ -22,7 +22,7 @@ import { ipv4MulticastToMac } from '../../core/ip';
 import { Logger } from '../../core/Logger';
 import { OSPFEngine } from '../../ospf/OSPFEngine';
 import { OSPFv3Engine } from '../../ospf/OSPFv3Engine';
-import type { OSPFNeighbor, OSPFPacket, OSPFInterface } from '../../ospf/types';
+import type { OSPFNeighbor, OSPFPacket, OSPFInterface, OSPFNetworkType } from '../../ospf/types';
 import { OSPF_ROUTER_ID_ABSENT } from '../../ospf/types';
 import type { ACLEngine } from './ACLEngine';
 import type { IPv6DataPlane } from './IPv6DataPlane';
@@ -33,6 +33,18 @@ import type { Equipment } from '@/network/equipment/Equipment';
 // ─── OSPF Extra Config Type ─────────────────────────────────────
 
 /** Advanced OSPF configuration not stored in OSPFEngine itself */
+export interface OspfInterfaceSettings {
+  cost?: number; priority?: number;
+  helloInterval?: number; deadInterval?: number;
+  authType?: number; authKey?: string;
+  demandCircuit?: boolean; networkType?: string;
+  mtuIgnore?: boolean; retransmitInterval?: number; transmitDelay?: number;
+  authKeyId?: number; silent?: boolean;
+  bfd?: boolean; bfdEchoDisabled?: boolean; bfdInterval?: number;
+  bfdMinRx?: number; bfdMultiplier?: number; bfdTemplate?: string;
+  floodReduction?: boolean; databaseFilterAllOut?: boolean;
+}
+
 export interface OSPFExtraConfig {
   spfThrottle?: { initial: number; hold: number; max: number };
   maxLsa?: number;
@@ -48,16 +60,7 @@ export interface OSPFExtraConfig {
   distributeList?: { aclId?: string; prefixListName?: string; direction: 'in' | 'out' };
   defaultInfoMetricType?: number;
   defaultInfoAlways?: boolean;
-  pendingIfConfig: Map<string, {
-    cost?: number; priority?: number;
-    helloInterval?: number; deadInterval?: number;
-    authType?: number; authKey?: string;
-    demandCircuit?: boolean; networkType?: string;
-    mtuIgnore?: boolean; retransmitInterval?: number; transmitDelay?: number;
-    authKeyId?: number; silent?: boolean;
-    bfd?: boolean; bfdEchoDisabled?: boolean; bfdInterval?: number;
-    bfdMinRx?: number; bfdMultiplier?: number; bfdTemplate?: string;
-  }>;
+  pendingIfConfig: Map<string, OspfInterfaceSettings>;
   pendingV3IfConfig: Map<string, {
     cost?: number; priority?: number;
     networkType?: string; ipsecAuth?: boolean;
@@ -598,6 +601,34 @@ export class RouterOSPFIntegration {
     this.ospfEngine.deactivateInterface(portName);
   }
 
+  applyInterfaceSettings(ifName: string, updates: OspfInterfaceSettings): void {
+    const pending = this.extraConfig.pendingIfConfig.get(ifName) ?? {};
+    Object.assign(pending, updates);
+    this.extraConfig.pendingIfConfig.set(ifName, pending);
+    const engine = this.ospfEngine;
+    const iface = engine?.getInterface(ifName);
+    if (engine && iface) {
+      if (updates.cost !== undefined) engine.setInterfaceCost(ifName, updates.cost);
+      if (updates.priority !== undefined) engine.setInterfacePriority(ifName, updates.priority);
+      if (updates.networkType !== undefined) {
+        engine.setInterfaceNetworkType(ifName, updates.networkType as OSPFNetworkType);
+      }
+      if (updates.helloInterval !== undefined) iface.helloInterval = updates.helloInterval;
+      if (updates.deadInterval !== undefined) iface.deadInterval = updates.deadInterval;
+      if (updates.authType !== undefined) iface.authType = updates.authType;
+      if (updates.authKey !== undefined) iface.authKey = updates.authKey;
+      if (updates.retransmitInterval !== undefined) iface.retransmitInterval = updates.retransmitInterval;
+      if (updates.transmitDelay !== undefined) iface.transmitDelay = updates.transmitDelay;
+    }
+    this.autoConverge();
+  }
+
+  resetInterfaceCost(ifName: string): void {
+    delete this.extraConfig.pendingIfConfig.get(ifName)?.cost;
+    this.ospfEngine?.resetInterfaceCost(ifName);
+    this.autoConverge();
+  }
+
   autoConverge(): void {
     if (!this.ospfEngine && !this.ospfv3Engine) return;
     // OSPFv3-only mode: skip OSPFv2 steps, jump straight to v3
@@ -914,7 +945,7 @@ export class RouterOSPFIntegration {
     this.pumpHellosV3(allPeers);
 
     this.floodV3LinkLSAs(allPeers);
-    this.v3ComputeRoutes(allPeers);
+    for (const peer of allPeers) peer.v3ComputeRoutes(allPeers);
   }
 
   /**
