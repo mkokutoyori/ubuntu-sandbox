@@ -16,14 +16,21 @@ import { hasTerminalSupport, Equipment } from '@/network';
 import type { ConnectionType } from '@/network';
 type BaseDevice = Equipment;
 import { cn } from '@/lib/utils';
+import { NETWORK_CANVAS_ID, screenToWorld, type CanvasPoint } from './canvas-geometry';
+
+function pointerOnMap(clientX: number, clientY: number): CanvasPoint | null {
+  const canvas = document.getElementById(NETWORK_CANVAS_ID);
+  if (!canvas) return null;
+  const { panX, panY, zoom } = useNetworkStore.getState();
+  return screenToWorld(clientX, clientY, canvas.getBoundingClientRect(), { panX, panY, zoom });
+}
 
 interface NetworkDeviceProps {
   device: NetworkDeviceUI;
-  zoom: number;
   onOpenTerminal?: (device: BaseDevice) => void;
 }
 
-function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps) {
+function NetworkDeviceImpl({ device, onOpenTerminal }: NetworkDeviceProps) {
   // Per-field selectors: zustand bails out when the selected slice is
   // unchanged, so dragging ANOTHER node (a store revision tick) no
   // longer re-renders this one. Actions are stable references.
@@ -76,25 +83,19 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
     setIsDragging(true);
     dragStartPos.current = { x: device.x, y: device.y };
 
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    dragOffset.current = {
-      x: e.clientX - rect.left - rect.width / 2,
-      y: e.clientY - rect.top - rect.height / 2
-    };
+    const grabbed = pointerOnMap(e.clientX, e.clientY);
+    dragOffset.current = grabbed
+      ? { x: grabbed.x - device.x, y: grabbed.y - device.y }
+      : { x: 0, y: 0 };
   }, [device, isConnecting, isConnectionSource, selectDevice, getPopoverPosition]);
 
   useEffect(() => {
     if (!isDragging) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const canvas = document.getElementById('network-canvas');
-      if (!canvas) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / zoom - dragOffset.current.x;
-      const y = (e.clientY - rect.top) / zoom - dragOffset.current.y;
-
-      moveDevice(device.id, Math.max(0, x), Math.max(0, y));
+      const pointer = pointerOnMap(e.clientX, e.clientY);
+      if (!pointer) return;
+      moveDevice(device.id, pointer.x - dragOffset.current.x, pointer.y - dragOffset.current.y);
     };
 
     const handleMouseUp = () => {
@@ -115,7 +116,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, device.id, zoom, moveDevice, commitMove]);
+  }, [isDragging, device.id, moveDevice, commitMove]);
 
   // Open source interface selector (instead of auto-selecting first free)
   const handleStartConnection = (e: React.MouseEvent) => {
@@ -166,7 +167,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
     switch (e.key) {
       case 'ArrowUp':
         e.preventDefault();
-        nudge(device.x, Math.max(0, device.y - STEP));
+        nudge(device.x, device.y - STEP);
         break;
       case 'ArrowDown':
         e.preventDefault();
@@ -174,7 +175,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
         break;
       case 'ArrowLeft':
         e.preventDefault();
-        nudge(Math.max(0, device.x - STEP), device.y);
+        nudge(device.x - STEP, device.y);
         break;
       case 'ArrowRight':
         e.preventDefault();
@@ -355,7 +356,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
 
 /**
  * Memoised: the canvas re-renders on every drag tick, but a node only
- * re-renders when ITS snapshot (referentially stabilised by the store),
- * the zoom, or the terminal callback actually changed.
+ * re-renders when ITS snapshot (referentially stabilised by the store)
+ * or the terminal callback actually changed.
  */
 export const NetworkDevice = memo(NetworkDeviceImpl);
