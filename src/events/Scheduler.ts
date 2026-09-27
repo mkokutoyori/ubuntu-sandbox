@@ -101,7 +101,6 @@ interface VirtualTask {
   fn: () => void;
   /** Insertion order to break ties deterministically. */
   seq: number;
-  cancelled: boolean;
 }
 
 function drainRunnableWork(): Promise<void> {
@@ -130,7 +129,6 @@ export class VirtualTimeScheduler implements IScheduler {
       due: this.currentTime + Math.max(0, delayMs),
       fn,
       seq: this.nextSeq++,
-      cancelled: false,
     });
     return handle;
   }
@@ -144,15 +142,12 @@ export class VirtualTimeScheduler implements IScheduler {
       period,
       fn,
       seq: this.nextSeq++,
-      cancelled: false,
     });
     return handle;
   }
 
   clear(handle: TimerHandle): void {
-    for (const t of this.tasks) {
-      if (t.handle === handle) t.cancelled = true;
-    }
+    this.removeTask(handle);
   }
 
   delay(ms: number): Promise<void> {
@@ -169,7 +164,6 @@ export class VirtualTimeScheduler implements IScheduler {
   msUntilNextTask(): number | null {
     let soonest: number | null = null;
     for (const t of this.tasks) {
-      if (t.cancelled) continue;
       const due = Math.max(0, t.due - this.currentTime);
       if (soonest === null || due < soonest) soonest = due;
     }
@@ -241,7 +235,6 @@ export class VirtualTimeScheduler implements IScheduler {
     }
 
     this.currentTime = target;
-    this.purgeCancelled();
   }
 
   jump(ms: number): void {
@@ -273,7 +266,6 @@ export class VirtualTimeScheduler implements IScheduler {
         console.error('[VirtualTimeScheduler] task threw:', e);
       }
     }
-    this.purgeCancelled();
   }
 
   /** Drop every pending task and reset the clock. */
@@ -285,7 +277,7 @@ export class VirtualTimeScheduler implements IScheduler {
 
   /** Number of currently-pending tasks (for tests). */
   pendingCount(): number {
-    return this.tasks.filter((t) => !t.cancelled).length;
+    return this.tasks.length;
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -293,7 +285,6 @@ export class VirtualTimeScheduler implements IScheduler {
   private pickNextDue(maxTime: number): VirtualTask | null {
     let best: VirtualTask | null = null;
     for (const t of this.tasks) {
-      if (t.cancelled) continue;
       if (t.due > maxTime) continue;
       if (!best || t.due < best.due || (t.due === best.due && t.seq < best.seq)) {
         best = t;
@@ -305,12 +296,6 @@ export class VirtualTimeScheduler implements IScheduler {
   private removeTask(handle: TimerHandle): void {
     const idx = this.tasks.findIndex((t) => t.handle === handle);
     if (idx >= 0) this.tasks.splice(idx, 1);
-  }
-
-  private purgeCancelled(): void {
-    for (let i = this.tasks.length - 1; i >= 0; i--) {
-      if (this.tasks[i].cancelled) this.tasks.splice(i, 1);
-    }
   }
 }
 
