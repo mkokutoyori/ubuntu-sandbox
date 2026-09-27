@@ -1200,30 +1200,48 @@ export class BashInterpreter {
       if (stderr) { this.output.push(stderr); this.stderrParts.push(stderr); }
       return;
     }
-    let stdoutHandled = false;
-    let stderrHandled = false;
+    type Sink = { kind: 'fd1' } | { kind: 'fd2' } | { kind: 'file'; path: string; append: boolean };
+    let fd1: Sink = { kind: 'fd1' };
+    let fd2: Sink = { kind: 'fd2' };
     for (const redir of redirections) {
       const target = yield* this.expandWordG(redir.target);
-      const path = this.io.resolvePath(target);
-      const append = redir.op === '>>';
+      const fd = redir.fd ?? 1;
+      if (redir.op === '>&' && /^\d+$/.test(target)) {
+        const source = target === '1' ? fd1 : target === '2' ? fd2 : null;
+        if (source === null) continue;
+        if (fd === 1) fd1 = source;
+        else if (fd === 2) fd2 = source;
+      } else if (redir.op === '>&') {
+        fd1 = fd2 = { kind: 'file', path: this.io.resolvePath(target), append: false };
+      } else if (redir.op === '>' || redir.op === '>>') {
+        const sink: Sink = { kind: 'file', path: this.io.resolvePath(target), append: redir.op === '>>' };
+        if (fd === 1) fd1 = sink;
+        else if (fd === 2) fd2 = sink;
+      }
+    }
+    const opened = new Set<string>();
+    const deliver = (content: string, sink: Sink): boolean => {
+      if (sink.kind === 'fd1') {
+        if (content) this.output.push(ensureTrailingNewline(content));
+        return true;
+      }
+      if (sink.kind === 'fd2') {
+        if (!content) return true;
+        this.stderrParts.push(content);
+        if (this.pipelineDepth === 0) this.output.push(ensureTrailingNewline(content));
+        return true;
+      }
       try {
-        if (redir.op === '>&' && /^\d+$/.test(target)) {
-          // fd dup (`>&2`): treat as stderr-handled so the stdout stream
-          // is the only thing left to flush to the terminal.
-          stderrHandled = stderrHandled || target === '2';
-        } else if (redir.op === '>' || redir.op === '>>') {
-          const fd = redir.fd ?? 1;
-          if (fd === 1) { this.io.writeFile(path, stdout, append); stdoutHandled = true; }
-          else if (fd === 2) { this.io.writeFile(path, stderr, append); stderrHandled = true; }
-        }
+        this.io!.writeFile(sink.path, content, sink.append || opened.has(sink.path));
+        opened.add(sink.path);
+        return true;
       } catch (e) {
         if (e instanceof Error) this.output.push(e.message + '\n');
         this.env.lastExitCode = 1;
-        return;
+        return false;
       }
-    }
-    if (!stdoutHandled && stdout) this.output.push(stdout);
-    if (!stderrHandled && stderr) { this.output.push(stderr); this.stderrParts.push(stderr); }
+    };
+    if (deliver(stdout, fd1)) deliver(stderr, fd2);
   }
 
   // ─── If ───────────────────────────────────────────────────────

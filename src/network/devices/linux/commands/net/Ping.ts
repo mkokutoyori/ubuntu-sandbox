@@ -7,6 +7,7 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import type { EchoRoute, PingResult, TraceSocketOptions } from '../../../EndHost';
 import { reverseNameOf } from '../../network/ReverseName';
+import { getoptDiagnostic, shortOptions } from '../Getopt';
 
 const IPUTILS_VERSION_LINE = 'from iputils 20221126';
 const DEFAULT_SIZE = 56;
@@ -268,25 +269,11 @@ export function parsePingArgs(args: readonly string[], cmd: 'ping' | 'ping6' = '
     }
   };
 
-  let optionsEnded = false;
-  for (let i = 0; i < args.length; i++) {
-    const token = args[i];
-    if (optionsEnded || token === '-' || !token.startsWith('-')) { parsed.targets.push(token); continue; }
-    if (token === '--') { optionsEnded = true; continue; }
-    for (let j = 1; j < token.length; j++) {
-      const ch = token[j];
-      const at = OPTSTRING.indexOf(ch);
-      if (at < 0 || ch === ':') return usageExit([...warnings, `${cmd}: invalid option -- '${ch}'`]);
-      let arg: string | undefined;
-      if (OPTSTRING[at + 1] === ':') {
-        if (j + 1 < token.length) arg = token.slice(j + 1);
-        else if (i + 1 < args.length) arg = args[++i];
-        else return usageExit([...warnings, `${cmd}: option requires an argument -- '${ch}'`]);
-        j = token.length;
-      }
-      const outcome = apply(ch, arg);
-      if (outcome !== null) return outcome;
-    }
+  for (const token of shortOptions(args, OPTSTRING)) {
+    if (token.kind === 'operand') { parsed.targets.push(token.value); continue; }
+    if (token.kind !== 'option') return usageExit([...warnings, getoptDiagnostic(cmd, token)]);
+    const outcome = apply(token.letter, token.argument);
+    if (outcome !== null) return outcome;
   }
   return { kind: 'parsed', args: parsed, warnings };
 }
@@ -614,6 +601,7 @@ function completePingFlags(_ctx: LinuxCommandContext, args: string[]): string[] 
 export const pingCommand: LinuxCommand = {
   name: 'ping',
   needsNetworkContext: true,
+  ownsHelpOption: true,
   manSection: 8,
   usage: 'ping [options] <destination>',
   help: 'Send ICMP ECHO_REQUEST packets to network hosts.',
@@ -656,6 +644,7 @@ export const pingCommand: LinuxCommand = {
 export const ping6Command: LinuxCommand = {
   name: 'ping6',
   needsNetworkContext: true,
+  ownsHelpOption: true,
   manSection: 8,
   usage: 'ping6 [options] <destination>',
   help: 'Send ICMPv6 ECHO_REQUEST packets to network hosts (alias for ping -6).',

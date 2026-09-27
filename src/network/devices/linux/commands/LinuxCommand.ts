@@ -107,6 +107,8 @@ export interface LinuxCommand {
    */
   readonly readsStdin?: boolean;
 
+  readonly ownsHelpOption?: boolean;
+
   // ─── Files this command needs to exist ──────────────────────────
 
   /**

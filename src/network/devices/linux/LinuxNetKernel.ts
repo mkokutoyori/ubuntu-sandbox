@@ -20,7 +20,8 @@ import type { Port } from '../../hardware/Port';
 import type { TcpWireOutcome } from '../../tcp/types';
 import type { PortNumber } from '../../core/ports/PortNumber';
 import type { IPAddress, IPv6Address, SubnetMask, MACAddress, IPv4Packet } from '../../core/types';
-import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, HostPolicyRule, PingResult, TraceProbeMethod, TraceSocketOptions, EchoOptions, EchoRoute } from '../EndHost';
+import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, HostPolicyRule, PingResult, TraceProbeMethod, TraceSocketOptions, EchoOptions, EchoRoute, ConnectedUdpSocket } from '../EndHost';
+import type { Errno } from '../../core/Errno';
 import type { DHCPClient } from '../../dhcp/DHCPClient';
 import type { DnsQueryFn } from '../../dns/compat/DnsWireCompat';
 import type { TcpStack } from '../../tcp/TcpStack';
@@ -203,7 +204,19 @@ export interface LinuxNetKernel {
    */
   tcpProbe(target: string, port: number): boolean;
 
-  tcpConnectOutcome(target: string, port: number, sourcePort?: PortNumber): TcpWireOutcome;
+  tcpConnectOutcome(target: string, port: number, sourcePort?: PortNumber, sourceIP?: IPAddress): TcpWireOutcome;
+
+  tcpExchange(
+    target: IPAddress | IPv6Address, port: number, payload: string,
+    options?: { sourcePort?: PortNumber; sourceIP?: IPAddress },
+  ): { outcome: TcpWireOutcome; received: string };
+
+  udpConnect(
+    target: IPAddress, port: number,
+    options?: { localPort?: number; source?: IPAddress; processName?: string; pid?: number; uid?: number },
+  ): ConnectedUdpSocket | Errno;
+
+  udpListen(port: number, processName: string, owner: { pid?: number; uid?: number }): Errno | null;
 
   /**
    * Opens a real connection and reads what the service volunteers, then
@@ -273,6 +286,8 @@ export interface LinuxNetKernel {
    * add an artificial microtask hop for no benefit.
    */
   resolveHostnameSync(name: string): IPAddress | null;
+
+  resolveHostname6Sync(name: string): IPv6Address | null;
 
   queryDns: DnsQueryFn;
 

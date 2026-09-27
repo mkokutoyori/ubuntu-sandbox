@@ -78,6 +78,7 @@ import {
 import { selectIpv6SourceAddress } from '../layers/internet/Ipv6Egress';
 import type { UdpEmissionOptions, UdpSendRequest } from '../layers/transport/UdpEgress';
 import { Logger } from '../core/Logger';
+import type { Errno } from '../core/Errno';
 import { PacketQueue } from '../core/PacketQueue';
 import {
   buildICMPError,
@@ -95,6 +96,7 @@ import {
   ICMP_TTL_EXPIRED_IN_TRANSIT,
   unreachableCodeName,
   isHardTcpUnreachCode,
+  udpSocketErrorFor,
   type ICMPErrorType,
   type IcmpErrorQuote,
   RFC792_ICMP_ERROR_QUOTE,
@@ -258,6 +260,18 @@ export interface UdpDelivery {
 
 /** Callback invoked for every datagram delivered to a bound UDP port. */
 export type UdpListener = (delivery: UdpDelivery) => void;
+
+export interface ConnectedUdpSocket {
+  readonly localPort: number;
+  send(payload: Uint8Array): Errno | null;
+  close(): void;
+}
+
+interface ConnectedUdpPeer {
+  readonly remote: string;
+  readonly remotePort: number;
+  pendingError: Errno | null;
+}
 
 // ─── IPv6 Neighbor Cache (RFC 4861) ─────────────────────────────────
 
@@ -2688,6 +2702,7 @@ export abstract class EndHost extends Equipment {
           + (icmp.mtu !== undefined ? ` mtu ${icmp.mtu}` : '');
 
       this.publishIcmpUnreachable(ipPkt, icmp);
+      this.reportUdpSocketError(icmp);
 
       const isHardTcpError = icmp.icmpType === 'destination-unreachable'
         && isHardTcpUnreachCode(icmp.code);
@@ -3004,11 +3019,14 @@ export abstract class EndHost extends Equipment {
     }, iface, port, target);
   }
 
-  public udpBind(port: number, listener: UdpListener, processName?: string): number | false {
+  public udpBind(
+    port: number, listener: UdpListener, processName?: string, owner: { pid?: number; uid?: number } = {},
+  ): number | false {
     let bound: number;
     try {
       bound = port === PORT_ANY ? this.socketTable.allocateEphemeralPort() : port;
-      this.socketTable.bind('udp', '0.0.0.0', bound, undefined, processName);
+      this.socketTable.bind('udp', '0.0.0.0', bound, owner.pid, processName, undefined,
+        owner.uid === undefined ? undefined : { ownerUid: owner.uid });
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('EADDRINUSE')) return false;
       throw error;
@@ -3018,6 +3036,75 @@ export abstract class EndHost extends Equipment {
   }
 
   private readonly udpAddressListeners = new Map<string, UdpListener>();
+
+  private readonly connectedUdpPeers = new Map<number, ConnectedUdpPeer>();
+
+  public udpListen(port: number, processName: string, owner: { pid?: number; uid?: number }): Errno | null {
+    try {
+      return this.udpBind(port, () => undefined, processName, owner) === false ? 'EADDRINUSE' : null;
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('EACCES')) return 'EACCES';
+      throw error;
+    }
+  }
+
+  public udpConnect(
+    remote: IPAddress, remotePort: number,
+    options: { localPort?: number; source?: IPAddress; processName?: string; pid?: number; uid?: number } = {},
+  ): ConnectedUdpSocket | Errno {
+    if (!remote.isLoopback() && !this.isLocalAddress(remote) && !this.resolveRoute(remote)) return 'ENETUNREACH';
+    if (options.source && !options.source.isLoopback() && !this.isLocalAddress(options.source)) return 'EADDRNOTAVAIL';
+    let localPort: number | false;
+    try {
+      localPort = this.udpBind(options.localPort ?? PORT_ANY, () => undefined, options.processName,
+        { pid: options.pid, uid: options.uid });
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('EACCES')) return 'EACCES';
+      throw error;
+    }
+    if (localPort === false) return 'EADDRINUSE';
+    const peer: ConnectedUdpPeer = { remote: remote.toString(), remotePort, pendingError: null };
+    this.connectedUdpPeers.set(localPort, peer);
+    return {
+      localPort,
+      send: (payload) => {
+        const pending = peer.pendingError;
+        if (pending !== null) {
+          peer.pendingError = null;
+          return pending;
+        }
+        const sent = this.sendUdpDatagram(
+          remote, remotePort, localPort, payload, payload.length,
+          options.source ? { sourceIp: options.source } : {});
+        return sent ? null : 'ENETUNREACH';
+      },
+      close: () => {
+        this.connectedUdpPeers.delete(localPort);
+        this.udpClose(localPort);
+      },
+    };
+  }
+
+  private reportUdpSocketError(icmp: ICMPPacket): void {
+    const original = icmp.originalPacket;
+    const datagram = original?.payload as UDPPacket | undefined;
+    if (!original || datagram?.type !== 'udp') return;
+    const peer = this.connectedUdpPeers.get(datagram.sourcePort);
+    if (!peer || peer.remote !== original.destinationIP.toString() || peer.remotePort !== datagram.destinationPort) return;
+    const error = udpSocketErrorFor(icmp.icmpType, icmp.code);
+    if (error?.fatal) peer.pendingError = error.errno;
+  }
+
+  public neighbourUnresolved(target: IPAddress | IPv6Address): boolean {
+    if (target instanceof IPv6Address) {
+      const route6 = this.resolveIPv6Route(target);
+      return route6 !== null && !route6.nextHopIP.isLoopback()
+        && !this.neighborCache.get(route6.nextHopIP.toString());
+    }
+    if (target.isLoopback() || this.isLocalAddress(target)) return false;
+    const route = this.resolveRoute(target);
+    return route !== null && !this.arpTable.has(route.nextHopIP.toString());
+  }
 
   /**
    * Lie un service à UNE adresse plutôt qu'à tout le port. Le port reste
@@ -4252,14 +4339,25 @@ export abstract class EndHost extends Equipment {
    * clients (nc, telnet, ssh) distinguish a filtered port from a closed
    * one without inspecting the peer's firewall state.
    */
-  tcpConnectOutcome(targetIP: IPAddress, port: number, sourcePort?: PortNumber): TcpWireOutcome {
-    this.resolveArpSync(targetIP);
-    return this.tcpv2.connectOutcome(targetIP.toString(), port, sourcePort);
+  tcpConnectOutcome(
+    targetIP: IPAddress, port: number, sourcePort?: PortNumber, sourceIP?: IPAddress,
+  ): TcpWireOutcome {
+    return this.tcpExchange(targetIP, port, '', { sourcePort, sourceIP }).outcome;
   }
 
   tcpConnectOutcome6(targetIP: IPv6Address, port: number, sourcePort?: PortNumber): TcpWireOutcome {
-    this.resolveNdpSync(targetIP);
-    return this.tcpv2.connectOutcome(targetIP.toString(), port, sourcePort);
+    return this.tcpExchange(targetIP, port, '', { sourcePort }).outcome;
+  }
+
+  tcpExchange(
+    targetIP: IPAddress | IPv6Address, port: number, payload: string,
+    options: { sourcePort?: PortNumber; sourceIP?: IPAddress } = {},
+  ): { outcome: TcpWireOutcome; received: string } {
+    if (targetIP instanceof IPv6Address) this.resolveNdpSync(targetIP);
+    else this.resolveArpSync(targetIP);
+    return this.tcpv2.exchange(targetIP.toString(), port, payload, {
+      localPort: options.sourcePort, localIp: options.sourceIP?.toString(),
+    });
   }
 
   tcpProbeSyncIPv6(targetAddr: string, port: number): boolean {

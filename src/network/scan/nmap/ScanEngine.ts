@@ -150,6 +150,7 @@ export const TCP_SCAN_REASON: Readonly<Record<TcpWireOutcome, string>> = {
   prohibited: 'admin-prohibited',
   timeout: 'no-response',
   unreachable: 'net-unreach',
+  'host-unreachable': 'host-unreach',
 };
 
 export interface PortResult {
