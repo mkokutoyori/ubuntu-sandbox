@@ -6,7 +6,7 @@ import {
   type UnackedSegment, type TcpOption, type TcpWireOutcome,
   noFlags, flagsString, nextIsn, makeSocketKey, makeListenerKey,
   computeTcpChecksum, verifyTcpChecksum, seqLt,
-  TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS, TCP_MIN_MSS,
+  TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS, TCP_MIN_MSS, TCP_BASE_HEADER_BYTES,
 } from './types';
 import { bogusChecksum, payloadBytes } from '@/network/layers/transport/L4Checksum';
 import { type StreamPayload, isStreamPayload, sliceStream, appendStream } from './StreamPayload';
@@ -927,11 +927,8 @@ export class TcpStack {
       // under-estimate the real on-wire size, computing a "corrected" MSS
       // that's still too big and bounces off the very same hop forever
       // (the guard below then blocks ever retrying the same value again).
-      const dataSegmentOptions: TcpOption[] = socket.timestampsEnabled
-        ? [{ kind: 'timestamp', tsVal: 0, tsEcr: 0 }] : [];
-      const tcpHeaderBytes = optionsDataOffset(dataSegmentOptions) * 4;
       const ipHeaderBytes = socket.family === 'ipv6' ? 40 : 20;
-      const newMss = Math.max(TCP_MIN_MSS, nextHopMtu - ipHeaderBytes - tcpHeaderBytes);
+      const newMss = Math.max(TCP_MIN_MSS, nextHopMtu - ipHeaderBytes - TCP_BASE_HEADER_BYTES);
       // Never grow MSS off this signal, but still attempt resegmentation
       // even when it doesn't need to shrink further: an already-queued
       // segment chunked at an *earlier*, larger MSS (before a previous
@@ -961,14 +958,14 @@ export class TcpStack {
   private resegmentAndRetransmit(socket: TcpSocket, origSequence: number): void {
     const head = socket.unackedQueue[0];
     if (!head || head.sequence !== origSequence) return;
-    if (!isStreamPayload(head.payload) || head.length <= socket.mss) return;
+    if (!isStreamPayload(head.payload) || head.length <= this.sendMss(socket)) return;
     const bounced = head.payload;
     socket.unackedQueue.shift();
     socket.sendNext = head.sequence;
     const resegmented: Array<{ payload: StreamPayload; psh: boolean }> = [];
     let offset = 0;
     while (offset < bounced.length) {
-      const chunk = sliceStream(bounced, offset, offset + socket.mss);
+      const chunk = sliceStream(bounced, offset, offset + this.sendMss(socket));
       offset += chunk.length;
       resegmented.push({ payload: chunk, psh: head.flags.psh && offset >= bounced.length });
     }
@@ -1188,7 +1185,7 @@ export class TcpStack {
     } else {
       let offset = 0;
       while (offset < data.length) {
-        const chunk = sliceStream(data, offset, offset + socket.mss);
+        const chunk = sliceStream(data, offset, offset + this.sendMss(socket));
         offset += chunk.length;
         this.queueForSend(socket, chunk, offset >= data.length);
       }
@@ -1207,11 +1204,18 @@ export class TcpStack {
    * or `resegmentAndRetransmit` pushed back onto the FRONT keeps its place
    * in the stream.
    */
+  private sendMss(socket: TcpSocket): number {
+    const dataSegmentOptions: TcpOption[] = socket.timestampsEnabled
+      ? [{ kind: 'timestamp', tsVal: 0, tsEcr: 0 }] : [];
+    return socket.mss - (optionsDataOffset(dataSegmentOptions) * 4 - TCP_BASE_HEADER_BYTES);
+  }
+
   private queueForSend(socket: TcpSocket, payload: StreamPayload, psh: boolean): void {
     let rest = payload;
     const tail = socket.sendBacklog[socket.sendBacklog.length - 1];
-    if (tail && tail.payload.length < socket.mss) {
-      const room = socket.mss - tail.payload.length;
+    const segmentBytes = this.sendMss(socket);
+    if (tail && tail.payload.length < segmentBytes) {
+      const room = segmentBytes - tail.payload.length;
       const merged = sliceStream(rest, 0, room);
       tail.payload = appendStream(tail.payload, merged);
       tail.psh = psh && merged.length === rest.length;
@@ -1292,10 +1296,11 @@ export class TcpStack {
    */
   private nagleHolds(socket: TcpSocket, headLength: number, take: number, overrideNagle: boolean): boolean {
     if (overrideNagle || socket.noDelay) return false;
-    if (headLength === 0 || take >= socket.mss) return false;
+    const segmentBytes = this.sendMss(socket);
+    if (headLength === 0 || take >= segmentBytes) return false;
     let queued = 0;
     for (const entry of socket.sendBacklog) queued += entry.payload.length;
-    if (queued >= socket.mss) return false;
+    if (queued >= segmentBytes) return false;
     return seqLt(socket.sendUnacked, socket.sendNext);
   }
 

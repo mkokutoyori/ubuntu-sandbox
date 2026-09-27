@@ -175,11 +175,11 @@ export interface IpNetworkContext {
   linkOps?: IpLinkOpsContext;
   /** Optional policy-routing rule context for ip rule */
   rule?: IpRuleContext;
-  /** Optional rule-aware route resolution, for `ip route get from SRC DST` */
-  resolveRouteWithRules?(
+  resolveRouteWithRules(
     dest: IPAddress, from: IPAddress | null,
   ): { iface: string; nextHopIP: string; table: number } | null;
   routeLookupFacts?(dest: IPAddress): { local: boolean; uid: number; pmtu: PathMtuException | null };
+  flushRouteCache?(): string;
   /** Optional network namespace CRUD for ip netns (list/add/del only — exec is handled upstream) */
   netns?: IpNetnsContext;
   /** Optional IPv4 multicast membership context for `ip maddr` (IGMP). */
@@ -1288,6 +1288,10 @@ function ipRoute(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): 
   if (args[0] === 'change') return ipRouteChange(ctx, args.slice(1));
   if (args[0] === 'del' || args[0] === 'delete') return ipRouteDel(ctx, args.slice(1));
   if (args[0] === 'get') return ipRouteGet(ctx, args.slice(1));
+  if (args[0] === 'flush') {
+    if (args[1] === 'cache' && args.length === 2 && ctx.flushRouteCache) return ctx.flushRouteCache();
+    return `ip route flush ${args.slice(1).join(' ')}: this simulator cannot flush routes by selector`.trimEnd();
+  }
   if (args[0] === 'help') return IP_ROUTE_HELP;
   return `Command "${args[0]}" is unknown, try "ip route help".`;
 }
@@ -1627,7 +1631,7 @@ function ipRouteGet(ctx: IpNetworkContext, args: string[]): string {
     return `local ${dest} ${from}dev lo table local ${src}uid ${facts.uid} \n    cache <local> `;
   }
 
-  const resolved = ctx.resolveRouteWithRules?.(destAddr, fromAddr) ?? null;
+  const resolved = ctx.resolveRouteWithRules(destAddr, fromAddr);
   if (!resolved) return 'RTNETLINK answers: Network is unreachable';
   const via = resolved.nextHopIP === dest ? '' : `via ${resolved.nextHopIP} `;
   const table = resolved.table !== 254 ? `table ${resolved.table} ` : '';

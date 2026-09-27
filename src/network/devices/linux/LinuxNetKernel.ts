@@ -220,6 +220,8 @@ export interface LinuxNetKernel {
 
   pathMtuException(target: IPAddress): PathMtuException | null;
 
+  flushPathMtuExceptions(): void;
+
   /**
    * Opens a real connection and reads what the service volunteers, then
    * closes it — nmap's `Probe TCP NULL q||`. Null when the connection

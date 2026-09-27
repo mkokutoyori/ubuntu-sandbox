@@ -256,6 +256,9 @@ export function formatWinPingReplyLine(r: PingResult, size: number): string {
     const ms = r.rttMs < 1 ? '<1ms' : `${Math.round(r.rttMs)}ms`;
     return `Reply from ${r.fromIP}: bytes=${size} time=${ms} TTL=${r.ttl}`;
   }
+  if (r.error?.startsWith('local error: message too long')) {
+    return winUnreachText(4);
+  }
   if (r.error?.includes('Time to live exceeded')) {
     const match = r.error.match(/from ([\d.]+)/);
     return `Reply from ${match ? match[1] : 'unknown'}: TTL expired in transit.`;
