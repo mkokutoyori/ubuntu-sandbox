@@ -342,7 +342,6 @@ export class Firewall extends Equipment {
   private readonly portals: FirewallPortals;
   private readonly sdwan: SdwanService;
   private readonly sdwanRoutes = new Map<string, DeclaredStaticRoute>();
-  private readonly routing: FirewallRouting;
   private readonly dhcp: FirewallDhcp;
   private readonly l3: L3Services;
   private readonly ntp: FirewallNtp;
@@ -675,7 +674,8 @@ export class Firewall extends Equipment {
       hostname: () => this.getName(),
       bus: () => this.getBus(),
       tcp: () => this.tcp,
-      routes: () => this.getVdom().routes,
+      vdomRoutes: (vdom) => this.getVdom(vdom).routes,
+      vdomOfInterface: (iface) => this.vdoms.vdomOfInterface(iface),
       routesOf: (iface) => this.getVdom(this.vdomOfLocalTraffic({ iface })).routes,
       interfaces: () => this.interfaces,
       port: (iface) => this.getPort(iface),
@@ -696,7 +696,6 @@ export class Firewall extends Equipment {
     });
 
     this.l3 = l3;
-    this.routing = l3.routing;
     this.dhcp = l3.dhcp;
     this.sdwan = l3.sdwan;
     this.sdwan.getTable().setRouteReach({
@@ -757,19 +756,20 @@ export class Firewall extends Equipment {
     const remoteAddress = IPAddress.tryParse(payload.neighborIp);
     if (!snmp || remoteAddress === null) return;
     if (!isBgpFsmState(payload.oldState) || !isBgpFsmState(payload.newState)) return;
-    const engine = this.routing.getBgp().getEngine();
+    const engine = this.l3.routings().map((routing) => routing.getBgp().getEngine())
+      .find((candidate) => candidate?.hasNeighbor(payload.neighborIp));
     snmp.raise({
       kind: 'bgp-peer',
       transition: {
         remoteAddress, from: payload.oldState, to: payload.newState,
-        lastError: engine === null ? NO_BGP_ERROR : engine.peerLastError(payload.neighborIp),
+        lastError: engine ? engine.peerLastError(payload.neighborIp) : NO_BGP_ERROR,
       },
     });
   }
 
   private raiseOspfNeighborTrap(payload: OspfNeighborStateChangedPayload): void {
     const snmp = this.snmpService;
-    const iface = this.routing.getOspf()?.getInterfaces().get(payload.iface);
+    const iface = this.l3.routingForInterface(payload.iface).getOspf()?.getInterfaces().get(payload.iface);
     const neighbor = iface?.neighbors.get(payload.neighborId);
     const routerId = IPAddress.tryParse(payload.routerId);
     const neighborAddress = IPAddress.tryParse(neighbor?.ipAddress ?? '');
@@ -972,7 +972,7 @@ export class Firewall extends Equipment {
   interfaceIndex(name: string): number {
     return this.interfaces.names().indexOf(name) + 1;
   }
-  getRouting(): FirewallRouting { return this.routing; }
+  getRouting(vdom?: string): FirewallRouting { return this.l3.routingOf(vdom ?? this.activeVdom); }
   getDhcp(): FirewallDhcp { return this.dhcp; }
 
   applyDhcp6Scope(scope: Dhcp6Scope): void { this.dhcp6.upsertScope(scope); }
@@ -1537,7 +1537,7 @@ export class Firewall extends Equipment {
   configureInterface(name: string, config: InterfaceConfig): void {
     const before = this.interfaces.get(name);
     this.interfaces.configure(name, config);
-    this.routing.refreshInterfaces();
+    for (const routing of this.l3.routings()) routing.refreshInterfaces();
     const after = this.interfaces.get(name);
     if (before?.ip !== after?.ip || before?.mask !== after?.mask) {
       this.snmpService?.raise({ kind: 'interface-address', port: name });

@@ -3,7 +3,7 @@ import { ipToUint32, tryIpToUint32, prefixLengthToMaskUint32 } from '../../../co
 import { BGPEngine, type BgpPeerLink, type BgpNeighborCfg } from '../../../bgp/BGPEngine';
 import { BGP_PORT } from '../../../bgp/messages';
 import { bgpTransport } from '../../../bgp/bgpTransport';
-import type { TcpStack } from '../../../tcp/TcpStack';
+import type { TcpSocket, TcpStack } from '../../../tcp/TcpStack';
 import type { IEventBus } from '../../../../events/EventBus';
 import type { ProtocolNeighborView } from '../../../routing/types';
 import type { ConnectedNetwork } from '../../../routing/RoutingPeerLocator';
@@ -25,6 +25,7 @@ export interface FirewallBgpDeps {
     distance: number; metric: number;
   }) => void;
   readonly removeRoutes: () => void;
+  readonly listen: (accept: (socket: TcpSocket) => void) => void;
 }
 
 export const AS_NUMBER_MAX = 4294967295;
@@ -163,18 +164,18 @@ export class FirewallBgp {
   private listen(): void {
     if (this.listening) return;
     this.listening = true;
-    this.deps.tcp().listen(BGP_PORT, {
-      onAccept: (socket) => {
-        const egress = this.egressToward(socket.remoteIp);
-        this.engine?.acceptInbound({
-          neighborIp: socket.remoteIp,
-          localIp: egress?.localIp ?? socket.localIp,
-          localIface: egress?.localIface ?? '',
-          transport: bgpTransport(socket),
-        });
-        this.installRoutes();
-      },
+    this.deps.listen((socket) => { this.accept(socket); });
+  }
+
+  private accept(socket: TcpSocket): void {
+    const egress = this.egressToward(socket.remoteIp);
+    this.engine?.acceptInbound({
+      neighborIp: socket.remoteIp,
+      localIp: egress?.localIp ?? socket.localIp,
+      localIface: egress?.localIface ?? '',
+      transport: bgpTransport(socket),
     });
+    this.installRoutes();
   }
 
   private dial(neighborIp: string): BgpPeerLink | null {

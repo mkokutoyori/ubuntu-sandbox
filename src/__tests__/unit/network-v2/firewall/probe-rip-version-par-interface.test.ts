@@ -64,6 +64,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import type { RIPEngine } from '@/network/rip/RIPEngine';
 
 beforeEach(() => {
   resetCounters();
@@ -78,13 +79,8 @@ function run(sh: FortiShell, ...lines: string[]): string {
   return last;
 }
 
-interface RipEngineView {
-  advanceTime(ms: number): void;
-  getRoutes(): Map<string, unknown>;
-}
-
-function moteur(fw: FortiGate): RipEngineView {
-  return (fw as unknown as { routing: { getRip(): RipEngineView } }).routing.getRip();
+function moteur(fw: FortiGate): RIPEngine {
+  return fw.getRouting().getRip()!;
 }
 
 function pareFeu(nom: string, adresse: string, prive: string, position: number) {

@@ -1,6 +1,7 @@
 import type { EthernetFrame, MACAddress } from '../../../core/types';
 import type { IEventBus } from '../../../../events/EventBus';
-import type { TcpStack } from '../../../tcp/TcpStack';
+import type { TcpSocket, TcpStack } from '../../../tcp/TcpStack';
+import { BGP_PORT } from '../../../bgp/messages';
 import type { InterfaceTable } from './InterfaceTable';
 import type { RouteTable } from './RouteTable';
 import type { Port } from '../../../hardware/Port';
@@ -19,7 +20,8 @@ export interface L3ServiceHost {
   hostname(): string;
   bus(): IEventBus;
   tcp(): TcpStack;
-  routes(): RouteTable;
+  vdomRoutes(vdom: string): RouteTable;
+  vdomOfInterface(iface: string): string;
   routesOf(iface: string | undefined): RouteTable;
   interfaces(): InterfaceTable;
   port(iface: string): Port | undefined;
@@ -33,24 +35,51 @@ export interface L3ServiceHost {
 }
 
 export interface L3Services {
-  readonly routing: FirewallRouting;
+  routingOf(vdom: string): FirewallRouting;
+  routings(): readonly FirewallRouting[];
+  routingForInterface(iface: string): FirewallRouting;
   readonly dhcp: FirewallDhcp;
   readonly sdwan: SdwanService;
 }
 
 export function buildL3Services(host: L3ServiceHost): L3Services {
-  const routing = createFirewallRouting({
-    deviceId: host.deviceId,
-    hostname: () => host.hostname(),
-    bus: () => host.bus(),
-    routes: () => host.routes(),
-    connectedRoutes: () => host.interfaces().connectedRoutes(),
-    interfaceAddresses: () => routingPortFacts(host.interfaces(), (n) => host.port(n)),
-    resolvedMac: (ip) => host.resolvedMac(ip),
-    tcp: () => host.tcp(),
-    emitFrame: (iface, frame) => { host.emitFrame(iface, frame); },
-    emitArpAware: (iface, packet, nextHop) => { host.emitArpAware(iface, packet, nextHop); },
-  });
+  const bgpAcceptors = new Map<string, (socket: TcpSocket) => void>();
+  let bgpListening = false;
+  const listenBgp = (vdom: string, accept: (socket: TcpSocket) => void): void => {
+    bgpAcceptors.set(vdom, accept);
+    if (bgpListening) return;
+    bgpListening = true;
+    host.tcp().listen(BGP_PORT, {
+      onAccept: (socket) => {
+        const owner = host.interfaces().owningInterface(socket.localIp);
+        const accept = owner === undefined ? undefined : bgpAcceptors.get(host.vdomOfInterface(owner));
+        if (accept) accept(socket); else socket.close();
+      },
+    });
+  };
+
+  const instances = new Map<string, FirewallRouting>();
+  const routingOf = (vdom: string): FirewallRouting => {
+    const known = instances.get(vdom);
+    if (known) return known;
+    const inVdom = (iface: string) => host.vdomOfInterface(iface) === vdom;
+    const created = createFirewallRouting({
+      deviceId: host.deviceId,
+      hostname: () => host.hostname(),
+      bus: () => host.bus(),
+      routes: () => host.vdomRoutes(vdom),
+      connectedRoutes: () => host.interfaces().connectedRoutes().filter((route) => inVdom(route.iface)),
+      interfaceAddresses: () => routingPortFacts(host.interfaces(), (n) => host.port(n))
+        .filter((port) => inVdom(port.name)),
+      resolvedMac: (ip) => host.resolvedMac(ip),
+      tcp: () => host.tcp(),
+      listenBgp: (accept) => { listenBgp(vdom, accept); },
+      emitFrame: (iface, frame) => { host.emitFrame(iface, frame); },
+      emitArpAware: (iface, packet, nextHop) => { host.emitArpAware(iface, packet, nextHop); },
+    });
+    instances.set(vdom, created);
+    return created;
+  };
 
   const dhcp = createFirewallDhcp({
     deviceId: host.deviceId,
@@ -85,13 +114,19 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
     settle: () => Promise.resolve(),
   });
 
-  return Object.freeze({ routing, dhcp, sdwan });
+  return Object.freeze({
+    routingOf,
+    routings: () => [...instances.values()],
+    routingForInterface: (iface: string) => routingOf(host.vdomOfInterface(iface)),
+    dhcp,
+    sdwan,
+  });
 }
 
 export function claimedByControlPlane(
   services: L3Services, iface: string, packet: IPv4Packet, sourceMac: string,
 ): boolean {
-  if (deliverToRoutingProtocol(services.routing, iface, packet)) return true;
+  if (deliverToRoutingProtocol(services.routingForInterface(iface), iface, packet)) return true;
 
   const request = dhcpDatagram(packet);
   if (request) return services.dhcp.handleUdp(iface, packet, request);
