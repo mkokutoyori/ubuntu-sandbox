@@ -5,7 +5,7 @@ import {
 import type { IEventBus } from '../../../../events/EventBus';
 import type { ConnectedRoute, InterfaceTable } from '../l3/InterfaceTable';
 import type { Port } from '../../../hardware/Port';
-import type { RouteTable } from '../l3/RouteTable';
+import { learnedRouteId, type RouteTable } from '../l3/RouteTable';
 import type { TcpSocket, TcpStack } from '../../../tcp/TcpStack';
 import { FirewallRouting, ripPacketOf, type RoutingPortFacts } from './FirewallRouting';
 
@@ -34,15 +34,25 @@ export function createFirewallRouting(host: RoutingWiringHost): FirewallRouting 
     sendFrame: (iface, frame) => { host.emitFrame(iface, frame); },
     sendArpAware: (iface, packet, nextHop) => { host.emitArpAware(iface, packet, nextHop); },
     connectedRoutes: () => host.connectedRoutes(),
+    selectedRoutes: () => host.routes().selected(),
     installRoute: (route) => {
       host.routes().addStatic(route.network, route.mask, route.nextHop, {
         iface: route.iface || undefined,
         distance: route.distance,
         metric: route.metric,
-        id: `${route.source}:${route.network}/${route.mask}`,
+        id: learnedRouteId(route.source, route.network, route.mask),
         routeType: route.routeType,
       });
     },
+    replaceRoute: (route) => {
+      host.routes().replaceLearned(route.source, route.network, route.mask, route.nextHop, {
+        iface: route.iface || undefined,
+        distance: route.distance,
+        metric: route.metric,
+        routeType: route.routeType,
+      });
+    },
+    withdrawRoute: (source, network, mask) => { host.routes().withdrawLearned(source, network, mask); },
     removeRoutes: (source) => { host.routes().removeStaticsBySource(source); },
     resolvedMac: (ip) => host.resolvedMac(ip),
     tcp: () => host.tcp(),

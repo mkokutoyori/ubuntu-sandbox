@@ -136,6 +136,17 @@ export class RouteTable {
     return true;
   }
 
+  replaceLearned(
+    source: string, network: string, mask: string, nextHop: string | undefined, options: StaticRouteOptions,
+  ): void {
+    this.withdrawLearned(source, network, mask);
+    this.addStatic(network, mask, nextHop, { ...options, id: learnedRouteId(source, network, mask) });
+  }
+
+  withdrawLearned(source: string, network: string, mask: string): void {
+    this.removeStaticById(learnedRouteId(source, network, mask));
+  }
+
   removeStaticsBySource(source: string): number {
     const prefix = `${source}:`;
     const before = this.statics.length;
@@ -247,6 +258,10 @@ export class RouteTable {
     }
     return undefined;
   }
+}
+
+export function learnedRouteId(source: string, network: string, mask: string): string {
+  return `${source}:${network}/${mask}`;
 }
 
 function kindOf(route: StaticRecord): RouteKind {

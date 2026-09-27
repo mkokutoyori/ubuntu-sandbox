@@ -3,7 +3,7 @@ import type {
   OspfStatusAreaFacts, OspfStatusFacts,
 } from './DynamicRoutingTypes';
 import {
-  ETHERTYPE_IPV4, IPAddress, IP_PROTO_OSPF, MACAddress, SubnetMask,
+  ETHERTYPE_IPV4, IPAddress, IP_PROTO_OSPF, MACAddress, RIP_METRIC_INFINITY, SubnetMask,
   createIPv4Packet,
   type EthernetFrame, type IPv4Packet, type RIPPacket,
 } from '../../../core/types';
@@ -26,6 +26,7 @@ import {
   type BgpConfiguration, type OspfConfiguration, type RipConfiguration,
 } from './DynamicRoutingTypes';
 import { FirewallBgp } from './FirewallBgp';
+import type { FirewallRoute } from '../l3/RouteTable';
 
 export interface RoutingPortFacts {
   readonly name: string;
@@ -45,10 +46,10 @@ export interface FirewallRoutingDeps {
   readonly connectedRoutes: () => ReadonlyArray<{
     network: string; mask: string; iface: string;
   }>;
-  readonly installRoute: (route: {
-    network: string; mask: string; nextHop?: string; iface: string;
-    distance: number; metric: number; source: RoutingSource; routeType?: string;
-  }) => void;
+  readonly selectedRoutes: () => readonly FirewallRoute[];
+  readonly installRoute: (route: LearnedRoute) => void;
+  readonly replaceRoute: (route: LearnedRoute) => void;
+  readonly withdrawRoute: (source: RoutingSource, network: string, mask: string) => void;
   readonly removeRoutes: (source: RoutingSource) => void;
   readonly resolvedMac: (ip: string) => MACAddress | undefined;
   readonly tcp: () => TcpStack;
@@ -57,7 +58,26 @@ export interface FirewallRoutingDeps {
 
 export type RoutingSource = 'rip' | 'ospf' | 'bgp';
 
+export interface LearnedRoute {
+  readonly network: string;
+  readonly mask: string;
+  readonly nextHop?: string;
+  readonly iface: string;
+  readonly distance: number;
+  readonly metric: number;
+  readonly source: RoutingSource;
+  readonly routeType?: string;
+}
+
 const RIP_DISTANCE = 120;
+
+interface RipRibRoute {
+  readonly network: IPAddress;
+  readonly mask: SubnetMask;
+  readonly nextHop?: IPAddress;
+  readonly iface: string;
+  readonly metric: number;
+}
 const OSPF_DISTANCE = 110;
 
 function authTypeOf(mode: string | undefined): number {
@@ -96,14 +116,32 @@ export class FirewallRouting {
 
   applyRip(config: RipConfiguration): string | undefined {
     this.ripConfig = config;
-    if (!config.enabled) { this.rip = null; this.deps.removeRoutes('rip'); return undefined; }
-
-    this.rip = new RIPEngine(this.deps.deviceId, this.deps.hostname(), this.ripCallbacks());
-    this.rip.setEventBus?.(this.deps.bus());
-    this.rip.start();
-    for (const network of config.networks) {
-      this.rip.advertiseNetwork(new IPAddress(network.prefix), new SubnetMask(network.mask));
+    if (!config.enabled) {
+      this.rip?.stop();
+      this.rip = null;
+      this.deps.removeRoutes('rip');
+      return undefined;
     }
+
+    if (!this.rip) {
+      this.rip = new RIPEngine(this.deps.deviceId, this.deps.hostname(), this.ripCallbacks(),
+        { addsHopOnReceipt: true });
+      this.rip.setEventBus?.(this.deps.bus());
+      this.rip.start();
+    }
+    const engine = this.rip;
+    const wanted = new Set(config.networks.map((network) => `${network.prefix}/${network.mask}`));
+    for (const held of engine.getConfig().networks) {
+      if (!wanted.has(`${held.network}/${held.mask}`)) engine.withdrawNetwork(held.network);
+    }
+    for (const network of config.networks) {
+      engine.advertiseNetwork(new IPAddress(network.prefix), new SubnetMask(network.mask));
+    }
+    for (const iface of engine.getConfig().passiveInterfaces) {
+      if (!config.passiveInterfaces.includes(iface)) engine.removePassiveInterface(iface);
+    }
+    for (const iface of config.passiveInterfaces) engine.setPassiveInterface(iface);
+    engine.setDefaultInformationOriginate(config.defaultInformationOriginate);
     return undefined;
   }
 
@@ -397,44 +435,33 @@ export class FirewallRouting {
       },
       sendIpv4ArpAware: (name: string, packet: IPv4Packet, nextHop: IPAddress) =>
         this.deps.sendArpAware(name, packet, nextHop),
-      getRoutingTable: () => this.deps.connectedRoutes().map(route => ({
+      getRoutingTable: () => this.deps.selectedRoutes().map(route => ({
         network: new IPAddress(route.network),
         mask: new SubnetMask(route.mask),
         iface: route.iface,
-        type: 'connected',
-        metric: 0,
+        type: route.kind === 'connected' ? 'connected' : route.protocol ?? 'static',
+        metric: route.metric ?? 0,
       })),
-      installRoute: (route: {
-        network: IPAddress; mask: SubnetMask; nextHop?: IPAddress;
-        iface: string; metric: number;
-      }) => {
-        this.deps.installRoute({
-          network: route.network.toString(),
-          mask: route.mask.toString(),
-          nextHop: route.nextHop?.toString(),
-          iface: route.iface,
-          distance: RIP_DISTANCE,
-          metric: route.metric,
-          source: 'rip',
-        });
+      installRoute: (route: RipRibRoute) => { this.holdRipRoute(route); },
+      removeRoute: (network: IPAddress, mask: SubnetMask) => {
+        this.deps.withdrawRoute('rip', network.toString(), mask.toString());
       },
-      removeRoute: () => { this.deps.removeRoutes('rip'); },
-      updateRoute: (
-        _network: IPAddress, _mask: SubnetMask,
-        route: { network: IPAddress; mask: SubnetMask; nextHop?: IPAddress; iface: string; metric: number },
-      ) => {
-        this.deps.installRoute({
-          network: route.network.toString(),
-          mask: route.mask.toString(),
-          nextHop: route.nextHop?.toString(),
-          iface: route.iface,
-          distance: RIP_DISTANCE,
-          metric: route.metric,
-          source: 'rip',
-        });
-      },
+      updateRoute: (_network: IPAddress, _mask: SubnetMask, route: RipRibRoute) => { this.holdRipRoute(route); },
       getRipVersion: () => this.ripConfig.version,
     };
+  }
+
+  private holdRipRoute(route: RipRibRoute): void {
+    const network = route.network.toString();
+    const mask = route.mask.toString();
+    if (route.metric >= RIP_METRIC_INFINITY) {
+      this.deps.withdrawRoute('rip', network, mask);
+      return;
+    }
+    this.deps.replaceRoute({
+      network, mask, nextHop: route.nextHop?.toString(), iface: route.iface,
+      distance: RIP_DISTANCE, metric: route.metric, source: 'rip',
+    });
   }
 
   private portOf(name: string): RoutingPortFacts | undefined {

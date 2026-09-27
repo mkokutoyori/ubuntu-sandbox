@@ -102,6 +102,7 @@ export interface RIPConfig {
   redistribute: Map<RIPRedistSource, { metric?: number; routePolicy?: string }>;
   defaultMetric: number | null;
   defaultInformationOriginate: boolean;
+  addsHopOnReceipt: boolean;
 }
 
 /**
@@ -174,6 +175,7 @@ function createDefaultConfig(): RIPConfig {
     redistribute: new Map(),
     defaultMetric: null,
     defaultInformationOriginate: false,
+    addsHopOnReceipt: false,
   };
 }
 
@@ -642,7 +644,7 @@ export class RIPEngine implements IProtocolEngine {
     switch (route.type) {
       case 'rip':
         return route.metric >= RIP_METRIC_INFINITY
-          ? null : Math.min(route.metric + 1, RIP_METRIC_INFINITY);
+          ? null : this.advertisedLearnedMetric(route.metric);
       case 'connected': {
         if (this.coveredByNetworkStatement(route.network)) return 1;
         const redist = this.config.redistribute.get('connected');
@@ -666,6 +668,10 @@ export class RIPEngine implements IProtocolEngine {
       default:
         return null;
     }
+  }
+
+  private advertisedLearnedMetric(metric: number): number {
+    return Math.min(metric + (this.config.addsHopOnReceipt ? 0 : 1), RIP_METRIC_INFINITY);
   }
 
   private redistributionDenied(
@@ -803,8 +809,7 @@ export class RIPEngine implements IProtocolEngine {
           }
           continue;
         }
-        entries.push(this.routeToRIPEntry(
-          route, Math.min(route.metric + 1, RIP_METRIC_INFINITY)));
+        entries.push(this.routeToRIPEntry(route, this.advertisedLearnedMetric(route.metric)));
       }
       for (let i = 0; i < entries.length; i += RIP_MAX_ENTRIES_PER_MESSAGE) {
         this.sendPacket(portName, {
@@ -901,7 +906,7 @@ export class RIPEngine implements IProtocolEngine {
     if (entry.afi !== 2 && entry.afi !== 0) return;
     if (entry.metric < 1 || entry.metric > RIP_METRIC_INFINITY) return;
 
-    const newMetric = Math.min(entry.metric, RIP_METRIC_INFINITY);
+    const newMetric = Math.min(entry.metric + (this.config.addsHopOnReceipt ? 1 : 0), RIP_METRIC_INFINITY);
     const key = `${entry.ipAddress}/${entry.subnetMask.toCIDR()}`;
     const existing = this.routes.get(key);
 
