@@ -4569,12 +4569,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // trunk` a real answer on an unmanaged switch rather than a refusal.
     const dtp = this.optionalDtp();
     const existing = [...sw.getVLANs().keys()].sort((a, b) => a - b);
-    const trunks: Array<{ port: string; native: number; allowed: VlanSet }> = [];
+    const vtp = this.optionalVtp();
+    const trunks: Array<{ name: string; port: string; native: number; allowed: VlanSet }> = [];
     for (const p of portNames) {
       const c = sw.getSwitchportConfig(p);
       const isTrunk = dtp ? dtp.getOperationalMode(p) === 'trunk' : c?.mode === 'trunk';
       if (c && isTrunk) {
-        trunks.push({ port: this.abbreviateInterface(p), native: c.trunkNativeVlan, allowed: c.trunkAllowedVlans });
+        trunks.push({ name: p, port: this.abbreviateInterface(p), native: c.trunkNativeVlan, allowed: c.trunkAllowedVlans });
       }
     }
     if (trunks.length === 0) return '';
@@ -4590,8 +4591,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     for (const t of trunks) lines.push(`${t.port.padEnd(12)}${allowedStr(t.allowed)}`);
     lines.push('', 'Port        Vlans allowed and active in management domain');
     for (const t of trunks) lines.push(`${t.port.padEnd(12)}${activeStr(t.allowed)}`);
+    const notPrunedStr = (t: { name: string; allowed: VlanSet }) =>
+      this.compactVlanList(existing.filter((v) => t.allowed.has(v) && !vtp?.isVlanPruned(t.name, v))) || 'none';
     lines.push('', 'Port        Vlans in spanning tree forwarding state and not pruned');
-    for (const t of trunks) lines.push(`${t.port.padEnd(12)}${activeStr(t.allowed)}`);
+    for (const t of trunks) lines.push(`${t.port.padEnd(12)}${notPrunedStr(t)}`);
     return lines.join('\n');
   }
 

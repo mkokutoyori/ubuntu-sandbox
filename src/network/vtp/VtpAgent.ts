@@ -611,8 +611,15 @@ export class VtpAgent extends ReactiveAgentBase {
     }, 300_000);
   }
 
+  protected override onPortLinkDown(portName: string): void {
+    if (!this.host.vtpIsTrunkPort(portName)) this.broadcastInterest();
+  }
+
   protected override onPortLinkUp(portName: string): void {
-    if (!this.host.vtpIsTrunkPort(portName)) return;
+    if (!this.host.vtpIsTrunkPort(portName)) {
+      this.broadcastInterest();
+      return;
+    }
     if (this.config.pruning) this.sendJoin(portName);
     if (!this.config.domain) return;
     if (this.config.mode === 'server') {
