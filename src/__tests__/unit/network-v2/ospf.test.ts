@@ -570,6 +570,7 @@ describe('OSPF LSDB & LSA Management', () => {
 
     // Re-originate by changing interface cost
     engine.setInterfaceCost('GigabitEthernet0/0', 100);
+    vi.advanceTimersByTime(5_000);
 
     const lsa2 = areaDB.get(key) as RouterLSA;
     expect(lsa2.lsSequenceNumber).toBeGreaterThan(seq1);

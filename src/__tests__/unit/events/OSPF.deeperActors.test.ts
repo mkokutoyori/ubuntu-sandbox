@@ -74,7 +74,7 @@ describe('LsaRefreshActor — periodic refresh of self-originated LSAs', () => {
     expect(refreshDue).toBeDefined();
     expect(refreshed).toBeDefined();
     // The refresh resets lsAge to 0 — verify the engine state reflects this.
-    expect(lsa.lsAge).toBeLessThan(5);
+    expect(engine.lookupLSA(OSPF_BACKBONE_AREA, 1, '1.1.1.1', '1.1.1.1')!.lsAge).toBeLessThan(5);
   });
 
   it('emits refresh-due BEFORE the engine performs the refresh', () => {

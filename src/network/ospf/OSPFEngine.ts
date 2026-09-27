@@ -95,6 +95,11 @@ export type OSPFSendCallback = (
   destIP: string,
 ) => void;
 
+function lsaContents(lsa: LSA): string {
+  const { lsAge: _age, lsSequenceNumber: _sequence, checksum: _checksum, ...contents } = lsa;
+  return JSON.stringify(contents);
+}
+
 const FLOODING_STATES: ReadonlySet<OSPFNeighborState> = new Set<OSPFNeighborState>(['Exchange', 'Loading', 'Full']);
 
 function sameLsa(a: LSAHeader, b: LSAHeader): boolean {
@@ -111,14 +116,12 @@ export class OSPFEngine implements IProtocolEngine {
   private sendCallback: OSPFSendCallback | null = null;
   private running = false;
 
-  /** Current LSA sequence number */
-  private seqNumber: number = OSPF_INITIAL_SEQUENCE_NUMBER;
+  private readonly lastSequence = new Map<LSDBKey, number>();
+  private readonly lastOriginationAt = new Map<LSDBKey, number>();
+  private readonly deferredOriginations = new Map<LSDBKey, { areaId: string; lsa: LSA; timer: symbol }>();
 
   /** LSA aging timer (fires every 1 second). TimerSet token. */
   private lsAgeTimer: symbol | null = null;
-
-  /** MinLSInterval: last flood timestamp (ms) per LSA key, for self-originated LSAs */
-  private lastFloodTime: Map<string, number> = new Map();
 
   /** MinLSArrival: last install timestamp (ms) per LSA key, for received LSAs */
   private lsArrivalTimes: Map<string, number> = new Map();
@@ -530,18 +533,19 @@ export class OSPFEngine implements IProtocolEngine {
     packet: OSPFPacket,
     destIp: string,
   ): void {
+    const onTheWire = structuredClone(packet);
     // RFC 2328 §8.2 / Appendix D — outgoing packets carry the interface auth.
     const ifc = this.interfaces.get(iface);
     if (ifc) {
-      packet.authType = ifc.authType ?? 0;
-      packet.authKey = (ifc.authType ?? 0) !== 0 ? ifc.authKey : undefined;
+      onTheWire.authType = ifc.authType ?? 0;
+      onTheWire.authKey = (ifc.authType ?? 0) !== 0 ? ifc.authKey : undefined;
     }
-    this.incrementStat(packet.packetType, 'tx');
+    this.incrementStat(onTheWire.packetType, 'tx');
     this.getBus().publish({
       topic: 'ospf.packet.outgoing',
-      payload: { ...this.routerRef(), iface, destIp, packet },
+      payload: { ...this.routerRef(), iface, destIp, packet: onTheWire },
     });
-    this.sendCallback?.(iface, packet, destIp);
+    this.sendCallback?.(iface, onTheWire, destIp);
   }
 
   private incrementStat(packetType: number, direction: 'rx' | 'tx'): void {
@@ -1118,15 +1122,15 @@ export class OSPFEngine implements IProtocolEngine {
     const lsa = areaDB.get(key);
     if (!lsa) return;
 
-    lsa.lsAge = OSPF_MAX_AGE;
-    lsa.lsSequenceNumber = this.nextSeqNumber();
-    lsa.checksum = computeOSPFLSAChecksum(lsa);
-    this.floodLSA(areaId, lsa, null, true);
+    this.cancelDeferredOrigination(key);
+    this.lastSequence.set(key, Math.max(this.lastSequence.get(key) ?? 0, lsa.lsSequenceNumber));
+    const flushed = { ...lsa, lsAge: OSPF_MAX_AGE } as LSA;
+    this.floodLSA(areaId, flushed, null);
     areaDB.delete(key);
 
     this.getBus().publish({
       topic: 'ospf.lsa.flushed',
-      payload: { ...this.routerRef(), areaId, lsa: this.headerOf(lsa), reason: 'topology-change' },
+      payload: { ...this.routerRef(), areaId, lsa: this.headerOf(flushed), reason: 'topology-change' },
     } as never);
   }
 
@@ -2294,10 +2298,13 @@ export class OSPFEngine implements IProtocolEngine {
         );
       }
 
-      if (lsa.lsAge >= OSPF_MAX_AGE) {
+      const existing = this.lookupLSA(iface.areaId, lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
+
+      if (lsa.lsAge >= OSPF_MAX_AGE && (!existing || this.isNewerLSA(lsa, existing))) {
         ackedHeaders.push(this.extractHeader(lsa));
-        if (areaDB?.has(key)) {
-          areaDB.delete(key);
+        if (existing) {
+          if (lsa.lsType === 5) this.lsdb.external.delete(key);
+          else areaDB?.delete(key);
           this.lsArrivalTimes.delete(key);
           lsdbChanged = true;
           if (lsa.lsType === 1 || lsa.lsType === 2) topologyChanged = true;
@@ -2309,9 +2316,12 @@ export class OSPFEngine implements IProtocolEngine {
         continue;
       }
 
-      const existing = this.lookupLSA(iface.areaId, lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
-
       if (!existing || this.isNewerLSA(lsa, existing)) {
+        if (this.isSelfOriginated(lsa)) {
+          ackedHeaders.push(this.extractHeader(lsa));
+          this.takeBackSelfOriginated(iface.areaId, lsa);
+          continue;
+        }
         // MinLSArrival (RFC 2328 §13, step 5b): rate-limit acceptance of any
         // instance of the same LSA (same LS type / Link State ID / Adv Router)
         // to at most once per MinLSArrival (1 second).  This applies regardless
@@ -2439,10 +2449,83 @@ export class OSPFEngine implements IProtocolEngine {
 
   // ─── LSDB Management ──────────────────────────────────────────
 
-  private originateOwnLSA(areaId: string, lsa: LSA): void {
+  private originateOwnLSA<T extends LSA>(areaId: string, lsa: T): T {
+    const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
+    const current = this.lookupLSA(areaId, lsa.lsType, lsa.linkStateId, lsa.advertisingRouter) as T | undefined;
+    if (current && current.lsAge < OSPF_MAX_AGE && lsaContents(current) === lsaContents(lsa)) {
+      this.cancelDeferredOrigination(key);
+      return current;
+    }
+    const last = this.lastOriginationAt.get(key);
+    const wait = this.batchConvergence || last === undefined ? 0 : last + OSPF_MIN_LS_INTERVAL * 1000 - this.now();
+    if (wait > 0) {
+      this.deferOrigination(key, areaId, lsa, wait);
+      return current ?? lsa;
+    }
+    return this.originateNow(areaId, key, lsa, current);
+  }
+
+  private originateNow<T extends LSA>(areaId: string, key: LSDBKey, lsa: T, current: LSA | undefined): T {
+    this.cancelDeferredOrigination(key);
+    this.installOwnInstance(areaId, key, { ...lsa, lsAge: 0, lsSequenceNumber: this.nextSequenceFor(key, current) });
+    return this.lookupLSA(areaId, lsa.lsType, lsa.linkStateId, lsa.advertisingRouter) as T;
+  }
+
+  private installOwnInstance(areaId: string, key: LSDBKey, lsa: LSA): void {
+    this.lastOriginationAt.set(key, this.now());
     this.lsaOriginatedCount++;
     this.installLSA(areaId, lsa);
     this.floodLSA(areaId, lsa, null);
+  }
+
+  private nextSequenceFor(key: LSDBKey, current: LSAHeader | undefined): number {
+    const last = Math.max(current?.lsSequenceNumber ?? 0, this.lastSequence.get(key) ?? 0);
+    const next = last === 0 ? OSPF_INITIAL_SEQUENCE_NUMBER : last + 1;
+    this.lastSequence.set(key, next);
+    return next;
+  }
+
+  private deferOrigination(key: LSDBKey, areaId: string, lsa: LSA, wait: number): void {
+    const pending = this.deferredOriginations.get(key);
+    if (pending) {
+      pending.lsa = lsa;
+      pending.areaId = areaId;
+      return;
+    }
+    const timer = this.timers.setTimeout(() => {
+      const due = this.deferredOriginations.get(key);
+      if (!due) return;
+      this.deferredOriginations.delete(key);
+      const current = this.lookupLSA(due.areaId, due.lsa.lsType, due.lsa.linkStateId, due.lsa.advertisingRouter);
+      if (current && current.lsAge < OSPF_MAX_AGE && lsaContents(current) === lsaContents(due.lsa)) return;
+      this.originateNow(due.areaId, key, due.lsa, current);
+    }, wait);
+    this.deferredOriginations.set(key, { areaId, lsa, timer });
+  }
+
+  private isSelfOriginated(lsa: LSAHeader): boolean {
+    if (lsa.advertisingRouter === this.config.routerId) return true;
+    if (lsa.lsType !== 2) return false;
+    return [...this.interfaces.values()].some((iface) => iface.ipAddress === lsa.linkStateId);
+  }
+
+  private takeBackSelfOriginated(areaId: string, stale: LSA): void {
+    const key = makeLSDBKey(stale.lsType, stale.linkStateId, stale.advertisingRouter);
+    this.lastSequence.set(key, Math.max(this.lastSequence.get(key) ?? 0, stale.lsSequenceNumber));
+    this.cancelDeferredOrigination(key);
+    const current = this.lookupLSA(areaId, stale.lsType, stale.linkStateId, stale.advertisingRouter);
+    if (current && current.lsAge < OSPF_MAX_AGE) {
+      this.installOwnInstance(areaId, key, { ...current, lsAge: 0, lsSequenceNumber: this.nextSequenceFor(key, current) } as LSA);
+      return;
+    }
+    this.floodLSA(areaId, { ...stale, lsAge: OSPF_MAX_AGE } as LSA, null);
+  }
+
+  private cancelDeferredOrigination(key: LSDBKey): void {
+    const pending = this.deferredOriginations.get(key);
+    if (!pending) return;
+    this.timers.clear(pending.timer);
+    this.deferredOriginations.delete(key);
   }
 
   installLSA(areaId: string, lsa: LSA): void {
@@ -2666,7 +2749,7 @@ export class OSPFEngine implements IProtocolEngine {
       lsType: 1,
       linkStateId: this.config.routerId,
       advertisingRouter: this.config.routerId,
-      lsSequenceNumber: this.nextSeqNumber(),
+      lsSequenceNumber: OSPF_INITIAL_SEQUENCE_NUMBER,
       checksum: 0,
       length: 24 + links.length * 12,
       flags,
@@ -2674,9 +2757,7 @@ export class OSPFEngine implements IProtocolEngine {
       links,
     };
 
-    this.originateOwnLSA(areaId, lsa);
-
-    return lsa;
+    return this.originateOwnLSA(areaId, lsa);
   }
 
   /**
@@ -2708,16 +2789,14 @@ export class OSPFEngine implements IProtocolEngine {
       lsType: 2,
       linkStateId: iface.ipAddress,
       advertisingRouter: this.config.routerId,
-      lsSequenceNumber: this.nextSeqNumber(),
+      lsSequenceNumber: OSPF_INITIAL_SEQUENCE_NUMBER,
       checksum: 0,
       length: 24 + attachedRouters.length * 4,
       networkMask: iface.mask,
       attachedRouters,
     };
 
-    this.originateOwnLSA(iface.areaId, lsa);
-
-    return lsa;
+    return this.originateOwnLSA(iface.areaId, lsa);
   }
 
   private hasFullNeighborOnInterface(iface: OSPFInterface): boolean {
@@ -2779,15 +2858,14 @@ export class OSPFEngine implements IProtocolEngine {
       lsType: 3,
       linkStateId: network,
       advertisingRouter: this.config.routerId,
-      lsSequenceNumber: this.nextSeqNumber(),
+      lsSequenceNumber: OSPF_INITIAL_SEQUENCE_NUMBER,
       checksum: 0,
       // 20-byte header + 4 (networkMask) + 4 (TOS count 1B pad + 3B metric) = 28
       length: 28,
       networkMask: mask,
       metric,
     };
-    this.originateOwnLSA(intoAreaId, lsa);
-    return lsa;
+    return this.originateOwnLSA(intoAreaId, lsa);
   }
 
   // ─── Type 4 Summary ASBR LSA (RFC 2328 §12.4.4) ───────────────
@@ -2804,14 +2882,13 @@ export class OSPFEngine implements IProtocolEngine {
       lsType: 4,
       linkStateId: asbrRouterId,
       advertisingRouter: this.config.routerId,
-      lsSequenceNumber: this.nextSeqNumber(),
+      lsSequenceNumber: OSPF_INITIAL_SEQUENCE_NUMBER,
       checksum: 0,
       length: 28,
       networkMask: '0.0.0.0',
       metric,
     };
-    this.originateOwnLSA(intoAreaId, lsa);
-    return lsa;
+    return this.originateOwnLSA(intoAreaId, lsa);
   }
 
   // ─── Type 7 NSSA External LSA (RFC 3101) ───────────────────────
@@ -2836,7 +2913,7 @@ export class OSPFEngine implements IProtocolEngine {
       lsType: 7,
       linkStateId: network,
       advertisingRouter: this.config.routerId,
-      lsSequenceNumber: this.nextSeqNumber(),
+      lsSequenceNumber: OSPF_INITIAL_SEQUENCE_NUMBER,
       checksum: 0,
       // Same structure as Type 5: 20-byte header + 16 bytes body = 36
       length: 36,
@@ -2846,8 +2923,7 @@ export class OSPFEngine implements IProtocolEngine {
       forwardingAddress,
       externalRouteTag: 0,
     };
-    this.originateOwnLSA(areaId, lsa);
-    return lsa;
+    return this.originateOwnLSA(areaId, lsa);
   }
 
   /**
@@ -2862,7 +2938,7 @@ export class OSPFEngine implements IProtocolEngine {
       lsType: 5,
       linkStateId: nssaLsa.linkStateId,
       advertisingRouter: this.config.routerId,
-      lsSequenceNumber: this.nextSeqNumber(),
+      lsSequenceNumber: OSPF_INITIAL_SEQUENCE_NUMBER,
       checksum: 0,
       length: 36,
       networkMask: nssaLsa.networkMask,
@@ -2871,8 +2947,7 @@ export class OSPFEngine implements IProtocolEngine {
       forwardingAddress: nssaLsa.forwardingAddress,
       externalRouteTag: nssaLsa.externalRouteTag,
     };
-    this.originateOwnLSA(OSPF_BACKBONE_AREA, lsa);
-    return lsa;
+    return this.originateOwnLSA(OSPF_BACKBONE_AREA, lsa);
   }
 
   /**
@@ -2893,7 +2968,7 @@ export class OSPFEngine implements IProtocolEngine {
       lsType: 5,
       linkStateId: network,
       advertisingRouter: this.config.routerId,
-      lsSequenceNumber: this.nextSeqNumber(),
+      lsSequenceNumber: OSPF_INITIAL_SEQUENCE_NUMBER,
       checksum: 0,
       length: 36,
       networkMask: mask,
@@ -2902,8 +2977,7 @@ export class OSPFEngine implements IProtocolEngine {
       forwardingAddress,
       externalRouteTag: 0,
     };
-    this.originateOwnLSA(OSPF_BACKBONE_AREA, lsa);
-    return lsa;
+    return this.originateOwnLSA(OSPF_BACKBONE_AREA, lsa);
   }
 
   /**
@@ -2945,25 +3019,7 @@ export class OSPFEngine implements IProtocolEngine {
 
   // ─── LSA Flooding (RFC 2328 §13.3) ─────────────────────────────
 
-  private floodLSA(areaId: string, lsa: LSA, excludeIface: string | null, force = false): void {
-    const isSelfOriginated = lsa.advertisingRouter === this.config.routerId;
-
-    // MinLSInterval (RFC 2328 §12.4): self-originated LSAs must not be re-flooded
-    // more than once every MinLSInterval seconds.
-    // We only record (and check) the last flood time when we actually sent to at
-    // least one neighbor — if there are no Full neighbors, the "flood" is a no-op
-    // and we do not start the rate-limiting clock.
-    if (!force && !this.batchConvergence && isSelfOriginated) {
-      const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
-      if (this.lastFloodTime.has(key)) {
-        const lastTime = this.lastFloodTime.get(key)!;
-        if (this.now() - lastTime < OSPF_MIN_LS_INTERVAL * 1000) {
-          return; // MinLSInterval not yet elapsed — suppress redundant flood
-        }
-      }
-    }
-
-    let sentToAny = false;
+  private floodLSA(areaId: string, lsa: LSA, excludeIface: string | null): void {
     for (const [ifName, iface] of this.interfaces) {
       if (ifName === excludeIface) continue;
       if (!areasEqual(iface.areaId, areaId) && lsa.lsType !== 5) continue;
@@ -2997,17 +3053,8 @@ export class OSPFEngine implements IProtocolEngine {
             : neighbor.ipAddress;
 
           this.dispatchOutgoing(iface.name, lsu, destIP);
-          sentToAny = true;
         }
       }
-    }
-
-    // Record the flood time only when we actually reached at least one neighbor.
-    // This way, calling floodLSA with no neighbors does not start the MinLSInterval
-    // clock — the first real flood (with neighbors present) is never suppressed.
-    if (isSelfOriginated && sentToAny) {
-      const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
-      this.lastFloodTime.set(key, this.now());
     }
   }
 
@@ -3015,19 +3062,13 @@ export class OSPFEngine implements IProtocolEngine {
    * Force a re-flood of every self-originated LSA currently held in the LSDB,
    * over real LSU frames (RFC 2328 §13.3). Receiving routers supersede any
    * stale instance they still hold (lower sequence) via {@link processLSUpdate}.
-   *
-   * This exists for *batch* reconvergence (e.g. a router added to an already
-   * converged domain): the MinLSInterval (§12.4) flood rate-limit assumes wall
-   * time advances between originations, which it does not in a synchronous
-   * "converge now" pass. Forcing the flood here keeps LSDB synchronisation on
-   * the wire (no out-of-band LSDB copy) while guaranteeing newer instances win.
    */
   refloodSelfOriginatedLSAs(): void {
     for (const [areaId, areaDB] of this.lsdb.areas) {
       for (const [, lsa] of areaDB) {
         if (lsa.advertisingRouter !== this.config.routerId) continue;
         if (lsa.lsAge >= OSPF_MAX_AGE) continue;
-        this.floodLSA(areaId, lsa, null, true); // force past MinLSInterval
+        this.floodLSA(areaId, lsa, null);
       }
     }
     // Type-5 (AS-external) LSAs live in the AS-wide external LSDB, not in any
@@ -3037,7 +3078,7 @@ export class OSPFEngine implements IProtocolEngine {
     for (const [, lsa] of this.lsdb.external) {
       if (lsa.advertisingRouter !== this.config.routerId) continue;
       if (lsa.lsAge >= OSPF_MAX_AGE) continue;
-      this.floodLSA(OSPF_BACKBONE_AREA, lsa, null, true); // force past MinLSInterval
+      this.floodLSA(OSPF_BACKBONE_AREA, lsa, null);
     }
   }
 
@@ -4100,12 +4141,10 @@ export class OSPFEngine implements IProtocolEngine {
    * Public-but-internal: called by `LsaRefreshActor` in response to
    * `ospf.lsa.refresh-due` events. User code should not invoke it.
    */
-  refreshOwnLSA(areaId: string, lsa: LSA): void {
-    lsa.lsAge = 0;
-    lsa.lsSequenceNumber = this.nextSeqNumber();
-    lsa.checksum = computeOSPFLSAChecksum(lsa);
-    this.lsaOriginatedCount++;
-    this.floodLSA(areaId, lsa, null, true); // force=true bypasses MinLSInterval
+  refreshOwnLSA(areaId: string, stale: LSA): void {
+    const key = makeLSDBKey(stale.lsType, stale.linkStateId, stale.advertisingRouter);
+    const lsa = { ...stale, lsAge: 0, lsSequenceNumber: this.nextSequenceFor(key, stale) } as LSA;
+    this.installOwnInstance(areaId, key, lsa);
     // Reactive: announce the periodic refresh so observers can audit
     // self-originated LSA churn (telemetry, replay snapshots, …).
     this.getBus().publish({
@@ -4150,7 +4189,9 @@ export class OSPFEngine implements IProtocolEngine {
     this.interfaces.clear();
     this.lsdb = createEmptyLSDB();
     this.ospfRoutes = [];
-    this.lastFloodTime.clear();
+    this.lastSequence.clear();
+    this.lastOriginationAt.clear();
+    this.deferredOriginations.clear();
     this.lsArrivalTimes.clear();
     this.spfLastRunAt = 0;
     this.spfCurrentHold = this.spfThrottleHold;
@@ -4164,15 +4205,6 @@ export class OSPFEngine implements IProtocolEngine {
   }
 
   // ─── Utility ──────────────────────────────────────────────────
-
-  private nextSeqNumber(): number {
-    const seq = this.seqNumber;
-    // OSPF uses signed 32-bit sequence numbers (0x80000001 to 0x7FFFFFFF)
-    // In JS, these are unsigned, so 0x80000001 (2147483649) > 0x7FFFFFFF (2147483647)
-    // We simply increment the counter; wrap-around from max unsigned is unlikely in simulation
-    this.seqNumber = seq + 1;
-    return seq;
-  }
 
   private computeNetwork(ip: string, mask: string): string {
     return networkAddress(ip, mask);
