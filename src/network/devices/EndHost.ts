@@ -76,7 +76,8 @@ import {
   type Ipv4SendRequest,
 } from '../layers/internet/Ipv4Egress';
 import { selectIpv6SourceAddress } from '../layers/internet/Ipv6Egress';
-import type { UdpEmissionOptions, UdpSendRequest } from '../layers/transport/UdpEgress';
+import { UDP_OVER_IPV4_HEADER_BYTES, type UdpEmissionOptions, type UdpSendRequest } from '../layers/transport/UdpEgress';
+import type { HostIcmpUnreachablePayload } from './host/events';
 import { Logger } from '../core/Logger';
 import type { Errno } from '../core/Errno';
 import { PacketQueue } from '../core/PacketQueue';
@@ -230,6 +231,14 @@ export interface TraceSocketOptions {
   dontFragment?: boolean;
   direct?: boolean;
 }
+
+export type UdpErrorReport =
+  | { readonly origin: 'local'; readonly errno: Errno; readonly mtu?: number }
+  | {
+    readonly origin: 'icmp'; readonly from: string; readonly errno: Errno;
+    readonly timeExceeded: boolean; readonly mtu?: number; readonly replyTtl?: number; readonly rttMs: number;
+  }
+  | { readonly origin: 'none' };
 
 interface TraceProbeOutcome {
   timeout: boolean;
@@ -921,6 +930,8 @@ export abstract class EndHost extends Equipment {
         ttl: ipPkt.ttl,
         origProtocol: original?.protocol,
         origDestPort: transport?.destinationPort,
+        icmpType: icmp.icmpType === 'time-exceeded' ? 'time-exceeded' : 'destination-unreachable',
+        ...(icmp.mtu === undefined ? {} : { mtu: icmp.mtu }),
       },
     });
   }
@@ -4596,12 +4607,11 @@ export abstract class EndHost extends Equipment {
     );
   }
 
-  private async awaitTraceError(
-    targetIP: IPAddress, timeoutMs: number,
-    quotesProbe: (pl: { origProtocol?: number; origDestPort?: number }) => boolean,
-    isArrival: (code: string) => boolean,
+  private async awaitQuotedIcmpError(
+    timeoutMs: number,
+    quotesProbe: (pl: HostIcmpUnreachablePayload) => boolean,
     send: () => void,
-  ): Promise<TraceProbeOutcome> {
+  ): Promise<{ payload: HostIcmpUnreachablePayload; rttMs: number } | null> {
     const sentAt = performance.now();
     const answer = waitForEvent(
       this.getBus(),
@@ -4612,22 +4622,63 @@ export abstract class EndHost extends Equipment {
     answer.catch(() => {});
     send();
     try {
-      const pl = await answer;
-      const rttMs = performance.now() - sentAt;
-      if (pl.code === 'ttl-exceeded') {
-        return { timeout: false, reached: false, ip: pl.fromIp, rttMs };
-      }
-      if (isArrival(pl.code) && pl.fromIp === targetIP.toString()) {
-        return { timeout: false, reached: true, ip: pl.fromIp, rttMs };
-      }
-      return {
-        timeout: false, reached: pl.fromIp === targetIP.toString(), ip: pl.fromIp, rttMs,
-        unreachable: true, icmpCode: pl.icmpCode,
-      };
+      const payload = await answer;
+      return { payload, rttMs: performance.now() - sentAt };
     } catch (err) {
-      if (err instanceof WaitForEventTimeoutError) return { timeout: true, reached: false };
+      if (err instanceof WaitForEventTimeoutError) return null;
       throw err;
     }
+  }
+
+  public async udpErrorProbe(
+    targetIP: IPAddress,
+    options: { destinationPort: number; sourcePort: number; ttl: number; payloadBytes: number; timeoutMs: number },
+  ): Promise<UdpErrorReport> {
+    const local = this.isLocalAddress(targetIP);
+    const route = local ? null : this.resolveRoute(targetIP);
+    if (!local && !route) return { origin: 'local', errno: 'ENETUNREACH' };
+    const pathMtu = local ? LOOPBACK_ECHO_MTU : this.pathMtuTo(targetIP, route!.port.getMTU());
+    if (UDP_OVER_IPV4_HEADER_BYTES + options.payloadBytes > pathMtu) {
+      return { origin: 'local', errno: 'EMSGSIZE', mtu: pathMtu };
+    }
+    const answer = await this.awaitQuotedIcmpError(
+      options.timeoutMs,
+      (pl) => pl.origProtocol === IP_PROTO_UDP && pl.origDestPort === options.destinationPort,
+      () => this.sendUdpDatagram({
+        destination: targetIP, destinationPort: options.destinationPort, sourcePort: options.sourcePort,
+        payload: null, payloadBytes: options.payloadBytes, ttl: options.ttl, dontFragment: true,
+      }),
+    );
+    if (answer === null) return { origin: 'none' };
+    const { payload, rttMs } = answer;
+    const error = udpSocketErrorFor(payload.icmpType ?? 'destination-unreachable', payload.icmpCode ?? 0);
+    return {
+      origin: 'icmp', from: payload.fromIp, errno: error?.errno ?? 'EHOSTUNREACH',
+      timeExceeded: payload.icmpType === 'time-exceeded', rttMs,
+      ...(payload.mtu === undefined ? {} : { mtu: payload.mtu }),
+      ...(payload.ttl === undefined ? {} : { replyTtl: payload.ttl }),
+    };
+  }
+
+  private async awaitTraceError(
+    targetIP: IPAddress, timeoutMs: number,
+    quotesProbe: (pl: { origProtocol?: number; origDestPort?: number }) => boolean,
+    isArrival: (code: string) => boolean,
+    send: () => void,
+  ): Promise<TraceProbeOutcome> {
+    const answer = await this.awaitQuotedIcmpError(timeoutMs, quotesProbe, send);
+    if (answer === null) return { timeout: true, reached: false };
+    const { payload: pl, rttMs } = answer;
+    if (pl.code === 'ttl-exceeded') {
+      return { timeout: false, reached: false, ip: pl.fromIp, rttMs };
+    }
+    if (isArrival(pl.code) && pl.fromIp === targetIP.toString()) {
+      return { timeout: false, reached: true, ip: pl.fromIp, rttMs };
+    }
+    return {
+      timeout: false, reached: pl.fromIp === targetIP.toString(), ip: pl.fromIp, rttMs,
+      unreachable: true, icmpCode: pl.icmpCode,
+    };
   }
 
   canTraceTo(targetIP: IPAddress, socket: TraceSocketOptions): boolean {
