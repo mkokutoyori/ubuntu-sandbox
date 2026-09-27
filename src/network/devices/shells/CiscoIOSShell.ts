@@ -34,6 +34,8 @@ import { CLEAR_CRYPTO_FAMILY } from '@/cli/commands/clear/clearCrypto';
 import { SHOW_CRYPTO_FAMILY } from '@/cli/commands/show/showCrypto';
 import type { Router, TracerouteHop } from '../Router';
 import { IOS_TRACEROUTE_BASE_PORT, iosUnreachableMark } from './cisco/iosTraceroute';
+import { IOS_IPV6_ERROR_INTERVAL } from '../router/IcmpErrorTokenBucket';
+import { displayIosAddress, displayIpv6Address } from './cisco/iosIpv6Text';
 import type { IRouterShell } from './IRouterShell';
 import { CiscoShellBase } from './CiscoShellBase';
 import { CommandTrie, setInvalidInputPromptWidth, formatInvalidInput, formatInvalidInputAt } from './CommandTrie';
@@ -475,6 +477,13 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...icmpRateLimitFamily(() => ({
         setIcmpUnreachableRateLimit: (timer, intervalMs) =>
           this.d().icmpUnreachableRateLimit.setIntervalMs(timer, intervalMs),
+        setIcmpv6ErrorInterval: (setting) => {
+          const bucket = this.d().icmpv6ErrorRateLimit;
+          bucket.configure(setting === null ? null : {
+            intervalMs: setting.intervalMs,
+            bucketSize: setting.bucketSize ?? IOS_IPV6_ERROR_INTERVAL.bucketSize,
+          });
+        },
       })),
       ...hsrpShowSpecs(this, () => this.fhrp),
       ...trackShowSpecs(this),
@@ -2433,8 +2442,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
     if (demande.protocol === 'ipv6') {
       this._pendingAsync = this.d()
-        .executeTraceroute6(new IPv6Address(target), maxHops, timeoutMs, probesPerHop)
-        .then(hops => this._formatCiscoTraceroute(target, maxHops, hops));
+        .executeTraceroute6(new IPv6Address(target), maxHops, timeoutMs, probesPerHop, firstTtl,
+          { kind: 'udp', basePort: IOS_TRACEROUTE_BASE_PORT })
+        .then(hops => this._formatCiscoTraceroute(displayIpv6Address(target), maxHops, hops));
       return '';
     }
 
@@ -2478,7 +2488,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         }
         if (probe.ip !== undefined && probe.ip !== lastAddress) {
           if (printed) line += '\n    ';
-          line += probe.ip;
+          line += displayIosAddress(probe.ip);
           lastAddress = probe.ip;
         }
         line += probe.unreachable

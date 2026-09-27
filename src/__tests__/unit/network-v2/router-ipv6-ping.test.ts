@@ -91,7 +91,7 @@ describe('a Cisco router pings IPv6', () => {
     const { a } = await ciscoPair();
     const icmp = watchIcmpv6(a);
     const out = await pingOnSimulatedClock(a, 'ping ipv6 2001:db8::2');
-    expect(out).toContain('Sending 5, 100-byte ICMP Echos to 2001:db8::2');
+    expect(out).toContain('Sending 5, 100-byte ICMP Echos to 2001:DB8::2');
     expect(out).toMatch(/Success rate is 100 percent \(5\/5\)/);
     // The transcript alone proves nothing — a fabricated success reads
     // the same. What proves it is the wire.
@@ -231,15 +231,15 @@ describe('a router traces an IPv6 route', () => {
     const { a } = await ciscoPair();
     const icmp = watchIcmpv6(a);
     const out = await a.executeCommand('traceroute ipv6 2001:db8::2');
-    expect(out).toContain('Tracing the route to 2001:db8::2');
-    expect(out).toContain('2001:db8::2');
-    expect(icmp.filter((t) => t === 'echo-request').length).toBeGreaterThan(0);
+    expect(out).toContain('Tracing the route to 2001:DB8::2');
+    expect(out).toContain('2001:DB8::2');
+    expect(icmp.filter((t) => t === 'destination-unreachable').length).toBeGreaterThan(0);
   }, 30_000);
 
   it('a bare `traceroute <ipv6>` takes the same path', async () => {
     const { a } = await ciscoPair();
     const out = await a.executeCommand('traceroute 2001:db8::2');
-    expect(out).toContain('2001:db8::2');
+    expect(out).toContain('2001:DB8::2');
     expect(out).not.toContain('Unrecognized host');
   }, 30_000);
 

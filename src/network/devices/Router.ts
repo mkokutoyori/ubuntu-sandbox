@@ -97,7 +97,8 @@ import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import { CiscoFileSystem } from './shells/cisco/CiscoFileSystem';
 import { IcmpUnreachableRateLimit } from './router/IcmpUnreachableRateLimit';
-import { icmpUnreachablePayload } from './host/icmpUnreachablePayload';
+import { IcmpErrorTokenBucket, type TokenBucketSetting } from './router/IcmpErrorTokenBucket';
+import { icmpUnreachablePayload, icmpv6UnreachablePayload } from './host/icmpUnreachablePayload';
 import type { HostIcmpUnreachablePayload } from './host/events';
 import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
 import { evaluateIpv6Acl, formatIpv6AclLogMessage } from './router/Ipv6AclEngine';
@@ -526,6 +527,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   protected readonly routerTimers = new TimerSet(() => this.getRouterScheduler());
   readonly icmpUnreachableRateLimit = new IcmpUnreachableRateLimit(
     this.unreachableRateLimitDefaultMs(), () => this.getRouterScheduler().now());
+  readonly icmpv6ErrorRateLimit = new IcmpErrorTokenBucket(
+    this.icmpv6ErrorIntervalDefault(), () => this.getRouterScheduler().now());
   /** In-flight ARP solicitations for forwarding — dedup signal that replaces
    *  pendingARPs use as a "request-already-sent" check (Phase 5.8). */
   private inFlightFwdARPs: Set<string> = new Set();
@@ -575,6 +578,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getCounters: () => this.counters,
       getBus: () => this.getBus(),
       getScheduler: () => this.getRouterScheduler(),
+      admitIcmpv6Error: () => this.icmpv6ErrorRateLimit.admit(),
+      onIcmpv6Error: (ipv6, icmpv6) => {
+        this.getBus().publish({
+          topic: 'host.icmp.unreachable',
+          payload: icmpv6UnreachablePayload(this.routerRef(), ipv6, icmpv6),
+        });
+      },
       getDhcpv6Server: () => this.dhcpv6Server,
       getDhcpv6ServerPool: (iface) => this.dhcpv6InterfacePools.get(iface),
       getDhcpv6RelayDestinations: (iface) => this.dhcpv6RelayDestinations.get(iface) ?? [],
@@ -1459,6 +1469,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   /** Return the active scheduler — injected one, or the singleton default. */
   protected unreachableRateLimitDefaultMs(): number | null {
+    return null;
+  }
+
+  protected icmpv6ErrorIntervalDefault(): TokenBucketSetting | null {
     return null;
   }
 
@@ -5691,17 +5705,29 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     maxHops: number = 30,
     timeoutMs: number = 2000,
     probesPerHop: number = 3,
+    firstHopLimit: number = 1,
+    probeKind: TraceProbeKind = { kind: 'icmp' },
   ): Promise<TracerouteHop[]> {
     const egress = this.ipv6Engine.resolveEgress(targetIP);
     if (!egress) return [];
     const targetStr = targetIP.toString();
     const hops: TracerouteHop[] = [];
+    const udpSourcePort = EPHEMERAL_TRACE_PORT_BASE + (++this.pingIdCounter % EPHEMERAL_TRACE_PORT_SPAN);
+    let udpPort = probeKind.kind === 'udp' ? probeKind.basePort : 0;
 
-    for (let hopLimit = 1; hopLimit <= maxHops; hopLimit++) {
+    for (let hopLimit = firstHopLimit; hopLimit <= maxHops; hopLimit++) {
       const probes: TracerouteProbe[] = [];
       let reached = false;
 
       for (let p = 0; p < probesPerHop; p++) {
+        if (probeKind.kind === 'udp') {
+          const destinationPort = udpPort++;
+          const outcome = await this.udpTraceProbe(destinationPort, timeoutMs,
+            () => this.ipv6Engine.sendUdpProbe(egress, targetIP, udpSourcePort, destinationPort, hopLimit));
+          probes.push(outcome.probe);
+          if (outcome.reached) reached = true;
+          continue;
+        }
         this.pingIdCounter++;
         const id = this.pingIdCounter;
         const seq = p + 1;
@@ -5805,10 +5831,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
       for (let p = 0; p < probesPerHop; p++) {
         if (probeKind.kind === 'udp') {
-          const outcome = await this.udpTraceProbe({
-            iface: route.iface, outPort, nextHopMAC: nextHopMAC!, source: myIP, target: targetIP,
-            ttl, sourcePort: udpSourcePort, destinationPort: udpPort++, timeoutMs,
-          });
+          const destinationPort = udpPort++;
+          const outcome = await this.udpTraceProbe(destinationPort, timeoutMs, () => this.sendFrame(route.iface, {
+            srcMAC: outPort.getMAC(),
+            dstMAC: nextHopMAC!,
+            etherType: ETHERTYPE_IPV4,
+            payload: buildUdpOverIpv4(myIP, {
+              destination: targetIP, destinationPort, sourcePort: udpSourcePort, payload: null, payloadBytes: 0, ttl,
+            }),
+          }));
           probes.push(outcome.probe);
           if (outcome.reached) destinationReached = true;
           continue;
@@ -5901,28 +5932,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return hops;
   }
 
-  private async udpTraceProbe(request: {
-    iface: string; outPort: Port; nextHopMAC: MACAddress; source: IPAddress; target: IPAddress;
-    ttl: number; sourcePort: number; destinationPort: number; timeoutMs: number;
-  }): Promise<{ probe: TracerouteProbe; reached: boolean }> {
+  private async udpTraceProbe(
+    destinationPort: number, timeoutMs: number, send: () => void,
+  ): Promise<{ probe: TracerouteProbe; reached: boolean }> {
     const sentAt = performance.now();
     const answer = waitForEvent(
       this.getBus(),
       'host.icmp.unreachable',
-      (pl) => pl.deviceId === this.id && pl.origProtocol === IP_PROTO_UDP
-        && pl.origDestPort === request.destinationPort,
-      { timeoutMs: request.timeoutMs, scheduler: this.getRouterScheduler() },
+      (pl) => pl.deviceId === this.id && pl.origProtocol === IP_PROTO_UDP && pl.origDestPort === destinationPort,
+      { timeoutMs, scheduler: this.getRouterScheduler() },
     );
     answer.catch(() => {});
-    this.sendFrame(request.iface, {
-      srcMAC: request.outPort.getMAC(),
-      dstMAC: request.nextHopMAC,
-      etherType: ETHERTYPE_IPV4,
-      payload: buildUdpOverIpv4(request.source, {
-        destination: request.target, destinationPort: request.destinationPort,
-        sourcePort: request.sourcePort, payload: null, payloadBytes: 0, ttl: request.ttl,
-      }),
-    });
+    send();
     try {
       const reply = await answer;
       const probe: TracerouteProbe = { responded: true, rttMs: performance.now() - sentAt, ip: reply.fromIp };

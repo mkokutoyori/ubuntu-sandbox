@@ -52,6 +52,26 @@ export function unreachableCodeName(code: number | undefined): UnreachableCodeNa
   return (code === undefined ? undefined : UNREACHABLE_CODE_NAMES[code]) ?? 'other';
 }
 
+export const ICMPV6_UNREACH_NO_ROUTE = 0;
+export const ICMPV6_UNREACH_ADMIN_PROHIBITED = 1;
+export const ICMPV6_UNREACH_ADDRESS = 3;
+export const ICMPV6_UNREACH_PORT = 4;
+export const ICMPV6_UNREACH_POLICY_FAILED = 5;
+export const ICMPV6_UNREACH_REJECT_ROUTE = 6;
+
+const ICMPV6_UNREACHABLE_CODE_NAMES: Readonly<Record<number, UnreachableCodeName>> = {
+  [ICMPV6_UNREACH_NO_ROUTE]: 'net-unreachable',
+  [ICMPV6_UNREACH_ADMIN_PROHIBITED]: 'admin-prohibited',
+  [ICMPV6_UNREACH_ADDRESS]: 'host-unreachable',
+  [ICMPV6_UNREACH_PORT]: 'port-unreachable',
+  [ICMPV6_UNREACH_POLICY_FAILED]: 'admin-prohibited',
+  [ICMPV6_UNREACH_REJECT_ROUTE]: 'admin-prohibited',
+};
+
+export function icmpv6UnreachableCodeName(code: number | undefined): UnreachableCodeName {
+  return (code === undefined ? undefined : ICMPV6_UNREACHABLE_CODE_NAMES[code]) ?? 'other';
+}
+
 export const PROHIBITED_UNREACH_CODES: ReadonlySet<number> = new Set([
   ICMP_UNREACH_NET_PROHIBITED,
   ICMP_UNREACH_HOST_PROHIBITED,

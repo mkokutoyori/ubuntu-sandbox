@@ -246,8 +246,8 @@ describe('an ICMPv6 answer is ROUTED, not handed to a neighbour', () => {
     // The intermediate hop answers with the address of the interface the
     // packet came in on (RFC 4443 §2.2), global when it has one — and a
     // zone index is local metadata that never goes on the wire.
-    expect(hops[0]).toContain('2001:db8:1::2');
+    expect(hops[0]).toContain('2001:DB8:1::2');
     expect(hops[0]).not.toContain('%');
-    expect(hops[1]).toContain('2001:db8:2::2');
+    expect(hops[1]).toContain('2001:DB8:2::2');
   }, 30_000);
 });

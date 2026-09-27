@@ -238,7 +238,7 @@ describe('ce que la grammaire acceptait, elle l\'accepte encore', () => {
   it.each([
     ['ping 10.0.0.1', /Sending 5, 100-byte ICMP Echos to 10\.0\.0\.1/],
     ['ping ip 10.0.0.1', /Sending 5, 100-byte/],
-    ['ping ipv6 2001:db8::1', /Sending 5, 100-byte ICMP Echos to 2001:db8::1/],
+    ['ping ipv6 2001:db8::1', /Sending 5, 100-byte ICMP Echos to 2001:DB8::1/],
     ['ping 10.0.0.1 repeat 3', /Sending 3,/],
     ['ping 10.0.0.1 size 64 timeout 1', /Sending 5, 64-byte .*timeout is 1 seconds/],
     ['ping 10.0.0.1 source 1.1.1.1', /Sending 5,/],

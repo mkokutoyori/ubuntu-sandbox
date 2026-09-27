@@ -37,6 +37,7 @@ import { orderCiscoConfigBlocks, routingProcessConfigLines, policyConfigLines } 
 import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
 import { pimInterfaceRunningConfigLines, pimGlobalRunningConfigLines } from './CiscoPimCommands';
 import { globalConfigRunningConfigLines } from '../../router/config/CiscoGlobalConfig';
+import { displayIpv6Address } from './iosIpv6Text';
 
 import {
   CISCO_HARDWARE_PROFILES, chassisSerial, ciscoClockReading, formatIosUptime,
@@ -865,6 +866,7 @@ export function showRunningConfig(router: Router): string {
   const globalLines = [
     ...globalConfigRunningConfigLines(router),
     ...(router.icmpUnreachableRateLimit?.runningConfigLines() ?? []),
+    ...(router.icmpv6ErrorRateLimit?.runningConfigLines() ?? []),
   ];
   if (globalLines.length > 0) { lines.push('!'); lines.push(...globalLines); }
 
@@ -1622,15 +1624,6 @@ export function showIpv6Static(router: Router): string {
   return lines.join('\n');
 }
 
-/**
- * IOS prints an address in upper case and WITHOUT its zone index here:
- * the zone is an interface name, not part of the 128 bits, and the
- * Interface column already names it. Upper-casing the whole string
- * turned `%GigabitEthernet0/0` into `%GIGABITETHERNET0/0`.
- */
-function displayIpv6Address(ip: string): string {
-  return ip.split('%')[0].toUpperCase();
-}
 
 /** IOS abbreviates every NDP state to five characters. */
 const IPV6_NEIGHBOR_STATE_IOS: Record<string, string> = {

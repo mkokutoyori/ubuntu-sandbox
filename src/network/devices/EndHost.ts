@@ -95,6 +95,8 @@ import {
   ICMP_UNREACH_HOST_PROHIBITED,
   ICMP_UNREACH_ADMIN_PROHIBITED,
   ICMP_UNREACH_FRAG_NEEDED,
+  ICMPV6_UNREACH_ADMIN_PROHIBITED,
+  ICMPV6_UNREACH_PORT,
   ICMP_TTL_EXPIRED_IN_TRANSIT,
   isHardTcpUnreachCode,
   udpSocketErrorFor,
@@ -297,8 +299,6 @@ interface ConnectedUdpPeer {
 
 // ─── IPv6 Neighbor Cache (RFC 4861) ─────────────────────────────────
 
-const ICMPV6_UNREACH_ADMIN_PROHIBITED = 1;
-const ICMPV6_UNREACH_PORT = 4;
 
 export type { NeighborState, NeighborCacheEntry } from './host/NeighborCache';
 
@@ -3561,7 +3561,7 @@ export abstract class EndHost extends Equipment {
     if (!srcIP) return;
 
     const icmpError: ICMPv6Packet = {
-      type: 'icmpv6', icmpType: 'destination-unreachable', code,
+      type: 'icmpv6', icmpType: 'destination-unreachable', code, invokingPacket: offendingPkt,
     };
     const errorPkt = createIPv6Packet(
       srcIP, offendingPkt.sourceIP, IP_PROTO_ICMPV6, this.defaultHopLimit, icmpError, 48,

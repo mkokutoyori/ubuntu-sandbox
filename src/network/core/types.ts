@@ -1372,6 +1372,7 @@ export interface ICMPv6Packet extends NetworkPdu {
   mtu?: number;
   /** NDP-specific fields (for NS/NA/RS/RA) */
   ndp?: NDPMessage;
+  invokingPacket?: IPv6Packet;
 }
 
 // ─── Neighbor Discovery Protocol (RFC 4861) ─────────────────────────

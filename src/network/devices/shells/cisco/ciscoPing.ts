@@ -7,6 +7,8 @@
  * here as a single source of truth instead of being copied into each shell.
  */
 
+import { displayIosAddress } from './iosIpv6Text';
+
 /**
  * Why a probe ended. IOS prints one character per probe and the character
  * IS the diagnosis, so the cause has to survive all the way from the ICMP
@@ -119,7 +121,7 @@ export function formatCiscoPing(
 ): string {
   const lines: string[] = [];
   lines.push('Type escape sequence to abort.');
-  lines.push(`Sending ${count}, ${sizeBytes}-byte ICMP Echos to ${target}, timeout is ${timeoutMs / 1000} seconds:`);
+  lines.push(`Sending ${count}, ${sizeBytes}-byte ICMP Echos to ${displayIosAddress(target)}, timeout is ${timeoutMs / 1000} seconds:`);
 
   const chars = results.map(ciscoPingMark);
   if (results.length === 0) {
