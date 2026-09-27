@@ -45,7 +45,7 @@ async function configuredLab(nat: boolean): Promise<UserLab> {
   const lab = await loadUserLab();
   await addRoutesToHq(lab);
   if (!nat) await taper(lab.FW1, ['config firewall policy', 'edit 1', 'set nat disable', 'next', 'end']);
-  await taper(lab.PC1, ['ip addr add 192.168.1.10/24 dev eth0', 'ip route add default via 192.168.1.99']);
+  await taper(lab.PC1, ['ip route replace default via 192.168.1.99']);
   return lab;
 }
 

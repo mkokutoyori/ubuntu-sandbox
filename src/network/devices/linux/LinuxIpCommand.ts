@@ -13,7 +13,7 @@ import {
   type IpColorizer, type IpColorMode,
 } from './LinuxIpColor';
 import { IPAddress, MACAddress, SubnetMask } from '../../core/types';
-import type { PathMtuException } from '../EndHost';
+import type { RouteException } from '../EndHost';
 import { broadcastAddress } from '../../core/ip';
 import { parseIpv6Prefix } from '../../core/Ipv6Arithmetic';
 import {
@@ -178,7 +178,7 @@ export interface IpNetworkContext {
   resolveRouteWithRules(
     dest: IPAddress, from: IPAddress | null,
   ): { iface: string; nextHopIP: string; table: number } | null;
-  routeLookupFacts?(dest: IPAddress): { local: boolean; uid: number; pmtu: PathMtuException | null };
+  routeLookupFacts?(dest: IPAddress): { local: boolean; uid: number; exception: RouteException | null };
   flushRouteCache?(): string;
   /** Optional network namespace CRUD for ip netns (list/add/del only — exec is handled upstream) */
   netns?: IpNetnsContext;
@@ -1624,7 +1624,7 @@ function ipRouteGet(ctx: IpNetworkContext, args: string[]): string {
     if (!fromAddr) return `Error: ${args[fromIdx + 1]} is not a valid IPv4 address.`;
   }
 
-  const facts = ctx.routeLookupFacts?.(destAddr) ?? { local: false, uid: 0, pmtu: null };
+  const facts = ctx.routeLookupFacts?.(destAddr) ?? { local: false, uid: 0, exception: null };
   const from = fromAddr ? `from ${fromAddr} ` : '';
   if (facts.local) {
     const src = fromAddr ? '' : `src ${dest} `;
@@ -1637,11 +1637,15 @@ function ipRouteGet(ctx: IpNetworkContext, args: string[]): string {
   const table = resolved.table !== 254 ? `table ${resolved.table} ` : '';
   const prefSrc = ctx.getInterfaceInfo(resolved.iface)?.ip;
   const src = !fromAddr && prefSrc ? `src ${prefSrc} ` : '';
-  const pmtu = facts.pmtu;
-  const cache = pmtu
-    ? `expires ${Math.floor(pmtu.expiresInMs / 1000)}sec mtu ${pmtu.locked ? 'lock ' : ''}${pmtu.mtu} `
-    : '';
-  return `${dest} ${from}${via}dev ${resolved.iface} ${table}${src}uid ${facts.uid} \n    cache ${cache}`;
+  return `${dest} ${from}${via}dev ${resolved.iface} ${table}${src}uid ${facts.uid} \n    cache ${routeCacheLine(facts.exception)}`;
+}
+
+function routeCacheLine(exception: RouteException | null): string {
+  if (!exception) return '';
+  const flags = exception.gateway ? '<redirected> ' : '';
+  const expires = `expires ${Math.floor(exception.expiresInMs / 1000)}sec `;
+  const mtu = exception.mtu ? `mtu ${exception.locked ? 'lock ' : ''}${exception.mtu} ` : '';
+  return `${flags}${expires}${mtu}`;
 }
 
 function isInSubnet(ip: string, network: string, cidr: number): boolean {

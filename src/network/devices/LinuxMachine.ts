@@ -3992,9 +3992,9 @@ export abstract class LinuxMachine extends EndHost
         return this.tcpConnectOutcome(new IPAddress(target), port, sourcePort, sourceIP);
       },
       udpConnect: (target, port, options) => this.udpConnect(target, port, options),
-      pathMtuException: (target) => this.pathMtuException(target),
+      routeException: (target) => this.routeException(target),
       udpErrorProbe: (target, options) => this.udpErrorProbe(target, options),
-      flushPathMtuExceptions: () => this.flushPathMtuExceptions(),
+      flushRouteExceptions: () => this.flushRouteExceptions(),
       udpListen: (port, processName, owner) => this.udpListen(port, processName, owner),
       tcpExchange: (target, port, payload, options) => this.tcpExchange(target, port, payload, options),
       ping6Sequence: (

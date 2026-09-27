@@ -51,15 +51,14 @@ import { taper } from './fortigateBatteryHarness';
 const SERVER1 = '192.168.30.4';
 const R3_LAN_SIDE = '192.168.20.1';
 const FW1_NAT_SOURCE = '192.168.20.2';
-const PC1 = '192.168.1.10';
+const PC1 = '192.168.1.3';
 const FW1_PORT1 = '192.168.1.99';
 
 async function configuredLab(): Promise<UserLab> {
   const lab = await loadUserLab();
   await addRoutesToHq(lab);
   await taper(lab.PC1, [
-    'ip addr add 192.168.1.10/24 dev eth0',
-    'ip route add default via 192.168.1.99',
+    'ip route replace default via 192.168.1.99',
   ]);
   await taper(lab.Server1, ['systemctl start nginx', 'systemctl start ssh']);
   return lab;
@@ -129,7 +128,7 @@ describe('user lab — hping3 against the policy', () => {
     // entrant sur port1 et ne ressort jamais par port2.
     const trace = await lab.FW1.executeCommand(
       `diagnose sniffer packet any 'host ${SERVER1}' 4 40`);
-    expect(trace).toMatch(/^.*port1 .*192\.168\.1\.10\.\d+ -> 192\.168\.30\.4\.81: ack 0$/m);
+    expect(trace).toMatch(/^.*port1 .*192\.168\.1\.3\.\d+ -> 192\.168\.30\.4\.81: ack 0$/m);
     expect(trace).not.toMatch(/port2 .*-> 192\.168\.30\.4\.81: ack /);
   });
 
@@ -145,7 +144,7 @@ describe('user lab — hping3 against the policy', () => {
     await lab.PC1.executeCommand(`sudo hping3 -S -p 80 -c 1 ${SERVER1}`);
     const trace = await lab.FW1.executeCommand(
       `diagnose sniffer packet any 'host ${SERVER1}' 4 20`);
-    expect(trace).toMatch(/port1 .*192\.168\.1\.10\.\d+ -> 192\.168\.30\.4\.80: syn \d+$/m);
+    expect(trace).toMatch(/port1 .*192\.168\.1\.3\.\d+ -> 192\.168\.30\.4\.80: syn \d+$/m);
     expect(trace).toMatch(
       new RegExp(`port2 .*${FW1_NAT_SOURCE.replace(/\./g, '\\.')}\\.\\d+ -> 192\\.168\\.30\\.4\\.80: syn \\d+$`, 'm'));
     expect(trace).toMatch(/192\.168\.30\.4\.80 -> 192\.168\.20\.2\.\d+: syn \d+ ack \d+$/m);
