@@ -23,7 +23,8 @@
  */
 
 import { tracerouteHostOf, type TracerouteHost } from './linux/commands/net/Traceroute';
-import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions } from './EndHost';
+import { pingHostOf, type PingHost, type PingTiming } from './linux/commands/net/Ping';
+import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type EchoRoute } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import { adOperPortKey, buildActorState } from '@/network/lacp/types';
@@ -797,6 +798,24 @@ export abstract class LinuxMachine extends EndHost
    * simples réglages : chacun tient un vrai port UDP sur son groupe
    * multicast et répond pour le nom de cet hôte.
    */
+  override tcpExchange(
+    targetIP: IPAddress | IPv6Address, port: number, payload: string,
+    options: { sourcePort?: PortNumber; sourceIP?: IPAddress } = {},
+  ): { outcome: TcpWireOutcome; received: string } {
+    const exchange = super.tcpExchange(targetIP, port, payload, options);
+    return { ...exchange, outcome: this.failedNeighbourIsHostUnreachable(targetIP, exchange.outcome) };
+  }
+
+  private nssHostAddressesSync(name: string, family: 2 | 10): string[] {
+    const r = this.executor.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, family));
+    if (r.status !== 'SUCCESS' || !r.entry) return [];
+    return r.entry.filter((h) => h.addressFamily === family).map((h) => h.address);
+  }
+
+  private failedNeighbourIsHostUnreachable(target: IPAddress | IPv6Address, outcome: TcpWireOutcome): TcpWireOutcome {
+    return outcome === 'timeout' && this.neighbourUnresolved(target) ? 'host-unreachable' : outcome;
+  }
+
   protected override icmpErrorQuote(): IcmpErrorQuote {
     return LINUX_ICMP_ERROR_QUOTE;
   }
@@ -808,6 +827,14 @@ export abstract class LinuxMachine extends EndHost
 
   uidOfUser(name: string): number | null {
     return this.executor.pathActorOf(name)?.uid ?? null;
+  }
+
+  pingHost(timing?: PingTiming): PingHost {
+    return pingHostOf(this.buildCommandContext(), timing);
+  }
+
+  pingHostInSession(session: LinuxShellSession, timing: PingTiming): PingHost {
+    return this.sessionSwap.withinSync(session, () => this.pingHost(timing), { capture: false });
   }
 
   tracerouteHost(asUser?: string): TracerouteHost {
@@ -3592,7 +3619,7 @@ export abstract class LinuxMachine extends EndHost
       }
       const cmdArgs = tokenized.tokens.slice(1);
       // --help flag: return auto-generated help instead of running.
-      if (cmdArgs.includes('--help')) {
+      if (!cmd.ownsHelpOption && cmdArgs.includes('--help')) {
         return renderHelp(cmd);
       }
 
@@ -3937,10 +3964,15 @@ export abstract class LinuxMachine extends EndHost
         count: number,
         timeoutMs = 2000,
         ttl?: number,
-        opts?: { dataSize?: number; df?: boolean },
+        opts?: EchoOptions,
       ): Promise<PingResult[]> => {
         return this.executePingSequence(target, count, timeoutMs, ttl, opts);
       },
+      echoRouteFor: (target: IPAddress, socket: TraceSocketOptions): EchoRoute | null =>
+        this.echoRouteFor(target, socket),
+      allocateEchoIdent: (): number => this.allocateEchoIdent(),
+      isBroadcastDestination: (target: IPAddress): boolean => this.isBroadcastDestination(target),
+      canReach6: (target: IPv6Address): boolean => this.canReach6(target),
       tcpProbe: (target: string, port: number): boolean => {
         if (target.includes(':')) return this.tcpProbeSyncIPv6(target, port);
         return this.tcpProbeSync(new IPAddress(target), port);
@@ -3949,10 +3981,15 @@ export abstract class LinuxMachine extends EndHost
         this.getTcpStack().grabGreeting(target, port),
       probeService: (target: string, port: number, payload: string): string | null =>
         this.getTcpStack().probeService(target, port, payload),
-      tcpConnectOutcome: (target: string, port: number, sourcePort?: PortNumber): TcpWireOutcome => {
+      tcpConnectOutcome: (
+        target: string, port: number, sourcePort?: PortNumber, sourceIP?: IPAddress,
+      ): TcpWireOutcome => {
         if (target.includes(':')) return this.tcpConnectOutcome6(new IPv6Address(target), port, sourcePort);
-        return this.tcpConnectOutcome(new IPAddress(target), port, sourcePort);
+        return this.tcpConnectOutcome(new IPAddress(target), port, sourcePort, sourceIP);
       },
+      udpConnect: (target, port, options) => this.udpConnect(target, port, options),
+      udpListen: (port, processName, owner) => this.udpListen(port, processName, owner),
+      tcpExchange: (target, port, payload, options) => this.tcpExchange(target, port, payload, options),
       ping6Sequence: (
         target: IPv6Address,
         count: number,
@@ -4050,12 +4087,14 @@ export abstract class LinuxMachine extends EndHost
       // `resolveHostname`.
       resolveHostnameSync: (name: string): IPAddress | null => {
         try { return new IPAddress(name); } catch { /* not a literal address */ }
-        const r = this.executor.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, 2));
-        if (r.status === 'SUCCESS' && r.entry) {
-          for (const h of r.entry) {
-            if (h.addressFamily !== 2) continue;
-            try { return new IPAddress(h.address); } catch { continue; }
-          }
+        for (const address of this.nssHostAddressesSync(name, 2)) {
+          try { return new IPAddress(address); } catch { continue; }
+        }
+        return null;
+      },
+      resolveHostname6Sync: (name: string): IPv6Address | null => {
+        for (const address of this.nssHostAddressesSync(name, 10)) {
+          try { return new IPv6Address(address); } catch { continue; }
         }
         return null;
       },

@@ -115,6 +115,6 @@ describe('le terminal et le script rendent la meme ligne', () => {
   it('un silence n\'est pas une erreur', () => {
     const r: PingResult = { success: false, rttMs: 0, ttl: 0, seq: 1, bytes: 0, fromIP: '' };
     expect(formatPingFailureLine(r)).toBeNull();
-    expect(formatPingReplyLine(r, 56)).toBe('Request timeout for icmp_seq 1');
+    expect(formatPingReplyLine(r, 56)).toBeNull();
   });
 });

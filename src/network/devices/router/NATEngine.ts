@@ -113,6 +113,15 @@ export interface NatSession {
   inIface?: string;
 }
 
+function isHairpinReturn(session: NatSession, pkt: IPv4Packet): boolean {
+  if (session.outsideLocalIP === undefined) return false;
+  const translated = session.outsideLocalIP !== session.outsideIP || session.outsideLocalPort !== session.outsidePort;
+  return translated
+    && pkt.sourceIP.toString() === session.outsideIP
+    && getPacketSrcPort(pkt) === session.outsidePort;
+}
+
+
 /** Per-protocol session timeout config (milliseconds). */
 export interface NatTimeouts {
   /** TCP established session. Default 86400 s (RFC 2663 §2.3.1). */
@@ -443,16 +452,15 @@ export class NATEngine {
     }
 
     // 1. Reverse PAT session lookup (reply to an inside-to-outside packet).
-    //    Only for packets arriving from outside (not hairpin).
-    if (isOutside) {
-      const reverseKey = makeKey(proto, dstIP, dstPort);
-      const revSession = this.reverseSessions.get(reverseKey);
-      if (revSession) {
-        revSession.timestamp = Date.now();
-        if (proto === IP_PROTO_TCP) updateTcpState(revSession, ipPkt, 'in');
-        this.hitCount++;
-        return rewriteDestIP(ipPkt, revSession.localIP, revSession.localPort);
-      }
+    const revSession = this.reverseSessions.get(makeKey(proto, dstIP, dstPort));
+    if (revSession && (isOutside || isHairpinReturn(revSession, ipPkt))) {
+      revSession.timestamp = Date.now();
+      if (proto === IP_PROTO_TCP) updateTcpState(revSession, ipPkt, 'in');
+      this.hitCount++;
+      const toClient = rewriteDestIP(ipPkt, revSession.localIP, revSession.localPort);
+      return isOutside
+        ? toClient
+        : rewriteSrcIP(toClient, revSession.outsideLocalIP!, revSession.outsideLocalPort);
     }
 
     // 2. Static NAT / server (DNAT for inbound connections AND hairpin).

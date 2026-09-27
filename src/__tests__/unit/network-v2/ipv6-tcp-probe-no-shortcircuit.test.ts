@@ -85,11 +85,11 @@ describe('IPv6 TCP probe travels the wire (no peer-state short-circuit)', () => 
     expect(pc.tcpConnectOutcome6(new IPv6Address('2001:db8::2'), 8080)).toBe('refused');
   });
 
-  it('times out when the server is not cabled, even though it has a listener', async () => {
+  it('fails with EHOSTUNREACH when the server is not cabled, even though it has a listener', async () => {
     const { pc, srv } = buildLan({ cabled: false });
     tcpListen(srv, 8080);
 
     expect(pc.tcpProbeSyncIPv6('2001:db8::2', 8080)).toBe(false);
-    expect(pc.tcpConnectOutcome6(new IPv6Address('2001:db8::2'), 8080)).toBe('timeout');
+    expect(pc.tcpConnectOutcome6(new IPv6Address('2001:db8::2'), 8080)).toBe('host-unreachable');
   });
 });

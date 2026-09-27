@@ -21,12 +21,7 @@
 
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { TerminalAsyncRuntime } from '@/terminal/async/TerminalAsyncRuntime';
-import type { AsyncJobContext } from '@/terminal/async/types';
-import type { PingResult } from '@/network/devices/EndHost';
-import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
-import {
-  formatPingHeader, formatPing6Header, formatPingReplyLine, formatPingStats,
-} from '@/network/devices/linux/LinuxFormatHelpers';
+import { createPing, type PingRun } from '@/network/devices/linux/commands/net/Ping';
 
 export interface SshInteractiveShellHooks {
   /** A line of output produced while a streaming job is running. */
@@ -83,61 +78,23 @@ export class SshInteractiveShell {
     if (this.runtime.hasForegroundJob) return false;
     if (!(this.device instanceof LinuxMachine)) return false;
     const toks = line.trim().split(/\s+/);
-    if (toks[0] !== 'ping') return false;
-    if (/[|<>&]/.test(line)) return false;
-    const parsed = parsePingArgs(toks.slice(1), 'ping');
-    if (!parsed.targetStr) return false;
+    if (toks[0] !== 'ping' && toks[0] !== 'ping6') return false;
+    if (/[|<>&;]/.test(line)) return false;
 
     this.hooks = hooks;
     const dev = this.device;
-    // Same "no -c given => unbounded" convention as the local terminal's
-    // tryStartPingStream() (LinuxTerminalSession.ts) — real Linux ping has
-    // no Windows-style -t; an omitted -c means continuous until Ctrl+C.
-    const streamCount = parsed.countGiven ? parsed.count : 0;
-    const deadlineAtMs = parsed.deadlineMs !== undefined ? Date.now() + parsed.deadlineMs : null;
-    const deadlineHit = () => deadlineAtMs !== null && Date.now() >= deadlineAtMs;
-
-    let targetLabel = parsed.targetStr;
-    const results: PingResult[] = [];
-    // Real ping reports the wall time of the whole run in its summary.
-    const pingStartedAt = Date.now();
-    const emitStats = (ctx: AsyncJobContext) => {
-      for (const l of formatPingStats(targetLabel, results.length, results, Date.now() - pingStartedAt)) ctx.sink.line(l);
-    };
-
+    let ping: PingRun | null = null;
     const job = this.runtime.start({
       mode: 'foreground',
       kind: 'streaming',
       command: line,
       run: async (ctx) => {
-        const outcome = parsed.v6
-          ? await dev.ping6StreamInSession(parsed.targetStr, {
-              count: streamCount, timeoutMs: parsed.timeoutMs, intervalMs: parsed.intervalMs,
-              onResolved: (ip) => { targetLabel = ip.toString(); ctx.sink.line(formatPing6Header(ip, parsed.size, parsed.targetStr !== ip.toString() ? parsed.targetStr : undefined)); },
-              onResult: (r) => { results.push(r); const l = formatPingReplyLine(r, parsed.size); if (l !== null) ctx.sink.line(l); },
-              shouldStop: () => ctx.cancelled() || deadlineHit(),
-              sleep: (ms) => ctx.delay(ms),
-            })
-          : await dev.pingStreamInSession(parsed.targetStr, {
-              count: streamCount, timeoutMs: parsed.timeoutMs, ttl: parsed.ttl, intervalMs: parsed.intervalMs,
-              onResolved: (ip) => { targetLabel = ip.toString(); ctx.sink.line(formatPingHeader(ip, parsed.size, parsed.targetStr !== ip.toString() ? parsed.targetStr : undefined)); },
-              onResult: (r) => { results.push(r); const l = formatPingReplyLine(r, parsed.size); if (l !== null) ctx.sink.line(l); },
-              shouldStop: () => ctx.cancelled() || deadlineHit(),
-              sleep: (ms) => ctx.delay(ms),
-            });
-        if (ctx.cancelled()) return;
-        if (!outcome.resolved && results.length === 0) {
-          const cmdName = parsed.v6 ? 'ping6' : 'ping';
-          ctx.sink.error(outcome.reason === 'name'
-            ? `${cmdName}: ${parsed.targetStr}: Name or service not known`
-            : (parsed.v6 ? 'connect: Network is unreachable' : 'ping: connect: Network is unreachable'));
-          hooks.onDone();
-          return;
-        }
-        emitStats(ctx);
-        hooks.onDone();
+        const host = dev.pingHost({ sleep: (ms) => ctx.delay(ms), now: () => Date.now() });
+        ping = createPing(toks.slice(1), host, (text) => ctx.sink.line(text), { cmd: toks[0] as 'ping' | 'ping6' });
+        await ping.run(() => ctx.cancelled());
+        if (!ctx.cancelled()) hooks.onDone();
       },
-      onInterrupt: (ctx) => { emitStats(ctx); hooks.onDone(); },
+      onInterrupt: () => { ping?.interrupt(); hooks.onDone(); },
     });
     return job !== null;
   }

@@ -19,19 +19,6 @@ import { formatIfconfigInterface } from './LinuxNetCommands';
 import { readIcmpUnreachable } from '../../core/icmpUnreachable';
 
 export interface LinuxFormatHelpers {
-  /**
-   * Render a full `ping` sequence output (header + per-packet + stats).
-   * @param size Payload size in bytes (defaults to 56, as in the real ping).
-   */
-  formatPingOutput(target: IPAddress, count: number, results: PingResult[], size?: number, hostname?: string): string;
-
-  /**
-   * Render a full `ping6` sequence output. iputils formats the IPv6
-   * header differently from IPv4: `PING <name>(<addr>) <size> data bytes`
-   * (no `(size+28)` total, since the IPv6 header is not counted there).
-   */
-  formatPing6Output(target: IPv6Address, count: number, results: PingResult[], size?: number, hostname?: string): string;
-
   /** Render a single interface in `ifconfig` style (UP/BROADCAST/...). */
   formatInterface(port: Port): string;
 
@@ -71,16 +58,22 @@ function formatInterface(port: Port): string {
   });
 }
 
-export function formatPingHeader(target: IPAddress, size: number = 56, hostname?: string): string {
-  const totalSize = size + 28; // ICMP header (8) + IP header (20)
+export type PingAddressRenderer = (ip: string) => string;
+
+const numericAddress: PingAddressRenderer = (ip) => ip;
+
+export function formatPingHeader(
+  target: IPAddress, size: number = 56, hostname?: string, bound?: { source: string; device?: string },
+): string {
+  const totalSize = size + 28;
   const displayName = hostname ?? target.toString();
-  return `PING ${displayName} (${target}) ${size}(${totalSize}) bytes of data.`;
+  const from = bound === undefined ? '' : `from ${bound.source} ${bound.device ?? ''}: `;
+  return `PING ${displayName} (${target}) ${from}${size}(${totalSize}) bytes of data.`;
 }
 
-/** True when the probe failed with an ICMP error rather than by timing out. */
 export function isIcmpErrorResult(r: PingResult): boolean {
   return !r.success && !!r.error
-    && /unreachable|Time to live exceeded/i.test(r.error);
+    && /unreachable|Time to live exceeded|local error/i.test(r.error);
 }
 
 export function icmpUnreachText(code: number | undefined, mtu: number | undefined): string {
@@ -97,103 +90,116 @@ export function icmpUnreachText(code: number | undefined, mtu: number | undefine
   }
 }
 
-export function formatPingFailureLine(r: PingResult): string | null {
+export function formatPingFailureLine(
+  r: PingResult, renderAddress: PingAddressRenderer = numericAddress,
+): string | null {
   if (r.success) return null;
   if (r.error?.includes('Time to live exceeded')) {
     const m = /from ([\d.]+)/.exec(r.error);
-    return `From ${m ? m[1] : 'unknown'} icmp_seq=${r.seq} Time to live exceeded`;
+    return `From ${m ? renderAddress(m[1]) : 'unknown'} icmp_seq=${r.seq} Time to live exceeded`;
   }
   const report = readIcmpUnreachable(r.error);
   if (!report) return null;
   const from = report.from || r.fromIP || 'unknown';
-  return `From ${from} icmp_seq=${r.seq} ${icmpUnreachText(report.code, report.mtu)}`;
+  return `From ${renderAddress(from)} icmp_seq=${r.seq} ${icmpUnreachText(report.code, report.mtu)}`;
 }
 
-/** One `ping` reply line for a single probe. Every probe produces one. */
-export function formatPingReplyLine(r: PingResult, size: number = 56): string | null {
-  if (r.success) {
-    const replySize = size + 8; // data size + ICMP header
-    return `${replySize} bytes from ${r.fromIP}: icmp_seq=${r.seq} ttl=${r.ttl} time=${r.rttMs.toFixed(3)} ms`;
+export function formatPingRtt(rttMs: number): string {
+  const triptime = Math.round(rttMs * 1000);
+  if (triptime >= 100000 - 50) return `${Math.floor((triptime + 500) / 1000)}`;
+  if (triptime >= 10000 - 5) {
+    const rounded = triptime + 50;
+    return `${Math.floor(rounded / 1000)}.${Math.floor((rounded % 1000) / 100)}`;
   }
-  const echec = formatPingFailureLine(r);
-  if (echec) return echec;
-  // A probe that simply never came back. Saying so beats printing
-  // nothing: a silent gap between the last reply and the summary is
-  // exactly what a pulled cable used to look like.
-  return `Request timeout for icmp_seq ${r.seq}`;
+  if (triptime >= 1000) {
+    const rounded = triptime + 5;
+    return `${Math.floor(rounded / 1000)}.${String(Math.floor((rounded % 1000) / 10)).padStart(2, '0')}`;
+  }
+  return `${Math.floor(triptime / 1000)}.${String(triptime % 1000).padStart(3, '0')}`;
 }
 
-/**
- * The trailing `--- statistics ---` block shared by block and streaming
- * ping. `elapsedMs` is the wall time of the run, which real ping always
- * reports; probes that failed with an ICMP error are counted separately
- * from plain losses, the way `+N errors` does.
- */
+export function formatPingReplyLine(
+  r: PingResult, size: number = 56, renderAddress: PingAddressRenderer = numericAddress,
+): string | null {
+  if (r.success) {
+    const timed = size >= PING_TIMING_MIN_SIZE ? ` time=${formatPingRtt(r.rttMs)} ms` : '';
+    return `${size + 8} bytes from ${renderAddress(r.fromIP)}: icmp_seq=${r.seq} ttl=${r.ttl}${timed}`;
+  }
+  return formatPingFailureLine(r, renderAddress);
+}
+
+export const PING_TIMING_MIN_SIZE = 16;
+
+export interface PingStatsOptions {
+  timing?: boolean;
+  flood?: boolean;
+  dots?: string;
+  ewmaMs?: number;
+}
+
+function microseconds(ms: number): number {
+  return Math.round(ms * 1000);
+}
+
+function formatMicros(us: number): string {
+  return `${Math.trunc(us / 1000)}.${String(Math.trunc(us % 1000)).padStart(3, '0')}`;
+}
+
+function formatLossPercent(loss: number): string {
+  return String(Number(loss.toPrecision(6)));
+}
+
 export function formatPingStats(
   targetStr: string,
   count: number,
   results: PingResult[],
   elapsedMs?: number,
+  options: PingStatsOptions = {},
 ): string[] {
   const received = results.filter(r => r.success);
   const errors = results.filter(isIcmpErrorResult).length;
-  const failed = count - received.length;
-  const loss = count === 0 ? 0 : Math.round((failed / count) * 100);
   const summary = [
     `${count} packets transmitted`,
     `${received.length} received`,
     ...(errors > 0 ? [`+${errors} errors`] : []),
-    `${loss}% packet loss`,
-    ...(elapsedMs === undefined ? [] : [`time ${Math.round(elapsedMs)}ms`]),
+    ...(count === 0 ? [] : [`${formatLossPercent(((count - received.length) * 100) / count)}% packet loss`]),
+    ...(count === 0 || elapsedMs === undefined ? [] : [`time ${Math.round(elapsedMs)}ms`]),
   ].join(', ');
   const lines = [
-    '',
+    options.flood ? options.dots ?? '' : '',
     `--- ${targetStr} ping statistics ---`,
     summary,
   ];
-  if (received.length > 0) {
-    const rtts = received.map(r => r.rttMs);
-    const min = Math.min(...rtts).toFixed(3);
-    const max = Math.max(...rtts).toFixed(3);
-    const avg = (rtts.reduce((a, b) => a + b, 0) / rtts.length).toFixed(3);
-    const mdev = (Math.sqrt(rtts.reduce((s, r) => s + (r - +avg) ** 2, 0) / rtts.length)).toFixed(3);
-    lines.push(`rtt min/avg/max/mdev = ${min}/${avg}/${max}/${mdev} ms`);
+  const tail: string[] = [];
+  if (received.length > 0 && options.timing !== false) {
+    const trips = received.map(r => microseconds(r.rttMs));
+    const total = trips.length;
+    const tsum = trips.reduce((a, b) => a + b, 0);
+    const tsum2 = trips.reduce((a, b) => a + b * b, 0);
+    const tmavg = Math.trunc(tsum / total);
+    const tmvar = Math.trunc((tsum2 - Math.trunc((tsum * tsum) / total)) / total);
+    const tmdev = Math.floor(Math.sqrt(Math.max(0, tmvar)));
+    tail.push(`rtt min/avg/max/mdev = ${formatMicros(Math.min(...trips))}/${formatMicros(tmavg)}`
+      + `/${formatMicros(Math.max(...trips))}/${formatMicros(tmdev)} ms`);
   }
-  return lines;
+  if (options.flood && received.length > 0 && count > 1 && elapsedMs !== undefined && options.ewmaMs !== undefined) {
+    const ipg = Math.trunc(microseconds(elapsedMs) / (count - 1));
+    const ewma = microseconds(options.ewmaMs);
+    tail.push(`ipg/ewma ${formatMicros(ipg)}/${formatMicros(ewma)} ms`);
+  }
+  lines.push(tail.join(', '));
+  return tail.length === 0 && elapsedMs === undefined ? lines.slice(0, -1) : lines;
 }
 
-function formatPingOutput(target: IPAddress, count: number, results: PingResult[], size: number = 56, hostname?: string): string {
-  return renderPingBody(formatPingHeader(target, size, hostname), String(target), count, results, size);
-}
-
-export function formatPing6Header(target: IPv6Address, size: number = 56, hostname?: string): string {
+export function formatPing6Header(
+  target: IPv6Address, size: number = 56, hostname?: string,
+): string {
   const displayName = hostname ?? target.toString();
   return `PING ${displayName}(${target}) ${size} data bytes`;
 }
 
-function formatPing6Output(target: IPv6Address, count: number, results: PingResult[], size: number = 56, hostname?: string): string {
-  return renderPingBody(formatPing6Header(target, size, hostname), String(target), count, results, size);
-}
-
-/** Per-packet lines + statistics block, shared by ping and ping6. */
-function renderPingBody(header: string, targetStr: string, count: number, results: PingResult[], size: number): string {
-  const lines: string[] = [header];
-  if (results.length === 0) {
-    lines.push('connect: Network is unreachable');
-  } else {
-    for (const r of results) {
-      const line = formatPingReplyLine(r, size);
-      if (line !== null) lines.push(line);
-    }
-  }
-  lines.push(...formatPingStats(targetStr, count, results));
-  return lines.join('\n');
-}
-
 /** Default singleton — no state, safe to share across machines. */
 export const defaultLinuxFormatHelpers: LinuxFormatHelpers = {
-  formatPingOutput,
-  formatPing6Output,
   formatInterface,
   formatBytes,
 };

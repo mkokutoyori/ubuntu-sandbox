@@ -34,7 +34,7 @@ describe('nc / ncat — real TCP probe', () => {
   it('-zv on a listening port emits the OpenBSD "succeeded" line', async () => {
     const { pc } = await buildPair();
     const out = await pc.executeCommand('nc -zv 10.0.0.2 22');
-    expect(out).toMatch(/Connection to 10\.0\.0\.2 22 port \[tcp\/\*\] succeeded!/);
+    expect(out).toMatch(/Connection to 10\.0\.0\.2 22 port \[tcp\/ssh\] succeeded!/);
   });
 
   it('-zv on a closed port emits "Connection refused"', async () => {
@@ -69,10 +69,15 @@ describe('nc / ncat — real TCP probe', () => {
     expect(out).toBe('');
   });
 
-  it('-uv reports success for the connectionless send', async () => {
+  it('-zuv reports success once the probes draw no port unreachable', async () => {
+    const { pc, srv } = await buildPair();
+    await srv.executeCommand('nc -lu -p 9000 &');
+    expect(await pc.executeCommand('nc -zuv 10.0.0.2 9000')).toBe('Connection to 10.0.0.2 9000 port [udp/*] succeeded!');
+  });
+
+  it('-uv without -z and without a terminal on stdin tests nothing and reports nothing', async () => {
     const { pc } = await buildPair();
-    const out = await pc.executeCommand('nc -uv 10.0.0.2 53');
-    expect(out).toMatch(/Connection to 10\.0\.0\.2 53 port \[udp\/\*\] succeeded!/);
+    expect(await pc.executeCommand('nc -uv 10.0.0.2 53')).toBe('');
   });
 
   it('prints usage when called with too few positional args', async () => {

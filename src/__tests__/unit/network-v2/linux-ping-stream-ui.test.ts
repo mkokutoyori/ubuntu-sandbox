@@ -76,8 +76,8 @@ describe('Linux ping — real-time streaming through the async pipeline', () => 
     session.setInput('ping -c 2 -W 0.2 192.168.1.99');
     session.handleKey(key('Enter'));
 
-    await waitFor(session, (l) => l.some((t) => t.includes('Network is unreachable')), 4000);
-    expect(texts(session).some((t) => t.includes('Network is unreachable'))).toBe(true);
+    await waitFor(session, (l) => l.some((t) => t.includes('Destination Host Unreachable')), 4000);
+    expect(texts(session).some((t) => t.includes('From 192.168.1.10 icmp_seq=1 Destination Host Unreachable'))).toBe(true);
     expect(texts(session).some((t) => t.includes('bytes from'))).toBe(false);
   });
 
@@ -98,7 +98,7 @@ describe('Linux ping — real-time streaming through the async pipeline', () => 
   });
 
   it('-w deadline stops the ping after the given time even without -c', async () => {
-    session.setInput('ping -i 0.02 -w 0.2 192.168.1.20');
+    session.setInput('ping -i 0.2 -w 1 192.168.1.20');
     session.handleKey(key('Enter'));
 
     await waitFor(session, (l) => l.some((t) => t.includes('ping statistics')), 3000);
@@ -149,7 +149,7 @@ describe('Linux ping -6 — the IPv6 path streams in real time too, not just IPv
   });
 
   it('-w deadline stops an IPv6 ping too', async () => {
-    session.setInput('ping -6 -i 0.02 -w 0.2 2001:db8::2');
+    session.setInput('ping -6 -i 0.2 -w 1 2001:db8::2');
     session.handleKey(key('Enter'));
 
     await waitFor(session, (l) => l.some((t) => t.includes('ping statistics')), 3000);

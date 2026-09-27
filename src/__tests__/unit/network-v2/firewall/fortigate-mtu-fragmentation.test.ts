@@ -105,7 +105,7 @@ describe('le pare-feu fait respecter le MTU de son interface de sortie', () => {
     async () => {
       const { fgt, pcLan } = await laboratoire(600);
 
-      expect(await pcLan.executeCommand('ping -c 1 -s 1200 192.168.20.10'))
+      expect(await pcLan.executeCommand('ping -c 1 -M dont -s 1200 192.168.20.10'))
         .toMatch(/, 0% packet loss/);
 
       const capture = await fgt.executeCommand(

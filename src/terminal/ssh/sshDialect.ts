@@ -39,6 +39,7 @@ const SAYS: Readonly<Record<
   timeout: 'timedOut',
   prohibited: 'noRoute',
   unreachable: 'noRoute',
+  'host-unreachable': 'noRoute',
 };
 
 export function sshWireFailureLine(

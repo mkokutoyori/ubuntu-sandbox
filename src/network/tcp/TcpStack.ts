@@ -211,6 +211,7 @@ export interface TcpOpenHandler {
 
 export interface TcpConnectOptions {
   localPort?: PortNumber;
+  localIp?: string;
   onOpen?: TcpOpenHandler;
   onData?: TcpDataHandler;
   onClose?: TcpCloseHandler;
@@ -673,7 +674,7 @@ export class TcpStack {
     const remoteIp = canonicalIpText(rawRemoteIp);
     const egress = this.resolveEgress(remoteIp);
     if (!egress) { this.dropped(remoteIp, remotePort, 'no-egress'); return null; }
-    const localIp = egress.srcIp;
+    const localIp = opts.localIp ?? egress.srcIp;
     if (opts.localPort && this.localPortInUse(opts.localPort, remoteIp)) {
       this.dropped(remoteIp, remotePort, 'addr-in-use');
       return null;
@@ -713,15 +714,10 @@ export class TcpStack {
    * 'unreachable' when the attempt never left this machine because no
    * route resolves — ENETUNREACH, which a real stack reports at once.
    */
-  connectOutcome(remoteIp: string, remotePort: number, localPort?: PortNumber): TcpWireOutcome {
-    const socket = this.connect(remoteIp, remotePort, localPort === undefined ? {} : { localPort });
-    if (!socket) return this.hasEgressTo(remoteIp) ? 'timeout' : 'unreachable';
-    if (socket.everEstablished) {
-      socket.close();
-      return 'open';
-    }
-    if (socket.connectProhibited) return 'prohibited';
-    return socket.connectRefused ? 'refused' : 'timeout';
+  connectOutcome(
+    remoteIp: string, remotePort: number, localPort?: PortNumber, localIp?: string,
+  ): TcpWireOutcome {
+    return this.exchange(remoteIp, remotePort, '', { localPort, localIp }).outcome;
   }
 
   /**
@@ -736,18 +732,33 @@ export class TcpStack {
   }
 
   probeService(remoteIp: string, remotePort: number, payload: string): string | null {
-    const socket = this.connect(remoteIp, remotePort);
-    if (!socket) return null;
-    if (!socket.everEstablished) { socket.close(); return null; }
-    let text = '';
+    const { received } = this.exchange(remoteIp, remotePort, payload);
+    return received === '' ? null : received;
+  }
+
+  exchange(
+    remoteIp: string, remotePort: number, payload: string,
+    opts: { localPort?: PortNumber; localIp?: string } = {},
+  ): { outcome: TcpWireOutcome; received: string } {
+    const socket = this.connect(remoteIp, remotePort, {
+      ...(opts.localPort === undefined ? {} : { localPort: opts.localPort }),
+      ...(opts.localIp === undefined ? {} : { localIp: opts.localIp }),
+    });
+    if (!socket) return { outcome: this.hasEgressTo(remoteIp) ? 'timeout' : 'unreachable', received: '' };
+    if (!socket.everEstablished) {
+      const outcome = socket.connectProhibited ? 'prohibited' : socket.connectRefused ? 'refused' : 'timeout';
+      socket.close();
+      return { outcome, received: '' };
+    }
+    let received = '';
     const stop = socket.onData((chunk) => {
-      if (typeof chunk === 'string') text += chunk;
-      else if (chunk instanceof Uint8Array) text += new TextDecoder().decode(chunk);
+      if (typeof chunk === 'string') received += chunk;
+      else if (chunk instanceof Uint8Array) received += new TextDecoder().decode(chunk);
     });
     if (payload.length > 0) socket.write(payload);
     stop();
     socket.close();
-    return text === '' ? null : text;
+    return { outcome: 'open', received };
   }
 
   /**

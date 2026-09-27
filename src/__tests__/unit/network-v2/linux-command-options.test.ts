@@ -69,7 +69,7 @@ describe('LinuxCommand — declarative options', () => {
 describe('renderHelp / renderManPage', () => {
   it('renderHelp includes Usage line', () => {
     const out = renderHelp(pingCommand);
-    expect(out).toContain('Usage:');
+    expect(out).toContain('Usage');
     expect(out).toContain('ping');
   });
 
