@@ -536,7 +536,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getPorts: () => this.ports,
       getRoutingTable: () => this.routingTable,
       setRoutingTable: (table) => { this.routingTable = table; },
-      pushRoute: (route) => { this.routingTable.push({ ...route, installedAt: Date.now() }); },
+      pushRoute: (route) => { this.routingTable.push({ ...route, installedAt: route.installedAt ?? this.getMonotonicClockMs() }); },
+      getMonotonicClockMs: () => this.getMonotonicClockMs(),
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       getRipVersion: () => this._ripVersion,
       isInterfaceUsable: (iface) => !(this.getPort(iface)?.isAdminDown() ?? false),
@@ -581,7 +582,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getPorts: () => this.ports,
       getRoutingTable: () => this.routingTable,
       setRoutingTable: (table) => { this.routingTable = table; },
-      pushRoute: (route) => { this.routingTable.push({ ...route, installedAt: Date.now() }); },
+      pushRoute: (route) => { this.routingTable.push({ ...route, installedAt: route.installedAt ?? this.getMonotonicClockMs() }); },
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       getArpEntry: (ip) => this.arpTable.get(ip),
       getACLEngine: () => this.aclEngine,
@@ -596,6 +597,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getPorts: () => this.ports,
       getRoutingTable: () => this.routingTable,
       setRoutingTable: (table) => { this.routingTable = table; },
+      getMonotonicClockMs: () => this.getMonotonicClockMs(),
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       getArpEntry: (ip) => this.arpTable.get(ip),
       getRipEngine: () => this.ripEngine,
@@ -1752,7 +1754,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         type: 'connected',
         ad: 0,
         metric: 0,
-        installedAt: Date.now(),
+        installedAt: this.getMonotonicClockMs(),
       });
     }
   }
@@ -1867,7 +1869,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       type: 'static',
       ad: opts?.preference ?? 1,
       metric,
-      installedAt: Date.now(),
+      installedAt: this.getMonotonicClockMs(),
       preference: opts?.preference,
       tag: opts?.tag,
       description: opts?.description,
@@ -1897,7 +1899,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (deja) return false;
     this.routingTable.push({
       network, mask, nextHop: null, iface: 'Null0',
-      type: 'static', ad: 5, metric: 0, installedAt: Date.now(),
+      type: 'static', ad: 5, metric: 0, installedAt: this.getMonotonicClockMs(),
     });
     return true;
   }
@@ -1959,7 +1961,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       type: 'default',
       ad: opts?.preference ?? 1,
       metric,
-      installedAt: Date.now(),
+      installedAt: this.getMonotonicClockMs(),
       preference: opts?.preference,
       tag: opts?.tag,
       description: opts?.description,

@@ -24,6 +24,7 @@ import { OSPFEngine } from '../../ospf/OSPFEngine';
 import { OSPFv3Engine } from '../../ospf/OSPFv3Engine';
 import type { OSPFNeighbor, OSPFPacket, OSPFInterface, OSPFNetworkType } from '../../ospf/types';
 import { OSPF_ROUTER_ID_ABSENT, areasEqual } from '../../ospf/types';
+import { carriedInstallTime } from '../../routing/RouteInstallTime';
 import type { ACLEngine } from './ACLEngine';
 import type { IPv6DataPlane } from './IPv6DataPlane';
 import type { RouteEntry } from '../Router';
@@ -1814,6 +1815,7 @@ export class RouterOSPFIntegration {
 
   /** Install OSPF-computed routes into the router's RIB */
   private installRoutes(routes: any[]): void {
+    const previous = this.ctx.getRoutingTable().filter(r => r.type === 'ospf');
     // Remove old OSPF routes
     this.ctx.setRoutingTable(this.ctx.getRoutingTable().filter(r => r.type !== 'ospf'));
 
@@ -1868,6 +1870,7 @@ export class RouterOSPFIntegration {
         if (route._metricType) entry._metricType = route._metricType;
         if (route._isDefault) entry._isDefault = route._isDefault;
         if (route._isStubDefault) entry._isStubDefault = route._isStubDefault;
+        entry.installedAt = carriedInstallTime(previous, entry);
         this.ctx.pushRoute(entry);
       }
     }
