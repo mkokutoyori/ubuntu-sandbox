@@ -369,7 +369,7 @@ function captureInterface(port: Port): TopologyInterfaceExport {
   if (port.hasExplicitDelayUs()) entry.delayUs = port.getDelayUs();
   const ip = port.getIPAddress();
   const mask = port.getSubnetMask();
-  if (ip && ip.toString() !== UNSET_IPV4) {
+  if (ip && ip.toString() !== UNSET_IPV4 && !port.isDhcpClient()) {
     entry.ipAddress = ip.toString();
     if (mask) entry.subnetMask = mask.toString();
   }
