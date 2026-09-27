@@ -13,7 +13,7 @@ import type { Router } from '../../Router';
 import { normalizeOspfRouteType, ospfRouteCode } from '@/network/ospf/routeCodes';
 import { renderIpRouteTable, routerRouteTableHost } from './CiscoShowCommands';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
-import { isAreaId } from '../../../ospf/types';
+import { isAreaId, type LSAHeader } from '../../../ospf/types';
 import { boundedInteger } from '@/cli/ArgumentTypes';
 
 import { CISCO_ERRORS } from '../cli-utils';
@@ -1757,7 +1757,7 @@ export function showIpOspfNeighbor(router: Router): string {
     const iface = ospf.getInterface(n.iface);
     if (!iface || iface.state === 'Down') continue;
     const stateStr = `${n.state.toUpperCase()}/  -`;
-    const deadTime = compteARebours(iface, n.lastHelloReceived);
+    const deadTime = compteARebours(iface, n.lastHelloReceived, ospf.now());
 
     lines.push(
       `${n.routerId.padEnd(16)}${String(n.priority).padEnd(6)}` +
@@ -1769,9 +1769,11 @@ export function showIpOspfNeighbor(router: Router): string {
   return lines.join('\n');
 }
 
-function compteARebours(iface: { deadInterval?: number } | undefined, lastHelloMs: number): string {
+function compteARebours(
+  iface: { deadInterval?: number } | undefined, lastHelloMs: number, nowMs: number,
+): string {
   const dead = iface?.deadInterval ?? 40;
-  const ecoule = Math.max(0, Date.now() - lastHelloMs) / 1000;
+  const ecoule = Math.max(0, nowMs - lastHelloMs) / 1000;
   const restant = Math.max(0, Math.min(dead, Math.floor(dead - ecoule)));
   const pad = (v: number) => String(v).padStart(2, '0');
   return `${pad(Math.floor(restant / 3600))}:${pad(Math.floor((restant % 3600) / 60))}:${pad(restant % 60)}`;
@@ -1783,7 +1785,7 @@ function showIpOspfDatabaseSummaryCounts(router: Router): string {
   router._ospfAutoConverge();
   const lsdb = ospf.getLSDB();
   const lines = [
-    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    ospfProcessHeader(ospf),
     '',
   ];
   const totals: Record<number, number> = {};
@@ -1828,7 +1830,7 @@ function showIpOspfDatabase(router: Router): string {
 
   const lsdb = ospf.getLSDB();
   const lines = [
-    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    ospfProcessHeader(ospf),
     '',
   ];
 
@@ -1879,7 +1881,7 @@ function showIpOspfDatabaseExternal(router: Router, args: string[]): string {
   const detail = args.includes('detail');
 
   const lines = [
-    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    ospfProcessHeader(ospf),
     '',
     '                Type-5 AS External Link States',
     '',
@@ -2108,9 +2110,10 @@ function showIpOspfNeighborDetail(router: Router): string {
     lines.push(`    Options is 0x${(n.options ?? 0x02).toString(16).padStart(2, '0')}`);
     lines.push(`    Dead timer due in 00:00:${String(deadInterval).padStart(2, '0')}`);
     lines.push(`    Neighbor is up for 00:00:00`);
-    lines.push(`    Index 1/1, retransmission queue length ${n.lsRetransmissionList?.length ?? 0}, number of retransmission 0`);
+    const resent = ospf.lsuRetransmissionOf(n);
+    lines.push(`    Index 1/1, retransmission queue length ${resent.queue.length}, number of retransmission ${resent.packets}`);
     lines.push(`    First 0x0(0)/0x0(0) Next 0x0(0)/0x0(0)`);
-    lines.push(`    Last retransmission scan length is 0, maximum is 0`);
+    lines.push(`    Last retransmission scan length is ${resent.lastLength}, maximum is ${resent.maxLength}`);
     lines.push(`    Last retransmission scan time is 0 msec, maximum is 0 msec`);
     lines.push(`    Retransmit interval ${retransmitInterval}`);
     lines.push('');
@@ -2127,7 +2130,7 @@ function showIpOspfDatabaseRouter(router: Router, detail: boolean): string {
   const lsdb = ospf.getLSDB();
 
   const lines = [
-    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    ospfProcessHeader(ospf),
     '',
   ];
 
@@ -2194,7 +2197,7 @@ function showIpOspfDatabaseNetwork(router: Router, detail: boolean): string {
   const lsdb = ospf.getLSDB();
 
   const lines = [
-    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    ospfProcessHeader(ospf),
     '',
   ];
 
@@ -2248,7 +2251,7 @@ function showIpOspfDatabaseSummary(router: Router, detail: boolean): string {
   const lsdb = ospf.getLSDB();
 
   const lines = [
-    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    ospfProcessHeader(ospf),
     '',
   ];
 
@@ -2356,7 +2359,7 @@ function showIpOspfBorderRouters(router: Router): string {
   const routes = ospf.getRoutes();
 
   const lines = [
-    `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`,
+    ospfProcessHeader(ospf),
     '',
     `                Base Topology (MTRIC 0)`,
   ];
@@ -2534,37 +2537,48 @@ function showIpOspfTimers(router: Router): string {
 function showIpOspfRequestList(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
-  const lines: string[] = ['Neighbor                Interface  Area'];
-  let any = false;
+  const lines = ['', ospfProcessHeader(ospf), ''];
   for (const iface of ospf.getInterfaces().values()) {
     for (const nbr of iface.neighbors.values()) {
       if (nbr.lsRequestList.length === 0) continue;
-      any = true;
-      lines.push(`${nbr.routerId.padEnd(24)}${iface.name.padEnd(11)}${iface.areaId}`);
-      for (const lsr of nbr.lsRequestList) {
-        lines.push(`  Type ${lsr.lsType} LS-ID ${lsr.linkStateId} ADV-Router ${lsr.advertisingRouter}`);
-      }
+      lines.push(`  Neighbor ${nbr.routerId}, interface ${iface.name} address ${nbr.ipAddress}`, '');
+      lines.push(...lsaQueueTable(nbr.lsRequestList), '');
     }
   }
-  if (!any) lines.push('(no LS Request list entries)');
   return lines.join('\n');
 }
 
 function showIpOspfRetransmissionList(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '';
-  const lines: string[] = ['Neighbor                Interface  Area  Queue length'];
-  let any = false;
+  const lines = ['', ospfProcessHeader(ospf), ''];
   for (const iface of ospf.getInterfaces().values()) {
     for (const nbr of iface.neighbors.values()) {
-      const q = nbr.lsRetransmissionList?.length ?? 0;
-      if (q === 0) continue;
-      any = true;
-      lines.push(`${nbr.routerId.padEnd(24)}${iface.name.padEnd(11)}${iface.areaId.padEnd(6)}${q}`);
+      const pending = ospf.lsuRetransmissionOf(nbr);
+      if (pending.queue.length === 0) continue;
+      lines.push(`  Neighbor ${nbr.routerId}, interface ${iface.name} address ${nbr.ipAddress}`);
+      lines.push(`  Link state retransmission due in ${pending.dueInMs ?? 0} msec, Queue length ${pending.queue.length}`, '');
+      lines.push(...lsaQueueTable(pending.queue), '');
     }
   }
-  if (!any) lines.push('(no LS Retransmission list entries)');
   return lines.join('\n');
+}
+
+function lsaQueueTable(queue: readonly LSAHeader[]): string[] {
+  return [
+    '  Type  LS ID             ADV RTR           Seq NO      Age    Checksum',
+    ...queue.map((lsa) => `${String(lsa.lsType).padStart(6)}  ${lsa.linkStateId.padEnd(18)}`
+      + `${lsa.advertisingRouter.padEnd(18)}${iosHex(lsa.lsSequenceNumber).padEnd(12)}`
+      + `${String(lsa.lsAge).padEnd(7)}${iosHex(lsa.checksum)}`),
+  ];
+}
+
+function iosHex(value: number): string {
+  return `0x${value.toString(16).toUpperCase()}`;
+}
+
+function ospfProcessHeader(ospf: { getRouterId(): string; getProcessId(): number }): string {
+  return `            OSPF Router with ID (${ospf.getRouterId()}) (Process ID ${ospf.getProcessId()})`;
 }
 
 function showIpOspfFloodList(router: Router): string {

@@ -17,6 +17,7 @@
 import {
   OSPFConfig, OSPFInterface, OSPFNeighbor, OSPFNeighborState, OSPFNeighborEvent,
   OSPFInterfaceState, OSPFArea, OSPFAreaRange, OSPFAreaType, OSPFNetworkType, OSPFPacketStats,
+  OSPFLsuRetransmission,
   LSA, LSAHeader, LSAType, RouterLSA, NetworkLSA, SummaryLSA, ASBRSummaryLSA,
   ExternalLSA, NSSAExternalLSA,
   RouterLSALink, RouterLinkType,
@@ -94,6 +95,12 @@ export type OSPFSendCallback = (
   destIP: string,
 ) => void;
 
+const FLOODING_STATES: ReadonlySet<OSPFNeighborState> = new Set<OSPFNeighborState>(['Exchange', 'Loading', 'Full']);
+
+function sameLsa(a: LSAHeader, b: LSAHeader): boolean {
+  return a.lsType === b.lsType && a.linkStateId === b.linkStateId && a.advertisingRouter === b.advertisingRouter;
+}
+
 // ─── OSPF Engine ────────────────────────────────────────────────────
 
 export class OSPFEngine implements IProtocolEngine {
@@ -170,7 +177,7 @@ export class OSPFEngine implements IProtocolEngine {
     rxLSU: 0, txLSU: 0,
     rxLSAck: 0, txLSAck: 0,
     rxChecksumErrors: 0,
-    lastReset: Date.now(),
+    lastReset: this.now(),
   };
 
   getPacketStats(): Readonly<OSPFPacketStats> { return { ...this.packetStats }; }
@@ -183,7 +190,7 @@ export class OSPFEngine implements IProtocolEngine {
       rxLSU: 0, txLSU: 0,
       rxLSAck: 0, txLSAck: 0,
       rxChecksumErrors: 0,
-      lastReset: Date.now(),
+      lastReset: this.now(),
     };
   }
 
@@ -318,6 +325,12 @@ export class OSPFEngine implements IProtocolEngine {
 
   private getBus(): IEventBus {
     return this.busHolder.get();
+  }
+
+  now(): number { return this.getScheduler().now(); }
+
+  defer(action: () => void, delayMs: number): void {
+    this.timers.setTimeout(action, delayMs);
   }
 
   private getScheduler(): IScheduler {
@@ -611,6 +624,40 @@ export class OSPFEngine implements IProtocolEngine {
     if (neighbor.state === 'Loading' && neighbor.lsRequestList.length > 0) {
       this.sendLSRequest(iface, neighbor);
     }
+  }
+
+  triggerLSURetransmit(ifaceName: string, neighborRid: string): void {
+    const iface = this.interfaces.get(ifaceName);
+    const neighbor = iface?.neighbors.get(neighborRid);
+    if (!iface || !neighbor) return;
+    neighbor.lsuRetransmitTimer = null;
+    if (!FLOODING_STATES.has(neighbor.state) || neighbor.lsRetransmissionList.length === 0) return;
+    const lsas = [...neighbor.lsRetransmissionList];
+    const resent = neighbor.lsuResent ?? { packets: 0, lastLength: 0, maxLength: 0 };
+    neighbor.lsuResent = {
+      packets: resent.packets + 1,
+      lastLength: lsas.length,
+      maxLength: Math.max(resent.maxLength, lsas.length),
+    };
+    this.dispatchOutgoing(iface.name, {
+      type: 'ospf',
+      version: OSPF_VERSION_2,
+      packetType: 4,
+      routerId: this.config.routerId,
+      areaId: iface.areaId,
+      numLSAs: lsas.length,
+      lsas,
+    }, neighbor.ipAddress);
+    this.startLSURetransmitTimer(iface, neighbor);
+  }
+
+  lsuRetransmissionOf(neighbor: OSPFNeighbor): OSPFLsuRetransmission {
+    return {
+      packets: 0, lastLength: 0, maxLength: 0,
+      ...neighbor.lsuResent,
+      queue: neighbor.lsRetransmissionList,
+      dueInMs: this.timers.remaining(neighbor.lsuRetransmitTimer),
+    };
   }
 
   /**
@@ -1393,7 +1440,7 @@ export class OSPFEngine implements IProtocolEngine {
     neighbor.priority = hello.priority;
     neighbor.neighborDR = hello.designatedRouter;
     neighbor.neighborBDR = hello.backupDesignatedRouter;
-    neighbor.lastHelloReceived = Date.now();
+    neighbor.lastHelloReceived = this.now();
     neighbor.options = hello.options;
 
     // HelloReceived event (resets dead timer)
@@ -1461,7 +1508,7 @@ export class OSPFEngine implements IProtocolEngine {
       lsRequestList: [],
       lsRetransmissionList: [],
       dbSummaryList: [],
-      lastHelloReceived: Date.now(),
+      lastHelloReceived: this.now(),
       options: hello.options,
       ddRetransmitTimer: null,
       lsrRetransmitTimer: null,
@@ -1543,6 +1590,7 @@ export class OSPFEngine implements IProtocolEngine {
             this.setNeighborState(iface, neighbor, 'TwoWay', event);
             neighbor.lsRequestList = [];
             neighbor.lsRetransmissionList = [];
+            this.cancelLSURetransmitTimer(neighbor);
             neighbor.dbSummaryList = [];
           }
         }
@@ -1556,6 +1604,7 @@ export class OSPFEngine implements IProtocolEngine {
           this.setNeighborState(iface, neighbor, 'ExStart', event);
           neighbor.lsRequestList = [];
           neighbor.lsRetransmissionList = [];
+          this.cancelLSURetransmitTimer(neighbor);
           neighbor.dbSummaryList = [];
           // Do NOT call startDDExchange here — the re-exchange will be triggered
           // by the next Hello or inactivity timer cycle (RFC 2328 §10.6).
@@ -1570,6 +1619,7 @@ export class OSPFEngine implements IProtocolEngine {
           this.setNeighborState(iface, neighbor, 'Init', event);
           neighbor.lsRequestList = [];
           neighbor.lsRetransmissionList = [];
+          this.cancelLSURetransmitTimer(neighbor);
           neighbor.dbSummaryList = [];
         }
         break;
@@ -1582,6 +1632,7 @@ export class OSPFEngine implements IProtocolEngine {
         this.setNeighborState(iface, neighbor, 'Down', event);
         neighbor.lsRequestList = [];
         neighbor.lsRetransmissionList = [];
+        this.cancelLSURetransmitTimer(neighbor);
         neighbor.dbSummaryList = [];
         break;
 
@@ -1592,6 +1643,7 @@ export class OSPFEngine implements IProtocolEngine {
         this.setNeighborState(iface, neighbor, 'Down', event);
         neighbor.lsRequestList = [];
         neighbor.lsRetransmissionList = [];
+        this.cancelLSURetransmitTimer(neighbor);
         neighbor.dbSummaryList = [];
         // Remove from interface neighbors
         iface.neighbors.delete(neighbor.routerId);
@@ -1740,6 +1792,48 @@ export class OSPFEngine implements IProtocolEngine {
     if (neighbor.lsrRetransmitTimer) {
       this.timers.clear(neighbor.lsrRetransmitTimer);
       neighbor.lsrRetransmitTimer = null;
+    }
+  }
+
+  private queueForRetransmission(iface: OSPFInterface, neighbor: OSPFNeighbor, lsa: LSA): void {
+    neighbor.lsRetransmissionList = neighbor.lsRetransmissionList.filter((queued) => !sameLsa(queued, lsa));
+    neighbor.lsRetransmissionList.push(lsa);
+    this.startLSURetransmitTimer(iface, neighbor);
+  }
+
+  private startLSURetransmitTimer(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
+    if (neighbor.lsuRetransmitTimer) return;
+    neighbor.lsuRetransmitTimer = this.timers.setTimeout(() => {
+      neighbor.lsuRetransmitTimer = null;
+      this.getBus().publish({
+        topic: 'ospf.lsu.retransmit-due',
+        payload: { ...this.routerRef(), iface: iface.name, neighborId: neighbor.routerId },
+      });
+    }, iface.retransmitInterval * 1000);
+  }
+
+  private cancelLSURetransmitTimer(neighbor: OSPFNeighbor): void {
+    if (neighbor.lsuRetransmitTimer) {
+      this.timers.clear(neighbor.lsuRetransmitTimer);
+      neighbor.lsuRetransmitTimer = null;
+    }
+  }
+
+  private dropFromRetransmission(neighbor: OSPFNeighbor, header: LSAHeader): void {
+    neighbor.lsRetransmissionList = neighbor.lsRetransmissionList
+      .filter((queued) => !(sameLsa(queued, header) && this.isSameInstance(queued, header)));
+    if (neighbor.lsRetransmissionList.length === 0) this.cancelLSURetransmitTimer(neighbor);
+  }
+
+  private evictOlderInstances(areaId: string, lsa: LSA): void {
+    for (const iface of this.interfaces.values()) {
+      if (lsa.lsType !== 5 && !areasEqual(iface.areaId, areaId)) continue;
+      for (const neighbor of iface.neighbors.values()) {
+        if (neighbor.lsRetransmissionList.length === 0) continue;
+        neighbor.lsRetransmissionList = neighbor.lsRetransmissionList
+          .filter((queued) => !(sameLsa(queued, lsa) && !this.isNewerLSA(queued, lsa)));
+        if (neighbor.lsRetransmissionList.length === 0) this.cancelLSURetransmitTimer(neighbor);
+      }
     }
   }
 
@@ -1914,7 +2008,7 @@ export class OSPFEngine implements IProtocolEngine {
   // ─── DD Exchange (RFC 2328 §10.6-10.8) ─────────────────────────
 
   private startDDExchange(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
-    neighbor.ddSeqNumber = Math.floor(Date.now() / 1000) & 0xFFFFFFFF;
+    neighbor.ddSeqNumber = Math.floor(this.now() / 1000) & 0xFFFFFFFF;
     // Higher Router ID becomes Master (RFC 2328 §10.6)
     neighbor.isMaster = this.config.routerId > neighbor.routerId;
 
@@ -2209,6 +2303,7 @@ export class OSPFEngine implements IProtocolEngine {
           if (lsa.lsType === 1 || lsa.lsType === 2) topologyChanged = true;
           const maxAgeExclude = (iface.networkType === 'broadcast' || iface.networkType === 'nbma')
             ? ifaceName : null;
+          this.evictOlderInstances(iface.areaId, lsa);
           this.floodLSA(iface.areaId, lsa, maxAgeExclude);
         }
         continue;
@@ -2222,7 +2317,7 @@ export class OSPFEngine implements IProtocolEngine {
         // to at most once per MinLSArrival (1 second).  This applies regardless
         // of whether the incoming LSA has a higher sequence number.
         const arrKey = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
-        const now = Date.now();
+        const now = this.now();
         if (!this.batchConvergence && existing && this.lsArrivalTimes.has(arrKey)) {
           const lastArrival = this.lsArrivalTimes.get(arrKey)!;
           if (now - lastArrival < OSPF_MIN_LS_ARRIVAL * 1000) {
@@ -2252,10 +2347,15 @@ export class OSPFEngine implements IProtocolEngine {
         // For broadcast/NBMA: exclude the incoming interface (flood via DR only).
         const floodExclude = (iface.networkType === 'broadcast' || iface.networkType === 'nbma')
           ? ifaceName : null;
+        this.evictOlderInstances(iface.areaId, lsa);
         this.floodLSA(iface.areaId, lsa, floodExclude);
 
         // Acknowledge
         ackedHeaders.push(this.extractHeader(lsa));
+      } else if (this.isSameInstance(lsa, existing)) {
+        const queued = neighbor.lsRetransmissionList.some((entry) => sameLsa(entry, lsa));
+        if (queued) this.dropFromRetransmission(neighbor, lsa);
+        else ackedHeaders.push(this.extractHeader(lsa));
       }
     }
 
@@ -2306,14 +2406,7 @@ export class OSPFEngine implements IProtocolEngine {
     const neighbor = this.findNeighborByIP(iface, srcIP);
     if (!neighbor) return;
 
-    // Remove acknowledged LSAs from retransmission list
-    for (const header of ack.lsaHeaders) {
-      neighbor.lsRetransmissionList = neighbor.lsRetransmissionList.filter(
-        lsa => !(lsa.lsType === header.lsType &&
-                  lsa.linkStateId === header.linkStateId &&
-                  lsa.advertisingRouter === header.advertisingRouter)
-      );
-    }
+    for (const header of ack.lsaHeaders) this.dropFromRetransmission(neighbor, header);
   }
 
   private findNeighborByIP(iface: OSPFInterface, srcIP: string): OSPFNeighbor | null {
@@ -2325,7 +2418,7 @@ export class OSPFEngine implements IProtocolEngine {
 
   // ─── LSA Comparison (RFC 2328 §13.1) ──────────────────────────
 
-  private isNewerLSA(a: LSA, b: LSA): boolean {
+  private isNewerLSA(a: LSAHeader, b: LSAHeader): boolean {
     if (a.lsSequenceNumber !== b.lsSequenceNumber) {
       return a.lsSequenceNumber > b.lsSequenceNumber;
     }
@@ -2338,6 +2431,10 @@ export class OSPFEngine implements IProtocolEngine {
       return a.lsAge < b.lsAge; // Younger (lower age) is newer
     }
     return false; // Same
+  }
+
+  private isSameInstance(a: LSAHeader, b: LSAHeader): boolean {
+    return !this.isNewerLSA(a, b) && !this.isNewerLSA(b, a);
   }
 
   // ─── LSDB Management ──────────────────────────────────────────
@@ -2860,7 +2957,7 @@ export class OSPFEngine implements IProtocolEngine {
       const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
       if (this.lastFloodTime.has(key)) {
         const lastTime = this.lastFloodTime.get(key)!;
-        if (Date.now() - lastTime < OSPF_MIN_LS_INTERVAL * 1000) {
+        if (this.now() - lastTime < OSPF_MIN_LS_INTERVAL * 1000) {
           return; // MinLSInterval not yet elapsed — suppress redundant flood
         }
       }
@@ -2882,7 +2979,7 @@ export class OSPFEngine implements IProtocolEngine {
 
       for (const [, neighbor] of iface.neighbors) {
         if (neighbor.state === 'Full' || neighbor.state === 'Exchange' || neighbor.state === 'Loading') {
-          neighbor.lsRetransmissionList.push(lsa);
+          this.queueForRetransmission(iface, neighbor, lsa);
 
           const lsu: OSPFLSUpdatePacket = {
             type: 'ospf',
@@ -2910,7 +3007,7 @@ export class OSPFEngine implements IProtocolEngine {
     // clock — the first real flood (with neighbors present) is never suppressed.
     if (isSelfOriginated && sentToAny) {
       const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
-      this.lastFloodTime.set(key, Date.now());
+      this.lastFloodTime.set(key, this.now());
     }
   }
 
@@ -2967,7 +3064,7 @@ export class OSPFEngine implements IProtocolEngine {
     // Exponential back-off (RFC 2328 §16.5 / Cisco 'timers throttle spf'):
     //   - First SPF after a quiet period → use initial delay, reset hold counter
     //   - Rapid re-schedules                → use current hold, double it for next time
-    const now = Date.now();
+    const now = this.now();
     const timeSinceLastRun = now - this.spfLastRunAt;
 
     let delay: number;
@@ -2997,7 +3094,7 @@ export class OSPFEngine implements IProtocolEngine {
     this.spfTimer = this.timers.setTimeout(() => {
       this.spfPending = false;
       this.spfTimer = null;
-      this.spfLastRunAt = Date.now();
+      this.spfLastRunAt = this.now();
       if (this.spfNeedsFullRun) {
         this.spfNeedsFullRun = false;
         this.runSPF();
@@ -4046,6 +4143,7 @@ export class OSPFEngine implements IProtocolEngine {
         neighbor.deadTimer = null;
         neighbor.ddRetransmitTimer = null;
         neighbor.lsrRetransmitTimer = null;
+        neighbor.lsuRetransmitTimer = null;
       }
     }
 

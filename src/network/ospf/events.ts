@@ -159,6 +159,11 @@ export interface OspfLsrRetransmitDuePayload extends OspfRouterRef {
   neighborId: string;
 }
 
+export interface OspfLsuRetransmitDuePayload extends OspfRouterRef {
+  iface: string;
+  neighborId: string;
+}
+
 export interface OspfHelloMismatchPayload extends OspfRouterRef {
   iface: string;
   from: string;
@@ -212,6 +217,7 @@ export type OspfDomainEvent =
   | { topic: 'ospf.hello.send-requested'; payload: OspfHelloSendRequestedPayload }
   | { topic: 'ospf.dd.retransmit-due'; payload: OspfDdRetransmitDuePayload }
   | { topic: 'ospf.lsr.retransmit-due'; payload: OspfLsrRetransmitDuePayload }
+  | { topic: 'ospf.lsu.retransmit-due'; payload: OspfLsuRetransmitDuePayload }
   | { topic: 'ospf.hello.mismatch'; payload: OspfHelloMismatchPayload }
   | { topic: 'ospf.area.mismatch'; payload: OspfAreaMismatchPayload }
   | { topic: 'ospf.router-id.unavailable'; payload: OspfRouterIdUnavailablePayload };

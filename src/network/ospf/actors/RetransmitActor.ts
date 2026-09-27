@@ -42,6 +42,9 @@ export class RetransmitActor {
       this.bus.subscribeWhere('ospf.lsr.retransmit-due', isOurs, (e) => {
         this.engine.triggerLSRRetransmit(e.payload.iface, e.payload.neighborId);
       }),
+      this.bus.subscribeWhere('ospf.lsu.retransmit-due', isOurs, (e) => {
+        this.engine.triggerLSURetransmit(e.payload.iface, e.payload.neighborId);
+      }),
     );
   }
 
