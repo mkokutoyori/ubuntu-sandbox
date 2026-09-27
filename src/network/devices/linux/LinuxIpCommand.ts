@@ -13,6 +13,7 @@ import {
   type IpColorizer, type IpColorMode,
 } from './LinuxIpColor';
 import { IPAddress, MACAddress, SubnetMask } from '../../core/types';
+import type { PathMtuException } from '../EndHost';
 import { broadcastAddress } from '../../core/ip';
 import { parseIpv6Prefix } from '../../core/Ipv6Arithmetic';
 import {
@@ -178,6 +179,7 @@ export interface IpNetworkContext {
   resolveRouteWithRules?(
     dest: IPAddress, from: IPAddress | null,
   ): { iface: string; nextHopIP: string; table: number } | null;
+  routeLookupFacts?(dest: IPAddress): { local: boolean; uid: number; pmtu: PathMtuException | null };
   /** Optional network namespace CRUD for ip netns (list/add/del only — exec is handled upstream) */
   netns?: IpNetnsContext;
   /** Optional IPv4 multicast membership context for `ip maddr` (IGMP). */
@@ -1612,57 +1614,30 @@ function ipRouteGet(ctx: IpNetworkContext, args: string[]): string {
   if (!destAddr) return `Error: ${dest} is not a valid IPv4 address.`;
 
   const fromIdx = args.indexOf('from');
-  if (fromIdx !== -1 && args[fromIdx + 1] && ctx.resolveRouteWithRules) {
-    const fromAddr = IPAddress.tryParse(args[fromIdx + 1]);
+  let fromAddr: IPAddress | null = null;
+  if (fromIdx !== -1 && args[fromIdx + 1]) {
+    fromAddr = IPAddress.tryParse(args[fromIdx + 1]);
     if (!fromAddr) return `Error: ${args[fromIdx + 1]} is not a valid IPv4 address.`;
-    const resolved = ctx.resolveRouteWithRules(destAddr, fromAddr);
-    if (!resolved) return `RTNETLINK answers: Network is unreachable`;
-    const iface = ctx.getInterfaceInfo(resolved.iface);
-    const src = iface?.ip ?? undefined;
-    const suffix = src ? ` src ${src}` : '';
-    const tableSuffix = resolved.table !== 254 ? ` table ${resolved.table}` : '';
-    if (resolved.nextHopIP === dest) {
-      return `${dest} from ${fromAddr} dev ${resolved.iface}${suffix}${tableSuffix}`;
-    }
-    return `${dest} from ${fromAddr} via ${resolved.nextHopIP} dev ${resolved.iface}${suffix}${tableSuffix}`;
   }
 
-  const table = ctx.getRoutingTable();
-  const best = pickBestRoute(destAddr, table);
-  if (!best) return `RTNETLINK answers: Network is unreachable`;
-
-  const iface = ctx.getInterfaceInfo(best.iface);
-  const src = iface?.ip ?? undefined;
-
-  if (best.type === 'default') {
-    const suffix = src ? ` src ${src}` : '';
-    return `${dest} via ${best.nextHop} dev ${best.iface}${suffix}`;
+  const facts = ctx.routeLookupFacts?.(destAddr) ?? { local: false, uid: 0, pmtu: null };
+  const from = fromAddr ? `from ${fromAddr} ` : '';
+  if (facts.local) {
+    const src = fromAddr ? '' : `src ${dest} `;
+    return `local ${dest} ${from}dev lo table local ${src}uid ${facts.uid} \n    cache <local> `;
   }
-  if (best.nextHop) {
-    const suffix = src ? ` src ${src}` : '';
-    return `${dest} via ${best.nextHop} dev ${best.iface}${suffix}`;
-  }
-  const suffix = src ? ` src ${src}` : (best.srcIp ? ` src ${best.srcIp}` : '');
-  return `${dest} dev ${best.iface}${suffix}`;
-}
 
-function pickBestRoute(dest: IPAddress, table: IpRouteEntry[]): IpRouteEntry | null {
-  const destInt = dest.toUint32();
-  let best: IpRouteEntry | null = null;
-  let bestPrefix = -1;
-  for (const route of table) {
-    const cidr = route.type === 'default' ? 0 : route.cidr;
-    const mask = SubnetMask.fromCIDR(cidr).toUint32();
-    const netParsed = IPAddress.tryParse(route.network);
-    const netInt = netParsed ? netParsed.toUint32() : 0;
-    if ((destInt & mask) !== (netInt & mask)) continue;
-    if (cidr > bestPrefix
-      || (cidr === bestPrefix && best !== null && route.metric < best.metric)) {
-      bestPrefix = cidr;
-      best = route;
-    }
-  }
-  return best;
+  const resolved = ctx.resolveRouteWithRules?.(destAddr, fromAddr) ?? null;
+  if (!resolved) return 'RTNETLINK answers: Network is unreachable';
+  const via = resolved.nextHopIP === dest ? '' : `via ${resolved.nextHopIP} `;
+  const table = resolved.table !== 254 ? `table ${resolved.table} ` : '';
+  const prefSrc = ctx.getInterfaceInfo(resolved.iface)?.ip;
+  const src = !fromAddr && prefSrc ? `src ${prefSrc} ` : '';
+  const pmtu = facts.pmtu;
+  const cache = pmtu
+    ? `expires ${Math.floor(pmtu.expiresInMs / 1000)}sec mtu ${pmtu.locked ? 'lock ' : ''}${pmtu.mtu} `
+    : '';
+  return `${dest} ${from}${via}dev ${resolved.iface} ${table}${src}uid ${facts.uid} \n    cache ${cache}`;
 }
 
 function isInSubnet(ip: string, network: string, cidr: number): boolean {

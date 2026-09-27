@@ -56,6 +56,9 @@ export function fragmentIPv4(pkt: IPv4Packet, mtu: number): IPv4Packet[] {
     ? ipv4HeaderBytesFor(carriedOptions) : headerBytes;
 
   const fragments: IPv4Packet[] = [];
+  const baseOffsetBytes = pkt.fragmentOffset * 8;
+  const originalMoreFragments = pkt.flags & IPV4_FLAG_MF;
+  const otherFlags = pkt.flags & ~IPV4_FLAG_MF;
   let offsetBytes = 0;
   while (offsetBytes < totalPayloadBytes) {
     const chunk = Math.min(maxChunk, totalPayloadBytes - offsetBytes);
@@ -66,9 +69,9 @@ export function fragmentIPv4(pkt: IPv4Packet, mtu: number): IPv4Packet[] {
       ...pkt,
       ihl: fragHeaderBytes / 4,
       totalLength: fragHeaderBytes + chunk,
-      flags: isLast ? 0 : IPV4_FLAG_MF,
-      fragmentOffset: offsetBytes / 8,
-      payload: isFirst ? pkt.payload : { type: 'ipv4-fragment-data', length: chunk },
+      flags: otherFlags | (isLast ? originalMoreFragments : IPV4_FLAG_MF),
+      fragmentOffset: (baseOffsetBytes + offsetBytes) / 8,
+      payload: isFirst && baseOffsetBytes === 0 ? pkt.payload : { type: 'ipv4-fragment-data', length: chunk },
       headerChecksum: 0,
     };
     if (!isFirst) {

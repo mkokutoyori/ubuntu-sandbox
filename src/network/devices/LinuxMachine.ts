@@ -402,7 +402,8 @@ export abstract class LinuxMachine extends EndHost
     this.greAgentInstance = new GreAgent(greHost, () => this.getBus());
     this.greAgentInstance.start();
     this.greAgent = this.greAgentInstance;
-    this.executor.setIpNetworkContext(buildIpCtx(this.net, this.xfrmCtx, this.greAgentInstance));
+    this.executor.setIpNetworkContext(buildIpCtx(this.net, this.xfrmCtx, this.greAgentInstance,
+      undefined, undefined, undefined, () => this.executor.userMgr.currentUid));
     // NSS `dns` source resolves through real UDP/53 once resolv.conf
     // names a non-loopback server (loopback = systemd-resolved stub,
     // modelled by the legacy fallback).
@@ -814,6 +815,10 @@ export abstract class LinuxMachine extends EndHost
 
   private failedNeighbourIsHostUnreachable(target: IPAddress | IPv6Address, outcome: TcpWireOutcome): TcpWireOutcome {
     return outcome === 'timeout' && this.neighbourUnresolved(target) ? 'host-unreachable' : outcome;
+  }
+
+  protected override echoReplyFlags(): number {
+    return 0;
   }
 
   protected override icmpErrorQuote(): IcmpErrorQuote {
@@ -3988,6 +3993,7 @@ export abstract class LinuxMachine extends EndHost
         return this.tcpConnectOutcome(new IPAddress(target), port, sourcePort, sourceIP);
       },
       udpConnect: (target, port, options) => this.udpConnect(target, port, options),
+      pathMtuException: (target) => this.pathMtuException(target),
       udpListen: (port, processName, owner) => this.udpListen(port, processName, owner),
       tcpExchange: (target, port, payload, options) => this.tcpExchange(target, port, payload, options),
       ping6Sequence: (

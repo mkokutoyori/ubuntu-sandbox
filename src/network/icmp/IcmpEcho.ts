@@ -38,6 +38,7 @@ export function buildEchoRequest(
 
 export function buildEchoReply(
   request: IPv4Packet, requestIcmp: ICMPPacket, source: IPAddress, ttl: number,
+  flags: number = request.flags,
 ): IPv4Packet {
   const reply: ICMPPacket = {
     type: 'icmp', icmpType: 'echo-reply', code: 0,
@@ -53,7 +54,7 @@ export function buildEchoReply(
   return createIPv4Packet(
     source, returnRoute ? returnRoute.firstHop : request.sourceIP,
     IP_PROTO_ICMP, ttl, reply, 8 + requestIcmp.dataSize,
-    { flags: request.flags, ...(ipOptions.length > 0 ? { ipOptions } : {}) },
+    { flags, ...(ipOptions.length > 0 ? { ipOptions } : {}) },
   );
 }
 

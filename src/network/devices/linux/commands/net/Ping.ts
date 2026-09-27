@@ -332,7 +332,6 @@ interface PingPlan {
   header: string;
   renderAddress: PingAddressRenderer;
   echo: (seq: number) => Promise<PingResult>;
-  localError?: string;
 }
 
 export function createPing(
@@ -446,7 +445,6 @@ export function createPing(
     }
     const mtuDisc = args.mtuDisc ?? (broadcast ? 'do' : 'want');
     const packetSize = args.size + IP_AND_ICMP_HEADERS;
-    const mtu = route?.mtu ?? Number.MAX_SAFE_INTEGER;
     const ident = host.allocateIdent();
     const renderAddress: PingAddressRenderer = numeric
       ? (ip) => ip
@@ -458,11 +456,18 @@ export function createPing(
       label: target,
       header: formatPingHeader(address, args.size, target === address.toString() ? undefined : target, bound),
       renderAddress,
-      localError: mtuDisc === 'do' && packetSize > mtu ? `local error: message too long, mtu=${mtu}` : undefined,
-      echo: (seq) => host.echo(address, seq, {
-        ident, timeoutMs: args.timeoutMs, ttl: args.ttl, dataSize: args.size,
-        df: mtuDisc !== 'dont' && packetSize <= mtu, socket,
-      }),
+      echo: async (seq) => {
+        const path = host.route(address, socket);
+        const mtu = path?.mtu ?? Number.MAX_SAFE_INTEGER;
+        if (mtuDisc === 'do' && packetSize > mtu) {
+          return { success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '', error: `local error: message too long, mtu=${mtu}` };
+        }
+        const fits = packetSize <= mtu && !(path?.mtuLocked ?? false);
+        return host.echo(address, seq, {
+          ident, timeoutMs: args.timeoutMs, ttl: args.ttl, dataSize: args.size,
+          df: mtuDisc === 'do' || (mtuDisc === 'want' && fits), socket,
+        });
+      },
     };
   };
 
@@ -512,9 +517,7 @@ export function createPing(
         emit(`${timestampPrefix(args.timestamp)}no answer yet for icmp_seq=${seq - 1}`);
       }
       sendTimes.push(host.now());
-      const r = current.localError !== undefined
-        ? { success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '', error: current.localError }
-        : { ...(await current.echo(seq)), seq };
+      const r = { ...(await current.echo(seq)), seq };
       if (finished) break;
       results.push(r);
       report(r, args, current);
