@@ -1,4 +1,7 @@
 import { pingOptionsFor } from '../../../diag/PingOptions';
+import type { FortiScope } from '../schema/types';
+
+export type CliScope = Exclude<FortiScope, 'both'>;
 
 export interface FortiExecuteOption {
   readonly keyword: string;
@@ -9,6 +12,7 @@ export interface FortiExecuteCommand {
   readonly name: string;
   readonly help: string;
   readonly options?: readonly FortiExecuteOption[];
+  readonly scope?: FortiScope;
 }
 
 function pingOptionKeywords(family: 'ipv4' | 'ipv6'): readonly FortiExecuteOption[] {
@@ -71,14 +75,14 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
       { keyword: 'pppoe-reconnect', description: 'Reconnect to the PPPoE server.' },
     ] },
   { name: 'log', help: 'Log operations.' },
-  { name: 'ping', help: 'Send ICMP echo requests.' },
+  { name: 'ping', help: 'Send ICMP echo requests.', scope: 'vdom' },
   { name: 'policy-packet-capture', help: 'Captured-packet operations.',
     options: [{ keyword: 'delete-all', description: 'Delete all captured packets.' }] },
-  { name: 'ping6', help: 'Send IPv6 ICMP echo requests.' },
+  { name: 'ping6', help: 'Send IPv6 ICMP echo requests.', scope: 'vdom' },
   { name: 'ping-options', help: 'Set ICMP echo request (ping) options.',
-    options: pingOptionKeywords('ipv4') },
+    options: pingOptionKeywords('ipv4'), scope: 'vdom' },
   { name: 'ping6-options', help: 'Set IPv6 ICMP echo request (ping6) options.',
-    options: pingOptionKeywords('ipv6') },
+    options: pingOptionKeywords('ipv6'), scope: 'vdom' },
   { name: 'reboot', help: 'Reboot this device.' },
   { name: 'restore', help: 'Restore the configuration from a remote server.' },
   { name: 'revision', help: 'List or delete stored configuration revisions.' },
@@ -91,16 +95,16 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
     options: [{ keyword: 'system', description: 'System filters.' }] },
   { name: 'shutdown', help: 'Shut down this device.' },
   { name: 'sync-session', help: 'Sync all sessions from peers.' },
-  { name: 'ssh', help: 'Open an SSH session to a remote host.' },
-  { name: 'telnet', help: 'Open a telnet session to a remote host.' },
+  { name: 'ssh', help: 'Open an SSH session to a remote host.', scope: 'vdom' },
+  { name: 'telnet', help: 'Open a telnet session to a remote host.', scope: 'vdom' },
   { name: 'update-av', help: 'Update antivirus definitions from FortiGuard.' },
   { name: 'update-geo-ip', help: 'Update the IP geography database.' },
   { name: 'update-ips', help: 'Update IPS definitions from FortiGuard.' },
   { name: 'update-now', help: 'Update all FortiGuard databases now.' },
   { name: 'time', help: 'Display or set the system time.' },
   { name: 'upd-vd-license', help: 'Update the VDOM license.' },
-  { name: 'traceroute', help: 'Trace the route to a destination.' },
-  { name: 'tracert6', help: 'Traceroute for IPv6.' },
+  { name: 'traceroute', help: 'Trace the route to a destination.', scope: 'vdom' },
+  { name: 'tracert6', help: 'Traceroute for IPv6.', scope: 'vdom' },
   { name: 'vpn', help: 'VPN operations.',
     options: [
       { keyword: 'certificate', description: 'Certificate operations.' },
@@ -124,8 +128,16 @@ export function resolvePrefix(
   return { candidates };
 }
 
-export function executeNames(): readonly string[] {
-  return FORTI_EXECUTE_COMMANDS.map(command => command.name);
+export function offeredIn(scope: FortiScope | undefined, where: CliScope): boolean {
+  return scope === undefined || scope === 'both' || scope === where;
+}
+
+export function executeCommandsIn(where: CliScope): readonly FortiExecuteCommand[] {
+  return FORTI_EXECUTE_COMMANDS.filter(command => offeredIn(command.scope, where));
+}
+
+export function executeNames(where: CliScope): readonly string[] {
+  return executeCommandsIn(where).map(command => command.name);
 }
 
 export function executeOptionNames(command: string): readonly string[] {

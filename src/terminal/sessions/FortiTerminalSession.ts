@@ -273,10 +273,10 @@ export class FortiTerminalSession extends CLITerminalSession {
     const device = this.device;
     if (!(device instanceof Firewall)) return false;
 
-    const words = commandLine.trim().split(/\s+/);
-    if (words[0] !== 'execute' || words[1] !== 'ping' || words.length !== 3) return false;
+    const target = this.forti().getShell().pingTargetFor(commandLine);
+    if (target === null) return false;
 
-    const run = device.beginPing(words[2]);
+    const run = device.beginPing(target);
     if (!run) { this.addLine(PING_NO_ROUTE); this.notify(); return true; }
 
     const count = device.pingRepeatCount();

@@ -857,14 +857,13 @@ export class Firewall extends Equipment {
   getIpConflictDetection(): IpConflictDetection { return this.ipConflicts; }
 
   private resolveEgress(destination: string): FirewallPingEgress | null {
-    const route = this.getVdom().routes.resolveNextHop(destination);
-    const iface = route?.iface ?? this.interfaces.interfaceForDestination(destination);
-    const source = iface === undefined ? undefined : this.interfaces.get(iface)?.ip;
-    if (iface === undefined || source === undefined) {
+    const egress = this.routedEgress(destination);
+    const source = egress === undefined ? undefined : this.interfaces.get(egress.iface)?.ip;
+    if (egress === undefined || source === undefined) {
       this.rememberUnroutable(destination);
       return null;
     }
-    return { iface, gateway: route?.nextHop, source };
+    return { iface: egress.iface, gateway: egress.nextHop, source };
   }
 
   private rememberUnroutable(destination: string): void {
@@ -1401,15 +1400,21 @@ export class Firewall extends Equipment {
   }
 
   private localEgress(target: string, iface?: string): { iface: string; nextHop?: string } | undefined {
+    if (iface !== undefined) return this.routedEgress(target, iface);
+    const routed = this.routedEgress(target);
+    if (routed) return routed;
+    const connected = this.interfaces.interfaceForDestination(target);
+    return connected === undefined ? undefined : { iface: connected };
+  }
+
+  private routedEgress(target: string, iface?: string): { iface: string; nextHop?: string } | undefined {
     const routes = this.getVdom().routes;
     if (iface !== undefined) {
       const via = routes.resolveNextHopVia(target, iface);
       return via === undefined ? undefined : { iface, nextHop: via.nextHop };
     }
     const route = routes.resolveNextHop(target);
-    if (route) return { iface: route.iface, nextHop: route.nextHop };
-    const connected = this.interfaces.interfaceForDestination(target);
-    return connected === undefined ? undefined : { iface: connected };
+    return route === undefined ? undefined : { iface: route.iface, nextHop: route.nextHop };
   }
 
   sendUdpDatagram(request: UdpSendRequest): boolean {

@@ -51,6 +51,7 @@ import { renderVipList } from './vipListRenderer';
 import { renderDnsProxy } from './dnsProxyRenderer';
 import { renderIpConflictCache, renderIpConflictProbes } from './ipConflictRenderer';
 import { interfaceType } from '../schema/system';
+import type { FortiScope } from '../schema/types';
 import { renderIpFrags } from './ipFragsRenderer';
 import { renderSysTop } from './sysTopRenderer';
 import { renderBridgeList, renderBridgeHosts } from './brctlRenderer';
@@ -864,6 +865,8 @@ function diagnoseIke(rest: readonly string[], deps: FortiDiagDeps): string {
   }
   return FortiMessages.unknownPath(`vpn ike gateway ${rest.slice(1).join(' ')}`);
 }
+
+export const SNIFFER_SCOPE: FortiScope = 'vdom';
 
 export interface SnifferPlan {
   readonly iface: string;

@@ -1,4 +1,5 @@
-import { FORTI_EXECUTE_COMMANDS } from './execute/executeVocabulary';
+import { executeCommandsIn, offeredIn, type CliScope } from './execute/executeVocabulary';
+import { SNIFFER_SCOPE } from './diag/FortiDiagCommands';
 import { LOG_CATEGORIES } from './log/logCategories';
 import { argumentAccepts, type ArgumentSpec, type EnumValue } from '../../../../../cli/ArgumentTypes';
 import { CommandTable, type CommandSpec } from '../../../../../cli/CommandTable';
@@ -103,6 +104,7 @@ export interface SocleDeps {
   readonly runExecute: (rest: readonly string[]) => string;
   readonly leaveCli: () => string;
   readonly enterGlobal: () => string;
+  readonly globalScope?: () => boolean;
   readonly authorize?: (spec: FortiTableSpec, intent: AccessIntent) => AccessVerdict;
   readonly principal?: () => string;
   readonly vdomNames?: () => readonly string[];
@@ -206,15 +208,24 @@ export class FortiSocle {
     if (object) {
       const shape = object.availableAttributes().map(a => a.name).join(',');
       return `object:${principal}:${object.spec.path.join(' ')}:${shape}`
-        + `:${this.referenceStamp(object)}`;
+        + `:${this.referenceStamp(object)}`
+        + (object.spec.scopeOnly ? `:${this.operationStamp()}` : '');
     }
     const table = this.deps.nav.currentTable();
     if (table) {
       return `table:${principal}:${table.spec.path.join(' ')}:${table.keys().join(',')}`;
     }
-    return `root:${principal}:${this.deps.tree.specPaths().length}`
+    return `root:${principal}:${this.deps.tree.specPaths().length}:${this.operationStamp()}`;
+  }
+
+  private operationStamp(): string {
+    return `${this.where()}`
       + `:${(this.deps.vdomNames?.() ?? []).join(',')}`
       + `:${(this.deps.adminSessions?.() ?? []).map(s => s.index).join(',')}`;
+  }
+
+  private where(): CliScope {
+    return this.deps.globalScope?.() ? 'global' : 'vdom';
   }
 
   private referenceStamp(object: FortiObject): string {
@@ -289,10 +300,17 @@ export class FortiSocle {
     ];
     out.push(...this.branchSpecs());
     out.push(...this.viewSpecs());
-    out.push(...this.diagnoseSpecs());
-    out.push(...this.enterVdomSpecs());
-    out.push(...this.eraseDiskSpecs());
-    out.push(...this.adminSessionSpecs());
+    out.push(...this.operationSpecs());
+    return out;
+  }
+
+  private operationSpecs(): CommandSpec[] {
+    const out: CommandSpec[] = [
+      ...this.diagnoseSpecs(),
+      ...this.enterVdomSpecs(),
+      ...this.eraseDiskSpecs(),
+      ...this.adminSessionSpecs(),
+    ];
     out.push(...this.executeSpecs(new Set(out.map(spec => spec.id))));
     out.push(this.withArgument('execute', ['execute',
       { name: 'command', type: 'REST', description: 'Command to execute.' }],
@@ -346,7 +364,7 @@ export class FortiSocle {
   }
 
   private executeSpecs(declared: ReadonlySet<string>): CommandSpec[] {
-    return FORTI_EXECUTE_COMMANDS
+    return executeCommandsIn(this.where())
       .filter(command => !declared.has(`execute ${command.name}`))
       .map(command => this.withArgument(
       `execute ${command.name}`,
@@ -642,9 +660,9 @@ export class FortiSocle {
         ['diagnose', 'firewall', 'auth', 'filter', rest('rest', 'Filter criterion.')],
         'Restrict what the authenticated-user list shows.',
         run(['firewall', 'auth', 'filter'])),
-      this.withArgument('diagnose sniffer packet',
+      ...(offeredIn(SNIFFER_SCOPE, this.where()) ? [this.withArgument('diagnose sniffer packet',
         ['diagnose', 'sniffer', 'packet', rest('rest', '<interface> <filter> [verbose] [count]')],
-        'Capture packets on an interface.', run(['sniffer', 'packet'])),
+        'Capture packets on an interface.', run(['sniffer', 'packet']))] : []),
     ];
   }
 
@@ -720,7 +738,7 @@ export class FortiSocle {
         () => this.deps.nav.descend([name])));
     }
 
-    if (object.spec.scopeOnly) out.push(...this.branchSpecs());
+    if (object.spec.scopeOnly) out.push(...this.branchSpecs(), ...this.operationSpecs());
 
     out.push(...this.viewSpecs());
     return out;
