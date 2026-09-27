@@ -203,7 +203,17 @@ export interface EchoRoute {
   source: IPAddress | null;
   iface: string;
   mtu: number;
+  mtuLocked: boolean;
 }
+
+export interface PathMtuException {
+  readonly mtu: number;
+  readonly locked: boolean;
+  readonly expiresInMs: number;
+}
+
+const MIN_PMTU = 552;
+const PMTU_EXPIRES_MS = 600_000;
 
 export interface EchoOptions {
   dataSize?: number;
@@ -2598,6 +2608,12 @@ export abstract class EndHost extends Equipment {
   public sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void {
     const port = this.getPort(outPortName);
     if (!port) return;
+    const packets = this.fragmentsForEgress(ipPkt, port.getMTU());
+    if (!packets) return;
+    for (const packet of packets) this.sendIpv4DatagramArpAware(outPortName, port, packet, nextHopIP);
+  }
+
+  private sendIpv4DatagramArpAware(outPortName: string, port: Port, ipPkt: IPv4Packet, nextHopIP: IPAddress): void {
     const surLien = linkDestinationFor(nextHopIP, this.connectedIpv4Prefixes());
     if (surLien) {
       this.sendFrame(outPortName, {
@@ -2703,6 +2719,11 @@ export abstract class EndHost extends Equipment {
 
       this.publishIcmpUnreachable(ipPkt, icmp);
       this.reportUdpSocketError(icmp);
+      if (icmp.icmpType === 'destination-unreachable' && icmp.code === ICMP_UNREACH_FRAG_NEEDED
+        && icmp.mtu !== undefined && icmp.originalPacket
+        && this.isLocalAddress(icmp.originalPacket.sourceIP)) {
+        this.recordPathMtu(icmp.originalPacket.destinationIP, icmp.mtu);
+      }
 
       const isHardTcpError = icmp.icmpType === 'destination-unreachable'
         && isHardTcpUnreachCode(icmp.code);
@@ -2795,6 +2816,10 @@ export abstract class EndHost extends Equipment {
     }
   }
 
+  protected echoReplyFlags(request: IPv4Packet): number {
+    return request.flags;
+  }
+
   private sendEchoReply(portName: string, requestIP: IPv4Packet, requestICMP: ICMPPacket): void {
     const port = this.ports.get(portName);
     if (!port) return;
@@ -2807,7 +2832,7 @@ export abstract class EndHost extends Equipment {
       : port.getIPAddress();
     if (!myIP) return;
 
-    const replyIP = buildEchoReply(requestIP, requestICMP, myIP, this.defaultTTL);
+    const replyIP = buildEchoReply(requestIP, requestICMP, myIP, this.defaultTTL, this.echoReplyFlags(requestIP));
 
     // Route the reply — source may be on a different subnet (via default gateway)
     const route = this.resolveRoute(replyIP.destinationIP);
@@ -3038,6 +3063,55 @@ export abstract class EndHost extends Equipment {
   private readonly udpAddressListeners = new Map<string, UdpListener>();
 
   private readonly connectedUdpPeers = new Map<number, ConnectedUdpPeer>();
+
+  private readonly pmtuExceptions = new Map<string, { mtu: number; locked: boolean; expiresAt: number }>();
+
+  public pathMtuException(destination: IPAddress): PathMtuException | null {
+    const key = destination.toString();
+    const entry = this.pmtuExceptions.get(key);
+    if (!entry) return null;
+    const expiresInMs = entry.expiresAt - this.getScheduler().now();
+    if (expiresInMs <= 0) {
+      this.pmtuExceptions.delete(key);
+      return null;
+    }
+    return { mtu: entry.mtu, locked: entry.locked, expiresInMs };
+  }
+
+  public flushPathMtuExceptions(): void {
+    this.pmtuExceptions.clear();
+  }
+
+  private pathMtuTo(destination: IPAddress, linkMtu: number): number {
+    const exception = this.pathMtuException(destination);
+    return exception ? Math.min(linkMtu, exception.mtu) : linkMtu;
+  }
+
+  private recordPathMtu(destination: IPAddress, reported: number): void {
+    const route = this.resolveRoute(destination);
+    if (!route) return;
+    const current = this.pathMtuTo(destination, route.port.getMTU());
+    if (current < reported) return;
+    const locked = reported < MIN_PMTU;
+    this.pmtuExceptions.set(destination.toString(), {
+      mtu: locked ? Math.min(current, MIN_PMTU) : reported,
+      locked,
+      expiresAt: this.getScheduler().now() + PMTU_EXPIRES_MS,
+    });
+  }
+
+  private fragmentsForEgress(ipPkt: IPv4Packet, linkMtu: number): IPv4Packet[] | null {
+    const mtu = this.pathMtuTo(ipPkt.destinationIP, linkMtu);
+    if (ipPkt.totalLength <= mtu) return [ipPkt];
+    if ((ipPkt.flags & IPV4_FLAG_DF) !== 0) {
+      this.protocolCounters.ipFragFails++;
+      return null;
+    }
+    const fragments = fragmentIPv4(ipPkt, mtu);
+    this.protocolCounters.ipFragOKs++;
+    this.protocolCounters.ipFragCreates += fragments.length;
+    return fragments;
+  }
 
   public udpListen(port: number, processName: string, owner: { pid?: number; uid?: number }): Errno | null {
     try {
@@ -3781,10 +3855,16 @@ export abstract class EndHost extends Equipment {
       throw new Error('blocked by firewall');
     }
 
-    this.sendFrame(portName, {
-      srcMAC: port.getMAC(), dstMAC: targetMAC,
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    });
+    const packets = this.fragmentsForEgress(ipPkt, port.getMTU());
+    if (!packets) {
+      throw new Error(`local error: message too long, mtu=${this.pathMtuTo(targetIP, port.getMTU())}`);
+    }
+    for (const packet of packets) {
+      this.sendFrame(portName, {
+        srcMAC: port.getMAC(), dstMAC: targetMAC,
+        etherType: ETHERTYPE_IPV4, payload: packet,
+      });
+    }
 
     const replyOutcome = replyPromise.then((r) => ({ kind: 'reply' as const, r }));
     const failedOutcome = failedPromise.then((r) => ({ kind: 'failed' as const, r }));
@@ -4125,14 +4205,15 @@ export abstract class EndHost extends Equipment {
 
   echoRouteFor(targetIP: IPAddress, socket: TraceSocketOptions): EchoRoute | null {
     if (this.isLocalAddress(targetIP)) {
-      return { source: socket.sourceIp ?? targetIP, iface: 'lo', mtu: LOOPBACK_ECHO_MTU };
+      return { source: socket.sourceIp ?? targetIP, iface: 'lo', mtu: LOOPBACK_ECHO_MTU, mtuLocked: false };
     }
     const route = this.traceRouteFor(targetIP, socket);
     if (route === null || !route.port.getIsUp()) return null;
     return {
       source: socket.sourceIp ?? route.port.getIPAddress() ?? null,
       iface: route.iface,
-      mtu: route.port.getMTU(),
+      mtu: this.pathMtuTo(targetIP, route.port.getMTU()),
+      mtuLocked: this.pathMtuException(targetIP)?.locked ?? false,
     };
   }
 

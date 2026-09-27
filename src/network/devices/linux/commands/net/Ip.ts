@@ -117,8 +117,12 @@ export function buildIpCtx(
   linkOps?: IpLinkOpsContext,
   netns?: IpNetnsContext,
   maddr?: IpMaddrContext,
+  currentUid: () => number = () => 0,
 ): IpNetworkContext {
   return {
+    routeLookupFacts(dest: IPAddress) {
+      return { local: net.isLocalAddress(dest), uid: currentUid(), pmtu: net.pathMtuException(dest) };
+    },
     // Any local port answers this: a port belongs to the machine that
     // owns it, so there is nothing further to inject.
     getLocalDevice(): object | null {
@@ -470,7 +474,8 @@ export const ipCommand: LinuxCommand = {
       if (!name || !cmdLine) return 'Usage: ip netns exec NAME cmd...';
       return ctx.netns.exec(name, cmdLine);
     }
-    const ipCtx = buildIpCtx(ctx.net, ctx.xfrm, ctx.greAgent, ctx.linkOps, ctx.netns, ctx.maddr);
+    const ipCtx = buildIpCtx(ctx.net, ctx.xfrm, ctx.greAgent, ctx.linkOps, ctx.netns, ctx.maddr,
+      () => ctx.executor.userMgr.currentUid);
     // Seul `-c=auto` consulte ce drapeau ; les autres formes de `-c`
     // tranchent d'elles-mêmes.
     const out = executeIpCommand(ipCtx, args, ctx.outputPiped === true);

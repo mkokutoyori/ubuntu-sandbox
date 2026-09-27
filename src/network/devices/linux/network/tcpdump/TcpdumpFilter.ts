@@ -192,11 +192,11 @@ class Parser {
       case 'arp':
         return { ok: true, predicate: (f) => f.l3 === 'arp' };
       case 'tcp':
-        return this.protoOrPort((f) => f.l4 === 'tcp', dir, 'tcp');
+        return this.protoOrPort((f) => f.l4 === 'tcp' || f.ipProtocol === IP_PROTO_TCP, dir, 'tcp');
       case 'udp':
-        return this.protoOrPort((f) => f.l4 === 'udp', dir, 'udp');
+        return this.protoOrPort((f) => f.l4 === 'udp' || f.ipProtocol === IP_PROTO_UDP, dir, 'udp');
       case 'icmp':
-        return this.maybeSlice((f) => f.l4 === 'icmp');
+        return this.maybeSlice((f) => f.l4 === 'icmp' || (f.l3 === 'ipv4' && f.ipProtocol === IP_PROTO_ICMP));
       case 'icmp6':
         return { ok: true, predicate: (f) => f.l4 === 'icmp6' };
       case 'vlan':
