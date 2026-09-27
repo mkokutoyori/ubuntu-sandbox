@@ -7,10 +7,12 @@ export type ShortOption =
 export type GetoptFailure = Extract<ShortOption, { kind: 'invalid' | 'missing-argument' }>;
 
 export function* shortOptions(args: readonly string[], optstring: string): Generator<ShortOption> {
+  const stopAtFirstOperand = optstring.startsWith('+');
   let optionsEnded = false;
   for (let i = 0; i < args.length; i++) {
     const token = args[i];
     if (optionsEnded || token === '-' || !token.startsWith('-')) {
+      if (stopAtFirstOperand) optionsEnded = true;
       yield { kind: 'operand', value: token };
       continue;
     }
@@ -21,13 +23,17 @@ export function* shortOptions(args: readonly string[], optstring: string): Gener
     for (let j = 1; j < token.length; j++) {
       const letter = token[j];
       const at = optstring.indexOf(letter);
-      if (at < 0 || letter === ':') {
+      if (at < 0 || letter === ':' || (stopAtFirstOperand && at === 0)) {
         yield { kind: 'invalid', letter };
         continue;
       }
       if (optstring[at + 1] !== ':') {
         yield { kind: 'option', letter };
         continue;
+      }
+      if (optstring[at + 2] === ':') {
+        yield j + 1 < token.length ? { kind: 'option', letter, argument: token.slice(j + 1) } : { kind: 'option', letter };
+        break;
       }
       if (j + 1 < token.length) yield { kind: 'option', letter, argument: token.slice(j + 1) };
       else if (i + 1 < args.length) yield { kind: 'option', letter, argument: args[++i] };

@@ -596,7 +596,7 @@ export class BashInterpreter {
         const savedNonLastStage = this.nonLastPipelineStage;
         if (!isLast) this.nonLastPipelineStage = true;
         try {
-          if (cmd.type === 'SimpleCommand' && pipeInput) {
+          if (cmd.type === 'SimpleCommand' && i > 0) {
             yield* this.visitSimpleCommandWithInput(cmd, pipeInput);
           } else if (pipeInput && (cmd.type === 'WhileClause' || cmd.type === 'UntilClause')) {
             // `producer | while read line; do …; done` — feed the prior
@@ -630,7 +630,7 @@ export class BashInterpreter {
     if (pipeInput) this.output.push(pipeInput);
     // Every stage's fd 2 bypasses the pipe and reaches the terminal
     // directly, like real concurrent processes sharing the inherited fd 2.
-    const pipelineStderr = this.stderrParts.slice(stderrMarker).join('');
+    const pipelineStderr = this.stderrParts.slice(stderrMarker).map(ensureTrailingNewline).join('');
     if (pipelineStderr) this.output.push(pipelineStderr);
     if (this.isPipefail()) {
       const nonZero = stageCodes.filter(c => c !== 0);
@@ -659,7 +659,7 @@ export class BashInterpreter {
   // ─── Simple Command ───────────────────────────────────────────
 
   private *visitSimpleCommand(node: SimpleCommand): Effects<void> {
-    yield* this.visitSimpleCommandWithInput(node, '');
+    yield* this.visitSimpleCommandWithInput(node, undefined);
   }
 
   private procSubCounter = 63;
@@ -733,12 +733,12 @@ export class BashInterpreter {
     }
   }
 
-  private *visitSimpleCommandWithInput(rawNode: SimpleCommand, pipeInput: string): Effects<void> {
+  private *visitSimpleCommandWithInput(rawNode: SimpleCommand, pipeInput: string | undefined): Effects<void> {
     yield* this.fireSignalTrap('DEBUG');
     const node = this.materializeProcSubs(rawNode);
 
     // Check for input redirection (< file), herestring (<<<), or heredoc (<<)
-    if (!pipeInput) {
+    if (pipeInput === undefined) {
       for (const redir of node.redirections) {
         if (redir.op === '<' && this.io) {
           const target = yield* this.expandWordG(redir.target);
@@ -755,7 +755,7 @@ export class BashInterpreter {
       }
     }
 
-    if (!pipeInput && this.loopStdin) {
+    if (pipeInput === undefined && this.loopStdin) {
       const head = node.words[0];
       if (head && head.type === 'LiteralWord' && head.value === 'read') {
         pipeInput = this.loopStdin.length > 0 ? this.loopStdin.shift()! + '\n' : '';
@@ -871,7 +871,7 @@ export class BashInterpreter {
       const outputPiped = stdoutRedirected || this.nonLastPipelineStage;
       const result = normalizeResult(yield {
         argv: fullArgs, env: envSnapshot, background, outputPiped,
-        stdin: pipeInput || undefined,
+        stdin: pipeInput,
       });
       if (result.backgroundPid !== undefined) {
         this.env.set('!', String(result.backgroundPid));
@@ -1045,7 +1045,7 @@ export class BashInterpreter {
     const fullArgs = pipeInput ? [...target, pipeInput] : target;
     const envSnapshot = this.childEnvironment([]);
     const result = normalizeResult(yield {
-      argv: fullArgs, env: envSnapshot, stdin: pipeInput || undefined,
+      argv: fullArgs, env: envSnapshot, stdin: pipeInput,
     });
     if (result.output) this.output.push(result.output);
     this.env.lastExitCode = result.exitCode;

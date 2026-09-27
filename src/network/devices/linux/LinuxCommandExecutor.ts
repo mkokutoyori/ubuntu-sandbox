@@ -51,6 +51,7 @@ import {
   type ArchiveCtx,
 } from './coreutils';
 import { cmdDiff } from './coreutils/DiffCommand';
+import { runXargs } from './coreutils/Xargs';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 import {
@@ -3431,7 +3432,7 @@ export class LinuxCommandExecutor {
         if (cmd0 === 'run-parts') return this.handleRunPartsAsync(rest);
         if (cmd0.startsWith('./') || cmd0.startsWith('/')) {
           return this.runDirectScriptAsync(cmd0, rest).then(
-            (r) => r ?? this.dispatchFromInterpreter(effective, env, background),
+            (r) => r ?? this.dispatchFromInterpreter(effective, env, background, outputPiped, stdin),
           );
         }
         return null;
@@ -3448,7 +3449,7 @@ export class LinuxCommandExecutor {
         return this.runSshTransportAsync(transfer.cmd, transfer.args, transfer.password, stdin);
       }
     }
-    return this.dispatchFromInterpreter(argv, env, background);
+    return this.dispatchFromInterpreter(argv, env, background, outputPiped, stdin);
   }
 
   /**
@@ -3918,6 +3919,8 @@ export class LinuxCommandExecutor {
         && actualArgs[actualArgs.length - 1] === interpreterStdin) {
       stdin = interpreterStdin;
       actualArgs.pop();
+    } else if (interpreterStdin === '') {
+      stdin = '';
     } else if (actualArgs.length > 0) {
       const lastArg = actualArgs[actualArgs.length - 1];
       // Heuristic: if last arg contains newlines, it's likely pipe input
@@ -5481,8 +5484,8 @@ export class LinuxCommandExecutor {
       case 'sha256sum':
       case 'sha1sum': {
         const checkMode = args.includes('-c') || args.includes('--check');
-        const targets = args.filter(a => !a.startsWith('-'));
-        if (!targets.length) return { output: `${cmd}: missing file operand`, exitCode: 1 };
+        const named = args.filter(a => a === '-' || !a.startsWith('-'));
+        const targets = named.length > 0 ? named : ['-'];
         if (checkMode) {
           const checksumFile = this.vfs.readFile(this.vfs.normalizePath(targets[0], this.cwd));
           if (checksumFile === null) return { output: `${cmd}: ${targets[0]}: No such file or directory`, exitCode: 1 };
@@ -5504,8 +5507,7 @@ export class LinuxCommandExecutor {
         }
         const lines: string[] = [];
         for (const target of targets) {
-          const resolved = this.vfs.normalizePath(target, this.cwd);
-          const content = this.vfs.readFile(resolved);
+          const content = target === '-' ? stdin ?? '' : this.vfs.readFile(this.vfs.normalizePath(target, this.cwd));
           if (content === null) { lines.push(`${cmd}: ${target}: No such file or directory`); continue; }
           lines.push(`${checksumVfs(content, cmd)}  ${target}`);
         }
@@ -5589,9 +5591,11 @@ export class LinuxCommandExecutor {
       case 'ssh-keygen':  return this.runSshKeygen(args);
       case 'ssh-copy-id': return this.runSshCopyId(args);
       case 'xargs': {
-        if (!stdin) return { output: '', exitCode: 0 };
-        const xCmd = args[0] || 'echo';
-        return { output: stdin.split('\n').filter(l => l.trim()).map(l => `${xCmd} ${l.trim()}`).join('\n'), exitCode: 0 };
+        const r = runXargs(args, stdin, {
+          run: (argv) => this.dispatch(argv[0], argv.slice(1), undefined, isSudo),
+          readFile: (path) => this.vfs.readFile(this.vfs.normalizePath(path, this.cwd)),
+        });
+        return { output: r.stdout, exitCode: r.exitCode, stderr: r.stderr } as { output: string; exitCode: number };
       }
       // alias / unalias / type / set / unset / declare / local / readonly
       // are shell builtins resolved inside the bash interpreter; they only
