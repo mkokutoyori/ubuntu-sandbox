@@ -41,7 +41,7 @@ import {
 import type { PingResult, TracerouteHopResult } from '@/network/devices/EndHost';
 import { IPAddress } from '@/network/core/types';
 import {
-  openWireSshShell, silentConnectIo, wireReachOutcome,
+  openWireSshShell, silentConnectIo, wireReachOutcomeRetransmitting,
 } from '@/terminal/ssh/wireSshLogin';
 import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshells/SshInteractiveSubShell';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
@@ -1031,7 +1031,7 @@ export class WindowsTerminalSession extends TerminalSession {
       return true;
     }
     if (declared === undefined) {
-      const wire = wireReachOutcome(this.device, found.ip, port);
+      const wire = await wireReachOutcomeRetransmitting(this.device, found.ip, port);
       if (wire !== 'open') {
         this.addLine(sshWireFailureLine(OPENSSH_SSH, wire, host, port));
         return true;

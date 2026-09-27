@@ -6,6 +6,7 @@ import { makeArgCompleter } from '../completionHelpers';
 import { PortNumber } from '../../../../core/ports/PortNumber';
 import { strerror, type Errno } from '../../../../core/Errno';
 import { connectErrno } from '../../../../tcp/types';
+import { retransmitSilentSyn } from '../../../../tcp/SynRetransmission';
 import { getoptDiagnostic, shortOptions } from '../Getopt';
 
 const OPTSTRING = '46C:cDde:FH:hI:i:K:klM:m:NnO:o:P:p:q:R:rSs:T:tUuV:vW:w:X:x:Z:z';
@@ -97,6 +98,8 @@ interface NcOptions {
   randomize: boolean;
   sourcePort?: string;
   sourceAddress?: string;
+  intervalSeconds?: number;
+  timeoutMs?: number;
   operands: string[];
 }
 
@@ -114,9 +117,10 @@ function strtonum(text: string, min: number, max: number): { value: number } | {
   return { value };
 }
 
-function checkedNumber(text: string, min: number, max: number, label: string): void {
+function checkedNumber(text: string, min: number, max: number, label: string): number {
   const r = strtonum(text, min, max);
   if ('error' in r) throw new NcExit([`nc: ${label} ${r.error}: ${text}`]);
+  return r.value;
 }
 
 function usageExit(before: string[] = []): NcExit {
@@ -138,7 +142,7 @@ function parseNcArgs(args: readonly string[]): NcOptions {
       case 'D': case 'N': case 't': break;
       case 'd': opts.detachStdin = true; break;
       case 'h': throw new NcExit([HELP]);
-      case 'i': checkedNumber(argument!, 0, UINT_MAX, 'interval'); break;
+      case 'i': opts.intervalSeconds = checkedNumber(argument!, 0, UINT_MAX, 'interval'); break;
       case 'k': opts.keep = true; break;
       case 'l': opts.listen = true; break;
       case 'n': opts.numeric = true; break;
@@ -149,7 +153,7 @@ function parseNcArgs(args: readonly string[]): NcOptions {
       case 'u': opts.udp = true; break;
       case 'v': opts.verbose = true; break;
       case 'W': checkedNumber(argument!, 1, INT_MAX, 'receive limit'); break;
-      case 'w': checkedNumber(argument!, 0, Math.floor(INT_MAX / 1000), 'timeout'); break;
+      case 'w': opts.timeoutMs = checkedNumber(argument!, 0, Math.floor(INT_MAX / 1000), 'timeout') * 1000; break;
       case 'X':
         if (!['connect', '4', '4a', '5'].includes(argument!.toLowerCase())) {
           throw new NcExit(['nc: unsupported proxy protocol']);
@@ -254,7 +258,8 @@ function udpTest(send: () => Errno | null): boolean {
   return answered;
 }
 
-function runConnect(ctx: LinuxCommandContext, opts: NcOptions, stdin: string, out: NcOutput): number {
+async function runConnect(ctx: LinuxCommandContext, opts: NcOptions, stdin: string, out: NcOutput): Promise<number> {
+  const wait = (ms: number): Promise<void> => ctx.net.getScheduler().delay(ms);
   if (opts.operands.length !== 2) throw usageExit();
   const [host, portText] = opts.operands;
   const ports = buildPorts(ctx, portText, opts.randomize);
@@ -297,7 +302,9 @@ function runConnect(ctx: LinuxCommandContext, opts: NcOptions, stdin: string, ou
       if (opts.verbose) out.write('stderr', connectFailure(host, address, port, proto, 'EADDRNOTAVAIL', opts));
       continue;
     }
-    const exchange = ctx.net.tcpExchange(target, port, payload, { sourcePort, sourceIP });
+    const exchange = await retransmitSilentSyn(
+      () => ctx.net.tcpExchange(target, port, payload, { sourcePort, sourceIP }),
+      (attempt) => attempt.outcome === 'timeout', wait, opts.timeoutMs);
     if (exchange.outcome !== 'open') {
       if (opts.verbose) {
         out.write('stderr', connectFailure(host, address, port, proto, connectErrno(exchange.outcome), opts));
@@ -306,6 +313,7 @@ function runConnect(ctx: LinuxCommandContext, opts: NcOptions, stdin: string, ou
     }
     ret = 0;
     if (opts.verbose) out.write('stderr', connectionInfo(ctx, host, address, port, proto, opts));
+    if (!opts.zero && opts.intervalSeconds) await wait(opts.intervalSeconds * 1000);
     if (!opts.zero && exchange.received !== '') out.write('stdout', exchange.received.replace(/\r?\n$/, ''));
   }
   return ret;
@@ -353,11 +361,11 @@ function openTcpListener(ctx: LinuxCommandContext, port: number, ownerUid: numbe
   }
 }
 
-function runNc(ctx: LinuxCommandContext, args: string[], stdin = ''): NcResult {
+async function runNc(ctx: LinuxCommandContext, args: string[], stdin = ''): Promise<NcResult> {
   const out = new NcOutput();
   try {
     const opts = parseNcArgs(args);
-    const code = opts.listen ? runListen(ctx, opts, out) : runConnect(ctx, opts, stdin, out);
+    const code = opts.listen ? runListen(ctx, opts, out) : await runConnect(ctx, opts, stdin, out);
     return out.finish(code);
   } catch (error) {
     if (!(error instanceof NcExit)) throw error;
@@ -390,12 +398,12 @@ export const ncCommand: LinuxCommand = {
     { flag: '-w', description: 'Timeout for connects and final net reads', takesArg: true, argName: 'timeout' },
   ],
 
-  run(ctx: LinuxCommandContext, args: string[], stdin?: string): string {
-    return runNc(ctx, args, stdin).combined;
+  async run(ctx: LinuxCommandContext, args: string[], stdin?: string): Promise<string> {
+    return (await runNc(ctx, args, stdin)).combined;
   },
 
-  runWithStatusSync(ctx: LinuxCommandContext, args: string[], stdin?: string) {
-    const result = runNc(ctx, args, stdin);
+  async runWithStatus(ctx: LinuxCommandContext, args: string[], stdin?: string) {
+    const result = await runNc(ctx, args, stdin);
     return { output: result.stdout, exitCode: result.exitCode, stderr: result.stderr };
   },
 };

@@ -96,12 +96,22 @@ import {
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import { CiscoFileSystem } from './shells/cisco/CiscoFileSystem';
+import { IcmpUnreachableRateLimit } from './router/IcmpUnreachableRateLimit';
+import { icmpUnreachablePayload } from './host/icmpUnreachablePayload';
+import type { HostIcmpUnreachablePayload } from './host/events';
+import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
 import { evaluateIpv6Acl, formatIpv6AclLogMessage } from './router/Ipv6AclEngine';
+
+const EPHEMERAL_TRACE_PORT_BASE = 49152;
+const EPHEMERAL_TRACE_PORT_SPAN = 16384;
 
 /** One probe of one hop, as both traceroute implementations report it. */
 export interface TracerouteProbe {
   responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean;
+  code?: HostIcmpUnreachablePayload['code'];
 }
+
+export type TraceProbeKind = { readonly kind: 'icmp' } | { readonly kind: 'udp'; readonly basePort: number };
 export interface TracerouteHop {
   hop: number; ip?: string; rttMs?: number; timeout: boolean;
   unreachable?: boolean; probes: TracerouteProbe[];
@@ -514,6 +524,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   // ── Reactive (Phase 5.8) — scheduler + TimerSet + event helpers ──
   private routerScheduler: IScheduler | null = null;
   protected readonly routerTimers = new TimerSet(() => this.getRouterScheduler());
+  readonly icmpUnreachableRateLimit = new IcmpUnreachableRateLimit(
+    this.unreachableRateLimitDefaultMs(), () => this.getRouterScheduler().now());
   /** In-flight ARP solicitations for forwarding — dedup signal that replaces
    *  pendingARPs use as a "request-already-sent" check (Phase 5.8). */
   private inFlightFwdARPs: Set<string> = new Set();
@@ -1443,6 +1455,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   /** Return the active scheduler — injected one, or the singleton default. */
+  protected unreachableRateLimitDefaultMs(): number | null {
+    return null;
+  }
+
   protected getRouterScheduler(): IScheduler {
     return this.routerScheduler ?? this.getScheduler();
   }
@@ -2758,6 +2774,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const icmp = ipPkt.payload as ICMPPacket;
       if (!icmp || icmp.type !== 'icmp') return;
 
+      if (icmp.icmpType === 'time-exceeded' || icmp.icmpType === 'destination-unreachable') {
+        this.getBus().publish({
+          topic: 'host.icmp.unreachable',
+          payload: icmpUnreachablePayload(this.routerRef(), ipPkt, icmp),
+        });
+      }
+
       if (icmp.icmpType === 'echo-request') {
         const port = this.ports.get(inPort);
         if (!port) return;
@@ -3356,6 +3379,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!myIP) return;
 
     if (this.icmpTypeSuppressedByLocalAcl(icmpType)) return;
+    if (icmpType === 'destination-unreachable' && !this.icmpUnreachableRateLimit.admit(code)) return;
 
     const errorIP = buildICMPError(
       myIP, offendingPkt, icmpType, code, this.defaultTTL,
@@ -5743,7 +5767,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     timeoutMs: number = 2000,
     probesPerHop: number = 3,
     firstTtl: number = 1,
-  ): Promise<Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> }>> {
+    probeKind: TraceProbeKind = { kind: 'icmp' },
+  ): Promise<TracerouteHop[]> {
     const route = this.lookupRoute(targetIP);
     if (!route) return [];
 
@@ -5762,13 +5787,24 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (!nextHopMAC) return [{ hop: 1, timeout: true, probes: [{ responded: false }] }];
     }
 
-    const hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> }> = [];
+    const hops: TracerouteHop[] = [];
+    const udpSourcePort = EPHEMERAL_TRACE_PORT_BASE + (++this.pingIdCounter % EPHEMERAL_TRACE_PORT_SPAN);
+    let udpPort = probeKind.kind === 'udp' ? probeKind.basePort : 0;
 
     for (let ttl = firstTtl; ttl <= maxHops; ttl++) {
-      const probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> = [];
+      const probes: TracerouteProbe[] = [];
       let destinationReached = false;
 
       for (let p = 0; p < probesPerHop; p++) {
+        if (probeKind.kind === 'udp') {
+          const outcome = await this.udpTraceProbe({
+            iface: route.iface, outPort, nextHopMAC: nextHopMAC!, source: myIP, target: targetIP,
+            ttl, sourcePort: udpSourcePort, destinationPort: udpPort++, timeoutMs,
+          });
+          probes.push(outcome.probe);
+          if (outcome.reached) destinationReached = true;
+          continue;
+        }
         this.pingIdCounter++;
         const id = this.pingIdCounter;
         const seq = p + 1;
@@ -5855,6 +5891,40 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
 
     return hops;
+  }
+
+  private async udpTraceProbe(request: {
+    iface: string; outPort: Port; nextHopMAC: MACAddress; source: IPAddress; target: IPAddress;
+    ttl: number; sourcePort: number; destinationPort: number; timeoutMs: number;
+  }): Promise<{ probe: TracerouteProbe; reached: boolean }> {
+    const sentAt = performance.now();
+    const answer = waitForEvent(
+      this.getBus(),
+      'host.icmp.unreachable',
+      (pl) => pl.deviceId === this.id && pl.origProtocol === IP_PROTO_UDP
+        && pl.origDestPort === request.destinationPort,
+      { timeoutMs: request.timeoutMs, scheduler: this.getRouterScheduler() },
+    );
+    answer.catch(() => {});
+    this.sendFrame(request.iface, {
+      srcMAC: request.outPort.getMAC(),
+      dstMAC: request.nextHopMAC,
+      etherType: ETHERTYPE_IPV4,
+      payload: buildUdpOverIpv4(request.source, {
+        destination: request.target, destinationPort: request.destinationPort,
+        sourcePort: request.sourcePort, payload: null, payloadBytes: 0, ttl: request.ttl,
+      }),
+    });
+    try {
+      const reply = await answer;
+      const probe: TracerouteProbe = { responded: true, rttMs: performance.now() - sentAt, ip: reply.fromIp };
+      if (reply.code === 'ttl-exceeded') return { probe, reached: false };
+      if (reply.code === 'port-unreachable') return { probe, reached: true };
+      return { probe: { ...probe, unreachable: true, code: reply.code }, reached: false };
+    } catch (err) {
+      if (err instanceof WaitForEventTimeoutError) return { probe: { responded: false }, reached: false };
+      throw err;
+    }
   }
 
   /** @internal Resolve ARP for ping, returns MAC or null on timeout */

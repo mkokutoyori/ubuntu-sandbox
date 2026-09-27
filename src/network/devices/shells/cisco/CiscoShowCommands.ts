@@ -841,7 +841,10 @@ export function showRunningConfig(router: Router): string {
     lines.push('!');
   }
 
-  const globalLines = globalConfigRunningConfigLines(router);
+  const globalLines = [
+    ...globalConfigRunningConfigLines(router),
+    ...(router.icmpUnreachableRateLimit?.runningConfigLines() ?? []),
+  ];
   if (globalLines.length > 0) { lines.push('!'); lines.push(...globalLines); }
 
   const pimLines = pimGlobalRunningConfigLines(router);

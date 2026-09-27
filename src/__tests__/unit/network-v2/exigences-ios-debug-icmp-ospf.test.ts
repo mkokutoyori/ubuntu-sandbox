@@ -288,7 +288,7 @@ describe('Exigence 5 — chaque caractère de ping est une réponse ICMP précis
     await run(r2, 'ip access-group 101 in');
     await run(r2, 'end');
     const out = await run(r1, 'ping 10.0.0.2');
-    expect(out).toMatch(/U{2,}/);
+    expect(out).toContain('\nU.U.U\n');
   });
 });
 

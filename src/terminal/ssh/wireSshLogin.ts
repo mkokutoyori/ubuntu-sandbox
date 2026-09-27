@@ -31,6 +31,8 @@ import { IPAddress } from '@/network/core/types';
 import { parseDialAddress } from '@/network/tcp/dial';
 import type { TcpFlags, TcpWireOutcome } from '@/network/tcp/types';
 import type { StatelessProbeReply } from '@/network/tcp/TcpStack';
+import { retransmitSilentSyn } from '@/network/tcp/SynRetransmission';
+import { getDefaultScheduler } from '@/events/Scheduler';
 
 type WireProbeDevice = {
   getTcpStack(): {
@@ -59,6 +61,16 @@ export function wireReachOutcome(
     fin: false, syn: true, rst: false, psh: false, ack: false, urg: false, ece: false, cwr: false,
   };
   return OUTCOME_OF_REPLY[stack.scanProbe(destIp, port, syn)];
+}
+
+export function wireReachOutcomeRetransmitting(
+  device: object | null | undefined, destIp: string, port: number,
+): Promise<TcpWireOutcome> {
+  return retransmitSilentSyn(
+    () => wireReachOutcome(device, destIp, port),
+    (outcome) => outcome === 'timeout',
+    (ms) => getDefaultScheduler().delay(ms),
+  );
 }
 
 
