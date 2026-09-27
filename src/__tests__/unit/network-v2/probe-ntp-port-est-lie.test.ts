@@ -115,7 +115,7 @@ describe('un demon qui tourne tient son port', () => {
     const { scanner, cible } = await segment();
 
     const ss = await taper(cible, 'ss -lun');
-    const rapport = await taper(scanner, 'nmap -Pn -sU -p 123 10.0.0.2');
+    const rapport = await taper(scanner, 'sudo nmap -Pn -sU -p 123 10.0.0.2');
 
     expect(ss).toMatch(/0\.0\.0\.0:123/);
     expect(etatUdp(rapport, 123)).toBe('open|filtered');
@@ -137,7 +137,7 @@ describe('un demon arrete rend son port', () => {
     await taper(cible, 'sudo systemctl stop chrony');
     await taper(cible, 'tcpdump -nn -i eth0 icmp -w ntp.pcap &');
 
-    const rapport = await taper(scanner, 'nmap -Pn -sU --reason -p 123 10.0.0.2');
+    const rapport = await taper(scanner, 'sudo nmap -Pn -sU --reason -p 123 10.0.0.2');
     const capture = await taper(cible, 'tcpdump -r ntp.pcap -nn');
 
     expect(etatUdp(rapport, 123)).toBe('closed');
@@ -160,7 +160,7 @@ describe('TEMOIN', () => {
   it('un port UDP que personne ne tient repond deja ferme', async () => {
     const { scanner } = await segment();
 
-    const rapport = await taper(scanner, 'nmap -Pn -sU --reason -p 161 10.0.0.2');
+    const rapport = await taper(scanner, 'sudo nmap -Pn -sU --reason -p 161 10.0.0.2');
 
     expect(etatUdp(rapport, 161)).toBe('closed');
     expect(rapport).toContain('port-unreach');

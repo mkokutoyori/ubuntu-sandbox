@@ -13,8 +13,8 @@ export type IngressDecision =
 export interface Ipv4IngressHost {
   readonly l3: L3Services;
   readonly captivePortal: CaptivePortalRedirect;
-  ownsAddress(address: string): boolean;
-  decapsulate(packet: IPv4Packet): { tunnel: string; inner: IPv4Packet } | null;
+  ownsAddress(vdom: VdomContext, address: string): boolean;
+  decapsulate(vdom: VdomContext, packet: IPv4Packet): { tunnel: string; inner: IPv4Packet } | null;
   hasSession(vdom: VdomContext, packet: IPv4Packet): boolean;
   destinedToSelf(vdom: VdomContext, packet: IPv4Packet): boolean;
   destinationIsTranslated(iface: string, packet: IPv4Packet): boolean;
@@ -25,15 +25,15 @@ export interface IngressWiring {
   readonly captivePortal: CaptivePortalRedirect;
   readonly interfaces: { owningInterface(address: string): string | undefined };
   vdomOf(iface: string): VdomContext;
-  decapsulate(packet: IPv4Packet): { tunnel: string; inner: IPv4Packet } | null;
+  decapsulate(vdom: VdomContext, packet: IPv4Packet): { tunnel: string; inner: IPv4Packet } | null;
 }
 
 export function ingressHostOf(wiring: IngressWiring): Ipv4IngressHost {
   return {
     l3: wiring.l3,
     captivePortal: wiring.captivePortal,
-    ownsAddress: (a) => wiring.interfaces.owningInterface(a) !== undefined,
-    decapsulate: (p) => wiring.decapsulate(p),
+    ownsAddress: (vdom, a) => ownedIn(wiring, vdom, a),
+    decapsulate: (vdom, p) => wiring.decapsulate(vdom, p),
     hasSession: (vdom, p) => {
       if (vdom.sessions.lookup(flowKeyFromPacket(p)) !== undefined) return true;
       const related = icmpErrorFlowKey(p);
@@ -50,7 +50,12 @@ function destinedToSelf(
 ): boolean {
   const destination = packet.destinationIP.toString();
   if (vdom.settings.opmode === 'transparent') return vdom.settings.manageIP === destination;
-  return wiring.interfaces.owningInterface(destination) !== undefined;
+  return ownedIn(wiring, vdom, destination);
+}
+
+function ownedIn(wiring: IngressWiring, vdom: VdomContext, address: string): boolean {
+  const owner = wiring.interfaces.owningInterface(address);
+  return owner !== undefined && wiring.vdomOf(owner).name === vdom.name;
 }
 
 function destinationIsTranslated(
@@ -76,8 +81,8 @@ export function classifyIpv4(
   }
 
   if (packet.protocol === IP_PROTO_ESP
-    && host.ownsAddress(packet.destinationIP.toString())) {
-    const opened = host.decapsulate(packet);
+    && host.ownsAddress(vdom, packet.destinationIP.toString())) {
+    const opened = host.decapsulate(vdom, packet);
     return opened === null
       ? { kind: 'consumed' }
       : { kind: 'decapsulated', tunnel: opened.tunnel, inner: opened.inner };

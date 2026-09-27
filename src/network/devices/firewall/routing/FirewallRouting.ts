@@ -20,7 +20,7 @@ import {
 } from './AccessList';
 import { IpPrefixListStore } from '../../router/policy/IpPrefixList';
 import type { IEventBus } from '../../../../events/EventBus';
-import type { TcpStack } from '../../../tcp/TcpStack';
+import type { TcpSocket, TcpStack } from '../../../tcp/TcpStack';
 import {
   OSPF_DEFAULTS, RIP_DEFAULTS,
   type BgpConfiguration, type OspfConfiguration, type RipConfiguration,
@@ -52,6 +52,7 @@ export interface FirewallRoutingDeps {
   readonly removeRoutes: (source: RoutingSource) => void;
   readonly resolvedMac: (ip: string) => MACAddress | undefined;
   readonly tcp: () => TcpStack;
+  readonly listenBgp: (accept: (socket: TcpSocket) => void) => void;
 }
 
 export type RoutingSource = 'rip' | 'ospf' | 'bgp';
@@ -83,6 +84,7 @@ export class FirewallRouting {
       connectedRoutes: deps.connectedRoutes,
       installRoute: (route) => { deps.installRoute({ ...route, source: 'bgp' }); },
       removeRoutes: () => { deps.removeRoutes('bgp'); },
+      listen: deps.listenBgp,
     });
   }
 

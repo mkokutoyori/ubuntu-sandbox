@@ -12,6 +12,7 @@ import { bogusChecksum, payloadBytes } from '@/network/layers/transport/L4Checks
 import { type StreamPayload, isStreamPayload, sliceStream, appendStream } from './StreamPayload';
 import { fragmentIPv4, IPV4_FLAG_DF } from '@/network/core/Ipv4Fragmentation';
 import { PortNumber, PORT_ANY } from '@/network/core/ports/PortNumber';
+import type { PortBindingPolicy } from '@/network/core/ports/PortBindingPolicy';
 import { PROHIBITED_UNREACH_CODES } from '@/network/core/IcmpErrors';
 
 /**
@@ -108,6 +109,16 @@ interface StatelessProbeWatch {
   localPort: number;
   destIp: string;
   destPort: number;
+}
+
+export function receivedIpHeaderOf(ipPkt: IPv4Packet): ReceivedIpHeader {
+  return {
+    ttl: ipPkt.ttl,
+    identification: ipPkt.identification,
+    tos: ipPkt.tos,
+    totalLength: ipPkt.totalLength,
+    dontFragment: (ipPkt.flags & 0b010) !== 0,
+  };
 }
 
 const NO_REPLY_IP_HEADER: ReceivedIpHeader = {
@@ -214,6 +225,7 @@ export interface TcpListenOptions {
    * les deux tables ne peuvent plus en diverger.
    */
   identity?: ListenerIdentity;
+  ownerUid?: number;
 }
 
 export class TcpSocket {
@@ -555,9 +567,19 @@ export class TcpStack {
 
   private socketSink: ListenerSocketSink | null = null;
 
+  private bindingPolicy: PortBindingPolicy | null = null;
+
+  setBindingPolicy(policy: PortBindingPolicy): void {
+    this.bindingPolicy = policy;
+  }
+
   listen(localPort: number, opts: TcpListenOptions, localIp = '0.0.0.0'): TcpListener {
     if (!PortNumber.isValid(localPort)) {
       throw new Error(`TCP listener port out of range: ${localPort} (EINVAL)`);
+    }
+    if (localPort !== PORT_ANY && opts.ownerUid !== undefined && this.bindingPolicy !== null
+      && !this.bindingPolicy.permits(localPort, { uid: opts.ownerUid })) {
+      throw new Error(`TCP listener on ${localIp}:${localPort} needs CAP_NET_BIND_SERVICE (EACCES)`);
     }
     const boundPort = localPort === PORT_ANY ? this.nextEphemeral(localIp) : localPort;
     if (boundPort < 0) {
@@ -691,8 +713,8 @@ export class TcpStack {
    * 'unreachable' when the attempt never left this machine because no
    * route resolves — ENETUNREACH, which a real stack reports at once.
    */
-  connectOutcome(remoteIp: string, remotePort: number): TcpWireOutcome {
-    const socket = this.connect(remoteIp, remotePort);
+  connectOutcome(remoteIp: string, remotePort: number, localPort?: PortNumber): TcpWireOutcome {
+    const socket = this.connect(remoteIp, remotePort, localPort === undefined ? {} : { localPort });
     if (!socket) return this.hasEgressTo(remoteIp) ? 'timeout' : 'unreachable';
     if (socket.everEstablished) {
       socket.close();
@@ -806,7 +828,7 @@ export class TcpStack {
 
   private noteStatelessUnreachable(
     origSourcePort: number, origDestPort: number, origDestIp: string,
-    icmpCode: number | undefined, icmpFrom?: string,
+    icmpCode: number | undefined, icmpFrom?: string, icmpHeader?: ReceivedIpHeader,
   ): void {
     for (const watch of this.statelessProbes.values()) {
       if (watch.localPort !== origSourcePort) continue;
@@ -818,13 +840,14 @@ export class TcpStack {
       watch.icmpType = ICMP_TYPE_DEST_UNREACH;
       watch.icmpCode = icmpCode;
       watch.icmpFrom = icmpFrom;
+      if (icmpHeader) watch.ip = { ...icmpHeader };
       return;
     }
   }
 
   noteProbeTimeExceeded(
     origSourcePort: number, origDestPort: number, origDestIp: string,
-    icmpCode: number, icmpFrom: string,
+    icmpCode: number, icmpFrom: string, icmpHeader?: ReceivedIpHeader,
   ): void {
     for (const watch of this.statelessProbes.values()) {
       if (watch.localPort !== origSourcePort) continue;
@@ -834,6 +857,7 @@ export class TcpStack {
       watch.icmpType = ICMP_TYPE_TIME_EXCEEDED;
       watch.icmpCode = icmpCode;
       watch.icmpFrom = icmpFrom;
+      if (icmpHeader) watch.ip = { ...icmpHeader };
       return;
     }
   }
@@ -853,7 +877,7 @@ export class TcpStack {
    */
   onIcmpUnreachable(
     origSourcePort: number, origDestPort: number, origDestIp: string,
-    icmpCode?: number, icmpFrom?: string,
+    icmpCode?: number, icmpFrom?: string, icmpHeader?: ReceivedIpHeader,
   ): void {
     for (const socket of this.sockets.values()) {
       if (socket.localPort !== origSourcePort) continue;
@@ -868,7 +892,7 @@ export class TcpStack {
       return;
     }
     this.noteStatelessUnreachable(
-      origSourcePort, origDestPort, origDestIp, icmpCode, icmpFrom);
+      origSourcePort, origDestPort, origDestIp, icmpCode, icmpFrom, icmpHeader);
   }
 
   /**
@@ -976,13 +1000,8 @@ export class TcpStack {
     if (ipPkt.protocol !== IP_PROTO_TCP) return false;
     const seg = ipPkt.payload as TcpSegment | undefined;
     if (!seg || seg.type !== 'tcp') return false;
-    return this.handleSegment(srcIp.toString(), ipPkt.destinationIP.toString(), seg, {
-      ttl: ipPkt.ttl,
-      identification: ipPkt.identification,
-      tos: ipPkt.tos,
-      totalLength: ipPkt.totalLength,
-      dontFragment: (ipPkt.flags & 0b010) !== 0,
-    });
+    return this.handleSegment(
+      srcIp.toString(), ipPkt.destinationIP.toString(), seg, receivedIpHeaderOf(ipPkt));
   }
 
   handleIp6(_inPort: string, srcIp: IPv6Address, ipv6: IPv6Packet): boolean {

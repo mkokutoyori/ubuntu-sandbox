@@ -2,6 +2,7 @@ export interface HuaweiHardwareProfile {
   readonly family: 'router' | 'switch';
   readonly model: string;
   readonly description: string;
+  readonly uptimeSubject: string;
   readonly softwareBranch: string;
   readonly versionString: string;
   readonly boardType: string;
@@ -32,6 +33,7 @@ export const AR2220_HARDWARE_PROFILE: HuaweiHardwareProfile = {
   family: 'router',
   model: 'AR2220',
   description: 'Huawei AR2220 Enterprise Router',
+  uptimeSubject: 'Huawei AR2220 Router',
   softwareBranch: 'V200R009C00SPC500',
   versionString: 'VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)',
   boardType: 'AR2220',
@@ -71,6 +73,7 @@ export const S5720_HARDWARE_PROFILE: HuaweiHardwareProfile = {
   family: 'switch',
   model: 'S5720-28X-LI-AC',
   description: 'Huawei S5720-28X-LI-AC Switch',
+  uptimeSubject: 'HUAWEI S5720-28X-LI-AC Routing Switch',
   softwareBranch: 'V200R019C10SPC500',
   versionString: 'VRP (R) software, Version 5.170 (S5720 V200R019C10SPC500)',
   boardType: 'S5720-28X-LI',
@@ -143,9 +146,21 @@ export function renderHardwareElabel(
   ].join('\n');
 }
 
+const VRP_UPTIME_UNITS: ReadonlyArray<readonly [string, number]> = [
+  ['week', 7 * 86_400_000], ['day', 86_400_000], ['hour', 3_600_000], ['minute', 60_000],
+];
+
+export function formatVrpUptime(uptimeMs: number): string {
+  let rest = Math.max(0, Math.floor(uptimeMs));
+  return VRP_UPTIME_UNITS.map(([unit, unitMs]) => {
+    const count = Math.floor(rest / unitMs);
+    rest -= count * unitMs;
+    return `${count} ${unit}${count > 1 ? 's' : ''}`;
+  }).join(', ');
+}
+
 export function renderHardwareVersion(
-  hostname: string,
-  uptime: string,
+  uptimeMs: number,
   profile: HuaweiHardwareProfile,
 ): string {
   return [
@@ -155,7 +170,7 @@ export function renderHardwareVersion(
     '',
     `BOARD TYPE:          ${profile.boardType}`,
     'BootROM Version:     1.0',
-    `${hostname} uptime is ${uptime}`,
+    `${profile.uptimeSubject} uptime is ${formatVrpUptime(uptimeMs)}`,
   ].join('\n');
 }
 

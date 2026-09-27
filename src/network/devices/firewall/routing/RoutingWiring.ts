@@ -6,7 +6,7 @@ import type { IEventBus } from '../../../../events/EventBus';
 import type { ConnectedRoute, InterfaceTable } from '../l3/InterfaceTable';
 import type { Port } from '../../../hardware/Port';
 import type { RouteTable } from '../l3/RouteTable';
-import type { TcpStack } from '../../../tcp/TcpStack';
+import type { TcpSocket, TcpStack } from '../../../tcp/TcpStack';
 import { FirewallRouting, ripPacketOf, type RoutingPortFacts } from './FirewallRouting';
 
 export type { FirewallRouting };
@@ -22,6 +22,7 @@ export interface RoutingWiringHost {
   emitFrame(iface: string, frame: EthernetFrame): void;
   emitArpAware(iface: string, packet: IPv4Packet, nextHop: IPAddress): void;
   tcp(): TcpStack;
+  listenBgp(accept: (socket: TcpSocket) => void): void;
 }
 
 export function createFirewallRouting(host: RoutingWiringHost): FirewallRouting {
@@ -45,6 +46,7 @@ export function createFirewallRouting(host: RoutingWiringHost): FirewallRouting 
     removeRoutes: (source) => { host.routes().removeStaticsBySource(source); },
     resolvedMac: (ip) => host.resolvedMac(ip),
     tcp: () => host.tcp(),
+    listenBgp: (accept) => { host.listenBgp(accept); },
   });
 }
 

@@ -2,7 +2,9 @@ import {
   NMAP_USAGE, NmapImmediateOutput, NmapOptionError, parseNmapArgs,
 } from './NmapOptions';
 import { scan } from './ScanEngine';
-import { renderNormal, renderGreppable, totalSeconds } from './NmapFormatter';
+import {
+  bannerLine, renderNormal, renderNormalFile, renderGreppable, totalSeconds, type NmapClock,
+} from './NmapFormatter';
 import { renderXml } from './NmapXml';
 import { buildScanProbes, type ScanHost } from './NmapProbes';
 import { IPAddress } from '@/network/core/types';
@@ -35,7 +37,7 @@ export async function runNmap(host: ScanHost, args: string[]): Promise<NmapRunRe
 
   let options;
   try {
-    options = parseNmapArgs(args);
+    options = parseNmapArgs(args, host.privileged);
   } catch (e) {
     // Une option refusee n'est pas un balayage rate, c'est un balayage
     // qui n'a pas eu lieu : rien n'est emis et aucun fichier n'est ecrit.
@@ -45,6 +47,13 @@ export async function runNmap(host: ScanHost, args: string[]): Promise<NmapRunRe
         : null;
     if (text === null) throw e;
     return refuse(text);
+  }
+
+  const clock: NmapClock = (format, atMs) => host.localTime(format, atMs);
+  if (options.fatalAfterBanner !== undefined) {
+    return refuse([
+      ...options.warnings, bannerLine(clock, Date.now()), options.fatalAfterBanner, 'QUITTING!',
+    ].join('\n'));
   }
 
   const interfaces = interfacesOf(host.device);
@@ -111,14 +120,13 @@ export async function runNmap(host: ScanHost, args: string[]): Promise<NmapRunRe
 
   const commandLine = `nmap ${args.join(' ')}`;
   const report = await scan(options, scanProbes);
-  const normal = renderNormal(report, options, commandLine);
 
   return {
-    output: normal,
-    normal,
-    greppable: options.outputGreppable ? renderGreppable(report, commandLine) : null,
+    output: renderNormal(report, options, commandLine, clock),
+    normal: renderNormalFile(report, options, commandLine, clock),
+    greppable: options.outputGreppable ? renderGreppable(report, commandLine, clock) : null,
     xml: options.outputXml
-      ? renderXml(report, options, commandLine, totalSeconds(report)) : null,
+      ? renderXml(report, options, commandLine, totalSeconds(report), clock) : null,
     outputNormalPath: options.outputNormal ?? null,
     outputGreppablePath: options.outputGreppable ?? null,
     outputXmlPath: options.outputXml ?? null,

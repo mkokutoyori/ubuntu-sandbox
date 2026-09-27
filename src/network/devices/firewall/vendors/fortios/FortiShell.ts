@@ -25,7 +25,7 @@ import {
   FortiNavigator, unquote, type FortiConfigChange,
 } from './runtime/FortiNavigator';
 import {
-  executeNames, executeOptionNames, resolvePrefix,
+  executeNames, executeOptionNames, offeredIn, resolvePrefix, type CliScope,
 } from './execute/executeVocabulary';
 import {
   BATCH_ENTERED, BATCH_EXITED, BATCH_STATUS_RUNNING, BATCH_STATUS_STOPPED,
@@ -59,7 +59,7 @@ import type {
 import { FortiDiagnostics } from './diag/FortiDiagnostics';
 import {
   deniedLog, runDiagnose, runExecuteLog, runFnsysctl, runSessionFilter,
-  parseSnifferPlan, type SnifferPlan,
+  parseSnifferPlan, SNIFFER_SCOPE, type SnifferPlan,
 } from './diag/FortiDiagCommands';
 import { renderVpnTunnelList, renderVpnTunnelSummary } from './diag/vpnTunnelRenderer';
 import {
@@ -308,6 +308,7 @@ export class FortiShell {
       runExecute: (rest) => this.executeVerb(rest),
       leaveCli: () => '',
       enterGlobal: () => this.enterGlobal(),
+      globalScope: () => this.globalScope,
       authorize: (spec, intent) => this.authorizeSpec(spec, intent),
       principal: () => this.adminName ?? '',
       vdomNames: () => this.fw.vdomNames(),
@@ -1246,7 +1247,7 @@ export class FortiShell {
     const words = line.split(/\s+/).filter(Boolean);
     if (words.length < 2) return null;
     if (!'execute'.startsWith(words[0])) return null;
-    if (resolvePrefix(words[1], executeNames()).name !== 'batch') return null;
+    if (resolvePrefix(words[1], executeNames(this.cliScope())).name !== 'batch') return null;
     return words.slice(2);
   }
 
@@ -1538,8 +1539,19 @@ export class FortiShell {
   snifferPlanFor(commandLine: string): SnifferPlan | null {
     const words = commandLine.trim().split(/\s+/);
     if (words[0] !== 'diagnose' || words[1] !== 'sniffer') return null;
+    if (!offeredIn(SNIFFER_SCOPE, this.cliScope())) return null;
     return parseSnifferPlan(
       words.slice(2), (name) => this.fw.getPort(name) !== undefined);
+  }
+
+  pingTargetFor(commandLine: string): string | null {
+    const words = commandLine.trim().split(/\s+/);
+    if (words.length !== 3 || words[0] !== 'execute' || words[1] !== 'ping') return null;
+    return executeNames(this.cliScope()).includes('ping') ? words[2] : null;
+  }
+
+  private cliScope(): CliScope {
+    return this.globalScope ? 'global' : 'vdom';
   }
 
   private accomplirAction(action: ActionDestructive): void {
@@ -1584,7 +1596,7 @@ export class FortiShell {
   interactionPlanFor(commandLine: string): CommandInteractionPlan | null {
     const words = commandLine.trim().split(/\s+/);
     if (words[0] !== 'execute') return null;
-    const resolved = resolvePrefix(words[1] ?? '', executeNames());
+    const resolved = resolvePrefix(words[1] ?? '', executeNames(this.cliScope()));
     const plan = this.planDestructif(resolved.name, words.slice(2));
     if (plan === null) return null;
 
@@ -1659,7 +1671,7 @@ export class FortiShell {
   private executeVerb(rest: readonly string[]): string {
     if (rest.length === 0) return FortiMessages.incomplete('a command');
 
-    const resolved = resolvePrefix(rest[0], executeNames());
+    const resolved = resolvePrefix(rest[0], executeNames(this.cliScope()));
     if (resolved.name === undefined) {
       return resolved.candidates.length > 1
         ? FortiMessages.ambiguous(rest[0], resolved.candidates)

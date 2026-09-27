@@ -40,7 +40,6 @@ import {
   type IngressInterfaceOptions, type IngressInterfaceOptionsReader,
 } from './l3/IngressInterfaceOptions';
 import { isIPv4Fragment } from '../../core/Ipv4Fragmentation';
-import { SystemClock, schedulerWallClock } from '../../core/SystemClock';
 import { SessionHelperTable, type SessionHelperEntry } from './session/SessionHelperTable';
 import { SystemLoad, type InspectionPosture, type MemoryWorkload } from './health/SystemLoad';
 import { conserveLogDraft } from './health/ConserveEvent';
@@ -65,6 +64,7 @@ import {
   ProxyArpTable, proxyOwnerKey, publishPoolProxyArp, type ProxyArpEntry,
 } from './l3/ProxyArpTable';
 import { ArpService } from './l3/ArpService';
+import { IpConflictDetection } from './l3/IpConflictDetection';
 import { ZoneTable } from './model/ZoneTable';
 import { ObjectStore } from './model/ObjectStore';
 import { PolicyStore } from './model/PolicyStore';
@@ -122,7 +122,6 @@ import { FirewallPing6 } from './diag/FirewallPing6';
 import { getDefaultScheduler } from '@/events/Scheduler';
 import type { IEventBus } from '@/events/EventBus';
 import type { BgpNeighborStateChangedPayload } from '../../bgp/events';
-import { NO_BGP_ERROR } from '../../bgp/messages';
 import type { OspfNeighborStateChangedPayload } from '../../ospf/events';
 import { isBgpFsmState } from '../../snmp/Bgp4MibNotifications';
 import type { Ipv6Counters } from '../router/IPv6DataPlane';
@@ -130,7 +129,7 @@ import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
 import type { TacacsClientAgent } from '../../tacacs/TacacsClientAgent';
 import type { IdentityTable } from './identity/IdentityTable';
 import type { UserDirectory } from './identity/UserDirectory';
-import type { IpsecTunnelTable } from './vpn/IpsecTunnelTable';
+import type { IpsecTunnelTable, Phase1Tunnel } from './vpn/IpsecTunnelTable';
 import type { CertificateStore } from './vpn/CertificateStore';
 import type { FirewallRouting } from './routing/FirewallRouting';
 import { buildL3Services, type L3Services } from './l3/L3ServiceWiring';
@@ -245,6 +244,11 @@ const DEFAULT_INTERFACE_MTU = 1500;
 
 export type RebootReason = 'power cycle' | 'warm reboot';
 
+interface LocalTrafficOrigin {
+  readonly iface?: string;
+  readonly source?: string;
+}
+
 const GENERIC_SESSION_HELPERS: readonly SessionHelperEntry[] = Object.freeze([
   { id: 1, name: 'ftp', protocol: 6, port: 21 },
 ]);
@@ -289,7 +293,7 @@ export class Firewall extends Equipment {
     transitPermitted: (probe) => this.ipv6TransitPermitted(probe),
     localInVerdict: (iface, traffic) => this.localInVerdict6(iface, traffic),
     dosVerdict: (iface, traffic) => this.dosVerdict6(iface, traffic),
-    sessions: () => this.getSessionTable(),
+    sessions: (iface) => this.vdoms.contextOfInterface(iface).sessions,
     dhcpv6Server: () => this.dhcp6.getServer(),
     dhcpv6PoolFor: (iface) => this.dhcp6.poolOfInterface(iface),
   });
@@ -299,7 +303,7 @@ export class Firewall extends Equipment {
       const settings = this.dnsClient.getSettings();
       return [settings.primary, settings.secondary].filter(server => server.length > 0);
     },
-    now: () => this.clock.now(),
+    now: () => this.getSystemClockMs(),
   });
 
   getDhcp6(): FirewallDhcp6 { return this.dhcp6; }
@@ -320,12 +324,12 @@ export class Firewall extends Equipment {
   private rebootReason: RebootReason = 'power cycle';
   private readonly fortiguard = new FortiGuardDatabases({ now: () => this.now() });
   private readonly arp: ArpService;
+  private readonly ipConflicts: IpConflictDetection;
   private readonly registry = new PipelineStageRegistry();
   private readonly pipelines: PipelineCache;
   private readonly services: FirewallServices;
   protected readonly profile: FirewallProfile;
   private readonly logging = new LoggingConfig();
-  private readonly clock: SystemClock;
   private readonly syslog: SyslogAgent;
   private readonly syslogCollectors: SyslogCollectorTable;
   private readonly boundPolicyInterfaces = new Set<string>();
@@ -337,7 +341,6 @@ export class Firewall extends Equipment {
   private readonly portals: FirewallPortals;
   private readonly sdwan: SdwanService;
   private readonly sdwanRoutes = new Map<string, DeclaredStaticRoute>();
-  private readonly routing: FirewallRouting;
   private readonly dhcp: FirewallDhcp;
   private readonly l3: L3Services;
   private readonly ntp: FirewallNtp;
@@ -398,7 +401,7 @@ export class Firewall extends Equipment {
   constructor(
     deviceType: DeviceType, name: string, x = 0, y = 0, options: FirewallOptions = {},
   ) {
-    super(deviceType, name, x, y);
+    super(deviceType, name, x, y, options.now);
 
     this.attachReassemblyTimeout();
 
@@ -427,8 +430,7 @@ export class Firewall extends Equipment {
       },
     });
 
-    this.clock = new SystemClock(options.now ?? schedulerWallClock());
-    const now = () => this.clock.now();
+    const now = () => this.getSystemClockMs();
     this.load = new SystemLoad({
       now,
       cpuCount: profile.chassis.cpuCount,
@@ -499,11 +501,28 @@ export class Firewall extends Equipment {
         this.load.reassess();
       },
     });
+    this.ipConflicts = new IpConflictDetection({
+      ownAddresses: () => this.interfaces.all()
+        .filter((iface) => iface.ip !== undefined && iface.ip !== '0.0.0.0')
+        .map((iface) => ({ iface: iface.name, address: iface.ip! })),
+      owningInterface: (address) => this.interfaces.owningInterface(address),
+      hardwareAddressOf: (iface) => {
+        const port = this.getPort(iface);
+        return port && !port.isLoopback() ? port.getMAC() : null;
+      },
+      indexOf: (iface) => this.interfaceIndex(iface),
+      vdomOf: (iface) => this.vdoms.vdomOfInterface(iface),
+      emitArp: (packet, iface) => { this.emitArp(packet, iface); },
+      now,
+      log: (vdom, draft) => { this.getLogStore(vdom).append(draft); },
+      trap: (iface) => { this.snmpService?.raise({ kind: 'interface-ip-conflict', iface }); },
+    });
     this.arp = new ArpService({
       interfaces: this.interfaces,
       macOf: (iface) => this.portMac(iface),
       now,
       onRequestNeeded: (request, iface) => this.emitArp(request, iface),
+      onDuplicateAddress: (report) => { this.ipConflicts.report(report); },
       proxyOwns: (address, iface) => this.proxyArpAnswers(address, iface),
       onCacheChanged: () => { this.liveState.refresh(); },
     });
@@ -564,7 +583,7 @@ export class Firewall extends Equipment {
       sendUdp: (destIp, port, payload) => this.sendUdpToPeer(destIp, port, payload),
       ...ipsecHostFacts({
         interfaces: this.interfaces,
-        routes: () => this.getVdom().routes,
+        egressFor: (peer) => this.tunnelInterfaceTowards(peer) ?? this.localEgress(peer, {})?.iface,
         connected: (iface) => this.getPort(iface)?.isConnected(),
       }),
     });
@@ -583,7 +602,8 @@ export class Firewall extends Equipment {
       bus: () => this.getBus(), now, tcp: () => this.tcp,
       vdom: (v?: string) => this.getVdom(v),
       certificates: () => this.getCertificateStore(),
-      remoteAuthenticate: (s1, u, p) => this.remoteAuthenticate(s1, u, p),
+      vdomOfClient: (address) => this.vdomOfClient(address),
+      remoteAuthenticate: (vdom, s1, u, p) => this.remoteAuthenticate(vdom, s1, u, p),
       serial: () => this.serialNumber(),
       cpuStates: () => this.getSystemLoad().cpuStates(),
       memoryPercent: () => {
@@ -595,13 +615,13 @@ export class Firewall extends Equipment {
       sendArpAware: (iface, ipPkt, nextHopIP) =>
         this.sendIpv4FrameArpAware(iface, ipPkt, nextHopIP),
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
-      sessions: () => this.getVdom().sessions,
+      sessions: () => this.vdoms.names().map((vdom) => ({ vdom, table: this.getVdom(vdom).sessions })),
       connectedRoutes: () => this.interfaces.connectedRoutes(),
       addressOf: (iface) => this.interfaces.get(iface)?.ip,
       authenticated: (iface, address) =>
         this.vdoms.contextOfInterface(iface).identities.lookup(address) !== undefined,
-      authRequiredByPolicy: () => this.getVdom().policy.ordered()
-        .some(r => (r.authUsers?.length ?? 0) > 0 || (r.authGroups?.length ?? 0) > 0),
+      authRequiredByPolicy: () => this.vdoms.names().some((vdom) => this.getVdom(vdom).policy.ordered()
+        .some(r => (r.authUsers?.length ?? 0) > 0 || (r.authGroups?.length ?? 0) > 0)),
       portalUsesHttps: () => this.authPortalSecureHttp,
       managementPorts: () => this.management.managementPorts(),
       createManagementCli: (user, origin) => this.createManagementCli(user, origin),
@@ -623,7 +643,7 @@ export class Firewall extends Equipment {
             .find(name => this.interfaces.get(name)?.ip === session.local.ip) ?? '',
           local: session.local,
           remote: session.remote,
-          vdom: this.activeVdom,
+          vdom: this.getAccessMatrix().getAdmin(session.username)?.vdoms[0] ?? this.managementVdom(),
         });
       },
       onAdminLogout: (user) => { this.onAdminLogout(user); },
@@ -653,7 +673,9 @@ export class Firewall extends Equipment {
       hostname: () => this.getName(),
       bus: () => this.getBus(),
       tcp: () => this.tcp,
-      routes: () => this.getVdom().routes,
+      vdomRoutes: (vdom) => this.getVdom(vdom).routes,
+      vdomOfInterface: (iface) => this.vdoms.vdomOfInterface(iface),
+      routesOf: (iface) => this.getVdom(this.vdomOfLocalTraffic({ iface })).routes,
       interfaces: () => this.interfaces,
       port: (iface) => this.getPort(iface),
       resolvedMac: (ip) => this.arp.resolved(ip) ?? undefined,
@@ -673,12 +695,11 @@ export class Firewall extends Equipment {
     });
 
     this.l3 = l3;
-    this.routing = l3.routing;
     this.dhcp = l3.dhcp;
     this.sdwan = l3.sdwan;
     this.sdwan.getTable().setRouteReach({
       prefixLengthTowards: (iface, destination) =>
-        this.getVdom().routes.prefixLengthTowards(iface, destination),
+        this.vdoms.contextOfInterface(iface).routes.prefixLengthTowards(iface, destination),
     });
     this.sdwan.onHealthChange((changes) => { this.onSdwanHealthChange(changes); });
     this.attachTrapSources();
@@ -734,19 +755,18 @@ export class Firewall extends Equipment {
     const remoteAddress = IPAddress.tryParse(payload.neighborIp);
     if (!snmp || remoteAddress === null) return;
     if (!isBgpFsmState(payload.oldState) || !isBgpFsmState(payload.newState)) return;
-    const engine = this.routing.getBgp().getEngine();
     snmp.raise({
       kind: 'bgp-peer',
       transition: {
         remoteAddress, from: payload.oldState, to: payload.newState,
-        lastError: engine === null ? NO_BGP_ERROR : engine.peerLastError(payload.neighborIp),
+        lastError: payload.lastError,
       },
     });
   }
 
   private raiseOspfNeighborTrap(payload: OspfNeighborStateChangedPayload): void {
     const snmp = this.snmpService;
-    const iface = this.routing.getOspf()?.getInterfaces().get(payload.iface);
+    const iface = this.l3.routingForInterface(payload.iface).getOspf()?.getInterfaces().get(payload.iface);
     const neighbor = iface?.neighbors.get(payload.neighborId);
     const routerId = IPAddress.tryParse(payload.routerId);
     const neighborAddress = IPAddress.tryParse(neighbor?.ipAddress ?? '');
@@ -835,17 +855,19 @@ export class Firewall extends Equipment {
   powerOn(): void {
     super.powerOn();
     this.rebootReason = 'power cycle';
+    this.ipConflicts?.probeWhenEnabled();
   }
 
+  getIpConflictDetection(): IpConflictDetection { return this.ipConflicts; }
+
   private resolveEgress(destination: string): FirewallPingEgress | null {
-    const route = this.getVdom().routes.resolveNextHop(destination);
-    const iface = route?.iface ?? this.interfaces.interfaceForDestination(destination);
-    const source = iface === undefined ? undefined : this.interfaces.get(iface)?.ip;
-    if (iface === undefined || source === undefined) {
+    const egress = this.routedEgress(destination, this.activeVdom);
+    const source = egress === undefined ? undefined : this.interfaces.get(egress.iface)?.ip;
+    if (egress === undefined || source === undefined) {
       this.rememberUnroutable(destination);
       return null;
     }
-    return { iface, gateway: route?.nextHop, source };
+    return { iface: egress.iface, gateway: egress.nextHop, source };
   }
 
   private rememberUnroutable(destination: string): void {
@@ -926,7 +948,7 @@ export class Firewall extends Equipment {
       if (source === undefined) return;
       this.forward(iface,
         udpDatagram(source, to, DNS_PORT, port, payload),
-        this.getVdom().routes.resolveNextHop(to)?.nextHop);
+        this.vdoms.contextOfInterface(iface).routes.resolveNextHop(to)?.nextHop);
     },
   });
 
@@ -947,7 +969,7 @@ export class Firewall extends Equipment {
   interfaceIndex(name: string): number {
     return this.interfaces.names().indexOf(name) + 1;
   }
-  getRouting(): FirewallRouting { return this.routing; }
+  getRouting(vdom?: string): FirewallRouting { return this.l3.routingOf(vdom ?? this.activeVdom); }
   getDhcp(): FirewallDhcp { return this.dhcp; }
 
   applyDhcp6Scope(scope: Dhcp6Scope): void { this.dhcp6.upsertScope(scope); }
@@ -1072,7 +1094,7 @@ export class Firewall extends Equipment {
   localOutSteering(flow: {
     destination: IPAddress; protocol: number; sourcePort: PortNumber; destinationPort: PortNumber;
   }): string | null {
-    const vdom = this.getVdom();
+    const vdom = this.getVdom(this.managementVdom());
     const destination = flow.destination.toString();
     const source = this.sourceAddressFor(flow.destination)?.toString() ?? UNSPECIFIED_IPV4;
     const decision = vdom.policyRoutes?.evaluate({
@@ -1265,7 +1287,7 @@ export class Firewall extends Equipment {
   }
 
   private closeSessionsOn(iface: string): void {
-    this.getVdom().sessions.clearMatching(
+    this.vdoms.contextOfInterface(iface).sessions.clearMatching(
       session => session.egressInterface === iface);
   }
 
@@ -1290,12 +1312,12 @@ export class Firewall extends Equipment {
   ): IkeConfigReply | string | undefined {
     if (!request.wantAddress) return undefined;
 
-    const tunnel = this.getVdom().tunnels.all()
-      .find(entry => this.modeCfg.configuredFor(entry));
-    if (!tunnel) return 'IPv4 pool is not configured';
+    const owned = this.modeCfgTunnelFor(peer);
+    if (!owned) return 'IPv4 pool is not configured';
+    const { tunnel, vdom } = owned;
 
     if (tunnel.authUserGroup !== undefined) {
-      const directory = this.getUserDirectory();
+      const directory = this.getUserDirectory(vdom);
       const user = request.identity ?? '';
       const admitted = user.length > 0
         && directory.authenticateLocal(user, request.credential ?? '')
@@ -1310,14 +1332,26 @@ export class Firewall extends Equipment {
     return {
       address: assignment.address,
       netmask: assignment.netmask,
-      splitInclude: this.splitSubnetsOf(assignment.splitInclude),
+      splitInclude: this.splitSubnetsOf(vdom, assignment.splitInclude),
       dnsServers: assignment.dnsServers,
     };
   }
 
-  private splitSubnetsOf(name: string | undefined): readonly string[] {
+  private modeCfgTunnelFor(peer: string): { tunnel: Phase1Tunnel; vdom: string } | undefined {
+    let fallback: { tunnel: Phase1Tunnel; vdom: string } | undefined;
+    for (const vdom of this.vdoms.names()) {
+      for (const tunnel of this.getVdom(vdom).tunnels.all()) {
+        if (!this.modeCfg.configuredFor(tunnel)) continue;
+        if (tunnel.remoteGateway === peer) return { tunnel, vdom };
+        fallback ??= { tunnel, vdom };
+      }
+    }
+    return fallback;
+  }
+
+  private splitSubnetsOf(vdom: string, name: string | undefined): readonly string[] {
     if (name === undefined) return [];
-    const object = this.getObjectStore().getAddress(name);
+    const object = this.getObjectStore(vdom).getAddress(name);
     if (object?.value === undefined) return [];
     return object.careMask === undefined
       ? [object.value]
@@ -1368,33 +1402,65 @@ export class Firewall extends Equipment {
   }
 
   private sendUdpToPeer(destIp: string, port: number, payload: unknown): boolean {
+    const iface = this.tunnelInterfaceTowards(destIp);
     return this.sendUdpDatagram({
       destination: new IPAddress(destIp),
       destinationPort: port, sourcePort: port, payload,
       payloadBytes: payload instanceof Uint8Array ? payload.length : 64,
+      ...(iface === undefined ? {} : { iface }),
     });
   }
 
+  private tunnelInterfaceTowards(peer: string): string | undefined {
+    for (const vdom of this.vdoms.names()) {
+      const tunnel = this.getVdom(vdom).tunnels.all()
+        .find((entry) => entry.remoteGateway === peer && entry.boundInterface.length > 0);
+      if (tunnel !== undefined) return tunnel.boundInterface;
+    }
+    return undefined;
+  }
+
   sourceAddressFor(destination: IPAddress, iface?: string): IPAddress | null {
-    const egress = this.localEgress(destination.toString(), iface)?.iface;
+    const egress = this.localEgress(destination.toString(), { iface })?.iface;
     const source = egress === undefined ? undefined : this.interfaces.get(egress)?.ip;
     return source === undefined ? null : new IPAddress(source);
   }
 
-  private localEgress(target: string, iface?: string): { iface: string; nextHop?: string } | undefined {
-    const routes = this.getVdom().routes;
+  private localEgress(
+    target: string, from: LocalTrafficOrigin,
+  ): { iface: string; nextHop?: string } | undefined {
+    return this.routedEgress(target, this.vdomOfLocalTraffic(from), from.iface);
+  }
+
+  private vdomOfLocalTraffic(from: LocalTrafficOrigin): string {
+    if (from.iface !== undefined) return this.vdoms.vdomOfInterface(from.iface);
+    const owner = from.source === undefined ? undefined : this.interfaces.owningInterface(from.source);
+    return owner === undefined ? this.managementVdom() : this.vdoms.vdomOfInterface(owner);
+  }
+
+  managementVdom(): string { return ROOT_VDOM; }
+
+  private vdomOfClient(address: string): string {
+    const iface = this.interfaces.interfaceForDestination(address);
+    return iface === undefined ? this.managementVdom() : this.vdoms.vdomOfInterface(iface);
+  }
+
+  private routedEgress(
+    target: string, vdom: string, iface?: string,
+  ): { iface: string; nextHop?: string } | undefined {
+    const routes = this.getVdom(vdom).routes;
     if (iface !== undefined) {
       const via = routes.resolveNextHopVia(target, iface);
       return via === undefined ? undefined : { iface, nextHop: via.nextHop };
     }
     const route = routes.resolveNextHop(target);
-    if (route) return { iface: route.iface, nextHop: route.nextHop };
-    const connected = this.interfaces.interfaceForDestination(target);
-    return connected === undefined ? undefined : { iface: connected };
+    return route === undefined ? undefined : { iface: route.iface, nextHop: route.nextHop };
   }
 
   sendUdpDatagram(request: UdpSendRequest): boolean {
-    const egress = this.localEgress(request.destination.toString(), request.iface);
+    const egress = this.localEgress(request.destination.toString(), {
+      iface: request.iface, source: request.source?.toString(),
+    });
     const iface = egress?.iface;
     const source = request.source?.toString()
       ?? (iface === undefined ? undefined : this.interfaces.get(iface)?.ip);
@@ -1413,11 +1479,11 @@ export class Firewall extends Equipment {
   }
 
   private remoteAuthenticate(
-    server: string, user: string, password: string,
+    vdom: string, server: string, user: string, password: string,
   ): Promise<RemoteAuthOutcome> {
     return remoteAuthenticate({
       tcp: this.tcp,
-      server: (n) => this.getVdom().users.getServer(n),
+      server: (n) => this.getVdom(vdom).users.getServer(n),
       radius: this.radius,
       tacacs: this.tacacs,
     }, server, user, password);
@@ -1468,10 +1534,11 @@ export class Firewall extends Equipment {
   configureInterface(name: string, config: InterfaceConfig): void {
     const before = this.interfaces.get(name);
     this.interfaces.configure(name, config);
-    this.routing.refreshInterfaces();
+    for (const routing of this.l3.routings()) routing.refreshInterfaces();
     const after = this.interfaces.get(name);
     if (before?.ip !== after?.ip || before?.mask !== after?.mask) {
       this.snmpService?.raise({ kind: 'interface-address', port: name });
+      this.ipConflicts.probeWhenEnabled(name);
     }
   }
 
@@ -1500,8 +1567,10 @@ export class Firewall extends Equipment {
   }
 
   setInterfaceUp(name: string, up: boolean): void {
+    const wasUp = this.interfaces.get(name)?.up === true;
     this.adminIntent.set(name, up);
     this.interfaces.setUp(name, up);
+    if (up && !wasUp) this.ipConflicts.probeWhenEnabled(name);
   }
 
   now(): number { return this.services.now(); }
@@ -1511,8 +1580,6 @@ export class Firewall extends Equipment {
   setSessionTimers(timers: Partial<SessionTimeoutProfile>): void {
     Object.assign(this.sessionTimers, timers);
   }
-
-  getSystemClock(): SystemClock { return this.clock; }
 
   private timezone = TimeZone.of('Europe/Paris');
 
@@ -1537,7 +1604,7 @@ export class Firewall extends Equipment {
   localTimeOf(at: number): number { return localMsAt(this.timezone, at); }
 
   setLocalClock(localMs: number): void {
-    this.clock.set(utcMsForLocal(this.timezone, localMs));
+    this._setSystemClock(utcMsForLocal(this.timezone, localMs));
   }
 
   managementIdleTimeoutMs(): number { return this.management.idleTimeoutMs(); }
@@ -2281,7 +2348,7 @@ export class Firewall extends Equipment {
   getPing6(): FirewallPing6 { return this.ping6; }
 
   private ipv6TransitPermitted(probe: PolicyProbe): boolean {
-    const vdom = this.getVdom();
+    const vdom = this.vdoms.contextOfInterface(probe.ingressInterface || probe.egressInterface);
     const decision = vdom.evaluator.evaluate(vdom.policy.ordered(), probe);
     return !isDenyAction(decision.action);
   }
@@ -2500,7 +2567,8 @@ export class Firewall extends Equipment {
 
     const error = buildICMPError(
       new IPAddress(source), packet, kind, code, ICMP_ERROR_TTL, options);
-    const route = this.getVdom().routes.resolveNextHop(packet.sourceIP.toString());
+    const route = this.vdoms.contextOfInterface(ingressPort).routes
+      .resolveNextHop(packet.sourceIP.toString());
     this.forward(route?.iface ?? ingressPort, error, route?.nextHop);
   }
 
@@ -2621,7 +2689,7 @@ export class Firewall extends Equipment {
   private forward(
     egressPort: string, packet: IPv4Packet, gateway?: string, bridged?: BridgedFrame,
   ): void {
-    if (this.getVdom().tunnels.isTunnelInterface(egressPort)) {
+    if (this.vdoms.contextOfInterface(egressPort).tunnels.isTunnelInterface(egressPort)) {
       this.forwardThroughTunnel(egressPort, packet);
       return;
     }
@@ -2647,7 +2715,7 @@ export class Firewall extends Equipment {
   }
 
   private forwardThroughTunnel(tunnelName: string, packet: IPv4Packet): void {
-    const vdom = this.getVdom();
+    const vdom = this.vdoms.contextOfInterface(tunnelName);
     for (const leg of sealedLegs(
       this.ipsec, vdom.tunnels, vdom.routes, tunnelName, packet)) {
       this.forward(leg.iface, leg.packet, leg.gateway);
@@ -2678,7 +2746,7 @@ export class Firewall extends Equipment {
       captivePortal: this.captivePortal,
       interfaces: this.interfaces,
       vdomOf: (iface) => this.vdoms.contextOfInterface(iface),
-      decapsulate: (p) => decryptFromTunnel(this.ipsec, this.getVdom().tunnels, p) ?? null,
+      decapsulate: (vdom, p) => decryptFromTunnel(this.ipsec, vdom.tunnels, p) ?? null,
     });
   }
 }

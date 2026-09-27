@@ -201,6 +201,9 @@ export function buildCommitDevice(
         if (settings.fragmentMemoryMb !== undefined) {
           fw.getFragmentReassembly().setThresholdMegabytes(settings.fragmentMemoryMb);
         }
+        if (settings.ipConflictDetection !== undefined) {
+          fw.getIpConflictDetection().setEnabled(settings.ipConflictDetection);
+        }
         fw.setManagementPorts({
           ssh: settings.adminSshPort,
           telnet: settings.adminTelnetPort,

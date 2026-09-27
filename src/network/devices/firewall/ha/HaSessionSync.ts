@@ -1,9 +1,9 @@
 import { makeFlowKey, type FlowKey } from '../session/FlowKey';
-import type { SessionTable } from '../session/SessionTable';
-import type { HaSyncedSession } from './HaTypes';
+import type { HaSyncedSession, VdomSessions } from './HaTypes';
 
-export function exportSessions(table: SessionTable): readonly HaSyncedSession[] {
-  return table.view().all().map(session => ({
+export function exportSessions(tables: readonly VdomSessions[]): readonly HaSyncedSession[] {
+  return tables.flatMap(({ vdom, table }) => table.view().all().map(session => ({
+    vdom,
     key: keyText(session.c2s),
     ingressZone: session.ingressZone,
     egressZone: session.egressZone,
@@ -11,15 +11,16 @@ export function exportSessions(table: SessionTable): readonly HaSyncedSession[] 
     egressInterface: session.egressInterface,
     timeoutSec: session.timeoutSec,
     policyId: session.policyId,
-  }));
+  })));
 }
 
 export function importSessions(
-  table: SessionTable, sessions: readonly HaSyncedSession[],
+  tables: readonly VdomSessions[], sessions: readonly HaSyncedSession[],
 ): void {
   for (const synced of sessions) {
+    const table = tables.find(({ vdom }) => vdom === synced.vdom)?.table;
     const key = parseKey(synced.key);
-    if (!key || table.lookup(key)) continue;
+    if (!table || !key || table.lookup(key)) continue;
 
     table.install(key, {
       ingressZone: synced.ingressZone,

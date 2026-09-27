@@ -1,6 +1,5 @@
 import type { EthernetFrame, MACAddress } from '../../../core/types';
-import type { HaInterfaceStats } from './HaTypes';
-import type { SessionTable } from '../session/SessionTable';
+import type { HaInterfaceStats, VdomSessions } from './HaTypes';
 import { HaAgent } from './HaAgent';
 import { exportSessions, importSessions } from './HaSessionSync';
 
@@ -11,7 +10,7 @@ export interface FirewallHaDeps {
   readonly sendFrame: (iface: string, frame: EthernetFrame) => void;
   readonly interfaceMac: (iface: string) => MACAddress | undefined;
   readonly interfaceUp: (iface: string) => boolean;
-  readonly sessions: () => SessionTable;
+  readonly sessions: () => readonly VdomSessions[];
   readonly cpuStates: () => {
     user: number; nice: number; system: number; idle: number;
   };
@@ -39,7 +38,7 @@ export class FirewallHa {
       configurationText: () => this.read?.() ?? '',
       applyConfiguration: (text) => { this.apply?.(text); },
       exportSessions: () => exportSessions(deps.sessions()),
-      sessionCount: () => deps.sessions().count(),
+      sessionCount: () => deps.sessions().reduce((total, { table }) => total + table.count(), 0),
       cpuStates: deps.cpuStates,
       memoryPercent: deps.memoryPercent,
       interfaceStats: deps.interfaceStats,
@@ -73,7 +72,7 @@ export interface HaWiringHost {
     isConnected(): boolean;
     isOperationallyUp(): boolean;
   } | undefined;
-  sessions(): SessionTable;
+  sessions(): readonly VdomSessions[];
   cpuStates(): { user: number; nice: number; system: number; idle: number };
   memoryPercent(): number;
   interfaceStats(iface: string): HaInterfaceStats | undefined;

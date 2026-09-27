@@ -51,6 +51,14 @@ export class MACAddress {
     });
   }
 
+  static tryParse(mac: string): MACAddress | null {
+    try {
+      return new MACAddress(mac);
+    } catch {
+      return null;
+    }
+  }
+
   static generate(): MACAddress {
     macCounter++;
     const b3 = (macCounter >> 16) & 0xff;
@@ -1010,6 +1018,7 @@ export interface ARPEntry {
   timestamp: number;
   /** Dynamic = learned, static = manual, failed = resolution timed out (NUD FAILED). */
   type: 'dynamic' | 'static' | 'failed';
+  vlan?: number;
 }
 
 // ─── ICMP (L4, inside IPv4, protocol 1) ─────────────────────────────

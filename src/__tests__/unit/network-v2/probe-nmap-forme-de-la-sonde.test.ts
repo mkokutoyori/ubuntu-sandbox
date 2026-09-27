@@ -134,10 +134,10 @@ describe('--badsum : la pile de la cible jette ce qui ne se verifie pas', () => 
   it('un balayage SYN correct ouvre le port, le meme avec --badsum le filtre', async () => {
     const { scanner } = await segment();
 
-    const temoin = await taper(scanner, 'nmap -Pn -sS -p 22 10.0.0.2');
+    const temoin = await taper(scanner, 'sudo nmap -Pn -sS -p 22 10.0.0.2');
     expect(etatDuPort(temoin, 22)).toBe('open');
 
-    const corrompu = await taper(scanner, 'nmap -Pn -sS --badsum -p 22 10.0.0.2');
+    const corrompu = await taper(scanner, 'sudo nmap -Pn -sS --badsum -p 22 10.0.0.2');
     expect(corrompu).not.toContain('not implemented');
     expect(etatDuPort(corrompu, 22)).toBe('filtered');
   });
@@ -146,7 +146,7 @@ describe('--badsum : la pile de la cible jette ce qui ne se verifie pas', () => 
     const { scanner, cible } = await segment();
 
     await taper(cible, 'tcpdump -nn -i eth0 tcp port 22 -w corrompu.pcap &');
-    await taper(scanner, 'nmap -Pn -sS --badsum -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -sS --badsum -p 22 10.0.0.2');
     const capture = await taper(cible, 'tcpdump -r corrompu.pcap -nn');
 
     expect(capture).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.2\.22: Flags \[S\]/);
@@ -156,17 +156,17 @@ describe('--badsum : la pile de la cible jette ce qui ne se verifie pas', () => 
   it('un balayage UDP corrompu ne recoit plus de port-unreachable', async () => {
     const { scanner } = await segment();
 
-    const temoin = await taper(scanner, 'nmap -Pn -sU -p 9 10.0.0.2');
+    const temoin = await taper(scanner, 'sudo nmap -Pn -sU -p 9 10.0.0.2');
     expect(etatDuPort(temoin, 9)).toBe('closed');
 
-    const corrompu = await taper(scanner, 'nmap -Pn -sU --badsum -p 9 10.0.0.2');
+    const corrompu = await taper(scanner, 'sudo nmap -Pn -sU --badsum -p 9 10.0.0.2');
     expect(etatDuPort(corrompu, 9)).toBe('open|filtered');
   });
 
   it('un balayage CONNECTE avertit et n honore pas l option', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sT --badsum -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sT --badsum -p 22 10.0.0.2');
 
     expect(sortie).toContain(
       'You have specified some options that require raw socket access.');
@@ -181,7 +181,7 @@ describe('-g impose le port source de la sonde', () => {
     const { scanner } = await segment();
 
     const sortie = await taper(scanner,
-      'nmap -Pn -sS -g 53 --packet-trace -p 22 10.0.0.2');
+      'sudo nmap -Pn -sS -g 53 --packet-trace -p 22 10.0.0.2');
 
     expect(sortie).toMatch(/SENT \(\d+\.\d{4}s\) TCP \[10\.0\.0\.1:53 > 10\.0\.0\.2:22 S seq=/);
     expect(etatDuPort(sortie, 22)).toBe('open');
@@ -191,7 +191,7 @@ describe('-g impose le port source de la sonde', () => {
     const { scanner } = await segment();
 
     const sortie = await taper(scanner,
-      'nmap -Pn -sS --source-port 20 --packet-trace -p 22 10.0.0.2');
+      'sudo nmap -Pn -sS --source-port 20 --packet-trace -p 22 10.0.0.2');
 
     expect(sortie).toMatch(/TCP \[10\.0\.0\.1:20 > 10\.0\.0\.2:22 S seq=/);
   });
@@ -202,17 +202,17 @@ describe('-g impose le port source de la sonde', () => {
       'sudo iptables -A INPUT -p tcp --dport 22 --sport 53 -j ACCEPT',
       'sudo iptables -A INPUT -p tcp --dport 22 -j DROP');
 
-    const bloque = await taper(scanner, 'nmap -Pn -sS -p 22 10.0.0.2');
+    const bloque = await taper(scanner, 'sudo nmap -Pn -sS -p 22 10.0.0.2');
     expect(etatDuPort(bloque, 22)).toBe('filtered');
 
-    const passe = await taper(scanner, 'nmap -Pn -sS -g 53 -p 22 10.0.0.2');
+    const passe = await taper(scanner, 'sudo nmap -Pn -sS -g 53 -p 22 10.0.0.2');
     expect(etatDuPort(passe, 22)).toBe('open');
   });
 
   it('avec un balayage connecte, -g porte son propre avertissement', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sT -g 53 -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sT -g 53 -p 22 10.0.0.2');
 
     expect(sortie).toContain('WARNING: -g is incompatible with the default'
       + ' connect() scan (-sT).  Use a raw scan such as -sS if you want to set'
@@ -224,7 +224,7 @@ describe('-g impose le port source de la sonde', () => {
   it('un port source nul est signale sans etre refuse', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS -g 0 -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS -g 0 -p 22 10.0.0.2');
 
     expect(sortie).toContain(
       'WARNING: a source port of zero may not work on all systems.');
@@ -237,7 +237,7 @@ describe('--ttl decide jusqu ou la sonde va', () => {
     const { scanner } = await segment();
 
     const sortie = await taper(scanner,
-      'nmap -Pn -sS --ttl 7 --packet-trace -p 22 10.0.0.2');
+      'sudo nmap -Pn -sS --ttl 7 --packet-trace -p 22 10.0.0.2');
 
     expect(sortie).toMatch(/SENT \([^)]+\) TCP \[[^\]]+\] IP \[ttl=7 /);
   });
@@ -245,17 +245,17 @@ describe('--ttl decide jusqu ou la sonde va', () => {
   it('une duree de vie de 1 meurt sur le routeur, le port se lit filtered', async () => {
     const { scanner } = await deuxSegments();
 
-    const temoin = await taper(scanner, 'nmap -Pn -sS -p 22 10.2.0.2');
+    const temoin = await taper(scanner, 'sudo nmap -Pn -sS -p 22 10.2.0.2');
     expect(etatDuPort(temoin, 22)).toBe('open');
 
-    const court = await taper(scanner, 'nmap -Pn -sS --ttl 1 -p 22 10.2.0.2');
+    const court = await taper(scanner, 'sudo nmap -Pn -sS --ttl 1 -p 22 10.2.0.2');
     expect(etatDuPort(court, 22)).toBe('filtered');
   });
 
   it('une valeur hors de [0, 255] est refusee avant tout balayage', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn --ttl 300 -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn --ttl 300 -p 22 10.0.0.2');
 
     expect(sortie).toContain('ttl option must be a number between 0 and 255 (inclusive)');
     expect(sortie).not.toContain('Nmap scan report');

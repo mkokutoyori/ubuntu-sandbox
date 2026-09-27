@@ -22,6 +22,7 @@ import type { IEventBus } from '@/events/EventBus';
 import { HuaweiDebugService } from './router/diag/HuaweiDebugService';
 import { RouterManagementService } from './router/management/RouterManagementService';
 import type { SshServerConfig } from '../protocols/ssh/server/ISshServerContext';
+import { VRP_ARP_EXPIRE_TIME_DEFAULT_SEC } from './shells/huawei/HuaweiConfigCommands';
 
 export class HuaweiSwitch extends Switch {
   static readonly MAX_PORT_GROUPS = 32;
@@ -183,6 +184,8 @@ export class HuaweiSwitch extends Switch {
     this.pimSnoopingAgent.handleFrame(portName, frame);
     super.handleFrame(portName, frame);
   }
+
+  override defaultArpTimeoutSec(): number { return VRP_ARP_EXPIRE_TIME_DEFAULT_SEC; }
 
   protected override getIgmpSnoopingAgentOrNull(): IgmpSnoopingAgent {
     return this.igmpSnoopingAgent;

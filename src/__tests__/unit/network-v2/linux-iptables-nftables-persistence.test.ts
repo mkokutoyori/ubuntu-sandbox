@@ -193,7 +193,7 @@ describe('Scénario 5 — Corrélation règles / trafic observé', () => {
     const { client, server } = buildLab();
     await server.executeCommand('iptables -A INPUT -p tcp --dport 22 -j LOG --log-prefix "SSH-ATTEMPT: "');
 
-    await client.executeCommand('tcpdump -ni eth0 port 22 -w /tmp/ssh-attempt.pcap &');
+    await client.executeCommand('sudo tcpdump -ni eth0 port 22 -w /tmp/ssh-attempt.pcap &');
     await client.executeCommand('ssh -o StrictHostKeyChecking=no alice@10.0.0.2 whoami', 'wonderland\n');
     const sniffed = await client.executeCommand('tcpdump -nn -r /tmp/ssh-attempt.pcap');
 

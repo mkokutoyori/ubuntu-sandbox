@@ -165,7 +165,7 @@ describe('a FortiGate reports its BGP peers with BGP4-MIB notifications', () => 
     expect(backward).toHaveLength(1);
     const [remote, lastError, state] = objects(backward[0]);
     expect(remote).toBe('1.3.6.1.2.1.15.3.1.7.10.1.0.2=10.1.0.2');
-    expect(lastError).toBe('1.3.6.1.2.1.15.3.1.14.10.1.0.2=0600');
+    expect(lastError).toBe('1.3.6.1.2.1.15.3.1.14.10.1.0.2=0604');
     expect(Number(state.split('=')[1])).toBeLessThan(6);
   });
 

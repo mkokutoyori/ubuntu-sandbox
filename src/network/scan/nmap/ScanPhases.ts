@@ -38,18 +38,13 @@ export interface ScanPhase {
   scanning?: { target: string; probes: number };
 }
 
-function clockHHMM(at: Date): string {
-  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
-}
-
 /**
  * timing.cc:765 et 2777. La duree est celle que le rapport annonce deja
  * par ailleurs : ce simulateur livre ses trames de facon synchrone, donc
  * elle est estimee et non mesuree, et l'inventer differemment ici ferait
  * dire deux choses a une meme sortie.
  */
-export function renderPhase(phase: ScanPhase, at: Date, elapsedSeconds: number): string[] {
-  const hhmm = clockHHMM(at);
+export function renderPhase(phase: ScanPhase, hhmm: string, elapsedSeconds: number): string[] {
   const lines = [`Initiating ${phase.name} at ${hhmm}`];
   if (phase.scanning) {
     const n = phase.scanning.probes;

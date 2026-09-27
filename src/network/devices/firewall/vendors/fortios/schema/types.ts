@@ -238,6 +238,7 @@ export interface FortiSessionTimers {
 export interface FortiGlobalSettings {
   readonly hostname?: string;
   readonly multiVdom: boolean;
+  readonly ipConflictDetection?: boolean;
   readonly cfgSaveMode?: ConfigSaveMode;
   readonly authHttpPort?: number;
   readonly authHttpsPort?: number;

@@ -107,7 +107,7 @@ describe('--iflist decrit la machine et ne balaye rien', () => {
   it('les deux bannieres et les deux en-tetes sont la', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap --iflist');
+    const sortie = await taper(scanner, 'sudo nmap --iflist');
 
     expect(sortie).not.toContain('not implemented');
     expect(sortie).toContain(
@@ -121,7 +121,7 @@ describe('--iflist decrit la machine et ne balaye rien', () => {
   it('une carte ethernet porte son adresse, son type et sa MAC', async () => {
     const { scanner } = await segment();
 
-    const ligne = ligneInterface(await taper(scanner, 'nmap --iflist'), 'eth0');
+    const ligne = ligneInterface(await taper(scanner, 'sudo nmap --iflist'), 'eth0');
 
     expect(ligne).toContain('10.0.0.1/24');
     expect(ligne).toContain('ethernet');
@@ -133,7 +133,7 @@ describe('--iflist decrit la machine et ne balaye rien', () => {
   it('la boucle vient en tete, typee loopback et sans MAC', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap --iflist');
+    const sortie = await taper(scanner, 'sudo nmap --iflist');
     const ligne = ligneInterface(sortie, 'lo');
 
     expect(sortie.split('\n')[1]).toMatch(/^DEV/);
@@ -147,7 +147,7 @@ describe('--iflist decrit la machine et ne balaye rien', () => {
   it('la table des routes rend le reseau connecte', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap --iflist');
+    const sortie = await taper(scanner, 'sudo nmap --iflist');
 
     expect(sortie).toMatch(/^10\.0\.0\.0\/24 +eth0 +\d+$/m);
   });
@@ -156,7 +156,7 @@ describe('--iflist decrit la machine et ne balaye rien', () => {
     const { scanner, cible } = await segment();
     await taper(cible, 'tcpdump -nn -i eth0 tcp -w iflist.pcap &');
 
-    const sortie = await taper(scanner, 'nmap --iflist -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap --iflist -p 22 10.0.0.2');
     const capture = await taper(cible, 'tcpdump -r iflist.pcap -nn --count');
 
     expect(sortie).not.toContain('Nmap scan report');
@@ -170,7 +170,7 @@ describe('-e choisit l interface d emission', () => {
     const macEth1 = scanner.getPort('eth1')!.getMAC().toString();
     await taper(cible, 'tcpdump -e -nn -i eth0 tcp port 22 -w choix.pcap &');
 
-    const rapport = await taper(scanner, 'nmap -Pn -sS -e eth1 -p 22 10.0.0.2');
+    const rapport = await taper(scanner, 'sudo nmap -Pn -sS -e eth1 -p 22 10.0.0.2');
     const capture = await taper(cible, 'tcpdump -r choix.pcap -nn -e');
 
     expect(rapport).not.toContain('not implemented');
@@ -181,7 +181,7 @@ describe('-e choisit l interface d emission', () => {
   it('un peripherique inconnu est un refus qui le nomme', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS -e zorglub -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS -e zorglub -p 22 10.0.0.2');
 
     expect(sortie).toContain('I cannot figure out what source address to use'
       + ' for device zorglub, does it even exist?');
@@ -192,7 +192,7 @@ describe('-e choisit l interface d emission', () => {
     const { scanner } = await segment();
     await taper(scanner, 'sudo ip addr del 10.0.0.3/24 dev eth1');
 
-    const sortie = await taper(scanner, 'nmap -Pn -sS -e eth1 -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -sS -e eth1 -p 22 10.0.0.2');
 
     expect(sortie).toContain('does it even exist?');
     expect(sortie).not.toContain('Nmap scan report');
@@ -205,7 +205,7 @@ describe('TEMOIN', () => {
     const macEth0 = scanner.getPort('eth0')!.getMAC().toString();
     await taper(cible, 'tcpdump -e -nn -i eth0 tcp port 22 -w defaut.pcap &');
 
-    await taper(scanner, 'nmap -Pn -sS -p 22 10.0.0.2');
+    await taper(scanner, 'sudo nmap -Pn -sS -p 22 10.0.0.2');
     const capture = await taper(cible, 'tcpdump -r defaut.pcap -nn -e');
 
     expect(sourcesLien(capture)).toContain(macEth0.toLowerCase());

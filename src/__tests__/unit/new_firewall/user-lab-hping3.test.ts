@@ -72,7 +72,7 @@ function replyLines(out: string): string[] {
 describe('user lab — hping3 reads the reply that crossed FW1', () => {
   it('an open HQ port answers SYN/ACK with the ttl of the REPLY, not of my request', async () => {
     const lab = await configuredLab();
-    const line = replyLines(await lab.PC1.executeCommand(`hping3 -S -p 80 -c 1 ${SERVER1}`))[0];
+    const line = replyLines(await lab.PC1.executeCommand(`sudo hping3 -S -p 80 -c 1 ${SERVER1}`))[0];
     expect(line).toContain('flags=SA');
     expect(line).toContain('win=65535');
     expect(line).toMatch(/^len=44 ip=192\.168\.30\.4 ttl=62 DF id=\d+ sport=80 /);
@@ -80,13 +80,13 @@ describe('user lab — hping3 reads the reply that crossed FW1', () => {
 
   it('a closed HQ port answers RST+ACK with a zero window and a bare header', async () => {
     const lab = await configuredLab();
-    const line = replyLines(await lab.PC1.executeCommand(`hping3 -S -p 81 -c 1 ${SERVER1}`))[0];
+    const line = replyLines(await lab.PC1.executeCommand(`sudo hping3 -S -p 81 -c 1 ${SERVER1}`))[0];
     expect(line).toMatch(/^len=40 ip=192\.168\.30\.4 ttl=62 DF id=\d+ sport=81 flags=RA seq=0 win=0 /);
   });
 
   it('-t 2 dies at R3, and the ICMP time-exceeded names it', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC1.executeCommand(`hping3 -S -p 80 -c 1 -t 2 ${SERVER1}`);
+    const out = await lab.PC1.executeCommand(`sudo hping3 -S -p 80 -c 1 -t 2 ${SERVER1}`);
     expect(out).toContain(`TTL 0 during transit from ip=${R3_LAN_SIDE}`);
     expect(replyLines(out)).toHaveLength(0);
     expect(out).toContain('1 packets transmitted, 0 packets received, 100% packet loss');
@@ -94,7 +94,7 @@ describe('user lab — hping3 reads the reply that crossed FW1', () => {
 
   it('-V prints the reply own header, cut where log_ip cuts it', async () => {
     const lab = await configuredLab();
-    const out = (await lab.PC1.executeCommand(`hping3 -S -p 80 -c 1 -V ${SERVER1}`)).split('\n');
+    const out = (await lab.PC1.executeCommand(`sudo hping3 -S -p 80 -c 1 -V ${SERVER1}`)).split('\n');
     expect(out.find((l) => l.startsWith('len='))).toMatch(/ttl=62 DF id=\d+ tos=0 iplen=44$/);
     expect(out.some((l) => l.startsWith('sport=80 flags=SA'))).toBe(true);
     expect(out.some((l) => /^seq=\d+ ack=\d+ sum=[0-9a-f]+ urp=0$/.test(l))).toBe(true);
@@ -102,7 +102,7 @@ describe('user lab — hping3 reads the reply that crossed FW1', () => {
 
   it('-1 crosses policy 1 and the echo reply carries the same two-hop ttl', async () => {
     const lab = await configuredLab();
-    const lines = replyLines(await lab.PC1.executeCommand(`hping3 -1 -c 2 ${SERVER1}`));
+    const lines = replyLines(await lab.PC1.executeCommand(`sudo hping3 -1 -c 2 ${SERVER1}`));
     expect(lines).toHaveLength(2);
     expect(lines[0]).toMatch(/^len=28 ip=192\.168\.30\.4 ttl=62 id=\d+ icmp_seq=0 rtt=\d+\.\d ms$/);
     expect(lines[1]).toContain('icmp_seq=1');
@@ -110,7 +110,7 @@ describe('user lab — hping3 reads the reply that crossed FW1', () => {
 
   it('-p ++79 walks the three ports and each one answers for itself', async () => {
     const lab = await configuredLab();
-    const lines = replyLines(await lab.PC1.executeCommand(`hping3 -S -p ++79 -c 3 ${SERVER1}`));
+    const lines = replyLines(await lab.PC1.executeCommand(`sudo hping3 -S -p ++79 -c 3 ${SERVER1}`));
     expect(lines.map((l) => /sport=(\d+)/.exec(l)?.[1])).toEqual(['79', '80', '81']);
     expect(lines[0]).toContain('flags=RA');
     expect(lines[1]).toContain('flags=SA');
@@ -121,7 +121,7 @@ describe('user lab — hping3 reads the reply that crossed FW1', () => {
 describe('user lab — hping3 against the policy', () => {
   it('-A draws nothing because FW1 drops a segment that belongs to no session', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC1.executeCommand(`hping3 -A -p 81 -c 1 ${SERVER1}`);
+    const out = await lab.PC1.executeCommand(`sudo hping3 -A -p 81 -c 1 ${SERVER1}`);
     expect(replyLines(out)).toHaveLength(0);
     expect(out).toContain('1 packets transmitted, 0 packets received, 100% packet loss');
 
@@ -135,14 +135,14 @@ describe('user lab — hping3 against the policy', () => {
 
   it('the same probe from HQ towards the LAN meets the implicit deny', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC3.executeCommand(`hping3 -S -p 80 -c 2 ${PC1}`);
+    const out = await lab.PC3.executeCommand(`sudo hping3 -S -p 80 -c 2 ${PC1}`);
     expect(replyLines(out)).toHaveLength(0);
     expect(out).toContain('2 packets transmitted, 0 packets received, 100% packet loss');
   });
 
   it('a SYN really crosses FW1, and the wire shows it NAT-ed to port2', async () => {
     const lab = await configuredLab();
-    await lab.PC1.executeCommand(`hping3 -S -p 80 -c 1 ${SERVER1}`);
+    await lab.PC1.executeCommand(`sudo hping3 -S -p 80 -c 1 ${SERVER1}`);
     const trace = await lab.FW1.executeCommand(
       `diagnose sniffer packet any 'host ${SERVER1}' 4 20`);
     expect(trace).toMatch(/port1 .*192\.168\.1\.10\.\d+ -> 192\.168\.30\.4\.80: syn \d+$/m);
@@ -156,10 +156,11 @@ describe('user lab — hping3 against the policy', () => {
 describe('user lab — hping3 --scan through FW1', () => {
   it('the scan table lists only the HQ ports that answered SYN, with their real ttl', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC1.executeCommand(`hping3 --scan 22,80,81 -S ${SERVER1}`);
+    const out = await lab.PC1.executeCommand(`sudo hping3 --scan 22,80,81 -S ${SERVER1}`);
     const lines = out.split('\n');
-    expect(lines[0]).toBe('3 ports to scan, use -V to see all the replies');
-    expect(lines[2]).toBe('|port| serv name |  flags  |ttl| id  | win | len |');
+    expect(lines[0]).toBe(`Scanning ${SERVER1} (${SERVER1}), port 22,80,81`);
+    expect(lines[1]).toBe('3 ports to scan, use -V to see all the replies');
+    expect(lines[3]).toBe('|port| serv name |  flags  |ttl| id  | win | len |');
     const rows = lines.filter((l) => /^\s+\d+ \S+\s*: /.test(l));
     expect(rows.map((r) => r.trim().split(/\s+/)[0])).toEqual(['22', '80']);
     expect(rows[0]).toContain('ssh');
@@ -170,7 +171,7 @@ describe('user lab — hping3 --scan through FW1', () => {
 
   it('-V adds the closed HQ port to the same table', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC1.executeCommand(`hping3 --scan 80,81 -S -V ${SERVER1}`);
+    const out = await lab.PC1.executeCommand(`sudo hping3 --scan 80,81 -S -V ${SERVER1}`);
     const rows = out.split('\n').filter((l) => /^\s+\d+ \S+\s*: /.test(l));
     expect(rows).toHaveLength(2);
     expect(rows[0]).toContain('.S..A...');
@@ -182,7 +183,7 @@ describe('user lab — hping3 against FW1 own interface', () => {
   it('a management port FW1 serves answers SYN/ACK with the ttl of its OWN segment', async () => {
     const lab = await configuredLab();
     const line = replyLines(
-      await lab.PC1.executeCommand(`hping3 -S -p 443 -c 1 ${FW1_PORT1}`))[0];
+      await lab.PC1.executeCommand(`sudo hping3 -S -p 443 -c 1 ${FW1_PORT1}`))[0];
     // port1 est sur le segment de PC1 : aucun routeur n'a decremente le
     // ttl, donc 64 ici contre 62 pour Server1 — c'est la meme lecture du
     // champ dans la REPONSE qui rend les deux chiffres differents.
@@ -192,14 +193,14 @@ describe('user lab — hping3 against FW1 own interface', () => {
 
   it('a management service FW1 does NOT allow stays silent, it does not refuse', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC1.executeCommand(`hping3 -S -p 23 -c 1 ${FW1_PORT1}`);
+    const out = await lab.PC1.executeCommand(`sudo hping3 -S -p 23 -c 1 ${FW1_PORT1}`);
     expect(replyLines(out)).toHaveLength(0);
     expect(out).toContain('1 packets transmitted, 0 packets received, 100% packet loss');
   });
 
   it('--scan separates what FW1 serves from what it drops, and names the silent one', async () => {
     const lab = await configuredLab();
-    const out = await lab.PC1.executeCommand(`hping3 --scan 22,23,80,443 -S -V ${FW1_PORT1}`);
+    const out = await lab.PC1.executeCommand(`sudo hping3 --scan 22,23,80,443 -S -V ${FW1_PORT1}`);
     const rows = out.split('\n').filter((l) => /^\s+\d+ \S+\s*: /.test(l));
     expect(rows.map((r) => r.trim().split(/\s+/)[0])).toEqual(['22', '80', '443']);
     for (const row of rows) expect(row).toMatch(/\.S\.\.A\.\.\.\s+64\s/);

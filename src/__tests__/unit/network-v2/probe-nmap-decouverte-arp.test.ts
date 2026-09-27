@@ -110,7 +110,7 @@ describe('la decouverte d un hote LOCAL passe par le lien', () => {
     const { scanner, cible } = await segment();
     await faireTaire(cible);
 
-    const sortie = await taper(scanner, 'nmap -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -p 22 10.0.0.2');
 
     expect(sortie).toMatch(/Host is up/);
     expect(sortie).not.toMatch(/Host seems down/);
@@ -120,7 +120,7 @@ describe('la decouverte d un hote LOCAL passe par le lien', () => {
     const { scanner, cible } = await segment();
     await faireTaire(cible);
 
-    const sortie = await taper(scanner, 'nmap -sn --reason 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -sn --reason 10.0.0.2');
 
     expect(sortie).toContain('arp-response');
   });
@@ -130,7 +130,7 @@ describe('la decouverte d un hote LOCAL passe par le lien', () => {
     const attendue = (cible as unknown as { getPort(n: string): { getMAC(): MACAddress } })
       .getPort('eth0').getMAC().toString().toUpperCase();
 
-    const sortie = await taper(scanner, 'nmap -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -p 22 10.0.0.2');
 
     expect(sortie).toContain(`MAC Address: ${attendue} (Unknown)`);
   });
@@ -138,7 +138,7 @@ describe('la decouverte d un hote LOCAL passe par le lien', () => {
   it('la ligne MAC vient APRES la table des ports', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -p 22 10.0.0.2');
 
     const table = sortie.indexOf('22/tcp');
     const mac = sortie.indexOf('MAC Address:');
@@ -150,7 +150,7 @@ describe('la decouverte d un hote LOCAL passe par le lien', () => {
     const { scanner } = await segment();
     await taper(scanner, 'sudo tcpdump -i eth0 -w /tmp/arp.pcap &');
 
-    await taper(scanner, 'nmap -sn 10.0.0.2');
+    await taper(scanner, 'sudo nmap -sn 10.0.0.2');
 
     const vu = await taper(scanner, 'sudo tcpdump -r /tmp/arp.pcap -nn');
     expect(vu).toMatch(/ARP, Request who-has 10\.0\.0\.2 tell 10\.0\.0\.1/);
@@ -161,7 +161,7 @@ describe('la decouverte d un hote LOCAL passe par le lien', () => {
     await taper(scanner, 'ping -c 1 10.0.0.2');
     await taper(cible, 'sudo tcpdump -i eth0 -w /tmp/noicmp.pcap &');
 
-    await taper(scanner, 'nmap -sn 10.0.0.2');
+    await taper(scanner, 'sudo nmap -sn 10.0.0.2');
 
     const vu = await taper(cible, 'sudo tcpdump -r /tmp/noicmp.pcap -nn');
     expect(vu).not.toMatch(/ICMP echo request/);
@@ -172,15 +172,16 @@ describe('l ARP se fait MEME sous -Pn', () => {
   it('une adresse locale que personne ne porte ressort `down`', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn -p 22 10.0.0.77');
+    const sortie = await taper(scanner, 'sudo nmap -Pn -p 22 10.0.0.77');
 
-    expect(sortie).toMatch(/Host seems down/);
+    expect(sortie).toMatch(/\(0 hosts up\)/);
+    expect(sortie).not.toContain('Host is up');
   });
 
   it('`--disable-arp-ping` rend a `-Pn` son sens litteral', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -Pn --disable-arp-ping -p 22 10.0.0.77');
+    const sortie = await taper(scanner, 'sudo nmap -Pn --disable-arp-ping -p 22 10.0.0.77');
 
     expect(sortie).toMatch(/Host is up/);
   });
@@ -188,7 +189,7 @@ describe('l ARP se fait MEME sous -Pn', () => {
   it('`--disable-arp-ping` supprime aussi la ligne MAC Address', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap --disable-arp-ping -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap --disable-arp-ping -p 22 10.0.0.2');
 
     expect(sortie).not.toContain('MAC Address:');
   });
@@ -198,7 +199,7 @@ describe('IPv6 : la decouverte de voisin remplace l ARP', () => {
   it('la raison rendue est `nd-response`', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -6 -sn --reason 2001:db8::2');
+    const sortie = await taper(scanner, 'sudo nmap -6 -sn --reason 2001:db8::2');
 
     expect(sortie).toContain('nd-response');
   });
@@ -241,7 +242,7 @@ describe('les temoins', () => {
       'ip route add default via 10.0.1.254');
     await taper(cible, 'sudo systemctl start ssh');
 
-    const sortie = await taper(scanner, 'nmap -p 22 10.0.1.1');
+    const sortie = await taper(scanner, 'sudo nmap -p 22 10.0.1.1');
 
     expect(sortie).toMatch(/Host is up/);
     expect(sortie).not.toContain('MAC Address:');
@@ -250,7 +251,7 @@ describe('les temoins', () => {
   it('TEMOIN: le balayage ordinaire trouve toujours le port ouvert', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -p 22,8888 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -p 22,8888 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+open\s+ssh/);
     expect(sortie).toMatch(/8888\/tcp\s+closed/);
@@ -260,7 +261,7 @@ describe('les temoins', () => {
     const { scanner, cible } = await segment();
     (cible as unknown as { powerOff(): void }).powerOff();
 
-    const sortie = await taper(scanner, 'nmap -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -p 22 10.0.0.2');
 
     expect(sortie).toMatch(/Host seems down/);
   });

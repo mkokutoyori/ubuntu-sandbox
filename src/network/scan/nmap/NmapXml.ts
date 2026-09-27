@@ -1,5 +1,5 @@
-import { fmtHumanDate } from '@/network/devices/linux/LinuxLogManager';
-import type { NmapOptions, ScanType } from './NmapOptions';
+import { NMAP_VERSION, type NmapOptions, type ScanType } from './NmapOptions';
+import { CTIME_FORMAT, type NmapClock } from './NmapFormatter';
 import { effectivePorts } from './ScanEngine';
 import type { HostReport, NmapReport, PortResult } from './ScanEngine';
 import { formatPortRanges } from './PortSpec';
@@ -14,7 +14,6 @@ import { formatPortRanges } from './PortSpec';
  */
 
 export const NMAP_XML_OUTPUT_VERSION = '1.05';
-export const NMAP_XML_VERSION = '7.94';
 
 /**
  * `escape` (`xml.cc:222`) : les cinq entites, puis `--` dans un
@@ -68,20 +67,6 @@ function addressType(ip: string): 'ipv4' | 'ipv6' {
 }
 
 /**
- * `adjust_timeouts2` (`timing.cc:120`) sur un PREMIER echantillon :
- * `srtt` est l'aller-retour mesure, `rttvar` le meme borne a
- * [5 ms, 2 s], et le delai `srtt + 4 * rttvar` borne a
- * [`MIN_RTT_TIMEOUT`, `MAX_RTT_TIMEOUT`], soit [100 ms, 10 s]
- * (`nmap.h:187`). Les trois sont en MICROSECONDES.
- */
-function timesOf(latencyMs: number): { srtt: number; rttvar: number; to: number } {
-  const srtt = Math.round(latencyMs * 1000);
-  const rttvar = Math.min(2000000, Math.max(5000, srtt));
-  const to = Math.min(10000000, Math.max(100000, srtt + rttvar * 4));
-  return { srtt, rttvar, to };
-}
-
-/**
  * `print_xml_service` (`output.cc:178`). `method` distingue la table des
  * services de la SONDE qui a lu une banniere, et `conf` est la confiance
  * que `nmap` accorde au nom : 3 pour une deduction de table, 10 pour un
@@ -98,12 +83,10 @@ function serviceTag(port: PortResult, versionScan: boolean): string {
 }
 
 function portTag(port: PortResult, versionScan: boolean): string {
-  // `state_reason_init` (`portreasons.cc:398`) part d'un TTL nul, et un
-  // balayage CONNECTE n'en observe jamais : ce simulateur ne releve le
-  // TTL d'aucune reponse de port, donc zero est ce qu'il a mesure.
   return openTag('port', [['protocol', port.protocol], ['portid', port.port]])
     + emptyTag('state', [
-      ['state', port.state], ['reason', port.reason], ['reason_ttl', 0],
+      ['state', port.state], ['reason', port.reason], ['reason_ttl', port.replyTtl ?? 0],
+      ['reason_ip', port.reasonFrom],
     ])
     + serviceTag(port, versionScan)
     + '</port>';
@@ -213,8 +196,8 @@ function hostSection(
     lines.push(...portsSection(host, options));
     lines.push(...osSection(host));
     lines.push(...traceSection(host));
-    const { srtt, rttvar, to } = timesOf(host.latencyMs);
-    lines.push(emptyTag('times', [['srtt', srtt], ['rttvar', rttvar], ['to', to]]));
+    const { srtt, rttvar, timeout } = host.times;
+    lines.push(emptyTag('times', [['srtt', srtt], ['rttvar', rttvar], ['to', timeout]]));
   }
   lines.push('</host>');
   return lines;
@@ -231,14 +214,14 @@ export const NMAP_WEB_STYLESHEET = 'https://svn.nmap.org/nmap/docs/nmap.xsl';
 
 export function renderXml(
   report: NmapReport, options: NmapOptions, commandLine: string,
-  elapsedSeconds: number,
+  elapsedSeconds: number, clock: NmapClock,
 ): string {
   const started = new Date(report.startedAt);
   const startedSec = Math.floor(started.getTime() / 1000);
-  const startedStr = fmtHumanDate(started);
+  const startedStr = clock(CTIME_FORMAT, started.getTime());
   const finished = new Date(started.getTime() + Math.round(elapsedSeconds * 1000));
   const finishedSec = Math.floor(finished.getTime() / 1000);
-  const finishedStr = fmtHumanDate(finished);
+  const finishedStr = clock(CTIME_FORMAT, finished.getTime());
 
   const lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -247,12 +230,12 @@ export function renderXml(
   if (options.stylesheet !== null) {
     lines.push(`<?xml-stylesheet href="${escapeXml(options.stylesheet)}" type="text/xsl"?>`);
   }
-  lines.push(`<!-- Nmap ${NMAP_XML_VERSION} scan initiated ${escapeXml(startedStr)}`
+  lines.push(`<!-- Nmap ${NMAP_VERSION} scan initiated ${escapeXml(startedStr)}`
     + ` as: ${escapeXml(commandLine)} -->`);
   lines.push(openTag('nmaprun', [
     ['scanner', 'nmap'], ['args', commandLine],
     ['start', startedSec], ['startstr', startedStr],
-    ['version', NMAP_XML_VERSION],
+    ['version', NMAP_VERSION],
     ['xmloutputversion', NMAP_XML_OUTPUT_VERSION],
   ]));
 

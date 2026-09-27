@@ -12,8 +12,9 @@ export interface FirewallPortalDeps {
   readonly now: () => number;
   readonly vdom: (name?: string) => VdomContext;
   readonly certificates: () => CertificateStore;
+  readonly vdomOfClient: (address: string) => string;
   readonly remoteAuthenticate: (
-    server: string, user: string, password: string,
+    vdom: string, server: string, user: string, password: string,
   ) => Promise<RemoteAuthOutcome>;
 }
 
@@ -35,6 +36,7 @@ export function buildFirewallPortals(deps: FirewallPortalDeps): FirewallPortals 
     tcp: deps.tcp,
     now: deps.now,
     vdom: deps.vdom,
+    vdomOfClient: deps.vdomOfClient,
     remoteAuthenticate: deps.remoteAuthenticate,
   });
 
@@ -42,7 +44,7 @@ export function buildFirewallPortals(deps: FirewallPortalDeps): FirewallPortals 
     tcp: deps.tcp,
     now: deps.now,
     authenticate: (address, credentials) => auth.authenticate(address, credentials),
-    groupsOf: (user) => deps.vdom().users.groupsOf(user),
+    groupsOf: (user, address) => deps.vdom(deps.vdomOfClient(address)).users.groupsOf(user),
     certificate: (name) => {
       const declared = deps.certificates().local(name);
       return declared === undefined

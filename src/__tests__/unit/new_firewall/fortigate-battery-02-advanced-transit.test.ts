@@ -661,7 +661,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
         'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       // Injection directe d'un ACK sans SYN préalable via hping3
-      const res = await pc.executeCommand('hping3 -A -p 80 -c 1 203.0.113.9');
+      const res = await pc.executeCommand('sudo hping3 -A -p 80 -c 1 203.0.113.9');
       expect(res).toMatch(/100% packet loss|0 packets received/i);
     });
 
@@ -710,7 +710,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
         'set src-check enable', 'next', 'end', // Strict RPF
       ]);
       // PC envoie un paquet avec IP source externe (203.0.113.88) depuis son interface LAN
-      const res = await pc.executeCommand('hping3 -a 203.0.113.88 -1 -c 1 203.0.113.1');
+      const res = await pc.executeCommand('sudo hping3 -a 203.0.113.88 -1 -c 1 203.0.113.1');
       expect(res).toMatch(/100% packet loss|0 packets received/i);
     });
 

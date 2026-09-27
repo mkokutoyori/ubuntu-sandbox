@@ -16,10 +16,10 @@ describe('tcpdump background capture responds to kill (PRD-tcpdump.md P5)', () =
     const pc = new LinuxPC('PC1', 0, 0);
     await pc.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
 
-    await pc.executeCommand('tcpdump -i eth0 -w /tmp/cap.pcap &');
+    await pc.executeCommand('sudo tcpdump -i eth0 -w /tmp/cap.pcap &');
     await pc.executeCommand('kill %1');
 
-    const readBack = await pc.executeCommand('tcpdump -r /tmp/cap.pcap');
+    const readBack = await pc.executeCommand('sudo tcpdump -r /tmp/cap.pcap');
     expect(readBack).not.toContain('No such file or directory');
   });
 });

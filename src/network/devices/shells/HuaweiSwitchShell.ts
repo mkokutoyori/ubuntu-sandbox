@@ -24,6 +24,7 @@ import {
 } from './huawei/vrpCommonCommands';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { huaweiInteractionPlanFor } from './huawei/HuaweiInteractionPlans';
+import { renderHardwareVersion, S5720_HARDWARE_PROFILE } from './huawei/HuaweiHardwareProfile';
 import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteraction';
 import {
   registerVrpLldpDisplayCommands, applyVrpLldpAdminStatus,
@@ -54,7 +55,7 @@ import { iosInterfaceStatus } from '../inspection/InterfaceStatusView';
 import {
   type LigneIpBrief, type LigneInterface, protocoleVrp, rendreIpInterfaceBrief,
   rendreInterfaceBrief, rendreInterfaceDescription, huaweiMacAddress,
-  type LigneArp, rendreArpSwitch, rendreMacAddress,
+  type LigneArp, rendreArpSwitch, rendreMacAddress, vrpArpExpire,
 } from './huawei/huaweiTableLayouts';
 import { analyserStp, STP_SYSTEME, STP_INTERFACE, borneTimerStp, declarerAideStp,
 } from './huawei/HuaweiStpGrammar';
@@ -71,6 +72,7 @@ import {
 import type { HuaweiShellContext } from './huawei/HuaweiConfigCommands';
 import {
   analyserTeteRouteStatiqueVrp, lireQueueRouteStatiqueVrp, QUEUE_PARAMETRE_INVALIDE,
+  parseVrpArpExpireTime, VRP_WRONG_PARAMETER,
 } from './huawei/HuaweiConfigCommands';
 import { VRP_STATIC_PREFERENCE } from '../SwitchSvi';
 import {
@@ -1548,6 +1550,21 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
 
+    this.interfaceTrie.registerGreedy('arp expire-time', 'Set ARP expire time (seconds)', (args, raw) => {
+      const vlan = /^Vlanif(\d+)$/.exec(this.selectedInterface ?? '');
+      if (!this.swRef || !vlan) return refuseMotInattenduVrp(raw ?? `arp expire-time ${args.join(' ')}`, 'expire-time');
+      const seconds = parseVrpArpExpireTime(args);
+      if (seconds === null) return VRP_WRONG_PARAMETER;
+      this.swRef.setSviArpTimeout(Number(vlan[1]), seconds);
+      return '';
+    });
+    this.interfaceTrie.register('undo arp expire-time', 'Reset ARP expire time', () => {
+      const vlan = /^Vlanif(\d+)$/.exec(this.selectedInterface ?? '');
+      if (!this.swRef || !vlan) return refuseMotInattenduVrp('undo arp expire-time', 'expire-time');
+      this.swRef.setSviArpTimeout(Number(vlan[1]), null);
+      return '';
+    });
+
     this.interfaceTrie.registerGreedy('description', 'Set interface description', (args) => {
       if (!this.swRef || !this.selectedInterface || args.length < 1) return 'Error: Incomplete command.';
       this.swRef.setInterfaceDescription(this.selectedInterface, args.join(' '));
@@ -2481,7 +2498,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private registerDisplayCommands(trie: CommandTrie): void {
     trie.register('display version', 'Display VRP version information', () => {
       if (!this.swRef) return '';
-      return this.displayVersion(this.swRef);
+      return renderHardwareVersion(this.swRef.getUptimeMs(), S5720_HARDWARE_PROFILE);
     });
     // La forme globale marchait, la forme PAR-INTERFACE était refusée
     // (audit 12, §3.3). Elle filtre la même vue plutôt que d'en rendre
@@ -2825,13 +2842,14 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!this.swRef) return '';
       const filter = (args[0] ?? '').toLowerCase();
       const lignes: LigneArp[] = [];
-      for (const [ip, e] of this.swRef._getArpTableInternal()) {
+      const cache = this.swRef._getArpTableInternal();
+      for (const [ip, e] of cache) {
         if (filter === 'static' && e.type !== 'static') continue;
         if (filter === 'dynamic' && e.type !== 'dynamic') continue;
         lignes.push({
           ip,
           mac: huaweiMacAddress(e.mac),
-          expire: e.type === 'static' ? '-' : '20',
+          expire: vrpArpExpire(cache, e),
           type: e.type,
           iface: huaweiDisplayInterfaceName(e.iface),
         });
@@ -4184,19 +4202,6 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   // ─── Display Implementations ──────────────────────────────────────
 
-  private displayVersion(sw: Switch): string {
-    return [
-      'Huawei Versatile Routing Platform Software',
-      'VRP (R) software, Version 5.170 (S5720 V200R019C10SPC500)',
-      'Copyright (C) 2000-2025 HUAWEI TECH CO., LTD',
-      '',
-      `BOARD TYPE:          S5720-28X-LI-AC`,
-      `CPLD Version:        1.0`,
-      `BootROM Version:     1.0`,
-      `${sw.getHostname()} uptime is 0 days, 0 hours, 0 minutes`,
-    ].join('\n');
-  }
-
   private displayVlan(sw: Switch): string {
     const vlans = sw.getVLANs();
     const configs = sw._getSwitchportConfigs();
@@ -4573,6 +4578,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
         lines.push(`interface ${name}`);
         if (svi.dhcpClient) lines.push(' ip address dhcp-alloc');
         else if (svi.ip && svi.mask) lines.push(` ip address ${svi.ip} ${svi.mask}`);
+        if (svi.arpTimeoutSec != null && svi.arpTimeoutSec !== sw.defaultArpTimeoutSec()) {
+          lines.push(` arp expire-time ${svi.arpTimeoutSec}`);
+        }
         for (const l of this.renderVlanifVrrpLines(sw, name)) lines.push(l);
         for (const natLine of runningConfigNATHuawei(commeRouteur(sw), name)) lines.push(natLine);
         lines.push('#');

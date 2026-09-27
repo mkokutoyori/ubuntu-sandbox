@@ -51,11 +51,11 @@ describe('Scenario 7 — Capture et analyse de paquets sur un lien SSH', () => {
     await server.executeCommand('echo "alice:ssh-secret-PW!" | chpasswd');
     await server.executeCommand('systemctl start ssh');
 
-    await capture.executeCommand('tcpdump -i eth0 -w /tmp/ssh.pcap &');
+    await capture.executeCommand('sudo tcpdump -i eth0 -w /tmp/ssh.pcap &');
 
     await client.executeCommand('ssh -o StrictHostKeyChecking=no alice@10.0.0.20 "cat /etc/shadow"', 'ssh-secret-PW!\n');
 
-    const tcpdumpOut = await capture.executeCommand('tcpdump -r /tmp/ssh.pcap -A');
+    const tcpdumpOut = await capture.executeCommand('sudo tcpdump -r /tmp/ssh.pcap -A');
     expect(tcpdumpOut).toMatch(/10\.0\.0\.20\.ssh/);
     expect(tcpdumpOut).toMatch(/SSH-2\.0/);
     expect(tcpdumpOut).not.toContain('ssh-secret-PW!');
@@ -74,11 +74,11 @@ describe('Scenario 7 — Capture et analyse de paquets sur un lien SSH', () => {
     await server.executeCommand('echo "bob:telnet-cleartext" | chpasswd');
     await server.executeCommand('systemctl start telnet');
 
-    await capture.executeCommand('tcpdump -i eth0 -w /tmp/telnet.pcap &');
+    await capture.executeCommand('sudo tcpdump -i eth0 -w /tmp/telnet.pcap &');
 
     await client.executeCommand('telnet 10.0.0.20', 'bob\ntelnet-cleartext\nls /etc/shadow\nexit\n');
 
-    const tcpdumpOut = await capture.executeCommand('tcpdump -r /tmp/telnet.pcap -A');
+    const tcpdumpOut = await capture.executeCommand('sudo tcpdump -r /tmp/telnet.pcap -A');
     expect(tcpdumpOut).toMatch(/10\.0\.0\.20\.telnet/);
     expect(tcpdumpOut).toContain('telnet-cleartext');
     expect(tcpdumpOut).toContain('ls /etc/shadow');
@@ -97,15 +97,15 @@ describe('Scenario 7 — Capture et analyse de paquets sur un lien SSH', () => {
     await server.executeCommand('echo "carol:carolsecret123" | chpasswd');
     await server.executeCommand('systemctl start ssh');
 
-    await capture.executeCommand('tcpdump -i eth0 -w /tmp/ssh2.pcap &');
+    await capture.executeCommand('sudo tcpdump -i eth0 -w /tmp/ssh2.pcap &');
     await client.executeCommand('ssh -o StrictHostKeyChecking=no carol@10.0.0.20 "uname -a"', 'carolsecret123\n');
-    const sshAscii = await capture.executeCommand('tcpdump -r /tmp/ssh2.pcap -A');
+    const sshAscii = await capture.executeCommand('sudo tcpdump -r /tmp/ssh2.pcap -A');
 
     await server.executeCommand('systemctl stop ssh');
     await server.executeCommand('systemctl start telnet');
-    await capture.executeCommand('tcpdump -i eth0 -w /tmp/telnet2.pcap &');
+    await capture.executeCommand('sudo tcpdump -i eth0 -w /tmp/telnet2.pcap &');
     await client.executeCommand('telnet 10.0.0.20', 'carol\ncarolsecret123\nuname -a\nexit\n');
-    const telnetAscii = await capture.executeCommand('tcpdump -r /tmp/telnet2.pcap -A');
+    const telnetAscii = await capture.executeCommand('sudo tcpdump -r /tmp/telnet2.pcap -A');
 
     expect(sshAscii).toMatch(/10\.0\.0\.20\.ssh/);
     expect(sshAscii).not.toContain('carolsecret123');

@@ -31,7 +31,7 @@ import {
   BgpSession, type BgpFsmState, type BgpMessageCounts,
 } from './BgpSession';
 import {
-  BGP_DEFAULT_CONNECT_RETRY_SEC, NO_BGP_ERROR,
+  BGP_DEFAULT_CONNECT_RETRY_SEC, CEASE_SUBCODE, NO_BGP_ERROR,
   type BgpErrorCode, type BgpUpdateMessage, type BgpNlri, type BgpPathAttributes,
 } from './messages';
 import { TimerSet } from '@/events/TimerSet';
@@ -222,8 +222,8 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
   }
 
   // ── lifecycle ──────────────────────────────────────────────────────
-  override disable(): void {
-    for (const ps of this.peers.values()) ps.session.close();
+  override disable(ceaseSubcode: number = CEASE_SUBCODE.PEER_DECONFIGURED): void {
+    for (const [ip, ps] of this.peers) this.closeAndAnnounce(ip, ps, ceaseSubcode);
     this.peers.clear();
     this.shutdownTimers();
     this.attempted.clear();
@@ -241,7 +241,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     for (const [ip, ps] of [...this.peers]) {
       const cfg = this.config.neighbors.get(ip);
       if (!cfg || !matches(ip, cfg)) continue;
-      ps.session.close();
+      ps.session.close(CEASE_SUBCODE.ADMINISTRATIVE_RESET);
       this.peers.delete(ip);
       reset.push(ip);
     }
@@ -276,7 +276,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
       // peering and refuse the new one; otherwise drop the stale/in-progress
       // outbound and accept this inbound so peering can complete.
       if (existing.session.isEstablished()) { link.transport.close(); return; }
-      existing.session.close();
+      existing.session.close(CEASE_SUBCODE.CONNECTION_COLLISION_RESOLUTION);
       this.peers.delete(link.neighborIp);
     }
     this.startSession(link, false);
@@ -287,7 +287,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     // Drop sessions for neighbours no longer configured.
     for (const [ip, ps] of [...this.peers]) {
       if (!this.config.neighbors.has(ip)) {
-        ps.session.close();
+        this.closeAndAnnounce(ip, ps, CEASE_SUBCODE.PEER_DECONFIGURED);
         this.peers.delete(ip);
         this.clearConnectRetry(ip);
         this.attempted.delete(ip);
@@ -742,6 +742,12 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     return rows.sort((a, b) => String(a.network).localeCompare(String(b.network)));
   }
 
+  private closeAndAnnounce(ip: string, ps: { session: BgpSession }, ceaseSubcode: number): void {
+    const previous = this.neighbors.view().find((n) => n.id === ip)?.state;
+    ps.session.close(ceaseSubcode);
+    this.publishNeighborState(ip, previous, 'Idle', this.config.neighbors.get(ip)?.remoteAs);
+  }
+
   private publishNeighborState(
     ip: string, oldState: string | undefined, newState: string, remoteAs?: number,
   ): void {
@@ -751,6 +757,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
       payload: {
         deviceId: this.deviceId, neighborIp: ip,
         oldState: oldState ?? 'Idle', newState, remoteAs: remoteAs ?? null,
+        lastError: this.peerLastError(ip),
       },
     });
   }

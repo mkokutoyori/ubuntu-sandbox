@@ -126,7 +126,7 @@ describe('une trame du fil n est enregistree qu une fois', () => {
     const { client } = await segment();
     await taper(client, 'sudo tcpdump -i eth0 tcp -w /tmp/sf.pcap &');
 
-    await taper(client, 'nmap -Pn --scanflags SYNFIN -p 22 10.0.0.2');
+    await taper(client, 'sudo nmap -Pn --scanflags SYNFIN -p 22 10.0.0.2');
 
     const vu = await taper(client, 'sudo tcpdump -r /tmp/sf.pcap -nn');
     expect(lignes(vu, /Flags \[FS\]/)).toHaveLength(1);

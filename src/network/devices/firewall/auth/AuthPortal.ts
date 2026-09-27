@@ -21,9 +21,9 @@ export interface AuthPortalDeps {
   readonly identities: (vdom?: string) => IdentityTable;
   readonly vdomOfAddress: (address: string) => string;
   readonly remoteAuthenticate: (
-    server: string, user: string, password: string,
+    vdom: string, server: string, user: string, password: string,
   ) => Promise<RemoteAuthOutcome>;
-  readonly onEvent?: (message: string) => void;
+  readonly onEvent?: (vdom: string, message: string) => void;
 }
 
 export interface PortalCredentials {
@@ -76,7 +76,7 @@ export class AuthPortal {
 
     if (route.source === 'local') {
       if (!directory.authenticateLocal(credentials.username, credentials.password)) {
-        this.report(`user ${credentials.username} failed local authentication`);
+        this.report(vdom, `user ${credentials.username} failed local authentication`);
         return { ok: false, reason: 'bad-password' };
       }
       return this.admit(address, credentials.username, 'local', undefined, policyId);
@@ -85,9 +85,9 @@ export class AuthPortal {
     if (route.server === undefined) return { ok: false, reason: 'no-server' };
 
     const outcome = await this.deps.remoteAuthenticate(
-      route.server, credentials.username, credentials.password);
+      vdom, route.server, credentials.username, credentials.password);
     if (!outcome.accepted) {
-      this.report(`user ${credentials.username} rejected by ${route.server}`);
+      this.report(vdom, `user ${credentials.username} rejected by ${route.server}`);
       return { ok: false, reason: 'bad-password' };
     }
 
@@ -111,12 +111,12 @@ export class AuthPortal {
       timeoutSec: timeout,
     });
 
-    this.report(`user ${user} authenticated from ${address}`);
+    this.report(vdom, `user ${user} authenticated from ${address}`);
     return { ok: true, user, groups };
   }
 
-  private report(message: string): void {
-    this.deps.onEvent?.(message);
+  private report(vdom: string, message: string): void {
+    this.deps.onEvent?.(vdom, message);
   }
 
   private async respond(request: HttpMessage, peer?: Http1Peer): Promise<HttpMessage> {
@@ -191,8 +191,9 @@ export interface AuthPortalBuild {
     identities: IdentityTable;
     logs: { append(draft: unknown): unknown };
   };
+  readonly vdomOfClient: (address: string) => string;
   readonly remoteAuthenticate: (
-    server: string, user: string, password: string,
+    vdom: string, server: string, user: string, password: string,
   ) => Promise<RemoteAuthOutcome>;
 }
 
@@ -202,9 +203,9 @@ export function buildAuthPortal(build: AuthPortalBuild): AuthPortal {
     now: build.now,
     directory: (vdom) => build.vdom(vdom).users,
     identities: (vdom) => build.vdom(vdom).identities,
-    vdomOfAddress: () => 'root',
+    vdomOfAddress: build.vdomOfClient,
     remoteAuthenticate: build.remoteAuthenticate,
-    onEvent: (message) => build.vdom().logs.append({
+    onEvent: (vdom, message) => build.vdom(vdom).logs.append({
       at: build.now(), type: 'event', subtype: 'user', level: 'notice',
       id: '0102043008', fields: { action: 'authentication', msg: message },
     }),

@@ -44,7 +44,7 @@ export class FortiGate extends Firewall {
         buildDate: FORTI_FIRMWARE.buildDate,
         versionSuffix: fortiVersionSuffix(FORTI_FIRMWARE),
       }),
-      managementVdomIndex: () => this.vdomIndex('root'),
+      managementVdomIndex: () => this.vdomIndex(this.managementVdom()),
       cpuUsagePercent: () => this.getSystemLoad().cpuUsagePercent(),
       memory: () => this.getSystemLoad().memory(),
       logDisk: () => {

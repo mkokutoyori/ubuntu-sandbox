@@ -38,27 +38,27 @@ async function captureOneSyn(cmd: string): Promise<string> {
 
 describe('tcpdump verbosity levels + TCP options + checksum display (PRD-tcpdump.md P6)', () => {
   it('a SYN carrying negotiated options shows them by default, without -v', async () => {
-    const output = await captureOneSyn('tcpdump -c 1 -nn tcp');
+    const output = await captureOneSyn('sudo tcpdump -c 1 -nn tcp');
     expect(output).toMatch(/options \[mss \d+,sackOK,TS val \d+ ecr \d+,wscale \d+\]/);
     expect(output).not.toContain('cksum');
     expect(output).not.toContain('proto TCP');
   });
 
   it('-v adds the IP header block and a correct TCP checksum, silent on a good IP checksum', async () => {
-    const output = await captureOneSyn('tcpdump -c 1 -nn -v tcp');
+    const output = await captureOneSyn('sudo tcpdump -c 1 -nn -v tcp');
     expect(output).toMatch(/proto TCP \(6\), length \d+\)/);
     expect(output).toMatch(/cksum 0x[0-9a-f]{4} \(correct\)/);
     expect(output).not.toContain('ip sum ok');
   });
 
   it('-vv additionally reports the IP header checksum explicitly as ok', async () => {
-    const output = await captureOneSyn('tcpdump -c 1 -nn -vv tcp');
+    const output = await captureOneSyn('sudo tcpdump -c 1 -nn -vv tcp');
     expect(output).toContain('ip sum ok');
     expect(output).toMatch(/cksum 0x[0-9a-f]{4} \(correct\)/);
   });
 
   it('a real segment carries a correct seq/ack/window, not the old always-zero placeholders', async () => {
-    const output = await captureOneSyn('tcpdump -c 1 -nn tcp');
+    const output = await captureOneSyn('sudo tcpdump -c 1 -nn tcp');
     const match = output.match(/seq (\d+), win (\d+)/);
     expect(match).not.toBeNull();
     expect(Number(match![1])).toBeGreaterThan(0);

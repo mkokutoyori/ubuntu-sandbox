@@ -116,7 +116,7 @@ describe('la latence est en secondes, pas en millisecondes', () => {
 
     const ping = await taper(scanner, 'ping -c 1 10.0.0.2');
     const rttMs = Number(/time=([\d.]+) ms/.exec(ping)?.[1] ?? NaN);
-    const sortie = await taper(scanner, 'nmap --disable-arp-ping -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap --disable-arp-ping -p 22 10.0.0.2');
 
     expect(rttMs).toBeGreaterThan(0);
     expect(latence(sortie)).toBeLessThan(rttMs / 100);
@@ -125,7 +125,7 @@ describe('la latence est en secondes, pas en millisecondes', () => {
   it('elle ne porte que deux chiffres significatifs', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap --disable-arp-ping -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap --disable-arp-ping -p 22 10.0.0.2');
 
     const chiffres = /\(([\d.]+)s latency\)/.exec(sortie)?.[1] ?? '';
     expect(chiffres.replace(/^0\.0*/, '').replace('.', '')).toHaveLength(2);
@@ -136,7 +136,7 @@ describe('`--reason` dit le TTL de la reponse', () => {
   it('un echo-reply porte son TTL', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap --reason --disable-arp-ping -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap --reason --disable-arp-ping -p 22 10.0.0.2');
 
     expect(sortie).toMatch(/Host is up, received echo-reply ttl 64 \([\d.]+s latency\)\./);
   });
@@ -144,7 +144,7 @@ describe('`--reason` dit le TTL de la reponse', () => {
   it('une reponse ARP n en porte aucun, et rien n est ecrit', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap --reason -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap --reason -p 22 10.0.0.2');
 
     expect(sortie).toContain('received arp-response');
     expect(sortie).not.toMatch(/arp-response ttl/);
@@ -155,7 +155,7 @@ describe('un hote mort porte sa raison dans le crochet', () => {
   it('`--reason` la nomme', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap --reason -p 22 10.0.0.77');
+    const sortie = await taper(scanner, 'sudo nmap -v --reason -p 22 10.0.0.77');
 
     expect(sortie).toContain('[host down, received no-response]');
   });
@@ -163,7 +163,7 @@ describe('un hote mort porte sa raison dans le crochet', () => {
   it('TEMOIN: sans `--reason` le crochet reste nu', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -p 22 10.0.0.77');
+    const sortie = await taper(scanner, 'sudo nmap -v -p 22 10.0.0.77');
 
     expect(sortie).toContain('[host down]');
     expect(sortie).not.toContain('no-response');
@@ -174,7 +174,7 @@ describe('la decouverte de couche lien mesure son aller-retour', () => {
   it('la latence n est plus la constante de repli', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'sudo nmap -p 22 10.0.0.2');
 
     expect(sortie).toContain('MAC Address:');
     expect(latence(sortie)).not.toBe(0.001);

@@ -10,6 +10,7 @@ import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import { TimeZone } from '@/network/core/time/TimeZone';
+import { WINDOWS_TIME_ZONES as ZONES_WINDOWS } from '@/network/core/time/WindowsTimeZones';
 import {
   observesDaylightSaving, standardOffsetMinutes,
 } from '@/network/core/time/TimeZoneRegistry';
@@ -30,25 +31,6 @@ import {
  * explicite plutot que devinee, et un nom inconnu est REFUSE comme le
  * vrai applet le refuse.
  */
-const ZONES_WINDOWS: ReadonlyArray<{ id: string; iana: string; nom: string }> = [
-  { id: 'UTC', iana: 'Etc/UTC', nom: 'Coordinated Universal Time' },
-  { id: 'W. Central Africa Standard Time', iana: 'Africa/Douala', nom: 'West Central Africa' },
-  { id: 'GMT Standard Time', iana: 'Europe/London', nom: 'Dublin, Edinburgh, Lisbon, London' },
-  { id: 'Greenwich Standard Time', iana: 'Africa/Abidjan', nom: 'Monrovia, Reykjavik' },
-  { id: 'W. Europe Standard Time', iana: 'Europe/Berlin', nom: 'Amsterdam, Berlin, Bern, Rome' },
-  { id: 'Romance Standard Time', iana: 'Europe/Paris', nom: 'Brussels, Copenhagen, Madrid, Paris' },
-  { id: 'South Africa Standard Time', iana: 'Africa/Johannesburg', nom: 'Harare, Pretoria' },
-  { id: 'E. Africa Standard Time', iana: 'Africa/Nairobi', nom: 'Nairobi' },
-  { id: 'Egypt Standard Time', iana: 'Africa/Cairo', nom: 'Cairo' },
-  { id: 'Eastern Standard Time', iana: 'America/New_York', nom: 'Eastern Time (US & Canada)' },
-  { id: 'Central Standard Time', iana: 'America/Chicago', nom: 'Central Time (US & Canada)' },
-  { id: 'Pacific Standard Time', iana: 'America/Los_Angeles', nom: 'Pacific Time (US & Canada)' },
-  { id: 'India Standard Time', iana: 'Asia/Kolkata', nom: 'Chennai, Kolkata, Mumbai, New Delhi' },
-  { id: 'China Standard Time', iana: 'Asia/Shanghai', nom: 'Beijing, Chongqing, Hong Kong' },
-  { id: 'Tokyo Standard Time', iana: 'Asia/Tokyo', nom: 'Osaka, Sapporo, Tokyo' },
-  { id: 'Russian Standard Time', iana: 'Europe/Moscow', nom: 'Moscow, St. Petersburg' },
-  { id: 'AUS Eastern Standard Time', iana: 'Australia/Sydney', nom: 'Canberra, Melbourne, Sydney' },
-];
 
 function objetZone(z: { id: string; iana: string; nom: string }): PSValue {
   const zone = TimeZone.parse(z.iana);

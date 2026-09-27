@@ -120,12 +120,11 @@ export class BgpSession {
     this.emit(update);
   }
 
-  /** Administrative shutdown (RFC 4271 §6.7 Cease). */
-  close(): void {
+  close(ceaseSubcode: number): void {
     if (this._state === 'Idle') return;
     this.emit({
       type: 'bgp', message: 'notification',
-      errorCode: BGP_ERROR.CEASE, errorSubcode: 0,
+      errorCode: BGP_ERROR.CEASE, errorSubcode: ceaseSubcode,
     });
     this.teardown();
   }

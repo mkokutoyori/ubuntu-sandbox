@@ -45,6 +45,16 @@ export type HuaweiShellMode =
   // muette au lieu d'une erreur de compilation.
   | 'pim';
 
+export const VRP_ARP_EXPIRE_TIME_DEFAULT_SEC = 1_200;
+const VRP_ARP_EXPIRE_TIME_RANGE: readonly [number, number] = [60, 86_400];
+export const VRP_WRONG_PARAMETER = `Error: Wrong parameter found at '^' position.`;
+
+export function parseVrpArpExpireTime(args: readonly string[]): number | null {
+  const [min, max] = VRP_ARP_EXPIRE_TIME_RANGE;
+  const seconds = /^\d+$/.test(args[0] ?? '') ? Number(args[0]) : NaN;
+  return args.length === 1 && seconds >= min && seconds <= max ? seconds : null;
+}
+
 export interface HuaweiShellContext {
   r(): Router;
   setMode(mode: HuaweiShellMode): void;
@@ -306,14 +316,10 @@ export function cmdIpPool(router: Router, ctx: HuaweiShellContext, poolName: str
 // ─── ARP Static Command ─────────────────────────────────────────────
 
 export function cmdArpStatic(router: Router, ip: string, mac: string): string {
-  const normalizedMAC = normalizeMAC(mac);
-  const arpTable = router._getArpTableInternal();
-  arpTable.set(ip, {
-    mac: new MACAddress(normalizedMAC),
-    iface: '',
-    timestamp: Date.now(),
-    type: 'static',
-  } as any);
+  const address = IPAddress.tryParse(ip);
+  const hardware = MACAddress.tryParse(normalizeMAC(mac));
+  if (!address || !hardware) return `Error: Wrong parameter found at '^' position.`;
+  router._addStaticARP(address, hardware, '');
   return '';
 }
 
@@ -934,16 +940,15 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
   trie.registerGreedy('arp expire-time', 'Set ARP expire time (seconds)', (args) => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
-    const port = ctx.r().getPort(ifName);
-    const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) port.setArpTimeoutSec(n);
+    const seconds = parseVrpArpExpireTime(args);
+    if (seconds === null) return VRP_WRONG_PARAMETER;
+    ctx.r().setArpTimeoutSec(ifName, seconds);
     return '';
   });
   trie.registerGreedy('undo arp expire-time', 'Reset ARP expire time', () => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
-    const port = ctx.r().getPort(ifName);
-    if (port) port.setArpTimeoutSec(4 * 60 * 60);
+    ctx.r().setArpTimeoutSec(ifName, null);
     return '';
   });
   trie.register('arp-proxy enable', 'Enable proxy-ARP', () => {

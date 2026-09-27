@@ -315,10 +315,16 @@ export function cmdDate(args: string[], timezone?: string): string {
     if (a === '-u' || a === '--utc' || a === '--universal') forceUtc = true;
   }
 
-  const rendu = renderingIn(forceUtc ? undefined : timezone, when.getTime());
-  const local = new Date(when.getTime() + rendu.offsetMin * 60_000);
-  if (fmtArg !== undefined) return strftime(fmtArg, local, rendu);
-  return fullDate(local, rendu.abbr);
+  const zone = forceUtc ? undefined : timezone;
+  if (fmtArg !== undefined) return formatLocalTime(fmtArg, when.getTime(), zone);
+  const rendu = renderingIn(zone, when.getTime());
+  return fullDate(new Date(when.getTime() + rendu.offsetMin * 60_000), rendu.abbr);
+}
+
+export function formatLocalTime(fmt: string, atMs: number, timezone?: string, zoneName?: string): string {
+  const rendu = renderingIn(timezone, atMs);
+  const shown = zoneName === undefined ? rendu : { ...rendu, abbr: zoneName };
+  return strftime(fmt, new Date(atMs + rendu.offsetMin * 60_000), shown);
 }
 
 export function cmdTty(currentTty: string): string {

@@ -225,6 +225,7 @@ function waitSpecOf(value: string): [number, number, number] | null {
 }
 
 const BUILT_MODULES = new Set(['default', 'icmp', 'tcp', 'udp', 'raw']);
+const RAW_SOCKET_METHODS: ReadonlySet<string> = new Set(['tcp', 'raw']);
 const UNBUILT_MODULES: Readonly<Record<string, string>> = {
   tcpconn: 'a connect()-based TCP trace',
   udplite: 'a UDPLITE datagram',
@@ -361,6 +362,8 @@ function probeMethod(parsed: ParsedTracerouteArgs, protocol: number): TraceProbe
 }
 
 export interface TracerouteHost {
+  rawSocketsPermitted: boolean;
+  mayBindPort(port: number): boolean;
   resolveHostname(name: string): Promise<IPAddress | null>;
   interfaceExists(name: string): boolean;
   ownsAddress(address: IPAddress): boolean;
@@ -402,13 +405,16 @@ async function sourceOf(
 }
 
 function socketErrorOf(
-  target: IPAddress, socket: TraceSocketOptions, host: TracerouteHost,
+  target: IPAddress, socket: TraceSocketOptions, host: TracerouteHost, bindsSourcePort: boolean,
 ): string | null {
   if (socket.iface !== undefined && !host.interfaceExists(socket.iface)) {
     return 'setsockopt SO_BINDTODEVICE: No such device';
   }
   if (socket.sourceIp !== undefined && !host.ownsAddress(socket.sourceIp)) {
     return 'bind: Cannot assign requested address';
+  }
+  if (bindsSourcePort && socket.sourcePort !== undefined && !host.mayBindPort(socket.sourcePort)) {
+    return 'bind: Permission denied';
   }
   if (!host.canReach(target, socket)) return 'connect: Network is unreachable';
   return null;
@@ -449,6 +455,11 @@ export async function runTraceroute(
   const invalid = mainValidationError(parsed);
   if (invalid !== null) { emit(invalid); return 2; }
 
+  if (RAW_SOCKET_METHODS.has(parsed.method) && !host.rawSocketsPermitted) {
+    emit('You do not have enough privileges to use this traceroute method.\nsocket: Operation not permitted');
+    return 1;
+  }
+
   const socket: TraceSocketOptions = {
     dontFragment: parsed.dontFragment,
     direct: parsed.direct,
@@ -457,9 +468,9 @@ export async function runTraceroute(
     ...(parsed.sourcePort === undefined ? {} : { sourcePort: parsed.sourcePort }),
   };
   const header = tracerouteHeader(parsed.targetStr, target.toString(), parsed.maxHops, parsed.packetSize);
-  const socketError = socketErrorOf(target, socket, host);
+  const perProbeSocket = parsed.method === 'default' || parsed.method === 'udp';
+  const socketError = socketErrorOf(target, socket, host, perProbeSocket);
   if (socketError !== null) {
-    const perProbeSocket = parsed.method === 'default' || parsed.method === 'udp';
     emit(perProbeSocket ? `${header}\n${socketError}` : `\n${socketError}`);
     return 1;
   }
@@ -472,12 +483,16 @@ export async function runTraceroute(
   return 0;
 }
 
-export function tracerouteHostOf(ctx: LinuxCommandContext): TracerouteHost {
+export function tracerouteHostOf(
+  ctx: LinuxCommandContext, rawSocketsPermitted = ctx.executor.holdsCapability('CAP_NET_RAW'),
+  uid = ctx.executor.userMgr.currentUid,
+): TracerouteHost {
   return {
+    rawSocketsPermitted,
+    mayBindPort: (port) => ctx.executor.portBindPermitted(port, uid),
     resolveHostname: (name) => ctx.net.resolveHostname(name),
     interfaceExists: (name) => ctx.net.getPorts().has(name),
-    ownsAddress: (address) => [...ctx.net.getPorts().values()]
-      .some((port) => port.getIPAddress()?.equals(address) === true) || address.isLoopback(),
+    ownsAddress: (address) => ctx.net.isLocalAddress(address),
     canReach: (target, socket) => ctx.net.canTraceTo(target, socket),
     protocolNumber: (name) => {
       const found = ctx.executor.nss.lookup<NssProtocolEntry>('protocols', (src) => src.getprotobyname?.(name));

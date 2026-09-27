@@ -29,7 +29,7 @@ import { newProtocolCounters, countIcmpIn, countIcmpOut, type ProtocolCounters }
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
-import { TcpStack } from '../tcp/TcpStack';
+import { TcpStack, receivedIpHeaderOf } from '../tcp/TcpStack';
 import type { TcpSegment, TcpDialFailure, TcpWireOutcome } from '../tcp/types';
 import type { UdpChecksumInput } from '@/network/layers/transport/UdpChecksum';
 import { isDialFailure, noFlags } from '../tcp/types';
@@ -139,6 +139,7 @@ export interface GreDecapsulator {
 // ─── Internal Types ────────────────────────────────────────────────
 
 import type { ARPEntry } from '../core/types';
+import { PortBindingPolicy } from '../core/ports/PortBindingPolicy';
 import type { TaggedEthernetFrame } from './Switch';
 
 const CLIENT_DDNS_TTL = 1200;
@@ -435,6 +436,7 @@ export abstract class EndHost extends Equipment {
   protected ipv6RoutingTable: HostIPv6RouteEntry[] = [];
 
   protected readonly tcpv2: TcpStack;
+  protected readonly portBindingPolicy: PortBindingPolicy;
 
   // ─── DHCP Client (RFC 2131) ─────────────────────────────────────
   protected dhcpClient: DHCPClient;
@@ -876,6 +878,7 @@ export abstract class EndHost extends Equipment {
         code: icmp.icmpType === 'time-exceeded'
           ? 'ttl-exceeded' : unreachableCodeName(icmp.code),
         icmpCode: icmp.code,
+        ttl: ipPkt.ttl,
         origProtocol: original?.protocol,
         origDestPort: transport?.destinationPort,
       },
@@ -969,9 +972,13 @@ export abstract class EndHost extends Equipment {
     this.tcpv2 = new TcpStack(hostBase, () => this.getBus(), () => this.getScheduler());
     this.tcpv2.start();
     this.attachListenerProjection();
+    const platform = String(type).includes('windows') ? 'windows' : 'linux';
+    this.portBindingPolicy = platform === 'windows' ? PortBindingPolicy.windows() : PortBindingPolicy.linux();
+    this.socketTable.setBindingPolicy(this.portBindingPolicy);
+    this.tcpv2.setBindingPolicy(this.portBindingPolicy);
     this.hardware = HardwareProfile.defaultFor(
       String(type).includes('server') ? 'server' : 'workstation',
-      String(type).includes('windows') ? 'windows' : 'linux',
+      platform,
     );
     this.hardware.identify(this.name);
     this.lifecycle = new HostLifecycle();
@@ -2078,15 +2085,14 @@ export abstract class EndHost extends Equipment {
       });
     }
 
-    if (arp.operation === 'request' && arp.targetIP.equals(myIP)) {
-      // ARP request for our IP → reply with our MAC
-      Logger.info(this.id, 'arp:reply', `${this.name}: ARP reply for ${myIP} via ${portName}`);
+    if (arp.operation === 'request' && this.answersArpFor(port, arp.targetIP)) {
+      Logger.info(this.id, 'arp:reply', `${this.name}: ARP reply for ${arp.targetIP} via ${portName}`);
 
       const reply: ARPPacket = {
         type: 'arp',
         operation: 'reply',
         senderMAC: port.getMAC(),
-        senderIP: myIP,
+        senderIP: arp.targetIP,
         targetMAC: arp.senderMAC,
         targetIP: arp.senderIP,
       };
@@ -2103,6 +2109,12 @@ export abstract class EndHost extends Equipment {
       // queued forwarded packets that were waiting for this resolution.
       this.flushFwdQueue(arp.senderIP.toString(), arp.senderMAC);
     }
+  }
+
+  private answersArpFor(port: Port, target: IPAddress): boolean {
+    if (target.isLoopback()) return false;
+    if (port.ownsIPv4(target)) return true;
+    return this.hostModel === 'weak' && this.getPortOwningIP(target) !== null;
   }
 
   /** Send queued forwarded packets now that ARP has been resolved. */
@@ -2236,6 +2248,14 @@ export abstract class EndHost extends Equipment {
       if (port.isIPv6Enabled() && port.hasIPv6Address(ip)) return port;
     }
     return null;
+  }
+
+  isLocalAddress(ip: IPAddress): boolean {
+    return ip.isLoopback() || this.getPortOwningIP(ip) !== null;
+  }
+
+  isLocalAddress6(ip: IPv6Address): boolean {
+    return ip.isLoopback() || this.getPortOwningIPv6(ip) !== null;
   }
 
   /**
@@ -2667,7 +2687,7 @@ export abstract class EndHost extends Equipment {
           this.tcpv2.onIcmpUnreachable(
             origSeg.sourcePort, origSeg.destinationPort,
             icmp.originalPacket.destinationIP.toString(),
-            icmp.code, ipPkt.sourceIP.toString(),
+            icmp.code, ipPkt.sourceIP.toString(), receivedIpHeaderOf(ipPkt),
           );
         }
       } else if (icmp.icmpType === 'time-exceeded' && icmp.originalPacket) {
@@ -2676,7 +2696,7 @@ export abstract class EndHost extends Equipment {
           this.tcpv2.noteProbeTimeExceeded(
             origSeg.sourcePort, origSeg.destinationPort,
             icmp.originalPacket.destinationIP.toString(),
-            icmp.code, ipPkt.sourceIP.toString(),
+            icmp.code, ipPkt.sourceIP.toString(), receivedIpHeaderOf(ipPkt),
           );
         }
       } else if (isFragNeeded && icmp.originalPacket && icmp.mtu !== undefined) {
@@ -2834,6 +2854,16 @@ export abstract class EndHost extends Equipment {
   ): void {
     if (!mayGenerateICMPError(offendingPkt)) return;
 
+    if (this.isLocalAddress(offendingPkt.sourceIP)) {
+      const looped = buildICMPError(offendingPkt.destinationIP, offendingPkt, icmpType, code, this.defaultTTL, {
+        nextHopMTU, quote: this.icmpErrorQuote(),
+      });
+      const verdict = this.firewallFilter('lo', looped, 'out');
+      if (verdict === 'drop' || verdict === 'reject') return;
+      this.handleICMP('lo', looped);
+      return;
+    }
+
     const route = this.resolveRoute(offendingPkt.sourceIP);
     if (!route) return; // no route back to source — silently drop
 
@@ -2887,7 +2917,7 @@ export abstract class EndHost extends Equipment {
     } catch {
       return true;
     }
-    if (addr.isLoopback() || this.getPortOwningIP(addr)) return true;
+    if (this.isLocalAddress(addr)) return true;
     const route = this.resolveRoute(addr);
     return route !== null && this.isInterfaceOperationallyUp(route.iface, route.port);
   }
@@ -3087,7 +3117,7 @@ export abstract class EndHost extends Equipment {
 
     // Local delivery (loopback or own address) — like a real kernel, this
     // never reaches the wire.
-    if (destinationIP.isLoopback() || this.getPortOwningIP(destinationIP)) {
+    if (this.isLocalAddress(destinationIP)) {
       const srcStr = destinationIP.toString();
       const udp: UDPPacket = { ...udpBase, checksum: computeUdpChecksum(udpBase, srcStr, srcStr) };
       const localPkt = createIPv4Packet(
@@ -3233,7 +3263,7 @@ export abstract class EndHost extends Equipment {
       length: 8 + payloadBytes, checksum: 0, payload,
     };
 
-    if (destinationIP.isLoopback() || this.getPortOwningIPv6(destinationIP)) {
+    if (this.isLocalAddress6(destinationIP)) {
       const localPkt = createIPv6Packet(
         destinationIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit,
         stampUdpChecksum(udp, destinationIP.toString(), destinationIP.toString()),
@@ -3908,7 +3938,7 @@ export abstract class EndHost extends Equipment {
   ): Promise<PingResult[]> {
     // Local delivery without touching the wire: loopback (127/8) and any
     // address owned by one of our interfaces (self-ping), like a real kernel.
-    if (targetIP.isLoopback() || this.getPortOwningIP(targetIP)) {
+    if (this.isLocalAddress(targetIP)) {
       return this.localEchoResults(targetIP, count);
     }
 
@@ -3983,7 +4013,7 @@ export abstract class EndHost extends Equipment {
 
   /** True if `targetIP` is locally delivered (loopback/self) or a route exists to reach it. */
   hasRouteOrLocal(targetIP: IPAddress): boolean {
-    if (targetIP.isLoopback() || this.getPortOwningIP(targetIP)) return true;
+    if (this.isLocalAddress(targetIP)) return true;
     return this.resolveRoute(targetIP) !== null;
   }
 
@@ -3996,7 +4026,7 @@ export abstract class EndHost extends Equipment {
   }
 
   sendPingProbeSync(targetIP: IPAddress, opts?: { ttl?: number }): { success: boolean; rttMs: number; ttl: number } {
-    if (targetIP.isLoopback() || this.getPortOwningIP(targetIP)) {
+    if (this.isLocalAddress(targetIP)) {
       return { success: true, rttMs: 0.02, ttl: this.defaultTTL };
     }
     const route = this.resolveRoute(targetIP);
@@ -4180,14 +4210,14 @@ export abstract class EndHost extends Equipment {
    * clients (nc, telnet, ssh) distinguish a filtered port from a closed
    * one without inspecting the peer's firewall state.
    */
-  tcpConnectOutcome(targetIP: IPAddress, port: number): TcpWireOutcome {
+  tcpConnectOutcome(targetIP: IPAddress, port: number, sourcePort?: PortNumber): TcpWireOutcome {
     this.resolveArpSync(targetIP);
-    return this.tcpv2.connectOutcome(targetIP.toString(), port);
+    return this.tcpv2.connectOutcome(targetIP.toString(), port, sourcePort);
   }
 
-  tcpConnectOutcome6(targetIP: IPv6Address, port: number): TcpWireOutcome {
+  tcpConnectOutcome6(targetIP: IPv6Address, port: number, sourcePort?: PortNumber): TcpWireOutcome {
     this.resolveNdpSync(targetIP);
-    return this.tcpv2.connectOutcome(targetIP.toString(), port);
+    return this.tcpv2.connectOutcome(targetIP.toString(), port, sourcePort);
   }
 
   tcpProbeSyncIPv6(targetAddr: string, port: number): boolean {
@@ -4236,7 +4266,7 @@ export abstract class EndHost extends Equipment {
     const infinite = count <= 0;
     const isLast = (seq: number) => !infinite && seq >= count;
 
-    if (targetIP.isLoopback() || this.getPortOwningIP(targetIP)) {
+    if (this.isLocalAddress(targetIP)) {
       for (let seq = 1; (infinite || seq <= count) && !shouldStop(); seq++) {
         onResult({ success: true, rttMs: 0.02, ttl: this.defaultTTL, seq, bytes: 64, fromIP: targetIP.toString() });
         if (isLast(seq)) break;
@@ -4381,7 +4411,7 @@ export abstract class EndHost extends Equipment {
   }
 
   canTraceTo(targetIP: IPAddress, socket: TraceSocketOptions): boolean {
-    if (targetIP.isLoopback() || this.getPortOwningIP(targetIP)) return true;
+    if (this.isLocalAddress(targetIP)) return true;
     return this.traceRouteFor(targetIP, socket) !== null;
   }
 
@@ -4410,7 +4440,7 @@ export abstract class EndHost extends Equipment {
     method: TraceProbeMethod = { kind: 'icmp' },
     socket: TraceSocketOptions = {},
   ): Promise<TracerouteHopResult[]> {
-    if (targetIP.isLoopback() || this.getPortOwningIP(targetIP)) {
+    if (this.isLocalAddress(targetIP)) {
       const self = targetIP.toString();
       const hop: TracerouteHopResult = {
         hop: firstTtl, ip: self, timeout: false,

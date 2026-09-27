@@ -72,7 +72,7 @@ async function routedDenyLab() {
 describe('SSH coherence across ssh / journalctl / tcpdump', () => {
   it('WITNESS: a successful exec is visible in all three views', async () => {
     const { pc, srv } = await directLab();
-    await pc.executeCommand('tcpdump -i eth0 -w /tmp/s.pcap &');
+    await pc.executeCommand('sudo tcpdump -i eth0 -w /tmp/s.pcap &');
 
     const r = await sshExec(pc, '10.0.0.10', 'whoami', 'alice', 'secret123');
     expect(r.stdout.trim()).toBe('alice');
@@ -81,28 +81,28 @@ describe('SSH coherence across ssh / journalctl / tcpdump', () => {
     expect(journal).toMatch(/Accepted password for alice from 10\.0\.0\.1/);
     expect(journal).toMatch(/session opened for user alice/);
 
-    const dump = await pc.executeCommand('tcpdump -r /tmp/s.pcap');
+    const dump = await pc.executeCommand('sudo tcpdump -r /tmp/s.pcap');
     expect(dump).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.10\.ssh: Flags \[S\]/);
     expect(dump).toMatch(/10\.0\.0\.10\.ssh > 10\.0\.0\.1\.\d+: Flags \[S\.\]/);
   });
 
   it('DISCRIMINATION: a wrong password still crossed the wire', async () => {
     const { pc, srv } = await directLab();
-    await pc.executeCommand('tcpdump -i eth0 -w /tmp/s.pcap &');
+    await pc.executeCommand('sudo tcpdump -i eth0 -w /tmp/s.pcap &');
 
     await expect(openSshSession(pc, '10.0.0.10', 'alice', 'wrong')).rejects.toThrow();
 
     expect(await srv.executeCommand('journalctl -u ssh --no-pager')).toMatch(/Failed password for alice/);
-    expect(await pc.executeCommand('tcpdump -r /tmp/s.pcap')).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.10\.ssh: Flags \[S\]/);
+    expect(await pc.executeCommand('sudo tcpdump -r /tmp/s.pcap')).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.10\.ssh: Flags \[S\]/);
   });
 
   it('DISCRIMINATION: a deny-ACL session is absent from journal and never establishes', async () => {
     const { pc, srv } = await routedDenyLab();
-    await pc.executeCommand('tcpdump -i eth0 -w /tmp/s.pcap &');
+    await pc.executeCommand('sudo tcpdump -i eth0 -w /tmp/s.pcap &');
 
     await expect(openSshSession(pc, '10.0.2.10', 'alice', 'secret123')).rejects.toThrow();
 
     expect(await srv.executeCommand('journalctl -u ssh --no-pager')).not.toMatch(/Accepted password for alice/);
-    expect(await pc.executeCommand('tcpdump -r /tmp/s.pcap')).not.toMatch(/Flags \[S\.\]/);
+    expect(await pc.executeCommand('sudo tcpdump -r /tmp/s.pcap')).not.toMatch(/Flags \[S\.\]/);
   });
 });

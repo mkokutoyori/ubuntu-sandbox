@@ -173,7 +173,7 @@ describe('Scénario 3 — ACL Cisco étendue filtrant SSH (TCP/22) entre VLANs',
     await installAcl(router);
     await userPc.executeCommand('ssh alice@10.0.30.10 whoami', 'admin\n');
 
-    const tcpdump = await userPc.executeCommand('tcpdump -nn');
+    const tcpdump = await userPc.executeCommand('sudo tcpdump -nn');
     // The exact line shape comes from PacketCaptureLog → cmdTcpdump
     // (a `tcpdump` row carries "<src.ip>.<src.port> > <dst.ip>.<dst.port>:
     // Flags [<flags>]"). We assert (a) a SYN went out toward 10.0.30.10:22

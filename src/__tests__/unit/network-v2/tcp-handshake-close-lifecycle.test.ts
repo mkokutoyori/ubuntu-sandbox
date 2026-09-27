@@ -110,9 +110,9 @@ function parseTcpdumpLine(line: string): { flags: string; seq: number; ack: numb
 async function capturer(
   pc: LinuxPC, fichier: string, trafic: () => void,
 ): Promise<string> {
-  await pc.executeCommand(`tcpdump -nn port 8080 -w ${fichier} &`);
+  await pc.executeCommand(`sudo tcpdump -nn port 8080 -w ${fichier} &`);
   trafic();
-  return pc.executeCommand(`tcpdump -r ${fichier} -nn -S`);
+  return pc.executeCommand(`sudo tcpdump -r ${fichier} -nn -S`);
 }
 
 describe('Scénario 1 — Cycle de vie complet d\'une connexion TCP', () => {

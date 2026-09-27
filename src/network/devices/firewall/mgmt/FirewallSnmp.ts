@@ -102,6 +102,7 @@ export type DhcpTrapType = 'pool-usage' | 'conflict' | 'nak';
 export type FirewallTrapFact =
   | { readonly kind: 'link'; readonly port: string; readonly up: boolean }
   | { readonly kind: 'interface-address'; readonly port: string }
+  | { readonly kind: 'interface-ip-conflict'; readonly iface: string }
   | { readonly kind: 'cpu-high' }
   | { readonly kind: 'memory'; readonly condition: MemoryTrapCondition }
   | { readonly kind: 'log-disk-full' }

@@ -28,7 +28,6 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
-import { SystemClock } from '../core/SystemClock';
 import { DeviceClockStore } from '../core/time/DeviceClock';
 import {
   CarPolicer, suppressionKindOf, cloneCarRule,
@@ -82,7 +81,6 @@ import { GlbpAgent } from '../glbp/GlbpAgent';
 import { FhrpRepository } from './inspection/config/FhrpRepository';
 import { UDP_PORT_GLBP } from '../glbp/types';
 import { IP_PROTO_UDP, createIPv4Packet } from '../core/types';
-import type { ARPEntry } from '../core/types';
 import type { UDPPacket } from '../core/types';
 import { makeSwitchVrrpHost, makeSwitchNtpHost } from './switch/SwitchVrrpAdapter';
 import { NtpAgent } from '../ntp/NtpAgent';
@@ -109,6 +107,7 @@ import {
 import { ArpInspectionPipeline } from '../arp/ArpInspectionPipeline';
 import { ArpRateLimiter } from '../arp/ArpRateLimiter';
 import { ArpStats } from '../arp/ArpStats';
+import { ArpCache, ARP_TIMEOUT_DEFAULT_SEC } from '../arp/ArpCache';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { SwitchSecurityService } from './switch/SwitchSecurityService';
 import { CiscoHttpService } from './router/management/CiscoHttpService';
@@ -347,10 +346,6 @@ export abstract class Switch extends Equipment {
    * de gestion du commutateur Huawei recoit CETTE instance plutot que
    * d'en fabriquer une seconde.
    */
-  private readonly _systemClock = new SystemClock();
-  getSystemClockMs(): number { return this._systemClock.now(); }
-  _setSystemClock(epochMs: number): void { this._systemClock.set(epochMs); }
-
   private readonly _deviceClock = new DeviceClockStore();
   getDeviceClock(): DeviceClockStore { return this._deviceClock; }
 
@@ -510,7 +505,11 @@ export abstract class Switch extends Equipment {
   private interfaceDescriptions: Map<string, string> = new Map();
 
   // ─── Management ARP Table ──────────────────────────────────────
-  private arpTable: Map<string, ARPEntry> = new Map();
+  private readonly arpTable = new ArpCache({
+    now: () => this.getMonotonicClockMs(),
+    timeoutSecFor: (entry) => (entry.vlan === undefined
+      ? this.defaultArpTimeoutSec() : this.sviArpTimeoutSec(entry.vlan)),
+  });
   private readonly arpStats = new ArpStats();
   private ipRoutingEnabled = false;
 
@@ -564,15 +563,8 @@ export abstract class Switch extends Equipment {
       return true;
     },
     lookupArp: (ip) => this.arpTable.get(ip)?.mac ?? null,
-    forgetArp: (ip: string) => {
-      const existing = this.arpTable.get(ip);
-      if (existing && existing.type !== 'static') this.arpTable.delete(ip);
-    },
-    learnArp: (ip, mac, iface) => {
-      const existing = this.arpTable.get(ip);
-      if (existing && existing.type === 'static') return;
-      this.arpTable.set(ip, { mac, iface, timestamp: Date.now(), type: 'dynamic' });
-    },
+    forgetArp: (ip: string) => { this.arpTable.forgetDynamic(ip); },
+    learnArp: (ip, mac, iface, vlan) => { this.arpTable.learn(ip, mac, iface, vlan); },
     fhrpVipArpOwner: (vlanIf, targetIp, requesterIp) =>
       this._vrrpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
       ?? this._hsrpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
@@ -655,6 +647,7 @@ export abstract class Switch extends Equipment {
     this.initDhcpSnooping();
     this.dhcpServer.setEventBus(this.getBus());
     this.dhcpServer.setDeviceId(this.id, this.name);
+    this.dhcpServer.setClock(() => this.getSystemClockMs());
   }
 
   private initPortSecurity(): void {
@@ -3896,20 +3889,11 @@ export abstract class Switch extends Equipment {
     const ip = arp.senderIP.toString();
     if (ip === '0.0.0.0') return;
     const existing = this.arpTable.get(ip);
-    if (existing && existing.type === 'static') return;
     const senderMacStr = arp.senderMAC.toString().toLowerCase();
-    if (existing &&
-        existing.mac.toString().toLowerCase() === senderMacStr &&
-        existing.iface === ingressPort) {
-      existing.timestamp = Date.now();
-      return;
-    }
-    this.arpTable.set(ip, {
-      mac: arp.senderMAC,
-      iface: ingressPort,
-      timestamp: Date.now(),
-      type: 'dynamic',
-    });
+    const unchanged = existing !== undefined
+      && existing.mac.toString().toLowerCase() === senderMacStr
+      && existing.iface === ingressPort;
+    if (!this.arpTable.learn(ip, arp.senderMAC, ingressPort, vlan) || unchanged) return;
     this.getBus().publish({
       topic: 'arp.snoop.learned',
       payload: {
@@ -4003,14 +3987,35 @@ export abstract class Switch extends Equipment {
 
   // ─── ARP Accessors (ARPProvider interface) ──────────────────────
 
-  _getArpTableInternal() { return this.arpTable; }
+  _getArpTableInternal(): ArpCache {
+    this.arpTable.expire();
+    return this.arpTable;
+  }
+
+  defaultArpTimeoutSec(): number {
+    return ARP_TIMEOUT_DEFAULT_SEC;
+  }
+
+  _getSviArpAddresses(): Array<{ vlan: number; ip: string; mac: MACAddress }> {
+    return this.getSvis()
+      .filter((svi) => svi.ip !== undefined)
+      .map((svi) => ({ vlan: svi.vlan, ip: svi.ip!.toString(), mac: this.getBridgeMac() }));
+  }
+
+  sviArpTimeoutSec(vlan: number): number {
+    return this.svi.getSvi(vlan)?.arpTimeoutSec ?? this.defaultArpTimeoutSec();
+  }
+
+  setSviArpTimeout(vlan: number, seconds: number | null): void {
+    this.svi.setArpTimeout(vlan, seconds);
+  }
 
   _getArpStats(): ArpStats { return this.arpStats; }
 
   _getSviVlanIds(): number[] { return this.getSvis().map((s) => s.vlan); }
 
   _addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void {
-    this.arpTable.set(ip.toString(), { mac, iface, timestamp: Date.now(), type: 'static' });
+    this.arpTable.addStatic(ip.toString(), mac, iface);
   }
 
   _deleteARP(ip: IPAddress): boolean {
@@ -4018,11 +4023,7 @@ export abstract class Switch extends Equipment {
   }
 
   _clearARPCache(): void {
-    for (const [ip, entry] of this.arpTable) {
-      if (entry.type !== 'static') {
-        this.arpTable.delete(ip);
-      }
-    }
+    this.arpTable.clearDynamic();
   }
 
   _vtpUpdaterIdentity(): string {

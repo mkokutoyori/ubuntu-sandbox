@@ -49,6 +49,9 @@ import {
 import { renderNtpStatus } from './ntpStatusRenderer';
 import { renderVipList } from './vipListRenderer';
 import { renderDnsProxy } from './dnsProxyRenderer';
+import { renderIpConflictCache, renderIpConflictProbes } from './ipConflictRenderer';
+import { interfaceType } from '../schema/system';
+import type { FortiScope } from '../schema/types';
 import { renderIpFrags } from './ipFragsRenderer';
 import { renderSysTop } from './sysTopRenderer';
 import { renderBridgeList, renderBridgeHosts } from './brctlRenderer';
@@ -330,8 +333,20 @@ function diagnoseTest(rest: readonly string[], deps: FortiDiagDeps): string {
     return FortiMessages.unknownPath(`test ${rest.join(' ')}`);
   }
   if (rest[1] === 'dnsproxy') return renderDnsProxy(deps.fw, deps.vdom());
-  return FortiMessages.unimplemented(`test application ${rest[1] ?? ''}`,
-    'only the `dnsproxy` application is modelled in this simulator.');
+  if (rest[1] === 'miglogd' && rest[2] === '54') {
+    return renderIpConflictCache(deps.fw.getIpConflictDetection().cache(),
+      (iface) => configuredVlanId(deps, iface));
+  }
+  if (rest[1] === 'miglogd' && rest[2] === '55') {
+    return renderIpConflictProbes(deps.fw.getIpConflictDetection().probe());
+  }
+  return FortiMessages.unimplemented(`test application ${rest.slice(1).join(' ')}`,
+    'only `dnsproxy` and `miglogd` 54 and 55 are modelled in this simulator.');
+}
+
+function configuredVlanId(deps: FortiDiagDeps, iface: string): string | undefined {
+  const config = deps.configTree().existingTable(['system', 'interface'])?.get(iface);
+  return config && interfaceType(config) === 'vlan' ? config.effective('vlanid')[0] : undefined;
 }
 
 function diagnoseSnmp(rest: readonly string[], deps: FortiDiagDeps): string {
@@ -850,6 +865,8 @@ function diagnoseIke(rest: readonly string[], deps: FortiDiagDeps): string {
   }
   return FortiMessages.unknownPath(`vpn ike gateway ${rest.slice(1).join(' ')}`);
 }
+
+export const SNIFFER_SCOPE: FortiScope = 'vdom';
 
 export interface SnifferPlan {
   readonly iface: string;

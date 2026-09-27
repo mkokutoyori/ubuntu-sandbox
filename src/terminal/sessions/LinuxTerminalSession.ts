@@ -127,6 +127,10 @@ import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, ha
 import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
+import { localListenerFailure, NO_LOCAL_FORWARDING, remoteForwardFailure } from '@/network/protocols/ssh/ForwardOpening';
+
+type CaptureTool = 'tcpdump' | 'traceroute';
+
 // ─── Theme ────────────────────────────────────────────────────────
 
 const LINUX_THEME: TerminalTheme = {
@@ -986,22 +990,55 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   private tryStartTracerouteStream(commandLine: string): boolean {
-    if (this.hasForegroundAsyncJob) return false;
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'traceroute') return false;
-    if (/[|<>&;]/.test(commandLine)) return false;
+    return this.tryStartCaptureTool(commandLine, 'traceroute');
+  }
 
+  private captureToolInvocation(
+    commandLine: string, tool: CaptureTool,
+  ): { argv: string[]; elevated: boolean } | null {
+    if (/[|<>&;]/.test(commandLine)) return null;
+    const toks = commandLine.trim().split(/\s+/);
+    const elevated = toks[0] === 'sudo';
+    const argv = elevated ? toks.slice(1) : toks;
+    return argv[0] === tool ? { argv, elevated } : null;
+  }
+
+  private tryStartCaptureTool(commandLine: string, tool: CaptureTool): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    if (!(this.device instanceof LinuxMachine) || !this.shell) return false;
+    const invocation = this.captureToolInvocation(commandLine, tool);
+    if (invocation === null) return false;
+    if (invocation.elevated && this.shell.uid !== 0) return false;
+    return this.startCaptureTool(commandLine, invocation.argv, invocation.elevated);
+  }
+
+  private startCaptureTool(commandLine: string, argv: string[], elevated: boolean): boolean {
+    const dev = this.device;
+    const shell = this.shell;
+    if (!(dev instanceof LinuxMachine) || !shell) return false;
+    if (elevated) {
+      const refusal = dev.sudoRefusalInSession(argv, shell);
+      if (refusal !== null) { this.addLine(refusal); this.notify(); return true; }
+    }
     const job = this.startAsyncCommand({
       mode: 'foreground',
       kind: 'streaming',
       command: commandLine,
       run: async (ctx) => {
-        await runTraceroute(
-          toks.slice(1), dev.tracerouteHost(),
-          (text) => { for (const line of text.split('\n')) ctx.sink.line(line); },
-          () => ctx.cancelled());
+        if (argv[0] === 'traceroute') {
+          await runTraceroute(
+            argv.slice(1), dev.tracerouteHostInSession(shell, elevated),
+            (text) => { for (const line of text.split('\n')) ctx.sink.line(line); },
+            () => ctx.cancelled());
+          return;
+        }
+        const result = await runTcpdump(argv.slice(1), {
+          ...dev.tcpdumpDepsInSession(shell, elevated),
+          stream: { line: (text) => ctx.sink.line(text) },
+          onCancelRequested: (cb) => { ctx.onCancel(cb); return () => {}; },
+        });
+        const rest = interleaveTcpdumpStreams(result);
+        if (rest) for (const line of rest.split('\n')) ctx.sink.line(line);
       },
     });
     return job !== null;
@@ -1137,28 +1174,7 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   private tryStartTcpdump(commandLine: string): boolean {
-    if (this.hasForegroundAsyncJob) return false;
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'tcpdump') return false;
-    if (/[|<>&;]/.test(commandLine)) return false;
-
-    const job = this.startAsyncCommand({
-      mode: 'foreground',
-      kind: 'streaming',
-      command: commandLine,
-      run: async (ctx) => {
-        const result = await runTcpdump(toks.slice(1), {
-          ...dev.buildTcpdumpDeps(),
-          stream: { line: (text) => ctx.sink.line(text) },
-          onCancelRequested: (cb) => { ctx.onCancel(cb); return () => {}; },
-        });
-        const rest = interleaveTcpdumpStreams(result);
-        if (rest) for (const line of rest.split('\n')) ctx.sink.line(line);
-      },
-    });
-    return job !== null;
+    return this.tryStartCaptureTool(commandLine, 'tcpdump');
   }
 
   private tryStartJournalFollow(commandLine: string): boolean {
@@ -2310,6 +2326,23 @@ export class LinuxTerminalSession extends TerminalSession {
       }
     }
 
+    const captureTool = this.captureToolInvocation(command, 'tcpdump')
+      ?? this.captureToolInvocation(command, 'traceroute');
+    if (captureTool !== null && captureTool.elevated) {
+      const steps = this.buildDeviceFlowSteps(command, currentUser, currentUid);
+      if (steps) {
+        this.startFlowFromSteps(steps.map((step) => (step.type === 'execute' && step.action
+          ? {
+            ...step,
+            action: async (ctx: FlowContext) => {
+              ctx.metadata.set('enter_capture_tool', JSON.stringify({ command, argv: captureTool.argv }));
+            },
+          }
+          : step)), command);
+        return true;
+      }
+    }
+
     const steps = this.buildDeviceFlowSteps(command, currentUser, currentUid);
     if (!steps) return false;
 
@@ -2319,6 +2352,12 @@ export class LinuxTerminalSession extends TerminalSession {
 
   /** Post-flow hook: sync device state and handle special actions (e.g. enter sqlplus). */
   protected override onFlowComplete(ctx: FlowContext): void {
+    const captureTool = ctx.metadata.get('enter_capture_tool') as string | undefined;
+    if (captureTool) {
+      const { command, argv } = JSON.parse(captureTool) as { command: string; argv: string[] };
+      this.startCaptureTool(command, argv, true);
+      return;
+    }
     const rmanArgs = ctx.metadata.get('enter_rman') as string | undefined;
     if (rmanArgs) {
       this.enterRman(JSON.parse(rmanArgs));
@@ -3026,11 +3065,16 @@ export class LinuxTerminalSession extends TerminalSession {
     // OpenSSH `-D`: SOCKS proxy on a local port — symmetric placement to
     // `-L` (always on the local device).
     const dynamicForwarders = this.installDynamicForwards(session, host, meta, dialPeer);
+    const localRequested = (meta.localForwards?.length ?? 0) + (meta.dynamicForwards?.length ?? 0);
+    if (localRequested > 0 && forwarders.length + dynamicForwarders.length === 0) {
+      this.addLine(NO_LOCAL_FORWARDING);
+    }
     // OpenSSH `-R`: needs the remote device — registered only when the
     // SSH peer resolves to a local Equipment instance (the common case
     // for the tutorial LAN).
     const remoteForwarders = linuxRemoteDevice
-      ? this.installRemoteForwards(session, host, linuxRemoteDevice, meta)
+      ? this.installRemoteForwards(session, host, linuxRemoteDevice, meta,
+        linuxRemoteDevice.uidOfUser(user) ?? undefined)
       : [];
     const agentForwarding = linuxRemoteDevice
       ? this.installAgentForwarding(linuxRemoteDevice, meta)
@@ -3987,10 +4031,11 @@ export class LinuxTerminalSession extends TerminalSession {
         remotePort: fwd.remotePort,
         sshHost,
       }, dialDevice);
-      forwarder.register();
-      this.addLine(
-        `Forwarding TCP ${fwd.localPort} → ${fwd.remoteHost}:${fwd.remotePort} via ${sshHost}`,
-      );
+      const opening = forwarder.register(this.shell?.uid);
+      if (opening !== 'opened') {
+        for (const line of localListenerFailure('127.0.0.1', fwd.localPort, opening)) this.addLine(line);
+        continue;
+      }
       out.push(forwarder);
     }
     return out;
@@ -4021,10 +4066,13 @@ export class LinuxTerminalSession extends TerminalSession {
         bindAddress: fwd.bindAddress,
         sshHost,
       }, dialDevice);
-      forwarder.register();
-      this.addLine(
-        `SOCKS proxy listening on ${fwd.bindAddress ?? '*'}:${fwd.socksPort} via ${sshHost}`,
-      );
+      const opening = forwarder.register(this.shell?.uid);
+      if (opening !== 'opened') {
+        const shown = fwd.bindAddress === null || fwd.bindAddress === undefined ? '127.0.0.1'
+          : fwd.bindAddress === '*' ? '0.0.0.0' : fwd.bindAddress;
+        for (const line of localListenerFailure(shown, fwd.socksPort, opening)) this.addLine(line);
+        continue;
+      }
       out.push(forwarder);
     }
     return out;
@@ -4041,6 +4089,7 @@ export class LinuxTerminalSession extends TerminalSession {
     sshHost: string,
     remoteDeviceRaw: Equipment,
     meta: { remoteForwards?: readonly RemoteForward[] },
+    remoteUid: number | undefined,
   ): SshRemoteForwarder[] {
     const forwards = meta.remoteForwards ?? [];
     if (forwards.length === 0) return [];
@@ -4057,10 +4106,10 @@ export class LinuxTerminalSession extends TerminalSession {
         localPort: fwd.localPort,
         sshHost,
       }, asDialDevice(this.getLocalDevice()));
-      forwarder.register();
-      this.addLine(
-        `Forwarding ${sshHost}:${fwd.remotePort} → ${fwd.localHost}:${fwd.localPort} (reverse)`,
-      );
+      if (forwarder.register(remoteUid) !== 'opened') {
+        this.addLine(remoteForwardFailure(fwd.remotePort));
+        continue;
+      }
       out.push(forwarder);
     }
     return out;

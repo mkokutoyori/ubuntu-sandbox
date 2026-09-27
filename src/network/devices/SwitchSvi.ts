@@ -49,6 +49,7 @@ export interface SviInterface {
    */
   helperAddresses: string[];
   dhcpClient?: boolean;
+  arpTimeoutSec?: number | null;
 }
 
 /** The minimal surface the SVI plane needs from its hosting switch. */
@@ -65,7 +66,7 @@ export interface SviHost {
   /** Read the switch's shared management ARP cache. */
   lookupArp(ip: string): MACAddress | null;
   /** Populate the switch's shared management ARP cache. */
-  learnArp(ip: string, mac: MACAddress, iface: string): void;
+  learnArp(ip: string, mac: MACAddress, iface: string, vlan: number): void;
   /** Forget an ARP entry. */
   forgetArp?(ip: string): void;
   /**
@@ -199,6 +200,10 @@ export class SwitchSvi {
     this.ensure(vlan).adminUp = up;
   }
 
+  setArpTimeout(vlan: number, seconds: number | null): void {
+    this.ensure(vlan).arpTimeoutSec = seconds;
+  }
+
   hasSvi(vlan: number): boolean { return this.svis.has(vlan); }
   getSvi(vlan: number): SviInterface | undefined { return this.svis.get(vlan); }
   list(): SviInterface[] {
@@ -322,7 +327,7 @@ export class SwitchSvi {
       if (!arp || arp.type !== 'arp') return false;
       this.host.recordArp?.('rx', arp.operation);
       // Learn the sender either way, into the switch's shared mgmt cache.
-      this.host.learnArp(arp.senderIP.toString(), arp.senderMAC, ingressPort);
+      this.host.learnArp(arp.senderIP.toString(), arp.senderMAC, ingressPort, ingressVlan);
 
       if (arp.operation === 'request' && arp.targetIP.equals(selfIp)) {
         this.sendArpReply(ingressVlan, selfIp, arp);

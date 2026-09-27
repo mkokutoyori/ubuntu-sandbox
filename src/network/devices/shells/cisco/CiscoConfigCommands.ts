@@ -470,8 +470,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'Keepalive period' },
   'load-interval': { name: 'seconds', type: 'INT', range: [30, 600],
     description: 'Load calculation interval, in multiples of 30' },
-  'arp timeout': { name: 'seconds', type: 'INT', range: [0, 2147483],
-    description: 'Seconds an ARP cache entry stays valid' },
   /*
    * La place est EXIGEE et GLOUTONNE : le gestionnaire recolle les mots
    * (`interface GigabitEthernet 0/0` s'ecrit avec ou sans espace), et
@@ -656,13 +654,6 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (n < 1 || n > 16777215) throw new CliInvalidInput({ token: args[0] });
     if (port) port.setDelayUs(n * 10);
     ctx.r().convergeDynamicRouting();
-    return '';
-  });
-  trie.registerGreedy('arp timeout', 'Set ARP timeout (seconds)', (args) => {
-    if (!ctx.getSelectedInterface()) return '% No interface selected';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) port.setArpTimeoutSec(n);
     return '';
   });
   trie.registerGreedy('duplex', 'Set interface duplex', (args) => {

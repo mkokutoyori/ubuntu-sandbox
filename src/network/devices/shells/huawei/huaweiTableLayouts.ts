@@ -1,5 +1,7 @@
 
 import { renderTable, VRP_TABLE, FIXED_TABLE, type TableColumn } from '../cli/TextTable';
+import type { ArpCache } from '../../../arp/ArpCache';
+import type { ARPEntry } from '../../../core/types';
 
 export interface LigneIpBrief {
   readonly nom: string;
@@ -92,6 +94,11 @@ export function huaweiMacAddress(mac: { toString(): string } | string): string {
   const brut = String(mac).replace(/[^0-9a-fA-F]/g, '').toLowerCase();
   if (brut.length !== 12) return String(mac);
   return `${brut.slice(0, 4)}-${brut.slice(4, 8)}-${brut.slice(8, 12)}`;
+}
+
+export function vrpArpExpire(cache: ArpCache, entry: ARPEntry): string {
+  if (entry.type === 'static') return '';
+  return String(Math.max(0, Math.ceil(cache.remainingMs(entry) / 60_000)));
 }
 
 export interface LigneArp {

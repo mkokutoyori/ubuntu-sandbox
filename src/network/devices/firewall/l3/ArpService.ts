@@ -6,6 +6,8 @@ export type DuplicateAddressReport = {
   readonly address: string;
   readonly claimedBy: MACAddress;
   readonly iface: string;
+  readonly operation: ARPPacket['operation'];
+  readonly gratuitous: boolean;
 };
 
 export interface ArpServiceDeps {
@@ -134,7 +136,10 @@ export class ArpService implements INeighborResolver<string> {
     if (this.deps.interfaces.owningInterface(sender) === undefined) return false;
     if (packet.senderMAC.equals(this.deps.macOf(iface))) return false;
 
-    this.deps.onDuplicateAddress?.({ address: sender, claimedBy: packet.senderMAC, iface });
+    this.deps.onDuplicateAddress?.({
+      address: sender, claimedBy: packet.senderMAC, iface,
+      operation: packet.operation, gratuitous: packet.targetIP.equals(packet.senderIP),
+    });
     return true;
   }
 

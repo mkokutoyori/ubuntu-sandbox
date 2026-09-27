@@ -60,7 +60,7 @@ beforeEach(() => {
 describe('tcpdump IP fragmentation flags + minimal DNS summary (PRD-tcpdump.md P7)', () => {
   it('a real DNS query/response pair prints a real one-line summary, not a bare UDP line', async () => {
     const { pc } = await buildDnsLab();
-    const pending = pc.executeCommand('tcpdump -c 2 -nn udp port 53');
+    const pending = pc.executeCommand('sudo tcpdump -c 2 -nn udp port 53');
     await new Promise((resolve) => setTimeout(resolve, 30));
     await pc.executeCommand(`dig @${NS1_IP} www.example.com`);
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -83,7 +83,7 @@ describe('tcpdump IP fragmentation flags + minimal DNS summary (PRD-tcpdump.md P
 
   it('-v shows the real Don\'t Fragment flag instead of a hardcoded flags [none]', async () => {
     const { pc } = await buildDnsLab();
-    const pending = pc.executeCommand('tcpdump -c 1 -nn -v udp port 53');
+    const pending = pc.executeCommand('sudo tcpdump -c 1 -nn -v udp port 53');
     await new Promise((resolve) => setTimeout(resolve, 30));
     await pc.executeCommand(`dig @${NS1_IP} www.example.com`);
     await new Promise((resolve) => setTimeout(resolve, 50));

@@ -1,3 +1,5 @@
+import type { SessionTable } from '../session/SessionTable';
+
 export type HaMode = 'standalone' | 'a-a' | 'a-p';
 
 export type HaRole = 'standalone' | 'master' | 'slave';
@@ -40,6 +42,7 @@ export const HA_DEFAULTS: HaConfiguration = Object.freeze({
 });
 
 export interface HaSyncedSession {
+  readonly vdom: string;
   readonly key: string;
   readonly ingressZone: string;
   readonly egressZone: string;
@@ -47,6 +50,11 @@ export interface HaSyncedSession {
   readonly egressInterface: string;
   readonly timeoutSec: number;
   readonly policyId?: string;
+}
+
+export interface VdomSessions {
+  readonly vdom: string;
+  readonly table: SessionTable;
 }
 
 export interface HaTrafficCounters {

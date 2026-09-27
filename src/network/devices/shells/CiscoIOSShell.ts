@@ -22,6 +22,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { SocleLegend } from './CiscoShellBase';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { dhcpClientFamily, type DhcpClientLeaseView } from '@/cli/commands/dhcp/dhcpClientFamily';
+import { arpTimeoutFamily } from '@/cli/commands/arp/arpTimeoutFamily';
 import type { DebugPair } from '@/cli/commands/debug/debugFamily';
 import { ALL_TUNNEL } from '@/cli/commands/tunnel/tunnelFamily';
 import {
@@ -112,7 +113,7 @@ import {
 
 // Extracted command modules
 import * as Show from './cisco/CiscoShowCommands';
-import { showProcessesCpu } from './cisco/CiscoCommonShow';
+import { showProcessesCpu, ciscoClockReading } from './cisco/CiscoCommonShow';
 import {
   showNATTranslations, showNATStatistics, networkPrefixLength, natErrorMessageFor,
 } from './cisco/CiscoNATCommands';
@@ -469,6 +470,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...negationSpecs(() => this.negationHost()),
       ...zoneSpecs(() => this.zoneHost()),
       ...dhcpClientFamily(),
+      ...arpTimeoutFamily(),
       ...hsrpShowSpecs(this, () => this.fhrp),
       ...trackShowSpecs(this),
       showViewSpec('show-ip-route-ospf', ['show', 'ip', 'route', 'ospf'],
@@ -1189,6 +1191,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   selectedInterfaceName(): string | null {
     return this.selectedInterface ?? null;
+  }
+
+  setInterfaceArpTimeout(iface: string, seconds: number | null): void {
+    this.d().setArpTimeoutSec(iface, seconds);
   }
 
   dhcpClientEnable(iface: string, line: string): void {
@@ -2188,7 +2194,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         section('show ip nat translations', showNATTranslations(getRouter())),
         section('show ip nat statistics', showNATStatistics(getRouter())),
         section('show ip ospf neighbor', showIpOspfNeighbor(getRouter())),
-        section('show ip dhcp binding', formatDhcpBindings(getRouter()._getDHCPServerInternal())),
+        section('show ip dhcp binding', formatDhcpBindings(getRouter()._getDHCPServerInternal(), undefined,
+          (epochMs) => ciscoClockReading(this.cs(), epochMs).local)),
         section('show logging', this.logging.render()),
       ].join('\n\n');
     });

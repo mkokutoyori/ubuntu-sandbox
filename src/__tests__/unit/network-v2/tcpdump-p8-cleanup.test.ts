@@ -36,7 +36,7 @@ describe('tcpdump P8 cleanup: -Q, snaplen truncation, -D, -r+-c, multicast/broad
     await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
     (pc2 as unknown as TcpConnector).getTcpStack().listen(9000, { onAccept: () => {} });
 
-    const pendingOut = pc1.executeCommand('tcpdump -c 1 -nn -Q out tcp');
+    const pendingOut = pc1.executeCommand('sudo tcpdump -c 1 -nn -Q out tcp');
     await new Promise((resolve) => setTimeout(resolve, 30));
     (pc1 as unknown as TcpConnector).getTcpStack().connect('10.0.0.2', 9000);
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -50,7 +50,7 @@ describe('tcpdump P8 cleanup: -Q, snaplen truncation, -D, -r+-c, multicast/broad
     await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
     (pc2 as unknown as TcpConnector).getTcpStack().listen(9000, { onAccept: () => {} });
 
-    const pending = pc1.executeCommand('tcpdump -c 1 -nn -s 30 tcp');
+    const pending = pc1.executeCommand('sudo tcpdump -c 1 -nn -s 30 tcp');
     await new Promise((resolve) => setTimeout(resolve, 30));
     (pc1 as unknown as TcpConnector).getTcpStack().connect('10.0.0.2', 9000);
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -62,7 +62,7 @@ describe('tcpdump P8 cleanup: -Q, snaplen truncation, -D, -r+-c, multicast/broad
   it('-D reports each interface\'s real up/down state instead of always [Up, Running]', async () => {
     const pc1 = new LinuxPC('PC1', 0, 0);
     await pc1.executeCommand('ifconfig eth0 down');
-    const output = await pc1.executeCommand('tcpdump -D');
+    const output = await pc1.executeCommand('sudo tcpdump -D');
     expect(output).toMatch(/^\d+\.eth0 \[none, Disconnected\]$/m);
     expect(output.split('\n')[0]).toBe('1.any (Pseudo-device that captures on all interfaces) [Up, Running]');
   });
@@ -72,7 +72,7 @@ describe('tcpdump P8 cleanup: -Q, snaplen truncation, -D, -r+-c, multicast/broad
     await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
     await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-    const pending = pc1.executeCommand('tcpdump -c 1 -nn broadcast');
+    const pending = pc1.executeCommand('sudo tcpdump -c 1 -nn broadcast');
     await new Promise((resolve) => setTimeout(resolve, 30));
     await pc1.executeCommand('arp -d 10.0.0.2');
     await pc1.executeCommand('ping -c 1 10.0.0.2');
@@ -86,16 +86,16 @@ describe('tcpdump P8 cleanup: -Q, snaplen truncation, -D, -r+-c, multicast/broad
     await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
     (pc2 as unknown as TcpConnector).getTcpStack().listen(9000, { onAccept: () => {} });
 
-    const writing = pc1.executeCommand('tcpdump -w multi.cap -c 6 tcp');
+    const writing = pc1.executeCommand('sudo tcpdump -w multi.cap -c 6 tcp');
     await new Promise((resolve) => setTimeout(resolve, 30));
     (pc1 as unknown as TcpConnector).getTcpStack().connect('10.0.0.2', 9000);
     (pc1 as unknown as TcpConnector).getTcpStack().connect('10.0.0.2', 9000);
     await new Promise((resolve) => setTimeout(resolve, 50));
     await writing;
 
-    const all = await pc1.executeCommand('tcpdump -nn -r multi.cap');
+    const all = await pc1.executeCommand('sudo tcpdump -nn -r multi.cap');
     expect(all.split('\n').filter((l) => l.includes('Flags [')).length).toBe(6);
-    const output = await pc1.executeCommand('tcpdump -nn -r multi.cap -c 1');
+    const output = await pc1.executeCommand('sudo tcpdump -nn -r multi.cap -c 1');
     const packetLines = output.split('\n').filter((l) => l.includes('Flags ['));
     expect(packetLines.length).toBe(1);
   });

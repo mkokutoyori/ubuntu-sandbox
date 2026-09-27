@@ -108,14 +108,14 @@ describe('tcpdump: scripted invocation keeps working and uses conformant wording
   it('the banner says "snapshot length", matching real tcpdump, whether typed or scripted', async () => {
     const pc1 = new LinuxPC('PC1', 0, 0);
 
-    const typed = await pc1.executeCommand('tcpdump -c 1 -i eth0');
+    const typed = await pc1.executeCommand('sudo tcpdump -c 1 -i eth0');
     expect(typed).toContain('snapshot length');
     expect(typed).not.toContain('capture size');
 
     await pc1.executeCommand(
       `bash -c 'echo "tcpdump -c 1 -i eth0" > /tmp/__dispatch_test.sh'`,
     );
-    const scripted = await pc1.executeCommand('bash /tmp/__dispatch_test.sh');
+    const scripted = await pc1.executeCommand('sudo bash /tmp/__dispatch_test.sh');
     expect(scripted).toContain('snapshot length');
     expect(scripted).not.toContain('capture size');
     // Two real capture windows back-to-back (`-c 1` with no traffic on an

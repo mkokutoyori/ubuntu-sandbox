@@ -22,6 +22,7 @@ import {
   displayIpIntBrief,
 } from './shells/huawei/HuaweiDisplayCommands';
 import { huaweiDisplayInterfaceName, resolveHuaweiInterfaceName as resolveHuaweiIfName } from './shells/cli-utils';
+import { VRP_ARP_EXPIRE_TIME_DEFAULT_SEC } from './shells/huawei/HuaweiConfigCommands';
 import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
@@ -296,6 +297,8 @@ export class HuaweiRouter extends Router {
 
   /** VRP announces the incoming telnet login differently from IOS. */
   protected override getVtyAuthHeader(): string { return 'Login authentication'; }
+
+  override defaultArpTimeoutSec(): number { return VRP_ARP_EXPIRE_TIME_DEFAULT_SEC; }
 
   /**
    * VRP's counterpart of IOS's RSA host keys.

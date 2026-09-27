@@ -50,20 +50,27 @@ function interfaceLines(provider: ARPProvider): ArpLine[] {
       iface: name, vrf: ARP_DEFAULT_VRF, kind: 'interface',
     });
   }
+  for (const svi of provider._getSviArpAddresses?.() ?? []) {
+    out.push({
+      protocol: ARP_PROTOCOL, address: svi.ip, age: ARP_NO_AGE,
+      mac: svi.mac.toCiscoString(), type: ARP_ENCAPSULATION,
+      iface: `Vlan${svi.vlan}`, vrf: ARP_DEFAULT_VRF, kind: 'interface',
+    });
+  }
   return out;
 }
 
-function tableLine([ip, entry]: [string, CiscoARPEntry]): ArpLine {
+function tableLine(nowMs: number, [ip, entry]: [string, CiscoARPEntry]): ArpLine {
   const isStatic = entry.type === 'static';
   return {
     protocol: ARP_PROTOCOL,
     address: ip,
     age: isStatic
       ? ARP_NO_AGE
-      : String(Math.floor((Date.now() - entry.timestamp) / ARP_AGE_UNIT_MS)),
+      : String(Math.floor((nowMs - entry.timestamp) / ARP_AGE_UNIT_MS)),
     mac: entry.mac.toCiscoString(),
     type: ARP_ENCAPSULATION,
-    iface: entry.iface,
+    iface: entry.vlan === undefined ? entry.iface : `Vlan${entry.vlan}`,
     vrf: ARP_DEFAULT_VRF,
     kind: isStatic ? 'static' : 'dynamic',
   };
@@ -74,7 +81,8 @@ function arpLines(
 ): ArpLine[] {
   const own = interfaceLines(provider);
   const held = new Set(own.map(line => line.address));
-  return [...own, ...entries.filter(([ip]) => !held.has(ip)).map(tableLine)];
+  const nowMs = provider.getMonotonicClockMs();
+  return [...own, ...entries.filter(([ip]) => !held.has(ip)).map((entry) => tableLine(nowMs, entry))];
 }
 
 function arpSummary(lines: readonly ArpLine[]): string {

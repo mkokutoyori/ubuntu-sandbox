@@ -34,7 +34,7 @@ export interface FirewallIpv6Deps {
   transitPermitted(probe: PolicyProbe): boolean;
   localInVerdict?(iface: string, traffic: LocalInTraffic): LocalInVerdict;
   dosVerdict?(iface: string, traffic: DosTraffic): AnomalyAction | 'none';
-  sessions(): SessionTable;
+  sessions(iface: string): SessionTable;
   dhcpv6Server(): DHCPv6Server;
   dhcpv6PoolFor(iface: string): string | undefined;
 }
@@ -128,7 +128,7 @@ export class FirewallIpv6 {
 
     const key = makeFlowKey(source, ports.sourcePort ?? 0,
       destination, ports.destPort ?? 0, protocol);
-    const sessions = this.deps.sessions();
+    const sessions = this.deps.sessions(ingress ?? egress);
     if (sessions.lookup(key)) return true;
 
     const permitted = this.deps.transitPermitted({

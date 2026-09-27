@@ -38,6 +38,7 @@ import { SshConnectionRequest } from '../../../protocols/ssh/server/SshConnectio
 import { SshdServerConfig } from '../../../protocols/ssh/server/SshdServerConfig';
 import { authorizedKeyAdmits, parseAuthorizedKeysLine, type AuthorizedKey } from '../../../protocols/ssh/SshPureUtils';
 import { parseProxyJumpSpec, type ProxyHop } from '@/terminal/sessions/sshArgs';
+import { localListenerFailure, NO_LOCAL_FORWARDING, remoteForwardFailure } from '../../../protocols/ssh/ForwardOpening';
 
 /** The four-tuple of a TCP handshake the SSH client performed. */
 export interface SshConnectionTuple {
@@ -717,6 +718,8 @@ function setupPortForwards(
     ?? (remoteExec ? readRemoteSshdDirective(remoteExec, 'GatewayPorts') : null);
 
   let diagnostics = '';
+  let localRequested = 0;
+  let localOpened = 0;
   for (const fwd of forwards) {
     if (!permits(fwd) || !destAllowed(fwd)) {
       diagnostics +=
@@ -731,18 +734,32 @@ function setupPortForwards(
       const honourBind = gatewayPolicy === 'yes' || gatewayPolicy === 'clientspecified';
       const effective = honourBind ? fwd : rebindToLoopback(fwd);
       const clientStack = (opts.sourceDevice as { getTcpStack?: () => TcpStack } | null)?.getTcpStack?.();
-      remoteForwarding?.open(effective, SSHD_PID, 'sshd', clientStack);
+      const remoteUid = machine.uidOfUser(remoteUser) ?? undefined;
+      const opening = remoteForwarding?.open(effective, SSHD_PID, 'sshd', clientStack, remoteUid);
+      if (opening !== undefined && opening !== 'opened') {
+        diagnostics += `${remoteForwardFailure(fwd.listenPort)}\n`;
+      }
     } else {
       // -L / -D : the listener lives on the client host, owned by ssh.
       // The outbound side is re-originated FROM the SSH server: tag the
       // forward with that server's IP so a local probe (`nc`) hitting the
       // tunnel listener is evaluated as if it came from the sshd process.
-      opts.localForwarding?.open(fwd, SSH_CLIENT_FORWARD_PID, 'ssh', machine.getTcpStack());
+      localRequested++;
+      const opening = opts.localForwarding?.open(
+        fwd, SSH_CLIENT_FORWARD_PID, 'ssh', machine.getTcpStack(), opts.sourceUid);
+      if (opening !== undefined && opening !== 'opened') {
+        diagnostics += localListenerFailure(fwd.bindAddress, fwd.listenPort, opening).map((l) => `${l}\n`).join('');
+        continue;
+      }
+      localOpened++;
       const sshServerIp = machine.getPorts()
         .map(p => p.getIPAddress()?.toString())
         .find(Boolean);
       if (sshServerIp) opts.localForwarding?.setOrigin(fwd.listenPort, sshServerIp);
     }
+  }
+  if (localRequested > 0 && localOpened === 0 && opts.localForwarding !== undefined) {
+    diagnostics += `${NO_LOCAL_FORWARDING}\n`;
   }
   return diagnostics;
 }

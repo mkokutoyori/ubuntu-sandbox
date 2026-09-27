@@ -67,7 +67,7 @@ function macOf(host: LinuxServer | LinuxPC): string {
 describe('Scénario 5 — Détection d\'ARP Spoofing', () => {
   it('la commande de capture des réponses ARP réussit sans erreur, avec écriture pcap', async () => {
     const { observer } = buildSpoofLab();
-    const out = await observer.executeCommand(`tcpdump -i eth0 -nn -e 'arp[6:2] == 2' -w /tmp/arp-replies.pcap`);
+    const out = await observer.executeCommand(`sudo tcpdump -i eth0 -nn -e 'arp[6:2] == 2' -w /tmp/arp-replies.pcap`);
     expect(out).not.toMatch(/tcpdump: error/);
   });
 
@@ -75,7 +75,7 @@ describe('Scénario 5 — Détection d\'ARP Spoofing', () => {
     it('arping -A émet un vrai Gratuitous ARP REPLY, visible sur le fil', async () => {
       const { attacker, observer } = buildSpoofLab();
       const dump = await captureOn(
-        observer, `tcpdump -nn -e 'arp[6:2] == 2'`,
+        observer, `sudo tcpdump -nn -e 'arp[6:2] == 2'`,
         () => attacker.executeCommand(`arping -A -c 5 -I eth0 ${GATEWAY_IP}`),
       );
       const replyLines = dump.split('\n').filter((l) => l.includes('Reply'));
@@ -105,7 +105,7 @@ describe('Scénario 5 — Détection d\'ARP Spoofing', () => {
     it('le pipeline awk isole sans faux positif l\'IP répondue par deux MACs distincts', async () => {
       const { gw, attacker, victim, observer } = buildSpoofLab();
 
-      const pending = observer.executeCommand(`tcpdump -c 10 -nn -e 'arp[6:2] == 2' -w /tmp/arp-replies.pcap`);
+      const pending = observer.executeCommand(`sudo tcpdump -c 10 -nn -e 'arp[6:2] == 2' -w /tmp/arp-replies.pcap`);
       await new Promise((r) => setTimeout(r, 20));
       // Réponse légitime : le vrai propriétaire de GATEWAY_IP répond à une requête ARP normale.
       await victim.executeCommand(`ping -c 1 ${GATEWAY_IP}`).catch(() => {});
@@ -115,7 +115,7 @@ describe('Scénario 5 — Détection d\'ARP Spoofing', () => {
       await pending;
 
       const alertReport = await observer.executeCommand(
-        `tcpdump -nn -e -r /tmp/arp-replies.pcap | grep 'Reply' | ` +
+        `sudo tcpdump -nn -e -r /tmp/arp-replies.pcap | grep 'Reply' | ` +
         `awk '{print $(NF-4), $(NF-2)}' | sort | uniq | ` +
         `awk '{ip[$1]++; mac[$1]=mac[$1]" "$2} END {for (i in ip) if (ip[i]>1) print "ALERTE ARP SPOOFING:", i, "annoncé avec MACs:", mac[i]}'`,
       );
@@ -172,7 +172,7 @@ describe('Scénario 5 — Détection d\'ARP Spoofing', () => {
       await victim.executeCommand(`ip route add default via ${GATEWAY_IP}`);
 
       const before = await captureOn(
-        observer, `tcpdump -nn -e 'ip and src ${VICTIM_IP}'`,
+        observer, `sudo tcpdump -nn -e 'ip and src ${VICTIM_IP}'`,
         () => victim.executeCommand(`ping -c 1 8.8.8.8`).catch(() => {}),
       );
       const beforeDstMac = before.split('\n')
@@ -183,7 +183,7 @@ describe('Scénario 5 — Détection d\'ARP Spoofing', () => {
       await victim.executeCommand(`ip neigh replace ${GATEWAY_IP} lladdr ${macOf(attacker)} dev eth0 nud permanent`);
 
       const after = await captureOn(
-        observer, `tcpdump -nn -e 'ip and src ${VICTIM_IP}'`,
+        observer, `sudo tcpdump -nn -e 'ip and src ${VICTIM_IP}'`,
         () => victim.executeCommand(`ping -c 1 8.8.8.8`).catch(() => {}),
       );
       const afterDstMac = after.split('\n')
@@ -198,7 +198,7 @@ describe('Scénario 5 — Détection d\'ARP Spoofing', () => {
     it('détection multi-MAC sans faux positif, diff des caches ARP précis, et redirection de trafic confirmée', async () => {
       const { gw, attacker, victim, observer } = buildSpoofLab();
 
-      const dump = await captureOn(observer, `tcpdump -nn -e 'arp[6:2] == 2' -c 10`, async () => {
+      const dump = await captureOn(observer, `sudo tcpdump -nn -e 'arp[6:2] == 2' -c 10`, async () => {
         await victim.executeCommand(`ping -c 1 ${GATEWAY_IP}`).catch(() => {});
         await attacker.executeCommand(`arping -A -c 1 -I eth0 ${GATEWAY_IP}`);
       });

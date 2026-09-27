@@ -87,7 +87,7 @@ function randomLabel(len: number): string {
 const QUERY_LINE = '(A|AAAA|TXT|MX|CNAME)\\? [A-Za-z0-9.-]+ \\(\\d+\\)';
 
 async function captureToFile(pc: LinuxPC, file: string, stimulus: () => Promise<unknown>): Promise<void> {
-  const pending = pc.executeCommand(`tcpdump -c 100 -nn -vvv 'port 53' -w ${file}`);
+  const pending = pc.executeCommand(`sudo tcpdump -c 100 -nn -vvv 'port 53' -w ${file}`);
   await new Promise((r) => setTimeout(r, 20));
   await stimulus();
   await new Promise((r) => setTimeout(r, 30));
@@ -97,7 +97,7 @@ async function captureToFile(pc: LinuxPC, file: string, stimulus: () => Promise<
 describe('Scénario 6 — Détection d\'un tunnel DNS', () => {
   it('la simulation de sous-domaines longs et la capture simultanée réussissent sans erreur', async () => {
     const { pc } = await buildTunnelLab();
-    const pending = pc.executeCommand(`tcpdump -i eth0 -nn -vvv 'port 53' -w /tmp/dns-anomaly.pcap`);
+    const pending = pc.executeCommand(`sudo tcpdump -i eth0 -nn -vvv 'port 53' -w /tmp/dns-anomaly.pcap`);
     await new Promise((r) => setTimeout(r, 20));
     await pc.executeCommand(`host ${randomLabel(40)}.${TUNNEL_DOMAIN} ${NS1_IP}`);
     await new Promise((r) => setTimeout(r, 30));
@@ -119,7 +119,7 @@ describe('Scénario 6 — Détection d\'un tunnel DNS', () => {
       });
 
       const report = await pc.executeCommand(
-        `tcpdump -nn -vvv -r /tmp/dns-anomaly.pcap 'port 53' | ` +
+        `sudo tcpdump -nn -vvv -r /tmp/dns-anomaly.pcap 'port 53' | ` +
         `grep -oP '${QUERY_LINE}' | awk '{n=split($2, parts, "."); label=parts[1]; len=length(label); ` +
         `if (len > 30) print "SUSPECT (longueur="len"):", $2; else print "NORMAL (longueur="len"):", $2}'`,
       );
@@ -147,7 +147,7 @@ describe('Scénario 6 — Détection d\'un tunnel DNS', () => {
       });
 
       const report = await pc.executeCommand(
-        `tcpdump -nn -vvv -r /tmp/dns-anomaly.pcap 'port 53' | ` +
+        `sudo tcpdump -nn -vvv -r /tmp/dns-anomaly.pcap 'port 53' | ` +
         `grep -oP '${QUERY_LINE}' | ` +
         `awk '{n=split($2, p, "."); print p[n-2]"."p[n-1]"."p[n]}' | sort | uniq -c | sort -rn | head -1`,
       );
@@ -174,7 +174,7 @@ describe('Scénario 6 — Détection d\'un tunnel DNS', () => {
       });
 
       const distribution = await pc.executeCommand(
-        `tcpdump -nn -vvv -r /tmp/dns-anomaly.pcap 'port 53' | ` +
+        `sudo tcpdump -nn -vvv -r /tmp/dns-anomaly.pcap 'port 53' | ` +
         `grep -oP 'A\\?|AAAA\\?|TXT\\?|MX\\?|CNAME\\?' | sort | uniq -c | sort -rn | ` +
         `awk '{total+=$1; types[$2]=$1} END {for (t in types) printf "%s | %d | %.1f%%\\n", t, types[t], types[t]/total*100}'`,
       );
@@ -199,7 +199,7 @@ describe('Scénario 6 — Détection d\'un tunnel DNS', () => {
       });
 
       const lengthReport = await pc.executeCommand(
-        `tcpdump -nn -vvv -r /tmp/dns-anomaly.pcap 'port 53' | ` +
+        `sudo tcpdump -nn -vvv -r /tmp/dns-anomaly.pcap 'port 53' | ` +
         `grep -oP '${QUERY_LINE}' | awk '{n=split($2, parts, "."); label=parts[1]; len=length(label); ` +
         `if (len > 30) print "SUSPECT (longueur="len"):", $2; else print "NORMAL (longueur="len"):", $2}'`,
       );
@@ -208,7 +208,7 @@ describe('Scénario 6 — Détection d\'un tunnel DNS', () => {
       expect(lengthReport).toMatch(/NORMAL \(longueur=3\): www\./);
 
       const typeReport = await pc.executeCommand(
-        `tcpdump -nn -vvv -r /tmp/dns-anomaly.pcap 'port 53' | ` +
+        `sudo tcpdump -nn -vvv -r /tmp/dns-anomaly.pcap 'port 53' | ` +
         `grep -oP 'A\\?|AAAA\\?|TXT\\?|MX\\?|CNAME\\?' | sort | uniq -c | sort -rn`,
       );
       expect(typeReport).toMatch(new RegExp(`${tunnelLabels.length}\\s+TXT\\?`));

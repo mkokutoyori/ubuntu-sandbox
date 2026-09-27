@@ -34,9 +34,16 @@ async function type(cmd: string): Promise<void> {
   await tick();
 }
 
+async function typeWithSudo(cmd: string): Promise<void> {
+  await type(`sudo ${cmd}`);
+  session.setPasswordBuf('admin');
+  session.handleKey(key('Enter'));
+  await tick();
+}
+
 describe('Linux tcpdump — live capture streaming', () => {
   it('TD-01 streams the header, locks the prompt, streams live packets, Ctrl+C prints the summary', async () => {
-    await type('tcpdump');
+    await typeWithSudo('tcpdump');
     expect(session.hasForegroundAsyncJob).toBe(true);
     expect(session.listAttachedStreams().length).toBe(1);
     expect(texts(session).some((t) => t.includes('listening on eth0'))).toBe(true);
@@ -52,7 +59,7 @@ describe('Linux tcpdump — live capture streaming', () => {
   });
 
   it('TD-02 -c stops after the requested number of packets', async () => {
-    await type('tcpdump -c 2');
+    await typeWithSudo('tcpdump -c 2');
     capture(pc, 1, 22);
     capture(pc, 2, 22);
     await waitFor(session, (l) => l.some((t) => t.includes('2 packets captured')));
@@ -61,7 +68,7 @@ describe('Linux tcpdump — live capture streaming', () => {
   });
 
   it('TD-03 a port filter only streams matching packets', async () => {
-    await type('tcpdump port 22');
+    await typeWithSudo('tcpdump port 22');
     capture(pc, 5555, 80);
     capture(pc, 6666, 22);
     await waitFor(session, (l) => l.some((t) => t.includes('.6666 > 10.0.0.2.22')));

@@ -161,7 +161,9 @@ function writeKey(ctx: LinuxCommandContext, opts: SysctlOptions, key: string, va
 
   const writer = sysctlWriter(key);
   if (writer) {
-    writer(ctx, value);
+    if (writer(ctx, value) === false) {
+      return { output: '', exitCode: 1, stderr: `sysctl: setting key "${key}": Invalid argument` };
+    }
   } else if (!vfs.writeFile(path, `${value}\n`, 0, 0, 0o022) || readValue(ctx, path) !== value) {
     return { output: '', exitCode: 1, stderr: `sysctl: setting key "${key}": Operation not permitted` };
   }
@@ -171,7 +173,7 @@ function writeKey(ctx: LinuxCommandContext, opts: SysctlOptions, key: string, va
   return { output: renderLeaf(opts, key, shown) ?? '', exitCode: 0 };
 }
 
-type SysctlWriter = (ctx: LinuxCommandContext, value: string) => void;
+type SysctlWriter = (ctx: LinuxCommandContext, value: string) => boolean | void;
 
 function sysctlWriter(key: string): SysctlWriter | null {
   if (key === 'net.ipv4.ip_forward') {
@@ -193,14 +195,16 @@ function sysctlWriter(key: string): SysctlWriter | null {
   }
   if (key === 'net.ipv4.ip_local_port_range') {
     return (ctx, value) => {
-      const exec = ctx.executor as unknown as { applyEphemeralRange(min: number, max: number): void };
       const parts = value.replace(/["']/g, '').split(/\s+/).filter(Boolean);
       const min = Number(parts[0]);
       const max = Number(parts[1] ?? parts[0]);
-      if (Number.isFinite(min) && Number.isFinite(max) && min > 0 && max <= 65535 && min <= max) {
-        exec.applyEphemeralRange(min, max);
-      }
+      if (!ctx.executor.acceptsEphemeralRange(min, max)) return false;
+      ctx.executor.applyEphemeralRange(min, max);
+      return true;
     };
+  }
+  if (key === 'net.ipv4.ip_unprivileged_port_start') {
+    return (ctx, value) => ctx.executor.applyUnprivilegedPortStart(Number(value.trim()));
   }
   return null;
 }

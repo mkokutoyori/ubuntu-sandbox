@@ -22,11 +22,13 @@ export type CiscoARPEntry = ARPEntry;
  */
 export interface ARPProvider {
   _getArpTableInternal(): Map<string, CiscoARPEntry>;
+  getMonotonicClockMs(): number;
   _addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void;
   _deleteARP(ip: IPAddress): boolean;
   _clearARPCache(): void;
   _getPortsInternal(): Map<string, Port>;
   _getSviVlanIds?(): number[];
+  _getSviArpAddresses?(): ReadonlyArray<{ vlan: number; ip: string; mac: MACAddress }>;
 }
 
 // ─── CiscoDevice (full shell contract) ──────────────────────────────
@@ -50,5 +52,6 @@ export interface CiscoDevice extends ARPProvider {
   powerOff(): void;
   /** Power on the device */
   powerOn(): void;
+  getUptimeMs(): number;
   defaultHostname(): string;
 }

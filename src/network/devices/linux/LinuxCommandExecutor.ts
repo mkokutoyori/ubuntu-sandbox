@@ -60,6 +60,8 @@ import {
   type PrivilegeRequirement,
 } from './iam/policy/CommandPrivilegePolicy';
 import { createDefaultCommandPrivileges } from './iam/policy/defaultCommandPrivileges';
+import { holdsCapability, type LinuxCapability } from './iam/capabilities/LinuxCapabilities';
+import type { PortBindingPolicy } from '../../core/ports/PortBindingPolicy';
 import { parseAdduserArgs, type AdduserRequest } from './iam/adduserOptions';
 import { IamAuthLogProjection } from './iam/fs/IamAuthLogProjection';
 import { IamPolicyFilesProjection } from './iam/fs/IamPolicyFilesProjection';
@@ -2340,6 +2342,20 @@ export class LinuxCommandExecutor {
 
   readonly commandPrivileges: CommandPrivilegePolicy = createDefaultCommandPrivileges();
 
+  private portBindingPolicy: PortBindingPolicy | null = null;
+
+  setPortBindingPolicy(policy: PortBindingPolicy): void {
+    this.portBindingPolicy = policy;
+  }
+
+  portBindPermitted(port: number, uid = this.userMgr.currentUid): boolean {
+    return this.portBindingPolicy === null || this.portBindingPolicy.permits(port, { uid });
+  }
+
+  holdsCapability(capability: LinuxCapability): boolean {
+    return holdsCapability(this.privilegeActor(), capability);
+  }
+
   private privilegeActor(): PrivilegeActor {
     return {
       uid: this.userMgr.currentUid,
@@ -2402,6 +2418,20 @@ export class LinuxCommandExecutor {
   setEphemeralRangeApplier(fn: (min: number, max: number) => void): void {
     this.setStackEphemeralRangeFn = fn;
   }
+  applyUnprivilegedPortStart(start: number): boolean {
+    if (this.portBindingPolicy === null || this.socketTable === null) return false;
+    if (!Number.isInteger(start) || start < 0 || start > 65535) return false;
+    if (this.socketTable.getEphemeralRange().min < start) return false;
+    this.portBindingPolicy.unprivilegedPortStart = start;
+    return true;
+  }
+
+  acceptsEphemeralRange(min: number, max: number): boolean {
+    if (!Number.isInteger(min) || !Number.isInteger(max)) return false;
+    if (min < 1 || max > 65535 || max < min) return false;
+    return this.portBindingPolicy === null || min >= this.portBindingPolicy.unprivilegedPortStart;
+  }
+
   applyEphemeralRange(min: number, max: number): void {
     this.socketTable?.setEphemeralRange(min, max);
     this.setStackEphemeralRangeFn?.(min, max);

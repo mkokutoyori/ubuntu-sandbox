@@ -229,9 +229,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   }
 
   // ── Configuration d'interface ──
-  tries.configIf.describeArgs('arp timeout', [
-    INT('seconds', [0, 2147483], 'Seconds an ARP cache entry stays valid'),
-  ]);
   tries.configIf.describeArgs('delay', [
     INT('tens-of-microseconds', [1, 16777215], 'Throughput delay, in tens of microseconds'),
   ]);

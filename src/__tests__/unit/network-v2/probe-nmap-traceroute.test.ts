@@ -146,7 +146,7 @@ describe('une cible distante se trace pour de vrai', () => {
     const { scanner, voisin, cible } = await chaine();
     void voisin; void cible;
 
-    const sortie = await taper(scanner, 'nmap --traceroute -n -p 22 10.0.3.2');
+    const sortie = await taper(scanner, 'sudo nmap --traceroute -n -p 22 10.0.3.2');
 
     const t = bloc(sortie);
     expect(t[1]).toMatch(/^HOP RTT +ADDRESS$/);
@@ -160,7 +160,7 @@ describe('une cible distante se trace pour de vrai', () => {
     const { scanner } = await chaine();
     await taper(scanner, 'sudo tcpdump -i eth0 -w /tmp/tr.pcap &');
 
-    await taper(scanner, 'nmap --traceroute -n -Pn -p 22 10.0.3.2');
+    await taper(scanner, 'sudo nmap --traceroute -n -Pn -p 22 10.0.3.2');
 
     const vu = await taper(scanner, 'sudo tcpdump -r /tmp/tr.pcap -nn');
     expect(vu).toContain('10.0.1.1 > 10.0.1.2: ICMP time exceeded');
@@ -170,7 +170,7 @@ describe('une cible distante se trace pour de vrai', () => {
   it('la section vient APRES la table des ports', async () => {
     const { scanner } = await chaine();
 
-    const sortie = await taper(scanner, 'nmap --traceroute -n -p 22 10.0.3.2');
+    const sortie = await taper(scanner, 'sudo nmap --traceroute -n -p 22 10.0.3.2');
 
     expect(sortie.indexOf('22/tcp')).toBeGreaterThan(0);
     expect(sortie.indexOf('TRACEROUTE')).toBeGreaterThan(sortie.indexOf('22/tcp'));
@@ -181,7 +181,7 @@ describe('l en-tete nomme la sonde qui a fait repondre l hote', () => {
   it('un hote qui repond au ping fait ecrire le protocole ICMP', async () => {
     const { scanner } = await chaine();
 
-    const sortie = await taper(scanner, 'nmap --traceroute -n -p 22 10.0.3.2');
+    const sortie = await taper(scanner, 'sudo nmap --traceroute -n -p 22 10.0.3.2');
 
     expect(sortie).toContain('TRACEROUTE (using proto 1/icmp)');
   });
@@ -189,7 +189,7 @@ describe('l en-tete nomme la sonde qui a fait repondre l hote', () => {
   it('un port FERME l emporte sur l echo, parce qu un RST se contrefait mal', async () => {
     const { scanner } = await chaine();
 
-    const sortie = await taper(scanner, 'nmap --traceroute -n -p 8888 10.0.3.2');
+    const sortie = await taper(scanner, 'sudo nmap --traceroute -n -p 8888 10.0.3.2');
 
     expect(sortie).toContain('TRACEROUTE (using port 8888/tcp)');
   });
@@ -197,7 +197,7 @@ describe('l en-tete nomme la sonde qui a fait repondre l hote', () => {
   it('sans aucune sonde ayant repondu, l echo ICMP est suppose', async () => {
     const { scanner } = await chaine();
 
-    const sortie = await taper(scanner, 'nmap --traceroute -n -Pn -sn 10.0.3.2');
+    const sortie = await taper(scanner, 'sudo nmap --traceroute -n -Pn -sn 10.0.3.2');
 
     expect(sortie).toContain('TRACEROUTE (using proto 1/icmp)');
   });
@@ -207,7 +207,7 @@ describe('une cible du MEME segment n emet aucune sonde', () => {
   it('l en-tete est nu et le saut unique', async () => {
     const { scanner } = await segmentSeul();
 
-    const sortie = await taper(scanner, 'nmap --traceroute -n -p 22 10.0.1.3');
+    const sortie = await taper(scanner, 'sudo nmap --traceroute -n -p 22 10.0.1.3');
 
     const t = bloc(sortie);
     expect(t[0]).toBe('TRACEROUTE');
@@ -220,12 +220,12 @@ describe('une cible du MEME segment n emet aucune sonde', () => {
     const { scanner } = await segmentSeul();
     let sans = 0;
     const stop1 = scanner.getBus().subscribe('port.frame.tx-requested', () => { sans++; });
-    await taper(scanner, 'nmap -n -p 22 10.0.1.3');
+    await taper(scanner, 'sudo nmap -n -p 22 10.0.1.3');
     stop1();
 
     let avec = 0;
     const stop2 = scanner.getBus().subscribe('port.frame.tx-requested', () => { avec++; });
-    await taper(scanner, 'nmap --traceroute -n -p 22 10.0.1.3');
+    await taper(scanner, 'sudo nmap --traceroute -n -p 22 10.0.1.3');
     stop2();
 
     expect(avec).toBe(sans);
@@ -236,7 +236,7 @@ describe('deux cibles derriere le meme routeur replient leurs sauts', () => {
   it('la seconde renvoie a la premiere', async () => {
     const { scanner } = await chaine();
 
-    const sortie = await taper(scanner, 'nmap --traceroute -n -p 22 10.0.3.2 10.0.3.3');
+    const sortie = await taper(scanner, 'sudo nmap --traceroute -n -p 22 10.0.3.2 10.0.3.3');
 
     expect(sortie).toContain('Hops 1-2 are the same as for 10.0.3.2');
     expect(sortie).toMatch(/-\s+Hops 1-2 are the same as for 10\.0\.3\.2/);
@@ -245,7 +245,7 @@ describe('deux cibles derriere le meme routeur replient leurs sauts', () => {
   it('la ligne repliee n elargit pas la colonne des temps', async () => {
     const { scanner } = await chaine();
 
-    const sortie = await taper(scanner, 'nmap --traceroute -n -p 22 10.0.3.2 10.0.3.3');
+    const sortie = await taper(scanner, 'sudo nmap --traceroute -n -p 22 10.0.3.2 10.0.3.3');
 
     const entetes = sortie.split('\n').filter((l) => l.startsWith('HOP '));
     expect(entetes).toHaveLength(2);
@@ -259,7 +259,7 @@ describe('la resolution inverse nomme les sauts', () => {
     const { scanner } = await chaine();
     await taper(scanner, 'sudo sh -c "echo 10.0.1.1 passerelle >> /etc/hosts"');
 
-    const sortie = await taper(scanner, 'nmap --traceroute -p 22 10.0.3.2');
+    const sortie = await taper(scanner, 'sudo nmap --traceroute -p 22 10.0.3.2');
 
     expect(sortie).toContain('passerelle (10.0.1.1)');
   });
@@ -268,7 +268,7 @@ describe('la resolution inverse nomme les sauts', () => {
     const { scanner } = await chaine();
     await taper(scanner, 'sudo sh -c "echo 10.0.1.1 passerelle >> /etc/hosts"');
 
-    const sortie = await taper(scanner, 'nmap --traceroute -n -p 22 10.0.3.2');
+    const sortie = await taper(scanner, 'sudo nmap --traceroute -n -p 22 10.0.3.2');
 
     expect(sortie).not.toContain('passerelle');
   });
@@ -278,7 +278,7 @@ describe('les portes de l option', () => {
   it('`--traceroute` n est plus refusee', async () => {
     const { scanner } = await chaine();
 
-    const sortie = await taper(scanner, 'nmap --traceroute -n -p 22 10.0.3.2');
+    const sortie = await taper(scanner, 'sudo nmap --traceroute -n -p 22 10.0.3.2');
 
     expect(sortie).not.toContain('not implemented');
   });
@@ -286,7 +286,7 @@ describe('les portes de l option', () => {
   it('`-A` l active, comme sur une machine privilegiee', async () => {
     const { scanner } = await chaine();
 
-    const sortie = await taper(scanner, 'nmap -A -n -p 22 10.0.3.2');
+    const sortie = await taper(scanner, 'sudo nmap -A -n -p 22 10.0.3.2');
 
     expect(sortie).toContain('TRACEROUTE');
   });
@@ -294,7 +294,7 @@ describe('les portes de l option', () => {
   it('TEMOIN: sans l option, aucune section', async () => {
     const { scanner } = await chaine();
 
-    const sortie = await taper(scanner, 'nmap -n -p 22 10.0.3.2');
+    const sortie = await taper(scanner, 'sudo nmap -n -p 22 10.0.3.2');
 
     expect(sortie).not.toContain('TRACEROUTE');
   });
