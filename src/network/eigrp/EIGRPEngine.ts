@@ -42,9 +42,8 @@
 import { IPAddress, SubnetMask } from '../core/types';
 import { Logger } from '../core/Logger';
 import { TimerSet } from '@/events/TimerSet';
-import {
-  getDefaultScheduler, defaultSchedulerGeneration_, type IScheduler,
-} from '@/events/Scheduler';
+import { SchedulerBinding } from '@/events/SchedulerBinding';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import {
   AbstractRoutingProtocolEngine,
 } from '../routing/AbstractRoutingProtocolEngine';
@@ -207,19 +206,16 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
   /** Inject a scheduler (virtual time in tests, real time in the app). */
   setScheduler(scheduler: IScheduler | null): void {
     this.schedulerOverride = scheduler;
-    if (this.isEnabled()) this.armHelloTimers();
+    this.clockBinding.follow();
   }
   private getScheduler(): IScheduler {
     return this.schedulerOverride ?? getDefaultScheduler();
   }
 
-  private schedulerGeneration = defaultSchedulerGeneration_();
+  private readonly clockBinding = new SchedulerBinding(
+    () => this.getScheduler(), () => { this.rehomeTimers(); });
 
-  private checkSchedulerGeneration(): void {
-    if (this.schedulerOverride) return;
-    const g = defaultSchedulerGeneration_();
-    if (g === this.schedulerGeneration) return;
-    this.schedulerGeneration = g;
+  private rehomeTimers(): void {
     this.timers.clearAll();
     this.helloTimers.clear();
     if (!this.isEnabled()) return;
@@ -691,7 +687,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
    * this very call — the round is self-sufficient.
    */
   override converge(): void {
-    this.checkSchedulerGeneration();
+    this.clockBinding.follow();
     if (this.converging) return;
     if (!this.isEnabled() || !this.wire) { super.converge(); return; }
     this.syncHelloTimers();
@@ -716,7 +712,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
    * additionally skips routes through disconnected ports (Router FIB).
    */
   refreshFromCache(): void {
-    this.checkSchedulerGeneration();
+    this.clockBinding.follow();
     if (this.converging) return;
     this.converging = true;
     this.cacheOnly = true;
@@ -776,7 +772,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
    */
   processPacket(iface: string, srcIp: string, packet: EigrpPacket,
     multicast: boolean): void {
-    this.checkSchedulerGeneration();
+    this.clockBinding.follow();
     if (!this.isEnabled() || !this.wire) return;
     // A different AS number is a different EIGRP process — the packet
     // is simply not for us (no adjacency, like real IOS).

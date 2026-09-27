@@ -116,8 +116,8 @@ export class RouterRIPEngine {
     return this.engine.getUpdateSources();
   }
 
-  advanceTime(ms: number): void {
-    this.engine.advanceTime(ms);
+  followScheduler(): void {
+    this.engine.followScheduler();
   }
 
   advertiseNetwork(network: IPAddress, mask: SubnetMask): void {

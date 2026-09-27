@@ -29,6 +29,7 @@ import { type IEventBus } from '@/events/EventBus';
 import { BusHolder } from '@/events/BusHolder';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
+import { SchedulerBinding } from '@/events/SchedulerBinding';
 import {
   RIPSignalStore,
   makeReadonlyRIPObservables,
@@ -204,6 +205,8 @@ export class RIPEngine implements IProtocolEngine {
   // ── Reactive plumbing (Phase 4b2-RIP) ───────────────────────────────
   private readonly busHolder = new BusHolder();
   private schedulerOverride: IScheduler | null = null;
+  private readonly clockBinding = new SchedulerBinding(
+    () => this.getScheduler(), (shiftMs) => { this.rehome(shiftMs); });
   private readonly timers = new TimerSet(() => this.getScheduler());
   private readonly signalStore = new RIPSignalStore();
   /** Read-only observables (routes, stats). */
@@ -215,6 +218,7 @@ export class RIPEngine implements IProtocolEngine {
 
   /** Neighbours whose Responses were accepted, and when (RFC 2453 §3.9.2). */
   getUpdateSources(): Map<string, number> {
+    this.clockBinding.follow();
     const out = new Map<string, number>();
     const now = this.clock();
     for (const [ip, at] of this.updateSources) {
@@ -232,38 +236,48 @@ export class RIPEngine implements IProtocolEngine {
     this.busHolder.set(bus);
     this.attachActors();
   }
-  setScheduler(scheduler: IScheduler | null): void { this.schedulerOverride = scheduler; }
+  setScheduler(scheduler: IScheduler | null): void {
+    this.schedulerOverride = scheduler;
+    this.clockBinding.follow();
+  }
 
-  private clockSkewMs = 0;
-  private lastPeriodicAt = 0;
+  private clock(): number { return this.clockBinding.now(); }
 
-  /** Engine clock: wall time plus whatever `advanceTime()` has fast-forwarded. */
-  private clock(): number { return Date.now() + this.clockSkewMs; }
+  followScheduler(): void {
+    this.clockBinding.follow();
+  }
 
-  /**
-   * Fast-forward this engine's own timers by `ms`, firing the periodic
-   * update, route invalidation and garbage collection at the instants the
-   * configured timers would have fired them.
-   */
-  advanceTime(ms: number): void {
-    if (!this.running || ms <= 0) return;
-    let remaining = ms;
-    while (remaining > 0) {
-      const step = Math.min(remaining, this.nextEventIn());
-      this.clockSkewMs += step;
-      remaining -= step;
-      this.fireDueTimers();
+  private rehome(shiftMs: number): void {
+    for (const state of this.routes.values()) state.lastUpdate += shiftMs;
+    for (const [source, at] of this.updateSources) this.updateSources.set(source, at + shiftMs);
+    this.timers.clearAll();
+    this.updateTimer = null;
+    this.triggeredTimer = null;
+    for (const state of this.routes.values()) {
+      state.timeoutTimer = null;
+      state.gcTimer = null;
+    }
+    if (!this.running) return;
+    this.armPeriodicUpdate();
+    for (const state of this.routes.values()) this.armRouteTimer(state);
+    if (this.pendingTriggered.size > 0) {
+      this.triggeredTimer = this.timers.setTimeout(
+        () => this.flushTriggeredUpdates(), RIP_TIMERS.TRIGGERED_DELAY_MIN_MS);
     }
   }
 
-  private nextEventIn(): number {
-    const now = this.clock();
-    let next = this.config.updateInterval - (now - this.lastPeriodicAt);
-    for (const state of this.routes.values()) {
-      const budget = state.garbageCollect ? this.config.gcTimeout : this.config.routeTimeout;
-      next = Math.min(next, budget - (now - state.lastUpdate));
-    }
-    return Math.max(1, next);
+  private armPeriodicUpdate(): void {
+    this.updateTimer = this.timers.setInterval(() => {
+      this.sendPeriodicUpdate();
+    }, this.config.updateInterval);
+  }
+
+  private armRouteTimer(state: RIPRouteState): void {
+    const budget = state.garbageCollect ? this.config.gcTimeout : this.config.routeTimeout;
+    const remaining = Math.max(0, budget - (this.clock() - state.lastUpdate));
+    const timer = this.timers.setTimeout(() => this.fireDueTimers(), remaining);
+    if (state.garbageCollect) state.gcTimer = timer;
+    else state.timeoutTimer = timer;
   }
 
   private fireDueTimers(): void {
@@ -275,10 +289,6 @@ export class RIPEngine implements IProtocolEngine {
       } else if (age >= this.config.routeTimeout) {
         this.invalidateRoute(key, state);
       }
-    }
-    if (now - this.lastPeriodicAt >= this.config.updateInterval) {
-      this.lastPeriodicAt = now;
-      this.sendPeriodicUpdate();
     }
   }
   private getBus(): IEventBus { return this.busHolder.get(); }
@@ -332,12 +342,9 @@ export class RIPEngine implements IProtocolEngine {
   // ─── IProtocolEngine ──────────────────────────────────────────────
 
   start(): void {
+    this.clockBinding.follow();
     this.running = true;
-    this.lastPeriodicAt = this.clock();
-
-    this.updateTimer = this.timers.setInterval(() => {
-      this.sendPeriodicUpdate();
-    }, this.config.updateInterval);
+    this.armPeriodicUpdate();
 
     this.signalRefreshActor?.start();
     this.sendRequest();
@@ -398,6 +405,7 @@ export class RIPEngine implements IProtocolEngine {
   }
 
   advertiseNetwork(network: IPAddress, mask: SubnetMask): void {
+    this.clockBinding.follow();
     const already = this.config.networks.some((n) =>
       n.network.toString() === network.toString() && n.mask.toString() === mask.toString());
     if (already) return;
@@ -456,6 +464,7 @@ export class RIPEngine implements IProtocolEngine {
 
   /** Get route states for debugging/display */
   getRoutes(): Map<string, { metric: number; learnedFrom: string; age: number; garbageCollect: boolean }> {
+    this.clockBinding.follow();
     const result = new Map<string, { metric: number; learnedFrom: string; age: number; garbageCollect: boolean }>();
     for (const [key, state] of this.routes) {
       result.set(key, {
@@ -472,6 +481,7 @@ export class RIPEngine implements IProtocolEngine {
 
   /** Handle an incoming RIP packet */
   processPacket(inPort: string, srcIP: IPAddress, ripPkt: RIPPacket): void {
+    this.clockBinding.follow();
     if (!this.running) return;
     if (!this.isRIPInterface(inPort)) return;
 
@@ -587,6 +597,7 @@ export class RIPEngine implements IProtocolEngine {
    * waiting for its neighbours to time them out.
    */
   onInterfaceDown(iface: string, network?: IPAddress, mask?: SubnetMask): void {
+    this.clockBinding.follow();
     if (!this.running) return;
     for (const [key, state] of [...this.routes]) {
       if (state.learnedOnIface === iface && !state.garbageCollect) {
@@ -918,7 +929,7 @@ export class RIPEngine implements IProtocolEngine {
         existing.route.metric = newMetric;
         existing.lastUpdate = this.clock();
         existing.garbageCollect = false;
-        this.resetTimeout(key, existing);
+        this.resetTimeout(existing);
         this.callbacks.updateRoute(existing.route.network, existing.route.mask, existing.route);
         // RFC 2453 §3.10.1 — metric changes trigger an update.
         if (metricChanged) this.scheduleTriggeredUpdate(existing.route);
@@ -968,7 +979,7 @@ export class RIPEngine implements IProtocolEngine {
       gcTimer: null,
     };
     this.routes.set(key, state);
-    this.resetTimeout(key, state);
+    this.resetTimeout(state);
     this.routesAddedCount++;
     // RFC 2453 §3.10.1 — new routes trigger an update.
     this.scheduleTriggeredUpdate(route);
@@ -1007,8 +1018,7 @@ export class RIPEngine implements IProtocolEngine {
     this.callbacks.updateRoute(state.route.network, state.route.mask, state.route);
     this.scheduleTriggeredUpdate(state.route);
 
-    state.gcTimer = this.timers.setTimeout(
-      () => this.fireDueTimers(), this.config.gcTimeout);
+    this.armRouteTimer(state);
 
     Logger.info(this.equipmentId, 'rip:route-invalidated',
       `${this.hostname}: RIP route ${key} invalidated (metric=16)`);
@@ -1048,14 +1058,13 @@ export class RIPEngine implements IProtocolEngine {
     });
   }
 
-  private resetTimeout(key: string, state: RIPRouteState): void {
+  private resetTimeout(state: RIPRouteState): void {
     if (state.timeoutTimer) this.timers.clear(state.timeoutTimer);
     if (state.gcTimer) {
       this.timers.clear(state.gcTimer);
       state.gcTimer = null;
     }
 
-    state.timeoutTimer = this.timers.setTimeout(
-      () => this.fireDueTimers(), this.config.routeTimeout);
+    this.armRouteTimer(state);
   }
 }

@@ -319,7 +319,6 @@ export class VirtualTimeScheduler implements IScheduler {
 // ──────────────────────────────────────────────────────────────────────────
 
 let defaultSchedulerInstance: IScheduler | null = null;
-let defaultSchedulerGeneration = 0;
 
 export class OwnedScheduler implements IScheduler {
   private readonly owned = new Map<TimerHandle, { scheduler: IScheduler; handle: TimerHandle }>();
@@ -381,11 +380,6 @@ export function getDefaultScheduler(): IScheduler {
   return defaultSchedulerInstance;
 }
 
-export function defaultSchedulerGeneration_(): number {
-  return defaultSchedulerGeneration;
-}
-
 export function __setDefaultScheduler(scheduler: IScheduler | null): void {
   defaultSchedulerInstance = scheduler;
-  defaultSchedulerGeneration++;
 }

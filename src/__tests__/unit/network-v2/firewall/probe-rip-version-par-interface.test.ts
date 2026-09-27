@@ -65,6 +65,7 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import type { RIPEngine } from '@/network/rip/RIPEngine';
+import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
 
 beforeEach(() => {
   resetCounters();
@@ -102,6 +103,8 @@ function demarreRip(sh: FortiShell, prefixe: string, extra: readonly string[] = 
 interface TrameRip { readonly emetteur: string; readonly destination: string; readonly version: number }
 
 function laboratoire(reglagesA: readonly string[] = [], reglagesB: readonly string[] = []) {
+  const horloge = new VirtualTimeScheduler();
+  __setDefaultScheduler(horloge);
   const a = pareFeu('A', '10.0.0.1', '192.168.1.1', 0);
   const b = pareFeu('B', '10.0.0.2', '192.168.2.1', 300);
   new Cable('c1').connect(a.fw.getPort('port1')!, b.fw.getPort('port1')!);
@@ -128,8 +131,7 @@ function laboratoire(reglagesA: readonly string[] = [], reglagesB: readonly stri
 
   demarreRip(a.sh, '192.168.1.0', reglagesA);
   demarreRip(b.sh, '192.168.2.0', reglagesB);
-  moteur(a.fw).advanceTime(31000);
-  moteur(b.fw).advanceTime(31000);
+  horloge.advance(31000);
 
   return { a, b, trames };
 }

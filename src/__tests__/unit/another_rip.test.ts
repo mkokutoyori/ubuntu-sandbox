@@ -580,7 +580,6 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
 
       // Fast forward past invalid timer (180s)
       await r2.processTimers(181);
-      await r1.processTimers(181);
 
       routes = await r2.executeCommand('show ip route rip');
       expect(routes).toContain('possibly down');
