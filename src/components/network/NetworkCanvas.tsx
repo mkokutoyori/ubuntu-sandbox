@@ -8,6 +8,7 @@ import { useNetworkStore } from '@/store/networkStore';
 import { NetworkDevice } from './NetworkDevice';
 import { ConnectionLine, ConnectionLabel } from './ConnectionLine';
 import { computeCableRoutes, shouldShowPortLabels, type CableRoute } from './connection-line-logic';
+import { NETWORK_CANVAS_ID, screenToWorld } from './canvas-geometry';
 import { PacketAnimation, PacketLegend } from './PacketAnimation';
 import { useActivePackets } from '@/react/hooks/useActivePackets';
 import { Equipment } from '@/network';
@@ -21,6 +22,8 @@ interface NetworkCanvasProps {
 
 export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
+  const mapLayerRef = useRef<HTMLDivElement>(null);
+  const cableLayerRef = useRef<SVGSVGElement>(null);
   const dragDepthRef = useRef(0);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
 
@@ -141,7 +144,10 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     const middleOrAlt = e.button === 1 || (e.button === 0 && e.altKey);
-    const leftOnBackground = e.button === 0 && !e.altKey && e.target === e.currentTarget;
+    const onBackground = e.target === e.currentTarget
+      || e.target === mapLayerRef.current
+      || e.target === cableLayerRef.current;
+    const leftOnBackground = e.button === 0 && !e.altKey && onBackground;
     if (middleOrAlt || leftOnBackground) {
       setIsPanning(true);
       setStartPan({ x: e.clientX - panX, y: e.clientY - panY });
@@ -164,11 +170,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
     // updating it on every idle mouse movement re-rendered the whole
     // canvas subtree for no visible effect (rapport 09 audit).
     if (isConnecting) {
-      const rect = canvas.getBoundingClientRect();
-      setMousePos({
-        x: (e.clientX - rect.left) / zoom,
-        y: (e.clientY - rect.top) / zoom
-      });
+      setMousePos(screenToWorld(e.clientX, e.clientY, canvas.getBoundingClientRect(), { panX, panY, zoom }));
     }
 
     if (!isPanning) return;
@@ -182,7 +184,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
     if (!gesture || gesture.moved || !gesture.fromBackground) {
       setPan(e.clientX - startPan.x, e.clientY - startPan.y);
     }
-  }, [isConnecting, isPanning, startPan, zoom, setPan]);
+  }, [isConnecting, isPanning, startPan, panX, panY, zoom, setPan]);
 
   const handleMouseUp = useCallback(() => {
     const gesture = panGestureRef.current;
@@ -204,10 +206,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
     const deviceType = e.dataTransfer.getData('deviceType') as DeviceType;
     if (!deviceType || !canvasRef.current) return;
 
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left - panX) / zoom;
-    const y = (e.clientY - rect.top - panY) / zoom;
-
+    const { x, y } = screenToWorld(e.clientX, e.clientY, canvasRef.current.getBoundingClientRect(), { panX, panY, zoom });
     addDevice(deviceType, x, y);
   }, [zoom, panX, panY, addDevice]);
 
@@ -287,7 +286,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
 
       {/* Canvas area */}
       <div
-        id="network-canvas"
+        id={NETWORK_CANVAS_ID}
         ref={canvasRef}
         className={cn(
           "absolute inset-0 cursor-grab",
@@ -304,6 +303,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
         onDragLeave={handleDragLeave}
       >
         <div
+          ref={mapLayerRef}
           style={{
             transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
             transformOrigin: '0 0'
@@ -311,7 +311,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
           className="absolute inset-0"
         >
           {/* Connections SVG layer */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-auto" style={{ overflow: 'visible' }}>
+          <svg ref={cableLayerRef} className="absolute inset-0 w-full h-full pointer-events-auto" style={{ overflow: 'visible' }}>
             {connections.map(connection => {
               const route = cableRoutes.get(connection.id);
               if (!route) return null;
@@ -362,7 +362,6 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
             <NetworkDevice
               key={device.id}
               device={device}
-              zoom={zoom}
               onOpenTerminal={onOpenTerminal}
             />
           ))}
