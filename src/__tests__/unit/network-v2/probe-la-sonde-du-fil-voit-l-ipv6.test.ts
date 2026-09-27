@@ -91,7 +91,7 @@ async function saisir(s: TerminalSession, ligne: string): Promise<void> {
   s.foreground.setInput(ligne);
   s.foreground.setInputBuf(ligne);
   s.handleKey(key('Enter'));
-  for (let i = 0; i < 12; i++) await tick();
+  for (let i = 0; i < 60; i++) await tick();
 }
 
 const transcript = (s: TerminalSession): string => s.lines.map((l) => l.text).join('\n');

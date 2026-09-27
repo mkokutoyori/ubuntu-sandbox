@@ -127,7 +127,7 @@ import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSy
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
 import { runSshClient, wireExecTarget } from './network/LinuxSshClient';
-import { wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
+import { wireReachOutcomeRetransmitting } from '@/terminal/ssh/wireSshLogin';
 import { BSD_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
 import { parseDialAddress } from '@/network/tcp/dial';
 import { runSshKeygenCommand, vfsKeygenHost, type SshKeygenHost } from '@/network/protocols/ssh/SshKeygenCommand';
@@ -1673,7 +1673,7 @@ export class LinuxCommandExecutor {
     const linuxPeer = (peer as { executor?: unknown } | null)?.executor !== undefined;
     const reach = target === null
       ? undefined
-      : wireReachOutcome(this.localDevice, target.host, target.port);
+      : await wireReachOutcomeRetransmitting(this.localDevice, target.host, target.port);
     const wire = reach === 'open' && target !== null
       ? await this.connectWireSsh(
         target.host, target.user, stdinPwd, target.port, target.identities, target.strict)

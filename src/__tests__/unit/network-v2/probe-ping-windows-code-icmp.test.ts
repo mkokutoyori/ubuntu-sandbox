@@ -60,7 +60,7 @@ async function lab(routerCommands: string[] = []) {
   new Cable('c2').connect(lin.getPort('eth0')!, r.getPort('GigabitEthernet0/2')!);
   new Cable('c3').connect(cible.getPort('eth0')!, r.getPort('GigabitEthernet0/1')!);
   for (const c of [
-    'enable', 'configure terminal',
+    'enable', 'configure terminal', 'no ip icmp rate-limit unreachable',
     'interface GigabitEthernet0/0', 'ip address 10.0.0.1 255.255.255.0', 'no shutdown', 'exit',
     'interface GigabitEthernet0/1', 'ip address 10.0.1.1 255.255.255.0', 'no shutdown', 'exit',
     'interface GigabitEthernet0/2', 'ip address 10.0.2.1 255.255.255.0', 'no shutdown', 'exit',

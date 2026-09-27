@@ -60,8 +60,8 @@ describe('an inbound ACL also filters traffic addressed to the router', () => {
     const out = await r1.executeCommand('ping 10.0.0.2 repeat 2');
     expect(
       marks(out),
-      'the destination is the router itself — IOS still applies the inbound ACL',
-    ).toBe('UU');
+      'the destination is the router itself — IOS still applies the inbound ACL, and rate-limits its unreachables',
+    ).toBe('U.');
     expect(out).toContain('Success rate is 0 percent (0/2)');
   }, 30000);
 
@@ -83,7 +83,7 @@ describe('an inbound ACL also filters traffic addressed to the router', () => {
       `interface ${b}`, 'ip access-group 1 in',
     ]);
 
-    expect(marks(await r1.executeCommand('ping 10.0.0.2 repeat 2'))).toBe('UU');
+    expect(marks(await r1.executeCommand('ping 10.0.0.2 repeat 2'))).toBe('U.');
   }, 30000);
 
   it('`no ip unreachables` turns the denial into silence, not into a U', async () => {

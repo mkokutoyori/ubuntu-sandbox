@@ -28,6 +28,7 @@ import { HsrpAgent } from '../hsrp/HsrpAgent';
 import { UDP_PORT_HSRP } from '../hsrp/types';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
 import { NtpAgent } from '../ntp/NtpAgent';
+import { IOS_UNREACHABLE_INTERVAL_MS } from './router/IcmpUnreachableRateLimit';
 import { UDP_PORT_NTP } from '../ntp/types';
 import { GlbpAgent } from '../glbp/GlbpAgent';
 import { UDP_PORT_GLBP } from '../glbp/types';
@@ -82,6 +83,10 @@ const CISCO_UDP_OWNERS: ReadonlyMap<number, string> = new Map([
 ]);
 
 export class CiscoRouter extends Router {
+  protected override unreachableRateLimitDefaultMs(): number | null {
+    return IOS_UNREACHABLE_INTERVAL_MS;
+  }
+
   protected bootsInterfacesShutdown(): boolean {
     return true;
   }
