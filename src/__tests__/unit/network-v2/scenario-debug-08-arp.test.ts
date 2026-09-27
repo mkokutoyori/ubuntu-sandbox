@@ -54,8 +54,9 @@ describe('Scénario 8 (debug) — debug arp', () => {
 
     pc.configureInterface('eth0', new IPAddress('192.168.10.101'), new SubnetMask('255.255.255.0'));
 
-    lignes = [];
-    rtr.getDebugService().subscribe((l: string) => lignes.push(l));
+    const sink: string[] = [];
+    lignes = sink;
+    rtr.getDebugService().subscribe((l: string) => sink.push(l));
   });
 
   const run = (cmd: string): Promise<string> => rtr.executeCommand(cmd);

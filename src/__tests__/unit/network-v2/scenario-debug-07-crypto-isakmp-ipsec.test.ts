@@ -61,8 +61,9 @@ describe('Scénario 7 (debug) — debug crypto isakmp / debug crypto ipsec', () 
     await configurerVpn(kribi, wanKribi, lanKribi, '203.0.113.100', '192.168.30.254',
       '203.0.113.1', '192.168.30.0', '192.168.10.0', 'aes 128', 'sha', '2');
 
-    lignes = [];
-    siege.getDebugService().subscribe((l: string) => lignes.push(l));
+    const sink: string[] = [];
+    lignes = sink;
+    siege.getDebugService().subscribe((l: string) => sink.push(l));
   });
 
   async function configurerVpn(

@@ -148,18 +148,20 @@ describe('Une liste de transit se SUBIT, elle ne se rejoue pas', () => {
   });
 
   it('STRUCTUREL : et la trame ne franchit PAS le routeur', async () => {
-    const { pc, c2 } = await labo([DENY_TOUT]);
+    const { routeur, pc } = await labo([DENY_TOUT]);
+    const framesTowardServer = () => routeur.getPort('GigabitEthernet0/1')!.getCounters().framesOut;
     await pc.executeCommand('ping -c 1 10.0.2.10');
-    const avant = c2.getStats().framesTransmitted;
+    const before = framesTowardServer();
     await pc.executeCommand(SSH);
-    expect(c2.getStats().framesTransmitted).toBe(avant);
+    expect(framesTowardServer()).toBe(before);
   });
 
   it('sans liste, le SYN FRANCHIT le routeur', async () => {
-    const { pc, c2 } = await labo([]);
+    const { routeur, pc } = await labo([]);
+    const framesTowardServer = () => routeur.getPort('GigabitEthernet0/1')!.getCounters().framesOut;
     await pc.executeCommand('ping -c 1 10.0.2.10');
-    const avant = c2.getStats().framesTransmitted;
+    const before = framesTowardServer();
     await pc.executeCommand(SSH);
-    expect(c2.getStats().framesTransmitted).toBeGreaterThan(avant);
+    expect(framesTowardServer()).toBeGreaterThan(before);
   });
 });
