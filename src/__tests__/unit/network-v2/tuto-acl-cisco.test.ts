@@ -198,7 +198,7 @@ describe('concept 2 — l ACL standard', () => {
 
     expect(passe(await tape(pcWin, `ping ${SRV_LNX}`))).toBe(false);
     expect(passe(await tape(pcLnx, `ping -c 2 ${SRV_LNX}`))).toBe(true);
-  });
+  }, 20000);
 
   it('les compteurs de matches s incrementent', async () => {
     const { r1, pcWin } = await laboratoire();
@@ -210,7 +210,7 @@ describe('concept 2 — l ACL standard', () => {
     await tape(pcWin, `ping ${SRV_LNX}`);
 
     expect(await tape(r1, 'show access-lists 1')).toMatch(/deny.*\(\d+ match/);
-  });
+  }, 20000);
 
   it('l impact cache : PC-WIN joint encore le reseau d administration',
     async () => {
@@ -242,7 +242,7 @@ describe('concept 2 — l ACL standard', () => {
 
     expect(passe(await tape(pcWin, `ping ${SRV_LNX}`))).toBe(false);
     expect(passe(await tape(pcWin, `ping ${PC_ADMIN}`))).toBe(false);
-  });
+  }, 20000);
 });
 
 describe('concept 3 — l ordre des lignes', () => {
@@ -777,7 +777,7 @@ describe('concept 11 — depanner', () => {
     await tape(r1, 'clear access-list counters');
 
     expect(await tape(r1, 'show access-lists 1')).not.toMatch(/\([1-9]\d* match/);
-  });
+  }, 20000);
 
   it('`reload in 10` et `reload cancel` existent — le filet de securite',
     async () => {

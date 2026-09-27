@@ -1702,7 +1702,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       expect(output.toLowerCase()).toMatch(/local error|too long|frag needed/);
     });
 
-    it('218. an IOS ACL denying the UDP probes answers each with an administratively-prohibited !X', async () => {
+    it('218. an IOS ACL denying the UDP probes answers with !X, and IOS rate-limits the others to silence', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
       // Configure Cisco ACL to block UDP probes but allow ICMP echo
@@ -1715,7 +1715,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.r1.executeCommand('end');
 
       const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
-      expect(output).toMatch(/^ 1 {2}10\.0\.1\.1 \(10\.0\.1\.1\) {2}\d+\.\d+ ms !X {2}\d+\.\d+ ms !X {2}\d+\.\d+ ms !X$/m);
+      expect(output).toMatch(/^ 1 {2}10\.0\.1\.1 \(10\.0\.1\.1\) {2}\d+\.\d+ ms !X \* \*$/m);
     });
 
     it('219. should resolve and trace path successfully if ICMP method is forced (-I) even when UDP is blocked', async () => {

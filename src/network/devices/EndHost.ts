@@ -78,6 +78,7 @@ import {
 import { selectIpv6SourceAddress } from '../layers/internet/Ipv6Egress';
 import { UDP_OVER_IPV4_HEADER_BYTES, type UdpEmissionOptions, type UdpSendRequest } from '../layers/transport/UdpEgress';
 import type { HostIcmpUnreachablePayload } from './host/events';
+import { icmpUnreachablePayload } from './host/icmpUnreachablePayload';
 import { Logger } from '../core/Logger';
 import type { Errno } from '../core/Errno';
 import { PacketQueue } from '../core/PacketQueue';
@@ -95,7 +96,6 @@ import {
   ICMP_UNREACH_ADMIN_PROHIBITED,
   ICMP_UNREACH_FRAG_NEEDED,
   ICMP_TTL_EXPIRED_IN_TRANSIT,
-  unreachableCodeName,
   isHardTcpUnreachCode,
   udpSocketErrorFor,
   type ICMPErrorType,
@@ -226,12 +226,15 @@ const PMTU_EXPIRES_MS = 600_000;
 const REDIRECT_EXPIRES_MS = 300_000;
 const REDIRECT_CODES = new Set([0, 1, 2, 3]);
 
+class IcmpErrorReply extends Error {}
+
 export interface EchoOptions {
   dataSize?: number;
   df?: boolean;
   firstSeq?: number;
   ident?: number;
   socket?: TraceSocketOptions;
+  pauseAfterErrorReplyMs?: number;
 }
 
 export interface TraceSocketOptions {
@@ -925,24 +928,9 @@ export abstract class EndHost extends Equipment {
   }
 
   private publishIcmpUnreachable(ipPkt: IPv4Packet, icmp: ICMPPacket): void {
-    const original = icmp.originalPacket;
-    const transport = original?.payload as
-      { sourcePort?: number; destinationPort?: number } | undefined;
     this.getBus().publish({
       topic: 'host.icmp.unreachable',
-      payload: {
-        ...this.hostRef(),
-        fromIp: ipPkt.sourceIP.toString(),
-        toIp: ipPkt.destinationIP.toString(),
-        code: icmp.icmpType === 'time-exceeded'
-          ? 'ttl-exceeded' : unreachableCodeName(icmp.code),
-        icmpCode: icmp.code,
-        ttl: ipPkt.ttl,
-        origProtocol: original?.protocol,
-        origDestPort: transport?.destinationPort,
-        icmpType: icmp.icmpType === 'time-exceeded' ? 'time-exceeded' : 'destination-unreachable',
-        ...(icmp.mtu === undefined ? {} : { mtu: icmp.mtu }),
-      },
+      payload: icmpUnreachablePayload(this.hostRef(), ipPkt, icmp),
     });
   }
 
@@ -3926,7 +3914,7 @@ export abstract class EndHost extends Equipment {
 
     try {
       const winner = await Promise.race([replyOutcome, failedOutcome]);
-      if (winner.kind === 'failed') throw new Error(winner.r.reason);
+      if (winner.kind === 'failed') throw new IcmpErrorReply(winner.r.reason);
       // `tc qdisc ... netem delay` (Cable.artificialDelayMs) is metadata
       // added to the reported RTT, not a real injected delay on the
       // (synchronous, hot) frame-delivery path — same treatment as
@@ -4205,6 +4193,9 @@ export abstract class EndHost extends Equipment {
           fromIP: '',
           error: errorMsg,
         });
+        if (err instanceof IcmpErrorReply && opts?.pauseAfterErrorReplyMs && seq < firstSeq + count - 1) {
+          await this.getScheduler().delay(opts.pauseAfterErrorReplyMs);
+        }
       }
     }
     return results;
@@ -5585,7 +5576,7 @@ export abstract class EndHost extends Equipment {
 
     try {
       const winner = await Promise.race([replyOutcome, failedOutcome]);
-      if (winner.kind === 'failed') throw new Error(winner.r.reason);
+      if (winner.kind === 'failed') throw new IcmpErrorReply(winner.r.reason);
       // `tc qdisc ... netem delay` (Cable.artificialDelayMs) is metadata
       // added to the reported RTT, not a real injected delay on the
       // (synchronous, hot) frame-delivery path — same treatment as

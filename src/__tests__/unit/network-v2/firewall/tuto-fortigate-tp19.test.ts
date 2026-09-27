@@ -205,7 +205,7 @@ describe('TP 19 — OSPF entre le pare-feu et R1', () => {
       expect(await r1.executeCommand('show ip route'))
         .not.toMatch(/^S\*/m);
       expect(await r2.executeCommand('show ip route'))
-        .toMatch(/O\*\s+0\.0\.0\.0\/0/);
+        .toMatch(/^O\*E2\s+0\.0\.0\.0\/0 \[110\/1\] via 10\.0\.0\.1, \d\d:\d\d:\d\d, GigabitEthernet0\/1$/m);
     });
 
   it('etape 5 : une coupure fait TOMBER l\'adjacence, le retour la refait',

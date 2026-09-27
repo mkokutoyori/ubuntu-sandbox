@@ -24,7 +24,7 @@ import {
 } from '@/network/protocols/telnet/TelnetClientSession';
 import { TelnetInteractiveSubShell } from './TelnetInteractiveSubShell';
 import { BSD_TELNET, telnetWireFailure, type TelnetDialect } from './telnetDialect';
-import { wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
+import { wireReachOutcomeRetransmitting } from '@/terminal/ssh/wireSshLogin';
 
 export const TELNET_USAGE = BSD_TELNET.usage;
 
@@ -71,7 +71,7 @@ export async function launchTelnet(
   const destination = parseDialAddress(found.ip);
   if (!destination) return fail(dialect.unresolved(host, port));
 
-  const reach = wireReachOutcome(deps.device, found.ip, port);
+  const reach = await wireReachOutcomeRetransmitting(deps.device, found.ip, port);
   if (reach !== 'open') {
     return fail(telnetWireFailure(dialect, reach, host, found.ip, port));
   }

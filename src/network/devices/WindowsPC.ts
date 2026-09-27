@@ -53,7 +53,7 @@ import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManage
 import { runWindowsSshClient, winWireExecTarget } from './windows/network/WindowsSshClient';
 import type { WinWireTarget } from './windows/network/WindowsSshClient';
 import {
-  openWireSshConnection, silentConnectIo, relayScriptedShell, wireReachOutcome,
+  openWireSshConnection, silentConnectIo, relayScriptedShell, wireReachOutcomeRetransmitting,
 } from '@/terminal/ssh/wireSshLogin';
 import { WINDOWS_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
 import { isOk } from '@/network/protocols/ssh/Result';
@@ -2293,7 +2293,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const password = (this._scenarioStdin ?? '').split('\n')[0] || undefined;
     const reach = target === null
       ? undefined
-      : wireReachOutcome(this, target.host, target.port);
+      : await wireReachOutcomeRetransmitting(this, target.host, target.port);
     const wire = target && reach === 'open' ? await this.openWireSsh(target, password) : null;
     return runWindowsSshClient({
       args,
@@ -2381,7 +2381,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (!sourceIp) {
       return WINDOWS_TELNET.unreachable(host, host, port).join('\n');
     }
-    const reach = wireReachOutcome(this, host, port);
+    const reach = await wireReachOutcomeRetransmitting(this, host, port);
     if (reach !== 'open') {
       return telnetWireFailure(WINDOWS_TELNET, reach, host, host, port).join('\n');
     }
@@ -3553,7 +3553,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         return { port: route.port, onLink: route.nextHopIP.toString() === target.toString() };
       },
       executePingSequence: (target: IPAddress, count: number, timeout?: number, ttl?: number,
-        opts?: { dataSize?: number; df?: boolean }) =>
+        opts?: { dataSize?: number; df?: boolean; pauseAfterErrorReplyMs?: number }) =>
         this.executePingSequence(target, count, timeout, ttl, opts),
       executeTraceroute: (
         target: IPAddress, maxHops?: number, timeoutMs?: number,

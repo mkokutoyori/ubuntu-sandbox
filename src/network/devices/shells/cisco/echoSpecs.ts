@@ -3,6 +3,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { OptionSpec } from '@/cli/OptionBag';
 import { MAX_PING_REPEAT, resolveTargetFamily, type ParsedPing } from './ciscoPing';
 import { CISCO_ERRORS } from '../cli-utils';
+import { IOS_TRACEROUTE_TIMEOUT_SECONDS } from './iosTraceroute';
 
 const MODES = ['user', 'privileged'] as const;
 
@@ -138,7 +139,7 @@ function tracerouteRequest(
     protocol: famille.protocol,
     firstTtl,
     maxHops,
-    timeoutMs: entier(args, 'timeout', 2) * 1000,
+    timeoutMs: entier(args, 'timeout', IOS_TRACEROUTE_TIMEOUT_SECONDS) * 1000,
     probesPerHop: entier(args, 'probe', 3),
   };
 }

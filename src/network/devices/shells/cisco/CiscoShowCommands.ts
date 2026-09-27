@@ -225,10 +225,27 @@ export function showIpRoute(router: Router): string {
  */
 export interface RouteTableHost {
   localAddresses(): Iterable<readonly [string, { toUint32(): number; toString(): string }]>;
+  nowMs?(): number;
+}
+
+const LEARNED_ROUTE_TYPES: ReadonlySet<string> = new Set(['ospf', 'rip', 'eigrp', 'bgp']);
+
+export function isLearnedRouteType(type: string): boolean {
+  return LEARNED_ROUTE_TYPES.has(type);
+}
+
+export function formatRouteAge(elapsedMs: number): string {
+  const total = Math.max(0, Math.floor(elapsedMs / 1000));
+  const days = Math.floor(total / 86400);
+  if (days >= 7) return `${Math.floor(days / 7)}w${days % 7}d`;
+  if (days >= 1) return `${days}d${String(Math.floor((total % 86400) / 3600)).padStart(2, '0')}h`;
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${two(Math.floor(total / 3600))}:${two(Math.floor((total % 3600) / 60))}:${two(total % 60)}`;
 }
 
 export function routerRouteTableHost(router: Router): RouteTableHost {
   return {
+    nowMs: () => router.getMonotonicClockMs(),
     *localAddresses() {
       for (const [name, port] of router._getPortsInternal()) {
         const ip = port.getIPAddress();
@@ -249,6 +266,7 @@ export function renderIpRouteTable(
     iface?: string;
     ad?: number;
     metric?: number;
+    installedAt?: number;
   }>,
   codeOverride?: (route: unknown) => string | null,
 ): string {
@@ -268,16 +286,19 @@ export function renderIpRouteTable(
     const prefixLength = r.mask.toCIDR
       ? r.mask.toCIDR()
       : maskTextToCidr(r.mask.toString());
-    if (r.type === 'default' || (r.network.toString() === '0.0.0.0' && prefixLength === 0)) {
-      const code = `${routeCode(r.type === 'default' ? 'static' : r.type)}*`;
-      defaults.push(`${code.padEnd(6)}0.0.0.0/0 [${r.ad ?? 1}/${r.metric ?? 0}] via ${r.nextHop}`);
-      continue;
-    }
     const attachee = !r.nextHop || String(r.nextHop) === '0.0.0.0';
-    const via = attachee ? 'is directly connected' : `via ${r.nextHop}`;
+    const learnedAt = isLearnedRouteType(r.type) && !attachee ? r.installedAt : undefined;
+    const age = learnedAt !== undefined && host.nowMs ? `, ${formatRouteAge(host.nowMs() - learnedAt)}` : '';
+    const via = attachee ? 'is directly connected' : `via ${r.nextHop}${age}`;
     const metricStr = r.type === 'connected' || r.type === 'local'
       ? '' : ` [${r.ad ?? 1}/${r.metric ?? 0}]`;
-    const suffix = r.type === 'static' && !attachee ? '' : `, ${r.iface}`;
+    const suffix = (r.type === 'static' || r.type === 'default' || (r.type === 'bgp' && age !== '')) && !attachee
+      ? '' : `, ${r.iface}`;
+    if (r.type === 'default' || (r.network.toString() === '0.0.0.0' && prefixLength === 0)) {
+      const code = codeOverride?.(r) ?? `${routeCode(r.type === 'default' ? 'static' : r.type)}*`;
+      defaults.push(`${code.padEnd(6)}0.0.0.0/0${metricStr} ${via}${suffix}`);
+      continue;
+    }
     const invalide = r.type === 'rip' && (r.metric ?? 0) >= RIP_METRIC_INFINITY;
     rendered.push({
       code: codeOverride?.(r) ?? routeCode(r.type),
@@ -315,6 +336,7 @@ export function renderIpRouteTable(
     groups.set(key, bucket);
   }
 
+  for (const line of defaults) lines.push(line);
   for (const [key, bucket] of [...groups.entries()]
     .sort((a, b) => Number(a[0].split('/')[0]) - Number(b[0].split('/')[0]))) {
     const [baseText, parentPrefix] = key.split('/');
@@ -329,7 +351,6 @@ export function renderIpRouteTable(
       : `      ${base}/${parentPrefix} is subnetted, ${bucket.length} subnets`);
     for (const entry of bucket) lines.push(`${entry.code.padEnd(2)}       ${entry.text}`);
   }
-  for (const line of defaults) lines.push(line);
 
   return lines.join('\n');
 }
@@ -841,7 +862,10 @@ export function showRunningConfig(router: Router): string {
     lines.push('!');
   }
 
-  const globalLines = globalConfigRunningConfigLines(router);
+  const globalLines = [
+    ...globalConfigRunningConfigLines(router),
+    ...(router.icmpUnreachableRateLimit?.runningConfigLines() ?? []),
+  ];
   if (globalLines.length > 0) { lines.push('!'); lines.push(...globalLines); }
 
   const pimLines = pimGlobalRunningConfigLines(router);

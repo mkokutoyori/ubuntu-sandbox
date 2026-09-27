@@ -124,7 +124,7 @@ async function ouvrirSsh(
 ): Promise<void> {
   host.setInput(ligne);
   host.handleKey(key('Enter'));
-  for (let i = 0; i < 14 && host.currentInputMode.type !== 'password'; i++) await tick();
+  for (let i = 0; i < 60 && host.currentInputMode.type !== 'password'; i++) await tick();
   if (host.currentInputMode.type === 'password') {
     host.setPasswordBuf(motDePasse);
     host.handleKey(key('Enter'));

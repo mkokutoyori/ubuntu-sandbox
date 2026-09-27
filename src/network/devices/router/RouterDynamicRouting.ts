@@ -39,12 +39,14 @@ import { OspfEngineAdapter } from '../../routing/adapters/OspfEngineAdapter';
 import type { RouterRIPEngine } from './RouterRIPEngine';
 import type { RouterOSPFIntegration } from './RouterOSPFIntegration';
 import type { RouteEntry } from '../Router';
+import { carriedInstallTime } from '../../routing/RouteInstallTime';
 
 export interface DynamicRoutingCtx {
   readonly id: string;
   getPorts(): Map<string, Port>;
   getRoutingTable(): RouteEntry[];
   setRoutingTable(t: RouteEntry[]): void;
+  getMonotonicClockMs(): number;
   /** Egress for protocol frames (Port → Cable → peer handleFrame). */
   sendFrame(iface: string, frame: EthernetFrame): void;
   getArpEntry(ip: string): { mac: MACAddress; iface: string } | undefined;
@@ -276,17 +278,21 @@ export class RouterDynamicRouting {
   }
 
   private reflectRib(): void {
-    const kept = this.ctx.getRoutingTable()
-      .filter((r) => r.type !== 'eigrp' && r.type !== 'bgp');
-    const add = (rr: RibRoute): RouteEntry => ({
-      network: rr.network,
-      mask: rr.mask,
-      nextHop: rr.nextHop,
-      iface: rr.iface,
-      type: rr.protocol as 'eigrp' | 'bgp',
-      ad: rr.adminDistance,
-      metric: rr.metric,
-    });
+    const table = this.ctx.getRoutingTable();
+    const previous = table.filter((r) => r.type === 'eigrp' || r.type === 'bgp');
+    const kept = table.filter((r) => r.type !== 'eigrp' && r.type !== 'bgp');
+    const add = (rr: RibRoute): RouteEntry => {
+      const route: RouteEntry = {
+        network: rr.network,
+        mask: rr.mask,
+        nextHop: rr.nextHop,
+        iface: rr.iface,
+        type: rr.protocol as 'eigrp' | 'bgp',
+        ad: rr.adminDistance,
+        metric: rr.metric,
+      };
+      return { ...route, installedAt: carriedInstallTime(previous, route) ?? this.ctx.getMonotonicClockMs() };
+    };
     for (const rr of this.eigrp.getContributedRoutes()) kept.push(add(rr));
     for (const rr of this.bgp.getContributedRoutes()) kept.push(add(rr));
     this.ctx.setRoutingTable(kept);

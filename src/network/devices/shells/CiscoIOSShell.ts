@@ -23,6 +23,7 @@ import type { SocleLegend } from './CiscoShellBase';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { dhcpClientFamily, type DhcpClientLeaseView } from '@/cli/commands/dhcp/dhcpClientFamily';
 import { arpTimeoutFamily } from '@/cli/commands/arp/arpTimeoutFamily';
+import { ICMP_RATE_LIMIT_LEGENDS, icmpRateLimitFamily } from '@/cli/commands/icmp/icmpRateLimitFamily';
 import type { DebugPair } from '@/cli/commands/debug/debugFamily';
 import { ALL_TUNNEL } from '@/cli/commands/tunnel/tunnelFamily';
 import {
@@ -31,7 +32,8 @@ import {
 } from '@/cli/commands/objectGroup/objectGroupFamily';
 import { CLEAR_CRYPTO_FAMILY } from '@/cli/commands/clear/clearCrypto';
 import { SHOW_CRYPTO_FAMILY } from '@/cli/commands/show/showCrypto';
-import type { Router } from '../Router';
+import type { Router, TracerouteHop } from '../Router';
+import { IOS_TRACEROUTE_BASE_PORT, iosUnreachableMark } from './cisco/iosTraceroute';
 import type { IRouterShell } from './IRouterShell';
 import { CiscoShellBase } from './CiscoShellBase';
 import { CommandTrie, setInvalidInputPromptWidth, formatInvalidInput, formatInvalidInputAt } from './CommandTrie';
@@ -229,7 +231,6 @@ import {
   parseRouteMapClause, type RouteMapClauseKind,
 } from '../router/policy/routeMapClauses';
 import { showAdjacency } from './cisco/CiscoCommonShow';
-import { showIpRouteOspf } from './cisco/CiscoOspfCommands';
 import { clearAccessListCounters } from './cisco/CiscoAclCommands';
 import { IPV4_PLACE, valeurGlobaleSpecs } from './cisco/ipGlobalSpecs';
 import { formatDhcpBindings } from '@/cli/commands/show/showIpDhcp';
@@ -471,10 +472,14 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...zoneSpecs(() => this.zoneHost()),
       ...dhcpClientFamily(),
       ...arpTimeoutFamily(),
+      ...icmpRateLimitFamily(() => ({
+        setIcmpUnreachableRateLimit: (timer, intervalMs) =>
+          this.d().icmpUnreachableRateLimit.setIntervalMs(timer, intervalMs),
+      })),
       ...hsrpShowSpecs(this, () => this.fhrp),
       ...trackShowSpecs(this),
       showViewSpec('show-ip-route-ospf', ['show', 'ip', 'route', 'ospf'],
-        'Display OSPF routes', () => showIpRouteOspf(this.d())),
+        'Display OSPF routes', () => routerIpRouteView(this.d(), ['ospf'])),
       showAdjacencySpec(
         () => showAdjacency(this.d() as unknown as Parameters<typeof showAdjacency>[0]),
         false),
@@ -914,6 +919,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected override socleLegends(): SocleLegend[] {
     return [
       ...super.socleLegends(),
+      ...ICMP_RATE_LIMIT_LEGENDS.map(([path, legend]) => [path, legend, ['config']] as SocleLegend),
       ...MAP_LEGENDS.map(
         ([chemin, legende, modes]) => [chemin, legende, modes] as SocleLegend),
       [['no'], 'Negate a command or set its defaults', ['config-router']],
@@ -2435,10 +2441,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     const router = this.d();
     this._pendingAsync = this.resoudreCible(router, target).then((adresse) => {
       if (!adresse) return `% Unrecognized host or address, or protocol not running.`;
+      const label = adresse === target ? adresse : `${target} (${adresse})`;
       return router
         .executeTraceroute(
-          new IPAddress(adresse), maxHops, timeoutMs, probesPerHop, firstTtl)
-        .then(hops => this._formatCiscoTraceroute(adresse, maxHops, hops));
+          new IPAddress(adresse), maxHops, timeoutMs, probesPerHop, firstTtl,
+          { kind: 'udp', basePort: IOS_TRACEROUTE_BASE_PORT })
+        .then(hops => this._formatCiscoTraceroute(label, maxHops, hops));
     });
 
     return '';
@@ -2446,46 +2454,40 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   private _formatCiscoTraceroute(
     target: string,
-    maxHops: number,
-    hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; probes?: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> }>,
+    _maxHops: number,
+    hops: readonly TracerouteHop[],
   ): string {
     const lines: string[] = [
       'Type escape sequence to abort.',
       `Tracing the route to ${target}`,
-      `VRF info: (vrf in name/id, vrf out name/id)`,
-      '',
+      'VRF info: (vrf in name/id, vrf out name/id)',
     ];
-
     if (hops.length === 0) {
-      lines.push(`% Network is unreachable`);
+      lines.push('% Network is unreachable');
       return lines.join('\n');
     }
-
     for (const hop of hops) {
-      if (hop.timeout && (!hop.probes || hop.probes.every(p => !p.responded))) {
-        lines.push(`  ${hop.hop}  *  *  *`);
-        continue;
-      }
-
-      let annotation = '';
-      if (hop.unreachable) annotation = ' !N';
-
-      if (hop.probes && hop.probes.length > 0) {
-        const parts: string[] = [];
-        for (const probe of hop.probes) {
-          if (!probe.responded) {
-            parts.push('*');
-          } else {
-            parts.push(`${Math.round(probe.rttMs ?? 0)} msec`);
-          }
+      let line = `${String(hop.hop).padStart(3)} `;
+      let lastAddress: string | undefined;
+      let printed = false;
+      for (const probe of hop.probes) {
+        if (!probe.responded) {
+          line += ' * ';
+          printed = true;
+          continue;
         }
-        lines.push(`  ${hop.hop} ${hop.ip}  ${parts.join(' ')}${annotation}`);
-      } else {
-        const ms = Math.round(hop.rttMs ?? 0);
-        lines.push(`  ${hop.hop} ${hop.ip}  ${ms} msec${annotation}`);
+        if (probe.ip !== undefined && probe.ip !== lastAddress) {
+          if (printed) line += '\n    ';
+          line += probe.ip;
+          lastAddress = probe.ip;
+        }
+        line += probe.unreachable
+          ? ` ${iosUnreachableMark(probe.code)} `
+          : ` ${Math.round(probe.rttMs ?? 0)} msec`;
+        printed = true;
       }
+      lines.push(line);
     }
-
     return lines.join('\n');
   }
 
