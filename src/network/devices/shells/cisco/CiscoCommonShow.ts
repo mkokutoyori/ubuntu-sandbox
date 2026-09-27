@@ -519,7 +519,7 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
   ].join('\n');
 }
 
-const LLDP_IF_ABBREV: ReadonlyArray<readonly [RegExp, string]> = [
+const CISCO_INTERFACE_ABBREVIATIONS: ReadonlyArray<readonly [RegExp, string]> = [
   [/^TenGigabitEthernet/i, 'Te'],
   [/^FortyGigabitEthernet/i, 'Fo'],
   [/^GigabitEthernet/i, 'Gi'],
@@ -531,8 +531,8 @@ const LLDP_IF_ABBREV: ReadonlyArray<readonly [RegExp, string]> = [
   [/^Vlan/i, 'Vl'],
 ];
 
-function lldpShortIf(name: string): string {
-  for (const [re, abbr] of LLDP_IF_ABBREV) {
+export function ciscoShortInterfaceName(name: string): string {
+  for (const [re, abbr] of CISCO_INTERFACE_ABBREVIATIONS) {
     if (re.test(name)) return name.replace(re, abbr);
   }
   return name;
@@ -555,7 +555,7 @@ function lldpAutoNegotiationLine(auto: LldpAutoNegotiation | undefined): string 
 function lldpDetailBlock(n: LldpNeighbor, remaining: number): string {
   const lines = [
     '------------------------------------------------',
-    `Local Intf: ${lldpShortIf(n.localPort)}`,
+    `Local Intf: ${ciscoShortInterfaceName(n.localPort)}`,
     `Chassis id: ${lldpChassisId(n)}`,
     `Port id: ${n.portId}`,
     notAdvertised('Port Description', n.portDescription),
@@ -689,7 +689,7 @@ export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string
       return `${blocks.join('\n\n')}\n\nTotal entries displayed: ${learned.length}`;
     }
     const rows = learned.map((n) =>
-      `${(n.systemName ?? '').padEnd(20)}${lldpShortIf(n.localPort).padEnd(15)}` +
+      `${(n.systemName ?? '').padEnd(20)}${ciscoShortInterfaceName(n.localPort).padEnd(15)}` +
       `${String(agent?.ttlRemainingSec(n) ?? n.ttlSec).padEnd(11)}` +
       `${lldpCapabilityLetters(n.remoteCapabilities ?? []).padEnd(16)}${n.portId}`);
     return [...LLDP_CAP_LEGEND,

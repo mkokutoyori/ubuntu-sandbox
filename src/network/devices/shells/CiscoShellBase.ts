@@ -178,8 +178,9 @@ import {
   showBuffers, showTcpBrief, showSockets, type TcpBriefSource,
   showStacks, showReload, showAaa, showEnvironment, showControllers,
   chassisSerial, CISCO_HARDWARE_PROFILES, licenseTable, ciscoClockReading,
-  type ShowStateDevice,
+  type ShowStateDevice, ciscoShortInterfaceName,
 } from './cisco/CiscoCommonShow';
+import { renderInterfaceErrorCounters } from './cisco/ciscoCounterTables';
 import {
   registerCiscoDnsCommands, registerCiscoDnsExecCommands, type DnsCommandContext,
   DNS_RETRY_RANGE, DNS_TIMEOUT_RANGE,
@@ -9240,21 +9241,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // c'est la meme question : deux textes pour une question feraient
     // douter de la machine.
     this.registerOutgoingSessionCommands(target);
-    trie.registerGreedy('show interfaces counters errors', 'Display interface error counters', () => {
-      const rows = ['Port           Align-Err   FCS-Err  Xmit-Err   Rcv-Err UnderSize OutDiscards'];
-      for (const name of this.d().getPortNames()) {
+    trie.registerGreedy('show interfaces counters errors', 'Display interface error counters', () =>
+      renderInterfaceErrorCounters(this.d().getPortNames().map((name) => {
         const c = this.d().getPort(name)?.getCounters();
         const inErr = c?.errorsIn ?? 0;
-        const outErr = c?.errorsOut ?? 0;
-        rows.push(
-          `${name.padEnd(15)}` +
-          `${String(0).padStart(9)}${String(inErr).padStart(10)}` +
-          `${String(outErr).padStart(10)}${String(inErr).padStart(10)}` +
-          `${String(0).padStart(10)}${String(0).padStart(12)}`,
-        );
-      }
-      return rows.join('\n');
-    });
+        return {
+          port: ciscoShortInterfaceName(name), alignErr: 0, fcsErr: inErr,
+          xmitErr: c?.errorsOut ?? 0, rcvErr: inErr, underSize: 0, outDiscards: 0,
+        };
+      })));
     this.registerFileSystemCommands(target);
     // La table des PAQUETS TECHNOLOGIQUES — celle que la machine imprime
     // au demarrage — n'avait aucune commande pour la relire : elle
