@@ -129,7 +129,9 @@ import {
   buildIdentityConfigCommands, buildIdentitySubmodeCommands, getSecurityConfig,
   type CiscoSecurityShellContext,
 } from './cisco/CiscoSecurityCommands';
-import { showSwitchVersion, showIpTraffic, iosClockConfigLines } from './cisco/CiscoCommonShow';
+import {
+  showSwitchVersion, showIpTraffic, iosClockConfigLines, ciscoShortInterfaceName,
+} from './cisco/CiscoCommonShow';
 import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { buildConfigDhcpCommands, dhcpPoolSpecs } from './cisco/CiscoDhcpCommands';
@@ -6641,9 +6643,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private abbreviateInterface(name: string): string {
-    return name
-      .replace('FastEthernet', 'Fa')
-      .replace('GigabitEthernet', 'Gi')
-      .replace('Port-channel', 'Po');
+    return ciscoShortInterfaceName(name);
   }
 }
