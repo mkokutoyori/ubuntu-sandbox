@@ -100,6 +100,9 @@ describe('`no ip unreachables` silences ICMP type 3, and only type 3', () => {
     expect(before).toMatch(/[Ff]rag|too long|mtu|unreachable/i);
 
     await silence(router);
+    expect(await near.executeCommand('ip route flush cache'))
+      .toBe('Cannot open "/proc/sys/net/ipv4/route/flush": Permission denied');
+    expect(await near.executeCommand('sudo ip route flush cache')).toBe('');
     const after = await near.executeCommand('ping -M do -s 1200 -c 1 10.0.1.2');
 
     expect(after).toMatch(/100% packet loss/);

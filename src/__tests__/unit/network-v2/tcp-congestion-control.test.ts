@@ -107,8 +107,8 @@ describe('TCP congestion control (PRD-TCP.md P5)', () => {
     clientSocket.send('B'.repeat(12_000));
 
     expect(retransmits.length).toBeGreaterThan(0);
-    expect(flightAtRetransmit[0]).toBe(5841);
-    expect(clientSocket.cc.ssthresh).toBe(Math.max(Math.floor(5841 / 2), 2 * clientSocket.mss));
+    expect(flightAtRetransmit[0]).toBe(5829);
+    expect(clientSocket.cc.ssthresh).toBe(Math.max(Math.floor(5829 / 2), 2 * clientSocket.mss));
     expect(clientSocket.cc.ssthresh).toBe(2920);
     expect(clientSocket.cc.ssthresh).toBeLessThan(Number.MAX_SAFE_INTEGER);
   });

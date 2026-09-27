@@ -3939,8 +3939,7 @@ export abstract class LinuxMachine extends EndHost
       resolveRouteFromTable: (
         targetIP: IPAddress, fromIP: IPAddress | null,
       ): { iface: string; nextHopIP: IPAddress; table: number } | null => {
-        const r = this.resolveRouteFromTable(targetIP, fromIP);
-        return r ? { iface: r.port.getName(), nextHopIP: r.nextHopIP, table: r.table } : null;
+        return this.resolveRouteFromTable(targetIP, fromIP);
       },
       getArpTable: (): ReadonlyMap<string, ARPEntry> => {
         return this.arpTable;
@@ -3994,6 +3993,7 @@ export abstract class LinuxMachine extends EndHost
       },
       udpConnect: (target, port, options) => this.udpConnect(target, port, options),
       pathMtuException: (target) => this.pathMtuException(target),
+      flushPathMtuExceptions: () => this.flushPathMtuExceptions(),
       udpListen: (port, processName, owner) => this.udpListen(port, processName, owner),
       tcpExchange: (target, port, payload, options) => this.tcpExchange(target, port, payload, options),
       ping6Sequence: (

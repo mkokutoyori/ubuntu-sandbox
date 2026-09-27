@@ -1859,7 +1859,7 @@ export abstract class EndHost extends Equipment {
   /** Resolve a route consulting `ip rule` policy: first matching rule's table wins. */
   resolveRouteFromTable(
     targetIP: IPAddress, fromIP: IPAddress | null,
-  ): { port: Port; nextHopIP: IPAddress; table: number } | null {
+  ): { iface: string; nextHopIP: IPAddress; table: number } | null {
     const destInt = targetIP.toUint32();
     for (const rule of this.policyRules) {
       if (rule.fromNetwork && rule.fromMask) {
@@ -1872,9 +1872,7 @@ export abstract class EndHost extends Equipment {
       }
       const best = pickBestRouteInTable(destInt, this.getRoutingTableFor(rule.table));
       if (!best) continue;
-      const port = this.ports.get(best.iface);
-      if (!port) continue;
-      return { port, nextHopIP: best.nextHop || targetIP, table: rule.table };
+      return { iface: best.iface, nextHopIP: best.nextHop || targetIP, table: rule.table };
     }
     return null;
   }
@@ -3105,6 +3103,7 @@ export abstract class EndHost extends Equipment {
     if (ipPkt.totalLength <= mtu) return [ipPkt];
     if ((ipPkt.flags & IPV4_FLAG_DF) !== 0) {
       this.protocolCounters.ipFragFails++;
+      this.sendICMPError('lo', ipPkt, 'destination-unreachable', ICMP_UNREACH_FRAG_NEEDED, mtu);
       return null;
     }
     const fragments = fragmentIPv4(ipPkt, mtu);

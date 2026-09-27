@@ -123,6 +123,11 @@ export function buildIpCtx(
     routeLookupFacts(dest: IPAddress) {
       return { local: net.isLocalAddress(dest), uid: currentUid(), pmtu: net.pathMtuException(dest) };
     },
+    flushRouteCache(): string {
+      if (currentUid() !== 0) return 'Cannot open "/proc/sys/net/ipv4/route/flush": Permission denied';
+      net.flushPathMtuExceptions();
+      return '';
+    },
     // Any local port answers this: a port belongs to the machine that
     // owns it, so there is nothing further to inject.
     getLocalDevice(): object | null {

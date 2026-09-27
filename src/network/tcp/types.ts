@@ -133,6 +133,7 @@ export interface UnackedSegment {
 }
 
 export const TCP_DEFAULT_MSS = 1460;
+export const TCP_BASE_HEADER_BYTES = 20;
 export const TCP_DEFAULT_WINDOW = 65535;
 
 /** Floor for Path MTU Discovery's MSS shrinkage (PRD-TCP.md P7) — real stacks never let a reported Next-Hop MTU drive MSS to something absurdly tiny. */
