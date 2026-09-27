@@ -2138,6 +2138,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       'vlan-type', 'mac-vlan', 'ip', 'arp']) {
       this.vlanTrie.registerGreedy(kw, `VLAN ${kw} configuration`, (args, raw) => {
         if (this.selectedVlan === null) return '';
+        if (args.length === 0 && kw !== 'mux-vlan') return HUAWEI_ERRORS.INCOMPLETE(raw ?? kw);
         const v = this.swRef.getVLAN(this.selectedVlan);
         if (!v) return '';
         ajouterLigneVlan(v, kw, raw ?? `${kw} ${args.join(' ')}`.trim());
