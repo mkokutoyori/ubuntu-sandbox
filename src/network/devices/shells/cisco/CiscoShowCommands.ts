@@ -1064,6 +1064,7 @@ function ospfInterfaceRunningConfigLines(pending: Record<string, unknown>): stri
   if (pending.bfd) lines.push(' ip ospf bfd');
   if (pending.floodReduction) lines.push(' ip ospf flood-reduction');
   if (pending.databaseFilterAllOut) lines.push(' ip ospf database-filter all out');
+  if (pending.area !== undefined) lines.push(` ip ospf ${pending.processId ?? 1} area ${pending.area}`);
   return lines;
 }
 

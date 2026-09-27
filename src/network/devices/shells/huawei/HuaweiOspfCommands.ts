@@ -404,6 +404,16 @@ export function buildOSPFAreaViewCommands(
   // `network <adresse> <masque-generique>` : forme close.
   trie.allowArgs('network', 2);
 
+  trie.registerGreedy('undo network', 'Remove a network range from the area', (args) => {
+    if (args.length < 2) return 'Error: Incomplete command.';
+    const areaId = getOSPFArea();
+    if (!areaId) return 'Error: Not in area view.';
+    if (!estAdresseIPv4(args[0]) || !estAdresseIPv4(args[1])) return 'Error: Wrong parameter.';
+    ctx.r()._getOSPFIntegration().removeNetwork(args[0], args[1], areaId);
+    return '';
+  });
+  trie.allowArgs('undo network', 2);
+
   trie.registerGreedy('stub', 'Configure area as stub', (args) => {
     const ospf = ctx.r()._getOSPFEngineInternal();
     if (!ospf) return 'Error: OSPF is not enabled.';

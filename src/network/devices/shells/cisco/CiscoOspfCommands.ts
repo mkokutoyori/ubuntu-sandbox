@@ -14,7 +14,7 @@ import type { OspfInterfaceSettings } from '../../router/RouterOSPFIntegration';
 import { normalizeOspfRouteType, ospfRouteCode } from '@/network/ospf/routeCodes';
 import { renderIpRouteTable, routerRouteTableHost } from './CiscoShowCommands';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
-import { isAreaId, isBackboneAreaId, normalizeAreaId, type LSAHeader } from '../../../ospf/types';
+import { isAreaId, isBackboneAreaId, type LSAHeader } from '../../../ospf/types';
 import { boundedInteger } from '@/cli/ArgumentTypes';
 
 import { CISCO_ERRORS } from '../cli-utils';
@@ -241,6 +241,14 @@ function adresseReseau(ip: string, wildcard: string): string {
 
     ospf.addNetwork(adresseReseau(network, wildcard), wildcard, areaId);
     ctx.r()._ospfAutoConverge();
+    return '';
+  });
+
+  trie.registerGreedy('no network', 'Remove an OSPF network/area', (args) => {
+    if (args.length < 4) return '% Incomplete command.';
+    if (!'area'.startsWith(args[2].toLowerCase())) return '% Invalid input. Expected "area" keyword.';
+    if (!isAreaId(args[3])) throw new CliInvalidInput({ token: args[3] });
+    ctx.r()._getOSPFIntegration().removeNetwork(adresseReseau(args[0], args[1]), args[1], args[3]);
     return '';
   });
 
@@ -664,23 +672,7 @@ function enableOspfOnInterface(
   processId: number,
   areaId: string,
 ): void {
-  const router = ctx.r();
-  router._enableOSPF(processId);
-  const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return;
-  const ports = router._getPortsInternal();
-  const port = ports.get(ifName);
-  if (!port) return;
-  const ip = port.getIPAddress()?.toString();
-  const mask = port.getSubnetMask()?.toString();
-  if (!ip || !mask) return;
-  const existing = ospf.getInterface(ifName);
-  if (existing) {
-    existing.areaId = areaId;
-  } else {
-    ospf.activateInterface(ifName, ip, mask, areaId);
-  }
-  router._ospfAutoConverge();
+  ctx.r()._getOSPFIntegration().setInterfaceArea(ifName, processId, areaId);
 }
 
 /**
@@ -814,8 +806,8 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     if (args.length < 1) return '% Incomplete command.';
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '% No interface selected';
-    const areaId = normalizeAreaId(args[0]);
-    enableOspfOnInterface(ctx, ifName, 1, areaId);
+    if (!isAreaId(args[0])) throw new CliInvalidInput({ token: args[0] });
+    enableOspfOnInterface(ctx, ifName, 1, args[0]);
     return '';
   });
   configIfTrie.registerGreedy('ip ospf', 'OSPF interface configuration', (args) => {
@@ -824,11 +816,23 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
       if (isNaN(pid)) return '% Invalid process ID';
       const ifName = ctx.getSelectedInterface();
       if (!ifName) return '% No interface selected';
-      const areaId = normalizeAreaId(args[2]);
-      enableOspfOnInterface(ctx, ifName, pid, areaId);
+      if (!isAreaId(args[2])) throw new CliInvalidInput({ token: args[2] });
+      enableOspfOnInterface(ctx, ifName, pid, args[2]);
       return '';
     }
     return "% Invalid input detected at '^' marker.";
+  });
+
+  configIfTrie.registerGreedy('no ip ospf', 'Disable OSPF on this interface', (args) => {
+    const [first, second] = args.map((word) => word.toLowerCase());
+    const processForm = /^\d+$/.test(first ?? '');
+    if (first === undefined || (processForm && second === undefined)) return '% Incomplete command.';
+    const areaForm = first === 'area' || (processForm && second === 'area');
+    if (!areaForm) return "% Invalid input detected at '^' marker.";
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '% No interface selected';
+    ctx.r()._getOSPFIntegration().clearInterfaceArea(ifName);
+    return '';
   });
 
   configIfTrie.registerGreedy('ip ospf cost', 'Set OSPF cost on interface', (args) => {

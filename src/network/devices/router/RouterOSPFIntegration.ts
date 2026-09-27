@@ -23,7 +23,7 @@ import { Logger } from '../../core/Logger';
 import { OSPFEngine } from '../../ospf/OSPFEngine';
 import { OSPFv3Engine } from '../../ospf/OSPFv3Engine';
 import type { OSPFNeighbor, OSPFPacket, OSPFInterface, OSPFNetworkType } from '../../ospf/types';
-import { OSPF_ROUTER_ID_ABSENT } from '../../ospf/types';
+import { OSPF_ROUTER_ID_ABSENT, areasEqual } from '../../ospf/types';
 import type { ACLEngine } from './ACLEngine';
 import type { IPv6DataPlane } from './IPv6DataPlane';
 import type { RouteEntry } from '../Router';
@@ -43,6 +43,7 @@ export interface OspfInterfaceSettings {
   bfd?: boolean; bfdEchoDisabled?: boolean; bfdInterval?: number;
   bfdMinRx?: number; bfdMultiplier?: number; bfdTemplate?: string;
   floodReduction?: boolean; databaseFilterAllOut?: boolean;
+  area?: string; processId?: number;
 }
 
 export interface OSPFExtraConfig {
@@ -623,6 +624,52 @@ export class RouterOSPFIntegration {
     this.autoConverge();
   }
 
+  removeNetwork(network: string, wildcard: string, areaId: string): void {
+    this.ospfEngine?.removeNetwork(network, wildcard, areaId);
+    this.withdrawUncoveredInterfaces();
+    this.autoConverge();
+  }
+
+  setInterfaceArea(ifName: string, processId: number, areaId: string): void {
+    this.enableOSPF(processId);
+    const pending = this.extraConfig.pendingIfConfig.get(ifName) ?? {};
+    pending.area = areaId;
+    pending.processId = processId;
+    this.extraConfig.pendingIfConfig.set(ifName, pending);
+    const iface = this.ospfEngine?.getInterface(ifName);
+    if (iface && !areasEqual(iface.areaId, areaId)) this.ospfEngine!.removeInterface(ifName);
+    this.autoConverge();
+  }
+
+  clearInterfaceArea(ifName: string): void {
+    const pending = this.extraConfig.pendingIfConfig.get(ifName);
+    if (pending) {
+      delete pending.area;
+      delete pending.processId;
+    }
+    this.withdrawUncoveredInterfaces();
+    this.autoConverge();
+  }
+
+  private withdrawUncoveredInterfaces(): void {
+    const engine = this.ospfEngine;
+    if (!engine) return;
+    for (const [name, iface] of [...engine.getInterfaces()]) {
+      const wanted = this.areaWantedFor(name);
+      if (wanted === undefined || !areasEqual(wanted, iface.areaId)) engine.removeInterface(name);
+    }
+  }
+
+  private areaWantedFor(ifName: string): string | undefined {
+    const interfaceLevel = this.extraConfig.pendingIfConfig.get(ifName)?.area;
+    if (interfaceLevel !== undefined) return interfaceLevel;
+    const port = this.ctx.getPorts().get(ifName);
+    const ip = port?.getIPAddress();
+    const mask = port?.getSubnetMask();
+    if (!ip || !mask || !this.ospfEngine) return undefined;
+    return this.ospfEngine.matchInterfaces([{ name: ifName, ip: ip.toString(), mask: mask.toString() }])[0]?.areaId;
+  }
+
   resetInterfaceCost(ifName: string): void {
     delete this.extraConfig.pendingIfConfig.get(ifName)?.cost;
     this.ospfEngine?.resetInterfaceCost(ifName);
@@ -649,8 +696,12 @@ export class RouterOSPFIntegration {
       }
     }
 
-    const matches = this.ospfEngine.matchInterfaces(routerIfaces);
-    for (const m of matches) {
+    const matches = new Map(this.ospfEngine.matchInterfaces(routerIfaces).map((m) => [m.name, m]));
+    for (const ri of routerIfaces) {
+      const area = this.extraConfig.pendingIfConfig.get(ri.name)?.area;
+      if (area !== undefined) matches.set(ri.name, { ...ri, areaId: area });
+    }
+    for (const m of matches.values()) {
       if (!this.ospfEngine.getInterface(m.name)) {
         const pending = this.extraConfig.pendingIfConfig.get(m.name);
         this.ospfEngine.activateInterface(m.name, m.ip, m.mask, m.areaId, {
