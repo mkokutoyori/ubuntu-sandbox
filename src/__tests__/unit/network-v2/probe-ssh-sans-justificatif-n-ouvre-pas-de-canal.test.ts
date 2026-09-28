@@ -21,9 +21,13 @@
  *     MAUVAIS mot de passe      12 trames   « Permission denied »
  *     BON mot de passe          13 trames   rend « alice »
  *
- * Les deux premiers comptes sont EGAUX, et c'est la demonstration : un
- * appel sans justificatif coute exactement ce que coute un refus, donc
- * il est refuse au meme endroit, par le meme serveur, sur le meme fil.
+ * Les deux premiers comptes etaient EGAUX tant que le client, faute de
+ * mot de passe, envoyait une requete « password » vide. Depuis qu'il
+ * negocie comme OpenSSH (probe-le-client-ssh-negocie-comme-openssh), il
+ * ouvre par « none » (RFC 4252 §5.2) et, n'ayant rien d'autre a offrir,
+ * s'arrete au refus : il coute MOINS qu'un mauvais mot de passe, qui
+ * ajoute son echange. Il n'en passe pas moins par le fil, et le serveur
+ * le refuse.
  * La treizieme trame du troisieme cas est le canal d'exec, celui que
  * seule une authentification reussie ouvre. La taille de la sortie ne
  * change pas ces comptes — la difference est le CANAL, pas la charge
@@ -117,12 +121,13 @@ describe('un appel sans justificatif est refuse comme un mauvais mot de passe', 
       .toContain('Permission denied');
   });
 
-  it('il coute AUTANT de trames qu une authentification qui echoue', async () => {
+  it('it crosses the wire, and stops after "none" where a wrong password adds its own exchange', async () => {
     const sansJustificatif = await cout(`ssh ${OPT} alice@10.0.0.2 whoami`);
     const mauvaisMotDePasse = await cout(
       `sshpass -p MAUVAIS ssh ${OPT} alice@10.0.0.2 whoami`);
 
-    expect(sansJustificatif).toBe(mauvaisMotDePasse);
+    expect(sansJustificatif).toBeGreaterThan(0);
+    expect(sansJustificatif).toBeLessThan(mauvaisMotDePasse);
   });
 
   it('et MOINS qu une connexion authentifiee, qui ouvre son canal d exec', async () => {

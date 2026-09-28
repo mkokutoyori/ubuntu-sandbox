@@ -20,6 +20,7 @@ import { SshHostKey } from '../SshHostKey';
 import { SshUserContext } from '../SshUserContext';
 import {
   DEFAULT_SSH_SERVER_CONFIG,
+  SSHD_MAX_AUTH_TRIES_REASON,
   type ILinuxShell,
   type ISshServerContext,
   type SshServerConfig,
@@ -167,6 +168,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   private readonly syslogger: SshSyslogger | null;
   private readonly utmpProjection: LinuxUtmpProjection | null;
   readonly rawConfig: string;
+  readonly maxAuthTriesDisconnect = SSHD_MAX_AUTH_TRIES_REASON;
   private cachedEffective: SshdServerConfig | null = null;
   private readonly device: unknown;
   private readonly rootLoginOverride: boolean | undefined;
@@ -791,7 +793,19 @@ export class LinuxSshServerContext implements ISshServerContext {
         const methods: AuthMethodType[] = [];
         if (this.config.pubkeyAuthentication) methods.push('publickey');
         if (this.config.passwordAuthentication) methods.push('password');
+        if (this.config.kbdInteractiveAuthentication) methods.push('keyboard-interactive');
         return methods;
+      },
+      keyboardInteractive: () => {
+        if (!this.config.kbdInteractiveAuthentication || !this.effectiveSshdServerConfig().usePam) return null;
+        return {
+          device: 'pam',
+          name: '',
+          instruction: '',
+          prompts: [{ prompt: 'Password: ', echo: false }],
+          verify: (user, responses) => this.userAllowed(user, 'password')
+            && this.userManager.checkPassword(user, responses[0] ?? ''),
+        };
       },
       checkAccountLifecycle: (user) => this.userManager.accountLifecycleGate(user),
     };

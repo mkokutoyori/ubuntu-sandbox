@@ -14,8 +14,15 @@ import type {
   TcpConnector,
 } from '@/network/tcp/types';
 import { isDialFailure } from '@/network/tcp/types';
-import { AuthChain, createAuthMethods } from '../auth/AuthChain';
-import type { ISshAuthContext } from '../auth/ISshAuthMethod';
+import {
+  runUserauth,
+  type UserauthInfoRequest,
+  type UserauthOutcome,
+  type UserauthPrompt,
+  type UserauthReply,
+  type UserauthTransport,
+} from '../auth/ClientUserauth';
+import { SshKeyPair } from '../SshKeyPair';
 import type {
   ISshExecChannel,
   ISshSftpChannel,
@@ -26,7 +33,7 @@ import type { IHostKeyVerificationStrategy } from '../hostkey/IHostKeyVerificati
 import { SshKnownHosts } from '../hostkey/SshKnownHosts';
 import { createVerificationStrategy } from '../hostkey/VerificationStrategies';
 import { type Result, err, ok, propagateErr } from '../Result';
-import type { SshConnectOptions } from '../SshConnectOptions';
+import { OPENSSH_CLIENT_AUTHENTICATION, type SshConnectOptions } from '../SshConnectOptions';
 import { SshHostKey } from '../SshHostKey';
 import {
   type ISshInteractionHandler,
@@ -65,7 +72,7 @@ interface ServerBanner {
 }
 
 
-export const SSH_PASSWORD_PROMPTS = 3;
+export const SSH_PASSWORD_PROMPTS = OPENSSH_CLIENT_AUTHENTICATION.passwordPrompts;
 
 export class SshSession implements ISshSession {
   private _state: SshSessionState = idle();
@@ -399,101 +406,95 @@ export class SshSession implements ISshSession {
     conn: TcpConnection,
     opts: SshConnectOptions,
   ): Promise<Result<void>> {
-    const ctx = this.makeAuthContext(conn, user, opts);
-    // Track the number of password prompts already issued so we only emit
-    // "Permission denied, please try again." between attempts, never before
-    // the first prompt — matches OpenSSH 9.x exactly.
-    let promptsIssued = 0;
-    const passwordProvider = async (
-      currentUser: string,
-      _attemptsLeft: number,
-    ): Promise<string> => {
-      if (promptsIssued > 0) {
-        this.deps.interactionHandler.showAuthFailure?.(currentUser, opts.host);
-      }
-      promptsIssued++;
-      if (opts.password !== undefined) return opts.password;
-      return this.deps.interactionHandler.promptPassword(currentUser, opts.host);
+    const handler = this.deps.interactionHandler;
+    const suppliedOnce = opts.password !== undefined || handler.canPromptAgain?.() === false;
+    let answersGiven = 0;
+    const answer = (ask: () => Promise<string>): Promise<string> => {
+      answersGiven++;
+      return opts.password !== undefined ? Promise.resolve(opts.password) : ask();
     };
-    const suppliedOnce = opts.password !== undefined
-      || this.deps.interactionHandler.canPromptAgain?.() === false;
-    const prompts = suppliedOnce ? 1 : 3;
-    const methods = createAuthMethods(this.deps.vfs, opts, passwordProvider, prompts);
-    const chain = AuthChain.create(methods);
-
-    const result = await chain.tryAll(user, ctx);
-    if (!result.ok) {
-      this.deps.interactionHandler.showWarning(
-        `${user}@${opts.host}: Permission denied (${chain.toDisplayString()}).`,
-      );
-    }
-    return result;
-  }
-
-  private makeAuthContext(
-    conn: TcpConnection,
-    _user: string,
-    _opts: SshConnectOptions,
-  ): ISshAuthContext {
-    let attemptsLeft = SSH_PASSWORD_PROMPTS;
-    return {
-      checkPassword: () => false,
-      checkPasswordAsync: async (u, password) => {
-        attemptsLeft = Math.max(0, attemptsLeft - 1);
-        const response = await this.requestServerAuth(conn, {
-          op: 'auth',
-          method: 'password',
-          user: u,
-          ...(this.deps.credentialless === true && password === ''
-            ? {}
-            : { password }),
-        });
-        if (response.ended) attemptsLeft = 0;
-        return response.ok === true;
-      },
-      checkPublicKey: () => false,
-      checkPublicKeyAsync: async (u, publicKey) => {
-        const response = await this.requestServerAuth(conn, {
-          op: 'auth',
-          method: 'publickey',
-          user: u,
-          publicKey,
-        });
-        if (response.ended) attemptsLeft = 0;
-        return response.ok === true;
-      },
-      getAttemptsRemaining: () => attemptsLeft,
-      getAvailableMethods: () => ['publickey', 'password'],
-    };
-  }
-
-  private requestServerAuth(
-    conn: TcpConnection,
-    payload: Record<string, unknown>,
-  ): Promise<{ ok: boolean; ended: boolean }> {
-    return new Promise((resolve) => {
-      let settled = false;
-      const offData = conn.onData((data) => {
-        if (settled) return;
-        try {
-          const parsed = JSON.parse(data) as { ok?: boolean; ended?: boolean };
-          if (typeof parsed.ok === 'boolean') {
-            settled = true;
-            offData();
-            offClose?.();
-            resolve({ ok: parsed.ok, ended: parsed.ended === true });
-          }
-        } catch {
-          /* ignore */
-        }
-      });
-      const offClose = conn.onClose?.(() => {
-        if (settled) return;
-        settled = true;
-        offData();
-        resolve({ ok: false, ended: true });
-      });
-      conn.write(JSON.stringify(payload));
+    let closed = false;
+    const offClosed = conn.onClose?.(() => { closed = true; });
+    const outcome = await runUserauth(this.userauthTransport(conn, user, () => closed), {
+      authentication: opts.authentication,
+      publicKeys: this.offeredPublicKeys(opts),
+      interactive: this.deps.credentialless !== true,
+    }, {
+      canAnswer: () => !suppliedOnce || answersGiven === 0,
+      password: () => answer(() => handler.promptPassword(user, opts.host)),
+      keyboardInteractive: ({ prompt, echo }) => answer(() => {
+        const shown = `(${user}@${opts.host}) ${prompt}`;
+        return handler.promptKeyboardInteractive?.(shown, echo) ?? handler.promptPassword(user, opts.host);
+      }),
+      retry: () => handler.showAuthFailure?.(user, opts.host),
+      inform: (text) => handler.showInfo(text),
+    }).finally(() => offClosed?.());
+    if (outcome.kind === 'success') return ok(undefined);
+    handler.showWarning(userauthFailureLines(outcome, user, opts.host, opts.port));
+    return err({
+      kind: 'AUTH_FAILED', user, attemptsLeft: 0,
+      ...(outcome.kind === 'denied' ? { methods: outcome.methods } : {}),
     });
   }
+
+  private offeredPublicKeys(opts: SshConnectOptions): string[] {
+    const keys: string[] = [];
+    for (const path of opts.identityFiles) {
+      const pair = SshKeyPair.fromVfs(this.deps.vfs, path);
+      if (pair.ok) keys.push(pair.value.publicKeyContent);
+    }
+    return keys;
+  }
+
+  private userauthTransport(conn: TcpConnection, user: string, closed: () => boolean): UserauthTransport {
+    return {
+      request: (method, fields, onInfoRequest) => new Promise<UserauthReply>((resolve) => {
+        if (closed()) {
+          resolve({ kind: 'closed' });
+          return;
+        }
+        let settled = false;
+        const finish = (reply: UserauthReply): void => {
+          if (settled) return;
+          settled = true;
+          offData();
+          offClose?.();
+          resolve(reply);
+        };
+        const offData = conn.onData((data) => {
+          let parsed: {
+            op?: string; ok?: boolean; methods?: string; disconnect?: string;
+            name?: string; instruction?: string; prompts?: UserauthPrompt[];
+          };
+          try { parsed = JSON.parse(data) as typeof parsed; } catch { return; }
+          if (parsed.op === 'auth_info_request') {
+            const request: UserauthInfoRequest = {
+              name: parsed.name ?? '', instruction: parsed.instruction ?? '', prompts: parsed.prompts ?? [],
+            };
+            void Promise.resolve(onInfoRequest?.(request) ?? null).then((responses) => {
+              if (!settled) conn.write(JSON.stringify({ op: 'auth_info_response', responses: responses ?? [] }));
+            });
+            return;
+          }
+          if (typeof parsed.disconnect === 'string') finish({ kind: 'disconnect', reason: parsed.disconnect });
+          else if (parsed.ok === true) finish({ kind: 'success' });
+          else if (parsed.ok === false) finish({ kind: 'failure', methods: parsed.methods ?? '' });
+        });
+        const offClose = conn.onClose?.(() => finish({ kind: 'closed' }));
+        conn.write(JSON.stringify({ op: 'auth', method, user, ...fields }));
+      }),
+    };
+  }
+}
+
+function userauthFailureLines(
+  outcome: Exclude<UserauthOutcome, { kind: 'success' }>, user: string, host: string, port: number,
+): string {
+  if (outcome.kind === 'denied') return `${user}@${host}: Permission denied (${outcome.methods}).`;
+  if (outcome.kind === 'closed') return `Connection closed by ${host} port ${port}`;
+  return receivedDisconnectLines(host, port, outcome.reason);
+}
+
+export function receivedDisconnectLines(host: string, port: number, reason: string): string {
+  return `Received disconnect from ${host} port ${port}:2: ${reason}\nDisconnected from ${host} port ${port}`;
 }

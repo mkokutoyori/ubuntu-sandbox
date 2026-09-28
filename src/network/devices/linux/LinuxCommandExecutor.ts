@@ -159,6 +159,7 @@ import type { ISftpFileSystem } from '../../protocols/ssh/sftp/ISftpFileSystem';
 import { WireSftpFileSystem } from '../../protocols/ssh/sftp/WireSftpFileSystem';
 import { SshSession } from '../../protocols/ssh/session/SshSession';
 import { connectWireSsh, type StrictHostKeyChecking, type WireSshClient } from './network/WireSshConnector';
+import type { SshClientAuthentication } from '../../protocols/ssh/SshConnectOptions';
 import { isOk } from '../../protocols/ssh/Result';
 import type { TcpConnector } from '@/network/tcp/types';
 import {
@@ -1526,10 +1527,10 @@ export class LinuxCommandExecutor {
       return { output: `${cmd}: ${probe.output}`, exitCode: probe.exitCode };
     }
 
-    const wireFs = await this.tryOpenWireSftpFs(hostPart, remoteUser, offeredPassword, port, identities);
+    const { fs: wireFs, denial } = await this.tryOpenWireSftpFs(hostPart, remoteUser, offeredPassword, port, identities);
     const unauthenticated = (): { output: string; exitCode: number } | null => (
       !wireFs && this.tcpConnector
-        ? { output: `${remoteUser}@${hostPart}: Permission denied (publickey,password).`, exitCode: 1 }
+        ? { output: denial ?? `${remoteUser}@${hostPart}: Permission denied (publickey,password).`, exitCode: 1 }
         : null
     );
     if (cmd === 'scp') {
@@ -1597,25 +1598,22 @@ export class LinuxCommandExecutor {
     return body;
   }
 
-  private async openWireSshSession(
-    host: string, user: string, password: string | undefined,
-    port = 22, identities: string[] = [],
-  ): Promise<SshSession | null> {
-    return (await this.connectWireSsh(host, user, password, port, identities)).session;
-  }
-
   private async connectWireSsh(
     host: string, user: string, password: string | undefined,
     port = 22, identities: string[] = [], strict: StrictHostKeyChecking = 'accept-new',
-  ): Promise<{ session: SshSession | null; authRefused: boolean; notices: string[] }> {
+    authentication?: SshClientAuthentication,
+  ): Promise<{ session: SshSession | null; authRefused: boolean; denial?: string; notices: string[] }> {
     if (!this.tcpConnector) return { session: null, authRefused: false, notices: [] };
     const connector = this.tcpConnector;
     const outcome = await connectWireSsh(
-      this.wireSshClient(), { host, user, port, password, identities, strict },
+      this.wireSshClient(), { host, user, port, password, identities, strict, authentication },
       ((h, p) => connector(h, p)) as unknown as TcpConnector);
+    const authRefused = outcome.failure?.kind === 'AUTH_FAILED';
+    const denial = authRefused ? outcome.warnings.at(-1) : undefined;
     return {
       session: outcome.session,
-      authRefused: outcome.failure?.kind === 'AUTH_FAILED',
+      authRefused,
+      ...(denial !== undefined ? { denial } : {}),
       notices: [...outcome.notices],
     };
   }
@@ -1632,12 +1630,12 @@ export class LinuxCommandExecutor {
 
   private async tryOpenWireSftpFs(
     host: string, user: string, password: string, port = 22, identities: string[] = [],
-  ): Promise<ISftpFileSystem | null> {
-    const session = await this.openWireSshSession(host, user, password, port, identities);
-    if (!session) return null;
+  ): Promise<{ fs: ISftpFileSystem | null; denial?: string }> {
+    const { session, denial } = await this.connectWireSsh(host, user, password, port, identities);
+    if (!session) return { fs: null, denial };
     const channelResult = session.openSftpChannel();
-    if (!isOk(channelResult)) { session.disconnect(); return null; }
-    return new WireSftpFileSystem(channelResult.value);
+    if (!isOk(channelResult)) { session.disconnect(); return { fs: null }; }
+    return { fs: new WireSftpFileSystem(channelResult.value) };
   }
 
   private async relayShellOverWire(
@@ -1678,12 +1676,15 @@ export class LinuxCommandExecutor {
       : await wireReachOutcomeRetransmitting(this.localDevice, target.host, target.port);
     const wire = reach === 'open' && target !== null
       ? await this.connectWireSsh(
-        target.host, target.user, stdinPwd, target.port, target.identities, target.strict)
+        target.host, target.user, stdinPwd, target.port, target.identities, target.strict, target.authentication)
       : { session: null, authRefused: false, notices: [] as string[] };
     const session = wire.session;
     if (!session) {
       return this.finishSshClientResult(
-        runSshClient({ ...opts, wireAuthRefused: wire.authRefused, wireOutcome: reach }),
+        runSshClient({
+          ...opts, wireAuthRefused: wire.authRefused, wireOutcome: reach,
+          ...('denial' in wire && wire.denial !== undefined ? { wireDenial: wire.denial } : {}),
+        }),
         wire.authRefused);
     }
     const settled = !linuxPeer && target !== null && target.command

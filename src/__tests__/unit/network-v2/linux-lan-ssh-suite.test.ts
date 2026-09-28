@@ -1781,7 +1781,7 @@ describe('§26 — SSH public-key authentication', () => {
       },
       on: l => l.pc1,
       cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2',
-      contains: [/Permission denied \(publickey\)/],
+      contains: [/Permission denied \(password\)/],
     },
     {
       name: 'ssh-keygen -y -f reads the private key and prints the public form',

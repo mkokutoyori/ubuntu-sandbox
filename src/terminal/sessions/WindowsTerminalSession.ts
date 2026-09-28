@@ -1134,7 +1134,7 @@ export class WindowsTerminalSession extends TerminalSession {
         return;
       }
       this.endSshPrompt();
-      this.addLine(`${pending.user}@${pending.host}: Permission denied (publickey,password).`);
+      this.addLine(`${pending.user}@${pending.host}: Permission denied (${outcome.methods ?? 'publickey,password'}).`);
       this.notify();
       return;
     }

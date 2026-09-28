@@ -191,6 +191,7 @@ const DIRECTIVE_PARSERS: Record<string, (value: string) => Partial<SshdConfig>> 
   chrootdirectory: (v) => ({ chrootDirectory: v.trim() }),
   strictmodes: (v) => ({ strictModes: parseBool(v) }),
   kbdinteractiveauthentication: (v) => ({ kbdInteractiveAuthentication: parseBool(v) }),
+  challengeresponseauthentication: (v) => ({ kbdInteractiveAuthentication: parseBool(v) }),
   x11forwarding: (v) => ({ x11Forwarding: parseBool(v) }),
   allowtcpforwarding: (v) => {
     const lower = v.trim().toLowerCase();

@@ -40,6 +40,7 @@ export interface ISshInteractionHandler {
     fingerprint: string,
   ): Promise<HostKeyResponse>;
   promptPassword(user: string, host: string): Promise<string>;
+  promptKeyboardInteractive?(prompt: string, echo: boolean): Promise<string>;
   showWarning(message: string): void;
   showInfo(message: string): void;
   onConnected(info: SshConnectionInfo): void;
@@ -80,6 +81,10 @@ export class SilentSshInteractionHandler implements ISshInteractionHandler {
 
   async promptPassword(): Promise<string> {
     return typeof this.password === 'function' ? this.password() : this.password;
+  }
+
+  promptKeyboardInteractive(): Promise<string> {
+    return this.promptPassword();
   }
 
   canPromptAgain(): boolean {

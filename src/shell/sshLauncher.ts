@@ -24,6 +24,8 @@ import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshel
 import type { IShell, ShellLineResult } from './IShell';
 import { SshKnownHostsFile, type SshHostKeyType } from '@/network/protocols/ssh/SshKnownHostsFile';
 import { readForceCommand, readMaxAuthTries } from '@/network/devices/linux/network/LinuxSshClient';
+import { receivedDisconnectLines } from '@/network/protocols/ssh/session/SshSession';
+import { SSHD_MAX_AUTH_TRIES_REASON } from '@/network/protocols/ssh/server/ISshServerContext';
 export { SSH_PASSWORD_PROMPTS } from '@/network/protocols/ssh/session/SshSession';
 import { transportLiveness, establishedSessionLiveness } from '@/network/protocols/ssh/sessionLiveness';
 
@@ -396,10 +398,7 @@ export async function finalisePendingAuth(
     serverAuthTryCap !== null && auth.attempts >= serverAuthTryCap
       ? {
         kind: 'refused',
-        message: [
-          `Received disconnect from ${auth.host} port ${auth.port}:2: Too many authentication failures`,
-          `Disconnected from ${auth.host} port ${auth.port}`,
-        ].join('\n'),
+        message: receivedDisconnectLines(auth.host, auth.port, SSHD_MAX_AUTH_TRIES_REASON),
       }
       : null
   );

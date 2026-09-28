@@ -13,7 +13,7 @@ import { getDefaultScheduler } from '@/events/Scheduler';
 import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
 import type { EditorSession } from '@/network/devices/linux/editors/EditorView';
 import type { ChannelType } from '../channels/ISshChannel';
-import type { AccountLifecycleVerdict } from '../auth/ISshAuthMethod';
+import type { AccountLifecycleVerdict, KeyboardInteractiveChallenge } from '../auth/ISshAuthMethod';
 import {
   encodeSftpChannelFrame,
   decodeSftpChannelFrame,
@@ -163,6 +163,15 @@ export class SshServerHandler {
       this.ctx.recordLogout?.(user, clientIp);
     };
     let authFailures = 0;
+    let authRequests = 0;
+    let pendingInfoResponse: ((responses: readonly string[] | null) => void) | null = null;
+    const askKeyboardInteractive = (challenge: KeyboardInteractiveChallenge): Promise<readonly string[] | null> =>
+      new Promise((resolve) => {
+        pendingInfoResponse = resolve;
+        conn.write(JSON.stringify({
+          op: 'auth_info_request', name: challenge.name, instruction: challenge.instruction, prompts: challenge.prompts,
+        }));
+      });
     const preauth = preauthSlot(this.ctx);
     preauth.value += 1;
     let preauthDecremented = false;
@@ -232,6 +241,8 @@ export class SshServerHandler {
     };
 
     conn.onClose?.((reason) => {
+      pendingInfoResponse?.(null);
+      pendingInfoResponse = null;
       forwarded?.close();
       forwarded = null;
       if (userCtx) recordLogoutOnce(userCtx.username);
@@ -325,10 +336,23 @@ export class SshServerHandler {
           break;
         }
 
+        case 'auth_info_response': {
+          const deliver = pendingInfoResponse;
+          pendingInfoResponse = null;
+          deliver?.(Array.isArray(parsed.responses) ? parsed.responses.map(String) : []);
+          break;
+        }
+
         case 'auth': {
           const cap = this.ctx.config.maxAuthTries;
+          authRequests += 1;
+          const penaltyFree = authRequests === 1 && parsed.method === 'none';
+          const disconnect = this.ctx.maxAuthTriesDisconnect;
           if (authFailures >= cap) {
-            conn.write(JSON.stringify({ ok: false, ended: true, error: 'too many authentication failures' }));
+            conn.write(JSON.stringify({
+              ok: false, ended: true, error: 'too many authentication failures',
+              ...(disconnect ? { disconnect } : {}),
+            }));
             this.eventBus.emit({
               kind: 'auth_failure',
               port: this.ctx.clientPort?.(clientIp),
@@ -340,7 +364,7 @@ export class SshServerHandler {
             conn.close();
             return;
           }
-          void this.handleAuth(parsed, clientIp).then((result) => {
+          void this.handleAuth(parsed, clientIp, askKeyboardInteractive, authRequests === 1).then((result) => {
             if (result.ok) {
               conn.write(JSON.stringify({ ok: true }));
               userCtx = result.userCtx;
@@ -351,9 +375,13 @@ export class SshServerHandler {
               decPreauth();
               return;
             }
-            authFailures += 1;
-            conn.write(JSON.stringify({ ok: false, ended: authFailures >= cap }));
-            if (authFailures >= cap) {
+            if (!penaltyFree) authFailures += 1;
+            const ended = authFailures >= cap;
+            conn.write(JSON.stringify({
+              ok: false, ended, methods: this.ctx.auth.getAvailableMethods().join(','),
+              ...(ended && disconnect ? { disconnect } : {}),
+            }));
+            if (ended) {
               this.eventBus.emit({
                 kind: 'auth_failure',
                 port: this.ctx.clientPort?.(clientIp),
@@ -806,15 +834,29 @@ export class SshServerHandler {
   private async handleAuth(
     payload: Record<string, unknown>,
     clientIp: string,
+    askKeyboardInteractive: (challenge: KeyboardInteractiveChallenge) => Promise<readonly string[] | null>,
+    firstRequest: boolean,
   ): Promise<
     | { ok: false }
     | { ok: true; userCtx: SshUserContext; keyOptions: AuthorizedKeyOptions | null }
   > {
-    const method = payload.method as string | undefined;
     const user = (payload.user as string | undefined) ?? '';
-    const offered = payload.password as string | undefined;
-    const password = offered ?? '';
-    const credentialless = method === 'password' && offered === undefined;
+    const credentialless = payload.method === 'none';
+    if (credentialless && this.ctx.buildUserContext(user) !== null
+      && !(this.ctx.auth.acceptsWithoutCredential?.(user) ?? false)) return { ok: false };
+    let password = (payload.password as string | undefined) ?? '';
+    let responses: readonly string[] | null = null;
+    const challenge = payload.method === 'keyboard-interactive'
+      ? this.ctx.auth.keyboardInteractive?.() ?? null
+      : null;
+    if (payload.method === 'keyboard-interactive') {
+      if (!challenge) return { ok: false };
+      responses = await askKeyboardInteractive(challenge);
+      if (responses === null) return { ok: false };
+      password = responses[0] ?? '';
+    }
+    const method = challenge ? `keyboard-interactive/${challenge.device}` : payload.method as string | undefined;
+    const passwordBacked = payload.method === 'password' || challenge !== null;
 
     // Reactive throttler check: refuse before consulting auth.
     if (this.ctx.isClientBlocked?.(clientIp, user)) {
@@ -850,12 +892,15 @@ export class SshServerHandler {
     // before any credential validation.
     const userExists = this.ctx.buildUserContext(user) !== null;
     if (!userExists) {
-      this.eventBus.emit({
-        kind: 'auth_invalid_user',
-        user,
-        ip: clientIp,
-        timestamp: Date.now(),
-      });
+      if (firstRequest) {
+        this.eventBus.emit({
+          kind: 'auth_invalid_user',
+          user,
+          ip: clientIp,
+          port: this.ctx.clientPort?.(clientIp),
+          timestamp: Date.now(),
+        });
+      }
       // We still consult the auth context so the throttler counts the
       // failure and the response timing matches a real bad password attempt.
       // (Real sshd does the same for the same reason: side-channel hardening.)
@@ -866,15 +911,15 @@ export class SshServerHandler {
         reason: 'invalid_user',
         ip: clientIp,
         method,
+        validUser: false,
       });
-      this.ctx.recordAuthFailure?.(user, clientIp, 'invalid user');
+      if (!credentialless) this.ctx.recordAuthFailure?.(user, clientIp, 'invalid user');
       return { ok: false };
     }
 
     // PermitEmptyPasswords gate (cheaper than calling the user DB).
     if (
-      method === 'password' &&
-      !credentialless &&
+      passwordBacked &&
       password.length === 0 &&
       this.ctx.permitEmptyPasswords?.() === false
     ) {
@@ -893,6 +938,8 @@ export class SshServerHandler {
     let keyOptions: AuthorizedKeyOptions | null = null;
     if (credentialless) {
       success = this.ctx.auth.acceptsWithoutCredential?.(user) ?? false;
+    } else if (challenge && responses) {
+      success = challenge.verify(user, responses);
     } else if (method === 'password') {
       success = this.ctx.config.passwordAuthentication && (
         this.ctx.auth.checkPasswordAsync
@@ -916,7 +963,7 @@ export class SshServerHandler {
         kind: 'auth_failure',
         port: this.ctx.clientPort?.(clientIp),
         user,
-        reason: method === 'password' ? 'wrong_password' : 'wrong_key',
+        reason: passwordBacked ? 'wrong_password' : 'wrong_key',
         ip: clientIp,
         method,
       });

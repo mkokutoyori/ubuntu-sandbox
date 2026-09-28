@@ -2246,6 +2246,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     exec: ((command: string) => { output: string; exitCode: number } | null) | undefined;
     shell: (() => { output: string; exitCode: number } | null) | undefined;
     authRefused: boolean;
+    deniedMethods?: string;
     close: () => void;
   } | null> {
     const outcome = await openWireSshConnection({
@@ -2260,7 +2261,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       identityFiles: target.identities,
     });
     if (outcome.kind === 'auth-failed' && password !== undefined) {
-      return { exec: undefined, shell: undefined, authRefused: true, close: () => undefined };
+      return { exec: undefined, shell: undefined, authRefused: true, deniedMethods: outcome.methods, close: () => undefined };
     }
     if (outcome.kind !== 'connected') return null;
     const { session } = outcome;
@@ -2307,6 +2308,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       execRelay: wire?.exec,
       shellRelay: wire?.shell,
       wireAuthRefused: wire?.authRefused,
+      wireDeniedMethods: wire?.deniedMethods,
       wireAuthenticated: wire?.authRefused === false,
       localFs: {
         readFile: (p: string) => this.fs.readFile(p),

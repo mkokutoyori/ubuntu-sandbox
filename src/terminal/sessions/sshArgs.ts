@@ -18,7 +18,13 @@
  * command line does not crash the terminal.
  */
 
-export type StrictHostKeyChecking = 'yes' | 'no' | 'accept-new';
+import {
+  sshClientAuthentication,
+  type SshClientAuthentication,
+  type StrictHostKeyChecking,
+} from '@/network/protocols/ssh/SshConnectOptions';
+
+export type { StrictHostKeyChecking };
 
 export interface LocalForward {
   /** Port opened on the local machine. */
@@ -79,6 +85,7 @@ export interface ParsedSshArgs {
    * effect — request a PTY only for interactive sessions.
    */
   readonly requestTty?: 'yes' | 'no' | 'force';
+  readonly authentication: SshClientAuthentication;
 }
 
 export interface ProxyHop {
@@ -188,6 +195,7 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
   let requestTty: 'yes' | 'no' | 'force' | undefined;
   let host: string | null = null;
   const commandTokens: string[] = [];
+  const optionValues: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -224,6 +232,7 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
       requestTty = 'no';
     } else if (arg === '-o' && i + 1 < args.length) {
       const next = args[++i];
+      optionValues.push(next);
       const strictMatch = /^StrictHostKeyChecking=(yes|no|accept-new)$/i.exec(
         next,
       );
@@ -291,5 +300,6 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
     dynamicForwards: Object.freeze([...dynamicForwards]),
     forwardAgent,
     requestTty,
+    authentication: sshClientAuthentication(optionValues),
   };
 }

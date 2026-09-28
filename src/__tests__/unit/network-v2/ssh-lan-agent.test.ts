@@ -84,8 +84,8 @@ describe('SSH LAN — in-memory ssh-agent + ssh-add', () => {
     // id_ecdsa absent
     const added = agent.addAll('/home/user', vfs);
     expect(added).toEqual([
-      '/home/user/.ssh/id_ed25519',
       '/home/user/.ssh/id_rsa',
+      '/home/user/.ssh/id_ed25519',
     ]);
   });
 

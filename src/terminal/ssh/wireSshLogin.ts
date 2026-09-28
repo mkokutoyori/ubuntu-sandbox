@@ -108,7 +108,7 @@ export type WireSshLoginOutcome =
   /** The host presented a key that differs from the stored one. */
   | { kind: 'host-key-changed' }
   /** Authentication failed — already reported to the user by the SSH layer. */
-  | { kind: 'auth-failed' }
+  | { kind: 'auth-failed'; methods?: string }
   | { kind: 'cancelled' };
 
 /**
@@ -226,9 +226,12 @@ export async function openWireSshConnection(
   }
 
   if (!result || !isOk(result)) {
-    const errKind = result ? (result as { error: { kind: string } }).error.kind : 'UNKNOWN';
+    const failure = result && !isOk(result) ? result.error : null;
+    const errKind = failure?.kind ?? 'UNKNOWN';
     session.disconnect();
-    if (errKind === 'AUTH_FAILED') return { kind: 'auth-failed' };
+    if (failure?.kind === 'AUTH_FAILED') {
+      return failure.methods === undefined ? { kind: 'auth-failed' } : { kind: 'auth-failed', methods: failure.methods };
+    }
     if (errKind === 'CONNECTION_REFUSED') {
       return { kind: 'rejected', message: `ssh: connect to host ${req.host} port ${req.port}: Connection refused` };
     }

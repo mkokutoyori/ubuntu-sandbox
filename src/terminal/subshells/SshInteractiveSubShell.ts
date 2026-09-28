@@ -121,9 +121,13 @@ class HopInteractionHandler implements ISshInteractionHandler {
   }
 
   promptPassword(user: string, host: string): Promise<string> {
+    return this.promptKeyboardInteractive(`${user}@${host}'s password:`, false);
+  }
+
+  promptKeyboardInteractive(prompt: string, echo: boolean): Promise<string> {
     return new Promise((resolve) => {
       this.pendingPasswordResolve = resolve;
-      this.signal({ kind: 'password', promptText: `${user}@${host}'s password:` });
+      this.signal({ kind: echo ? 'text' : 'password', promptText: prompt.trimEnd() });
     });
   }
 

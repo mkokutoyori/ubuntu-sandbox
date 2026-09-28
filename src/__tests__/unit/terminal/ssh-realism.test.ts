@@ -13,8 +13,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxLastlogRegistry } from '@/network/devices/linux/LinuxLastlogRegistry';
 import { TerminalSshInteractionHandler } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
 import type { ITerminalIO } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
-import { PasswordAuthMethod } from '@/network/protocols/ssh/auth/PasswordAuthMethod';
-import type { ISshAuthContext } from '@/network/protocols/ssh/auth/ISshAuthMethod';
+import { runUserauth, type UserauthTransport } from '@/network/protocols/ssh/auth/ClientUserauth';
+import { OPENSSH_CLIENT_AUTHENTICATION } from '@/network/protocols/ssh/SshConnectOptions';
 
 describe('LinuxLastlogRegistry — PAM-style rotation', () => {
   let reg: LinuxLastlogRegistry;
@@ -57,7 +57,15 @@ describe('LinuxLastlogRegistry — PAM-style rotation', () => {
   });
 });
 
-describe('PasswordAuthMethod — OpenSSH-style retry feedback', () => {
+describe('password userauth — OpenSSH-style retry feedback', () => {
+  const passwordOnly = (accepts: (password: string) => boolean): UserauthTransport => ({
+    request: async (method, fields) => {
+      if (method === 'password' && accepts(String(fields.password))) return { kind: 'success' };
+      return { kind: 'failure', methods: 'password' };
+    },
+  });
+  const plan = { authentication: OPENSSH_CLIENT_AUTHENTICATION, publicKeys: [], interactive: true };
+
   it('emits "Permission denied, please try again." between attempts', async () => {
     const lines: Array<{ text: string; type?: string }> = [];
     const io: ITerminalIO = {
@@ -65,27 +73,16 @@ describe('PasswordAuthMethod — OpenSSH-style retry feedback', () => {
       readInput: async () => 'wrong',
     };
     const handler = new TerminalSshInteractionHandler(io);
-
-    let attempts = 0;
-    const ctx: ISshAuthContext = {
-      checkPassword: () => { attempts++; return false; },
-      checkPublicKey: () => false,
-      getAttemptsRemaining: () => 3 - attempts,
-      getAvailableMethods: () => ['password'],
-    };
-    // Wire showAuthFailure between attempts the way SshSession does.
-    const provider = async (user: string, _left: number): Promise<string> => {
-      if (attempts > 0) handler.showAuthFailure(user, 'host');
-      return 'wrong';
-    };
-    const method = new PasswordAuthMethod(provider, 3);
-    const result = await method.attempt('alice', ctx);
-    expect(result.ok).toBe(false);
+    const outcome = await runUserauth(passwordOnly(() => false), plan, {
+      canAnswer: () => true,
+      password: () => handler.promptPassword('alice', 'host'),
+      keyboardInteractive: () => handler.promptPassword('alice', 'host'),
+      retry: () => handler.showAuthFailure('alice', 'host'),
+      inform: () => undefined,
+    });
+    expect(outcome).toEqual({ kind: 'denied', methods: 'password' });
 
     const warnings = lines.filter(l => l.text.startsWith('Permission denied'));
-    // 3 attempts → 2 inter-attempt notices (none before the very first
-    // prompt, none after the last failure since the final "permission denied
-    // (publickey,password)" comes from doAuthenticate).
     expect(warnings).toHaveLength(2);
     expect(warnings[0].type).toBe('warning');
   });
@@ -97,21 +94,14 @@ describe('PasswordAuthMethod — OpenSSH-style retry feedback', () => {
       readInput: async () => 'right',
     };
     const handler = new TerminalSshInteractionHandler(io);
-    const ctx: ISshAuthContext = {
-      checkPassword: () => true,
-      checkPublicKey: () => false,
-      getAttemptsRemaining: () => 3,
-      getAvailableMethods: () => ['password'],
-    };
-    let calls = 0;
-    const provider = async (user: string, _left: number): Promise<string> => {
-      if (calls > 0) handler.showAuthFailure(user, 'host');
-      calls++;
-      return 'right';
-    };
-    const method = new PasswordAuthMethod(provider, 3);
-    const result = await method.attempt('alice', ctx);
-    expect(result.ok).toBe(true);
+    const outcome = await runUserauth(passwordOnly((p) => p === 'right'), plan, {
+      canAnswer: () => true,
+      password: () => handler.promptPassword('alice', 'host'),
+      keyboardInteractive: () => handler.promptPassword('alice', 'host'),
+      retry: () => handler.showAuthFailure('alice', 'host'),
+      inform: () => undefined,
+    });
+    expect(outcome).toEqual({ kind: 'success' });
     expect(lines.filter(l => l.text.includes('Permission denied'))).toHaveLength(0);
   });
 });

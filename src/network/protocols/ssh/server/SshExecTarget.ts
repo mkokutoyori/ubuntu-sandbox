@@ -49,8 +49,8 @@ export interface SshLoginDecision {
   reason?: string;
 }
 
-/** Authentication method that was negotiated for a session. */
-export type SshAuthMethod = 'password' | 'publickey' | 'keyboard-interactive';
+import type { AuthMethodType as SshAuthMethod } from '../auth/ISshAuthMethod';
+export type { SshAuthMethod };
 
 /** Frozen view of an inbound SSH-server policy. */
 export interface SshPolicySnapshot {

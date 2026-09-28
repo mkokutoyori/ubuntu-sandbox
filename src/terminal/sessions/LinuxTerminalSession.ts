@@ -97,7 +97,11 @@ import { SqlPlusShell } from '@/shell/adapters/SqlPlusShell';
 import { RmanShell } from '@/shell/adapters/RmanShell';
 import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
-import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
+import {
+  OPENSSH_DEFAULT_IDENTITY_FILES,
+  SshConnectOptionsBuilder,
+  type SshClientAuthentication,
+} from '@/network/protocols/ssh/SshConnectOptions';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { TerminalSshInteractionHandler } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
 import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols/ssh/session/QueuedTerminalIO';
@@ -2812,6 +2816,7 @@ export class LinuxTerminalSession extends TerminalSession {
       dynamicForwards?: readonly DynamicForward[];
       forwardAgent?: boolean;
       requestTty?: 'yes' | 'no' | 'force';
+      authentication?: SshClientAuthentication;
     },
   ): Promise<void> {
     const dev = this.device as unknown as {
@@ -2874,6 +2879,7 @@ export class LinuxTerminalSession extends TerminalSession {
       .strictHostKeyChecking(meta.strict);
     // Analysis doc §1.6: forward HashKnownHosts (CLI -o or ~/.ssh/config).
     if (meta.hashKnownHosts) builder.hashKnownHosts(true);
+    if (meta.authentication) builder.authentication(meta.authentication);
     for (const id of this.autoDiscoverIdentityFiles(meta.identityFiles)) {
       builder.addIdentityFile(id);
     }
@@ -3111,12 +3117,9 @@ export class LinuxTerminalSession extends TerminalSession {
     const home =
       dev.executor?.userMgr?.getUser(this.currentUser)?.home ??
       `/home/${this.currentUser}`;
-    const candidates = [
-      `${home}/.ssh/id_ed25519`,
-      `${home}/.ssh/id_rsa`,
-      `${home}/.ssh/id_ecdsa`,
-    ];
-    return candidates.filter((p) => localVfs.exists(p));
+    return OPENSSH_DEFAULT_IDENTITY_FILES
+      .map((name) => `${home}/.ssh/${name}`)
+      .filter((p) => localVfs.exists(p));
   }
 
   /**
@@ -3174,6 +3177,7 @@ export class LinuxTerminalSession extends TerminalSession {
       dynamicForwards: parsed.dynamicForwards,
       forwardAgent: parsed.forwardAgent,
       requestTty: parsed.requestTty,
+      authentication: parsed.authentication,
     };
   }
 
@@ -3491,6 +3495,7 @@ export class LinuxTerminalSession extends TerminalSession {
     const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
     const user = userAtHost.split('@')[0];
     const host = userAtHost.split('@')[1] ?? userAtHost;
+    const interaction = new SilentSshInteractionHandler(password);
     const session = new SshSession({
       tcpConnector,
       vfs: localVfs,
@@ -3498,7 +3503,7 @@ export class LinuxTerminalSession extends TerminalSession {
       localUid: userEntry?.uid ?? 1000,
       localGid: userEntry?.gid ?? 1000,
       knownHostsPath: `${homeDir}/.ssh/known_hosts`,
-      interactionHandler: new SilentSshInteractionHandler(password),
+      interactionHandler: interaction,
     });
     const builder = SshConnectOptionsBuilder.create()
       .host(host)
@@ -3511,7 +3516,10 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     const result = await session.connect(builder.build());
     if (!isOk(result)) {
-      this.addLine(`${user}@${host}: Permission denied (publickey,password).`, 'error');
+      const refusal = interaction.warnings.length > 0
+        ? interaction.warnings
+        : [`${user}@${host}: Permission denied (publickey,password).`];
+      for (const line of refusal.flatMap((w) => w.split('\n'))) this.addLine(line, 'error');
       this.notify();
       return null;
     }

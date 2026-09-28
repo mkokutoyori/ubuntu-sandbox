@@ -501,7 +501,7 @@ function formatConnectError(
     case 'HOST_KEY_CHANGED':
       return `@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\nHost key verification failed.`;
     case 'AUTH_FAILED':
-      return `${user}@${host}: Permission denied (publickey,password).`;
+      return `${user}@${host}: Permission denied (${typeof error.methods === 'string' ? error.methods : 'publickey,password'}).`;
     default:
       return `ssh: connection to ${host} failed`;
   }
