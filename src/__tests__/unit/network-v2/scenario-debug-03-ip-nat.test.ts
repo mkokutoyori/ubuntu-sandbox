@@ -56,8 +56,9 @@ describe('Scénario 3 (debug) — debug ip nat', () => {
     externe.configureInterface('eth0', new IPAddress('203.0.113.50'), new SubnetMask('255.255.255.0'));
     await interne.executeCommand('sudo ip route add default via 192.168.10.254');
 
-    lignes = [];
-    rtr.getDebugService().subscribe((l: string) => lignes.push(l));
+    const sink: string[] = [];
+    lignes = sink;
+    rtr.getDebugService().subscribe((l: string) => sink.push(l));
   });
 
   const run = (cmd: string): Promise<string> => rtr.executeCommand(cmd);

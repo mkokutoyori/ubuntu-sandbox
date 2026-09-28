@@ -335,6 +335,7 @@ describe('Set-NetAdapter — poser une adresse de couche 2, et refuser le reste'
 
   it('le voisin apprend la NOUVELLE adresse sur le fil', async () => {
     const { pc, sh, peer } = await machine();
+    await peer.executeCommand('sudo ip addr add 10.1.1.2/24 dev eth0');
     await run(sh, 'New-NetIPAddress -IPAddress 10.1.1.1 -InterfaceAlias "Ethernet 0" -PrefixLength 24');
     await run(sh, 'Set-NetAdapter -Name "Ethernet 0" -MacAddress 02-11-22-33-44-55 -NoRestart');
     await pc.executeCommand('ping 10.1.1.2');

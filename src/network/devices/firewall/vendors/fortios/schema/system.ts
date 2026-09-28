@@ -608,6 +608,11 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     ], 'none'),
     enable('mtu-override', 'Enable to set a custom MTU for this interface.'),
     count('mtu', 'MTU value for this interface.', 68, 9216, 1500),
+    choice('device-identification', 'Enable/disable passively gathering of device identity information '
+      + 'about the devices on the network connected to this interface.', [
+      { keyword: 'enable', description: 'Enable passive gathering of identity information about hosts.' },
+      { keyword: 'disable', description: 'Disable passive gathering of identity information about hosts.' },
+    ], 'disable'),
     choice('lldp-transmission', 'Enable/disable Link Layer Discovery Protocol (LLDP) transmission.', [
       { keyword: 'enable', description: 'Transmit LLDP on this interface.' },
       { keyword: 'disable', description: 'Do not transmit LLDP on this interface.' },
@@ -636,6 +641,7 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       mtu: object.effective('mtu-override')[0] === 'enable'
         ? Number.parseInt(object.effective('mtu')[0] ?? '', 10) || undefined
         : undefined,
+      deviceIdentification: object.effective('device-identification')[0] === 'enable',
       lldp: {
         transmission: (object.effective('lldp-transmission')[0] ?? 'vdom') as LldpSetting,
         reception: (object.effective('lldp-reception')[0] ?? 'vdom') as LldpSetting,

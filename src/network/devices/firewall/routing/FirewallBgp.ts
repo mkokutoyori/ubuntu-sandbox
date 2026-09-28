@@ -20,10 +20,10 @@ export interface FirewallBgpDeps {
   readonly connectedRoutes: () => ReadonlyArray<{
     network: string; mask: string; iface: string;
   }>;
-  readonly installRoute: (route: {
+  readonly replaceRoutes: (routes: ReadonlyArray<{
     network: string; mask: string; nextHop?: string; iface: string;
     distance: number; metric: number;
-  }) => void;
+  }>) => void;
   readonly removeRoutes: () => void;
   readonly listen: (accept: (socket: TcpSocket) => void) => void;
 }
@@ -226,17 +226,14 @@ export class FirewallBgp {
   }
 
   private installRoutes(): void {
-    this.deps.removeRoutes();
-    for (const route of this.engine?.getContributedRoutes() ?? []) {
-      this.deps.installRoute({
-        network: route.network.toString(),
-        mask: route.mask.toString(),
-        nextHop: route.nextHop?.toString(),
-        iface: route.iface,
-        distance: route.adminDistance,
-        metric: route.metric,
-      });
-    }
+    this.deps.replaceRoutes((this.engine?.getContributedRoutes() ?? []).map((route) => ({
+      network: route.network.toString(),
+      mask: route.mask.toString(),
+      nextHop: route.nextHop?.toString(),
+      iface: route.iface,
+      distance: route.adminDistance,
+      metric: route.metric,
+    })));
   }
 
   private derivedRouterId(): string {

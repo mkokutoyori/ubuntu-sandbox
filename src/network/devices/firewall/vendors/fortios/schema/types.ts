@@ -110,6 +110,7 @@ export interface FortiInterfacePatch {
   readonly parent?: string;
   readonly vlanId?: number;
   readonly mtu?: number;
+  readonly deviceIdentification?: boolean;
   readonly aggregate?: {
     readonly members: readonly string[];
     readonly lacpMode: 'static' | 'active' | 'passive';

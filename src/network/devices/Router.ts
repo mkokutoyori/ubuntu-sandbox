@@ -2272,14 +2272,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    */
   async processTimers(seconds: number): Promise<void> {
     const ms = Math.max(0, seconds) * 1000;
+    const clock = Router.simulationClock();
+    this.ripEngine.followScheduler();
     this.convergeDynamicRouting();
-    this.advanceProtocolTimers(ms);
-    Router.simulationClock().advance(ms);
+    clock.advance(ms);
     this.convergeDynamicRouting();
-  }
-
-  advanceProtocolTimers(ms: number): void {
-    this.ripEngine.advanceTime(ms);
   }
 
   private static simulationClock(): VirtualTimeScheduler {
@@ -4260,6 +4257,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!port) return false;
     return addressAnswersOnLink({
       sendOnLink: (request) => this.getLinkLayer().send(request),
+      arpRequestSent: (iface, target) => this.emitArpRequestSent(iface, target),
       hasNeighbour: (ip) => this.arpTable.has(ip),
       neighbourMac: (ip) => this.arpTable.get(ip)?.mac,
       answersEcho: (from, send) => {

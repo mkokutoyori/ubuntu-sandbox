@@ -28,6 +28,7 @@ export {
 } from './Scheduler';
 
 export { TimerSet } from './TimerSet';
+export { SchedulerBinding } from './SchedulerBinding';
 
 export type { Signal, Unsubscribe as SignalUnsubscribe } from './Signal';
 export { WritableSignal, derived } from './Signal';

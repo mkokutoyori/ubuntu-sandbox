@@ -35,7 +35,6 @@ import {
   type BgpErrorCode, type BgpUpdateMessage, type BgpNlri, type BgpPathAttributes,
 } from './messages';
 import { TimerSet } from '@/events/TimerSet';
-import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 
 export interface BgpNetworkStmt { network: string; mask: string; }
 export interface BgpNeighborCfg {
@@ -152,12 +151,6 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
   private cacheOnly = false;
 
   // ── ConnectRetryTimer (RFC 4271 §8.2.2) ────────────────────────────
-  private schedulerOverride: IScheduler | null = null;
-  /** Inject a scheduler (virtual time in tests, real time in the app). */
-  setScheduler(scheduler: IScheduler | null): void { this.schedulerOverride = scheduler; }
-  private getScheduler(): IScheduler {
-    return this.schedulerOverride ?? getDefaultScheduler();
-  }
   private readonly timers = new TimerSet(() => this.getScheduler());
   /** Per-neighbour ConnectRetryTimer + ConnectRetryCounter (§8.2.2). */
   private readonly connectRetry = new Map<string, ConnectRetryState>();

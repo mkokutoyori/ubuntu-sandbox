@@ -37,7 +37,7 @@ function interfaces(): InterfaceTable {
 }
 
 function routes(ifaces = interfaces()): RouteTable {
-  return new RouteTable({ connectedRoutes: () => ifaces.connectedRoutes() });
+  return new RouteTable({ now: () => 0, connectedRoutes: () => ifaces.connectedRoutes() });
 }
 
 describe('InterfaceTable', () => {

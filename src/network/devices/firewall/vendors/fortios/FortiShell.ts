@@ -963,7 +963,7 @@ export class FortiShell {
       if (view !== 'all' && view !== 'static' && view !== 'connected'
         && view !== 'database' && view !== 'ospf' && view !== 'rip'
         && view !== 'bgp') return null;
-      return renderRoutingTable(this.fw.getRouteTable(), view);
+      return renderRoutingTable(this.fw.getRouteTable(), view, this.fw.getMonotonicClockMs());
     }
     if (path === 'router info6 routing-table') {
       return renderIpv6RoutingTable(this.fw.getIpv6().dataPlane().getRoutingTable());

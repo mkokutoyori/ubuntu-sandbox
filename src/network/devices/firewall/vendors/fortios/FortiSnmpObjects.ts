@@ -24,7 +24,9 @@ const FG_ANTIVIRUS_TRAP_OBJECTS = `${FORTINET}.101.8.3`;
 const FG_IPS_TRAP_OBJECTS = `${FORTINET}.101.9.3`;
 const FG_VPN_TRAP_OBJECTS = `${FORTINET}.101.12.3`;
 const FG_LOAD_BALANCE_TRAP_OBJECTS = `${FORTINET}.101.16.1`;
+const FG_VD_ENT_INDEX = `${FORTINET}.101.3.2.1.1.1`;
 const FG_VD_ENT_NAME = `${FORTINET}.101.3.2.1.1.2`;
+const FG_DEVICE_TRAP_OBJECTS = `${FORTINET}.101.18.1`;
 const FG_INTF_TRAP_TYPE = `${FORTINET}.101.7.6.1.0`;
 const FG_INTF_TRAP_IP_CONFLICT = 1;
 const FG_DHCP = `${FORTINET}.101.23`;
@@ -194,6 +196,15 @@ export function fortiGateTraps(fact: FirewallTrapFact, context: FirewallTrapCont
         ...(index === null ? [] : instances(context, [`${OID_IF_NAME_PREFIX}.${index}`])),
       ])];
     }
+    case 'device-new':
+      return [trap('device-new', `${FG_TRAPS}.1201`, [
+        ...sender,
+        vb(`${OID_IF_INDEX_PREFIX}.0`, v('integer', 0)),
+        vb(`${FG_VD_ENT_INDEX}.0`, v('integer', fact.vdomIndex)),
+        vb(`${FG_DEVICE_TRAP_OBJECTS}.2.0`, v('gauge32', fact.createdSecondsAgo)),
+        vb(`${FG_DEVICE_TRAP_OBJECTS}.3.0`, v('gauge32', fact.lastSeenSecondsAgo)),
+        vb(`${FG_DEVICE_TRAP_OBJECTS}.1.0`, v('octet-string', fact.mac.toString())),
+      ])];
     case 'dhcp': {
       const index = context.interfaceIndex(fact.iface);
       return [trap('dhcp', `${FG_TRAPS}.1301`, [

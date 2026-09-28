@@ -75,13 +75,17 @@ wait`;
   });
 
   it('nohup wrapper around a network command reaches the real stack', async () => {
-    await pc.executeCommand('nohup ping -c 1 -W 1 192.168.1.2 >/dev/null');
+    const out = await pc.executeCommand('nohup ping -c 1 -W 1 192.168.1.2 >/dev/null');
+    expect(out).toBe('nohup: ignoring input and redirecting stderr to stdout');
     const arp = await pc.executeCommand('arp -n');
     expect(arp).toMatch(/^192\.168\.1\.2\b/m);
   });
 
   it('su <user> -c "<network cmd>" reaches the real stack under the swapped uid', async () => {
-    await pc.executeCommand('su root -c "ping -c 1 -W 1 192.168.1.2 >/dev/null"');
+    await pc.executeCommand('sudo useradd -m -s /bin/bash carol');
+    await pc.executeCommand('echo carol:carolpw | sudo chpasswd');
+    const out = await pc.executeCommand('su carol -c "ping -c 1 -W 1 192.168.1.2 >/dev/null; whoami"', 'carolpw\n');
+    expect(out).toBe('carol');
     const arp = await pc.executeCommand('arp -n');
     expect(arp).toMatch(/^192\.168\.1\.2\b/m);
   });

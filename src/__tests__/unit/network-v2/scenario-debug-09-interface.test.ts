@@ -48,8 +48,9 @@ describe('Scénario 9 (debug) — debug interface', () => {
 
     fai.configureInterface('eth0', new IPAddress('203.0.113.2'), new SubnetMask('255.255.255.252'));
 
-    lignes = [];
-    rtr.getDebugService().subscribe((l: string) => lignes.push(l));
+    const sink: string[] = [];
+    lignes = sink;
+    rtr.getDebugService().subscribe((l: string) => sink.push(l));
   });
 
   const run = (cmd: string): Promise<string> => rtr.executeCommand(cmd);

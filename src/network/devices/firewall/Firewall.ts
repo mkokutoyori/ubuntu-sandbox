@@ -107,6 +107,7 @@ import {
 import { deliverLocally } from './l3/LocalDelivery';
 import { ControlPlaneUdpEndpoint } from '../udp/ControlPlaneUdpEndpoint';
 import { dhcpServerId, type FirewallDhcp } from './l3/FirewallDhcp';
+import { DeviceInventory, observationOf, type DetectedDevice } from './identity/DeviceInventory';
 import type { TcpSocket, TcpStack } from '../../tcp/TcpStack';
 import { buildFirewallAgents } from './FirewallAgents';
 import { AccessMatrix } from './authz/AccessMatrix';
@@ -325,6 +326,7 @@ export class Firewall extends Equipment {
   private readonly fortiguard = new FortiGuardDatabases({ now: () => this.now() });
   private readonly arp: ArpService;
   private readonly ipConflicts: IpConflictDetection;
+  private readonly devices: DeviceInventory;
   private readonly registry = new PipelineStageRegistry();
   private readonly pipelines: PipelineCache;
   private readonly services: FirewallServices;
@@ -449,6 +451,7 @@ export class Firewall extends Equipment {
     this.syslogCollectors = new SyslogCollectorTable(() => this.syslog);
     this.vdoms = new VdomRegistry({
       now,
+      monotonicNow: () => this.getMonotonicClockMs(),
       scheduler: () => getDefaultScheduler(),
       timezone: () => this.getTimeZone(),
       deviceId: this.id,
@@ -516,6 +519,11 @@ export class Firewall extends Equipment {
       now,
       log: (vdom, draft) => { this.getLogStore(vdom).append(draft); },
       trap: (iface) => { this.snmpService?.raise({ kind: 'interface-ip-conflict', iface }); },
+    });
+    this.devices = new DeviceInventory({
+      now: () => this.getMonotonicClockMs(),
+      vdomOf: (iface) => this.vdoms.vdomOfInterface(iface),
+      onDetected: (device) => { this.raiseDeviceNewTrap(device); },
     });
     this.arp = new ArpService({
       interfaces: this.interfaces,
@@ -738,6 +746,10 @@ export class Firewall extends Equipment {
     return this.vdomNames().indexOf(name) + 1;
   }
 
+  vdomKernelIndex(name: string): number {
+    return this.vdomIndex(name) - 1;
+  }
+
   private raiseDhcpServerTrap(trapType: DhcpTrapType, pool: string): void {
     const scope = this.dhcp.scopeOfPool(pool);
     if (scope !== undefined) this.raiseDhcpTrap(trapType, scope.iface, dhcpServerId(scope));
@@ -859,6 +871,17 @@ export class Firewall extends Equipment {
   }
 
   getIpConflictDetection(): IpConflictDetection { return this.ipConflicts; }
+
+  getDeviceInventory(): DeviceInventory { return this.devices; }
+
+  private raiseDeviceNewTrap(device: DetectedDevice): void {
+    const now = this.getMonotonicClockMs();
+    this.snmpService?.raise({
+      kind: 'device-new', mac: device.mac, vdomIndex: this.vdomKernelIndex(device.vdom),
+      createdSecondsAgo: Math.floor((now - device.createdAt) / 1000),
+      lastSeenSecondsAgo: Math.floor((now - device.lastSeenAt) / 1000),
+    });
+  }
 
   private resolveEgress(destination: string): FirewallPingEgress | null {
     const egress = this.routedEgress(destination, this.activeVdom);
@@ -2198,6 +2221,7 @@ export class Firewall extends Equipment {
     if (logical !== undefined
       && frame.srcMAC.equals(this.getPort(portName)?.getMAC() ?? frame.dstMAC)) return;
     const iface = logical ?? portName;
+    this.devices.observe(iface, frame.srcMAC, observationOf(frame));
 
     if (frame.etherType === ETHERTYPE_ARP) {
       this.handleArpFrame(iface, frame.payload as ARPPacket);

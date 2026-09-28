@@ -174,7 +174,7 @@ describe('TP 19 — OSPF entre le pare-feu et R1', () => {
     expect(vue).not.toMatch(/Command fail|unknown configuration path/i);
     expect(vue).toContain('O - OSPF');
     expect(vue).not.toMatch(/^C\s+192\.168\.10\.0/m);
-    expect(vue).toMatch(/^O\*E2\s+0\.0\.0\.0\/0 \[110\/1\] via 192\.168\.100\.1, port1$/m);
+    expect(vue).toMatch(/^O\*E2\s+0\.0\.0\.0\/0 \[110\/1\] via 192\.168\.100\.1, port1, \d\d:\d\d:\d\d$/m);
 
     expect(await fgt.executeCommand('get router info routing-table connected'))
       .toMatch(/C\s+192\.168\.10\.0/);

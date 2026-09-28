@@ -23,6 +23,8 @@ export class RoutingNeighborTable {
   private readonly peers = new Map<string, NeighborRecord>();
   private readonly listeners = new Set<() => void>();
 
+  constructor(private readonly now: () => number) {}
+
   /** Subscribe to any neighbour change (reactive, no polling). */
   onChange(listener: () => void): () => void {
     this.listeners.add(listener);
@@ -40,7 +42,7 @@ export class RoutingNeighborTable {
     if (prev && prev.state === state && prev.remoteId === remoteId) return;
     this.peers.set(id, {
       id, address, iface, state, remoteId,
-      since: prev && prev.state === state ? prev.since : Date.now(),
+      since: prev && prev.state === state ? prev.since : this.now(),
     });
     this.emit();
   }
@@ -62,8 +64,12 @@ export class RoutingNeighborTable {
     if (this.peers.size) { this.peers.clear(); this.emit(); }
   }
 
+  shiftInstants(shiftMs: number): void {
+    for (const peer of this.peers.values()) peer.since += shiftMs;
+  }
+
   view(): ProtocolNeighborView[] {
-    const now = Date.now();
+    const now = this.now();
     return [...this.peers.values()].map((p) => ({
       id: p.id,
       address: p.address,

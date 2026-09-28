@@ -4,7 +4,9 @@ import type { SnmpNotification } from '../../../snmp/SnmpNotification';
 import type { BgpPeerTransition } from '../../../snmp/Bgp4MibNotifications';
 import type { OspfNeighborTransition } from '../../../snmp/OspfTrapMibNotifications';
 import type { SnmpCommunityAcl, SnmpValue, SnmpVersion } from '../../../snmp/types';
-import { IPAddress, IP_PROTO_UDP, type EthernetFrame, type IPv4Packet, type SubnetMask, type UDPPacket } from '../../../core/types';
+import {
+  IPAddress, IP_PROTO_UDP, type EthernetFrame, type IPv4Packet, type MACAddress, type SubnetMask, type UDPPacket,
+} from '../../../core/types';
 import type { PortNumber } from '../../../core/ports/PortNumber';
 import type { Port } from '../../../hardware/Port';
 import type { UdpSendRequest } from '../../../layers/transport/UdpEgress';
@@ -128,6 +130,10 @@ export type FirewallTrapFact =
   | {
     readonly kind: 'dhcp'; readonly trapType: DhcpTrapType; readonly iface: string;
     readonly vdomIndex: number; readonly vdomName: string; readonly serverId: number | null;
+  }
+  | {
+    readonly kind: 'device-new'; readonly mac: MACAddress; readonly vdomIndex: number;
+    readonly createdSecondsAgo: number; readonly lastSeenSecondsAgo: number;
   };
 
 export interface FirewallTrap {

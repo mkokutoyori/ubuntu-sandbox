@@ -34,15 +34,29 @@ export function createFirewallRouting(host: RoutingWiringHost): FirewallRouting 
     sendFrame: (iface, frame) => { host.emitFrame(iface, frame); },
     sendArpAware: (iface, packet, nextHop) => { host.emitArpAware(iface, packet, nextHop); },
     connectedRoutes: () => host.connectedRoutes(),
-    installRoute: (route) => {
-      host.routes().addStatic(route.network, route.mask, route.nextHop, {
+    selectedRoutes: () => host.routes().selected(),
+    replaceRoutes: (source, routes) => {
+      host.routes().replaceSourceRoutes(source, routes.map((route) => ({
+        network: route.network,
+        mask: route.mask,
+        nextHop: route.nextHop,
+        options: {
+          iface: route.iface || undefined,
+          distance: route.distance,
+          metric: route.metric,
+          routeType: route.routeType,
+        },
+      })));
+    },
+    replaceRoute: (route) => {
+      host.routes().replaceLearned(route.source, route.network, route.mask, route.nextHop, {
         iface: route.iface || undefined,
         distance: route.distance,
         metric: route.metric,
-        id: `${route.source}:${route.network}/${route.mask}`,
         routeType: route.routeType,
       });
     },
+    withdrawRoute: (source, network, mask) => { host.routes().withdrawLearned(source, network, mask); },
     removeRoutes: (source) => { host.routes().removeStaticsBySource(source); },
     resolvedMac: (ip) => host.resolvedMac(ip),
     tcp: () => host.tcp(),

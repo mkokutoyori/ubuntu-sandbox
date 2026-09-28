@@ -53,6 +53,7 @@ function lab() {
   zones.assignInterface('untrust', 'port2');
 
   const routes = new RouteTable({
+    now: () => 0,
     connectedRoutes: () => interfaces.connectedRoutes(),
     interfaceForDestination: (a) => interfaces.interfaceForDestination(a),
     isInterfaceUp: (i) => interfaces.isUp(i),

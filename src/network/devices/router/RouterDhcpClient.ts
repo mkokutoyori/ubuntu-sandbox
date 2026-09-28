@@ -45,6 +45,7 @@ export class RouterDhcpClient {
   enable(iface: string, ligne: string): void {
     this.configured.set(iface, ligne);
     this.host.markClient(iface, true);
+    if (!this.client.getState(iface).lease) this.host.clearLease(iface);
     this.request(iface);
   }
 
