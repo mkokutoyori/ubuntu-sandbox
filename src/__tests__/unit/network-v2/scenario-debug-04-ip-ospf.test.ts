@@ -34,8 +34,9 @@ describe('Scénario 4 (debug) — debug ip ospf', () => {
     await configurer(r1, g1, '10.0.0.1', '1.1.1.1');
     await configurer(r2, g2, '10.0.0.2', '2.2.2.2');
 
-    lignes = [];
-    r1.getDebugService().subscribe((l: string) => lignes.push(l));
+    const sink: string[] = [];
+    lignes = sink;
+    r1.getDebugService().subscribe((l: string) => sink.push(l));
   });
 
   async function configurer(r: CiscoRouter, iface: string, ip: string, rid: string): Promise<void> {

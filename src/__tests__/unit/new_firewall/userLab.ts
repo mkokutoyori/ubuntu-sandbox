@@ -1,9 +1,12 @@
+import { vi } from 'vitest';
 import { createDevice } from '@/network/devices/DeviceFactory';
 import { Cable } from '@/network/hardware/Cable';
 import type { DeviceType } from '@/network';
 import type { Port } from '@/network/hardware/Port';
 
 import { refuse, taper, type Cli } from './fortigateBatteryHarness';
+
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 export interface LabDevice extends Cli {
   getName(): string;

@@ -49,8 +49,9 @@ describe('Scénario 6 (debug) — debug ip dhcp server', () => {
     await rtr.executeCommand('exit');
     await rtr.executeCommand('end');
 
-    lignes = [];
-    rtr.getDebugService().subscribe((l: string) => lignes.push(l));
+    const sink: string[] = [];
+    lignes = sink;
+    rtr.getDebugService().subscribe((l: string) => sink.push(l));
   });
 
   const run = (cmd: string): Promise<string> => rtr.executeCommand(cmd);

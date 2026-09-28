@@ -135,6 +135,15 @@ export interface HostIcmpUnreachablePayload extends HostDeviceRef {
  * `sendPing` to settle the awaiting promise via `waitForEvent` instead of a
  * pendingPings callback (Phase 5.6).
  */
+export interface HostIcmpEchoRedirectedPayload extends HostDeviceRef {
+  fromIp: string;
+  gateway: string;
+  code: number;
+  toIp: string;
+  id: number;
+  seq: number;
+}
+
 export interface HostIcmpEchoFailedPayload extends HostDeviceRef {
   fromIp: string;   // sender of the ICMP error
   toIp: string;     // original echo-request destination
@@ -240,6 +249,7 @@ export type HostDomainEvent =
   | { topic: 'host.icmp.echo-reply'; payload: HostIcmpEchoReplyPayload }
   | { topic: 'host.icmp.echo-timeout'; payload: HostIcmpEchoTimeoutPayload }
   | { topic: 'host.icmp.echo-failed'; payload: HostIcmpEchoFailedPayload }
+  | { topic: 'host.icmp.echo-redirected'; payload: HostIcmpEchoRedirectedPayload }
   | { topic: 'host.icmp.unreachable'; payload: HostIcmpUnreachablePayload }
   | { topic: 'host.tcp.listener-started'; payload: HostTcpListenerStartedPayload }
   | { topic: 'host.tcp.listener-stopped'; payload: HostTcpListenerStoppedPayload }

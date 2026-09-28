@@ -32,8 +32,9 @@ describe('Scénario 5 (debug) — debug spanning-tree', () => {
     new Cable('lien-pc').connect(sw.getPort('FastEthernet0/1')!, pc.getPort('eth0')!);
 
     await sw.executeCommand('enable');
-    lignes = [];
-    sw.getDebugService().subscribe((l: string) => lignes.push(l));
+    const sink: string[] = [];
+    lignes = sink;
+    sw.getDebugService().subscribe((l: string) => sink.push(l));
   });
 
   const run = (cmd: string): Promise<string> => sw.executeCommand(cmd);

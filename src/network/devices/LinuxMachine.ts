@@ -825,6 +825,21 @@ export abstract class LinuxMachine extends EndHost
     return LINUX_ICMP_ERROR_QUOTE;
   }
 
+  protected override acceptsUnsolicitedArp(iface: string, sender: IPAddress, gratuitousOrReply: boolean): boolean {
+    if (!gratuitousOrReply) return false;
+    const level = Math.max(this.arpAcceptLevel('all'), this.arpAcceptLevel(iface));
+    if (level === 1) return true;
+    if (level !== 2) return false;
+    const port = this.ports.get(iface);
+    const address = port?.getIPAddress();
+    const mask = port?.getSubnetMask();
+    return !!address && !!mask && address.isInSameSubnet(sender, mask);
+  }
+
+  private arpAcceptLevel(scope: string): number {
+    return Number.parseInt(this.executor.vfs.readFile(`/proc/sys/net/ipv4/conf/${scope}/arp_accept`) ?? '0', 10) || 0;
+  }
+
   protected override lldpSystemDescription(): string {
     const k = this.executor.identity.kernel;
     return `${this.getHostname()} ${k.sysname} ${k.release} ${k.machine}`;
@@ -3270,109 +3285,6 @@ export abstract class LinuxMachine extends EndHost
    */
   private static readonly SCRIPT_FILE_HEAD_RE =
     /^\s*(?:sudo\s+)?(?:bash|sh)\s+(?!-[a-zA-Z]*c\b)\S|^\s*(?:sudo\s+)?(?:\.\/|\/)\S|^\s*(?:sudo\s+)?run-parts\s+\S/;
-
-  private async runShellScript(script: string): Promise<string> {
-    const collected: Array<{ line: string; runAs?: string }> = [];
-    const skipBuiltins = new Set(['wait', 'jobs', 'bg', 'disown']);
-    let pendingUser: string | undefined;
-    const collect = (argv: string[]): { output: string; exitCode: number } => {
-      if (argv.length === 0) return { output: '', exitCode: 0 };
-      if (skipBuiltins.has(argv[0])) return { output: '', exitCode: 0 };
-      const innerScript = LinuxMachine.extractInlineScript(argv);
-      if (innerScript !== null) {
-        this.executor.runScriptWithCollector(innerScript, collect);
-        return { output: '', exitCode: 0 };
-      }
-      const suInner = LinuxMachine.extractSuCommand(argv);
-      if (suInner !== null) {
-        const prev = pendingUser;
-        pendingUser = suInner.user;
-        this.executor.runScriptWithCollector(suInner.script, collect);
-        pendingUser = prev;
-        return { output: '', exitCode: 0 };
-      }
-      const innerArgv = LinuxMachine.unwrapTransparentPrefix(argv);
-      if (innerArgv !== null && innerArgv.length > 0) {
-        return collect(innerArgv);
-      }
-      collected.push({ line: LinuxMachine.quoteArgv(argv), runAs: pendingUser });
-      return { output: '', exitCode: 0 };
-    };
-    this.executor.runScriptWithCollector(script, collect);
-
-    const outputs: string[] = [];
-    for (const item of collected) {
-      const out = item.runAs
-        ? await this.executor.runAsUser(item.runAs, () => this.executeCommand(item.line))
-        : await this.executeCommand(item.line);
-      if (out) outputs.push(out);
-    }
-    return outputs.join('\n');
-  }
-
-  private static extractInlineScript(argv: string[]): string | null {
-    if (argv[0] !== 'bash' && argv[0] !== 'sh') return null;
-    for (let i = 1; i < argv.length; i++) {
-      const a = argv[i];
-      if (!a.startsWith('-') || a === '-') break;
-      if (a.includes('c')) return argv[i + 1] ?? null;
-    }
-    return null;
-  }
-
-  private static extractSuCommand(argv: string[]): { user: string; script: string } | null {
-    if (argv[0] !== 'su') return null;
-    let user = 'root';
-    for (let i = 1; i < argv.length; i++) {
-      const a = argv[i];
-      if (a === '-' || a === '-l' || a === '--login') continue;
-      if (a === '-c' || a === '--command') {
-        const script = argv[i + 1];
-        return script !== undefined ? { user, script } : null;
-      }
-      if (!a.startsWith('-')) user = a;
-    }
-    return null;
-  }
-
-  private static unwrapTransparentPrefix(argv: string[]): string[] | null {
-    const head = argv[0];
-    if (head === 'nohup' || head === 'setsid') {
-      return argv.slice(1);
-    }
-    if (head === 'timeout') {
-      let i = 1;
-      while (i < argv.length && argv[i].startsWith('-')) {
-        if (argv[i] === '-s' || argv[i] === '-k' || argv[i] === '--signal' || argv[i] === '--kill-after') i += 2;
-        else i++;
-      }
-      if (i >= argv.length) return null;
-      return argv.slice(i + 1);
-    }
-    if (head === 'nice') {
-      let i = 1;
-      if (argv[i] === '-n' || argv[i] === '--adjustment') i += 2;
-      else if (argv[i]?.startsWith('-')) i++;
-      return argv.slice(i);
-    }
-    if (head === 'env') {
-      let i = 1;
-      while (i < argv.length) {
-        const a = argv[i];
-        if (a === '-i' || a === '--ignore-environment' || a === '-') { i++; continue; }
-        if (a === '-u' || a === '--unset') { i += 2; continue; }
-        if (a.startsWith('-')) { i++; continue; }
-        if (/^[A-Za-z_][A-Za-z_0-9]*=/.test(a)) { i++; continue; }
-        break;
-      }
-      return i < argv.length ? argv.slice(i) : null;
-    }
-    return null;
-  }
-
-  private static quoteArgv(argv: string[]): string {
-    return argv.map((a) => /[\s'"\\$`]/.test(a) ? `'${a.replace(/'/g, "'\\''")}'` : a).join(' ');
-  }
 
   private hasShellConstructs(input: string): boolean {
     if (/(^|\s|;|\||&)(for|while|until|if|case|select)\s/.test(input)) return true;

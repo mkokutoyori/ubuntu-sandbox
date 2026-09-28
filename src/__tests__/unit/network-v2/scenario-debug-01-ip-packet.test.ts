@@ -54,8 +54,9 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
     await pc.executeCommand('sudo ip route add default via 192.168.10.254');
     await distant.executeCommand('sudo ip route add default via 192.168.30.254');
 
-    lignes = [];
-    rtr.getDebugService().subscribe((l: string) => lignes.push(l));
+    const sink: string[] = [];
+    lignes = sink;
+    rtr.getDebugService().subscribe((l: string) => sink.push(l));
   });
 
   const run = (cmd: string): Promise<string> => rtr.executeCommand(cmd);

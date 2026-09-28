@@ -1,6 +1,6 @@
 import {
-  formatPingHeader, formatPing6Header, formatPingReplyLine, formatPingStats,
-  PING_TIMING_MIN_SIZE, type PingAddressRenderer,
+  formatPingHeader, formatPing6Header, formatPingRedirectLine, formatPingReplyLine, formatPingStats,
+  pingErrorCount, PING_TIMING_MIN_SIZE, type PingAddressRenderer,
 } from '@/network/devices/linux/LinuxFormatHelpers';
 import { IPv6Address, IPAddress } from '@/network/core/types';
 import type { LinuxCommand } from '../LinuxCommand';
@@ -477,6 +477,9 @@ export function createPing(
       return;
     }
     if (args.quiet) return;
+    for (const notice of r.redirects ?? []) {
+      emit(`${timestampPrefix(args.timestamp)}${formatPingRedirectLine(r.seq, notice, current.renderAddress)}`);
+    }
     if (r.error?.startsWith('local error')) { emit(`${cmd}: ${r.error}`); return; }
     const line = formatPingReplyLine(r, args.size, current.renderAddress);
     if (line !== null) emit(`${timestampPrefix(args.timestamp)}${line}`);
@@ -500,12 +503,13 @@ export function createPing(
       results.push(r);
       report(r, args, current);
       const received = results.filter((x) => x.success).length;
-      const errors = results.filter((x) => !x.success && x.error !== undefined).length;
+      const errors = pingErrorCount(results);
+      if (args.count > 0 && received + errors >= args.count) break;
       if (args.deadlineMs === undefined && args.count > 0 && results.length >= args.count) break;
-      if (args.deadlineMs !== undefined && args.count > 0 && received >= args.count) break;
       if (args.deadlineMs !== undefined && errors > 0) break;
       if (deadlineHit() || shouldStop()) break;
-      if (args.intervalMs > 0) await host.sleep(args.intervalMs);
+      const untilNextSend = args.intervalMs - (host.now() - sendTimes[sendTimes.length - 1]);
+      if (untilNextSend > 0) await host.sleep(untilNextSend);
       if (deadlineHit()) break;
     }
     if (finished) return results.some((r) => r.success) ? 0 : 1;

@@ -4257,6 +4257,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!port) return false;
     return addressAnswersOnLink({
       sendOnLink: (request) => this.getLinkLayer().send(request),
+      arpRequestSent: (iface, target) => this.emitArpRequestSent(iface, target),
       hasNeighbour: (ip) => this.arpTable.has(ip),
       neighbourMac: (ip) => this.arpTable.get(ip)?.mac,
       answersEcho: (from, send) => {

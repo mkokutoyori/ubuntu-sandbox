@@ -71,20 +71,20 @@ const leased = async (client: LinuxPC): Promise<string> => {
   return client.getPorts()[0].getIPAddress()?.toString() ?? '';
 };
 
-describe('chaque candidat est sonde avant d\'etre offert', () => {
-  it('deux adresses occupees : le client recoit la troisieme — TEMOIN', async () => {
+describe('every candidate is probed before it is offered', () => {
+  it('two addresses in use: the client gets the third — WITNESS', async () => {
     const { client } = await lab(2);
 
     expect(await leased(client)).toBe('192.168.30.4');
   }, 30000);
 
-  it('cinq adresses occupees : le client recoit la sixieme, jamais une prise', async () => {
+  it('five addresses in use: the client gets the sixth, never a taken one', async () => {
     const { client } = await lab(5);
 
     expect(await leased(client)).toBe('192.168.30.7');
   }, 30000);
 
-  it('et chaque adresse prise est inscrite comme conflit', async () => {
+  it('and every taken address is recorded as a conflict', async () => {
     const { r3, client } = await lab(5);
     await leased(client);
 

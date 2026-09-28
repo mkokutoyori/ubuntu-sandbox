@@ -54,8 +54,9 @@ describe('Scénario 8 (debug) — debug arp', () => {
 
     pc.configureInterface('eth0', new IPAddress('192.168.10.101'), new SubnetMask('255.255.255.0'));
 
-    lignes = [];
-    rtr.getDebugService().subscribe((l: string) => lignes.push(l));
+    const sink: string[] = [];
+    lignes = sink;
+    rtr.getDebugService().subscribe((l: string) => sink.push(l));
   });
 
   const run = (cmd: string): Promise<string> => rtr.executeCommand(cmd);
@@ -121,7 +122,11 @@ describe('Scénario 8 (debug) — debug arp', () => {
       expect(requetes.some((l) => /dst 192\.168\.10\.254 0000\.0000\.0000/.test(l))).toBe(true);
     }, LONG);
 
-    it('l\'ARP gratuit du routeur à la configuration de `ip address` peuple le cache du poste', async () => {
+    it('the router gratuitous ARP does not populate a Linux host cache; the first ping does', async () => {
+      expect(await pc.executeCommand('ip neigh show')).not.toContain('192.168.10.254');
+
+      await pingOnSimulatedClock(pc, 'ping -c 1 -W 1 192.168.10.254');
+
       const neigh = await pc.executeCommand('ip neigh show');
       expect(neigh).toContain('192.168.10.254');
       expect(neigh).toMatch(/REACHABLE/);
