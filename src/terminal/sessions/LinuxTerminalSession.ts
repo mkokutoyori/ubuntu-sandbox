@@ -971,6 +971,7 @@ export class LinuxTerminalSession extends TerminalSession {
           ...dev.tcpdumpDepsInSession(shell, elevated),
           stream: { line: (text) => ctx.sink.line(text) },
           onCancelRequested: (cb) => { ctx.onCancel(cb); return () => {}; },
+          interruptEchoed: () => true,
         });
         const rest = interleaveTcpdumpStreams(result);
         if (rest) for (const line of rest.split('\n')) ctx.sink.line(line);
