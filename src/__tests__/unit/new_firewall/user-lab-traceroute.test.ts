@@ -89,17 +89,17 @@ describe('user lab — Linux traceroute crosses FW1 and R3 with the probe it ann
 
   it('-t, -F and --sport are on the wire; without -F the probe carries no DF', async () => {
     const lab = await configuredLab();
-    const shaped = await captureWhile(lab.PC1, 'sudo tcpdump -c 1 -n -v -i eth0 udp',
+    const shaped = await captureWhile(lab.PC1, 'sudo tcpdump -c 1 -n -v -i eth0 udp and dst host 192.168.30.4',
       () => lab.PC1.executeCommand(`traceroute -n -q 1 -m 1 -F -t 16 --sport=4444 ${SERVER1}`));
     expect(shaped).toMatch(/IP \(tos 0x10, ttl 1, id \d+, offset 0, flags \[DF\], proto UDP \(17\), length 60\)\n {4}192\.168\.1\.3\.4444 > 192\.168\.30\.4\.33434: UDP/);
-    const plain = await captureWhile(lab.PC1, 'sudo tcpdump -c 1 -n -v -i eth0 udp',
+    const plain = await captureWhile(lab.PC1, 'sudo tcpdump -c 1 -n -v -i eth0 udp and dst host 192.168.30.4',
       () => lab.PC1.executeCommand(`traceroute -n -q 1 -m 1 ${SERVER1}`));
     expect(plain).toMatch(/IP \(tos 0x0, ttl 1, id \d+, offset 0, flags \[none\], proto UDP \(17\), length 60\)/);
   });
 
   it('Server1 receives the probe NAT\'d to FW1\'s address, source port and tos intact', async () => {
     const lab = await configuredLab();
-    const seen = await captureWhile(lab.Server1, 'sudo tcpdump -c 1 -n -v -i eth0 udp',
+    const seen = await captureWhile(lab.Server1, 'sudo tcpdump -c 1 -n -v -i eth0 udp and dst host 192.168.30.4',
       () => lab.PC1.executeCommand(`traceroute -n -q 1 -f 3 -m 3 --sport=4444 -t 16 ${SERVER1}`));
     expect(seen).toMatch(/IP \(tos 0x10, ttl 1, .*proto UDP \(17\), length 60\)\n {4}192\.168\.20\.2\.4444 > 192\.168\.30\.4\.33434: UDP/);
   });
