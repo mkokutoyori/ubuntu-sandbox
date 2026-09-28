@@ -86,6 +86,7 @@ import {
 
 // Linux kernel / userspace
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
+import { SIGNAL_NUMBERS, type Signal } from './linux/LinuxProcessManager';
 import { sampleVmstat } from './linux/system/Vmstat';
 import { sampleMpstat, mpstatBanner, type MpstatArgs } from './linux/system/Mpstat';
 import { sampleIostatCpu, sampleIostatDevices, iostatBanner, type IostatArgs } from './linux/system/Iostat';
@@ -667,6 +668,7 @@ export abstract class LinuxMachine extends EndHost
       const cmd = this.commands.get(name);
       return !!cmd && !!cmd.needsNetworkContext;
     });
+    this.executor.setScheduler(() => this.getScheduler());
 
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (!name.endsWith('.socket')) return;
@@ -2753,9 +2755,18 @@ export abstract class LinuxMachine extends EndHost
   }
 
   /** Build the context object passed to every `LinuxCommand.run()` call. */
+  private onProcessExit(pid: number, listener: (signal: Signal | null) => void): () => void {
+    return this.getBus().subscribeWhere('linux.process.exited',
+      (p) => p.deviceId === this.id && p.pid === pid,
+      ({ payload }) => listener(payload.signal !== undefined && payload.signal in SIGNAL_NUMBERS ? payload.signal as Signal : null));
+  }
+
   protected buildCommandContext(outputPiped = false): LinuxCommandContext {
+    const pid = this.executor.currentPid();
     return {
       outputPiped,
+      whenKilled: (listener) => this.onProcessExit(pid, (signal) => { if (signal !== null) listener(signal); }),
+      supervised: this.executor.isSupervised(pid),
       executor: this.executor,
       net: this.net,
       netConfig: this.executor.netConfig,
@@ -4786,12 +4797,9 @@ export abstract class LinuxMachine extends EndHost
       delay: (ms: number): Promise<void> => {
         return new Promise((resolve) => setTimeout(resolve, ms));
       },
-      onCancelRequested: (cb: () => void): () => void => {
-        return this.getBus().subscribeWhere('linux.process.exited',
-          (p) => p.deviceId === this.id && p.pid === pid,
-          () => cb());
-      },
+      onCancelRequested: (cb: () => void): () => void => this.onProcessExit(pid, () => cb()),
       runsDetached: (): boolean => detached,
+      runsSupervised: (): boolean => this.executor.isSupervised(pid),
       readFile: (path: string): string | null => {
         return this.executor.vfs.readFile(this.executor.vfs.normalizePath(path, cwd));
       },
