@@ -75,7 +75,7 @@ describe('Scénario 2 — Configuration VLAN et trunk sur switch Huawei S-series
 
       // Le VLAN 10 doit lister GigabitEthernet0/0/1 parmi ses interfaces membres.
       const vlanDetail = await sw.executeCommand('display vlan 10');
-      expect(vlanDetail).toContain('GigabitEthernet0/0/1');
+      expect(vlanDetail).toContain('GE0/0/1(');
     });
   });
 
@@ -107,7 +107,7 @@ describe('Scénario 2 — Configuration VLAN et trunk sur switch Huawei S-series
       // pas seulement les ports access.
       for (const id of [10, 20, 30]) {
         const detail = await sw.executeCommand(`display vlan ${id}`);
-        expect(detail).toContain('GigabitEthernet0/0/24');
+        expect(detail).toContain('GE0/0/24(');
       }
     });
   });
@@ -137,7 +137,7 @@ describe('Scénario 2 — Configuration VLAN et trunk sur switch Huawei S-series
       // exprimer avec un simple port trunk/access Cisco.
       for (const id of [10, 20, 30]) {
         const detail = await sw.executeCommand(`display vlan ${id}`);
-        expect(detail).toContain('GigabitEthernet0/0/5');
+        expect(detail).toContain('GE0/0/5(');
       }
     });
   });
@@ -160,8 +160,8 @@ describe('Scénario 2 — Configuration VLAN et trunk sur switch Huawei S-series
       await sw.executeCommand('return');
 
       const vlanDetail = await sw.executeCommand('display vlan 10');
-      expect(vlanDetail).toContain('GigabitEthernet0/0/1');
-      expect(vlanDetail).toContain('GigabitEthernet0/0/24');
+      expect(vlanDetail).toContain('GE0/0/1(');
+      expect(vlanDetail).toContain('GE0/0/24(');
 
       const portVlan = await sw.executeCommand('display port vlan');
       expect(portVlan).toMatch(/access/);

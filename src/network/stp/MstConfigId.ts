@@ -1,6 +1,7 @@
 import { hmac } from '@/crypto/mac/hmac';
 import { MD5 } from '@/crypto/hash';
 import { parseStpVlanList, type MstRegion } from '@/network/stp/types';
+import { compactVlanList } from '@/network/devices/shells/cli/vlanList';
 
 const MAX_VID = 4094;
 const TABLE_ENTRIES = MAX_VID + 2;
@@ -49,24 +50,9 @@ export function sameMstRegion(a: MstConfigIdentifier, b: MstConfigIdentifier): b
   return a.name === b.name && a.revision === b.revision && a.digest === b.digest;
 }
 
-export function formatVlanRanges(vlans: Iterable<number>): string {
-  const tries = [...new Set(vlans)].sort((a, b) => a - b);
-  const ranges: string[] = [];
-  let debut: number | null = null;
-  let dernier = 0;
-  for (const vlan of tries) {
-    if (debut !== null && vlan === dernier + 1) { dernier = vlan; continue; }
-    if (debut !== null) ranges.push(debut === dernier ? `${debut}` : `${debut}-${dernier}`);
-    debut = vlan;
-    dernier = vlan;
-  }
-  if (debut !== null) ranges.push(debut === dernier ? `${debut}` : `${debut}-${dernier}`);
-  return ranges.join(',');
-}
-
 export function vlansMappedToInstanceZero(instances: ReadonlyMap<number, string>): string {
   const table = vlanToInstanceTable(instances);
   const libres: number[] = [];
   for (let vlan = 1; vlan <= MAX_VID; vlan++) if (table[vlan] === 0) libres.push(vlan);
-  return formatVlanRanges(libres);
+  return compactVlanList(libres);
 }

@@ -299,6 +299,7 @@ export interface MACTableEntry {
 export interface VLANEntry {
   id: number;
   name: string;
+  description?: string;
   ports: Set<string>;  // ports assigned to this VLAN
 }
 
@@ -1086,11 +1087,15 @@ export abstract class Switch extends Equipment {
 
   protected isReservedVlanId(_id: number): boolean { return false; }
 
+  protected defaultVlanName(id: number): string {
+    return `VLAN${String(id).padStart(4, '0')}`;
+  }
+
   createVLAN(id: number, name?: string): boolean {
     if (id < 1 || id > 4094) return false;
     if (this.isReservedVlanId(id)) return false;
     if (this.vlans.has(id)) return false;
-    const newVlan: VLANEntry = { id, name: name || `VLAN${String(id).padStart(4, '0')}`, ports: new Set() };
+    const newVlan: VLANEntry = { id, name: name || this.defaultVlanName(id), ports: new Set() };
     this.vlans.set(id, newVlan);
 
     // Let subclass handle VLAN recreation (e.g., Cisco reactivates suspended ports)
@@ -1134,6 +1139,14 @@ export abstract class Switch extends Equipment {
     const vlan = this.vlans.get(id);
     if (!vlan) return false;
     vlan.name = name;
+    return true;
+  }
+
+  setVlanDescription(id: number, description: string | null): boolean {
+    const vlan = this.vlans.get(id);
+    if (!vlan) return false;
+    if (description === null) delete vlan.description;
+    else vlan.description = description;
     return true;
   }
 

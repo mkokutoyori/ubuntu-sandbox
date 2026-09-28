@@ -109,6 +109,16 @@ export function estAdresseIPv4(valeur: string): boolean {
   return parts.every((p) => /^\d{1,3}$/.test(p) && Number(p) <= 255);
 }
 
+const HUAWEI_SHORT_TYPES: ReadonlyArray<readonly [string, string]> = [
+  ['XGigabitEthernet', 'XGE'],
+  ['GigabitEthernet', 'GE'],
+  ['Ethernet', 'Eth'],
+];
+
+function startsWithType(name: string, type: string): boolean {
+  return name.startsWith(type) && /\d/.test(name.charAt(type.length));
+}
+
 /**
  * Le nom qu'un port PORTE a l'ecran. Les ports sont ranges sous leur nom
  * court (`GE0/0/0`), qui est interne : VRP n'affiche jamais que le nom
@@ -117,7 +127,17 @@ export function estAdresseIPv4(valeur: string): boolean {
  * s'appelait `GE0/0/0` ici et `GigabitEthernet0/0/0` la.
  */
 export function huaweiDisplayInterfaceName(interne: string): string {
-  return interne.startsWith('GE') ? interne.replace(/^GE/, 'GigabitEthernet') : interne;
+  for (const [long, short] of HUAWEI_SHORT_TYPES) {
+    if (startsWithType(interne, short)) return long + interne.slice(short.length);
+  }
+  return interne;
+}
+
+export function huaweiShortInterfaceName(name: string): string {
+  for (const [long, short] of HUAWEI_SHORT_TYPES) {
+    if (startsWithType(name, long)) return short + name.slice(long.length);
+  }
+  return name;
 }
 
 /** Ce que la vue RIP de VRP retient hors du moteur commun. */

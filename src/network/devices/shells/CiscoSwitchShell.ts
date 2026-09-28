@@ -177,7 +177,7 @@ import {
 } from './cisco/ciscoContinuations';
 import type { ContinuationTable } from './cisco/ciscoContinuations';
 import {
-  mstConfigDigest, vlansMappedToInstanceZero, formatVlanRanges,
+  mstConfigDigest, vlansMappedToInstanceZero,
 } from '@/network/stp/MstConfigId';
 import { parseStpVlanList } from '@/network/stp/types';
 
@@ -1917,7 +1917,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         const retires = new Set(parseStpVlanList(vlans));
         const restants = parseStpVlanList(actuel).filter((v) => !retires.has(v));
         if (restants.length === 0) agent()?.unmapMstInstance(instance);
-        else agent()?.mapMstInstance(instance, formatVlanRanges(restants));
+        else agent()?.mapMstInstance(instance, compactVlanList(restants));
         return '';
       },
       retirerInstance: (instance) => { agent()?.unmapMstInstance(instance); return ''; },

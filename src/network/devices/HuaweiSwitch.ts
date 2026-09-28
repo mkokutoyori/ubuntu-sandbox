@@ -187,6 +187,8 @@ export class HuaweiSwitch extends Switch {
 
   override defaultArpTimeoutSec(): number { return VRP_ARP_EXPIRE_TIME_DEFAULT_SEC; }
 
+  protected override defaultVlanName(_id: number): string { return ''; }
+
   protected override getIgmpSnoopingAgentOrNull(): IgmpSnoopingAgent {
     return this.igmpSnoopingAgent;
   }

@@ -148,10 +148,11 @@ describe('Group 1: Huawei Switch — Basic VRP Commands', () => {
 
       // Verify VLAN existence
       const vlanOutput = await sw.executeCommand('display vlan');
-      expect(vlanOutput).toContain('10');
-      expect(vlanOutput).toContain('Sales');
-      expect(vlanOutput).toContain('20');
-      expect(vlanOutput).toContain('Engineering');
+      expect(vlanOutput).toMatch(/^10\s+common\s+UT:GE0\/0\/1\(/m);
+      expect(vlanOutput).toMatch(/^20\s+common\s+UT:GE0\/0\/2\(/m);
+      const config = await sw.executeCommand('display current-configuration');
+      expect(config).toMatch(/^vlan 10\n name Sales$/m);
+      expect(config).toMatch(/^vlan 20\n name Engineering$/m);
     });
 
     it('should delete a VLAN with undo vlan', async () => {

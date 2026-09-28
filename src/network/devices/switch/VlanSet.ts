@@ -42,6 +42,21 @@ export function parseVlanList(
   return { vlans };
 }
 
+export function vlanRuns(vlans: Iterable<number>): Array<readonly [number, number]> {
+  const sorted = [...new Set(vlans)].sort((a, b) => a - b);
+  const runs: Array<[number, number]> = [];
+  for (const vlan of sorted) {
+    const last = runs[runs.length - 1];
+    if (last && vlan === last[1] + 1) last[1] = vlan;
+    else runs.push([vlan, vlan]);
+  }
+  return runs;
+}
+
+export function formatVrpVlanList(vlans: Iterable<number>): string {
+  return vlanRuns(vlans).map(([first, last]) => (first === last ? `${first}` : `${first} to ${last}`)).join(' ');
+}
+
 export class VlanSet {
   private complemented: boolean;
   private members: Set<number>;
