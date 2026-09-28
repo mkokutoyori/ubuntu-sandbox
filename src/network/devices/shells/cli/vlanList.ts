@@ -1,5 +1,5 @@
 import { boundedInteger } from '@/cli/ArgumentTypes';
-import { parseVlanId } from '../../switch/VlanSet';
+import { parseVlanId, vlanRuns } from '../../switch/VlanSet';
 
 /**
  * Le domaine d'une liste ecrite a la mode d'IOS.
@@ -46,18 +46,6 @@ export function parseVlanList(
   return vlans.size > 0 ? vlans : null;
 }
 
-export function compactVlanList(sorted: readonly number[]): string {
-  if (sorted.length === 0) return '';
-  const ranges: string[] = [];
-  let start = sorted[0], end = sorted[0];
-  for (let i = 1; i < sorted.length; i++) {
-    if (sorted[i] === end + 1) {
-      end = sorted[i];
-    } else {
-      ranges.push(start === end ? String(start) : `${start}-${end}`);
-      start = end = sorted[i];
-    }
-  }
-  ranges.push(start === end ? String(start) : `${start}-${end}`);
-  return ranges.join(',');
+export function compactVlanList(vlans: Iterable<number>): string {
+  return vlanRuns(vlans).map(([first, last]) => (first === last ? `${first}` : `${first}-${last}`)).join(',');
 }

@@ -95,7 +95,7 @@ import {
 import { describeHuaweiArguments } from './huawei/huaweiArgumentHelp';
 import { buildActorState, lacpStateBits } from '@/network/lacp/types';
 import { LOAD_BALANCE_METHODS } from '@/network/lacp/loadBalance';
-import { parseVlanList } from '../switch/VlanSet';
+import { formatVrpVlanList, parseVlanList } from '../switch/VlanSet';
 import { boundedInteger } from '@/cli/ArgumentTypes';
 
 const VUES_SWITCH = [
@@ -4482,7 +4482,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       dhcp.push('dhcp snooping enable');
       const vlans = sec.getDhcpSnoopingVlans();
       if (vlans.length > 0) {
-        dhcp.push(`dhcp snooping enable vlan ${[...vlans].sort((a, b) => a - b).join(' ')}`);
+        dhcp.push(`dhcp snooping enable vlan ${formatVrpVlanList(vlans)}`);
       }
     }
     for (const trust of sec.getDhcpSnoopingTrust()) {
@@ -4541,8 +4541,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       '#',
     ];
 
-    const batch = [...sw.getVLANs().keys()].filter((id) => id !== 1).sort((a, b) => a - b);
-    if (batch.length > 0) lines.push(`vlan batch ${batch.join(' ')}`, '#');
+    const batch = [...sw.getVLANs().keys()].filter((id) => id !== 1);
+    if (batch.length > 0) lines.push(`vlan batch ${formatVrpVlanList(batch)}`, '#');
     for (const id of sw.getVLANs().keys()) {
       if (id === 1) continue;
       const body = this.vlanBlockBody(sw, id);
@@ -4676,16 +4676,15 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const lines: string[] = [];
     const desc = sw.getInterfaceDescription(portName);
     if (desc) lines.push(` description ${desc}`);
-    const vlanListe = (ids: Set<number> | undefined) =>
-      Array.from(ids ?? []).sort((a, b) => a - b).join(' ');
+    const vlanListe = (ids: Set<number> | undefined) => formatVrpVlanList(ids ?? []);
 
     if (cfg.mode === 'trunk') {
       lines.push(' port link-type trunk');
       if (cfg.trunkNativeVlan !== 1) lines.push(` port trunk pvid vlan ${cfg.trunkNativeVlan}`);
-      const allowedArr = Array.from(cfg.trunkAllowedVlans).sort((a, b) => a - b);
-      if (allowedArr.length >= 4094) lines.push(' port trunk allow-pass vlan all');
-      else if (allowedArr.length === 0) lines.push(' port trunk allow-pass vlan none');
-      else lines.push(` port trunk allow-pass vlan ${allowedArr.join(' ')}`);
+      const allowed = cfg.trunkAllowedVlans;
+      if (allowed.size >= 4094) lines.push(' port trunk allow-pass vlan all');
+      else if (allowed.size === 0) lines.push(' port trunk allow-pass vlan none');
+      else lines.push(` port trunk allow-pass vlan ${formatVrpVlanList(allowed)}`);
     } else if (cfg.mode === 'hybrid') {
       lines.push(' port link-type hybrid');
       if ((cfg.hybridPvid ?? 1) !== 1) lines.push(` port hybrid pvid vlan ${cfg.hybridPvid}`);
