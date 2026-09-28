@@ -124,7 +124,11 @@ export class CiscoSwitch extends Switch {
       vtpUpdaterIdentity: () => this._vtpUpdaterIdentity(),
       vtpGetMstRegion: () => {
         const region = this.stpAgent.getMstRegion();
-        return { name: region.name, revision: region.revision, instances: [...region.instances] };
+        return {
+          name: region.name,
+          revision: region.revision,
+          instances: [...region.instances].map(([id, vlans]) => [id, [...vlans].sort((a, b) => a - b)]),
+        };
       },
       vtpApplyMstRegion: (region) => {
         this.stpAgent.applyMstRegion(region.name, region.revision, region.instances);

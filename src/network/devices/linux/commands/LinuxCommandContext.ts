@@ -27,6 +27,7 @@ import type { GreAgent } from '@/network/gre/GreAgent';
 import type { LinuxNetworkConfigManager } from '../LinuxNetworkConfigManager';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { SshdServerConfigSnapshot } from '@/network/protocols/ssh/server/SshdServerConfig';
+import type { Signal } from '../LinuxProcessManager';
 
 export interface LinuxCommandContext {
   /** Kernel-level services: VFS, users, iptables, services, processes. */
@@ -107,4 +108,8 @@ export interface LinuxCommandContext {
    * `ip -c=auto` en dépend entièrement.
    */
   readonly outputPiped?: boolean;
+
+  readonly whenKilled?: (listener: (signal: Signal) => void) => () => void;
+
+  readonly supervised?: boolean;
 }

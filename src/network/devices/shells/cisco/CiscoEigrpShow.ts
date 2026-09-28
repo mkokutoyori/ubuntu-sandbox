@@ -1,4 +1,5 @@
 import { renderTable, FIXED_TABLE } from '../cli/TextTable';
+import { formatIosElapsed } from './iosElapsed';
 import type { EIGRPEngine } from '../../../eigrp/EIGRPEngine';
 import type { EigrpStubTlv } from '../../../eigrp/packets';
 import type { Port } from '../../../hardware/Port';
@@ -19,7 +20,7 @@ const NEIGHBOR_COLUMNS = [
   { header: 'Address', width: 24, value: (r: NeighborRow) => r.address },
   { header: 'Interface', width: 23, value: (r: NeighborRow) => r.iface },
   { header: 'Hold', width: 5, value: (r: NeighborRow) => String(r.hold).padStart(4) },
-  { header: 'Uptime', width: 9, value: (r: NeighborRow) => iosUptime(r.uptimeSec) },
+  { header: 'Uptime', width: 9, value: (r: NeighborRow) => formatIosElapsed(r.uptimeSec * 1_000) },
   { header: 'SRTT', width: 7, value: (r: NeighborRow) => String(r.srtt).padStart(4) },
   { header: 'RTO', width: 5, value: (r: NeighborRow) => String(r.rto).padStart(3) },
   { header: 'Q', width: 3, value: () => '0' },
@@ -35,19 +36,6 @@ function placeAt(labels: ReadonlyArray<readonly [number, string]>): string {
 }
 
 const NEIGHBOR_UNITS_ROW = placeAt([[51, '(sec)'], [65, '(ms)'], [76, 'Cnt'], [80, 'Num']]);
-
-export function iosUptime(sec: number): string {
-  const s = Math.max(0, Math.floor(sec));
-  if (s < 86400) {
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:`
-      + String(s % 60).padStart(2, '0');
-  }
-  const j = Math.floor(s / 86400);
-  if (j < 7) return `${j}d${String(Math.floor((s % 86400) / 3600)).padStart(2, '0')}h`;
-  return `${Math.floor(j / 7)}w${j % 7}d`;
-}
 
 function neighborRows(e: EIGRPEngine): NeighborRow[] {
   const views = e.getNeighbors();
@@ -294,7 +282,7 @@ export function eigrpProtocolBlock(
   out.push('    Gateway         Distance      Last Update');
   for (const n of e.getNeighbors()) {
     out.push(`    ${n.address.padEnd(16)}${String(90).padStart(4)}`
-      + `      ${iosUptime(n.uptimeSec)}`);
+      + `      ${formatIosElapsed(n.uptimeSec * 1_000)}`);
   }
   out.push('  Distance: internal 90 external 170');
   return out;

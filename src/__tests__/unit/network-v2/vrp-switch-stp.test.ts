@@ -123,7 +123,7 @@ describe('la famille stp du commutateur VRP', () => {
     expect(b.getVlanHelloSec(1)).toBe(a.getVlanHelloSec(1));
     expect(b.getMstRegion().name).toBe('REGION');
     expect(b.getMstRegion().revision).toBe(7);
-    expect([...b.getMstRegion().instances]).toEqual([[1, '10']]);
+    expect([...b.getMstRegion().instances].map(([id, vlans]) => [id, [...vlans]])).toEqual([[1, [10]]]);
   });
 
   it('le bloc de region porte son `revision-level`, dans les DEUX vues', async () => {

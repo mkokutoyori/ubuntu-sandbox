@@ -55,6 +55,7 @@ import { renderCounterTable, renderTable, type TableColumn } from '../cli/TextTa
 import { getHttpService } from '@/network/equipment/RouterServiceCapabilities';
 import { IPV6_NEIGHBORS_COLUMNS, IPV6_NEIGHBORS_STYLE, type Ipv6NeighborRow } from './ciscoTableLayouts';
 import { vrfRunningConfigLines, type VrfHost } from './ciscoVrfStore';
+import { formatIosElapsed } from './iosElapsed';
 
 export function serviceFlagLines(
   device: { getServiceFlags?: () => ReadonlyMap<string, boolean> },
@@ -176,7 +177,7 @@ function reachOf(r: TableRoute, nowMs: number | undefined): string {
   const metric = `[${r.ad ?? 1}/${r.metric ?? 0}]`;
   if (attached) return `${metric} is directly connected, ${r.iface}`;
   const age = isLearnedRouteType(r.type) && r.installedAt !== undefined && nowMs !== undefined
-    ? `, ${formatRouteAge(nowMs - r.installedAt)}` : '';
+    ? `, ${formatIosElapsed(nowMs - r.installedAt)}` : '';
   const exit = r.type === 'bgp' || (staticRoute && !r.ifaceConfigured) ? '' : `, ${r.iface}`;
   return `${metric} via ${r.nextHop}${age}${exit}`;
 }
@@ -270,15 +271,6 @@ const LEARNED_ROUTE_TYPES: ReadonlySet<string> = new Set(['ospf', 'rip', 'eigrp'
 
 export function isLearnedRouteType(type: string): boolean {
   return LEARNED_ROUTE_TYPES.has(type);
-}
-
-export function formatRouteAge(elapsedMs: number): string {
-  const total = Math.max(0, Math.floor(elapsedMs / 1000));
-  const days = Math.floor(total / 86400);
-  if (days >= 7) return `${Math.floor(days / 7)}w${days % 7}d`;
-  if (days >= 1) return `${days}d${String(Math.floor((total % 86400) / 3600)).padStart(2, '0')}h`;
-  const two = (n: number) => String(n).padStart(2, '0');
-  return `${two(Math.floor(total / 3600))}:${two(Math.floor((total % 3600) / 60))}:${two(total % 60)}`;
 }
 
 export function routerRouteTableHost(router: Router): RouteTableHost {
@@ -1424,7 +1416,7 @@ function ripProtocolsBlock(router: Router): string {
   block.push('    Gateway         Distance      Last Update');
   const distance = rip?.distance ?? 120;
   for (const [source, age] of router.getRIPUpdateSources()) {
-    block.push(`    ${source.padEnd(16)}${String(distance).padEnd(14)}${formatRipAge(age)}`);
+    block.push(`    ${source.padEnd(16)}${String(distance).padEnd(14)}${formatIosElapsed(age * 1_000)}`);
   }
   block.push(`  Distance: (default is ${distance})`);
   return block.join('\n');
@@ -1934,7 +1926,7 @@ export function showIpRipDatabase(router: Router, autoSummary = true): string {
     try { summaryLine(new IPAddress(netPart)); } catch { /* keep the entry */ }
     lines.push(`${key}`);
     lines.push(`    [${info.metric}] via ${info.learnedFrom}, ` +
-      `${formatRipAge(info.age)}${info.garbageCollect ? ', possibly down' : ''}`);
+      `${formatIosElapsed(info.age * 1_000)}${info.garbageCollect ? ', possibly down' : ''}`);
   }
   return lines.join('\n');
 }
@@ -1954,13 +1946,6 @@ function ripCoversAddress(
     addr.networkAddress(n.mask).toString() === n.network.networkAddress(n.mask).toString());
 }
 
-function formatRipAge(seconds: number): string {
-  const s = Math.max(0, Math.floor(seconds));
-  const hh = String(Math.floor(s / 3600)).padStart(2, '0');
-  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
-  const ss = String(s % 60).padStart(2, '0');
-  return `${hh}:${mm}:${ss}`;
-}
 
 /** `show ip bgp …` — honest state: no BGP process configured. */
 export function showBgpNotActive(): string {

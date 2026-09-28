@@ -9,6 +9,7 @@ import type { EchoRoute, PingResult, TraceSocketOptions } from '../../../EndHost
 import { reverseNameOf } from '../../network/ReverseName';
 import { getoptDiagnostic, shortOptions } from '../Getopt';
 import { INT_MAX, IPUTILS_VERSION_LINE, LONG_MAX, strtolOrErr } from './IputilsCommon';
+import { SIGNAL_NUMBERS, type Signal } from '../../LinuxProcessManager';
 
 const DEFAULT_SIZE = 56;
 const DETACHED_DEFAULT_COUNT = 4;
@@ -285,6 +286,7 @@ export interface PingHost {
 export interface PingRun {
   run(shouldStop: () => boolean): Promise<number>;
   interrupt(): void;
+  terminate(): void;
 }
 
 function patternBytes(pattern: string): number[] {
@@ -519,6 +521,7 @@ export function createPing(
   return {
     run,
     interrupt: () => { if (plan !== null) summary(true); finished = true; },
+    terminate: () => { finished = true; },
   };
 }
 
@@ -561,13 +564,29 @@ export function pingHostOf(
   };
 }
 
+const PING_FINISHING_SIGNALS: ReadonlySet<Signal> = new Set<Signal>(['SIGINT', 'SIGALRM']);
+
 async function runDetached(
   ctx: LinuxCommandContext, args: string[], cmd: 'ping' | 'ping6',
 ): Promise<{ output: string; exitCode: number }> {
   const lines: string[] = [];
-  const exitCode = await createPing(args, pingHostOf(ctx), (line) => lines.push(line), { cmd, detached: true })
-    .run(() => false);
-  return { output: lines.join('\n'), exitCode };
+  const ping = createPing(args, pingHostOf(ctx), (line) => lines.push(line), { cmd, detached: !ctx.supervised });
+  const received = { finishing: false, killedBy: null as Signal | null };
+  const stopWatching = ctx.whenKilled?.((signal) => {
+    if (PING_FINISHING_SIGNALS.has(signal)) {
+      received.finishing = true;
+      return;
+    }
+    received.killedBy = signal;
+    ping.terminate();
+  }) ?? (() => {});
+  try {
+    const exitCode = await ping.run(() => received.finishing);
+    const killedBy = received.killedBy;
+    return { output: lines.join('\n'), exitCode: killedBy === null ? exitCode : 128 + SIGNAL_NUMBERS[killedBy] };
+  } finally {
+    stopWatching();
+  }
 }
 
 const PING_FLAGS_LIST = [

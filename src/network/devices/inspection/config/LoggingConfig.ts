@@ -1,4 +1,5 @@
 import { Logger } from '@/network/core/Logger';
+import { formatIosElapsed } from '@/network/devices/shells/cisco/iosElapsed';
 import { DuplicateEventFilter } from '@/events/DuplicateEventFilter';
 import { isValidIPv4 } from '@/network/core/ip';
 import { ospfHelloMismatchLines } from '@/network/ospf/events';
@@ -26,6 +27,8 @@ export type Severity = typeof SEVERITIES[number];
  * ligne verbatim est un choix qu'on écrit, pas un argument qu'on omet.
  */
 export const DEBUG_VERBATIM = '';
+
+const UPTIME_MSEC_LIMIT_MS = 86_400_000;
 
 /**
  * Le pont générique `log` porte un nom d'événement interne, pas un
@@ -685,27 +688,9 @@ export class LoggingConfig {
       : this.formatDatetimeStamp(spec, ts);
   }
 
-  /**
-   * IOS abbreviates a long uptime rather than letting the hour count grow:
-   * `HH:MM:SS` for the first day, then `1d00h`, then `1w2d`. The short
-   * forms carry no milliseconds — there is nowhere to put them, and a real
-   * `1w2d.443` is not a thing anybody has seen in a log.
-   *
-   * No `*` marker either: an uptime is a counter this device owns, so it
-   * is authoritative whatever the clock is doing.
-   */
   private formatUptimeStamp(spec: TimestampSpec, uptimeMs: number): string {
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const totalSec = Math.max(0, Math.floor(uptimeMs / 1000));
-    const jours = Math.floor(totalSec / 86400);
-    if (jours >= 7) {
-      const semaines = Math.floor(jours / 7);
-      return `${semaines}w${jours - semaines * 7}d`;
-    }
-    if (jours >= 1) return `${jours}d${pad(Math.floor((totalSec % 86400) / 3600))}h`;
-    const base = `${pad(Math.floor(totalSec / 3600))}:`
-      + `${pad(Math.floor((totalSec % 3600) / 60))}:${pad(totalSec % 60)}`;
-    if (!spec.msec) return base;
+    const base = formatIosElapsed(uptimeMs);
+    if (!spec.msec || uptimeMs >= UPTIME_MSEC_LIMIT_MS) return base;
     return `${base}.${String(Math.floor(uptimeMs) % 1000).padStart(3, '0')}`;
   }
 

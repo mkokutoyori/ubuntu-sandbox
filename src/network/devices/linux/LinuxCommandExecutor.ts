@@ -123,7 +123,9 @@ import { atAllowed, atDenialMessage } from './jobs/AtPermissions';
 import { PortActivityLogProjection } from './ports/PortActivityLogProjection';
 import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
-import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService } from './LinuxProcessCommands';
+import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService, parseSignalArg } from './LinuxProcessCommands';
+import { getoptDiagnostic, shortOptions, type LongOption } from './commands/Getopt';
+import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
 import { runSshClient, wireExecTarget } from './network/LinuxSshClient';
@@ -3317,6 +3319,18 @@ export class LinuxCommandExecutor {
     this.isNetworkCommandName = pred;
   }
 
+  private scheduler: () => IScheduler = getDefaultScheduler;
+
+  setScheduler(source: () => IScheduler): void {
+    this.scheduler = source;
+  }
+
+  private readonly supervisedPids = new Set<number>();
+
+  isSupervised(pid: number): boolean {
+    return this.supervisedPids.has(pid);
+  }
+
   /**
    * Async twin of {@link execute}: same pipeline, driven through the
    * interpreter's async driver so network commands compose with full
@@ -5269,19 +5283,7 @@ export class LinuxCommandExecutor {
       // `trap '... exit 130' INT; sleep N` body, we surface the trap
       // body's effect (exit 130 + the trap echo) so cross-equipment
       // signal-relay tests stay coherent without an event-loop.
-      case 'timeout': {
-        const parsed = parseTimeoutInvocation(args);
-        if ('error' in parsed) return { output: parsed.error, exitCode: 1 };
-        const inner = parsed.command.join(' ');
-        // Detect the canonical ssh-trap-INT-sleep pattern and emit the
-        // trap's effect, exactly as a real timeout → ssh → trap chain
-        // would produce.
-        if (/^ssh\b.*\btrap\b.*\bINT\b.*\bsleep\b/i.test(inner)) {
-          return { output: 'caught', exitCode: 130 };
-        }
-        const out = this.execute(inner);
-        return { output: out, exitCode: this.lastExitCode };
-      }
+      case 'timeout': return this.runTimeout(args);
 
       case 'nohup': return this.runNohup(args, stdin, outputPiped);
 
@@ -7722,7 +7724,8 @@ export class LinuxCommandExecutor {
     switch (argv[0]) {
       case 'timeout': {
         const parsed = parseTimeoutInvocation(args);
-        return 'command' in parsed ? run(parsed.command, env, outputPiped) : null;
+        if ('error' in parsed || !this.isNetworkCommandName(parsed.command[0])) return null;
+        return this.runSupervised(parsed, () => run(parsed.command, env, outputPiped));
       }
       case 'env': {
         const parsed = parseEnvInvocation(args, env ?? Object.fromEntries(this.env));
@@ -7736,6 +7739,87 @@ export class LinuxCommandExecutor {
       default:
         return null;
     }
+  }
+
+  private runTimeout(args: string[]): { output: string; exitCode: number; stderr?: string } {
+    const parsed = parseTimeoutInvocation(args);
+    if ('error' in parsed) return { output: parsed.error, exitCode: TIMEOUT_EXIT_CANCELED };
+    const heldBefore = this.sessionHoldSeconds;
+    const result = this.dispatchFromInterpreter(parsed.command, this._cmdEnv);
+    const held = this.sessionHoldSeconds - heldBefore;
+    if (parsed.durationSeconds === 0 || held <= parsed.durationSeconds) return result;
+    const notices = [timeoutNotice(parsed, parsed.signal)];
+    let killedBy: Signal | null = null;
+    if (TERMINATING_SIGNALS.has(parsed.signal)) {
+      killedBy = parsed.signal;
+      this.sessionHoldSeconds = heldBefore + parsed.durationSeconds;
+    } else if (parsed.killAfterSeconds > 0 && held > parsed.durationSeconds + parsed.killAfterSeconds) {
+      killedBy = 'SIGKILL';
+      notices.push(timeoutNotice(parsed, 'SIGKILL'));
+      this.sessionHoldSeconds = heldBefore + parsed.durationSeconds + parsed.killAfterSeconds;
+    }
+    const exitCode = killedBy === null
+      ? (parsed.preserveStatus ? result.exitCode : TIMEOUT_EXIT_TIMEDOUT)
+      : timedOutStatus(parsed, killedBy, 128 + SIGNAL_NUMBERS[killedBy]);
+    return parsed.verbose
+      ? { output: result.output, exitCode, stderr: notices.join('\n') }
+      : { output: result.output, exitCode };
+  }
+
+  private runSupervised(
+    invocation: TimeoutInvocation,
+    start: () => Promise<{ output: string; exitCode: number; stderr?: string }> | null,
+  ): Promise<{ output: string; exitCode: number; stderr?: string }> | null {
+    const proc = this.processMgr.spawn({
+      command: invocation.command.join(' '),
+      comm: invocation.command[0].split('/').pop() ?? invocation.command[0],
+      user: this.userMgr.currentUser,
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+      ppid: this.currentBashPid(),
+      tty: 'pts/0',
+      cwd: this.cwd,
+    });
+    this.supervisedPids.add(proc.pid);
+    this.bashPids.push(proc.pid);
+    let pending: Promise<{ output: string; exitCode: number; stderr?: string }> | null;
+    try {
+      pending = start();
+    } finally {
+      this.bashPids.pop();
+    }
+    if (pending === null) {
+      this.supervisedPids.delete(proc.pid);
+      this.processMgr.exit(proc.pid, 0);
+      return null;
+    }
+    const scheduler = this.scheduler();
+    const notices: string[] = [];
+    let timedOut = false;
+    const send = (signal: Signal): void => {
+      if (!this.processMgr.get(proc.pid)) return;
+      if (invocation.verbose) notices.push(timeoutNotice(invocation, signal));
+      this.processMgr.kill(proc.pid, signal);
+    };
+    const timers: TimerHandle[] = [];
+    if (invocation.durationSeconds > 0) {
+      timers.push(scheduler.setTimeout(() => {
+        timedOut = true;
+        send(invocation.signal);
+        if (invocation.killAfterSeconds > 0) {
+          timers.push(scheduler.setTimeout(() => send('SIGKILL'), invocation.killAfterSeconds * 1000));
+        }
+      }, invocation.durationSeconds * 1000));
+    }
+    return pending.then((result) => {
+      for (const timer of timers) scheduler.clear(timer);
+      this.supervisedPids.delete(proc.pid);
+      if (this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
+      const killedBy = this.processMgr.lastKillSignal(proc.pid) ?? invocation.signal;
+      const exitCode = timedOut ? timedOutStatus(invocation, killedBy, result.exitCode) : result.exitCode;
+      const stderr = [result.stderr, ...notices].filter((line) => line).join('\n');
+      return stderr ? { ...result, exitCode, stderr } : { ...result, exitCode };
+    });
   }
 
   private nohupOutputFile(): { path: string; shown: string } | null {
@@ -7960,25 +8044,80 @@ function niceWrappedCommand(argv: string[]): { argv: string[]; adjustment: numbe
   return { argv: argv.slice(i), adjustment: Math.max(-20, Math.min(19, adjustment)) };
 }
 
-/**
- * Parse a `run-parts --umask` value. Accepts a 3- or 4-digit octal mask
- * (optionally surrounded by whitespace) in the range 000..0777. Returns
- * the numeric mask, or null when the value is not a valid umask.
- */
 const NOHUP_OUT_UMASK = 0o177;
 
-const TIMEOUT_OPTIONS_WITH_VALUE = new Set(['-s', '--signal', '-k', '--kill-after']);
+const TIMEOUT_EXIT_TIMEDOUT = 124;
+const TIMEOUT_EXIT_CANCELED = 125;
+const TIMEOUT_TRY_HELP = "Try 'timeout --help' for more information.";
 
-function parseTimeoutInvocation(args: readonly string[]): { command: string[] } | { error: string } {
-  let i = 0;
-  while (i < args.length && args[i].startsWith('-')) {
-    const option = args[i];
-    i++;
-    if (TIMEOUT_OPTIONS_WITH_VALUE.has(option) && !option.includes('=')) i++;
+const TIMEOUT_LONG_OPTIONS: readonly LongOption[] = [
+  { name: 'foreground', letter: 'f', takesArgument: false },
+  { name: 'kill-after', letter: 'k', takesArgument: true },
+  { name: 'preserve-status', letter: 'p', takesArgument: false },
+  { name: 'signal', letter: 's', takesArgument: true },
+  { name: 'verbose', letter: 'v', takesArgument: false },
+];
+
+const TIME_SUFFIX_SECONDS: Readonly<Record<string, number>> = { '': 1, s: 1, m: 60, h: 3600, d: 86400 };
+
+const TERMINATING_SIGNALS: ReadonlySet<Signal> = new Set<Signal>([
+  'SIGHUP', 'SIGINT', 'SIGQUIT', 'SIGKILL', 'SIGTERM', 'SIGUSR1', 'SIGUSR2', 'SIGPIPE', 'SIGALRM',
+]);
+
+interface TimeoutInvocation {
+  readonly durationSeconds: number;
+  readonly signal: Signal;
+  readonly killAfterSeconds: number;
+  readonly preserveStatus: boolean;
+  readonly verbose: boolean;
+  readonly command: string[];
+}
+
+function parseTimeoutDuration(raw: string): number | null {
+  const m = /^(\d+(?:\.\d*)?|\.\d+)([smhd]?)$/.exec(raw);
+  return m ? parseFloat(m[1]) * TIME_SUFFIX_SECONDS[m[2]] : null;
+}
+
+function parseTimeoutInvocation(args: readonly string[]): TimeoutInvocation | { error: string } {
+  const refuse = (line?: string) => ({ error: line === undefined ? TIMEOUT_TRY_HELP : `${line}\n${TIMEOUT_TRY_HELP}` });
+  let signal: Signal = 'SIGTERM';
+  let killAfterSeconds = 0;
+  let preserveStatus = false;
+  let verbose = false;
+  const operands: string[] = [];
+  for (const item of shortOptions(args, '+fk:ps:v', TIMEOUT_LONG_OPTIONS)) {
+    if (item.kind === 'operand') {
+      operands.push(item.value);
+      continue;
+    }
+    if (item.kind !== 'option') return refuse(getoptDiagnostic('timeout', item));
+    const value = item.argument ?? '';
+    if (item.letter === 'k') {
+      const seconds = parseTimeoutDuration(value);
+      if (seconds === null) return refuse(`timeout: invalid time interval '${value}'`);
+      killAfterSeconds = seconds;
+    } else if (item.letter === 's') {
+      const parsed = parseSignalArg(value);
+      if (parsed === null || value.startsWith('-')) return refuse(`timeout: '${value}': invalid signal`);
+      signal = parsed;
+    } else if (item.letter === 'p') {
+      preserveStatus = true;
+    } else if (item.letter === 'v') {
+      verbose = true;
+    }
   }
-  if (i >= args.length) return { error: 'timeout: missing operand' };
-  const command = args.slice(i + 1);
-  return command.length === 0 ? { error: 'timeout: missing command' } : { command };
+  if (operands.length < 2) return refuse();
+  const durationSeconds = parseTimeoutDuration(operands[0]);
+  if (durationSeconds === null) return refuse(`timeout: invalid time interval '${operands[0]}'`);
+  return { durationSeconds, signal, killAfterSeconds, preserveStatus, verbose, command: operands.slice(1) };
+}
+
+function timeoutNotice(invocation: TimeoutInvocation, signal: Signal): string {
+  return `timeout: sending signal ${signal.replace(/^SIG/, '')} to command '${invocation.command[0]}'`;
+}
+
+function timedOutStatus(invocation: TimeoutInvocation, killedBy: Signal, commandStatus: number): number {
+  return invocation.preserveStatus || killedBy === 'SIGKILL' ? commandStatus : TIMEOUT_EXIT_TIMEDOUT;
 }
 
 function parseEnvInvocation(
@@ -8025,6 +8164,11 @@ function extractCommandHead(input: string): string | null {
   return head;
 }
 
+/**
+ * Parse a `run-parts --umask` value. Accepts a 3- or 4-digit octal mask
+ * (optionally surrounded by whitespace) in the range 000..0777. Returns
+ * the numeric mask, or null when the value is not a valid umask.
+ */
 function parseRunPartsUmask(raw: string): number | null {
   const v = raw.trim();
   if (!/^[0-7]{3,4}$/.test(v)) return null;

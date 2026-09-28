@@ -12,7 +12,8 @@
 import type { Router } from '../../Router';
 import type { OspfInterfaceSettings } from '../../router/RouterOSPFIntegration';
 import { normalizeOspfRouteType, ospfRouteCode } from '@/network/ospf/routeCodes';
-import { formatRouteAge, isLearnedRouteType, renderIpRouteTable, routerRouteTableHost } from './CiscoShowCommands';
+import { isLearnedRouteType, renderIpRouteTable, routerRouteTableHost } from './CiscoShowCommands';
+import { formatIosElapsed } from './iosElapsed';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { isAreaId, isBackboneAreaId, type LSAHeader } from '../../../ospf/types';
 import { boundedInteger } from '@/cli/ArgumentTypes';
@@ -1761,8 +1762,7 @@ function compteARebours(
   const dead = iface?.deadInterval ?? 40;
   const ecoule = Math.max(0, nowMs - lastHelloMs) / 1000;
   const restant = Math.max(0, Math.min(dead, Math.floor(dead - ecoule)));
-  const pad = (v: number) => String(v).padStart(2, '0');
-  return `${pad(Math.floor(restant / 3600))}:${pad(Math.floor((restant % 3600) / 60))}:${pad(restant % 60)}`;
+  return formatIosElapsed(restant * 1_000);
 }
 
 function showIpOspfDatabaseSummaryCounts(router: Router): string {
@@ -2882,7 +2882,7 @@ export function renderRouteEntryDetail(
 
   if (best.nextHop && isLearnedRouteType(best.type)) {
     const age = best.installedAt !== undefined && hooks.nowMs !== undefined
-      ? `, ${formatRouteAge(hooks.nowMs - best.installedAt)} ago`
+      ? `, ${formatIosElapsed(hooks.nowMs - best.installedAt)} ago`
       : '';
     lines.push(`  Last update from ${best.nextHop} on ${best.iface}${age}`);
   }
