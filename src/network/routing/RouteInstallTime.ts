@@ -8,6 +8,7 @@ export interface InstalledRoute {
   readonly type: string;
   readonly ad?: number;
   readonly metric?: number;
+  readonly routeType?: string;
   readonly installedAt?: number;
 }
 
@@ -20,5 +21,6 @@ export function carriedInstallTime(
     && String(held.nextHop ?? '') === String(route.nextHop ?? '')
     && (held.iface ?? '') === (route.iface ?? '')
     && held.ad === route.ad
-    && held.metric === route.metric)?.installedAt;
+    && held.metric === route.metric
+    && (held.routeType ?? '') === (route.routeType ?? ''))?.installedAt;
 }

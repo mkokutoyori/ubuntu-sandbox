@@ -250,8 +250,8 @@ function routeLegend(lastLine: string): string[] {
   return [...ROUTE_CODE_LEGEND, `       ${lastLine}`, ''];
 }
 
-export function renderRoutingTable(routes: RouteTable, view: RoutingView): string {
-  if (view === 'database') return renderRoutingDatabase(routes);
+export function renderRoutingTable(routes: RouteTable, view: RoutingView, now: number): string {
+  if (view === 'database') return renderRoutingDatabase(routes, now);
 
   const lines = [...routeLegend('* - candidate default'), DEFAULT_ROUTING_VRF];
 
@@ -259,7 +259,7 @@ export function renderRoutingTable(routes: RouteTable, view: RoutingView): strin
     .filter(route => keptBy(view, route))
     .map(route => ({
       code: routeCode(route),
-      destination: `${route.network}/${prefixLength(route.mask)} ${reachedBy(route)}`,
+      destination: `${route.network}/${prefixLength(route.mask)} ${reachedBy(route, now)}`,
     }));
 
   lines.push(...renderTable(rows, [
@@ -270,13 +270,13 @@ export function renderRoutingTable(routes: RouteTable, view: RoutingView): strin
   return lines.join('\n');
 }
 
-export function renderRoutingDatabase(routes: RouteTable): string {
+export function renderRoutingDatabase(routes: RouteTable, now: number): string {
   const lines = routeLegend('> - selected route, * - FIB route');
 
   for (const route of routes.all()) {
     const kept = routes.isSelected(route);
     lines.push(`${protocolLetter(route).padEnd(5)}${kept ? '*>' : '  '} `
-      + `${route.network}/${prefixLength(route.mask)} ${reachedBy(route)}`
+      + `${route.network}/${prefixLength(route.mask)} ${reachedBy(route, now)}`
       + (kept ? '' : ' inactive'));
   }
   return lines.join('\n');
@@ -308,17 +308,19 @@ function isDefaultRoute(route: FirewallRoute): boolean {
   return route.network === '0.0.0.0' && route.mask === '0.0.0.0';
 }
 
-function reachedBy(route: FirewallRoute): string {
+function reachedBy(route: FirewallRoute, now: number): string {
   const metric = `[${route.distance}/${route.metric ?? 0}]`;
+  const age = route.protocol === undefined || route.installedAt === undefined
+    ? '' : `, ${uptimeClock((now - route.installedAt) / 1000)}`;
   const onLink = route.nextHop === undefined
     || route.nextHop.length === 0
     || route.nextHop === route.network;
   if (onLink) {
     return route.kind === 'connected'
       ? `is directly connected, ${route.iface}`
-      : `${metric} is directly connected, ${route.iface}`;
+      : `${metric} is directly connected, ${route.iface}${age}`;
   }
-  return `${metric} via ${route.nextHop}, ${route.iface}`;
+  return `${metric} via ${route.nextHop}, ${route.iface}${age}`;
 }
 
 export function renderOspfNeighbors(
@@ -429,10 +431,13 @@ export function renderBgpNeighbors(facts: BgpSummaryFacts): string {
 
 function uptimeClock(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
-  const hh = String(Math.floor(total / 3600)).padStart(2, '0');
-  const mm = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
-  const ss = String(total % 60).padStart(2, '0');
-  return `${hh}:${mm}:${ss}`;
+  const two = (value: number) => String(value).padStart(2, '0');
+  const days = Math.floor(total / 86_400);
+  const hours = Math.floor((total % 86_400) / 3_600);
+  const minutes = Math.floor((total % 3_600) / 60);
+  if (days < 1) return `${two(hours)}:${two(minutes)}:${two(total % 60)}`;
+  if (days < 7) return `${days}d${two(hours)}h${two(minutes)}m`;
+  return `${two(Math.floor(days / 7))}w${days % 7}d${two(hours)}h`;
 }
 
 function groupLeasesByInterface<T extends { iface: string }>(

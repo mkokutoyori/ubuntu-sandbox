@@ -1,4 +1,6 @@
 import { tryIpToUint32 } from '../../../core/ip';
+import { IPAddress, SubnetMask } from '../../../core/types';
+import { carriedInstallTime, type InstalledRoute } from '../../../routing/RouteInstallTime';
 import type { ConnectedRoute } from './InterfaceTable';
 
 export type RouteKind = 'connected' | 'static' | 'default' | 'dynamic';
@@ -14,6 +16,7 @@ export interface FirewallRoute {
   readonly metric?: number;
   readonly protocol?: string;
   readonly routeType?: string;
+  readonly installedAt?: number;
 }
 
 export interface ResolvedNextHop {
@@ -43,7 +46,15 @@ export interface StaticRouteOptions {
   routeType?: string;
 }
 
+export interface LearnedRouteRecord {
+  readonly network: string;
+  readonly mask: string;
+  readonly nextHop?: string;
+  readonly options: StaticRouteOptions;
+}
+
 export interface RouteTableDeps {
+  now: () => number;
   connectedRoutes: () => readonly ConnectedRoute[];
   interfaceForDestination?: (address: string) => string | undefined;
   isInterfaceUp?: (iface: string) => boolean;
@@ -60,6 +71,7 @@ interface StaticRecord {
   isDefault: boolean;
   id?: string;
   routeType?: string;
+  installedAt: number;
 }
 
 const DEFAULT_STATIC_DISTANCE = 1;
@@ -119,6 +131,7 @@ export class RouteTable {
       isDefault: mask === '0.0.0.0' && network === '0.0.0.0',
       id: options.id,
       routeType: options.routeType,
+      installedAt: this.deps.now(),
     });
   }
 
@@ -139,8 +152,23 @@ export class RouteTable {
   replaceLearned(
     source: string, network: string, mask: string, nextHop: string | undefined, options: StaticRouteOptions,
   ): void {
+    const id = learnedRouteId(source, network, mask);
+    const held = this.statics.filter((record) => record.id === id);
     this.withdrawLearned(source, network, mask);
-    this.addStatic(network, mask, nextHop, { ...options, id: learnedRouteId(source, network, mask) });
+    this.addLearned(source, { network, mask, nextHop, options }, held);
+  }
+
+  replaceSourceRoutes(source: string, routes: readonly LearnedRouteRecord[]): void {
+    const held = this.statics.filter((record) => record.id?.startsWith(`${source}:`));
+    this.removeStaticsBySource(source);
+    for (const route of routes) this.addLearned(source, route, held);
+  }
+
+  private addLearned(source: string, route: LearnedRouteRecord, held: readonly StaticRecord[]): void {
+    this.addStatic(route.network, route.mask, route.nextHop,
+      { ...route.options, id: learnedRouteId(source, route.network, route.mask) });
+    const added = this.statics[this.statics.length - 1];
+    added.installedAt = carriedInstallTime(held.map(installedView), installedView(added)) ?? added.installedAt;
   }
 
   withdrawLearned(source: string, network: string, mask: string): void {
@@ -212,6 +240,7 @@ export class RouteTable {
         metric: route.metric,
         protocol: protocolOf(route),
         routeType: route.routeType,
+        installedAt: route.installedAt,
       }));
     }
     return Object.freeze(routes);
@@ -262,6 +291,20 @@ export class RouteTable {
 
 export function learnedRouteId(source: string, network: string, mask: string): string {
   return `${source}:${network}/${mask}`;
+}
+
+function installedView(record: StaticRecord): InstalledRoute {
+  return {
+    network: new IPAddress(record.network),
+    mask: new SubnetMask(record.mask),
+    nextHop: IPAddress.tryParse(record.nextHop ?? ''),
+    iface: record.iface ?? null,
+    type: protocolOf(record) ?? 'static',
+    ad: record.distance,
+    metric: record.metric,
+    routeType: record.routeType,
+    installedAt: record.installedAt,
+  };
 }
 
 function kindOf(route: StaticRecord): RouteKind {

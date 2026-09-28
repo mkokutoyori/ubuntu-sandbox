@@ -47,7 +47,7 @@ export interface FirewallRoutingDeps {
     network: string; mask: string; iface: string;
   }>;
   readonly selectedRoutes: () => readonly FirewallRoute[];
-  readonly installRoute: (route: LearnedRoute) => void;
+  readonly replaceRoutes: (source: RoutingSource, routes: readonly LearnedRoute[]) => void;
   readonly replaceRoute: (route: LearnedRoute) => void;
   readonly withdrawRoute: (source: RoutingSource, network: string, mask: string) => void;
   readonly removeRoutes: (source: RoutingSource) => void;
@@ -102,7 +102,9 @@ export class FirewallRouting {
       tcp: deps.tcp,
       ports: deps.ports,
       connectedRoutes: deps.connectedRoutes,
-      installRoute: (route) => { deps.installRoute({ ...route, source: 'bgp' }); },
+      replaceRoutes: (routes) => {
+        deps.replaceRoutes('bgp', routes.map((route) => ({ ...route, source: 'bgp' as const })));
+      },
       removeRoutes: () => { deps.removeRoutes('bgp'); },
       listen: deps.listenBgp,
     });
@@ -371,22 +373,18 @@ export class FirewallRouting {
 
     const named = this.ospfConfig.distributeListIn;
 
-    this.deps.removeRoutes('ospf');
-    for (const route of this.ospf.getRoutes()) {
-      if (named && !this.inboundFilterPermits(named, route.network, route.mask)) {
-        continue;
-      }
-      this.deps.installRoute({
+    this.deps.replaceRoutes('ospf', this.ospf.getRoutes()
+      .filter((route) => !named || this.inboundFilterPermits(named, route.network, route.mask))
+      .map((route) => ({
         network: route.network,
         mask: route.mask,
         nextHop: route.nextHop,
         iface: route.iface,
         distance: OSPF_DISTANCE,
         metric: route.cost,
-        source: 'ospf',
+        source: 'ospf' as const,
         routeType: route.routeType,
-      });
-    }
+      })));
   }
 
   private inboundFilterPermits(named: string, network: string, mask: string): boolean {

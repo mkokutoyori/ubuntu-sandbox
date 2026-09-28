@@ -56,6 +56,7 @@ function lab(natOrder: Partial<FirewallServices['natOrder']> = {}) {
   zones.assignInterface('dmz', 'port3');
 
   const routes = new RouteTable({
+    now: () => 0,
     connectedRoutes: () => interfaces.connectedRoutes(),
     interfaceForDestination: (a) => interfaces.interfaceForDestination(a),
     isInterfaceUp: (i) => interfaces.isUp(i),

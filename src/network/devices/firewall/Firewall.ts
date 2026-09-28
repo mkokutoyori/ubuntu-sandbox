@@ -451,6 +451,7 @@ export class Firewall extends Equipment {
     this.syslogCollectors = new SyslogCollectorTable(() => this.syslog);
     this.vdoms = new VdomRegistry({
       now,
+      monotonicNow: () => this.getMonotonicClockMs(),
       scheduler: () => getDefaultScheduler(),
       timezone: () => this.getTimeZone(),
       deviceId: this.id,

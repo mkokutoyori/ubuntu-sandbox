@@ -77,6 +77,7 @@ export const ROOT_VDOM = 'root';
 
 export interface VdomRegistryDeps {
   readonly now: () => number;
+  readonly monotonicNow: () => number;
   readonly scheduler?: () => IScheduler;
   readonly timezone: () => TimeZone;
   readonly deviceId: string;
@@ -211,6 +212,7 @@ export class VdomRegistry {
     const schedules = new ScheduleStore(deps.timezone);
 
     const routes = new RouteTable({
+      now: () => deps.monotonicNow(),
       connectedRoutes: () => deps.connectedRoutes(name),
       interfaceForDestination: (address) => deps.interfaceForDestination(name, address),
       isInterfaceUp: (iface) => deps.isInterfaceUp(iface),
