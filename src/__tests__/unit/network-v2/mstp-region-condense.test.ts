@@ -36,6 +36,7 @@ import { Cable } from '@/network/hardware/Cable';
 import {
   mstConfigDigest, mstConfigIdentifier, sameMstRegion, vlansMappedToInstanceZero,
 } from '@/network/stp/MstConfigId';
+import { compactVlanList } from '@/network/devices/shells/cli/vlanList';
 
 beforeEach(() => {
   resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset();
@@ -66,33 +67,34 @@ describe('le condense de region est celui de la norme', () => {
     expect(mstConfigDigest(new Map())).toBe(VIDE);
   });
 
-  it('associer un VLAN change le condense', () => {
-    expect(mstConfigDigest(new Map([[1, '10']]))).not.toBe(VIDE);
+  it('mapping a VLAN changes the digest', () => {
+    expect(mstConfigDigest(new Map([[1, new Set([10])]]))).not.toBe(VIDE);
   });
 
-  it('deux tables identiques ecrites differemment donnent le MEME condense', () => {
-    const a = mstConfigDigest(new Map([[1, '10,11,12']]));
-    const b = mstConfigDigest(new Map([[1, '10-12']]));
-    expect(a).toBe(b);
+  it('the same table typed two ways gives the SAME digest', async () => {
+    const digest = async (vlans: string) => (await (await commutateur(`SW${vlans.length}`,
+      { name: 'RG1', revision: 1, instances: [[1, vlans]] })).executeCommand('show spanning-tree mst configuration digest'))
+      .split('\n').find((l) => l.startsWith('Digest'));
+    expect(await digest('10,11,12')).toBe(await digest('10-12'));
   });
 
-  it('le condense ne depend NI du nom NI de la revision', () => {
-    const a = mstConfigIdentifier({ name: 'RG1', revision: 1, instances: new Map([[1, '10']]) });
-    const b = mstConfigIdentifier({ name: 'RG2', revision: 7, instances: new Map([[1, '10']]) });
+  it('the digest depends NEITHER on the name NOR on the revision', () => {
+    const a = mstConfigIdentifier({ name: 'RG1', revision: 1, instances: new Map([[1, new Set([10])]]) });
+    const b = mstConfigIdentifier({ name: 'RG2', revision: 7, instances: new Map([[1, new Set([10])]]) });
     expect(a.digest).toBe(b.digest);
     expect(sameMstRegion(a, b)).toBe(false);
   });
 
-  it('l instance 0 recoit ce qui n est associe a personne d autre', () => {
-    expect(vlansMappedToInstanceZero(new Map([[1, '10']]))).toBe('1-9,11-4094');
-    expect(vlansMappedToInstanceZero(new Map())).toBe('1-4094');
+  it('instance 0 receives what nobody else maps', () => {
+    expect(compactVlanList(vlansMappedToInstanceZero(new Map([[1, new Set([10])]])))).toBe('1-9,11-4094');
+    expect(compactVlanList(vlansMappedToInstanceZero(new Map()))).toBe('1-4094');
   });
 
   it('la vue Cisco rend le condense, et la vue sans `digest` ne le rend pas', async () => {
     const sw = await commutateur('SW1', { name: 'RG1', revision: 1, instances: [[1, '10']] });
     const avecDigest = await sw.executeCommand('show spanning-tree mst configuration digest');
     expect(avecDigest).toContain('Digest');
-    expect(avecDigest).toContain(mstConfigDigest(new Map([[1, '10']])));
+    expect(avecDigest).toContain(mstConfigDigest(new Map([[1, new Set([10])]])));
 
     const sansDigest = await sw.executeCommand('show spanning-tree mst configuration');
     expect(sansDigest).not.toContain('Digest');

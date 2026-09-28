@@ -1,4 +1,5 @@
 import type { StpAgent } from '@/network/stp/StpAgent';
+import { formatVrpVlanList } from '@/network/devices/switch/VlanSet';
 
 const VRP_HELLO_SEC = 2;
 const VRP_FORWARD_DELAY_SEC = 15;
@@ -13,7 +14,7 @@ export function vrpStpRegionLines(agent: StpAgent | undefined): string[] {
   if (region.name) out.push(` region-name ${region.name}`);
   if (region.revision !== 0) out.push(` revision-level ${region.revision}`);
   for (const [id, vlans] of [...region.instances].sort((a, b) => a[0] - b[0])) {
-    out.push(` instance ${id} vlan ${vlans}`);
+    out.push(` instance ${id} vlan ${formatVrpVlanList(vlans)}`);
   }
   if (!agent?.isMstRegionPendingActivation()) out.push(' active region-configuration');
   return out;

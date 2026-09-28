@@ -72,7 +72,7 @@ describe('VTP v3 — MST database propagation', () => {
     const clientRegion = client.getStpAgent().getMstRegion();
     expect(clientRegion.name).toBe('REGION-A');
     expect(clientRegion.revision).toBe(5);
-    expect(clientRegion.instances.get(1)).toBe('10,20-25');
+    expect([...clientRegion.instances.get(1) ?? []].sort((a, b) => a - b)).toEqual([10, 20, 21, 22, 23, 24, 25]);
   });
 
   it('a later region change on the server re-syncs the client automatically', async () => {

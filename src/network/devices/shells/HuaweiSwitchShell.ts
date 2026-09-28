@@ -33,6 +33,7 @@ import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
 import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo, normaliserErreurVrp, tropDeParametres, huaweiTypeInterface, refuseMotInattenduVrp, rendreErreurVrp } from './cli-utils';
+import { vlansMappedToInstanceZero } from '@/network/stp/MstConfigId';
 import { getCredentialStore } from '@/network/equipment/RouterServiceCapabilities';
 import {
   displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
@@ -3567,7 +3568,24 @@ export class HuaweiSwitchShell implements ISwitchShell {
       }
       const id = parseInt(args[0], 10);
       if (isNaN(id)) return 'Error: Wrong parameter found at \'^\' position.';
-      this.applyToStpAgent(ag => ag.mapMstInstance(id, args.slice(2).join(' ')));
+      const parsed = parseVlanList(args.slice(2));
+      if ('at' in parsed) return refuseMotInattenduVrp(`instance ${args.join(' ')}`, args[2 + parsed.at] ?? args[2]);
+      this.applyToStpAgent(ag => ag.mapMstInstance(id, parsed.vlans));
+      return '';
+    });
+    t.registerGreedy('undo instance', 'Remove VLANs from an MST instance', (args) => {
+      if (args.length === 0) return 'Error: Incomplete command.';
+      const id = parseInt(args[0], 10);
+      if (isNaN(id)) return 'Error: Wrong parameter found at \'^\' position.';
+      if (args.length === 1) {
+        this.applyToStpAgent(ag => ag.unmapMstInstance(id));
+        return '';
+      }
+      if (args[1].toLowerCase() !== 'vlan') return refuseMotInattenduVrp(`undo instance ${args.join(' ')}`, args[1]);
+      if (args.length < 3) return 'Error: Incomplete command.';
+      const parsed = parseVlanList(args.slice(2));
+      if ('at' in parsed) return refuseMotInattenduVrp(`undo instance ${args.join(' ')}`, args[2 + parsed.at] ?? args[2]);
+      this.applyToStpAgent(ag => ag.unmapMstVlans(id, parsed.vlans));
       return '';
     });
     t.registerGreedy('revision-level', 'Set MST revision level', (args) => {
@@ -3590,8 +3608,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
         `Revision Level: ${region?.revision ?? 0}`,
         `Instance Vlans Mapped`,
       ];
-      for (const [instance, vlans] of region?.instances ?? []) {
-        lines.push(`${String(instance).padEnd(8)} ${vlans}`);
+      for (const [instance, vlans] of [...(region?.instances ?? [])].sort((a, b) => a[0] - b[0])) {
+        lines.push(`${String(instance).padEnd(8)} ${formatVrpVlanList(vlans)}`);
       }
       return lines.join('\n');
     });
@@ -3625,9 +3643,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
         `  Revision level       :${region?.revision ?? 0}`,
         '',
         '  Instance   VLANs Mapped',
-        '  0          1 to 4094',
+        `  0          ${formatVrpVlanList(vlansMappedToInstanceZero(region?.instances ?? new Map()))}`,
       ];
-      for (const [id, v] of region?.instances ?? []) lines.push(`  ${String(id).padEnd(11)}${v}`);
+      for (const [id, v] of [...(region?.instances ?? [])].sort((a, b) => a[0] - b[0])) {
+        lines.push(`  ${String(id).padEnd(11)}${formatVrpVlanList(v)}`);
+      }
       return lines.join('\n');
     });
     registerVrpLldpDisplayCommands(trie, {

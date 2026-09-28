@@ -5,11 +5,12 @@ import {
   type BridgeId, type StpBpdu, type StpConfig, type StpPortInfo, type StpPortRole,
   type StpPortGuards, type MstRegion,
   createDefaultStpConfig, compareBridge, bridgeEquals, defaultPathCost, defaultPathCostLong,
-  defaultPortGuards, createDefaultMstRegion, parseStpVlanList,
+  defaultPortGuards, createDefaultMstRegion,
   ETHERTYPE_STP, STP_BRIDGE_MAC, PVST_PLUS_MAC, UPLINKFAST_DEFAULT_RATE,
 } from './types';
 import { StpVlanInstance, type StpInstanceAgent, type StpForwardState } from './StpVlanInstance';
 import { mstConfigIdentifier, sameMstRegion, type MstConfigIdentifier } from './MstConfigId';
+import { compactVlanList } from '@/network/devices/shells/cli/vlanList';
 import { MACAddress, type EthernetFrame } from '../core/types';
 import type { LinkSendRequest } from '../layers/link/LinkLayer';
 import { Logger } from '../core/Logger';
@@ -272,8 +273,8 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
    */
   private instanceKeyForVlan(vlan: number): number {
     if (this.config.mode !== 'mstp') return vlan;
-    for (const [instanceId, vlanSpec] of this.mstRegion.instances) {
-      if (parseStpVlanList(vlanSpec).includes(vlan)) return instanceId;
+    for (const [instanceId, members] of this.mstRegion.instances) {
+      if (members.has(vlan)) return instanceId;
     }
     return 0;
   }
@@ -554,11 +555,25 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
 
   setMstName(name: string): void { this.mstRegionPending.name = name; }
   setMstRevision(rev: number): void { this.mstRegionPending.revision = rev; }
-  mapMstInstance(instanceId: number, vlans: string): void {
-    this.mstRegionPending.instances.set(instanceId, vlans);
+  mapMstInstance(instanceId: number, vlans: Iterable<number>): void {
+    const moved = new Set(vlans);
+    const instances = this.mstRegionPending.instances;
+    for (const [id, members] of instances) {
+      if (id !== instanceId) this.setMstInstanceMembers(id, [...members].filter((v) => !moved.has(v)));
+    }
+    if (instanceId !== 0) this.setMstInstanceMembers(instanceId, [...(instances.get(instanceId) ?? []), ...moved]);
+  }
+  unmapMstVlans(instanceId: number, vlans: Iterable<number>): void {
+    const removed = new Set(vlans);
+    this.setMstInstanceMembers(instanceId, [...(this.mstRegionPending.instances.get(instanceId) ?? [])]
+      .filter((v) => !removed.has(v)));
   }
   unmapMstInstance(instanceId: number): void {
     this.mstRegionPending.instances.delete(instanceId);
+  }
+  private setMstInstanceMembers(instanceId: number, vlans: readonly number[]): void {
+    if (vlans.length === 0) this.mstRegionPending.instances.delete(instanceId);
+    else this.mstRegionPending.instances.set(instanceId, new Set(vlans));
   }
 
   commitMstRegion(): void {
@@ -571,11 +586,11 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     this.copyMstRegion(this.mstRegion, this.mstRegionPending);
   }
 
-  applyMstRegion(name: string, revision: number, instances: [number, string][]): void {
+  applyMstRegion(name: string, revision: number, instances: Iterable<readonly [number, Iterable<number>]>): void {
     this.mstRegionPending.name = name;
     this.mstRegionPending.revision = revision;
     this.mstRegionPending.instances.clear();
-    for (const [id, vlans] of instances) this.mstRegionPending.instances.set(id, vlans);
+    for (const [id, vlans] of instances) this.mstRegionPending.instances.set(id, new Set(vlans));
     this.copyMstRegion(this.mstRegionPending, this.mstRegion);
     this.recomputeOnTopologyChange();
   }
@@ -867,7 +882,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     if (r.name) out.push(` name ${r.name}`);
     if (r.revision !== 0) out.push(` revision ${r.revision}`);
     for (const [instance, vlans] of [...r.instances].sort((a, b) => a[0] - b[0])) {
-      out.push(` instance ${instance} vlan ${vlans}`);
+      out.push(` instance ${instance} vlan ${compactVlanList(vlans)}`);
     }
     return out;
   }
