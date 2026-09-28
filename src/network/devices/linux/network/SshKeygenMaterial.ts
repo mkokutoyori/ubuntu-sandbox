@@ -1,5 +1,10 @@
 import { sha256 } from '@/crypto/hash/sha256';
 import { md5 } from '@/crypto/hash/md5';
+import { base64ToBytes, bytesToBase64, utf8ToBytes } from '@/crypto/encoding';
+import { ed25519PublicKey } from '@/crypto/ecc/ed25519';
+import { generateP256PrivateScalar, p256PublicKey, P256_FIELD_BYTES } from '@/crypto/ecc/p256';
+import { bitLength, generateRsaKeyPair, modInverse, type RandomBytes } from '@/crypto/rsa/rsa';
+import { SshReader, SshWriter } from '@/network/protocols/ssh/wire/SshDataTypes';
 
 export const KEYGEN_ALGORITHMS: Readonly<Record<string, string>> = {
   ed25519: 'ssh-ed25519',
@@ -9,66 +14,69 @@ export const KEYGEN_ALGORITHMS: Readonly<Record<string, string>> = {
 
 const PRIVATE_HEADER = '-----BEGIN OPENSSH PRIVATE KEY-----';
 const PRIVATE_FOOTER = '-----END OPENSSH PRIVATE KEY-----';
+const AUTH_MAGIC = 'openssh-key-v1\0';
+const UNENCRYPTED_BLOCK_SIZE = 8;
+const ARMOUR_LINE_LENGTH = 70;
+const NISTP256 = 'nistp256';
 
 export interface KeygenPair {
   readonly pub: string;
   readonly priv: string;
 }
 
-interface KeygenSecret {
-  readonly algorithm: string;
-  readonly key: string;
-  readonly comment: string;
-  readonly bits: number;
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
-}
-
-function fromBase64(text: string): Uint8Array {
-  const binary = atob(text);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-function decodedOrLiteral(text: string): Uint8Array {
-  try {
-    return fromBase64(text);
-  } catch {
-    return ascii(text);
+export type SshPrivateKey =
+  | {
+    readonly algorithm: 'ssh-ed25519';
+    readonly seed: Uint8Array;
+    readonly publicKey: Uint8Array;
+    readonly comment: string;
   }
-}
-
-function lengthPrefixed(parts: readonly Uint8Array[]): Uint8Array {
-  let total = 0;
-  for (const part of parts) total += 4 + part.length;
-  const out = new Uint8Array(total);
-  let at = 0;
-  for (const part of parts) {
-    out[at] = (part.length >>> 24) & 0xff;
-    out[at + 1] = (part.length >>> 16) & 0xff;
-    out[at + 2] = (part.length >>> 8) & 0xff;
-    out[at + 3] = part.length & 0xff;
-    out.set(part, at + 4);
-    at += 4 + part.length;
+  | {
+    readonly algorithm: 'ssh-rsa';
+    readonly n: bigint;
+    readonly e: bigint;
+    readonly d: bigint;
+    readonly iqmp: bigint;
+    readonly p: bigint;
+    readonly q: bigint;
+    readonly comment: string;
   }
-  return out;
-}
-
-function ascii(text: string): Uint8Array {
-  const out = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0xff;
-  return out;
-}
+  | {
+    readonly algorithm: 'ecdsa-sha2-nistp256';
+    readonly q: Uint8Array;
+    readonly d: bigint;
+    readonly comment: string;
+  };
 
 function randomBytes(count: number): Uint8Array {
   const out = new Uint8Array(count);
   for (let i = 0; i < count; i++) out[i] = Math.floor(Math.random() * 256);
   return out;
+}
+
+function deterministicBytes(seed: string): RandomBytes {
+  let counter = 0;
+  let pool = new Uint8Array(0);
+  return (count: number) => {
+    while (pool.length < count) {
+      const block = sha256(utf8ToBytes(`${seed}#${counter++}`));
+      const grown = new Uint8Array(pool.length + block.length);
+      grown.set(pool);
+      grown.set(block, pool.length);
+      pool = grown;
+    }
+    const out = pool.slice(0, count);
+    pool = pool.slice(count);
+    return out;
+  };
+}
+
+function decodedOrLiteral(text: string): Uint8Array {
+  try {
+    return base64ToBytes(text);
+  } catch {
+    return utf8ToBytes(text);
+  }
 }
 
 export function keygenBits(algorithm: string, requested?: number): number {
@@ -78,84 +86,144 @@ export function keygenBits(algorithm: string, requested?: number): number {
   return 256;
 }
 
-function publicBlob(algorithm: string, key: Uint8Array): string {
+function bigIntToBytes(n: bigint, length: number): Uint8Array {
+  const out = new Uint8Array(length);
+  let v = n;
+  for (let i = length - 1; i >= 0; i--) { out[i] = Number(v & 0xffn); v >>= 8n; }
+  return out;
+}
+
+function generateKey(algorithm: string, comment: string, bits: number, random: RandomBytes): SshPrivateKey {
   if (algorithm === 'ssh-rsa') {
-    return toBase64(lengthPrefixed([ascii(algorithm), new Uint8Array([1, 0, 1]), key]));
+    const { privateKey } = generateRsaKeyPair(Math.ceil(bits / 16) * 16, random);
+    const p = privateKey.p!;
+    const q = privateKey.q!;
+    return {
+      algorithm, n: privateKey.n, e: privateKey.e, d: privateKey.d,
+      iqmp: modInverse(q, p), p, q, comment,
+    };
   }
   if (algorithm === 'ecdsa-sha2-nistp256') {
-    return toBase64(lengthPrefixed([ascii(algorithm), ascii('nistp256'), key]));
+    const d = generateP256PrivateScalar(random);
+    const point = p256PublicKey(d);
+    const q = new Uint8Array(1 + 2 * P256_FIELD_BYTES);
+    q[0] = 0x04;
+    q.set(bigIntToBytes(point.x, P256_FIELD_BYTES), 1);
+    q.set(bigIntToBytes(point.y, P256_FIELD_BYTES), 1 + P256_FIELD_BYTES);
+    return { algorithm, q, d, comment };
   }
-  return toBase64(lengthPrefixed([ascii(algorithm), key]));
+  const seed = random(32);
+  return { algorithm: 'ssh-ed25519', seed, publicKey: ed25519PublicKey(seed), comment };
 }
 
-function keyLengthFor(algorithm: string, bits: number): number {
-  if (algorithm === 'ssh-rsa') return Math.ceil(bits / 8);
-  if (algorithm === 'ecdsa-sha2-nistp256') return 65;
-  return 32;
+export function sshPublicKeyBlob(key: SshPrivateKey): Uint8Array {
+  const writer = new SshWriter().writeString(key.algorithm);
+  if (key.algorithm === 'ssh-rsa') return writer.writeMpint(key.e).writeMpint(key.n).toBytes();
+  if (key.algorithm === 'ecdsa-sha2-nistp256') return writer.writeString(NISTP256).writeBytes(key.q).toBytes();
+  return writer.writeBytes(key.publicKey).toBytes();
 }
 
-function deterministicKey(algorithm: string, seed: string): Uint8Array {
-  const length = keyLengthFor(algorithm, keygenBits(algorithm));
-  const key = new Uint8Array(length);
-  for (let offset = 0, counter = 0; offset < length; offset += 32, counter++) {
-    key.set(sha256(ascii(`${seed}#${counter}`)).subarray(0, Math.min(32, length - offset)), offset);
+function publicLine(key: SshPrivateKey): string {
+  return `${key.algorithm} ${bytesToBase64(sshPublicKeyBlob(key))} ${key.comment}`;
+}
+
+function privateSection(key: SshPrivateKey, checkint: number): Uint8Array {
+  const writer = new SshWriter().writeUint32(checkint).writeUint32(checkint).writeString(key.algorithm);
+  if (key.algorithm === 'ssh-rsa') {
+    writer.writeMpint(key.n).writeMpint(key.e).writeMpint(key.d)
+      .writeMpint(key.iqmp).writeMpint(key.p).writeMpint(key.q);
+  } else if (key.algorithm === 'ecdsa-sha2-nistp256') {
+    writer.writeString(NISTP256).writeBytes(key.q).writeMpint(key.d);
+  } else {
+    const secret = new Uint8Array(64);
+    secret.set(key.seed);
+    secret.set(key.publicKey, 32);
+    writer.writeBytes(key.publicKey).writeBytes(secret);
   }
-  return key;
+  writer.writeString(key.comment);
+  const unpadded = writer.toBytes().length;
+  for (let pad = 1; (unpadded + pad - 1) % UNENCRYPTED_BLOCK_SIZE !== 0; pad++) writer.writeByte(pad);
+  return writer.toBytes();
 }
 
-export function keygenDeterministicPublicBlob(algorithm: string, seed: string): string {
-  return publicBlob(algorithm, deterministicKey(algorithm, seed));
+function privateFile(key: SshPrivateKey, checkint: number): string {
+  const body = new SshWriter()
+    .writeRaw(utf8ToBytes(AUTH_MAGIC))
+    .writeString('none')
+    .writeString('none')
+    .writeString('')
+    .writeUint32(1)
+    .writeBytes(sshPublicKeyBlob(key))
+    .writeBytes(privateSection(key, checkint))
+    .toBytes();
+  const armoured = bytesToBase64(body);
+  const lines: string[] = [];
+  for (let at = 0; at < armoured.length; at += ARMOUR_LINE_LENGTH) lines.push(armoured.slice(at, at + ARMOUR_LINE_LENGTH));
+  return `${PRIVATE_HEADER}\n${lines.join('\n')}\n${PRIVATE_FOOTER}\n`;
+}
+
+function checkintFrom(random: RandomBytes): number {
+  const [a, b, c, d] = random(4);
+  return ((a << 24) | (b << 16) | (c << 8) | d) >>> 0;
+}
+
+function pairFor(key: SshPrivateKey, random: RandomBytes): KeygenPair {
+  return { pub: publicLine(key), priv: privateFile(key, checkintFrom(random)) };
 }
 
 export function keygenDeterministicPair(
   algorithm: string, seed: string, comment: string,
 ): KeygenPair {
-  return assemblePair(algorithm, deterministicKey(algorithm, seed), comment);
-}
-
-function assemblePair(
-  algorithm: string, key: Uint8Array, comment: string, bits?: number,
-): KeygenPair {
-  const secret: KeygenSecret = {
-    algorithm, key: toBase64(key), comment, bits: bits ?? keygenBits(algorithm),
-  };
-  const armoured = toBase64(ascii(JSON.stringify(secret)));
-  const wrapped = armoured.match(/.{1,70}/g) ?? [armoured];
-  return {
-    pub: `${algorithm} ${publicBlob(algorithm, key)} ${comment}`,
-    priv: `${PRIVATE_HEADER}\n${wrapped.join('\n')}\n${PRIVATE_FOOTER}\n`,
-  };
+  const random = deterministicBytes(seed);
+  return pairFor(generateKey(algorithm, comment, keygenBits(algorithm), random), random);
 }
 
 export function keygenPair(algorithm: string, comment: string, bits?: number): KeygenPair {
-  const size = keygenBits(algorithm, bits);
-  return assemblePair(algorithm, randomBytes(keyLengthFor(algorithm, size)), comment, size);
+  return pairFor(generateKey(algorithm, comment, keygenBits(algorithm, bits), randomBytes), randomBytes);
 }
 
-function readSecret(material: string): KeygenSecret | null {
-  const body = material
-    .replace(PRIVATE_HEADER, '')
-    .replace(PRIVATE_FOOTER, '')
-    .replace(/\s+/g, '');
+function readPrivateKey(reader: SshReader, algorithm: string): SshPrivateKey | null {
+  if (algorithm === 'ssh-rsa') {
+    const [n, e, d, iqmp, p, q] = [0, 1, 2, 3, 4, 5].map(() => reader.readMpint());
+    return { algorithm, n, e, d, iqmp, p, q, comment: reader.readString() };
+  }
+  if (algorithm === 'ecdsa-sha2-nistp256') {
+    if (reader.readString() !== NISTP256) return null;
+    const q = reader.readBytes();
+    const d = reader.readMpint();
+    return { algorithm, q, d, comment: reader.readString() };
+  }
+  if (algorithm === 'ssh-ed25519') {
+    const publicKey = reader.readBytes();
+    const secret = reader.readBytes();
+    if (publicKey.length !== 32 || secret.length !== 64) return null;
+    return { algorithm, seed: secret.slice(0, 32), publicKey, comment: reader.readString() };
+  }
+  return null;
+}
+
+export function keygenPrivateKey(material: string): SshPrivateKey | null {
+  const body = material.replace(PRIVATE_HEADER, '').replace(PRIVATE_FOOTER, '').replace(/\s+/g, '');
   if (body === '') return null;
   try {
-    const parsed = JSON.parse(new TextDecoder().decode(fromBase64(body))) as Partial<KeygenSecret>;
-    if (typeof parsed.algorithm !== 'string' || typeof parsed.key !== 'string') return null;
-    return {
-      algorithm: parsed.algorithm,
-      key: parsed.key,
-      comment: typeof parsed.comment === 'string' ? parsed.comment : '',
-      bits: typeof parsed.bits === 'number' ? parsed.bits : 256,
-    };
+    const outer = new SshReader(base64ToBytes(body));
+    const magic = outer.readRaw(AUTH_MAGIC.length);
+    if (new TextDecoder().decode(magic) !== AUTH_MAGIC) return null;
+    if (outer.readString() !== 'none' || outer.readString() !== 'none') return null;
+    outer.readBytes();
+    if (outer.readUint32() !== 1) return null;
+    outer.readBytes();
+    const inner = new SshReader(outer.readBytes());
+    if (inner.readUint32() !== inner.readUint32()) return null;
+    return readPrivateKey(inner, inner.readString());
   } catch {
     return null;
   }
 }
 
 export function keygenPublicOf(material: string): string | null {
-  const secret = readSecret(material);
-  if (secret === null) return null;
-  return `${secret.algorithm} ${publicBlob(secret.algorithm, fromBase64(secret.key))} ${secret.comment}`;
+  const key = keygenPrivateKey(material);
+  return key === null ? null : publicLine(key);
 }
 
 const ALGORITHM_LABELS: Readonly<Record<string, string>> = {
@@ -170,15 +238,24 @@ export interface KeygenKeyFacts {
   readonly comment: string;
 }
 
+function publicKeyBits(algorithm: string, blob: string): number {
+  if (algorithm !== 'ssh-rsa') return 256;
+  try {
+    const reader = new SshReader(base64ToBytes(blob));
+    reader.readString();
+    reader.readMpint();
+    return bitLength(reader.readMpint());
+  } catch {
+    return 0;
+  }
+}
+
 export function keygenKeyFacts(publicLine: string): KeygenKeyFacts {
   const tokens = publicLine.trim().split(/\s+/);
   const algorithm = tokens[0] ?? '';
-  const bytes = fromBase64(tokens[1] ?? '');
   return {
     label: ALGORITHM_LABELS[algorithm] ?? algorithm.toUpperCase(),
-    bits: algorithm === 'ssh-rsa'
-      ? (bytes.length - 4 - algorithm.length - 4 - 3 - 4) * 8
-      : 256,
+    bits: publicKeyBits(algorithm, tokens[1] ?? ''),
     comment: tokens.slice(2).join(' '),
   };
 }
@@ -188,7 +265,7 @@ export function keygenBlobDigest(blob: string, hash: string): string | null {
   if (wanted !== 'sha256' && wanted !== 'md5') return null;
   const bytes = decodedOrLiteral(blob);
   return wanted === 'sha256'
-    ? `SHA256:${toBase64(sha256(bytes)).replace(/=+$/, '')}`
+    ? `SHA256:${bytesToBase64(sha256(bytes)).replace(/=+$/, '')}`
     : `MD5:${[...md5(bytes)].map(b => b.toString(16).padStart(2, '0')).join(':')}`;
 }
 
@@ -214,7 +291,7 @@ function randomartBorder(label: string): string {
 
 export function keygenRandomart(publicLine: string): string {
   const facts = keygenKeyFacts(publicLine);
-  const digest = sha256(fromBase64(publicLine.trim().split(/\s+/)[1] ?? ''));
+  const digest = sha256(decodedOrLiteral(publicLine.trim().split(/\s+/)[1] ?? ''));
   const field = Array.from({ length: RANDOMART_WIDTH }, () => new Array<number>(RANDOMART_HEIGHT).fill(0));
   const last = RANDOMART_SYMBOLS.length - 1;
   const startX = Math.floor(RANDOMART_WIDTH / 2);

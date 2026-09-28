@@ -14,6 +14,8 @@
  * deliverable (`SftpHandleTable.ts`), not this phase's.
  */
 
+import { SshReader, SshWriter } from '../wire/SshDataTypes';
+
 export const SFTP_TYPE = {
   INIT: 1, VERSION: 2, OPEN: 3, CLOSE: 4, READ: 5, WRITE: 6,
   LSTAT: 7, FSTAT: 8, SETSTAT: 9, FSETSTAT: 10, OPENDIR: 11, READDIR: 12,
@@ -113,39 +115,7 @@ export type SftpWirePacket =
   | SftpReadlinkPacket | SftpSymlinkPacket | SftpLinkPacket
   | SftpStatusPacket | SftpHandlePacket | SftpDataPacket | SftpNamePacket | SftpAttrsPacket;
 
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-
-class ByteWriter {
-  private chunks: Uint8Array[] = [];
-
-  writeByte(b: number): this {
-    this.chunks.push(new Uint8Array([b & 0xff]));
-    return this;
-  }
-
-  writeUint32(n: number): this {
-    this.chunks.push(new Uint8Array([(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff]));
-    return this;
-  }
-
-  /** Encoded as two big-endian uint32 halves; values stay within `Number.MAX_SAFE_INTEGER` (file sizes/offsets never approach 2^53 in this simulator). */
-  writeUint64(n: number): this {
-    const hi = Math.floor(n / 0x100000000);
-    const lo = n >>> 0;
-    return this.writeUint32(hi).writeUint32(lo);
-  }
-
-  writeString(s: string): this {
-    const bytes = encoder.encode(s);
-    return this.writeUint32(bytes.length).writeRaw(bytes);
-  }
-
-  writeRaw(bytes: Uint8Array): this {
-    this.chunks.push(bytes);
-    return this;
-  }
-
+class ByteWriter extends SshWriter {
   writeAttrs(attrs: SftpWireAttrs): this {
     let flags = 0;
     if (attrs.size !== undefined) flags |= ATTR_FLAG.SIZE;
@@ -171,57 +141,9 @@ class ByteWriter {
     }
     return this;
   }
-
-  toBytes(): Uint8Array {
-    const total = this.chunks.reduce((sum, c) => sum + c.length, 0);
-    const out = new Uint8Array(total);
-    let offset = 0;
-    for (const c of this.chunks) { out.set(c, offset); offset += c.length; }
-    return out;
-  }
 }
 
-class ByteReader {
-  private offset = 0;
-  constructor(private readonly bytes: Uint8Array) {}
-
-  private require(n: number): void {
-    if (this.offset + n > this.bytes.length) throw new Error('sftp: truncated packet');
-  }
-
-  readByte(): number {
-    this.require(1);
-    return this.bytes[this.offset++];
-  }
-
-  readUint32(): number {
-    this.require(4);
-    const [a, b, c, d] = [this.bytes[this.offset], this.bytes[this.offset + 1], this.bytes[this.offset + 2], this.bytes[this.offset + 3]];
-    this.offset += 4;
-    return ((a << 24) | (b << 16) | (c << 8) | d) >>> 0;
-  }
-
-  readUint64(): number {
-    const hi = this.readUint32();
-    const lo = this.readUint32();
-    return hi * 0x100000000 + lo;
-  }
-
-  readString(): string {
-    const len = this.readUint32();
-    this.require(len);
-    const value = decoder.decode(this.bytes.slice(this.offset, this.offset + len));
-    this.offset += len;
-    return value;
-  }
-
-  readRaw(len: number): Uint8Array {
-    this.require(len);
-    const value = this.bytes.slice(this.offset, this.offset + len);
-    this.offset += len;
-    return value;
-  }
-
+class ByteReader extends SshReader {
   readAttrs(): SftpWireAttrs {
     const flags = this.readUint32();
     const attrs: {
@@ -248,10 +170,6 @@ class ByteReader {
       attrs.extended = extended;
     }
     return attrs;
-  }
-
-  get remaining(): number {
-    return this.bytes.length - this.offset;
   }
 }
 

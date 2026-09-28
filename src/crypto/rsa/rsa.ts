@@ -17,9 +17,9 @@
  * quoi que ce soit de réel.
  *
  * La taille par défaut est un choix MESURÉ, pas une facilité : une clé de
- * 2048 bits coûte en moyenne 460 ms à fabriquer en JavaScript, et la
- * suite de tests de ce dépôt en génère plus de deux mille — un quart
- * d'heure d'attente pour des clés dont aucun test ne regarde la taille.
+ * 2048 bits coûte en moyenne 190 ms à fabriquer en JavaScript, et la
+ * suite de tests de ce dépôt en génère plus de deux mille — six minutes
+ * d'attente pour des clés dont aucun test ne regarde la taille.
  * À 512 bits la même clé coûte 9 ms. La taille demandée est donc toujours
  * honorée (`openssl genrsa 2048` fabrique un vrai module de 2048 bits) ;
  * seules les clés dont personne n'a précisé la taille prennent la petite.
@@ -35,7 +35,13 @@ export const DEFAULT_MODULUS_BITS = 512;
 export const PUBLIC_EXPONENT = 65537n;
 
 export interface RsaPublicKey { readonly n: bigint; readonly e: bigint }
-export interface RsaPrivateKey { readonly n: bigint; readonly e: bigint; readonly d: bigint }
+export interface RsaPrivateKey {
+  readonly n: bigint;
+  readonly e: bigint;
+  readonly d: bigint;
+  readonly p?: bigint;
+  readonly q?: bigint;
+}
 
 export function modPow(base: bigint, exp: bigint, m: bigint): bigint {
   let result = 1n;
@@ -55,7 +61,7 @@ function egcd(a: bigint, b: bigint): { g: bigint; x: bigint; y: bigint } {
   return { g: r.g, x: r.y, y: r.x - (a / b) * r.y };
 }
 
-function invMod(a: bigint, m: bigint): bigint {
+export function modInverse(a: bigint, m: bigint): bigint {
   const { g, x } = egcd(a % m, m);
   if (g !== 1n) throw new Error('RSA: no modular inverse');
   return ((x % m) + m) % m;
@@ -118,12 +124,40 @@ export function isProbablePrime(n: bigint, rounds = 20, random: RandomBytes = de
   return true;
 }
 
+const SIEVE_LIMIT = 1 << 14;
+
+const SIEVE_PRIMES: readonly number[] = (() => {
+  const composite = new Uint8Array(SIEVE_LIMIT);
+  const primes: number[] = [];
+  for (let n = 3; n < SIEVE_LIMIT; n += 2) {
+    if (composite[n]) continue;
+    primes.push(n);
+    for (let m = n * n; m < SIEVE_LIMIT; m += 2 * n) composite[m] = 1;
+  }
+  return primes;
+})();
+
+const SEARCH_SPAN = 1 << 12;
+
+function divisibleBySievePrime(residues: readonly number[], delta: number): boolean {
+  for (let i = 0; i < residues.length; i++) {
+    if ((residues[i] + delta) % SIEVE_PRIMES[i] === 0) return true;
+  }
+  return false;
+}
+
 function generatePrime(bits: number, random: RandomBytes): bigint {
   for (;;) {
-    const candidate = randomOddCandidate(bits, random);
-    if (candidate % PUBLIC_EXPONENT === 0n) continue;
-    if ((candidate - 1n) % PUBLIC_EXPONENT === 0n) continue; // e doit être inversible mod (p-1)
-    if (isProbablePrime(candidate, 20, random)) return candidate;
+    const start = randomOddCandidate(bits, random);
+    const residues = SIEVE_PRIMES.map((p) => Number(start % BigInt(p)));
+    for (let delta = 0; delta < SEARCH_SPAN; delta += 2) {
+      if (divisibleBySievePrime(residues, delta)) continue;
+      const candidate = start + BigInt(delta);
+      if (bitLength(candidate) !== bits) break;
+      if (candidate % PUBLIC_EXPONENT === 0n) continue;
+      if ((candidate - 1n) % PUBLIC_EXPONENT === 0n) continue; // e doit être inversible mod (p-1)
+      if (isProbablePrime(candidate, 20, random)) return candidate;
+    }
   }
 }
 
@@ -147,10 +181,10 @@ export function generateRsaKeyPair(
     const n = p * q;
     if (bitLength(n) !== bits) continue;
     const phi = (p - 1n) * (q - 1n);
-    const d = invMod(PUBLIC_EXPONENT, phi);
+    const d = modInverse(PUBLIC_EXPONENT, phi);
     return {
       publicKey: { n, e: PUBLIC_EXPONENT },
-      privateKey: { n, e: PUBLIC_EXPONENT, d },
+      privateKey: { n, e: PUBLIC_EXPONENT, d, p, q },
     };
   }
 }
