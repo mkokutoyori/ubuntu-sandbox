@@ -136,6 +136,7 @@ import { estAdresseIPv4 } from './cli-utils';
 import { boundedInteger } from '@/cli/ArgumentTypes';
 import { BGP_ATTRIBUTE_MAX, BGP_HOLD_TIME_MAX } from '@/network/bgp/attributes';
 import { registerHuaweiKeypairCommands } from './huawei/HuaweiKeypairCommands';
+import { RsaPeerPublicKeyEditor } from './huawei/HuaweiRsaPeerPublicKeyEditor';
 
 const JOURS_VRP: Record<string, string> = {
   daily: 'daily', 'working-day': 'weekdays', 'off-day': 'weekend',
@@ -619,8 +620,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   // ─── Prompt Generation ─────────────────────────────────────────────
 
+  private readonly peerKeys = new RsaPeerPublicKeyEditor();
+
   getPrompt(router: Router): string {
     const host = router._getHostnameInternal();
+    const keyView = this.peerKeys.viewSuffix();
+    if (keyView !== null) return `[${host}${keyView}]`;
     switch (this.mode) {
       case 'user':       return `<${host}>`;
       case 'system':     return `[${host}]`;
@@ -676,6 +681,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     router.setRouteTrackResolver((track) => resolveVrpTrack(router, track));
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
+    if (this.peerKeys.isEditing()) return this.peerKeys.handle(trimmed, router.getManagementService());
 
     // VRP comment/separator lines: `#` (optionally followed by text) is a
     // silent no-op in every view — VRP configuration files use it as the
@@ -2159,7 +2165,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
-    registerHuaweiKeypairCommands(t, () => this.r());
+    registerHuaweiKeypairCommands(t, () => this.r(), this.peerKeys);
 
     t.registerGreedy('cpu-defend policy', 'Enter CPU-defend policy', (args, raw) => {
       const r = vrpStores(this.r());

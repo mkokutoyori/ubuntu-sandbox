@@ -2942,6 +2942,7 @@ export abstract class Switch extends Equipment {
     return this.getCredentialStore().admits(user, service, this.unsetServiceTypeAdmits());
   }
   protected sshPasswordAllowed(_user: string): boolean { return true; }
+  protected sshPublicKeyAdmitted?(user: string, offeredKeyMaterial: string): boolean;
   protected sshForcedCommand(_user: string): string | null { return null; }
   protected sshServerLimits(): Partial<SshServerConfig> { return {}; }
 
@@ -3034,6 +3035,10 @@ export abstract class Switch extends Equipment {
       isClientBlocked: () => !this._getVtyLineConfig().incomingVerdict().accept,
       recordLogin: (user, fromIp) => this.recordSshLogin(user, fromIp, '', true),
       forcedCommand: (user) => this.sshForcedCommand(user),
+      ...(this.sshPublicKeyAdmitted ? {
+        publicKeyAdmitted: (user: string, key: string) =>
+          this.accountAdmits(user, 'ssh') && this.sshPublicKeyAdmitted!(user, key),
+      } : {}),
     }, this.sshServerLimits()));
   }
 

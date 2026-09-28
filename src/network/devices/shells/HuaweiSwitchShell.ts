@@ -80,6 +80,7 @@ import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay, remoteAccessConfigBlocksVrp,
 } from './huawei/HuaweiCommonSecurity';
 import { registerHuaweiKeypairCommands } from './huawei/HuaweiKeypairCommands';
+import { RsaPeerPublicKeyEditor } from './huawei/HuaweiRsaPeerPublicKeyEditor';
 import { lignesConfigSnmpVrp } from './huawei/huaweiSnmpCommands';
 import { buildDhcpPoolCommands } from './huawei/HuaweiDhcpCommands';
 import { formatHuaweiAcl, formatHuaweiAclConfig } from './huawei/HuaweiAclFormat';
@@ -676,8 +677,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return '';
   }
 
+  private readonly peerKeys = new RsaPeerPublicKeyEditor();
+
   getPrompt(sw: Switch): string {
     const host = sw.getHostname();
+    const keyView = this.peerKeys.viewSuffix();
+    if (keyView !== null) return `[${host}${keyView}]`;
     switch (this.mode) {
       case 'user':      return `<${host}>`;
       case 'system':    return `[${host}]`;
@@ -705,6 +710,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
   execute(sw: Switch, input: string): string {
     const trimmed = input.trim();
     if (!trimmed) return '';
+    if (this.peerKeys.isEditing()) {
+      const device: HuaweiSwitchDevice = sw;
+      return this.peerKeys.handle(trimmed, device.getManagementService?.() ?? null);
+    }
     // VRP comment/separator lines: `#` is a silent no-op in every view
     // (config-file section separator) — pasting a config must not error.
     if (trimmed.startsWith('#')) return '';
@@ -1271,7 +1280,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     // Shared management commands (SSH/Telnet/SNMP/NTP/syslog/…) — DRY
-    registerHuaweiKeypairCommands(this.systemTrie, () => this.swRef);
+    registerHuaweiKeypairCommands(this.systemTrie, () => this.swRef, this.peerKeys);
     registerHuaweiCommonSecurity(this.systemTrie,
       () => commeRouteur(this.swRef),
       () => this.swRef?.getNtpAgent(),

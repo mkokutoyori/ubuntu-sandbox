@@ -824,7 +824,7 @@ describe('§10 — SSH authentication methods', () => {
         await l.hwR1.executeCommand('system-view');
         await l.hwR1.executeCommand(`rsa peer-public-key linux1key encoding-type openssh`);
         await l.hwR1.executeCommand(`public-key-code begin`);
-        await l.hwR1.executeCommand(pub.trim().split(' ')[1]);
+        await l.hwR1.executeCommand(pub.trim());
         await l.hwR1.executeCommand(`public-key-code end`);
         await l.hwR1.executeCommand(`peer-public-key end`);
         await l.hwR1.executeCommand('ssh user admin authentication-type rsa');

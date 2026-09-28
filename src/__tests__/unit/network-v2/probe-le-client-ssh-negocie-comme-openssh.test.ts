@@ -32,14 +32,13 @@
  * MaxAuthTries 6 d'OpenSSH. Le cas regle donc MaxAuthTries a 4, pour que
  * la coupure vienne du serveur SSH et non du pare-feu.
  *
- * Discriminee contre l'etat d'avant (`git stash push -- src/network
- * src/terminal src/shell`) : 11 des 15 cas tombent. Passent des deux
- * cotes :
- *  - les trois TEMOINS : trois mauvais mots de passe finissent sur la
+ * Discriminee contre l'etat d'avant (f65b09b8c) : 12 des 17 cas
+ * tombent. Passent des deux cotes :
+ *  - les quatre TEMOINS : trois mauvais mots de passe finissent sur la
  *    liste du serveur par defaut, une cle autorisee ouvre la session sans
- *    invite, et BatchMode dans un script devant le serveur par defaut
- *    cite `(publickey,password)`. Sans eux, une sonde de refus ne
- *    prouverait rien du laboratoire ;
+ *    invite au terminal comme dans un script, et BatchMode dans un script
+ *    devant le serveur par defaut cite `(publickey,password)`. Sans eux,
+ *    une sonde de refus ne prouverait rien du laboratoire ;
  *  - `KbdInteractiveAuthentication=no` laisse l'invite du mot de passe :
  *    l'ancien client ne connaissait que celle-la. Il garde le correctif
  *    honnete, qui ne doit pas proposer keyboard-interactive quand
@@ -286,6 +285,24 @@ describe('a script sees the list the server advertised', () => {
     const out = await client.executeCommand(`ssh -o BatchMode=yes alice@${SERVER} true`);
 
     expect(out).toContain(`alice@${SERVER}: Permission denied (publickey,keyboard-interactive).`);
+  });
+
+  it('an authorized key opens the session in a script — WITNESS', async () => {
+    const lab = await buildLab();
+    await lab.client.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
+    await authorize(lab, { 'id_rsa.pub': '' });
+
+    expect(await lab.client.executeCommand(`ssh alice@${SERVER} whoami`)).toMatch(/^alice$/m);
+  });
+
+  it('PreferredAuthentications=password in a script does not offer the key', async () => {
+    const lab = await buildLab();
+    await lab.client.executeCommand("ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa");
+    await authorize(lab, { 'id_rsa.pub': '' });
+    const out = await lab.client.executeCommand(
+      `ssh -o PreferredAuthentications=password alice@${SERVER} whoami`, 'wrong\n');
+
+    expect(out).not.toMatch(/^alice$/m);
   });
 
   it('BatchMode against the default server — WITNESS', async () => {

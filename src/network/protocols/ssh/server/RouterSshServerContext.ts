@@ -81,6 +81,7 @@ export interface RouterSshServerDeps {
   /** Optional auth-failure hook for the audit log. */
   recordAuthFailure?(user: string, fromIp: string, reason: string): void;
   forcedCommand?(user: string): string | null;
+  publicKeyAdmitted?(user: string, offeredKeyMaterial: string): boolean;
 }
 
 export class RouterSshServerContext implements ISshServerContext {
@@ -220,14 +221,14 @@ export class RouterSshServerContext implements ISshServerContext {
             return this.deps.aaaAuthenticate!(user, password);
           }
         : undefined,
-      // Public-key auth on routers is plumbed but always rejects until
-      // `ip ssh pubkey-chain` / `ssh user authentication-type rsa` is
-      // wired into NetworkOsCredentialStore — placeholder so the handler
-      // surfaces the right "no key" message in the meantime.
-      checkPublicKey: (_user, _publicKey) => false,
+      checkPublicKey: (user, publicKey) => {
+        attemptsLeft = Math.max(0, attemptsLeft - 1);
+        return this.deps.publicKeyAdmitted?.(user, publicKey) ?? false;
+      },
       getAttemptsRemaining: () => attemptsLeft,
       getAvailableMethods: (): readonly AuthMethodType[] => {
         const methods: AuthMethodType[] = [];
+        if (this.config.pubkeyAuthentication && this.deps.publicKeyAdmitted) methods.push('publickey');
         if (this.config.passwordAuthentication) methods.push('password');
         return methods;
       },

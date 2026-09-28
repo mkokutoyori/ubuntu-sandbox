@@ -1238,6 +1238,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.getCredentialStore().recordLoginSuccess(user, ip, 'password');
       },
       recordLogout: (user, ip) => this.closeWireVtySession(user, ip),
+      ...(this.sshPublicKeyAdmitted ? {
+        publicKeyAdmitted: (user: string, key: string) =>
+          this.accountAdmits(user, 'ssh') && this.sshPublicKeyAdmitted!(user, key),
+      } : {}),
     }, this.sshServerLimits());
     return new SshServerHandler(ctx);
   }
@@ -4322,6 +4326,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.getCredentialStore().admits(user, service, this.unsetServiceTypeAdmits());
   }
   protected sshPasswordAllowed(_user: string): boolean { return true; }
+  protected sshPublicKeyAdmitted?(user: string, offeredKeyMaterial: string): boolean;
   protected sshForcedCommand(_user: string): string | null { return null; }
   private sshPasswordLoginAdmitted(user: string): boolean {
     return this.accountAdmits(user, 'ssh') && this.sshPasswordAllowed(user);
