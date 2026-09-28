@@ -27,6 +27,7 @@ export interface TcpdumpDeps {
   now(): Date;
   delay(ms: number): Promise<void>;
   onCancelRequested(cb: () => void): () => void;
+  runsSupervised?(): boolean;
   runsDetached?(): boolean;
   readFile(path: string): string | null;
   writeFile(path: string, content: string, asUser?: string): boolean;
@@ -276,6 +277,7 @@ async function runCapture(
   const target = opt.count;
   const detached = deps.runsDetached?.() === true;
   const streaming = deps.stream !== undefined;
+  const supervised = deps.runsSupervised?.() === true;
 
   await new Promise<void>((resolve) => {
     let settled = false;
@@ -310,7 +312,7 @@ async function runCapture(
     unsubscribeCancel = deps.onCancelRequested(finish);
     if (settled) {
       unsubscribeCapture();
-    } else if (streaming) {
+    } else if (streaming || supervised) {
       return;
     } else if (detached && target === null) {
       resolve();

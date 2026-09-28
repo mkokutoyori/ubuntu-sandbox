@@ -33,6 +33,7 @@ import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
 import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo, normaliserErreurVrp, tropDeParametres, huaweiTypeInterface, refuseMotInattenduVrp, rendreErreurVrp } from './cli-utils';
+import { vlansMappedToInstanceZero } from '@/network/stp/MstConfigId';
 import { getCredentialStore } from '@/network/equipment/RouterServiceCapabilities';
 import {
   displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
@@ -50,7 +51,7 @@ import { vrpMtuFamily } from '@/cli/vendors/vrp/vrpInterfaceParamsFamily';
 import { vrpClockFamily, VRP_TIMEZONE_DEFAUT } from '@/cli/vendors/vrp/vrpClockFamily';
 import { mqcMatchLine, mqcRemarkLines } from '../Switch';
 import { DSCP_KEYWORD_TO_VALUE } from '../router/ACLEngine';
-import { resolveHuaweiInterfaceName, huaweiDisplayInterfaceName } from './cli-utils';
+import { resolveHuaweiInterfaceName, huaweiDisplayInterfaceName, huaweiShortInterfaceName } from './cli-utils';
 import { iosInterfaceStatus } from '../inspection/InterfaceStatusView';
 import {
   type LigneIpBrief, type LigneInterface, protocoleVrp, rendreIpInterfaceBrief,
@@ -95,7 +96,7 @@ import {
 import { describeHuaweiArguments } from './huawei/huaweiArgumentHelp';
 import { buildActorState, lacpStateBits } from '@/network/lacp/types';
 import { LOAD_BALANCE_METHODS } from '@/network/lacp/loadBalance';
-import { parseVlanList } from '../switch/VlanSet';
+import { formatVrpVlanList, parseVlanList } from '../switch/VlanSet';
 import { boundedInteger } from '@/cli/ArgumentTypes';
 
 const VUES_SWITCH = [
@@ -184,6 +185,19 @@ function portTypeVrp(nom: string): string {
   if (/^TenGigabitEthernet|^XGigabitEthernet/i.test(nom)) return '10GE';
   if (/^FastEthernet|^Ethernet/i.test(nom)) return '100M';
   return 'GE';
+}
+
+const VLAN_PORTS_PER_ROW = 4;
+const VLAN_PORT_CELL_WIDTH = 16;
+
+function vlanPortRows(tag: 'UT' | 'TG', cells: readonly string[]): string[] {
+  const rows: string[] = [];
+  for (let i = 0; i < cells.length; i += VLAN_PORTS_PER_ROW) {
+    const chunk = cells.slice(i, i + VLAN_PORTS_PER_ROW);
+    const text = chunk.map((cell, k) => (k < chunk.length - 1 ? cell.padEnd(VLAN_PORT_CELL_WIDTH) : cell)).join('');
+    rows.push(`${i === 0 ? `${tag}:` : ' '.repeat(tag.length + 1)}${text}`);
+  }
+  return rows;
 }
 
 const MST_REVISION_MAX = 65535;
@@ -325,7 +339,6 @@ export class HuaweiSwitchShell implements ISwitchShell {
   }
 
   /** Per-VLAN description (vlan-view `description …`). */
-  private vlanDesc = new Map<number, string>();
 
   private portGroupMembers: string[] = [];
   private portGroupName: string | null = null;
@@ -2010,10 +2023,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // Un nom de VLAN VRP est un seul mot.
     this.vlanTrie.allowArgs('name', 1);
 
-    // description <text> — stored per-VLAN.
     this.vlanTrie.registerGreedy('description', 'Set VLAN description', (args) => {
-      if (this.selectedVlan === null || args.length < 1) return 'Error: Incomplete command.';
-      this.vlanDesc.set(this.selectedVlan, args.join(' '));
+      if (!this.swRef || this.selectedVlan === null || args.length < 1) return 'Error: Incomplete command.';
+      this.swRef.setVlanDescription(this.selectedVlan, args.join(' '));
       return '';
     });
 
@@ -2524,8 +2536,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // display vlan [summary | <id>]
     trie.registerGreedy('display vlan', 'Display VLAN information', (args) => {
       if (!this.swRef) return '';
-      const full = this.displayVlan(this.swRef);
-      if (args.length === 0) return full;
+      if (args.length === 0) return this.displayVlan(this.swRef);
       if (args[0].toLowerCase() === 'summary') {
         const ids: number[] = [];
         for (const [id] of this.swRef.getVLANs()) ids.push(id);
@@ -2539,11 +2550,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
       }
       const id = parseInt(args[0], 10);
       if (!isNaN(id)) {
-        const lines = full.split('\n');
-        const hit = lines.filter(l => new RegExp(`(^|\\s)${id}(\\s|$)`).test(l));
-        return [lines[0] ?? '', ...(hit.length ? hit : [`VLAN ${id} not found`])].join('\n');
+        return this.swRef.getVLAN(id) ? this.displayVlan(this.swRef, id) : `VLAN ${id} not found`;
       }
-      return full;
+      return this.displayVlan(this.swRef);
     });
 
     // `display port` seul répondait « Incomplete command » alors que
@@ -3559,7 +3568,24 @@ export class HuaweiSwitchShell implements ISwitchShell {
       }
       const id = parseInt(args[0], 10);
       if (isNaN(id)) return 'Error: Wrong parameter found at \'^\' position.';
-      this.applyToStpAgent(ag => ag.mapMstInstance(id, args.slice(2).join(' ')));
+      const parsed = parseVlanList(args.slice(2));
+      if ('at' in parsed) return refuseMotInattenduVrp(`instance ${args.join(' ')}`, args[2 + parsed.at] ?? args[2]);
+      this.applyToStpAgent(ag => ag.mapMstInstance(id, parsed.vlans));
+      return '';
+    });
+    t.registerGreedy('undo instance', 'Remove VLANs from an MST instance', (args) => {
+      if (args.length === 0) return 'Error: Incomplete command.';
+      const id = parseInt(args[0], 10);
+      if (isNaN(id)) return 'Error: Wrong parameter found at \'^\' position.';
+      if (args.length === 1) {
+        this.applyToStpAgent(ag => ag.unmapMstInstance(id));
+        return '';
+      }
+      if (args[1].toLowerCase() !== 'vlan') return refuseMotInattenduVrp(`undo instance ${args.join(' ')}`, args[1]);
+      if (args.length < 3) return 'Error: Incomplete command.';
+      const parsed = parseVlanList(args.slice(2));
+      if ('at' in parsed) return refuseMotInattenduVrp(`undo instance ${args.join(' ')}`, args[2 + parsed.at] ?? args[2]);
+      this.applyToStpAgent(ag => ag.unmapMstVlans(id, parsed.vlans));
       return '';
     });
     t.registerGreedy('revision-level', 'Set MST revision level', (args) => {
@@ -3582,8 +3608,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
         `Revision Level: ${region?.revision ?? 0}`,
         `Instance Vlans Mapped`,
       ];
-      for (const [instance, vlans] of region?.instances ?? []) {
-        lines.push(`${String(instance).padEnd(8)} ${vlans}`);
+      for (const [instance, vlans] of [...(region?.instances ?? [])].sort((a, b) => a[0] - b[0])) {
+        lines.push(`${String(instance).padEnd(8)} ${formatVrpVlanList(vlans)}`);
       }
       return lines.join('\n');
     });
@@ -3617,9 +3643,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
         `  Revision level       :${region?.revision ?? 0}`,
         '',
         '  Instance   VLANs Mapped',
-        '  0          1 to 4094',
+        `  0          ${formatVrpVlanList(vlansMappedToInstanceZero(region?.instances ?? new Map()))}`,
       ];
-      for (const [id, v] of region?.instances ?? []) lines.push(`  ${String(id).padEnd(11)}${v}`);
+      for (const [id, v] of [...(region?.instances ?? [])].sort((a, b) => a[0] - b[0])) {
+        lines.push(`  ${String(id).padEnd(11)}${formatVrpVlanList(v)}`);
+      }
       return lines.join('\n');
     });
     registerVrpLldpDisplayCommands(trie, {
@@ -3884,18 +3912,23 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return this.displayCurrentConfigInterface(this.swRef, this.selectedInterface);
     }
     if (this.mode === 'vlan' && this.selectedVlan !== null) {
-      const tete = `vlan ${this.selectedVlan}`;
-      const out: string[] = ['#'];
-      let dedans = false;
-      for (const l of this.displayCurrentConfig(this.swRef).split('\n')) {
-        if (!dedans) { if (l === tete) { dedans = true; out.push(l); } continue; }
-        if (l === '#' || (l.length > 0 && !/^\s/.test(l))) break;
-        out.push(l);
-      }
-      out.push('#');
-      return out.join('\n');
+      return ['#', `vlan ${this.selectedVlan}`, ...this.vlanBlockBody(this.swRef, this.selectedVlan), '#'].join('\n');
     }
     return this.displayCurrentConfig(this.swRef);
+  }
+
+  private vlanBlockBody(sw: HuaweiSwitchDevice, id: number): string[] {
+    const vlan = sw.getVLAN(id);
+    if (!vlan) return [];
+    const body: string[] = [];
+    if (vlan.description) body.push(` description ${vlan.description}`);
+    if (vlan.name) body.push(` name ${vlan.name}`);
+    for (const extra of lignesDuVlan(vlan)) body.push(` ${extra}`);
+    const politique = sw.getVlanTrafficPolicy?.(id);
+    if (politique) body.push(` traffic-policy ${politique} inbound`);
+    const apprentissage = new Map(sw.getMacLearningDisabledVlans()).get(id);
+    if (apprentissage) body.push(` ${ligneApprentissageMac(apprentissage)}`);
+    return body;
   }
 
   private displayEthTrunkConfig(id: number): string {
@@ -4169,7 +4202,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (this.mode === 'interface' && this.selectedInterface) {
         this.swRef.setInterfaceDescription(this.selectedInterface, '');
       } else if (this.mode === 'vlan' && this.selectedVlan !== null) {
-        this.vlanDesc.delete(this.selectedVlan);
+        this.swRef.setVlanDescription(this.selectedVlan, null);
       }
       return '';
     }
@@ -4203,33 +4236,53 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   // ─── Display Implementations ──────────────────────────────────────
 
-  private displayVlan(sw: Switch): string {
-    const vlans = sw.getVLANs();
-    const configs = sw._getSwitchportConfigs();
-
+  private displayVlan(sw: HuaweiSwitchDevice, only?: number): string {
+    const rule = '-'.repeat(80);
+    const vlans = [...sw.getVLANs().values()]
+      .filter((v) => only === undefined || v.id === only)
+      .sort((a, b) => a.id - b.id);
+    const learningOff = new Map(sw.getMacLearningDisabledVlans());
     const lines = [
-      'VLAN ID  Name                          Status   Ports',
-      '-------  ----------------------------  -------  ----------------------------',
+      ...(only === undefined ? [`The total number of VLANs is: ${vlans.length}`] : []),
+      rule,
+      'U: Up;         D: Down;         TG: Tagged;         UT: Untagged;',
+      'MP: Vlan-mapping;               ST: Vlan-stacking;',
+      '#: ProtocolTransparent-vlan;    *: Management-vlan;',
+      rule,
+      '',
+      'VID  Type    Ports',
+      rule,
     ];
-
-    for (const [id, vlan] of vlans) {
-      const name = vlan.name.padEnd(30);
-      const portsInVlan: string[] = [];
-      for (const [portName, cfg] of configs) {
-        if (cfg.mode === 'access' && cfg.accessVlan === id) {
-          portsInVlan.push(portName);
-        } else if (cfg.mode === 'trunk' && cfg.trunkAllowedVlans.has(id)) {
-          portsInVlan.push(portName);
-        } else if (cfg.mode === 'hybrid'
-          && (cfg.hybridUntaggedVlans?.has(id) || cfg.hybridTaggedVlans?.has(id))) {
-          portsInVlan.push(portName);
-        }
-      }
-      const portsStr = portsInVlan.join(', ');
-      lines.push(`${String(id).padEnd(9)}${name}active   ${portsStr}`);
+    for (const vlan of vlans) {
+      const members = this.vlanMembers(sw, vlan.id);
+      const rows = [...vlanPortRows('UT', members.untagged), ...vlanPortRows('TG', members.tagged)];
+      const head = `${String(vlan.id).padEnd(5)}common  `;
+      if (rows.length === 0) lines.push(head.trimEnd());
+      rows.forEach((row, i) => lines.push(`${i === 0 ? head : ' '.repeat(head.length)}${row}`));
     }
-
+    lines.push('', 'VID  Status  Property      MAC-LRN Statistics Description', rule);
+    for (const vlan of vlans) {
+      const learning = learningOff.has(vlan.id) ? 'disable' : 'enable';
+      const description = vlan.description ?? `VLAN ${String(vlan.id).padStart(4, '0')}`;
+      lines.push(`${String(vlan.id).padEnd(5)}${'enable'.padEnd(8)}${'default'.padEnd(14)}`
+        + `${learning.padEnd(8)}${'disable'.padEnd(11)}${description}`);
+    }
     return lines.join('\n');
+  }
+
+  private vlanMembers(sw: HuaweiSwitchDevice, id: number): { untagged: string[]; tagged: string[] } {
+    const untagged: string[] = [];
+    const tagged: string[] = [];
+    for (const [portName, cfg] of sw._getSwitchportConfigs()) {
+      const port = sw.getPort(portName);
+      const cell = `${huaweiShortInterfaceName(portName)}(${port?.getIsUp() && port.isConnected() ? 'U' : 'D'})`;
+      if (cfg.mode === 'access' && cfg.accessVlan === id) untagged.push(cell);
+      else if (cfg.mode === 'trunk' && cfg.trunkAllowedVlans.has(id)) {
+        (cfg.trunkNativeVlan === id ? untagged : tagged).push(cell);
+      } else if (cfg.mode === 'hybrid' && cfg.hybridUntaggedVlans?.has(id)) untagged.push(cell);
+      else if (cfg.mode === 'hybrid' && cfg.hybridTaggedVlans?.has(id)) tagged.push(cell);
+    }
+    return { untagged, tagged };
   }
 
   private displayInterfaceBrief(sw: Switch, filtre?: string): string {
@@ -4449,7 +4502,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       dhcp.push('dhcp snooping enable');
       const vlans = sec.getDhcpSnoopingVlans();
       if (vlans.length > 0) {
-        dhcp.push(`dhcp snooping enable vlan ${[...vlans].sort((a, b) => a - b).join(' ')}`);
+        dhcp.push(`dhcp snooping enable vlan ${formatVrpVlanList(vlans)}`);
       }
     }
     for (const trust of sec.getDhcpSnoopingTrust()) {
@@ -4508,19 +4561,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
       '#',
     ];
 
-    // VLANs
-    for (const [id, vlan] of sw.getVLANs()) {
+    const batch = [...sw.getVLANs().keys()].filter((id) => id !== 1);
+    if (batch.length > 0) lines.push(`vlan batch ${formatVrpVlanList(batch)}`, '#');
+    for (const id of sw.getVLANs().keys()) {
       if (id === 1) continue;
-      lines.push(`vlan ${id}`);
-      lines.push(` name ${vlan.name}`);
-      // Ces lignes etaient rangees et rendues par personne : la
-      // configuration d'un VLAN les perdait, et l'import avec.
-      for (const extra of lignesDuVlan(vlan)) lines.push(` ${extra}`);
-      const politique = sw.getVlanTrafficPolicy?.(id);
-      if (politique) lines.push(` traffic-policy ${politique} inbound`);
-      const apprentissage = new Map(sw.getMacLearningDisabledVlans()).get(id);
-      if (apprentissage) lines.push(` ${ligneApprentissageMac(apprentissage)}`);
-      lines.push('#');
+      const body = this.vlanBlockBody(sw, id);
+      if (body.length > 0) lines.push(`vlan ${id}`, ...body, '#');
     }
 
     for (const [id, t] of [...this.ethTrunks.entries()].sort((x, y) => x[0] - y[0])) {
@@ -4650,16 +4696,15 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const lines: string[] = [];
     const desc = sw.getInterfaceDescription(portName);
     if (desc) lines.push(` description ${desc}`);
-    const vlanListe = (ids: Set<number> | undefined) =>
-      Array.from(ids ?? []).sort((a, b) => a - b).join(' ');
+    const vlanListe = (ids: Set<number> | undefined) => formatVrpVlanList(ids ?? []);
 
     if (cfg.mode === 'trunk') {
       lines.push(' port link-type trunk');
       if (cfg.trunkNativeVlan !== 1) lines.push(` port trunk pvid vlan ${cfg.trunkNativeVlan}`);
-      const allowedArr = Array.from(cfg.trunkAllowedVlans).sort((a, b) => a - b);
-      if (allowedArr.length >= 4094) lines.push(' port trunk allow-pass vlan all');
-      else if (allowedArr.length === 0) lines.push(' port trunk allow-pass vlan none');
-      else lines.push(` port trunk allow-pass vlan ${allowedArr.join(' ')}`);
+      const allowed = cfg.trunkAllowedVlans;
+      if (allowed.size >= 4094) lines.push(' port trunk allow-pass vlan all');
+      else if (allowed.size === 0) lines.push(' port trunk allow-pass vlan none');
+      else lines.push(` port trunk allow-pass vlan ${formatVrpVlanList(allowed)}`);
     } else if (cfg.mode === 'hybrid') {
       lines.push(' port link-type hybrid');
       if ((cfg.hybridPvid ?? 1) !== 1) lines.push(` port hybrid pvid vlan ${cfg.hybridPvid}`);

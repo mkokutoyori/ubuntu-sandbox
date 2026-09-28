@@ -61,23 +61,20 @@ describe('la configuration de vue VLAN ne se perd plus', () => {
     }
   });
 
-  it('elles sont rangees SOUS leur VLAN, pas ailleurs', async () => {
+  it('they are stored UNDER their VLAN, nowhere else', async () => {
     const s = await sw(['system-view', 'vlan 10', 'mux-vlan', 'quit',
       'vlan 20', 'quit']);
     const cfg = await s.executeCommand('display current-configuration');
-    const lignes = cfg.split('\n');
-    const iDix = lignes.findIndex(l => l.trim() === 'vlan 10');
-    const iVingt = lignes.findIndex(l => l.trim() === 'vlan 20');
-    const iMux = lignes.findIndex(l => l.trim() === 'mux-vlan');
-    expect(iDix).toBeGreaterThanOrEqual(0);
-    expect(iMux).toBeGreaterThan(iDix);
-    expect(iMux).toBeLessThan(iVingt);
+    expect(cfg).toMatch(/^vlan batch 10 20$/m);
+    expect(cfg).toMatch(/^vlan 10\n mux-vlan\n#$/m);
+    expect(cfg).not.toMatch(/^vlan 20$/m);
   });
 
-  it('un VLAN sans ligne supplementaire n\'en gagne pas', async () => {
+  it('a VLAN with nothing to say gets no block of its own', async () => {
     const s = await sw(['system-view', 'vlan 30', 'quit']);
     const cfg = await s.executeCommand('display current-configuration');
-    expect(cfg).toContain('vlan 30');
+    expect(cfg).toMatch(/^vlan batch 30$/m);
+    expect(cfg).not.toMatch(/^vlan 30$/m);
     expect(cfg).not.toContain('undefined');
   });
 });

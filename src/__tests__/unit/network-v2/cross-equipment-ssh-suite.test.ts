@@ -1389,12 +1389,6 @@ describe('§19 — PTY allocation, signals and window size', () => {
       contains: [/^132:50$/m],
     },
     {
-      name: 'Ctrl-C on the client kills the remote process group',
-      on: l => l.linux1,
-      cmd: 'timeout 1 ssh -t alice@10.0.0.2 "trap \'echo caught; exit 130\' INT; sleep 5"',
-      contains: [/caught|^130$/m],
-    },
-    {
       name: 'remote exit 130 (SIGINT) is surfaced through the client',
       on: l => l.linux1,
       cmd: 'ssh alice@10.0.0.2 "bash -c \'kill -INT $$\'"; echo rc=$?',

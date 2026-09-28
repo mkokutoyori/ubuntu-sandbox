@@ -132,7 +132,7 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
 // ─── kill ─────────────────────────────────────────────────────────────
 
 /** Map a -<num> or -SIGFOO style argument to a Signal name. */
-function parseSignalArg(token: string): Signal | null {
+export function parseSignalArg(token: string): Signal | null {
   const cleaned = token.replace(/^-/, '');
   // Numeric form: -9, -15, etc.
   if (/^\d+$/.test(cleaned)) {

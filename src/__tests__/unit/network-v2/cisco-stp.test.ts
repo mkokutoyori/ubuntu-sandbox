@@ -69,7 +69,7 @@ describe('Cisco STP — MST sub-mode', () => {
     const region = sw.getStpAgent().getMstRegion();
     expect(region.name).toBe('LAB');
     expect(region.revision).toBe(7);
-    expect(region.instances.get(1)).toBe('10,20');
+    expect([...region.instances.get(1) ?? []]).toEqual([10, 20]);
 
     const show = await sw.executeCommand('do show spanning-tree mst configuration');
     expect(show).toContain('Name      [LAB]');

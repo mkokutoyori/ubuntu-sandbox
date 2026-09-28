@@ -172,7 +172,7 @@ describe('les VLAN admis sur une agregation sont des identifiants', () => {
       const ligne = (await config(d)).split('\n')
         .find((l) => l.includes('port trunk allow-pass vlan'));
       expect(ligne, 'la ligne des VLAN admis').toBeDefined();
-      expect(ligne!.split(/\s+/)).toContain('11');
+      expect(ligne).toMatch(/ vlan 10 to 12$/);
     });
 });
 

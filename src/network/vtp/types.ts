@@ -38,11 +38,11 @@ export interface VtpVlanEntry {
 export type VtpDatabase = 'vlan' | 'mst';
 
 /** Wire shape of an MST region config (`docs/PRD-STP.md §4`'s `MstRegion`,
- *  with its `instances: Map<number, string>` flattened to tuples). */
+ *  with its `instances` map flattened to tuples). */
 export interface VtpMstRegionPayload {
   name: string;
   revision: number;
-  instances: [number, string][];
+  instances: [number, number[]][];
 }
 
 export interface VtpFrame extends NetworkPdu {

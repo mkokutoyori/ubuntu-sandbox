@@ -177,9 +177,8 @@ import {
 } from './cisco/ciscoContinuations';
 import type { ContinuationTable } from './cisco/ciscoContinuations';
 import {
-  mstConfigDigest, vlansMappedToInstanceZero, formatVlanRanges,
+  mstConfigDigest, vlansMappedToInstanceZero,
 } from '@/network/stp/MstConfigId';
-import { parseStpVlanList } from '@/network/stp/types';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -568,22 +567,9 @@ type ListeVlan = { ids: number[] } | { erreur: string };
  */
 function analyserListeVlan(args: readonly string[]): ListeVlan {
   if (args.length < 1) return { erreur: CISCO_ERRORS.INCOMPLETE };
-
-  const ids: number[] = [];
-  for (const part of args.join('').split(',')) {
-    const plage = part.match(/^(\d+)-(\d+)$/);
-    if (plage) {
-      const [debut, fin] = [Number(plage[1]), Number(plage[2])];
-      if (fin < debut) return { erreur: '% Invalid VLAN ID' };
-      for (let i = debut; i <= fin; i++) ids.push(i);
-      continue;
-    }
-    if (!/^\d+$/.test(part)) return { erreur: '% Invalid VLAN ID' };
-    ids.push(Number(part));
-  }
-  if (ids.length === 0 || ids.some(i => i < 1 || i > 4094)) {
-    return { erreur: '% Invalid VLAN ID' };
-  }
+  const parsed = parseVlanList(args.join(''));
+  if (parsed === null) return { erreur: '% Invalid VLAN ID' };
+  const ids = [...parsed].sort((a, b) => a - b);
   if (ids.some(i => i >= 1002 && i <= 1005)) {
     return { erreur: '% VLANs 1002-1005 are reserved for legacy FDDI/Token Ring use' };
   }
@@ -1893,31 +1879,22 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private mstConfigHost(): MstConfigHost {
     const agent = () => this.stpAgentOf(this.d());
-    const vlansValides = (liste: string): string | null => {
-      const lus = analyserListeVlan([liste.replace(/\s+/g, '')]);
-      return 'erreur' in lus ? lus.erreur : null;
-    };
+    const vlanList = (list: string): ListeVlan => analyserListeVlan([list.replace(/\s+/g, '')]);
     return {
       poserNom: (nom) => { agent()?.setMstName(nom); return ''; },
       effacerNom: () => { agent()?.setMstName(''); return ''; },
       poserRevision: (revision) => { agent()?.setMstRevision(revision); return ''; },
       effacerRevision: () => { agent()?.setMstRevision(0); return ''; },
       associerVlans: (instance, vlans) => {
-        const refus = vlansValides(vlans);
-        if (refus !== null) return refus;
-        agent()?.mapMstInstance(instance, vlans.replace(/\s+/g, ''));
+        const parsed = vlanList(vlans);
+        if ('erreur' in parsed) return parsed.erreur;
+        agent()?.mapMstInstance(instance, parsed.ids);
         return '';
       },
       dissocierVlans: (instance, vlans) => {
-        const refus = vlansValides(vlans);
-        if (refus !== null) return refus;
-        const region = agent()?.getPendingMstRegion();
-        const actuel = region?.instances.get(instance);
-        if (actuel === undefined) return '';
-        const retires = new Set(parseStpVlanList(vlans));
-        const restants = parseStpVlanList(actuel).filter((v) => !retires.has(v));
-        if (restants.length === 0) agent()?.unmapMstInstance(instance);
-        else agent()?.mapMstInstance(instance, formatVlanRanges(restants));
+        const parsed = vlanList(vlans);
+        if ('erreur' in parsed) return parsed.erreur;
+        agent()?.unmapMstVlans(instance, parsed.ids);
         return '';
       },
       retirerInstance: (instance) => { agent()?.unmapMstInstance(instance); return ''; },
@@ -2931,7 +2908,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private showMstConfig(withDigest = false, enAttente = false): string {
     const agent = this.stpAgentOf(this.d());
     const region = enAttente ? agent?.getPendingMstRegion() : agent?.getMstRegion();
-    const instances = region?.instances ?? new Map<number, string>();
+    const instances = region?.instances ?? new Map<number, ReadonlySet<number>>();
     const ml: string[] = [
       'Name      [' + (region?.name ?? '') + ']',
       'Revision  ' + (region?.revision ?? 0) + '     Instances configured ' +
@@ -2945,9 +2922,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       '-------------------------------------------------------------',
       'Instance  Vlans mapped',
       '--------  -------------------------------------------------',
-      `0         ${vlansMappedToInstanceZero(instances)}`,
+      `0         ${compactVlanList(vlansMappedToInstanceZero(instances))}`,
     );
-    for (const [id, v] of instances) ml.push(`${String(id).padEnd(10)}${v}`);
+    for (const [id, v] of [...instances].sort((a, b) => a[0] - b[0])) ml.push(`${String(id).padEnd(10)}${compactVlanList(v)}`);
     return ml.join('\n');
   }
 

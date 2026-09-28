@@ -306,9 +306,8 @@ describe('Group 5: Huawei Switch — Command Regression', () => {
     await sw.executeCommand('vlan 10');
     await sw.executeCommand('name ENGINEERING');
     await sw.executeCommand('quit');
-    const output = await sw.executeCommand('display vlan');
-    expect(output).toContain('10');
-    expect(output).toContain('ENGINEERING');
+    expect(await sw.executeCommand('display vlan')).toMatch(/^10\s+enable\s/m);
+    expect(await sw.executeCommand('display current-configuration')).toMatch(/^vlan 10\n name ENGINEERING$/m);
   });
 
   it('5.4 — VLAN batch creation', async () => {

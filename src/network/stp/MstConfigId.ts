@@ -1,6 +1,6 @@
 import { hmac } from '@/crypto/mac/hmac';
 import { MD5 } from '@/crypto/hash';
-import { parseStpVlanList, type MstRegion } from '@/network/stp/types';
+import type { MstRegion } from '@/network/stp/types';
 
 const MAX_VID = 4094;
 const TABLE_ENTRIES = MAX_VID + 2;
@@ -16,17 +16,19 @@ export interface MstConfigIdentifier {
   readonly digest: string;
 }
 
-export function vlanToInstanceTable(instances: ReadonlyMap<number, string>): Uint16Array {
+export type MstInstanceMap = ReadonlyMap<number, ReadonlySet<number>>;
+
+export function vlanToInstanceTable(instances: MstInstanceMap): Uint16Array {
   const table = new Uint16Array(TABLE_ENTRIES);
-  for (const [instanceId, spec] of instances) {
-    for (const vlan of parseStpVlanList(spec)) {
+  for (const [instanceId, members] of instances) {
+    for (const vlan of members) {
       if (vlan >= 1 && vlan <= MAX_VID) table[vlan] = instanceId;
     }
   }
   return table;
 }
 
-export function mstConfigDigest(instances: ReadonlyMap<number, string>): string {
+export function mstConfigDigest(instances: MstInstanceMap): string {
   const table = vlanToInstanceTable(instances);
   const bytes = new Uint8Array(TABLE_ENTRIES * 2);
   for (let i = 0; i < TABLE_ENTRIES; i++) {
@@ -49,24 +51,9 @@ export function sameMstRegion(a: MstConfigIdentifier, b: MstConfigIdentifier): b
   return a.name === b.name && a.revision === b.revision && a.digest === b.digest;
 }
 
-export function formatVlanRanges(vlans: Iterable<number>): string {
-  const tries = [...new Set(vlans)].sort((a, b) => a - b);
-  const ranges: string[] = [];
-  let debut: number | null = null;
-  let dernier = 0;
-  for (const vlan of tries) {
-    if (debut !== null && vlan === dernier + 1) { dernier = vlan; continue; }
-    if (debut !== null) ranges.push(debut === dernier ? `${debut}` : `${debut}-${dernier}`);
-    debut = vlan;
-    dernier = vlan;
-  }
-  if (debut !== null) ranges.push(debut === dernier ? `${debut}` : `${debut}-${dernier}`);
-  return ranges.join(',');
-}
-
-export function vlansMappedToInstanceZero(instances: ReadonlyMap<number, string>): string {
+export function vlansMappedToInstanceZero(instances: MstInstanceMap): number[] {
   const table = vlanToInstanceTable(instances);
-  const libres: number[] = [];
-  for (let vlan = 1; vlan <= MAX_VID; vlan++) if (table[vlan] === 0) libres.push(vlan);
-  return formatVlanRanges(libres);
+  const unmapped: number[] = [];
+  for (let vlan = 1; vlan <= MAX_VID; vlan++) if (table[vlan] === 0) unmapped.push(vlan);
+  return unmapped;
 }
