@@ -16,42 +16,14 @@
  * imperceptible.
  */
 
-const P = (1n << 255n) - 19n;
+import {
+  bigIntToLittleEndian, invert25519 as invert, littleEndianToBigInt, mod25519 as mod,
+} from './curve25519Field';
+
 /** (486662 - 2) / 4, la constante `a24` de la RFC §5. */
 const A24 = 121665n;
 
 export const X25519_KEY_LEN = 32;
-
-function mod(a: bigint): bigint {
-  const r = a % P;
-  return r < 0n ? r + P : r;
-}
-
-/** Inverse modulaire par le petit théorème de Fermat : a^(p-2). */
-function invert(a: bigint): bigint {
-  let result = 1n;
-  let base = mod(a);
-  let e = P - 2n;
-  while (e > 0n) {
-    if (e & 1n) result = mod(result * base);
-    base = mod(base * base);
-    e >>= 1n;
-  }
-  return result;
-}
-
-function leToBig(bytes: Uint8Array): bigint {
-  let n = 0n;
-  for (let i = bytes.length - 1; i >= 0; i--) n = (n << 8n) | BigInt(bytes[i]);
-  return n;
-}
-
-function bigToLe(n: bigint, length = X25519_KEY_LEN): Uint8Array {
-  const out = new Uint8Array(length);
-  let v = n;
-  for (let i = 0; i < length; i++) { out[i] = Number(v & 0xffn); v >>= 8n; }
-  return out;
-}
 
 /**
  * Le « clamping » du §5 : les trois bits de poids faible à zéro pour que
@@ -73,11 +45,11 @@ export function clampScalar(scalar: Uint8Array): Uint8Array {
  * scalaire, du poids fort au poids faible.
  */
 export function x25519(scalar: Uint8Array, uCoordinate: Uint8Array): Uint8Array {
-  const k = leToBig(clampScalar(scalar));
+  const k = littleEndianToBigInt(clampScalar(scalar));
   const u = Uint8Array.from(uCoordinate);
   // §5 : le bit de poids fort de la coordonnée reçue est ignoré.
   u[31] &= 127;
-  const x1 = mod(leToBig(u));
+  const x1 = mod(littleEndianToBigInt(u));
 
   let x2 = 1n, z2 = 0n, x3 = x1, z3 = 1n, swap = 0n;
   for (let t = 254; t >= 0; t--) {
@@ -98,7 +70,7 @@ export function x25519(scalar: Uint8Array, uCoordinate: Uint8Array): Uint8Array 
   }
   if (swap) { [x2, x3] = [x3, x2]; [z2, z3] = [z3, z2]; }
 
-  return bigToLe(mod(x2 * invert(z2)));
+  return bigIntToLittleEndian(mod(x2 * invert(z2)), X25519_KEY_LEN);
 }
 
 /** Le point de base du §4.1 : u = 9. */

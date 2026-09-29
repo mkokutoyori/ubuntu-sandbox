@@ -44,6 +44,7 @@ import {
 import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
 import { parseScpArgs, parseScpEndpoint } from '@/network/protocols/ssh/Scp';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
+import { OPENSSH_UBUNTU_22_04 } from '@/network/protocols/ssh/OpenSshRelease';
 import {
   formatTransferProgress,
   expandTilde,
@@ -354,6 +355,7 @@ describe('SSH-05 — exec channel (non-interactive command)', () => {
 describe('SSH-03 — ssh-keygen (key pair generation)', () => {
   const alice = (vfs: VirtualFileSystem) => vfsKeygenHost(vfs, {
     uid: 1000, gid: 1000, user: 'alice', hostname: 'local', sshDir: '/home/alice/.ssh',
+    cwd: '/home/alice', release: OPENSSH_UBUNTU_22_04,
   });
 
   it('writes a deterministic key pair under ~/.ssh/ with correct modes', () => {
@@ -372,12 +374,12 @@ describe('SSH-03 — ssh-keygen (key pair generation)', () => {
   it('refuses to overwrite an existing private key', () => {
     const vfs = new VirtualFileSystem();
     vfs.mkdirp('/home/alice/.ssh', 0o700, 1000, 1000);
-    vfs.writeFile('/home/alice/.ssh/id_ed25519', 'pre-existing', 1000, 1000, 0o077);
+    vfs.writeFile('/home/alice/.ssh/id_rsa', 'pre-existing', 1000, 1000, 0o077);
     const result = runSshKeygenCommand([], alice(vfs));
     expect(result.exitCode).toBe(1);
-    expect(result.output).toContain('/home/alice/.ssh/id_ed25519 already exists.');
+    expect(result.output).toContain('/home/alice/.ssh/id_rsa already exists.');
     expect(result.output).toContain('Overwrite (y/n)? ');
-    expect(vfs.readFile('/home/alice/.ssh/id_ed25519')).toBe('pre-existing');
+    expect(vfs.readFile('/home/alice/.ssh/id_rsa')).toBe('pre-existing');
   });
 });
 

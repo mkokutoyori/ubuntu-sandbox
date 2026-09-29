@@ -21,7 +21,8 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 import { Equipment } from '@/network';
 import { parseSshArgs } from '@/terminal/sessions/sshArgs';
-import { SshAgent } from '@/network/protocols/ssh/SshAgent';
+import { SshAgent, agentKeyOf, type AgentKey } from '@/network/protocols/ssh/SshAgent';
+import { keygenDeterministicPair } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { SshAgentForwarding } from '@/network/protocols/ssh/SshAgentForwarding';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
@@ -54,30 +55,18 @@ describe('SSH LAN — agent forwarding (`ssh -A`)', () => {
   it('FA4 — SshAgentForwarding copies every local key into the remote agent', () => {
     const local = new SshAgent();
     const remote = new SshAgent();
-    // Add two simulated identities locally (no VFS needed — directly inject
-    // via the in-memory facade).
-    (local as unknown as { keys: Map<string, unknown> }).keys.set('/k1', {
-      path: '/k1', material: 'm1', fingerprint: 'SHA256:aaa',
-      algorithm: 'ED25519', comment: 'k1', bits: 256,
-    });
-    (local as unknown as { keys: Map<string, unknown> }).keys.set('/k2', {
-      path: '/k2', material: 'm2', fingerprint: 'SHA256:bbb',
-      algorithm: 'RSA', comment: 'k2', bits: 2048,
-    });
+    local.install(K1);
+    local.install(K2);
     const fwd = new SshAgentForwarding(local, remote);
     fwd.attach();
-    expect(remote.list().map((k) => k.path).sort()).toEqual(['/k1', '/k2']);
+    expect(remote.list().map((k) => k.comment).sort()).toEqual(['k1', 'k2']);
   });
 
   // FA5
   it('FA5 — without forwarding, the remote agent stays empty', () => {
     const local = new SshAgent();
     const remote = new SshAgent();
-    (local as unknown as { keys: Map<string, unknown> }).keys.set('/k1', {
-      path: '/k1', material: 'm1', fingerprint: 'SHA256:aaa',
-      algorithm: 'ED25519', comment: 'k1', bits: 256,
-    });
-    // No SshAgentForwarding created → no copy.
+    local.install(K1);
     expect(remote.list()).toHaveLength(0);
   });
 
@@ -85,19 +74,22 @@ describe('SSH LAN — agent forwarding (`ssh -A`)', () => {
   it('FA6 — detach() removes only the keys this forwarding installed', () => {
     const local = new SshAgent();
     const remote = new SshAgent();
-    (local as unknown as { keys: Map<string, unknown> }).keys.set('/k1', {
-      path: '/k1', material: 'm1', fingerprint: 'SHA256:aaa',
-      algorithm: 'ED25519', comment: 'k1', bits: 256,
-    });
-    // Pre-existing remote key — should survive detach.
-    (remote as unknown as { keys: Map<string, unknown> }).keys.set('/pre', {
-      path: '/pre', material: 'p', fingerprint: 'SHA256:ccc',
-      algorithm: 'ECDSA', comment: 'pre', bits: 256,
-    });
+    local.install(K1);
+    remote.install(PRE);
     const fwd = new SshAgentForwarding(local, remote);
     fwd.attach();
-    expect(remote.list().map((k) => k.path).sort()).toEqual(['/k1', '/pre']);
+    expect(remote.list().map((k) => k.comment).sort()).toEqual(['k1', 'pre']);
     fwd.detach();
-    expect(remote.list().map((k) => k.path)).toEqual(['/pre']);
+    expect(remote.list().map((k) => k.comment)).toEqual(['pre']);
   });
 });
+
+function agentKey(path: string, seed: string, comment: string): AgentKey {
+  const key = agentKeyOf(path, keygenDeterministicPair('ssh-ed25519', seed, comment).priv);
+  if (key === null) throw new Error('unreadable key');
+  return key;
+}
+
+const K1 = agentKey('/k1', 'fwd-1', 'k1');
+const K2 = agentKey('/k2', 'fwd-2', 'k2');
+const PRE = agentKey('/pre', 'fwd-3', 'pre');

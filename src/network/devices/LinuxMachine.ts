@@ -212,6 +212,7 @@ import { SSH_SERVER_IDENTIFICATION_LINE } from '@/network/protocols/ssh/serverId
 import { buildLinuxInteractionPlan } from './linux/interaction/LinuxInteractionPlanner';
 import type { CommandInteractionPlan, InteractionPlanContext } from '@/shell/interaction/CommandInteraction';
 import { SnmpClientSession } from '@/network/snmp/SnmpClientSession';
+import type { SshKeygenTerminal } from '@/network/protocols/ssh/SshKeygenCommand';
 
 /**
  * Minimal sshd-style glob matcher: `*` matches any sequence including
@@ -337,6 +338,10 @@ export abstract class LinuxMachine extends EndHost
     this.tcpv2.setEphemeralRange(32768, 60999);
     this.initDefaultSockets(profile.isServer);
     this.executor.setLocalDevice(this);
+    this.executor.bindKernelHostname({
+      read: () => this.getHostname(),
+      write: (name) => this.setKernelHostname(name),
+    });
     this.executor.setSocketTable(this.socketTable);
     // §F9.3 — le plafond de descripteurs s'applique aux sockets, et il est
     // compté sur la même table que celle que `/proc/<pid>/fd` affiche.
@@ -388,7 +393,7 @@ export abstract class LinuxMachine extends EndHost
     // simulated stack actually exchanges.
     new TcpSocketStateProjection(this.getBus(), this.socketTable, this.id);
     new TcpdumpCaptureProjection(this.getBus(), this.executor.captureLog, this.id);
-    this.syncHostnameFiles(profile.hostname);
+    this.syncHostnameFiles(this.hostname);
 
     // 3. Network façade (closes over protected EndHost members)
     this.net = this.buildNetKernel();
@@ -475,6 +480,7 @@ export abstract class LinuxMachine extends EndHost
       return { output: result, exitCode: this.inferRegistryExitCode(cmd, result) };
     };
     this.executor._registryPrivilegeHook = (cmd) => this.commands.get(cmd)?.privilege;
+    this.executor.registeredCommandNames = () => this.commands.list().map(c => c.name);
 
     // 5. Initialise SSH server config files on first boot:
     //    /etc/ssh/sshd_config + /etc/ssh/ssh_host_ed25519_key(.pub).
@@ -1188,7 +1194,7 @@ export abstract class LinuxMachine extends EndHost
         syslog: (tag, message) => this.executor.logMgr.logDaemon(tag, message),
         deliverMail: (recipient, body) => this.deliverCronMail(recipient, body),
         homeFor: (user) => this.executor.userMgr.getUser(user)?.home ?? (user === 'root' ? '/root' : `/home/${user}`),
-        hostname: (this.executor.vfs.readFile('/etc/hostname') ?? this.name).trim(),
+        hostname: this.getHostname(),
         now: () => this.executor.simulatedDate(),
       });
     }
@@ -1245,7 +1251,7 @@ export abstract class LinuxMachine extends EndHost
 
   private deliverCronMail(recipient: string, body: string): void {
     const entry = this.executor.userMgr.getUser(recipient);
-    const host = (this.executor.vfs.readFile('/etc/hostname') ?? this.name).trim();
+    const host = this.getHostname();
     const envelope = `From cron@${host}  ${formatCtime(this.executor.simulatedDate())}\n`;
     this.executor.vfs.writeFile(`/var/mail/${recipient}`, envelope + body + '\n', entry?.uid ?? 0, entry?.gid ?? 0, 0o022, true);
   }
@@ -2546,8 +2552,17 @@ export abstract class LinuxMachine extends EndHost
     // Keep the Equipment-level field in sync too — getHostname() reads
     // it, and DNS / NSS resolution walks the registry by hostname.
     super.setHostname(hostname);
-    (this.profile as { hostname: string }).hostname = hostname;
     this.syncHostnameFiles(hostname);
+  }
+
+  setKernelHostname(hostname: string): void {
+    super.setHostname(hostname);
+  }
+
+  override powerOn(): void {
+    const wasOn = this.getIsPoweredOn();
+    super.powerOn();
+    if (!wasOn) this.executor.bootKernelHostname();
   }
 
   protected override onDhcpLeaseConfigured(iface: string): void {
@@ -3172,7 +3187,7 @@ export abstract class LinuxMachine extends EndHost
     this._sshContext = new LinuxSshServerContext(
       this.executor.vfs,
       this.executor.userMgr,
-      this.profile.hostname,
+      () => this.getHostname(),
       {},
       this.executor,
       // Route incoming SSH exec commands through the full pipeline so
@@ -4526,22 +4541,28 @@ export abstract class LinuxMachine extends EndHost
         .sort();
     }
 
-    // Delegate to the command's `complete()` callback if we are completing
-    // an argument to a registered command.
     if (rest.length >= 1) {
       const cmd = this.commands.get(head);
+      const partialArg = rest[rest.length - 1];
       if (cmd && cmd.complete) {
-        const partialArg = rest[rest.length - 1];
         const candidates = cmd.complete(this.buildCommandContext(), rest);
         if (candidates.length > 0) {
           return candidates.filter(c => c.startsWith(partialArg)).sort();
         }
+      } else if (cmd?.options && partialArg.startsWith('-')) {
+        const flags = cmd.options.flatMap(o => [o.flag, ...(o.aliases ?? [])]);
+        const matching = flags.filter(f => f.startsWith(partialArg));
+        if (matching.length > 0) return [...new Set(matching)].sort();
       }
     }
 
     return this.executor.getCompletions(partial);
   }
   getCurrentUser(): string { return this.executor.getCurrentUser(); }
+  homeDirectoryOf(user: string): string { return this.executor.homeDirectoryOf(user); }
+  runSshKeygenInteractive(args: readonly string[], terminal: SshKeygenTerminal): Promise<number> {
+    return this.executor.runSshKeygenInteractive(args, terminal);
+  }
   getCurrentUid(): number { return this.executor.getCurrentUid(); }
   handleExit(): { output: string; inSu: boolean } { return this.executor.handleExit(); }
   resetSession(): void { this.executor.resetSession(); }
@@ -4920,13 +4941,13 @@ export abstract class LinuxMachine extends EndHost
 
   mpstatBannerLine(): string {
     const now = new Date();
-    const hostname = (this.executor.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const hostname = this.getHostname();
     return mpstatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
   }
 
   pidstatBannerLine(): string {
     const now = new Date();
-    const hostname = (this.executor.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const hostname = this.getHostname();
     return pidstatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
   }
 
@@ -4940,7 +4961,7 @@ export abstract class LinuxMachine extends EndHost
 
   iostatBannerLine(): string {
     const now = new Date();
-    const hostname = (this.executor.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const hostname = this.getHostname();
     return iostatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
   }
 

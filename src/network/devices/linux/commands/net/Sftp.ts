@@ -1,6 +1,8 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
+import { sshOptionCompletionWords } from '@/network/protocols/ssh/SshClientOptions';
+import { OPENSSH_UBUNTU_22_04 } from '@/network/protocols/ssh/OpenSshRelease';
 
 const SFTP_USAGE = 'usage: sftp [-46AaCfNpqrv] [-B buffer_size] [-b batchfile] [-c cipher]\n' +
   '            [-D sftp_server_command] [-F ssh_config] [-i identity_file]\n' +
@@ -21,7 +23,10 @@ export const sftpCommand: LinuxCommand = {
   manSection: 1,
   usage: SFTP_USAGE,
   help: 'Interactive file transfer over SSH.',
-  complete: makeArgCompleter({ flags: ['-b', '-P', '-i', '-o', '-r', '-q', '-v'] }),
+  complete: makeArgCompleter({
+    flags: ['-b', '-P', '-i', '-o', '-r', '-q', '-v'],
+    wordsAfter: { '-o': sshOptionCompletionWords(OPENSSH_UBUNTU_22_04.clientKeywords) },
+  }),
   options: [
     { flag: '-b', description: 'Read the verbs from this batch file.', takesArg: true, argName: 'batchfile' },
     { flag: '-P', description: 'Port to connect to on the remote host.', takesArg: true, argName: 'port' },

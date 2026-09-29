@@ -1,15 +1,28 @@
 import type { CommandTrie } from '../CommandTrie';
 import type { KeypairService } from '../../router/security/KeypairService';
+import type { RsaPeerKeyStore, RsaPeerPublicKeyEditor } from './HuaweiRsaPeerPublicKeyEditor';
+import { wordArg } from './huaweiInterfaceHelp';
 
 export interface HuaweiKeypairHost {
   getHostname(): string;
   getKeypairService(): KeypairService;
+  getManagementService?(): RsaPeerKeyStore;
   _refreshSshAvailability?(): void;
 }
 
 export function registerHuaweiKeypairCommands(
-  trie: CommandTrie, host: () => HuaweiKeypairHost | null | undefined,
+  trie: CommandTrie, host: () => HuaweiKeypairHost | null | undefined, peerKeys: RsaPeerPublicKeyEditor,
 ): void {
+  trie.registerGreedy('rsa peer-public-key', 'Configure the public key of a peer', (args) => peerKeys.open(args));
+  trie.registerGreedy('undo rsa peer-public-key', 'Delete the public key of a peer', (args) => {
+    if (args.length !== 1) return 'Error: Incomplete command.';
+    host()?.getManagementService?.().removeRsaPeerPublicKey(args[0]);
+    return '';
+  });
+  for (const path of ['rsa peer-public-key', 'undo rsa peer-public-key']) {
+    trie.describeArgs(path, [wordArg('Name of the peer public key', 'key-name')]);
+    trie.requireArgs(path, 1);
+  }
   trie.register('rsa local-key-pair create', 'Generate RSA key pair', () => {
     const dev = host();
     if (!dev) return '';

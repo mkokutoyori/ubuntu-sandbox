@@ -132,7 +132,10 @@ import { runSshClient, wireExecTarget } from './network/LinuxSshClient';
 import { wireReachOutcomeRetransmitting } from '@/terminal/ssh/wireSshLogin';
 import { BSD_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
 import { parseDialAddress } from '@/network/tcp/dial';
-import { runSshKeygenCommand, vfsKeygenHost, type SshKeygenHost } from '@/network/protocols/ssh/SshKeygenCommand';
+import {
+  runSshKeygenCommand, runSshKeygenInteractive as runSshKeygenInteractiveOn, vfsKeygenHost,
+  type SshKeygenHost, type SshKeygenTerminal,
+} from '@/network/protocols/ssh/SshKeygenCommand';
 import {
   runSshAddCommand, runSshAgentCommand, type SshAgentHost,
 } from '@/network/protocols/ssh/SshAgentCommands';
@@ -159,6 +162,10 @@ import type { ISftpFileSystem } from '../../protocols/ssh/sftp/ISftpFileSystem';
 import { WireSftpFileSystem } from '../../protocols/ssh/sftp/WireSftpFileSystem';
 import { SshSession } from '../../protocols/ssh/session/SshSession';
 import { connectWireSsh, type StrictHostKeyChecking, type WireSshClient } from './network/WireSshConnector';
+import type { SshClientAuthentication } from '../../protocols/ssh/SshConnectOptions';
+import { sshReplyWithoutSession } from '../../protocols/ssh/SshClientCommandLine';
+import { OPENSSH_UBUNTU_22_04 } from '../../protocols/ssh/OpenSshRelease';
+import { KERNEL_HOSTNAME_PATH, kernelHostname, staticHostname } from './KernelHostname';
 import { isOk } from '../../protocols/ssh/Result';
 import type { TcpConnector } from '@/network/tcp/types';
 import {
@@ -243,6 +250,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'mtr', 'netstat', 'ethtool',
   'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
   'ssh', 'sshpass', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat', 'tcpdump', 'tc',
+  'ssh-keygen', 'ssh-add', 'ssh-agent', 'ssh-copy-id', 'ssh-keyscan',
   'iptables', 'iptables-save', 'iptables-restore',
   'ip6tables', 'ip6tables-save', 'ip6tables-restore', 'nft', 'ufw', 'firewall-cmd', 'netfilter-persistent',
   // Editors
@@ -254,6 +262,27 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Cryptographie
   'openssl',
 ];
+
+const SUDO_FLAG_LETTERS = /^-[nSEkbiHvPs]+$/;
+
+function parseSudoLead(args: readonly string[]): {
+  flags: Set<string>; user: string | null; rest: string[];
+} {
+  const flags = new Set<string>();
+  let user: string | null = null;
+  let i = 0;
+  while (i < args.length) {
+    const arg = args[i];
+    if (SUDO_FLAG_LETTERS.test(arg)) {
+      for (const letter of arg.slice(1)) flags.add(letter);
+      i++;
+    } else if (arg === '-u' && i + 1 < args.length) {
+      user = args[i + 1];
+      i += 2;
+    } else break;
+  }
+  return { flags, user, rest: args.slice(i) };
+}
 
 /** Fast membership test for {@link KNOWN_LINUX_COMMANDS}. */
 const KNOWN_LINUX_COMMAND_SET: ReadonlySet<string> = new Set(KNOWN_LINUX_COMMANDS);
@@ -791,6 +820,36 @@ export class LinuxCommandExecutor {
     this.seedIdentityFiles();
   }
 
+  private kernelHostnameBinding: { read(): string; write(name: string): void } | null = null;
+
+  bindKernelHostname(binding: { read(): string; write(name: string): void }): void {
+    this.kernelHostnameBinding = binding;
+  }
+
+  private currentKernelHostname(): string {
+    return this.kernelHostnameBinding?.read() ?? staticHostname(this.vfs);
+  }
+
+  setKernelHostname(name: string): void {
+    this.kernelHostnameBinding?.write(name);
+  }
+
+  bootKernelHostname(): void {
+    this.setKernelHostname(staticHostname(this.vfs));
+  }
+
+  rebootCycle(): void {
+    this.auditRules.rebootReset();
+    // PRD-Iptables-UFW.md Phase 7 (objectif B.6): real netfilter state
+    // does not survive a reboot — wipe the live rule sets first, then
+    // let rebootCycle()'s lifecycle events (ufw, netfilter-persistent)
+    // reconstruct whatever was actually persisted to disk.
+    this.iptables.resetAll();
+    this.ip6tables.resetAll();
+    this.serviceMgr.rebootCycle();
+    this.bootKernelHostname();
+  }
+
   /**
    * Register the kernel `/proc` entries as generated pseudo-files, so
    * `/proc/version` and `/proc/sys/kernel/*` track the identity model live.
@@ -803,7 +862,7 @@ export class LinuxCommandExecutor {
     this.vfs.registerGeneratedFile('/proc/sys/kernel/ostype', () => `${k().sysname}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/osrelease', () => `${k().release}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/version', () => `${k().version}\n`);
-    this.vfs.registerGeneratedFile('/proc/sys/kernel/hostname', () => `${(this.vfs.readFile('/etc/hostname') ?? 'localhost').trim()}\n`);
+    this.vfs.registerGeneratedFile(KERNEL_HOSTNAME_PATH, () => `${this.currentKernelHostname()}\n`);
     // `/proc/modules` est la SOURCE et `lsmod` son lecteur, dans cet
     // ordre : les deux vues ne peuvent donc pas diverger.
     this.vfs.registerGeneratedFile('/proc/modules', () => this.kernelModules.toProcModules());
@@ -1526,10 +1585,10 @@ export class LinuxCommandExecutor {
       return { output: `${cmd}: ${probe.output}`, exitCode: probe.exitCode };
     }
 
-    const wireFs = await this.tryOpenWireSftpFs(hostPart, remoteUser, offeredPassword, port, identities);
+    const { fs: wireFs, denial } = await this.tryOpenWireSftpFs(hostPart, remoteUser, offeredPassword, port, identities);
     const unauthenticated = (): { output: string; exitCode: number } | null => (
       !wireFs && this.tcpConnector
-        ? { output: `${remoteUser}@${hostPart}: Permission denied (publickey,password).`, exitCode: 1 }
+        ? { output: denial ?? `${remoteUser}@${hostPart}: Permission denied (publickey,password).`, exitCode: 1 }
         : null
     );
     if (cmd === 'scp') {
@@ -1597,25 +1656,22 @@ export class LinuxCommandExecutor {
     return body;
   }
 
-  private async openWireSshSession(
-    host: string, user: string, password: string | undefined,
-    port = 22, identities: string[] = [],
-  ): Promise<SshSession | null> {
-    return (await this.connectWireSsh(host, user, password, port, identities)).session;
-  }
-
   private async connectWireSsh(
     host: string, user: string, password: string | undefined,
     port = 22, identities: string[] = [], strict: StrictHostKeyChecking = 'accept-new',
-  ): Promise<{ session: SshSession | null; authRefused: boolean; notices: string[] }> {
+    authentication?: SshClientAuthentication,
+  ): Promise<{ session: SshSession | null; authRefused: boolean; denial?: string; notices: string[] }> {
     if (!this.tcpConnector) return { session: null, authRefused: false, notices: [] };
     const connector = this.tcpConnector;
     const outcome = await connectWireSsh(
-      this.wireSshClient(), { host, user, port, password, identities, strict },
+      this.wireSshClient(), { host, user, port, password, identities, strict, authentication },
       ((h, p) => connector(h, p)) as unknown as TcpConnector);
+    const authRefused = outcome.failure?.kind === 'AUTH_FAILED';
+    const denial = authRefused ? outcome.warnings.at(-1) : undefined;
     return {
       session: outcome.session,
-      authRefused: outcome.failure?.kind === 'AUTH_FAILED',
+      authRefused,
+      ...(denial !== undefined ? { denial } : {}),
       notices: [...outcome.notices],
     };
   }
@@ -1632,12 +1688,12 @@ export class LinuxCommandExecutor {
 
   private async tryOpenWireSftpFs(
     host: string, user: string, password: string, port = 22, identities: string[] = [],
-  ): Promise<ISftpFileSystem | null> {
-    const session = await this.openWireSshSession(host, user, password, port, identities);
-    if (!session) return null;
+  ): Promise<{ fs: ISftpFileSystem | null; denial?: string }> {
+    const { session, denial } = await this.connectWireSsh(host, user, password, port, identities);
+    if (!session) return { fs: null, denial };
     const channelResult = session.openSftpChannel();
-    if (!isOk(channelResult)) { session.disconnect(); return null; }
-    return new WireSftpFileSystem(channelResult.value);
+    if (!isOk(channelResult)) { session.disconnect(); return { fs: null }; }
+    return { fs: new WireSftpFileSystem(channelResult.value) };
   }
 
   private async relayShellOverWire(
@@ -1666,6 +1722,8 @@ export class LinuxCommandExecutor {
     rawArgs: string[], offeredPassword?: string,
   ): Promise<{ output: string; exitCode: number }> {
     const args = rawArgs.map(word => this.expandTilde(word));
+    const withoutSession = sshReplyWithoutSession(args, OPENSSH_UBUNTU_22_04);
+    if (withoutSession) return withoutSession;
     const stdinPwd = (offeredPassword
       ?? this._scenarioStdin ?? '')
       .split('\n')[0] || undefined;
@@ -1678,12 +1736,15 @@ export class LinuxCommandExecutor {
       : await wireReachOutcomeRetransmitting(this.localDevice, target.host, target.port);
     const wire = reach === 'open' && target !== null
       ? await this.connectWireSsh(
-        target.host, target.user, stdinPwd, target.port, target.identities, target.strict)
+        target.host, target.user, stdinPwd, target.port, target.identities, target.strict, target.authentication)
       : { session: null, authRefused: false, notices: [] as string[] };
     const session = wire.session;
     if (!session) {
       return this.finishSshClientResult(
-        runSshClient({ ...opts, wireAuthRefused: wire.authRefused, wireOutcome: reach }),
+        runSshClient({
+          ...opts, wireAuthRefused: wire.authRefused, wireOutcome: reach,
+          ...('denial' in wire && wire.denial !== undefined ? { wireDenial: wire.denial } : {}),
+        }),
         wire.authRefused);
     }
     const settled = !linuxPeer && target !== null && target.command
@@ -1831,9 +1892,11 @@ export class LinuxCommandExecutor {
    * privilegie s'y perdait sans un mot.
    */
   private sshHomeDir(): string {
-    const user = this.userMgr.currentUser;
-    return this.userMgr.getUser(user)?.home
-      ?? (user === 'root' ? '/root' : `/home/${user}`);
+    return this.homeDirectoryOf(this.userMgr.currentUser);
+  }
+
+  homeDirectoryOf(user: string): string {
+    return this.userMgr.getUser(user)?.home ?? (user === 'root' ? '/root' : `/home/${user}`);
   }
 
   /** Build the standard SshClientOpts (used by `ssh` and ssh-transport). */
@@ -1849,7 +1912,7 @@ export class LinuxCommandExecutor {
 
   private buildSshClientOpts(args: string[], callerEnv?: Record<string, string>, offeredPassword?: string) {
     const password = offeredPassword ?? this.sshpassPassword;
-    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const hostname = kernelHostname(this.vfs);
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     const user = this.userMgr.currentUser;
     const home = this.sshHomeDir();
@@ -2096,13 +2159,19 @@ export class LinuxCommandExecutor {
       uid: this.userMgr.currentUid,
       gid: this.userMgr.currentGid,
       user: this.userMgr.currentUser,
-      hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+      hostname: kernelHostname(this.vfs),
       sshDir: `${this.sshHomeDir()}/.ssh`,
+      cwd: this.cwd,
+      release: OPENSSH_UBUNTU_22_04,
     });
   }
 
-  private runSshKeygen(args: string[]): { output: string; exitCode: number } {
-    return runSshKeygenCommand(args, this.keygenHost());
+  private runSshKeygen(args: string[], stdin?: string): { output: string; exitCode: number } {
+    return runSshKeygenCommand(args, this.keygenHost(), stdin);
+  }
+
+  runSshKeygenInteractive(args: readonly string[], terminal: SshKeygenTerminal): Promise<number> {
+    return runSshKeygenInteractiveOn(args.map(word => this.expandTilde(word)), this.keygenHost(), terminal);
   }
 
   /**
@@ -2246,7 +2315,7 @@ export class LinuxCommandExecutor {
    */
   authorizeSudo(cmdName: string, args: readonly string[], runasUser = 'root'): SudoAuthorization {
     const invokingUser = this.userMgr.currentUser;
-    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const hostname = kernelHostname(this.vfs);
     if (!this.userMgr.getUser(runasUser)) {
       return { allowed: false, nopasswd: false, reason: 'unknown-target-user', invokingUser, runasUser, hostname };
     }
@@ -2769,7 +2838,7 @@ export class LinuxCommandExecutor {
       syslog: (tag, message) => this.logMgr.logDaemon(tag, message),
       deliverMail: (recipient, body) => {
         const entry = this.userMgr.getUser(recipient);
-        const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+        const hostname = kernelHostname(this.vfs);
         deliverLocalMessage(
           this.vfs, recipient,
           { envelopeFrom: `cron@${hostname}`, receivedAt: this.wallEpoch + this.clock.now(), rawMessage: body },
@@ -2777,7 +2846,7 @@ export class LinuxCommandExecutor {
         );
       },
       homeFor: (user) => this.userMgr.getUser(user)?.home ?? `/home/${user}`,
-      hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+      hostname: kernelHostname(this.vfs),
       now: () => this.simulatedDate(),
     });
     return this.cronEngine;
@@ -2833,7 +2902,7 @@ export class LinuxCommandExecutor {
    */
   fireDueAtJobs(at: Date = this.simulatedDate()): void {
     if (this.serviceMgr.status('atd')?.state !== 'active') return;
-    const host = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const host = kernelHostname(this.vfs);
     for (const job of this.atQueue.dueJobs(at)) {
       const prev = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid };
       const entry = this.userMgr.getUser(job.user);
@@ -3806,28 +3875,21 @@ export class LinuxCommandExecutor {
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
       cmdArgs = cmdArgs.slice(1);
-      // `-S` reads the sudo password from stdin — detect it before the
-      // flag group is stripped below. Only sudo's own leading option
-      // flags are inspected; once we hit the command-to-run, its own
-      // flags (e.g. `passwd -S user`) belong to it, not to sudo.
-      let readsStdinPassword = false;
-      for (const a of cmdArgs) {
-        if (!/^-[nSEkbiHvP]+$/.test(a)) break;
-        if (a.includes('S')) { readsStdinPassword = true; break; }
+      const lead = parseSudoLead(cmdArgs);
+      const readsStdinPassword = lead.flags.has('S');
+      const sudoTargetUser = lead.user;
+      cmdArgs = lead.rest;
+      const shellRequested = lead.flags.has('i') || lead.flags.has('s');
+      if (cmdArgs.length === 0 && !shellRequested) {
+        return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
       }
-      // Strip flags that don't consume a value (-n non-interactive, -S
-      // read password from stdin, -E preserve env, -k reset timestamp).
-      while (cmdArgs.length > 0 && /^-[nSEkbiHvP]+$/.test(cmdArgs[0])) cmdArgs.shift();
-      if (cmdArgs.length === 0) return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
       if (cmdArgs[0] === '-l') return this.dispatch('sudo', cmdArgs, undefined, true);
-
-      // Parse `-u user` up front — authorization (runas restriction) and
-      // the audit trail both need the real target, not just "root", and
-      // the command line logged must not include the "-u user" prefix.
-      let sudoTargetUser: string | null = null;
-      if (cmdArgs[0] === '-u' && cmdArgs.length >= 3) {
-        sudoTargetUser = cmdArgs[1];
-        cmdArgs = cmdArgs.slice(2);
+      if (shellRequested) {
+        const last = cmdArgs[cmdArgs.length - 1];
+        const piped = last !== undefined && last.includes('\n') ? cmdArgs.pop() : undefined;
+        const asShell = ['su', ...(lead.flags.has('i') ? ['-'] : []), sudoTargetUser ?? 'root'];
+        cmdArgs = [...asShell, ...(cmdArgs.length > 0 ? ['-c', cmdArgs.join(' ')] : [])];
+        if (piped !== undefined) cmdArgs.push(piped);
       }
       const runasUser = sudoTargetUser ?? 'root';
       const auth = this.authorizeSudo(cmdArgs[0], cmdArgs.slice(1), runasUser);
@@ -4407,7 +4469,7 @@ export class LinuxCommandExecutor {
     if (this.envOverride) return { ...this.envOverride };
     const user = this.userMgr.currentUser;
     const home = this.userMgr.currentUid === 0 ? '/root' : `/home/${user}`;
-    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const hostname = kernelHostname(this.vfs);
     const vars: Record<string, string> = {
       HOME: home,
       PWD: this.cwd,
@@ -5372,14 +5434,7 @@ export class LinuxCommandExecutor {
       }
       case 'reboot':
       case 'shutdown': {
-        this.auditRules.rebootReset();
-        // PRD-Iptables-UFW.md Phase 7 (objectif B.6): real netfilter state
-        // does not survive a reboot — wipe the live rule sets first, then
-        // let rebootCycle()'s lifecycle events (ufw, netfilter-persistent)
-        // reconstruct whatever was actually persisted to disk.
-        this.iptables.resetAll();
-        this.ip6tables.resetAll();
-        this.serviceMgr.rebootCycle();
+        this.rebootCycle();
         return { output: '', exitCode: 0 };
       }
       case 'df': return {
@@ -5396,21 +5451,21 @@ export class LinuxCommandExecutor {
         pm: this.processMgr,
         cpu: this.hardware.cpu,
         kernel: this.identity.kernel,
-        hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+        hostname: kernelHostname(this.vfs),
       });
       case 'pidstat': return cmdPidstat(args, {
         pm: this.processMgr,
         cpu: this.hardware.cpu,
         memory: this.hardware.memory,
         kernel: this.identity.kernel,
-        hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+        hostname: kernelHostname(this.vfs),
       });
       case 'iostat': return cmdIostat(args, {
         pm: this.processMgr,
         cpu: this.hardware.cpu,
         storage: this.hardware.storage,
         kernel: this.identity.kernel,
-        hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+        hostname: kernelHostname(this.vfs),
       });
       case 'exportfs': return this.handleExportfs(args);
       case 'showmount': return this.handleShowmount(args);
@@ -5561,7 +5616,7 @@ export class LinuxCommandExecutor {
       case 'ssh-agent':
         return runSshAgentCommand(args, this.agentHost());
       case 'ssh-keyscan': return this.runSshKeyscan(args);
-      case 'ssh-keygen':  return this.runSshKeygen(args);
+      case 'ssh-keygen':  return this.runSshKeygen(args, stdin);
       case 'ssh-copy-id': return this.runSshCopyId(args);
       case 'xargs': {
         const r = runXargs(args, stdin, {
@@ -5971,7 +6026,7 @@ export class LinuxCommandExecutor {
 
   handleMail(args: string[], stdin?: string): { output: string; exitCode: number } {
     const parsed = parseMailArgs(args);
-    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const hostname = kernelHostname(this.vfs);
     if (parsed.readMode) {
       const mailbox = this.vfs.readFile(`/var/mail/${this.userMgr.currentUser}`) ?? '';
       return { output: formatMailboxSummary(parseMailbox(mailbox)), exitCode: 0 };
@@ -6408,12 +6463,18 @@ export class LinuxCommandExecutor {
   // ─── su handler ──────────────────────────────────────────────────
 
   private agentHost(): SshAgentHost {
+    const absolute = (path: string) => this.vfs.normalizePath(path, this.cwd);
     return {
       agent: this.sshAgent,
-      reader: this.vfs,
-      separator: '/',
-      sshDir: `${this.sshHomeDir()}/.ssh`,
+      reader: { readFile: (path: string) => this.vfs.readFile(absolute(path)) },
+      homeDir: this.sshHomeDir(),
       authSocket: `/tmp/ssh-${this.userMgr.currentUser}/agent.1`,
+      release: OPENSSH_UBUNTU_22_04,
+      agentUnreachable: () => null,
+      privateKeyMode: (path: string) => {
+        const inode = this.vfs.resolveInode(absolute(path));
+        return inode && inode.uid === this.userMgr.currentUid ? inode.permissions : null;
+      },
       setEnvironment: (name: string, value: string) => { this.env.set(name, value); },
     };
   }
@@ -7199,7 +7260,7 @@ export class LinuxCommandExecutor {
   }
 
   private handleWatch(args: string[]): { output: string; exitCode: number } {
-    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const hostname = kernelHostname(this.vfs);
     const r = runWatch(args, {
       hostname,
       now: () => {
@@ -7263,7 +7324,7 @@ export class LinuxCommandExecutor {
   private handleSudoCmd(args: string[]): { output: string; exitCode: number } {
     if (args.length === 0 || args[0] === '-l') {
       // sudo -l [-U user]: show what a user (default: current user) can do.
-      const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+      const hostname = kernelHostname(this.vfs);
       const user = (args[0] === '-l' && args[1] === '-U' && args[2]) ? args[2] : this.userMgr.currentUser;
       if (!this.userMgr.getUser(user)) {
         return { output: `sudo: unknown user: ${user}`, exitCode: 1 };
@@ -7299,7 +7360,7 @@ export class LinuxCommandExecutor {
     if (user === 'root' || this.userMgr.currentUid === 0) return true;
     const load = loadSudoPolicy(this.vfs);
     if (!load.ok || !load.engine) return false;
-    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const hostname = kernelHostname(this.vfs);
     return load.engine.hasAnyAccess(this.sudoActor(user), hostname, this.getHostIps());
   }
 
@@ -7681,8 +7742,10 @@ export class LinuxCommandExecutor {
     return names;
   }
 
+  registeredCommandNames: () => readonly string[] = () => [];
+
   private getCommandCompletions(prefix: string): string[] {
-    const unique = Array.from(new Set(KNOWN_LINUX_COMMANDS));
+    const unique = Array.from(new Set([...KNOWN_LINUX_COMMANDS, ...this.registeredCommandNames()]));
     if (!prefix) return unique.sort();
     return unique.filter(c => c.startsWith(prefix)).sort();
   }

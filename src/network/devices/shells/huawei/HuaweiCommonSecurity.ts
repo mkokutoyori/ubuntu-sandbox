@@ -71,10 +71,18 @@ export function remoteAccessConfigBlocksVrp(mgmt: RouterManagementService): stri
     ...[...mgmt.getSshUsers()].flatMap(([name, user]) => [
       `ssh user ${name}`,
       ...(user.authenticationType ? [`ssh user ${name} authentication-type ${user.authenticationType}`] : []),
+      ...(user.assignedRsaKey ? [`ssh user ${name} assign rsa-key ${user.assignedRsaKey}`] : []),
       ...(user.serviceType ? [`ssh user ${name} service-type ${user.serviceType}`] : []),
     ]),
   ];
-  return [telnetBlock, stelnetBlock].filter((block) => block.length > 0);
+  const peerKeyBlocks = [...mgmt.getRsaPeerPublicKeys().values()].map((key) => [
+    `rsa peer-public-key ${key.name}${key.encoding === 'der' ? '' : ` encoding-type ${key.encoding}`}`,
+    ' public-key-code begin',
+    ...key.code.map((line) => `  ${line}`),
+    ' public-key-code end',
+    ' peer-public-key end',
+  ]);
+  return [telnetBlock, ...peerKeyBlocks, stelnetBlock].filter((block) => block.length > 0);
 }
 
 export function displayTelnetServerStatusVrp(device: unknown): string {

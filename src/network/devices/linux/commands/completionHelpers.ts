@@ -31,6 +31,11 @@ export function makeArgCompleter(spec: ArgCompletionSpec): CompleteFn {
     if (wordsForPrev) {
       return wordsForPrev.filter((w) => w.startsWith(partial));
     }
+    for (const [flag, words] of Object.entries(spec.wordsAfter ?? {})) {
+      if (/^-[A-Za-z]$/.test(flag) && partial.startsWith(flag) && partial.length > flag.length) {
+        return words.map((w) => flag + w).filter((w) => w.startsWith(partial));
+      }
+    }
     if (partial.startsWith('-') && spec.flags) {
       return spec.flags.filter((f) => f.startsWith(partial));
     }
@@ -38,7 +43,8 @@ export function makeArgCompleter(spec: ArgCompletionSpec): CompleteFn {
       return spec.firstWords.filter((w) => w.startsWith(partial));
     }
     if (spec.hostsAtBarePosition && !partial.startsWith('-')) {
-      return knownHosts(ctx).filter((h) => h.startsWith(partial));
+      const user = partial.slice(0, partial.lastIndexOf('@') + 1);
+      return knownHosts(ctx).map((h) => user + h).filter((h) => h.startsWith(partial));
     }
     return [];
   };

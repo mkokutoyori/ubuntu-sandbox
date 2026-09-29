@@ -328,6 +328,7 @@ export class DHCPServer implements IProtocolEngine {
 
   deletePool(name: string): boolean {
     this.highUtilizationNotified.delete(name);
+    this.staticBindings.delete(name);
     return this.pools.delete(name);
   }
 
@@ -706,8 +707,12 @@ export class DHCPServer implements IProtocolEngine {
         };
       }
 
-      // Allocate a new IP and create a pending offer
-      const ip = this.findAvailableIP(pool, params.clientMAC);
+      const requested = params.requestedIP;
+      const ip = requested !== undefined
+        && this.isIPInPool(requested, pool)
+        && this.isAvailableFor(requested, pool, params.clientMAC)
+        ? requested
+        : this.findAvailableIP(pool, params.clientMAC);
       if (!ip) {
         // Real IOS/VRP raise a log/trap on pool exhaustion; a silent
         // null left operators discovering it from user complaints.
@@ -855,6 +860,26 @@ export class DHCPServer implements IProtocolEngine {
           serverIdentifier: this.resolveServerId(pool),
           xid: params.xid,
           message: `Client ${params.clientMAC} denied by pool policy`,
+        };
+      }
+
+      const reservation = this.findStaticBinding(params.clientMAC, pool.name);
+      if (reservation !== null && reservation.ipAddress !== params.requestedIP) {
+        const held = this.bindings.get(params.requestedIP);
+        if (held !== undefined && held.clientId === params.clientMAC) {
+          this.bindings.delete(params.requestedIP);
+          this.getBus().publish({
+            topic: 'dhcp.pool.lease-released',
+            payload: { ...this.deviceRef(), pool: held.poolName, ip: params.requestedIP, reason: 'reassigned' },
+          });
+          this.refreshServerSignals();
+        }
+        this.stats.naks++;
+        return {
+          type: 'NAK',
+          serverIdentifier: this.resolveServerId(pool),
+          xid: params.xid,
+          message: `Client ${params.clientMAC} is reserved ${reservation.ipAddress}, not ${params.requestedIP}`,
         };
       }
 
@@ -1480,28 +1505,22 @@ export class DHCPServer implements IProtocolEngine {
     for (let ip = networkNum + 1; ip < broadcastNum; ip++) {
       const ipStr = this.numberToIP(ip);
 
-      // Skip excluded
-      if (this.isExcluded(ipStr)) continue;
-
-      // Skip already bound
-      if (this.bindings.has(ipStr)) continue;
-
-      // Skip pending offers (reserved for other clients)
-      if (this.pendingOffers.has(ipStr)) continue;
-
-      // Skip conflicted addresses
-      if (this.isConflicted(ipStr)) continue;
-
-      // Skip IPs reserved for other clients via static bindings
-      if (clientMAC) {
-        const reservedFor = this.getStaticBindingForIP(ipStr, pool.name);
-        if (reservedFor && reservedFor.clientId !== clientMAC) continue;
-      }
-
-      return ipStr;
+      if (this.isAvailableFor(ipStr, pool, clientMAC)) return ipStr;
     }
 
     return null; // Pool exhausted
+  }
+
+  private isAvailableFor(ip: string, pool: DHCPPoolConfig, clientMAC?: string): boolean {
+    if (this.isExcluded(ip)) return false;
+    if (this.bindings.has(ip)) return false;
+    if (this.pendingOffers.has(ip)) return false;
+    if (this.isConflicted(ip)) return false;
+    if (clientMAC) {
+      const reservedFor = this.getStaticBindingForIP(ip, pool.name);
+      if (reservedFor && reservedFor.clientId !== clientMAC) return false;
+    }
+    return true;
   }
 
   /** Find static binding that reserves a specific IP */

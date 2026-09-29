@@ -28,6 +28,7 @@ export interface TcpdumpDeps {
   delay(ms: number): Promise<void>;
   onCancelRequested(cb: () => void): () => void;
   runsSupervised?(): boolean;
+  interruptEchoed?(): boolean;
   runsDetached?(): boolean;
   readFile(path: string): string | null;
   writeFile(path: string, content: string, asUser?: string): boolean;
@@ -44,6 +45,7 @@ const PRINTED_LINK_TYPES = new Set(['EN10MB', 'LINUX_SLL', 'LINUX_SLL2']);
 export interface TranscriptEntry {
   fd: 1 | 2;
   text: string;
+  blank?: true;
 }
 
 export interface TcpdumpResult {
@@ -66,6 +68,14 @@ class Transcript {
     this.push(2, text);
   }
 
+  blankLine(): void {
+    if (this.stream) {
+      this.stream.line('');
+      return;
+    }
+    this.entries.push({ fd: 1, text: '', blank: true });
+  }
+
   private push(fd: 1 | 2, text: string): void {
     if (this.stream) {
       for (const line of text.split('\n')) this.stream.line(line);
@@ -81,7 +91,7 @@ class Transcript {
 }
 
 export function interleaveTcpdumpStreams(result: TcpdumpResult): string {
-  return result.transcript.map((e) => e.text).filter((text) => text.length > 0).join('\n');
+  return result.transcript.filter((e) => e.text.length > 0 || e.blank).map((e) => e.text).join('\n');
 }
 
 export async function runTcpdump(tokens: string[], deps: TcpdumpDeps): Promise<TcpdumpResult> {
@@ -274,6 +284,7 @@ async function runCapture(
   const collected: CaptureFrame[] = [];
   let rendering: Promise<void> = Promise.resolve();
   let limitReached = false;
+  let interrupted = false;
   const target = opt.count;
   const detached = deps.runsDetached?.() === true;
   const streaming = deps.stream !== undefined;
@@ -309,7 +320,10 @@ async function runCapture(
       }
       if (target !== null && collected.length >= target) finish();
     });
-    unsubscribeCancel = deps.onCancelRequested(finish);
+    unsubscribeCancel = deps.onCancelRequested(() => {
+      interrupted = !settled;
+      finish();
+    });
     if (settled) {
       unsubscribeCapture();
     } else if (streaming || supervised) {
@@ -322,6 +336,7 @@ async function runCapture(
     }
   });
 
+  if (interrupted && writer === null && deps.interruptEchoed?.() !== true) transcript.blankLine();
   if (limitReached) transcript.err(`Maximum file limit reached: ${opt.fileCount ?? 0}`);
   for (const line of footer(collected.length, collected.length)) transcript.err(line);
   return transcript.result(0);

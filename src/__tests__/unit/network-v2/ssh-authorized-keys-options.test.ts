@@ -101,7 +101,7 @@ describe('SSH server — authorized_keys per-key options', () => {
       'ssh -o PreferredAuthentications=publickey -o PasswordAuthentication=no alice@10.0.0.2 echo hi', 'admin\n',
     );
     expect(out).toMatch(/^alice\s*$/m);
-    expect(out).not.toMatch(/linux-server/);
+    expect(out).not.toMatch(new RegExp(`^${srv.getHostname()}\\s*$`, 'm'));
     expect(out).not.toMatch(/Permission denied/i);
   });
 

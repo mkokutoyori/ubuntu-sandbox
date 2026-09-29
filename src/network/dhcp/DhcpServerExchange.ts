@@ -37,9 +37,29 @@ function offerPacket(pkt: DHCPPacket, offer: DHCPOfferResult): DHCPPacket {
   });
 }
 
+function requestedAddress(pkt: DHCPPacket): string | undefined {
+  const raw = pkt.getOption(DHCP_OPTION.REQUESTED_IP);
+  return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+}
+
 function clientHostName(pkt: DHCPPacket): string | undefined {
   const raw = pkt.getOption(DHCP_OPTION.HOST_NAME);
   return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+}
+
+export type DhcpReplyRoute =
+  | { readonly kind: 'relay'; readonly relay: string }
+  | { readonly kind: 'broadcast' }
+  | { readonly kind: 'unicast'; readonly address: string };
+
+const BROADCAST_FLAG = 0x8000;
+
+export function dhcpReplyRoute(request: DHCPPacket, reply: DHCPPacket): DhcpReplyRoute {
+  if (request.giaddr !== '0.0.0.0') return { kind: 'relay', relay: request.giaddr };
+  if (reply.getMessageType() === 'DHCPNAK') return { kind: 'broadcast' };
+  if (request.ciaddr !== '0.0.0.0') return { kind: 'unicast', address: request.ciaddr };
+  if ((request.flags & BROADCAST_FLAG) !== 0 || reply.yiaddr === '0.0.0.0') return { kind: 'broadcast' };
+  return { kind: 'unicast', address: reply.yiaddr };
 }
 
 /**
@@ -47,6 +67,14 @@ function clientHostName(pkt: DHCPPacket): string | undefined {
  * reply (RELEASE, DECLINE, or no address available).
  */
 export function buildDhcpServerReply(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket | null {
+  const reply = answerDhcpRequest(pkt, ctx);
+  if (reply === null) return null;
+  reply.giaddr = pkt.giaddr;
+  reply.flags = pkt.flags;
+  return reply;
+}
+
+function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket | null {
   const { server } = ctx;
   const giaddr = pkt.giaddr !== '0.0.0.0' ? pkt.giaddr : undefined;
   const type = pkt.getMessageType();
@@ -56,6 +84,7 @@ export function buildDhcpServerReply(pkt: DHCPPacket, ctx: DhcpServeContext): DH
       clientMAC: pkt.chaddr, xid: pkt.xid,
       hostName: clientHostName(pkt),
       clientIdentifier: pkt.chaddr, parameterRequestList: [],
+      requestedIP: requestedAddress(pkt),
       giaddr, localGatewayIP: giaddr ? undefined : ctx.localGatewayIP,
     };
     let offer = server.processDiscover(params);
@@ -100,6 +129,19 @@ export function buildDhcpServerReply(pkt: DHCPPacket, ctx: DhcpServeContext): DH
         netbiosNodeType: pool?.netbiosNodeType,
         rawOptions: pool?.options,
       });
+  }
+
+  if (type === 'DHCPINFORM') {
+    const result = server.processInform({
+      clientMAC: pkt.chaddr, clientIP: pkt.ciaddr, xid: pkt.xid, clientIdentifier: pkt.chaddr,
+    });
+    if (!result) return null;
+    return DHCPPacket.createInformAck(pkt.chaddr, pkt.xid, pkt.ciaddr, result.serverIdentifier, {
+      mask: result.mask,
+      router: result.router ?? '0.0.0.0',
+      dns: result.dnsServers,
+      domainName: result.domainName ?? undefined,
+    });
   }
 
   if (type === 'DHCPDECLINE') {

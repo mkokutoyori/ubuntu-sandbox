@@ -1,28 +1,24 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
+import { sshOptionCompletionWords } from '@/network/protocols/ssh/SshClientOptions';
 import { proxyJumpRequest, wireExecTarget } from '../../network/LinuxSshClient';
 import { runThroughProxyJump } from '../../network/SshProxyJump';
 import { dialStream, parseDialAddress } from '@/network/tcp/dial';
 import { PortNumber } from '@/network/core/ports/PortNumber';
 import type { TcpConnector } from '@/network/tcp/types';
-
-const SSH_USAGE = 'usage: ssh [-46AaCfGgKkMNnqsTtVvXxYy] [-B bind_interface]\n'
-  + '           [-b bind_address] [-c cipher_spec] [-D [bind_address:]port]\n'
-  + '           [-E log_file] [-e escape_char] [-F configfile] [-I pkcs11]\n'
-  + '           [-i identity_file] [-J destination] [-L address] [-l login_name]\n'
-  + '           [-m mac_spec] [-O ctl_cmd] [-o option] [-p port] [-Q query_option]\n'
-  + '           [-R address] [-S ctl_path] [-W host:port] [-w local_tun[:remote_tun]]\n'
-  + '           destination [command [argument ...]]';
+import { OPENSSH_UBUNTU_22_04 } from '@/network/protocols/ssh/OpenSshRelease';
 
 export const sshCommand: LinuxCommand = {
   name: 'ssh',
   needsNetworkContext: true,
   manSection: 1,
-  usage: SSH_USAGE,
+  usage: OPENSSH_UBUNTU_22_04.sshUsage,
   help: 'OpenSSH remote login client.',
   complete: makeArgCompleter({
     flags: ['-p', '-i', '-o', '-l', '-t', '-T', '-q', '-v', '-N', '-L', '-R', '-D', '-J', '-A'],
+    wordsAfter: { '-o': sshOptionCompletionWords(OPENSSH_UBUNTU_22_04.clientKeywords) },
+    hostsAtBarePosition: true,
   }),
   options: [
     { flag: '-p', description: 'Port to connect to on the remote host.', takesArg: true, argName: 'port' },
@@ -66,7 +62,7 @@ export async function runSsh(
   const expanded = jump.remaining.map((word) =>
     word === '~' ? client.home : word.startsWith('~/') ? client.home + word.slice(1) : word);
   const parsed = wireExecTarget(expanded, ctx.executor.vfs, ctx.executor.getCwd(), client.user);
-  if (!parsed) return { output: SSH_USAGE, exitCode: 255 };
+  if (!parsed) return { output: OPENSSH_UBUNTU_22_04.sshUsage, exitCode: 255 };
   const target = parsed;
   return runThroughProxyJump({
     client,

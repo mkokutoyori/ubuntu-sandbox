@@ -1,6 +1,8 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
+import { sshOptionCompletionWords } from '@/network/protocols/ssh/SshClientOptions';
+import { OPENSSH_UBUNTU_22_04 } from '@/network/protocols/ssh/OpenSshRelease';
 
 const SCP_USAGE = 'usage: scp [-346ABCOpqRrsTv] [-c cipher] [-D sftp_server_path] [-F ssh_config]\n' +
   '           [-i identity_file] [-J destination] [-l limit] [-o ssh_option]\n' +
@@ -18,7 +20,10 @@ export const scpCommand: LinuxCommand = {
   manSection: 1,
   usage: SCP_USAGE,
   help: 'Copy files between hosts over SSH.',
-  complete: makeArgCompleter({ flags: ['-r', '-p', '-P', '-i', '-o', '-q', '-v', '-C'] }),
+  complete: makeArgCompleter({
+    flags: ['-r', '-p', '-P', '-i', '-o', '-q', '-v', '-C'],
+    wordsAfter: { '-o': sshOptionCompletionWords(OPENSSH_UBUNTU_22_04.clientKeywords) },
+  }),
   options: [
     { flag: '-r', description: 'Copy directories recursively.' },
     { flag: '-p', description: 'Preserve modification time and mode.' },

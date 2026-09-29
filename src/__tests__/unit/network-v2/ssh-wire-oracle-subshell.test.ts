@@ -15,6 +15,7 @@ import { installDefaultShells, reinstallDefaultShells } from '@/shell/registerDe
 import { ShellFactory } from '@/shell/ShellFactory';
 import { AbstractShell } from '@/shell/AbstractShell';
 import type { ShellLineResult } from '@/shell/IShell';
+import { noopSshLocalFs } from './_helpers/noopSshLocalFs';
 
 beforeEach(() => {
   installDefaultShells();
@@ -37,7 +38,7 @@ async function oracleShell(): Promise<ISshShellChannel> {
   const dev = pc as unknown as { tcpConnect(h: string, p: number): Promise<unknown> };
   const session = new SshSession({
     tcpConnector: ((h: string, p: number) => dev.tcpConnect(h, p)) as never,
-    vfs: { readFile: () => null, writeFile: () => undefined, resolveInode: () => null, mkdirp: () => undefined } as never,
+    vfs: noopSshLocalFs() as never,
     localUser: 'user', localUid: 1000, localGid: 1000,
     knownHostsPath: '/home/user/.ssh/known_hosts',
     interactionHandler: new SilentSshInteractionHandler(),

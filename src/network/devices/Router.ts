@@ -165,7 +165,7 @@ import {
   DHCP_FREE_ADDRESS_HIGH, DHCP_FREE_ADDRESS_LOW, DHCP_SHARED_NET_ENTRY,
   snmpAdminStringIndex,
 } from '../snmp/mibs/DhcpServerMib';
-import { DHCPPacket } from '../dhcp/DHCPPacket';
+import { DHCPPacket, DHCP_WIRE_BYTES } from '../dhcp/DHCPPacket';
 import { buildDhcpServerReply } from '../dhcp/DhcpServerExchange';
 import type { DHCPDiscoverParams, DHCPOfferResult, DHCPSnoopingConfig } from '../dhcp/types';
 import { createDefaultSnoopingConfig } from '../dhcp/types';
@@ -1238,6 +1238,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.getCredentialStore().recordLoginSuccess(user, ip, 'password');
       },
       recordLogout: (user, ip) => this.closeWireVtySession(user, ip),
+      ...(this.sshPublicKeyAdmitted ? {
+        publicKeyAdmitted: (user: string, key: string) =>
+          this.accountAdmits(user, 'ssh') && this.sshPublicKeyAdmitted!(user, key),
+      } : {}),
     }, this.sshServerLimits());
     return new SshServerHandler(ctx);
   }
@@ -1420,7 +1424,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const datagram = buildUdpDatagram({
       destination: new IPAddress('255.255.255.255'),
       destinationPort: DHCP_SERVER_PORT, sourcePort: DHCP_CLIENT_PORT,
-      payload: pkt, payloadBytes: 300,
+      payload: pkt, payloadBytes: DHCP_WIRE_BYTES,
     });
     this.sendIpv4Packet({
       destination: new IPAddress('255.255.255.255'),
@@ -4225,7 +4229,6 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     giaddr: string | undefined,
   ): void {
     if (option82) reply.setOption(82, option82);
-    reply.giaddr = pkt.giaddr;
     if (giaddr) {
       const dst = new IPAddress(giaddr);
       const route = this.lookupRoute(dst);
@@ -4284,9 +4287,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       type: 'udp',
       sourcePort: 67,
       destinationPort: dstIp.toString() === '255.255.255.255' ? 68 : 67,
-      length: 8 + 300, checksum: 0, payload: pkt,
+      length: 8 + DHCP_WIRE_BYTES, checksum: 0, payload: pkt,
     };
-    const ipPkt = createIPv4Packet(srcIp, dstIp, IP_PROTO_UDP, 64, udp, 8 + 300);
+    const ipPkt = createIPv4Packet(srcIp, dstIp, IP_PROTO_UDP, 64, udp, 8 + DHCP_WIRE_BYTES);
     this.sendFrame(portName, {
       srcMAC: port.getMAC(), dstMAC: dstMac,
       etherType: ETHERTYPE_IPV4, payload: ipPkt,
@@ -4322,6 +4325,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.getCredentialStore().admits(user, service, this.unsetServiceTypeAdmits());
   }
   protected sshPasswordAllowed(_user: string): boolean { return true; }
+  protected sshPublicKeyAdmitted?(user: string, offeredKeyMaterial: string): boolean;
   protected sshForcedCommand(_user: string): string | null { return null; }
   private sshPasswordLoginAdmitted(user: string): boolean {
     return this.accountAdmits(user, 'ssh') && this.sshPasswordAllowed(user);

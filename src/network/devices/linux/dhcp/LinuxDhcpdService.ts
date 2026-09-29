@@ -1,6 +1,6 @@
 import type { EndHost } from '../../EndHost';
 import { DHCPServer } from '../../../dhcp/DHCPServer';
-import { DHCPPacket } from '../../../dhcp/DHCPPacket';
+import { DHCPPacket, DHCP_WIRE_BYTES } from '../../../dhcp/DHCPPacket';
 import { buildDhcpServerReply } from '../../../dhcp/DhcpServerExchange';
 import {
   IPAddress, SubnetMask, MACAddress, createIPv4Packet,
@@ -284,7 +284,6 @@ export class LinuxDhcpdService {
     });
     if (!reply) return;
     if (reply.getMessageType() === 'DHCPACK') this.recordLease(pkt, reply);
-    reply.giaddr = pkt.giaddr;
     if (pkt.giaddr !== '0.0.0.0') this.sendReplyToRelay(pkt.giaddr, reply);
     else this.sendReply(inPort, reply);
   }
@@ -324,7 +323,7 @@ export class LinuxDhcpdService {
 
   private sendReplyToRelay(relayAgent: string, reply: DHCPPacket): void {
     this.host.sendUdpDatagram(
-      new IPAddress(relayAgent), DHCP_SERVER_PORT, DHCP_SERVER_PORT, reply, 300);
+      new IPAddress(relayAgent), DHCP_SERVER_PORT, DHCP_SERVER_PORT, reply, DHCP_WIRE_BYTES);
   }
 
   private sendReply(inPort: string, reply: DHCPPacket): void {
@@ -333,14 +332,14 @@ export class LinuxDhcpdService {
     if (!port || !srcIp) return;
     const udp: UDPPacket = {
       type: 'udp', sourcePort: DHCP_SERVER_PORT, destinationPort: DHCP_CLIENT_PORT,
-      length: 8 + 300, checksum: 0, payload: reply,
+      length: 8 + DHCP_WIRE_BYTES, checksum: 0, payload: reply,
     };
     this.host.sendFrame(inPort, {
       srcMAC: port.getMAC(),
       dstMAC: MACAddress.broadcast(),
       etherType: ETHERTYPE_IPV4,
       payload: createIPv4Packet(
-        srcIp, new IPAddress('255.255.255.255'), IP_PROTO_UDP, 64, udp, 8 + 300),
+        srcIp, new IPAddress('255.255.255.255'), IP_PROTO_UDP, 64, udp, 8 + DHCP_WIRE_BYTES),
     });
   }
 

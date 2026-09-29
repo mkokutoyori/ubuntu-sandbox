@@ -28,6 +28,7 @@ import {
   runSshKeygenCommand,
   vfsKeygenHost,
 } from '@/network/protocols/ssh/SshKeygenCommand';
+import { OPENSSH_UBUNTU_22_04 } from '@/network/protocols/ssh/OpenSshRelease';
 
 describe('SSH LAN — file transfers', () => {
   let lan: SshLan;
@@ -161,6 +162,7 @@ describe('SSH LAN — file transfers', () => {
     const result = runSshKeygenCommand(['-t', 'ed25519', '-C', 'alice@local'],
       vfsKeygenHost(localVfs, {
         uid: 1000, gid: 1000, user: 'user', hostname: 'local', sshDir: '/home/user/.ssh',
+        cwd: '/home/user', release: OPENSSH_UBUNTU_22_04,
       }));
     expect(result.exitCode).toBe(0);
     expect(localVfs.exists('/home/user/.ssh/id_ed25519')).toBe(true);

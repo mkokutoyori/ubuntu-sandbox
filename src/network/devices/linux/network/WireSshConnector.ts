@@ -1,6 +1,11 @@
 import { SshSession } from '../../../protocols/ssh/session/SshSession';
 import { SilentSshInteractionHandler } from '../../../protocols/ssh/session/ISshInteractionHandler';
-import { SshConnectOptionsBuilder } from '../../../protocols/ssh/SshConnectOptions';
+import {
+  OPENSSH_CLIENT_AUTHENTICATION,
+  OPENSSH_DEFAULT_IDENTITY_FILES,
+  SshConnectOptionsBuilder,
+  type SshClientAuthentication,
+} from '../../../protocols/ssh/SshConnectOptions';
 import { isOk, type SshError } from '../../../protocols/ssh/Result';
 import type { ISshLocalFs } from '../../../protocols/ssh/ISshLocalFs';
 import type { TcpConnector } from '@/network/tcp/types';
@@ -23,6 +28,7 @@ export interface WireSshTarget {
   readonly passwordPrompt?: () => string;
   readonly identities: readonly string[];
   readonly strict: StrictHostKeyChecking;
+  readonly authentication?: SshClientAuthentication;
 }
 
 export interface WireSshOutcome {
@@ -31,8 +37,6 @@ export interface WireSshOutcome {
   readonly notices: readonly string[];
   readonly warnings: readonly string[];
 }
-
-const DEFAULT_IDENTITIES = ['id_ed25519', 'id_rsa', 'id_ecdsa'];
 
 export async function connectWireSsh(
   client: WireSshClient, target: WireSshTarget, connector: TcpConnector,
@@ -50,10 +54,11 @@ export async function connectWireSsh(
     interactionHandler: interaction,
   });
   const builder = SshConnectOptionsBuilder.create()
-    .host(target.host).user(target.user).port(target.port).strictHostKeyChecking(target.strict);
+    .host(target.host).user(target.user).port(target.port).strictHostKeyChecking(target.strict)
+    .authentication(target.authentication ?? OPENSSH_CLIENT_AUTHENTICATION);
   for (const path of target.identities) builder.addIdentityFile(path);
   if (target.identities.length === 0) {
-    for (const candidate of DEFAULT_IDENTITIES) {
+    for (const candidate of OPENSSH_DEFAULT_IDENTITY_FILES) {
       const path = `${client.home}/.ssh/${candidate}`;
       if (client.vfs.readFile(path) !== null) builder.addIdentityFile(path);
     }

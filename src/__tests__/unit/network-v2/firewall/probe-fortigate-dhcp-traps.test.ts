@@ -52,6 +52,15 @@
  * TEMOIN « a REQUEST the server refuses is one NAK », que l'ancien client
  * comptait deja, et qui prouve que la paire mesure le comptage et non un
  * banc muet.
+ *
+ * Deux cas reecrits depuis que le FortiGate sonde une adresse avant de
+ * l'offrir (RFC 2131 §3.1.2) : un squatteur n'est plus offert a un client,
+ * donc plus decline par lui. La trap conflictIP part de deux sources, toutes
+ * deux mesurees ici : le DHCPDECLINE recu sur le fil, et l'adresse que le
+ * serveur trouve lui-meme occupee — le poste Ubuntu recoit alors l'adresse
+ * suivante. La verification ARP du client Windows et la regle de l'adresse
+ * non specifiee dans le cache voisin se mesurent contre un serveur qui ne
+ * sonde pas, dans dhcp-ping-before-offer.test.ts.
  */
 import { describe, it, expect } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
@@ -64,6 +73,7 @@ import type { SnmpMessage } from '@/network/snmp/types';
 import { DHCPClient } from '@/network/dhcp/DHCPClient';
 import { DHCPServer } from '@/network/dhcp/DHCPServer';
 import { EventBus } from '@/events/EventBus';
+import { declineOnTheWire } from '../_helpers/dhcpDeclineOnTheWire';
 
 interface Shell { executeCommand(command: string): Promise<string> }
 
@@ -163,23 +173,20 @@ describe('a FortiGate reports its DHCP service with fgTrapDhcp', () => {
     expect(dhcpTrapsV1(traps)).toHaveLength(1);
   });
 
-  it('a Windows client that finds its acknowledged address answering ARP declines it, and the FortiGate reports conflictIP', async () => {
+  it('a DHCPDECLINE received on the wire is reported as conflictIP', async () => {
     const { traps, plug } = await managedFirewall();
-    const squatter = plug(new LinuxPC('linux-pc', 'SQUATTER'));
-    await type(squatter, ['sudo ip addr add 10.1.0.100/24 dev eth0', 'sudo ip link set eth0 up']);
-    const windows = plug(new WindowsPC('windows-pc', 'WIN'));
-    await windows.executeCommand('ipconfig /renew');
+    const client = await leaseClient(plug, 'C1');
+    declineOnTheWire(client.getPorts()[0], '10.1.0.100', '10.1.0.1');
     expect(dhcpTraps(traps).map(trapType)).toEqual([2]);
-    expect(await squatter.executeCommand('ip neigh show')).not.toContain('0.0.0.0');
   });
 
-  it('an Ubuntu client in the same situation does not check, and nothing is reported', async () => {
+  it('an address found in use by the FortiGate itself is not offered, and is reported as conflictIP', async () => {
     const { traps, plug } = await managedFirewall();
     const squatter = plug(new LinuxPC('linux-pc', 'SQUATTER'));
     await type(squatter, ['sudo ip addr add 10.1.0.100/24 dev eth0', 'sudo ip link set eth0 up']);
     const ubuntu = await leaseClient(plug, 'UBUNTU');
-    expect(await ubuntu.executeCommand('ip -4 addr show eth0')).toContain('inet 10.1.0.100');
-    expect(dhcpTraps(traps)).toEqual([]);
+    expect(await ubuntu.executeCommand('ip -4 addr show eth0')).toContain('inet 10.1.0.101');
+    expect(dhcpTraps(traps).map(trapType)).toEqual([2]);
   });
 
   it('the lease usage is served as the guide walks it: the server count, then the usage per VDOM and server', async () => {

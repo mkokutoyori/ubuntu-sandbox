@@ -47,6 +47,7 @@ export interface ExternalCommandResult {
    * whole `output` is treated as stderr iff the exit code is non-zero).
    */
   stderr?: string;
+  interleaved?: string;
   backgroundPid?: number;
 }
 
@@ -884,13 +885,19 @@ export class BashInterpreter {
         // and must not leak into the next stage's stdin (see
         // `runPipelineStages`).
         explicitStderr = result.stderr;
-        if (result.output) {
-          this.output.push(hasAnyRedirect ? result.output : ensureTrailingNewline(result.output));
-        }
-        if (result.stderr) {
-          this.stderrParts.push(result.stderr);
-          if (!hasAnyRedirect && this.pipelineDepth === 0) {
-            this.output.push(ensureTrailingNewline(result.stderr));
+        const terminalView = !hasAnyRedirect && this.pipelineDepth === 0 ? result.interleaved : undefined;
+        if (terminalView !== undefined) {
+          if (terminalView) this.output.push(ensureTrailingNewline(terminalView));
+          if (result.stderr) this.stderrParts.push(result.stderr);
+        } else {
+          if (result.output) {
+            this.output.push(hasAnyRedirect ? result.output : ensureTrailingNewline(result.output));
+          }
+          if (result.stderr) {
+            this.stderrParts.push(result.stderr);
+            if (!hasAnyRedirect && this.pipelineDepth === 0) {
+              this.output.push(ensureTrailingNewline(result.stderr));
+            }
           }
         }
       } else if (result.output) {

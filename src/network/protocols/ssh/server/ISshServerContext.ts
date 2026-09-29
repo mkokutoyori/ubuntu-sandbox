@@ -25,6 +25,7 @@ export interface SshServerConfig {
   readonly permitRootLogin: boolean;
   readonly passwordAuthentication: boolean;
   readonly pubkeyAuthentication: boolean;
+  readonly kbdInteractiveAuthentication?: boolean;
   readonly clientAliveInterval?: number;
   readonly clientAliveCountMax?: number;
   readonly loginGraceTime?: number;
@@ -114,6 +115,8 @@ export interface ILinuxShell {
   dispose?(): void;
 }
 
+export const SSHD_MAX_AUTH_TRIES_REASON = 'Too many authentication failures';
+
 export interface ISshServerContext {
   readonly hostKey: SshHostKey;
   readonly config: Readonly<SshServerConfig>;
@@ -194,6 +197,7 @@ export interface ISshServerContext {
   rootMayLogIn?(method: 'password' | 'publickey', keyForcesCommand?: boolean): boolean;
   admittedKey?(user: string, publicKey: string, source: KeySource): AuthorizedKey | null;
   forcedCommand?(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): string | null;
+  readonly maxAuthTriesDisconnect?: string;
 }
 
 export interface DirectTcpipRequest {

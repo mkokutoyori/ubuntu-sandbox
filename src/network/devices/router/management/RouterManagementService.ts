@@ -3,6 +3,10 @@ import { vrpDatetimeToEpochMs } from '../../shells/huawei/huaweiClockDatetime';
 import { parseVrpDaylightSaving } from '../../shells/huawei/huaweiDaylightSaving';
 import { DeviceClockStore, type DeviceClockConfig } from '../../../core/time/DeviceClock';
 import { PortNumber, PORT_ANY } from '../../../core/ports/PortNumber';
+import { parseAuthorizedKeysLine } from '../../../protocols/ssh/SshPureUtils';
+import { parseAll, parseTLV, UNIVERSAL_TAG } from '../../windows/server/ad/ldap/Ber';
+import { sshPublicKeyBlob } from '../../linux/network/SshKeygenMaterial';
+import { bytesToBase64, hexToBytes } from '@/crypto/encoding';
 
 export interface RawConfigEntry {
   feature: string;
@@ -40,6 +44,56 @@ export type SshUserServiceType = typeof SSH_USER_SERVICE_TYPES[number];
 export interface SshUser {
   authenticationType?: SshUserAuthenticationType;
   serviceType?: SshUserServiceType;
+  assignedRsaKey?: string;
+}
+
+export const RSA_PEER_KEY_ENCODINGS = ['der', 'openssh', 'pem'] as const;
+export type RsaPeerKeyEncoding = typeof RSA_PEER_KEY_ENCODINGS[number];
+
+export interface RsaPeerPublicKey {
+  readonly name: string;
+  readonly encoding: RsaPeerKeyEncoding;
+  readonly code: readonly string[];
+}
+
+const SSH_USER_KEY_AUTHENTICATION_TYPES: ReadonlySet<SshUserAuthenticationType> = new Set(['rsa', 'all']);
+
+function opensshRsaMaterial(key: RsaPeerPublicKey): string | null {
+  const parsed = parseAuthorizedKeysLine(key.code.map((line) => line.trim()).join(''));
+  return parsed?.algorithm === 'ssh-rsa' && !parsed.options ? parsed.material : null;
+}
+
+function derPositiveInteger(content: Uint8Array): bigint | null {
+  if (content.length === 0 || content[0] & 0x80) return null;
+  let n = 0n;
+  for (const b of content) n = (n << 8n) | BigInt(b);
+  return n;
+}
+
+function derRsaMaterial(key: RsaPeerPublicKey): string | null {
+  const hex = key.code.join('').replace(/\s+/g, '');
+  if (!/^(?:[0-9a-fA-F]{2})+$/.test(hex)) return null;
+  try {
+    const der = hexToBytes(hex);
+    const outer = parseTLV(der, 0);
+    if (outer.nextOffset !== der.length || outer.tagClass !== 'universal'
+      || !outer.constructed || outer.tagNumber !== UNIVERSAL_TAG.SEQUENCE) return null;
+    const fields = parseAll(outer.content);
+    if (fields.length !== 2
+      || fields.some((f) => f.tagClass !== 'universal' || f.constructed || f.tagNumber !== UNIVERSAL_TAG.INTEGER)) return null;
+    const n = derPositiveInteger(fields[0].content);
+    const e = derPositiveInteger(fields[1].content);
+    if (n === null || e === null) return null;
+    return bytesToBase64(sshPublicKeyBlob({ algorithm: 'ssh-rsa', n, e }));
+  } catch {
+    return null;
+  }
+}
+
+function peerKeyMaterial(key: RsaPeerPublicKey): string | null {
+  if (key.encoding === 'openssh') return opensshRsaMaterial(key);
+  if (key.encoding === 'der') return derRsaMaterial(key);
+  return null;
 }
 
 function oneOf<T extends string>(allowed: readonly T[], text: string | undefined): T | null {
@@ -87,6 +141,7 @@ export class RouterManagementService {
     retries: SSH_DEFAULT_AUTH_RETRIES,
   };
   private readonly sshUsers = new Map<string, SshUser>();
+  private readonly rsaPeerPublicKeys = new Map<string, RsaPeerPublicKey>();
   private sshDefaultPasswordAuthentication = true;
   private readonly ntpService = {
     enabled: true,
@@ -209,6 +264,11 @@ export class RouterManagementService {
       const type = oneOf(SSH_USER_SERVICE_TYPES, args[2]);
       if (type === null) return args[2] ?? attribute;
       user.serviceType = type;
+    } else if (attribute === 'assign') {
+      if (args[2]?.toLowerCase() !== 'rsa-key') return args[2] ?? attribute;
+      if (negated) { delete user.assignedRsaKey; return null; }
+      if (!args[3]) return 'rsa-key';
+      user.assignedRsaKey = args[3];
     } else {
       return args[1];
     }
@@ -217,6 +277,17 @@ export class RouterManagementService {
   }
 
   getSshUsers(): ReadonlyMap<string, Readonly<SshUser>> { return this.sshUsers; }
+
+  setRsaPeerPublicKey(key: RsaPeerPublicKey): void { this.rsaPeerPublicKeys.set(key.name, key); }
+  removeRsaPeerPublicKey(name: string): boolean { return this.rsaPeerPublicKeys.delete(name); }
+  getRsaPeerPublicKeys(): ReadonlyMap<string, RsaPeerPublicKey> { return this.rsaPeerPublicKeys; }
+
+  sshPublicKeyAdmitted(user: string, offeredMaterial: string): boolean {
+    const account = this.sshUsers.get(user);
+    if (!account?.authenticationType || !SSH_USER_KEY_AUTHENTICATION_TYPES.has(account.authenticationType)) return false;
+    const key = account.assignedRsaKey === undefined ? undefined : this.rsaPeerPublicKeys.get(account.assignedRsaKey);
+    return key !== undefined && peerKeyMaterial(key) === offeredMaterial;
+  }
   sshDefaultPasswordAuthenticationEnabled(): boolean { return this.sshDefaultPasswordAuthentication; }
 
   sshPasswordAllowed(user: string): boolean {

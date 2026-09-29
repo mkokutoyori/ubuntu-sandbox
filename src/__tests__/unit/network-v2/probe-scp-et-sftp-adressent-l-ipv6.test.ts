@@ -117,10 +117,10 @@ async function laboratoire() {
 
 describe('la pile repond deja en IPv6 — le TEMOIN', () => {
   it('`ssh` vers le litteral joint le serveur', async () => {
-    const { poste } = await laboratoire();
+    const { poste, serveur } = await laboratoire();
 
     expect(await poste.executeCommand(
-      `sshpass -p ${SECRET} ssh alice@${SERVEUR_V6} hostname`)).toMatch(/linux-server/);
+      `sshpass -p ${SECRET} ssh alice@${SERVEUR_V6} hostname`)).toContain(serveur.getHostname());
   });
 });
 

@@ -111,7 +111,7 @@ describe('la console SORT de la machine : `execute ssh` et `execute telnet`', ()
   });
 
   it('le mot de passe accepte ouvre une session SUR la machine distante', async () => {
-    const { fgt } = await voisinDirect();
+    const { fgt, pc } = await voisinDirect();
     const s = await openFortiConsole(fgt);
     await runCommand(s, 'execute ssh operateur@192.168.10.10');
     await answerSecret(s, 'Lab2026');
@@ -119,7 +119,7 @@ describe('la console SORT de la machine : `execute ssh` et `execute telnet`', ()
     const avant = s.lines.length;
     await runCommand(s, 'hostname');
     const repondu = s.lines.slice(avant).map(l => l.text).join('\n');
-    expect(repondu).toContain('linux-pc');
+    expect(repondu).toContain(pc.getHostname());
     expect(repondu).not.toContain('FGT-01 #');
   });
 

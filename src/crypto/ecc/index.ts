@@ -4,6 +4,10 @@ export {
   X25519_BASE, X25519_KEY_LEN,
 } from './x25519';
 export {
+  ed25519PublicKey, ed25519Sign, ed25519Verify,
+  ED25519_ORDER, ED25519_KEY_LEN, ED25519_SIGNATURE_LEN,
+} from './ed25519';
+export {
   p256Sign, p256Verify, p256PublicKey, isOnCurve, rfc6979Nonce, p256Ecdh,
   p256PublicToMaterial, p256PrivateToMaterial, p256PublicPartOf,
   materialToP256Public, materialToP256Private,

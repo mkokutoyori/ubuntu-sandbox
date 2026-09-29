@@ -160,7 +160,7 @@ describe('SSH terminal — device.executeCommand stubs', () => {
     // mode prints just the command's output (no banner) — here, the
     // remote's /etc/hostname.
     const out = await lan.pc1.executeCommand(`ssh alice@${PC2_IP} hostname`, 'admin\n');
-    expect(out.trim()).toMatch(/^[a-z0-9-]+$/);
+    expect(out.trim()).toBe(lan.pc2.getHostname());
     expect(out).not.toMatch(/Connection refused/);
   });
 
@@ -249,7 +249,7 @@ describe('SSH terminal — direct SshSession (single host)', () => {
   it('runs hostname remotely and gets the server hostname', async () => {
     const s = await openSession(lan.pc1, PC2_IP);
     const r = await execRemote(s, 'hostname');
-    expect(r.stdout.trim()).toBe('linux-pc');
+    expect(r.stdout.trim()).toBe(lan.pc2.getHostname());
     s.disconnect();
   });
 
@@ -329,7 +329,7 @@ describe('SSH terminal — multi-host scenarios', () => {
     s2.disconnect();
 
     const s3 = await openSession(lan.pc4, PC3_IP);
-    expect((await execRemote(s3, 'hostname')).stdout.trim()).toBe('linux-pc');
+    expect((await execRemote(s3, 'hostname')).stdout.trim()).toBe(lan.pc3.getHostname());
     s3.disconnect();
   });
 

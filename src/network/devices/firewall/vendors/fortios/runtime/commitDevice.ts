@@ -82,7 +82,7 @@ export function buildCommitDevice(
         return fw.getRouting().applyBgp(patch);
       },
       applyDhcpScope(scope) {
-        fw.getDhcp().upsertScope(scope);
+        return fw.getDhcp().upsertScope(scope) ?? undefined;
       },
       removeDhcpScope(id) {
         fw.getDhcp().removeScope(id);

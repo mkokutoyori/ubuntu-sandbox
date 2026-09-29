@@ -1,13 +1,14 @@
 import {
-  ETHERTYPE_IPV4, IPAddress, MACAddress, createIPv4Packet,
+  ETHERTYPE_IPV4, IPAddress, MACAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
 } from '../../../core/types';
-import { ipToUint32, tryIpToUint32, uint32ToIp } from '../../../core/ip';
+import { buildUdpOverIpv4 } from '../../../layers/transport/UdpEgress';
+import { inSameSubnet, ipToUint32, tryIpToUint32, uint32ToIp } from '../../../core/ip';
 import { DHCPServer } from '../../../dhcp/DHCPServer';
 import { DHCPClient } from '../../../dhcp/DHCPClient';
 import { WireDhcpChannel } from '../../../dhcp/DhcpServerChannel';
-import { DHCPPacket } from '../../../dhcp/DHCPPacket';
-import { buildDhcpServerReply } from '../../../dhcp/DhcpServerExchange';
+import { DHCPPacket, DHCP_WIRE_BYTES } from '../../../dhcp/DHCPPacket';
+import { buildDhcpServerReply, dhcpReplyRoute, type DhcpReplyRoute } from '../../../dhcp/DhcpServerExchange';
 import type { IEventBus } from '../../../../events/EventBus';
 import { DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '@/network/core/WellKnownPorts';
 import { relayDhcpReply, relayDhcpRequest, type DhcpRelayHost } from '../../../dhcp/DhcpRelay';
@@ -27,7 +28,7 @@ export interface DhcpScope {
   readonly ranges: ReadonlyArray<{ startIp: string; endIp: string }>;
   readonly dnsService?: string;
   readonly reservations?: ReadonlyArray<{
-    ip: string; mac: string; description: string;
+    id: string; ip: string; mac: string; description: string;
   }>;
 }
 
@@ -45,6 +46,7 @@ export interface FirewallDhcpDeps {
   readonly systemDnsServers?: () => readonly string[];
   readonly sendToServer?: (server: IPAddress, packet: IPv4Packet) => boolean;
   readonly interfaceOwning?: (address: string) => string | null;
+  readonly addressInUse?: (iface: string, address: string) => boolean;
 }
 
 const POOL_USAGE_TRAP_PERCENT = 90;
@@ -116,21 +118,15 @@ export class FirewallDhcp {
     const mac = this.deps.portMac(iface);
     if (!mac) return;
 
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort: DHCP_CLIENT_PORT,
-      destinationPort: DHCP_SERVER_PORT,
-      length: 0,
-      checksum: 0,
-      payload: pkt,
-    };
-
     this.deps.sendFrame(iface, {
       srcMAC: mac,
       dstMAC: MACAddress.broadcast(),
       etherType: ETHERTYPE_IPV4,
-      payload: createIPv4Packet(
-        new IPAddress('0.0.0.0'), new IPAddress('255.255.255.255'), 17, 1, udp, 64),
+      payload: buildUdpOverIpv4(new IPAddress('0.0.0.0'), {
+        destination: new IPAddress('255.255.255.255'),
+        sourcePort: DHCP_CLIENT_PORT, destinationPort: DHCP_SERVER_PORT,
+        payload: pkt, payloadBytes: DHCP_WIRE_BYTES,
+      }),
     });
   }
 
@@ -163,9 +159,36 @@ export class FirewallDhcp {
     return found;
   }
 
-  upsertScope(scope: DhcpScope): void {
+  upsertScope(scope: DhcpScope): string | null {
+    const problem = this.reservationProblem(scope);
+    if (problem !== null) return problem;
     this.scopes.set(scope.id, scope);
     this.rebuild();
+    return null;
+  }
+
+  private reservationProblem(scope: DhcpScope): string | null {
+    const subnet = this.poolSubnet(scope);
+    const byIp = new Map<string, string>();
+    const byMac = new Map<string, string>();
+    for (const reservation of scope.reservations ?? []) {
+      if (reservation.mac.length === 0 || reservation.ip === '0.0.0.0') continue;
+      const mac = new MACAddress(reservation.mac).toString();
+      if (subnet !== null && networkOf(reservation.ip, subnet.mask) !== subnet.network) {
+        return `the IP address ${reservation.ip} is outside the subnet ${subnet.network}/${subnet.mask} of the DHCP server.`;
+      }
+      const sameIp = byIp.get(reservation.ip);
+      if (sameIp !== undefined) {
+        return `the IP address ${reservation.ip} is already reserved by entry ${sameIp}.`;
+      }
+      const sameMac = byMac.get(mac);
+      if (sameMac !== undefined) {
+        return `the MAC address ${mac} is already reserved by entry ${sameMac}.`;
+      }
+      byIp.set(reservation.ip, reservation.id);
+      byMac.set(mac, reservation.id);
+    }
+    return null;
   }
 
   removeScope(id: string): void {
@@ -234,7 +257,7 @@ export class FirewallDhcp {
       },
       interfaceOwning: (address) => this.deps.interfaceOwning?.(address) ?? null,
       sendToServer: (server, packet) => this.deps.sendToServer?.(server, packet) ?? false,
-      broadcastReply: (iface, reply) => { this.emit(iface, reply, reply.chaddr); },
+      broadcastReply: (iface, reply) => { this.deliver(iface, reply, { kind: 'broadcast' }); },
       relayInformationOption: () => false,
       countForward: () => undefined,
       countReply: () => undefined,
@@ -265,22 +288,36 @@ export class FirewallDhcp {
     const reply = buildDhcpServerReply(request, {
       server: this.server,
       localGatewayIP: local?.ip,
+      isAddressInUse: (address) => this.probeOnLink(iface, address),
     });
-    if (reply) this.emit(iface, reply, request.chaddr);
+    if (reply) this.deliver(iface, reply, dhcpReplyRoute(request, reply), request.chaddr);
     return true;
   }
 
-  private declarePool(scope: DhcpScope): void {
+  private poolSubnet(scope: DhcpScope): { network: string; mask: string } | null {
     const local = this.deps.interfaceAddress(scope.iface);
     const mask = scope.netmask !== '0.0.0.0' && scope.netmask.length > 0
       ? scope.netmask
       : local?.mask ?? '255.255.255.0';
     const anchor = scope.ranges[0]?.startIp ?? local?.ip;
-    if (!anchor) return;
+    if (!anchor) return null;
 
     const network = networkOf(anchor, mask);
-    if (network === null) return;
+    return network === null ? null : { network, mask };
+  }
 
+  private probeOnLink(iface: string, address: string): boolean {
+    const local = this.deps.interfaceAddress(iface);
+    if (local === undefined || !inSameSubnet(local.ip, address, local.mask)) return false;
+    return this.deps.addressInUse?.(iface, address) ?? false;
+  }
+
+  private declarePool(scope: DhcpScope): void {
+    const subnet = this.poolSubnet(scope);
+    if (subnet === null) return;
+
+    const { network, mask } = subnet;
+    const local = this.deps.interfaceAddress(scope.iface);
     const name = poolNameOf(scope);
     this.server.createPool(name);
     this.server.configurePoolNetwork(name, network, mask);
@@ -302,7 +339,7 @@ export class FirewallDhcp {
 
     for (const reservation of scope.reservations ?? []) {
       if (reservation.mac.length === 0 || reservation.ip === '0.0.0.0') continue;
-      this.server.addStaticBinding(name, reservation.mac, reservation.ip);
+      this.server.addStaticBinding(name, new MACAddress(reservation.mac).toString(), reservation.ip);
     }
 
     this.server.configurePoolUtilizationMark(name, 'high', POOL_USAGE_TRAP_PERCENT, false);
@@ -320,26 +357,32 @@ export class FirewallDhcp {
     });
   }
 
-  private emit(iface: string, reply: DHCPPacket, clientMac: string): void {
-    const source = this.deps.interfaceAddress(iface)?.ip ?? '0.0.0.0';
+  private deliver(
+    iface: string, reply: DHCPPacket, route: DhcpReplyRoute, clientMac: string = reply.chaddr,
+  ): void {
+    const source = new IPAddress(this.deps.interfaceAddress(iface)?.ip ?? '0.0.0.0');
+    if (route.kind === 'relay') {
+      const relay = new IPAddress(route.relay);
+      this.deps.sendToServer?.(relay, buildUdpOverIpv4(source, {
+        destination: relay,
+        sourcePort: DHCP_SERVER_PORT, destinationPort: DHCP_SERVER_PORT,
+        payload: reply, payloadBytes: DHCP_WIRE_BYTES,
+      }));
+      return;
+    }
     const mac = this.deps.portMac(iface);
     if (!mac) return;
 
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort: DHCP_SERVER_PORT,
-      destinationPort: DHCP_CLIENT_PORT,
-      length: 0,
-      checksum: 0,
-      payload: reply,
-    };
-
+    const broadcast = route.kind === 'broadcast';
     this.deps.sendFrame(iface, {
       srcMAC: mac,
-      dstMAC: new MACAddress(clientMac),
+      dstMAC: broadcast ? MACAddress.broadcast() : new MACAddress(clientMac),
       etherType: ETHERTYPE_IPV4,
-      payload: createIPv4Packet(
-        new IPAddress(source), new IPAddress('255.255.255.255'), 17, 1, udp, 64),
+      payload: buildUdpOverIpv4(source, {
+        destination: new IPAddress(broadcast ? '255.255.255.255' : route.address),
+        sourcePort: DHCP_SERVER_PORT, destinationPort: DHCP_CLIENT_PORT,
+        payload: reply, payloadBytes: DHCP_WIRE_BYTES,
+      }),
     });
   }
 }
@@ -403,6 +446,7 @@ export interface DhcpWiringHost {
   systemDnsServers?(): readonly string[];
   sendToServer?(server: IPAddress, packet: IPv4Packet): boolean;
   interfaceOwning?(address: string): string | null;
+  addressInUse?(iface: string, address: string): boolean;
 }
 
 export function createFirewallDhcp(host: DhcpWiringHost): FirewallDhcp {
@@ -421,5 +465,6 @@ export function createFirewallDhcp(host: DhcpWiringHost): FirewallDhcp {
     clearInterface: (iface) => { host.leaseLost(iface); },
     sendToServer: (server, packet) => host.sendToServer?.(server, packet) ?? false,
     interfaceOwning: (address) => host.interfaceOwning?.(address) ?? null,
+    addressInUse: (iface, address) => host.addressInUse?.(iface, address) ?? false,
   });
 }

@@ -58,7 +58,10 @@ import { validateSudoersContent } from '@/network/devices/linux/iam/PwGrCheck';
 import { validateCrontabContent } from '@/network/devices/linux/cron/CrontabParser';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
-import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder, driveSubShellTab } from '@/terminal/completion';
+import { CompletionController, ReadlinePolicy, LastWordSource, ghostRemainder, driveSubShellTab, SubShellCompletionControllers } from '@/terminal/completion';
+import {
+  bashPromptParts, collapseHome, formatBashPrompt, type BashPromptParts,
+} from '@/network/devices/linux/shell/BashPrompt';
 import type { SubShellTabHost } from '@/terminal/completion';
 import { toInteractiveSteps } from '@/terminal/flows/planAdapter';
 import { analyzeBashInput } from '@/bash/incompleteInput';
@@ -97,12 +100,19 @@ import { SqlPlusShell } from '@/shell/adapters/SqlPlusShell';
 import { RmanShell } from '@/shell/adapters/RmanShell';
 import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
-import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
+import {
+  OPENSSH_DEFAULT_IDENTITY_FILES,
+  SshConnectOptionsBuilder,
+  type SshClientAuthentication,
+} from '@/network/protocols/ssh/SshConnectOptions';
+import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
+import { OPENSSH_UBUNTU_22_04 } from '@/network/protocols/ssh/OpenSshRelease';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { TerminalSshInteractionHandler } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
 import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols/ssh/session/QueuedTerminalIO';
 import { isOk } from '@/network/protocols/ssh/Result';
-import { defaultKeygenFile } from '@/network/protocols/ssh/SshKeygenCommand';
+import { isSshKeygenCapableHost } from '@/network/equipment/HostCapabilities';
+import { splitShellWords } from '@/bash/runtime/ShellWords';
 import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
 import { parseScpArgs } from '@/network/protocols/ssh/Scp';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
@@ -153,7 +163,7 @@ export class LinuxTerminalSession extends TerminalSession {
   tabSuggestions: string[] | null = null;
   private readonly rootCompletion =
     new CompletionController(new ReadlinePolicy({ caseInsensitive: false }));
-  private readonly subShellCompletion = new CompletionController(new CyclingPolicy());
+  private readonly subShellCompletion = new SubShellCompletionControllers();
   /** Active sub-shell (SQL*Plus, or any future REPL). Null when in normal bash mode. */
   private activeSubShell: ISubShell | null = null;
 
@@ -444,14 +454,18 @@ export class LinuxTerminalSession extends TerminalSession {
     // PS2 continuation prompt while accumulating an incomplete command
     // (open quote, trailing `\`, dangling connector, open block, heredoc).
     if (this._continuationBuffer !== null) return this.ps2Prompt;
-    const hostname = this.device.getHostname() || 'localhost';
+    return formatBashPrompt(this.localBashParts());
+  }
+
+  private localBashParts(): BashPromptParts {
     const user = this.currentUser;
-    const homeDir = user === 'root' ? '/root' : `/home/${user}`;
-    let path = this.currentPath;
-    if (path === homeDir) path = '~';
-    else if (path.startsWith(homeDir + '/')) path = '~' + path.slice(homeDir.length);
-    const promptChar = user === 'root' ? '#' : '$';
-    return `${user}@${hostname}:${path}${promptChar} `;
+    return bashPromptParts({
+      user,
+      root: this.shell ? this.shell.uid === 0 : user === 'root',
+      hostname: this.device.getHostname() || 'localhost',
+      cwd: this.currentPath,
+      home: homeDirectoryOn(this.device, user),
+    });
   }
 
   /**
@@ -497,6 +511,8 @@ export class LinuxTerminalSession extends TerminalSession {
       return (this.foreground as LinuxTerminalSession).getPromptParts();
     }
     if (this.activeSubShell) {
+      const remoteBash = this.activeSubShell.getPromptParts?.();
+      if (remoteBash) return remoteBash;
       const kind = (this.activeSubShell as { kind?: string; inner?: { kind?: string } }).kind
         ?? (this.activeSubShell as { inner?: { kind?: string } }).inner?.kind
         ?? '';
@@ -515,14 +531,7 @@ export class LinuxTerminalSession extends TerminalSession {
         };
       }
     }
-    const hostname = this.device.getHostname() || 'localhost';
-    const user = this.currentUser;
-    const homeDir = user === 'root' ? '/root' : `/home/${user}`;
-    let path = this.currentPath;
-    if (path === homeDir) path = '~';
-    else if (path.startsWith(homeDir + '/')) path = '~' + path.slice(homeDir.length);
-    const promptChar = user === 'root' ? '#' : '$';
-    return { user, hostname, path, promptChar };
+    return this.localBashParts();
   }
 
   /** Peek inside an SSH-remote adapter to learn the inner top-of-stack kind. */
@@ -538,13 +547,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // `getPromptParts`), which is the right place to surface that.
     const local = this.getLocalDevice();
     const hostname = local.getHostname() || 'localhost';
-    const homeDir =
-      this.localUser === 'root' ? '/root' : `/home/${this.localUser}`;
-    let path = this.localPath;
-    if (path === homeDir) path = '~';
-    else if (path.startsWith(homeDir + '/')) {
-      path = '~' + path.slice(homeDir.length);
-    }
+    const path = collapseHome(this.localPath, homeDirectoryOn(local, this.localUser));
     return { left: `${this.localUser}@${hostname}: ${path}` };
   }
 
@@ -971,6 +974,7 @@ export class LinuxTerminalSession extends TerminalSession {
           ...dev.tcpdumpDepsInSession(shell, elevated),
           stream: { line: (text) => ctx.sink.line(text) },
           onCancelRequested: (cb) => { ctx.onCancel(cb); return () => {}; },
+          interruptEchoed: () => true,
         });
         const rest = interleaveTcpdumpStreams(result);
         if (rest) for (const line of rest.split('\n')) ctx.sink.line(line);
@@ -1527,8 +1531,9 @@ export class LinuxTerminalSession extends TerminalSession {
     if (!trimmed.startsWith('sudo ')) {
       const noSudo = trimmed;
       const parts = noSudo.split(/\s+/);
+      const words = splitShellWords(noSudo).words;
       if (parts[0] === 'sftp') {
-        this.enterSftp(parts.slice(1));
+        this.enterSftp(words.slice(1));
         return;
       }
       if (parts[0] === 'ftp') {
@@ -1544,23 +1549,23 @@ export class LinuxTerminalSession extends TerminalSession {
         return;
       }
       if (parts[0] === 'ssh') {
-        await this.enterSsh(parts.slice(1));
+        await this.enterSsh(words.slice(1));
         return;
       }
       if (parts[0] === 'telnet') {
         await this.enterTelnet(parts.slice(1));
         return;
       }
-      if (parts[0] === 'ssh-keygen') {
-        await this.enterSshKeygen(parts.slice(1));
+      if (parts[0] === 'ssh-keygen' && !/[$`|;&<>()*?]/.test(noSudo)) {
+        await this.enterSshKeygen(splitShellWords(noSudo).words.slice(1));
         return;
       }
       if (parts[0] === 'ssh-copy-id') {
-        this.enterSshCopyId(parts.slice(1));
+        this.enterSshCopyId(words.slice(1));
         return;
       }
       if (parts[0] === 'scp') {
-        this.enterScp(parts.slice(1));
+        this.enterScp(words.slice(1));
         return;
       }
       if (parts[0] === 'lsnrctl') {
@@ -2322,23 +2327,6 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     // enter_ssh is no longer set — enterSsh() now calls connectAndEnterSsh()
     // directly using the reactive QueuedTerminalIO approach.
-    const sshKeygenMeta = ctx.metadata.get('enter_ssh_keygen') as string | undefined;
-    if (sshKeygenMeta) {
-      const meta = JSON.parse(sshKeygenMeta) as { args: string[]; defaultFile: string };
-      const filePath = (ctx.values.get('keygen_file') ?? '').trim() || meta.defaultFile;
-      const passphrase = ctx.values.get('keygen_passphrase') ?? '';
-      const confirm = ctx.values.get('keygen_passphrase_confirm') ?? '';
-      if (passphrase !== confirm) {
-        this.addLine('Passphrases do not match.  Try again.', 'error');
-        this.notify();
-        return;
-      }
-      const expandedArgs = [...meta.args];
-      if (!expandedArgs.includes('-f')) expandedArgs.push('-f', filePath);
-      if (!expandedArgs.includes('-N')) expandedArgs.push('-N', passphrase);
-      void this.runSshKeygen(expandedArgs);
-      return;
-    }
     const sshCopyMeta = ctx.metadata.get('enter_ssh_copy_id') as string | undefined;
     if (sshCopyMeta) {
       const meta = JSON.parse(sshCopyMeta) as {
@@ -2714,12 +2702,12 @@ export class LinuxTerminalSession extends TerminalSession {
    * Supported flags: -p <port>, -i <keyfile>, -o StrictHostKeyChecking=value.
    */
   private async enterSsh(args: string[]): Promise<void> {
-    const parsed = parseSshArgs(args);
+    const withoutSession = sshReplyWithoutSession(args, OPENSSH_UBUNTU_22_04);
+    const parsed = withoutSession ? null : parseSshArgs(args);
     if (!parsed) {
-      this.addLine(
-        'usage: ssh [-p port] [-i identity_file] [-o option=value] [user@]host [command...]',
-        'error',
-      );
+      for (const line of (withoutSession?.output ?? OPENSSH_UBUNTU_22_04.sshUsage).split('\n')) {
+        this.addLine(line, withoutSession?.exitCode === 0 ? 'normal' : 'error');
+      }
       this.notify();
       return;
     }
@@ -2811,6 +2799,7 @@ export class LinuxTerminalSession extends TerminalSession {
       dynamicForwards?: readonly DynamicForward[];
       forwardAgent?: boolean;
       requestTty?: 'yes' | 'no' | 'force';
+      authentication?: SshClientAuthentication;
     },
   ): Promise<void> {
     const dev = this.device as unknown as {
@@ -2873,6 +2862,7 @@ export class LinuxTerminalSession extends TerminalSession {
       .strictHostKeyChecking(meta.strict);
     // Analysis doc §1.6: forward HashKnownHosts (CLI -o or ~/.ssh/config).
     if (meta.hashKnownHosts) builder.hashKnownHosts(true);
+    if (meta.authentication) builder.authentication(meta.authentication);
     for (const id of this.autoDiscoverIdentityFiles(meta.identityFiles)) {
       builder.addIdentityFile(id);
     }
@@ -3110,12 +3100,9 @@ export class LinuxTerminalSession extends TerminalSession {
     const home =
       dev.executor?.userMgr?.getUser(this.currentUser)?.home ??
       `/home/${this.currentUser}`;
-    const candidates = [
-      `${home}/.ssh/id_ed25519`,
-      `${home}/.ssh/id_rsa`,
-      `${home}/.ssh/id_ecdsa`,
-    ];
-    return candidates.filter((p) => localVfs.exists(p));
+    return OPENSSH_DEFAULT_IDENTITY_FILES
+      .map((name) => `${home}/.ssh/${name}`)
+      .filter((p) => localVfs.exists(p));
   }
 
   /**
@@ -3173,83 +3160,23 @@ export class LinuxTerminalSession extends TerminalSession {
       dynamicForwards: parsed.dynamicForwards,
       forwardAgent: parsed.forwardAgent,
       requestTty: parsed.requestTty,
+      authentication: parsed.authentication,
     };
   }
 
-  // ── ssh-keygen ──────────────────────────────────────────────────
-
-  /**
-   * `ssh-keygen` entry point. When invoked with `-f` and `-N` flags it
-   * runs non-interactively. Otherwise OpenSSH prompts the user for a
-   * destination file and a passphrase (BRD SSH-03-R1..R4, R10).
-   */
   private async enterSshKeygen(args: string[]): Promise<void> {
-    const dev = this.device as unknown as {
-      executor?: {
-        userMgr?: { getUser(name: string): { home?: string } | undefined };
-      };
-    };
-    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
-    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
-    const typeIndex = args.indexOf('-t');
-    const defaultFile = defaultKeygenFile(
-      { separator: '/', sshDir: `${homeDir}/.ssh` },
-      typeIndex >= 0 ? (args[typeIndex + 1] ?? '').toLowerCase() : 'ed25519',
-    );
-    const hasFlagF = args.includes('-f');
-    const hasFlagN = args.includes('-N');
-
-    // Both -f and -N supplied → non-interactive.
-    if (hasFlagF && hasFlagN) {
-      void this.runSshKeygen(args);
-      return;
-    }
-
-    // Build an interactive flow: file path → passphrase → confirm passphrase.
-    const steps: InteractiveStep[] = [];
-    if (!hasFlagF) {
-      steps.push({
-        type: 'text',
-        prompt: `Enter file in which to save the key (${defaultFile}): `,
-        storeAs: 'keygen_file',
-      });
-    }
-    if (!hasFlagN) {
-      steps.push({
-        type: 'password',
-        prompt: `Enter passphrase (empty for no passphrase): `,
-        mask: 'hidden',
-        storeAs: 'keygen_passphrase',
-      });
-      steps.push({
-        type: 'password',
-        prompt: `Enter same passphrase again: `,
-        mask: 'hidden',
-        storeAs: 'keygen_passphrase_confirm',
-      });
-    }
-    steps.push({
-      type: 'execute',
-      action: async (ctx: FlowContext) => {
-        ctx.metadata.set(
-          'enter_ssh_keygen',
-          JSON.stringify({ args, defaultFile }),
-        );
-      },
-    });
-    this.startFlowFromSteps(steps, `ssh-keygen ${args.join(' ')}`);
-  }
-
-  private async runSshKeygen(args: string[]): Promise<void> {
-    const dev = this.device as unknown as { executeCommand?(line: string): Promise<string> | string };
-    if (typeof dev.executeCommand !== 'function') {
+    if (!isSshKeygenCapableHost(this.device)) {
       this.addLine('ssh-keygen: this device has no filesystem', 'error');
       this.notify();
       return;
     }
-    const quoted = args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
-    const out = await dev.executeCommand(`ssh-keygen ${quoted}`);
-    for (const line of String(out).split('\n')) this.addLine(line);
+    const broker = new PromiseInputBrokerLib(this.getInputHost());
+    await this.device.runSshKeygenInteractive(args, {
+      print: (line) => { this.addLine(line); this.notify(); },
+      ask: (prompt, hidden) => hidden
+        ? broker.password(prompt, { trim: false })
+        : broker.ask(prompt, { trim: false }),
+    });
     this.notify();
   }
 
@@ -3490,6 +3417,7 @@ export class LinuxTerminalSession extends TerminalSession {
     const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
     const user = userAtHost.split('@')[0];
     const host = userAtHost.split('@')[1] ?? userAtHost;
+    const interaction = new SilentSshInteractionHandler(password);
     const session = new SshSession({
       tcpConnector,
       vfs: localVfs,
@@ -3497,7 +3425,7 @@ export class LinuxTerminalSession extends TerminalSession {
       localUid: userEntry?.uid ?? 1000,
       localGid: userEntry?.gid ?? 1000,
       knownHostsPath: `${homeDir}/.ssh/known_hosts`,
-      interactionHandler: new SilentSshInteractionHandler(password),
+      interactionHandler: interaction,
     });
     const builder = SshConnectOptionsBuilder.create()
       .host(host)
@@ -3510,7 +3438,10 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     const result = await session.connect(builder.build());
     if (!isOk(result)) {
-      this.addLine(`${user}@${host}: Permission denied (publickey,password).`, 'error');
+      const refusal = interaction.warnings.length > 0
+        ? interaction.warnings
+        : [`${user}@${host}: Permission denied (publickey,password).`];
+      for (const line of refusal.flatMap((w) => w.split('\n'))) this.addLine(line, 'error');
       this.notify();
       return null;
     }
@@ -4128,6 +4059,12 @@ export class LinuxTerminalSession extends TerminalSession {
  * remote machine without touching the simulated SSH transport. Returns
  * null when the target is not a Linux device managed by the sandbox.
  */
+function homeDirectoryOn(device: Equipment, user: string): string {
+  return device instanceof LinuxMachine
+    ? device.homeDirectoryOf(user)
+    : user === 'root' ? '/root' : `/home/${user}`;
+}
+
 function findEquipmentByIp(targetIp: string): Equipment | null {
   const all = EquipmentRegistry.getInstance().getAll();
   for (const eq of all) {

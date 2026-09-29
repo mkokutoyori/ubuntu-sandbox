@@ -18,6 +18,7 @@
  * faire semblant : hors terminal, il n'y a pas d'écran à repeindre.
  */
 
+import { kernelHostname } from '../../KernelHostname';
 import { IPAddress } from '@/network/core/types';
 import type { LinuxCommand } from '../LinuxCommand';
 import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION } from '../../Mtr';
@@ -82,7 +83,7 @@ export const mtrCommand: LinuxCommand = {
     return formatMtrFrame({
       // Le nom de la machine, pas celui du profil : `mtr` affiche
       // l'hôte d'où part la mesure, et `hostname` a pu être changé.
-      hostname: (ctx.executor.vfs.readFile('/etc/hostname') ?? ctx.profile.hostname).trim(),
+      hostname: kernelHostname(ctx.executor.vfs),
       target: stats[stats.length - 1].ip ?? ip.toString(),
       startedAt: new Date(),
       hops: stats,

@@ -31,6 +31,8 @@ import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 
+const SERVER_NAME = 'SRV';
+const CLIENT_NAME = 'CLI';
 const MASK = new SubnetMask('255.255.255.0');
 const key = (k: string): KeyEvent =>
   ({ key: k, ctrlKey: false, altKey: false, metaKey: false, shiftKey: false });
@@ -53,9 +55,9 @@ interface Lab {
 
 /** CLI —— SW —— SRV, with an interactive ssh session already open on SRV. */
 async function connectedLab(): Promise<Lab> {
-  const cli = new LinuxPC('linux-pc', 'CLI');
+  const cli = new LinuxPC('linux-pc', CLIENT_NAME);
   const sw = new GenericSwitch('switch-generic', 'SW', 8, 0, 0);
-  const srv = new LinuxServer('linux-server', 'SRV');
+  const srv = new LinuxServer('linux-server', SERVER_NAME);
   cli.configureInterface('eth0', new IPAddress('10.0.0.1'), MASK);
   srv.configureInterface('eth0', new IPAddress('10.0.0.2'), MASK);
   new Cable('c1').connect(cli.getPort('eth0')!, sw.getPorts()[0]);
@@ -88,9 +90,11 @@ async function type(t: LinuxTerminalSession, line: string): Promise<void> {
 
 const screen = (t: LinuxTerminalSession): string =>
   t.lines.map((l) => l.text).join('\n');
+
+const printedLines = (t: LinuxTerminalSession): string[] => t.lines.map((l) => l.text);
 /** True while the prompt still belongs to the remote host. */
 const onRemote = (t: LinuxTerminalSession): boolean =>
-  t.getPrompt().includes('@SRV');
+  t.getPrompt().includes(`@${SERVER_NAME}`);
 
 describe('the session is genuinely established first', () => {
   it('the prompt is the remote host, and commands run there', async () => {
@@ -98,7 +102,7 @@ describe('the session is genuinely established first', () => {
 
     expect(onRemote(t)).toBe(true);
     await type(t, 'hostname');
-    expect(screen(t)).toContain('linux-server');
+    expect(printedLines(t)).toContain(SERVER_NAME);
   });
 });
 
@@ -172,7 +176,7 @@ describe('faults that END the session', () => {
     // Not merely "an error was printed": the session is gone, so the next
     // command must run locally rather than vanish into a dead channel.
     await type(t, 'hostname');
-    expect(screen(t)).toContain('linux-pc');
+    expect(printedLines(t)).toContain(CLIENT_NAME);
   });
 });
 
@@ -188,7 +192,7 @@ describe('faults that do NOT end the session', () => {
     // administrators can restart sshd over ssh without locking themselves
     // out — and treating it as a disconnect would teach the opposite.
     expect(onRemote(t)).toBe(true);
-    expect(screen(t)).toContain('linux-server');
+    expect(printedLines(t)).toContain(SERVER_NAME);
     expect(screen(t)).not.toContain('Broken pipe');
   });
 
@@ -211,7 +215,7 @@ describe('faults that do NOT end the session', () => {
     await type(t, 'hostname');
 
     expect(onRemote(t)).toBe(true);
-    expect(screen(t)).toContain('linux-server');
+    expect(printedLines(t)).toContain(SERVER_NAME);
     expect(screen(t)).not.toContain('Broken pipe');
   });
 
@@ -229,7 +233,7 @@ describe('faults that do NOT end the session', () => {
     // Liveness must follow the path this session actually uses, not react
     // to any change in the topology.
     expect(onRemote(t)).toBe(true);
-    expect(screen(t)).toContain('linux-server');
+    expect(printedLines(t)).toContain(SERVER_NAME);
   });
 });
 
@@ -244,7 +248,7 @@ describe('recovery', () => {
 
     // The fault leaves no residue: the same login works again.
     expect(await cli.executeCommand('sshpass -p secret ssh alice@10.0.0.2 hostname'))
-      .toContain('linux-server');
+      .toContain(SERVER_NAME);
   });
 
   it('a powered-off remote answers again once switched back on', async () => {
@@ -256,7 +260,7 @@ describe('recovery', () => {
     srv.powerOn();
 
     expect(await cli.executeCommand('sshpass -p secret ssh alice@10.0.0.2 hostname'))
-      .toContain('linux-server');
+      .toContain(SERVER_NAME);
   });
 });
 
@@ -266,7 +270,7 @@ describe('the same rules from a Windows client', () => {
   async function winLab(): Promise<WinLab> {
     const win = new WindowsPC('windows-pc', 'WIN');
     const sw = new GenericSwitch('switch-generic', 'SW', 8, 0, 0);
-    const srv = new LinuxServer('linux-server', 'SRV');
+    const srv = new LinuxServer('linux-server', SERVER_NAME);
     win.getPorts()[0].configureIP(new IPAddress('10.0.0.1'), MASK);
     srv.getPorts()[0].configureIP(new IPAddress('10.0.0.2'), MASK);
     new Cable('c1').connect(win.getPorts()[0], sw.getPorts()[0]);
@@ -304,7 +308,7 @@ describe('the same rules from a Windows client', () => {
   it('is genuinely connected', async () => {
     const { t } = await winLab();
     await winType(t, 'hostname');
-    expect(winScreen(t)).toContain('linux-server');
+    expect(winScreen(t).split('\n')).toContain(SERVER_NAME);
   });
 
   it('dies when the remote is switched off', async () => {
@@ -333,7 +337,7 @@ describe('the same rules from a Windows client', () => {
     const { srv, t } = await winLab();
     await srv.executeCommand('systemctl stop ssh');
     await winType(t, 'hostname');
-    expect(winScreen(t)).toContain('linux-server');
+    expect(winScreen(t).split('\n')).toContain(SERVER_NAME);
     expect(winScreen(t)).not.toContain('Broken pipe');
   });
 });

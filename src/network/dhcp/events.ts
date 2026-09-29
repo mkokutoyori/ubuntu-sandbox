@@ -118,7 +118,7 @@ export interface DhcpPoolLeaseAllocatedPayload extends DhcpDeviceRef {
 export interface DhcpPoolLeaseReleasedPayload extends DhcpDeviceRef {
   pool: string;
   ip: string;
-  reason: 'client-release' | 'expired' | 'manual' | 'declined';
+  reason: 'client-release' | 'expired' | 'manual' | 'declined' | 'reassigned';
 }
 
 export interface DhcpReservationAddedPayload extends DhcpDeviceRef {

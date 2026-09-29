@@ -19,12 +19,23 @@
 import { findHostByAddress, isPathReachable } from './HostLookup';
 import { sshUnreachableReason, wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
+import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
+import { unprotectedPrivateKeyWarning } from '@/network/protocols/ssh/PrivateKeyPermissions';
+import { OPENSSH_UBUNTU_22_04 } from '@/network/protocols/ssh/OpenSshRelease';
 import { IPAddress } from '../../../core/types';
 import { parseDialAddress } from '../../../tcp/dial';
 import type { TcpWireOutcome } from '../../../tcp/types';
 import { type SshHostKeyType } from './SshKnownHostEntry';
 import { SshPortForward } from './SshPortForward';
-import type { AccountLifecycleVerdict } from '@/network/protocols/ssh/auth/ISshAuthMethod';
+import type { AccountLifecycleVerdict, AuthMethodType } from '@/network/protocols/ssh/auth/ISshAuthMethod';
+import {
+  OPENSSH_DEFAULT_IDENTITY_FILES,
+  OPENSSH_USERAUTH_METHODS,
+  sshClientAuthentication,
+  type SshClientAuthentication,
+} from '@/network/protocols/ssh/SshConnectOptions';
+import { sshOptionValues } from '@/network/protocols/ssh/SshClientCommandLine';
+import { everySshOption, firstSshOption, sshOptionAssignment } from '@/network/protocols/ssh/SshClientOptions';
 import type { SshForwardingTable } from './SshForwardingTable';
 import type { TcpStack } from '../../../tcp/TcpStack';
 import type { SshAgent } from '../../../protocols/ssh/SshAgent';
@@ -100,6 +111,7 @@ export interface SshClientOpts {
   ) => { output: string; exitCode: number } | null;
   wireAuthenticated?: boolean;
   wireAuthRefused?: boolean;
+  wireDenial?: string;
   wireOutcome?: TcpWireOutcome;
   shellRelay?: () => { output: string; exitCode: number } | null;
   /**
@@ -237,10 +249,21 @@ interface RemoteExecLike {
 interface SshAuthResolution {
   /** The method that will be used, or null when authentication fails. */
   method: 'publickey' | 'password' | null;
-  /** Methods the client is willing to attempt — drives the failure message. */
-  clientMethods: string[];
+  serverMethods: string;
   /** When method='publickey', the authorized_keys entry that matched. */
   matchedKey?: AuthorizedKey | null;
+}
+
+function advertisedSshMethods(machine: unknown): readonly AuthMethodType[] | null {
+  const context = (machine as {
+    getSshServerContext?: () => { auth?: { getAvailableMethods?: () => readonly AuthMethodType[] } } | undefined;
+  } | undefined)?.getSshServerContext?.();
+  return context?.auth?.getAvailableMethods?.() ?? null;
+}
+
+function deniedLine(user: string, host: string, methods: readonly string[] | string | null): string {
+  const list = methods === null ? 'publickey,password' : typeof methods === 'string' ? methods : methods.join(',');
+  return `${user}@${host}: Permission denied (${list}).`;
 }
 
 /** Read a single sshd_config directive's first value (lower-cased). */
@@ -257,17 +280,9 @@ function readRemoteSshdDirectiveRaw(exec: RemoteExecLike, name: string): string 
   return m ? m[1] : null;
 }
 
-/** Value of a client-side `-o Name=value` / `-o "Name value"` option. */
 function clientOption(args: string[], name: string): string | null {
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '-o' && args[i + 1] !== undefined) {
-      const parts = args[i + 1].trim().split(/[=\s]+/);
-      if (parts[0]?.toLowerCase() === name.toLowerCase()) {
-        return (parts[1] ?? '').toLowerCase();
-      }
-    }
-  }
-  return null;
+  const value = firstSshOption(sshOptionValues(args), name.toLowerCase());
+  return value === undefined ? null : (value.split(/\s+/)[0] ?? '').toLowerCase();
 }
 
 /**
@@ -285,11 +300,7 @@ function localIdentityPublicKey(opts: SshClientOpts, flags: string[]): string | 
     const keyHomes = home === '/root' ? ['/root'] : [home, '/root'];
     const candidates = iVal
       ? [iVal.endsWith('.pub') ? iVal : `${iVal}.pub`]
-      : keyHomes.flatMap((h) => [
-          `${h}/.ssh/id_ed25519.pub`,
-          `${h}/.ssh/id_rsa.pub`,
-          `${h}/.ssh/id_ecdsa.pub`,
-        ]);
+      : keyHomes.flatMap((h) => OPENSSH_DEFAULT_IDENTITY_FILES.map((name) => `${h}/.ssh/${name}.pub`));
     for (const c of candidates) {
       const data = opts.localVfs.readFile(c);
       if (data && data.trim()) return data.trim();
@@ -399,42 +410,42 @@ function firstStrictModesViolation(
  * key first, then password. Honours the server's PubkeyAuthentication /
  * PasswordAuthentication directives and the client's `-o` overrides.
  */
+function clientTriesMethod(client: SshClientAuthentication, method: AuthMethodType): boolean {
+  if (method === 'publickey') return client.publickey;
+  if (client.batchMode) return false;
+  return method === 'password' ? client.password : client.keyboardInteractive;
+}
+
 function resolveSshAuthMethod(
   opts: SshClientOpts,
   flags: string[],
   exec: RemoteExecLike | undefined,
   remoteUser: string,
+  advertised: readonly AuthMethodType[] | null,
   onStrictModesRefusal?: (offendingPath: string) => void,
 ): SshAuthResolution {
-  const clientPubkey = clientOption(flags, 'PubkeyAuthentication') !== 'no';
-  const clientPassword = clientOption(flags, 'PasswordAuthentication') !== 'no';
-  const clientMethods: string[] = [];
-  if (clientPubkey) clientMethods.push('publickey');
-  if (clientPassword) clientMethods.push('password');
-
-  if (!exec) {
-    return { method: clientPassword ? 'password' : null, clientMethods };
-  }
-  const serverPubkey = readRemoteSshdDirective(exec, 'PubkeyAuthentication') !== 'no';
-  const serverPassword = readRemoteSshdDirective(exec, 'PasswordAuthentication') !== 'no';
-
-  if (clientPubkey && serverPubkey) {
-    const identity = localIdentityPublicKey(opts, flags);
-    if (identity) {
-      const matchedKey = findMatchedAuthorizedKey(exec, remoteUser, identity, onStrictModesRefusal);
-      if (matchedKey) {
-        if (!authorizedKeyAdmits(matchedKey, { ip: opts.sourceIp, host: opts.sourceHostname })) {
-          // fall through to password
-        } else {
-          return { method: 'publickey', clientMethods, matchedKey };
-        }
-      }
+  const client = sshClientAuthentication(sshOptionValues(flags));
+  const offered = advertised ?? (exec
+    ? [
+      ...(readRemoteSshdDirective(exec, 'PubkeyAuthentication') !== 'no' ? ['publickey' as const] : []),
+      ...(readRemoteSshdDirective(exec, 'PasswordAuthentication') !== 'no' ? ['password' as const] : []),
+    ]
+    : ['password' as const]);
+  const serverMethods = offered.join(',');
+  const preferred = client.preferred ?? OPENSSH_USERAUTH_METHODS.filter((m) => clientTriesMethod(client, m));
+  for (const name of preferred) {
+    const method = OPENSSH_USERAUTH_METHODS.find((m) => m === name);
+    if (!method || !offered.includes(method) || !clientTriesMethod(client, method)) continue;
+    if (method !== 'publickey') return { method: 'password', serverMethods };
+    const identity = exec ? localIdentityPublicKey(opts, flags) : null;
+    const matchedKey = identity && exec
+      ? findMatchedAuthorizedKey(exec, remoteUser, identity, onStrictModesRefusal)
+      : null;
+    if (matchedKey && authorizedKeyAdmits(matchedKey, { ip: opts.sourceIp, host: opts.sourceHostname })) {
+      return { method: 'publickey', serverMethods, matchedKey };
     }
   }
-  if (clientPassword && serverPassword) {
-    return { method: 'password', clientMethods };
-  }
-  return { method: null, clientMethods };
+  return { method: null, serverMethods };
 }
 
 /**
@@ -511,17 +522,6 @@ function envNameMatches(name: string, patterns: readonly string[]): boolean {
   });
 }
 
-/** Raw (case-preserving) value of a client-side `-o Name[=| ]value` option. */
-function clientOptionRaw(args: string[], name: string): string | null {
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '-o' && args[i + 1] !== undefined) {
-      const m = new RegExp(`^${name}\\s*=?\\s*(.*)$`, 'i').exec(args[i + 1].trim());
-      if (m) return m[1];
-    }
-  }
-  return null;
-}
-
 /** Collect every value of a directive from an sshd_config / ssh_config blob. */
 function collectDirective(content: string, name: string): string[] {
   const out: string[] = [];
@@ -533,17 +533,21 @@ function collectDirective(content: string, name: string): string[] {
   return out;
 }
 
-/** Patterns the client will send: defaults + ~/.ssh/config, or `-o SendEnv`. */
 function clientSendEnvPatterns(opts: SshClientOpts, flags: string[]): string[] {
-  // An explicit `-o SendEnv ...` overrides the config and the defaults.
-  const override = clientOptionRaw(flags, 'SendEnv');
-  if (override !== null) {
-    return override.trim().split(/\s+/).filter(Boolean);
-  }
-  const patterns = [...DEFAULT_ENV_PATTERNS];
-  if (opts.localVfs) {
-    const cfg = opts.localVfs.readFile(`${opts.sourceHome ?? '/root'}/.ssh/config`) ?? '';
-    patterns.push(...collectDirective(cfg, 'SendEnv'));
+  const requested = everySshOption(sshOptionValues(flags), 'sendenv')
+    .flatMap((value) => value.split(/\s+/).filter(Boolean));
+  const configured = opts.localVfs
+    ? collectDirective(opts.localVfs.readFile(`${opts.sourceHome ?? '/root'}/.ssh/config`) ?? '', 'SendEnv')
+    : [];
+  const patterns: string[] = [];
+  for (const entry of [...requested, ...configured, ...DEFAULT_ENV_PATTERNS]) {
+    if (!entry.startsWith('-')) {
+      patterns.push(entry);
+      continue;
+    }
+    for (let i = patterns.length - 1; i >= 0; i--) {
+      if (envNameMatches(patterns[i], [entry.slice(1)])) patterns.splice(i, 1);
+    }
   }
   return patterns;
 }
@@ -585,6 +589,7 @@ export interface WireExecTarget {
   identities: string[];
   command: string;
   strict: 'yes' | 'no' | 'accept-new';
+  authentication: SshClientAuthentication;
 }
 
 export function wireExecTarget(
@@ -612,6 +617,7 @@ export function wireExecTarget(
     host, user, port: clientPort(flags), identities,
     command: joinRemoteCommand(positional.slice(1)),
     strict: asked === 'yes' || asked === 'no' ? asked : 'accept-new',
+    authentication: sshClientAuthentication(sshOptionValues(flags)),
   };
 }
 
@@ -630,17 +636,18 @@ export function proxyJumpRequest(args: readonly string[]): ProxyJumpRequest | nu
       break;
     }
     if (arg === '-J' && i + 1 < args.length) {
-      spec = args[++i];
+      const jump = args[++i];
+      spec ??= jump;
       continue;
     }
     if (arg.startsWith('-J') && arg.length > 2) {
-      spec = arg.slice(2);
+      spec ??= arg.slice(2);
       continue;
     }
     const option = arg === '-o' ? args[i + 1] : arg.startsWith('-o') ? arg.slice(2) : null;
-    const proxyJump = option === null || option === undefined ? null : /^ProxyJump\s*[=\s]\s*(.+)$/i.exec(option.trim());
-    if (proxyJump) {
-      spec = proxyJump[1];
+    const proxyJump = option === null || option === undefined ? null : sshOptionAssignment(option);
+    if (proxyJump?.name === 'proxyjump') {
+      spec ??= proxyJump.value;
       if (arg === '-o') i++;
       continue;
     }
@@ -789,12 +796,14 @@ function verdictFromWireAlone(
   const wire = opts.wireOutcome ?? wireReachOutcome(opts.sourceDevice, destIp, port);
   if (wire !== 'open') return wireFailure(opts, host, destIp, port, wire);
   return {
-    output: `${remoteUser}@${host}: Permission denied (publickey,password).\n`,
+    output: `${opts.wireDenial ?? deniedLine(remoteUser, host, null)}\n`,
     exitCode: 255,
   };
 }
 
 export function runSshClient(opts: SshClientOpts): SshClientResult {
+  const withoutSession = sshReplyWithoutSession(opts.args, OPENSSH_UBUNTU_22_04);
+  if (withoutSession) return withoutSession;
   const { positional, flags } = splitSshArgs(opts.args);
   const target = positional[0];
   let port = clientPort(flags);
@@ -807,17 +816,14 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const iVal = iIdx >= 0 ? flags[iIdx + 1] : undefined;
   if (iVal && opts.localVfs?.resolveInode) {
     const inode = opts.localVfs.resolveInode(iVal, true);
-    if (inode && (inode.permissions & 0o077) !== 0) {
+    const warning = inode ? unprotectedPrivateKeyWarning(iVal, inode.permissions) : null;
+    if (warning) {
       return {
-        output:
-          `@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n` +
-          `@         WARNING: UNPROTECTED PRIVATE KEY FILE!          @\n` +
-          `@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n` +
-          `Permissions 0${inode.permissions.toString(8)} for '${iVal}' are too open.\n` +
-          `It is required that your private key files are NOT accessible by others.\n` +
-          `This private key will be ignored.\n` +
-          `Load key "${iVal}": bad permissions\n` +
+        output: [
+          ...warning,
+          `Load key "${iVal}": bad permissions`,
           `${opts.sourceUser}@${target ?? ''}: Permission denied (publickey,password).`,
+        ].join('\n'),
         exitCode: 255,
       };
     }
@@ -831,7 +837,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
   if (!target) {
-    return { output: 'usage: ssh [-options] destination [command]', exitCode: 1 };
+    return { output: OPENSSH_UBUNTU_22_04.sshUsage, exitCode: 255 };
   }
 
   const parsed = RE_USERHOST.exec(target);
@@ -956,7 +962,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     if (wire !== 'open') return wireFailure(opts, host, destIp, port, wire);
     if (opts.wireAuthRefused) {
       return {
-        output: `${remoteUser}@${host}: Permission denied (publickey,password).\n`,
+        output: `${opts.wireDenial ?? deniedLine(remoteUser, host, advertisedSshMethods(found.device))}\n`,
         exitCode: 255,
       };
     }
@@ -1068,7 +1074,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       port: 22,
     });
     return {
-      output: `${remoteUser}@${host}: Permission denied (publickey,password).`,
+      output: opts.wireDenial ?? deniedLine(remoteUser, host, advertisedSshMethods(machine)),
       exitCode: 255,
       connection: connectedTuple,
     };
@@ -1084,7 +1090,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const remoteEvents = (machine as unknown as {
     getSshServerContext?: () => { events?: { emit: (e: { kind: string; user: string; ip: string; path?: string; port?: number; reason?: string; method?: string }) => void } };
   }).getSshServerContext?.()?.events;
-  const auth = resolveSshAuthMethod(opts, flags, remoteExec, remoteUser, (offendingPath) => {
+  const auth = resolveSshAuthMethod(opts, flags, remoteExec, remoteUser, advertisedSshMethods(machine), (offendingPath) => {
     remoteEvents?.emit({
       kind: 'auth_strict_modes_refused',
       user: remoteUser,
@@ -1100,9 +1106,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   if (!methodGate.ok) {
     noteRefusal(auth.method ?? undefined);
     return {
-      output: `${remoteUser}@${host}: Permission denied (${
-        auth.clientMethods.join(',') || 'publickey,password'
-      }).`,
+      output: opts.wireDenial ?? deniedLine(remoteUser, host, auth.serverMethods),
       exitCode: 255,
       connection: connectedTuple,
     };
@@ -1124,9 +1128,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   if (offered === 'not-offered' && !grantsWithoutCredential(machine, remoteUser)) {
     noteRefusal('password');
     return {
-      output: `${remoteUser}@${host}: Permission denied (${
-        auth.clientMethods.join(',') || 'publickey,password'
-      }).`,
+      output: opts.wireDenial ?? deniedLine(remoteUser, host, auth.serverMethods),
       exitCode: 255,
       connection: connectedTuple,
     };
@@ -1136,9 +1138,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     const events = (machine as unknown as { getSshServerContext?: () => { events?: { emit: (e: { kind: 'client_disconnected'; user: string; ip: string; reason: string }) => void } } }).getSshServerContext?.()?.events;
     events?.emit({ kind: 'client_disconnected', user: remoteUser, ip: opts.sourceIp, reason: 'too_many_failures' });
     return {
-      output: `${remoteUser}@${host}: Permission denied (${
-        auth.clientMethods.join(',') || 'publickey,password'
-      }).`,
+      output: opts.wireDenial ?? deniedLine(remoteUser, host, auth.serverMethods),
       exitCode: 255,
       connection: connectedTuple,
     };
@@ -1156,7 +1156,16 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       remoteEvents?.emit({ kind: 'auth_account_phase', user: remoteUser, ip: opts.sourceIp });
     }
     return {
-      output: `Your account has expired; please contact your system administrator\n${remoteUser}@${host}: Permission denied (publickey,password).`,
+      output: `Your account has expired; please contact your system administrator\n${opts.wireDenial ?? deniedLine(remoteUser, host, auth.serverMethods)}`,
+      exitCode: 255,
+      connection: connectedTuple,
+    };
+  }
+
+  if (opts.wireAuthRefused) {
+    noteRefusal(auth.method ?? undefined);
+    return {
+      output: opts.wireDenial ?? deniedLine(remoteUser, host, auth.serverMethods),
       exitCode: 255,
       connection: connectedTuple,
     };
@@ -1666,7 +1675,7 @@ function runCrossPlatformExec(
     }
     if (decision.outcome === 'rejected') {
       target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-      return { output: `${remoteUser}@${host}: Permission denied (publickey,password).\n`, exitCode: 255 };
+      return { output: `${deniedLine(remoteUser, host, advertisedSshMethods(target))}\n`, exitCode: 255 };
     }
     target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, true, decision.method ?? 'password');
   } else {
@@ -1682,7 +1691,7 @@ function runCrossPlatformExec(
     const login = target.sshdAcceptsLogin(remoteUser);
     if (!login.ok) {
       target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, false);
-      return { output: `${remoteUser}@${host}: Permission denied (publickey,password).\n`, exitCode: 255 };
+      return { output: `${deniedLine(remoteUser, host, advertisedSshMethods(target))}\n`, exitCode: 255 };
     }
     target.recordSshLogin(remoteUser, opts.sourceIp, opts.sourceHostname, true, 'password');
   }

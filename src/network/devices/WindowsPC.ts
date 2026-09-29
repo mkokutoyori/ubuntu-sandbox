@@ -55,11 +55,15 @@ import type { WinWireTarget } from './windows/network/WindowsSshClient';
 import {
   openWireSshConnection, silentConnectIo, relayScriptedShell, wireReachOutcomeRetransmitting,
 } from '@/terminal/ssh/wireSshLogin';
+import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
+import { OPENSSH_WINDOWS_8_6 } from '@/network/protocols/ssh/OpenSshRelease';
 import { WINDOWS_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
 import { isOk } from '@/network/protocols/ssh/Result';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { SshAgent } from '@/network/protocols/ssh/SshAgent';
-import { runSshKeygenCommand, type SshKeygenHost } from '@/network/protocols/ssh/SshKeygenCommand';
+import {
+  runSshKeygenCommand, runSshKeygenInteractive, type SshKeygenHost, type SshKeygenTerminal,
+} from '@/network/protocols/ssh/SshKeygenCommand';
 import {
   runSshAddCommand, runSshAgentCommand, type SshAgentHost,
 } from '@/network/protocols/ssh/SshAgentCommands';
@@ -2198,10 +2202,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return `C:\\Users\\${this.userMgr.currentUser}`;
   }
 
-  private sshProfileDir(): string {
-    return `${this.userProfileDir()}\\.ssh`;
-  }
-
   private keygenHost(): SshKeygenHost {
     return {
       store: {
@@ -2209,18 +2209,21 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           const r = this.fs.readFile(this.fs.normalizePath(path, this.cwd));
           return r.ok ? (r.content ?? '') : null;
         },
-        write: (path: string, content: string) =>
-          this.fs.createFile(this.fs.normalizePath(path, this.cwd), content).ok,
-        ensureDir: (path: string) => {
-          const abs = this.fs.normalizePath(path, this.cwd);
-          if (!this.fs.exists(abs)) this.fs.mkdirp(abs);
+        write: (path: string, content: string) => {
+          const target = this.fs.normalizePath(path, this.cwd);
+          if (this.fs.createFile(target, content).ok) return null;
+          return this.fs.isDirectory(target.slice(0, target.lastIndexOf('\\')))
+            ? 'Permission denied'
+            : 'No such file or directory';
         },
+        isDirectory: (path: string) => this.fs.isDirectory(this.fs.normalizePath(path, this.cwd)),
+        makePrivateDirectory: (path: string) => { this.fs.mkdirp(this.fs.normalizePath(path, this.cwd)); },
       },
-      separator: '\\',
-      sshDir: this.sshProfileDir(),
+      sshDir: `${this.userProfileDir()}/.ssh`,
       hostKeyDir: 'C:\\ProgramData\\ssh',
       user: this.userMgr.currentUser,
       hostname: this.hostname,
+      release: OPENSSH_WINDOWS_8_6,
     };
   }
 
@@ -2233,9 +2236,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           return r.ok ? (r.content ?? '') : null;
         },
       },
-      separator: '\\',
-      sshDir: this.sshProfileDir(),
+      homeDir: this.userProfileDir(),
       authSocket: `${this.userProfileDir()}\\AppData\\Local\\Temp\\ssh-${this.userMgr.currentUser}\\agent.1`,
+      release: OPENSSH_WINDOWS_8_6,
+      agentUnreachable: () => (this.svcMgr.getService('ssh-agent')?.state === 'Running'
+        ? null
+        : 'Error connecting to agent: No such file or directory'),
+      privateKeyMode: () => null,
       setEnvironment: (name: string, value: string) => { this.setEnvVar(name, value); },
     };
   }
@@ -2246,6 +2253,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     exec: ((command: string) => { output: string; exitCode: number } | null) | undefined;
     shell: (() => { output: string; exitCode: number } | null) | undefined;
     authRefused: boolean;
+    deniedMethods?: string;
     close: () => void;
   } | null> {
     const outcome = await openWireSshConnection({
@@ -2260,7 +2268,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       identityFiles: target.identities,
     });
     if (outcome.kind === 'auth-failed' && password !== undefined) {
-      return { exec: undefined, shell: undefined, authRefused: true, close: () => undefined };
+      return { exec: undefined, shell: undefined, authRefused: true, deniedMethods: outcome.methods, close: () => undefined };
     }
     if (outcome.kind !== 'connected') return null;
     const { session } = outcome;
@@ -2287,6 +2295,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private async cmdSsh(args: string[]): Promise<string> {
+    const withoutSession = sshReplyWithoutSession(args, OPENSSH_WINDOWS_8_6);
+    if (withoutSession) return withoutSession.output;
     const user = this.userMgr.currentUser;
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     const target = winWireExecTarget(args, user);
@@ -2307,6 +2317,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       execRelay: wire?.exec,
       shellRelay: wire?.shell,
       wireAuthRefused: wire?.authRefused,
+      wireDeniedMethods: wire?.deniedMethods,
       wireAuthenticated: wire?.authRefused === false,
       localFs: {
         readFile: (p: string) => this.fs.readFile(p),
@@ -4353,6 +4364,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Override Equipment's hard-coded 'user' default so syncDeviceState
    *  reports the real currently-logged-in account on this Windows host. */
   getCurrentUser(): string { return this.userMgr.currentUser; }
+  runSshKeygenInteractive(args: readonly string[], terminal: SshKeygenTerminal): Promise<number> {
+    return runSshKeygenInteractive(args, this.keygenHost(), terminal);
+  }
 
   /** Get the service manager (for PowerShellExecutor and other integrations) */
   private lacpAgentInstance: LacpAgent | null = null;

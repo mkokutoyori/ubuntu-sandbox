@@ -12,6 +12,7 @@
  * new consumers (audit panels, toasts, supervisors) subscribe to the bus.
  */
 
+import { kernelHostname } from './KernelHostname';
 import { VirtualFileSystem } from './VirtualFileSystem';
 import { uptimeHeader } from './system/SystemInfo';
 import { loadSudoPolicy } from './iam/SudoPolicyEngine';
@@ -1435,7 +1436,7 @@ export class LinuxUserManager {
   sudoList(username: string): string {
     const user = this.users.get(username);
     if (!user) return `User ${username} is not allowed to run sudo`;
-    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const hostname = kernelHostname(this.vfs);
     const actor = { user: username, groups: this.getUserGroups(username).map((g) => g.name) };
     const load = loadSudoPolicy(this.vfs);
     if (!load.ok || !load.engine || !load.engine.hasAnyAccess(actor, hostname, [])) {

@@ -6,8 +6,12 @@
  * du client Linux de ce depot, qui sert ici de reference :
  *
  *   - avec l'option, seule une cle qui figure dans l'`authorized_keys` du
- *     serveur ouvre la session ; sinon `Permission denied (publickey).`
- *     (ssh.c / auth2.c : la liste des methodes se reduit a `publickey`) ;
+ *     serveur ouvre la session ; sinon `Permission denied
+ *     (publickey,password).` : le client n'essaie plus le mot de passe, mais
+ *     le refus cite la liste que le SERVEUR annonce (sshconnect2.c, `fatal`
+ *     de `userauth` sur `authlist`). Cette sonde attendait d'abord
+ *     `(publickey)`, une premisse fausse corrigee avec la negociation
+ *     d'OpenSSH (probe-le-client-ssh-negocie-comme-openssh) ;
  *   - sans l'option, ce simulateur garde sa convention assumee — un `ssh`
  *     qui n'offre aucune justificatif vaut « l'operateur a tape son mot de
  *     passe a l'invite » (LinuxSshClient, verifyOfferedPassword : « keep the
@@ -83,13 +87,13 @@ describe('Windows honore le retrait du repli par mot de passe', () => {
     const { win } = await labo();
     const out = await win.executeCommand(
       `ssh ${SANS_REPLI} -i C:\\etrangere alice@10.0.0.2 hostname`);
-    expect(out).toContain('alice@10.0.0.2: Permission denied (publickey).');
+    expect(out).toContain('alice@10.0.0.2: Permission denied (publickey,password).');
   });
 
   it('AUCUNE cle ne suffit pas non plus', async () => {
     const { win } = await labo();
     const out = await win.executeCommand(`ssh ${SANS_REPLI} alice@10.0.0.2 hostname`);
-    expect(out).toContain('alice@10.0.0.2: Permission denied (publickey).');
+    expect(out).toContain('alice@10.0.0.2: Permission denied (publickey,password).');
   });
 
   it('une cle qui correspond ouvre la session', async () => {
@@ -98,14 +102,14 @@ describe('Windows honore le retrait du repli par mot de passe', () => {
     await autoriseLaCleDe(srv, (await win.executeCommand('type C:\\bonne.pub')).trim());
     const out = await win.executeCommand(
       `ssh ${SANS_REPLI} -i C:\\bonne alice@10.0.0.2 hostname`);
-    expect(out.trim()).toBe('linux-server');
+    expect(out.trim()).toBe(srv.getHostname());
   });
 
   it('sans l option, la convention du simulateur tient', async () => {
-    const { win } = await labo();
+    const { win, srv } = await labo();
     const out = await win.executeCommand(
       'ssh -o StrictHostKeyChecking=no alice@10.0.0.2 hostname');
-    expect(out.trim()).toBe('linux-server');
+    expect(out.trim()).toBe(srv.getHostname());
   });
 
   it('un SERVEUR qui refuse le mot de passe est honore sans option cliente', async () => {
@@ -122,7 +126,7 @@ describe('Windows honore le retrait du repli par mot de passe', () => {
     const { win, srv } = await labo();
     const refus = await win.executeCommand(
       `sftp ${SANS_REPLI} -i C:\\etrangere alice@10.0.0.2`);
-    expect(refus).toContain('Permission denied (publickey).');
+    expect(refus).toContain('Permission denied (publickey,password).');
     await win.executeCommand('ssh-keygen -t ed25519 -N "" -f C:\\bonne');
     await autoriseLaCleDe(srv, (await win.executeCommand('type C:\\bonne.pub')).trim());
     const accepte = await win.executeCommand(
@@ -133,6 +137,6 @@ describe('Windows honore le retrait du repli par mot de passe', () => {
   it('le client Linux refuse deja, et c est la reponse a rejoindre', async () => {
     const { pc } = await labo();
     const out = await pc.executeCommand(`ssh ${SANS_REPLI} alice@10.0.0.2 hostname`);
-    expect(out).toContain('alice@10.0.0.2: Permission denied (publickey).');
+    expect(out).toContain('alice@10.0.0.2: Permission denied (publickey,password).');
   });
 });

@@ -64,6 +64,10 @@ export class TerminalSshInteractionHandler implements ISshInteractionHandler {
     return this.io.readInput(`${user}@${host}'s password: `, true);
   }
 
+  promptKeyboardInteractive(prompt: string, echo: boolean): Promise<string> {
+    return this.io.readInput(prompt, !echo);
+  }
+
   showWarning(message: string): void {
     for (const line of message.split('\n')) {
       this.io.writeLine(line, 'warning');

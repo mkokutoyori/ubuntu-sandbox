@@ -10,6 +10,7 @@ import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOpti
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { isOk } from '@/network/protocols/ssh/Result';
 import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
+import { noopSshLocalFs } from './_helpers/noopSshLocalFs';
 
 beforeEach(() => {
   resetCounters();
@@ -39,7 +40,7 @@ async function remoteSubShell(user: string, addOpts: object = { m: true, s: '/bi
   const dev = pc as unknown as { tcpConnect(h: string, p: number): Promise<unknown> };
   const session = new SshSession({
     tcpConnector: ((h: string, p: number) => dev.tcpConnect(h, p)) as never,
-    vfs: { readFile: () => null, writeFile: () => undefined, resolveInode: () => null, mkdirp: () => undefined } as never,
+    vfs: noopSshLocalFs() as never,
     localUser: 'user', localUid: 1000, localGid: 1000,
     knownHostsPath: '/home/user/.ssh/known_hosts',
     interactionHandler: new SilentSshInteractionHandler(),

@@ -35,8 +35,7 @@ import { parseArgs, parseSubject, REAL_OPENSSL_SUBCOMMANDS } from './OpenSslArgs
 import { runEnc, ENC_ALGOS, ENC_KNOWN_UNIMPLEMENTED } from './OpenSslEnc';
 import { ok, fail, type OpenSslHost, type OpenSslResult } from './OpenSslHost';
 
-export const OPENSSL_VERSION = '3.0.2';
-export const OPENSSL_VERSION_DATE = '15 Mar 2022';
+import { OPENSSL_VERSION_DATE, OPENSSL_VERSION_TEXT } from './opensslVersion';
 
 const DIGESTS: Readonly<Record<string, { label: string; fn: (s: string) => string }>> = {
   md4: { label: 'MD4', fn: (s) => bytesToHex(md4(utf8ToBytes(s))) },
@@ -588,13 +587,12 @@ function runVerify(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
 function runVersion(argv: readonly string[]): OpenSslResult {
   const { opts } = parseArgs('version', argv);
-  const tete = `OpenSSL ${OPENSSL_VERSION} ${OPENSSL_VERSION_DATE}`;
-  if (opts.has('-v')) return ok(tete);
+  if (opts.has('-v')) return ok(OPENSSL_VERSION_TEXT);
   if (!opts.has('-a')) {
-    return ok(`${tete} (Library: OpenSSL ${OPENSSL_VERSION} ${OPENSSL_VERSION_DATE})`);
+    return ok(`${OPENSSL_VERSION_TEXT} (Library: ${OPENSSL_VERSION_TEXT})`);
   }
   return ok([
-    tete,
+    OPENSSL_VERSION_TEXT,
     `built on: ${OPENSSL_VERSION_DATE}`,
     'platform: debian-amd64',
     'OPENSSLDIR: "/usr/lib/ssl"',

@@ -13,6 +13,6 @@ export { LastWordSource, FullLineSource, splitLastWord } from './sources';
 export { ghostRemainder } from './ghost';
 export type { UniqueSpaceMode } from './sources';
 export {
-  driveSubShellTab, hasSubShellCompletion, subShellCompletionSource,
+  driveSubShellTab, hasSubShellCompletion, subShellCompletionSource, SubShellCompletionControllers,
 } from './subShellTab';
 export type { SubShellCompletionTarget, SubShellTabHost } from './subShellTab';

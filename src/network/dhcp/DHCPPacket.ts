@@ -14,6 +14,8 @@
 import type { DHCPMessageType } from './types';
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
 
+export const DHCP_WIRE_BYTES = 300;
+
 /** DHCP Option codes (RFC 2132) */
 export const DHCP_OPTION = {
   SUBNET_MASK: 1,
@@ -231,7 +233,10 @@ export class DHCPPacket implements NetworkPdu {
     return pkt;
   }
 
-  private static applyExtendedOptions(pkt: DHCPPacket, opts: OfferOptions): void {
+  private static applyExtendedOptions(
+    pkt: DHCPPacket,
+    opts: Pick<OfferOptions, 'nextServer' | 'bootfile' | 'netbiosServers' | 'netbiosNodeType' | 'rawOptions'>,
+  ): void {
     if (opts.nextServer) pkt.setOption(DHCP_OPTION.TFTP_SERVER_NAME, opts.nextServer);
     if (opts.bootfile) pkt.setOption(DHCP_OPTION.BOOTFILE_NAME, opts.bootfile);
     if (opts.netbiosServers && opts.netbiosServers.length > 0) {
@@ -280,6 +285,27 @@ export class DHCPPacket implements NetworkPdu {
     pkt.setOption(DHCP_OPTION.LEASE_TIME, opts.leaseDuration);
     if (opts.renewalTime !== undefined) pkt.setOption(DHCP_OPTION.RENEWAL_TIME, opts.renewalTime);
     if (opts.rebindingTime !== undefined) pkt.setOption(DHCP_OPTION.REBINDING_TIME, opts.rebindingTime);
+    if (opts.domainName) pkt.setOption(DHCP_OPTION.DOMAIN_NAME, opts.domainName);
+    DHCPPacket.applyExtendedOptions(pkt, opts);
+    return pkt;
+  }
+
+  static createInformAck(
+    mac: string, xid: number,
+    clientIP: string, serverIP: string,
+    opts: Omit<OfferOptions, 'leaseDuration' | 'renewalTime' | 'rebindingTime'>,
+  ): DHCPPacket {
+    const pkt = new DHCPPacket();
+    pkt.op = 2;
+    pkt.xid = xid;
+    pkt.ciaddr = clientIP;
+    pkt.siaddr = serverIP;
+    pkt.chaddr = mac.toUpperCase();
+    pkt.setOption(DHCP_OPTION.MESSAGE_TYPE, 5);
+    pkt.setOption(DHCP_OPTION.SERVER_IDENTIFIER, serverIP);
+    pkt.setOption(DHCP_OPTION.SUBNET_MASK, opts.mask);
+    pkt.setOption(DHCP_OPTION.ROUTER, opts.router);
+    if (opts.dns.length > 0) pkt.setOption(DHCP_OPTION.DNS, opts.dns);
     if (opts.domainName) pkt.setOption(DHCP_OPTION.DOMAIN_NAME, opts.domainName);
     DHCPPacket.applyExtendedOptions(pkt, opts);
     return pkt;

@@ -321,6 +321,10 @@ export class HuaweiRouter extends Router {
 
   protected override unsetServiceTypeAdmits(): boolean { return false; }
 
+  protected override sshPublicKeyAdmitted(user: string, offeredKeyMaterial: string): boolean {
+    return this.getManagementService().sshPublicKeyAdmitted(user, offeredKeyMaterial);
+  }
+
   protected override sshPasswordAllowed(user: string): boolean {
     return this.getManagementService().sshPasswordAllowed(user);
   }

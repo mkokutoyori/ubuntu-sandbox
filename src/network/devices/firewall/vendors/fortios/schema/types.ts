@@ -436,7 +436,7 @@ export interface FortiCommitDevice {
   applyRip(settings: RipConfiguration): string | void;
   applyOspf(settings: OspfConfiguration): string | void;
   applyBgp(settings: BgpConfiguration): string | void;
-  applyDhcpScope(scope: DhcpScope): void;
+  applyDhcpScope(scope: DhcpScope): string | void;
   removeDhcpScope(id: string): void;
   applyIpv6RouterAdvertisement(iface: string, options: {
     send: boolean; managed: boolean; other: boolean;

@@ -58,13 +58,17 @@ describe('la chaine ssh-keygen -> ssh-add -> ssh tient sous Windows', () => {
   it('sans `-f`, la paire atterrit sous le profil de l utilisateur', async () => {
     const { win } = await labo();
     const out = await win.executeCommand('ssh-keygen -t ed25519 -N ""');
-    expect(out).toContain('\\.ssh\\id_ed25519');
+    expect(out).toContain('Your identification has been saved in C:\\Users\\User/.ssh/id_ed25519');
     const pub = await win.executeCommand('type %USERPROFILE%\\.ssh\\id_ed25519.pub');
     expect(pub.trim().startsWith('ssh-ed25519 ')).toBe(true);
   });
 
   it('`ssh-add` sans argument trouve l identite par defaut', async () => {
     const { win } = await labo();
+    win.setCurrentUser('Administrator');
+    await win.executeCommand('sc config ssh-agent start= demand');
+    await win.executeCommand('net start ssh-agent');
+    win.setCurrentUser('User');
     await win.executeCommand('ssh-keygen -t ed25519 -N ""');
     const ajout = await win.executeCommand('ssh-add');
     expect(ajout).toContain('Identity added:');
@@ -82,7 +86,7 @@ describe('la chaine ssh-keygen -> ssh-add -> ssh tient sous Windows', () => {
     await srv.executeCommand('sudo chmod 600 /home/alice/.ssh/authorized_keys');
     const out = await win.executeCommand(
       'ssh -o StrictHostKeyChecking=no -o PasswordAuthentication=no -i C:\\cle alice@10.0.0.2 hostname');
-    expect(out.trim()).toBe('linux-server');
+    expect(out.trim()).toBe(srv.getHostname());
     expect(out).not.toMatch(/Permission denied/);
   });
 });

@@ -909,7 +909,7 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
     },
   ],
   onCommit(object, context) {
-    context.device.applyDhcpScope({
+    return context.device.applyDhcpScope({
       id: object.key,
       enabled: object.effective('status')[0] !== 'disable',
       iface: object.effective('interface')[0] ?? '',
@@ -921,6 +921,7 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
         object.effective('dns-server2')[0] ?? '',
       ].filter(server => server.length > 0 && server !== '0.0.0.0'),
       reservations: object.childEntries('reserved-address').map(entry => ({
+        id: entry.key,
         ip: entry.effective('ip')[0] ?? '0.0.0.0',
         mac: entry.effective('mac')[0] ?? '',
         description: entry.effective('description')[0] ?? '',

@@ -166,7 +166,7 @@ describe('TEMOINS', () => {
 
     const sortie = await pc.executeCommand('hostnamectl');
 
-    expect(sortie).toContain('Static hostname: linux-pc');
+    expect(sortie).toContain(`Static hostname: ${(await pc.executeCommand('hostname')).trim()}`);
     expect(sortie).toContain('Operating System: Ubuntu 22.04.4 LTS');
   });
 

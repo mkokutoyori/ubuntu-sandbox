@@ -161,11 +161,11 @@ describe('`telnet` lit un litteral IPv6', () => {
 
 describe('`ssh` lit un litteral IPv6', () => {
   it('la commande distante repond', async () => {
-    const { poste } = await laboratoire();
+    const { poste, serveur } = await laboratoire();
 
     expect(await poste.executeCommand(
       `sshpass -p ${SECRET} ssh alice@${SERVEUR_V6} hostname`))
-      .toMatch(/linux-server/);
+      .toContain(serveur.getHostname());
   });
 });
 

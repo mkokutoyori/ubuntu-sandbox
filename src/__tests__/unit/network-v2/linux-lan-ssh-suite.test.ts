@@ -1781,7 +1781,7 @@ describe('§26 — SSH public-key authentication', () => {
       },
       on: l => l.pc1,
       cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2',
-      contains: [/Permission denied \(publickey\)/],
+      contains: [/Permission denied \(password\)/],
     },
     {
       name: 'ssh-keygen -y -f reads the private key and prints the public form',
@@ -2177,14 +2177,20 @@ describe('§32 — environment forwarding (SendEnv / AcceptEnv)', () => {
       contains: [/LANG=fr_FR\.UTF-8/],
     },
     {
-      name: '-o SendEnv= overrides config and blocks forwarding',
+      name: '-o SendEnv adds to the defaults instead of replacing them',
       setup: async (l) => {
-        await l.pc1.executeCommand('mkdir -p ~/.ssh');
-        await l.pc1.executeCommand('printf "SendEnv MYVAR\\n" > ~/.ssh/config');
+        await l.pc2.executeCommand('printf "AcceptEnv MYVAR\\n"| sudo tee -a /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
+      cmd: 'LANG=fr_FR.UTF-8 MYVAR=zzz ssh -o "SendEnv MYVAR" alice@10.0.0.2 \'echo "$LANG $MYVAR"\'',
+      contains: [/^fr_FR\.UTF-8 zzz$/m],
+    },
+    {
+      name: '-o SendEnv without a value is refused',
+      on: l => l.pc1,
       cmd: 'MYVAR=zzz ssh -o "SendEnv " alice@10.0.0.2 \'echo "MYVAR=$MYVAR"\'',
-      contains: [/^MYVAR=\s*$/m],
+      contains: [/^command-line line 0: no argument after keyword "sendenv"$/m],
     },
     {
       name: 'forwarded env appears in env output on remote',

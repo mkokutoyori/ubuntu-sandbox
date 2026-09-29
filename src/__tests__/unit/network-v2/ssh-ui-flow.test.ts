@@ -270,8 +270,7 @@ describe('SSH UI — basic password authentication flow', () => {
     const before2 = session.lines.length;
     await typeNormal(session, 'hostname');
     await waitFor(() => session.lines.length > before2);
-    // /etc/hostname holds "linux-pc" (from the LinuxPC profile).
-    expect(linesText(session).slice(before2).join('\n')).toMatch(/linux-pc/);
+    expect(linesText(session).slice(before2).join('\n')).toContain(lan.pc2.getHostname());
   });
 
   it('updates the prompt to the remote machine after connecting', async () => {

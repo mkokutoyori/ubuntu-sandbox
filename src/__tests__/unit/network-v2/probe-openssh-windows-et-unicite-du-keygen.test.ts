@@ -64,6 +64,14 @@ function windows(): WindowsPC {
 
 const flush = (): Promise<void> => new Promise(r => setTimeout(r, 0));
 
+async function withAgentStarted(pc: WindowsPC): Promise<WindowsPC> {
+  pc.setCurrentUser('Administrator');
+  await pc.executeCommand('sc config ssh-agent start= demand');
+  await pc.executeCommand('net start ssh-agent');
+  pc.setCurrentUser('User');
+  return pc;
+}
+
 async function parLeTerminal(pc: LinuxPC, ligne: string): Promise<string> {
   const session = new LinuxTerminalSession('term-1', pc);
   session.setInput(ligne);
@@ -112,12 +120,12 @@ describe('Windows livre les outils que son constructeur compile', () => {
   });
 
   it('`ssh-add -l` sur un agent vide rend la phrase d OpenSSH', async () => {
-    const pc = windows();
+    const pc = await withAgentStarted(windows());
     expect(await pc.executeCommand('ssh-add -l')).toContain('The agent has no identities.');
   });
 
   it('`ssh-add <cle>` puis `-l` rend « bits empreinte commentaire (TYPE) »', async () => {
-    const pc = windows();
+    const pc = await withAgentStarted(windows());
     await pc.executeCommand('ssh-keygen -t ed25519 -N "" -f C:\\essai');
     const ajout = await pc.executeCommand('ssh-add C:\\essai');
     expect(ajout).toContain('Identity added: C:\\essai');
@@ -132,7 +140,7 @@ describe('Windows livre les outils que son constructeur compile', () => {
   });
 
   it('l agent est celui de la MACHINE : cmd le remplit, PowerShell le voit', async () => {
-    const pc = windows();
+    const pc = await withAgentStarted(windows());
     await pc.executeCommand('ssh-keygen -t ed25519 -N "" -f C:\\essai');
     await pc.executeCommand('ssh-add C:\\essai');
     const parCmd = (await pc.executeCommand('ssh-add -l')).trim();
@@ -152,7 +160,7 @@ describe('une machine n a qu un ssh-keygen : les deux vues concordent', () => {
   it('la vue SSH ecrit les cinq lignes', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
     pc.powerOn();
-    const out = await pc.executeCommand('ssh-keygen -t ed25519 -N "" -f /root/.ssh/vue');
+    const out = await pc.executeCommand('ssh-keygen -t ed25519 -N "" -f /home/user/.ssh/vue');
     expect(out).toContain('Generating public/private ed25519 key pair.');
     expect(out).toContain("The key's randomart image is:");
   });
@@ -160,31 +168,31 @@ describe('une machine n a qu un ssh-keygen : les deux vues concordent', () => {
   it('la vue SSH refuse un type inconnu', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
     pc.powerOn();
-    const out = await pc.executeCommand('ssh-keygen -t zorglub -N "" -f /root/.ssh/z');
+    const out = await pc.executeCommand('ssh-keygen -t zorglub -N "" -f /home/user/.ssh/z');
     expect(out.toLowerCase()).toContain('unknown key type');
   });
 
   it('la vue terminal ecrit le type DEMANDE, pas un autre', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
     pc.powerOn();
-    await parLeTerminal(pc, 'ssh-keygen -t ecdsa -N "" -f /root/.ssh/ec');
-    const pub = await pc.executeCommand('cat /root/.ssh/ec.pub');
+    await parLeTerminal(pc, 'ssh-keygen -t ecdsa -N "" -f /home/user/.ssh/ec');
+    const pub = await pc.executeCommand('cat /home/user/.ssh/ec.pub');
     expect(pub.trim().startsWith('ecdsa-sha2-nistp256 ')).toBe(true);
   });
 
   it('la vue terminal refuse le type que la vue SSH refuse', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
     pc.powerOn();
-    const out = await parLeTerminal(pc, 'ssh-keygen -t zorglub -N "" -f /root/.ssh/z');
+    const out = await parLeTerminal(pc, 'ssh-keygen -t zorglub -N "" -f /home/user/.ssh/z');
     expect(out.toLowerCase()).toContain('unknown key type');
   });
 
   it('la privee ecrite par la vue terminal porte de quoi retrouver sa publique', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
     pc.powerOn();
-    await parLeTerminal(pc, 'ssh-keygen -t ed25519 -N "" -f /root/.ssh/vt');
-    const surDisque = (await pc.executeCommand('cat /root/.ssh/vt.pub')).trim();
-    const deduite = (await pc.executeCommand('ssh-keygen -y -f /root/.ssh/vt')).trim();
+    await parLeTerminal(pc, 'ssh-keygen -t ed25519 -N "" -f /home/user/.ssh/vt');
+    const surDisque = (await pc.executeCommand('cat /home/user/.ssh/vt.pub')).trim();
+    const deduite = (await pc.executeCommand('ssh-keygen -y -f /home/user/.ssh/vt')).trim();
     expect(deduite.split(' ')[1]).toBe(surDisque.split(' ')[1]);
   });
 });

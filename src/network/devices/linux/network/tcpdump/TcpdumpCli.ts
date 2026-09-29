@@ -1,3 +1,5 @@
+import { OPENSSL_VERSION_TEXT } from '@/network/crypto/openssl/opensslVersion';
+
 export type TimestampMode = 'time' | 'none' | 'epoch' | 'delta' | 'datetime' | 'since-first';
 export type HexMode = 'none' | 'hex' | 'hexascii';
 
@@ -49,7 +51,7 @@ export type Invocation =
 const VERSION_TEXT = [
   'tcpdump version 4.99.1',
   'libpcap version 1.10.1 (with TPACKET_V3)',
-  'OpenSSL 3.0.2 15 Mar 2022',
+  OPENSSL_VERSION_TEXT,
 ].join('\n');
 
 const USAGE_TEXT = [

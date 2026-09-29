@@ -8,6 +8,8 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
+import { hostnameOf, type HostnameSource } from '@/network/devices/linux/KernelHostname';
+import { bashPromptParts, formatBashPrompt } from '@/network/devices/linux/shell/BashPrompt';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import type { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
 import type { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
@@ -20,6 +22,7 @@ import { SshHostKey } from '../SshHostKey';
 import { SshUserContext } from '../SshUserContext';
 import {
   DEFAULT_SSH_SERVER_CONFIG,
+  SSHD_MAX_AUTH_TRIES_REASON,
   type ILinuxShell,
   type ISshServerContext,
   type SshServerConfig,
@@ -167,6 +170,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   private readonly syslogger: SshSyslogger | null;
   private readonly utmpProjection: LinuxUtmpProjection | null;
   readonly rawConfig: string;
+  readonly maxAuthTriesDisconnect = SSHD_MAX_AUTH_TRIES_REASON;
   private cachedEffective: SshdServerConfig | null = null;
   private readonly device: unknown;
   private readonly rootLoginOverride: boolean | undefined;
@@ -174,7 +178,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   constructor(
     private readonly vfs: VirtualFileSystem,
     private readonly userManager: LinuxUserManager,
-    private readonly hostname: string,
+    private readonly hostnameSource: HostnameSource,
     config: Partial<SshServerConfig> = {},
     private readonly executor: LinuxCommandExecutor | null = null,
     /**
@@ -205,7 +209,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     // Reactive subsystems: each one is independent and only needs the bus.
     this.syslogger = (opts.enableSyslog ?? true)
       ? new SshSyslogger(this.vfs, this.events, {
-          hostname: this.hostname,
+          hostname: this.hostnameSource,
           port: this.sshdConfig.listenPort,
           // The pid of the REAL sshd in this machine's process table, not
           // a fresh random one: `ps`, `sshd[<pid>]` in auth.log and
@@ -316,7 +320,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   /** Re-read /etc/ssh/sshd_config and return a fresh context (SSH-07-R6). */
   reloadConfig(): LinuxSshServerContext {
     return new LinuxSshServerContext(
-      this.vfs, this.userManager, this.hostname, {}, this.executor, this.fullExecutor,
+      this.vfs, this.userManager, this.hostnameSource, {}, this.executor, this.fullExecutor,
       { device: this.device },
     );
   }
@@ -474,10 +478,7 @@ export class LinuxSshServerContext implements ISshServerContext {
           }
           if (EXIT_WORDS.has(line.trim().toLowerCase())) {
             const left = device.handleExitInSession(session);
-            return {
-              stdout: left.output === '' ? '' : `${left.output}\n`,
-              stderr: '', exitCode: 0, sessionEnded: !left.inSu,
-            };
+            return { stdout: 'logout\n', stderr: '', exitCode: 0, sessionEnded: !left.inSu };
           }
           const launched = subShells.launch(line);
           if (launched) return { stdout: joinLines(launched), stderr: '', exitCode: 0 };
@@ -518,14 +519,13 @@ export class LinuxSshServerContext implements ISshServerContext {
         getPrompt: () => {
           const nested = subShells.getPrompt();
           if (nested !== null) return nested;
-          // The authenticated user's real home from /etc/passwd — never a
-          // guessed `/home/<name>`, which would be wrong for root (/root)
-          // and for any account with a custom home.
-          const home = userCtx.homeDirectory;
-          const shortCwd = session.cwd === home ? '~'
-            : session.cwd.startsWith(`${home}/`) ? `~${session.cwd.slice(home.length)}`
-            : session.cwd;
-          return `${userCtx.username}@${device.getSshHostname()}:${shortCwd}${userCtx.isRoot() ? '#' : '$'} `;
+          return formatBashPrompt(bashPromptParts({
+            user: session.user,
+            root: session.uid === 0,
+            hostname: device.getSshHostname(),
+            cwd: session.cwd,
+            home: device.homeDirectoryOf(session.user),
+          }));
         },
         // A persistent shell channel ends by hanging up (real terminal
         // close); a one-shot exec ran its single command to completion,
@@ -579,7 +579,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   getMotd(): string {
     if (!this.effectiveSshdServerConfig().printMotd) return '';
     const motd = this.vfs.readFile('/etc/motd');
-    return motd ?? `Welcome to ${this.hostname}\n`;
+    return motd ?? `Welcome to ${hostnameOf(this.hostnameSource)}\n`;
   }
 
   getLastLogin(user: string): string | null {
@@ -746,7 +746,7 @@ export class LinuxSshServerContext implements ISshServerContext {
       const material = pub.trim().split(/\s+/)[1] ?? pub.trim();
       return SshHostKey.fromFiles(material, priv.trim(), 'ssh-ed25519');
     }
-    const generated = SshHostKey.generate(this.hostname);
+    const generated = SshHostKey.generate(hostnameOf(this.hostnameSource));
     this.vfs.writeFile(
       HOST_KEY_PUB_PATH,
       generated.publicKeyLine + '\n',
@@ -791,7 +791,19 @@ export class LinuxSshServerContext implements ISshServerContext {
         const methods: AuthMethodType[] = [];
         if (this.config.pubkeyAuthentication) methods.push('publickey');
         if (this.config.passwordAuthentication) methods.push('password');
+        if (this.config.kbdInteractiveAuthentication) methods.push('keyboard-interactive');
         return methods;
+      },
+      keyboardInteractive: () => {
+        if (!this.config.kbdInteractiveAuthentication || !this.effectiveSshdServerConfig().usePam) return null;
+        return {
+          device: 'pam',
+          name: '',
+          instruction: '',
+          prompts: [{ prompt: 'Password: ', echo: false }],
+          verify: (user, responses) => this.userAllowed(user, 'password')
+            && this.userManager.checkPassword(user, responses[0] ?? ''),
+        };
       },
       checkAccountLifecycle: (user) => this.userManager.accountLifecycleGate(user),
     };

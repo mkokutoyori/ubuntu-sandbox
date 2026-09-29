@@ -78,6 +78,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
+import { noopSshLocalFs } from './_helpers/noopSshLocalFs';
 import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress, IPAddress, SubnetMask } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -131,10 +132,7 @@ async function laboratoire(gardeDeVie: string): Promise<{
   const dev = pc as unknown as { tcpConnect(h: string, p: number): Promise<unknown> };
   const session = new SshSession({
     tcpConnector: ((h: string, p: number) => dev.tcpConnect(h, p)) as never,
-    vfs: {
-      readFile: () => null, writeFile: () => undefined,
-      resolveInode: () => null, mkdirp: () => undefined,
-    } as never,
+    vfs: noopSshLocalFs() as never,
     localUser: 'user', localUid: 1000, localGid: 1000,
     knownHostsPath: '/home/user/.ssh/known_hosts',
     interactionHandler: new SilentSshInteractionHandler(),

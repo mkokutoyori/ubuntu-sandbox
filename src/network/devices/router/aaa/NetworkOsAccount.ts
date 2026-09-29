@@ -5,7 +5,8 @@ import {
 } from '@/crypto/passwords/huawei';
 import { ciscoPasswordMatches } from '../../shells/cisco/ciscoPasswordVerify';
 
-export type SshAuthMethod = 'password' | 'publickey' | 'keyboard-interactive';
+import type { AuthMethodType as SshAuthMethod } from '@/network/protocols/ssh/auth/ISshAuthMethod';
+export type { SshAuthMethod };
 export type PasswordHashAlgorithm =
   | 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'sha512' | 'cipher' | 'irreversible-cipher' | 'type-7';
 export type AccountServiceType =

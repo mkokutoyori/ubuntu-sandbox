@@ -74,7 +74,7 @@ export function match<T, E, U>(
 export type SshError =
   | { kind: 'HOST_KEY_CHANGED'; host: string; expected: string; got: string }
   | { kind: 'HOST_KEY_REJECTED'; host: string; fingerprint: string }
-  | { kind: 'AUTH_FAILED'; user: string; attemptsLeft: number }
+  | { kind: 'AUTH_FAILED'; user: string; attemptsLeft: number; methods?: string }
   | { kind: 'CONNECTION_REFUSED'; host: string; port: number }
   | { kind: 'CONNECTION_TIMEOUT'; host: string; port: number }
   | { kind: 'CONNECTION_UNREACHABLE'; host: string; port: number }

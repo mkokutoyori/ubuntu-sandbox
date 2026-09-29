@@ -28,6 +28,7 @@ export interface L3ServiceHost {
   resolvedMac(ip: string): MACAddress | undefined;
   emitFrame(iface: string, frame: EthernetFrame): void;
   emitArpAware(iface: string, packet: IPv4Packet, nextHop: IPAddress): void;
+  probeAddress(iface: string, address: string): boolean;
   assignAddress(iface: string, ip: string, mask: string): void;
   forward(iface: string, packet: IPv4Packet, gateway?: string): void;
   systemDnsServers?(): readonly string[];
@@ -92,6 +93,7 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
     },
     portMac: (iface) => host.port(iface)?.getMAC(),
     emitFrame: (iface, frame) => { host.emitFrame(iface, frame); },
+    addressInUse: (iface, address) => host.probeAddress(iface, address),
     leaseGranted: (iface, ip, mask, gateway) => {
       host.assignAddress(iface, ip, mask);
       if (gateway) host.routesOf(iface).addDefault(gateway, { id: `dhcp:${iface}` });

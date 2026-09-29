@@ -14,6 +14,10 @@
 import { Equipment } from '@/network';
 import { primaryShellKindFor } from '@/shell/shellKind';
 import { SSH_PASSWORD_PROMPTS } from '@/shell/sshLauncher';
+import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
+import { OPENSSH_WINDOWS_8_6 } from '@/network/protocols/ssh/OpenSshRelease';
+import { isSshKeygenCapableHost } from '@/network/equipment/HostCapabilities';
+import { splitCmdArgs } from '@/network/devices/windows/cmdline';
 import {
   TerminalSession, TerminalTheme, SessionType, KeyEvent, nextLineId,
   withTimeout, DeviceOfflineError,
@@ -50,7 +54,7 @@ import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { classifyWindowsLines } from '@/terminal/core/windowsOutputStyle';
-import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder, driveSubShellTab, hasSubShellCompletion } from '@/terminal/completion';
+import { CompletionController, ReadlinePolicy, LastWordSource, ghostRemainder, driveSubShellTab, hasSubShellCompletion, SubShellCompletionControllers } from '@/terminal/completion';
 import type { SubShellTabHost } from '@/terminal/completion';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
@@ -85,7 +89,7 @@ export class WindowsTerminalSession extends TerminalSession {
 
   private readonly rootCompletion =
     new CompletionController(new ReadlinePolicy({ caseInsensitive: true }));
-  private readonly subShellCompletion = new CompletionController(new CyclingPolicy());
+  private readonly subShellCompletion = new SubShellCompletionControllers();
 
   private readonly _flowFormatter = new PlainOutputFormatter();
   private _onRequestClose?: () => void;
@@ -844,22 +848,23 @@ export class WindowsTerminalSession extends TerminalSession {
     if (this.tryStartWinNetstatStream(trimmed)) return;
     if (this.tryStartWinPathpingStream(trimmed)) return;
 
-    // SSH client info / unsupported forms — handled by the shared
-    // launcher first so the OpenSSH usage / version line is uniform
-    // across the local console and SSH'd-in shells.
-    if (lower === 'ssh -v' || lower === 'ssh --version'
-        || trimmed === 'ssh' /* bare ssh prints usage */) {
-      if (lower === 'ssh -v' || lower === 'ssh --version') {
-        this.addLine('OpenSSH_9.6p1 Ubuntu-3ubuntu13.4, OpenSSL 3.0.13 30 Jan 2024');
-      } else {
-        this.addLine('usage: ssh [-46AaCfGgKkMNnqsTtVvXxYy] [-B bind_interface]');
-        this.addLine('           [-b bind_address] [-c cipher_spec] [-D [bind_address:]port]');
-        this.addLine('           [-E log_file] [-F configfile] [-I pkcs11] [-i identity_file]');
-        this.addLine('           [-J [user@]host[:port]] [-L address] [-l login_name]');
-        this.addLine('           [-o option] [-p port] [-Q query_option] [-R address]');
-        this.addLine('           [-S ctl_path] [-W host:port] [-w local_tun[:remote_tun]]');
-        this.addLine('           destination [command [argument ...]]');
-      }
+    const withoutSession = lower === 'ssh' || lower.startsWith('ssh ')
+      ? sshReplyWithoutSession(trimmed.split(/\s+/).slice(1), OPENSSH_WINDOWS_8_6)
+      : null;
+    if (withoutSession) {
+      for (const line of withoutSession.output.split('\n')) this.addLine(line);
+      this.notify();
+      return;
+    }
+
+    if (/^ssh-keygen(\.exe)?(\s|$)/i.test(trimmed) && !/[|&<>^%]/.test(trimmed) && isSshKeygenCapableHost(this.device)) {
+      const broker = new PromiseInputBrokerCtor(this.inputHostImpl);
+      await this.device.runSshKeygenInteractive(splitCmdArgs(trimmed).slice(1), {
+        print: (line) => { this.addLine(line); this.notify(); },
+        ask: (question, hidden) => hidden
+          ? broker.password(question, { trim: false })
+          : broker.ask(question, { trim: false }),
+      });
       this.notify();
       return;
     }
@@ -1134,7 +1139,7 @@ export class WindowsTerminalSession extends TerminalSession {
         return;
       }
       this.endSshPrompt();
-      this.addLine(`${pending.user}@${pending.host}: Permission denied (publickey,password).`);
+      this.addLine(`${pending.user}@${pending.host}: Permission denied (${outcome.methods ?? 'publickey,password'}).`);
       this.notify();
       return;
     }

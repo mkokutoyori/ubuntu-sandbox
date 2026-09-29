@@ -45,7 +45,7 @@ describe('H-01 — /etc/hosts VFS initialization', () => {
   it('creates /etc/hosts with hostname entry (127.0.1.1) on a LinuxPC', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     const out = await pc.executeCommand('cat /etc/hosts');
-    expect(out).toMatch(/127\.0\.1\.1\s+linux-pc/);
+    expect(out).toMatch(new RegExp(`127\\.0\\.1\\.1\\s+${pc.getHostname()}`));
   });
 
   it('creates /etc/hosts with hostname entry on a LinuxServer', async () => {
@@ -53,7 +53,7 @@ describe('H-01 — /etc/hosts VFS initialization', () => {
     const out = await srv.executeCommand('cat /etc/hosts');
     expect(out).toContain('127.0.0.1');
     expect(out).toContain('localhost');
-    expect(out).toMatch(/127\.0\.1\.1\s+linux-server/);
+    expect(out).toMatch(new RegExp(`127\\.0\\.1\\.1\\s+${srv.getHostname()}`));
   });
 
   it('includes IPv6 localhost entries', async () => {
@@ -70,22 +70,22 @@ describe('H-01 — /etc/hosts VFS initialization', () => {
 
 describe('H-02 — /etc/hostname synchronization', () => {
 
-  it('sets /etc/hostname to profile hostname, not "localhost"', async () => {
+  it('sets /etc/hostname to the machine name, not "localhost"', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     const out = await pc.executeCommand('cat /etc/hostname');
-    expect(out.trim()).toBe('linux-pc');
+    expect(out.trim()).toBe(pc.getHostname());
   });
 
-  it('hostname command returns the profile hostname', async () => {
+  it('hostname command returns the machine name', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     const out = await pc.executeCommand('hostname');
-    expect(out.trim()).toBe('linux-pc');
+    expect(out.trim()).toBe(pc.getHostname());
   });
 
   it('server has its own hostname', async () => {
     const srv = new LinuxServer('linux-server', 'SRV1');
     const out = await srv.executeCommand('cat /etc/hostname');
-    expect(out.trim()).toBe('linux-server');
+    expect(out.trim()).toBe(srv.getHostname());
   });
 
 });
@@ -199,7 +199,7 @@ describe('H-03 — resolveHostname via LinuxNetKernel', () => {
 
   it('resolves own hostname to 127.0.1.1', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
-    const out = await pc.executeCommand('ping -c 1 linux-pc');
+    const out = await pc.executeCommand(`ping -c 1 ${pc.getHostname()}`);
     expect(out).toContain('127.0.1.1');
   });
 
@@ -332,7 +332,7 @@ describe('H-07 — getent hosts command', () => {
     expect(out).toContain('127.0.0.1');
     expect(out).toContain('localhost');
     expect(out).toContain('127.0.1.1');
-    expect(out).toContain('linux-pc');
+    expect(out).toContain(pc.getHostname());
   });
 
   it('getent hosts <name> resolves a specific hostname', async () => {

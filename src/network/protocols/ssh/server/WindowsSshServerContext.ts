@@ -15,6 +15,7 @@ import { SshUserContext } from '../SshUserContext';
 import type { SshVtyShell } from './SshExecTarget';
 import {
   DEFAULT_SSH_SERVER_CONFIG,
+  SSHD_MAX_AUTH_TRIES_REASON,
   type ILinuxShell,
   type ISshServerContext,
   type SshServerConfig,
@@ -72,6 +73,7 @@ export class WindowsSshServerContext implements ISshServerContext {
   readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;
   readonly sshdConfig: SshdConfig;
+  readonly maxAuthTriesDisconnect = SSHD_MAX_AUTH_TRIES_REASON;
 
   constructor(
     private readonly wfs: WindowsFileSystem,

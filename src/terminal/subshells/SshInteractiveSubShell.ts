@@ -50,6 +50,9 @@
  * Reference: BRD-SSH-SFTP.md SSH-04.
  */
 
+import {
+  bashPromptParts, formatBashPrompt, parseBashPrompt, type BashPromptParts,
+} from '@/network/devices/linux/shell/BashPrompt';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
 import { Equipment } from '@/network';
@@ -121,9 +124,13 @@ class HopInteractionHandler implements ISshInteractionHandler {
   }
 
   promptPassword(user: string, host: string): Promise<string> {
+    return this.promptKeyboardInteractive(`${user}@${host}'s password:`, false);
+  }
+
+  promptKeyboardInteractive(prompt: string, echo: boolean): Promise<string> {
     return new Promise((resolve) => {
       this.pendingPasswordResolve = resolve;
-      this.signal({ kind: 'password', promptText: `${user}@${host}'s password:` });
+      this.signal({ kind: echo ? 'text' : 'password', promptText: prompt.trimEnd() });
     });
   }
 
@@ -320,9 +327,19 @@ export class SshInteractiveSubShell implements ISubShell {
     // moment we land rather than a guessed bash shape.
     const opening = this.channel.initialPrompt?.();
     if (opening) return opening;
-    const homeDir = `/home/${this.remoteUser}`;
-    const cwdShort = this.cwd === homeDir ? '~' : this.cwd;
-    return `${this.remoteUser}@${this.promptHost}:${cwdShort}$ `;
+    return formatBashPrompt(bashPromptParts({
+      user: this.remoteUser,
+      root: this.remoteUser === 'root',
+      hostname: this.promptHost,
+      cwd: this.cwd,
+      home: this.remoteUser === 'root' ? '/root' : `/home/${this.remoteUser}`,
+    }));
+  }
+
+  getPromptParts(): BashPromptParts | null {
+    if (this.nestedHop) return this.nestedHop.getPromptParts();
+    if (this.serverNested || !(this.channel.isPosixShell?.() ?? true)) return null;
+    return parseBashPrompt(this.getPrompt());
   }
 
   /**
@@ -345,6 +362,11 @@ export class SshInteractiveSubShell implements ISubShell {
   completesWholeLine(): boolean {
     if (this.nestedHop) return this.nestedHop.completesWholeLine();
     return this.channel.supportsInlineHelp();
+  }
+
+  completionStyle(): 'readline' | 'cycling' {
+    if (this.nestedHop) return this.nestedHop.completionStyle();
+    return !this.serverNested && (this.channel.isPosixShell?.() ?? true) ? 'readline' : 'cycling';
   }
 
   /**
@@ -439,7 +461,8 @@ export class SshInteractiveSubShell implements ISubShell {
     // the line has to travel the wire like any other
     // (docs/PRD-SSH-Unification.md §4bis B2); only the login shell's own
     // `exit` ends the session.
-    if ((trimmed === 'exit' || trimmed === 'logout') && !this.serverNested) {
+    if ((trimmed === 'exit' || trimmed === 'logout') && !this.serverNested
+        && !(this.channel.isPosixShell?.() ?? true)) {
       this.closing = true;
       this.session.disconnect();
       return {
@@ -471,11 +494,12 @@ export class SshInteractiveSubShell implements ISubShell {
     // for a password unless the caller is already root — this simulator
     // has no client-side notion of "am I root", so we always challenge;
     // beginSuSession() itself no-ops the check when currentUid is 0.
-    const suMatch = /^su(?:\s+(?:-l|--login|-))?(?:\s+(\S+))?$/.exec(trimmed);
+    const suMatch = /^su(?:\s+(-l|--login|-))?(?:\s+(\S+))?$/.exec(trimmed);
     if (suMatch) {
-      const target = suMatch[1] && suMatch[1] !== 'root' ? ` ${suMatch[1]}` : '';
+      const login = suMatch[1] ? ' -' : '';
+      const target = suMatch[2] && suMatch[2] !== 'root' ? ` ${suMatch[2]}` : '';
       this.pendingSu = {
-        remoteCommand: `su${target}`,
+        remoteCommand: `su${login}${target}`,
         label: 'su',
         promptText: 'Password:',
         attemptsLeft: MAX_SU_ATTEMPTS,

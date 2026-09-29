@@ -54,6 +54,7 @@ describe('SshSyslogger — reactive auth.log producer', () => {
       user: 'alice',
       method: 'publickey',
       ip: '10.0.0.2',
+      keyType: 'ED25519',
       keyFingerprint: 'SHA256:abc123',
     });
     expect(readAuthLog()).toContain(

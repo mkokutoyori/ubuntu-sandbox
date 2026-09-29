@@ -22,9 +22,6 @@ export interface LinuxProfile {
    */
   readonly isServer: boolean;
 
-  /** Hostname displayed in the shell and in `sudo -l` output. */
-  readonly hostname: string;
-
   /**
    * Expose `registerProcess`/`clearSystemProcesses` on the device so that
    * external subsystems (e.g. Oracle DBMS background processes) can surface
@@ -38,7 +35,6 @@ export const LINUX_PC_PROFILE: LinuxProfile = {
   portCount: 4,
   portPrefix: 'eth',
   isServer: false,
-  hostname: 'linux-pc',
 };
 
 /** Default profile for a Linux server. */
@@ -46,6 +42,5 @@ export const LINUX_SERVER_PROFILE: LinuxProfile = {
   portCount: 4,
   portPrefix: 'eth',
   isServer: true,
-  hostname: 'linux-server',
   exposeSystemProcessApi: true,
 };

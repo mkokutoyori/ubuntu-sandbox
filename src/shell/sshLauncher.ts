@@ -24,6 +24,10 @@ import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshel
 import type { IShell, ShellLineResult } from './IShell';
 import { SshKnownHostsFile, type SshHostKeyType } from '@/network/protocols/ssh/SshKnownHostsFile';
 import { readForceCommand, readMaxAuthTries } from '@/network/devices/linux/network/LinuxSshClient';
+import { receivedDisconnectLines } from '@/network/protocols/ssh/session/SshSession';
+import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
+import { OPENSSH_UBUNTU_22_04, OPENSSH_WINDOWS_8_6 } from '@/network/protocols/ssh/OpenSshRelease';
+import { SSHD_MAX_AUTH_TRIES_REASON } from '@/network/protocols/ssh/server/ISshServerContext';
 export { SSH_PASSWORD_PROMPTS } from '@/network/protocols/ssh/session/SshSession';
 import { transportLiveness, establishedSessionLiveness } from '@/network/protocols/ssh/sessionLiveness';
 
@@ -157,30 +161,12 @@ export async function tryInterpretSshLaunch(
   const parsed = parseSshLine(line);
   if (!parsed) return null;
 
-  // `ssh -V` — print the simulator's client banner.
-  if (parsed.flags['V']) {
+  const release = opts.sourceDevice?.getOSType?.() === 'windows' ? OPENSSH_WINDOWS_8_6 : OPENSSH_UBUNTU_22_04;
+  const withoutSession = sshReplyWithoutSession(line.trim().split(/\s+/).slice(1), release);
+  if (withoutSession) {
     return {
-      kind: 'noop',
-      result: {
-        output: [
-          'OpenSSH_9.6p1 Ubuntu-3ubuntu13.4, OpenSSL 3.0.13 30 Jan 2024',
-        ],
-      },
-    };
-  }
-
-  if (!parsed.host) {
-    return {
-      kind: 'error',
-      result: {
-        output: ['usage: ssh [-46AaCfGgKkMNnqsTtVvXxYy] [-B bind_interface]',
-          '           [-b bind_address] [-c cipher_spec] [-D [bind_address:]port]',
-          '           [-E log_file] [-F configfile] [-I pkcs11] [-i identity_file]',
-          '           [-J [user@]host[:port]] [-L address] [-l login_name] [-m mac_spec]',
-          '           [-O ctl_cmd] [-o option] [-p port] [-Q query_option] [-R address]',
-          '           [-S ctl_path] [-W host:port] [-w local_tun[:remote_tun]]',
-          '           destination [command [argument ...]]'],
-      },
+      kind: withoutSession.exitCode === 0 ? 'noop' : 'error',
+      result: { output: withoutSession.output.split('\n') },
     };
   }
 
@@ -396,10 +382,7 @@ export async function finalisePendingAuth(
     serverAuthTryCap !== null && auth.attempts >= serverAuthTryCap
       ? {
         kind: 'refused',
-        message: [
-          `Received disconnect from ${auth.host} port ${auth.port}:2: Too many authentication failures`,
-          `Disconnected from ${auth.host} port ${auth.port}`,
-        ].join('\n'),
+        message: receivedDisconnectLines(auth.host, auth.port, SSHD_MAX_AUTH_TRIES_REASON),
       }
       : null
   );

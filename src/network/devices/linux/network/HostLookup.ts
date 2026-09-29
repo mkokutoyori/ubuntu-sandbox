@@ -422,8 +422,7 @@ export function findHostByAddress(
 
   for (const dev of candidates) {
     if (!dev.getIsPoweredOn()) continue;
-    const candidate = (dev as Equipment & { profile?: { hostname?: string } });
-    const hostname = candidate.profile?.hostname?.toLowerCase();
+    const hostname = dev.getHostname().toLowerCase();
     const name = dev.getName().toLowerCase();
     if (
       hostname === needle || hostname === shortNeedle ||

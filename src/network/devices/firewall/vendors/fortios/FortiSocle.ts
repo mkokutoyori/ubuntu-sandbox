@@ -2,9 +2,9 @@ import { executeCommandsIn, offeredIn, type CliScope } from './execute/executeVo
 import { SNIFFER_SCOPE } from './diag/FortiDiagCommands';
 import { LOG_CATEGORIES } from './log/logCategories';
 import { argumentAccepts, type ArgumentSpec, type EnumValue } from '../../../../../cli/ArgumentTypes';
-import { CommandTable, type CommandSpec } from '../../../../../cli/CommandTable';
+import { CommandTable, type CommandSpec, type TreeNode } from '../../../../../cli/CommandTable';
 import { newSession, type CliSession } from '../../../../../cli/CliSession';
-import { parseCommand, uniqueChild } from '../../../../../cli/CommandParser';
+import { keywordMatches, parseCommand } from '../../../../../cli/CommandParser';
 import { complete, type CompletionTrigger, type Suggestion } from '../../../../../cli/CompletionEngine';
 import { FortiMessages } from './FortiMessages';
 import type { FortiAttributeSpec, FortiTableSpec } from './schema/types';
@@ -168,14 +168,25 @@ export class FortiSocle {
     return complete(this.contextTable(), input, this.session(), 'TAB').completion;
   }
 
-  canonicalWords(words: readonly string[]): readonly string[] {
+  canonicalWords(words: readonly string[], pending: readonly string[] | null = null): readonly string[] {
     const table = this.contextTable();
     const session = this.session();
     let node = table.rootNode();
     const out: string[] = [];
 
-    for (const word of words) {
-      const child = uniqueChild(node, word, table, session);
+    const consumes = (from: TreeNode, rest: readonly string[]): boolean =>
+      rest.length === 0
+      || keywordMatches(from, rest[0], table, session)
+        .some(child => consumes(child, rest.slice(1)));
+
+    for (const [index, word] of words.entries()) {
+      let matches = keywordMatches(node, word, table, session);
+      if (matches.length > 1 && pending !== null) {
+        const following = [...words.slice(index + 1), ...pending];
+        const readable = matches.filter(match => consumes(match, following));
+        if (readable.length > 0) matches = readable;
+      }
+      const child = matches.length === 1 ? matches[0] : undefined;
       if (child?.keyword === undefined) return [...out, ...words.slice(out.length)];
       out.push(child.keyword);
       node = child;
