@@ -8,6 +8,7 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
+import { hostnameOf, type HostnameSource } from '@/network/devices/linux/KernelHostname';
 import { bashPromptParts, formatBashPrompt } from '@/network/devices/linux/shell/BashPrompt';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import type { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
@@ -177,7 +178,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   constructor(
     private readonly vfs: VirtualFileSystem,
     private readonly userManager: LinuxUserManager,
-    private readonly hostname: string,
+    private readonly hostnameSource: HostnameSource,
     config: Partial<SshServerConfig> = {},
     private readonly executor: LinuxCommandExecutor | null = null,
     /**
@@ -208,7 +209,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     // Reactive subsystems: each one is independent and only needs the bus.
     this.syslogger = (opts.enableSyslog ?? true)
       ? new SshSyslogger(this.vfs, this.events, {
-          hostname: this.hostname,
+          hostname: this.hostnameSource,
           port: this.sshdConfig.listenPort,
           // The pid of the REAL sshd in this machine's process table, not
           // a fresh random one: `ps`, `sshd[<pid>]` in auth.log and
@@ -319,7 +320,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   /** Re-read /etc/ssh/sshd_config and return a fresh context (SSH-07-R6). */
   reloadConfig(): LinuxSshServerContext {
     return new LinuxSshServerContext(
-      this.vfs, this.userManager, this.hostname, {}, this.executor, this.fullExecutor,
+      this.vfs, this.userManager, this.hostnameSource, {}, this.executor, this.fullExecutor,
       { device: this.device },
     );
   }
@@ -578,7 +579,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   getMotd(): string {
     if (!this.effectiveSshdServerConfig().printMotd) return '';
     const motd = this.vfs.readFile('/etc/motd');
-    return motd ?? `Welcome to ${this.hostname}\n`;
+    return motd ?? `Welcome to ${hostnameOf(this.hostnameSource)}\n`;
   }
 
   getLastLogin(user: string): string | null {
@@ -745,7 +746,7 @@ export class LinuxSshServerContext implements ISshServerContext {
       const material = pub.trim().split(/\s+/)[1] ?? pub.trim();
       return SshHostKey.fromFiles(material, priv.trim(), 'ssh-ed25519');
     }
-    const generated = SshHostKey.generate(this.hostname);
+    const generated = SshHostKey.generate(hostnameOf(this.hostnameSource));
     this.vfs.writeFile(
       HOST_KEY_PUB_PATH,
       generated.publicKeyLine + '\n',

@@ -132,9 +132,9 @@ describe('`ssh <hote Linux>` execute ce qu\'on lui tape', () => {
   }, 30000);
 
   it('la commande saisie est reellement executee', async () => {
-    const { pc } = await lab();
+    const { pc, srv } = await lab();
     expect(await pc.executeCommand(`ssh bob@${SRV_IP}`, 'pw\nhostname\nexit\n'))
-      .toContain('linux-server');
+      .toContain(srv.getHostname());
   }, 30000);
 
   it('l\'invite du shell distant precede chaque ligne', async () => {
@@ -144,10 +144,10 @@ describe('`ssh <hote Linux>` execute ce qu\'on lui tape', () => {
   }, 30000);
 
   it('`exit` ferme la session : rien ne s\'execute apres', async () => {
-    const { pc } = await lab();
+    const { pc, srv } = await lab();
     const out = await pc.executeCommand(`ssh bob@${SRV_IP}`, 'pw\nwhoami\nexit\nhostname\n');
     expect(out).toContain('bob');
-    expect(out).not.toContain('linux-server');
+    expect(out.split('\n').filter((line) => line === srv.getHostname())).toEqual([]);
   }, 30000);
 
   it('non-regression : sans entree, le transcrit ne change pas', async () => {

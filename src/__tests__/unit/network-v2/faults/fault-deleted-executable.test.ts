@@ -122,14 +122,14 @@ describe('le binaire d\'un démon est un vrai fichier du disque', () => {
 describe('§F5.10 — le processus survit à la suppression de son binaire', () => {
   it('le service reste `active` et continue de servir sur le fil', async () => {
     const { cli, srv } = await lab();
-    expect((await sshHostname(cli)).trim()).toBe('linux-server');
+    expect((await sshHostname(cli)).trim()).toBe(srv.getHostname());
 
     await srv.executeCommand('rm /usr/sbin/sshd');
 
     expect((await srv.executeCommand('systemctl is-active ssh')).trim()).toBe('active');
     // Le vrai test n'est pas ce que dit systemd, c'est que le démon répond
     // encore à un client distant.
-    expect((await sshHostname(cli)).trim()).toBe('linux-server');
+    expect((await sshHostname(cli)).trim()).toBe(srv.getHostname());
   });
 
   it('`/proc/<pid>/exe` est le seul à montrer la panne — avec ` (deleted)`', async () => {
@@ -203,7 +203,7 @@ describe('§F5.10 — la réparation compte autant que la panne', () => {
 
     expect(await srv.executeCommand('systemctl restart ssh')).toBe('');
     expect((await srv.executeCommand('systemctl is-active ssh')).trim()).toBe('active');
-    expect((await sshHostname(cli)).trim()).toBe('linux-server');
+    expect((await sshHostname(cli)).trim()).toBe(srv.getHostname());
   });
 
   it('le suffixe ` (deleted)` disparaît quand le fichier revient', async () => {

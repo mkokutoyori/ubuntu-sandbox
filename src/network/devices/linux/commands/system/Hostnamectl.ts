@@ -1,5 +1,6 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { STATIC_HOSTNAME_PATH, kernelHostname, staticHostname } from '../../KernelHostname';
 
 export const hostnamectlCommand: LinuxCommand = {
   name: 'hostnamectl',
@@ -9,14 +10,14 @@ export const hostnamectlCommand: LinuxCommand = {
     if (args[0] === 'set-hostname') {
       const newName = args[1];
       if (!newName) return 'hostnamectl: missing hostname';
-      const oldName = (ctx.executor.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-      ctx.executor.vfs.writeFile('/etc/hostname', newName + '\n', 0, 0, 0o022);
+      const oldName = staticHostname(ctx.executor.vfs);
+      ctx.executor.vfs.writeFile(STATIC_HOSTNAME_PATH, newName + '\n', 0, 0, 0o022);
+      ctx.executor.setKernelHostname(newName);
       if (newName !== oldName) {
         ctx.executor.logMgr.logSystemd('systemd-hostnamed', `Changed static host name to '${newName}' (was '${oldName}')`);
       }
       return '';
     }
-    const hn = (ctx.executor.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-    return ctx.executor.identity.toHostnamectl(hn);
+    return ctx.executor.identity.toHostnamectl(staticHostname(ctx.executor.vfs), kernelHostname(ctx.executor.vfs));
   },
 };

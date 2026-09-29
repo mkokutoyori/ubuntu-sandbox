@@ -1,5 +1,7 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { Deny } from '../../iam/policy/CommandPrivilegePolicy';
+import { kernelHostname } from '../../KernelHostname';
 
 const VALID_FLAGS = new Set([
   '-s', '--short', '-f', '--fqdn', '-i', '--ip-address',
@@ -10,8 +12,12 @@ export const hostnameCommand: LinuxCommand = {
   name: 'hostname',
   needsNetworkContext: true,
   usage: 'hostname [options] [NEWHOSTNAME]',
+  privilege: {
+    appliesWhen: (args) => args.some((a) => !a.startsWith('-')),
+    deny: Deny.withMessage('hostname: you must be root to change the host name'),
+  },
   run(ctx: LinuxCommandContext, args: string[]): string {
-    const hn = (ctx.executor.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const hn = kernelHostname(ctx.executor.vfs);
     for (const a of args) {
       if (a.startsWith('-') && !VALID_FLAGS.has(a)) return `hostname: unrecognized option: ${a}`;
     }
@@ -22,7 +28,7 @@ export const hostnameCommand: LinuxCommand = {
     if (args.includes('-I') || args.includes('--all-ip-addresses')) return '127.0.1.1';
     if (args.includes('-A') || args.includes('--all-fqdns')) return hn;
     if (args.length > 0 && !args[0].startsWith('-')) {
-      ctx.executor.vfs.writeFile('/etc/hostname', args[0] + '\n', 0, 0, 0o022);
+      ctx.executor.setKernelHostname(args[0]);
       return '';
     }
     return hn;

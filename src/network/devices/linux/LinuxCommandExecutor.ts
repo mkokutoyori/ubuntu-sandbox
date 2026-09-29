@@ -165,6 +165,7 @@ import { connectWireSsh, type StrictHostKeyChecking, type WireSshClient } from '
 import type { SshClientAuthentication } from '../../protocols/ssh/SshConnectOptions';
 import { sshReplyWithoutSession } from '../../protocols/ssh/SshClientCommandLine';
 import { OPENSSH_UBUNTU_22_04 } from '../../protocols/ssh/OpenSshRelease';
+import { KERNEL_HOSTNAME_PATH, kernelHostname, staticHostname } from './KernelHostname';
 import { isOk } from '../../protocols/ssh/Result';
 import type { TcpConnector } from '@/network/tcp/types';
 import {
@@ -819,6 +820,36 @@ export class LinuxCommandExecutor {
     this.seedIdentityFiles();
   }
 
+  private kernelHostnameBinding: { read(): string; write(name: string): void } | null = null;
+
+  bindKernelHostname(binding: { read(): string; write(name: string): void }): void {
+    this.kernelHostnameBinding = binding;
+  }
+
+  private currentKernelHostname(): string {
+    return this.kernelHostnameBinding?.read() ?? staticHostname(this.vfs);
+  }
+
+  setKernelHostname(name: string): void {
+    this.kernelHostnameBinding?.write(name);
+  }
+
+  bootKernelHostname(): void {
+    this.setKernelHostname(staticHostname(this.vfs));
+  }
+
+  rebootCycle(): void {
+    this.auditRules.rebootReset();
+    // PRD-Iptables-UFW.md Phase 7 (objectif B.6): real netfilter state
+    // does not survive a reboot — wipe the live rule sets first, then
+    // let rebootCycle()'s lifecycle events (ufw, netfilter-persistent)
+    // reconstruct whatever was actually persisted to disk.
+    this.iptables.resetAll();
+    this.ip6tables.resetAll();
+    this.serviceMgr.rebootCycle();
+    this.bootKernelHostname();
+  }
+
   /**
    * Register the kernel `/proc` entries as generated pseudo-files, so
    * `/proc/version` and `/proc/sys/kernel/*` track the identity model live.
@@ -831,7 +862,7 @@ export class LinuxCommandExecutor {
     this.vfs.registerGeneratedFile('/proc/sys/kernel/ostype', () => `${k().sysname}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/osrelease', () => `${k().release}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/version', () => `${k().version}\n`);
-    this.vfs.registerGeneratedFile('/proc/sys/kernel/hostname', () => `${(this.vfs.readFile('/etc/hostname') ?? 'localhost').trim()}\n`);
+    this.vfs.registerGeneratedFile(KERNEL_HOSTNAME_PATH, () => `${this.currentKernelHostname()}\n`);
     // `/proc/modules` est la SOURCE et `lsmod` son lecteur, dans cet
     // ordre : les deux vues ne peuvent donc pas diverger.
     this.vfs.registerGeneratedFile('/proc/modules', () => this.kernelModules.toProcModules());
@@ -1881,7 +1912,7 @@ export class LinuxCommandExecutor {
 
   private buildSshClientOpts(args: string[], callerEnv?: Record<string, string>, offeredPassword?: string) {
     const password = offeredPassword ?? this.sshpassPassword;
-    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const hostname = kernelHostname(this.vfs);
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     const user = this.userMgr.currentUser;
     const home = this.sshHomeDir();
@@ -2128,7 +2159,7 @@ export class LinuxCommandExecutor {
       uid: this.userMgr.currentUid,
       gid: this.userMgr.currentGid,
       user: this.userMgr.currentUser,
-      hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+      hostname: kernelHostname(this.vfs),
       sshDir: `${this.sshHomeDir()}/.ssh`,
       cwd: this.cwd,
       release: OPENSSH_UBUNTU_22_04,
@@ -2284,7 +2315,7 @@ export class LinuxCommandExecutor {
    */
   authorizeSudo(cmdName: string, args: readonly string[], runasUser = 'root'): SudoAuthorization {
     const invokingUser = this.userMgr.currentUser;
-    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const hostname = kernelHostname(this.vfs);
     if (!this.userMgr.getUser(runasUser)) {
       return { allowed: false, nopasswd: false, reason: 'unknown-target-user', invokingUser, runasUser, hostname };
     }
@@ -2807,7 +2838,7 @@ export class LinuxCommandExecutor {
       syslog: (tag, message) => this.logMgr.logDaemon(tag, message),
       deliverMail: (recipient, body) => {
         const entry = this.userMgr.getUser(recipient);
-        const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+        const hostname = kernelHostname(this.vfs);
         deliverLocalMessage(
           this.vfs, recipient,
           { envelopeFrom: `cron@${hostname}`, receivedAt: this.wallEpoch + this.clock.now(), rawMessage: body },
@@ -2815,7 +2846,7 @@ export class LinuxCommandExecutor {
         );
       },
       homeFor: (user) => this.userMgr.getUser(user)?.home ?? `/home/${user}`,
-      hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+      hostname: kernelHostname(this.vfs),
       now: () => this.simulatedDate(),
     });
     return this.cronEngine;
@@ -2871,7 +2902,7 @@ export class LinuxCommandExecutor {
    */
   fireDueAtJobs(at: Date = this.simulatedDate()): void {
     if (this.serviceMgr.status('atd')?.state !== 'active') return;
-    const host = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const host = kernelHostname(this.vfs);
     for (const job of this.atQueue.dueJobs(at)) {
       const prev = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid };
       const entry = this.userMgr.getUser(job.user);
@@ -4438,7 +4469,7 @@ export class LinuxCommandExecutor {
     if (this.envOverride) return { ...this.envOverride };
     const user = this.userMgr.currentUser;
     const home = this.userMgr.currentUid === 0 ? '/root' : `/home/${user}`;
-    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const hostname = kernelHostname(this.vfs);
     const vars: Record<string, string> = {
       HOME: home,
       PWD: this.cwd,
@@ -5403,14 +5434,7 @@ export class LinuxCommandExecutor {
       }
       case 'reboot':
       case 'shutdown': {
-        this.auditRules.rebootReset();
-        // PRD-Iptables-UFW.md Phase 7 (objectif B.6): real netfilter state
-        // does not survive a reboot — wipe the live rule sets first, then
-        // let rebootCycle()'s lifecycle events (ufw, netfilter-persistent)
-        // reconstruct whatever was actually persisted to disk.
-        this.iptables.resetAll();
-        this.ip6tables.resetAll();
-        this.serviceMgr.rebootCycle();
+        this.rebootCycle();
         return { output: '', exitCode: 0 };
       }
       case 'df': return {
@@ -5427,21 +5451,21 @@ export class LinuxCommandExecutor {
         pm: this.processMgr,
         cpu: this.hardware.cpu,
         kernel: this.identity.kernel,
-        hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+        hostname: kernelHostname(this.vfs),
       });
       case 'pidstat': return cmdPidstat(args, {
         pm: this.processMgr,
         cpu: this.hardware.cpu,
         memory: this.hardware.memory,
         kernel: this.identity.kernel,
-        hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+        hostname: kernelHostname(this.vfs),
       });
       case 'iostat': return cmdIostat(args, {
         pm: this.processMgr,
         cpu: this.hardware.cpu,
         storage: this.hardware.storage,
         kernel: this.identity.kernel,
-        hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+        hostname: kernelHostname(this.vfs),
       });
       case 'exportfs': return this.handleExportfs(args);
       case 'showmount': return this.handleShowmount(args);
@@ -6002,7 +6026,7 @@ export class LinuxCommandExecutor {
 
   handleMail(args: string[], stdin?: string): { output: string; exitCode: number } {
     const parsed = parseMailArgs(args);
-    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const hostname = kernelHostname(this.vfs);
     if (parsed.readMode) {
       const mailbox = this.vfs.readFile(`/var/mail/${this.userMgr.currentUser}`) ?? '';
       return { output: formatMailboxSummary(parseMailbox(mailbox)), exitCode: 0 };
@@ -7236,7 +7260,7 @@ export class LinuxCommandExecutor {
   }
 
   private handleWatch(args: string[]): { output: string; exitCode: number } {
-    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const hostname = kernelHostname(this.vfs);
     const r = runWatch(args, {
       hostname,
       now: () => {
@@ -7300,7 +7324,7 @@ export class LinuxCommandExecutor {
   private handleSudoCmd(args: string[]): { output: string; exitCode: number } {
     if (args.length === 0 || args[0] === '-l') {
       // sudo -l [-U user]: show what a user (default: current user) can do.
-      const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+      const hostname = kernelHostname(this.vfs);
       const user = (args[0] === '-l' && args[1] === '-U' && args[2]) ? args[2] : this.userMgr.currentUser;
       if (!this.userMgr.getUser(user)) {
         return { output: `sudo: unknown user: ${user}`, exitCode: 1 };
@@ -7336,7 +7360,7 @@ export class LinuxCommandExecutor {
     if (user === 'root' || this.userMgr.currentUid === 0) return true;
     const load = loadSudoPolicy(this.vfs);
     if (!load.ok || !load.engine) return false;
-    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const hostname = kernelHostname(this.vfs);
     return load.engine.hasAnyAccess(this.sudoActor(user), hostname, this.getHostIps());
   }
 

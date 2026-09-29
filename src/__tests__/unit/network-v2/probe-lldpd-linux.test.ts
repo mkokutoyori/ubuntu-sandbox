@@ -124,7 +124,7 @@ describe('Linux : lldpd et lldpcli', () => {
     expect(out).toContain('Local chassis:');
     expect(out).toContain('SysName:      srv1');
     expect(out).toMatch(/SysDescr:\s+srv1 Linux \S+ x86_64/);
-    expect(out).not.toContain('linux-pc');
+    expect(out).toContain(`SysName:      ${(await pc.executeCommand('hostname')).trim()}`);
     expect(out).not.toContain('127.0.0.1');
   });
 

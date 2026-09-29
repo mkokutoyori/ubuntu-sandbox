@@ -86,7 +86,7 @@ describe('la chaine ssh-keygen -> ssh-add -> ssh tient sous Windows', () => {
     await srv.executeCommand('sudo chmod 600 /home/alice/.ssh/authorized_keys');
     const out = await win.executeCommand(
       'ssh -o StrictHostKeyChecking=no -o PasswordAuthentication=no -i C:\\cle alice@10.0.0.2 hostname');
-    expect(out.trim()).toBe('linux-server');
+    expect(out.trim()).toBe(srv.getHostname());
     expect(out).not.toMatch(/Permission denied/);
   });
 });

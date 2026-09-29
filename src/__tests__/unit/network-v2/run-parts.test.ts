@@ -1040,9 +1040,7 @@ describe('Linux run-parts System Suite', () => {
       await pc.executeCommand('chmod +x /tmp/parts/scripta');
       
       const output = await pc.executeCommand('run-parts /tmp/parts');
-      // /etc/hostname carries the host's configured hostname (the device
-      // label is a separate concept); the child simply echoes it back.
-      expect(output.trim()).toBe('linux-pc');
+      expect(output.trim()).toBe(pc.getHostname());
     });
 
     it('106. should isolate scripts standard inputs preventing parent shell locking (stdin from /dev/null)', async () => {

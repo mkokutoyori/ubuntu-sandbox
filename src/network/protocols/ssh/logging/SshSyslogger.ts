@@ -15,6 +15,7 @@
  * Reference: man 5 sshd_config — LogLevel, SyslogFacility.
  */
 
+import { hostnameOf, type HostnameSource } from '@/network/devices/linux/KernelHostname';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import type { LinuxLogManager } from '@/network/devices/linux/LinuxLogManager';
 import type {
@@ -31,7 +32,7 @@ const MONTHS = [
 ];
 
 export interface SshSysloggerOptions {
-  readonly hostname: string;
+  readonly hostname: HostnameSource;
   /** PID printed inside `sshd[<pid>]`. Defaults to a random high value. */
   readonly sshdPid?: number;
   /** SSH listening port shown in `port <n> ssh2`. Defaults to 22. */
@@ -54,7 +55,7 @@ export interface SshSysloggerOptions {
  * Use {@link dispose} to detach when the server shuts down.
  */
 export class SshSyslogger {
-  private readonly hostname: string;
+  private readonly hostnameSource: HostnameSource;
   private readonly sshdPid: number;
   private readonly port: number;
   private readonly clock: () => Date;
@@ -69,7 +70,7 @@ export class SshSyslogger {
     bus: ISshServerEventBus,
     opts: SshSysloggerOptions,
   ) {
-    this.hostname = opts.hostname;
+    this.hostnameSource = opts.hostname;
     this.sshdPid = opts.sshdPid ?? 1000 + Math.floor(Math.random() * 9000);
     this.port = opts.port ?? 22;
     this.clock = opts.clock ?? (() => new Date());
@@ -97,7 +98,7 @@ export class SshSyslogger {
   private format(event: SshServerEvent): string | null {
     switch (event.kind) {
       case 'client_connected':
-        return `Connection from ${event.ip} port ${event.port ?? this.port} on ${this.hostname} port ${this.port}`;
+        return `Connection from ${event.ip} port ${event.port ?? this.port} on ${hostnameOf(this.hostnameSource)} port ${this.port}`;
 
       case 'auth_success': {
         this.pendingSessionUser = event.user;
@@ -203,7 +204,7 @@ export class SshSyslogger {
       return;
     }
     if (!this.vfs.exists(LOG_DIR)) this.vfs.mkdirp(LOG_DIR, 0o755, 0, 0);
-    const line = `${this.timestamp()} ${this.hostname} sshd[${this.sshdPid}]: ${message}\n`;
+    const line = `${this.timestamp()} ${hostnameOf(this.hostnameSource)} sshd[${this.sshdPid}]: ${message}\n`;
     const existing = this.vfs.readFile(AUTH_LOG_PATH) ?? '';
     this.vfs.writeFile(AUTH_LOG_PATH, existing + line, 0, 0, 0o022);
   }

@@ -102,14 +102,14 @@ describe('Windows honore le retrait du repli par mot de passe', () => {
     await autoriseLaCleDe(srv, (await win.executeCommand('type C:\\bonne.pub')).trim());
     const out = await win.executeCommand(
       `ssh ${SANS_REPLI} -i C:\\bonne alice@10.0.0.2 hostname`);
-    expect(out.trim()).toBe('linux-server');
+    expect(out.trim()).toBe(srv.getHostname());
   });
 
   it('sans l option, la convention du simulateur tient', async () => {
-    const { win } = await labo();
+    const { win, srv } = await labo();
     const out = await win.executeCommand(
       'ssh -o StrictHostKeyChecking=no alice@10.0.0.2 hostname');
-    expect(out.trim()).toBe('linux-server');
+    expect(out.trim()).toBe(srv.getHostname());
   });
 
   it('un SERVEUR qui refuse le mot de passe est honore sans option cliente', async () => {

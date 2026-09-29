@@ -3,6 +3,7 @@
  * and /var/log/ files for the Linux simulator.
  */
 
+import { kernelHostname } from './KernelHostname';
 import { VirtualFileSystem } from './VirtualFileSystem';
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import { kernelBootMessages, kernelCommandLine, defaultKernelBootFacts, type KernelBootFacts } from './boot/KernelBootLog';
@@ -103,7 +104,6 @@ export class LinuxLogManager {
   private dmesgBuffer: DmesgEntry[] = [];
   private bootTime: Date;
   private bootId: string;
-  private hostname = 'localhost';
   private nextPid = 100;
   private monotonicCounter = 0;
   /**
@@ -917,8 +917,7 @@ export class LinuxLogManager {
   }
 
   private currentHostname(): string {
-    const h = this.vfs.readFile('/etc/hostname');
-    return h ? h.trim() : this.hostname;
+    return kernelHostname(this.vfs);
   }
 
   /**

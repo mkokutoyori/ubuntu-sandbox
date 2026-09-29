@@ -15,10 +15,7 @@ export const rebootCommand: LinuxCommand = {
   options: REBOOT_OPTIONS,
   privilege: { satisfiedBy: Satisfy.root },
   run: (ctx) => {
-    ctx.executor.auditRules.rebootReset();
-    ctx.executor.iptables.resetAll();
-    ctx.executor.ip6tables.resetAll();
-    ctx.executor.serviceMgr.rebootCycle();
+    ctx.executor.rebootCycle();
     return '';
   },
 };

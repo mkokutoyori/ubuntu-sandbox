@@ -8,6 +8,7 @@
  * commandes ne puissent pas se contredire (`docs/PRD-networkctl.md`).
  */
 
+import { kernelHostname } from '../../KernelHostname';
 import type { LinuxCommand, LinuxCommandOption } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { Satisfy } from '../../iam/policy/CommandPrivilegePolicy';
@@ -149,8 +150,7 @@ function renderGlobalStatus(links: readonly LinkState[], ctx: LinuxCommandContex
 
   const lines = ['●   State: ' + aggregateOperationalState(links)];
   lines.push(field('Online state', aggregateOnlineState(links)));
-  const hostname = ctx.executor.vfs.readFile('/etc/hostname')?.trim();
-  if (hostname) lines.push(field('Hostname', hostname));
+  lines.push(field('Hostname', kernelHostname(ctx.executor.vfs)));
   for (const [i, addr] of addresses.entries()) {
     lines.push(field(i === 0 ? 'Address' : '', addr));
   }

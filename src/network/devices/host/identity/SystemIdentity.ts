@@ -234,9 +234,10 @@ export class SystemIdentity {
   }
 
   /** Render the `hostnamectl` status report. */
-  toHostnamectl(hostname: string): string {
+  toHostnamectl(hostname: string, transient: string = hostname): string {
     return [
       `   Static hostname: ${hostname}`,
+      ...(transient === hostname ? [] : [`Transient hostname: ${transient}`]),
       `         Icon name: ${this.iconName}`,
       `           Chassis: ${this.chassis}`,
       `        Machine ID: ${this.machineId}`,

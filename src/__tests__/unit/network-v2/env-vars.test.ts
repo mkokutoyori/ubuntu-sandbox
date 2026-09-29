@@ -63,7 +63,7 @@ describe('EV-02 — Linux login shell exports standard variables', () => {
     expect(out).toMatch(/^TERM=/m);
     expect(out).toMatch(/^MAIL=\/var\/mail\//m);
     expect(out).not.toMatch(/^HOSTNAME=/m);
-    expect((await pc.executeCommand('echo $HOSTNAME')).trim()).toBe('linux-pc');
+    expect((await pc.executeCommand('echo $HOSTNAME')).trim()).toBe(pc.getHostname());
   });
 
   it('$HOSTNAME expands to the configured hostname', async () => {

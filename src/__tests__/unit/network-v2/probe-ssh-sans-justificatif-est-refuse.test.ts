@@ -212,7 +212,7 @@ interface Cible {
 }
 
 const CIBLES: readonly Cible[] = [
-  { nom: 'linux', ip: LINUX, compte: 'alice', commande: 'hostname', preuve: /linux-server/ },
+  { nom: 'linux', ip: LINUX, compte: 'alice', commande: 'hostname', preuve: /^SRV\s*$/m },
   { nom: 'cisco', ip: CISCO, compte: 'bob', commande: '"show version"', preuve: /Cisco IOS Software/ },
   { nom: 'huawei', ip: HUAWEI, compte: 'bob', commande: '"display version"', preuve: /Huawei|VRP/ },
   { nom: 'windows', ip: WINDOWS, compte: 'User', commande: 'hostname', preuve: /windows-pc|WIN/i },
