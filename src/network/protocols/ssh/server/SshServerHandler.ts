@@ -27,9 +27,14 @@ import { SftpWireSession } from '../sftp/SftpWireSession';
 import { encodeSftpWirePacket, decodeSftpWirePacket } from '../sftp/SftpWireCodec';
 import { SshUserContext } from '../SshUserContext';
 import { SSH_SERVER_IDENTIFICATION } from '../serverIdentification';
+import { userauthSignedData, verifyUserauthSignature } from '../auth/UserauthSignature';
+import {
+  keygenBlobDigest, keygenKeyFacts, sshPublicKeyFromBlob,
+} from '@/network/devices/linux/network/SshKeygenMaterial';
+import { base64ToBytes } from '@/crypto/encoding';
 import {
   SshRecordLayer, sealedStream, generateEphemeralScalar,
-  ephemeralPublicKey, sharedSecretFrom,
+  ephemeralPublicKey, sharedSecretFrom, exchangeHash,
 } from '../transport/SshRecordLayer';
 import type { ILinuxShell, ISshServerContext } from './ISshServerContext';
 import type { AuthorizedKeyOptions } from '../SshPureUtils';
@@ -164,6 +169,7 @@ export class SshServerHandler {
     };
     let authFailures = 0;
     let authRequests = 0;
+    let sessionId: Uint8Array | null = null;
     let pendingInfoResponse: ((responses: readonly string[] | null) => void) | null = null;
     const askKeyboardInteractive = (challenge: KeyboardInteractiveChallenge): Promise<readonly string[] | null> =>
       new Promise((resolve) => {
@@ -331,7 +337,17 @@ export class SshServerHandler {
           );
           if (peerKey) {
             const secret = sharedSecretFrom(kexScalar, peerKey);
-            if (secret) records.install(secret, 'server');
+            if (secret) {
+              records.install(secret, 'server');
+              sessionId = exchangeHash({
+                clientVersion: protocolInfo.clientVersion,
+                serverVersion: SSH_SERVER_IDENTIFICATION,
+                hostKeyBlob: this.ctx.hostKey.publicKey,
+                clientEphemeral: peerKey,
+                serverEphemeral: ephemeralPublicKey(kexScalar),
+                sharedSecret: secret,
+              });
+            }
           }
           break;
         }
@@ -364,7 +380,11 @@ export class SshServerHandler {
             conn.close();
             return;
           }
-          void this.handleAuth(parsed, clientIp, askKeyboardInteractive, authRequests === 1).then((result) => {
+          void this.handleAuth(parsed, clientIp, askKeyboardInteractive, authRequests === 1, sessionId).then((result) => {
+            if ('pkOk' in result) {
+              conn.write(JSON.stringify({ pk_ok: true, algorithm: parsed.algorithm, publicKey: parsed.publicKey }));
+              return;
+            }
             if (result.ok) {
               conn.write(JSON.stringify({ ok: true }));
               userCtx = result.userCtx;
@@ -836,8 +856,10 @@ export class SshServerHandler {
     clientIp: string,
     askKeyboardInteractive: (challenge: KeyboardInteractiveChallenge) => Promise<readonly string[] | null>,
     firstRequest: boolean,
+    sessionId: Uint8Array | null,
   ): Promise<
     | { ok: false }
+    | { ok: false; pkOk: true }
     | { ok: true; userCtx: SshUserContext; keyOptions: AuthorizedKeyOptions | null }
   > {
     const user = (payload.user as string | undefined) ?? '';
@@ -936,6 +958,7 @@ export class SshServerHandler {
 
     let success = false;
     let keyOptions: AuthorizedKeyOptions | null = null;
+    let authenticatedKey: string | null = null;
     if (credentialless) {
       success = this.ctx.auth.acceptsWithoutCredential?.(user) ?? false;
     } else if (challenge && responses) {
@@ -948,15 +971,21 @@ export class SshServerHandler {
       );
     } else if (method === 'publickey') {
       const offered = (payload.publicKey as string) ?? '';
+      let keyAdmitted: boolean;
       if (this.ctx.admittedKey) {
         const admitted = this.ctx.admittedKey(user, offered, { ip: clientIp });
         const rootForced = user !== 'root'
           || (this.ctx.rootMayLogIn?.('publickey', admitted?.options?.command !== undefined) ?? true);
-        success = this.ctx.config.pubkeyAuthentication && admitted !== null && rootForced;
+        keyAdmitted = this.ctx.config.pubkeyAuthentication && admitted !== null && rootForced;
         keyOptions = admitted?.options ?? null;
       } else {
-        success = this.ctx.config.pubkeyAuthentication && this.ctx.auth.checkPublicKey(user, offered);
+        keyAdmitted = this.ctx.config.pubkeyAuthentication && this.ctx.auth.checkPublicKey(user, offered);
       }
+      const signature = payload.signature as string | undefined;
+      if (signature === undefined && keyAdmitted) return { ok: false, pkOk: true };
+      success = keyAdmitted && signature !== undefined
+        && signatureProvesKey(sessionId, user, String(payload.algorithm ?? ''), offered, signature);
+      authenticatedKey = offered;
     }
     if (!success) {
       this.eventBus.emit({
@@ -996,6 +1025,7 @@ export class SshServerHandler {
       ip: clientIp,
       port: this.ctx.clientPort?.(clientIp),
       timestamp: Date.now(),
+      ...(authenticatedKey === null ? {} : keyEvidence(authenticatedKey)),
     });
     const userCtx =
       this.ctx.buildUserContext(user) ??
@@ -1043,6 +1073,28 @@ function errorToMessage(error: unknown): string {
   }
 
   return e.message ?? e.kind ?? 'error';
+}
+
+function signatureProvesKey(
+  sessionId: Uint8Array | null, user: string, algorithm: string, publicKey: string, signature: string,
+): boolean {
+  if (sessionId === null) return false;
+  try {
+    const blob = base64ToBytes(publicKey);
+    return verifyUserauthSignature(
+      blob, algorithm, base64ToBytes(signature), userauthSignedData(sessionId, user, algorithm, blob));
+  } catch {
+    return false;
+  }
+}
+
+function keyEvidence(publicKey: string): { keyType: string; keyFingerprint: string } | Record<string, never> {
+  const algorithm = (() => {
+    try { return sshPublicKeyFromBlob(base64ToBytes(publicKey))?.algorithm ?? null; } catch { return null; }
+  })();
+  const fingerprint = keygenBlobDigest(publicKey, 'sha256');
+  if (algorithm === null || fingerprint === null) return {};
+  return { keyType: keygenKeyFacts(`${algorithm} ${publicKey}`).label, keyFingerprint: fingerprint };
 }
 
 function withOriginalCommand(forced: string, asked: string): string {

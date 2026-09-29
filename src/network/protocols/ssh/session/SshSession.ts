@@ -16,6 +16,7 @@ import type {
 import { isDialFailure } from '@/network/tcp/types';
 import {
   runUserauth,
+  type UserauthIdentity,
   type UserauthInfoRequest,
   type UserauthOutcome,
   type UserauthPrompt,
@@ -23,6 +24,11 @@ import {
   type UserauthTransport,
 } from '../auth/ClientUserauth';
 import { SshKeyPair } from '../SshKeyPair';
+import { signUserauth, userauthSignatureAlgorithm, userauthSignedData } from '../auth/UserauthSignature';
+import {
+  keygenPrivateKey, sshPublicKeyBlob, sshPublicKeyFromBlob,
+} from '@/network/devices/linux/network/SshKeygenMaterial';
+import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
 import type {
   ISshExecChannel,
   ISshSftpChannel,
@@ -51,7 +57,7 @@ import {
 } from './SshSessionState';
 import {
   SshRecordLayer, sealedStream, generateEphemeralScalar,
-  ephemeralPublicKey, sharedSecretFrom,
+  ephemeralPublicKey, sharedSecretFrom, exchangeHash,
 } from '../transport/SshRecordLayer';
 
 export interface SshSessionDeps {
@@ -74,10 +80,13 @@ interface ServerBanner {
 
 export const SSH_PASSWORD_PROMPTS = OPENSSH_CLIENT_AUTHENTICATION.passwordPrompts;
 
+const SSH_CLIENT_IDENTIFICATION = 'SSH-2.0-Sandbox';
+
 export class SshSession implements ISshSession {
   private _state: SshSessionState = idle();
   private conn: TcpConnection | null = null;
   private readonly records = new SshRecordLayer();
+  private sessionId: Uint8Array | null = null;
 
   revealWireRecord(frame: string): string | null {
     return this.records.reveal(frame);
@@ -320,21 +329,33 @@ export class SshSession implements ISshSession {
       }
     });
     const scalar = generateEphemeralScalar();
+    const clientEphemeral = ephemeralPublicKey(scalar);
     conn.write(JSON.stringify({
       op: 'hello',
-      clientVersion: 'SSH-2.0-Sandbox',
-      kexPublicKey: ephemeralPublicKey(scalar),
+      clientVersion: SSH_CLIENT_IDENTIFICATION,
+      kexPublicKey: clientEphemeral,
     }));
     off();
     if (!banner) {
       return err({ kind: 'IO_ERROR', message: 'no server banner' });
     }
-    const peerKey = (banner as { kexPublicKey?: string }).kexPublicKey;
+    const received: ServerBanner & { kexPublicKey?: string } = banner;
+    const peerKey = received.kexPublicKey;
     if (peerKey) {
       const secret = sharedSecretFrom(scalar, peerKey);
-      if (secret) records.install(secret, 'client');
+      if (secret) {
+        records.install(secret, 'client');
+        this.sessionId = exchangeHash({
+          clientVersion: SSH_CLIENT_IDENTIFICATION,
+          serverVersion: received.serverVersion,
+          hostKeyBlob: received.hostKey.publicKey,
+          clientEphemeral,
+          serverEphemeral: peerKey,
+          sharedSecret: secret,
+        });
+      }
     }
-    return ok(banner);
+    return ok(received);
   }
 
   private async doHostKeyCheck(
@@ -417,7 +438,7 @@ export class SshSession implements ISshSession {
     const offClosed = conn.onClose?.(() => { closed = true; });
     const outcome = await runUserauth(this.userauthTransport(conn, user, () => closed), {
       authentication: opts.authentication,
-      publicKeys: this.offeredPublicKeys(opts),
+      identities: this.userauthIdentities(opts, user),
       interactive: this.deps.credentialless !== true,
     }, {
       canAnswer: () => !suppliedOnce || answersGiven === 0,
@@ -437,13 +458,38 @@ export class SshSession implements ISshSession {
     });
   }
 
-  private offeredPublicKeys(opts: SshConnectOptions): string[] {
-    const keys: string[] = [];
+  private userauthIdentities(opts: SshConnectOptions, user: string): UserauthIdentity[] {
+    const identities: UserauthIdentity[] = [];
     for (const path of opts.identityFiles) {
       const pair = SshKeyPair.fromVfs(this.deps.vfs, path);
-      if (pair.ok) keys.push(pair.value.publicKeyContent);
+      if (!pair.ok) continue;
+      let blob: Uint8Array;
+      try { blob = base64ToBytes(pair.value.publicKeyContent); } catch { continue; }
+      const publicKey = sshPublicKeyFromBlob(blob);
+      if (publicKey === null) continue;
+      const algorithm = userauthSignatureAlgorithm(publicKey);
+      identities.push({
+        algorithm,
+        publicKey: pair.value.publicKeyContent,
+        sign: () => this.signUserauthRequest(path, user, algorithm, blob),
+      });
     }
-    return keys;
+    return identities;
+  }
+
+  private signUserauthRequest(path: string, user: string, algorithm: string, blob: Uint8Array): string | null {
+    const handler = this.deps.interactionHandler;
+    const key = keygenPrivateKey(this.deps.vfs.readFile(path) ?? '');
+    if (key === null) {
+      handler.showWarning(`Load key "${path}": invalid format`);
+      return null;
+    }
+    if (bytesToBase64(sshPublicKeyBlob(key)) !== bytesToBase64(blob)) {
+      handler.showWarning(`identity_sign: private key ${path} contents do not match public`);
+      return null;
+    }
+    if (this.sessionId === null) return null;
+    return bytesToBase64(signUserauth(key, userauthSignedData(this.sessionId, user, algorithm, blob)));
   }
 
   private userauthTransport(conn: TcpConnection, user: string, closed: () => boolean): UserauthTransport {
@@ -463,7 +509,7 @@ export class SshSession implements ISshSession {
         };
         const offData = conn.onData((data) => {
           let parsed: {
-            op?: string; ok?: boolean; methods?: string; disconnect?: string;
+            op?: string; ok?: boolean; pk_ok?: boolean; methods?: string; disconnect?: string;
             name?: string; instruction?: string; prompts?: UserauthPrompt[];
           };
           try { parsed = JSON.parse(data) as typeof parsed; } catch { return; }
@@ -477,6 +523,7 @@ export class SshSession implements ISshSession {
             return;
           }
           if (typeof parsed.disconnect === 'string') finish({ kind: 'disconnect', reason: parsed.disconnect });
+          else if (parsed.pk_ok === true) finish({ kind: 'pk_ok' });
           else if (parsed.ok === true) finish({ kind: 'success' });
           else if (parsed.ok === false) finish({ kind: 'failure', methods: parsed.methods ?? '' });
         });

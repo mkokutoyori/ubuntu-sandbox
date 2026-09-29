@@ -64,7 +64,7 @@ describe('password userauth — OpenSSH-style retry feedback', () => {
       return { kind: 'failure', methods: 'password' };
     },
   });
-  const plan = { authentication: OPENSSH_CLIENT_AUTHENTICATION, publicKeys: [], interactive: true };
+  const plan = { authentication: OPENSSH_CLIENT_AUTHENTICATION, identities: [], interactive: true };
 
   it('emits "Permission denied, please try again." between attempts', async () => {
     const lines: Array<{ text: string; type?: string }> = [];

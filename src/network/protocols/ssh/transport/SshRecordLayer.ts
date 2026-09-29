@@ -5,6 +5,8 @@ import {
   bytesToBase64, base64ToBytes, utf8ToBytes, bytesToUtf8,
 } from '@/crypto/encoding';
 import { x25519, x25519Base, X25519_KEY_LEN } from '@/crypto/ecc/x25519';
+import { sha256 } from '@/crypto/hash/sha256';
+import { SshWriter } from '../wire/SshDataTypes';
 
 export const SSH_SEALED_TAG = '';
 const KEY_LEN = 16;
@@ -34,6 +36,32 @@ export function sharedSecretFrom(scalar: Uint8Array, peerPublicKey: string): Uin
   }
   if (peer.length !== X25519_KEY_LEN) return null;
   return x25519(scalar, peer);
+}
+
+export interface KeyExchangeTranscript {
+  readonly clientVersion: string;
+  readonly serverVersion: string;
+  readonly hostKeyBlob: string;
+  readonly clientEphemeral: string;
+  readonly serverEphemeral: string;
+  readonly sharedSecret: Uint8Array;
+}
+
+export function exchangeHash(transcript: KeyExchangeTranscript): Uint8Array | null {
+  let sharedSecret = 0n;
+  for (const b of transcript.sharedSecret) sharedSecret = (sharedSecret << 8n) | BigInt(b);
+  try {
+    return sha256(new SshWriter()
+      .writeString(transcript.clientVersion)
+      .writeString(transcript.serverVersion)
+      .writeBytes(base64ToBytes(transcript.hostKeyBlob))
+      .writeBytes(base64ToBytes(transcript.clientEphemeral))
+      .writeBytes(base64ToBytes(transcript.serverEphemeral))
+      .writeMpint(sharedSecret)
+      .toBytes());
+  } catch {
+    return null;
+  }
 }
 
 export function isSealedRecord(frame: string): boolean {

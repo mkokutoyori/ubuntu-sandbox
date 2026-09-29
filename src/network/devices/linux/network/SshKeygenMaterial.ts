@@ -116,7 +116,34 @@ function generateKey(algorithm: string, comment: string, bits: number, random: R
   return { algorithm: 'ssh-ed25519', seed, publicKey: ed25519PublicKey(seed), comment };
 }
 
-export function sshPublicKeyBlob(key: SshPrivateKey): Uint8Array {
+export type SshPublicKey =
+  | { readonly algorithm: 'ssh-ed25519'; readonly publicKey: Uint8Array }
+  | { readonly algorithm: 'ssh-rsa'; readonly e: bigint; readonly n: bigint }
+  | { readonly algorithm: 'ecdsa-sha2-nistp256'; readonly q: Uint8Array };
+
+export function sshPublicKeyFromBlob(blob: Uint8Array): SshPublicKey | null {
+  try {
+    const reader = new SshReader(blob);
+    const algorithm = reader.readString();
+    let key: SshPublicKey | null = null;
+    if (algorithm === 'ssh-ed25519') {
+      const publicKey = reader.readBytes();
+      key = publicKey.length === 32 ? { algorithm, publicKey } : null;
+    } else if (algorithm === 'ssh-rsa') {
+      const e = reader.readMpint();
+      key = { algorithm, e, n: reader.readMpint() };
+    } else if (algorithm === 'ecdsa-sha2-nistp256') {
+      if (reader.readString() !== NISTP256) return null;
+      const q = reader.readBytes();
+      key = q.length === 1 + 2 * P256_FIELD_BYTES && q[0] === 0x04 ? { algorithm, q } : null;
+    }
+    return key !== null && reader.remaining === 0 ? key : null;
+  } catch {
+    return null;
+  }
+}
+
+export function sshPublicKeyBlob(key: SshPublicKey): Uint8Array {
   const writer = new SshWriter().writeString(key.algorithm);
   if (key.algorithm === 'ssh-rsa') return writer.writeMpint(key.e).writeMpint(key.n).toBytes();
   if (key.algorithm === 'ecdsa-sha2-nistp256') return writer.writeString(NISTP256).writeBytes(key.q).toBytes();

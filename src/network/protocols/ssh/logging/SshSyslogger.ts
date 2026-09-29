@@ -101,8 +101,8 @@ export class SshSyslogger {
 
       case 'auth_success': {
         this.pendingSessionUser = event.user;
-        if (event.method === 'publickey' && event.keyFingerprint) {
-          return `Accepted publickey for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2: ED25519 ${event.keyFingerprint}`;
+        if (event.method === 'publickey' && event.keyType && event.keyFingerprint) {
+          return `Accepted publickey for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2: ${event.keyType} ${event.keyFingerprint}`;
         }
         return `Accepted ${event.method} for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2`;
       }

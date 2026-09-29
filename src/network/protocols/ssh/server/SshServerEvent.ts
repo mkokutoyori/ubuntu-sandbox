@@ -56,6 +56,7 @@ export type SshServerEvent =
       method: string;
       ip: string;
       port?: number;
+      keyType?: string;
       keyFingerprint?: string;
       fromHost?: string;
       timestamp?: number;

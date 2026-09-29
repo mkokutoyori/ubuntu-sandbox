@@ -14,6 +14,7 @@ export interface UserauthInfoRequest {
 
 export type UserauthReply =
   | { readonly kind: 'success' }
+  | { readonly kind: 'pk_ok' }
   | { readonly kind: 'failure'; readonly methods: string }
   | { readonly kind: 'disconnect'; readonly reason: string }
   | { readonly kind: 'closed' };
@@ -40,9 +41,15 @@ export interface UserauthPrompter {
   inform(text: string): void;
 }
 
+export interface UserauthIdentity {
+  readonly algorithm: string;
+  readonly publicKey: string;
+  sign(): string | null;
+}
+
 export interface UserauthPlan {
   readonly authentication: SshClientAuthentication;
-  readonly publicKeys: readonly string[];
+  readonly identities: readonly UserauthIdentity[];
   readonly interactive: boolean;
 }
 
@@ -91,15 +98,25 @@ export async function runUserauth(
     }
   };
 
-  let publicKeysOffered = 0;
+  let identitiesOffered = 0;
   let keyboardInteractiveAttempts = 0;
   let infoRequestSeen = false;
   let passwordAttempts = 0;
-  const attempt = async (method: AuthMethodType): Promise<UserauthReply | null> => {
-    if (method === 'publickey') {
-      const publicKey = plan.publicKeys[publicKeysOffered++];
-      return publicKey === undefined ? null : transport.request('publickey', { publicKey });
+  const offerPublicKey = async (): Promise<UserauthReply | null> => {
+    for (;;) {
+      const identity = plan.identities[identitiesOffered++];
+      if (identity === undefined) return null;
+      const offered = { algorithm: identity.algorithm, publicKey: identity.publicKey };
+      const query = await transport.request('publickey', offered);
+      if (query.kind !== 'pk_ok') return query;
+      const signature = identity.sign();
+      if (signature === null) continue;
+      const signed = await transport.request('publickey', { ...offered, signature });
+      if (signed.kind !== 'pk_ok') return signed;
     }
+  };
+  const attempt = async (method: AuthMethodType): Promise<UserauthReply | null> => {
+    if (method === 'publickey') return offerPublicKey();
     if (method === 'keyboard-interactive') {
       if (keyboardInteractiveAttempts++ >= auth.passwordPrompts) return null;
       if (keyboardInteractiveAttempts > 1 && !infoRequestSeen) return null;
@@ -121,6 +138,7 @@ export async function runUserauth(
 
   let reply = await transport.request('none', {});
   for (;;) {
+    if (reply.kind === 'pk_ok') return { kind: 'closed' };
     if (reply.kind !== 'failure') return reply;
     let sent: UserauthReply | null = null;
     while (sent === null) {
