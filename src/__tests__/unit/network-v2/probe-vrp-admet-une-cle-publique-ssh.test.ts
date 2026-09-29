@@ -20,20 +20,28 @@
  * par le proxy de sortie ; les messages d'entree de vue sont ceux des
  * exemples de configuration Huawei.
  *
- * Les cles SSH du simulateur ne sont pas de vraies cles RSA
- * (`deriveKeyMaterial`) : une cle collee en OpenSSH se compare a ce que
- * le client presente, une cle DER n'a rien a quoi se comparer et ferme
- * la porte (regle 6, les criteres de securite echouent FERMES).
+ * Depuis que `ssh-keygen` fabrique de vraies cles RSA, une cle collee en
+ * DER se compare aussi : son code est l'hexadecimal d'un RSAPublicKey
+ * PKCS#1 (RFC 8017 A.1.1), SEQUENCE { n, e }. Les exemples Huawei le
+ * montrent : « 3082010A 02820101 … », une SEQUENCE dont le premier
+ * element est directement l'entier n, ce qu'un SubjectPublicKeyInfo
+ * n'est pas. Le premier etat de cette sonde attendait qu'une cle DER
+ * n'ouvre rien, faute de vraies cles ; ce cas est remplace par ses deux
+ * suites, la bonne cle en DER ouvre, celle d'un autre hote non. La forme
+ * PEM de VRP n'a pas pu etre lue (support.huawei.com refuse par le
+ * proxy) : elle est gardee et rendue, et n'ouvre rien (regle 6).
  *
  * Ecrite a l'aveugle contre cette reference, avant de lire les vues.
  *
  * Discriminee contre l'etat d'avant (`git stash push -- src/network`) :
- * 10 des 20 cas tombent. Passent des deux cotes, sur chaque plateforme,
- * le TEMOIN (le mot de passe ouvre la session par defaut) et les quatre
- * refus — une autre cle, une cle non attribuee, `authentication-type
- * password`, et le mot de passe sous `authentication-type rsa` — qu'aucune
- * cle n'ouvrant rien avant, ils ne pouvaient pas tomber ; ils prouvent
- * que la porte ouverte ne l'est que pour la bonne cle.
+ * 10 des 20 cas tombent ; puis, pour la cle DER, contre d934022ee : ses
+ * deux cas « la cle du client en DER ouvre la session » tombent. Passent
+ * des deux cotes, sur chaque plateforme, le TEMOIN (le mot de passe ouvre
+ * la session par defaut) et les cinq refus — une autre cle, en OpenSSH
+ * puis en DER, une cle non attribuee, `authentication-type password`, et
+ * le mot de passe sous `authentication-type rsa` — qu'aucune cle
+ * n'ouvrant rien avant, ils ne pouvaient pas tomber ; ils prouvent que la
+ * porte ouverte ne l'est que pour la bonne cle.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
@@ -45,6 +53,7 @@ import { IPAddress, SubnetMask, resetCounters, MACAddress } from '@/network/core
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { base64ToBytes } from '@/crypto/encoding';
 
 const SECRET = 'Admin@123';
 
@@ -129,9 +138,42 @@ async function type(device: Device, lines: readonly string[]): Promise<string[]>
 }
 
 const peerKey = (name: string, code: string, encoding = 'openssh'): string[] => [
-  `rsa peer-public-key ${name} encoding-type ${encoding}`, 'public-key-code begin', code, 'public-key-code end',
+  `rsa peer-public-key ${name} encoding-type ${encoding}`, 'public-key-code begin', ...code.split('\n'), 'public-key-code end',
   'peer-public-key end',
 ];
+
+function derKeyCode(publicLine: string): string {
+  const blob = base64ToBytes(publicLine.split(/\s+/)[1]);
+  let at = 0;
+  const field = (): Uint8Array => {
+    const length = (blob[at] << 24) | (blob[at + 1] << 16) | (blob[at + 2] << 8) | blob[at + 3];
+    const out = blob.slice(at + 4, at + 4 + length);
+    at += 4 + length;
+    return out;
+  };
+  field();
+  const e = field();
+  const n = field();
+  const derLength = (length: number): number[] => {
+    if (length < 0x80) return [length];
+    const bytes: number[] = [];
+    for (let v = length; v > 0; v >>= 8) bytes.unshift(v & 0xff);
+    return [0x80 | bytes.length, ...bytes];
+  };
+  const integer = (magnitude: Uint8Array): number[] => {
+    let body = [...magnitude];
+    while (body.length > 1 && body[0] === 0 && (body[1] & 0x80) === 0) body = body.slice(1);
+    if (body[0] & 0x80) body = [0, ...body];
+    return [0x02, ...derLength(body.length), ...body];
+  };
+  const content = [...integer(n), ...integer(e)];
+  const der = [0x30, ...derLength(content.length), ...content];
+  const hex = der.map((b) => b.toString(16).padStart(2, '0').toUpperCase()).join('');
+  const groups = hex.match(/.{1,8}/g) ?? [];
+  const lines: string[] = [];
+  for (let i = 0; i < groups.length; i += 6) lines.push(groups.slice(i, i + 6).join(' '));
+  return lines.join('\n');
+}
 
 const keyLogin = async ({ host, ip }: Lab, from: LinuxPC = host): Promise<boolean> =>
   /VRP|Huawei/i.test(await from.executeCommand(
@@ -212,12 +254,20 @@ for (const [platform, make] of [['router', routerLab], ['switch', switchLab]] as
       expect(config).toMatch(/^ssh user admin assign rsa-key k$/m);
     }, 30000);
 
-    it('a DER key is kept, and vouches for no simulated key', async () => {
+    it('the client key pasted as a DER key code opens the session', async () => {
       const lab = await make();
-      await type(lab.device, [...peerKey('d', '30818902818100C4A8 0203 010001', 'der'),
+      await type(lab.device, [...peerKey('d', derKeyCode(lab.publicKey), 'der'),
         'ssh user admin authentication-type rsa', 'ssh user admin assign rsa-key d']);
 
       expect(await lab.device.executeCommand('display current-configuration')).toMatch(/^rsa peer-public-key d$/m);
+      expect(await keyLogin(lab)).toBe(true);
+    }, 30000);
+
+    it('another host\'s key as a DER key code does not', async () => {
+      const lab = await make();
+      await type(lab.device, [...peerKey('d', derKeyCode(lab.otherPublicKey), 'der'),
+        'ssh user admin authentication-type rsa', 'ssh user admin assign rsa-key d']);
+
       expect(await keyLogin(lab)).toBe(false);
     }, 30000);
   });

@@ -4,6 +4,9 @@ import { parseVrpDaylightSaving } from '../../shells/huawei/huaweiDaylightSaving
 import { DeviceClockStore, type DeviceClockConfig } from '../../../core/time/DeviceClock';
 import { PortNumber, PORT_ANY } from '../../../core/ports/PortNumber';
 import { parseAuthorizedKeysLine } from '../../../protocols/ssh/SshPureUtils';
+import { parseAll, parseTLV, UNIVERSAL_TAG } from '../../windows/server/ad/ldap/Ber';
+import { sshPublicKeyBlob } from '../../linux/network/SshKeygenMaterial';
+import { bytesToBase64, hexToBytes } from '@/crypto/encoding';
 
 export interface RawConfigEntry {
   feature: string;
@@ -56,9 +59,41 @@ export interface RsaPeerPublicKey {
 const SSH_USER_KEY_AUTHENTICATION_TYPES: ReadonlySet<SshUserAuthenticationType> = new Set(['rsa', 'all']);
 
 function opensshRsaMaterial(key: RsaPeerPublicKey): string | null {
-  if (key.encoding !== 'openssh') return null;
   const parsed = parseAuthorizedKeysLine(key.code.map((line) => line.trim()).join(''));
   return parsed?.algorithm === 'ssh-rsa' && !parsed.options ? parsed.material : null;
+}
+
+function derPositiveInteger(content: Uint8Array): bigint | null {
+  if (content.length === 0 || content[0] & 0x80) return null;
+  let n = 0n;
+  for (const b of content) n = (n << 8n) | BigInt(b);
+  return n;
+}
+
+function derRsaMaterial(key: RsaPeerPublicKey): string | null {
+  const hex = key.code.join('').replace(/\s+/g, '');
+  if (!/^(?:[0-9a-fA-F]{2})+$/.test(hex)) return null;
+  try {
+    const der = hexToBytes(hex);
+    const outer = parseTLV(der, 0);
+    if (outer.nextOffset !== der.length || outer.tagClass !== 'universal'
+      || !outer.constructed || outer.tagNumber !== UNIVERSAL_TAG.SEQUENCE) return null;
+    const fields = parseAll(outer.content);
+    if (fields.length !== 2
+      || fields.some((f) => f.tagClass !== 'universal' || f.constructed || f.tagNumber !== UNIVERSAL_TAG.INTEGER)) return null;
+    const n = derPositiveInteger(fields[0].content);
+    const e = derPositiveInteger(fields[1].content);
+    if (n === null || e === null) return null;
+    return bytesToBase64(sshPublicKeyBlob({ algorithm: 'ssh-rsa', n, e }));
+  } catch {
+    return null;
+  }
+}
+
+function peerKeyMaterial(key: RsaPeerPublicKey): string | null {
+  if (key.encoding === 'openssh') return opensshRsaMaterial(key);
+  if (key.encoding === 'der') return derRsaMaterial(key);
+  return null;
 }
 
 function oneOf<T extends string>(allowed: readonly T[], text: string | undefined): T | null {
@@ -251,7 +286,7 @@ export class RouterManagementService {
     const account = this.sshUsers.get(user);
     if (!account?.authenticationType || !SSH_USER_KEY_AUTHENTICATION_TYPES.has(account.authenticationType)) return false;
     const key = account.assignedRsaKey === undefined ? undefined : this.rsaPeerPublicKeys.get(account.assignedRsaKey);
-    return key !== undefined && opensshRsaMaterial(key) === offeredMaterial;
+    return key !== undefined && peerKeyMaterial(key) === offeredMaterial;
   }
   sshDefaultPasswordAuthenticationEnabled(): boolean { return this.sshDefaultPasswordAuthentication; }
 
