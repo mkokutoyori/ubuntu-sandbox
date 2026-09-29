@@ -18,7 +18,7 @@ import type { WindowsServer } from '@/network/devices/WindowsServer';
 import type { WindowsPC } from '@/network/devices/WindowsPC';
 import { addRoutesToHq, loadUserLab, type UserLab } from './userLab';
 import { taper } from './fortigateBatteryHarness';
-import { ADMIN_CREDENTIAL, pointDnsAt, promoteDomainController, shell, windows } from './userLabDomain';
+import { AD_SERVICES, ADMIN_CREDENTIAL, pointDnsAt, promoteDomainController, shell, windows } from './userLabDomain';
 
 const JOIN = `Add-Computer -DomainName "google.com" -Credential "${ADMIN_CREDENTIAL}"`;
 
@@ -38,14 +38,6 @@ function joined(lab: UserLab): boolean {
 function accountOnDc(lab: UserLab): boolean {
   return (windows(lab.WinServer1) as WindowsServer).getDirectoryStore()!.getComputer('PC2') !== null;
 }
-
-const AD_SERVICES = [
-  'config firewall service custom',
-  'edit "AD-KERBEROS"', 'set tcp-portrange 88', 'set udp-portrange 88', 'next',
-  'edit "AD-LDAP"', 'set tcp-portrange 389', 'set udp-portrange 389', 'next',
-  'edit "AD-SMB-RPC"', 'set tcp-portrange 445 135 464', 'next',
-  'end',
-];
 
 describe('user lab — PC2 rejoint google.com à travers FW1', () => {
   it('TÉMOIN : la policy 1 d origine laisse passer la jonction', async () => {

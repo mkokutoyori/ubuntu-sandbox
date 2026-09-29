@@ -199,7 +199,10 @@ import {
   NewNpsConnectionRequestPolicyCmdlet, GetNpsConnectionRequestPolicyCmdlet, RemoveNpsConnectionRequestPolicyCmdlet,
   SetNpsAccountingConfigurationCmdlet,
 } from './NpsCmdlets';
-import { NewGPOCmdlet, GetGPOCmdlet, NewGPLinkCmdlet, SetGPLinkCmdlet, SetGPRegistryValueCmdlet, SetGPInheritanceCmdlet, GetGPInheritanceCmdlet } from './GroupPolicyCmdlets';
+import {
+  NewGPOCmdlet, GetGPOCmdlet, RemoveGPOCmdlet, RenameGPOCmdlet, NewGPLinkCmdlet, SetGPLinkCmdlet, RemoveGPLinkCmdlet,
+  SetGPRegistryValueCmdlet, GetGPRegistryValueCmdlet, RemoveGPRegistryValueCmdlet, SetGPInheritanceCmdlet, GetGPInheritanceCmdlet,
+} from './GroupPolicyCmdlets';
 import {
   NewWebsiteCmdlet, GetWebsiteCmdlet, StartWebsiteCmdlet, StopWebsiteCmdlet, RemoveWebsiteCmdlet,
   NewWebBindingCmdlet,
@@ -749,6 +752,11 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   // ── Group Policy (PRD-Windows-Server.md §5 P10) ─────────────────────────────
   registry.register(new NewGPOCmdlet());
   registry.register(new GetGPOCmdlet());
+  registry.register(new RemoveGPOCmdlet());
+  registry.register(new RenameGPOCmdlet());
+  registry.register(new RemoveGPLinkCmdlet());
+  registry.register(new GetGPRegistryValueCmdlet());
+  registry.register(new RemoveGPRegistryValueCmdlet());
   registry.register(new NewGPLinkCmdlet());
   registry.register(new SetGPLinkCmdlet());
   registry.register(new SetGPRegistryValueCmdlet());

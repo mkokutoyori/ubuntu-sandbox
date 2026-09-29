@@ -51,3 +51,11 @@ export async function pointDnsAt(device: LabDevice, dcAddress: string): Promise<
   windows(device).setCurrentUser('Administrator');
   await shell(device, `Set-DnsClientServerAddress -InterfaceAlias "Ethernet 0" -ServerAddresses ${dcAddress}`);
 }
+
+export const AD_SERVICES = [
+  'config firewall service custom',
+  'edit "AD-KERBEROS"', 'set tcp-portrange 88', 'set udp-portrange 88', 'next',
+  'edit "AD-LDAP"', 'set tcp-portrange 389', 'set udp-portrange 389', 'next',
+  'edit "AD-SMB-RPC"', 'set tcp-portrange 445 135 464', 'next',
+  'end',
+];

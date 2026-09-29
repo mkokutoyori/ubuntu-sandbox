@@ -19,7 +19,8 @@ import { DirectoryTree, type DirectoryEntry, type EntryReplMeta, type Modificati
 import { parseDN, formatDN, leafValue, type DistinguishedName } from './ldap/LdapDN';
 import type { LdapBindCheck } from './ldap/LdapServer';
 import type { AdUser, AdGroup, AdComputer, AdOrgUnit, Gpo, GpoSettings, GpoAccountPolicy, GpoRegistryValue, GpoLinkInfo, AdFineGrainedPasswordPolicy, AdAccessRule, AdGenericObject, AdServiceAccount } from './AdTypes';
-import { DEFAULT_LOCKOUT_POLICY, encodeGpLink, decodeGpLink } from './AdTypes';
+import { DEFAULT_LOCKOUT_POLICY, canonicalGpRegistryType, decodeGpLink, encodeGpLink, gpRegistryValueProblem, normalisedPolicyKey } from './AdTypes';
+import { containerChain, resolveGroupPolicy, type GpoContainerReader, type GroupPolicyResult } from './GpoResolution';
 import { generateId } from '@/network/core/types';
 import {
   type HighWatermarkVector, emptyHighWatermarkVector, recordUsn, cloneHighWatermarkVector,
@@ -526,10 +527,11 @@ export class DirectoryStore {
 
   // ─── Group Policy Objects (PRD-Windows-Server.md §5 P10) ────────────
 
-  newGpo(name: string): DirOpResult {
+  newGpo(name: string, description = ''): DirOpResult {
     const res = this.tree.addEntry(this.cnDn(name, this.policiesDn), {
       objectClass: ['top', 'container', 'groupPolicyContainer'],
       cn: [name], displayName: [name],
+      ...(description ? { description: [description] } : {}),
     });
     return res.ok ? { ok: true, message: '' } : { ok: false, message: `A GPO named "${name}" already exists.` };
   }
@@ -558,6 +560,7 @@ export class DirectoryStore {
     const gpoDn = formatDN(entry.dn);
     return {
       id: firstOf(entry.attributes.get('cn')),
+      description: firstOf(entry.attributes.get('description')),
       name: firstOf(entry.attributes.get('displayname')),
       links: this.tree.allDescendants(this.tree.getRootDn())
         .filter(e => (e.attributes.get('gplink') ?? []).some(v => decodeGpLink(v).gpoDn.toLowerCase() === gpoDn.toLowerCase()))
@@ -589,8 +592,11 @@ export class DirectoryStore {
   setGpRegistryValue(gpoName: string, entryPatch: GpoRegistryValue): DirOpResult {
     const gpo = this.getGpo(gpoName);
     if (!gpo) return { ok: false, message: `Cannot find a GPO with name "${gpoName}".` };
+    const invalid = gpRegistryValueProblem(entryPatch);
+    if (invalid) return { ok: false, message: invalid };
+    entryPatch = { ...entryPatch, type: canonicalGpRegistryType(entryPatch.type) ?? entryPatch.type };
     const existing = gpo.settings.registryPolicy ?? [];
-    const idx = existing.findIndex(e => e.key.toLowerCase() === entryPatch.key.toLowerCase() && e.valueName.toLowerCase() === entryPatch.valueName.toLowerCase());
+    const idx = existing.findIndex(e => normalisedPolicyKey(e.key) === normalisedPolicyKey(entryPatch.key) && e.valueName.toLowerCase() === entryPatch.valueName.toLowerCase());
     const next = [...existing];
     if (idx >= 0) next[idx] = entryPatch; else next.push(entryPatch);
     return this.setGpoSettings(gpoName, { registryPolicy: next });
@@ -637,53 +643,111 @@ export class DirectoryStore {
     return { ok: true, message: '' };
   }
 
-  /**
-   * RSoP for a computer, real precedence order: domain-linked GPOs first,
-   * then GPOs linked to the computer's own OU (more specific — its
-   * settings override the domain's on conflicting keys). Only direct
-   * links are honored (no OU-hierarchy walk beyond the computer's
-   * immediate container). Disabled links (`-LinkEnabled No`) never apply;
-   * an Enforced domain-level link still applies even when the computer's
-   * own OU has inheritance blocked — real AD's "Enforced wins over
-   * blocked inheritance" rule.
-   *
-   * `userSam`, when given, additionally folds in GPOs linked to the
-   * logged-on user's own OU — real AD's User Configuration settings
-   * (folder redirection, HKCU registry policy, …) resolve against the
-   * USER object's location, independently of where the computer object
-   * sits (this simulator doesn't model Loopback Processing, so there's
-   * no computer-OU override of that for now).
-   */
-  resultantSetOfPolicy(computerName?: string, userSam?: string): { appliedGpoNames: string[]; settings: GpoSettings } {
-    let ouEntry: DirectoryEntry | null = null;
-    if (computerName) {
-      const computer = this.findComputerEntry(computerName);
-      if (computer) ouEntry = this.tree.getByDn(computer.dn.slice(1));
+  resultantSetOfPolicy(computerName?: string, userSam?: string): GroupPolicyResult {
+    const rootDn = formatDN(this.tree.getRootDn());
+    const computer = computerName ? this.findComputerEntry(computerName) : null;
+    const user = userSam ? this.findUserEntry(userSam) : null;
+    return resolveGroupPolicy(
+      this.gpoReader(),
+      computer ? containerChain(formatDN(computer.dn), rootDn) : [rootDn],
+      user ? containerChain(formatDN(user.dn), rootDn) : undefined,
+    );
+  }
+
+  private gpoEntryAt(dn: string): DirectoryEntry | null {
+    try { return this.tree.getByDn(parseDN(dn)); } catch { return null; }
+  }
+
+  private gpoReader(): GpoContainerReader {
+    return {
+      gpLinks: dn => this.gpoEntryAt(dn)?.attributes.get('gplink') ?? [],
+      inheritanceBlocked: dn => firstOf(this.gpoEntryAt(dn)?.attributes.get('gpoptions')) === '1',
+      readGpo: dn => {
+        const entry = this.gpoEntryAt(dn);
+        if (!entry) return null;
+        const gpo = this.projectGpo(entry);
+        return { name: gpo.name, settings: gpo.settings };
+      },
+    };
+  }
+
+  private linkHolders(gpoDn: string): DirectoryEntry[] {
+    const wanted = gpoDn.toLowerCase();
+    return this.tree.allDescendants(this.tree.getRootDn())
+      .filter(e => (e.attributes.get('gplink') ?? []).some(v => decodeGpLink(v).gpoDn.toLowerCase() === wanted));
+  }
+
+  /** `Remove-GPO` — deletes the GPO and, unless `keepLinks`, every link to it in this domain. */
+  removeGpo(name: string, keepLinks = false): DirOpResult {
+    const gpo = this.findGpoEntry(name);
+    if (!gpo) return { ok: false, message: `A GPO with the name "${name}" cannot be found.` };
+    const gpoDn = formatDN(gpo.dn);
+    for (const holder of keepLinks ? [] : this.linkHolders(gpoDn)) {
+      const kept = (holder.attributes.get('gplink') ?? []).filter(v => decodeGpLink(v).gpoDn.toLowerCase() !== gpoDn.toLowerCase());
+      this.tree.modifyEntry(holder.dn, [{ op: 'replace', type: 'gPLink', values: kept }]);
     }
-    let userOuEntry: DirectoryEntry | null = null;
-    if (userSam) {
-      const user = this.findUserEntry(userSam);
-      if (user) userOuEntry = this.tree.getByDn(user.dn.slice(1));
+    const res = this.tree.deleteEntry(gpo.dn);
+    return res.ok ? { ok: true, message: '' } : { ok: false, message: res.message };
+  }
+
+  /** `Rename-GPO` — renames the container and rewrites every link that names it. */
+  renameGpo(name: string, newName: string): DirOpResult {
+    const gpo = this.findGpoEntry(name);
+    if (!gpo) return { ok: false, message: `A GPO with the name "${name}" cannot be found.` };
+    if (this.findGpoEntry(newName)) return { ok: false, message: `A GPO with the name "${newName}" already exists.` };
+    const oldDn = formatDN(gpo.dn);
+    const holders = this.linkHolders(oldDn).map(h => ({ dn: h.dn, links: h.attributes.get('gplink') ?? [] }));
+    const res = this.tree.renameEntry(gpo.dn, `CN=${newName}`, true);
+    if (!res.ok) return { ok: false, message: res.message };
+    const renamed = this.findGpoEntry(newName);
+    if (!renamed) return { ok: false, message: `Cannot find the renamed GPO "${newName}".` };
+    this.tree.modifyEntry(renamed.dn, [{ op: 'replace', type: 'displayName', values: [newName] }]);
+    const newDn = formatDN(renamed.dn);
+    for (const holder of holders) {
+      const links = holder.links.map(v => {
+        const link = decodeGpLink(v);
+        return link.gpoDn.toLowerCase() === oldDn.toLowerCase()
+          ? encodeGpLink(newDn, { linkEnabled: link.linkEnabled, enforced: link.enforced, order: link.order })
+          : v;
+      });
+      this.tree.modifyEntry(holder.dn, [{ op: 'replace', type: 'gPLink', values: links }]);
     }
-    const inheritanceBlocked = ouEntry ? firstOf(ouEntry.attributes.get('gpoptions')) === '1' : false;
-    const domainLinks = this.linkedGposFor(this.tree.getRootDn()).filter(l => l.enabled && (l.enforced || !inheritanceBlocked));
-    const ouLinks = ouEntry ? this.linkedGposFor(ouEntry.dn).filter(l => l.enabled) : [];
-    const userOuLinks = (userOuEntry && userOuEntry.dn.join(',') !== ouEntry?.dn.join(','))
-      ? this.linkedGposFor(userOuEntry.dn).filter(l => l.enabled) : [];
-    const ordered = [...domainLinks, ...ouLinks, ...userOuLinks].sort((a, b) => a.order - b.order).map(l => l.gpo);
-    const merged: GpoSettings = {};
-    for (const gpo of ordered) {
-      if (gpo.settings.accountPolicy !== undefined) merged.accountPolicy = { ...merged.accountPolicy, ...gpo.settings.accountPolicy };
-      if (gpo.settings.logonBanner !== undefined) merged.logonBanner = gpo.settings.logonBanner;
-      if (gpo.settings.startupScript !== undefined) merged.startupScript = gpo.settings.startupScript;
-      if (gpo.settings.auditPolicy !== undefined) merged.auditPolicy = { ...merged.auditPolicy, ...gpo.settings.auditPolicy };
-      if (gpo.settings.registryPolicy !== undefined) {
-        const byKey = new Map((merged.registryPolicy ?? []).map(e => [`${e.key.toLowerCase()}|${e.valueName.toLowerCase()}`, e]));
-        for (const e of gpo.settings.registryPolicy) byKey.set(`${e.key.toLowerCase()}|${e.valueName.toLowerCase()}`, e);
-        merged.registryPolicy = Array.from(byKey.values());
-      }
-    }
-    return { appliedGpoNames: ordered.map(g => g.name), settings: merged };
+    return { ok: true, message: '' };
+  }
+
+  /** `Remove-GPLink` — drops the link between a GPO and one container, leaving the GPO. */
+  removeGpLink(gpoName: string, targetDn: string): DirOpResult {
+    const gpo = this.findGpoEntry(gpoName);
+    if (!gpo) return { ok: false, message: `A GPO with the name "${gpoName}" cannot be found.` };
+    const target = this.resolveTargetEntry(targetDn);
+    if (!target) return { ok: false, message: `Cannot find an object with distinguished name: '${targetDn}'.` };
+    const gpoDn = formatDN(gpo.dn).toLowerCase();
+    const links = target.attributes.get('gplink') ?? [];
+    const kept = links.filter(v => decodeGpLink(v).gpoDn.toLowerCase() !== gpoDn);
+    if (kept.length === links.length) return { ok: false, message: `The GPO "${gpoName}" is not linked to '${targetDn}'.` };
+    this.tree.modifyEntry(target.dn, [{ op: 'replace', type: 'gPLink', values: kept }]);
+    return { ok: true, message: '' };
+  }
+
+  /** `Get-GPRegistryValue` — every value a GPO sets under `key` (all of its values when `valueName` is empty). */
+  getGpRegistryValues(gpoName: string, key: string, valueName: string): GpoRegistryValue[] | null {
+    const gpo = this.getGpo(gpoName);
+    if (!gpo) return null;
+    const wantedKey = normalisedPolicyKey(key);
+    return (gpo.settings.registryPolicy ?? []).filter(e =>
+      normalisedPolicyKey(e.key) === wantedKey && (valueName === '' || e.valueName.toLowerCase() === valueName.toLowerCase()));
+  }
+
+  /** `Remove-GPRegistryValue` — removes one value, or every value under `key` when `valueName` is empty. */
+  removeGpRegistryValue(gpoName: string, key: string, valueName: string): DirOpResult {
+    const gpo = this.getGpo(gpoName);
+    if (!gpo) return { ok: false, message: `A GPO with the name "${gpoName}" cannot be found.` };
+    const doomed = this.getGpRegistryValues(gpoName, key, valueName) ?? [];
+    if (doomed.length === 0) return { ok: false, message: `The GPO "${gpoName}" does not set the registry value '${key}${valueName ? `\\${valueName}` : ''}'.` };
+    const identity = (e: GpoRegistryValue): string => `${normalisedPolicyKey(e.key)}|${e.valueName.toLowerCase()}`;
+    const doomedIdentities = new Set(doomed.map(identity));
+    const kept = (gpo.settings.registryPolicy ?? []).filter(e => !doomedIdentities.has(identity(e)));
+    return this.setGpoSettings(gpoName, { registryPolicy: kept });
   }
 
   setGpInheritance(targetDn: string, blocked: boolean): DirOpResult {
@@ -712,20 +776,6 @@ export class DirectoryStore {
         };
       }),
     };
-  }
-
-  private linkedGposFor(dn: DistinguishedName): Array<{ gpo: Gpo; enabled: boolean; enforced: boolean; order: number }> {
-    const entry = this.tree.getByDn(dn);
-    const links = entry?.attributes.get('gplink') ?? [];
-    return links
-      .map(raw => {
-        const decoded = decodeGpLink(raw);
-        let gpoEntry: DirectoryEntry | null;
-        try { gpoEntry = this.tree.getByDn(parseDN(decoded.gpoDn)); } catch { gpoEntry = null; }
-        if (!gpoEntry) return null;
-        return { gpo: this.projectGpo(gpoEntry), enabled: decoded.linkEnabled, enforced: decoded.enforced, order: decoded.order };
-      })
-      .filter((l): l is { gpo: Gpo; enabled: boolean; enforced: boolean; order: number } => l !== null);
   }
 
   // ─── Password policy: Default Domain Policy + Fine-Grained (PSO) ────

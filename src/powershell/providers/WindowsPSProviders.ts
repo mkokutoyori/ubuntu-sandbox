@@ -73,7 +73,7 @@ import type {
   AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdDomainInfo, AdTrustInfo,
   AdReplicationConnectionInfo, AdReplicationFailureInfo, AdPasswordPolicyInfo, AdFineGrainedPasswordPolicyInfo, AdAccessRuleInfo,
   IComputerProvider, DomainMembershipInfo,
-  IGpoProvider, GpoInfo, GpLinkOptions, GpoLinkResultInfo,
+  IGpoProvider, GpoInfo, GpLinkOptions, GpoLinkResultInfo, GpRegistryValueInfo,
   IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
   IExchangeProvider, ExchangeOpResult, ExchangeServerInfo,
   MailboxOpResult, MailboxInfo, MailboxStatisticsInfo, MailFolderName,
@@ -2939,17 +2939,37 @@ class WindowsGpoAdapter implements IGpoProvider {
     return store;
   }
 
-  newGpo(name: string): AdOpResult {
-    return this.requireDc('New-GPO').newGpo(name);
+  newGpo(name: string, description?: string): AdOpResult {
+    return this.requireDc('New-GPO').newGpo(name, description);
+  }
+
+  removeGpo(name: string, keepLinks?: boolean): AdOpResult {
+    return this.requireDc('Remove-GPO').removeGpo(name, keepLinks);
+  }
+
+  renameGpo(name: string, newName: string): AdOpResult {
+    return this.requireDc('Rename-GPO').renameGpo(name, newName);
+  }
+
+  removeGpLink(gpoName: string, targetDn: string): AdOpResult {
+    return this.requireDc('Remove-GPLink').removeGpLink(gpoName, targetDn);
+  }
+
+  getGpRegistryValues(gpoName: string, key: string, valueName: string): GpRegistryValueInfo[] | null {
+    return this.requireDc('Get-GPRegistryValue').getGpRegistryValues(gpoName, key, valueName);
+  }
+
+  removeGpRegistryValue(gpoName: string, key: string, valueName: string): AdOpResult {
+    return this.requireDc('Remove-GPRegistryValue').removeGpRegistryValue(gpoName, key, valueName);
   }
 
   getGpo(name: string): GpoInfo | null {
     const gpo = this.requireDc('Get-GPO').getGpo(name);
-    return gpo ? { id: gpo.id, name: gpo.name, links: gpo.links } : null;
+    return gpo ? { id: gpo.id, name: gpo.name, description: gpo.description, links: gpo.links } : null;
   }
 
   listGpos(): GpoInfo[] {
-    return this.requireDc('Get-GPO').listGpos().map(g => ({ id: g.id, name: g.name, links: g.links }));
+    return this.requireDc('Get-GPO').listGpos().map(g => ({ id: g.id, name: g.name, description: g.description, links: g.links }));
   }
 
   newGPLink(gpoName: string, targetDn: string, opts?: GpLinkOptions): AdOpResult {
@@ -2966,6 +2986,10 @@ class WindowsGpoAdapter implements IGpoProvider {
 
   getDomainDn(): string {
     return this.requireDc('New-GPLink').getDomainDn();
+  }
+
+  getDomainName(): string {
+    return this.requireDc('New-GPO').dnsName;
   }
 
   setGpInheritance(targetDn: string, blocked: boolean): AdOpResult {

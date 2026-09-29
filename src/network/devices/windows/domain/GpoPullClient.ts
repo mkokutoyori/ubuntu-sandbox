@@ -19,12 +19,13 @@ import type { TcpStack } from '@/network/tcp/TcpStack';
 import { dialLdap } from '../server/ad/ldap/LdapClient';
 import type { DomainMembership } from './DomainTypes';
 import type { GpoSettings } from '../server/ad/AdTypes';
-import { decodeGpLink } from '../server/ad/AdTypes';
+import { containerChain, resolveGroupPolicy, type GpoContainerReader } from '../server/ad/GpoResolution';
 
 export interface GpoPullResult {
   ok: boolean;
   message: string;
   appliedGpoNames: string[];
+  appliedUserGpoNames: string[];
   settings: GpoSettings;
 }
 
@@ -49,90 +50,47 @@ function parseGpoSettings(attrs: Array<{ type: string; values: string[] }>): Gpo
   };
 }
 
-function mergeSettings(target: GpoSettings, source: GpoSettings): void {
-  if (source.accountPolicy !== undefined) target.accountPolicy = { ...target.accountPolicy, ...source.accountPolicy };
-  if (source.logonBanner !== undefined) target.logonBanner = source.logonBanner;
-  if (source.startupScript !== undefined) target.startupScript = source.startupScript;
-  if (source.auditPolicy !== undefined) target.auditPolicy = { ...target.auditPolicy, ...source.auditPolicy };
-  if (source.registryPolicy !== undefined) {
-    const byKey = new Map((target.registryPolicy ?? []).map(e => [`${e.key.toLowerCase()}|${e.valueName.toLowerCase()}`, e]));
-    for (const e of source.registryPolicy) byKey.set(`${e.key.toLowerCase()}|${e.valueName.toLowerCase()}`, e);
-    target.registryPolicy = Array.from(byKey.values());
-  }
+type LdapAttributes = Array<{ type: string; values: string[] }>;
+
+function valuesOf(attrs: LdapAttributes, name: string): string[] {
+  return attrs.find(a => a.type.toLowerCase() === name.toLowerCase())?.values ?? [];
 }
 
 export function pullGroupPolicy(tcpStack: TcpStack, membership: DomainMembership, hostname: string, userSam?: string): GpoPullResult {
   const conn = dialLdap(tcpStack, membership.dcAddress);
   if (!conn.ok || !conn.client) {
-    return { ok: false, message: 'The processing of Group Policy failed because of lack of network connectivity to a domain controller.', appliedGpoNames: [], settings: {} };
+    return { ok: false, message: 'The processing of Group Policy failed because of lack of network connectivity to a domain controller.', appliedGpoNames: [], appliedUserGpoNames: [], settings: {} };
   }
   const ldap = conn.client;
   const computerSam = `${hostname}$`;
   const bind = ldap.bind(computerSam, membership.machineSecret);
   if (!bind.ok) {
     ldap.unbind();
-    return { ok: false, message: 'Access is denied.', appliedGpoNames: [], settings: {} };
+    return { ok: false, message: 'Access is denied.', appliedGpoNames: [], appliedUserGpoNames: [], settings: {} };
   }
 
   const rootDn = rootDnOf(membership.dnsName);
-  const merged: GpoSettings = {};
-  const applied: Array<{ name: string; order: number }> = [];
-
-  /** Reads and applies one container's `gPLink` — decoding each entry's `-LinkEnabled`/`-Enforced`/`-Order` options; `overrideBlock` lets an Enforced link win even when this container's own inheritance is blocked, matching real AD's precedence rule. */
-  const applyLinksFrom = (dn: string, inheritanceBlocked: boolean): void => {
-    const self = ldap.search(dn, 'base', { kind: 'present', attr: 'objectClass' }, ['gPLink']);
-    const links = self.entries[0]?.attributes.find(a => a.type.toLowerCase() === 'gplink')?.values ?? [];
-    for (const raw of links) {
-      const decoded = decodeGpLink(raw);
-      if (!decoded.linkEnabled) continue;
-      if (inheritanceBlocked && !decoded.enforced) continue;
-      const gpoResult = ldap.search(decoded.gpoDn, 'base', { kind: 'present', attr: 'objectClass' },
-        ['displayName', 'gpoAccountPolicy', 'gpoLogonBanner', 'gpoStartupScript', 'gpoAuditPolicy', 'gpoRegistryPolicy']);
-      const entry = gpoResult.entries[0];
-      if (!entry) continue;
-      const name = entry.attributes.find(a => a.type.toLowerCase() === 'displayname')?.values[0] ?? decoded.gpoDn;
-      applied.push({ name, order: decoded.order });
-      mergeSettings(merged, parseGpoSettings(entry.attributes));
-    }
+  const readBase = (dn: string, attributes: string[]) =>
+    ldap.search(dn, 'base', { kind: 'present', attr: 'objectClass' }, attributes).entries[0];
+  const reader: GpoContainerReader = {
+    gpLinks: dn => valuesOf(readBase(dn, ['gPLink'])?.attributes ?? [], 'gPLink'),
+    inheritanceBlocked: dn => valuesOf(readBase(dn, ['gPOptions'])?.attributes ?? [], 'gPOptions')[0] === '1',
+    readGpo: dn => {
+      const entry = readBase(dn, ['displayName', 'gpoAccountPolicy', 'gpoLogonBanner', 'gpoStartupScript', 'gpoAuditPolicy', 'gpoRegistryPolicy']);
+      if (!entry) return null;
+      return { name: valuesOf(entry.attributes, 'displayName')[0] ?? dn, settings: parseGpoSettings(entry.attributes) };
+    },
   };
+  const dnOf = (sam: string): string | undefined =>
+    ldap.search(rootDn, 'sub', { kind: 'equalityMatch', attr: 'sAMAccountName', value: sam }, []).entries[0]?.dn;
 
-  // Resolve the computer's own OU (and whether IT blocks inherited policy)
-  // before processing domain-linked GPOs — blocked inheritance only ever
-  // withholds policy the computer would otherwise INHERIT from an ancestor
-  // (the domain root); it never withholds the OU's own direct links.
-  const selfSearch = ldap.search(rootDn, 'sub', { kind: 'equalityMatch', attr: 'sAMAccountName', value: computerSam }, []);
-  const computerDn = selfSearch.entries[0]?.dn;
-  let parentDn: string | null = null;
-  let ouBlocked = false;
-  if (computerDn) {
-    const candidate = computerDn.split(',').slice(1).join(',');
-    if (candidate && candidate.toLowerCase() !== rootDn.toLowerCase()) {
-      parentDn = candidate;
-      const ouResult = ldap.search(parentDn, 'base', { kind: 'present', attr: 'objectClass' }, ['gPOptions']);
-      ouBlocked = ouResult.entries[0]?.attributes.find(a => a.type.toLowerCase() === 'gpoptions')?.values[0] === '1';
-    }
-  }
-
-  applyLinksFrom(rootDn, ouBlocked);
-  if (parentDn) applyLinksFrom(parentDn, false);
-
-  // User Configuration policy (folder redirection, HKCU registry policy, …)
-  // resolves against the logged-on user's own OU, independently of the
-  // computer's placement (this simulator doesn't model Loopback Processing).
-  if (userSam) {
-    const userSearch = ldap.search(rootDn, 'sub', { kind: 'equalityMatch', attr: 'sAMAccountName', value: userSam }, []);
-    const userDn = userSearch.entries[0]?.dn;
-    if (userDn) {
-      const userParentDn = userDn.split(',').slice(1).join(',');
-      if (userParentDn && userParentDn.toLowerCase() !== rootDn.toLowerCase()
-          && userParentDn.toLowerCase() !== (parentDn ?? '').toLowerCase()) {
-        const userOuResult = ldap.search(userParentDn, 'base', { kind: 'present', attr: 'objectClass' }, ['gPOptions']);
-        const userOuBlocked = userOuResult.entries[0]?.attributes.find(a => a.type.toLowerCase() === 'gpoptions')?.values[0] === '1';
-        applyLinksFrom(userParentDn, userOuBlocked);
-      }
-    }
-  }
-
+  const computerDn = dnOf(computerSam);
+  const userDn = userSam ? dnOf(userSam) : undefined;
+  const result = resolveGroupPolicy(
+    reader,
+    computerDn ? containerChain(computerDn, rootDn) : [rootDn],
+    userDn ? containerChain(userDn, rootDn) : undefined,
+  );
   ldap.unbind();
-  return { ok: true, message: '', appliedGpoNames: applied.sort((a, b) => a.order - b.order).map(a => a.name), settings: merged };
+  return { ok: true, message: '', ...result };
 }
