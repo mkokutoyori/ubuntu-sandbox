@@ -37,6 +37,11 @@ function offerPacket(pkt: DHCPPacket, offer: DHCPOfferResult): DHCPPacket {
   });
 }
 
+function requestedAddress(pkt: DHCPPacket): string | undefined {
+  const raw = pkt.getOption(DHCP_OPTION.REQUESTED_IP);
+  return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+}
+
 function clientHostName(pkt: DHCPPacket): string | undefined {
   const raw = pkt.getOption(DHCP_OPTION.HOST_NAME);
   return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
@@ -79,6 +84,7 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
       clientMAC: pkt.chaddr, xid: pkt.xid,
       hostName: clientHostName(pkt),
       clientIdentifier: pkt.chaddr, parameterRequestList: [],
+      requestedIP: requestedAddress(pkt),
       giaddr, localGatewayIP: giaddr ? undefined : ctx.localGatewayIP,
     };
     let offer = server.processDiscover(params);
@@ -123,6 +129,19 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
         netbiosNodeType: pool?.netbiosNodeType,
         rawOptions: pool?.options,
       });
+  }
+
+  if (type === 'DHCPINFORM') {
+    const result = server.processInform({
+      clientMAC: pkt.chaddr, clientIP: pkt.ciaddr, xid: pkt.xid, clientIdentifier: pkt.chaddr,
+    });
+    if (!result) return null;
+    return DHCPPacket.createInformAck(pkt.chaddr, pkt.xid, pkt.ciaddr, result.serverIdentifier, {
+      mask: result.mask,
+      router: result.router ?? '0.0.0.0',
+      dns: result.dnsServers,
+      domainName: result.domainName ?? undefined,
+    });
   }
 
   if (type === 'DHCPDECLINE') {
