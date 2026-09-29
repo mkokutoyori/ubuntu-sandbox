@@ -3,7 +3,7 @@ import {
   type EthernetFrame, type IPv4Packet, type UDPPacket,
 } from '../../../core/types';
 import { buildUdpOverIpv4 } from '../../../layers/transport/UdpEgress';
-import { ipToUint32, tryIpToUint32, uint32ToIp } from '../../../core/ip';
+import { inSameSubnet, ipToUint32, tryIpToUint32, uint32ToIp } from '../../../core/ip';
 import { DHCPServer } from '../../../dhcp/DHCPServer';
 import { DHCPClient } from '../../../dhcp/DHCPClient';
 import { WireDhcpChannel } from '../../../dhcp/DhcpServerChannel';
@@ -46,6 +46,7 @@ export interface FirewallDhcpDeps {
   readonly systemDnsServers?: () => readonly string[];
   readonly sendToServer?: (server: IPAddress, packet: IPv4Packet) => boolean;
   readonly interfaceOwning?: (address: string) => string | null;
+  readonly addressInUse?: (iface: string, address: string) => boolean;
 }
 
 const POOL_USAGE_TRAP_PERCENT = 90;
@@ -287,6 +288,7 @@ export class FirewallDhcp {
     const reply = buildDhcpServerReply(request, {
       server: this.server,
       localGatewayIP: local?.ip,
+      isAddressInUse: (address) => this.probeOnLink(iface, address),
     });
     if (reply) this.deliver(iface, reply, dhcpReplyRoute(request, reply), request.chaddr);
     return true;
@@ -302,6 +304,12 @@ export class FirewallDhcp {
 
     const network = networkOf(anchor, mask);
     return network === null ? null : { network, mask };
+  }
+
+  private probeOnLink(iface: string, address: string): boolean {
+    const local = this.deps.interfaceAddress(iface);
+    if (local === undefined || !inSameSubnet(local.ip, address, local.mask)) return false;
+    return this.deps.addressInUse?.(iface, address) ?? false;
   }
 
   private declarePool(scope: DhcpScope): void {
@@ -438,6 +446,7 @@ export interface DhcpWiringHost {
   systemDnsServers?(): readonly string[];
   sendToServer?(server: IPAddress, packet: IPv4Packet): boolean;
   interfaceOwning?(address: string): string | null;
+  addressInUse?(iface: string, address: string): boolean;
 }
 
 export function createFirewallDhcp(host: DhcpWiringHost): FirewallDhcp {
@@ -456,5 +465,6 @@ export function createFirewallDhcp(host: DhcpWiringHost): FirewallDhcp {
     clearInterface: (iface) => { host.leaseLost(iface); },
     sendToServer: (server, packet) => host.sendToServer?.(server, packet) ?? false,
     interfaceOwning: (address) => host.interfaceOwning?.(address) ?? null,
+    addressInUse: (iface, address) => host.addressInUse?.(iface, address) ?? false,
   });
 }

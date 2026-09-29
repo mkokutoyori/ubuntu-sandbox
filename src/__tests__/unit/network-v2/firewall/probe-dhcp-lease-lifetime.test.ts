@@ -33,6 +33,13 @@
  * meme raison — il a ete mesure seul : la correspondance 0 → illimite
  * retiree, le bail prend la duree par defaut d'un jour et l'adresse est
  * reattribuee deux jours plus tard.
+ *
+ * Reecriture du laboratoire des adresses refusees : il faisait decliner
+ * l'adresse par un client Windows face a un squatteur ; depuis que le
+ * FortiGate sonde une adresse avant de l'offrir (RFC 2131 §3.1.2), il
+ * trouve le squatteur lui-meme et le client n'a plus rien a decliner. Le
+ * DHCPDECLINE part maintenant sur le fil, d'un poste qui a pris l'adresse,
+ * et les trois echeances mesurees sont les memes.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
@@ -42,6 +49,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { Cable } from '@/network/hardware/Cable';
 import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
+import { declineOnTheWire } from '../_helpers/dhcpDeclineOnTheWire';
 
 interface Shell { executeCommand(command: string): Promise<string> }
 
@@ -130,12 +138,11 @@ describe('a FortiGate lease runs out on the FortiGate clock', () => {
 describe('a declined address stays out of the range for conflicted-ip-timeout', () => {
   async function declinedLab(server: readonly string[]) {
     const lab = await fortiLab(server, ['10.1.0.100', '10.1.0.101']);
-    const squatter = lab.plug(new LinuxPC('linux-pc', 'SQUATTER'));
-    await type(squatter.host, ['sudo ip addr add 10.1.0.100/24 dev eth0', 'sudo ip link set eth0 up']);
-    const windows = lab.plug(new WindowsPC('windows-pc', 'WIN'));
-    await windows.host.executeCommand('ipconfig /renew');
+    const first = await lease(lab.plug, 'C0');
+    expect(first.address).toBe('10.1.0.100');
+    declineOnTheWire(first.host.getPorts()[0], '10.1.0.100', '10.1.0.1');
+    first.cable.disconnect();
     expect((await lease(lab.plug, 'C1')).address).toBe('10.1.0.101');
-    squatter.cable.disconnect();
     return lab;
   }
 

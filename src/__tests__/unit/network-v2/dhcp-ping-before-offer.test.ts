@@ -9,6 +9,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
+import { WindowsPC } from '@/network/devices/WindowsPC';
 import { Hub } from '@/network/devices/Hub';
 import { Cable } from '@/network/hardware/Cable';
 import { MACAddress, resetCounters } from '@/network/core/types';
@@ -82,5 +83,41 @@ describe('DHCP — proactive ping-before-offer conflict detection', () => {
     const out = await h1.executeCommand('dhclient -v eth0');
     expect(out).toContain('DHCPACK');
     expect(r1._getDHCPServerInternal().getConflicts().length).toBe(0);
+  });
+});
+
+describe('DHCP — a client that finds the offered address in use declines it', () => {
+  async function unprobedLab() {
+    const squatter = new LinuxPC('linux-pc', 'SQUATTER');
+    const windows = new WindowsPC('windows-pc', 'WIN');
+    const r1 = new CiscoRouter('R1');
+    const hub = new Hub('HUB', 4);
+    new Cable('a').connect(squatter.getPort('eth0')!, hub.getPort('eth0')!);
+    new Cable('b').connect(windows.getPort('eth0')!, hub.getPort('eth1')!);
+    new Cable('c').connect(r1.getPort('GigabitEthernet0/0')!, hub.getPort('eth2')!);
+    await run(r1, [
+      'enable', 'configure terminal',
+      'interface GigabitEthernet0/0', 'ip address 10.0.2.1 255.255.255.0', 'no shutdown', 'exit',
+      'ip dhcp ping packets 0',
+      'ip dhcp pool LAN', 'network 10.0.2.0 255.255.255.0', 'default-router 10.0.2.1', 'exit',
+      'ip dhcp excluded-address 10.0.2.1',
+      'end',
+    ]);
+    await run(squatter, ['sudo ip addr add 10.0.2.2/24 dev eth0', 'sudo ip link set eth0 up']);
+    await windows.executeCommand('ipconfig /renew');
+    return { squatter, windows, r1 };
+  }
+
+  it('a Windows client probes the address it was acknowledged and declines it when another host answers', async () => {
+    const { r1 } = await unprobedLab();
+    const conflicts = r1._getDHCPServerInternal().getConflicts();
+
+    expect(conflicts.map(c => `${c.ipAddress} ${c.detectionMethod}`)).toEqual(['10.0.2.2 DHCP Decline']);
+  });
+
+  it('the host that answers the probe does not keep the unspecified address in its neighbour cache', async () => {
+    const { squatter } = await unprobedLab();
+
+    expect(await squatter.executeCommand('ip neigh show')).not.toContain('0.0.0.0');
   });
 });

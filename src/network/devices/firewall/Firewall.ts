@@ -693,6 +693,7 @@ export class Firewall extends Equipment {
       },
       emitArpAware: (iface, packet, nextHop) =>
         this.sendIpv4FrameArpAware(iface, packet, nextHop),
+      probeAddress: (iface, address) => this.probeAddressOnLink(iface, address),
       assignAddress: (iface, ip, mask) => { this.configureInterface(iface, { ip, mask }); },
       forward: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
       systemDnsServers: () => {
@@ -2748,6 +2749,14 @@ export class Firewall extends Equipment {
 
   private emitArp(packet: ARPPacket, iface: string): void {
     this.sendFrame(iface, arpFrame(this.portMac(iface), packet));
+  }
+
+  private probeAddressOnLink(iface: string, address: string): boolean {
+    this.arp.forget(address);
+    const request = this.arp.buildRequest(address, iface);
+    if (request === undefined) return false;
+    this.emitArp(request, iface);
+    return this.arp.resolved(address) !== undefined;
   }
 
   private portMac(iface: string) {
