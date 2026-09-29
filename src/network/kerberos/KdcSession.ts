@@ -117,20 +117,28 @@ export class KdcSessionHandler {
       this.failAs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_C_PRINCIPAL_UNKNOWN);
       return;
     }
+    const isUser = !sam.endsWith('$');
+    if (isUser && (!this.ctx.store.isUserEnabled(sam) || this.ctx.store.isLockedOut(sam))) {
+      this.failAs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_CLIENT_REVOKED, 'Clients credentials have been revoked');
+      return;
+    }
     const realm = this.ctx.store.getRealm();
     const clientKey = stringToKey(secret, realm);
 
     const paEncTs = req.padata.find((p) => p.type === PA_ENC_TIMESTAMP);
-    if (!paEncTs) {
+    const preAuthOptional = isUser && this.ctx.store.userDoesNotRequirePreAuth(sam);
+    if (!paEncTs && !preAuthOptional) {
       this.failAs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_PREAUTH_REQUIRED, 'Additional pre-authentication required');
       return;
     }
-    if (!this.verifyPreAuth(paEncTs.value, clientKey)) {
-      if (!sam.endsWith('$')) this.ctx.store.recordBadPasswordAttempt(sam);
-      this.failAs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_PREAUTH_FAILED, 'Pre-authentication information was invalid');
-      return;
+    if (paEncTs) {
+      if (!this.verifyPreAuth(paEncTs.value, clientKey)) {
+        if (isUser) this.ctx.store.recordBadPasswordAttempt(sam);
+        this.failAs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_PREAUTH_FAILED, 'Pre-authentication information was invalid');
+        return;
+      }
+      if (isUser) this.ctx.store.resetBadPasswordCount(sam);
     }
-    if (!sam.endsWith('$')) this.ctx.store.resetBadPasswordCount(sam);
 
     const krbtgtSecret = this.ctx.store.getUserSecret('krbtgt');
     if (krbtgtSecret === null) {
@@ -144,7 +152,7 @@ export class KdcSessionHandler {
     const now = Math.floor(Date.now() / 1000);
     const endtime = Math.min(req.reqBody.till, now + TICKET_LIFETIME_SECONDS);
     const renewTill = now + RENEWABLE_LIFETIME_SECONDS;
-    const flags = { ...NO_TICKET_FLAGS, initial: true, preAuthent: true, renewable: true, forwardable: true };
+    const flags = { ...NO_TICKET_FLAGS, initial: true, preAuthent: paEncTs !== undefined, renewable: true, forwardable: true };
 
     const encTicketPart: EncTicketPart = {
       flags, key: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: sessionKeyValue },

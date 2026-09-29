@@ -29,7 +29,7 @@ import { parseCredentialArg } from './RemotingCmdlets';
 import { WindowsSecurityAudit, type SecurityEventSink } from '@/network/devices/windows/WindowsSecurityAudit';
 import { type AdFunctionalLevel, adFunctionalLevelKeywords, parseAdFunctionalLevel } from '@/network/devices/windows/server/ad/adFunctionalLevels';
 import { OU_PROPERTIES, OU_PROPERTY_PARAMETERS } from '@/network/devices/windows/server/ad/adOrganizationalUnit';
-import { USER_FLAGS, USER_FLAG_PARAMETERS, USER_PROPERTIES, USER_PROPERTY_PARAMETERS, accountExpiresValue } from '@/network/devices/windows/server/ad/adUser';
+import { ACCOUNT_CONTROL_FLAGS, USER_FLAGS, USER_FLAG_PARAMETERS, USER_PROPERTIES, USER_PROPERTY_PARAMETERS, accountExpiresValue } from '@/network/devices/windows/server/ad/adUser';
 import { OU_DEFAULT_PROPERTIES, USER_DEFAULT_PROPERTIES, GROUP_DEFAULT_PROPERTIES, COMPUTER_DEFAULT_PROPERTIES, adView } from './adPropertySets';
 import { IPAddress } from '@/network/core/types';
 import type { RemoteDirectoryTarget } from '@/powershell/providers/adRemoteDirectory';
@@ -687,6 +687,102 @@ export class EnableADAccountCmdlet implements ICmdlet {
     if (!res.ok) { ctx.emitError(`Enable-ADAccount : ${res.message}`); return null; }
     auditSinkFor(ctx)?.accountEnabled(identity, subjectUserOf(ctx));
     return null;
+  }
+}
+
+function identitiesOf(ctx: CmdletContext): string[] {
+  const raw = ctx.named['identity'] ?? ctx.positional[0];
+  const items = Array.isArray(raw) ? raw : raw === undefined ? [] : [raw];
+  return items.map(item => {
+    if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
+      const rec = item as Record<string, PSValue>;
+      if (rec.SamAccountName !== undefined) return psValueToString(rec.SamAccountName);
+      if (rec.DistinguishedName !== undefined) return psValueToString(rec.DistinguishedName);
+    }
+    return psValueToString(item);
+  }).filter(identity => identity !== '');
+}
+
+export class UnlockADAccountCmdlet implements ICmdlet {
+  readonly name = 'unlock-adaccount';
+  readonly displayName = 'Unlock-ADAccount';
+  readonly aliases = [] as const;
+  readonly pipelineByValue = 'Identity';
+  readonly parameters = ['Identity', 'Credential', 'Server', 'AuthType', 'Partition', 'WhatIf', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Unlock-ADAccount');
+    const identities = identitiesOf(ctx);
+    if (identities.length === 0) {
+      ctx.emitError('Unlock-ADAccount : Cannot process command because of one or more missing mandatory parameters: Identity.');
+      return null;
+    }
+    for (const identity of identities) {
+      if (ctx.named['whatif'] === true) {
+        ctx.emit(`What if: Performing the operation "Set" on target "${identity}".`);
+        continue;
+      }
+      const res = ad.unlockAccount(identity);
+      if (!res.ok) { ctx.emitError(`Unlock-ADAccount : ${res.message}`); continue; }
+      auditSinkFor(ctx)?.accountUnlocked(identity, subjectUserOf(ctx));
+    }
+    return null;
+  }
+}
+
+const UNMODELLED_ACCOUNT_CONTROL: Readonly<Record<string, string>> = {
+  homedirrequired: 'HomedirRequired sets ADS_UF_HOMEDIR_REQUIRED, and no logon path of this simulator reads it.',
+  mnslogonaccount: 'MNSLogonAccount marks an MNS logon account, and no logon path of this simulator reads it.',
+  trustedtoauthfordelegation: 'TrustedToAuthForDelegation needs S4U2Self protocol transition, which this KDC does not implement.',
+  usedeskeyonly: 'UseDESKeyOnly needs DES tickets, and this KDC issues AES256-CTS-HMAC-SHA1-96 only.',
+};
+
+export class SetADAccountControlCmdlet implements ICmdlet {
+  readonly name = 'set-adaccountcontrol';
+  readonly displayName = 'Set-ADAccountControl';
+  readonly aliases = [] as const;
+  readonly pipelineByValue = 'Identity';
+  readonly parameters = ['Identity',
+    ...ACCOUNT_CONTROL_FLAGS.map(flag => flag.parameter), 'CannotChangePassword',
+    'HomedirRequired', 'MNSLogonAccount', 'TrustedToAuthForDelegation', 'UseDESKeyOnly',
+    'Credential', 'Server', 'AuthType', 'PassThru', 'WhatIf', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Set-ADAccountControl');
+    const identities = identitiesOf(ctx);
+    if (identities.length === 0) {
+      ctx.emitError('Set-ADAccountControl : Cannot process command because of one or more missing mandatory parameters: Identity.');
+      return null;
+    }
+    for (const [key, reason] of Object.entries(UNMODELLED_ACCOUNT_CONTROL)) {
+      if (ctx.named[key] !== undefined) {
+        ctx.emitError(`Set-ADAccountControl : ${reason}`);
+        return null;
+      }
+    }
+    const flags: Record<string, boolean> = {};
+    for (const spec of ACCOUNT_CONTROL_FLAGS) {
+      const given = booleanArg(ctx, spec.parameter.toLowerCase());
+      if (given !== undefined) flags[spec.parameter] = given;
+    }
+    const cannotChangePassword = booleanArg(ctx, 'cannotchangepassword');
+    const results: PSValue[] = [];
+    for (const identity of identities) {
+      if (ctx.named['whatif'] === true) {
+        ctx.emit(`What if: Performing the operation "Set" on target "${identity}".`);
+        continue;
+      }
+      const res = ad.setAccountControl(identity, { flags, cannotChangePassword });
+      if (!res.ok) { ctx.emitError(`Set-ADAccountControl : ${res.message}`); continue; }
+      const audit = auditSinkFor(ctx);
+      const subject = subjectUserOf(ctx);
+      if (flags['Enabled'] === true) audit?.accountEnabled(identity, subject);
+      else if (flags['Enabled'] === false) audit?.accountDisabled(identity, subject);
+      if (Object.keys(flags).some(key => key !== 'Enabled') || cannotChangePassword !== undefined) audit?.accountChanged(identity, subject);
+      const user = ctx.named['passthru'] === true ? ad.getUser(identity) : null;
+      if (user) results.push(userToPSObject(user));
+    }
+    return results.length === 0 ? null : (results as PSValue);
   }
 }
 

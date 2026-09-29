@@ -768,6 +768,18 @@ class WindowsAdAdapter implements IAdProvider {
     if (denied) return denied;
     return store.setUser(store.resolveIdentity(identity), opts);
   }
+  unlockAccount(identity: string): AdOpResult {
+    const store = this.requireStore('Unlock-ADAccount');
+    const denied = this.requireAdmin('Unlock-ADAccount');
+    if (denied) return denied;
+    return store.unlockUser(identity);
+  }
+  setAccountControl(identity: string, change: { flags: Record<string, boolean>; cannotChangePassword?: boolean }): AdOpResult {
+    const store = this.requireStore('Set-ADAccountControl');
+    const denied = this.requireAdmin('Set-ADAccountControl');
+    if (denied) return denied;
+    return store.setAccountControl(identity, change);
+  }
   listUsers(): AdUserInfo[] {
     return this.requireStore('Get-ADUser').listUsers().map(userInfoOf);
   }

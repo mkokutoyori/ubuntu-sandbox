@@ -77,6 +77,12 @@ export const USER_FLAGS: readonly UserFlagSpec[] = [
 
 export const USER_FLAG_PARAMETERS: readonly string[] = USER_FLAGS.map(f => f.parameter);
 
+export const ACCOUNT_CONTROL_ONLY_FLAGS: readonly UserFlagSpec[] = [
+  { parameter: 'DoesNotRequirePreAuth', bit: USER_ACCOUNT_CONTROL.DONT_REQ_PREAUTH, inverted: false },
+];
+
+export const ACCOUNT_CONTROL_FLAGS: readonly UserFlagSpec[] = [...USER_FLAGS, ...ACCOUNT_CONTROL_ONLY_FLAGS];
+
 export function applyUserFlag(uac: number, spec: UserFlagSpec, wanted: boolean): number {
   const set = spec.inverted ? !wanted : wanted;
   return set ? (uac | spec.bit) >>> 0 : (uac & ~spec.bit) >>> 0;

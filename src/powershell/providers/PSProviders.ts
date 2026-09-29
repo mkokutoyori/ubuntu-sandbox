@@ -281,6 +281,10 @@ export interface IAdProvider {
   getUser(identity: string): AdUserInfo | null;
   listUsers(): AdUserInfo[];
   setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string }): AdOpResult;
+  /** `Unlock-ADAccount -Identity <user>` — clears the lockout and the bad-password counter. */
+  unlockAccount(identity: string): AdOpResult;
+  /** `Set-ADAccountControl -Identity <user> [-Enabled ...]` — flips userAccountControl bits (parameter names as in `ACCOUNT_CONTROL_FLAGS`), keeping every other bit. */
+  setAccountControl(identity: string, change: { flags: Record<string, boolean>; cannotChangePassword?: boolean }): AdOpResult;
   removeUser(identity: string): AdOpResult;
   /** Every user/computer object carrying at least one SPN — for cross-object duplicate-SPN detection (`Get-ADObject -Filter {ServicePrincipalName -like "*"}`). */
   listObjectsWithSpns(): Array<{ name: string; servicePrincipalNames: string[] }>;

@@ -31,7 +31,7 @@ import type { AttributeSchema, ObjectClassSchema, SchemaOpResult } from './schem
 import { TrustRegistry, type TrustDirection, type TrustOpResult, type TrustInfo, type TrustRecord } from './forest/TrustRelationship';
 import { DEFAULT_AD_FUNCTIONAL_LEVEL } from './adFunctionalLevels';
 import { OU_PROPERTIES, PROTECTION_OBJECT_RIGHTS, PROTECTION_PARENT_RIGHT, isProtectionAce, protectionAce } from './adOrganizationalUnit';
-import { NEVER_EXPIRES, USER_FLAGS, USER_PROPERTIES, CHANGE_PASSWORD_TRUSTEES, accountExpiresDate, applyUserFlag, cannotChangePasswordAce, isCannotChangePasswordAce, readUserFlag } from './adUser';
+import { ACCOUNT_CONTROL_FLAGS, NEVER_EXPIRES, USER_FLAGS, USER_PROPERTIES, CHANGE_PASSWORD_TRUSTEES, accountExpiresDate, applyUserFlag, cannotChangePasswordAce, isCannotChangePasswordAce, readUserFlag } from './adUser';
 import { GROUP_PROPERTIES, MEMBER_ALREADY_IN_GROUP, MEMBER_NOT_IN_GROUP, groupNestingProblem, groupTypeParts, groupTypeValue } from './adGroup';
 import { RECYCLE_BIN_FEATURE, findOptionalFeature, forestModeAdmits, requiredForestModeFor } from './adOptionalFeatures';
 import { getForestForDomain } from './forest/Forest';
@@ -940,7 +940,7 @@ export class DirectoryStore {
   private projectUserFlags(entry: DirectoryEntry): Record<string, boolean> {
     const uac = Number(firstOf(entry.attributes.get('useraccountcontrol'))) || 0;
     const out: Record<string, boolean> = {};
-    for (const spec of USER_FLAGS) out[spec.parameter] = readUserFlag(uac, spec);
+    for (const spec of ACCOUNT_CONTROL_FLAGS) out[spec.parameter] = readUserFlag(uac, spec);
     return out;
   }
 
@@ -989,7 +989,7 @@ export class DirectoryStore {
     }
     const changes: { op: 'replace' | 'add' | 'delete'; type: string; values: string[] }[] = [];
     if (opts.enabled !== undefined) {
-      changes.push({ op: 'replace', type: 'userAccountControl', values: [String(opts.enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE)] });
+      changes.push({ op: 'replace', type: 'userAccountControl', values: [String(this.uacAfter(entry, { Enabled: opts.enabled }))] });
     }
     if (opts.fullName !== undefined) changes.push({ op: 'replace', type: 'displayName', values: opts.fullName ? [opts.fullName] : [] });
     if (opts.password !== undefined) {
@@ -1035,6 +1035,49 @@ export class DirectoryStore {
   isLockedOut(sam: string): boolean {
     const entry = this.findUserEntry(sam);
     return entry ? firstOf(entry.attributes.get('lockouttime')) !== '' : false;
+  }
+
+  isUserEnabled(sam: string): boolean {
+    const entry = this.findUserEntry(sam);
+    return entry ? isEnabledFromUac(entry.attributes.get('useraccountcontrol')) : false;
+  }
+
+  userDoesNotRequirePreAuth(sam: string): boolean {
+    const entry = this.findUserEntry(sam);
+    if (!entry) return false;
+    const spec = ACCOUNT_CONTROL_FLAGS.find(f => f.parameter === 'DoesNotRequirePreAuth');
+    return spec ? readUserFlag(Number(firstOf(entry.attributes.get('useraccountcontrol'))) || 0, spec) : false;
+  }
+
+  private uacAfter(entry: DirectoryEntry, flags: Record<string, boolean | undefined>): number {
+    let uac = Number(firstOf(entry.attributes.get('useraccountcontrol'))) || 0;
+    for (const spec of ACCOUNT_CONTROL_FLAGS) {
+      const wanted = flags[spec.parameter];
+      if (wanted !== undefined) uac = applyUserFlag(uac, spec, wanted);
+    }
+    return uac;
+  }
+
+  /** `Unlock-ADAccount` — clears `lockoutTime` and the bad-password counter; an account that is not locked is left as it is, as in real AD. */
+  unlockUser(identity: string): DirOpResult {
+    const entry = this.findUserEntry(this.resolveIdentity(identity));
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${identity}' under: '${this.getDomainDn()}'.` };
+    this.tree.modifyEntry(entry.dn, [
+      { op: 'replace', type: 'lockoutTime', values: [] },
+      { op: 'replace', type: 'badPwdCount', values: [] },
+    ]);
+    return { ok: true, message: '' };
+  }
+
+  /** `Set-ADAccountControl` — flips userAccountControl bits, keeping every other bit, and the change-password ACE for `CannotChangePassword`. */
+  setAccountControl(identity: string, change: { flags: Record<string, boolean>; cannotChangePassword?: boolean }): DirOpResult {
+    const entry = this.findUserEntry(this.resolveIdentity(identity));
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${identity}' under: '${this.getDomainDn()}'.` };
+    if (Object.keys(change.flags).length > 0) {
+      this.tree.modifyEntry(entry.dn, [{ op: 'replace', type: 'userAccountControl', values: [String(this.uacAfter(entry, change.flags))] }]);
+    }
+    if (change.cannotChangePassword !== undefined) return this.setCannotChangePassword(identity, change.cannotChangePassword);
+    return { ok: true, message: '' };
   }
 
   /** `Search-ADAccount -LockedOut`. */
