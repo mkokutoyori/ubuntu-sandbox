@@ -21,7 +21,6 @@ export interface SshKeygenStore {
 
 export interface SshKeygenHost {
   readonly store: SshKeygenStore;
-  readonly separator: string;
   readonly sshDir: string;
   readonly hostKeyDir: string;
   readonly user: string;
@@ -109,24 +108,17 @@ interface KeygenRequest {
   readonly verbose: boolean;
 }
 
-function join(host: SshKeygenHost, ...parts: string[]): string {
-  return parts.join(host.separator);
-}
-
-function directoryOf(host: Pick<SshKeygenHost, 'separator'>, path: string): string {
-  const cut = path.lastIndexOf(host.separator);
+function directoryOf(path: string): string {
+  const cut = path.lastIndexOf('/');
   return cut <= 0 ? '' : path.slice(0, cut);
 }
 
-export function defaultKeygenFile(
-  host: Pick<SshKeygenHost, 'separator' | 'sshDir'>,
-  type: string,
-): string {
-  return [host.sshDir, DEFAULT_FILE_NAMES[type.toLowerCase()] ?? DEFAULT_FILE_NAMES[DEFAULT_KEYGEN_TYPE]].join(host.separator);
+function defaultKeygenFile(host: SshKeygenHost, type: string): string {
+  return `${host.sshDir}/${DEFAULT_FILE_NAMES[type.toLowerCase()] ?? DEFAULT_FILE_NAMES[DEFAULT_KEYGEN_TYPE]}`;
 }
 
-export function knownHostsPathOf(host: SshKeygenHost): string {
-  return join(host, host.sshDir, 'known_hosts');
+function knownHostsPathOf(host: SshKeygenHost): string {
+  return `${host.sshDir}/known_hosts`;
 }
 
 function strtonum(text: string, max: number): { value: number } | { error: string } {
@@ -281,7 +273,7 @@ function* printPublicDialogue(request: KeygenRequest, host: SshKeygenHost): Keyg
 function allHostKeys(request: KeygenRequest, host: SshKeygenHost): number {
   const dir = (request.file ?? host.hostKeyDir).replace(/[/\\]$/, '');
   for (const type of ['ed25519', 'rsa', 'ecdsa']) {
-    const privatePath = join(host, dir, `ssh_host_${type}_key`);
+    const privatePath = `${dir}/ssh_host_${type}_key`;
     if ((host.store.read(privatePath) ?? '') !== '') continue;
     const pair = keygenPair(KEYGEN_ALGORITHMS[type]!, `root@${host.hostname}`);
     host.store.write(privatePath, pair.priv, true);
@@ -306,7 +298,7 @@ function* generationDialogue(request: KeygenRequest, host: SshKeygenHost): Keyge
   if (!request.quiet) yield print(`Generating public/private ${requested} key pair.`);
   const file = request.file ?? (yield* askFile(host, 'Enter file in which to save the key', type));
   if (file === null) return 1;
-  if (directoryOf(host, file) === host.sshDir && !host.store.isDirectory(host.sshDir)) {
+  if (directoryOf(file) === host.sshDir && !host.store.isDirectory(host.sshDir)) {
     host.store.makePrivateDirectory(host.sshDir);
     if (!request.quiet) yield print(`Created directory '${host.sshDir}'.`);
   }
@@ -445,7 +437,6 @@ export function vfsKeygenHost(vfs: KeygenVfs, identity: KeygenIdentity): SshKeyg
         vfs.mkdirp(absolute(path), 0o700, identity.uid, identity.gid);
       },
     },
-    separator: '/',
     sshDir: identity.sshDir,
     hostKeyDir: identity.hostKeyDir ?? '/etc/ssh',
     user: identity.user,

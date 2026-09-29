@@ -58,7 +58,7 @@ describe('la chaine ssh-keygen -> ssh-add -> ssh tient sous Windows', () => {
   it('sans `-f`, la paire atterrit sous le profil de l utilisateur', async () => {
     const { win } = await labo();
     const out = await win.executeCommand('ssh-keygen -t ed25519 -N ""');
-    expect(out).toContain('\\.ssh\\id_ed25519');
+    expect(out).toContain('Your identification has been saved in C:\\Users\\User/.ssh/id_ed25519');
     const pub = await win.executeCommand('type %USERPROFILE%\\.ssh\\id_ed25519.pub');
     expect(pub.trim().startsWith('ssh-ed25519 ')).toBe(true);
   });

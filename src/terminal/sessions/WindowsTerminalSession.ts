@@ -16,6 +16,8 @@ import { primaryShellKindFor } from '@/shell/shellKind';
 import { SSH_PASSWORD_PROMPTS } from '@/shell/sshLauncher';
 import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
 import { OPENSSH_WINDOWS_8_6 } from '@/network/protocols/ssh/OpenSshRelease';
+import { isSshKeygenCapableHost } from '@/network/equipment/HostCapabilities';
+import { splitCmdArgs } from '@/network/devices/windows/cmdline';
 import {
   TerminalSession, TerminalTheme, SessionType, KeyEvent, nextLineId,
   withTimeout, DeviceOfflineError,
@@ -851,6 +853,18 @@ export class WindowsTerminalSession extends TerminalSession {
       : null;
     if (withoutSession) {
       for (const line of withoutSession.output.split('\n')) this.addLine(line);
+      this.notify();
+      return;
+    }
+
+    if (/^ssh-keygen(\.exe)?(\s|$)/i.test(trimmed) && !/[|&<>^%]/.test(trimmed) && isSshKeygenCapableHost(this.device)) {
+      const broker = new PromiseInputBrokerCtor(this.inputHostImpl);
+      await this.device.runSshKeygenInteractive(splitCmdArgs(trimmed).slice(1), {
+        print: (line) => { this.addLine(line); this.notify(); },
+        ask: (question, hidden) => hidden
+          ? broker.password(question, { trim: false })
+          : broker.ask(question, { trim: false }),
+      });
       this.notify();
       return;
     }
