@@ -132,6 +132,9 @@ describe('ssh-add : ce que l agent porte, et ce qu il en dit', () => {
   it('Windows : `ssh-add -l` sur un agent vide rend la MEME phrase', async () => {
     const pc = new WindowsPC('windows-pc', 'WIN1', 0, 0);
     pc.powerOn();
+    pc.setCurrentUser('Administrator');
+    await pc.executeCommand('sc config ssh-agent start= demand');
+    await pc.executeCommand('net start ssh-agent');
     expect(await pc.executeCommand('ssh-add -l')).toContain('The agent has no identities.');
   });
 });

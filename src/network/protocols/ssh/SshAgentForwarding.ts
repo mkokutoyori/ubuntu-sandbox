@@ -16,7 +16,7 @@ import type { SshAgent } from './SshAgent';
 
 export class SshAgentForwarding {
   private attached = false;
-  private installedPaths: string[] = [];
+  private installed: string[] = [];
 
   constructor(
     private readonly local: SshAgent,
@@ -30,14 +30,10 @@ export class SshAgentForwarding {
    */
   attach(): void {
     if (this.attached) return;
-    const remoteKeys = this.remote as unknown as {
-      keys: Map<string, unknown>;
-    };
     for (const key of this.local.list()) {
-      if (!this.remote.has(key.path)) {
-        remoteKeys.keys.set(key.path, key);
-        this.installedPaths.push(key.path);
-      }
+      if (this.remote.holds(key.blob)) continue;
+      this.remote.install(key);
+      this.installed.push(key.blob);
     }
     this.attached = true;
   }
@@ -48,15 +44,8 @@ export class SshAgentForwarding {
    */
   detach(): void {
     if (!this.attached) return;
-    for (const path of this.installedPaths) {
-      this.remote.remove(path);
-    }
-    this.installedPaths = [];
+    for (const blob of this.installed) this.remote.removeKey(blob);
+    this.installed = [];
     this.attached = false;
-  }
-
-  /** Snapshot of the paths this forwarding owns on the remote. */
-  getInstalledPaths(): readonly string[] {
-    return [...this.installedPaths];
   }
 }

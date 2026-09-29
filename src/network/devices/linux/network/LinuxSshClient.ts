@@ -20,6 +20,7 @@ import { findHostByAddress, isPathReachable } from './HostLookup';
 import { sshUnreachableReason, wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
 import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
+import { unprotectedPrivateKeyWarning } from '@/network/protocols/ssh/PrivateKeyPermissions';
 import { OPENSSH_UBUNTU_22_04 } from '@/network/protocols/ssh/OpenSshRelease';
 import { IPAddress } from '../../../core/types';
 import { parseDialAddress } from '../../../tcp/dial';
@@ -828,17 +829,14 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const iVal = iIdx >= 0 ? flags[iIdx + 1] : undefined;
   if (iVal && opts.localVfs?.resolveInode) {
     const inode = opts.localVfs.resolveInode(iVal, true);
-    if (inode && (inode.permissions & 0o077) !== 0) {
+    const warning = inode ? unprotectedPrivateKeyWarning(iVal, inode.permissions) : null;
+    if (warning) {
       return {
-        output:
-          `@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n` +
-          `@         WARNING: UNPROTECTED PRIVATE KEY FILE!          @\n` +
-          `@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n` +
-          `Permissions 0${inode.permissions.toString(8)} for '${iVal}' are too open.\n` +
-          `It is required that your private key files are NOT accessible by others.\n` +
-          `This private key will be ignored.\n` +
-          `Load key "${iVal}": bad permissions\n` +
+        output: [
+          ...warning,
+          `Load key "${iVal}": bad permissions`,
           `${opts.sourceUser}@${target ?? ''}: Permission denied (publickey,password).`,
+        ].join('\n'),
         exitCode: 255,
       };
     }

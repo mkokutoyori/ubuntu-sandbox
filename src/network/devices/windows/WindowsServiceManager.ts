@@ -258,14 +258,14 @@ export class WindowsServiceManager {
     const svc = (
       name: string, displayName: string, desc: string,
       opts: Partial<Pick<WindowsService, 'startType' | 'dependencies' | 'canPauseAndContinue'
-        | 'acceptsShutdown' | 'processName' | 'account' | 'serviceType' | 'state' | 'critical'>> = {}
+        | 'acceptsShutdown' | 'processName' | 'account' | 'serviceType' | 'state' | 'critical' | 'binaryPath'>> = {}
     ) => {
       this.services.set(name.toLowerCase(), {
         name, displayName, description: desc,
         state: opts.state ?? 'Running',
         startType: opts.startType ?? 'Automatic',
         serviceType: opts.serviceType ?? 'WIN32_SHARE_PROCESS',
-        binaryPath: `C:\\Windows\\System32\\svchost.exe -k ${name.toLowerCase()}`,
+        binaryPath: opts.binaryPath ?? `C:\\Windows\\System32\\svchost.exe -k ${name.toLowerCase()}`,
         account: opts.account ?? 'NT AUTHORITY\\LocalService',
         dependencies: opts.dependencies ?? [],
         canPauseAndContinue: opts.canPauseAndContinue ?? false,
@@ -360,7 +360,15 @@ export class WindowsServiceManager {
         dependencies: ['RpcSs'], processName: 'sshd.exe',
         binaryPath: 'C:\\Windows\\System32\\OpenSSH\\sshd.exe',
         account: 'NT AUTHORITY\\SYSTEM', serviceType: 'WIN32_OWN_PROCESS',
-      } as any);
+      });
+
+    svc('ssh-agent', 'OpenSSH Authentication Agent',
+      'Agent to hold private keys used for public key authentication.',
+      {
+        startType: 'Disabled', state: 'Stopped', processName: 'ssh-agent.exe',
+        binaryPath: 'C:\\Windows\\System32\\OpenSSH\\ssh-agent.exe',
+        account: 'NT AUTHORITY\\SYSTEM', serviceType: 'WIN32_OWN_PROCESS',
+      });
 
     // Audio
     svc('AudioSrv', 'Windows Audio', 'Manages audio for Windows-based programs',

@@ -6422,12 +6422,18 @@ export class LinuxCommandExecutor {
   // ─── su handler ──────────────────────────────────────────────────
 
   private agentHost(): SshAgentHost {
+    const absolute = (path: string) => this.vfs.normalizePath(path, this.cwd);
     return {
       agent: this.sshAgent,
-      reader: this.vfs,
-      separator: '/',
-      sshDir: `${this.sshHomeDir()}/.ssh`,
+      reader: { readFile: (path: string) => this.vfs.readFile(absolute(path)) },
+      homeDir: this.sshHomeDir(),
       authSocket: `/tmp/ssh-${this.userMgr.currentUser}/agent.1`,
+      release: OPENSSH_UBUNTU_22_04,
+      agentUnreachable: () => null,
+      privateKeyMode: (path: string) => {
+        const inode = this.vfs.resolveInode(absolute(path));
+        return inode && inode.uid === this.userMgr.currentUid ? inode.permissions : null;
+      },
       setEnvironment: (name: string, value: string) => { this.env.set(name, value); },
     };
   }

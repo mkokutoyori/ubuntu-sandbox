@@ -65,6 +65,10 @@ describe('la chaine ssh-keygen -> ssh-add -> ssh tient sous Windows', () => {
 
   it('`ssh-add` sans argument trouve l identite par defaut', async () => {
     const { win } = await labo();
+    win.setCurrentUser('Administrator');
+    await win.executeCommand('sc config ssh-agent start= demand');
+    await win.executeCommand('net start ssh-agent');
+    win.setCurrentUser('User');
     await win.executeCommand('ssh-keygen -t ed25519 -N ""');
     const ajout = await win.executeCommand('ssh-add');
     expect(ajout).toContain('Identity added:');

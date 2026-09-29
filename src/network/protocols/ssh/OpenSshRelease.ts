@@ -4,7 +4,16 @@ export interface OpenSshRelease {
   readonly clientVersion: string;
   readonly sshUsage: string;
   readonly keygenUsage: string;
+  readonly addUsage: string;
+  readonly addOptstring: string;
 }
+
+const ADD_USAGE_TAIL = [
+  '               [file ...]',
+  '       ssh-add -s pkcs11',
+  '       ssh-add -e pkcs11',
+  '       ssh-add -T pubkey ...',
+];
 
 const SSH_USAGE_HEAD = [
   'usage: ssh [-46AaCfGgKkMNnqsTtVvXxYy] [-B bind_interface]',
@@ -61,6 +70,12 @@ export const OPENSSH_UBUNTU_22_04: OpenSshRelease = {
     '       ssh-keygen -Y verify -f allowed_signers_file -I signer_identity',
     '                  -n namespace -s signature_file [-r krl_file] [-O option]',
   ].join('\n'),
+  addUsage: [
+    'usage: ssh-add [-cDdKkLlqvXx] [-E fingerprint_hash] [-H hostkey_file]',
+    '               [-h destination_constraint] [-S provider] [-t life]',
+    ...ADD_USAGE_TAIL,
+  ].join('\n'),
+  addOptstring: '+vkKlLcdDTxXE:e:h:H:M:m:qs:S:t:',
 };
 
 export const OPENSSH_WINDOWS_8_6: OpenSshRelease = {
@@ -76,4 +91,9 @@ export const OPENSSH_WINDOWS_8_6: OpenSshRelease = {
     '       ssh-keygen -Y verify -f allowed_signers_file -I signer_identity',
     '                  -n namespace -s signature_file [-r revocation_file]',
   ].join('\n'),
+  addUsage: [
+    'usage: ssh-add [-cDdKkLlqvXx] [-E fingerprint_hash] [-S provider] [-t life]',
+    ...ADD_USAGE_TAIL,
+  ].join('\n'),
+  addOptstring: '+vkKlLcdDTxXE:e:M:m:qs:S:t:',
 };

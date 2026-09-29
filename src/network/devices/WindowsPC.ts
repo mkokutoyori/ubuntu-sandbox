@@ -2202,10 +2202,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return `C:\\Users\\${this.userMgr.currentUser}`;
   }
 
-  private sshProfileDir(): string {
-    return `${this.userProfileDir()}\\.ssh`;
-  }
-
   private keygenHost(): SshKeygenHost {
     return {
       store: {
@@ -2240,9 +2236,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           return r.ok ? (r.content ?? '') : null;
         },
       },
-      separator: '\\',
-      sshDir: this.sshProfileDir(),
+      homeDir: this.userProfileDir(),
       authSocket: `${this.userProfileDir()}\\AppData\\Local\\Temp\\ssh-${this.userMgr.currentUser}\\agent.1`,
+      release: OPENSSH_WINDOWS_8_6,
+      agentUnreachable: () => (this.svcMgr.getService('ssh-agent')?.state === 'Running'
+        ? null
+        : 'Error connecting to agent: No such file or directory'),
+      privateKeyMode: () => null,
       setEnvironment: (name: string, value: string) => { this.setEnvVar(name, value); },
     };
   }
