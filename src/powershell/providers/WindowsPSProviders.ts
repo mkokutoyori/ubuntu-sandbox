@@ -103,6 +103,7 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
 import type { GroupWriteOptions, OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
 import type { AdGroup, AdUser } from '@/network/devices/windows/server/ad/AdTypes';
+import { DEFAULT_LOCKOUT_POLICY } from '@/network/devices/windows/server/ad/AdTypes';
 import { withRemoteDirectory } from './adRemoteDirectory';
 import { MEMBER_ALREADY_IN_GROUP, MEMBER_NOT_IN_GROUP, groupTypeValue } from '@/network/devices/windows/server/ad/adGroup';
 import { PRIVILEGED_ACCESS_MANAGEMENT_FEATURE, TTL_WITHOUT_PAM_FEATURE } from '@/network/devices/windows/server/ad/adOptionalFeatures';
@@ -599,9 +600,9 @@ class WindowsAdAdapter implements IAdProvider {
       passwordHistoryCount: p.passwordHistoryLength ?? 24,
       maxPasswordAgeDays: p.maxPasswordAge ?? 42,
       minPasswordAgeDays: p.minPasswordAge ?? 1,
-      lockoutThreshold: p.lockoutThreshold ?? 5,
-      lockoutDurationMinutes: p.lockoutDurationMinutes ?? 30,
-      lockoutObservationWindowMinutes: p.lockoutWindowMinutes ?? 30,
+      lockoutThreshold: p.lockoutThreshold ?? DEFAULT_LOCKOUT_POLICY.threshold,
+      lockoutDurationMinutes: p.lockoutDurationMinutes ?? DEFAULT_LOCKOUT_POLICY.durationMinutes,
+      lockoutObservationWindowMinutes: p.lockoutWindowMinutes ?? DEFAULT_LOCKOUT_POLICY.windowMinutes,
       complexityEnabled: p.complexityEnabled ?? true,
       reversibleEncryptionEnabled: p.reversibleEncryptionEnabled ?? false,
     };

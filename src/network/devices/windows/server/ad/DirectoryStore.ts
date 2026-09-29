@@ -19,7 +19,7 @@ import { DirectoryTree, type DirectoryEntry, type EntryReplMeta, type Modificati
 import { parseDN, formatDN, leafValue, type DistinguishedName } from './ldap/LdapDN';
 import type { LdapBindCheck } from './ldap/LdapServer';
 import type { AdUser, AdGroup, AdComputer, AdOrgUnit, Gpo, GpoSettings, GpoAccountPolicy, GpoRegistryValue, GpoLinkInfo, AdFineGrainedPasswordPolicy, AdAccessRule, AdGenericObject, AdServiceAccount } from './AdTypes';
-import { encodeGpLink, decodeGpLink } from './AdTypes';
+import { DEFAULT_LOCKOUT_POLICY, encodeGpLink, decodeGpLink } from './AdTypes';
 import { generateId } from '@/network/core/types';
 import {
   type HighWatermarkVector, emptyHighWatermarkVector, recordUsn, cloneHighWatermarkVector,
@@ -1007,34 +1007,74 @@ export class DirectoryStore {
     return { ok: true, message: '' };
   }
 
-  /** AD's Default Domain Policy LockoutThreshold default: 5 bad passwords locks the account (PRD-Windows-Server-Advanced §5 password policy). */
-  private static readonly LOCKOUT_THRESHOLD = 5;
+  /**
+   * The lockout policy that governs `sam`: the fine-grained PSO that
+   * resolves for the account when there is one, else the Default Domain
+   * Policy, field by field. Threshold 0 never locks; duration 0 keeps the
+   * lock until an administrator unlocks the account.
+   */
+  private lockoutPolicyFor(sam: string): { threshold: number; durationMinutes: number; windowMinutes: number } {
+    const domain = this.getDefaultDomainPasswordPolicy();
+    const pso = this.getResultantPasswordPolicy(sam)?.settings ?? {};
+    return {
+      threshold: pso.lockoutThreshold ?? domain.lockoutThreshold ?? DEFAULT_LOCKOUT_POLICY.threshold,
+      durationMinutes: pso.lockoutDurationMinutes ?? domain.lockoutDurationMinutes ?? DEFAULT_LOCKOUT_POLICY.durationMinutes,
+      windowMinutes: pso.lockoutWindowMinutes ?? domain.lockoutWindowMinutes ?? DEFAULT_LOCKOUT_POLICY.windowMinutes,
+    };
+  }
 
-  /** A failed Kerberos pre-authentication (bad password) — increments badPwdCount and locks the account once the threshold is reached, matching real AD. */
+  private lockedAtMs(entry: DirectoryEntry): number {
+    return Number(firstOf(entry.attributes.get('lockouttime'))) || 0;
+  }
+
+  private lockoutActive(entry: DirectoryEntry): boolean {
+    const lockedAt = this.lockedAtMs(entry);
+    if (lockedAt === 0) return false;
+    const { durationMinutes } = this.lockoutPolicyFor(firstOf(entry.attributes.get('samaccountname')));
+    return durationMinutes === 0 || this.now().getTime() < lockedAt + durationMinutes * 60_000;
+  }
+
+  /**
+   * A failed Kerberos pre-authentication (bad password): counts it inside the
+   * observation window (a count older than the window starts again, and so
+   * does the count of an account whose lockout has run out) and locks the
+   * account once the threshold is reached, on the machine's simulated clock.
+   */
   recordBadPasswordAttempt(sam: string): void {
     const entry = this.findUserEntry(sam);
     if (!entry) return;
-    const count = Number(firstOf(entry.attributes.get('badpwdcount'))) || 0;
-    const next = count + 1;
+    const policy = this.lockoutPolicyFor(sam);
+    const nowMs = this.now().getTime();
+    const lockRanOut = this.lockedAtMs(entry) !== 0 && !this.lockoutActive(entry);
+    const lastBadAt = Number(firstOf(entry.attributes.get('badpasswordtime'))) || 0;
+    const windowElapsed = lastBadAt !== 0 && nowMs - lastBadAt > policy.windowMinutes * 60_000;
+    const previous = lockRanOut || windowElapsed ? 0 : Number(firstOf(entry.attributes.get('badpwdcount'))) || 0;
+    const next = previous + 1;
     const changes: { op: 'replace'; type: string; values: string[] }[] = [
       { op: 'replace', type: 'badPwdCount', values: [String(next)] },
+      { op: 'replace', type: 'badPasswordTime', values: [String(nowMs)] },
     ];
-    if (next >= DirectoryStore.LOCKOUT_THRESHOLD) {
-      changes.push({ op: 'replace', type: 'lockoutTime', values: [String(Math.floor(Date.now() / 1000))] });
+    if (lockRanOut) changes.push({ op: 'replace', type: 'lockoutTime', values: [] });
+    if (policy.threshold > 0 && next >= policy.threshold) {
+      changes.push({ op: 'replace', type: 'lockoutTime', values: [String(nowMs)] });
     }
     this.tree.modifyEntry(entry.dn, changes);
   }
 
-  /** A successful logon resets the bad-password counter, matching real AD. */
+  /** A successful logon resets the bad-password counter and any lockout that had run out, matching real AD. */
   resetBadPasswordCount(sam: string): void {
     const entry = this.findUserEntry(sam);
     if (!entry) return;
-    this.tree.modifyEntry(entry.dn, [{ op: 'replace', type: 'badPwdCount', values: [] }]);
+    this.tree.modifyEntry(entry.dn, [
+      { op: 'replace', type: 'badPwdCount', values: [] },
+      { op: 'replace', type: 'badPasswordTime', values: [] },
+      { op: 'replace', type: 'lockoutTime', values: [] },
+    ]);
   }
 
   isLockedOut(sam: string): boolean {
     const entry = this.findUserEntry(sam);
-    return entry ? firstOf(entry.attributes.get('lockouttime')) !== '' : false;
+    return entry ? this.lockoutActive(entry) : false;
   }
 
   isUserEnabled(sam: string): boolean {
@@ -1065,6 +1105,7 @@ export class DirectoryStore {
     this.tree.modifyEntry(entry.dn, [
       { op: 'replace', type: 'lockoutTime', values: [] },
       { op: 'replace', type: 'badPwdCount', values: [] },
+      { op: 'replace', type: 'badPasswordTime', values: [] },
     ]);
     return { ok: true, message: '' };
   }
@@ -1083,7 +1124,7 @@ export class DirectoryStore {
   /** `Search-ADAccount -LockedOut`. */
   listLockedOutUsers(): Array<{ sam: string; name: string; badPwdCount: number }> {
     return this.listUserEntries()
-      .filter(e => firstOf(e.attributes.get('lockouttime')) !== '')
+      .filter(e => this.lockoutActive(e))
       .map(e => ({
         sam: firstOf(e.attributes.get('samaccountname')),
         name: firstOf(e.attributes.get('displayname')) || firstOf(e.attributes.get('samaccountname')),

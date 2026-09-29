@@ -30,6 +30,23 @@
  * src/network/kerberos/KdcSession.ts et src/powershell, l'enum
  * KDC_ERR_CLIENT_REVOKED conservee : sans elle, `errorCode` attendu vaudrait
  * `undefined` et un succes le satisferait a tort) : 9 des 12 cas tombent.
+ *
+ * Politique de verrouillage : le seuil etait un 5 code en dur dans le magasin
+ * alors que `Set-ADDefaultDomainPasswordPolicy -LockoutThreshold|-LockoutDuration|
+ * -LockoutObservationWindow` etaient acceptes et rendus par
+ * `Get-ADDefaultDomainPasswordPolicy` sans que rien ne les lise — encore un
+ * critere stocke sans etre evalue. Le KDC lit maintenant la politique
+ * RESULTANTE du compte (le PSO qui s'applique, sinon la politique du domaine,
+ * champ par champ) : seuil 0 = jamais de verrou ; duree 0 = verrou jusqu'a
+ * Unlock-ADAccount ; sinon le verrou tombe seul apres la duree ; un compteur
+ * plus vieux que la fenetre d'observation repart de zero. Le tout sur
+ * l'horloge simulee du DC (`advanceTime`), pas sur l'heure murale.
+ * Les sept cas « lockout policy » : 5 tombent contre le commit precedent
+ * (seuil fixe, verrou sans expiration) ; passent des deux cotes « une duree de
+ * zero garde le verrou » et « dans la fenetre, les echecs se cumulent » —
+ * GARDES : l'ancien comportement les satisfaisait, ils empechent le nouveau de
+ * lever un verrou trop tot.
+ *
  * Passent des deux cotes, et pourquoi :
  *  - « TEMOIN : un compte sain obtient un TGT » — le lab, le KDC et le
  *    client sont sains, donc un refus mesure le verrou et non un reseau mort.
@@ -200,5 +217,74 @@ describe('Unlock-ADAccount / Set-ADAccountControl on the KDC', () => {
     expect(await run(dc, 'Set-ADAccountControl -Identity alice -UseDESKeyOnly $true')).toMatch(/DES tickets/);
     expect(await run(dc, 'Set-ADAccountControl -Identity alice -TrustedToAuthForDelegation $true')).toMatch(/S4U2Self/);
     expect(await run(dc, '(Get-ADUser alice -Properties PasswordNeverExpires).PasswordNeverExpires')).toBe('True');
+  });
+});
+
+describe('lockout policy — duration, observation window, threshold, PSO', () => {
+  const minutes = (n: number): number => n * 60_000;
+
+  it('le verrou tombe seul après LockoutDuration (30 minutes par défaut)', async () => {
+    const { dc, client } = await lab();
+    lockOut(client);
+    dc.advanceTime(minutes(29));
+    expect(asExchange(client, 'alicepw').errorCode).toBe(KrbErrorCode.KDC_ERR_CLIENT_REVOKED);
+    expect(await run(dc, '(Search-ADAccount -LockedOut).SamAccountName')).toContain('alice');
+    dc.advanceTime(minutes(2));
+    expect(await run(dc, '(Search-ADAccount -LockedOut).SamAccountName')).not.toContain('alice');
+    expect(asExchange(client, 'alicepw').ok).toBe(true);
+  });
+
+  it('une durée de zéro garde le verrou jusqu à Unlock-ADAccount', async () => {
+    const { dc, client } = await lab();
+    await run(dc, 'Set-ADDefaultDomainPasswordPolicy -Identity lab.local -LockoutDuration (New-TimeSpan -Minutes 0)');
+    lockOut(client);
+    dc.advanceTime(minutes(60 * 24));
+    expect(asExchange(client, 'alicepw').errorCode).toBe(KrbErrorCode.KDC_ERR_CLIENT_REVOKED);
+    await run(dc, 'Unlock-ADAccount -Identity alice');
+    expect(asExchange(client, 'alicepw').ok).toBe(true);
+  });
+
+  it('LockoutThreshold est celui de la politique, pas un cinq codé en dur', async () => {
+    const { dc, client } = await lab();
+    await run(dc, 'Set-ADDefaultDomainPasswordPolicy -Identity lab.local -LockoutThreshold 3');
+    asExchange(client, 'wrongpassword');
+    asExchange(client, 'wrongpassword');
+    expect(asExchange(client, 'alicepw').ok).toBe(true);
+    for (let attempt = 0; attempt < 3; attempt++) asExchange(client, 'wrongpassword');
+    expect(asExchange(client, 'alicepw').errorCode).toBe(KrbErrorCode.KDC_ERR_CLIENT_REVOKED);
+  });
+
+  it('un seuil de zéro ne verrouille jamais', async () => {
+    const { dc, client } = await lab();
+    await run(dc, 'Set-ADDefaultDomainPasswordPolicy -Identity lab.local -LockoutThreshold 0');
+    for (let attempt = 0; attempt < 20; attempt++) asExchange(client, 'wrongpassword');
+    expect(asExchange(client, 'alicepw').ok).toBe(true);
+  });
+
+  it('la fenêtre d observation remet le compteur à zéro', async () => {
+    const { dc, client } = await lab();
+    for (let attempt = 0; attempt < 4; attempt++) asExchange(client, 'wrongpassword');
+    dc.advanceTime(minutes(31));
+    asExchange(client, 'wrongpassword');
+    expect(asExchange(client, 'alicepw').ok).toBe(true);
+  });
+
+  it('dans la fenêtre, les échecs se cumulent jusqu au verrou', async () => {
+    const { dc, client } = await lab();
+    for (let attempt = 0; attempt < 4; attempt++) asExchange(client, 'wrongpassword');
+    dc.advanceTime(minutes(10));
+    asExchange(client, 'wrongpassword');
+    expect(asExchange(client, 'alicepw').errorCode).toBe(KrbErrorCode.KDC_ERR_CLIENT_REVOKED);
+  });
+
+  it('une politique fine du compte l emporte sur celle du domaine', async () => {
+    const { dc, client } = await lab();
+    await run(dc, 'New-ADFineGrainedPasswordPolicy -Name Strict -Precedence 1 -LockoutThreshold 2 -LockoutDuration (New-TimeSpan -Minutes 10) -LockoutObservationWindow (New-TimeSpan -Minutes 10) -MinPasswordLength 8 -ComplexityEnabled $true');
+    await run(dc, 'Add-ADFineGrainedPasswordPolicySubject -Identity Strict -Subjects alice');
+    asExchange(client, 'wrongpassword');
+    asExchange(client, 'wrongpassword');
+    expect(asExchange(client, 'alicepw').errorCode).toBe(KrbErrorCode.KDC_ERR_CLIENT_REVOKED);
+    dc.advanceTime(minutes(11));
+    expect(asExchange(client, 'alicepw').ok).toBe(true);
   });
 });

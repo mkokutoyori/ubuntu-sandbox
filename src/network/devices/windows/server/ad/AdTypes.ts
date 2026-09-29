@@ -87,6 +87,8 @@ export interface GpoAccountPolicy {
   reversibleEncryptionEnabled?: boolean;
 }
 
+export const DEFAULT_LOCKOUT_POLICY = { threshold: 5, durationMinutes: 30, windowMinutes: 30 } as const;
+
 /** A Fine-Grained Password Policy (`msDS-PasswordSettings`, PRD-Windows-Server-Advanced.md §5 P10) — the same account-policy shape as a GPO's, plus the precedence that resolves conflicts between PSOs applying to the same account (lowest wins) and the direct/group subjects it applies to. */
 export interface AdFineGrainedPasswordPolicy {
   readonly name: string;

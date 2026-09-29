@@ -43,7 +43,7 @@ async function buildLan(): Promise<{ dc: WindowsServer; member: WindowsServer; c
   dc.setCurrentUser('Administrator');
   await run(ps(dc), 'Install-WindowsFeature AD-Domain-Services');
   await run(ps(dc), 'Install-ADDSForest -DomainName lab.local -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
-  await run(ps(dc), 'New-ADUser -Name alice -AccountPassword (ConvertTo-SecureString "alicepw" -AsPlainText -Force) -DisplayName "Alice"');
+  await run(ps(dc), 'New-ADUser -Enabled $true -Name alice -AccountPassword (ConvertTo-SecureString "alicepw" -AsPlainText -Force) -DisplayName "Alice"');
   await run(ps(dc), 'New-ADGroup -Name Engineers -GroupScope Global');
   await run(ps(dc), 'Add-ADGroupMember -Identity Engineers -Members alice');
 
