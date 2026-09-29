@@ -6,6 +6,7 @@
  * The owning session routes keyboard events and line input to it.
  */
 
+import type { BashPromptParts } from '@/network/devices/linux/shell/BashPrompt';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { RichOutputLine } from '@/terminal/core/types';
 import type { IShellBase } from '@/shell/IShellBase';
@@ -49,6 +50,8 @@ export interface SubShellResult {
 export interface ISubShell extends IShellBase {
   /** Current prompt string (e.g. "SQL> ", "PS C:\> "). */
   getPrompt(): string;
+
+  getPromptParts?(): BashPromptParts | null;
 
   /**
    * Handle a key event. Returns true if consumed, false to let
@@ -103,6 +106,8 @@ export interface ISubShell extends IShellBase {
   getCompletionsAsync?(line: string): Promise<string[]>;
 
   completesWholeLine?(): boolean;
+
+  completionStyle?(): 'readline' | 'cycling';
 
   /**
    * Continuation hook: after the host terminal collects the value

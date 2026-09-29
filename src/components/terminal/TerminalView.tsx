@@ -30,6 +30,7 @@ import {
 } from '@/terminal/core/lineEditing';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { LinuxEditorFsContext } from '@/terminal/sessions/LinuxEditorFsContext';
+import { parseBashPrompt } from '@/network/devices/linux/shell/BashPrompt';
 
 // ─── Hook: subscribe to a session's state changes ─────────────────
 
@@ -760,11 +761,9 @@ const PromptRenderer: React.FC<{ session: TerminalSession; sessionType: string; 
 /** Render a single output line — exported for unit tests. */
 export const LineRenderer: React.FC<{ line: OutputLine; theme: TerminalTheme; sessionType: string }> = React.memo(({ line, theme, sessionType }) => {
   if (line.promptText !== undefined) {
-    const linuxPromptMatch = sessionType === 'linux'
-      ? line.promptText.match(/^(\S+)@(\S+):(.+?)([$#])\s*$/)
-      : null;
-    if (linuxPromptMatch) {
-      const [, user, hostname, path, char] = linuxPromptMatch;
+    const linuxPrompt = sessionType === 'linux' ? parseBashPrompt(line.promptText) : null;
+    if (linuxPrompt) {
+      const { user, hostname, path, promptChar: char } = linuxPrompt;
       return (
         <pre className="whitespace-pre-wrap" style={{ margin: 0, fontFamily: 'inherit' }}>
           <span style={{ color: user === 'root' ? '#ef2929' : '#8ae234', fontWeight: 'bold' }}>{user}@{hostname}</span>

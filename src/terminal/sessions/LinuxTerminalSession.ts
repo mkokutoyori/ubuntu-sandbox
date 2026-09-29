@@ -58,7 +58,10 @@ import { validateSudoersContent } from '@/network/devices/linux/iam/PwGrCheck';
 import { validateCrontabContent } from '@/network/devices/linux/cron/CrontabParser';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
-import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder, driveSubShellTab } from '@/terminal/completion';
+import { CompletionController, ReadlinePolicy, LastWordSource, ghostRemainder, driveSubShellTab, SubShellCompletionControllers } from '@/terminal/completion';
+import {
+  bashPromptParts, collapseHome, formatBashPrompt, type BashPromptParts,
+} from '@/network/devices/linux/shell/BashPrompt';
 import type { SubShellTabHost } from '@/terminal/completion';
 import { toInteractiveSteps } from '@/terminal/flows/planAdapter';
 import { analyzeBashInput } from '@/bash/incompleteInput';
@@ -160,7 +163,7 @@ export class LinuxTerminalSession extends TerminalSession {
   tabSuggestions: string[] | null = null;
   private readonly rootCompletion =
     new CompletionController(new ReadlinePolicy({ caseInsensitive: false }));
-  private readonly subShellCompletion = new CompletionController(new CyclingPolicy());
+  private readonly subShellCompletion = new SubShellCompletionControllers();
   /** Active sub-shell (SQL*Plus, or any future REPL). Null when in normal bash mode. */
   private activeSubShell: ISubShell | null = null;
 
@@ -451,14 +454,18 @@ export class LinuxTerminalSession extends TerminalSession {
     // PS2 continuation prompt while accumulating an incomplete command
     // (open quote, trailing `\`, dangling connector, open block, heredoc).
     if (this._continuationBuffer !== null) return this.ps2Prompt;
-    const hostname = this.device.getHostname() || 'localhost';
+    return formatBashPrompt(this.localBashParts());
+  }
+
+  private localBashParts(): BashPromptParts {
     const user = this.currentUser;
-    const homeDir = user === 'root' ? '/root' : `/home/${user}`;
-    let path = this.currentPath;
-    if (path === homeDir) path = '~';
-    else if (path.startsWith(homeDir + '/')) path = '~' + path.slice(homeDir.length);
-    const promptChar = user === 'root' ? '#' : '$';
-    return `${user}@${hostname}:${path}${promptChar} `;
+    return bashPromptParts({
+      user,
+      root: this.shell ? this.shell.uid === 0 : user === 'root',
+      hostname: this.device.getHostname() || 'localhost',
+      cwd: this.currentPath,
+      home: homeDirectoryOn(this.device, user),
+    });
   }
 
   /**
@@ -504,6 +511,8 @@ export class LinuxTerminalSession extends TerminalSession {
       return (this.foreground as LinuxTerminalSession).getPromptParts();
     }
     if (this.activeSubShell) {
+      const remoteBash = this.activeSubShell.getPromptParts?.();
+      if (remoteBash) return remoteBash;
       const kind = (this.activeSubShell as { kind?: string; inner?: { kind?: string } }).kind
         ?? (this.activeSubShell as { inner?: { kind?: string } }).inner?.kind
         ?? '';
@@ -522,14 +531,7 @@ export class LinuxTerminalSession extends TerminalSession {
         };
       }
     }
-    const hostname = this.device.getHostname() || 'localhost';
-    const user = this.currentUser;
-    const homeDir = user === 'root' ? '/root' : `/home/${user}`;
-    let path = this.currentPath;
-    if (path === homeDir) path = '~';
-    else if (path.startsWith(homeDir + '/')) path = '~' + path.slice(homeDir.length);
-    const promptChar = user === 'root' ? '#' : '$';
-    return { user, hostname, path, promptChar };
+    return this.localBashParts();
   }
 
   /** Peek inside an SSH-remote adapter to learn the inner top-of-stack kind. */
@@ -545,13 +547,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // `getPromptParts`), which is the right place to surface that.
     const local = this.getLocalDevice();
     const hostname = local.getHostname() || 'localhost';
-    const homeDir =
-      this.localUser === 'root' ? '/root' : `/home/${this.localUser}`;
-    let path = this.localPath;
-    if (path === homeDir) path = '~';
-    else if (path.startsWith(homeDir + '/')) {
-      path = '~' + path.slice(homeDir.length);
-    }
+    const path = collapseHome(this.localPath, homeDirectoryOn(local, this.localUser));
     return { left: `${this.localUser}@${hostname}: ${path}` };
   }
 
@@ -4062,6 +4058,12 @@ export class LinuxTerminalSession extends TerminalSession {
  * remote machine without touching the simulated SSH transport. Returns
  * null when the target is not a Linux device managed by the sandbox.
  */
+function homeDirectoryOn(device: Equipment, user: string): string {
+  return device instanceof LinuxMachine
+    ? device.homeDirectoryOf(user)
+    : user === 'root' ? '/root' : `/home/${user}`;
+}
+
 function findEquipmentByIp(targetIp: string): Equipment | null {
   const all = EquipmentRegistry.getInstance().getAll();
   for (const eq of all) {

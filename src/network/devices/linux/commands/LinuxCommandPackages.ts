@@ -54,7 +54,7 @@ export const COMMAND_PACKAGES: Readonly<Record<string, string>> = {
   telnet: 'inetutils-telnet',
   ssh: 'openssh-client', scp: 'openssh-client', sftp: 'openssh-client',
   'ssh-keygen': 'openssh-client', 'ssh-keyscan': 'openssh-client',
-  'ssh-copy-id': 'openssh-client',
+  'ssh-copy-id': 'openssh-client', 'ssh-add': 'openssh-client', 'ssh-agent': 'openssh-client',
   sshpass: 'sshpass',
   passwd: 'passwd', useradd: 'passwd', userdel: 'passwd', usermod: 'passwd',
   groupadd: 'passwd', groupdel: 'passwd', groupmod: 'passwd', chage: 'passwd',

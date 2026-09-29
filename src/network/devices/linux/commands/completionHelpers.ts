@@ -38,7 +38,8 @@ export function makeArgCompleter(spec: ArgCompletionSpec): CompleteFn {
       return spec.firstWords.filter((w) => w.startsWith(partial));
     }
     if (spec.hostsAtBarePosition && !partial.startsWith('-')) {
-      return knownHosts(ctx).filter((h) => h.startsWith(partial));
+      const user = partial.slice(0, partial.lastIndexOf('@') + 1);
+      return knownHosts(ctx).map((h) => user + h).filter((h) => h.startsWith(partial));
     }
     return [];
   };

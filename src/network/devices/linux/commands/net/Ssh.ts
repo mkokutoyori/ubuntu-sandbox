@@ -16,6 +16,7 @@ export const sshCommand: LinuxCommand = {
   help: 'OpenSSH remote login client.',
   complete: makeArgCompleter({
     flags: ['-p', '-i', '-o', '-l', '-t', '-T', '-q', '-v', '-N', '-L', '-R', '-D', '-J', '-A'],
+    hostsAtBarePosition: true,
   }),
   options: [
     { flag: '-p', description: 'Port to connect to on the remote host.', takesArg: true, argName: 'port' },

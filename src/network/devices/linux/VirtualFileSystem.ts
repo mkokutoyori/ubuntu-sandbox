@@ -1406,7 +1406,8 @@ export class VirtualFileSystem {
 
     const results: string[] = [];
     if (part.includes('*') || part.includes('?') || part.includes('[')) {
-      for (const [name] of inode.children) {
+      const names = [...inode.children.keys()].sort((a, b) => a.localeCompare(b));
+      for (const name of names) {
         if (name === '.' || name === '..') continue;
         if (this.globMatch(name, part)) {
           const childPath = currentPath === '/' ? '/' + name : currentPath + '/' + name;

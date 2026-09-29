@@ -54,7 +54,7 @@ import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { classifyWindowsLines } from '@/terminal/core/windowsOutputStyle';
-import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder, driveSubShellTab, hasSubShellCompletion } from '@/terminal/completion';
+import { CompletionController, ReadlinePolicy, LastWordSource, ghostRemainder, driveSubShellTab, hasSubShellCompletion, SubShellCompletionControllers } from '@/terminal/completion';
 import type { SubShellTabHost } from '@/terminal/completion';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
@@ -89,7 +89,7 @@ export class WindowsTerminalSession extends TerminalSession {
 
   private readonly rootCompletion =
     new CompletionController(new ReadlinePolicy({ caseInsensitive: true }));
-  private readonly subShellCompletion = new CompletionController(new CyclingPolicy());
+  private readonly subShellCompletion = new SubShellCompletionControllers();
 
   private readonly _flowFormatter = new PlainOutputFormatter();
   private _onRequestClose?: () => void;

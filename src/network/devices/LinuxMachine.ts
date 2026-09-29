@@ -476,6 +476,7 @@ export abstract class LinuxMachine extends EndHost
       return { output: result, exitCode: this.inferRegistryExitCode(cmd, result) };
     };
     this.executor._registryPrivilegeHook = (cmd) => this.commands.get(cmd)?.privilege;
+    this.executor.registeredCommandNames = () => this.commands.list().map(c => c.name);
 
     // 5. Initialise SSH server config files on first boot:
     //    /etc/ssh/sshd_config + /etc/ssh/ssh_host_ed25519_key(.pub).
@@ -4527,22 +4528,25 @@ export abstract class LinuxMachine extends EndHost
         .sort();
     }
 
-    // Delegate to the command's `complete()` callback if we are completing
-    // an argument to a registered command.
     if (rest.length >= 1) {
       const cmd = this.commands.get(head);
+      const partialArg = rest[rest.length - 1];
       if (cmd && cmd.complete) {
-        const partialArg = rest[rest.length - 1];
         const candidates = cmd.complete(this.buildCommandContext(), rest);
         if (candidates.length > 0) {
           return candidates.filter(c => c.startsWith(partialArg)).sort();
         }
+      } else if (cmd?.options && partialArg.startsWith('-')) {
+        const flags = cmd.options.flatMap(o => [o.flag, ...(o.aliases ?? [])]);
+        const matching = flags.filter(f => f.startsWith(partialArg));
+        if (matching.length > 0) return [...new Set(matching)].sort();
       }
     }
 
     return this.executor.getCompletions(partial);
   }
   getCurrentUser(): string { return this.executor.getCurrentUser(); }
+  homeDirectoryOf(user: string): string { return this.executor.homeDirectoryOf(user); }
   runSshKeygenInteractive(args: readonly string[], terminal: SshKeygenTerminal): Promise<number> {
     return this.executor.runSshKeygenInteractive(args, terminal);
   }

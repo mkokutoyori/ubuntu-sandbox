@@ -249,6 +249,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'mtr', 'netstat', 'ethtool',
   'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
   'ssh', 'sshpass', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat', 'tcpdump', 'tc',
+  'ssh-keygen', 'ssh-add', 'ssh-agent', 'ssh-copy-id', 'ssh-keyscan',
   'iptables', 'iptables-save', 'iptables-restore',
   'ip6tables', 'ip6tables-save', 'ip6tables-restore', 'nft', 'ufw', 'firewall-cmd', 'netfilter-persistent',
   // Editors
@@ -260,6 +261,27 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Cryptographie
   'openssl',
 ];
+
+const SUDO_FLAG_LETTERS = /^-[nSEkbiHvPs]+$/;
+
+function parseSudoLead(args: readonly string[]): {
+  flags: Set<string>; user: string | null; rest: string[];
+} {
+  const flags = new Set<string>();
+  let user: string | null = null;
+  let i = 0;
+  while (i < args.length) {
+    const arg = args[i];
+    if (SUDO_FLAG_LETTERS.test(arg)) {
+      for (const letter of arg.slice(1)) flags.add(letter);
+      i++;
+    } else if (arg === '-u' && i + 1 < args.length) {
+      user = args[i + 1];
+      i += 2;
+    } else break;
+  }
+  return { flags, user, rest: args.slice(i) };
+}
 
 /** Fast membership test for {@link KNOWN_LINUX_COMMANDS}. */
 const KNOWN_LINUX_COMMAND_SET: ReadonlySet<string> = new Set(KNOWN_LINUX_COMMANDS);
@@ -1839,9 +1861,11 @@ export class LinuxCommandExecutor {
    * privilegie s'y perdait sans un mot.
    */
   private sshHomeDir(): string {
-    const user = this.userMgr.currentUser;
-    return this.userMgr.getUser(user)?.home
-      ?? (user === 'root' ? '/root' : `/home/${user}`);
+    return this.homeDirectoryOf(this.userMgr.currentUser);
+  }
+
+  homeDirectoryOf(user: string): string {
+    return this.userMgr.getUser(user)?.home ?? (user === 'root' ? '/root' : `/home/${user}`);
   }
 
   /** Build the standard SshClientOpts (used by `ssh` and ssh-transport). */
@@ -3820,28 +3844,21 @@ export class LinuxCommandExecutor {
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
       cmdArgs = cmdArgs.slice(1);
-      // `-S` reads the sudo password from stdin — detect it before the
-      // flag group is stripped below. Only sudo's own leading option
-      // flags are inspected; once we hit the command-to-run, its own
-      // flags (e.g. `passwd -S user`) belong to it, not to sudo.
-      let readsStdinPassword = false;
-      for (const a of cmdArgs) {
-        if (!/^-[nSEkbiHvP]+$/.test(a)) break;
-        if (a.includes('S')) { readsStdinPassword = true; break; }
+      const lead = parseSudoLead(cmdArgs);
+      const readsStdinPassword = lead.flags.has('S');
+      const sudoTargetUser = lead.user;
+      cmdArgs = lead.rest;
+      const shellRequested = lead.flags.has('i') || lead.flags.has('s');
+      if (cmdArgs.length === 0 && !shellRequested) {
+        return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
       }
-      // Strip flags that don't consume a value (-n non-interactive, -S
-      // read password from stdin, -E preserve env, -k reset timestamp).
-      while (cmdArgs.length > 0 && /^-[nSEkbiHvP]+$/.test(cmdArgs[0])) cmdArgs.shift();
-      if (cmdArgs.length === 0) return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
       if (cmdArgs[0] === '-l') return this.dispatch('sudo', cmdArgs, undefined, true);
-
-      // Parse `-u user` up front — authorization (runas restriction) and
-      // the audit trail both need the real target, not just "root", and
-      // the command line logged must not include the "-u user" prefix.
-      let sudoTargetUser: string | null = null;
-      if (cmdArgs[0] === '-u' && cmdArgs.length >= 3) {
-        sudoTargetUser = cmdArgs[1];
-        cmdArgs = cmdArgs.slice(2);
+      if (shellRequested) {
+        const last = cmdArgs[cmdArgs.length - 1];
+        const piped = last !== undefined && last.includes('\n') ? cmdArgs.pop() : undefined;
+        const asShell = ['su', ...(lead.flags.has('i') ? ['-'] : []), sudoTargetUser ?? 'root'];
+        cmdArgs = [...asShell, ...(cmdArgs.length > 0 ? ['-c', cmdArgs.join(' ')] : [])];
+        if (piped !== undefined) cmdArgs.push(piped);
       }
       const runasUser = sudoTargetUser ?? 'root';
       const auth = this.authorizeSudo(cmdArgs[0], cmdArgs.slice(1), runasUser);
@@ -7701,8 +7718,10 @@ export class LinuxCommandExecutor {
     return names;
   }
 
+  registeredCommandNames: () => readonly string[] = () => [];
+
   private getCommandCompletions(prefix: string): string[] {
-    const unique = Array.from(new Set(KNOWN_LINUX_COMMANDS));
+    const unique = Array.from(new Set([...KNOWN_LINUX_COMMANDS, ...this.registeredCommandNames()]));
     if (!prefix) return unique.sort();
     return unique.filter(c => c.startsWith(prefix)).sort();
   }

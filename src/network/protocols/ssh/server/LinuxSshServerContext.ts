@@ -8,6 +8,7 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
+import { bashPromptParts, formatBashPrompt } from '@/network/devices/linux/shell/BashPrompt';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import type { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
 import type { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
@@ -476,10 +477,7 @@ export class LinuxSshServerContext implements ISshServerContext {
           }
           if (EXIT_WORDS.has(line.trim().toLowerCase())) {
             const left = device.handleExitInSession(session);
-            return {
-              stdout: left.output === '' ? '' : `${left.output}\n`,
-              stderr: '', exitCode: 0, sessionEnded: !left.inSu,
-            };
+            return { stdout: 'logout\n', stderr: '', exitCode: 0, sessionEnded: !left.inSu };
           }
           const launched = subShells.launch(line);
           if (launched) return { stdout: joinLines(launched), stderr: '', exitCode: 0 };
@@ -520,14 +518,13 @@ export class LinuxSshServerContext implements ISshServerContext {
         getPrompt: () => {
           const nested = subShells.getPrompt();
           if (nested !== null) return nested;
-          // The authenticated user's real home from /etc/passwd — never a
-          // guessed `/home/<name>`, which would be wrong for root (/root)
-          // and for any account with a custom home.
-          const home = userCtx.homeDirectory;
-          const shortCwd = session.cwd === home ? '~'
-            : session.cwd.startsWith(`${home}/`) ? `~${session.cwd.slice(home.length)}`
-            : session.cwd;
-          return `${userCtx.username}@${device.getSshHostname()}:${shortCwd}${userCtx.isRoot() ? '#' : '$'} `;
+          return formatBashPrompt(bashPromptParts({
+            user: session.user,
+            root: session.uid === 0,
+            hostname: device.getSshHostname(),
+            cwd: session.cwd,
+            home: device.homeDirectoryOf(session.user),
+          }));
         },
         // A persistent shell channel ends by hanging up (real terminal
         // close); a one-shot exec ran its single command to completion,
