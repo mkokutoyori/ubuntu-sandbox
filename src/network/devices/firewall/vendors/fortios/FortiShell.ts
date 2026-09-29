@@ -468,7 +468,7 @@ export class FortiShell {
     const out: Suggestion[] = [];
     const seen = new Set<string>();
     for (const suggestion of [
-      ...this.socle.suggestions(this.socleProbe(head, bare), trigger),
+      ...this.socle.suggestions(this.socleProbe(this.canonicalHead(head, [bare]), bare), trigger),
       ...this.viewPathSuggestions(head, bare),
     ]) {
       if (seen.has(suggestion.value)) continue;
@@ -486,7 +486,7 @@ export class FortiShell {
     const quote = typed.startsWith('"') ? '"' : '';
     const bare = typed.slice(quote.length);
 
-    const developpee = this.canonicalHead(head);
+    const developpee = this.canonicalHead(head, [bare]);
     const lowered = bare.toLowerCase();
     return this.candidates(input, 'TAB')
       .filter(s => !s.isArgument || s.completable === true)
@@ -496,22 +496,22 @@ export class FortiShell {
       .map(value => `${developpee}${quote}${value}${quote}`);
   }
 
-  private canonicalHead(head: string): string {
-    const words = this.canonicalWords(head);
+  private canonicalHead(head: string, pending: readonly string[] | null = null): string {
+    const words = this.canonicalWords(head, pending);
     return words.length === 0 ? head : `${words.join(' ')} `;
   }
 
-  private canonicalWords(head: string): readonly string[] {
+  private canonicalWords(head: string, pending: readonly string[] | null = null): readonly string[] {
     const typed = head.trim().split(/\s+/).filter(Boolean);
     if (typed.length === 0) return [];
 
-    const words = [...this.socle.canonicalWords(typed)];
+    const words = [...this.socle.canonicalWords(typed, pending)];
     if (words[0] !== 'show' && words[0] !== 'get') return words;
 
     const resolution = resolvePathWords(words.slice(1), (prefix) => [
       ...this.tree.branchNames(prefix),
       ...viewContinuations(FORTI_GET_VIEWS, prefix),
-    ]);
+    ], pending);
     return [words[0], ...resolution.words];
   }
 
@@ -532,7 +532,7 @@ export class FortiShell {
   }
 
   private viewPathSuggestions(head: string, typed: string): readonly Suggestion[] {
-    const words = this.canonicalWords(head);
+    const words = this.canonicalWords(head, [typed]);
     if (words[0] !== 'show' && words[0] !== 'get') return [];
 
     const walked = words.slice(1);
