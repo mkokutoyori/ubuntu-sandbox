@@ -281,6 +281,10 @@ export interface IAdProvider {
   getUser(identity: string): AdUserInfo | null;
   listUsers(): AdUserInfo[];
   setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string }): AdOpResult;
+  /** `Unlock-ADAccount -Identity <user>` — clears the lockout and the bad-password counter. */
+  unlockAccount(identity: string): AdOpResult;
+  /** `Set-ADAccountControl -Identity <user> [-Enabled ...]` — flips userAccountControl bits (parameter names as in `ACCOUNT_CONTROL_FLAGS`), keeping every other bit. */
+  setAccountControl(identity: string, change: { flags: Record<string, boolean>; cannotChangePassword?: boolean }): AdOpResult;
   removeUser(identity: string): AdOpResult;
   /** Every user/computer object carrying at least one SPN — for cross-object duplicate-SPN detection (`Get-ADObject -Filter {ServicePrincipalName -like "*"}`). */
   listObjectsWithSpns(): Array<{ name: string; servicePrincipalNames: string[] }>;
@@ -318,6 +322,11 @@ export interface IAdProvider {
   listComputers(): AdComputerInfo[];
   /** `Set-ADComputer -Identity <name> -AllowedToDelegateTo <svc1,svc2,...>` (PRD-Windows-Server-Advanced.md §5 P10) — the `msDS-AllowedToDelegateTo` list S4U2Proxy checks. */
   setComputerAllowedToDelegateTo(identity: string, targetServiceNames: string[]): AdOpResult;
+
+  /** `Move-ADObject -Identity <dn|sam> -TargetPath <ou dn>` — LDAP ModifyDN with a new superior, keeping the object's RDN. */
+  moveObject(identity: string, targetPath: string, target?: RemoteDirectoryTarget): AdOpResult;
+  /** `Get-ADPrincipalGroupMembership -Identity <principal>` — the groups this principal is a direct member of (its primary group included). null when the principal is not found. */
+  getPrincipalGroups(identity: string): AdGroupInfo[] | null;
 
   newOrganizationalUnit(name: string, path?: string, opts?: OrgUnitWriteOptions): AdOpResult;
   setOrganizationalUnit(identity: string, attributes: Record<string, string>, protectedFlag?: boolean, target?: RemoteDirectoryTarget): AdOpResult;
@@ -535,15 +544,27 @@ export interface IComputerProvider {
 
 // ── Group Policy (PRD-Windows-Server.md §5 P10) ─────────────────────────────
 
-export interface GpoInfo { id: string; name: string; links: string[] }
+export interface GpoInfo { id: string; name: string; description: string; links: string[] }
 
 /** A single `gPLink`, decoded — what `Get-GPInheritance ... GpoLinks | Select DisplayName, Enabled, Enforced, Order` reports per link. */
 export interface GpoLinkResultInfo { displayName: string; enabled: boolean; enforced: boolean; order: number }
 
 export interface GpLinkOptions { linkEnabled?: boolean; enforced?: boolean; order?: number }
 
+export interface GpRegistryValueInfo { key: string; valueName: string; type: string; value: string }
+
 export interface IGpoProvider {
-  newGpo(name: string): AdOpResult;
+  newGpo(name: string, description?: string): AdOpResult;
+  /** `Remove-GPO` — the GPO and every link to it in the domain. */
+  removeGpo(name: string, keepLinks?: boolean): AdOpResult;
+  /** `Rename-GPO -Name <old> -TargetName <new>`. */
+  renameGpo(name: string, newName: string): AdOpResult;
+  /** `Remove-GPLink -Name <gpo> -Target <container>`. */
+  removeGpLink(gpoName: string, targetDn: string): AdOpResult;
+  /** `Get-GPRegistryValue` — null when the GPO does not exist; every value under `key` when `valueName` is empty. */
+  getGpRegistryValues(gpoName: string, key: string, valueName: string): GpRegistryValueInfo[] | null;
+  /** `Remove-GPRegistryValue` — one value, or every value under `key` when `valueName` is empty. */
+  removeGpRegistryValue(gpoName: string, key: string, valueName: string): AdOpResult;
   getGpo(name: string): GpoInfo | null;
   listGpos(): GpoInfo[];
   /** `New-GPLink -Target` accepts a distinguished name (domain root or an OU's DN, e.g. from `Get-ADOrganizationalUnit`). */
@@ -553,6 +574,7 @@ export interface IGpoProvider {
   /** `Set-GPRegistryValue` — records/updates a registry-based policy setting on a GPO. */
   setGpRegistryValue(gpoName: string, key: string, valueName: string, type: string, value: string): AdOpResult;
   getDomainDn(): string;
+  getDomainName(): string;
   setGpInheritance(targetDn: string, blocked: boolean): AdOpResult;
   getGpInheritance(targetDn: string): { dn: string; gpoInheritanceBlocked: boolean; gpoLinks: GpoLinkResultInfo[] } | null;
 }

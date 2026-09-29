@@ -73,7 +73,7 @@ import type {
   AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdDomainInfo, AdTrustInfo,
   AdReplicationConnectionInfo, AdReplicationFailureInfo, AdPasswordPolicyInfo, AdFineGrainedPasswordPolicyInfo, AdAccessRuleInfo,
   IComputerProvider, DomainMembershipInfo,
-  IGpoProvider, GpoInfo, GpLinkOptions, GpoLinkResultInfo,
+  IGpoProvider, GpoInfo, GpLinkOptions, GpoLinkResultInfo, GpRegistryValueInfo,
   IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
   IExchangeProvider, ExchangeOpResult, ExchangeServerInfo,
   MailboxOpResult, MailboxInfo, MailboxStatisticsInfo, MailFolderName,
@@ -103,6 +103,7 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
 import type { GroupWriteOptions, OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
 import type { AdGroup, AdUser } from '@/network/devices/windows/server/ad/AdTypes';
+import { DEFAULT_LOCKOUT_POLICY } from '@/network/devices/windows/server/ad/AdTypes';
 import { withRemoteDirectory } from './adRemoteDirectory';
 import { MEMBER_ALREADY_IN_GROUP, MEMBER_NOT_IN_GROUP, groupTypeValue } from '@/network/devices/windows/server/ad/adGroup';
 import { PRIVILEGED_ACCESS_MANAGEMENT_FEATURE, TTL_WITHOUT_PAM_FEATURE } from '@/network/devices/windows/server/ad/adOptionalFeatures';
@@ -599,9 +600,9 @@ class WindowsAdAdapter implements IAdProvider {
       passwordHistoryCount: p.passwordHistoryLength ?? 24,
       maxPasswordAgeDays: p.maxPasswordAge ?? 42,
       minPasswordAgeDays: p.minPasswordAge ?? 1,
-      lockoutThreshold: p.lockoutThreshold ?? 5,
-      lockoutDurationMinutes: p.lockoutDurationMinutes ?? 30,
-      lockoutObservationWindowMinutes: p.lockoutWindowMinutes ?? 30,
+      lockoutThreshold: p.lockoutThreshold ?? DEFAULT_LOCKOUT_POLICY.threshold,
+      lockoutDurationMinutes: p.lockoutDurationMinutes ?? DEFAULT_LOCKOUT_POLICY.durationMinutes,
+      lockoutObservationWindowMinutes: p.lockoutWindowMinutes ?? DEFAULT_LOCKOUT_POLICY.windowMinutes,
       complexityEnabled: p.complexityEnabled ?? true,
       reversibleEncryptionEnabled: p.reversibleEncryptionEnabled ?? false,
     };
@@ -767,6 +768,18 @@ class WindowsAdAdapter implements IAdProvider {
     const denied = this.requireAdmin('Set-ADUser');
     if (denied) return denied;
     return store.setUser(store.resolveIdentity(identity), opts);
+  }
+  unlockAccount(identity: string): AdOpResult {
+    const store = this.requireStore('Unlock-ADAccount');
+    const denied = this.requireAdmin('Unlock-ADAccount');
+    if (denied) return denied;
+    return store.unlockUser(identity);
+  }
+  setAccountControl(identity: string, change: { flags: Record<string, boolean>; cannotChangePassword?: boolean }): AdOpResult {
+    const store = this.requireStore('Set-ADAccountControl');
+    const denied = this.requireAdmin('Set-ADAccountControl');
+    if (denied) return denied;
+    return store.setAccountControl(identity, change);
   }
   listUsers(): AdUserInfo[] {
     return this.requireStore('Get-ADUser').listUsers().map(userInfoOf);
@@ -972,6 +985,29 @@ class WindowsAdAdapter implements IAdProvider {
     if (denied) return denied;
     const name = store.resolveIdentity(identity).replace(/\$$/, '');
     return store.setAllowedToDelegateTo(name, targetServiceNames);
+  }
+
+  moveObject(identity: string, targetPath: string, target?: RemoteDirectoryTarget): AdOpResult {
+    if (target) {
+      return this.remoteDirectory('Move-ADObject', target, client => {
+        if (!identity.includes('=')) {
+          return { ok: false, message: 'Move-ADObject over -Server needs the DistinguishedName as -Identity.' };
+        }
+        const rdn = identity.split(',')[0];
+        const res = client.modifyDN(identity, rdn, false, targetPath);
+        return res.ok ? { ok: true, message: '' } : { ok: false, message: res.result.diagnosticMessage || `Cannot find an object with identity: '${identity}'.` };
+      });
+    }
+    const store = this.requireStore('Move-ADObject');
+    const denied = this.requireAdmin('Move-ADObject');
+    if (denied) return denied;
+    return store.moveObject(identity, targetPath);
+  }
+
+  getPrincipalGroups(identity: string): AdGroupInfo[] | null {
+    const store = this.requireStore('Get-ADPrincipalGroupMembership');
+    const groups = store.getPrincipalGroups(store.resolveIdentity(identity));
+    return groups ? groups.map(groupInfoOf) : null;
   }
 
   newOrganizationalUnit(name: string, path?: string, opts?: OrgUnitWriteOptions): AdOpResult {
@@ -2903,17 +2939,37 @@ class WindowsGpoAdapter implements IGpoProvider {
     return store;
   }
 
-  newGpo(name: string): AdOpResult {
-    return this.requireDc('New-GPO').newGpo(name);
+  newGpo(name: string, description?: string): AdOpResult {
+    return this.requireDc('New-GPO').newGpo(name, description);
+  }
+
+  removeGpo(name: string, keepLinks?: boolean): AdOpResult {
+    return this.requireDc('Remove-GPO').removeGpo(name, keepLinks);
+  }
+
+  renameGpo(name: string, newName: string): AdOpResult {
+    return this.requireDc('Rename-GPO').renameGpo(name, newName);
+  }
+
+  removeGpLink(gpoName: string, targetDn: string): AdOpResult {
+    return this.requireDc('Remove-GPLink').removeGpLink(gpoName, targetDn);
+  }
+
+  getGpRegistryValues(gpoName: string, key: string, valueName: string): GpRegistryValueInfo[] | null {
+    return this.requireDc('Get-GPRegistryValue').getGpRegistryValues(gpoName, key, valueName);
+  }
+
+  removeGpRegistryValue(gpoName: string, key: string, valueName: string): AdOpResult {
+    return this.requireDc('Remove-GPRegistryValue').removeGpRegistryValue(gpoName, key, valueName);
   }
 
   getGpo(name: string): GpoInfo | null {
     const gpo = this.requireDc('Get-GPO').getGpo(name);
-    return gpo ? { id: gpo.id, name: gpo.name, links: gpo.links } : null;
+    return gpo ? { id: gpo.id, name: gpo.name, description: gpo.description, links: gpo.links } : null;
   }
 
   listGpos(): GpoInfo[] {
-    return this.requireDc('Get-GPO').listGpos().map(g => ({ id: g.id, name: g.name, links: g.links }));
+    return this.requireDc('Get-GPO').listGpos().map(g => ({ id: g.id, name: g.name, description: g.description, links: g.links }));
   }
 
   newGPLink(gpoName: string, targetDn: string, opts?: GpLinkOptions): AdOpResult {
@@ -2930,6 +2986,10 @@ class WindowsGpoAdapter implements IGpoProvider {
 
   getDomainDn(): string {
     return this.requireDc('New-GPLink').getDomainDn();
+  }
+
+  getDomainName(): string {
+    return this.requireDc('New-GPO').dnsName;
   }
 
   setGpInheritance(targetDn: string, blocked: boolean): AdOpResult {

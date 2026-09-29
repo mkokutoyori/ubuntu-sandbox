@@ -50,7 +50,7 @@ import {
 } from './PathCmdlets';
 import {
   NewObjectCmdlet, GetRandomCmdlet, InvokeExpressionCmdlet,
-  ConvertToSecureStringCmdlet, GetHelpCmdlet, GetCommandCmdlet,
+  ConvertToSecureStringCmdlet, ReadHostCmdlet, GetHelpCmdlet, GetCommandCmdlet,
   GetModuleCmdlet, ImportModuleCmdlet, ClearHostCmdlet,
   InvokeCommandCmdlet, StartJobCmdlet, GetJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
   SetLocationCmdlet, GetLocationCmdlet, PushLocationCmdlet, PopLocationCmdlet,
@@ -139,6 +139,7 @@ import {
   DisableADAccountCmdlet, EnableADAccountCmdlet,
   NewADGroupCmdlet, SetADGroupCmdlet, GetADGroupCmdlet, RemoveADGroupCmdlet, AddADGroupMemberCmdlet, RemoveADGroupMemberCmdlet, GetADGroupMemberCmdlet,
   GetADComputerCmdlet, SetADComputerCmdlet, GetADObjectCmdlet, SetADObjectCmdlet, RestoreADObjectCmdlet,
+  GetADPrincipalGroupMembershipCmdlet, MoveADObjectCmdlet, UnlockADAccountCmdlet, SetADAccountControlCmdlet,
   GetADOptionalFeatureCmdlet, EnableADOptionalFeatureCmdlet, GetADRootDSECmdlet, SearchADAccountCmdlet,
   AddKdsRootKeyCmdlet, GetKdsRootKeyCmdlet, NewADServiceAccountCmdlet, GetADServiceAccountCmdlet,
   SetADServiceAccountCmdlet, AddADComputerServiceAccountCmdlet,
@@ -198,7 +199,10 @@ import {
   NewNpsConnectionRequestPolicyCmdlet, GetNpsConnectionRequestPolicyCmdlet, RemoveNpsConnectionRequestPolicyCmdlet,
   SetNpsAccountingConfigurationCmdlet,
 } from './NpsCmdlets';
-import { NewGPOCmdlet, GetGPOCmdlet, NewGPLinkCmdlet, SetGPLinkCmdlet, SetGPRegistryValueCmdlet, SetGPInheritanceCmdlet, GetGPInheritanceCmdlet } from './GroupPolicyCmdlets';
+import {
+  NewGPOCmdlet, GetGPOCmdlet, RemoveGPOCmdlet, RenameGPOCmdlet, NewGPLinkCmdlet, SetGPLinkCmdlet, RemoveGPLinkCmdlet,
+  SetGPRegistryValueCmdlet, GetGPRegistryValueCmdlet, RemoveGPRegistryValueCmdlet, SetGPInheritanceCmdlet, GetGPInheritanceCmdlet,
+} from './GroupPolicyCmdlets';
 import {
   NewWebsiteCmdlet, GetWebsiteCmdlet, StartWebsiteCmdlet, StopWebsiteCmdlet, RemoveWebsiteCmdlet,
   NewWebBindingCmdlet,
@@ -340,6 +344,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new GetRandomCmdlet());
   registry.register(new InvokeExpressionCmdlet());
   registry.register(new ConvertToSecureStringCmdlet());
+  registry.register(new ReadHostCmdlet());
   registry.register(new GetHelpCmdlet());
   registry.register(new GetCommandCmdlet());
   registry.register(new GetModuleCmdlet());
@@ -612,6 +617,10 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new AddADGroupMemberCmdlet());
   registry.register(new RemoveADGroupMemberCmdlet());
   registry.register(new GetADGroupMemberCmdlet());
+  registry.register(new GetADPrincipalGroupMembershipCmdlet());
+  registry.register(new MoveADObjectCmdlet());
+  registry.register(new UnlockADAccountCmdlet());
+  registry.register(new SetADAccountControlCmdlet());
   registry.register(new GetADComputerCmdlet());
   registry.register(new SetADComputerCmdlet());
   registry.register(new GetADObjectCmdlet());
@@ -743,6 +752,11 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   // ── Group Policy (PRD-Windows-Server.md §5 P10) ─────────────────────────────
   registry.register(new NewGPOCmdlet());
   registry.register(new GetGPOCmdlet());
+  registry.register(new RemoveGPOCmdlet());
+  registry.register(new RenameGPOCmdlet());
+  registry.register(new RemoveGPLinkCmdlet());
+  registry.register(new GetGPRegistryValueCmdlet());
+  registry.register(new RemoveGPRegistryValueCmdlet());
   registry.register(new NewGPLinkCmdlet());
   registry.register(new SetGPLinkCmdlet());
   registry.register(new SetGPRegistryValueCmdlet());

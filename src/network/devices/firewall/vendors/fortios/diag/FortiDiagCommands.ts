@@ -47,6 +47,7 @@ import {
   renderHaChecksum, renderHaChecksumCluster, renderHaStatus,
 } from './haRenderer';
 import { renderNtpStatus } from './ntpStatusRenderer';
+import { renderLinkMonitorStatus } from './linkMonitorRenderer';
 import { renderVipList } from './vipListRenderer';
 import { renderDnsProxy } from './dnsProxyRenderer';
 import { renderIpConflictCache, renderIpConflictProbes } from './ipConflictRenderer';
@@ -419,6 +420,13 @@ function diagnoseHa(rest: readonly string[], deps: FortiDiagDeps): string {
   return FortiMessages.unknownPath(`sys ha ${rest.join(' ')}`);
 }
 
+function diagnoseLinkMonitor(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest.length === 0 || rest[0] === 'status') {
+    return renderLinkMonitorStatus(deps.fw.linkMonitorStatuses(), rest[1]);
+  }
+  return FortiMessages.unknownPath(`sys link-monitor ${rest.join(' ')}`);
+}
+
 function diagnoseSdwan(rest: readonly string[], deps: FortiDiagDeps): string {
   const table = deps.fw.getSdwan().getTable();
 
@@ -540,6 +548,7 @@ export function deniedLog(
 
 function diagnoseSession(rest: readonly string[], deps: FortiDiagDeps): string {
   if (rest[0] === 'sdwan') return diagnoseSdwan(rest.slice(1), deps);
+  if (rest[0] === 'link-monitor') return diagnoseLinkMonitor(rest.slice(1), deps);
   if (rest[0] === 'ha') return diagnoseHa(rest.slice(1), deps);
   if (rest[0] === 'top') return renderSysTop(deps.fw);
   if (rest[0] === 'checkused') return diagnoseCheckused(rest.slice(1), deps);

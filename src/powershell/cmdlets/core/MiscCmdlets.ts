@@ -222,6 +222,19 @@ export class ConvertToSecureStringCmdlet implements ICmdlet {
   }
 }
 
+export class ReadHostCmdlet implements ICmdlet {
+  readonly name = 'read-host';
+  readonly displayName = 'Read-Host';
+  readonly description = 'Reads a line of input from the console.';
+  readonly parameters = ['Prompt', 'AsSecureString', 'MaskInput'] as const;
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const secure = ctx.named['assecurestring'] === true || ctx.named['maskinput'] === true;
+    return secure ? ({ SecureString: '', Length: 0 } as Record<string, PSValue>) : '';
+  }
+}
+
 // ─── Get-Help ─────────────────────────────────────────────────────────────
 
 export class GetHelpCmdlet implements ICmdlet {

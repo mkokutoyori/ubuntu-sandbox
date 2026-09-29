@@ -182,6 +182,7 @@ import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialHttp as dialHttpClient, parseHttpUrl } from '@/network/http/HttpClient';
 import { SmtpClientSession } from '@/network/smtp/SmtpClientSession';
 import type { GpoSettings } from './windows/server/ad/AdTypes';
+import { normalisedPolicyKey } from './windows/server/ad/AdTypes';
 import { cmdNltest, cmdDcdiag, cmdKlist } from './windows/WinDomainDiag';
 import { discoverDc } from './windows/domain/DcHostnameDiscovery';
 import { cmdRepadmin, type RepadminContext } from './windows/WinRepadmin';
@@ -1664,6 +1665,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   // ─── Group Policy (PRD-Windows-Server.md §5 P10) ────────────────────
 
   private gpoAppliedNames: string[] = [];
+  private gpoAppliedUserNames: string[] = [];
+  private readonly gpoPolicyValues = new Map<string, { key: string; valueName: string }>();
   private gpoLastAppliedAt: Date | null = null;
   private gpoLogonBanner: { title: string; text: string } | null = null;
 
@@ -1717,15 +1720,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const currentUser = this.userMgr.currentUser;
     const userSam = currentUser.includes('\\') ? currentUser.split('\\').pop() : currentUser;
     let appliedGpoNames: string[];
+    let appliedUserGpoNames: string[];
     let settings: GpoSettings;
     if (localStore) {
       const rsop = localStore.resultantSetOfPolicy(this.getHostname(), userSam);
       appliedGpoNames = rsop.appliedGpoNames;
+      appliedUserGpoNames = rsop.appliedUserGpoNames;
       settings = rsop.settings;
     } else {
       const result = pullGroupPolicy(this.getTcpStack(), this.domainMembership, this.getHostname(), userSam);
       if (!result.ok) return { ok: false, message: `gpupdate : ${result.message}` };
       appliedGpoNames = result.appliedGpoNames;
+      appliedUserGpoNames = result.appliedUserGpoNames;
       settings = result.settings;
     }
     if (settings.accountPolicy) this.accountsPolicy.applyGpoOverrides(settings.accountPolicy);
@@ -1736,36 +1742,51 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         this.auditPolicy.set(subcategory, setting);
       }
     }
-    if (settings.registryPolicy !== undefined) {
-      for (const entry of settings.registryPolicy) {
-        const type = (['String', 'DWord', 'QWord', 'ExpandString', 'MultiString', 'Binary'] as const).includes(entry.type as never)
-          ? entry.type as RegistryValue['type'] : 'String';
-        const value = type === 'DWord' || type === 'QWord' ? Number(entry.value) : entry.value;
-        this.registry.applyGpoRegistryValue(entry.key, entry.valueName, value, type);
-      }
+    const registryPolicy = settings.registryPolicy ?? [];
+    const policyIdentity = (e: { key: string; valueName: string }): string => `${normalisedPolicyKey(e.key)}|${e.valueName.toLowerCase()}`;
+    const stillSet = new Set(registryPolicy.map(policyIdentity));
+    for (const [identity, entry] of this.gpoPolicyValues) {
+      if (!stillSet.has(identity)) this.registry.removeItemProperty(entry.key, entry.valueName);
+    }
+    this.gpoPolicyValues.clear();
+    for (const entry of registryPolicy) {
+      const type = (['String', 'DWord', 'QWord', 'ExpandString', 'MultiString', 'Binary'] as const).includes(entry.type as never)
+        ? entry.type as RegistryValue['type'] : 'String';
+      const value = type === 'DWord' || type === 'QWord' ? Number(entry.value) : entry.value;
+      this.registry.applyGpoRegistryValue(entry.key, entry.valueName, value, type);
+      if (/\\Policies(\\|$)/i.test(entry.key)) this.gpoPolicyValues.set(policyIdentity(entry), { key: entry.key, valueName: entry.valueName });
     }
     this.gpoAppliedNames = appliedGpoNames;
+    this.gpoAppliedUserNames = appliedUserGpoNames;
     this.gpoLastAppliedAt = new Date();
     return { ok: true, message: '' };
   }
 
+  private domainControllerIdentity(): { netbiosName: string; dcAddress: string } | null {
+    const store = this.getDirectoryStore();
+    if (!store) return null;
+    const own = this.getInterfaces().find(p => p.getIPAddress() !== null)?.getIPAddress()?.toString() ?? '127.0.0.1';
+    return { netbiosName: store.netbiosName, dcAddress: own };
+  }
+
   /** `gpresult /r` — RSoP summary text, matching the real tool's section layout. */
   cmdGpresult(): string {
-    if (!this.domainMembership) {
+    const domain = this.domainMembership ?? this.domainControllerIdentity();
+    if (!domain) {
       return 'gpresult : The processing of Group Policy failed. This computer is not a member of a domain.';
     }
     const lines: string[] = [
       'Microsoft (R) Windows (R) Operating System Group Policy Result tool v2.0',
       'Copyright (C) Microsoft Corp. 1981-2001',
       '',
-      `RSOP data for ${this.domainMembership.netbiosName}\\${this.userMgr.currentUser} on ${this.getHostname()} : Logging Mode`,
+      `RSOP data for ${domain.netbiosName}\\${this.userMgr.currentUser} on ${this.getHostname()} : Logging Mode`,
       '-------------------------------------------------------------',
       '',
       'COMPUTER SETTINGS',
       '------------------',
       `    Last time Group Policy was applied: ${this.gpoLastAppliedAt ? this.gpoLastAppliedAt.toString() : 'N/A'}`,
-      `    Group Policy was applied from:      ${this.domainMembership.dcAddress}`,
-      `    Domain Name:                        ${this.domainMembership.netbiosName}`,
+      `    Group Policy was applied from:      ${domain.dcAddress}`,
+      `    Domain Name:                        ${domain.netbiosName}`,
       `    Domain Type:                        Windows Active Directory`,
       '',
       '    Applied Group Policy Objects',
@@ -1779,7 +1800,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (this.gpoStartupScript) {
       lines.push('', '    Startup Scripts', '    ---------------', `        ${this.gpoStartupScript}`);
     }
-    lines.push('', 'USER SETTINGS', '------------------', '    N/A');
+    lines.push('', 'USER SETTINGS', '------------------', '', '    Applied Group Policy Objects', '    -----------------------------');
+    if (this.gpoAppliedUserNames.length === 0) lines.push('        N/A');
+    else for (const name of this.gpoAppliedUserNames) lines.push(`        ${name}`);
     return lines.join('\n');
   }
 

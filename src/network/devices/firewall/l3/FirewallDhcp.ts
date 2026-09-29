@@ -1,5 +1,5 @@
 import {
-  ETHERTYPE_IPV4, IPAddress, MACAddress,
+  IPAddress, MACAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
 } from '../../../core/types';
 import { buildUdpOverIpv4 } from '../../../layers/transport/UdpEgress';
@@ -7,6 +7,9 @@ import { inSameSubnet, ipToUint32, tryIpToUint32, uint32ToIp } from '../../../co
 import { DHCPServer } from '../../../dhcp/DHCPServer';
 import { DHCPClient } from '../../../dhcp/DHCPClient';
 import { WireDhcpChannel } from '../../../dhcp/DhcpServerChannel';
+import { dhcpClientFrame } from '../../../dhcp/DhcpClientFrame';
+import { dhcpLinkDestination, dhcpServerReplyFrame } from '../../../dhcp/DhcpServerReplyFrame';
+import type { DhcpUnicastTarget } from '../../../dhcp/types';
 import { DHCPPacket, DHCP_WIRE_BYTES } from '../../../dhcp/DHCPPacket';
 import { buildDhcpServerReply, dhcpReplyRoute, type DhcpReplyRoute } from '../../../dhcp/DhcpServerExchange';
 import type { IEventBus } from '../../../../events/EventBus';
@@ -40,8 +43,8 @@ export interface FirewallDhcpDeps {
   readonly interfaceAddress: (iface: string) => { ip: string; mask: string } | undefined;
   readonly portMac: (iface: string) => MACAddress | undefined;
   readonly sendFrame: (iface: string, frame: EthernetFrame) => void;
-  readonly configureInterface: (
-    iface: string, ip: string, mask: string, gateway: string | null) => void;
+  readonly configureInterface: (iface: string, ip: string, mask: string) => void;
+  readonly installLeaseRoute: (iface: string, gateway: string | null, distance: number) => void;
   readonly clearInterface: (iface: string) => void;
   readonly systemDnsServers?: () => readonly string[];
   readonly sendToServer?: (server: IPAddress, packet: IPv4Packet) => boolean;
@@ -49,6 +52,12 @@ export interface FirewallDhcpDeps {
   readonly addressInUse?: (iface: string, address: string) => boolean;
 }
 
+export interface DhcpClientRoute {
+  readonly gateway: boolean;
+  readonly distance: number;
+}
+
+const DEFAULT_CLIENT_ROUTE: DhcpClientRoute = { gateway: true, distance: 5 };
 const POOL_USAGE_TRAP_PERCENT = 90;
 const UNLIMITED_LEASE = 0;
 
@@ -75,7 +84,10 @@ export class FirewallDhcp {
     this.server.setClock(deps.now);
     this.client = new DHCPClient(
       (iface) => deps.portMac(iface)?.toString() ?? '00:00:00:00:00:00',
-      (iface, ip, mask, gateway) => { deps.configureInterface(iface, ip, mask, gateway); },
+      (iface, ip, mask, gateway) => {
+        deps.configureInterface(iface, ip, mask);
+        this.installGateway(iface, gateway);
+      },
       (iface) => { deps.clearInterface(iface); });
     this.client.setDeviceId(deps.deviceId, deps.hostname());
     this.client.setEventBus(deps.bus());
@@ -83,16 +95,30 @@ export class FirewallDhcp {
     this.client.setWireChannelFactory((iface) => this.channelFor(iface));
   }
 
-  private readonly clientInterfaces = new Set<string>();
+  private readonly clientInterfaces = new Map<string, DhcpClientRoute>();
 
   acquireLease(iface: string): string {
-    this.clientInterfaces.add(iface);
     return this.client.requestLease(iface, {});
   }
 
-  setClientMode(iface: string, enabled: boolean): void {
-    if (enabled) this.clientInterfaces.add(iface);
-    else this.clientInterfaces.delete(iface);
+  startClient(iface: string): void {
+    if (this.client.getState(iface).lease === null) this.client.requestLease(iface, {});
+  }
+
+  setClientMode(iface: string, route: DhcpClientRoute | null): void {
+    if (route === null) {
+      if (!this.clientInterfaces.delete(iface)) return;
+      this.client.abandonLease(iface);
+      return;
+    }
+    this.clientInterfaces.set(iface, route);
+    const lease = this.client.getState(iface).lease;
+    if (lease !== null) this.installGateway(iface, lease.defaultGateway);
+  }
+
+  private installGateway(iface: string, gateway: string | null): void {
+    const route = this.clientInterfaces.get(iface) ?? DEFAULT_CLIENT_ROUTE;
+    this.deps.installLeaseRoute(iface, route.gateway ? gateway : null, route.distance);
   }
 
   isClientInterface(iface: string): boolean {
@@ -107,27 +133,18 @@ export class FirewallDhcp {
     const existing = this.channels.get(iface);
     if (existing) return existing;
 
-    const channel = new WireDhcpChannel(iface, (name, pkt) => {
-      this.emitClientFrame(name, pkt);
+    const channel = new WireDhcpChannel(iface, (name, pkt, target) => {
+      this.emitClientFrame(name, pkt, target);
     }, this.deps.now);
     this.channels.set(iface, channel);
     return channel;
   }
 
-  private emitClientFrame(iface: string, pkt: DHCPPacket): void {
+  private emitClientFrame(iface: string, pkt: DHCPPacket, target?: DhcpUnicastTarget): void {
     const mac = this.deps.portMac(iface);
     if (!mac) return;
 
-    this.deps.sendFrame(iface, {
-      srcMAC: mac,
-      dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4,
-      payload: buildUdpOverIpv4(new IPAddress('0.0.0.0'), {
-        destination: new IPAddress('255.255.255.255'),
-        sourcePort: DHCP_CLIENT_PORT, destinationPort: DHCP_SERVER_PORT,
-        payload: pkt, payloadBytes: DHCP_WIRE_BYTES,
-      }),
-    });
+    this.deps.sendFrame(iface, dhcpClientFrame(pkt, mac, target));
   }
 
   deliverToClient(iface: string, udp: UDPPacket, sourceMac: string): boolean {
@@ -373,17 +390,7 @@ export class FirewallDhcp {
     const mac = this.deps.portMac(iface);
     if (!mac) return;
 
-    const broadcast = route.kind === 'broadcast';
-    this.deps.sendFrame(iface, {
-      srcMAC: mac,
-      dstMAC: broadcast ? MACAddress.broadcast() : new MACAddress(clientMac),
-      etherType: ETHERTYPE_IPV4,
-      payload: buildUdpOverIpv4(source, {
-        destination: new IPAddress(broadcast ? '255.255.255.255' : route.address),
-        sourcePort: DHCP_SERVER_PORT, destinationPort: DHCP_CLIENT_PORT,
-        payload: reply, payloadBytes: DHCP_WIRE_BYTES,
-      }),
-    });
+    this.deps.sendFrame(iface, dhcpServerReplyFrame(reply, source, mac, dhcpLinkDestination(route, clientMac)));
   }
 }
 
@@ -441,7 +448,8 @@ export interface DhcpWiringHost {
   interfaceAddress(iface: string): { ip: string; mask: string } | undefined;
   portMac(iface: string): MACAddress | undefined;
   emitFrame(iface: string, frame: EthernetFrame): void;
-  leaseGranted(iface: string, ip: string, mask: string, gateway: string | null): void;
+  leaseGranted(iface: string, ip: string, mask: string): void;
+  leaseRoute(iface: string, gateway: string | null, distance: number): void;
   leaseLost(iface: string): void;
   systemDnsServers?(): readonly string[];
   sendToServer?(server: IPAddress, packet: IPv4Packet): boolean;
@@ -459,9 +467,8 @@ export function createFirewallDhcp(host: DhcpWiringHost): FirewallDhcp {
     interfaceAddress: (iface) => host.interfaceAddress(iface),
     portMac: (iface) => host.portMac(iface),
     sendFrame: (iface, frame) => { host.emitFrame(iface, frame); },
-    configureInterface: (iface, ip, mask, gateway) => {
-      host.leaseGranted(iface, ip, mask, gateway);
-    },
+    configureInterface: (iface, ip, mask) => { host.leaseGranted(iface, ip, mask); },
+    installLeaseRoute: (iface, gateway, distance) => { host.leaseRoute(iface, gateway, distance); },
     clearInterface: (iface) => { host.leaseLost(iface); },
     sendToServer: (server, packet) => host.sendToServer?.(server, packet) ?? false,
     interfaceOwning: (address) => host.interfaceOwning?.(address) ?? null,

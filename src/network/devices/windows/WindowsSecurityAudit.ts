@@ -35,6 +35,7 @@ export const SECURITY_EVENT = {
   ACCOUNT_DELETED: 4726,
   ACCOUNT_CHANGED: 4738,
   ACCOUNT_LOCKED_OUT: 4740,
+  ACCOUNT_UNLOCKED: 4767,
   GROUP_MEMBER_ADDED: 4732,
   GROUP_MEMBER_REMOVED: 4733,
   GROUP_MEMBER_ADDED_GLOBAL: 4728,
@@ -181,6 +182,11 @@ export class WindowsSecurityAudit {
 
   accountDisabled(name: string, subjectUserName = 'Administrator'): void {
     this.success(SECURITY_EVENT.ACCOUNT_DISABLED, `A user account was disabled.\n\nTarget Account:\n\tAccount Name:\t${name}`,
+      { TargetUserName: name, SubjectUserName: subjectUserName }, subjectUserName);
+  }
+
+  accountUnlocked(name: string, subjectUserName = 'Administrator'): void {
+    this.success(SECURITY_EVENT.ACCOUNT_UNLOCKED, `A user account was unlocked.\n\nTarget Account:\n\tAccount Name:\t${name}`,
       { TargetUserName: name, SubjectUserName: subjectUserName }, subjectUserName);
   }
 

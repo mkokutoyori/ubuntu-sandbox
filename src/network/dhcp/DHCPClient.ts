@@ -803,6 +803,7 @@ export class DHCPClient implements IProtocolEngine {
           clientMAC: mac,
           clientIP: lease.ipAddress,
           serverIdentifier: lease.serverIdentifier,
+          unicastTo: { ip: lease.serverIdentifier, mac: lease.serverMac },
           clientIdentifier,
           ...this.clientIdentity(),
         });
@@ -810,21 +811,22 @@ export class DHCPClient implements IProtocolEngine {
       }
     }
 
-    // Clear timers
-    this.clearTimers(state);
-
-    // Clear IP
-    this.clearIP(iface);
-
-    // Reset state — keep lastKnownLease cleared (explicit release = don't reuse)
-    const oldIP = state.lease.ipAddress;
-    state.lease = null;
-    state.lastKnownLease = null; // Explicit release — do not INIT-REBOOT
-    state.state = 'INIT';
-    state.processRunning = false;
+    const oldIP = lease.ipAddress;
+    this.abandonLease(iface);
     state.logs.push(`released ${oldIP} on ${iface}`);
 
     return `released ${oldIP}`;
+  }
+
+  abandonLease(iface: string): void {
+    const state = this.ifaceStates.get(iface);
+    if (!state) return;
+    this.clearTimers(state);
+    if (state.lease) this.clearIP(iface);
+    state.lease = null;
+    state.lastKnownLease = null;
+    state.state = 'INIT';
+    state.processRunning = false;
   }
 
   /**
@@ -981,6 +983,8 @@ export class DHCPClient implements IProtocolEngine {
               clientMAC: mac,
               xid: state.xid,
               requestedIP: lease.ipAddress,
+              currentAddress: lease.ipAddress,
+              unicastTo: { ip: lease.serverIdentifier, mac: lease.serverMac },
               // No serverIdentifier in RENEWING (unicast, RFC 2131 §4.3.2)
               clientIdentifier,
               ...this.clientIdentity(),
@@ -1025,6 +1029,7 @@ export class DHCPClient implements IProtocolEngine {
             clientMAC: mac,
             xid: state.xid,
             requestedIP: lease.ipAddress,
+            currentAddress: lease.ipAddress,
             clientIdentifier,
             ...this.clientIdentity(),
           });

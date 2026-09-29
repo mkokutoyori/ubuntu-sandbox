@@ -87,6 +87,8 @@ export interface GpoAccountPolicy {
   reversibleEncryptionEnabled?: boolean;
 }
 
+export const DEFAULT_LOCKOUT_POLICY = { threshold: 5, durationMinutes: 30, windowMinutes: 30 } as const;
+
 /** A Fine-Grained Password Policy (`msDS-PasswordSettings`, PRD-Windows-Server-Advanced.md §5 P10) — the same account-policy shape as a GPO's, plus the precedence that resolves conflicts between PSOs applying to the same account (lowest wins) and the direct/group subjects it applies to. */
 export interface AdFineGrainedPasswordPolicy {
   readonly name: string;
@@ -104,6 +106,37 @@ export interface GpoRegistryValue {
   valueName: string;
   type: string;
   value: string;
+}
+
+export const GP_REGISTRY_TYPES = ['String', 'ExpandString', 'Binary', 'DWord', 'MultiString', 'QWord'] as const;
+
+export function canonicalGpRegistryType(type: string): string | null {
+  return GP_REGISTRY_TYPES.find(t => t.toLowerCase() === type.toLowerCase()) ?? null;
+}
+
+export function normalisedPolicyKey(key: string): string {
+  return key.toLowerCase()
+    .replace(/^hkey_local_machine/, 'hklm')
+    .replace(/^hkey_current_user/, 'hkcu')
+    .replace(/^(hklm|hkcu):/, '$1')
+    .replace(/\\+$/, '');
+}
+
+export function gpRegistryValueProblem(entry: GpoRegistryValue): string | null {
+  if (!/^(hklm|hkcu)(\\|$)/.test(normalisedPolicyKey(entry.key))) {
+    return `The registry key '${entry.key}' is not under HKEY_LOCAL_MACHINE or HKEY_CURRENT_USER, the only hives Group Policy sets.`;
+  }
+  const type = canonicalGpRegistryType(entry.type);
+  if (type === null) {
+    return `Cannot convert value "${entry.type}" to type "Microsoft.Win32.RegistryValueKind". Error: "Unable to match the identifier name ${entry.type} to a valid enumerator name. Specify one of the following enumerator names and try again: ${GP_REGISTRY_TYPES.join(', ')}"`;
+  }
+  if (type === 'DWord' && !(/^\d+$/.test(entry.value) && Number(entry.value) <= 4294967295)) {
+    return `The value '${entry.value}' is not valid for type DWord: it must be a whole number from 0 to 4294967295.`;
+  }
+  if (type === 'QWord' && !/^\d+$/.test(entry.value)) {
+    return `The value '${entry.value}' is not valid for type QWord: it must be a non-negative whole number.`;
+  }
+  return null;
 }
 
 export interface GpoSettings {
@@ -152,6 +185,7 @@ export function decodeGpLink(raw: string): { gpoDn: string; linkEnabled: boolean
 export interface Gpo {
   readonly id: string;
   readonly name: string;
+  readonly description: string;
   links: string[];
   settings: GpoSettings;
 }

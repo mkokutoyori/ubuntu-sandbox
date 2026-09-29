@@ -27,9 +27,7 @@ export function buildCommitDevice(
   return {
       applyInterface(name, patch) {
         if (patch.vdom) fw.assignInterfaceToVdom(name, patch.vdom);
-        if (patch.addressingMode) {
-          fw.getDhcp().setClientMode(name, patch.addressingMode === 'dhcp');
-        }
+        if (patch.addressingMode) fw.getDhcp().setClientMode(name, patch.dhcpRoute ?? null);
         if (patch.ip && patch.mask) fw.configureInterface(name, { ip: patch.ip, mask: patch.mask });
         if (patch.up !== undefined) fw.setInterfaceUp(name, patch.up);
         if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);
@@ -97,7 +95,7 @@ export function buildCommitDevice(
         fw.removeDhcp6Scope(id);
       },
       acquireDhcpLease(iface) {
-        fw.getDhcp().acquireLease(iface);
+        fw.getDhcp().startClient(iface);
       },
       removeStaticRoute(id) {
         fw.forgetSdwanStaticRoute(id);
@@ -268,6 +266,12 @@ export function buildCommitDevice(
       },
       applyLdbMonitor(monitor) {
         fw.getLdbMonitors().set(monitor);
+      },
+      applyLinkMonitor(monitor) {
+        fw.getLinkMonitors().set(monitor);
+      },
+      removeLinkMonitor(name) {
+        fw.getLinkMonitors().remove(name);
       },
       applyFragmentMemoryThreshold(megabytes) {
         fw.getFragmentReassembly().setThresholdMegabytes(megabytes);

@@ -19,7 +19,8 @@ import { DirectoryTree, type DirectoryEntry, type EntryReplMeta, type Modificati
 import { parseDN, formatDN, leafValue, type DistinguishedName } from './ldap/LdapDN';
 import type { LdapBindCheck } from './ldap/LdapServer';
 import type { AdUser, AdGroup, AdComputer, AdOrgUnit, Gpo, GpoSettings, GpoAccountPolicy, GpoRegistryValue, GpoLinkInfo, AdFineGrainedPasswordPolicy, AdAccessRule, AdGenericObject, AdServiceAccount } from './AdTypes';
-import { encodeGpLink, decodeGpLink } from './AdTypes';
+import { DEFAULT_LOCKOUT_POLICY, canonicalGpRegistryType, decodeGpLink, encodeGpLink, gpRegistryValueProblem, normalisedPolicyKey } from './AdTypes';
+import { containerChain, resolveGroupPolicy, type GpoContainerReader, type GroupPolicyResult } from './GpoResolution';
 import { generateId } from '@/network/core/types';
 import {
   type HighWatermarkVector, emptyHighWatermarkVector, recordUsn, cloneHighWatermarkVector,
@@ -31,7 +32,7 @@ import type { AttributeSchema, ObjectClassSchema, SchemaOpResult } from './schem
 import { TrustRegistry, type TrustDirection, type TrustOpResult, type TrustInfo, type TrustRecord } from './forest/TrustRelationship';
 import { DEFAULT_AD_FUNCTIONAL_LEVEL } from './adFunctionalLevels';
 import { OU_PROPERTIES, PROTECTION_OBJECT_RIGHTS, PROTECTION_PARENT_RIGHT, isProtectionAce, protectionAce } from './adOrganizationalUnit';
-import { NEVER_EXPIRES, USER_FLAGS, USER_PROPERTIES, CHANGE_PASSWORD_TRUSTEES, accountExpiresDate, applyUserFlag, cannotChangePasswordAce, isCannotChangePasswordAce, readUserFlag } from './adUser';
+import { ACCOUNT_CONTROL_FLAGS, NEVER_EXPIRES, USER_FLAGS, USER_PROPERTIES, CHANGE_PASSWORD_TRUSTEES, accountExpiresDate, applyUserFlag, cannotChangePasswordAce, isCannotChangePasswordAce, readUserFlag } from './adUser';
 import { GROUP_PROPERTIES, MEMBER_ALREADY_IN_GROUP, MEMBER_NOT_IN_GROUP, groupNestingProblem, groupTypeParts, groupTypeValue } from './adGroup';
 import { RECYCLE_BIN_FEATURE, findOptionalFeature, forestModeAdmits, requiredForestModeFor } from './adOptionalFeatures';
 import { getForestForDomain } from './forest/Forest';
@@ -526,10 +527,11 @@ export class DirectoryStore {
 
   // ─── Group Policy Objects (PRD-Windows-Server.md §5 P10) ────────────
 
-  newGpo(name: string): DirOpResult {
+  newGpo(name: string, description = ''): DirOpResult {
     const res = this.tree.addEntry(this.cnDn(name, this.policiesDn), {
       objectClass: ['top', 'container', 'groupPolicyContainer'],
       cn: [name], displayName: [name],
+      ...(description ? { description: [description] } : {}),
     });
     return res.ok ? { ok: true, message: '' } : { ok: false, message: `A GPO named "${name}" already exists.` };
   }
@@ -558,6 +560,7 @@ export class DirectoryStore {
     const gpoDn = formatDN(entry.dn);
     return {
       id: firstOf(entry.attributes.get('cn')),
+      description: firstOf(entry.attributes.get('description')),
       name: firstOf(entry.attributes.get('displayname')),
       links: this.tree.allDescendants(this.tree.getRootDn())
         .filter(e => (e.attributes.get('gplink') ?? []).some(v => decodeGpLink(v).gpoDn.toLowerCase() === gpoDn.toLowerCase()))
@@ -589,8 +592,11 @@ export class DirectoryStore {
   setGpRegistryValue(gpoName: string, entryPatch: GpoRegistryValue): DirOpResult {
     const gpo = this.getGpo(gpoName);
     if (!gpo) return { ok: false, message: `Cannot find a GPO with name "${gpoName}".` };
+    const invalid = gpRegistryValueProblem(entryPatch);
+    if (invalid) return { ok: false, message: invalid };
+    entryPatch = { ...entryPatch, type: canonicalGpRegistryType(entryPatch.type) ?? entryPatch.type };
     const existing = gpo.settings.registryPolicy ?? [];
-    const idx = existing.findIndex(e => e.key.toLowerCase() === entryPatch.key.toLowerCase() && e.valueName.toLowerCase() === entryPatch.valueName.toLowerCase());
+    const idx = existing.findIndex(e => normalisedPolicyKey(e.key) === normalisedPolicyKey(entryPatch.key) && e.valueName.toLowerCase() === entryPatch.valueName.toLowerCase());
     const next = [...existing];
     if (idx >= 0) next[idx] = entryPatch; else next.push(entryPatch);
     return this.setGpoSettings(gpoName, { registryPolicy: next });
@@ -637,53 +643,111 @@ export class DirectoryStore {
     return { ok: true, message: '' };
   }
 
-  /**
-   * RSoP for a computer, real precedence order: domain-linked GPOs first,
-   * then GPOs linked to the computer's own OU (more specific — its
-   * settings override the domain's on conflicting keys). Only direct
-   * links are honored (no OU-hierarchy walk beyond the computer's
-   * immediate container). Disabled links (`-LinkEnabled No`) never apply;
-   * an Enforced domain-level link still applies even when the computer's
-   * own OU has inheritance blocked — real AD's "Enforced wins over
-   * blocked inheritance" rule.
-   *
-   * `userSam`, when given, additionally folds in GPOs linked to the
-   * logged-on user's own OU — real AD's User Configuration settings
-   * (folder redirection, HKCU registry policy, …) resolve against the
-   * USER object's location, independently of where the computer object
-   * sits (this simulator doesn't model Loopback Processing, so there's
-   * no computer-OU override of that for now).
-   */
-  resultantSetOfPolicy(computerName?: string, userSam?: string): { appliedGpoNames: string[]; settings: GpoSettings } {
-    let ouEntry: DirectoryEntry | null = null;
-    if (computerName) {
-      const computer = this.findComputerEntry(computerName);
-      if (computer) ouEntry = this.tree.getByDn(computer.dn.slice(1));
+  resultantSetOfPolicy(computerName?: string, userSam?: string): GroupPolicyResult {
+    const rootDn = formatDN(this.tree.getRootDn());
+    const computer = computerName ? this.findComputerEntry(computerName) : null;
+    const user = userSam ? this.findUserEntry(userSam) : null;
+    return resolveGroupPolicy(
+      this.gpoReader(),
+      computer ? containerChain(formatDN(computer.dn), rootDn) : [rootDn],
+      user ? containerChain(formatDN(user.dn), rootDn) : undefined,
+    );
+  }
+
+  private gpoEntryAt(dn: string): DirectoryEntry | null {
+    try { return this.tree.getByDn(parseDN(dn)); } catch { return null; }
+  }
+
+  private gpoReader(): GpoContainerReader {
+    return {
+      gpLinks: dn => this.gpoEntryAt(dn)?.attributes.get('gplink') ?? [],
+      inheritanceBlocked: dn => firstOf(this.gpoEntryAt(dn)?.attributes.get('gpoptions')) === '1',
+      readGpo: dn => {
+        const entry = this.gpoEntryAt(dn);
+        if (!entry) return null;
+        const gpo = this.projectGpo(entry);
+        return { name: gpo.name, settings: gpo.settings };
+      },
+    };
+  }
+
+  private linkHolders(gpoDn: string): DirectoryEntry[] {
+    const wanted = gpoDn.toLowerCase();
+    return this.tree.allDescendants(this.tree.getRootDn())
+      .filter(e => (e.attributes.get('gplink') ?? []).some(v => decodeGpLink(v).gpoDn.toLowerCase() === wanted));
+  }
+
+  /** `Remove-GPO` — deletes the GPO and, unless `keepLinks`, every link to it in this domain. */
+  removeGpo(name: string, keepLinks = false): DirOpResult {
+    const gpo = this.findGpoEntry(name);
+    if (!gpo) return { ok: false, message: `A GPO with the name "${name}" cannot be found.` };
+    const gpoDn = formatDN(gpo.dn);
+    for (const holder of keepLinks ? [] : this.linkHolders(gpoDn)) {
+      const kept = (holder.attributes.get('gplink') ?? []).filter(v => decodeGpLink(v).gpoDn.toLowerCase() !== gpoDn.toLowerCase());
+      this.tree.modifyEntry(holder.dn, [{ op: 'replace', type: 'gPLink', values: kept }]);
     }
-    let userOuEntry: DirectoryEntry | null = null;
-    if (userSam) {
-      const user = this.findUserEntry(userSam);
-      if (user) userOuEntry = this.tree.getByDn(user.dn.slice(1));
+    const res = this.tree.deleteEntry(gpo.dn);
+    return res.ok ? { ok: true, message: '' } : { ok: false, message: res.message };
+  }
+
+  /** `Rename-GPO` — renames the container and rewrites every link that names it. */
+  renameGpo(name: string, newName: string): DirOpResult {
+    const gpo = this.findGpoEntry(name);
+    if (!gpo) return { ok: false, message: `A GPO with the name "${name}" cannot be found.` };
+    if (this.findGpoEntry(newName)) return { ok: false, message: `A GPO with the name "${newName}" already exists.` };
+    const oldDn = formatDN(gpo.dn);
+    const holders = this.linkHolders(oldDn).map(h => ({ dn: h.dn, links: h.attributes.get('gplink') ?? [] }));
+    const res = this.tree.renameEntry(gpo.dn, `CN=${newName}`, true);
+    if (!res.ok) return { ok: false, message: res.message };
+    const renamed = this.findGpoEntry(newName);
+    if (!renamed) return { ok: false, message: `Cannot find the renamed GPO "${newName}".` };
+    this.tree.modifyEntry(renamed.dn, [{ op: 'replace', type: 'displayName', values: [newName] }]);
+    const newDn = formatDN(renamed.dn);
+    for (const holder of holders) {
+      const links = holder.links.map(v => {
+        const link = decodeGpLink(v);
+        return link.gpoDn.toLowerCase() === oldDn.toLowerCase()
+          ? encodeGpLink(newDn, { linkEnabled: link.linkEnabled, enforced: link.enforced, order: link.order })
+          : v;
+      });
+      this.tree.modifyEntry(holder.dn, [{ op: 'replace', type: 'gPLink', values: links }]);
     }
-    const inheritanceBlocked = ouEntry ? firstOf(ouEntry.attributes.get('gpoptions')) === '1' : false;
-    const domainLinks = this.linkedGposFor(this.tree.getRootDn()).filter(l => l.enabled && (l.enforced || !inheritanceBlocked));
-    const ouLinks = ouEntry ? this.linkedGposFor(ouEntry.dn).filter(l => l.enabled) : [];
-    const userOuLinks = (userOuEntry && userOuEntry.dn.join(',') !== ouEntry?.dn.join(','))
-      ? this.linkedGposFor(userOuEntry.dn).filter(l => l.enabled) : [];
-    const ordered = [...domainLinks, ...ouLinks, ...userOuLinks].sort((a, b) => a.order - b.order).map(l => l.gpo);
-    const merged: GpoSettings = {};
-    for (const gpo of ordered) {
-      if (gpo.settings.accountPolicy !== undefined) merged.accountPolicy = { ...merged.accountPolicy, ...gpo.settings.accountPolicy };
-      if (gpo.settings.logonBanner !== undefined) merged.logonBanner = gpo.settings.logonBanner;
-      if (gpo.settings.startupScript !== undefined) merged.startupScript = gpo.settings.startupScript;
-      if (gpo.settings.auditPolicy !== undefined) merged.auditPolicy = { ...merged.auditPolicy, ...gpo.settings.auditPolicy };
-      if (gpo.settings.registryPolicy !== undefined) {
-        const byKey = new Map((merged.registryPolicy ?? []).map(e => [`${e.key.toLowerCase()}|${e.valueName.toLowerCase()}`, e]));
-        for (const e of gpo.settings.registryPolicy) byKey.set(`${e.key.toLowerCase()}|${e.valueName.toLowerCase()}`, e);
-        merged.registryPolicy = Array.from(byKey.values());
-      }
-    }
-    return { appliedGpoNames: ordered.map(g => g.name), settings: merged };
+    return { ok: true, message: '' };
+  }
+
+  /** `Remove-GPLink` — drops the link between a GPO and one container, leaving the GPO. */
+  removeGpLink(gpoName: string, targetDn: string): DirOpResult {
+    const gpo = this.findGpoEntry(gpoName);
+    if (!gpo) return { ok: false, message: `A GPO with the name "${gpoName}" cannot be found.` };
+    const target = this.resolveTargetEntry(targetDn);
+    if (!target) return { ok: false, message: `Cannot find an object with distinguished name: '${targetDn}'.` };
+    const gpoDn = formatDN(gpo.dn).toLowerCase();
+    const links = target.attributes.get('gplink') ?? [];
+    const kept = links.filter(v => decodeGpLink(v).gpoDn.toLowerCase() !== gpoDn);
+    if (kept.length === links.length) return { ok: false, message: `The GPO "${gpoName}" is not linked to '${targetDn}'.` };
+    this.tree.modifyEntry(target.dn, [{ op: 'replace', type: 'gPLink', values: kept }]);
+    return { ok: true, message: '' };
+  }
+
+  /** `Get-GPRegistryValue` — every value a GPO sets under `key` (all of its values when `valueName` is empty). */
+  getGpRegistryValues(gpoName: string, key: string, valueName: string): GpoRegistryValue[] | null {
+    const gpo = this.getGpo(gpoName);
+    if (!gpo) return null;
+    const wantedKey = normalisedPolicyKey(key);
+    return (gpo.settings.registryPolicy ?? []).filter(e =>
+      normalisedPolicyKey(e.key) === wantedKey && (valueName === '' || e.valueName.toLowerCase() === valueName.toLowerCase()));
+  }
+
+  /** `Remove-GPRegistryValue` — removes one value, or every value under `key` when `valueName` is empty. */
+  removeGpRegistryValue(gpoName: string, key: string, valueName: string): DirOpResult {
+    const gpo = this.getGpo(gpoName);
+    if (!gpo) return { ok: false, message: `A GPO with the name "${gpoName}" cannot be found.` };
+    const doomed = this.getGpRegistryValues(gpoName, key, valueName) ?? [];
+    if (doomed.length === 0) return { ok: false, message: `The GPO "${gpoName}" does not set the registry value '${key}${valueName ? `\\${valueName}` : ''}'.` };
+    const identity = (e: GpoRegistryValue): string => `${normalisedPolicyKey(e.key)}|${e.valueName.toLowerCase()}`;
+    const doomedIdentities = new Set(doomed.map(identity));
+    const kept = (gpo.settings.registryPolicy ?? []).filter(e => !doomedIdentities.has(identity(e)));
+    return this.setGpoSettings(gpoName, { registryPolicy: kept });
   }
 
   setGpInheritance(targetDn: string, blocked: boolean): DirOpResult {
@@ -712,20 +776,6 @@ export class DirectoryStore {
         };
       }),
     };
-  }
-
-  private linkedGposFor(dn: DistinguishedName): Array<{ gpo: Gpo; enabled: boolean; enforced: boolean; order: number }> {
-    const entry = this.tree.getByDn(dn);
-    const links = entry?.attributes.get('gplink') ?? [];
-    return links
-      .map(raw => {
-        const decoded = decodeGpLink(raw);
-        let gpoEntry: DirectoryEntry | null;
-        try { gpoEntry = this.tree.getByDn(parseDN(decoded.gpoDn)); } catch { gpoEntry = null; }
-        if (!gpoEntry) return null;
-        return { gpo: this.projectGpo(gpoEntry), enabled: decoded.linkEnabled, enforced: decoded.enforced, order: decoded.order };
-      })
-      .filter((l): l is { gpo: Gpo; enabled: boolean; enforced: boolean; order: number } => l !== null);
   }
 
   // ─── Password policy: Default Domain Policy + Fine-Grained (PSO) ────
@@ -940,7 +990,7 @@ export class DirectoryStore {
   private projectUserFlags(entry: DirectoryEntry): Record<string, boolean> {
     const uac = Number(firstOf(entry.attributes.get('useraccountcontrol'))) || 0;
     const out: Record<string, boolean> = {};
-    for (const spec of USER_FLAGS) out[spec.parameter] = readUserFlag(uac, spec);
+    for (const spec of ACCOUNT_CONTROL_FLAGS) out[spec.parameter] = readUserFlag(uac, spec);
     return out;
   }
 
@@ -989,7 +1039,7 @@ export class DirectoryStore {
     }
     const changes: { op: 'replace' | 'add' | 'delete'; type: string; values: string[] }[] = [];
     if (opts.enabled !== undefined) {
-      changes.push({ op: 'replace', type: 'userAccountControl', values: [String(opts.enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE)] });
+      changes.push({ op: 'replace', type: 'userAccountControl', values: [String(this.uacAfter(entry, { Enabled: opts.enabled }))] });
     }
     if (opts.fullName !== undefined) changes.push({ op: 'replace', type: 'displayName', values: opts.fullName ? [opts.fullName] : [] });
     if (opts.password !== undefined) {
@@ -1007,40 +1057,124 @@ export class DirectoryStore {
     return { ok: true, message: '' };
   }
 
-  /** AD's Default Domain Policy LockoutThreshold default: 5 bad passwords locks the account (PRD-Windows-Server-Advanced §5 password policy). */
-  private static readonly LOCKOUT_THRESHOLD = 5;
+  /**
+   * The lockout policy that governs `sam`: the fine-grained PSO that
+   * resolves for the account when there is one, else the Default Domain
+   * Policy, field by field. Threshold 0 never locks; duration 0 keeps the
+   * lock until an administrator unlocks the account.
+   */
+  private lockoutPolicyFor(sam: string): { threshold: number; durationMinutes: number; windowMinutes: number } {
+    const domain = this.getDefaultDomainPasswordPolicy();
+    const pso = this.getResultantPasswordPolicy(sam)?.settings ?? {};
+    return {
+      threshold: pso.lockoutThreshold ?? domain.lockoutThreshold ?? DEFAULT_LOCKOUT_POLICY.threshold,
+      durationMinutes: pso.lockoutDurationMinutes ?? domain.lockoutDurationMinutes ?? DEFAULT_LOCKOUT_POLICY.durationMinutes,
+      windowMinutes: pso.lockoutWindowMinutes ?? domain.lockoutWindowMinutes ?? DEFAULT_LOCKOUT_POLICY.windowMinutes,
+    };
+  }
 
-  /** A failed Kerberos pre-authentication (bad password) — increments badPwdCount and locks the account once the threshold is reached, matching real AD. */
+  private lockedAtMs(entry: DirectoryEntry): number {
+    return Number(firstOf(entry.attributes.get('lockouttime'))) || 0;
+  }
+
+  private lockoutActive(entry: DirectoryEntry): boolean {
+    const lockedAt = this.lockedAtMs(entry);
+    if (lockedAt === 0) return false;
+    const { durationMinutes } = this.lockoutPolicyFor(firstOf(entry.attributes.get('samaccountname')));
+    return durationMinutes === 0 || this.now().getTime() < lockedAt + durationMinutes * 60_000;
+  }
+
+  /**
+   * A failed Kerberos pre-authentication (bad password): counts it inside the
+   * observation window (a count older than the window starts again, and so
+   * does the count of an account whose lockout has run out) and locks the
+   * account once the threshold is reached, on the machine's simulated clock.
+   */
   recordBadPasswordAttempt(sam: string): void {
     const entry = this.findUserEntry(sam);
     if (!entry) return;
-    const count = Number(firstOf(entry.attributes.get('badpwdcount'))) || 0;
-    const next = count + 1;
+    const policy = this.lockoutPolicyFor(sam);
+    const nowMs = this.now().getTime();
+    const lockRanOut = this.lockedAtMs(entry) !== 0 && !this.lockoutActive(entry);
+    const lastBadAt = Number(firstOf(entry.attributes.get('badpasswordtime'))) || 0;
+    const windowElapsed = lastBadAt !== 0 && nowMs - lastBadAt > policy.windowMinutes * 60_000;
+    const previous = lockRanOut || windowElapsed ? 0 : Number(firstOf(entry.attributes.get('badpwdcount'))) || 0;
+    const next = previous + 1;
     const changes: { op: 'replace'; type: string; values: string[] }[] = [
       { op: 'replace', type: 'badPwdCount', values: [String(next)] },
+      { op: 'replace', type: 'badPasswordTime', values: [String(nowMs)] },
     ];
-    if (next >= DirectoryStore.LOCKOUT_THRESHOLD) {
-      changes.push({ op: 'replace', type: 'lockoutTime', values: [String(Math.floor(Date.now() / 1000))] });
+    if (lockRanOut) changes.push({ op: 'replace', type: 'lockoutTime', values: [] });
+    if (policy.threshold > 0 && next >= policy.threshold) {
+      changes.push({ op: 'replace', type: 'lockoutTime', values: [String(nowMs)] });
     }
     this.tree.modifyEntry(entry.dn, changes);
   }
 
-  /** A successful logon resets the bad-password counter, matching real AD. */
+  /** A successful logon resets the bad-password counter and any lockout that had run out, matching real AD. */
   resetBadPasswordCount(sam: string): void {
     const entry = this.findUserEntry(sam);
     if (!entry) return;
-    this.tree.modifyEntry(entry.dn, [{ op: 'replace', type: 'badPwdCount', values: [] }]);
+    this.tree.modifyEntry(entry.dn, [
+      { op: 'replace', type: 'badPwdCount', values: [] },
+      { op: 'replace', type: 'badPasswordTime', values: [] },
+      { op: 'replace', type: 'lockoutTime', values: [] },
+    ]);
   }
 
   isLockedOut(sam: string): boolean {
     const entry = this.findUserEntry(sam);
-    return entry ? firstOf(entry.attributes.get('lockouttime')) !== '' : false;
+    return entry ? this.lockoutActive(entry) : false;
+  }
+
+  isUserEnabled(sam: string): boolean {
+    const entry = this.findUserEntry(sam);
+    return entry ? isEnabledFromUac(entry.attributes.get('useraccountcontrol')) : false;
+  }
+
+  userDoesNotRequirePreAuth(sam: string): boolean {
+    const entry = this.findUserEntry(sam);
+    if (!entry) return false;
+    const spec = ACCOUNT_CONTROL_FLAGS.find(f => f.parameter === 'DoesNotRequirePreAuth');
+    return spec ? readUserFlag(Number(firstOf(entry.attributes.get('useraccountcontrol'))) || 0, spec) : false;
+  }
+
+  private uacAfter(entry: DirectoryEntry, flags: Record<string, boolean | undefined>): number {
+    let uac = Number(firstOf(entry.attributes.get('useraccountcontrol'))) || 0;
+    for (const spec of ACCOUNT_CONTROL_FLAGS) {
+      const wanted = flags[spec.parameter];
+      if (wanted !== undefined) uac = applyUserFlag(uac, spec, wanted);
+    }
+    return uac;
+  }
+
+  /** `Unlock-ADAccount` — clears `lockoutTime` and the bad-password counter; an account that is not locked is left as it is, as in real AD. */
+  unlockUser(identity: string): DirOpResult {
+    const entry = this.findUserEntry(this.resolveIdentity(identity));
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${identity}' under: '${this.getDomainDn()}'.` };
+    this.tree.modifyEntry(entry.dn, [
+      { op: 'replace', type: 'lockoutTime', values: [] },
+      { op: 'replace', type: 'badPwdCount', values: [] },
+      { op: 'replace', type: 'badPasswordTime', values: [] },
+    ]);
+    return { ok: true, message: '' };
+  }
+
+  /** `Set-ADAccountControl` — flips userAccountControl bits, keeping every other bit, and the change-password ACE for `CannotChangePassword`. */
+  setAccountControl(identity: string, change: { flags: Record<string, boolean>; cannotChangePassword?: boolean }): DirOpResult {
+    const entry = this.findUserEntry(this.resolveIdentity(identity));
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${identity}' under: '${this.getDomainDn()}'.` };
+    if (Object.keys(change.flags).length > 0) {
+      this.tree.modifyEntry(entry.dn, [{ op: 'replace', type: 'userAccountControl', values: [String(this.uacAfter(entry, change.flags))] }]);
+    }
+    if (change.cannotChangePassword !== undefined) return this.setCannotChangePassword(identity, change.cannotChangePassword);
+    return { ok: true, message: '' };
   }
 
   /** `Search-ADAccount -LockedOut`. */
   listLockedOutUsers(): Array<{ sam: string; name: string; badPwdCount: number }> {
     return this.listUserEntries()
-      .filter(e => firstOf(e.attributes.get('lockouttime')) !== '')
+      .filter(e => this.lockoutActive(e))
       .map(e => ({
         sam: firstOf(e.attributes.get('samaccountname')),
         name: firstOf(e.attributes.get('displayname')) || firstOf(e.attributes.get('samaccountname')),
@@ -1434,6 +1568,33 @@ export class DirectoryStore {
   private findGroupMemberEntry(sam: string): DirectoryEntry | null {
     return this.findUserEntry(sam) ?? this.findComputerEntry(sam) ?? this.findGroupEntry(sam)
       ?? this.findForeignSecurityPrincipalEntry(sam);
+  }
+
+  getPrincipalGroups(identity: string): AdGroup[] | null {
+    this.expireMemberships();
+    const entry = this.findGroupMemberEntry(this.resolveIdentity(identity));
+    if (!entry) return null;
+    const groups: AdGroup[] = [];
+    for (const dnStr of entry.attributes.get('memberof') ?? []) {
+      const sam = this.samOfDn(dnStr);
+      const group = sam ? this.getGroup(sam) : null;
+      if (group) groups.push(group);
+    }
+    return groups;
+  }
+
+  moveObject(identity: string, targetPath: string): DirOpResult {
+    const entry = this.findGroupMemberEntry(this.resolveIdentity(identity)) ?? this.resolveTargetEntry(identity);
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${identity}' under: '${this.getDomainDn()}'.` };
+    const targetParent = this.resolveTargetEntry(targetPath);
+    if (!targetParent) return { ok: false, message: `The specified target path '${targetPath}' does not exist.` };
+    const leafRdn = formatDN([entry.dn[0]]);
+    const res = this.tree.renameEntry(entry.dn, leafRdn, false, targetParent.dn);
+    if (res.ok) return { ok: true, message: '' };
+    if (res.message === 'entryAlreadyExists') {
+      return { ok: false, message: `An object with the DistinguishedName '${leafRdn},${formatDN(targetParent.dn)}' already exists.` };
+    }
+    return { ok: false, message: res.message };
   }
 
   private foreignSecurityPrincipalsDn(): DistinguishedName {

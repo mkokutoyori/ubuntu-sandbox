@@ -19,7 +19,8 @@
 import type { EndHost } from '@/network/devices/EndHost';
 import { DHCPServer } from '@/network/dhcp/DHCPServer';
 import { DHCPPacket, DHCP_OPTION, DHCP_WIRE_BYTES } from '@/network/dhcp/DHCPPacket';
-import { buildDhcpServerReply } from '@/network/dhcp/DhcpServerExchange';
+import { buildDhcpServerReply, dhcpReplyRoute } from '@/network/dhcp/DhcpServerExchange';
+import { dhcpLinkDestination, dhcpServerReplyFrame, type DhcpLinkDestination } from '@/network/dhcp/DhcpServerReplyFrame';
 import type { DHCPBinding } from '@/network/dhcp/types';
 import type { DhcidRecordData } from '@/network/dns/wire/ResourceRecord';
 import { RRType } from '@/network/dns/wire/RRType';
@@ -27,11 +28,8 @@ import {
   dhcidIdentityFromChaddr, dhcidIdentityFromClientId, dhcidMatches,
   DHCID_DIGEST_SHA256, computeDhcidDigest, type DhcidIdentity,
 } from '@/network/dns/wire/Dhcid';
-import { DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '@/network/core/WellKnownPorts';
-import {
-  IPAddress, SubnetMask, MACAddress, createIPv4Packet, ETHERTYPE_IPV4, IP_PROTO_UDP,
-  type UDPPacket,
-} from '@/network/core/types';
+import { DHCP_SERVER_PORT } from '@/network/core/WellKnownPorts';
+import { IPAddress, SubnetMask, type UDPPacket } from '@/network/core/types';
 
 export interface DhcpOpResult { ok: boolean; message: string }
 
@@ -218,7 +216,6 @@ export class WindowsDhcpServerRole {
     this.adoptServerIdentifierOf(inPort);
     this.engine.setServerOwnedAddresses(this.ownAddresses());
     if (pkt.getMessageType() === 'DHCPRELEASE') this.withdrawDnsFor(pkt.ciaddr);
-    const relayAgent = pkt.giaddr !== '0.0.0.0' ? pkt.giaddr : undefined;
     const reply = buildDhcpServerReply(pkt, {
       server: this.engine,
       localGatewayIP: this.host.getPorts().find(p => p.getName() === inPort)?.getIPAddress()?.toString(),
@@ -226,8 +223,9 @@ export class WindowsDhcpServerRole {
     });
     if (!reply) return;
     this.syncDnsForExchange(pkt, reply);
-    if (relayAgent) this.sendReplyToRelay(relayAgent, reply);
-    else this.sendReply(inPort, reply);
+    const route = dhcpReplyRoute(pkt, reply);
+    if (route.kind === 'relay') this.sendReplyToRelay(route.relay, reply);
+    else this.sendReply(inPort, reply, dhcpLinkDestination(route, pkt.chaddr));
   }
 
   private zoneForLeasedAddress(ip: string): string | null {
@@ -331,19 +329,11 @@ export class WindowsDhcpServerRole {
     });
   }
 
-  private sendReply(inPort: string, reply: DHCPPacket): void {
+  private sendReply(inPort: string, reply: DHCPPacket, to: DhcpLinkDestination): void {
     const port = this.host.getPorts().find(p => p.getName() === inPort);
     const srcIp = port?.getIPAddress();
     if (!port || !srcIp) return;
-    const udp: UDPPacket = {
-      type: 'udp', sourcePort: DHCP_SERVER_PORT, destinationPort: DHCP_CLIENT_PORT,
-      length: 8 + DHCP_WIRE_BYTES, checksum: 0, payload: reply,
-    };
-    const ipPkt = createIPv4Packet(srcIp, new IPAddress('255.255.255.255'), IP_PROTO_UDP, 64, udp, 8 + DHCP_WIRE_BYTES);
-    this.host.sendFrame(inPort, {
-      srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    });
+    this.host.sendFrame(inPort, dhcpServerReplyFrame(reply, srcIp, port.getMAC(), to));
   }
 
   // ─── Scopes (Add-DhcpServerv4Scope / Get-DhcpServerv4Scope) ─────────

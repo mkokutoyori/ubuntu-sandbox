@@ -3,6 +3,7 @@ import type { SessionHelperEntry } from '../../../session/SessionHelperTable';
 import type { ConfigSaveMode } from '../../../config/ConfigSaveMode';
 import type { ConserveThresholds } from '../../../health/SystemLoad';
 import type { LdbMonitorType } from '../../../health/LdbMonitor';
+import type { LinkMonitorProtocol } from '../../../health/LinkMonitor';
 import type { LdbMethod } from '../../../nat/RealServerPool';
 import type { ArgumentSpec, EnumValue } from '../../../../../../cli/ArgumentTypes';
 import type { ObjectStore } from '../../../model/ObjectStore';
@@ -102,6 +103,7 @@ import type { LldpSetting, LldpVdomSetting } from '../../../l2/LldpIntent';
 export interface FortiInterfacePatch {
   readonly vdom?: string;
   readonly addressingMode?: 'static' | 'dhcp' | 'pppoe';
+  readonly dhcpRoute?: { readonly gateway: boolean; readonly distance: number };
   readonly ip?: string;
   readonly mask?: string;
   readonly up?: boolean;
@@ -286,6 +288,21 @@ export interface FortiLdbMonitorPatch {
   readonly port: number;
 }
 
+export interface FortiLinkMonitorPatch {
+  readonly name: string;
+  readonly srcintf: string;
+  readonly servers: readonly string[];
+  readonly protocol: LinkMonitorProtocol;
+  readonly gatewayIp: string;
+  readonly sourceIp: string;
+  readonly port: number;
+  readonly intervalMs: number;
+  readonly failtime: number;
+  readonly recoverytime: number;
+  readonly updateStaticRoute: boolean;
+  readonly status: boolean;
+}
+
 export interface FortiRealServerPatch {
   readonly id: string;
   readonly address: string;
@@ -373,6 +390,8 @@ export interface FortiCommitDevice {
   }): void;
   removeIpv6StaticRoute(id: string): void;
   removeLdbMonitor(name: string): void;
+  applyLinkMonitor(monitor: FortiLinkMonitorPatch): void;
+  removeLinkMonitor(name: string): void;
   applyBalancedVip(vip: FortiBalancedVipPatch): string | void;
   applyReplacementMessage(message: string, buffer: string): void;
   applyConsoleSettings(settings: ConsoleSettingsPatch): void;

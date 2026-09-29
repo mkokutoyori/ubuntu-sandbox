@@ -1,16 +1,14 @@
 import type { EndHost } from '../../EndHost';
 import { DHCPServer } from '../../../dhcp/DHCPServer';
 import { DHCPPacket, DHCP_WIRE_BYTES } from '../../../dhcp/DHCPPacket';
-import { buildDhcpServerReply } from '../../../dhcp/DhcpServerExchange';
-import {
-  IPAddress, SubnetMask, MACAddress, createIPv4Packet,
-  ETHERTYPE_IPV4, IP_PROTO_UDP, type UDPPacket,
-} from '../../../core/types';
+import { buildDhcpServerReply, dhcpReplyRoute } from '../../../dhcp/DhcpServerExchange';
+import { dhcpLinkDestination, dhcpServerReplyFrame, type DhcpLinkDestination } from '../../../dhcp/DhcpServerReplyFrame';
+import { IPAddress, SubnetMask, type UDPPacket } from '../../../core/types';
 import {
   parseDhcpdConf, parseDhcpdInterfaces, mergedOptions,
   type DhcpdConfig, type DhcpdSubnet,
 } from './DhcpdConfig';
-import { DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '@/network/core/WellKnownPorts';
+import { DHCP_SERVER_PORT } from '@/network/core/WellKnownPorts';
 import {
   DHCPD_BANNER, DHCPD_CONF_PATH, DHCPD_DEFAULTS_PATH, DHCPD_LEASES_PATH,
   DHCPD_LEASES_HEADER, DHCPD_PID_PATH, DHCPD_VERSION,
@@ -284,8 +282,9 @@ export class LinuxDhcpdService {
     });
     if (!reply) return;
     if (reply.getMessageType() === 'DHCPACK') this.recordLease(pkt, reply);
-    if (pkt.giaddr !== '0.0.0.0') this.sendReplyToRelay(pkt.giaddr, reply);
-    else this.sendReply(inPort, reply);
+    const route = dhcpReplyRoute(pkt, reply);
+    if (route.kind === 'relay') this.sendReplyToRelay(route.relay, reply);
+    else this.sendReply(inPort, reply, dhcpLinkDestination(route, pkt.chaddr));
   }
 
   private addressIsTaken(inPort: string, ip: string): boolean {
@@ -326,21 +325,11 @@ export class LinuxDhcpdService {
       new IPAddress(relayAgent), DHCP_SERVER_PORT, DHCP_SERVER_PORT, reply, DHCP_WIRE_BYTES);
   }
 
-  private sendReply(inPort: string, reply: DHCPPacket): void {
+  private sendReply(inPort: string, reply: DHCPPacket, to: DhcpLinkDestination): void {
     const port = this.host.getPorts().find(entry => entry.getName() === inPort);
     const srcIp = port?.getIPAddress();
     if (!port || !srcIp) return;
-    const udp: UDPPacket = {
-      type: 'udp', sourcePort: DHCP_SERVER_PORT, destinationPort: DHCP_CLIENT_PORT,
-      length: 8 + DHCP_WIRE_BYTES, checksum: 0, payload: reply,
-    };
-    this.host.sendFrame(inPort, {
-      srcMAC: port.getMAC(),
-      dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4,
-      payload: createIPv4Packet(
-        srcIp, new IPAddress('255.255.255.255'), IP_PROTO_UDP, 64, udp, 8 + DHCP_WIRE_BYTES),
-    });
+    this.host.sendFrame(inPort, dhcpServerReplyFrame(reply, srcIp, port.getMAC(), to));
   }
 
   version(): string { return DHCPD_VERSION; }

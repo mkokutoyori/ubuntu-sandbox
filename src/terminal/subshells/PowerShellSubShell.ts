@@ -157,6 +157,9 @@ export class PowerShellSubShell implements ISubShell {
     const getCredentialHit = await this.tryGetCredentialIntercept(trimmed);
     if (getCredentialHit) return getCredentialHit;
 
+    const effective = await this.resolveEmbeddedReadHost(trimmed);
+    if (effective === null) return { output: [], exit: false, prompt: this.getPrompt() };
+
     // Track history for Get-History
     if (trimmed) {
       this.commandHistory.push(trimmed);
@@ -195,7 +198,7 @@ export class PowerShellSubShell implements ISubShell {
     // attached. Inside the window, `device.getCwd()` and any
     // `device.executeCmdCommand(...)` delegation observe THIS terminal's
     // cwd / env (terminal_gap.md §7.x).
-    const dispatch = async (): Promise<string | null> => this.dispatchCommand(trimmed);
+    const dispatch = async (): Promise<string | null> => this.dispatchCommand(effective);
 
     const result = (this.session && this.device instanceof WindowsPC)
       ? await this.device.runInSession(this.session, dispatch)
@@ -482,6 +485,32 @@ export class PowerShellSubShell implements ISubShell {
     // No resources to clean up
   }
 
+  private async resolveEmbeddedReadHost(line: string): Promise<string | null> {
+    if (!this._broker || !this._broker.capabilities().interactive) return line;
+    if (!/\(\s*Read-Host\b/i.test(line)) return line;
+    let out = '';
+    let i = 0;
+    while (i < line.length) {
+      if (line[i] === '(' && /^\(\s*Read-Host\b/i.test(line.slice(i))) {
+        const close = matchingParen(line, i);
+        if (close !== -1) {
+          const parsed = parseReadHost(line.slice(i + 1, close).trim());
+          const prompt = parsed?.prompt ?? '';
+          const entered = parsed?.secure
+            ? await this._broker.password(prompt)
+            : await this._broker.ask(prompt);
+          if (entered === null) return null;
+          out += embeddedReadHostSubstitution(entered, parsed?.secure ?? false);
+          i = close + 1;
+          continue;
+        }
+      }
+      out += line[i];
+      i++;
+    }
+    return out;
+  }
+
   private async tryReadHostIntercept(line: string): Promise<SubShellResult | null> {
     if (!this._broker) return null;
     if (!this._broker.capabilities().interactive) return null;
@@ -543,6 +572,26 @@ interface ParsedReadHost {
   secure: boolean;
 }
 
+function matchingParen(line: string, open: number): number {
+  let depth = 0;
+  let quote: '"' | "'" | null = null;
+  for (let i = open; i < line.length; i++) {
+    const c = line[i];
+    if (quote) { if (c === quote) quote = null; continue; }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c === '(') depth++;
+    else if (c === ')') { depth--; if (depth === 0) return i; }
+  }
+  return -1;
+}
+
+function embeddedReadHostSubstitution(entered: string, secure: boolean): string {
+  const escaped = entered.replace(/'/g, "''");
+  return secure
+    ? `(ConvertTo-SecureString '${escaped}' -AsPlainText -Force)`
+    : `'${escaped}'`;
+}
+
 function parseReadHost(line: string): ParsedReadHost | null {
   const m = line.match(/^\s*(?:\$([A-Za-z_][A-Za-z_0-9]*)\s*=\s*)?Read-Host\b(.*)$/i);
   if (!m) return null;
@@ -555,7 +604,7 @@ function parseReadHost(line: string): ParsedReadHost | null {
     if (/^-AsSecureString$/i.test(t)) { secure = true; continue; }
     if (/^-MaskInput$/i.test(t))      { secure = true; continue; }
     if (/^-Prompt$/i.test(t) && i + 1 < tokens.length) { prompt = tokens[++i]; continue; }
-    if (i === 0 && !t.startsWith('-')) { prompt = t; continue; }
+    if (prompt === null && !t.startsWith('-')) { prompt = t; continue; }
   }
   return { bindTo: m[1] ?? null, prompt, secure };
 }

@@ -46,7 +46,7 @@ async function buildTwoDomains(): Promise<{ dcA: WindowsServer; dcB: WindowsServ
   dcA.setCurrentUser('Administrator');
   await run(ps(dcA), 'Install-WindowsFeature AD-Domain-Services');
   await run(ps(dcA), 'Install-ADDSForest -DomainName a.local -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
-  await run(ps(dcA), 'New-ADUser -Name alice -AccountPassword (ConvertTo-SecureString "alicepw" -AsPlainText -Force) -DisplayName "Alice"');
+  await run(ps(dcA), 'New-ADUser -Enabled $true -Name alice -AccountPassword (ConvertTo-SecureString "alicepw" -AsPlainText -Force) -DisplayName "Alice"');
 
   dcB.setCurrentUser('Administrator');
   await run(ps(dcB), 'Install-WindowsFeature AD-Domain-Services');
@@ -134,7 +134,7 @@ describe('Cross-realm Kerberos referral (RFC 4120 §3.3.3) — user of domain A 
     const { dcA, dcB, client } = await buildTwoDomains();
     await run(ps(dcA), 'New-ADTrust -Target b.local -Direction Outbound -Credential "Administrator:P@ssw0rd" -Server 192.168.95.11');
 
-    await run(ps(dcB), 'New-ADUser -Name bob -AccountPassword (ConvertTo-SecureString "bobpw" -AsPlainText -Force) -DisplayName "Bob"');
+    await run(ps(dcB), 'New-ADUser -Enabled $true -Name bob -AccountPassword (ConvertTo-SecureString "bobpw" -AsPlainText -Force) -DisplayName "Bob"');
 
     const connA = dialKdc(client.getTcpStack(), '192.168.95.10');
     const asA = connA.client!.asExchange('alice', 'alicepw', 'A.LOCAL');

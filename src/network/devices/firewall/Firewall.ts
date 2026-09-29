@@ -48,6 +48,7 @@ import { StreamAssembler, oversizeLimitBytes } from './inspection/StreamAssemble
 import { BridgeFdb } from './l2/BridgeFdb';
 import { RevisionStore } from './config/RevisionStore';
 import { LdbMonitorTable } from './health/LdbMonitor';
+import { LinkMonitorTable, type LinkMonitorStatus } from './health/LinkMonitor';
 import { dialTcp, parseDialAddress } from '../../tcp/dial';
 import { isDialFailure } from '../../tcp/types';
 import { PortNumber } from '../../core/ports/PortNumber';
@@ -376,6 +377,7 @@ export class Firewall extends Equipment {
       return true;
     },
   });
+  private readonly linkMonitors = new LinkMonitorTable();
 
   private readonly haService: FirewallHa;
   private readonly ipsec: IPSecEngine;
@@ -2335,6 +2337,13 @@ export class Firewall extends Equipment {
   getRevisions(): RevisionStore { return this.revisions; }
 
   getLdbMonitors(): LdbMonitorTable { return this.ldbMonitors; }
+
+  getLinkMonitors(): LinkMonitorTable { return this.linkMonitors; }
+
+  linkMonitorStatuses(): readonly LinkMonitorStatus[] {
+    return this.linkMonitors.evaluate(
+      (server) => this.ping.begin(server)?.step(1) !== null);
+  }
 
   getFragmentReassembly(): FragmentReassembly { return this.fragments; }
 

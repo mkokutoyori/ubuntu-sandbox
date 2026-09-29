@@ -19,6 +19,7 @@ import type {
   DHCPDeclineParams,
   DHCPReleaseParams,
   DHCPPoolConfig,
+  DhcpUnicastTarget,
 } from './types';
 import { createDefaultPoolConfig } from './types';
 
@@ -32,7 +33,7 @@ export interface DhcpServerChannel {
   processRelease(params: DHCPReleaseParams): void;
 }
 
-export type DhcpFrameSender = (iface: string, pkt: DHCPPacket) => void;
+export type DhcpFrameSender = (iface: string, pkt: DHCPPacket, target?: DhcpUnicastTarget) => void;
 
 const str = (v: unknown): string | null => (v === undefined || v === null ? null : String(v));
 const num = (v: unknown): number | undefined => {
@@ -83,9 +84,10 @@ export class WireDhcpChannel implements DhcpServerChannel {
     expect: ReadonlyArray<string>,
     xid: number,
     clientMAC: string,
+    target?: DhcpUnicastTarget,
   ): InboxEntry | null {
     this.inbox.length = 0;
-    this.sendFrame(this.iface, pkt);
+    this.sendFrame(this.iface, pkt, target);
     const reply = this.inbox.find(e =>
       e.pkt.xid === xid
       && e.pkt.chaddr.toLowerCase() === clientMAC.toLowerCase()
@@ -142,10 +144,15 @@ export class WireDhcpChannel implements DhcpServerChannel {
       params.clientMAC, params.xid, params.requestedIP, params.serverIdentifier ?? '');
     // RENEWING/REBINDING/INIT-REBOOT REQUESTs carry no server id (RFC 2131 §4.3.2).
     if (!params.serverIdentifier) request.removeOption(DHCP_OPTION.SERVER_IDENTIFIER);
+    if (params.currentAddress !== undefined) {
+      request.ciaddr = params.currentAddress;
+      request.flags = 0;
+      request.removeOption(DHCP_OPTION.REQUESTED_IP);
+    }
     if (params.hostName) request.setOption(DHCP_OPTION.HOST_NAME, params.hostName);
     if (params.clientFqdn) request.setOption(DHCP_OPTION.CLIENT_FQDN, params.clientFqdn);
 
-    const entry = this.exchange(request, ['DHCPACK', 'DHCPNAK'], params.xid, params.clientMAC);
+    const entry = this.exchange(request, ['DHCPACK', 'DHCPNAK'], params.xid, params.clientMAC, params.unicastTo);
     if (!entry) return null;
     const reply = entry.pkt;
 
@@ -205,6 +212,6 @@ export class WireDhcpChannel implements DhcpServerChannel {
     const xid = Math.floor(Math.random() * 0xFFFFFFFF);
     const pkt = DHCPPacket.createRelease(
       params.clientMAC, xid, params.clientIP, params.serverIdentifier ?? '0.0.0.0');
-    this.sendFrame(this.iface, pkt);
+    this.sendFrame(this.iface, pkt, params.unicastTo);
   }
 }

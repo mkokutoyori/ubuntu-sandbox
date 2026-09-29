@@ -44,6 +44,7 @@ import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddr
   ethernetFrameBytes,
 } from '../core/types';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
+import { dhcpClientFrame } from '../dhcp/DhcpClientFrame';
 import { VlanSet } from './switch/VlanSet';
 import {
   evaluateMacAcl, isIpEtherType, type MacAccessList,
@@ -3252,22 +3253,10 @@ export abstract class Switch extends Equipment {
       const svi = this.getSvi(vlan);
       if (svi) svi.dhcpClient = on;
     },
-    sendDhcpFrame: (iface, pkt) => {
+    sendDhcpFrame: (iface, pkt, target) => {
       const vlan = Switch.vlanOfSviName(iface);
       if (vlan === null) return;
-      const udp: UDPPacket = {
-        type: 'udp', sourcePort: 68, destinationPort: 67,
-        length: 8 + 300, checksum: 0, payload: pkt,
-      };
-      const ipPkt = createIPv4Packet(
-        new IPAddress('0.0.0.0'), new IPAddress('255.255.255.255'),
-        IP_PROTO_UDP, 64, udp, 8 + 300);
-      this.egressOnVlan(vlan, {
-        srcMAC: this.getBridgeMac(),
-        dstMAC: MACAddress.broadcast(),
-        etherType: ETHERTYPE_IPV4,
-        payload: ipPkt,
-      });
+      this.egressOnVlan(vlan, dhcpClientFrame(pkt, this.getBridgeMac(), target));
     },
     bus: () => this.getBus(),
     identity: () => ({ deviceId: this.id, hostname: this.getHostname() }),
