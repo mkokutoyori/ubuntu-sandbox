@@ -12,6 +12,7 @@ import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISs
 import { isOk } from '@/network/protocols/ssh/Result';
 import type { ISshShellChannel } from '@/network/protocols/ssh/channels/ISshChannel';
 import { installDefaultShells } from '@/shell/registerDefaults';
+import { noopSshLocalFs } from './_helpers/noopSshLocalFs';
 
 beforeEach(() => {
   installDefaultShells();
@@ -34,7 +35,7 @@ async function windowsShell(): Promise<ISshShellChannel> {
   const dev = pc as unknown as { tcpConnect(h: string, p: number): Promise<unknown> };
   const session = new SshSession({
     tcpConnector: ((h: string, p: number) => dev.tcpConnect(h, p)) as never,
-    vfs: { readFile: () => null, writeFile: () => undefined, resolveInode: () => null, mkdirp: () => undefined } as never,
+    vfs: noopSshLocalFs() as never,
     localUser: 'user', localUid: 1000, localGid: 1000,
     knownHostsPath: '/home/user/.ssh/known_hosts',
     interactionHandler: new SilentSshInteractionHandler(),

@@ -12,10 +12,6 @@
  *   -o ProxyJump=<spec>        Same as `-J <spec>`.
  *   -J <spec>                  Comma-separated jump-host chain.
  *   -L <localPort:host:port>   Local port forwarding (repeatable).
- *
- * The parser is intentionally tolerant — unknown `-o key=value`
- * directives are ignored so a `~/.ssh/config` snippet pasted on the
- * command line does not crash the terminal.
  */
 
 import {
@@ -23,6 +19,11 @@ import {
   type SshClientAuthentication,
   type StrictHostKeyChecking,
 } from '@/network/protocols/ssh/SshConnectOptions';
+import { everySshOption, firstSshOption, sshFlag } from '@/network/protocols/ssh/SshClientOptions';
+
+const STRICT_HOST_KEY_MODES: Readonly<Record<string, StrictHostKeyChecking>> = {
+  yes: 'yes', true: 'yes', ask: 'yes', no: 'no', false: 'no', off: 'no', 'accept-new': 'accept-new',
+};
 
 export type { StrictHostKeyChecking };
 
@@ -185,8 +186,6 @@ export function parseRemoteForwardSpec(spec: string): RemoteForward | null {
 export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
   let port = 22;
   const identityFiles: string[] = [];
-  let strict: StrictHostKeyChecking = 'accept-new';
-  let hashKnownHosts: boolean | undefined;
   const jumpHostsRaw: string[] = [];
   const localForwards: LocalForward[] = [];
   const remoteForwards: RemoteForward[] = [];
@@ -231,62 +230,39 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
     } else if (arg === '-T') {
       requestTty = 'no';
     } else if (arg === '-o' && i + 1 < args.length) {
-      const next = args[++i];
-      optionValues.push(next);
-      const strictMatch = /^StrictHostKeyChecking=(yes|no|accept-new)$/i.exec(
-        next,
-      );
-      if (strictMatch) {
-        strict = strictMatch[1].toLowerCase() as StrictHostKeyChecking;
-        continue;
-      }
-      const hashMatch = /^HashKnownHosts=(yes|no|true|false)$/i.exec(next);
-      if (hashMatch) {
-        hashKnownHosts = /^(yes|true)$/i.test(hashMatch[1]);
-        continue;
-      }
-      const proxyMatch = /^ProxyJump=(.+)$/i.exec(next);
-      if (proxyMatch) {
-        for (const hop of parseProxyJumpSpec(proxyMatch[1])) {
-          jumpHostsRaw.push(hop.user ? `${hop.user}@${hop.host}` : hop.host);
-        }
-        continue;
-      }
-      const lfMatch = /^LocalForward=(.+)$/i.exec(next);
-      if (lfMatch) {
-        const fwd = parseLocalForwardSpec(lfMatch[1]);
-        if (fwd) localForwards.push(fwd);
-        continue;
-      }
-      const rfMatch = /^RemoteForward=(.+)$/i.exec(next);
-      if (rfMatch) {
-        const fwd = parseRemoteForwardSpec(rfMatch[1]);
-        if (fwd) remoteForwards.push(fwd);
-        continue;
-      }
-      const dfMatch = /^DynamicForward=(.+)$/i.exec(next);
-      if (dfMatch) {
-        const fwd = parseDynamicForwardSpec(dfMatch[1]);
-        if (fwd) dynamicForwards.push(fwd);
-        continue;
-      }
-      const faMatch = /^ForwardAgent=(yes|no|true|false)$/i.exec(next);
-      if (faMatch) {
-        forwardAgent = /^(yes|true)$/i.test(faMatch[1]);
-        continue;
-      }
-      const ttyMatch = /^RequestTTY=(yes|no|force|auto)$/i.exec(next);
-      if (ttyMatch) {
-        const v = ttyMatch[1].toLowerCase();
-        if (v === 'yes' || v === 'no' || v === 'force') {
-          requestTty = v as 'yes' | 'no' | 'force';
-        }
-      }
+      optionValues.push(args[++i]);
+    } else if (arg.startsWith('-o') && arg.length > 2) {
+      optionValues.push(arg.slice(2));
     } else if (!arg.startsWith('-')) {
       host = arg;
     }
   }
   if (!host) return null;
+  const strict = STRICT_HOST_KEY_MODES[firstSshOption(optionValues, 'stricthostkeychecking')?.toLowerCase() ?? ''] ?? 'accept-new';
+  const hashValue = firstSshOption(optionValues, 'hashknownhosts');
+  const hashKnownHosts = hashValue === undefined ? undefined : sshFlag(hashValue) ?? undefined;
+  const proxyJump = firstSshOption(optionValues, 'proxyjump');
+  if (jumpHostsRaw.length === 0 && proxyJump !== undefined) {
+    for (const hop of parseProxyJumpSpec(proxyJump)) {
+      jumpHostsRaw.push(hop.user ? `${hop.user}@${hop.host}` : hop.host);
+    }
+  }
+  for (const spec of everySshOption(optionValues, 'localforward')) {
+    const forward = parseLocalForwardSpec(spec);
+    if (forward) localForwards.push(forward);
+  }
+  for (const spec of everySshOption(optionValues, 'remoteforward')) {
+    const forward = parseRemoteForwardSpec(spec);
+    if (forward) remoteForwards.push(forward);
+  }
+  for (const spec of everySshOption(optionValues, 'dynamicforward')) {
+    const forward = parseDynamicForwardSpec(spec);
+    if (forward) dynamicForwards.push(forward);
+  }
+  const agentValue = firstSshOption(optionValues, 'forwardagent');
+  const forwardAgentRequested = forwardAgent || (agentValue !== undefined && sshFlag(agentValue) === true);
+  const ttyValue = firstSshOption(optionValues, 'requesttty')?.toLowerCase();
+  const ttyFromOption = ttyValue === 'yes' || ttyValue === 'true' ? 'yes' : ttyValue === 'no' || ttyValue === 'false' ? 'no' : ttyValue === 'force' ? 'force' : undefined;
   return {
     userAtHost: host,
     port,
@@ -298,8 +274,8 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
     localForwards: Object.freeze([...localForwards]),
     remoteForwards: Object.freeze([...remoteForwards]),
     dynamicForwards: Object.freeze([...dynamicForwards]),
-    forwardAgent,
-    requestTty,
+    forwardAgent: forwardAgentRequested,
+    requestTty: requestTty ?? ttyFromOption,
     authentication: sshClientAuthentication(optionValues),
   };
 }

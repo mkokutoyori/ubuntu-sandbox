@@ -48,8 +48,12 @@ export class AcceptNewVerificationStrategy
 }
 
 export class NoVerificationStrategy implements IHostKeyVerificationStrategy {
-  verify(): VerificationDecision {
-    return { action: 'accept_silent' };
+  verify(
+    host: string,
+    _key: SshHostKey,
+    store: KnownHostsStore,
+  ): VerificationDecision {
+    return store.get(host) ? { action: 'accept_silent' } : { action: 'accept_and_save' };
   }
 }
 

@@ -1531,8 +1531,9 @@ export class LinuxTerminalSession extends TerminalSession {
     if (!trimmed.startsWith('sudo ')) {
       const noSudo = trimmed;
       const parts = noSudo.split(/\s+/);
+      const words = splitShellWords(noSudo).words;
       if (parts[0] === 'sftp') {
-        this.enterSftp(parts.slice(1));
+        this.enterSftp(words.slice(1));
         return;
       }
       if (parts[0] === 'ftp') {
@@ -1548,7 +1549,7 @@ export class LinuxTerminalSession extends TerminalSession {
         return;
       }
       if (parts[0] === 'ssh') {
-        await this.enterSsh(parts.slice(1));
+        await this.enterSsh(words.slice(1));
         return;
       }
       if (parts[0] === 'telnet') {
@@ -1560,11 +1561,11 @@ export class LinuxTerminalSession extends TerminalSession {
         return;
       }
       if (parts[0] === 'ssh-copy-id') {
-        this.enterSshCopyId(parts.slice(1));
+        this.enterSshCopyId(words.slice(1));
         return;
       }
       if (parts[0] === 'scp') {
-        this.enterScp(parts.slice(1));
+        this.enterScp(words.slice(1));
         return;
       }
       if (parts[0] === 'lsnrctl') {

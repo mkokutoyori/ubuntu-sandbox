@@ -17,8 +17,8 @@ import type { ISshAuthContext } from '../../../protocols/ssh/auth/ISshAuthMethod
 import {
   OPENSSH_DEFAULT_IDENTITY_FILES,
   sshClientAuthentication,
-  sshOptionValues,
 } from '../../../protocols/ssh/SshConnectOptions';
+import { sshOptionValues } from '../../../protocols/ssh/SshClientCommandLine';
 import { wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
 import { OPENSSH_WINDOWS_8_6 } from '@/network/protocols/ssh/OpenSshRelease';

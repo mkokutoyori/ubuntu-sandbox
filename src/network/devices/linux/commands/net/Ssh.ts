@@ -1,6 +1,7 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
+import { sshOptionCompletionWords } from '@/network/protocols/ssh/SshClientOptions';
 import { proxyJumpRequest, wireExecTarget } from '../../network/LinuxSshClient';
 import { runThroughProxyJump } from '../../network/SshProxyJump';
 import { dialStream, parseDialAddress } from '@/network/tcp/dial';
@@ -16,6 +17,7 @@ export const sshCommand: LinuxCommand = {
   help: 'OpenSSH remote login client.',
   complete: makeArgCompleter({
     flags: ['-p', '-i', '-o', '-l', '-t', '-T', '-q', '-v', '-N', '-L', '-R', '-D', '-J', '-A'],
+    wordsAfter: { '-o': sshOptionCompletionWords(OPENSSH_UBUNTU_22_04.clientKeywords) },
     hostsAtBarePosition: true,
   }),
   options: [

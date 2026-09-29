@@ -6,6 +6,7 @@
  */
 
 import type { AuthMethodType } from './auth/ISshAuthMethod';
+import { firstSshOption, sshFlag } from './SshClientOptions';
 
 export type StrictHostKeyChecking = 'yes' | 'no' | 'accept-new';
 
@@ -33,36 +34,13 @@ export const OPENSSH_CLIENT_AUTHENTICATION: SshClientAuthentication = Object.fre
   passwordPrompts: 3,
 });
 
-const SSH_OPTION_ALIASES: Readonly<Record<string, string>> = {
-  challengeresponseauthentication: 'kbdinteractiveauthentication',
-};
-
-function sshOptionAssignment(raw: string): { name: string; value: string } | null {
-  const match = /^\s*([A-Za-z]+)\s*(?:=\s*|\s+)(.*?)\s*$/.exec(raw);
-  if (!match) return null;
-  const name = match[1].toLowerCase();
-  return { name: SSH_OPTION_ALIASES[name] ?? name, value: match[2] };
-}
-
-function sshFlag(value: string): boolean | null {
-  const lowered = value.toLowerCase();
-  if (lowered === 'yes' || lowered === 'true') return true;
-  if (lowered === 'no' || lowered === 'false') return false;
-  return null;
-}
-
 export function sshClientAuthentication(optionValues: readonly string[]): SshClientAuthentication {
-  const seen = new Map<string, string>();
-  for (const raw of optionValues) {
-    const assignment = sshOptionAssignment(raw);
-    if (assignment && !seen.has(assignment.name)) seen.set(assignment.name, assignment.value);
-  }
   const flag = (name: string, fallback: boolean): boolean => {
-    const value = seen.get(name);
+    const value = firstSshOption(optionValues, name);
     return value === undefined ? fallback : sshFlag(value) ?? fallback;
   };
-  const preferred = seen.get('preferredauthentications');
-  const prompts = Number.parseInt(seen.get('numberofpasswordprompts') ?? '', 10);
+  const preferred = firstSshOption(optionValues, 'preferredauthentications');
+  const prompts = Number.parseInt(firstSshOption(optionValues, 'numberofpasswordprompts') ?? '', 10);
   const defaults = OPENSSH_CLIENT_AUTHENTICATION;
   return Object.freeze({
     preferred: preferred === undefined ? null : Object.freeze(preferred.split(',').map((m) => m.trim()).filter(Boolean)),
@@ -72,15 +50,6 @@ export function sshClientAuthentication(optionValues: readonly string[]): SshCli
     batchMode: flag('batchmode', defaults.batchMode),
     passwordPrompts: Number.isInteger(prompts) && prompts >= 0 ? prompts : defaults.passwordPrompts,
   });
-}
-
-export function sshOptionValues(args: readonly string[]): string[] {
-  const values: string[] = [];
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '-o' && args[i + 1] !== undefined) values.push(args[++i]);
-    else if (args[i].startsWith('-o') && args[i].length > 2) values.push(args[i].slice(2));
-  }
-  return values;
 }
 
 export interface SshConnectOptions {

@@ -32,9 +32,10 @@ import {
   OPENSSH_DEFAULT_IDENTITY_FILES,
   OPENSSH_USERAUTH_METHODS,
   sshClientAuthentication,
-  sshOptionValues,
   type SshClientAuthentication,
 } from '@/network/protocols/ssh/SshConnectOptions';
+import { sshOptionValues } from '@/network/protocols/ssh/SshClientCommandLine';
+import { everySshOption, firstSshOption, sshOptionAssignment } from '@/network/protocols/ssh/SshClientOptions';
 import type { SshForwardingTable } from './SshForwardingTable';
 import type { TcpStack } from '../../../tcp/TcpStack';
 import type { SshAgent } from '../../../protocols/ssh/SshAgent';
@@ -279,17 +280,9 @@ function readRemoteSshdDirectiveRaw(exec: RemoteExecLike, name: string): string 
   return m ? m[1] : null;
 }
 
-/** Value of a client-side `-o Name=value` / `-o "Name value"` option. */
 function clientOption(args: string[], name: string): string | null {
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '-o' && args[i + 1] !== undefined) {
-      const parts = args[i + 1].trim().split(/[=\s]+/);
-      if (parts[0]?.toLowerCase() === name.toLowerCase()) {
-        return (parts[1] ?? '').toLowerCase();
-      }
-    }
-  }
-  return null;
+  const value = firstSshOption(sshOptionValues(args), name.toLowerCase());
+  return value === undefined ? null : (value.split(/\s+/)[0] ?? '').toLowerCase();
 }
 
 /**
@@ -529,17 +522,6 @@ function envNameMatches(name: string, patterns: readonly string[]): boolean {
   });
 }
 
-/** Raw (case-preserving) value of a client-side `-o Name[=| ]value` option. */
-function clientOptionRaw(args: string[], name: string): string | null {
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '-o' && args[i + 1] !== undefined) {
-      const m = new RegExp(`^${name}\\s*=?\\s*(.*)$`, 'i').exec(args[i + 1].trim());
-      if (m) return m[1];
-    }
-  }
-  return null;
-}
-
 /** Collect every value of a directive from an sshd_config / ssh_config blob. */
 function collectDirective(content: string, name: string): string[] {
   const out: string[] = [];
@@ -551,17 +533,21 @@ function collectDirective(content: string, name: string): string[] {
   return out;
 }
 
-/** Patterns the client will send: defaults + ~/.ssh/config, or `-o SendEnv`. */
 function clientSendEnvPatterns(opts: SshClientOpts, flags: string[]): string[] {
-  // An explicit `-o SendEnv ...` overrides the config and the defaults.
-  const override = clientOptionRaw(flags, 'SendEnv');
-  if (override !== null) {
-    return override.trim().split(/\s+/).filter(Boolean);
-  }
-  const patterns = [...DEFAULT_ENV_PATTERNS];
-  if (opts.localVfs) {
-    const cfg = opts.localVfs.readFile(`${opts.sourceHome ?? '/root'}/.ssh/config`) ?? '';
-    patterns.push(...collectDirective(cfg, 'SendEnv'));
+  const requested = everySshOption(sshOptionValues(flags), 'sendenv')
+    .flatMap((value) => value.split(/\s+/).filter(Boolean));
+  const configured = opts.localVfs
+    ? collectDirective(opts.localVfs.readFile(`${opts.sourceHome ?? '/root'}/.ssh/config`) ?? '', 'SendEnv')
+    : [];
+  const patterns: string[] = [];
+  for (const entry of [...requested, ...configured, ...DEFAULT_ENV_PATTERNS]) {
+    if (!entry.startsWith('-')) {
+      patterns.push(entry);
+      continue;
+    }
+    for (let i = patterns.length - 1; i >= 0; i--) {
+      if (envNameMatches(patterns[i], [entry.slice(1)])) patterns.splice(i, 1);
+    }
   }
   return patterns;
 }
@@ -650,17 +636,18 @@ export function proxyJumpRequest(args: readonly string[]): ProxyJumpRequest | nu
       break;
     }
     if (arg === '-J' && i + 1 < args.length) {
-      spec = args[++i];
+      const jump = args[++i];
+      spec ??= jump;
       continue;
     }
     if (arg.startsWith('-J') && arg.length > 2) {
-      spec = arg.slice(2);
+      spec ??= arg.slice(2);
       continue;
     }
     const option = arg === '-o' ? args[i + 1] : arg.startsWith('-o') ? arg.slice(2) : null;
-    const proxyJump = option === null || option === undefined ? null : /^ProxyJump\s*[=\s]\s*(.+)$/i.exec(option.trim());
-    if (proxyJump) {
-      spec = proxyJump[1];
+    const proxyJump = option === null || option === undefined ? null : sshOptionAssignment(option);
+    if (proxyJump?.name === 'proxyjump') {
+      spec ??= proxyJump.value;
       if (arg === '-o') i++;
       continue;
     }

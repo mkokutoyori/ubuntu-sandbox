@@ -1,4 +1,5 @@
 import { OPENSSH_UBUNTU_CLIENT_VERSION, OPENSSH_WINDOWS_CLIENT_VERSION } from './serverIdentification';
+import { sshClientKeywords, type SshClientKeyword } from './SshClientKeywords';
 
 export interface OpenSshRelease {
   readonly clientVersion: string;
@@ -6,6 +7,7 @@ export interface OpenSshRelease {
   readonly keygenUsage: string;
   readonly addUsage: string;
   readonly addOptstring: string;
+  readonly clientKeywords: readonly SshClientKeyword[];
 }
 
 const ADD_USAGE_TAIL = [
@@ -76,6 +78,7 @@ export const OPENSSH_UBUNTU_22_04: OpenSshRelease = {
     ...ADD_USAGE_TAIL,
   ].join('\n'),
   addOptstring: '+vkKlLcdDTxXE:e:h:H:M:m:qs:S:t:',
+  clientKeywords: sshClientKeywords('8.9'),
 };
 
 export const OPENSSH_WINDOWS_8_6: OpenSshRelease = {
@@ -96,4 +99,5 @@ export const OPENSSH_WINDOWS_8_6: OpenSshRelease = {
     ...ADD_USAGE_TAIL,
   ].join('\n'),
   addOptstring: '+vkKlLcdDTxXE:e:M:m:qs:S:t:',
+  clientKeywords: sshClientKeywords('8.6'),
 };

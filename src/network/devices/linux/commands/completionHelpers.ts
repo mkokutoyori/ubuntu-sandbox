@@ -31,6 +31,11 @@ export function makeArgCompleter(spec: ArgCompletionSpec): CompleteFn {
     if (wordsForPrev) {
       return wordsForPrev.filter((w) => w.startsWith(partial));
     }
+    for (const [flag, words] of Object.entries(spec.wordsAfter ?? {})) {
+      if (/^-[A-Za-z]$/.test(flag) && partial.startsWith(flag) && partial.length > flag.length) {
+        return words.map((w) => flag + w).filter((w) => w.startsWith(partial));
+      }
+    }
     if (partial.startsWith('-') && spec.flags) {
       return spec.flags.filter((f) => f.startsWith(partial));
     }
