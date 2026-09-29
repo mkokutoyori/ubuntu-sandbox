@@ -237,7 +237,7 @@ export class GetGPRegistryValueCmdlet implements ICmdlet {
     const values = gpo.getGpRegistryValues(name, key, valueName);
     if (values === null) { ctx.emitError(`Get-GPRegistryValue : A GPO with the name "${name}" cannot be found.`); return null; }
     if (values.length === 0) {
-      ctx.emitError(`Get-GPRegistryValue : The GPO "${name}" does not set the registry value '${key}${valueName ? `\\${valueName}` : ''}'.`);
+      ctx.emitError(`Get-GPRegistryValue : The following Group Policy registry setting was not found: ${key}${valueName ? `\\${valueName}` : ''}`);
       return null;
     }
     return values.map(registryValueToPSObject) as PSValue;

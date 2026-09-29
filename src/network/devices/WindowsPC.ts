@@ -177,6 +177,7 @@ import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } f
 import { joinDomain, type DomainJoinResult } from './windows/domain/DomainJoinClient';
 import { logonDomainUser } from './windows/domain/DomainLogonClient';
 import { pullGroupPolicy } from './windows/domain/GpoPullClient';
+import { GROUP_POLICY_SYSTEM_KEY, backgroundRefreshDisabled, refreshDelayMs } from './windows/domain/GroupPolicyRefresh';
 import { resetComputerSecretOverWire, removeComputerAccountOverWire, renameComputerAccountOverWire } from './windows/domain/ComputerSecureChannelClient';
 import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialHttp as dialHttpClient, parseHttpUrl } from '@/network/http/HttpClient';
@@ -1667,6 +1668,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private gpoAppliedNames: string[] = [];
   private gpoAppliedUserNames: string[] = [];
   private readonly gpoPolicyValues = new Map<string, { key: string; valueName: string }>();
+  private gpoRefreshDueAt: number | null = null;
+  private gpoRefreshCycle = 0;
+  private gpoLastSignature: string | null = null;
   private gpoLastAppliedAt: Date | null = null;
   private gpoLogonBanner: { title: string; text: string } | null = null;
 
@@ -1729,7 +1733,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       settings = rsop.settings;
     } else {
       const result = pullGroupPolicy(this.getTcpStack(), this.domainMembership, this.getHostname(), userSam);
-      if (!result.ok) return { ok: false, message: `gpupdate : ${result.message}` };
+      if (!result.ok) {
+        if (result.failure === 'no-domain-controller') this.logGroupPolicyConnectivityFailure();
+        this.gpoRefreshDueAt = null;
+        return { ok: false, message: `gpupdate : ${result.message}` };
+      }
       appliedGpoNames = result.appliedGpoNames;
       appliedUserGpoNames = result.appliedUserGpoNames;
       settings = result.settings;
@@ -1759,7 +1767,53 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.gpoAppliedNames = appliedGpoNames;
     this.gpoAppliedUserNames = appliedUserGpoNames;
     this.gpoLastAppliedAt = new Date();
+    this.logGroupPolicyProcessed(appliedGpoNames.length + appliedUserGpoNames.length, JSON.stringify({ appliedGpoNames, appliedUserGpoNames, settings }));
+    this.gpoRefreshDueAt = null;
     return { ok: true, message: '' };
+  }
+
+  private logGroupPolicyProcessed(objectCount: number, signature: string): void {
+    const changed = signature !== this.gpoLastSignature;
+    this.gpoLastSignature = signature;
+    this.eventLog.writeEventLog(
+      'System', 'Microsoft-Windows-GroupPolicy', changed ? 1502 : 1500, 'Information',
+      changed
+        ? `The Group Policy settings for the computer were processed successfully. New settings from ${objectCount} Group Policy objects were detected and applied.`
+        : 'The Group Policy settings for the computer were processed successfully. There were no changes detected since the last successful processing of Group Policy.');
+  }
+
+  private logGroupPolicyConnectivityFailure(): void {
+    this.eventLog.writeEventLog(
+      'System', 'Microsoft-Windows-GroupPolicy', 1129, 'Error',
+      'The processing of Group Policy failed because of lack of network connectivity to a domain controller. This may be a transient condition. A success message would be generated once the machine gets connected to the domain controller and Group Policy has successfully processed. If you do not see a success message for several hours, then contact your administrator.');
+  }
+
+  private groupPolicySystemValues(): Record<string, string | number> | null {
+    return this.registry.getItemPropertyValues(GROUP_POLICY_SYSTEM_KEY);
+  }
+
+  private groupPolicyRefreshDelay(): number {
+    return refreshDelayMs({
+      domainController: this.getDirectoryStore() !== null,
+      values: this.groupPolicySystemValues(),
+      hostname: this.getHostname(),
+      cycle: this.gpoRefreshCycle,
+    });
+  }
+
+  private runBackgroundGroupPolicyRefresh(elapsedMs: number): void {
+    if (!this.domainMembership && !this.getDirectoryStore()) {
+      this.gpoRefreshDueAt = null;
+      return;
+    }
+    const now = this.simulatedDate().getTime();
+    if (this.gpoRefreshDueAt === null) {
+      this.gpoRefreshDueAt = now - elapsedMs + this.groupPolicyRefreshDelay();
+    }
+    if (now < this.gpoRefreshDueAt) return;
+    if (!backgroundRefreshDisabled(this.groupPolicySystemValues())) this.gpupdateForce();
+    this.gpoRefreshCycle++;
+    this.gpoRefreshDueAt = now + this.groupPolicyRefreshDelay();
   }
 
   private domainControllerIdentity(): { netbiosName: string; dcAddress: string } | null {
@@ -3958,6 +4012,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.clock.advance(ms);
     this.procMgr.advanceTime(ms);
     this.fireDueScheduledTasks();
+    this.runBackgroundGroupPolicyRefresh(ms);
     this.svcMgr.advanceRecoveryTimers(
       this.simulatedDate().getTime(),
       (svc) => this.procMgr.onServiceStarted(svc.name, svc.processName),

@@ -743,7 +743,7 @@ export class DirectoryStore {
     const gpo = this.getGpo(gpoName);
     if (!gpo) return { ok: false, message: `A GPO with the name "${gpoName}" cannot be found.` };
     const doomed = this.getGpRegistryValues(gpoName, key, valueName) ?? [];
-    if (doomed.length === 0) return { ok: false, message: `The GPO "${gpoName}" does not set the registry value '${key}${valueName ? `\\${valueName}` : ''}'.` };
+    if (doomed.length === 0) return { ok: false, message: `The following Group Policy registry setting was not found: ${key}${valueName ? `\\${valueName}` : ''}` };
     const identity = (e: GpoRegistryValue): string => `${normalisedPolicyKey(e.key)}|${e.valueName.toLowerCase()}`;
     const doomedIdentities = new Set(doomed.map(identity));
     const kept = (gpo.settings.registryPolicy ?? []).filter(e => !doomedIdentities.has(identity(e)));

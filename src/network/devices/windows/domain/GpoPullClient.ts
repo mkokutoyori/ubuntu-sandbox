@@ -24,6 +24,7 @@ import { containerChain, resolveGroupPolicy, type GpoContainerReader } from '../
 export interface GpoPullResult {
   ok: boolean;
   message: string;
+  failure?: 'no-domain-controller' | 'access-denied';
   appliedGpoNames: string[];
   appliedUserGpoNames: string[];
   settings: GpoSettings;
@@ -59,14 +60,14 @@ function valuesOf(attrs: LdapAttributes, name: string): string[] {
 export function pullGroupPolicy(tcpStack: TcpStack, membership: DomainMembership, hostname: string, userSam?: string): GpoPullResult {
   const conn = dialLdap(tcpStack, membership.dcAddress);
   if (!conn.ok || !conn.client) {
-    return { ok: false, message: 'The processing of Group Policy failed because of lack of network connectivity to a domain controller.', appliedGpoNames: [], appliedUserGpoNames: [], settings: {} };
+    return { ok: false, failure: 'no-domain-controller', message: 'The processing of Group Policy failed because of lack of network connectivity to a domain controller.', appliedGpoNames: [], appliedUserGpoNames: [], settings: {} };
   }
   const ldap = conn.client;
   const computerSam = `${hostname}$`;
   const bind = ldap.bind(computerSam, membership.machineSecret);
   if (!bind.ok) {
     ldap.unbind();
-    return { ok: false, message: 'Access is denied.', appliedGpoNames: [], appliedUserGpoNames: [], settings: {} };
+    return { ok: false, failure: 'access-denied', message: 'Access is denied.', appliedGpoNames: [], appliedUserGpoNames: [], settings: {} };
   }
 
   const rootDn = rootDnOf(membership.dnsName);
