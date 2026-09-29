@@ -92,7 +92,7 @@ describe('Add-DnsServerResourceRecord* / Get-DnsServerResourceRecord', () => {
     const { dns } = await zoned();
     await run(ps(dns), 'Add-DnsServerResourceRecordA -ZoneName lab.local -Name ws01 -IPv4Address 192.168.60.30');
     const out = await run(ps(dns), 'Get-DnsServerResourceRecord -ZoneName lab.local -Name ws01');
-    expect(out).toContain('ws01.lab.local');
+    expect(out).toMatch(/^ws01\s+A\s/m);
     expect(out).toContain('192.168.60.30');
   });
 

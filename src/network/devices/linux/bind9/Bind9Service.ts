@@ -4,7 +4,7 @@ import { RecursiveResolver } from '@/network/dns/resolver/RecursiveResolver';
 import { DnsCache } from '@/network/dns/resolver/DnsCache';
 import { parseZoneFile, ZoneFileError } from '@/network/dns/zone/ZoneFile';
 import { ZoneError } from '@/network/dns/zone/Zone';
-import { ZoneTransferClient, transferTransportOf } from '@/network/dns/transfer/ZoneTransferClient';
+import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer } from '@/network/dns/transfer/ZoneTransferHosting';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { DnsClass } from '@/network/dns/wire/RRType';
 import { IPAddress } from '@/network/core/types';
@@ -12,11 +12,11 @@ import { makeTxtRecord } from '@/network/dns/wire/ResourceRecord';
 import { formatRecordLine } from '../commands/dns/RecordFormat';
 import { normalizeDnsName, parentName } from '@/network/dns/wire/DnsName';
 import {
-  isTransferQuery, buildAxfrAnswers, buildTransferResponse, refuseTransfer,
+  isTransferQuery, refuseTransfer,
 } from '@/network/dns/transfer/AxfrSession';
-import { sendNotify, isNotify, makeNotifyAck } from '@/network/dns/transfer/NotifyProtocol';
+import { isNotify, makeNotifyAck } from '@/network/dns/transfer/NotifyProtocol';
 import {
-  bindDnsUdpServer, unbindDnsUdpServer, udpClientOf, DNS_PORT,
+  bindDnsUdpServer, unbindDnsUdpServer, DNS_PORT,
 } from '@/network/dns/transport/DnsUdpTransport';
 import {
   bindDnsTcpServer, unbindDnsTcpServer,
@@ -60,7 +60,7 @@ export class Bind9Service {
   private readonly cache = new DnsCache();
   private readonly loadedZones = new Map<string, number>();
   private readonly failedZones = new Set<string>();
-  private readonly transferClients = new Map<string, ZoneTransferClient>();
+  private readonly secondaries: SecondaryZoneRefresher;
   private readonly frozenZones = new Set<string>();
   private readonly logging: Bind9Logging;
   private readonly readFile: (path: string) => string | null;
@@ -79,6 +79,10 @@ export class Bind9Service {
     this.readFile = (path) => this.files.read(path);
     this.logging = new Bind9Logging((path, content) => this.files.append(path, content));
     this.rndcChannel = new RndcChannel(this);
+    this.secondaries = new SecondaryZoneRefresher(host, (name, force) => {
+      const zone = this.config?.zones.find((z) => z.name === name && z.type === 'secondary');
+      if (zone) void this.refreshSecondaryZone(zone, force);
+    });
   }
 
   isRunning(): boolean {
@@ -471,12 +475,7 @@ export class Bind9Service {
   }
 
   private serveTransfer(query: DnsMessage): DnsMessage {
-    const qname = normalizeDnsName(query.questions[0].qname);
-    const zone = this.store?.findZone(qname);
-    if (!zone || zone.origin !== qname) {
-      return this.refuse(query, false);
-    }
-    return buildTransferResponse(query, buildAxfrAnswers(zone));
+    return serveZoneTransfer(this.store, query) ?? this.refuse(query, false);
   }
 
   private handleNotify(query: DnsMessage, sourceIP?: IPAddress): DnsMessage {
@@ -503,33 +502,13 @@ export class Bind9Service {
     return { ok: true };
   }
 
-  private transferClientFor(zone: NamedZone): ZoneTransferClient | null {
-    const existing = this.transferClients.get(zone.name);
-    if (existing) return existing;
-
+  private async refreshSecondaryZone(zone: NamedZone, force = false): Promise<boolean> {
+    if (!this.running || this.store === null) return false;
     const primaries = zone.primaries
       .map((primary) => IPAddress.tryParse(primary))
       .filter((ip): ip is IPAddress => ip !== null);
-    if (primaries.length === 0) return null;
-
-    const client = new ZoneTransferClient(zone.name, primaries,
-      transferTransportOf(udpClientOf(this.host), this.host));
-    this.transferClients.set(zone.name, client);
-    return client;
-  }
-
-  private async refreshSecondaryZone(zone: NamedZone, force = false): Promise<boolean> {
-    if (!this.running || this.store === null) return false;
-    const client = this.transferClientFor(zone);
-    if (!client) return false;
-
-    client.adopt(this.store.getZone(zone.name));
-    if (!await client.refresh(force)) return false;
-
-    const fetched = client.currentZone();
+    const { zone: fetched } = await this.secondaries.refresh(this.store, zone.name, primaries, force);
     if (!fetched) return false;
-    this.store.removeZone(zone.name);
-    this.store.addZone(fetched);
     this.loadedZones.set(zone.name, fetched.soa.data.serial);
     this.failedZones.delete(zone.name);
     return true;
@@ -539,10 +518,10 @@ export class Bind9Service {
     const zone = this.config?.zones.find((z) => z.name === zoneName && z.type === 'primary');
     const loaded = this.store?.findZone(zoneName);
     if (!zone || !loaded || loaded.origin !== zoneName) return;
-    for (const target of zone.alsoNotify) {
-      const targetIP = IPAddress.tryParse(target);
-      if (targetIP) void sendNotify(this.host, targetIP, loaded.origin, loaded.soa);
-    }
+    const targets = zone.alsoNotify
+      .map((target) => IPAddress.tryParse(target))
+      .filter((ip): ip is IPAddress => ip !== null);
+    notifyZoneTargets(this.host, loaded, targets);
   }
 
   private async recurse(query: DnsMessage): Promise<DnsMessage> {

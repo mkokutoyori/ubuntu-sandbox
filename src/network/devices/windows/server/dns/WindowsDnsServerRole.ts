@@ -1,25 +1,10 @@
-/**
- * WindowsDnsServerRole — hosts the real DNS engine (`src/network/dns/`) as
- * the "DNS Server" Windows role (PRD-Windows-Server.md §5 P7): genuine
- * authoritative zones answered over real UDP/TCP port 53, with optional
- * forwarders (recursion) — reusing the wire/zone/resolver/transport stack
- * wholesale, the same engine the Linux BIND9 service (`Bind9Service.ts`)
- * already hosts. No DNS logic is reimplemented here; this is a thin
- * Windows-flavored façade (zone/record CRUD surface + forwarder wiring)
- * around that engine.
- *
- * Scope, matching the PRD's explicit `DnsServer` cmdlet surface: primary
- * zones only — no secondary zones / zone-transfer serving (not in the
- * PRD's cmdlet list; that machinery exists in `transfer/` if a later phase
- * wants it).
- */
-
 import type { EndHost } from '@/network/devices/EndHost';
 import { Zone, ZoneError } from '@/network/dns/zone/Zone';
 import { ZoneStore, ZoneStoreError } from '@/network/dns/zone/ZoneStore';
+import { renderZoneFile } from '@/network/dns/zone/ZoneFile';
 import { AuthoritativeServer } from '@/network/dns/resolver/AuthoritativeServer';
 import { RecursiveResolver } from '@/network/dns/resolver/RecursiveResolver';
-import { DnsCache } from '@/network/dns/resolver/DnsCache';
+import { DnsCache, type DnsCacheRecordView } from '@/network/dns/resolver/DnsCache';
 import { bindDnsUdpServer, unbindDnsUdpServer } from '@/network/dns/transport/DnsUdpTransport';
 import { bindDnsTcpServer, unbindDnsTcpServer } from '@/network/dns/transport/DnsTcpTransport';
 import { isUpdateMessage } from '@/network/dns/update/DnsUpdate';
@@ -28,14 +13,19 @@ import {
   authorizeUpdate, signIfKeyed,
 } from '@/network/dns/update/UpdateResponder';
 import { TsigKeyring } from '@/network/dns/tsig/Tsig';
+import { isTransferQuery, refuseTransfer } from '@/network/dns/transfer/AxfrSession';
+import { isNotify, makeNotifyAck } from '@/network/dns/transfer/NotifyProtocol';
+import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer } from '@/network/dns/transfer/ZoneTransferHosting';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
+import { normalizeDnsName } from '@/network/dns/wire/DnsName';
 import { RRType } from '@/network/dns/wire/RRType';
 import {
   makeARecord, makeAaaaRecord, makeCnameRecord, makePtrRecord, makeMxRecord, makeSrvRecord, makeSoaRecord,
+  makeNsRecord, makeTxtRecord,
   type ResourceRecord, type ResourceRecordData, type SoaRecordData,
   type ARecordData, type AaaaRecordData, type CnameRecordData, type PtrRecordData, type MxRecordData,
-  type SrvRecordData, type NsRecordData, type DhcidRecordData, makeDhcidRecord,
+  type SrvRecordData, type NsRecordData, type TxtRecordData, type DhcidRecordData, makeDhcidRecord,
 } from '@/network/dns/wire/ResourceRecord';
 import { dhcidToPresentation } from '@/network/dns/wire/Dhcid';
 import { ptrQName } from '@/network/dns/compat/DnsWireCompat';
@@ -44,43 +34,179 @@ import { IPAddress } from '@/network/core/types';
 export interface DnsOpResult { ok: boolean; message: string }
 
 export type DnsDynamicUpdateMode = 'None' | 'NonsecureAndSecure' | 'Secure';
+export type DnsZoneType = 'Primary' | 'Secondary' | 'Forwarder';
+export type DnsTransferPolicy =
+  'NoTransfer' | 'TransferToZoneNameServer' | 'TransferToSecureServers' | 'TransferAnyServer';
+export type DnsNotifyPolicy = 'NoNotify' | 'Notify' | 'NotifyServers';
+
+export const DNS_TRANSFER_POLICIES: readonly DnsTransferPolicy[] =
+  ['NoTransfer', 'TransferToZoneNameServer', 'TransferToSecureServers', 'TransferAnyServer'];
+export const DNS_NOTIFY_POLICIES: readonly DnsNotifyPolicy[] = ['NoNotify', 'Notify', 'NotifyServers'];
 
 export interface DnsZoneInfo {
   name: string;
+  type: DnsZoneType;
   recordCount: number;
   dynamicUpdate: DnsDynamicUpdateMode;
+  zoneFile: string;
+  isDsIntegrated: boolean;
+  isReverse: boolean;
+  isLoaded: boolean;
+  serial: number | null;
+  secureSecondaries: DnsTransferPolicy;
+  secondaryServers: string[];
+  notify: DnsNotifyPolicy;
+  notifyServers: string[];
+  masterServers: string[];
+  lastZoneTransfer: number | null;
+  isExpired: boolean;
 }
 
-export interface DnsRecordInfo { name: string; type: string; ttl: number; text: string }
+export interface DnsRecordInfo {
+  name: string;
+  type: string;
+  ttl: number;
+  text: string;
+  data: Record<string, string | number>;
+}
+
+export interface DnsRecordSpec { type: string; data: Record<string, string | number> }
+
+export interface DnsForwarderInfo { addresses: string[]; useRootHint: boolean; timeoutSeconds: number }
+
+export interface DnsZoneFileSink {
+  write(fileName: string, text: string): void;
+  remove(fileName: string): void;
+}
+
+export interface DnsRoleEnvironment {
+  now?: () => number;
+  zoneFiles?: DnsZoneFileSink;
+  directoryAvailable?: () => boolean;
+}
+
+export interface DnsPrimaryZoneOptions {
+  dsIntegrated?: boolean;
+  adminEmail?: string;
+  ttl?: number;
+  networkId?: string;
+  zoneFile?: string;
+  dynamicUpdate?: DnsDynamicUpdateMode;
+}
+
+export interface DnsPrimaryZoneChanges {
+  dynamicUpdate?: DnsDynamicUpdateMode;
+  secureSecondaries?: DnsTransferPolicy;
+  secondaryServers?: string[];
+  notify?: DnsNotifyPolicy;
+  notifyServers?: string[];
+}
 
 const DNS_PORT = 53;
+const DEFAULT_FORWARDER_TIMEOUT_SECONDS = 3;
+const UNLOADED_RETRY_SECONDS = 600;
 
 const RR_TYPE_NAME = new Map<number, string>(
   Object.entries(RRType).map(([name, code]) => [code, name]),
 );
 
+const RECORD_FIELDS: Record<string, readonly string[]> = {
+  A: ['IPv4Address'],
+  AAAA: ['IPv6Address'],
+  CNAME: ['HostNameAlias'],
+  PTR: ['PtrDomainName'],
+  NS: ['NameServer'],
+  MX: ['Preference', 'MailExchange'],
+  SRV: ['Priority', 'Weight', 'Port', 'DomainName'],
+  TXT: ['DescriptiveText'],
+};
+
+export function formatRecordFields(type: string, fields: Record<string, string | number>): string | null {
+  switch (type.toUpperCase()) {
+    case 'A': return String(fields.IPv4Address);
+    case 'AAAA': return String(fields.IPv6Address);
+    case 'CNAME': return String(fields.HostNameAlias);
+    case 'PTR': return String(fields.PtrDomainName);
+    case 'NS': return String(fields.NameServer);
+    case 'TXT': return String(fields.DescriptiveText);
+    case 'MX': return `[${fields.Preference}] ${fields.MailExchange}`;
+    case 'SRV': return `[${fields.Priority}][${fields.Weight}] ${fields.Port} ${fields.DomainName}`;
+    case 'SOA':
+      return `[${fields.SerialNumber}][${fields.RefreshInterval}][${fields.RetryDelay}][${fields.ExpireLimit}][${fields.MinimumTimeToLive}] ${fields.PrimaryServer} ${fields.ResponsiblePerson}`;
+    default: return null;
+  }
+}
+
 function formatRecordData(rr: ResourceRecord<ResourceRecordData>): string {
+  const fields = recordFields(rr);
+  const typeName = RR_TYPE_NAME.get(rr.data.type) ?? '';
+  const known = formatRecordFields(typeName, fields);
+  if (known !== null) return known;
+  return rr.data.type === RRType.DHCID
+    ? dhcidToPresentation(rr.data as DhcidRecordData)
+    : JSON.stringify(rr.data);
+}
+
+function recordFields(rr: ResourceRecord<ResourceRecordData>): Record<string, string | number> {
   switch (rr.data.type) {
-    case RRType.A: return (rr.data as ARecordData).address.toString();
-    case RRType.AAAA: return (rr.data as AaaaRecordData).address.toString();
-    case RRType.CNAME: return (rr.data as CnameRecordData).cname;
-    case RRType.PTR: return (rr.data as PtrRecordData).ptrdname;
-    case RRType.NS: return (rr.data as NsRecordData).nsdname;
+    case RRType.A: return { IPv4Address: (rr.data as ARecordData).address.toString() };
+    case RRType.AAAA: return { IPv6Address: (rr.data as AaaaRecordData).address.toString() };
+    case RRType.CNAME: return { HostNameAlias: (rr.data as CnameRecordData).cname };
+    case RRType.PTR: return { PtrDomainName: (rr.data as PtrRecordData).ptrdname };
+    case RRType.NS: return { NameServer: (rr.data as NsRecordData).nsdname };
+    case RRType.TXT: return { DescriptiveText: (rr.data as TxtRecordData).text.join('') };
     case RRType.MX: {
       const d = rr.data as MxRecordData;
-      return `[${d.preference}] ${d.exchange}`;
+      return { Preference: d.preference, MailExchange: d.exchange };
     }
     case RRType.SRV: {
       const d = rr.data as SrvRecordData;
-      return `[${d.priority}][${d.weight}] ${d.port} ${d.target}`;
+      return { Priority: d.priority, Weight: d.weight, Port: d.port, DomainName: d.target };
     }
     case RRType.SOA: {
       const d = rr.data as SoaRecordData;
-      return `${d.mname} ${d.rname} ${d.serial}`;
+      return {
+        PrimaryServer: d.mname, ResponsiblePerson: d.rname, SerialNumber: d.serial,
+        RefreshInterval: d.refresh, RetryDelay: d.retry, ExpireLimit: d.expire, MinimumTimeToLive: d.minimum,
+      };
     }
-    case RRType.DHCID: return dhcidToPresentation(rr.data as DhcidRecordData);
-    default: return JSON.stringify(rr.data);
+    default: return {};
   }
+}
+
+function buildRecord(fqdn: string, ttl: number, spec: DnsRecordSpec): ResourceRecord<ResourceRecordData> {
+  const type = spec.type.toUpperCase();
+  const fields = RECORD_FIELDS[type];
+  if (!fields) throw new Error(`Record type "${spec.type}" is not supported by this DNS server.`);
+  for (const field of fields) {
+    const value = spec.data[field];
+    if (value === undefined || value === '') {
+      throw new Error(`The ${type} record data is missing "${field}".`);
+    }
+  }
+  const text = (field: string): string => String(spec.data[field]);
+  const number = (field: string): number => Number(spec.data[field]);
+  switch (type) {
+    case 'A': return makeARecord(fqdn, ttl, text('IPv4Address'));
+    case 'AAAA': return makeAaaaRecord(fqdn, ttl, text('IPv6Address'));
+    case 'CNAME': return makeCnameRecord(fqdn, ttl, text('HostNameAlias'));
+    case 'PTR': return makePtrRecord(fqdn, ttl, text('PtrDomainName'));
+    case 'NS': return makeNsRecord(fqdn, ttl, text('NameServer'));
+    case 'TXT': return makeTxtRecord(fqdn, ttl, text('DescriptiveText'));
+    case 'MX': return makeMxRecord(fqdn, ttl, number('Preference'), text('MailExchange'));
+    default: return makeSrvRecord(fqdn, ttl, {
+      priority: number('Priority'), weight: number('Weight'), port: number('Port'), target: text('DomainName'),
+    });
+  }
+}
+
+function sameFields(a: Record<string, string | number>, b: Record<string, string | number>): boolean {
+  const keys = Object.keys(b);
+  return keys.length > 0 && keys.every(k => normalizeValue(a[k]) === normalizeValue(b[k]));
+}
+
+function normalizeValue(value: string | number | undefined): string {
+  return String(value ?? '').toLowerCase().replace(/\.$/, '');
 }
 
 function bumpSerial(zone: Zone): void {
@@ -96,16 +222,79 @@ function normalizeZoneKey(name: string): string {
   return lower.endsWith('.') ? lower.slice(0, -1) : lower;
 }
 
+function isUnder(name: string, zone: string): boolean {
+  return name === zone || name.endsWith(`.${zone}`);
+}
+
+function parseAddresses(values: readonly string[]): IPAddress[] | string {
+  const parsed: IPAddress[] = [];
+  for (const value of values) {
+    const ip = IPAddress.tryParse(value);
+    if (!ip) return `"${value}" is not a valid IPv4 address.`;
+    parsed.push(ip);
+  }
+  return parsed;
+}
+
+const OCTET_LABELS: Record<number, number> = { 8: 1, 16: 2, 24: 3 };
+
+function reverseZoneName(networkId: string): string | { error: string } {
+  const match = /^(\d{1,3}(?:\.\d{1,3}){0,3})\/(\d{1,2})$/.exec(networkId.trim());
+  if (!match) return { error: `"${networkId}" is not a valid network id (expected a.b.c.d/prefix).` };
+  const prefix = Number(match[2]);
+  const labels = OCTET_LABELS[prefix];
+  if (labels === undefined) {
+    return { error: `The prefix length /${prefix} is not on an octet boundary; classless reverse delegation (RFC 2317) is not built.` };
+  }
+  const octets = match[1].split('.');
+  if (octets.length < labels || octets.some(o => Number(o) > 255)) {
+    return { error: `"${networkId}" is not a valid network id.` };
+  }
+  return `${octets.slice(0, labels).reverse().join('.')}.in-addr.arpa`;
+}
+
+interface ZoneSettings {
+  type: DnsZoneType;
+  zoneFile: string;
+  dsIntegrated: boolean;
+  transfer: DnsTransferPolicy;
+  secondaryServers: string[];
+  notify: DnsNotifyPolicy;
+  notifyServers: string[];
+  masters: string[];
+  lastTransferMs: number | null;
+  nextRefreshMs: number | null;
+  expired: boolean;
+}
+
+interface ConditionalForwarder { masters: string[]; resolver: RecursiveResolver }
+
 export class WindowsDnsServerRole {
   private readonly store = new ZoneStore();
   private readonly authoritative = new AuthoritativeServer(this.store);
-  private resolver: RecursiveResolver | null = null;
+  private readonly cache: DnsCache;
+  private readonly settings = new Map<string, ZoneSettings>();
+  private readonly conditional = new Map<string, ConditionalForwarder>();
+  private readonly secondaries: SecondaryZoneRefresher;
   private readonly keyring = new TsigKeyring();
   private readonly zoneDynamicUpdate = new Map<string, DnsDynamicUpdateMode>();
+  private resolver: RecursiveResolver | null = null;
   private forwarderAddresses: string[] = [];
+  private forwarderTimeoutSeconds = DEFAULT_FORWARDER_TIMEOUT_SECONDS;
+  private recursionEnabled = true;
   private running = false;
 
-  constructor(private readonly host: EndHost) {}
+  private readonly now: () => number;
+  private readonly zoneFiles: DnsZoneFileSink | null;
+  private readonly directoryAvailable: () => boolean;
+
+  constructor(private readonly host: EndHost, environment: DnsRoleEnvironment = {}) {
+    this.now = environment.now ?? (() => Date.now());
+    this.zoneFiles = environment.zoneFiles ?? null;
+    this.directoryAvailable = environment.directoryAvailable ?? (() => false);
+    this.cache = new DnsCache(this.now);
+    this.secondaries = new SecondaryZoneRefresher(host, (name, force) => { void this.refreshSecondary(name, force); });
+  }
 
   isRunning(): boolean { return this.running; }
 
@@ -113,8 +302,8 @@ export class WindowsDnsServerRole {
 
   start(): void {
     if (this.running) return;
-    bindDnsUdpServer(this.host, this.handleQuery, DNS_PORT, 'dns');
-    bindDnsTcpServer(this.host, this.handleQuery, DNS_PORT);
+    bindDnsUdpServer(this.host, this.handleUdp, DNS_PORT, 'dns');
+    bindDnsTcpServer(this.host, this.handleTcp, DNS_PORT);
     this.running = true;
   }
 
@@ -125,18 +314,117 @@ export class WindowsDnsServerRole {
     this.running = false;
   }
 
-  private readonly handleQuery = (
-    query: DnsMessage, _ip?: unknown, _port?: number, raw?: Uint8Array,
-  ): DnsMessage | Promise<DnsMessage> => {
+  tick(): void {
+    const at = this.now();
+    for (const [name, settings] of this.settings) {
+      if (settings.type !== 'Secondary') continue;
+      const zone = this.store.getZone(name);
+      if (zone && settings.lastTransferMs !== null
+        && at - settings.lastTransferMs >= zone.soa.data.expire * 1000) {
+        this.store.removeZone(name);
+        this.secondaries.discard(name);
+        settings.expired = true;
+        settings.nextRefreshMs = at;
+      }
+      if (settings.nextRefreshMs !== null && at >= settings.nextRefreshMs) {
+        settings.nextRefreshMs = null;
+        void this.refreshSecondary(name, false);
+      }
+    }
+  }
+
+  private readonly handleUdp = (
+    query: DnsMessage, source?: unknown, _port?: number, raw?: Uint8Array,
+  ): DnsMessage | Promise<DnsMessage> => this.answer(query, 'udp', source, raw);
+
+  private readonly handleTcp = (
+    query: DnsMessage, source?: unknown, _port?: number, raw?: Uint8Array,
+  ): DnsMessage | Promise<DnsMessage> => this.answer(query, 'tcp', source, raw);
+
+  private answer(
+    query: DnsMessage, transport: 'udp' | 'tcp', source: unknown, raw?: Uint8Array,
+  ): DnsMessage | Promise<DnsMessage> {
+    const sourceAddress = source instanceof IPAddress ? source.toString() : null;
+    if (isNotify(query)) return this.handleNotify(query, sourceAddress);
     if (isUpdateMessage(query)) return this.handleUpdate(query, raw);
+    if (isTransferQuery(query)) {
+      return transport === 'udp' ? refuseTransfer(query) : this.handleTransfer(query, sourceAddress);
+    }
     const response = this.authoritative.answer(query);
     const question = query.questions[0];
     const outsideAuthority = !response.flags.aa && response.flags.rcode === DnsRcode.REFUSED;
-    if (outsideAuthority && question && query.flags.rd && this.resolver) {
-      return this.recurse(query);
+    if (outsideAuthority && question && this.hitsUnloadedSecondary(question.qname)) {
+      return { ...response, flags: { ...response.flags, rcode: DnsRcode.SERVFAIL } };
+    }
+    if (outsideAuthority && question && query.flags.rd && this.recursionEnabled) {
+      const resolver = this.resolverFor(question.qname);
+      if (resolver) return this.recurse(query, resolver);
     }
     return response;
-  };
+  }
+
+  private hitsUnloadedSecondary(qname: string): boolean {
+    const name = normalizeDnsName(qname);
+    for (const [zone, settings] of this.settings) {
+      if (settings.type === 'Secondary' && !this.store.getZone(zone) && isUnder(name, zone)) return true;
+    }
+    return false;
+  }
+
+  private resolverFor(qname: string): RecursiveResolver | null {
+    const name = normalizeDnsName(qname);
+    let best: string | null = null;
+    for (const zone of this.conditional.keys()) {
+      if (isUnder(name, zone) && (best === null || zone.length > best.length)) best = zone;
+    }
+    return best !== null ? this.conditional.get(best)!.resolver : this.resolver;
+  }
+
+  private handleTransfer(query: DnsMessage, source: string | null): DnsMessage {
+    const qname = normalizeDnsName(query.questions[0].qname);
+    const settings = this.settings.get(qname);
+    const zone = this.store.getZone(qname);
+    if (!settings || settings.type === 'Forwarder' || !zone || !this.transferAllowed(settings, zone, source)) {
+      return refuseTransfer(query);
+    }
+    return serveZoneTransfer(this.store, query) ?? refuseTransfer(query);
+  }
+
+  private transferAllowed(settings: ZoneSettings, zone: Zone, source: string | null): boolean {
+    if (source === null) return false;
+    switch (settings.transfer) {
+      case 'TransferAnyServer': return true;
+      case 'TransferToSecureServers': return settings.secondaryServers.includes(source);
+      case 'TransferToZoneNameServer': return this.nameServerAddresses(zone).includes(source);
+      default: return false;
+    }
+  }
+
+  private nameServerAddresses(zone: Zone): string[] {
+    const addresses: string[] = [];
+    for (const ns of zone.getRRSet(zone.origin, RRType.NS) ?? []) {
+      const target = normalizeDnsName((ns.data as NsRecordData).nsdname);
+      for (const a of this.store.findZone(target)?.getRRSet(target, RRType.A) ?? []) {
+        addresses.push((a.data as ARecordData).address.toString());
+      }
+    }
+    return addresses;
+  }
+
+  private localAddresses(): string[] {
+    return this.host.getPorts().map(port => port.getIPAddress()?.toString()).filter((a): a is string => !!a);
+  }
+
+  private handleNotify(query: DnsMessage, source: string | null): DnsMessage {
+    const ack = makeNotifyAck(query);
+    const name = normalizeDnsName(query.questions[0]?.qname ?? '');
+    const settings = this.settings.get(name);
+    if (settings?.type !== 'Secondary' || source === null || !settings.masters.includes(source)) {
+      return { ...ack, flags: { ...ack.flags, rcode: DnsRcode.REFUSED } };
+    }
+    void this.refreshSecondary(name, false);
+    return ack;
+  }
 
   private handleUpdate(query: DnsMessage, raw?: Uint8Array): DnsMessage {
     const now = Math.floor(Date.now() / 1000);
@@ -161,14 +449,14 @@ export class WindowsDnsServerRole {
     for (const rr of verdict.applied.removals) zone.removeRecord(rr);
     for (const rr of verdict.applied.additions) zone.addRecord(rr);
     if (verdict.applied.removals.length > 0 || verdict.applied.additions.length > 0) {
-      bumpSerial(zone);
+      this.zoneChanged(zone);
     }
     return reply(DnsRcode.NOERROR);
   }
 
-  private async recurse(query: DnsMessage): Promise<DnsMessage> {
+  private async recurse(query: DnsMessage, resolver: RecursiveResolver): Promise<DnsMessage> {
     const question = query.questions[0];
-    const result = await this.resolver!.resolve(question.qname, question.qtype);
+    const result = await resolver.resolve(question.qname, question.qtype);
     const rcode =
       result.status === 'NOERROR' ? DnsRcode.NOERROR :
       result.status === 'NXDOMAIN' ? DnsRcode.NXDOMAIN : DnsRcode.SERVFAIL;
@@ -185,28 +473,138 @@ export class WindowsDnsServerRole {
     };
   }
 
-  // ─── Forwarders (Set-DnsServerForwarder) ────────────────────────────
+  private zoneChanged(zone: Zone): void {
+    bumpSerial(zone);
+    this.persist(zone);
+    this.notifyPeers(zone);
+  }
+
+  private persist(zone: Zone): void {
+    const settings = this.settings.get(zone.origin);
+    if (settings && !settings.dsIntegrated && this.zoneFiles) this.zoneFiles.write(settings.zoneFile, renderZoneFile(zone));
+  }
+
+  private notifyPeers(zone: Zone): void {
+    const settings = this.settings.get(zone.origin);
+    if (settings?.type !== 'Primary' || settings.notify === 'NoNotify') return;
+    const own = this.localAddresses();
+    const wanted = settings.notify === 'NotifyServers' ? settings.notifyServers : this.nameServerAddresses(zone);
+    const targets = wanted
+      .filter(address => !own.includes(address))
+      .map(address => IPAddress.tryParse(address))
+      .filter((ip): ip is IPAddress => ip !== null);
+    notifyZoneTargets(this.host, zone, targets);
+  }
+
+  private async refreshSecondary(name: string, force: boolean): Promise<boolean> {
+    const settings = this.settings.get(name);
+    if (settings?.type !== 'Secondary' || !this.running) return false;
+    const masters = parseAddresses(settings.masters);
+    if (typeof masters === 'string') return false;
+    const outcome = await this.secondaries.refresh(this.store, name, masters, force);
+    if (outcome.deferred) return false;
+    if (!this.settings.has(name)) {
+      this.store.removeZone(name);
+      return false;
+    }
+    const at = this.now();
+    const zone = this.store.getZone(name);
+    if (outcome.succeeded) {
+      settings.lastTransferMs = at;
+      settings.expired = false;
+      if (zone) {
+        this.persist(zone);
+        settings.nextRefreshMs = at + zone.soa.data.refresh * 1000;
+      }
+    } else {
+      settings.nextRefreshMs = at + (zone ? zone.soa.data.retry : UNLOADED_RETRY_SECONDS) * 1000;
+    }
+    return outcome.succeeded;
+  }
 
   setForwarders(addresses: readonly string[]): DnsOpResult {
-    const parsed: IPAddress[] = [];
-    for (const a of addresses) {
-      const ip = IPAddress.tryParse(a);
-      if (!ip) return { ok: false, message: `"${a}" is not a valid IPv4 address.` };
-      parsed.push(ip);
-    }
+    const parsed = parseAddresses(addresses);
+    if (typeof parsed === 'string') return { ok: false, message: parsed };
     this.forwarderAddresses = [...addresses];
-    this.resolver = parsed.length > 0 ? new RecursiveResolver(this.host, parsed, new DnsCache()) : null;
+    this.rebuildResolver();
     return { ok: true, message: '' };
+  }
+
+  addForwarders(addresses: readonly string[]): DnsOpResult {
+    return this.setForwarders([...this.forwarderAddresses, ...addresses.filter(a => !this.forwarderAddresses.includes(a))]);
+  }
+
+  removeForwarders(addresses: readonly string[]): DnsOpResult {
+    const missing = addresses.find(a => !this.forwarderAddresses.includes(a));
+    if (missing !== undefined) return { ok: false, message: `"${missing}" is not a configured forwarder.` };
+    return this.setForwarders(this.forwarderAddresses.filter(a => !addresses.includes(a)));
+  }
+
+  setForwarderTimeout(seconds: number): DnsOpResult {
+    if (!Number.isInteger(seconds) || seconds < 1 || seconds > 15) {
+      return { ok: false, message: 'The forwarder timeout must be between 1 and 15 seconds.' };
+    }
+    this.forwarderTimeoutSeconds = seconds;
+    this.rebuildResolver();
+    return { ok: true, message: '' };
+  }
+
+  private rebuildResolver(): void {
+    const parsed = parseAddresses(this.forwarderAddresses);
+    this.resolver = typeof parsed !== 'string' && parsed.length > 0 ? this.resolverOver(parsed) : null;
+  }
+
+  private resolverOver(addresses: readonly IPAddress[]): RecursiveResolver {
+    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: this.forwarderTimeoutSeconds * 1000 });
   }
 
   getForwarders(): string[] { return [...this.forwarderAddresses]; }
 
-  // ─── Zones (Add-DnsServerPrimaryZone / Get-DnsServerZone) ───────────
+  getForwarderInfo(): DnsForwarderInfo {
+    return { addresses: this.getForwarders(), useRootHint: false, timeoutSeconds: this.forwarderTimeoutSeconds };
+  }
 
-  addPrimaryZone(name: string, opts: { adminEmail?: string; ttl?: number } = {}): DnsOpResult {
-    const origin = name.toLowerCase();
-    if (this.store.getZone(origin)) {
-      return { ok: false, message: `A zone named "${name}" is already configured on this server.` };
+  setRecursion(enabled: boolean): DnsOpResult {
+    this.recursionEnabled = enabled;
+    return { ok: true, message: '' };
+  }
+
+  isRecursionEnabled(): boolean { return this.recursionEnabled; }
+
+  cacheEntries(): DnsCacheRecordView[] {
+    return this.cache.entries().filter(entry => !entry.negative);
+  }
+
+  clearCache(): void { this.cache.flush(); }
+
+  private zoneNameConflict(origin: string): DnsOpResult | null {
+    if (this.settings.has(origin) || this.conditional.has(origin)) {
+      return { ok: false, message: `A zone named "${origin}" is already configured on this server.` };
+    }
+    return null;
+  }
+
+  private newSettings(type: DnsZoneType, origin: string, zoneFile?: string, dsIntegrated = false): ZoneSettings {
+    return {
+      type, zoneFile: dsIntegrated ? '' : zoneFile || `${origin}.dns`, dsIntegrated,
+      transfer: 'TransferToZoneNameServer', secondaryServers: [],
+      notify: 'Notify', notifyServers: [], masters: [],
+      lastTransferMs: null, nextRefreshMs: null, expired: false,
+    };
+  }
+
+  addPrimaryZone(name: string, opts: DnsPrimaryZoneOptions = {}): DnsOpResult {
+    let origin = normalizeZoneKey(name);
+    if (opts.networkId !== undefined) {
+      const reverse = reverseZoneName(opts.networkId);
+      if (typeof reverse !== 'string') return { ok: false, message: reverse.error };
+      origin = reverse;
+    }
+    if (!origin) return { ok: false, message: 'Cannot process command because of one or more missing mandatory parameters: Name.' };
+    const conflict = this.zoneNameConflict(origin);
+    if (conflict) return { ok: false, message: conflict.message.replace(origin, name || origin) };
+    if (opts.dsIntegrated && !this.directoryAvailable()) {
+      return { ok: false, message: 'Directory-integrated zones need a domain controller: no Active Directory partition is hosted on this server.' };
     }
     const ttl = opts.ttl ?? 3600;
     const mname = `ns1.${origin}`;
@@ -217,6 +615,9 @@ export class WindowsDnsServerRole {
       });
       const zone = new Zone(origin, soa);
       this.store.addZone(zone);
+      this.settings.set(origin, this.newSettings('Primary', origin, opts.zoneFile, opts.dsIntegrated));
+      if (opts.dynamicUpdate) this.zoneDynamicUpdate.set(origin, opts.dynamicUpdate);
+      this.persist(zone);
       return { ok: true, message: '' };
     } catch (e) {
       if (e instanceof ZoneError || e instanceof ZoneStoreError) return { ok: false, message: e.message };
@@ -224,38 +625,136 @@ export class WindowsDnsServerRole {
     }
   }
 
+  addSecondaryZone(name: string, masters: readonly string[], zoneFile?: string): DnsOpResult {
+    const origin = normalizeZoneKey(name);
+    const parsed = parseAddresses(masters);
+    if (typeof parsed === 'string') return { ok: false, message: parsed };
+    if (parsed.length === 0) return { ok: false, message: 'A secondary zone needs at least one master server.' };
+    const conflict = this.zoneNameConflict(origin);
+    if (conflict) return conflict;
+    const settings = this.newSettings('Secondary', origin, zoneFile);
+    settings.masters = [...masters];
+    settings.nextRefreshMs = this.now();
+    this.settings.set(origin, settings);
+    void this.refreshSecondary(origin, false);
+    return { ok: true, message: '' };
+  }
+
+  addConditionalForwarderZone(name: string, masters: readonly string[]): DnsOpResult {
+    const origin = normalizeZoneKey(name);
+    const parsed = parseAddresses(masters);
+    if (typeof parsed === 'string') return { ok: false, message: parsed };
+    if (parsed.length === 0) return { ok: false, message: 'A conditional forwarder needs at least one master server.' };
+    const conflict = this.zoneNameConflict(origin);
+    if (conflict) return conflict;
+    this.conditional.set(origin, { masters: [...masters], resolver: this.resolverOver(parsed) });
+    return { ok: true, message: '' };
+  }
+
+  setConditionalForwarderMasters(name: string, masters: readonly string[]): DnsOpResult {
+    const origin = normalizeZoneKey(name);
+    if (!this.conditional.has(origin)) return { ok: false, message: `Zone "${name}" is not a conditional forwarder zone.` };
+    this.conditional.delete(origin);
+    return this.addConditionalForwarderZone(origin, masters);
+  }
+
+  setPrimaryZone(name: string, changes: DnsPrimaryZoneChanges): DnsOpResult {
+    const origin = normalizeZoneKey(name);
+    const settings = this.settings.get(origin);
+    if (!settings || settings.type !== 'Primary') return { ok: false, message: `"${name}" is not a primary zone on this server.` };
+    for (const list of [changes.secondaryServers, changes.notifyServers]) {
+      const parsed = list ? parseAddresses(list) : [];
+      if (typeof parsed === 'string') return { ok: false, message: parsed };
+    }
+    if (changes.dynamicUpdate) this.zoneDynamicUpdate.set(origin, changes.dynamicUpdate);
+    if (changes.secureSecondaries) settings.transfer = changes.secureSecondaries;
+    if (changes.secondaryServers) settings.secondaryServers = [...changes.secondaryServers];
+    if (changes.notify) settings.notify = changes.notify;
+    if (changes.notifyServers) settings.notifyServers = [...changes.notifyServers];
+    return { ok: true, message: '' };
+  }
+
+  setSecondaryZone(name: string, changes: { masters?: string[]; secureSecondaries?: DnsTransferPolicy; secondaryServers?: string[] }): DnsOpResult {
+    const origin = normalizeZoneKey(name);
+    const settings = this.settings.get(origin);
+    if (settings?.type !== 'Secondary') return { ok: false, message: `"${name}" is not a secondary zone on this server.` };
+    for (const list of [changes.masters, changes.secondaryServers]) {
+      const parsed = list ? parseAddresses(list) : [];
+      if (typeof parsed === 'string') return { ok: false, message: parsed };
+    }
+    if (changes.masters) {
+      if (changes.masters.length === 0) return { ok: false, message: 'A secondary zone needs at least one master server.' };
+      settings.masters = [...changes.masters];
+      this.secondaries.discard(origin);
+    }
+    if (changes.secureSecondaries) settings.transfer = changes.secureSecondaries;
+    if (changes.secondaryServers) settings.secondaryServers = [...changes.secondaryServers];
+    return { ok: true, message: '' };
+  }
+
+  startZoneTransfer(name: string): DnsOpResult {
+    const origin = normalizeZoneKey(name);
+    if (this.settings.get(origin)?.type !== 'Secondary') {
+      return { ok: false, message: `"${name}" is not a secondary zone on this server.` };
+    }
+    void this.refreshSecondary(origin, true);
+    return { ok: true, message: '' };
+  }
+
   removeZone(name: string): DnsOpResult {
-    if (!this.store.removeZone(name)) return { ok: false, message: `Zone "${name}" does not exist.` };
+    const origin = normalizeZoneKey(name);
+    if (this.conditional.delete(origin)) return { ok: true, message: '' };
+    const settings = this.settings.get(origin);
+    if (!settings) return { ok: false, message: `Zone "${name}" does not exist.` };
+    this.store.removeZone(origin);
+    this.settings.delete(origin);
+    this.zoneDynamicUpdate.delete(origin);
+    this.secondaries.discard(origin);
+    if (!settings.dsIntegrated) this.zoneFiles?.remove(settings.zoneFile);
     return { ok: true, message: '' };
   }
 
   getZone(name: string): DnsZoneInfo | null {
-    const zone = this.store.getZone(name);
-    return zone ? this.zoneInfo(zone) : null;
+    return this.zoneInfoByName(normalizeZoneKey(name));
   }
 
   listZones(): DnsZoneInfo[] {
-    return this.store.listZones().map(z => this.zoneInfo(z));
+    return [...this.settings.keys(), ...this.conditional.keys()]
+      .map(name => this.zoneInfoByName(name)!);
   }
 
-  private zoneInfo(zone: Zone): DnsZoneInfo {
+  private zoneInfoByName(name: string): DnsZoneInfo | null {
+    const forwarder = this.conditional.get(name);
+    if (forwarder) {
+      return {
+        name, type: 'Forwarder', recordCount: 0, dynamicUpdate: 'None', zoneFile: '', isDsIntegrated: false, isReverse: false,
+        isLoaded: true, serial: null, secureSecondaries: 'NoTransfer', secondaryServers: [],
+        notify: 'NoNotify', notifyServers: [], masterServers: [...forwarder.masters],
+        lastZoneTransfer: null, isExpired: false,
+      };
+    }
+    const settings = this.settings.get(name);
+    if (!settings) return null;
+    const zone = this.store.getZone(name);
     return {
-      name: zone.origin,
-      recordCount: zone.allRecords().length,
-      dynamicUpdate: this.dynamicUpdateMode(zone.origin),
+      name, type: settings.type, recordCount: zone?.allRecords().length ?? 0,
+      dynamicUpdate: this.dynamicUpdateMode(name), zoneFile: settings.zoneFile, isDsIntegrated: settings.dsIntegrated,
+      isReverse: name.endsWith('.arpa'), isLoaded: zone !== null, serial: zone?.soa.data.serial ?? null,
+      secureSecondaries: settings.transfer, secondaryServers: [...settings.secondaryServers],
+      notify: settings.notify, notifyServers: [...settings.notifyServers],
+      masterServers: [...settings.masters], lastZoneTransfer: settings.lastTransferMs,
+      isExpired: settings.expired,
     };
   }
 
   private dynamicUpdateMode(zoneName: string): DnsDynamicUpdateMode {
-    return this.zoneDynamicUpdate.get(normalizeZoneKey(zoneName)) ?? 'NonsecureAndSecure';
+    const key = normalizeZoneKey(zoneName);
+    if (this.settings.get(key)?.type === 'Secondary') return 'None';
+    return this.zoneDynamicUpdate.get(key) ?? 'NonsecureAndSecure';
   }
 
   setZoneDynamicUpdate(zoneName: string, mode: DnsDynamicUpdateMode): DnsOpResult {
-    if (!this.store.getZone(zoneName)) {
-      return { ok: false, message: `Zone "${zoneName}" does not exist on this server.` };
-    }
-    this.zoneDynamicUpdate.set(normalizeZoneKey(zoneName), mode);
-    return { ok: true, message: '' };
+    return this.setPrimaryZone(zoneName, { dynamicUpdate: mode });
   }
 
   addTsigKey(name: string, algorithm: string, secret: string): DnsOpResult {
@@ -273,9 +772,12 @@ export class WindowsDnsServerRole {
     return this.keyring.list().map(k => ({ name: k.name, algorithm: k.algorithm }));
   }
 
-  // ─── Records (Add/Get/Remove-DnsServerResourceRecord*) ──────────────
-
   private zoneFor(zoneName: string, cmdletName: string): Zone | { error: DnsOpResult } {
+    const key = normalizeZoneKey(zoneName);
+    const settings = this.settings.get(key);
+    if (settings?.type === 'Secondary') {
+      return { error: { ok: false, message: `${cmdletName} : Zone "${zoneName}" is a secondary zone and is read-only.` } };
+    }
     const zone = this.store.getZone(zoneName);
     if (!zone) return { error: { ok: false, message: `${cmdletName} : Zone "${zoneName}" does not exist on this server.` } };
     return zone;
@@ -285,99 +787,104 @@ export class WindowsDnsServerRole {
     return recordName === '@' || recordName === '' ? zone.origin : `${recordName}.${zone.origin}`;
   }
 
-  addARecord(zoneName: string, recordName: string, ipv4: string, ttl = 3600): DnsOpResult {
-    const zone = this.zoneFor(zoneName, 'Add-DnsServerResourceRecordA');
+  addRecord(zoneName: string, recordName: string, spec: DnsRecordSpec, ttl = 3600, cmdletName = 'Add-DnsServerResourceRecord'): DnsOpResult {
+    const zone = this.zoneFor(zoneName, cmdletName);
     if ('error' in zone) return zone.error;
     try {
-      zone.addRecord(makeARecord(this.fqdn(recordName, zone), ttl, ipv4));
-      bumpSerial(zone);
+      zone.addRecord(buildRecord(this.fqdn(recordName, zone), ttl, spec));
+      this.zoneChanged(zone);
       return { ok: true, message: '' };
     } catch (e) { return { ok: false, message: (e as Error).message }; }
+  }
+
+  addARecord(zoneName: string, recordName: string, ipv4: string, ttl = 3600): DnsOpResult {
+    return this.addRecord(zoneName, recordName, { type: 'A', data: { IPv4Address: ipv4 } }, ttl, 'Add-DnsServerResourceRecordA');
   }
 
   addAaaaRecord(zoneName: string, recordName: string, ipv6: string, ttl = 3600): DnsOpResult {
-    const zone = this.zoneFor(zoneName, 'Add-DnsServerResourceRecordAAAA');
-    if ('error' in zone) return zone.error;
-    try {
-      zone.addRecord(makeAaaaRecord(this.fqdn(recordName, zone), ttl, ipv6));
-      bumpSerial(zone);
-      return { ok: true, message: '' };
-    } catch (e) { return { ok: false, message: (e as Error).message }; }
+    return this.addRecord(zoneName, recordName, { type: 'AAAA', data: { IPv6Address: ipv6 } }, ttl, 'Add-DnsServerResourceRecordAAAA');
   }
 
   addCnameRecord(zoneName: string, recordName: string, hostNameAlias: string, ttl = 3600): DnsOpResult {
-    const zone = this.zoneFor(zoneName, 'Add-DnsServerResourceRecordCName');
-    if ('error' in zone) return zone.error;
-    try {
-      zone.addRecord(makeCnameRecord(this.fqdn(recordName, zone), ttl, hostNameAlias));
-      bumpSerial(zone);
-      return { ok: true, message: '' };
-    } catch (e) { return { ok: false, message: (e as Error).message }; }
+    return this.addRecord(zoneName, recordName, { type: 'CNAME', data: { HostNameAlias: hostNameAlias } }, ttl, 'Add-DnsServerResourceRecordCName');
   }
 
   addPtrRecord(zoneName: string, recordName: string, ptrDomainName: string, ttl = 3600): DnsOpResult {
-    const zone = this.zoneFor(zoneName, 'Add-DnsServerResourceRecordPtr');
-    if ('error' in zone) return zone.error;
-    try {
-      zone.addRecord(makePtrRecord(this.fqdn(recordName, zone), ttl, ptrDomainName));
-      bumpSerial(zone);
-      return { ok: true, message: '' };
-    } catch (e) { return { ok: false, message: (e as Error).message }; }
+    return this.addRecord(zoneName, recordName, { type: 'PTR', data: { PtrDomainName: ptrDomainName } }, ttl, 'Add-DnsServerResourceRecordPtr');
   }
 
   addMxRecord(zoneName: string, recordName: string, preference: number, mailExchange: string, ttl = 3600): DnsOpResult {
-    const zone = this.zoneFor(zoneName, 'Add-DnsServerResourceRecordMX');
-    if ('error' in zone) return zone.error;
-    try {
-      zone.addRecord(makeMxRecord(this.fqdn(recordName, zone), ttl, preference, mailExchange));
-      bumpSerial(zone);
-      return { ok: true, message: '' };
-    } catch (e) { return { ok: false, message: (e as Error).message }; }
+    return this.addRecord(zoneName, recordName,
+      { type: 'MX', data: { Preference: preference, MailExchange: mailExchange } }, ttl, 'Add-DnsServerResourceRecordMX');
   }
 
   addSrvRecord(
     zoneName: string, recordName: string, target: { priority: number; weight: number; port: number; target: string }, ttl = 3600,
   ): DnsOpResult {
-    const zone = this.zoneFor(zoneName, 'Add-DnsServerResourceRecord -Srv');
-    if ('error' in zone) return zone.error;
-    try {
-      zone.addRecord(makeSrvRecord(this.fqdn(recordName, zone), ttl, target));
-      bumpSerial(zone);
-      return { ok: true, message: '' };
-    } catch (e) { return { ok: false, message: (e as Error).message }; }
+    return this.addRecord(zoneName, recordName, {
+      type: 'SRV',
+      data: { Priority: target.priority, Weight: target.weight, Port: target.port, DomainName: target.target },
+    }, ttl, 'Add-DnsServerResourceRecord -Srv');
   }
 
-  removeRecord(zoneName: string, recordName: string, type: string): DnsOpResult {
+  removeRecord(zoneName: string, recordName: string, type: string, data?: Record<string, string | number>): DnsOpResult {
     const zone = this.zoneFor(zoneName, 'Remove-DnsServerResourceRecord');
     if ('error' in zone) return zone.error;
     const rrType = RRType[type.toUpperCase() as keyof typeof RRType];
     if (rrType === undefined) return { ok: false, message: `Unknown record type "${type}".` };
     const fqdn = this.fqdn(recordName, zone);
-    const existing = zone.getRRSet(fqdn, rrType) ?? [];
+    const existing = (zone.getRRSet(fqdn, rrType) ?? [])
+      .filter(rr => data === undefined || sameFields(recordFields(rr), data));
     if (existing.length === 0) return { ok: false, message: `Cannot find "${fqdn}" of type ${type} in zone "${zoneName}".` };
     for (const rr of [...existing]) zone.removeRecord(rr);
-    bumpSerial(zone);
+    this.zoneChanged(zone);
     return { ok: true, message: '' };
   }
 
-  /** `Get-DnsServerResourceRecord` — all records in a zone, or only those under one name when given. */
-  getRecords(zoneName: string, recordName?: string): DnsRecordInfo[] | null {
+  replaceRecord(
+    zoneName: string, recordName: string, previous: DnsRecordSpec, next: DnsRecordSpec, ttl?: number,
+  ): DnsOpResult {
+    const zone = this.zoneFor(zoneName, 'Set-DnsServerResourceRecord');
+    if ('error' in zone) return zone.error;
+    const rrType = RRType[previous.type.toUpperCase() as keyof typeof RRType];
+    const fqdn = this.fqdn(recordName, zone);
+    const old = rrType === undefined ? undefined
+      : (zone.getRRSet(fqdn, rrType) ?? []).find(rr => sameFields(recordFields(rr), previous.data));
+    if (!old) return { ok: false, message: `Cannot find "${fqdn}" of type ${previous.type} in zone "${zoneName}".` };
+    let replacement: ResourceRecord<ResourceRecordData>;
+    try {
+      replacement = buildRecord(fqdn, ttl ?? old.ttl, next);
+    } catch (e) { return { ok: false, message: (e as Error).message }; }
+    zone.removeRecord(old);
+    try {
+      zone.addRecord(replacement);
+    } catch (e) {
+      zone.addRecord(old);
+      return { ok: false, message: (e as Error).message };
+    }
+    this.zoneChanged(zone);
+    return { ok: true, message: '' };
+  }
+
+  getRecords(zoneName: string, recordName?: string, type?: string): DnsRecordInfo[] | null {
     const zone = this.store.getZone(zoneName);
     if (!zone) return null;
+    const wanted = type ? RRType[type.toUpperCase() as keyof typeof RRType] : undefined;
     const all = zone.allRecords();
-    const filtered = recordName ? all.filter(rr => rr.name.toLowerCase() === this.fqdn(recordName, zone).toLowerCase()) : all;
+    const named = recordName ? all.filter(rr => rr.name.toLowerCase() === this.fqdn(recordName, zone).toLowerCase()) : all;
+    const filtered = wanted === undefined ? named : named.filter(rr => rr.data.type === wanted);
     return filtered.map(rr => ({
-      name: rr.name, type: RR_TYPE_NAME.get(rr.data.type) ?? String(rr.data.type), ttl: rr.ttl, text: formatRecordData(rr),
+      name: rr.name, type: RR_TYPE_NAME.get(rr.data.type) ?? String(rr.data.type), ttl: rr.ttl,
+      text: formatRecordData(rr), data: recordFields(rr),
     }));
   }
 
-  /** Direct in-process zone mutation for dynamic updates (DHCP lease grant, domain join) — see file header. */
   applyDynamicARecord(zoneName: string, fqdnName: string, ipv4: string, ttl = 3600): DnsOpResult {
     const zone = this.store.getZone(zoneName);
     if (!zone) return { ok: false, message: `Zone "${zoneName}" does not exist on this server.` };
     for (const rr of zone.getRRSet(fqdnName, RRType.A) ?? []) zone.removeRecord(rr);
     zone.addRecord(makeARecord(fqdnName, ttl, ipv4));
-    bumpSerial(zone);
+    this.zoneChanged(zone);
     return { ok: true, message: '' };
   }
 
@@ -391,7 +898,7 @@ export class WindowsDnsServerRole {
     if (!zone) return { ok: false, message: `No reverse lookup zone is authoritative for "${arpa}".` };
     for (const rr of zone.getRRSet(arpa, RRType.PTR) ?? []) zone.removeRecord(rr);
     zone.addRecord(makePtrRecord(arpa, ttl, fqdnName));
-    bumpSerial(zone);
+    this.zoneChanged(zone);
     return { ok: true, message: '' };
   }
 
@@ -405,7 +912,7 @@ export class WindowsDnsServerRole {
       return { ok: false, message: `Cannot find "${fqdnName}" of type ${type} in zone "${zoneName}".` };
     }
     for (const rr of [...existing]) zone.removeRecord(rr);
-    bumpSerial(zone);
+    this.zoneChanged(zone);
     return { ok: true, message: '' };
   }
 
@@ -416,7 +923,7 @@ export class WindowsDnsServerRole {
     const existing = zone.getRRSet(arpa, RRType.PTR) ?? [];
     if (existing.length === 0) return { ok: false, message: `Cannot find "${arpa}" of type PTR.` };
     for (const rr of [...existing]) zone.removeRecord(rr);
-    bumpSerial(zone);
+    this.zoneChanged(zone);
     return { ok: true, message: '' };
   }
 
@@ -434,7 +941,7 @@ export class WindowsDnsServerRole {
     zone.addRecord(makeDhcidRecord(fqdnName, ttl, {
       identifierType: data.identifierType, digestType: data.digestType, digest: data.digest,
     }));
-    bumpSerial(zone);
+    this.zoneChanged(zone);
     return { ok: true, message: '' };
   }
 }

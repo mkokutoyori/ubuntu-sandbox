@@ -4013,6 +4013,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.procMgr.advanceTime(ms);
     this.fireDueScheduledTasks();
     this.runBackgroundGroupPolicyRefresh(ms);
+    this.getDnsServerRole()?.tick();
     this.svcMgr.advanceRecoveryTimers(
       this.simulatedDate().getTime(),
       (svc) => this.procMgr.onServiceStarted(svc.name, svc.processName),

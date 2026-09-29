@@ -958,28 +958,50 @@ export interface ILicensingProvider {
 
 // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
 
-export interface DnsOpResult { ok: boolean; message: string }
-export interface DnsZoneInfo { name: string; recordCount: number; dynamicUpdate: DnsDynamicUpdateMode }
-export type DnsDynamicUpdateMode = 'None' | 'NonsecureAndSecure' | 'Secure';
-export interface DnsRecordInfo { name: string; type: string; ttl: number; text: string }
+import type {
+  DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy,
+} from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
+export type {
+  DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy,
+} from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
+
+export interface DnsCacheEntryInfo { name: string; type: string; ttl: number; data: string }
 
 export interface IDnsServerProvider {
-  addPrimaryZone(name: string, adminEmail?: string): DnsOpResult;
+  addPrimaryZone(name: string, options?: DnsPrimaryZoneOptions): DnsOpResult;
+  addSecondaryZone(name: string, masters: string[], zoneFile?: string): DnsOpResult;
+  addConditionalForwarderZone(name: string, masters: string[]): DnsOpResult;
+  setPrimaryZone(name: string, changes: DnsPrimaryZoneChanges): DnsOpResult;
+  setSecondaryZone(name: string, changes: { masters?: string[]; secureSecondaries?: DnsTransferPolicy; secondaryServers?: string[] }): DnsOpResult;
+  setConditionalForwarderMasters(name: string, masters: string[]): DnsOpResult;
+  startZoneTransfer(name: string): DnsOpResult;
   removeZone(name: string): DnsOpResult;
   getZone(name: string): DnsZoneInfo | null;
   listZones(): DnsZoneInfo[];
 
+  addRecord(zone: string, name: string, spec: DnsRecordSpec, ttl?: number): DnsOpResult;
   addARecord(zone: string, name: string, ipv4: string, ttl?: number): DnsOpResult;
   addAaaaRecord(zone: string, name: string, ipv6: string, ttl?: number): DnsOpResult;
   addCnameRecord(zone: string, name: string, hostNameAlias: string, ttl?: number): DnsOpResult;
   addMxRecord(zone: string, name: string, preference: number, mailExchange: string, ttl?: number): DnsOpResult;
   addPtrRecord(zone: string, name: string, ptrDomainName: string, ttl?: number): DnsOpResult;
   addSrvRecord(zone: string, name: string, target: { priority: number; weight: number; port: number; target: string }, ttl?: number): DnsOpResult;
-  removeRecord(zone: string, name: string, type: string): DnsOpResult;
-  getRecords(zone: string, name?: string): DnsRecordInfo[] | null;
+  removeRecord(zone: string, name: string, type: string, data?: Record<string, string | number>): DnsOpResult;
+  replaceRecord(zone: string, name: string, previous: DnsRecordSpec, next: DnsRecordSpec, ttl?: number): DnsOpResult;
+  getRecords(zone: string, name?: string, type?: string): DnsRecordInfo[] | null;
 
   setForwarders(addresses: string[]): DnsOpResult;
+  addForwarders(addresses: string[]): DnsOpResult;
+  removeForwarders(addresses: string[]): DnsOpResult;
+  setForwarderTimeout(seconds: number): DnsOpResult;
   getForwarders(): string[];
+  getForwarderInfo(): DnsForwarderInfo;
+  setRecursion(enabled: boolean): DnsOpResult;
+  isRecursionEnabled(): boolean;
+  cacheEntries(): DnsCacheEntryInfo[];
+  clearCache(): void;
 
   setZoneDynamicUpdate(zone: string, mode: DnsDynamicUpdateMode): DnsOpResult;
   addTsigKey(name: string, algorithm: string, secret: string): DnsOpResult;

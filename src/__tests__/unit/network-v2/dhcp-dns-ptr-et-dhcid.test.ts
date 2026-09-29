@@ -135,7 +135,7 @@ describe('DHCP -> DNS : la zone inverse recoit le PTR', () => {
 
     const inverse = await run(sh, `Get-DnsServerResourceRecord -ZoneName "${REVERSE_ZONE}"`);
     const dernierOctet = adresse!.split('.')[3];
-    expect(inverse).toContain(`${dernierOctet}.${REVERSE_ZONE}`);
+    expect(inverse).toMatch(new RegExp(`^${dernierOctet}\\s+PTR`, "m"));
   });
 
   it('la zone inverse est trouvee par SUFFIXE, pas par egalite', async () => {

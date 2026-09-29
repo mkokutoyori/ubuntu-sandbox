@@ -169,7 +169,11 @@ import {
   AddDnsServerResourceRecordCNameCmdlet, AddDnsServerResourceRecordMXCmdlet,
   AddDnsServerResourceRecordPtrCmdlet, AddDnsServerResourceRecordCmdlet,
   RemoveDnsServerResourceRecordCmdlet, GetDnsServerResourceRecordCmdlet,
-  SetDnsServerForwarderCmdlet, GetDnsServerForwarderCmdlet,
+  SetDnsServerForwarderCmdlet, GetDnsServerForwarderCmdlet, AddDnsServerForwarderCmdlet, RemoveDnsServerForwarderCmdlet,
+  AddDnsServerSecondaryZoneCmdlet, AddDnsServerConditionalForwarderZoneCmdlet, SetDnsServerConditionalForwarderZoneCmdlet,
+  SetDnsServerSecondaryZoneCmdlet, RemoveDnsServerZoneCmdlet, StartDnsServerZoneTransferCmdlet,
+  SetDnsServerResourceRecordCmdlet, SetDnsServerRecursionCmdlet, GetDnsServerRecursionCmdlet,
+  ClearDnsServerCacheCmdlet, ShowDnsServerCacheCmdlet,
 } from './DnsServerCmdlets';
 import {
   AddDhcpServerv4ScopeCmdlet, GetDhcpServerv4ScopeCmdlet, GetDhcpServerv4BindingCmdlet,
@@ -709,6 +713,19 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetDnsServerResourceRecordCmdlet());
   registry.register(new SetDnsServerForwarderCmdlet());
   registry.register(new GetDnsServerForwarderCmdlet());
+  registry.register(new AddDnsServerForwarderCmdlet());
+  registry.register(new RemoveDnsServerForwarderCmdlet());
+  registry.register(new AddDnsServerSecondaryZoneCmdlet());
+  registry.register(new AddDnsServerConditionalForwarderZoneCmdlet());
+  registry.register(new SetDnsServerConditionalForwarderZoneCmdlet());
+  registry.register(new SetDnsServerSecondaryZoneCmdlet());
+  registry.register(new RemoveDnsServerZoneCmdlet());
+  registry.register(new StartDnsServerZoneTransferCmdlet());
+  registry.register(new SetDnsServerResourceRecordCmdlet());
+  registry.register(new SetDnsServerRecursionCmdlet());
+  registry.register(new GetDnsServerRecursionCmdlet());
+  registry.register(new ClearDnsServerCacheCmdlet());
+  registry.register(new ShowDnsServerCacheCmdlet());
 
   // ── DHCP Server role (PRD-Windows-Server.md §5 P8) ──────────────────────────
   registry.register(new AddDhcpServerv4ScopeCmdlet());

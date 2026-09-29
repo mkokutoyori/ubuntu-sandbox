@@ -183,6 +183,19 @@ export function formatTimeSpanValue(totalMs: number): string {
   return negative ? `-${withDays}` : withDays;
 }
 
+const displayFormatters = new Map<string, (record: Record<string, PSValue>) => string>();
+
+export function registerPSDisplayFormatter(type: string, format: (record: Record<string, PSValue>) => string): void {
+  displayFormatters.set(type, format);
+}
+
+export function registeredDisplay(value: unknown): string | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+  const rec = value as Record<string, PSValue>;
+  const formatter = typeof rec.__type === 'string' ? displayFormatters.get(rec.__type) : undefined;
+  return formatter ? formatter(rec) : null;
+}
+
 export function psValueToString(value: PSValue): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'boolean') return value ? 'True' : 'False';
@@ -204,6 +217,8 @@ export function psValueToString(value: PSValue): string {
   if (typeof value === 'function') return '';
   if (typeof value === 'object') {
     const rec = value as Record<string, PSValue>;
+    const registered = registeredDisplay(rec);
+    if (registered !== null) return registered;
     if (rec.__type === 'TimeSpan' && typeof rec.TotalMilliseconds === 'number') {
       return formatTimeSpanValue(rec.TotalMilliseconds);
     }
