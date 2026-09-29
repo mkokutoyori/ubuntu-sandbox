@@ -1,0 +1,3 @@
+export const OPENSSL_VERSION = '3.0.2';
+export const OPENSSL_VERSION_DATE = '15 Mar 2022';
+export const OPENSSL_VERSION_TEXT = `OpenSSL ${OPENSSL_VERSION} ${OPENSSL_VERSION_DATE}`;

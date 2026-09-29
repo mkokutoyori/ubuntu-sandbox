@@ -1,7 +1,8 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
-import { runOpenSsl, OPENSSL_VERSION } from '@/network/crypto/openssl/OpenSslEngine';
+import { runOpenSsl } from '@/network/crypto/openssl/OpenSslEngine';
+import { OPENSSL_VERSION } from '@/network/crypto/openssl/opensslVersion';
 import type { OpenSslHost } from '@/network/crypto/openssl/OpenSslHost';
 import { probeTlsPeer } from '@/network/tls/tlsPeerProbe';
 

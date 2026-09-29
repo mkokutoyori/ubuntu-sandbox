@@ -102,6 +102,8 @@ import {
   SshConnectOptionsBuilder,
   type SshClientAuthentication,
 } from '@/network/protocols/ssh/SshConnectOptions';
+import { OPENSSH_USAGE, sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
+import { OPENSSH_UBUNTU_CLIENT_VERSION } from '@/network/protocols/ssh/serverIdentification';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { TerminalSshInteractionHandler } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
 import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols/ssh/session/QueuedTerminalIO';
@@ -2719,12 +2721,12 @@ export class LinuxTerminalSession extends TerminalSession {
    * Supported flags: -p <port>, -i <keyfile>, -o StrictHostKeyChecking=value.
    */
   private async enterSsh(args: string[]): Promise<void> {
-    const parsed = parseSshArgs(args);
+    const withoutSession = sshReplyWithoutSession(args, OPENSSH_UBUNTU_CLIENT_VERSION);
+    const parsed = withoutSession ? null : parseSshArgs(args);
     if (!parsed) {
-      this.addLine(
-        'usage: ssh [-p port] [-i identity_file] [-o option=value] [user@]host [command...]',
-        'error',
-      );
+      for (const line of (withoutSession?.output ?? OPENSSH_USAGE).split('\n')) {
+        this.addLine(line, withoutSession?.exitCode === 0 ? 'normal' : 'error');
+      }
       this.notify();
       return;
     }

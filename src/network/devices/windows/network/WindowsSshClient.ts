@@ -21,6 +21,7 @@ import {
 } from '../../../protocols/ssh/SshConnectOptions';
 import { wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
+import { OPENSSH_USAGE } from '@/network/protocols/ssh/SshClientCommandLine';
 import type { TcpWireOutcome } from '@/network/tcp/types';
 
 export interface WinSshClientResult {
@@ -229,7 +230,7 @@ export async function runWindowsSshClient(
     };
   }
   if (!target) {
-    return { output: 'usage: ssh [-options] destination [command]', exitCode: 1 };
+    return { output: OPENSSH_USAGE, exitCode: 255 };
   }
 
   const parsed = RE_USERHOST.exec(target);

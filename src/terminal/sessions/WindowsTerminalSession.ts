@@ -14,6 +14,8 @@
 import { Equipment } from '@/network';
 import { primaryShellKindFor } from '@/shell/shellKind';
 import { SSH_PASSWORD_PROMPTS } from '@/shell/sshLauncher';
+import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
+import { OPENSSH_WINDOWS_CLIENT_VERSION } from '@/network/protocols/ssh/serverIdentification';
 import {
   TerminalSession, TerminalTheme, SessionType, KeyEvent, nextLineId,
   withTimeout, DeviceOfflineError,
@@ -844,22 +846,11 @@ export class WindowsTerminalSession extends TerminalSession {
     if (this.tryStartWinNetstatStream(trimmed)) return;
     if (this.tryStartWinPathpingStream(trimmed)) return;
 
-    // SSH client info / unsupported forms — handled by the shared
-    // launcher first so the OpenSSH usage / version line is uniform
-    // across the local console and SSH'd-in shells.
-    if (lower === 'ssh -v' || lower === 'ssh --version'
-        || trimmed === 'ssh' /* bare ssh prints usage */) {
-      if (lower === 'ssh -v' || lower === 'ssh --version') {
-        this.addLine('OpenSSH_9.6p1 Ubuntu-3ubuntu13.4, OpenSSL 3.0.13 30 Jan 2024');
-      } else {
-        this.addLine('usage: ssh [-46AaCfGgKkMNnqsTtVvXxYy] [-B bind_interface]');
-        this.addLine('           [-b bind_address] [-c cipher_spec] [-D [bind_address:]port]');
-        this.addLine('           [-E log_file] [-F configfile] [-I pkcs11] [-i identity_file]');
-        this.addLine('           [-J [user@]host[:port]] [-L address] [-l login_name]');
-        this.addLine('           [-o option] [-p port] [-Q query_option] [-R address]');
-        this.addLine('           [-S ctl_path] [-W host:port] [-w local_tun[:remote_tun]]');
-        this.addLine('           destination [command [argument ...]]');
-      }
+    const withoutSession = lower === 'ssh' || lower.startsWith('ssh ')
+      ? sshReplyWithoutSession(trimmed.split(/\s+/).slice(1), OPENSSH_WINDOWS_CLIENT_VERSION)
+      : null;
+    if (withoutSession) {
+      for (const line of withoutSession.output.split('\n')) this.addLine(line);
       this.notify();
       return;
     }

@@ -160,6 +160,8 @@ import { WireSftpFileSystem } from '../../protocols/ssh/sftp/WireSftpFileSystem'
 import { SshSession } from '../../protocols/ssh/session/SshSession';
 import { connectWireSsh, type StrictHostKeyChecking, type WireSshClient } from './network/WireSshConnector';
 import type { SshClientAuthentication } from '../../protocols/ssh/SshConnectOptions';
+import { sshReplyWithoutSession } from '../../protocols/ssh/SshClientCommandLine';
+import { OPENSSH_UBUNTU_CLIENT_VERSION } from '../../protocols/ssh/serverIdentification';
 import { isOk } from '../../protocols/ssh/Result';
 import type { TcpConnector } from '@/network/tcp/types';
 import {
@@ -1664,6 +1666,8 @@ export class LinuxCommandExecutor {
     rawArgs: string[], offeredPassword?: string,
   ): Promise<{ output: string; exitCode: number }> {
     const args = rawArgs.map(word => this.expandTilde(word));
+    const withoutSession = sshReplyWithoutSession(args, OPENSSH_UBUNTU_CLIENT_VERSION);
+    if (withoutSession) return withoutSession;
     const stdinPwd = (offeredPassword
       ?? this._scenarioStdin ?? '')
       .split('\n')[0] || undefined;

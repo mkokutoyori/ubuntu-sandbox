@@ -55,6 +55,8 @@ import type { WinWireTarget } from './windows/network/WindowsSshClient';
 import {
   openWireSshConnection, silentConnectIo, relayScriptedShell, wireReachOutcomeRetransmitting,
 } from '@/terminal/ssh/wireSshLogin';
+import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
+import { OPENSSH_WINDOWS_CLIENT_VERSION } from '@/network/protocols/ssh/serverIdentification';
 import { WINDOWS_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
 import { isOk } from '@/network/protocols/ssh/Result';
 import { installDefaultShells } from '@/shell/registerDefaults';
@@ -2288,6 +2290,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private async cmdSsh(args: string[]): Promise<string> {
+    const withoutSession = sshReplyWithoutSession(args, OPENSSH_WINDOWS_CLIENT_VERSION);
+    if (withoutSession) return withoutSession.output;
     const user = this.userMgr.currentUser;
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
     const target = winWireExecTarget(args, user);
