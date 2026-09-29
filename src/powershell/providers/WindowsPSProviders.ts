@@ -1257,19 +1257,21 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
   }
 
   addPrimaryZone(name: string, options?: DnsPrimaryZoneOptions): DnsOpResult { return this.role().addPrimaryZone(name, options); }
-  addSecondaryZone(name: string, masters: string[], zoneFile?: string): DnsOpResult { return this.role().addSecondaryZone(name, masters, zoneFile); }
-  addConditionalForwarderZone(name: string, masters: string[]): DnsOpResult { return this.role().addConditionalForwarderZone(name, masters); }
+  serverName(): string { return this.pc.getHostname(); }
+  addSecondaryZone(name: string, masters: string[], zoneFile?: string, loadExisting?: boolean): DnsOpResult { return this.role().addSecondaryZone(name, masters, zoneFile, loadExisting); }
+  addConditionalForwarderZone(name: string, masters: string[], timeoutSeconds?: number): DnsOpResult { return this.role().addConditionalForwarderZone(name, masters, timeoutSeconds); }
+  renameZoneFile(name: string, zoneFile: string): DnsOpResult { return this.role().renameZoneFile(name, zoneFile); }
   setPrimaryZone(name: string, changes: DnsPrimaryZoneChanges): DnsOpResult { return this.role().setPrimaryZone(name, changes); }
   setSecondaryZone(name: string, changes: { masters?: string[]; secureSecondaries?: DnsTransferPolicy; secondaryServers?: string[] }): DnsOpResult {
     return this.role().setSecondaryZone(name, changes);
   }
-  setConditionalForwarderMasters(name: string, masters: string[]): DnsOpResult { return this.role().setConditionalForwarderMasters(name, masters); }
+  setConditionalForwarderMasters(name: string, masters: string[] | undefined, timeoutSeconds?: number): DnsOpResult { return this.role().setConditionalForwarderMasters(name, masters, timeoutSeconds); }
   startZoneTransfer(name: string): DnsOpResult { return this.role().startZoneTransfer(name); }
   removeZone(name: string): DnsOpResult { return this.role().removeZone(name); }
   getZone(name: string): DnsZoneInfo | null { return this.role().getZone(name); }
   listZones(): DnsZoneInfo[] { return this.role().listZones(); }
 
-  addRecord(zone: string, name: string, spec: DnsRecordSpec, ttl?: number): DnsOpResult { return this.role().addRecord(zone, name, spec, ttl); }
+  addRecord(zone: string, name: string, spec: DnsRecordSpec, ttl?: number, createPtr?: boolean): DnsOpResult { return this.role().addRecord(zone, name, spec, ttl, undefined, createPtr); }
   addARecord(zone: string, name: string, ipv4: string, ttl?: number): DnsOpResult { return this.role().addARecord(zone, name, ipv4, ttl); }
   addAaaaRecord(zone: string, name: string, ipv6: string, ttl?: number): DnsOpResult { return this.role().addAaaaRecord(zone, name, ipv6, ttl); }
   addCnameRecord(zone: string, name: string, hostNameAlias: string, ttl?: number): DnsOpResult { return this.role().addCnameRecord(zone, name, hostNameAlias, ttl); }

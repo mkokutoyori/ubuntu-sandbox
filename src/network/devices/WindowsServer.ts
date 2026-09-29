@@ -149,6 +149,10 @@ export class WindowsServer extends WindowsPC {
   private dnsZoneFileSink(): DnsZoneFileSink {
     const directory = 'C:\\Windows\\System32\\dns';
     return {
+      read: (fileName) => {
+        const file = this.getFileSystem().readFile(`${directory}\\${fileName}`);
+        return file.ok ? file.content ?? '' : null;
+      },
       write: (fileName, text) => {
         this.getFileSystem().mkdirp(directory);
         this.getFileSystem().createFile(`${directory}\\${fileName}`, text);

@@ -22,6 +22,55 @@ function requireDns(ctx: CmdletContext, cmdletName: string): IDnsServerProvider 
 const DYNAMIC_UPDATE_MODES: readonly DnsDynamicUpdateMode[] = ['None', 'NonsecureAndSecure', 'Secure'];
 const REPLICATION_SCOPES = ['Domain', 'Forest', 'Legacy'] as const;
 
+const LOCAL_TARGETS = ['.', 'localhost', '127.0.0.1', '::1'];
+
+function guard(ctx: CmdletContext, cmdletName: string, dns: IDnsServerProvider): boolean {
+  const raw = ctx.named['computername'];
+  if (raw === undefined) return true;
+  const target = psValueToString(Array.isArray(raw) ? raw[0] : raw).toLowerCase();
+  const own = dns.serverName().toLowerCase();
+  if (LOCAL_TARGETS.includes(target) || target === own || target.startsWith(`${own}.`)) return true;
+  ctx.emitError(`${cmdletName} : Cannot reach "${target}": remote DNS Server management (CIM over WinRM) is not built, only the local server can be managed.`);
+  return false;
+}
+
+function recordGuard(ctx: CmdletContext, cmdletName: string, dns: IDnsServerProvider): boolean {
+  if (!guard(ctx, cmdletName, dns)) return false;
+  for (const [key, name, reason] of [
+    ['agerecord', 'AgeRecord', 'aging and scavenging are not modelled, so a record cannot be aged'],
+    ['allowupdateany', 'AllowUpdateAny', 'per-record update permissions are not modelled, so a record cannot be opened to any updater'],
+  ] as const) {
+    if (isSwitchOn(ctx.named[key])) {
+      ctx.emitError(`${cmdletName} : -${name} is refused: ${reason}.`);
+      return false;
+    }
+  }
+  return true;
+}
+
+function withPassThru(ctx: CmdletContext, dns: IDnsServerProvider, before: ReadonlySet<string>, name: string): PSValue {
+  if (!isSwitchOn(ctx.named['passthru'])) return null;
+  const zone = dns.getZone(name) ?? dns.listZones().find(z => !before.has(z.name));
+  return zone ? zoneToPSObject(zone) : null;
+}
+
+function refuseUnbuilt(ctx: CmdletContext, cmdletName: string, checks: readonly (readonly [string, string, string])[]): boolean {
+  for (const [key, label, reason] of checks) {
+    if (ctx.named[key] !== undefined) {
+      ctx.emitError(`${cmdletName} : -${label} is refused: ${reason}.`);
+      return true;
+    }
+  }
+  return false;
+}
+
+function recursionKept(ctx: CmdletContext, cmdletName: string): boolean {
+  const raw = ctx.named['userecursion'];
+  if (raw === undefined || isSwitchOn(raw)) return true;
+  ctx.emitError(`${cmdletName} : -UseRecursion $false is refused: a conditional forwarder always asks its masters to recurse; the non-recursive mode is not built.`);
+  return false;
+}
+
 function failed(ctx: CmdletContext, cmdletName: string, res: DnsOpResult): null {
   ctx.emitError(`${cmdletName} : ${res.message}`);
   return null;
@@ -123,10 +172,11 @@ function ttlOf(ctx: CmdletContext): number | undefined {
 export class AddDnsServerPrimaryZoneCmdlet implements ICmdlet {
   readonly name = 'add-dnsserverprimaryzone';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'NetworkId', 'ZoneFile', 'ResponsiblePerson', 'DynamicUpdate', 'ReplicationScope'] as const;
+  readonly parameters = ['Name', 'NetworkId', 'ZoneFile', 'ResponsiblePerson', 'DynamicUpdate', 'ReplicationScope', 'ComputerName', 'PassThru', 'LoadExisting'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerPrimaryZone');
+    if (!guard(ctx, 'Add-DnsServerPrimaryZone', dns)) return null;
     const name = nameOf(ctx);
     const networkId = ctx.named['networkid'] !== undefined ? psValueToString(ctx.named['networkid']) : undefined;
     if (!name && !networkId) return missing(ctx, 'Add-DnsServerPrimaryZone', 'Name');
@@ -137,70 +187,88 @@ export class AddDnsServerPrimaryZoneCmdlet implements ICmdlet {
       ctx.emitError('Add-DnsServerPrimaryZone : -ZoneFile and -ReplicationScope cannot be combined: a zone is either file-backed or directory-integrated.');
       return null;
     }
+    const before = new Set(dns.listZones().map(z => z.name));
     const res = dns.addPrimaryZone(name, {
       adminEmail: ctx.named['responsibleperson'] !== undefined ? psValueToString(ctx.named['responsibleperson']) : undefined,
       networkId,
       zoneFile: ctx.named['zonefile'] !== undefined ? psValueToString(ctx.named['zonefile']) : undefined,
       dynamicUpdate,
       dsIntegrated: scope !== undefined,
+      loadExisting: isSwitchOn(ctx.named['loadexisting']),
     });
-    return res.ok ? null : failed(ctx, 'Add-DnsServerPrimaryZone', res);
+    return res.ok ? withPassThru(ctx, dns, before, name) : failed(ctx, 'Add-DnsServerPrimaryZone', res);
   }
 }
 
 export class AddDnsServerSecondaryZoneCmdlet implements ICmdlet {
   readonly name = 'add-dnsserversecondaryzone';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'ZoneFile', 'MasterServers'] as const;
+  readonly parameters = ['Name', 'ZoneFile', 'MasterServers', 'ComputerName', 'PassThru', 'LoadExisting'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerSecondaryZone');
+    if (!guard(ctx, 'Add-DnsServerSecondaryZone', dns)) return null;
     const name = nameOf(ctx);
     const masters = stringList(ctx.named['masterservers']);
     if (!name || masters.length === 0) return missing(ctx, 'Add-DnsServerSecondaryZone', 'Name MasterServers');
     const zoneFile = ctx.named['zonefile'] !== undefined ? psValueToString(ctx.named['zonefile']) : undefined;
-    const res = dns.addSecondaryZone(name, masters, zoneFile);
-    return res.ok ? null : failed(ctx, 'Add-DnsServerSecondaryZone', res);
+    const before = new Set(dns.listZones().map(z => z.name));
+    const res = dns.addSecondaryZone(name, masters, zoneFile, isSwitchOn(ctx.named['loadexisting']));
+    return res.ok ? withPassThru(ctx, dns, before, name) : failed(ctx, 'Add-DnsServerSecondaryZone', res);
   }
 }
+
+const CONDITIONAL_FORWARDER_UNBUILT = [
+  ['zonefile', 'ZoneFile', 'a forwarder zone is not written to a zone file here'],
+] as const;
 
 export class AddDnsServerConditionalForwarderZoneCmdlet implements ICmdlet {
   readonly name = 'add-dnsserverconditionalforwarderzone';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'MasterServers'] as const;
+  readonly parameters = ['Name', 'MasterServers', 'ComputerName', 'PassThru', 'ForwarderTimeout', 'UseRecursion', 'ZoneFile'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerConditionalForwarderZone');
+    if (!guard(ctx, 'Add-DnsServerConditionalForwarderZone', dns)) return null;
     const name = nameOf(ctx);
     const masters = stringList(ctx.named['masterservers']);
     if (!name || masters.length === 0) return missing(ctx, 'Add-DnsServerConditionalForwarderZone', 'Name MasterServers');
-    const res = dns.addConditionalForwarderZone(name, masters);
-    return res.ok ? null : failed(ctx, 'Add-DnsServerConditionalForwarderZone', res);
+    if (refuseUnbuilt(ctx, 'Add-DnsServerConditionalForwarderZone', CONDITIONAL_FORWARDER_UNBUILT)) return null;
+    if (!recursionKept(ctx, 'Add-DnsServerConditionalForwarderZone')) return null;
+    const timeout = ctx.named['forwardertimeout'] !== undefined ? Number(psValueToString(ctx.named['forwardertimeout'])) : undefined;
+    const before = new Set(dns.listZones().map(z => z.name));
+    const res = dns.addConditionalForwarderZone(name, masters, timeout);
+    return res.ok ? withPassThru(ctx, dns, before, name) : failed(ctx, 'Add-DnsServerConditionalForwarderZone', res);
   }
 }
 
 export class SetDnsServerConditionalForwarderZoneCmdlet implements ICmdlet {
   readonly name = 'set-dnsserverconditionalforwarderzone';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'MasterServers'] as const;
+  readonly parameters = ['Name', 'MasterServers', 'ComputerName', 'PassThru', 'ForwarderTimeout', 'UseRecursion'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Set-DnsServerConditionalForwarderZone');
+    if (!guard(ctx, 'Set-DnsServerConditionalForwarderZone', dns)) return null;
     const name = nameOf(ctx);
-    const masters = stringList(ctx.named['masterservers']);
-    if (!name || masters.length === 0) return missing(ctx, 'Set-DnsServerConditionalForwarderZone', 'Name MasterServers');
-    const res = dns.setConditionalForwarderMasters(name, masters);
-    return res.ok ? null : failed(ctx, 'Set-DnsServerConditionalForwarderZone', res);
+    const masters = ctx.named['masterservers'] !== undefined ? stringList(ctx.named['masterservers']) : undefined;
+    if (!name || (masters !== undefined && masters.length === 0)) return missing(ctx, 'Set-DnsServerConditionalForwarderZone', 'Name MasterServers');
+    if (!recursionKept(ctx, 'Set-DnsServerConditionalForwarderZone')) return null;
+    if (masters === undefined && ctx.named['forwardertimeout'] === undefined) return missing(ctx, 'Set-DnsServerConditionalForwarderZone', 'MasterServers');
+    const timeout = ctx.named['forwardertimeout'] !== undefined ? Number(psValueToString(ctx.named['forwardertimeout'])) : undefined;
+    const res = dns.setConditionalForwarderMasters(name, masters, timeout);
+    return res.ok ? withPassThru(ctx, dns, new Set(), name) : failed(ctx, 'Set-DnsServerConditionalForwarderZone', res);
   }
 }
 
 export class GetDnsServerZoneCmdlet implements ICmdlet {
   readonly name = 'get-dnsserverzone';
   readonly aliases = [] as const;
-  readonly parameters = ['Name'] as const;
+  readonly parameters = ['Name', 'ComputerName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Get-DnsServerZone');
+    if (!guard(ctx, 'Get-DnsServerZone', dns)) return null;
     const name = nameOf(ctx);
     if (name) {
       const z = dns.getZone(name);
@@ -214,10 +282,11 @@ export class GetDnsServerZoneCmdlet implements ICmdlet {
 export class SetDnsServerPrimaryZoneCmdlet implements ICmdlet {
   readonly name = 'set-dnsserverprimaryzone';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'DynamicUpdate', 'SecureSecondaries', 'SecondaryServers', 'Notify', 'NotifyServers'] as const;
+  readonly parameters = ['Name', 'DynamicUpdate', 'SecureSecondaries', 'SecondaryServers', 'Notify', 'NotifyServers', 'ComputerName', 'PassThru', 'ZoneFile'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Set-DnsServerPrimaryZone');
+    if (!guard(ctx, 'Set-DnsServerPrimaryZone', dns)) return null;
     const name = nameOf(ctx);
     if (!name) return missing(ctx, 'Set-DnsServerPrimaryZone', 'Name');
     const dynamicUpdate = choice(ctx, 'Set-DnsServerPrimaryZone', 'DynamicUpdate', 'dynamicupdate', DYNAMIC_UPDATE_MODES);
@@ -225,7 +294,8 @@ export class SetDnsServerPrimaryZoneCmdlet implements ICmdlet {
     const notify = choice<DnsNotifyPolicy>(ctx, 'Set-DnsServerPrimaryZone', 'Notify', 'notify', DNS_NOTIFY_POLICIES);
     if (dynamicUpdate === null || secureSecondaries === null || notify === null) return null;
     if (dynamicUpdate === undefined && secureSecondaries === undefined && notify === undefined
-      && ctx.named['secondaryservers'] === undefined && ctx.named['notifyservers'] === undefined) {
+      && ctx.named['secondaryservers'] === undefined && ctx.named['notifyservers'] === undefined
+      && ctx.named['zonefile'] === undefined) {
       return missing(ctx, 'Set-DnsServerPrimaryZone', 'DynamicUpdate');
     }
     const res = dns.setPrimaryZone(name, {
@@ -233,32 +303,57 @@ export class SetDnsServerPrimaryZoneCmdlet implements ICmdlet {
       secondaryServers: ctx.named['secondaryservers'] !== undefined ? stringList(ctx.named['secondaryservers']) : undefined,
       notifyServers: ctx.named['notifyservers'] !== undefined ? stringList(ctx.named['notifyservers']) : undefined,
     });
-    return res.ok ? null : failed(ctx, 'Set-DnsServerPrimaryZone', res);
+    if (!res.ok) return failed(ctx, 'Set-DnsServerPrimaryZone', res);
+    if (ctx.named['zonefile'] !== undefined) {
+      const renamed = dns.renameZoneFile(name, psValueToString(ctx.named['zonefile']));
+      if (!renamed.ok) return failed(ctx, 'Set-DnsServerPrimaryZone', renamed);
+    }
+    return withPassThru(ctx, dns, new Set(), name);
   }
 }
 
 export class SetDnsServerSecondaryZoneCmdlet implements ICmdlet {
   readonly name = 'set-dnsserversecondaryzone';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'MasterServers'] as const;
+  readonly parameters = ['Name', 'MasterServers', 'ComputerName', 'PassThru', 'ZoneFile', 'SecureSecondaries', 'SecondaryServers', 'Notify', 'NotifyServers'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Set-DnsServerSecondaryZone');
+    if (!guard(ctx, 'Set-DnsServerSecondaryZone', dns)) return null;
     const name = nameOf(ctx);
-    const masters = stringList(ctx.named['masterservers']);
-    if (!name || masters.length === 0) return missing(ctx, 'Set-DnsServerSecondaryZone', 'Name MasterServers');
-    const res = dns.setSecondaryZone(name, { masters });
-    return res.ok ? null : failed(ctx, 'Set-DnsServerSecondaryZone', res);
+    if (!name) return missing(ctx, 'Set-DnsServerSecondaryZone', 'Name');
+    if (refuseUnbuilt(ctx, 'Set-DnsServerSecondaryZone', [
+      ['notify', 'Notify', 'a secondary zone does not send NOTIFY onward (cascaded secondaries are not built)'],
+      ['notifyservers', 'NotifyServers', 'a secondary zone does not send NOTIFY onward (cascaded secondaries are not built)'],
+    ])) return null;
+    const secureSecondaries = choice<DnsTransferPolicy>(ctx, 'Set-DnsServerSecondaryZone', 'SecureSecondaries', 'securesecondaries', DNS_TRANSFER_POLICIES);
+    if (secureSecondaries === null) return null;
+    const masters = ctx.named['masterservers'] !== undefined ? stringList(ctx.named['masterservers']) : undefined;
+    if (masters === undefined && secureSecondaries === undefined && ctx.named['secondaryservers'] === undefined
+      && ctx.named['zonefile'] === undefined) {
+      return missing(ctx, 'Set-DnsServerSecondaryZone', 'MasterServers');
+    }
+    const res = dns.setSecondaryZone(name, {
+      masters, secureSecondaries,
+      secondaryServers: ctx.named['secondaryservers'] !== undefined ? stringList(ctx.named['secondaryservers']) : undefined,
+    });
+    if (!res.ok) return failed(ctx, 'Set-DnsServerSecondaryZone', res);
+    if (ctx.named['zonefile'] !== undefined) {
+      const renamed = dns.renameZoneFile(name, psValueToString(ctx.named['zonefile']));
+      if (!renamed.ok) return failed(ctx, 'Set-DnsServerSecondaryZone', renamed);
+    }
+    return withPassThru(ctx, dns, new Set(), name);
   }
 }
 
 export class RemoveDnsServerZoneCmdlet implements ICmdlet {
   readonly name = 'remove-dnsserverzone';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'Force', 'Confirm'] as const;
+  readonly parameters = ['Name', 'Force', 'Confirm', 'ComputerName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Remove-DnsServerZone');
+    if (!guard(ctx, 'Remove-DnsServerZone', dns)) return null;
     const name = nameOf(ctx);
     if (!name) return missing(ctx, 'Remove-DnsServerZone', 'Name');
     const res = dns.removeZone(name);
@@ -269,10 +364,11 @@ export class RemoveDnsServerZoneCmdlet implements ICmdlet {
 export class StartDnsServerZoneTransferCmdlet implements ICmdlet {
   readonly name = 'start-dnsserverzonetransfer';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'FullTransfer'] as const;
+  readonly parameters = ['Name', 'FullTransfer', 'ComputerName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Start-DnsServerZoneTransfer');
+    if (!guard(ctx, 'Start-DnsServerZoneTransfer', dns)) return null;
     const name = nameOf(ctx);
     if (!name) return missing(ctx, 'Start-DnsServerZoneTransfer', 'Name');
     const res = dns.startZoneTransfer(name);
@@ -283,10 +379,11 @@ export class StartDnsServerZoneTransferCmdlet implements ICmdlet {
 export class AddDnsServerTsigKeyCmdlet implements ICmdlet {
   readonly name = 'add-dnsservertsigkey';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'Algorithm', 'Secret'] as const;
+  readonly parameters = ['Name', 'Algorithm', 'Secret', 'ComputerName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerTsigKey');
+    if (!guard(ctx, 'Add-DnsServerTsigKey', dns)) return null;
     const name = nameOf(ctx);
     const algorithm = psValueToString(ctx.named['algorithm'] ?? 'hmac-sha256.');
     const secret = psValueToString(ctx.named['secret'] ?? '');
@@ -303,10 +400,11 @@ export class AddDnsServerTsigKeyCmdlet implements ICmdlet {
 export class GetDnsServerTsigKeyCmdlet implements ICmdlet {
   readonly name = 'get-dnsservertsigkey';
   readonly aliases = [] as const;
-  readonly parameters = [] as const;
+  readonly parameters = ['ComputerName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Get-DnsServerTsigKey');
+    if (!guard(ctx, 'Get-DnsServerTsigKey', dns)) return null;
     return dns.listTsigKeys().map(k => ({ Name: k.name, Algorithm: k.algorithm }));
   }
 }
@@ -314,10 +412,11 @@ export class GetDnsServerTsigKeyCmdlet implements ICmdlet {
 export class RemoveDnsServerTsigKeyCmdlet implements ICmdlet {
   readonly name = 'remove-dnsservertsigkey';
   readonly aliases = [] as const;
-  readonly parameters = ['Name'] as const;
+  readonly parameters = ['Name', 'ComputerName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Remove-DnsServerTsigKey');
+    if (!guard(ctx, 'Remove-DnsServerTsigKey', dns)) return null;
     const res = dns.removeTsigKey(nameOf(ctx));
     if (!res.ok) { ctx.emitError(`Remove-DnsServerTsigKey : ${res.message}`); return null; }
     return null;
@@ -329,15 +428,18 @@ export class RemoveDnsServerTsigKeyCmdlet implements ICmdlet {
 export class AddDnsServerResourceRecordACmdlet implements ICmdlet {
   readonly name = 'add-dnsserverresourcerecorda';
   readonly aliases = [] as const;
-  readonly parameters = ['ZoneName', 'Name', 'IPv4Address', 'TimeToLive'] as const;
+  readonly parameters = ['ZoneName', 'Name', 'IPv4Address', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny', 'CreatePtr'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecordA');
+    if (!recordGuard(ctx, 'Add-DnsServerResourceRecordA', dns)) return null;
     const zone = zoneNameOf(ctx);
     const name = nameOf(ctx);
     const ip = psValueToString(ctx.named['ipv4address'] ?? '');
     if (!zone || !name || !ip) return missing(ctx, 'Add-DnsServerResourceRecordA', 'ZoneName Name IPv4Address');
-    const res = dns.addARecord(zone, name, ip, ttlOf(ctx));
+    const res = isSwitchOn(ctx.named['createptr'])
+      ? dns.addRecord(zone, name, { type: 'A', data: { IPv4Address: ip } }, ttlOf(ctx), true)
+      : dns.addARecord(zone, name, ip, ttlOf(ctx));
     return res.ok ? null : failed(ctx, 'Add-DnsServerResourceRecordA', res);
   }
 }
@@ -345,14 +447,19 @@ export class AddDnsServerResourceRecordACmdlet implements ICmdlet {
 export class AddDnsServerResourceRecordAAAACmdlet implements ICmdlet {
   readonly name = 'add-dnsserverresourcerecordaaaa';
   readonly aliases = [] as const;
-  readonly parameters = ['ZoneName', 'Name', 'IPv6Address', 'TimeToLive'] as const;
+  readonly parameters = ['ZoneName', 'Name', 'IPv6Address', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny', 'CreatePtr'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecordAAAA');
+    if (!recordGuard(ctx, 'Add-DnsServerResourceRecordAAAA', dns)) return null;
     const zone = zoneNameOf(ctx);
     const name = nameOf(ctx);
     const ip = psValueToString(ctx.named['ipv6address'] ?? '');
     if (!zone || !name || !ip) return missing(ctx, 'Add-DnsServerResourceRecordAAAA', 'ZoneName Name IPv6Address');
+    if (isSwitchOn(ctx.named['createptr'])) {
+      ctx.emitError('Add-DnsServerResourceRecordAAAA : -CreatePtr is refused: IPv6 reverse zones (ip6.arpa) are not built.');
+      return null;
+    }
     const res = dns.addAaaaRecord(zone, name, ip, ttlOf(ctx));
     return res.ok ? null : failed(ctx, 'Add-DnsServerResourceRecordAAAA', res);
   }
@@ -361,10 +468,11 @@ export class AddDnsServerResourceRecordAAAACmdlet implements ICmdlet {
 export class AddDnsServerResourceRecordCNameCmdlet implements ICmdlet {
   readonly name = 'add-dnsserverresourcerecordcname';
   readonly aliases = [] as const;
-  readonly parameters = ['ZoneName', 'Name', 'HostNameAlias', 'TimeToLive'] as const;
+  readonly parameters = ['ZoneName', 'Name', 'HostNameAlias', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecordCName');
+    if (!recordGuard(ctx, 'Add-DnsServerResourceRecordCName', dns)) return null;
     const zone = zoneNameOf(ctx);
     const name = nameOf(ctx);
     const alias = psValueToString(ctx.named['hostnamealias'] ?? '');
@@ -377,10 +485,11 @@ export class AddDnsServerResourceRecordCNameCmdlet implements ICmdlet {
 export class AddDnsServerResourceRecordMXCmdlet implements ICmdlet {
   readonly name = 'add-dnsserverresourcerecordmx';
   readonly aliases = [] as const;
-  readonly parameters = ['ZoneName', 'Name', 'MailExchange', 'Preference', 'TimeToLive'] as const;
+  readonly parameters = ['ZoneName', 'Name', 'MailExchange', 'Preference', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecordMX');
+    if (!recordGuard(ctx, 'Add-DnsServerResourceRecordMX', dns)) return null;
     const zone = zoneNameOf(ctx);
     const name = nameOf(ctx);
     const exchange = psValueToString(ctx.named['mailexchange'] ?? '');
@@ -394,10 +503,11 @@ export class AddDnsServerResourceRecordMXCmdlet implements ICmdlet {
 export class AddDnsServerResourceRecordPtrCmdlet implements ICmdlet {
   readonly name = 'add-dnsserverresourcerecordptr';
   readonly aliases = [] as const;
-  readonly parameters = ['ZoneName', 'Name', 'PtrDomainName', 'TimeToLive'] as const;
+  readonly parameters = ['ZoneName', 'Name', 'PtrDomainName', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecordPtr');
+    if (!recordGuard(ctx, 'Add-DnsServerResourceRecordPtr', dns)) return null;
     const zone = zoneNameOf(ctx);
     const name = nameOf(ctx);
     const ptr = psValueToString(ctx.named['ptrdomainname'] ?? '');
@@ -424,14 +534,13 @@ const RECORD_SWITCHES: readonly { switchName: string; type: string; fields: read
 export class AddDnsServerResourceRecordCmdlet implements ICmdlet {
   readonly name = 'add-dnsserverresourcerecord';
   readonly aliases = [] as const;
-  readonly parameters = [
-    'ZoneName', 'Name', 'A', 'AAAA', 'CName', 'Ptr', 'NS', 'Txt', 'Mx', 'Srv', 'IPv4Address', 'IPv6Address',
+  readonly parameters = ['ZoneName', 'Name', 'A', 'AAAA', 'CName', 'Ptr', 'NS', 'Txt', 'Mx', 'Srv', 'IPv4Address', 'IPv6Address',
     'HostNameAlias', 'PtrDomainName', 'NameServer', 'DescriptiveText', 'MailExchange', 'Preference',
-    'Priority', 'Weight', 'Port', 'DomainName', 'DomainNameTarget', 'TimeToLive',
-  ] as const;
+    'Priority', 'Weight', 'Port', 'DomainName', 'DomainNameTarget', 'TimeToLive',, 'ComputerName', 'AgeRecord', 'AllowUpdateAny', 'CreatePtr'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecord');
+    if (!recordGuard(ctx, 'Add-DnsServerResourceRecord', dns)) return null;
     const chosen = RECORD_SWITCHES.filter(entry => isSwitchOn(ctx.named[entry.switchName]));
     if (chosen.length !== 1) {
       ctx.emitError('Add-DnsServerResourceRecord : Parameter set cannot be resolved using the specified named parameters: exactly one of -A, -AAAA, -CName, -Ptr, -NS, -Txt, -Mx or -Srv is required.');
@@ -447,7 +556,7 @@ export class AddDnsServerResourceRecordCmdlet implements ICmdlet {
       if (raw !== undefined) data[field] = psValueToString(raw);
     }
     const spec: DnsRecordSpec = { type: entry.type, data };
-    const res = dns.addRecord(zone, name, spec, ttlOf(ctx));
+    const res = dns.addRecord(zone, name, spec, ttlOf(ctx), isSwitchOn(ctx.named['createptr']));
     return res.ok ? null : failed(ctx, 'Add-DnsServerResourceRecord', res);
   }
 }
@@ -488,11 +597,12 @@ const SINGLE_FIELD: Record<string, string> = {
 export class RemoveDnsServerResourceRecordCmdlet implements ICmdlet {
   readonly name = 'remove-dnsserverresourcerecord';
   readonly aliases = [] as const;
-  readonly parameters = ['ZoneName', 'Name', 'RRType', 'RecordData', 'InputObject', 'Force', 'Confirm'] as const;
+  readonly parameters = ['ZoneName', 'Name', 'RRType', 'RecordData', 'InputObject', 'Force', 'Confirm', 'ComputerName', 'AgeRecord', 'AllowUpdateAny'] as const;
   readonly pipelineByValue = 'InputObject';
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Remove-DnsServerResourceRecord');
+    if (!recordGuard(ctx, 'Remove-DnsServerResourceRecord', dns)) return null;
     const zone = zoneNameOf(ctx);
     const input = ctx.named['inputobject'];
     if (input !== undefined) {
@@ -522,10 +632,11 @@ export class RemoveDnsServerResourceRecordCmdlet implements ICmdlet {
 export class SetDnsServerResourceRecordCmdlet implements ICmdlet {
   readonly name = 'set-dnsserverresourcerecord';
   readonly aliases = [] as const;
-  readonly parameters = ['ZoneName', 'OldInputObject', 'NewInputObject', 'TimeToLive'] as const;
+  readonly parameters = ['ZoneName', 'OldInputObject', 'NewInputObject', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Set-DnsServerResourceRecord');
+    if (!recordGuard(ctx, 'Set-DnsServerResourceRecord', dns)) return null;
     const zone = zoneNameOf(ctx);
     const previous = specOf(ctx.named['oldinputobject']);
     const next = specOf(ctx.named['newinputobject']);
@@ -543,10 +654,11 @@ export class SetDnsServerResourceRecordCmdlet implements ICmdlet {
 export class GetDnsServerResourceRecordCmdlet implements ICmdlet {
   readonly name = 'get-dnsserverresourcerecord';
   readonly aliases = [] as const;
-  readonly parameters = ['ZoneName', 'Name', 'RRType'] as const;
+  readonly parameters = ['ZoneName', 'Name', 'RRType', 'ComputerName', 'AgeRecord', 'AllowUpdateAny'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Get-DnsServerResourceRecord');
+    if (!recordGuard(ctx, 'Get-DnsServerResourceRecord', dns)) return null;
     const zone = zoneNameOf(ctx);
     if (!zone) return missing(ctx, 'Get-DnsServerResourceRecord', 'ZoneName');
     const name = ctx.named['name'] !== undefined ? psValueToString(ctx.named['name']) : undefined;
@@ -564,12 +676,17 @@ const ROOT_HINTS_MISSING = 'root hints are not built: this server can only recur
 export class SetDnsServerForwarderCmdlet implements ICmdlet {
   readonly name = 'set-dnsserverforwarder';
   readonly aliases = [] as const;
-  readonly parameters = ['IPAddress', 'UseRootHint', 'Timeout'] as const;
+  readonly parameters = ['IPAddress', 'UseRootHint', 'Timeout', 'ComputerName', 'EnableReordering'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Set-DnsServerForwarder');
+    if (!guard(ctx, 'Set-DnsServerForwarder', dns)) return null;
     if (isSwitchOn(ctx.named['useroothint'])) {
       ctx.emitError(`Set-DnsServerForwarder : ${ROOT_HINTS_MISSING}`);
+      return null;
+    }
+    if (ctx.named['enablereordering'] !== undefined && !isSwitchOn(ctx.named['enablereordering'])) {
+      ctx.emitError('Set-DnsServerForwarder : -EnableReordering $false is refused: forwarders are always tried in the order listed; RTT-based reordering is not built.');
       return null;
     }
     if (ctx.named['timeout'] !== undefined) {
@@ -586,10 +703,11 @@ export class SetDnsServerForwarderCmdlet implements ICmdlet {
 export class AddDnsServerForwarderCmdlet implements ICmdlet {
   readonly name = 'add-dnsserverforwarder';
   readonly aliases = [] as const;
-  readonly parameters = ['IPAddress'] as const;
+  readonly parameters = ['IPAddress', 'ComputerName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerForwarder');
+    if (!guard(ctx, 'Add-DnsServerForwarder', dns)) return null;
     const addresses = stringList(ctx.named['ipaddress'] ?? (ctx.positional.length > 0 ? ctx.positional : undefined));
     if (addresses.length === 0) return missing(ctx, 'Add-DnsServerForwarder', 'IPAddress');
     const res = dns.addForwarders(addresses);
@@ -600,10 +718,11 @@ export class AddDnsServerForwarderCmdlet implements ICmdlet {
 export class RemoveDnsServerForwarderCmdlet implements ICmdlet {
   readonly name = 'remove-dnsserverforwarder';
   readonly aliases = [] as const;
-  readonly parameters = ['IPAddress', 'Force', 'Confirm'] as const;
+  readonly parameters = ['IPAddress', 'Force', 'Confirm', 'ComputerName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Remove-DnsServerForwarder');
+    if (!guard(ctx, 'Remove-DnsServerForwarder', dns)) return null;
     const addresses = stringList(ctx.named['ipaddress'] ?? (ctx.positional.length > 0 ? ctx.positional : undefined));
     if (addresses.length === 0) return missing(ctx, 'Remove-DnsServerForwarder', 'IPAddress');
     const res = dns.removeForwarders(addresses);
@@ -614,7 +733,7 @@ export class RemoveDnsServerForwarderCmdlet implements ICmdlet {
 export class GetDnsServerForwarderCmdlet implements ICmdlet {
   readonly name = 'get-dnsserverforwarder';
   readonly aliases = [] as const;
-  readonly parameters = [] as const;
+  readonly parameters = ['ComputerName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const info = requireDns(ctx, 'Get-DnsServerForwarder').getForwarderInfo();
@@ -625,10 +744,11 @@ export class GetDnsServerForwarderCmdlet implements ICmdlet {
 export class SetDnsServerRecursionCmdlet implements ICmdlet {
   readonly name = 'set-dnsserverrecursion';
   readonly aliases = [] as const;
-  readonly parameters = ['Enable'] as const;
+  readonly parameters = ['Enable', 'ComputerName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Set-DnsServerRecursion');
+    if (!guard(ctx, 'Set-DnsServerRecursion', dns)) return null;
     if (ctx.named['enable'] === undefined) return missing(ctx, 'Set-DnsServerRecursion', 'Enable');
     dns.setRecursion(isSwitchOn(ctx.named['enable']));
     return null;
@@ -638,7 +758,7 @@ export class SetDnsServerRecursionCmdlet implements ICmdlet {
 export class GetDnsServerRecursionCmdlet implements ICmdlet {
   readonly name = 'get-dnsserverrecursion';
   readonly aliases = [] as const;
-  readonly parameters = [] as const;
+  readonly parameters = ['ComputerName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     return { Enable: requireDns(ctx, 'Get-DnsServerRecursion').isRecursionEnabled() };
@@ -648,7 +768,7 @@ export class GetDnsServerRecursionCmdlet implements ICmdlet {
 export class ClearDnsServerCacheCmdlet implements ICmdlet {
   readonly name = 'clear-dnsservercache';
   readonly aliases = [] as const;
-  readonly parameters = ['Force', 'Confirm'] as const;
+  readonly parameters = ['Force', 'Confirm', 'ComputerName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     requireDns(ctx, 'Clear-DnsServerCache').clearCache();
@@ -659,7 +779,7 @@ export class ClearDnsServerCacheCmdlet implements ICmdlet {
 export class ShowDnsServerCacheCmdlet implements ICmdlet {
   readonly name = 'show-dnsservercache';
   readonly aliases = [] as const;
-  readonly parameters = [] as const;
+  readonly parameters = ['ComputerName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     return requireDns(ctx, 'Show-DnsServerCache').cacheEntries().map(entry => ({

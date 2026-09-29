@@ -1,7 +1,7 @@
 import type { EndHost } from '@/network/devices/EndHost';
 import { Zone, ZoneError } from '@/network/dns/zone/Zone';
 import { ZoneStore, ZoneStoreError } from '@/network/dns/zone/ZoneStore';
-import { renderZoneFile } from '@/network/dns/zone/ZoneFile';
+import { renderZoneFile, parseZoneFile, ZoneFileError } from '@/network/dns/zone/ZoneFile';
 import { AuthoritativeServer } from '@/network/dns/resolver/AuthoritativeServer';
 import { RecursiveResolver } from '@/network/dns/resolver/RecursiveResolver';
 import { DnsCache, type DnsCacheRecordView } from '@/network/dns/resolver/DnsCache';
@@ -75,6 +75,7 @@ export interface DnsRecordSpec { type: string; data: Record<string, string | num
 export interface DnsForwarderInfo { addresses: string[]; useRootHint: boolean; timeoutSeconds: number }
 
 export interface DnsZoneFileSink {
+  read(fileName: string): string | null;
   write(fileName: string, text: string): void;
   remove(fileName: string): void;
 }
@@ -87,6 +88,7 @@ export interface DnsRoleEnvironment {
 
 export interface DnsPrimaryZoneOptions {
   dsIntegrated?: boolean;
+  loadExisting?: boolean;
   adminEmail?: string;
   ttl?: number;
   networkId?: string;
@@ -222,6 +224,12 @@ function normalizeZoneKey(name: string): string {
   return lower.endsWith('.') ? lower.slice(0, -1) : lower;
 }
 
+const ZONE_NAME = /^[a-z0-9_][a-z0-9_-]*(\.[a-z0-9_-]+)*$/;
+
+function zoneNameProblem(origin: string): string | null {
+  return ZONE_NAME.test(origin) ? null : `"${origin}" is not a valid DNS zone name (letters, digits, "-" and "_" separated by dots).`;
+}
+
 function isUnder(name: string, zone: string): boolean {
   return name === zone || name.endsWith(`.${zone}`);
 }
@@ -267,7 +275,7 @@ interface ZoneSettings {
   expired: boolean;
 }
 
-interface ConditionalForwarder { masters: string[]; resolver: RecursiveResolver }
+interface ConditionalForwarder { masters: string[]; timeoutSeconds: number; resolver: RecursiveResolver }
 
 export class WindowsDnsServerRole {
   private readonly store = new ZoneStore();
@@ -554,8 +562,8 @@ export class WindowsDnsServerRole {
     this.resolver = typeof parsed !== 'string' && parsed.length > 0 ? this.resolverOver(parsed) : null;
   }
 
-  private resolverOver(addresses: readonly IPAddress[]): RecursiveResolver {
-    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: this.forwarderTimeoutSeconds * 1000 });
+  private resolverOver(addresses: readonly IPAddress[], timeoutSeconds = this.forwarderTimeoutSeconds): RecursiveResolver {
+    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000 });
   }
 
   getForwarders(): string[] { return [...this.forwarderAddresses]; }
@@ -578,6 +586,8 @@ export class WindowsDnsServerRole {
   clearCache(): void { this.cache.flush(); }
 
   private zoneNameConflict(origin: string): DnsOpResult | null {
+    const problem = zoneNameProblem(origin);
+    if (problem) return { ok: false, message: problem };
     if (this.settings.has(origin) || this.conditional.has(origin)) {
       return { ok: false, message: `A zone named "${origin}" is already configured on this server.` };
     }
@@ -603,6 +613,9 @@ export class WindowsDnsServerRole {
     if (!origin) return { ok: false, message: 'Cannot process command because of one or more missing mandatory parameters: Name.' };
     const conflict = this.zoneNameConflict(origin);
     if (conflict) return { ok: false, message: conflict.message.replace(origin, name || origin) };
+    if (opts.loadExisting && opts.dsIntegrated) {
+      return { ok: false, message: '-LoadExisting reads a zone file and cannot be combined with a directory-integrated zone.' };
+    }
     if (opts.dsIntegrated && !this.directoryAvailable()) {
       return { ok: false, message: 'Directory-integrated zones need a domain controller: no Active Directory partition is hosted on this server.' };
     }
@@ -610,12 +623,15 @@ export class WindowsDnsServerRole {
     const mname = `ns1.${origin}`;
     const rname = (opts.adminEmail ?? `hostmaster.${origin}`).replace('@', '.');
     try {
-      const soa = makeSoaRecord(origin, ttl, {
-        mname, rname, serial: 1, refresh: 900, retry: 600, expire: 86400, minimum: ttl,
-      });
-      const zone = new Zone(origin, soa);
+      const settingsToUse = this.newSettings('Primary', origin, opts.zoneFile, opts.dsIntegrated);
+      const zone = opts.loadExisting
+        ? this.zoneFromFile(origin, settingsToUse.zoneFile)
+        : new Zone(origin, makeSoaRecord(origin, ttl, {
+          mname, rname, serial: 1, refresh: 900, retry: 600, expire: 86400, minimum: ttl,
+        }));
+      if (typeof zone === 'string') return { ok: false, message: zone };
       this.store.addZone(zone);
-      this.settings.set(origin, this.newSettings('Primary', origin, opts.zoneFile, opts.dsIntegrated));
+      this.settings.set(origin, settingsToUse);
       if (opts.dynamicUpdate) this.zoneDynamicUpdate.set(origin, opts.dynamicUpdate);
       this.persist(zone);
       return { ok: true, message: '' };
@@ -625,7 +641,19 @@ export class WindowsDnsServerRole {
     }
   }
 
-  addSecondaryZone(name: string, masters: readonly string[], zoneFile?: string): DnsOpResult {
+  private zoneFromFile(origin: string, fileName: string): Zone | string {
+    const text = this.zoneFiles?.read(fileName) ?? null;
+    if (text === null) return `The zone file "${fileName}" does not exist in C:\\Windows\\System32\\dns.`;
+    try {
+      const zone = parseZoneFile(text, origin);
+      return zone.origin === origin ? zone : `The zone file "${fileName}" describes "${zone.origin}", not "${origin}".`;
+    } catch (e) {
+      if (e instanceof ZoneFileError || e instanceof ZoneError) return `The zone file "${fileName}" is invalid: ${e.message}`;
+      throw e;
+    }
+  }
+
+  addSecondaryZone(name: string, masters: readonly string[], zoneFile?: string, loadExisting = false): DnsOpResult {
     const origin = normalizeZoneKey(name);
     const parsed = parseAddresses(masters);
     if (typeof parsed === 'string') return { ok: false, message: parsed };
@@ -635,27 +663,53 @@ export class WindowsDnsServerRole {
     const settings = this.newSettings('Secondary', origin, zoneFile);
     settings.masters = [...masters];
     settings.nextRefreshMs = this.now();
+    if (loadExisting) {
+      const loaded = this.zoneFromFile(origin, settings.zoneFile);
+      if (typeof loaded === 'string') return { ok: false, message: loaded };
+      this.store.addZone(loaded);
+      settings.lastTransferMs = this.now();
+      settings.nextRefreshMs = this.now() + loaded.soa.data.refresh * 1000;
+    }
     this.settings.set(origin, settings);
-    void this.refreshSecondary(origin, false);
+    if (!loadExisting) void this.refreshSecondary(origin, false);
     return { ok: true, message: '' };
   }
 
-  addConditionalForwarderZone(name: string, masters: readonly string[]): DnsOpResult {
+  addConditionalForwarderZone(name: string, masters: readonly string[], timeoutSeconds = this.forwarderTimeoutSeconds): DnsOpResult {
     const origin = normalizeZoneKey(name);
     const parsed = parseAddresses(masters);
     if (typeof parsed === 'string') return { ok: false, message: parsed };
     if (parsed.length === 0) return { ok: false, message: 'A conditional forwarder needs at least one master server.' };
     const conflict = this.zoneNameConflict(origin);
     if (conflict) return conflict;
-    this.conditional.set(origin, { masters: [...masters], resolver: this.resolverOver(parsed) });
+    if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 15) {
+      return { ok: false, message: 'The forwarder timeout must be between 1 and 15 seconds.' };
+    }
+    this.conditional.set(origin, { masters: [...masters], timeoutSeconds, resolver: this.resolverOver(parsed, timeoutSeconds) });
     return { ok: true, message: '' };
   }
 
-  setConditionalForwarderMasters(name: string, masters: readonly string[]): DnsOpResult {
+  setConditionalForwarderMasters(name: string, masters: readonly string[] | undefined, timeoutSeconds?: number): DnsOpResult {
     const origin = normalizeZoneKey(name);
-    if (!this.conditional.has(origin)) return { ok: false, message: `Zone "${name}" is not a conditional forwarder zone.` };
+    const current = this.conditional.get(origin);
+    if (!current) return { ok: false, message: `Zone "${name}" is not a conditional forwarder zone.` };
     this.conditional.delete(origin);
-    return this.addConditionalForwarderZone(origin, masters);
+    const res = this.addConditionalForwarderZone(origin, masters ?? current.masters, timeoutSeconds ?? current.timeoutSeconds);
+    if (!res.ok) this.conditional.set(origin, current);
+    return res;
+  }
+
+  renameZoneFile(name: string, zoneFile: string): DnsOpResult {
+    const origin = normalizeZoneKey(name);
+    const settings = this.settings.get(origin);
+    if (!settings) return { ok: false, message: `Zone "${name}" does not exist on this server.` };
+    if (settings.dsIntegrated) return { ok: false, message: `Zone "${name}" is directory-integrated and has no zone file.` };
+    const previous = settings.zoneFile;
+    settings.zoneFile = zoneFile;
+    const zone = this.store.getZone(origin);
+    if (zone) this.persist(zone);
+    if (previous !== zoneFile) this.zoneFiles?.remove(previous);
+    return { ok: true, message: '' };
   }
 
   setPrimaryZone(name: string, changes: DnsPrimaryZoneChanges): DnsOpResult {
@@ -787,11 +841,27 @@ export class WindowsDnsServerRole {
     return recordName === '@' || recordName === '' ? zone.origin : `${recordName}.${zone.origin}`;
   }
 
-  addRecord(zoneName: string, recordName: string, spec: DnsRecordSpec, ttl = 3600, cmdletName = 'Add-DnsServerResourceRecord'): DnsOpResult {
+  addRecord(
+    zoneName: string, recordName: string, spec: DnsRecordSpec, ttl = 3600,
+    cmdletName = 'Add-DnsServerResourceRecord', createPtr = false,
+  ): DnsOpResult {
     const zone = this.zoneFor(zoneName, cmdletName);
     if ('error' in zone) return zone.error;
     try {
-      zone.addRecord(buildRecord(this.fqdn(recordName, zone), ttl, spec));
+      const fqdn = this.fqdn(recordName, zone);
+      const record = buildRecord(fqdn, ttl, spec);
+      let reverse: Zone | null = null;
+      if (createPtr) {
+        if (spec.type.toUpperCase() !== 'A') return { ok: false, message: '-CreatePtr only applies to A records.' };
+        const arpa = ptrQName(String(spec.data.IPv4Address));
+        reverse = this.store.findZone(arpa);
+        if (!reverse || this.settings.get(reverse.origin)?.type === 'Secondary') {
+          return { ok: false, message: `No writable reverse lookup zone is authoritative for "${arpa}".` };
+        }
+        reverse.addRecord(makePtrRecord(arpa, ttl, fqdn));
+      }
+      zone.addRecord(record);
+      if (reverse) this.zoneChanged(reverse);
       this.zoneChanged(zone);
       return { ok: true, message: '' };
     } catch (e) { return { ok: false, message: (e as Error).message }; }

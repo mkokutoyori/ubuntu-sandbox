@@ -971,17 +971,19 @@ export interface DnsCacheEntryInfo { name: string; type: string; ttl: number; da
 
 export interface IDnsServerProvider {
   addPrimaryZone(name: string, options?: DnsPrimaryZoneOptions): DnsOpResult;
-  addSecondaryZone(name: string, masters: string[], zoneFile?: string): DnsOpResult;
-  addConditionalForwarderZone(name: string, masters: string[]): DnsOpResult;
+  serverName(): string;
+  addSecondaryZone(name: string, masters: string[], zoneFile?: string, loadExisting?: boolean): DnsOpResult;
+  addConditionalForwarderZone(name: string, masters: string[], timeoutSeconds?: number): DnsOpResult;
+  renameZoneFile(name: string, zoneFile: string): DnsOpResult;
   setPrimaryZone(name: string, changes: DnsPrimaryZoneChanges): DnsOpResult;
   setSecondaryZone(name: string, changes: { masters?: string[]; secureSecondaries?: DnsTransferPolicy; secondaryServers?: string[] }): DnsOpResult;
-  setConditionalForwarderMasters(name: string, masters: string[]): DnsOpResult;
+  setConditionalForwarderMasters(name: string, masters: string[] | undefined, timeoutSeconds?: number): DnsOpResult;
   startZoneTransfer(name: string): DnsOpResult;
   removeZone(name: string): DnsOpResult;
   getZone(name: string): DnsZoneInfo | null;
   listZones(): DnsZoneInfo[];
 
-  addRecord(zone: string, name: string, spec: DnsRecordSpec, ttl?: number): DnsOpResult;
+  addRecord(zone: string, name: string, spec: DnsRecordSpec, ttl?: number, createPtr?: boolean): DnsOpResult;
   addARecord(zone: string, name: string, ipv4: string, ttl?: number): DnsOpResult;
   addAaaaRecord(zone: string, name: string, ipv6: string, ttl?: number): DnsOpResult;
   addCnameRecord(zone: string, name: string, hostNameAlias: string, ttl?: number): DnsOpResult;
