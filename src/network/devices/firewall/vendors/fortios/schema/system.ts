@@ -45,6 +45,10 @@ function isStatic(object: FortiObjectView): boolean {
   return object.effective('mode')[0] === 'static' && isRouted(object);
 }
 
+function isDhcpClient(object: FortiObjectView): boolean {
+  return object.effective('mode')[0] === 'dhcp' && isRouted(object);
+}
+
 function isRouted(object: FortiObjectView): boolean {
   return object.setting('system settings', 'opmode')[0] !== 'transparent';
 }
@@ -570,6 +574,16 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     { ...addressMask('ip', 'Interface IPv4 address and subnet mask.',
       ['0.0.0.0', '0.0.0.0']), availableWhen: isStatic },
     {
+      ...enable('defaultgw', 'Enable to get the gateway IP from the DHCP or PPPoE server.', true),
+      availableWhen: isDhcpClient,
+    },
+    {
+      ...count('distance',
+        'Distance for routes learned through PPPoE or DHCP, lower distance indicates preferred route.',
+        1, 255, 5),
+      availableWhen: isDhcpClient,
+    },
+    {
       name: 'allowaccess',
       help: 'Permitted types of management access to this interface.',
       quoted: false,
@@ -631,6 +645,10 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     context.device.applyInterface(object.key, {
       vdom: object.effective('vdom')[0],
       addressingMode: (mode ?? 'static') as 'static' | 'dhcp' | 'pppoe',
+      dhcpRoute: mode === 'dhcp' ? {
+        gateway: object.effective('defaultgw')[0] !== 'disable',
+        distance: Number.parseInt(object.effective('distance')[0] ?? '', 10) || 5,
+      } : undefined,
       ip: ip[0],
       mask: ip[1],
       up: object.effective('status')[0] !== 'down',

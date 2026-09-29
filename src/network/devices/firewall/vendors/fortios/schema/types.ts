@@ -102,6 +102,7 @@ import type { LldpSetting, LldpVdomSetting } from '../../../l2/LldpIntent';
 export interface FortiInterfacePatch {
   readonly vdom?: string;
   readonly addressingMode?: 'static' | 'dhcp' | 'pppoe';
+  readonly dhcpRoute?: { readonly gateway: boolean; readonly distance: number };
   readonly ip?: string;
   readonly mask?: string;
   readonly up?: boolean;

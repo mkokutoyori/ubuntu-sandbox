@@ -94,9 +94,11 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
     portMac: (iface) => host.port(iface)?.getMAC(),
     emitFrame: (iface, frame) => { host.emitFrame(iface, frame); },
     addressInUse: (iface, address) => host.probeAddress(iface, address),
-    leaseGranted: (iface, ip, mask, gateway) => {
-      host.assignAddress(iface, ip, mask);
-      if (gateway) host.routesOf(iface).addDefault(gateway, { id: `dhcp:${iface}` });
+    leaseGranted: (iface, ip, mask) => { host.assignAddress(iface, ip, mask); },
+    leaseRoute: (iface, gateway, distance) => {
+      const routes = host.routesOf(iface);
+      routes.removeStaticById(`dhcp:${iface}`);
+      if (gateway) routes.addDefault(gateway, { id: `dhcp:${iface}`, distance });
     },
     leaseLost: (iface) => { host.routesOf(iface).removeStaticById(`dhcp:${iface}`); },
     systemDnsServers: () => host.systemDnsServers?.() ?? [],
