@@ -328,6 +328,7 @@ export class DHCPServer implements IProtocolEngine {
 
   deletePool(name: string): boolean {
     this.highUtilizationNotified.delete(name);
+    this.staticBindings.delete(name);
     return this.pools.delete(name);
   }
 
@@ -855,6 +856,26 @@ export class DHCPServer implements IProtocolEngine {
           serverIdentifier: this.resolveServerId(pool),
           xid: params.xid,
           message: `Client ${params.clientMAC} denied by pool policy`,
+        };
+      }
+
+      const reservation = this.findStaticBinding(params.clientMAC, pool.name);
+      if (reservation !== null && reservation.ipAddress !== params.requestedIP) {
+        const held = this.bindings.get(params.requestedIP);
+        if (held !== undefined && held.clientId === params.clientMAC) {
+          this.bindings.delete(params.requestedIP);
+          this.getBus().publish({
+            topic: 'dhcp.pool.lease-released',
+            payload: { ...this.deviceRef(), pool: held.poolName, ip: params.requestedIP, reason: 'reassigned' },
+          });
+          this.refreshServerSignals();
+        }
+        this.stats.naks++;
+        return {
+          type: 'NAK',
+          serverIdentifier: this.resolveServerId(pool),
+          xid: params.xid,
+          message: `Client ${params.clientMAC} is reserved ${reservation.ipAddress}, not ${params.requestedIP}`,
         };
       }
 
