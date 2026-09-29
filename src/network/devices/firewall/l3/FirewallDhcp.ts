@@ -1,5 +1,5 @@
 import {
-  ETHERTYPE_IPV4, IPAddress, MACAddress,
+  IPAddress, MACAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
 } from '../../../core/types';
 import { buildUdpOverIpv4 } from '../../../layers/transport/UdpEgress';
@@ -7,6 +7,9 @@ import { inSameSubnet, ipToUint32, tryIpToUint32, uint32ToIp } from '../../../co
 import { DHCPServer } from '../../../dhcp/DHCPServer';
 import { DHCPClient } from '../../../dhcp/DHCPClient';
 import { WireDhcpChannel } from '../../../dhcp/DhcpServerChannel';
+import { dhcpClientFrame } from '../../../dhcp/DhcpClientFrame';
+import { dhcpLinkDestination, dhcpServerReplyFrame } from '../../../dhcp/DhcpServerReplyFrame';
+import type { DhcpUnicastTarget } from '../../../dhcp/types';
 import { DHCPPacket, DHCP_WIRE_BYTES } from '../../../dhcp/DHCPPacket';
 import { buildDhcpServerReply, dhcpReplyRoute, type DhcpReplyRoute } from '../../../dhcp/DhcpServerExchange';
 import type { IEventBus } from '../../../../events/EventBus';
@@ -130,27 +133,18 @@ export class FirewallDhcp {
     const existing = this.channels.get(iface);
     if (existing) return existing;
 
-    const channel = new WireDhcpChannel(iface, (name, pkt) => {
-      this.emitClientFrame(name, pkt);
+    const channel = new WireDhcpChannel(iface, (name, pkt, target) => {
+      this.emitClientFrame(name, pkt, target);
     }, this.deps.now);
     this.channels.set(iface, channel);
     return channel;
   }
 
-  private emitClientFrame(iface: string, pkt: DHCPPacket): void {
+  private emitClientFrame(iface: string, pkt: DHCPPacket, target?: DhcpUnicastTarget): void {
     const mac = this.deps.portMac(iface);
     if (!mac) return;
 
-    this.deps.sendFrame(iface, {
-      srcMAC: mac,
-      dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4,
-      payload: buildUdpOverIpv4(new IPAddress('0.0.0.0'), {
-        destination: new IPAddress('255.255.255.255'),
-        sourcePort: DHCP_CLIENT_PORT, destinationPort: DHCP_SERVER_PORT,
-        payload: pkt, payloadBytes: DHCP_WIRE_BYTES,
-      }),
-    });
+    this.deps.sendFrame(iface, dhcpClientFrame(pkt, mac, target));
   }
 
   deliverToClient(iface: string, udp: UDPPacket, sourceMac: string): boolean {
@@ -396,17 +390,7 @@ export class FirewallDhcp {
     const mac = this.deps.portMac(iface);
     if (!mac) return;
 
-    const broadcast = route.kind === 'broadcast';
-    this.deps.sendFrame(iface, {
-      srcMAC: mac,
-      dstMAC: broadcast ? MACAddress.broadcast() : new MACAddress(clientMac),
-      etherType: ETHERTYPE_IPV4,
-      payload: buildUdpOverIpv4(source, {
-        destination: new IPAddress(broadcast ? '255.255.255.255' : route.address),
-        sourcePort: DHCP_SERVER_PORT, destinationPort: DHCP_CLIENT_PORT,
-        payload: reply, payloadBytes: DHCP_WIRE_BYTES,
-      }),
-    });
+    this.deps.sendFrame(iface, dhcpServerReplyFrame(reply, source, mac, dhcpLinkDestination(route, clientMac)));
   }
 }
 

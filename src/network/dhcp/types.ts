@@ -129,6 +129,11 @@ export interface DHCPOfferResult {
   vendorOptions?: Record<number, string>;
 }
 
+export interface DhcpUnicastTarget {
+  readonly ip: string;
+  readonly mac: string | null;
+}
+
 /** Parameters sent in DHCPREQUEST (client → server) */
 export interface DHCPRequestParams {
   clientMAC: string;
@@ -141,6 +146,8 @@ export interface DHCPRequestParams {
   serverIdentifier?: string;
   /** Option 61: Client Identifier */
   clientIdentifier: string;
+  currentAddress?: string;
+  unicastTo?: DhcpUnicastTarget;
 }
 
 /** Result returned by server for DHCPACK */
@@ -175,6 +182,7 @@ export interface DHCPReleaseParams {
   serverIdentifier?: string;
   /** Option 61: Client Identifier */
   clientIdentifier: string;
+  unicastTo?: DhcpUnicastTarget;
 }
 
 /** Parameters sent in DHCPDECLINE (client → server) */

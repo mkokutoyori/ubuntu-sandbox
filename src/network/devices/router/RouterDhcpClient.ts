@@ -1,7 +1,7 @@
 import { DHCPClient } from '@/network/dhcp/DHCPClient';
 import { WireDhcpChannel } from '@/network/dhcp/DhcpServerChannel';
 import type { DHCPPacket } from '@/network/dhcp/DHCPPacket';
-import type { DHCPClientLease } from '@/network/dhcp/types';
+import type { DHCPClientLease, DhcpUnicastTarget } from '@/network/dhcp/types';
 import type { IEventBus } from '@/events/EventBus';
 
 export interface RouterDhcpHost {
@@ -9,7 +9,7 @@ export interface RouterDhcpHost {
   linkUsable(iface: string): boolean;
   applyLease(iface: string, ip: string, mask: string, gateway: string | null): void;
   clearLease(iface: string): void;
-  sendDhcpFrame(iface: string, pkt: DHCPPacket): void;
+  sendDhcpFrame(iface: string, pkt: DHCPPacket, target?: DhcpUnicastTarget): void;
   markClient(iface: string, on: boolean): void;
   bus(): IEventBus | null;
   identity(): { deviceId: string; hostname: string };
@@ -36,7 +36,7 @@ export class RouterDhcpClient {
   private channel(iface: string): WireDhcpChannel {
     let channel = this.channels.get(iface);
     if (!channel) {
-      channel = new WireDhcpChannel(iface, (i, pkt) => this.host.sendDhcpFrame(i, pkt));
+      channel = new WireDhcpChannel(iface, (i, pkt, target) => this.host.sendDhcpFrame(i, pkt, target));
       this.channels.set(iface, channel);
     }
     return channel;

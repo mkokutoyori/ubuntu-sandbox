@@ -29,9 +29,11 @@ export interface EchoHooks {
   sizeBytes?: number;
   shouldStop?: () => boolean;
 }
-import { DHCPPacket } from '../dhcp/DHCPPacket';
+import { DHCPPacket, DHCP_WIRE_BYTES } from '../dhcp/DHCPPacket';
 import type { DHCPServer } from '../dhcp/DHCPServer';
-import { buildDhcpServerReply } from '../dhcp/DhcpServerExchange';
+import { buildDhcpServerReply, dhcpReplyRoute } from '../dhcp/DhcpServerExchange';
+import { dhcpLinkDestination, dhcpServerReplyFrame } from '../dhcp/DhcpServerReplyFrame';
+import { DHCP_SERVER_PORT } from '../core/WellKnownPorts';
 import { buildUdpOverIpv4, type UdpSendRequest } from '../layers/transport/UdpEgress';
 
 /** A Switched Virtual Interface. Exists (IP-less) once `interface Vlan N` is
@@ -500,15 +502,17 @@ export class SwitchSvi {
       localGatewayIP: svi.ip.toString(),
     });
     if (!reply) return;
-    reply.giaddr = pkt.giaddr;
-    const udp: UDPPacket = {
-      type: 'udp', sourcePort: 67, destinationPort: 68, length: 8 + 300, checksum: 0, payload: reply,
-    };
-    const out = createIPv4Packet(svi.ip, new IPAddress('255.255.255.255'), IP_PROTO_UDP, 64, udp, 8 + 300);
-    this.host.egressOnVlan(svi.vlan, {
-      srcMAC: this.host.getBridgeMac(), dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: out,
-    });
+    const route = dhcpReplyRoute(pkt, reply);
+    if (route.kind === 'relay') {
+      this.sendUdpDatagram({
+        destination: new IPAddress(route.relay),
+        destinationPort: DHCP_SERVER_PORT, sourcePort: DHCP_SERVER_PORT,
+        payload: reply, payloadBytes: DHCP_WIRE_BYTES,
+      });
+      return;
+    }
+    this.host.egressOnVlan(svi.vlan, dhcpServerReplyFrame(
+      reply, svi.ip, this.host.getBridgeMac(), dhcpLinkDestination(route, pkt.chaddr)));
   }
 
   /**

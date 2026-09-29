@@ -124,6 +124,8 @@ import { DHCPClient } from '../dhcp/DHCPClient';
 import { DHCPPacket, DHCP_WIRE_BYTES } from '../dhcp/DHCPPacket';
 import { addressAnswersOnLink } from '../arp/AddressProbe';
 import { WireDhcpChannel } from '../dhcp/DhcpServerChannel';
+import { dhcpClientFrame } from '../dhcp/DhcpClientFrame';
+import type { DhcpUnicastTarget } from '../dhcp/types';
 import type { DHCPClientIfaceState } from '../dhcp/types';
 import { DHCPv6Packet } from '../dhcpv6/DHCPv6Packet';
 import { IP_PROTO_GRE } from '../gre/types';
@@ -1109,7 +1111,7 @@ export abstract class EndHost extends Equipment {
     if (!port) return null;
     let channel = this.dhcpWireChannels.get(iface);
     if (!channel) {
-      channel = new WireDhcpChannel(iface, (ifc, pkt) => this.sendWireDhcpFrame(ifc, pkt));
+      channel = new WireDhcpChannel(iface, (ifc, pkt, target) => this.sendWireDhcpFrame(ifc, pkt, target));
       this.dhcpWireChannels.set(iface, channel);
       this.ensureDhcpUdp68Listener();
     }
@@ -1181,22 +1183,10 @@ export abstract class EndHost extends Equipment {
     _iface: string, _dnsServers: readonly string[], _domainName: string | null,
   ): void {}
 
-  private sendWireDhcpFrame(iface: string, pkt: DHCPPacket): void {
+  private sendWireDhcpFrame(iface: string, pkt: DHCPPacket, target?: DhcpUnicastTarget): void {
     const port = this.ports.get(iface);
     if (!port) return;
-    const udp: UDPPacket = {
-      type: 'udp', sourcePort: 68, destinationPort: 67,
-      length: 8 + DHCP_WIRE_BYTES, checksum: 0, payload: pkt,
-    };
-    const ipPkt = createIPv4Packet(
-      new IPAddress('0.0.0.0'), new IPAddress('255.255.255.255'),
-      IP_PROTO_UDP, 64, udp, 8 + DHCP_WIRE_BYTES);
-    this.sendFrame(iface, {
-      srcMAC: port.getMAC(),
-      dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4,
-      payload: ipPkt,
-    });
+    this.sendFrame(iface, dhcpClientFrame(pkt, port.getMAC(), target));
   }
 
   protected onDhcpLeaseReleased(_iface: string): void {}

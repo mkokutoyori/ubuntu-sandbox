@@ -166,8 +166,10 @@ import {
   snmpAdminStringIndex,
 } from '../snmp/mibs/DhcpServerMib';
 import { DHCPPacket, DHCP_WIRE_BYTES } from '../dhcp/DHCPPacket';
-import { buildDhcpServerReply } from '../dhcp/DhcpServerExchange';
-import type { DHCPDiscoverParams, DHCPOfferResult, DHCPSnoopingConfig } from '../dhcp/types';
+import { buildDhcpServerReply, dhcpReplyRoute } from '../dhcp/DhcpServerExchange';
+import { dhcpLinkDestination } from '../dhcp/DhcpServerReplyFrame';
+import type { DHCPDiscoverParams, DHCPOfferResult, DHCPSnoopingConfig, DhcpUnicastTarget } from '../dhcp/types';
+import { dhcpClientAddressing } from '../dhcp/DhcpClientFrame';
 import { createDefaultSnoopingConfig } from '../dhcp/types';
 import { DHCPv6Server } from '../dhcpv6/DHCPv6Server';
 import { DHCPv6Packet } from '../dhcpv6/DHCPv6Packet';
@@ -677,7 +679,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.routingTable = this.routingTable.filter(r =>
           !((r.type === 'connected' || r.type === 'default') && r.iface === iface));
       },
-      sendDhcpFrame: (iface, pkt) => this.sendDhcpClientFrame(iface, pkt),
+      sendDhcpFrame: (iface, pkt, target) => this.sendDhcpClientFrame(iface, pkt, target),
       markClient: (iface, on) => this.ports.get(iface)?.setDhcpClient(on),
       bus: () => this.getBus(),
       identity: () => ({ deviceId: this.id, hostname: this.getHostname() }),
@@ -1420,16 +1422,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   getDhcpClientAgent(): RouterDhcpClient { return this.dhcpClientAgent; }
 
-  private sendDhcpClientFrame(iface: string, pkt: DHCPPacket): void {
+  private sendDhcpClientFrame(iface: string, pkt: DHCPPacket, target?: DhcpUnicastTarget): void {
+    const addressing = dhcpClientAddressing(pkt, target);
     const datagram = buildUdpDatagram({
-      destination: new IPAddress('255.255.255.255'),
+      destination: addressing.destination,
       destinationPort: DHCP_SERVER_PORT, sourcePort: DHCP_CLIENT_PORT,
       payload: pkt, payloadBytes: DHCP_WIRE_BYTES,
     });
     this.sendIpv4Packet({
-      destination: new IPAddress('255.255.255.255'),
+      destination: addressing.destination,
       iface,
-      source: new IPAddress('0.0.0.0'),
+      source: addressing.source,
       protocol: IP_PROTO_UDP,
       payload: datagram,
       payloadBytes: datagram.length,
@@ -4174,7 +4177,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         return true;
       },
       broadcastReply: (iface, reply) => {
-        this.sendDhcpFrameOnPort(iface, reply, new IPAddress('255.255.255.255'), MACAddress.broadcast());
+        this.sendDhcpFrameOnPort(iface, reply, new IPAddress('255.255.255.255'), MACAddress.broadcast(), DHCP_CLIENT_PORT);
       },
       relayInformationOption: () => this.dhcpServer.isRelayInformationOptionEnabled(),
       countForward: () => this.dhcpServer.countRelayForward(),
@@ -4220,24 +4223,24 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       isAddressInUse: (ip) => this.isCandidateAddressInUse(new IPAddress(ip)),
     });
     if (!reply) return;
-    this.dispatchDhcpReply(inPort, pkt, reply, option82, giaddr);
+    this.dispatchDhcpReply(inPort, pkt, reply, option82);
   }
 
   private dispatchDhcpReply(
     inPort: string, pkt: DHCPPacket, reply: DHCPPacket,
     option82: { circuitId: string; remoteId: string } | undefined,
-    giaddr: string | undefined,
   ): void {
     if (option82) reply.setOption(82, option82);
-    if (giaddr) {
-      const dst = new IPAddress(giaddr);
-      const route = this.lookupRoute(dst);
-      const egress = route ? this.ports.get(route.iface) : undefined;
-      if (!route || !egress) return;
-      this.sendDhcpFrameOnPort(route.iface, reply, dst, MACAddress.broadcast());
-    } else {
-      this.sendDhcpFrameOnPort(inPort, reply, new IPAddress('255.255.255.255'), MACAddress.broadcast());
+    const route = dhcpReplyRoute(pkt, reply);
+    if (route.kind === 'relay') {
+      const dst = new IPAddress(route.relay);
+      const egress = this.lookupRoute(dst);
+      if (!egress || !this.ports.get(egress.iface)) return;
+      this.sendDhcpFrameOnPort(egress.iface, reply, dst, MACAddress.broadcast(), DHCP_SERVER_PORT);
+      return;
     }
+    const to = dhcpLinkDestination(route, pkt.chaddr);
+    this.sendDhcpFrameOnPort(inPort, reply, to.address, to.mac, DHCP_CLIENT_PORT);
   }
 
   /**
@@ -4279,6 +4282,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     pkt: DHCPPacket,
     dstIp: IPAddress,
     dstMac: MACAddress,
+    dstPort: number,
   ): void {
     const port = this.ports.get(portName);
     const srcIp = port?.getIPAddress();
@@ -4286,7 +4290,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const udp: UDPPacket = {
       type: 'udp',
       sourcePort: 67,
-      destinationPort: dstIp.toString() === '255.255.255.255' ? 68 : 67,
+      destinationPort: dstPort,
       length: 8 + DHCP_WIRE_BYTES, checksum: 0, payload: pkt,
     };
     const ipPkt = createIPv4Packet(srcIp, dstIp, IP_PROTO_UDP, 64, udp, 8 + DHCP_WIRE_BYTES);

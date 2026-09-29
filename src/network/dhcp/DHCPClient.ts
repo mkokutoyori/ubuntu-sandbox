@@ -803,6 +803,7 @@ export class DHCPClient implements IProtocolEngine {
           clientMAC: mac,
           clientIP: lease.ipAddress,
           serverIdentifier: lease.serverIdentifier,
+          unicastTo: { ip: lease.serverIdentifier, mac: lease.serverMac },
           clientIdentifier,
           ...this.clientIdentity(),
         });
@@ -982,6 +983,8 @@ export class DHCPClient implements IProtocolEngine {
               clientMAC: mac,
               xid: state.xid,
               requestedIP: lease.ipAddress,
+              currentAddress: lease.ipAddress,
+              unicastTo: { ip: lease.serverIdentifier, mac: lease.serverMac },
               // No serverIdentifier in RENEWING (unicast, RFC 2131 §4.3.2)
               clientIdentifier,
               ...this.clientIdentity(),
@@ -1026,6 +1029,7 @@ export class DHCPClient implements IProtocolEngine {
             clientMAC: mac,
             xid: state.xid,
             requestedIP: lease.ipAddress,
+            currentAddress: lease.ipAddress,
             clientIdentifier,
             ...this.clientIdentity(),
           });
