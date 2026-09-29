@@ -1436,6 +1436,33 @@ export class DirectoryStore {
       ?? this.findForeignSecurityPrincipalEntry(sam);
   }
 
+  getPrincipalGroups(identity: string): AdGroup[] | null {
+    this.expireMemberships();
+    const entry = this.findGroupMemberEntry(this.resolveIdentity(identity));
+    if (!entry) return null;
+    const groups: AdGroup[] = [];
+    for (const dnStr of entry.attributes.get('memberof') ?? []) {
+      const sam = this.samOfDn(dnStr);
+      const group = sam ? this.getGroup(sam) : null;
+      if (group) groups.push(group);
+    }
+    return groups;
+  }
+
+  moveObject(identity: string, targetPath: string): DirOpResult {
+    const entry = this.findGroupMemberEntry(this.resolveIdentity(identity)) ?? this.resolveTargetEntry(identity);
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${identity}' under: '${this.getDomainDn()}'.` };
+    const targetParent = this.resolveTargetEntry(targetPath);
+    if (!targetParent) return { ok: false, message: `The specified target path '${targetPath}' does not exist.` };
+    const leafRdn = formatDN([entry.dn[0]]);
+    const res = this.tree.renameEntry(entry.dn, leafRdn, false, targetParent.dn);
+    if (res.ok) return { ok: true, message: '' };
+    if (res.message === 'entryAlreadyExists') {
+      return { ok: false, message: `An object with the DistinguishedName '${leafRdn},${formatDN(targetParent.dn)}' already exists.` };
+    }
+    return { ok: false, message: res.message };
+  }
+
   private foreignSecurityPrincipalsDn(): DistinguishedName {
     return [...parseDN('CN=ForeignSecurityPrincipals'), ...this.tree.getRootDn()];
   }

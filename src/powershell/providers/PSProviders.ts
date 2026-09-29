@@ -319,6 +319,11 @@ export interface IAdProvider {
   /** `Set-ADComputer -Identity <name> -AllowedToDelegateTo <svc1,svc2,...>` (PRD-Windows-Server-Advanced.md §5 P10) — the `msDS-AllowedToDelegateTo` list S4U2Proxy checks. */
   setComputerAllowedToDelegateTo(identity: string, targetServiceNames: string[]): AdOpResult;
 
+  /** `Move-ADObject -Identity <dn|sam> -TargetPath <ou dn>` — LDAP ModifyDN with a new superior, keeping the object's RDN. */
+  moveObject(identity: string, targetPath: string, target?: RemoteDirectoryTarget): AdOpResult;
+  /** `Get-ADPrincipalGroupMembership -Identity <principal>` — the groups this principal is a direct member of (its primary group included). null when the principal is not found. */
+  getPrincipalGroups(identity: string): AdGroupInfo[] | null;
+
   newOrganizationalUnit(name: string, path?: string, opts?: OrgUnitWriteOptions): AdOpResult;
   setOrganizationalUnit(identity: string, attributes: Record<string, string>, protectedFlag?: boolean, target?: RemoteDirectoryTarget): AdOpResult;
   removeOrganizationalUnit(identity: string, recursive?: boolean, target?: RemoteDirectoryTarget): AdOpResult;

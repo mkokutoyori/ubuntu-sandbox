@@ -921,6 +921,57 @@ export class GetADGroupMemberCmdlet implements ICmdlet {
   }
 }
 
+export class GetADPrincipalGroupMembershipCmdlet implements ICmdlet {
+  readonly name = 'get-adprincipalgroupmembership';
+  readonly displayName = 'Get-ADPrincipalGroupMembership';
+  readonly aliases = [] as const;
+  readonly pipelineByValue = 'Identity';
+  readonly parameters = ['Identity', 'Server', 'Credential', 'AuthType',
+    'ResourceContextServer', 'ResourceContextPartition'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADPrincipalGroupMembership');
+    const identity = identityOrObjectOf(ctx);
+    if (!identity) {
+      ctx.emitError('Get-ADPrincipalGroupMembership : Cannot process command because of one or more missing mandatory parameters: Identity.');
+      return null;
+    }
+    const groups = ad.getPrincipalGroups(identity);
+    if (groups === null) {
+      ctx.emitError(`Get-ADPrincipalGroupMembership : Cannot find an object with identity: '${identity}'.`);
+      return null;
+    }
+    return groups.map(g => groupToPSObject(g)) as PSValue;
+  }
+}
+
+export class MoveADObjectCmdlet implements ICmdlet {
+  readonly name = 'move-adobject';
+  readonly displayName = 'Move-ADObject';
+  readonly aliases = [] as const;
+  readonly pipelineByValue = 'Identity';
+  readonly parameters = ['Identity', 'TargetPath', 'Server', 'Credential', 'AuthType',
+    'Partition', 'PassThru', 'WhatIf', 'Confirm'] as const;
+  readonly parameterValues = { TargetPath: 'path' } as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Move-ADObject');
+    const identity = identityOrObjectOf(ctx);
+    const targetPath = ctx.named['targetpath'] !== undefined ? psValueToString(ctx.named['targetpath']) : '';
+    if (!identity || !targetPath) {
+      ctx.emitError('Move-ADObject : Cannot process command because of one or more missing mandatory parameters: Identity TargetPath.');
+      return null;
+    }
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "Move" on target "${identity}".`);
+      return null;
+    }
+    const res = ad.moveObject(identity, targetPath, remoteTargetOf(ctx));
+    if (!res.ok) { ctx.emitError(`Move-ADObject : ${res.message}`); return null; }
+    return null;
+  }
+}
+
 // ── Get-ADComputer ───────────────────────────────────────────────────────────
 
 export class GetADComputerCmdlet implements ICmdlet {

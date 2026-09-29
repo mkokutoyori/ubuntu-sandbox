@@ -974,6 +974,29 @@ class WindowsAdAdapter implements IAdProvider {
     return store.setAllowedToDelegateTo(name, targetServiceNames);
   }
 
+  moveObject(identity: string, targetPath: string, target?: RemoteDirectoryTarget): AdOpResult {
+    if (target) {
+      return this.remoteDirectory('Move-ADObject', target, client => {
+        if (!identity.includes('=')) {
+          return { ok: false, message: 'Move-ADObject over -Server needs the DistinguishedName as -Identity.' };
+        }
+        const rdn = identity.split(',')[0];
+        const res = client.modifyDN(identity, rdn, false, targetPath);
+        return res.ok ? { ok: true, message: '' } : { ok: false, message: res.result.diagnosticMessage || `Cannot find an object with identity: '${identity}'.` };
+      });
+    }
+    const store = this.requireStore('Move-ADObject');
+    const denied = this.requireAdmin('Move-ADObject');
+    if (denied) return denied;
+    return store.moveObject(identity, targetPath);
+  }
+
+  getPrincipalGroups(identity: string): AdGroupInfo[] | null {
+    const store = this.requireStore('Get-ADPrincipalGroupMembership');
+    const groups = store.getPrincipalGroups(store.resolveIdentity(identity));
+    return groups ? groups.map(groupInfoOf) : null;
+  }
+
   newOrganizationalUnit(name: string, path?: string, opts?: OrgUnitWriteOptions): AdOpResult {
     if (opts?.target) {
       const base = path ?? `DC=${opts.target.server.split('.').slice(1).join(',DC=')}`;
