@@ -1259,6 +1259,79 @@ export const SYSTEM_GEOIP_OVERRIDE: FortiTableSpec = {
   },
 };
 
+const LINK_MONITOR_NON_PING = 'only `ping` probes the server in this build; '
+  + 'this protocol would need a target that answers that probe.';
+
+export const SYSTEM_LINK_MONITOR: FortiTableSpec = {
+  path: ['system', 'link-monitor'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 78,
+  help: 'Configure Link Health Monitor.',
+  attributes: [
+    { ...word('name', 'Link monitor name.'), readOnly: true },
+    {
+      ...choice('protocol', 'Protocols used to monitor the server.', [
+        { keyword: 'ping', description: 'ICMP echo.' },
+        { keyword: 'tcp-echo', description: 'TCP echo.' },
+        { keyword: 'udp-echo', description: 'UDP echo.' },
+        { keyword: 'http', description: 'HTTP GET.' },
+        { keyword: 'twamp', description: 'TWAMP probe.' },
+      ], 'ping'),
+      unimplementedValues: {
+        'tcp-echo': LINK_MONITOR_NON_PING, 'udp-echo': LINK_MONITOR_NON_PING,
+        http: LINK_MONITOR_NON_PING, twamp: LINK_MONITOR_NON_PING,
+      },
+    },
+    reference('srcintf', 'Interface that sends the probes.', ['system interface']),
+    {
+      name: 'server',
+      help: 'IP addresses of the servers to probe.',
+      quoted: true,
+      multiValue: true,
+      parts: [{ name: 'server', type: 'IP_ADDR', description: 'IP address of a server to probe.' }],
+      defaultValue: [],
+    },
+    address('gateway-ip', 'Gateway IP address used to probe the server.', '0.0.0.0'),
+    address('source-ip', 'Source IP address used in the probe packets.', '0.0.0.0'),
+    count('port', 'Port number of the traffic to monitor.', 0, 65535, 0),
+    count('interval', 'Detection interval in milliseconds.', 500, 3600000, 500),
+    count('probe-timeout', 'Time to wait before a probe packet is considered lost, in milliseconds.',
+      500, 3600000, 500),
+    count('failtime', 'Number of failures before the server is down.', 1, 3600, 5),
+    count('recoverytime', 'Number of successes before the server is up.', 1, 3600, 5),
+    enable('update-static-route',
+      'Withdraw the static routes through this interface when the monitor is down.', true),
+    enable('status', 'Enable/disable this link monitor.', true),
+  ],
+  onCommit(object, context) {
+    const servers = object.effective('server');
+    if (servers.length === 0) {
+      return 'a link monitor needs `set server <ip>`.';
+    }
+    context.device.applyLinkMonitor({
+      name: object.key,
+      srcintf: object.effective('srcintf')[0] ?? '',
+      servers,
+      protocol: (object.effective('protocol')[0] ?? 'ping') as never,
+      gatewayIp: object.effective('gateway-ip')[0] ?? '0.0.0.0',
+      sourceIp: object.effective('source-ip')[0] ?? '0.0.0.0',
+      port: Number.parseInt(object.effective('port')[0] ?? '0', 10) || 0,
+      intervalMs: Number.parseInt(object.effective('interval')[0] ?? '500', 10) || 500,
+      failtime: Number.parseInt(object.effective('failtime')[0] ?? '5', 10) || 5,
+      recoverytime: Number.parseInt(object.effective('recoverytime')[0] ?? '5', 10) || 5,
+      updateStaticRoute: object.effective('update-static-route')[0] !== 'disable',
+      status: object.effective('status')[0] !== 'disable',
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeLinkMonitor(key);
+  },
+};
+
 export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_GLOBAL,
   SYSTEM_PASSWORD_POLICY,
@@ -1276,4 +1349,5 @@ export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_NTP,
   SYSTEM_SESSION_TTL,
   SYSTEM_SESSION_HELPER,
+  SYSTEM_LINK_MONITOR,
 ]);

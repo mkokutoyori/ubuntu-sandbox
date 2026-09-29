@@ -267,6 +267,12 @@ export function buildCommitDevice(
       applyLdbMonitor(monitor) {
         fw.getLdbMonitors().set(monitor);
       },
+      applyLinkMonitor(monitor) {
+        fw.getLinkMonitors().set(monitor);
+      },
+      removeLinkMonitor(name) {
+        fw.getLinkMonitors().remove(name);
+      },
       applyFragmentMemoryThreshold(megabytes) {
         fw.getFragmentReassembly().setThresholdMegabytes(megabytes);
       },
