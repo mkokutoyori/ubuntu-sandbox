@@ -56,12 +56,14 @@ import {
   openWireSshConnection, silentConnectIo, relayScriptedShell, wireReachOutcomeRetransmitting,
 } from '@/terminal/ssh/wireSshLogin';
 import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
-import { OPENSSH_WINDOWS_CLIENT_VERSION } from '@/network/protocols/ssh/serverIdentification';
+import { OPENSSH_WINDOWS_8_6 } from '@/network/protocols/ssh/OpenSshRelease';
 import { WINDOWS_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
 import { isOk } from '@/network/protocols/ssh/Result';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { SshAgent } from '@/network/protocols/ssh/SshAgent';
-import { runSshKeygenCommand, type SshKeygenHost } from '@/network/protocols/ssh/SshKeygenCommand';
+import {
+  runSshKeygenCommand, runSshKeygenInteractive, type SshKeygenHost, type SshKeygenTerminal,
+} from '@/network/protocols/ssh/SshKeygenCommand';
 import {
   runSshAddCommand, runSshAgentCommand, type SshAgentHost,
 } from '@/network/protocols/ssh/SshAgentCommands';
@@ -2211,18 +2213,22 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           const r = this.fs.readFile(this.fs.normalizePath(path, this.cwd));
           return r.ok ? (r.content ?? '') : null;
         },
-        write: (path: string, content: string) =>
-          this.fs.createFile(this.fs.normalizePath(path, this.cwd), content).ok,
-        ensureDir: (path: string) => {
-          const abs = this.fs.normalizePath(path, this.cwd);
-          if (!this.fs.exists(abs)) this.fs.mkdirp(abs);
+        write: (path: string, content: string) => {
+          const target = this.fs.normalizePath(path, this.cwd);
+          if (this.fs.createFile(target, content).ok) return null;
+          return this.fs.isDirectory(target.slice(0, target.lastIndexOf('\\')))
+            ? 'Permission denied'
+            : 'No such file or directory';
         },
+        isDirectory: (path: string) => this.fs.isDirectory(this.fs.normalizePath(path, this.cwd)),
+        makePrivateDirectory: (path: string) => { this.fs.mkdirp(this.fs.normalizePath(path, this.cwd)); },
       },
       separator: '\\',
       sshDir: this.sshProfileDir(),
       hostKeyDir: 'C:\\ProgramData\\ssh',
       user: this.userMgr.currentUser,
       hostname: this.hostname,
+      release: OPENSSH_WINDOWS_8_6,
     };
   }
 
@@ -2290,7 +2296,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private async cmdSsh(args: string[]): Promise<string> {
-    const withoutSession = sshReplyWithoutSession(args, OPENSSH_WINDOWS_CLIENT_VERSION);
+    const withoutSession = sshReplyWithoutSession(args, OPENSSH_WINDOWS_8_6);
     if (withoutSession) return withoutSession.output;
     const user = this.userMgr.currentUser;
     const sourceIp = this.firstConfiguredIp() ?? '127.0.0.1';
@@ -4359,6 +4365,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Override Equipment's hard-coded 'user' default so syncDeviceState
    *  reports the real currently-logged-in account on this Windows host. */
   getCurrentUser(): string { return this.userMgr.currentUser; }
+  runSshKeygenInteractive(args: readonly string[], terminal: SshKeygenTerminal): Promise<number> {
+    return runSshKeygenInteractive(args, this.keygenHost(), terminal);
+  }
 
   /** Get the service manager (for PowerShellExecutor and other integrations) */
   private lacpAgentInstance: LacpAgent | null = null;

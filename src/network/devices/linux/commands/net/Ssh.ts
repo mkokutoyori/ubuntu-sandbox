@@ -6,13 +6,13 @@ import { runThroughProxyJump } from '../../network/SshProxyJump';
 import { dialStream, parseDialAddress } from '@/network/tcp/dial';
 import { PortNumber } from '@/network/core/ports/PortNumber';
 import type { TcpConnector } from '@/network/tcp/types';
-import { OPENSSH_USAGE } from '@/network/protocols/ssh/SshClientCommandLine';
+import { OPENSSH_UBUNTU_22_04 } from '@/network/protocols/ssh/OpenSshRelease';
 
 export const sshCommand: LinuxCommand = {
   name: 'ssh',
   needsNetworkContext: true,
   manSection: 1,
-  usage: OPENSSH_USAGE,
+  usage: OPENSSH_UBUNTU_22_04.sshUsage,
   help: 'OpenSSH remote login client.',
   complete: makeArgCompleter({
     flags: ['-p', '-i', '-o', '-l', '-t', '-T', '-q', '-v', '-N', '-L', '-R', '-D', '-J', '-A'],
@@ -59,7 +59,7 @@ export async function runSsh(
   const expanded = jump.remaining.map((word) =>
     word === '~' ? client.home : word.startsWith('~/') ? client.home + word.slice(1) : word);
   const parsed = wireExecTarget(expanded, ctx.executor.vfs, ctx.executor.getCwd(), client.user);
-  if (!parsed) return { output: OPENSSH_USAGE, exitCode: 255 };
+  if (!parsed) return { output: OPENSSH_UBUNTU_22_04.sshUsage, exitCode: 255 };
   const target = parsed;
   return runThroughProxyJump({
     client,

@@ -212,6 +212,7 @@ import { SSH_SERVER_IDENTIFICATION_LINE } from '@/network/protocols/ssh/serverId
 import { buildLinuxInteractionPlan } from './linux/interaction/LinuxInteractionPlanner';
 import type { CommandInteractionPlan, InteractionPlanContext } from '@/shell/interaction/CommandInteraction';
 import { SnmpClientSession } from '@/network/snmp/SnmpClientSession';
+import type { SshKeygenTerminal } from '@/network/protocols/ssh/SshKeygenCommand';
 
 /**
  * Minimal sshd-style glob matcher: `*` matches any sequence including
@@ -4542,6 +4543,9 @@ export abstract class LinuxMachine extends EndHost
     return this.executor.getCompletions(partial);
   }
   getCurrentUser(): string { return this.executor.getCurrentUser(); }
+  runSshKeygenInteractive(args: readonly string[], terminal: SshKeygenTerminal): Promise<number> {
+    return this.executor.runSshKeygenInteractive(args, terminal);
+  }
   getCurrentUid(): number { return this.executor.getCurrentUid(); }
   handleExit(): { output: string; inSu: boolean } { return this.executor.handleExit(); }
   resetSession(): void { this.executor.resetSession(); }

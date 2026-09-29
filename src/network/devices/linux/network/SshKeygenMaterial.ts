@@ -1,5 +1,7 @@
 import { sha256 } from '@/crypto/hash/sha256';
 import { md5 } from '@/crypto/hash/md5';
+import { sha1 } from '@/crypto/hash/sha1';
+import { sha384, sha512 } from '@/crypto/hash/sha512';
 import { base64ToBytes, bytesToBase64, utf8ToBytes } from '@/crypto/encoding';
 import { ed25519PublicKey } from '@/crypto/ecc/ed25519';
 import { generateP256PrivateScalar, p256PublicKey, P256_FIELD_BYTES } from '@/crypto/ecc/p256';
@@ -80,9 +82,7 @@ function decodedOrLiteral(text: string): Uint8Array {
 }
 
 export function keygenBits(algorithm: string, requested?: number): number {
-  if (algorithm === 'ssh-rsa') {
-    return requested !== undefined && requested >= 1024 ? requested : 3072;
-  }
+  if (algorithm === 'ssh-rsa') return requested ?? 3072;
   return 256;
 }
 
@@ -287,13 +287,25 @@ export function keygenKeyFacts(publicLine: string): KeygenKeyFacts {
   };
 }
 
+const FINGERPRINT_HASHES: Readonly<Record<string, { readonly label: string; readonly digest: (bytes: Uint8Array) => Uint8Array }>> = {
+  md5: { label: 'MD5', digest: md5 },
+  sha1: { label: 'SHA1', digest: sha1 },
+  sha256: { label: 'SHA256', digest: sha256 },
+  sha384: { label: 'SHA384', digest: sha384 },
+  sha512: { label: 'SHA512', digest: sha512 },
+};
+
+export function isFingerprintHash(name: string): boolean {
+  return FINGERPRINT_HASHES[name.toLowerCase()] !== undefined;
+}
+
 export function keygenBlobDigest(blob: string, hash: string): string | null {
-  const wanted = hash.trim().toLowerCase() || 'sha256';
-  if (wanted !== 'sha256' && wanted !== 'md5') return null;
-  const bytes = decodedOrLiteral(blob);
-  return wanted === 'sha256'
-    ? `SHA256:${bytesToBase64(sha256(bytes)).replace(/=+$/, '')}`
-    : `MD5:${[...md5(bytes)].map(b => b.toString(16).padStart(2, '0')).join(':')}`;
+  const fingerprintHash = FINGERPRINT_HASHES[hash.trim().toLowerCase() || 'sha256'];
+  if (fingerprintHash === undefined) return null;
+  const digest = fingerprintHash.digest(decodedOrLiteral(blob));
+  return fingerprintHash.label === 'MD5'
+    ? `MD5:${[...digest].map(b => b.toString(16).padStart(2, '0')).join(':')}`
+    : `${fingerprintHash.label}:${bytesToBase64(digest).replace(/=+$/, '')}`;
 }
 
 export function keygenDigest(publicLine: string, hash: string): string | null {
@@ -304,7 +316,7 @@ export function keygenFingerprint(publicLine: string, hash: string): string | nu
   const digest = keygenDigest(publicLine, hash);
   if (digest === null) return null;
   const facts = keygenKeyFacts(publicLine);
-  return `${facts.bits} ${digest} ${facts.comment} (${facts.label})`;
+  return `${facts.bits} ${digest} ${facts.comment || 'no comment'} (${facts.label})`;
 }
 
 const RANDOMART_WIDTH = 17;
@@ -316,9 +328,10 @@ function randomartBorder(label: string): string {
   return `+${'-'.repeat(Math.max(0, left))}${label}${'-'.repeat(Math.max(0, RANDOMART_WIDTH - left - label.length))}+`;
 }
 
-export function keygenRandomart(publicLine: string): string {
+export function keygenRandomart(publicLine: string, hash = 'sha256'): string {
   const facts = keygenKeyFacts(publicLine);
-  const digest = sha256(decodedOrLiteral(publicLine.trim().split(/\s+/)[1] ?? ''));
+  const fingerprintHash = FINGERPRINT_HASHES[hash.toLowerCase()] ?? FINGERPRINT_HASHES.sha256;
+  const digest = fingerprintHash.digest(decodedOrLiteral(publicLine.trim().split(/\s+/)[1] ?? ''));
   const field = Array.from({ length: RANDOMART_WIDTH }, () => new Array<number>(RANDOMART_HEIGHT).fill(0));
   const last = RANDOMART_SYMBOLS.length - 1;
   const startX = Math.floor(RANDOMART_WIDTH / 2);
@@ -342,6 +355,6 @@ export function keygenRandomart(publicLine: string): string {
     for (let col = 0; col < RANDOMART_WIDTH; col++) line += RANDOMART_SYMBOLS[Math.min(field[col][row], last)];
     rows.push(`${line}|`);
   }
-  rows.push(randomartBorder('[SHA256]'));
+  rows.push(randomartBorder(`[${fingerprintHash.label}]`));
   return rows.join('\n');
 }

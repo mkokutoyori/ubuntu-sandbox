@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { sha512, sha512Hex, SHA512 } from '@/crypto/hash';
-import { utf8ToBytes } from '@/crypto/encoding';
+import { sha384, sha512, sha512Hex, SHA384, SHA512 } from '@/crypto/hash';
+import { bytesToHex, utf8ToBytes } from '@/crypto/encoding';
 
 describe('sha512Hex — FIPS 180-4 vectors', () => {
   it.each([
@@ -50,5 +50,25 @@ describe('SHA512 descriptor', () => {
   it('declares a 128-byte block and 64-byte digest', () => {
     expect(SHA512.blockSize).toBe(128);
     expect(SHA512.digestSize).toBe(64);
+  });
+});
+
+describe('sha384 — FIPS 180-4 vectors', () => {
+  it.each([
+    ['', '38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b'],
+    ['abc', 'cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7'],
+    [
+      'abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu',
+      '09330c33f71147e83d192fc782cd1b4753111b173b3b05d22fa08086e3b0f712fcc7c71a557e2db966c3e9fa91746039',
+    ],
+  ])('sha384(%j)', (input, expected) => {
+    expect(bytesToHex(sha384(utf8ToBytes(input)))).toBe(expected);
+  });
+
+  it('is a 48-byte digest over the 128-byte SHA-512 block', () => {
+    expect(SHA384.digestSize).toBe(48);
+    expect(SHA384.blockSize).toBe(128);
+    expect(bytesToHex(SHA384.createState().update(utf8ToBytes('ab')).update(utf8ToBytes('c')).digest()))
+      .toBe('cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7');
   });
 });

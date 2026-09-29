@@ -5,6 +5,7 @@
  */
 
 import type { Equipment } from './Equipment';
+import type { SshKeygenTerminal } from '@/network/protocols/ssh/SshKeygenCommand';
 
 /** Validates <user, password> against the device's local credential store. */
 export interface CredentialAuthenticator {
@@ -63,6 +64,14 @@ export function isFileEditorHost(dev: unknown): dev is FileEditorHost {
     && hasFn(dev, 'resolveAbsolutePath')
     && hasFn(dev, 'readFileForEditor')
     && hasFn(dev, 'writeFileFromEditor');
+}
+
+export interface SshKeygenCapableHost {
+  runSshKeygenInteractive(args: readonly string[], terminal: SshKeygenTerminal): Promise<number>;
+}
+
+export function isSshKeygenCapableHost(dev: unknown): dev is SshKeygenCapableHost {
+  return hasFn(dev, 'runSshKeygenInteractive');
 }
 
 /**

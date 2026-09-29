@@ -26,9 +26,7 @@ import { SshKnownHostsFile, type SshHostKeyType } from '@/network/protocols/ssh/
 import { readForceCommand, readMaxAuthTries } from '@/network/devices/linux/network/LinuxSshClient';
 import { receivedDisconnectLines } from '@/network/protocols/ssh/session/SshSession';
 import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
-import {
-  OPENSSH_UBUNTU_CLIENT_VERSION, OPENSSH_WINDOWS_CLIENT_VERSION,
-} from '@/network/protocols/ssh/serverIdentification';
+import { OPENSSH_UBUNTU_22_04, OPENSSH_WINDOWS_8_6 } from '@/network/protocols/ssh/OpenSshRelease';
 import { SSHD_MAX_AUTH_TRIES_REASON } from '@/network/protocols/ssh/server/ISshServerContext';
 export { SSH_PASSWORD_PROMPTS } from '@/network/protocols/ssh/session/SshSession';
 import { transportLiveness, establishedSessionLiveness } from '@/network/protocols/ssh/sessionLiveness';
@@ -163,10 +161,8 @@ export async function tryInterpretSshLaunch(
   const parsed = parseSshLine(line);
   if (!parsed) return null;
 
-  const clientVersion = opts.sourceDevice?.getOSType?.() === 'windows'
-    ? OPENSSH_WINDOWS_CLIENT_VERSION
-    : OPENSSH_UBUNTU_CLIENT_VERSION;
-  const withoutSession = sshReplyWithoutSession(line.trim().split(/\s+/).slice(1), clientVersion);
+  const release = opts.sourceDevice?.getOSType?.() === 'windows' ? OPENSSH_WINDOWS_8_6 : OPENSSH_UBUNTU_22_04;
+  const withoutSession = sshReplyWithoutSession(line.trim().split(/\s+/).slice(1), release);
   if (withoutSession) {
     return {
       kind: withoutSession.exitCode === 0 ? 'noop' : 'error',

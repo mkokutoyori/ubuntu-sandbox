@@ -102,13 +102,14 @@ import {
   SshConnectOptionsBuilder,
   type SshClientAuthentication,
 } from '@/network/protocols/ssh/SshConnectOptions';
-import { OPENSSH_USAGE, sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
-import { OPENSSH_UBUNTU_CLIENT_VERSION } from '@/network/protocols/ssh/serverIdentification';
+import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
+import { OPENSSH_UBUNTU_22_04 } from '@/network/protocols/ssh/OpenSshRelease';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { TerminalSshInteractionHandler } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
 import { QueuedTerminalIO, QueuedTerminalIOCancelled } from '@/network/protocols/ssh/session/QueuedTerminalIO';
 import { isOk } from '@/network/protocols/ssh/Result';
-import { defaultKeygenFile } from '@/network/protocols/ssh/SshKeygenCommand';
+import { isSshKeygenCapableHost } from '@/network/equipment/HostCapabilities';
+import { splitShellWords } from '@/bash/runtime/ShellWords';
 import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
 import { parseScpArgs } from '@/network/protocols/ssh/Scp';
 import { SshConfig } from '@/network/protocols/ssh/SshConfig';
@@ -1558,8 +1559,8 @@ export class LinuxTerminalSession extends TerminalSession {
         await this.enterTelnet(parts.slice(1));
         return;
       }
-      if (parts[0] === 'ssh-keygen') {
-        await this.enterSshKeygen(parts.slice(1));
+      if (parts[0] === 'ssh-keygen' && !/[$`|;&<>()*?]/.test(noSudo)) {
+        await this.enterSshKeygen(splitShellWords(noSudo).words.slice(1));
         return;
       }
       if (parts[0] === 'ssh-copy-id') {
@@ -2329,23 +2330,6 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     // enter_ssh is no longer set — enterSsh() now calls connectAndEnterSsh()
     // directly using the reactive QueuedTerminalIO approach.
-    const sshKeygenMeta = ctx.metadata.get('enter_ssh_keygen') as string | undefined;
-    if (sshKeygenMeta) {
-      const meta = JSON.parse(sshKeygenMeta) as { args: string[]; defaultFile: string };
-      const filePath = (ctx.values.get('keygen_file') ?? '').trim() || meta.defaultFile;
-      const passphrase = ctx.values.get('keygen_passphrase') ?? '';
-      const confirm = ctx.values.get('keygen_passphrase_confirm') ?? '';
-      if (passphrase !== confirm) {
-        this.addLine('Passphrases do not match.  Try again.', 'error');
-        this.notify();
-        return;
-      }
-      const expandedArgs = [...meta.args];
-      if (!expandedArgs.includes('-f')) expandedArgs.push('-f', filePath);
-      if (!expandedArgs.includes('-N')) expandedArgs.push('-N', passphrase);
-      void this.runSshKeygen(expandedArgs);
-      return;
-    }
     const sshCopyMeta = ctx.metadata.get('enter_ssh_copy_id') as string | undefined;
     if (sshCopyMeta) {
       const meta = JSON.parse(sshCopyMeta) as {
@@ -2721,10 +2705,10 @@ export class LinuxTerminalSession extends TerminalSession {
    * Supported flags: -p <port>, -i <keyfile>, -o StrictHostKeyChecking=value.
    */
   private async enterSsh(args: string[]): Promise<void> {
-    const withoutSession = sshReplyWithoutSession(args, OPENSSH_UBUNTU_CLIENT_VERSION);
+    const withoutSession = sshReplyWithoutSession(args, OPENSSH_UBUNTU_22_04);
     const parsed = withoutSession ? null : parseSshArgs(args);
     if (!parsed) {
-      for (const line of (withoutSession?.output ?? OPENSSH_USAGE).split('\n')) {
+      for (const line of (withoutSession?.output ?? OPENSSH_UBUNTU_22_04.sshUsage).split('\n')) {
         this.addLine(line, withoutSession?.exitCode === 0 ? 'normal' : 'error');
       }
       this.notify();
@@ -3183,80 +3167,19 @@ export class LinuxTerminalSession extends TerminalSession {
     };
   }
 
-  // ── ssh-keygen ──────────────────────────────────────────────────
-
-  /**
-   * `ssh-keygen` entry point. When invoked with `-f` and `-N` flags it
-   * runs non-interactively. Otherwise OpenSSH prompts the user for a
-   * destination file and a passphrase (BRD SSH-03-R1..R4, R10).
-   */
   private async enterSshKeygen(args: string[]): Promise<void> {
-    const dev = this.device as unknown as {
-      executor?: {
-        userMgr?: { getUser(name: string): { home?: string } | undefined };
-      };
-    };
-    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
-    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
-    const typeIndex = args.indexOf('-t');
-    const defaultFile = defaultKeygenFile(
-      { separator: '/', sshDir: `${homeDir}/.ssh` },
-      typeIndex >= 0 ? (args[typeIndex + 1] ?? '').toLowerCase() : 'ed25519',
-    );
-    const hasFlagF = args.includes('-f');
-    const hasFlagN = args.includes('-N');
-
-    // Both -f and -N supplied → non-interactive.
-    if (hasFlagF && hasFlagN) {
-      void this.runSshKeygen(args);
-      return;
-    }
-
-    // Build an interactive flow: file path → passphrase → confirm passphrase.
-    const steps: InteractiveStep[] = [];
-    if (!hasFlagF) {
-      steps.push({
-        type: 'text',
-        prompt: `Enter file in which to save the key (${defaultFile}): `,
-        storeAs: 'keygen_file',
-      });
-    }
-    if (!hasFlagN) {
-      steps.push({
-        type: 'password',
-        prompt: `Enter passphrase (empty for no passphrase): `,
-        mask: 'hidden',
-        storeAs: 'keygen_passphrase',
-      });
-      steps.push({
-        type: 'password',
-        prompt: `Enter same passphrase again: `,
-        mask: 'hidden',
-        storeAs: 'keygen_passphrase_confirm',
-      });
-    }
-    steps.push({
-      type: 'execute',
-      action: async (ctx: FlowContext) => {
-        ctx.metadata.set(
-          'enter_ssh_keygen',
-          JSON.stringify({ args, defaultFile }),
-        );
-      },
-    });
-    this.startFlowFromSteps(steps, `ssh-keygen ${args.join(' ')}`);
-  }
-
-  private async runSshKeygen(args: string[]): Promise<void> {
-    const dev = this.device as unknown as { executeCommand?(line: string): Promise<string> | string };
-    if (typeof dev.executeCommand !== 'function') {
+    if (!isSshKeygenCapableHost(this.device)) {
       this.addLine('ssh-keygen: this device has no filesystem', 'error');
       this.notify();
       return;
     }
-    const quoted = args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
-    const out = await dev.executeCommand(`ssh-keygen ${quoted}`);
-    for (const line of String(out).split('\n')) this.addLine(line);
+    const broker = new PromiseInputBrokerLib(this.getInputHost());
+    await this.device.runSshKeygenInteractive(args, {
+      print: (line) => { this.addLine(line); this.notify(); },
+      ask: (prompt, hidden) => hidden
+        ? broker.password(prompt, { trim: false })
+        : broker.ask(prompt, { trim: false }),
+    });
     this.notify();
   }
 

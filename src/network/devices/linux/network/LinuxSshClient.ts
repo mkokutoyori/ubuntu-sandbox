@@ -19,8 +19,8 @@
 import { findHostByAddress, isPathReachable } from './HostLookup';
 import { sshUnreachableReason, wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
-import { OPENSSH_USAGE, sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
-import { OPENSSH_UBUNTU_CLIENT_VERSION } from '@/network/protocols/ssh/serverIdentification';
+import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
+import { OPENSSH_UBUNTU_22_04 } from '@/network/protocols/ssh/OpenSshRelease';
 import { IPAddress } from '../../../core/types';
 import { parseDialAddress } from '../../../tcp/dial';
 import type { TcpWireOutcome } from '../../../tcp/types';
@@ -814,7 +814,7 @@ function verdictFromWireAlone(
 }
 
 export function runSshClient(opts: SshClientOpts): SshClientResult {
-  const withoutSession = sshReplyWithoutSession(opts.args, OPENSSH_UBUNTU_CLIENT_VERSION);
+  const withoutSession = sshReplyWithoutSession(opts.args, OPENSSH_UBUNTU_22_04);
   if (withoutSession) return withoutSession;
   const { positional, flags } = splitSshArgs(opts.args);
   const target = positional[0];
@@ -852,7 +852,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
   if (!target) {
-    return { output: OPENSSH_USAGE, exitCode: 255 };
+    return { output: OPENSSH_UBUNTU_22_04.sshUsage, exitCode: 255 };
   }
 
   const parsed = RE_USERHOST.exec(target);

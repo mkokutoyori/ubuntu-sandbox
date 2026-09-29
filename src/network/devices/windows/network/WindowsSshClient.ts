@@ -21,7 +21,7 @@ import {
 } from '../../../protocols/ssh/SshConnectOptions';
 import { wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
-import { OPENSSH_USAGE } from '@/network/protocols/ssh/SshClientCommandLine';
+import { OPENSSH_WINDOWS_8_6 } from '@/network/protocols/ssh/OpenSshRelease';
 import type { TcpWireOutcome } from '@/network/tcp/types';
 
 export interface WinSshClientResult {
@@ -230,7 +230,7 @@ export async function runWindowsSshClient(
     };
   }
   if (!target) {
-    return { output: OPENSSH_USAGE, exitCode: 255 };
+    return { output: OPENSSH_WINDOWS_8_6.sshUsage, exitCode: 255 };
   }
 
   const parsed = RE_USERHOST.exec(target);

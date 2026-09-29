@@ -11,6 +11,7 @@ import type { HashAlgorithm, IncrementalHash } from './HashAlgorithm';
 
 const BLOCK_SIZE = 128; // 1024 bits
 const DIGEST_SIZE = 64; // 512 bits
+const SHA384_DIGEST_SIZE = 48;
 
 // Round constants (first 64 bits of the fractional parts of the cube roots of
 // the first 80 primes), split into hi/lo 32-bit halves.
@@ -45,6 +46,11 @@ const H_INIT = new Uint32Array([
   0x510e527f, 0xade682d1, 0x9b05688c, 0x2b3e6c1f, 0x1f83d9ab, 0xfb41bd6b, 0x5be0cd19, 0x137e2179,
 ]);
 
+const H384_INIT = new Uint32Array([
+  0xcbbb9d5d, 0xc1059ed8, 0x629a292a, 0x367cd507, 0x9159015a, 0x3070dd17, 0x152fecd8, 0xf70e5939,
+  0x67332667, 0xffc00b31, 0x8eb44a87, 0x68581511, 0xdb0c2e0d, 0x64f98fa7, 0x47b5481d, 0xbefa4fa4,
+]);
+
 // Message-schedule scratch shared by all states. Safe because JS is
 // single-threaded and compressBlock never re-enters; sharing avoids two
 // 80-word allocations per state clone (PBKDF2 clones twice per round).
@@ -57,12 +63,14 @@ export class Sha512State implements IncrementalHash {
   private readonly buf: Uint8Array;
   private bufLen: number;
   private totalBytes: number;
+  private readonly digestSize: number;
 
-  constructor(src?: Sha512State) {
-    this.h = src ? Uint32Array.from(src.h) : Uint32Array.from(H_INIT);
+  constructor(src?: Sha512State, initial: Uint32Array = H_INIT, digestSize = DIGEST_SIZE) {
+    this.h = src ? Uint32Array.from(src.h) : Uint32Array.from(initial);
     this.buf = src ? Uint8Array.from(src.buf) : new Uint8Array(BLOCK_SIZE);
     this.bufLen = src ? src.bufLen : 0;
     this.totalBytes = src ? src.totalBytes : 0;
+    this.digestSize = src ? src.digestSize : digestSize;
   }
 
   update(data: Uint8Array): this {
@@ -110,8 +118,8 @@ export class Sha512State implements IncrementalHash {
     for (let off = 0; off < tail.length; off += BLOCK_SIZE) {
       compressBlock(h, tail, off);
     }
-    const out = new Uint8Array(DIGEST_SIZE);
-    for (let i = 0; i < 16; i++) {
+    const out = new Uint8Array(this.digestSize);
+    for (let i = 0; i < this.digestSize / 4; i++) {
       out[i * 4] = (h[i] >>> 24) & 0xff;
       out[i * 4 + 1] = (h[i] >>> 16) & 0xff;
       out[i * 4 + 2] = (h[i] >>> 8) & 0xff;
@@ -136,6 +144,17 @@ export const SHA512: HashAlgorithm = {
   digestSize: DIGEST_SIZE,
   digest: sha512,
   createState: () => new Sha512State(),
+};
+
+export function sha384(input: Uint8Array): Uint8Array {
+  return new Sha512State(undefined, H384_INIT, SHA384_DIGEST_SIZE).update(input).digest();
+}
+
+export const SHA384: HashAlgorithm = {
+  blockSize: BLOCK_SIZE,
+  digestSize: SHA384_DIGEST_SIZE,
+  digest: sha384,
+  createState: () => new Sha512State(undefined, H384_INIT, SHA384_DIGEST_SIZE),
 };
 
 // ─── Compression ──────────────────────────────────────────────────────────

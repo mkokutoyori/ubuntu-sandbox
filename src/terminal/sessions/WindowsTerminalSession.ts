@@ -15,7 +15,7 @@ import { Equipment } from '@/network';
 import { primaryShellKindFor } from '@/shell/shellKind';
 import { SSH_PASSWORD_PROMPTS } from '@/shell/sshLauncher';
 import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
-import { OPENSSH_WINDOWS_CLIENT_VERSION } from '@/network/protocols/ssh/serverIdentification';
+import { OPENSSH_WINDOWS_8_6 } from '@/network/protocols/ssh/OpenSshRelease';
 import {
   TerminalSession, TerminalTheme, SessionType, KeyEvent, nextLineId,
   withTimeout, DeviceOfflineError,
@@ -847,7 +847,7 @@ export class WindowsTerminalSession extends TerminalSession {
     if (this.tryStartWinPathpingStream(trimmed)) return;
 
     const withoutSession = lower === 'ssh' || lower.startsWith('ssh ')
-      ? sshReplyWithoutSession(trimmed.split(/\s+/).slice(1), OPENSSH_WINDOWS_CLIENT_VERSION)
+      ? sshReplyWithoutSession(trimmed.split(/\s+/).slice(1), OPENSSH_WINDOWS_8_6)
       : null;
     if (withoutSession) {
       for (const line of withoutSession.output.split('\n')) this.addLine(line);

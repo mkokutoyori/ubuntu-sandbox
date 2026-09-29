@@ -1,6 +1,6 @@
 export type ShortOption =
   | { readonly kind: 'option'; readonly letter: string; readonly argument?: string }
-  | { readonly kind: 'operand'; readonly value: string }
+  | { readonly kind: 'operand'; readonly value: string; readonly index: number }
   | { readonly kind: 'invalid'; readonly letter: string }
   | { readonly kind: 'missing-argument'; readonly letter: string; readonly long?: string }
   | { readonly kind: 'unrecognized'; readonly token: string }
@@ -59,7 +59,7 @@ export function* shortOptions(
     const token = args[i];
     if (optionsEnded || token === '-' || !token.startsWith('-')) {
       if (stopAtFirstOperand) optionsEnded = true;
-      yield { kind: 'operand', value: token };
+      yield { kind: 'operand', value: token, index: i };
       continue;
     }
     if (token === '--') {
@@ -106,4 +106,10 @@ export function getoptDiagnostic(program: string, failure: GetoptFailure): strin
     case 'needless-argument':
       return `${program}: option '--${failure.long}' doesn't allow an argument`;
   }
+}
+
+export function bsdGetoptDiagnostic(failure: Extract<GetoptFailure, { kind: 'invalid' | 'missing-argument' }>): string {
+  return failure.kind === 'invalid'
+    ? `unknown option -- ${failure.letter}`
+    : `option requires an argument -- ${failure.letter}`;
 }

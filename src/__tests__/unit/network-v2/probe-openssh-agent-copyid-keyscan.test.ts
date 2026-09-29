@@ -39,7 +39,7 @@ beforeEach(() => {
   Logger.reset();
 });
 
-const CLE = '/root/.ssh/id_ed25519';
+const CLE = '/home/user/.ssh/id_ed25519';
 
 async function poste(): Promise<LinuxPC> {
   const pc = new LinuxPC('linux-pc', 'PC1');

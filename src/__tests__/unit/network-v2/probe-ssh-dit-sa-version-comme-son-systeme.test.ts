@@ -14,7 +14,8 @@
  *   « OpenSSH_8.9p1 Ubuntu-3ubuntu0.6, OpenSSL 3.0.2 15 Mar 2022 » ;
  * - Windows 11 22H2/23H2 (le simulateur rend la version 10.0.22631) : le
  *   client livre avec le systeme se presente « OpenSSH_for_Windows_8.6p1,
- *   LibreSSL 3.4.3 » (PowerShell/Win32-OpenSSH, issue #2039).
+ *   LibreSSL 3.4.3 » (PowerShell/Win32-OpenSSH, issue #2039). L'usage de
+ *   8.6 finit sa derniere ligne par « destination [command] ».
  *
  * Ecrite a l'aveugle contre ces sources, avant de lire les chemins.
  * 10 des 11 cas tombent avant le correctif. Passe des deux cotes le TEMOIN
@@ -42,7 +43,7 @@ beforeEach(() => {
 
 const UBUNTU = 'OpenSSH_8.9p1 Ubuntu-3ubuntu0.6, OpenSSL 3.0.2 15 Mar 2022';
 const WINDOWS = 'OpenSSH_for_Windows_8.6p1, LibreSSL 3.4.3';
-const USAGE = [
+const USAGE_8_9 = [
   'usage: ssh [-46AaCfGgKkMNnqsTtVvXxYy] [-B bind_interface]',
   '           [-b bind_address] [-c cipher_spec] [-D [bind_address:]port]',
   '           [-E log_file] [-e escape_char] [-F configfile] [-I pkcs11]',
@@ -51,6 +52,7 @@ const USAGE = [
   '           [-Q query_option] [-R address] [-S ctl_path] [-W host:port]',
   '           [-w local_tun[:remote_tun]] destination [command [argument ...]]',
 ].join('\n');
+const USAGE_8_6 = USAGE_8_9.replace('destination [command [argument ...]]', 'destination [command]');
 
 const key = (k: string): KeyEvent => ({ key: k, ctrlKey: false, altKey: false, metaKey: false, shiftKey: false });
 
@@ -98,11 +100,11 @@ describe('Ubuntu 22.04', () => {
   });
 
   it('without a destination, ssh prints its usage', async () => {
-    expect((await linux().executeCommand('ssh')).trim()).toBe(USAGE);
+    expect((await linux().executeCommand('ssh')).trim()).toBe(USAGE_8_9);
   });
 
   it('-v alone is verbosity, not the version: usage again', async () => {
-    expect((await linux().executeCommand('ssh -v')).trim()).toBe(USAGE);
+    expect((await linux().executeCommand('ssh -v')).trim()).toBe(USAGE_8_9);
   });
 
   it('the terminal answers ssh -V like the command', async () => {
@@ -116,7 +118,7 @@ describe('Windows 11 23H2', () => {
   });
 
   it('without a destination, ssh prints its usage', async () => {
-    expect((await windows().executeCommand('ssh')).trim()).toBe(USAGE);
+    expect((await windows().executeCommand('ssh')).trim()).toBe(USAGE_8_6);
   });
 
   it('the terminal answers ssh -V like the command', async () => {
@@ -124,6 +126,6 @@ describe('Windows 11 23H2', () => {
   });
 
   it('the terminal treats ssh -v as verbosity: usage, not the version', async () => {
-    expect(await typed(new WindowsTerminalSession('w2', windows()), 'ssh -v')).toBe(USAGE);
+    expect(await typed(new WindowsTerminalSession('w2', windows()), 'ssh -v')).toBe(USAGE_8_6);
   });
 });

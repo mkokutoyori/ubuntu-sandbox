@@ -132,7 +132,10 @@ import { runSshClient, wireExecTarget } from './network/LinuxSshClient';
 import { wireReachOutcomeRetransmitting } from '@/terminal/ssh/wireSshLogin';
 import { BSD_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
 import { parseDialAddress } from '@/network/tcp/dial';
-import { runSshKeygenCommand, vfsKeygenHost, type SshKeygenHost } from '@/network/protocols/ssh/SshKeygenCommand';
+import {
+  runSshKeygenCommand, runSshKeygenInteractive as runSshKeygenInteractiveOn, vfsKeygenHost,
+  type SshKeygenHost, type SshKeygenTerminal,
+} from '@/network/protocols/ssh/SshKeygenCommand';
 import {
   runSshAddCommand, runSshAgentCommand, type SshAgentHost,
 } from '@/network/protocols/ssh/SshAgentCommands';
@@ -161,7 +164,7 @@ import { SshSession } from '../../protocols/ssh/session/SshSession';
 import { connectWireSsh, type StrictHostKeyChecking, type WireSshClient } from './network/WireSshConnector';
 import type { SshClientAuthentication } from '../../protocols/ssh/SshConnectOptions';
 import { sshReplyWithoutSession } from '../../protocols/ssh/SshClientCommandLine';
-import { OPENSSH_UBUNTU_CLIENT_VERSION } from '../../protocols/ssh/serverIdentification';
+import { OPENSSH_UBUNTU_22_04 } from '../../protocols/ssh/OpenSshRelease';
 import { isOk } from '../../protocols/ssh/Result';
 import type { TcpConnector } from '@/network/tcp/types';
 import {
@@ -1666,7 +1669,7 @@ export class LinuxCommandExecutor {
     rawArgs: string[], offeredPassword?: string,
   ): Promise<{ output: string; exitCode: number }> {
     const args = rawArgs.map(word => this.expandTilde(word));
-    const withoutSession = sshReplyWithoutSession(args, OPENSSH_UBUNTU_CLIENT_VERSION);
+    const withoutSession = sshReplyWithoutSession(args, OPENSSH_UBUNTU_22_04);
     if (withoutSession) return withoutSession;
     const stdinPwd = (offeredPassword
       ?? this._scenarioStdin ?? '')
@@ -2103,11 +2106,17 @@ export class LinuxCommandExecutor {
       user: this.userMgr.currentUser,
       hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
       sshDir: `${this.sshHomeDir()}/.ssh`,
+      cwd: this.cwd,
+      release: OPENSSH_UBUNTU_22_04,
     });
   }
 
-  private runSshKeygen(args: string[]): { output: string; exitCode: number } {
-    return runSshKeygenCommand(args, this.keygenHost());
+  private runSshKeygen(args: string[], stdin?: string): { output: string; exitCode: number } {
+    return runSshKeygenCommand(args, this.keygenHost(), stdin);
+  }
+
+  runSshKeygenInteractive(args: readonly string[], terminal: SshKeygenTerminal): Promise<number> {
+    return runSshKeygenInteractiveOn(args.map(word => this.expandTilde(word)), this.keygenHost(), terminal);
   }
 
   /**
@@ -5566,7 +5575,7 @@ export class LinuxCommandExecutor {
       case 'ssh-agent':
         return runSshAgentCommand(args, this.agentHost());
       case 'ssh-keyscan': return this.runSshKeyscan(args);
-      case 'ssh-keygen':  return this.runSshKeygen(args);
+      case 'ssh-keygen':  return this.runSshKeygen(args, stdin);
       case 'ssh-copy-id': return this.runSshCopyId(args);
       case 'xargs': {
         const r = runXargs(args, stdin, {

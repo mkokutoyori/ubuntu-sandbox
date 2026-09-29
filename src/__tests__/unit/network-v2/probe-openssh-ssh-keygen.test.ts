@@ -49,7 +49,7 @@ function windows(): WindowsPC {
   return pc;
 }
 
-const LINUX_KEY = '/root/.ssh/essai';
+const LINUX_KEY = '/home/user/.ssh/essai';
 
 describe('ssh-keygen : la generation imprime les cinq lignes d OpenSSH', () => {
   it('Linux : les cinq lignes, dans l ordre', async () => {

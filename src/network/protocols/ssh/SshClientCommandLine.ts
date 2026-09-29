@@ -1,47 +1,32 @@
-export const OPENSSH_USAGE = [
-  'usage: ssh [-46AaCfGgKkMNnqsTtVvXxYy] [-B bind_interface]',
-  '           [-b bind_address] [-c cipher_spec] [-D [bind_address:]port]',
-  '           [-E log_file] [-e escape_char] [-F configfile] [-I pkcs11]',
-  '           [-i identity_file] [-J [user@]host[:port]] [-L address]',
-  '           [-l login_name] [-m mac_spec] [-O ctl_cmd] [-o option] [-p port]',
-  '           [-Q query_option] [-R address] [-S ctl_path] [-W host:port]',
-  '           [-w local_tun[:remote_tun]] destination [command [argument ...]]',
-].join('\n');
+import { bsdGetoptDiagnostic, shortOptions } from '@/network/devices/linux/commands/Getopt';
+import type { OpenSshRelease } from './OpenSshRelease';
 
-const FLAG_OPTIONS = new Set('1246afgknqstvxACGKMNPTVXYy');
-const VALUE_OPTIONS = new Set('bceilmopBDEFIJLOQRSwW');
+const SSH_OPTSTRING = '+1246ab:c:e:fgi:kl:m:no:p:qstvxAB:CD:E:F:GI:J:KL:MNO:PQ:R:S:TVw:W:XYy';
 
 export interface SshReplyWithoutSession {
   readonly output: string;
   readonly exitCode: number;
 }
 
-export function sshReplyWithoutSession(
-  args: readonly string[], clientVersion: string,
-): SshReplyWithoutSession | null {
-  const usage = { output: OPENSSH_USAGE, exitCode: 255 };
-  let destination = false;
-  let terminated = false;
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (terminated || !arg.startsWith('-') || arg === '-') {
-      if (destination) break;
-      destination = true;
-      continue;
+function earlyReply(args: readonly string[], release: OpenSshRelease): SshReplyWithoutSession | number {
+  for (const option of shortOptions(args, SSH_OPTSTRING)) {
+    if (option.kind === 'operand') return option.index;
+    if (option.kind === 'invalid' || option.kind === 'missing-argument') {
+      return { output: `${bsdGetoptDiagnostic(option)}\n${release.sshUsage}`, exitCode: 255 };
     }
-    if (arg === '--') {
-      terminated = true;
-      continue;
-    }
-    for (let c = 1; c < arg.length; c++) {
-      const letter = arg[c];
-      if (letter === 'V') return { output: clientVersion, exitCode: 0 };
-      if (VALUE_OPTIONS.has(letter)) {
-        if (c === arg.length - 1) i++;
-        break;
-      }
-      if (!FLAG_OPTIONS.has(letter)) return usage;
-    }
+    if (option.kind !== 'option') continue;
+    if (option.letter === 'V') return { output: release.clientVersion, exitCode: 0 };
+    if (option.letter === '1') return { output: 'SSH protocol v.1 is no longer supported', exitCode: 255 };
   }
-  return destination ? null : usage;
+  return args.length;
+}
+
+export function sshReplyWithoutSession(
+  args: readonly string[], release: OpenSshRelease,
+): SshReplyWithoutSession | null {
+  const beforeDestination = earlyReply(args, release);
+  if (typeof beforeDestination !== 'number') return beforeDestination;
+  if (beforeDestination >= args.length) return { output: release.sshUsage, exitCode: 255 };
+  const afterDestination = earlyReply(args.slice(beforeDestination + 1), release);
+  return typeof afterDestination === 'number' ? null : afterDestination;
 }
