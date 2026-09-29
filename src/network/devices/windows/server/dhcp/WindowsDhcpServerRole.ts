@@ -18,7 +18,7 @@
 
 import type { EndHost } from '@/network/devices/EndHost';
 import { DHCPServer } from '@/network/dhcp/DHCPServer';
-import { DHCPPacket, DHCP_OPTION } from '@/network/dhcp/DHCPPacket';
+import { DHCPPacket, DHCP_OPTION, DHCP_WIRE_BYTES } from '@/network/dhcp/DHCPPacket';
 import { buildDhcpServerReply } from '@/network/dhcp/DhcpServerExchange';
 import type { DHCPBinding } from '@/network/dhcp/types';
 import type { DhcidRecordData } from '@/network/dns/wire/ResourceRecord';
@@ -226,7 +226,6 @@ export class WindowsDhcpServerRole {
     });
     if (!reply) return;
     this.syncDnsForExchange(pkt, reply);
-    reply.giaddr = pkt.giaddr;
     if (relayAgent) this.sendReplyToRelay(relayAgent, reply);
     else this.sendReply(inPort, reply);
   }
@@ -319,7 +318,7 @@ export class WindowsDhcpServerRole {
 
   private sendReplyToRelay(relayAgent: string, reply: DHCPPacket): void {
     const sent = this.host.sendUdpDatagram(
-      new IPAddress(relayAgent), DHCP_SERVER_PORT, DHCP_SERVER_PORT, reply, 300,
+      new IPAddress(relayAgent), DHCP_SERVER_PORT, DHCP_SERVER_PORT, reply, DHCP_WIRE_BYTES,
     );
     if (sent) return;
     this.host.getBus().publish({
@@ -338,9 +337,9 @@ export class WindowsDhcpServerRole {
     if (!port || !srcIp) return;
     const udp: UDPPacket = {
       type: 'udp', sourcePort: DHCP_SERVER_PORT, destinationPort: DHCP_CLIENT_PORT,
-      length: 8 + 300, checksum: 0, payload: reply,
+      length: 8 + DHCP_WIRE_BYTES, checksum: 0, payload: reply,
     };
-    const ipPkt = createIPv4Packet(srcIp, new IPAddress('255.255.255.255'), IP_PROTO_UDP, 64, udp, 8 + 300);
+    const ipPkt = createIPv4Packet(srcIp, new IPAddress('255.255.255.255'), IP_PROTO_UDP, 64, udp, 8 + DHCP_WIRE_BYTES);
     this.host.sendFrame(inPort, {
       srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
       etherType: ETHERTYPE_IPV4, payload: ipPkt,

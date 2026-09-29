@@ -1,10 +1,9 @@
 import { IP_PROTO_UDP, IPAddress, createIPv4Packet, type IPv4Packet, type UDPPacket } from '../core/types';
 import { DHCP_SERVER_PORT } from '../core/WellKnownPorts';
 import type { IEventBus } from '../../events/EventBus';
-import type { DHCPPacket } from './DHCPPacket';
+import { DHCP_WIRE_BYTES, type DHCPPacket } from './DHCPPacket';
 
 const MAX_RELAY_HOPS = 16;
-const RELAYED_DHCP_BYTES = 300;
 
 export interface DhcpRelayHost {
   readonly deviceId: string;
@@ -47,10 +46,10 @@ export function relayDhcpRequest(
   for (const server of servers) {
     const udp: UDPPacket = {
       type: 'udp', sourcePort: DHCP_SERVER_PORT, destinationPort: DHCP_SERVER_PORT,
-      length: 8 + RELAYED_DHCP_BYTES, checksum: 0, payload: request,
+      length: 8 + DHCP_WIRE_BYTES, checksum: 0, payload: request,
     };
     host.sendToServer(new IPAddress(server),
-      createIPv4Packet(new IPAddress(request.giaddr), new IPAddress(server), IP_PROTO_UDP, 64, udp, 8 + RELAYED_DHCP_BYTES));
+      createIPv4Packet(new IPAddress(request.giaddr), new IPAddress(server), IP_PROTO_UDP, 64, udp, 8 + DHCP_WIRE_BYTES));
   }
   host.countForward();
   host.bus().publish({

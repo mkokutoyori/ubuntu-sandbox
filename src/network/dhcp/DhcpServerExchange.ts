@@ -42,11 +42,34 @@ function clientHostName(pkt: DHCPPacket): string | undefined {
   return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
 }
 
+export type DhcpReplyRoute =
+  | { readonly kind: 'relay'; readonly relay: string }
+  | { readonly kind: 'broadcast' }
+  | { readonly kind: 'unicast'; readonly address: string };
+
+const BROADCAST_FLAG = 0x8000;
+
+export function dhcpReplyRoute(request: DHCPPacket, reply: DHCPPacket): DhcpReplyRoute {
+  if (request.giaddr !== '0.0.0.0') return { kind: 'relay', relay: request.giaddr };
+  if (reply.getMessageType() === 'DHCPNAK') return { kind: 'broadcast' };
+  if (request.ciaddr !== '0.0.0.0') return { kind: 'unicast', address: request.ciaddr };
+  if ((request.flags & BROADCAST_FLAG) !== 0 || reply.yiaddr === '0.0.0.0') return { kind: 'broadcast' };
+  return { kind: 'unicast', address: reply.yiaddr };
+}
+
 /**
  * Returns the packet to send back, or null when the request needs no
  * reply (RELEASE, DECLINE, or no address available).
  */
 export function buildDhcpServerReply(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket | null {
+  const reply = answerDhcpRequest(pkt, ctx);
+  if (reply === null) return null;
+  reply.giaddr = pkt.giaddr;
+  reply.flags = pkt.flags;
+  return reply;
+}
+
+function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket | null {
   const { server } = ctx;
   const giaddr = pkt.giaddr !== '0.0.0.0' ? pkt.giaddr : undefined;
   const type = pkt.getMessageType();

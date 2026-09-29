@@ -121,7 +121,7 @@ import { machineIdFor } from './host/hardware/HardwareIdentity';
 import { HostLifecycle } from './host/lifecycle';
 import { SystemIdentity } from './host/identity';
 import { DHCPClient } from '../dhcp/DHCPClient';
-import { DHCPPacket } from '../dhcp/DHCPPacket';
+import { DHCPPacket, DHCP_WIRE_BYTES } from '../dhcp/DHCPPacket';
 import { addressAnswersOnLink } from '../arp/AddressProbe';
 import { WireDhcpChannel } from '../dhcp/DhcpServerChannel';
 import type { DHCPClientIfaceState } from '../dhcp/types';
@@ -1186,11 +1186,11 @@ export abstract class EndHost extends Equipment {
     if (!port) return;
     const udp: UDPPacket = {
       type: 'udp', sourcePort: 68, destinationPort: 67,
-      length: 8 + 300, checksum: 0, payload: pkt,
+      length: 8 + DHCP_WIRE_BYTES, checksum: 0, payload: pkt,
     };
     const ipPkt = createIPv4Packet(
       new IPAddress('0.0.0.0'), new IPAddress('255.255.255.255'),
-      IP_PROTO_UDP, 64, udp, 8 + 300);
+      IP_PROTO_UDP, 64, udp, 8 + DHCP_WIRE_BYTES);
     this.sendFrame(iface, {
       srcMAC: port.getMAC(),
       dstMAC: MACAddress.broadcast(),

@@ -1,13 +1,14 @@
 import {
-  ETHERTYPE_IPV4, IPAddress, MACAddress, createIPv4Packet,
+  ETHERTYPE_IPV4, IPAddress, MACAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
 } from '../../../core/types';
+import { buildUdpOverIpv4 } from '../../../layers/transport/UdpEgress';
 import { ipToUint32, tryIpToUint32, uint32ToIp } from '../../../core/ip';
 import { DHCPServer } from '../../../dhcp/DHCPServer';
 import { DHCPClient } from '../../../dhcp/DHCPClient';
 import { WireDhcpChannel } from '../../../dhcp/DhcpServerChannel';
-import { DHCPPacket } from '../../../dhcp/DHCPPacket';
-import { buildDhcpServerReply } from '../../../dhcp/DhcpServerExchange';
+import { DHCPPacket, DHCP_WIRE_BYTES } from '../../../dhcp/DHCPPacket';
+import { buildDhcpServerReply, dhcpReplyRoute, type DhcpReplyRoute } from '../../../dhcp/DhcpServerExchange';
 import type { IEventBus } from '../../../../events/EventBus';
 import { DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '@/network/core/WellKnownPorts';
 import { relayDhcpReply, relayDhcpRequest, type DhcpRelayHost } from '../../../dhcp/DhcpRelay';
@@ -116,21 +117,15 @@ export class FirewallDhcp {
     const mac = this.deps.portMac(iface);
     if (!mac) return;
 
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort: DHCP_CLIENT_PORT,
-      destinationPort: DHCP_SERVER_PORT,
-      length: 0,
-      checksum: 0,
-      payload: pkt,
-    };
-
     this.deps.sendFrame(iface, {
       srcMAC: mac,
       dstMAC: MACAddress.broadcast(),
       etherType: ETHERTYPE_IPV4,
-      payload: createIPv4Packet(
-        new IPAddress('0.0.0.0'), new IPAddress('255.255.255.255'), 17, 1, udp, 64),
+      payload: buildUdpOverIpv4(new IPAddress('0.0.0.0'), {
+        destination: new IPAddress('255.255.255.255'),
+        sourcePort: DHCP_CLIENT_PORT, destinationPort: DHCP_SERVER_PORT,
+        payload: pkt, payloadBytes: DHCP_WIRE_BYTES,
+      }),
     });
   }
 
@@ -261,7 +256,7 @@ export class FirewallDhcp {
       },
       interfaceOwning: (address) => this.deps.interfaceOwning?.(address) ?? null,
       sendToServer: (server, packet) => this.deps.sendToServer?.(server, packet) ?? false,
-      broadcastReply: (iface, reply) => { this.emit(iface, reply, reply.chaddr); },
+      broadcastReply: (iface, reply) => { this.deliver(iface, reply, { kind: 'broadcast' }); },
       relayInformationOption: () => false,
       countForward: () => undefined,
       countReply: () => undefined,
@@ -293,7 +288,7 @@ export class FirewallDhcp {
       server: this.server,
       localGatewayIP: local?.ip,
     });
-    if (reply) this.emit(iface, reply, request.chaddr);
+    if (reply) this.deliver(iface, reply, dhcpReplyRoute(request, reply), request.chaddr);
     return true;
   }
 
@@ -354,26 +349,32 @@ export class FirewallDhcp {
     });
   }
 
-  private emit(iface: string, reply: DHCPPacket, clientMac: string): void {
-    const source = this.deps.interfaceAddress(iface)?.ip ?? '0.0.0.0';
+  private deliver(
+    iface: string, reply: DHCPPacket, route: DhcpReplyRoute, clientMac: string = reply.chaddr,
+  ): void {
+    const source = new IPAddress(this.deps.interfaceAddress(iface)?.ip ?? '0.0.0.0');
+    if (route.kind === 'relay') {
+      const relay = new IPAddress(route.relay);
+      this.deps.sendToServer?.(relay, buildUdpOverIpv4(source, {
+        destination: relay,
+        sourcePort: DHCP_SERVER_PORT, destinationPort: DHCP_SERVER_PORT,
+        payload: reply, payloadBytes: DHCP_WIRE_BYTES,
+      }));
+      return;
+    }
     const mac = this.deps.portMac(iface);
     if (!mac) return;
 
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort: DHCP_SERVER_PORT,
-      destinationPort: DHCP_CLIENT_PORT,
-      length: 0,
-      checksum: 0,
-      payload: reply,
-    };
-
+    const broadcast = route.kind === 'broadcast';
     this.deps.sendFrame(iface, {
       srcMAC: mac,
-      dstMAC: new MACAddress(clientMac),
+      dstMAC: broadcast ? MACAddress.broadcast() : new MACAddress(clientMac),
       etherType: ETHERTYPE_IPV4,
-      payload: createIPv4Packet(
-        new IPAddress(source), new IPAddress('255.255.255.255'), 17, 1, udp, 64),
+      payload: buildUdpOverIpv4(source, {
+        destination: new IPAddress(broadcast ? '255.255.255.255' : route.address),
+        sourcePort: DHCP_SERVER_PORT, destinationPort: DHCP_CLIENT_PORT,
+        payload: reply, payloadBytes: DHCP_WIRE_BYTES,
+      }),
     });
   }
 }

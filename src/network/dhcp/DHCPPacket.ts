@@ -14,6 +14,8 @@
 import type { DHCPMessageType } from './types';
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
 
+export const DHCP_WIRE_BYTES = 300;
+
 /** DHCP Option codes (RFC 2132) */
 export const DHCP_OPTION = {
   SUBNET_MASK: 1,
