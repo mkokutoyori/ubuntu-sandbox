@@ -90,7 +90,7 @@ import type {
   IPrintProvider, PrintOpResult, PrintJobInfo,
   ILicensingProvider, LicenseStateInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsDynamicUpdateMode, DnsRecordSpec, DnsForwarderInfo,
-  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsRootHintInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
@@ -1292,6 +1292,12 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
   setForwarderTimeout(seconds: number): DnsOpResult { return this.role().setForwarderTimeout(seconds); }
   getForwarders(): string[] { return this.role().getForwarders(); }
   getForwarderInfo(): DnsForwarderInfo { return this.role().getForwarderInfo(); }
+  setUseRootHint(enabled: boolean): DnsOpResult { return this.role().setUseRootHint(enabled); }
+  getRootHints(): DnsRootHintInfo[] { return this.role().getRootHints(); }
+  addRootHint(nameServer: string, address: string): DnsOpResult { return this.role().addRootHint(nameServer, address); }
+  removeRootHint(nameServer: string, address?: string): DnsOpResult { return this.role().removeRootHint(nameServer, address); }
+  setRootHint(nameServer: string, addresses: string[]): DnsOpResult { return this.role().setRootHint(nameServer, addresses); }
+  importRootHints(): DnsOpResult { return this.role().importRootHints(); }
   setRecursion(enabled: boolean): DnsOpResult { return this.role().setRecursion(enabled); }
   isRecursionEnabled(): boolean { return this.role().isRecursionEnabled(); }
   cacheEntries(): DnsCacheEntryInfo[] {

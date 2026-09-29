@@ -298,8 +298,9 @@ describe('conditional forwarders, forwarders and cache', () => {
     return lab;
   }
 
-  it('sans redirecteur, WNS1 refuse la requête récursive hors de sa zone', async () => {
-    const { pc1 } = await partnerLab();
+  it('sans redirecteur ni racine, WNS1 refuse la requête récursive hors de sa zone', async () => {
+    const { wns1, pc1 } = await partnerLab();
+    await run(wns1, 'Set-DnsServerForwarder -UseRootHint $false');
     const answer = await answerFor(pc1, WNS1_IP, 'www.partner.test', RRType.A, true);
     expect(answer?.flags.rcode).toBe(DnsRcode.REFUSED);
   });
@@ -330,14 +331,15 @@ describe('conditional forwarders, forwarders and cache', () => {
     expect(await run(wns1, 'Get-DnsServerRecursion')).toMatch(/Enable\s+-+\s+False/);
   });
 
-  it('Add/Remove-DnsServerForwarder et refus de -UseRootHint', async () => {
+  it('Add/Remove-DnsServerForwarder et bascule de -UseRootHint', async () => {
     const { wns1 } = await partnerLab();
     await run(wns1, `Add-DnsServerForwarder -IPAddress ${WNS3_IP}`);
     await run(wns1, 'Add-DnsServerForwarder -IPAddress 10.0.1.99');
     expect(await run(wns1, 'Get-DnsServerForwarder')).toContain('10.0.1.99');
     await run(wns1, 'Remove-DnsServerForwarder -IPAddress 10.0.1.99 -Force');
     expect(await run(wns1, 'Get-DnsServerForwarder')).not.toContain('10.0.1.99');
-    expect(await run(wns1, 'Set-DnsServerForwarder -UseRootHint $true')).toMatch(/root hints are not built/);
+    expect(await run(wns1, 'Set-DnsServerForwarder -UseRootHint $false')).toBe('');
+    expect(await run(wns1, 'Get-DnsServerForwarder')).toMatch(/\bFalse\b/);
   });
 });
 

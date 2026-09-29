@@ -960,11 +960,11 @@ export interface ILicensingProvider {
 
 import type {
   DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
-  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsRootHintInfo,
 } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 export type {
   DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
-  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsRootHintInfo,
 } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 
 export interface DnsCacheEntryInfo { name: string; type: string; ttl: number; data: string }
@@ -1000,6 +1000,12 @@ export interface IDnsServerProvider {
   setForwarderTimeout(seconds: number): DnsOpResult;
   getForwarders(): string[];
   getForwarderInfo(): DnsForwarderInfo;
+  setUseRootHint(enabled: boolean): DnsOpResult;
+  getRootHints(): DnsRootHintInfo[];
+  addRootHint(nameServer: string, address: string): DnsOpResult;
+  removeRootHint(nameServer: string, address?: string): DnsOpResult;
+  setRootHint(nameServer: string, addresses: string[]): DnsOpResult;
+  importRootHints(): DnsOpResult;
   setRecursion(enabled: boolean): DnsOpResult;
   isRecursionEnabled(): boolean;
   cacheEntries(): DnsCacheEntryInfo[];

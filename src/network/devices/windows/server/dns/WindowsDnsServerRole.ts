@@ -4,6 +4,7 @@ import { ZoneStore, ZoneStoreError } from '@/network/dns/zone/ZoneStore';
 import { renderZoneFile, parseZoneFile, ZoneFileError } from '@/network/dns/zone/ZoneFile';
 import { AuthoritativeServer } from '@/network/dns/resolver/AuthoritativeServer';
 import { RecursiveResolver } from '@/network/dns/resolver/RecursiveResolver';
+import { IANA_ROOT_HINTS, renderRootHintsFile, type RootHint } from '@/network/dns/resolver/RootHints';
 import { DnsCache, type DnsCacheRecordView } from '@/network/dns/resolver/DnsCache';
 import { bindDnsUdpServer, unbindDnsUdpServer } from '@/network/dns/transport/DnsUdpTransport';
 import { bindDnsTcpServer, unbindDnsTcpServer } from '@/network/dns/transport/DnsTcpTransport';
@@ -71,6 +72,8 @@ export interface DnsRecordInfo {
 }
 
 export interface DnsRecordSpec { type: string; data: Record<string, string | number> }
+
+export type DnsRootHintInfo = RootHint;
 
 export interface DnsForwarderInfo { addresses: string[]; useRootHint: boolean; timeoutSeconds: number }
 
@@ -289,6 +292,9 @@ export class WindowsDnsServerRole {
   private resolver: RecursiveResolver | null = null;
   private forwarderAddresses: string[] = [];
   private forwarderTimeoutSeconds = DEFAULT_FORWARDER_TIMEOUT_SECONDS;
+  private rootHints: RootHint[] = IANA_ROOT_HINTS.map(h => ({ ...h }));
+  private rootResolver: RecursiveResolver | null = null;
+  private useRootHint = true;
   private recursionEnabled = true;
   private running = false;
 
@@ -301,6 +307,7 @@ export class WindowsDnsServerRole {
     this.zoneFiles = environment.zoneFiles ?? null;
     this.directoryAvailable = environment.directoryAvailable ?? (() => false);
     this.cache = new DnsCache(this.now);
+    this.rootResolver = this.resolverOver(parseAddresses(this.rootHints.map(h => h.address)) as IPAddress[]);
     this.secondaries = new SecondaryZoneRefresher(host, (name, force) => { void this.refreshSecondary(name, force); });
   }
 
@@ -365,8 +372,8 @@ export class WindowsDnsServerRole {
       return { ...response, flags: { ...response.flags, rcode: DnsRcode.SERVFAIL } };
     }
     if (outsideAuthority && question && query.flags.rd && this.recursionEnabled) {
-      const resolver = this.resolverFor(question.qname);
-      if (resolver) return this.recurse(query, resolver);
+      const resolvers = this.resolversFor(question.qname);
+      if (resolvers.length > 0) return this.recurse(query, resolvers);
     }
     return response;
   }
@@ -379,13 +386,17 @@ export class WindowsDnsServerRole {
     return false;
   }
 
-  private resolverFor(qname: string): RecursiveResolver | null {
+  private resolversFor(qname: string): RecursiveResolver[] {
     const name = normalizeDnsName(qname);
     let best: string | null = null;
     for (const zone of this.conditional.keys()) {
       if (isUnder(name, zone) && (best === null || zone.length > best.length)) best = zone;
     }
-    return best !== null ? this.conditional.get(best)!.resolver : this.resolver;
+    if (best !== null) return [this.conditional.get(best)!.resolver];
+    const chain: RecursiveResolver[] = [];
+    if (this.resolver) chain.push(this.resolver);
+    if (this.useRootHint && this.rootResolver) chain.push(this.rootResolver);
+    return chain;
   }
 
   private handleTransfer(query: DnsMessage, source: string | null): DnsMessage {
@@ -462,9 +473,13 @@ export class WindowsDnsServerRole {
     return reply(DnsRcode.NOERROR);
   }
 
-  private async recurse(query: DnsMessage, resolver: RecursiveResolver): Promise<DnsMessage> {
+  private async recurse(query: DnsMessage, resolvers: readonly RecursiveResolver[]): Promise<DnsMessage> {
     const question = query.questions[0];
-    const result = await resolver.resolve(question.qname, question.qtype);
+    let result = await resolvers[0].resolve(question.qname, question.qtype);
+    for (const next of resolvers.slice(1)) {
+      if (result.status !== 'SERVFAIL') break;
+      result = await next.resolve(question.qname, question.qtype);
+    }
     const rcode =
       result.status === 'NOERROR' ? DnsRcode.NOERROR :
       result.status === 'NXDOMAIN' ? DnsRcode.NXDOMAIN : DnsRcode.SERVFAIL;
@@ -569,7 +584,81 @@ export class WindowsDnsServerRole {
   getForwarders(): string[] { return [...this.forwarderAddresses]; }
 
   getForwarderInfo(): DnsForwarderInfo {
-    return { addresses: this.getForwarders(), useRootHint: false, timeoutSeconds: this.forwarderTimeoutSeconds };
+    return { addresses: this.getForwarders(), useRootHint: this.useRootHint, timeoutSeconds: this.forwarderTimeoutSeconds };
+  }
+
+  setUseRootHint(enabled: boolean): DnsOpResult {
+    this.useRootHint = enabled;
+    return { ok: true, message: '' };
+  }
+
+  getRootHints(): DnsRootHintInfo[] { return this.rootHints.map(h => ({ ...h })); }
+
+  private rootHintsChanged(): void {
+    const parsed = parseAddresses([...new Set(this.rootHints.map(h => h.address))]);
+    this.rootResolver = typeof parsed !== 'string' && parsed.length > 0 ? this.resolverOver(parsed) : null;
+    this.zoneFiles?.write('cache.dns', renderRootHintsFile(this.rootHints));
+  }
+
+  private hintName(name: string): string {
+    const lower = name.toLowerCase();
+    return lower.endsWith('.') ? lower : `${lower}.`;
+  }
+
+  addRootHint(nameServer: string, address: string): DnsOpResult {
+    const name = this.hintName(nameServer);
+    if (!ZONE_NAME.test(name.slice(0, -1))) return { ok: false, message: `"${nameServer}" is not a valid name server name.` };
+    const parsed = parseAddresses([address]);
+    if (typeof parsed === 'string') return { ok: false, message: parsed };
+    if (this.rootHints.some(h => h.name === name && h.address === address)) {
+      return { ok: false, message: `The root hint "${nameServer}" ${address} already exists.` };
+    }
+    this.rootHints.push({ name, address });
+    this.rootHintsChanged();
+    return { ok: true, message: '' };
+  }
+
+  removeRootHint(nameServer: string, address?: string): DnsOpResult {
+    const name = this.hintName(nameServer);
+    const kept = this.rootHints.filter(h => !(h.name === name && (address === undefined || h.address === address)));
+    if (kept.length === this.rootHints.length) return { ok: false, message: `Cannot find the root hint "${nameServer}"${address ? ` ${address}` : ''}.` };
+    this.rootHints = kept;
+    this.rootHintsChanged();
+    return { ok: true, message: '' };
+  }
+
+  setRootHint(nameServer: string, addresses: readonly string[]): DnsOpResult {
+    const name = this.hintName(nameServer);
+    if (!this.rootHints.some(h => h.name === name)) return { ok: false, message: `Cannot find the root hint "${nameServer}".` };
+    const parsed = parseAddresses(addresses);
+    if (typeof parsed === 'string') return { ok: false, message: parsed };
+    if (addresses.length === 0) return { ok: false, message: 'A root hint needs at least one IP address.' };
+    this.rootHints = [...this.rootHints.filter(h => h.name !== name), ...addresses.map(address => ({ name, address }))];
+    this.rootHintsChanged();
+    return { ok: true, message: '' };
+  }
+
+  importRootHints(): DnsOpResult {
+    const sources = parseAddresses([...new Set([...this.rootHints.map(h => h.address), ...this.forwarderAddresses])]);
+    if (typeof sources === 'string' || sources.length === 0) return { ok: false, message: 'No server is known to import root hints from.' };
+    void this.fetchRootHints(sources);
+    return { ok: true, message: '' };
+  }
+
+  private async fetchRootHints(sources: readonly IPAddress[]): Promise<void> {
+    const resolver = new RecursiveResolver(this.host, sources, new DnsCache(this.now), { timeoutMs: 2000 });
+    const roots = await resolver.resolve('.', RRType.NS);
+    const names = roots.answers.filter(rr => rr.data.type === RRType.NS).map(rr => (rr.data as NsRecordData).nsdname);
+    const fetched: RootHint[] = [];
+    for (const name of names) {
+      const answer = await resolver.resolve(name, RRType.A);
+      for (const rr of answer.answers) {
+        if (rr.data.type === RRType.A) fetched.push({ name: this.hintName(name), address: (rr.data as ARecordData).address.toString() });
+      }
+    }
+    if (fetched.length === 0) return;
+    this.rootHints = fetched;
+    this.rootHintsChanged();
   }
 
   setRecursion(enabled: boolean): DnsOpResult {
@@ -586,7 +675,7 @@ export class WindowsDnsServerRole {
   clearCache(): void { this.cache.flush(); }
 
   private zoneNameConflict(origin: string): DnsOpResult | null {
-    const problem = zoneNameProblem(origin);
+    const problem = origin === '' ? null : zoneNameProblem(origin);
     if (problem) return { ok: false, message: problem };
     if (this.settings.has(origin) || this.conditional.has(origin)) {
       return { ok: false, message: `A zone named "${origin}" is already configured on this server.` };
@@ -604,13 +693,14 @@ export class WindowsDnsServerRole {
   }
 
   addPrimaryZone(name: string, opts: DnsPrimaryZoneOptions = {}): DnsOpResult {
+    const isRoot = name.trim() === '.';
     let origin = normalizeZoneKey(name);
     if (opts.networkId !== undefined) {
       const reverse = reverseZoneName(opts.networkId);
       if (typeof reverse !== 'string') return { ok: false, message: reverse.error };
       origin = reverse;
     }
-    if (!origin) return { ok: false, message: 'Cannot process command because of one or more missing mandatory parameters: Name.' };
+    if (!origin && !isRoot) return { ok: false, message: 'Cannot process command because of one or more missing mandatory parameters: Name.' };
     const conflict = this.zoneNameConflict(origin);
     if (conflict) return { ok: false, message: conflict.message.replace(origin, name || origin) };
     if (opts.loadExisting && opts.dsIntegrated) {

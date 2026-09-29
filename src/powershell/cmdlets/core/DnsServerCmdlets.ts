@@ -671,8 +671,6 @@ export class GetDnsServerResourceRecordCmdlet implements ICmdlet {
 
 // ── Forwarders, recursion, cache ─────────────────────────────────────────
 
-const ROOT_HINTS_MISSING = 'root hints are not built: this server can only recurse through forwarders, so -UseRootHint $true is refused.';
-
 export class SetDnsServerForwarderCmdlet implements ICmdlet {
   readonly name = 'set-dnsserverforwarder';
   readonly aliases = [] as const;
@@ -681,10 +679,7 @@ export class SetDnsServerForwarderCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Set-DnsServerForwarder');
     if (!guard(ctx, 'Set-DnsServerForwarder', dns)) return null;
-    if (isSwitchOn(ctx.named['useroothint'])) {
-      ctx.emitError(`Set-DnsServerForwarder : ${ROOT_HINTS_MISSING}`);
-      return null;
-    }
+    if (ctx.named['useroothint'] !== undefined) dns.setUseRootHint(isSwitchOn(ctx.named['useroothint']));
     if (ctx.named['enablereordering'] !== undefined && !isSwitchOn(ctx.named['enablereordering'])) {
       ctx.emitError('Set-DnsServerForwarder : -EnableReordering $false is refused: forwarders are always tried in the order listed; RTT-based reordering is not built.');
       return null;
@@ -785,5 +780,86 @@ export class ShowDnsServerCacheCmdlet implements ICmdlet {
     return requireDns(ctx, 'Show-DnsServerCache').cacheEntries().map(entry => ({
       HostName: entry.name, RecordType: entry.type, TimeToLive: entry.ttl, RecordData: entry.data,
     }));
+  }
+}
+
+export class GetDnsServerRootHintCmdlet implements ICmdlet {
+  readonly name = 'get-dnsserverroothint';
+  readonly aliases = [] as const;
+  readonly parameters = ['ComputerName'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Get-DnsServerRootHint');
+    if (!guard(ctx, 'Get-DnsServerRootHint', dns)) return null;
+    const byName = new Map<string, string[]>();
+    for (const hint of dns.getRootHints()) byName.set(hint.name, [...(byName.get(hint.name) ?? []), hint.address]);
+    return [...byName].map(([name, addresses]) => ({ NameServer: name, IPAddress: addresses }));
+  }
+}
+
+export class AddDnsServerRootHintCmdlet implements ICmdlet {
+  readonly name = 'add-dnsserverroothint';
+  readonly aliases = [] as const;
+  readonly parameters = ['NameServer', 'IPAddress', 'ComputerName'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Add-DnsServerRootHint');
+    if (!guard(ctx, 'Add-DnsServerRootHint', dns)) return null;
+    const server = psValueToString(ctx.named['nameserver'] ?? ctx.positional[0] ?? '');
+    const addresses = stringList(ctx.named['ipaddress']);
+    if (!server || addresses.length === 0) return missing(ctx, 'Add-DnsServerRootHint', 'NameServer IPAddress');
+    for (const address of addresses) {
+      const res = dns.addRootHint(server, address);
+      if (!res.ok) return failed(ctx, 'Add-DnsServerRootHint', res);
+    }
+    return null;
+  }
+}
+
+export class SetDnsServerRootHintCmdlet implements ICmdlet {
+  readonly name = 'set-dnsserverroothint';
+  readonly aliases = [] as const;
+  readonly parameters = ['NameServer', 'IPAddress', 'ComputerName'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Set-DnsServerRootHint');
+    if (!guard(ctx, 'Set-DnsServerRootHint', dns)) return null;
+    const server = psValueToString(ctx.named['nameserver'] ?? ctx.positional[0] ?? '');
+    const addresses = stringList(ctx.named['ipaddress']);
+    if (!server || addresses.length === 0) return missing(ctx, 'Set-DnsServerRootHint', 'NameServer IPAddress');
+    const res = dns.setRootHint(server, addresses);
+    return res.ok ? null : failed(ctx, 'Set-DnsServerRootHint', res);
+  }
+}
+
+export class RemoveDnsServerRootHintCmdlet implements ICmdlet {
+  readonly name = 'remove-dnsserverroothint';
+  readonly aliases = [] as const;
+  readonly parameters = ['NameServer', 'IPAddress', 'Force', 'Confirm', 'ComputerName'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Remove-DnsServerRootHint');
+    if (!guard(ctx, 'Remove-DnsServerRootHint', dns)) return null;
+    const server = psValueToString(ctx.named['nameserver'] ?? ctx.positional[0] ?? '');
+    if (!server) return missing(ctx, 'Remove-DnsServerRootHint', 'NameServer');
+    const addresses = stringList(ctx.named['ipaddress']);
+    for (const address of addresses.length > 0 ? addresses : [undefined]) {
+      const res = dns.removeRootHint(server, address);
+      if (!res.ok) return failed(ctx, 'Remove-DnsServerRootHint', res);
+    }
+    return null;
+  }
+}
+
+export class ImportDnsServerRootHintCmdlet implements ICmdlet {
+  readonly name = 'import-dnsserverroothint';
+  readonly aliases = [] as const;
+  readonly parameters = ['ComputerName'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Import-DnsServerRootHint');
+    if (!guard(ctx, 'Import-DnsServerRootHint', dns)) return null;
+    const res = dns.importRootHints();
+    return res.ok ? null : failed(ctx, 'Import-DnsServerRootHint', res);
   }
 }

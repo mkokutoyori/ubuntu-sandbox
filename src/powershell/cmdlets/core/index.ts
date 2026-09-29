@@ -174,6 +174,8 @@ import {
   SetDnsServerSecondaryZoneCmdlet, RemoveDnsServerZoneCmdlet, StartDnsServerZoneTransferCmdlet,
   SetDnsServerResourceRecordCmdlet, SetDnsServerRecursionCmdlet, GetDnsServerRecursionCmdlet,
   ClearDnsServerCacheCmdlet, ShowDnsServerCacheCmdlet,
+  GetDnsServerRootHintCmdlet, AddDnsServerRootHintCmdlet, SetDnsServerRootHintCmdlet,
+  RemoveDnsServerRootHintCmdlet, ImportDnsServerRootHintCmdlet,
 } from './DnsServerCmdlets';
 import {
   AddDhcpServerv4ScopeCmdlet, GetDhcpServerv4ScopeCmdlet, GetDhcpServerv4BindingCmdlet,
@@ -726,6 +728,11 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetDnsServerRecursionCmdlet());
   registry.register(new ClearDnsServerCacheCmdlet());
   registry.register(new ShowDnsServerCacheCmdlet());
+  registry.register(new GetDnsServerRootHintCmdlet());
+  registry.register(new AddDnsServerRootHintCmdlet());
+  registry.register(new SetDnsServerRootHintCmdlet());
+  registry.register(new RemoveDnsServerRootHintCmdlet());
+  registry.register(new ImportDnsServerRootHintCmdlet());
 
   // ── DHCP Server role (PRD-Windows-Server.md §5 P8) ──────────────────────────
   registry.register(new AddDhcpServerv4ScopeCmdlet());
