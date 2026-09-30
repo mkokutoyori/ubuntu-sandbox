@@ -104,8 +104,10 @@ export class RecursiveResolver {
       : null;
   }
 
-  async resolve(qname: string, qtype: number): Promise<ResolutionResult> {
-    return this.resolveWithDepth(qname, qtype, 0, false);
+  async resolve(
+    qname: string, qtype: number, options: { readonly checkingDisabled?: boolean } = {},
+  ): Promise<ResolutionResult> {
+    return this.resolveWithDepth(qname, qtype, 0, options.checkingDisabled === true);
   }
 
   private async resolveWithDepth(

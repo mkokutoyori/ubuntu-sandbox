@@ -3,6 +3,9 @@ import { AddressMatchList } from './NamedAcl';
 import { NamedConfigError } from './NamedConfigError';
 import type { NamedConfStatement } from './NamedConfParser';
 import { parseUpdatePolicyRule, type UpdatePolicyRule } from './NamedUpdatePolicy';
+import { makeDsRecord, makeDnskeyRecord } from '@/network/dns/wire/ResourceRecord';
+import type { ResourceRecord, DsRecordData } from '@/network/dns/wire/ResourceRecord';
+import { dsDigestOf, keyTagOf as keyTagOfAnchor, DnssecDigestType } from '@/network/dns/dnssec/DnsKey';
 
 export { NamedConfigError } from './NamedConfigError';
 
@@ -70,6 +73,7 @@ export interface NamedConfig {
   readonly logging: NamedLogging;
   readonly keys: ReadonlyMap<string, NamedKey>;
   readonly controls: readonly NamedControls[];
+  readonly trustAnchors: readonly ResourceRecord<DsRecordData>[];
 }
 
 const DEFAULT_DIRECTORY = '/var/cache/bind';
@@ -414,6 +418,42 @@ function blocksByLabel(
   return result;
 }
 
+function parseTrustAnchors(statement: NamedConfStatement): ResourceRecord<DsRecordData>[] {
+  const anchors: ResourceRecord<DsRecordData>[] = [];
+  for (const entry of requireBlock(statement)) {
+    const words = entry.values.map((value) => value.text);
+    const [name, kind, ...rest] = words;
+    if (!name || !kind) fail(entry, "expected a name and a trust anchor type");
+    if (kind === 'static-ds' || kind === 'initial-ds') {
+      const [keyTag, algorithm, digestType, digest] = rest;
+      if (![keyTag, algorithm, digestType].every((word) => /^\d+$/.test(word ?? '')) || !/^[0-9a-fA-F]+$/.test(digest ?? '')) {
+        fail(entry, `invalid ${kind} trust anchor`);
+      }
+      anchors.push(makeDsRecord(name, 0, {
+        keyTag: Number(keyTag), algorithm: Number(algorithm), digestType: Number(digestType),
+        digest: digest.toUpperCase(),
+      }));
+    } else if (kind === 'static-key' || kind === 'initial-key') {
+      const [flags, protocol, algorithm, key] = rest;
+      if (![flags, protocol, algorithm].every((word) => /^\d+$/.test(word ?? '')) || !key) {
+        fail(entry, `invalid ${kind} trust anchor`);
+      }
+      const dnskey = makeDnskeyRecord(name, 0, {
+        flags: Number(flags), protocol: Number(protocol), algorithm: Number(algorithm),
+        publicKey: key.replace(/\s+/g, ''),
+      });
+      anchors.push(makeDsRecord(name, 0, {
+        keyTag: keyTagOfAnchor(dnskey.data), algorithm: Number(algorithm),
+        digestType: DnssecDigestType.SHA256,
+        digest: dsDigestOf(name, dnskey.data, DnssecDigestType.SHA256),
+      }));
+    } else {
+      fail(entry, `unknown trust anchor type '${kind}'`);
+    }
+  }
+  return anchors;
+}
+
 function parseControlsInet(
   statement: NamedConfStatement,
   acls: ReadonlyMap<string, AddressMatchList>,
@@ -464,6 +504,7 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
   const keys = new Map<string, NamedKey>();
   const zoneStatements: NamedConfStatement[] = [];
   const controlsStatements: NamedConfStatement[] = [];
+  const trustAnchors: ResourceRecord<DsRecordData>[] = [];
 
   for (const statement of statements) {
     const keyword = keywordOf(statement);
@@ -492,6 +533,9 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
       case 'controls':
         controlsStatements.push(statement);
         break;
+      case 'trust-anchors':
+        trustAnchors.push(...parseTrustAnchors(statement));
+        break;
       default:
         fail(statement, `unknown option '${keyword}'`);
     }
@@ -517,5 +561,6 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
     logging: { channels, categories },
     keys,
     controls,
+    trustAnchors,
   };
 }

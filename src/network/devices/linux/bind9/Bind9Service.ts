@@ -23,6 +23,7 @@ import {
 import { TsigKeyring, tsigKeyFromBase64, canonicalKeyName } from '@/network/dns/tsig/Tsig';
 import { serialAdd } from '@/network/dns/zone/SerialNumber';
 import { RRType } from '@/network/dns/wire/RRType';
+import { findOpt, makeOptRecord, DEFAULT_EDNS_PAYLOAD_SIZE } from '@/network/dns/wire/EdnsOptRecord';
 import { makeSoaRecord } from '@/network/dns/wire/ResourceRecord';
 import { updatePolicyPermits } from './NamedUpdatePolicy';
 import {
@@ -153,11 +154,14 @@ export class Bind9Service {
    */
   secureRootsReport(): OperationResult {
     if (!this.running) return { ok: false, error: 'not running' };
+    const anchors = this.config?.trustAnchors ?? [];
     const lines = [
       ';', `; Secure roots as of ${new Date().toUTCString()}`, ';',
-      this.dnssecValidationEnabled
-        ? ' (no trust anchors configured)'
-        : ' DNSSEC validation is disabled; no secure roots.',
+      ...(!this.dnssecValidationEnabled
+        ? [' DNSSEC validation is disabled; no secure roots.']
+        : anchors.length === 0
+          ? [' (no trust anchors configured)']
+          : anchors.map((anchor) => ` ${anchor.name}/IN DS ${anchor.data.keyTag} ${anchor.data.algorithm} ${anchor.data.digestType} ${anchor.data.digest} ; static`)),
     ];
     this.files.append('/var/cache/bind/named.secroots', lines.join('\n') + '\n');
     return { ok: true };
@@ -349,8 +353,12 @@ export class Bind9Service {
       const parsed = IPAddress.tryParse(forwarder);
       if (parsed) forwarders.push(parsed);
     }
+    const dnssec = config.options.dnssecValidation !== 'no' && config.trustAnchors.length > 0
+      ? { dnssec: { anchors: config.trustAnchors } }
+      : {};
     if (forwarders.length > 0) {
-      resolvers.push(new RecursiveResolver(this.host, forwarders, this.cache, { forwardRecursively: true }));
+      resolvers.push(new RecursiveResolver(
+        this.host, forwarders, this.cache, { forwardRecursively: true, ...dnssec }));
     }
     const hints: IPAddress[] = [];
     for (const zone of config.zones) {
@@ -358,7 +366,7 @@ export class Bind9Service {
       const content = this.readFile(zone.file);
       if (content !== null) hints.push(...collectHintAddresses(content));
     }
-    if (hints.length > 0) resolvers.push(new RecursiveResolver(this.host, hints, this.cache));
+    if (hints.length > 0) resolvers.push(new RecursiveResolver(this.host, hints, this.cache, dnssec));
     return resolvers;
   }
 
@@ -633,11 +641,17 @@ export class Bind9Service {
 
   private async recurse(query: DnsMessage): Promise<DnsMessage> {
     const question = query.questions[0];
-    let result = await this.resolvers[0].resolve(question.qname, question.qtype);
+    const options = { checkingDisabled: query.flags.cd };
+    let result = await this.resolvers[0].resolve(question.qname, question.qtype, options);
     for (const next of this.resolvers.slice(1)) {
       if (result.status !== 'SERVFAIL') break;
-      result = await next.resolve(question.qname, question.qtype);
+      result = await next.resolve(question.qname, question.qtype, options);
     }
+    const wantsDnssec = findOpt(query)?.data.dnssecOk === true;
+    const authenticated = result.security === 'secure' && (wantsDnssec || query.flags.ad);
+    const answers = wantsDnssec
+      ? [...result.answers]
+      : result.answers.filter((rr) => rr.data.type !== RRType.RRSIG && rr.data.type !== RRType.NSEC);
     const rcode =
       result.status === 'NOERROR' ? DnsRcode.NOERROR :
       result.status === 'NXDOMAIN' ? DnsRcode.NXDOMAIN :
@@ -646,12 +660,12 @@ export class Bind9Service {
       id: query.id,
       flags: {
         qr: true, opcode: DnsOpcode.QUERY, aa: false, tc: false,
-        rd: query.flags.rd, ra: true, ad: false, cd: false, rcode,
+        rd: query.flags.rd, ra: true, ad: authenticated, cd: query.flags.cd, rcode,
       },
       questions: [question],
-      answers: [...result.answers],
+      answers,
       authorities: [],
-      additionals: [],
+      additionals: wantsDnssec ? [makeOptRecord(DEFAULT_EDNS_PAYLOAD_SIZE, { dnssecOk: true })] : [],
     };
   }
 
