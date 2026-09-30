@@ -1,3 +1,4 @@
+import { ipToUint32 } from '../../../../core/ip';
 import { renderTable, FIXED_TABLE } from '../../../shells/cli/TextTable';
 import type { EnumValue } from '../../../../../cli/ArgumentTypes';
 import type { Suggestion, CompletionTrigger } from '../../../../../cli/CompletionEngine';
@@ -1971,6 +1972,14 @@ export class FortiShell {
     if (rest[0] === 'lease-clear') {
       if (rest.length < 2) return FortiMessages.incomplete('an IP address');
       if (rest[1] === 'all') { dhcp.clearAllLeases(); return ''; }
+      const span = /^(\d+\.\d+\.\d+\.\d+)-(\d+\.\d+\.\d+\.\d+)$/.exec(rest[1]);
+      if (span !== null) {
+        const from = ipToUint32(span[1]);
+        const to = ipToUint32(span[2]);
+        const held = dhcp.leases().filter(lease => ipToUint32(lease.ip) >= from && ipToUint32(lease.ip) <= to);
+        for (const lease of held) dhcp.clearLease(lease.ip);
+        return held.length > 0 ? '' : FortiMessages.commandFail(`no lease held between ${span[1]} and ${span[2]}.`);
+      }
       return dhcp.clearLease(rest[1])
         ? '' : FortiMessages.commandFail(`no lease held for ${rest[1]}.`);
     }

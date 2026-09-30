@@ -30,7 +30,7 @@ export interface DhcpScope {
   readonly domain: string;
   readonly leaseTimeSec: number;
   readonly conflictedIpTimeoutSec?: number;
-  readonly ranges: ReadonlyArray<{ startIp: string; endIp: string }>;
+  readonly ranges: ReadonlyArray<{ startIp: string; endIp: string; leaseTimeSec?: number }>;
   readonly dnsService?: string;
   readonly ntpService?: string;
   readonly ntpServers?: readonly string[];
@@ -48,6 +48,7 @@ export interface DhcpScope {
   }>;
   readonly reservations?: ReadonlyArray<{
     id: string; ip: string; mac: string; description: string; action?: string;
+    type?: 'mac' | 'option82'; circuitId?: string; circuitIdType?: string; remoteId?: string; remoteIdType?: string;
   }>;
 }
 
@@ -111,9 +112,9 @@ export class FirewallDhcp {
       if (event.payload.deviceId === deps.deviceId) this.withdrawName(event.payload.ip);
     });
     this.server.setAdmissionPolicy({
-      mayServe: (mac, pool, client) => this.macAclAllows(mac, pool) && this.vendorClassAllows(client?.vendorClass, pool),
+      mayServe: (mac, pool, client) => this.macAclAllows(mac, pool, client?.relayInformation) && this.vendorClassAllows(client?.vendorClass, pool),
       addressAllowed: () => true,
-      leaseSeconds: (_pool, configured) => configured,
+      leaseSeconds: (pool, configured, address) => this.rangeLeaseSeconds(pool, configured, address),
     });
     this.traceClientAndRelay();
     this.client = new DHCPClient(
@@ -383,14 +384,50 @@ export class FirewallDhcp {
     return (scope.vciStrings ?? []).some(candidate => vendorClass.startsWith(candidate));
   }
 
-  private macAclAllows(clientMac: string, pool: string): boolean {
+  private rangeLeaseSeconds(pool: string, configured: number, address: string | undefined): number {
+    const scope = this.scopeOfPool(pool);
+    if (scope === undefined || address === undefined) return configured;
+    const value = ipToUint32(address);
+    for (const range of scope.ranges) {
+      if (range.leaseTimeSec === undefined || range.leaseTimeSec === 0) continue;
+      if (value >= ipToUint32(range.startIp) && value <= ipToUint32(range.endIp)) return range.leaseTimeSec;
+    }
+    return configured;
+  }
+
+  private option82Entry(scope: DhcpScope, information: { circuitId: string; remoteId: string } | undefined) {
+    if (information === undefined) return undefined;
+    return (scope.reservations ?? []).find(reservation => {
+      if (reservation.type !== 'option82') return false;
+      const circuit = decodedOption82(reservation.circuitId ?? '', reservation.circuitIdType);
+      const remote = decodedOption82(reservation.remoteId ?? '', reservation.remoteIdType);
+      return (circuit === '' || circuit === information.circuitId) && (remote === '' || remote === information.remoteId)
+        && (circuit !== '' || remote !== '');
+    });
+  }
+
+  private macAclAllows(clientMac: string, pool: string, information?: { circuitId: string; remoteId: string }): boolean {
     const scope = this.scopeOfPool(pool);
     if (scope === undefined) return true;
+    const relayed = this.option82Entry(scope, information);
+    if (relayed !== undefined) {
+      this.applyOption82Reservation(pool, clientMac, relayed);
+      return relayed.action !== 'block';
+    }
     const mac = new MACAddress(clientMac).toString();
     const entry = (scope.reservations ?? []).find(reservation =>
-      reservation.mac.length > 0 && new MACAddress(reservation.mac).toString() === mac);
+      reservation.type !== 'option82' && reservation.mac.length > 0 && new MACAddress(reservation.mac).toString() === mac);
     if (entry !== undefined) return entry.action !== 'block';
     return scope.macAclDefaultAction !== 'block';
+  }
+
+  private applyOption82Reservation(pool: string, clientMac: string, entry: { ip: string; action?: string }): void {
+    if ((entry.action ?? 'reserved') !== 'reserved' || entry.ip === '0.0.0.0') return;
+    const mac = new MACAddress(clientMac).toString();
+    for (const held of this.server.getStaticBindings(pool)) {
+      if (held.clientId === mac) this.server.removeStaticBinding(pool, held.ipAddress);
+    }
+    this.server.addStaticBinding(pool, mac, entry.ip);
   }
 
   clearLease(ip: string): boolean {
@@ -578,9 +615,17 @@ export class FirewallDhcp {
   }
 }
 
-function isFixedReservation(reservation: { ip: string; mac: string; action?: string }): boolean {
-  return reservation.mac.length > 0 && reservation.ip !== '0.0.0.0'
+function isFixedReservation(reservation: { ip: string; mac: string; action?: string; type?: string }): boolean {
+  return reservation.type !== 'option82' && reservation.mac.length > 0 && reservation.ip !== '0.0.0.0'
     && (reservation.action ?? 'reserved') === 'reserved';
+}
+
+function decodedOption82(value: string, type: string | undefined): string {
+  if (type !== 'hex') return value;
+  const digits = value.replace(/[^0-9a-fA-F]/g, '');
+  let text = '';
+  for (let i = 0; i + 1 < digits.length; i += 2) text += String.fromCharCode(parseInt(digits.slice(i, i + 2), 16));
+  return text;
 }
 
 function domainSearchHex(name: string): string {

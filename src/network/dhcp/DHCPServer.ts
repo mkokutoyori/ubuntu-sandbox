@@ -635,7 +635,7 @@ export class DHCPServer implements IProtocolEngine {
     for (const pool of poolEntries) {
       if (!pool.network || !pool.mask) continue;
       if (pool.active === false) continue;
-      if (this.admission && !this.admission.mayServe(params.clientMAC, pool.name, { vendorClass: params.vendorClass })) continue;
+      if (this.admission && !this.admission.mayServe(params.clientMAC, pool.name, { vendorClass: params.vendorClass, relayInformation: params.relayInformation })) continue;
 
       // Only consider pools whose subnet actually contains the anchor.
       if (subnetAnchor && !this.isIPInPool(subnetAnchor, pool)) continue;
@@ -855,7 +855,7 @@ export class DHCPServer implements IProtocolEngine {
       if (!pool.network || !pool.mask) continue;
       if (!this.isIPInPool(params.requestedIP, pool)) continue;
 
-      if (this.admission && !this.admission.mayServe(params.clientMAC, pool.name, { vendorClass: params.vendorClass })) return null;
+      if (this.admission && !this.admission.mayServe(params.clientMAC, pool.name, { vendorClass: params.vendorClass, relayInformation: params.relayInformation })) return null;
 
       if (this.isClientDenied(params.clientMAC, pool)) {
         this.stats.naks++;
@@ -906,7 +906,7 @@ export class DHCPServer implements IProtocolEngine {
         clientId: params.clientMAC,
         hostName: params.hostName,
         leaseStart,
-        leaseExpiration: pool.leaseInfinite ? INFINITE_LEASE_EXPIRATION : leaseStart + this.leaseSecondsOf(pool) * 1000,
+        leaseExpiration: pool.leaseInfinite ? INFINITE_LEASE_EXPIRATION : leaseStart + this.leaseSecondsOf(pool, params.requestedIP) * 1000,
         poolName: pool.name,
         type: 'automatic',
       };
@@ -1048,8 +1048,8 @@ export class DHCPServer implements IProtocolEngine {
     this.admission = policy;
   }
 
-  leaseSecondsOf(pool: DHCPPoolConfig): number {
-    return this.admission?.leaseSeconds(pool.name, pool.leaseDuration) ?? pool.leaseDuration;
+  leaseSecondsOf(pool: DHCPPoolConfig, address?: string): number {
+    return this.admission?.leaseSeconds(pool.name, pool.leaseDuration, address) ?? pool.leaseDuration;
   }
 
   importBinding(binding: DHCPBinding): void {

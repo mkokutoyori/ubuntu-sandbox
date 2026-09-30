@@ -10,7 +10,7 @@
  */
 import { DHCPPacket, DHCP_OPTION } from './DHCPPacket';
 import type { DHCPServer } from './DHCPServer';
-import type { DHCPDiscoverParams, DHCPOfferResult } from './types';
+import type { DHCPDiscoverParams, DHCPOfferResult, DhcpRelayInformation } from './types';
 
 export interface DhcpServeContext {
   server: DHCPServer;
@@ -40,6 +40,12 @@ function offerPacket(pkt: DHCPPacket, offer: DHCPOfferResult, leaseDuration: num
 function requestedAddress(pkt: DHCPPacket): string | undefined {
   const raw = pkt.getOption(DHCP_OPTION.REQUESTED_IP);
   return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+}
+
+function relayInformationOf(pkt: DHCPPacket): DhcpRelayInformation | undefined {
+  const raw = pkt.getOption(82) as { circuitId?: unknown; remoteId?: unknown } | undefined;
+  if (raw === undefined || raw === null || typeof raw !== 'object') return undefined;
+  return { circuitId: String(raw.circuitId ?? ''), remoteId: String(raw.remoteId ?? '') };
 }
 
 function vendorClassOf(pkt: DHCPPacket): string | undefined {
@@ -90,6 +96,7 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
       hostName: clientHostName(pkt),
       clientIdentifier: pkt.chaddr, parameterRequestList: [],
       vendorClass: vendorClassOf(pkt),
+      relayInformation: relayInformationOf(pkt),
       requestedIP: requestedAddress(pkt),
       giaddr, localGatewayIP: giaddr ? undefined : ctx.localGatewayIP,
     };
@@ -102,7 +109,7 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
         offer = (next && next.ip !== offer.ip) ? next : null;
       }
     }
-    return offer ? offerPacket(pkt, offer, server.leaseSecondsOf(offer.pool)) : null;
+    return offer ? offerPacket(pkt, offer, server.leaseSecondsOf(offer.pool, offer.ip)) : null;
   }
 
   if (type === 'DHCPREQUEST') {
@@ -112,6 +119,7 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
       hostName: clientHostName(pkt),
       clientIdentifier: pkt.chaddr,
       vendorClass: vendorClassOf(pkt),
+      relayInformation: relayInformationOf(pkt),
       serverIdentifier: String(pkt.getOption(54) ?? ''),
       giaddr,
     } as never);
@@ -127,7 +135,7 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
         router: pool?.defaultRouter ?? '0.0.0.0',
         dns: pool?.dnsServers ?? [],
         domainName: pool?.domainName ?? undefined,
-        leaseDuration: pool ? server.leaseSecondsOf(pool) : 86400,
+        leaseDuration: pool ? server.leaseSecondsOf(pool, result.binding.ipAddress) : 86400,
         renewalTime: pool?.renewalTime,
         rebindingTime: pool?.rebindingTime,
         nextServer: pool?.nextServer,

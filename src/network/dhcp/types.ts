@@ -102,6 +102,7 @@ export interface DHCPDiscoverParams {
   clientIdentifier: string;
   /** Option 60: Vendor Class Identifier */
   vendorClass?: string;
+  relayInformation?: DhcpRelayInformation;
   /** Option 55: Parameter Request List (option codes client wants) */
   parameterRequestList: number[];
   /** Option 50: Requested IP (used in INIT-REBOOT) */
@@ -150,6 +151,7 @@ export interface DHCPRequestParams {
   clientIdentifier: string;
   /** Option 60: Vendor Class Identifier */
   vendorClass?: string;
+  relayInformation?: DhcpRelayInformation;
   currentAddress?: string;
   unicastTo?: DhcpUnicastTarget;
 }
@@ -475,12 +477,18 @@ export function createDefaultClientState(): DHCPClientIfaceState {
   };
 }
 
+export interface DhcpRelayInformation {
+  readonly circuitId: string;
+  readonly remoteId: string;
+}
+
 export interface DhcpAdmissionClient {
   readonly vendorClass?: string;
+  readonly relayInformation?: DhcpRelayInformation;
 }
 
 export interface DhcpAdmissionPolicy {
   mayServe(clientMAC: string, poolName: string, client?: DhcpAdmissionClient): boolean;
   addressAllowed(ip: string, poolName: string): boolean;
-  leaseSeconds(poolName: string, configuredSeconds: number): number;
+  leaseSeconds(poolName: string, configuredSeconds: number, address?: string): number;
 }
