@@ -1029,7 +1029,7 @@ export abstract class LinuxMachine extends EndHost
               serverIP, qname, rrTypeName(qtype), 2000, { dnssecOk: true });
           }
           if (!reply) return { status: 'SERVFAIL', records: [] };
-          return { status: 'NOERROR', records: [...reply.answers, ...reply.authorities] };
+          return { status: 'NOERROR', records: reply.answers, authorities: reply.authorities };
         },
         this.dnssecAnchors,
       );

@@ -117,7 +117,7 @@ export class ZoneStore {
     if (!dnssec) return authority;
 
     if (kind === 'nodata') {
-      const proof = zone.getRRSet(qname, RRType.NSEC)?.[0] ?? null;
+      const proof = zone.getRRSet(qname, RRType.NSEC)?.[0] ?? findCoveringNsec(zone, qname);
       if (proof) authority.push(proof as ResourceRecord<ResourceRecordData>);
       return authority;
     }

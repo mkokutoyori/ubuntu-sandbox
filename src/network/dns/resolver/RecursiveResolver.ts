@@ -18,6 +18,7 @@ export type ResolutionStatus = 'NOERROR' | 'NXDOMAIN' | 'SERVFAIL';
 export interface ResolutionResult {
   readonly status: ResolutionStatus;
   readonly answers: readonly ResourceRecord<ResourceRecordData>[];
+  readonly authorities?: readonly ResourceRecord<ResourceRecordData>[];
   readonly fromCache: boolean;
   readonly security?: DnssecStatus;
 }
@@ -102,7 +103,7 @@ export class RecursiveResolver {
     this.validatorInstance ??= new DnsValidator(
       async (qname, qtype) => {
         const result = await this.resolveWithDepth(qname, qtype, 0, true);
-        return { status: result.status, records: result.answers };
+        return { status: result.status, records: result.answers, authorities: result.authorities };
       },
       options.anchors,
       { now: options.now },
@@ -141,7 +142,7 @@ export class RecursiveResolver {
     let security: DnssecStatus | undefined;
     if (this.validator && !raw && outcome.status !== 'SERVFAIL') {
       security = outcome.answers.length > 0
-        ? await this.validator.validateAnswer(outcome.answers)
+        ? await this.validator.validateAnswer(outcome.answers, outcome.authorities)
         : await this.validator.validateNegative(qname, outcome.authorities, outcome.negative === 'nxdomain');
       if (security === 'bogus') {
         return { status: 'SERVFAIL', answers: [], fromCache: false, security };
@@ -160,7 +161,10 @@ export class RecursiveResolver {
       }
     }
 
-    return { status: outcome.status, answers: outcome.answers, fromCache: false, security };
+    return {
+      status: outcome.status, answers: outcome.answers, authorities: outcome.authorities,
+      fromCache: false, security,
+    };
   }
 
   private async iterate(
@@ -183,7 +187,7 @@ export class RecursiveResolver {
       if (response.answers.length > 0) {
         const owned = ownedByQuestion(qname, response.answers);
         if (owned.length === 0) return servfail();
-        return this.acceptAnswers(qtype, owned, depth, raw);
+        return this.acceptAnswers(qtype, owned, response.authorities, depth, raw);
       }
 
       if (response.flags.aa) {
@@ -209,7 +213,7 @@ export class RecursiveResolver {
     if (response.flags.rcode !== DnsRcode.NOERROR) return servfail();
     const owned = ownedByQuestion(qname, response.answers);
     if (owned.length > 0) {
-      return { status: 'NOERROR', answers: owned, authorities: [], negative: null };
+      return { status: 'NOERROR', answers: owned, authorities: response.authorities, negative: null };
     }
     if (response.answers.length > 0) return servfail();
     return { status: 'NOERROR', answers: [], authorities: response.authorities, negative: 'nodata' };
@@ -218,11 +222,12 @@ export class RecursiveResolver {
   private async acceptAnswers(
     qtype: number,
     answers: readonly ResourceRecord<ResourceRecordData>[],
+    authorities: readonly ResourceRecord<ResourceRecordData>[],
     depth: number,
     raw: boolean,
   ): Promise<IterationOutcome> {
     const done = (records: readonly ResourceRecord<ResourceRecordData>[]): IterationOutcome =>
-      ({ status: 'NOERROR', answers: records, authorities: [], negative: null });
+      ({ status: 'NOERROR', answers: records, authorities, negative: null });
 
     if (answers.some((rr) => rr.data.type === qtype)) {
       return done(answers);

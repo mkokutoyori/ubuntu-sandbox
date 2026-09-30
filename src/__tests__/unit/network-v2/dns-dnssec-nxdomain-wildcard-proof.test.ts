@@ -53,15 +53,12 @@ describe('NXDOMAIN signé', () => {
   });
 
   it('le validateur rejette un NXDOMAIN sans la preuve du générique', async () => {
-    const { zone, store, ksk } = signed();
+    const { store, ksk } = signed();
     const r = store.answer({ qname: 'q.example.com', qtype: RRType.A, qclass: DnsClass.IN }, { dnssec: true });
-    const lookup = async () => ({
-      status: 'NOERROR' as const,
-      records: [
-        ...(zone.getRRSet('example.com', RRType.DNSKEY) ?? []),
-        ...(zone.getRRSet('example.com', RRType.RRSIG) ?? []).filter((s) => (s.data as { typeCovered: number }).typeCovered === RRType.DNSKEY),
-      ] as ResourceRecord<ResourceRecordData>[],
-    });
+    const lookup = async (name: string, type: number) => {
+      const reply = store.answer({ qname: name, qtype: type, qclass: DnsClass.IN }, { dnssec: true });
+      return { status: 'NOERROR' as const, records: reply.answers, authorities: reply.authority };
+    };
     const validator = new DnsValidator(lookup, [makeDsForKey('example.com', 0, ksk)]);
     const covering = nsecs(r.authority).find((n) => nsecCovers('q.example.com', n))!;
     const withoutWildcard = r.authority.filter((rr) =>
