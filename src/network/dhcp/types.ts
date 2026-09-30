@@ -27,7 +27,13 @@ export type DHCPMessageType =
   | 'DHCPACK'
   | 'DHCPNAK'
   | 'DHCPRELEASE'
-  | 'DHCPINFORM';
+  | 'DHCPINFORM'
+  | 'DHCPLEASEQUERY'
+  | 'DHCPLEASEUNASSIGNED'
+  | 'DHCPLEASEUNKNOWN'
+  | 'DHCPLEASEACTIVE'
+  | 'DHCPBULKLEASEQUERY'
+  | 'DHCPLEASEQUERYDONE';
 
 // ─── DHCP Pool Configuration ─────────────────────────────────────────
 
@@ -102,6 +108,7 @@ export interface DHCPDiscoverParams {
   clientIdentifier: string;
   /** Option 60: Vendor Class Identifier */
   vendorClass?: string;
+  relayInformation?: DhcpRelayInformation;
   /** Option 55: Parameter Request List (option codes client wants) */
   parameterRequestList: number[];
   /** Option 50: Requested IP (used in INIT-REBOOT) */
@@ -150,6 +157,10 @@ export interface DHCPRequestParams {
   clientIdentifier: string;
   /** Option 60: Vendor Class Identifier */
   vendorClass?: string;
+  relayInformation?: DhcpRelayInformation;
+  requestState?: 'selecting' | 'init-reboot' | 'renewing';
+  hardwareAddress?: string;
+  clientIdentifierOption?: string;
   currentAddress?: string;
   unicastTo?: DhcpUnicastTarget;
 }
@@ -276,7 +287,38 @@ export interface DHCPBinding {
   poolName: string;
   /** Type of binding */
   type: 'automatic' | 'manual';
+  /** chaddr of the client that holds the lease (RFC 4388 query by MAC). */
+  hardwareAddress?: string;
+  /** Raw option 61 of the client, when it sent one (RFC 4388 query by client identifier). */
+  clientIdentifierOption?: string;
+  /** Last option 82 received for this lease (RFC 4388 §6.4.2). */
+  relayInformation?: DhcpRelayInformation;
+  /** Last time the client dealt with the server about this address (ms). */
+  lastTransaction?: number;
 }
+
+export interface DhcpLeaseQuery {
+  readonly giaddr: string;
+  readonly ipAddress?: string;
+  readonly hardwareAddress?: string;
+  readonly clientIdentifier?: string;
+  readonly parameterRequestList: readonly number[];
+}
+
+export type DhcpLeaseQueryResult =
+  | { readonly type: 'DHCPLEASEUNKNOWN' }
+  | { readonly type: 'DHCPLEASEUNASSIGNED'; readonly ipAddress: string }
+  | {
+    readonly type: 'DHCPLEASEACTIVE';
+    readonly ipAddress: string;
+    readonly hardwareAddress: string;
+    readonly clientIdentifierOption?: string;
+    readonly relayInformation?: DhcpRelayInformation;
+    readonly secondsSinceTransaction: number;
+    readonly leaseSecondsLeft: number | null;
+    readonly associatedAddresses: readonly string[];
+    readonly poolName: string;
+  };
 
 // ─── DHCP Server Statistics ──────────────────────────────────────────
 
@@ -475,12 +517,41 @@ export function createDefaultClientState(): DHCPClientIfaceState {
   };
 }
 
+export interface DhcpRelayInformation {
+  readonly circuitId: string;
+  readonly remoteId: string;
+}
+
 export interface DhcpAdmissionClient {
   readonly vendorClass?: string;
+  readonly relayInformation?: DhcpRelayInformation;
 }
 
 export interface DhcpAdmissionPolicy {
   mayServe(clientMAC: string, poolName: string, client?: DhcpAdmissionClient): boolean;
   addressAllowed(ip: string, poolName: string): boolean;
-  leaseSeconds(poolName: string, configuredSeconds: number): number;
+  leaseSeconds(poolName: string, configuredSeconds: number, address?: string): number;
+}
+
+export type DhcpBulkState = 1 | 2 | 5;
+
+export interface DhcpBulkQuery {
+  readonly hardwareAddress?: string;
+  readonly clientIdentifier?: string;
+  readonly remoteId?: string;
+  readonly relayId?: string;
+  readonly queryStartTime?: number;
+  readonly queryEndTime?: number;
+}
+
+export interface DhcpBulkRecord {
+  readonly ipAddress: string;
+  readonly state: DhcpBulkState;
+  readonly poolName: string;
+  readonly hardwareAddress?: string;
+  readonly clientIdentifierOption?: string;
+  readonly relayInformation?: DhcpRelayInformation;
+  readonly lastTransaction?: number;
+  readonly leaseStart?: number;
+  readonly leaseExpiration?: number;
 }

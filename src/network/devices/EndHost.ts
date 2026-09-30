@@ -18,6 +18,7 @@
  *          └─ ICMP Packet (protocol 1)
  */
 
+import { dhcpv6WireLength } from '../dhcpv6/Dhcpv6Codec';
 import { Equipment } from '../equipment/Equipment';
 import { buildEchoReply } from '../icmp/IcmpEcho';
 import {
@@ -127,7 +128,10 @@ import { WireDhcpChannel } from '../dhcp/DhcpServerChannel';
 import { dhcpClientFrame } from '../dhcp/DhcpClientFrame';
 import type { DhcpUnicastTarget } from '../dhcp/types';
 import type { DHCPClientIfaceState } from '../dhcp/types';
-import { DHCPv6Packet } from '../dhcpv6/DHCPv6Packet';
+import {
+  DHCPv6Packet, DHCPV6_OPTION, DHCPV6_STATUS, DHCPV6_IRT_DEFAULT, DHCPV6_IRT_INFINITY, DHCPV6_IRT_MINIMUM,
+} from '../dhcpv6/DHCPv6Packet';
+import { verifyReconfigure } from '../dhcpv6/Dhcpv6Reconfigure';
 import { IP_PROTO_GRE } from '../gre/types';
 import { IP_PROTO_IGMP } from '../igmp/types';
 import { IgmpHostAgent } from '../igmp/IgmpHostAgent';
@@ -403,6 +407,25 @@ function pickBestRouteInTable(destInt: number, table: HostRouteEntry[]): HostRou
 
 /** `--to-destination`/`--to-source` as iptables/ip6tables accept them: a bare "ip" or "ip:port". */
 // ─── EndHost ───────────────────────────────────────────────────────
+
+export interface Dhcpv6ClientLease {
+  serverDuid: string;
+  iaid: number;
+  address: string | null;
+  prefix: { prefix: string; prefixLength: number } | null;
+  t1: number;
+  t2: number;
+  preferredLifetime: number;
+  validLifetime: number;
+  serverUnicast: string | null;
+  reconfigureKey: string | null;
+}
+
+export interface Dhcpv6InformationState {
+  serverDuid: string;
+  refreshSeconds: number;
+  reconfigureKey: string | null;
+}
 
 export abstract class EndHost extends Equipment {
   // ─── Socket Table (L4) ──────────────────────────────────────────
@@ -714,6 +737,10 @@ export abstract class EndHost extends Equipment {
     set.add(cle);
     this.ipv6Groups.set(iface, set);
     return true;
+  }
+
+  learnIpv6Neighbor(iface: string, address: IPv6Address, mac: string): void {
+    this.neighborCache.learnFromSource(address.toString(), new MACAddress(mac), iface, false);
   }
 
   leaveIPv6Group(iface: string, group: string): boolean {
@@ -1197,11 +1224,49 @@ export abstract class EndHost extends Equipment {
   // client to obtain a real, wire-negotiated address from a DHCPv6Server.
   private dhcpv6Inbox: Map<string, DHCPv6Packet[]> = new Map();
   private dhcpv6XidCounter = 1;
+  private dhcpv6Leases: Map<string, Dhcpv6ClientLease> = new Map();
+  private dhcpv6Information: Map<string, Dhcpv6InformationState> = new Map();
+  private dhcpv6InformationTimers: Map<string, number> = new Map();
+  private dhcpv6Busy = false;
+  private dhcpv6ReconfigureCounters = { accepted: 0, discarded: 0 };
+
+  getDhcpv6ReconfigureCounters(): Readonly<{ accepted: number; discarded: number }> {
+    return { ...this.dhcpv6ReconfigureCounters };
+  }
+
+  getDhcpv6Information(iface: string): Readonly<Dhcpv6InformationState> | null {
+    return this.dhcpv6Information.get(iface) ?? null;
+  }
+
+  private handleDhcpv6Reconfigure(iface: string, pkt: DHCPv6Packet, destination: IPAddress | IPv6Address): void {
+    const discard = () => { this.dhcpv6ReconfigureCounters.discarded++; };
+    if (this.dhcpv6Busy) return;
+    const lease = this.dhcpv6Leases.get(iface);
+    const info = this.dhcpv6Information.get(iface);
+    const serverDuid = lease?.serverDuid ?? info?.serverDuid ?? null;
+    const key = lease?.reconfigureKey ?? info?.reconfigureKey ?? null;
+    if (!key || destination instanceof IPv6Address === false || (destination as IPv6Address).isMulticast()) return discard();
+    if (pkt.serverDuid !== serverDuid || pkt.clientDuid !== this.buildDhcpv6ClientDuid(iface)) return discard();
+    if (!pkt.reconfigureMessage || !verifyReconfigure(pkt, key)) return discard();
+    this.dhcpv6ReconfigureCounters.accepted++;
+    this.dhcpv6Busy = true;
+    try {
+      if (pkt.reconfigureMessage === 'RENEW') this.renewDhcpv6Lease(iface);
+      else if (pkt.reconfigureMessage === 'REBIND') this.rebindDhcpv6Lease(iface);
+      else this.fetchDhcpv6Information(iface);
+    } finally {
+      this.dhcpv6Busy = false;
+    }
+  }
 
   private ensureDhcpv6Udp546Listener(): void {
     if (this.udpListeners.has(546)) return;
     this.udpListeners.set(546, (dgram) => {
       const pkt = dgram.udp.payload;
+      if (pkt instanceof DHCPv6Packet && pkt.msgType === 'RECONFIGURE') {
+        this.handleDhcpv6Reconfigure(dgram.inPort, pkt, dgram.destinationIP);
+        return;
+      }
       if (pkt instanceof DHCPv6Packet) {
         const box = this.dhcpv6Inbox.get(dgram.inPort) ?? [];
         box.push(pkt);
@@ -1214,17 +1279,19 @@ export abstract class EndHost extends Equipment {
     return `00:03:00:01:${this.ports.get(iface)!.getMAC().toString()}`;
   }
 
-  private sendDhcpv6Frame(iface: string, pkt: DHCPv6Packet): void {
+  private sendDhcpv6Frame(iface: string, pkt: DHCPv6Packet, unicastTo: string | null = null): void {
     const port = this.ports.get(iface);
     const srcIp = port?.getLinkLocalIPv6();
     if (!port || !srcIp) return;
+    if (unicastTo) this.resolveNdpSync(new IPv6Address(unicastTo));
+    if (unicastTo && this.neighborCache.get(unicastTo) && this.sendUdpDatagram6(new IPv6Address(unicastTo), 547, 546, pkt, dhcpv6WireLength(pkt))) return;
     const dst = new IPv6Address('ff02::1:2');
     const udp: UDPPacket = {
-      type: 'udp', sourcePort: 546, destinationPort: 547, length: 8 + 300, checksum: 0, payload: pkt,
+      type: 'udp', sourcePort: 546, destinationPort: 547, length: 8 + dhcpv6WireLength(pkt), checksum: 0, payload: pkt,
     };
     const ipPkt = createIPv6Packet(
       srcIp, dst, IP_PROTO_UDP, 1,
-      stampUdpChecksum(udp, srcIp.toString(), dst.toString()), 8 + 300);
+      stampUdpChecksum(udp, srcIp.toString(), dst.toString()), udp.length);
     this.sendFrame(iface, {
       srcMAC: port.getMAC(), dstMAC: dst.toMulticastMAC(), etherType: ETHERTYPE_IPV6, payload: ipPkt,
     });
@@ -1285,21 +1352,36 @@ export abstract class EndHost extends Equipment {
     this.ensureDhcpv6Udp546Listener();
 
     const clientDuid = this.buildDhcpv6ClientDuid(iface);
-    const xid = (this.dhcpv6XidCounter = (this.dhcpv6XidCounter + 1) & 0xffffff);
-
-    this.dhcpv6Inbox.set(iface, []);
-    this.sendDhcpv6Frame(iface, DHCPv6Packet.createInformationRequest(clientDuid, xid));
-
-    const reply = (this.dhcpv6Inbox.get(iface) ?? [])
-      .find(p => p.msgType === 'REPLY' && p.transactionId === xid);
+    const request = DHCPv6Packet.createInformationRequest(clientDuid, this.nextDhcpv6Xid());
+    request.optionRequest = [DHCPV6_OPTION.DNS_SERVERS, DHCPV6_OPTION.DOMAIN_LIST, DHCPV6_OPTION.INFORMATION_REFRESH_TIME];
+    request.reconfigureAccept = true;
+    const reply = this.exchangeDhcpv6(iface, request);
     if (!reply) return null;
 
+    const advertised = reply.informationRefreshTime ?? DHCPV6_IRT_DEFAULT;
+    const refreshSeconds = advertised === DHCPV6_IRT_INFINITY ? advertised : Math.max(DHCPV6_IRT_MINIMUM, advertised);
+    this.dhcpv6Information.set(iface, {
+      serverDuid: reply.serverDuid!, refreshSeconds,
+      reconfigureKey: reply.reconfigureAccept && reply.authentication?.type === 1 ? reply.authentication.value : null,
+    });
+    this.scheduleDhcpv6InformationRefresh(iface, refreshSeconds);
     this.onDhcpv6LeaseConfigured(iface, reply.dnsServers ?? [], reply.domainList?.[0] ?? null);
     return reply.dnsServers ?? [];
   }
 
-  /** Real DHCPv6 SOLICIT->ADVERTISE->REQUEST->REPLY. Returns a verbose transcript, or '' on failure/no verbose. */
-  requestDhcpv6Lease(iface: string, verbose = false): string {
+  private scheduleDhcpv6InformationRefresh(iface: string, seconds: number): void {
+    const previous = this.dhcpv6InformationTimers.get(iface);
+    if (previous !== undefined) this.getScheduler().clear(previous);
+    this.dhcpv6InformationTimers.delete(iface);
+    if (seconds === DHCPV6_IRT_INFINITY) return;
+    this.dhcpv6InformationTimers.set(iface, this.getScheduler().setTimeout(() => {
+      this.dhcpv6InformationTimers.delete(iface);
+      this.fetchDhcpv6Information(iface);
+    }, seconds * 1000));
+  }
+
+  /** Real DHCPv6 SOLICIT->ADVERTISE->REQUEST->REPLY (or SOLICIT->REPLY with Rapid Commit). Returns a verbose transcript, or '' on failure/no verbose. */
+  requestDhcpv6Lease(iface: string, verbose = false, options: { rapidCommit?: boolean; prefixDelegation?: boolean } = {}): string {
     const port = this.ports.get(iface);
     if (!port) return verbose ? `${iface}: no such interface` : '';
     if (!port.isIPv6Enabled()) port.enableIPv6();
@@ -1307,31 +1389,195 @@ export abstract class EndHost extends Equipment {
 
     const clientDuid = this.buildDhcpv6ClientDuid(iface);
     const iaid = 1;
-    const xid = (this.dhcpv6XidCounter = (this.dhcpv6XidCounter + 1) & 0xffffff);
+    const xid = this.nextDhcpv6Xid();
     const lines: string[] = [];
 
+    const solicit = DHCPv6Packet.createSolicit(clientDuid, iaid, xid);
+    solicit.rapidCommit = options.rapidCommit === true;
+    solicit.optionRequest = [DHCPV6_OPTION.DNS_SERVERS, DHCPV6_OPTION.DOMAIN_LIST];
+    solicit.reconfigureAccept = true;
+    if (options.prefixDelegation) solicit.prefixDelegations = [{ iaid, t1: 0, t2: 0, prefixes: [] }];
     this.dhcpv6Inbox.set(iface, []);
-    this.sendDhcpv6Frame(iface, DHCPv6Packet.createSolicit(clientDuid, iaid, xid));
+    this.sendDhcpv6Frame(iface, solicit);
     if (verbose) lines.push('DHCPv6 SOLICIT');
-    const advertise = (this.dhcpv6Inbox.get(iface) ?? [])
-      .find(p => p.msgType === 'ADVERTISE' && p.transactionId === xid && p.ia?.addresses[0]);
-    if (!advertise) return verbose ? [...lines, 'No DHCPv6 ADVERTISE received'].join('\n') : '';
-    if (verbose) lines.push(`DHCPv6 ADVERTISE of ${advertise.ia!.addresses[0].address}`);
 
-    this.dhcpv6Inbox.set(iface, []);
-    this.sendDhcpv6Frame(iface, DHCPv6Packet.createRequest(
-      clientDuid, advertise.serverDuid!, iaid, advertise.ia!.addresses[0].address, xid));
-    if (verbose) lines.push('DHCPv6 REQUEST');
-    const reply = (this.dhcpv6Inbox.get(iface) ?? [])
-      .find(p => p.msgType === 'REPLY' && p.transactionId === xid && p.ia?.addresses[0]);
-    if (!reply) return verbose ? [...lines, 'No DHCPv6 REPLY received'].join('\n') : '';
+    let reply = (this.dhcpv6Inbox.get(iface) ?? [])
+      .find(p => p.msgType === 'REPLY' && p.transactionId === xid && p.rapidCommit);
+    if (!reply) {
+      const advertise = (this.dhcpv6Inbox.get(iface) ?? [])
+        .find(p => p.msgType === 'ADVERTISE' && p.transactionId === xid
+          && (p.ia?.addresses[0] || p.prefixDelegations[0]?.prefixes[0]));
+      if (!advertise) return verbose ? [...lines, 'No DHCPv6 ADVERTISE received'].join('\n') : '';
+      if (verbose) lines.push(`DHCPv6 ADVERTISE of ${advertise.ia?.addresses[0]?.address ?? advertise.prefixDelegations[0].prefixes[0].prefix}`);
 
-    const lease = reply.ia!.addresses[0];
-    port.addDHCPv6Address(new IPv6Address(lease.address), 64);
-    if (verbose) lines.push(`DHCPv6 REPLY of ${lease.address}`);
+      const request = DHCPv6Packet.createClientMessage(
+        'REQUEST', clientDuid, advertise.serverDuid, xid, advertise.ias.map(ia => ({ ...ia })),
+        advertise.prefixDelegations.map(pd => ({ ...pd })));
+      request.optionRequest = solicit.optionRequest;
+      request.reconfigureAccept = true;
+      this.dhcpv6Inbox.set(iface, []);
+      this.sendDhcpv6Frame(iface, request, advertise.serverUnicast);
+      if (verbose) lines.push('DHCPv6 REQUEST');
+      reply = (this.dhcpv6Inbox.get(iface) ?? [])
+        .find(p => p.msgType === 'REPLY' && p.transactionId === xid);
+      if (!reply) return verbose ? [...lines, 'No DHCPv6 REPLY received'].join('\n') : '';
+    }
+
+    const granted = reply.ia?.addresses[0];
+    const delegated = reply.prefixDelegations[0]?.prefixes[0];
+    if (!granted && !delegated) return verbose ? [...lines, 'No DHCPv6 REPLY received'].join('\n') : '';
+    this.dhcpv6Leases.set(iface, {
+      serverDuid: reply.serverDuid!, iaid,
+      address: granted?.address ?? null,
+      prefix: delegated ? { prefix: delegated.prefix, prefixLength: delegated.prefixLength } : null,
+      t1: reply.ia?.t1 ?? reply.prefixDelegations[0]?.t1 ?? 0,
+      t2: reply.ia?.t2 ?? reply.prefixDelegations[0]?.t2 ?? 0,
+      preferredLifetime: granted?.preferredLifetime ?? delegated?.preferredLifetime ?? 0,
+      validLifetime: granted?.validLifetime ?? delegated?.validLifetime ?? 0,
+      serverUnicast: reply.serverUnicast,
+      reconfigureKey: reply.reconfigureAccept && reply.authentication?.type === 1 ? reply.authentication.value : null,
+    });
+    if (granted) {
+      port.addDHCPv6Address(new IPv6Address(granted.address), 64);
+      if (verbose) lines.push(`DHCPv6 REPLY of ${granted.address}${reply.rapidCommit ? ' (rapid commit)' : ''}`);
+    }
+    if (delegated && verbose) lines.push(`DHCPv6 REPLY prefix ${delegated.prefix}/${delegated.prefixLength}`);
     this.onDhcpv6LeaseConfigured(
       iface, reply.dnsServers ?? [], reply.domainList?.[0] ?? null);
     return lines.join('\n');
+  }
+
+  getDhcpv6Lease(iface: string): Readonly<Dhcpv6ClientLease> | null {
+    return this.dhcpv6Leases.get(iface) ?? null;
+  }
+
+  private nextDhcpv6Xid(): number {
+    return (this.dhcpv6XidCounter = (this.dhcpv6XidCounter + 1) & 0xffffff);
+  }
+
+  private exchangeDhcpv6(iface: string, pkt: DHCPv6Packet, unicastTo: string | null = null): DHCPv6Packet | null {
+    this.ensureDhcpv6Udp546Listener();
+    this.dhcpv6Inbox.set(iface, []);
+    this.sendDhcpv6Frame(iface, pkt, unicastTo);
+    return (this.dhcpv6Inbox.get(iface) ?? [])
+      .find(p => p.msgType === 'REPLY' && p.transactionId === pkt.transactionId) ?? null;
+  }
+
+  private leaseMessage(
+    msgType: 'CONFIRM' | 'RENEW' | 'REBIND' | 'RELEASE' | 'DECLINE', iface: string,
+  ): { packet: DHCPv6Packet; lease: Dhcpv6ClientLease } | null {
+    const lease = this.dhcpv6Leases.get(iface);
+    if (!lease) return null;
+    const withServer = msgType === 'RENEW' || msgType === 'RELEASE' || msgType === 'DECLINE';
+    const ias = lease.address ? [{
+      iaid: lease.iaid, t1: 0, t2: 0,
+      addresses: [{ address: lease.address, preferredLifetime: 0, validLifetime: 0 }],
+    }] : [];
+    const pds = lease.prefix ? [{
+      iaid: lease.iaid, t1: 0, t2: 0,
+      prefixes: [{ ...lease.prefix, preferredLifetime: 0, validLifetime: 0 }],
+    }] : [];
+    const packet = DHCPv6Packet.createClientMessage(
+      msgType, this.buildDhcpv6ClientDuid(iface), withServer ? lease.serverDuid : null,
+      this.nextDhcpv6Xid(), ias, pds);
+    return { packet, lease };
+  }
+
+  private applyLeaseReply(iface: string, lease: Dhcpv6ClientLease, reply: DHCPv6Packet): 'extended' | 'lost' | 'unchanged' {
+    const port = this.ports.get(iface);
+    const ia = reply.ias.find(candidate => candidate.iaid === lease.iaid);
+    const pd = reply.prefixDelegations.find(candidate => candidate.iaid === lease.iaid);
+    const address = ia?.addresses.find(candidate => candidate.address === lease.address);
+    const prefix = pd?.prefixes.find(candidate => candidate.prefix === lease.prefix?.prefix);
+    const addressGone = lease.address !== null && (!address || address.validLifetime === 0);
+    const prefixGone = lease.prefix !== null && (!prefix || prefix.validLifetime === 0);
+    if (addressGone && prefixGone || (addressGone && lease.prefix === null) || (prefixGone && lease.address === null)) {
+      if (lease.address && port) port.removeIPv6Address(new IPv6Address(lease.address));
+      this.dhcpv6Leases.delete(iface);
+      return 'lost';
+    }
+    const source = address ?? prefix;
+    if (!source) return 'unchanged';
+    lease.preferredLifetime = source.preferredLifetime;
+    lease.validLifetime = source.validLifetime;
+    lease.t1 = (address ? ia : pd)!.t1;
+    lease.t2 = (address ? ia : pd)!.t2;
+    return 'extended';
+  }
+
+  renewDhcpv6Lease(iface: string): 'extended' | 'lost' | 'unchanged' | 'no-reply' | 'no-lease' {
+    const built = this.leaseMessage('RENEW', iface);
+    if (!built) return 'no-lease';
+    const reply = this.exchangeDhcpv6(iface, built.packet, built.lease.serverUnicast);
+    return reply ? this.settleLeaseReply(iface, built.lease, reply) : 'no-reply';
+  }
+
+  rebindDhcpv6Lease(iface: string): 'extended' | 'lost' | 'unchanged' | 'no-reply' | 'no-lease' {
+    const built = this.leaseMessage('REBIND', iface);
+    if (!built) return 'no-lease';
+    const reply = this.exchangeDhcpv6(iface, built.packet);
+    return reply ? this.settleLeaseReply(iface, built.lease, reply) : 'no-reply';
+  }
+
+  private settleLeaseReply(iface: string, lease: Dhcpv6ClientLease, reply: DHCPv6Packet): 'extended' | 'lost' | 'unchanged' {
+    const noBinding = reply.ias.some(ia => ia.statusCode === DHCPV6_STATUS.NoBinding)
+      || reply.prefixDelegations.some(pd => pd.statusCode === DHCPV6_STATUS.NoBinding);
+    if (!noBinding) return this.applyLeaseReply(iface, lease, reply);
+    const port = this.ports.get(iface);
+    const request = DHCPv6Packet.createClientMessage(
+      'REQUEST', this.buildDhcpv6ClientDuid(iface), lease.serverDuid, this.nextDhcpv6Xid(),
+      lease.address ? [{ iaid: lease.iaid, t1: 0, t2: 0, addresses: [{ address: lease.address, preferredLifetime: 0, validLifetime: 0 }] }] : [],
+      lease.prefix ? [{ iaid: lease.iaid, t1: 0, t2: 0, prefixes: [{ ...lease.prefix, preferredLifetime: 0, validLifetime: 0 }] }] : []);
+    const granted = this.exchangeDhcpv6(iface, request, lease.serverUnicast);
+    const address = granted?.ias.find(ia => ia.iaid === lease.iaid)?.addresses[0];
+    const prefix = granted?.prefixDelegations.find(pd => pd.iaid === lease.iaid)?.prefixes[0];
+    if (!address && !prefix) {
+      if (lease.address && port) port.removeIPv6Address(new IPv6Address(lease.address));
+      this.dhcpv6Leases.delete(iface);
+      return 'lost';
+    }
+    if (lease.address && address && address.address !== lease.address && port) {
+      port.removeIPv6Address(new IPv6Address(lease.address));
+      port.addDHCPv6Address(new IPv6Address(address.address), 64);
+      lease.address = address.address;
+    }
+    if (prefix) lease.prefix = { prefix: prefix.prefix, prefixLength: prefix.prefixLength };
+    const source = address ?? prefix!;
+    lease.preferredLifetime = source.preferredLifetime;
+    lease.validLifetime = source.validLifetime;
+    return 'extended';
+  }
+
+  confirmDhcpv6Lease(iface: string): 'success' | 'not-on-link' | 'no-reply' | 'no-lease' {
+    const built = this.leaseMessage('CONFIRM', iface);
+    if (!built) return 'no-lease';
+    const reply = this.exchangeDhcpv6(iface, built.packet);
+    if (!reply) return 'no-reply';
+    if (reply.statusCode === DHCPV6_STATUS.NotOnLink) {
+      const port = this.ports.get(iface);
+      if (built.lease.address && port) port.removeIPv6Address(new IPv6Address(built.lease.address));
+      this.dhcpv6Leases.delete(iface);
+      return 'not-on-link';
+    }
+    return 'success';
+  }
+
+  releaseDhcpv6Lease(iface: string): boolean {
+    return this.relinquishDhcpv6Lease('RELEASE', iface);
+  }
+
+  declineDhcpv6Lease(iface: string): boolean {
+    return this.relinquishDhcpv6Lease('DECLINE', iface);
+  }
+
+  private relinquishDhcpv6Lease(msgType: 'RELEASE' | 'DECLINE', iface: string): boolean {
+    const built = this.leaseMessage(msgType, iface);
+    if (!built) return false;
+    const reply = this.exchangeDhcpv6(iface, built.packet, built.lease.serverUnicast);
+    const port = this.ports.get(iface);
+    if (built.lease.address && port) port.removeIPv6Address(new IPv6Address(built.lease.address));
+    this.dhcpv6Leases.delete(iface);
+    return reply !== null && (reply.statusCode ?? DHCPV6_STATUS.Success) === DHCPV6_STATUS.Success;
   }
 
   // ─── Hardware inventory ─────────────────────────────────────────
@@ -2062,7 +2308,7 @@ export abstract class EndHost extends Equipment {
     } else if (frame.etherType === ETHERTYPE_IPV4) {
       this.handleIPv4(iface, frame.payload as IPv4Packet, frame.srcMAC.toString());
     } else if (frame.etherType === ETHERTYPE_IPV6) {
-      this.handleIPv6(iface, frame.payload as IPv6Packet);
+      this.handleIPv6(iface, frame.payload as IPv6Packet, frame.srcMAC.toString());
     }
   }
 
@@ -3493,6 +3739,34 @@ export abstract class EndHost extends Equipment {
       : this.sendUdpDatagram(destinationIP, destinationPort, sourcePort, payload, payloadBytes);
   }
 
+  public scheduleTimer(callback: () => void, delayMs: number): number {
+    return this.getScheduler().setTimeout(callback, delayMs);
+  }
+
+  public sendUdpDatagram6OnLink(
+    iface: string, destinationIP: IPv6Address, destinationPort: number, sourcePort: number,
+    payload: unknown, payloadBytes: number = 0,
+  ): boolean {
+    const port = this.ports.get(iface);
+    const neighbour = this.neighborCache.get(destinationIP.toString());
+    if (!port || !neighbour) return false;
+    const srcIP = destinationIP.isLinkLocal()
+      ? port.getLinkLocalIPv6()
+      : selectIpv6SourceAddress(port, destinationIP);
+    if (!srcIP) return false;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort, destinationPort, length: 8 + payloadBytes, checksum: 0, payload,
+    };
+    const ipPkt = createIPv6Packet(
+      srcIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit,
+      stampUdpChecksum(udp, srcIP.toString(), destinationIP.toString()), udp.length);
+    if (this.firewallFilter6(iface, ipPkt, 'out') !== 'accept') return false;
+    this.sendFrame(iface, {
+      srcMAC: port.getMAC(), dstMAC: neighbour.mac, etherType: ETHERTYPE_IPV6, payload: ipPkt,
+    });
+    return true;
+  }
+
   public sendUdpDatagram6(
     destinationIP: IPv6Address,
     destinationPort: number,
@@ -3604,7 +3878,7 @@ export abstract class EndHost extends Equipment {
     }
   }
 
-  private deliverUDP6(portName: string, ipv6: IPv6Packet): void {
+  private deliverUDP6(portName: string, ipv6: IPv6Packet, sourceMac?: string): void {
     const udp = ipv6.payload as UDPPacket;
     if (!udp || udp.type !== 'udp') return;
 
@@ -3615,7 +3889,7 @@ export abstract class EndHost extends Equipment {
       return;
     }
 
-    if (this.dispatchUdpToListener(portName, udp, ipv6.sourceIP, ipv6.destinationIP)) return;
+    if (this.dispatchUdpToListener(portName, udp, ipv6.sourceIP, ipv6.destinationIP, sourceMac)) return;
 
     this.sendICMPv6Unreachable(portName, ipv6);
   }
@@ -5107,7 +5381,7 @@ export abstract class EndHost extends Equipment {
 
   // ─── IPv6 Packet Handling ──────────────────────────────────────
 
-  private handleIPv6(portName: string, ipv6: IPv6Packet): void {
+  private handleIPv6(portName: string, ipv6: IPv6Packet, sourceMac?: string): void {
     if (!ipv6 || ipv6.type !== 'ipv6') return;
 
     const port = this.ports.get(portName);
@@ -5167,7 +5441,7 @@ export abstract class EndHost extends Equipment {
       }
 
       if (ipv6.nextHeader === IP_PROTO_UDP) {
-        this.deliverUDP6(portName, ipv6);
+        this.deliverUDP6(portName, ipv6, sourceMac);
       } else {
         this.tcpv2.handleIp6(portName, ipv6.sourceIP, ipv6);
       }

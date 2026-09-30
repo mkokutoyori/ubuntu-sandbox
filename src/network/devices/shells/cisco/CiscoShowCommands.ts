@@ -13,6 +13,7 @@ import { iosClockConfigLines } from './CiscoCommonShow';
 import { getDeviceClock } from '@/network/equipment/RouterServiceCapabilities';
 import { loadIntervalLabel, DEFAULT_LOAD_INTERVAL_SEC } from '../../../hardware/PortLoad';
 import { dhcpRunningConfigLines, dhcpSnoopingInterfaceLines, dhcpSnoopingRunningConfigLines } from '../../../dhcp/dhcpRunningConfig';
+import { dhcpv6RunningConfigLines, dhcpv6InterfaceServerLine } from '../../../dhcpv6/dhcpv6RunningConfig';
 import { createDefaultSnoopingConfig } from '../../../dhcp/types';
 import type { DHCPSnoopingConfig } from '../../../dhcp/types';
 
@@ -606,6 +607,7 @@ export function showRunningConfig(router: Router): string {
   lines.push(...consoleAndAuxLineConfigLines(router, serviceEncryption));
 
   lines.push(...dhcpRunningConfigLines(dhcp));
+  lines.push(...dhcpv6RunningConfigLines(router._getDHCPv6ServerInternal()));
   lines.push(...dhcpSnoopingRunningConfigLines(snoopingConfigOf(router)));
 
   lines.push('!');
@@ -1108,7 +1110,7 @@ function ospfInterfaceRunningConfigLines(pending: Record<string, unknown>): stri
   return lines;
 }
 
-function legacyInterfaceLines(port: Port): string[] {
+function legacyInterfaceLines(port: Port, router: Router): string[] {
   const lines: string[] = [];
   const mss = port.getTcpAdjustMss();
   const pool = port.getIpv6DhcpPool();
@@ -1124,7 +1126,7 @@ function legacyInterfaceLines(port: Port): string[] {
   if (port.isDhcpRelayInfoTrusted()) lines.push(' ip dhcp relay information trusted');
   if (port.isRipV2Broadcast()) lines.push(' ip rip v2-broadcast');
   if (port.isNbarProtocolDiscoveryEnabled()) lines.push(' ip nbar protocol-discovery');
-  if (pool) lines.push(` ipv6 dhcp server ${pool}`);
+  if (pool) lines.push(dhcpv6InterfaceServerLine(router._getDHCPv6ServerInternal(), pool));
   for (const d of port.getIpv6DhcpRelayDestinations()) {
     lines.push(` ipv6 dhcp relay destination ${d}`);
   }
@@ -1209,7 +1211,7 @@ function interfaceConfigLines(
   if (nhrp) lines.push(...nhrp.asRunningConfigInterface(name));
   const nf = (router as unknown as { getNetflowService?: () => { asInterfaceRunningConfigLines: (n: string) => string[] } }).getNetflowService?.();
   if (nf) lines.push(...nf.asInterfaceRunningConfigLines(name));
-  lines.push(...legacyInterfaceLines(port));
+  lines.push(...legacyInterfaceLines(port, router));
   lines.push(...dhcpSnoopingInterfaceLines(snoopingConfigOf(router), name));
   lines.push(...igmpInterfaceRunningConfigLines(router, name));
   lines.push(...pimInterfaceRunningConfigLines(router, name));

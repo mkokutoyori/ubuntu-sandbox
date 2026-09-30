@@ -122,6 +122,7 @@ import {
 import { DnsService } from './linux/LinuxDnsService';
 import { Bind9Service } from './linux/bind9/Bind9Service';
 import { LinuxDhcpdService } from './linux/dhcp/LinuxDhcpdService';
+import { LinuxDhcpd6Service } from './linux/dhcp/LinuxDhcpd6Service';
 import { seedDhcpdFiles } from './linux/dhcp/DhcpdFiles';
 import { ServiceScriptRunner } from './linux/service/ServiceScriptRunner';
 
@@ -306,6 +307,7 @@ export abstract class LinuxMachine extends EndHost
 
   public readonly bind9: Bind9Service;
   public readonly dhcpd: LinuxDhcpdService;
+  public readonly dhcpd6: LinuxDhcpd6Service;
 
   /** Configured DNS resolver IP (from /etc/resolv.conf). */
   protected dnsResolverIP = '';
@@ -543,6 +545,24 @@ export abstract class LinuxMachine extends EndHost
         'isc-dhcp-server'),
     });
     this.dhcpd.getEngine().setEventBus(this.getBus());
+    this.dhcpd6 = new LinuxDhcpd6Service(this, {
+      read: (path) => this.executor.vfs.readFile(path),
+      write: (path, content) => { this.executor.vfs.writeFile(path, content, 0, 0, 0o022); },
+    });
+    this.executor.serviceMgr.registerConfigCheck('isc-dhcp-server6', () => {
+      const verdict = this.dhcpd6.preflight();
+      return verdict.ok ? { ok: true } : { ok: false, error: verdict.output, verbatim: true };
+    });
+    this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (name !== 'isc-dhcp-server6') return;
+      const outcome = event === 'start' ? this.dhcpd6.start()
+        : event === 'restart' || event === 'reload' ? this.dhcpd6.restart() : null;
+      if (event === 'stop') this.dhcpd6.stop();
+      if (outcome && !outcome.ok) {
+        this.dhcpd6.stop();
+        this.executor.serviceMgr.markFailed('isc-dhcp-server6', outcome.output);
+      }
+    });
     this.executor.serviceMgr.registerConfigCheck('isc-dhcp-server', () => {
       const verdict = this.dhcpd.preflight();
       return verdict.ok ? { ok: true } : { ok: false, error: verdict.output, verbatim: true };
@@ -2790,6 +2810,7 @@ export abstract class LinuxMachine extends EndHost
       dnsService: this.dnsService,
       bind9: this.bind9,
       dhcpd: this.dhcpd,
+      dhcpd6: this.dhcpd6,
       xfrm: this.xfrmCtx,
       profile: this.profile,
       fmt: this.fmt,

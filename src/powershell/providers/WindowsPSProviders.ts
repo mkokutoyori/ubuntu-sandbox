@@ -1342,6 +1342,8 @@ class WindowsDhcpServerAdapter implements IDhcpServerProvider {
     return role;
   }
 
+  v6() { return this.role().v6; }
+
   addScope(name: string, startRange: string, endRange: string, subnetMask: string, leaseDurationSeconds?: number): DhcpOpResult {
     return this.role().addScope(name, startRange, endRange, subnetMask, leaseDurationSeconds);
   }

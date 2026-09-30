@@ -23,6 +23,61 @@ export interface DHCPv6PoolConfig {
   domainName: string | null;
   preferredLifetime: number;
   validLifetime: number;
+  delegations: DHCPv6DelegationPool[];
+  staticDelegations: DHCPv6StaticDelegation[];
+  rapidCommit: boolean;
+  preference: number;
+  delegationFromLocalPool: string | null;
+  reservations: DHCPv6Reservation[];
+  exclusions: DHCPv6AddressRange[];
+  t1: number | null;
+  t2: number | null;
+  serverUnicast: string | null;
+  reconfigure: boolean;
+  informationRefreshTime: number;
+}
+
+export interface DHCPv6Reservation {
+  address: string;
+  clientDuid: string;
+  iaid: number | null;
+  name: string | null;
+}
+
+export interface DHCPv6DelegationPool {
+  prefix: string;
+  prefixLength: number;
+  assignedLength: number;
+  firstPrefix?: string;
+  lastPrefix?: string;
+}
+
+export interface DHCPv6StaticDelegation {
+  prefix: string;
+  prefixLength: number;
+  clientDuid: string;
+  iaid: number | null;
+}
+
+export interface DHCPv6RelayPath {
+  relayAddress: string;
+  layers: ReadonlyArray<DHCPv6RelayLayer>;
+}
+
+export interface DHCPv6RelayLayer {
+  linkAddress: string;
+  peerAddress: string;
+  interfaceId: string | null;
+}
+
+export interface DHCPv6PrefixBinding {
+  clientDuid: string;
+  iaid: number;
+  prefix: string;
+  prefixLength: number;
+  poolName: string;
+  leaseStart: number;
+  leaseExpiration: number;
 }
 
 export function createDefaultDHCPv6Pool(name: string): DHCPv6PoolConfig {
@@ -35,6 +90,18 @@ export function createDefaultDHCPv6Pool(name: string): DHCPv6PoolConfig {
     domainName: null,
     preferredLifetime: 27000,
     validLifetime: 43200,
+    delegations: [],
+    staticDelegations: [],
+    rapidCommit: false,
+    preference: 0,
+    delegationFromLocalPool: null,
+    reservations: [],
+    exclusions: [],
+    t1: null,
+    t2: null,
+    serverUnicast: null,
+    reconfigure: false,
+    informationRefreshTime: 86400,
   };
 }
 

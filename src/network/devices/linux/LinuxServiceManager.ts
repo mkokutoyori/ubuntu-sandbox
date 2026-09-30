@@ -438,6 +438,15 @@ const SERVER_UNITS: DefaultUnit[] = [
     enabledByDefault: false,
   },
   {
+    name: 'isc-dhcp-server6',
+    description: 'ISC DHCP IPv6 server',
+    type: 'forking',
+    execStart: '/usr/sbin/dhcpd -6 -q -cf /etc/dhcp/dhcpd6.conf',
+    user: 'root',
+    after: ['network-online.target'],
+    enabledByDefault: false,
+  },
+  {
     name: 'rpcbind',
     description: 'RPC bind portmap service',
     type: 'forking',
@@ -555,6 +564,10 @@ export const SERVICE_LISTENERS: Readonly<Record<string, ServiceListenerSpec>> = 
   'isc-dhcp-server': {
     processName: 'dhcpd',
     sockets: [{ port: 67, protocol: 'udp' }],
+  },
+  'isc-dhcp-server6': {
+    processName: 'dhcpd',
+    sockets: [{ port: 547, protocol: 'udp' }],
   },
   mysql: { processName: 'mysqld', sockets: [{ port: 3306, protocol: 'tcp' }] },
   postgresql: { processName: 'postgres', sockets: [{ port: 5432, protocol: 'tcp' }] },
@@ -1840,6 +1853,7 @@ function serviceMemoryProfile(name: string): { vsize: number; rss: number } {
     'unattended-upgrade':   [126000, 16000],
     'nginx':                [55000,  4900],
     'isc-dhcp-server':      [12000,  1400],
+    'isc-dhcp-server6':     [12000,  1400],
     'apache2':              [220000, 12000],
     'mariadbd':             [1180000, 130000],
     'mysqld':               [1180000, 130000],

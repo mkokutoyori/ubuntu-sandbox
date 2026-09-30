@@ -2,6 +2,9 @@ export const DHCPD_CONF_PATH = '/etc/dhcp/dhcpd.conf';
 export const DHCPD_DEFAULTS_PATH = '/etc/default/isc-dhcp-server';
 export const DHCPD_LEASES_PATH = '/var/lib/dhcp/dhcpd.leases';
 export const DHCPD_PID_PATH = '/run/dhcp-server/dhcpd.pid';
+export const DHCPD6_CONF_PATH = '/etc/dhcp/dhcpd6.conf';
+export const DHCPD6_LEASES_PATH = '/var/lib/dhcp/dhcpd6.leases';
+export const DHCPD6_PID_PATH = '/run/dhcp-server/dhcpd6.pid';
 export const DHCPD_BINARY = '/usr/sbin/dhcpd';
 
 export const DHCPD_VERSION = '4.4.1';
@@ -65,6 +68,21 @@ INTERFACESv4=""
 INTERFACESv6=""
 `;
 
+export const DHCPD6_CONF_DEFAULT = `# Sample configuration file for ISC dhcpd for DHCPv6
+#
+
+default-lease-time 2592000;
+preferred-lifetime 604800;
+option dhcp-renewal-time 3600;
+option dhcp-rebinding-time 7200;
+option dhcp6.name-servers 2001:db8:0:1::1;
+option dhcp6.domain-search "example.org";
+
+# subnet6 2001:db8:0:1::/64 {
+#   range6 2001:db8:0:1::129 2001:db8:0:1::254;
+# }
+`;
+
 export const DHCPD_LEASES_HEADER = `# The format of this file is documented in the dhcpd.leases(5) manual page.
 # This lease file was written by isc-dhcp-${DHCPD_VERSION}
 `;
@@ -82,4 +100,6 @@ export function seedDhcpdFiles(fs: DhcpdSeedFs): void {
   if (!fs.exists(DHCPD_CONF_PATH)) fs.write(DHCPD_CONF_PATH, DHCPD_CONF_DEFAULT);
   if (!fs.exists(DHCPD_DEFAULTS_PATH)) fs.write(DHCPD_DEFAULTS_PATH, DHCPD_DEFAULTS_CONTENT);
   if (!fs.exists(DHCPD_LEASES_PATH)) fs.write(DHCPD_LEASES_PATH, DHCPD_LEASES_HEADER);
+  if (!fs.exists(DHCPD6_CONF_PATH)) fs.write(DHCPD6_CONF_PATH, DHCPD6_CONF_DEFAULT);
+  if (!fs.exists(DHCPD6_LEASES_PATH)) fs.write(DHCPD6_LEASES_PATH, DHCPD_LEASES_HEADER);
 }

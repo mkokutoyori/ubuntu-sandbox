@@ -217,7 +217,7 @@ describe('Group 2: DHCPPacket Structure', () => {
 
       expect(pkt.op).toBe(2); // BOOTREPLY
       expect(pkt.yiaddr).toBe('192.168.1.100');
-      expect(pkt.siaddr).toBe('192.168.1.1');
+      expect(pkt.siaddr).toBe('0.0.0.0');
       expect(pkt.getOption(53)).toBe(2); // DHCPOFFER
       expect(pkt.getOption(54)).toBe('192.168.1.1'); // Server Identifier
       expect(pkt.getOption(1)).toBe('255.255.255.0'); // Subnet Mask

@@ -13,6 +13,9 @@
  */
 
 import type { DhcpFailoverChanges, DhcpFailoverRequest, DhcpFailoverView } from '@/network/devices/windows/server/dhcp/WindowsDhcpServerRole';
+import type {
+  DhcpV6OpResult, DhcpV6ScopeInfo, DhcpV6ScopeRequest, DhcpV6LeaseInfo, DhcpV6ReservationInfo, DhcpV6ExclusionInfo,
+} from '@/network/devices/windows/server/dhcp/WindowsDhcpv6';
 import type { GroupWriteOptions, OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
 
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
@@ -1038,7 +1041,25 @@ export interface DhcpScopeStats { total: number; inUse: number; free: number; pe
 export interface DhcpServerStats { scopes: number; totalAddresses: number; inUse: number; free: number }
 export interface DhcpLeaseInfo { ipAddress: string; clientId: string; scopeId: string; scopeName: string; leaseExpiration: number; type: 'automatic' | 'manual' }
 
+export interface IDhcpServerV6Provider {
+  addScope(request: DhcpV6ScopeRequest): DhcpV6OpResult;
+  getScope(prefix: string): DhcpV6ScopeInfo | null;
+  listScopes(): DhcpV6ScopeInfo[];
+  setScope(prefix: string, changes: Partial<DhcpV6ScopeRequest> & { newName?: string }): DhcpV6OpResult;
+  removeScope(prefix: string): DhcpV6OpResult;
+  addExclusionRange(prefix: string, start: string, end: string): DhcpV6OpResult;
+  listExclusionRanges(prefix?: string): DhcpV6ExclusionInfo[];
+  addReservation(prefix: string, address: string, clientDuid: string, iaid: number, name: string): DhcpV6OpResult;
+  listReservations(prefix?: string): DhcpV6ReservationInfo[];
+  removeReservation(prefix: string, address: string): DhcpV6OpResult;
+  setOptionValue(prefix: string | undefined, optionId: number, values: string[]): DhcpV6OpResult;
+  getOptionValues(prefix?: string): Array<{ optionId: number; name: string; value: string[]; prefix: string | null }>;
+  getLeases(prefix?: string): DhcpV6LeaseInfo[];
+  removeLease(address: string): DhcpV6OpResult;
+}
+
 export interface IDhcpServerProvider {
+  v6(): IDhcpServerV6Provider;
   addScope(name: string, startRange: string, endRange: string, subnetMask: string, leaseDurationSeconds?: number): DhcpOpResult;
   getScope(name: string): DhcpScopeInfo | null;
   listScopes(): DhcpScopeInfo[];

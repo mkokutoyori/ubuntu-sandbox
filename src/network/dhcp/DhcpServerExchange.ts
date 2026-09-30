@@ -10,7 +10,7 @@
  */
 import { DHCPPacket, DHCP_OPTION } from './DHCPPacket';
 import type { DHCPServer } from './DHCPServer';
-import type { DHCPDiscoverParams, DHCPOfferResult } from './types';
+import type { DHCPDiscoverParams, DHCPOfferResult, DhcpRelayInformation } from './types';
 
 export interface DhcpServeContext {
   server: DHCPServer;
@@ -40,6 +40,68 @@ function offerPacket(pkt: DHCPPacket, offer: DHCPOfferResult, leaseDuration: num
 function requestedAddress(pkt: DHCPPacket): string | undefined {
   const raw = pkt.getOption(DHCP_OPTION.REQUESTED_IP);
   return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+}
+
+function relayInformationOf(pkt: DHCPPacket): DhcpRelayInformation | undefined {
+  const raw = pkt.getOption(82) as { circuitId?: unknown; remoteId?: unknown } | undefined;
+  if (raw === undefined || raw === null || typeof raw !== 'object') return undefined;
+  return { circuitId: String(raw.circuitId ?? ''), remoteId: String(raw.remoteId ?? '') };
+}
+
+const NO_HARDWARE_ADDRESS = '00:00:00:00:00:00';
+
+function leaseQueryMessage(type: number, xid: number, ciaddr: string, chaddr: string): DHCPPacket {
+  const reply = new DHCPPacket();
+  reply.op = 2;
+  reply.xid = xid;
+  reply.ciaddr = ciaddr;
+  reply.chaddr = chaddr;
+  reply.setOption(DHCP_OPTION.MESSAGE_TYPE, type);
+  return reply;
+}
+
+function answerLeaseQuery(pkt: DHCPPacket, server: DHCPServer): DHCPPacket | null {
+  if (pkt.giaddr === '0.0.0.0' || !server.mayLeasequery(pkt.giaddr)) return null;
+  const clientIdentifier = pkt.getOption(DHCP_OPTION.CLIENT_IDENTIFIER);
+  const byIp = pkt.ciaddr !== '0.0.0.0';
+  const byMac = pkt.chaddr !== NO_HARDWARE_ADDRESS;
+  const byId = typeof clientIdentifier === 'string' && clientIdentifier.length > 0;
+  if ([byIp, byMac, byId].filter(Boolean).length !== 1) return null;
+  const requested = (pkt.getOption(DHCP_OPTION.PARAMETER_REQUEST_LIST) as number[] | undefined) ?? [];
+  const result = server.processLeaseQuery({
+    giaddr: pkt.giaddr,
+    ipAddress: byIp ? pkt.ciaddr : undefined,
+    hardwareAddress: !byIp && byMac && !byId ? pkt.chaddr : undefined,
+    clientIdentifier: !byIp && byId ? String(clientIdentifier) : undefined,
+    parameterRequestList: requested,
+  });
+  if (result.type === 'DHCPLEASEUNKNOWN') return leaseQueryMessage(12, pkt.xid, '0.0.0.0', pkt.chaddr);
+  if (result.type === 'DHCPLEASEUNASSIGNED') return leaseQueryMessage(11, pkt.xid, result.ipAddress, pkt.chaddr);
+  const reply = leaseQueryMessage(13, pkt.xid, result.ipAddress, result.hardwareAddress);
+  reply.setOption(DHCP_OPTION.SERVER_IDENTIFIER, server.getServerIdentifier());
+  reply.setOption(DHCP_OPTION.CLIENT_LAST_TRANSACTION_TIME, result.secondsSinceTransaction);
+  if (result.associatedAddresses.length > 0) reply.setOption(DHCP_OPTION.ASSOCIATED_IP, [...result.associatedAddresses]);
+  const pool = server.getPool(result.poolName);
+  for (const code of requested) {
+    if (code === DHCP_OPTION.CLIENT_IDENTIFIER && result.clientIdentifierOption !== undefined) {
+      reply.setOption(code, result.clientIdentifierOption);
+    } else if (code === 82 && result.relayInformation !== undefined) {
+      reply.setOption(code, result.relayInformation);
+    } else if (code === DHCP_OPTION.LEASE_TIME && result.leaseSecondsLeft !== null && result.leaseSecondsLeft > 0) {
+      reply.setOption(code, result.leaseSecondsLeft);
+    } else if ((code === DHCP_OPTION.RENEWAL_TIME || code === DHCP_OPTION.REBINDING_TIME) && result.leaseSecondsLeft !== null) {
+      const share = code === DHCP_OPTION.RENEWAL_TIME ? 0.5 : 0.875;
+      const total = pool?.leaseDuration ?? result.leaseSecondsLeft;
+      const left = Math.floor(total * share) - (total - result.leaseSecondsLeft);
+      if (left > 0) reply.setOption(code, left);
+    } else if (pool !== undefined && server.leasequeryMayReturn(code)) {
+      if (code === DHCP_OPTION.SUBNET_MASK && pool.mask) reply.setOption(code, pool.mask);
+      if (code === DHCP_OPTION.ROUTER && pool.defaultRouter) reply.setOption(code, pool.defaultRouter);
+      if (code === DHCP_OPTION.DNS && pool.dnsServers.length > 0) reply.setOption(code, [...pool.dnsServers]);
+      if (code === DHCP_OPTION.DOMAIN_NAME && pool.domainName) reply.setOption(code, pool.domainName);
+    }
+  }
+  return reply;
 }
 
 function vendorClassOf(pkt: DHCPPacket): string | undefined {
@@ -75,8 +137,20 @@ export function buildDhcpServerReply(pkt: DHCPPacket, ctx: DhcpServeContext): DH
   const reply = answerDhcpRequest(pkt, ctx);
   if (reply === null) return null;
   reply.giaddr = pkt.giaddr;
-  reply.flags = pkt.flags;
+  reply.flags = reply.getMessageType() === 'DHCPNAK' && pkt.giaddr !== '0.0.0.0'
+    ? pkt.flags | BROADCAST_FLAG
+    : pkt.flags;
   return reply;
+}
+
+const IMPLIED_CLIENT_IDENTIFIER = /^01([0-9a-f]{12})$/i;
+
+export function clientKeyOf(pkt: DHCPPacket): string {
+  const raw = pkt.getOption(DHCP_OPTION.CLIENT_IDENTIFIER);
+  if (typeof raw !== 'string' || raw.length === 0) return pkt.chaddr;
+  const implied = IMPLIED_CLIENT_IDENTIFIER.exec(raw);
+  if (implied) return implied[1].toUpperCase().replace(/(..)(?=.)/g, '$1:');
+  return `id:${raw}`;
 }
 
 function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket | null {
@@ -86,10 +160,11 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
 
   if (type === 'DHCPDISCOVER') {
     const params: DHCPDiscoverParams = {
-      clientMAC: pkt.chaddr, xid: pkt.xid,
+      clientMAC: clientKeyOf(pkt), xid: pkt.xid,
       hostName: clientHostName(pkt),
       clientIdentifier: pkt.chaddr, parameterRequestList: [],
       vendorClass: vendorClassOf(pkt),
+      relayInformation: relayInformationOf(pkt),
       requestedIP: requestedAddress(pkt),
       giaddr, localGatewayIP: giaddr ? undefined : ctx.localGatewayIP,
     };
@@ -102,16 +177,23 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
         offer = (next && next.ip !== offer.ip) ? next : null;
       }
     }
-    return offer ? offerPacket(pkt, offer, server.leaseSecondsOf(offer.pool)) : null;
+    if (!offer) return null;
+    const previous = server.remainingLeaseSeconds(offer.ip, clientKeyOf(pkt));
+    return offerPacket(pkt, offer, previous ?? server.leaseSecondsOf(offer.pool, offer.ip));
   }
 
   if (type === 'DHCPREQUEST') {
+    const selecting = pkt.getOption(54) !== undefined;
     const result = server.processRequestWithNak({
-      clientMAC: pkt.chaddr, xid: pkt.xid,
+      clientMAC: clientKeyOf(pkt), xid: pkt.xid,
+      requestState: selecting ? 'selecting' : pkt.ciaddr === '0.0.0.0' ? 'init-reboot' : 'renewing',
+      hardwareAddress: pkt.chaddr,
+      clientIdentifierOption: typeof pkt.getOption(DHCP_OPTION.CLIENT_IDENTIFIER) === 'string' ? String(pkt.getOption(DHCP_OPTION.CLIENT_IDENTIFIER)) : undefined,
       requestedIP: String(pkt.getOption(50) ?? pkt.ciaddr),
       hostName: clientHostName(pkt),
       clientIdentifier: pkt.chaddr,
       vendorClass: vendorClassOf(pkt),
+      relayInformation: relayInformationOf(pkt),
       serverIdentifier: String(pkt.getOption(54) ?? ''),
       giaddr,
     } as never);
@@ -127,7 +209,7 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
         router: pool?.defaultRouter ?? '0.0.0.0',
         dns: pool?.dnsServers ?? [],
         domainName: pool?.domainName ?? undefined,
-        leaseDuration: pool ? server.leaseSecondsOf(pool) : 86400,
+        leaseDuration: pool ? server.leaseSecondsOf(pool, result.binding.ipAddress) : 86400,
         renewalTime: pool?.renewalTime,
         rebindingTime: pool?.rebindingTime,
         nextServer: pool?.nextServer,
@@ -140,7 +222,7 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
 
   if (type === 'DHCPINFORM') {
     const result = server.processInform({
-      clientMAC: pkt.chaddr, clientIP: pkt.ciaddr, xid: pkt.xid, clientIdentifier: pkt.chaddr,
+      clientMAC: clientKeyOf(pkt), clientIP: pkt.ciaddr, xid: pkt.xid, clientIdentifier: pkt.chaddr,
     });
     if (!result) return null;
     return DHCPPacket.createInformAck(pkt.chaddr, pkt.xid, pkt.ciaddr, result.serverIdentifier, {
@@ -153,7 +235,7 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
 
   if (type === 'DHCPDECLINE') {
     server.processDecline({
-      clientMAC: pkt.chaddr,
+      clientMAC: clientKeyOf(pkt),
       declinedIP: String(pkt.getOption(50) ?? ''),
       serverIdentifier: String(pkt.getOption(54) ?? ''),
       clientIdentifier: pkt.chaddr,
@@ -161,9 +243,11 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
     return null;
   }
 
+  if (type === 'DHCPLEASEQUERY') return answerLeaseQuery(pkt, server);
+
   if (type === 'DHCPRELEASE') {
     server.processRelease({
-      clientMAC: pkt.chaddr,
+      clientMAC: clientKeyOf(pkt),
       clientIP: pkt.ciaddr,
       serverIdentifier: String(pkt.getOption(54) ?? ''),
       clientIdentifier: pkt.chaddr,

@@ -914,6 +914,7 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
     address('dns-server1', 'DNS server 1.'),
     address('dns-server2', 'DNS server 2.'),
     address('dns-server3', 'DNS server 3.'),
+    address('dns-server4', 'DNS server 4.'),
     word('domain', 'Domain name suffix for the IP addresses that the DHCP server assigns.'),
     choice('ntp-service', 'Options for assigning Network Time Protocol (NTP) servers to DHCP clients.', [
       { keyword: 'local', description: 'Use the FortiGate as the NTP server.' },
@@ -1043,6 +1044,10 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
           { keyword: 'block', description: 'Block the DHCP request of the client with this MAC address.' },
           { keyword: 'reserved', description: 'Assign the reserved IP address to the client with this MAC address.' },
         ], 'reserved'),
+        choice('type', 'DHCP reserved-address type.', [
+          { keyword: 'mac', description: 'Match with MAC address.' },
+          { keyword: 'option82', description: 'Match with DHCP option 82.' },
+        ], 'mac'),
         address('ip', 'IP address to be reserved for the MAC address.'),
         {
           name: 'mac', help: 'MAC address of the client that will get the reserved IP.',
@@ -1051,6 +1056,29 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
             name: 'mac', type: 'MAC_ADDR',
             description: 'MAC address of the client.',
           }],
+          availableWhen: (object: FortiObjectView) => object.effective('type')[0] !== 'option82',
+        },
+        {
+          ...word('circuit-id', 'Option 82 circuit-ID of the client that will get the reserved IP address.'),
+          availableWhen: (object: FortiObjectView) => object.effective('type')[0] === 'option82',
+        },
+        {
+          ...choice('circuit-id-type', 'DHCP option type.', [
+            { keyword: 'hex', description: 'DHCP option in hex.' },
+            { keyword: 'string', description: 'DHCP option in string.' },
+          ], 'string'),
+          availableWhen: (object: FortiObjectView) => object.effective('type')[0] === 'option82',
+        },
+        {
+          ...word('remote-id', 'Option 82 remote-ID of the client that will get the reserved IP address.'),
+          availableWhen: (object: FortiObjectView) => object.effective('type')[0] === 'option82',
+        },
+        {
+          ...choice('remote-id-type', 'DHCP option type.', [
+            { keyword: 'hex', description: 'DHCP option in hex.' },
+            { keyword: 'string', description: 'DHCP option in string.' },
+          ], 'string'),
+          availableWhen: (object: FortiObjectView) => object.effective('type')[0] === 'option82',
         },
         text('description', 'Description.'),
       ],
@@ -1068,6 +1096,14 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
         { ...word('id', 'Range identifier.'), readOnly: true },
         address('start-ip', 'Start of IP range.'),
         address('end-ip', 'End of IP range.'),
+        {
+          ...count('lease-time', 'Lease time in seconds, 0 means default lease time.', 0, 8640000, 0),
+          acceptsValue: (value: string) => {
+            const seconds = Number(value);
+            return seconds === 0 || (seconds >= 300 && seconds <= 8640000);
+          },
+          expectedValue: 'an integer in range[300-8640000], or 0 for the default lease time.',
+        },
       ],
     },
   ],
@@ -1083,6 +1119,7 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
         object.effective('dns-server1')[0] ?? '',
         object.effective('dns-server2')[0] ?? '',
         object.effective('dns-server3')[0] ?? '',
+        object.effective('dns-server4')[0] ?? '',
       ].filter(server => server.length > 0 && server !== '0.0.0.0'),
       wifiControllers: ['wifi-ac1', 'wifi-ac2', 'wifi-ac3']
         .map(name => object.effective(name)[0] ?? '')
@@ -1126,6 +1163,11 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
         mac: entry.effective('mac')[0] ?? '',
         description: entry.effective('description')[0] ?? '',
         action: entry.effective('action')[0] ?? 'reserved',
+        type: entry.effective('type')[0] === 'option82' ? 'option82' as const : 'mac' as const,
+        circuitId: entry.effective('circuit-id')[0] ?? '',
+        circuitIdType: entry.effective('circuit-id-type')[0] ?? 'string',
+        remoteId: entry.effective('remote-id')[0] ?? '',
+        remoteIdType: entry.effective('remote-id-type')[0] ?? 'string',
       })),
       domain: object.effective('domain')[0] ?? '',
       leaseTimeSec: Number.parseInt(object.effective('lease-time')[0] ?? '604800', 10),
@@ -1133,6 +1175,7 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
       ranges: object.childEntries('ip-range').map(range => ({
         startIp: range.effective('start-ip')[0] ?? '0.0.0.0',
         endIp: range.effective('end-ip')[0] ?? '0.0.0.0',
+        leaseTimeSec: Number.parseInt(range.effective('lease-time')[0] ?? '0', 10) || 0,
       })),
     });
   },

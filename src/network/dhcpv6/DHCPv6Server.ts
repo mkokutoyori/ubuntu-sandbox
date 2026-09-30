@@ -13,6 +13,7 @@ import { ipv6FromBigInt, ipv6ToBigInt } from '../core/Ipv6Arithmetic';
 import {
   DHCPv6PoolConfig, DHCPv6Binding, DHCPv6SolicitParams, DHCPv6RequestParams,
   DHCPv6LeaseResult, DHCPv6ReleaseParams, DHCPv6AddressRange, createDefaultDHCPv6Pool,
+  DHCPv6PrefixBinding, DHCPv6StaticDelegation, DHCPv6Reservation, DHCPv6RelayPath,
 } from './types';
 
 const RANGE_SCAN_LIMIT = 65536;
@@ -25,7 +26,172 @@ export class DHCPv6Server {
   private bindings: Map<string, DHCPv6Binding> = new Map();
   /** Address reserved between SOLICIT and REQUEST (RFC 8415 §18.3.1). */
   private pendingOffers: Map<string, { clientDuid: string; iaid: number; poolName: string }> = new Map();
+  private prefixBindings: Map<string, DHCPv6PrefixBinding> = new Map();
+  private pendingPrefixes: Map<string, { clientDuid: string; iaid: number; poolName: string }> = new Map();
+  private declined: Map<string, number> = new Map();
+  private clientAddresses: Map<string, { address: string; iface: string | null }> = new Map();
+  private reconfigureKeys: Map<string, string> = new Map();
+  private reconfigureWilling: Set<string> = new Set();
+  private reconfigurePending: Map<string, 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST'> = new Map();
+  private reconfigureGenerations: Map<string, number> = new Map();
+  private relayPaths: Map<string, DHCPv6RelayPath> = new Map();
+  private localPools: Map<string, { prefix: string; prefixLength: number; assignedLength: number }> = new Map();
   private clock: () => number = () => Date.now();
+
+  noteClientAddress(clientDuid: string, address: string, iface: string | null = null): void {
+    this.clientAddresses.set(clientDuid, { address, iface });
+  }
+  clientAddressOf(clientDuid: string): string | null { return this.clientAddresses.get(clientDuid)?.address ?? null; }
+  clientInterfaceOf(clientDuid: string): string | null { return this.clientAddresses.get(clientDuid)?.iface ?? null; }
+
+  noteReconfigureWilling(clientDuid: string, willing: boolean): void {
+    if (willing) this.reconfigureWilling.add(clientDuid);
+    else this.reconfigureWilling.delete(clientDuid);
+  }
+
+  isReconfigureWilling(clientDuid: string): boolean { return this.reconfigureWilling.has(clientDuid); }
+
+  reconfigureKeyFor(clientDuid: string): string {
+    let key = this.reconfigureKeys.get(clientDuid);
+    if (!key) {
+      const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+      key = [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
+      this.reconfigureKeys.set(clientDuid, key);
+    }
+    return key;
+  }
+
+  hasReconfigureKey(clientDuid: string): boolean { return this.reconfigureKeys.has(clientDuid); }
+
+  beginReconfigure(clientDuid: string, msgType: 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST'): number {
+    const generation = (this.reconfigureGenerations.get(clientDuid) ?? 0) + 1;
+    this.reconfigureGenerations.set(clientDuid, generation);
+    this.reconfigurePending.set(clientDuid, msgType);
+    return generation;
+  }
+
+  reconfigureGeneration(clientDuid: string): number { return this.reconfigureGenerations.get(clientDuid) ?? 0; }
+
+  abortReconfigure(clientDuid: string): void { this.reconfigurePending.delete(clientDuid); }
+
+  noteRelayPath(clientDuid: string, path: DHCPv6RelayPath | null): void {
+    if (path === null || path.layers.length === 0) this.relayPaths.delete(clientDuid);
+    else this.relayPaths.set(clientDuid, path);
+  }
+
+  relayPathOf(clientDuid: string): DHCPv6RelayPath | null { return this.relayPaths.get(clientDuid) ?? null; }
+
+  pendingReconfigure(clientDuid: string): 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST' | null {
+    return this.reconfigurePending.get(clientDuid) ?? null;
+  }
+
+  satisfyReconfigure(clientDuid: string, msgType: string): void {
+    if (this.reconfigurePending.get(clientDuid) === msgType) this.reconfigurePending.delete(clientDuid);
+  }
+
+  configurePoolServerUnicast(name: string, address: string | null): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.serverUnicast = address === null ? null : new IPv6Address(address).toString();
+    return true;
+  }
+
+  configurePoolReconfigure(name: string, enabled: boolean): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.reconfigure = enabled;
+    return true;
+  }
+
+  configurePoolInformationRefresh(name: string, seconds: number): boolean {
+    const pool = this.pools.get(name);
+    if (!pool || !Number.isInteger(seconds) || seconds < 0) return false;
+    pool.informationRefreshTime = seconds;
+    return true;
+  }
+
+  configureLocalPool(name: string, prefix: string, prefixLength: number, assignedLength: number): boolean {
+    if (assignedLength < prefixLength || assignedLength > 128) return false;
+    const network = new IPv6Address(prefix).getNetworkPrefix(prefixLength).toString();
+    this.localPools.set(name, { prefix: network, prefixLength, assignedLength });
+    for (const pool of this.pools.values()) {
+      if (pool.delegationFromLocalPool === name) pool.delegations = [{ prefix: network, prefixLength, assignedLength }];
+    }
+    return true;
+  }
+
+  getLocalPools(): ReadonlyMap<string, { prefix: string; prefixLength: number; assignedLength: number }> { return this.localPools; }
+
+  deleteLocalPool(name: string): boolean { return this.localPools.delete(name); }
+
+  configurePoolDelegationFromLocalPool(name: string, localPoolName: string): boolean {
+    const pool = this.pools.get(name);
+    const local = this.localPools.get(localPoolName);
+    if (!pool) return false;
+    pool.delegationFromLocalPool = localPoolName;
+    pool.delegations = local ? [{ ...local }] : [];
+    return true;
+  }
+
+  configurePoolRapidCommit(name: string, enabled: boolean): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.rapidCommit = enabled;
+    return true;
+  }
+
+  configurePoolPreference(name: string, value: number): boolean {
+    const pool = this.pools.get(name);
+    if (!pool || !Number.isInteger(value) || value < 0 || value > 255) return false;
+    pool.preference = value;
+    return true;
+  }
+
+  configurePoolReservation(name: string, reservation: DHCPv6Reservation): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    const wanted = new IPv6Address(reservation.address).toString();
+    pool.reservations = [
+      ...pool.reservations.filter(r => new IPv6Address(r.address).toString() !== wanted),
+      { ...reservation, address: wanted },
+    ];
+    return true;
+  }
+
+  removePoolReservation(name: string, address: string): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    const wanted = new IPv6Address(address).toString();
+    const before = pool.reservations.length;
+    pool.reservations = pool.reservations.filter(r => new IPv6Address(r.address).toString() !== wanted);
+    return pool.reservations.length < before;
+  }
+
+  configurePoolTimers(name: string, t1: number | null, t2: number | null): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.t1 = t1;
+    pool.t2 = t2;
+    return true;
+  }
+
+  configurePoolExclusions(name: string, ranges: readonly DHCPv6AddressRange[]): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.exclusions = ranges.map(range => ({ ...range }));
+    return true;
+  }
+
+  configurePoolExclusion(name: string, range: DHCPv6AddressRange): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.exclusions = [...pool.exclusions, { ...range }];
+    return true;
+  }
+
+  selectPool(anchor?: string, explicitPoolName?: string): DHCPv6PoolConfig | undefined {
+    return this.resolvePools(anchor, explicitPoolName)[0];
+  }
 
   setClock(clock: () => number): void { this.clock = clock; }
 
@@ -88,10 +254,68 @@ export class DHCPv6Server {
   clearBinding(address: string): boolean { return this.bindings.delete(address); }
 
   clearAllBindings(): number {
-    const removed = this.bindings.size;
+    const removed = this.bindings.size + this.prefixBindings.size;
     this.bindings.clear();
+    this.prefixBindings.clear();
     this.pendingOffers.clear();
+    this.pendingPrefixes.clear();
+    this.declined.clear();
+    this.reconfigureKeys.clear();
+    this.reconfigurePending.clear();
+    this.relayPaths.clear();
     return removed;
+  }
+
+  getPrefixBindings(): DHCPv6PrefixBinding[] { return [...this.prefixBindings.values()]; }
+
+  getDeclinedAddresses(): string[] { return [...this.declined.keys()]; }
+
+  clearDeclined(address: string): boolean { return this.declined.delete(address); }
+
+  clearPrefixBinding(prefix: string, prefixLength: number): boolean {
+    return this.prefixBindings.delete(`${prefix}/${prefixLength}`);
+  }
+
+  configurePoolDelegation(name: string, prefix: string, prefixLength: number, assignedLength: number): boolean {
+    const pool = this.pools.get(name);
+    if (!pool || assignedLength < prefixLength || assignedLength > 128) return false;
+    const network = new IPv6Address(prefix).getNetworkPrefix(prefixLength).toString();
+    pool.delegations = [
+      ...pool.delegations.filter(d => !(d.prefix === network && d.prefixLength === prefixLength)),
+      { prefix: network, prefixLength, assignedLength },
+    ];
+    return true;
+  }
+
+  configurePoolDelegationRange(name: string, low: string, high: string, assignedLength: number): boolean {
+    const pool = this.pools.get(name);
+    if (!pool || assignedLength < 1 || assignedLength > 128) return false;
+    const first = ipv6ToBigInt(new IPv6Address(low));
+    const last = ipv6ToBigInt(new IPv6Address(high));
+    if (last < first) return false;
+    let common = 128;
+    for (let shared = first ^ last; shared > 0n; shared >>= 1n) common--;
+    const covering = Math.min(common, assignedLength);
+    pool.delegations = [
+      ...pool.delegations,
+      {
+        prefix: new IPv6Address(low).getNetworkPrefix(covering).toString(), prefixLength: covering,
+        assignedLength, firstPrefix: new IPv6Address(low).getNetworkPrefix(assignedLength).toString(),
+        lastPrefix: new IPv6Address(high).getNetworkPrefix(assignedLength).toString(),
+      },
+    ];
+    return true;
+  }
+
+  configurePoolStaticDelegation(name: string, delegation: DHCPv6StaticDelegation): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    const network = new IPv6Address(delegation.prefix).getNetworkPrefix(delegation.prefixLength).toString();
+    pool.staticDelegations = [
+      ...pool.staticDelegations.filter(d => !(d.prefix === network && d.prefixLength === delegation.prefixLength)),
+      { ...delegation, prefix: network },
+    ];
+    return true;
   }
 
   /**
@@ -119,8 +343,16 @@ export class DHCPv6Server {
     return null;
   }
 
+  private excluded(candidate: string, pool: DHCPv6PoolConfig): boolean {
+    const value = ipv6ToBigInt(new IPv6Address(candidate));
+    return pool.exclusions.some(range =>
+      value >= ipv6ToBigInt(new IPv6Address(range.startIp)) && value <= ipv6ToBigInt(new IPv6Address(range.endIp)))
+      || pool.reservations.some(r => new IPv6Address(r.address).toString() === new IPv6Address(candidate).toString());
+  }
+
   private addressFreeAndInPool(candidate: string, pool: DHCPv6PoolConfig): boolean {
-    if (this.bindings.has(candidate) || this.pendingOffers.has(candidate)) return false;
+    if (this.bindings.has(candidate) || this.pendingOffers.has(candidate) || this.declined.has(candidate)) return false;
+    if (this.excluded(candidate, pool)) return false;
     if (!pool.prefix || !pool.prefixLength) return true;
     return new IPv6Address(candidate)
       .isInSameSubnet(new IPv6Address(pool.prefix), pool.prefixLength);
@@ -146,20 +378,22 @@ export class DHCPv6Server {
     return null;
   }
 
-  /** First unused address in the pool's prefix (host portion, starting at ::2 — ::1 is conventionally the router). */
   private findAvailableAddress(pool: DHCPv6PoolConfig): string | null {
     if (pool.ranges.length > 0) return this.findInRanges(pool);
     if (!pool.prefix || !pool.prefixLength) return null;
-    const prefixHextets = new IPv6Address(pool.prefix).getHextets();
-    const hostBits = 128 - pool.prefixLength;
-    const maxHost = hostBits >= 32 ? 0xfffe : (1 << hostBits) - 2;
-    for (let host = 2; host <= maxHost && host < 0xfffe; host++) {
-      const hextets = [...prefixHextets];
-      hextets[7] = host & 0xffff;
-      hextets[6] = (hextets[6] & 0xffff) | (host >> 16);
-      const candidate = new IPv6Address(hextets).toString();
-      if (this.bindings.has(candidate) || this.pendingOffers.has(candidate)) continue;
-      return candidate;
+    const base = ipv6ToBigInt(new IPv6Address(pool.prefix));
+    const last = base + (1n << BigInt(128 - pool.prefixLength)) - 1n;
+    let value = base + 2n;
+    for (let steps = 0; value <= last && steps < RANGE_SCAN_LIMIT; steps++) {
+      const covering = pool.exclusions.find(range =>
+        value >= ipv6ToBigInt(new IPv6Address(range.startIp)) && value <= ipv6ToBigInt(new IPv6Address(range.endIp)));
+      if (covering) {
+        value = ipv6ToBigInt(new IPv6Address(covering.endIp)) + 1n;
+        continue;
+      }
+      const candidate = ipv6FromBigInt(value).toString();
+      if (this.addressFreeAndInPool(candidate, pool)) return candidate;
+      value++;
     }
     return null;
   }
@@ -176,7 +410,9 @@ export class DHCPv6Server {
           return { address: addr, pool, serverDuid: this.serverDuid, transactionId: params.transactionId };
         }
       }
-      const address = this.findAvailableAddress(pool);
+      const reserved = pool.reservations.find(r => r.clientDuid === params.clientDuid && (r.iaid === null || r.iaid === params.iaid));
+      const reservedFree = reserved && !this.bindings.has(reserved.address) && !this.declined.has(reserved.address);
+      const address = reservedFree ? reserved.address : this.findAvailableAddress(pool);
       if (!address) continue;
       this.pendingOffers.set(address, { clientDuid: params.clientDuid, iaid: params.iaid, poolName: pool.name });
       return { address, pool, serverDuid: this.serverDuid, transactionId: params.transactionId };
@@ -228,10 +464,173 @@ export class DHCPv6Server {
     return { pool, serverDuid: this.serverDuid, transactionId: params.transactionId };
   }
 
-  processRelease(params: DHCPv6ReleaseParams): void {
+  processRelease(params: DHCPv6ReleaseParams): boolean {
     const binding = this.bindings.get(params.address);
     if (binding && binding.clientDuid === params.clientDuid && binding.iaid === params.iaid) {
       this.bindings.delete(params.address);
+      return true;
     }
+    return false;
+  }
+
+  addressOnLink(address: string, anchor?: string, explicitPoolName?: string): boolean | null {
+    const pools = explicitPoolName
+      ? this.resolvePools(undefined, explicitPoolName)
+      : this.resolvePools(anchor).filter(p => p.prefix && p.prefixLength);
+    const withPrefix = pools.filter(p => p.prefix && p.prefixLength);
+    if (withPrefix.length === 0) return null;
+    const candidate = new IPv6Address(address);
+    return withPrefix.some(p => candidate.isInSameSubnet(new IPv6Address(p.prefix!), p.prefixLength!));
+  }
+
+  findBinding(clientDuid: string, iaid: number, address: string): DHCPv6Binding | null {
+    const binding = this.bindings.get(address);
+    return binding && binding.clientDuid === clientDuid && binding.iaid === iaid ? binding : null;
+  }
+
+  hasIaBinding(clientDuid: string, iaid: number): boolean {
+    for (const b of this.bindings.values()) if (b.clientDuid === clientDuid && b.iaid === iaid) return true;
+    for (const b of this.prefixBindings.values()) if (b.clientDuid === clientDuid && b.iaid === iaid) return true;
+    return false;
+  }
+
+  extendAddress(clientDuid: string, iaid: number, address: string): DHCPv6LeaseResult | null {
+    const binding = this.findBinding(clientDuid, iaid, address);
+    const pool = binding ? this.pools.get(binding.poolName) : undefined;
+    if (!binding || !pool) return null;
+    const now = this.clock();
+    binding.leaseStart = now;
+    binding.leaseExpiration = now + pool.validLifetime * 1000;
+    return { address, pool, serverDuid: this.serverDuid, transactionId: 0 };
+  }
+
+  declineAddress(clientDuid: string, iaid: number, address: string): boolean {
+    if (!this.findBinding(clientDuid, iaid, address)) return false;
+    this.bindings.delete(address);
+    this.declined.set(address, this.clock());
+    return true;
+  }
+
+  private delegationPools(explicitPoolName?: string, anchor?: string): DHCPv6PoolConfig[] {
+    if (explicitPoolName) {
+      const pool = this.pools.get(explicitPoolName);
+      return pool ? [pool] : [];
+    }
+    const withDelegation = [...this.pools.values()].filter(p => p.delegations.length > 0 || p.staticDelegations.length > 0);
+    if (!anchor) return withDelegation;
+    const anchorIp = new IPv6Address(anchor);
+    const onLink = withDelegation.filter(p => p.prefix && p.prefixLength
+      && anchorIp.isInSameSubnet(new IPv6Address(p.prefix), p.prefixLength));
+    return onLink.length > 0 ? onLink : withDelegation;
+  }
+
+  private prefixKey(prefix: string, length: number): string {
+    return `${new IPv6Address(prefix).getNetworkPrefix(length).toString()}/${length}`;
+  }
+
+  private prefixTaken(key: string): boolean {
+    return this.prefixBindings.has(key) || this.pendingPrefixes.has(key);
+  }
+
+  private carvePrefix(pool: DHCPv6PoolConfig): { prefix: string; length: number } | null {
+    for (const delegation of pool.delegations) {
+      const step = 1n << BigInt(128 - delegation.assignedLength);
+      const base = ipv6ToBigInt(new IPv6Address(delegation.firstPrefix ?? delegation.prefix));
+      const count = delegation.lastPrefix
+        ? (ipv6ToBigInt(new IPv6Address(delegation.lastPrefix)) - base) / step + 1n
+        : 1n << BigInt(delegation.assignedLength - delegation.prefixLength);
+      const ceiling = count < BigInt(RANGE_SCAN_LIMIT) ? count : BigInt(RANGE_SCAN_LIMIT);
+      for (let index = 0n; index < ceiling; index++) {
+        const candidate = ipv6FromBigInt(base + index * step).toString();
+        if (!this.prefixTaken(this.prefixKey(candidate, delegation.assignedLength))
+          && !this.staticallyReserved(candidate, delegation.assignedLength)) {
+          return { prefix: candidate, length: delegation.assignedLength };
+        }
+      }
+    }
+    return null;
+  }
+
+  private staticallyReserved(prefix: string, length: number): boolean {
+    const key = this.prefixKey(prefix, length);
+    for (const pool of this.pools.values()) {
+      for (const entry of pool.staticDelegations) {
+        if (this.prefixKey(entry.prefix, entry.prefixLength) === key) return true;
+      }
+    }
+    return false;
+  }
+
+  offerPrefix(
+    clientDuid: string, iaid: number, explicitPoolName?: string, anchor?: string,
+  ): { prefix: string; prefixLength: number; pool: DHCPv6PoolConfig } | null {
+    for (const pool of this.delegationPools(explicitPoolName, anchor)) {
+      for (const binding of this.prefixBindings.values()) {
+        if (binding.clientDuid === clientDuid && binding.iaid === iaid && binding.poolName === pool.name) {
+          return { prefix: binding.prefix, prefixLength: binding.prefixLength, pool };
+        }
+      }
+      for (const [key, pending] of this.pendingPrefixes) {
+        if (pending.clientDuid === clientDuid && pending.iaid === iaid && pending.poolName === pool.name) {
+          const [prefix, length] = key.split('/');
+          return { prefix, prefixLength: parseInt(length, 10), pool };
+        }
+      }
+      const fixed = pool.staticDelegations.find(d => d.clientDuid === clientDuid && (d.iaid === null || d.iaid === iaid));
+      const chosen = fixed ? { prefix: fixed.prefix, length: fixed.prefixLength } : this.carvePrefix(pool);
+      if (!chosen) continue;
+      this.pendingPrefixes.set(this.prefixKey(chosen.prefix, chosen.length), { clientDuid, iaid, poolName: pool.name });
+      return { prefix: chosen.prefix, prefixLength: chosen.length, pool };
+    }
+    return null;
+  }
+
+  commitPrefix(
+    clientDuid: string, iaid: number, prefix: string, prefixLength: number, explicitPoolName?: string, anchor?: string,
+  ): { prefix: string; prefixLength: number; pool: DHCPv6PoolConfig } | null {
+    const key = this.prefixKey(prefix, prefixLength);
+    const network = key.split('/')[0];
+    for (const pool of this.delegationPools(explicitPoolName, anchor)) {
+      const pending = this.pendingPrefixes.get(key);
+      const existing = this.prefixBindings.get(key);
+      const owned = (pending && pending.clientDuid === clientDuid && pending.iaid === iaid && pending.poolName === pool.name)
+        || (existing && existing.clientDuid === clientDuid && existing.iaid === iaid);
+      if (!owned) continue;
+      this.pendingPrefixes.delete(key);
+      const now = this.clock();
+      this.prefixBindings.set(key, {
+        clientDuid, iaid, prefix: network, prefixLength, poolName: pool.name,
+        leaseStart: now, leaseExpiration: now + pool.validLifetime * 1000,
+      });
+      return { prefix: network, prefixLength, pool };
+    }
+    return null;
+  }
+
+  extendPrefix(clientDuid: string, iaid: number, prefix: string, prefixLength: number): { pool: DHCPv6PoolConfig } | null {
+    const binding = this.prefixBindings.get(this.prefixKey(prefix, prefixLength));
+    const pool = binding ? this.pools.get(binding.poolName) : undefined;
+    if (!binding || !pool || binding.clientDuid !== clientDuid || binding.iaid !== iaid) return null;
+    const now = this.clock();
+    binding.leaseStart = now;
+    binding.leaseExpiration = now + pool.validLifetime * 1000;
+    return { pool };
+  }
+
+  releasePrefix(clientDuid: string, iaid: number, prefix: string, prefixLength: number): boolean {
+    const key = this.prefixKey(prefix, prefixLength);
+    const binding = this.prefixBindings.get(key);
+    if (!binding || binding.clientDuid !== clientDuid || binding.iaid !== iaid) return false;
+    return this.prefixBindings.delete(key);
+  }
+
+  prefixOnLink(prefix: string, prefixLength: number, explicitPoolName?: string, anchor?: string): boolean | null {
+    const pools = this.delegationPools(explicitPoolName, anchor);
+    if (pools.length === 0) return null;
+    const candidate = new IPv6Address(prefix);
+    return pools.some(pool => [...pool.delegations, ...pool.staticDelegations].some(entry => {
+      const length = 'assignedLength' in entry ? entry.assignedLength : entry.prefixLength;
+      return length === prefixLength && candidate.isInSameSubnet(new IPv6Address(entry.prefix), entry.prefixLength);
+    }));
   }
 }

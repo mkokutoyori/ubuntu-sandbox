@@ -6,6 +6,7 @@
  * and IPv6 forwarding.
  */
 
+import { dhcpv6WireLength } from '../../dhcpv6/Dhcpv6Codec';
 import type { Port } from '../../hardware/Port';
 import type { RouterCounters } from '../Router';
 import type { IEventBus } from '@/events/EventBus';
@@ -26,7 +27,9 @@ import {
 import { Logger } from '../../core/Logger';
 import { NeighborCache, type NeighborCacheEntry } from '../host/NeighborCache';
 import { DHCPv6Server } from '../../dhcpv6/DHCPv6Server';
-import { DHCPv6Packet } from '../../dhcpv6/DHCPv6Packet';
+import { startReconfigure } from '../../dhcpv6/Dhcpv6Reconfigure';
+import { answerRelayForward, buildDhcpv6ServerReply } from '../../dhcpv6/Dhcpv6ServerExchange';
+import { DHCPv6Packet, DHCPV6_HOP_COUNT_LIMIT } from '../../dhcpv6/DHCPv6Packet';
 
 // ─── IPv6 Types ─────────────────────────────────────────────────
 
@@ -450,10 +453,6 @@ export class IPv6DataPlane {
     const pkt = udp.payload;
     if (!(pkt instanceof DHCPv6Packet)) return;
 
-    if (pkt.msgType === 'RELAY-FORW') {
-      this.handleDhcpv6RelayForw(inPort, pkt);
-      return;
-    }
     if (pkt.msgType === 'RELAY-REPL') {
       this.handleDhcpv6RelayRepl(pkt);
       return;
@@ -461,6 +460,7 @@ export class IPv6DataPlane {
 
     const relayDests = this.ctx.getDhcpv6RelayDestinations(inPort);
     if (relayDests.length > 0) {
+      if (pkt.msgType === 'RELAY-FORW' && pkt.hopCount >= DHCPV6_HOP_COUNT_LIMIT) return;
       // The final RELAY-REPL leg needs to reach the client back on this
       // same link; observing its real MAC now (instead of a separate NDP
       // round-trip for a link we're already on) is what lets that unwind.
@@ -469,52 +469,32 @@ export class IPv6DataPlane {
       return;
     }
 
-    const poolName = this.ctx.getDhcpv6ServerPool(inPort);
-    if (!poolName) return;
-    this.serveDhcpv6(inPort, ipv6.sourceIP, pkt, poolName, srcMAC);
-  }
-
-  /** Directly-attached client (or a relayed exchange re-entering after RELAY-FORW unwrap): run the pool through the server engine and reply. */
-  private serveDhcpv6(
-    inPort: string, clientAddr: IPv6Address, pkt: DHCPv6Packet, poolName: string, dstMAC?: MACAddress,
-  ): void {
-    const server = this.ctx.getDhcpv6Server();
-    const iaid = pkt.ia?.iaid ?? 0;
-    let replyType: 'ADVERTISE' | 'REPLY';
-    let result;
-    if (pkt.msgType === 'SOLICIT') {
-      result = server.processSolicit({ clientDuid: pkt.clientDuid!, iaid, transactionId: pkt.transactionId }, poolName);
-      replyType = 'ADVERTISE';
-    } else if (pkt.msgType === 'REQUEST' || pkt.msgType === 'RENEW' || pkt.msgType === 'REBIND') {
-      result = server.processRequest({
-        clientDuid: pkt.clientDuid!, iaid, transactionId: pkt.transactionId,
-        requestedAddress: pkt.ia?.addresses[0]?.address ?? '', serverDuid: pkt.serverDuid ?? server.getServerDuid(),
-      }, poolName);
-      replyType = 'REPLY';
-    } else if (pkt.msgType === 'RELEASE') {
-      server.processRelease({ clientDuid: pkt.clientDuid!, iaid, address: pkt.ia?.addresses[0]?.address ?? '' });
-      return;
-    } else if (pkt.msgType === 'INFORMATION-REQUEST') {
-      // Stateless service (RFC 8415 §18.3.5): the reply carries only
-      // the other configuration; nothing is assigned or retained.
-      const info = server.processInformationRequest(
-        { transactionId: pkt.transactionId }, poolName, clientAddr.toString());
-      if (!info) return;
-      this.sendDhcpv6Reply(inPort, clientAddr, DHCPv6Packet.createInformationReply(
-        pkt.clientDuid!, server.getServerDuid(), pkt.transactionId,
-        info.pool.dnsServers, info.pool.domainName,
-      ), dstMAC);
-      return;
-    } else {
+    if (pkt.msgType === 'RELAY-FORW') {
+      this.handleDhcpv6RelayForw(pkt, ipv6.sourceIP);
       return;
     }
-    if (!result) return;
 
-    const reply = replyType === 'ADVERTISE'
-      ? DHCPv6Packet.createAdvertise(pkt.clientDuid!, server.getServerDuid(), pkt.transactionId, iaid, result.address, result.pool.preferredLifetime, result.pool.validLifetime, result.pool.dnsServers, result.pool.domainName)
-      : DHCPv6Packet.createReply(pkt.clientDuid!, server.getServerDuid(), pkt.transactionId, iaid, result.address, result.pool.preferredLifetime, result.pool.validLifetime, result.pool.dnsServers, result.pool.domainName);
+    const poolName = this.ctx.getDhcpv6ServerPool(inPort);
+    if (!poolName) return;
+    this.serveDhcpv6(inPort, ipv6, pkt, poolName, srcMAC);
+  }
 
-    this.sendDhcpv6Reply(inPort, clientAddr, reply, dstMAC);
+  private serveDhcpv6(
+    inPort: string, ipv6: IPv6Packet, pkt: DHCPv6Packet, poolName: string, dstMAC?: MACAddress,
+  ): void {
+    const reply = buildDhcpv6ServerReply(this.ctx.getDhcpv6Server(), pkt, {
+      poolName, relayed: false, unicast: !ipv6.destinationIP.isMulticast(), clientAddress: ipv6.sourceIP.toString(),
+      clientInterface: inPort, destination: ipv6.destinationIP.toString(),
+    });
+    if (dstMAC) this.neighborCache.learnFromSource(ipv6.sourceIP.toString(), dstMAC, inPort, false);
+    if (reply) this.sendDhcpv6Reply(inPort, ipv6.sourceIP, reply, dstMAC);
+  }
+
+  sendDhcpv6Reconfigure(clientDuid: string, msgType: 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST'): boolean {
+    return startReconfigure(this.ctx.getDhcpv6Server(), clientDuid, msgType, ({ message, route }) => {
+      if (route.kind === 'relay') this.sendDhcpv6RelayMessage(new IPv6Address(route.relay), message);
+      else this.sendDhcpv6Reply(route.iface, new IPv6Address(route.address), message);
+    }, this.ctx.getScheduler());
   }
 
   private sendDhcpv6Reply(inPort: string, dstIp: IPv6Address, reply: DHCPv6Packet, dstMAC?: MACAddress): void {
@@ -525,10 +505,10 @@ export class IPv6DataPlane {
     const mac = dstMAC ?? this.neighborCache.get(dstIp.toString())?.mac;
     if (!mac) return;
     const udp: UDPPacket = {
-      type: 'udp', sourcePort: 547, destinationPort: 546, length: 8 + 300, checksum: 0, payload: reply,
+      type: 'udp', sourcePort: 547, destinationPort: 546, length: 8 + dhcpv6WireLength(reply), checksum: 0, payload: reply,
     };
     const ipPkt = createIPv6Packet(srcIp, dstIp, IP_PROTO_UDP, this.defaultHopLimit,
-      stampUdpChecksum(udp, srcIp.toString(), dstIp.toString()), 8 + 300);
+      stampUdpChecksum(udp, srcIp.toString(), dstIp.toString()), udp.length);
     this.ctx.sendFrame(inPort, { srcMAC: port.getMAC(), dstMAC: mac, etherType: ETHERTYPE_IPV6, payload: ipPkt });
   }
 
@@ -538,7 +518,7 @@ export class IPv6DataPlane {
     if (!port) return;
     const linkAddr = port.getGlobalIPv6() ?? port.getLinkLocalIPv6();
     if (!linkAddr) return;
-    const relayForw = DHCPv6Packet.createRelayForw(linkAddr.toString(), ipv6.sourceIP.toString(), pkt.hopCount + 1, inPort, pkt);
+    const relayForw = DHCPv6Packet.createRelayForw(linkAddr.toString(), ipv6.sourceIP.toString(), pkt.msgType === 'RELAY-FORW' ? pkt.hopCount + 1 : 0, inPort, pkt);
 
     for (const dest of destinations) {
       const dstIp = new IPv6Address(dest);
@@ -550,10 +530,10 @@ export class IPv6DataPlane {
       const nextHopMac = this.resolveNeighborSync(route.iface, route.nextHop ?? dstIp);
       if (!nextHopMac) continue;
       const udp: UDPPacket = {
-        type: 'udp', sourcePort: 547, destinationPort: 547, length: 8 + 300, checksum: 0, payload: relayForw,
+        type: 'udp', sourcePort: 547, destinationPort: 547, length: 8 + dhcpv6WireLength(relayForw), checksum: 0, payload: relayForw,
       };
       const relayedPkt = createIPv6Packet(egressSrcIp, dstIp, IP_PROTO_UDP, this.defaultHopLimit,
-        stampUdpChecksum(udp, egressSrcIp.toString(), dstIp.toString()), 8 + 300);
+        stampUdpChecksum(udp, egressSrcIp.toString(), dstIp.toString()), udp.length);
       this.ctx.sendFrame(route.iface, {
         srcMAC: egressPort.getMAC(), dstMAC: nextHopMac, etherType: ETHERTYPE_IPV6, payload: relayedPkt,
       });
@@ -561,37 +541,12 @@ export class IPv6DataPlane {
   }
 
   /** A relay agent's RELAY-FORW reached us: unwrap and serve the inner message from the relay's own link-address subnet. */
-  private handleDhcpv6RelayForw(inPort: string, pkt: DHCPv6Packet): void {
-    const inner = pkt.relayedMessage;
-    if (!inner) return;
-    if (inner.msgType === 'RELAY-FORW') { this.handleDhcpv6RelayForw(inPort, inner); return; }
-    const server = this.ctx.getDhcpv6Server();
-    const iaid = inner.ia?.iaid ?? 0;
-    let replyType: 'ADVERTISE' | 'REPLY';
-    let result;
-    if (inner.msgType === 'SOLICIT') {
-      result = server.processSolicit({ clientDuid: inner.clientDuid!, iaid, transactionId: inner.transactionId, linkAddress: pkt.linkAddress });
-      replyType = 'ADVERTISE';
-    } else if (inner.msgType === 'REQUEST' || inner.msgType === 'RENEW' || inner.msgType === 'REBIND') {
-      result = server.processRequest({
-        clientDuid: inner.clientDuid!, iaid, transactionId: inner.transactionId, linkAddress: pkt.linkAddress,
-        requestedAddress: inner.ia?.addresses[0]?.address ?? '', serverDuid: inner.serverDuid ?? server.getServerDuid(),
-      });
-      replyType = 'REPLY';
-    } else if (inner.msgType === 'RELEASE') {
-      server.processRelease({ clientDuid: inner.clientDuid!, iaid, address: inner.ia?.addresses[0]?.address ?? '' });
-      return;
-    } else {
-      return;
-    }
-    if (!result) return;
+  private handleDhcpv6RelayForw(pkt: DHCPv6Packet, source: IPv6Address): void {
+    const relayRepl = answerRelayForward(this.ctx.getDhcpv6Server(), pkt, source.toString());
+    if (relayRepl) this.sendDhcpv6RelayMessage(source, relayRepl);
+  }
 
-    const innerReply = replyType === 'ADVERTISE'
-      ? DHCPv6Packet.createAdvertise(inner.clientDuid!, server.getServerDuid(), inner.transactionId, iaid, result.address, result.pool.preferredLifetime, result.pool.validLifetime, result.pool.dnsServers, result.pool.domainName)
-      : DHCPv6Packet.createReply(inner.clientDuid!, server.getServerDuid(), inner.transactionId, iaid, result.address, result.pool.preferredLifetime, result.pool.validLifetime, result.pool.dnsServers, result.pool.domainName);
-
-    const relayRepl = DHCPv6Packet.createRelayRepl(pkt.linkAddress, pkt.peerAddress, pkt.interfaceId, innerReply);
-    const dstIp = new IPv6Address(pkt.linkAddress);
+  private sendDhcpv6RelayMessage(dstIp: IPv6Address, message: DHCPv6Packet): void {
     const route = this.lookupRoute(dstIp);
     if (!route) return;
     const egressPort = this.ctx.getPorts().get(route.iface);
@@ -600,22 +555,23 @@ export class IPv6DataPlane {
     const nextHopMac = this.resolveNeighborSync(route.iface, route.nextHop ?? dstIp);
     if (!nextHopMac) return;
     const udp: UDPPacket = {
-      type: 'udp', sourcePort: 547, destinationPort: 547, length: 8 + 300, checksum: 0, payload: relayRepl,
+      type: 'udp', sourcePort: 547, destinationPort: 547, length: 8 + dhcpv6WireLength(message), checksum: 0, payload: message,
     };
-    const replyPkt = createIPv6Packet(egressSrcIp, dstIp, IP_PROTO_UDP, this.defaultHopLimit,
-      stampUdpChecksum(udp, egressSrcIp.toString(), dstIp.toString()), 8 + 300);
+    const packet = createIPv6Packet(egressSrcIp, dstIp, IP_PROTO_UDP, this.defaultHopLimit,
+      stampUdpChecksum(udp, egressSrcIp.toString(), dstIp.toString()), udp.length);
     this.ctx.sendFrame(route.iface, {
-      srcMAC: egressPort.getMAC(), dstMAC: nextHopMac, etherType: ETHERTYPE_IPV6, payload: replyPkt,
+      srcMAC: egressPort.getMAC(), dstMAC: nextHopMac, etherType: ETHERTYPE_IPV6, payload: packet,
     });
   }
 
   /** RELAY-REPL arrived back at the originating relay agent: unwrap and forward the inner reply onto the client's own link. */
   private handleDhcpv6RelayRepl(pkt: DHCPv6Packet): void {
     const inner = pkt.relayedMessage;
-    if (!inner || !pkt.interfaceId) return;
-    if (inner.msgType === 'RELAY-REPL') { this.handleDhcpv6RelayRepl(inner); return; }
-    const clientAddr = new IPv6Address(pkt.peerAddress);
-    this.sendDhcpv6Reply(pkt.interfaceId, clientAddr, inner);
+    if (!inner) return;
+    const peer = new IPv6Address(pkt.peerAddress);
+    if (inner.msgType === 'RELAY-REPL') { this.sendDhcpv6RelayMessage(peer, inner); return; }
+    if (!pkt.interfaceId) return;
+    this.sendDhcpv6Reply(pkt.interfaceId, peer, inner);
   }
 
   /** Synchronous NDP resolution for a next-hop the relay hasn't seen yet — same cable-is-synchronous assumption as SwitchSvi.resolveArp. */

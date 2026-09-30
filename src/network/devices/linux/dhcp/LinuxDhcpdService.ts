@@ -1,4 +1,5 @@
 import type { EndHost } from '../../EndHost';
+import { DhcpBulkLeasequeryService } from '@/network/dhcp/DhcpBulkLeasequery';
 import { DHCPServer } from '../../../dhcp/DHCPServer';
 import { DHCPPacket, DHCP_WIRE_BYTES } from '../../../dhcp/DHCPPacket';
 import { buildDhcpServerReply, dhcpReplyRoute } from '../../../dhcp/DhcpServerExchange';
@@ -45,7 +46,7 @@ function poolNameFor(subnet: DhcpdSubnet): string {
 const WEEKDAY_UTC = ['0', '1', '2', '3', '4', '5', '6'];
 
 /** dhcpd.leases(5): `<weekday> YYYY/MM/DD HH:MM:SS`, always UTC. */
-function leaseStamp(atMs: number): string {
+export function leaseStamp(atMs: number): string {
   const date = new Date(atMs);
   const pad = (value: number) => String(value).padStart(2, '0');
   return `${WEEKDAY_UTC[date.getUTCDay()]} ${date.getUTCFullYear()}/`
@@ -59,8 +60,11 @@ export class LinuxDhcpdService {
   private served: ServedInterface[] = [];
   private lastConfig: DhcpdConfig | null = null;
 
+  private readonly bulkLeasequery: DhcpBulkLeasequeryService;
+
   constructor(private readonly host: EndHost, private readonly fs: DhcpdFsPort) {
     this.engine.setEventBus(host.getBus());
+    this.bulkLeasequery = new DhcpBulkLeasequeryService({ tcp: () => host.getTcpStack(), now: () => Date.now() }, this.engine);
   }
 
   isRunning(): boolean { return this.running; }
@@ -186,6 +190,8 @@ export class LinuxDhcpdService {
   }
 
   private applyConfig(config: DhcpdConfig): void {
+    this.engine.setAuthoritative(config.authoritative);
+    this.engine.setLeasequery(config.leasequery);
     this.engine.setPingPacketCount(config.pingCheck ? 1 : 0);
     this.engine.setPingTimeoutMs(config.pingTimeoutSeconds * 1000);
     for (const [name] of this.engine.getAllPools()) this.engine.deletePool(name);

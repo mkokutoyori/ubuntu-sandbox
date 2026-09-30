@@ -788,9 +788,20 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   trie.registerGreedy('ipv6 dhcp server', 'Bind IPv6 DHCP pool to interface', (args) => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName || !args[0]) return '';
+    const options = { rapidCommit: false, preference: null as number | null };
+    for (let i = 1; i < args.length; i++) {
+      const word = args[i].toLowerCase();
+      if (word === 'rapid-commit') options.rapidCommit = true;
+      else if (word === 'preference' && /^\d+$/.test(args[i + 1] ?? '') && Number(args[i + 1]) <= 255) {
+        options.preference = Number(args[++i]);
+      } else return "% Invalid input detected at '^' marker.";
+    }
     const port = ctx.r().getPort(ifName);
     port?.setIpv6DhcpPool(args[0]);
     ctx.r().setDhcpv6ServerPool(ifName, args[0]);
+    const server = ctx.r()._getDHCPv6ServerInternal();
+    server.configurePoolRapidCommit(args[0], options.rapidCommit);
+    if (options.preference !== null) server.configurePoolPreference(args[0], options.preference);
     return '';
   });
   trie.registerGreedy('ipv6 dhcp relay destination', 'IPv6 DHCP relay destination', (args) => {

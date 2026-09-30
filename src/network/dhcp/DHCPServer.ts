@@ -27,7 +27,7 @@ import {
   DHCPDiscoverParams, DHCPOfferResult, DHCPRequestParams, DHCPAckResult,
   DHCPReleaseParams, DHCPDeclineParams,
   DHCPInformParams, DHCPInformResult,
-  DHCPRequestWithNakResult, DHCPStaticBinding, DhcpAdmissionPolicy,
+  DHCPRequestWithNakResult, DHCPStaticBinding, DhcpAdmissionPolicy, DhcpLeaseQuery, DhcpLeaseQueryResult, DhcpBulkQuery, DhcpBulkRecord,
   ackOf, createDefaultPoolConfig, createDefaultStats,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
@@ -72,6 +72,7 @@ export class DHCPServer implements IProtocolEngine {
   /** Service enabled flag */
   private enabled: boolean = true;
   private admission: DhcpAdmissionPolicy | null = null;
+  private authoritative = false;
 
   /** Server's own IP address (Option 54: Server Identifier) */
   private serverIdentifier: string = '0.0.0.0';
@@ -306,6 +307,24 @@ export class DHCPServer implements IProtocolEngine {
    * REQUEST. Accept it when it matches our configured identifier or any pool
    * gateway we advertise (so the response and validation stay consistent).
    */
+  private verifyExistingBinding(params: DHCPRequestParams): 'known' | 'silent' | 'wrong-network' | 'wrong-address' {
+    let inSomePool = false;
+    for (const [, pool] of this.pools) {
+      if (pool.network && pool.mask && this.isIPInPool(params.requestedIP, pool)) inSomePool = true;
+    }
+    if (!inSomePool) return 'wrong-network';
+    const own = [...this.bindings.values()].find(b => b.clientId === params.clientMAC);
+    let reserved: string | null = null;
+    for (const [name] of this.pools) {
+      const reservation = this.findStaticBinding(params.clientMAC, name);
+      if (reservation !== null) reserved = reservation.ipAddress;
+    }
+    if (own === undefined && reserved === null) return this.authoritative ? 'wrong-address' : 'silent';
+    if (own !== undefined && own.ipAddress !== params.requestedIP && reserved !== params.requestedIP) return 'wrong-address';
+    if (own === undefined && reserved !== null && reserved !== params.requestedIP) return 'wrong-address';
+    return 'known';
+  }
+
   private isOurServerId(id: string | undefined): boolean {
     if (!id || id === '0.0.0.0') return true;
     if (id === this.serverIdentifier) return true;
@@ -635,7 +654,7 @@ export class DHCPServer implements IProtocolEngine {
     for (const pool of poolEntries) {
       if (!pool.network || !pool.mask) continue;
       if (pool.active === false) continue;
-      if (this.admission && !this.admission.mayServe(params.clientMAC, pool.name, { vendorClass: params.vendorClass })) continue;
+      if (this.admission && !this.admission.mayServe(params.clientMAC, pool.name, { vendorClass: params.vendorClass, relayInformation: params.relayInformation })) continue;
 
       // Only consider pools whose subnet actually contains the anchor.
       if (subnetAnchor && !this.isIPInPool(subnetAnchor, pool)) continue;
@@ -827,6 +846,22 @@ export class DHCPServer implements IProtocolEngine {
     this.expireStale();
     this.stats.requests++;
 
+    if (params.requestState === 'init-reboot' || params.requestState === 'renewing') {
+      const verdict = this.verifyExistingBinding(params);
+      if (verdict !== 'known') {
+        if (verdict === 'silent') return null;
+        this.stats.naks++;
+        return {
+          type: 'NAK',
+          serverIdentifier: this.resolveServerId(this.findPoolForIP(params.requestedIP)),
+          xid: params.xid,
+          message: verdict === 'wrong-network'
+            ? `Requested address ${params.requestedIP} is on the wrong network`
+            : `Requested address ${params.requestedIP} is not the address of this client`,
+        };
+      }
+    }
+
     // Check excluded
     if (this.isExcluded(params.requestedIP)
       && !this.isReservedFor(params.clientMAC, params.requestedIP)) {
@@ -855,7 +890,7 @@ export class DHCPServer implements IProtocolEngine {
       if (!pool.network || !pool.mask) continue;
       if (!this.isIPInPool(params.requestedIP, pool)) continue;
 
-      if (this.admission && !this.admission.mayServe(params.clientMAC, pool.name, { vendorClass: params.vendorClass })) return null;
+      if (this.admission && !this.admission.mayServe(params.clientMAC, pool.name, { vendorClass: params.vendorClass, relayInformation: params.relayInformation })) return null;
 
       if (this.isClientDenied(params.clientMAC, pool)) {
         this.stats.naks++;
@@ -906,9 +941,13 @@ export class DHCPServer implements IProtocolEngine {
         clientId: params.clientMAC,
         hostName: params.hostName,
         leaseStart,
-        leaseExpiration: pool.leaseInfinite ? INFINITE_LEASE_EXPIRATION : leaseStart + this.leaseSecondsOf(pool) * 1000,
+        leaseExpiration: pool.leaseInfinite ? INFINITE_LEASE_EXPIRATION : leaseStart + this.leaseSecondsOf(pool, params.requestedIP) * 1000,
         poolName: pool.name,
         type: 'automatic',
+        hardwareAddress: params.hardwareAddress,
+        clientIdentifierOption: params.clientIdentifierOption,
+        relayInformation: params.relayInformation,
+        lastTransaction: leaseStart,
       };
 
       this.bindings.set(params.requestedIP, binding);
@@ -1044,12 +1083,157 @@ export class DHCPServer implements IProtocolEngine {
     return this.bindings;
   }
 
+  setAuthoritative(on: boolean): void { this.authoritative = on; }
+
+  private leasequeryEnabled = false;
+  private leasequeryRequestors: ReadonlySet<string> | null = null;
+  private leasequeryOptions: ReadonlySet<number> = new Set([1, 3, 6, 15, 42, 44, 46, 66, 67]);
+
+  setLeasequery(enabled: boolean, requestors: readonly string[] | null = null): void {
+    this.leasequeryEnabled = enabled;
+    this.leasequeryRequestors = requestors === null ? null : new Set(requestors);
+  }
+
+  setLeasequeryNonSensitiveOptions(codes: readonly number[]): void {
+    this.leasequeryOptions = new Set(codes);
+  }
+
+  isLeasequeryEnabled(): boolean { return this.leasequeryEnabled; }
+
+  mayLeasequery(requestor: string): boolean {
+    return this.leasequeryEnabled && (this.leasequeryRequestors === null || this.leasequeryRequestors.has(requestor));
+  }
+
+  private managesAddress(address: string): boolean {
+    if (this.isExcluded(address)) return false;
+    for (const [, pool] of this.pools) {
+      if (pool.network && pool.mask && this.isIPInPool(address, pool)) return true;
+    }
+    return false;
+  }
+
+  processLeaseQuery(query: DhcpLeaseQuery): DhcpLeaseQueryResult {
+    const now = this.clock();
+    this.expireStale();
+    const active = [...this.bindings.values()].filter(b => b.leaseExpiration > now);
+    let subject: DHCPBinding | undefined;
+    if (query.ipAddress !== undefined) {
+      if (!this.managesAddress(query.ipAddress)) return { type: 'DHCPLEASEUNKNOWN' };
+      subject = active.find(b => b.ipAddress === query.ipAddress);
+      if (subject === undefined) return { type: 'DHCPLEASEUNASSIGNED', ipAddress: query.ipAddress };
+    } else {
+      const own = active.filter(b => query.clientIdentifier !== undefined
+        ? b.clientIdentifierOption === query.clientIdentifier
+        : b.hardwareAddress?.toLowerCase() === query.hardwareAddress?.toLowerCase());
+      subject = own.sort((a, b) => (b.lastTransaction ?? 0) - (a.lastTransaction ?? 0))[0];
+      if (subject === undefined) return { type: 'DHCPLEASEUNKNOWN' };
+    }
+    const holder = subject;
+    const all = active
+      .filter(b => b.clientId === holder.clientId)
+      .sort((a, b) => (b.lastTransaction ?? 0) - (a.lastTransaction ?? 0))
+      .map(b => b.ipAddress);
+    return {
+      type: 'DHCPLEASEACTIVE',
+      ipAddress: holder.ipAddress,
+      hardwareAddress: holder.hardwareAddress ?? holder.clientId,
+      clientIdentifierOption: holder.clientIdentifierOption,
+      relayInformation: holder.relayInformation,
+      secondsSinceTransaction: Math.max(0, Math.floor((now - (holder.lastTransaction ?? holder.leaseStart)) / 1000)),
+      leaseSecondsLeft: holder.leaseExpiration >= INFINITE_LEASE_EXPIRATION ? null : Math.max(0, Math.ceil((holder.leaseExpiration - now) / 1000)),
+      associatedAddresses: all.length > 1 ? all : [],
+      poolName: holder.poolName,
+    };
+  }
+
+  leasequeryMayReturn(code: number): boolean { return this.leasequeryOptions.has(code); }
+
+  private bulkLeasequery: { enabled: boolean; requestors: ReadonlySet<string> | null } = { enabled: false, requestors: null };
+  private bulkListeners = new Set<() => void>();
+
+  setBulkLeasequery(enabled: boolean, requestors: readonly string[] | null = null): void {
+    this.bulkLeasequery = { enabled, requestors: requestors === null ? null : new Set(requestors) };
+    for (const listener of this.bulkListeners) listener();
+  }
+
+  onBulkLeasequeryChange(listener: () => void): () => void {
+    this.bulkListeners.add(listener);
+    return () => { this.bulkListeners.delete(listener); };
+  }
+
+  isBulkLeasequeryEnabled(): boolean { return this.bulkLeasequery.enabled && this.enabled; }
+
+  mayBulkLeasequery(requestor: string): boolean {
+    return this.isBulkLeasequeryEnabled()
+      && (this.bulkLeasequery.requestors === null || this.bulkLeasequery.requestors.has(requestor));
+  }
+
+  processBulkLeaseQuery(query: DhcpBulkQuery): DhcpBulkRecord[] {
+    const now = this.clock();
+    this.expireStale();
+    const window = (at: number | undefined): boolean => {
+      if (at === undefined) return false;
+      const seconds = Math.floor(at / 1000);
+      return (query.queryStartTime === undefined || seconds >= query.queryStartTime)
+        && (query.queryEndTime === undefined || seconds <= query.queryEndTime);
+    };
+    const timed = query.queryStartTime !== undefined || query.queryEndTime !== undefined;
+    const primary = query.hardwareAddress !== undefined || query.clientIdentifier !== undefined
+      || query.remoteId !== undefined || query.relayId !== undefined;
+    const records: DhcpBulkRecord[] = [];
+    const active = [...this.bindings.values()].filter(b => b.leaseExpiration > now);
+    const asRecord = (b: DHCPBinding): DhcpBulkRecord => ({
+      ipAddress: b.ipAddress, state: 2, poolName: b.poolName, hardwareAddress: b.hardwareAddress,
+      clientIdentifierOption: b.clientIdentifierOption, relayInformation: b.relayInformation,
+      lastTransaction: b.lastTransaction, leaseStart: b.leaseStart, leaseExpiration: b.leaseExpiration,
+    });
+    const changed = (b: DHCPBinding): boolean => !timed || window(b.lastTransaction) || window(b.leaseStart);
+    if (primary) {
+      for (const b of active) {
+        const match = query.hardwareAddress !== undefined
+          ? b.hardwareAddress?.toLowerCase() === query.hardwareAddress.toLowerCase()
+          : query.clientIdentifier !== undefined
+            ? b.clientIdentifierOption === query.clientIdentifier
+            : query.remoteId !== undefined
+              ? b.relayInformation?.remoteId === query.remoteId
+              : false;
+        if (match && changed(b)) records.push(asRecord(b));
+      }
+      return records;
+    }
+    const held = new Map(active.map(b => [b.ipAddress, b]));
+    for (const [, pool] of this.pools) {
+      if (!pool.network || !pool.mask) continue;
+      const network = this.ipToNumber(pool.network);
+      const broadcast = (network | ~this.ipToNumber(pool.mask)) >>> 0;
+      for (let value = network + 1; value < broadcast; value++) {
+        const address = this.numberToIP(value);
+        if (this.isExcluded(address)) continue;
+        const binding = held.get(address);
+        if (binding !== undefined) {
+          if (changed(binding)) records.push(asRecord(binding));
+        } else if (!timed) {
+          records.push({ ipAddress: address, state: this.isConflicted(address) ? 5 : 1, poolName: pool.name });
+        }
+      }
+    }
+    return records;
+  }
+
+  remainingLeaseSeconds(address: string, clientKey: string): number | null {
+    const binding = this.bindings.get(address);
+    if (binding === undefined || binding.clientId !== clientKey) return null;
+    if (binding.leaseExpiration >= INFINITE_LEASE_EXPIRATION) return null;
+    const remaining = Math.ceil((binding.leaseExpiration - this.clock()) / 1000);
+    return remaining > 0 ? remaining : null;
+  }
+
   setAdmissionPolicy(policy: DhcpAdmissionPolicy | null): void {
     this.admission = policy;
   }
 
-  leaseSecondsOf(pool: DHCPPoolConfig): number {
-    return this.admission?.leaseSeconds(pool.name, pool.leaseDuration) ?? pool.leaseDuration;
+  leaseSecondsOf(pool: DHCPPoolConfig, address?: string): number {
+    return this.admission?.leaseSeconds(pool.name, pool.leaseDuration, address) ?? pool.leaseDuration;
   }
 
   importBinding(binding: DHCPBinding): void {

@@ -18,6 +18,8 @@
 
 import type { EndHost } from '@/network/devices/EndHost';
 import { DHCPServer } from '@/network/dhcp/DHCPServer';
+import { WindowsDhcpv6 } from './WindowsDhcpv6';
+import { DhcpBulkLeasequeryService } from '@/network/dhcp/DhcpBulkLeasequery';
 import { DHCPPacket, DHCP_OPTION, DHCP_WIRE_BYTES } from '@/network/dhcp/DHCPPacket';
 import { buildDhcpServerReply, dhcpReplyRoute } from '@/network/dhcp/DhcpServerExchange';
 import { dhcpLinkDestination, dhcpServerReplyFrame, type DhcpLinkDestination } from '@/network/dhcp/DhcpServerReplyFrame';
@@ -159,12 +161,16 @@ export class WindowsDhcpServerRole {
   private registeredIpAddress: string | null = null;
   private readonly outsideExclusions = new Map<string, Array<{ start: string; end: string }>>();
   readonly failover: DhcpFailoverService;
+  readonly v6: WindowsDhcpv6;
+  private readonly bulkLeasequery: DhcpBulkLeasequeryService;
 
   constructor(private readonly host: EndHost, private readonly env: DhcpRoleEnvironment = STANDALONE_ENVIRONMENT) {
     this.engine.setPingPacketCount(0);
     this.engine.setEventBus(host.getBus());
     this.engine.setDeviceId(host.getId(), host.getHostname());
     this.engine.setClock(() => env.now());
+    this.v6 = new WindowsDhcpv6(host, () => env.now());
+    this.bulkLeasequery = new DhcpBulkLeasequeryService({ tcp: () => host.getTcpStack(), now: () => env.now() }, this.engine);
     this.engine.setAdmissionPolicy(null);
     this.failover = new DhcpFailoverService(this.failoverHost());
     this.engine.setAdmissionPolicy(this.failover.policy);
@@ -366,12 +372,14 @@ export class WindowsDhcpServerRole {
     this.engine.enable();
     this.host.udpBind(DHCP_SERVER_PORT, this.handleDatagram, 'dhcpserver');
     this.running = true;
+    this.v6.start();
     this.failover.start();
   }
 
   stop(): void {
     if (!this.running) return;
     this.failover.stop();
+    this.v6.stop();
     this.host.udpClose(DHCP_SERVER_PORT);
     this.engine.disable();
     this.running = false;

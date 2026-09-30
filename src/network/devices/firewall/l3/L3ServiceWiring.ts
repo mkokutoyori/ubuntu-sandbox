@@ -109,6 +109,7 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
     systemDnsServers: () => host.systemDnsServers?.() ?? [],
     systemNtpServers: () => host.systemNtpServers?.() ?? [],
     ddns: () => host.ddns?.(),
+    tcp: () => host.tcp(),
     debug: () => host.debug?.(),
     ownAddresses: () => host.interfaces().all()
       .map(entry => entry.ip)

@@ -181,6 +181,13 @@ import {
   RemoveDnsServerRootHintCmdlet, ImportDnsServerRootHintCmdlet,
 } from './DnsServerCmdlets';
 import {
+  AddDhcpServerv6ScopeCmdlet, GetDhcpServerv6ScopeCmdlet, SetDhcpServerv6ScopeCmdlet, RemoveDhcpServerv6ScopeCmdlet,
+  AddDhcpServerv6ExclusionRangeCmdlet, GetDhcpServerv6ExclusionRangeCmdlet,
+  AddDhcpServerv6ReservationCmdlet, GetDhcpServerv6ReservationCmdlet, RemoveDhcpServerv6ReservationCmdlet,
+  SetDhcpServerv6OptionValueCmdlet, GetDhcpServerv6OptionValueCmdlet,
+  GetDhcpServerv6LeaseCmdlet, RemoveDhcpServerv6LeaseCmdlet,
+} from './DhcpServerV6Cmdlets';
+import {
   AddDhcpServerv4ScopeCmdlet, GetDhcpServerv4ScopeCmdlet, GetDhcpServerv4BindingCmdlet,
   GetDhcpServerv4DnsSettingCmdlet, SetDhcpServerv4DnsSettingCmdlet,
   AddDhcpServerv4ExclusionRangeCmdlet, AddDhcpServerv4ReservationCmdlet,
@@ -821,6 +828,19 @@ export function registerDnsServerCmdlets(registry: CmdletRegistry): void {
 
 export function registerDhcpServerCmdlets(registry: CmdletRegistry): void {
   // ── DHCP Server role (PRD-Windows-Server.md §5 P8) ──────────────────────────
+  registry.register(new AddDhcpServerv6ScopeCmdlet());
+  registry.register(new GetDhcpServerv6ScopeCmdlet());
+  registry.register(new SetDhcpServerv6ScopeCmdlet());
+  registry.register(new RemoveDhcpServerv6ScopeCmdlet());
+  registry.register(new AddDhcpServerv6ExclusionRangeCmdlet());
+  registry.register(new GetDhcpServerv6ExclusionRangeCmdlet());
+  registry.register(new AddDhcpServerv6ReservationCmdlet());
+  registry.register(new GetDhcpServerv6ReservationCmdlet());
+  registry.register(new RemoveDhcpServerv6ReservationCmdlet());
+  registry.register(new SetDhcpServerv6OptionValueCmdlet());
+  registry.register(new GetDhcpServerv6OptionValueCmdlet());
+  registry.register(new GetDhcpServerv6LeaseCmdlet());
+  registry.register(new RemoveDhcpServerv6LeaseCmdlet());
   registry.register(new AddDhcpServerv4ScopeCmdlet());
   registry.register(new GetDhcpServerv4ScopeCmdlet());
   registry.register(new GetDhcpServerv4BindingCmdlet());
