@@ -279,7 +279,7 @@ export class FirewallDhcp {
       found.push({
         iface: scope?.iface ?? '',
         ip,
-        mac: new MACAddress(binding.clientId).toString(),
+        mac: binding.clientId.startsWith('id:') ? binding.clientId : new MACAddress(binding.clientId).toString(),
         hostName: binding.hostName ?? '',
         expiresAt: binding.leaseExpiration,
       });
@@ -414,6 +414,7 @@ export class FirewallDhcp {
       this.applyOption82Reservation(pool, clientMac, relayed);
       return relayed.action !== 'block';
     }
+    if (clientMac.startsWith('id:')) return scope.macAclDefaultAction !== 'block';
     const mac = new MACAddress(clientMac).toString();
     const entry = (scope.reservations ?? []).find(reservation =>
       reservation.type !== 'option82' && reservation.mac.length > 0 && new MACAddress(reservation.mac).toString() === mac);
@@ -422,7 +423,7 @@ export class FirewallDhcp {
   }
 
   private applyOption82Reservation(pool: string, clientMac: string, entry: { ip: string; action?: string }): void {
-    if ((entry.action ?? 'reserved') !== 'reserved' || entry.ip === '0.0.0.0') return;
+    if ((entry.action ?? 'reserved') !== 'reserved' || entry.ip === '0.0.0.0' || clientMac.startsWith('id:')) return;
     const mac = new MACAddress(clientMac).toString();
     for (const held of this.server.getStaticBindings(pool)) {
       if (held.clientId === mac) this.server.removeStaticBinding(pool, held.ipAddress);

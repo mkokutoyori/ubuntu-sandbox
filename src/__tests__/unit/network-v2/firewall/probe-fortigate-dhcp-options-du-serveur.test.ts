@@ -1,7 +1,7 @@
 /*
  * Le serveur DHCP d'un FortiGate (`config system dhcp server`) doit accepter
  * et SERVIR les attributs que le moteur partage porte deja : dns-server3, ntp-service et ntp-server1 a 3 (option 42), wins-server1 et 2 (option
- * 44), next-server et filename (options 66 et 67), config exclude-range,
+ * 44), next-server et filename (siaddr et file, RFC 2131 §2), config exclude-range,
  * config options (code, type hex|string|ip|fqdn), reserved-address action
  * (assign|block|reserved) et mac-acl-default-action (assign|block).
  *
@@ -151,11 +151,11 @@ describe('DNS, NTP, WINS et amorcage', () => {
     expect(asList(ack(replies)!.getOption(44))).toEqual(['10.7.7.1', '10.7.7.2']);
   });
 
-  it('next-server et filename sont offerts en options 66 et 67', async () => {
+  it('next-server et filename sont offerts dans siaddr et file (RFC 2131 §2)', async () => {
     const { pc, replies } = await lab([], ['set next-server 10.8.8.8', 'set filename "pxelinux.0"']);
     await lease(pc);
-    expect(String(ack(replies)!.getOption(66))).toBe('10.8.8.8');
-    expect(String(ack(replies)!.getOption(67))).toBe('pxelinux.0');
+    expect(ack(replies)!.siaddr).toBe('10.8.8.8');
+    expect(ack(replies)!.file).toBe('pxelinux.0');
   });
 });
 

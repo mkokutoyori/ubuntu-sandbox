@@ -81,8 +81,20 @@ export function buildDhcpServerReply(pkt: DHCPPacket, ctx: DhcpServeContext): DH
   const reply = answerDhcpRequest(pkt, ctx);
   if (reply === null) return null;
   reply.giaddr = pkt.giaddr;
-  reply.flags = pkt.flags;
+  reply.flags = reply.getMessageType() === 'DHCPNAK' && pkt.giaddr !== '0.0.0.0'
+    ? pkt.flags | BROADCAST_FLAG
+    : pkt.flags;
   return reply;
+}
+
+const IMPLIED_CLIENT_IDENTIFIER = /^01([0-9a-f]{12})$/i;
+
+export function clientKeyOf(pkt: DHCPPacket): string {
+  const raw = pkt.getOption(DHCP_OPTION.CLIENT_IDENTIFIER);
+  if (typeof raw !== 'string' || raw.length === 0) return pkt.chaddr;
+  const implied = IMPLIED_CLIENT_IDENTIFIER.exec(raw);
+  if (implied) return implied[1].toUpperCase().replace(/(..)(?=.)/g, '$1:');
+  return `id:${raw}`;
 }
 
 function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket | null {
@@ -92,7 +104,7 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
 
   if (type === 'DHCPDISCOVER') {
     const params: DHCPDiscoverParams = {
-      clientMAC: pkt.chaddr, xid: pkt.xid,
+      clientMAC: clientKeyOf(pkt), xid: pkt.xid,
       hostName: clientHostName(pkt),
       clientIdentifier: pkt.chaddr, parameterRequestList: [],
       vendorClass: vendorClassOf(pkt),
@@ -109,12 +121,16 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
         offer = (next && next.ip !== offer.ip) ? next : null;
       }
     }
-    return offer ? offerPacket(pkt, offer, server.leaseSecondsOf(offer.pool, offer.ip)) : null;
+    if (!offer) return null;
+    const previous = server.remainingLeaseSeconds(offer.ip, clientKeyOf(pkt));
+    return offerPacket(pkt, offer, previous ?? server.leaseSecondsOf(offer.pool, offer.ip));
   }
 
   if (type === 'DHCPREQUEST') {
+    const selecting = pkt.getOption(54) !== undefined;
     const result = server.processRequestWithNak({
-      clientMAC: pkt.chaddr, xid: pkt.xid,
+      clientMAC: clientKeyOf(pkt), xid: pkt.xid,
+      requestState: selecting ? 'selecting' : pkt.ciaddr === '0.0.0.0' ? 'init-reboot' : 'renewing',
       requestedIP: String(pkt.getOption(50) ?? pkt.ciaddr),
       hostName: clientHostName(pkt),
       clientIdentifier: pkt.chaddr,
@@ -148,7 +164,7 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
 
   if (type === 'DHCPINFORM') {
     const result = server.processInform({
-      clientMAC: pkt.chaddr, clientIP: pkt.ciaddr, xid: pkt.xid, clientIdentifier: pkt.chaddr,
+      clientMAC: clientKeyOf(pkt), clientIP: pkt.ciaddr, xid: pkt.xid, clientIdentifier: pkt.chaddr,
     });
     if (!result) return null;
     return DHCPPacket.createInformAck(pkt.chaddr, pkt.xid, pkt.ciaddr, result.serverIdentifier, {
@@ -161,7 +177,7 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
 
   if (type === 'DHCPDECLINE') {
     server.processDecline({
-      clientMAC: pkt.chaddr,
+      clientMAC: clientKeyOf(pkt),
       declinedIP: String(pkt.getOption(50) ?? ''),
       serverIdentifier: String(pkt.getOption(54) ?? ''),
       clientIdentifier: pkt.chaddr,
@@ -171,7 +187,7 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
 
   if (type === 'DHCPRELEASE') {
     server.processRelease({
-      clientMAC: pkt.chaddr,
+      clientMAC: clientKeyOf(pkt),
       clientIP: pkt.ciaddr,
       serverIdentifier: String(pkt.getOption(54) ?? ''),
       clientIdentifier: pkt.chaddr,

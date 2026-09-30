@@ -163,6 +163,10 @@ export class DHCPPacket implements NetworkPdu {
   giaddr: string = '0.0.0.0';
   /** Client hardware address */
   chaddr: string = '00:00:00:00:00:00';
+  /** Optional server host name (64 bytes, RFC 2131 §2) */
+  sname: string = '';
+  /** Boot file name (128 bytes, RFC 2131 §2) */
+  file: string = '';
 
   // ─── Options (TLV) ───────────────────────────────────────────
 
@@ -219,12 +223,13 @@ export class DHCPPacket implements NetworkPdu {
     pkt.op = 2; // BOOTREPLY
     pkt.xid = xid;
     pkt.yiaddr = offeredIP;
-    pkt.siaddr = serverIP;
+    pkt.siaddr = opts.nextServer ?? '0.0.0.0';
+    pkt.file = opts.bootfile ?? '';
     pkt.chaddr = mac.toUpperCase();
     pkt.setOption(DHCP_OPTION.MESSAGE_TYPE, 2); // DHCPOFFER
     pkt.setOption(DHCP_OPTION.SERVER_IDENTIFIER, serverIP);
     pkt.setOption(DHCP_OPTION.SUBNET_MASK, opts.mask);
-    pkt.setOption(DHCP_OPTION.ROUTER, opts.router);
+    if (opts.router && opts.router !== '0.0.0.0') pkt.setOption(DHCP_OPTION.ROUTER, opts.router);
     if (opts.dns.length > 0) pkt.setOption(DHCP_OPTION.DNS, opts.dns);
     pkt.setOption(DHCP_OPTION.LEASE_TIME, opts.leaseDuration);
     if (opts.renewalTime !== undefined) pkt.setOption(DHCP_OPTION.RENEWAL_TIME, opts.renewalTime);
@@ -238,8 +243,6 @@ export class DHCPPacket implements NetworkPdu {
     pkt: DHCPPacket,
     opts: Pick<OfferOptions, 'nextServer' | 'bootfile' | 'netbiosServers' | 'netbiosNodeType' | 'rawOptions'>,
   ): void {
-    if (opts.nextServer) pkt.setOption(DHCP_OPTION.TFTP_SERVER_NAME, opts.nextServer);
-    if (opts.bootfile) pkt.setOption(DHCP_OPTION.BOOTFILE_NAME, opts.bootfile);
     if (opts.netbiosServers && opts.netbiosServers.length > 0) {
       pkt.setOption(DHCP_OPTION.NETBIOS_NAME_SERVER, opts.netbiosServers);
     }
@@ -276,12 +279,13 @@ export class DHCPPacket implements NetworkPdu {
     pkt.op = 2;
     pkt.xid = xid;
     pkt.yiaddr = assignedIP;
-    pkt.siaddr = serverIP;
+    pkt.siaddr = opts.nextServer ?? '0.0.0.0';
+    pkt.file = opts.bootfile ?? '';
     pkt.chaddr = mac.toUpperCase();
     pkt.setOption(DHCP_OPTION.MESSAGE_TYPE, 5); // DHCPACK
     pkt.setOption(DHCP_OPTION.SERVER_IDENTIFIER, serverIP);
     pkt.setOption(DHCP_OPTION.SUBNET_MASK, opts.mask);
-    pkt.setOption(DHCP_OPTION.ROUTER, opts.router);
+    if (opts.router && opts.router !== '0.0.0.0') pkt.setOption(DHCP_OPTION.ROUTER, opts.router);
     if (opts.dns.length > 0) pkt.setOption(DHCP_OPTION.DNS, opts.dns);
     pkt.setOption(DHCP_OPTION.LEASE_TIME, opts.leaseDuration);
     if (opts.renewalTime !== undefined) pkt.setOption(DHCP_OPTION.RENEWAL_TIME, opts.renewalTime);
@@ -300,12 +304,13 @@ export class DHCPPacket implements NetworkPdu {
     pkt.op = 2;
     pkt.xid = xid;
     pkt.ciaddr = clientIP;
-    pkt.siaddr = serverIP;
+    pkt.siaddr = opts.nextServer ?? '0.0.0.0';
+    pkt.file = opts.bootfile ?? '';
     pkt.chaddr = mac.toUpperCase();
     pkt.setOption(DHCP_OPTION.MESSAGE_TYPE, 5);
     pkt.setOption(DHCP_OPTION.SERVER_IDENTIFIER, serverIP);
     pkt.setOption(DHCP_OPTION.SUBNET_MASK, opts.mask);
-    pkt.setOption(DHCP_OPTION.ROUTER, opts.router);
+    if (opts.router && opts.router !== '0.0.0.0') pkt.setOption(DHCP_OPTION.ROUTER, opts.router);
     if (opts.dns.length > 0) pkt.setOption(DHCP_OPTION.DNS, opts.dns);
     if (opts.domainName) pkt.setOption(DHCP_OPTION.DOMAIN_NAME, opts.domainName);
     DHCPPacket.applyExtendedOptions(pkt, opts);
@@ -406,8 +411,8 @@ export class DHCPPacket implements NetworkPdu {
       buf[offset++] = macBytes[i] || 0;
     }
 
-    // sname (64 bytes) + file (128 bytes) = 192 bytes of zeros
-    offset += 192;
+    DHCPPacket.writeText(buf, offset, this.sname, 64); offset += 64;
+    DHCPPacket.writeText(buf, offset, this.file, 128); offset += 128;
 
     // Magic cookie
     buf[offset++] = MAGIC_COOKIE[0];
@@ -424,6 +429,16 @@ export class DHCPPacket implements NetworkPdu {
     buf[offset++] = DHCP_OPTION.END;
 
     return buf;
+  }
+
+  private static writeText(buf: Uint8Array, offset: number, text: string, width: number): void {
+    for (let i = 0; i < Math.min(text.length, width - 1); i++) buf[offset + i] = text.charCodeAt(i) & 0xff;
+  }
+
+  private static readText(data: Uint8Array, offset: number, width: number): string {
+    let text = '';
+    for (let i = 0; i < width && data[offset + i] !== 0; i++) text += String.fromCharCode(data[offset + i]);
+    return text;
   }
 
   /** Deserialize binary Uint8Array to DHCPPacket */
@@ -459,8 +474,8 @@ export class DHCPPacket implements NetworkPdu {
     pkt.chaddr = macParts.join(':');
     offset += 16;
 
-    // Skip sname + file
-    offset += 192;
+    pkt.sname = DHCPPacket.readText(data, offset, 64); offset += 64;
+    pkt.file = DHCPPacket.readText(data, offset, 128); offset += 128;
 
     // Verify magic cookie
     if (data[offset] !== 99 || data[offset + 1] !== 130 ||

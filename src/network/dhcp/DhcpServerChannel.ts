@@ -106,7 +106,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
     if (!entry) return null;
     const offer = entry.pkt;
 
-    const serverIdentifier = str(offer.getOption(DHCP_OPTION.SERVER_IDENTIFIER)) ?? offer.siaddr;
+    const serverIdentifier = str(offer.getOption(DHCP_OPTION.SERVER_IDENTIFIER)) ?? '0.0.0.0';
     this.lastServerIp = serverIdentifier;
     const renewalTime = num(offer.getOption(DHCP_OPTION.RENEWAL_TIME));
     const rebindingTime = num(offer.getOption(DHCP_OPTION.REBINDING_TIME));
@@ -123,8 +123,8 @@ export class WireDhcpChannel implements DhcpServerChannel {
       denyPatterns: [],
       renewalTime,
       rebindingTime,
-      nextServer: str(offer.getOption(DHCP_OPTION.TFTP_SERVER_NAME)) ?? undefined,
-      bootfile: str(offer.getOption(DHCP_OPTION.BOOTFILE_NAME)) ?? undefined,
+      nextServer: offer.siaddr !== '0.0.0.0' ? offer.siaddr : undefined,
+      bootfile: offer.file.length > 0 ? offer.file : undefined,
       netbiosServers: strArray(offer.getOption(DHCP_OPTION.NETBIOS_NAME_SERVER)),
       netbiosNodeType: str(offer.getOption(DHCP_OPTION.NETBIOS_NODE_TYPE)) ?? undefined,
     };
@@ -158,7 +158,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
     if (!entry) return null;
     const reply = entry.pkt;
 
-    const serverIdentifier = str(reply.getOption(DHCP_OPTION.SERVER_IDENTIFIER)) ?? reply.siaddr;
+    const serverIdentifier = str(reply.getOption(DHCP_OPTION.SERVER_IDENTIFIER)) ?? '0.0.0.0';
     if (reply.getMessageType() === 'DHCPNAK') {
       return {
         type: 'NAK',

@@ -72,6 +72,7 @@ export class DHCPServer implements IProtocolEngine {
   /** Service enabled flag */
   private enabled: boolean = true;
   private admission: DhcpAdmissionPolicy | null = null;
+  private authoritative = false;
 
   /** Server's own IP address (Option 54: Server Identifier) */
   private serverIdentifier: string = '0.0.0.0';
@@ -306,6 +307,24 @@ export class DHCPServer implements IProtocolEngine {
    * REQUEST. Accept it when it matches our configured identifier or any pool
    * gateway we advertise (so the response and validation stay consistent).
    */
+  private verifyExistingBinding(params: DHCPRequestParams): 'known' | 'silent' | 'wrong-network' | 'wrong-address' {
+    let inSomePool = false;
+    for (const [, pool] of this.pools) {
+      if (pool.network && pool.mask && this.isIPInPool(params.requestedIP, pool)) inSomePool = true;
+    }
+    if (!inSomePool) return 'wrong-network';
+    const own = [...this.bindings.values()].find(b => b.clientId === params.clientMAC);
+    let reserved: string | null = null;
+    for (const [name] of this.pools) {
+      const reservation = this.findStaticBinding(params.clientMAC, name);
+      if (reservation !== null) reserved = reservation.ipAddress;
+    }
+    if (own === undefined && reserved === null) return this.authoritative ? 'wrong-address' : 'silent';
+    if (own !== undefined && own.ipAddress !== params.requestedIP && reserved !== params.requestedIP) return 'wrong-address';
+    if (own === undefined && reserved !== null && reserved !== params.requestedIP) return 'wrong-address';
+    return 'known';
+  }
+
   private isOurServerId(id: string | undefined): boolean {
     if (!id || id === '0.0.0.0') return true;
     if (id === this.serverIdentifier) return true;
@@ -827,6 +846,22 @@ export class DHCPServer implements IProtocolEngine {
     this.expireStale();
     this.stats.requests++;
 
+    if (params.requestState === 'init-reboot' || params.requestState === 'renewing') {
+      const verdict = this.verifyExistingBinding(params);
+      if (verdict !== 'known') {
+        if (verdict === 'silent') return null;
+        this.stats.naks++;
+        return {
+          type: 'NAK',
+          serverIdentifier: this.resolveServerId(this.findPoolForIP(params.requestedIP)),
+          xid: params.xid,
+          message: verdict === 'wrong-network'
+            ? `Requested address ${params.requestedIP} is on the wrong network`
+            : `Requested address ${params.requestedIP} is not the address of this client`,
+        };
+      }
+    }
+
     // Check excluded
     if (this.isExcluded(params.requestedIP)
       && !this.isReservedFor(params.clientMAC, params.requestedIP)) {
@@ -1042,6 +1077,16 @@ export class DHCPServer implements IProtocolEngine {
   getBindings(): Map<string, DHCPBinding> {
     this.cleanExpiredBindings();
     return this.bindings;
+  }
+
+  setAuthoritative(on: boolean): void { this.authoritative = on; }
+
+  remainingLeaseSeconds(address: string, clientKey: string): number | null {
+    const binding = this.bindings.get(address);
+    if (binding === undefined || binding.clientId !== clientKey) return null;
+    if (binding.leaseExpiration >= INFINITE_LEASE_EXPIRATION) return null;
+    const remaining = Math.ceil((binding.leaseExpiration - this.clock()) / 1000);
+    return remaining > 0 ? remaining : null;
   }
 
   setAdmissionPolicy(policy: DhcpAdmissionPolicy | null): void {

@@ -152,6 +152,7 @@ export interface DHCPRequestParams {
   /** Option 60: Vendor Class Identifier */
   vendorClass?: string;
   relayInformation?: DhcpRelayInformation;
+  requestState?: 'selecting' | 'init-reboot' | 'renewing';
   currentAddress?: string;
   unicastTo?: DhcpUnicastTarget;
 }
