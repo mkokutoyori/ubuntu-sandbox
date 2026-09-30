@@ -18,6 +18,7 @@ import type { TcpStack } from '@/network/tcp/TcpStack';
 import { discoverDc, rootDnOf } from './DcHostnameDiscovery';
 import type { DomainMembership, DomainSession } from './DomainTypes';
 import { bindLdapWithKerberos } from './KerberosLdapBind';
+import type { LdapClient } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 
 export interface DomainLogonResult { ok: boolean; message: string; session?: DomainSession }
 
@@ -42,10 +43,25 @@ export function logonDomainUser(tcpStack: TcpStack, membership: DomainMembership
   if (session.failure !== undefined || !session.client) return badCredential;
   const ldap = session.client;
 
-  const search = ldap.search(rootDnOf(membership.dnsName), 'sub', { kind: 'equalityMatch', attr: 'sAMAccountName', value: sam }, ['memberOf']);
+  const groups = readGroups(ldap, membership, sam);
   ldap.unbind();
-
-  const memberOfDns = search.entries[0]?.attributes.find(a => a.type.toLowerCase() === 'memberof')?.values ?? [];
-  const groups = memberOfDns.map(leafCn).filter((s): s is string => s !== null);
   return { ok: true, message: '', session: { netbiosName: membership.netbiosName, sam, groups } };
+}
+
+function readGroups(ldap: LdapClient, membership: DomainMembership, sam: string): string[] {
+  const search = ldap.search(rootDnOf(membership.dnsName), 'sub', { kind: 'equalityMatch', attr: 'sAMAccountName', value: sam }, ['memberOf']);
+  const memberOfDns = search.entries[0]?.attributes.find(a => a.type.toLowerCase() === 'memberof')?.values ?? [];
+  return memberOfDns.map(leafCn).filter((g): g is string => g !== null);
+}
+
+export function lookupDomainGroups(
+  tcpStack: TcpStack, membership: DomainMembership, bind: { user: string; password: string }, sam: string,
+): string[] | null {
+  const session = bindLdapWithKerberos({
+    tcpStack, dcAddress: membership.dcAddress, domainName: membership.dnsName, user: bind.user, password: bind.password,
+  });
+  if (session.failure !== undefined || !session.client) return null;
+  const groups = readGroups(session.client, membership, sam);
+  session.client.unbind();
+  return groups;
 }

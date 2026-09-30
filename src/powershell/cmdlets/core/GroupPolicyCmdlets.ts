@@ -5,6 +5,7 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { IGpoProvider, GpoInfo, GpLinkOptions, GpRegistryValueInfo } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
+import { jobInfoToPS } from './MiscCmdlets';
 
 function requireGpo(ctx: CmdletContext, cmdletName: string): IGpoProvider {
   if (!ctx.providers.gpo) {
@@ -302,5 +303,49 @@ export class GetGPInheritanceCmdlet implements ICmdlet {
         DisplayName: l.displayName, Enabled: l.enabled, Enforced: l.enforced, Order: l.order,
       })) as PSValue[],
     } as Record<string, PSValue>;
+  }
+}
+
+export class InvokeGPUpdateCmdlet implements ICmdlet {
+  readonly name = 'invoke-gpupdate';
+  readonly aliases = [] as const;
+  readonly parameters = ['Computer', 'Target', 'Force', 'Boot', 'LogOff', 'RandomDelayInMinutes', 'Sync', 'AsJob'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const gpo = requireGpo(ctx, 'Invoke-GPUpdate');
+    const wanted = ctx.named['target'] !== undefined ? psValueToString(ctx.named['target']).toLowerCase() : 'both';
+    if (!['both', 'computer', 'user'].includes(wanted)) {
+      ctx.emitError(`Invoke-GPUpdate : Cannot validate argument on parameter 'Target'. The argument "${wanted}" does not belong to the set "Computer,User".`);
+      return null;
+    }
+    const maxDelay = ctx.named['randomdelayinminutes'] !== undefined ? Number(psValueToString(ctx.named['randomdelayinminutes'])) : 10;
+    if (!Number.isInteger(maxDelay) || maxDelay < 0) {
+      ctx.emitError('Invoke-GPUpdate : Cannot validate argument on parameter \'RandomDelayInMinutes\'. The value must be a non-negative integer.');
+      return null;
+    }
+    const delay = gpo.refreshDelayMinutes(maxDelay);
+    const computers = ctx.named['computer'] !== undefined
+      ? (Array.isArray(ctx.named['computer']) ? ctx.named['computer'] : [ctx.named['computer']]).map(psValueToString).filter(c => c !== '')
+      : [];
+    const remoting = ctx.providers.remoting;
+    const own = remoting?.localComputerName().toLowerCase() ?? '';
+    const remote = computers.filter(c => !['.', 'localhost', '127.0.0.1', '::1'].includes(c.toLowerCase())
+      && c.toLowerCase() !== own && !c.toLowerCase().startsWith(`${own}.`));
+    if (remote.length > 0 && remoting) {
+      for (const computer of remote) {
+        const outcome = remoting.refreshPolicy(computer, wanted as 'both' | 'computer' | 'user', delay);
+        if (!outcome.ok) ctx.emitError(`Invoke-GPUpdate : Cannot connect to ${computer}: ${outcome.error ?? 'Access is denied.'}`);
+        else if ((outcome.output ?? '') !== '') ctx.emitError(`Invoke-GPUpdate : ${computer}: ${(outcome.output ?? '').trim()}`);
+      }
+      return null;
+    }
+    gpo.waitMinutes(delay);
+    const result = gpo.applyPolicy(wanted as 'both' | 'computer' | 'user');
+    if (!result.ok) {
+      ctx.emitError(`Invoke-GPUpdate : ${result.message}`);
+      return null;
+    }
+    if (ctx.named['asjob'] === true && ctx.providers.jobs) return jobInfoToPS(ctx.providers.jobs.startJob(undefined, [], 0));
+    return null;
   }
 }

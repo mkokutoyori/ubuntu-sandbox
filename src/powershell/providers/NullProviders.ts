@@ -47,6 +47,7 @@ export function nullProviders(): PSProviders {
     windowsUpdate:  null,
     print:          null,
     licensing:      null,
+    capabilities:   null,
   };
 }
 

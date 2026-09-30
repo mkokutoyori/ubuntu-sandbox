@@ -41,7 +41,10 @@ export class JobProvider implements IJobProvider {
   }
 
   beginRecording(): void { this.table.beginRecording(); }
-  recordSleep(ms: number): void { this.table.recordSleep(ms); }
+  recordSleep(ms: number): void {
+    if (this.table.isRecording()) this.table.recordSleep(ms);
+    else this.clock.advance(ms);
+  }
   endRecording(): number { return this.table.endRecording(); }
 
   startJob(name: string | undefined, output: unknown[], durationMs: number): JobInfo {

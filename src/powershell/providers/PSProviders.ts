@@ -554,6 +554,9 @@ export interface GpLinkOptions { linkEnabled?: boolean; enforced?: boolean; orde
 export interface GpRegistryValueInfo { key: string; valueName: string; type: string; value: string }
 
 export interface IGpoProvider {
+  applyPolicy(scope: 'both' | 'computer' | 'user'): { ok: boolean; message: string };
+  waitMinutes(minutes: number): void;
+  refreshDelayMinutes(maxMinutes: number): number;
   newGpo(name: string, description?: string): AdOpResult;
   /** `Remove-GPO` — the GPO and every link to it in the domain. */
   removeGpo(name: string, keepLinks?: boolean): AdOpResult;
@@ -1102,6 +1105,14 @@ export interface INpsProvider {
   queryAccounting(sql: string): Record<string, import('@/powershell/runtime/PSEnvironment').PSValue>[] | null;
 }
 
+export interface CapabilityInfo { name: string; displayName: string; description: string; state: 'Installed' | 'NotPresent' }
+
+export interface ICapabilityProvider {
+  list(): CapabilityInfo[];
+  add(name: string): { ok: boolean; message: string };
+  remove(name: string): { ok: boolean; message: string };
+}
+
 export interface IRemotingProvider {
   /**
    * Resolve a computer name/IP to a remoting-capable target — over the
@@ -1113,6 +1124,12 @@ export interface IRemotingProvider {
    * on any failure (unreachable, WinRM not listening, or bad credentials).
    */
   resolveComputer(name: string, credential?: { username: string; password: string }): IRemoteComputer | null;
+  /** Run a PowerShell line on another computer over a real WinRM session (implicit Kerberos identity unless a credential is given) and return its raw text output. */
+  runCommand(computerName: string, line: string, credential?: { username: string; password: string }): { ok: boolean; output?: string; error?: string };
+  /** Ask another computer to refresh its Group Policy over a real WinRM session (implicit Kerberos identity). */
+  refreshPolicy(computerName: string, scope: 'both' | 'computer' | 'user', delayMinutes: number): { ok: boolean; output?: string; error?: string };
+  /** This computer's own name, to tell `-ComputerName` naming this machine from one naming another. */
+  localComputerName(): string;
   /** `Enable-PSRemoting` on THIS (local) device. */
   enablePSRemoting(): void;
   /** This device's own WinRM enabled state (Test-WSMan with no -ComputerName). */
@@ -1652,6 +1669,7 @@ export interface PSProviders {
   readonly wmi:            IWmiProvider            | null;
   readonly environment:    IEnvironmentProvider    | null;
   readonly remoting:       IRemotingProvider       | null;
+  readonly capabilities:   ICapabilityProvider    | null;
   readonly roles:          IRoleProvider           | null;
   readonly smb:            ISmbProvider            | null;
   readonly ad:             IAdProvider             | null;

@@ -19,8 +19,7 @@ import {
   encodeLdapMessage, decodeLdapMessages, ldapResult, LdapResultCode,
   START_TLS_OID, PAGED_RESULTS_CONTROL_OID, encodePagedResultsValue, decodePagedResultsValue,
 } from './LdapMessage';
-import { decodeApReq, decodeAuthenticator, decodeEncTicketPart } from '@/network/kerberos/codec';
-import { stringToKey, decryptWithUsage, KU_TICKET, KU_AP_REQ_AUTHENTICATOR } from '@/network/kerberos/crypto';
+import { verifyApReq } from '@/network/kerberos/ApReqVerifier';
 import type { TlsServerConfig } from '@/network/tls/TlsServerSession';
 import { TlsServerSession } from '@/network/tls/TlsServerSession';
 import { encryptApplicationData, decryptApplicationData } from '@/network/http/https/ApplicationDataCipher';
@@ -72,8 +71,6 @@ function expiringLinkTtl(attributeDescription: string): number | null {
   const match = /^member;ttl=(\d+)$/i.exec(attributeDescription.trim());
   return match ? parseInt(match[1], 10) : null;
 }
-
-const CLOCK_SKEW_SECONDS = 5 * 60;
 
 function treeMessageToResultCode(message: string): number {
   if (message.startsWith('noSuchObject')) return LdapResultCode.noSuchObject;
@@ -375,20 +372,6 @@ export class LdapServerHandler {
    */
   private checkSaslBind(sasl: SaslCredentials): boolean {
     if (sasl.mechanism !== 'GSSAPI' || !this.ctx.kerberos) return false;
-    const { realm, serviceSecret } = this.ctx.kerberos;
-    try {
-      const apReq = decodeApReq(sasl.credentials);
-      const serviceKey = stringToKey(serviceSecret, realm);
-      const ticketPart = decodeEncTicketPart(decryptWithUsage(serviceKey, KU_TICKET, apReq.ticket.encPart.cipher));
-      if (ticketPart.endtime < Math.floor(Date.now() / 1000)) return false;
-
-      const ticketSessionKey = new TextDecoder().decode(ticketPart.key.keyValue);
-      const authenticator = decodeAuthenticator(decryptWithUsage(ticketSessionKey, KU_AP_REQ_AUTHENTICATOR, apReq.authenticator.cipher));
-      const sameCname = authenticator.cname.nameString.join('/') === ticketPart.cname.nameString.join('/');
-      const withinSkew = Math.abs(Math.floor(Date.now() / 1000) - authenticator.ctime) <= CLOCK_SKEW_SECONDS;
-      return sameCname && withinSkew;
-    } catch {
-      return false;
-    }
+    return verifyApReq(sasl.credentials, this.ctx.kerberos) !== null;
   }
 }

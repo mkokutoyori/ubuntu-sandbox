@@ -15,6 +15,8 @@
 
 
 import { findWmiClass } from '@/network/devices/windows/WmiClasses';
+import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
+import { RSAT_CAPABILITIES } from '@/powershell/cmdlets/core/rsatCapabilities';
 import type { WindowsPC } from '@/network/devices/WindowsPC';
 import type { ServiceStartType } from '@/network/devices/windows/WindowsServiceManager';
 import type { WindowsServer } from '@/network/devices/WindowsServer';
@@ -63,7 +65,7 @@ import type {
   IFileSystemProvider, IRegistryProvider, IServiceProvider,
   INetworkProvider, IProcessProvider, IUserProvider, IEventLogProvider,
   IVpnProvider, IScheduledTaskProvider, IDiskProvider, IEnvironmentProvider,
-  IRemotingProvider, IRemoteComputer,
+  IRemotingProvider, IRemoteComputer, ICapabilityProvider, CapabilityInfo,
   IRoleProvider, WindowsFeatureInfo,
   ISmbProvider, SmbShareInfo, SmbSessionInfo,
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult, AdSiteInfo,
@@ -2962,7 +2964,24 @@ class WindowsComputerAdapter implements IComputerProvider {
 // on `getDirectoryStore()` rather than a RoleManager feature.
 
 class WindowsGpoAdapter implements IGpoProvider {
+  private delayCycle = 0;
+
   constructor(private readonly pc: WindowsPC) {}
+
+  applyPolicy(scope: 'both' | 'computer' | 'user'): { ok: boolean; message: string } {
+    return this.pc.gpupdateForce(scope);
+  }
+
+  waitMinutes(minutes: number): void {
+    if (minutes > 0) this.pc.advanceTime(minutes * 60_000);
+  }
+
+  refreshDelayMinutes(maxMinutes: number): number {
+    if (maxMinutes <= 0) return 0;
+    let hash = 0x811c9dc5;
+    for (const ch of `${this.pc.getHostname()}#${this.delayCycle++}`) hash = Math.imul(hash ^ ch.charCodeAt(0), 0x01000193) >>> 0;
+    return hash % (maxMinutes + 1);
+  }
 
   private requireDc(cmdletName: string): DirectoryStore {
     const store = this.pc.getDirectoryStore();
@@ -3638,6 +3657,39 @@ interface RemotableDevice {
   winrm: { enabled: boolean };
 }
 
+class WindowsCapabilityAdapter implements ICapabilityProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  private isServerEdition(): boolean { return this.pc.getWindowsEdition() === 'server'; }
+
+  list(): CapabilityInfo[] {
+    return RSAT_CAPABILITIES.map(capability => ({
+      name: capability.name, displayName: capability.displayName, description: capability.description,
+      state: this.isServerEdition() || this.pc.rsatCapabilities.has(capability.name) ? 'Installed' : 'NotPresent',
+    }));
+  }
+
+  add(name: string): { ok: boolean; message: string } {
+    const capability = RSAT_CAPABILITIES.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (!capability) return { ok: false, message: `The capability "${name}" is not available: only the RSAT tools built in this simulator can be added.` };
+    if (this.isServerEdition() || this.pc.rsatCapabilities.has(capability.name)) return { ok: true, message: '' };
+    this.pc.rsatCapabilities.add(capability.name);
+    capability.register(this.pc.cmdletOverlay);
+    return { ok: true, message: '' };
+  }
+
+  remove(name: string): { ok: boolean; message: string } {
+    const capability = RSAT_CAPABILITIES.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (!capability) return { ok: false, message: `The capability "${name}" is not available.` };
+    if (this.isServerEdition()) return { ok: false, message: 'The tools of a Windows Server are part of the edition and cannot be removed here; uninstall the role management feature instead.' };
+    if (!this.pc.rsatCapabilities.delete(capability.name)) return { ok: true, message: '' };
+    const scratch = new CmdletRegistry();
+    capability.register(scratch);
+    for (const cmdlet of scratch.cmdlets()) this.pc.cmdletOverlay.unregister(cmdlet);
+    return { ok: true, message: '' };
+  }
+}
+
 class WindowsRemotingAdapter implements IRemotingProvider {
   constructor(private readonly pc: WindowsPC) {}
 
@@ -3657,6 +3709,16 @@ class WindowsRemotingAdapter implements IRemotingProvider {
    * no real wire representation of a `PSScriptBlock` AST to ship, only
    * the connection-establishment step is real.
    */
+  runCommand(computerName: string, line: string, credential?: { username: string; password: string }): { ok: boolean; output?: string; error?: string } {
+    return this.pc.runRemoteCommand(computerName, line, credential);
+  }
+
+  refreshPolicy(computerName: string, scope: 'both' | 'computer' | 'user', delayMinutes: number): { ok: boolean; output?: string; error?: string } {
+    return this.pc.runRemoteRequest(computerName, { op: 'gpupdate', scope, delayMinutes });
+  }
+
+  localComputerName(): string { return this.pc.getHostname(); }
+
   resolveComputer(name: string, credential?: { username: string; password: string }): IRemoteComputer | null {
     const targetIp = this.pc.resolveHostnameSync(name);
     if (!targetIp) return null;
@@ -3771,5 +3833,6 @@ export function createWindowsPSProviders(
     windowsUpdate:  new WindowsUpdateClientAdapter(pc),
     print:          pc.getRoleManager() ? new WindowsPrintAdapter(pc) : null,
     licensing:      new WindowsLicensingAdapter(pc),
+    capabilities:   new WindowsCapabilityAdapter(pc),
   };
 }

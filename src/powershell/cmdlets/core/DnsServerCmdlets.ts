@@ -22,20 +22,7 @@ function requireDns(ctx: CmdletContext, cmdletName: string): IDnsServerProvider 
 const DYNAMIC_UPDATE_MODES: readonly DnsDynamicUpdateMode[] = ['None', 'NonsecureAndSecure', 'Secure'];
 const REPLICATION_SCOPES = ['Domain', 'Forest', 'Legacy'] as const;
 
-const LOCAL_TARGETS = ['.', 'localhost', '127.0.0.1', '::1'];
-
-function guard(ctx: CmdletContext, cmdletName: string, dns: IDnsServerProvider): boolean {
-  const raw = ctx.named['computername'];
-  if (raw === undefined) return true;
-  const target = psValueToString(Array.isArray(raw) ? raw[0] : raw).toLowerCase();
-  const own = dns.serverName().toLowerCase();
-  if (LOCAL_TARGETS.includes(target) || target === own || target.startsWith(`${own}.`)) return true;
-  ctx.emitError(`${cmdletName} : Cannot reach "${target}": remote DNS Server management (CIM over WinRM) is not built, only the local server can be managed.`);
-  return false;
-}
-
-function recordGuard(ctx: CmdletContext, cmdletName: string, dns: IDnsServerProvider): boolean {
-  if (!guard(ctx, cmdletName, dns)) return false;
+function recordGuard(ctx: CmdletContext, cmdletName: string, _dns: IDnsServerProvider): boolean {
   for (const [key, name, reason] of [
     ['agerecord', 'AgeRecord', 'aging and scavenging are not modelled, so a record cannot be aged'],
     ['allowupdateany', 'AllowUpdateAny', 'per-record update permissions are not modelled, so a record cannot be opened to any updater'],
@@ -176,7 +163,6 @@ export class AddDnsServerPrimaryZoneCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerPrimaryZone');
-    if (!guard(ctx, 'Add-DnsServerPrimaryZone', dns)) return null;
     const name = nameOf(ctx);
     const networkId = ctx.named['networkid'] !== undefined ? psValueToString(ctx.named['networkid']) : undefined;
     if (!name && !networkId) return missing(ctx, 'Add-DnsServerPrimaryZone', 'Name');
@@ -207,7 +193,6 @@ export class AddDnsServerSecondaryZoneCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerSecondaryZone');
-    if (!guard(ctx, 'Add-DnsServerSecondaryZone', dns)) return null;
     const name = nameOf(ctx);
     const masters = stringList(ctx.named['masterservers']);
     if (!name || masters.length === 0) return missing(ctx, 'Add-DnsServerSecondaryZone', 'Name MasterServers');
@@ -229,7 +214,6 @@ export class AddDnsServerConditionalForwarderZoneCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerConditionalForwarderZone');
-    if (!guard(ctx, 'Add-DnsServerConditionalForwarderZone', dns)) return null;
     const name = nameOf(ctx);
     const masters = stringList(ctx.named['masterservers']);
     if (!name || masters.length === 0) return missing(ctx, 'Add-DnsServerConditionalForwarderZone', 'Name MasterServers');
@@ -249,7 +233,6 @@ export class SetDnsServerConditionalForwarderZoneCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Set-DnsServerConditionalForwarderZone');
-    if (!guard(ctx, 'Set-DnsServerConditionalForwarderZone', dns)) return null;
     const name = nameOf(ctx);
     const masters = ctx.named['masterservers'] !== undefined ? stringList(ctx.named['masterservers']) : undefined;
     if (!name || (masters !== undefined && masters.length === 0)) return missing(ctx, 'Set-DnsServerConditionalForwarderZone', 'Name MasterServers');
@@ -268,7 +251,6 @@ export class GetDnsServerZoneCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Get-DnsServerZone');
-    if (!guard(ctx, 'Get-DnsServerZone', dns)) return null;
     const name = nameOf(ctx);
     if (name) {
       const z = dns.getZone(name);
@@ -286,7 +268,6 @@ export class SetDnsServerPrimaryZoneCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Set-DnsServerPrimaryZone');
-    if (!guard(ctx, 'Set-DnsServerPrimaryZone', dns)) return null;
     const name = nameOf(ctx);
     if (!name) return missing(ctx, 'Set-DnsServerPrimaryZone', 'Name');
     const dynamicUpdate = choice(ctx, 'Set-DnsServerPrimaryZone', 'DynamicUpdate', 'dynamicupdate', DYNAMIC_UPDATE_MODES);
@@ -319,7 +300,6 @@ export class SetDnsServerSecondaryZoneCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Set-DnsServerSecondaryZone');
-    if (!guard(ctx, 'Set-DnsServerSecondaryZone', dns)) return null;
     const name = nameOf(ctx);
     if (!name) return missing(ctx, 'Set-DnsServerSecondaryZone', 'Name');
     if (refuseUnbuilt(ctx, 'Set-DnsServerSecondaryZone', [
@@ -353,7 +333,6 @@ export class RemoveDnsServerZoneCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Remove-DnsServerZone');
-    if (!guard(ctx, 'Remove-DnsServerZone', dns)) return null;
     const name = nameOf(ctx);
     if (!name) return missing(ctx, 'Remove-DnsServerZone', 'Name');
     const res = dns.removeZone(name);
@@ -368,7 +347,6 @@ export class StartDnsServerZoneTransferCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Start-DnsServerZoneTransfer');
-    if (!guard(ctx, 'Start-DnsServerZoneTransfer', dns)) return null;
     const name = nameOf(ctx);
     if (!name) return missing(ctx, 'Start-DnsServerZoneTransfer', 'Name');
     const res = dns.startZoneTransfer(name);
@@ -383,7 +361,6 @@ export class AddDnsServerTsigKeyCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerTsigKey');
-    if (!guard(ctx, 'Add-DnsServerTsigKey', dns)) return null;
     const name = nameOf(ctx);
     const algorithm = psValueToString(ctx.named['algorithm'] ?? 'hmac-sha256.');
     const secret = psValueToString(ctx.named['secret'] ?? '');
@@ -404,7 +381,6 @@ export class GetDnsServerTsigKeyCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Get-DnsServerTsigKey');
-    if (!guard(ctx, 'Get-DnsServerTsigKey', dns)) return null;
     return dns.listTsigKeys().map(k => ({ Name: k.name, Algorithm: k.algorithm }));
   }
 }
@@ -416,7 +392,6 @@ export class RemoveDnsServerTsigKeyCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Remove-DnsServerTsigKey');
-    if (!guard(ctx, 'Remove-DnsServerTsigKey', dns)) return null;
     const res = dns.removeTsigKey(nameOf(ctx));
     if (!res.ok) { ctx.emitError(`Remove-DnsServerTsigKey : ${res.message}`); return null; }
     return null;
@@ -678,7 +653,6 @@ export class SetDnsServerForwarderCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Set-DnsServerForwarder');
-    if (!guard(ctx, 'Set-DnsServerForwarder', dns)) return null;
     if (ctx.named['useroothint'] !== undefined) dns.setUseRootHint(isSwitchOn(ctx.named['useroothint']));
     if (ctx.named['enablereordering'] !== undefined && !isSwitchOn(ctx.named['enablereordering'])) {
       ctx.emitError('Set-DnsServerForwarder : -EnableReordering $false is refused: forwarders are always tried in the order listed; RTT-based reordering is not built.');
@@ -702,7 +676,6 @@ export class AddDnsServerForwarderCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerForwarder');
-    if (!guard(ctx, 'Add-DnsServerForwarder', dns)) return null;
     const addresses = stringList(ctx.named['ipaddress'] ?? (ctx.positional.length > 0 ? ctx.positional : undefined));
     if (addresses.length === 0) return missing(ctx, 'Add-DnsServerForwarder', 'IPAddress');
     const res = dns.addForwarders(addresses);
@@ -717,7 +690,6 @@ export class RemoveDnsServerForwarderCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Remove-DnsServerForwarder');
-    if (!guard(ctx, 'Remove-DnsServerForwarder', dns)) return null;
     const addresses = stringList(ctx.named['ipaddress'] ?? (ctx.positional.length > 0 ? ctx.positional : undefined));
     if (addresses.length === 0) return missing(ctx, 'Remove-DnsServerForwarder', 'IPAddress');
     const res = dns.removeForwarders(addresses);
@@ -743,7 +715,6 @@ export class SetDnsServerRecursionCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Set-DnsServerRecursion');
-    if (!guard(ctx, 'Set-DnsServerRecursion', dns)) return null;
     if (ctx.named['enable'] === undefined) return missing(ctx, 'Set-DnsServerRecursion', 'Enable');
     dns.setRecursion(isSwitchOn(ctx.named['enable']));
     return null;
@@ -790,7 +761,6 @@ export class GetDnsServerRootHintCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Get-DnsServerRootHint');
-    if (!guard(ctx, 'Get-DnsServerRootHint', dns)) return null;
     const byName = new Map<string, string[]>();
     for (const hint of dns.getRootHints()) byName.set(hint.name, [...(byName.get(hint.name) ?? []), hint.address]);
     return [...byName].map(([name, addresses]) => ({ NameServer: name, IPAddress: addresses }));
@@ -804,7 +774,6 @@ export class AddDnsServerRootHintCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerRootHint');
-    if (!guard(ctx, 'Add-DnsServerRootHint', dns)) return null;
     const server = psValueToString(ctx.named['nameserver'] ?? ctx.positional[0] ?? '');
     const addresses = stringList(ctx.named['ipaddress']);
     if (!server || addresses.length === 0) return missing(ctx, 'Add-DnsServerRootHint', 'NameServer IPAddress');
@@ -823,7 +792,6 @@ export class SetDnsServerRootHintCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Set-DnsServerRootHint');
-    if (!guard(ctx, 'Set-DnsServerRootHint', dns)) return null;
     const server = psValueToString(ctx.named['nameserver'] ?? ctx.positional[0] ?? '');
     const addresses = stringList(ctx.named['ipaddress']);
     if (!server || addresses.length === 0) return missing(ctx, 'Set-DnsServerRootHint', 'NameServer IPAddress');
@@ -839,7 +807,6 @@ export class RemoveDnsServerRootHintCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Remove-DnsServerRootHint');
-    if (!guard(ctx, 'Remove-DnsServerRootHint', dns)) return null;
     const server = psValueToString(ctx.named['nameserver'] ?? ctx.positional[0] ?? '');
     if (!server) return missing(ctx, 'Remove-DnsServerRootHint', 'NameServer');
     const addresses = stringList(ctx.named['ipaddress']);
@@ -858,7 +825,6 @@ export class ImportDnsServerRootHintCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Import-DnsServerRootHint');
-    if (!guard(ctx, 'Import-DnsServerRootHint', dns)) return null;
     const res = dns.importRootHints();
     return res.ok ? null : failed(ctx, 'Import-DnsServerRootHint', res);
   }
