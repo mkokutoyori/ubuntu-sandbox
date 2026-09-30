@@ -52,6 +52,8 @@ export const V6_DEFAULT_PREFERRED = 8 * 86400;
 export const V6_DEFAULT_VALID = 12 * 86400;
 export const V6_DNS_SERVER_OPTION = 23;
 export const V6_DOMAIN_SEARCH_OPTION = 24;
+export const V6_UNICAST_OPTION = 12;
+export const V6_INFORMATION_REFRESH_OPTION = 32;
 
 interface ScopeRecord {
   prefix: string;
@@ -120,6 +122,10 @@ export class WindowsDhcpv6 {
     const domains = record.options.get(V6_DOMAIN_SEARCH_OPTION) ?? this.serverOptions.get(V6_DOMAIN_SEARCH_OPTION) ?? [];
     engine.configurePoolDns(name, dns);
     if (domains[0]) engine.configurePoolDomain(name, domains[0]);
+    const unicast = record.options.get(V6_UNICAST_OPTION) ?? this.serverOptions.get(V6_UNICAST_OPTION) ?? [];
+    engine.configurePoolServerUnicast(name, unicast[0] ?? null);
+    const refresh = record.options.get(V6_INFORMATION_REFRESH_OPTION) ?? this.serverOptions.get(V6_INFORMATION_REFRESH_OPTION);
+    engine.configurePoolInformationRefresh(name, refresh ? Number(refresh[0]) : 86400);
     const pool = engine.getPool(name);
     if (pool) {
       pool.reservations = [];
@@ -280,10 +286,13 @@ export class WindowsDhcpv6 {
   }
 
   setOptionValue(prefix: string | undefined, optionId: number, values: string[]): DhcpV6OpResult {
-    if (optionId !== V6_DNS_SERVER_OPTION && optionId !== V6_DOMAIN_SEARCH_OPTION) {
+    if (![V6_DNS_SERVER_OPTION, V6_DOMAIN_SEARCH_OPTION, V6_UNICAST_OPTION, V6_INFORMATION_REFRESH_OPTION].includes(optionId)) {
       return { ok: false, message: `Option ID ${optionId} is not supported.` };
     }
-    if (optionId === V6_DNS_SERVER_OPTION) {
+    if (optionId === V6_INFORMATION_REFRESH_OPTION && !(values.length === 1 && /^\d+$/.test(values[0]))) {
+      return { ok: false, message: 'The Information Refresh Time is a number of seconds.' };
+    }
+    if (optionId === V6_DNS_SERVER_OPTION || optionId === V6_UNICAST_OPTION) {
       for (const value of values) {
         try { new IPv6Address(value); } catch { return { ok: false, message: `"${value}" is not a valid IPv6 address.` }; }
       }
@@ -301,7 +310,7 @@ export class WindowsDhcpv6 {
   }
 
   getOptionValues(prefix?: string): Array<{ optionId: number; name: string; value: string[]; prefix: string | null }> {
-    const label = (id: number) => (id === V6_DNS_SERVER_OPTION ? 'DNS Recursive Name Server' : 'Domain Search List');
+    const label = (id: number) => ({ [V6_DNS_SERVER_OPTION]: 'DNS Recursive Name Server', [V6_DOMAIN_SEARCH_OPTION]: 'Domain Search List', [V6_UNICAST_OPTION]: 'Unicast', [V6_INFORMATION_REFRESH_OPTION]: 'Information Refresh Time' } as Record<number, string>)[id] ?? String(id);
     if (prefix === undefined) {
       return [...this.serverOptions].map(([optionId, value]) => ({ optionId, name: label(optionId), value, prefix: null }));
     }

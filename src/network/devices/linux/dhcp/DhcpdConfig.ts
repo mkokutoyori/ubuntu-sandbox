@@ -21,6 +21,8 @@ export interface DhcpdOptions {
   renewalTime: number | null;
   rebindingTime: number | null;
   preferredLifetime: number | null;
+  unicast6: string | null;
+  infoRefreshTime: number | null;
 }
 
 export interface DhcpdSubnet6 {
@@ -77,7 +79,7 @@ export function emptyOptions(): DhcpdOptions {
     defaultLeaseTime: null, maxLeaseTime: null, ntpServers: [],
     netbiosNameServers: [], tftpServerName: null, bootfileName: null,
     nameServers6: [], domainSearch: [], preference: null, renewalTime: null,
-    rebindingTime: null, preferredLifetime: null,
+    rebindingTime: null, preferredLifetime: null, unicast6: null, infoRefreshTime: null,
   };
 }
 
@@ -101,6 +103,8 @@ export function mergedOptions(globals: DhcpdOptions, local: DhcpdOptions): Dhcpd
     renewalTime: local.renewalTime ?? globals.renewalTime,
     rebindingTime: local.rebindingTime ?? globals.rebindingTime,
     preferredLifetime: local.preferredLifetime ?? globals.preferredLifetime,
+    unicast6: local.unicast6 ?? globals.unicast6,
+    infoRefreshTime: local.infoRefreshTime ?? globals.infoRefreshTime,
   };
 }
 
@@ -184,6 +188,8 @@ class Parser {
       case 'dhcp6.name-servers': into.nameServers6 = rest; return;
       case 'dhcp6.domain-search': into.domainSearch = rest.map(unquote); return;
       case 'dhcp6.preference': into.preference = Number(rest[0]); return;
+      case 'dhcp6.unicast': into.unicast6 = rest[0] ?? null; return;
+      case 'dhcp6.info-refresh-time': into.infoRefreshTime = Number(rest[0]); return;
       case 'dhcp-renewal-time': into.renewalTime = Number(rest[0]); return;
       case 'dhcp-rebinding-time': into.rebindingTime = Number(rest[0]); return;
       default: this.fail(head, `unknown option ${name}.`);

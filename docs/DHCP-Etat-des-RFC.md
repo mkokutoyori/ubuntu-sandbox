@@ -30,7 +30,7 @@ unique par famille (`buildDhcpServerReply`, `buildDhcpv6ServerReply`) : une amé
 
 ## Limites assumées
 
-- Reconfigure (RFC 8415 §18.3.11) exige l'authentification RKAP : non implémenté, et donc non annoncé.
-- Option Server Unicast et Information Refresh Time : non implémentées.
+- Reconfigure (RFC 8415 §18.3.11, RKAP §20.4), Server Unicast (§21.12) et Information Refresh Time (§21.23) : implémentés dans le moteur, le client et les serveurs d'hôte. Limites : pas de Reconfigure vers un client derrière un relais ; le HMAC-MD5 porte sur la sérialisation canonique de l'objet paquet, pas sur des octets de fil ; la livraison étant synchrone, les temporisations de retransmission ne sont pas observables. Aucune commande d'activation du Reconfigure ni du Server Unicast n'est sourcée pour Cisco, Huawei et FortiGate : elles sont exposées par le moteur (Windows : options 12 et 32 ; dhcpd : `dhcp6.unicast`, `dhcp6.info-refresh-time` ; Cisco : `information refresh`).
+- La limite de sauts d'un relais est de 8 (table du §7.6 de la RFC fournie, qui note la réduction de 32 à 8) : le code en utilisait 32.
 - Relay-ID (RFC 6925) et VPN-ID (RFC 6607) ne sont pas dans `docs/rfc/dhcp` : une requête bulk par Relay-ID ne correspond à rien, une requête par VPN-ID est terminée par `QueryTerminated`.
 - Les commandes d'activation du leasequery sur Cisco, Huawei, Windows et FortiGate ne sont pas sourcées : le moteur les porte, aucune commande n'a été inventée.

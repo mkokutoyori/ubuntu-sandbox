@@ -1,6 +1,7 @@
 import { IPv6Address } from '../core/types';
 import type { EndHost, UdpDelivery } from '../devices/EndHost';
-import { DHCPv6Packet } from './DHCPv6Packet';
+import { DHCPv6Packet, DHCPV6_REC_MAX_RC } from './DHCPv6Packet';
+import { buildReconfigure } from './Dhcpv6Reconfigure';
 import { DHCPv6Server } from './DHCPv6Server';
 import { answerRelayForward, buildDhcpv6ServerReply } from './Dhcpv6ServerExchange';
 
@@ -72,6 +73,8 @@ export class Dhcpv6HostService {
     const reply = buildDhcpv6ServerReply(this.server, message, {
       anchor: port?.globalAddress ?? undefined,
       clientAddress: delivery.sourceIP.toString(),
+      clientInterface: delivery.inPort,
+      destination: delivery.destinationIP.toString(),
       relayed: false,
       unicast: !(delivery.destinationIP instanceof IPv6Address && delivery.destinationIP.isMulticast()),
     });
@@ -79,6 +82,19 @@ export class Dhcpv6HostService {
     this.host.sendUdpDatagram6OnLink(delivery.inPort, delivery.sourceIP, DHCPV6_CLIENT_PORT, DHCPV6_SERVER_PORT, reply, 300);
     this.onReply?.(message, reply);
   };
+
+  sendReconfigure(clientDuid: string, msgType: 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST'): boolean {
+    if (!this.running) return false;
+    const address = this.server.clientAddressOf(clientDuid);
+    const iface = this.server.clientInterfaceOf(clientDuid);
+    const message = buildReconfigure(this.server, clientDuid, msgType);
+    if (!message || !address || !iface) return false;
+    this.server.beginReconfigure(clientDuid, msgType);
+    for (let attempt = 0; attempt < DHCPV6_REC_MAX_RC && this.server.pendingReconfigure(clientDuid); attempt++) {
+      this.host.sendUdpDatagram6OnLink(iface, new IPv6Address(address), DHCPV6_CLIENT_PORT, DHCPV6_SERVER_PORT, message, 300);
+    }
+    return true;
+  }
 
   private send(destination: IPv6Address, destinationPort: number, message: DHCPv6Packet): void {
     this.host.sendUdpDatagram6(destination, destinationPort, DHCPV6_SERVER_PORT, message, 300);

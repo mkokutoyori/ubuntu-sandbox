@@ -131,6 +131,8 @@ export class LinuxDhcpd6Service {
       engine.configurePoolDns(name, options.nameServers6);
       if (options.domainSearch[0]) engine.configurePoolDomain(name, options.domainSearch[0]);
       if (options.preference) engine.configurePoolPreference(name, options.preference);
+      if (options.unicast6) engine.configurePoolServerUnicast(name, options.unicast6);
+      if (options.infoRefreshTime !== null) engine.configurePoolInformationRefresh(name, options.infoRefreshTime);
       for (const range of subnet.prefixRanges) engine.configurePoolDelegationRange(name, range.low, range.high, range.length);
     }
     for (const host of config.hosts) {

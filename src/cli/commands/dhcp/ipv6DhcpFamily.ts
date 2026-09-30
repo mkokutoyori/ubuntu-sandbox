@@ -1,5 +1,6 @@
 import type { CommandSpec } from '../../CommandTable';
 import type { DHCPv6Server } from '@/network/dhcpv6/DHCPv6Server';
+import { DHCPV6_IRT_DEFAULT, DHCPV6_IRT_INFINITY } from '@/network/dhcpv6/DHCPv6Packet';
 import { parseIpv6Prefix } from '@/network/core/Ipv6Arithmetic';
 import { pad2 } from '@/lib/format';
 import { IOS_MONTHS } from '@/network/devices/shells/cisco/CiscoCommonShow';
@@ -196,6 +197,43 @@ function configurationFamily(host: () => Ipv6DhcpHost | undefined): CommandSpec[
       undoOmitsArguments: true,
       undo: (_session, args) => {
         host()?.server()?.deleteLocalPool(String(args.name));
+        return '';
+      },
+    },
+    {
+      id: 'dhcpv6-information-refresh-infinity',
+      path: ['information', 'refresh', 'infinity'],
+      description: 'Clients never refresh their stateless configuration',
+      modes: POOL_MODE, minPrivilege: 15,
+      run: () => {
+        const target = host();
+        const name = target?.currentPool();
+        if (name) target?.server()?.configurePoolInformationRefresh(name, DHCPV6_IRT_INFINITY);
+        return '';
+      },
+    },
+    {
+      id: 'dhcpv6-information-refresh',
+      path: ['information', 'refresh',
+        { name: 'days', type: 'INT' as const, range: [0, 365] as [number, number], description: 'Days' },
+        { name: 'hours', type: 'INT' as const, range: [0, 23] as [number, number], optional: true, description: 'Hours' },
+        { name: 'minutes', type: 'INT' as const, range: [0, 59] as [number, number], optional: true, description: 'Minutes' }],
+      description: 'Set the information refresh time',
+      modes: POOL_MODE, minPrivilege: 15,
+      run: (_session, args) => {
+        const target = host();
+        const name = target?.currentPool();
+        if (!name) return '';
+        const seconds = Number(args.days) * 86400 + Number(args.hours ?? 0) * 3600 + Number(args.minutes ?? 0) * 60;
+        target?.server()?.configurePoolInformationRefresh(name, seconds);
+        return '';
+      },
+      undoDescription: 'Restore the default information refresh time',
+      undoOmitsArguments: true,
+      undo: () => {
+        const target = host();
+        const name = target?.currentPool();
+        if (name) target?.server()?.configurePoolInformationRefresh(name, DHCPV6_IRT_DEFAULT);
         return '';
       },
     },

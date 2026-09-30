@@ -1,3 +1,4 @@
+import { DHCPV6_IRT_DEFAULT, DHCPV6_IRT_INFINITY } from './DHCPv6Packet';
 import type { DHCPv6Server } from './DHCPv6Server';
 
 const DEFAULT_PREFERRED = 27000;
@@ -19,6 +20,13 @@ export function dhcpv6RunningConfigLines(server: DHCPv6Server): string[] {
     for (const fixed of pool.staticDelegations) {
       const iaid = fixed.iaid === null ? '' : ` iaid ${fixed.iaid}`;
       lines.push(` prefix-delegation ${fixed.prefix}/${fixed.prefixLength} ${fixed.clientDuid.replace(/:/g, '').toUpperCase()}${iaid}`);
+    }
+    if (pool.informationRefreshTime === DHCPV6_IRT_INFINITY) lines.push(' information refresh infinity');
+    else if (pool.informationRefreshTime !== DHCPV6_IRT_DEFAULT) {
+      const days = Math.floor(pool.informationRefreshTime / 86400);
+      const hours = Math.floor((pool.informationRefreshTime % 86400) / 3600);
+      const minutes = Math.floor((pool.informationRefreshTime % 3600) / 60);
+      lines.push(` information refresh ${days} ${hours} ${minutes}`);
     }
     for (const dns of pool.dnsServers) lines.push(` dns-server ${dns}`);
     if (pool.domainName) lines.push(` domain-name ${pool.domainName}`);

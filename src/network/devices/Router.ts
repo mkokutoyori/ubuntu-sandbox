@@ -491,6 +491,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   // ── DHCPv6 Server (RFC 8415) ─────────────────────────────────
   private dhcpv6Server: DHCPv6Server = new DHCPv6Server();
   _getDHCPv6ServerInternal(): DHCPv6Server { return this.dhcpv6Server; }
+  sendDhcpv6Reconfigure(clientDuid: string, msgType: 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST'): boolean {
+    return this.ipv6Engine.sendDhcpv6Reconfigure(clientDuid, msgType);
+  }
   /** Interface → pool name (`ipv6 dhcp server <pool>` / Huawei `dhcpv6 server <pool>`). */
   private dhcpv6InterfacePools: Map<string, string> = new Map();
   setDhcpv6ServerPool(iface: string, poolName: string): void { this.dhcpv6InterfacePools.set(iface, poolName); }

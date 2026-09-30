@@ -1,4 +1,5 @@
-import { DHCPv6Packet, DHCPV6_STATUS, DHCPV6_OPTION } from './DHCPv6Packet';
+import { IPv6Address } from '../core/types';
+import { DHCPv6Packet, DHCPV6_STATUS, DHCPV6_OPTION, DHCPV6_IRT_INFINITY, DHCPV6_IRT_MINIMUM } from './DHCPv6Packet';
 import type { DHCPv6IANA, DHCPv6IAPD, DHCPv6IAAddress, DHCPv6IAPrefix } from './DHCPv6Packet';
 import type { DHCPv6Server } from './DHCPv6Server';
 import type { DHCPv6PoolConfig } from './types';
@@ -7,6 +8,8 @@ export interface Dhcpv6ExchangeContext {
   readonly poolName?: string;
   readonly anchor?: string;
   readonly clientAddress?: string;
+  readonly clientInterface?: string;
+  readonly destination?: string;
   readonly relayed: boolean;
   readonly unicast: boolean;
 }
@@ -233,6 +236,32 @@ function relinquish(
   return reply;
 }
 
+function unicastPermitted(server: DHCPv6Server, ctx: Dhcpv6ExchangeContext): boolean {
+  const configured = server.selectPool(ctx.anchor, ctx.poolName)?.serverUnicast;
+  if (!configured || !ctx.destination) return false;
+  try { return new IPv6Address(ctx.destination).toString() === configured; } catch { return false; }
+}
+
+function decorate(server: DHCPv6Server, request: DHCPv6Packet, ctx: Dhcpv6ExchangeContext, reply: DHCPv6Packet): void {
+  const pool = server.selectPool(ctx.anchor, ctx.poolName);
+  const duid = request.clientDuid;
+  if (!pool || !duid || reply.statusCode === DHCPV6_STATUS.UseMulticast) return;
+  if (pool.serverUnicast) reply.serverUnicast = pool.serverUnicast;
+  if (request.msgType === 'SOLICIT' || request.msgType === 'REQUEST' || request.msgType === 'INFORMATION-REQUEST') {
+    server.noteReconfigureWilling(duid, request.reconfigureAccept && pool.reconfigure);
+  }
+  if (request.reconfigureAccept && pool.reconfigure) {
+    reply.reconfigureAccept = true;
+    if (reply.msgType === 'REPLY') {
+      reply.authentication = { protocol: 3, algorithm: 1, rdm: 0, type: 1, value: server.reconfigureKeyFor(duid) };
+    }
+  }
+  if (request.msgType === 'INFORMATION-REQUEST' && request.optionRequest?.includes(DHCPV6_OPTION.INFORMATION_REFRESH_TIME)) {
+    reply.informationRefreshTime = pool.informationRefreshTime === DHCPV6_IRT_INFINITY
+      ? DHCPV6_IRT_INFINITY : Math.max(DHCPV6_IRT_MINIMUM, pool.informationRefreshTime);
+  }
+}
+
 function useMulticast(request: DHCPv6Packet, server: DHCPv6Server): DHCPv6Packet {
   const reply = stamp(request, server, 'REPLY');
   messageStatus(reply, DHCPV6_STATUS.UseMulticast);
@@ -253,7 +282,8 @@ function serve(
   server: DHCPv6Server, request: DHCPv6Packet, ctx: Dhcpv6ExchangeContext,
 ): DHCPv6Packet | null {
   const direct = !ctx.relayed;
-  if (ctx.clientAddress && request.clientDuid) server.noteClientAddress(request.clientDuid, ctx.clientAddress);
+  if (ctx.clientAddress && request.clientDuid) server.noteClientAddress(request.clientDuid, ctx.clientAddress, ctx.clientInterface ?? null);
+  if (request.clientDuid) server.satisfyReconfigure(request.clientDuid, request.msgType);
   const ownId = server.getServerDuid();
   switch (request.msgType) {
     case 'SOLICIT': {
@@ -271,7 +301,7 @@ function serve(
     case 'RELEASE':
     case 'DECLINE': {
       if (!request.clientDuid || request.serverDuid !== ownId) return null;
-      if (direct && ctx.unicast) return useMulticast(request, server);
+      if (direct && ctx.unicast && !unicastPermitted(server, ctx)) return useMulticast(request, server);
       if (request.msgType === 'REQUEST') return allocate(server, request, ctx, 'REPLY', true);
       if (request.msgType === 'RENEW') return extendOrExpire(server, request, ctx, false);
       return relinquish(server, request, request.msgType === 'DECLINE');
@@ -295,10 +325,12 @@ export function buildDhcpv6ServerReply(
   server: DHCPv6Server, request: DHCPv6Packet, ctx: Dhcpv6ExchangeContext,
 ): DHCPv6Packet | null {
   const original = request.clientDuid;
-  if (original === null || original === original.toLowerCase()) return serve(server, request, ctx);
-  const canonical = Object.assign(new DHCPv6Packet(), request, { clientDuid: original.toLowerCase() });
+  const canonical = original === null || original === original.toLowerCase()
+    ? request : Object.assign(new DHCPv6Packet(), request, { clientDuid: original.toLowerCase() });
   const reply = serve(server, canonical, ctx);
-  if (reply) reply.clientDuid = original;
+  if (!reply) return null;
+  decorate(server, canonical, ctx, reply);
+  if (canonical !== request) reply.clientDuid = original;
   return reply;
 }
 

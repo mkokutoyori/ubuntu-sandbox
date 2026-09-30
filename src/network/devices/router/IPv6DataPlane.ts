@@ -26,8 +26,9 @@ import {
 import { Logger } from '../../core/Logger';
 import { NeighborCache, type NeighborCacheEntry } from '../host/NeighborCache';
 import { DHCPv6Server } from '../../dhcpv6/DHCPv6Server';
+import { buildReconfigure } from '../../dhcpv6/Dhcpv6Reconfigure';
 import { answerRelayForward, buildDhcpv6ServerReply } from '../../dhcpv6/Dhcpv6ServerExchange';
-import { DHCPv6Packet, DHCPV6_HOP_COUNT_LIMIT } from '../../dhcpv6/DHCPv6Packet';
+import { DHCPv6Packet, DHCPV6_HOP_COUNT_LIMIT, DHCPV6_REC_MAX_RC } from '../../dhcpv6/DHCPv6Packet';
 
 // ─── IPv6 Types ─────────────────────────────────────────────────
 
@@ -482,8 +483,23 @@ export class IPv6DataPlane {
   ): void {
     const reply = buildDhcpv6ServerReply(this.ctx.getDhcpv6Server(), pkt, {
       poolName, relayed: false, unicast: !ipv6.destinationIP.isMulticast(), clientAddress: ipv6.sourceIP.toString(),
+      clientInterface: inPort, destination: ipv6.destinationIP.toString(),
     });
+    if (dstMAC) this.neighborCache.learnFromSource(ipv6.sourceIP.toString(), dstMAC, inPort, false);
     if (reply) this.sendDhcpv6Reply(inPort, ipv6.sourceIP, reply, dstMAC);
+  }
+
+  sendDhcpv6Reconfigure(clientDuid: string, msgType: 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST'): boolean {
+    const server = this.ctx.getDhcpv6Server();
+    const address = server.clientAddressOf(clientDuid);
+    const iface = server.clientInterfaceOf(clientDuid);
+    const message = buildReconfigure(server, clientDuid, msgType);
+    if (!message || !address || !iface) return false;
+    server.beginReconfigure(clientDuid, msgType);
+    for (let attempt = 0; attempt < DHCPV6_REC_MAX_RC && server.pendingReconfigure(clientDuid); attempt++) {
+      this.sendDhcpv6Reply(iface, new IPv6Address(address), message);
+    }
+    return true;
   }
 
   private sendDhcpv6Reply(inPort: string, dstIp: IPv6Address, reply: DHCPv6Packet, dstMAC?: MACAddress): void {

@@ -32,6 +32,9 @@ export interface DHCPv6PoolConfig {
   exclusions: DHCPv6AddressRange[];
   t1: number | null;
   t2: number | null;
+  serverUnicast: string | null;
+  reconfigure: boolean;
+  informationRefreshTime: number;
 }
 
 export interface DHCPv6Reservation {
@@ -85,6 +88,9 @@ export function createDefaultDHCPv6Pool(name: string): DHCPv6PoolConfig {
     exclusions: [],
     t1: null,
     t2: null,
+    serverUnicast: null,
+    reconfigure: false,
+    informationRefreshTime: 86400,
   };
 }
 

@@ -29,12 +29,70 @@ export class DHCPv6Server {
   private prefixBindings: Map<string, DHCPv6PrefixBinding> = new Map();
   private pendingPrefixes: Map<string, { clientDuid: string; iaid: number; poolName: string }> = new Map();
   private declined: Map<string, number> = new Map();
-  private clientAddresses: Map<string, string> = new Map();
+  private clientAddresses: Map<string, { address: string; iface: string | null }> = new Map();
+  private reconfigureKeys: Map<string, string> = new Map();
+  private reconfigureWilling: Set<string> = new Set();
+  private reconfigurePending: Map<string, 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST'> = new Map();
   private localPools: Map<string, { prefix: string; prefixLength: number; assignedLength: number }> = new Map();
   private clock: () => number = () => Date.now();
 
-  noteClientAddress(clientDuid: string, address: string): void { this.clientAddresses.set(clientDuid, address); }
-  clientAddressOf(clientDuid: string): string | null { return this.clientAddresses.get(clientDuid) ?? null; }
+  noteClientAddress(clientDuid: string, address: string, iface: string | null = null): void {
+    this.clientAddresses.set(clientDuid, { address, iface });
+  }
+  clientAddressOf(clientDuid: string): string | null { return this.clientAddresses.get(clientDuid)?.address ?? null; }
+  clientInterfaceOf(clientDuid: string): string | null { return this.clientAddresses.get(clientDuid)?.iface ?? null; }
+
+  noteReconfigureWilling(clientDuid: string, willing: boolean): void {
+    if (willing) this.reconfigureWilling.add(clientDuid);
+    else this.reconfigureWilling.delete(clientDuid);
+  }
+
+  isReconfigureWilling(clientDuid: string): boolean { return this.reconfigureWilling.has(clientDuid); }
+
+  reconfigureKeyFor(clientDuid: string): string {
+    let key = this.reconfigureKeys.get(clientDuid);
+    if (!key) {
+      const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+      key = [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
+      this.reconfigureKeys.set(clientDuid, key);
+    }
+    return key;
+  }
+
+  hasReconfigureKey(clientDuid: string): boolean { return this.reconfigureKeys.has(clientDuid); }
+
+  beginReconfigure(clientDuid: string, msgType: 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST'): void {
+    this.reconfigurePending.set(clientDuid, msgType);
+  }
+
+  pendingReconfigure(clientDuid: string): 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST' | null {
+    return this.reconfigurePending.get(clientDuid) ?? null;
+  }
+
+  satisfyReconfigure(clientDuid: string, msgType: string): void {
+    if (this.reconfigurePending.get(clientDuid) === msgType) this.reconfigurePending.delete(clientDuid);
+  }
+
+  configurePoolServerUnicast(name: string, address: string | null): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.serverUnicast = address === null ? null : new IPv6Address(address).toString();
+    return true;
+  }
+
+  configurePoolReconfigure(name: string, enabled: boolean): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.reconfigure = enabled;
+    return true;
+  }
+
+  configurePoolInformationRefresh(name: string, seconds: number): boolean {
+    const pool = this.pools.get(name);
+    if (!pool || !Number.isInteger(seconds) || seconds < 0) return false;
+    pool.informationRefreshTime = seconds;
+    return true;
+  }
 
   configureLocalPool(name: string, prefix: string, prefixLength: number, assignedLength: number): boolean {
     if (assignedLength < prefixLength || assignedLength > 128) return false;
@@ -186,6 +244,8 @@ export class DHCPv6Server {
     this.pendingOffers.clear();
     this.pendingPrefixes.clear();
     this.declined.clear();
+    this.reconfigureKeys.clear();
+    this.reconfigurePending.clear();
     return removed;
   }
 

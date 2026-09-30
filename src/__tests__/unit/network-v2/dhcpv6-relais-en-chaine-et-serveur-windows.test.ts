@@ -4,7 +4,7 @@
  *
  * Exigences : §19.1 un relais qui recoit un Relay-forward le RE-EMBALLE vers ses
  * propres destinations au lieu de le servir ; le hop-count vaut 0 pour un message
- * de client et monte de 1 a chaque relais (la limite de 32 est appliquee, sans sonde) ; §19.4 un Relay-reply dont le message est
+ * de client et monte de 1 a chaque relais (limite de 8 : voir dhcpv6-rfc8415-unicast-refresh-reconfigure) ; §19.4 un Relay-reply dont le message est
  * lui-meme un Relay-reply est renvoye AU PAIR (peer-address) du relais, pas au
  * client ; §18.3.10 le serveur repond au relais, par le meme chemin inverse.
  *

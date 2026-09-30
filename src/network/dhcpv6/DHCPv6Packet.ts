@@ -25,6 +25,14 @@ export interface DHCPv6IANA {
   statusMessage?: string;
 }
 
+export interface DHCPv6Authentication {
+  protocol: 3;
+  algorithm: 1;
+  rdm: 0;
+  type: 1 | 2;
+  value: string;
+}
+
 export interface DHCPv6IAPrefix {
   prefix: string;
   prefixLength: number;
@@ -51,12 +59,21 @@ export const DHCPV6_STATUS = {
   NoPrefixAvail: 6,
 } as const;
 
-export const DHCPV6_HOP_COUNT_LIMIT = 32;
+export const DHCPV6_HOP_COUNT_LIMIT = 8;
+export const DHCPV6_REC_TIMEOUT_SECONDS = 2;
+export const DHCPV6_REC_MAX_RC = 8;
+export const DHCPV6_IRT_DEFAULT = 86400;
+export const DHCPV6_IRT_MINIMUM = 600;
+export const DHCPV6_IRT_INFINITY = 0xffffffff;
 
 export const DHCPV6_OPTION = {
   DNS_SERVERS: 23,
   DOMAIN_LIST: 24,
+  UNICAST: 12,
+  RECONF_MSG: 19,
+  RECONF_ACCEPT: 20,
   IA_PD: 25,
+  INFORMATION_REFRESH_TIME: 32,
 } as const;
 
 export class DHCPv6Packet {
@@ -69,6 +86,11 @@ export class DHCPv6Packet {
   prefixDelegations: DHCPv6IAPD[] = [];
   rapidCommit = false;
   optionRequest: number[] | null = null;
+  serverUnicast: string | null = null;
+  reconfigureAccept = false;
+  reconfigureMessage: 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST' | null = null;
+  authentication: DHCPv6Authentication | null = null;
+  informationRefreshTime: number | null = null;
   preference: number | null = null;
   dnsServers: string[] = [];
   domainList: string[] = [];
