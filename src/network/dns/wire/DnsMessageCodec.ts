@@ -11,6 +11,7 @@ import type {
   TsigRecordData,
 } from '@/network/dns/wire/ResourceRecord';
 import { isEmptyRecordData } from '@/network/dns/wire/ResourceRecord';
+import { base64ToBytes, bytesToBase64, bytesToHex, hexToBytes } from '@/crypto/encoding';
 
 export class DnsMessageError extends Error {
   constructor(message: string) {
@@ -77,10 +78,6 @@ function encodeQuestion(question: DnsQuestion, out: number[], compressionMap: Ma
   writeUint16(out, question.qclass);
 }
 
-function writeText(out: number[], text: string): void {
-  for (let i = 0; i < text.length; i++) out.push(text.charCodeAt(i) & 0xff);
-}
-
 function encodeTypeBitmaps(types: readonly number[], out: number[]): void {
   const windows = new Map<number, number[]>();
   for (const type of types) {
@@ -117,6 +114,30 @@ export function encodeCanonicalName(name: string): number[] {
   const out: number[] = [];
   encodeName(name.toLowerCase(), out, new Map());
   return out;
+}
+
+class NoCompressionMap extends Map<string, number> {
+  override set(): this {
+    return this;
+  }
+}
+
+function lowercaseRdataNames(data: ResourceRecordData): ResourceRecordData {
+  switch (data.type) {
+    case RRType.NS: return { ...data, nsdname: data.nsdname.toLowerCase() };
+    case RRType.CNAME: return { ...data, cname: data.cname.toLowerCase() };
+    case RRType.PTR: return { ...data, ptrdname: data.ptrdname.toLowerCase() };
+    case RRType.SOA: return { ...data, mname: data.mname.toLowerCase(), rname: data.rname.toLowerCase() };
+    case RRType.MX: return { ...data, exchange: data.exchange.toLowerCase() };
+    case RRType.SRV: return { ...data, target: data.target.toLowerCase() };
+    default: return data;
+  }
+}
+
+export function encodeCanonicalRData(data: ResourceRecordData): Uint8Array {
+  const out: number[] = [];
+  encodeRData(lowercaseRdataNames(data), out, new NoCompressionMap());
+  return Uint8Array.from(out);
 }
 
 function encodeRData(data: ResourceRecordData, out: number[], compressionMap: Map<string, number>): void {
@@ -165,7 +186,7 @@ function encodeRData(data: ResourceRecordData, out: number[], compressionMap: Ma
     case RRType.DNSKEY:
       writeUint16(out, data.flags);
       out.push(data.protocol & 0xff, data.algorithm & 0xff);
-      writeText(out, data.publicKey);
+      for (const byte of base64ToBytes(data.publicKey)) out.push(byte);
       return;
     case RRType.RRSIG:
       writeUint16(out, data.typeCovered);
@@ -175,17 +196,17 @@ function encodeRData(data: ResourceRecordData, out: number[], compressionMap: Ma
       writeUint32(out, data.inception);
       writeUint16(out, data.keyTag);
       encodeName(data.signerName, out, new Map());
-      writeText(out, data.signature);
+      for (const byte of base64ToBytes(data.signature)) out.push(byte);
       return;
     case RRType.DS:
       writeUint16(out, data.keyTag);
       out.push(data.algorithm & 0xff, data.digestType & 0xff);
-      writeText(out, data.digest);
+      for (const byte of hexToBytes(data.digest)) out.push(byte);
       return;
     case RRType.DHCID:
       writeUint16(out, data.identifierType);
       out.push(data.digestType & 0xff);
-      writeText(out, data.digest);
+      for (let i = 0; i < data.digest.length; i++) out.push(data.digest.charCodeAt(i) & 0xff);
       return;
     case RRType.NSEC:
       encodeName(data.nextDomainName, out, new Map());
@@ -439,7 +460,7 @@ function decodeRData(type: number, view: Uint8Array, offset: number, rdlength: n
       const flags = rdataCursor.readUint16();
       const protocol = rdataCursor.readUint8();
       const algorithm = rdataCursor.readUint8();
-      const publicKey = readText(view, rdataCursor.pos, offset + rdlength);
+      const publicKey = bytesToBase64(view.slice(rdataCursor.pos, offset + rdlength));
       return { type: RRType.DNSKEY, flags, protocol, algorithm, publicKey } as DnskeyRecordData;
     }
     case RRType.RRSIG: {
@@ -451,7 +472,7 @@ function decodeRData(type: number, view: Uint8Array, offset: number, rdlength: n
       const inception = rdataCursor.readUint32();
       const keyTag = rdataCursor.readUint16();
       const signer = decodeName(view, rdataCursor.pos);
-      const signature = readText(view, signer.next, offset + rdlength);
+      const signature = bytesToBase64(view.slice(signer.next, offset + rdlength));
       return {
         type: RRType.RRSIG, typeCovered, algorithm, labels, originalTtl,
         expiration, inception, keyTag, signerName: signer.name, signature,
@@ -461,13 +482,13 @@ function decodeRData(type: number, view: Uint8Array, offset: number, rdlength: n
       const keyTag = rdataCursor.readUint16();
       const algorithm = rdataCursor.readUint8();
       const digestType = rdataCursor.readUint8();
-      const digest = readText(view, rdataCursor.pos, offset + rdlength);
+      const digest = bytesToHex(view.slice(rdataCursor.pos, offset + rdlength)).toUpperCase();
       return { type: RRType.DS, keyTag, algorithm, digestType, digest } as DsRecordData;
     }
     case RRType.DHCID: {
       const identifierType = rdataCursor.readUint16();
       const digestType = rdataCursor.readUint8();
-      const digest = readText(view, rdataCursor.pos, offset + rdlength);
+      const digest = String.fromCharCode(...view.slice(rdataCursor.pos, offset + rdlength));
       return { type: RRType.DHCID, identifierType, digestType, digest } as DhcidRecordData;
     }
     case RRType.NSEC: {
@@ -498,12 +519,6 @@ function decodeRData(type: number, view: Uint8Array, offset: number, rdlength: n
     default:
       throw new DnsMessageError(`cannot decode RDATA for unsupported record type ${type}`);
   }
-}
-
-function readText(view: Uint8Array, start: number, end: number): string {
-  let text = '';
-  for (let i = start; i < end; i++) text += String.fromCharCode(view[i]);
-  return text;
 }
 
 function decodeTypeBitmaps(view: Uint8Array, start: number, end: number): number[] {
