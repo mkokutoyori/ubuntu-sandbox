@@ -40,6 +40,14 @@ export const DHCP_OPTION = {
   CLIENT_FQDN: 81,
   CLIENT_LAST_TRANSACTION_TIME: 91,
   ASSOCIATED_IP: 92,
+  RELAY_AGENT_INFORMATION: 82,
+  STATUS_CODE: 151,
+  BASE_TIME: 152,
+  START_TIME_OF_STATE: 153,
+  QUERY_START_TIME: 154,
+  QUERY_END_TIME: 155,
+  DHCP_STATE: 156,
+  DATA_SOURCE: 157,
   END: 255,
   PAD: 0,
 } as const;
@@ -113,6 +121,8 @@ const MESSAGE_TYPE_VALUES: Record<number, DHCPMessageType> = {
   11: 'DHCPLEASEUNASSIGNED',
   12: 'DHCPLEASEUNKNOWN',
   13: 'DHCPLEASEACTIVE',
+  14: 'DHCPBULKLEASEQUERY',
+  15: 'DHCPLEASEQUERYDONE',
 };
 
 /** Magic cookie (RFC 2131 §3): 99.130.83.99 = 0x63825363 */
@@ -400,7 +410,7 @@ export class DHCPPacket implements NetworkPdu {
 
   /** Serialize packet to binary Uint8Array (wire format) */
   serialize(): Uint8Array {
-    const buf = new Uint8Array(576); // Minimum DHCP packet size
+    const buf = new Uint8Array(4096);
     let offset = 0;
 
     // Fixed header
@@ -452,7 +462,7 @@ export class DHCPPacket implements NetworkPdu {
     // End option
     buf[offset++] = DHCP_OPTION.END;
 
-    return buf;
+    return buf.slice(0, Math.max(576, offset));
   }
 
   private static writeText(buf: Uint8Array, offset: number, text: string, width: number): void {
@@ -566,6 +576,40 @@ export class DHCPPacket implements NetworkPdu {
         }
         break;
       }
+      case DHCP_OPTION.HOST_NAME:
+      case DHCP_OPTION.VENDOR_CLASS:
+      case DHCP_OPTION.CLIENT_IDENTIFIER: {
+        const text = String(value);
+        buf[offset++] = text.length;
+        for (let i = 0; i < text.length; i++) buf[offset++] = text.charCodeAt(i) & 0xff;
+        break;
+      }
+      case DHCP_OPTION.RELAY_AGENT_INFORMATION: {
+        const information = value as { circuitId?: string; remoteId?: string };
+        const body: number[] = [];
+        for (const [sub, text] of [[1, information.circuitId], [2, information.remoteId]] as const) {
+          if (text === undefined || text === '') continue;
+          body.push(sub, text.length);
+          for (let i = 0; i < text.length; i++) body.push(text.charCodeAt(i) & 0xff);
+        }
+        buf[offset++] = body.length;
+        for (const byte of body) buf[offset++] = byte;
+        break;
+      }
+      case DHCP_OPTION.STATUS_CODE: {
+        const status = value as { code: number; message?: string };
+        const text = status.message ?? '';
+        buf[offset++] = text.length + 1;
+        buf[offset++] = status.code;
+        for (let i = 0; i < text.length; i++) buf[offset++] = text.charCodeAt(i) & 0xff;
+        break;
+      }
+      case DHCP_OPTION.DHCP_STATE:
+      case DHCP_OPTION.DATA_SOURCE: {
+        buf[offset++] = 1;
+        buf[offset++] = value as number;
+        break;
+      }
       case DHCP_OPTION.ASSOCIATED_IP: {
         const addresses = value as string[];
         buf[offset++] = addresses.length * 4;
@@ -578,7 +622,11 @@ export class DHCPPacket implements NetworkPdu {
       case DHCP_OPTION.LEASE_TIME:
       case DHCP_OPTION.RENEWAL_TIME:
       case DHCP_OPTION.REBINDING_TIME:
-      case DHCP_OPTION.CLIENT_LAST_TRANSACTION_TIME: {
+      case DHCP_OPTION.CLIENT_LAST_TRANSACTION_TIME:
+      case DHCP_OPTION.BASE_TIME:
+      case DHCP_OPTION.START_TIME_OF_STATE:
+      case DHCP_OPTION.QUERY_START_TIME:
+      case DHCP_OPTION.QUERY_END_TIME: {
         buf[offset++] = 4;
         const num = value as number;
         buf[offset++] = (num >>> 24) & 0xFF;
@@ -648,6 +696,38 @@ export class DHCPPacket implements NetworkPdu {
         return servers;
       }
 
+      case DHCP_OPTION.HOST_NAME:
+      case DHCP_OPTION.VENDOR_CLASS:
+      case DHCP_OPTION.CLIENT_IDENTIFIER: {
+        let text = '';
+        for (let i = 0; i < data.length; i++) text += String.fromCharCode(data[i]);
+        return text;
+      }
+
+      case DHCP_OPTION.RELAY_AGENT_INFORMATION: {
+        const information: { circuitId: string; remoteId: string } = { circuitId: '', remoteId: '' };
+        for (let i = 0; i + 1 < data.length;) {
+          const sub = data[i];
+          const length = data[i + 1];
+          let text = '';
+          for (let j = 0; j < length; j++) text += String.fromCharCode(data[i + 2 + j]);
+          if (sub === 1) information.circuitId = text;
+          if (sub === 2) information.remoteId = text;
+          i += 2 + length;
+        }
+        return information;
+      }
+
+      case DHCP_OPTION.STATUS_CODE: {
+        let message = '';
+        for (let i = 1; i < data.length; i++) message += String.fromCharCode(data[i]);
+        return { code: data[0], message };
+      }
+
+      case DHCP_OPTION.DHCP_STATE:
+      case DHCP_OPTION.DATA_SOURCE:
+        return data[0];
+
       case DHCP_OPTION.ASSOCIATED_IP: {
         const addresses: string[] = [];
         for (let i = 0; i + 4 <= data.length; i += 4) addresses.push(DHCPPacket.readIP(data, i));
@@ -658,6 +738,10 @@ export class DHCPPacket implements NetworkPdu {
       case DHCP_OPTION.RENEWAL_TIME:
       case DHCP_OPTION.REBINDING_TIME:
       case DHCP_OPTION.CLIENT_LAST_TRANSACTION_TIME:
+      case DHCP_OPTION.BASE_TIME:
+      case DHCP_OPTION.START_TIME_OF_STATE:
+      case DHCP_OPTION.QUERY_START_TIME:
+      case DHCP_OPTION.QUERY_END_TIME:
         return ((data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]) >>> 0;
 
       case DHCP_OPTION.NETBIOS_NODE_TYPE:

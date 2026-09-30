@@ -1,4 +1,5 @@
 import type { EndHost } from '../../EndHost';
+import { DhcpBulkLeasequeryService } from '@/network/dhcp/DhcpBulkLeasequery';
 import { DHCPServer } from '../../../dhcp/DHCPServer';
 import { DHCPPacket, DHCP_WIRE_BYTES } from '../../../dhcp/DHCPPacket';
 import { buildDhcpServerReply, dhcpReplyRoute } from '../../../dhcp/DhcpServerExchange';
@@ -59,8 +60,11 @@ export class LinuxDhcpdService {
   private served: ServedInterface[] = [];
   private lastConfig: DhcpdConfig | null = null;
 
+  private readonly bulkLeasequery: DhcpBulkLeasequeryService;
+
   constructor(private readonly host: EndHost, private readonly fs: DhcpdFsPort) {
     this.engine.setEventBus(host.getBus());
+    this.bulkLeasequery = new DhcpBulkLeasequeryService({ tcp: () => host.getTcpStack(), now: () => Date.now() }, this.engine);
   }
 
   isRunning(): boolean { return this.running; }

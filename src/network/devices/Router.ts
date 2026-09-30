@@ -294,6 +294,7 @@ import { iosInterfaceUsable, interfaceHasNoSocket, interfacesBootShutdown, route
 import { ciscoPasswordMatches } from './shells/cisco/ciscoPasswordVerify';
 import { DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '../core/WellKnownPorts';
 import { buildUdpDatagram, type UdpSendRequest } from '../layers/transport/UdpEgress';
+import { DhcpBulkLeasequeryService } from '../dhcp/DhcpBulkLeasequery';
 
 // ─── Router (Abstract Base) ──────────────────────────────────────────
 
@@ -484,6 +485,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   // ── DHCP Server (RFC 2131) ──────────────────────────────────
   private dhcpServer: DHCPServer = new DHCPServer();
+  private readonly dhcpBulkLeasequery = new DhcpBulkLeasequeryService(
+    { tcp: () => this.tcpv2, now: () => this.getSystemClockMs() }, this.dhcpServer);
 
   // ── DHCPv6 Server (RFC 8415) ─────────────────────────────────
   private dhcpv6Server: DHCPv6Server = new DHCPv6Server();

@@ -17,6 +17,8 @@ import { DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '@/network/core/WellKnownPort
 import type { FirewallDdns, DdnsSettings } from './FirewallDdns';
 import type { DhcpDebug } from './DhcpDebug';
 import { relayDhcpReply, relayDhcpRequest, type DhcpRelayHost } from '../../../dhcp/DhcpRelay';
+import { DhcpBulkLeasequeryService } from '../../../dhcp/DhcpBulkLeasequery';
+import type { TcpStack } from '../../../tcp/TcpStack';
 
 
 
@@ -69,6 +71,7 @@ export interface FirewallDhcpDeps {
   readonly interfaceOwning?: (address: string) => string | null;
   readonly ownAddresses?: () => readonly string[];
   readonly ddns?: () => FirewallDdns | undefined;
+  readonly tcp?: () => TcpStack;
   readonly debug?: () => DhcpDebug | undefined;
   readonly addressInUse?: (iface: string, address: string) => boolean;
 }
@@ -100,6 +103,7 @@ export class FirewallDhcp {
   private readonly registeredNames = new Map<string, { fqdn: string; scope: DhcpScope }>();
 
   private readonly server = new DHCPServer();
+  private readonly bulkLeasequery: DhcpBulkLeasequeryService;
   private readonly scopes = new Map<string, DhcpScope>();
   private readonly client: DHCPClient;
   private readonly channels = new Map<string, WireDhcpChannel>();
@@ -108,6 +112,7 @@ export class FirewallDhcp {
     this.server.setDeviceId(deps.deviceId, deps.hostname());
     this.server.setEventBus(deps.bus());
     this.server.setClock(deps.now);
+    this.bulkLeasequery = new DhcpBulkLeasequeryService({ tcp: () => deps.tcp!(), now: () => deps.now() }, this.server);
     deps.bus().subscribe('dhcp.pool.lease-released', (event) => {
       if (event.payload.deviceId === deps.deviceId) this.withdrawName(event.payload.ip);
     });
@@ -714,6 +719,7 @@ export interface DhcpWiringHost {
   interfaceOwning?(address: string): string | null;
   ownAddresses?(): readonly string[];
   ddns?(): FirewallDdns | undefined;
+  tcp?(): TcpStack;
   debug?(): DhcpDebug | undefined;
   addressInUse?(iface: string, address: string): boolean;
 }
@@ -736,6 +742,7 @@ export function createFirewallDhcp(host: DhcpWiringHost): FirewallDhcp {
     interfaceOwning: (address) => host.interfaceOwning?.(address) ?? null,
     ownAddresses: () => host.ownAddresses?.() ?? [],
     ddns: () => host.ddns?.(),
+    tcp: () => host.tcp!(),
     debug: () => host.debug?.(),
     addressInUse: (iface, address) => host.addressInUse?.(iface, address) ?? false,
   });

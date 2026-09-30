@@ -27,7 +27,7 @@ import {
   DHCPDiscoverParams, DHCPOfferResult, DHCPRequestParams, DHCPAckResult,
   DHCPReleaseParams, DHCPDeclineParams,
   DHCPInformParams, DHCPInformResult,
-  DHCPRequestWithNakResult, DHCPStaticBinding, DhcpAdmissionPolicy, DhcpLeaseQuery, DhcpLeaseQueryResult,
+  DHCPRequestWithNakResult, DHCPStaticBinding, DhcpAdmissionPolicy, DhcpLeaseQuery, DhcpLeaseQueryResult, DhcpBulkQuery, DhcpBulkRecord,
   ackOf, createDefaultPoolConfig, createDefaultStats,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
@@ -1147,6 +1147,78 @@ export class DHCPServer implements IProtocolEngine {
   }
 
   leasequeryMayReturn(code: number): boolean { return this.leasequeryOptions.has(code); }
+
+  private bulkLeasequery: { enabled: boolean; requestors: ReadonlySet<string> | null } = { enabled: false, requestors: null };
+  private bulkListeners = new Set<() => void>();
+
+  setBulkLeasequery(enabled: boolean, requestors: readonly string[] | null = null): void {
+    this.bulkLeasequery = { enabled, requestors: requestors === null ? null : new Set(requestors) };
+    for (const listener of this.bulkListeners) listener();
+  }
+
+  onBulkLeasequeryChange(listener: () => void): () => void {
+    this.bulkListeners.add(listener);
+    return () => { this.bulkListeners.delete(listener); };
+  }
+
+  isBulkLeasequeryEnabled(): boolean { return this.bulkLeasequery.enabled && this.enabled; }
+
+  mayBulkLeasequery(requestor: string): boolean {
+    return this.isBulkLeasequeryEnabled()
+      && (this.bulkLeasequery.requestors === null || this.bulkLeasequery.requestors.has(requestor));
+  }
+
+  processBulkLeaseQuery(query: DhcpBulkQuery): DhcpBulkRecord[] {
+    const now = this.clock();
+    this.expireStale();
+    const window = (at: number | undefined): boolean => {
+      if (at === undefined) return false;
+      const seconds = Math.floor(at / 1000);
+      return (query.queryStartTime === undefined || seconds >= query.queryStartTime)
+        && (query.queryEndTime === undefined || seconds <= query.queryEndTime);
+    };
+    const timed = query.queryStartTime !== undefined || query.queryEndTime !== undefined;
+    const primary = query.hardwareAddress !== undefined || query.clientIdentifier !== undefined
+      || query.remoteId !== undefined || query.relayId !== undefined;
+    const records: DhcpBulkRecord[] = [];
+    const active = [...this.bindings.values()].filter(b => b.leaseExpiration > now);
+    const asRecord = (b: DHCPBinding): DhcpBulkRecord => ({
+      ipAddress: b.ipAddress, state: 2, poolName: b.poolName, hardwareAddress: b.hardwareAddress,
+      clientIdentifierOption: b.clientIdentifierOption, relayInformation: b.relayInformation,
+      lastTransaction: b.lastTransaction, leaseStart: b.leaseStart, leaseExpiration: b.leaseExpiration,
+    });
+    const changed = (b: DHCPBinding): boolean => !timed || window(b.lastTransaction) || window(b.leaseStart);
+    if (primary) {
+      for (const b of active) {
+        const match = query.hardwareAddress !== undefined
+          ? b.hardwareAddress?.toLowerCase() === query.hardwareAddress.toLowerCase()
+          : query.clientIdentifier !== undefined
+            ? b.clientIdentifierOption === query.clientIdentifier
+            : query.remoteId !== undefined
+              ? b.relayInformation?.remoteId === query.remoteId
+              : false;
+        if (match && changed(b)) records.push(asRecord(b));
+      }
+      return records;
+    }
+    const held = new Map(active.map(b => [b.ipAddress, b]));
+    for (const [, pool] of this.pools) {
+      if (!pool.network || !pool.mask) continue;
+      const network = this.ipToNumber(pool.network);
+      const broadcast = (network | ~this.ipToNumber(pool.mask)) >>> 0;
+      for (let value = network + 1; value < broadcast; value++) {
+        const address = this.numberToIP(value);
+        if (this.isExcluded(address)) continue;
+        const binding = held.get(address);
+        if (binding !== undefined) {
+          if (changed(binding)) records.push(asRecord(binding));
+        } else if (!timed) {
+          records.push({ ipAddress: address, state: this.isConflicted(address) ? 5 : 1, poolName: pool.name });
+        }
+      }
+    }
+    return records;
+  }
 
   remainingLeaseSeconds(address: string, clientKey: string): number | null {
     const binding = this.bindings.get(address);

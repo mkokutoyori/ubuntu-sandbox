@@ -128,6 +128,7 @@ import { vtyLoginModeOf } from './router/vty/VtyLineConfig';
 import { KeypairService } from './router/security/KeypairService';
 import { classifyIpv4Destination } from '../layers/internet/InternetLayer';
 import type { LldpHost } from '../lldp/LldpAgent';
+import { DhcpBulkLeasequeryService } from '../dhcp/DhcpBulkLeasequery';
 
 // Re-export shell classes for backward compatibility
 export { CiscoSwitchShell } from './shells/CiscoSwitchShell';
@@ -3921,6 +3922,8 @@ export abstract class Switch extends Equipment {
   // until `dhcp enable`, and is what EndHost.autoDiscoverDHCPServers
   // finds when it duck-types `getDHCPServer` on any reachable Equipment.
   private readonly dhcpServer: DHCPServer = new DHCPServer();
+  private readonly dhcpBulkLeasequery = new DhcpBulkLeasequeryService(
+    { tcp: () => this.getTcpStack(), now: () => this.getSystemClockMs() }, this.dhcpServer);
   _getDHCPServerInternal(): DHCPServer { return this.dhcpServer; }
   getDHCPServer(): DHCPServer { return this.dhcpServer; }
 

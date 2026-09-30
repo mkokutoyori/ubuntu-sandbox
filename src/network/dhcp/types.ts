@@ -31,7 +31,9 @@ export type DHCPMessageType =
   | 'DHCPLEASEQUERY'
   | 'DHCPLEASEUNASSIGNED'
   | 'DHCPLEASEUNKNOWN'
-  | 'DHCPLEASEACTIVE';
+  | 'DHCPLEASEACTIVE'
+  | 'DHCPBULKLEASEQUERY'
+  | 'DHCPLEASEQUERYDONE';
 
 // ─── DHCP Pool Configuration ─────────────────────────────────────────
 
@@ -529,4 +531,27 @@ export interface DhcpAdmissionPolicy {
   mayServe(clientMAC: string, poolName: string, client?: DhcpAdmissionClient): boolean;
   addressAllowed(ip: string, poolName: string): boolean;
   leaseSeconds(poolName: string, configuredSeconds: number, address?: string): number;
+}
+
+export type DhcpBulkState = 1 | 2 | 5;
+
+export interface DhcpBulkQuery {
+  readonly hardwareAddress?: string;
+  readonly clientIdentifier?: string;
+  readonly remoteId?: string;
+  readonly relayId?: string;
+  readonly queryStartTime?: number;
+  readonly queryEndTime?: number;
+}
+
+export interface DhcpBulkRecord {
+  readonly ipAddress: string;
+  readonly state: DhcpBulkState;
+  readonly poolName: string;
+  readonly hardwareAddress?: string;
+  readonly clientIdentifierOption?: string;
+  readonly relayInformation?: DhcpRelayInformation;
+  readonly lastTransaction?: number;
+  readonly leaseStart?: number;
+  readonly leaseExpiration?: number;
 }
