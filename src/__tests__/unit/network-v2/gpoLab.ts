@@ -25,7 +25,7 @@ export const SERVEURS = `OU=Serveurs,${ORDINATEURS}`;
 const ps = (d: WindowsServer | WindowsPC) => PowerShellSubShell.create(d).subShell;
 export const run = async (d: WindowsServer | WindowsPC, l: string): Promise<string> => (await ps(d).processLine(l)).output.join('\n');
 
-export interface Lab { dc: WindowsServer; client: WindowsPC }
+export interface Lab { dc: WindowsServer; client: WindowsPC; clientCable: Cable; reconnectClient: () => void }
 
 export async function lab(): Promise<Lab> {
   const dc = new WindowsServer('DC01');
@@ -33,7 +33,8 @@ export async function lab(): Promise<Lab> {
   const sw = new GenericSwitch('switch-generic', 'SW1', 8, 0, 0);
   for (const d of [dc, client, sw]) d.powerOn();
   new Cable('c-dc').connect(dc.getPorts()[0], sw.getPorts()[0]);
-  new Cable('c-cli').connect(client.getPorts()[0], sw.getPorts()[1]);
+  const clientCable = new Cable('c-cli');
+  clientCable.connect(client.getPorts()[0], sw.getPorts()[1]);
   const mask = new SubnetMask('255.255.255.0');
   dc.getPorts()[0].configureIP(new IPAddress('10.0.0.10'), mask);
   client.getPorts()[0].configureIP(new IPAddress('10.0.0.30'), mask);
@@ -45,7 +46,8 @@ export async function lab(): Promise<Lab> {
     await run(dc, `New-ADOrganizationalUnit -Name "${name}" -Path "${path}"`);
   }
   await run(client, 'Set-DnsClientServerAddress -InterfaceAlias "Ethernet 0" -ServerAddresses 10.0.0.10');
-  return { dc, client };
+  const reconnectClient = (): void => { clientCable.connect(client.getPorts()[0], sw.getPorts()[1]); };
+  return { dc, client, clientCable, reconnectClient };
 }
 
 export async function joinIn(l: Lab, ou: string): Promise<void> {
@@ -70,3 +72,7 @@ export async function mode(client: WindowsPC): Promise<string> {
   return client.executeCmdCommand('reg query "HKLM\\SOFTWARE\\Policies\\Lab" /v Mode');
 }
 
+
+export async function policyValue(machine: WindowsPC | WindowsServer, name = 'Mode'): Promise<string> {
+  return machine.executeCmdCommand(`reg query "HKLM\\SOFTWARE\\Policies\\Lab" /v ${name}`);
+}

@@ -146,11 +146,12 @@ describe('WindowsDnsServerRole — real UDP/TCP 53 answering', () => {
     expect(response!.flags.rcode).toBe(DnsRcode.NXDOMAIN);
   });
 
-  it('answers REFUSED for a name outside any hosted zone when no forwarder is configured', async () => {
+  it('answers REFUSED for a name outside any hosted zone when neither a forwarder nor root hints are in use', async () => {
     const { server, client } = topology();
     const role = new WindowsDnsServerRole(server);
     role.start();
     role.addPrimaryZone('lab.local');
+    role.setUseRootHint(false);
 
     const response = await client.queryDnsServer(new IPAddress('192.168.50.10'), 'example.com', 'A');
     expect(response).not.toBeNull();

@@ -14,7 +14,10 @@
  */
 
 
+import type { DhcpFailoverChanges, DhcpFailoverRequest } from '@/network/devices/windows/server/dhcp/WindowsDhcpServerRole';
 import { findWmiClass } from '@/network/devices/windows/WmiClasses';
+import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
+import { RSAT_CAPABILITIES } from '@/powershell/cmdlets/core/rsatCapabilities';
 import type { WindowsPC } from '@/network/devices/WindowsPC';
 import type { ServiceStartType } from '@/network/devices/windows/WindowsServiceManager';
 import type { WindowsServer } from '@/network/devices/WindowsServer';
@@ -63,7 +66,7 @@ import type {
   IFileSystemProvider, IRegistryProvider, IServiceProvider,
   INetworkProvider, IProcessProvider, IUserProvider, IEventLogProvider,
   IVpnProvider, IScheduledTaskProvider, IDiskProvider, IEnvironmentProvider,
-  IRemotingProvider, IRemoteComputer,
+  IRemotingProvider, IRemoteComputer, ICapabilityProvider, CapabilityInfo,
   IRoleProvider, WindowsFeatureInfo,
   ISmbProvider, SmbShareInfo, SmbSessionInfo,
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult, AdSiteInfo,
@@ -89,7 +92,8 @@ import type {
   IWindowsUpdateProvider,
   IPrintProvider, PrintOpResult, PrintJobInfo,
   ILicensingProvider, LicenseStateInfo,
-  IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsDynamicUpdateMode,
+  IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsDynamicUpdateMode, DnsRecordSpec, DnsForwarderInfo,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
@@ -1255,11 +1259,22 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
     return role;
   }
 
-  addPrimaryZone(name: string, adminEmail?: string): DnsOpResult { return this.role().addPrimaryZone(name, { adminEmail }); }
+  addPrimaryZone(name: string, options?: DnsPrimaryZoneOptions): DnsOpResult { return this.role().addPrimaryZone(name, options); }
+  serverName(): string { return this.pc.getHostname(); }
+  addSecondaryZone(name: string, masters: string[], zoneFile?: string, loadExisting?: boolean): DnsOpResult { return this.role().addSecondaryZone(name, masters, zoneFile, loadExisting); }
+  addConditionalForwarderZone(name: string, masters: string[], timeoutSeconds?: number, useRecursion?: boolean, zoneFile?: string): DnsOpResult { return this.role().addConditionalForwarderZone(name, masters, timeoutSeconds, useRecursion, zoneFile); }
+  renameZoneFile(name: string, zoneFile: string): DnsOpResult { return this.role().renameZoneFile(name, zoneFile); }
+  setPrimaryZone(name: string, changes: DnsPrimaryZoneChanges): DnsOpResult { return this.role().setPrimaryZone(name, changes); }
+  setSecondaryZone(name: string, changes: { masters?: string[]; secureSecondaries?: DnsTransferPolicy; secondaryServers?: string[]; notify?: DnsNotifyPolicy; notifyServers?: string[] }): DnsOpResult {
+    return this.role().setSecondaryZone(name, changes);
+  }
+  setConditionalForwarderMasters(name: string, masters: string[] | undefined, timeoutSeconds?: number, useRecursion?: boolean): DnsOpResult { return this.role().setConditionalForwarderMasters(name, masters, timeoutSeconds, useRecursion); }
+  startZoneTransfer(name: string): DnsOpResult { return this.role().startZoneTransfer(name); }
   removeZone(name: string): DnsOpResult { return this.role().removeZone(name); }
   getZone(name: string): DnsZoneInfo | null { return this.role().getZone(name); }
   listZones(): DnsZoneInfo[] { return this.role().listZones(); }
 
+  addRecord(zone: string, name: string, spec: DnsRecordSpec, ttl?: number, createPtr?: boolean, options?: DnsRecordOptions): DnsOpResult { return this.role().addRecord(zone, name, spec, ttl, undefined, createPtr, options); }
   addARecord(zone: string, name: string, ipv4: string, ttl?: number): DnsOpResult { return this.role().addARecord(zone, name, ipv4, ttl); }
   addAaaaRecord(zone: string, name: string, ipv6: string, ttl?: number): DnsOpResult { return this.role().addAaaaRecord(zone, name, ipv6, ttl); }
   addCnameRecord(zone: string, name: string, hostNameAlias: string, ttl?: number): DnsOpResult { return this.role().addCnameRecord(zone, name, hostNameAlias, ttl); }
@@ -1268,11 +1283,36 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
   addSrvRecord(zone: string, name: string, target: { priority: number; weight: number; port: number; target: string }, ttl?: number): DnsOpResult {
     return this.role().addSrvRecord(zone, name, target, ttl);
   }
-  removeRecord(zone: string, name: string, type: string): DnsOpResult { return this.role().removeRecord(zone, name, type); }
-  getRecords(zone: string, name?: string): DnsRecordInfo[] | null { return this.role().getRecords(zone, name); }
+  removeRecord(zone: string, name: string, type: string, data?: Record<string, string | number>): DnsOpResult { return this.role().removeRecord(zone, name, type, data); }
+  replaceRecord(zone: string, name: string, previous: DnsRecordSpec, next: DnsRecordSpec, ttl?: number): DnsOpResult {
+    return this.role().replaceRecord(zone, name, previous, next, ttl);
+  }
+  getRecords(zone: string, name?: string, type?: string): DnsRecordInfo[] | null { return this.role().getRecords(zone, name, type); }
 
   setForwarders(addresses: string[]): DnsOpResult { return this.role().setForwarders(addresses); }
+  addForwarders(addresses: string[]): DnsOpResult { return this.role().addForwarders(addresses); }
+  removeForwarders(addresses: string[]): DnsOpResult { return this.role().removeForwarders(addresses); }
+  setForwarderTimeout(seconds: number): DnsOpResult { return this.role().setForwarderTimeout(seconds); }
+  setEnableReordering(enabled: boolean): DnsOpResult { return this.role().setEnableReordering(enabled); }
+  setZoneAging(name: string, changes: { aging?: boolean; noRefreshSeconds?: number; refreshSeconds?: number; scavengeServers?: string[] }): DnsOpResult { return this.role().setZoneAging(name, changes); }
+  getZoneAging(name: string): DnsZoneAgingInfo | null { return this.role().getZoneAging(name); }
+  setScavenging(changes: { enabled?: boolean; intervalSeconds?: number; noRefreshSeconds?: number; refreshSeconds?: number; lastScavengeMs?: number; applyOnAllZones?: boolean }): DnsOpResult { return this.role().setScavenging(changes); }
+  getScavenging(): DnsScavengingInfo { return this.role().getScavenging(); }
+  startScavenging(): number { return this.role().startScavenging(); }
   getForwarders(): string[] { return this.role().getForwarders(); }
+  getForwarderInfo(): DnsForwarderInfo { return this.role().getForwarderInfo(); }
+  setUseRootHint(enabled: boolean): DnsOpResult { return this.role().setUseRootHint(enabled); }
+  getRootHints(): DnsRootHintInfo[] { return this.role().getRootHints(); }
+  addRootHint(nameServer: string, address: string): DnsOpResult { return this.role().addRootHint(nameServer, address); }
+  removeRootHint(nameServer: string, address?: string): DnsOpResult { return this.role().removeRootHint(nameServer, address); }
+  setRootHint(nameServer: string, addresses: string[]): DnsOpResult { return this.role().setRootHint(nameServer, addresses); }
+  importRootHints(): DnsOpResult { return this.role().importRootHints(); }
+  setRecursion(enabled: boolean): DnsOpResult { return this.role().setRecursion(enabled); }
+  isRecursionEnabled(): boolean { return this.role().isRecursionEnabled(); }
+  cacheEntries(): DnsCacheEntryInfo[] {
+    return this.role().cacheEntries().map(e => ({ name: e.name, type: e.type, ttl: e.ttl, data: e.data }));
+  }
+  clearCache(): void { this.role().clearCache(); }
 
   setZoneDynamicUpdate(zone: string, mode: DnsDynamicUpdateMode): DnsOpResult {
     return this.role().setZoneDynamicUpdate(zone, mode);
@@ -1350,6 +1390,15 @@ class WindowsDhcpServerAdapter implements IDhcpServerProvider {
   }
   serverAddress(): string { return this.pc.getPorts()[0]?.getIPAddress()?.toString() ?? ''; }
   serverName(): string { return this.pc.getHostname(); }
+
+  addFailover(request: DhcpFailoverRequest): DhcpOpResult { return this.role().addFailover(request); }
+  getFailover(name: string) { return this.role().getFailover(name); }
+  listFailovers() { return this.role().listFailovers(); }
+  setFailover(name: string, changes: DhcpFailoverChanges): DhcpOpResult { return this.role().setFailover(name, changes); }
+  removeFailover(name: string, force: boolean): DhcpOpResult { return this.role().removeFailover(name, force); }
+  replicateFailover(name: string, scopeIds: readonly string[] | undefined, force: boolean): DhcpOpResult {
+    return this.role().replicateFailover(name, scopeIds, force);
+  }
 }
 
 // ── NPS (RADIUS) adapter (PRD-Windows-Server.md §5 P9) ───────────────────
@@ -2931,7 +2980,24 @@ class WindowsComputerAdapter implements IComputerProvider {
 // on `getDirectoryStore()` rather than a RoleManager feature.
 
 class WindowsGpoAdapter implements IGpoProvider {
+  private delayCycle = 0;
+
   constructor(private readonly pc: WindowsPC) {}
+
+  applyPolicy(scope: 'both' | 'computer' | 'user'): { ok: boolean; message: string } {
+    return this.pc.gpupdateForce(scope);
+  }
+
+  waitMinutes(minutes: number): void {
+    if (minutes > 0) this.pc.advanceTime(minutes * 60_000);
+  }
+
+  refreshDelayMinutes(maxMinutes: number): number {
+    if (maxMinutes <= 0) return 0;
+    let hash = 0x811c9dc5;
+    for (const ch of `${this.pc.getHostname()}#${this.delayCycle++}`) hash = Math.imul(hash ^ ch.charCodeAt(0), 0x01000193) >>> 0;
+    return hash % (maxMinutes + 1);
+  }
 
   private requireDc(cmdletName: string): DirectoryStore {
     const store = this.pc.getDirectoryStore();
@@ -3607,6 +3673,39 @@ interface RemotableDevice {
   winrm: { enabled: boolean };
 }
 
+class WindowsCapabilityAdapter implements ICapabilityProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  private isServerEdition(): boolean { return this.pc.getWindowsEdition() === 'server'; }
+
+  list(): CapabilityInfo[] {
+    return RSAT_CAPABILITIES.map(capability => ({
+      name: capability.name, displayName: capability.displayName, description: capability.description,
+      state: this.isServerEdition() || this.pc.rsatCapabilities.has(capability.name) ? 'Installed' : 'NotPresent',
+    }));
+  }
+
+  add(name: string): { ok: boolean; message: string } {
+    const capability = RSAT_CAPABILITIES.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (!capability) return { ok: false, message: `The capability "${name}" is not available: only the RSAT tools built in this simulator can be added.` };
+    if (this.isServerEdition() || this.pc.rsatCapabilities.has(capability.name)) return { ok: true, message: '' };
+    this.pc.rsatCapabilities.add(capability.name);
+    capability.register(this.pc.cmdletOverlay);
+    return { ok: true, message: '' };
+  }
+
+  remove(name: string): { ok: boolean; message: string } {
+    const capability = RSAT_CAPABILITIES.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (!capability) return { ok: false, message: `The capability "${name}" is not available.` };
+    if (this.isServerEdition()) return { ok: false, message: 'The tools of a Windows Server are part of the edition and cannot be removed here; uninstall the role management feature instead.' };
+    if (!this.pc.rsatCapabilities.delete(capability.name)) return { ok: true, message: '' };
+    const scratch = new CmdletRegistry();
+    capability.register(scratch);
+    for (const cmdlet of scratch.cmdlets()) this.pc.cmdletOverlay.unregister(cmdlet);
+    return { ok: true, message: '' };
+  }
+}
+
 class WindowsRemotingAdapter implements IRemotingProvider {
   constructor(private readonly pc: WindowsPC) {}
 
@@ -3626,6 +3725,16 @@ class WindowsRemotingAdapter implements IRemotingProvider {
    * no real wire representation of a `PSScriptBlock` AST to ship, only
    * the connection-establishment step is real.
    */
+  runCommand(computerName: string, line: string, credential?: { username: string; password: string }): { ok: boolean; output?: string; error?: string } {
+    return this.pc.runRemoteCommand(computerName, line, credential);
+  }
+
+  refreshPolicy(computerName: string, scope: 'both' | 'computer' | 'user', delayMinutes: number): { ok: boolean; output?: string; error?: string } {
+    return this.pc.runRemoteRequest(computerName, { op: 'gpupdate', scope, delayMinutes });
+  }
+
+  localComputerName(): string { return this.pc.getHostname(); }
+
   resolveComputer(name: string, credential?: { username: string; password: string }): IRemoteComputer | null {
     const targetIp = this.pc.resolveHostnameSync(name);
     if (!targetIp) return null;
@@ -3740,5 +3849,6 @@ export function createWindowsPSProviders(
     windowsUpdate:  new WindowsUpdateClientAdapter(pc),
     print:          pc.getRoleManager() ? new WindowsPrintAdapter(pc) : null,
     licensing:      new WindowsLicensingAdapter(pc),
+    capabilities:   new WindowsCapabilityAdapter(pc),
   };
 }

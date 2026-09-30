@@ -10,7 +10,11 @@
  *     keeps the last policy it applied, as a real client does;
  *   - policy 1 given the AD services again: the refresh crosses, and the
  *     value of a GPO deleted meanwhile is withdrawn from PC2's registry;
- *   - policy 1 disabled: nothing crosses.
+ *   - policy 1 disabled: nothing crosses;
+ *   - with no `gpupdate` typed, PC2 picks up a GPO linked after the join
+ *     within 120 minutes of its own clock — through FW1 — and a refresh that
+ *     FW1 blocks leaves event 1129 and the last policy in place, until the
+ *     policy lets LDAP and Kerberos through again.
  *
  * Only configuration is added; topology and equipment are the lab's.
  */
@@ -90,5 +94,39 @@ describe('user lab — Group Policy de google.com à travers FW1', () => {
     await taper(lab.FW1, ['config firewall policy', 'edit 1', 'set status disable', 'next', 'end']);
     expect(await refresh(lab)).toMatch(/lack of network connectivity/i);
     expect(await profile(lab)).not.toContain('siege');
+  });
+
+  it("sans gpupdate, PC2 reçoit une GPO liée après la jonction, à travers FW1, en 120 minutes au plus", async () => {
+    const lab = await gpoLab();
+    await refresh(lab);
+    await shell(lab.WinServer1, 'New-GPO -Name "Tardive"');
+    await shell(lab.WinServer1, `Set-GPRegistryValue -Name "Tardive" -Key "${POLICY_KEY}" -ValueName Tard -Type String -Value "oui"`);
+    await shell(lab.WinServer1, `New-GPLink -Name "Tardive" -Target "${SIEGE}"`);
+    pc2(lab).advanceTime(89 * 60_000);
+    expect(await pc2(lab).executeCmdCommand(`reg query "${POLICY_KEY}" /v Tard`)).not.toMatch(/REG_SZ\s+oui/);
+    pc2(lab).advanceTime(32 * 60_000);
+    expect(await pc2(lab).executeCmdCommand(`reg query "${POLICY_KEY}" /v Tard`)).toMatch(/REG_SZ\s+oui/);
+  });
+
+  it("un rafraîchissement automatique bloqué par FW1 laisse l'événement 1129, puis réussit une fois les services AD rouverts", async () => {
+    const lab = await gpoLab();
+    await refresh(lab);
+    await shell(lab.WinServer1, 'New-GPO -Name "Tardive"');
+    await shell(lab.WinServer1, `Set-GPRegistryValue -Name "Tardive" -Key "${POLICY_KEY}" -ValueName Tard -Type String -Value "oui"`);
+    await shell(lab.WinServer1, `New-GPLink -Name "Tardive" -Target "${SIEGE}"`);
+    await taper(lab.FW1, ['config firewall policy', 'edit 1', 'set service "DNS"', 'next', 'end']);
+    pc2(lab).advanceTime(121 * 60_000);
+    expect(await shell(lab.PC2, "Get-WinEvent -FilterHashtable @{ LogName = 'System'; Id = 1129 } | ForEach-Object { $_.Message }"))
+      .toMatch(/lack of network connectivity to a domain controller/);
+    expect(await pc2(lab).executeCmdCommand(`reg query "${POLICY_KEY}" /v Tard`)).not.toMatch(/REG_SZ\s+oui/);
+    expect(await profile(lab)).toContain('siege');
+    await taper(lab.FW1, [
+      ...AD_SERVICES,
+      'config firewall policy', 'edit 1', 'set service "DNS" "AD-KERBEROS" "AD-LDAP" "AD-SMB-RPC"', 'next', 'end',
+    ]);
+    pc2(lab).advanceTime(121 * 60_000);
+    expect(await pc2(lab).executeCmdCommand(`reg query "${POLICY_KEY}" /v Tard`)).toMatch(/REG_SZ\s+oui/);
+    expect(await shell(lab.PC2, "Get-WinEvent -FilterHashtable @{ LogName = 'System'; Id = 1502 } | ForEach-Object { $_.Message }"))
+      .toMatch(/New settings/);
   });
 });

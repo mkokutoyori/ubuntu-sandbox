@@ -20,7 +20,9 @@ import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { IDhcpServerProvider, DhcpScopeInfo, DhcpLeaseInfo } from '@/powershell/providers/PSProviders';
-import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { psValueToString, timeSpanValue } from '@/powershell/runtime/PSExpansion';
+import { isSwitchOn, timeSpanSeconds } from './DnsServerCmdlets';
+import type { DhcpFailoverChanges, DhcpFailoverView } from '@/network/devices/windows/server/dhcp/WindowsDhcpServerRole';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function requireDhcp(ctx: CmdletContext, cmdletName: string): IDhcpServerProvider {
@@ -39,7 +41,7 @@ function scopeToPSObject(s: DhcpScopeInfo): Record<string, PSValue> {
 function leaseToPSObject(l: DhcpLeaseInfo): Record<string, PSValue> {
   return {
     IPAddress: l.ipAddress, ClientId: l.clientId, ScopeId: l.scopeId || l.scopeName,
-    LeaseExpiryTime: new Date(l.leaseExpiration).toString(),
+    LeaseExpiryTime: new Date(l.leaseExpiration),
     AddressState: l.type === 'manual' ? 'ActiveReservation' : 'Active',
   };
 }
@@ -70,7 +72,7 @@ export class AddDhcpServerv4ScopeCmdlet implements ICmdlet {
       ctx.emitError('Add-DhcpServerv4Scope : Cannot process command because of one or more missing mandatory parameters: Name StartRange EndRange SubnetMask.');
       return null;
     }
-    const leaseDuration = ctx.named['leaseduration'] !== undefined ? Number(psValueToString(ctx.named['leaseduration'])) : undefined;
+    const leaseDuration = ctx.named['leaseduration'] !== undefined ? timeSpanSeconds(ctx.named['leaseduration'], 'LeaseDuration') : undefined;
     const res = dhcp.addScope(name, startRange, endRange, subnetMask, leaseDuration);
     if (!res.ok) { ctx.emitError(`Add-DhcpServerv4Scope : ${res.message}`); return null; }
     return null;
@@ -228,7 +230,7 @@ export class SetDhcpServerv4ScopeCmdlet implements ICmdlet {
     const changes: { newName?: string; leaseDuration?: number; state?: 'Active' | 'Inactive' } = {};
     if (ctx.named['name'] !== undefined) changes.newName = psValueToString(ctx.named['name']);
     if (ctx.named['leaseduration'] !== undefined) {
-      changes.leaseDuration = Number(psValueToString(ctx.named['leaseduration']));
+      changes.leaseDuration = timeSpanSeconds(ctx.named['leaseduration'], 'LeaseDuration');
     }
     if (ctx.named['state'] !== undefined) {
       const state = psValueToString(ctx.named['state']);
@@ -569,5 +571,218 @@ export class RemoveDhcpServerInDCCmdlet implements ICmdlet {
     const res = dhcp.revokeInDC();
     if (!res.ok) { ctx.emitError(`Remove-DhcpServerInDC : ${res.message}`); return null; }
     return null;
+  }
+}
+
+function failoverToPSObject(view: DhcpFailoverView): Record<string, PSValue> {
+  return {
+    Name: view.name, ScopeId: view.scopeIds, PrimaryServerIP: view.primaryServerIp, SecondaryServerIP: view.secondaryServerIp,
+    PrimaryServerName: view.primaryServerName, SecondaryServerName: view.secondaryServerName, Mode: view.mode,
+    LoadBalancePercent: view.loadBalancePercent, ServerRole: view.serverRole, ReservePercent: view.reservePercent,
+    MaxClientLeadTime: timeSpanValue(view.maxClientLeadTimeSeconds * 1000),
+    StateSwitchInterval: timeSpanValue(view.stateSwitchIntervalSeconds * 1000),
+    State: view.state, AutoStateTransition: view.autoStateTransition, EnableAuth: view.enableAuth,
+  };
+}
+
+function stringList(raw: PSValue | undefined): string[] {
+  if (raw === undefined || raw === null) return [];
+  return (Array.isArray(raw) ? raw : [raw]).map(psValueToString).filter(text => text !== '');
+}
+
+function numberOf(ctx: CmdletContext, key: string, cmdletName: string, parameter: string): number | undefined {
+  const raw = ctx.named[key];
+  if (raw === undefined) return undefined;
+  const value = Number(psValueToString(raw));
+  if (!Number.isFinite(value)) {
+    throw new PSRuntimeError(`${cmdletName} : Cannot bind parameter '${parameter}'. Cannot convert value "${psValueToString(raw)}" to type "System.Int32".`);
+  }
+  return value;
+}
+
+function serverRoleOf(ctx: CmdletContext, cmdletName: string): 'Active' | 'Standby' | undefined {
+  const raw = ctx.named['serverrole'];
+  if (raw === undefined) return undefined;
+  const text = psValueToString(raw);
+  const role = ['Active', 'Standby'].find(candidate => candidate.toLowerCase() === text.toLowerCase());
+  if (!role) {
+    throw new PSRuntimeError(`${cmdletName} : Cannot validate argument on parameter 'ServerRole'. The argument "${text}" does not belong to the set "Active,Standby".`);
+  }
+  return role as 'Active' | 'Standby';
+}
+
+function timeSpanOf(ctx: CmdletContext, key: string, parameter: string): number | undefined {
+  const raw = ctx.named[key];
+  return raw === undefined ? undefined : timeSpanSeconds(raw, parameter);
+}
+
+export class AddDhcpServerv4FailoverCmdlet implements ICmdlet {
+  readonly name = 'add-dhcpserverv4failover';
+  readonly displayName = 'Add-DhcpServerv4Failover';
+  readonly aliases = [] as const;
+  readonly parameters = [
+    'ComputerName', 'Name', 'ScopeId', 'PartnerServer', 'LoadBalancePercent', 'ServerRole', 'ReservePercent',
+    'MaxClientLeadTime', 'StateSwitchInterval', 'AutoStateTransition', 'SharedSecret', 'Force', 'PassThru',
+  ] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dhcp = requireDhcp(ctx, 'Add-DhcpServerv4Failover');
+    const name = psValueToString(ctx.named['name'] ?? '');
+    const partnerServer = psValueToString(ctx.named['partnerserver'] ?? '');
+    if (!name || !partnerServer) {
+      ctx.emitError('Add-DhcpServerv4Failover : Cannot process command because of one or more missing mandatory parameters: Name PartnerServer.');
+      return null;
+    }
+    const result = dhcp.addFailover({
+      name, partnerServer, scopeIds: stringList(ctx.named['scopeid']),
+      loadBalancePercent: numberOf(ctx, 'loadbalancepercent', 'Add-DhcpServerv4Failover', 'LoadBalancePercent'),
+      serverRole: serverRoleOf(ctx, 'Add-DhcpServerv4Failover'),
+      reservePercent: numberOf(ctx, 'reservepercent', 'Add-DhcpServerv4Failover', 'ReservePercent'),
+      maxClientLeadTimeSeconds: timeSpanOf(ctx, 'maxclientleadtime', 'MaxClientLeadTime'),
+      stateSwitchIntervalSeconds: timeSpanOf(ctx, 'stateswitchinterval', 'StateSwitchInterval'),
+      autoStateTransition: ctx.named['autostatetransition'] === undefined ? undefined : isSwitchOn(ctx.named['autostatetransition']),
+      sharedSecret: ctx.named['sharedsecret'] === undefined ? undefined : psValueToString(ctx.named['sharedsecret']),
+      force: isSwitchOn(ctx.named['force']),
+    });
+    if (!result.ok) { ctx.emitError(`Add-DhcpServerv4Failover : ${result.message}`); return null; }
+    if (!isSwitchOn(ctx.named['passthru'])) return null;
+    const view = dhcp.getFailover(name);
+    return view ? failoverToPSObject(view) : null;
+  }
+}
+
+export class GetDhcpServerv4FailoverCmdlet implements ICmdlet {
+  readonly name = 'get-dhcpserverv4failover';
+  readonly displayName = 'Get-DhcpServerv4Failover';
+  readonly aliases = [] as const;
+  readonly parameters = ['ComputerName', 'Name', 'ScopeId'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dhcp = requireDhcp(ctx, 'Get-DhcpServerv4Failover');
+    const name = psValueToString(ctx.named['name'] ?? '');
+    if (name) {
+      const view = dhcp.getFailover(name);
+      if (!view) { ctx.emitError(`Get-DhcpServerv4Failover : The failover relationship "${name}" does not exist on the DHCP server.`); return null; }
+      return failoverToPSObject(view);
+    }
+    const scopeIds = stringList(ctx.named['scopeid']);
+    const all = dhcp.listFailovers();
+    if (scopeIds.length === 0) return all.map(failoverToPSObject);
+    const matching = all.filter(view => scopeIds.some(id => view.scopeIds.includes(id)));
+    if (matching.length === 0) {
+      ctx.emitError(`Get-DhcpServerv4Failover : The scope ${scopeIds[0]} is not part of any failover relationship on the DHCP server.`);
+      return null;
+    }
+    return matching.map(failoverToPSObject);
+  }
+}
+
+export class SetDhcpServerv4FailoverCmdlet implements ICmdlet {
+  readonly name = 'set-dhcpserverv4failover';
+  readonly displayName = 'Set-DhcpServerv4Failover';
+  readonly aliases = [] as const;
+  readonly parameters = [
+    'ComputerName', 'Name', 'LoadBalancePercent', 'ServerRole', 'ReservePercent', 'MaxClientLeadTime',
+    'StateSwitchInterval', 'AutoStateTransition', 'SharedSecret', 'PartnerDown', 'PassThru',
+  ] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dhcp = requireDhcp(ctx, 'Set-DhcpServerv4Failover');
+    const name = psValueToString(ctx.named['name'] ?? '');
+    if (!name) {
+      ctx.emitError('Set-DhcpServerv4Failover : Cannot process command because of one or more missing mandatory parameters: Name.');
+      return null;
+    }
+    const changes: DhcpFailoverChanges = {
+      loadBalancePercent: numberOf(ctx, 'loadbalancepercent', 'Set-DhcpServerv4Failover', 'LoadBalancePercent'),
+      serverRole: serverRoleOf(ctx, 'Set-DhcpServerv4Failover'),
+      reservePercent: numberOf(ctx, 'reservepercent', 'Set-DhcpServerv4Failover', 'ReservePercent'),
+      maxClientLeadTimeSeconds: timeSpanOf(ctx, 'maxclientleadtime', 'MaxClientLeadTime'),
+      stateSwitchIntervalSeconds: timeSpanOf(ctx, 'stateswitchinterval', 'StateSwitchInterval'),
+      autoStateTransition: ctx.named['autostatetransition'] === undefined ? undefined : isSwitchOn(ctx.named['autostatetransition']),
+      sharedSecret: ctx.named['sharedsecret'] === undefined ? undefined : psValueToString(ctx.named['sharedsecret']),
+      partnerDown: isSwitchOn(ctx.named['partnerdown']),
+    };
+    const result = dhcp.setFailover(name, changes);
+    if (!result.ok) { ctx.emitError(`Set-DhcpServerv4Failover : ${result.message}`); return null; }
+    if (!isSwitchOn(ctx.named['passthru'])) return null;
+    const view = dhcp.getFailover(name);
+    return view ? failoverToPSObject(view) : null;
+  }
+}
+
+export class RemoveDhcpServerv4FailoverCmdlet implements ICmdlet {
+  readonly name = 'remove-dhcpserverv4failover';
+  readonly displayName = 'Remove-DhcpServerv4Failover';
+  readonly aliases = [] as const;
+  readonly parameters = ['ComputerName', 'Name', 'Force'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dhcp = requireDhcp(ctx, 'Remove-DhcpServerv4Failover');
+    const names = stringList(ctx.named['name']);
+    if (names.length === 0) {
+      ctx.emitError('Remove-DhcpServerv4Failover : Cannot process command because of one or more missing mandatory parameters: Name.');
+      return null;
+    }
+    for (const name of names) {
+      const result = dhcp.removeFailover(name, isSwitchOn(ctx.named['force']));
+      if (!result.ok) ctx.emitError(`Remove-DhcpServerv4Failover : ${result.message}`);
+    }
+    return null;
+  }
+}
+
+function scopeMembership(cmdletName: string, key: 'addScopeIds' | 'removeScopeIds'): ICmdlet['execute'] {
+  return (ctx: CmdletContext): PSValue => {
+    const dhcp = requireDhcp(ctx, cmdletName);
+    const name = psValueToString(ctx.named['name'] ?? '');
+    const scopeIds = stringList(ctx.named['scopeid']);
+    if (!name || scopeIds.length === 0) {
+      ctx.emitError(`${cmdletName} : Cannot process command because of one or more missing mandatory parameters: Name ScopeId.`);
+      return null;
+    }
+    const result = dhcp.setFailover(name, { [key]: scopeIds });
+    if (!result.ok) { ctx.emitError(`${cmdletName} : ${result.message}`); return null; }
+    if (!isSwitchOn(ctx.named['passthru'])) return null;
+    const view = dhcp.getFailover(name);
+    return view ? failoverToPSObject(view) : null;
+  };
+}
+
+export class AddDhcpServerv4FailoverScopeCmdlet implements ICmdlet {
+  readonly name = 'add-dhcpserverv4failoverscope';
+  readonly displayName = 'Add-DhcpServerv4FailoverScope';
+  readonly aliases = [] as const;
+  readonly parameters = ['ComputerName', 'Name', 'ScopeId', 'PassThru'] as const;
+  readonly execute = scopeMembership('Add-DhcpServerv4FailoverScope', 'addScopeIds');
+}
+
+export class RemoveDhcpServerv4FailoverScopeCmdlet implements ICmdlet {
+  readonly name = 'remove-dhcpserverv4failoverscope';
+  readonly displayName = 'Remove-DhcpServerv4FailoverScope';
+  readonly aliases = [] as const;
+  readonly parameters = ['ComputerName', 'Name', 'ScopeId', 'PassThru'] as const;
+  readonly execute = scopeMembership('Remove-DhcpServerv4FailoverScope', 'removeScopeIds');
+}
+
+export class InvokeDhcpServerv4FailoverReplicationCmdlet implements ICmdlet {
+  readonly name = 'invoke-dhcpserverv4failoverreplication';
+  readonly displayName = 'Invoke-DhcpServerv4FailoverReplication';
+  readonly aliases = [] as const;
+  readonly parameters = ['ComputerName', 'Name', 'ScopeId', 'Force', 'PassThru'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dhcp = requireDhcp(ctx, 'Invoke-DhcpServerv4FailoverReplication');
+    const names = stringList(ctx.named['name']);
+    const targets = names.length > 0 ? names : dhcp.listFailovers().map(view => view.name);
+    const scopeIds = stringList(ctx.named['scopeid']);
+    const replicated: PSValue[] = [];
+    for (const name of targets) {
+      const result = dhcp.replicateFailover(name, scopeIds.length > 0 ? scopeIds : undefined, isSwitchOn(ctx.named['force']));
+      if (!result.ok) { ctx.emitError(`Invoke-DhcpServerv4FailoverReplication : ${result.message}`); continue; }
+      const view = dhcp.getFailover(name);
+      if (view) replicated.push(failoverToPSObject(view));
+    }
+    return isSwitchOn(ctx.named['passthru']) ? replicated : null;
   }
 }

@@ -162,6 +162,8 @@ import {
   InstallAdcsCertificationAuthorityCmdlet, GetCATemplateCmdlet, AddCATemplateCmdlet, GetCertificateCmdlet,
 } from './AdcsCmdlets';
 import { AddComputerCmdlet, RemoveComputerCmdlet, RenameComputerCmdlet, TestComputerSecureChannelCmdlet, InstallADServiceAccountCmdlet, TestADServiceAccountCmdlet } from './ComputerCmdlets';
+import { remotable } from '../remoteDispatch';
+import { GetWindowsCapabilityCmdlet, AddWindowsCapabilityCmdlet, RemoveWindowsCapabilityCmdlet } from './CapabilityCmdlets';
 import {
   AddDnsServerPrimaryZoneCmdlet, GetDnsServerZoneCmdlet, SetDnsServerPrimaryZoneCmdlet,
   AddDnsServerTsigKeyCmdlet, GetDnsServerTsigKeyCmdlet, RemoveDnsServerTsigKeyCmdlet,
@@ -169,7 +171,14 @@ import {
   AddDnsServerResourceRecordCNameCmdlet, AddDnsServerResourceRecordMXCmdlet,
   AddDnsServerResourceRecordPtrCmdlet, AddDnsServerResourceRecordCmdlet,
   RemoveDnsServerResourceRecordCmdlet, GetDnsServerResourceRecordCmdlet,
-  SetDnsServerForwarderCmdlet, GetDnsServerForwarderCmdlet,
+  SetDnsServerForwarderCmdlet, GetDnsServerForwarderCmdlet, AddDnsServerForwarderCmdlet, RemoveDnsServerForwarderCmdlet,
+  AddDnsServerSecondaryZoneCmdlet, AddDnsServerConditionalForwarderZoneCmdlet, SetDnsServerConditionalForwarderZoneCmdlet,
+  SetDnsServerSecondaryZoneCmdlet, RemoveDnsServerZoneCmdlet, StartDnsServerZoneTransferCmdlet,
+  SetDnsServerResourceRecordCmdlet, SetDnsServerRecursionCmdlet, GetDnsServerRecursionCmdlet,
+  ClearDnsServerCacheCmdlet, ShowDnsServerCacheCmdlet,
+  SetDnsServerZoneAgingCmdlet, GetDnsServerZoneAgingCmdlet, SetDnsServerScavengingCmdlet, GetDnsServerScavengingCmdlet, StartDnsServerScavengingCmdlet,
+  GetDnsServerRootHintCmdlet, AddDnsServerRootHintCmdlet, SetDnsServerRootHintCmdlet,
+  RemoveDnsServerRootHintCmdlet, ImportDnsServerRootHintCmdlet,
 } from './DnsServerCmdlets';
 import {
   AddDhcpServerv4ScopeCmdlet, GetDhcpServerv4ScopeCmdlet, GetDhcpServerv4BindingCmdlet,
@@ -192,6 +201,8 @@ import {
   RemoveDhcpServerInDCCmdlet,
   GetDhcpServerSettingCmdlet,
   SetDhcpServerSettingCmdlet,
+  AddDhcpServerv4FailoverCmdlet, GetDhcpServerv4FailoverCmdlet, SetDhcpServerv4FailoverCmdlet, RemoveDhcpServerv4FailoverCmdlet,
+  AddDhcpServerv4FailoverScopeCmdlet, RemoveDhcpServerv4FailoverScopeCmdlet, InvokeDhcpServerv4FailoverReplicationCmdlet,
 } from './DhcpServerCmdlets';
 import {
   NewNpsRadiusClientCmdlet, GetNpsRadiusClientCmdlet, RemoveNpsRadiusClientCmdlet,
@@ -201,7 +212,7 @@ import {
 } from './NpsCmdlets';
 import {
   NewGPOCmdlet, GetGPOCmdlet, RemoveGPOCmdlet, RenameGPOCmdlet, NewGPLinkCmdlet, SetGPLinkCmdlet, RemoveGPLinkCmdlet,
-  SetGPRegistryValueCmdlet, GetGPRegistryValueCmdlet, RemoveGPRegistryValueCmdlet, SetGPInheritanceCmdlet, GetGPInheritanceCmdlet,
+  SetGPRegistryValueCmdlet, GetGPRegistryValueCmdlet, RemoveGPRegistryValueCmdlet, SetGPInheritanceCmdlet, GetGPInheritanceCmdlet, InvokeGPUpdateCmdlet,
 } from './GroupPolicyCmdlets';
 import {
   NewWebsiteCmdlet, GetWebsiteCmdlet, StartWebsiteCmdlet, StopWebsiteCmdlet, RemoveWebsiteCmdlet,
@@ -497,6 +508,10 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new GetCimInstanceCmdlet());
   registry.register(new GetCounterCmdlet());
 
+  registry.register(new GetWindowsCapabilityCmdlet());
+  registry.register(new AddWindowsCapabilityCmdlet());
+  registry.register(new RemoveWindowsCapabilityCmdlet());
+
   // ── PowerShell Remoting (provider-backed) ─────────────────────────────────
   registry.register(new EnablePSRemotingCmdlet());
   registry.register(new TestWSManCmdlet());
@@ -692,50 +707,9 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetCATemplateCmdlet());
   registry.register(new AddCATemplateCmdlet());
 
-  // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
-  registry.register(new AddDnsServerPrimaryZoneCmdlet());
-  registry.register(new SetDnsServerPrimaryZoneCmdlet());
-  registry.register(new AddDnsServerTsigKeyCmdlet());
-  registry.register(new GetDnsServerTsigKeyCmdlet());
-  registry.register(new RemoveDnsServerTsigKeyCmdlet());
-  registry.register(new GetDnsServerZoneCmdlet());
-  registry.register(new AddDnsServerResourceRecordACmdlet());
-  registry.register(new AddDnsServerResourceRecordAAAACmdlet());
-  registry.register(new AddDnsServerResourceRecordCNameCmdlet());
-  registry.register(new AddDnsServerResourceRecordMXCmdlet());
-  registry.register(new AddDnsServerResourceRecordPtrCmdlet());
-  registry.register(new AddDnsServerResourceRecordCmdlet());
-  registry.register(new RemoveDnsServerResourceRecordCmdlet());
-  registry.register(new GetDnsServerResourceRecordCmdlet());
-  registry.register(new SetDnsServerForwarderCmdlet());
-  registry.register(new GetDnsServerForwarderCmdlet());
+  registerDnsServerCmdlets(registry);
 
-  // ── DHCP Server role (PRD-Windows-Server.md §5 P8) ──────────────────────────
-  registry.register(new AddDhcpServerv4ScopeCmdlet());
-  registry.register(new GetDhcpServerv4ScopeCmdlet());
-  registry.register(new GetDhcpServerv4BindingCmdlet());
-  registry.register(new GetDhcpServerv4DnsSettingCmdlet());
-  registry.register(new SetDhcpServerv4DnsSettingCmdlet());
-  registry.register(new AddDhcpServerv4ExclusionRangeCmdlet());
-  registry.register(new AddDhcpServerv4ReservationCmdlet());
-  registry.register(new SetDhcpServerv4OptionValueCmdlet());
-  registry.register(new GetDhcpServerv4LeaseCmdlet());
-  registry.register(new AddDhcpServerInDCCmdlet());
-  registry.register(new SetDhcpServerv4ScopeCmdlet());
-  registry.register(new RemoveDhcpServerv4ScopeCmdlet());
-  registry.register(new GetDhcpServerv4ReservationCmdlet());
-  registry.register(new RemoveDhcpServerv4ReservationCmdlet());
-  registry.register(new GetDhcpServerv4ExclusionRangeCmdlet());
-  registry.register(new RemoveDhcpServerv4ExclusionRangeCmdlet());
-  registry.register(new GetDhcpServerv4OptionValueCmdlet());
-  registry.register(new RemoveDhcpServerv4OptionValueCmdlet());
-  registry.register(new RemoveDhcpServerv4LeaseCmdlet());
-  registry.register(new GetDhcpServerv4ScopeStatisticsCmdlet());
-  registry.register(new GetDhcpServerv4StatisticsCmdlet());
-  registry.register(new GetDhcpServerInDCCmdlet());
-  registry.register(new RemoveDhcpServerInDCCmdlet());
-  registry.register(new GetDhcpServerSettingCmdlet());
-  registry.register(new SetDhcpServerSettingCmdlet());
+  registerDhcpServerCmdlets(registry);
 
   // ── NPS (RADIUS) role (PRD-Windows-Server.md §5 P9 + Advanced P22) ──────────
   registry.register(new NewNpsRadiusClientCmdlet());
@@ -749,19 +723,7 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new RemoveNpsConnectionRequestPolicyCmdlet());
   registry.register(new SetNpsAccountingConfigurationCmdlet());
 
-  // ── Group Policy (PRD-Windows-Server.md §5 P10) ─────────────────────────────
-  registry.register(new NewGPOCmdlet());
-  registry.register(new GetGPOCmdlet());
-  registry.register(new RemoveGPOCmdlet());
-  registry.register(new RenameGPOCmdlet());
-  registry.register(new RemoveGPLinkCmdlet());
-  registry.register(new GetGPRegistryValueCmdlet());
-  registry.register(new RemoveGPRegistryValueCmdlet());
-  registry.register(new NewGPLinkCmdlet());
-  registry.register(new SetGPLinkCmdlet());
-  registry.register(new SetGPRegistryValueCmdlet());
-  registry.register(new SetGPInheritanceCmdlet());
-  registry.register(new GetGPInheritanceCmdlet());
+  registerGroupPolicyCmdlets(registry);
 
   // ── Web Server / IIS role (PRD-Windows-Server.md §5 P11) ────────────────────
   registry.register(new NewWebsiteCmdlet());
@@ -812,4 +774,100 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   // ── WSUS (PRD-Windows-Server-Advanced.md §5 P19) ────────────────────────────
   registry.register(new GetWsusUpdateCmdlet());
   registry.register(new ApproveWsusUpdateCmdlet());
+}
+
+export function registerDnsServerCmdlets(registry: CmdletRegistry): void {
+  // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
+  registry.register(remotable('Add-DnsServerPrimaryZone', new AddDnsServerPrimaryZoneCmdlet()));
+  registry.register(remotable('Set-DnsServerPrimaryZone', new SetDnsServerPrimaryZoneCmdlet()));
+  registry.register(remotable('Add-DnsServerTsigKey', new AddDnsServerTsigKeyCmdlet()));
+  registry.register(remotable('Get-DnsServerTsigKey', new GetDnsServerTsigKeyCmdlet()));
+  registry.register(remotable('Remove-DnsServerTsigKey', new RemoveDnsServerTsigKeyCmdlet()));
+  registry.register(remotable('Get-DnsServerZone', new GetDnsServerZoneCmdlet()));
+  registry.register(remotable('Add-DnsServerResourceRecordA', new AddDnsServerResourceRecordACmdlet()));
+  registry.register(remotable('Add-DnsServerResourceRecordAAAA', new AddDnsServerResourceRecordAAAACmdlet()));
+  registry.register(remotable('Add-DnsServerResourceRecordCName', new AddDnsServerResourceRecordCNameCmdlet()));
+  registry.register(remotable('Add-DnsServerResourceRecordMX', new AddDnsServerResourceRecordMXCmdlet()));
+  registry.register(remotable('Add-DnsServerResourceRecordPtr', new AddDnsServerResourceRecordPtrCmdlet()));
+  registry.register(remotable('Add-DnsServerResourceRecord', new AddDnsServerResourceRecordCmdlet()));
+  registry.register(remotable('Remove-DnsServerResourceRecord', new RemoveDnsServerResourceRecordCmdlet()));
+  registry.register(remotable('Get-DnsServerResourceRecord', new GetDnsServerResourceRecordCmdlet()));
+  registry.register(remotable('Set-DnsServerForwarder', new SetDnsServerForwarderCmdlet()));
+  registry.register(remotable('Get-DnsServerForwarder', new GetDnsServerForwarderCmdlet()));
+  registry.register(remotable('Add-DnsServerForwarder', new AddDnsServerForwarderCmdlet()));
+  registry.register(remotable('Remove-DnsServerForwarder', new RemoveDnsServerForwarderCmdlet()));
+  registry.register(remotable('Add-DnsServerSecondaryZone', new AddDnsServerSecondaryZoneCmdlet()));
+  registry.register(remotable('Add-DnsServerConditionalForwarderZone', new AddDnsServerConditionalForwarderZoneCmdlet()));
+  registry.register(remotable('Set-DnsServerConditionalForwarderZone', new SetDnsServerConditionalForwarderZoneCmdlet()));
+  registry.register(remotable('Set-DnsServerSecondaryZone', new SetDnsServerSecondaryZoneCmdlet()));
+  registry.register(remotable('Remove-DnsServerZone', new RemoveDnsServerZoneCmdlet()));
+  registry.register(remotable('Start-DnsServerZoneTransfer', new StartDnsServerZoneTransferCmdlet()));
+  registry.register(remotable('Set-DnsServerResourceRecord', new SetDnsServerResourceRecordCmdlet()));
+  registry.register(remotable('Set-DnsServerRecursion', new SetDnsServerRecursionCmdlet()));
+  registry.register(remotable('Get-DnsServerRecursion', new GetDnsServerRecursionCmdlet()));
+  registry.register(remotable('Clear-DnsServerCache', new ClearDnsServerCacheCmdlet()));
+  registry.register(remotable('Show-DnsServerCache', new ShowDnsServerCacheCmdlet()));
+  registry.register(remotable('Get-DnsServerRootHint', new GetDnsServerRootHintCmdlet()));
+  registry.register(remotable('Add-DnsServerRootHint', new AddDnsServerRootHintCmdlet()));
+  registry.register(remotable('Set-DnsServerRootHint', new SetDnsServerRootHintCmdlet()));
+  registry.register(remotable('Remove-DnsServerRootHint', new RemoveDnsServerRootHintCmdlet()));
+  registry.register(remotable('Import-DnsServerRootHint', new ImportDnsServerRootHintCmdlet()));
+  registry.register(remotable('Set-DnsServerZoneAging', new SetDnsServerZoneAgingCmdlet()));
+  registry.register(remotable('Get-DnsServerZoneAging', new GetDnsServerZoneAgingCmdlet()));
+  registry.register(remotable('Set-DnsServerScavenging', new SetDnsServerScavengingCmdlet()));
+  registry.register(remotable('Get-DnsServerScavenging', new GetDnsServerScavengingCmdlet()));
+  registry.register(remotable('Start-DnsServerScavenging', new StartDnsServerScavengingCmdlet()));
+}
+
+export function registerDhcpServerCmdlets(registry: CmdletRegistry): void {
+  // ── DHCP Server role (PRD-Windows-Server.md §5 P8) ──────────────────────────
+  registry.register(new AddDhcpServerv4ScopeCmdlet());
+  registry.register(new GetDhcpServerv4ScopeCmdlet());
+  registry.register(new GetDhcpServerv4BindingCmdlet());
+  registry.register(new GetDhcpServerv4DnsSettingCmdlet());
+  registry.register(new SetDhcpServerv4DnsSettingCmdlet());
+  registry.register(new AddDhcpServerv4ExclusionRangeCmdlet());
+  registry.register(new AddDhcpServerv4ReservationCmdlet());
+  registry.register(new SetDhcpServerv4OptionValueCmdlet());
+  registry.register(new GetDhcpServerv4LeaseCmdlet());
+  registry.register(new AddDhcpServerInDCCmdlet());
+  registry.register(new SetDhcpServerv4ScopeCmdlet());
+  registry.register(new RemoveDhcpServerv4ScopeCmdlet());
+  registry.register(new GetDhcpServerv4ReservationCmdlet());
+  registry.register(new RemoveDhcpServerv4ReservationCmdlet());
+  registry.register(new GetDhcpServerv4ExclusionRangeCmdlet());
+  registry.register(new RemoveDhcpServerv4ExclusionRangeCmdlet());
+  registry.register(new GetDhcpServerv4OptionValueCmdlet());
+  registry.register(new RemoveDhcpServerv4OptionValueCmdlet());
+  registry.register(new RemoveDhcpServerv4LeaseCmdlet());
+  registry.register(new GetDhcpServerv4ScopeStatisticsCmdlet());
+  registry.register(new GetDhcpServerv4StatisticsCmdlet());
+  registry.register(new GetDhcpServerInDCCmdlet());
+  registry.register(new RemoveDhcpServerInDCCmdlet());
+  registry.register(new GetDhcpServerSettingCmdlet());
+  registry.register(new SetDhcpServerSettingCmdlet());
+  registry.register(remotable('Add-DhcpServerv4Failover', new AddDhcpServerv4FailoverCmdlet()));
+  registry.register(remotable('Get-DhcpServerv4Failover', new GetDhcpServerv4FailoverCmdlet()));
+  registry.register(remotable('Set-DhcpServerv4Failover', new SetDhcpServerv4FailoverCmdlet()));
+  registry.register(remotable('Remove-DhcpServerv4Failover', new RemoveDhcpServerv4FailoverCmdlet()));
+  registry.register(remotable('Add-DhcpServerv4FailoverScope', new AddDhcpServerv4FailoverScopeCmdlet()));
+  registry.register(remotable('Remove-DhcpServerv4FailoverScope', new RemoveDhcpServerv4FailoverScopeCmdlet()));
+  registry.register(remotable('Invoke-DhcpServerv4FailoverReplication', new InvokeDhcpServerv4FailoverReplicationCmdlet()));
+}
+
+export function registerGroupPolicyCmdlets(registry: CmdletRegistry): void {
+  // ── Group Policy (PRD-Windows-Server.md §5 P10) ─────────────────────────────
+  registry.register(new NewGPOCmdlet());
+  registry.register(new GetGPOCmdlet());
+  registry.register(new RemoveGPOCmdlet());
+  registry.register(new RenameGPOCmdlet());
+  registry.register(new RemoveGPLinkCmdlet());
+  registry.register(new GetGPRegistryValueCmdlet());
+  registry.register(new RemoveGPRegistryValueCmdlet());
+  registry.register(new NewGPLinkCmdlet());
+  registry.register(new SetGPLinkCmdlet());
+  registry.register(new SetGPRegistryValueCmdlet());
+  registry.register(new SetGPInheritanceCmdlet());
+  registry.register(new GetGPInheritanceCmdlet());
+  registry.register(new InvokeGPUpdateCmdlet());
 }

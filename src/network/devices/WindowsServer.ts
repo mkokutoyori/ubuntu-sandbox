@@ -21,7 +21,7 @@ import { RoleManager } from './windows/server/RoleManager';
 import { DirectoryStore } from './windows/server/ad/DirectoryStore';
 import { AD_NULL_GUID } from './windows/server/ad/AdTypes';
 import type { SharePermission } from './windows/server/smb/SmbTypes';
-import { WindowsDnsServerRole } from './windows/server/dns/WindowsDnsServerRole';
+import { WindowsDnsServerRole, type DnsZoneFileSink } from './windows/server/dns/WindowsDnsServerRole';
 import { WindowsDhcpServerRole } from './windows/server/dhcp/WindowsDhcpServerRole';
 import { WindowsNpsRole } from './windows/server/nps/WindowsNpsRole';
 import { WindowsIisRole } from './windows/server/iis/WindowsIisRole';
@@ -146,13 +146,32 @@ export class WindowsServer extends WindowsPC {
    * role (via a `DnsServer` cmdlet) immediately after installing it, so
    * this is not observable in practice.
    */
+  private dnsZoneFileSink(): DnsZoneFileSink {
+    const directory = 'C:\\Windows\\System32\\dns';
+    return {
+      read: (fileName) => {
+        const file = this.getFileSystem().readFile(`${directory}\\${fileName}`);
+        return file.ok ? file.content ?? '' : null;
+      },
+      write: (fileName, text) => {
+        this.getFileSystem().mkdirp(directory);
+        this.getFileSystem().createFile(`${directory}\\${fileName}`, text);
+      },
+      remove: (fileName) => { this.getFileSystem().deleteFile(`${directory}\\${fileName}`); },
+    };
+  }
+
   getDnsServerRole(): WindowsDnsServerRole | null {
     if (!this.roleManager.isInstalled('DNS')) {
       if (this.dnsServerRoleInstance) { this.dnsServerRoleInstance.stop(); this.dnsServerRoleInstance = null; }
       return null;
     }
     if (!this.dnsServerRoleInstance) {
-      this.dnsServerRoleInstance = new WindowsDnsServerRole(this);
+      this.dnsServerRoleInstance = new WindowsDnsServerRole(this, {
+        now: () => this.simulatedDate().getTime(),
+        zoneFiles: this.dnsZoneFileSink(),
+        directoryAvailable: () => this.getDirectoryStore() !== null,
+      });
       this.dnsServerRoleInstance.start();
     }
     return this.dnsServerRoleInstance;
@@ -171,7 +190,13 @@ export class WindowsServer extends WindowsPC {
       return null;
     }
     if (!this.dhcpServerRoleInstance) {
-      this.dhcpServerRoleInstance = new WindowsDhcpServerRole(this);
+      this.dhcpServerRoleInstance = new WindowsDhcpServerRole(this, {
+        now: () => this.simulatedDate().getTime(),
+        adminApReqFor: (peerName) => this.adminApReqFor(peerName),
+        verifyAdministrator: (apReq) => this.authenticateAdministrator(apReq),
+        resolve: (name) => (IPAddress.isValid(name) ? name : this.resolveHostnameSync(name)?.toString() ?? null),
+        localAddressToward: (address) => this.sourceAddressFor(new IPAddress(address))?.toString() ?? null,
+      });
       this.dhcpServerRoleInstance.start();
     }
     this.dhcpServerRoleInstance.setDomainContext(
@@ -1417,7 +1442,7 @@ export class WindowsServer extends WindowsPC {
     const dns = this.getDnsServerRole();
     if (!dns) return;
     if (dns.getZone(domainName)) return;
-    dns.addPrimaryZone(domainName);
+    dns.addPrimaryZone(domainName, { dsIntegrated: true });
     const hostname = this.getHostname();
     const iface = this.getInterfaces().find(p => p.getIPAddress() !== null);
     const ownIp = iface?.getIPAddress() ?? null;
@@ -1438,11 +1463,10 @@ export class WindowsServer extends WindowsPC {
       const octets = ownIp.getOctets();
       const networkOctets = Math.floor(mask.toCIDR() / 8);
       if (networkOctets > 0 && networkOctets < 4) {
-        const reverseZone = `${octets.slice(0, networkOctets).reverse().join('.')}.in-addr.arpa`;
-        if (!dns.getZone(reverseZone)) {
-          dns.addPrimaryZone(reverseZone);
-          dns.addPtrRecord(reverseZone, octets.slice(networkOctets).join('.'), dcTarget);
-        }
+        const networkId = `${octets.slice(0, networkOctets).join('.')}/${networkOctets * 8}`;
+        const existing = dns.reverseZoneFor(ownIp.toString());
+        const reverseZone = existing ?? (dns.addPrimaryZone('', { networkId, dsIntegrated: true }).ok ? dns.reverseZoneFor(ownIp.toString()) : null);
+        if (reverseZone && !existing) dns.addPtrRecord(reverseZone, octets.slice(networkOctets).join('.'), dcTarget);
       }
     }
   }

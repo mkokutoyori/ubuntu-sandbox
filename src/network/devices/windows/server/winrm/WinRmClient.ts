@@ -99,3 +99,59 @@ export function pushForwardedEvent(opts: {
   }
   return { ok: true };
 }
+
+export interface WinRmRunResult {
+  ok: boolean;
+  output?: string;
+  error?: string;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+export function runWinRmRequest(opts: {
+  tcpStack: TcpStack;
+  targetIp: string;
+  request: Record<string, unknown>;
+  credential?: { username: string; password: string };
+  apReq?: Uint8Array;
+}): WinRmRunResult {
+  const socket = opts.tcpStack.connect(opts.targetIp, 5985);
+  if (!socket || socket.state !== 'established') {
+    return {
+      ok: false,
+      error: 'WinRM cannot complete the operation. Verify that the specified computer name is valid, that the computer '
+        + 'is accessible over the network, and that a firewall exception for the WinRM service is enabled and allows '
+        + 'access from this computer.',
+    };
+  }
+  const negotiate = roundTrip(socket, { op: 'negotiate' });
+  if (!negotiate?.ok) {
+    socket.close();
+    return { ok: false, error: 'WinRM cannot complete the operation. Verify that the WinRM service is running on the destination.' };
+  }
+  const auth = opts.apReq
+    ? roundTrip(socket, { op: 'krbAuth', apReq: bytesToBase64(opts.apReq) })
+    : roundTrip(socket, { op: 'auth', username: opts.credential?.username ?? '', password: opts.credential?.password ?? '' });
+  if (!auth?.ok) {
+    socket.close();
+    return { ok: false, error: (auth as { message?: string } | null)?.message ?? 'Access is denied.' };
+  }
+  const run = roundTrip(socket, opts.request);
+  socket.close();
+  if (!run?.ok) return { ok: false, error: (run as { message?: string } | null)?.message ?? 'Access is denied.' };
+  return { ok: true, output: String(run.output ?? '') };
+}
+
+export function runWinRmCommand(opts: {
+  tcpStack: TcpStack;
+  targetIp: string;
+  line: string;
+  credential?: { username: string; password: string };
+  apReq?: Uint8Array;
+}): WinRmRunResult {
+  return runWinRmRequest({ ...opts, request: { op: 'run', line: opts.line } });
+}

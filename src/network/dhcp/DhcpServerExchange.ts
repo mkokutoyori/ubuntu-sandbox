@@ -20,13 +20,13 @@ export interface DhcpServeContext {
   isAddressInUse?: (ip: string) => boolean;
 }
 
-function offerPacket(pkt: DHCPPacket, offer: DHCPOfferResult): DHCPPacket {
+function offerPacket(pkt: DHCPPacket, offer: DHCPOfferResult, leaseDuration: number): DHCPPacket {
   return DHCPPacket.createOffer(pkt.chaddr, pkt.xid, offer.ip, offer.serverIdentifier, {
     mask: offer.pool.mask ?? '255.255.255.0',
     router: offer.pool.defaultRouter ?? '0.0.0.0',
     dns: offer.pool.dnsServers,
     domainName: offer.pool.domainName ?? undefined,
-    leaseDuration: offer.pool.leaseDuration ?? 86400,
+    leaseDuration,
     renewalTime: offer.renewalTime,
     rebindingTime: offer.rebindingTime,
     nextServer: offer.pool.nextServer,
@@ -96,7 +96,7 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
         offer = (next && next.ip !== offer.ip) ? next : null;
       }
     }
-    return offer ? offerPacket(pkt, offer) : null;
+    return offer ? offerPacket(pkt, offer, server.leaseSecondsOf(offer.pool)) : null;
   }
 
   if (type === 'DHCPREQUEST') {
@@ -120,7 +120,7 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
         router: pool?.defaultRouter ?? '0.0.0.0',
         dns: pool?.dnsServers ?? [],
         domainName: pool?.domainName ?? undefined,
-        leaseDuration: pool?.leaseDuration ?? 86400,
+        leaseDuration: pool ? server.leaseSecondsOf(pool) : 86400,
         renewalTime: pool?.renewalTime,
         rebindingTime: pool?.rebindingTime,
         nextServer: pool?.nextServer,

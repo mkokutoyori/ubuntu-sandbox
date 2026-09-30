@@ -20,9 +20,11 @@
  * valeur d'une cle `...\Policies\...` est retiree quand la GPO ne s'applique
  * plus, alors que les autres cles restent en place (« tattooing »). Les
  * enumerations Yes/No d'`-Enforced`/`-LinkEnabled`/`-IsBlocked` sont refusees
- * dans les mots de PowerShell pour une enumeration. Le libelle exact des
- * messages d'erreur propres a GroupPolicy n'a pas pu etre confronte a une
- * capture : ils nomment la cause, sans pretendre etre le texte de Microsoft.
+ * dans les mots de PowerShell pour une enumeration. Seul le debut du message
+ * d'absence d'un parametre de registre (« The following Group Policy registry
+ * setting was not found ») est source (recherche, learn.microsoft.com n'etant
+ * pas joignable) ; les autres libelles GroupPolicy nomment la cause sans
+ * pretendre etre le texte de Microsoft.
  *
  * Mesure avant le correctif (git stash de src/network et src/powershell) :
  * 15 des 19 cas tombent. Passent des deux cotes, et pourquoi :
@@ -111,7 +113,7 @@ describe('GPO — Remove/Rename/Get/Remove-GPRegistryValue, validation, retrait 
     await gpo(l.dc, 'Lab', POSTES, 'un');
     expect(await run(l.dc, `(Get-GPRegistryValue -Name "Lab" -Key "${KEY}" -ValueName Mode).Value`)).toBe('un');
     expect(await run(l.dc, `(Get-GPRegistryValue -Name "Lab" -Key "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Lab").ValueName`)).toBe('Mode');
-    expect(await run(l.dc, `Get-GPRegistryValue -Name "Lab" -Key "${KEY}" -ValueName Absent`)).toMatch(/does not set the registry value/i);
+    expect(await run(l.dc, `Get-GPRegistryValue -Name "Lab" -Key "${KEY}" -ValueName Absent`)).toMatch(/The following Group Policy registry setting was not found/i);
   });
 
   it("Remove-GPRegistryValue retire la valeur, et gpupdate la retire du poste", async () => {
@@ -150,7 +152,7 @@ describe('GPO — Remove/Rename/Get/Remove-GPRegistryValue, validation, retrait 
     expect(await run(l.dc, `Set-GPRegistryValue -Name "Lab" -Key "${KEY}" -ValueName A -Type Texte -Value 1`)).toMatch(/Specify one of the following enumerator names.*DWord/);
     expect(await run(l.dc, 'Set-GPRegistryValue -Name "Lab" -Key "HKCR\\Lab" -ValueName A -Type String -Value 1')).toMatch(/not under HKEY_LOCAL_MACHINE or HKEY_CURRENT_USER/);
     expect(await run(l.dc, `Set-GPRegistryValue -Name "Lab" -Key "${KEY}" -ValueName A -Type DWord -Value abc`)).toMatch(/not valid for type DWord/);
-    expect(await run(l.dc, `Get-GPRegistryValue -Name "Lab" -Key "${KEY}"`)).toMatch(/does not set the registry value/i);
+    expect(await run(l.dc, `Get-GPRegistryValue -Name "Lab" -Key "${KEY}"`)).toMatch(/The following Group Policy registry setting was not found/i);
   });
 
   it('un type écrit en minuscules est rangé sous son nom canonique', async () => {

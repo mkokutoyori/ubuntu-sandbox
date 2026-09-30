@@ -555,7 +555,7 @@ export class InvokeCommandCmdlet implements ICmdlet {
 
 // ─── Start-Job / Receive-Job / Wait-Job ───────────────────────────────────
 
-function jobInfoToPS(info: { id: number; name: string; state: string; hasMoreData: boolean; output: unknown[] }): Record<string, PSValue> {
+export function jobInfoToPS(info: { id: number; name: string; state: string; hasMoreData: boolean; output: unknown[] }): Record<string, PSValue> {
   return {
     Id: info.id, Name: info.name, State: info.state,
     HasMoreData: info.hasMoreData, Output: info.output as PSValue[],

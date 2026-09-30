@@ -4,7 +4,7 @@ import { RecursiveResolver } from '@/network/dns/resolver/RecursiveResolver';
 import { DnsCache } from '@/network/dns/resolver/DnsCache';
 import { parseZoneFile, ZoneFileError } from '@/network/dns/zone/ZoneFile';
 import { ZoneError } from '@/network/dns/zone/Zone';
-import { ZoneTransferClient, transferTransportOf } from '@/network/dns/transfer/ZoneTransferClient';
+import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer } from '@/network/dns/transfer/ZoneTransferHosting';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { DnsClass } from '@/network/dns/wire/RRType';
 import { IPAddress } from '@/network/core/types';
@@ -12,11 +12,11 @@ import { makeTxtRecord } from '@/network/dns/wire/ResourceRecord';
 import { formatRecordLine } from '../commands/dns/RecordFormat';
 import { normalizeDnsName, parentName } from '@/network/dns/wire/DnsName';
 import {
-  isTransferQuery, buildAxfrAnswers, buildTransferResponse, refuseTransfer,
+  isTransferQuery, refuseTransfer,
 } from '@/network/dns/transfer/AxfrSession';
-import { sendNotify, isNotify, makeNotifyAck } from '@/network/dns/transfer/NotifyProtocol';
+import { isNotify, makeNotifyAck } from '@/network/dns/transfer/NotifyProtocol';
 import {
-  bindDnsUdpServer, unbindDnsUdpServer, udpClientOf, DNS_PORT,
+  bindDnsUdpServer, unbindDnsUdpServer, DNS_PORT,
 } from '@/network/dns/transport/DnsUdpTransport';
 import {
   bindDnsTcpServer, unbindDnsTcpServer,
@@ -56,11 +56,11 @@ export class Bind9Service {
   private config: NamedConfig | null = null;
   private store: ZoneStore | null = null;
   private authoritative: AuthoritativeServer | null = null;
-  private resolver: RecursiveResolver | null = null;
+  private resolvers: RecursiveResolver[] = [];
   private readonly cache = new DnsCache();
   private readonly loadedZones = new Map<string, number>();
   private readonly failedZones = new Set<string>();
-  private readonly transferClients = new Map<string, ZoneTransferClient>();
+  private readonly secondaries: SecondaryZoneRefresher;
   private readonly frozenZones = new Set<string>();
   private readonly logging: Bind9Logging;
   private readonly readFile: (path: string) => string | null;
@@ -79,6 +79,10 @@ export class Bind9Service {
     this.readFile = (path) => this.files.read(path);
     this.logging = new Bind9Logging((path, content) => this.files.append(path, content));
     this.rndcChannel = new RndcChannel(this);
+    this.secondaries = new SecondaryZoneRefresher(host, (name, force) => {
+      const zone = this.config?.zones.find((z) => z.name === name && z.type === 'secondary');
+      if (zone) void this.refreshSecondaryZone(zone, force);
+    });
   }
 
   isRunning(): boolean {
@@ -313,25 +317,30 @@ export class Bind9Service {
     this.config = config;
     this.store = store;
     this.authoritative = new AuthoritativeServer(store);
-    this.resolver = this.buildResolver(config);
+    this.resolvers = this.buildResolvers(config);
     this.queryLogEnabled = config.options.queryLog;
     this.dnssecValidationEnabled = config.options.dnssecValidation !== 'no';
   }
 
-  private buildResolver(config: NamedConfig): RecursiveResolver | null {
-    if (!config.options.recursion) return null;
-    const upstreams: IPAddress[] = [];
+  private buildResolvers(config: NamedConfig): RecursiveResolver[] {
+    if (!config.options.recursion) return [];
+    const resolvers: RecursiveResolver[] = [];
+    const forwarders: IPAddress[] = [];
     for (const forwarder of config.options.forwarders) {
       const parsed = IPAddress.tryParse(forwarder);
-      if (parsed) upstreams.push(parsed);
+      if (parsed) forwarders.push(parsed);
     }
+    if (forwarders.length > 0) {
+      resolvers.push(new RecursiveResolver(this.host, forwarders, this.cache, { forwardRecursively: true }));
+    }
+    const hints: IPAddress[] = [];
     for (const zone of config.zones) {
       if (zone.type !== 'hint' || zone.file === null) continue;
       const content = this.readFile(zone.file);
-      if (content !== null) upstreams.push(...collectHintAddresses(content));
+      if (content !== null) hints.push(...collectHintAddresses(content));
     }
-    if (upstreams.length === 0) return null;
-    return new RecursiveResolver(this.host, upstreams, this.cache);
+    if (hints.length > 0) resolvers.push(new RecursiveResolver(this.host, hints, this.cache));
+    return resolvers;
   }
 
   private aclEnvironment(): AclHostEnvironment {
@@ -464,19 +473,14 @@ export class Bind9Service {
     }
 
     const outsideAuthority = !response.flags.aa && response.flags.rcode === DnsRcode.REFUSED;
-    if (outsideAuthority && question && query.flags.rd && recursionAllowed && this.resolver) {
+    if (outsideAuthority && question && query.flags.rd && recursionAllowed && this.resolvers.length > 0) {
       return this.recurse(query);
     }
     return { ...response, flags: { ...response.flags, ra: recursionAllowed } };
   }
 
   private serveTransfer(query: DnsMessage): DnsMessage {
-    const qname = normalizeDnsName(query.questions[0].qname);
-    const zone = this.store?.findZone(qname);
-    if (!zone || zone.origin !== qname) {
-      return this.refuse(query, false);
-    }
-    return buildTransferResponse(query, buildAxfrAnswers(zone));
+    return serveZoneTransfer(this.store, query) ?? this.refuse(query, false);
   }
 
   private handleNotify(query: DnsMessage, sourceIP?: IPAddress): DnsMessage {
@@ -503,33 +507,13 @@ export class Bind9Service {
     return { ok: true };
   }
 
-  private transferClientFor(zone: NamedZone): ZoneTransferClient | null {
-    const existing = this.transferClients.get(zone.name);
-    if (existing) return existing;
-
+  private async refreshSecondaryZone(zone: NamedZone, force = false): Promise<boolean> {
+    if (!this.running || this.store === null) return false;
     const primaries = zone.primaries
       .map((primary) => IPAddress.tryParse(primary))
       .filter((ip): ip is IPAddress => ip !== null);
-    if (primaries.length === 0) return null;
-
-    const client = new ZoneTransferClient(zone.name, primaries,
-      transferTransportOf(udpClientOf(this.host), this.host));
-    this.transferClients.set(zone.name, client);
-    return client;
-  }
-
-  private async refreshSecondaryZone(zone: NamedZone, force = false): Promise<boolean> {
-    if (!this.running || this.store === null) return false;
-    const client = this.transferClientFor(zone);
-    if (!client) return false;
-
-    client.adopt(this.store.getZone(zone.name));
-    if (!await client.refresh(force)) return false;
-
-    const fetched = client.currentZone();
+    const { zone: fetched } = await this.secondaries.refresh(this.store, zone.name, primaries, force);
     if (!fetched) return false;
-    this.store.removeZone(zone.name);
-    this.store.addZone(fetched);
     this.loadedZones.set(zone.name, fetched.soa.data.serial);
     this.failedZones.delete(zone.name);
     return true;
@@ -539,15 +523,19 @@ export class Bind9Service {
     const zone = this.config?.zones.find((z) => z.name === zoneName && z.type === 'primary');
     const loaded = this.store?.findZone(zoneName);
     if (!zone || !loaded || loaded.origin !== zoneName) return;
-    for (const target of zone.alsoNotify) {
-      const targetIP = IPAddress.tryParse(target);
-      if (targetIP) void sendNotify(this.host, targetIP, loaded.origin, loaded.soa);
-    }
+    const targets = zone.alsoNotify
+      .map((target) => IPAddress.tryParse(target))
+      .filter((ip): ip is IPAddress => ip !== null);
+    notifyZoneTargets(this.host, loaded, targets);
   }
 
   private async recurse(query: DnsMessage): Promise<DnsMessage> {
     const question = query.questions[0];
-    const result = await this.resolver!.resolve(question.qname, question.qtype);
+    let result = await this.resolvers[0].resolve(question.qname, question.qtype);
+    for (const next of this.resolvers.slice(1)) {
+      if (result.status !== 'SERVFAIL') break;
+      result = await next.resolve(question.qname, question.qtype);
+    }
     const rcode =
       result.status === 'NOERROR' ? DnsRcode.NOERROR :
       result.status === 'NXDOMAIN' ? DnsRcode.NXDOMAIN :

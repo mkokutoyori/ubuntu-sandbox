@@ -12,6 +12,7 @@
  *     → all nulls, used by the standalone PSInterpreter (no Windows device)
  */
 
+import type { DhcpFailoverChanges, DhcpFailoverRequest, DhcpFailoverView } from '@/network/devices/windows/server/dhcp/WindowsDhcpServerRole';
 import type { GroupWriteOptions, OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
 
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
@@ -554,6 +555,9 @@ export interface GpLinkOptions { linkEnabled?: boolean; enforced?: boolean; orde
 export interface GpRegistryValueInfo { key: string; valueName: string; type: string; value: string }
 
 export interface IGpoProvider {
+  applyPolicy(scope: 'both' | 'computer' | 'user'): { ok: boolean; message: string };
+  waitMinutes(minutes: number): void;
+  refreshDelayMinutes(maxMinutes: number): number;
   newGpo(name: string, description?: string): AdOpResult;
   /** `Remove-GPO` — the GPO and every link to it in the domain. */
   removeGpo(name: string, keepLinks?: boolean): AdOpResult;
@@ -958,28 +962,64 @@ export interface ILicensingProvider {
 
 // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
 
-export interface DnsOpResult { ok: boolean; message: string }
-export interface DnsZoneInfo { name: string; recordCount: number; dynamicUpdate: DnsDynamicUpdateMode }
-export type DnsDynamicUpdateMode = 'None' | 'NonsecureAndSecure' | 'Secure';
-export interface DnsRecordInfo { name: string; type: string; ttl: number; text: string }
+import type {
+  DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
+} from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
+export type {
+  DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
+} from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
+
+export interface DnsCacheEntryInfo { name: string; type: string; ttl: number; data: string }
 
 export interface IDnsServerProvider {
-  addPrimaryZone(name: string, adminEmail?: string): DnsOpResult;
+  addPrimaryZone(name: string, options?: DnsPrimaryZoneOptions): DnsOpResult;
+  serverName(): string;
+  addSecondaryZone(name: string, masters: string[], zoneFile?: string, loadExisting?: boolean): DnsOpResult;
+  addConditionalForwarderZone(name: string, masters: string[], timeoutSeconds?: number, useRecursion?: boolean, zoneFile?: string): DnsOpResult;
+  renameZoneFile(name: string, zoneFile: string): DnsOpResult;
+  setPrimaryZone(name: string, changes: DnsPrimaryZoneChanges): DnsOpResult;
+  setSecondaryZone(name: string, changes: { masters?: string[]; secureSecondaries?: DnsTransferPolicy; secondaryServers?: string[]; notify?: DnsNotifyPolicy; notifyServers?: string[] }): DnsOpResult;
+  setConditionalForwarderMasters(name: string, masters: string[] | undefined, timeoutSeconds?: number, useRecursion?: boolean): DnsOpResult;
+  startZoneTransfer(name: string): DnsOpResult;
   removeZone(name: string): DnsOpResult;
   getZone(name: string): DnsZoneInfo | null;
   listZones(): DnsZoneInfo[];
 
+  addRecord(zone: string, name: string, spec: DnsRecordSpec, ttl?: number, createPtr?: boolean, options?: DnsRecordOptions): DnsOpResult;
   addARecord(zone: string, name: string, ipv4: string, ttl?: number): DnsOpResult;
   addAaaaRecord(zone: string, name: string, ipv6: string, ttl?: number): DnsOpResult;
   addCnameRecord(zone: string, name: string, hostNameAlias: string, ttl?: number): DnsOpResult;
   addMxRecord(zone: string, name: string, preference: number, mailExchange: string, ttl?: number): DnsOpResult;
   addPtrRecord(zone: string, name: string, ptrDomainName: string, ttl?: number): DnsOpResult;
   addSrvRecord(zone: string, name: string, target: { priority: number; weight: number; port: number; target: string }, ttl?: number): DnsOpResult;
-  removeRecord(zone: string, name: string, type: string): DnsOpResult;
-  getRecords(zone: string, name?: string): DnsRecordInfo[] | null;
+  removeRecord(zone: string, name: string, type: string, data?: Record<string, string | number>): DnsOpResult;
+  replaceRecord(zone: string, name: string, previous: DnsRecordSpec, next: DnsRecordSpec, ttl?: number): DnsOpResult;
+  getRecords(zone: string, name?: string, type?: string): DnsRecordInfo[] | null;
 
   setForwarders(addresses: string[]): DnsOpResult;
+  addForwarders(addresses: string[]): DnsOpResult;
+  removeForwarders(addresses: string[]): DnsOpResult;
+  setForwarderTimeout(seconds: number): DnsOpResult;
+  setEnableReordering(enabled: boolean): DnsOpResult;
+  setZoneAging(name: string, changes: { aging?: boolean; noRefreshSeconds?: number; refreshSeconds?: number; scavengeServers?: string[] }): DnsOpResult;
+  getZoneAging(name: string): DnsZoneAgingInfo | null;
+  setScavenging(changes: { enabled?: boolean; intervalSeconds?: number; noRefreshSeconds?: number; refreshSeconds?: number; lastScavengeMs?: number; applyOnAllZones?: boolean }): DnsOpResult;
+  getScavenging(): DnsScavengingInfo;
+  startScavenging(): number;
   getForwarders(): string[];
+  getForwarderInfo(): DnsForwarderInfo;
+  setUseRootHint(enabled: boolean): DnsOpResult;
+  getRootHints(): DnsRootHintInfo[];
+  addRootHint(nameServer: string, address: string): DnsOpResult;
+  removeRootHint(nameServer: string, address?: string): DnsOpResult;
+  setRootHint(nameServer: string, addresses: string[]): DnsOpResult;
+  importRootHints(): DnsOpResult;
+  setRecursion(enabled: boolean): DnsOpResult;
+  isRecursionEnabled(): boolean;
+  cacheEntries(): DnsCacheEntryInfo[];
+  clearCache(): void;
 
   setZoneDynamicUpdate(zone: string, mode: DnsDynamicUpdateMode): DnsOpResult;
   addTsigKey(name: string, algorithm: string, secret: string): DnsOpResult;
@@ -1033,6 +1073,13 @@ export interface IDhcpServerProvider {
   setConflictDetectionAttempts(attempts: number): DhcpOpResult;
   serverAddress(): string;
   serverName(): string;
+
+  addFailover(request: DhcpFailoverRequest): DhcpOpResult;
+  getFailover(name: string): DhcpFailoverView | null;
+  listFailovers(): DhcpFailoverView[];
+  setFailover(name: string, changes: DhcpFailoverChanges): DhcpOpResult;
+  removeFailover(name: string, force: boolean): DhcpOpResult;
+  replicateFailover(name: string, scopeIds: readonly string[] | undefined, force: boolean): DhcpOpResult;
 }
 
 // ── NPS (RADIUS) role (PRD-Windows-Server.md §5 P9) ─────────────────────────
@@ -1072,6 +1119,14 @@ export interface INpsProvider {
   queryAccounting(sql: string): Record<string, import('@/powershell/runtime/PSEnvironment').PSValue>[] | null;
 }
 
+export interface CapabilityInfo { name: string; displayName: string; description: string; state: 'Installed' | 'NotPresent' }
+
+export interface ICapabilityProvider {
+  list(): CapabilityInfo[];
+  add(name: string): { ok: boolean; message: string };
+  remove(name: string): { ok: boolean; message: string };
+}
+
 export interface IRemotingProvider {
   /**
    * Resolve a computer name/IP to a remoting-capable target — over the
@@ -1083,6 +1138,12 @@ export interface IRemotingProvider {
    * on any failure (unreachable, WinRM not listening, or bad credentials).
    */
   resolveComputer(name: string, credential?: { username: string; password: string }): IRemoteComputer | null;
+  /** Run a PowerShell line on another computer over a real WinRM session (implicit Kerberos identity unless a credential is given) and return its raw text output. */
+  runCommand(computerName: string, line: string, credential?: { username: string; password: string }): { ok: boolean; output?: string; error?: string };
+  /** Ask another computer to refresh its Group Policy over a real WinRM session (implicit Kerberos identity). */
+  refreshPolicy(computerName: string, scope: 'both' | 'computer' | 'user', delayMinutes: number): { ok: boolean; output?: string; error?: string };
+  /** This computer's own name, to tell `-ComputerName` naming this machine from one naming another. */
+  localComputerName(): string;
   /** `Enable-PSRemoting` on THIS (local) device. */
   enablePSRemoting(): void;
   /** This device's own WinRM enabled state (Test-WSMan with no -ComputerName). */
@@ -1622,6 +1683,7 @@ export interface PSProviders {
   readonly wmi:            IWmiProvider            | null;
   readonly environment:    IEnvironmentProvider    | null;
   readonly remoting:       IRemotingProvider       | null;
+  readonly capabilities:   ICapabilityProvider    | null;
   readonly roles:          IRoleProvider           | null;
   readonly smb:            ISmbProvider            | null;
   readonly ad:             IAdProvider             | null;

@@ -15,7 +15,7 @@
  *   formatter) converts back to a display string.
  */
 
-import { formatTimeSpanValue } from '@/powershell/runtime/PSExpansion';
+import { formatTimeSpanValue, registeredDisplay } from '@/powershell/runtime/PSExpansion';
 
 // ─── Core types ──────────────────────────────────────────────────
 
@@ -591,7 +591,7 @@ export function renderPSCellValue(value: unknown): string {
   // name (e.g. `MSFT_NetAdapter`); without ETS metadata we fall back to
   // the hashtable form which preserves all field information.
   if (typeof value === 'object') {
-    return renderObjectShort(value);
+    return registeredDisplay(value) ?? renderObjectShort(value);
   }
   return String(value);
 }
@@ -604,6 +604,8 @@ function renderObjectShort(value: unknown): string {
       && typeof (value as Record<string, unknown>).TotalMilliseconds === 'number') {
     return formatTimeSpanValue((value as Record<string, unknown>).TotalMilliseconds as number);
   }
+  const registered = registeredDisplay(value);
+  if (registered !== null) return registered;
   if (typeof value === 'object' && !(value instanceof Date)) {
     const entries = Object.entries(value as Record<string, unknown>);
     if (entries.length === 0) return '';
@@ -878,6 +880,9 @@ function pickDefaultColumns(keys: string[]): string[] | null {
   // column alone; ProviderPath / Provider / Drive stay reachable to scripts.
   if (lower.has('path') && lower.has('providerpath') && lower.has('provider')) {
     return ['Path'];
+  }
+  if (lower.has('hostname') && lower.has('recordtype') && lower.has('timestamp') && lower.has('recorddata')) {
+    return ['HostName', 'RecordType', 'Type', 'Timestamp', 'TimeToLive', 'RecordData'];
   }
   // Service object: Status / Name / DisplayName
   if (lower.has('status') && lower.has('name') && lower.has('displayname')) {

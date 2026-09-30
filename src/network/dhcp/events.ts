@@ -115,6 +115,12 @@ export interface DhcpPoolLeaseAllocatedPayload extends DhcpDeviceRef {
   leaseTimeSec: number;
 }
 
+export interface DhcpFailoverStateChangedPayload extends DhcpDeviceRef {
+  relationship: string;
+  from: string;
+  to: string;
+}
+
 export interface DhcpPoolLeaseReleasedPayload extends DhcpDeviceRef {
   pool: string;
   ip: string;
@@ -208,6 +214,7 @@ export type DhcpDomainEvent =
   | { topic: 'dhcp.address-conflict'; payload: DhcpAddressConflictPayload }
   | { topic: 'dhcp.pool.lease-allocated'; payload: DhcpPoolLeaseAllocatedPayload }
   | { topic: 'dhcp.pool.lease-released'; payload: DhcpPoolLeaseReleasedPayload }
+  | { topic: 'dhcp.failover.state-changed'; payload: DhcpFailoverStateChangedPayload }
   | { topic: 'dhcp.reservation.added'; payload: DhcpReservationAddedPayload }
   | { topic: 'dhcp.relay.forwarded'; payload: DhcpRelayForwardedPayload }
   | { topic: 'dhcp.relay.reply-forwarded'; payload: DhcpRelayReplyForwardedPayload }

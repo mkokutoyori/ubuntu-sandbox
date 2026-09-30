@@ -1,6 +1,7 @@
 import { RRType, DnsClass } from '@/network/dns/wire/RRType';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
+import { rdataKey } from '@/network/dns/wire/ResourceRecord';
 import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
 import type { Zone } from '@/network/dns/zone/Zone';
 import {
@@ -43,7 +44,7 @@ function within(name: string, origin: string): boolean {
 function sameRdata(
   a: ResourceRecord<ResourceRecordData>, b: ResourceRecord<ResourceRecordData>,
 ): boolean {
-  return JSON.stringify(a.data) === JSON.stringify(b.data);
+  return rdataKey(a.data) === rdataKey(b.data);
 }
 
 function checkPrerequisite(zone: Zone, p: UpdatePrerequisite): number {

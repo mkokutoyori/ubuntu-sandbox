@@ -1,10 +1,13 @@
 import { Zone } from '@/network/dns/zone/Zone';
-import type { ResourceRecord, SoaRecordData } from '@/network/dns/wire/ResourceRecord';
+import type {
+  ResourceRecord, ResourceRecordData, SoaRecordData, ARecordData, AaaaRecordData, NsRecordData,
+  CnameRecordData, PtrRecordData, MxRecordData, TxtRecordData, SrvRecordData, DhcidRecordData,
+} from '@/network/dns/wire/ResourceRecord';
 import {
   makeARecord, makeAaaaRecord, makeNsRecord, makeCnameRecord, makePtrRecord,
   makeMxRecord, makeTxtRecord, makeSrvRecord, makeSoaRecord, makeDhcidRecord,
 } from '@/network/dns/wire/ResourceRecord';
-import { dhcidFromPresentation } from '@/network/dns/wire/Dhcid';
+import { dhcidFromPresentation, dhcidToPresentation } from '@/network/dns/wire/Dhcid';
 import { RRType } from '@/network/dns/wire/RRType';
 
 export class ZoneFileError extends Error {
@@ -230,4 +233,52 @@ export function parseZoneFile(text: string, defaultOrigin?: string): Zone {
     throw new ZoneFileError('zone file does not contain an SOA record');
   }
   return zone;
+}
+
+function absoluteName(name: string): string {
+  return name.endsWith('.') ? name : `${name}.`;
+}
+
+function renderRdata(data: ResourceRecordData): string | null {
+  switch (data.type) {
+    case RRType.A: return (data as ARecordData).address.toString();
+    case RRType.AAAA: return (data as AaaaRecordData).address.toString();
+    case RRType.NS: return absoluteName((data as NsRecordData).nsdname);
+    case RRType.CNAME: return absoluteName((data as CnameRecordData).cname);
+    case RRType.PTR: return absoluteName((data as PtrRecordData).ptrdname);
+    case RRType.MX: {
+      const mx = data as MxRecordData;
+      return `${mx.preference} ${absoluteName(mx.exchange)}`;
+    }
+    case RRType.TXT: return (data as TxtRecordData).text.map(t => `"${t.replace(/(["\\])/g, '\\$1')}"`).join(' ');
+    case RRType.SRV: {
+      const srv = data as SrvRecordData;
+      return `${srv.priority} ${srv.weight} ${srv.port} ${absoluteName(srv.target)}`;
+    }
+    case RRType.DHCID: return dhcidToPresentation(data as DhcidRecordData);
+    default: return null;
+  }
+}
+
+const RENDERED_TYPE_NAME = new Map<number, string>(
+  Object.entries(RRType).map(([name, code]) => [code as number, name]),
+);
+
+export function renderZoneFile(zone: Zone): string {
+  const soa = zone.soa;
+  const timers = soa.data;
+  const lines = [
+    `$ORIGIN ${absoluteName(zone.origin)}`,
+    `$TTL ${timers.minimum}`,
+    `${absoluteName(soa.name)} ${soa.ttl} IN SOA ${absoluteName(timers.mname)} ${absoluteName(timers.rname)} `
+      + `${timers.serial} ${timers.refresh} ${timers.retry} ${timers.expire} ${timers.minimum}`,
+  ];
+  for (const rr of zone.allRecords()) {
+    if (rr.data.type === RRType.SOA) continue;
+    const rdata = renderRdata(rr.data);
+    const typeName = RENDERED_TYPE_NAME.get(rr.data.type);
+    if (rdata === null || typeName === undefined) continue;
+    lines.push(`${absoluteName(rr.name)} ${rr.ttl} IN ${typeName} ${rdata}`);
+  }
+  return `${lines.join('\n')}\n`;
 }

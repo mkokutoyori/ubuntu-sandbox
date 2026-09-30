@@ -18,6 +18,8 @@ export class JobTable {
     this.recordedMs = 0;
   }
 
+  isRecording(): boolean { return this.recording; }
+
   recordSleep(ms: number): void {
     if (this.recording && ms > 0) this.recordedMs += ms;
   }

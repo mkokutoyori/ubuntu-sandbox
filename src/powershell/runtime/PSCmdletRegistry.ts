@@ -17,12 +17,19 @@ export class CmdletRegistry {
   /** name/alias (lowercase) → ICmdlet */
   private readonly map = new Map<string, ICmdlet>();
 
+  constructor(private readonly parent: CmdletRegistry | null = null) {}
+
   /** Register a single cmdlet (and all its aliases). */
   register(cmdlet: ICmdlet): void {
     this.map.set(cmdlet.name.toLowerCase(), cmdlet);
     for (const alias of cmdlet.aliases) {
       this.map.set(alias.toLowerCase(), cmdlet);
     }
+  }
+
+  unregister(cmdlet: ICmdlet): void {
+    this.map.delete(cmdlet.name.toLowerCase());
+    for (const alias of cmdlet.aliases) this.map.delete(alias.toLowerCase());
   }
 
   /** Register multiple cmdlets at once. */
@@ -35,27 +42,19 @@ export class CmdletRegistry {
    * Returns null if not found, so callers can fall through to native dispatch.
    */
   resolve(name: string): ICmdlet | null {
-    return this.map.get(name.toLowerCase()) ?? null;
+    return this.map.get(name.toLowerCase()) ?? this.parent?.resolve(name) ?? null;
   }
 
   /** All registered canonical names (sorted, for Get-Command output). */
   list(): string[] {
-    const seen = new Set<string>();
-    const names: string[] = [];
-    for (const cmdlet of this.map.values()) {
-      if (!seen.has(cmdlet.name)) {
-        seen.add(cmdlet.name);
-        names.push(cmdlet.name);
-      }
-    }
-    return names.sort();
+    return this.cmdlets().map(cmdlet => cmdlet.name).sort();
   }
 
   /** All registered cmdlet instances (deduped, for Get-Alias / Get-Command). */
   cmdlets(): ICmdlet[] {
     const seen = new Set<string>();
     const out: ICmdlet[] = [];
-    for (const cmdlet of this.map.values()) {
+    for (const cmdlet of [...this.map.values(), ...(this.parent?.cmdlets() ?? [])]) {
       if (!seen.has(cmdlet.name)) {
         seen.add(cmdlet.name);
         out.push(cmdlet);
@@ -66,6 +65,6 @@ export class CmdletRegistry {
 
   /** Total number of registered cmdlet entries (names + aliases). */
   get size(): number {
-    return this.map.size;
+    return this.map.size + (this.parent?.size ?? 0);
   }
 }

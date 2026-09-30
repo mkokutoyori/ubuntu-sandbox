@@ -47,6 +47,29 @@ export interface DnsTcpClient {
   tcpConnect(destination: string, port: number): Promise<TcpSocket | null>;
 }
 
+function connectWithin(
+  host: DnsTcpClient, destination: string, port: number, timeoutMs: number,
+): Promise<TcpSocket | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => { settled = true; resolve(null); }, timeoutMs);
+    host.tcpConnect(destination, port).then(
+      (socket) => {
+        if (settled) { socket?.close(); return; }
+        settled = true;
+        clearTimeout(timer);
+        resolve(socket);
+      },
+      () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(null);
+      },
+    );
+  });
+}
+
 export async function queryDnsOverTcp(
   host: DnsTcpClient,
   serverIP: IPAddress | IPv6Address,
@@ -54,7 +77,7 @@ export async function queryDnsOverTcp(
   port: number = DNS_PORT,
   timeoutMs: number = 2000,
 ): Promise<DnsMessage | null> {
-  const socket = await host.tcpConnect(serverIP.toString(), port);
+  const socket = await connectWithin(host, serverIP.toString(), port, timeoutMs);
   if (!socket) return null;
 
   return new Promise<DnsMessage | null>((resolve) => {

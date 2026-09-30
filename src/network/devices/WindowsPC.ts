@@ -76,7 +76,7 @@ import { splitCmdArgs } from './windows/cmdline';
 import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy';
 import { DoskeyTable } from './windows/cli/DoskeyTable';
 import { runPowerShellShim, createShimState, type PsShimState } from './windows/PowerShellCmdShim';
-import { PSInterpreter, PSRuntimeError } from '@/powershell/interpreter/PSInterpreter';
+import { PSInterpreter, PSRuntimeError, createClientCmdletOverlay } from '@/powershell/interpreter/PSInterpreter';
 import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
 import type { VpnConnectionInfo } from '@/powershell/providers/PSProviders';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
@@ -143,8 +143,10 @@ import { LdapServerHandler } from './windows/server/ad/ldap/LdapServer';
 import { selfSignedLdapCert } from './windows/server/ad/ldap/ldapStartTls';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { getForestForDomain } from './windows/server/ad/forest/Forest';
+import { verifyApReq } from '@/network/kerberos/ApReqVerifier';
 import { KdcSessionHandler } from '@/network/kerberos/KdcSession';
-import { dialKdc } from '@/network/kerberos/KerberosClient';
+import { dialKdc, buildApReq } from '@/network/kerberos/KerberosClient';
+import { KU_AP_REQ_AUTHENTICATOR } from '@/network/kerberos/crypto';
 import { principalName, PrincipalNameType } from '@/network/kerberos/types';
 import { KerberosTicketCache } from '@/network/kerberos/KerberosTicketCache';
 import { KerberosSignalStore } from '@/network/kerberos/observables';
@@ -166,7 +168,8 @@ import { ClusterSignalStore } from './windows/server/cluster/observables';
 import { ClusterSignalRefreshActor } from './windows/server/cluster/actors/ClusterSignalRefreshActor';
 import { DfsSignalStore } from './windows/server/dfs/observables';
 import { DfsSignalRefreshActor } from './windows/server/dfs/actors/DfsSignalRefreshActor';
-import { dialWinRm, type WinRmDialResult, pushForwardedEvent } from './windows/server/winrm/WinRmClient';
+import { dialWinRm, type WinRmDialResult, pushForwardedEvent, runWinRmRequest, type WinRmRunResult } from './windows/server/winrm/WinRmClient';
+import type { WinRmIdentity, WinRmCommandResult } from './windows/server/winrm/WinRmServer';
 // WEC collector discovery is an explicit non-objective of
 // docs/PRD-Frame-Only-Refactor.md §2.2, inherited from docs/PRD-Wecutil.md
 // §2.2. Not pending work.
@@ -175,8 +178,9 @@ import { EquipmentRegistry } from '../equipment/EquipmentRegistry';
 import type { EventLogEntry } from './windows/PSEventLogProvider';
 import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } from './windows/domain/DomainTypes';
 import { joinDomain, type DomainJoinResult } from './windows/domain/DomainJoinClient';
-import { logonDomainUser } from './windows/domain/DomainLogonClient';
+import { logonDomainUser, lookupDomainGroups } from './windows/domain/DomainLogonClient';
 import { pullGroupPolicy } from './windows/domain/GpoPullClient';
+import { GROUP_POLICY_SYSTEM_KEY, backgroundRefreshDisabled, refreshDelayMs } from './windows/domain/GroupPolicyRefresh';
 import { resetComputerSecretOverWire, removeComputerAccountOverWire, renameComputerAccountOverWire } from './windows/domain/ComputerSecureChannelClient';
 import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialHttp as dialHttpClient, parseHttpUrl } from '@/network/http/HttpClient';
@@ -372,6 +376,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Lazy full PowerShell interpreter reused across `powershell -Command`. */
   private psInterpreter: PSInterpreter | null = null;
 
+  readonly rsatCapabilities = new Set<string>();
+  readonly cmdletOverlay = createClientCmdletOverlay();
+
   getWindowsEdition(): 'client' | 'server' { return 'client'; }
 
   getPowerShellInterpreter(): PSInterpreter {
@@ -380,7 +387,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       // device's own registry / event log / network tables, so `reg` and
       // the cmdlets cannot end up on two different copies of the machine.
       this.psInterpreter = new PSInterpreter(
-        createWindowsPSProviders(this), { edition: this.getWindowsEdition() },
+        createWindowsPSProviders(this), { edition: this.getWindowsEdition(), registry: this.cmdletOverlay },
       );
     }
     return this.psInterpreter;
@@ -1257,7 +1264,96 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       userMgr: this.userMgr,
       domainAuth: (u, p) => this.tryDomainAuth(u, p),
       wec: { receiveForwardedEvent: (subscriptionId, sourceMachine, event) => this.receiveForwardedEvent(subscriptionId, sourceMachine, event) },
+      kerberos: this.kerberosServiceIdentity(),
+      runCommand: (line, identity) => this.runRemoteLine(line, identity),
+      refreshPolicy: (scope, delayMinutes, identity) => this.refreshPolicyForAdministrator(scope, delayMinutes, identity),
     });
+  }
+
+  private kerberosServiceIdentity(): { realm: string; serviceSecret: string } | undefined {
+    const store = this.getDirectoryStore();
+    if (store) {
+      const secret = store.getComputerSecret(this.getHostname());
+      return secret !== null ? { realm: store.getRealm(), serviceSecret: secret } : undefined;
+    }
+    return this.domainMembership
+      ? { realm: this.domainMembership.dnsName.toUpperCase(), serviceSecret: this.domainMembership.machineSecret }
+      : undefined;
+  }
+
+  private isRemoteAdministrator(identity: WinRmIdentity): boolean {
+    const local = this.userMgr.isAdmin(identity.sam);
+    if (!identity.viaDomain) return local;
+    const store = this.getDirectoryStore();
+    const groups = store
+      ? store.groupsForUser(identity.sam).map(g => g.name)
+      : this.domainMembership
+        ? lookupDomainGroups(this.getTcpStack(), this.domainMembership,
+          { user: `${this.getHostname()}$`, password: this.domainMembership.machineSecret }, identity.sam) ?? []
+        : [];
+    return local || groups.some(g => ['Domain Admins', 'Enterprise Admins', 'Administrators'].includes(g));
+  }
+
+  private refreshPolicyForAdministrator(scope: 'both' | 'computer' | 'user', delayMinutes: number, identity: WinRmIdentity): WinRmCommandResult {
+    if (!this.winrm.enabled || !this.isRemoteAdministrator(identity)) return { ok: false, message: 'Access is denied.' };
+    setTimeout(() => {
+      if (delayMinutes > 0) this.advanceTime(delayMinutes * 60_000);
+      this.gpupdateForce(scope);
+    }, 0);
+    return { ok: true, output: '' };
+  }
+
+  private runRemoteLine(line: string, identity: WinRmIdentity): WinRmCommandResult {
+    if (!this.winrm.enabled) return { ok: false, message: 'Access is denied.' };
+    if (!this.isRemoteAdministrator(identity)) return { ok: false, message: 'Access is denied.' };
+    const previous = this.userMgr.currentUser;
+    this.setCurrentUser(identity.sam);
+    try {
+      return { ok: true, output: this.getPowerShellInterpreter().execute(line) };
+    } catch (error) {
+      return { ok: true, output: error instanceof Error ? error.message : String(error) };
+    } finally {
+      this.setCurrentUser(previous);
+    }
+  }
+
+  runRemoteRequest(computerName: string, request: Record<string, unknown>, credential?: { username: string; password: string }): WinRmRunResult {
+    const target = this.resolveHostnameSync(computerName);
+    if (!target) {
+      return { ok: false, error: `The computer "${computerName}" could not be resolved.` };
+    }
+    const base = { tcpStack: this.getTcpStack(), targetIp: target.toString(), request };
+    if (credential) return runWinRmRequest({ ...base, credential });
+    const apReq = this.kerberosApReqFor(computerName.split('.')[0]);
+    if (!apReq) return { ok: false, error: 'Access is denied.' };
+    return runWinRmRequest({ ...base, apReq });
+  }
+
+  runRemoteCommand(computerName: string, line: string, credential?: { username: string; password: string }): WinRmRunResult {
+    return this.runRemoteRequest(computerName, { op: 'run', line }, credential);
+  }
+
+  adminApReqFor(serviceName: string): Uint8Array | null {
+    return this.kerberosApReqFor(serviceName);
+  }
+
+  authenticateAdministrator(apReq: Uint8Array): boolean {
+    const identity = this.kerberosServiceIdentity();
+    const sam = identity ? verifyApReq(apReq, identity) : null;
+    return sam !== null && this.isRemoteAdministrator({ sam, viaDomain: true });
+  }
+
+  private kerberosApReqFor(serviceName: string): Uint8Array | null {
+    const membership = this.domainMembership;
+    const tgt = this.kerberosTicketCache.getTgt();
+    if (!membership || !tgt || !this.domainSession) return null;
+    const conn = dialKdc(this.getTcpStack(), membership.dcAddress);
+    if (!conn.ok || !conn.client) return null;
+    const realm = membership.dnsName.toUpperCase();
+    const cname = principalName(PrincipalNameType.NT_PRINCIPAL, this.domainSession.sam);
+    const tgs = conn.client.tgsExchange(tgt.ticket, tgt.sessionKey, cname, realm, serviceName);
+    if (!tgs.ok || !tgs.ticket || !tgs.sessionKey) return null;
+    return buildApReq(tgs.ticket, tgs.sessionKey, cname, realm, KU_AP_REQ_AUTHENTICATOR);
   }
 
   // ─── Domain join / logon (PRD-Windows-Server.md §5 P6) ──────────────
@@ -1667,6 +1763,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private gpoAppliedNames: string[] = [];
   private gpoAppliedUserNames: string[] = [];
   private readonly gpoPolicyValues = new Map<string, { key: string; valueName: string }>();
+  private gpoRefreshDueAt: number | null = null;
+  private gpoRefreshCycle = 0;
+  private gpoLastSignature: string | null = null;
   private gpoLastAppliedAt: Date | null = null;
   private gpoLogonBanner: { title: string; text: string } | null = null;
 
@@ -1708,7 +1807,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * `gpresult /r` to report. A domain controller applies its own
    * directory's RSoP directly (no need to dial itself over the wire).
    */
-  gpupdateForce(): { ok: boolean; message: string } {
+  gpupdateForce(scope: 'both' | 'computer' | 'user' = 'both'): { ok: boolean; message: string } {
+    const wantsComputer = scope !== 'user';
+    const wantsUser = scope !== 'computer';
+    const userHive = /^(HKCU|HKEY_CURRENT_USER)([\\:]|$)/i;
+    const inScope = (key: string): boolean => (userHive.test(key) ? wantsUser : wantsComputer);
     const localStore = this.getDirectoryStore();
     if (!this.domainMembership && !localStore) {
       return { ok: false, message: 'gpupdate : This computer is not joined to a domain.' };
@@ -1729,26 +1832,31 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       settings = rsop.settings;
     } else {
       const result = pullGroupPolicy(this.getTcpStack(), this.domainMembership, this.getHostname(), userSam);
-      if (!result.ok) return { ok: false, message: `gpupdate : ${result.message}` };
+      if (!result.ok) {
+        if (result.failure === 'no-domain-controller') this.logGroupPolicyConnectivityFailure();
+        this.gpoRefreshDueAt = null;
+        return { ok: false, message: `gpupdate : ${result.message}` };
+      }
       appliedGpoNames = result.appliedGpoNames;
       appliedUserGpoNames = result.appliedUserGpoNames;
       settings = result.settings;
     }
-    if (settings.accountPolicy) this.accountsPolicy.applyGpoOverrides(settings.accountPolicy);
-    if (settings.logonBanner !== undefined) this.gpoLogonBanner = settings.logonBanner;
-    if (settings.startupScript !== undefined) this.gpoStartupScript = settings.startupScript;
-    if (settings.auditPolicy !== undefined) {
+    if (wantsComputer && settings.accountPolicy) this.accountsPolicy.applyGpoOverrides(settings.accountPolicy);
+    if (wantsComputer && settings.logonBanner !== undefined) this.gpoLogonBanner = settings.logonBanner;
+    if (wantsComputer && settings.startupScript !== undefined) this.gpoStartupScript = settings.startupScript;
+    if (wantsComputer && settings.auditPolicy !== undefined) {
       for (const [subcategory, setting] of Object.entries(settings.auditPolicy)) {
         this.auditPolicy.set(subcategory, setting);
       }
     }
-    const registryPolicy = settings.registryPolicy ?? [];
+    const registryPolicy = (settings.registryPolicy ?? []).filter(entry => inScope(entry.key));
     const policyIdentity = (e: { key: string; valueName: string }): string => `${normalisedPolicyKey(e.key)}|${e.valueName.toLowerCase()}`;
     const stillSet = new Set(registryPolicy.map(policyIdentity));
-    for (const [identity, entry] of this.gpoPolicyValues) {
+    for (const [identity, entry] of [...this.gpoPolicyValues]) {
+      if (!inScope(entry.key)) continue;
       if (!stillSet.has(identity)) this.registry.removeItemProperty(entry.key, entry.valueName);
+      this.gpoPolicyValues.delete(identity);
     }
-    this.gpoPolicyValues.clear();
     for (const entry of registryPolicy) {
       const type = (['String', 'DWord', 'QWord', 'ExpandString', 'MultiString', 'Binary'] as const).includes(entry.type as never)
         ? entry.type as RegistryValue['type'] : 'String';
@@ -1756,10 +1864,75 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       this.registry.applyGpoRegistryValue(entry.key, entry.valueName, value, type);
       if (/\\Policies(\\|$)/i.test(entry.key)) this.gpoPolicyValues.set(policyIdentity(entry), { key: entry.key, valueName: entry.valueName });
     }
-    this.gpoAppliedNames = appliedGpoNames;
-    this.gpoAppliedUserNames = appliedUserGpoNames;
+    if (wantsComputer) this.gpoAppliedNames = appliedGpoNames;
+    if (wantsUser) this.gpoAppliedUserNames = appliedUserGpoNames;
     this.gpoLastAppliedAt = new Date();
+    if (wantsComputer) {
+      this.logGroupPolicyProcessed(appliedGpoNames.length + appliedUserGpoNames.length, JSON.stringify({ appliedGpoNames, appliedUserGpoNames, settings }));
+    }
+    this.gpoRefreshDueAt = null;
     return { ok: true, message: '' };
+  }
+
+  private cmdGpupdate(args: readonly string[]): string {
+    let scope: 'both' | 'computer' | 'user' = 'both';
+    for (const raw of args) {
+      const arg = raw.toLowerCase();
+      const target = /^[/-]target:(computer|user)$/.exec(arg);
+      if (target) { scope = target[1] as 'computer' | 'user'; continue; }
+      if (['/force', '-force', '/logoff', '-logoff', '/boot', '-boot', '/sync', '-sync'].includes(arg) || /^[/-]wait:\d+$/.test(arg)) continue;
+      return 'ERROR: Invalid Argument specified.';
+    }
+    const res = this.gpupdateForce(scope);
+    if (!res.ok) return res.message;
+    const lines = ['Updating policy...', ''];
+    if (scope !== 'user') lines.push('Computer Policy update has completed successfully.');
+    if (scope !== 'computer') lines.push('User Policy update has completed successfully.');
+    return lines.join('\n');
+  }
+
+  private logGroupPolicyProcessed(objectCount: number, signature: string): void {
+    const changed = signature !== this.gpoLastSignature;
+    this.gpoLastSignature = signature;
+    this.eventLog.writeEventLog(
+      'System', 'Microsoft-Windows-GroupPolicy', changed ? 1502 : 1500, 'Information',
+      changed
+        ? `The Group Policy settings for the computer were processed successfully. New settings from ${objectCount} Group Policy objects were detected and applied.`
+        : 'The Group Policy settings for the computer were processed successfully. There were no changes detected since the last successful processing of Group Policy.');
+  }
+
+  private logGroupPolicyConnectivityFailure(): void {
+    this.eventLog.writeEventLog(
+      'System', 'Microsoft-Windows-GroupPolicy', 1129, 'Error',
+      'The processing of Group Policy failed because of lack of network connectivity to a domain controller. This may be a transient condition. A success message would be generated once the machine gets connected to the domain controller and Group Policy has successfully processed. If you do not see a success message for several hours, then contact your administrator.');
+  }
+
+  private groupPolicySystemValues(): Record<string, string | number> | null {
+    return this.registry.getItemPropertyValues(GROUP_POLICY_SYSTEM_KEY);
+  }
+
+  private groupPolicyRefreshDelay(): number {
+    return refreshDelayMs({
+      domainController: this.getDirectoryStore() !== null,
+      values: this.groupPolicySystemValues(),
+      hostname: this.getHostname(),
+      cycle: this.gpoRefreshCycle,
+    });
+  }
+
+  private runBackgroundGroupPolicyRefresh(elapsedMs: number): void {
+    if (!this.domainMembership && !this.getDirectoryStore()) {
+      this.gpoRefreshDueAt = null;
+      return;
+    }
+    const now = this.simulatedDate().getTime();
+    if (this.gpoRefreshDueAt === null) {
+      this.gpoRefreshDueAt = now - elapsedMs + this.groupPolicyRefreshDelay();
+    }
+    if (now < this.gpoRefreshDueAt) return;
+    if (!backgroundRefreshDisabled(this.groupPolicySystemValues())) this.gpupdateForce();
+    this.gpoRefreshCycle++;
+    this.gpoRefreshDueAt = now + this.groupPolicyRefreshDelay();
   }
 
   private domainControllerIdentity(): { netbiosName: string; dcAddress: string } | null {
@@ -3165,12 +3338,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         }
         return out;
       }
-      case 'gpupdate': {
-        const res = this.gpupdateForce();
-        return res.ok
-          ? 'Updating policy...\n\nComputer Policy update has completed successfully.'
-          : res.message;
-      }
+      case 'gpupdate': return this.cmdGpupdate(args);
       case 'gpresult': return this.cmdGpresult();
       case 'dsregcmd': {
         const whfb = this.registry.getItemPropertyValues('HKLM\\SOFTWARE\\Policies\\Microsoft\\PassportForWork');
@@ -3958,6 +4126,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.clock.advance(ms);
     this.procMgr.advanceTime(ms);
     this.fireDueScheduledTasks();
+    this.runBackgroundGroupPolicyRefresh(ms);
+    this.getDnsServerRole()?.tick();
+    this.getDhcpServerRole()?.tick();
     this.svcMgr.advanceRecoveryTimers(
       this.simulatedDate().getTime(),
       (svc) => this.procMgr.onServiceStarted(svc.name, svc.processName),

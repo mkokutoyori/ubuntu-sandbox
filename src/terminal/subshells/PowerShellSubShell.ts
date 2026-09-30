@@ -71,7 +71,7 @@ export class PowerShellSubShell implements ISubShell {
     // device. Non-Windows devices keep the default NULL_PROVIDERS.
     this.interp = device instanceof WindowsPC
       ? new PSInterpreter(
-          createWindowsPSProviders(device), { edition: device.getWindowsEdition() },
+          createWindowsPSProviders(device), { edition: device.getWindowsEdition(), registry: device.cmdletOverlay },
         )
       : new PSInterpreter();
   }
