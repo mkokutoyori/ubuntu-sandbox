@@ -38,6 +38,15 @@ export function canonicalKeyName(name: string): string {
 
 export class TsigKeyring {
   private readonly keys = new Map<string, TsigKey>();
+  private readonly latestTimeSigned = new Map<string, number>();
+
+  acceptTimeSigned(name: string, timeSigned: number): boolean {
+    const key = canonicalKeyName(name);
+    const latest = this.latestTimeSigned.get(key);
+    if (latest !== undefined && timeSigned < latest) return false;
+    this.latestTimeSigned.set(key, timeSigned);
+    return true;
+  }
 
   add(key: TsigKey): void { this.keys.set(canonicalKeyName(key.name), key); }
   remove(name: string): boolean { return this.keys.delete(canonicalKeyName(name)); }
@@ -149,7 +158,13 @@ export type TsigVerdict =
   | { readonly status: 'absent' }
   | { readonly status: 'malformed' }
   | { readonly status: 'ok'; readonly key: TsigKey; readonly mac: Uint8Array; readonly tsig: TsigRecordData }
-  | { readonly status: 'badkey' | 'badsig' | 'badtime'; readonly keyName: string; readonly tsig: TsigRecordData };
+  | { readonly status: 'badkey' | 'badsig'; readonly keyName: string; readonly tsig: TsigRecordData }
+  | {
+      readonly status: 'badtime'; readonly keyName: string; readonly tsig: TsigRecordData;
+      readonly key: TsigKey; readonly macValid: boolean;
+    };
+
+export type TsigFailure = Exclude<TsigVerdict, { status: 'ok' | 'absent' | 'malformed' }>;
 
 export interface TsigVerifyOptions {
   readonly lookup: TsigKeyLookup;
@@ -186,14 +201,14 @@ export function verifyDnsMessage(bytes: Uint8Array, options: TsigVerifyOptions):
     fudge: tsig.fudge, error: tsig.error, otherData: tsig.otherData,
   }, options.requestMac ?? null));
 
-  if (expected.length !== tsig.mac.length) return { status: 'badsig', keyName: last.name, tsig };
-  let equal = 0;
-  for (let i = 0; i < expected.length; i++) equal |= expected[i] ^ tsig.mac[i];
-  if (equal !== 0) return { status: 'badsig', keyName: last.name, tsig };
+  let equal = expected.length === tsig.mac.length ? 0 : 1;
+  for (let i = 0; i < expected.length && equal === 0; i++) equal |= expected[i] ^ tsig.mac[i];
+  const macValid = equal === 0;
 
   if (Math.abs(options.now - tsig.timeSigned) > tsig.fudge) {
-    return { status: 'badtime', keyName: last.name, tsig };
+    return { status: 'badtime', keyName: last.name, tsig, key, macValid };
   }
+  if (!macValid) return { status: 'badsig', keyName: last.name, tsig };
   return { status: 'ok', key, mac: tsig.mac, tsig };
 }
 
@@ -205,4 +220,37 @@ export function tsigErrorCodeFor(status: TsigVerdict['status']): number {
     case 'malformed': return TsigErrorCode.BADSIG;
     default: return TsigErrorCode.NOERROR;
   }
+}
+
+const SERVER_TIME_OCTETS = 6;
+
+function serverTimeOctets(now: number): Uint8Array {
+  const out: number[] = [];
+  writeUint48(out, now);
+  return Uint8Array.from(out).slice(0, SERVER_TIME_OCTETS);
+}
+
+export function tsigErrorResponse(
+  response: DnsMessage, failure: TsigFailure, now: number,
+): DnsMessage {
+  if (failure.status === 'badtime') {
+    return signedDnsMessage(response, {
+      key: failure.key,
+      timeSigned: failure.tsig.timeSigned,
+      fudge: failure.tsig.fudge,
+      error: TsigErrorCode.BADTIME,
+      otherData: serverTimeOctets(now),
+      requestMac: failure.macValid ? failure.tsig.mac : null,
+    });
+  }
+  const record = makeTsigRecord(failure.keyName, {
+    algorithm: failure.tsig.algorithm,
+    timeSigned: now,
+    fudge: failure.tsig.fudge,
+    mac: new Uint8Array(0),
+    originalId: failure.tsig.originalId,
+    error: failure.status === 'badkey' ? TsigErrorCode.BADKEY : TsigErrorCode.BADSIG,
+    otherData: new Uint8Array(0),
+  });
+  return { ...response, additionals: [...response.additionals, record] };
 }

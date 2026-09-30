@@ -7,8 +7,8 @@ import { Zone } from '@/network/dns/zone/Zone';
 import { normalizeDnsName } from '@/network/dns/wire/DnsName';
 import { serialGreaterThan } from '@/network/dns/zone/SerialNumber';
 import {
-  verifyDnsMessage, signedDnsMessage, tsigErrorCodeFor, TsigErrorCode,
-  type TsigKey, type TsigKeyring,
+  verifyDnsMessage, signedDnsMessage, tsigErrorResponse,
+  type TsigKey, type TsigKeyring, type TsigFailure,
 } from '@/network/dns/tsig/Tsig';
 import {
   readUpdateMessage, DnsUpdateFormatError,
@@ -215,7 +215,7 @@ export type UpdateSecurityPolicy = 'none' | 'secure';
 
 export interface UpdateAuthorization {
   readonly rcode: number;
-  readonly tsigError: number;
+  readonly failure: TsigFailure | null;
   readonly key: TsigKey | null;
   readonly requestMac: Uint8Array | null;
 }
@@ -227,27 +227,38 @@ export function authorizeUpdate(
   now: number,
 ): UpdateAuthorization {
   const none: UpdateAuthorization = {
-    rcode: DnsRcode.NOERROR, tsigError: 0, key: null, requestMac: null,
+    rcode: DnsRcode.NOERROR, failure: null, key: null, requestMac: null,
   };
-  if (!raw) return policy === 'secure' ? refusal(TsigErrorCode.BADKEY) : none;
+  const unsigned = (): UpdateAuthorization => (policy === 'secure' ? refusal(null) : none);
+  if (!raw) return unsigned();
 
   const verdict = verifyDnsMessage(raw, { lookup: keyring.lookup, now });
-  if (verdict.status === 'absent') {
-    return policy === 'secure' ? refusal(TsigErrorCode.BADKEY) : none;
+  switch (verdict.status) {
+    case 'absent':
+      return unsigned();
+    case 'malformed':
+      return refusal(null);
+    case 'ok':
+      if (!keyring.acceptTimeSigned(verdict.key.name, verdict.tsig.timeSigned)) {
+        return refusal({
+          status: 'badtime', keyName: verdict.key.name, tsig: verdict.tsig,
+          key: verdict.key, macValid: true,
+        });
+      }
+      return { rcode: DnsRcode.NOERROR, failure: null, key: verdict.key, requestMac: verdict.mac };
+    default:
+      return refusal(verdict);
   }
-  if (verdict.status === 'ok') {
-    return { rcode: DnsRcode.NOERROR, tsigError: 0, key: verdict.key, requestMac: verdict.mac };
-  }
-  return refusal(tsigErrorCodeFor(verdict.status));
 }
 
-function refusal(tsigError: number): UpdateAuthorization {
-  return { rcode: DnsUpdateRcode.NOTAUTH, tsigError, key: null, requestMac: null };
+function refusal(failure: TsigFailure | null): UpdateAuthorization {
+  return { rcode: DnsUpdateRcode.NOTAUTH, failure, key: null, requestMac: null };
 }
 
 export function signIfKeyed(
   response: DnsMessage, auth: UpdateAuthorization, now: number,
 ): DnsMessage {
+  if (auth.failure) return tsigErrorResponse(response, auth.failure, now);
   if (!auth.key) return response;
   return signedDnsMessage(response, {
     key: auth.key, timeSigned: now, requestMac: auth.requestMac,
