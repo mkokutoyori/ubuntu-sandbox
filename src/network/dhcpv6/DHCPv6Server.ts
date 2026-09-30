@@ -29,14 +29,53 @@ export class DHCPv6Server {
   private prefixBindings: Map<string, DHCPv6PrefixBinding> = new Map();
   private pendingPrefixes: Map<string, { clientDuid: string; iaid: number; poolName: string }> = new Map();
   private declined: Map<string, number> = new Map();
-  private rapidCommit = false;
-  private preference = 0;
+  private clientAddresses: Map<string, string> = new Map();
+  private localPools: Map<string, { prefix: string; prefixLength: number; assignedLength: number }> = new Map();
   private clock: () => number = () => Date.now();
 
-  setRapidCommit(enabled: boolean): void { this.rapidCommit = enabled; }
-  isRapidCommit(): boolean { return this.rapidCommit; }
-  setPreference(value: number): void { this.preference = Math.max(0, Math.min(255, Math.trunc(value))); }
-  getPreference(): number { return this.preference; }
+  noteClientAddress(clientDuid: string, address: string): void { this.clientAddresses.set(clientDuid, address); }
+  clientAddressOf(clientDuid: string): string | null { return this.clientAddresses.get(clientDuid) ?? null; }
+
+  configureLocalPool(name: string, prefix: string, prefixLength: number, assignedLength: number): boolean {
+    if (assignedLength < prefixLength || assignedLength > 128) return false;
+    const network = new IPv6Address(prefix).getNetworkPrefix(prefixLength).toString();
+    this.localPools.set(name, { prefix: network, prefixLength, assignedLength });
+    for (const pool of this.pools.values()) {
+      if (pool.delegationFromLocalPool === name) pool.delegations = [{ prefix: network, prefixLength, assignedLength }];
+    }
+    return true;
+  }
+
+  getLocalPools(): ReadonlyMap<string, { prefix: string; prefixLength: number; assignedLength: number }> { return this.localPools; }
+
+  deleteLocalPool(name: string): boolean { return this.localPools.delete(name); }
+
+  configurePoolDelegationFromLocalPool(name: string, localPoolName: string): boolean {
+    const pool = this.pools.get(name);
+    const local = this.localPools.get(localPoolName);
+    if (!pool) return false;
+    pool.delegationFromLocalPool = localPoolName;
+    pool.delegations = local ? [{ ...local }] : [];
+    return true;
+  }
+
+  configurePoolRapidCommit(name: string, enabled: boolean): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.rapidCommit = enabled;
+    return true;
+  }
+
+  configurePoolPreference(name: string, value: number): boolean {
+    const pool = this.pools.get(name);
+    if (!pool || !Number.isInteger(value) || value < 0 || value > 255) return false;
+    pool.preference = value;
+    return true;
+  }
+
+  selectPool(anchor?: string, explicitPoolName?: string): DHCPv6PoolConfig | undefined {
+    return this.resolvePools(anchor, explicitPoolName)[0];
+  }
 
   setClock(clock: () => number): void { this.clock = clock; }
 

@@ -454,29 +454,9 @@ export function ipv6DhcpPoolSpecs(ctx: CiscoShellContext): CommandSpec[] {
 }
 
 export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Router): void {
-  trie.register('show ipv6 dhcp binding', 'Display IPv6 DHCP bindings', () => {
-    const r = getRouter() as any;
-    const bindings = r._ciscoIpv6DhcpBindings as Map<string, any> | undefined;
-    if (!bindings || bindings.size === 0) return 'No IPv6 DHCP bindings.';
-    return [...bindings.values()].map(b => `${b.client} → ${b.address}`).join('\n');
-  });
   trie.register('show dhcp server', 'Display DHCP server status', () => {
     const r = getRouter() as any;
     return r._ciscoDhcpServerEnabled === false ? 'DHCP server disabled.' : 'DHCP server enabled.';
-  });
-
-  trie.register('show ipv6 dhcp pool', 'Display IPv6 DHCP pools', () => {
-    const r = getRouter() as any;
-    const pools = r._ciscoIpv6DhcpPools as Map<string, any> | undefined;
-    if (!pools || pools.size === 0) return 'No IPv6 DHCP pools configured.';
-    const out: string[] = [];
-    for (const [, p] of pools) {
-      out.push(`DHCPv6 pool: ${p.name}`);
-      if (p.prefix) out.push(`  Prefix: ${p.prefix}`);
-      if (p.dnsServers) out.push(`  DNS servers: ${p.dnsServers.join(', ')}`);
-      if (p.domainName) out.push(`  Domain: ${p.domainName}`);
-    }
-    return out.join('\n');
   });
 
   trie.register('show ipv6 dhcp interface', 'Display IPv6 DHCP interface state', () => {

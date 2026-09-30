@@ -25,6 +25,9 @@ export interface DHCPv6PoolConfig {
   validLifetime: number;
   delegations: DHCPv6DelegationPool[];
   staticDelegations: DHCPv6StaticDelegation[];
+  rapidCommit: boolean;
+  preference: number;
+  delegationFromLocalPool: string | null;
 }
 
 export interface DHCPv6DelegationPool {
@@ -62,6 +65,9 @@ export function createDefaultDHCPv6Pool(name: string): DHCPv6PoolConfig {
     validLifetime: 43200,
     delegations: [],
     staticDelegations: [],
+    rapidCommit: false,
+    preference: 0,
+    delegationFromLocalPool: null,
   };
 }
 

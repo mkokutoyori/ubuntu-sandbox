@@ -479,7 +479,7 @@ export class IPv6DataPlane {
     inPort: string, ipv6: IPv6Packet, pkt: DHCPv6Packet, poolName: string, dstMAC?: MACAddress,
   ): void {
     const reply = buildDhcpv6ServerReply(this.ctx.getDhcpv6Server(), pkt, {
-      poolName, relayed: false, unicast: !ipv6.destinationIP.isMulticast(),
+      poolName, relayed: false, unicast: !ipv6.destinationIP.isMulticast(), clientAddress: ipv6.sourceIP.toString(),
     });
     if (reply) this.sendDhcpv6Reply(inPort, ipv6.sourceIP, reply, dstMAC);
   }
@@ -533,7 +533,7 @@ export class IPv6DataPlane {
     if (!inner) return;
     if (inner.msgType === 'RELAY-FORW') { this.handleDhcpv6RelayForw(inPort, inner); return; }
     const innerReply = buildDhcpv6ServerReply(this.ctx.getDhcpv6Server(), inner, {
-      anchor: pkt.linkAddress, relayed: true, unicast: false,
+      anchor: pkt.linkAddress, clientAddress: pkt.peerAddress, relayed: true, unicast: false,
     });
     if (!innerReply) return;
 

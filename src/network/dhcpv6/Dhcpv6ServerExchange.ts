@@ -6,6 +6,7 @@ import type { DHCPv6PoolConfig } from './types';
 export interface Dhcpv6ExchangeContext {
   readonly poolName?: string;
   readonly anchor?: string;
+  readonly clientAddress?: string;
   readonly relayed: boolean;
   readonly unicast: boolean;
 }
@@ -134,7 +135,8 @@ function allocate(
   reply.prefixDelegations = request.prefixDelegations.map(pd => assignPrefixes(server, request, ctx, pd, commit));
   uniformTimers(reply);
   applyConfiguration(reply, request, preferredPoolOf(server, ctx, reply));
-  if (msgType === 'ADVERTISE' && server.getPreference() > 0) reply.preference = server.getPreference();
+  const preference = server.selectPool(ctx.anchor, ctx.poolName)?.preference ?? 0;
+  if (msgType === 'ADVERTISE' && preference > 0) reply.preference = preference;
   return reply;
 }
 
@@ -249,12 +251,13 @@ export function buildDhcpv6ServerReply(
   server: DHCPv6Server, request: DHCPv6Packet, ctx: Dhcpv6ExchangeContext,
 ): DHCPv6Packet | null {
   const direct = !ctx.relayed;
+  if (ctx.clientAddress && request.clientDuid) server.noteClientAddress(request.clientDuid, ctx.clientAddress);
   const ownId = server.getServerDuid();
   switch (request.msgType) {
     case 'SOLICIT': {
       if (!request.clientDuid || request.serverDuid !== null) return null;
       if (direct && ctx.unicast) return null;
-      if (request.rapidCommit && server.isRapidCommit()) {
+      if (request.rapidCommit && server.selectPool(ctx.anchor, ctx.poolName)?.rapidCommit) {
         const reply = allocate(server, request, ctx, 'REPLY', true);
         reply.rapidCommit = true;
         return reply;

@@ -41,6 +41,7 @@ import type { CommandSpec, TreeNode, LiveValuesPort } from '@/cli/CommandTable';
  */
 export type SocleLegend = readonly [readonly string[], string, (readonly string[])?];
 import { showIpDhcpSpecs, type DhcpViewServer } from '@/cli/commands/show/showIpDhcp';
+import { ipv6DhcpFamily, type Ipv6DhcpHost } from '@/cli/commands/dhcp/ipv6DhcpFamily';
 import { showConfigViewSpecs } from '@/cli/commands/show/showSlice';
 import { debugFamily, undebugFamily, type DebugPair } from '@/cli/commands/debug/debugFamily';
 import { ciscoExecSpecs, sendTargetOf, type CiscoExecHost } from './cisco/ciscoExecSpecs';
@@ -3680,6 +3681,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }).getDebugService?.();
   }
 
+  protected ipv6DhcpHost(): Ipv6DhcpHost | undefined {
+    const device = this.d() as unknown as {
+      _getDHCPv6ServerInternal?: () => import('@/network/dhcpv6/DHCPv6Server').DHCPv6Server;
+    };
+    if (typeof device._getDHCPv6ServerInternal !== 'function') return undefined;
+    return {
+      server: () => device._getDHCPv6ServerInternal!(),
+      currentPool: () => (this.d() as unknown as { _ciscoIpv6DhcpCurrent?: string })._ciscoIpv6DhcpCurrent ?? null,
+      now: () => Date.now(),
+    };
+  }
+
   protected dhcpViewServer(): DhcpViewServer | undefined {
     const device = this.d() as unknown as {
       _getDHCPServerInternal?: () => DhcpViewServer | undefined;
@@ -5910,6 +5923,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...ciscoExecSpecs(() => this.execHost()),
       ...showConfigViewSpecs(() => this),
       ...showIpDhcpSpecs(() => this.dhcpViewServer(), (epochMs) => ciscoClockReading(this.cs(), epochMs).local),
+      ...ipv6DhcpFamily(() => this.ipv6DhcpHost(), (epochMs) => ciscoClockReading(this.cs(), epochMs).local),
       ...this.discoverySpecs(),
       ...this.loggingSpecs(),
       ...this.ntpSpecs(),

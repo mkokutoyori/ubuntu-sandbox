@@ -340,7 +340,7 @@ describe('§18.3.7 Release / §18.3.8 Decline', () => {
 describe('§18.3.1 Rapid Commit', () => {
   it('serveur configure : Solicit avec Rapid Commit recoit un Reply engage', () => {
     const server = engine();
-    server.setRapidCommit(true);
+    server.configurePoolRapidCommit('P', true);
     const s = DHCPv6Packet.createSolicit('c1', 1, 1);
     s.rapidCommit = true;
     const reply = buildDhcpv6ServerReply(server, s, CTX)!;
@@ -360,14 +360,14 @@ describe('§18.3.1 Rapid Commit', () => {
 
   it('temoin : client sans Rapid Commit chez un serveur configure recoit un Advertise', () => {
     const server = engine();
-    server.setRapidCommit(true);
+    server.configurePoolRapidCommit('P', true);
     const adv = buildDhcpv6ServerReply(server, DHCPv6Packet.createSolicit('c1', 1, 1), CTX)!;
     expect(adv.msgType).toBe('ADVERTISE');
   });
 
   it('preference du serveur portee par l Advertise quand elle est non nulle', () => {
     const server = engine();
-    server.setPreference(200);
+    server.configurePoolPreference('P', 200);
     const adv = buildDhcpv6ServerReply(server, DHCPv6Packet.createSolicit('c1', 1, 1), CTX)!;
     expect(adv.preference).toBe(200);
     expect(buildDhcpv6ServerReply(engine(), DHCPv6Packet.createSolicit('c1', 1, 1), CTX)!.preference).toBeNull();
@@ -522,19 +522,14 @@ describe('sur le fil, routeur Cisco et clients Linux', () => {
     expect(h2.getDhcpv6Lease('eth0')?.address).not.toBe(declined);
   });
 
-  it('Rapid Commit sur le fil : deux messages au lieu de quatre', async () => {
+  it('Rapid Commit sur le fil : pas de Request, adresse obtenue en deux messages', async () => {
     const { h1, h2, server } = await lab();
-    const count = (host: LinuxPC, rapid: boolean) => {
-      let frames = 0;
-      const detach = host.getPort('eth0')!.attachTap(() => { frames++; });
-      host.requestDhcpv6Lease('eth0', false, { rapidCommit: rapid });
-      detach();
-      return frames;
-    };
-    const slow = count(h1, false);
-    server.setRapidCommit(true);
-    const fast = count(h2, true);
-    expect(slow).toBeGreaterThan(fast);
+    const slow = h1.requestDhcpv6Lease('eth0', true, { rapidCommit: true });
+    expect(slow).toContain('DHCPv6 REQUEST');
+    server.configurePoolRapidCommit('POOL1', true);
+    const fast = h2.requestDhcpv6Lease('eth0', true, { rapidCommit: true });
+    expect(fast).not.toContain('DHCPv6 REQUEST');
+    expect(fast).toContain('(rapid commit)');
     expect(h2.getDhcpv6Lease('eth0')?.address).toBeTruthy();
   });
 
