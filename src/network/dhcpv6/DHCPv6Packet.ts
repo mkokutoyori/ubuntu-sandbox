@@ -21,7 +21,41 @@ export interface DHCPv6IANA {
   t1: number;
   t2: number;
   addresses: DHCPv6IAAddress[];
+  statusCode?: number;
+  statusMessage?: string;
 }
+
+export interface DHCPv6IAPrefix {
+  prefix: string;
+  prefixLength: number;
+  preferredLifetime: number;
+  validLifetime: number;
+}
+
+export interface DHCPv6IAPD {
+  iaid: number;
+  t1: number;
+  t2: number;
+  prefixes: DHCPv6IAPrefix[];
+  statusCode?: number;
+  statusMessage?: string;
+}
+
+export const DHCPV6_STATUS = {
+  Success: 0,
+  UnspecFail: 1,
+  NoAddrsAvail: 2,
+  NoBinding: 3,
+  NotOnLink: 4,
+  UseMulticast: 5,
+  NoPrefixAvail: 6,
+} as const;
+
+export const DHCPV6_OPTION = {
+  DNS_SERVERS: 23,
+  DOMAIN_LIST: 24,
+  IA_PD: 25,
+} as const;
 
 export class DHCPv6Packet {
   msgType: DHCPv6MessageType = 'SOLICIT';
@@ -29,7 +63,11 @@ export class DHCPv6Packet {
 
   clientDuid: string | null = null;
   serverDuid: string | null = null;
-  ia: DHCPv6IANA | null = null;
+  ias: DHCPv6IANA[] = [];
+  prefixDelegations: DHCPv6IAPD[] = [];
+  rapidCommit = false;
+  optionRequest: number[] | null = null;
+  preference: number | null = null;
   dnsServers: string[] = [];
   domainList: string[] = [];
   elapsedTime = 0;
@@ -43,6 +81,12 @@ export class DHCPv6Packet {
   peerAddress: string = '::';
   interfaceId: string | null = null;
   relayedMessage: DHCPv6Packet | null = null;
+
+  get ia(): DHCPv6IANA | null { return this.ias[0] ?? null; }
+  set ia(value: DHCPv6IANA | null) {
+    if (value) this.ias[0] = value;
+    else this.ias = [];
+  }
 
   static createSolicit(clientDuid: string, iaid: number, transactionId: number): DHCPv6Packet {
     const pkt = new DHCPv6Packet();
@@ -137,6 +181,21 @@ export class DHCPv6Packet {
     pkt.serverDuid = serverDuid;
     pkt.dnsServers = dnsServers;
     if (domainName) pkt.domainList = [domainName];
+    return pkt;
+  }
+
+  static createClientMessage(
+    msgType: 'REQUEST' | 'CONFIRM' | 'RENEW' | 'REBIND' | 'RELEASE' | 'DECLINE',
+    clientDuid: string, serverDuid: string | null, transactionId: number,
+    ias: DHCPv6IANA[], prefixDelegations: DHCPv6IAPD[] = [],
+  ): DHCPv6Packet {
+    const pkt = new DHCPv6Packet();
+    pkt.msgType = msgType;
+    pkt.transactionId = transactionId;
+    pkt.clientDuid = clientDuid;
+    pkt.serverDuid = serverDuid;
+    pkt.ias = ias;
+    pkt.prefixDelegations = prefixDelegations;
     return pkt;
   }
 

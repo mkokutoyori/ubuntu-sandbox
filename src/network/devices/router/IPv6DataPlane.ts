@@ -26,6 +26,7 @@ import {
 import { Logger } from '../../core/Logger';
 import { NeighborCache, type NeighborCacheEntry } from '../host/NeighborCache';
 import { DHCPv6Server } from '../../dhcpv6/DHCPv6Server';
+import { buildDhcpv6ServerReply } from '../../dhcpv6/Dhcpv6ServerExchange';
 import { DHCPv6Packet } from '../../dhcpv6/DHCPv6Packet';
 
 // ─── IPv6 Types ─────────────────────────────────────────────────
@@ -471,50 +472,16 @@ export class IPv6DataPlane {
 
     const poolName = this.ctx.getDhcpv6ServerPool(inPort);
     if (!poolName) return;
-    this.serveDhcpv6(inPort, ipv6.sourceIP, pkt, poolName, srcMAC);
+    this.serveDhcpv6(inPort, ipv6, pkt, poolName, srcMAC);
   }
 
-  /** Directly-attached client (or a relayed exchange re-entering after RELAY-FORW unwrap): run the pool through the server engine and reply. */
   private serveDhcpv6(
-    inPort: string, clientAddr: IPv6Address, pkt: DHCPv6Packet, poolName: string, dstMAC?: MACAddress,
+    inPort: string, ipv6: IPv6Packet, pkt: DHCPv6Packet, poolName: string, dstMAC?: MACAddress,
   ): void {
-    const server = this.ctx.getDhcpv6Server();
-    const iaid = pkt.ia?.iaid ?? 0;
-    let replyType: 'ADVERTISE' | 'REPLY';
-    let result;
-    if (pkt.msgType === 'SOLICIT') {
-      result = server.processSolicit({ clientDuid: pkt.clientDuid!, iaid, transactionId: pkt.transactionId }, poolName);
-      replyType = 'ADVERTISE';
-    } else if (pkt.msgType === 'REQUEST' || pkt.msgType === 'RENEW' || pkt.msgType === 'REBIND') {
-      result = server.processRequest({
-        clientDuid: pkt.clientDuid!, iaid, transactionId: pkt.transactionId,
-        requestedAddress: pkt.ia?.addresses[0]?.address ?? '', serverDuid: pkt.serverDuid ?? server.getServerDuid(),
-      }, poolName);
-      replyType = 'REPLY';
-    } else if (pkt.msgType === 'RELEASE') {
-      server.processRelease({ clientDuid: pkt.clientDuid!, iaid, address: pkt.ia?.addresses[0]?.address ?? '' });
-      return;
-    } else if (pkt.msgType === 'INFORMATION-REQUEST') {
-      // Stateless service (RFC 8415 §18.3.5): the reply carries only
-      // the other configuration; nothing is assigned or retained.
-      const info = server.processInformationRequest(
-        { transactionId: pkt.transactionId }, poolName, clientAddr.toString());
-      if (!info) return;
-      this.sendDhcpv6Reply(inPort, clientAddr, DHCPv6Packet.createInformationReply(
-        pkt.clientDuid!, server.getServerDuid(), pkt.transactionId,
-        info.pool.dnsServers, info.pool.domainName,
-      ), dstMAC);
-      return;
-    } else {
-      return;
-    }
-    if (!result) return;
-
-    const reply = replyType === 'ADVERTISE'
-      ? DHCPv6Packet.createAdvertise(pkt.clientDuid!, server.getServerDuid(), pkt.transactionId, iaid, result.address, result.pool.preferredLifetime, result.pool.validLifetime, result.pool.dnsServers, result.pool.domainName)
-      : DHCPv6Packet.createReply(pkt.clientDuid!, server.getServerDuid(), pkt.transactionId, iaid, result.address, result.pool.preferredLifetime, result.pool.validLifetime, result.pool.dnsServers, result.pool.domainName);
-
-    this.sendDhcpv6Reply(inPort, clientAddr, reply, dstMAC);
+    const reply = buildDhcpv6ServerReply(this.ctx.getDhcpv6Server(), pkt, {
+      poolName, relayed: false, unicast: !ipv6.destinationIP.isMulticast(),
+    });
+    if (reply) this.sendDhcpv6Reply(inPort, ipv6.sourceIP, reply, dstMAC);
   }
 
   private sendDhcpv6Reply(inPort: string, dstIp: IPv6Address, reply: DHCPv6Packet, dstMAC?: MACAddress): void {
@@ -565,30 +532,10 @@ export class IPv6DataPlane {
     const inner = pkt.relayedMessage;
     if (!inner) return;
     if (inner.msgType === 'RELAY-FORW') { this.handleDhcpv6RelayForw(inPort, inner); return; }
-    const server = this.ctx.getDhcpv6Server();
-    const iaid = inner.ia?.iaid ?? 0;
-    let replyType: 'ADVERTISE' | 'REPLY';
-    let result;
-    if (inner.msgType === 'SOLICIT') {
-      result = server.processSolicit({ clientDuid: inner.clientDuid!, iaid, transactionId: inner.transactionId, linkAddress: pkt.linkAddress });
-      replyType = 'ADVERTISE';
-    } else if (inner.msgType === 'REQUEST' || inner.msgType === 'RENEW' || inner.msgType === 'REBIND') {
-      result = server.processRequest({
-        clientDuid: inner.clientDuid!, iaid, transactionId: inner.transactionId, linkAddress: pkt.linkAddress,
-        requestedAddress: inner.ia?.addresses[0]?.address ?? '', serverDuid: inner.serverDuid ?? server.getServerDuid(),
-      });
-      replyType = 'REPLY';
-    } else if (inner.msgType === 'RELEASE') {
-      server.processRelease({ clientDuid: inner.clientDuid!, iaid, address: inner.ia?.addresses[0]?.address ?? '' });
-      return;
-    } else {
-      return;
-    }
-    if (!result) return;
-
-    const innerReply = replyType === 'ADVERTISE'
-      ? DHCPv6Packet.createAdvertise(inner.clientDuid!, server.getServerDuid(), inner.transactionId, iaid, result.address, result.pool.preferredLifetime, result.pool.validLifetime, result.pool.dnsServers, result.pool.domainName)
-      : DHCPv6Packet.createReply(inner.clientDuid!, server.getServerDuid(), inner.transactionId, iaid, result.address, result.pool.preferredLifetime, result.pool.validLifetime, result.pool.dnsServers, result.pool.domainName);
+    const innerReply = buildDhcpv6ServerReply(this.ctx.getDhcpv6Server(), inner, {
+      anchor: pkt.linkAddress, relayed: true, unicast: false,
+    });
+    if (!innerReply) return;
 
     const relayRepl = DHCPv6Packet.createRelayRepl(pkt.linkAddress, pkt.peerAddress, pkt.interfaceId, innerReply);
     const dstIp = new IPv6Address(pkt.linkAddress);
