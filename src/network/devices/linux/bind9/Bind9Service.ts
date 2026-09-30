@@ -56,7 +56,7 @@ export class Bind9Service {
   private config: NamedConfig | null = null;
   private store: ZoneStore | null = null;
   private authoritative: AuthoritativeServer | null = null;
-  private resolver: RecursiveResolver | null = null;
+  private resolvers: RecursiveResolver[] = [];
   private readonly cache = new DnsCache();
   private readonly loadedZones = new Map<string, number>();
   private readonly failedZones = new Set<string>();
@@ -317,25 +317,30 @@ export class Bind9Service {
     this.config = config;
     this.store = store;
     this.authoritative = new AuthoritativeServer(store);
-    this.resolver = this.buildResolver(config);
+    this.resolvers = this.buildResolvers(config);
     this.queryLogEnabled = config.options.queryLog;
     this.dnssecValidationEnabled = config.options.dnssecValidation !== 'no';
   }
 
-  private buildResolver(config: NamedConfig): RecursiveResolver | null {
-    if (!config.options.recursion) return null;
-    const upstreams: IPAddress[] = [];
+  private buildResolvers(config: NamedConfig): RecursiveResolver[] {
+    if (!config.options.recursion) return [];
+    const resolvers: RecursiveResolver[] = [];
+    const forwarders: IPAddress[] = [];
     for (const forwarder of config.options.forwarders) {
       const parsed = IPAddress.tryParse(forwarder);
-      if (parsed) upstreams.push(parsed);
+      if (parsed) forwarders.push(parsed);
     }
+    if (forwarders.length > 0) {
+      resolvers.push(new RecursiveResolver(this.host, forwarders, this.cache, { forwardRecursively: true }));
+    }
+    const hints: IPAddress[] = [];
     for (const zone of config.zones) {
       if (zone.type !== 'hint' || zone.file === null) continue;
       const content = this.readFile(zone.file);
-      if (content !== null) upstreams.push(...collectHintAddresses(content));
+      if (content !== null) hints.push(...collectHintAddresses(content));
     }
-    if (upstreams.length === 0) return null;
-    return new RecursiveResolver(this.host, upstreams, this.cache);
+    if (hints.length > 0) resolvers.push(new RecursiveResolver(this.host, hints, this.cache));
+    return resolvers;
   }
 
   private aclEnvironment(): AclHostEnvironment {
@@ -468,7 +473,7 @@ export class Bind9Service {
     }
 
     const outsideAuthority = !response.flags.aa && response.flags.rcode === DnsRcode.REFUSED;
-    if (outsideAuthority && question && query.flags.rd && recursionAllowed && this.resolver) {
+    if (outsideAuthority && question && query.flags.rd && recursionAllowed && this.resolvers.length > 0) {
       return this.recurse(query);
     }
     return { ...response, flags: { ...response.flags, ra: recursionAllowed } };
@@ -526,7 +531,11 @@ export class Bind9Service {
 
   private async recurse(query: DnsMessage): Promise<DnsMessage> {
     const question = query.questions[0];
-    const result = await this.resolver!.resolve(question.qname, question.qtype);
+    let result = await this.resolvers[0].resolve(question.qname, question.qtype);
+    for (const next of this.resolvers.slice(1)) {
+      if (result.status !== 'SERVFAIL') break;
+      result = await next.resolve(question.qname, question.qtype);
+    }
     const rcode =
       result.status === 'NOERROR' ? DnsRcode.NOERROR :
       result.status === 'NXDOMAIN' ? DnsRcode.NXDOMAIN :

@@ -20,7 +20,7 @@ import { PSLexer }  from '@/powershell/lexer/PSLexer';
 import { PSParser } from '@/powershell/parser/PSParser';
 import { PS_OPERATOR_PARAMS } from '@/powershell/lexer/PSToken';
 import { PSEnvironment, PSValue, seedBuiltins } from '@/powershell/runtime/PSEnvironment';
-import { expandString, psValueToString } from '@/powershell/runtime/PSExpansion';
+import { expandString, psValueToString, timeSpanValue } from '@/powershell/runtime/PSExpansion';
 import {
   type ProcessPolicyPort, PROCESS_POLICY_VARIABLE,
   effectiveExecutionPolicy, scriptRefusal,
@@ -2817,7 +2817,7 @@ export class PSRuntime {
         return new Date(String(val)) as unknown as PSValue;
       case 'timespan': case 'system.timespan': {
         const ms = typeof val === 'number' ? val : Number(val);
-        return { __type: 'TimeSpan', TotalMilliseconds: ms, TotalSeconds: ms/1000, TotalMinutes: ms/60000, TotalHours: ms/3600000, TotalDays: ms/86400000, Days: Math.floor(ms/86400000), Hours: Math.floor((ms%86400000)/3600000), Minutes: Math.floor((ms%3600000)/60000), Seconds: Math.floor((ms%60000)/1000), Milliseconds: ms%1000 } as unknown as PSValue;
+        return timeSpanValue(ms);
       }
       case 'version': case 'system.version': {
         const parts = String(val).split('.').map(Number);

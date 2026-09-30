@@ -31,6 +31,7 @@ export interface RecursiveResolverOptions {
   readonly timeoutMs?: number;
   readonly maxReferrals?: number;
   readonly maxDepth?: number;
+  readonly forwardRecursively?: boolean;
   readonly dnssec?: RecursiveResolverDnssecOptions;
 }
 
@@ -60,6 +61,7 @@ export class RecursiveResolver {
   private readonly timeoutMs: number;
   private readonly maxReferrals: number;
   private readonly maxDepth: number;
+  private readonly forwardRecursively: boolean;
   private readonly validator: DnsValidator | null;
 
   constructor(
@@ -71,6 +73,7 @@ export class RecursiveResolver {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxReferrals = options.maxReferrals ?? DEFAULT_MAX_REFERRALS;
     this.maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
+    this.forwardRecursively = options.forwardRecursively ?? false;
     this.validator = options.dnssec
       ? new DnsValidator(
           async (qname, qtype) => {
@@ -139,6 +142,8 @@ export class RecursiveResolver {
   ): Promise<IterationOutcome> {
     let servers: readonly IPAddress[] = this.rootHints;
 
+    if (this.forwardRecursively) return this.forward(servers, qname, qtype);
+
     for (let referral = 0; referral <= this.maxReferrals; referral++) {
       const response = await this.queryFirstReachable(servers, qname, qtype);
       if (!response) return servfail();
@@ -161,6 +166,21 @@ export class RecursiveResolver {
       servers = nextServers;
     }
     return servfail();
+  }
+
+  private async forward(
+    servers: readonly IPAddress[], qname: string, qtype: number,
+  ): Promise<IterationOutcome> {
+    const response = await this.queryFirstReachable(servers, qname, qtype);
+    if (!response) return servfail();
+    if (response.flags.rcode === DnsRcode.NXDOMAIN) {
+      return { status: 'NXDOMAIN', answers: [], authorities: response.authorities, negative: 'nxdomain' };
+    }
+    if (response.flags.rcode !== DnsRcode.NOERROR) return servfail();
+    if (response.answers.length > 0) {
+      return { status: 'NOERROR', answers: response.answers, authorities: [], negative: null };
+    }
+    return { status: 'NOERROR', answers: [], authorities: response.authorities, negative: 'nodata' };
   }
 
   private async acceptAnswers(
@@ -242,7 +262,7 @@ export class RecursiveResolver {
       id,
       flags: {
         qr: false, opcode: DnsOpcode.QUERY, aa: false, tc: false,
-        rd: false, ra: false, ad: false, cd: false, rcode: DnsRcode.NOERROR,
+        rd: this.forwardRecursively, ra: false, ad: false, cd: false, rcode: DnsRcode.NOERROR,
       },
       questions: [{ qname, qtype, qclass: DnsClass.IN }],
       answers: [],

@@ -380,7 +380,7 @@ describe('generic record cmdlets, reverse zones and zone files', () => {
     const { wns1 } = await buildLab();
     await run(wns1, 'Add-DnsServerPrimaryZone -NetworkId 10.0.1.0/24');
     expect(await run(wns1, 'Get-DnsServerZone')).toContain('1.0.10.in-addr.arpa');
-    expect(await run(wns1, 'Add-DnsServerPrimaryZone -NetworkId 10.0.1.0/25')).toMatch(/RFC 2317/);
+    expect(await run(wns1, 'Add-DnsServerPrimaryZone -NetworkId 10.0.0.0/20')).toMatch(/RFC 2317/);
   });
 
   it('chaque modification réécrit le fichier de zone lisible par le parseur DNS', async () => {

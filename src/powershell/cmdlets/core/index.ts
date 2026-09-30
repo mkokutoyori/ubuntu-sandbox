@@ -176,6 +176,7 @@ import {
   SetDnsServerSecondaryZoneCmdlet, RemoveDnsServerZoneCmdlet, StartDnsServerZoneTransferCmdlet,
   SetDnsServerResourceRecordCmdlet, SetDnsServerRecursionCmdlet, GetDnsServerRecursionCmdlet,
   ClearDnsServerCacheCmdlet, ShowDnsServerCacheCmdlet,
+  SetDnsServerZoneAgingCmdlet, GetDnsServerZoneAgingCmdlet, SetDnsServerScavengingCmdlet, GetDnsServerScavengingCmdlet, StartDnsServerScavengingCmdlet,
   GetDnsServerRootHintCmdlet, AddDnsServerRootHintCmdlet, SetDnsServerRootHintCmdlet,
   RemoveDnsServerRootHintCmdlet, ImportDnsServerRootHintCmdlet,
 } from './DnsServerCmdlets';
@@ -809,6 +810,11 @@ export function registerDnsServerCmdlets(registry: CmdletRegistry): void {
   registry.register(remotable('Set-DnsServerRootHint', new SetDnsServerRootHintCmdlet()));
   registry.register(remotable('Remove-DnsServerRootHint', new RemoveDnsServerRootHintCmdlet()));
   registry.register(remotable('Import-DnsServerRootHint', new ImportDnsServerRootHintCmdlet()));
+  registry.register(remotable('Set-DnsServerZoneAging', new SetDnsServerZoneAgingCmdlet()));
+  registry.register(remotable('Get-DnsServerZoneAging', new GetDnsServerZoneAgingCmdlet()));
+  registry.register(remotable('Set-DnsServerScavenging', new SetDnsServerScavengingCmdlet()));
+  registry.register(remotable('Get-DnsServerScavenging', new GetDnsServerScavengingCmdlet()));
+  registry.register(remotable('Start-DnsServerScavenging', new StartDnsServerScavengingCmdlet()));
 }
 
 export function registerDhcpServerCmdlets(registry: CmdletRegistry): void {

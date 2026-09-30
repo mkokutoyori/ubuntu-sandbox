@@ -5,8 +5,9 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type {
   IDnsServerProvider, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsOpResult,
 } from '@/powershell/providers/PSProviders';
-import { psValueToString, registerPSDisplayFormatter } from '@/powershell/runtime/PSExpansion';
+import { psValueToString, registerPSDisplayFormatter, timeSpanValue } from '@/powershell/runtime/PSExpansion';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
+import { RRType } from '@/network/dns/wire/RRType';
 import {
   DNS_TRANSFER_POLICIES, DNS_NOTIFY_POLICIES, formatRecordFields,
   type DnsTransferPolicy, type DnsNotifyPolicy, type DnsDynamicUpdateMode,
@@ -22,40 +23,14 @@ function requireDns(ctx: CmdletContext, cmdletName: string): IDnsServerProvider 
 const DYNAMIC_UPDATE_MODES: readonly DnsDynamicUpdateMode[] = ['None', 'NonsecureAndSecure', 'Secure'];
 const REPLICATION_SCOPES = ['Domain', 'Forest', 'Legacy'] as const;
 
-function recordGuard(ctx: CmdletContext, cmdletName: string, _dns: IDnsServerProvider): boolean {
-  for (const [key, name, reason] of [
-    ['agerecord', 'AgeRecord', 'aging and scavenging are not modelled, so a record cannot be aged'],
-    ['allowupdateany', 'AllowUpdateAny', 'per-record update permissions are not modelled, so a record cannot be opened to any updater'],
-  ] as const) {
-    if (isSwitchOn(ctx.named[key])) {
-      ctx.emitError(`${cmdletName} : -${name} is refused: ${reason}.`);
-      return false;
-    }
-  }
-  return true;
+function recordOptions(ctx: CmdletContext): { age?: boolean; allowUpdateAny?: boolean } {
+  return { age: isSwitchOn(ctx.named['agerecord']), allowUpdateAny: isSwitchOn(ctx.named['allowupdateany']) };
 }
 
 function withPassThru(ctx: CmdletContext, dns: IDnsServerProvider, before: ReadonlySet<string>, name: string): PSValue {
   if (!isSwitchOn(ctx.named['passthru'])) return null;
   const zone = dns.getZone(name) ?? dns.listZones().find(z => !before.has(z.name));
   return zone ? zoneToPSObject(zone) : null;
-}
-
-function refuseUnbuilt(ctx: CmdletContext, cmdletName: string, checks: readonly (readonly [string, string, string])[]): boolean {
-  for (const [key, label, reason] of checks) {
-    if (ctx.named[key] !== undefined) {
-      ctx.emitError(`${cmdletName} : -${label} is refused: ${reason}.`);
-      return true;
-    }
-  }
-  return false;
-}
-
-function recursionKept(ctx: CmdletContext, cmdletName: string): boolean {
-  const raw = ctx.named['userecursion'];
-  if (raw === undefined || isSwitchOn(raw)) return true;
-  ctx.emitError(`${cmdletName} : -UseRecursion $false is refused: a conditional forwarder always asks its masters to recurse; the non-recursive mode is not built.`);
-  return false;
 }
 
 function failed(ctx: CmdletContext, cmdletName: string, res: DnsOpResult): null {
@@ -102,6 +77,9 @@ function zoneToPSObject(z: DnsZoneInfo): Record<string, PSValue> {
   };
 }
 
+const RECORD_TYPE_NUMBER: Record<string, number> = Object.fromEntries(
+  Object.entries(RRType).map(([name, code]) => [name, code as number]));
+
 const DNS_RECORD_DATA_TYPE = 'DnsServerRecordData';
 
 registerPSDisplayFormatter(DNS_RECORD_DATA_TYPE, record =>
@@ -120,8 +98,8 @@ function relativeName(fqdn: string, zone: string): string {
 
 function recordToPSObject(r: DnsRecordInfo, zone: string): Record<string, PSValue> {
   return {
-    HostName: relativeName(r.name, zone), RecordType: r.type, TimeToLive: r.ttl,
-    RecordData: recordData(r.type, r.data),
+    HostName: relativeName(r.name, zone), RecordType: r.type, Type: RECORD_TYPE_NUMBER[r.type] ?? 0, Timestamp: r.timestampMs === null ? null : new Date(r.timestampMs),
+    TimeToLive: r.ttl, RecordData: recordData(r.type, r.data),
   };
 }
 
@@ -135,9 +113,7 @@ function zoneNameOf(ctx: CmdletContext): string {
 
 const TIMESPAN = /^(?:(\d+)\.)?(\d+):(\d+):(\d+)$/;
 
-function ttlOf(ctx: CmdletContext): number | undefined {
-  const raw = ctx.named['timetolive'];
-  if (raw === undefined) return undefined;
+function timeSpanSeconds(raw: PSValue, parameter: string): number {
   if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
     const span = raw as Record<string, PSValue>;
     if (typeof span.TotalSeconds === 'number') return Math.round(span.TotalSeconds);
@@ -149,9 +125,19 @@ function ttlOf(ctx: CmdletContext): number | undefined {
     ? Number(span[1] ?? 0) * 86400 + Number(span[2]) * 3600 + Number(span[3]) * 60 + Number(span[4])
     : Number(text);
   if (!Number.isFinite(seconds) || seconds < 0) {
-    throw new PSRuntimeError(`Cannot bind parameter 'TimeToLive'. Cannot convert value "${text}" to type "System.TimeSpan".`);
+    throw new PSRuntimeError(`Cannot bind parameter '${parameter}'. Cannot convert value "${text}" to type "System.TimeSpan".`);
   }
   return seconds;
+}
+
+function ttlOf(ctx: CmdletContext): number | undefined {
+  const raw = ctx.named['timetolive'];
+  return raw === undefined ? undefined : timeSpanSeconds(raw, 'TimeToLive');
+}
+
+function optionalSpan(ctx: CmdletContext, key: string, parameter: string): number | undefined {
+  const raw = ctx.named[key];
+  return raw === undefined ? undefined : timeSpanSeconds(raw, parameter);
 }
 
 // ── Zones ────────────────────────────────────────────────────────────────
@@ -203,10 +189,6 @@ export class AddDnsServerSecondaryZoneCmdlet implements ICmdlet {
   }
 }
 
-const CONDITIONAL_FORWARDER_UNBUILT = [
-  ['zonefile', 'ZoneFile', 'a forwarder zone is not written to a zone file here'],
-] as const;
-
 export class AddDnsServerConditionalForwarderZoneCmdlet implements ICmdlet {
   readonly name = 'add-dnsserverconditionalforwarderzone';
   readonly aliases = [] as const;
@@ -217,11 +199,10 @@ export class AddDnsServerConditionalForwarderZoneCmdlet implements ICmdlet {
     const name = nameOf(ctx);
     const masters = stringList(ctx.named['masterservers']);
     if (!name || masters.length === 0) return missing(ctx, 'Add-DnsServerConditionalForwarderZone', 'Name MasterServers');
-    if (refuseUnbuilt(ctx, 'Add-DnsServerConditionalForwarderZone', CONDITIONAL_FORWARDER_UNBUILT)) return null;
-    if (!recursionKept(ctx, 'Add-DnsServerConditionalForwarderZone')) return null;
     const timeout = ctx.named['forwardertimeout'] !== undefined ? Number(psValueToString(ctx.named['forwardertimeout'])) : undefined;
     const before = new Set(dns.listZones().map(z => z.name));
-    const res = dns.addConditionalForwarderZone(name, masters, timeout);
+    const useRecursion = ctx.named['userecursion'] !== undefined ? isSwitchOn(ctx.named['userecursion']) : undefined;
+    const res = dns.addConditionalForwarderZone(name, masters, timeout, useRecursion, ctx.named['zonefile'] !== undefined ? psValueToString(ctx.named['zonefile']) : undefined);
     return res.ok ? withPassThru(ctx, dns, before, name) : failed(ctx, 'Add-DnsServerConditionalForwarderZone', res);
   }
 }
@@ -236,10 +217,10 @@ export class SetDnsServerConditionalForwarderZoneCmdlet implements ICmdlet {
     const name = nameOf(ctx);
     const masters = ctx.named['masterservers'] !== undefined ? stringList(ctx.named['masterservers']) : undefined;
     if (!name || (masters !== undefined && masters.length === 0)) return missing(ctx, 'Set-DnsServerConditionalForwarderZone', 'Name MasterServers');
-    if (!recursionKept(ctx, 'Set-DnsServerConditionalForwarderZone')) return null;
-    if (masters === undefined && ctx.named['forwardertimeout'] === undefined) return missing(ctx, 'Set-DnsServerConditionalForwarderZone', 'MasterServers');
+    if (masters === undefined && ctx.named['forwardertimeout'] === undefined && ctx.named['userecursion'] === undefined) return missing(ctx, 'Set-DnsServerConditionalForwarderZone', 'MasterServers');
     const timeout = ctx.named['forwardertimeout'] !== undefined ? Number(psValueToString(ctx.named['forwardertimeout'])) : undefined;
-    const res = dns.setConditionalForwarderMasters(name, masters, timeout);
+    const useRecursion = ctx.named['userecursion'] !== undefined ? isSwitchOn(ctx.named['userecursion']) : undefined;
+    const res = dns.setConditionalForwarderMasters(name, masters, timeout, useRecursion);
     return res.ok ? withPassThru(ctx, dns, new Set(), name) : failed(ctx, 'Set-DnsServerConditionalForwarderZone', res);
   }
 }
@@ -302,20 +283,18 @@ export class SetDnsServerSecondaryZoneCmdlet implements ICmdlet {
     const dns = requireDns(ctx, 'Set-DnsServerSecondaryZone');
     const name = nameOf(ctx);
     if (!name) return missing(ctx, 'Set-DnsServerSecondaryZone', 'Name');
-    if (refuseUnbuilt(ctx, 'Set-DnsServerSecondaryZone', [
-      ['notify', 'Notify', 'a secondary zone does not send NOTIFY onward (cascaded secondaries are not built)'],
-      ['notifyservers', 'NotifyServers', 'a secondary zone does not send NOTIFY onward (cascaded secondaries are not built)'],
-    ])) return null;
     const secureSecondaries = choice<DnsTransferPolicy>(ctx, 'Set-DnsServerSecondaryZone', 'SecureSecondaries', 'securesecondaries', DNS_TRANSFER_POLICIES);
-    if (secureSecondaries === null) return null;
+    const notify = choice<DnsNotifyPolicy>(ctx, 'Set-DnsServerSecondaryZone', 'Notify', 'notify', DNS_NOTIFY_POLICIES);
+    if (secureSecondaries === null || notify === null) return null;
     const masters = ctx.named['masterservers'] !== undefined ? stringList(ctx.named['masterservers']) : undefined;
-    if (masters === undefined && secureSecondaries === undefined && ctx.named['secondaryservers'] === undefined
-      && ctx.named['zonefile'] === undefined) {
+    if (masters === undefined && secureSecondaries === undefined && notify === undefined && ctx.named['secondaryservers'] === undefined
+      && ctx.named['notifyservers'] === undefined && ctx.named['zonefile'] === undefined) {
       return missing(ctx, 'Set-DnsServerSecondaryZone', 'MasterServers');
     }
     const res = dns.setSecondaryZone(name, {
-      masters, secureSecondaries,
+      masters, secureSecondaries, notify,
       secondaryServers: ctx.named['secondaryservers'] !== undefined ? stringList(ctx.named['secondaryservers']) : undefined,
+      notifyServers: ctx.named['notifyservers'] !== undefined ? stringList(ctx.named['notifyservers']) : undefined,
     });
     if (!res.ok) return failed(ctx, 'Set-DnsServerSecondaryZone', res);
     if (ctx.named['zonefile'] !== undefined) {
@@ -407,14 +386,11 @@ export class AddDnsServerResourceRecordACmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecordA');
-    if (!recordGuard(ctx, 'Add-DnsServerResourceRecordA', dns)) return null;
     const zone = zoneNameOf(ctx);
     const name = nameOf(ctx);
     const ip = psValueToString(ctx.named['ipv4address'] ?? '');
     if (!zone || !name || !ip) return missing(ctx, 'Add-DnsServerResourceRecordA', 'ZoneName Name IPv4Address');
-    const res = isSwitchOn(ctx.named['createptr'])
-      ? dns.addRecord(zone, name, { type: 'A', data: { IPv4Address: ip } }, ttlOf(ctx), true)
-      : dns.addARecord(zone, name, ip, ttlOf(ctx));
+    const res = dns.addRecord(zone, name, { type: 'A', data: { IPv4Address: ip } }, ttlOf(ctx), isSwitchOn(ctx.named['createptr']), recordOptions(ctx));
     return res.ok ? null : failed(ctx, 'Add-DnsServerResourceRecordA', res);
   }
 }
@@ -426,16 +402,11 @@ export class AddDnsServerResourceRecordAAAACmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecordAAAA');
-    if (!recordGuard(ctx, 'Add-DnsServerResourceRecordAAAA', dns)) return null;
     const zone = zoneNameOf(ctx);
     const name = nameOf(ctx);
     const ip = psValueToString(ctx.named['ipv6address'] ?? '');
     if (!zone || !name || !ip) return missing(ctx, 'Add-DnsServerResourceRecordAAAA', 'ZoneName Name IPv6Address');
-    if (isSwitchOn(ctx.named['createptr'])) {
-      ctx.emitError('Add-DnsServerResourceRecordAAAA : -CreatePtr is refused: IPv6 reverse zones (ip6.arpa) are not built.');
-      return null;
-    }
-    const res = dns.addAaaaRecord(zone, name, ip, ttlOf(ctx));
+    const res = dns.addRecord(zone, name, { type: 'AAAA', data: { IPv6Address: ip } }, ttlOf(ctx), isSwitchOn(ctx.named['createptr']), recordOptions(ctx));
     return res.ok ? null : failed(ctx, 'Add-DnsServerResourceRecordAAAA', res);
   }
 }
@@ -447,12 +418,11 @@ export class AddDnsServerResourceRecordCNameCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecordCName');
-    if (!recordGuard(ctx, 'Add-DnsServerResourceRecordCName', dns)) return null;
     const zone = zoneNameOf(ctx);
     const name = nameOf(ctx);
     const alias = psValueToString(ctx.named['hostnamealias'] ?? '');
     if (!zone || !name || !alias) return missing(ctx, 'Add-DnsServerResourceRecordCName', 'ZoneName Name HostNameAlias');
-    const res = dns.addCnameRecord(zone, name, alias, ttlOf(ctx));
+    const res = dns.addRecord(zone, name, { type: 'CNAME', data: { HostNameAlias: alias } }, ttlOf(ctx), false, recordOptions(ctx));
     return res.ok ? null : failed(ctx, 'Add-DnsServerResourceRecordCName', res);
   }
 }
@@ -464,13 +434,12 @@ export class AddDnsServerResourceRecordMXCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecordMX');
-    if (!recordGuard(ctx, 'Add-DnsServerResourceRecordMX', dns)) return null;
     const zone = zoneNameOf(ctx);
     const name = nameOf(ctx);
     const exchange = psValueToString(ctx.named['mailexchange'] ?? '');
     const preference = ctx.named['preference'] !== undefined ? Number(psValueToString(ctx.named['preference'])) : 10;
     if (!zone || !name || !exchange) return missing(ctx, 'Add-DnsServerResourceRecordMX', 'ZoneName Name MailExchange');
-    const res = dns.addMxRecord(zone, name, preference, exchange, ttlOf(ctx));
+    const res = dns.addRecord(zone, name, { type: 'MX', data: { Preference: preference, MailExchange: exchange } }, ttlOf(ctx), false, recordOptions(ctx));
     return res.ok ? null : failed(ctx, 'Add-DnsServerResourceRecordMX', res);
   }
 }
@@ -482,12 +451,11 @@ export class AddDnsServerResourceRecordPtrCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecordPtr');
-    if (!recordGuard(ctx, 'Add-DnsServerResourceRecordPtr', dns)) return null;
     const zone = zoneNameOf(ctx);
     const name = nameOf(ctx);
     const ptr = psValueToString(ctx.named['ptrdomainname'] ?? '');
     if (!zone || !name || !ptr) return missing(ctx, 'Add-DnsServerResourceRecordPtr', 'ZoneName Name PtrDomainName');
-    const res = dns.addPtrRecord(zone, name, ptr, ttlOf(ctx));
+    const res = dns.addRecord(zone, name, { type: 'PTR', data: { PtrDomainName: ptr } }, ttlOf(ctx), false, recordOptions(ctx));
     return res.ok ? null : failed(ctx, 'Add-DnsServerResourceRecordPtr', res);
   }
 }
@@ -515,7 +483,6 @@ export class AddDnsServerResourceRecordCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecord');
-    if (!recordGuard(ctx, 'Add-DnsServerResourceRecord', dns)) return null;
     const chosen = RECORD_SWITCHES.filter(entry => isSwitchOn(ctx.named[entry.switchName]));
     if (chosen.length !== 1) {
       ctx.emitError('Add-DnsServerResourceRecord : Parameter set cannot be resolved using the specified named parameters: exactly one of -A, -AAAA, -CName, -Ptr, -NS, -Txt, -Mx or -Srv is required.');
@@ -531,7 +498,7 @@ export class AddDnsServerResourceRecordCmdlet implements ICmdlet {
       if (raw !== undefined) data[field] = psValueToString(raw);
     }
     const spec: DnsRecordSpec = { type: entry.type, data };
-    const res = dns.addRecord(zone, name, spec, ttlOf(ctx), isSwitchOn(ctx.named['createptr']));
+    const res = dns.addRecord(zone, name, spec, ttlOf(ctx), isSwitchOn(ctx.named['createptr']), recordOptions(ctx));
     return res.ok ? null : failed(ctx, 'Add-DnsServerResourceRecord', res);
   }
 }
@@ -577,7 +544,6 @@ export class RemoveDnsServerResourceRecordCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Remove-DnsServerResourceRecord');
-    if (!recordGuard(ctx, 'Remove-DnsServerResourceRecord', dns)) return null;
     const zone = zoneNameOf(ctx);
     const input = ctx.named['inputobject'];
     if (input !== undefined) {
@@ -611,7 +577,6 @@ export class SetDnsServerResourceRecordCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Set-DnsServerResourceRecord');
-    if (!recordGuard(ctx, 'Set-DnsServerResourceRecord', dns)) return null;
     const zone = zoneNameOf(ctx);
     const previous = specOf(ctx.named['oldinputobject']);
     const next = specOf(ctx.named['newinputobject']);
@@ -633,7 +598,6 @@ export class GetDnsServerResourceRecordCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Get-DnsServerResourceRecord');
-    if (!recordGuard(ctx, 'Get-DnsServerResourceRecord', dns)) return null;
     const zone = zoneNameOf(ctx);
     if (!zone) return missing(ctx, 'Get-DnsServerResourceRecord', 'ZoneName');
     const name = ctx.named['name'] !== undefined ? psValueToString(ctx.named['name']) : undefined;
@@ -654,10 +618,7 @@ export class SetDnsServerForwarderCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Set-DnsServerForwarder');
     if (ctx.named['useroothint'] !== undefined) dns.setUseRootHint(isSwitchOn(ctx.named['useroothint']));
-    if (ctx.named['enablereordering'] !== undefined && !isSwitchOn(ctx.named['enablereordering'])) {
-      ctx.emitError('Set-DnsServerForwarder : -EnableReordering $false is refused: forwarders are always tried in the order listed; RTT-based reordering is not built.');
-      return null;
-    }
+    if (ctx.named['enablereordering'] !== undefined) dns.setEnableReordering(isSwitchOn(ctx.named['enablereordering']));
     if (ctx.named['timeout'] !== undefined) {
       const res = dns.setForwarderTimeout(Number(psValueToString(ctx.named['timeout'])));
       if (!res.ok) return failed(ctx, 'Set-DnsServerForwarder', res);
@@ -704,7 +665,7 @@ export class GetDnsServerForwarderCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const info = requireDns(ctx, 'Get-DnsServerForwarder').getForwarderInfo();
-    return { IPAddress: info.addresses, UseRootHint: info.useRootHint, Timeout: info.timeoutSeconds };
+    return { IPAddress: info.addresses, UseRootHint: info.useRootHint, Timeout: info.timeoutSeconds, EnableReordering: info.enableReordering };
   }
 }
 
@@ -827,5 +788,97 @@ export class ImportDnsServerRootHintCmdlet implements ICmdlet {
     const dns = requireDns(ctx, 'Import-DnsServerRootHint');
     const res = dns.importRootHints();
     return res.ok ? null : failed(ctx, 'Import-DnsServerRootHint', res);
+  }
+}
+
+export class SetDnsServerZoneAgingCmdlet implements ICmdlet {
+  readonly name = 'set-dnsserverzoneaging';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'Aging', 'NoRefreshInterval', 'RefreshInterval', 'ScavengeServers', 'PassThru', 'ComputerName'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Set-DnsServerZoneAging');
+    const name = nameOf(ctx);
+    if (!name) return missing(ctx, 'Set-DnsServerZoneAging', 'Name');
+    const res = dns.setZoneAging(name, {
+      aging: ctx.named['aging'] !== undefined ? isSwitchOn(ctx.named['aging']) : undefined,
+      noRefreshSeconds: optionalSpan(ctx, 'norefreshinterval', 'NoRefreshInterval'),
+      refreshSeconds: optionalSpan(ctx, 'refreshinterval', 'RefreshInterval'),
+      scavengeServers: ctx.named['scavengeservers'] !== undefined ? stringList(ctx.named['scavengeservers']) : undefined,
+    });
+    if (!res.ok) return failed(ctx, 'Set-DnsServerZoneAging', res);
+    return isSwitchOn(ctx.named['passthru']) ? zoneAgingObject(dns, name) : null;
+  }
+}
+
+function zoneAgingObject(dns: IDnsServerProvider, name: string): PSValue {
+  const info = dns.getZoneAging(name);
+  if (!info) return null;
+  return {
+    ZoneName: info.name, AgingEnabled: info.agingEnabled,
+    AvailForScavengeTime: info.availableForScavengeMs === null ? null : new Date(info.availableForScavengeMs),
+    NoRefreshInterval: timeSpanValue(info.noRefreshSeconds * 1000), RefreshInterval: timeSpanValue(info.refreshSeconds * 1000),
+    ScavengeServers: info.scavengeServers,
+  };
+}
+
+export class GetDnsServerZoneAgingCmdlet implements ICmdlet {
+  readonly name = 'get-dnsserverzoneaging';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'ComputerName'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Get-DnsServerZoneAging');
+    const name = nameOf(ctx);
+    if (!name) return missing(ctx, 'Get-DnsServerZoneAging', 'Name');
+    const info = zoneAgingObject(dns, name);
+    if (info === null) { ctx.emitError(`Get-DnsServerZoneAging : Cannot find a primary zone "${name}" on this server.`); return null; }
+    return info;
+  }
+}
+
+export class SetDnsServerScavengingCmdlet implements ICmdlet {
+  readonly name = 'set-dnsserverscavenging';
+  readonly aliases = [] as const;
+  readonly parameters = ['ScavengingState', 'ScavengingInterval', 'NoRefreshInterval', 'RefreshInterval', 'LastScavengeTime', 'ApplyOnAllZones', 'ComputerName'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Set-DnsServerScavenging');
+    const last = ctx.named['lastscavengetime'];
+    const res = dns.setScavenging({
+      enabled: ctx.named['scavengingstate'] !== undefined ? isSwitchOn(ctx.named['scavengingstate']) : undefined,
+      intervalSeconds: optionalSpan(ctx, 'scavenginginterval', 'ScavengingInterval'),
+      noRefreshSeconds: optionalSpan(ctx, 'norefreshinterval', 'NoRefreshInterval'),
+      refreshSeconds: optionalSpan(ctx, 'refreshinterval', 'RefreshInterval'),
+      lastScavengeMs: last instanceof Date ? last.getTime() : undefined,
+      applyOnAllZones: isSwitchOn(ctx.named['applyonallzones']),
+    });
+    return res.ok ? null : failed(ctx, 'Set-DnsServerScavenging', res);
+  }
+}
+
+export class GetDnsServerScavengingCmdlet implements ICmdlet {
+  readonly name = 'get-dnsserverscavenging';
+  readonly aliases = [] as const;
+  readonly parameters = ['ComputerName'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const info = requireDns(ctx, 'Get-DnsServerScavenging').getScavenging();
+    return {
+      ScavengingState: info.scavengingEnabled, ScavengingInterval: timeSpanValue(info.intervalSeconds * 1000),
+      NoRefreshInterval: timeSpanValue(info.noRefreshSeconds * 1000), RefreshInterval: timeSpanValue(info.refreshSeconds * 1000),
+      LastScavengeTime: info.lastScavengeMs === null ? null : new Date(info.lastScavengeMs),
+    };
+  }
+}
+
+export class StartDnsServerScavengingCmdlet implements ICmdlet {
+  readonly name = 'start-dnsserverscavenging';
+  readonly aliases = [] as const;
+  readonly parameters = ['Force', 'Confirm', 'ComputerName'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    requireDns(ctx, 'Start-DnsServerScavenging').startScavenging();
+    return null;
   }
 }

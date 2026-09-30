@@ -98,7 +98,7 @@ describe('le client Windows enregistre son propre nom', () => {
   it('liberer le bail RETIRE le nom, comme un vrai client', async () => {
     const { win, sh } = await labo();
     await bailWindows(win);
-    expect(await zone(sh)).toMatch(/^pc-win\s+A\s+1200/mi);
+    expect(await zone(sh)).toMatch(/^pc-win\s+A\s+1\s.*\s1200\s/mi);
 
     await run(ps(win), 'ipconfig /release');
 

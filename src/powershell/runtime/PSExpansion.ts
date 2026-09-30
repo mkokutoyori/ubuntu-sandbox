@@ -189,6 +189,15 @@ export function registerPSDisplayFormatter(type: string, format: (record: Record
   displayFormatters.set(type, format);
 }
 
+export function timeSpanValue(ms: number): PSValue {
+  return {
+    __type: 'TimeSpan', TotalMilliseconds: ms, TotalSeconds: ms / 1000, TotalMinutes: ms / 60000,
+    TotalHours: ms / 3600000, TotalDays: ms / 86400000, Days: Math.floor(ms / 86400000),
+    Hours: Math.floor((ms % 86400000) / 3600000), Minutes: Math.floor((ms % 3600000) / 60000),
+    Seconds: Math.floor((ms % 60000) / 1000), Milliseconds: ms % 1000,
+  } as unknown as PSValue;
+}
+
 export function registeredDisplay(value: unknown): string | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
   const rec = value as Record<string, PSValue>;

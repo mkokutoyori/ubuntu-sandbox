@@ -963,11 +963,11 @@ export interface ILicensingProvider {
 
 import type {
   DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
-  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsRootHintInfo,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
 } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 export type {
   DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
-  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsRootHintInfo,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
 } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 
 export interface DnsCacheEntryInfo { name: string; type: string; ttl: number; data: string }
@@ -976,17 +976,17 @@ export interface IDnsServerProvider {
   addPrimaryZone(name: string, options?: DnsPrimaryZoneOptions): DnsOpResult;
   serverName(): string;
   addSecondaryZone(name: string, masters: string[], zoneFile?: string, loadExisting?: boolean): DnsOpResult;
-  addConditionalForwarderZone(name: string, masters: string[], timeoutSeconds?: number): DnsOpResult;
+  addConditionalForwarderZone(name: string, masters: string[], timeoutSeconds?: number, useRecursion?: boolean, zoneFile?: string): DnsOpResult;
   renameZoneFile(name: string, zoneFile: string): DnsOpResult;
   setPrimaryZone(name: string, changes: DnsPrimaryZoneChanges): DnsOpResult;
-  setSecondaryZone(name: string, changes: { masters?: string[]; secureSecondaries?: DnsTransferPolicy; secondaryServers?: string[] }): DnsOpResult;
-  setConditionalForwarderMasters(name: string, masters: string[] | undefined, timeoutSeconds?: number): DnsOpResult;
+  setSecondaryZone(name: string, changes: { masters?: string[]; secureSecondaries?: DnsTransferPolicy; secondaryServers?: string[]; notify?: DnsNotifyPolicy; notifyServers?: string[] }): DnsOpResult;
+  setConditionalForwarderMasters(name: string, masters: string[] | undefined, timeoutSeconds?: number, useRecursion?: boolean): DnsOpResult;
   startZoneTransfer(name: string): DnsOpResult;
   removeZone(name: string): DnsOpResult;
   getZone(name: string): DnsZoneInfo | null;
   listZones(): DnsZoneInfo[];
 
-  addRecord(zone: string, name: string, spec: DnsRecordSpec, ttl?: number, createPtr?: boolean): DnsOpResult;
+  addRecord(zone: string, name: string, spec: DnsRecordSpec, ttl?: number, createPtr?: boolean, options?: DnsRecordOptions): DnsOpResult;
   addARecord(zone: string, name: string, ipv4: string, ttl?: number): DnsOpResult;
   addAaaaRecord(zone: string, name: string, ipv6: string, ttl?: number): DnsOpResult;
   addCnameRecord(zone: string, name: string, hostNameAlias: string, ttl?: number): DnsOpResult;
@@ -1001,6 +1001,12 @@ export interface IDnsServerProvider {
   addForwarders(addresses: string[]): DnsOpResult;
   removeForwarders(addresses: string[]): DnsOpResult;
   setForwarderTimeout(seconds: number): DnsOpResult;
+  setEnableReordering(enabled: boolean): DnsOpResult;
+  setZoneAging(name: string, changes: { aging?: boolean; noRefreshSeconds?: number; refreshSeconds?: number; scavengeServers?: string[] }): DnsOpResult;
+  getZoneAging(name: string): DnsZoneAgingInfo | null;
+  setScavenging(changes: { enabled?: boolean; intervalSeconds?: number; noRefreshSeconds?: number; refreshSeconds?: number; lastScavengeMs?: number; applyOnAllZones?: boolean }): DnsOpResult;
+  getScavenging(): DnsScavengingInfo;
+  startScavenging(): number;
   getForwarders(): string[];
   getForwarderInfo(): DnsForwarderInfo;
   setUseRootHint(enabled: boolean): DnsOpResult;

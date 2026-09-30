@@ -92,7 +92,7 @@ import type {
   IPrintProvider, PrintOpResult, PrintJobInfo,
   ILicensingProvider, LicenseStateInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsDynamicUpdateMode, DnsRecordSpec, DnsForwarderInfo,
-  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsRootHintInfo,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
@@ -1261,19 +1261,19 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
   addPrimaryZone(name: string, options?: DnsPrimaryZoneOptions): DnsOpResult { return this.role().addPrimaryZone(name, options); }
   serverName(): string { return this.pc.getHostname(); }
   addSecondaryZone(name: string, masters: string[], zoneFile?: string, loadExisting?: boolean): DnsOpResult { return this.role().addSecondaryZone(name, masters, zoneFile, loadExisting); }
-  addConditionalForwarderZone(name: string, masters: string[], timeoutSeconds?: number): DnsOpResult { return this.role().addConditionalForwarderZone(name, masters, timeoutSeconds); }
+  addConditionalForwarderZone(name: string, masters: string[], timeoutSeconds?: number, useRecursion?: boolean, zoneFile?: string): DnsOpResult { return this.role().addConditionalForwarderZone(name, masters, timeoutSeconds, useRecursion, zoneFile); }
   renameZoneFile(name: string, zoneFile: string): DnsOpResult { return this.role().renameZoneFile(name, zoneFile); }
   setPrimaryZone(name: string, changes: DnsPrimaryZoneChanges): DnsOpResult { return this.role().setPrimaryZone(name, changes); }
-  setSecondaryZone(name: string, changes: { masters?: string[]; secureSecondaries?: DnsTransferPolicy; secondaryServers?: string[] }): DnsOpResult {
+  setSecondaryZone(name: string, changes: { masters?: string[]; secureSecondaries?: DnsTransferPolicy; secondaryServers?: string[]; notify?: DnsNotifyPolicy; notifyServers?: string[] }): DnsOpResult {
     return this.role().setSecondaryZone(name, changes);
   }
-  setConditionalForwarderMasters(name: string, masters: string[] | undefined, timeoutSeconds?: number): DnsOpResult { return this.role().setConditionalForwarderMasters(name, masters, timeoutSeconds); }
+  setConditionalForwarderMasters(name: string, masters: string[] | undefined, timeoutSeconds?: number, useRecursion?: boolean): DnsOpResult { return this.role().setConditionalForwarderMasters(name, masters, timeoutSeconds, useRecursion); }
   startZoneTransfer(name: string): DnsOpResult { return this.role().startZoneTransfer(name); }
   removeZone(name: string): DnsOpResult { return this.role().removeZone(name); }
   getZone(name: string): DnsZoneInfo | null { return this.role().getZone(name); }
   listZones(): DnsZoneInfo[] { return this.role().listZones(); }
 
-  addRecord(zone: string, name: string, spec: DnsRecordSpec, ttl?: number, createPtr?: boolean): DnsOpResult { return this.role().addRecord(zone, name, spec, ttl, undefined, createPtr); }
+  addRecord(zone: string, name: string, spec: DnsRecordSpec, ttl?: number, createPtr?: boolean, options?: DnsRecordOptions): DnsOpResult { return this.role().addRecord(zone, name, spec, ttl, undefined, createPtr, options); }
   addARecord(zone: string, name: string, ipv4: string, ttl?: number): DnsOpResult { return this.role().addARecord(zone, name, ipv4, ttl); }
   addAaaaRecord(zone: string, name: string, ipv6: string, ttl?: number): DnsOpResult { return this.role().addAaaaRecord(zone, name, ipv6, ttl); }
   addCnameRecord(zone: string, name: string, hostNameAlias: string, ttl?: number): DnsOpResult { return this.role().addCnameRecord(zone, name, hostNameAlias, ttl); }
@@ -1292,6 +1292,12 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
   addForwarders(addresses: string[]): DnsOpResult { return this.role().addForwarders(addresses); }
   removeForwarders(addresses: string[]): DnsOpResult { return this.role().removeForwarders(addresses); }
   setForwarderTimeout(seconds: number): DnsOpResult { return this.role().setForwarderTimeout(seconds); }
+  setEnableReordering(enabled: boolean): DnsOpResult { return this.role().setEnableReordering(enabled); }
+  setZoneAging(name: string, changes: { aging?: boolean; noRefreshSeconds?: number; refreshSeconds?: number; scavengeServers?: string[] }): DnsOpResult { return this.role().setZoneAging(name, changes); }
+  getZoneAging(name: string): DnsZoneAgingInfo | null { return this.role().getZoneAging(name); }
+  setScavenging(changes: { enabled?: boolean; intervalSeconds?: number; noRefreshSeconds?: number; refreshSeconds?: number; lastScavengeMs?: number; applyOnAllZones?: boolean }): DnsOpResult { return this.role().setScavenging(changes); }
+  getScavenging(): DnsScavengingInfo { return this.role().getScavenging(); }
+  startScavenging(): number { return this.role().startScavenging(); }
   getForwarders(): string[] { return this.role().getForwarders(); }
   getForwarderInfo(): DnsForwarderInfo { return this.role().getForwarderInfo(); }
   setUseRootHint(enabled: boolean): DnsOpResult { return this.role().setUseRootHint(enabled); }

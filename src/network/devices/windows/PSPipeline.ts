@@ -881,6 +881,9 @@ function pickDefaultColumns(keys: string[]): string[] | null {
   if (lower.has('path') && lower.has('providerpath') && lower.has('provider')) {
     return ['Path'];
   }
+  if (lower.has('hostname') && lower.has('recordtype') && lower.has('timestamp') && lower.has('recorddata')) {
+    return ['HostName', 'RecordType', 'Type', 'Timestamp', 'TimeToLive', 'RecordData'];
+  }
   // Service object: Status / Name / DisplayName
   if (lower.has('status') && lower.has('name') && lower.has('displayname')) {
     return ['Status', 'Name', 'DisplayName'];

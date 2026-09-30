@@ -96,7 +96,10 @@ export class Zone {
     }
     const existing = byType.get(rr.data.type);
     if (existing) {
-      existing.push(rr);
+      const key = rdataKey(rr.data);
+      const duplicate = existing.findIndex(known => rdataKey(known.data) === key);
+      if (duplicate >= 0) existing[duplicate] = rr;
+      else existing.push(rr);
     } else {
       byType.set(rr.data.type, [rr]);
     }
