@@ -4,6 +4,7 @@ import { RRType } from '@/network/dns/wire/RRType';
 import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import { findOpt, CLASSIC_UDP_PAYLOAD_SIZE, DEFAULT_EDNS_PAYLOAD_SIZE } from '@/network/dns/wire/EdnsOptRecord';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
+import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
 
 export const CLASSIC_UDP_MAX_SIZE = CLASSIC_UDP_PAYLOAD_SIZE;
 
@@ -59,25 +60,43 @@ export function udpClientOf(host: EndHost): DnsUdpClient {
   };
 }
 
+function dropLastRRset(
+  records: readonly ResourceRecord<ResourceRecordData>[],
+): ResourceRecord<ResourceRecordData>[] {
+  if (records.length === 0) return [];
+  const last = records[records.length - 1];
+  const sameSet = (rr: ResourceRecord<ResourceRecordData>): boolean =>
+    rr.name.toLowerCase() === last.name.toLowerCase() && rr.data.type === last.data.type;
+  return records.filter((rr) => !sameSet(rr));
+}
+
 export function truncateForUdp(message: DnsMessage, maxSize: number = CLASSIC_UDP_PAYLOAD_SIZE): DnsMessage {
   if (encodeDnsMessage(message).length <= maxSize) return message;
 
   const opt = message.additionals.find((rr) => rr.data.type === RRType.OPT);
   let { answers, authorities } = message;
   let extras = message.additionals.filter((rr) => rr.data.type !== RRType.OPT);
+  let truncated = false;
 
   const rebuild = (): DnsMessage => ({
     ...message,
-    flags: { ...message.flags, tc: true },
+    flags: { ...message.flags, tc: truncated },
     answers,
     authorities,
     additionals: opt ? [...extras, opt] : extras,
   });
   const fits = (): boolean => encodeDnsMessage(rebuild()).length <= maxSize;
 
-  while (extras.length > 0 && !fits()) extras = extras.slice(0, -1);
-  while (authorities.length > 0 && !fits()) authorities = authorities.slice(0, -1);
-  while (answers.length > 0 && !fits()) answers = answers.slice(0, -1);
+  while (extras.length > 0 && !fits()) extras = dropLastRRset(extras);
+  while (authorities.length > 0 && !fits()) {
+    authorities = dropLastRRset(authorities);
+    truncated = true;
+  }
+  while (answers.length > 0 && !fits()) {
+    answers = answers.slice(0, -1);
+    truncated = true;
+  }
+  if (!fits()) truncated = true;
 
   return rebuild();
 }

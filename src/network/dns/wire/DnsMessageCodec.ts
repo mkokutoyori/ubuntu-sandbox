@@ -4,7 +4,7 @@ import { RRType, DnsClass } from '@/network/dns/wire/RRType';
 import { packOptTtl, unpackOptTtl } from '@/network/dns/wire/EdnsOptRecord';
 import type { DnsMessage, DnsQuestion } from '@/network/dns/wire/DnsMessage';
 import type {
-  ResourceRecord, ResourceRecordData, OptRecordData,
+  ResourceRecord, ResourceRecordData, OptRecordData, EdnsOption,
   ARecordData, AaaaRecordData, NsRecordData, CnameRecordData, PtrRecordData,
   SoaRecordData, MxRecordData, TxtRecordData, SrvRecordData,
   DnskeyRecordData, RrsigRecordData, DsRecordData, DhcidRecordData, NsecRecordData,
@@ -21,6 +21,7 @@ export class DnsMessageError extends Error {
 
 const HEADER_LENGTH = 12;
 const MAX_LABEL_OCTETS = 63;
+const MAX_NAME_OCTETS = 255;
 const MAX_POINTER_OFFSET = 0x3fff;
 const POINTER_MARKER = 0xc0;
 const MAX_POINTER_HOPS = 128;
@@ -213,7 +214,29 @@ function encodeOptRecord(data: OptRecordData, out: number[]): void {
   writeUint16(out, RRType.OPT);
   writeUint16(out, data.udpPayloadSize);
   writeUint32(out, packOptTtl(data));
-  writeUint16(out, 0);
+  const options = data.options ?? [];
+  writeUint16(out, options.reduce((total, option) => total + 4 + option.data.length, 0));
+  for (const option of options) {
+    writeUint16(out, option.code);
+    writeUint16(out, option.data.length);
+    for (const byte of option.data) out.push(byte);
+  }
+}
+
+function decodeEdnsOptions(view: Uint8Array, start: number, length: number): EdnsOption[] {
+  const options: EdnsOption[] = [];
+  const end = start + length;
+  let pos = start;
+  while (pos < end) {
+    if (pos + 4 > end) throw new DnsMessageError('truncated EDNS option header');
+    const code = (view[pos] << 8) | view[pos + 1];
+    const size = (view[pos + 2] << 8) | view[pos + 3];
+    pos += 4;
+    if (pos + size > end) throw new DnsMessageError('EDNS option overruns the OPT RDATA');
+    options.push({ code, data: view.slice(pos, pos + size) });
+    pos += size;
+  }
+  return options;
 }
 
 function encodeResourceRecord(
@@ -294,6 +317,7 @@ function decodeName(view: Uint8Array, startOffset: number): { name: string; next
   let pos = startOffset;
   let next = -1;
   let hops = 0;
+  let nameOctets = 0;
 
   for (;;) {
     if (pos >= view.length) {
@@ -326,6 +350,10 @@ function decodeName(view: Uint8Array, startOffset: number): { name: string; next
 
     if (len > MAX_LABEL_OCTETS) {
       throw new DnsMessageError(`label at offset ${pos} exceeds ${MAX_LABEL_OCTETS} octets`);
+    }
+    nameOctets += len + 1;
+    if (nameOctets + 1 > MAX_NAME_OCTETS) {
+      throw new DnsMessageError(`domain name exceeds ${MAX_NAME_OCTETS} octets`);
     }
     pos++;
     if (pos + len > view.length) {
@@ -506,8 +534,12 @@ function decodeResourceRecord(cursor: Cursor): ResourceRecord<ResourceRecordData
   cursor.assertAvailable(rdlength);
 
   if (type === RRType.OPT) {
+    const options = decodeEdnsOptions(cursor.view, cursor.pos, rdlength);
     cursor.pos += rdlength;
-    const data: OptRecordData = { type: RRType.OPT, udpPayloadSize: rrClass, ...unpackOptTtl(ttl) };
+    const data: OptRecordData = {
+      type: RRType.OPT, udpPayloadSize: rrClass, ...unpackOptTtl(ttl),
+      ...(options.length > 0 ? { options } : {}),
+    };
     return { name, ttl, rrClass, data };
   }
 

@@ -1,6 +1,6 @@
 import { RRType } from '@/network/dns/wire/RRType';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
-import type { OptRecordData, ResourceRecord } from '@/network/dns/wire/ResourceRecord';
+import type { EdnsOption, OptRecordData, ResourceRecord } from '@/network/dns/wire/ResourceRecord';
 
 export const CLASSIC_UDP_PAYLOAD_SIZE = 512;
 export const DEFAULT_EDNS_PAYLOAD_SIZE = 4096;
@@ -14,6 +14,7 @@ export interface OptRecordOptions {
   readonly version?: number;
   readonly dnssecOk?: boolean;
   readonly extendedRcodeHigh?: number;
+  readonly options?: readonly EdnsOption[];
 }
 
 export function packOptTtl(data: OptRecordData): number {
@@ -40,6 +41,7 @@ export function makeOptRecord(udpPayloadSize: number, options: OptRecordOptions 
     version: options.version ?? EDNS_VERSION,
     dnssecOk: options.dnssecOk ?? false,
     extendedRcodeHigh: options.extendedRcodeHigh ?? 0,
+    ...(options.options && options.options.length > 0 ? { options: options.options } : {}),
   };
   return { name: '', ttl: packOptTtl(data), rrClass: size, data };
 }
@@ -47,4 +49,9 @@ export function makeOptRecord(udpPayloadSize: number, options: OptRecordOptions 
 export function findOpt(message: DnsMessage): ResourceRecord<OptRecordData> | null {
   const opt = message.additionals.find((rr) => rr.data.type === RRType.OPT);
   return (opt as ResourceRecord<OptRecordData>) ?? null;
+}
+
+export function findOpts(message: DnsMessage): ResourceRecord<OptRecordData>[] {
+  return message.additionals.filter(
+    (rr): rr is ResourceRecord<OptRecordData> => rr.data.type === RRType.OPT);
 }

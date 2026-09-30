@@ -134,12 +134,18 @@ export interface SrvRecordData {
   readonly target: string;
 }
 
+export interface EdnsOption {
+  readonly code: number;
+  readonly data: Uint8Array;
+}
+
 export interface OptRecordData {
   readonly type: typeof RRType.OPT;
   readonly udpPayloadSize: number;
   readonly version: number;
   readonly dnssecOk: boolean;
   readonly extendedRcodeHigh: number;
+  readonly options?: readonly EdnsOption[];
 }
 
 export interface DnskeyRecordData {
