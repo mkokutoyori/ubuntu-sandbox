@@ -1,0 +1,91 @@
+import { IPv6Address } from '../core/types';
+import type { EndHost, UdpDelivery } from '../devices/EndHost';
+import { DHCPv6Packet } from './DHCPv6Packet';
+import { DHCPv6Server } from './DHCPv6Server';
+import { answerRelayForward, buildDhcpv6ServerReply } from './Dhcpv6ServerExchange';
+
+export const DHCPV6_SERVER_PORT = 547;
+export const DHCPV6_CLIENT_PORT = 546;
+export const ALL_DHCP_SERVERS_GROUP = 'ff02::1:2';
+
+export interface Dhcpv6HostPort {
+  interfaces(): ReadonlyArray<{ name: string; mac: string; globalAddress: string | null }>;
+  udpBind(port: number, listener: (delivery: UdpDelivery) => void, processName: string): number | false;
+  udpClose(port: number): void;
+  joinIPv6Group(iface: string, group: string): boolean;
+  leaveIPv6Group(iface: string, group: string): boolean;
+  learnIpv6Neighbor(iface: string, address: IPv6Address, mac: string): void;
+  sendUdpDatagram6(destination: IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes: number): boolean;
+}
+
+export class Dhcpv6HostService {
+  private readonly server = new DHCPv6Server();
+  private running = false;
+
+  constructor(private readonly host: Dhcpv6HostPort, private readonly processName: string, clock?: () => number) {
+    if (clock) this.server.setClock(clock);
+  }
+
+  getEngine(): DHCPv6Server { return this.server; }
+
+  isRunning(): boolean { return this.running; }
+
+  start(): boolean {
+    if (this.running) return true;
+    const interfaces = this.host.interfaces();
+    if (interfaces.length > 0) this.server.setServerDuid(`00:03:00:01:${interfaces[0].mac}`);
+    if (this.host.udpBind(DHCPV6_SERVER_PORT, this.handle, this.processName) === false) return false;
+    for (const port of interfaces) this.host.joinIPv6Group(port.name, ALL_DHCP_SERVERS_GROUP);
+    this.server.enable();
+    this.running = true;
+    return true;
+  }
+
+  stop(): void {
+    if (!this.running) return;
+    for (const port of this.host.interfaces()) this.host.leaveIPv6Group(port.name, ALL_DHCP_SERVERS_GROUP);
+    this.host.udpClose(DHCPV6_SERVER_PORT);
+    this.server.disable();
+    this.running = false;
+  }
+
+  private readonly handle = (delivery: UdpDelivery): void => {
+    if (!this.running || !(delivery.sourceIP instanceof IPv6Address)) return;
+    const message = delivery.udp.payload;
+    if (!(message instanceof DHCPv6Packet)) return;
+    if (delivery.sourceMAC) this.host.learnIpv6Neighbor(delivery.inPort, delivery.sourceIP, delivery.sourceMAC);
+
+    if (message.msgType === 'RELAY-FORW') {
+      const answer = answerRelayForward(this.server, message);
+      if (answer) this.send(delivery.sourceIP, DHCPV6_SERVER_PORT, answer);
+      return;
+    }
+    const port = this.host.interfaces().find(entry => entry.name === delivery.inPort);
+    const reply = buildDhcpv6ServerReply(this.server, message, {
+      anchor: port?.globalAddress ?? undefined,
+      clientAddress: delivery.sourceIP.toString(),
+      relayed: false,
+      unicast: !(delivery.destinationIP instanceof IPv6Address && delivery.destinationIP.isMulticast()),
+    });
+    if (reply) this.send(delivery.sourceIP, DHCPV6_CLIENT_PORT, reply);
+  };
+
+  private send(destination: IPv6Address, destinationPort: number, message: DHCPv6Packet): void {
+    this.host.sendUdpDatagram6(destination, destinationPort, DHCPV6_SERVER_PORT, message, 300);
+  }
+}
+
+export function dhcpv6PortOf(host: EndHost): Dhcpv6HostPort {
+  return {
+    interfaces: () => host.getPorts().map(port => ({
+      name: port.getName(), mac: port.getMAC().toString(), globalAddress: port.getGlobalIPv6()?.toString() ?? null,
+    })),
+    udpBind: (port, listener, processName) => host.udpBind(port, listener, processName),
+    udpClose: port => host.udpClose(port),
+    joinIPv6Group: (iface, group) => host.joinIPv6Group(iface, group),
+    leaveIPv6Group: (iface, group) => host.leaveIPv6Group(iface, group),
+    learnIpv6Neighbor: (iface, address, mac) => host.learnIpv6Neighbor(iface, address, mac),
+    sendUdpDatagram6: (destination, destinationPort, sourcePort, payload, bytes) =>
+      host.sendUdpDatagram6(destination, destinationPort, sourcePort, payload, bytes),
+  };
+}

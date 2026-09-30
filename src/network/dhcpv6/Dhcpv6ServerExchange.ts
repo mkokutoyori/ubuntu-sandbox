@@ -64,14 +64,14 @@ function applyConfiguration(reply: DHCPv6Packet, request: DHCPv6Packet, pool: DH
   if (pool.domainName && wants(request, DHCPV6_OPTION.DOMAIN_LIST)) reply.domainList = [pool.domainName];
 }
 
-function uniformTimers(reply: DHCPv6Packet): void {
+function uniformTimers(reply: DHCPv6Packet, pool: DHCPv6PoolConfig | undefined): void {
   const preferred: number[] = [];
   for (const ia of reply.ias) for (const a of ia.addresses) if (a.validLifetime > 0) preferred.push(a.preferredLifetime);
   for (const pd of reply.prefixDelegations) for (const p of pd.prefixes) if (p.validLifetime > 0) preferred.push(p.preferredLifetime);
   if (preferred.length === 0) return;
   const shortest = Math.min(...preferred);
-  const t1 = Math.floor(shortest * 0.5);
-  const t2 = Math.floor(shortest * 0.8);
+  const t1 = pool?.t1 ?? Math.floor(shortest * 0.5);
+  const t2 = pool?.t2 ?? Math.floor(shortest * 0.8);
   for (const ia of reply.ias) if (ia.addresses.some(a => a.validLifetime > 0)) { ia.t1 = t1; ia.t2 = t2; }
   for (const pd of reply.prefixDelegations) if (pd.prefixes.some(p => p.validLifetime > 0)) { pd.t1 = t1; pd.t2 = t2; }
 }
@@ -133,8 +133,9 @@ function allocate(
   const reply = stamp(request, server, msgType);
   reply.ias = request.ias.map(ia => assignAddresses(server, request, ctx, ia, commit));
   reply.prefixDelegations = request.prefixDelegations.map(pd => assignPrefixes(server, request, ctx, pd, commit));
-  uniformTimers(reply);
-  applyConfiguration(reply, request, preferredPoolOf(server, ctx, reply));
+  const answering = preferredPoolOf(server, ctx, reply);
+  uniformTimers(reply, answering);
+  applyConfiguration(reply, request, answering);
   const preference = server.selectPool(ctx.anchor, ctx.poolName)?.preference ?? 0;
   if (msgType === 'ADVERTISE' && preference > 0) reply.preference = preference;
   return reply;
@@ -186,8 +187,9 @@ function extendOrExpire(
   }
 
   if (!answered) return null;
-  uniformTimers(reply);
-  applyConfiguration(reply, request, preferredPoolOf(server, ctx, reply));
+  const answering = preferredPoolOf(server, ctx, reply);
+  uniformTimers(reply, answering);
+  applyConfiguration(reply, request, answering);
   return reply;
 }
 
@@ -247,7 +249,7 @@ function information(server: DHCPv6Server, request: DHCPv6Packet, ctx: Dhcpv6Exc
   return reply;
 }
 
-export function buildDhcpv6ServerReply(
+function serve(
   server: DHCPv6Server, request: DHCPv6Packet, ctx: Dhcpv6ExchangeContext,
 ): DHCPv6Packet | null {
   const direct = !ctx.relayed;
@@ -287,4 +289,29 @@ export function buildDhcpv6ServerReply(
     default:
       return null;
   }
+}
+
+export function buildDhcpv6ServerReply(
+  server: DHCPv6Server, request: DHCPv6Packet, ctx: Dhcpv6ExchangeContext,
+): DHCPv6Packet | null {
+  const original = request.clientDuid;
+  if (original === null || original === original.toLowerCase()) return serve(server, request, ctx);
+  const canonical = Object.assign(new DHCPv6Packet(), request, { clientDuid: original.toLowerCase() });
+  const reply = serve(server, canonical, ctx);
+  if (reply) reply.clientDuid = original;
+  return reply;
+}
+
+export function answerRelayForward(
+  server: DHCPv6Server, forward: DHCPv6Packet, depth = 0,
+): DHCPv6Packet | null {
+  const inner = forward.relayedMessage;
+  if (!inner || depth > 32) return null;
+  const answer = inner.msgType === 'RELAY-FORW'
+    ? answerRelayForward(server, inner, depth + 1)
+    : buildDhcpv6ServerReply(server, inner, {
+      anchor: forward.linkAddress, clientAddress: forward.peerAddress, relayed: true, unicast: false,
+    });
+  if (!answer) return null;
+  return DHCPv6Packet.createRelayRepl(forward.linkAddress, forward.peerAddress, forward.interfaceId, answer);
 }

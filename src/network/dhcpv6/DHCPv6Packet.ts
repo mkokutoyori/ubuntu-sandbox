@@ -51,6 +51,8 @@ export const DHCPV6_STATUS = {
   NoPrefixAvail: 6,
 } as const;
 
+export const DHCPV6_HOP_COUNT_LIMIT = 32;
+
 export const DHCPV6_OPTION = {
   DNS_SERVERS: 23,
   DOMAIN_LIST: 24,

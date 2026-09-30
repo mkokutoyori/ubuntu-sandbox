@@ -715,6 +715,17 @@ export class PSLexer {
       return psToken(PSTokenType.WORD, word, start);
     }
 
+    if (!this.eof() && /^\d+$/.test(value)) {
+      const rest = this.input.slice(this.pos);
+      const identifier = /^[A-Za-z_][A-Za-z0-9_]*/.exec(rest);
+      const numericSuffix = /^(?:[eE][+-]?\d|[kKmMgGtTpP][bB]$|[lLdDuUsSyY]$|[uU][lLyY]$|[uU][lL][lL]$)/;
+      if (identifier && !numericSuffix.test(identifier[0])) {
+        let word = value;
+        while (!this.eof() && this.isWordChar(this.ch())) { word += this.ch(); this.advance(); }
+        return psToken(PSTokenType.WORD, word, start);
+      }
+    }
+
     // Decimal part
     if (!this.eof() && this.ch() === '.' && this.peek1() !== '.') {
       value += '.'; this.advance();

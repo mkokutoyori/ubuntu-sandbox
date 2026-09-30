@@ -727,6 +727,10 @@ export abstract class EndHost extends Equipment {
     return true;
   }
 
+  learnIpv6Neighbor(iface: string, address: IPv6Address, mac: string): void {
+    this.neighborCache.learnFromSource(address.toString(), new MACAddress(mac), iface, false);
+  }
+
   leaveIPv6Group(iface: string, group: string): boolean {
     let g: IPv6Address;
     try { g = new IPv6Address(group); } catch { return false; }
@@ -2234,7 +2238,7 @@ export abstract class EndHost extends Equipment {
     } else if (frame.etherType === ETHERTYPE_IPV4) {
       this.handleIPv4(iface, frame.payload as IPv4Packet, frame.srcMAC.toString());
     } else if (frame.etherType === ETHERTYPE_IPV6) {
-      this.handleIPv6(iface, frame.payload as IPv6Packet);
+      this.handleIPv6(iface, frame.payload as IPv6Packet, frame.srcMAC.toString());
     }
   }
 
@@ -3776,7 +3780,7 @@ export abstract class EndHost extends Equipment {
     }
   }
 
-  private deliverUDP6(portName: string, ipv6: IPv6Packet): void {
+  private deliverUDP6(portName: string, ipv6: IPv6Packet, sourceMac?: string): void {
     const udp = ipv6.payload as UDPPacket;
     if (!udp || udp.type !== 'udp') return;
 
@@ -3787,7 +3791,7 @@ export abstract class EndHost extends Equipment {
       return;
     }
 
-    if (this.dispatchUdpToListener(portName, udp, ipv6.sourceIP, ipv6.destinationIP)) return;
+    if (this.dispatchUdpToListener(portName, udp, ipv6.sourceIP, ipv6.destinationIP, sourceMac)) return;
 
     this.sendICMPv6Unreachable(portName, ipv6);
   }
@@ -5279,7 +5283,7 @@ export abstract class EndHost extends Equipment {
 
   // ─── IPv6 Packet Handling ──────────────────────────────────────
 
-  private handleIPv6(portName: string, ipv6: IPv6Packet): void {
+  private handleIPv6(portName: string, ipv6: IPv6Packet, sourceMac?: string): void {
     if (!ipv6 || ipv6.type !== 'ipv6') return;
 
     const port = this.ports.get(portName);
@@ -5339,7 +5343,7 @@ export abstract class EndHost extends Equipment {
       }
 
       if (ipv6.nextHeader === IP_PROTO_UDP) {
-        this.deliverUDP6(portName, ipv6);
+        this.deliverUDP6(portName, ipv6, sourceMac);
       } else {
         this.tcpv2.handleIp6(portName, ipv6.sourceIP, ipv6);
       }

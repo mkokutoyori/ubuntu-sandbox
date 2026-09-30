@@ -26,8 +26,8 @@ import {
 import { Logger } from '../../core/Logger';
 import { NeighborCache, type NeighborCacheEntry } from '../host/NeighborCache';
 import { DHCPv6Server } from '../../dhcpv6/DHCPv6Server';
-import { buildDhcpv6ServerReply } from '../../dhcpv6/Dhcpv6ServerExchange';
-import { DHCPv6Packet } from '../../dhcpv6/DHCPv6Packet';
+import { answerRelayForward, buildDhcpv6ServerReply } from '../../dhcpv6/Dhcpv6ServerExchange';
+import { DHCPv6Packet, DHCPV6_HOP_COUNT_LIMIT } from '../../dhcpv6/DHCPv6Packet';
 
 // ─── IPv6 Types ─────────────────────────────────────────────────
 
@@ -451,10 +451,6 @@ export class IPv6DataPlane {
     const pkt = udp.payload;
     if (!(pkt instanceof DHCPv6Packet)) return;
 
-    if (pkt.msgType === 'RELAY-FORW') {
-      this.handleDhcpv6RelayForw(inPort, pkt);
-      return;
-    }
     if (pkt.msgType === 'RELAY-REPL') {
       this.handleDhcpv6RelayRepl(pkt);
       return;
@@ -462,11 +458,17 @@ export class IPv6DataPlane {
 
     const relayDests = this.ctx.getDhcpv6RelayDestinations(inPort);
     if (relayDests.length > 0) {
+      if (pkt.msgType === 'RELAY-FORW' && pkt.hopCount >= DHCPV6_HOP_COUNT_LIMIT) return;
       // The final RELAY-REPL leg needs to reach the client back on this
       // same link; observing its real MAC now (instead of a separate NDP
       // round-trip for a link we're already on) is what lets that unwind.
       if (srcMAC) this.neighborCache.learnFromSource(ipv6.sourceIP.toString(), srcMAC, inPort, false);
       this.relayDhcpv6ToDestinations(inPort, ipv6, pkt, relayDests);
+      return;
+    }
+
+    if (pkt.msgType === 'RELAY-FORW') {
+      this.handleDhcpv6RelayForw(pkt);
       return;
     }
 
@@ -505,7 +507,7 @@ export class IPv6DataPlane {
     if (!port) return;
     const linkAddr = port.getGlobalIPv6() ?? port.getLinkLocalIPv6();
     if (!linkAddr) return;
-    const relayForw = DHCPv6Packet.createRelayForw(linkAddr.toString(), ipv6.sourceIP.toString(), pkt.hopCount + 1, inPort, pkt);
+    const relayForw = DHCPv6Packet.createRelayForw(linkAddr.toString(), ipv6.sourceIP.toString(), pkt.msgType === 'RELAY-FORW' ? pkt.hopCount + 1 : 0, inPort, pkt);
 
     for (const dest of destinations) {
       const dstIp = new IPv6Address(dest);
@@ -528,17 +530,12 @@ export class IPv6DataPlane {
   }
 
   /** A relay agent's RELAY-FORW reached us: unwrap and serve the inner message from the relay's own link-address subnet. */
-  private handleDhcpv6RelayForw(inPort: string, pkt: DHCPv6Packet): void {
-    const inner = pkt.relayedMessage;
-    if (!inner) return;
-    if (inner.msgType === 'RELAY-FORW') { this.handleDhcpv6RelayForw(inPort, inner); return; }
-    const innerReply = buildDhcpv6ServerReply(this.ctx.getDhcpv6Server(), inner, {
-      anchor: pkt.linkAddress, clientAddress: pkt.peerAddress, relayed: true, unicast: false,
-    });
-    if (!innerReply) return;
+  private handleDhcpv6RelayForw(pkt: DHCPv6Packet): void {
+    const relayRepl = answerRelayForward(this.ctx.getDhcpv6Server(), pkt);
+    if (relayRepl) this.sendDhcpv6RelayMessage(new IPv6Address(pkt.linkAddress), relayRepl);
+  }
 
-    const relayRepl = DHCPv6Packet.createRelayRepl(pkt.linkAddress, pkt.peerAddress, pkt.interfaceId, innerReply);
-    const dstIp = new IPv6Address(pkt.linkAddress);
+  private sendDhcpv6RelayMessage(dstIp: IPv6Address, message: DHCPv6Packet): void {
     const route = this.lookupRoute(dstIp);
     if (!route) return;
     const egressPort = this.ctx.getPorts().get(route.iface);
@@ -547,22 +544,23 @@ export class IPv6DataPlane {
     const nextHopMac = this.resolveNeighborSync(route.iface, route.nextHop ?? dstIp);
     if (!nextHopMac) return;
     const udp: UDPPacket = {
-      type: 'udp', sourcePort: 547, destinationPort: 547, length: 8 + 300, checksum: 0, payload: relayRepl,
+      type: 'udp', sourcePort: 547, destinationPort: 547, length: 8 + 300, checksum: 0, payload: message,
     };
-    const replyPkt = createIPv6Packet(egressSrcIp, dstIp, IP_PROTO_UDP, this.defaultHopLimit,
+    const packet = createIPv6Packet(egressSrcIp, dstIp, IP_PROTO_UDP, this.defaultHopLimit,
       stampUdpChecksum(udp, egressSrcIp.toString(), dstIp.toString()), 8 + 300);
     this.ctx.sendFrame(route.iface, {
-      srcMAC: egressPort.getMAC(), dstMAC: nextHopMac, etherType: ETHERTYPE_IPV6, payload: replyPkt,
+      srcMAC: egressPort.getMAC(), dstMAC: nextHopMac, etherType: ETHERTYPE_IPV6, payload: packet,
     });
   }
 
   /** RELAY-REPL arrived back at the originating relay agent: unwrap and forward the inner reply onto the client's own link. */
   private handleDhcpv6RelayRepl(pkt: DHCPv6Packet): void {
     const inner = pkt.relayedMessage;
-    if (!inner || !pkt.interfaceId) return;
-    if (inner.msgType === 'RELAY-REPL') { this.handleDhcpv6RelayRepl(inner); return; }
-    const clientAddr = new IPv6Address(pkt.peerAddress);
-    this.sendDhcpv6Reply(pkt.interfaceId, clientAddr, inner);
+    if (!inner) return;
+    const peer = new IPv6Address(pkt.peerAddress);
+    if (inner.msgType === 'RELAY-REPL') { this.sendDhcpv6RelayMessage(peer, inner); return; }
+    if (!pkt.interfaceId) return;
+    this.sendDhcpv6Reply(pkt.interfaceId, peer, inner);
   }
 
   /** Synchronous NDP resolution for a next-hop the relay hasn't seen yet — same cable-is-synchronous assumption as SwitchSvi.resolveArp. */

@@ -28,6 +28,17 @@ export interface DHCPv6PoolConfig {
   rapidCommit: boolean;
   preference: number;
   delegationFromLocalPool: string | null;
+  reservations: DHCPv6Reservation[];
+  exclusions: DHCPv6AddressRange[];
+  t1: number | null;
+  t2: number | null;
+}
+
+export interface DHCPv6Reservation {
+  address: string;
+  clientDuid: string;
+  iaid: number | null;
+  name: string | null;
 }
 
 export interface DHCPv6DelegationPool {
@@ -68,6 +79,10 @@ export function createDefaultDHCPv6Pool(name: string): DHCPv6PoolConfig {
     rapidCommit: false,
     preference: 0,
     delegationFromLocalPool: null,
+    reservations: [],
+    exclusions: [],
+    t1: null,
+    t2: null,
   };
 }
 

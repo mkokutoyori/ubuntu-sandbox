@@ -13,7 +13,7 @@ import { ipv6FromBigInt, ipv6ToBigInt } from '../core/Ipv6Arithmetic';
 import {
   DHCPv6PoolConfig, DHCPv6Binding, DHCPv6SolicitParams, DHCPv6RequestParams,
   DHCPv6LeaseResult, DHCPv6ReleaseParams, DHCPv6AddressRange, createDefaultDHCPv6Pool,
-  DHCPv6PrefixBinding, DHCPv6StaticDelegation,
+  DHCPv6PrefixBinding, DHCPv6StaticDelegation, DHCPv6Reservation,
 } from './types';
 
 const RANGE_SCAN_LIMIT = 65536;
@@ -70,6 +70,48 @@ export class DHCPv6Server {
     const pool = this.pools.get(name);
     if (!pool || !Number.isInteger(value) || value < 0 || value > 255) return false;
     pool.preference = value;
+    return true;
+  }
+
+  configurePoolReservation(name: string, reservation: DHCPv6Reservation): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    const wanted = new IPv6Address(reservation.address).toString();
+    pool.reservations = [
+      ...pool.reservations.filter(r => new IPv6Address(r.address).toString() !== wanted),
+      { ...reservation, address: wanted },
+    ];
+    return true;
+  }
+
+  removePoolReservation(name: string, address: string): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    const wanted = new IPv6Address(address).toString();
+    const before = pool.reservations.length;
+    pool.reservations = pool.reservations.filter(r => new IPv6Address(r.address).toString() !== wanted);
+    return pool.reservations.length < before;
+  }
+
+  configurePoolTimers(name: string, t1: number | null, t2: number | null): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.t1 = t1;
+    pool.t2 = t2;
+    return true;
+  }
+
+  configurePoolExclusions(name: string, ranges: readonly DHCPv6AddressRange[]): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.exclusions = ranges.map(range => ({ ...range }));
+    return true;
+  }
+
+  configurePoolExclusion(name: string, range: DHCPv6AddressRange): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.exclusions = [...pool.exclusions, { ...range }];
     return true;
   }
 
@@ -204,8 +246,16 @@ export class DHCPv6Server {
     return null;
   }
 
+  private excluded(candidate: string, pool: DHCPv6PoolConfig): boolean {
+    const value = ipv6ToBigInt(new IPv6Address(candidate));
+    return pool.exclusions.some(range =>
+      value >= ipv6ToBigInt(new IPv6Address(range.startIp)) && value <= ipv6ToBigInt(new IPv6Address(range.endIp)))
+      || pool.reservations.some(r => new IPv6Address(r.address).toString() === new IPv6Address(candidate).toString());
+  }
+
   private addressFreeAndInPool(candidate: string, pool: DHCPv6PoolConfig): boolean {
     if (this.bindings.has(candidate) || this.pendingOffers.has(candidate) || this.declined.has(candidate)) return false;
+    if (this.excluded(candidate, pool)) return false;
     if (!pool.prefix || !pool.prefixLength) return true;
     return new IPv6Address(candidate)
       .isInSameSubnet(new IPv6Address(pool.prefix), pool.prefixLength);
@@ -231,20 +281,22 @@ export class DHCPv6Server {
     return null;
   }
 
-  /** First unused address in the pool's prefix (host portion, starting at ::2 — ::1 is conventionally the router). */
   private findAvailableAddress(pool: DHCPv6PoolConfig): string | null {
     if (pool.ranges.length > 0) return this.findInRanges(pool);
     if (!pool.prefix || !pool.prefixLength) return null;
-    const prefixHextets = new IPv6Address(pool.prefix).getHextets();
-    const hostBits = 128 - pool.prefixLength;
-    const maxHost = hostBits >= 32 ? 0xfffe : (1 << hostBits) - 2;
-    for (let host = 2; host <= maxHost && host < 0xfffe; host++) {
-      const hextets = [...prefixHextets];
-      hextets[7] = host & 0xffff;
-      hextets[6] = (hextets[6] & 0xffff) | (host >> 16);
-      const candidate = new IPv6Address(hextets).toString();
-      if (this.bindings.has(candidate) || this.pendingOffers.has(candidate) || this.declined.has(candidate)) continue;
-      return candidate;
+    const base = ipv6ToBigInt(new IPv6Address(pool.prefix));
+    const last = base + (1n << BigInt(128 - pool.prefixLength)) - 1n;
+    let value = base + 2n;
+    for (let steps = 0; value <= last && steps < RANGE_SCAN_LIMIT; steps++) {
+      const covering = pool.exclusions.find(range =>
+        value >= ipv6ToBigInt(new IPv6Address(range.startIp)) && value <= ipv6ToBigInt(new IPv6Address(range.endIp)));
+      if (covering) {
+        value = ipv6ToBigInt(new IPv6Address(covering.endIp)) + 1n;
+        continue;
+      }
+      const candidate = ipv6FromBigInt(value).toString();
+      if (this.addressFreeAndInPool(candidate, pool)) return candidate;
+      value++;
     }
     return null;
   }
@@ -261,7 +313,9 @@ export class DHCPv6Server {
           return { address: addr, pool, serverDuid: this.serverDuid, transactionId: params.transactionId };
         }
       }
-      const address = this.findAvailableAddress(pool);
+      const reserved = pool.reservations.find(r => r.clientDuid === params.clientDuid && (r.iaid === null || r.iaid === params.iaid));
+      const reservedFree = reserved && !this.bindings.has(reserved.address) && !this.declined.has(reserved.address);
+      const address = reservedFree ? reserved.address : this.findAvailableAddress(pool);
       if (!address) continue;
       this.pendingOffers.set(address, { clientDuid: params.clientDuid, iaid: params.iaid, poolName: pool.name });
       return { address, pool, serverDuid: this.serverDuid, transactionId: params.transactionId };

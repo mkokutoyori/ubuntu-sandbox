@@ -225,6 +225,16 @@ describe('§21.7 Option Request', () => {
   });
 });
 
+describe('identifiant client', () => {
+  it('un DUID en majuscules designe le meme client que sa forme minuscule, la reponse rend la forme recue', () => {
+    const server = engine();
+    const lower = bind(server, '00:03:00:01:aa:bb:cc:dd:ee:ff', 1);
+    const upper = buildDhcpv6ServerReply(server, DHCPv6Packet.createSolicit('00:03:00:01:AA:BB:CC:DD:EE:FF', 1, 9), CTX)!;
+    expect(upper.ias[0].addresses[0].address).toBe(lower);
+    expect(upper.clientDuid).toBe('00:03:00:01:AA:BB:CC:DD:EE:FF');
+  });
+});
+
 describe('§18.3.4 Renew / §18.3.5 Rebind', () => {
   it('Renew : les durees repartent de l instant du Renew', () => {
     const server = engine();
