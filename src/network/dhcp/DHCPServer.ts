@@ -635,7 +635,7 @@ export class DHCPServer implements IProtocolEngine {
     for (const pool of poolEntries) {
       if (!pool.network || !pool.mask) continue;
       if (pool.active === false) continue;
-      if (this.admission && !this.admission.mayServe(params.clientMAC, pool.name)) continue;
+      if (this.admission && !this.admission.mayServe(params.clientMAC, pool.name, { vendorClass: params.vendorClass })) continue;
 
       // Only consider pools whose subnet actually contains the anchor.
       if (subnetAnchor && !this.isIPInPool(subnetAnchor, pool)) continue;
@@ -855,7 +855,7 @@ export class DHCPServer implements IProtocolEngine {
       if (!pool.network || !pool.mask) continue;
       if (!this.isIPInPool(params.requestedIP, pool)) continue;
 
-      if (this.admission && !this.admission.mayServe(params.clientMAC, pool.name)) return null;
+      if (this.admission && !this.admission.mayServe(params.clientMAC, pool.name, { vendorClass: params.vendorClass })) return null;
 
       if (this.isClientDenied(params.clientMAC, pool)) {
         this.stats.naks++;

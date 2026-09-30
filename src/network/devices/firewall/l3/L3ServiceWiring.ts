@@ -12,6 +12,8 @@ import {
   createFirewallDhcp, dhcpDatagram, dhcpReplyDatagram, type FirewallDhcp,
 } from './FirewallDhcp';
 import { deliverToRoutingProtocol } from '../routing/RoutingWiring';
+import type { FirewallDdns } from './FirewallDdns';
+import type { DhcpDebug } from './DhcpDebug';
 import { SdwanService } from '../sdwan/SdwanService';
 import { IPAddress, type IPv4Packet } from '../../../core/types';
 
@@ -32,6 +34,9 @@ export interface L3ServiceHost {
   assignAddress(iface: string, ip: string, mask: string): void;
   forward(iface: string, packet: IPv4Packet, gateway?: string): void;
   systemDnsServers?(): readonly string[];
+  systemNtpServers?(): readonly string[];
+  ddns?(): FirewallDdns;
+  debug?(): DhcpDebug;
   now(): number;
 }
 
@@ -102,6 +107,12 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
     },
     leaseLost: (iface) => { host.routesOf(iface).removeStaticById(`dhcp:${iface}`); },
     systemDnsServers: () => host.systemDnsServers?.() ?? [],
+    systemNtpServers: () => host.systemNtpServers?.() ?? [],
+    ddns: () => host.ddns?.(),
+    debug: () => host.debug?.(),
+    ownAddresses: () => host.interfaces().all()
+      .map(entry => entry.ip)
+      .filter((ip): ip is string => typeof ip === 'string' && ip.length > 0),
     sendToServer: (server, packet) => {
       const relaying = host.interfaces().owningInterface(packet.sourceIP.toString());
       const hop = host.routesOf(relaying).resolveNextHop(server.toString());

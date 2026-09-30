@@ -100,6 +100,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
     const discover = DHCPPacket.createDiscover(params.clientMAC, params.xid);
     if (params.requestedIP) discover.setOption(DHCP_OPTION.REQUESTED_IP, params.requestedIP);
     if (params.hostName) discover.setOption(DHCP_OPTION.HOST_NAME, params.hostName);
+    applyClientIdentity(discover, params);
     if (params.clientFqdn) discover.setOption(DHCP_OPTION.CLIENT_FQDN, params.clientFqdn);
     const entry = this.exchange(discover, ['DHCPOFFER'], params.xid, params.clientMAC);
     if (!entry) return null;
@@ -150,6 +151,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
       request.removeOption(DHCP_OPTION.REQUESTED_IP);
     }
     if (params.hostName) request.setOption(DHCP_OPTION.HOST_NAME, params.hostName);
+    applyClientIdentity(request, params);
     if (params.clientFqdn) request.setOption(DHCP_OPTION.CLIENT_FQDN, params.clientFqdn);
 
     const entry = this.exchange(request, ['DHCPACK', 'DHCPNAK'], params.xid, params.clientMAC, params.unicastTo);
@@ -214,4 +216,13 @@ export class WireDhcpChannel implements DhcpServerChannel {
       params.clientMAC, xid, params.clientIP, params.serverIdentifier ?? '0.0.0.0');
     this.sendFrame(this.iface, pkt, params.unicastTo);
   }
+}
+
+function applyClientIdentity(
+  packet: DHCPPacket,
+  params: { clientMAC: string; clientIdentifier: string; vendorClass?: string },
+): void {
+  const implied = `01${params.clientMAC.replace(/:/g, '').toLowerCase()}`;
+  if (params.clientIdentifier !== implied) packet.setOption(DHCP_OPTION.CLIENT_IDENTIFIER, params.clientIdentifier);
+  if (params.vendorClass) packet.setOption(DHCP_OPTION.VENDOR_CLASS, params.vendorClass);
 }

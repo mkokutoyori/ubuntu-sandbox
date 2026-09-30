@@ -219,7 +219,8 @@ export class FortiTerminalSession extends CLITerminalSession {
   }
 
   protected override tryInterceptAsyncCommand(command: string): boolean {
-    return this.tryStartPingStream(command) || this.tryStartSnifferStream(command);
+    return this.tryStartPingStream(command) || this.tryStartSnifferStream(command)
+      || this.tryStartDhcpDebugStream(command);
   }
 
   private tryStartSnifferStream(commandLine: string): boolean {
@@ -264,6 +265,35 @@ export class FortiTerminalSession extends CLITerminalSession {
         emitTrailer(ctx);
       },
       onInterrupt: (ctx) => emitTrailer(ctx),
+    });
+    return job !== null;
+  }
+
+  private tryStartDhcpDebugStream(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const device = this.device;
+    if (!(device instanceof Firewall)) return false;
+    if (!this.forti().getShell().debugEnableRequested(commandLine)) return false;
+
+    const debug = device.getDhcpDebug();
+    if (!debug.hasLevels()) return false;
+
+    const queue: string[] = [];
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      run: async (ctx) => {
+        const answer = await device.executeCommand(commandLine);
+        if (answer) ctx.sink.line(answer);
+        const stop = debug.subscribe((line) => { queue.push(line); });
+        try {
+          while (!ctx.cancelled()) {
+            while (queue.length > 0) ctx.sink.line(queue.shift()!);
+            await ctx.delay(SNIFFER_POLL_MS);
+          }
+        } finally { stop(); }
+      },
     });
     return job !== null;
   }

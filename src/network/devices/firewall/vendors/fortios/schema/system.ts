@@ -612,6 +612,23 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       defaultValue: [],
       availableWhen: (object) => object.effective('dhcp-relay-service')[0] === 'enable',
     },
+    {
+      ...enable('dhcp-relay-agent-option', 'Enable/disable DHCP relay agent option.', true),
+      availableWhen: (object: FortiObjectView) => object.effective('dhcp-relay-service')[0] === 'enable',
+    },
+    {
+      ...word('dhcp-client-identifier', 'DHCP client identifier.'),
+      availableWhen: isDhcpClient,
+    },
+    {
+      ...count('dhcp-renew-time', 'DHCP renew time in seconds (300-604800), 0 means use the renew time provided by the server.', 0, 604800, 0),
+      acceptsValue: (value: string) => {
+        const seconds = Number(value);
+        return seconds === 0 || (seconds >= 300 && seconds <= 604800);
+      },
+      expectedValue: 'an integer in range[300-604800], or 0 to use the renew time provided by the server.',
+      availableWhen: isDhcpClient,
+    },
     choice('status', 'Bring the interface up or shut it down.', [
       { keyword: 'up', description: 'Bring the interface up.' },
       { keyword: 'down', description: 'Shut down the interface.' },
@@ -649,6 +666,10 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
         gateway: object.effective('defaultgw')[0] !== 'disable',
         distance: Number.parseInt(object.effective('distance')[0] ?? '', 10) || 5,
       } : undefined,
+      dhcpClient: mode === 'dhcp' ? {
+        identifier: object.effective('dhcp-client-identifier')[0] ?? '',
+        renewTimeSec: Number.parseInt(object.effective('dhcp-renew-time')[0] ?? '0', 10) || 0,
+      } : undefined,
       ip: ip[0],
       mask: ip[1],
       up: object.effective('status')[0] !== 'down',
@@ -680,6 +701,7 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     const regularRelay = object.effective('dhcp-relay-service')[0] === 'enable'
       && object.effective('dhcp-relay-type')[0] !== 'ipsec';
     context.device.setDhcpRelay(object.key, regularRelay ? object.effective('dhcp-relay-ip') : null);
+    context.device.setDhcpRelayOption(object.key, regularRelay && object.effective('dhcp-relay-agent-option')[0] !== 'disable');
 
     const prefix = parseIpv6Prefix(object.childSetting('ipv6', 'ip6-address')[0] ?? '');
     if (prefix) {
@@ -874,7 +896,14 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
       + 'connected to this interface.', ['system interface']),
     address('default-gateway', 'Default gateway IP address assigned by the DHCP server.'),
     address('netmask', 'Netmask assigned by the DHCP server.'),
-    count('lease-time', 'Lease time in seconds, 0 means unlimited.', 0, 8640000, 604800),
+    {
+      ...count('lease-time', 'Lease time in seconds, 0 means unlimited.', 0, 8640000, 604800),
+      acceptsValue: (value: string) => {
+        const seconds = Number(value);
+        return seconds === 0 || (seconds >= 300 && seconds <= 8640000);
+      },
+      expectedValue: 'an integer in range[300-8640000], or 0 for an unlimited lease.',
+    },
     count('conflicted-ip-timeout', 'Time in seconds to wait after a conflicted IP address is removed '
       + 'from the DHCP range before it can be reused.', 60, 8640000, 1800),
     choice('dns-service', 'Options for assigning DNS servers to DHCP clients.', [
@@ -884,9 +913,120 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
     ], 'specify'),
     address('dns-server1', 'DNS server 1.'),
     address('dns-server2', 'DNS server 2.'),
+    address('dns-server3', 'DNS server 3.'),
     word('domain', 'Domain name suffix for the IP addresses that the DHCP server assigns.'),
+    choice('ntp-service', 'Options for assigning Network Time Protocol (NTP) servers to DHCP clients.', [
+      { keyword: 'local', description: 'Use the FortiGate as the NTP server.' },
+      { keyword: 'default', description: 'Use the system NTP servers.' },
+      { keyword: 'specify', description: 'Use the servers named below.' },
+    ], 'specify'),
+    ...['ntp-server1', 'ntp-server2', 'ntp-server3'].map((name, index) => ({
+      ...address(name, `NTP server ${index + 1}.`),
+      availableWhen: (object: FortiObjectView) => object.effective('ntp-service')[0] === 'specify',
+    })),
+    ...['wifi-ac1', 'wifi-ac2', 'wifi-ac3'].map((name, index) =>
+      address(name, `WiFi Access Controller ${index + 1} IP address (DHCP option 138, RFC 5417).`)),
+    enable('vci-match', 'Enable/disable vendor class identifier (VCI) matching. When enabled only DHCP requests with a matching VCI are served.'),
+    enable('ddns-update', 'Enable/disable DDNS update for DHCP.'),
+    {
+      ...enable('ddns-update-override', 'Enable/disable DDNS update override for DHCP.'),
+      availableWhen: (object: FortiObjectView) => object.effective('ddns-update')[0] === 'enable',
+    },
+    {
+      ...address('ddns-server-ip', 'DDNS server IP.'),
+      availableWhen: (object: FortiObjectView) => object.effective('ddns-update')[0] === 'enable',
+    },
+    {
+      ...word('ddns-zone', 'Zone of your domain name (ex. DDNS.com).'),
+      availableWhen: (object: FortiObjectView) => object.effective('ddns-update')[0] === 'enable',
+    },
+    {
+      ...choice('ddns-auth', 'DDNS authentication mode.', [
+        { keyword: 'disable', description: 'Disable DDNS authentication.' },
+        { keyword: 'tsig', description: 'TSIG based on RFC2845.' },
+      ], 'disable'),
+      availableWhen: (object: FortiObjectView) => object.effective('ddns-update')[0] === 'enable',
+    },
+    {
+      ...word('ddns-keyname', 'DDNS update key name.'),
+      availableWhen: (object: FortiObjectView) => object.effective('ddns-auth')[0] === 'tsig',
+    },
+    {
+      ...word('ddns-key', 'DDNS update key (base 64 encoding).'),
+      availableWhen: (object: FortiObjectView) => object.effective('ddns-auth')[0] === 'tsig',
+    },
+    {
+      ...count('ddns-ttl', 'TTL.', 60, 86400, 300),
+      availableWhen: (object: FortiObjectView) => object.effective('ddns-update')[0] === 'enable',
+    },
+    address('wins-server1', 'WINS server 1.'),
+    address('wins-server2', 'WINS server 2.'),
+    address('next-server', 'IP address of a server, such as a TFTP server, from which DHCP clients can download a boot file.'),
+    word('filename', 'Name of the boot file on the TFTP server.'),
+    choice('mac-acl-default-action', 'MAC access control default action (allow or block assigning IP settings).', [
+      { keyword: 'assign', description: 'Allow assigning IP settings.' },
+      { keyword: 'block', description: 'Block assigning IP settings.' },
+    ], 'assign'),
   ],
   children: [
+    {
+      path: ['vci-string'],
+      kind: 'table',
+      keyType: 'name',
+      ordered: false,
+      scope: 'vdom',
+      accessGroup: 'sysgrp',
+      renderOrder: 74,
+      help: 'One or more VCI strings in quotes separated by spaces.',
+      attributes: [
+        { ...word('vci-string', 'VCI strings.'), readOnly: true },
+      ],
+    },
+    {
+      path: ['exclude-range'],
+      kind: 'table',
+      keyType: 'integer',
+      ordered: false,
+      scope: 'vdom',
+      accessGroup: 'sysgrp',
+      renderOrder: 73,
+      help: 'Exclude one or more ranges of IP addresses from being assigned to clients.',
+      attributes: [
+        { ...word('id', 'ID.'), readOnly: true },
+        address('start-ip', 'Start of IP range.'),
+        address('end-ip', 'End of IP range.'),
+      ],
+    },
+    {
+      path: ['options'],
+      kind: 'table',
+      keyType: 'integer',
+      ordered: false,
+      scope: 'vdom',
+      accessGroup: 'sysgrp',
+      renderOrder: 74,
+      help: 'DHCP options.',
+      attributes: [
+        { ...word('id', 'ID.'), readOnly: true },
+        count('code', 'DHCP option code.', 0, 255, 0),
+        choice('type', 'DHCP option type.', [
+          { keyword: 'hex', description: 'DHCP option in hex.' },
+          { keyword: 'string', description: 'DHCP option in string.' },
+          { keyword: 'ip', description: 'DHCP option in IP.' },
+          { keyword: 'fqdn', description: 'DHCP option in domain search option format.' },
+        ], 'hex'),
+        {
+          ...word('value', 'DHCP option value.'),
+          availableWhen: (object: FortiObjectView) => object.effective('type')[0] !== 'ip',
+        },
+        {
+          name: 'ip', help: 'DHCP option IPs.', quoted: true, multiValue: true,
+          parts: [{ name: 'ip', type: 'IP_ADDR', description: 'DHCP option IP.' }],
+          defaultValue: [],
+          availableWhen: (object: FortiObjectView) => object.effective('type')[0] === 'ip',
+        },
+      ],
+    },
     {
       path: ['reserved-address'],
       kind: 'table',
@@ -898,6 +1038,11 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
       help: 'Options for the DHCP server to assign IP settings to specific MAC addresses.',
       attributes: [
         { ...word('id', 'Reservation identifier.'), readOnly: true },
+        choice('action', 'Options for the DHCP server to configure the client with the reserved MAC address.', [
+          { keyword: 'assign', description: 'Configure the client with this MAC address like any other client.' },
+          { keyword: 'block', description: 'Block the DHCP request of the client with this MAC address.' },
+          { keyword: 'reserved', description: 'Assign the reserved IP address to the client with this MAC address.' },
+        ], 'reserved'),
         address('ip', 'IP address to be reserved for the MAC address.'),
         {
           name: 'mac', help: 'MAC address of the client that will get the reserved IP.',
@@ -937,12 +1082,50 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
       dnsServers: [
         object.effective('dns-server1')[0] ?? '',
         object.effective('dns-server2')[0] ?? '',
+        object.effective('dns-server3')[0] ?? '',
       ].filter(server => server.length > 0 && server !== '0.0.0.0'),
+      wifiControllers: ['wifi-ac1', 'wifi-ac2', 'wifi-ac3']
+        .map(name => object.effective(name)[0] ?? '')
+        .filter(server => server.length > 0 && server !== '0.0.0.0'),
+      ddns: {
+        enabled: object.effective('ddns-update')[0] === 'enable',
+        override: object.effective('ddns-update-override')[0] === 'enable',
+        serverIp: object.effective('ddns-server-ip')[0] ?? '0.0.0.0',
+        zone: object.effective('ddns-zone')[0] ?? '',
+        auth: object.effective('ddns-auth')[0] === 'tsig' ? 'tsig' : 'disable',
+        keyName: object.effective('ddns-keyname')[0] ?? '',
+        key: object.effective('ddns-key')[0] ?? '',
+        ttl: Number.parseInt(object.effective('ddns-ttl')[0] ?? '300', 10),
+      },
+      vciMatch: object.effective('vci-match')[0] === 'enable',
+      vciStrings: object.childEntries('vci-string').map(entry => entry.key),
+      ntpService: object.effective('ntp-service')[0] ?? 'specify',
+      ntpServers: ['ntp-server1', 'ntp-server2', 'ntp-server3']
+        .map(name => object.effective(name)[0] ?? '')
+        .filter(server => server.length > 0 && server !== '0.0.0.0'),
+      winsServers: ['wins-server1', 'wins-server2']
+        .map(name => object.effective(name)[0] ?? '')
+        .filter(server => server.length > 0 && server !== '0.0.0.0'),
+      nextServer: object.effective('next-server')[0] ?? '0.0.0.0',
+      bootFile: object.effective('filename')[0] ?? '',
+      macAclDefaultAction: object.effective('mac-acl-default-action')[0] === 'block' ? 'block' : 'assign',
+      excludeRanges: object.childEntries('exclude-range').map(range => ({
+        startIp: range.effective('start-ip')[0] ?? '0.0.0.0',
+        endIp: range.effective('end-ip')[0] ?? '0.0.0.0',
+      })),
+      options: object.childEntries('options').map(option => ({
+        id: option.key,
+        code: Number.parseInt(option.effective('code')[0] ?? '0', 10),
+        type: option.effective('type')[0] ?? 'hex',
+        value: option.effective('value')[0] ?? '',
+        ips: option.effective('ip'),
+      })),
       reservations: object.childEntries('reserved-address').map(entry => ({
         id: entry.key,
         ip: entry.effective('ip')[0] ?? '0.0.0.0',
         mac: entry.effective('mac')[0] ?? '',
         description: entry.effective('description')[0] ?? '',
+        action: entry.effective('action')[0] ?? 'reserved',
       })),
       domain: object.effective('domain')[0] ?? '',
       leaseTimeSec: Number.parseInt(object.effective('lease-time')[0] ?? '604800', 10),
