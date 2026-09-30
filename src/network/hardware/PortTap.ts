@@ -1,4 +1,5 @@
 import type { EthernetFrame } from '../core/types';
+import { lineageOf } from './FrameLineage';
 
 export type FrameDirection = 'in' | 'out';
 
@@ -6,6 +7,8 @@ export interface TappedFrame {
   readonly iface: string;
   readonly direction: FrameDirection;
   readonly frame: EthernetFrame;
+  readonly seq: number;
+  readonly at: Date;
 }
 
 export type FrameTap = (tapped: TappedFrame) => void;
@@ -24,7 +27,8 @@ export class TapPoint {
 
   emit(iface: string, direction: FrameDirection, frame: EthernetFrame): void {
     if (this.taps.size === 0) return;
-    const tapped: TappedFrame = { iface, direction, frame };
+    const { seq, at } = lineageOf(frame);
+    const tapped: TappedFrame = { iface, direction, frame, seq, at };
     for (const tap of [...this.taps]) tap(tapped);
   }
 }

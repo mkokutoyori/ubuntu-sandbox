@@ -4878,10 +4878,22 @@ export abstract class LinuxMachine extends EndHost
     const wantPort = iface !== 'lo';
     const wantLoopback = iface === 'lo' || iface === 'any';
 
+    const pending: Array<{ seq: number; frame: CaptureFrame }> = [];
+    const flush = (): void => {
+      pending.sort((a, b) => a.seq - b.seq);
+      for (const entry of pending.splice(0)) sink(entry.frame);
+    };
+    unsubs.push(flush);
+
     if (wantPort) {
       unsubs.push(this.attachCapture(
-        (tapped) => sink(
-          decodeEthernetFrame(tapped.frame, tapped.iface, tapped.direction, new Date())),
+        (tapped) => {
+          if (pending.length === 0) queueMicrotask(flush);
+          pending.push({
+            seq: tapped.seq,
+            frame: decodeEthernetFrame(tapped.frame, tapped.iface, tapped.direction, tapped.at),
+          });
+        },
         iface === 'any' ? undefined : iface));
     }
 
