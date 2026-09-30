@@ -38,6 +38,8 @@ export const DHCP_OPTION = {
   TFTP_SERVER_NAME: 66,
   BOOTFILE_NAME: 67,
   CLIENT_FQDN: 81,
+  CLIENT_LAST_TRANSACTION_TIME: 91,
+  ASSOCIATED_IP: 92,
   END: 255,
   PAD: 0,
 } as const;
@@ -107,6 +109,10 @@ const MESSAGE_TYPE_VALUES: Record<number, DHCPMessageType> = {
   6: 'DHCPNAK',
   7: 'DHCPRELEASE',
   8: 'DHCPINFORM',
+  10: 'DHCPLEASEQUERY',
+  11: 'DHCPLEASEUNASSIGNED',
+  12: 'DHCPLEASEUNKNOWN',
+  13: 'DHCPLEASEACTIVE',
 };
 
 /** Magic cookie (RFC 2131 §3): 99.130.83.99 = 0x63825363 */
@@ -372,6 +378,24 @@ export class DHCPPacket implements NetworkPdu {
     return pkt;
   }
 
+  static createLeaseQuery(
+    query: { giaddr: string; ipAddress?: string; hardwareAddress?: string; clientIdentifier?: string; parameterRequestList?: readonly number[] },
+    xid: number,
+  ): DHCPPacket {
+    const pkt = new DHCPPacket();
+    pkt.op = 1;
+    pkt.xid = xid;
+    pkt.giaddr = query.giaddr;
+    pkt.ciaddr = query.ipAddress ?? '0.0.0.0';
+    if (query.hardwareAddress) pkt.chaddr = query.hardwareAddress.toUpperCase();
+    pkt.setOption(DHCP_OPTION.MESSAGE_TYPE, 10);
+    if (query.clientIdentifier) pkt.setOption(DHCP_OPTION.CLIENT_IDENTIFIER, query.clientIdentifier);
+    if (query.parameterRequestList && query.parameterRequestList.length > 0) {
+      pkt.setOption(DHCP_OPTION.PARAMETER_REQUEST_LIST, [...query.parameterRequestList]);
+    }
+    return pkt;
+  }
+
   // ─── Serialization ────────────────────────────────────────────
 
   /** Serialize packet to binary Uint8Array (wire format) */
@@ -542,9 +566,19 @@ export class DHCPPacket implements NetworkPdu {
         }
         break;
       }
+      case DHCP_OPTION.ASSOCIATED_IP: {
+        const addresses = value as string[];
+        buf[offset++] = addresses.length * 4;
+        for (const address of addresses) {
+          this.writeIP(buf, offset, address);
+          offset += 4;
+        }
+        break;
+      }
       case DHCP_OPTION.LEASE_TIME:
       case DHCP_OPTION.RENEWAL_TIME:
-      case DHCP_OPTION.REBINDING_TIME: {
+      case DHCP_OPTION.REBINDING_TIME:
+      case DHCP_OPTION.CLIENT_LAST_TRANSACTION_TIME: {
         buf[offset++] = 4;
         const num = value as number;
         buf[offset++] = (num >>> 24) & 0xFF;
@@ -614,9 +648,16 @@ export class DHCPPacket implements NetworkPdu {
         return servers;
       }
 
+      case DHCP_OPTION.ASSOCIATED_IP: {
+        const addresses: string[] = [];
+        for (let i = 0; i + 4 <= data.length; i += 4) addresses.push(DHCPPacket.readIP(data, i));
+        return addresses;
+      }
+
       case DHCP_OPTION.LEASE_TIME:
       case DHCP_OPTION.RENEWAL_TIME:
       case DHCP_OPTION.REBINDING_TIME:
+      case DHCP_OPTION.CLIENT_LAST_TRANSACTION_TIME:
         return ((data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]) >>> 0;
 
       case DHCP_OPTION.NETBIOS_NODE_TYPE:

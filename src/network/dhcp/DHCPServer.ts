@@ -27,7 +27,7 @@ import {
   DHCPDiscoverParams, DHCPOfferResult, DHCPRequestParams, DHCPAckResult,
   DHCPReleaseParams, DHCPDeclineParams,
   DHCPInformParams, DHCPInformResult,
-  DHCPRequestWithNakResult, DHCPStaticBinding, DhcpAdmissionPolicy,
+  DHCPRequestWithNakResult, DHCPStaticBinding, DhcpAdmissionPolicy, DhcpLeaseQuery, DhcpLeaseQueryResult,
   ackOf, createDefaultPoolConfig, createDefaultStats,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
@@ -944,6 +944,10 @@ export class DHCPServer implements IProtocolEngine {
         leaseExpiration: pool.leaseInfinite ? INFINITE_LEASE_EXPIRATION : leaseStart + this.leaseSecondsOf(pool, params.requestedIP) * 1000,
         poolName: pool.name,
         type: 'automatic',
+        hardwareAddress: params.hardwareAddress,
+        clientIdentifierOption: params.clientIdentifierOption,
+        relayInformation: params.relayInformation,
+        lastTransaction: leaseStart,
       };
 
       this.bindings.set(params.requestedIP, binding);
@@ -1080,6 +1084,69 @@ export class DHCPServer implements IProtocolEngine {
   }
 
   setAuthoritative(on: boolean): void { this.authoritative = on; }
+
+  private leasequeryEnabled = false;
+  private leasequeryRequestors: ReadonlySet<string> | null = null;
+  private leasequeryOptions: ReadonlySet<number> = new Set([1, 3, 6, 15, 42, 44, 46, 66, 67]);
+
+  setLeasequery(enabled: boolean, requestors: readonly string[] | null = null): void {
+    this.leasequeryEnabled = enabled;
+    this.leasequeryRequestors = requestors === null ? null : new Set(requestors);
+  }
+
+  setLeasequeryNonSensitiveOptions(codes: readonly number[]): void {
+    this.leasequeryOptions = new Set(codes);
+  }
+
+  isLeasequeryEnabled(): boolean { return this.leasequeryEnabled; }
+
+  mayLeasequery(requestor: string): boolean {
+    return this.leasequeryEnabled && (this.leasequeryRequestors === null || this.leasequeryRequestors.has(requestor));
+  }
+
+  private managesAddress(address: string): boolean {
+    if (this.isExcluded(address)) return false;
+    for (const [, pool] of this.pools) {
+      if (pool.network && pool.mask && this.isIPInPool(address, pool)) return true;
+    }
+    return false;
+  }
+
+  processLeaseQuery(query: DhcpLeaseQuery): DhcpLeaseQueryResult {
+    const now = this.clock();
+    this.expireStale();
+    const active = [...this.bindings.values()].filter(b => b.leaseExpiration > now);
+    let subject: DHCPBinding | undefined;
+    if (query.ipAddress !== undefined) {
+      if (!this.managesAddress(query.ipAddress)) return { type: 'DHCPLEASEUNKNOWN' };
+      subject = active.find(b => b.ipAddress === query.ipAddress);
+      if (subject === undefined) return { type: 'DHCPLEASEUNASSIGNED', ipAddress: query.ipAddress };
+    } else {
+      const own = active.filter(b => query.clientIdentifier !== undefined
+        ? b.clientIdentifierOption === query.clientIdentifier
+        : b.hardwareAddress?.toLowerCase() === query.hardwareAddress?.toLowerCase());
+      subject = own.sort((a, b) => (b.lastTransaction ?? 0) - (a.lastTransaction ?? 0))[0];
+      if (subject === undefined) return { type: 'DHCPLEASEUNKNOWN' };
+    }
+    const holder = subject;
+    const all = active
+      .filter(b => b.clientId === holder.clientId)
+      .sort((a, b) => (b.lastTransaction ?? 0) - (a.lastTransaction ?? 0))
+      .map(b => b.ipAddress);
+    return {
+      type: 'DHCPLEASEACTIVE',
+      ipAddress: holder.ipAddress,
+      hardwareAddress: holder.hardwareAddress ?? holder.clientId,
+      clientIdentifierOption: holder.clientIdentifierOption,
+      relayInformation: holder.relayInformation,
+      secondsSinceTransaction: Math.max(0, Math.floor((now - (holder.lastTransaction ?? holder.leaseStart)) / 1000)),
+      leaseSecondsLeft: holder.leaseExpiration >= INFINITE_LEASE_EXPIRATION ? null : Math.max(0, Math.ceil((holder.leaseExpiration - now) / 1000)),
+      associatedAddresses: all.length > 1 ? all : [],
+      poolName: holder.poolName,
+    };
+  }
+
+  leasequeryMayReturn(code: number): boolean { return this.leasequeryOptions.has(code); }
 
   remainingLeaseSeconds(address: string, clientKey: string): number | null {
     const binding = this.bindings.get(address);

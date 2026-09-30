@@ -187,6 +187,7 @@ export class LinuxDhcpdService {
 
   private applyConfig(config: DhcpdConfig): void {
     this.engine.setAuthoritative(config.authoritative);
+    this.engine.setLeasequery(config.leasequery);
     this.engine.setPingPacketCount(config.pingCheck ? 1 : 0);
     this.engine.setPingTimeoutMs(config.pingTimeoutSeconds * 1000);
     for (const [name] of this.engine.getAllPools()) this.engine.deletePool(name);

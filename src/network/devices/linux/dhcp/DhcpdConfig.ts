@@ -40,6 +40,7 @@ export interface DhcpdConfig {
   readonly subnets: readonly DhcpdSubnet[];
   readonly hosts: readonly DhcpdHost[];
   readonly authoritative: boolean;
+  readonly leasequery: boolean;
   readonly errors: readonly DhcpdError[];
 }
 
@@ -104,6 +105,7 @@ class Parser {
   readonly subnets: DhcpdSubnet[] = [];
   readonly hosts: DhcpdHost[] = [];
   authoritative = false;
+  leasequery = false;
   pingCheck: boolean | undefined;
   pingTimeoutSeconds = 1;
 
@@ -169,6 +171,9 @@ class Parser {
     switch (head.value) {
       case 'default-lease-time': into.defaultLeaseTime = Number(words[0]); return true;
       case 'max-lease-time': into.maxLeaseTime = Number(words[0]); return true;
+      case 'leasequery':
+        this.leasequery = /^(true|on|1)$/i.test(words[0] ?? '');
+        return true;
       case 'ping-check':
         this.pingCheck = /^(true|on|1)$/i.test(words[0] ?? '');
         return true;
@@ -216,6 +221,7 @@ class Parser {
     for (const subnet of parser.subnets) this.subnets.push(subnet);
     for (const host of parser.hosts) this.hosts.push(host);
     if (parser.authoritative) this.authoritative = true;
+    if (parser.leasequery) this.leasequery = true;
     if (parser.pingCheck !== undefined) this.pingCheck = parser.pingCheck;
   }
 
@@ -329,7 +335,7 @@ export function parseDhcpdConf(text: string, path: string): DhcpdConfig {
   parser.run(globals);
   return {
     globals, subnets: parser.subnets, hosts: parser.hosts,
-    authoritative: parser.authoritative, pingCheck: parser.pingCheck ?? PING_CHECK_DEFAULT,
+    authoritative: parser.authoritative, leasequery: parser.leasequery, pingCheck: parser.pingCheck ?? PING_CHECK_DEFAULT,
     pingTimeoutSeconds: parser.pingTimeoutSeconds, errors: parser.errors,
   };
 }
