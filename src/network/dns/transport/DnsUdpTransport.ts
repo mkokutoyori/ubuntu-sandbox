@@ -115,9 +115,14 @@ export function bindDnsUdpServer(
   handler: DnsMessageHandler,
   port: number = DNS_PORT,
   processName: string = 'dns',
+  address?: string,
 ): void {
-  if (port === DNS_PORT) host.getSocketTable().unbind('udp', '127.0.0.53', port);
-  host.udpBind(port, ({ sourceIP, udp }) => {
+  if (port === DNS_PORT && address === undefined) host.getSocketTable().unbind('udp', '127.0.0.53', port);
+  const bind = (listener: Parameters<EndHost['udpBind']>[1]): void => {
+    if (address === undefined) host.udpBind(port, listener, processName);
+    else host.udpBindAddress(address, port, listener, processName);
+  };
+  bind(({ sourceIP, udp }) => {
     if (!(udp.payload instanceof Uint8Array)) return;
     let query: DnsMessage;
     try {
@@ -134,7 +139,7 @@ export function bindDnsUdpServer(
     const result = handler(query, sourceIP, udp.sourcePort, udp.payload);
     if (result instanceof Promise) void result.then(send);
     else send(result);
-  }, processName);
+  });
 }
 
 export function unbindDnsUdpServer(host: EndHost, port: number = DNS_PORT): void {
