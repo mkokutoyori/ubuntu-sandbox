@@ -1544,6 +1544,14 @@ export class FortiShell {
       words.slice(2), (name) => this.fw.getPort(name) !== undefined);
   }
 
+  debugEnableRequested(commandLine: string): boolean {
+    const words = commandLine.trim().split(/\s+/);
+    if (words.length !== 3) return false;
+    return resolvePrefix(words[0], ['diagnose']).name === 'diagnose'
+      && resolvePrefix(words[1], ['debug']).name === 'debug'
+      && resolvePrefix(words[2], ['enable']).name === 'enable';
+  }
+
   pingTargetFor(commandLine: string): string | null {
     const words = commandLine.trim().split(/\s+/);
     if (words.length !== 3 || words[0] !== 'execute' || words[1] !== 'ping') return null;

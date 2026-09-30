@@ -15,6 +15,7 @@ import { buildDhcpServerReply, dhcpReplyRoute, type DhcpReplyRoute } from '../..
 import type { IEventBus } from '../../../../events/EventBus';
 import { DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '@/network/core/WellKnownPorts';
 import type { FirewallDdns, DdnsSettings } from './FirewallDdns';
+import type { DhcpDebug } from './DhcpDebug';
 import { relayDhcpReply, relayDhcpRequest, type DhcpRelayHost } from '../../../dhcp/DhcpRelay';
 
 
@@ -67,6 +68,7 @@ export interface FirewallDhcpDeps {
   readonly interfaceOwning?: (address: string) => string | null;
   readonly ownAddresses?: () => readonly string[];
   readonly ddns?: () => FirewallDdns | undefined;
+  readonly debug?: () => DhcpDebug | undefined;
   readonly addressInUse?: (iface: string, address: string) => boolean;
 }
 
@@ -113,6 +115,7 @@ export class FirewallDhcp {
       addressAllowed: () => true,
       leaseSeconds: (_pool, configured) => configured,
     });
+    this.traceClientAndRelay();
     this.client = new DHCPClient(
       (iface) => deps.portMac(iface)?.toString() ?? '00:00:00:00:00:00',
       (iface, ip, mask, gateway) => {
@@ -124,6 +127,72 @@ export class FirewallDhcp {
     this.client.setEventBus(deps.bus());
     this.client.setClock(deps.now);
     this.client.setWireChannelFactory((iface) => this.channelFor(iface));
+  }
+
+  private traceClientAndRelay(): void {
+    const bus = this.deps.bus();
+    const client = (text: string): void => this.deps.debug?.()?.emit('dhcpc', text);
+    const relay = (text: string): void => this.deps.debug?.()?.emit('dhcprelay', text);
+    bus.subscribe('dhcp.discover.sent', (event) => {
+      if (event.payload.deviceId === this.deps.deviceId) client(`DHCPDISCOVER on ${event.payload.iface} to 255.255.255.255 port 67`);
+    });
+    bus.subscribe('dhcp.offer.received', (event) => {
+      if (event.payload.deviceId === this.deps.deviceId) client(`DHCPOFFER of ${event.payload.offeredIp} from ${event.payload.serverIp}`);
+    });
+    bus.subscribe('dhcp.request.sent', (event) => {
+      if (event.payload.deviceId === this.deps.deviceId) client(`DHCPREQUEST for ${event.payload.requestedIp} on ${event.payload.iface} to ${event.payload.serverIp} port 67`);
+    });
+    bus.subscribe('dhcp.ack.received', (event) => {
+      if (event.payload.deviceId !== this.deps.deviceId) return;
+      client(`DHCPACK of ${event.payload.assignedIp} from ${event.payload.serverIp}`);
+      client(`bound to ${event.payload.assignedIp} -- renewal in ${event.payload.t1Sec} seconds.`);
+    });
+    bus.subscribe('dhcp.nak.received', (event) => {
+      if (event.payload.deviceId === this.deps.deviceId) client(`DHCPNAK from ${event.payload.serverIp}`);
+    });
+    bus.subscribe('dhcp.decline.sent', (event) => {
+      if (event.payload.deviceId === this.deps.deviceId) client(`DHCPDECLINE of ${event.payload.ip} on ${event.payload.iface} to ${event.payload.serverIp} port 67`);
+    });
+    bus.subscribe('dhcp.lease.renewing', (event) => {
+      if (event.payload.deviceId === this.deps.deviceId) client(`DHCPREQUEST for ${event.payload.ip} on ${event.payload.iface} (renewing)`);
+    });
+    bus.subscribe('dhcp.relay.forwarded', (event) => {
+      if (event.payload.deviceId !== this.deps.deviceId) return;
+      for (const helper of event.payload.helpers) relay(`Forwarded BOOTREQUEST for ${event.payload.clientMac} to ${helper}`);
+    });
+    bus.subscribe('dhcp.relay.reply-forwarded', (event) => {
+      if (event.payload.deviceId === this.deps.deviceId) relay(`Forwarded BOOTREPLY for ${event.payload.clientMac} to ${event.payload.assignedIp}`);
+    });
+    bus.subscribe('dhcp.relay.dropped', (event) => {
+      if (event.payload.deviceId === this.deps.deviceId) relay(`Discarding packet with hop count ${event.payload.hops} from ${event.payload.clientMac}`);
+    });
+  }
+
+  private traceServer(iface: string, request: DHCPPacket, reply: DHCPPacket | null): void {
+    const debug = this.deps.debug?.();
+    if (debug === undefined || debug.level('dhcps') === 0) return;
+    const mac = request.chaddr.toLowerCase();
+    const via = request.giaddr !== '0.0.0.0' ? request.giaddr : `${iface}(ethernet)`;
+    const replied = reply?.getMessageType();
+    const say = (text: string): void => debug.emit('dhcps', text);
+    switch (request.getMessageType()) {
+      case 'DHCPDISCOVER':
+        say(`DHCPDISCOVER from ${mac} via ${via}`);
+        if (replied === 'DHCPOFFER') say(`DHCPOFFER on ${reply!.yiaddr} to ${mac} via ${via}`);
+        else say(`DHCPDISCOVER from ${mac} via ${via}: no free leases`);
+        break;
+      case 'DHCPREQUEST': {
+        const wanted = String(request.getOption(50) ?? request.ciaddr);
+        say(`DHCPREQUEST for ${wanted} from ${mac} via ${via}`);
+        if (replied === 'DHCPACK') say(`DHCPACK on ${reply!.yiaddr} to ${mac} via ${via}`);
+        else if (replied === 'DHCPNAK') say(`DHCPNAK on ${wanted} to ${mac} via ${via}`);
+        break;
+      }
+      case 'DHCPRELEASE': say(`DHCPRELEASE of ${request.ciaddr} from ${mac} via ${via}`); break;
+      case 'DHCPDECLINE': say(`DHCPDECLINE of ${String(request.getOption(50) ?? request.ciaddr)} from ${mac} via ${via}`); break;
+      case 'DHCPINFORM': say(`DHCPINFORM from ${request.ciaddr} via ${via}`); break;
+      default: break;
+    }
   }
 
   private readonly clientInterfaces = new Map<string, DhcpClientRoute>();
@@ -400,6 +469,7 @@ export class FirewallDhcp {
       isAddressInUse: (address) => this.probeOnLink(iface, address),
     });
     if (request.getMessageType() === 'DHCPRELEASE') this.withdrawName(request.ciaddr);
+    this.traceServer(iface, request, reply ?? null);
     if (reply) {
       this.registerName(iface, request, reply);
       this.deliver(iface, reply, dhcpReplyRoute(request, reply), request.chaddr);
@@ -598,6 +668,7 @@ export interface DhcpWiringHost {
   interfaceOwning?(address: string): string | null;
   ownAddresses?(): readonly string[];
   ddns?(): FirewallDdns | undefined;
+  debug?(): DhcpDebug | undefined;
   addressInUse?(iface: string, address: string): boolean;
 }
 
@@ -619,6 +690,7 @@ export function createFirewallDhcp(host: DhcpWiringHost): FirewallDhcp {
     interfaceOwning: (address) => host.interfaceOwning?.(address) ?? null,
     ownAddresses: () => host.ownAddresses?.() ?? [],
     ddns: () => host.ddns?.(),
+    debug: () => host.debug?.(),
     addressInUse: (iface, address) => host.addressInUse?.(iface, address) ?? false,
   });
 }

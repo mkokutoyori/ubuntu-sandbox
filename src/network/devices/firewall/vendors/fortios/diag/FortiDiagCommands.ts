@@ -21,6 +21,7 @@ import { formatLogRecord, type FortiLogContext, type FortiLogFormat } from '../l
 import { type LoggedIdentity, trafficDenyLog } from '../log/trafficLog';
 import type { FortiDiagnostics } from './FortiDiagnostics';
 import { renderDebugFlow } from './debugFlowRenderer';
+import { DHCP_DEBUG_APPLICATIONS, isDhcpDebugApplication } from '../../../l3/DhcpDebug';
 import { renderIpropeList, renderIpropeShow } from './ipropeRenderer';
 import { renderSniffer } from './snifferRenderer';
 import {
@@ -671,14 +672,17 @@ function renderSessionFilter(filter: SessionFilter): string {
 function diagnoseDebug(rest: readonly string[], deps: FortiDiagDeps): string {
   const state = deps.state.debugFlow;
 
-  if (rest[0] === 'reset') { deps.state.resetDebug(); return ''; }
+  if (rest[0] === 'reset') { deps.state.resetDebug(); deps.fw.getDhcpDebug().reset(); return ''; }
+  if (rest[0] === 'application') return setDebugApplication(rest.slice(1), deps);
+  if (rest[0] === 'console') return setDebugConsole(rest.slice(1), deps);
   if (rest[0] === 'enable') {
+    deps.fw.getDhcpDebug().setEnabled(true);
     state.enabled = true;
     const text = renderDebugFlow(deps.fw.recentTraces(), state, deps.vdom());
     state.nextTraceId += Math.max(1, countTraces(text));
     return state.showConsole ? text : '';
   }
-  if (rest[0] === 'disable') { state.enabled = false; return ''; }
+  if (rest[0] === 'disable') { state.enabled = false; deps.fw.getDhcpDebug().setEnabled(false); return ''; }
   if (rest[0] !== 'flow') return FortiMessages.unknownPath(rest.join(' '));
 
   if (rest[1] === 'filter') return setFlowFilter(rest.slice(2), deps);
@@ -690,6 +694,27 @@ function diagnoseDebug(rest: readonly string[], deps: FortiDiagDeps): string {
     return '';
   }
   return FortiMessages.unknownPath(rest.join(' '));
+}
+
+function setDebugApplication(words: readonly string[], deps: FortiDiagDeps): string {
+  const [name, raw] = words;
+  if (name === undefined) return FortiMessages.incomplete('a daemon name');
+  if (!isDhcpDebugApplication(name)) {
+    return FortiMessages.parseError(name, `known daemons: ${DHCP_DEBUG_APPLICATIONS.join(', ')}.`);
+  }
+  if (raw === undefined) return FortiMessages.incomplete('a debug level');
+  const level = Number(raw);
+  if (!Number.isInteger(level)) return FortiMessages.parseError(raw, 'the debug level is an integer; -1 turns every message on, 0 turns them off.');
+  deps.fw.getDhcpDebug().setLevel(name, level);
+  return '';
+}
+
+function setDebugConsole(words: readonly string[], deps: FortiDiagDeps): string {
+  if (words[0] !== 'timestamp') return FortiMessages.unknownPath(`debug console ${words.join(' ')}`.trim());
+  const value = words[1];
+  if (value !== 'enable' && value !== 'disable') return FortiMessages.incomplete('`enable` or `disable`');
+  deps.fw.getDhcpDebug().setTimestamp(value === 'enable');
+  return '';
 }
 
 function setFlowShow(words: readonly string[], deps: FortiDiagDeps): string {

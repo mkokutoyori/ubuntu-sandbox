@@ -169,6 +169,7 @@ import { FirewallTraceroute } from './diag/FirewallTraceroute';
 import {
   DNS_PORT, FirewallDnsClient, } from './l3/FirewallDnsClient';
 import { FirewallDdns } from './l3/FirewallDdns';
+import { DhcpDebug } from './l3/DhcpDebug';
 import { FirewallDnsServer } from './l3/FirewallDnsServer';
 import { transferTransportOf } from '../../dns/transfer/ZoneTransferClient';
 import type { SdwanService } from './sdwan/SdwanService';
@@ -706,6 +707,7 @@ export class Firewall extends Equipment {
       },
       systemNtpServers: () => this.ntp.getSettings().servers,
       ddns: () => this.ddns,
+      debug: () => this.dhcpDebug,
     });
 
     this.l3 = l3;
@@ -943,6 +945,10 @@ export class Firewall extends Equipment {
   });
 
   getDdns(): FirewallDdns { return this.ddns; }
+
+  private readonly dhcpDebug = new DhcpDebug(() => this.getSystemClockMs());
+
+  getDhcpDebug(): DhcpDebug { return this.dhcpDebug; }
 
   private udpEndpoint: ControlPlaneUdpEndpoint | null = null;
 
