@@ -28,6 +28,7 @@ export function buildCommitDevice(
       applyInterface(name, patch) {
         if (patch.vdom) fw.assignInterfaceToVdom(name, patch.vdom);
         if (patch.addressingMode) fw.getDhcp().setClientMode(name, patch.dhcpRoute ?? null);
+        if (patch.dhcpClient) fw.getDhcp().setClientOptions(name, patch.dhcpClient);
         if (patch.ip && patch.mask) fw.configureInterface(name, { ip: patch.ip, mask: patch.mask });
         if (patch.up !== undefined) fw.setInterfaceUp(name, patch.up);
         if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);
@@ -320,6 +321,9 @@ export function buildCommitDevice(
       },
       applyReplacementMessage(message, buffer) {
         fw.getLoginBanners().setBuffer(message, buffer);
+      },
+      setDhcpRelayOption(iface, on) {
+        fw.getDhcp().setRelayAgentOption(iface, on);
       },
       setDhcpRelay(iface, servers) {
         fw.getDhcp().setRelay(iface, servers);

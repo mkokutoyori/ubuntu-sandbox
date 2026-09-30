@@ -104,6 +104,7 @@ export interface FortiInterfacePatch {
   readonly vdom?: string;
   readonly addressingMode?: 'static' | 'dhcp' | 'pppoe';
   readonly dhcpRoute?: { readonly gateway: boolean; readonly distance: number };
+  readonly dhcpClient?: { readonly identifier: string; readonly renewTimeSec: number };
   readonly ip?: string;
   readonly mask?: string;
   readonly up?: boolean;
@@ -408,6 +409,7 @@ export interface FortiCommitDevice {
   resolveFqdnNow(fqdn: string): void;
   setCaptivePortalInterface(iface: string, on: boolean): void;
   setDhcpRelay(iface: string, servers: readonly string[] | null): void;
+  setDhcpRelayOption(iface: string, on: boolean): void;
   refreshCaptivePortal(): void;
   applySyslogCollector(settings: SyslogCollectorSettings): string | void;
   applySyslogFilter(settings: SyslogFilterSettings): string | void;

@@ -42,6 +42,11 @@ function requestedAddress(pkt: DHCPPacket): string | undefined {
   return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
 }
 
+function vendorClassOf(pkt: DHCPPacket): string | undefined {
+  const raw = pkt.getOption(DHCP_OPTION.VENDOR_CLASS);
+  return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+}
+
 function clientHostName(pkt: DHCPPacket): string | undefined {
   const raw = pkt.getOption(DHCP_OPTION.HOST_NAME);
   return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
@@ -84,6 +89,7 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
       clientMAC: pkt.chaddr, xid: pkt.xid,
       hostName: clientHostName(pkt),
       clientIdentifier: pkt.chaddr, parameterRequestList: [],
+      vendorClass: vendorClassOf(pkt),
       requestedIP: requestedAddress(pkt),
       giaddr, localGatewayIP: giaddr ? undefined : ctx.localGatewayIP,
     };
@@ -105,6 +111,7 @@ function answerDhcpRequest(pkt: DHCPPacket, ctx: DhcpServeContext): DHCPPacket |
       requestedIP: String(pkt.getOption(50) ?? pkt.ciaddr),
       hostName: clientHostName(pkt),
       clientIdentifier: pkt.chaddr,
+      vendorClass: vendorClassOf(pkt),
       serverIdentifier: String(pkt.getOption(54) ?? ''),
       giaddr,
     } as never);

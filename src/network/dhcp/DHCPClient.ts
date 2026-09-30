@@ -316,8 +316,26 @@ export class DHCPClient implements IProtocolEngine {
   // ─── Client Identifier Helper ─────────────────────────────────────
 
   /** Build Option 61 Client Identifier: 01 (hw type Ethernet) + MAC */
-  private buildClientIdentifier(mac: string): string {
-    return '01' + mac.replace(/:/g, '').toLowerCase();
+  private vendorClass: string | null = null;
+
+  setVendorClass(value: string | null): void { this.vendorClass = value; }
+
+  private readonly identifierOverrides = new Map<string, string>();
+  private readonly renewTimeOverrides = new Map<string, number>();
+
+  setClientIdentifier(iface: string, identifier: string | null): void {
+    if (identifier === null || identifier.length === 0) this.identifierOverrides.delete(iface);
+    else this.identifierOverrides.set(iface, identifier);
+  }
+
+  setRenewTime(iface: string, seconds: number | null): void {
+    if (seconds === null || seconds === 0) this.renewTimeOverrides.delete(iface);
+    else this.renewTimeOverrides.set(iface, seconds);
+  }
+
+  private buildClientIdentifier(mac: string, iface?: string): string {
+    return (iface === undefined ? undefined : this.identifierOverrides.get(iface))
+      ?? '01' + mac.replace(/:/g, '').toLowerCase();
   }
 
   // ─── DHCP Discover → Offer → Request → Ack (DORA) ────────────────
@@ -335,7 +353,7 @@ export class DHCPClient implements IProtocolEngine {
     const state = this.getState(iface);
     const lines: string[] = [];
     const { verbose = false } = options;
-    const clientIdentifier = this.buildClientIdentifier(mac);
+    const clientIdentifier = this.buildClientIdentifier(mac, iface);
 
     // INIT-REBOOT (RFC 2131 §3.2): a client that already knows an address —
     // whether it is currently bound to it or read it back from the lease
@@ -390,6 +408,7 @@ export class DHCPClient implements IProtocolEngine {
         clientMAC: mac,
         xid: state.xid,
         clientIdentifier,
+        vendorClass: this.vendorClass ?? undefined,
         ...this.clientIdentity(),
         parameterRequestList: DEFAULT_PARAMETER_REQUEST_LIST,
       });
@@ -446,6 +465,7 @@ export class DHCPClient implements IProtocolEngine {
       requestedIP: offer.ip,
       serverIdentifier: offer.serverIdentifier,
       clientIdentifier,
+      vendorClass: this.vendorClass ?? undefined,
       ...this.clientIdentity(),
     });
     const ackResult = ackOf(replyResult);
@@ -522,7 +542,7 @@ export class DHCPClient implements IProtocolEngine {
     const leaseDuration = pool.leaseDuration;
 
     // T1: Option 58 from server, or 50% of lease (RFC 2131 §4.4.5)
-    let renewalTime = ackResult.renewalTime ?? pool.renewalTime ?? Math.floor(leaseDuration * 0.5);
+    let renewalTime = this.renewTimeOverrides.get(iface) ?? ackResult.renewalTime ?? pool.renewalTime ?? Math.floor(leaseDuration * 0.5);
     // T2: Option 59 from server, or 87.5% of lease (RFC 2131 §4.4.5)
     let rebindingTime = ackResult.rebindingTime ?? pool.rebindingTime ?? Math.floor(leaseDuration * 0.875);
 
@@ -686,6 +706,7 @@ export class DHCPClient implements IProtocolEngine {
         requestedIP: lastLease.ipAddress,    // Option 50
         // NO serverIdentifier (RFC 2131 §3.2)
         clientIdentifier,                     // Option 61
+        vendorClass: this.vendorClass ?? undefined,
         ...this.clientIdentity(),
       });
       if (result?.xid !== state.xid) continue;
@@ -734,7 +755,7 @@ export class DHCPClient implements IProtocolEngine {
 
     // BOUND with reused lease
     state.state = 'BOUND';
-    const renewalTime = ackResult.renewalTime ?? Math.floor(ackResult.binding.leaseExpiration - ackResult.binding.leaseStart) / 1000 * 0.5;
+    const renewalTime = this.renewTimeOverrides.get(iface) ?? ackResult.renewalTime ?? Math.floor(ackResult.binding.leaseExpiration - ackResult.binding.leaseStart) / 1000 * 0.5;
     const rebindingTime = ackResult.rebindingTime ?? Math.floor(ackResult.binding.leaseExpiration - ackResult.binding.leaseStart) / 1000 * 0.875;
     const leaseDuration = Math.floor((ackResult.binding.leaseExpiration - ackResult.binding.leaseStart) / 1000);
 
@@ -793,7 +814,7 @@ export class DHCPClient implements IProtocolEngine {
     }
 
     const mac = this.getMACForIface(iface);
-    const clientIdentifier = this.buildClientIdentifier(mac);
+    const clientIdentifier = this.buildClientIdentifier(mac, iface);
     const lease = state.lease;
 
     // RFC-compliant RELEASE to the grantor (RFC 2131 §3.4).
@@ -961,7 +982,7 @@ export class DHCPClient implements IProtocolEngine {
 
     const lease = state.lease;
     const mac = this.getMACForIface(iface);
-    const clientIdentifier = this.buildClientIdentifier(mac);
+    const clientIdentifier = this.buildClientIdentifier(mac, iface);
 
     // T1: Renewal (unicast to original server)
     state.renewalTimer = this.timers.setTimeout(() => {
@@ -987,6 +1008,7 @@ export class DHCPClient implements IProtocolEngine {
               unicastTo: { ip: lease.serverIdentifier, mac: lease.serverMac },
               // No serverIdentifier in RENEWING (unicast, RFC 2131 §4.3.2)
               clientIdentifier,
+              vendorClass: this.vendorClass ?? undefined,
               ...this.clientIdentity(),
             });
             if (ackResult && ackResult.xid === state.xid) {
@@ -1031,6 +1053,7 @@ export class DHCPClient implements IProtocolEngine {
             requestedIP: lease.ipAddress,
             currentAddress: lease.ipAddress,
             clientIdentifier,
+            vendorClass: this.vendorClass ?? undefined,
             ...this.clientIdentity(),
           });
           if (ackResult && ackResult.xid === state.xid) {

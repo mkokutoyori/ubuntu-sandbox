@@ -612,6 +612,23 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       defaultValue: [],
       availableWhen: (object) => object.effective('dhcp-relay-service')[0] === 'enable',
     },
+    {
+      ...enable('dhcp-relay-agent-option', 'Enable/disable DHCP relay agent option.', true),
+      availableWhen: (object: FortiObjectView) => object.effective('dhcp-relay-service')[0] === 'enable',
+    },
+    {
+      ...word('dhcp-client-identifier', 'DHCP client identifier.'),
+      availableWhen: isDhcpClient,
+    },
+    {
+      ...count('dhcp-renew-time', 'DHCP renew time in seconds (300-604800), 0 means use the renew time provided by the server.', 0, 604800, 0),
+      acceptsValue: (value: string) => {
+        const seconds = Number(value);
+        return seconds === 0 || (seconds >= 300 && seconds <= 604800);
+      },
+      expectedValue: 'an integer in range[300-604800], or 0 to use the renew time provided by the server.',
+      availableWhen: isDhcpClient,
+    },
     choice('status', 'Bring the interface up or shut it down.', [
       { keyword: 'up', description: 'Bring the interface up.' },
       { keyword: 'down', description: 'Shut down the interface.' },
@@ -649,6 +666,10 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
         gateway: object.effective('defaultgw')[0] !== 'disable',
         distance: Number.parseInt(object.effective('distance')[0] ?? '', 10) || 5,
       } : undefined,
+      dhcpClient: mode === 'dhcp' ? {
+        identifier: object.effective('dhcp-client-identifier')[0] ?? '',
+        renewTimeSec: Number.parseInt(object.effective('dhcp-renew-time')[0] ?? '0', 10) || 0,
+      } : undefined,
       ip: ip[0],
       mask: ip[1],
       up: object.effective('status')[0] !== 'down',
@@ -680,6 +701,7 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     const regularRelay = object.effective('dhcp-relay-service')[0] === 'enable'
       && object.effective('dhcp-relay-type')[0] !== 'ipsec';
     context.device.setDhcpRelay(object.key, regularRelay ? object.effective('dhcp-relay-ip') : null);
+    context.device.setDhcpRelayOption(object.key, regularRelay && object.effective('dhcp-relay-agent-option')[0] !== 'disable');
 
     const prefix = parseIpv6Prefix(object.childSetting('ipv6', 'ip6-address')[0] ?? '');
     if (prefix) {
@@ -902,6 +924,9 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
       ...address(name, `NTP server ${index + 1}.`),
       availableWhen: (object: FortiObjectView) => object.effective('ntp-service')[0] === 'specify',
     })),
+    ...['wifi-ac1', 'wifi-ac2', 'wifi-ac3'].map((name, index) =>
+      address(name, `WiFi Access Controller ${index + 1} IP address (DHCP option 138, RFC 5417).`)),
+    enable('vci-match', 'Enable/disable vendor class identifier (VCI) matching. When enabled only DHCP requests with a matching VCI are served.'),
     address('wins-server1', 'WINS server 1.'),
     address('wins-server2', 'WINS server 2.'),
     address('next-server', 'IP address of a server, such as a TFTP server, from which DHCP clients can download a boot file.'),
@@ -912,6 +937,19 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
     ], 'assign'),
   ],
   children: [
+    {
+      path: ['vci-string'],
+      kind: 'table',
+      keyType: 'name',
+      ordered: false,
+      scope: 'vdom',
+      accessGroup: 'sysgrp',
+      renderOrder: 74,
+      help: 'One or more VCI strings in quotes separated by spaces.',
+      attributes: [
+        { ...word('vci-string', 'VCI strings.'), readOnly: true },
+      ],
+    },
     {
       path: ['exclude-range'],
       kind: 'table',
@@ -1014,6 +1052,11 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
         object.effective('dns-server2')[0] ?? '',
         object.effective('dns-server3')[0] ?? '',
       ].filter(server => server.length > 0 && server !== '0.0.0.0'),
+      wifiControllers: ['wifi-ac1', 'wifi-ac2', 'wifi-ac3']
+        .map(name => object.effective(name)[0] ?? '')
+        .filter(server => server.length > 0 && server !== '0.0.0.0'),
+      vciMatch: object.effective('vci-match')[0] === 'enable',
+      vciStrings: object.childEntries('vci-string').map(entry => entry.key),
       ntpService: object.effective('ntp-service')[0] ?? 'specify',
       ntpServers: ['ntp-server1', 'ntp-server2', 'ntp-server3']
         .map(name => object.effective(name)[0] ?? '')

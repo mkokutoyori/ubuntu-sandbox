@@ -36,6 +36,9 @@ export interface DhcpScope {
   readonly nextServer?: string;
   readonly bootFile?: string;
   readonly macAclDefaultAction?: 'assign' | 'block';
+  readonly wifiControllers?: readonly string[];
+  readonly vciMatch?: boolean;
+  readonly vciStrings?: readonly string[];
   readonly excludeRanges?: ReadonlyArray<{ startIp: string; endIp: string }>;
   readonly options?: ReadonlyArray<{
     id: string; code: number; type: string; value: string; ips: readonly string[];
@@ -73,6 +76,7 @@ const DEFAULT_CLIENT_ROUTE: DhcpClientRoute = { gateway: true, distance: 5 };
 const POOL_USAGE_TRAP_PERCENT = 90;
 const UNLIMITED_LEASE = 0;
 const NTP_SERVERS_OPTION = 42;
+const WIFI_CONTROLLER_OPTION = 138;
 
 function poolNameOf(scope: DhcpScope): string {
   return `scope-${scope.id}`;
@@ -85,6 +89,8 @@ export function dhcpServerId(scope: DhcpScope): number | null {
 
 export class FirewallDhcp {
   private readonly relays = new Map<string, readonly string[]>();
+  private readonly relayOptionInterfaces = new Set<string>();
+  private relayingFrom: string | null = null;
 
   private readonly server = new DHCPServer();
   private readonly scopes = new Map<string, DhcpScope>();
@@ -96,7 +102,7 @@ export class FirewallDhcp {
     this.server.setEventBus(deps.bus());
     this.server.setClock(deps.now);
     this.server.setAdmissionPolicy({
-      mayServe: (mac, pool) => this.macAclAllows(mac, pool),
+      mayServe: (mac, pool, client) => this.macAclAllows(mac, pool) && this.vendorClassAllows(client?.vendorClass, pool),
       addressAllowed: () => true,
       leaseSeconds: (_pool, configured) => configured,
     });
@@ -132,6 +138,16 @@ export class FirewallDhcp {
     this.clientInterfaces.set(iface, route);
     const lease = this.client.getState(iface).lease;
     if (lease !== null) this.installGateway(iface, lease.defaultGateway);
+  }
+
+  setClientOptions(iface: string, options: { identifier: string; renewTimeSec: number }): void {
+    this.client.setClientIdentifier(iface, options.identifier);
+    this.client.setRenewTime(iface, options.renewTimeSec);
+  }
+
+  setRelayAgentOption(iface: string, on: boolean): void {
+    if (on) this.relayOptionInterfaces.add(iface);
+    else this.relayOptionInterfaces.delete(iface);
   }
 
   private installGateway(iface: string, gateway: string | null): void {
@@ -261,6 +277,13 @@ export class FirewallDhcp {
     return [...(scope.ntpServers ?? [])];
   }
 
+  private vendorClassAllows(vendorClass: string | undefined, pool: string): boolean {
+    const scope = this.scopeOfPool(pool);
+    if (scope === undefined || scope.vciMatch !== true) return true;
+    if (vendorClass === undefined) return false;
+    return (scope.vciStrings ?? []).some(candidate => vendorClass.startsWith(candidate));
+  }
+
   private macAclAllows(clientMac: string, pool: string): boolean {
     const scope = this.scopeOfPool(pool);
     if (scope === undefined) return true;
@@ -309,7 +332,7 @@ export class FirewallDhcp {
       interfaceOwning: (address) => this.deps.interfaceOwning?.(address) ?? null,
       sendToServer: (server, packet) => this.deps.sendToServer?.(server, packet) ?? false,
       broadcastReply: (iface, reply) => { this.deliver(iface, reply, { kind: 'broadcast' }); },
-      relayInformationOption: () => false,
+      relayInformationOption: () => this.relayingFrom !== null && this.relayOptionInterfaces.has(this.relayingFrom),
       countForward: () => undefined,
       countReply: () => undefined,
       countDrop: () => undefined,
@@ -328,7 +351,9 @@ export class FirewallDhcp {
     if (request.op !== 1) return true;
     const relayServers = this.relays.get(iface);
     if (relayServers) {
+      this.relayingFrom = iface;
       relayDhcpRequest(this.relayHost(), iface, request, relayServers);
+      this.relayingFrom = null;
       return true;
     }
     if (!this.server.isEnabled() || !this.scopeOfInterface(iface)) return true;
@@ -399,6 +424,9 @@ export class FirewallDhcp {
       this.server.configurePoolNextServer(name, scope.nextServer);
     }
     if ((scope.bootFile ?? '').length > 0) this.server.configurePoolBootfile(name, scope.bootFile!);
+    if ((scope.wifiControllers ?? []).length > 0) {
+      this.server.configurePoolOption(name, WIFI_CONTROLLER_OPTION, 'ip', scope.wifiControllers!.join(' '));
+    }
     for (const option of scope.options ?? []) {
       const encoded = encodedOption(option);
       if (encoded !== null) this.server.configurePoolOption(name, option.code, encoded.kind, encoded.value);
