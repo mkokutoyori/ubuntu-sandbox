@@ -13,7 +13,7 @@ témoins). Les fichiers de sonde sont listés dans la dernière colonne.
 | 2136 | Mise à jour dynamique | Prérequis sur le RRset entier, classes étrangères et types méta en FORMERR, règles CNAME/SOA (série RFC 1982), dernier NS du sommet conservé, appliqué sur une copie puis delta. Limite : pas de SIG(0). | `dns-update-rfc2136-probe`, `bind9-dynamic-update-probe`, `named-update-policy` |
 | 2308 | Cache négatif | SOA négatif à min(TTL, MINIMUM) ; NXDOMAIN retenu pour le nom, NODATA par type. Limite : pas de cache de SERVFAIL (§7, facultatif). | `dns-rfc-conformance-probe`, `dns-resolver-hardening-probe` |
 | 2845 | TSIG | Réponses d'erreur TSIG (BADKEY/BADSIG non signés, BADTIME signé avec l'heure serveur), ordre clé → temps → MAC, temps signé qui recule rejeté. Limites : RFC 8945 (qui remplace la 2845) injoignable d'ici, l'ordre suit la 2845 fournie ; pas de TSIG sur les transferts multi-messages (§4.4). | `dns-tsig-error-returns-probe` |
-| 4033, 4034, 4035 | DNSSEC | **Cryptographie réelle** : forme canonique RFC 4034 §6 (NSEC/RRSIG non passés en minuscules, RFC 6840 §5.1), étiquette de clé annexe B, DS SHA-1/SHA-256, RSASHA1, RSASHA256, ECDSAP256SHA256 ; octets DNSKEY/RRSIG/DS bruts sur le fil ; NS de délégation et colle non signés (§2.2), chaîne NSEC sans colle (§2.3). Preuve : les 13 signatures RSASHA1 et les étiquettes 38519/9465 de l'annexe A de la RFC 4035 se vérifient. Limites : pas de NSEC3, pas de preuve d'absence de générique dans un NXDOMAIN, pas de renouvellement de clé automatisé. | `dns-dnssec-rfc4035-vectors`, `dns-dnssec-real-keys-probe` |
+| 4033, 4034, 4035 | DNSSEC | **Cryptographie réelle** : forme canonique RFC 4034 §6 (NSEC/RRSIG non passés en minuscules, RFC 6840 §5.1), étiquette de clé annexe B, DS SHA-1/SHA-256, RSASHA1, RSASHA256, ECDSAP256SHA256 ; octets DNSKEY/RRSIG/DS bruts sur le fil ; NS de délégation et colle non signés (§2.2), chaîne NSEC sans colle (§2.3). Preuve : les 13 signatures RSASHA1 et les étiquettes 38519/9465 de l'annexe A de la RFC 4035 se vérifient. NXDOMAIN signé : NSEC du nom et NSEC du générique du plus proche ancêtre, exigés par le validateur (§3.1.3.2, §5.4). Limites : pas de NSEC3, pas de renouvellement de clé automatisé. | `dns-dnssec-rfc4035-vectors`, `dns-dnssec-real-keys-probe`, `dns-dnssec-nxdomain-wildcard-proof` |
 | 6891 | EDNS(0) | Options lues et écrites, FORMERR sur OPT multiple ou non racine, BADVERS, taille négociée. Limite : aucune option n'est interprétée (NSID, cookies, padding absents de l'ensemble). | `dns-wire-edns-probe` |
 | 6895 | Registres IANA DNS | Plages de types méta (128–255) exploitées par la mise à jour ; non mesuré ailleurs. | — |
 | 7766 | DNS sur TCP | Préfixe de longueur, connexion persistante, plusieurs requêtes par connexion, réassemblage, fermeture après 10 s d'inactivité ; octets bruts transmis au gestionnaire (TSIG sur TCP). Limites : le client ouvre une connexion par requête, pas de réponses dans le désordre, pas d'option edns-tcp-keepalive. | `dns-tcp-framing-rfc7766` |
@@ -49,7 +49,7 @@ seule fois en matière de clé (`tsigKeyFromBase64`).
 ## Non réalisé, mesuré
 
 - Validation DNSSEC sur FortiGate, Cisco et Huawei (aucune ancre configurable).
-- NSEC3 (RFC 5155) et preuve de non-existence avec générique.
+- NSEC3 (RFC 5155).
 - TSIG sur transferts multi-messages, SIG(0), IXFR/AXFR sur plusieurs messages
   hors de ce que gère déjà `AxfrSession`.
 - DNAME, autres types hors de la liste du codec.

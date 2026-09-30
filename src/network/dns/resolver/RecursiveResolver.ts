@@ -142,7 +142,7 @@ export class RecursiveResolver {
     if (this.validator && !raw && outcome.status !== 'SERVFAIL') {
       security = outcome.answers.length > 0
         ? await this.validator.validateAnswer(outcome.answers)
-        : await this.validator.validateNegative(qname, outcome.authorities);
+        : await this.validator.validateNegative(qname, outcome.authorities, outcome.negative === 'nxdomain');
       if (security === 'bogus') {
         return { status: 'SERVFAIL', answers: [], fromCache: false, security };
       }

@@ -116,10 +116,18 @@ export class ZoneStore {
     ];
     if (!dnssec) return authority;
 
-    const proof = kind === 'nodata'
-      ? zone.getRRSet(qname, RRType.NSEC)?.[0] ?? null
-      : findCoveringNsec(zone, qname);
-    if (proof) authority.push(proof as ResourceRecord<ResourceRecordData>);
+    if (kind === 'nodata') {
+      const proof = zone.getRRSet(qname, RRType.NSEC)?.[0] ?? null;
+      if (proof) authority.push(proof as ResourceRecord<ResourceRecordData>);
+      return authority;
+    }
+    const covering = findCoveringNsec(zone, qname);
+    if (covering) authority.push(covering as ResourceRecord<ResourceRecordData>);
+    const wildcard = `*.${zone.closestEncloser(qname)}`.replace(/^\*\.$/, '*');
+    const wildcardProof = findCoveringNsec(zone, wildcard);
+    if (wildcardProof && wildcardProof !== covering) {
+      authority.push(wildcardProof as ResourceRecord<ResourceRecordData>);
+    }
     return authority;
   }
 

@@ -126,6 +126,15 @@ export class Zone {
     return false;
   }
 
+  closestEncloser(qname: string): string {
+    let candidate = parentOf(normalize(qname));
+    while (candidate !== null && isWithinOrigin(candidate, this.origin)) {
+      if (candidate === this.origin || this.nameExists(candidate)) return candidate;
+      candidate = parentOf(candidate);
+    }
+    return this.origin;
+  }
+
   private nameExists(name: string): boolean {
     return this.rrsets.has(name) || this.hasDescendant(name);
   }

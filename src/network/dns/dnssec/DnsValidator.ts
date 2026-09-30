@@ -34,6 +34,20 @@ function rrsigsOf(records: readonly ResourceRecord<ResourceRecordData>[]): Resou
   );
 }
 
+function commonAncestor(a: string, b: string): string {
+  const left = normalize(a).split('.').filter((l) => l !== '').reverse();
+  const right = normalize(b).split('.').filter((l) => l !== '').reverse();
+  const shared: string[] = [];
+  for (let i = 0; i < Math.min(left.length, right.length) && left[i] === right[i]; i++) shared.push(left[i]);
+  return shared.reverse().join('.');
+}
+
+function closestEncloserFrom(qname: string, nsec: ResourceRecord<NsecRecordData>): string {
+  const fromOwner = commonAncestor(qname, nsec.name);
+  const fromNext = commonAncestor(qname, nsec.data.nextDomainName);
+  return fromOwner.length >= fromNext.length ? fromOwner : fromNext;
+}
+
 export class DnsValidator {
   private readonly now: () => number;
   private readonly maxChainDepth: number;
@@ -75,7 +89,9 @@ export class DnsValidator {
   }
 
   async validateNegative(
-    qname: string, authorities: readonly ResourceRecord<ResourceRecordData>[],
+    qname: string,
+    authorities: readonly ResourceRecord<ResourceRecordData>[],
+    nameError = false,
   ): Promise<DnssecStatus> {
     const nsecs = authorities.filter(
       (rr): rr is ResourceRecord<NsecRecordData> => rr.data.type === RRType.NSEC,
@@ -86,13 +102,25 @@ export class DnsValidator {
       (nsec) => nsecCovers(qname, nsec) || normalize(nsec.name) === normalize(qname),
     );
     if (!proof) return 'bogus';
+    const used = [proof];
 
-    const rrsig = rrsigsOf(authorities).find(
-      (sig) => normalize(sig.name) === normalize(proof.name) && sig.data.typeCovered === RRType.NSEC,
-    );
-    if (!rrsig) return 'bogus';
+    if (nameError) {
+      const encloser = closestEncloserFrom(qname, proof);
+      const wildcard = encloser === '' ? '*' : `*.${encloser}`;
+      const wildcardProof = nsecs.find((nsec) => nsecCovers(wildcard, nsec));
+      if (!wildcardProof) return 'bogus';
+      if (!used.includes(wildcardProof)) used.push(wildcardProof);
+    }
 
-    return this.verifyWithZoneKeys([proof], rrsig.data, 0);
+    for (const nsec of used) {
+      const rrsig = rrsigsOf(authorities).find(
+        (sig) => normalize(sig.name) === normalize(nsec.name) && sig.data.typeCovered === RRType.NSEC,
+      );
+      if (!rrsig) return 'bogus';
+      const verdict = await this.verifyWithZoneKeys([nsec], rrsig.data, 0);
+      if (verdict !== 'secure') return verdict;
+    }
+    return 'secure';
   }
 
   private async verifyWithZoneKeys(
