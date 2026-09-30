@@ -121,6 +121,7 @@ import {
 } from './linux/LinuxIpCommand';
 import { DnsService } from './linux/LinuxDnsService';
 import { Bind9Service } from './linux/bind9/Bind9Service';
+import { attachOrderedCapture } from '../hardware/PortTap';
 import { LinuxDhcpdService } from './linux/dhcp/LinuxDhcpdService';
 import { LinuxDhcpd6Service } from './linux/dhcp/LinuxDhcpd6Service';
 import { seedDhcpdFiles } from './linux/dhcp/DhcpdFiles';
@@ -4878,22 +4879,10 @@ export abstract class LinuxMachine extends EndHost
     const wantPort = iface !== 'lo';
     const wantLoopback = iface === 'lo' || iface === 'any';
 
-    const pending: Array<{ seq: number; frame: CaptureFrame }> = [];
-    const flush = (): void => {
-      pending.sort((a, b) => a.seq - b.seq);
-      for (const entry of pending.splice(0)) sink(entry.frame);
-    };
-    unsubs.push(flush);
-
     if (wantPort) {
-      unsubs.push(this.attachCapture(
-        (tapped) => {
-          if (pending.length === 0) queueMicrotask(flush);
-          pending.push({
-            seq: tapped.seq,
-            frame: decodeEthernetFrame(tapped.frame, tapped.iface, tapped.direction, tapped.at),
-          });
-        },
+      unsubs.push(attachOrderedCapture(
+        this,
+        (tapped) => sink(decodeEthernetFrame(tapped.frame, tapped.iface, tapped.direction, tapped.at)),
         iface === 'any' ? undefined : iface));
     }
 

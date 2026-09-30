@@ -14,7 +14,7 @@
  */
 
 import type { IEventBus } from '@/events/EventBus';
-import type { FrameSource } from '@/network/hardware/PortTap';
+import { attachOrderedCapture, type FrameSource } from '@/network/hardware/PortTap';
 import { DebugBroadcast, type DebugLineListener, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 import { huaweiDisplayInterfaceName } from '@/network/devices/shells/cli-utils';
 import {
@@ -235,7 +235,7 @@ export class HuaweiDebugService implements TerminalDebugSource {
         this.emit('ip-icmp', `ICMP: ${kind} ${dir}, src=${ip.src}, dst=${ip.dst}`);
       }
     };
-    this.broadcast.track(frames.attachCapture((tapped) => {
+    this.broadcast.track(attachOrderedCapture(frames, (tapped) => {
       onFrame(tapped.frame, tapped.direction === 'in' ? 'received' : 'sent');
     }));
   }

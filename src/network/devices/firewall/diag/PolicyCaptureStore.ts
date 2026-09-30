@@ -16,7 +16,7 @@ export class PolicyCaptureStore {
 
   getMaxSizeMb(): number { return this.maxSizeMb; }
 
-  record(policyId: string, entry: CapturedFrame): void {
+  record(policyId: string, entry: Omit<CapturedFrame, 'seq'>): void {
     this.forPolicy(policyId).record(entry);
   }
 

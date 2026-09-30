@@ -49,7 +49,7 @@ export type DebugCategory =
   | 'stp.bpdu';
 
 import type { IEventBus } from '@/events/EventBus';
-import type { FrameSource } from '@/network/hardware/PortTap';
+import { attachOrderedCapture, type FrameSource } from '@/network/hardware/PortTap';
 import { DebugBroadcast, type DebugLineListener, type DebugLineJournal, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 import { CliInvalidInput } from '@/network/devices/shells/cli/CliDiagnostic';
 import { ospfHelloMismatchLines } from '@/network/ospf/events';
@@ -947,7 +947,7 @@ export class RouterDebugService implements TerminalDebugSource {
       if (!mine(e.payload)) return;
       this.emit('mac', `MAC: Flushed address table`);
     }));
-    this.broadcast.track(frames.attachCapture((tapped) => {
+    this.broadcast.track(attachOrderedCapture(frames, (tapped) => {
       onFrame(tapped.frame, tapped.direction === 'in' ? 'rcvd' : 'sent', tapped.iface);
     }));
   }

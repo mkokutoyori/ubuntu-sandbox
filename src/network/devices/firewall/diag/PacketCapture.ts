@@ -1,10 +1,12 @@
 import type { EthernetFrame, IPv4Packet, UDPPacket, ICMPPacket } from '../../../core/types';
 import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, ETHERTYPE_ARP, ETHERTYPE_IPV4 } from '../../../core/types';
 import type { TcpSegment } from '../../../tcp/types';
+import { lineageOf, orderedDelivery } from '../../../hardware/FrameLineage';
 
 export type CaptureDirection = 'in' | 'out';
 
 export interface CapturedFrame {
+  readonly seq: number;
   readonly at: number;
   readonly iface: string;
   readonly direction: CaptureDirection;
@@ -43,7 +45,8 @@ export class PacketCapture {
 
   storedByteCount(): number { return this.storedBytes; }
 
-  record(entry: CapturedFrame): void {
+  record(raw: Omit<CapturedFrame, 'seq'>): void {
+    const entry: CapturedFrame = { ...raw, seq: lineageOf(raw.frame).seq };
     this.frames.push(entry);
     this.storedBytes += frameBytes(entry.frame);
     this.trim();
@@ -64,8 +67,13 @@ export class PacketCapture {
   }
 
   observe(listener: (entry: CapturedFrame) => void): () => void {
-    this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
+    let lastAt = Number.NEGATIVE_INFINITY;
+    const delivery = orderedDelivery<CapturedFrame>((entry) => {
+      lastAt = Math.max(lastAt, entry.at);
+      listener(entry.at === lastAt ? entry : { ...entry, at: lastAt });
+    });
+    this.listeners.add(delivery.push);
+    return () => { delivery.flush(); this.listeners.delete(delivery.push); };
   }
 
   clear(): void {
@@ -79,7 +87,12 @@ export class PacketCapture {
 
   select(query: CaptureQuery): readonly CapturedFrame[] {
     const kept: CapturedFrame[] = [];
-    for (const entry of this.frames) {
+    const ordered = this.frames.map((entry, index) => ({ entry, index }))
+      .sort((a, b) => a.entry.seq - b.entry.seq || a.index - b.index);
+    let lastAt = Number.NEGATIVE_INFINITY;
+    for (const { entry: stored } of ordered) {
+      lastAt = Math.max(lastAt, stored.at);
+      const entry = stored.at === lastAt ? stored : { ...stored, at: lastAt };
       if (query.iface !== 'any' && entry.iface !== query.iface) continue;
       if (!frameMatches(entry.frame, query.filter)) continue;
       kept.push(entry);

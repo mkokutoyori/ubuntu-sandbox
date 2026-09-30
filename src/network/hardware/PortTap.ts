@@ -1,5 +1,5 @@
 import type { EthernetFrame } from '../core/types';
-import { lineageOf } from './FrameLineage';
+import { lineageOf, orderedDelivery } from './FrameLineage';
 
 export type FrameDirection = 'in' | 'out';
 
@@ -35,4 +35,10 @@ export class TapPoint {
 
 export interface FrameSource {
   attachCapture(tap: FrameTap, iface?: string): DetachTap;
+}
+
+export function attachOrderedCapture(source: FrameSource, tap: FrameTap, iface?: string): DetachTap {
+  const delivery = orderedDelivery(tap);
+  const detach = source.attachCapture(delivery.push, iface);
+  return () => { delivery.flush(); detach(); };
 }
