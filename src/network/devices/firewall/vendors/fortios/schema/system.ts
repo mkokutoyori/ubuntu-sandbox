@@ -874,7 +874,14 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
       + 'connected to this interface.', ['system interface']),
     address('default-gateway', 'Default gateway IP address assigned by the DHCP server.'),
     address('netmask', 'Netmask assigned by the DHCP server.'),
-    count('lease-time', 'Lease time in seconds, 0 means unlimited.', 0, 8640000, 604800),
+    {
+      ...count('lease-time', 'Lease time in seconds, 0 means unlimited.', 0, 8640000, 604800),
+      acceptsValue: (value: string) => {
+        const seconds = Number(value);
+        return seconds === 0 || (seconds >= 300 && seconds <= 8640000);
+      },
+      expectedValue: 'an integer in range[300-8640000], or 0 for an unlimited lease.',
+    },
     count('conflicted-ip-timeout', 'Time in seconds to wait after a conflicted IP address is removed '
       + 'from the DHCP range before it can be reused.', 60, 8640000, 1800),
     choice('dns-service', 'Options for assigning DNS servers to DHCP clients.', [
@@ -885,7 +892,6 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
     address('dns-server1', 'DNS server 1.'),
     address('dns-server2', 'DNS server 2.'),
     address('dns-server3', 'DNS server 3.'),
-    address('dns-server4', 'DNS server 4.'),
     word('domain', 'Domain name suffix for the IP addresses that the DHCP server assigns.'),
     choice('ntp-service', 'Options for assigning Network Time Protocol (NTP) servers to DHCP clients.', [
       { keyword: 'local', description: 'Use the FortiGate as the NTP server.' },
@@ -1007,7 +1013,6 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
         object.effective('dns-server1')[0] ?? '',
         object.effective('dns-server2')[0] ?? '',
         object.effective('dns-server3')[0] ?? '',
-        object.effective('dns-server4')[0] ?? '',
       ].filter(server => server.length > 0 && server !== '0.0.0.0'),
       ntpService: object.effective('ntp-service')[0] ?? 'specify',
       ntpServers: ['ntp-server1', 'ntp-server2', 'ntp-server3']

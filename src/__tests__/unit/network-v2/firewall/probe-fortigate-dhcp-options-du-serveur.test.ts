@@ -1,14 +1,14 @@
 /*
  * Le serveur DHCP d'un FortiGate (`config system dhcp server`) doit accepter
- * et SERVIR les attributs que le moteur partage porte deja : dns-server3 et
- * 4, ntp-service et ntp-server1 a 3 (option 42), wins-server1 et 2 (option
+ * et SERVIR les attributs que le moteur partage porte deja : dns-server3, ntp-service et ntp-server1 a 3 (option 42), wins-server1 et 2 (option
  * 44), next-server et filename (options 66 et 67), config exclude-range,
  * config options (code, type hex|string|ip|fqdn), reserved-address action
  * (assign|block|reserved) et mac-acl-default-action (assign|block).
  *
  * L'AUTORITE : le schema FortiOS de `system dhcp server`, tel que le porte le
  * module `fortios_system_dhcp_server` de la collection Ansible de Fortinet
- * (noms, choix et descriptions) ; RFC 2132 (options 6, 42, 44, 66, 67). La
+ * (noms, choix et descriptions) ; la reference CLI du depot
+ * (official_docs/forti-cli-ref-60.txt, FortiOS 6.0.4, `system dhcp server`) ; RFC 2132 (options 6, 42, 44, 66, 67). La
  * documentation de Fortinet n'est pas joignable d'ici : les valeurs par
  * defaut (ntp-service specify, mac-acl-default-action assign, action
  * reserved) et l'encodage d'une option `fqdn` (etiquettes de la RFC 1035,
@@ -116,11 +116,11 @@ describe('serveur sans les attributs', () => {
 });
 
 describe('DNS, NTP, WINS et amorcage', () => {
-  it('dns-server1 a 4 sont tous offerts', async () => {
+  it('dns-server1 a 3 sont tous offerts', async () => {
     const { pc, replies } = await lab([], [
-      'set dns-server1 10.0.0.1', 'set dns-server2 10.0.0.2', 'set dns-server3 10.0.0.3', 'set dns-server4 10.0.0.4']);
+      'set dns-server1 10.0.0.1', 'set dns-server2 10.0.0.2', 'set dns-server3 10.0.0.3']);
     await lease(pc);
-    expect(asList(ack(replies)!.getOption(6))).toEqual(['10.0.0.1', '10.0.0.2', '10.0.0.3', '10.0.0.4']);
+    expect(asList(ack(replies)!.getOption(6))).toEqual(['10.0.0.1', '10.0.0.2', '10.0.0.3']);
   });
 
   it('ntp-service specify offre ntp-server1 a 3 en option 42', async () => {

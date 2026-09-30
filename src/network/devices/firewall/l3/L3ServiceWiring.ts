@@ -104,6 +104,9 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
     leaseLost: (iface) => { host.routesOf(iface).removeStaticById(`dhcp:${iface}`); },
     systemDnsServers: () => host.systemDnsServers?.() ?? [],
     systemNtpServers: () => host.systemNtpServers?.() ?? [],
+    ownAddresses: () => host.interfaces().all()
+      .map(entry => entry.ip)
+      .filter((ip): ip is string => typeof ip === 'string' && ip.length > 0),
     sendToServer: (server, packet) => {
       const relaying = host.interfaces().owningInterface(packet.sourceIP.toString());
       const hop = host.routesOf(relaying).resolveNextHop(server.toString());

@@ -60,6 +60,7 @@ export interface FirewallDhcpDeps {
   readonly systemNtpServers?: () => readonly string[];
   readonly sendToServer?: (server: IPAddress, packet: IPv4Packet) => boolean;
   readonly interfaceOwning?: (address: string) => string | null;
+  readonly ownAddresses?: () => readonly string[];
   readonly addressInUse?: (iface: string, address: string) => boolean;
 }
 
@@ -334,6 +335,7 @@ export class FirewallDhcp {
 
     const local = this.deps.interfaceAddress(iface);
     this.server.setServerIdentifier(local?.ip ?? '0.0.0.0');
+    this.server.setServerOwnedAddresses([...(this.deps.ownAddresses?.() ?? [])]);
 
     const reply = buildDhcpServerReply(request, {
       server: this.server,
@@ -530,6 +532,7 @@ export interface DhcpWiringHost {
   systemNtpServers?(): readonly string[];
   sendToServer?(server: IPAddress, packet: IPv4Packet): boolean;
   interfaceOwning?(address: string): string | null;
+  ownAddresses?(): readonly string[];
   addressInUse?(iface: string, address: string): boolean;
 }
 
@@ -549,6 +552,7 @@ export function createFirewallDhcp(host: DhcpWiringHost): FirewallDhcp {
     clearInterface: (iface) => { host.leaseLost(iface); },
     sendToServer: (server, packet) => host.sendToServer?.(server, packet) ?? false,
     interfaceOwning: (address) => host.interfaceOwning?.(address) ?? null,
+    ownAddresses: () => host.ownAddresses?.() ?? [],
     addressInUse: (iface, address) => host.addressInUse?.(iface, address) ?? false,
   });
 }
