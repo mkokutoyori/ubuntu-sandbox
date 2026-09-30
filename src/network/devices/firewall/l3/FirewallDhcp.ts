@@ -3,7 +3,7 @@ import {
   type EthernetFrame, type IPv4Packet, type UDPPacket,
 } from '../../../core/types';
 import { buildUdpOverIpv4 } from '../../../layers/transport/UdpEgress';
-import { inSameSubnet, ipToUint32, tryIpToUint32, uint32ToIp } from '../../../core/ip';
+import { inSameSubnet, ipToUint32, isValidIPv4, tryIpToUint32, uint32ToIp } from '../../../core/ip';
 import { DHCPServer } from '../../../dhcp/DHCPServer';
 import { DHCPClient } from '../../../dhcp/DHCPClient';
 import { WireDhcpChannel } from '../../../dhcp/DhcpServerChannel';
@@ -30,8 +30,18 @@ export interface DhcpScope {
   readonly conflictedIpTimeoutSec?: number;
   readonly ranges: ReadonlyArray<{ startIp: string; endIp: string }>;
   readonly dnsService?: string;
+  readonly ntpService?: string;
+  readonly ntpServers?: readonly string[];
+  readonly winsServers?: readonly string[];
+  readonly nextServer?: string;
+  readonly bootFile?: string;
+  readonly macAclDefaultAction?: 'assign' | 'block';
+  readonly excludeRanges?: ReadonlyArray<{ startIp: string; endIp: string }>;
+  readonly options?: ReadonlyArray<{
+    id: string; code: number; type: string; value: string; ips: readonly string[];
+  }>;
   readonly reservations?: ReadonlyArray<{
-    id: string; ip: string; mac: string; description: string;
+    id: string; ip: string; mac: string; description: string; action?: string;
   }>;
 }
 
@@ -47,6 +57,7 @@ export interface FirewallDhcpDeps {
   readonly installLeaseRoute: (iface: string, gateway: string | null, distance: number) => void;
   readonly clearInterface: (iface: string) => void;
   readonly systemDnsServers?: () => readonly string[];
+  readonly systemNtpServers?: () => readonly string[];
   readonly sendToServer?: (server: IPAddress, packet: IPv4Packet) => boolean;
   readonly interfaceOwning?: (address: string) => string | null;
   readonly addressInUse?: (iface: string, address: string) => boolean;
@@ -60,6 +71,7 @@ export interface DhcpClientRoute {
 const DEFAULT_CLIENT_ROUTE: DhcpClientRoute = { gateway: true, distance: 5 };
 const POOL_USAGE_TRAP_PERCENT = 90;
 const UNLIMITED_LEASE = 0;
+const NTP_SERVERS_OPTION = 42;
 
 function poolNameOf(scope: DhcpScope): string {
   return `scope-${scope.id}`;
@@ -82,6 +94,11 @@ export class FirewallDhcp {
     this.server.setDeviceId(deps.deviceId, deps.hostname());
     this.server.setEventBus(deps.bus());
     this.server.setClock(deps.now);
+    this.server.setAdmissionPolicy({
+      mayServe: (mac, pool) => this.macAclAllows(mac, pool),
+      addressAllowed: () => true,
+      leaseSeconds: (_pool, configured) => configured,
+    });
     this.client = new DHCPClient(
       (iface) => deps.portMac(iface)?.toString() ?? '00:00:00:00:00:00',
       (iface, ip, mask, gateway) => {
@@ -189,7 +206,7 @@ export class FirewallDhcp {
     const byIp = new Map<string, string>();
     const byMac = new Map<string, string>();
     for (const reservation of scope.reservations ?? []) {
-      if (reservation.mac.length === 0 || reservation.ip === '0.0.0.0') continue;
+      if (!isFixedReservation(reservation)) continue;
       const mac = new MACAddress(reservation.mac).toString();
       if (subnet !== null && networkOf(reservation.ip, subnet.mask) !== subnet.network) {
         return `the IP address ${reservation.ip} is outside the subnet ${subnet.network}/${subnet.mask} of the DHCP server.`;
@@ -235,6 +252,22 @@ export class FirewallDhcp {
       return [...(this.deps.systemDnsServers?.() ?? [])];
     }
     return [...scope.dnsServers];
+  }
+
+  private resolvedNtpServers(scope: DhcpScope, localIp?: string): string[] {
+    if (scope.ntpService === 'local') return localIp ? [localIp] : [];
+    if (scope.ntpService === 'default') return (this.deps.systemNtpServers?.() ?? []).filter(isValidIPv4);
+    return [...(scope.ntpServers ?? [])];
+  }
+
+  private macAclAllows(clientMac: string, pool: string): boolean {
+    const scope = this.scopeOfPool(pool);
+    if (scope === undefined) return true;
+    const mac = new MACAddress(clientMac).toString();
+    const entry = (scope.reservations ?? []).find(reservation =>
+      reservation.mac.length > 0 && new MACAddress(reservation.mac).toString() === mac);
+    if (entry !== undefined) return entry.action !== 'block';
+    return scope.macAclDefaultAction !== 'block';
   }
 
   clearLease(ip: string): boolean {
@@ -353,9 +386,24 @@ export class FirewallDhcp {
     for (const gap of gapsOutsideRanges(network, mask, scope.ranges)) {
       this.server.addExcludedRange(gap.start, gap.end);
     }
+    for (const range of scope.excludeRanges ?? []) {
+      this.server.addExcludedRange(range.startIp, range.endIp);
+    }
+
+    const ntp = this.resolvedNtpServers(scope, local?.ip);
+    if (ntp.length > 0) this.server.configurePoolOption(name, NTP_SERVERS_OPTION, 'ip', ntp.join(' '));
+    if ((scope.winsServers ?? []).length > 0) this.server.configurePoolNetbios(name, [...scope.winsServers!]);
+    if (scope.nextServer !== undefined && scope.nextServer !== '0.0.0.0' && scope.nextServer.length > 0) {
+      this.server.configurePoolNextServer(name, scope.nextServer);
+    }
+    if ((scope.bootFile ?? '').length > 0) this.server.configurePoolBootfile(name, scope.bootFile!);
+    for (const option of scope.options ?? []) {
+      const encoded = encodedOption(option);
+      if (encoded !== null) this.server.configurePoolOption(name, option.code, encoded.kind, encoded.value);
+    }
 
     for (const reservation of scope.reservations ?? []) {
-      if (reservation.mac.length === 0 || reservation.ip === '0.0.0.0') continue;
+      if (!isFixedReservation(reservation)) continue;
       this.server.addStaticBinding(name, new MACAddress(reservation.mac).toString(), reservation.ip);
     }
 
@@ -391,6 +439,33 @@ export class FirewallDhcp {
     if (!mac) return;
 
     this.deps.sendFrame(iface, dhcpServerReplyFrame(reply, source, mac, dhcpLinkDestination(route, clientMac)));
+  }
+}
+
+function isFixedReservation(reservation: { ip: string; mac: string; action?: string }): boolean {
+  return reservation.mac.length > 0 && reservation.ip !== '0.0.0.0'
+    && (reservation.action ?? 'reserved') === 'reserved';
+}
+
+function domainSearchHex(name: string): string {
+  const labels = name.split('.').filter(label => label.length > 0);
+  const bytes: number[] = [];
+  for (const label of labels) {
+    bytes.push(label.length);
+    for (const ch of label) bytes.push(ch.charCodeAt(0));
+  }
+  bytes.push(0);
+  return bytes.map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function encodedOption(
+  option: { type: string; value: string; ips: readonly string[] },
+): { kind: 'ip' | 'ascii' | 'hex'; value: string } | null {
+  switch (option.type) {
+    case 'ip': return option.ips.length > 0 ? { kind: 'ip', value: option.ips.join(' ') } : null;
+    case 'string': return option.value.length > 0 ? { kind: 'ascii', value: option.value } : null;
+    case 'fqdn': return option.value.length > 0 ? { kind: 'hex', value: domainSearchHex(option.value) } : null;
+    default: return option.value.length > 0 ? { kind: 'hex', value: option.value } : null;
   }
 }
 
@@ -452,6 +527,7 @@ export interface DhcpWiringHost {
   leaseRoute(iface: string, gateway: string | null, distance: number): void;
   leaseLost(iface: string): void;
   systemDnsServers?(): readonly string[];
+  systemNtpServers?(): readonly string[];
   sendToServer?(server: IPAddress, packet: IPv4Packet): boolean;
   interfaceOwning?(address: string): string | null;
   addressInUse?(iface: string, address: string): boolean;
@@ -460,6 +536,7 @@ export interface DhcpWiringHost {
 export function createFirewallDhcp(host: DhcpWiringHost): FirewallDhcp {
   return new FirewallDhcp({
     systemDnsServers: () => host.systemDnsServers?.() ?? [],
+    systemNtpServers: () => host.systemNtpServers?.() ?? [],
     deviceId: host.deviceId,
     now: () => host.now(),
     hostname: () => host.hostname(),

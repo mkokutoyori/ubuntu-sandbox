@@ -1775,16 +1775,11 @@ denominateur nul n'a pas de valeur — mais une vraie machine refuse la
 commande `network` manquante autrement, et savoir laquelle des deux
 elle fait demanderait une capture qu'on n'a pas.
 
-### [dhcp] Windows : le basculement et l'export restent absents
-`Get-DhcpServerv4Binding`, `Get-/Set-DhcpServerv4DnsSetting` sont
-désormais déclarées et réelles. Restent absents
-`Add-DhcpServerv4Failover`, `Get-DhcpServerv4Failover` et
-`Export-DhcpServer`/`Import-DhcpServer`.
-**Mesure** : ces trois familles ne sont pas dans le module.
-**Report** : le basculement demande un second serveur et un protocole de
-synchronisation entre les deux — un sujet en soi, pas une applet de plus.
-L'export/import est faisable (le VFS existe) mais suppose d'écrire le
-XML qu'un vrai Windows produit, et de le relire.
+### [dhcp] Windows : l'export et l'import restent absents
+`Export-DhcpServer` et `Import-DhcpServer` ne sont pas dans le module.
+**Mesure** : ces deux applets ne sont pas dans le module.
+**Report** : elles supposent d'ecrire le XML qu'un vrai Windows produit,
+et de le relire ; le VFS existe, le format n'est pas capture.
 
 ### [ddns] GSS-TSIG (Kerberos) n'est pas modélisé
 TSIG à clé partagée (RFC 8945) est écrit, signe et vérifie vraiment ; ce

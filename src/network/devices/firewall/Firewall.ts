@@ -703,6 +703,7 @@ export class Firewall extends Equipment {
         return [settings.primary, settings.secondary]
           .filter(server => server.length > 0 && server !== '0.0.0.0');
       },
+      systemNtpServers: () => this.ntp.getSettings().servers,
     });
 
     this.l3 = l3;

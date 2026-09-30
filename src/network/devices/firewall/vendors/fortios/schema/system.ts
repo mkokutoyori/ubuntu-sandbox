@@ -884,9 +884,73 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
     ], 'specify'),
     address('dns-server1', 'DNS server 1.'),
     address('dns-server2', 'DNS server 2.'),
+    address('dns-server3', 'DNS server 3.'),
+    address('dns-server4', 'DNS server 4.'),
     word('domain', 'Domain name suffix for the IP addresses that the DHCP server assigns.'),
+    choice('ntp-service', 'Options for assigning Network Time Protocol (NTP) servers to DHCP clients.', [
+      { keyword: 'local', description: 'Use the FortiGate as the NTP server.' },
+      { keyword: 'default', description: 'Use the system NTP servers.' },
+      { keyword: 'specify', description: 'Use the servers named below.' },
+    ], 'specify'),
+    ...['ntp-server1', 'ntp-server2', 'ntp-server3'].map((name, index) => ({
+      ...address(name, `NTP server ${index + 1}.`),
+      availableWhen: (object: FortiObjectView) => object.effective('ntp-service')[0] === 'specify',
+    })),
+    address('wins-server1', 'WINS server 1.'),
+    address('wins-server2', 'WINS server 2.'),
+    address('next-server', 'IP address of a server, such as a TFTP server, from which DHCP clients can download a boot file.'),
+    word('filename', 'Name of the boot file on the TFTP server.'),
+    choice('mac-acl-default-action', 'MAC access control default action (allow or block assigning IP settings).', [
+      { keyword: 'assign', description: 'Allow assigning IP settings.' },
+      { keyword: 'block', description: 'Block assigning IP settings.' },
+    ], 'assign'),
   ],
   children: [
+    {
+      path: ['exclude-range'],
+      kind: 'table',
+      keyType: 'integer',
+      ordered: false,
+      scope: 'vdom',
+      accessGroup: 'sysgrp',
+      renderOrder: 73,
+      help: 'Exclude one or more ranges of IP addresses from being assigned to clients.',
+      attributes: [
+        { ...word('id', 'ID.'), readOnly: true },
+        address('start-ip', 'Start of IP range.'),
+        address('end-ip', 'End of IP range.'),
+      ],
+    },
+    {
+      path: ['options'],
+      kind: 'table',
+      keyType: 'integer',
+      ordered: false,
+      scope: 'vdom',
+      accessGroup: 'sysgrp',
+      renderOrder: 74,
+      help: 'DHCP options.',
+      attributes: [
+        { ...word('id', 'ID.'), readOnly: true },
+        count('code', 'DHCP option code.', 0, 255, 0),
+        choice('type', 'DHCP option type.', [
+          { keyword: 'hex', description: 'DHCP option in hex.' },
+          { keyword: 'string', description: 'DHCP option in string.' },
+          { keyword: 'ip', description: 'DHCP option in IP.' },
+          { keyword: 'fqdn', description: 'DHCP option in domain search option format.' },
+        ], 'hex'),
+        {
+          ...word('value', 'DHCP option value.'),
+          availableWhen: (object: FortiObjectView) => object.effective('type')[0] !== 'ip',
+        },
+        {
+          name: 'ip', help: 'DHCP option IPs.', quoted: true, multiValue: true,
+          parts: [{ name: 'ip', type: 'IP_ADDR', description: 'DHCP option IP.' }],
+          defaultValue: [],
+          availableWhen: (object: FortiObjectView) => object.effective('type')[0] === 'ip',
+        },
+      ],
+    },
     {
       path: ['reserved-address'],
       kind: 'table',
@@ -898,6 +962,11 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
       help: 'Options for the DHCP server to assign IP settings to specific MAC addresses.',
       attributes: [
         { ...word('id', 'Reservation identifier.'), readOnly: true },
+        choice('action', 'Options for the DHCP server to configure the client with the reserved MAC address.', [
+          { keyword: 'assign', description: 'Configure the client with this MAC address like any other client.' },
+          { keyword: 'block', description: 'Block the DHCP request of the client with this MAC address.' },
+          { keyword: 'reserved', description: 'Assign the reserved IP address to the client with this MAC address.' },
+        ], 'reserved'),
         address('ip', 'IP address to be reserved for the MAC address.'),
         {
           name: 'mac', help: 'MAC address of the client that will get the reserved IP.',
@@ -937,12 +1006,36 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
       dnsServers: [
         object.effective('dns-server1')[0] ?? '',
         object.effective('dns-server2')[0] ?? '',
+        object.effective('dns-server3')[0] ?? '',
+        object.effective('dns-server4')[0] ?? '',
       ].filter(server => server.length > 0 && server !== '0.0.0.0'),
+      ntpService: object.effective('ntp-service')[0] ?? 'specify',
+      ntpServers: ['ntp-server1', 'ntp-server2', 'ntp-server3']
+        .map(name => object.effective(name)[0] ?? '')
+        .filter(server => server.length > 0 && server !== '0.0.0.0'),
+      winsServers: ['wins-server1', 'wins-server2']
+        .map(name => object.effective(name)[0] ?? '')
+        .filter(server => server.length > 0 && server !== '0.0.0.0'),
+      nextServer: object.effective('next-server')[0] ?? '0.0.0.0',
+      bootFile: object.effective('filename')[0] ?? '',
+      macAclDefaultAction: object.effective('mac-acl-default-action')[0] === 'block' ? 'block' : 'assign',
+      excludeRanges: object.childEntries('exclude-range').map(range => ({
+        startIp: range.effective('start-ip')[0] ?? '0.0.0.0',
+        endIp: range.effective('end-ip')[0] ?? '0.0.0.0',
+      })),
+      options: object.childEntries('options').map(option => ({
+        id: option.key,
+        code: Number.parseInt(option.effective('code')[0] ?? '0', 10),
+        type: option.effective('type')[0] ?? 'hex',
+        value: option.effective('value')[0] ?? '',
+        ips: option.effective('ip'),
+      })),
       reservations: object.childEntries('reserved-address').map(entry => ({
         id: entry.key,
         ip: entry.effective('ip')[0] ?? '0.0.0.0',
         mac: entry.effective('mac')[0] ?? '',
         description: entry.effective('description')[0] ?? '',
+        action: entry.effective('action')[0] ?? 'reserved',
       })),
       domain: object.effective('domain')[0] ?? '',
       leaseTimeSec: Number.parseInt(object.effective('lease-time')[0] ?? '604800', 10),

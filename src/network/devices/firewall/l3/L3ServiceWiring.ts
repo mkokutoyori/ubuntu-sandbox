@@ -32,6 +32,7 @@ export interface L3ServiceHost {
   assignAddress(iface: string, ip: string, mask: string): void;
   forward(iface: string, packet: IPv4Packet, gateway?: string): void;
   systemDnsServers?(): readonly string[];
+  systemNtpServers?(): readonly string[];
   now(): number;
 }
 
@@ -102,6 +103,7 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
     },
     leaseLost: (iface) => { host.routesOf(iface).removeStaticById(`dhcp:${iface}`); },
     systemDnsServers: () => host.systemDnsServers?.() ?? [],
+    systemNtpServers: () => host.systemNtpServers?.() ?? [],
     sendToServer: (server, packet) => {
       const relaying = host.interfaces().owningInterface(packet.sourceIP.toString());
       const hop = host.routesOf(relaying).resolveNextHop(server.toString());
