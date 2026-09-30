@@ -101,7 +101,7 @@ export function truncateForUdp(message: DnsMessage, maxSize: number = CLASSIC_UD
   return rebuild();
 }
 
-function negotiatedUdpSize(query: DnsMessage): number {
+export function negotiatedUdpSize(query: DnsMessage): number {
   const opt = findOpt(query);
   if (!opt) return CLASSIC_UDP_PAYLOAD_SIZE;
   return Math.min(

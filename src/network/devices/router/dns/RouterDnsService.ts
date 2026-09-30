@@ -3,11 +3,10 @@ import type { RouterHostsTable } from './RouterHostsTable';
 import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import { makeARecord, makeSoaRecord } from '@/network/dns/wire/ResourceRecord';
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
-import { findOpt } from '@/network/dns/wire/EdnsOptRecord';
 import { Zone } from '@/network/dns/zone/Zone';
 import { ZoneStore } from '@/network/dns/zone/ZoneStore';
 import { AuthoritativeServer } from '@/network/dns/resolver/AuthoritativeServer';
-import { truncateForUdp, CLASSIC_UDP_MAX_SIZE } from '@/network/dns/transport/DnsUdpTransport';
+import { truncateForUdp, negotiatedUdpSize } from '@/network/dns/transport/DnsUdpTransport';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 
 export interface DnsStats {
@@ -82,10 +81,8 @@ export class RouterDnsService {
     const reponse = new AuthoritativeServer(store).answer(requete);
     if (reponse.answers.length > 0) this.stats.repondues += 1;
     else if (reponse.flags.rcode === DnsRcode.NXDOMAIN) this.stats.nxdomain += 1;
-    const limite = findOpt(requete)
-      ? Math.max(CLASSIC_UDP_MAX_SIZE, findOpt(requete)!.data.udpPayloadSize)
-      : CLASSIC_UDP_MAX_SIZE;
-    this.transport()?.reply(source, sourcePort, encodeDnsMessage(truncateForUdp(reponse, limite)));
+    this.transport()?.reply(
+      source, sourcePort, encodeDnsMessage(truncateForUdp(reponse, negotiatedUdpSize(requete))));
   }
 
   private candidats(nom: string): string[] {
