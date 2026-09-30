@@ -59,6 +59,17 @@ export interface DHCPv6StaticDelegation {
   iaid: number | null;
 }
 
+export interface DHCPv6RelayPath {
+  relayAddress: string;
+  layers: ReadonlyArray<DHCPv6RelayLayer>;
+}
+
+export interface DHCPv6RelayLayer {
+  linkAddress: string;
+  peerAddress: string;
+  interfaceId: string | null;
+}
+
 export interface DHCPv6PrefixBinding {
   clientDuid: string;
   iaid: number;

@@ -16,11 +16,9 @@
  * jusqu'a REC_MAX_RC (8) sans reponse et cesse des que le message attendu arrive.
  * Un relais ecarte un Relay-forward dont le hop-count atteint HOP_COUNT_LIMIT (8).
  *
- * Limites : le Reconfigure vers un client derriere un relais (Relay-reply) n'est pas
- * emis, faute d'adresse directe ; les paquets du simulateur sont des objets, le
- * HMAC est calcule sur leur serialisation canonique, pas sur des octets de fil ;
- * la livraison etant synchrone, les temporisations de retransmission (REC_TIMEOUT)
- * ne sont pas observables et les 8 tentatives partent sans attente.
+ * Le codec sur octets, le HMAC calcule dessus, la retransmission temporisee et le
+ * Reconfigure derriere un relais sont sondes dans
+ * dhcpv6-rfc8415-fil-relais-temporisation.test.ts.
  *
  * Avant le correctif : aucune de ces options n'existait et la limite de relais
  * valait 32 : les 37 cas tombent (dont ceux qui importent les nouveaux modules), sauf le temoin nomme « temoin » qui passe sur l'ancien code ; mutations verifiees : verifyReconfigure toujours vrai fait tomber 2 cas, la limite de relais a 32 en fait tomber 2 (constante et hop-count 8).
@@ -39,7 +37,7 @@ import { VirtualTimeScheduler } from '@/events/Scheduler';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { DHCPv6Server } from '@/network/dhcpv6/DHCPv6Server';
 import {
-  DHCPv6Packet, DHCPV6_STATUS, DHCPV6_OPTION, DHCPV6_IRT_INFINITY, DHCPV6_HOP_COUNT_LIMIT, DHCPV6_REC_MAX_RC,
+  DHCPv6Packet, DHCPV6_STATUS, DHCPV6_OPTION, DHCPV6_IRT_INFINITY, DHCPV6_HOP_COUNT_LIMIT,
 } from '@/network/dhcpv6/DHCPv6Packet';
 import { buildDhcpv6ServerReply } from '@/network/dhcpv6/Dhcpv6ServerExchange';
 import { buildReconfigure, verifyReconfigure } from '@/network/dhcpv6/Dhcpv6Reconfigure';
@@ -145,7 +143,6 @@ describe('Server Unicast (§21.12, §18.4)', () => {
     server.configurePoolServerUnicast('POOL1', '2001:db8:1::1');
     await h1.executeCommand('dhclient -6 eth0');
     expect(h1.getDhcpv6Lease('eth0')?.serverUnicast).toBe('2001:db8:1::1');
-    await h1.executeCommand('ping -6 -c 1 2001:db8:1::1');
     const destinations: string[] = [];
     h1.getPort('eth0')!.attachTap(({ frame, direction }) => {
       const ip = frame.payload as { destinationIP?: { toString(): string }; payload?: { payload?: unknown } };
@@ -356,14 +353,14 @@ describe('Reconfigure sur le fil', () => {
     expect(await h1.executeCommand('cat /etc/resolv.conf')).toContain('2001:db8:53::7');
   });
 
-  it('cle alteree cote serveur : le client ecarte et le serveur reessaie REC_MAX_RC fois', async () => {
+  it('cle alteree cote serveur : le client ecarte, le bail n est pas prolonge', async () => {
     const { h1, r1, server, advance } = await enrolled();
     const duid = server.getBindings()[0].clientDuid;
     (server as unknown as { reconfigureKeys: Map<string, string> }).reconfigureKeys.set(duid, 'cd'.repeat(16));
     const before = server.getBindings()[0].leaseExpiration;
     advance(1_000_000);
     r1.sendDhcpv6Reconfigure(duid, 'RENEW');
-    expect(h1.getDhcpv6ReconfigureCounters()).toEqual({ accepted: 0, discarded: DHCPV6_REC_MAX_RC });
+    expect(h1.getDhcpv6ReconfigureCounters()).toEqual({ accepted: 0, discarded: 1 });
     expect(server.getBindings()[0].leaseExpiration).toBe(before);
     expect(server.pendingReconfigure(duid)).toBe('RENEW');
   });

@@ -6,6 +6,7 @@
  * and IPv6 forwarding.
  */
 
+import { dhcpv6WireLength } from '../../dhcpv6/Dhcpv6Codec';
 import type { Port } from '../../hardware/Port';
 import type { RouterCounters } from '../Router';
 import type { IEventBus } from '@/events/EventBus';
@@ -26,9 +27,9 @@ import {
 import { Logger } from '../../core/Logger';
 import { NeighborCache, type NeighborCacheEntry } from '../host/NeighborCache';
 import { DHCPv6Server } from '../../dhcpv6/DHCPv6Server';
-import { buildReconfigure } from '../../dhcpv6/Dhcpv6Reconfigure';
+import { startReconfigure } from '../../dhcpv6/Dhcpv6Reconfigure';
 import { answerRelayForward, buildDhcpv6ServerReply } from '../../dhcpv6/Dhcpv6ServerExchange';
-import { DHCPv6Packet, DHCPV6_HOP_COUNT_LIMIT, DHCPV6_REC_MAX_RC } from '../../dhcpv6/DHCPv6Packet';
+import { DHCPv6Packet, DHCPV6_HOP_COUNT_LIMIT } from '../../dhcpv6/DHCPv6Packet';
 
 // ─── IPv6 Types ─────────────────────────────────────────────────
 
@@ -469,7 +470,7 @@ export class IPv6DataPlane {
     }
 
     if (pkt.msgType === 'RELAY-FORW') {
-      this.handleDhcpv6RelayForw(pkt);
+      this.handleDhcpv6RelayForw(pkt, ipv6.sourceIP);
       return;
     }
 
@@ -490,16 +491,10 @@ export class IPv6DataPlane {
   }
 
   sendDhcpv6Reconfigure(clientDuid: string, msgType: 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST'): boolean {
-    const server = this.ctx.getDhcpv6Server();
-    const address = server.clientAddressOf(clientDuid);
-    const iface = server.clientInterfaceOf(clientDuid);
-    const message = buildReconfigure(server, clientDuid, msgType);
-    if (!message || !address || !iface) return false;
-    server.beginReconfigure(clientDuid, msgType);
-    for (let attempt = 0; attempt < DHCPV6_REC_MAX_RC && server.pendingReconfigure(clientDuid); attempt++) {
-      this.sendDhcpv6Reply(iface, new IPv6Address(address), message);
-    }
-    return true;
+    return startReconfigure(this.ctx.getDhcpv6Server(), clientDuid, msgType, ({ message, route }) => {
+      if (route.kind === 'relay') this.sendDhcpv6RelayMessage(new IPv6Address(route.relay), message);
+      else this.sendDhcpv6Reply(route.iface, new IPv6Address(route.address), message);
+    }, this.ctx.getScheduler());
   }
 
   private sendDhcpv6Reply(inPort: string, dstIp: IPv6Address, reply: DHCPv6Packet, dstMAC?: MACAddress): void {
@@ -510,10 +505,10 @@ export class IPv6DataPlane {
     const mac = dstMAC ?? this.neighborCache.get(dstIp.toString())?.mac;
     if (!mac) return;
     const udp: UDPPacket = {
-      type: 'udp', sourcePort: 547, destinationPort: 546, length: 8 + 300, checksum: 0, payload: reply,
+      type: 'udp', sourcePort: 547, destinationPort: 546, length: 8 + dhcpv6WireLength(reply), checksum: 0, payload: reply,
     };
     const ipPkt = createIPv6Packet(srcIp, dstIp, IP_PROTO_UDP, this.defaultHopLimit,
-      stampUdpChecksum(udp, srcIp.toString(), dstIp.toString()), 8 + 300);
+      stampUdpChecksum(udp, srcIp.toString(), dstIp.toString()), udp.length);
     this.ctx.sendFrame(inPort, { srcMAC: port.getMAC(), dstMAC: mac, etherType: ETHERTYPE_IPV6, payload: ipPkt });
   }
 
@@ -535,10 +530,10 @@ export class IPv6DataPlane {
       const nextHopMac = this.resolveNeighborSync(route.iface, route.nextHop ?? dstIp);
       if (!nextHopMac) continue;
       const udp: UDPPacket = {
-        type: 'udp', sourcePort: 547, destinationPort: 547, length: 8 + 300, checksum: 0, payload: relayForw,
+        type: 'udp', sourcePort: 547, destinationPort: 547, length: 8 + dhcpv6WireLength(relayForw), checksum: 0, payload: relayForw,
       };
       const relayedPkt = createIPv6Packet(egressSrcIp, dstIp, IP_PROTO_UDP, this.defaultHopLimit,
-        stampUdpChecksum(udp, egressSrcIp.toString(), dstIp.toString()), 8 + 300);
+        stampUdpChecksum(udp, egressSrcIp.toString(), dstIp.toString()), udp.length);
       this.ctx.sendFrame(route.iface, {
         srcMAC: egressPort.getMAC(), dstMAC: nextHopMac, etherType: ETHERTYPE_IPV6, payload: relayedPkt,
       });
@@ -546,9 +541,9 @@ export class IPv6DataPlane {
   }
 
   /** A relay agent's RELAY-FORW reached us: unwrap and serve the inner message from the relay's own link-address subnet. */
-  private handleDhcpv6RelayForw(pkt: DHCPv6Packet): void {
-    const relayRepl = answerRelayForward(this.ctx.getDhcpv6Server(), pkt);
-    if (relayRepl) this.sendDhcpv6RelayMessage(new IPv6Address(pkt.linkAddress), relayRepl);
+  private handleDhcpv6RelayForw(pkt: DHCPv6Packet, source: IPv6Address): void {
+    const relayRepl = answerRelayForward(this.ctx.getDhcpv6Server(), pkt, source.toString());
+    if (relayRepl) this.sendDhcpv6RelayMessage(source, relayRepl);
   }
 
   private sendDhcpv6RelayMessage(dstIp: IPv6Address, message: DHCPv6Packet): void {
@@ -560,10 +555,10 @@ export class IPv6DataPlane {
     const nextHopMac = this.resolveNeighborSync(route.iface, route.nextHop ?? dstIp);
     if (!nextHopMac) return;
     const udp: UDPPacket = {
-      type: 'udp', sourcePort: 547, destinationPort: 547, length: 8 + 300, checksum: 0, payload: message,
+      type: 'udp', sourcePort: 547, destinationPort: 547, length: 8 + dhcpv6WireLength(message), checksum: 0, payload: message,
     };
     const packet = createIPv6Packet(egressSrcIp, dstIp, IP_PROTO_UDP, this.defaultHopLimit,
-      stampUdpChecksum(udp, egressSrcIp.toString(), dstIp.toString()), 8 + 300);
+      stampUdpChecksum(udp, egressSrcIp.toString(), dstIp.toString()), udp.length);
     this.ctx.sendFrame(route.iface, {
       srcMAC: egressPort.getMAC(), dstMAC: nextHopMac, etherType: ETHERTYPE_IPV6, payload: packet,
     });

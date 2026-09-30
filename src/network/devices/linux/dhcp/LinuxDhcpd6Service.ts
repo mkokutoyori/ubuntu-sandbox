@@ -41,6 +41,10 @@ export class LinuxDhcpd6Service {
 
   getEngine(): DHCPv6Server { return this.service.getEngine(); }
 
+  reconfigure(clientDuid: string, msgType: 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST'): boolean {
+    return this.service.sendReconfigure(clientDuid, msgType);
+  }
+
   servedInterfaces(): readonly string[] { return this.served; }
 
   checkConfig(): DhcpdOperationResult {

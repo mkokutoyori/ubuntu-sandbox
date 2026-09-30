@@ -2,7 +2,7 @@ import { IPv6Address } from '../core/types';
 import { DHCPv6Packet, DHCPV6_STATUS, DHCPV6_OPTION, DHCPV6_IRT_INFINITY, DHCPV6_IRT_MINIMUM } from './DHCPv6Packet';
 import type { DHCPv6IANA, DHCPv6IAPD, DHCPv6IAAddress, DHCPv6IAPrefix } from './DHCPv6Packet';
 import type { DHCPv6Server } from './DHCPv6Server';
-import type { DHCPv6PoolConfig } from './types';
+import type { DHCPv6PoolConfig, DHCPv6RelayLayer } from './types';
 
 export interface Dhcpv6ExchangeContext {
   readonly poolName?: string;
@@ -330,20 +330,30 @@ export function buildDhcpv6ServerReply(
   const reply = serve(server, canonical, ctx);
   if (!reply) return null;
   decorate(server, canonical, ctx, reply);
+  if (!ctx.relayed && canonical.clientDuid) server.noteRelayPath(canonical.clientDuid, null);
   if (canonical !== request) reply.clientDuid = original;
   return reply;
 }
 
 export function answerRelayForward(
-  server: DHCPv6Server, forward: DHCPv6Packet, depth = 0,
+  server: DHCPv6Server, forward: DHCPv6Packet, sourceAddress: string, depth = 0,
 ): DHCPv6Packet | null {
   const inner = forward.relayedMessage;
   if (!inner || depth > 32) return null;
   const answer = inner.msgType === 'RELAY-FORW'
-    ? answerRelayForward(server, inner, depth + 1)
+    ? answerRelayForward(server, inner, sourceAddress, depth + 1)
     : buildDhcpv6ServerReply(server, inner, {
       anchor: forward.linkAddress, clientAddress: forward.peerAddress, relayed: true, unicast: false,
     });
   if (!answer) return null;
+  if (depth === 0) {
+    const layers: DHCPv6RelayLayer[] = [];
+    let cursor: DHCPv6Packet | null = forward;
+    while (cursor && (cursor.msgType === 'RELAY-FORW')) {
+      layers.push({ linkAddress: cursor.linkAddress, peerAddress: cursor.peerAddress, interfaceId: cursor.interfaceId });
+      cursor = cursor.relayedMessage;
+    }
+    if (cursor?.clientDuid) server.noteRelayPath(cursor.clientDuid.toLowerCase(), { relayAddress: sourceAddress, layers });
+  }
   return DHCPv6Packet.createRelayRepl(forward.linkAddress, forward.peerAddress, forward.interfaceId, answer);
 }

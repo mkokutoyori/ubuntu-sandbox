@@ -97,6 +97,10 @@ export class WindowsDhcpv6 {
 
   isRunning(): boolean { return this.service.isRunning(); }
 
+  reconfigure(clientDuid: string, msgType: 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST'): boolean {
+    return this.service.sendReconfigure(clientDuid, msgType);
+  }
+
   private poolName(prefix: string): string { return `${prefix}/64`; }
 
   private view(record: ScopeRecord): DhcpV6ScopeInfo {

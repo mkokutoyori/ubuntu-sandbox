@@ -13,7 +13,7 @@ import { ipv6FromBigInt, ipv6ToBigInt } from '../core/Ipv6Arithmetic';
 import {
   DHCPv6PoolConfig, DHCPv6Binding, DHCPv6SolicitParams, DHCPv6RequestParams,
   DHCPv6LeaseResult, DHCPv6ReleaseParams, DHCPv6AddressRange, createDefaultDHCPv6Pool,
-  DHCPv6PrefixBinding, DHCPv6StaticDelegation, DHCPv6Reservation,
+  DHCPv6PrefixBinding, DHCPv6StaticDelegation, DHCPv6Reservation, DHCPv6RelayPath,
 } from './types';
 
 const RANGE_SCAN_LIMIT = 65536;
@@ -33,6 +33,8 @@ export class DHCPv6Server {
   private reconfigureKeys: Map<string, string> = new Map();
   private reconfigureWilling: Set<string> = new Set();
   private reconfigurePending: Map<string, 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST'> = new Map();
+  private reconfigureGenerations: Map<string, number> = new Map();
+  private relayPaths: Map<string, DHCPv6RelayPath> = new Map();
   private localPools: Map<string, { prefix: string; prefixLength: number; assignedLength: number }> = new Map();
   private clock: () => number = () => Date.now();
 
@@ -61,9 +63,23 @@ export class DHCPv6Server {
 
   hasReconfigureKey(clientDuid: string): boolean { return this.reconfigureKeys.has(clientDuid); }
 
-  beginReconfigure(clientDuid: string, msgType: 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST'): void {
+  beginReconfigure(clientDuid: string, msgType: 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST'): number {
+    const generation = (this.reconfigureGenerations.get(clientDuid) ?? 0) + 1;
+    this.reconfigureGenerations.set(clientDuid, generation);
     this.reconfigurePending.set(clientDuid, msgType);
+    return generation;
   }
+
+  reconfigureGeneration(clientDuid: string): number { return this.reconfigureGenerations.get(clientDuid) ?? 0; }
+
+  abortReconfigure(clientDuid: string): void { this.reconfigurePending.delete(clientDuid); }
+
+  noteRelayPath(clientDuid: string, path: DHCPv6RelayPath | null): void {
+    if (path === null || path.layers.length === 0) this.relayPaths.delete(clientDuid);
+    else this.relayPaths.set(clientDuid, path);
+  }
+
+  relayPathOf(clientDuid: string): DHCPv6RelayPath | null { return this.relayPaths.get(clientDuid) ?? null; }
 
   pendingReconfigure(clientDuid: string): 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST' | null {
     return this.reconfigurePending.get(clientDuid) ?? null;
@@ -246,6 +262,7 @@ export class DHCPv6Server {
     this.declined.clear();
     this.reconfigureKeys.clear();
     this.reconfigurePending.clear();
+    this.relayPaths.clear();
     return removed;
   }
 

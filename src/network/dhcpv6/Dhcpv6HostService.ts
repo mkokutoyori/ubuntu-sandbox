@@ -1,7 +1,8 @@
+import { dhcpv6WireLength } from './Dhcpv6Codec';
 import { IPv6Address } from '../core/types';
 import type { EndHost, UdpDelivery } from '../devices/EndHost';
-import { DHCPv6Packet, DHCPV6_REC_MAX_RC } from './DHCPv6Packet';
-import { buildReconfigure } from './Dhcpv6Reconfigure';
+import { DHCPv6Packet } from './DHCPv6Packet';
+import { startReconfigure } from './Dhcpv6Reconfigure';
 import { DHCPv6Server } from './DHCPv6Server';
 import { answerRelayForward, buildDhcpv6ServerReply } from './Dhcpv6ServerExchange';
 
@@ -16,6 +17,7 @@ export interface Dhcpv6HostPort {
   joinIPv6Group(iface: string, group: string): boolean;
   leaveIPv6Group(iface: string, group: string): boolean;
   learnIpv6Neighbor(iface: string, address: IPv6Address, mac: string): void;
+  schedule(callback: () => void, delayMs: number): number;
   sendUdpDatagram6OnLink(iface: string, destination: IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes: number): boolean;
   sendUdpDatagram6(destination: IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes: number): boolean;
 }
@@ -65,7 +67,7 @@ export class Dhcpv6HostService {
     if (delivery.sourceMAC) this.host.learnIpv6Neighbor(delivery.inPort, delivery.sourceIP, delivery.sourceMAC);
 
     if (message.msgType === 'RELAY-FORW') {
-      const answer = answerRelayForward(this.server, message);
+      const answer = answerRelayForward(this.server, message, delivery.sourceIP.toString());
       if (answer) this.send(delivery.sourceIP, DHCPV6_SERVER_PORT, answer);
       return;
     }
@@ -79,25 +81,20 @@ export class Dhcpv6HostService {
       unicast: !(delivery.destinationIP instanceof IPv6Address && delivery.destinationIP.isMulticast()),
     });
     if (!reply) return;
-    this.host.sendUdpDatagram6OnLink(delivery.inPort, delivery.sourceIP, DHCPV6_CLIENT_PORT, DHCPV6_SERVER_PORT, reply, 300);
+    this.host.sendUdpDatagram6OnLink(delivery.inPort, delivery.sourceIP, DHCPV6_CLIENT_PORT, DHCPV6_SERVER_PORT, reply, dhcpv6WireLength(reply));
     this.onReply?.(message, reply);
   };
 
   sendReconfigure(clientDuid: string, msgType: 'RENEW' | 'REBIND' | 'INFORMATION-REQUEST'): boolean {
     if (!this.running) return false;
-    const address = this.server.clientAddressOf(clientDuid);
-    const iface = this.server.clientInterfaceOf(clientDuid);
-    const message = buildReconfigure(this.server, clientDuid, msgType);
-    if (!message || !address || !iface) return false;
-    this.server.beginReconfigure(clientDuid, msgType);
-    for (let attempt = 0; attempt < DHCPV6_REC_MAX_RC && this.server.pendingReconfigure(clientDuid); attempt++) {
-      this.host.sendUdpDatagram6OnLink(iface, new IPv6Address(address), DHCPV6_CLIENT_PORT, DHCPV6_SERVER_PORT, message, 300);
-    }
-    return true;
+    return startReconfigure(this.server, clientDuid, msgType, ({ message, route }) => {
+      if (route.kind === 'relay') this.send(new IPv6Address(route.relay), DHCPV6_SERVER_PORT, message);
+      else this.host.sendUdpDatagram6OnLink(route.iface, new IPv6Address(route.address), DHCPV6_CLIENT_PORT, DHCPV6_SERVER_PORT, message, dhcpv6WireLength(message));
+    }, { setTimeout: (callback, delay) => this.host.schedule(callback, delay) });
   }
 
   private send(destination: IPv6Address, destinationPort: number, message: DHCPv6Packet): void {
-    this.host.sendUdpDatagram6(destination, destinationPort, DHCPV6_SERVER_PORT, message, 300);
+    this.host.sendUdpDatagram6(destination, destinationPort, DHCPV6_SERVER_PORT, message, dhcpv6WireLength(message));
   }
 }
 
@@ -106,6 +103,7 @@ export function dhcpv6PortOf(host: EndHost): Dhcpv6HostPort {
     interfaces: () => host.getPorts().map(port => ({
       name: port.getName(), mac: port.getMAC().toString(), globalAddress: port.getGlobalIPv6()?.toString() ?? null,
     })),
+    schedule: (callback, delayMs) => host.scheduleTimer(callback, delayMs),
     udpBind: (port, listener, processName) => host.udpBind(port, listener, processName),
     udpClose: port => host.udpClose(port),
     joinIPv6Group: (iface, group) => host.joinIPv6Group(iface, group),

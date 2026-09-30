@@ -18,6 +18,7 @@
  *          └─ ICMP Packet (protocol 1)
  */
 
+import { dhcpv6WireLength } from '../dhcpv6/Dhcpv6Codec';
 import { Equipment } from '../equipment/Equipment';
 import { buildEchoReply } from '../icmp/IcmpEcho';
 import {
@@ -1282,14 +1283,15 @@ export abstract class EndHost extends Equipment {
     const port = this.ports.get(iface);
     const srcIp = port?.getLinkLocalIPv6();
     if (!port || !srcIp) return;
-    if (unicastTo && this.neighborCache.get(unicastTo) && this.sendUdpDatagram6(new IPv6Address(unicastTo), 547, 546, pkt, 300)) return;
+    if (unicastTo) this.resolveNdpSync(new IPv6Address(unicastTo));
+    if (unicastTo && this.neighborCache.get(unicastTo) && this.sendUdpDatagram6(new IPv6Address(unicastTo), 547, 546, pkt, dhcpv6WireLength(pkt))) return;
     const dst = new IPv6Address('ff02::1:2');
     const udp: UDPPacket = {
-      type: 'udp', sourcePort: 546, destinationPort: 547, length: 8 + 300, checksum: 0, payload: pkt,
+      type: 'udp', sourcePort: 546, destinationPort: 547, length: 8 + dhcpv6WireLength(pkt), checksum: 0, payload: pkt,
     };
     const ipPkt = createIPv6Packet(
       srcIp, dst, IP_PROTO_UDP, 1,
-      stampUdpChecksum(udp, srcIp.toString(), dst.toString()), 8 + 300);
+      stampUdpChecksum(udp, srcIp.toString(), dst.toString()), udp.length);
     this.sendFrame(iface, {
       srcMAC: port.getMAC(), dstMAC: dst.toMulticastMAC(), etherType: ETHERTYPE_IPV6, payload: ipPkt,
     });
@@ -3735,6 +3737,10 @@ export abstract class EndHost extends Equipment {
     return destinationIP instanceof IPv6Address
       ? this.sendUdpDatagram6(destinationIP, destinationPort, sourcePort, payload, payloadBytes)
       : this.sendUdpDatagram(destinationIP, destinationPort, sourcePort, payload, payloadBytes);
+  }
+
+  public scheduleTimer(callback: () => void, delayMs: number): number {
+    return this.getScheduler().setTimeout(callback, delayMs);
   }
 
   public sendUdpDatagram6OnLink(
