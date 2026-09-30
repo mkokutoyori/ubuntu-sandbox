@@ -28,6 +28,7 @@ export interface ZoneUpdate {
   readonly additions: readonly ResourceRecord<ResourceRecordData>[];
   readonly removals: readonly ResourceRecord<ResourceRecordData>[];
   readonly serial?: number;
+  readonly soa?: ResourceRecord<SoaRecordData>;
   readonly notify?: boolean;
 }
 
@@ -88,9 +89,9 @@ export class PrimaryZoneAgent {
     const verdict = evaluateUpdate(this.zone, request);
     if (verdict.rcode !== DnsRcode.NOERROR) return reply(verdict.rcode);
 
-    const { additions, removals } = verdict.applied;
-    if (additions.length > 0 || removals.length > 0) {
-      await this.applyUpdate({ additions, removals });
+    const { additions, removals, soa } = verdict.applied;
+    if (additions.length > 0 || removals.length > 0 || soa) {
+      await this.applyUpdate({ additions, removals, soa });
     }
     return reply(DnsRcode.NOERROR);
   }
@@ -113,8 +114,8 @@ export class PrimaryZoneAgent {
     for (const rr of update.removals) this.zone.removeRecord(rr);
     for (const rr of update.additions) this.zone.addRecord(rr);
 
-    const toSerial = update.serial ?? serialAdd(fromSerial, 1);
-    const previous = this.zone.soa;
+    const toSerial = update.serial ?? (update.soa ? update.soa.data.serial : serialAdd(fromSerial, 1));
+    const previous = update.soa ?? this.zone.soa;
     this.zone.updateSoa(makeSoaRecord(previous.name, previous.ttl, {
       ...previous.data, serial: toSerial,
     }));

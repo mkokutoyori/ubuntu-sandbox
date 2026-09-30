@@ -89,9 +89,22 @@ function wireTypeOf(rr: ResourceRecord<ResourceRecordData>): RRType | number {
   return isEmptyRecordData(rr.data) ? rr.data.wireType : rr.data.type;
 }
 
-function readPrerequisite(rr: ResourceRecord<ResourceRecordData>): UpdatePrerequisite {
+const FIRST_META_TYPE = 128;
+
+function isMetaType(type: RRType | number): boolean {
+  return type >= FIRST_META_TYPE && type <= RRType.ANY;
+}
+
+function readPrerequisite(
+  rr: ResourceRecord<ResourceRecordData>, zoneClass: DnsClass | number,
+): UpdatePrerequisite {
   const type = wireTypeOf(rr);
   const empty = isEmptyRecordData(rr.data);
+
+  if (rr.ttl !== 0) throw new DnsUpdateFormatError('a prerequisite must carry a zero TTL');
+  if (rr.rrClass !== DnsClass.ANY && rr.rrClass !== DnsClassNone && rr.rrClass !== zoneClass) {
+    throw new DnsUpdateFormatError('prerequisite class must be ANY, NONE or the zone class');
+  }
 
   if (rr.rrClass === DnsClass.ANY) {
     if (rr.ttl !== 0 || !empty) throw new DnsUpdateFormatError('prerequisite of class ANY must carry no TTL and no RDATA');
@@ -109,20 +122,29 @@ function readPrerequisite(rr: ResourceRecord<ResourceRecordData>): UpdatePrerequ
   return { kind: 'rrset-exists-value', record: rr };
 }
 
-function readInstruction(rr: ResourceRecord<ResourceRecordData>): UpdateInstruction {
+function readInstruction(
+  rr: ResourceRecord<ResourceRecordData>, zoneClass: DnsClass | number,
+): UpdateInstruction {
   const type = wireTypeOf(rr);
   const empty = isEmptyRecordData(rr.data);
 
+  if (rr.rrClass !== DnsClass.ANY && rr.rrClass !== DnsClassNone && rr.rrClass !== zoneClass) {
+    throw new DnsUpdateFormatError('update class must be ANY, NONE or the zone class');
+  }
   if (rr.rrClass === DnsClass.ANY) {
     if (rr.ttl !== 0 || !empty) throw new DnsUpdateFormatError('deletion of class ANY must carry no TTL and no RDATA');
+    if (type !== RRType.ANY && isMetaType(type)) throw new DnsUpdateFormatError('deletion of a meta type');
     return type === RRType.ANY
       ? { kind: 'delete-name', name: rr.name }
       : { kind: 'delete-rrset', name: rr.name, type };
   }
   if (rr.rrClass === DnsClassNone) {
+    if (rr.ttl !== 0) throw new DnsUpdateFormatError('deletion of class NONE must carry a zero TTL');
+    if (isMetaType(type)) throw new DnsUpdateFormatError('deletion of a meta type');
     if (empty) throw new DnsUpdateFormatError('deletion of a single RR must carry its RDATA');
     return { kind: 'delete-record', record: rr };
   }
+  if (isMetaType(type)) throw new DnsUpdateFormatError('addition of a meta type');
   if (empty) throw new DnsUpdateFormatError('addition must carry RDATA');
   return { kind: 'add', record: rr };
 }
@@ -138,7 +160,7 @@ export function readUpdateMessage(message: DnsMessage): DnsUpdateRequest {
   return {
     zone: zone.qname,
     zoneClass: zone.qclass,
-    prerequisites: message.answers.map(readPrerequisite),
-    updates: message.authorities.map(readInstruction),
+    prerequisites: message.answers.map((rr) => readPrerequisite(rr, zone.qclass)),
+    updates: message.authorities.map((rr) => readInstruction(rr, zone.qclass)),
   };
 }

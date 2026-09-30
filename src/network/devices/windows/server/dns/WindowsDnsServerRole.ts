@@ -525,7 +525,9 @@ export class WindowsDnsServerRole {
       zone.addRecord(rr);
       this.claimDynamic(zone, rr, owner);
     }
-    if (verdict.applied.removals.length > 0 || verdict.applied.additions.length > 0) {
+    for (const rr of verdict.applied.refreshed) this.claimDynamic(zone, rr, owner);
+    if (verdict.applied.soa) zone.updateSoa(verdict.applied.soa);
+    if (verdict.applied.removals.length > 0 || verdict.applied.additions.length > 0 || verdict.applied.soa) {
       this.zoneChanged(zone);
     }
     return reply(DnsRcode.NOERROR);
