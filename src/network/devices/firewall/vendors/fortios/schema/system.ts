@@ -1228,6 +1228,7 @@ export const SYSTEM_DHCP6_SERVER: FortiTableSpec = {
       expectedValue: 'an IPv6 address such as `2001:db8:1:1::53`.',
     })),
     word('domain', 'Domain name suffix for the addresses that the DHCPv6 server assigns.'),
+    enable('rapid-commit', 'Enable/disable allow/disallow rapid commit.'),
   ],
   children: [
     {
@@ -1270,6 +1271,7 @@ export const SYSTEM_DHCP6_SERVER: FortiTableSpec = {
         .map(name => object.effective(name)[0] ?? '')
         .filter(server => server.length > 0 && server !== '::'),
       domain: object.effective('domain')[0] ?? '',
+      rapidCommit: object.effective('rapid-commit')[0] === 'enable',
       ranges: object.childEntries('ip-range').map(range => ({
         startIp: range.effective('start-ip')[0] ?? '::',
         endIp: range.effective('end-ip')[0] ?? '::',

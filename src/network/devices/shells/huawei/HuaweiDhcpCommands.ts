@@ -211,6 +211,29 @@ export function registerDhcpv6SystemCommands(trie: CommandTrie, ctx: HuaweiShell
     }
     return '';
   });
+  trie.register('dhcpv6 rapid-commit', 'Support the Rapid Commit option', () => {
+    ctx.r()._getDHCPv6ServerInternal().setRapidCommitAll(true);
+    return '';
+  });
+  trie.register('undo dhcpv6 rapid-commit', 'Do not support the Rapid Commit option', () => {
+    ctx.r()._getDHCPv6ServerInternal().setRapidCommitAll(false);
+    return '';
+  });
+  trie.registerGreedy('information-refresh', 'Interval for refreshing stateless configuration (600-4294967295 s)', (args) => {
+    const name = (ctx as any)._dhcpv6Selected as string | undefined;
+    if (!name) return '';
+    const seconds = Number(args[0]);
+    if (!/^\d+$/.test(args[0] ?? '') || seconds < 600 || seconds > 4294967295) {
+      return "Error: Wrong parameter found at '^' position.";
+    }
+    ctx.r()._getDHCPv6ServerInternal().configurePoolInformationRefresh(name, seconds);
+    return '';
+  });
+  trie.registerGreedy('undo information-refresh', 'Restore the default information refresh interval', () => {
+    const name = (ctx as any)._dhcpv6Selected as string | undefined;
+    if (name) ctx.r()._getDHCPv6ServerInternal().configurePoolInformationRefresh(name, 86400);
+    return '';
+  });
   trie.registerGreedy('dns-domain-name', 'DHCPv6 domain-name', (args) => {
     const p = (v6().get((ctx as any)._dhcpv6Selected));
     if (p && args[0]) p.domainName = args[0];
