@@ -36,6 +36,11 @@ export class RndcChannel {
           ? 'The zone reload and thaw was successful.'
           : `rndc: 'thaw' failed: ${result.error}`;
       }
+      case 'sync': {
+        const zoneName = rest.find((word) => !word.startsWith('-')) ?? '';
+        const result = this.bind9.syncZone(zoneName);
+        return result.ok ? '' : `rndc: 'sync' failed: ${result.error}`;
+      }
       case 'querylog':
         return this.querylog(rest[0]);
       case 'retransfer': {

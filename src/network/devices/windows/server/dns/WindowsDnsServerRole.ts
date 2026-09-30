@@ -14,7 +14,7 @@ import {
   evaluateUpdate, updateResponse, parseOrFormerr, DnsUpdateRcode,
   authorizeUpdate, signIfKeyed,
 } from '@/network/dns/update/UpdateResponder';
-import { TsigKeyring } from '@/network/dns/tsig/Tsig';
+import { TsigKeyring, tsigKeyFromBase64 } from '@/network/dns/tsig/Tsig';
 import { isTransferQuery, refuseTransfer } from '@/network/dns/transfer/AxfrSession';
 import { isNotify, makeNotifyAck } from '@/network/dns/transfer/NotifyProtocol';
 import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer } from '@/network/dns/transfer/ZoneTransferHosting';
@@ -1124,7 +1124,9 @@ export class WindowsDnsServerRole {
   }
 
   addTsigKey(name: string, algorithm: string, secret: string): DnsOpResult {
-    this.keyring.add({ name, algorithm, secret });
+    const key = tsigKeyFromBase64(name, algorithm, secret);
+    if (!key) return { ok: false, message: 'The TSIG secret is not valid base64.' };
+    this.keyring.add(key);
     return { ok: true, message: '' };
   }
 

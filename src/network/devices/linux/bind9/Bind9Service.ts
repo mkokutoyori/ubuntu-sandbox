@@ -2,7 +2,7 @@ import { ZoneStore } from '@/network/dns/zone/ZoneStore';
 import { AuthoritativeServer } from '@/network/dns/resolver/AuthoritativeServer';
 import { RecursiveResolver } from '@/network/dns/resolver/RecursiveResolver';
 import { DnsCache } from '@/network/dns/resolver/DnsCache';
-import { parseZoneFile, ZoneFileError } from '@/network/dns/zone/ZoneFile';
+import { parseZoneFile, renderZoneFile, ZoneFileError } from '@/network/dns/zone/ZoneFile';
 import { ZoneError } from '@/network/dns/zone/Zone';
 import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer } from '@/network/dns/transfer/ZoneTransferHosting';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
@@ -15,6 +15,16 @@ import {
   isTransferQuery, refuseTransfer,
 } from '@/network/dns/transfer/AxfrSession';
 import { isNotify, makeNotifyAck } from '@/network/dns/transfer/NotifyProtocol';
+import { isUpdateMessage } from '@/network/dns/update/DnsUpdate';
+import type { DnsUpdateRequest } from '@/network/dns/update/DnsUpdate';
+import {
+  authorizeUpdate, evaluateUpdate, parseOrFormerr, signIfKeyed, updateResponse, DnsUpdateRcode,
+} from '@/network/dns/update/UpdateResponder';
+import { TsigKeyring, tsigKeyFromBase64, canonicalKeyName } from '@/network/dns/tsig/Tsig';
+import { serialAdd } from '@/network/dns/zone/SerialNumber';
+import { RRType } from '@/network/dns/wire/RRType';
+import { makeSoaRecord } from '@/network/dns/wire/ResourceRecord';
+import { updatePolicyPermits } from './NamedUpdatePolicy';
 import {
   bindDnsUdpServer, unbindDnsUdpServer, DNS_PORT,
 } from '@/network/dns/transport/DnsUdpTransport';
@@ -38,6 +48,7 @@ import type { OperationResult } from '../LinuxServiceManager';
 export interface Bind9Files {
   read(path: string): string | null;
   append(path: string, content: string): void;
+  write(path: string, content: string): void;
 }
 
 export interface ZoneReloadResult extends OperationResult {
@@ -62,6 +73,7 @@ export class Bind9Service {
   private readonly failedZones = new Set<string>();
   private readonly secondaries: SecondaryZoneRefresher;
   private readonly frozenZones = new Set<string>();
+  private keyring = new TsigKeyring();
   private readonly logging: Bind9Logging;
   private readonly readFile: (path: string) => string | null;
   private queryLogEnabled = false;
@@ -158,6 +170,7 @@ export class Bind9Service {
   freezeZone(name: string): OperationResult {
     const zone = this.primaryZone(name);
     if (!zone) return { ok: false, error: 'not found' };
+    if (this.isDynamic(zone)) this.syncZone(zone.name);
     this.frozenZones.add(zone.name);
     return { ok: true };
   }
@@ -166,13 +179,14 @@ export class Bind9Service {
     const zone = this.primaryZone(name);
     if (!zone) return { ok: false, error: 'not found' };
     this.frozenZones.delete(zone.name);
-    return this.reloadZone(name);
+    return this.reloadZone(name, true);
   }
 
-  reloadZone(name: string): ZoneReloadResult {
+  reloadZone(name: string, thawing = false): ZoneReloadResult {
     const zone = this.primaryZone(name);
     if (!zone) return { ok: false, error: 'not found' };
     if (this.frozenZones.has(zone.name)) return { ok: false, error: 'frozen' };
+    if (this.isDynamic(zone) && !thawing) return { ok: false, error: 'dynamic zone' };
     if (zone.file === null || this.store === null) return { ok: false, error: 'not loaded' };
 
     const content = this.readFile(zone.file);
@@ -314,6 +328,11 @@ export class Bind9Service {
       }
     }
 
+    this.keyring = new TsigKeyring();
+    for (const key of config.keys.values()) {
+      const tsigKey = tsigKeyFromBase64(key.name, key.algorithm, key.secret);
+      if (tsigKey) this.keyring.add(tsigKey);
+    }
     this.config = config;
     this.store = store;
     this.authoritative = new AuthoritativeServer(store);
@@ -413,25 +432,29 @@ export class Bind9Service {
   }
 
   private readonly handleUdpQuery = (
-    query: DnsMessage, sourceIP?: IPAddress, sourcePort?: number,
+    query: DnsMessage, sourceIP?: IPAddress, sourcePort?: number, raw?: Uint8Array,
   ): DnsMessage | Promise<DnsMessage> =>
-    this.answerQuery(query, 'udp', sourceIP, sourcePort);
+    this.answerQuery(query, 'udp', sourceIP, sourcePort, raw);
 
   private readonly handleTcpQuery = (
-    query: DnsMessage, sourceIP?: IPAddress, sourcePort?: number,
+    query: DnsMessage, sourceIP?: IPAddress, sourcePort?: number, raw?: Uint8Array,
   ): DnsMessage | Promise<DnsMessage> =>
-    this.answerQuery(query, 'tcp', sourceIP, sourcePort);
+    this.answerQuery(query, 'tcp', sourceIP, sourcePort, raw);
 
   private answerQuery(
     query: DnsMessage,
     transport: 'udp' | 'tcp',
     sourceIP?: IPAddress,
     sourcePort?: number,
+    raw?: Uint8Array,
   ): DnsMessage | Promise<DnsMessage> {
     const config = this.config!;
 
     if (isNotify(query)) {
       return this.handleNotify(query, sourceIP);
+    }
+    if (isUpdateMessage(query)) {
+      return this.handleUpdate(query, sourceIP, raw);
     }
     const env = this.aclEnvironment();
     const source = sourceIP?.toString() ?? LOOPBACK;
@@ -477,6 +500,85 @@ export class Bind9Service {
       return this.recurse(query);
     }
     return { ...response, flags: { ...response.flags, ra: recursionAllowed } };
+  }
+
+  private handleUpdate(query: DnsMessage, sourceIP?: IPAddress, raw?: Uint8Array): DnsMessage {
+    const now = Math.floor(Date.now() / 1000);
+    const auth = authorizeUpdate(raw, 'none', this.keyring, now);
+    const reply = (rcode: number): DnsMessage =>
+      signIfKeyed(updateResponse(query, rcode), auth, now);
+    if (auth.rcode !== DnsRcode.NOERROR) return reply(auth.rcode);
+
+    const request = parseOrFormerr(query);
+    if (!request) return reply(DnsRcode.FORMERR);
+
+    const named = this.primaryZone(request.zone);
+    const zone = named ? this.store?.getZone(named.name) ?? null : null;
+    if (!named || !zone) return reply(DnsUpdateRcode.NOTAUTH);
+
+    const signer = auth.key ? canonicalKeyName(auth.key.name) : null;
+    const source = sourceIP?.toString() ?? LOOPBACK;
+    if (named.updatePolicy === null && !named.allowUpdate.matches(source, this.aclEnvironment(), signer)) {
+      return reply(DnsRcode.REFUSED);
+    }
+    if (this.frozenZones.has(named.name)) return reply(DnsRcode.SERVFAIL);
+
+    const verdict = evaluateUpdate(zone, request);
+    if (verdict.rcode !== DnsRcode.NOERROR) return reply(verdict.rcode);
+    if (named.updatePolicy !== null && !this.policyPermits(named.updatePolicy, signer, zone, request)) {
+      return reply(DnsRcode.REFUSED);
+    }
+
+    const { additions, removals, soa } = verdict.applied;
+    for (const rr of removals) zone.removeRecord(rr);
+    for (const rr of additions) zone.addRecord(rr);
+    if (additions.length > 0 || removals.length > 0 || soa) {
+      const base = soa ?? zone.soa;
+      zone.updateSoa(makeSoaRecord(base.name, base.ttl, {
+        ...base.data, serial: soa ? soa.data.serial : serialAdd(zone.soa.data.serial, 1),
+      }));
+      this.loadedZones.set(named.name, zone.soa.data.serial);
+      this.notifySecondaries(named.name);
+    }
+    return reply(DnsRcode.NOERROR);
+  }
+
+  private policyPermits(
+    rules: NonNullable<NamedZone['updatePolicy']>,
+    signer: string | null,
+    zone: NonNullable<ReturnType<ZoneStore['getZone']>>,
+    request: DnsUpdateRequest,
+  ): boolean {
+    const allowed = (name: string, type: number): boolean =>
+      updatePolicyPermits(rules, signer, zone.origin, name, type);
+    for (const update of request.updates) {
+      if (update.kind === 'add' || update.kind === 'delete-record') {
+        if (!allowed(update.record.name, update.record.data.type as number)) return false;
+      } else if (update.kind === 'delete-rrset') {
+        if (!allowed(update.name, update.type as number)) return false;
+      } else {
+        const name = normalizeDnsName(update.name);
+        const present = new Set<number>();
+        for (const rr of zone.allRecords()) {
+          if (normalizeDnsName(rr.name) === name) present.add(rr.data.type as number);
+        }
+        for (const type of present) if (!allowed(update.name, type)) return false;
+      }
+    }
+    return true;
+  }
+
+  private isDynamic(zone: NamedZone): boolean {
+    return zone.updatePolicy !== null || !zone.allowUpdate.grantsNothing();
+  }
+
+  syncZone(name: string): OperationResult {
+    const named = this.primaryZone(name);
+    const zone = named ? this.store?.getZone(named.name) ?? null : null;
+    if (!named || !zone || named.file === null) return { ok: false, error: 'not found' };
+    if (!this.isDynamic(named)) return { ok: false, error: 'not dynamic' };
+    this.files.write(named.file, renderZoneFile(zone));
+    return { ok: true };
   }
 
   private serveTransfer(query: DnsMessage): DnsMessage {

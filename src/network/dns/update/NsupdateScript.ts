@@ -8,7 +8,7 @@ import {
 import type {
   UpdateInstruction, UpdatePrerequisite, DnsUpdateRequest,
 } from '@/network/dns/update/DnsUpdate';
-import { TsigAlgorithm, type TsigKey } from '@/network/dns/tsig/Tsig';
+import { TsigAlgorithm, tsigKeyFromBase64, type TsigKey } from '@/network/dns/tsig/Tsig';
 import { DnsUpdateRcode } from '@/network/dns/update/UpdateResponder';
 
 export interface NsupdateScript {
@@ -53,14 +53,14 @@ function buildRecord(
 
 export function parseNsupdateKeyOption(spec: string): TsigKey | string {
   const parts = spec.split(':');
-  if (parts.length === 3) {
-    const algorithm = parts[0].endsWith('.') ? parts[0] : `${parts[0]}.`;
-    return { name: parts[1], algorithm, secret: parts[2] };
-  }
-  if (parts.length === 2) {
-    return { name: parts[0], algorithm: TsigAlgorithm.HMAC_SHA256, secret: parts[1] };
-  }
-  return `nsupdate: could not read key from ${spec}`;
+  const [algorithm, name, secret] = parts.length === 3
+    ? [parts[0].endsWith('.') ? parts[0] : `${parts[0]}.`, parts[1], parts[2]]
+    : parts.length === 2
+      ? [TsigAlgorithm.HMAC_SHA256, parts[0], parts[1]]
+      : [null, '', ''];
+  if (algorithm === null) return `nsupdate: could not read key from ${spec}`;
+  return tsigKeyFromBase64(name, algorithm, secret)
+    ?? `could not create key from ${spec}: bad base64 encoding`;
 }
 
 export function parseNsupdateLine(line: string, script: NsupdateScript): string | null {

@@ -7,6 +7,7 @@ import {
 } from '@/network/dns/wire/DnsMessageCodec';
 import { makeTsigRecord, type TsigRecordData } from '@/network/dns/wire/ResourceRecord';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
+import { base64ToBytes } from '@/crypto/encoding';
 
 export const TsigAlgorithm = {
   HMAC_MD5: 'hmac-md5.sig-alg.reg.int.',
@@ -27,6 +28,19 @@ export interface TsigKey {
   readonly name: string;
   readonly algorithm: string;
   readonly secret: string;
+}
+
+export function tsigKeyFromBase64(
+  name: string, algorithm: string, secretBase64: string,
+): TsigKey | null {
+  try {
+    const bytes = base64ToBytes(secretBase64);
+    let secret = '';
+    for (const byte of bytes) secret += String.fromCharCode(byte);
+    return { name, algorithm, secret };
+  } catch {
+    return null;
+  }
 }
 
 export type TsigKeyLookup = (name: string) => TsigKey | undefined;

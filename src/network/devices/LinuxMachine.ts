@@ -528,6 +528,7 @@ export abstract class LinuxMachine extends EndHost
         if (!this.executor.vfs.exists(dir)) this.executor.vfs.mkdirp(dir, 0o755, 0, 0);
         this.executor.vfs.writeFile(path, content, 0, 0, 0o022, true);
       },
+      write: (path, content) => { this.executor.vfs.writeFile(path, content, 0, 0, 0o022); },
     });
     this.executor.serviceMgr.registerConfigCheck('named', () => this.bind9.checkConfig());
 

@@ -161,7 +161,7 @@ describe('l invite de nsupdate', () => {
       name: 'cle-labo', algorithm: TsigAlgorithm.HMAC_SHA256, secret: 'secret-partage',
     });
 
-    await taper(session, 'nsupdate -y hmac-sha256:cle-labo:secret-partage');
+    await taper(session, 'nsupdate -y hmac-sha256:cle-labo:c2VjcmV0LXBhcnRhZ2U=');
     await taper(session, `server ${SERVEUR}`);
     await taper(session, `zone ${ORIGIN}`);
     await taper(session, `update add poste.${ORIGIN} 300 A 10.0.0.100`);

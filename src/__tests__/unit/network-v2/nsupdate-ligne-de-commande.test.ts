@@ -144,7 +144,7 @@ describe('nsupdate signe quand on lui donne une cle', () => {
     });
 
     const sortie = await taper(
-      poste, `printf '${AJOUT}' | nsupdate -y hmac-sha256:cle-labo:secret-partage`);
+      poste, `printf '${AJOUT}' | nsupdate -y hmac-sha256:cle-labo:c2VjcmV0LXBhcnRhZ2U=`);
 
     expect(sortie.trim()).toBe('');
     expect(await resoudre(poste, `poste.${ORIGIN}`)).toContain('10.0.0.100');
@@ -157,7 +157,7 @@ describe('nsupdate signe quand on lui donne une cle', () => {
     });
 
     const sortie = await taper(
-      poste, `printf '${AJOUT}' | nsupdate -y hmac-sha256:cle-labo:pas-le-bon`);
+      poste, `printf '${AJOUT}' | nsupdate -y hmac-sha256:cle-labo:cGFzLWxlLWJvbg==`);
 
     expect(sortie).toContain('NOTAUTH');
     expect(await resoudre(poste, `poste.${ORIGIN}`)).not.toContain('10.0.0.100');

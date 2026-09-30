@@ -18,7 +18,8 @@ type AclElement =
   | { readonly kind: 'localhost'; readonly negated: boolean }
   | { readonly kind: 'localnets'; readonly negated: boolean }
   | { readonly kind: 'address'; readonly base: number; readonly prefix: number; readonly negated: boolean }
-  | { readonly kind: 'reference'; readonly list: AddressMatchList; readonly negated: boolean };
+  | { readonly kind: 'reference'; readonly list: AddressMatchList; readonly negated: boolean }
+  | { readonly kind: 'key'; readonly name: string; readonly negated: boolean };
 
 const ADDRESS_PATTERN = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?:\/(\d{1,2}))?$/;
 const LOOPBACK_PREFIX: AclNetwork = { address: '127.0.0.0', prefix: 8 };
@@ -67,10 +68,14 @@ export class AddressMatchList {
     return new AddressMatchList(elements);
   }
 
-  matches(ip: string, env: AclHostEnvironment): boolean {
+  grantsNothing(): boolean {
+    return this.elements.every((element) => element.kind === 'none');
+  }
+
+  matches(ip: string, env: AclHostEnvironment, signingKey: string | null = null): boolean {
     const address = toUint32(ip);
     for (const element of this.elements) {
-      if (elementMatches(element, address, env)) return !element.negated;
+      if (elementMatches(element, address, env, signingKey)) return !element.negated;
     }
     return false;
   }
@@ -85,6 +90,9 @@ function parseElement(
   if (values[0]?.text === '!') {
     negated = true;
     values = values.slice(1);
+  }
+  if (values.length === 2 && values[0].text === 'key' && !values[0].quoted && statement.block === null) {
+    return { kind: 'key', name: values[1].text.toLowerCase().replace(/\.$/, ''), negated };
   }
   if (values.length !== 1 || statement.block !== null) {
     throw new NamedConfigError(statement.file, statement.line, 'invalid address match list element');
@@ -121,7 +129,9 @@ function parseElement(
  * IPv4-only (this simulator has no IPv6 CIDR matching yet), so a `null`
  * (non-IPv4) address never matches them.
  */
-function elementMatches(element: AclElement, address: number | null, env: AclHostEnvironment): boolean {
+function elementMatches(
+  element: AclElement, address: number | null, env: AclHostEnvironment, signingKey: string | null,
+): boolean {
   switch (element.kind) {
     case 'any':
       return true;
@@ -134,7 +144,10 @@ function elementMatches(element: AclElement, address: number | null, env: AclHos
     case 'address':
       return address !== null && inNetwork(address, element.base, element.prefix);
     case 'reference':
-      return address !== null && element.list.matches(IPAddress.fromUint32(address).toString(), env);
+      return address !== null
+        && element.list.matches(IPAddress.fromUint32(address).toString(), env, signingKey);
+    case 'key':
+      return signingKey !== null && signingKey === element.name;
   }
 }
 

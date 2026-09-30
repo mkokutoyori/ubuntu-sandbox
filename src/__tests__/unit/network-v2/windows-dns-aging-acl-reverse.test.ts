@@ -51,14 +51,18 @@ async function lab(secure = true): Promise<{ wns: WindowsServer; pc: LinuxPC }> 
   await run(wns, 'Install-WindowsFeature DNS');
   await run(wns, 'Add-DnsServerPrimaryZone -Name lab.test');
   await run(wns, `Set-DnsServerPrimaryZone -Name lab.test -DynamicUpdate ${secure ? 'Secure' : 'NonsecureAndSecure'}`);
-  await run(wns, 'Add-DnsServerTsigKey -Name alice -Secret alice-secret');
-  await run(wns, 'Add-DnsServerTsigKey -Name bob -Secret bob-secret');
+  await run(wns, 'Add-DnsServerTsigKey -Name alice -Secret YWxpY2Utc2VjcmV0');
+  await run(wns, 'Add-DnsServerTsigKey -Name bob -Secret Ym9iLXNlY3JldA==');
   return { wns, pc };
 }
 
+const SECRETS: Readonly<Record<string, string>> = {
+  alice: 'YWxpY2Utc2VjcmV0', bob: 'Ym9iLXNlY3JldA==',
+};
+
 function update(pc: LinuxPC, key: string, lines: readonly string[]): Promise<string> {
   const script = ['server ' + SERVER, 'zone lab.test', ...lines, 'send'].join('\\n');
-  return pc.executeCommand(`printf '${script}\\n' | nsupdate -y hmac-sha256:${key}:${key}-secret`);
+  return pc.executeCommand(`printf '${script}\\n' | nsupdate -y hmac-sha256:${key}:${SECRETS[key]}`);
 }
 
 const records = (wns: WindowsServer, extra = '') => run(wns, `Get-DnsServerResourceRecord -ZoneName lab.test ${extra}`);

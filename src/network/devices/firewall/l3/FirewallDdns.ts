@@ -3,7 +3,7 @@ import { DnsClass, RRType } from '../../../dns/wire/RRType';
 import { makeARecord } from '../../../dns/wire/ResourceRecord';
 import { buildUpdateMessage } from '../../../dns/update/DnsUpdate';
 import { decodeDnsMessage, encodeDnsMessage } from '../../../dns/wire/DnsMessageCodec';
-import { signDnsMessage, TsigAlgorithm } from '../../../dns/tsig/Tsig';
+import { signDnsMessage, tsigKeyFromBase64, TsigAlgorithm } from '../../../dns/tsig/Tsig';
 import { DNS_PORT } from './FirewallDnsClient';
 
 export interface DdnsSettings {
@@ -78,11 +78,13 @@ export class FirewallDdns {
     this.nextId = (this.nextId + 1) % TRANSACTION_SPAN;
     const message = buildUpdateMessage(
       { zone: settings.zone, zoneClass: DnsClass.IN, prerequisites: [], updates }, id);
-    const payload = settings.auth === 'tsig' && settings.keyName.length > 0
-      ? signDnsMessage(message, {
-        key: { name: settings.keyName, algorithm: TsigAlgorithm.HMAC_MD5, secret: settings.key },
-        timeSigned: Math.floor(this.deps.now() / 1000),
-      })
+    const signing = settings.auth === 'tsig' && settings.keyName.length > 0;
+    const key = signing
+      ? tsigKeyFromBase64(settings.keyName, TsigAlgorithm.HMAC_MD5, settings.key)
+      : null;
+    if (signing && !key) return false;
+    const payload = key
+      ? signDnsMessage(message, { key, timeSigned: Math.floor(this.deps.now() / 1000) })
       : encodeDnsMessage(message);
     const port = this.nextPort;
     this.nextPort = this.nextPort >= 49999 ? EPHEMERAL_BASE : this.nextPort + 1;

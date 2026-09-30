@@ -2,6 +2,7 @@ import { IPAddress } from '@/network/core/types';
 import { AddressMatchList } from './NamedAcl';
 import { NamedConfigError } from './NamedConfigError';
 import type { NamedConfStatement } from './NamedConfParser';
+import { parseUpdatePolicyRule, type UpdatePolicyRule } from './NamedUpdatePolicy';
 
 export { NamedConfigError } from './NamedConfigError';
 
@@ -30,6 +31,8 @@ export interface NamedZone {
   readonly primaries: readonly string[];
   readonly alsoNotify: readonly string[];
   readonly allowTransfer: AddressMatchList | null;
+  readonly allowUpdate: AddressMatchList;
+  readonly updatePolicy: readonly UpdatePolicyRule[] | null;
   readonly forwarders: readonly string[];
   readonly declaredAt: { readonly file: string; readonly line: number };
 }
@@ -221,6 +224,8 @@ interface ZoneDraft {
   primaries: string[];
   alsoNotify: string[];
   allowTransfer: AddressMatchList | null;
+  allowUpdate: AddressMatchList | null;
+  updatePolicy: UpdatePolicyRule[] | null;
   forwarders: string[];
 }
 
@@ -230,7 +235,8 @@ function parseZoneEntries(
   acls: ReadonlyMap<string, AddressMatchList>,
 ): ZoneDraft {
   const draft: ZoneDraft = {
-    type: null, file: null, primaries: [], alsoNotify: [], allowTransfer: null, forwarders: [],
+    type: null, file: null, primaries: [], alsoNotify: [], allowTransfer: null,
+    allowUpdate: null, updatePolicy: null, forwarders: [],
   };
   for (const entry of requireBlock(statement)) {
     const keyword = keywordOf(entry);
@@ -255,12 +261,21 @@ function parseZoneEntries(
       case 'allow-transfer':
         draft.allowTransfer = AddressMatchList.fromStatements(requireBlock(entry), acls);
         break;
+      case 'allow-update':
+        draft.allowUpdate = AddressMatchList.fromStatements(requireBlock(entry), acls);
+        break;
+      case 'update-policy':
+        draft.updatePolicy = requireBlock(entry).map(parseUpdatePolicyRule);
+        break;
       case 'forwarders':
         draft.forwarders = parseAddressList(entry);
         break;
       default:
         fail(entry, `unknown option '${keyword}'`);
     }
+  }
+  if (draft.allowUpdate !== null && draft.updatePolicy !== null) {
+    fail(statement, `zone '${zoneName}': 'allow-update' and 'update-policy' cannot both be set`);
   }
   return draft;
 }
@@ -309,6 +324,8 @@ function parseZone(
     primaries: draft.primaries,
     alsoNotify: draft.alsoNotify,
     allowTransfer: draft.allowTransfer,
+    allowUpdate: draft.allowUpdate ?? AddressMatchList.none(),
+    updatePolicy: draft.updatePolicy,
     forwarders: draft.forwarders,
     declaredAt: { file: statement.file, line: statement.line },
   };
