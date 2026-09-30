@@ -45,6 +45,8 @@ export interface DHCPv6DelegationPool {
   prefix: string;
   prefixLength: number;
   assignedLength: number;
+  firstPrefix?: string;
+  lastPrefix?: string;
 }
 
 export interface DHCPv6StaticDelegation {

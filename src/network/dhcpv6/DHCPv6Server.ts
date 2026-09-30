@@ -210,6 +210,26 @@ export class DHCPv6Server {
     return true;
   }
 
+  configurePoolDelegationRange(name: string, low: string, high: string, assignedLength: number): boolean {
+    const pool = this.pools.get(name);
+    if (!pool || assignedLength < 1 || assignedLength > 128) return false;
+    const first = ipv6ToBigInt(new IPv6Address(low));
+    const last = ipv6ToBigInt(new IPv6Address(high));
+    if (last < first) return false;
+    let common = 128;
+    for (let shared = first ^ last; shared > 0n; shared >>= 1n) common--;
+    const covering = Math.min(common, assignedLength);
+    pool.delegations = [
+      ...pool.delegations,
+      {
+        prefix: new IPv6Address(low).getNetworkPrefix(covering).toString(), prefixLength: covering,
+        assignedLength, firstPrefix: new IPv6Address(low).getNetworkPrefix(assignedLength).toString(),
+        lastPrefix: new IPv6Address(high).getNetworkPrefix(assignedLength).toString(),
+      },
+    ];
+    return true;
+  }
+
   configurePoolStaticDelegation(name: string, delegation: DHCPv6StaticDelegation): boolean {
     const pool = this.pools.get(name);
     if (!pool) return false;
@@ -438,8 +458,10 @@ export class DHCPv6Server {
   private carvePrefix(pool: DHCPv6PoolConfig): { prefix: string; length: number } | null {
     for (const delegation of pool.delegations) {
       const step = 1n << BigInt(128 - delegation.assignedLength);
-      const base = ipv6ToBigInt(new IPv6Address(delegation.prefix));
-      const count = 1n << BigInt(delegation.assignedLength - delegation.prefixLength);
+      const base = ipv6ToBigInt(new IPv6Address(delegation.firstPrefix ?? delegation.prefix));
+      const count = delegation.lastPrefix
+        ? (ipv6ToBigInt(new IPv6Address(delegation.lastPrefix)) - base) / step + 1n
+        : 1n << BigInt(delegation.assignedLength - delegation.prefixLength);
       const ceiling = count < BigInt(RANGE_SCAN_LIMIT) ? count : BigInt(RANGE_SCAN_LIMIT);
       for (let index = 0n; index < ceiling; index++) {
         const candidate = ipv6FromBigInt(base + index * step).toString();

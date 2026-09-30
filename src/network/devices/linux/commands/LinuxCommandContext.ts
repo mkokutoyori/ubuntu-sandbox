@@ -14,6 +14,7 @@
  * `Equipment` at all. See `linux_gap.md` §7.3.
  */
 
+import type { LinuxDhcpd6Service } from '../dhcp/LinuxDhcpd6Service';
 import type { LinuxCommandExecutor } from '../LinuxCommandExecutor';
 import type { LinuxNetKernel } from '../LinuxNetKernel';
 import type { DnsService } from '../LinuxDnsService';
@@ -46,6 +47,7 @@ export interface LinuxCommandContext {
 
   /** ISC DHCP server co-located with this machine (dhcpd). */
   readonly dhcpd?: LinuxDhcpdService;
+  readonly dhcpd6?: LinuxDhcpd6Service;
 
   /** XFRM SAD/SPD context for `ip xfrm` commands. */
   readonly xfrm: IpXfrmContext;

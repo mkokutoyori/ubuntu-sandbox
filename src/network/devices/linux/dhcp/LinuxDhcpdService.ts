@@ -46,7 +46,7 @@ function poolNameFor(subnet: DhcpdSubnet): string {
 const WEEKDAY_UTC = ['0', '1', '2', '3', '4', '5', '6'];
 
 /** dhcpd.leases(5): `<weekday> YYYY/MM/DD HH:MM:SS`, always UTC. */
-function leaseStamp(atMs: number): string {
+export function leaseStamp(atMs: number): string {
   const date = new Date(atMs);
   const pad = (value: number) => String(value).padStart(2, '0');
   return `${WEEKDAY_UTC[date.getUTCDay()]} ${date.getUTCFullYear()}/`

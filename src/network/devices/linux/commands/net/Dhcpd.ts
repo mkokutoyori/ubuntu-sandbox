@@ -2,7 +2,7 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
 import {
-  DHCPD_BANNER, DHCPD_BINARY, DHCPD_CONF_PATH, DHCPD_LEASES_PATH, DHCPD_VERSION,
+  DHCPD_BANNER, DHCPD_BINARY, DHCPD_CONF_PATH, DHCPD_LEASES_PATH, DHCPD_VERSION, DHCPD6_LEASES_PATH,
 } from '../../dhcp/DhcpdFiles';
 
 const UNIT = 'isc-dhcp-server';
@@ -18,8 +18,8 @@ function service(ctx: LinuxCommandContext) {
   return ctx.dhcpd ?? null;
 }
 
-function configTest(ctx: LinuxCommandContext): Outcome {
-  const daemon = service(ctx);
+function configTest(ctx: LinuxCommandContext, ipv6: boolean): Outcome {
+  const daemon = ipv6 ? ctx.dhcpd6 ?? null : service(ctx);
   if (!daemon) return { output: `${DHCPD_BINARY}: not available on this machine`, exitCode: 1 };
   const verdict = daemon.checkConfig();
   return { output: verdict.output, exitCode: verdict.ok ? 0 : 1 };
@@ -52,15 +52,17 @@ export const dhcpdCommand: LinuxCommand = {
     if (args.includes('--help') || args.includes('-h')) {
       return { output: USAGE, exitCode: 0 };
     }
-    if (args.includes('-t')) return configTest(ctx);
+    const ipv6 = args.includes('-6');
+    if (args.includes('-t')) return configTest(ctx, ipv6);
     if (args.includes('-T')) {
-      const leases = ctx.executor.vfs.readFile(DHCPD_LEASES_PATH);
+      const leasePath = ipv6 ? DHCPD6_LEASES_PATH : DHCPD_LEASES_PATH;
+      const leases = ctx.executor.vfs.readFile(leasePath);
       return leases === null
-        ? { output: `Can't open lease database ${DHCPD_LEASES_PATH}: No such file or directory`, exitCode: 1 }
-        : { output: [...DHCPD_BANNER, `Lease file: ${DHCPD_LEASES_PATH}`].join('\n'), exitCode: 0 };
+        ? { output: `Can't open lease database ${leasePath}: No such file or directory`, exitCode: 1 }
+        : { output: [...DHCPD_BANNER, `Lease file: ${leasePath}`].join('\n'), exitCode: 0 };
     }
 
-    const daemon = service(ctx);
+    const daemon = ipv6 ? ctx.dhcpd6 ?? null : service(ctx);
     if (!daemon) return { output: `${DHCPD_BINARY}: not available on this machine`, exitCode: 1 };
     if (daemon.isRunning()) {
       return {
@@ -71,7 +73,7 @@ export const dhcpdCommand: LinuxCommand = {
       };
     }
 
-    const result = ctx.executor.serviceMgr.start(UNIT);
+    const result = ctx.executor.serviceMgr.start(ipv6 ? 'isc-dhcp-server6' : UNIT);
     return result.ok
       ? { output: '', exitCode: 0 }
       : { output: result.error ?? 'dhcpd: failed to start', exitCode: 1 };

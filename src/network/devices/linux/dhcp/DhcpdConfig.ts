@@ -15,6 +15,21 @@ export interface DhcpdOptions {
   netbiosNameServers: string[];
   tftpServerName: string | null;
   bootfileName: string | null;
+  nameServers6: string[];
+  domainSearch: string[];
+  preference: number | null;
+  renewalTime: number | null;
+  rebindingTime: number | null;
+  preferredLifetime: number | null;
+}
+
+export interface DhcpdSubnet6 {
+  readonly prefix: string;
+  readonly prefixLength: number;
+  readonly ranges: { start: string; end: string }[];
+  readonly prefixRanges: { low: string; high: string; length: number }[];
+  readonly options: DhcpdOptions;
+  readonly line: number;
 }
 
 export interface DhcpdSubnet {
@@ -29,6 +44,9 @@ export interface DhcpdHost {
   readonly name: string;
   readonly hardwareEthernet: string | null;
   readonly fixedAddress: string | null;
+  readonly clientDuid: string | null;
+  readonly fixedAddress6: string | null;
+  readonly fixedPrefix6: { prefix: string; length: number } | null;
   readonly options: DhcpdOptions;
   readonly line: number;
 }
@@ -38,6 +56,7 @@ export interface DhcpdConfig {
   readonly pingCheck: boolean;
   readonly pingTimeoutSeconds: number;
   readonly subnets: readonly DhcpdSubnet[];
+  readonly subnets6: readonly DhcpdSubnet6[];
   readonly hosts: readonly DhcpdHost[];
   readonly authoritative: boolean;
   readonly leasequery: boolean;
@@ -48,12 +67,17 @@ export const PING_CHECK_DEFAULT = true;
 
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
 const MAC = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/i;
+const IPV6_PREFIX = /^[0-9a-f:]+\/\d{1,3}$/i;
+const IPV6 = /^[0-9a-f:]*:[0-9a-f:]*$/i;
+const DUID = /^[0-9a-f]{1,2}(:[0-9a-f]{1,2})+$/i;
 
 export function emptyOptions(): DhcpdOptions {
   return {
     routers: [], domainNameServers: [], domainName: null, broadcastAddress: null,
     defaultLeaseTime: null, maxLeaseTime: null, ntpServers: [],
     netbiosNameServers: [], tftpServerName: null, bootfileName: null,
+    nameServers6: [], domainSearch: [], preference: null, renewalTime: null,
+    rebindingTime: null, preferredLifetime: null,
   };
 }
 
@@ -71,6 +95,12 @@ export function mergedOptions(globals: DhcpdOptions, local: DhcpdOptions): Dhcpd
       ? local.netbiosNameServers : globals.netbiosNameServers,
     tftpServerName: local.tftpServerName ?? globals.tftpServerName,
     bootfileName: local.bootfileName ?? globals.bootfileName,
+    nameServers6: local.nameServers6.length > 0 ? local.nameServers6 : globals.nameServers6,
+    domainSearch: local.domainSearch.length > 0 ? local.domainSearch : globals.domainSearch,
+    preference: local.preference ?? globals.preference,
+    renewalTime: local.renewalTime ?? globals.renewalTime,
+    rebindingTime: local.rebindingTime ?? globals.rebindingTime,
+    preferredLifetime: local.preferredLifetime ?? globals.preferredLifetime,
   };
 }
 
@@ -103,6 +133,7 @@ class Parser {
   private index = 0;
   readonly errors: DhcpdError[] = [];
   readonly subnets: DhcpdSubnet[] = [];
+  readonly subnets6: DhcpdSubnet6[] = [];
   readonly hosts: DhcpdHost[] = [];
   authoritative = false;
   leasequery = false;
@@ -150,13 +181,18 @@ class Parser {
       case 'tftp-server-name': into.tftpServerName = unquote(rest[0] ?? ''); return;
       case 'bootfile-name': into.bootfileName = unquote(rest[0] ?? ''); return;
       case 'subnet-mask': return;
+      case 'dhcp6.name-servers': into.nameServers6 = rest; return;
+      case 'dhcp6.domain-search': into.domainSearch = rest.map(unquote); return;
+      case 'dhcp6.preference': into.preference = Number(rest[0]); return;
+      case 'dhcp-renewal-time': into.renewalTime = Number(rest[0]); return;
+      case 'dhcp-rebinding-time': into.rebindingTime = Number(rest[0]); return;
       default: this.fail(head, `unknown option ${name}.`);
     }
   }
 
   private arityOf(keyword: string): number {
     switch (keyword) {
-      case 'default-lease-time': case 'max-lease-time': case 'min-lease-time':
+      case 'default-lease-time': case 'max-lease-time': case 'min-lease-time': case 'preferred-lifetime':
       case 'ddns-update-style': case 'ddns-updates': case 'log-facility':
       case 'next-server': case 'filename': case 'server-identifier':
       case 'get-lease-hostnames': case 'use-host-decl-names':
@@ -171,6 +207,7 @@ class Parser {
     switch (head.value) {
       case 'default-lease-time': into.defaultLeaseTime = Number(words[0]); return true;
       case 'max-lease-time': into.maxLeaseTime = Number(words[0]); return true;
+      case 'preferred-lifetime': into.preferredLifetime = Number(words[0]); return true;
       case 'leasequery':
         this.leasequery = /^(true|on|1)$/i.test(words[0] ?? '');
         return true;
@@ -219,6 +256,7 @@ class Parser {
     parser.run(options);
     for (const error of parser.errors) this.errors.push(error);
     for (const subnet of parser.subnets) this.subnets.push(subnet);
+    for (const subnet of parser.subnets6) this.subnets6.push(subnet);
     for (const host of parser.hosts) this.hosts.push(host);
     if (parser.authoritative) this.authoritative = true;
     if (parser.leasequery) this.leasequery = true;
@@ -243,6 +281,32 @@ class Parser {
     this.subnets.push({ network, netmask, ranges, options, line: head.line });
   }
 
+  private declareSubnet6(head: Token): void {
+    const spec = this.tokens[this.index]?.value ?? '';
+    if (!IPV6_PREFIX.test(spec)) {
+      this.fail(head, 'expecting an IPv6 prefix.');
+      return;
+    }
+    this.index++;
+    const inner = this.block(this.tokens[this.index]);
+    if (!inner) return;
+    const options = emptyOptions();
+    this.nested(inner, options);
+    const [prefix, length] = spec.split('/');
+    const ranges: { start: string; end: string }[] = [];
+    const prefixRanges: { low: string; high: string; length: number }[] = [];
+    for (let i = 0; i < inner.length; i++) {
+      if (inner[i].value === 'range6' && IPV6.test(inner[i + 1]?.value ?? '') && IPV6.test(inner[i + 2]?.value ?? '')) {
+        ranges.push({ start: inner[i + 1].value, end: inner[i + 2].value });
+      }
+      if (inner[i].value === 'prefix6' && IPV6.test(inner[i + 1]?.value ?? '') && IPV6.test(inner[i + 2]?.value ?? '')
+        && /^\/\d+$/.test(inner[i + 3]?.value ?? '')) {
+        prefixRanges.push({ low: inner[i + 1].value, high: inner[i + 2].value, length: Number(inner[i + 3].value.slice(1)) });
+      }
+    }
+    this.subnets6.push({ prefix, prefixLength: Number(length), ranges, prefixRanges, options, line: head.line });
+  }
+
   private declareHost(head: Token): void {
     const name = this.tokens[this.index]?.value ?? '';
     if (name === '' || name === '{') {
@@ -259,9 +323,14 @@ class Parser {
       this.fail(head, 'expecting a hardware address.');
       return;
     }
+    if (record.clientDuid !== null && !DUID.test(record.clientDuid)) {
+      this.fail(head, 'expecting a DUID.');
+      return;
+    }
     this.hosts.push({
       name, hardwareEthernet: record.hardwareEthernet,
-      fixedAddress: record.fixedAddress, options, line: head.line,
+      fixedAddress: record.fixedAddress, clientDuid: record.clientDuid,
+      fixedAddress6: record.fixedAddress6, fixedPrefix6: record.fixedPrefix6, options, line: head.line,
     });
   }
 
@@ -282,9 +351,11 @@ class Parser {
         continue;
       }
       if (head.value === 'subnet') { this.declareSubnet(head); continue; }
+      if (head.value === 'subnet6') { this.declareSubnet6(head); continue; }
       if (head.value === 'host') { this.declareHost(head); continue; }
-      if (head.value === 'range') { this.statement(head); continue; }
-      if (head.value === 'hardware' || head.value === 'fixed-address') {
+      if (head.value === 'range' || head.value === 'range6' || head.value === 'prefix6') { this.statement(head); continue; }
+      if (head.value === 'hardware' || head.value === 'fixed-address' || head.value === 'fixed-address6'
+        || head.value === 'fixed-prefix6' || head.value === 'host-identifier') {
         this.statement(head);
         continue;
       }
@@ -313,11 +384,15 @@ function collectRanges(tokens: readonly Token[], into: { start: string; end: str
   }
 }
 
-function collectHostRecord(
-  tokens: readonly Token[],
-): { hardwareEthernet: string | null; fixedAddress: string | null } {
+function collectHostRecord(tokens: readonly Token[]): {
+  hardwareEthernet: string | null; fixedAddress: string | null; clientDuid: string | null;
+  fixedAddress6: string | null; fixedPrefix6: { prefix: string; length: number } | null;
+} {
   let hardwareEthernet: string | null = null;
   let fixedAddress: string | null = null;
+  let clientDuid: string | null = null;
+  let fixedAddress6: string | null = null;
+  let fixedPrefix6: { prefix: string; length: number } | null = null;
   for (let i = 0; i < tokens.length; i++) {
     if (tokens[i].value === 'hardware' && tokens[i + 1]?.value === 'ethernet') {
       hardwareEthernet = (tokens[i + 2]?.value ?? '').toLowerCase();
@@ -325,8 +400,17 @@ function collectHostRecord(
     if (tokens[i].value === 'fixed-address') {
       fixedAddress = tokens[i + 1]?.value ?? null;
     }
+    if (tokens[i].value === 'host-identifier' && tokens[i + 1]?.value === 'option'
+      && tokens[i + 2]?.value === 'dhcp6.client-id') {
+      clientDuid = (tokens[i + 3]?.value ?? '').toLowerCase();
+    }
+    if (tokens[i].value === 'fixed-address6') fixedAddress6 = tokens[i + 1]?.value ?? null;
+    if (tokens[i].value === 'fixed-prefix6' && IPV6_PREFIX.test(tokens[i + 1]?.value ?? '')) {
+      const [prefix, length] = tokens[i + 1].value.split('/');
+      fixedPrefix6 = { prefix, length: Number(length) };
+    }
   }
-  return { hardwareEthernet, fixedAddress };
+  return { hardwareEthernet, fixedAddress, clientDuid, fixedAddress6, fixedPrefix6 };
 }
 
 export function parseDhcpdConf(text: string, path: string): DhcpdConfig {
@@ -334,17 +418,18 @@ export function parseDhcpdConf(text: string, path: string): DhcpdConfig {
   const parser = new Parser(tokenize(text), path);
   parser.run(globals);
   return {
-    globals, subnets: parser.subnets, hosts: parser.hosts,
+    globals, subnets: parser.subnets, subnets6: parser.subnets6, hosts: parser.hosts,
     authoritative: parser.authoritative, leasequery: parser.leasequery, pingCheck: parser.pingCheck ?? PING_CHECK_DEFAULT,
     pingTimeoutSeconds: parser.pingTimeoutSeconds, errors: parser.errors,
   };
 }
 
 /** `INTERFACESv4="eth0 eth1"` — the list `/etc/default/isc-dhcp-server` carries. */
-export function parseDhcpdInterfaces(text: string): string[] {
+export function parseDhcpdInterfaces(text: string, family: 'v4' | 'v6' = 'v4'): string[] {
+  const variable = family === 'v4' ? 'INTERFACESv4' : 'INTERFACESv6';
   for (const line of text.split('\n')) {
     const clean = line.split('#')[0].trim();
-    const match = /^INTERFACESv4\s*=\s*(.*)$/.exec(clean);
+    const match = new RegExp(`^${variable}\\s*=\\s*(.*)$`).exec(clean);
     if (!match) continue;
     return unquote(match[1].trim()).split(/[\s,]+/).filter(word => word.length > 0);
   }

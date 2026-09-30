@@ -15,6 +15,7 @@ export interface Dhcpv6HostPort {
   joinIPv6Group(iface: string, group: string): boolean;
   leaveIPv6Group(iface: string, group: string): boolean;
   learnIpv6Neighbor(iface: string, address: IPv6Address, mac: string): void;
+  sendUdpDatagram6OnLink(iface: string, destination: IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes: number): boolean;
   sendUdpDatagram6(destination: IPv6Address, destinationPort: number, sourcePort: number, payload: unknown, payloadBytes: number): boolean;
 }
 
@@ -22,9 +23,15 @@ export class Dhcpv6HostService {
   private readonly server = new DHCPv6Server();
   private running = false;
 
+  private onReply: ((request: DHCPv6Packet, reply: DHCPv6Packet) => void) | null = null;
+
   constructor(private readonly host: Dhcpv6HostPort, private readonly processName: string, clock?: () => number) {
     if (clock) this.server.setClock(clock);
   }
+
+  observeReplies(observer: (request: DHCPv6Packet, reply: DHCPv6Packet) => void): void { this.onReply = observer; }
+
+  servedInterfaces: ReadonlySet<string> | null = null;
 
   getEngine(): DHCPv6Server { return this.server; }
 
@@ -51,6 +58,7 @@ export class Dhcpv6HostService {
 
   private readonly handle = (delivery: UdpDelivery): void => {
     if (!this.running || !(delivery.sourceIP instanceof IPv6Address)) return;
+    if (this.servedInterfaces && !this.servedInterfaces.has(delivery.inPort)) return;
     const message = delivery.udp.payload;
     if (!(message instanceof DHCPv6Packet)) return;
     if (delivery.sourceMAC) this.host.learnIpv6Neighbor(delivery.inPort, delivery.sourceIP, delivery.sourceMAC);
@@ -67,7 +75,9 @@ export class Dhcpv6HostService {
       relayed: false,
       unicast: !(delivery.destinationIP instanceof IPv6Address && delivery.destinationIP.isMulticast()),
     });
-    if (reply) this.send(delivery.sourceIP, DHCPV6_CLIENT_PORT, reply);
+    if (!reply) return;
+    this.host.sendUdpDatagram6OnLink(delivery.inPort, delivery.sourceIP, DHCPV6_CLIENT_PORT, DHCPV6_SERVER_PORT, reply, 300);
+    this.onReply?.(message, reply);
   };
 
   private send(destination: IPv6Address, destinationPort: number, message: DHCPv6Packet): void {
@@ -85,6 +95,8 @@ export function dhcpv6PortOf(host: EndHost): Dhcpv6HostPort {
     joinIPv6Group: (iface, group) => host.joinIPv6Group(iface, group),
     leaveIPv6Group: (iface, group) => host.leaveIPv6Group(iface, group),
     learnIpv6Neighbor: (iface, address, mac) => host.learnIpv6Neighbor(iface, address, mac),
+    sendUdpDatagram6OnLink: (iface, destination, destinationPort, sourcePort, payload, bytes) =>
+      host.sendUdpDatagram6OnLink(iface, destination, destinationPort, sourcePort, payload, bytes),
     sendUdpDatagram6: (destination, destinationPort, sourcePort, payload, bytes) =>
       host.sendUdpDatagram6(destination, destinationPort, sourcePort, payload, bytes),
   };

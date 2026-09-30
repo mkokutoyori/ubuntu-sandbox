@@ -48,7 +48,7 @@ export interface ServicePortSource {
 }
 
 /** Units whose listener is managed elsewhere and must not be touched here. */
-const EXCLUDED_UNITS = new Set(['ssh', 'sshd', 'isc-dhcp-server']);
+const EXCLUDED_UNITS = new Set(['ssh', 'sshd', 'isc-dhcp-server', 'isc-dhcp-server6']);
 
 /** Default bind address when a socket spec does not pin one. */
 const ALL_INTERFACES = '0.0.0.0';

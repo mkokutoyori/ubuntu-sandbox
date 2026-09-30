@@ -3669,6 +3669,30 @@ export abstract class EndHost extends Equipment {
       : this.sendUdpDatagram(destinationIP, destinationPort, sourcePort, payload, payloadBytes);
   }
 
+  public sendUdpDatagram6OnLink(
+    iface: string, destinationIP: IPv6Address, destinationPort: number, sourcePort: number,
+    payload: unknown, payloadBytes: number = 0,
+  ): boolean {
+    const port = this.ports.get(iface);
+    const neighbour = this.neighborCache.get(destinationIP.toString());
+    if (!port || !neighbour) return false;
+    const srcIP = destinationIP.isLinkLocal()
+      ? port.getLinkLocalIPv6()
+      : selectIpv6SourceAddress(port, destinationIP);
+    if (!srcIP) return false;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort, destinationPort, length: 8 + payloadBytes, checksum: 0, payload,
+    };
+    const ipPkt = createIPv6Packet(
+      srcIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit,
+      stampUdpChecksum(udp, srcIP.toString(), destinationIP.toString()), udp.length);
+    if (this.firewallFilter6(iface, ipPkt, 'out') !== 'accept') return false;
+    this.sendFrame(iface, {
+      srcMAC: port.getMAC(), dstMAC: neighbour.mac, etherType: ETHERTYPE_IPV6, payload: ipPkt,
+    });
+    return true;
+  }
+
   public sendUdpDatagram6(
     destinationIP: IPv6Address,
     destinationPort: number,
