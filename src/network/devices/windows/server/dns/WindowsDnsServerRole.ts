@@ -15,6 +15,17 @@ import {
   authorizeUpdate, signIfKeyed,
 } from '@/network/dns/update/UpdateResponder';
 import { TsigKeyring, tsigKeyFromBase64 } from '@/network/dns/tsig/Tsig';
+import { buildRecursiveResponse, recursiveResolveOptions } from '@/network/dns/resolver/RecursiveResponse';
+import { makeDnskeyRecord } from '@/network/dns/wire/ResourceRecord';
+import type { DsRecordData } from '@/network/dns/wire/ResourceRecord';
+import { makeDsForKey, DNSKEY_FLAG_KSK, DnssecAlgorithm } from '@/network/dns/dnssec/DnsKey';
+import { base64ToBytes } from '@/crypto/encoding';
+
+const WINDOWS_CRYPTO_ALGORITHMS: ReadonlyMap<string, number> = new Map([
+  ['rsasha1', DnssecAlgorithm.RSASHA1],
+  ['rsasha256', DnssecAlgorithm.RSASHA256],
+  ['ecdsap256sha256', DnssecAlgorithm.ECDSAP256SHA256],
+]);
 import { isTransferQuery, refuseTransfer } from '@/network/dns/transfer/AxfrSession';
 import { isNotify, makeNotifyAck } from '@/network/dns/transfer/NotifyProtocol';
 import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer } from '@/network/dns/transfer/ZoneTransferHosting';
@@ -306,6 +317,8 @@ export class WindowsDnsServerRole {
   private readonly conditional = new Map<string, ConditionalForwarder>();
   private readonly secondaries: SecondaryZoneRefresher;
   private readonly keyring = new TsigKeyring();
+  private readonly trustAnchors: ResourceRecord<DsRecordData>[] = [];
+  private readonly trustAnchorKeys = new Map<string, { name: string; cryptoAlgorithm: string; base64: string }>();
   private readonly zoneDynamicUpdate = new Map<string, DnsDynamicUpdateMode>();
   private forwarders: ForwarderEntry[] = [];
   private enableReordering = true;
@@ -535,30 +548,21 @@ export class WindowsDnsServerRole {
 
   private async recurse(query: DnsMessage, attempts: readonly ResolutionAttempt[]): Promise<DnsMessage> {
     const question = query.questions[0];
-    let result = await this.attempt(attempts[0], question.qname, question.qtype);
+    const options = recursiveResolveOptions(query);
+    let result = await this.attempt(attempts[0], question.qname, question.qtype, options);
     for (const next of attempts.slice(1)) {
       if (result.status !== 'SERVFAIL') break;
-      result = await this.attempt(next, question.qname, question.qtype);
+      result = await this.attempt(next, question.qname, question.qtype, options);
     }
-    const rcode =
-      result.status === 'NOERROR' ? DnsRcode.NOERROR :
-      result.status === 'NXDOMAIN' ? DnsRcode.NXDOMAIN : DnsRcode.SERVFAIL;
-    return {
-      id: query.id,
-      flags: {
-        qr: true, opcode: DnsOpcode.QUERY, aa: false, tc: false,
-        rd: query.flags.rd, ra: true, ad: false, cd: false, rcode,
-      },
-      questions: [question],
-      answers: [...result.answers],
-      authorities: [],
-      additionals: [],
-    };
+    return buildRecursiveResponse(query, result);
   }
 
-  private async attempt(attempt: ResolutionAttempt, qname: string, qtype: number): Promise<ResolutionResult> {
+  private async attempt(
+    attempt: ResolutionAttempt, qname: string, qtype: number,
+    options: { readonly checkingDisabled?: boolean } = {},
+  ): Promise<ResolutionResult> {
     const started = performance.now();
-    const result = await attempt.resolver.resolve(qname, qtype);
+    const result = await attempt.resolver.resolve(qname, qtype, options);
     attempt.report?.(performance.now() - started, result.status !== 'SERVFAIL');
     return result;
   }
@@ -670,11 +674,11 @@ export class WindowsDnsServerRole {
   }
 
   private forwardingResolver(addresses: readonly IPAddress[], timeoutSeconds = this.forwarderTimeoutSeconds): RecursiveResolver {
-    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, forwardRecursively: true });
+    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, forwardRecursively: true, dnssec: { anchors: this.trustAnchors } });
   }
 
   private resolverOver(addresses: readonly IPAddress[], timeoutSeconds = this.forwarderTimeoutSeconds): RecursiveResolver {
-    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000 });
+    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, dnssec: { anchors: this.trustAnchors } });
   }
 
   getForwarders(): string[] { return this.forwarders.map(f => f.address); }
@@ -1128,6 +1132,52 @@ export class WindowsDnsServerRole {
     if (!key) return { ok: false, message: 'The TSIG secret is not valid base64.' };
     this.keyring.add(key);
     return { ok: true, message: '' };
+  }
+
+  addTrustAnchor(name: string, cryptoAlgorithm: string, base64: string): DnsOpResult {
+    const algorithm = WINDOWS_CRYPTO_ALGORITHMS.get(cryptoAlgorithm.toLowerCase());
+    if (algorithm === undefined) {
+      return { ok: false, message: `The cryptographic algorithm "${cryptoAlgorithm}" is not supported.` };
+    }
+    const owner = normalizeDnsName(name);
+    let material: Uint8Array;
+    try {
+      material = base64ToBytes(base64.replace(/\s+/g, ''));
+    } catch {
+      return { ok: false, message: 'The key data is not valid base64.' };
+    }
+    if (material.length === 0) return { ok: false, message: 'The key data is empty.' };
+    const dnskey = makeDnskeyRecord(owner, 0, {
+      flags: DNSKEY_FLAG_KSK, algorithm, publicKey: base64.replace(/\s+/g, ''),
+    });
+    const anchor = makeDsForKey(owner, 0, dnskey);
+    const key = `${owner}|${anchor.data.keyTag}|${algorithm}`;
+    if (this.trustAnchorKeys.has(key)) return { ok: true, message: '' };
+    this.trustAnchorKeys.set(key, { name: owner, cryptoAlgorithm, base64: base64.replace(/\s+/g, '') });
+    this.trustAnchors.push(anchor);
+    return { ok: true, message: '' };
+  }
+
+  removeTrustAnchor(name: string): DnsOpResult {
+    const owner = normalizeDnsName(name);
+    const before = this.trustAnchors.length;
+    for (let i = this.trustAnchors.length - 1; i >= 0; i--) {
+      if (normalizeDnsName(this.trustAnchors[i].name) === owner) this.trustAnchors.splice(i, 1);
+    }
+    for (const [key, value] of [...this.trustAnchorKeys]) {
+      if (value.name === owner) this.trustAnchorKeys.delete(key);
+    }
+    return this.trustAnchors.length < before
+      ? { ok: true, message: '' }
+      : { ok: false, message: `The trust anchor "${name}" does not exist.` };
+  }
+
+  listTrustAnchors(): { name: string; keyTag: number; cryptoAlgorithm: string; digest: string }[] {
+    return this.trustAnchors.map(anchor => ({
+      name: anchor.name, keyTag: anchor.data.keyTag,
+      cryptoAlgorithm: [...WINDOWS_CRYPTO_ALGORITHMS].find(([, code]) => code === anchor.data.algorithm)?.[0] ?? String(anchor.data.algorithm),
+      digest: anchor.data.digest,
+    }));
   }
 
   removeTsigKey(name: string): DnsOpResult {

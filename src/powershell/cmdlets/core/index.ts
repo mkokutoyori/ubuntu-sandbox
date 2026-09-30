@@ -167,6 +167,7 @@ import { GetWindowsCapabilityCmdlet, AddWindowsCapabilityCmdlet, RemoveWindowsCa
 import {
   AddDnsServerPrimaryZoneCmdlet, GetDnsServerZoneCmdlet, SetDnsServerPrimaryZoneCmdlet,
   AddDnsServerTsigKeyCmdlet, GetDnsServerTsigKeyCmdlet, RemoveDnsServerTsigKeyCmdlet,
+  AddDnsServerTrustAnchorCmdlet, GetDnsServerTrustAnchorCmdlet, RemoveDnsServerTrustAnchorCmdlet,
   AddDnsServerResourceRecordACmdlet, AddDnsServerResourceRecordAAAACmdlet,
   AddDnsServerResourceRecordCNameCmdlet, AddDnsServerResourceRecordMXCmdlet,
   AddDnsServerResourceRecordPtrCmdlet, AddDnsServerResourceRecordCmdlet,
@@ -790,6 +791,9 @@ export function registerDnsServerCmdlets(registry: CmdletRegistry): void {
   registry.register(remotable('Add-DnsServerTsigKey', new AddDnsServerTsigKeyCmdlet()));
   registry.register(remotable('Get-DnsServerTsigKey', new GetDnsServerTsigKeyCmdlet()));
   registry.register(remotable('Remove-DnsServerTsigKey', new RemoveDnsServerTsigKeyCmdlet()));
+  registry.register(remotable('Add-DnsServerTrustAnchor', new AddDnsServerTrustAnchorCmdlet()));
+  registry.register(remotable('Get-DnsServerTrustAnchor', new GetDnsServerTrustAnchorCmdlet()));
+  registry.register(remotable('Remove-DnsServerTrustAnchor', new RemoveDnsServerTrustAnchorCmdlet()));
   registry.register(remotable('Get-DnsServerZone', new GetDnsServerZoneCmdlet()));
   registry.register(remotable('Add-DnsServerResourceRecordA', new AddDnsServerResourceRecordACmdlet()));
   registry.register(remotable('Add-DnsServerResourceRecordAAAA', new AddDnsServerResourceRecordAAAACmdlet()));

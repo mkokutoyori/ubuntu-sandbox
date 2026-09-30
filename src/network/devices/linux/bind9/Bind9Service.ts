@@ -23,7 +23,7 @@ import {
 import { TsigKeyring, tsigKeyFromBase64, canonicalKeyName } from '@/network/dns/tsig/Tsig';
 import { serialAdd } from '@/network/dns/zone/SerialNumber';
 import { RRType } from '@/network/dns/wire/RRType';
-import { findOpt, makeOptRecord, DEFAULT_EDNS_PAYLOAD_SIZE } from '@/network/dns/wire/EdnsOptRecord';
+import { buildRecursiveResponse, recursiveResolveOptions } from '@/network/dns/resolver/RecursiveResponse';
 import { makeSoaRecord } from '@/network/dns/wire/ResourceRecord';
 import { updatePolicyPermits } from './NamedUpdatePolicy';
 import {
@@ -641,32 +641,13 @@ export class Bind9Service {
 
   private async recurse(query: DnsMessage): Promise<DnsMessage> {
     const question = query.questions[0];
-    const options = { checkingDisabled: query.flags.cd };
+    const options = recursiveResolveOptions(query);
     let result = await this.resolvers[0].resolve(question.qname, question.qtype, options);
     for (const next of this.resolvers.slice(1)) {
       if (result.status !== 'SERVFAIL') break;
       result = await next.resolve(question.qname, question.qtype, options);
     }
-    const wantsDnssec = findOpt(query)?.data.dnssecOk === true;
-    const authenticated = result.security === 'secure' && (wantsDnssec || query.flags.ad);
-    const answers = wantsDnssec
-      ? [...result.answers]
-      : result.answers.filter((rr) => rr.data.type !== RRType.RRSIG && rr.data.type !== RRType.NSEC);
-    const rcode =
-      result.status === 'NOERROR' ? DnsRcode.NOERROR :
-      result.status === 'NXDOMAIN' ? DnsRcode.NXDOMAIN :
-      DnsRcode.SERVFAIL;
-    return {
-      id: query.id,
-      flags: {
-        qr: true, opcode: DnsOpcode.QUERY, aa: false, tc: false,
-        rd: query.flags.rd, ra: true, ad: authenticated, cd: query.flags.cd, rcode,
-      },
-      questions: [question],
-      answers,
-      authorities: [],
-      additionals: wantsDnssec ? [makeOptRecord(DEFAULT_EDNS_PAYLOAD_SIZE, { dnssecOk: true })] : [],
-    };
+    return buildRecursiveResponse(query, result);
   }
 
   private refuse(query: DnsMessage, recursionAllowed: boolean): DnsMessage {

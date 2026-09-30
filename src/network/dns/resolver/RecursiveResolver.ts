@@ -80,7 +80,8 @@ export class RecursiveResolver {
   private readonly maxReferrals: number;
   private readonly maxDepth: number;
   private readonly forwardRecursively: boolean;
-  private readonly validator: DnsValidator | null;
+  private validatorInstance: DnsValidator | null = null;
+  private readonly dnssecOptions: RecursiveResolverDnssecOptions | null;
 
   constructor(
     private readonly host: EndHost,
@@ -92,16 +93,21 @@ export class RecursiveResolver {
     this.maxReferrals = options.maxReferrals ?? DEFAULT_MAX_REFERRALS;
     this.maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
     this.forwardRecursively = options.forwardRecursively ?? false;
-    this.validator = options.dnssec
-      ? new DnsValidator(
-          async (qname, qtype) => {
-            const result = await this.resolveWithDepth(qname, qtype, 0, true);
-            return { status: result.status, records: result.answers };
-          },
-          options.dnssec.anchors,
-          { now: options.dnssec.now },
-        )
-      : null;
+    this.dnssecOptions = options.dnssec ?? null;
+  }
+
+  private get validator(): DnsValidator | null {
+    const options = this.dnssecOptions;
+    if (options === null || options.anchors.length === 0) return null;
+    this.validatorInstance ??= new DnsValidator(
+      async (qname, qtype) => {
+        const result = await this.resolveWithDepth(qname, qtype, 0, true);
+        return { status: result.status, records: result.answers };
+      },
+      options.anchors,
+      { now: options.now },
+    );
+    return this.validatorInstance;
   }
 
   async resolve(
