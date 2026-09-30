@@ -168,6 +168,7 @@ import { buildEchoRequest } from '../../icmp/IcmpEcho';
 import { FirewallTraceroute } from './diag/FirewallTraceroute';
 import {
   DNS_PORT, FirewallDnsClient, } from './l3/FirewallDnsClient';
+import { FirewallDdns } from './l3/FirewallDdns';
 import { FirewallDnsServer } from './l3/FirewallDnsServer';
 import { transferTransportOf } from '../../dns/transfer/ZoneTransferClient';
 import type { SdwanService } from './sdwan/SdwanService';
@@ -704,6 +705,7 @@ export class Firewall extends Equipment {
           .filter(server => server.length > 0 && server !== '0.0.0.0');
       },
       systemNtpServers: () => this.ntp.getSettings().servers,
+      ddns: () => this.ddns,
     });
 
     this.l3 = l3;
@@ -930,6 +932,17 @@ export class Firewall extends Equipment {
   });
 
   getDnsClient(): FirewallDnsClient { return this.dnsClient; }
+
+  private readonly ddns = new FirewallDdns({
+    send: (destination, sourcePort, payload) => this.sendUdpDatagram({
+      destination: new IPAddress(destination),
+      destinationPort: DNS_PORT, sourcePort, payload,
+      payloadBytes: payload.length,
+    }),
+    now: () => this.getSystemClockMs(),
+  });
+
+  getDdns(): FirewallDdns { return this.ddns; }
 
   private udpEndpoint: ControlPlaneUdpEndpoint | null = null;
 
@@ -2652,7 +2665,7 @@ export class Firewall extends Equipment {
     deliverLocally({
       ikeDatagram: (p) => ikeDatagram(p),
       handleIke: (iface, p, d) => { this.ipsec.handleIkeUdp(iface, p, d as never); },
-      observedBySdwan: (p) => this.dnsClient.observe(p)
+      observedBySdwan: (p) => this.dnsClient.observe(p) || this.ddns.observe(p)
         || this.traceroute.observe(p) || this.ping.observeReply(p)
         || this.sdwan.observeReply(p) || this.deliverToUdpSocket(p),
       answeredByDnsServer: (iface, p) => {

@@ -927,6 +927,38 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
     ...['wifi-ac1', 'wifi-ac2', 'wifi-ac3'].map((name, index) =>
       address(name, `WiFi Access Controller ${index + 1} IP address (DHCP option 138, RFC 5417).`)),
     enable('vci-match', 'Enable/disable vendor class identifier (VCI) matching. When enabled only DHCP requests with a matching VCI are served.'),
+    enable('ddns-update', 'Enable/disable DDNS update for DHCP.'),
+    {
+      ...enable('ddns-update-override', 'Enable/disable DDNS update override for DHCP.'),
+      availableWhen: (object: FortiObjectView) => object.effective('ddns-update')[0] === 'enable',
+    },
+    {
+      ...address('ddns-server-ip', 'DDNS server IP.'),
+      availableWhen: (object: FortiObjectView) => object.effective('ddns-update')[0] === 'enable',
+    },
+    {
+      ...word('ddns-zone', 'Zone of your domain name (ex. DDNS.com).'),
+      availableWhen: (object: FortiObjectView) => object.effective('ddns-update')[0] === 'enable',
+    },
+    {
+      ...choice('ddns-auth', 'DDNS authentication mode.', [
+        { keyword: 'disable', description: 'Disable DDNS authentication.' },
+        { keyword: 'tsig', description: 'TSIG based on RFC2845.' },
+      ], 'disable'),
+      availableWhen: (object: FortiObjectView) => object.effective('ddns-update')[0] === 'enable',
+    },
+    {
+      ...word('ddns-keyname', 'DDNS update key name.'),
+      availableWhen: (object: FortiObjectView) => object.effective('ddns-auth')[0] === 'tsig',
+    },
+    {
+      ...word('ddns-key', 'DDNS update key (base 64 encoding).'),
+      availableWhen: (object: FortiObjectView) => object.effective('ddns-auth')[0] === 'tsig',
+    },
+    {
+      ...count('ddns-ttl', 'TTL.', 60, 86400, 300),
+      availableWhen: (object: FortiObjectView) => object.effective('ddns-update')[0] === 'enable',
+    },
     address('wins-server1', 'WINS server 1.'),
     address('wins-server2', 'WINS server 2.'),
     address('next-server', 'IP address of a server, such as a TFTP server, from which DHCP clients can download a boot file.'),
@@ -1055,6 +1087,16 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
       wifiControllers: ['wifi-ac1', 'wifi-ac2', 'wifi-ac3']
         .map(name => object.effective(name)[0] ?? '')
         .filter(server => server.length > 0 && server !== '0.0.0.0'),
+      ddns: {
+        enabled: object.effective('ddns-update')[0] === 'enable',
+        override: object.effective('ddns-update-override')[0] === 'enable',
+        serverIp: object.effective('ddns-server-ip')[0] ?? '0.0.0.0',
+        zone: object.effective('ddns-zone')[0] ?? '',
+        auth: object.effective('ddns-auth')[0] === 'tsig' ? 'tsig' : 'disable',
+        keyName: object.effective('ddns-keyname')[0] ?? '',
+        key: object.effective('ddns-key')[0] ?? '',
+        ttl: Number.parseInt(object.effective('ddns-ttl')[0] ?? '300', 10),
+      },
       vciMatch: object.effective('vci-match')[0] === 'enable',
       vciStrings: object.childEntries('vci-string').map(entry => entry.key),
       ntpService: object.effective('ntp-service')[0] ?? 'specify',

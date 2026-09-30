@@ -14,6 +14,7 @@ import { DHCPPacket, DHCP_WIRE_BYTES } from '../../../dhcp/DHCPPacket';
 import { buildDhcpServerReply, dhcpReplyRoute, type DhcpReplyRoute } from '../../../dhcp/DhcpServerExchange';
 import type { IEventBus } from '../../../../events/EventBus';
 import { DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '@/network/core/WellKnownPorts';
+import type { FirewallDdns, DdnsSettings } from './FirewallDdns';
 import { relayDhcpReply, relayDhcpRequest, type DhcpRelayHost } from '../../../dhcp/DhcpRelay';
 
 
@@ -37,6 +38,7 @@ export interface DhcpScope {
   readonly bootFile?: string;
   readonly macAclDefaultAction?: 'assign' | 'block';
   readonly wifiControllers?: readonly string[];
+  readonly ddns?: { readonly enabled: boolean; readonly override: boolean; readonly ttl: number } & DdnsSettings;
   readonly vciMatch?: boolean;
   readonly vciStrings?: readonly string[];
   readonly excludeRanges?: ReadonlyArray<{ startIp: string; endIp: string }>;
@@ -64,6 +66,7 @@ export interface FirewallDhcpDeps {
   readonly sendToServer?: (server: IPAddress, packet: IPv4Packet) => boolean;
   readonly interfaceOwning?: (address: string) => string | null;
   readonly ownAddresses?: () => readonly string[];
+  readonly ddns?: () => FirewallDdns | undefined;
   readonly addressInUse?: (iface: string, address: string) => boolean;
 }
 
@@ -91,6 +94,7 @@ export class FirewallDhcp {
   private readonly relays = new Map<string, readonly string[]>();
   private readonly relayOptionInterfaces = new Set<string>();
   private relayingFrom: string | null = null;
+  private readonly registeredNames = new Map<string, { fqdn: string; scope: DhcpScope }>();
 
   private readonly server = new DHCPServer();
   private readonly scopes = new Map<string, DhcpScope>();
@@ -101,6 +105,9 @@ export class FirewallDhcp {
     this.server.setDeviceId(deps.deviceId, deps.hostname());
     this.server.setEventBus(deps.bus());
     this.server.setClock(deps.now);
+    deps.bus().subscribe('dhcp.pool.lease-released', (event) => {
+      if (event.payload.deviceId === deps.deviceId) this.withdrawName(event.payload.ip);
+    });
     this.server.setAdmissionPolicy({
       mayServe: (mac, pool, client) => this.macAclAllows(mac, pool) && this.vendorClassAllows(client?.vendorClass, pool),
       addressAllowed: () => true,
@@ -277,6 +284,29 @@ export class FirewallDhcp {
     return [...(scope.ntpServers ?? [])];
   }
 
+  private registerName(iface: string, request: DHCPPacket, reply: DHCPPacket): void {
+    if (reply.getMessageType() !== 'DHCPACK') return;
+    const scope = this.scopeOfInterface(iface);
+    const ddns = this.deps.ddns?.();
+    if (scope?.ddns === undefined || !scope.ddns.enabled || ddns === undefined) return;
+    const fqdnOption = request.getOption(81) as { flags: number; name: string } | undefined;
+    if (fqdnOption !== undefined && (fqdnOption.flags & 0x01) === 0 && !scope.ddns.override) return;
+    const declared = String(request.getOption(12) ?? fqdnOption?.name ?? '').trim();
+    if (declared.length === 0) return;
+    const fqdn = `${declared.split('.')[0]}.${scope.ddns.zone}`;
+    if (ddns.register(scope.ddns, fqdn, reply.yiaddr, scope.ddns.ttl)) {
+      this.registeredNames.set(reply.yiaddr, { fqdn, scope });
+    }
+  }
+
+  private withdrawName(address: string): void {
+    const held = this.registeredNames.get(address);
+    const ddns = this.deps.ddns?.();
+    if (held === undefined || held.scope.ddns === undefined || ddns === undefined) return;
+    this.registeredNames.delete(address);
+    ddns.withdraw(held.scope.ddns, held.fqdn, address);
+  }
+
   private vendorClassAllows(vendorClass: string | undefined, pool: string): boolean {
     const scope = this.scopeOfPool(pool);
     if (scope === undefined || scope.vciMatch !== true) return true;
@@ -295,10 +325,12 @@ export class FirewallDhcp {
   }
 
   clearLease(ip: string): boolean {
+    this.withdrawName(ip);
     return this.server.clearBinding(ip);
   }
 
   clearAllLeases(): void {
+    for (const address of [...this.registeredNames.keys()]) this.withdrawName(address);
     this.server.clearBindings();
   }
 
@@ -367,7 +399,11 @@ export class FirewallDhcp {
       localGatewayIP: local?.ip,
       isAddressInUse: (address) => this.probeOnLink(iface, address),
     });
-    if (reply) this.deliver(iface, reply, dhcpReplyRoute(request, reply), request.chaddr);
+    if (request.getMessageType() === 'DHCPRELEASE') this.withdrawName(request.ciaddr);
+    if (reply) {
+      this.registerName(iface, request, reply);
+      this.deliver(iface, reply, dhcpReplyRoute(request, reply), request.chaddr);
+    }
     return true;
   }
 
@@ -561,6 +597,7 @@ export interface DhcpWiringHost {
   sendToServer?(server: IPAddress, packet: IPv4Packet): boolean;
   interfaceOwning?(address: string): string | null;
   ownAddresses?(): readonly string[];
+  ddns?(): FirewallDdns | undefined;
   addressInUse?(iface: string, address: string): boolean;
 }
 
@@ -581,6 +618,7 @@ export function createFirewallDhcp(host: DhcpWiringHost): FirewallDhcp {
     sendToServer: (server, packet) => host.sendToServer?.(server, packet) ?? false,
     interfaceOwning: (address) => host.interfaceOwning?.(address) ?? null,
     ownAddresses: () => host.ownAddresses?.() ?? [],
+    ddns: () => host.ddns?.(),
     addressInUse: (iface, address) => host.addressInUse?.(iface, address) ?? false,
   });
 }

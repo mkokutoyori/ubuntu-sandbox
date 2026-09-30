@@ -12,6 +12,7 @@ import {
   createFirewallDhcp, dhcpDatagram, dhcpReplyDatagram, type FirewallDhcp,
 } from './FirewallDhcp';
 import { deliverToRoutingProtocol } from '../routing/RoutingWiring';
+import type { FirewallDdns } from './FirewallDdns';
 import { SdwanService } from '../sdwan/SdwanService';
 import { IPAddress, type IPv4Packet } from '../../../core/types';
 
@@ -33,6 +34,7 @@ export interface L3ServiceHost {
   forward(iface: string, packet: IPv4Packet, gateway?: string): void;
   systemDnsServers?(): readonly string[];
   systemNtpServers?(): readonly string[];
+  ddns?(): FirewallDdns;
   now(): number;
 }
 
@@ -104,6 +106,7 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
     leaseLost: (iface) => { host.routesOf(iface).removeStaticById(`dhcp:${iface}`); },
     systemDnsServers: () => host.systemDnsServers?.() ?? [],
     systemNtpServers: () => host.systemNtpServers?.() ?? [],
+    ddns: () => host.ddns?.(),
     ownAddresses: () => host.interfaces().all()
       .map(entry => entry.ip)
       .filter((ip): ip is string => typeof ip === 'string' && ip.length > 0),
