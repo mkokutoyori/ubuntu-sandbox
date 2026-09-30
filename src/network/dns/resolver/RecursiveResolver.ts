@@ -1,5 +1,5 @@
 import type { IPAddress } from '@/network/core/types';
-import { normalizeDnsName as normalizeName } from '@/network/dns/wire/DnsName';
+import { normalizeDnsName as normalizeName, isWithinDomain } from '@/network/dns/wire/DnsName';
 import type { EndHost } from '@/network/devices/EndHost';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { RRType, DnsClass } from '@/network/dns/wire/RRType';
@@ -54,6 +54,24 @@ function servfail(): IterationOutcome {
 function findSoa(records: readonly ResourceRecord<ResourceRecordData>[]): ResourceRecord<SoaRecordData> | null {
   const soa = records.find((rr) => rr.data.type === RRType.SOA);
   return (soa as ResourceRecord<SoaRecordData>) ?? null;
+}
+
+function ownedByQuestion(
+  qname: string, answers: readonly ResourceRecord<ResourceRecordData>[],
+): ResourceRecord<ResourceRecordData>[] {
+  const names = new Set([normalizeName(qname)]);
+  const kept = new Set<ResourceRecord<ResourceRecordData>>();
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const rr of answers) {
+      if (kept.has(rr) || !names.has(normalizeName(rr.name))) continue;
+      kept.add(rr);
+      grew = true;
+      if (rr.data.type === RRType.CNAME) names.add(normalizeName(rr.data.cname));
+    }
+  }
+  return answers.filter((rr) => kept.has(rr));
 }
 
 export class RecursiveResolver {
@@ -141,6 +159,7 @@ export class RecursiveResolver {
     qname: string, qtype: number, depth: number, raw: boolean,
   ): Promise<IterationOutcome> {
     let servers: readonly IPAddress[] = this.rootHints;
+    let zoneCut = '';
 
     if (this.forwardRecursively) return this.forward(servers, qname, qtype);
 
@@ -154,16 +173,19 @@ export class RecursiveResolver {
       if (response.flags.rcode !== DnsRcode.NOERROR) return servfail();
 
       if (response.answers.length > 0) {
-        return this.acceptAnswers(qtype, response.answers, depth, raw);
+        const owned = ownedByQuestion(qname, response.answers);
+        if (owned.length === 0) return servfail();
+        return this.acceptAnswers(qtype, owned, depth, raw);
       }
 
       if (response.flags.aa) {
         return { status: 'NOERROR', answers: [], authorities: response.authorities, negative: 'nodata' };
       }
 
-      const nextServers = await this.followReferral(response, depth, raw);
-      if (!nextServers) return servfail();
-      servers = nextServers;
+      const referral = await this.followReferral(response, qname, zoneCut, depth, raw);
+      if (!referral) return servfail();
+      servers = referral.servers;
+      zoneCut = referral.zone;
     }
     return servfail();
   }
@@ -177,9 +199,11 @@ export class RecursiveResolver {
       return { status: 'NXDOMAIN', answers: [], authorities: response.authorities, negative: 'nxdomain' };
     }
     if (response.flags.rcode !== DnsRcode.NOERROR) return servfail();
-    if (response.answers.length > 0) {
-      return { status: 'NOERROR', answers: response.answers, authorities: [], negative: null };
+    const owned = ownedByQuestion(qname, response.answers);
+    if (owned.length > 0) {
+      return { status: 'NOERROR', answers: owned, authorities: [], negative: null };
     }
+    if (response.answers.length > 0) return servfail();
     return { status: 'NOERROR', answers: [], authorities: response.authorities, negative: 'nodata' };
   }
 
@@ -212,20 +236,27 @@ export class RecursiveResolver {
   }
 
   private async followReferral(
-    response: DnsMessage, depth: number, raw: boolean,
-  ): Promise<readonly IPAddress[] | null> {
+    response: DnsMessage, qname: string, zoneCut: string, depth: number, raw: boolean,
+  ): Promise<{ servers: readonly IPAddress[]; zone: string } | null> {
+    const target = normalizeName(qname);
     const nsRecords = response.authorities.filter(
-      (rr): rr is ResourceRecord<NsRecordData> => rr.data.type === RRType.NS,
+      (rr): rr is ResourceRecord<NsRecordData> => {
+        if (rr.data.type !== RRType.NS) return false;
+        const owner = normalizeName(rr.name);
+        return owner !== zoneCut && isWithinDomain(owner, zoneCut) && isWithinDomain(target, owner);
+      },
     );
     if (nsRecords.length === 0) return null;
+    const zone = normalizeName(nsRecords[0].name);
 
     const nsNames = new Set(nsRecords.map((rr) => normalizeName(rr.data.nsdname)));
     const glue = response.additionals.filter(
       (rr): rr is ResourceRecord<ARecordData> =>
-        rr.data.type === RRType.A && nsNames.has(normalizeName(rr.name)),
+        rr.data.type === RRType.A && nsNames.has(normalizeName(rr.name))
+        && isWithinDomain(normalizeName(rr.name), zoneCut),
     );
     if (glue.length > 0) {
-      return glue.map((rr) => rr.data.address);
+      return { servers: glue.map((rr) => rr.data.address), zone };
     }
 
     for (const ns of nsRecords) {
@@ -236,7 +267,7 @@ export class RecursiveResolver {
       const addresses = nsResult.answers
         .filter((rr): rr is ResourceRecord<ARecordData> => rr.data.type === RRType.A)
         .map((rr) => rr.data.address);
-      if (addresses.length > 0) return addresses;
+      if (addresses.length > 0) return { servers: addresses, zone };
     }
     return null;
   }

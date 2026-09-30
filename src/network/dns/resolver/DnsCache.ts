@@ -1,5 +1,6 @@
 import type { ResourceRecord, ResourceRecordData, SoaRecordData } from '@/network/dns/wire/ResourceRecord';
 import { resourceRecordToLegacyRecord } from '@/network/dns/compat/DnsWireCompat';
+import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 
 export type DnsCacheLookup =
   | { readonly kind: 'hit'; readonly records: readonly ResourceRecord<ResourceRecordData>[] }
@@ -35,6 +36,12 @@ function keyOf(name: string, type: number): string {
   return `${name.toLowerCase().replace(/\.$/, '')}|${type}`;
 }
 
+const ANY_TYPE_KEY = '*';
+
+function nameErrorKeyOf(name: string): string {
+  return `${name.toLowerCase().replace(/\.$/, '')}|${ANY_TYPE_KEY}`;
+}
+
 export class DnsCache {
   private readonly positive = new Map<string, PositiveEntry>();
   private readonly negative = new Map<string, NegativeEntry>();
@@ -53,13 +60,14 @@ export class DnsCache {
     for (const [key, set] of grouped) {
       this.positive.set(key, { records: set, storedAtMs, entry: qname ?? set[0].name });
       this.negative.delete(key);
+      this.negative.delete(nameErrorKeyOf(set[0].name));
     }
   }
 
   storeNegative(qname: string, qtype: number, rcode: number, soa: ResourceRecord<SoaRecordData>): void {
     const ttlSeconds = Math.min(soa.ttl, soa.data.minimum);
-    this.negative.set(keyOf(qname, qtype),
-      { rcode, ttlSeconds, storedAtMs: this.now(), entry: qname, qtype });
+    const key = rcode === DnsRcode.NXDOMAIN ? nameErrorKeyOf(qname) : keyOf(qname, qtype);
+    this.negative.set(key, { rcode, ttlSeconds, storedAtMs: this.now(), entry: qname, qtype });
   }
 
   entries(): DnsCacheRecordView[] {
@@ -100,13 +108,14 @@ export class DnsCache {
     const key = keyOf(qname, qtype);
     const nowMs = this.now();
 
-    const negativeEntry = this.negative.get(key);
-    if (negativeEntry) {
+    for (const negativeKey of [nameErrorKeyOf(qname), key]) {
+      const negativeEntry = this.negative.get(negativeKey);
+      if (!negativeEntry) continue;
       const elapsed = (nowMs - negativeEntry.storedAtMs) / 1000;
       if (elapsed <= negativeEntry.ttlSeconds) {
         return { kind: 'negative', rcode: negativeEntry.rcode };
       }
-      this.negative.delete(key);
+      this.negative.delete(negativeKey);
     }
 
     const positiveEntry = this.positive.get(key);

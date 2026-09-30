@@ -16,13 +16,27 @@ export type DnsMessageHandler = (
   raw?: Uint8Array,
 ) => DnsMessage | Promise<DnsMessage>;
 
+export function answersQuestion(query: DnsMessage, response: DnsMessage): boolean {
+  if (response.id !== query.id) return false;
+  if (response.questions.length === 0) return response.flags.rcode === 1;
+  if (response.questions.length !== query.questions.length) return false;
+  return query.questions.every((asked, index) => {
+    const echoed = response.questions[index];
+    return echoed.qname.toLowerCase().replace(/\.$/, '') === asked.qname.toLowerCase().replace(/\.$/, '')
+      && echoed.qtype === asked.qtype && echoed.qclass === asked.qclass;
+  });
+}
+
 export type DnsMessageEncoder = (message: DnsMessage) => Uint8Array;
 
 export interface DnsUdpClient {
   allocateEphemeralPort(): number;
   udpBind(
     port: number,
-    listener: (delivery: { udp: { payload: unknown } }) => void,
+    listener: (delivery: {
+      readonly sourceIP: { toString(): string };
+      readonly udp: { readonly payload: unknown; readonly sourcePort: number };
+    }) => void,
     processName?: string,
   ): number | false;
   udpClose(port: number): void;
@@ -146,11 +160,12 @@ export function askOverUdp(
     };
 
     try {
-      host.udpBind(sourcePort, ({ udp }) => {
+      host.udpBind(sourcePort, ({ sourceIP, udp }) => {
         if (!(udp.payload instanceof Uint8Array)) return;
+        if (sourceIP.toString() !== serverIP.toString() || udp.sourcePort !== port) return;
         try {
           const response = decodeDnsMessage(udp.payload);
-          if (response.id === query.id) finish(response);
+          if (answersQuestion(query, response)) finish(response);
         } catch {
           return;
         }

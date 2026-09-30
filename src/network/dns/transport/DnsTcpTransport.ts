@@ -4,7 +4,7 @@ import type { EndHost } from '@/network/devices/EndHost';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
-import { DNS_PORT, queryDnsOverUdp } from '@/network/dns/transport/DnsUdpTransport';
+import { DNS_PORT, queryDnsOverUdp, answersQuestion } from '@/network/dns/transport/DnsUdpTransport';
 import type { DnsMessageHandler } from '@/network/dns/transport/DnsUdpTransport';
 import { DnsStreamReader, frameDnsMessage } from '@/network/dns/transport/DnsStreamFraming';
 
@@ -119,7 +119,7 @@ export async function queryDnsOverTcp(
           socket.close();
           return;
         }
-        if (response.id !== query.id) continue;
+        if (!answersQuestion(query, response)) continue;
         finish(response);
         socket.close();
         return;
