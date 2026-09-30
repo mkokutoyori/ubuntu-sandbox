@@ -21,13 +21,22 @@ export function defaultSignatureWindow(nowSeconds: number = Math.floor(Date.now(
 
 function labelCount(name: string): number {
   const trimmed = name.toLowerCase().replace(/\.$/, '');
-  return trimmed === '' ? 0 : trimmed.split('.').length;
+  if (trimmed === '') return 0;
+  const labels = trimmed.split('.');
+  return labels[0] === '*' ? labels.length - 1 : labels.length;
 }
 
-export function canonicalRRSetForm(records: readonly ResourceRecord<ResourceRecordData>[]): string {
+export function canonicalRRSetForm(
+  records: readonly ResourceRecord<ResourceRecordData>[],
+  overrides: { readonly ttl?: number; readonly labels?: number } = {},
+): string {
   const first = records[0];
   const rdata = records.map((rr) => rdataKey(rr.data)).sort().join('#');
-  return `${first.name.toLowerCase().replace(/\.$/, '')}|${first.data.type}|${first.ttl}|${rdata}`;
+  let owner = first.name.toLowerCase().replace(/\.$/, '');
+  if (overrides.labels !== undefined && overrides.labels < labelCount(owner)) {
+    owner = `*.${owner.split('.').slice(-overrides.labels || undefined).join('.')}`.replace(/\.$/, '');
+  }
+  return `${owner}|${first.data.type}|${overrides.ttl ?? first.ttl}|${rdata}`;
 }
 
 export function computeSignature(
@@ -97,7 +106,9 @@ export function verifySignature(
   if (nowSeconds < rrsig.inception || nowSeconds > rrsig.expiration) return false;
   if (rrsig.keyTag !== keyTagOf(key)) return false;
   if (rrsig.algorithm !== key.algorithm) return false;
-  const expected = computeSignature(key, canonicalRRSetForm(records), {
+  const expected = computeSignature(key, canonicalRRSetForm(records, {
+    ttl: rrsig.originalTtl, labels: rrsig.labels,
+  }), {
     inception: rrsig.inception, expiration: rrsig.expiration,
   });
   return expected === rrsig.signature;

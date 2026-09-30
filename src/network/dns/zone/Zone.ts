@@ -15,11 +15,16 @@ export class ZoneError extends Error {
 const MAX_CNAME_CHAIN_DEPTH = 16;
 
 export type ZoneLookupResult =
-  | { readonly kind: 'answer'; readonly records: readonly ResourceRecord<ResourceRecordData>[] }
+  | {
+      readonly kind: 'answer';
+      readonly records: readonly ResourceRecord<ResourceRecordData>[];
+      readonly synthesizedFrom?: string;
+    }
   | {
       readonly kind: 'cname';
       readonly chain: readonly ResourceRecord<CnameRecordData>[];
       readonly finalRecords: readonly ResourceRecord<ResourceRecordData>[] | null;
+      readonly synthesizedFrom?: string;
     }
   | { readonly kind: 'delegation'; readonly nsRecords: readonly ResourceRecord<NsRecordData>[] }
   | { readonly kind: 'nodata' }
@@ -113,6 +118,51 @@ export class Zone {
     return this.rrsets.has(normalize(name));
   }
 
+  hasDescendant(name: string): boolean {
+    const suffix = `.${normalize(name)}`;
+    for (const owner of this.rrsets.keys()) {
+      if (owner.endsWith(suffix)) return true;
+    }
+    return false;
+  }
+
+  private nameExists(name: string): boolean {
+    return this.rrsets.has(name) || this.hasDescendant(name);
+  }
+
+  private wildcardOwnerFor(name: string): string | null {
+    let encloser = parentOf(name);
+    while (encloser !== null && isWithinOrigin(encloser, this.origin)) {
+      if (this.nameExists(encloser) || encloser === this.origin) {
+        const wildcard = `*.${encloser}`;
+        return this.rrsets.has(wildcard) ? wildcard : null;
+      }
+      encloser = parentOf(encloser);
+    }
+    return null;
+  }
+
+  private synthesizeFromWildcard(
+    name: string, wildcard: string, qtype: number, depth: number,
+  ): ZoneLookupResult | null {
+    const result = this.lookup(wildcard, qtype, depth + 1);
+    const rename = <T extends ResourceRecordData>(rr: ResourceRecord<T>): ResourceRecord<T> =>
+      normalize(rr.name) === wildcard ? { ...rr, name } : rr;
+    switch (result.kind) {
+      case 'answer':
+        return { kind: 'answer', records: result.records.map(rename), synthesizedFrom: wildcard };
+      case 'cname':
+        return {
+          kind: 'cname', chain: result.chain.map(rename),
+          finalRecords: result.finalRecords, synthesizedFrom: wildcard,
+        };
+      case 'nodata':
+        return result;
+      default:
+        return null;
+    }
+  }
+
   private rotated(
     name: string, type: number, records: readonly ResourceRecord<ResourceRecordData>[],
   ): ResourceRecord<ResourceRecordData>[] {
@@ -185,6 +235,16 @@ export class Zone {
 
     if (ownRrsets && this.hasName(name)) {
       return { kind: 'nodata' };
+    }
+
+    if (this.hasDescendant(name)) {
+      return { kind: 'nodata' };
+    }
+
+    const wildcard = this.wildcardOwnerFor(name);
+    if (wildcard !== null) {
+      const synthesized = this.synthesizeFromWildcard(name, wildcard, qtype, depth);
+      if (synthesized) return synthesized;
     }
 
     return { kind: 'nxdomain' };

@@ -25,6 +25,10 @@ export function bindDnsTcpServer(
           socket.close();
           return;
         }
+        if (query.flags.qr) {
+          socket.close();
+          return;
+        }
         const send = (response: DnsMessage): void => {
           socket.send(encodeDnsMessage(response));
           socket.close();

@@ -92,6 +92,7 @@ export function bindDnsUdpServer(
     } catch {
       return;
     }
+    if (query.flags.qr) return;
     const send = (result: DnsMessage): void => {
       const response = truncateForUdp(result, negotiatedUdpSize(query));
       const bytes = encodeDnsMessage(response);
