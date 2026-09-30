@@ -6,6 +6,9 @@ import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessag
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import { DNS_PORT, queryDnsOverUdp } from '@/network/dns/transport/DnsUdpTransport';
 import type { DnsMessageHandler } from '@/network/dns/transport/DnsUdpTransport';
+import { DnsStreamReader, frameDnsMessage } from '@/network/dns/transport/DnsStreamFraming';
+
+export const DNS_TCP_IDLE_TIMEOUT_MS = 10000;
 
 export function bindDnsTcpServer(
   host: EndHost,
@@ -16,28 +19,38 @@ export function bindDnsTcpServer(
   host.getTcpStack().listen(port, {
     identity: { processName: options.processName ?? 'dnsmasq' },
     onAccept: (socket: TcpSocket) => {
+      const reader = new DnsStreamReader();
+      let idle: ReturnType<typeof setTimeout> | null = null;
+      const rearm = (): void => {
+        if (idle) clearTimeout(idle);
+        idle = setTimeout(() => socket.close(), DNS_TCP_IDLE_TIMEOUT_MS);
+      };
+      socket.onClose(() => { if (idle) clearTimeout(idle); });
+      rearm();
       socket.onData((data) => {
         if (!(data instanceof Uint8Array)) return;
-        let query: DnsMessage;
-        try {
-          query = decodeDnsMessage(data);
-        } catch {
-          socket.close();
-          return;
+        rearm();
+        for (const raw of reader.push(data)) {
+          let query: DnsMessage;
+          try {
+            query = decodeDnsMessage(raw);
+          } catch {
+            socket.close();
+            return;
+          }
+          if (query.flags.qr) {
+            socket.close();
+            return;
+          }
+          const send = (response: DnsMessage): void => {
+            socket.send(frameDnsMessage(encodeDnsMessage(response)));
+          };
+          const result = handler(
+            query, IPAddress.tryParse(socket.remoteIp) ?? undefined, socket.remotePort, raw,
+          );
+          if (result instanceof Promise) void result.then(send);
+          else send(result);
         }
-        if (query.flags.qr) {
-          socket.close();
-          return;
-        }
-        const send = (response: DnsMessage): void => {
-          socket.send(encodeDnsMessage(response));
-          socket.close();
-        };
-        const result = handler(
-          query, IPAddress.tryParse(socket.remoteIp) ?? undefined, socket.remotePort,
-        );
-        if (result instanceof Promise) void result.then(send);
-        else send(result);
       });
     },
   }, options.address ?? '0.0.0.0');
@@ -94,18 +107,27 @@ export async function queryDnsOverTcp(
       resolve(result);
     };
 
+    const reader = new DnsStreamReader();
     socket.onData((data) => {
       if (!(data instanceof Uint8Array)) return;
-      try {
-        finish(decodeDnsMessage(data));
-      } catch {
-        finish(null);
+      for (const raw of reader.push(data)) {
+        let response: DnsMessage;
+        try {
+          response = decodeDnsMessage(raw);
+        } catch {
+          finish(null);
+          socket.close();
+          return;
+        }
+        if (response.id !== query.id) continue;
+        finish(response);
+        socket.close();
+        return;
       }
-      socket.close();
     });
     socket.onClose(() => finish(null));
 
-    socket.send(encodeDnsMessage(query));
+    socket.send(frameDnsMessage(encodeDnsMessage(query)));
     timer = setTimeout(() => { finish(null); socket.close(); }, timeoutMs);
   });
 }

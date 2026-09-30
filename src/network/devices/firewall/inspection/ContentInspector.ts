@@ -8,6 +8,7 @@ import {
 import { parseRequest, parseResponse } from '../../../http/http1/Http1Wire';
 import { identifyApplication } from './ApplicationSignatures';
 import { decodeDnsMessage } from '../../../dns/wire/DnsMessageCodec';
+import { unframeDnsMessage } from '../../../dns/transport/DnsStreamFraming';
 import { decodeRecords } from '../../../http/https/TlsRecordWire';
 import { decodeMessages } from '../../../tls/messages';
 
@@ -178,7 +179,13 @@ export function parseDnsQuestion(flow: InspectedFlow): string | undefined {
   try {
     return decodeDnsMessage(bytes).questions[0]?.qname;
   } catch {
-    return undefined;
+    const unframed = unframeDnsMessage(bytes);
+    if (!unframed) return undefined;
+    try {
+      return decodeDnsMessage(unframed).questions[0]?.qname;
+    } catch {
+      return undefined;
+    }
   }
 }
 
