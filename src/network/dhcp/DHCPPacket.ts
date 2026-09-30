@@ -576,9 +576,22 @@ export class DHCPPacket implements NetworkPdu {
         }
         break;
       }
-      case DHCP_OPTION.HOST_NAME:
-      case DHCP_OPTION.VENDOR_CLASS:
       case DHCP_OPTION.CLIENT_IDENTIFIER: {
+        const text = String(value);
+        const hardware = /^01([0-9a-f]{12})$/i.exec(text);
+        if (hardware) {
+          buf[offset++] = 7;
+          buf[offset++] = 1;
+          for (let i = 0; i < 6; i++) buf[offset++] = parseInt(hardware[1].slice(i * 2, i * 2 + 2), 16);
+        } else {
+          buf[offset++] = text.length + 1;
+          buf[offset++] = 0;
+          for (let i = 0; i < text.length; i++) buf[offset++] = text.charCodeAt(i) & 0xff;
+        }
+        break;
+      }
+      case DHCP_OPTION.HOST_NAME:
+      case DHCP_OPTION.VENDOR_CLASS: {
         const text = String(value);
         buf[offset++] = text.length;
         for (let i = 0; i < text.length; i++) buf[offset++] = text.charCodeAt(i) & 0xff;
@@ -696,9 +709,20 @@ export class DHCPPacket implements NetworkPdu {
         return servers;
       }
 
-      case DHCP_OPTION.HOST_NAME:
-      case DHCP_OPTION.VENDOR_CLASS:
       case DHCP_OPTION.CLIENT_IDENTIFIER: {
+        if (data.length === 7 && data[0] === 1) {
+          return `01${Array.from(data.slice(1), byte => byte.toString(16).padStart(2, '0')).join('')}`;
+        }
+        if (data.length >= 1 && data[0] === 0) {
+          let text = '';
+          for (let i = 1; i < data.length; i++) text += String.fromCharCode(data[i]);
+          return text;
+        }
+        return Array.from(data, byte => byte.toString(16).padStart(2, '0')).join('');
+      }
+
+      case DHCP_OPTION.HOST_NAME:
+      case DHCP_OPTION.VENDOR_CLASS: {
         let text = '';
         for (let i = 0; i < data.length; i++) text += String.fromCharCode(data[i]);
         return text;

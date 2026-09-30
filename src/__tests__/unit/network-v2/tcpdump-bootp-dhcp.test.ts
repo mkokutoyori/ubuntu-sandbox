@@ -1,17 +1,22 @@
 /*
  * tcpdump sur `udp port 67 or udp port 68` : le trafic DHCP se decode en BOOTP/DHCP
- * comme print-bootp.c. Sans option : « BOOTP/DHCP, Request from <mac>, length N » et
- * « BOOTP/DHCP, Reply, length N ». Avec -v : xid, Flags, Client-IP / Your-IP / Server-IP /
- * Gateway-IP, Client-Ethernet-Address, cookie magique et options (DHCP-Message, Server-ID,
- * Lease-Time, Subnet-Mask...). Les noms d'options et la mise en page viennent de la
- * connaissance du format de tcpdump, pas d'une sortie capturee : non verifies mot a mot.
- * -q reste « UDP, length N ».
+ * comme `bootp_print` et `rfc1048_print` de print-bootp.c (depot the-tcpdump-group/tcpdump,
+ * branche master, lu en entier : la table tag2str est generee depuis ce fichier).
+ * Sans option : « BOOTP/DHCP, Request from <mac>, length N » et « BOOTP/DHCP, Reply,
+ * length N ». Avec -v : xid, « Flags [none|Broadcast] », Client-IP / Your-IP / Server-IP /
+ * Gateway-IP, Client-Ethernet-Address, cookie magique et options, sans ligne END (le code
+ * ne l'imprime qu'a partir de -vvv) ; Parameter-Request sur des lignes de quatre
+ * « nom (code) » ; « (0x%04x) » apres Flags seulement avec -vv. -q garde « UDP, length N ».
+ * Non porte : la variante CMU du champ vendeur ; le DHCPv6 (546/547) n'est pas decode.
  *
- * Avant le correctif (git stash des sources) : 6 cas tombent ; le temoin « quatre trames
- * DORA » et le cas -q passent avant comme apres, le second parce qu'il garde le
- * comportement UDP voulu.
+ * Avant le correctif (git stash des sources) : chaque trame s'affichait « UDP, length N » ;
+ * les cas de decodage tombent. Le temoin « quatre trames DORA » et le cas -q passent avant
+ * comme apres.
  */
+
 import { describe, it, expect, beforeEach } from 'vitest';
+import { DHCPPacket, DHCP_OPTION } from '@/network/dhcp/DHCPPacket';
+import { bootpText, decodeBootp } from '@/network/devices/linux/network/tcpdump/TcpdumpBootp';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
@@ -74,29 +79,96 @@ describe('tcpdump -nn sur le port 67/68', () => {
 });
 
 describe('tcpdump -v', () => {
-  it('xid, Flags et Client-Ethernet-Address', async () => {
+  it('xid et Flags sans masque hexadecimal, Client-Ethernet-Address', async () => {
     const { text, mac } = await capture('-v');
-    expect(text).toMatch(/xid 0x[0-9a-f]+, Flags \[(none|Broadcast)\] \(0x[0-9a-f]{4}\)/);
-    expect(text).toContain(`Client-Ethernet-Address ${mac}`);
-    expect(text).toContain('Vendor-rfc1048 Extensions');
-    expect(text).toContain('Magic Cookie 0x63825363');
+    expect(text).toMatch(/xid 0x[0-9a-f]+, Flags \[(none|Broadcast)\]\n/);
+    expect(text).not.toMatch(/Flags \[[a-zA-Z]+\] \(0x/);
+    expect(text).toContain(`\t  Client-Ethernet-Address ${mac}`);
+    expect(text).toContain('\t  Vendor-rfc1048 Extensions\n\t    Magic Cookie 0x63825363');
   });
 
-  it('options : DHCP-Message Discover / Offer / Request / ACK, Server-ID, Lease-Time, Subnet-Mask, END', async () => {
+  it('-vv ajoute le masque hexadecimal des Flags', async () => {
+    const { text } = await capture('-vv');
+    expect(text).toMatch(/Flags \[(none|Broadcast)\] \(0x[0-9a-f]{4}\)/);
+  });
+
+  it('options : DHCP-Message, Server-ID, Lease-Time, Subnet-Mask, Default-Gateway, Domain-Name-Server', async () => {
     const { text } = await capture('-v');
     for (const kind of ['Discover', 'Offer', 'Request', 'ACK']) {
-      expect(text).toContain(`DHCP-Message (53), length 1: ${kind}`);
+      expect(text).toContain(`\t    DHCP-Message (53), length 1: ${kind}`);
     }
-    expect(text).toContain('Server-ID (54), length 4: 192.168.1.1');
-    expect(text).toContain('Lease-Time (51), length 4: 7200');
-    expect(text).toContain('Subnet-Mask (1), length 4: 255.255.255.0');
-    expect(text).toContain('Default-Gateway (3), length 4: 192.168.1.1');
-    expect(text).toContain('Domain-Name-Server (6), length 4: 8.8.8.8');
-    expect(text).toContain('END (255)');
+    expect(text).toContain('\t    Server-ID (54), length 4: 192.168.1.1');
+    expect(text).toContain('\t    Lease-Time (51), length 4: 7200');
+    expect(text).toContain('\t    Subnet-Mask (1), length 4: 255.255.255.0');
+    expect(text).toContain('\t    Default-Gateway (3), length 4: 192.168.1.1');
+    expect(text).toContain('\t    Domain-Name-Server (6), length 4: 8.8.8.8');
+  });
+
+  it('pas de ligne END a -v (le code source ne l imprime qu a -vvv)', async () => {
+    expect((await capture('-v')).text).not.toContain('END (255)');
+    expect((await capture('-vvv')).text).toContain('END (255)');
+  });
+
+  it('Hostname est entre guillemets', async () => {
+    const { text } = await capture('-v');
+    expect(text).toContain('Hostname (12), length 2: "C1"');
   });
 
   it('Reply : Your-IP et Server-IP', async () => {
     const { text } = await capture('-v');
-    expect(text).toMatch(/Your-IP 192\.168\.1\.10\d/);
+    expect(text).toMatch(/\t  Your-IP 192\.168\.1\.10\d/);
+  });
+});
+
+describe('mise en forme des options sur un paquet construit (bootp_print, rfc1048_print)', () => {
+  const packet = () => {
+    const request = DHCPPacket.createRequest('aa:bb:cc:dd:ee:ff', 0x1234, '10.0.0.5', '10.0.0.1');
+    request.setOption(DHCP_OPTION.PARAMETER_REQUEST_LIST, [1, 3, 6, 15, 28, 42, 51]);
+    request.setOption(DHCP_OPTION.CLIENT_IDENTIFIER, '01aabbccddeeff');
+    request.ciaddr = '10.0.0.5';
+    request.hops = 2;
+    request.secs = 7;
+    return request;
+  };
+  const render = (verbose: number) => bootpText(decodeBootp(packet())!, verbose, 300);
+
+  it('-v : hops, xid, secs, Flags, Client-IP dans l ordre du code', () => {
+    const text = render(1);
+    expect(text).toMatch(/^BOOTP\/DHCP, Request from aa:bb:cc:dd:ee:ff, length 300, hops 2, xid 0x1234, secs 7, Flags \[Broadcast\]\n\t  Client-IP 10\.0\.0\.5\n\t  Client-Ethernet-Address aa:bb:cc:dd:ee:ff/);
+  });
+
+  it('Parameter-Request : quatre « nom (code) » par ligne, noms de tag2str', () => {
+    const text = render(1);
+    expect(text).toContain('Parameter-Request (55), length 7: \n\t      Subnet-Mask (1), Default-Gateway (3), Domain-Name-Server (6), Domain-Name (15)\n\t      BR (28), NTP (42), Lease-Time (51)');
+  });
+
+  it('Client-ID de type 1 : « ether <mac> »', () => {
+    expect(render(1)).toMatch(/Client-ID \(61\), length 7: ether aa:bb:cc:dd:ee:ff/);
+  });
+
+  it('Requested-IP et Server-ID : adresses', () => {
+    const text = render(1);
+    expect(text).toContain('Requested-IP (50), length 4: 10.0.0.5');
+    expect(text).toContain('Server-ID (54), length 4: 10.0.0.1');
+  });
+});
+
+describe('option 61 sur le fil (RFC 2132 §9.14 : octet de type puis identifiant)', () => {
+  it('identifiant materiel : type 1 puis six octets, relu sous la meme forme', () => {
+    const packet = DHCPPacket.createDiscover('aa:bb:cc:dd:ee:ff', 1);
+    packet.setOption(DHCP_OPTION.CLIENT_IDENTIFIER, '01aabbccddeeff');
+    const bytes = packet.serialize();
+    const at = [...bytes].findIndex((value, index) => index > 240 && value === 61);
+    expect([...bytes.subarray(at, at + 9)]).toEqual([61, 7, 1, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]);
+    expect(DHCPPacket.deserialize(bytes).getOption(DHCP_OPTION.CLIENT_IDENTIFIER)).toBe('01aabbccddeeff');
+  });
+
+  it('identifiant libre : type 0 puis le texte, relu sous la meme forme', () => {
+    const packet = DHCPPacket.createDiscover('aa:bb:cc:dd:ee:ff', 1);
+    packet.setOption(DHCP_OPTION.CLIENT_IDENTIFIER, 'poste-7');
+    const bytes = packet.serialize();
+    const at = [...bytes].findIndex((value, index) => index > 240 && value === 61);
+    expect([...bytes.subarray(at, at + 4)]).toEqual([61, 8, 0, 'p'.charCodeAt(0)]);
+    expect(DHCPPacket.deserialize(bytes).getOption(DHCP_OPTION.CLIENT_IDENTIFIER)).toBe('poste-7');
   });
 });
