@@ -25,7 +25,7 @@ unique par famille (`buildDhcpServerReply`, `buildDhcpv6ServerReply`) : une amé
 | Cisco IOS | Moteur commun | Commun : `rapid-commit`, `preference`, `prefix-delegation` (pool local et statique), `ipv6 local pool`, `show ipv6 dhcp binding` et `pool`, rendu dans `show running-config` | Formats de `show` repris de la documentation Cisco de mémoire, non vérifiés mot à mot |
 | Huawei VRP | Moteur commun | Le moteur sert IA_NA et IA_PD sur le fil ; les commandes `display dhcpv6` existantes lisent une table libre et non le moteur | Syntaxe VRP de la délégation et formats d'affichage non sourcés : rien n'a été inventé |
 | Windows Server | Moteur commun, failover | Cmdlets `DhcpServerv6*` : scopes, exclusions, réservations, options DNS et liste de recherche, baux ; durées par défaut Windows (8 j, 12 j, T1 4 j, T2 6,4 j) | Messages d'erreur exacts non vérifiés |
-| dhcpd Linux | Moteur commun, `leasequery on;` | Non fait : pas de `dhcpd -6`, ni `subnet6` | |
+| dhcpd Linux | Moteur commun, `leasequery on;` | `dhcpd -6` : `subnet6`, `range6`, `prefix6`, `host` avec `fixed-address6` / `fixed-prefix6`, options `dhcp6.*`, unité `isc-dhcp-server6`, `dhcpd6.leases` | Syntaxe de `dhcpd.conf(5)` de mémoire ; pas de leasequery v6 (RFC 5007 absente du dépôt) |
 | FortiGate | Moteur commun, nombreux attributs | Sert IA_NA sur le fil ; ni Rapid Commit ni IA_PD (aucune syntaxe FortiOS sourcée) | |
 
 ## Limites assumées
