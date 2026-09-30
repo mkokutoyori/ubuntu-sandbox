@@ -28,6 +28,8 @@ import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/Reso
 import { RRType } from '@/network/dns/wire/RRType';
 import { decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import { rrTypeName } from '@/network/dns/compat/DnsWireCompat';
+import { DHCPPacket } from '@/network/dhcp/DHCPPacket';
+import { decodeBootp, type BootpInfo } from './TcpdumpBootp';
 
 export type CaptureDirection = 'in' | 'out';
 export type CaptureL3 = 'arp' | 'ipv4' | 'ipv6' | 'other';
@@ -103,6 +105,7 @@ export interface CaptureFrame {
   vlanId?: number;
   vlanPriority?: number;
   vlanDei?: number;
+  bootp?: BootpInfo;
   dnsId?: number;
   dnsQr?: boolean;
   dnsRd?: boolean;
@@ -534,6 +537,10 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
     base.appPayload = appPayloadBytes(udp.payload);
     if (udp.sourcePort === 53 || udp.destinationPort === 53) {
       decodeDnsPayload(base, udp.payload);
+    }
+    if ((udp.sourcePort === 67 || udp.sourcePort === 68) && (udp.destinationPort === 67 || udp.destinationPort === 68)
+      && udp.payload instanceof DHCPPacket) {
+      base.bootp = decodeBootp(udp.payload) ?? undefined;
     }
     return;
   }
