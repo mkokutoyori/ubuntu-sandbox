@@ -143,6 +143,7 @@ import { LdapServerHandler } from './windows/server/ad/ldap/LdapServer';
 import { selfSignedLdapCert } from './windows/server/ad/ldap/ldapStartTls';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { getForestForDomain } from './windows/server/ad/forest/Forest';
+import { verifyApReq } from '@/network/kerberos/ApReqVerifier';
 import { KdcSessionHandler } from '@/network/kerberos/KdcSession';
 import { dialKdc, buildApReq } from '@/network/kerberos/KerberosClient';
 import { KU_AP_REQ_AUTHENTICATOR } from '@/network/kerberos/crypto';
@@ -1330,6 +1331,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   runRemoteCommand(computerName: string, line: string, credential?: { username: string; password: string }): WinRmRunResult {
     return this.runRemoteRequest(computerName, { op: 'run', line }, credential);
+  }
+
+  adminApReqFor(serviceName: string): Uint8Array | null {
+    return this.kerberosApReqFor(serviceName);
+  }
+
+  authenticateAdministrator(apReq: Uint8Array): boolean {
+    const identity = this.kerberosServiceIdentity();
+    const sam = identity ? verifyApReq(apReq, identity) : null;
+    return sam !== null && this.isRemoteAdministrator({ sam, viaDomain: true });
   }
 
   private kerberosApReqFor(serviceName: string): Uint8Array | null {
@@ -4117,6 +4128,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.fireDueScheduledTasks();
     this.runBackgroundGroupPolicyRefresh(ms);
     this.getDnsServerRole()?.tick();
+    this.getDhcpServerRole()?.tick();
     this.svcMgr.advanceRecoveryTimers(
       this.simulatedDate().getTime(),
       (svc) => this.procMgr.onServiceStarted(svc.name, svc.processName),

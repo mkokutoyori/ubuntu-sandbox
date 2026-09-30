@@ -27,7 +27,7 @@ import {
   DHCPDiscoverParams, DHCPOfferResult, DHCPRequestParams, DHCPAckResult,
   DHCPReleaseParams, DHCPDeclineParams,
   DHCPInformParams, DHCPInformResult,
-  DHCPRequestWithNakResult, DHCPStaticBinding,
+  DHCPRequestWithNakResult, DHCPStaticBinding, DhcpAdmissionPolicy,
   ackOf, createDefaultPoolConfig, createDefaultStats,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
@@ -71,6 +71,7 @@ export type DhcpInterfaceMode = 'server' | 'relay' | 'none' | 'global' | 'interf
 export class DHCPServer implements IProtocolEngine {
   /** Service enabled flag */
   private enabled: boolean = true;
+  private admission: DhcpAdmissionPolicy | null = null;
 
   /** Server's own IP address (Option 54: Server Identifier) */
   private serverIdentifier: string = '0.0.0.0';
@@ -634,6 +635,7 @@ export class DHCPServer implements IProtocolEngine {
     for (const pool of poolEntries) {
       if (!pool.network || !pool.mask) continue;
       if (pool.active === false) continue;
+      if (this.admission && !this.admission.mayServe(params.clientMAC, pool.name)) continue;
 
       // Only consider pools whose subnet actually contains the anchor.
       if (subnetAnchor && !this.isIPInPool(subnetAnchor, pool)) continue;
@@ -853,6 +855,8 @@ export class DHCPServer implements IProtocolEngine {
       if (!pool.network || !pool.mask) continue;
       if (!this.isIPInPool(params.requestedIP, pool)) continue;
 
+      if (this.admission && !this.admission.mayServe(params.clientMAC, pool.name)) return null;
+
       if (this.isClientDenied(params.clientMAC, pool)) {
         this.stats.naks++;
         return {
@@ -902,7 +906,7 @@ export class DHCPServer implements IProtocolEngine {
         clientId: params.clientMAC,
         hostName: params.hostName,
         leaseStart,
-        leaseExpiration: pool.leaseInfinite ? INFINITE_LEASE_EXPIRATION : leaseStart + pool.leaseDuration * 1000,
+        leaseExpiration: pool.leaseInfinite ? INFINITE_LEASE_EXPIRATION : leaseStart + this.leaseSecondsOf(pool) * 1000,
         poolName: pool.name,
         type: 'automatic',
       };
@@ -1038,6 +1042,20 @@ export class DHCPServer implements IProtocolEngine {
   getBindings(): Map<string, DHCPBinding> {
     this.cleanExpiredBindings();
     return this.bindings;
+  }
+
+  setAdmissionPolicy(policy: DhcpAdmissionPolicy | null): void {
+    this.admission = policy;
+  }
+
+  leaseSecondsOf(pool: DHCPPoolConfig): number {
+    return this.admission?.leaseSeconds(pool.name, pool.leaseDuration) ?? pool.leaseDuration;
+  }
+
+  importBinding(binding: DHCPBinding): void {
+    this.bindings.set(binding.ipAddress, { ...binding });
+    this.pendingOffers.delete(binding.ipAddress);
+    this.refreshServerSignals();
   }
 
   clearBindings(): void {
@@ -1513,6 +1531,7 @@ export class DHCPServer implements IProtocolEngine {
 
   private isAvailableFor(ip: string, pool: DHCPPoolConfig, clientMAC?: string): boolean {
     if (this.isExcluded(ip)) return false;
+    if (this.admission && !this.admission.addressAllowed(ip, pool.name)) return false;
     if (this.bindings.has(ip)) return false;
     if (this.pendingOffers.has(ip)) return false;
     if (this.isConflicted(ip)) return false;

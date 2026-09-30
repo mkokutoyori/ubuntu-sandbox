@@ -12,6 +12,7 @@
  *     → all nulls, used by the standalone PSInterpreter (no Windows device)
  */
 
+import type { DhcpFailoverChanges, DhcpFailoverRequest, DhcpFailoverView } from '@/network/devices/windows/server/dhcp/WindowsDhcpServerRole';
 import type { GroupWriteOptions, OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
 
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
@@ -1072,6 +1073,13 @@ export interface IDhcpServerProvider {
   setConflictDetectionAttempts(attempts: number): DhcpOpResult;
   serverAddress(): string;
   serverName(): string;
+
+  addFailover(request: DhcpFailoverRequest): DhcpOpResult;
+  getFailover(name: string): DhcpFailoverView | null;
+  listFailovers(): DhcpFailoverView[];
+  setFailover(name: string, changes: DhcpFailoverChanges): DhcpOpResult;
+  removeFailover(name: string, force: boolean): DhcpOpResult;
+  replicateFailover(name: string, scopeIds: readonly string[] | undefined, force: boolean): DhcpOpResult;
 }
 
 // ── NPS (RADIUS) role (PRD-Windows-Server.md §5 P9) ─────────────────────────

@@ -190,7 +190,13 @@ export class WindowsServer extends WindowsPC {
       return null;
     }
     if (!this.dhcpServerRoleInstance) {
-      this.dhcpServerRoleInstance = new WindowsDhcpServerRole(this);
+      this.dhcpServerRoleInstance = new WindowsDhcpServerRole(this, {
+        now: () => this.simulatedDate().getTime(),
+        adminApReqFor: (peerName) => this.adminApReqFor(peerName),
+        verifyAdministrator: (apReq) => this.authenticateAdministrator(apReq),
+        resolve: (name) => (IPAddress.isValid(name) ? name : this.resolveHostnameSync(name)?.toString() ?? null),
+        localAddressToward: (address) => this.sourceAddressFor(new IPAddress(address))?.toString() ?? null,
+      });
       this.dhcpServerRoleInstance.start();
     }
     this.dhcpServerRoleInstance.setDomainContext(

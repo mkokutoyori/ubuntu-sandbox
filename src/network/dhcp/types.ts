@@ -470,3 +470,9 @@ export function createDefaultClientState(): DHCPClientIfaceState {
     processRunning: false,
   };
 }
+
+export interface DhcpAdmissionPolicy {
+  mayServe(clientMAC: string, poolName: string): boolean;
+  addressAllowed(ip: string, poolName: string): boolean;
+  leaseSeconds(poolName: string, configuredSeconds: number): number;
+}

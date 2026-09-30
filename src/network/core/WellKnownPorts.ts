@@ -25,6 +25,8 @@ export const EPHEMERAL_PORT_MAX = 65535;
 export const DHCP_SERVER_PORT = 67;
 export const DHCP_CLIENT_PORT = 68;
 
+export const DHCP_FAILOVER_PORT = 647;
+
 // ─── IANA service name table ─────────────────────────────────────────
 // Values: { tcp?: name, udp?: name }
 // A missing key means that protocol is not assigned for that port.
@@ -60,6 +62,7 @@ const IANA: Map<number, { tcp?: string; udp?: string }> = new Map([
   [520,  { udp: 'route' }],
   [587,  { tcp: 'submission' }],
   [636,  { tcp: 'ldaps' }],
+  [647,  { tcp: 'dhcp-failover' }],
   [993,  { tcp: 'imaps' }],
   [995,  { tcp: 'pop3s' }],
   [1433, { tcp: 'ms-sql-s', udp: 'ms-sql-s' }],

@@ -14,6 +14,7 @@
  */
 
 
+import type { DhcpFailoverChanges, DhcpFailoverRequest } from '@/network/devices/windows/server/dhcp/WindowsDhcpServerRole';
 import { findWmiClass } from '@/network/devices/windows/WmiClasses';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
 import { RSAT_CAPABILITIES } from '@/powershell/cmdlets/core/rsatCapabilities';
@@ -1389,6 +1390,15 @@ class WindowsDhcpServerAdapter implements IDhcpServerProvider {
   }
   serverAddress(): string { return this.pc.getPorts()[0]?.getIPAddress()?.toString() ?? ''; }
   serverName(): string { return this.pc.getHostname(); }
+
+  addFailover(request: DhcpFailoverRequest): DhcpOpResult { return this.role().addFailover(request); }
+  getFailover(name: string) { return this.role().getFailover(name); }
+  listFailovers() { return this.role().listFailovers(); }
+  setFailover(name: string, changes: DhcpFailoverChanges): DhcpOpResult { return this.role().setFailover(name, changes); }
+  removeFailover(name: string, force: boolean): DhcpOpResult { return this.role().removeFailover(name, force); }
+  replicateFailover(name: string, scopeIds: readonly string[] | undefined, force: boolean): DhcpOpResult {
+    return this.role().replicateFailover(name, scopeIds, force);
+  }
 }
 
 // ── NPS (RADIUS) adapter (PRD-Windows-Server.md §5 P9) ───────────────────

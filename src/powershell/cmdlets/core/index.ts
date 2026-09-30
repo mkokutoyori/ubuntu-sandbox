@@ -201,6 +201,8 @@ import {
   RemoveDhcpServerInDCCmdlet,
   GetDhcpServerSettingCmdlet,
   SetDhcpServerSettingCmdlet,
+  AddDhcpServerv4FailoverCmdlet, GetDhcpServerv4FailoverCmdlet, SetDhcpServerv4FailoverCmdlet, RemoveDhcpServerv4FailoverCmdlet,
+  AddDhcpServerv4FailoverScopeCmdlet, RemoveDhcpServerv4FailoverScopeCmdlet, InvokeDhcpServerv4FailoverReplicationCmdlet,
 } from './DhcpServerCmdlets';
 import {
   NewNpsRadiusClientCmdlet, GetNpsRadiusClientCmdlet, RemoveNpsRadiusClientCmdlet,
@@ -844,6 +846,13 @@ export function registerDhcpServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new RemoveDhcpServerInDCCmdlet());
   registry.register(new GetDhcpServerSettingCmdlet());
   registry.register(new SetDhcpServerSettingCmdlet());
+  registry.register(remotable('Add-DhcpServerv4Failover', new AddDhcpServerv4FailoverCmdlet()));
+  registry.register(remotable('Get-DhcpServerv4Failover', new GetDhcpServerv4FailoverCmdlet()));
+  registry.register(remotable('Set-DhcpServerv4Failover', new SetDhcpServerv4FailoverCmdlet()));
+  registry.register(remotable('Remove-DhcpServerv4Failover', new RemoveDhcpServerv4FailoverCmdlet()));
+  registry.register(remotable('Add-DhcpServerv4FailoverScope', new AddDhcpServerv4FailoverScopeCmdlet()));
+  registry.register(remotable('Remove-DhcpServerv4FailoverScope', new RemoveDhcpServerv4FailoverScopeCmdlet()));
+  registry.register(remotable('Invoke-DhcpServerv4FailoverReplication', new InvokeDhcpServerv4FailoverReplicationCmdlet()));
 }
 
 export function registerGroupPolicyCmdlets(registry: CmdletRegistry): void {

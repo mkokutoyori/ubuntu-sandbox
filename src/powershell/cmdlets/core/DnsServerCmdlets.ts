@@ -49,7 +49,7 @@ function stringList(value: PSValue | undefined): string[] {
   return items.map(item => psValueToString(item).trim()).filter(item => item !== '');
 }
 
-function isSwitchOn(value: PSValue | undefined): boolean {
+export function isSwitchOn(value: PSValue | undefined): boolean {
   return value === true || value === 1 || (typeof value === 'string' && ['true', '1'].includes(value.toLowerCase()));
 }
 
@@ -113,7 +113,7 @@ function zoneNameOf(ctx: CmdletContext): string {
 
 const TIMESPAN = /^(?:(\d+)\.)?(\d+):(\d+):(\d+)$/;
 
-function timeSpanSeconds(raw: PSValue, parameter: string): number {
+export function timeSpanSeconds(raw: PSValue, parameter: string): number {
   if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
     const span = raw as Record<string, PSValue>;
     if (typeof span.TotalSeconds === 'number') return Math.round(span.TotalSeconds);

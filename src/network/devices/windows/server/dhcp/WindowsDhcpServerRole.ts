@@ -9,7 +9,7 @@
  * same pattern `WindowsDnsServerRole` established for the DNS role.
  *
  * Scope, matching the PRD's explicit `DhcpServer` cmdlet surface: IPv4
- * scopes only (no DHCPv6, no failover/split-scope). Exclusion ranges are
+ * scopes only (no DHCPv6). Failover is carried by `DhcpFailoverService`. Exclusion ranges are
  * applied on the engine's single global excluded-address list (mirroring
  * Cisco `ip dhcp excluded-address`'s own global scope) rather than being
  * tracked per-Windows-scope — acceptable for the lab's single-scope-per-
@@ -29,9 +29,67 @@ import {
   DHCID_DIGEST_SHA256, computeDhcidDigest, type DhcidIdentity,
 } from '@/network/dns/wire/Dhcid';
 import { DHCP_SERVER_PORT } from '@/network/core/WellKnownPorts';
+import { DhcpFailoverService, type FailoverHost } from '@/network/dhcp/failover/DhcpFailoverService';
+import {
+  DEFAULT_LOAD_BALANCE_PERCENT, DEFAULT_MCLT_SECONDS, DEFAULT_RESERVE_PERCENT, DEFAULT_STATE_SWITCH_SECONDS,
+  type FailoverBinding, type FailoverConfig, type FailoverInfo, type FailoverRole, type FailoverScopeData,
+} from '@/network/dhcp/failover/types';
 import { IPAddress, SubnetMask, type UDPPacket } from '@/network/core/types';
 
 export interface DhcpOpResult { ok: boolean; message: string }
+
+export interface DhcpRoleEnvironment {
+  now(): number;
+  adminApReqFor(peerName: string): Uint8Array | null;
+  verifyAdministrator(apReq: Uint8Array): boolean;
+  resolve(name: string): string | null;
+  localAddressToward(address: string): string | null;
+}
+
+export interface DhcpFailoverRequest {
+  name: string;
+  scopeIds: string[];
+  partnerServer: string;
+  loadBalancePercent?: number;
+  serverRole?: FailoverRole;
+  reservePercent?: number;
+  maxClientLeadTimeSeconds?: number;
+  stateSwitchIntervalSeconds?: number;
+  autoStateTransition?: boolean;
+  sharedSecret?: string;
+  force: boolean;
+}
+
+export interface DhcpFailoverChanges {
+  loadBalancePercent?: number;
+  serverRole?: FailoverRole;
+  reservePercent?: number;
+  maxClientLeadTimeSeconds?: number;
+  stateSwitchIntervalSeconds?: number;
+  autoStateTransition?: boolean;
+  sharedSecret?: string;
+  addScopeIds?: string[];
+  removeScopeIds?: string[];
+  partnerDown?: boolean;
+}
+
+export interface DhcpFailoverView {
+  name: string;
+  scopeIds: string[];
+  primaryServerIp: string;
+  secondaryServerIp: string;
+  primaryServerName: string;
+  secondaryServerName: string;
+  mode: 'LoadBalance' | 'HotStandby';
+  loadBalancePercent: number;
+  serverRole: FailoverRole;
+  reservePercent: number;
+  maxClientLeadTimeSeconds: number;
+  stateSwitchIntervalSeconds: number;
+  autoStateTransition: boolean;
+  enableAuth: boolean;
+  state: string;
+}
 
 export interface DhcpScopeInfo {
   scopeId: string;
@@ -99,10 +157,206 @@ export class WindowsDhcpServerRole {
   };
   private readonly registeredRecords = new Map<string, { zone: string; fqdn: string; forward: boolean; reverse: boolean }>();
   private registeredIpAddress: string | null = null;
+  private readonly outsideExclusions = new Map<string, Array<{ start: string; end: string }>>();
+  readonly failover: DhcpFailoverService;
 
-  constructor(private readonly host: EndHost) {
+  constructor(private readonly host: EndHost, private readonly env: DhcpRoleEnvironment = STANDALONE_ENVIRONMENT) {
     this.engine.setPingPacketCount(0);
     this.engine.setEventBus(host.getBus());
+    this.engine.setDeviceId(host.getId(), host.getHostname());
+    this.engine.setClock(() => env.now());
+    this.engine.setAdmissionPolicy(null);
+    this.failover = new DhcpFailoverService(this.failoverHost());
+    this.engine.setAdmissionPolicy(this.failover.policy);
+  }
+
+  private failoverHost(): FailoverHost {
+    return {
+      now: () => this.env.now(),
+      tcp: () => this.host.getTcpStack(),
+      bus: () => this.host.getBus(),
+      deviceId: () => this.host.getId(),
+      hostName: () => this.host.getHostname(),
+      ownAddresses: () => this.ownAddresses(),
+      scopeRange: (scope) => this.scopeRanges.get(scope) ?? null,
+      exportScopes: (names) => this.exportScopes(names),
+      importScopes: (data, overwrite) => this.importScopes(data, overwrite),
+      exportBindings: (scopes) => this.exportBindings(scopes),
+      importBinding: (binding) => this.engine.importBinding({
+        ipAddress: binding.ip, clientId: binding.clientId, hostName: binding.hostName,
+        leaseStart: binding.leaseStart, leaseExpiration: binding.leaseExpiration,
+        poolName: binding.scope, type: binding.type,
+      }),
+      dropBinding: (ip) => { this.engine.clearBinding(ip); },
+      adminApReqFor: (peerName) => this.env.adminApReqFor(peerName),
+      verifyAdministrator: (apReq) => this.env.verifyAdministrator(apReq),
+      isAuthorized: () => this.isAuthorizedInDC(),
+    };
+  }
+
+  tick(): void {
+    this.engine.cleanExpiredBindings();
+    this.failover.tick();
+  }
+
+  private failoverView(info: FailoverInfo): DhcpFailoverView {
+    const localActive = info.localIsPrimary === (info.primaryRole === 'Active');
+    return {
+      name: info.name, scopeIds: info.scopes.map(scope => this.scopeIdOfPool(scope) || scope),
+      primaryServerIp: info.primaryAddress, secondaryServerIp: info.secondaryAddress,
+      primaryServerName: info.primaryName, secondaryServerName: info.secondaryName,
+      mode: info.mode, loadBalancePercent: info.loadBalancePercent,
+      serverRole: info.mode === 'LoadBalance' || localActive ? 'Active' : 'Standby',
+      reservePercent: info.reservePercent, maxClientLeadTimeSeconds: info.maxClientLeadTimeSeconds,
+      stateSwitchIntervalSeconds: info.stateSwitchIntervalSeconds, autoStateTransition: info.autoStateTransition,
+      enableAuth: info.sharedSecret !== null, state: info.state,
+    };
+  }
+
+  listFailovers(): DhcpFailoverView[] {
+    return this.failover.list().map(info => this.failoverView(info));
+  }
+
+  getFailover(name: string): DhcpFailoverView | null {
+    const info = this.failover.get(name);
+    return info ? this.failoverView(info) : null;
+  }
+
+  private resolveScopeNames(scopeIds: readonly string[]): { names: string[]; missing: string | null } {
+    const names: string[] = [];
+    for (const id of scopeIds) {
+      const key = this.resolveScopeKey(id);
+      if (!this.engine.getPool(key)) return { names, missing: id };
+      names.push(key);
+    }
+    return { names, missing: null };
+  }
+
+  addFailover(request: DhcpFailoverRequest): DhcpOpResult {
+    const scopes = this.resolveScopeNames(request.scopeIds);
+    if (scopes.missing !== null) return { ok: false, message: `The scope ${scopes.missing} does not exist on this DHCP server.` };
+    if (scopes.names.length === 0) return { ok: false, message: 'At least one scope must be given with -ScopeId.' };
+    const partnerAddress = this.env.resolve(request.partnerServer);
+    if (!partnerAddress) return { ok: false, message: `The partner server "${request.partnerServer}" could not be resolved.` };
+    const own = this.env.localAddressToward(partnerAddress);
+    if (!own) return { ok: false, message: `No local address can reach the partner server ${partnerAddress}.` };
+    const hotStandby = request.serverRole !== undefined;
+    const config: FailoverConfig = {
+      name: request.name, mode: hotStandby ? 'HotStandby' : 'LoadBalance', localIsPrimary: true,
+      primaryAddress: own, primaryName: this.host.getHostname(),
+      secondaryAddress: partnerAddress, secondaryName: request.partnerServer.split('.')[0],
+      loadBalancePercent: request.loadBalancePercent ?? DEFAULT_LOAD_BALANCE_PERCENT,
+      primaryRole: request.serverRole ?? 'Active',
+      reservePercent: request.reservePercent ?? DEFAULT_RESERVE_PERCENT,
+      maxClientLeadTimeSeconds: request.maxClientLeadTimeSeconds ?? DEFAULT_MCLT_SECONDS,
+      autoStateTransition: request.autoStateTransition ?? false,
+      stateSwitchIntervalSeconds: request.stateSwitchIntervalSeconds ?? DEFAULT_STATE_SWITCH_SECONDS,
+      sharedSecret: request.sharedSecret ?? null, scopes: scopes.names,
+    };
+    return this.failover.create(config, request.force);
+  }
+
+  setFailover(name: string, changes: DhcpFailoverChanges): DhcpOpResult {
+    const current = this.failover.get(name);
+    if (!current) return { ok: false, message: `The failover relationship "${name}" does not exist.` };
+    if (changes.partnerDown) return this.failover.declarePartnerDown(name);
+    const added = this.resolveScopeNames(changes.addScopeIds ?? []);
+    if (added.missing !== null) return { ok: false, message: `The scope ${added.missing} does not exist on this DHCP server.` };
+    const removed = this.resolveScopeNames(changes.removeScopeIds ?? []);
+    if (removed.missing !== null) return { ok: false, message: `The scope ${removed.missing} does not exist on this DHCP server.` };
+    const stranger = removed.names.find(scope => !current.scopes.includes(scope));
+    if (stranger) return { ok: false, message: `The scope "${stranger}" is not part of the failover relationship "${name}".` };
+    const scopes = [...current.scopes.filter(scope => !removed.names.includes(scope)), ...added.names.filter(scope => !current.scopes.includes(scope))];
+    const primaryRole = changes.serverRole === undefined ? undefined
+      : current.localIsPrimary ? changes.serverRole : changes.serverRole === 'Active' ? 'Standby' : 'Active';
+    const defined = <T>(value: T | undefined, fallback: T): T => (value === undefined ? fallback : value);
+    const next: Partial<FailoverConfig> = {
+      scopes,
+      loadBalancePercent: defined(changes.loadBalancePercent, current.loadBalancePercent),
+      reservePercent: defined(changes.reservePercent, current.reservePercent),
+      maxClientLeadTimeSeconds: defined(changes.maxClientLeadTimeSeconds, current.maxClientLeadTimeSeconds),
+      stateSwitchIntervalSeconds: defined(changes.stateSwitchIntervalSeconds, current.stateSwitchIntervalSeconds),
+      autoStateTransition: defined(changes.autoStateTransition, current.autoStateTransition),
+      sharedSecret: defined(changes.sharedSecret, current.sharedSecret),
+      primaryRole: defined(primaryRole as FailoverRole | undefined, current.primaryRole),
+    };
+    return this.failover.update(name, next);
+  }
+
+  removeFailover(name: string, force: boolean): DhcpOpResult {
+    return this.failover.remove(name, force);
+  }
+
+  replicateFailover(name: string, scopeIds: readonly string[] | undefined, force: boolean): DhcpOpResult {
+    const scopes = scopeIds === undefined ? { names: undefined, missing: null } : this.resolveScopeNames(scopeIds);
+    if (scopes.missing !== null) return { ok: false, message: `The scope ${scopes.missing} does not exist on this DHCP server.` };
+    return this.failover.replicate(name, scopes.names, force);
+  }
+
+  private exportScopes(names: readonly string[]): FailoverScopeData[] {
+    const out: FailoverScopeData[] = [];
+    for (const name of names) {
+      const info = this.getScope(name);
+      if (!info) continue;
+      const startNum = new IPAddress(info.startRange).toUint32();
+      const endNum = new IPAddress(info.endRange).toUint32();
+      const options: Record<number, readonly string[]> = {};
+      for (const option of this.listOptionValues(name)) options[option.optionId] = option.values;
+      out.push({
+        name: info.name, startRange: info.startRange, endRange: info.endRange, subnetMask: info.subnetMask,
+        leaseDuration: info.leaseDuration, state: info.state, options,
+        exclusions: this.listExclusionRanges().filter(r =>
+          new IPAddress(r.start).toUint32() >= startNum && new IPAddress(r.end).toUint32() <= endNum),
+        reservations: this.listReservations(name).map(r => ({ ip: r.ipAddress, clientId: r.clientId })),
+      });
+    }
+    return out;
+  }
+
+  private importScopes(data: readonly FailoverScopeData[], overwrite: boolean): DhcpOpResult {
+    for (const scope of data) {
+      if (this.engine.getPool(scope.name) && !overwrite) {
+        return { ok: false, message: `The scope "${scope.name}" already exists on this DHCP server; use -Force to overwrite it.` };
+      }
+    }
+    for (const scope of data) {
+      const kept = this.exportBindings([scope.name]);
+      if (this.engine.getPool(scope.name)) this.dismantleScope(scope.name);
+      const added = this.addScope(scope.name, scope.startRange, scope.endRange, scope.subnetMask, scope.leaseDuration);
+      if (!added.ok) return added;
+      for (const [id, values] of Object.entries(scope.options)) this.setOptionValue(scope.name, Number(id), [...values]);
+      for (const range of scope.exclusions) this.addExclusionRange(range.start, range.end);
+      for (const reservation of scope.reservations) this.addReservation(scope.name, reservation.ip, reservation.clientId);
+      this.setScope(scope.name, { state: scope.state });
+      for (const binding of kept) {
+        this.engine.importBinding({
+          ipAddress: binding.ip, clientId: binding.clientId, hostName: binding.hostName,
+          leaseStart: binding.leaseStart, leaseExpiration: binding.leaseExpiration,
+          poolName: binding.scope, type: binding.type,
+        });
+      }
+    }
+    return { ok: true, message: '' };
+  }
+
+  private exportBindings(scopes: readonly string[]): FailoverBinding[] {
+    return [...this.engine.getBindings().values()]
+      .filter(b => scopes.includes(b.poolName))
+      .map(b => ({
+        ip: b.ipAddress, clientId: b.clientId, hostName: b.hostName, leaseStart: b.leaseStart,
+        leaseExpiration: b.leaseExpiration, scope: b.poolName, type: b.type,
+      }));
+  }
+
+  private dismantleScope(name: string): void {
+    for (const range of this.outsideExclusions.get(name) ?? []) this.engine.removeExcludedRange(range.start, range.end);
+    this.outsideExclusions.delete(name);
+    for (const reservation of this.listReservations(name)) this.engine.removeStaticBinding(name, reservation.ipAddress);
+    for (const range of this.exportScopes([name])[0]?.exclusions ?? []) this.engine.removeExcludedRange(range.start, range.end);
+    this.engine.deletePool(name);
+    this.scopeRanges.delete(name);
+    this.scopeState.delete(name);
+    this.scopeOptions.delete(name);
   }
 
   isRunning(): boolean { return this.running; }
@@ -112,10 +366,12 @@ export class WindowsDhcpServerRole {
     this.engine.enable();
     this.host.udpBind(DHCP_SERVER_PORT, this.handleDatagram, 'dhcpserver');
     this.running = true;
+    this.failover.start();
   }
 
   stop(): void {
     if (!this.running) return;
+    this.failover.stop();
     this.host.udpClose(DHCP_SERVER_PORT);
     this.engine.disable();
     this.running = false;
@@ -349,23 +605,26 @@ export class WindowsDhcpServerRole {
     if (leaseDurationSeconds) this.engine.configurePoolLease(name, leaseDurationSeconds);
     this.scopeRanges.set(name, { start: startRange, end: endRange });
     this.scopeState.set(name, true);
-    this.excludeOutsideRange(network, mask, startRange, endRange);
+    this.excludeOutsideRange(name, network, mask, startRange, endRange);
     this.projectOptions();
     return { ok: true, message: '' };
   }
 
   /** Confines allocation to [startRange, endRange] by excluding the rest of the subnet's host range. */
-  private excludeOutsideRange(network: string, mask: SubnetMask, start: string, end: string): void {
+  private excludeOutsideRange(scope: string, network: string, mask: SubnetMask, start: string, end: string): void {
     const networkNum = new IPAddress(network).toUint32();
     const broadcastNum = (networkNum | (~mask.toUint32() >>> 0)) >>> 0;
     const startNum = new IPAddress(start).toUint32();
     const endNum = new IPAddress(end).toUint32();
+    const generated: Array<{ start: string; end: string }> = [];
     if (startNum > networkNum + 1) {
-      this.engine.addExcludedRange(IPAddress.fromUint32(networkNum + 1).toString(), IPAddress.fromUint32(startNum - 1).toString());
+      generated.push({ start: IPAddress.fromUint32(networkNum + 1).toString(), end: IPAddress.fromUint32(startNum - 1).toString() });
     }
     if (endNum < broadcastNum - 1) {
-      this.engine.addExcludedRange(IPAddress.fromUint32(endNum + 1).toString(), IPAddress.fromUint32(broadcastNum - 1).toString());
+      generated.push({ start: IPAddress.fromUint32(endNum + 1).toString(), end: IPAddress.fromUint32(broadcastNum - 1).toString() });
     }
+    for (const range of generated) this.engine.addExcludedRange(range.start, range.end);
+    this.outsideExclusions.set(scope, generated);
   }
 
   private resolveScopeKey(idOrName: string): string {
@@ -474,11 +733,12 @@ export class WindowsDhcpServerRole {
     if (!this.engine.getPool(name)) {
       return { ok: false, message: `Remove-DhcpServerv4Scope : ScopeId "${name}" does not exist on this DHCP server.` };
     }
+    const owner = this.failover.relationshipOfScope(name);
+    if (owner) {
+      return { ok: false, message: `Remove-DhcpServerv4Scope : The scope "${name}" belongs to the failover relationship "${owner}"; remove it from the relationship first.` };
+    }
     for (const lease of this.getLeases(name)) this.engine.clearBinding(lease.ipAddress);
-    this.engine.deletePool(name);
-    this.scopeRanges.delete(name);
-    this.scopeState.delete(name);
-    this.scopeOptions.delete(name);
+    this.dismantleScope(name);
     return { ok: true, message: '' };
   }
 
@@ -591,6 +851,14 @@ export class WindowsDhcpServerRole {
     }
   }
 }
+
+const STANDALONE_ENVIRONMENT: DhcpRoleEnvironment = {
+  now: () => Date.now(),
+  adminApReqFor: () => null,
+  verifyAdministrator: () => false,
+  resolve: () => null,
+  localAddressToward: () => null,
+};
 
 const OPTION_NAMES: Record<number, string> = {
   3: 'Router', 6: 'DNS Servers', 15: 'DNS Domain Name', 51: 'Lease',

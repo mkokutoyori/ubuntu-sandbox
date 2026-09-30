@@ -635,6 +635,12 @@ export class PSLexer {
       return psToken(PSTokenType.WORD, dottedName[0], start);
     }
 
+    const daysTimeSpan = /^\d+\.\d{1,2}:\d{2}:\d{2}(?:\.\d+)?/.exec(this.input.slice(this.pos));
+    if (daysTimeSpan) {
+      for (let i = 0; i < daysTimeSpan[0].length; i++) this.advance();
+      return psToken(PSTokenType.WORD, daysTimeSpan[0], start);
+    }
+
     // Hex: 0x...
     if (first_ === '0' && (this.peek1() === 'x' || this.peek1() === 'X')) {
       value += '0'; this.advance();
