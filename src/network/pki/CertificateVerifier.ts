@@ -1,3 +1,4 @@
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import { PkiKeyPair } from './PkiKeyPair';
 import type { X509Certificate } from './X509Certificate';
 import { tbsPayload } from './X509Certificate';
@@ -70,31 +71,63 @@ export class CertificateVerifier {
   }
 }
 
-export function certificateMatchesHostname(cert: X509Certificate, hostname: string): boolean {
-  const target = hostname.toLowerCase();
-  const names: string[] = [...(cert.extensions?.subjectAltName ?? [])]
-    // `subjectAltName=DNS:lab.local` / `IP:10.0.0.1` — openssl's own
-    // spelling on the command line, and what this simulator stores, so the
-    // type prefix has to come off before comparing against a hostname.
-    .map((n) => n.replace(/^\s*(?:DNS|IP|URI|email)\s*:\s*/i, '').trim());
-  if (names.length === 0) {
-    // RFC 4514 allows whitespace around the `=`, and openssl PRINTS it that
-    // way (`subject=C = FR, CN = www.lab`) — which is how this simulator's
-    // own `openssl req` renders it. Requiring a bare `CN=` meant no
-    // certificate issued here could ever match a hostname by its common
-    // name; only a SAN worked, and only by accident.
-    const cn = /CN\s*=\s*([^,]+)/.exec(cert.subject);
-    if (cn) names.push(cn[1].trim());
-  }
-  return names.some(raw => {
-    const name = raw.toLowerCase();
-    if (name === target) return true;
-    if (name.startsWith('*.')) {
-      const suffix = name.slice(1);
-      return target.endsWith(suffix) && !target.slice(0, -suffix.length).includes('.');
+interface PresentedIdentity {
+  readonly type: 'dns' | 'ip';
+  readonly value: string;
+}
+
+function presentedIdentities(cert: X509Certificate): PresentedIdentity[] {
+  const identities: PresentedIdentity[] = [];
+  for (const raw of cert.extensions?.subjectAltName ?? []) {
+    const typed = /^\s*(DNS|IP|URI|email)\s*:\s*(.*?)\s*$/i.exec(raw);
+    if (typed) {
+      const kind = typed[1].toLowerCase();
+      if (kind === 'dns') identities.push({ type: 'dns', value: typed[2] });
+      else if (kind === 'ip') identities.push({ type: 'ip', value: typed[2] });
+      continue;
     }
-    return false;
-  });
+    const bare = raw.trim();
+    identities.push({ type: IPAddress.tryParse(bare) || IPv6Address.tryParse(bare) ? 'ip' : 'dns', value: bare });
+  }
+  return identities;
+}
+
+function normalizedAddress(text: string): string | null {
+  const v4 = IPAddress.tryParse(text);
+  if (v4) return v4.toString();
+  const v6 = IPv6Address.tryParse(text);
+  return v6 ? v6.toString() : null;
+}
+
+function dnsIdentityMatches(presented: string, reference: string): boolean {
+  const name = presented.toLowerCase().replace(/\.$/, '');
+  if (!name.includes('*')) return name === reference;
+  const labels = name.split('.');
+  if (labels[0] !== '*' || labels.slice(1).some((label) => label.includes('*'))) return false;
+  if (labels.length < 3) return false;
+  const suffix = labels.slice(1).join('.');
+  const referenceLabels = reference.split('.');
+  return referenceLabels.length === labels.length && referenceLabels.slice(1).join('.') === suffix
+    && referenceLabels[0].length > 0;
+}
+
+export function certificateMatchesHostname(cert: X509Certificate, hostname: string): boolean {
+  const identities = presentedIdentities(cert);
+  const address = normalizedAddress(hostname.replace(/^\[|\]$/g, ''));
+  if (address !== null) {
+    if (identities.length === 0) {
+      const cn = /CN\s*=\s*([^,]+)/.exec(cert.subject);
+      return cn !== null && normalizedAddress(cn[1].trim()) === address;
+    }
+    return identities.some((id) => id.type === 'ip' && normalizedAddress(id.value) === address);
+  }
+  const reference = hostname.toLowerCase().replace(/\.$/, '');
+  const dnsIdentities = identities.filter((id) => id.type === 'dns').map((id) => id.value);
+  if (dnsIdentities.length === 0) {
+    const cn = /CN\s*=\s*([^,]+)/.exec(cert.subject);
+    if (cn) dnsIdentities.push(cn[1].trim());
+  }
+  return dnsIdentities.some((presented) => dnsIdentityMatches(presented, reference));
 }
 
 function dropSignature(cert: X509Certificate): X509Certificate {

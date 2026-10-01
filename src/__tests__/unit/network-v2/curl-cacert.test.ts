@@ -154,7 +154,7 @@ describe('the two matching defects --cacert exposed', () => {
     await srv.executeCommand(
       'openssl req -x509 -newkey rsa:512 -keyout /etc/ssl/private/srv.key '
       + '-out /etc/ssl/certs/srv.crt -days 365 -nodes -subj "/CN=unrelated.lab" '
-      + '-addext "subjectAltName=DNS:127.0.0.1"');
+      + '-addext "subjectAltName=IP:127.0.0.1"');
     await serve(srv);
 
     const out = await srv.executeCommand(
