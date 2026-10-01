@@ -152,6 +152,7 @@ export interface LegacyServerSetup {
   readonly requestClientCert: boolean;
   readonly verifier?: CertificateVerifier;
   readonly securityLevel: number;
+  readonly lenientClientCert: boolean;
   readonly clientExtensions: LegacyClientExtensions;
   readonly extendedMasterSecret: boolean;
   readonly sessionStore?: LegacySessionStore;
@@ -170,6 +171,8 @@ export class LegacyServerHandshake {
   result: 'accept' | 'reject' | null = null;
   lastAlert: TlsAlert | null = null;
   peerCertificate: X509Certificate | null = null;
+  peerVerified = false;
+  peerVerificationReason: string | null = null;
   traffic: LegacyTraffic | null = null;
 
   private state: ServerLegacyState = 'awaiting-client-flight';
@@ -423,21 +426,30 @@ export class LegacyServerHandshake {
     let verifiedLeaf: X509Certificate | null = null;
     if (this.setup.requestClientCert) {
       if (!certificate) return this.reject('unexpected_message');
-      if (certificate.certificateList.length === 0) return this.reject('handshake_failure');
-      if (!this.setup.verifier || !certificateVerify) return this.reject('handshake_failure');
-      verifiedLeaf = certificate.certificateList[0];
-      const verification = this.setup.verifier.verify(verifiedLeaf, undefined, certificate.certificateList.slice(1), 'clientAuth', this.setup.securityLevel);
-      if (verification.ok === false) return this.rejectCertificate(verification.reason);
-      this.peerCertificate = verifiedLeaf;
+      const lenient = this.setup.lenientClientCert;
+      if (certificate.certificateList.length === 0) {
+        if (!lenient) return this.reject('handshake_failure');
+        this.peerVerificationReason = 'no-certificate';
+      } else {
+        if (!this.setup.verifier || !certificateVerify) return this.reject('handshake_failure');
+        verifiedLeaf = certificate.certificateList[0];
+        this.peerCertificate = verifiedLeaf;
+        const verification = this.setup.verifier.verify(verifiedLeaf, undefined, certificate.certificateList.slice(1), 'clientAuth', this.setup.securityLevel);
+        this.peerVerified = verification.ok !== false;
+        if (verification.ok === false) {
+          this.peerVerificationReason = verification.reason;
+          if (!lenient) return this.rejectCertificate(verification.reason);
+        }
+      }
     } else if (certificate) {
       return this.reject('unexpected_message');
     }
 
     let sessionHash: Uint8Array | null = null;
     for (const message of bundle) {
-      if (message.kind === 'legacy_certificate_verify') {
+      if (message.kind === 'legacy_certificate_verify' && verifiedLeaf !== null) {
         const signed = concat(...this.messages);
-        if (!verifyLegacy(verifiedLeaf!.publicKey, version, signed, (message as LegacyCertificateVerify).signature)) {
+        if (!verifyLegacy(verifiedLeaf.publicKey, version, signed, (message as LegacyCertificateVerify).signature)) {
           return this.reject('decrypt_error');
         }
       }

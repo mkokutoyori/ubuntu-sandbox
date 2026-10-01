@@ -144,7 +144,14 @@ export class HttpsServerSession {
       const method = parsed.message.method ?? 'GET';
       const target = parsed.message.target ?? '';
       this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method, target } });
-      const produced = this.handler(parsed.message, { ip: socket.remoteIp, port: socket.remotePort });
+      const produced = this.handler(parsed.message, {
+        ip: socket.remoteIp, port: socket.remotePort,
+        tls: {
+          protocolVersion: tls.negotiatedVersion, cipherSuite: tls.negotiatedCipherSuite,
+          clientCertificate: tls.peerCertificate, clientVerified: tls.peerVerified,
+          clientVerifyReason: tls.peerVerificationReason,
+        },
+      });
       /*
        * Un gestionnaire asynchrone ne doit pas pouvoir doubler le
        * précédent : `serverSeq` est le compteur de séquence des

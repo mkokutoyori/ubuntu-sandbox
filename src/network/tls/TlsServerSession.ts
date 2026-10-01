@@ -63,6 +63,8 @@ export interface TlsServerConfig {
   readonly ocspStaple?: OcspStapleSource;
   /** RFC 6066 §4 — honour a client's max_fragment_length request (default false, like OpenSSL). */
   readonly acceptMaxFragmentLength?: boolean;
+  /** mTLS: `strict` aborts on a missing or invalid client certificate (default), `lenient` records the outcome and continues (nginx `ssl_verify_client on`). */
+  readonly clientCertPolicy?: 'strict' | 'lenient';
   /** Top preference; tried first against what the client actually offered (RFC 8446 §4.1.1). */
   readonly cipherSuite?: CipherSuite;
   /** RFC 8446 §4.3.2 — request the peer's certificate (mTLS). Requires `verifier`. */
@@ -180,6 +182,9 @@ export class TlsServerSession {
   private sessionResumed = false;
   private readonly transcript: Uint8Array[] = [];
   negotiatedMaxFragmentLength: number | null = null;
+  peerCertificate: X509Certificate | null = null;
+  peerVerified = false;
+  peerVerificationReason: string | null = null;
   private credentials: ActiveCredential;
   private protocols: readonly TlsProtocolVersion[];
   private readonly policy: ResolvedLegacyPolicy;
@@ -371,6 +376,7 @@ export class TlsServerSession {
       serverCert: this.credentials.cert, serverChain: this.credentials.chain, serverPrivateKey: this.credentials.privateKey,
       serverGroups: this.supportedGroups, securityLevel: this.policy.securityLevel, dhGroupId: this.config.dhGroupId ?? 14,
       requestClientCert: this.config.requestClientCert === true, verifier: this.config.verifier,
+      lenientClientCert: this.config.clientCertPolicy === 'lenient',
     });
     const flight = this.legacy.start();
     this.negotiatedCipherSuite = this.legacy.negotiatedSuite.name;
@@ -390,6 +396,9 @@ export class TlsServerSession {
     if (legacy.result === null || this.result !== null) return;
     this.result = legacy.result;
     this.state = 'done';
+    this.peerCertificate = legacy.peerCertificate;
+    this.peerVerified = legacy.peerVerified;
+    this.peerVerificationReason = legacy.peerVerificationReason;
     if (legacy.result === 'reject') {
       this.lastAlert = legacy.lastAlert;
       this.emit({ topic: 'tls.handshake.failed', payload: { sessionId: this.sessionId, role: 'server', alert: this.lastAlert! } });
@@ -549,26 +558,34 @@ export class TlsServerSession {
     if (this.config.requestClientCert) {
       const certificate = messages.find((m): m is CertificateMessage => m.kind === 'certificate');
       const certificateVerify = messages.find((m): m is CertificateVerify => m.kind === 'certificate_verify');
-      if (!certificate || certificate.certificateList.length === 0 || !certificateVerify) {
-        return this.reject('certificate_unknown');
-      }
-      const leafCert = certificate.certificateList[0];
-      if (!this.config.verifier) return this.reject('certificate_unknown');
-      const verification = this.config.verifier.verify(leafCert, undefined, certificate.certificateList.slice(1), 'clientAuth', this.policy.securityLevel);
-      if (verification.ok === false) {
-        this.lastAlert = certificateAlert(verification.reason);
-        this.state = 'done';
-        this.result = 'reject';
-        this.emit({ topic: 'tls.handshake.failed', payload: { sessionId: this.sessionId, role: 'server', alert: this.lastAlert } });
-        this.emit({ topic: 'tls.alert.sent', payload: { sessionId: this.sessionId, role: 'server', alert: this.lastAlert } });
-        return null;
-      }
-
+      const lenient = this.config.clientCertPolicy === 'lenient';
+      if (!certificate) return this.reject('unexpected_message');
       this.transcript.push(encodeHandshakeMessage(certificate));
-      const preVerify = certificateVerifyContent('client', transcriptHash(this.transcript, this.hash));
-      if (certificateVerify.signatureAlgorithm !== schemeForKey(leafCert.publicKey.algorithm)) return this.reject('illegal_parameter');
-      if (!verifyCertificateVerify(leafCert.publicKey, preVerify, certificateVerify.signatureAlgorithm, certificateVerify.signature)) return this.reject('decrypt_error');
-      this.transcript.push(encodeHandshakeMessage(certificateVerify));
+      if (certificate.certificateList.length === 0 || !certificateVerify) {
+        if (!lenient) return this.reject('certificate_required');
+        this.peerVerificationReason = 'no-certificate';
+      } else {
+        const leafCert = certificate.certificateList[0];
+        this.peerCertificate = leafCert;
+        if (!this.config.verifier) return this.reject('certificate_unknown');
+        const verification = this.config.verifier.verify(leafCert, undefined, certificate.certificateList.slice(1), 'clientAuth', this.policy.securityLevel);
+        this.peerVerified = verification.ok !== false;
+        if (verification.ok === false) {
+          this.peerVerificationReason = verification.reason;
+          if (!lenient) {
+            this.lastAlert = certificateAlert(verification.reason);
+            this.state = 'done';
+            this.result = 'reject';
+            this.emit({ topic: 'tls.handshake.failed', payload: { sessionId: this.sessionId, role: 'server', alert: this.lastAlert } });
+            this.emit({ topic: 'tls.alert.sent', payload: { sessionId: this.sessionId, role: 'server', alert: this.lastAlert } });
+            return null;
+          }
+        }
+        const preVerify = certificateVerifyContent('client', transcriptHash(this.transcript, this.hash));
+        if (certificateVerify.signatureAlgorithm !== schemeForKey(leafCert.publicKey.algorithm)) return this.reject('illegal_parameter');
+        if (!verifyCertificateVerify(leafCert.publicKey, preVerify, certificateVerify.signatureAlgorithm, certificateVerify.signature)) return this.reject('decrypt_error');
+        this.transcript.push(encodeHandshakeMessage(certificateVerify));
+      }
     }
 
     const finished = messages.find((m): m is Finished => m.kind === 'finished');
