@@ -29,7 +29,7 @@ describe('ChaCha20-Poly1305', () => {
     for (const size of [0, 1, 15, 16, 17, 63, 64, 65, 200]) {
       const key = randomBytes(32); const nonce = randomBytes(12); const aad = randomBytes(13); const data = randomBytes(size);
       const cipher = createCipheriv('chacha20-poly1305', key, nonce, { authTagLength: 16 });
-      cipher.setAAD(aad);
+      cipher.setAAD(aad, { plaintextLength: data.length });
       const oracle = Buffer.concat([cipher.update(data), cipher.final()]);
       const oracleTag = cipher.getAuthTag();
       const ours = chacha20Poly1305Encrypt(key, nonce, aad, data);
