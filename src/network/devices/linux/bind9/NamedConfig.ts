@@ -33,6 +33,7 @@ export interface NamedZone {
   readonly type: ZoneType;
   readonly file: string | null;
   readonly primaries: readonly string[];
+  readonly primaryKeys: ReadonlyMap<string, string>;
   readonly alsoNotify: readonly string[];
   readonly allowTransfer: AddressMatchList | null;
   readonly allowUpdate: AddressMatchList;
@@ -239,6 +240,7 @@ interface ZoneDraft {
   type: ZoneType | null;
   file: string | null;
   primaries: string[];
+  primaryKeys: Map<string, string>;
   alsoNotify: string[];
   allowTransfer: AddressMatchList | null;
   allowUpdate: AddressMatchList | null;
@@ -252,7 +254,7 @@ function parseZoneEntries(
   acls: ReadonlyMap<string, AddressMatchList>,
 ): ZoneDraft {
   const draft: ZoneDraft = {
-    type: null, file: null, primaries: [], alsoNotify: [], allowTransfer: null,
+    type: null, file: null, primaries: [], primaryKeys: new Map(), alsoNotify: [], allowTransfer: null,
     allowUpdate: null, updatePolicy: null, forwarders: [],
   };
   for (const entry of requireBlock(statement)) {
@@ -269,9 +271,16 @@ function parseZoneEntries(
         draft.file = args[0] ?? null;
         break;
       case 'primaries':
-      case 'masters':
-        draft.primaries = parseAddressList(entry);
+      case 'masters': {
+        for (const item of requireBlock(entry)) {
+          const words = item.values.map((value) => value.text);
+          if (!IPAddress.isValid(words[0])) fail(item, `expected IP address near '${words[0]}'`);
+          if (words.length === 3 && words[1] === 'key') draft.primaryKeys.set(words[0], words[2]);
+          else if (words.length !== 1) fail(item, `unexpected '${words[1]}'`);
+          draft.primaries.push(words[0]);
+        }
         break;
+      }
       case 'also-notify':
         draft.alsoNotify = parseAddressList(entry);
         break;
@@ -339,6 +348,7 @@ function parseZone(
     type,
     file: resolveZoneFile(draft.file, directory),
     primaries: draft.primaries,
+    primaryKeys: draft.primaryKeys,
     alsoNotify: draft.alsoNotify,
     allowTransfer: draft.allowTransfer,
     allowUpdate: draft.allowUpdate ?? AddressMatchList.none(),

@@ -10,9 +10,16 @@ import { DnsStreamReader, frameDnsMessage } from '@/network/dns/transport/DnsStr
 
 export const DNS_TCP_IDLE_TIMEOUT_MS = 10000;
 
+export type DnsStreamHandler = (
+  query: DnsMessage,
+  sourceIP?: IPAddress | IPv6Address,
+  sourcePort?: number,
+  raw?: Uint8Array,
+) => DnsMessage | readonly DnsMessage[] | Promise<DnsMessage | readonly DnsMessage[]>;
+
 export function bindDnsTcpServer(
   host: EndHost,
-  handler: DnsMessageHandler,
+  handler: DnsStreamHandler,
   port: number = DNS_PORT,
   options: { address?: string; processName?: string } = {},
 ): void {
@@ -42,8 +49,9 @@ export function bindDnsTcpServer(
             socket.close();
             return;
           }
-          const send = (response: DnsMessage): void => {
-            socket.send(frameDnsMessage(encodeDnsMessage(response)));
+          const send = (response: DnsMessage | readonly DnsMessage[]): void => {
+            const messages = Array.isArray(response) ? response : [response as DnsMessage];
+            for (const message of messages) socket.send(frameDnsMessage(encodeDnsMessage(message)));
           };
           const result = handler(
             query, IPAddress.tryParse(socket.remoteIp) ?? undefined, socket.remotePort, raw,
@@ -129,6 +137,52 @@ export async function queryDnsOverTcp(
 
     socket.send(frameDnsMessage(encodeDnsMessage(query)));
     timer = setTimeout(() => { finish(null); socket.close(); }, timeoutMs);
+  });
+}
+
+export async function queryDnsOverTcpStream(
+  host: DnsTcpClient,
+  serverIP: IPAddress | IPv6Address,
+  query: DnsMessage,
+  isComplete: (messages: readonly DnsMessage[]) => boolean,
+  port: number = DNS_PORT,
+  timeoutMs: number = 2000,
+): Promise<{ messages: DnsMessage[]; frames: Uint8Array[] } | null> {
+  const socket = await connectWithin(host, serverIP.toString(), port, timeoutMs);
+  if (!socket) return null;
+
+  return new Promise((resolve) => {
+    const messages: DnsMessage[] = [];
+    const frames: Uint8Array[] = [];
+    const reader = new DnsStreamReader();
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const finish = (result: { messages: DnsMessage[]; frames: Uint8Array[] } | null): void => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(result);
+      socket.close();
+    };
+    socket.onData((data) => {
+      if (!(data instanceof Uint8Array)) return;
+      for (const raw of reader.push(data)) {
+        let message: DnsMessage;
+        try {
+          message = decodeDnsMessage(raw);
+        } catch {
+          finish(null);
+          return;
+        }
+        if (!answersQuestion(query, message)) continue;
+        messages.push(message);
+        frames.push(raw);
+        if (isComplete(messages)) { finish({ messages, frames }); return; }
+      }
+    });
+    socket.onClose(() => finish(null));
+    socket.send(frameDnsMessage(encodeDnsMessage(query)));
+    if (!settled) timer = setTimeout(() => finish(null), timeoutMs);
   });
 }
 

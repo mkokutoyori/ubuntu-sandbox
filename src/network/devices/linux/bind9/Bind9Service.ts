@@ -4,7 +4,7 @@ import { RecursiveResolver } from '@/network/dns/resolver/RecursiveResolver';
 import { DnsCache } from '@/network/dns/resolver/DnsCache';
 import { parseZoneFile, renderZoneFile, ZoneFileError } from '@/network/dns/zone/ZoneFile';
 import { ZoneError } from '@/network/dns/zone/Zone';
-import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer } from '@/network/dns/transfer/ZoneTransferHosting';
+import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer, signTransferResponse, datagramReply } from '@/network/dns/transfer/ZoneTransferHosting';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { DnsClass } from '@/network/dns/wire/RRType';
 import { IPAddress } from '@/network/core/types';
@@ -20,7 +20,7 @@ import type { DnsUpdateRequest } from '@/network/dns/update/DnsUpdate';
 import {
   authorizeUpdate, evaluateUpdate, parseOrFormerr, signIfKeyed, updateResponse, DnsUpdateRcode,
 } from '@/network/dns/update/UpdateResponder';
-import { TsigKeyring, tsigKeyFromBase64, canonicalKeyName } from '@/network/dns/tsig/Tsig';
+import { TsigKeyring, tsigKeyFromBase64, canonicalKeyName, type TsigKey } from '@/network/dns/tsig/Tsig';
 import { serialAdd } from '@/network/dns/zone/SerialNumber';
 import { RRType } from '@/network/dns/wire/RRType';
 import { buildRecursiveResponse, recursiveResolveOptions } from '@/network/dns/resolver/RecursiveResponse';
@@ -442,11 +442,11 @@ export class Bind9Service {
   private readonly handleUdpQuery = (
     query: DnsMessage, sourceIP?: IPAddress, sourcePort?: number, raw?: Uint8Array,
   ): DnsMessage | Promise<DnsMessage> =>
-    this.answerQuery(query, 'udp', sourceIP, sourcePort, raw);
+    datagramReply(this.answerQuery(query, 'udp', sourceIP, sourcePort, raw));
 
   private readonly handleTcpQuery = (
     query: DnsMessage, sourceIP?: IPAddress, sourcePort?: number, raw?: Uint8Array,
-  ): DnsMessage | Promise<DnsMessage> =>
+  ): DnsMessage | DnsMessage[] | Promise<DnsMessage> =>
     this.answerQuery(query, 'tcp', sourceIP, sourcePort, raw);
 
   private answerQuery(
@@ -455,7 +455,7 @@ export class Bind9Service {
     sourceIP?: IPAddress,
     sourcePort?: number,
     raw?: Uint8Array,
-  ): DnsMessage | Promise<DnsMessage> {
+  ): DnsMessage | DnsMessage[] | Promise<DnsMessage> {
     const config = this.config!;
 
     if (isNotify(query)) {
@@ -489,10 +489,18 @@ export class Bind9Service {
     if (question && isTransferQuery(query)) {
       const transferAcl = this.zoneFor(question.qname)?.allowTransfer
         ?? config.options.allowTransfer;
-      if (!transferAcl.matches(source, env)) {
-        return this.refuse(query, recursionAllowed);
+      const now = Math.floor(Date.now() / 1000);
+      const auth = authorizeUpdate(raw, 'none', this.keyring, now);
+      if (auth.rcode !== DnsRcode.NOERROR) {
+        const refused = this.refuse(query, recursionAllowed);
+        return signIfKeyed({ ...refused, flags: { ...refused.flags, rcode: auth.rcode } }, auth, now);
       }
-      return transport === 'udp' ? refuseTransfer(query) : this.serveTransfer(query);
+      const signer = auth.key ? canonicalKeyName(auth.key.name) : null;
+      if (!transferAcl.matches(source, env, signer)) {
+        return signIfKeyed(this.refuse(query, recursionAllowed), auth, now);
+      }
+      if (transport === 'udp') return refuseTransfer(query);
+      return signTransferResponse(this.serveTransfer(query), auth, now);
     }
 
     const response = this.authoritative!.answer(query);
@@ -589,8 +597,8 @@ export class Bind9Service {
     return { ok: true };
   }
 
-  private serveTransfer(query: DnsMessage): DnsMessage {
-    return serveZoneTransfer(this.store, query) ?? this.refuse(query, false);
+  private serveTransfer(query: DnsMessage): DnsMessage[] {
+    return serveZoneTransfer(this.store, query) ?? [this.refuse(query, false)];
   }
 
   private handleNotify(query: DnsMessage, sourceIP?: IPAddress): DnsMessage {
@@ -622,11 +630,21 @@ export class Bind9Service {
     const primaries = zone.primaries
       .map((primary) => IPAddress.tryParse(primary))
       .filter((ip): ip is IPAddress => ip !== null);
-    const { zone: fetched } = await this.secondaries.refresh(this.store, zone.name, primaries, force);
+    const { zone: fetched } = await this.secondaries.refresh(
+      this.store, zone.name, primaries, force, this.primaryKeysOf(zone));
     if (!fetched) return false;
     this.loadedZones.set(zone.name, fetched.soa.data.serial);
     this.failedZones.delete(zone.name);
     return true;
+  }
+
+  private primaryKeysOf(zone: NamedZone): Map<string, TsigKey> {
+    const keys = new Map<string, TsigKey>();
+    for (const [address, name] of zone.primaryKeys) {
+      const key = this.keyring.get(name);
+      if (key) keys.set(address, key);
+    }
+    return keys;
   }
 
   private notifySecondaries(zoneName: string): void {

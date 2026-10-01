@@ -99,10 +99,18 @@ function tsigVariables(keyName: string, data: Omit<TsigRecordData, 'type' | 'mac
   return out;
 }
 
+function tsigTimers(data: Omit<TsigRecordData, 'type' | 'mac' | 'originalId'>): number[] {
+  const out: number[] = [];
+  writeUint48(out, data.timeSigned);
+  out.push((data.fudge >> 8) & 0xff, data.fudge & 0xff);
+  return out;
+}
+
 function macInput(
   strippedMessage: Uint8Array, keyName: string,
   data: Omit<TsigRecordData, 'type' | 'mac' | 'originalId'>,
   requestMac: Uint8Array | null,
+  continuation = false,
 ): Uint8Array {
   const parts: number[] = [];
   if (requestMac) {
@@ -110,7 +118,7 @@ function macInput(
     for (const b of requestMac) parts.push(b);
   }
   for (const b of strippedMessage) parts.push(b);
-  for (const b of tsigVariables(keyName, data)) parts.push(b);
+  for (const b of continuation ? tsigTimers(data) : tsigVariables(keyName, data)) parts.push(b);
   return Uint8Array.from(parts);
 }
 
@@ -135,6 +143,7 @@ export interface TsigSignOptions {
   readonly error?: number;
   readonly otherData?: Uint8Array;
   readonly requestMac?: Uint8Array | null;
+  readonly continuation?: boolean;
 }
 
 export class TsigAlgorithmError extends Error {}
@@ -152,7 +161,7 @@ export function tsigRecordFor(message: DnsMessage, options: TsigSignOptions) {
     otherData: options.otherData ?? new Uint8Array(0),
   };
   const mac = hmac(hash, secretBytes(options.key.secret),
-    macInput(bare, options.key.name, variables, options.requestMac ?? null));
+    macInput(bare, options.key.name, variables, options.requestMac ?? null, options.continuation === true));
 
   return makeTsigRecord(options.key.name, { ...variables, mac, originalId: message.id });
 }
@@ -184,6 +193,7 @@ export interface TsigVerifyOptions {
   readonly lookup: TsigKeyLookup;
   readonly now: number;
   readonly requestMac?: Uint8Array | null;
+  readonly continuation?: boolean;
 }
 
 export function verifyDnsMessage(bytes: Uint8Array, options: TsigVerifyOptions): TsigVerdict {
@@ -213,7 +223,7 @@ export function verifyDnsMessage(bytes: Uint8Array, options: TsigVerifyOptions):
   const expected = hmac(hash, secretBytes(key.secret), macInput(stripped, last.name, {
     algorithm: tsig.algorithm, timeSigned: tsig.timeSigned,
     fudge: tsig.fudge, error: tsig.error, otherData: tsig.otherData,
-  }, options.requestMac ?? null));
+  }, options.requestMac ?? null, options.continuation === true));
 
   let equal = expected.length === tsig.mac.length ? 0 : 1;
   for (let i = 0; i < expected.length && equal === 0; i++) equal |= expected[i] ^ tsig.mac[i];
@@ -267,4 +277,42 @@ export function tsigErrorResponse(
     otherData: new Uint8Array(0),
   });
   return { ...response, additionals: [...response.additionals, record] };
+}
+
+export function signMessageStream(
+  messages: readonly DnsMessage[],
+  options: { readonly key: TsigKey; readonly timeSigned: number; readonly requestMac: Uint8Array | null },
+): DnsMessage[] {
+  const signed: DnsMessage[] = [];
+  let previousMac = options.requestMac;
+  messages.forEach((message, index) => {
+    const out = signedDnsMessage(message, {
+      key: options.key, timeSigned: options.timeSigned, requestMac: previousMac, continuation: index > 0,
+    });
+    const record = out.additionals[out.additionals.length - 1].data as TsigRecordData;
+    previousMac = record.mac;
+    signed.push(out);
+  });
+  return signed;
+}
+
+export type TsigStreamVerdict =
+  | { readonly ok: true; readonly key: TsigKey }
+  | { readonly ok: false; readonly reason: TsigVerdict['status'] };
+
+export function verifyMessageStream(
+  frames: readonly Uint8Array[],
+  options: { readonly lookup: TsigKeyLookup; readonly now: number; readonly requestMac: Uint8Array | null },
+): TsigStreamVerdict {
+  let previousMac = options.requestMac;
+  let key: TsigKey | null = null;
+  for (let index = 0; index < frames.length; index++) {
+    const verdict = verifyDnsMessage(frames[index], {
+      lookup: options.lookup, now: options.now, requestMac: previousMac, continuation: index > 0,
+    });
+    if (verdict.status !== 'ok') return { ok: false, reason: verdict.status };
+    previousMac = verdict.mac;
+    key = verdict.key;
+  }
+  return key ? { ok: true, key } : { ok: false, reason: 'absent' };
 }

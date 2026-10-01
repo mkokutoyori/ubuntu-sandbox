@@ -1,3 +1,4 @@
+import { encodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { RRType } from '@/network/dns/wire/RRType';
 import { Zone, ZoneError } from '@/network/dns/zone/Zone';
@@ -29,6 +30,43 @@ export function buildTransferResponse(
     authorities: [],
     additionals: [],
   };
+}
+
+export const TRANSFER_MESSAGE_BUDGET = 16384;
+
+export function buildTransferMessages(
+  query: DnsMessage, answers: readonly ResourceRecord<ResourceRecordData>[],
+): DnsMessage[] {
+  const empty = buildTransferResponse(query, []);
+  const base = encodeDnsMessage(empty).length;
+  const messages: DnsMessage[] = [];
+  let batch: ResourceRecord<ResourceRecordData>[] = [];
+  let size = base;
+  for (const rr of answers) {
+    const cost = encodeDnsMessage({ ...empty, answers: [rr] }).length - base;
+    if (batch.length >= 2 && size + cost > TRANSFER_MESSAGE_BUDGET) {
+      messages.push(buildTransferResponse(query, batch));
+      batch = [];
+      size = base;
+    }
+    batch.push(rr);
+    size += cost;
+  }
+  messages.push(buildTransferResponse(query, batch));
+  return messages;
+}
+
+export function transferComplete(messages: readonly DnsMessage[]): boolean {
+  const first = messages[0];
+  if (!first) return false;
+  if (first.flags.rcode !== DnsRcode.NOERROR) return true;
+  const answers = messages.flatMap((message) => message.answers);
+  const head = answers[0];
+  if (!head || head.data.type !== RRType.SOA) return true;
+  if (answers.length === 1 && messages.length === 1) return true;
+  const last = answers[answers.length - 1];
+  return answers.length > 1 && last.data.type === RRType.SOA
+    && (last.data as SoaRecordData).serial === (head.data as SoaRecordData).serial;
 }
 
 export function refuseTransfer(query: DnsMessage): DnsMessage {

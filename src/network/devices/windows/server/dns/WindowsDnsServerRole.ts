@@ -28,7 +28,7 @@ const WINDOWS_CRYPTO_ALGORITHMS: ReadonlyMap<string, number> = new Map([
 ]);
 import { isTransferQuery, refuseTransfer } from '@/network/dns/transfer/AxfrSession';
 import { isNotify, makeNotifyAck } from '@/network/dns/transfer/NotifyProtocol';
-import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer } from '@/network/dns/transfer/ZoneTransferHosting';
+import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer, datagramReply } from '@/network/dns/transfer/ZoneTransferHosting';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import { normalizeDnsName } from '@/network/dns/wire/DnsName';
@@ -395,15 +395,15 @@ export class WindowsDnsServerRole {
 
   private readonly handleUdp = (
     query: DnsMessage, source?: unknown, _port?: number, raw?: Uint8Array,
-  ): DnsMessage | Promise<DnsMessage> => this.answer(query, 'udp', source, raw);
+  ): DnsMessage | Promise<DnsMessage> => datagramReply(this.answer(query, 'udp', source, raw));
 
   private readonly handleTcp = (
     query: DnsMessage, source?: unknown, _port?: number, raw?: Uint8Array,
-  ): DnsMessage | Promise<DnsMessage> => this.answer(query, 'tcp', source, raw);
+  ): DnsMessage | DnsMessage[] | Promise<DnsMessage> => this.answer(query, 'tcp', source, raw);
 
   private answer(
     query: DnsMessage, transport: 'udp' | 'tcp', source: unknown, raw?: Uint8Array,
-  ): DnsMessage | Promise<DnsMessage> {
+  ): DnsMessage | DnsMessage[] | Promise<DnsMessage> {
     const sourceAddress = source instanceof IPAddress ? source.toString() : null;
     if (isNotify(query)) return this.handleNotify(query, sourceAddress);
     if (isUpdateMessage(query)) return this.handleUpdate(query, raw);
@@ -459,7 +459,7 @@ export class WindowsDnsServerRole {
       a.failures - b.failures || (a.averageMs ?? Infinity) - (b.averageMs ?? Infinity));
   }
 
-  private handleTransfer(query: DnsMessage, source: string | null): DnsMessage {
+  private handleTransfer(query: DnsMessage, source: string | null): DnsMessage | DnsMessage[] {
     const qname = normalizeDnsName(query.questions[0].qname);
     const settings = this.settings.get(qname);
     const zone = this.store.getZone(qname);

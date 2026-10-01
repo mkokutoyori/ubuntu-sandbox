@@ -12,7 +12,7 @@ import { bindDnsUdpServer, unbindDnsUdpServer } from '@/network/dns/transport/Dn
 import { bindDnsTcpServer, unbindDnsTcpServer } from '@/network/dns/transport/DnsTcpTransport';
 import { ZoneJournal } from '@/network/dns/transfer/ZoneJournal';
 import {
-  isTransferQuery, buildAxfrAnswers, buildTransferResponse, refuseTransfer,
+  isTransferQuery, buildAxfrAnswers, buildTransferResponse, buildTransferMessages, refuseTransfer,
 } from '@/network/dns/transfer/AxfrSession';
 import { buildIxfrAnswers } from '@/network/dns/transfer/IxfrSession';
 import { sendNotify } from '@/network/dns/transfer/NotifyProtocol';
@@ -22,6 +22,7 @@ import {
   type UpdateSecurityPolicy,
 } from '@/network/dns/update/UpdateResponder';
 import { TsigKeyring } from '@/network/dns/tsig/Tsig';
+import { signTransferResponse, datagramReply } from '@/network/dns/transfer/ZoneTransferHosting';
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 
 export interface ZoneUpdate {
@@ -36,6 +37,7 @@ export interface PrimaryZoneAgentOptions {
   readonly secondaries?: readonly IPAddress[];
   readonly journalLimit?: number;
   readonly updatePolicy?: UpdateSecurityPolicy;
+  readonly transferPolicy?: UpdateSecurityPolicy;
 }
 
 export type TransferListener = (qtype: number, response: DnsMessage) => void;
@@ -48,6 +50,7 @@ export class PrimaryZoneAgent {
   private readonly transferListeners: TransferListener[] = [];
   private readonly keyring = new TsigKeyring();
   private updatePolicy: UpdateSecurityPolicy;
+  private transferPolicy: UpdateSecurityPolicy;
 
   constructor(
     private readonly host: EndHost,
@@ -59,19 +62,20 @@ export class PrimaryZoneAgent {
     this.journal = new ZoneJournal(options.journalLimit);
     this.secondaries = options.secondaries ?? [];
     this.updatePolicy = options.updatePolicy ?? 'none';
+    this.transferPolicy = options.transferPolicy ?? 'none';
   }
 
   start(): void {
-    bindDnsUdpServer(this.host, (query, _ip, _port, raw) => this.dispatch(query, false, raw));
+    bindDnsUdpServer(this.host, (query, _ip, _port, raw) => datagramReply(this.dispatch(query, false, raw)));
     bindDnsTcpServer(this.host, (query, _ip, _port, raw) => this.dispatch(query, true, raw));
   }
 
   private dispatch(
     query: DnsMessage, transferAllowed: boolean, raw?: Uint8Array,
-  ): DnsMessage | Promise<DnsMessage> {
+  ): DnsMessage | DnsMessage[] | Promise<DnsMessage> {
     if (isUpdateMessage(query)) return this.answerUpdate(query, raw);
     if (isTransferQuery(query)) {
-      return transferAllowed ? this.answerTransfer(query) : refuseTransfer(query);
+      return transferAllowed ? this.answerTransfer(query, raw) : refuseTransfer(query);
     }
     return this.authServer.answer(query);
   }
@@ -99,6 +103,8 @@ export class PrimaryZoneAgent {
   getTsigKeyring(): TsigKeyring { return this.keyring; }
 
   setUpdatePolicy(policy: UpdateSecurityPolicy): void { this.updatePolicy = policy; }
+
+  setTransferPolicy(policy: UpdateSecurityPolicy): void { this.transferPolicy = policy; }
 
   stop(): void {
     unbindDnsUdpServer(this.host);
@@ -131,14 +137,21 @@ export class PrimaryZoneAgent {
     }
   }
 
-  private answerTransfer(query: DnsMessage): DnsMessage {
+  private answerTransfer(query: DnsMessage, raw?: Uint8Array): DnsMessage | DnsMessage[] {
+    const now = Math.floor(Date.now() / 1000);
+    const auth = authorizeUpdate(raw, this.transferPolicy, this.keyring, now);
+    if (auth.rcode !== DnsRcode.NOERROR) {
+      return signIfKeyed({
+        ...refuseTransfer(query), flags: { ...refuseTransfer(query).flags, rcode: auth.rcode },
+      }, auth, now);
+    }
     const qtype = query.questions[0].qtype;
     const answers = qtype === RRType.AXFR
       ? buildAxfrAnswers(this.zone)
       : buildIxfrAnswers(this.zone, this.journal, this.clientSerialOf(query));
-    const response = buildTransferResponse(query, answers);
-    for (const listener of this.transferListeners) listener(qtype, response);
-    return response;
+    const messages = buildTransferMessages(query, answers);
+    for (const listener of this.transferListeners) listener(qtype, buildTransferResponse(query, answers));
+    return signTransferResponse(messages, auth, now);
   }
 
   private clientSerialOf(query: DnsMessage): number {
