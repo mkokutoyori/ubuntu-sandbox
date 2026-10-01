@@ -19,6 +19,7 @@ export interface NamedOptions {
   readonly queryLog: boolean;
   readonly dnssecValidation: DnssecValidationMode;
   readonly listenOnPort: number;
+  readonly servfailTtl: number;
   readonly listenOn: AddressMatchList;
   readonly allowQuery: AddressMatchList;
   readonly allowRecursion: AddressMatchList;
@@ -79,6 +80,8 @@ export interface NamedConfig {
 const DEFAULT_DIRECTORY = '/var/cache/bind';
 const DEFAULT_RNDC_PORT = 953;
 const DEFAULT_DNS_PORT = 53;
+const DEFAULT_SERVFAIL_TTL = 1;
+const MAX_SERVFAIL_TTL = 30;
 const DEFAULT_SEVERITY = 'info';
 const ZONE_TYPE_ALIASES: Readonly<Record<string, ZoneType>> = {
   primary: 'primary',
@@ -136,6 +139,7 @@ interface MutableOptions {
   queryLog: boolean;
   dnssecValidation: DnssecValidationMode;
   listenOnPort: number;
+  servfailTtl: number;
   listenOn: AddressMatchList;
   allowQuery: AddressMatchList;
   allowRecursion: AddressMatchList;
@@ -151,6 +155,7 @@ function defaultOptions(): MutableOptions {
     queryLog: false,
     dnssecValidation: 'auto',
     listenOnPort: DEFAULT_DNS_PORT,
+    servfailTtl: DEFAULT_SERVFAIL_TTL,
     listenOn: AddressMatchList.any(),
     allowQuery: AddressMatchList.any(),
     allowRecursion: AddressMatchList.localTrust(),
@@ -199,6 +204,14 @@ function parseOptions(
           options.listenOnPort = port;
           options.listenOn = AddressMatchList.fromStatements(requireBlock(entry), acls);
         }
+        break;
+      }
+      case 'servfail-ttl': {
+        const value = Number(args[0]);
+        if (!Number.isInteger(value) || value < 0) {
+          fail(entry, `expected a number of seconds near '${args[0] ?? ';'}'`);
+        }
+        options.servfailTtl = Math.min(value, MAX_SERVFAIL_TTL);
         break;
       }
       case 'dnssec-validation':

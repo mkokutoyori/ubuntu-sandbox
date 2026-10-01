@@ -10,7 +10,7 @@ import type {
 } from '@/network/dns/wire/ResourceRecord';
 import { queryAuthoritativeServer } from '@/network/dns/transport/DnsTcpTransport';
 import { DnsCache } from '@/network/dns/resolver/DnsCache';
-import { DnsValidator } from '@/network/dns/dnssec/DnsValidator';
+import { DnsValidator, capTtlsToSignatures } from '@/network/dns/dnssec/DnsValidator';
 import type { DnssecStatus } from '@/network/dns/dnssec/DnsValidator';
 
 export type ResolutionStatus = 'NOERROR' | 'NXDOMAIN' | 'SERVFAIL';
@@ -34,6 +34,7 @@ export interface RecursiveResolverOptions {
   readonly maxDepth?: number;
   readonly forwardRecursively?: boolean;
   readonly dnssec?: RecursiveResolverDnssecOptions;
+  readonly servfailTtlSeconds?: number;
 }
 
 interface IterationOutcome {
@@ -83,6 +84,7 @@ export class RecursiveResolver {
   private readonly forwardRecursively: boolean;
   private validatorInstance: DnsValidator | null = null;
   private readonly dnssecOptions: RecursiveResolverDnssecOptions | null;
+  private readonly servfailTtlSeconds: number;
 
   constructor(
     private readonly host: EndHost,
@@ -95,6 +97,11 @@ export class RecursiveResolver {
     this.maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
     this.forwardRecursively = options.forwardRecursively ?? false;
     this.dnssecOptions = options.dnssec ?? null;
+    this.servfailTtlSeconds = options.servfailTtlSeconds ?? 0;
+  }
+
+  private nowSeconds(): number {
+    return (this.dnssecOptions?.now ?? (() => Math.floor(Date.now() / 1000)))();
   }
 
   private get validator(): DnsValidator | null {
@@ -123,7 +130,10 @@ export class RecursiveResolver {
     if (!raw) {
       const cached = this.cache.lookup(qname, qtype);
       if (cached.kind === 'hit') {
-        return { status: 'NOERROR', answers: cached.records, fromCache: true };
+        return { status: 'NOERROR', answers: cached.records, fromCache: true, security: cached.security };
+      }
+      if (cached.kind === 'servfail') {
+        return { status: 'SERVFAIL', answers: [], fromCache: true };
       }
       if (cached.kind === 'negative') {
         return {
@@ -145,13 +155,21 @@ export class RecursiveResolver {
         ? await this.validator.validateAnswer(outcome.answers, outcome.authorities)
         : await this.validator.validateNegative(qname, outcome.authorities, outcome.negative === 'nxdomain');
       if (security === 'bogus') {
+        this.cache.storeServfail(qname, qtype, this.servfailTtlSeconds);
         return { status: 'SERVFAIL', answers: [], fromCache: false, security };
       }
     }
+    if (!raw && outcome.status === 'SERVFAIL') {
+      this.cache.storeServfail(qname, qtype, this.servfailTtlSeconds);
+    }
+
+    const answers = security === 'secure'
+      ? capTtlsToSignatures(outcome.answers, this.nowSeconds())
+      : outcome.answers;
 
     if (!raw) {
-      if (outcome.status === 'NOERROR' && outcome.answers.length > 0) {
-        this.cache.storePositive(outcome.answers);
+      if (outcome.status === 'NOERROR' && answers.length > 0) {
+        this.cache.storePositive(answers, undefined, security);
       } else if (outcome.negative) {
         const soa = findSoa(outcome.authorities);
         if (soa) {
@@ -162,7 +180,7 @@ export class RecursiveResolver {
     }
 
     return {
-      status: outcome.status, answers: outcome.answers, authorities: outcome.authorities,
+      status: outcome.status, answers, authorities: outcome.authorities,
       fromCache: false, security,
     };
   }

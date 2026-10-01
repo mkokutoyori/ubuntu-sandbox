@@ -52,6 +52,21 @@ function closestEncloserFrom(qname: string, nsec: ResourceRecord<NsecRecordData>
   return fromOwner.length >= fromNext.length ? fromOwner : fromNext;
 }
 
+export function capTtlsToSignatures(
+  records: readonly ResourceRecord<ResourceRecordData>[], nowSeconds: number,
+): ResourceRecord<ResourceRecordData>[] {
+  const sigs = rrsigsOf(records);
+  return records.map((rr) => {
+    const covering = rr.data.type === RRType.RRSIG
+      ? [rr as ResourceRecord<RrsigRecordData>]
+      : sigs.filter((sig) => normalize(sig.name) === normalize(rr.name) && sig.data.typeCovered === rr.data.type);
+    if (covering.length === 0) return rr;
+    const ceiling = Math.min(...covering.map((sig) =>
+      Math.min(sig.data.originalTtl, Math.max(0, sig.data.expiration - nowSeconds))));
+    return rr.ttl <= ceiling ? rr : { ...rr, ttl: ceiling };
+  });
+}
+
 export class DnsValidator {
   private readonly now: () => number;
   private readonly maxChainDepth: number;
