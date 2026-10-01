@@ -46,9 +46,14 @@ Un secret s'écrit en base64 à toutes les frontières (`key {}` de named,
 `nsupdate -y`, `Add-DnsServerTsigKey`, `ddns-key` FortiGate) et est décodé une
 seule fois en matière de clé (`tsigKeyFromBase64`).
 
-## Non réalisé, mesuré
+## Non réalisé, et pourquoi
 
-- Validation DNSSEC sur FortiGate, Cisco et Huawei (aucune ancre configurable).
-- NSEC3 (RFC 5155).
-- SIG(0) (RFC 2931, hors de l'ensemble).
+- NSEC3 (RFC 5155) et SIG(0) (RFC 2931) : les textes ne sont pas dans `docs/rfc/dns`
+  et sont injoignables depuis l'environnement ; sans source, rien n'est implémenté.
+- Validation DNSSEC sur FortiGate (serveur DNS `config system dns-server`), Cisco et
+  Huawei : aucune commande ni documentation de validation n'a été trouvée pour ces
+  plateformes (la recherche ne remonte qu'un paramètre `dnssec-validate-status` de
+  FortiADC, autre produit).
+- Troncature UDP par RRset entier dans la section réponse : la pratique de named
+  n'est pas attestée d'ici.
 - DNAME, autres types hors de la liste du codec.
