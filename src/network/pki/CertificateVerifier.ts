@@ -74,18 +74,22 @@ export class CertificateVerifier {
       return { ok: true };
     }
     if (this.revocationCheck !== 'none') {
-      const crl = this.crls.find(c => c.issuer === cert.issuer);
-      if (!crl) {
-        if (this.revocationCheck === 'crl-strict') return { ok: false, reason: 'crl-stale' };
-      } else {
-        if (!crl.isValidSignature(issuer.publicKey)) return { ok: false, reason: 'crl-untrusted' };
-        if (!crl.isFresh(now)) {
-          if (this.revocationCheck === 'crl-strict') return { ok: false, reason: 'crl-stale' };
-        }
-        if (crl.contains(cert.serialNumber)) return { ok: false, reason: 'revoked' };
+      const members = anchorIsLeaf(cert, issuer) ? [cert] : [cert, ...path.intermediates, issuer];
+      const issuers = anchorIsLeaf(cert, issuer) ? [issuer] : [...path.intermediates, issuer, issuer];
+      for (let index = 0; index < members.length; index++) {
+        const failure = this.crlFailure(members[index], issuers[index], now);
+        if (failure) return failure;
       }
     }
     return { ok: true };
+  }
+
+  private crlFailure(cert: X509Certificate, issuer: X509Certificate, now: number): VerificationFailure | null {
+    const crl = this.crls.find((candidate) => candidate.issuer === cert.issuer);
+    if (!crl) return this.revocationCheck === 'crl-strict' ? { ok: false, reason: 'crl-stale' } : null;
+    if (!crl.isValidSignature(issuer.publicKey)) return { ok: false, reason: 'crl-untrusted' };
+    if (!crl.isFresh(now) && this.revocationCheck === 'crl-strict') return { ok: false, reason: 'crl-stale' };
+    return crl.contains(cert.serialNumber) ? { ok: false, reason: 'revoked' } : null;
   }
 
   checkOcspStaple(
