@@ -1,6 +1,6 @@
 import { Http1ServerSession } from '@/network/http/http1/Http1ServerSession';
 import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
-import { pemToCert, pemToPrivateKey } from '@/network/pki/pem';
+import { pemToCertChain, pemToPrivateKey } from '@/network/pki/pem';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import { createResponse, type HttpMessage } from '@/network/http/semantics/types';
@@ -162,7 +162,7 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
       )
       : new HttpsServerSession(
         this.host.tcpStack(), spec.port,
-        { serverCert: tls.cert, serverPrivateKey: tls.key },
+        { serverCert: tls.cert, serverChain: tls.chain, serverPrivateKey: tls.key },
         (req) => this.respond(spec.port, req),
       );
     try {
@@ -186,7 +186,7 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
    * it is the worst possible answer, since everything downstream believes
    * 443 means encrypted.
    */
-  private tlsMaterialFor(port: number): { cert: X509Certificate; key: PkiPrivateKey } | null | TlsProblem {
+  private tlsMaterialFor(port: number): { cert: X509Certificate; key: PkiPrivateKey; chain: readonly X509Certificate[] } | null | TlsProblem {
     const vhost = this.config.vhosts.find((v) => v.port === port && v.sslEngine);
     if (!vhost) return null;
     return this.tlsMaterialForVhost(vhost);
@@ -194,7 +194,7 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
 
   private tlsMaterialForVhost(
     vhost: ApacheVirtualHost,
-  ): { cert: X509Certificate; key: PkiPrivateKey } | null | TlsProblem {
+  ): { cert: X509Certificate; key: PkiPrivateKey; chain: readonly X509Certificate[] } | null | TlsProblem {
     const port = vhost.port;
     const fail = (message: string): TlsProblem => ({ error: message });
     if (!vhost.sslCertificateFile || !vhost.sslCertificateKeyFile) {
@@ -211,13 +211,14 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
       return fail(`AH00526: Syntax error on line 1 of ${vhost.source}: `
         + `SSLCertificateKeyFile: file '${vhost.sslCertificateKeyFile}' does not exist or is empty`);
     }
-    const cert = pemToCert(certPem);
+    const certChain = pemToCertChain(certPem);
+    const cert = certChain[0] ?? null;
     const key = pemToPrivateKey(keyPem);
     if (!cert || !key) {
       return fail(`AH02561: Failed to configure certificate ${vhost.serverName ?? '*'}:${port}, `
         + 'check /etc/apache2/ssl (SSL: error:0480006C:PEM routines::no start line)');
     }
-    return { cert, key };
+    return { cert, key, chain: certChain.slice(1) };
   }
 
   close(spec: PortSpec): void {

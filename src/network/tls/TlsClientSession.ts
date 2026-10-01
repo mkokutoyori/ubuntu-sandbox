@@ -378,7 +378,9 @@ export class TlsClientSession {
     const leafCert = certificate.certificateList[0];
     if (!leafCert) return this.fail('certificate_unknown');
     this.peerCertificate = leafCert;
-    const verification = this.config.verifier.verify(leafCert, this.config.serverName);
+    const verification = this.config.verifier.verify(
+      leafCert, this.config.serverName, certificate.certificateList.slice(1), 'serverAuth',
+    );
     this.peerVerified = verification.ok !== false;
     if (verification.ok === false) {
       this.peerVerificationReason = verification.reason;

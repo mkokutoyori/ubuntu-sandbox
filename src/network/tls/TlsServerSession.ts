@@ -45,6 +45,8 @@ import type { TrafficProtection } from './trafficProtection';
 export interface TlsServerConfig {
   readonly serverCert: X509Certificate;
   readonly serverPrivateKey: PkiPrivateKey;
+  /** RFC 8446 §4.4.2 — intermediates sent after the leaf, in issuing order. */
+  readonly serverChain?: readonly X509Certificate[];
   /** Top preference; tried first against what the client actually offered (RFC 8446 §4.1.1). */
   readonly cipherSuite?: CipherSuite;
   /** RFC 8446 §4.3.2 — request the peer's certificate (mTLS). Requires `verifier`. */
@@ -265,7 +267,7 @@ export class TlsServerSession {
       version, suite, clientHelloBytes, clientRandom: clientHello.random, clientVersionWire,
       offeredGroups: clientHello.extensions.supportedGroups, alpn: this.negotiatedAlpnProtocol,
       serverSupportsTls13: this.protocols.includes('1.3'),
-      serverCert: this.config.serverCert, serverPrivateKey: this.config.serverPrivateKey,
+      serverCert: this.config.serverCert, serverChain: this.config.serverChain ?? [], serverPrivateKey: this.config.serverPrivateKey,
       serverGroups: this.supportedGroups, dhGroupId: this.config.dhGroupId ?? 14,
       requestClientCert: this.config.requestClientCert === true, verifier: this.config.verifier,
     });
@@ -384,7 +386,7 @@ export class TlsServerSession {
       this.transcript.push(encodeHandshakeMessage(certificateRequest));
     }
 
-    const certificate: CertificateMessage = { kind: 'certificate', certificateList: [this.config.serverCert] };
+    const certificate: CertificateMessage = { kind: 'certificate', certificateList: [this.config.serverCert, ...(this.config.serverChain ?? [])] };
     bundle.push(certificate);
     this.transcript.push(encodeHandshakeMessage(certificate));
 
@@ -422,7 +424,7 @@ export class TlsServerSession {
       }
       const leafCert = certificate.certificateList[0];
       if (!this.config.verifier) return this.reject('certificate_unknown');
-      const verification = this.config.verifier.verify(leafCert);
+      const verification = this.config.verifier.verify(leafCert, undefined, certificate.certificateList.slice(1), 'clientAuth');
       if (verification.ok === false) {
         this.lastAlert = certificateAlert(verification.reason);
         this.state = 'done';

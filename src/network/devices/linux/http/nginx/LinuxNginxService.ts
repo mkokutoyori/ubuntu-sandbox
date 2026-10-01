@@ -3,7 +3,7 @@ import type { TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites
 import type { TcpStack } from '@/network/tcp/TcpStack';
 import { Http1ServerSession, type Http1Peer } from '@/network/http/http1/Http1ServerSession';
 import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
-import { pemToCert, pemToPrivateKey } from '@/network/pki/pem';
+import { pemToCertChain, pemToPrivateKey } from '@/network/pki/pem';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import { createResponse, type HttpMessage } from '@/network/http/semantics/types';
@@ -197,6 +197,7 @@ function isTlsProblem(v: unknown): v is TlsProblem {
 interface TlsMaterial {
   readonly cert: X509Certificate;
   readonly key: PkiPrivateKey;
+  readonly chain: readonly X509Certificate[];
   readonly protocols: readonly TlsProtocolVersion[];
   readonly cipherSuites: readonly string[];
   readonly preferServerCiphers: boolean;
@@ -311,7 +312,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
       : new HttpsServerSession(
         this.host.tcpStack(), spec.port,
         {
-          serverCert: tls.cert, serverPrivateKey: tls.key, protocols: tls.protocols,
+          serverCert: tls.cert, serverChain: tls.chain, serverPrivateKey: tls.key, protocols: tls.protocols,
           legacyCipherSuites: tls.cipherSuites, preferServerCiphers: tls.preferServerCiphers,
         },
         (req, peer) => this.respond(spec.port, req, peer),
@@ -359,7 +360,8 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
       return fail(`cannot load certificate key "${server.sslCertificateKey}": `
         + 'BIO_new_file() failed (SSL: error:80000002:system library::No such file or directory)');
     }
-    const cert = pemToCert(certPem);
+    const certChain = pemToCertChain(certPem);
+    const cert = certChain[0] ?? null;
     const key = pemToPrivateKey(keyPem);
     if (!cert) {
       return fail(`PEM_read_bio_X509_AUX("${server.sslCertificate}") failed `
@@ -378,7 +380,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
       .map((name) => PROTOCOL_BY_NGINX_NAME[name])
       .filter((version): version is TlsProtocolVersion => version !== undefined);
     return {
-      cert, key, protocols, cipherSuites: cipherList.suites.map((suite) => suite.name),
+      cert, key, chain: certChain.slice(1), protocols, cipherSuites: cipherList.suites.map((suite) => suite.name),
       preferServerCiphers: server.sslPreferServerCiphers,
     };
   }

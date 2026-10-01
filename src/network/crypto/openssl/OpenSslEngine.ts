@@ -517,6 +517,11 @@ function codeOpenssl(
     case 'bad-signature': return { n: 7, texte: 'certificate signature failure' };
     case 'revoked': return { n: 23, texte: 'certificate revoked' };
     case 'crl-untrusted': return { n: 8, texte: 'CRL signature failure' };
+    case 'not-a-ca': return { n: 24, texte: 'invalid CA certificate' };
+    case 'path-length': return { n: 25, texte: 'path length constraint exceeded' };
+    case 'purpose': return { n: 26, texte: 'unsupported certificate purpose' };
+    case 'key-usage': return { n: 32, texte: 'key usage does not include certificate signing' };
+    case 'weak-key': return { n: 66, texte: 'EE certificate key too weak' };
     case 'crl-stale':
       // Le vérificateur confond deux situations qu'openssl sépare, faute
       // d'une raison distincte : aucune CRL pour cet émetteur, ou une CRL
@@ -541,6 +546,14 @@ function runVerify(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     // Un `-CAfile` est un FAISCEAU : c'est ainsi qu'on approuve plusieurs
     // racines d'un coup, et `pemToCert` n'en lisait que la première.
     ancres.push(...pemToCertChain(t));
+  }
+
+  const intermediaires: X509Certificate[] = [];
+  const untrustedFile = opts.get('-untrusted');
+  if (typeof untrustedFile === 'string') {
+    const t = host.readFile(untrustedFile);
+    if (t === null) return fail(`Can't open "${untrustedFile}" for reading, No such file or directory`);
+    intermediaires.push(...pemToCertChain(t));
   }
 
   // `-crl_check` sans `-CRLfile` n'a rien à consulter : openssl refuse
@@ -573,7 +586,7 @@ function runVerify(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     const cert = pemToCert(t);
     if (!cert) { lignes.push(`unable to load certificate`); echec = true; continue; }
 
-    const verdict = verificateur.verify(cert);
+    const verdict = verificateur.verify(cert, undefined, intermediaires);
     if (verdict.ok) { lignes.push(`${cible}: OK`); continue; }
 
     const { n, texte } = codeOpenssl(verdict.reason, cert, listes);

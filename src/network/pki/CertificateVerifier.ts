@@ -1,11 +1,18 @@
 import { IPAddress, IPv6Address } from '@/network/core/types';
 import { PkiKeyPair } from './PkiKeyPair';
+import { modulusHex } from '@/crypto/rsa';
 import type { X509Certificate } from './X509Certificate';
 import { tbsPayload } from './X509Certificate';
 import type { CertificateRevocationList } from './CertificateRevocationList';
 import type { IOcspResponder } from './OcspResponder';
 
-export type VerificationReason = 'unknown' | 'expired' | 'revoked' | 'not-yet-valid' | 'bad-signature' | 'crl-stale' | 'crl-untrusted' | 'hostname-mismatch';
+export type VerificationReason =
+  | 'unknown' | 'expired' | 'revoked' | 'not-yet-valid' | 'bad-signature' | 'crl-stale' | 'crl-untrusted'
+  | 'hostname-mismatch' | 'not-a-ca' | 'path-length' | 'key-usage' | 'purpose' | 'weak-key';
+
+export type CertificatePurpose = 'serverAuth' | 'clientAuth';
+
+const MAX_CHAIN_DEPTH = 10;
 
 export interface VerificationOk { readonly ok: true; readonly reason?: undefined }
 export interface VerificationFailure { readonly ok: false; readonly reason: VerificationReason }
@@ -19,6 +26,7 @@ export interface CertificateVerifierOptions {
   readonly revocationCheck?: RevocationCheckMode;
   readonly clock?: () => number;
   readonly ocspResponder?: IOcspResponder;
+  readonly minRsaBits?: number;
 }
 
 export class CertificateVerifier {
@@ -27,6 +35,7 @@ export class CertificateVerifier {
   private readonly revocationCheck: RevocationCheckMode;
   private readonly clock: () => number;
   private readonly ocspResponder?: IOcspResponder;
+  private readonly minRsaBits: number;
 
   constructor(opts: CertificateVerifierOptions) {
     this.trustAnchors = opts.trustAnchors;
@@ -34,15 +43,19 @@ export class CertificateVerifier {
     this.revocationCheck = opts.revocationCheck ?? 'none';
     this.clock = opts.clock ?? Date.now;
     this.ocspResponder = opts.ocspResponder;
+    this.minRsaBits = opts.minRsaBits ?? 0;
   }
 
-  verify(cert: X509Certificate, expectedHostname?: string): VerificationResult {
+  verify(
+    cert: X509Certificate, expectedHostname?: string,
+    intermediates: readonly X509Certificate[] = [], purpose?: CertificatePurpose,
+  ): VerificationResult {
     const now = this.clock();
-    const issuer = this.trustAnchors.find(a => a.subject === cert.issuer);
-    if (!issuer) return { ok: false, reason: 'unknown' };
-    if (!PkiKeyPair.verify(issuer.publicKey, tbsPayload(dropSignature(cert)), cert.signature)) {
-      return { ok: false, reason: 'bad-signature' };
-    }
+    const path = this.buildPath(cert, intermediates);
+    if (path.ok === false) return path;
+    const issuer = path.anchor;
+    const failure = this.checkPath(cert, path.intermediates, now, purpose);
+    if (failure) return failure;
     if (now < cert.notBefore) return { ok: false, reason: 'not-yet-valid' };
     if (now > cert.notAfter) return { ok: false, reason: 'expired' };
     if (expectedHostname && !certificateMatchesHostname(cert, expectedHostname)) {
@@ -69,6 +82,72 @@ export class CertificateVerifier {
     }
     return { ok: true };
   }
+
+  private buildPath(cert: X509Certificate, intermediates: readonly X509Certificate[]): PathResult {
+    const used: X509Certificate[] = [];
+    let current = cert;
+    for (let depth = 0; depth <= MAX_CHAIN_DEPTH; depth++) {
+      const anchor = this.trustAnchors.find((a) => a.subject === current.issuer);
+      if (anchor) {
+        if (!PkiKeyPair.verify(anchor.publicKey, tbsPayload(dropSignature(current)), current.signature)) {
+          return { ok: false, reason: 'bad-signature' };
+        }
+        return { ok: true, anchor, intermediates: used };
+      }
+      const next = intermediates.find((candidate) => candidate.subject === current.issuer
+        && !used.includes(candidate)
+        && PkiKeyPair.verify(candidate.publicKey, tbsPayload(dropSignature(current)), current.signature));
+      if (!next) {
+        const forged = intermediates.some((candidate) => candidate.subject === current.issuer);
+        return { ok: false, reason: forged ? 'bad-signature' : 'unknown' };
+      }
+      used.push(next);
+      current = next;
+    }
+    return { ok: false, reason: 'path-length' };
+  }
+
+  private checkPath(
+    leaf: X509Certificate, intermediates: readonly X509Certificate[], now: number, purpose?: CertificatePurpose,
+  ): VerificationFailure | null {
+    for (let index = 0; index < intermediates.length; index++) {
+      const ca = intermediates[index];
+      if (now < ca.notBefore) return { ok: false, reason: 'not-yet-valid' };
+      if (now > ca.notAfter) return { ok: false, reason: 'expired' };
+      const constraints = ca.extensions?.basicConstraints;
+      if (!constraints || constraints.cA !== true) return { ok: false, reason: 'not-a-ca' };
+      const usage = ca.extensions?.keyUsage;
+      if (usage && !usage.includes('keyCertSign')) return { ok: false, reason: 'key-usage' };
+      const below = intermediates.slice(0, index).filter((c) => c.subject !== c.issuer).length;
+      if (constraints.pathLenConstraint !== undefined && below > constraints.pathLenConstraint) {
+        return { ok: false, reason: 'path-length' };
+      }
+      if (this.weakKey(ca)) return { ok: false, reason: 'weak-key' };
+    }
+    if (purpose) {
+      const eku = leaf.extensions?.extKeyUsage;
+      if (eku && eku.length > 0 && !eku.includes(purpose) && !eku.includes('anyExtendedKeyUsage')) {
+        return { ok: false, reason: 'purpose' };
+      }
+    }
+    if (this.weakKey(leaf)) return { ok: false, reason: 'weak-key' };
+    return null;
+  }
+
+  private weakKey(cert: X509Certificate): boolean {
+    if (this.minRsaBits === 0 || cert.publicKey.algorithm !== 'rsa') return false;
+    const bits = rsaBits(cert);
+    return bits !== null && bits < this.minRsaBits;
+  }
+}
+
+type PathResult =
+  | { readonly ok: true; readonly anchor: X509Certificate; readonly intermediates: readonly X509Certificate[] }
+  | VerificationFailure;
+
+function rsaBits(cert: X509Certificate): number | null {
+  const modulus = modulusHex(cert.publicKey.material);
+  return modulus === null ? null : modulus.replace(/^0+/, '').length * 4;
 }
 
 interface PresentedIdentity {

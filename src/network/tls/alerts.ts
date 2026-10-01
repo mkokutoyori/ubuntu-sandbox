@@ -96,6 +96,11 @@ export function alertForVerificationReason(reason: VerificationReason): AlertDes
     case 'crl-stale': return 'certificate_unknown';
     case 'crl-untrusted': return 'certificate_unknown';
     case 'hostname-mismatch': return 'bad_certificate';
+    case 'not-a-ca': return 'bad_certificate';
+    case 'path-length': return 'bad_certificate';
+    case 'key-usage': return 'bad_certificate';
+    case 'weak-key': return 'bad_certificate';
+    case 'purpose': return 'unsupported_certificate';
   }
 }
 

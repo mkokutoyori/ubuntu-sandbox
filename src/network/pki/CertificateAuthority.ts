@@ -14,6 +14,13 @@ export interface IssueOptions {
   readonly extKeyUsage?: readonly string[];
 }
 
+export interface SubordinateOptions {
+  readonly subject: string;
+  readonly notBefore: number;
+  readonly notAfter: number;
+  readonly pathLenConstraint?: number;
+}
+
 export interface IssuedCertificate {
   readonly cert: X509Certificate;
   readonly privateKey: PkiPrivateKey;
@@ -57,7 +64,7 @@ export class CertificateAuthority {
       publicKey: keys.publicKey,
       signatureAlgorithm: opts.algorithm === 'ecdsa' ? 'ecdsa-with-SHA256' : 'sha256WithRSAEncryption',
       extensions: Object.freeze({
-        basicConstraints: Object.freeze({ cA: true, pathLenConstraint: 0 }),
+        basicConstraints: Object.freeze({ cA: true }),
         keyUsage: Object.freeze(['keyCertSign', 'cRLSign'] as const),
       }),
     };
@@ -100,6 +107,32 @@ export class CertificateAuthority {
     };
     const signature = PkiKeyPair.sign(this.rootKey, tbsPayload(fields));
     return { cert: { ...fields, signature }, privateKey: keys.privateKey };
+  }
+
+  issueSubordinateCA(opts: SubordinateOptions): CertificateAuthority {
+    if (opts.notAfter <= opts.notBefore) {
+      throw new Error(`notAfter (${opts.notAfter}) must be > notBefore (${opts.notBefore})`);
+    }
+    const keys = PkiKeyPair.generate(this.rootCertificate.publicKey.algorithm);
+    const fields: X509CertificateFields = {
+      version: 3,
+      serialNumber: nextSerial(),
+      subject: opts.subject,
+      issuer: this.rootCertificate.subject,
+      notBefore: opts.notBefore,
+      notAfter: opts.notAfter,
+      publicKey: keys.publicKey,
+      signatureAlgorithm: this.rootCertificate.signatureAlgorithm,
+      extensions: Object.freeze({
+        basicConstraints: Object.freeze({
+          cA: true,
+          ...(opts.pathLenConstraint !== undefined ? { pathLenConstraint: opts.pathLenConstraint } : {}),
+        }),
+        keyUsage: Object.freeze(['keyCertSign', 'cRLSign'] as const),
+      }),
+    };
+    const signature = PkiKeyPair.sign(this.rootKey, tbsPayload(fields));
+    return new CertificateAuthority({ ...fields, signature }, keys.privateKey);
   }
 
   revoke(serialNumber: string, revocationDate: number, reasonCode?: RevokedEntry['reasonCode']): void {

@@ -129,6 +129,7 @@ export interface LegacyServerSetup {
   readonly alpn: string | null;
   readonly serverSupportsTls13: boolean;
   readonly serverCert: X509Certificate;
+  readonly serverChain: readonly X509Certificate[];
   readonly serverPrivateKey: PkiPrivateKey;
   readonly serverGroups: readonly string[];
   readonly dhGroupId: number;
@@ -169,7 +170,7 @@ export class LegacyServerHandshake {
       extensions: { alpn: this.setup.alpn ?? undefined },
     };
     bundle.push(serverHello);
-    const certificate: LegacyCertificate = { kind: 'legacy_certificate', certificateList: [this.setup.serverCert] };
+    const certificate: LegacyCertificate = { kind: 'legacy_certificate', certificateList: [this.setup.serverCert, ...this.setup.serverChain] };
     bundle.push(certificate);
 
     if (suite.keyExchange !== 'RSA') {
@@ -284,7 +285,7 @@ export class LegacyServerHandshake {
       if (certificate.certificateList.length === 0) return this.reject('handshake_failure');
       if (!this.setup.verifier || !certificateVerify) return this.reject('handshake_failure');
       verifiedLeaf = certificate.certificateList[0];
-      const verification = this.setup.verifier.verify(verifiedLeaf);
+      const verification = this.setup.verifier.verify(verifiedLeaf, undefined, certificate.certificateList.slice(1), 'clientAuth');
       if (verification.ok === false) return this.rejectCertificate(verification.reason);
       this.peerCertificate = verifiedLeaf;
     } else if (certificate) {
@@ -428,7 +429,7 @@ export class LegacyClientHandshake {
     const leaf = certificate.certificateList[0];
     if (!leaf) return this.fail('bad_certificate');
     this.peerCertificate = leaf;
-    const verification = setup.verifier.verify(leaf, setup.serverName);
+    const verification = setup.verifier.verify(leaf, setup.serverName, certificate.certificateList.slice(1), 'serverAuth');
     this.peerVerified = verification.ok !== false;
     if (verification.ok === false) {
       this.peerVerificationReason = verification.reason;
