@@ -189,7 +189,10 @@ export function loadServerTls(server: NginxServerBlock, files: NginxTlsFiles): S
       return fail(`d2i_OCSP_RESPONSE_bio("${settings.staplingFile}") failed `
         + '(SSL: error:0688010A:asn1 encoding routines::nested asn1 error)');
     }
-    staple = parsed;
+    staple = parsed.singles.find((single) => single.tbs.serialNumber === leafChain[0]?.serialNumber);
+    if (!staple) {
+      return fail(`"ssl_stapling_file" "${settings.staplingFile}" holds no response for the server certificate`);
+    }
   }
 
   const state = createSslConfState();

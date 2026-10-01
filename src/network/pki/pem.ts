@@ -26,7 +26,7 @@ import { SHA256 } from '@/crypto/hash';
 import type { X509Certificate } from './X509Certificate';
 import type { PkiPrivateKey, PkiPublicKey } from './PkiKeyPair';
 import { CertificateRevocationList, type CrlFields } from './CertificateRevocationList';
-import type { SignedOcspResponse } from './OcspResponder';
+import type { OcspRequestMessage, OcspResponseMessage } from './OcspWire';
 
 export type PemLabel =
   | 'CERTIFICATE'
@@ -37,6 +37,7 @@ export type PemLabel =
   | 'PUBLIC KEY'
   | 'CERTIFICATE REQUEST'
   | 'X509 CRL'
+  | 'OCSP REQUEST'
   | 'OCSP RESPONSE'
   | 'DH PARAMETERS';
 
@@ -266,14 +267,23 @@ export function pemToCrl(pem: string): CertificateRevocationList | null {
   }, o.signature ?? '');
 }
 
-export function ocspResponseToPem(response: SignedOcspResponse): string {
+export function ocspResponseToPem(response: OcspResponseMessage): string {
   return armour('OCSP RESPONSE', response);
 }
 
-export function pemToOcspResponse(pem: string): SignedOcspResponse | null {
-  const o = unarmour(pem, 'OCSP RESPONSE') as SignedOcspResponse | null;
-  if (!o || typeof o.signature !== 'string' || !o.tbs || typeof o.tbs.serialNumber !== 'string') return null;
+export function pemToOcspResponse(pem: string): OcspResponseMessage | null {
+  const o = unarmour(pem, 'OCSP RESPONSE') as OcspResponseMessage | null;
+  if (!o || typeof o.status !== 'string' || !Array.isArray(o.singles)) return null;
   return o;
+}
+
+export function ocspRequestToPem(request: OcspRequestMessage): string {
+  return armour('OCSP REQUEST', request);
+}
+
+export function pemToOcspRequest(pem: string): OcspRequestMessage | null {
+  const o = unarmour(pem, 'OCSP REQUEST') as OcspRequestMessage | null;
+  return o && Array.isArray(o.ids) ? o : null;
 }
 
 export interface DhParameters {

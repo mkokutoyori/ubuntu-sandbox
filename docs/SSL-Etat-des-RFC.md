@@ -41,7 +41,7 @@ Les anciennes limites 1 à 5, 7 à 11 sont fermées (voir les sondes). Sources l
 - **Messages de poignée de main en JSON, certificats non DER** : aucun client ou serveur réel ne peut se connecter à ce moteur. Les enregistrements ont le cadrage de la norme.
 - **IIS/Schannel** : les clés de registre `Protocols\TLS 1.x` et `Ciphers` ne sont pas évaluées. Schannel est fermé et sa documentation Microsoft n'est pas atteignable ici ; faute de source, rien n'est deviné. Fournir les pages de documentation Microsoft (Schannel, TLS registry settings) permettrait de les implémenter.
 - **Renégociation** (SSLVerifyClient dans `<Directory>`, `no_renegotiation`) : refusée en le disant, non exécutée.
-- **OCSP sur HTTP** (`ssl_ocsp`, `SSLOCSPEnable`, `openssl ocsp`) : l'agrafage (fichier signé) est réel ; l'interrogation d'un répondeur OCSP sur le fil ne l'est pas.
+- **OCSP** : `openssl ocsp` (requête, répondeur local ou `-port` sur le fil, client `-url`, vérification, nonce) et l'agrafage par fichier sont réels. Restent non évalués côté serveur web : `ssl_ocsp`/`ssl_stapling` sans fichier et `SSLOCSPEnable` (le serveur n'interroge pas lui-même un répondeur). Les structures sont des armures JSON, pas du DER ASN.1.
 - **HelloRetryRequest** : le `message_hash` de transcription (RFC 8446 §4.4.1) n'est pas appliqué.
 - QUIC et EAP-TLS restent figés sur 1.3 (RFC 9001 §4.2, RFC 9190).
 

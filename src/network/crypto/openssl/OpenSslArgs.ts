@@ -65,6 +65,7 @@ const VALUED: Readonly<Record<string, readonly string[]>> = {
   s_server: ['-accept', '-cert', '-key', '-port'],
   crl: ['-CAfile'],
   dhparam: ['-inform', '-outform'],
+  ocsp: ['-issuer', '-cert', '-serial', '-url', '-port', '-index', '-CA', '-rsigner', '-rkey', '-reqin', '-reqout', '-respin', '-respout', '-VAfile', '-nmin', '-ndays', '-header', '-timeout', '-CAfile'],
   errstr: [],
   list: [],
   prime: ['-bits', '-checks', '-generate'],

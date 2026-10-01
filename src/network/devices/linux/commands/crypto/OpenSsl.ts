@@ -5,6 +5,19 @@ import { runOpenSsl } from '@/network/crypto/openssl/OpenSslEngine';
 import { OPENSSL_VERSION } from '@/network/crypto/openssl/opensslVersion';
 import type { OpenSslHost } from '@/network/crypto/openssl/OpenSslHost';
 import { probeTlsPeer } from '@/network/tls/tlsPeerProbe';
+import { Http1ClientSession } from '@/network/http/http1/Http1ClientSession';
+import { Http1ServerSession } from '@/network/http/http1/Http1ServerSession';
+import { createRequest, createResponse } from '@/network/http/semantics/types';
+
+function textBytes(text: string): Uint8Array {
+  const out = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0xff;
+  return out;
+}
+
+function bytesText(bytes: Uint8Array | null): string {
+  return bytes === null ? '' : Array.from(bytes, (b) => String.fromCharCode(b)).join('');
+}
 
 /**
  * docs/PRD-OpenSSL.md — la porte Linux du moteur `openssl`.
@@ -45,6 +58,30 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
         ok: true, certificate: sonde.certificate,
         cipherSuite: sonde.cipherSuite, protocolVersion: sonde.protocolVersion ?? null, verified: sonde.verified,
       };
+    },
+    httpPost: (ip, port, path, body, headers) => {
+      const request = createRequest('POST', path);
+      request.headers.set('Host', `${ip}:${port}`);
+      for (const [name, value] of Object.entries(headers)) request.headers.set(name, value);
+      request.headers.set('Content-Length', String(body.length));
+      request.body = textBytes(body);
+      const session = new Http1ClientSession(ctx.net.getTcpStack(), ip, port);
+      const result = session.send(request);
+      session.close();
+      if (result.ok === false || !result.response) return { ok: false, reason: result.ok === false ? result.error ?? 'no response' : 'no response' };
+      return { ok: true, status: result.response.statusCode ?? 0, body: bytesText(result.response.body) };
+    },
+    serveHttp: (port, handler) => {
+      const stack = ctx.net.getTcpStack();
+      if (stack.listListeners().some((l) => l.localPort === port)) return false;
+      new Http1ServerSession(stack, port, (req) => {
+        const outcome = handler(bytesText(req.body));
+        const response = createResponse(outcome.status, outcome.status === 200 ? 'OK' : 'Bad Request');
+        response.headers.set('Content-Type', 'application/ocsp-response');
+        response.body = textBytes(outcome.body);
+        return response;
+      }).start({ processName: 'openssl' });
+      return true;
     },
     resolveHost: (nom) => {
       const hosts = vfs.readFile('/etc/hosts') ?? '';

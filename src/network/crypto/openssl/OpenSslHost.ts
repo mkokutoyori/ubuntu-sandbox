@@ -60,6 +60,19 @@ export interface OpenSslHost {
     ip: string, port: number, servername?: string, options?: TlsPeerProbeOptions,
   ): TlsPeerProbe;
 
+  /**
+   * Un POST HTTP/1.1 porté par de vraies trames (`openssl ocsp -url`).
+   */
+  httpPost?(
+    ip: string, port: number, path: string, body: string, headers: Readonly<Record<string, string>>,
+  ): { readonly ok: true; readonly status: number; readonly body: string } | { readonly ok: false; readonly reason: string };
+
+  /**
+   * Ouvre une écoute HTTP qui reste ouverte après la commande (`openssl ocsp -port`).
+   * `false` quand le port est pris.
+   */
+  serveHttp?(port: number, handler: (body: string) => { readonly status: number; readonly body: string }): boolean;
+
   /** Résolution par `/etc/hosts` — synchrone, pour la même raison. */
   resolveHost(nom: string): string | null;
 }
