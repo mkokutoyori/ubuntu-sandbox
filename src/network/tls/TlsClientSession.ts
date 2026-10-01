@@ -19,7 +19,7 @@ import { generateKeyExchange, sharedSecret, isImplementedGroup, type KeyExchange
 import { PkiKeyPair, type PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
-import type { CipherSuite } from './types';
+import { MAX_TLS_RECORD_LENGTH, type CipherSuite } from './types';
 import type { TlsDomainEvent } from './events';
 import {
   type ClientHello, type ServerHello, type EncryptedExtensionsMessage,
@@ -74,6 +74,9 @@ export interface TlsClientConfig {
   /** RFC 7525 §4.3.1 — smallest finite-field DH modulus accepted (default 2048 bits). */
   readonly minDhBits?: number;
 }
+
+const MAX_TICKET_LIFETIME_SECONDS = 604800;
+const MAX_PROTECTED_FRAGMENT = MAX_TLS_RECORD_LENGTH + 2048;
 
 export const DEFAULT_CLIENT_VERSIONS: readonly TlsProtocolVersion[] = ['1.3', '1.2'];
 
@@ -208,7 +211,9 @@ export class TlsClientSession {
     const received = incoming.length > 0 ? alertFromRecord(incoming[0]) : null;
     if (received !== null) return this.receiveAlert(received);
     const before = this.lastAlert;
-    const flight = this.process(incoming);
+    const flight = incoming.some((record) => record.fragment.length > MAX_PROTECTED_FRAGMENT)
+      ? this.fail('record_overflow')
+      : this.process(incoming);
     if (flight === null && this.result === 'failure' && this.lastAlert !== before && this.lastAlert !== null) {
       return [alertToRecord(this.lastAlert)];
     }
@@ -448,6 +453,7 @@ export class TlsClientSession {
     if (contentType !== 'handshake') return;
     const message = decodeHandshakeMessage(plaintext) as NewSessionTicket;
     if (message.kind !== 'new_session_ticket') return;
+    if (message.ticketLifetime > MAX_TICKET_LIFETIME_SECONDS) return;
     this.receivedTicket = {
       ticket: message.ticket,
       resumptionMasterSecret: this.resumptionMasterSecret,

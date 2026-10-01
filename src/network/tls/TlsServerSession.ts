@@ -20,7 +20,7 @@ import { generateKeyExchange, sharedSecret, isImplementedGroup } from './keyExch
 import { PkiKeyPair, type PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
-import { HELLO_RETRY_REQUEST_RANDOM, type CipherSuite } from './types';
+import { HELLO_RETRY_REQUEST_RANDOM, MAX_TLS_RECORD_LENGTH, type CipherSuite } from './types';
 import type { TlsDomainEvent } from './events';
 import {
   type ClientHello, type ServerHello, type HelloRetryRequest, type EncryptedExtensionsMessage,
@@ -68,6 +68,8 @@ export interface TlsServerConfig {
   /** RFC 3526 group id offered for finite-field DHE (default 14, 2048 bits). */
   readonly dhGroupId?: number;
 }
+
+const MAX_PROTECTED_FRAGMENT = MAX_TLS_RECORD_LENGTH + 2048;
 
 export const DEFAULT_SERVER_PROTOCOLS: readonly TlsProtocolVersion[] = ['1.3', '1.2'];
 
@@ -145,7 +147,9 @@ export class TlsServerSession {
     const received = incoming.length > 0 ? alertFromRecord(incoming[0]) : null;
     if (received !== null) return this.receiveAlert(received);
     const before = this.lastAlert;
-    const flight = this.process(incoming);
+    const flight = incoming.some((record) => record.fragment.length > MAX_PROTECTED_FRAGMENT)
+      ? this.reject('record_overflow')
+      : this.process(incoming);
     if (flight === null && this.result === 'reject' && this.lastAlert !== before && this.lastAlert !== null) {
       return [alertToRecord(this.lastAlert)];
     }
@@ -224,6 +228,12 @@ export class TlsServerSession {
     return fragmentAsRecords('handshake', hrrBytes, false);
   }
 
+  private alpnRefused(clientHello: ClientHello): boolean {
+    const offered = clientHello.extensions.alpn;
+    return this.alpnProtocols.length > 0 && offered !== undefined && offered.length > 0
+      && this.negotiatedAlpnProtocol === null;
+  }
+
   private legacySuiteDefinitions(): LegacySuiteDefinition[] {
     const names = this.config.legacyCipherSuites ?? DEFAULT_LEGACY_SERVER_SUITES;
     return names
@@ -249,6 +259,7 @@ export class TlsServerSession {
     this.negotiatedVersion = version;
     this.negotiatedCipherSuite = suite.name;
     this.negotiatedAlpnProtocol = selectAlpnProtocol(clientHello.extensions.alpn, this.alpnProtocols);
+    if (this.alpnRefused(clientHello)) return this.reject('no_application_protocol');
     const clientVersionWire = clientHello.legacyVersion === '1.0' ? 0x0301 : clientHello.legacyVersion === '1.1' ? 0x0302 : 0x0303;
     this.legacy = new LegacyServerHandshake({
       version, suite, clientHelloBytes, clientRandom: clientHello.random, clientVersionWire,
@@ -314,6 +325,7 @@ export class TlsServerSession {
     if (!negotiatedSuite) return this.reject('handshake_failure');
     this.negotiatedCipherSuite = negotiatedSuite;
     this.negotiatedAlpnProtocol = selectAlpnProtocol(clientHello.extensions.alpn, this.alpnProtocols);
+    if (this.alpnRefused(clientHello)) return this.reject('no_application_protocol');
 
     const serverRandom = randomNonce('srv');
     // La part du serveur porte désormais son groupe, comme celle du
