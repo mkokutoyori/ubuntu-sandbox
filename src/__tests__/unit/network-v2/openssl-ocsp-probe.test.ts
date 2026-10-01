@@ -6,9 +6,11 @@
  * MESURÉ avant correctif : `openssl ocsp` répondait « is not implemented in
  * this simulator » ; aucun répondeur OCSP ne pouvait être interrogé par
  * deux machines, et `ssl_stapling_file` ne lisait qu'une réponse à un seul
- * certificat. Avant correctif, 11 des 12 cas tombent ; le témoin (un
- * certificat émis par `openssl ca` est bien dans l'index) passe dans les
- * deux états.
+ * certificat. Avant correctif, 10 des 12 cas tombent ; deux passent dans
+ * les deux états : le témoin (un certificat émis par `openssl ca` est dans
+ * l'index) et le cas du nonce, dont les assertions sont négatives et que la
+ * commande absente satisfait trivialement ; il porte maintenant aussi une
+ * assertion positive.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -132,6 +134,7 @@ describe('répondeur HTTP sur le fil (-port) et client (-url)', () => {
     await client.executeCommand(`sh -c 'printf "${crt.replace(/\n/g, '\\n')}" > ${CA}/ca.crt'`);
     await client.executeCommand(`sh -c 'printf "${good.replace(/\n/g, '\\n')}" > /tmp/good.crt'`);
     const out = await client.executeCommand(`openssl ocsp ${ISSUER} -cert /tmp/good.crt -url http://10.0.0.1:2560 -CAfile ${CA}/ca.crt 2>&1`);
+    expect(out).toContain('Response verify OK');
     expect(out).not.toContain('Nonce Verify error');
     expect(out).not.toContain('WARNING: no nonce in response');
   });
