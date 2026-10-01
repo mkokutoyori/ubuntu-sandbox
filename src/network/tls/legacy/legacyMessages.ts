@@ -9,7 +9,13 @@ export interface LegacyServerHello {
   readonly sessionId: string;
   readonly cipherSuite: string;
   readonly compressionMethod: 'null';
-  readonly extensions: { readonly alpn?: string; readonly ecPointFormats?: readonly string[] };
+  readonly extensions: {
+    readonly alpn?: string;
+    readonly ecPointFormats?: readonly string[];
+    readonly extendedMasterSecret?: boolean;
+    readonly renegotiationInfo?: string;
+    readonly sessionTicket?: boolean;
+  };
 }
 
 export interface LegacyCertificate {
@@ -56,7 +62,14 @@ export interface LegacyFinished {
   readonly verifyData: string;
 }
 
+export interface LegacyNewSessionTicket {
+  readonly kind: 'legacy_new_session_ticket';
+  readonly lifetimeHint: number;
+  readonly ticket: string;
+}
+
 export type LegacyHandshakeMessage =
+  | LegacyNewSessionTicket
   | LegacyServerHello | LegacyCertificate | ServerKeyExchange | LegacyCertificateRequest
   | ServerHelloDone | ClientKeyExchange | LegacyCertificateVerify | LegacyFinished;
 

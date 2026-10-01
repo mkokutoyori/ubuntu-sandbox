@@ -40,10 +40,12 @@ import {
   type LegacySuiteDefinition, type ResolvedLegacyPolicy, type LegacyVersion, type TlsProtocolVersion,
 } from './legacy/legacyCipherSuites';
 import { LegacyServerHandshake, suiteMatchesCertificate } from './legacy/LegacyHandshake';
+import { legacySuiteByName } from './legacy/legacyCipherSuites';
 import { offeredVersions } from './legacy/versionNegotiation';
 import type { TrafficProtection } from './trafficProtection';
 import { suiteInfo } from './suite13';
 import type { Tls13Hash } from './hkdf';
+import { LegacySessionStore, LegacyTicketCodec, DEFAULT_SESSION_TIMEOUT_SECONDS } from './legacy/legacySessions';
 
 export interface TlsServerConfig {
   readonly serverCert: X509Certificate;
@@ -74,6 +76,14 @@ export interface TlsServerConfig {
   readonly securityLevel?: number;
   /** TLS 1.3 suites in OpenSSL's colon syntax (`SSL_CTX_set_ciphersuites`); default `TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256`. */
   readonly tls13Ciphersuites?: string;
+  /** RFC 7627 — negotiate `extended_master_secret` for TLS ≤ 1.2 (default true). */
+  readonly extendedMasterSecret?: boolean;
+  /** RFC 5246 §7.3 — server session cache enabling session-ID resumption for TLS ≤ 1.2. */
+  readonly legacySessionStore?: LegacySessionStore;
+  /** RFC 5077 — 32-byte key sealing stateless session tickets for TLS ≤ 1.2. */
+  readonly sessionTicketKey?: Uint8Array;
+  /** Lifetime of a TLS ≤ 1.2 session in seconds (default: the store's, else 300). */
+  readonly sessionTimeoutSeconds?: number;
   /** Choose among mutual TLS ≤ 1.2 suites by the server's order (default) or the client's. */
   readonly preferServerCiphers?: boolean;
   /** RFC 3526 group id offered for finite-field DHE (default 14, 2048 bits). */
@@ -265,8 +275,8 @@ export class TlsServerSession {
   ): readonly TlsRecord[] | null {
     if (!/^[0-9a-f]{64}$/i.test(clientHello.random)) return this.reject('decode_error');
     const offeredSuites = clientHello.legacyCipherSuites ?? [];
-    const usable = (definition: LegacySuiteDefinition): boolean =>
-      offeredSuites.includes(definition.code) && suiteUsableAt(definition, version)
+    const usable = (definition: LegacySuiteDefinition | undefined): boolean =>
+      definition !== undefined && this.policy.suites.includes(definition) && offeredSuites.includes(definition.code) && suiteUsableAt(definition, version)
       && suiteMatchesCertificate(this.config.serverCert, definition);
     const serverOrder = this.policy.suites;
     const suite = this.config.preferServerCiphers === false
@@ -280,7 +290,16 @@ export class TlsServerSession {
     this.negotiatedAlpnProtocol = selectAlpnProtocol(clientHello.extensions.alpn, this.alpnProtocols);
     if (this.alpnRefused(clientHello)) return this.reject('no_application_protocol');
     const clientVersionWire = clientHello.legacyVersion === '1.0' ? 0x0301 : clientHello.legacyVersion === '1.1' ? 0x0302 : 0x0303;
+    const extensions = clientHello.legacyExtensions ?? { sessionId: '', extendedMasterSecret: false, renegotiationInfo: null, sessionTicket: null };
     this.legacy = new LegacyServerHandshake({
+      clientExtensions: extensions,
+      extendedMasterSecret: this.config.extendedMasterSecret !== false,
+      sessionStore: this.config.legacySessionStore,
+      ticketCodec: this.config.sessionTicketKey ? new LegacyTicketCodec(this.config.sessionTicketKey) : undefined,
+      sessionLifetimeSeconds: this.config.sessionTimeoutSeconds ?? this.config.legacySessionStore?.timeoutSeconds ?? DEFAULT_SESSION_TIMEOUT_SECONDS,
+      acceptResumedSuite: (name) => usable(legacySuiteByName(name)),
+      resolveSuite: legacySuiteByName,
+      now: Date.now,
       version, suite, clientHelloBytes, clientRandom: clientHello.random, clientVersionWire,
       offeredGroups: clientHello.extensions.supportedGroups, alpn: this.negotiatedAlpnProtocol,
       serverSupportsTls13: this.protocols.includes('1.3'),
@@ -289,6 +308,7 @@ export class TlsServerSession {
       requestClientCert: this.config.requestClientCert === true, verifier: this.config.verifier,
     });
     const flight = this.legacy.start();
+    this.negotiatedCipherSuite = this.legacy.negotiatedSuite.name;
     this.state = 'legacy';
     this.syncLegacy();
     return flight;
@@ -315,7 +335,7 @@ export class TlsServerSession {
       topic: 'tls.handshake.completed',
       payload: {
         sessionId: this.sessionId, role: 'server', cipherSuite: this.negotiatedCipherSuite!,
-        protocolVersion: this.negotiatedVersion!, alpnProtocol: this.negotiatedAlpnProtocol, resumed: false,
+        protocolVersion: this.negotiatedVersion!, alpnProtocol: this.negotiatedAlpnProtocol, resumed: legacy.wasResumed,
       },
     });
   }

@@ -64,6 +64,12 @@ export function masterSecret(
   return tlsPrf(version, prf, preMaster, 'master secret', concat(clientRandom, serverRandom), MASTER_SECRET_LENGTH);
 }
 
+export function extendedMasterSecret(
+  version: LegacyVersion, prf: PrfHash, preMaster: Uint8Array, sessionHash: Uint8Array,
+): Uint8Array {
+  return tlsPrf(version, prf, preMaster, 'extended master secret', sessionHash, MASTER_SECRET_LENGTH);
+}
+
 export function handshakeHash(version: LegacyVersion, prf: PrfHash, messages: readonly Uint8Array[]): Uint8Array {
   const all = concat(...messages);
   if (version === '1.2') return hashOf(prf).digest(all);

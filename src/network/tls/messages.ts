@@ -22,12 +22,20 @@ export interface ClientHelloExtensions {
   readonly earlyData?: boolean;
 }
 
+export interface LegacyClientExtensions {
+  readonly sessionId: string;
+  readonly extendedMasterSecret: boolean;
+  readonly renegotiationInfo: string | null;
+  readonly sessionTicket: string | null;
+}
+
 export interface ClientHello {
   readonly kind: 'client_hello';
   readonly legacyVersion: string;
   readonly random: string;
   readonly cipherSuites: readonly CipherSuite[];
   readonly legacyCipherSuites?: readonly number[];
+  readonly legacyExtensions?: LegacyClientExtensions;
   readonly extensions: ClientHelloExtensions;
 }
 

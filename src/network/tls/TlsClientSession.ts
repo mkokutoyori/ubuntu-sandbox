@@ -22,7 +22,7 @@ import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { MAX_TLS_RECORD_LENGTH, type CipherSuite } from './types';
 import type { TlsDomainEvent } from './events';
 import {
-  type ClientHello, type ServerHello, type EncryptedExtensionsMessage,
+  type ClientHello, type ServerHello, type LegacyClientExtensions, type EncryptedExtensionsMessage,
   type CertificateRequest, type CertificateMessage, type CertificateVerify, type Finished,
   type NewSessionTicket, type KeyUpdate, type TlsHandshakeMessage,
   encodeHandshakeMessage, decodeHandshakeMessage, encodeMessages, decodeMessages, randomNonce,
@@ -42,6 +42,8 @@ import { decodeLegacyMessages } from './legacy/legacyMessages';
 import type { TrafficProtection } from './trafficProtection';
 import { suiteInfo } from './suite13';
 import type { Tls13Hash } from './hkdf';
+import type { ResumableLegacySession } from './legacy/legacySessions';
+import { randomHex } from './legacy/LegacyHandshake';
 
 export interface TlsClientConfig {
   readonly verifier: CertificateVerifier;
@@ -80,6 +82,12 @@ export interface TlsClientConfig {
   readonly securityLevel?: number;
   /** TLS 1.3 suites in OpenSSL's colon syntax (`SSL_CTX_set_ciphersuites`). */
   readonly tls13Ciphersuites?: string;
+  /** RFC 7627 — offer `extended_master_secret` for TLS ≤ 1.2 (default true). */
+  readonly extendedMasterSecret?: boolean;
+  /** A session exported by `exportLegacySession()` to resume (RFC 5246 §7.3, RFC 5077). */
+  readonly legacySession?: ResumableLegacySession;
+  /** `SSL_OP_LEGACY_SERVER_CONNECT` : talk to a server lacking RFC 5746 secure renegotiation. */
+  readonly allowUnsafeLegacyRenegotiation?: boolean;
 }
 
 const MAX_TICKET_LIFETIME_SECONDS = 604800;
@@ -158,6 +166,30 @@ export class TlsClientSession {
     return this.legacy?.traffic?.inbound ?? { secret: this.serverApplicationTrafficSecret!, suite: this.negotiatedCipherSuite as CipherSuite };
   }
 
+  private legacyExt: LegacyClientExtensions | null = null;
+
+  private legacyExtensions(): LegacyClientExtensions {
+    if (this.legacyExt === null) {
+      const session = this.config.legacySession ?? null;
+      const resumable = session !== null && this.legacyVersions().includes(session.state.version);
+      this.legacyExt = {
+        sessionId: resumable ? (session!.state.id !== '' ? session!.state.id : randomHex(32)) : '',
+        extendedMasterSecret: this.config.extendedMasterSecret !== false,
+        renegotiationInfo: '',
+        sessionTicket: resumable ? (session!.ticket ?? '') : '',
+      };
+    }
+    return this.legacyExt;
+  }
+
+  exportLegacySession(): ResumableLegacySession | null {
+    return this.legacy?.exportedSession ?? null;
+  }
+
+  get legacyResumed(): boolean {
+    return this.legacy?.resumed ?? false;
+  }
+
   private tls13Offer(): readonly CipherSuite[] {
     const base = this.suiteOverride ?? this.config.cipherSuites
       ?? (this.config.tls13Ciphersuites !== undefined ? parseTls13Ciphersuites(this.config.tls13Ciphersuites) : DEFAULT_CIPHER_SUITES);
@@ -207,6 +239,7 @@ export class TlsClientSession {
       kind: 'client_hello', legacyVersion: legacyCeiling, random: this.clientRandom,
       cipherSuites: this.offersTls13() ? this.tls13Offer() : [],
       legacyCipherSuites: this.legacySuiteDefinitions().map((definition) => definition.code),
+      legacyExtensions: this.legacyExtensions(),
       extensions: {
         supportedVersions: this.offersTls13() ? this.versions : [], keyShare: this.clientKeyShare,
         supportedGroups: this.supportedGroups, signatureAlgorithms: ['ecdsa_secp256r1_sha256'],
@@ -304,6 +337,10 @@ export class TlsClientSession {
       allowUntrustedPeer: this.config.allowUntrustedPeer === true, serverName: this.config.serverName,
       clientCert: this.config.clientCert, clientPrivateKey: this.config.clientPrivateKey,
       securityLevel: this.policy.securityLevel, resolveSuite: legacySuiteByName,
+      clientExtensions: this.legacyExtensions(),
+      session: this.config.legacySession ?? null,
+      allowUnsafeRenegotiation: this.config.allowUnsafeLegacyRenegotiation === true,
+      now: Date.now,
     });
     return this.handleLegacy(incoming);
   }
@@ -330,7 +367,7 @@ export class TlsClientSession {
         topic: 'tls.handshake.completed',
         payload: {
           sessionId: this.sessionId, role: 'client', cipherSuite: this.negotiatedCipherSuite!,
-          protocolVersion: this.negotiatedVersion!, alpnProtocol: this.negotiatedAlpnProtocol, resumed: false,
+          protocolVersion: this.negotiatedVersion!, alpnProtocol: this.negotiatedAlpnProtocol, resumed: legacy.resumed,
         },
       });
     }
