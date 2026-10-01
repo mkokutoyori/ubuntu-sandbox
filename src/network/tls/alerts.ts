@@ -23,15 +23,30 @@ export type AlertDescription =
   | 'protocol_version'
   | 'missing_extension'
   | 'unsupported_extension'
-  | 'no_application_protocol';
+  | 'no_application_protocol'
+  | 'record_overflow'
+  | 'decompression_failure'
+  | 'unsupported_certificate'
+  | 'access_denied'
+  | 'insufficient_security'
+  | 'internal_error'
+  | 'user_canceled'
+  | 'no_renegotiation'
+  | 'unrecognized_name'
+  | 'bad_certificate_status_response'
+  | 'unknown_psk_identity'
+  | 'certificate_required';
 
 /** RFC 8446 §6 registry — numeric codes for the alerts above. */
 export const ALERT_DESCRIPTION_CODE: Record<AlertDescription, number> = {
   close_notify: 0,
   unexpected_message: 10,
   bad_record_mac: 20,
+  record_overflow: 22,
+  decompression_failure: 30,
   handshake_failure: 40,
   bad_certificate: 42,
+  unsupported_certificate: 43,
   certificate_revoked: 44,
   certificate_expired: 45,
   certificate_unknown: 46,
@@ -40,11 +55,20 @@ export const ALERT_DESCRIPTION_CODE: Record<AlertDescription, number> = {
   // du registre : son code numérique était `undefined`.
   illegal_parameter: 47,
   unknown_ca: 48,
+  access_denied: 49,
   decode_error: 50,
   decrypt_error: 51,
   protocol_version: 70,
+  insufficient_security: 71,
+  internal_error: 80,
+  user_canceled: 90,
+  no_renegotiation: 100,
   missing_extension: 109,
   unsupported_extension: 110,
+  unrecognized_name: 112,
+  bad_certificate_status_response: 113,
+  unknown_psk_identity: 115,
+  certificate_required: 116,
   no_application_protocol: 120,
 };
 

@@ -291,6 +291,43 @@ export function rsaVerify(
 }
 
 /**
+ * `RSAES-PKCS1-V1_5-ENCRYPT` (RFC 8017 §7.2.1) : `0x00 || 0x02 || PS || 0x00 || M`,
+ * PS étant au moins huit octets non nuls tirés au hasard. C'est le chiffrement du
+ * secret pré-maître de `TLS_RSA_*` (RFC 5246 §7.4.7.1).
+ */
+export function rsaEncryptPkcs1(
+  key: RsaPublicKey, message: Uint8Array, random: RandomBytes = defaultRandom,
+): Uint8Array {
+  const k = byteLength(key.n);
+  if (message.length > k - 11) throw new RangeError('RSA: message too long');
+  const em = new Uint8Array(k);
+  em[1] = 0x02;
+  const padding = k - message.length - 3;
+  const fresh = random(padding);
+  for (let i = 0; i < padding; i++) {
+    let value = fresh[i];
+    while (value === 0) value = random(1)[0];
+    em[2 + i] = value;
+  }
+  em.set(message, k - message.length);
+  return bigToBe(modPow(beToBig(em), key.e, key.n), k);
+}
+
+/** `RSAES-PKCS1-V1_5-DECRYPT` (§7.2.2) ; `null` si le bourrage est invalide. */
+export function rsaDecryptPkcs1(key: RsaPrivateKey, ciphertext: Uint8Array): Uint8Array | null {
+  const k = byteLength(key.n);
+  if (ciphertext.length !== k) return null;
+  const c = beToBig(ciphertext);
+  if (c >= key.n) return null;
+  const em = bigToBe(modPow(c, key.d, key.n), k);
+  if (em[0] !== 0x00 || em[1] !== 0x02) return null;
+  let i = 2;
+  while (i < k && em[i] !== 0x00) i++;
+  if (i === k || i < 10) return null;
+  return em.slice(i + 1);
+}
+
+/**
  * La sérialisation que `PkiPublicKey.material`/`PkiPrivateKey.material`
  * transportent. Elle n'est pas du DER — même convention que le reste de
  * `src/network/pki/` — mais elle porte les VRAIS entiers, si bien que

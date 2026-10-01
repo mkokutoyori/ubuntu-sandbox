@@ -1,6 +1,6 @@
 /** RSA réel — RFC 8017. */
 export {
-  generateRsaKeyPair, rsaSign, rsaVerify, isProbablePrime, emsaPkcs1V15,
+  generateRsaKeyPair, rsaSign, rsaVerify, rsaEncryptPkcs1, rsaDecryptPkcs1, isProbablePrime, emsaPkcs1V15,
   publicKeyToMaterial, privateKeyToMaterial, materialToPublicKey, materialToPrivateKey,
   publicPartOf, modulusHex, bitLength,
   DEFAULT_MODULUS_BITS, PUBLIC_EXPONENT,
