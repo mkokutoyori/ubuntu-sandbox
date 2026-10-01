@@ -16,6 +16,9 @@ import { LossDetectionState, onPacketSent as onLossPacketSent, onAckReceived } f
 import { createCongestionState, isInSlowStart, onPacketSent as onCongestionPacketSent, onPacketAcked, onPacketsLost, type CongestionState } from './congestionControl';
 import { randomConnectionId, type QuicDomainEvent, type CongestionPhase } from './events';
 
+const CRYPTO_FLIGHT_PREFIX = 4;
+const CRYPTO_FRAME_PAYLOAD = 1000;
+
 export type QuicRole = 'client' | 'server';
 export type QuicConnectionState = 'idle' | 'handshaking' | 'established' | 'closing' | 'draining' | 'closed';
 
@@ -111,6 +114,10 @@ export class QuicConnection {
   private handshakeKeys: DirectionalKeys | null = null;
   private applicationKeys: DirectionalKeys | null = null;
   private readonly cryptoSendOffset: Record<PacketNumberSpace, number> = { initial: 0, handshake: 0, application: 0 };
+  private readonly cryptoReceivedTotal: Record<PacketNumberSpace, number> = { initial: 0, handshake: 0, application: 0 };
+  private readonly cryptoPending: Record<PacketNumberSpace, Uint8Array> = {
+    initial: new Uint8Array(0), handshake: new Uint8Array(0), application: new Uint8Array(0),
+  };
 
   constructor(
     private readonly host: EndHost,
@@ -126,6 +133,7 @@ export class QuicConnection {
       this.initialKeys = { send: this.config.keys.initial, receive: this.config.keys.initial };
       this.applicationKeys = { send: this.config.keys.application, receive: this.config.keys.application };
     } else {
+      this.config.tls.restrictToQuic();
       const secrets = deriveInitialSecrets(this.config.clientDestConnectionId);
       this.initialKeys = this.directionalKeys('initial', secrets.client, secrets.server);
     }
@@ -198,10 +206,16 @@ export class QuicConnection {
 
   private sendCryptoRecords(space: PacketNumberSpace, records: readonly TlsRecord[]): void {
     if (records.length === 0) return;
-    const data = encodeTlsRecordsForCrypto(records);
-    const offset = this.cryptoSendOffset[space];
-    this.cryptoSendOffset[space] += data.length;
-    this.sendPacket(space, [{ type: 'CRYPTO', offset, length: data.length, data }], true);
+    const flight = encodeTlsRecordsForCrypto(records);
+    const data = new Uint8Array(CRYPTO_FLIGHT_PREFIX + flight.length);
+    new DataView(data.buffer).setUint32(0, flight.length);
+    data.set(flight, CRYPTO_FLIGHT_PREFIX);
+    for (let start = 0; start < data.length; start += CRYPTO_FRAME_PAYLOAD) {
+      const chunk = data.slice(start, start + CRYPTO_FRAME_PAYLOAD);
+      const offset = this.cryptoSendOffset[space];
+      this.cryptoSendOffset[space] += chunk.length;
+      this.sendPacket(space, [{ type: 'CRYPTO', offset, length: chunk.length, data: chunk }], true);
+    }
   }
 
   openStream(direction: StreamDirection): number {
@@ -339,7 +353,30 @@ export class QuicConnection {
    */
   private handleCryptoFrame(frame: Extract<QuicFrame, { type: 'CRYPTO' }>, space: PacketNumberSpace): void {
     if (this.config.mode !== 'tls') return;
-    const records = decodeTlsRecordsFromCrypto(frame.data);
+    if (frame.offset !== this.cryptoReceivedTotal[space]) return;
+    this.cryptoReceivedTotal[space] += frame.data.length;
+    const pending = this.cryptoPending[space];
+    const joined = new Uint8Array(pending.length + frame.data.length);
+    joined.set(pending, 0);
+    joined.set(frame.data, pending.length);
+    this.cryptoPending[space] = joined;
+    this.drainCryptoFlights(space);
+  }
+
+  private drainCryptoFlights(space: PacketNumberSpace): void {
+    for (;;) {
+      const pending = this.cryptoPending[space];
+      if (pending.length < CRYPTO_FLIGHT_PREFIX) return;
+      const length = new DataView(pending.buffer, pending.byteOffset).getUint32(0);
+      if (pending.length < CRYPTO_FLIGHT_PREFIX + length) return;
+      const flight = pending.slice(CRYPTO_FLIGHT_PREFIX, CRYPTO_FLIGHT_PREFIX + length);
+      this.cryptoPending[space] = pending.slice(CRYPTO_FLIGHT_PREFIX + length);
+      this.processCryptoFlight(decodeTlsRecordsFromCrypto(flight), space);
+    }
+  }
+
+  private processCryptoFlight(records: ReturnType<typeof decodeTlsRecordsFromCrypto>, space: PacketNumberSpace): void {
+    if (this.config.mode !== 'tls') return;
 
     if (this.role === 'server') {
       if (space === 'initial') {

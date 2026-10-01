@@ -1,4 +1,4 @@
-import { expandCipherString } from '@/network/tls/legacy/cipherString';
+import { resolveCipherList } from '@/network/tls/legacy/legacyCipherSuites';
 import type { TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
 import type { TcpStack } from '@/network/tcp/TcpStack';
 import { Http1ServerSession, type Http1Peer } from '@/network/http/http1/Http1ServerSession';
@@ -199,7 +199,7 @@ interface TlsMaterial {
   readonly key: PkiPrivateKey;
   readonly chain: readonly X509Certificate[];
   readonly protocols: readonly TlsProtocolVersion[];
-  readonly cipherSuites: readonly string[];
+  readonly cipherList: string;
   readonly preferServerCiphers: boolean;
 }
 
@@ -208,7 +208,7 @@ const PROTOCOL_BY_NGINX_NAME: Readonly<Record<string, TlsProtocolVersion>> = {
 };
 
 function tlsFingerprint(m: TlsMaterial): string {
-  return `${m.cert.serialNumber}|${m.cert.notAfter}|${m.key.material}|${m.protocols.join(',')}|${m.cipherSuites.join(',')}|${m.preferServerCiphers}`;
+  return `${m.cert.serialNumber}|${m.cert.notAfter}|${m.key.material}|${m.protocols.join(',')}|${m.cipherList}|${m.preferServerCiphers}`;
 }
 
 
@@ -313,7 +313,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
         this.host.tcpStack(), spec.port,
         {
           serverCert: tls.cert, serverChain: tls.chain, serverPrivateKey: tls.key, protocols: tls.protocols,
-          legacyCipherSuites: tls.cipherSuites, preferServerCiphers: tls.preferServerCiphers,
+          cipherList: tls.cipherList, preferServerCiphers: tls.preferServerCiphers,
         },
         (req, peer) => this.respond(spec.port, req, peer),
       );
@@ -371,16 +371,15 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
       return fail(`cannot load certificate key "${server.sslCertificateKey}": `
         + 'PEM_read_bio_PrivateKey() failed (SSL: error:0480006C:PEM routines::no start line)');
     }
-    const cipherList = expandCipherString(server.sslCiphers);
+    const cipherList = resolveCipherList(server.sslCiphers);
     if (cipherList.ok === false) {
-      return fail(`SSL_CTX_set_cipher_list("${server.sslCiphers}") failed `
-        + `(SSL: error:0A0000B9:SSL routines::${cipherList.error})`);
+      return fail(`SSL_CTX_set_cipher_list("${server.sslCiphers}") failed (SSL: ${cipherList.error})`);
     }
     const protocols = server.sslProtocols
       .map((name) => PROTOCOL_BY_NGINX_NAME[name])
       .filter((version): version is TlsProtocolVersion => version !== undefined);
     return {
-      cert, key, chain: certChain.slice(1), protocols, cipherSuites: cipherList.suites.map((suite) => suite.name),
+      cert, key, chain: certChain.slice(1), protocols, cipherList: server.sslCiphers,
       preferServerCiphers: server.sslPreferServerCiphers,
     };
   }

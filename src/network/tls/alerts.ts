@@ -100,6 +100,7 @@ export function alertForVerificationReason(reason: VerificationReason): AlertDes
     case 'path-length': return 'bad_certificate';
     case 'key-usage': return 'bad_certificate';
     case 'weak-key': return 'bad_certificate';
+    case 'weak-ca-key': return 'bad_certificate';
     case 'purpose': return 'unsupported_certificate';
   }
 }
@@ -130,12 +131,38 @@ export function alertFromRecord(record: TlsRecord): TlsAlert | null {
   return { level: record.fragment[0] === 2 ? 'fatal' : 'warning', description };
 }
 
-const OPENSSL_ALERT_REASON: Readonly<Partial<Record<AlertDescription, string>>> = {
-  protocol_version: 'error:0A00042E:SSL routines::tlsv1 alert protocol version',
-  handshake_failure: 'error:0A000410:SSL routines::sslv3 alert handshake failure',
-  insufficient_security: 'error:0A000475:SSL routines::tlsv1 alert insufficient security',
+const OPENSSL_ALERT_REASON: Readonly<Partial<Record<AlertDescription, readonly [number, string]>>> = {
+  unexpected_message: [1010, 'sslv3 alert unexpected message'],
+  bad_record_mac: [1020, 'sslv3 alert bad record mac'],
+  record_overflow: [1022, 'tlsv1 alert record overflow'],
+  decompression_failure: [1030, 'sslv3 alert decompression failure'],
+  handshake_failure: [1040, 'sslv3 alert handshake failure'],
+  bad_certificate: [1042, 'sslv3 alert bad certificate'],
+  unsupported_certificate: [1043, 'sslv3 alert unsupported certificate'],
+  certificate_revoked: [1044, 'sslv3 alert certificate revoked'],
+  certificate_expired: [1045, 'sslv3 alert certificate expired'],
+  certificate_unknown: [1046, 'sslv3 alert certificate unknown'],
+  illegal_parameter: [1047, 'sslv3 alert illegal parameter'],
+  unknown_ca: [1048, 'tlsv1 alert unknown ca'],
+  access_denied: [1049, 'tlsv1 alert access denied'],
+  decode_error: [1050, 'tlsv1 alert decode error'],
+  decrypt_error: [1051, 'tlsv1 alert decrypt error'],
+  protocol_version: [1070, 'tlsv1 alert protocol version'],
+  insufficient_security: [1071, 'tlsv1 alert insufficient security'],
+  internal_error: [1080, 'tlsv1 alert internal error'],
+  user_canceled: [1090, 'tlsv1 alert user cancelled'],
+  no_renegotiation: [1100, 'tlsv1 alert no renegotiation'],
+  missing_extension: [1109, 'tlsv13 alert missing extension'],
+  certificate_required: [1116, 'tlsv13 alert certificate required'],
 };
 
+export function opensslErrorLine(reason: number, text: string): string {
+  return `error:${(0x0a000000 + reason).toString(16).toUpperCase().padStart(8, '0')}:SSL routines::${text}`;
+}
+
 export function opensslAlertReason(description: AlertDescription): string | undefined {
-  return OPENSSL_ALERT_REASON[description];
+  const entry = OPENSSL_ALERT_REASON[description];
+  if (entry !== undefined) return opensslErrorLine(entry[0], entry[1]);
+  const code = ALERT_DESCRIPTION_CODE[description];
+  return opensslErrorLine(1000 + code, `reason(${1000 + code})`);
 }

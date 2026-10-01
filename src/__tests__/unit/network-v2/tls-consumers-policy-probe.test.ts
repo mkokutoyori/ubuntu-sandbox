@@ -19,7 +19,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { expandCipherString } from '@/network/tls/legacy/cipherString';
+import { createCipherList } from '@/network/tls/legacy/cipherString';
 
 beforeEach(() => { EquipmentRegistry.getInstance().clear(); });
 
@@ -28,7 +28,7 @@ async function lab(tlsDirectives: string): Promise<LinuxServer> {
   srv.powerOn();
   await srv.executeCommand('mkdir -p /etc/ssl/certs /etc/ssl/private');
   await srv.executeCommand(
-    'openssl req -x509 -newkey rsa:512 -keyout /etc/ssl/private/lab.key '
+    'openssl req -x509 -newkey rsa:1024 -keyout /etc/ssl/private/lab.key '
     + '-out /etc/ssl/certs/lab.crt -days 365 -nodes -subj "/CN=lab.local"');
   const site = 'server {\\n  listen 443 ssl;\\n  server_name _;\\n  root /var/www/html;\\n'
     + '  index index.nginx-debian.html;\\n'
@@ -41,28 +41,57 @@ async function lab(tlsDirectives: string): Promise<LinuxServer> {
 }
 
 describe('openssl ciphers et la grammaire des listes', () => {
+  const names = (rule: string): string[] => {
+    const list = createCipherList(rule);
+    return list.ok ? list.ciphers.map((c) => c.name) : [];
+  };
+
   it('une suite nommée, la négation et l\'intersection', () => {
-    const named = expandCipherString('ECDHE-RSA-AES128-GCM-SHA256');
-    expect(named.ok && named.suites.map((s) => s.opensslName)).toEqual(['ECDHE-RSA-AES128-GCM-SHA256']);
-    const both = expandCipherString('ECDHE+AESGCM:!aECDSA');
-    expect(both.ok && both.suites.every((s) => s.name.startsWith('TLS_ECDHE_RSA'))).toBe(true);
-    const none = expandCipherString('RC4');
-    expect(none.ok).toBe(false);
+    expect(names('ECDHE-RSA-AES128-GCM-SHA256')).toEqual(['ECDHE-RSA-AES128-GCM-SHA256']);
+    expect(names('ECDHE+AESGCM:!aECDSA').every((n) => n.startsWith('ECDHE-RSA'))).toBe(true);
+    expect(createCipherList('RC4').ok).toBe(false);
   });
 
-  it('HIGH:!aNULL:!MD5 ne contient jamais RC4, et !x retire pour de bon', () => {
-    const list = expandCipherString('HIGH:!aNULL:!MD5');
-    expect(list.ok && list.suites.length).toBeGreaterThan(5);
-    const killed = expandCipherString('ALL:!kRSA:kRSA');
-    expect(killed.ok && killed.suites.some((s) => s.keyExchange === 'RSA')).toBe(false);
+  it('DEFAULT suit l\'ordre de ssl_create_cipher_list : ECDHE+AEAD, puis force, TLS 1.2 avant l\'héritage', () => {
+    const order = names('DEFAULT');
+    expect(order.slice(0, 3)).toEqual([
+      'ECDHE-ECDSA-AES256-GCM-SHA384', 'ECDHE-RSA-AES256-GCM-SHA384', 'DHE-RSA-AES256-GCM-SHA384',
+    ]);
+    expect(order.indexOf('ECDHE-RSA-AES128-GCM-SHA256')).toBeLessThan(order.indexOf('ECDHE-RSA-AES256-SHA384'));
+    expect(order.indexOf('ECDHE-RSA-AES256-SHA384')).toBeLessThan(order.indexOf('ECDHE-RSA-AES256-SHA'));
+  });
+
+  it('3DES est NOT_DEFAULT : ALL le contient, DEFAULT et HIGH non (ssl/s3_lib.c)', () => {
+    expect(names('ALL')).toContain('DES-CBC3-SHA');
+    expect(names('DEFAULT')).not.toContain('DES-CBC3-SHA');
+    expect(names('HIGH')).not.toContain('DES-CBC3-SHA');
+    expect(names('MEDIUM')).toContain('DES-CBC3-SHA');
+    expect(names('COMPLEMENTOFDEFAULT')).toContain('DES-CBC3-SHA');
+  });
+
+  it('! retire pour de bon, - retire mais laisse revenir, + déplace en fin de liste', () => {
+    expect(names('ALL:!kRSA:kRSA').some((n) => /^(AES|DES)/.test(n))).toBe(false);
+    expect(names('ALL:-kRSA:kRSA').some((n) => /^AES128-SHA$/.test(n))).toBe(true);
+    const moved = names('ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:+ECDHE-RSA-AES128-GCM-SHA256');
+    expect(moved).toEqual(['ECDHE-RSA-AES256-GCM-SHA384', 'ECDHE-RSA-AES128-GCM-SHA256']);
+  });
+
+  it('@STRENGTH trie par taille de clé et @SECLEVEL est retenu ; une commande invalide échoue', () => {
+    const sorted = names('AES128-SHA:AES256-SHA:@STRENGTH');
+    expect(sorted).toEqual(['AES256-SHA', 'AES128-SHA']);
+    const level = createCipherList('DEFAULT:@SECLEVEL=2');
+    expect(level.ok && level.securityLevel).toBe(2);
+    const bad = createCipherList('@NOPE');
+    expect(bad.ok === false && bad.reason).toBe('invalid command');
+    const none = createCipherList('NOSUCH');
+    expect(none.ok === false && none.error).toBe('error:0A0000B9:SSL routines::no cipher match');
   });
 
   it('openssl ciphers -v décrit une suite en 1.2', async () => {
     const srv = await lab('');
     const out = await srv.executeCommand('openssl ciphers -v ECDHE-RSA-AES128-GCM-SHA256');
     expect(out).toContain('TLSv1.2');
-    expect(out).toContain('Kx=ECDH');
-    expect(out).toContain('Enc=AESGCM(128)');
+    expect(out.trim().split('\n').pop()).toBe('ECDHE-RSA-AES128-GCM-SHA256    TLSv1.2 Kx=ECDH     Au=RSA   Enc=AESGCM(128)            Mac=AEAD');
   });
 
   it('openssl ciphers sans liste énumère aussi les suites ≤ 1.2', async () => {

@@ -36,12 +36,12 @@ type ClientOptions = Partial<Omit<TlsClientConfig, 'verifier'>>;
 
 function lab(
   client: ClientOptions, server: ServerOptions,
-  options: { ecdsa?: boolean; names?: string[]; clientCertificate?: boolean } = {},
+  options: { ecdsa?: boolean; names?: string[]; clientCertificate?: boolean; keyBits?: number } = {},
 ) {
-  const ca = CertificateAuthority.generate('CN=Lab Root', { now: NOW, algorithm: options.ecdsa ? 'ecdsa' : 'rsa' });
+  const ca = CertificateAuthority.generate('CN=Lab Root', { now: NOW, algorithm: options.ecdsa ? 'ecdsa' : 'rsa', keyBits: options.keyBits });
   const leaf = ca.issueCertificate({
     subject: 'CN=server.lab', notBefore: NOW - 1000, notAfter: NOW + 1e9,
-    subjectAltNames: options.names ?? ['server.lab'],
+    subjectAltNames: options.names ?? ['server.lab'], keyBits: options.keyBits,
   } as never);
   const verifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
   const clientLeaf = options.clientCertificate
@@ -208,18 +208,18 @@ describe('suites et échanges de clés', () => {
     expect(exchange(client, server)).toBe('GET / HTTP/1.1');
   });
 
-  it('RFC 7525 : un client refuse un DH de 1024 bits par défaut (insufficient_security)', () => {
+  it('niveau 2 (ssl_cert.c) : un DH de 1024 bits vaut 80 bits < 112, refusé (handshake_failure)', () => {
     const { client, server } = lab(
-      { versions: ['1.2'], ...only('TLS_DHE_RSA_WITH_AES_128_GCM_SHA256') }, { dhGroupId: 2 },
+      { versions: ['1.2'], cipherList: 'DHE-RSA-AES128-GCM-SHA256:@SECLEVEL=2' }, { dhGroupId: 2 }, { keyBits: 2048 },
     );
     drive(client, server);
     expect(client.result).toBe('failure');
-    expect(client.lastAlert?.description).toBe('insufficient_security');
+    expect(client.lastAlert?.description).toBe('handshake_failure');
   });
 
-  it('témoin : le même DH 1024 passe quand le client baisse son seuil', () => {
+  it('témoin : au niveau 1 par défaut (80 bits), le même DH 1024 passe', () => {
     const { client, server } = lab(
-      { versions: ['1.2'], minDhBits: 1024, ...only('TLS_DHE_RSA_WITH_AES_128_GCM_SHA256') }, { dhGroupId: 2 },
+      { versions: ['1.2'], ...only('TLS_DHE_RSA_WITH_AES_128_GCM_SHA256') }, { dhGroupId: 2 },
     );
     drive(client, server);
     expect(client.result).toBe('success');

@@ -141,10 +141,10 @@ describe('usage de la feuille', () => {
     expect(client.lastAlert?.description).toBe('unsupported_certificate');
   });
 
-  it('une clé RSA sous le seuil demandé est refusée (weak-key)', () => {
+  it('niveau de sécurité 2 (ssl_cert.c) : une clé RSA de 1024 bits vaut 80 bits < 112, refusée (weak-key)', () => {
     const root = CertificateAuthority.generate('CN=Root', { now: NOW });
     const leaf = root.issueCertificate({ subject: 'CN=w', notBefore: NOW - 1000, notAfter: NOW + YEAR } as never);
-    const strict = new CertificateVerifier({ trustAnchors: [root.rootCertificate], clock: () => NOW, minRsaBits: 2048 });
+    const strict = new CertificateVerifier({ trustAnchors: [root.rootCertificate], clock: () => NOW, securityLevel: 2 });
     expect(strict.verify(leaf.cert)).toEqual({ ok: false, reason: 'weak-key' });
     const lax = new CertificateVerifier({ trustAnchors: [root.rootCertificate], clock: () => NOW });
     expect(lax.verify(leaf.cert).ok).toBe(true);

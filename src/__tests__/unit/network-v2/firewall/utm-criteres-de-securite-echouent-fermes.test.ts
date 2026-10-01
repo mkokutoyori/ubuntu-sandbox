@@ -187,7 +187,7 @@ const SITE_HTTPS =
 async function servirHttpsAutoSigne(srvDmz: LinuxServer): Promise<void> {
   await srvDmz.executeCommand('mkdir -p /etc/ssl/certs /etc/ssl/private');
   await srvDmz.executeCommand(
-    'openssl req -x509 -newkey rsa:512 -keyout /etc/ssl/private/srv.key '
+    'openssl req -x509 -newkey rsa:1024 -keyout /etc/ssl/private/srv.key '
     + '-out /etc/ssl/certs/srv.crt -days 365 -nodes -subj "/CN=192.168.20.10"');
   await srvDmz.executeCommand(
     `sh -c 'printf "${SITE_HTTPS}" > /etc/nginx/sites-available/default'`);

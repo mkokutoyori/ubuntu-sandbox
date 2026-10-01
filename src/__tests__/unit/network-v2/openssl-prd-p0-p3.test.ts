@@ -338,11 +338,12 @@ describe('§P4 — les commandes de description', () => {
     // dépôt offrent réellement.
     expect(out).toContain('TLS_AES_256_GCM_SHA384');
     expect(out).toContain('TLS_CHACHA20_POLY1305_SHA256');
-    // Les suites ≤ 1.2 sont réelles depuis la poignée de main RFC 5246 :
-    // seules celles sans code (RC4, ChaCha20 en 1.2) restent absentes.
+    // Les suites ≤ 1.2 sont réelles depuis la poignée de main RFC 5246,
+    // ChaCha20-Poly1305 depuis RFC 8439/7905 ; RC4 (désactivé par défaut
+    // dans OpenSSL 3, `weak-ssl-ciphers`) reste absent.
     expect(out).toContain('ECDHE-RSA-AES256-SHA384');
+    expect(out).toContain('ECDHE-RSA-CHACHA20-POLY1305');
     expect(out).not.toContain('RC4-SHA');
-    expect(out).not.toContain('ECDHE-RSA-CHACHA20-POLY1305');
   });
 
   it('`ciphers -v` détaille chaque suite', async () => {

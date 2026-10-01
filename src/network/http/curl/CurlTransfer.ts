@@ -1,5 +1,7 @@
 import { opensslAlertReason } from '@/network/tls/alerts';
-import { expandCipherString } from '@/network/tls/legacy/cipherString';
+import { x509VerifyError } from '@/network/pki/x509VerifyErrors';
+import type { VerificationReason } from '@/network/pki/CertificateVerifier';
+import { resolveCipherList } from '@/network/tls/legacy/legacyCipherSuites';
 import { legacySuiteByName, type TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
 import { Http1ClientSession } from '../http1/Http1ClientSession';
 import { HttpsClientSession } from '../https/HttpsClientSession';
@@ -32,14 +34,13 @@ const ALL_TLS_VERSIONS: readonly TlsProtocolVersion[] = ['1.0', '1.1', '1.2', '1
 
 function curlTlsPolicy(
   opts: CurlOptions,
-): { ok: true; config: { versions: readonly TlsProtocolVersion[]; legacyCipherSuites?: readonly string[] } } | { ok: false } {
+): { ok: true; config: { versions: readonly TlsProtocolVersion[]; cipherList?: string } } | { ok: false } {
   const min = ALL_TLS_VERSIONS.indexOf(opts.tlsMin ?? '1.2');
   const max = ALL_TLS_VERSIONS.indexOf(opts.tlsMax ?? '1.3');
   const versions = ALL_TLS_VERSIONS.filter((_, index) => index >= min && index <= max);
   if (opts.ciphers === null) return { ok: true, config: { versions } };
-  const list = expandCipherString(opts.ciphers);
-  if (list.ok === false) return { ok: false };
-  return { ok: true, config: { versions, legacyCipherSuites: list.suites.map((suite) => suite.name) } };
+  if (resolveCipherList(opts.ciphers).ok === false) return { ok: false };
+  return { ok: true, config: { versions, cipherList: opts.ciphers } };
 }
 
 export interface CurlUrl {
@@ -460,12 +461,19 @@ export async function performCurlRequest(
         session = new HttpsClientSession(host.tcpStack(), address, url.port, { verifier, ...tlsPolicy.config });
         session.adopt(porte.socket);
         const result = await session.sendAsync(request);
-        const alert = session.handshake?.lastAlert ?? null;
-        const tlsAlert = session.handshake?.result === 'failure' && alert !== null ? opensslAlertReason(alert.description) : undefined;
+        const handshake = session.handshake;
+        const peerAlert = handshake?.peerAlert ?? null;
+        const localReason = handshake?.result === 'failure' ? handshake.peerVerificationReason : null;
         if (!result.ok || !result.response) {
-          if (tlsAlert !== undefined) {
+          if (peerAlert !== null) {
             failure = {
-              ok: false, code: 35, message: `curl: (35) OpenSSL/3.0.13: ${tlsAlert}`,
+              ok: false, code: 35, message: `curl: (35) OpenSSL/3.0.13: ${opensslAlertReason(peerAlert.description)}`,
+              url, remoteIp, method, numRedirects: redirects, trace,
+            };
+          } else if (localReason !== null && handshake?.peerCertificate) {
+            failure = {
+              ok: false, code: 60,
+              message: `curl: (60) SSL certificate problem: ${x509VerifyError(localReason as VerificationReason, handshake.peerCertificate, []).texte}`,
               url, remoteIp, method, numRedirects: redirects, trace,
             };
           } else if (!opts.insecure) {

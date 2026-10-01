@@ -36,9 +36,9 @@ async function autorite(nom: string): Promise<{ srv: LinuxServer; serie: string 
   srv.powerOn();
   await srv.executeCommand('mkdir -p /etc/ssl/CA');
   await srv.executeCommand(
-    'openssl req -x509 -newkey rsa:512 -keyout /etc/ssl/CA/ca.key '
+    'openssl req -x509 -newkey rsa:1024 -keyout /etc/ssl/CA/ca.key '
     + '-out /etc/ssl/CA/ca.crt -days 365 -nodes -subj "/CN=Lab Root CA"');
-  await srv.executeCommand('openssl genrsa -out /tmp/w.key 512');
+  await srv.executeCommand('openssl genrsa -out /tmp/w.key 1024');
   await srv.executeCommand(
     'openssl req -new -key /tmp/w.key -out /tmp/w.csr -subj "/CN=www.lab"');
   await srv.executeCommand(
@@ -112,7 +112,7 @@ describe('la liste porte la signature de son autorité', () => {
     // sépare — et c'est précisément ce qui n'existait pas.
     await srv.executeCommand('mkdir -p /tmp/rogue');
     await srv.executeCommand(
-      'openssl req -x509 -newkey rsa:512 -keyout /tmp/rogue/ca.key '
+      'openssl req -x509 -newkey rsa:1024 -keyout /tmp/rogue/ca.key '
       + '-out /tmp/rogue/ca.crt -days 365 -nodes -subj "/CN=Lab Root CA"');
     await srv.executeCommand(
       'openssl ca -cert /tmp/rogue/ca.crt -keyfile /tmp/rogue/ca.key -gencrl -out /tmp/fausse.crl');

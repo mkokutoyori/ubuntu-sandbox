@@ -20,7 +20,7 @@ export interface TlsProbeOptions {
   readonly trustAnchors?: readonly X509Certificate[];
   readonly now?: number;
   readonly versions?: readonly TlsProtocolVersion[];
-  readonly legacyCipherSuites?: readonly string[];
+  readonly cipherList?: string;
 }
 
 export function probeTlsPeer(
@@ -37,7 +37,7 @@ export function probeTlsPeer(
     serverName: options.servername,
     alpn: ['http/1.1'],
     ...(options.versions ? { versions: options.versions } : {}),
-    ...(options.legacyCipherSuites ? { legacyCipherSuites: options.legacyCipherSuites } : {}),
+    ...(options.cipherList ? { cipherList: options.cipherList } : {}),
   });
 
   try {

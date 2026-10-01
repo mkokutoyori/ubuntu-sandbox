@@ -12,6 +12,7 @@
  */
 import type { CipherSuite } from './types';
 import { expandLabel } from './keySchedule';
+import { suiteInfo } from './suite13';
 
 export interface SessionTicket {
   readonly ticket: string;
@@ -24,8 +25,9 @@ export interface SessionTicket {
 }
 
 /** RFC 8446 §7.5.1 shape — `HKDF-Expand-Label(resumption_master_secret, "resumption", ticket_nonce, Hash.length)`. */
-export function deriveResumptionPsk(ticket: Pick<SessionTicket, 'resumptionMasterSecret' | 'ticketNonce'>): string {
-  return expandLabel(ticket.resumptionMasterSecret, 'resumption', ticket.ticketNonce);
+export function deriveResumptionPsk(ticket: Pick<SessionTicket, 'resumptionMasterSecret' | 'ticketNonce' | 'cipherSuite'>): string {
+  const { hash } = suiteInfo(ticket.cipherSuite);
+  return expandLabel(ticket.resumptionMasterSecret, 'resumption', ticket.ticketNonce, hash);
 }
 
 export function isTicketFresh(ticket: SessionTicket, nowMs: number): boolean {

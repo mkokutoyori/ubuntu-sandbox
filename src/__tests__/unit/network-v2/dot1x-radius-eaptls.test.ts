@@ -104,8 +104,8 @@ async function runEapTlsSupplicant(
   try {
     // RFC 8446 flights carry a full certificate chain + signature, so a
     // tiny 40-byte MTU now needs noticeably more fragments/rounds than the
-    // old ad hoc 2-RTT model did — 150 comfortably covers that case.
-    for (let round = 0; round < 150; round++) {
+    // old ad hoc 2-RTT model did — 400 comfortably covers that case with the 1024-bit lab keys.
+    for (let round = 0; round < 400; round++) {
       if (!latestEap) return 'timeout';
       const eap: EapPacket = latestEap;
       if (eap.code === 'success') return 'success';

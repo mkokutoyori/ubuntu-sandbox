@@ -20,16 +20,18 @@
  * 2048 bits coûte en moyenne 190 ms à fabriquer en JavaScript, et la
  * suite de tests de ce dépôt en génère plus de deux mille — six minutes
  * d'attente pour des clés dont aucun test ne regarde la taille.
- * À 512 bits la même clé coûte 9 ms. La taille demandée est donc toujours
- * honorée (`openssl genrsa 2048` fabrique un vrai module de 2048 bits) ;
- * seules les clés dont personne n'a précisé la taille prennent la petite.
+ * À 1024 bits la même clé coûte 42 ms, et 1024 est le plancher du niveau de
+ * sécurité 1 d'OpenSSL (80 bits) : en dessous, une pile TLS refuse la clé.
+ * La taille demandée est toujours honorée (`openssl genrsa 2048` fabrique
+ * un vrai module de 2048 bits) ; seules les clés dont personne n'a
+ * précisé la taille prennent la petite.
  */
 
 import { md5, sha1, sha256 } from '@/crypto/hash';
 import { bytesToHex, hexToBytes } from '@/crypto/encoding';
 
 /** Voir l'en-tête : mesuré, pas choisi par confort. */
-export const DEFAULT_MODULUS_BITS = 512;
+export const DEFAULT_MODULUS_BITS = 1024;
 
 /** Le e usuel, 2^16 + 1 (RFC 8017 §3.1 le recommande). */
 export const PUBLIC_EXPONENT = 65537n;

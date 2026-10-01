@@ -3,6 +3,7 @@ import type { HashAlgorithm } from '@/crypto/hash';
 import { hmac } from '@/crypto/mac';
 import {
   aesEncryptBlock, aesDecryptBlock, aesGcmEncrypt, aesGcmDecrypt, AES_GCM_TAG_SIZE,
+  aesCcmEncrypt, aesCcmDecrypt, chacha20Poly1305Encrypt, chacha20Poly1305Decrypt,
 } from '@/crypto/cipher';
 import { tripleDesEncryptBlock, tripleDesDecryptBlock } from '@/crypto/cipher/des';
 import { utf8ToBytes } from '@/crypto/encoding';
@@ -86,6 +87,9 @@ function cipherShape(suite: LegacySuiteDefinition): CipherShape {
   switch (suite.cipher) {
     case 'AES_128_GCM': return { encKeyLength: 16, blockSize: 0, fixedIvLength: 4 };
     case 'AES_256_GCM': return { encKeyLength: 32, blockSize: 0, fixedIvLength: 4 };
+    case 'AES_128_CCM': case 'AES_128_CCM_8': return { encKeyLength: 16, blockSize: 0, fixedIvLength: 4 };
+    case 'AES_256_CCM': case 'AES_256_CCM_8': return { encKeyLength: 32, blockSize: 0, fixedIvLength: 4 };
+    case 'CHACHA20_POLY1305': return { encKeyLength: 32, blockSize: 0, fixedIvLength: 12 };
     case 'AES_128_CBC': return { encKeyLength: 16, blockSize: 16, fixedIvLength: 16 };
     case 'AES_256_CBC': return { encKeyLength: 32, blockSize: 16, fixedIvLength: 16 };
     case '3DES_EDE_CBC': return { encKeyLength: 24, blockSize: 8, fixedIvLength: 8 };
@@ -196,24 +200,61 @@ export class LegacyRecordProtection {
     return this.suite.mac === 'AEAD' ? this.openAead(absolute, record) : this.openCbc(absolute, record);
   }
 
+  private aeadTagLength(): number {
+    return this.suite.cipher === 'AES_128_CCM_8' || this.suite.cipher === 'AES_256_CCM_8' ? 8 : AES_GCM_TAG_SIZE;
+  }
+
+  private aeadSeal(nonce: Uint8Array, aad: Uint8Array, plain: Uint8Array): { ciphertext: Uint8Array; tag: Uint8Array } {
+    switch (this.suite.cipher) {
+      case 'CHACHA20_POLY1305': return chacha20Poly1305Encrypt(this.keys.encKey, nonce, aad, plain);
+      case 'AES_128_CCM': case 'AES_256_CCM': case 'AES_128_CCM_8': case 'AES_256_CCM_8':
+        return aesCcmEncrypt(this.keys.encKey, nonce, aad, plain, this.aeadTagLength());
+      default: return aesGcmEncrypt(this.keys.encKey, nonce, aad, plain);
+    }
+  }
+
+  private aeadOpen(nonce: Uint8Array, aad: Uint8Array, cipher: Uint8Array, tag: Uint8Array): Uint8Array | null {
+    switch (this.suite.cipher) {
+      case 'CHACHA20_POLY1305': return chacha20Poly1305Decrypt(this.keys.encKey, nonce, aad, cipher, tag);
+      case 'AES_128_CCM': case 'AES_256_CCM': case 'AES_128_CCM_8': case 'AES_256_CCM_8':
+        return aesCcmDecrypt(this.keys.encKey, nonce, aad, cipher, tag);
+      default: return aesGcmDecrypt(this.keys.encKey, nonce, aad, cipher, tag);
+    }
+  }
+
+  private chachaNonce(seq: number): Uint8Array {
+    const nonce = Uint8Array.from(this.keys.fixedIv);
+    const sequence = seqBytes(seq);
+    for (let i = 0; i < 8; i++) nonce[4 + i] ^= sequence[i];
+    return nonce;
+  }
+
   private sealAead(seq: number, record: TlsRecord): TlsRecord {
-    const explicit = seqBytes(seq);
-    const nonce = concat(this.keys.fixedIv, explicit);
     const aad = this.header(record, record.fragment.length, seq);
-    const { ciphertext, tag } = aesGcmEncrypt(this.keys.encKey, nonce, aad, record.fragment);
+    if (this.suite.cipher === 'CHACHA20_POLY1305') {
+      const { ciphertext, tag } = this.aeadSeal(this.chachaNonce(seq), aad, record.fragment);
+      return { ...record, legacyVersion: PROTOCOL_VERSION_WIRE[this.version], fragment: concat(ciphertext, tag) };
+    }
+    const explicit = seqBytes(seq);
+    const { ciphertext, tag } = this.aeadSeal(concat(this.keys.fixedIv, explicit), aad, record.fragment);
     return { ...record, legacyVersion: PROTOCOL_VERSION_WIRE[this.version], fragment: concat(explicit, ciphertext, tag) };
   }
 
   private openAead(seq: number, record: TlsRecord): TlsRecord | null {
     const body = record.fragment;
-    if (body.length < 8 + AES_GCM_TAG_SIZE) return null;
+    const tagLength = this.aeadTagLength();
+    if (this.suite.cipher === 'CHACHA20_POLY1305') {
+      if (body.length < tagLength) return null;
+      const cipherLength = body.length - tagLength;
+      const aad = this.header(record, cipherLength, seq);
+      const plain = this.aeadOpen(this.chachaNonce(seq), aad, body.subarray(0, cipherLength), body.subarray(cipherLength));
+      return plain === null ? null : { ...record, fragment: plain };
+    }
+    if (body.length < 8 + tagLength) return null;
     const explicit = body.subarray(0, 8);
-    const cipherLength = body.length - 8 - AES_GCM_TAG_SIZE;
+    const cipherLength = body.length - 8 - tagLength;
     const aad = this.header(record, cipherLength, seq);
-    const plain = aesGcmDecrypt(
-      this.keys.encKey, concat(this.keys.fixedIv, explicit), aad,
-      body.subarray(8, 8 + cipherLength), body.subarray(8 + cipherLength),
-    );
+    const plain = this.aeadOpen(concat(this.keys.fixedIv, explicit), aad, body.subarray(8, 8 + cipherLength), body.subarray(8 + cipherLength));
     return plain === null ? null : { ...record, fragment: plain };
   }
 

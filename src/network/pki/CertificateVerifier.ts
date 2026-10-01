@@ -1,6 +1,6 @@
 import { IPAddress, IPv6Address } from '@/network/core/types';
 import { PkiKeyPair } from './PkiKeyPair';
-import { modulusHex } from '@/crypto/rsa';
+import { keyPermitted } from '@/network/tls/legacy/securityPolicy';
 import type { X509Certificate } from './X509Certificate';
 import { tbsPayload } from './X509Certificate';
 import type { CertificateRevocationList } from './CertificateRevocationList';
@@ -8,7 +8,7 @@ import type { IOcspResponder } from './OcspResponder';
 
 export type VerificationReason =
   | 'unknown' | 'expired' | 'revoked' | 'not-yet-valid' | 'bad-signature' | 'crl-stale' | 'crl-untrusted'
-  | 'hostname-mismatch' | 'not-a-ca' | 'path-length' | 'key-usage' | 'purpose' | 'weak-key';
+  | 'hostname-mismatch' | 'not-a-ca' | 'path-length' | 'key-usage' | 'purpose' | 'weak-key' | 'weak-ca-key';
 
 export type CertificatePurpose = 'serverAuth' | 'clientAuth';
 
@@ -26,7 +26,7 @@ export interface CertificateVerifierOptions {
   readonly revocationCheck?: RevocationCheckMode;
   readonly clock?: () => number;
   readonly ocspResponder?: IOcspResponder;
-  readonly minRsaBits?: number;
+  readonly securityLevel?: number;
 }
 
 export class CertificateVerifier {
@@ -35,7 +35,7 @@ export class CertificateVerifier {
   private readonly revocationCheck: RevocationCheckMode;
   private readonly clock: () => number;
   private readonly ocspResponder?: IOcspResponder;
-  private readonly minRsaBits: number;
+  private readonly securityLevel: number;
 
   constructor(opts: CertificateVerifierOptions) {
     this.trustAnchors = opts.trustAnchors;
@@ -43,18 +43,20 @@ export class CertificateVerifier {
     this.revocationCheck = opts.revocationCheck ?? 'none';
     this.clock = opts.clock ?? Date.now;
     this.ocspResponder = opts.ocspResponder;
-    this.minRsaBits = opts.minRsaBits ?? 0;
+    this.securityLevel = opts.securityLevel ?? 0;
   }
 
   verify(
     cert: X509Certificate, expectedHostname?: string,
-    intermediates: readonly X509Certificate[] = [], purpose?: CertificatePurpose,
+    intermediates: readonly X509Certificate[] = [], purpose?: CertificatePurpose, securityLevel?: number,
   ): VerificationResult {
     const now = this.clock();
     const path = this.buildPath(cert, intermediates);
     if (path.ok === false) return path;
     const issuer = path.anchor;
-    const failure = this.checkPath(cert, path.intermediates, now, purpose);
+    const level = securityLevel ?? this.securityLevel;
+    const failure = this.checkPath(cert, path.intermediates, now, purpose, level)
+      ?? (anchorIsLeaf(cert, issuer) || keyPermitted(level, issuer.publicKey) ? null : { ok: false as const, reason: 'weak-ca-key' as const });
     if (failure) return failure;
     if (now < cert.notBefore) return { ok: false, reason: 'not-yet-valid' };
     if (now > cert.notAfter) return { ok: false, reason: 'expired' };
@@ -108,7 +110,8 @@ export class CertificateVerifier {
   }
 
   private checkPath(
-    leaf: X509Certificate, intermediates: readonly X509Certificate[], now: number, purpose?: CertificatePurpose,
+    leaf: X509Certificate, intermediates: readonly X509Certificate[], now: number, purpose: CertificatePurpose | undefined,
+    level: number,
   ): VerificationFailure | null {
     for (let index = 0; index < intermediates.length; index++) {
       const ca = intermediates[index];
@@ -122,7 +125,7 @@ export class CertificateVerifier {
       if (constraints.pathLenConstraint !== undefined && below > constraints.pathLenConstraint) {
         return { ok: false, reason: 'path-length' };
       }
-      if (this.weakKey(ca)) return { ok: false, reason: 'weak-key' };
+      if (!keyPermitted(level, ca.publicKey)) return { ok: false, reason: 'weak-ca-key' };
     }
     if (purpose) {
       const eku = leaf.extensions?.extKeyUsage;
@@ -130,25 +133,18 @@ export class CertificateVerifier {
         return { ok: false, reason: 'purpose' };
       }
     }
-    if (this.weakKey(leaf)) return { ok: false, reason: 'weak-key' };
+    if (!keyPermitted(level, leaf.publicKey)) return { ok: false, reason: 'weak-key' };
     return null;
   }
+}
 
-  private weakKey(cert: X509Certificate): boolean {
-    if (this.minRsaBits === 0 || cert.publicKey.algorithm !== 'rsa') return false;
-    const bits = rsaBits(cert);
-    return bits !== null && bits < this.minRsaBits;
-  }
+function anchorIsLeaf(cert: X509Certificate, anchor: X509Certificate): boolean {
+  return cert.subject === anchor.subject && cert.publicKey.material === anchor.publicKey.material;
 }
 
 type PathResult =
   | { readonly ok: true; readonly anchor: X509Certificate; readonly intermediates: readonly X509Certificate[] }
   | VerificationFailure;
-
-function rsaBits(cert: X509Certificate): number | null {
-  const modulus = modulusHex(cert.publicKey.material);
-  return modulus === null ? null : modulus.replace(/^0+/, '').length * 4;
-}
 
 interface PresentedIdentity {
   readonly type: 'dns' | 'ip';

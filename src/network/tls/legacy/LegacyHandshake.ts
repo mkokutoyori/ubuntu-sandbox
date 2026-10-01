@@ -23,6 +23,7 @@ import {
   type LegacyCertificateVerify, type LegacyFinished, type LegacyServerHello, type ServerHelloDone,
   type ServerKeyExchange,
 } from './legacyMessages';
+import { dhPermitted } from './securityPolicy';
 import { signLegacy, signatureAlgorithmName, verifyLegacy } from './legacySignature';
 
 const RANDOM_BYTES = 32;
@@ -135,6 +136,7 @@ export interface LegacyServerSetup {
   readonly dhGroupId: number;
   readonly requestClientCert: boolean;
   readonly verifier?: CertificateVerifier;
+  readonly securityLevel: number;
 }
 
 type ServerLegacyState = 'awaiting-client-flight' | 'done';
@@ -285,7 +287,7 @@ export class LegacyServerHandshake {
       if (certificate.certificateList.length === 0) return this.reject('handshake_failure');
       if (!this.setup.verifier || !certificateVerify) return this.reject('handshake_failure');
       verifiedLeaf = certificate.certificateList[0];
-      const verification = this.setup.verifier.verify(verifiedLeaf, undefined, certificate.certificateList.slice(1), 'clientAuth');
+      const verification = this.setup.verifier.verify(verifiedLeaf, undefined, certificate.certificateList.slice(1), 'clientAuth', this.setup.securityLevel);
       if (verification.ok === false) return this.rejectCertificate(verification.reason);
       this.peerCertificate = verifiedLeaf;
     } else if (certificate) {
@@ -349,7 +351,7 @@ export interface LegacyClientSetup {
   readonly serverName?: string;
   readonly clientCert?: X509Certificate;
   readonly clientPrivateKey?: PkiPrivateKey;
-  readonly minDhBits: number;
+  readonly securityLevel: number;
   readonly resolveSuite: (name: string) => LegacySuiteDefinition | undefined;
 }
 
@@ -429,7 +431,7 @@ export class LegacyClientHandshake {
     const leaf = certificate.certificateList[0];
     if (!leaf) return this.fail('bad_certificate');
     this.peerCertificate = leaf;
-    const verification = setup.verifier.verify(leaf, setup.serverName, certificate.certificateList.slice(1), 'serverAuth');
+    const verification = setup.verifier.verify(leaf, setup.serverName, certificate.certificateList.slice(1), 'serverAuth', setup.securityLevel);
     this.peerVerified = verification.ok !== false;
     if (verification.ok === false) {
       this.peerVerificationReason = verification.reason;
@@ -455,7 +457,7 @@ export class LegacyClientHandshake {
       if (suite.keyExchange === 'DHE_RSA') {
         if (params.type !== 'dh') return this.fail('illegal_parameter');
         const p = modpFromHex(params.p);
-        if (p.toString(2).length < setup.minDhBits) return this.fail('insufficient_security');
+        if (!dhPermitted(setup.securityLevel, p.toString(2).length)) return this.fail('handshake_failure');
         const g = modpFromHex(params.g);
         const own = generateModpKeyPair({ id: 0, bits: p.toString(2).length, prime: p, generator: g });
         const secret = modpSharedSecret(own, modpFromHex(params.ys));

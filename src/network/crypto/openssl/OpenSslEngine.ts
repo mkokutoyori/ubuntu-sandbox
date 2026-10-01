@@ -29,10 +29,17 @@ import {
 } from '@/network/pki/pem';
 import { buildCertificateRequest } from '@/network/pki/CertificateSigningRequest';
 import { CertificateVerifier, type VerificationReason } from '@/network/pki/CertificateVerifier';
+import { x509VerifyError } from '@/network/pki/x509VerifyErrors';
 import { CertificateRevocationList } from '@/network/pki/CertificateRevocationList';
 import { MANDATORY_CIPHER_SUITES } from '@/network/tls/cipherSuites';
-import { expandCipherString, verboseCipherLine } from '@/network/tls/legacy/cipherString';
-import { legacySuiteByName, type TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
+import {
+  createCipherList, cipherDescription, tls13Description, DEFAULT_CIPHER_RULE as DEFAULT_CIPHER_LIST,
+} from '@/network/tls/legacy/cipherString';
+import {
+  isImplementedCipher, isImplementedTls13Cipher, legacySuiteByName, legacySuiteByOpensslName,
+  type TlsProtocolVersion,
+} from '@/network/tls/legacy/legacyCipherSuites';
+import { DEFAULT_SECURITY_LEVEL, cipherPermitted, tls13CipherPermitted } from '@/network/tls/legacy/securityPolicy';
 import { opensslAlertReason, type AlertDescription } from '@/network/tls/alerts';
 import { parseArgs, parseSubject, REAL_OPENSSL_SUBCOMMANDS } from './OpenSslArgs';
 import { runEnc, ENC_ALGOS, ENC_KNOWN_UNIMPLEMENTED } from './OpenSslEnc';
@@ -493,49 +500,6 @@ function signCsr(
 
 // ─── verify ─────────────────────────────────────────────────────────
 
-/**
- * Le verdict d'openssl, dit avec les mots d'openssl.
- *
- * `CertificateVerifier` répond par une RAISON ; `verify` affiche un
- * NUMÉRO, et c'est ce numéro qu'un opérateur tape dans un moteur de
- * recherche. La table est ici, en un seul endroit, pour que les deux ne
- * puissent pas se contredire.
- *
- * `unknown` couvre deux situations qu'openssl distingue et que le
- * vérificateur ne distingue pas : aucune ancre ne porte le nom de
- * l'émetteur. Si le certificat est son propre émetteur, c'est un
- * auto-signé non approuvé (18) ; sinon il manque le maillon (20).
- */
-function codeOpenssl(
-  raison: VerificationReason,
-  cert: X509Certificate,
-  listes: readonly CertificateRevocationList[],
-): { n: number; texte: string } {
-  switch (raison) {
-    case 'expired': return { n: 10, texte: 'certificate has expired' };
-    case 'not-yet-valid': return { n: 9, texte: 'certificate is not yet valid' };
-    case 'bad-signature': return { n: 7, texte: 'certificate signature failure' };
-    case 'revoked': return { n: 23, texte: 'certificate revoked' };
-    case 'crl-untrusted': return { n: 8, texte: 'CRL signature failure' };
-    case 'not-a-ca': return { n: 24, texte: 'invalid CA certificate' };
-    case 'path-length': return { n: 25, texte: 'path length constraint exceeded' };
-    case 'purpose': return { n: 26, texte: 'unsupported certificate purpose' };
-    case 'key-usage': return { n: 32, texte: 'key usage does not include certificate signing' };
-    case 'weak-key': return { n: 66, texte: 'EE certificate key too weak' };
-    case 'crl-stale':
-      // Le vérificateur confond deux situations qu'openssl sépare, faute
-      // d'une raison distincte : aucune CRL pour cet émetteur, ou une CRL
-      // périmée. La liste est ici, on peut donc trancher.
-      return listes.some((l) => l.issuer === cert.issuer)
-        ? { n: 12, texte: 'CRL has expired' }
-        : { n: 3, texte: 'unable to get certificate CRL' };
-    default:
-      return cert.subject === cert.issuer
-        ? { n: 18, texte: 'self signed certificate' }
-        : { n: 20, texte: 'unable to get local issuer certificate' };
-  }
-}
-
 function runVerify(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const { opts, operands } = parseArgs('verify', argv);
   const ancres: X509Certificate[] = [];
@@ -589,7 +553,7 @@ function runVerify(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     const verdict = verificateur.verify(cert, undefined, intermediaires);
     if (verdict.ok) { lignes.push(`${cible}: OK`); continue; }
 
-    const { n, texte } = codeOpenssl(verdict.reason, cert, listes);
+    const { n, texte } = x509VerifyError(verdict.reason, cert, listes);
     lignes.push(cert.subject);
     lignes.push(`error ${n} at 0 depth lookup: ${texte}`);
     lignes.push(`error ${cible}: verification failed`);
@@ -656,19 +620,46 @@ function runPrime(argv: readonly string[]): OpenSslResult {
  */
 function runCiphers(argv: readonly string[]): OpenSslResult {
   const { opts, operands } = parseArgs('ciphers', argv);
-  const spec = operands[0] ?? 'DEFAULT';
-  const list = expandCipherString(spec);
-  if (list.ok === false) return fail('Error in cipher list', 1);
-  const only13 = opts.has('-tls1_3');
-  const legacy = only13 ? [] : list.suites;
-  const tls13 = operands.length === 0 || opts.has('-tls1_3') ? MANDATORY_CIPHER_SUITES : [];
-  if (opts.has('-v')) {
-    return ok([
-      ...tls13.map((s) => `${s.padEnd(30)} TLSv1.3 Kx=any      Au=any  Enc=${s.includes('CHACHA20') ? 'CHACHA20/POLY1305' : 'AESGCM'} Mac=AEAD`),
-      ...legacy.map(verboseCipherLine),
-    ].join('\n'));
+  const spec = operands[0];
+  const tls13Suites = opts.get('-ciphersuites');
+  if (typeof tls13Suites === 'string' && createCipherList('DEFAULT', { tls13Suites, isAvailable: isImplementedCipher }).ok === false) {
+    return fail('Error setting TLSv1.3 ciphersuites', 1);
   }
-  return ok([...tls13, ...legacy.map((suite) => suite.opensslName)].join(':'));
+  const list = createCipherList(spec ?? DEFAULT_CIPHER_LIST, {
+    isAvailable: isImplementedCipher,
+    ...(typeof tls13Suites === 'string' ? { tls13Suites } : {}),
+    isTls13Available: isImplementedTls13Cipher,
+  });
+  if (list.ok === false) return fail(`Error in cipher list\n${list.error}`, 1);
+  let tls13 = list.tls13;
+  let legacy = list.ciphers;
+  if (opts.has('-s')) {
+    const level = list.securityLevel ?? DEFAULT_SECURITY_LEVEL;
+    const ceiling = (['-tls1_3', '-tls1_2', '-tls1_1', '-tls1', '-ssl3'] as const).find((flag) => opts.has(flag));
+    const version = ceiling === '-tls1_3' ? 0x0304 : ceiling === '-tls1_2' ? 0x0303 : ceiling === '-tls1_1' ? 0x0302
+      : ceiling === '-tls1' ? 0x0301 : ceiling === '-ssl3' ? 0x0300 : 0x0304;
+    tls13 = version === 0x0304 ? tls13.filter((c) => tls13CipherPermitted(level, c.bits)) : [];
+    legacy = legacy.filter((c) => c.minTls <= Math.min(version, 0x0303)
+      && (version === 0x0304 ? false : true)
+      && cipherPermitted(level, legacySuiteByOpensslName(c.name)!));
+  }
+  if (opts.has('-v') || opts.has('-V') || opts.has('-stdname')) {
+    const lines: string[] = [];
+    const hex2 = (value: number): string => `0x${(value & 0xff).toString(16).toUpperCase().padStart(2, '0')}`;
+    const describe = (id: number, standard: string, text: string): string => {
+      let prefix = '';
+      if (opts.has('-V')) {
+        prefix = (id & 0xff000000) === 0x03000000
+          ? `          ${hex2(id >> 8)},${hex2(id)} - `
+          : `${hex2(id >> 24)},${hex2(id >> 16)},${hex2(id >> 8)},${hex2(id)} - `;
+      }
+      return `${prefix}${opts.has('-stdname') ? `${standard.padEnd(45)} - ` : ''}${text}`;
+    };
+    for (const c of tls13) lines.push(describe(c.id, c.name, tls13Description(c)));
+    for (const c of legacy) lines.push(describe(c.id, c.standardName, cipherDescription(c)));
+    return ok(lines.join('').replace(/\n$/, ''));
+  }
+  return ok([...tls13.map((c) => c.name), ...legacy.map((c) => c.name)].join(':'));
 }
 
 function runInfo(argv: readonly string[]): OpenSslResult {
@@ -1147,13 +1138,11 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const versions: readonly TlsProtocolVersion[] = forced
     ? [versionOf[forced]]
     : opts.has('-no_tls1_3') ? ['1.2'] : ['1.3', '1.2'];
-  let legacyCipherSuites: readonly string[] | undefined;
   if (typeof cipherSpec === 'string') {
-    const list = expandCipherString(cipherSpec);
-    if (list.ok === false) return fail('Error setting cipher list', 1);
-    legacyCipherSuites = list.suites.map((suite) => suite.name);
+    const list = createCipherList(cipherSpec, { isAvailable: isImplementedCipher });
+    if (list.ok === false) return fail(`Error setting cipher list\n${list.error}`, 1);
   }
-  const probeOptions = { versions, ...(legacyCipherSuites ? { legacyCipherSuites } : {}) };
+  const probeOptions = { versions, ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}) };
   const sonde = host.tlsPeerCertificate?.(
     ip, port, typeof nomServeur === 'string' ? nomServeur : undefined, probeOptions);
 

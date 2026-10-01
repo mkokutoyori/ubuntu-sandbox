@@ -18,12 +18,23 @@
  * partagé encore simulé n'a rien à changer.
  */
 
-import { SHA256 } from '@/crypto/hash';
+import { SHA256, SHA384 } from '@/crypto/hash';
+import type { HashAlgorithm } from '@/crypto/hash';
 import { hmac } from '@/crypto/mac';
 import { bytesToHex, hexToBytes, utf8ToBytes } from '@/crypto/encoding';
 
 /** La taille de sortie de SHA-256, celle que le §7.1 appelle `Hash.length`. */
 export const HASH_LEN = 32;
+
+export type Tls13Hash = 'sha256' | 'sha384';
+
+export function hashFunction(hash: Tls13Hash): HashAlgorithm {
+  return hash === 'sha384' ? SHA384 : SHA256;
+}
+
+export function hashLength(hash: Tls13Hash): number {
+  return hash === 'sha384' ? 48 : 32;
+}
 
 const HEX = /^[0-9a-fA-F]+$/;
 
@@ -34,8 +45,8 @@ export function toBytes(s: string): Uint8Array {
 }
 
 /** `HKDF-Extract(salt, IKM) = HMAC-Hash(salt, IKM)` (RFC 5869 §2.2). */
-export function hkdfExtract(salt: Uint8Array, ikm: Uint8Array): Uint8Array {
-  return hmac(SHA256, salt, ikm);
+export function hkdfExtract(salt: Uint8Array, ikm: Uint8Array, hash: Tls13Hash = 'sha256'): Uint8Array {
+  return hmac(hashFunction(hash), salt, ikm);
 }
 
 /**
@@ -44,8 +55,8 @@ export function hkdfExtract(salt: Uint8Array, ikm: Uint8Array): Uint8Array {
  * tronquée à L. Le compteur est sur UN octet, d'où la limite de 255
  * blocs qu'impose la RFC.
  */
-export function hkdfExpand(prk: Uint8Array, info: Uint8Array, length: number): Uint8Array {
-  if (length > 255 * HASH_LEN) throw new RangeError('HKDF: requested length too large');
+export function hkdfExpand(prk: Uint8Array, info: Uint8Array, length: number, hash: Tls13Hash = 'sha256'): Uint8Array {
+  if (length > 255 * hashLength(hash)) throw new RangeError('HKDF: requested length too large');
   const out = new Uint8Array(length);
   let previous = new Uint8Array(0);
   let written = 0;
@@ -54,7 +65,7 @@ export function hkdfExpand(prk: Uint8Array, info: Uint8Array, length: number): U
     input.set(previous, 0);
     input.set(info, previous.length);
     input[input.length - 1] = counter;
-    previous = hmac(SHA256, prk, input);
+    previous = hmac(hashFunction(hash), prk, input);
     const take = Math.min(previous.length, length - written);
     out.set(previous.subarray(0, take), written);
     written += take;
@@ -90,18 +101,18 @@ export function hkdfLabel(length: number, label: string, context: Uint8Array): U
 
 /** `HKDF-Expand-Label(Secret, Label, Context, Length)` (RFC 8446 §7.1). */
 export function hkdfExpandLabel(
-  secret: Uint8Array, label: string, context: Uint8Array, length: number,
+  secret: Uint8Array, label: string, context: Uint8Array, length: number, hash: Tls13Hash = 'sha256',
 ): Uint8Array {
-  return hkdfExpand(secret, hkdfLabel(length, label, context), length);
+  return hkdfExpand(secret, hkdfLabel(length, label, context), length, hash);
 }
 
 /** Les mêmes, du côté des chaînes hexadécimales que ce TLS échange. */
-export function extractHex(salt: string, ikm: string): string {
-  return bytesToHex(hkdfExtract(toBytes(salt), toBytes(ikm)));
+export function extractHex(salt: string, ikm: string, hash: Tls13Hash = 'sha256'): string {
+  return bytesToHex(hkdfExtract(toBytes(salt), toBytes(ikm), hash));
 }
 
 export function expandLabelHex(
-  secret: string, label: string, context: string, length = HASH_LEN,
+  secret: string, label: string, context: string, length: number = HASH_LEN, hash: Tls13Hash = 'sha256',
 ): string {
-  return bytesToHex(hkdfExpandLabel(toBytes(secret), label, toBytes(context), length));
+  return bytesToHex(hkdfExpandLabel(toBytes(secret), label, toBytes(context), length, hash));
 }

@@ -69,7 +69,7 @@ export class PkiKeyPair {
   /**
    * `bits` n'est honoré que pour RSA, et sa valeur par défaut est un
    * choix MESURÉ : une clé de 2048 bits coûte en moyenne 460 ms à
-   * fabriquer en JavaScript contre 9 ms à 512, et cette suite en génère
+   * fabriquer en JavaScript contre 42 ms à 1024, et cette suite en génère
    * plus de deux mille. La taille demandée est toujours respectée —
    * `openssl genrsa 2048` fabrique un vrai module de 2048 bits ; seules
    * les clés dont personne n'a précisé la taille prennent la petite.

@@ -18,7 +18,7 @@
  * bibliothèque de sécurité.
  */
 
-import { SHA256, sha256 } from '@/crypto/hash';
+import { SHA256, sha256, sha1 } from '@/crypto/hash';
 import { hmac } from '@/crypto/mac';
 import { bytesToHex, hexToBytes } from '@/crypto/encoding';
 
@@ -173,9 +173,15 @@ export function rfc6979Nonce(privateScalar: bigint, messageHash: Uint8Array): bi
 
 export interface P256Signature { readonly r: bigint; readonly s: bigint }
 
-export function p256Sign(privateScalar: bigint, message: Uint8Array): P256Signature {
+export type P256Digest = 'sha256' | 'sha1';
+
+function digestOf(message: Uint8Array, digest: P256Digest): Uint8Array {
+  return digest === 'sha1' ? sha1(message) : sha256(message);
+}
+
+export function p256Sign(privateScalar: bigint, message: Uint8Array, digest: P256Digest = 'sha256'): P256Signature {
   const d = mod(privateScalar, P256_ORDER);
-  const h = sha256(message);
+  const h = digestOf(message, digest);
   const z = mod(bytesToBig(h), P256_ORDER);
   for (;;) {
     const k = rfc6979Nonce(d, h);
@@ -189,14 +195,14 @@ export function p256Sign(privateScalar: bigint, message: Uint8Array): P256Signat
   }
 }
 
-export function p256Verify(q: P256Point, message: Uint8Array, sig: P256Signature): boolean {
+export function p256Verify(q: P256Point, message: Uint8Array, sig: P256Signature, digest: P256Digest = 'sha256'): boolean {
   const { r, s } = sig;
   if (r <= 0n || r >= P256_ORDER || s <= 0n || s >= P256_ORDER) return false;
   // Le point public doit être SUR la courbe : sans ce contrôle, une clé
   // fabriquée sur une courbe voisine ferait fuir le scalaire privé du
   // pair (attaque par courbe invalide).
   if (!isOnCurve(q)) return false;
-  const z = mod(bytesToBig(sha256(message)), P256_ORDER);
+  const z = mod(bytesToBig(digestOf(message, digest)), P256_ORDER);
   const w = invMod(s, P256_ORDER);
   const point = toAffine(addPoints(
     multiply(mod(z * w, P256_ORDER), G),

@@ -41,13 +41,13 @@ function machine(name = 'V'): LinuxServer {
  */
 async function racine(srv: LinuxServer, id: string, nom: string): Promise<void> {
   await srv.executeCommand(
-    `openssl req -x509 -newkey rsa:512 -keyout /tmp/${id}.key `
+    `openssl req -x509 -newkey rsa:1024 -keyout /tmp/${id}.key `
     + `-out /tmp/${id}.crt -days 365 -nodes -subj "/CN=${nom}"`);
 }
 
 /** Une feuille signée par la racine désignée. */
 async function feuille(srv: LinuxServer, id: string, nom: string, parId: string): Promise<void> {
-  await srv.executeCommand(`openssl genrsa -out /tmp/${id}.key 512`);
+  await srv.executeCommand(`openssl genrsa -out /tmp/${id}.key 1024`);
   await srv.executeCommand(
     `openssl req -new -key /tmp/${id}.key -out /tmp/${id}.csr -subj "/CN=${nom}"`);
   await srv.executeCommand(
@@ -162,7 +162,7 @@ describe('les deux commandes disent la même chose des mêmes fichiers', () => {
     await srv.executeCommand('mkdir -p /etc/ssl/certs /etc/ssl/private');
     await racine(srv, 'vraie', 'Lab Root CA');
     await racine(srv, 'fausse', 'Lab Root CA');
-    await srv.executeCommand('openssl genrsa -out /etc/ssl/private/srv.key 512');
+    await srv.executeCommand('openssl genrsa -out /etc/ssl/private/srv.key 1024');
     await srv.executeCommand(
       'openssl req -new -key /etc/ssl/private/srv.key -out /tmp/srv.csr -subj "/CN=127.0.0.1"');
     await srv.executeCommand(

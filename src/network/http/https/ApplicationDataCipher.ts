@@ -18,6 +18,11 @@ import {
 } from '@/network/tls/recordProtection';
 import { fragmentAsRecords, fragmentPlaintext, reassembleRecords, reassembleFragments, type TlsRecord } from '@/network/tls/recordLayer';
 import type { TrafficProtection } from '@/network/tls/trafficProtection';
+import type { Tls13Traffic } from '@/network/tls/suite13';
+
+function isLegacy(traffic: TrafficProtection): traffic is Exclude<TrafficProtection, string | Tls13Traffic> {
+  return typeof traffic !== 'string' && 'kind' in traffic && traffic.kind === 'legacy';
+}
 
 export interface EncryptedApplicationData {
   readonly records: TlsRecord[];
@@ -31,8 +36,8 @@ export interface EncryptedApplicationData {
  * servir l'ancien après un `KeyUpdate`. Le coût est une expansion HKDF
  * par lot, pas par octet.
  */
-function keys(trafficSecret: string): RecordKeys {
-  return deriveRecordKeys(trafficSecret);
+function keys(traffic: string | Tls13Traffic): RecordKeys {
+  return typeof traffic === 'string' ? deriveRecordKeys(traffic) : deriveRecordKeys(traffic.secret, traffic.suite);
 }
 
 /**
@@ -43,7 +48,7 @@ function keys(trafficSecret: string): RecordKeys {
 export function encryptApplicationData(
   traffic: TrafficProtection, startSeq: number, plaintext: Uint8Array,
 ): EncryptedApplicationData {
-  if (typeof traffic !== 'string') {
+  if (isLegacy(traffic)) {
     let legacySeq = startSeq;
     const sealed = fragmentPlaintext('application_data', plaintext).map((record): TlsRecord => traffic.seal(legacySeq++, record));
     return { records: sealed, nextSeq: legacySeq };
@@ -80,7 +85,7 @@ export class BadRecordMacError extends Error {
 export function decryptApplicationData(
   traffic: TrafficProtection, startSeq: number, records: readonly TlsRecord[],
 ): DecryptedApplicationData {
-  if (typeof traffic !== 'string') {
+  if (isLegacy(traffic)) {
     let legacySeq = startSeq;
     const opened: TlsRecord[] = [];
     for (const record of records) {

@@ -12,11 +12,11 @@
  * server) are exact structural properties, testable without any real
  * cryptography.
  */
-import { sha256Hex } from '@/crypto/hash';
 import { bytesToHex } from '@/crypto/encoding';
-import { extractHex, expandLabelHex, HASH_LEN, toBytes } from './hkdf';
+import {
+  extractHex, expandLabelHex, HASH_LEN, toBytes, hashFunction, hashLength, type Tls13Hash,
+} from './hkdf';
 import { hmac } from '@/crypto/mac';
-import { SHA256 } from '@/crypto/hash';
 
 /**
  * Le « 0 » du §7.1 : Hash.length octets nuls, soit 32 pour SHA-256 —
@@ -26,9 +26,17 @@ import { SHA256 } from '@/crypto/hash';
  */
 export const ZERO_IKM = '0'.repeat(HASH_LEN * 2);
 
+export function zeroIkm(hash: Tls13Hash): string {
+  return '0'.repeat(hashLength(hash) * 2);
+}
+
+function emptyTranscript(hash: Tls13Hash): string {
+  return bytesToHex(hashFunction(hash).digest(new Uint8Array(0)));
+}
+
 /** `HKDF-Extract(salt, ikm)`, le vrai (RFC 5869 §2.2). */
-export function extractSecret(salt: string, ikm: string): string {
-  return extractHex(salt, ikm);
+export function extractSecret(salt: string, ikm: string, hash: Tls13Hash = 'sha256'): string {
+  return extractHex(salt, ikm, hash);
 }
 
 /**
@@ -37,18 +45,18 @@ export function extractSecret(salt: string, ikm: string): string {
  * `context` est le condensé de transcription (ou la chaîne vide, comme
  * la RFC l'autorise) que l'appelant a déjà calculé.
  */
-export function expandLabel(secret: string, label: string, context: string): string {
-  return expandLabelHex(secret, label, context);
+export function expandLabel(secret: string, label: string, context: string, hash: Tls13Hash = 'sha256'): string {
+  return expandLabelHex(secret, label, context, hashLength(hash), hash);
 }
 
-/** `Transcript-Hash(messages)` : un vrai SHA-256 sur les messages concaténés. */
-export function transcriptHash(messageBytesList: readonly Uint8Array[]): string {
+/** `Transcript-Hash(messages)` : le condensé de la suite négociée sur les messages concaténés. */
+export function transcriptHash(messageBytesList: readonly Uint8Array[], hash: Tls13Hash = 'sha256'): string {
   let total = 0;
   for (const bytes of messageBytesList) total += bytes.length;
   const concat = new Uint8Array(total);
   let i = 0;
   for (const bytes of messageBytesList) { concat.set(bytes, i); i += bytes.length; }
-  return sha256Hex(String.fromCharCode(...concat));
+  return bytesToHex(hashFunction(hash).digest(concat));
 }
 
 /**
@@ -92,23 +100,30 @@ export function deriveKeySchedule(
   transcripts: KeyScheduleTranscripts,
   psk: string = ZERO_IKM,
   dheSharedSecret: string = ZERO_IKM,
+  hash: Tls13Hash = 'sha256',
 ): KeySchedule {
-  const earlySecret = extractSecret('', psk);
-  const binderKey = expandLabel(earlySecret, 'ext binder', '');
-  const clientEarlyTrafficSecret = expandLabel(earlySecret, 'c e traffic', transcripts.clientHello);
-  const earlyExporterMasterSecret = expandLabel(earlySecret, 'e exp master', transcripts.clientHello);
+  const zero = zeroIkm(hash);
+  const pskInput = psk === ZERO_IKM ? zero : psk;
+  const dheInput = dheSharedSecret === ZERO_IKM ? zero : dheSharedSecret;
+  const empty = emptyTranscript(hash);
+  const expand = (secret: string, label: string, context: string): string => expandLabel(secret, label, context, hash);
 
-  const derivedFromEarly = expandLabel(earlySecret, 'derived', '');
-  const handshakeSecret = extractSecret(derivedFromEarly, dheSharedSecret);
-  const clientHandshakeTrafficSecret = expandLabel(handshakeSecret, 'c hs traffic', transcripts.serverHello);
-  const serverHandshakeTrafficSecret = expandLabel(handshakeSecret, 's hs traffic', transcripts.serverHello);
+  const earlySecret = extractSecret('', pskInput, hash);
+  const binderKey = expand(earlySecret, 'ext binder', empty);
+  const clientEarlyTrafficSecret = expand(earlySecret, 'c e traffic', transcripts.clientHello);
+  const earlyExporterMasterSecret = expand(earlySecret, 'e exp master', transcripts.clientHello);
 
-  const derivedFromHandshake = expandLabel(handshakeSecret, 'derived', '');
-  const masterSecret = extractSecret(derivedFromHandshake, ZERO_IKM);
-  const clientApplicationTrafficSecret = expandLabel(masterSecret, 'c ap traffic', transcripts.serverFinished);
-  const serverApplicationTrafficSecret = expandLabel(masterSecret, 's ap traffic', transcripts.serverFinished);
-  const exporterMasterSecret = expandLabel(masterSecret, 'exp master', transcripts.serverFinished);
-  const resumptionMasterSecret = expandLabel(masterSecret, 'res master', transcripts.clientFinished);
+  const derivedFromEarly = expand(earlySecret, 'derived', empty);
+  const handshakeSecret = extractSecret(derivedFromEarly, dheInput, hash);
+  const clientHandshakeTrafficSecret = expand(handshakeSecret, 'c hs traffic', transcripts.serverHello);
+  const serverHandshakeTrafficSecret = expand(handshakeSecret, 's hs traffic', transcripts.serverHello);
+
+  const derivedFromHandshake = expand(handshakeSecret, 'derived', empty);
+  const masterSecret = extractSecret(derivedFromHandshake, zero, hash);
+  const clientApplicationTrafficSecret = expand(masterSecret, 'c ap traffic', transcripts.serverFinished);
+  const serverApplicationTrafficSecret = expand(masterSecret, 's ap traffic', transcripts.serverFinished);
+  const exporterMasterSecret = expand(masterSecret, 'exp master', transcripts.serverFinished);
+  const resumptionMasterSecret = expand(masterSecret, 'res master', transcripts.clientFinished);
 
   return {
     earlySecret, binderKey, clientEarlyTrafficSecret, earlyExporterMasterSecret,
@@ -125,9 +140,9 @@ export function deriveKeySchedule(
  * intermédiaire n'était pas modélisée ; elle l'est, puisque le HMAC et
  * l'expansion sont maintenant réels tous les deux.
  */
-export function computeFinished(trafficSecret: string, transcript: string): string {
-  const finishedKey = toBytes(expandLabelHex(trafficSecret, 'finished', '', HASH_LEN));
-  return bytesToHex(hmac(SHA256, finishedKey, toBytes(transcript)));
+export function computeFinished(trafficSecret: string, transcript: string, hash: Tls13Hash = 'sha256'): string {
+  const finishedKey = toBytes(expandLabelHex(trafficSecret, 'finished', '', hashLength(hash), hash));
+  return bytesToHex(hmac(hashFunction(hash), finishedKey, toBytes(transcript)));
 }
 
 /**
@@ -137,8 +152,8 @@ export function computeFinished(trafficSecret: string, transcript: string): stri
  * ratcheted independently by calling this on that direction's current
  * secret alone (§4.6.3).
  */
-export function nextTrafficSecret(secret: string): string {
-  return expandLabel(secret, 'traffic upd', '');
+export function nextTrafficSecret(secret: string, hash: Tls13Hash = 'sha256'): string {
+  return expandLabel(secret, 'traffic upd', '', hash);
 }
 
 /**

@@ -19,8 +19,8 @@ function runHandshake(server: EapTlsServerSession, peer: EapTlsPeerSession): { s
     rounds++;
     // RFC 8446 flights carry a full certificate chain + signature, so a
     // tiny 40-byte MTU now needs noticeably more fragments/rounds than the
-    // old ad hoc 2-RTT model did — 150 comfortably covers that case.
-    if (rounds > 150) throw new Error('handshake did not converge');
+    // old ad hoc 2-RTT model did — 400 comfortably covers that case with the 1024-bit lab keys.
+    if (rounds > 400) throw new Error('handshake did not converge');
     const resp = peer.handle(req);
     req = server.handle(resp);
   }

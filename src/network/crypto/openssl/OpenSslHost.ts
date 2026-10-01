@@ -23,7 +23,7 @@ export type TlsPeerProbe =
 
 export interface TlsPeerProbeOptions {
   readonly versions?: readonly TlsProtocolVersion[];
-  readonly legacyCipherSuites?: readonly string[];
+  readonly cipherList?: string;
 }
 
 export interface OpenSslHost {

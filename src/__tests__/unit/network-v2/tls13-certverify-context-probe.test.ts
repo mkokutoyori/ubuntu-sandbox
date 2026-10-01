@@ -27,6 +27,7 @@ import {
   decodeMessages, encodeHandshakeMessage, type CertificateVerify, type CertificateMessage,
 } from '@/network/tls/messages';
 import { transcriptHash, certificateVerifyContent } from '@/network/tls/keySchedule';
+import { suiteInfo } from '@/network/tls/suite13';
 
 const NOW = Date.now();
 
@@ -40,12 +41,12 @@ function flight() {
   const down = server.handle(hello) as TlsRecord[];
   const [serverHelloRecord, ...bundleRecords] = down;
   const messages = decodeMessages(reassembleRecords(bundleRecords, true).plaintext);
-  return { leaf, hello, serverHelloRecord, messages, client, down };
+  return { leaf, hello, serverHelloRecord, messages, client, down, hash: suiteInfo(server.negotiatedCipherSuite).hash };
 }
 
 describe('RFC 8446 §4.4.3 — contexte de CertificateVerify', () => {
   it('la signature du serveur vérifie sur le contenu à préfixe de contexte', () => {
-    const { leaf, hello, serverHelloRecord, messages } = flight();
+    const { leaf, hello, serverHelloRecord, messages, hash: suiteHash } = flight();
     const certificate = messages.find((m): m is CertificateMessage => m.kind === 'certificate')!;
     const verify = messages.find((m): m is CertificateVerify => m.kind === 'certificate_verify')!;
     const before = [
@@ -53,19 +54,19 @@ describe('RFC 8446 §4.4.3 — contexte de CertificateVerify', () => {
       ...messages.filter((m) => m.kind === 'encrypted_extensions').map(encodeHandshakeMessage),
       encodeHandshakeMessage(certificate),
     ];
-    const hash = transcriptHash(before);
+    const hash = transcriptHash(before, suiteHash);
     expect(PkiKeyPair.verify(leaf.cert.publicKey, certificateVerifyContent('server', hash), verify.signature)).toBe(true);
   });
 
   it('elle ne vérifie PAS sur le condensé nu, ni sous le contexte « client »', () => {
-    const { leaf, hello, serverHelloRecord, messages } = flight();
+    const { leaf, hello, serverHelloRecord, messages, hash: suiteHash } = flight();
     const certificate = messages.find((m): m is CertificateMessage => m.kind === 'certificate')!;
     const verify = messages.find((m): m is CertificateVerify => m.kind === 'certificate_verify')!;
     const hash = transcriptHash([
       hello[0].fragment, serverHelloRecord.fragment,
       ...messages.filter((m) => m.kind === 'encrypted_extensions').map(encodeHandshakeMessage),
       encodeHandshakeMessage(certificate),
-    ]);
+    ], suiteHash);
     expect(PkiKeyPair.verify(leaf.cert.publicKey, hash, verify.signature)).toBe(false);
     expect(PkiKeyPair.verify(leaf.cert.publicKey, certificateVerifyContent('client', hash), verify.signature)).toBe(false);
   });
