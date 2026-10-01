@@ -98,7 +98,9 @@ const KNOWN_UNSUPPORTED = new Set([
   // `ssl_*` are handshake knobs: this TLS engine picks its own suite and
   // groups, so accepting them would store a value nothing reads — the
   // same rule this file applies to every other directive.
-  'ssl_session_cache',
+  'ssl_stapling', 'ssl_stapling_verify', 'ssl_trusted_certificate', 'ssl_client_certificate',
+  'ssl_verify_client', 'ssl_verify_depth', 'ssl_ecdh_curve', 'ssl_session_tickets', 'ssl_early_data',
+  'ssl_conf_command', 'ssl_buffer_size', 'ssl_reject_handshake', 'ssl_crl', 'ssl_session_cache',
   'ssl_session_timeout', 'ssl_dhparam', 'stub_status', 'sub_filter',
   'geo', 'map', 'split_clients', 'perl', 'lua_package_path',
 ]);
