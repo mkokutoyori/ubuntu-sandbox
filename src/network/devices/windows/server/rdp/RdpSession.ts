@@ -258,7 +258,7 @@ export class RdpServerHandler {
       }
 
       // established: one CredSSP credential PDU decides whether a session is created.
-      const { plaintext, nextSeq } = decryptApplicationData(tls!.clientApplicationTrafficSecret!, clientSeq, decodeRecords(bytes));
+      const { plaintext, nextSeq } = decryptApplicationData(tls!.clientTraffic(), clientSeq, decodeRecords(bytes));
       clientSeq = nextSeq;
       const req = decodeCredSspRequest(plaintext);
       if (!req) return;
@@ -276,7 +276,7 @@ export class RdpServerHandler {
         this.ctx.reportLogon?.(req.username, false);
       }
       const respBytes = encodeCredSspResponse(ok, sessionId);
-      const { records, nextSeq: serverNextSeq } = encryptApplicationData(tls!.serverApplicationTrafficSecret!, serverSeq, respBytes);
+      const { records, nextSeq: serverNextSeq } = encryptApplicationData(tls!.serverTraffic(), serverSeq, respBytes);
       serverSeq = serverNextSeq;
       socket.send(encodeRecords(records));
 
@@ -328,7 +328,7 @@ export function dialRdp(
   }
 
   const { records, nextSeq: clientNextSeq } = encryptApplicationData(
-    tls.clientApplicationTrafficSecret!, clientSeq, encodeCredSspRequest(username, password),
+    tls.clientTraffic(), clientSeq, encodeCredSspRequest(username, password),
   );
   clientSeq = clientNextSeq;
 
@@ -338,7 +338,7 @@ export function dialRdp(
   unsubCredSsp();
   if (!responseRecords) return { ok: false, error: 'Empty reply from server' };
 
-  const { plaintext, nextSeq: serverNextSeq } = decryptApplicationData(tls.serverApplicationTrafficSecret!, serverSeq, responseRecords);
+  const { plaintext, nextSeq: serverNextSeq } = decryptApplicationData(tls.serverTraffic(), serverSeq, responseRecords);
   serverSeq = serverNextSeq;
   const resp = decodeCredSspResponse(plaintext);
   if (!resp || !resp.ok) return { ok: false, error: 'Logon failure: unknown user name or bad password.' };

@@ -643,12 +643,12 @@ export class FtpServerSession {
 
   private encryptForDataChannel(dataTls: TlsServerSession | null, content: string): string {
     if (dataTls?.result !== 'accept') return content;
-    return encryptText(dataTls.serverApplicationTrafficSecret!, 0, content).wire;
+    return encryptText(dataTls.serverTraffic(), 0, content).wire;
   }
 
   private decryptForDataChannel(dataTls: TlsServerSession | null, seqRef: { seq: number }, raw: string): string {
     if (dataTls?.result !== 'accept') return raw;
-    const { text, nextSeq } = decryptText(dataTls.clientApplicationTrafficSecret!, seqRef.seq, raw);
+    const { text, nextSeq } = decryptText(dataTls.clientTraffic(), seqRef.seq, raw);
     seqRef.seq = nextSeq;
     return text;
   }

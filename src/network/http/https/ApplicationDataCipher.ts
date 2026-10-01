@@ -16,7 +16,8 @@
 import {
   deriveRecordKeys, sealRecord, openRecord, type RecordKeys,
 } from '@/network/tls/recordProtection';
-import { fragmentAsRecords, reassembleRecords, type TlsRecord } from '@/network/tls/recordLayer';
+import { fragmentAsRecords, fragmentPlaintext, reassembleRecords, reassembleFragments, type TlsRecord } from '@/network/tls/recordLayer';
+import type { TrafficProtection } from '@/network/tls/trafficProtection';
 
 export interface EncryptedApplicationData {
   readonly records: TlsRecord[];
@@ -40,9 +41,14 @@ function keys(trafficSecret: string): RecordKeys {
  * consuming one sequence number per record.
  */
 export function encryptApplicationData(
-  trafficSecret: string, startSeq: number, plaintext: Uint8Array,
+  traffic: TrafficProtection, startSeq: number, plaintext: Uint8Array,
 ): EncryptedApplicationData {
-  const k = keys(trafficSecret);
+  if (typeof traffic !== 'string') {
+    let legacySeq = startSeq;
+    const sealed = fragmentPlaintext('application_data', plaintext).map((record): TlsRecord => traffic.seal(legacySeq++, record));
+    return { records: sealed, nextSeq: legacySeq };
+  }
+  const k = keys(traffic);
   const records = fragmentAsRecords('application_data', plaintext, true);
   let seq = startSeq;
   const encrypted = records.map((record): TlsRecord => sealRecord(k, seq++, record));
@@ -72,9 +78,19 @@ export class BadRecordMacError extends Error {
 
 /** L'inverse d'`encryptApplicationData`. */
 export function decryptApplicationData(
-  trafficSecret: string, startSeq: number, records: readonly TlsRecord[],
+  traffic: TrafficProtection, startSeq: number, records: readonly TlsRecord[],
 ): DecryptedApplicationData {
-  const k = keys(trafficSecret);
+  if (typeof traffic !== 'string') {
+    let legacySeq = startSeq;
+    const opened: TlsRecord[] = [];
+    for (const record of records) {
+      const plain = traffic.open(legacySeq++, record);
+      if (plain === null) throw new BadRecordMacError();
+      opened.push(plain);
+    }
+    return { plaintext: reassembleFragments(opened).plaintext, nextSeq: legacySeq };
+  }
+  const k = keys(traffic);
   let seq = startSeq;
   const decrypted: TlsRecord[] = [];
   for (const record of records) {

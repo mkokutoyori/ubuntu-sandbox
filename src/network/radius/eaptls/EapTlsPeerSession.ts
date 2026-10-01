@@ -70,7 +70,7 @@ export class EapTlsPeerSession {
     this.eapType = opts.eapType ?? 'tls';
     this.innerAuth = opts.innerAuth;
     this.tls = new TlsClientSession({
-      verifier, clientCert: clientCert ?? undefined, clientPrivateKey: opts.clientPrivateKey,
+      verifier, clientCert: clientCert ?? undefined, clientPrivateKey: opts.clientPrivateKey, versions: ['1.3'],
     });
   }
 

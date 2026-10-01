@@ -154,6 +154,7 @@ function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
 
 export class LegacyRecordProtection {
   readonly kind = 'legacy' as const;
+  sequenceBase = 0;
   private chainIv: Uint8Array;
 
   constructor(
@@ -186,11 +187,13 @@ export class LegacyRecordProtection {
   }
 
   seal(seq: number, record: TlsRecord): TlsRecord {
-    return this.suite.mac === 'AEAD' ? this.sealAead(seq, record) : this.sealCbc(seq, record);
+    const absolute = seq + this.sequenceBase;
+    return this.suite.mac === 'AEAD' ? this.sealAead(absolute, record) : this.sealCbc(absolute, record);
   }
 
   open(seq: number, record: TlsRecord): TlsRecord | null {
-    return this.suite.mac === 'AEAD' ? this.openAead(seq, record) : this.openCbc(seq, record);
+    const absolute = seq + this.sequenceBase;
+    return this.suite.mac === 'AEAD' ? this.openAead(absolute, record) : this.openCbc(absolute, record);
   }
 
   private sealAead(seq: number, record: TlsRecord): TlsRecord {

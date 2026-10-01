@@ -276,11 +276,11 @@ export class SslDeepInspection {
       if (server.result !== 'accept') return;
 
       const { plaintext, nextSeq } = decryptApplicationData(
-        server.clientApplicationTrafficSecret!, clientSeq, records);
+        server.clientTraffic(), clientSeq, records);
       clientSeq = nextSeq;
 
       const forwarded = encryptApplicationData(
-        upstream.session.clientApplicationTrafficSecret!, upstreamClientSeq, plaintext);
+        upstream.session.clientTraffic(), upstreamClientSeq, plaintext);
       upstreamClientSeq = forwarded.nextSeq;
 
       let answer: TlsRecord[] | null = null;
@@ -292,11 +292,11 @@ export class SslDeepInspection {
       if (!answer) return;
 
       const decoded = decryptApplicationData(
-        upstream.session.serverApplicationTrafficSecret!, upstreamServerSeq, answer);
+        upstream.session.serverTraffic(), upstreamServerSeq, answer);
       upstreamServerSeq = decoded.nextSeq;
 
       const resealed = encryptApplicationData(
-        server.serverApplicationTrafficSecret!, serverSeq, decoded.plaintext);
+        server.serverTraffic(), serverSeq, decoded.plaintext);
       serverSeq = resealed.nextSeq;
       clientSocket.write(bytesToBinaryString(encodeRecords(resealed.records)));
     };

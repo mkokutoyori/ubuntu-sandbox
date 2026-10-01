@@ -54,7 +54,7 @@ export class EapTlsServerSession {
     this.eapType = config.eapType ?? 'tls';
     this.tls = new TlsServerSession({
       serverCert: config.serverCert, serverPrivateKey: config.serverPrivateKey,
-      requestClientCert: config.requireClientCert ?? true, verifier: config.verifier,
+      requestClientCert: config.requireClientCert ?? true, verifier: config.verifier, protocols: ['1.3'],
     });
   }
 

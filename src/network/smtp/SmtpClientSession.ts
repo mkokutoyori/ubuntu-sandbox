@@ -58,7 +58,7 @@ export class SmtpClientSession {
       return;
     }
     if (this.controlTls?.result === 'success') {
-      const { text, nextSeq } = decryptText(this.controlTls.serverApplicationTrafficSecret!, this.controlServerSeq, String(data));
+      const { text, nextSeq } = decryptText(this.controlTls.serverTraffic(), this.controlServerSeq, String(data));
       this.controlServerSeq = nextSeq;
       this.absorbReplies(text);
       return;
@@ -142,7 +142,7 @@ export class SmtpClientSession {
 
   private writeText(text: string): void {
     if (this.controlTls?.result === 'success') {
-      const { wire, nextSeq } = encryptText(this.controlTls.clientApplicationTrafficSecret!, this.controlClientSeq, text);
+      const { wire, nextSeq } = encryptText(this.controlTls.clientTraffic(), this.controlClientSeq, text);
       this.controlClientSeq = nextSeq;
       this.socket!.write(wire);
     } else {

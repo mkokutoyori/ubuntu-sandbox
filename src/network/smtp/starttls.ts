@@ -1,4 +1,5 @@
 import type { TcpSocket } from '@/network/tcp/TcpStack';
+import type { TrafficProtection } from '@/network/tls/trafficProtection';
 import { TlsServerSession, type TlsServerConfig } from '@/network/tls/TlsServerSession';
 import { TlsClientSession, type TlsClientConfig } from '@/network/tls/TlsClientSession';
 import type { TlsRecord } from '@/network/tls/recordLayer';
@@ -51,12 +52,12 @@ export function stepHandshake(tls: { handle(incoming: readonly TlsRecord[]): rea
   return bytesToBinaryString(encodeRecords(nextFlight));
 }
 
-export function encryptText(secret: string, seq: number, text: string): { wire: string; nextSeq: number } {
+export function encryptText(secret: TrafficProtection, seq: number, text: string): { wire: string; nextSeq: number } {
   const { records, nextSeq } = encryptApplicationData(secret, seq, encoder.encode(text));
   return { wire: bytesToBinaryString(encodeRecords(records)), nextSeq };
 }
 
-export function decryptText(secret: string, seq: number, raw: string): { text: string; nextSeq: number } {
+export function decryptText(secret: TrafficProtection, seq: number, raw: string): { text: string; nextSeq: number } {
   const incoming = decodeRecords(binaryStringToBytes(raw));
   const { plaintext, nextSeq } = decryptApplicationData(secret, seq, incoming);
   return { text: decoder.decode(plaintext), nextSeq };

@@ -109,7 +109,7 @@ export class HttpsServerSession {
       }
 
       const { plaintext: requestBytes, nextSeq: clientNextSeq } = decryptApplicationData(
-        tls.clientApplicationTrafficSecret!, clientSeq, records,
+        tls.clientTraffic(), clientSeq, records,
       );
       clientSeq = clientNextSeq;
 
@@ -120,7 +120,7 @@ export class HttpsServerSession {
         this.applyHsts(response);
         const chunked = response.headers.get('Transfer-Encoding')?.toLowerCase() === 'chunked';
         const responseBytes = encoder.encode(encodeResponse(response, { chunked }));
-        const { records, nextSeq: serverNextSeq } = encryptApplicationData(tls.serverApplicationTrafficSecret!, serverSeq, responseBytes);
+        const { records, nextSeq: serverNextSeq } = encryptApplicationData(tls.serverTraffic(), serverSeq, responseBytes);
         serverSeq = serverNextSeq;
         socket.write(bytesToBinaryString(encodeRecords(records)));
         if (shouldClose) {

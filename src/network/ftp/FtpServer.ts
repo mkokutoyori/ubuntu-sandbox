@@ -52,7 +52,7 @@ export class FtpServer {
     const writeReply = (r: FtpReply): void => {
       const text = encodeReply(r);
       if (wireState === 'tls-established' && tls) {
-        const { wire, nextSeq } = encryptText(tls.serverApplicationTrafficSecret!, serverSeq, text);
+        const { wire, nextSeq } = encryptText(tls.serverTraffic(), serverSeq, text);
         serverSeq = nextSeq;
         socket.write(wire);
       } else {
@@ -86,7 +86,7 @@ export class FtpServer {
 
       let text: string;
       if (wireState === 'tls-established' && tls) {
-        const { text: decrypted, nextSeq } = decryptText(tls.clientApplicationTrafficSecret!, clientSeq, String(data));
+        const { text: decrypted, nextSeq } = decryptText(tls.clientTraffic(), clientSeq, String(data));
         clientSeq = nextSeq;
         text = decrypted;
       } else {

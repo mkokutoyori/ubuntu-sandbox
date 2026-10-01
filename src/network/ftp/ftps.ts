@@ -8,6 +8,7 @@
  * the HTTPS adapter (`network/http/https/`), which are pure TLS-record
  * plumbing with no HTTP-specific logic, so nothing is duplicated.
  */
+import type { TrafficProtection } from '@/network/tls/trafficProtection';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { TlsServerSession, type TlsServerConfig } from '@/network/tls/TlsServerSession';
 import { TlsClientSession, type TlsClientConfig } from '@/network/tls/TlsClientSession';
@@ -71,13 +72,13 @@ export function stepHandshake(tls: { handle(incoming: readonly TlsRecord[]): rea
 }
 
 /** Encrypts `text` (one FTP command/reply line, or one data-channel payload) into wire bytes ready for `socket.write()`. */
-export function encryptText(secret: string, seq: number, text: string): { wire: string; nextSeq: number } {
+export function encryptText(secret: TrafficProtection, seq: number, text: string): { wire: string; nextSeq: number } {
   const { records, nextSeq } = encryptApplicationData(secret, seq, encoder.encode(text));
   return { wire: bytesToBinaryString(encodeRecords(records)), nextSeq };
 }
 
 /** Inverse of `encryptText`: `raw` is exactly one `onData` payload's `String(data)`. */
-export function decryptText(secret: string, seq: number, raw: string): { text: string; nextSeq: number } {
+export function decryptText(secret: TrafficProtection, seq: number, raw: string): { text: string; nextSeq: number } {
   const incoming = decodeRecords(binaryStringToBytes(raw));
   const { plaintext, nextSeq } = decryptApplicationData(secret, seq, incoming);
   return { text: decoder.decode(plaintext), nextSeq };

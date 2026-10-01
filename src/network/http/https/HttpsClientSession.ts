@@ -114,7 +114,7 @@ export class HttpsClientSession {
     const tls = this.tls;
 
     const requestBytes = encoder.encode(encodeRequest(request, opts));
-    const { records, nextSeq: clientNextSeq } = encryptApplicationData(tls.clientApplicationTrafficSecret!, this.clientSeq, requestBytes);
+    const { records, nextSeq: clientNextSeq } = encryptApplicationData(tls.clientTraffic(), this.clientSeq, requestBytes);
 
     let responseRecords: TlsRecord[] | null = null;
     const unsubscribe = socket.onData((data) => {
@@ -126,7 +126,7 @@ export class HttpsClientSession {
 
     if (!responseRecords) return fail('Empty reply from server');
 
-    const { plaintext, nextSeq: serverNextSeq } = decryptApplicationData(tls.serverApplicationTrafficSecret!, this.serverSeq, responseRecords);
+    const { plaintext, nextSeq: serverNextSeq } = decryptApplicationData(tls.serverTraffic(), this.serverSeq, responseRecords);
     this.serverSeq = serverNextSeq;
 
     const parsed = parseResponse(decoder.decode(plaintext), { suppressBody: request.method === 'HEAD' });
@@ -170,7 +170,7 @@ export class HttpsClientSession {
     const tls = this.tls;
 
     const requestBytes = encoder.encode(encodeRequest(request, opts));
-    const { records, nextSeq: clientNextSeq } = encryptApplicationData(tls.clientApplicationTrafficSecret!, this.clientSeq, requestBytes);
+    const { records, nextSeq: clientNextSeq } = encryptApplicationData(tls.clientTraffic(), this.clientSeq, requestBytes);
 
     let responseRecords: TlsRecord[] | null = null;
     const unsubscribe = socket.onData((data) => {
@@ -185,7 +185,7 @@ export class HttpsClientSession {
 
     if (!responseRecords) return fail('Empty reply from server');
 
-    const { plaintext, nextSeq: serverNextSeq } = decryptApplicationData(tls.serverApplicationTrafficSecret!, this.serverSeq, responseRecords);
+    const { plaintext, nextSeq: serverNextSeq } = decryptApplicationData(tls.serverTraffic(), this.serverSeq, responseRecords);
     this.serverSeq = serverNextSeq;
 
     const parsed = parseResponse(decoder.decode(plaintext), { suppressBody: request.method === 'HEAD' });

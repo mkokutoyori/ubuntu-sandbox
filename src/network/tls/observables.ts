@@ -7,7 +7,6 @@
  */
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import { WritableSignal, type Signal } from '@/events/Signal';
-import type { CipherSuite } from './types';
 import type { TlsAlert } from './alerts';
 import type { TlsSessionRole } from './events';
 
@@ -15,7 +14,7 @@ export interface TlsSessionVM {
   readonly sessionId: string;
   readonly role: TlsSessionRole;
   readonly status: 'in-progress' | 'established' | 'failed';
-  readonly cipherSuite: CipherSuite | null;
+  readonly cipherSuite: string | null;
   readonly alpnProtocol: string | null;
   readonly resumed: boolean;
   readonly alert: TlsAlert | null;

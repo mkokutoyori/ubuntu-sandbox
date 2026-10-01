@@ -27,6 +27,7 @@ export interface ClientHello {
   readonly legacyVersion: string;
   readonly random: string;
   readonly cipherSuites: readonly CipherSuite[];
+  readonly legacyCipherSuites?: readonly number[];
   readonly extensions: ClientHelloExtensions;
 }
 
