@@ -39,13 +39,17 @@ const APPLIED_BLOCKS = new Set(['http', 'server', 'location', 'events', 'if', 'u
  */
 const UPSTREAM_METHODES_ABSENTES = new Set(['least_conn', 'hash', 'random', 'least_time']);
 
+export const DEFAULT_SSL_PROTOCOLS: readonly string[] = ['TLSv1.2', 'TLSv1.3'];
+export const DEFAULT_SSL_CIPHERS = 'HIGH:!aNULL:!MD5';
+export const SSL_PROTOCOL_NAMES: readonly string[] = ['SSLv2', 'SSLv3', 'TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3'];
+
 const APPLIED_DIRECTIVES = new Set([
   'listen', 'server_name', 'root', 'index', 'try_files', 'return',
   'error_page', 'autoindex', 'access_log', 'error_log', 'include',
   'add_header', 'default_type',
   // §P5 — these two DECIDE which certificate a `listen … ssl` port
   // presents, so they belong here and not in `ACCEPTED_INERT`.
-  'ssl_certificate', 'ssl_certificate_key',
+  'ssl_certificate', 'ssl_certificate_key', 'ssl_protocols', 'ssl_ciphers', 'ssl_prefer_server_ciphers',
   // §P6 — `proxy_pass` DÉCIDE vers où la requête part, `proxy_set_header`
   // ce qu'elle emporte, et `server` (dans un bloc `upstream`) nomme la
   // cible. Les trois agissent ; elles ne peuvent pas être inertes.
@@ -94,7 +98,7 @@ const KNOWN_UNSUPPORTED = new Set([
   // `ssl_*` are handshake knobs: this TLS engine picks its own suite and
   // groups, so accepting them would store a value nothing reads — the
   // same rule this file applies to every other directive.
-  'ssl_protocols', 'ssl_ciphers', 'ssl_prefer_server_ciphers', 'ssl_session_cache',
+  'ssl_session_cache',
   'ssl_session_timeout', 'ssl_dhparam', 'stub_status', 'sub_filter',
   'geo', 'map', 'split_clients', 'perl', 'lua_package_path',
 ]);
@@ -288,6 +292,17 @@ function parseBlock(
     }
     if (!APPLIED_DIRECTIVES.has(name) && !ACCEPTED_INERT.has(name)) {
       return { ok: false, error: unknownOrUnsupported(name, file, line) };
+    }
+    if (name === 'ssl_protocols') {
+      if (args.length === 0) return { ok: false, error: emerg('invalid number of arguments in "ssl_protocols" directive', file, line) };
+      const unknown = args.find((a) => !SSL_PROTOCOL_NAMES.includes(a));
+      if (unknown) return { ok: false, error: emerg(`invalid value "${unknown}"`, file, line) };
+    }
+    if (name === 'ssl_prefer_server_ciphers' && (args.length !== 1 || (args[0] !== 'on' && args[0] !== 'off'))) {
+      return { ok: false, error: emerg('invalid value "' + (args[0] ?? '') + '", it must be "on" or "off"', file, line) };
+    }
+    if (name === 'ssl_ciphers' && args.length !== 1) {
+      return { ok: false, error: emerg('invalid number of arguments in "ssl_ciphers" directive', file, line) };
     }
 
     out.push({ name, args, line, file });
@@ -507,6 +522,9 @@ export interface NginxServerBlock {
   /** §P5 — the PEM files this server presents, as written in the file. */
   readonly sslCertificate: string | null;
   readonly sslCertificateKey: string | null;
+  readonly sslProtocols: readonly string[];
+  readonly sslCiphers: string;
+  readonly sslPreferServerCiphers: boolean;
   /** §P6 — hérités par les `location` qui n'en déclarent pas. */
   readonly proxySetHeaders: readonly (readonly [string, string])[];
 }
@@ -637,7 +655,7 @@ function collectLocation(node: NginxDirective, inheritedRoot: string): NginxLoca
   return loc as NginxLocation;
 }
 
-function collectServer(node: NginxDirective, httpDefaults: { accessLog: string | null; errorLog: string | null }): NginxServerBlock {
+function collectServer(node: NginxDirective, httpDefaults: { accessLog: string | null; errorLog: string | null; sslProtocols: readonly string[]; sslCiphers: string; sslPreferServerCiphers: boolean }): NginxServerBlock {
   const listen: { port: number; defaultServer: boolean; ssl: boolean }[] = [];
   let serverNames: string[] = [];
   let root = '/var/www/html';
@@ -648,11 +666,17 @@ function collectServer(node: NginxDirective, httpDefaults: { accessLog: string |
   const addHeaders: (readonly [string, string])[] = [];
   let sslCertificate: string | null = null;
   let sslCertificateKey: string | null = null;
+  let sslProtocols = httpDefaults.sslProtocols;
+  let sslCiphers = httpDefaults.sslCiphers;
+  let sslPreferServerCiphers = httpDefaults.sslPreferServerCiphers;
   const proxySetHeaders: (readonly [string, string])[] = [];
 
   for (const d of node.block ?? []) {
     if (d.name === 'ssl_certificate') sslCertificate = d.args[0] ?? null;
     else if (d.name === 'ssl_certificate_key') sslCertificateKey = d.args[0] ?? null;
+    else if (d.name === 'ssl_protocols') sslProtocols = [...d.args];
+    else if (d.name === 'ssl_ciphers') sslCiphers = d.args[0];
+    else if (d.name === 'ssl_prefer_server_ciphers') sslPreferServerCiphers = d.args[0] === 'on';
     else if (d.name === 'listen') {
       const spec = parseListen(d.args);
       if (spec && !listen.some((l) => l.port === spec.port)) listen.push(spec);
@@ -672,13 +696,16 @@ function collectServer(node: NginxDirective, httpDefaults: { accessLog: string |
 
   return {
     listen, serverNames, root, index, locations, accessLog, errorLog, addHeaders,
-    sslCertificate, sslCertificateKey, proxySetHeaders,
+    sslCertificate, sslCertificateKey, sslProtocols, sslCiphers, sslPreferServerCiphers, proxySetHeaders,
   };
 }
 
 export function extractServers(tree: readonly NginxDirective[]): NginxServerBlock[] {
   const out: NginxServerBlock[] = [];
-  const defaults = { accessLog: null as string | null, errorLog: null as string | null };
+  const defaults = {
+    accessLog: null as string | null, errorLog: null as string | null,
+    sslProtocols: DEFAULT_SSL_PROTOCOLS, sslCiphers: DEFAULT_SSL_CIPHERS, sslPreferServerCiphers: false,
+  };
 
   const walk = (nodes: readonly NginxDirective[], inHttp: boolean): void => {
     for (const node of nodes) {
@@ -688,6 +715,9 @@ export function extractServers(tree: readonly NginxDirective[]): NginxServerBloc
         for (const d of node.block ?? []) {
           if (d.name === 'access_log') defaults.accessLog = d.args[0] === 'off' ? null : d.args[0];
           if (d.name === 'error_log') defaults.errorLog = d.args[0];
+          if (d.name === 'ssl_protocols') defaults.sslProtocols = [...d.args];
+          if (d.name === 'ssl_ciphers') defaults.sslCiphers = d.args[0];
+          if (d.name === 'ssl_prefer_server_ciphers') defaults.sslPreferServerCiphers = d.args[0] === 'on';
         }
         walk(node.block ?? [], true);
       } else if (node.name === 'server') {

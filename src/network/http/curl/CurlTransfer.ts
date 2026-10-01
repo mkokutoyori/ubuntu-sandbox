@@ -1,3 +1,6 @@
+import { opensslAlertReason } from '@/network/tls/alerts';
+import { expandCipherString } from '@/network/tls/legacy/cipherString';
+import { legacySuiteByName, type TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
 import { Http1ClientSession } from '../http1/Http1ClientSession';
 import { HttpsClientSession } from '../https/HttpsClientSession';
 import {
@@ -19,6 +22,25 @@ import { MAX_PORT, PortNumber } from '@/network/core/ports/PortNumber';
 import type { CurlHost } from './CurlHost';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { performCurlFtp } from './CurlFtp';
+
+
+function opensslSuiteName(name: string): string {
+  return legacySuiteByName(name)?.opensslName ?? name;
+}
+
+const ALL_TLS_VERSIONS: readonly TlsProtocolVersion[] = ['1.0', '1.1', '1.2', '1.3'];
+
+function curlTlsPolicy(
+  opts: CurlOptions,
+): { ok: true; config: { versions: readonly TlsProtocolVersion[]; legacyCipherSuites?: readonly string[] } } | { ok: false } {
+  const min = ALL_TLS_VERSIONS.indexOf(opts.tlsMin ?? '1.2');
+  const max = ALL_TLS_VERSIONS.indexOf(opts.tlsMax ?? '1.3');
+  const versions = ALL_TLS_VERSIONS.filter((_, index) => index >= min && index <= max);
+  if (opts.ciphers === null) return { ok: true, config: { versions } };
+  const list = expandCipherString(opts.ciphers);
+  if (list.ok === false) return { ok: false };
+  return { ok: true, config: { versions, legacyCipherSuites: list.suites.map((suite) => suite.name) } };
+}
 
 export interface CurlUrl {
   readonly scheme: 'http' | 'https' | 'ftp';
@@ -428,11 +450,25 @@ export async function performCurlRequest(
 
       let session: HttpsClientSession | null = null;
       try {
-        session = new HttpsClientSession(host.tcpStack(), address, url.port, { verifier });
+        const tlsPolicy = curlTlsPolicy(opts);
+        if (tlsPolicy.ok === false) {
+          return {
+            ok: false, code: 59, message: "curl: (59) Couldn't use specified SSL cipher",
+            url, remoteIp, method, numRedirects: redirects, trace,
+          };
+        }
+        session = new HttpsClientSession(host.tcpStack(), address, url.port, { verifier, ...tlsPolicy.config });
         session.adopt(porte.socket);
         const result = await session.sendAsync(request);
+        const alert = session.handshake?.lastAlert ?? null;
+        const tlsAlert = session.handshake?.result === 'failure' && alert !== null ? opensslAlertReason(alert.description) : undefined;
         if (!result.ok || !result.response) {
-          if (!opts.insecure) {
+          if (tlsAlert !== undefined) {
+            failure = {
+              ok: false, code: 35, message: `curl: (35) OpenSSL/3.0.13: ${tlsAlert}`,
+              url, remoteIp, method, numRedirects: redirects, trace,
+            };
+          } else if (!opts.insecure) {
             failure = {
               ok: false, code: 60,
               message: 'curl: (60) SSL certificate problem: unable to get local issuer certificate',
@@ -455,7 +491,7 @@ export async function performCurlRequest(
             };
           } else {
             trace.push(`* Connected to ${url.host} (${address}) port ${url.port}`);
-            trace.push('* SSL connection using TLSv1.3');
+            trace.push(`* SSL connection using TLSv${session.handshake?.negotiatedVersion ?? '1.3'} / ${opensslSuiteName(session.handshake?.negotiatedCipherSuite ?? '')}`);
             if (peer) {
               trace.push('* Server certificate:');
               trace.push(`*  subject: ${peer.subject}`);

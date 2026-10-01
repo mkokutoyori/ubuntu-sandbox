@@ -29,7 +29,7 @@ import {
 } from './messages';
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
 import { deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, ZERO_IKM } from './keySchedule';
-import { certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
+import { alertFromRecord, alertToRecord, certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
 import { MANDATORY_CIPHER_SUITES } from './cipherSuites';
 import { type SessionTicket, deriveResumptionPsk } from './sessionTickets';
 import {
@@ -202,7 +202,30 @@ export class TlsClientSession {
   }
 
   /** Feeds the server's flight in; returns the client's next flight, or null on failure. */
+  peerAlert: TlsAlert | null = null;
+
   handle(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
+    const received = incoming.length > 0 ? alertFromRecord(incoming[0]) : null;
+    if (received !== null) return this.receiveAlert(received);
+    const before = this.lastAlert;
+    const flight = this.process(incoming);
+    if (flight === null && this.result === 'failure' && this.lastAlert !== before && this.lastAlert !== null) {
+      return [alertToRecord(this.lastAlert)];
+    }
+    return flight;
+  }
+
+  private receiveAlert(alert: TlsAlert): null {
+    if (this.result !== null) return null;
+    this.peerAlert = alert;
+    this.lastAlert = alert;
+    this.state = 'done';
+    this.result = 'failure';
+    this.emit({ topic: 'tls.handshake.failed', payload: { sessionId: this.sessionId, role: 'client', alert } });
+    return null;
+  }
+
+  private process(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
     if (this.state !== 'awaiting-server-flight') return null;
     try {
       return this.handleServerMessage(incoming);

@@ -36,14 +36,14 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
     // `nc` et `nmap` — `EndHost.tcpConnectOutcome`, synchrone parce que
     // la livraison de trames l'est dans ce simulateur.
     tcpConnect: (ip, port) => ctx.net.tcpConnectOutcome(ip, port),
-    tlsPeerCertificate: (ip, port, servername) => {
+    tlsPeerCertificate: (ip, port, servername, options) => {
       const sonde = probeTlsPeer(ctx.net.getTcpStack(), ip, port, {
-        servername, trustAnchors: ctx.tlsTrustAnchors,
+        servername, trustAnchors: ctx.tlsTrustAnchors, ...options,
       });
-      if (!sonde.ok) return { ok: false, reason: sonde.reason ?? 'handshake failed' };
+      if (!sonde.ok) return { ok: false, reason: sonde.reason ?? 'handshake failed', alert: sonde.alert ?? null };
       return {
         ok: true, certificate: sonde.certificate,
-        cipherSuite: sonde.cipherSuite, verified: sonde.verified,
+        cipherSuite: sonde.cipherSuite, protocolVersion: sonde.protocolVersion ?? null, verified: sonde.verified,
       };
     },
     resolveHost: (nom) => {

@@ -1,3 +1,4 @@
+import type { TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
 export interface CurlResolveEntry {
   readonly host: string;
   readonly port: number;
@@ -8,6 +9,9 @@ export interface CurlOptions {
   head: boolean;
   include: boolean;
   insecure: boolean;
+  tlsMin: TlsProtocolVersion | null;
+  tlsMax: TlsProtocolVersion | null;
+  ciphers: string | null;
   silent: boolean;
   showError: boolean;
   verbose: boolean;
@@ -79,6 +83,11 @@ const LONG_NO_ARG: Record<string, string> = {
   include: 'i',
   version: 'V',
   'retry-all-errors': 'retry-all-errors',
+  tlsv1: 'tlsv1.0',
+  'tlsv1.0': 'tlsv1.0',
+  'tlsv1.1': 'tlsv1.1',
+  'tlsv1.2': 'tlsv1.2',
+  'tlsv1.3': 'tlsv1.3',
 };
 
 const LONG_WITH_ARG: Record<string, string> = {
@@ -107,6 +116,8 @@ const LONG_WITH_ARG: Record<string, string> = {
   'connect-timeout': 'connect-timeout',
   'max-time': 'm',
   'local-port': 'local-port',
+  'tls-max': 'tls-max',
+  ciphers: 'ciphers',
 };
 
 const UNSUPPORTED_SHORT: Record<string, true> = {
@@ -133,7 +144,7 @@ const UNSUPPORTED_LONG: Record<string, true> = {
   key: true, capath: true, interface: true,
   'anyauth': true, ntlm: true,
   negotiate: true, digest: true, 'proxy-user': true, socks5: true, socks4: true,
-  'tlsv1.2': true, 'tlsv1.3': true, 'ciphers': true, 'keepalive-time': true,
+  'keepalive-time': true,
   'speed-limit': true, 'speed-time': true, range: true, 'time-cond': true,
   'remote-time': true, netrc: true, 'trace': true, 'trace-ascii': true,
   config: true,
@@ -159,6 +170,9 @@ function defaults(): CurlOptions {
     head: false,
     include: false,
     insecure: false,
+    tlsMin: null,
+    tlsMax: null,
+    ciphers: null,
     silent: false,
     showError: false,
     verbose: false,
@@ -279,6 +293,14 @@ function applyValued(
       break;
     }
     case 'cacert': opts.caCert = value; break;
+    case 'tls-max': {
+      const versions: Record<string, TlsProtocolVersion> = { '1.0': '1.0', '1.1': '1.1', '1.2': '1.2', '1.3': '1.3' };
+      const version = versions[value];
+      if (!version) return usageFailure(`curl: option ${spelling}: unsupported TLS version: ${value}`);
+      opts.tlsMax = version;
+      break;
+    }
+    case 'ciphers': opts.ciphers = value; break;
     case 'connect-timeout': {
       const seconds = Number(value);
       if (value.trim() === '' || !Number.isFinite(seconds) || seconds < 0) {
@@ -319,6 +341,10 @@ function applyFlag(opts: CurlOptions, letter: string): void {
     case 'V': opts.version = true; break;
     case 'retry-all-errors': opts.retryAllErrors = true; break;
     case 'k': opts.insecure = true; break;
+    case 'tlsv1.0': opts.tlsMin = '1.0'; break;
+    case 'tlsv1.1': opts.tlsMin = '1.1'; break;
+    case 'tlsv1.2': opts.tlsMin = '1.2'; break;
+    case 'tlsv1.3': opts.tlsMin = '1.3'; break;
     case 's': opts.silent = true; break;
     case 'S': opts.showError = true; break;
     case 'v': opts.verbose = true; break;

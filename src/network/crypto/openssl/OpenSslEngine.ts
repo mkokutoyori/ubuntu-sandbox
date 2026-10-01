@@ -31,6 +31,9 @@ import { buildCertificateRequest } from '@/network/pki/CertificateSigningRequest
 import { CertificateVerifier, type VerificationReason } from '@/network/pki/CertificateVerifier';
 import { CertificateRevocationList } from '@/network/pki/CertificateRevocationList';
 import { MANDATORY_CIPHER_SUITES } from '@/network/tls/cipherSuites';
+import { expandCipherString, verboseCipherLine } from '@/network/tls/legacy/cipherString';
+import { legacySuiteByName, type TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
+import { opensslAlertReason, type AlertDescription } from '@/network/tls/alerts';
 import { parseArgs, parseSubject, REAL_OPENSSL_SUBCOMMANDS } from './OpenSslArgs';
 import { runEnc, ENC_ALGOS, ENC_KNOWN_UNIMPLEMENTED } from './OpenSslEnc';
 import { ok, fail, type OpenSslHost, type OpenSslResult } from './OpenSslHost';
@@ -639,13 +642,20 @@ function runPrime(argv: readonly string[]): OpenSslResult {
  * décrirait une autre machine — c'est la règle du §P4.
  */
 function runCiphers(argv: readonly string[]): OpenSslResult {
-  const { opts } = parseArgs('ciphers', argv);
+  const { opts, operands } = parseArgs('ciphers', argv);
+  const spec = operands[0] ?? 'DEFAULT';
+  const list = expandCipherString(spec);
+  if (list.ok === false) return fail('Error in cipher list', 1);
+  const only13 = opts.has('-tls1_3');
+  const legacy = only13 ? [] : list.suites;
+  const tls13 = operands.length === 0 || opts.has('-tls1_3') ? MANDATORY_CIPHER_SUITES : [];
   if (opts.has('-v')) {
-    return ok(MANDATORY_CIPHER_SUITES.map(
-      (s) => `${s.padEnd(30)} TLSv1.3 Kx=any      Au=any  Enc=${s.includes('CHACHA20') ? 'CHACHA20/POLY1305' : 'AESGCM'} Mac=AEAD`,
-    ).join('\n'));
+    return ok([
+      ...tls13.map((s) => `${s.padEnd(30)} TLSv1.3 Kx=any      Au=any  Enc=${s.includes('CHACHA20') ? 'CHACHA20/POLY1305' : 'AESGCM'} Mac=AEAD`),
+      ...legacy.map(verboseCipherLine),
+    ].join('\n'));
   }
-  return ok(MANDATORY_CIPHER_SUITES.join(':'));
+  return ok([...tls13, ...legacy.map((suite) => suite.opensslName)].join(':'));
 }
 
 function runInfo(argv: readonly string[]): OpenSslResult {
@@ -1116,13 +1126,30 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   }
 
   const nomServeur = opts.get('-servername');
+  const cipherSpec = opts.get('-cipher');
+  const forced = (['-tls1_3', '-tls1_2', '-tls1_1', '-tls1'] as const).find((flag) => opts.has(flag));
+  const versionOf: Record<string, TlsProtocolVersion> = {
+    '-tls1_3': '1.3', '-tls1_2': '1.2', '-tls1_1': '1.1', '-tls1': '1.0',
+  };
+  const versions: readonly TlsProtocolVersion[] = forced
+    ? [versionOf[forced]]
+    : opts.has('-no_tls1_3') ? ['1.2'] : ['1.3', '1.2'];
+  let legacyCipherSuites: readonly string[] | undefined;
+  if (typeof cipherSpec === 'string') {
+    const list = expandCipherString(cipherSpec);
+    if (list.ok === false) return fail('Error setting cipher list', 1);
+    legacyCipherSuites = list.suites.map((suite) => suite.name);
+  }
+  const probeOptions = { versions, ...(legacyCipherSuites ? { legacyCipherSuites } : {}) };
   const sonde = host.tlsPeerCertificate?.(
-    ip, port, typeof nomServeur === 'string' ? nomServeur : undefined);
+    ip, port, typeof nomServeur === 'string' ? nomServeur : undefined, probeOptions);
 
   const echecPoignee = sonde && sonde.ok === false
     ? (sonde.reason ?? 'handshake failed') : null;
   if (echecPoignee !== null) {
     lignes.push(`TLS handshake yielded no peer certificate: ${echecPoignee}`);
+    const raison = sonde && sonde.ok === false && sonde.alert ? opensslAlertReason(sonde.alert as AlertDescription) : undefined;
+    if (raison) lignes.push(raison);
   }
 
   lignes.push('---');
@@ -1145,7 +1172,12 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   } else {
     const suite = sonde && sonde.ok && sonde.cipherSuite
       ? sonde.cipherSuite : MANDATORY_CIPHER_SUITES[1];
-    lignes.push(`New, TLSv1.3, Cipher is ${suite}`);
+    const protocole = sonde && sonde.ok && sonde.protocolVersion ? sonde.protocolVersion : '1.3';
+    const nomSuite = legacySuiteByName(suite)?.opensslName ?? suite;
+    lignes.push(`New, TLSv${protocole}, Cipher is ${nomSuite}`);
+    lignes.push('SSL-Session:');
+    lignes.push(`    Protocol  : TLSv${protocole}`);
+    lignes.push(`    Cipher    : ${nomSuite}`);
   }
   if (typeof nomServeur === 'string') lignes.push(`Server name: ${nomServeur}`);
   if (presente) {

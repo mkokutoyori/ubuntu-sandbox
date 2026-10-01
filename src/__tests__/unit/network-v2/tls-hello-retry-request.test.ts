@@ -76,7 +76,7 @@ describe('TLS 1.3 HelloRetryRequest (RFC 8446 §4.1.4)', () => {
     const clientHello1 = client.start();
     const serverFlight = server.handle(clientHello1);
 
-    expect(serverFlight).toBeNull();
+    expect(serverFlight?.[0].contentType).toBe('alert');
     expect(server.result).toBe('reject');
   });
 

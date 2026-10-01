@@ -1,3 +1,4 @@
+import type { TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { TcpWireOutcome } from '@/network/tcp/types';
 /**
@@ -16,8 +17,14 @@ import type { TcpWireOutcome } from '@/network/tcp/types';
 
 export type TlsPeerProbe =
   | { readonly ok: true; readonly certificate: X509Certificate | null;
-      readonly cipherSuite: string | null; readonly verified: boolean }
-  | { readonly ok: false; readonly reason: string };
+      readonly cipherSuite: string | null; readonly protocolVersion?: string | null;
+      readonly verified: boolean }
+  | { readonly ok: false; readonly reason: string; readonly alert?: string | null };
+
+export interface TlsPeerProbeOptions {
+  readonly versions?: readonly TlsProtocolVersion[];
+  readonly legacyCipherSuites?: readonly string[];
+}
 
 export interface OpenSslHost {
   readFile(path: string): string | null;
@@ -50,7 +57,7 @@ export interface OpenSslHost {
    * decrire deux certificats differents pour le meme serveur.
    */
   tlsPeerCertificate?(
-    ip: string, port: number, servername?: string,
+    ip: string, port: number, servername?: string, options?: TlsPeerProbeOptions,
   ): TlsPeerProbe;
 
   /** Résolution par `/etc/hosts` — synchrone, pour la même raison. */

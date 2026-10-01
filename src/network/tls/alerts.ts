@@ -6,6 +6,7 @@
  */
 import type { VerificationReason } from '@/network/pki/CertificateVerifier';
 import type { AlertLevel } from './types';
+import type { TlsRecord } from './recordLayer';
 
 export type AlertDescription =
   | 'close_notify'
@@ -104,4 +105,32 @@ export function certificateAlert(reason: VerificationReason): TlsAlert {
 
 export function fatalAlert(description: AlertDescription): TlsAlert {
   return { level: 'fatal', description };
+}
+
+const ALERT_DESCRIPTION_BY_CODE = new Map<number, AlertDescription>(
+  (Object.entries(ALERT_DESCRIPTION_CODE) as [AlertDescription, number][]).map(([name, code]) => [code, name]),
+);
+
+export function alertToRecord(alert: TlsAlert, legacyVersion = 0x0303): TlsRecord {
+  return {
+    contentType: 'alert', legacyVersion,
+    fragment: Uint8Array.of(alert.level === 'fatal' ? 2 : 1, ALERT_DESCRIPTION_CODE[alert.description]),
+  };
+}
+
+export function alertFromRecord(record: TlsRecord): TlsAlert | null {
+  if (record.contentType !== 'alert' || record.fragment.length !== 2) return null;
+  const description = ALERT_DESCRIPTION_BY_CODE.get(record.fragment[1]);
+  if (!description) return null;
+  return { level: record.fragment[0] === 2 ? 'fatal' : 'warning', description };
+}
+
+const OPENSSL_ALERT_REASON: Readonly<Partial<Record<AlertDescription, string>>> = {
+  protocol_version: 'error:0A00042E:SSL routines::tlsv1 alert protocol version',
+  handshake_failure: 'error:0A000410:SSL routines::sslv3 alert handshake failure',
+  insufficient_security: 'error:0A000475:SSL routines::tlsv1 alert insufficient security',
+};
+
+export function opensslAlertReason(description: AlertDescription): string | undefined {
+  return OPENSSL_ALERT_REASON[description];
 }

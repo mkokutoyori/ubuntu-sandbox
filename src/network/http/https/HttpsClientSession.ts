@@ -51,6 +51,7 @@ export type HttpsClientConfig = Omit<TlsClientConfig, 'alpn'> & { readonly alpn?
 export class HttpsClientSession {
   private socket: TcpSocket | null = null;
   private tls: TlsClientSession | null = null;
+  private lastTls: TlsClientSession | null = null;
   private clientSeq = 0;
   private serverSeq = 0;
   readonly hstsStore: HstsStore;
@@ -80,6 +81,7 @@ export class HttpsClientSession {
     if (!socket || socket.state !== 'established') return false;
 
     const tls = new TlsClientSession({ ...this.tlsConfig, alpn: this.tlsConfig.alpn ?? ['http/1.1'] });
+    this.lastTls = tls;
     runTlsHandshakeOverSocket(socket, tls);
 
     if (tls.result !== 'success') {
@@ -211,6 +213,10 @@ export class HttpsClientSession {
 
   get peerCertificate(): X509Certificate | null {
     return this.tls?.peerCertificate ?? null;
+  }
+
+  get handshake(): TlsClientSession | null {
+    return this.lastTls;
   }
 }
 

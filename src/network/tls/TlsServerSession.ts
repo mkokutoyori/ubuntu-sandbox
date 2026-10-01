@@ -30,7 +30,7 @@ import {
 } from './messages';
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
 import { deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, ZERO_IKM } from './keySchedule';
-import { certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
+import { alertFromRecord, alertToRecord, certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
 import { MANDATORY_CIPHER_SUITES, selectCipherSuite } from './cipherSuites';
 import { selectAlpnProtocol } from './alpn';
 import { type SessionTicket, SessionTicketStore, deriveResumptionPsk } from './sessionTickets';
@@ -142,6 +142,29 @@ export class TlsServerSession {
 
   /** Feeds the peer's flight in; returns this side's next flight, or null once nothing more is to be sent. */
   handle(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
+    const received = incoming.length > 0 ? alertFromRecord(incoming[0]) : null;
+    if (received !== null) return this.receiveAlert(received);
+    const before = this.lastAlert;
+    const flight = this.process(incoming);
+    if (flight === null && this.result === 'reject' && this.lastAlert !== before && this.lastAlert !== null) {
+      return [alertToRecord(this.lastAlert)];
+    }
+    return flight;
+  }
+
+  peerAlert: TlsAlert | null = null;
+
+  private receiveAlert(alert: TlsAlert): null {
+    if (this.result !== null) return null;
+    this.peerAlert = alert;
+    this.lastAlert = alert;
+    this.state = 'done';
+    this.result = 'reject';
+    this.emit({ topic: 'tls.handshake.failed', payload: { sessionId: this.sessionId, role: 'server', alert } });
+    return null;
+  }
+
+  private process(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
     try {
       if (this.state === 'idle') return this.handleFirstClientHello(incoming);
       if (this.state === 'awaiting-second-client-hello') return this.handleSecondClientHello(incoming);

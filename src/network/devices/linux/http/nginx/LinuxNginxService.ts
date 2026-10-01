@@ -1,3 +1,5 @@
+import { expandCipherString } from '@/network/tls/legacy/cipherString';
+import type { TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
 import type { TcpStack } from '@/network/tcp/TcpStack';
 import { Http1ServerSession, type Http1Peer } from '@/network/http/http1/Http1ServerSession';
 import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
@@ -192,8 +194,20 @@ function isTlsProblem(v: unknown): v is TlsProblem {
  * in-memory map, no more exposed than the key already is inside the live
  * TLS session.
  */
-function tlsFingerprint(m: { cert: X509Certificate; key: PkiPrivateKey }): string {
-  return `${m.cert.serialNumber}|${m.cert.notAfter}|${m.key.material}`;
+interface TlsMaterial {
+  readonly cert: X509Certificate;
+  readonly key: PkiPrivateKey;
+  readonly protocols: readonly TlsProtocolVersion[];
+  readonly cipherSuites: readonly string[];
+  readonly preferServerCiphers: boolean;
+}
+
+const PROTOCOL_BY_NGINX_NAME: Readonly<Record<string, TlsProtocolVersion>> = {
+  TLSv1: '1.0', 'TLSv1.1': '1.1', 'TLSv1.2': '1.2', 'TLSv1.3': '1.3',
+};
+
+function tlsFingerprint(m: TlsMaterial): string {
+  return `${m.cert.serialNumber}|${m.cert.notAfter}|${m.key.material}|${m.protocols.join(',')}|${m.cipherSuites.join(',')}|${m.preferServerCiphers}`;
 }
 
 
@@ -296,7 +310,10 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
       )
       : new HttpsServerSession(
         this.host.tcpStack(), spec.port,
-        { serverCert: tls.cert, serverPrivateKey: tls.key },
+        {
+          serverCert: tls.cert, serverPrivateKey: tls.key, protocols: tls.protocols,
+          legacyCipherSuites: tls.cipherSuites, preferServerCiphers: tls.preferServerCiphers,
+        },
         (req, peer) => this.respond(spec.port, req, peer),
       );
     try {
@@ -319,7 +336,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
    * point is that it is not. The failure is written to `error.log` with
    * nginx's own wording, and the port stays shut.
    */
-  private tlsMaterialFor(port: number): { cert: X509Certificate; key: PkiPrivateKey } | null | TlsProblem {
+  private tlsMaterialFor(port: number): TlsMaterial | null | TlsProblem {
     const server = this.servers.find((s) => s.listen.some((l) => l.port === port && l.ssl));
     if (!server) return null;
     return this.tlsMaterialForServer(server, port);
@@ -327,7 +344,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
 
   private tlsMaterialForServer(
     server: NginxServerBlock, port: number,
-  ): { cert: X509Certificate; key: PkiPrivateKey } | null | TlsProblem {
+  ): TlsMaterial | null | TlsProblem {
     const fail = (message: string): TlsProblem => ({ error: `nginx: [emerg] ${message}` });
     if (!server.sslCertificate || !server.sslCertificateKey) {
       return fail(`no "ssl_certificate" is defined for the "listen ... ssl" directive`);
@@ -352,7 +369,18 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
       return fail(`cannot load certificate key "${server.sslCertificateKey}": `
         + 'PEM_read_bio_PrivateKey() failed (SSL: error:0480006C:PEM routines::no start line)');
     }
-    return { cert, key };
+    const cipherList = expandCipherString(server.sslCiphers);
+    if (cipherList.ok === false) {
+      return fail(`SSL_CTX_set_cipher_list("${server.sslCiphers}") failed `
+        + `(SSL: error:0A0000B9:SSL routines::${cipherList.error})`);
+    }
+    const protocols = server.sslProtocols
+      .map((name) => PROTOCOL_BY_NGINX_NAME[name])
+      .filter((version): version is TlsProtocolVersion => version !== undefined);
+    return {
+      cert, key, protocols, cipherSuites: cipherList.suites.map((suite) => suite.name),
+      preferServerCiphers: server.sslPreferServerCiphers,
+    };
   }
 
   close(spec: PortSpec): void {

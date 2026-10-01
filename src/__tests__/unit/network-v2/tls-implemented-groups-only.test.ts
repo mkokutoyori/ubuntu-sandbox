@@ -167,7 +167,7 @@ describe('le serveur ne sélectionne pas un groupe qu\'il ne sait pas calculer',
     const { client, server } = lab([X25519_GROUP, 'secp384r1'], ['secp384r1']);
     const reponse = server.handle(client.start());
 
-    expect(reponse).toBeNull();
+    expect(reponse?.[0].contentType).toBe('alert');
     expect(server.result).toBe('reject');
     expect(server.lastAlert?.description).toBe('handshake_failure');
   });

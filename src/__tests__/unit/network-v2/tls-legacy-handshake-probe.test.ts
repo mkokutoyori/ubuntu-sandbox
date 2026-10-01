@@ -9,7 +9,7 @@
  * enregistrements GCM/CBC, RSAES) sont vérifiées contre node:crypto dans
  * `tls-legacy-primitives.test.ts` ; ici on mesure la POIGNÉE DE MAIN.
  *
- * Avant correctif, 23 des 27 cas tombent. Les quatre qui passent dans les
+ * Avant correctif, 24 des 28 cas tombent. Les quatre qui passent dans les
  * deux états sont des témoins, et chacun passe pour la même raison : les
  * options de version étant ignorées, la poignée de main se fait en 1.3 et
  * conclut — « un client qui n'offrait pas 1.3 accepte 1.2 d'un serveur
@@ -141,9 +141,21 @@ describe('négociation de version', () => {
   });
 });
 
+describe('RFC 8446 §6 — l\'alerte part sur le fil', () => {
+  it('le refus du serveur arrive au client comme un enregistrement alert (code 70)', () => {
+    const { client, server } = lab({ versions: ['1.2'] }, { protocols: ['1.3'] });
+    const wire = drive(client, server);
+    const alert = wire.sentToClient[0][0];
+    expect(alert.contentType).toBe('alert');
+    expect([...alert.fragment]).toEqual([2, 70]);
+    expect(client.peerAlert?.description).toBe('protocol_version');
+    expect(client.result).toBe('failure');
+  });
+});
+
 describe('RFC 8446 §4.1.3 — sentinelle de rétrogradation', () => {
   function stripTls13(records: readonly TlsRecord[], direction: 'up' | 'down'): readonly TlsRecord[] {
-    if (direction !== 'up') return records;
+    if (direction !== 'up' || records[0].contentType !== 'handshake') return records;
     const hello = decodeHandshakeMessage(records[0].fragment) as ClientHello;
     if (hello.kind !== 'client_hello') return records;
     const stripped: ClientHello = {
