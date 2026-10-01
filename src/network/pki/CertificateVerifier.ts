@@ -28,6 +28,8 @@ export interface CertificateVerifierOptions {
   readonly ocspResponder?: IOcspResponder;
   readonly securityLevel?: number;
   readonly maxDepth?: number;
+  readonly revocationScope?: 'leaf' | 'chain';
+  readonly missingCrlOk?: boolean;
 }
 
 export class CertificateVerifier {
@@ -38,6 +40,8 @@ export class CertificateVerifier {
   private readonly ocspResponder?: IOcspResponder;
   private readonly securityLevel: number;
   private readonly maxDepth: number | undefined;
+  private readonly revocationScope: 'leaf' | 'chain';
+  private readonly missingCrlOk: boolean;
 
   constructor(opts: CertificateVerifierOptions) {
     this.trustAnchors = opts.trustAnchors;
@@ -47,6 +51,8 @@ export class CertificateVerifier {
     this.ocspResponder = opts.ocspResponder;
     this.securityLevel = opts.securityLevel ?? 0;
     this.maxDepth = opts.maxDepth;
+    this.revocationScope = opts.revocationScope ?? 'chain';
+    this.missingCrlOk = opts.missingCrlOk ?? false;
   }
 
   verify(
@@ -76,7 +82,8 @@ export class CertificateVerifier {
     if (this.revocationCheck !== 'none') {
       const members = anchorIsLeaf(cert, issuer) ? [cert] : [cert, ...path.intermediates, issuer];
       const issuers = anchorIsLeaf(cert, issuer) ? [issuer] : [...path.intermediates, issuer, issuer];
-      for (let index = 0; index < members.length; index++) {
+      const checked = this.revocationScope === 'leaf' ? 1 : members.length;
+      for (let index = 0; index < checked; index++) {
         const failure = this.crlFailure(members[index], issuers[index], now);
         if (failure) return failure;
       }
@@ -86,7 +93,7 @@ export class CertificateVerifier {
 
   private crlFailure(cert: X509Certificate, issuer: X509Certificate, now: number): VerificationFailure | null {
     const crl = this.crls.find((candidate) => candidate.issuer === cert.issuer);
-    if (!crl) return this.revocationCheck === 'crl-strict' ? { ok: false, reason: 'crl-stale' } : null;
+    if (!crl) return this.revocationCheck === 'crl-strict' && !this.missingCrlOk ? { ok: false, reason: 'crl-stale' } : null;
     if (!crl.isValidSignature(issuer.publicKey)) return { ok: false, reason: 'crl-untrusted' };
     if (!crl.isFresh(now) && this.revocationCheck === 'crl-strict') return { ok: false, reason: 'crl-stale' };
     return crl.contains(cert.serialNumber) ? { ok: false, reason: 'revoked' } : null;

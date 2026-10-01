@@ -69,6 +69,11 @@ function baseName(arg: string, suffixe: string): string {
   return arg.endsWith(suffixe) ? arg.slice(0, -suffixe.length) : arg;
 }
 
+function dependencies(loadFile: string | null): string[] {
+  const match = /^#\s*Depends:\s*(.*)$/m.exec(loadFile ?? '');
+  return match ? match[1].split(/\s+/).filter((name) => name.length > 0) : [];
+}
+
 function activer(ctx: LinuxCommandContext, f: Famille, args: string[]): Outcome {
   const vfs = ctx.executor.vfs;
   const noms = args.filter((a) => !a.startsWith('-'));
@@ -77,16 +82,20 @@ function activer(ctx: LinuxCommandContext, f: Famille, args: string[]): Outcome 
   }
   const lignes: string[] = [];
   let change = false;
-  for (const brut of noms) {
-    const nom = baseName(brut, f.principal);
+  const enableOne = (nom: string, dependantDe: string | null): string | null => {
     const source = `${f.available}/${nom}${f.principal}`;
-    if (!vfs.exists(source)) {
-      return { output: `ERROR: ${f.nom} ${nom} does not exist!`, exitCode: 1 };
-    }
+    if (!vfs.exists(source)) return `ERROR: ${f.nom} ${nom} does not exist!`;
     const cible = `${f.enabled}/${nom}${f.principal}`;
     if (vfs.exists(cible)) {
-      lignes.push(`${f.nom} ${nom} already enabled`);
-      continue;
+      lignes.push(dependantDe === null ? `${f.nom} ${nom} already enabled` : `${f.nom} ${nom} already enabled`);
+      return null;
+    }
+    if (f.secondaire) {
+      for (const dependance of dependencies(vfs.readFile(source))) {
+        lignes.push(`Considering dependency ${dependance} for ${nom}:`);
+        const erreur = enableOne(dependance, nom);
+        if (erreur) return erreur;
+      }
     }
     // Le lien est RELATIF, comme celui que Debian pose : un chemin
     // absolu marcherait ici et se verrait au premier `ls -l`.
@@ -101,6 +110,11 @@ function activer(ctx: LinuxCommandContext, f: Famille, args: string[]): Outcome 
     }
     lignes.push(`Enabling ${f.nom.toLowerCase()} ${nom}.`);
     change = true;
+    return null;
+  };
+  for (const brut of noms) {
+    const erreur = enableOne(baseName(brut, f.principal), null);
+    if (erreur) return { output: erreur, exitCode: 1 };
   }
   if (change) {
     lignes.push('To activate the new configuration, you need to run:');

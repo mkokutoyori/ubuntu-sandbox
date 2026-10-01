@@ -1,17 +1,20 @@
-import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { CertificateRevocationList } from '@/network/pki/CertificateRevocationList';
 import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import {
-  pemToCertChain, pemToPrivateKey, pemToEncryptedPrivateKey, isEncryptedPrivateKeyPem, splitPemChain,
-  pemToCrl, pemToOcspResponse, pemToDhParameters, type DhParameters,
+  pemToCertChain, pemToPrivateKey, pemToEncryptedPrivateKey, isEncryptedPrivateKeyPem,
+  pemToOcspResponse, pemToDhParameters, type DhParameters,
 } from '@/network/pki/pem';
+import {
+  fopenFailure, loadLocationsFailure, ticketKeyFromFile, crlsFromPem, buildClientVerifier, anchorsFromPem,
+  type ServerIdentity,
+} from '@/network/http/https/ServerTlsToolkit';
 import { resolveCipherList, type TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
 import {
   applySslConfCommand, createSslConfState, effectiveProtocols, formatSslConfError, parseGroupList,
 } from '@/network/tls/legacy/sslConf';
-import { sha256 } from '@/crypto/hash';
 import { privateKeyPairsWith } from '@/network/pki/keyPairing';
 import type { NginxServerBlock } from './NginxConfig';
 import type { NginxSslSettings } from './NginxSsl';
@@ -24,12 +27,6 @@ export interface TlsProblem { readonly error: string }
 
 export function isTlsProblem(value: unknown): value is TlsProblem {
   return typeof value === 'object' && value !== null && 'error' in value;
-}
-
-export interface ServerIdentity {
-  readonly cert: X509Certificate;
-  readonly key: PkiPrivateKey;
-  readonly chain: readonly X509Certificate[];
 }
 
 export interface ServerTls {
@@ -49,27 +46,13 @@ export interface ServerTls {
   readonly fingerprint: string;
 }
 
+export type { ServerIdentity };
+
 export const DEFAULT_ECDH_GROUPS: readonly string[] = ['x25519', 'secp256r1'];
 
 const PROTOCOL_BY_NGINX_NAME: Readonly<Record<string, TlsProtocolVersion>> = {
   TLSv1: '1.0', 'TLSv1.1': '1.1', 'TLSv1.2': '1.2', 'TLSv1.3': '1.3',
 };
-
-function fopenFailure(path: string): string {
-  return `error:80000002:system library::No such file or directory:calling fopen(${path}, r) `
-    + 'error:10000080:BIO routines::no such file';
-}
-
-function loadLocationsFailure(path: string): string {
-  return `SSL_CTX_load_verify_locations("${path}") failed (SSL: ${fopenFailure(path)} `
-    + 'error:05880002:x509 certificate routines::system lib)';
-}
-
-function asBytes(text: string): Uint8Array {
-  const out = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0xff;
-  return out;
-}
 
 function bytesToHexText(bytes: Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
@@ -143,28 +126,25 @@ export function loadServerTls(server: NginxServerBlock, files: NginxTlsFiles): S
 
   let verifier: CertificateVerifier | null = null;
   if (settings.verifyClient !== 'off' || settings.trustedCertificate !== '') {
-    const anchors: X509Certificate[] = [];
+    const anchorTexts: string[] = [];
     for (const path of [settings.clientCertificate, settings.trustedCertificate]) {
       if (path === '') continue;
       const pem = files.read(path);
       if (pem === null) return fail(loadLocationsFailure(path));
-      anchors.push(...pemToCertChain(pem));
+      anchorTexts.push(pem);
     }
-    const crls: CertificateRevocationList[] = [];
+    let crls: CertificateRevocationList[] = [];
     if (settings.crl !== '') {
       const pem = files.read(settings.crl);
       if (pem === null) {
         return fail(`X509_LOOKUP_load_file("${settings.crl}") failed (SSL: ${fopenFailure(settings.crl)} `
           + 'error:05880002:x509 certificate routines::system lib)');
       }
-      for (const block of splitPemChain(pem)) {
-        const crl = pemToCrl(block);
-        if (crl) crls.push(crl);
-      }
+      crls = crlsFromPem(pem);
     }
-    verifier = new CertificateVerifier({
-      trustAnchors: anchors, crls, revocationCheck: settings.crl === '' ? 'none' : 'crl-strict',
-      maxDepth: settings.verifyDepth,
+    verifier = buildClientVerifier({
+      anchors: anchorsFromPem(...anchorTexts), crls, crlChecking: settings.crl !== '',
+      revocationScope: 'chain', missingCrlOk: false, maxDepth: settings.verifyDepth,
     });
   }
 
@@ -195,7 +175,7 @@ export function loadServerTls(server: NginxServerBlock, files: NginxTlsFiles): S
     const text = files.read(path);
     if (text === null) return fail(`open() "${path}" failed (2: No such file or directory)`);
     if (text.length !== 48 && text.length !== 80) return fail(`"${path}" must be 48 or 80 bytes`);
-    ticketKey = sha256(asBytes(text));
+    ticketKey = ticketKeyFromFile(text);
   }
 
   let staple: SignedOcspResponse | undefined;

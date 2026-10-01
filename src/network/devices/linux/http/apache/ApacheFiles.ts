@@ -20,6 +20,7 @@ export const APACHE_PORTS_PATH = '/etc/apache2/ports.conf';
 export const APACHE_SITES_AVAILABLE = '/etc/apache2/sites-available';
 export const APACHE_SITES_ENABLED = '/etc/apache2/sites-enabled';
 export const APACHE_MODS_ENABLED = '/etc/apache2/mods-enabled';
+export const APACHE_CONF_ENABLED = '/etc/apache2/conf-enabled';
 export const APACHE_MODS_AVAILABLE = '/etc/apache2/mods-available';
 export const APACHE_ACCESS_LOG = '/var/log/apache2/access.log';
 export const APACHE_ERROR_LOG = '/var/log/apache2/error.log';
@@ -129,8 +130,15 @@ export const APACHE_AVAILABLE_MODULES: readonly string[] = [
   'userdir',
 ];
 
+const MODULE_DEPENDENCIES: Readonly<Record<string, readonly string[]>> = {
+  ssl: ['setenvif', 'mime', 'socache_shmcb'],
+  proxy_http: ['proxy'], proxy_fcgi: ['proxy'], proxy_balancer: ['proxy', 'alias'],
+};
+
 export function apacheModuleLoadFile(name: string): string {
-  return `LoadModule ${name}_module /usr/lib/apache2/modules/mod_${name}.so\n`;
+  const dependencies = MODULE_DEPENDENCIES[name];
+  const header = dependencies ? `# Depends: ${dependencies.join(' ')}\n` : '';
+  return `${header}LoadModule ${name}_module /usr/lib/apache2/modules/mod_${name}.so\n`;
 }
 
 /** What `apachectl -l` lists: what is linked into the binary. */
@@ -223,3 +231,50 @@ export function apacheForbiddenPage(target: string): string {
 </body></html>
 `;
 }
+
+export function apacheBadRequestPage(): string {
+  return `<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title>400 Bad Request</title>
+</head><body>
+<h1>Bad Request</h1>
+<p>Your browser sent a request that this server could not understand.<br />
+</p>
+<hr>
+<address>Apache/${APACHE_VERSION} (Ubuntu) Server</address>
+</body></html>
+`;
+}
+
+export function apacheMisdirectedPage(host: string, port: number): string {
+  return `<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title>421 Misdirected Request</title>
+</head><body>
+<h1>Misdirected Request</h1>
+<p>The client needs a new connection for this request as the requested host name does not match the Server Name Indication (SNI) in use for this connection.</p>
+<hr>
+<address>Apache/${APACHE_VERSION} (Ubuntu) Server at ${host} Port ${port}</address>
+</body></html>
+`;
+}
+
+export const APACHE_SSL_CONF = `<IfModule mod_ssl.c>
+	SSLRandomSeed startup builtin
+	SSLRandomSeed startup file:/dev/urandom 512
+	SSLRandomSeed connect builtin
+	SSLRandomSeed connect file:/dev/urandom 512
+
+	AddType application/x-x509-ca-cert .crt
+	AddType application/x-pkcs7-crl    .crl
+
+	SSLPassPhraseDialog exec:/usr/share/apache2/ask-for-passphrase
+
+	SSLSessionCache\t\tshmcb:\${APACHE_RUN_DIR}/ssl_scache(512000)
+	SSLSessionCacheTimeout  300
+
+	SSLCipherSuite HIGH:!aNULL
+
+	SSLProtocol all -SSLv3
+</IfModule>
+`;

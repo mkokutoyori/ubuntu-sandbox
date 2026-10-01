@@ -625,36 +625,87 @@ export function cmdRmdir(ctx: ShellContext, args: string[]): string {
 }
 
 export function cmdLn(ctx: ShellContext, args: string[]): string {
-  let symbolic = false;
+  const flags = { symbolic: false, force: false, noDereference: false, verbose: false, relative: false, noTargetDirectory: false };
   const paths: string[] = [];
-  for (const arg of args) {
-    if (arg === '-s') { symbolic = true; continue; }
-    if (arg.startsWith('-')) continue;
+  let targetDirectory: string | null = null;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--') { paths.push(...args.slice(i + 1)); break; }
+    if (arg.startsWith('--')) {
+      const long = arg.slice(2);
+      if (long === 'symbolic') flags.symbolic = true;
+      else if (long === 'force') flags.force = true;
+      else if (long === 'no-dereference') flags.noDereference = true;
+      else if (long === 'verbose') flags.verbose = true;
+      else if (long === 'relative') flags.relative = true;
+      else if (long === 'no-target-directory') flags.noTargetDirectory = true;
+      else return `ln: unrecognized option '${arg}'\nTry 'ln --help' for more information.`;
+      continue;
+    }
+    if (arg.startsWith('-') && arg.length > 1) {
+      for (const letter of arg.slice(1)) {
+        if (letter === 's') flags.symbolic = true;
+        else if (letter === 'f') flags.force = true;
+        else if (letter === 'n') flags.noDereference = true;
+        else if (letter === 'v') flags.verbose = true;
+        else if (letter === 'r') flags.relative = true;
+        else if (letter === 'T') flags.noTargetDirectory = true;
+        else if (letter === 't') { targetDirectory = args[++i] ?? null; break; }
+        else return `ln: invalid option -- '${letter}'\nTry 'ln --help' for more information.`;
+      }
+      continue;
+    }
     paths.push(arg);
   }
-  if (paths.length < 2) return 'ln: missing operand';
+  const sources = targetDirectory !== null ? paths : paths.slice(0, -1);
+  const destination = targetDirectory ?? paths[paths.length - 1];
+  if (paths.length === 0 || (targetDirectory === null && paths.length < 2)) {
+    return paths.length === 0 ? "ln: missing file operand\nTry 'ln --help' for more information." : `ln: missing destination file operand after '${paths[0]}'\nTry 'ln --help' for more information.`;
+  }
 
-  const target = paths[0];
   const actor = actorOf(ctx);
-  const linkP = ctx.vfs.path(paths[1], ctx.cwd, actor);
-  const linkPath = linkP.value;
+  const output: string[] = [];
+  for (const source of sources) {
+    const destP = ctx.vfs.path(destination, ctx.cwd, actor);
+    const intoDirectory = !flags.noTargetDirectory && destP.isDirectory();
+    const name = source.replace(/\/+$/, '').split('/').pop() ?? source;
+    const linkText = intoDirectory ? `${destination.replace(/\/+$/, '')}/${name}` : destination;
+    const linkP = ctx.vfs.path(linkText, ctx.cwd, actor);
+    const linkPath = linkP.value;
 
-  if (ctx.uid !== 0 && linkP.parent().inode() && !linkP.parent().isWritableDir()) {
-    const kind = symbolic ? 'symbolic link' : 'hard link';
-    return `ln: failed to create ${kind} '${paths[1]}': Permission denied`;
-  }
+    if (ctx.uid !== 0 && linkP.parent().inode() && !linkP.parent().isWritableDir()) {
+      const kind = flags.symbolic ? 'symbolic link' : 'hard link';
+      return `ln: failed to create ${kind} '${linkText}': Permission denied`;
+    }
+    if (ctx.vfs.lstat(linkPath)) {
+      if (!flags.force) {
+        return `ln: failed to create ${flags.symbolic ? 'symbolic' : 'hard'} link '${linkText}': File exists`;
+      }
+      ctx.vfs.deleteFile(linkPath);
+    }
 
-  if (symbolic) {
-    if (!ctx.vfs.createSymlink(linkPath, target, ctx.uid, ctx.gid)) {
-      return `ln: failed to create symbolic link '${paths[1]}'`;
+    let target = source;
+    if (flags.symbolic && flags.relative) {
+      const absTarget = ctx.vfs.normalizePath(source, ctx.cwd);
+      const base = linkPath.split('/').slice(0, -1);
+      const goal = absTarget.split('/');
+      let common = 0;
+      while (common < base.length && common < goal.length && base[common] === goal[common]) common++;
+      target = [...base.slice(common).map(() => '..'), ...goal.slice(common)].join('/') || '.';
     }
-  } else {
-    const absTarget = ctx.vfs.normalizePath(target, ctx.cwd);
-    if (!ctx.vfs.createHardLink(linkPath, absTarget)) {
-      return `ln: failed to create hard link '${paths[1]}'`;
+    if (flags.symbolic) {
+      if (!ctx.vfs.createSymlink(linkPath, target, ctx.uid, ctx.gid)) {
+        return `ln: failed to create symbolic link '${linkText}'`;
+      }
+    } else {
+      const absTarget = ctx.vfs.normalizePath(source, ctx.cwd);
+      if (!ctx.vfs.createHardLink(linkPath, absTarget)) {
+        return `ln: failed to create hard link '${linkText}'`;
+      }
     }
+    if (flags.verbose) output.push(`'${linkText}' ${flags.symbolic ? '->' : '=>'} '${target}'`);
   }
-  return '';
+  return output.join('\n');
 }
 
 export function cmdPwd(ctx: ShellContext): string {

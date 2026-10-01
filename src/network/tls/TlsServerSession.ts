@@ -41,6 +41,7 @@ import {
   type LegacySuiteDefinition, type ResolvedLegacyPolicy, type LegacyVersion, type TlsProtocolVersion,
 } from './legacy/legacyCipherSuites';
 import { modpGroup, type ModpGroup } from '@/crypto/dh/modp';
+import { allowsMissingCertificate, continuesAfterVerificationFailure, type ClientCertPolicy } from './clientAuthPolicy';
 import { LegacyServerHandshake, suiteMatchesCertificate } from './legacy/LegacyHandshake';
 import { legacySuiteByName } from './legacy/legacyCipherSuites';
 import { offeredVersions } from './legacy/versionNegotiation';
@@ -64,8 +65,8 @@ export interface TlsServerConfig {
   readonly ocspStaple?: OcspStapleSource;
   /** RFC 6066 §4 — honour a client's max_fragment_length request (default false, like OpenSSL). */
   readonly acceptMaxFragmentLength?: boolean;
-  /** mTLS: `strict` aborts on a missing or invalid client certificate (default), `lenient` records the outcome and continues (nginx `ssl_verify_client on`). */
-  readonly clientCertPolicy?: 'strict' | 'lenient';
+  /** mTLS: `strict` aborts on a missing or invalid client certificate (default), `lenient` records the outcome and continues (nginx `ssl_verify_client on`), `optional` tolerates a missing one (Apache `SSLVerifyClient optional`), `optional_no_ca` also tolerates an unverifiable issuer. */
+  readonly clientCertPolicy?: ClientCertPolicy;
   /** Top preference; tried first against what the client actually offered (RFC 8446 §4.1.1). */
   readonly cipherSuite?: CipherSuite;
   /** RFC 8446 §4.3.2 — request the peer's certificate (mTLS). Requires `verifier`. */
@@ -124,6 +125,8 @@ export interface TlsServerCredential {
   readonly rejectHandshake?: boolean;
   /** Predicate over the client's server_name, replacing `hostnames` when the owner has its own matching rules. */
   readonly matches?: (serverName: string) => boolean;
+  /** Versions this credential's virtual host allows; replaces the port-wide list once the credential is selected (mod_ssl `protocol_set`). */
+  readonly protocols?: readonly TlsProtocolVersion[];
 }
 
 interface ActiveCredential {
@@ -361,6 +364,7 @@ export class TlsServerSession {
         : certificateMatchesHostname(credential.cert, serverName);
       if (matches) {
         this.credentials = { cert: credential.cert, privateKey: credential.privateKey, chain: credential.chain ?? [] };
+        if (credential.protocols) this.protocols = permittedVersions(credential.protocols, this.policy.securityLevel);
         return credential.rejectHandshake !== true;
       }
     }
@@ -415,7 +419,7 @@ export class TlsServerSession {
       serverCert: this.credentials.cert, serverChain: this.credentials.chain, serverPrivateKey: this.credentials.privateKey,
       serverGroups: this.supportedGroups, securityLevel: this.policy.securityLevel, dhGroup: this.dhGroup(),
       requestClientCert: this.config.requestClientCert === true, verifier: this.config.verifier,
-      lenientClientCert: this.config.clientCertPolicy === 'lenient',
+      clientCertPolicy: this.config.clientCertPolicy,
     });
     const flight = this.legacy.start();
     this.negotiatedCipherSuite = this.legacy.negotiatedSuite.name;
@@ -598,11 +602,11 @@ export class TlsServerSession {
     if (this.config.requestClientCert) {
       const certificate = messages.find((m): m is CertificateMessage => m.kind === 'certificate');
       const certificateVerify = messages.find((m): m is CertificateVerify => m.kind === 'certificate_verify');
-      const lenient = this.config.clientCertPolicy === 'lenient';
+      const policy = this.config.clientCertPolicy;
       if (!certificate) return this.reject('unexpected_message');
       this.transcript.push(encodeHandshakeMessage(certificate));
       if (certificate.certificateList.length === 0 || !certificateVerify) {
-        if (!lenient) return this.reject('certificate_required');
+        if (!allowsMissingCertificate(policy)) return this.reject('certificate_required');
         this.peerVerificationReason = 'no-certificate';
       } else {
         const leafCert = certificate.certificateList[0];
@@ -613,7 +617,7 @@ export class TlsServerSession {
         this.peerVerified = verification.ok !== false;
         if (verification.ok === false) {
           this.peerVerificationReason = verification.reason;
-          if (!lenient) {
+          if (!continuesAfterVerificationFailure(policy, verification.reason)) {
             this.lastAlert = certificateAlert(verification.reason);
             this.state = 'done';
             this.result = 'reject';

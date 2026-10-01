@@ -15,6 +15,11 @@
  * here too.
  */
 
+import {
+  isApacheSslDirective, checkApacheSslDirective, apacheSslDirectiveSpecs, resolveApacheSsl, sessionCacheProblem,
+  type ApacheSslDirective, type ApacheSslSettings,
+} from './ApacheSsl';
+
 export interface ApacheFileSource {
   read(path: string): string | null;
   list(dir: string): string[] | null;
@@ -28,10 +33,8 @@ export interface ApacheVirtualHost {
   readonly documentRoot: string;
   readonly directoryIndex: readonly string[];
   readonly accessLog: string | null;
-  /** §P5's Apache twin — `SSLEngine on` plus the two PEM files. */
-  readonly sslEngine: boolean;
-  readonly sslCertificateFile: string | null;
-  readonly sslCertificateKeyFile: string | null;
+  readonly ssl: ApacheSslSettings;
+  readonly protocolSet: boolean;
   /** The file it came from, for error messages. */
   readonly source: string;
 }
@@ -131,10 +134,7 @@ const DIRECTIVE_MODULE: Readonly<Record<string, string>> = {
   header: 'headers', requestheader: 'headers',
   rewriteengine: 'rewrite', rewriterule: 'rewrite', rewritecond: 'rewrite',
   rewritebase: 'rewrite', rewriteoptions: 'rewrite', rewritemap: 'rewrite',
-  sslengine: 'ssl', sslcertificatefile: 'ssl', sslcertificatekeyfile: 'ssl',
-  sslcertificatechainfile: 'ssl', sslcacertificatefile: 'ssl',
-  sslprotocol: 'ssl', sslciphersuite: 'ssl', sslhonorcipherorder: 'ssl',
-  sslverifyclient: 'ssl', sslsessioncache: 'ssl',
+  ...Object.fromEntries(apacheSslDirectiveSpecs().map((spec) => [spec.name.toLowerCase(), 'ssl'])),
   proxypass: 'proxy', proxypassreverse: 'proxy', proxypreservehost: 'proxy',
   proxyrequests: 'proxy', proxytimeout: 'proxy', proxypassmatch: 'proxy',
   proxyvia: 'proxy', proxyaddheaders: 'proxy',
@@ -153,7 +153,7 @@ const DIRECTIVE_MODULE: Readonly<Record<string, string>> = {
  */
 const APACHE_APPLIQUEES = new Set([
   'documentroot', 'servername', 'serveralias', 'directoryindex',
-  'customlog', 'sslengine', 'sslcertificatefile', 'sslcertificatekeyfile',
+  'customlog', ...apacheSslDirectiveSpecs().map((spec) => spec.name.toLowerCase()),
 ]);
 
 /**
@@ -171,9 +171,6 @@ const APACHE_INERTES = new Set([
   'indexoptions', 'indexignore', 'headername',
   'addtype', 'addencoding', 'addhandler', 'addcharset',
   'addoutputfilterbytype', 'setoutputfilter',
-  'sslcertificatechainfile', 'sslcacertificatefile',
-  'sslprotocol', 'sslciphersuite', 'sslhonorcipherorder',
-  'sslverifyclient', 'sslsessioncache',
 ]);
 
 /**
@@ -257,6 +254,110 @@ export function validateApacheDirective(
   return null;
 }
 
+export interface ApacheConfigLayout {
+  readonly mainConf: string;
+  readonly modsEnabled: string;
+  readonly confEnabled: string;
+}
+
+interface ScanHandlers {
+  openVirtualHost(argument: string, line: number): ApacheConfigError | null;
+  closeVirtualHost(): void;
+  inVirtualHost(): boolean;
+  directive(name: string, rawValue: string, line: number): ApacheConfigError | null;
+}
+
+const NESTED_SECTION_OPEN = /^<(Directory|DirectoryMatch|Location|LocationMatch|Files|FilesMatch|Proxy|ProxyMatch|If|ElseIf|Else|RequireAll|RequireAny|RequireNone|Limit|LimitExcept|IfDefine|IfVersion)(\s[^>]*)?>$/i;
+const NESTED_SECTION_CLOSE = /^<\/(Directory|DirectoryMatch|Location|LocationMatch|Files|FilesMatch|Proxy|ProxyMatch|If|ElseIf|Else|RequireAll|RequireAny|RequireNone|Limit|LimitExcept|IfDefine|IfVersion)>$/i;
+
+function scanConfigText(
+  text: string, path: string, modulesCharges: ReadonlySet<string> | undefined, handlers: ScanHandlers,
+): ApacheConfigError | null {
+  let skipDepth = 0;
+  let nestedDepth = 0;
+  for (const { n, content } of meaningfulLines(text)) {
+    const ifModule = /^<IfModule\s+!?(?:mod_)?([A-Za-z0-9_]+)(?:\.c)?\s*>$/i.exec(content);
+    if (ifModule) {
+      const negated = content.includes('!');
+      const name = ifModule[1].replace(/_module$/, '');
+      const loaded = modulesCharges === undefined || modulesCharges.has(name);
+      if (negated ? loaded : !loaded) skipDepth++;
+      else if (skipDepth > 0) skipDepth++;
+      continue;
+    }
+    if (/^<\/IfModule>$/i.test(content)) {
+      if (skipDepth > 0) skipDepth--;
+      continue;
+    }
+    if (skipDepth > 0) continue;
+
+    if (NESTED_SECTION_OPEN.test(content)) { nestedDepth++; continue; }
+    if (NESTED_SECTION_CLOSE.test(content)) { if (nestedDepth > 0) nestedDepth--; continue; }
+    if (nestedDepth > 0) {
+      const directive = /^(\w+)/.exec(content)?.[1];
+      if (directive && /^ssl/i.test(directive) && isApacheSslDirective(directive)) {
+        return {
+          message: `apache2: Syntax error on line ${n} of ${path}: ${directive} inside a <Directory>, <Location> or `
+            + '<Files> section needs a TLS renegotiation after the handshake, which this simulator does not perform',
+          line: n,
+        };
+      }
+      continue;
+    }
+
+    const opening = /^<VirtualHost\s+(.+)>$/i.exec(content);
+    if (opening) {
+      const error = handlers.openVirtualHost(opening[1], n);
+      if (error) return error;
+      continue;
+    }
+    if (/^<\/VirtualHost>$/i.test(content)) {
+      handlers.closeVirtualHost();
+      continue;
+    }
+    const match = /^(\w+)(?:\s+(.+))?$/.exec(content);
+    if (!match) continue;
+    const error = handlers.directive(match[1], match[2] ?? '', n);
+    if (error) return error;
+  }
+  return null;
+}
+
+function splitArguments(raw: string): string[] {
+  const out: string[] = [];
+  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  for (const match of raw.matchAll(pattern)) out.push(match[1] ?? match[2] ?? match[3]);
+  return out;
+}
+
+function sslDirectiveProblem(
+  directive: ApacheSslDirective, inVirtualHost: boolean, src: ApacheFileSource,
+  modulesCharges: ReadonlySet<string> | undefined,
+): string | null {
+  const arity = checkApacheSslDirective(directive);
+  if (arity) return arity;
+  const spec = apacheSslDirectiveSpecs().find((candidate) => candidate.name.toLowerCase() === directive.name.toLowerCase());
+  if (spec?.scope === 'global' && inVirtualHost) return `${spec.name} cannot occur within <VirtualHost> section`;
+  const name = directive.name.toLowerCase();
+  const first = directive.args[0] ?? '';
+  if (name === 'sslsessioncache' && modulesCharges) {
+    const cache = sessionCacheProblem(first, modulesCharges);
+    if (cache) return cache;
+  }
+  const FILE_DIRECTIVES = new Set([
+    'sslcertificatefile', 'sslcertificatekeyfile', 'sslcertificatechainfile', 'sslcacertificatefile',
+    'sslcarevocationfile', 'sslcadnrequestfile', 'sslsessionticketkeyfile',
+  ]);
+  const DIRECTORY_DIRECTIVES = new Set(['sslcacertificatepath', 'sslcarevocationpath', 'sslcadnrequestpath']);
+  if (FILE_DIRECTIVES.has(name)) {
+    const content = src.read(first);
+    if (content === null || content === '') return `${directive.name}: file '${first}' does not exist or is empty`;
+  } else if (DIRECTORY_DIRECTIVES.has(name) && src.list(first) === null) {
+    return `${directive.name}: directory '${first}' does not exist`;
+  }
+  return null;
+}
+
 export function parseApacheConfig(
   src: ApacheFileSource,
   portsPath: string,
@@ -268,10 +369,12 @@ export function parseApacheConfig(
    * refuser tout ce qui n'est pas `core`.
    */
   modulesCharges?: ReadonlySet<string>,
+  layout?: ApacheConfigLayout,
 ): { config: ApacheConfig; error: ApacheConfigError | null } {
   const env = readEnvvars(src, envvarsPath);
   const listenPorts: number[] = [];
   const vhosts: ApacheVirtualHost[] = [];
+  const globalSsl: ApacheSslDirective[] = [];
 
   const ports = src.read(portsPath);
   if (ports === null) {
@@ -287,6 +390,53 @@ export function parseApacheConfig(
     if (p !== null && !listenPorts.includes(p)) listenPorts.push(p);
   }
 
+  const globalFiles: string[] = [];
+  if (layout) {
+    for (const name of (src.list(layout.modsEnabled) ?? []).filter((n) => n.endsWith('.conf')).sort()) {
+      globalFiles.push(`${layout.modsEnabled}/${name}`);
+    }
+    globalFiles.push(layout.mainConf);
+    for (const name of (src.list(layout.confEnabled) ?? []).filter((n) => n.endsWith('.conf')).sort()) {
+      globalFiles.push(`${layout.confEnabled}/${name}`);
+    }
+  }
+
+  const failure = (error: ApacheConfigError): { config: ApacheConfig; error: ApacheConfigError } => ({
+    config: { listenPorts, vhosts }, error,
+  });
+
+  const recordSsl = (
+    target: ApacheSslDirective[], inVirtualHost: boolean, path: string, name: string, rawValue: string, n: number,
+  ): ApacheConfigError | null => {
+    if (!isApacheSslDirective(name)) return null;
+    const directive: ApacheSslDirective = {
+      name, args: splitArguments(expand(rawValue, env)), file: path, line: n,
+    };
+    const problem = sslDirectiveProblem(directive, inVirtualHost, src, modulesCharges);
+    if (problem) return { message: `AH00526: Syntax error on line ${n} of ${path}:\n${problem}`, line: n };
+    target.push(directive);
+    return null;
+  };
+
+  for (const path of globalFiles) {
+    const text = src.read(path);
+    if (text === null) continue;
+    const error = scanConfigText(text, path, modulesCharges, {
+      openVirtualHost: () => null,
+      closeVirtualHost: () => undefined,
+      inVirtualHost: () => false,
+      directive: (name, rawValue, n) => {
+        if (!isApacheSslDirective(name)) return null;
+        if (modulesCharges) {
+          const bad = validateApacheDirective(name, path, n, modulesCharges);
+          if (bad) return bad;
+        }
+        return recordSsl(globalSsl, false, path, name, rawValue, n);
+      },
+    });
+    if (error) return failure(error);
+  }
+
   const files = (src.list(sitesEnabled) ?? []).sort();
   for (const name of files) {
     const path = `${sitesEnabled}/${name}`;
@@ -296,99 +446,75 @@ export function parseApacheConfig(
     let current: {
       port: number; serverName: string | null; aliases: string[];
       root: string; index: string[]; accessLog: string | null;
-      sslEngine: boolean; sslCert: string | null; sslKey: string | null;
+      ssl: ApacheSslDirective[];
     } | null = null;
+    let sslError: ApacheConfigError | null = null;
 
-    // `<IfModule mod_ssl.c>` : Apache SAUTE le bloc quand le module
-    // n'est pas chargé. C'est ainsi que Debian livre `default-ssl.conf`,
-    // et c'est ce qui fait qu'`a2ensite default-ssl` sans
-    // `a2enmod ssl` ne sert RIEN sur 443 au lieu d'échouer — la vraie
-    // première marche de tout TP TLS Apache. Le bloc était ignoré comme
-    // une ligne quelconque, donc l'hôte virtuel était lu quand même.
-    let sauteJusquA = 0;
-
-    for (const { n, content } of meaningfulLines(text)) {
-      const ifModule = /^<IfModule\s+!?(?:mod_)?([A-Za-z0-9_]+)(?:\.c)?\s*>$/i.exec(content);
-      if (ifModule) {
-        const nie = content.includes('!');
-        const nom = ifModule[1].replace(/_module$/, '');
-        const charge = modulesCharges === undefined || modulesCharges.has(nom);
-        if (nie ? charge : !charge) sauteJusquA++;
-        else if (sauteJusquA > 0) sauteJusquA++;
-        continue;
-      }
-      if (/^<\/IfModule>$/i.test(content)) {
-        if (sauteJusquA > 0) sauteJusquA--;
-        continue;
-      }
-      if (sauteJusquA > 0) continue;
-
-      const opening = /^<VirtualHost\s+(.+)>$/i.exec(content);
-      if (opening) {
-        const port = virtualHostPort(opening[1]);
+    const error = scanConfigText(text, path, modulesCharges, {
+      openVirtualHost: (argument, n) => {
+        const port = virtualHostPort(argument);
         if (port === null) {
-          return {
-            config: { listenPorts, vhosts },
-            error: { message: `Syntax error on line ${n} of ${path}: bad VirtualHost address`, line: n },
-          };
+          return { message: `Syntax error on line ${n} of ${path}: bad VirtualHost address`, line: n };
         }
         current = {
           port, serverName: null, aliases: [],
-          root: '/var/www/html', index: [...DEFAULT_INDEX], accessLog: null,
-          sslEngine: false, sslCert: null, sslKey: null,
+          root: '/var/www/html', index: [...DEFAULT_INDEX], accessLog: null, ssl: [],
         };
-        continue;
-      }
-      if (/^<\/VirtualHost>$/i.test(content)) {
+        return null;
+      },
+      closeVirtualHost: () => {
         if (current) {
-          vhosts.push({
-            port: current.port,
-            serverName: current.serverName,
-            serverAliases: current.aliases,
-            documentRoot: current.root,
-            directoryIndex: current.index,
-            accessLog: current.accessLog,
-            sslEngine: current.sslEngine,
-            sslCertificateFile: current.sslCert,
-            sslCertificateKeyFile: current.sslKey,
-            source: path,
-          });
+          const resolved = resolveApacheSsl(globalSsl, current.ssl);
+          if (resolved.ok === false) {
+            sslError = {
+              message: `AH00526: Syntax error on line ${resolved.directive.line} of ${resolved.directive.file}:\n${resolved.error}`,
+              line: resolved.directive.line,
+            };
+          } else {
+            vhosts.push({
+              port: current.port,
+              serverName: current.serverName,
+              serverAliases: current.aliases,
+              documentRoot: current.root,
+              directoryIndex: current.index,
+              accessLog: current.accessLog,
+              ssl: resolved.settings,
+              protocolSet: current.ssl.some((d) => d.name.toLowerCase() === 'sslprotocol'),
+              source: path,
+            });
+          }
         }
         current = null;
-        continue;
-      }
-      if (!current) continue;
-
-      const directiveMatch = /^(\w+)(?:\s+(.+))?$/.exec(content);
-      if (!directiveMatch) continue;
-      const [, directive, rawArgs] = directiveMatch;
-      if (modulesCharges) {
-        const mauvaise = validateApacheDirective(directive, path, n, modulesCharges);
-        if (mauvaise) return { config: { listenPorts, vhosts }, error: mauvaise };
-      }
-      const rawValue = rawArgs ?? '';
-      // Values go through `envvars`: Debian's shipped configuration writes
-      // `${APACHE_LOG_DIR}/access.log`, and without this expansion the log
-      // would land in a directory literally named `${APACHE_LOG_DIR}`.
-      const value = expand(rawValue.replace(/^"|"$/g, '').trim(), env);
-      switch (directive.toLowerCase()) {
-        case 'documentroot': current.root = value.replace(/\/$/, ''); break;
-        case 'servername': current.serverName = value.toLowerCase(); break;
-        case 'serveralias': current.aliases.push(...value.toLowerCase().split(/\s+/)); break;
-        case 'directoryindex': current.index = value.split(/\s+/); break;
-        case 'customlog': current.accessLog = value.split(/\s+/)[0]; break;
-        case 'sslengine': current.sslEngine = /^on$/i.test(value); break;
-        case 'sslcertificatefile': current.sslCert = value; break;
-        case 'sslcertificatekeyfile': current.sslKey = value; break;
-        default: break; // the rest of the grammar is read and ignored
-      }
-    }
-
+      },
+      inVirtualHost: () => current !== null,
+      directive: (directive, rawArgs, n) => {
+        if (modulesCharges) {
+          const bad = validateApacheDirective(directive, path, n, modulesCharges);
+          if (bad) return bad;
+        }
+        if (isApacheSslDirective(directive)) {
+          return recordSsl(current ? current.ssl : globalSsl, current !== null, path, directive, rawArgs, n);
+        }
+        if (!current) return null;
+        // Values go through `envvars`: Debian's shipped configuration writes
+        // `${APACHE_LOG_DIR}/access.log`, and without this expansion the log
+        // would land in a directory literally named `${APACHE_LOG_DIR}`.
+        const value = expand(rawArgs.replace(/^"|"$/g, '').trim(), env);
+        switch (directive.toLowerCase()) {
+          case 'documentroot': current.root = value.replace(/\/$/, ''); break;
+          case 'servername': current.serverName = value.toLowerCase(); break;
+          case 'serveralias': current.aliases.push(...value.toLowerCase().split(/\s+/)); break;
+          case 'directoryindex': current.index = value.split(/\s+/); break;
+          case 'customlog': current.accessLog = value.split(/\s+/)[0]; break;
+          default: break;
+        }
+        return null;
+      },
+    });
+    if (error) return failure(error);
+    if (sslError) return failure(sslError);
     if (current) {
-      return {
-        config: { listenPorts, vhosts },
-        error: { message: `Syntax error in ${path}: expected </VirtualHost> before end of file` },
-      };
+      return failure({ message: `Syntax error in ${path}: expected </VirtualHost> before end of file` });
     }
   }
 
@@ -418,15 +544,21 @@ export function apacheWarnings(config: ApacheConfig): string[] {
   return out;
 }
 
+export function apacheNameMatches(pattern: string, name: string): boolean {
+  const source = pattern.toLowerCase().replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+  return new RegExp(`^${source}$`).test(name.toLowerCase());
+}
+
 /** The vhost that answers: `ServerName`/`ServerAlias` first, else the first one. */
 export function selectVirtualHost(
-  config: ApacheConfig, port: number, hostHeader: string,
+  config: ApacheConfig, port: number, hostHeader: string, candidates?: readonly ApacheVirtualHost[],
 ): ApacheVirtualHost | null {
-  const onThisPort = config.vhosts.filter((v) => v.port === port);
+  const onThisPort = candidates ?? config.vhosts.filter((v) => v.port === port);
   if (onThisPort.length === 0) return null;
   const name = hostHeader.split(':')[0].toLowerCase();
   const exact = onThisPort.find(
-    (v) => v.serverName === name || v.serverAliases.includes(name),
+    (v) => (v.serverName !== null && apacheNameMatches(v.serverName, name))
+      || v.serverAliases.some((alias) => apacheNameMatches(alias, name)),
   );
   // Apache keeps the FIRST vhost of a port as the default host — the
   // alphabetical order of the files in `sites-enabled`, which is why a real

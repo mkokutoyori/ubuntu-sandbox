@@ -3,8 +3,6 @@ import { Http1ServerSession, type Http1Peer } from '@/network/http/http1/Http1Se
 import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
 import { CertificateVerifier, type VerificationReason } from '@/network/pki/CertificateVerifier';
 import { x509VerifyError } from '@/network/pki/x509VerifyErrors';
-import { LegacySessionStore } from '@/network/tls/legacy/legacySessions';
-import { SessionTicketStore } from '@/network/tls/sessionTickets';
 import type { TlsServerCredential } from '@/network/tls/TlsServerSession';
 import type { HttpsServerConfig } from '@/network/http/https/HttpsServerSession';
 import { createResponse, type HttpMessage } from '@/network/http/semantics/types';
@@ -23,8 +21,8 @@ import {
   NGINX_VERSION, NGINX_ACCESS_LOG, NGINX_ERROR_LOG,
   notFoundPage, forbiddenPage, badGatewayPage, sslCertificateErrorPage, sslNoCertificatePage, misdirectedPage,
 } from './NginxFiles';
-import { loadServerTls, isTlsProblem, type ServerIdentity, type ServerTls, type TlsProblem } from './NginxTls';
-import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
+import { loadServerTls, isTlsProblem, type ServerTls, type TlsProblem } from './NginxTls';
+import { ephemeralIdentity, resumptionConfig, credentialFor } from '@/network/http/https/ServerTlsToolkit';
 import { clientCertificateVerdict } from './NginxSsl';
 import { findServerByName, serverNameMatches, type ServerNameEntry } from './NginxServerNames';
 
@@ -131,17 +129,6 @@ function matchLocation(server: NginxServerBlock, target: string): NginxLocation 
     if (target.startsWith(loc.path) && (!best || loc.path.length > best.path.length)) best = loc;
   }
   return best;
-}
-
-function ephemeralIdentity(): ServerIdentity {
-  const generated = generateSelfSignedCertificate('CN=nginx-reject-handshake', { now: Date.now() });
-  return { cert: generated.cert, key: generated.privateKey, chain: [] };
-}
-
-function randomTicketKey(): Uint8Array {
-  const key = new Uint8Array(32);
-  for (let i = 0; i < key.length; i++) key[i] = Math.floor(Math.random() * 256);
-  return key;
 }
 
 const NGINX_UID = 33;
@@ -337,7 +324,6 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
   private engineConfig(port: PortTls): HttpsServerConfig {
     const base = port.defaultTls;
     const settings = base.settings;
-    const stored = settings.sessionCache.builtin === 'builtin' || settings.sessionCache.shared !== null;
     const credentials: TlsServerCredential[] = [];
     const entries: ServerNameEntry<{ block: NginxServerBlock; tls: ServerTls }>[] = [];
     for (const entry of port.servers) {
@@ -347,15 +333,18 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
       ?? port.servers.find((e) => e.tls.identity !== null)?.tls.identity
       ?? ephemeralIdentity();
     for (const entry of port.servers) {
-      const identity = entry.tls.identity ?? fallback;
-      credentials.push({
-        cert: identity.cert, privateKey: identity.key, chain: identity.chain,
-        matches: (name) => findServerByName(entries, name) === entry,
-        rejectHandshake: entry.tls.settings.rejectHandshake,
-      });
+      credentials.push(credentialFor(
+        entry.tls.identity ?? fallback, (name) => findServerByName(entries, name) === entry,
+        entry.tls.settings.rejectHandshake,
+      ));
     }
     const verifying = port.servers.find((e) => e.tls.settings.verifyClient !== 'off');
-    const ticketKey = settings.sessionTickets && base.sessionTickets ? base.ticketKey ?? randomTicketKey() : undefined;
+    const resumption = resumptionConfig({
+      tickets: base.sessionTickets,
+      serverSideCache: settings.sessionCache.builtin === 'builtin' || settings.sessionCache.shared !== null,
+      timeoutSeconds: settings.sessionTimeout,
+      ticketKey: base.ticketKey,
+    });
     return {
       serverCert: fallback.cert, serverChain: fallback.chain, serverPrivateKey: fallback.key,
       protocols: base.protocols, cipherList: base.cipherList, preferServerCiphers: base.preferServerCiphers,
@@ -364,10 +353,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
       sniCredentials: credentials, rejectHandshake: settings.rejectHandshake,
       earlyData: settings.earlyData, sendBufferSize: settings.bufferSize,
       ocspStaple: base.staple, dhParameters: base.dhParameters,
-      sessionTimeoutSeconds: settings.sessionTimeout,
-      legacySessionStore: stored ? new LegacySessionStore(settings.sessionTimeout) : undefined,
-      sessionTicketKey: ticketKey,
-      sessionTicketStore: base.sessionTickets || stored ? new SessionTicketStore() : undefined,
+      ...resumption,
       ...(verifying
         ? {
           requestClientCert: true, clientCertPolicy: 'lenient' as const,

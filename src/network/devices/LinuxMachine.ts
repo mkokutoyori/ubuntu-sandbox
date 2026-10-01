@@ -54,7 +54,7 @@ import {
   APACHE_SITES_AVAILABLE, APACHE_SITES_ENABLED, APACHE_DEFAULT_SITE,
   APACHE_DEFAULT_PAGE, APACHE_DOCROOT, APACHE_DEFAULT_MODULES, apacheModuleLoadFile,
   APACHE_ENVVARS, APACHE_ENVVARS_PATH, APACHE_MODS_ENABLED, APACHE_DEFAULT_SSL_SITE,
-  APACHE_MODS_AVAILABLE, APACHE_AVAILABLE_MODULES,
+  APACHE_MODS_AVAILABLE, APACHE_AVAILABLE_MODULES, APACHE_SSL_CONF,
 } from './linux/http/apache/ApacheFiles';
 import { checkNginxCriticalFiles } from './linux/service/CriticalFiles';
 import {
@@ -1642,6 +1642,8 @@ export abstract class LinuxMachine extends EndHost
     // `mods-enabled` n'en contient que des liens. Sans ce répertoire,
     // `a2enmod ssl` n'aurait rien à lier — et c'est la distinction
     // disponible/activé qui porte toute la leçon.
+    const sslConfFile = `${APACHE_MODS_AVAILABLE}/ssl.conf`;
+    if (!vfs.exists(sslConfFile)) vfs.writeFile(sslConfFile, APACHE_SSL_CONF, 0, 0, 0o022, true);
     for (const module of APACHE_AVAILABLE_MODULES) {
       const loadFile = `${APACHE_MODS_AVAILABLE}/${module}.load`;
       if (!vfs.exists(loadFile)) {

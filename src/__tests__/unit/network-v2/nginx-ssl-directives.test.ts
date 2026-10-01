@@ -20,45 +20,13 @@
  * était présenté, donc le défaut l'était aussi).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { LinuxServer } from '@/network/devices/LinuxServer';
+import type { LinuxServer } from '@/network/devices/LinuxServer';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { HttpsClientSession } from '@/network/http/https/HttpsClientSession';
-import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
-import { pemToCert } from '@/network/pki/pem';
-import { createRequest } from '@/network/http/semantics/types';
 import { EventBus } from '@/events/EventBus';
+import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+import { PKI, machine, sh, selfSigned, issue, lab, ALICE, MALLORY, exchange, type Exchange } from './_httpsLab';
 
 beforeEach(() => { EquipmentRegistry.getInstance().clear(); });
-
-const PKI = '/etc/ssl/pki';
-
-function machine(): LinuxServer {
-  const srv = new LinuxServer('linux-server', 'NG');
-  srv.powerOn();
-  return srv;
-}
-
-async function sh(srv: LinuxServer, command: string): Promise<string> {
-  return srv.executeCommand(command);
-}
-
-async function selfSigned(srv: LinuxServer, name: string, cn: string): Promise<void> {
-  await sh(srv, `openssl req -x509 -newkey rsa:1024 -keyout ${PKI}/${name}.key -out ${PKI}/${name}.crt -days 365 -nodes -subj "/CN=${cn}"`);
-}
-
-async function issue(srv: LinuxServer, ca: string, name: string, cn: string): Promise<void> {
-  await sh(srv, `openssl req -new -newkey rsa:1024 -nodes -keyout ${PKI}/${name}.key -out ${PKI}/${name}.csr -subj "/CN=${cn}"`);
-  await sh(srv, `openssl x509 -req -in ${PKI}/${name}.csr -CA ${PKI}/${ca}.crt -CAkey ${PKI}/${ca}.key -CAcreateserial -out ${PKI}/${name}.crt -days 30`);
-}
-
-async function lab(srv: LinuxServer): Promise<void> {
-  await sh(srv, `mkdir -p ${PKI}`);
-  await selfSigned(srv, 'ca', 'Lab CA');
-  await selfSigned(srv, 'rogue', 'Rogue CA');
-  await selfSigned(srv, 'srv', 'lab.local');
-  await issue(srv, 'ca', 'alice', 'alice');
-  await issue(srv, 'rogue', 'mallory', 'mallory');
-}
 
 async function site(srv: LinuxServer, body: string): Promise<void> {
   const text = body.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
@@ -86,8 +54,6 @@ async function up(srv: LinuxServer, extra = '', http = ''): Promise<string> {
 const MTLS = `  ssl_verify_client on;
   ssl_client_certificate ${PKI}/ca.crt;
 `;
-const ALICE = `--cert ${PKI}/alice.crt --key ${PKI}/alice.key`;
-const MALLORY = `--cert ${PKI}/mallory.crt --key ${PKI}/mallory.key`;
 
 describe('défauts du source nginx 1.24', () => {
   it('témoin : un serveur HTTPS sans autre directive répond 200', async () => {
@@ -214,42 +180,6 @@ describe('ssl_verify_client (ngx_http_process_request, special_response)', () =>
     expect(await sh(srv, `curl -sS -k ${bob} https://127.0.0.1/`)).toContain('Welcome to nginx!');
   });
 });
-
-import { TlsClientSession, type TlsClientConfig } from '@/network/tls/TlsClientSession';
-import { runTlsHandshakeOverSocket, encodeRecords, decodeRecords, bytesToBinaryString, binaryStringToBytes } from '@/network/http/https/TlsRecordWire';
-import { encryptApplicationData, decryptApplicationData } from '@/network/http/https/ApplicationDataCipher';
-import { encodeRequest } from '@/network/http/http1/Http1Wire';
-import type { TlsRecord } from '@/network/tls/recordLayer';
-
-async function trustedVerifier(srv: LinuxServer, ...names: string[]): Promise<CertificateVerifier> {
-  const anchors = [];
-  for (const name of names) {
-    const cert = pemToCert(await sh(srv, `cat ${PKI}/${name}.crt`));
-    if (cert) anchors.push(cert);
-  }
-  return new CertificateVerifier({ trustAnchors: anchors });
-}
-
-interface Exchange { readonly client: TlsClientSession; readonly records: TlsRecord[]; readonly status: string }
-
-async function exchange(srv: LinuxServer, config: Partial<TlsClientConfig>, host = 'lab.local', path = '/'): Promise<Exchange | null> {
-  const socket = srv.getTcpStack().connect('127.0.0.1', 443);
-  if (!socket || socket.state !== 'established') return null;
-  const verifier = await trustedVerifier(srv, 'srv', 'srv2', 'srv3');
-  const client = new TlsClientSession({ verifier, serverName: host, ...config } as TlsClientConfig);
-  runTlsHandshakeOverSocket(socket, client);
-  if (client.result !== 'success') { socket.close(); return { client, records: [], status: '' }; }
-  const request = createRequest('GET', path);
-  request.headers.set('Host', host);
-  request.headers.set('Connection', 'close');
-  const sealed = encryptApplicationData(client.clientTraffic(), 0, new TextEncoder().encode(encodeRequest(request)));
-  let received: TlsRecord[] = [];
-  const stop = socket.onData((data) => { received = decodeRecords(binaryStringToBytes(String(data))); });
-  socket.write(bytesToBinaryString(encodeRecords(sealed.records)));
-  stop();
-  const plain = received.length > 0 ? new TextDecoder().decode(decryptApplicationData(client.serverTraffic(), 0, received).plaintext) : '';
-  return { client, records: received, status: plain.split('\r\n')[0] ?? '' };
-}
 
 describe('SNI : un certificat par bloc server (ngx_http_ssl_servername)', () => {
   async function twoSites(srv: LinuxServer, extraSecond = ''): Promise<void> {

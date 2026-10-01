@@ -6,6 +6,7 @@ import {
   generateModpKeyPair, modpSharedSecret, modpToHex, modpFromHex, type ModpGroup,
 } from '@/crypto/dh/modp';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
+import { allowsMissingCertificate, continuesAfterVerificationFailure, type ClientCertPolicy } from '../clientAuthPolicy';
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from '../alerts';
@@ -152,7 +153,7 @@ export interface LegacyServerSetup {
   readonly requestClientCert: boolean;
   readonly verifier?: CertificateVerifier;
   readonly securityLevel: number;
-  readonly lenientClientCert: boolean;
+  readonly clientCertPolicy: ClientCertPolicy | undefined;
   readonly clientExtensions: LegacyClientExtensions;
   readonly extendedMasterSecret: boolean;
   readonly sessionStore?: LegacySessionStore;
@@ -426,9 +427,9 @@ export class LegacyServerHandshake {
     let verifiedLeaf: X509Certificate | null = null;
     if (this.setup.requestClientCert) {
       if (!certificate) return this.reject('unexpected_message');
-      const lenient = this.setup.lenientClientCert;
+      const policy = this.setup.clientCertPolicy;
       if (certificate.certificateList.length === 0) {
-        if (!lenient) return this.reject('handshake_failure');
+        if (!allowsMissingCertificate(policy)) return this.reject('handshake_failure');
         this.peerVerificationReason = 'no-certificate';
       } else {
         if (!this.setup.verifier || !certificateVerify) return this.reject('handshake_failure');
@@ -439,7 +440,7 @@ export class LegacyServerHandshake {
         this.peerVerified = verification.ok !== false;
         if (verification.ok === false) {
           this.peerVerificationReason = verification.reason;
-          if (!lenient) return this.rejectCertificate(verification.reason);
+          if (!continuesAfterVerificationFailure(policy, verification.reason)) return this.rejectCertificate(verification.reason);
         }
       }
     } else if (certificate) {
