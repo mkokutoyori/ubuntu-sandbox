@@ -47,7 +47,8 @@ Conventions de lecture : **réel** = calculé et vérifié contre un oracle ou d
 9. **Grammaire des listes OpenSSL** — la documentation (`docs.openssl.org`) n'est pas atteignable depuis cet environnement. Sont implémentés les opérateurs (`:` `,` espace, `!` `-` `+`, `@STRENGTH`, intersection `A+B`) et les mots-clés dont le sens se lit sur les attributs de la suite (`kRSA`, `aRSA`, `aECDSA`, `ECDHE`, `DHE`, `AESGCM`, `AES128`, `AES256`, `AES`, `3DES`, `RC4`, `SHA1`, `SHA256`, `SHA384`, `TLSv1.2`). `HIGH`, `ALL` et `DEFAULT` excluent 3DES faute de classement sourcé ; `MEDIUM` et `LOW` ne contiennent rien ; `@SECLEVEL=n` est refusé plutôt que deviné. Les textes d'erreur OpenSSL (`0A00042E`, `0A000410`, `0A000475`) viennent de transcriptions connues, non d'une source consultable ici.
 10. **`openssl verify -untrusted` n'a pas de sonde de bout en bout** : aucune commande `openssl` n'émet encore une AC subordonnée (la validation de chemin, elle, est sondée sur l'API).
 11. **Pas de révocation sur les intermédiaires** : CRL/OCSP ne s'appliquent qu'à la feuille.
-12. QUIC et EAP-TLS restent figés sur 1.3 (RFC 9001 §4.2, RFC 9190).
+12. **Apache (`SSLProtocol`, `SSLCipherSuite`) et IIS/Schannel (clés `Protocols\TLS 1.x`) ne lisent pas encore la politique de versions et de suites** : seul nginx l'évalue. Ils appliquent les défauts du moteur (1.3 et 1.2).
+13. QUIC et EAP-TLS restent figés sur 1.3 (RFC 9001 §4.2, RFC 9190).
 
 ## 4. Sondes
 
