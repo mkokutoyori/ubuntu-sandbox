@@ -28,7 +28,7 @@ import {
   encodeHandshakeMessage, decodeHandshakeMessage, encodeMessages, decodeMessages, randomNonce,
 } from './messages';
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
-import { deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, ZERO_IKM } from './keySchedule';
+import { deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
 import { alertFromRecord, alertToRecord, certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
 import { MANDATORY_CIPHER_SUITES } from './cipherSuites';
 import { type SessionTicket, deriveResumptionPsk } from './sessionTickets';
@@ -362,9 +362,6 @@ export class TlsClientSession {
       { clientHello: transcriptHash([this.transcript[0]]), serverHello: shTranscript, serverFinished: shTranscript, clientFinished: shTranscript },
       effectivePsk, dheSharedSecret,
     );
-    this.resumptionMasterSecret = handshakePhase.resumptionMasterSecret;
-    this.clientApplicationTrafficSecret = handshakePhase.clientApplicationTrafficSecret;
-    this.serverApplicationTrafficSecret = handshakePhase.serverApplicationTrafficSecret;
     this.clientHandshakeTrafficSecret = handshakePhase.clientHandshakeTrafficSecret;
     this.serverHandshakeTrafficSecret = handshakePhase.serverHandshakeTrafficSecret;
     const sessionResumed = Boolean(serverHello.extensions.preSharedKey);
@@ -398,7 +395,7 @@ export class TlsClientSession {
     if (certificateRequest) this.transcript.push(encodeHandshakeMessage(certificateRequest));
     this.transcript.push(encodeHandshakeMessage(certificate));
 
-    const preVerify = transcriptHash(this.transcript);
+    const preVerify = certificateVerifyContent('server', transcriptHash(this.transcript));
     if (!PkiKeyPair.verify(leafCert.publicKey, preVerify, certificateVerify.signature)) return this.fail('decrypt_error');
     this.transcript.push(encodeHandshakeMessage(certificateVerify));
 
@@ -406,6 +403,13 @@ export class TlsClientSession {
     const expectedServerFinished = computeFinished(handshakePhase.serverHandshakeTrafficSecret, preFinished);
     if (serverFinished.verifyData !== expectedServerFinished) return this.fail('decrypt_error');
     this.transcript.push(encodeHandshakeMessage(serverFinished));
+    const throughServerFinished = transcriptHash(this.transcript);
+    const applicationPhase = deriveKeySchedule(
+      { clientHello: transcriptHash([this.transcript[0]]), serverHello: shTranscript, serverFinished: throughServerFinished, clientFinished: throughServerFinished },
+      effectivePsk, dheSharedSecret,
+    );
+    this.clientApplicationTrafficSecret = applicationPhase.clientApplicationTrafficSecret;
+    this.serverApplicationTrafficSecret = applicationPhase.serverApplicationTrafficSecret;
 
     const finalBundle: TlsHandshakeMessage[] = [];
     if (certificateRequest) {
@@ -418,7 +422,7 @@ export class TlsClientSession {
       if (this.config.clientCert && this.config.clientPrivateKey) {
         const clientCertificateVerify: CertificateVerify = {
           kind: 'certificate_verify',
-          signature: PkiKeyPair.sign(this.config.clientPrivateKey, transcriptHash(this.transcript)),
+          signature: PkiKeyPair.sign(this.config.clientPrivateKey, certificateVerifyContent('client', transcriptHash(this.transcript))),
         };
         finalBundle.push(clientCertificateVerify);
         this.transcript.push(encodeHandshakeMessage(clientCertificateVerify));
@@ -430,6 +434,8 @@ export class TlsClientSession {
       verifyData: computeFinished(handshakePhase.clientHandshakeTrafficSecret, transcriptHash(this.transcript)),
     };
     finalBundle.push(clientFinished);
+    this.transcript.push(encodeHandshakeMessage(clientFinished));
+    this.resumptionMasterSecret = expandLabel(applicationPhase.masterSecret, 'res master', transcriptHash(this.transcript));
 
     this.state = 'done';
     this.result = 'success';

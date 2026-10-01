@@ -140,3 +140,13 @@ export function computeFinished(trafficSecret: string, transcript: string): stri
 export function nextTrafficSecret(secret: string): string {
   return expandLabel(secret, 'traffic upd', '');
 }
+
+/**
+ * RFC 8446 §4.4.3 — le contenu signé par CertificateVerify : 64 espaces,
+ * la chaîne de contexte, un octet nul, puis le condensé de transcription.
+ * Sans ce préfixe, une signature produite ailleurs sur le même condensé
+ * (autre protocole, autre côté) serait rejouable ici.
+ */
+export function certificateVerifyContent(role: 'server' | 'client', transcript: string): string {
+  return `${' '.repeat(64)}TLS 1.3, ${role} CertificateVerify\u0000${transcript}`;
+}
