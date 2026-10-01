@@ -1,6 +1,7 @@
 import { utf8ToBytes, bytesToUtf8 } from '@/crypto/encoding';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { LegacyVersion } from './legacyCipherSuites';
+import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
 
 export interface LegacyServerHello {
   readonly kind: 'legacy_server_hello';
@@ -15,6 +16,8 @@ export interface LegacyServerHello {
     readonly extendedMasterSecret?: boolean;
     readonly renegotiationInfo?: string;
     readonly sessionTicket?: boolean;
+    readonly statusRequest?: boolean;
+    readonly maxFragmentLength?: number;
   };
 }
 
@@ -62,6 +65,11 @@ export interface LegacyFinished {
   readonly verifyData: string;
 }
 
+export interface LegacyCertificateStatus {
+  readonly kind: 'legacy_certificate_status';
+  readonly response: SignedOcspResponse;
+}
+
 export interface LegacyNewSessionTicket {
   readonly kind: 'legacy_new_session_ticket';
   readonly lifetimeHint: number;
@@ -69,6 +77,7 @@ export interface LegacyNewSessionTicket {
 }
 
 export type LegacyHandshakeMessage =
+  | LegacyCertificateStatus
   | LegacyNewSessionTicket
   | LegacyServerHello | LegacyCertificate | ServerKeyExchange | LegacyCertificateRequest
   | ServerHelloDone | ClientKeyExchange | LegacyCertificateVerify | LegacyFinished;

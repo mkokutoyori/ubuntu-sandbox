@@ -50,11 +50,12 @@ export function encryptApplicationData(
 ): EncryptedApplicationData {
   if (isLegacy(traffic)) {
     let legacySeq = startSeq;
-    const sealed = fragmentPlaintext('application_data', plaintext).map((record): TlsRecord => traffic.seal(legacySeq++, record));
+    const sealed = fragmentPlaintext('application_data', plaintext, traffic.maxFragment).map((record): TlsRecord => traffic.seal(legacySeq++, record));
     return { records: sealed, nextSeq: legacySeq };
   }
   const k = keys(traffic);
-  const records = fragmentAsRecords('application_data', plaintext, true);
+  const limit = typeof traffic === 'string' ? undefined : traffic.maxFragment;
+  const records = fragmentAsRecords('application_data', plaintext, true, limit);
   let seq = startSeq;
   const encrypted = records.map((record): TlsRecord => sealRecord(k, seq++, record));
   return { records: encrypted, nextSeq: seq };
@@ -77,6 +78,10 @@ export interface DecryptedApplicationData {
  * du XOR mal déchiffré faisait déjà lever `reassembleRecords`, faute de
  * remorque de type valide.
  */
+export class RecordOverflowError extends Error {
+  constructor() { super('record_overflow'); this.name = 'RecordOverflowError'; }
+}
+
 export class BadRecordMacError extends Error {
   constructor() { super('bad_record_mac'); this.name = 'BadRecordMacError'; }
 }
@@ -91,6 +96,7 @@ export function decryptApplicationData(
     for (const record of records) {
       const plain = traffic.open(legacySeq++, record);
       if (plain === null) throw new BadRecordMacError();
+      if (plain.fragment.length > traffic.maxFragment) throw new RecordOverflowError();
       opened.push(plain);
     }
     return { plaintext: reassembleFragments(opened).plaintext, nextSeq: legacySeq };
@@ -103,6 +109,9 @@ export function decryptApplicationData(
     // Refuser le lot entier plutôt que d'en livrer la moitié : c'est ce
     // que fait un vrai TLS, qui ferme la connexion.
     if (clair === null) throw new BadRecordMacError();
+    if (typeof traffic !== 'string' && traffic.maxFragment !== undefined && clair.fragment.length > traffic.maxFragment + 1) {
+      throw new RecordOverflowError();
+    }
     decrypted.push(clair);
   }
   const { plaintext } = reassembleRecords(decrypted, true);

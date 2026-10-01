@@ -165,6 +165,7 @@ function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
 export class LegacyRecordProtection {
   readonly kind = 'legacy' as const;
   sequenceBase = 0;
+  maxFragment = 16384;
   private chainIv: Uint8Array;
 
   constructor(

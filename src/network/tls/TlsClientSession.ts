@@ -43,6 +43,8 @@ import { decodeLegacyMessages } from './legacy/legacyMessages';
 import type { TrafficProtection } from './trafficProtection';
 import { suiteInfo } from './suite13';
 import type { Tls13Hash } from './hkdf';
+import { stapleAlert } from './ocspStapling';
+import { isValidMaxFragmentLength, DEFAULT_MAX_FRAGMENT } from './maxFragment';
 import type { ResumableLegacySession } from './legacy/legacySessions';
 import { randomHex } from './legacy/LegacyHandshake';
 
@@ -89,7 +91,19 @@ export interface TlsClientConfig {
   readonly legacySession?: ResumableLegacySession;
   /** `SSL_OP_LEGACY_SERVER_CONNECT` : talk to a server lacking RFC 5746 secure renegotiation. */
   readonly allowUnsafeLegacyRenegotiation?: boolean;
+  /** RFC 6066 §8 — send status_request and verify a stapled OCSP response. */
+  readonly requestOcspStaple?: boolean;
+  /** RFC 7633 must-staple behaviour: a missing or invalid staple fails with bad_certificate_status_response. */
+  readonly requireOcspStaple?: boolean;
+  /** RFC 6066 §4 — ask the server to limit records to this many bytes. */
+  readonly maxFragmentLength?: number;
+  /** RFC 8701 — inject GREASE values into the ClientHello lists. */
+  readonly grease?: boolean;
 }
+
+const GREASE_VALUE = 0x0a0a;
+const GREASE_NAME = 'grease_0a0a';
+const GREASE_CIPHER_SUITE = 'TLS_GREASE_0A0A';
 
 const MAX_TICKET_LIFETIME_SECONDS = 604800;
 const MAX_PROTECTED_FRAGMENT = MAX_TLS_RECORD_LENGTH + 2048;
@@ -147,6 +161,7 @@ export class TlsClientSession {
   private legacy: LegacyClientHandshake | null = null;
   private lastClientHelloBytes: Uint8Array = new Uint8Array(0);
   private hash: Tls13Hash = 'sha256';
+  negotiatedMaxFragmentLength: number | null = null;
 
   constructor(private readonly config: TlsClientConfig) {
     this.policy = resolveLegacyPolicy(config);
@@ -160,11 +175,11 @@ export class TlsClientSession {
   }
 
   clientTraffic(): TrafficProtection {
-    return this.legacy?.traffic?.outbound ?? { secret: this.clientApplicationTrafficSecret!, suite: this.negotiatedCipherSuite as CipherSuite };
+    return this.legacy?.traffic?.outbound ?? { secret: this.clientApplicationTrafficSecret!, suite: this.negotiatedCipherSuite as CipherSuite, maxFragment: this.negotiatedMaxFragmentLength ?? DEFAULT_MAX_FRAGMENT };
   }
 
   serverTraffic(): TrafficProtection {
-    return this.legacy?.traffic?.inbound ?? { secret: this.serverApplicationTrafficSecret!, suite: this.negotiatedCipherSuite as CipherSuite };
+    return this.legacy?.traffic?.inbound ?? { secret: this.serverApplicationTrafficSecret!, suite: this.negotiatedCipherSuite as CipherSuite, maxFragment: this.negotiatedMaxFragmentLength ?? DEFAULT_MAX_FRAGMENT };
   }
 
   private legacyExt: LegacyClientExtensions | null = null;
@@ -189,6 +204,10 @@ export class TlsClientSession {
 
   get legacyResumed(): boolean {
     return this.legacy?.resumed ?? false;
+  }
+
+  private withGrease<T>(values: readonly T[], grease: T): readonly T[] {
+    return this.config.grease === true ? [grease, ...values] : values;
   }
 
   private tls13Offer(): readonly CipherSuite[] {
@@ -238,14 +257,17 @@ export class TlsClientSession {
     const ticket = this.config.resumptionTicket;
     const clientHello: ClientHello = {
       kind: 'client_hello', legacyVersion: legacyCeiling, random: this.clientRandom,
-      cipherSuites: this.offersTls13() ? this.tls13Offer() : [],
-      legacyCipherSuites: this.legacySuiteDefinitions().map((definition) => definition.code),
+      cipherSuites: this.offersTls13() ? this.withGrease(this.tls13Offer(), GREASE_CIPHER_SUITE as CipherSuite) : [],
+      legacyCipherSuites: this.withGrease(this.legacySuiteDefinitions().map((definition) => definition.code), GREASE_VALUE),
       legacyExtensions: this.legacyExtensions(),
       extensions: {
-        supportedVersions: this.offersTls13() ? this.versions : [], keyShare: this.clientKeyShare,
-        supportedGroups: this.supportedGroups, signatureAlgorithms: SUPPORTED_SIGNATURE_SCHEMES,
-        alpn: this.config.alpn,
+        supportedVersions: this.offersTls13() ? this.withGrease(this.versions, GREASE_NAME) : [], keyShare: this.clientKeyShare,
+        supportedGroups: this.withGrease(this.supportedGroups, GREASE_NAME),
+        signatureAlgorithms: this.withGrease(SUPPORTED_SIGNATURE_SCHEMES, GREASE_NAME),
+        alpn: this.config.alpn ? this.withGrease(this.config.alpn, GREASE_NAME) : undefined,
         serverName: this.config.serverName,
+        ...(this.config.requestOcspStaple || this.config.requireOcspStaple ? { statusRequest: true } : {}),
+        ...(isValidMaxFragmentLength(this.config.maxFragmentLength) ? { maxFragmentLength: this.config.maxFragmentLength } : {}),
         preSharedKey: ticket?.ticket,
         pskKeyExchangeModes: ticket ? ['psk_dhe_ke'] : undefined,
         earlyData: ticket && this.config.earlyData ? true : undefined,
@@ -341,6 +363,9 @@ export class TlsClientSession {
       clientExtensions: this.legacyExtensions(),
       session: this.config.legacySession ?? null,
       allowUnsafeRenegotiation: this.config.allowUnsafeLegacyRenegotiation === true,
+      requestStatus: this.config.requestOcspStaple === true || this.config.requireOcspStaple === true,
+      requireStaple: this.config.requireOcspStaple === true,
+      requestedMaxFragment: isValidMaxFragmentLength(this.config.maxFragmentLength) ? this.config.maxFragmentLength : null,
       now: Date.now,
     });
     return this.handleLegacy(incoming);
@@ -355,6 +380,7 @@ export class TlsClientSession {
     this.negotiatedVersion = legacy.negotiatedVersion;
     this.negotiatedCipherSuite = legacy.negotiatedSuite?.name ?? null;
     this.negotiatedAlpnProtocol = legacy.negotiatedAlpn;
+    this.negotiatedMaxFragmentLength = legacy.negotiatedMaxFragment;
     if (legacy.result === 'failure') {
       this.lastAlert = legacy.lastAlert;
       this.state = 'done';
@@ -392,11 +418,19 @@ export class TlsClientSession {
     if (!encryptedExtensions || !certificate || !certificateVerify || !serverFinished) return this.fail('unexpected_message');
 
     const offeredSuites = this.tls13Offer();
+    if ((serverHello.cipherSuite as string) === GREASE_CIPHER_SUITE) return this.fail('illegal_parameter');
     if (!offeredSuites.includes(serverHello.cipherSuite)) return this.fail('handshake_failure');
     this.negotiatedCipherSuite = serverHello.cipherSuite;
     this.negotiatedVersion = '1.3';
     this.hash = suiteInfo(serverHello.cipherSuite).hash;
+    if (encryptedExtensions.extensions.alpn === GREASE_NAME) return this.fail('illegal_parameter');
     this.negotiatedAlpnProtocol = encryptedExtensions.extensions.alpn ?? null;
+    const echoedFragment = encryptedExtensions.extensions.maxFragmentLength;
+    if (echoedFragment !== undefined) {
+      if (this.config.maxFragmentLength === undefined) return this.fail('unsupported_extension');
+      if (echoedFragment !== this.config.maxFragmentLength) return this.fail('illegal_parameter');
+      this.negotiatedMaxFragmentLength = echoedFragment;
+    }
     this.earlyDataAccepted = encryptedExtensions.extensions.earlyData ?? false;
 
     // Étage 3 : un vrai X25519 sur la part du serveur, avec le scalaire
@@ -450,6 +484,11 @@ export class TlsClientSession {
       }
     }
 
+    const stapleProblem = stapleAlert(
+      this.config.verifier, leafCert, certificate.certificateList.slice(1), certificate.ocspStaple,
+      this.config.requireOcspStaple === true,
+    );
+    if (stapleProblem !== null && (this.config.requestOcspStaple || this.config.requireOcspStaple)) return this.fail(stapleProblem);
     this.transcript.push(encodeHandshakeMessage(encryptedExtensions));
     if (certificateRequest) this.transcript.push(encodeHandshakeMessage(certificateRequest));
     this.transcript.push(encodeHandshakeMessage(certificate));

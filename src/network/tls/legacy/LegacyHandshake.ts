@@ -21,9 +21,11 @@ import {
   decodeLegacyMessages, encodeLegacyBundle, encodeLegacyMessage,
   type ClientKeyExchange, type KeyExchangeParams, type LegacyCertificate, type LegacyCertificateRequest,
   type LegacyCertificateVerify, type LegacyFinished, type LegacyServerHello, type ServerHelloDone,
-  type ServerKeyExchange, type LegacyNewSessionTicket,
+  type ServerKeyExchange, type LegacyNewSessionTicket, type LegacyCertificateStatus,
 } from './legacyMessages';
 import type { LegacyClientExtensions } from '../messages';
+import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
+import { stapleAlert } from '../ocspStapling';
 import {
   LegacySessionStore, LegacyTicketCodec, type LegacySessionState, type ResumableLegacySession,
 } from './legacySessions';
@@ -155,6 +157,8 @@ export interface LegacyServerSetup {
   readonly sessionStore?: LegacySessionStore;
   readonly ticketCodec?: LegacyTicketCodec;
   readonly sessionLifetimeSeconds: number;
+  readonly statusStaple: SignedOcspResponse | null;
+  readonly maxFragmentLength: number | null;
   readonly acceptResumedSuite: (name: string) => boolean;
   readonly resolveSuite: (name: string) => LegacySuiteDefinition | undefined;
   readonly now: () => number;
@@ -202,7 +206,16 @@ export class LegacyServerHandshake {
       ...(this.ems ? { extendedMasterSecret: true } : {}),
       ...(client.renegotiationInfo !== null ? { renegotiationInfo: '' } : {}),
       ...(this.issueTicket ? { sessionTicket: true } : {}),
+      ...(this.setup.statusStaple !== null ? { statusRequest: true } : {}),
+      ...(this.setup.maxFragmentLength !== null ? { maxFragmentLength: this.setup.maxFragmentLength } : {}),
     };
+  }
+
+  private applyFragmentLimit(inbound: LegacyRecordProtection, outbound: LegacyRecordProtection): void {
+    const limit = this.setup.maxFragmentLength;
+    if (limit === null) return;
+    inbound.maxFragment = limit;
+    outbound.maxFragment = limit;
   }
 
   private findResumable(): { state: LegacySessionState; id: string } | 'abort' | null {
@@ -244,6 +257,10 @@ export class LegacyServerHandshake {
     bundle.push(serverHello);
     const certificate: LegacyCertificate = { kind: 'legacy_certificate', certificateList: [this.setup.serverCert, ...this.setup.serverChain] };
     bundle.push(certificate);
+    if (this.setup.statusStaple !== null) {
+      const status: LegacyCertificateStatus = { kind: 'legacy_certificate_status', response: this.setup.statusStaple };
+      bundle.push(status);
+    }
 
     if (suite.keyExchange !== 'RSA') {
       const params = this.generateParams();
@@ -297,6 +314,7 @@ export class LegacyServerHandshake {
     });
     this.messages.push(encodeLegacyMessage(finished));
     outbound.sequenceBase = 1;
+    this.applyFragmentLimit(inbound, outbound);
     this.traffic = { inbound, outbound };
     this.state = 'awaiting-resumed-finished';
     return [...handshakeRecords(version, encodeLegacyBundle([serverHello])), changeCipherSpec(version), sealed];
@@ -470,6 +488,7 @@ export class LegacyServerHandshake {
     });
     inbound.sequenceBase = 1;
     outbound.sequenceBase = 1;
+    this.applyFragmentLimit(inbound, outbound);
     this.traffic = { inbound, outbound };
     if (this.setup.sessionStore && this.sessionId !== '') this.setup.sessionStore.put(state);
     this.state = 'done';
@@ -496,6 +515,9 @@ export interface LegacyClientSetup {
   readonly clientExtensions: LegacyClientExtensions;
   readonly session: ResumableLegacySession | null;
   readonly allowUnsafeRenegotiation: boolean;
+  readonly requestStatus: boolean;
+  readonly requireStaple: boolean;
+  readonly requestedMaxFragment: number | null;
   readonly now: () => number;
 }
 
@@ -511,6 +533,7 @@ export class LegacyClientHandshake {
   negotiatedVersion: LegacyVersion | null = null;
   negotiatedSuite: LegacySuiteDefinition | null = null;
   negotiatedAlpn: string | null = null;
+  negotiatedMaxFragment: number | null = null;
 
   private state: ClientLegacyState = 'awaiting-server-flight';
   private readonly messages: Uint8Array[] = [];
@@ -559,6 +582,7 @@ export class LegacyClientHandshake {
     const serverHello = bundle.find((m): m is LegacyServerHello => m.kind === 'legacy_server_hello');
     const certificate = bundle.find((m): m is LegacyCertificate => m.kind === 'legacy_certificate');
     const serverKeyExchange = bundle.find((m): m is ServerKeyExchange => m.kind === 'server_key_exchange');
+    const certificateStatus = bundle.find((m): m is LegacyCertificateStatus => m.kind === 'legacy_certificate_status');
     const certificateRequest = bundle.find((m): m is LegacyCertificateRequest => m.kind === 'legacy_certificate_request');
     const done = bundle.find((m) => m.kind === 'server_hello_done');
     if (!serverHello) return this.fail('unexpected_message');
@@ -579,6 +603,12 @@ export class LegacyClientHandshake {
     this.serverSessionId = serverHello.sessionId;
     const version = serverHello.version;
 
+    const echoedFragment = serverHello.extensions.maxFragmentLength;
+    if (echoedFragment !== undefined) {
+      if (setup.requestedMaxFragment === null) return this.fail('unsupported_extension');
+      if (echoedFragment !== setup.requestedMaxFragment) return this.fail('illegal_parameter');
+      this.negotiatedMaxFragment = echoedFragment;
+    }
     const offeredEms = setup.clientExtensions.extendedMasterSecret;
     const serverEms = serverHello.extensions.extendedMasterSecret === true;
     if (serverEms && !offeredEms) return this.fail('unsupported_extension');
@@ -601,6 +631,14 @@ export class LegacyClientHandshake {
     if (verification.ok === false) {
       this.peerVerificationReason = verification.reason;
       if (!setup.allowUntrustedPeer) return this.failCertificate(verification.reason);
+    }
+    if (setup.requestStatus && serverHello.extensions.statusRequest !== true && certificateStatus !== undefined) return this.fail('unsupported_extension');
+    if (!setup.requestStatus && certificateStatus !== undefined) return this.fail('unsupported_extension');
+    if (setup.requestStatus) {
+      const stapleProblem = stapleAlert(
+        setup.verifier, leaf, certificate.certificateList.slice(1), certificateStatus?.response, setup.requireStaple,
+      );
+      if (stapleProblem !== null) return this.fail(stapleProblem);
     }
     if (!suiteMatchesCertificate(leaf, suite)) return this.fail('illegal_parameter');
     if (isForwardSecret(suite) !== (serverKeyExchange !== undefined)) return this.fail('unexpected_message');
@@ -679,9 +717,16 @@ export class LegacyClientHandshake {
     });
     this.messages.push(encodeLegacyMessage(finished));
     outbound.sequenceBase = 1;
+    this.applyFragmentLimit(inbound, outbound);
     this.traffic = { inbound, outbound };
     this.state = 'awaiting-server-finished';
     return [...handshakeRecords(version, encodeLegacyBundle(out)), changeCipherSpec(version), sealed];
+  }
+
+  private applyFragmentLimit(inbound: LegacyRecordProtection, outbound: LegacyRecordProtection): void {
+    if (this.negotiatedMaxFragment === null) return;
+    inbound.maxFragment = this.negotiatedMaxFragment;
+    outbound.maxFragment = this.negotiatedMaxFragment;
   }
 
   private resumeAbbreviated(
@@ -720,6 +765,7 @@ export class LegacyClientHandshake {
       contentType: 'handshake', legacyVersion: PROTOCOL_VERSION_WIRE[version], fragment: encodeLegacyMessage(finished),
     });
     outbound.sequenceBase = 1;
+    this.applyFragmentLimit(inbound, outbound);
     this.traffic = { inbound, outbound };
     this.exportedSession = setup.session;
     this.state = 'done';

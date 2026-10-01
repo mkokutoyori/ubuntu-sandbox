@@ -4,7 +4,7 @@ import { keyPermitted } from '@/network/tls/legacy/securityPolicy';
 import type { X509Certificate } from './X509Certificate';
 import { tbsPayload } from './X509Certificate';
 import type { CertificateRevocationList } from './CertificateRevocationList';
-import type { IOcspResponder } from './OcspResponder';
+import { verifyOcspStaple, type IOcspResponder, type SignedOcspResponse, type OcspStapleVerdict } from './OcspResponder';
 
 export type VerificationReason =
   | 'unknown' | 'expired' | 'revoked' | 'not-yet-valid' | 'bad-signature' | 'crl-stale' | 'crl-untrusted'
@@ -83,6 +83,15 @@ export class CertificateVerifier {
       }
     }
     return { ok: true };
+  }
+
+  checkOcspStaple(
+    cert: X509Certificate, intermediates: readonly X509Certificate[], staple: SignedOcspResponse,
+  ): OcspStapleVerdict | { ok: false; reason: 'unknown-issuer' } {
+    const path = this.buildPath(cert, intermediates);
+    if (path.ok === false) return { ok: false, reason: 'unknown-issuer' };
+    const issuer = path.intermediates[0] ?? path.anchor;
+    return verifyOcspStaple(staple, cert, issuer, this.clock());
   }
 
   private buildPath(cert: X509Certificate, intermediates: readonly X509Certificate[]): PathResult {

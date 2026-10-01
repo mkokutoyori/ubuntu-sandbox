@@ -26,6 +26,7 @@ export const DEFAULT_SUITE_13: CipherSuite = 'TLS_AES_128_GCM_SHA256';
 export interface Tls13Traffic {
   readonly secret: string;
   readonly suite: CipherSuite;
+  readonly maxFragment?: number;
 }
 
 export function suiteInfo(name: string | null | undefined): Tls13SuiteInfo {
