@@ -29,6 +29,7 @@ import {
 } from './messages';
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
 import { deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
+import { signCertificateVerify, verifyCertificateVerify, SUPPORTED_SIGNATURE_SCHEMES, schemeForKey } from './signature13';
 import { alertFromRecord, alertToRecord, certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
 import { DEFAULT_CIPHER_SUITES, parseTls13Ciphersuites } from './cipherSuites';
 import { tls13CipherPermitted } from './legacy/securityPolicy';
@@ -242,7 +243,7 @@ export class TlsClientSession {
       legacyExtensions: this.legacyExtensions(),
       extensions: {
         supportedVersions: this.offersTls13() ? this.versions : [], keyShare: this.clientKeyShare,
-        supportedGroups: this.supportedGroups, signatureAlgorithms: ['ecdsa_secp256r1_sha256'],
+        supportedGroups: this.supportedGroups, signatureAlgorithms: SUPPORTED_SIGNATURE_SCHEMES,
         alpn: this.config.alpn,
         serverName: this.config.serverName,
         preSharedKey: ticket?.ticket,
@@ -454,7 +455,8 @@ export class TlsClientSession {
     this.transcript.push(encodeHandshakeMessage(certificate));
 
     const preVerify = certificateVerifyContent('server', transcriptHash(this.transcript, this.hash));
-    if (!PkiKeyPair.verify(leafCert.publicKey, preVerify, certificateVerify.signature)) return this.fail('decrypt_error');
+    if (certificateVerify.signatureAlgorithm !== schemeForKey(leafCert.publicKey.algorithm)) return this.fail('illegal_parameter');
+    if (!verifyCertificateVerify(leafCert.publicKey, preVerify, certificateVerify.signatureAlgorithm, certificateVerify.signature)) return this.fail('decrypt_error');
     this.transcript.push(encodeHandshakeMessage(certificateVerify));
 
     const preFinished = transcriptHash(this.transcript, this.hash);
@@ -478,9 +480,12 @@ export class TlsClientSession {
       this.transcript.push(encodeHandshakeMessage(clientCertificate));
 
       if (this.config.clientCert && this.config.clientPrivateKey) {
+        const clientSignature = signCertificateVerify(
+          this.config.clientPrivateKey, certificateVerifyContent('client', transcriptHash(this.transcript, this.hash)),
+        );
+        if (clientSignature === null) return this.fail('handshake_failure');
         const clientCertificateVerify: CertificateVerify = {
-          kind: 'certificate_verify',
-          signature: PkiKeyPair.sign(this.config.clientPrivateKey, certificateVerifyContent('client', transcriptHash(this.transcript, this.hash))),
+          kind: 'certificate_verify', signatureAlgorithm: clientSignature.scheme, signature: clientSignature.signature,
         };
         finalBundle.push(clientCertificateVerify);
         this.transcript.push(encodeHandshakeMessage(clientCertificateVerify));

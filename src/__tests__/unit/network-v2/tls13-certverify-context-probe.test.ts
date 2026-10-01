@@ -1,5 +1,5 @@
 /**
- * RFC 8446 §4.4.3 — la signature de CertificateVerify porte sur 64
+ * RFC 8446 §4.4.3 et §4.2.3 — la signature de CertificateVerify porte sur 64
  * espaces, la chaîne de contexte (« TLS 1.3, server CertificateVerify »
  * ou « …client… »), un octet nul et le condensé de transcription.
  *
@@ -7,24 +7,24 @@
  * une signature de serveur était rejouable comme signature de client sur
  * la même transcription.
  *
- * Avant correctif, 2 des 3 cas tombent ; le témoin (le client accepte la
- * poignée de main complète) passe dans les deux états.
+ * Mesure : contre le commit qui n'avait pas encore RSA-PSS, 3 des 5 cas
+ * tombent ; passent dans les deux états le témoin « le client accepte la
+ * poignée de main complète » et le refus du condensé nu (signature PKCS#1
+ * v1.5 rejetée de toute façon).
  *
- * Limite écrite : la même livraison place les secrets de trafic
- * applicatifs au point ClientHello..Finished du serveur et le secret de
- * reprise après le Finished du client (§7.1). Aucun cas ici ne le
- * discrimine — les éphémères X25519 ne s'injectent pas — ; il est couvert
- * par la cohérence des deux bouts, la reprise PSK et KeyUpdate.
+ * Les points de transcription du §7.1 sont vérifiés contre un second
+ * calendrier de clés dans `tls-aead-suites-probe.test.ts`.
  */
 import { describe, it, expect } from 'vitest';
 import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
-import { PkiKeyPair } from '@/network/pki/PkiKeyPair';
+import { verifyCertificateVerify } from '@/network/tls/signature13';
 import { TlsServerSession } from '@/network/tls/TlsServerSession';
 import { TlsClientSession } from '@/network/tls/TlsClientSession';
-import { reassembleRecords, type TlsRecord } from '@/network/tls/recordLayer';
+import { reassembleRecords, fragmentAsRecords, type TlsRecord } from '@/network/tls/recordLayer';
 import {
-  decodeMessages, encodeHandshakeMessage, type CertificateVerify, type CertificateMessage,
+  decodeMessages, encodeMessages, decodeHandshakeMessage, encodeHandshakeMessage,
+  type CertificateVerify, type CertificateMessage, type ClientHello,
 } from '@/network/tls/messages';
 import { transcriptHash, certificateVerifyContent } from '@/network/tls/keySchedule';
 import { suiteInfo } from '@/network/tls/suite13';
@@ -55,7 +55,8 @@ describe('RFC 8446 §4.4.3 — contexte de CertificateVerify', () => {
       encodeHandshakeMessage(certificate),
     ];
     const hash = transcriptHash(before, suiteHash);
-    expect(PkiKeyPair.verify(leaf.cert.publicKey, certificateVerifyContent('server', hash), verify.signature)).toBe(true);
+    expect(verify.signatureAlgorithm).toBe('rsa_pss_rsae_sha256');
+    expect(verifyCertificateVerify(leaf.cert.publicKey, certificateVerifyContent('server', hash), verify.signatureAlgorithm, verify.signature)).toBe(true);
   });
 
   it('elle ne vérifie PAS sur le condensé nu, ni sous le contexte « client »', () => {
@@ -67,13 +68,43 @@ describe('RFC 8446 §4.4.3 — contexte de CertificateVerify', () => {
       ...messages.filter((m) => m.kind === 'encrypted_extensions').map(encodeHandshakeMessage),
       encodeHandshakeMessage(certificate),
     ], suiteHash);
-    expect(PkiKeyPair.verify(leaf.cert.publicKey, hash, verify.signature)).toBe(false);
-    expect(PkiKeyPair.verify(leaf.cert.publicKey, certificateVerifyContent('client', hash), verify.signature)).toBe(false);
+    expect(verifyCertificateVerify(leaf.cert.publicKey, hash, verify.signatureAlgorithm, verify.signature)).toBe(false);
+    expect(verifyCertificateVerify(leaf.cert.publicKey, certificateVerifyContent('client', hash), verify.signatureAlgorithm, verify.signature)).toBe(false);
   });
 
   it('le client accepte la poignée de main complète avec ce contexte', () => {
     const { client, down } = flight();
     client.handle(down);
     expect(client.result).toBe('success');
+  });
+});
+
+describe('RFC 8446 §4.2.3 — RSA-PSS dans CertificateVerify', () => {
+  it('un client qui n\'annonce pas rsa_pss_rsae_sha256 ne peut pas être servi par un certificat RSA', () => {
+    const ca = CertificateAuthority.generate('CN=ca', { now: NOW });
+    const leaf = ca.issueCertificate({ subject: 'CN=srv', notBefore: NOW - 1000, notAfter: NOW + 1e9 });
+    const verifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
+    const server = new TlsServerSession({ serverCert: leaf.cert, serverPrivateKey: leaf.privateKey });
+    const client = new TlsClientSession({ verifier });
+    const hello = decodeHandshakeMessage(client.start()[0].fragment) as ClientHello;
+    const narrowed = encodeHandshakeMessage({ ...hello, extensions: { ...hello.extensions, signatureAlgorithms: ['ecdsa_secp256r1_sha256'] } });
+    const reply = server.handle([{ contentType: 'handshake', legacyVersion: 0x0303, fragment: narrowed }]);
+    expect(server.lastAlert?.description).toBe('handshake_failure');
+    expect([...reply![0].fragment]).toEqual([2, 40]);
+  });
+
+  it('le client refuse une signature RSA PKCS#1 v1.5 : interdite en 1.3 (illegal_parameter)', () => {
+    const ca = CertificateAuthority.generate('CN=ca', { now: NOW });
+    const leaf = ca.issueCertificate({ subject: 'CN=srv', notBefore: NOW - 1000, notAfter: NOW + 1e9 });
+    const verifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
+    const server = new TlsServerSession({ serverCert: leaf.cert, serverPrivateKey: leaf.privateKey });
+    const client = new TlsClientSession({ verifier });
+    const down = server.handle(client.start())!;
+    const [serverHello, ...bundleRecords] = down;
+    const messages = decodeMessages(reassembleRecords(bundleRecords, true).plaintext);
+    const forged = messages.map((m) => (m.kind === 'certificate_verify' ? { ...m, signatureAlgorithm: 'rsa_pkcs1_sha256' } : m));
+    const records = fragmentAsRecords('handshake', encodeMessages(forged), true);
+    client.handle([serverHello, ...records]);
+    expect(client.lastAlert?.description).toBe('illegal_parameter');
   });
 });

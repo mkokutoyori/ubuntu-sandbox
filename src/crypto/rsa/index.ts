@@ -6,3 +6,4 @@ export {
   DEFAULT_MODULUS_BITS, PUBLIC_EXPONENT,
   type RsaSignatureHash, type RsaKeyPair, type RsaPublicKey, type RsaPrivateKey, type RandomBytes,
 } from './rsa';
+export { rsaPssSign, rsaPssVerify } from './pss';

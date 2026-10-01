@@ -76,6 +76,7 @@ export interface CertificateMessage {
 
 export interface CertificateVerify {
   readonly kind: 'certificate_verify';
+  readonly signatureAlgorithm?: string;
   readonly signature: string;
 }
 

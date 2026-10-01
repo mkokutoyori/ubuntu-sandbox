@@ -76,7 +76,7 @@ const SMALL_PRIMES: readonly bigint[] = [
 
 export type RandomBytes = (n: number) => Uint8Array;
 
-function defaultRandom(n: number): Uint8Array {
+export function defaultRandom(n: number): Uint8Array {
   const out = new Uint8Array(n);
   for (let i = 0; i < n; i++) out[i] = Math.floor(Math.random() * 256);
   return out;
@@ -195,18 +195,18 @@ export function bitLength(n: bigint): number {
   return n.toString(2).length;
 }
 
-function byteLength(n: bigint): number {
+export function byteLength(n: bigint): number {
   return Math.ceil(bitLength(n) / 8);
 }
 
-function bigToBe(n: bigint, length: number): Uint8Array {
+export function bigToBe(n: bigint, length: number): Uint8Array {
   const out = new Uint8Array(length);
   let v = n;
   for (let i = length - 1; i >= 0; i--) { out[i] = Number(v & 0xffn); v >>= 8n; }
   return out;
 }
 
-function beToBig(bytes: Uint8Array): bigint {
+export function beToBig(bytes: Uint8Array): bigint {
   let n = 0n;
   for (const b of bytes) n = (n << 8n) | BigInt(b);
   return n;
