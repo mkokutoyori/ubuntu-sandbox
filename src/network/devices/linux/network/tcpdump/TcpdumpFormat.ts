@@ -1,3 +1,4 @@
+import { bootpText } from './TcpdumpBootp';
 import { icmpTimeExceededPhrase, icmpUnreachablePhrase } from '@/network/core/IcmpPhrase';
 import type { CaptureFrame } from './CaptureFrame';
 import type { TcpdumpOptions } from './TcpdumpCli';
@@ -340,6 +341,7 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRender
   }
   if (frame.l4 === 'udp') {
     if (frame.dnsQr !== undefined) return dnsLine(frame, opt);
+    if (frame.bootp && !opt.quiet) return bootpText(frame.bootp, opt.verbose, frame.payloadLength ?? 0);
     const cksum = opt.verbose > 0 && !opt.skipChecksumCheck ? udpChecksumToken(frame) : '';
     return `UDP${cksum}, length ${frame.payloadLength ?? 0}`;
   }

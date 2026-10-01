@@ -1028,6 +1028,9 @@ export interface IDnsServerProvider {
   addTsigKey(name: string, algorithm: string, secret: string): DnsOpResult;
   removeTsigKey(name: string): DnsOpResult;
   listTsigKeys(): { name: string; algorithm: string }[];
+  addTrustAnchor(name: string, cryptoAlgorithm: string, base64: string): DnsOpResult;
+  removeTrustAnchor(name: string): DnsOpResult;
+  listTrustAnchors(): { name: string; keyTag: number; cryptoAlgorithm: string; digest: string }[];
 }
 
 // ── DHCP Server role (PRD-Windows-Server.md §5 P8) ──────────────────────────

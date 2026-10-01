@@ -27,7 +27,10 @@ import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
 import { RRType } from '@/network/dns/wire/RRType';
 import { decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
+import { unframeDnsMessage } from '@/network/dns/transport/DnsStreamFraming';
 import { rrTypeName } from '@/network/dns/compat/DnsWireCompat';
+import { DHCPPacket } from '@/network/dhcp/DHCPPacket';
+import { decodeBootp, type BootpInfo } from './TcpdumpBootp';
 
 export type CaptureDirection = 'in' | 'out';
 export type CaptureL3 = 'arp' | 'ipv4' | 'ipv6' | 'other';
@@ -103,6 +106,7 @@ export interface CaptureFrame {
   vlanId?: number;
   vlanPriority?: number;
   vlanDei?: number;
+  bootp?: BootpInfo;
   dnsId?: number;
   dnsQr?: boolean;
   dnsRd?: boolean;
@@ -144,11 +148,13 @@ function formatResourceRecordData(rr: ResourceRecord<ResourceRecordData>): strin
   }
 }
 
-function decodeDnsPayload(base: CaptureFrame, payload: unknown): void {
+function decodeDnsPayload(base: CaptureFrame, payload: unknown, stream = false): void {
   if (!(payload instanceof Uint8Array)) return;
   let msg: DnsMessage;
   try {
-    msg = decodeDnsMessage(payload);
+    const bytes = stream ? unframeDnsMessage(payload) : payload;
+    if (!bytes) return;
+    msg = decodeDnsMessage(bytes);
   } catch {
     return;
   }
@@ -518,7 +524,7 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
     base.payloadLength = Math.max(0, (ip.totalLength ?? 40) - (ip.ihl ?? 5) * 4 - seg.dataOffset * 4);
     base.appPayload = appPayloadBytes(seg.payload);
     if (seg.sourcePort === 53 || seg.destinationPort === 53) {
-      decodeDnsPayload(base, seg.payload);
+      decodeDnsPayload(base, seg.payload, true);
     }
     return;
   }
@@ -534,6 +540,10 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
     base.appPayload = appPayloadBytes(udp.payload);
     if (udp.sourcePort === 53 || udp.destinationPort === 53) {
       decodeDnsPayload(base, udp.payload);
+    }
+    if ((udp.sourcePort === 67 || udp.sourcePort === 68) && (udp.destinationPort === 67 || udp.destinationPort === 68)
+      && udp.payload instanceof DHCPPacket) {
+      base.bootp = decodeBootp(udp.payload) ?? undefined;
     }
     return;
   }
@@ -570,7 +580,7 @@ function decodeIpv6Payload(base: CaptureFrame, ip6: IPv6Packet): void {
     base.payloadLength = Math.max(0, ip6.payloadLength - seg.dataOffset * 4);
     base.appPayload = appPayloadBytes(seg.payload);
     if (seg.sourcePort === 53 || seg.destinationPort === 53) {
-      decodeDnsPayload(base, seg.payload);
+      decodeDnsPayload(base, seg.payload, true);
     }
     return;
   }

@@ -1,8 +1,12 @@
 import type { CiscoDnsConfig } from './CiscoDnsConfig';
 import type { RouterHostsTable } from './RouterHostsTable';
 import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
-import { makeARecord } from '@/network/dns/wire/ResourceRecord';
-import { RRType } from '@/network/dns/wire/RRType';
+import { makeARecord, makeSoaRecord } from '@/network/dns/wire/ResourceRecord';
+import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
+import { Zone } from '@/network/dns/zone/Zone';
+import { ZoneStore } from '@/network/dns/zone/ZoneStore';
+import { AuthoritativeServer } from '@/network/dns/resolver/AuthoritativeServer';
+import { truncateForUdp, negotiatedUdpSize } from '@/network/dns/transport/DnsUdpTransport';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 
 export interface DnsStats {
@@ -20,6 +24,9 @@ export interface DnsTransport {
 }
 
 export const DNS_PORT = 53;
+
+const HOSTS_RECORD_TTL = 86400;
+const HOSTS_ZONE_TTL = 86400;
 
 export class RouterDnsService {
   readonly stats: DnsStats = { recues: 0, repondues: 0, nxdomain: 0, transferees: 0 };
@@ -47,24 +54,35 @@ export class RouterDnsService {
 
   estLie(): boolean { return this.lie; }
 
+  private hostsZone(): Zone {
+    const zone = new Zone('', makeSoaRecord('', HOSTS_ZONE_TTL, {
+      mname: 'router', rname: 'hostmaster', serial: 1,
+      refresh: 3600, retry: 600, expire: 86400, minimum: HOSTS_ZONE_TTL,
+    }));
+    for (const entry of this.hosts().entries()) {
+      for (const ip of entry.ips) {
+        try {
+          zone.addRecord(makeARecord(entry.name, HOSTS_RECORD_TTL, ip));
+        } catch {
+          continue;
+        }
+      }
+    }
+    return zone;
+  }
+
   private onQuery(source: string, sourcePort: number, charge: unknown): void {
     let requete: DnsMessage;
     try { requete = decodeDnsMessage(charge as Uint8Array); } catch { return; }
-    if (requete.questions.length === 0) return;
+    if (requete.flags.qr) return;
     this.stats.recues += 1;
-    const question = requete.questions[0];
-    const nom = question.qname.replace(/\.$/, '');
-    const adresses = question.qtype === RRType.A ? this.hosts().resolveAll(nom) : [];
-    const reponse: DnsMessage = {
-      ...requete,
-      flags: { ...requete.flags, qr: true, aa: true, ra: true, rcode: adresses.length > 0 ? 0 : 3 },
-      answers: adresses.map((ip) => makeARecord(question.qname, 86400, ip)),
-      authorities: [],
-      additionals: [],
-    };
-    if (adresses.length > 0) this.stats.repondues += 1;
-    else this.stats.nxdomain += 1;
-    this.transport()?.reply(source, sourcePort, encodeDnsMessage(reponse));
+    const store = new ZoneStore();
+    store.addZone(this.hostsZone());
+    const reponse = new AuthoritativeServer(store).answer(requete);
+    if (reponse.answers.length > 0) this.stats.repondues += 1;
+    else if (reponse.flags.rcode === DnsRcode.NXDOMAIN) this.stats.nxdomain += 1;
+    this.transport()?.reply(
+      source, sourcePort, encodeDnsMessage(truncateForUdp(reponse, negotiatedUdpSize(requete))));
   }
 
   private candidats(nom: string): string[] {

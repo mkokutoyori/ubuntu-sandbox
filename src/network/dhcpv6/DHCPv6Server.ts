@@ -133,6 +133,12 @@ export class DHCPv6Server {
     return true;
   }
 
+  private rapidCommitAll = false;
+
+  setRapidCommitAll(enabled: boolean): void { this.rapidCommitAll = enabled; }
+
+  isRapidCommitAll(): boolean { return this.rapidCommitAll; }
+
   configurePoolRapidCommit(name: string, enabled: boolean): boolean {
     const pool = this.pools.get(name);
     if (!pool) return false;

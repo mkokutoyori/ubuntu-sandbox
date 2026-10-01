@@ -1,13 +1,16 @@
-import { makeDnskeyRecord, makeDsRecord, rdataKey } from '@/network/dns/wire/ResourceRecord';
+import { makeDnskeyRecord, makeDsRecord } from '@/network/dns/wire/ResourceRecord';
 import type { ResourceRecord, DnskeyRecordData, DsRecordData } from '@/network/dns/wire/ResourceRecord';
-import { simulatedDigest, simulatedKeyTag } from '@/network/dns/dnssec/Digest';
+import { sha1, sha256 } from '@/crypto/hash';
+import { bytesToBase64, bytesToHex } from '@/crypto/encoding';
+import {
+  DnssecAlgorithmNumber, generateDnssecKey, type DnssecPrivateKey,
+} from '@/network/dns/dnssec/DnssecAlgorithms';
+import { canonicalOwnerName, dnskeyRdata, keyTagOfRdata } from '@/network/dns/dnssec/DnssecWire';
 
-export const DnssecAlgorithm = {
-  RSASHA256: 8,
-  ECDSAP256SHA256: 13,
-} as const;
+export const DnssecAlgorithm = DnssecAlgorithmNumber;
 
 export const DnssecDigestType = {
+  SHA1: 1,
   SHA256: 2,
 } as const;
 
@@ -15,6 +18,12 @@ export const DNSKEY_FLAG_ZSK = 256;
 export const DNSKEY_FLAG_KSK = 257;
 
 export type ZoneKeyRole = 'zsk' | 'ksk';
+
+const privateKeys = new WeakMap<object, DnssecPrivateKey>();
+
+export function privateKeyOf(key: ResourceRecord<DnskeyRecordData>): DnssecPrivateKey | undefined {
+  return privateKeys.get(key.data);
+}
 
 export function generateZoneKey(
   origin: string,
@@ -24,35 +33,45 @@ export function generateZoneKey(
   seed: string = '',
 ): ResourceRecord<DnskeyRecordData> {
   const flags = role === 'ksk' ? DNSKEY_FLAG_KSK : DNSKEY_FLAG_ZSK;
-  const publicKey = `sim-${algorithm}-${simulatedDigest(`${origin}|${role}|${algorithm}|${seed}`)}`;
-  return makeDnskeyRecord(origin, ttl, { flags, algorithm, publicKey });
+  const generated = generateDnssecKey(algorithm, `${origin}|${role}|${algorithm}|${seed}`);
+  const record = makeDnskeyRecord(origin, ttl, {
+    flags, algorithm, publicKey: bytesToBase64(generated.publicKey),
+  });
+  privateKeys.set(record.data, generated.privateKey);
+  return record;
 }
 
 export function keyTagOf(key: DnskeyRecordData): number {
-  return simulatedKeyTag(rdataKey(key));
+  return keyTagOfRdata(dnskeyRdata(key), key.algorithm);
 }
 
 export function isKsk(key: DnskeyRecordData): boolean {
   return key.flags === DNSKEY_FLAG_KSK;
 }
 
-export function dsDigestOf(owner: string, key: DnskeyRecordData): string {
-  return simulatedDigest(`${owner.toLowerCase()}|${rdataKey(key)}`);
+export function dsDigestOf(
+  owner: string, key: DnskeyRecordData, digestType: number = DnssecDigestType.SHA256,
+): string {
+  const input = Uint8Array.from([...canonicalOwnerName(owner), ...dnskeyRdata(key)]);
+  const digest = digestType === DnssecDigestType.SHA1 ? sha1(input) : sha256(input);
+  return bytesToHex(digest).toUpperCase();
 }
 
 export function makeDsForKey(
   owner: string, ttl: number, key: ResourceRecord<DnskeyRecordData>,
+  digestType: number = DnssecDigestType.SHA256,
 ): ResourceRecord<DsRecordData> {
   return makeDsRecord(owner, ttl, {
     keyTag: keyTagOf(key.data),
     algorithm: key.data.algorithm,
-    digestType: DnssecDigestType.SHA256,
-    digest: dsDigestOf(owner, key.data),
+    digestType,
+    digest: dsDigestOf(owner, key.data, digestType),
   });
 }
 
 export function dsMatchesKey(owner: string, ds: DsRecordData, key: DnskeyRecordData): boolean {
+  if (ds.digestType !== DnssecDigestType.SHA1 && ds.digestType !== DnssecDigestType.SHA256) return false;
   return ds.keyTag === keyTagOf(key) &&
     ds.algorithm === key.algorithm &&
-    ds.digest === dsDigestOf(owner, key);
+    ds.digest.toUpperCase() === dsDigestOf(owner, key, ds.digestType);
 }

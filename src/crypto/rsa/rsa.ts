@@ -25,7 +25,7 @@
  * seules les clés dont personne n'a précisé la taille prennent la petite.
  */
 
-import { sha256 } from '@/crypto/hash';
+import { sha1, sha256 } from '@/crypto/hash';
 import { bytesToHex, hexToBytes } from '@/crypto/encoding';
 
 /** Voir l'en-tête : mesuré, pas choisi par confort. */
@@ -220,16 +220,31 @@ const SHA256_DIGEST_INFO_PREFIX = Uint8Array.from([
   0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0x04, 0x20,
 ]);
 
+export type RsaSignatureHash = 'sha1' | 'sha256';
+
+const SHA1_DIGEST_INFO_PREFIX = Uint8Array.from([
+  0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14,
+]);
+
+function digestInfoOf(message: Uint8Array, hash: RsaSignatureHash): Uint8Array {
+  const prefix = hash === 'sha1' ? SHA1_DIGEST_INFO_PREFIX : SHA256_DIGEST_INFO_PREFIX;
+  const digest = hash === 'sha1' ? sha1(message) : sha256(message);
+  const t = new Uint8Array(prefix.length + digest.length);
+  t.set(prefix, 0);
+  t.set(digest, prefix.length);
+  return t;
+}
+
 /**
  * `EMSA-PKCS1-v1_5` (§9.2) : `0x00 || 0x01 || PS || 0x00 || T`, où PS est
  * du 0xFF et fait au moins huit octets. Le bourrage n'est pas décoratif —
  * c'est lui qui empêche une signature d'être réutilisée pour un autre
  * condensé de même valeur numérique.
  */
-export function emsaPkcs1V15(message: Uint8Array, emLen: number): Uint8Array {
-  const t = new Uint8Array(SHA256_DIGEST_INFO_PREFIX.length + 32);
-  t.set(SHA256_DIGEST_INFO_PREFIX, 0);
-  t.set(sha256(message), SHA256_DIGEST_INFO_PREFIX.length);
+export function emsaPkcs1V15(
+  message: Uint8Array, emLen: number, hash: RsaSignatureHash = 'sha256',
+): Uint8Array {
+  const t = digestInfoOf(message, hash);
   if (emLen < t.length + 11) throw new RangeError('RSA: intended encoded message length too short');
 
   const em = new Uint8Array(emLen);
@@ -242,9 +257,11 @@ export function emsaPkcs1V15(message: Uint8Array, emLen: number): Uint8Array {
 }
 
 /** `RSASSA-PKCS1-V1_5-SIGN` (§8.2.1). */
-export function rsaSign(key: RsaPrivateKey, message: Uint8Array): Uint8Array {
+export function rsaSign(
+  key: RsaPrivateKey, message: Uint8Array, hash: RsaSignatureHash = 'sha256',
+): Uint8Array {
   const k = byteLength(key.n);
-  const em = emsaPkcs1V15(message, k);
+  const em = emsaPkcs1V15(message, k, hash);
   return bigToBe(modPow(beToBig(em), key.d, key.n), k);
 }
 
@@ -254,14 +271,16 @@ export function rsaSign(key: RsaPrivateKey, message: Uint8Array): Uint8Array {
  * recommande, et celle qui ferme la porte aux signatures forgées à la
  * Bleichenbacher sur un bourrage trop permissif.
  */
-export function rsaVerify(key: RsaPublicKey, message: Uint8Array, signature: Uint8Array): boolean {
+export function rsaVerify(
+  key: RsaPublicKey, message: Uint8Array, signature: Uint8Array, hash: RsaSignatureHash = 'sha256',
+): boolean {
   const k = byteLength(key.n);
   if (signature.length !== k) return false;
   const s = beToBig(signature);
   if (s >= key.n) return false;
   let attendu: Uint8Array;
   try {
-    attendu = emsaPkcs1V15(message, k);
+    attendu = emsaPkcs1V15(message, k, hash);
   } catch {
     return false;
   }

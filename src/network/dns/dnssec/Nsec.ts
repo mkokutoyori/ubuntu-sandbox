@@ -16,10 +16,37 @@ export function canonicalNameCompare(a: string, b: string): number {
   return labelsA.length - labelsB.length;
 }
 
-export function buildNsecChain(zone: Zone): ResourceRecord<NsecRecordData>[] {
-  const typesByOwner = new Map<string, Set<number>>();
+export function delegationCuts(zone: Zone): Set<string> {
+  const cuts = new Set<string>();
   for (const rr of zone.allRecords()) {
     const owner = normalize(rr.name);
+    if (rr.data.type === RRType.NS && owner !== zone.origin) cuts.add(owner);
+  }
+  return cuts;
+}
+
+export function isOccluded(name: string, cuts: ReadonlySet<string>): boolean {
+  const owner = normalize(name);
+  for (const cut of cuts) {
+    if (owner !== cut && owner.endsWith(`.${cut}`)) return true;
+  }
+  return false;
+}
+
+export function isSignedRRset(
+  name: string, type: number, zoneOrigin: string, cuts: ReadonlySet<string>,
+): boolean {
+  const owner = normalize(name);
+  if (isOccluded(owner, cuts)) return false;
+  return !(type === RRType.NS && owner !== zoneOrigin && cuts.has(owner));
+}
+
+export function buildNsecChain(zone: Zone): ResourceRecord<NsecRecordData>[] {
+  const typesByOwner = new Map<string, Set<number>>();
+  const cuts = delegationCuts(zone);
+  for (const rr of zone.allRecords()) {
+    const owner = normalize(rr.name);
+    if (isOccluded(owner, cuts)) continue;
     const types = typesByOwner.get(owner) ?? new Set<number>();
     types.add(rr.data.type);
     typesByOwner.set(owner, types);

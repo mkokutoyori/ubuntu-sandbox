@@ -555,6 +555,19 @@ export function displayCurrentConfig(
     }
     lines.push('#');
   }
+  const dhcpv6 = router._getDHCPv6ServerInternal();
+  if (dhcpv6.isRapidCommitAll()) {
+    lines.push('dhcpv6 rapid-commit');
+    lines.push('#');
+  }
+  for (const [name, pool] of dhcpv6.getAllPools()) {
+    lines.push(`dhcpv6 pool ${name}`);
+    if (pool.prefix && pool.prefixLength) lines.push(` address prefix ${pool.prefix}/${pool.prefixLength}`);
+    if (pool.dnsServers.length > 0) lines.push(` dns-server ${pool.dnsServers.join(' ')}`);
+    if (pool.domainName) lines.push(` dns-domain-name ${pool.domainName}`);
+    if (pool.informationRefreshTime !== 86400) lines.push(` information-refresh ${pool.informationRefreshTime}`);
+    lines.push('#');
+  }
   const excluded = dhcp.getExcludedRanges();
   for (const range of excluded) {
     if (range.start === range.end) {

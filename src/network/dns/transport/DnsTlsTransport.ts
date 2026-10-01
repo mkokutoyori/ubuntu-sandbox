@@ -30,6 +30,7 @@ import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import { TlsServerSession } from '@/network/tls/TlsServerSession';
 import { TlsClientSession } from '@/network/tls/TlsClientSession';
 import { fragmentAsRecords, reassembleRecords, type TlsRecord } from '@/network/tls/recordLayer';
+import { DnsStreamReader, frameDnsMessage } from '@/network/dns/transport/DnsStreamFraming';
 
 export const DOT_PORT = 853;
 export const DOT_ALPN = 'dot';
@@ -69,7 +70,8 @@ export function bindDnsTlsServer(host: EndHost, handler: DnsMessageHandler, opti
           let query: DnsMessage;
           try {
             const { plaintext } = reassembleRecords(incoming, true);
-            query = decodeDnsMessage(plaintext);
+            const [raw] = new DnsStreamReader().push(plaintext);
+            query = decodeDnsMessage(raw);
           } catch {
             socket.close();
             return;
@@ -79,7 +81,7 @@ export function bindDnsTlsServer(host: EndHost, handler: DnsMessageHandler, opti
           // DnsQuicTransport/DnsUdpTransport, an async handler result can't
           // be awaited here.
           if (answer instanceof Promise) { socket.close(); return; }
-          socket.send(fragmentAsRecords('application_data', encodeDnsMessage(answer), true));
+          socket.send(fragmentAsRecords('application_data', frameDnsMessage(encodeDnsMessage(answer)), true));
           socket.close();
           return;
         }
@@ -140,7 +142,8 @@ export async function queryDnsOverTls(
       if (client.result === 'success') {
         try {
           const { plaintext } = reassembleRecords(incoming, true);
-          const response = decodeDnsMessage(plaintext);
+          const [raw] = new DnsStreamReader().push(plaintext);
+          const response = decodeDnsMessage(raw);
           finish(response.id === query.id ? response : null);
         } catch {
           finish(null);
@@ -157,7 +160,7 @@ export async function queryDnsOverTls(
       }
       if (reply) socket.send(reply);
       if (client.result === 'success') {
-        socket.send(fragmentAsRecords('application_data', encodeDnsMessage(query), true));
+        socket.send(fragmentAsRecords('application_data', frameDnsMessage(encodeDnsMessage(query)), true));
       }
     });
     socket.onClose(() => finish(null));

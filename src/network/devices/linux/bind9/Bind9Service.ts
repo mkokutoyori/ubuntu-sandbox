@@ -2,9 +2,9 @@ import { ZoneStore } from '@/network/dns/zone/ZoneStore';
 import { AuthoritativeServer } from '@/network/dns/resolver/AuthoritativeServer';
 import { RecursiveResolver } from '@/network/dns/resolver/RecursiveResolver';
 import { DnsCache } from '@/network/dns/resolver/DnsCache';
-import { parseZoneFile, ZoneFileError } from '@/network/dns/zone/ZoneFile';
+import { parseZoneFile, renderZoneFile, ZoneFileError } from '@/network/dns/zone/ZoneFile';
 import { ZoneError } from '@/network/dns/zone/Zone';
-import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer } from '@/network/dns/transfer/ZoneTransferHosting';
+import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer, signTransferResponse, datagramReply } from '@/network/dns/transfer/ZoneTransferHosting';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { DnsClass } from '@/network/dns/wire/RRType';
 import { IPAddress } from '@/network/core/types';
@@ -15,6 +15,17 @@ import {
   isTransferQuery, refuseTransfer,
 } from '@/network/dns/transfer/AxfrSession';
 import { isNotify, makeNotifyAck } from '@/network/dns/transfer/NotifyProtocol';
+import { isUpdateMessage } from '@/network/dns/update/DnsUpdate';
+import type { DnsUpdateRequest } from '@/network/dns/update/DnsUpdate';
+import {
+  authorizeUpdate, evaluateUpdate, parseOrFormerr, signIfKeyed, updateResponse, DnsUpdateRcode,
+} from '@/network/dns/update/UpdateResponder';
+import { TsigKeyring, tsigKeyFromBase64, canonicalKeyName, type TsigKey } from '@/network/dns/tsig/Tsig';
+import { serialAdd } from '@/network/dns/zone/SerialNumber';
+import { RRType } from '@/network/dns/wire/RRType';
+import { buildRecursiveResponse, recursiveResolveOptions } from '@/network/dns/resolver/RecursiveResponse';
+import { makeSoaRecord } from '@/network/dns/wire/ResourceRecord';
+import { updatePolicyPermits } from './NamedUpdatePolicy';
 import {
   bindDnsUdpServer, unbindDnsUdpServer, DNS_PORT,
 } from '@/network/dns/transport/DnsUdpTransport';
@@ -38,6 +49,7 @@ import type { OperationResult } from '../LinuxServiceManager';
 export interface Bind9Files {
   read(path: string): string | null;
   append(path: string, content: string): void;
+  write(path: string, content: string): void;
 }
 
 export interface ZoneReloadResult extends OperationResult {
@@ -62,6 +74,7 @@ export class Bind9Service {
   private readonly failedZones = new Set<string>();
   private readonly secondaries: SecondaryZoneRefresher;
   private readonly frozenZones = new Set<string>();
+  private keyring = new TsigKeyring();
   private readonly logging: Bind9Logging;
   private readonly readFile: (path: string) => string | null;
   private queryLogEnabled = false;
@@ -141,11 +154,14 @@ export class Bind9Service {
    */
   secureRootsReport(): OperationResult {
     if (!this.running) return { ok: false, error: 'not running' };
+    const anchors = this.config?.trustAnchors ?? [];
     const lines = [
       ';', `; Secure roots as of ${new Date().toUTCString()}`, ';',
-      this.dnssecValidationEnabled
-        ? ' (no trust anchors configured)'
-        : ' DNSSEC validation is disabled; no secure roots.',
+      ...(!this.dnssecValidationEnabled
+        ? [' DNSSEC validation is disabled; no secure roots.']
+        : anchors.length === 0
+          ? [' (no trust anchors configured)']
+          : anchors.map((anchor) => ` ${anchor.name}/IN DS ${anchor.data.keyTag} ${anchor.data.algorithm} ${anchor.data.digestType} ${anchor.data.digest} ; static`)),
     ];
     this.files.append('/var/cache/bind/named.secroots', lines.join('\n') + '\n');
     return { ok: true };
@@ -158,6 +174,7 @@ export class Bind9Service {
   freezeZone(name: string): OperationResult {
     const zone = this.primaryZone(name);
     if (!zone) return { ok: false, error: 'not found' };
+    if (this.isDynamic(zone)) this.syncZone(zone.name);
     this.frozenZones.add(zone.name);
     return { ok: true };
   }
@@ -166,13 +183,14 @@ export class Bind9Service {
     const zone = this.primaryZone(name);
     if (!zone) return { ok: false, error: 'not found' };
     this.frozenZones.delete(zone.name);
-    return this.reloadZone(name);
+    return this.reloadZone(name, true);
   }
 
-  reloadZone(name: string): ZoneReloadResult {
+  reloadZone(name: string, thawing = false): ZoneReloadResult {
     const zone = this.primaryZone(name);
     if (!zone) return { ok: false, error: 'not found' };
     if (this.frozenZones.has(zone.name)) return { ok: false, error: 'frozen' };
+    if (this.isDynamic(zone) && !thawing) return { ok: false, error: 'dynamic zone' };
     if (zone.file === null || this.store === null) return { ok: false, error: 'not loaded' };
 
     const content = this.readFile(zone.file);
@@ -314,6 +332,11 @@ export class Bind9Service {
       }
     }
 
+    this.keyring = new TsigKeyring();
+    for (const key of config.keys.values()) {
+      const tsigKey = tsigKeyFromBase64(key.name, key.algorithm, key.secret);
+      if (tsigKey) this.keyring.add(tsigKey);
+    }
     this.config = config;
     this.store = store;
     this.authoritative = new AuthoritativeServer(store);
@@ -330,8 +353,12 @@ export class Bind9Service {
       const parsed = IPAddress.tryParse(forwarder);
       if (parsed) forwarders.push(parsed);
     }
+    const dnssec = config.options.dnssecValidation !== 'no' && config.trustAnchors.length > 0
+      ? { dnssec: { anchors: config.trustAnchors } }
+      : {};
     if (forwarders.length > 0) {
-      resolvers.push(new RecursiveResolver(this.host, forwarders, this.cache, { forwardRecursively: true }));
+      resolvers.push(new RecursiveResolver(
+        this.host, forwarders, this.cache, { forwardRecursively: true, servfailTtlSeconds: config.options.servfailTtl, ...dnssec }));
     }
     const hints: IPAddress[] = [];
     for (const zone of config.zones) {
@@ -339,7 +366,7 @@ export class Bind9Service {
       const content = this.readFile(zone.file);
       if (content !== null) hints.push(...collectHintAddresses(content));
     }
-    if (hints.length > 0) resolvers.push(new RecursiveResolver(this.host, hints, this.cache));
+    if (hints.length > 0) resolvers.push(new RecursiveResolver(this.host, hints, this.cache, { servfailTtlSeconds: config.options.servfailTtl, ...dnssec }));
     return resolvers;
   }
 
@@ -413,25 +440,29 @@ export class Bind9Service {
   }
 
   private readonly handleUdpQuery = (
-    query: DnsMessage, sourceIP?: IPAddress, sourcePort?: number,
+    query: DnsMessage, sourceIP?: IPAddress, sourcePort?: number, raw?: Uint8Array,
   ): DnsMessage | Promise<DnsMessage> =>
-    this.answerQuery(query, 'udp', sourceIP, sourcePort);
+    datagramReply(this.answerQuery(query, 'udp', sourceIP, sourcePort, raw));
 
   private readonly handleTcpQuery = (
-    query: DnsMessage, sourceIP?: IPAddress, sourcePort?: number,
-  ): DnsMessage | Promise<DnsMessage> =>
-    this.answerQuery(query, 'tcp', sourceIP, sourcePort);
+    query: DnsMessage, sourceIP?: IPAddress, sourcePort?: number, raw?: Uint8Array,
+  ): DnsMessage | DnsMessage[] | Promise<DnsMessage> =>
+    this.answerQuery(query, 'tcp', sourceIP, sourcePort, raw);
 
   private answerQuery(
     query: DnsMessage,
     transport: 'udp' | 'tcp',
     sourceIP?: IPAddress,
     sourcePort?: number,
-  ): DnsMessage | Promise<DnsMessage> {
+    raw?: Uint8Array,
+  ): DnsMessage | DnsMessage[] | Promise<DnsMessage> {
     const config = this.config!;
 
     if (isNotify(query)) {
       return this.handleNotify(query, sourceIP);
+    }
+    if (isUpdateMessage(query)) {
+      return this.handleUpdate(query, sourceIP, raw);
     }
     const env = this.aclEnvironment();
     const source = sourceIP?.toString() ?? LOOPBACK;
@@ -458,10 +489,18 @@ export class Bind9Service {
     if (question && isTransferQuery(query)) {
       const transferAcl = this.zoneFor(question.qname)?.allowTransfer
         ?? config.options.allowTransfer;
-      if (!transferAcl.matches(source, env)) {
-        return this.refuse(query, recursionAllowed);
+      const now = Math.floor(Date.now() / 1000);
+      const auth = authorizeUpdate(raw, 'none', this.keyring, now);
+      if (auth.rcode !== DnsRcode.NOERROR) {
+        const refused = this.refuse(query, recursionAllowed);
+        return signIfKeyed({ ...refused, flags: { ...refused.flags, rcode: auth.rcode } }, auth, now);
       }
-      return transport === 'udp' ? refuseTransfer(query) : this.serveTransfer(query);
+      const signer = auth.key ? canonicalKeyName(auth.key.name) : null;
+      if (!transferAcl.matches(source, env, signer)) {
+        return signIfKeyed(this.refuse(query, recursionAllowed), auth, now);
+      }
+      if (transport === 'udp') return refuseTransfer(query);
+      return signTransferResponse(this.serveTransfer(query), auth, now);
     }
 
     const response = this.authoritative!.answer(query);
@@ -479,8 +518,87 @@ export class Bind9Service {
     return { ...response, flags: { ...response.flags, ra: recursionAllowed } };
   }
 
-  private serveTransfer(query: DnsMessage): DnsMessage {
-    return serveZoneTransfer(this.store, query) ?? this.refuse(query, false);
+  private handleUpdate(query: DnsMessage, sourceIP?: IPAddress, raw?: Uint8Array): DnsMessage {
+    const now = Math.floor(Date.now() / 1000);
+    const auth = authorizeUpdate(raw, 'none', this.keyring, now);
+    const reply = (rcode: number): DnsMessage =>
+      signIfKeyed(updateResponse(query, rcode), auth, now);
+    if (auth.rcode !== DnsRcode.NOERROR) return reply(auth.rcode);
+
+    const request = parseOrFormerr(query);
+    if (!request) return reply(DnsRcode.FORMERR);
+
+    const named = this.primaryZone(request.zone);
+    const zone = named ? this.store?.getZone(named.name) ?? null : null;
+    if (!named || !zone) return reply(DnsUpdateRcode.NOTAUTH);
+
+    const signer = auth.key ? canonicalKeyName(auth.key.name) : null;
+    const source = sourceIP?.toString() ?? LOOPBACK;
+    if (named.updatePolicy === null && !named.allowUpdate.matches(source, this.aclEnvironment(), signer)) {
+      return reply(DnsRcode.REFUSED);
+    }
+    if (this.frozenZones.has(named.name)) return reply(DnsRcode.SERVFAIL);
+
+    const verdict = evaluateUpdate(zone, request);
+    if (verdict.rcode !== DnsRcode.NOERROR) return reply(verdict.rcode);
+    if (named.updatePolicy !== null && !this.policyPermits(named.updatePolicy, signer, zone, request)) {
+      return reply(DnsRcode.REFUSED);
+    }
+
+    const { additions, removals, soa } = verdict.applied;
+    for (const rr of removals) zone.removeRecord(rr);
+    for (const rr of additions) zone.addRecord(rr);
+    if (additions.length > 0 || removals.length > 0 || soa) {
+      const base = soa ?? zone.soa;
+      zone.updateSoa(makeSoaRecord(base.name, base.ttl, {
+        ...base.data, serial: soa ? soa.data.serial : serialAdd(zone.soa.data.serial, 1),
+      }));
+      this.loadedZones.set(named.name, zone.soa.data.serial);
+      this.notifySecondaries(named.name);
+    }
+    return reply(DnsRcode.NOERROR);
+  }
+
+  private policyPermits(
+    rules: NonNullable<NamedZone['updatePolicy']>,
+    signer: string | null,
+    zone: NonNullable<ReturnType<ZoneStore['getZone']>>,
+    request: DnsUpdateRequest,
+  ): boolean {
+    const allowed = (name: string, type: number): boolean =>
+      updatePolicyPermits(rules, signer, zone.origin, name, type);
+    for (const update of request.updates) {
+      if (update.kind === 'add' || update.kind === 'delete-record') {
+        if (!allowed(update.record.name, update.record.data.type as number)) return false;
+      } else if (update.kind === 'delete-rrset') {
+        if (!allowed(update.name, update.type as number)) return false;
+      } else {
+        const name = normalizeDnsName(update.name);
+        const present = new Set<number>();
+        for (const rr of zone.allRecords()) {
+          if (normalizeDnsName(rr.name) === name) present.add(rr.data.type as number);
+        }
+        for (const type of present) if (!allowed(update.name, type)) return false;
+      }
+    }
+    return true;
+  }
+
+  private isDynamic(zone: NamedZone): boolean {
+    return zone.updatePolicy !== null || !zone.allowUpdate.grantsNothing();
+  }
+
+  syncZone(name: string): OperationResult {
+    const named = this.primaryZone(name);
+    const zone = named ? this.store?.getZone(named.name) ?? null : null;
+    if (!named || !zone || named.file === null) return { ok: false, error: 'not found' };
+    if (!this.isDynamic(named)) return { ok: false, error: 'not dynamic' };
+    this.files.write(named.file, renderZoneFile(zone));
+    return { ok: true };
+  }
+
+  private serveTransfer(query: DnsMessage): DnsMessage[] {
+    return serveZoneTransfer(this.store, query) ?? [this.refuse(query, false)];
   }
 
   private handleNotify(query: DnsMessage, sourceIP?: IPAddress): DnsMessage {
@@ -512,11 +630,21 @@ export class Bind9Service {
     const primaries = zone.primaries
       .map((primary) => IPAddress.tryParse(primary))
       .filter((ip): ip is IPAddress => ip !== null);
-    const { zone: fetched } = await this.secondaries.refresh(this.store, zone.name, primaries, force);
+    const { zone: fetched } = await this.secondaries.refresh(
+      this.store, zone.name, primaries, force, this.primaryKeysOf(zone));
     if (!fetched) return false;
     this.loadedZones.set(zone.name, fetched.soa.data.serial);
     this.failedZones.delete(zone.name);
     return true;
+  }
+
+  private primaryKeysOf(zone: NamedZone): Map<string, TsigKey> {
+    const keys = new Map<string, TsigKey>();
+    for (const [address, name] of zone.primaryKeys) {
+      const key = this.keyring.get(name);
+      if (key) keys.set(address, key);
+    }
+    return keys;
   }
 
   private notifySecondaries(zoneName: string): void {
@@ -531,26 +659,13 @@ export class Bind9Service {
 
   private async recurse(query: DnsMessage): Promise<DnsMessage> {
     const question = query.questions[0];
-    let result = await this.resolvers[0].resolve(question.qname, question.qtype);
+    const options = recursiveResolveOptions(query);
+    let result = await this.resolvers[0].resolve(question.qname, question.qtype, options);
     for (const next of this.resolvers.slice(1)) {
       if (result.status !== 'SERVFAIL') break;
-      result = await next.resolve(question.qname, question.qtype);
+      result = await next.resolve(question.qname, question.qtype, options);
     }
-    const rcode =
-      result.status === 'NOERROR' ? DnsRcode.NOERROR :
-      result.status === 'NXDOMAIN' ? DnsRcode.NXDOMAIN :
-      DnsRcode.SERVFAIL;
-    return {
-      id: query.id,
-      flags: {
-        qr: true, opcode: DnsOpcode.QUERY, aa: false, tc: false,
-        rd: query.flags.rd, ra: true, ad: false, cd: false, rcode,
-      },
-      questions: [question],
-      answers: [...result.answers],
-      authorities: [],
-      additionals: [],
-    };
+    return buildRecursiveResponse(query, result);
   }
 
   private refuse(query: DnsMessage, recursionAllowed: boolean): DnsMessage {

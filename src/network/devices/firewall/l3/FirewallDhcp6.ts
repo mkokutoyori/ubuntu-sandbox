@@ -11,6 +11,7 @@ export interface Dhcp6Scope {
   readonly dnsService: string;
   readonly dnsServers: readonly string[];
   readonly domain: string;
+  readonly rapidCommit?: boolean;
   readonly ranges: ReadonlyArray<{ startIp: string; endIp: string }>;
 }
 
@@ -87,6 +88,7 @@ export class FirewallDhcp6 {
       this.server.configurePoolDns(name, this.resolvedDnsServers(scope));
       this.server.configurePoolDomain(name, scope.domain);
       this.server.configurePoolLifetime(name, scope.leaseTimeSec, scope.leaseTimeSec);
+      this.server.configurePoolRapidCommit(name, scope.rapidCommit === true);
     }
 
     if (serving.length === 0) { this.server.disable(); return; }

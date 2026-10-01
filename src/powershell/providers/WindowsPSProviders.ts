@@ -1322,6 +1322,13 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
   }
   removeTsigKey(name: string): DnsOpResult { return this.role().removeTsigKey(name); }
   listTsigKeys(): { name: string; algorithm: string }[] { return this.role().listTsigKeys(); }
+  addTrustAnchor(name: string, cryptoAlgorithm: string, base64: string): DnsOpResult {
+    return this.role().addTrustAnchor(name, cryptoAlgorithm, base64);
+  }
+  removeTrustAnchor(name: string): DnsOpResult { return this.role().removeTrustAnchor(name); }
+  listTrustAnchors(): { name: string; keyTag: number; cryptoAlgorithm: string; digest: string }[] {
+    return this.role().listTrustAnchors();
+  }
 }
 
 // ── DHCP Server adapter (PRD-Windows-Server.md §5 P8) ────────────────────

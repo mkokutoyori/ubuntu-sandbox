@@ -3,7 +3,7 @@ import type { DnsHeaderFlags } from '@/network/dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
 import {
-  findOpt, makeOptRecord, DEFAULT_EDNS_PAYLOAD_SIZE, EDNS_VERSION, EDNS_BADVERS_EXTENDED_RCODE_HIGH,
+  findOpt, findOpts, makeOptRecord, DEFAULT_EDNS_PAYLOAD_SIZE, EDNS_VERSION, EDNS_BADVERS_EXTENDED_RCODE_HIGH,
 } from '@/network/dns/wire/EdnsOptRecord';
 import type { ZoneStore } from '@/network/dns/zone/ZoneStore';
 
@@ -22,6 +22,10 @@ export class AuthoritativeServer {
       return this.errorResponse(query, baseFlags, DnsRcode.FORMERR);
     }
 
+    const opts = findOpts(query);
+    if (opts.length > 1 || opts.some((opt) => opt.name !== '')) {
+      return this.errorResponse(query, baseFlags, DnsRcode.FORMERR);
+    }
     const queryOpt = findOpt(query);
     if (queryOpt && queryOpt.data.version > EDNS_VERSION) {
       return {

@@ -26,6 +26,7 @@ import {
 } from '../core/types';
 import { Logger } from '../core/Logger';
 import { TapPoint, type FrameTap, type DetachTap } from './PortTap';
+import { lineageOf } from './FrameLineage';
 import { PortSecurity } from './PortSecurity';
 import { StormControl } from './StormControl';
 import type { Cable } from './Cable';
@@ -1123,6 +1124,7 @@ export class Port {
       return false;
     }
 
+    lineageOf(frame);
     this.recordOutboundFrame(frame);
 
     return this.cable.transmit(frame, this);

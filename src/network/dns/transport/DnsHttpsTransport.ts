@@ -13,6 +13,8 @@ import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
+import { base64ToBytes } from '@/crypto/encoding';
+import { RRType } from '@/network/dns/wire/RRType';
 import type { DnsMessageHandler } from '@/network/dns/transport/DnsUdpTransport';
 import { createRequest, createResponse } from '@/network/http/semantics/types';
 import { HttpsClientSession } from '@/network/http/https/HttpsClientSession';
@@ -39,6 +41,15 @@ export interface DohClientTlsConfig {
   readonly verifier: CertificateVerifier;
 }
 
+function freshnessLifetime(message: DnsMessage): number {
+  const cacheable = message.answers.length > 0
+    ? message.answers
+    : message.authorities.filter((rr) => rr.data.type === RRType.SOA);
+  if (cacheable.length === 0) return 0;
+  return Math.min(...cacheable.map((rr) =>
+    rr.data.type === RRType.SOA ? Math.min(rr.ttl, rr.data.minimum) : rr.ttl));
+}
+
 const runningServers = new Map<string, HttpsServerSession>();
 
 export function bindDnsHttpsServer(
@@ -51,24 +62,43 @@ export function bindDnsHttpsServer(
     host.getTcpStack(), port,
     { serverCert: tlsConfig.serverCert, serverPrivateKey: tlsConfig.serverPrivateKey, alpnProtocols: [DOH_ALPN] },
     (request) => {
-      if (request.method !== 'POST') return createResponse(400, 'Bad Request');
-      if (request.target !== path) return createResponse(404, 'Not Found');
-      if (request.headers.get('Content-Type') !== DOH_CONTENT_TYPE) return createResponse(415, 'Unsupported Media Type');
+      const [targetPath, queryString = ''] = request.target.split('?');
+      if (targetPath !== path) return createResponse(404, 'Not Found');
+      if (request.method !== 'GET' && request.method !== 'POST') {
+        const refused = createResponse(405, 'Method Not Allowed');
+        refused.headers.set('Allow', 'GET, POST');
+        return refused;
+      }
+
+      let wire: Uint8Array;
+      if (request.method === 'POST') {
+        if (request.headers.get('Content-Type') !== DOH_CONTENT_TYPE) {
+          return createResponse(415, 'Unsupported Media Type');
+        }
+        wire = request.body ?? new Uint8Array();
+      } else {
+        const parameter = queryString.split('&').find((part) => part.startsWith('dns='));
+        if (parameter === undefined) return createResponse(400, 'Bad Request');
+        try {
+          wire = base64ToBytes(parameter.slice(4).replace(/-/g, '+').replace(/_/g, '/'));
+        } catch {
+          return createResponse(400, 'Bad Request');
+        }
+      }
 
       let query: DnsMessage;
       try {
-        query = decodeDnsMessage(request.body ?? new Uint8Array());
+        query = decodeDnsMessage(wire);
       } catch {
         return createResponse(400, 'Bad Request');
       }
+      if (query.flags.qr) return createResponse(400, 'Bad Request');
 
       const answer = handler(query);
-      // Http1RequestHandler is synchronous-only — same constraint as
-      // DnsQuicTransport/DnsUdpTransport, an async handler result can't be
-      // awaited inside this callback.
       if (answer instanceof Promise) return createResponse(500, 'Internal Server Error');
       const response = createResponse(200, 'OK');
       response.headers.set('Content-Type', DOH_CONTENT_TYPE);
+      response.headers.set('Cache-Control', `max-age=${freshnessLifetime(answer)}`);
       response.body = encodeDnsMessage(answer);
       return response;
     },
@@ -94,7 +124,8 @@ export async function queryDnsOverHttps(
   const request = createRequest('POST', options.path ?? DOH_PATH);
   request.headers.set('Host', options.sni ?? serverIP.toString());
   request.headers.set('Content-Type', DOH_CONTENT_TYPE);
-  request.body = encodeDnsMessage(query);
+  request.headers.set('Accept', DOH_CONTENT_TYPE);
+  request.body = encodeDnsMessage({ ...query, id: 0 });
 
   const result = client.send(request);
   client.close();
@@ -102,7 +133,7 @@ export async function queryDnsOverHttps(
 
   try {
     const message = decodeDnsMessage(result.response.body ?? new Uint8Array());
-    return message.id === query.id ? message : null;
+    return message.id === 0 ? { ...message, id: query.id } : null;
   } catch {
     return null;
   }

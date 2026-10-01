@@ -192,7 +192,7 @@ describe('Scénario 2 — une réponse falsifiée est refusée', () => {
 describe('Scénario 3 — une zone non signée, selon le mode', () => {
   it('`allow-downgrade` l\'accepte et le dit non authentifié', async () => {
     const { pc, anchor } = await lab({ unsigned: true });
-    trust(pc, anchor);
+    trust(pc, { ...anchor, name: 'other.test' });
 
     const out = await pc.executeCommand('resolvectl query web.lab.test');
     expect(out).toContain('198.51.100.7');
@@ -201,16 +201,25 @@ describe('Scénario 3 — une zone non signée, selon le mode', () => {
 
   it('`DNSSEC=yes` la refuse, puisqu\'aucune signature ne la couvre', async () => {
     const { pc, anchor } = await lab({ unsigned: true });
-    trust(pc, anchor);
+    trust(pc, { ...anchor, name: 'other.test' });
     await pc.executeCommand('sudo resolvectl dnssec eth0 yes');
 
     expect(await pc.executeCommand('resolvectl query web.lab.test'))
       .toContain('no signed data and DNSSEC=yes');
   }, LONG);
 
-  it('`DNSSEC=no` n\'essaie même pas de valider', async () => {
+  it('une zone ancrée dont on a retiré les signatures est refusée, non acceptée en insecure', async () => {
     const { pc, anchor } = await lab({ unsigned: true });
     trust(pc, anchor);
+
+    const out = await pc.executeCommand('resolvectl query web.lab.test');
+    expect(out).toContain('DNSSEC validation failed');
+    expect(out).not.toContain('Data is authenticated: no');
+  }, LONG);
+
+  it('`DNSSEC=no` n\'essaie même pas de valider', async () => {
+    const { pc, anchor } = await lab({ unsigned: true });
+    trust(pc, { ...anchor, name: 'other.test' });
     await pc.executeCommand('sudo resolvectl dnssec eth0 no');
 
     const out = await pc.executeCommand('resolvectl query web.lab.test');
@@ -220,7 +229,7 @@ describe('Scénario 3 — une zone non signée, selon le mode', () => {
 
   it('le mode du lien l\'emporte sur le global', async () => {
     const { pc, anchor } = await lab({ unsigned: true });
-    trust(pc, anchor);
+    trust(pc, { ...anchor, name: 'other.test' });
     await pc.executeCommand('sudo resolvectl dnssec eth0 yes');
 
     expect(await pc.executeCommand('resolvectl status eth0')).toContain('DNSSEC setting: yes');

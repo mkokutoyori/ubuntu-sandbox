@@ -289,7 +289,7 @@ function serve(
     case 'SOLICIT': {
       if (!request.clientDuid || request.serverDuid !== null) return null;
       if (direct && ctx.unicast) return null;
-      if (request.rapidCommit && server.selectPool(ctx.anchor, ctx.poolName)?.rapidCommit) {
+      if (request.rapidCommit && (server.isRapidCommitAll() || server.selectPool(ctx.anchor, ctx.poolName)?.rapidCommit)) {
         const reply = allocate(server, request, ctx, 'REPLY', true);
         reply.rapidCommit = true;
         return reply;

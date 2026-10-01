@@ -121,6 +121,7 @@ import {
 } from './linux/LinuxIpCommand';
 import { DnsService } from './linux/LinuxDnsService';
 import { Bind9Service } from './linux/bind9/Bind9Service';
+import { attachOrderedCapture } from '../hardware/PortTap';
 import { LinuxDhcpdService } from './linux/dhcp/LinuxDhcpdService';
 import { LinuxDhcpd6Service } from './linux/dhcp/LinuxDhcpd6Service';
 import { seedDhcpdFiles } from './linux/dhcp/DhcpdFiles';
@@ -527,6 +528,7 @@ export abstract class LinuxMachine extends EndHost
         if (!this.executor.vfs.exists(dir)) this.executor.vfs.mkdirp(dir, 0o755, 0, 0);
         this.executor.vfs.writeFile(path, content, 0, 0, 0o022, true);
       },
+      write: (path, content) => { this.executor.vfs.writeFile(path, content, 0, 0, 0o022); },
     });
     this.executor.serviceMgr.registerConfigCheck('named', () => this.bind9.checkConfig());
 
@@ -1027,7 +1029,7 @@ export abstract class LinuxMachine extends EndHost
               serverIP, qname, rrTypeName(qtype), 2000, { dnssecOk: true });
           }
           if (!reply) return { status: 'SERVFAIL', records: [] };
-          return { status: 'NOERROR', records: [...reply.answers, ...reply.authorities] };
+          return { status: 'NOERROR', records: reply.answers, authorities: reply.authorities };
         },
         this.dnssecAnchors,
       );
@@ -1079,21 +1081,10 @@ export abstract class LinuxMachine extends EndHost
       // table des sockets (SERVICE_LISTENERS) : c'est elle que `ss`
       // montrait. On la reprend pour mettre un vrai service derrière.
       this.socketTable.unbind('udp', STUB_ADDRESS, DNS_PORT);
-      this.udpBindAddress(STUB_ADDRESS, DNS_PORT, ({ sourceIP, udp }) => {
-        if (!(udp.payload instanceof Uint8Array)) return;
-        let query: DnsMessage;
-        try { query = decodeDnsMessage(udp.payload); } catch { return; }
-        const send = (reply: DnsMessage): void => {
-          const bytes = encodeDnsMessage(reply);
-          this.sendUdpDatagramTo(sourceIP, udp.sourcePort, DNS_PORT, bytes, bytes.length);
-        };
-        // Sans validation à faire, la réponse part dans la même pile
-        // d'appel : c'est ce qui garde le résolveur NSS synchrone du
-        // système capable d'interroger le stub.
+      bindDnsUdpServer(this, (query) => {
         const immediate = this.answerResolvedQuerySync(query);
-        if (immediate) { send(immediate); return; }
-        void this.answerResolvedQuery(query).then(send);
-      }, 'systemd-resolved');
+        return immediate ?? this.answerResolvedQuery(query);
+      }, DNS_PORT, 'systemd-resolved', STUB_ADDRESS);
       // Le stub répond aussi en TCP sur une vraie machine — c'est par là
       // que passe une réponse trop grande pour un datagramme (RFC 7766).
       // L'entrée `tcp 127.0.0.53:53` figurait déjà dans `ss` ; jusqu'ici
@@ -4879,9 +4870,9 @@ export abstract class LinuxMachine extends EndHost
     const wantLoopback = iface === 'lo' || iface === 'any';
 
     if (wantPort) {
-      unsubs.push(this.attachCapture(
-        (tapped) => sink(
-          decodeEthernetFrame(tapped.frame, tapped.iface, tapped.direction, new Date())),
+      unsubs.push(attachOrderedCapture(
+        this,
+        (tapped) => sink(decodeEthernetFrame(tapped.frame, tapped.iface, tapped.direction, tapped.at)),
         iface === 'any' ? undefined : iface));
     }
 

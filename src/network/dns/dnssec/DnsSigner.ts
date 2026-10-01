@@ -1,12 +1,14 @@
 import { RRType } from '@/network/dns/wire/RRType';
-import { makeRrsigRecord, rdataKey } from '@/network/dns/wire/ResourceRecord';
+import { makeRrsigRecord } from '@/network/dns/wire/ResourceRecord';
 import type {
   ResourceRecord, ResourceRecordData, DnskeyRecordData, RrsigRecordData,
 } from '@/network/dns/wire/ResourceRecord';
 import type { Zone } from '@/network/dns/zone/Zone';
-import { simulatedDigest } from '@/network/dns/dnssec/Digest';
-import { keyTagOf, isKsk } from '@/network/dns/dnssec/DnsKey';
-import { buildNsecChain } from '@/network/dns/dnssec/Nsec';
+import { bytesToBase64, base64ToBytes } from '@/crypto/encoding';
+import { keyTagOf, isKsk, privateKeyOf } from '@/network/dns/dnssec/DnsKey';
+import { signWithDnssecKey, verifyWithDnssecKey } from '@/network/dns/dnssec/DnssecAlgorithms';
+import { labelCountOf, signedData } from '@/network/dns/dnssec/DnssecWire';
+import { buildNsecChain, delegationCuts, isSignedRRset } from '@/network/dns/dnssec/Nsec';
 
 export interface SignatureWindow {
   readonly inception: number;
@@ -19,25 +21,6 @@ export function defaultSignatureWindow(nowSeconds: number = Math.floor(Date.now(
   return { inception: nowSeconds - 3600, expiration: nowSeconds + DEFAULT_VALIDITY_SECONDS };
 }
 
-function labelCount(name: string): number {
-  const trimmed = name.toLowerCase().replace(/\.$/, '');
-  return trimmed === '' ? 0 : trimmed.split('.').length;
-}
-
-export function canonicalRRSetForm(records: readonly ResourceRecord<ResourceRecordData>[]): string {
-  const first = records[0];
-  const rdata = records.map((rr) => rdataKey(rr.data)).sort().join('#');
-  return `${first.name.toLowerCase().replace(/\.$/, '')}|${first.data.type}|${first.ttl}|${rdata}`;
-}
-
-export function computeSignature(
-  key: DnskeyRecordData,
-  canonicalForm: string,
-  window: SignatureWindow,
-): string {
-  return simulatedDigest(`${rdataKey(key)}|${window.inception}|${window.expiration}|${canonicalForm}`);
-}
-
 export function signRRSet(
   records: readonly ResourceRecord<ResourceRecordData>[],
   signerName: string,
@@ -45,18 +28,21 @@ export function signRRSet(
   window: SignatureWindow,
 ): ResourceRecord<RrsigRecordData> {
   const first = records[0];
-  const canonicalForm = canonicalRRSetForm(records);
-  return makeRrsigRecord(first.name, first.ttl, {
-    typeCovered: first.data.type,
+  const privateKey = privateKeyOf(key);
+  if (!privateKey) throw new Error(`no private key is held for DNSKEY ${key.name}`);
+  const fields = {
+    typeCovered: first.data.type as number,
     algorithm: key.data.algorithm,
-    labels: labelCount(first.name),
+    labels: labelCountOf(first.name),
     originalTtl: first.ttl,
     expiration: window.expiration,
     inception: window.inception,
     keyTag: keyTagOf(key.data),
     signerName,
-    signature: computeSignature(key.data, canonicalForm, window),
-  });
+  };
+  const signature = signWithDnssecKey(
+    privateKey, signedData({ type: RRType.RRSIG, ...fields, signature: '' }, records));
+  return makeRrsigRecord(first.name, first.ttl, { ...fields, signature: bytesToBase64(signature) });
 }
 
 export interface ZoneSigningKeys {
@@ -73,9 +59,11 @@ export function signZone(zone: Zone, keys: ZoneSigningKeys, window?: SignatureWi
     zone.addRecord(nsec as ResourceRecord<ResourceRecordData>);
   }
 
+  const cuts = delegationCuts(zone);
   const rrsetsByOwnerAndType = new Map<string, ResourceRecord<ResourceRecordData>[]>();
   for (const rr of zone.allRecords()) {
     if (rr.data.type === RRType.RRSIG) continue;
+    if (!isSignedRRset(rr.name, rr.data.type as number, zone.origin, cuts)) continue;
     const key = `${rr.name.toLowerCase()}|${rr.data.type}`;
     const set = rrsetsByOwnerAndType.get(key);
     if (set) set.push(rr);
@@ -94,13 +82,22 @@ export function verifySignature(
   key: DnskeyRecordData,
   nowSeconds: number,
 ): boolean {
+  if (records.length === 0) return false;
   if (nowSeconds < rrsig.inception || nowSeconds > rrsig.expiration) return false;
   if (rrsig.keyTag !== keyTagOf(key)) return false;
   if (rrsig.algorithm !== key.algorithm) return false;
-  const expected = computeSignature(key, canonicalRRSetForm(records), {
-    inception: rrsig.inception, expiration: rrsig.expiration,
-  });
-  return expected === rrsig.signature;
+  if (rrsig.typeCovered !== records[0].data.type) return false;
+  if (rrsig.labels > labelCountOf(records[0].name)) return false;
+  let signature: Uint8Array;
+  let material: Uint8Array;
+  try {
+    signature = base64ToBytes(rrsig.signature);
+    material = base64ToBytes(key.publicKey);
+  } catch {
+    return false;
+  }
+  return verifyWithDnssecKey(
+    key.algorithm, material, signedData(rrsig, records), signature);
 }
 
 export function selectKskFrom(keys: readonly DnskeyRecordData[]): DnskeyRecordData | null {

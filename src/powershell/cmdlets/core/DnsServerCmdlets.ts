@@ -377,6 +377,53 @@ export class RemoveDnsServerTsigKeyCmdlet implements ICmdlet {
   }
 }
 
+export class AddDnsServerTrustAnchorCmdlet implements ICmdlet {
+  readonly name = 'add-dnsservertrustanchor';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'KeyProtocol', 'CryptoAlgorithm', 'Base64Data', 'ComputerName'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Add-DnsServerTrustAnchor');
+    const name = nameOf(ctx);
+    const base64 = psValueToString(ctx.named['base64data'] ?? '');
+    const algorithm = psValueToString(ctx.named['cryptoalgorithm'] ?? 'RsaSha256');
+    if (!name || !base64) {
+      ctx.emitError('Add-DnsServerTrustAnchor : Cannot process command because of one or more missing mandatory parameters: Name Base64Data.');
+      return null;
+    }
+    const res = dns.addTrustAnchor(name, algorithm, base64);
+    if (!res.ok) { ctx.emitError(`Add-DnsServerTrustAnchor : ${res.message}`); return null; }
+    return null;
+  }
+}
+
+export class GetDnsServerTrustAnchorCmdlet implements ICmdlet {
+  readonly name = 'get-dnsservertrustanchor';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'ComputerName'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Get-DnsServerTrustAnchor');
+    const name = nameOf(ctx);
+    return dns.listTrustAnchors()
+      .filter(a => !name || a.name.toLowerCase().replace(/\.$/, '') === name.toLowerCase().replace(/\.$/, ''))
+      .map(a => ({ Name: a.name, KeyTag: a.keyTag, CryptoAlgorithm: a.cryptoAlgorithm, Digest: a.digest }));
+  }
+}
+
+export class RemoveDnsServerTrustAnchorCmdlet implements ICmdlet {
+  readonly name = 'remove-dnsservertrustanchor';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'ComputerName'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Remove-DnsServerTrustAnchor');
+    const res = dns.removeTrustAnchor(nameOf(ctx));
+    if (!res.ok) { ctx.emitError(`Remove-DnsServerTrustAnchor : ${res.message}`); return null; }
+    return null;
+  }
+}
+
 // ── Resource records ─────────────────────────────────────────────────────
 
 export class AddDnsServerResourceRecordACmdlet implements ICmdlet {

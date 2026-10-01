@@ -4,6 +4,7 @@ import { RRType } from '@/network/dns/wire/RRType';
 import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import { findOpt, CLASSIC_UDP_PAYLOAD_SIZE, DEFAULT_EDNS_PAYLOAD_SIZE } from '@/network/dns/wire/EdnsOptRecord';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
+import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
 
 export const CLASSIC_UDP_MAX_SIZE = CLASSIC_UDP_PAYLOAD_SIZE;
 
@@ -16,13 +17,27 @@ export type DnsMessageHandler = (
   raw?: Uint8Array,
 ) => DnsMessage | Promise<DnsMessage>;
 
+export function answersQuestion(query: DnsMessage, response: DnsMessage): boolean {
+  if (response.id !== query.id) return false;
+  if (response.questions.length === 0) return response.flags.rcode === 1;
+  if (response.questions.length !== query.questions.length) return false;
+  return query.questions.every((asked, index) => {
+    const echoed = response.questions[index];
+    return echoed.qname.toLowerCase().replace(/\.$/, '') === asked.qname.toLowerCase().replace(/\.$/, '')
+      && echoed.qtype === asked.qtype && echoed.qclass === asked.qclass;
+  });
+}
+
 export type DnsMessageEncoder = (message: DnsMessage) => Uint8Array;
 
 export interface DnsUdpClient {
   allocateEphemeralPort(): number;
   udpBind(
     port: number,
-    listener: (delivery: { udp: { payload: unknown } }) => void,
+    listener: (delivery: {
+      readonly sourceIP: { toString(): string };
+      readonly udp: { readonly payload: unknown; readonly sourcePort: number };
+    }) => void,
     processName?: string,
   ): number | false;
   udpClose(port: number): void;
@@ -45,30 +60,48 @@ export function udpClientOf(host: EndHost): DnsUdpClient {
   };
 }
 
+function dropLastRRset(
+  records: readonly ResourceRecord<ResourceRecordData>[],
+): ResourceRecord<ResourceRecordData>[] {
+  if (records.length === 0) return [];
+  const last = records[records.length - 1];
+  const sameSet = (rr: ResourceRecord<ResourceRecordData>): boolean =>
+    rr.name.toLowerCase() === last.name.toLowerCase() && rr.data.type === last.data.type;
+  return records.filter((rr) => !sameSet(rr));
+}
+
 export function truncateForUdp(message: DnsMessage, maxSize: number = CLASSIC_UDP_PAYLOAD_SIZE): DnsMessage {
   if (encodeDnsMessage(message).length <= maxSize) return message;
 
   const opt = message.additionals.find((rr) => rr.data.type === RRType.OPT);
   let { answers, authorities } = message;
   let extras = message.additionals.filter((rr) => rr.data.type !== RRType.OPT);
+  let truncated = false;
 
   const rebuild = (): DnsMessage => ({
     ...message,
-    flags: { ...message.flags, tc: true },
+    flags: { ...message.flags, tc: truncated },
     answers,
     authorities,
     additionals: opt ? [...extras, opt] : extras,
   });
   const fits = (): boolean => encodeDnsMessage(rebuild()).length <= maxSize;
 
-  while (extras.length > 0 && !fits()) extras = extras.slice(0, -1);
-  while (authorities.length > 0 && !fits()) authorities = authorities.slice(0, -1);
-  while (answers.length > 0 && !fits()) answers = answers.slice(0, -1);
+  while (extras.length > 0 && !fits()) extras = dropLastRRset(extras);
+  while (authorities.length > 0 && !fits()) {
+    authorities = dropLastRRset(authorities);
+    truncated = true;
+  }
+  while (answers.length > 0 && !fits()) {
+    answers = answers.slice(0, -1);
+    truncated = true;
+  }
+  if (!fits()) truncated = true;
 
   return rebuild();
 }
 
-function negotiatedUdpSize(query: DnsMessage): number {
+export function negotiatedUdpSize(query: DnsMessage): number {
   const opt = findOpt(query);
   if (!opt) return CLASSIC_UDP_PAYLOAD_SIZE;
   return Math.min(
@@ -82,9 +115,14 @@ export function bindDnsUdpServer(
   handler: DnsMessageHandler,
   port: number = DNS_PORT,
   processName: string = 'dns',
+  address?: string,
 ): void {
-  if (port === DNS_PORT) host.getSocketTable().unbind('udp', '127.0.0.53', port);
-  host.udpBind(port, ({ sourceIP, udp }) => {
+  if (port === DNS_PORT && address === undefined) host.getSocketTable().unbind('udp', '127.0.0.53', port);
+  const bind = (listener: Parameters<EndHost['udpBind']>[1]): void => {
+    if (address === undefined) host.udpBind(port, listener, processName);
+    else host.udpBindAddress(address, port, listener, processName);
+  };
+  bind(({ sourceIP, udp }) => {
     if (!(udp.payload instanceof Uint8Array)) return;
     let query: DnsMessage;
     try {
@@ -92,6 +130,7 @@ export function bindDnsUdpServer(
     } catch {
       return;
     }
+    if (query.flags.qr) return;
     const send = (result: DnsMessage): void => {
       const response = truncateForUdp(result, negotiatedUdpSize(query));
       const bytes = encodeDnsMessage(response);
@@ -100,7 +139,7 @@ export function bindDnsUdpServer(
     const result = handler(query, sourceIP, udp.sourcePort, udp.payload);
     if (result instanceof Promise) void result.then(send);
     else send(result);
-  }, processName);
+  });
 }
 
 export function unbindDnsUdpServer(host: EndHost, port: number = DNS_PORT): void {
@@ -145,11 +184,12 @@ export function askOverUdp(
     };
 
     try {
-      host.udpBind(sourcePort, ({ udp }) => {
+      host.udpBind(sourcePort, ({ sourceIP, udp }) => {
         if (!(udp.payload instanceof Uint8Array)) return;
+        if (sourceIP.toString() !== serverIP.toString() || udp.sourcePort !== port) return;
         try {
           const response = decodeDnsMessage(udp.payload);
-          if (response.id === query.id) finish(response);
+          if (answersQuestion(query, response)) finish(response);
         } catch {
           return;
         }

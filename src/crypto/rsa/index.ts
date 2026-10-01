@@ -4,5 +4,5 @@ export {
   publicKeyToMaterial, privateKeyToMaterial, materialToPublicKey, materialToPrivateKey,
   publicPartOf, modulusHex, bitLength,
   DEFAULT_MODULUS_BITS, PUBLIC_EXPONENT,
-  type RsaKeyPair, type RsaPublicKey, type RsaPrivateKey, type RandomBytes,
+  type RsaSignatureHash, type RsaKeyPair, type RsaPublicKey, type RsaPrivateKey, type RandomBytes,
 } from './rsa';

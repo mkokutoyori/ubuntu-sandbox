@@ -66,10 +66,12 @@ export class ZoneStore {
     }
 
     const dnssec = options.dnssec === true;
-    const sign = (records: readonly ResourceRecord<ResourceRecordData>[]) =>
-      dnssec ? this.withSignatures(zone, records) : [...records];
-
     const result = zone.lookup(question.qname, question.qtype);
+    const synthesizedFrom = result.kind === 'answer' || result.kind === 'cname'
+      ? result.synthesizedFrom : undefined;
+    const sign = (records: readonly ResourceRecord<ResourceRecordData>[]) =>
+      dnssec ? this.withSignatures(zone, records, synthesizedFrom) : [...records];
+
     switch (result.kind) {
       case 'answer':
         return {
@@ -107,18 +109,30 @@ export class ZoneStore {
   private negativeAuthority(
     zone: Zone, qname: string, dnssec: boolean, kind: 'nodata' | 'nxdomain',
   ): ResourceRecord<ResourceRecordData>[] {
-    const authority: ResourceRecord<ResourceRecordData>[] = [zone.soa as ResourceRecord<ResourceRecordData>];
+    const soa = zone.soa;
+    const negativeTtl = Math.min(soa.ttl, soa.data.minimum);
+    const authority: ResourceRecord<ResourceRecordData>[] = [
+      { ...soa, ttl: negativeTtl } as ResourceRecord<ResourceRecordData>,
+    ];
     if (!dnssec) return authority;
 
-    const proof = kind === 'nodata'
-      ? zone.getRRSet(qname, RRType.NSEC)?.[0] ?? null
-      : findCoveringNsec(zone, qname);
-    if (proof) authority.push(proof as ResourceRecord<ResourceRecordData>);
+    if (kind === 'nodata') {
+      const proof = zone.getRRSet(qname, RRType.NSEC)?.[0] ?? findCoveringNsec(zone, qname);
+      if (proof) authority.push(proof as ResourceRecord<ResourceRecordData>);
+      return authority;
+    }
+    const covering = findCoveringNsec(zone, qname);
+    if (covering) authority.push(covering as ResourceRecord<ResourceRecordData>);
+    const wildcard = `*.${zone.closestEncloser(qname)}`.replace(/^\*\.$/, '*');
+    const wildcardProof = findCoveringNsec(zone, wildcard);
+    if (wildcardProof && wildcardProof !== covering) {
+      authority.push(wildcardProof as ResourceRecord<ResourceRecordData>);
+    }
     return authority;
   }
 
   private withSignatures(
-    zone: Zone, records: readonly ResourceRecord<ResourceRecordData>[],
+    zone: Zone, records: readonly ResourceRecord<ResourceRecordData>[], synthesizedFrom?: string,
   ): ResourceRecord<ResourceRecordData>[] {
     const out = [...records];
     const seen = new Set<string>();
@@ -127,10 +141,12 @@ export class ZoneStore {
       const key = `${normalize(rr.name)}|${rr.data.type}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const sigs = zone.getRRSet(rr.name, RRType.RRSIG) ?? [];
-      out.push(...sigs.filter(
+      const wildcardSource = synthesizedFrom !== undefined && !zone.hasName(rr.name);
+      const sigOwner = wildcardSource ? synthesizedFrom : rr.name;
+      const sigs = (zone.getRRSet(sigOwner, RRType.RRSIG) ?? []).filter(
         (sig) => (sig.data as RrsigRecordData).typeCovered === rr.data.type,
-      ));
+      );
+      out.push(...sigs.map((sig) => (wildcardSource ? { ...sig, name: rr.name } : sig)));
     }
     return out;
   }

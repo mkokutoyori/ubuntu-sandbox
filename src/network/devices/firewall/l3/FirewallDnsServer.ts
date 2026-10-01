@@ -16,6 +16,7 @@ import {
   ZoneTransferClient, type ZoneTransferTransport,
 } from '../../../dns/transfer/ZoneTransferClient';
 import { DNS_PORT } from './FirewallDnsClient';
+import { truncateForUdp, negotiatedUdpSize } from '@/network/dns/transport/DnsUdpTransport';
 
 export interface DnsZoneEntry {
   readonly hostname: string;
@@ -169,7 +170,7 @@ export class FirewallDnsServer {
 
     const response = this.reactTo(query, packet.sourceIP.toString());
     this.deps.reply(iface, packet.sourceIP.toString(), udp.sourcePort,
-      encodeDnsMessage(response));
+      encodeDnsMessage(truncateForUdp(response, negotiatedUdpSize(query))));
     return true;
   }
 

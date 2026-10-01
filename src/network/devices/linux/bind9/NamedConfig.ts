@@ -2,6 +2,10 @@ import { IPAddress } from '@/network/core/types';
 import { AddressMatchList } from './NamedAcl';
 import { NamedConfigError } from './NamedConfigError';
 import type { NamedConfStatement } from './NamedConfParser';
+import { parseUpdatePolicyRule, type UpdatePolicyRule } from './NamedUpdatePolicy';
+import { makeDsRecord, makeDnskeyRecord } from '@/network/dns/wire/ResourceRecord';
+import type { ResourceRecord, DsRecordData } from '@/network/dns/wire/ResourceRecord';
+import { dsDigestOf, keyTagOf as keyTagOfAnchor, DnssecDigestType } from '@/network/dns/dnssec/DnsKey';
 
 export { NamedConfigError } from './NamedConfigError';
 
@@ -15,6 +19,7 @@ export interface NamedOptions {
   readonly queryLog: boolean;
   readonly dnssecValidation: DnssecValidationMode;
   readonly listenOnPort: number;
+  readonly servfailTtl: number;
   readonly listenOn: AddressMatchList;
   readonly allowQuery: AddressMatchList;
   readonly allowRecursion: AddressMatchList;
@@ -28,8 +33,11 @@ export interface NamedZone {
   readonly type: ZoneType;
   readonly file: string | null;
   readonly primaries: readonly string[];
+  readonly primaryKeys: ReadonlyMap<string, string>;
   readonly alsoNotify: readonly string[];
   readonly allowTransfer: AddressMatchList | null;
+  readonly allowUpdate: AddressMatchList;
+  readonly updatePolicy: readonly UpdatePolicyRule[] | null;
   readonly forwarders: readonly string[];
   readonly declaredAt: { readonly file: string; readonly line: number };
 }
@@ -67,11 +75,14 @@ export interface NamedConfig {
   readonly logging: NamedLogging;
   readonly keys: ReadonlyMap<string, NamedKey>;
   readonly controls: readonly NamedControls[];
+  readonly trustAnchors: readonly ResourceRecord<DsRecordData>[];
 }
 
 const DEFAULT_DIRECTORY = '/var/cache/bind';
 const DEFAULT_RNDC_PORT = 953;
 const DEFAULT_DNS_PORT = 53;
+const DEFAULT_SERVFAIL_TTL = 1;
+const MAX_SERVFAIL_TTL = 30;
 const DEFAULT_SEVERITY = 'info';
 const ZONE_TYPE_ALIASES: Readonly<Record<string, ZoneType>> = {
   primary: 'primary',
@@ -129,6 +140,7 @@ interface MutableOptions {
   queryLog: boolean;
   dnssecValidation: DnssecValidationMode;
   listenOnPort: number;
+  servfailTtl: number;
   listenOn: AddressMatchList;
   allowQuery: AddressMatchList;
   allowRecursion: AddressMatchList;
@@ -144,6 +156,7 @@ function defaultOptions(): MutableOptions {
     queryLog: false,
     dnssecValidation: 'auto',
     listenOnPort: DEFAULT_DNS_PORT,
+    servfailTtl: DEFAULT_SERVFAIL_TTL,
     listenOn: AddressMatchList.any(),
     allowQuery: AddressMatchList.any(),
     allowRecursion: AddressMatchList.localTrust(),
@@ -194,6 +207,14 @@ function parseOptions(
         }
         break;
       }
+      case 'servfail-ttl': {
+        const value = Number(args[0]);
+        if (!Number.isInteger(value) || value < 0) {
+          fail(entry, `expected a number of seconds near '${args[0] ?? ';'}'`);
+        }
+        options.servfailTtl = Math.min(value, MAX_SERVFAIL_TTL);
+        break;
+      }
       case 'dnssec-validation':
         if (args[0] !== 'auto' && args[0] !== 'yes' && args[0] !== 'no') {
           fail(entry, `expected 'auto', 'yes' or 'no' near '${args[0] ?? ';'}'`);
@@ -219,8 +240,11 @@ interface ZoneDraft {
   type: ZoneType | null;
   file: string | null;
   primaries: string[];
+  primaryKeys: Map<string, string>;
   alsoNotify: string[];
   allowTransfer: AddressMatchList | null;
+  allowUpdate: AddressMatchList | null;
+  updatePolicy: UpdatePolicyRule[] | null;
   forwarders: string[];
 }
 
@@ -230,7 +254,8 @@ function parseZoneEntries(
   acls: ReadonlyMap<string, AddressMatchList>,
 ): ZoneDraft {
   const draft: ZoneDraft = {
-    type: null, file: null, primaries: [], alsoNotify: [], allowTransfer: null, forwarders: [],
+    type: null, file: null, primaries: [], primaryKeys: new Map(), alsoNotify: [], allowTransfer: null,
+    allowUpdate: null, updatePolicy: null, forwarders: [],
   };
   for (const entry of requireBlock(statement)) {
     const keyword = keywordOf(entry);
@@ -246,14 +271,27 @@ function parseZoneEntries(
         draft.file = args[0] ?? null;
         break;
       case 'primaries':
-      case 'masters':
-        draft.primaries = parseAddressList(entry);
+      case 'masters': {
+        for (const item of requireBlock(entry)) {
+          const words = item.values.map((value) => value.text);
+          if (!IPAddress.isValid(words[0])) fail(item, `expected IP address near '${words[0]}'`);
+          if (words.length === 3 && words[1] === 'key') draft.primaryKeys.set(words[0], words[2]);
+          else if (words.length !== 1) fail(item, `unexpected '${words[1]}'`);
+          draft.primaries.push(words[0]);
+        }
         break;
+      }
       case 'also-notify':
         draft.alsoNotify = parseAddressList(entry);
         break;
       case 'allow-transfer':
         draft.allowTransfer = AddressMatchList.fromStatements(requireBlock(entry), acls);
+        break;
+      case 'allow-update':
+        draft.allowUpdate = AddressMatchList.fromStatements(requireBlock(entry), acls);
+        break;
+      case 'update-policy':
+        draft.updatePolicy = requireBlock(entry).map(parseUpdatePolicyRule);
         break;
       case 'forwarders':
         draft.forwarders = parseAddressList(entry);
@@ -261,6 +299,9 @@ function parseZoneEntries(
       default:
         fail(entry, `unknown option '${keyword}'`);
     }
+  }
+  if (draft.allowUpdate !== null && draft.updatePolicy !== null) {
+    fail(statement, `zone '${zoneName}': 'allow-update' and 'update-policy' cannot both be set`);
   }
   return draft;
 }
@@ -307,8 +348,11 @@ function parseZone(
     type,
     file: resolveZoneFile(draft.file, directory),
     primaries: draft.primaries,
+    primaryKeys: draft.primaryKeys,
     alsoNotify: draft.alsoNotify,
     allowTransfer: draft.allowTransfer,
+    allowUpdate: draft.allowUpdate ?? AddressMatchList.none(),
+    updatePolicy: draft.updatePolicy,
     forwarders: draft.forwarders,
     declaredAt: { file: statement.file, line: statement.line },
   };
@@ -397,6 +441,42 @@ function blocksByLabel(
   return result;
 }
 
+function parseTrustAnchors(statement: NamedConfStatement): ResourceRecord<DsRecordData>[] {
+  const anchors: ResourceRecord<DsRecordData>[] = [];
+  for (const entry of requireBlock(statement)) {
+    const words = entry.values.map((value) => value.text);
+    const [name, kind, ...rest] = words;
+    if (!name || !kind) fail(entry, "expected a name and a trust anchor type");
+    if (kind === 'static-ds' || kind === 'initial-ds') {
+      const [keyTag, algorithm, digestType, digest] = rest;
+      if (![keyTag, algorithm, digestType].every((word) => /^\d+$/.test(word ?? '')) || !/^[0-9a-fA-F]+$/.test(digest ?? '')) {
+        fail(entry, `invalid ${kind} trust anchor`);
+      }
+      anchors.push(makeDsRecord(name, 0, {
+        keyTag: Number(keyTag), algorithm: Number(algorithm), digestType: Number(digestType),
+        digest: digest.toUpperCase(),
+      }));
+    } else if (kind === 'static-key' || kind === 'initial-key') {
+      const [flags, protocol, algorithm, key] = rest;
+      if (![flags, protocol, algorithm].every((word) => /^\d+$/.test(word ?? '')) || !key) {
+        fail(entry, `invalid ${kind} trust anchor`);
+      }
+      const dnskey = makeDnskeyRecord(name, 0, {
+        flags: Number(flags), protocol: Number(protocol), algorithm: Number(algorithm),
+        publicKey: key.replace(/\s+/g, ''),
+      });
+      anchors.push(makeDsRecord(name, 0, {
+        keyTag: keyTagOfAnchor(dnskey.data), algorithm: Number(algorithm),
+        digestType: DnssecDigestType.SHA256,
+        digest: dsDigestOf(name, dnskey.data, DnssecDigestType.SHA256),
+      }));
+    } else {
+      fail(entry, `unknown trust anchor type '${kind}'`);
+    }
+  }
+  return anchors;
+}
+
 function parseControlsInet(
   statement: NamedConfStatement,
   acls: ReadonlyMap<string, AddressMatchList>,
@@ -447,6 +527,7 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
   const keys = new Map<string, NamedKey>();
   const zoneStatements: NamedConfStatement[] = [];
   const controlsStatements: NamedConfStatement[] = [];
+  const trustAnchors: ResourceRecord<DsRecordData>[] = [];
 
   for (const statement of statements) {
     const keyword = keywordOf(statement);
@@ -475,6 +556,9 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
       case 'controls':
         controlsStatements.push(statement);
         break;
+      case 'trust-anchors':
+        trustAnchors.push(...parseTrustAnchors(statement));
+        break;
       default:
         fail(statement, `unknown option '${keyword}'`);
     }
@@ -500,5 +584,6 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
     logging: { channels, categories },
     keys,
     controls,
+    trustAnchors,
   };
 }
