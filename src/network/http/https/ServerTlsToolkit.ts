@@ -1,6 +1,7 @@
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { CertificateRevocationList } from '@/network/pki/CertificateRevocationList';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
+import type { IOcspResponder } from '@/network/pki/OcspResponder';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { splitPemChain, pemToCrl, pemToCertChain } from '@/network/pki/pem';
@@ -63,13 +64,16 @@ export interface ClientVerifierInput {
   readonly revocationScope: 'leaf' | 'chain';
   readonly missingCrlOk: boolean;
   readonly maxDepth: number;
+  readonly ocsp?: { readonly responder: IOcspResponder; readonly scope: 'leaf' | 'chain'; readonly missingOk: boolean };
 }
 
 export function buildClientVerifier(input: ClientVerifierInput): CertificateVerifier {
   return new CertificateVerifier({
     trustAnchors: input.anchors,
     crls: input.crls,
-    revocationCheck: input.crlChecking ? 'crl-strict' : 'none',
+    revocationCheck: input.ocsp ? 'ocsp' : input.crlChecking ? 'crl-strict' : 'none',
+    crlMode: 'crl-strict',
+    ...(input.ocsp ? { ocspResponder: input.ocsp.responder, ocspScope: input.ocsp.scope, missingOcspOk: input.ocsp.missingOk } : {}),
     revocationScope: input.revocationScope,
     missingCrlOk: input.missingCrlOk,
     maxDepth: input.maxDepth,

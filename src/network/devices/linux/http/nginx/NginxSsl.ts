@@ -3,7 +3,7 @@ export interface NginxSslDirective {
   readonly args: readonly string[];
 }
 
-type SslDirectiveKind = 'str' | 'flag' | 'size' | 'num' | 'sec' | 'enum' | 'bitmask' | 'strArray' | 'keyval' | 'sessionCache';
+type SslDirectiveKind = 'url' | 'ocspEnum' | 'ocspCache' | 'str' | 'flag' | 'size' | 'num' | 'sec' | 'enum' | 'bitmask' | 'strArray' | 'keyval' | 'sessionCache';
 
 interface SslDirectiveSpec {
   readonly kind: SslDirectiveKind;
@@ -35,6 +35,10 @@ const SSL_DIRECTIVE_SPECS: Readonly<Record<string, SslDirectiveSpec>> = {
   ssl_stapling: { kind: 'flag', ...ONE },
   ssl_stapling_file: { kind: 'str', ...ONE },
   ssl_stapling_verify: { kind: 'flag', ...ONE },
+  ssl_stapling_responder: { kind: 'url', ...ONE },
+  ssl_ocsp: { kind: 'ocspEnum', ...ONE },
+  ssl_ocsp_responder: { kind: 'url', ...ONE },
+  ssl_ocsp_cache: { kind: 'ocspCache', ...ONE },
   ssl_early_data: { kind: 'flag', ...ONE },
   ssl_conf_command: { kind: 'keyval', minArgs: 2, maxArgs: 2 },
   ssl_reject_handshake: { kind: 'flag', ...ONE },
@@ -54,6 +58,8 @@ const VERIFY_CLIENT_VALUES = ['off', 'on', 'optional', 'optional_no_ca'] as cons
 export type NginxVerifyClient = (typeof VERIFY_CLIENT_VALUES)[number];
 
 const PAGE_SIZE = 4096;
+const OCSP_VALUES = ['off', 'on', 'leaf'] as const;
+export type NginxOcspMode = (typeof OCSP_VALUES)[number];
 
 function isDecimal(text: string): boolean {
   return /^\d+$/.test(text);
@@ -132,9 +138,26 @@ export function checkSslDirective(name: string, args: readonly string[], already
     }
     case 'sessionCache':
       return checkSessionCache(args);
+    case 'ocspEnum':
+      return (OCSP_VALUES as readonly string[]).includes(args[0]) ? null : `invalid value "${args[0]}"`;
+    case 'ocspCache':
+      return checkOcspCache(args[0]);
+    case 'url':
+      return /^http:\/\//i.test(args[0]) ? null : `invalid URL prefix in "${args[0]}"`;
     default:
       return null;
   }
+}
+
+function checkOcspCache(item: string): string | null {
+  if (item === 'off') return null;
+  if (item.length <= 'shared:'.length || !item.startsWith('shared:')) return `invalid OCSP cache "${item}"`;
+  const rest = item.slice('shared:'.length);
+  const colon = rest.indexOf(':');
+  if (colon <= 0) return `invalid OCSP cache "${item}"`;
+  const size = parseNginxSize(rest.slice(colon + 1));
+  if (size === null) return `invalid OCSP cache "${item}"`;
+  return size < 8 * PAGE_SIZE ? `OCSP cache "${item}" is too small` : null;
 }
 
 export interface SslSessionCacheSetting {
@@ -194,6 +217,10 @@ export interface NginxSslSettings {
   readonly stapling: boolean;
   readonly staplingFile: string;
   readonly staplingVerify: boolean;
+  readonly staplingResponder: string;
+  readonly ocsp: NginxOcspMode;
+  readonly ocspResponder: string;
+  readonly ocspCache: string | null;
   readonly earlyData: boolean;
   readonly confCommands: readonly (readonly [string, string])[];
   readonly rejectHandshake: boolean;
@@ -223,6 +250,10 @@ interface SslLayer {
   stapling?: boolean;
   staplingFile?: string;
   staplingVerify?: boolean;
+  staplingResponder?: string;
+  ocsp?: NginxOcspMode;
+  ocspResponder?: string;
+  ocspCache?: string;
   earlyData?: boolean;
   confCommands?: (readonly [string, string])[];
   rejectHandshake?: boolean;
@@ -262,6 +293,10 @@ function collectLayer(directives: readonly NginxSslDirective[]): SslLayer {
       case 'ssl_stapling': layer.stapling = flag(d); break;
       case 'ssl_stapling_file': layer.staplingFile = d.args[0]; break;
       case 'ssl_stapling_verify': layer.staplingVerify = flag(d); break;
+      case 'ssl_stapling_responder': layer.staplingResponder = d.args[0]; break;
+      case 'ssl_ocsp': layer.ocsp = d.args[0] as NginxOcspMode; break;
+      case 'ssl_ocsp_responder': layer.ocspResponder = d.args[0]; break;
+      case 'ssl_ocsp_cache': layer.ocspCache = d.args[0]; break;
       case 'ssl_early_data': layer.earlyData = flag(d); break;
       case 'ssl_conf_command': (layer.confCommands ??= []).push([d.args[0], d.args[1]]); break;
       case 'ssl_reject_handshake': layer.rejectHandshake = flag(d); break;
@@ -305,6 +340,10 @@ export function resolveSslSettings(
     stapling: pick('stapling') ?? false,
     staplingFile: pick('staplingFile') ?? '',
     staplingVerify: pick('staplingVerify') ?? false,
+    staplingResponder: pick('staplingResponder') ?? '',
+    ocsp: pick('ocsp') ?? 'off',
+    ocspResponder: pick('ocspResponder') ?? '',
+    ocspCache: pick('ocspCache') ?? null,
     earlyData: pick('earlyData') ?? false,
     confCommands: pick('confCommands') ?? [],
     rejectHandshake: pick('rejectHandshake') ?? false,
@@ -321,6 +360,9 @@ export function sslMergeProblem(settings: NginxSslSettings, serves: boolean): st
   }
   if (settings.verifyClient !== 'off' && settings.clientCertificate === '' && settings.verifyClient !== 'optional_no_ca') {
     return 'no ssl_client_certificate for ssl_verify_client';
+  }
+  if (settings.ocsp !== 'off' && settings.verifyClient === 'optional_no_ca') {
+    return '"ssl_ocsp" is incompatible with "ssl_verify_client optional_no_ca"';
   }
   return null;
 }

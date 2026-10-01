@@ -9,6 +9,7 @@ export interface CurlOptions {
   head: boolean;
   include: boolean;
   insecure: boolean;
+  certStatus: boolean;
   tlsMin: TlsProtocolVersion | null;
   tlsMax: TlsProtocolVersion | null;
   ciphers: string | null;
@@ -79,6 +80,7 @@ const SHORT_WITH_ARG = 'owXdHuAbceDTFmE';
 const LONG_NO_ARG: Record<string, string> = {
   head: 'I',
   insecure: 'k',
+  'cert-status': 'cert-status',
   silent: 's',
   'show-error': 'S',
   verbose: 'v',
@@ -203,6 +205,7 @@ function defaults(): CurlOptions {
     head: false,
     include: false,
     insecure: false,
+    certStatus: false,
     tlsMin: null,
     tlsMax: null,
     ciphers: null,
@@ -389,6 +392,7 @@ function applyFlag(opts: CurlOptions, letter: string): void {
     case 'V': opts.version = true; break;
     case 'retry-all-errors': opts.retryAllErrors = true; break;
     case 'k': opts.insecure = true; break;
+    case 'cert-status': opts.certStatus = true; break;
     case 'tlsv1.0': opts.tlsMin = '1.0'; break;
     case 'tlsv1.1': opts.tlsMin = '1.1'; break;
     case 'tlsv1.2': opts.tlsMin = '1.2'; break;

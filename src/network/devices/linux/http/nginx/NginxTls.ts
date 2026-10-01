@@ -1,6 +1,7 @@
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { CertificateRevocationList } from '@/network/pki/CertificateRevocationList';
-import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
+import type { OcspStapleSource } from '@/network/tls/ocspStapling';
+import { OcspClient, WireOcspResponder, DEFAULT_OCSP_POLICY, ocspUrlOf, parseOcspUrl, type OcspWireDeps } from '@/network/http/ocsp/OcspHttpClient';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import {
@@ -41,7 +42,8 @@ export interface ServerTls {
   readonly sessionTickets: boolean;
   readonly extendedMasterSecret: boolean | undefined;
   readonly ticketKey: Uint8Array | undefined;
-  readonly staple: SignedOcspResponse | undefined;
+  readonly staple: OcspStapleSource | undefined;
+  readonly warnings: readonly string[];
   readonly dhParameters: DhParameters | undefined;
   readonly fingerprint: string;
 }
@@ -65,7 +67,9 @@ function readPasswords(path: string | null, files: NginxTlsFiles): readonly stri
   return text.split('\n').map((line) => line.replace(/\r$/, '')).filter((line) => line.length > 0);
 }
 
-export function loadServerTls(server: NginxServerBlock, files: NginxTlsFiles): ServerTls | TlsProblem {
+export function loadServerTls(
+  server: NginxServerBlock, files: NginxTlsFiles, wire: OcspWireDeps | null = null,
+): ServerTls | TlsProblem {
   const settings = server.ssl;
   const fail = (message: string): TlsProblem => ({ error: `nginx: [emerg] ${message}` });
 
@@ -142,9 +146,19 @@ export function loadServerTls(server: NginxServerBlock, files: NginxTlsFiles): S
       }
       crls = crlsFromPem(pem);
     }
+    const anchors = anchorsFromPem(...anchorTexts);
+    const ocsp = settings.ocsp !== 'off' && wire
+      ? {
+        responder: new WireOcspResponder(new OcspClient(wire, {
+          ...DEFAULT_OCSP_POLICY, responderUrl: settings.ocspResponder === '' ? null : settings.ocspResponder,
+          overrideResponder: settings.ocspResponder !== '', trusted: anchors,
+        })),
+        scope: settings.ocsp === 'leaf' ? 'leaf' as const : 'chain' as const, missingOk: false,
+      }
+      : undefined;
     verifier = buildClientVerifier({
-      anchors: anchorsFromPem(...anchorTexts), crls, crlChecking: settings.crl !== '',
-      revocationScope: 'chain', missingCrlOk: false, maxDepth: settings.verifyDepth,
+      anchors, crls, crlChecking: settings.crl !== '',
+      revocationScope: 'chain', missingCrlOk: false, maxDepth: settings.verifyDepth, ocsp,
     });
   }
 
@@ -178,7 +192,8 @@ export function loadServerTls(server: NginxServerBlock, files: NginxTlsFiles): S
     ticketKey = ticketKeyFromFile(text);
   }
 
-  let staple: SignedOcspResponse | undefined;
+  let staple: OcspStapleSource | undefined;
+  const warnings: string[] = [];
   if (settings.stapling && settings.staplingFile !== '') {
     const pem = files.read(settings.staplingFile);
     if (pem === null) {
@@ -192,6 +207,29 @@ export function loadServerTls(server: NginxServerBlock, files: NginxTlsFiles): S
     staple = parsed.singles.find((single) => single.tbs.serialNumber === leafChain[0]?.serialNumber);
     if (!staple) {
       return fail(`"ssl_stapling_file" "${settings.staplingFile}" holds no response for the server certificate`);
+    }
+  } else if (settings.stapling && wire) {
+    const leaf = leafChain[0];
+    const trustedText = settings.trustedCertificate === '' ? null : files.read(settings.trustedCertificate);
+    const trusted = trustedText === null ? [] : anchorsFromPem(trustedText);
+    const issuer = leafChain.slice(1).find((c) => c.subject === leaf.issuer) ?? trusted.find((c) => c.subject === leaf.issuer);
+    const name = settings.certificates[0];
+    const url = settings.staplingResponder !== '' ? settings.staplingResponder : ocspUrlOf(leaf);
+    if (!issuer) {
+      warnings.push(`"ssl_stapling" ignored, issuer certificate not found for certificate "${name}"`);
+    } else if (url === null) {
+      warnings.push(`"ssl_stapling" ignored, no OCSP responder URL in the certificate "${name}"`);
+    } else if (parseOcspUrl(url) === null) {
+      warnings.push(`"ssl_stapling" ignored, invalid URL prefix in OCSP responder "${url}" in the certificate "${name}"`);
+    } else {
+      const client = new OcspClient(wire, {
+        ...DEFAULT_OCSP_POLICY, responderUrl: url, overrideResponder: true,
+        trusted: [issuer, ...trusted], verifySignature: settings.staplingVerify, useNonce: false,
+      });
+      staple = (cert) => {
+        const found = client.lookup(cert);
+        return found.ok ? found.single : null;
+      };
     }
   }
 
@@ -227,14 +265,14 @@ export function loadServerTls(server: NginxServerBlock, files: NginxTlsFiles): S
     leafChain[0]?.serialNumber ?? '', leafChain[0]?.notAfter ?? '', key?.material ?? '', protocols.join(','), finalCipherList,
     preferServerCiphers, finalGroups.join(','), sessionTickets, settings.sessionTimeout,
     settings.sessionCache.builtin, settings.sessionCache.shared?.name ?? '', settings.earlyData,
-    settings.bufferSize, settings.verifyClient, settings.verifyDepth, settings.rejectHandshake,
-    ticketKey ? bytesToHexText(ticketKey) : '', staple ? staple.signature : '', tls13Ciphersuites ?? '',
+    settings.bufferSize, settings.ocsp, settings.ocspResponder, settings.staplingResponder, settings.staplingVerify, settings.verifyClient, settings.verifyDepth, settings.rejectHandshake,
+    ticketKey ? bytesToHexText(ticketKey) : '', typeof staple === 'object' ? staple.signature : staple ? 'dynamic' : '', tls13Ciphersuites ?? '',
     dhParameters ? dhParameters.prime.toString(16).slice(0, 16) : '', extendedMasterSecret ?? '',
   ].join('|');
 
   return {
     settings, identity: key ? { cert: leafChain[0], key, chain: leafChain.slice(1) } : null, verifier, protocols,
     cipherList: finalCipherList, tls13Ciphersuites, groups: finalGroups, preferServerCiphers,
-    sessionTickets, extendedMasterSecret, ticketKey, staple, dhParameters, fingerprint,
+    sessionTickets, extendedMasterSecret, ticketKey, staple, dhParameters, fingerprint, warnings,
   };
 }

@@ -4,6 +4,7 @@ import { CertificateVerifier } from '../pki/CertificateVerifier';
 import { runTlsHandshakeOverSocket } from '../http/https/TlsRecordWire';
 import type { TcpStack } from '../tcp/TcpStack';
 import type { X509Certificate } from '../pki/X509Certificate';
+import type { SignedOcspResponse } from '../pki/OcspResponder';
 
 export interface TlsProbeOutcome {
   readonly ok: boolean;
@@ -13,6 +14,7 @@ export interface TlsProbeOutcome {
   readonly protocolVersion?: string | null;
   readonly alert?: string | null;
   readonly verified: boolean;
+  readonly staple?: SignedOcspResponse | null;
 }
 
 export interface TlsProbeOptions {
@@ -21,6 +23,7 @@ export interface TlsProbeOptions {
   readonly now?: number;
   readonly versions?: readonly TlsProtocolVersion[];
   readonly cipherList?: string;
+  readonly requestStatus?: boolean;
 }
 
 export function probeTlsPeer(
@@ -38,6 +41,7 @@ export function probeTlsPeer(
     alpn: ['http/1.1'],
     ...(options.versions ? { versions: options.versions } : {}),
     ...(options.cipherList ? { cipherList: options.cipherList } : {}),
+    ...(options.requestStatus ? { collectOcspStaple: true } : {}),
   });
 
   try {
@@ -64,5 +68,5 @@ export function probeTlsPeer(
       certificate: null, cipherSuite, protocolVersion, alert, verified: false,
     };
   }
-  return { ok: true, certificate, cipherSuite, protocolVersion, alert, verified: succeeded };
+  return { ok: true, certificate, cipherSuite, protocolVersion, alert, verified: succeeded, staple: session.receivedStaple };
 }

@@ -24,6 +24,7 @@ import { MAX_PORT, PortNumber } from '@/network/core/ports/PortNumber';
 import type { CurlHost } from './CurlHost';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { performCurlFtp } from './CurlFtp';
+import { judgeCertStatus } from './CurlCertStatus';
 import { loadCurlClientCredential } from './CurlClientCertificate';
 import { parseGroupList } from '@/network/tls/legacy/sslConf';
 
@@ -487,7 +488,7 @@ export async function performCurlRequest(
         }
         const credential = clientCredential.credential;
         session = new HttpsClientSession(host.tcpStack(), address, url.port, {
-          verifier, ...tlsPolicy.config,
+          verifier, ...tlsPolicy.config, ...(opts.certStatus ? { collectOcspStaple: true } : {}),
           ...(credential ? { clientCert: credential.cert, clientChain: credential.chain, clientPrivateKey: credential.key } : {}),
         });
         session.adopt(porte.socket);
@@ -495,6 +496,9 @@ export async function performCurlRequest(
         const handshake = session.handshake;
         const peerAlert = handshake?.peerAlert ?? null;
         const localReason = handshake?.result === 'failure' ? handshake.peerVerificationReason : null;
+        const statusProblem = opts.certStatus && result.ok
+          ? judgeCertStatus(handshake?.receivedStaple ?? null, session.peerCertificate, handshake?.peerCertificateChain ?? [], anchors, Date.now())
+          : null;
         if (!result.ok || !result.response) {
           if (peerAlert !== null) {
             failure = {
@@ -520,6 +524,11 @@ export async function performCurlRequest(
               url, remoteIp, method, numRedirects: redirects, trace,
             };
           }
+        } else if (statusProblem !== null) {
+          failure = {
+            ok: false, code: 91, message: `curl: (91) ${statusProblem}`,
+            url, remoteIp, method, numRedirects: redirects, trace,
+          };
         } else {
           const peer = session.peerCertificate;
           if (peer && !opts.insecure && !certificateMatchesHostname(peer, url.host)) {

@@ -44,6 +44,7 @@ import type { TrafficProtection } from './trafficProtection';
 import { suiteInfo } from './suite13';
 import type { Tls13Hash } from './hkdf';
 import { stapleAlert } from './ocspStapling';
+import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
 import { isValidMaxFragmentLength, DEFAULT_MAX_FRAGMENT } from './maxFragment';
 import type { ResumableLegacySession } from './legacy/legacySessions';
 import { randomHex } from './legacy/LegacyHandshake';
@@ -97,6 +98,8 @@ export interface TlsClientConfig {
   readonly requestOcspStaple?: boolean;
   /** RFC 7633 must-staple behaviour: a missing or invalid staple fails with bad_certificate_status_response. */
   readonly requireOcspStaple?: boolean;
+  /** Send status_request and keep the staple for the caller to judge (curl --cert-status, s_client -status) instead of aborting. */
+  readonly collectOcspStaple?: boolean;
   /** RFC 6066 §4 — ask the server to limit records to this many bytes. */
   readonly maxFragmentLength?: number;
   /** RFC 8701 — inject GREASE values into the ClientHello lists. */
@@ -128,6 +131,8 @@ export class TlsClientSession {
   /** A ticket received via `receiveSessionTicket()`, ready to resume a future session. */
   receivedTicket: SessionTicket | null = null;
   peerCertificate: X509Certificate | null = null;
+  peerCertificateChain: readonly X509Certificate[] = [];
+  receivedStaple: SignedOcspResponse | null = null;
   peerVerified = false;
   peerVerificationReason: string | null = null;
   /**
@@ -268,7 +273,7 @@ export class TlsClientSession {
         signatureAlgorithms: this.withGrease(SUPPORTED_SIGNATURE_SCHEMES, GREASE_NAME),
         alpn: this.config.alpn ? this.withGrease(this.config.alpn, GREASE_NAME) : undefined,
         serverName: this.config.serverName,
-        ...(this.config.requestOcspStaple || this.config.requireOcspStaple ? { statusRequest: true } : {}),
+        ...(this.config.requestOcspStaple || this.config.requireOcspStaple || this.config.collectOcspStaple ? { statusRequest: true } : {}),
         ...(isValidMaxFragmentLength(this.config.maxFragmentLength) ? { maxFragmentLength: this.config.maxFragmentLength } : {}),
         preSharedKey: ticket?.ticket,
         pskKeyExchangeModes: ticket ? ['psk_dhe_ke'] : undefined,
@@ -365,7 +370,8 @@ export class TlsClientSession {
       clientExtensions: this.legacyExtensions(),
       session: this.config.legacySession ?? null,
       allowUnsafeRenegotiation: this.config.allowUnsafeLegacyRenegotiation === true,
-      requestStatus: this.config.requestOcspStaple === true || this.config.requireOcspStaple === true,
+      requestStatus: this.config.requestOcspStaple === true || this.config.requireOcspStaple === true || this.config.collectOcspStaple === true,
+      enforceStaple: this.config.requestOcspStaple === true || this.config.requireOcspStaple === true,
       requireStaple: this.config.requireOcspStaple === true,
       requestedMaxFragment: isValidMaxFragmentLength(this.config.maxFragmentLength) ? this.config.maxFragmentLength : null,
       now: Date.now,
@@ -377,6 +383,8 @@ export class TlsClientSession {
     const legacy = this.legacy!;
     const flight = legacy.handle(incoming);
     this.peerCertificate = legacy.peerCertificate;
+    this.peerCertificateChain = legacy.peerCertificateChain;
+    this.receivedStaple = legacy.receivedStaple;
     this.peerVerified = legacy.peerVerified;
     this.peerVerificationReason = legacy.peerVerificationReason;
     this.negotiatedVersion = legacy.negotiatedVersion;
@@ -470,6 +478,8 @@ export class TlsClientSession {
     const leafCert = certificate.certificateList[0];
     if (!leafCert) return this.fail('certificate_unknown');
     this.peerCertificate = leafCert;
+    this.peerCertificateChain = certificate.certificateList;
+    this.receivedStaple = certificate.ocspStaple ?? null;
     const verification = this.config.verifier.verify(
       leafCert, this.config.serverName, certificate.certificateList.slice(1), 'serverAuth', this.policy.securityLevel,
     );

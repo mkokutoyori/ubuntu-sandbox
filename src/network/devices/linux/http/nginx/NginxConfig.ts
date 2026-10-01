@@ -94,7 +94,6 @@ const KNOWN_UNSUPPORTED = new Set([
   'fastcgi_pass', 'fastcgi_param', 'fastcgi_index', 'include_fastcgi',
   'rewrite', 'limit_req', 'limit_req_zone', 'limit_conn', 'limit_conn_zone',
   'auth_basic', 'auth_basic_user_file',
-  'ssl_ocsp', 'ssl_ocsp_responder', 'ssl_ocsp_cache', 'ssl_stapling_responder',
   'stub_status', 'sub_filter',
   'geo', 'map', 'split_clients', 'perl', 'lua_package_path',
 ]);

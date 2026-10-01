@@ -30,6 +30,9 @@ export interface CertificateVerifierOptions {
   readonly maxDepth?: number;
   readonly revocationScope?: 'leaf' | 'chain';
   readonly missingCrlOk?: boolean;
+  readonly crlMode?: 'crl' | 'crl-strict';
+  readonly ocspScope?: 'leaf' | 'chain';
+  readonly missingOcspOk?: boolean;
 }
 
 export class CertificateVerifier {
@@ -42,6 +45,9 @@ export class CertificateVerifier {
   private readonly maxDepth: number | undefined;
   private readonly revocationScope: 'leaf' | 'chain';
   private readonly missingCrlOk: boolean;
+  private readonly crlMode: 'crl' | 'crl-strict';
+  private readonly ocspScope: 'leaf' | 'chain';
+  private readonly missingOcspOk: boolean;
 
   constructor(opts: CertificateVerifierOptions) {
     this.trustAnchors = opts.trustAnchors;
@@ -53,6 +59,9 @@ export class CertificateVerifier {
     this.maxDepth = opts.maxDepth;
     this.revocationScope = opts.revocationScope ?? 'chain';
     this.missingCrlOk = opts.missingCrlOk ?? false;
+    this.crlMode = opts.crlMode ?? (this.revocationCheck === 'crl-strict' ? 'crl-strict' : 'crl');
+    this.ocspScope = opts.ocspScope ?? 'leaf';
+    this.missingOcspOk = opts.missingOcspOk ?? false;
   }
 
   verify(
@@ -74,12 +83,14 @@ export class CertificateVerifier {
     }
     if (this.revocationCheck === 'ocsp') {
       if (!this.ocspResponder) return { ok: false, reason: 'crl-stale' };
-      const resp = this.ocspResponder.check(cert, now);
-      if (resp.status === 'revoked') return { ok: false, reason: 'revoked' };
-      if (resp.status === 'unknown') return { ok: false, reason: 'unknown' };
-      return { ok: true };
+      const members = this.ocspScope === 'leaf' || anchorIsLeaf(cert, issuer) ? [cert] : [cert, ...path.intermediates];
+      for (const member of members) {
+        const resp = this.ocspResponder.check(member, now);
+        if (resp.status === 'revoked') return { ok: false, reason: 'revoked' };
+        if (resp.status === 'unknown' && !this.missingOcspOk) return { ok: false, reason: 'unknown' };
+      }
     }
-    if (this.revocationCheck !== 'none') {
+    if (this.revocationCheck !== 'none' && (this.revocationCheck !== 'ocsp' || this.crls.length > 0)) {
       const members = anchorIsLeaf(cert, issuer) ? [cert] : [cert, ...path.intermediates, issuer];
       const issuers = anchorIsLeaf(cert, issuer) ? [issuer] : [...path.intermediates, issuer, issuer];
       const checked = this.revocationScope === 'leaf' ? 1 : members.length;
@@ -93,9 +104,9 @@ export class CertificateVerifier {
 
   private crlFailure(cert: X509Certificate, issuer: X509Certificate, now: number): VerificationFailure | null {
     const crl = this.crls.find((candidate) => candidate.issuer === cert.issuer);
-    if (!crl) return this.revocationCheck === 'crl-strict' && !this.missingCrlOk ? { ok: false, reason: 'crl-stale' } : null;
+    if (!crl) return this.crlMode === 'crl-strict' && !this.missingCrlOk ? { ok: false, reason: 'crl-stale' } : null;
     if (!crl.isValidSignature(issuer.publicKey)) return { ok: false, reason: 'crl-untrusted' };
-    if (!crl.isFresh(now) && this.revocationCheck === 'crl-strict') return { ok: false, reason: 'crl-stale' };
+    if (!crl.isFresh(now) && this.crlMode === 'crl-strict') return { ok: false, reason: 'crl-stale' };
     return crl.contains(cert.serialNumber) ? { ok: false, reason: 'revoked' } : null;
   }
 

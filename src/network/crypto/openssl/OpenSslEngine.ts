@@ -459,13 +459,56 @@ function renderText(cert: X509Certificate): string[] {
     '                    <simulated key material — this build does not compute',
     '                     real RSA moduli; see docs/PRD-OpenSSL.md §3.2>',
   ];
-  const san = cert.extensions?.subjectAltName;
-  if (san && san.length > 0) {
-    l.push('        X509v3 extensions:');
-    l.push('            X509v3 Subject Alternative Name:');
-    l.push(`                ${san.join(', ')}`);
+  const ext = cert.extensions;
+  const critical = new Set(ext?.criticalExtensions ?? []);
+  const mark = (name: string): string => (critical.has(name) ? ' critical' : '');
+  const lines: string[] = [];
+  if (ext?.basicConstraints) {
+    lines.push(`            X509v3 Basic Constraints:${mark('basicConstraints')}`);
+    lines.push(`                CA:${ext.basicConstraints.cA ? 'TRUE' : 'FALSE'}${ext.basicConstraints.pathLenConstraint !== undefined ? `, pathlen:${ext.basicConstraints.pathLenConstraint}` : ''}`);
   }
+  if (ext?.keyUsage && ext.keyUsage.length > 0) {
+    lines.push(`            X509v3 Key Usage:${mark('keyUsage')}`, `                ${ext.keyUsage.join(', ')}`);
+  }
+  if (ext?.extKeyUsage && ext.extKeyUsage.length > 0) {
+    lines.push(`            X509v3 Extended Key Usage:${mark('extendedKeyUsage')}`, `                ${ext.extKeyUsage.join(', ')}`);
+  }
+  if (ext?.subjectAltName && ext.subjectAltName.length > 0) {
+    lines.push('            X509v3 Subject Alternative Name:', `                ${ext.subjectAltName.join(', ')}`);
+  }
+  if (ext?.authorityInfoAccess && ext.authorityInfoAccess.length > 0) {
+    lines.push('            Authority Information Access:',
+      ...ext.authorityInfoAccess.map((a) => `                ${a.method === 'OCSP' ? 'OCSP' : 'CA Issuers'} - URI:${a.uri}`));
+  }
+  if (lines.length > 0) l.push('        X509v3 extensions:', ...lines);
   return l;
+}
+
+function extensionsFromFile(
+  host: OpenSslHost, opts: Map<string, string | true>,
+  csr: { readonly publicKey: { readonly material: string }; readonly extensions?: { readonly subjectAltName?: readonly string[] } },
+  issuer: X509Certificate,
+): { readonly extensions: CertificateExtensions | undefined } | { readonly error: string } {
+  let extensions: CertificateExtensions | undefined = csr.extensions?.subjectAltName
+    ? { subjectAltName: csr.extensions.subjectAltName }
+    : undefined;
+  const extfile = opts.get('-extfile');
+  if (typeof extfile !== 'string') return { extensions };
+  const configText = host.readFile(extfile);
+  if (configText === null) return { error: `Can't open "${extfile}" for reading, No such file or directory` };
+  const config = parseOpensslConfig(configText);
+  const requested = opts.get('-extensions');
+  const sectionName = typeof requested === 'string'
+    ? requested
+    : config.sections.get('default')?.find(([key]) => key === 'extensions')?.[1] ?? 'default';
+  const entries = config.sections.get(sectionName);
+  if (entries === undefined) {
+    return { error: `Error checking extension section ${sectionName}\nerror in extension: no such section ${sectionName}` };
+  }
+  const built = buildExtensions(entries, config, { publicKey: csr.publicKey, issuer });
+  if (built.ok === false) return { error: `Error adding extensions from section ${sectionName}\n${built.error}` };
+  extensions = built.extensions;
+  return { extensions };
 }
 
 function signCsr(
@@ -490,26 +533,9 @@ function signCsr(
   if (!caKey) return fail('unable to load CA Private Key');
 
   const jours = Number(opts.get('-days') ?? 30);
-  let extensions: CertificateExtensions | undefined = csr.extensions?.subjectAltName
-    ? { subjectAltName: csr.extensions.subjectAltName }
-    : undefined;
-  const extfile = opts.get('-extfile');
-  if (typeof extfile === 'string') {
-    const configText = host.readFile(extfile);
-    if (configText === null) return fail(`Can't open "${extfile}" for reading, No such file or directory`);
-    const config = parseOpensslConfig(configText);
-    const requested = opts.get('-extensions');
-    const sectionName = typeof requested === 'string'
-      ? requested
-      : config.sections.get('default')?.find(([key]) => key === 'extensions')?.[1] ?? 'default';
-    const entries = config.sections.get(sectionName);
-    if (entries === undefined) {
-      return fail(`Error checking extension section ${sectionName}\nerror in extension: no such section ${sectionName}`);
-    }
-    const built = buildExtensions(entries, config, { publicKey: csr.publicKey, issuer: ca });
-    if (built.ok === false) return fail(`Error adding extensions from section ${sectionName}\n${built.error}`);
-    extensions = built.extensions;
-  }
+  const loaded = extensionsFromFile(host, opts, csr, ca);
+  if ('error' in loaded) return fail(loaded.error);
+  const extensions = loaded.extensions;
   const champs = {
     version: 3 as const,
     serialNumber: bytesToHex(host.randomBytes(8)),
@@ -849,6 +875,20 @@ function repeatedOption(argv: readonly string[], name: string): string[] {
   return out;
 }
 
+function ocspResponseText(response: OcspResponseMessage): string[] {
+  const lines = ['OCSP Response Data:', `    OCSP Response Status: ${response.status} (0x${OCSP_RESPONSE_STATUS_CODE[response.status].toString(16)})`];
+  if (response.status === 'successful') {
+    lines.push('    Response Type: Basic OCSP Response', '    Version: 1 (0x0)',
+      `    Responder Id: ${response.responder ?? ''}`, `    Produced At: ${opensslDate(response.producedAt ?? 0)}`, '    Responses:');
+    for (const single of response.singles) {
+      lines.push('    Certificate ID:', `      Issuer: ${single.tbs.issuer}`, `      Serial Number: ${single.tbs.serialNumber}`,
+        `    Cert Status: ${single.tbs.status}`, `    This Update: ${opensslDate(single.tbs.thisUpdate)}`,
+        `    Next Update: ${opensslDate(single.tbs.nextUpdate)}`);
+    }
+  }
+  return lines;
+}
+
 function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const { opts } = parseArgs('ocsp', argv);
   const text = (name: string): string | null => {
@@ -921,20 +961,6 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     });
     void request;
     return { text: lines, ok };
-  };
-
-  const printResponse = (response: OcspResponseMessage): string[] => {
-    const lines = ['OCSP Response Data:', `    OCSP Response Status: ${response.status} (0x${OCSP_RESPONSE_STATUS_CODE[response.status].toString(16)})`];
-    if (response.status === 'successful') {
-      lines.push('    Response Type: Basic OCSP Response', '    Version: 1 (0x0)',
-        `    Responder Id: ${response.responder ?? ''}`, `    Produced At: ${opensslDate(response.producedAt ?? 0)}`, '    Responses:');
-      for (const single of response.singles) {
-        lines.push(`    Certificate ID:`, `      Issuer: ${single.tbs.issuer}`, `      Serial Number: ${single.tbs.serialNumber}`,
-          `    Cert Status: ${single.tbs.status}`, `    This Update: ${opensslDate(single.tbs.thisUpdate)}`,
-          `    Next Update: ${opensslDate(single.tbs.nextUpdate)}`);
-      }
-    }
-    return lines;
   };
 
   const finish = (code: number): OpenSslResult => ({ output: out.join('\n'), stderr: stderr.join('\n'), exitCode: code });
@@ -1026,7 +1052,7 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     out.push(`Responder Error: ${response.status} (${OCSP_RESPONSE_STATUS_CODE[response.status]})`);
     return finish(1);
   }
-  if (opts.has('-text')) out.push(...printResponse(response));
+  if (opts.has('-text')) out.push(...ocspResponseText(response));
   if (reqin !== null && text('-index') !== null && respin === null) return finish(0);
 
   let code = 0;
@@ -1114,6 +1140,8 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const serie = (serieCourante + 1).toString(16).toUpperCase().padStart(4, '0');
   host.writeFile(CA_SERIAL, serie + '\n');
 
+  const caExtensions = extensionsFromFile(host, opts, csr, ca);
+  if ('error' in caExtensions) return fail(caExtensions.error);
   const jours = Number(opts.get('-days') ?? 365);
   const champs = {
     version: 3 as const,
@@ -1124,9 +1152,7 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     notAfter: host.now() + jours * 24 * 3600 * 1000,
     publicKey: csr.publicKey,
     signatureAlgorithm: 'sha256WithRSAEncryption' as const,
-    extensions: csr.extensions?.subjectAltName
-      ? { subjectAltName: csr.extensions.subjectAltName }
-      : undefined,
+    extensions: caExtensions.extensions,
   };
   const cert: X509Certificate = { ...champs, signature: PkiKeyPair.sign(cleCa, tbsPayload(champs)) };
 
@@ -1481,7 +1507,10 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     const list = createCipherList(cipherSpec, { isAvailable: isImplementedCipher });
     if (list.ok === false) return fail(`Error setting cipher list\n${list.error}`, 1);
   }
-  const probeOptions = { versions, ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}) };
+  const probeOptions = {
+    versions, ...(typeof cipherSpec === 'string' ? { cipherList: cipherSpec } : {}),
+    ...(opts.has('-status') ? { requestStatus: true } : {}),
+  };
   const sonde = host.tlsPeerCertificate?.(
     ip, port, typeof nomServeur === 'string' ? nomServeur : undefined, probeOptions);
 
@@ -1508,6 +1537,16 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
       + 'pass -CAfile to display a known anchor; see docs/PRD-OpenSSL.md §P7)');
   }
   lignes.push('---');
+  if (opts.has('-status') && echecPoignee === null) {
+    const staple = sonde && sonde.ok ? sonde.staple ?? null : null;
+    if (staple === null) {
+      lignes.push('OCSP response: no response sent');
+    } else {
+      lignes.push('OCSP response: ', '======================================',
+        ...ocspResponseText({ status: 'successful', responder: staple.tbs.issuer, producedAt: staple.tbs.thisUpdate, singles: [staple] }),
+        '======================================');
+    }
+  }
   if (echecPoignee !== null) {
     lignes.push('New, (NONE), Cipher is (NONE)');
   } else {

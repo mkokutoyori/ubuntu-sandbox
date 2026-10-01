@@ -532,6 +532,7 @@ export interface LegacyClientSetup {
   readonly allowUnsafeRenegotiation: boolean;
   readonly requestStatus: boolean;
   readonly requireStaple: boolean;
+  readonly enforceStaple: boolean;
   readonly requestedMaxFragment: number | null;
   readonly now: () => number;
 }
@@ -542,6 +543,8 @@ export class LegacyClientHandshake {
   result: 'success' | 'failure' | null = null;
   lastAlert: TlsAlert | null = null;
   peerCertificate: X509Certificate | null = null;
+  peerCertificateChain: readonly X509Certificate[] = [];
+  receivedStaple: SignedOcspResponse | null = null;
   peerVerified = false;
   peerVerificationReason: string | null = null;
   traffic: LegacyTraffic | null = null;
@@ -641,6 +644,8 @@ export class LegacyClientHandshake {
     const leaf = certificate.certificateList[0];
     if (!leaf) return this.fail('bad_certificate');
     this.peerCertificate = leaf;
+    this.peerCertificateChain = certificate.certificateList;
+    this.receivedStaple = certificateStatus?.response ?? null;
     const verification = setup.verifier.verify(leaf, setup.serverName, certificate.certificateList.slice(1), 'serverAuth', setup.securityLevel);
     this.peerVerified = verification.ok !== false;
     if (verification.ok === false) {
@@ -653,7 +658,7 @@ export class LegacyClientHandshake {
       const stapleProblem = stapleAlert(
         setup.verifier, leaf, certificate.certificateList.slice(1), certificateStatus?.response, setup.requireStaple,
       );
-      if (stapleProblem !== null) return this.fail(stapleProblem);
+      if (stapleProblem !== null && setup.enforceStaple) return this.fail(stapleProblem);
     }
     if (!suiteMatchesCertificate(leaf, suite)) return this.fail('illegal_parameter');
     if (isForwardSecret(suite) !== (serverKeyExchange !== undefined)) return this.fail('unexpected_message');

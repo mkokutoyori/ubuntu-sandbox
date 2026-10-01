@@ -163,6 +163,13 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
 
     const tls = this.tlsMaterialFor(spec.port);
     if (isApacheTlsProblem(tls)) { this.reportStartupFailure(tls.error); return false; }
+    if (tls !== null) {
+      for (const entry of tls.vhosts) {
+        for (const warning of entry.tls.warnings) {
+          this.host.appendLog(APACHE_ERROR_LOG, `${formatErrorTime(this.host.now())} [ssl:error] [pid 1] ${warning}`);
+        }
+      }
+    }
 
     const session: ApacheSession = tls === null
       ? new Http1ServerSession(
@@ -208,7 +215,10 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
   ): PortTls | ApacheTlsProblem {
     const loaded: { vhost: ApacheVirtualHost; tls: ApacheVhostTls }[] = [];
     for (const vhost of onPort) {
-      const tls = loadVhostTls(vhost, this.host.fs, vhost.protocolSet);
+      const tls = loadVhostTls(vhost, this.host.fs, vhost.protocolSet, {
+        tcpStack: () => this.host.tcpStack(), resolve: (name) => this.host.resolve?.(name) ?? null,
+        now: () => this.host.now().getTime(),
+      });
       if (isApacheTlsProblem(tls)) return tls;
       loaded.push({ vhost, tls });
     }
@@ -240,7 +250,7 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
       protocols: base.protocols, cipherList: base.cipherList, preferServerCiphers: base.preferServerCiphers,
       tls13Ciphersuites: base.tls13Ciphersuites, supportedGroups: base.groups ?? DEFAULT_ECDH_GROUPS,
       extendedMasterSecret: base.extendedMasterSecret,
-      sniCredentials: credentials,
+      sniCredentials: credentials, ocspStaple: base.staple,
       ...resumption,
       ...(verifying
         ? {

@@ -60,7 +60,7 @@ const VALUED: Readonly<Record<string, readonly string[]>> = {
   req: ['-days', '-subj', '-newkey', '-addext', '-extensions', '-reqexts'],
   x509: ['-days', '-CA', '-CAkey', '-CAserial', '-checkend', '-ext', '-set_serial', '-signkey', '-extfile', '-extensions'],
   verify: ['-CAfile', '-CApath', '-untrusted', '-purpose', '-attime', '-CRLfile'],
-  ca: ['-cert', '-keyfile', '-days', '-subj', '-infiles', '-revoke'],
+  ca: ['-cert', '-keyfile', '-days', '-subj', '-infiles', '-revoke', '-extfile', '-extensions'],
   s_client: ['-connect', '-servername', '-CAfile', '-verify', '-port', '-cipher'],
   s_server: ['-accept', '-cert', '-key', '-port'],
   crl: ['-CAfile'],

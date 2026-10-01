@@ -21,6 +21,7 @@ import {
   NGINX_VERSION, NGINX_ACCESS_LOG, NGINX_ERROR_LOG,
   notFoundPage, forbiddenPage, badGatewayPage, sslCertificateErrorPage, sslNoCertificatePage, misdirectedPage,
 } from './NginxFiles';
+import type { OcspWireDeps } from '@/network/http/ocsp/OcspHttpClient';
 import { loadServerTls, isTlsProblem, type ServerTls, type TlsProblem } from './NginxTls';
 import { ephemeralIdentity, resumptionConfig, credentialFor } from '@/network/http/https/ServerTlsToolkit';
 import { clientCertificateVerdict } from './NginxSsl';
@@ -245,6 +246,14 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     return null;
   }
 
+  private reportStartupWarnings(port: PortTls): void {
+    for (const entry of port.servers) {
+      for (const warning of entry.tls.warnings) {
+        this.host.appendLog(NGINX_ERROR_LOG, `${formatErrorTime(this.host.now())} [warn] 0#0: ${warning}`);
+      }
+    }
+  }
+
   /** Le refus de démarrage part aussi dans le journal d'erreurs, comme le vrai. */
   reportStartupFailure(message: string): void {
     this.host.appendLog(NGINX_ERROR_LOG, `${formatErrorTime(this.host.now())} [emerg] 0#0: ${message.replace(/^nginx: \[emerg\] /, '')}`);
@@ -269,6 +278,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
 
     const tls = this.tlsMaterialFor(spec.port);
     if (isTlsProblem(tls)) { this.reportStartupFailure(tls.error); return false; }
+    if (tls !== null) this.reportStartupWarnings(tls);
 
     const session: NginxSession = tls === null
       ? new Http1ServerSession(
@@ -307,10 +317,14 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     return this.loadPortTls(onPort, port);
   }
 
+  private wireDeps(): OcspWireDeps {
+    return { tcpStack: () => this.host.tcpStack(), resolve: (name) => this.host.resolve?.(name) ?? null, now: () => this.host.now().getTime() };
+  }
+
   private loadPortTls(onPort: readonly NginxServerBlock[], port: number): PortTls | TlsProblem {
     const loaded: { block: NginxServerBlock; tls: ServerTls }[] = [];
     for (const block of onPort) {
-      const tls = loadServerTls(block, this.host.fs);
+      const tls = loadServerTls(block, this.host.fs, this.wireDeps());
       if (isTlsProblem(tls)) return tls;
       loaded.push({ block, tls });
     }
@@ -520,7 +534,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
   }
 
   private clientVerifier(server: NginxServerBlock): CertificateVerifier | null {
-    const tls = loadServerTls(server, this.host.fs);
+    const tls = loadServerTls(server, this.host.fs, this.wireDeps());
     return isTlsProblem(tls) ? null : tls.verifier;
   }
 

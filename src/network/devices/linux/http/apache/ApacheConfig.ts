@@ -340,13 +340,17 @@ function sslDirectiveProblem(
   if (spec?.scope === 'global' && inVirtualHost) return `${spec.name} cannot occur within <VirtualHost> section`;
   const name = directive.name.toLowerCase();
   const first = directive.args[0] ?? '';
+  if (name === 'sslstaplingcache' && modulesCharges) {
+    const cache = sessionCacheProblem(first, modulesCharges);
+    if (cache) return cache.replace('SSLSessionCache: ', 'SSLStaplingCache: ').replace(' session cache not supported', ' stapling cache not supported').replace('). Maybe', ') Maybe');
+  }
   if (name === 'sslsessioncache' && modulesCharges) {
     const cache = sessionCacheProblem(first, modulesCharges);
     if (cache) return cache;
   }
   const FILE_DIRECTIVES = new Set([
     'sslcertificatefile', 'sslcertificatekeyfile', 'sslcertificatechainfile', 'sslcacertificatefile',
-    'sslcarevocationfile', 'sslcadnrequestfile', 'sslsessionticketkeyfile',
+    'sslcarevocationfile', 'sslcadnrequestfile', 'sslsessionticketkeyfile', 'sslocsprespondercertificatefile',
   ]);
   const DIRECTORY_DIRECTIVES = new Set(['sslcacertificatepath', 'sslcarevocationpath', 'sslcadnrequestpath']);
   if (FILE_DIRECTIVES.has(name)) {

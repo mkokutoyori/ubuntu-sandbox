@@ -10,6 +10,8 @@ import { applySslConfCommand, createSslConfState, effectiveProtocols, formatSslC
 import {
   anchorsFromPem, buildClientVerifier, crlsFromPem, ticketKeyFromFile, type ServerIdentity,
 } from '@/network/http/https/ServerTlsToolkit';
+import { OcspClient, WireOcspResponder, DEFAULT_OCSP_POLICY, ocspUrlOf, type OcspWireDeps } from '@/network/http/ocsp/OcspHttpClient';
+import type { OcspStapleSource } from '@/network/tls/ocspStapling';
 import type { ApacheVirtualHost } from './ApacheConfig';
 import { contiguousProtocols, type ApacheProtocol, type ApacheSslSettings } from './ApacheSsl';
 
@@ -38,6 +40,8 @@ export interface ApacheVhostTls {
   readonly sessionTickets: boolean;
   readonly ticketKey: Uint8Array | undefined;
   readonly extendedMasterSecret: boolean | undefined;
+  readonly staple: OcspStapleSource | undefined;
+  readonly warnings: readonly string[];
   readonly fingerprint: string;
 }
 
@@ -50,7 +54,7 @@ export function vhostIdentifier(vhost: ApacheVirtualHost): string {
 }
 
 export function loadVhostTls(
-  vhost: ApacheVirtualHost, files: ApacheTlsFiles, protocolSetByVhost: boolean,
+  vhost: ApacheVirtualHost, files: ApacheTlsFiles, protocolSetByVhost: boolean, wire: OcspWireDeps | null = null,
 ): ApacheVhostTls | ApacheTlsProblem {
   const settings = vhost.ssl;
   const id = vhostIdentifier(vhost);
@@ -140,10 +144,28 @@ export function loadVhostTls(
       return fail(`AH01899: Host ${id}: CRL checking has been enabled, but neither SSLCARevocationFile `
         + 'nor SSLCARevocationPath is configured');
     }
+    const anchors = anchorsFromPem(...anchorTexts);
+    let responderTrust = anchors;
+    if (settings.ocspResponderCertificateFile !== null) {
+      const text = files.read(settings.ocspResponderCertificateFile);
+      if (text !== null) responderTrust = [...anchors, ...anchorsFromPem(text)];
+    }
+    const ocsp = settings.ocsp.mode !== 'off' && wire
+      ? {
+        responder: new WireOcspResponder(new OcspClient(wire, {
+          ...DEFAULT_OCSP_POLICY, responderUrl: settings.ocspDefaultResponder,
+          overrideResponder: settings.ocspOverrideResponder, trusted: responderTrust,
+          verifySignature: !settings.ocspNoVerify, useNonce: settings.ocspUseRequestNonce,
+          skewMs: settings.ocspResponseTimeSkew * 1000,
+          maxAgeMs: settings.ocspResponseMaxAge < 0 ? null : settings.ocspResponseMaxAge * 1000,
+        })),
+        scope: settings.ocsp.mode, missingOk: settings.ocsp.noOcspForCertOk,
+      }
+      : undefined;
     verifier = buildClientVerifier({
-      anchors: anchorsFromPem(...anchorTexts), crls: crlTexts.flatMap((text) => crlsFromPem(text)), crlChecking,
+      anchors, crls: crlTexts.flatMap((text) => crlsFromPem(text)), crlChecking,
       revocationScope: settings.crlCheck.mode === 'leaf' ? 'leaf' : 'chain',
-      missingCrlOk: settings.crlCheck.noCrlForCertOk, maxDepth: settings.verifyDepth,
+      missingCrlOk: settings.crlCheck.noCrlForCertOk, maxDepth: settings.verifyDepth, ocsp,
     });
   }
 
@@ -156,6 +178,34 @@ export function loadVhostTls(
           + 'it must contain exactly 48 bytes');
       }
       ticketKey = ticketKeyFromFile(text);
+    }
+  }
+
+  const warnings: string[] = [];
+  let staple: OcspStapleSource | undefined;
+  if (settings.useStapling) {
+    if (settings.stapling.cache === null) {
+      return fail('AH01958: SSLStapling: no stapling cache available');
+    }
+    const issuer = chain.find((c) => c.subject === certificates[0].issuer);
+    const url = settings.staplingForceUrl ?? ocspUrlOf(certificates[0]);
+    if (!issuer) {
+      warnings.push("AH02217: ssl_stapling_init_cert: can't retrieve issuer certificate!");
+      warnings.push(`AH02604: Unable to configure certificate ${id}:0 for stapling`);
+    } else if (url === null) {
+      warnings.push(`AH02218: ssl_stapling_init_cert: no OCSP URI in certificate and no SSLStaplingForceURL set`);
+      warnings.push(`AH02604: Unable to configure certificate ${id}:0 for stapling`);
+    } else if (wire) {
+      const client = new OcspClient(wire, {
+        ...DEFAULT_OCSP_POLICY, responderUrl: url, overrideResponder: true, trusted: [issuer],
+        useNonce: false, skewMs: settings.staplingResponseTimeSkew * 1000,
+        maxAgeMs: settings.staplingResponseMaxAge < 0 ? null : settings.staplingResponseMaxAge * 1000,
+        cacheMs: settings.staplingStandardCacheTimeout * 1000,
+      });
+      staple = (cert) => {
+        const found = client.lookup(cert);
+        return found.ok ? found.single : null;
+      };
     }
   }
 
@@ -185,7 +235,7 @@ export function loadVhostTls(
     preferServerCiphers, sessionTickets, settings.sessionCacheTimeout, settings.sessionCache, settings.verifyClient,
     settings.verifyDepth, state.tls13Ciphersuites ?? settings.tls13Ciphers ?? '', (state.groups ?? []).join(','),
     ticketKey ? ticketKey.join('.') : '', settings.crlCheck.mode, settings.caRevocationFile ?? '',
-    settings.useStapling,
+    settings.useStapling, settings.ocsp.mode, settings.ocspDefaultResponder ?? '', settings.staplingForceUrl ?? '',
   ].join('|');
 
   return {
@@ -193,7 +243,7 @@ export function loadVhostTls(
     protocolSet: protocolSetByVhost, cipherList: finalCipherList,
     tls13Ciphersuites: state.tls13Ciphersuites ?? settings.tls13Ciphers ?? undefined,
     groups: state.groups ?? undefined, preferServerCiphers, sessionTickets, ticketKey,
-    extendedMasterSecret: state.extendedMasterSecret ?? undefined, fingerprint,
+    extendedMasterSecret: state.extendedMasterSecret ?? undefined, staple, warnings, fingerprint,
   };
 }
 

@@ -45,6 +45,24 @@ const SPECS: readonly ApacheSslSpec[] = [
   { name: 'SSLStrictSNIVHostCheck', arity: 'flag', scope: 'server', description: 'Strict SNI virtual host checking' },
   { name: 'SSLUseStapling', arity: 'flag', scope: 'server', description: "SSL switch for the OCSP Stapling protocol (`on', `off')" },
   { name: 'SSLStaplingCache', arity: 'take1', scope: 'global', description: "SSL Stapling Response Cache storage (`dbm:/path/to/file')" },
+  { name: 'SSLOCSPEnable', arity: 'raw', scope: 'server', description: "Enable use of OCSP to verify certificate revocation mode ('on', 'leaf', 'off')" },
+  { name: 'SSLOCSPDefaultResponder', arity: 'take1', scope: 'server', description: 'URL of the default OCSP Responder' },
+  { name: 'SSLOCSPOverrideResponder', arity: 'flag', scope: 'server', description: "Force use of the default responder URL ('on', 'off')" },
+  { name: 'SSLOCSPResponseTimeSkew', arity: 'take1', scope: 'server', description: 'Maximum time difference in OCSP responses' },
+  { name: 'SSLOCSPResponseMaxAge', arity: 'take1', scope: 'server', description: 'Maximum age of OCSP responses' },
+  { name: 'SSLOCSPResponderTimeout', arity: 'take1', scope: 'server', description: 'OCSP responder query timeout' },
+  { name: 'SSLOCSPUseRequestNonce', arity: 'flag', scope: 'server', description: "Whether OCSP queries use a nonce or not ('on', 'off')" },
+  { name: 'SSLOCSPProxyURL', arity: 'take1', scope: 'server', description: 'Proxy URL to use for OCSP requests' },
+  { name: 'SSLOCSPNoVerify', arity: 'flag', scope: 'server', description: "Do not verify OCSP Responder certificate ('on', 'off')" },
+  { name: 'SSLOCSPResponderCertificateFile', arity: 'take1', scope: 'server', description: "Trusted OCSP responder certificates(`/path/to/file' - PEM encoded certificates)" },
+  { name: 'SSLStaplingResponseTimeSkew', arity: 'take1', scope: 'server', description: 'SSL stapling option for maximum time difference in OCSP responses' },
+  { name: 'SSLStaplingResponderTimeout', arity: 'take1', scope: 'server', description: 'SSL stapling option for OCSP responder timeout' },
+  { name: 'SSLStaplingResponseMaxAge', arity: 'take1', scope: 'server', description: 'SSL stapling option for maximum age of OCSP responses' },
+  { name: 'SSLStaplingStandardCacheTimeout', arity: 'take1', scope: 'server', description: 'SSL stapling option for normal OCSP Response Cache Lifetime' },
+  { name: 'SSLStaplingReturnResponderErrors', arity: 'flag', scope: 'server', description: "SSL stapling switch to return Status Errors Back to Client(`on', `off')" },
+  { name: 'SSLStaplingFakeTryLater', arity: 'flag', scope: 'server', description: "SSL stapling switch to send tryLater response to client on error (`on', `off')" },
+  { name: 'SSLStaplingErrorCacheTimeout', arity: 'take1', scope: 'server', description: 'SSL stapling option for OCSP Response Error Cache Lifetime' },
+  { name: 'SSLStaplingForceURL', arity: 'take1', scope: 'server', description: 'SSL stapling option to Force the OCSP Stapling URL' },
   { name: 'SSLOpenSSLConfCmd', arity: 'take2', scope: 'server', description: 'OpenSSL configuration command' },
 ];
 
@@ -197,6 +215,24 @@ export interface ApacheSslSettings {
   readonly strictSniVhostCheck: boolean;
   readonly useStapling: boolean;
   readonly stapling: { readonly cache: string | null };
+  readonly ocsp: { readonly mode: 'off' | 'leaf' | 'chain'; readonly noOcspForCertOk: boolean };
+  readonly ocspDefaultResponder: string | null;
+  readonly ocspOverrideResponder: boolean;
+  readonly ocspResponseTimeSkew: number;
+  readonly ocspResponseMaxAge: number;
+  readonly ocspUseRequestNonce: boolean;
+  readonly ocspNoVerify: boolean;
+  readonly ocspResponderCertificateFile: string | null;
+  readonly ocspResponderTimeout: number;
+  readonly ocspProxyUrl: string | null;
+  readonly staplingForceUrl: string | null;
+  readonly staplingResponseTimeSkew: number;
+  readonly staplingResponseMaxAge: number;
+  readonly staplingStandardCacheTimeout: number;
+  readonly staplingErrorCacheTimeout: number;
+  readonly staplingResponderTimeout: number;
+  readonly staplingReturnResponderErrors: boolean;
+  readonly staplingFakeTryLater: boolean;
   readonly confCommands: readonly (readonly [string, string])[];
   readonly passPhraseDialog: string;
 }
@@ -277,6 +313,42 @@ function applyDirectives(
       case 'sslstrictsnivhostcheck': base.strictSniVhostCheck = flag; break;
       case 'sslusestapling': base.useStapling = flag; break;
       case 'sslstaplingcache': base.stapling = { cache: value }; break;
+      case 'sslocspenable': {
+        const words = directive.args.join(' ').split(/\s+/).filter((w) => w.length > 0);
+        const first = (words[0] ?? '').toLowerCase();
+        if (first !== 'off' && first !== 'leaf' && first !== 'on') {
+          return { directive, error: `${directive.name}: Invalid argument '${words[0] ?? ''}'` };
+        }
+        let lenient = false;
+        for (const word of words.slice(1)) {
+          if (word.toLowerCase() === 'no_ocsp_for_cert_ok') lenient = true;
+          else return { directive, error: `${directive.name}: Invalid argument '${word}'` };
+        }
+        base.ocsp = { mode: first === 'on' ? 'chain' : first, noOcspForCertOk: lenient };
+        break;
+      }
+      case 'sslocspdefaultresponder': base.ocspDefaultResponder = value; break;
+      case 'sslocspoverrideresponder': base.ocspOverrideResponder = flag; break;
+      case 'sslocspresponsetimeskew': case 'sslocspresponsemaxage': case 'sslstaplingresponsetimeskew': case 'sslstaplingresponsemaxage': {
+        const seconds = atoi(value);
+        if (seconds < 0) return { directive, error: `${directive.name}: invalid argument` };
+        if (name === 'sslocspresponsetimeskew') base.ocspResponseTimeSkew = seconds;
+        else if (name === 'sslocspresponsemaxage') base.ocspResponseMaxAge = seconds;
+        else if (name === 'sslstaplingresponsetimeskew') base.staplingResponseTimeSkew = seconds;
+        else base.staplingResponseMaxAge = seconds;
+        break;
+      }
+      case 'sslocsprespondertimeout': base.ocspResponderTimeout = atoi(value); break;
+      case 'sslocspuserequestnonce': base.ocspUseRequestNonce = flag; break;
+      case 'sslocspproxyurl': base.ocspProxyUrl = value; break;
+      case 'sslocspnoverify': base.ocspNoVerify = flag; break;
+      case 'sslocsprespondercertificatefile': base.ocspResponderCertificateFile = value; break;
+      case 'sslstaplingstandardcachetimeout': base.staplingStandardCacheTimeout = atoi(value); break;
+      case 'sslstaplingerrorcachetimeout': base.staplingErrorCacheTimeout = atoi(value); break;
+      case 'sslstaplingrespondertimeout': base.staplingResponderTimeout = atoi(value); break;
+      case 'sslstaplingreturnrespondererrors': base.staplingReturnResponderErrors = flag; break;
+      case 'sslstaplingfaketrylater': base.staplingFakeTryLater = flag; break;
+      case 'sslstaplingforceurl': base.staplingForceUrl = value; break;
       case 'sslpassphrasedialog': base.passPhraseDialog = value; break;
       case 'sslopensslconfcmd': (base.confCommands ??= []).push([directive.args[0], directive.args[1]]); break;
       default: break;
@@ -320,6 +392,24 @@ export function resolveApacheSsl(
     strictSniVhostCheck: layer.strictSniVhostCheck ?? false,
     useStapling: layer.useStapling ?? false,
     stapling: layer.stapling ?? { cache: null },
+    ocsp: layer.ocsp ?? { mode: 'off', noOcspForCertOk: false },
+    ocspDefaultResponder: layer.ocspDefaultResponder ?? null,
+    ocspOverrideResponder: layer.ocspOverrideResponder ?? false,
+    ocspResponseTimeSkew: layer.ocspResponseTimeSkew ?? 300,
+    ocspResponseMaxAge: layer.ocspResponseMaxAge ?? -1,
+    ocspUseRequestNonce: layer.ocspUseRequestNonce ?? true,
+    ocspNoVerify: layer.ocspNoVerify ?? false,
+    ocspResponderCertificateFile: layer.ocspResponderCertificateFile ?? null,
+    ocspResponderTimeout: layer.ocspResponderTimeout ?? 10,
+    ocspProxyUrl: layer.ocspProxyUrl ?? null,
+    staplingForceUrl: layer.staplingForceUrl ?? null,
+    staplingResponseTimeSkew: layer.staplingResponseTimeSkew ?? 300,
+    staplingResponseMaxAge: layer.staplingResponseMaxAge ?? -1,
+    staplingStandardCacheTimeout: layer.staplingStandardCacheTimeout ?? 3600,
+    staplingErrorCacheTimeout: layer.staplingErrorCacheTimeout ?? 600,
+    staplingResponderTimeout: layer.staplingResponderTimeout ?? 10,
+    staplingReturnResponderErrors: layer.staplingReturnResponderErrors ?? true,
+    staplingFakeTryLater: layer.staplingFakeTryLater ?? true,
     confCommands: layer.confCommands ?? [],
     passPhraseDialog: layer.passPhraseDialog ?? 'builtin',
   };

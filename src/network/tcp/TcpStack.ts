@@ -306,6 +306,7 @@ export class TcpSocket {
    * stays bounded by one round trip's cable hops, not by segment count.
    */
   flushingBacklog = false;
+  readonly openedAtBurstDepth: number = burstDepth;
 
   /** RFC 5681 congestion control (PRD-TCP.md P5) — slow start/congestion avoidance/fast recovery. */
   readonly cc: TcpCongestionControl = new TcpCongestionControl(this.mss);
@@ -1145,7 +1146,7 @@ export class TcpStack {
       body();
     } finally {
       burstDepth--;
-      if (burstDepth === 0) this.drainOwedAcks();
+      this.drainOwedAcks();
     }
   }
 
@@ -1153,8 +1154,9 @@ export class TcpStack {
     if (drainingAcks) return;
     drainingAcks = true;
     try {
-      while (socketsOwingAck.size > 0) {
-        for (const socket of [...socketsOwingAck]) {
+      const due = (): TcpSocket[] => [...socketsOwingAck].filter((socket) => burstDepth === 0 || socket.openedAtBurstDepth >= burstDepth);
+      for (let pending = due(); pending.length > 0; pending = due()) {
+        for (const socket of pending) {
           socketsOwingAck.delete(socket);
           socket.stack.sendOwedAck(socket);
         }
