@@ -40,6 +40,7 @@ import {
   PROTOCOL_VERSIONS_BY_PREFERENCE, permittedVersions, resolveLegacyPolicy, suiteUsableAt,
   type LegacySuiteDefinition, type ResolvedLegacyPolicy, type LegacyVersion, type TlsProtocolVersion,
 } from './legacy/legacyCipherSuites';
+import { modpGroup, type ModpGroup } from '@/crypto/dh/modp';
 import { LegacyServerHandshake, suiteMatchesCertificate } from './legacy/LegacyHandshake';
 import { legacySuiteByName } from './legacy/legacyCipherSuites';
 import { offeredVersions } from './legacy/versionNegotiation';
@@ -101,6 +102,14 @@ export interface TlsServerConfig {
   readonly preferServerCiphers?: boolean;
   /** RFC 3526 group id offered for finite-field DHE (default 14, 2048 bits). */
   readonly dhGroupId?: number;
+  /** Explicit finite-field DHE parameters (nginx `ssl_dhparam`); take precedence over `dhGroupId`. */
+  readonly dhParameters?: { readonly prime: bigint; readonly generator: bigint };
+  /** RFC 6066 §3 — answer a handshake that selects the default credential with a fatal `unrecognized_name` (nginx `ssl_reject_handshake`). */
+  readonly rejectHandshake?: boolean;
+  /** RFC 8446 §4.2.10 — accept 0-RTT data and advertise `max_early_data_size` in tickets (default true; nginx `ssl_early_data`). */
+  readonly earlyData?: boolean;
+  /** Ceiling on the plaintext this side puts in one record, below the RFC 8449 limit (nginx `ssl_buffer_size`). */
+  readonly sendBufferSize?: number;
 }
 
 const MAX_PROTECTED_FRAGMENT = MAX_TLS_RECORD_LENGTH + 2048;
@@ -111,6 +120,10 @@ export interface TlsServerCredential {
   readonly chain?: readonly X509Certificate[];
   /** Names this credential answers (exact or `*.label`); default: whatever its certificate matches (RFC 6125). */
   readonly hostnames?: readonly string[];
+  /** Selecting this credential ends the handshake with `unrecognized_name`. */
+  readonly rejectHandshake?: boolean;
+  /** Predicate over the client's server_name, replacing `hostnames` when the owner has its own matching rules. */
+  readonly matches?: (serverName: string) => boolean;
 }
 
 interface ActiveCredential {
@@ -183,6 +196,8 @@ export class TlsServerSession {
   private readonly transcript: Uint8Array[] = [];
   negotiatedMaxFragmentLength: number | null = null;
   peerCertificate: X509Certificate | null = null;
+  peerCertificateChain: readonly X509Certificate[] = [];
+  negotiatedServerName: string | null = null;
   peerVerified = false;
   peerVerificationReason: string | null = null;
   private credentials: ActiveCredential;
@@ -213,6 +228,16 @@ export class TlsServerSession {
     this.cipherSuitePreference = ['TLS_AES_128_GCM_SHA256'];
   }
 
+  private dhGroup(): ModpGroup {
+    const explicit = this.config.dhParameters;
+    if (explicit) return { id: 0, bits: explicit.prime.toString(2).length, prime: explicit.prime, generator: explicit.generator };
+    return modpGroup(this.config.dhGroupId ?? 14) ?? modpGroup(14)!;
+  }
+
+  get sessionReused(): boolean {
+    return this.legacy ? this.legacy.wasResumed : this.sessionResumed;
+  }
+
   private policyLevel(config: TlsServerConfig): number {
     return resolveLegacyPolicy(config).securityLevel;
   }
@@ -222,7 +247,17 @@ export class TlsServerSession {
   }
 
   serverTraffic(): TrafficProtection {
-    return this.legacy?.traffic?.outbound ?? { secret: this.serverApplicationTrafficSecret!, suite: this.negotiatedCipherSuite as CipherSuite, maxFragment: this.negotiatedMaxFragmentLength ?? DEFAULT_MAX_FRAGMENT };
+    const ceiling = this.config.sendBufferSize;
+    const legacyOutbound = this.legacy?.traffic?.outbound;
+    if (legacyOutbound) {
+      if (ceiling !== undefined) legacyOutbound.maxFragment = Math.min(legacyOutbound.maxFragment, ceiling);
+      return legacyOutbound;
+    }
+    const negotiated = this.negotiatedMaxFragmentLength ?? DEFAULT_MAX_FRAGMENT;
+    return {
+      secret: this.serverApplicationTrafficSecret!, suite: this.negotiatedCipherSuite as CipherSuite,
+      maxFragment: ceiling === undefined ? negotiated : Math.min(negotiated, ceiling),
+    };
   }
 
   /** Feeds the peer's flight in; returns this side's next flight, or null once nothing more is to be sent. */
@@ -283,6 +318,7 @@ export class TlsServerSession {
     if (contentType !== 'handshake') return this.reject('decode_error');
     const clientHello = decodeHandshakeMessage(clientHelloBytes) as ClientHello;
     this.transcript.push(clientHelloBytes);
+    this.negotiatedServerName = clientHello.extensions.serverName || null;
     if (!this.selectCredentials(clientHello.extensions.serverName)) return this.reject('unrecognized_name');
 
     const offered = offeredVersions(clientHello);
@@ -315,17 +351,20 @@ export class TlsServerSession {
   }
 
   private selectCredentials(serverName: string | undefined): boolean {
-    if (serverName === undefined || serverName === '') return true;
+    if (serverName === undefined || serverName === '') return this.config.rejectHandshake !== true;
     for (const credential of this.config.sniCredentials ?? []) {
       const names = credential.hostnames;
-      const matches = names !== undefined
+      const matches = credential.matches !== undefined
+        ? credential.matches(serverName)
+        : names !== undefined
         ? names.some((pattern) => serverNameMatches(pattern, serverName))
         : certificateMatchesHostname(credential.cert, serverName);
       if (matches) {
         this.credentials = { cert: credential.cert, privateKey: credential.privateKey, chain: credential.chain ?? [] };
-        return true;
+        return credential.rejectHandshake !== true;
       }
     }
+    if (this.config.rejectHandshake === true) return false;
     return this.config.rejectUnknownServerName !== true || (this.config.sniCredentials ?? []).length === 0
       ? true
       : certificateMatchesHostname(this.config.serverCert, serverName);
@@ -374,7 +413,7 @@ export class TlsServerSession {
       offeredGroups: clientHello.extensions.supportedGroups, alpn: this.negotiatedAlpnProtocol,
       serverSupportsTls13: this.protocols.includes('1.3'),
       serverCert: this.credentials.cert, serverChain: this.credentials.chain, serverPrivateKey: this.credentials.privateKey,
-      serverGroups: this.supportedGroups, securityLevel: this.policy.securityLevel, dhGroupId: this.config.dhGroupId ?? 14,
+      serverGroups: this.supportedGroups, securityLevel: this.policy.securityLevel, dhGroup: this.dhGroup(),
       requestClientCert: this.config.requestClientCert === true, verifier: this.config.verifier,
       lenientClientCert: this.config.clientCertPolicy === 'lenient',
     });
@@ -397,6 +436,7 @@ export class TlsServerSession {
     this.result = legacy.result;
     this.state = 'done';
     this.peerCertificate = legacy.peerCertificate;
+    this.peerCertificateChain = legacy.peerCertificateChain;
     this.peerVerified = legacy.peerVerified;
     this.peerVerificationReason = legacy.peerVerificationReason;
     if (legacy.result === 'reject') {
@@ -443,7 +483,7 @@ export class TlsServerSession {
     this.negotiateMaxFragment(clientHello);
     const pskAccepted = redeemed !== null && redeemed.hash === this.hash;
     const pskInput = pskAccepted ? redeemed.psk : ZERO_IKM;
-    if (pskAccepted && earlyRecords.length > 0) {
+    if (pskAccepted && earlyRecords.length > 0 && this.config.earlyData !== false) {
       this.earlyDataAccepted = true;
       this.receivedEarlyData = reassembleRecords(earlyRecords, true).plaintext;
     }
@@ -567,6 +607,7 @@ export class TlsServerSession {
       } else {
         const leafCert = certificate.certificateList[0];
         this.peerCertificate = leafCert;
+        this.peerCertificateChain = certificate.certificateList;
         if (!this.config.verifier) return this.reject('certificate_unknown');
         const verification = this.config.verifier.verify(leafCert, undefined, certificate.certificateList.slice(1), 'clientAuth', this.policy.securityLevel);
         this.peerVerified = verification.ok !== false;
@@ -617,7 +658,7 @@ export class TlsServerSession {
     this.config.sessionTicketStore.issue(ticket);
     const newSessionTicket: NewSessionTicket = {
       kind: 'new_session_ticket', ticketLifetime: ticket.ticketLifetime, ticketAgeAdd: randomNonce('age-add'),
-      ticketNonce: ticket.ticketNonce, ticket: ticket.ticket, extensions: { earlyData: true },
+      ticketNonce: ticket.ticketNonce, ticket: ticket.ticket, extensions: { earlyData: this.config.earlyData !== false },
     };
     return fragmentAsRecords('handshake', encodeHandshakeMessage(newSessionTicket), true);
   }

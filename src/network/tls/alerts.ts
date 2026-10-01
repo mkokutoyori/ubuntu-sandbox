@@ -90,15 +90,16 @@ export function alertForVerificationReason(reason: VerificationReason): AlertDes
   switch (reason) {
     case 'unknown': return 'unknown_ca';
     case 'expired': return 'certificate_expired';
-    case 'not-yet-valid': return 'certificate_expired';
-    case 'bad-signature': return 'bad_certificate';
+    case 'not-yet-valid': return 'bad_certificate';
+    case 'bad-signature': return 'decrypt_error';
     case 'revoked': return 'certificate_revoked';
-    case 'crl-stale': return 'certificate_unknown';
-    case 'crl-untrusted': return 'certificate_unknown';
+    case 'crl-stale': return 'unknown_ca';
+    case 'crl-untrusted': return 'decrypt_error';
     case 'hostname-mismatch': return 'bad_certificate';
-    case 'not-a-ca': return 'bad_certificate';
-    case 'path-length': return 'bad_certificate';
-    case 'key-usage': return 'bad_certificate';
+    case 'not-a-ca': return 'unknown_ca';
+    case 'path-length': return 'unknown_ca';
+    case 'chain-too-long': return 'unknown_ca';
+    case 'key-usage': return 'certificate_unknown';
     case 'weak-key': return 'bad_certificate';
     case 'weak-ca-key': return 'bad_certificate';
     case 'purpose': return 'unsupported_certificate';

@@ -12,6 +12,11 @@ export interface CurlOptions {
   tlsMin: TlsProtocolVersion | null;
   tlsMax: TlsProtocolVersion | null;
   ciphers: string | null;
+  tls13Ciphers: string | null;
+  curves: string | null;
+  cert: string | null;
+  key: string | null;
+  keyPassphrase: string | null;
   silent: boolean;
   showError: boolean;
   verbose: boolean;
@@ -69,7 +74,7 @@ export const LITTERAL = '\u0000';
 
 const SHORT_NO_ARG = 'IksSvfLOiV';
 
-const SHORT_WITH_ARG = 'owXdHuAbceDTFm';
+const SHORT_WITH_ARG = 'owXdHuAbceDTFmE';
 
 const LONG_NO_ARG: Record<string, string> = {
   head: 'I',
@@ -118,6 +123,11 @@ const LONG_WITH_ARG: Record<string, string> = {
   'local-port': 'local-port',
   'tls-max': 'tls-max',
   ciphers: 'ciphers',
+  'tls13-ciphers': 'tls13-ciphers',
+  curves: 'curves',
+  cert: 'E',
+  key: 'key',
+  pass: 'pass',
 };
 
 const UNSUPPORTED_SHORT: Record<string, true> = {
@@ -125,7 +135,7 @@ const UNSUPPORTED_SHORT: Record<string, true> = {
   // à témoins (`http/cookies/`), un moteur RFC 6265 complet qui
   // n'avait aucun appelant.
   x: true, C: true, '#': true,
-  E: true, y: true, Y: true, z: true, R: true, j: true, N: true, g: true,
+  y: true, Y: true, z: true, R: true, j: true, N: true, g: true,
   K: true, r: true, P: true, Q: true, p: true, U: true,
 };
 
@@ -137,11 +147,11 @@ const UNSUPPORTED_LONG: Record<string, true> = {
   proxy: true, 'retry-delay': true,
   'retry-max-time': true,
   'http0.9': true,
-  'limit-rate': true, 'continue-at': true, 'progress-bar': true, cert: true,
+  'limit-rate': true, 'continue-at': true, 'progress-bar': true,
   // `--version` a quitté la liste des INCONNUES : curl la connaît, et
   // répondre « is unknown » à l'option la plus tapée de toutes était le
   // seul message de ce fichier qui mentait.
-  key: true, capath: true, interface: true,
+  capath: true, interface: true,
   'anyauth': true, ntlm: true,
   negotiate: true, digest: true, 'proxy-user': true, socks5: true, socks4: true,
   'keepalive-time': true,
@@ -154,6 +164,29 @@ const UNSUPPORTED_LONG: Record<string, true> = {
 export interface LocalPortRange {
   readonly first: number;
   readonly count: number;
+}
+
+export function splitCertParameter(parameter: string): { name: string | null; passphrase: string | null } {
+  if (parameter.length === 0) return { name: null, passphrase: null };
+  if (parameter.toLowerCase().startsWith('pkcs11:') || !/[:\\]/.test(parameter)) {
+    return { name: parameter, passphrase: null };
+  }
+  let name = '';
+  let i = 0;
+  while (i < parameter.length) {
+    const ch = parameter[i];
+    if (ch === '\\') {
+      const next = parameter[i + 1];
+      if (next === undefined) { name += '\\'; i += 1; } else if (next === '\\' || next === ':') { name += next; i += 2; } else { name += `\\${next}`; i += 2; }
+    } else if (ch === ':') {
+      const rest = parameter.slice(i + 1);
+      return { name, passphrase: rest.length > 0 ? rest : null };
+    } else {
+      name += ch;
+      i += 1;
+    }
+  }
+  return { name, passphrase: null };
 }
 
 function parseLocalPortRange(value: string): LocalPortRange | null {
@@ -173,6 +206,11 @@ function defaults(): CurlOptions {
     tlsMin: null,
     tlsMax: null,
     ciphers: null,
+    tls13Ciphers: null,
+    curves: null,
+    cert: null,
+    key: null,
+    keyPassphrase: null,
     silent: false,
     showError: false,
     verbose: false,
@@ -301,6 +339,16 @@ function applyValued(
       break;
     }
     case 'ciphers': opts.ciphers = value; break;
+    case 'tls13-ciphers': opts.tls13Ciphers = value; break;
+    case 'curves': opts.curves = value; break;
+    case 'key': opts.key = value; break;
+    case 'pass': opts.keyPassphrase = value; break;
+    case 'E': {
+      const split = splitCertParameter(value);
+      opts.cert = split.name;
+      if (split.passphrase !== null) opts.keyPassphrase = split.passphrase;
+      break;
+    }
     case 'connect-timeout': {
       const seconds = Number(value);
       if (value.trim() === '' || !Number.isFinite(seconds) || seconds < 0) {

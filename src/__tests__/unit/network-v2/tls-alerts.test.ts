@@ -9,14 +9,18 @@ import type { TlsRecord } from '@/network/tls/recordLayer';
 const NOW = Date.now();
 
 describe('alertForVerificationReason (RFC 8446 §6 mapping)', () => {
-  it('maps each CertificateVerifier.VerificationReason to a distinct alert', () => {
+  it('maps each CertificateVerifier.VerificationReason through the x509table of OpenSSL ssl/statem/statem_lib.c', () => {
     expect(alertForVerificationReason('unknown')).toBe('unknown_ca');
     expect(alertForVerificationReason('expired')).toBe('certificate_expired');
-    expect(alertForVerificationReason('not-yet-valid')).toBe('certificate_expired');
-    expect(alertForVerificationReason('bad-signature')).toBe('bad_certificate');
+    expect(alertForVerificationReason('not-yet-valid')).toBe('bad_certificate');
+    expect(alertForVerificationReason('bad-signature')).toBe('decrypt_error');
     expect(alertForVerificationReason('revoked')).toBe('certificate_revoked');
-    expect(alertForVerificationReason('crl-stale')).toBe('certificate_unknown');
-    expect(alertForVerificationReason('crl-untrusted')).toBe('certificate_unknown');
+    expect(alertForVerificationReason('crl-stale')).toBe('unknown_ca');
+    expect(alertForVerificationReason('crl-untrusted')).toBe('decrypt_error');
+    expect(alertForVerificationReason('not-a-ca')).toBe('unknown_ca');
+    expect(alertForVerificationReason('path-length')).toBe('unknown_ca');
+    expect(alertForVerificationReason('chain-too-long')).toBe('unknown_ca');
+    expect(alertForVerificationReason('key-usage')).toBe('certificate_unknown');
   });
 
   it('every alert in the dictionary has a distinct RFC 8446 §6 numeric code', () => {

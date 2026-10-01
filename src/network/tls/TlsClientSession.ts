@@ -62,6 +62,8 @@ export interface TlsClientConfig {
   readonly cipherSuites?: readonly CipherSuite[];
   /** Presented only if the server actually sends a CertificateRequest (mTLS). */
   readonly clientCert?: X509Certificate;
+  /** Intermediates sent after `clientCert` in the Certificate message. */
+  readonly clientChain?: readonly X509Certificate[];
   readonly clientPrivateKey?: PkiPrivateKey;
   /** Groups this client can offer a key_share for; defaults to `['x25519']`. The first entry is offered up front. */
   readonly supportedGroups?: readonly string[];
@@ -358,7 +360,7 @@ export class TlsClientSession {
       clientRandom: this.clientRandom, clientVersionWire: PROTOCOL_VERSION_WIRE[ceiling],
       offersTls13: this.offersTls13(), verifier: this.config.verifier,
       allowUntrustedPeer: this.config.allowUntrustedPeer === true, serverName: this.config.serverName,
-      clientCert: this.config.clientCert, clientPrivateKey: this.config.clientPrivateKey,
+      clientCert: this.config.clientCert, clientChain: this.config.clientChain, clientPrivateKey: this.config.clientPrivateKey,
       securityLevel: this.policy.securityLevel, resolveSuite: legacySuiteByName,
       clientExtensions: this.legacyExtensions(),
       session: this.config.legacySession ?? null,
@@ -513,7 +515,7 @@ export class TlsClientSession {
     const finalBundle: TlsHandshakeMessage[] = [];
     if (certificateRequest) {
       const clientCertificate: CertificateMessage = {
-        kind: 'certificate', certificateList: this.config.clientCert ? [this.config.clientCert] : [],
+        kind: 'certificate', certificateList: this.config.clientCert ? [this.config.clientCert, ...(this.config.clientChain ?? [])] : [],
       };
       finalBundle.push(clientCertificate);
       this.transcript.push(encodeHandshakeMessage(clientCertificate));

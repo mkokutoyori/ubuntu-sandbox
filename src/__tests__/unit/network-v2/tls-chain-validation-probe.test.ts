@@ -75,13 +75,13 @@ describe('chaîne leaf → intermédiaire → racine', () => {
     expect(handshake(verifier, direct, []).result).toBe('success');
   });
 
-  it('une signature d\'intermédiaire falsifiée est refusée (bad_certificate)', () => {
+  it('une signature d\'intermédiaire falsifiée est refusée (decrypt_error, X509_V_ERR_CERT_SIGNATURE_FAILURE dans x509table)', () => {
     const { root, inter, leaf } = pki();
     const verifier = new CertificateVerifier({ trustAnchors: [root.rootCertificate], clock: () => NOW });
     const forged = { ...inter.rootCertificate, signature: `${inter.rootCertificate.signature.slice(0, -2)}00` };
     const client = handshake(verifier, leaf, [forged]);
     expect(client.result).toBe('failure');
-    expect(client.lastAlert?.description).toBe('bad_certificate');
+    expect(client.lastAlert?.description).toBe('decrypt_error');
   });
 
   it('un intermédiaire expiré invalide la chaîne', () => {

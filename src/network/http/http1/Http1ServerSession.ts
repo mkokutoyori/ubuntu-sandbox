@@ -17,6 +17,9 @@ export interface Http1PeerTls {
   readonly protocolVersion: string | null;
   readonly cipherSuite: string | null;
   readonly clientCertificate: X509Certificate | null;
+  readonly clientCertificateChain: readonly X509Certificate[];
+  readonly serverName: string | null;
+  readonly sessionReused: boolean;
   readonly clientVerified: boolean;
   readonly clientVerifyReason: string | null;
 }

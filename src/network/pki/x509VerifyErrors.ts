@@ -28,6 +28,7 @@ export function x509VerifyError(
     case 'crl-untrusted': return { n: 8, texte: 'CRL signature failure' };
     case 'not-a-ca': return { n: 24, texte: 'invalid CA certificate' };
     case 'path-length': return { n: 25, texte: 'path length constraint exceeded' };
+    case 'chain-too-long': return { n: 22, texte: 'certificate chain too long' };
     case 'purpose': return { n: 26, texte: 'unsupported certificate purpose' };
     case 'key-usage': return { n: 32, texte: 'key usage does not include certificate signing' };
     case 'weak-key': return { n: 66, texte: 'EE certificate key too weak' };

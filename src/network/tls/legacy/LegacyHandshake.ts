@@ -3,7 +3,7 @@ import {
   materialToPrivateKey, materialToPublicKey, rsaDecryptPkcs1, rsaEncryptPkcs1,
 } from '@/crypto/rsa';
 import {
-  generateModpKeyPair, modpGroup, modpSharedSecret, modpToHex, modpFromHex,
+  generateModpKeyPair, modpSharedSecret, modpToHex, modpFromHex, type ModpGroup,
 } from '@/crypto/dh/modp';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
@@ -148,7 +148,7 @@ export interface LegacyServerSetup {
   readonly serverChain: readonly X509Certificate[];
   readonly serverPrivateKey: PkiPrivateKey;
   readonly serverGroups: readonly string[];
-  readonly dhGroupId: number;
+  readonly dhGroup: ModpGroup;
   readonly requestClientCert: boolean;
   readonly verifier?: CertificateVerifier;
   readonly securityLevel: number;
@@ -171,6 +171,7 @@ export class LegacyServerHandshake {
   result: 'accept' | 'reject' | null = null;
   lastAlert: TlsAlert | null = null;
   peerCertificate: X509Certificate | null = null;
+  peerCertificateChain: readonly X509Certificate[] = [];
   peerVerified = false;
   peerVerificationReason: string | null = null;
   traffic: LegacyTraffic | null = null;
@@ -343,8 +344,7 @@ export class LegacyServerHandshake {
   private generateParams(): KeyExchangeParams | null {
     const suite = this.suite;
     if (suite.keyExchange === 'DHE_RSA') {
-      const group = modpGroup(this.setup.dhGroupId);
-      if (!group) return null;
+      const group = this.setup.dhGroup;
       this.dh = generateModpKeyPair(group);
       return { type: 'dh', p: modpToHex(group.prime), g: modpToHex(group.generator), ys: modpToHex(this.dh.publicKey) };
     }
@@ -434,6 +434,7 @@ export class LegacyServerHandshake {
         if (!this.setup.verifier || !certificateVerify) return this.reject('handshake_failure');
         verifiedLeaf = certificate.certificateList[0];
         this.peerCertificate = verifiedLeaf;
+        this.peerCertificateChain = certificate.certificateList;
         const verification = this.setup.verifier.verify(verifiedLeaf, undefined, certificate.certificateList.slice(1), 'clientAuth', this.setup.securityLevel);
         this.peerVerified = verification.ok !== false;
         if (verification.ok === false) {
@@ -521,6 +522,7 @@ export interface LegacyClientSetup {
   readonly allowUntrustedPeer: boolean;
   readonly serverName?: string;
   readonly clientCert?: X509Certificate;
+  readonly clientChain?: readonly X509Certificate[];
   readonly clientPrivateKey?: PkiPrivateKey;
   readonly securityLevel: number;
   readonly resolveSuite: (name: string) => LegacySuiteDefinition | undefined;
@@ -697,7 +699,7 @@ export class LegacyClientHandshake {
     const out: object[] = [];
     if (certificateRequest) {
       const clientCertificate: LegacyCertificate = {
-        kind: 'legacy_certificate', certificateList: setup.clientCert ? [setup.clientCert] : [],
+        kind: 'legacy_certificate', certificateList: setup.clientCert ? [setup.clientCert, ...(setup.clientChain ?? [])] : [],
       };
       out.push(clientCertificate);
       this.messages.push(encodeLegacyMessage(clientCertificate));

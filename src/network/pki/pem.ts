@@ -26,6 +26,7 @@ import { SHA256 } from '@/crypto/hash';
 import type { X509Certificate } from './X509Certificate';
 import type { PkiPrivateKey, PkiPublicKey } from './PkiKeyPair';
 import { CertificateRevocationList, type CrlFields } from './CertificateRevocationList';
+import type { SignedOcspResponse } from './OcspResponder';
 
 export type PemLabel =
   | 'CERTIFICATE'
@@ -35,7 +36,9 @@ export type PemLabel =
   | 'ENCRYPTED PRIVATE KEY'
   | 'PUBLIC KEY'
   | 'CERTIFICATE REQUEST'
-  | 'X509 CRL';
+  | 'X509 CRL'
+  | 'OCSP RESPONSE'
+  | 'DH PARAMETERS';
 
 const LINE_WIDTH = 64;
 
@@ -205,6 +208,11 @@ export function pemToEncryptedPrivateKey(pem: string, passphrase: string): PkiPr
 }
 
 /** Une armure de clé chiffrée est-elle présente ? */
+export function pemToPrivateKeyWithPassphrase(pem: string, passphrase: string | null): PkiPrivateKey | null {
+  if (!isEncryptedPrivateKeyPem(pem)) return pemToPrivateKey(pem);
+  return passphrase === null ? null : pemToEncryptedPrivateKey(pem, passphrase);
+}
+
 export function isEncryptedPrivateKeyPem(pem: string): boolean {
   return pem.includes('-----BEGIN ENCRYPTED PRIVATE KEY-----');
 }
@@ -256,4 +264,29 @@ export function pemToCrl(pem: string): CertificateRevocationList | null {
     signatureAlgorithm: o.signatureAlgorithm ?? 'sha256WithRSAEncryption',
     revoked: o.revoked,
   }, o.signature ?? '');
+}
+
+export function ocspResponseToPem(response: SignedOcspResponse): string {
+  return armour('OCSP RESPONSE', response);
+}
+
+export function pemToOcspResponse(pem: string): SignedOcspResponse | null {
+  const o = unarmour(pem, 'OCSP RESPONSE') as SignedOcspResponse | null;
+  if (!o || typeof o.signature !== 'string' || !o.tbs || typeof o.tbs.serialNumber !== 'string') return null;
+  return o;
+}
+
+export interface DhParameters {
+  readonly prime: bigint;
+  readonly generator: bigint;
+}
+
+export function dhParametersToPem(parameters: DhParameters): string {
+  return armour('DH PARAMETERS', { p: parameters.prime.toString(16), g: parameters.generator.toString(16) });
+}
+
+export function pemToDhParameters(pem: string): DhParameters | null {
+  const o = unarmour(pem, 'DH PARAMETERS') as { p?: unknown; g?: unknown } | null;
+  if (!o || typeof o.p !== 'string' || typeof o.g !== 'string' || !/^[0-9a-f]+$/.test(o.p) || !/^[0-9a-f]+$/.test(o.g)) return null;
+  return { prime: BigInt(`0x${o.p}`), generator: BigInt(`0x${o.g}`) };
 }

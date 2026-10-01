@@ -11,11 +11,15 @@ export interface X509CertificateFields {
   readonly signatureAlgorithm: 'sha256WithRSAEncryption' | 'ecdsa-with-SHA256';
   readonly extensions?: Readonly<{
     basicConstraints?: { readonly cA: boolean; readonly pathLenConstraint?: number };
-    keyUsage?: readonly ('digitalSignature' | 'keyCertSign' | 'cRLSign' | 'keyEncipherment')[];
+    keyUsage?: readonly ('digitalSignature' | 'nonRepudiation' | 'keyEncipherment' | 'dataEncipherment' | 'keyAgreement' | 'keyCertSign' | 'cRLSign' | 'encipherOnly' | 'decipherOnly')[];
     /** RFC 5280 §4.2.1.12 Extended Key Usage (e.g. `serverAuth`, `clientAuth`) — stamped from the issuing AD CS certificate template, if any. */
     extKeyUsage?: readonly string[];
     subjectAltName?: readonly string[];
     crlDistributionPoints?: readonly string[];
+    authorityInfoAccess?: readonly { readonly method: 'OCSP' | 'caIssuers'; readonly uri: string }[];
+    subjectKeyIdentifier?: string;
+    authorityKeyIdentifier?: { readonly keyid?: string; readonly issuer?: string; readonly serial?: string };
+    criticalExtensions?: readonly string[];
   }>;
 }
 

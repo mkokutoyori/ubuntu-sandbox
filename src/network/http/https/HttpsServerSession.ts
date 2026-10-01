@@ -148,7 +148,8 @@ export class HttpsServerSession {
         ip: socket.remoteIp, port: socket.remotePort,
         tls: {
           protocolVersion: tls.negotiatedVersion, cipherSuite: tls.negotiatedCipherSuite,
-          clientCertificate: tls.peerCertificate, clientVerified: tls.peerVerified,
+          clientCertificate: tls.peerCertificate, clientCertificateChain: tls.peerCertificateChain,
+          serverName: tls.negotiatedServerName, sessionReused: tls.sessionReused, clientVerified: tls.peerVerified,
           clientVerifyReason: tls.peerVerificationReason,
         },
       });

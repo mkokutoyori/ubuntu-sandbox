@@ -19,13 +19,18 @@ import {
 } from '@/crypto/encoding';
 import { PkiKeyPair } from '@/network/pki/PkiKeyPair';
 import { publicPartOf, modulusHex, materialToPublicKey, bitLength } from '@/crypto/rsa';
+import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
+import { modpGroup } from '@/crypto/dh/modp';
+import { isProbablePrime } from '@/crypto/rsa';
+import { dhParametersToPem, pemToDhParameters, type DhParameters } from '@/network/pki/pem';
+import { parseOpensslConfig, buildExtensions, type CertificateExtensions } from './X509v3Config';
 import { materialToP256Public } from '@/crypto/ecc';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { tbsPayload, type X509Certificate } from '@/network/pki/X509Certificate';
 import {
   certToPem, pemToCert, pemToCertChain, privateKeyToPem, pemToPrivateKey, publicKeyToPem,
   pemToPublicKey, csrToPem, pemToCsr, crlToPem, pemToCrl, type CertificateRequest,
-  encryptedPrivateKeyToPem, pemToEncryptedPrivateKey, isEncryptedPrivateKeyPem,
+  encryptedPrivateKeyToPem, pemToEncryptedPrivateKey, isEncryptedPrivateKeyPem, pemToPrivateKeyWithPassphrase,
 } from '@/network/pki/pem';
 import { buildCertificateRequest } from '@/network/pki/CertificateSigningRequest';
 import { CertificateVerifier, type VerificationReason } from '@/network/pki/CertificateVerifier';
@@ -64,7 +69,7 @@ const KNOWN_UNIMPLEMENTED_DIGESTS = [
 const IMPLEMENTED = new Set([
   'version', 'help', 'dgst', 'rand', 'base64', 'passwd', 'genrsa', 'genpkey',
   'rsa', 'pkey', 'req', 'x509', 'verify', 'list', 'errstr', 'prime',
-  'ciphers', 'info', 'ca', 'crl',
+  'ciphers', 'info', 'ca', 'crl', 'dhparam',
   'ec', 'ecparam', 'pkcs8', 'pkeyutl', 'rsautl', 'rehash', 's_client',
   'enc', ...Object.keys(ENC_ALGOS),
   ...Object.keys(DIGESTS),
@@ -227,7 +232,9 @@ function runGenRsa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   // La taille demandée est HONORÉE : le module fait réellement ce nombre
   // de bits, ce qu'`openssl rsa -text` affiche ensuite en le mesurant.
   const paire = PkiKeyPair.generate('rsa', bits);
-  const pem = privateKeyToPem(paire.privateKey, opts.has('-traditional'));
+  const written = privateKeyPem(host, paire.privateKey, opts, opts.has('-traditional'));
+  if ('error' in written) return fail(written.error);
+  const pem = written.pem;
   const out = opts.get('-out');
   const trace = `Generating RSA private key, ${bits} bit long modulus (2 primes)`;
   if (typeof out === 'string') {
@@ -244,7 +251,7 @@ function runRsa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   if (typeof chemin !== 'string') return fail('openssl: rsa: -in is required');
   const texte = host.readFile(chemin);
   if (texte === null) return fail(`Can't open "${chemin}" for reading, No such file or directory`);
-  const cle = pemToPrivateKey(texte);
+  const cle = privateKeyFrom(host, texte, opts);
   if (!cle) return fail('unable to load Private Key');
 
   const lignes: string[] = [];
@@ -270,9 +277,13 @@ function runRsa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   }
 
   if (!opts.has('-noout')) {
-    lignes.push(opts.has('-pubout')
-      ? publicKeyToPem({ algorithm: cle.algorithm, material: publicPartOf(cle.material) })
-      : privateKeyToPem(cle));
+    if (opts.has('-pubout')) {
+      lignes.push(publicKeyToPem({ algorithm: cle.algorithm, material: publicPartOf(cle.material) }));
+    } else {
+      const written = privateKeyPem(host, cle, opts);
+      if ('error' in written) return fail(written.error);
+      lignes.push(written.pem);
+    }
   }
   const sortie = lignes.join('\n');
   const out = opts.get('-out');
@@ -302,7 +313,7 @@ function runReq(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   if (typeof cheminCle === 'string') {
     const t = host.readFile(cheminCle);
     if (t === null) return fail(`Can't open "${cheminCle}" for reading, No such file or directory`);
-    cle = pemToPrivateKey(t);
+    cle = privateKeyFrom(host, t, opts);
     if (!cle) return fail('unable to load Private Key');
   }
 
@@ -318,8 +329,10 @@ function runReq(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     }
     const paire = bits === undefined ? PkiKeyPair.generate('rsa') : PkiKeyPair.generate('rsa', bits);
     cle = paire.privateKey;
-    if (typeof keyout === 'string' && !host.writeFile(keyout, privateKeyToPem(cle))) {
-      return fail(`${keyout}: cannot write`);
+    if (typeof keyout === 'string') {
+      const written = privateKeyPem(host, cle, opts);
+      if ('error' in written) return fail(written.error);
+      if (!host.writeFile(keyout, written.pem)) return fail(`${keyout}: cannot write`);
     }
   }
 
@@ -467,11 +480,31 @@ function signCsr(
   if (texteCaKey === null) return fail(`Can't open "${cheminCaKey}" for reading, No such file or directory`);
 
   const ca = pemToCert(texteCa);
-  const caKey = pemToPrivateKey(texteCaKey);
+  const caKey = privateKeyFrom(host, texteCaKey, opts);
   if (!ca) return fail('unable to load certificate');
   if (!caKey) return fail('unable to load CA Private Key');
 
   const jours = Number(opts.get('-days') ?? 30);
+  let extensions: CertificateExtensions | undefined = csr.extensions?.subjectAltName
+    ? { subjectAltName: csr.extensions.subjectAltName }
+    : undefined;
+  const extfile = opts.get('-extfile');
+  if (typeof extfile === 'string') {
+    const configText = host.readFile(extfile);
+    if (configText === null) return fail(`Can't open "${extfile}" for reading, No such file or directory`);
+    const config = parseOpensslConfig(configText);
+    const requested = opts.get('-extensions');
+    const sectionName = typeof requested === 'string'
+      ? requested
+      : config.sections.get('default')?.find(([key]) => key === 'extensions')?.[1] ?? 'default';
+    const entries = config.sections.get(sectionName);
+    if (entries === undefined) {
+      return fail(`Error checking extension section ${sectionName}\nerror in extension: no such section ${sectionName}`);
+    }
+    const built = buildExtensions(entries, config, { publicKey: csr.publicKey, issuer: ca });
+    if (built.ok === false) return fail(`Error adding extensions from section ${sectionName}\n${built.error}`);
+    extensions = built.extensions;
+  }
   const champs = {
     version: 3 as const,
     serialNumber: bytesToHex(host.randomBytes(8)),
@@ -481,9 +514,7 @@ function signCsr(
     notAfter: host.now() + jours * 24 * 3600 * 1000,
     publicKey: csr.publicKey,
     signatureAlgorithm: 'sha256WithRSAEncryption' as const,
-    extensions: csr.extensions?.subjectAltName
-      ? { subjectAltName: csr.extensions.subjectAltName }
-      : undefined,
+    extensions,
   };
   const cert: X509Certificate = { ...champs, signature: PkiKeyPair.sign(caKey, tbsPayload(champs)) };
 
@@ -608,6 +639,73 @@ function runPrime(argv: readonly string[]): OpenSslResult {
   let premier = true;
   for (let i = 2n; i * i <= n; i++) if (n % i === 0n) { premier = false; break; }
   return ok(`${n.toString(16).toUpperCase()} is ${premier ? '' : 'not '}prime`);
+}
+
+const DH_PREGENERATED_GROUPS: ReadonlyMap<number, number> = new Map([
+  [768, 1], [1024, 2], [1536, 5], [2048, 14], [3072, 15], [4096, 16], [6144, 17], [8192, 18],
+]);
+
+function labeledBignum(label: string, value: bigint): string[] {
+  if (value < 0x10000000000000000n) return [`${label} ${value.toString()} (0x${value.toString(16)})`];
+  let hex = value.toString(16);
+  if (hex.length % 2 === 1) hex = `0${hex}`;
+  const bytes = hex.match(/../g)!;
+  const lines: string[] = [label];
+  const padded = hex[0] >= '8' ? ['00', ...bytes] : bytes;
+  for (let i = 0; i < padded.length; i += 15) lines.push(`    ${padded.slice(i, i + 15).join(':')}${i + 15 < padded.length ? ':' : ''}`);
+  return lines;
+}
+
+function dhParametersText(parameters: DhParameters): string {
+  const bits = parameters.prime.toString(2).length;
+  const lines = [
+    `DH Parameters: (${bits} bit)`,
+    ...labeledBignum('P:   ', parameters.prime),
+    ...labeledBignum('G:   ', parameters.generator),
+  ];
+  return lines.map((line) => `    ${line}`).join('\n');
+}
+
+function runDhparam(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
+  const { opts, operands } = parseArgs('dhparam', argv);
+  const out = opts.get('-out');
+  const messages: string[] = [];
+  let parameters: DhParameters;
+  const numbits = operands[0] === undefined ? (opts.has('-2') || opts.has('-3') || opts.has('-5') ? 2048 : null) : Number(operands[0]);
+  if (numbits !== null) {
+    if (!Number.isInteger(numbits) || numbits < 2) return fail('Error, unable to set DH prime length');
+    if (opts.has('-3') || opts.has('-5')) {
+      return fail(`openssl: dhparam: generator ${opts.has('-3') ? 3 : 5} needs a freshly generated safe prime, which this simulator does not compute`);
+    }
+    const id = DH_PREGENERATED_GROUPS.get(numbits);
+    const group = id === undefined ? undefined : modpGroup(id);
+    if (!group) {
+      return fail(`openssl: dhparam: a ${numbits}-bit safe prime is not available here; pre-generated sizes: ${[...DH_PREGENERATED_GROUPS.keys()].join(', ')}`);
+    }
+    if (typeof opts.get('-in') === 'string') messages.push(`Warning, input file ${String(opts.get('-in'))} ignored`);
+    messages.push(`Generating DH parameters, ${numbits} bit long safe prime`);
+    parameters = { prime: group.prime, generator: group.generator };
+  } else {
+    const input = readInput(host, typeof opts.get('-in') === 'string' ? String(opts.get('-in')) : undefined);
+    if (input === null) return fail(`Could not open file or uri for loading parameters from ${String(opts.get('-in'))}`);
+    const parsed = pemToDhParameters(input);
+    if (!parsed) return fail('Error, unable to load parameters');
+    parameters = parsed;
+  }
+  const chunks: string[] = [];
+  if (opts.has('-text')) chunks.push(dhParametersText(parameters));
+  if (opts.has('-check')) {
+    const safe = isProbablePrime(parameters.prime, 8) && isProbablePrime((parameters.prime - 1n) / 2n, 8);
+    if (!safe) return fail('Error, invalid parameters generated');
+    messages.push('DH parameters appear to be ok.');
+  }
+  if (!opts.has('-noout')) chunks.push(dhParametersToPem(parameters).replace(/\n$/, ''));
+  const body = chunks.join('\n');
+  if (typeof out === 'string') {
+    if (!host.writeFile(out, body === '' ? '' : `${body}\n`)) return fail(`${out}: cannot write`);
+    return { output: '', stderr: messages.join('\n'), exitCode: 0 };
+  }
+  return { output: body, stderr: messages.join('\n'), exitCode: 0 };
 }
 
 // ─── §P4 : ciphers, info ────────────────────────────────────────────
@@ -752,7 +850,7 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   if (texteCa === null) return fail(`unable to load CA certificate: ${cheminCa}`);
   if (texteCle === null) return fail(`unable to load CA private key: ${cheminCle}`);
   const ca = pemToCert(texteCa);
-  const cleCa = pemToPrivateKey(texteCle);
+  const cleCa = privateKeyFrom(host, texteCle, opts);
   if (!ca || !cleCa) return fail('unable to load CA certificate or key');
 
   const index = lireIndex(host);
@@ -929,7 +1027,9 @@ function runEcparam(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     return fail(`openssl: ecparam -name ${courbe}: is not implemented in this simulator`);
   }
   const paire = PkiKeyPair.generate('ecdsa');
-  const pem = privateKeyToPem(paire.privateKey, true);
+  const written = privateKeyPem(host, paire.privateKey, opts, true);
+  if ('error' in written) return fail(written.error);
+  const pem = written.pem;
   const out = opts.get('-out');
   if (typeof out === 'string') {
     return host.writeFile(out, pem) ? ok() : fail(`${out}: cannot write`);
@@ -943,7 +1043,7 @@ function runEc(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   if (typeof chemin !== 'string') return fail('openssl: ec: -in is required');
   const texte = host.readFile(chemin);
   if (texte === null) return fail(`Can't open "${chemin}" for reading, No such file or directory`);
-  const cle = pemToPrivateKey(texte);
+  const cle = privateKeyFrom(host, texte, opts);
   if (!cle) return fail('unable to load Key');
   if (cle.algorithm !== 'ecdsa') return fail('unable to load Key');
 
@@ -958,9 +1058,13 @@ function runEc(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     lignes.push('NIST CURVE: P-256');
   }
   if (!opts.has('-noout')) {
-    lignes.push(opts.has('-pubout')
-      ? publicKeyToPem({ algorithm: 'ecdsa', material: publicPartOf(cle.material) })
-      : privateKeyToPem(cle, true));
+    if (opts.has('-pubout')) {
+      lignes.push(publicKeyToPem({ algorithm: 'ecdsa', material: publicPartOf(cle.material) }));
+    } else {
+      const written = privateKeyPem(host, cle, opts, true);
+      if ('error' in written) return fail(written.error);
+      lignes.push(written.pem);
+    }
   }
   return ok(lignes.join('\n'));
 }
@@ -971,10 +1075,37 @@ function runEc(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
  * contenu : la clé sort identique, seule son armure change — et c'est
  * exactement ce que fait le vrai outil.
  */
-/** `pass:secret` — la seule source de phrase de passe non interactive. */
-function phraseDePasse(valeur: string | true | undefined): string | null {
+/** `pass:secret` ou `file:chemin` (première ligne) — les sources non interactives de apps/apps.c. */
+function phraseDePasse(valeur: string | true | undefined, host?: OpenSslHost): string | null {
   if (typeof valeur !== 'string') return null;
-  return valeur.startsWith('pass:') ? valeur.slice(5) : null;
+  if (valeur.startsWith('pass:')) return valeur.slice(5);
+  if (valeur.startsWith('file:') && host) {
+    const contenu = host.readFile(valeur.slice(5));
+    return contenu === null ? null : (contenu.split('\n')[0] ?? '').replace(/\r$/, '');
+  }
+  return null;
+}
+
+const CIPHER_FLAGS: readonly string[] = [
+  '-aes128', '-aes192', '-aes256', '-des3', '-camellia128', '-camellia192', '-camellia256',
+  '-aria128', '-aria192', '-aria256',
+];
+
+function privateKeyPem(
+  host: OpenSslHost, key: PkiPrivateKey, opts: Map<string, string | true>, traditional = false,
+): { readonly pem: string } | { readonly error: string } {
+  const wantsCipher = CIPHER_FLAGS.some((flag) => opts.has(flag));
+  const encrypt = wantsCipher || (opts.has('-passout') && !opts.has('-nodes') && !opts.has('-noenc'));
+  if (!encrypt) return { pem: privateKeyToPem(key, traditional) };
+  const passout = phraseDePasse(opts.get('-passout'), host);
+  if (passout === null) return { error: 'unable to write key\nopenssl: a passphrase source is required: -passout pass:... or file:...' };
+  return { pem: encryptedPrivateKeyToPem(key, passout, (n) => host.randomBytes(n)) };
+}
+
+function privateKeyFrom(
+  host: OpenSslHost, text: string, opts: Map<string, string | true>,
+): PkiPrivateKey | null {
+  return pemToPrivateKeyWithPassphrase(text, phraseDePasse(opts.get('-passin'), host));
 }
 
 /**
@@ -1042,7 +1173,7 @@ function runPkeyutl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     if (typeof cheminCle !== 'string') return fail('openssl: pkeyutl -sign: -inkey is required');
     const t = host.readFile(cheminCle);
     if (t === null) return fail(`Can't open "${cheminCle}" for reading, No such file or directory`);
-    const cle = pemToPrivateKey(t);
+    const cle = privateKeyFrom(host, t, opts);
     if (!cle) return fail('unable to load Private Key');
     const signature = PkiKeyPair.sign(cle, donnees);
     const out = opts.get('-out');
@@ -1243,6 +1374,7 @@ export function runOpenSsl(host: OpenSslHost, argv: readonly string[]): OpenSslR
   if (sub === 'list') return runList(reste);
   if (sub === 'errstr') return runErrstr(reste);
   if (sub === 'prime') return runPrime(reste);
+  if (sub === 'dhparam') return runDhparam(host, reste);
 
   // Les deux familles de refus du §11.2, qui ne disent pas la même
   // chose : openssl connaît `speed`, il ne connaît pas `frobnicate`.

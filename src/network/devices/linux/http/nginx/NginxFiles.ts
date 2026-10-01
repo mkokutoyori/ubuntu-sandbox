@@ -92,3 +92,15 @@ export function forbiddenPage(): string {
 export function badGatewayPage(): string {
   return `<html>\r\n<head><title>502 Bad Gateway</title></head>\r\n<body>\r\n<center><h1>502 Bad Gateway</h1></center>\r\n<hr><center>nginx/${NGINX_VERSION}</center>\r\n</body>\r\n</html>\r\n`;
 }
+
+export function sslCertificateErrorPage(): string {
+  return `<html>\r\n<head><title>400 The SSL certificate error</title></head>\r\n<body>\r\n<center><h1>400 Bad Request</h1></center>\r\n<center>The SSL certificate error</center>\r\n<hr><center>nginx/${NGINX_VERSION}</center>\r\n</body>\r\n</html>\r\n`;
+}
+
+export function sslNoCertificatePage(): string {
+  return `<html>\r\n<head><title>400 No required SSL certificate was sent</title></head>\r\n<body>\r\n<center><h1>400 Bad Request</h1></center>\r\n<center>No required SSL certificate was sent</center>\r\n<hr><center>nginx/${NGINX_VERSION}</center>\r\n</body>\r\n</html>\r\n`;
+}
+
+export function misdirectedPage(): string {
+  return `<html>\r\n<head><title>421 Misdirected Request</title></head>\r\n<body>\r\n<center><h1>421 Misdirected Request</h1></center>\r\n<hr><center>nginx/${NGINX_VERSION}</center>\r\n</body>\r\n</html>\r\n`;
+}

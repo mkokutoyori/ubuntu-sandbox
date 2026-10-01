@@ -119,8 +119,14 @@ describe('nginx — ssl_protocols', () => {
     expect(out).toContain('Welcome to nginx!');
   });
 
-  it('RFC 8996 : par défaut un client TLS 1.1 est refusé avec protocol_version', async () => {
+  it('nginx 1.24 (ngx_http_ssl_module.c) : par défaut ssl_protocols vaut TLSv1 TLSv1.1 TLSv1.2 TLSv1.3, un client TLS 1.1 passe', async () => {
     const srv = await lab('');
+    const out = await srv.executeCommand('curl -sS -k --tlsv1.1 --tls-max 1.1 https://127.0.0.1/ 2>&1');
+    expect(out).toContain('Welcome to nginx!');
+  });
+
+  it('RFC 8996 : avec ssl_protocols TLSv1.2 TLSv1.3 un client TLS 1.1 est refusé avec protocol_version', async () => {
+    const srv = await lab('  ssl_protocols TLSv1.2 TLSv1.3;\\n');
     const out = await srv.executeCommand('curl -sS -k --tlsv1.1 --tls-max 1.1 https://127.0.0.1/ 2>&1');
     expect(out).toContain('tlsv1 alert protocol version');
     expect(out).not.toContain('Welcome to nginx!');
@@ -181,8 +187,8 @@ describe('curl et s_client', () => {
     expect(out).toContain('Protocol  : TLSv1.2');
   });
 
-  it('s_client -tls1_1 contre un serveur par défaut : alerte protocol_version', async () => {
-    const srv = await lab('');
+  it('s_client -tls1_1 contre un serveur limité à TLSv1.2 TLSv1.3 : alerte protocol_version', async () => {
+    const srv = await lab('  ssl_protocols TLSv1.2 TLSv1.3;\\n');
     const out = await srv.executeCommand('openssl s_client -connect 127.0.0.1:443 -tls1_1');
     expect(out).toContain('tlsv1 alert protocol version');
     expect(out).toContain('Cipher is (NONE)');

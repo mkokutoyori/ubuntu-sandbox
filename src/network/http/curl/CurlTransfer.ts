@@ -24,6 +24,8 @@ import { MAX_PORT, PortNumber } from '@/network/core/ports/PortNumber';
 import type { CurlHost } from './CurlHost';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { performCurlFtp } from './CurlFtp';
+import { loadCurlClientCredential } from './CurlClientCertificate';
+import { parseGroupList } from '@/network/tls/legacy/sslConf';
 
 
 function opensslSuiteName(name: string): string {
@@ -32,15 +34,33 @@ function opensslSuiteName(name: string): string {
 
 const ALL_TLS_VERSIONS: readonly TlsProtocolVersion[] = ['1.0', '1.1', '1.2', '1.3'];
 
+interface CurlTlsConfig {
+  readonly versions: readonly TlsProtocolVersion[];
+  readonly cipherList?: string;
+  readonly tls13Ciphersuites?: string;
+  readonly supportedGroups?: readonly string[];
+}
+
 function curlTlsPolicy(
   opts: CurlOptions,
-): { ok: true; config: { versions: readonly TlsProtocolVersion[]; cipherList?: string } } | { ok: false } {
+): { ok: true; config: CurlTlsConfig } | { ok: false; message: string } {
   const min = ALL_TLS_VERSIONS.indexOf(opts.tlsMin ?? '1.2');
   const max = ALL_TLS_VERSIONS.indexOf(opts.tlsMax ?? '1.3');
   const versions = ALL_TLS_VERSIONS.filter((_, index) => index >= min && index <= max);
-  if (opts.ciphers === null) return { ok: true, config: { versions } };
-  if (resolveCipherList(opts.ciphers).ok === false) return { ok: false };
-  return { ok: true, config: { versions, cipherList: opts.ciphers } };
+  const config: { -readonly [K in keyof CurlTlsConfig]: CurlTlsConfig[K] } = { versions };
+  if (opts.ciphers !== null) {
+    if (resolveCipherList(opts.ciphers).ok === false) {
+      return { ok: false, message: `curl: (59) failed setting cipher list: ${opts.ciphers}` };
+    }
+    config.cipherList = opts.ciphers;
+  }
+  if (opts.tls13Ciphers !== null) config.tls13Ciphersuites = opts.tls13Ciphers;
+  if (opts.curves !== null) {
+    const groups = parseGroupList(opts.curves);
+    if (groups.ok === false) return { ok: false, message: `curl: (59) failed setting curves list: '${opts.curves}'` };
+    config.supportedGroups = groups.groups;
+  }
+  return { ok: true, config };
 }
 
 export interface CurlUrl {
@@ -451,14 +471,25 @@ export async function performCurlRequest(
 
       let session: HttpsClientSession | null = null;
       try {
-        const tlsPolicy = curlTlsPolicy(opts);
-        if (tlsPolicy.ok === false) {
+        const clientCredential = loadCurlClientCredential(opts, (p) => host.readFile(p));
+        if (clientCredential.ok === false) {
           return {
-            ok: false, code: 59, message: "curl: (59) Couldn't use specified SSL cipher",
+            ok: false, code: 58, message: clientCredential.message,
             url, remoteIp, method, numRedirects: redirects, trace,
           };
         }
-        session = new HttpsClientSession(host.tcpStack(), address, url.port, { verifier, ...tlsPolicy.config });
+        const tlsPolicy = curlTlsPolicy(opts);
+        if (tlsPolicy.ok === false) {
+          return {
+            ok: false, code: 59, message: tlsPolicy.message,
+            url, remoteIp, method, numRedirects: redirects, trace,
+          };
+        }
+        const credential = clientCredential.credential;
+        session = new HttpsClientSession(host.tcpStack(), address, url.port, {
+          verifier, ...tlsPolicy.config,
+          ...(credential ? { clientCert: credential.cert, clientChain: credential.chain, clientPrivateKey: credential.key } : {}),
+        });
         session.adopt(porte.socket);
         const result = await session.sendAsync(request);
         const handshake = session.handshake;

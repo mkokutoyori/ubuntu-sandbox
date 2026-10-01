@@ -8,7 +8,7 @@ import { verifyOcspStaple, type IOcspResponder, type SignedOcspResponse, type Oc
 
 export type VerificationReason =
   | 'unknown' | 'expired' | 'revoked' | 'not-yet-valid' | 'bad-signature' | 'crl-stale' | 'crl-untrusted'
-  | 'hostname-mismatch' | 'not-a-ca' | 'path-length' | 'key-usage' | 'purpose' | 'weak-key' | 'weak-ca-key';
+  | 'hostname-mismatch' | 'not-a-ca' | 'path-length' | 'chain-too-long' | 'key-usage' | 'purpose' | 'weak-key' | 'weak-ca-key';
 
 export type CertificatePurpose = 'serverAuth' | 'clientAuth';
 
@@ -27,6 +27,7 @@ export interface CertificateVerifierOptions {
   readonly clock?: () => number;
   readonly ocspResponder?: IOcspResponder;
   readonly securityLevel?: number;
+  readonly maxDepth?: number;
 }
 
 export class CertificateVerifier {
@@ -36,6 +37,7 @@ export class CertificateVerifier {
   private readonly clock: () => number;
   private readonly ocspResponder?: IOcspResponder;
   private readonly securityLevel: number;
+  private readonly maxDepth: number | undefined;
 
   constructor(opts: CertificateVerifierOptions) {
     this.trustAnchors = opts.trustAnchors;
@@ -44,6 +46,7 @@ export class CertificateVerifier {
     this.clock = opts.clock ?? Date.now;
     this.ocspResponder = opts.ocspResponder;
     this.securityLevel = opts.securityLevel ?? 0;
+    this.maxDepth = opts.maxDepth;
   }
 
   verify(
@@ -103,6 +106,8 @@ export class CertificateVerifier {
         if (!PkiKeyPair.verify(anchor.publicKey, tbsPayload(dropSignature(current)), current.signature)) {
           return { ok: false, reason: 'bad-signature' };
         }
+        const chainLength = anchorIsLeaf(cert, anchor) ? 1 : used.length + 2;
+        if (this.maxDepth !== undefined && chainLength > this.maxDepth + 1) return { ok: false, reason: 'chain-too-long' };
         return { ok: true, anchor, intermediates: used };
       }
       const next = intermediates.find((candidate) => candidate.subject === current.issuer
@@ -112,6 +117,7 @@ export class CertificateVerifier {
         const forged = intermediates.some((candidate) => candidate.subject === current.issuer);
         return { ok: false, reason: forged ? 'bad-signature' : 'unknown' };
       }
+      if (this.maxDepth !== undefined && used.length + 3 > this.maxDepth + 1) return { ok: false, reason: 'chain-too-long' };
       used.push(next);
       current = next;
     }
