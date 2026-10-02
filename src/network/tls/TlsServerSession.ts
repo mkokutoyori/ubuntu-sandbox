@@ -29,7 +29,7 @@ import {
   encodeHandshakeMessage, decodeHandshakeMessage, encodeMessages, decodeMessages, randomNonce,
 } from './messages';
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
-import { deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
+import { collapseFirstClientHello, deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
 import { signCertificateVerify, verifyCertificateVerify, SUPPORTED_SIGNATURE_SCHEMES, schemeForKey } from './signature13';
 import { alertFromRecord, alertToRecord, certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
 import { DEFAULT_CIPHER_SUITES, parseTls13Ciphersuites, selectCipherSuite } from './cipherSuites';
@@ -194,6 +194,7 @@ export class TlsServerSession {
   private resumptionMasterSecret: string | null = null;
   private masterSecret: string | null = null;
   private hash: Tls13Hash = 'sha256';
+  private retried = false;
   private earlyDataAccepted = false;
   private sessionResumed = false;
   private readonly transcript: Uint8Array[] = [];
@@ -342,6 +343,7 @@ export class TlsServerSession {
     };
     const hrrBytes = encodeHandshakeMessage(helloRetryRequest);
     this.transcript.push(hrrBytes);
+    this.retried = true;
     this.state = 'awaiting-second-client-hello';
     return fragmentAsRecords('handshake', hrrBytes, false);
   }
@@ -484,6 +486,7 @@ export class TlsServerSession {
     if (!negotiatedSuite) return this.reject('handshake_failure');
     this.negotiatedCipherSuite = negotiatedSuite;
     this.hash = suiteInfo(negotiatedSuite).hash;
+    if (this.retried) collapseFirstClientHello(this.transcript, this.hash);
     this.negotiateMaxFragment(clientHello);
     const pskAccepted = redeemed !== null && redeemed.hash === this.hash;
     const pskInput = pskAccepted ? redeemed.psk : ZERO_IKM;

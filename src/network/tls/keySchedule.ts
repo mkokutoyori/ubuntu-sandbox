@@ -165,3 +165,16 @@ export function nextTrafficSecret(secret: string, hash: Tls13Hash = 'sha256'): s
 export function certificateVerifyContent(role: 'server' | 'client', transcript: string): string {
   return `${' '.repeat(64)}TLS 1.3, ${role} CertificateVerify\u0000${transcript}`;
 }
+
+const MESSAGE_HASH_HANDSHAKE_TYPE = 254;
+
+export function collapseFirstClientHello(transcript: Uint8Array[], hash: Tls13Hash): void {
+  const digest = hashFunction(hash).digest(transcript[0]);
+  const replacement = new Uint8Array(4 + digest.length);
+  replacement[0] = MESSAGE_HASH_HANDSHAKE_TYPE;
+  replacement[1] = (digest.length >> 16) & 0xff;
+  replacement[2] = (digest.length >> 8) & 0xff;
+  replacement[3] = digest.length & 0xff;
+  replacement.set(digest, 4);
+  transcript[0] = replacement;
+}

@@ -28,7 +28,7 @@ import {
   encodeHandshakeMessage, decodeHandshakeMessage, encodeMessages, decodeMessages, randomNonce,
 } from './messages';
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
-import { deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
+import { collapseFirstClientHello, deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
 import { signCertificateVerify, verifyCertificateVerify, SUPPORTED_SIGNATURE_SCHEMES, schemeForKey } from './signature13';
 import { alertFromRecord, alertToRecord, certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
 import { DEFAULT_CIPHER_SUITES, parseTls13Ciphersuites } from './cipherSuites';
@@ -168,6 +168,7 @@ export class TlsClientSession {
   private legacy: LegacyClientHandshake | null = null;
   private lastClientHelloBytes: Uint8Array = new Uint8Array(0);
   private hash: Tls13Hash = 'sha256';
+  private retried = false;
   negotiatedMaxFragmentLength: number | null = null;
 
   constructor(private readonly config: TlsClientConfig) {
@@ -347,6 +348,7 @@ export class TlsClientSession {
       if (rest.length > 0) return this.fail('unexpected_message');
       if (!this.supportedGroups.includes(leadMessage.selectedGroup)) return this.fail('handshake_failure');
       this.transcript.push(leadBytes);
+      this.retried = true;
       return this.sendClientHello(leadMessage.selectedGroup);
     }
     if (leadMessage.kind !== 'server_hello') return this.fail('unexpected_message');
@@ -433,6 +435,7 @@ export class TlsClientSession {
     this.negotiatedCipherSuite = serverHello.cipherSuite;
     this.negotiatedVersion = '1.3';
     this.hash = suiteInfo(serverHello.cipherSuite).hash;
+    if (this.retried) collapseFirstClientHello(this.transcript, this.hash);
     if (encryptedExtensions.extensions.alpn === GREASE_NAME) return this.fail('illegal_parameter');
     this.negotiatedAlpnProtocol = encryptedExtensions.extensions.alpn ?? null;
     const echoedFragment = encryptedExtensions.extensions.maxFragmentLength;
