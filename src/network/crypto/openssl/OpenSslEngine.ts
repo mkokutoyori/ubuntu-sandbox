@@ -31,7 +31,9 @@ import { ocspRequestToPem, pemToOcspRequest, ocspResponseToPem, pemToOcspRespons
 import { parseOpensslConfig, buildExtensions, type CertificateExtensions } from './X509v3Config';
 import { materialToP256Public } from '@/crypto/ecc';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
-import { tbsPayload, type X509Certificate } from '@/network/pki/X509Certificate';
+import { signCertificate, type X509Certificate } from '@/network/pki/X509Certificate';
+import { encodeCertificate, canonicalSerial, sameSerial } from '@/network/pki/der/X509Der';
+import { opensslDistinguishedName } from '@/network/pki/der/DistinguishedName';
 import {
   certToPem, pemToCert, pemToCertChain, privateKeyToPem, pemToPrivateKey, publicKeyToPem,
   pemToPublicKey, csrToPem, pemToCsr, crlToPem, pemToCrl, type CertificateRequest,
@@ -357,15 +359,24 @@ function runReq(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     // Letting the helper generate its own produced a `.crt` and a `.key`
     // that did not correspond — invisible to every command that reads one
     // without the other, and fatal the moment nginx presented them.
+    const addExtensions = repeatedOption(argv, '-addext').map((text): [string, string] => {
+      const eq = text.indexOf('=');
+      return [text.slice(0, eq).trim(), text.slice(eq + 1).trim()];
+    });
+    const overridden = new Set(addExtensions.map(([name]) => name));
+    const entries: [string, string][] = [
+      ...([['subjectKeyIdentifier', 'hash'], ['authorityKeyIdentifier', 'keyid:always,issuer'], ['basicConstraints', 'critical,CA:true']] as [string, string][])
+        .filter(([name]) => !overridden.has(name)),
+      ...addExtensions,
+    ];
+    const selfIssuer = { publicKey: publique, subject: sujet, issuer: sujet, serialNumber: '' } as unknown as X509Certificate;
+    const built = buildExtensions(entries, { sections: new Map() }, { publicKey: publique, issuer: selfIssuer });
+    if (built.ok === false) return fail(`Error Loading extension section v3_ca\n${built.error}`);
     const { cert } = generateSelfSignedCertificate(sujet, {
       now: host.now(),
       validityMs: jours * 24 * 3600 * 1000,
       keyPair: { publicKey: publique, privateKey: cle },
-      // The SAN goes in BEFORE the signature. Adding it to the returned
-      // certificate — which is what this did — left a certificate whose
-      // signature covered a different content than the one on disk, so
-      // `-addext` produced a certificate no verifier could accept.
-      subjectAltName: altNames,
+      extensions: built.extensions,
     });
     const pem = certToPem(cert);
     if (typeof out === 'string') {
@@ -398,9 +409,9 @@ function runX509(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   if (!cert) return fail('unable to load certificate');
 
   const lignes: string[] = [];
-  if (opts.has('-subject')) lignes.push(`subject=${cert.subject}`);
-  if (opts.has('-issuer')) lignes.push(`issuer=${cert.issuer}`);
-  if (opts.has('-serial')) lignes.push(`serial=${cert.serialNumber.toUpperCase()}`);
+  if (opts.has('-subject')) lignes.push(`subject=${opensslDistinguishedName(cert.subject)}`);
+  if (opts.has('-issuer')) lignes.push(`issuer=${opensslDistinguishedName(cert.issuer)}`);
+  if (opts.has('-serial')) lignes.push(`serial=${shownSerial(cert.serialNumber)}`);
   if (opts.has('-startdate') || opts.has('-dates')) {
     lignes.push(`notBefore=${opensslDate(cert.notBefore)}`);
   }
@@ -408,7 +419,7 @@ function runX509(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     lignes.push(`notAfter=${opensslDate(cert.notAfter)}`);
   }
   if (opts.has('-fingerprint')) {
-    const brut = sha256Hex(tbsPayload(cert)).toUpperCase();
+    const brut = bytesToHex(SHA256.digest(encodeCertificate(cert))).toUpperCase();
     lignes.push(`SHA256 Fingerprint=${(brut.match(/.{2}/g) ?? []).join(':')}`);
   }
   // Le MÊME module que `rsa -modulus`, par la même fonction : c'est
@@ -437,18 +448,23 @@ function runX509(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   return ok(sortie);
 }
 
+function shownSerial(serial: string): string {
+  const digits = serial.replace(/^0+/, '').toUpperCase();
+  return digits.length % 2 === 1 ? `0${digits}` : digits === '' ? '00' : digits;
+}
+
 function renderText(cert: X509Certificate): string[] {
   const l: string[] = [
     'Certificate:',
     '    Data:',
     `        Version: 3 (0x2)`,
-    `        Serial Number: ${cert.serialNumber}`,
+    `        Serial Number: ${shownSerial(cert.serialNumber)}`,
     `        Signature Algorithm: ${cert.signatureAlgorithm}`,
-    `        Issuer: ${cert.issuer}`,
+    `        Issuer: ${opensslDistinguishedName(cert.issuer)}`,
     '        Validity',
     `            Not Before: ${opensslDate(cert.notBefore)}`,
     `            Not After : ${opensslDate(cert.notAfter)}`,
-    `        Subject: ${cert.subject}`,
+    `        Subject: ${opensslDistinguishedName(cert.subject)}`,
     '        Subject Public Key Info:',
     `            Public Key Algorithm: rsaEncryption`,
     '                RSA Public-Key: (2048 bit)',
@@ -547,7 +563,7 @@ function signCsr(
     signatureAlgorithm: 'sha256WithRSAEncryption' as const,
     extensions,
   };
-  const cert: X509Certificate = { ...champs, signature: PkiKeyPair.sign(caKey, tbsPayload(champs)) };
+  const cert: X509Certificate = signCertificate(champs, caKey);
 
   const pem = certToPem(cert);
   const out = opts.get('-out');
@@ -616,7 +632,7 @@ function runVerify(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     if (verdict.ok) { lignes.push(`${cible}: OK`); continue; }
 
     const { n, texte } = x509VerifyError(verdict.reason, cert, listes);
-    lignes.push(cert.subject);
+    lignes.push(opensslDistinguishedName(cert.subject));
     lignes.push(`error ${n} at 0 depth lookup: ${texte}`);
     lignes.push(`error ${cible}: verification failed`);
     echec = true;
@@ -881,7 +897,7 @@ function ocspResponseText(response: OcspResponseMessage): string[] {
     lines.push('    Response Type: Basic OCSP Response', '    Version: 1 (0x0)',
       `    Responder Id: ${response.responder ?? ''}`, `    Produced At: ${opensslDate(response.producedAt ?? 0)}`, '    Responses:');
     for (const single of response.singles) {
-      lines.push('    Certificate ID:', `      Issuer: ${single.tbs.issuer}`, `      Serial Number: ${single.tbs.serialNumber}`,
+      lines.push('    Certificate ID:', `      Issuer: ${opensslDistinguishedName(single.tbs.issuer)}`, `      Serial Number: ${shownSerial(single.tbs.serialNumber)}`,
         `    Cert Status: ${single.tbs.status}`, `    This Update: ${opensslDate(single.tbs.thisUpdate)}`,
         `    Next Update: ${opensslDate(single.tbs.nextUpdate)}`);
     }
@@ -934,7 +950,7 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     const entries = lireIndex(host, indexPath);
     const source: OcspStatusSource = {
       lookup: (id) => {
-        const entry = entries.find((e) => e.serie === id.serialNumber);
+        const entry = entries.find((e) => sameSerial(e.serie, id.serialNumber));
         if (!entry) return { status: 'unknown' };
         if (entry.etat === 'R') return { status: 'revoked', revokedAt: dateDepuisIndex(entry.revocation.split(',')[0]) };
         return { status: 'good' };
@@ -950,7 +966,7 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     const lines: string[] = [];
     let ok = true;
     response.singles.forEach((single, index) => {
-      const name = names[index] ?? single.tbs.serialNumber;
+      const name = names[index] ?? shownSerial(single.tbs.serialNumber);
       lines.push(`${name}: ${single.tbs.status}`);
       lines.push(`\tThis Update: ${opensslDate(single.tbs.thisUpdate)}`);
       lines.push(`\tNext Update: ${opensslDate(single.tbs.nextUpdate)}`);
@@ -1005,19 +1021,19 @@ function runOcsp(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
       const content = read(path, 'certificate'); if (typeof content !== 'string') return content;
       const cert = pemToCert(content);
       if (!cert) return fail('Error loading certificate');
-      ids.push({ issuer: issuer.subject, serialNumber: cert.serialNumber });
+      ids.push({ issuer: issuer.subject, serialNumber: canonicalSerial(cert.serialNumber) });
       names.push(path);
     }
     for (const serial of serials) {
       const clean = serial.replace(/^0x/i, '').toLowerCase();
       if (!/^[0-9a-f]+$/.test(clean)) return fail(`Error converting serial number ${serial}`);
-      ids.push({ issuer: issuer.subject, serialNumber: clean });
+      ids.push({ issuer: issuer.subject, serialNumber: canonicalSerial(clean) });
       names.push(serial);
     }
     const nonce = opts.has('-no_nonce') || respin !== null ? undefined : bytesToHex(host.randomBytes(16));
     request = { ids, ...(nonce !== undefined ? { nonce } : {}) };
   }
-  if (request !== null && names.length === 0) names = request.ids.map((id) => id.serialNumber);
+  if (request !== null && names.length === 0) names = request.ids.map((id) => shownSerial(id.serialNumber));
 
   const reqout = text('-reqout');
   if (reqout !== null && request !== null && !host.writeFile(reqout, ocspRequestToPem(request))) return fail(`${reqout}: cannot write`);
@@ -1096,12 +1112,12 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     if (t === null) return fail(`unable to load certificate: ${aRevoquer}`);
     const cert = pemToCert(t);
     if (!cert) return fail('unable to load certificate');
-    const entree = index.find((e) => e.serie === cert.serialNumber);
-    if (!entree) return fail(`ERROR:Serial number ${cert.serialNumber} is not in the index`);
+    const entree = index.find((e) => sameSerial(e.serie, cert.serialNumber));
+    if (!entree) return fail(`ERROR:Serial number ${shownSerial(cert.serialNumber)} is not in the index`);
     entree.etat = 'R';
     entree.revocation = dateIndex(host.now());
     ecrireIndex(host, index);
-    return { output: '', stderr: `Revoking Certificate ${cert.serialNumber}.\nData Base Updated`, exitCode: 0 };
+    return { output: '', stderr: `Revoking Certificate ${shownSerial(cert.serialNumber)}.\nData Base Updated`, exitCode: 0 };
   }
 
   // ── publication de la CRL ──
@@ -1118,7 +1134,7 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
       nextUpdate: host.now() + 30 * 24 * 3600 * 1000,
       signatureAlgorithm: 'sha256WithRSAEncryption',
       revoked: index.filter((e) => e.etat === 'R')
-        .map((e) => ({ serialNumber: e.serie, revocationDate: dateDepuisIndex(e.revocation) })),
+        .map((e) => ({ serialNumber: canonicalSerial(e.serie), revocationDate: dateDepuisIndex(e.revocation) })),
     }, cleCa);
     const pem = crlToPem(crl);
     const out = opts.get('-out');
@@ -1154,7 +1170,7 @@ function runCa(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     signatureAlgorithm: 'sha256WithRSAEncryption' as const,
     extensions: caExtensions.extensions,
   };
-  const cert: X509Certificate = { ...champs, signature: PkiKeyPair.sign(cleCa, tbsPayload(champs)) };
+  const cert: X509Certificate = signCertificate(champs, cleCa);
 
   index.push({
     etat: 'V',
@@ -1188,13 +1204,13 @@ function runCrl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   if (!crl) return fail('unable to load CRL');
 
   const lignes: string[] = [];
-  if (opts.has('-issuer')) lignes.push(`issuer=${crl.issuer}`);
+  if (opts.has('-issuer')) lignes.push(`issuer=${opensslDistinguishedName(crl.issuer)}`);
   if (opts.has('-lastupdate')) lignes.push(`lastUpdate=${opensslDate(crl.thisUpdate)}`);
   if (opts.has('-nextupdate')) lignes.push(`nextUpdate=${opensslDate(crl.nextUpdate)}`);
   if (opts.has('-text')) {
     lignes.push('Certificate Revocation List (CRL):');
     lignes.push('        Version 2 (0x1)');
-    lignes.push(`        Issuer: ${crl.issuer}`);
+    lignes.push(`        Issuer: ${opensslDistinguishedName(crl.issuer)}`);
     lignes.push(`        Last Update: ${opensslDate(crl.thisUpdate)}`);
     lignes.push(`        Next Update: ${opensslDate(crl.nextUpdate)}`);
     if (crl.revoked.length === 0) {
@@ -1202,7 +1218,7 @@ function runCrl(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     } else {
       lignes.push('Revoked Certificates:');
       for (const r of crl.revoked) {
-        lignes.push(`    Serial Number: ${r.serialNumber}`);
+        lignes.push(`    Serial Number: ${shownSerial(r.serialNumber)}`);
         // La date de révocation s'affiche comme toutes les autres dates
         // d'openssl. Elle sortait jusqu'ici au format de l'index
         // (`260806083012Z`), qui n'apparaît nulle part ailleurs.
@@ -1527,11 +1543,11 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
   const presente = sonde && sonde.ok ? sonde.certificate : null;
   if (presente) {
-    lignes.push(` 0 s:${presente.subject}`);
-    lignes.push(`   i:${presente.issuer}`);
+    lignes.push(` 0 s:${opensslDistinguishedName(presente.subject)}`);
+    lignes.push(`   i:${opensslDistinguishedName(presente.issuer)}`);
   } else if (ancre) {
-    lignes.push(` 0 s:${ancre.subject}`);
-    lignes.push(`   i:${ancre.issuer}`);
+    lignes.push(` 0 s:${opensslDistinguishedName(ancre.subject)}`);
+    lignes.push(`   i:${opensslDistinguishedName(ancre.issuer)}`);
   } else {
     lignes.push(' (no peer certificate available in this simulator — '
       + 'pass -CAfile to display a known anchor; see docs/PRD-OpenSSL.md §P7)');

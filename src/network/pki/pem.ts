@@ -24,6 +24,7 @@ import { aesCbcEncrypt, aesCbcDecrypt } from '@/crypto/cipher';
 import { pbkdf2 } from '@/crypto/kdf';
 import { SHA256 } from '@/crypto/hash';
 import type { X509Certificate } from './X509Certificate';
+import { encodeCertificate, decodeCertificate } from './der/X509Der';
 import type { PkiPrivateKey, PkiPublicKey } from './PkiKeyPair';
 import { CertificateRevocationList, type CrlFields } from './CertificateRevocationList';
 import type { OcspRequestMessage, OcspResponseMessage } from './OcspWire';
@@ -84,14 +85,41 @@ function unarmour(pem: string, label: PemLabel): unknown | null {
 
 // ─── Certificats ────────────────────────────────────────────────────
 
+function armourBytes(label: PemLabel, bytes: Uint8Array): string {
+  const b64 = bytesToBase64(bytes);
+  const lines: string[] = [];
+  for (let i = 0; i < b64.length; i += LINE_WIDTH) lines.push(b64.slice(i, i + LINE_WIDTH));
+  return `-----BEGIN ${label}-----\n${lines.join('\n')}\n-----END ${label}-----\n`;
+}
+
+function unarmourBytes(pem: string, label: PemLabel): Uint8Array | null {
+  const begin = `-----BEGIN ${label}-----`;
+  const end = `-----END ${label}-----`;
+  const from = pem.indexOf(begin);
+  if (from === -1) return null;
+  const to = pem.indexOf(end, from);
+  if (to === -1) return null;
+  const body = pem.slice(from + begin.length, to).replace(/\s+/g, '');
+  if (body.length === 0) return null;
+  try { return base64ToBytes(body); } catch { return null; }
+}
+
 export function certToPem(cert: X509Certificate): string {
-  return armour('CERTIFICATE', cert);
+  return armourBytes('CERTIFICATE', encodeCertificate(cert));
 }
 
 export function pemToCert(pem: string): X509Certificate | null {
-  const o = unarmour(pem, 'CERTIFICATE') as X509Certificate | null;
-  if (!o || typeof o.subject !== 'string' || typeof o.serialNumber !== 'string') return null;
-  return o;
+  const bytes = unarmourBytes(pem, 'CERTIFICATE');
+  if (bytes === null) return null;
+  try {
+    if (bytes[0] === 0x7b) {
+      const legacy = JSON.parse(bytesToUtf8(bytes)) as X509Certificate;
+      return typeof legacy.subject === 'string' && typeof legacy.serialNumber === 'string' ? legacy : null;
+    }
+    return decodeCertificate(bytes);
+  } catch {
+    return null;
+  }
 }
 
 /**

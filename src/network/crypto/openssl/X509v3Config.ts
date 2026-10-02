@@ -1,5 +1,4 @@
-import { sha1 } from '@/crypto/hash';
-import { bytesToHex, utf8ToBytes } from '@/crypto/encoding';
+import { subjectKeyIdentifierOf, EXTENDED_KEY_USAGE_OIDS } from '@/network/pki/der/X509Der';
 import type { X509Certificate, X509CertificateFields } from '@/network/pki/X509Certificate';
 import { IPAddress, IPv6Address } from '@/network/core/types';
 
@@ -90,15 +89,19 @@ const KEY_USAGE_BITS: readonly { readonly short: string; readonly long: string }
   { short: 'decipherOnly', long: 'Decipher Only' },
 ];
 
-const EXTENDED_KEY_USAGE: readonly { readonly short: string; readonly long: string; readonly oid: string }[] = [
-  { short: 'serverAuth', long: 'TLS Web Server Authentication', oid: '1.3.6.1.5.5.7.3.1' },
-  { short: 'clientAuth', long: 'TLS Web Client Authentication', oid: '1.3.6.1.5.5.7.3.2' },
-  { short: 'codeSigning', long: 'Code Signing', oid: '1.3.6.1.5.5.7.3.3' },
-  { short: 'emailProtection', long: 'E-mail Protection', oid: '1.3.6.1.5.5.7.3.4' },
-  { short: 'timeStamping', long: 'Time Stamping', oid: '1.3.6.1.5.5.7.3.8' },
-  { short: 'OCSPSigning', long: 'OCSP Signing', oid: '1.3.6.1.5.5.7.3.9' },
-  { short: 'anyExtendedKeyUsage', long: 'Any Extended Key Usage', oid: '2.5.29.37.0' },
-];
+const EXTENDED_KEY_USAGE_LONG_NAMES: Readonly<Record<string, string>> = {
+  serverAuth: 'TLS Web Server Authentication',
+  clientAuth: 'TLS Web Client Authentication',
+  codeSigning: 'Code Signing',
+  emailProtection: 'E-mail Protection',
+  timeStamping: 'Time Stamping',
+  OCSPSigning: 'OCSP Signing',
+  anyExtendedKeyUsage: 'Any Extended Key Usage',
+};
+
+const EXTENDED_KEY_USAGE = Object.keys(EXTENDED_KEY_USAGE_LONG_NAMES).map((short) => ({
+  short, long: EXTENDED_KEY_USAGE_LONG_NAMES[short], oid: EXTENDED_KEY_USAGE_OIDS[short],
+}));
 
 export interface ExtensionContext {
   readonly publicKey: { readonly material: string };
@@ -112,7 +115,7 @@ export type ExtensionBuild =
 type MutableExtensions = { -readonly [K in keyof CertificateExtensions]: CertificateExtensions[K] };
 
 function keyIdentifier(publicKeyMaterial: string): string {
-  return bytesToHex(sha1(utf8ToBytes(publicKeyMaterial))).toUpperCase().match(/../g)!.join(':');
+  return subjectKeyIdentifierOf({ algorithm: publicKeyMaterial.startsWith('ec-') ? 'ecdsa' : 'rsa', material: publicKeyMaterial });
 }
 
 function stripCritical(value: string): { critical: boolean; rest: string } {
@@ -244,6 +247,7 @@ export function buildExtensions(
             if (keyid === undefined && mandatory) return fail(name, rawValue, 'unable to get issuer keyid');
             if (keyid !== undefined) akid.keyid = keyid;
           } else if (kind === 'issuer') {
+            if (!mandatory && akid.keyid !== undefined) continue;
             if (issuer) { akid.issuer = issuer.issuer === issuer.subject ? issuer.subject : issuer.issuer; akid.serial = issuer.serialNumber; }
             else if (mandatory) return fail(name, rawValue, 'unable to get issuer details');
           } else {

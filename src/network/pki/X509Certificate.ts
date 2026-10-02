@@ -1,4 +1,7 @@
-import type { PkiPublicKey } from './PkiKeyPair';
+import { PkiKeyPair, type PkiPrivateKey, type PkiPublicKey } from './PkiKeyPair';
+import { IPAddress, IPv6Address } from '@/network/core/types';
+import { canonicalSerial, tbsBytesOf } from './der/X509Der';
+import { canonicalDistinguishedName } from './der/DistinguishedName';
 
 export interface X509CertificateFields {
   readonly version: 3;
@@ -27,18 +30,37 @@ export interface X509Certificate extends X509CertificateFields {
   readonly signature: string;
 }
 
-export function tbsPayload(c: X509CertificateFields): string {
-  return JSON.stringify({
-    v: c.version,
-    sn: c.serialNumber,
-    s: c.subject,
-    i: c.issuer,
-    nb: c.notBefore,
-    na: c.notAfter,
-    pk: c.publicKey.material,
-    alg: c.signatureAlgorithm,
-    ext: c.extensions ?? {},
-  });
+export function tbsPayload(c: X509CertificateFields): Uint8Array {
+  return tbsBytesOf(c);
+}
+
+function wholeSeconds(epochMs: number): number {
+  return Math.floor(epochMs / 1000) * 1000;
+}
+
+function canonicalName(entry: string): string {
+  if (/^(DNS|IP|email|URI):/s.test(entry)) return entry;
+  return IPAddress.tryParse(entry) || IPv6Address.tryParse(entry) ? `IP:${entry}` : `DNS:${entry}`;
+}
+
+export function normalizeCertificateFields(fields: X509CertificateFields): X509CertificateFields {
+  const extensions = fields.extensions && fields.extensions.subjectAltName
+    ? { ...fields.extensions, subjectAltName: Object.freeze(fields.extensions.subjectAltName.map(canonicalName)) }
+    : fields.extensions;
+  return {
+    ...fields,
+    serialNumber: canonicalSerial(fields.serialNumber),
+    subject: canonicalDistinguishedName(fields.subject),
+    issuer: canonicalDistinguishedName(fields.issuer),
+    notBefore: wholeSeconds(fields.notBefore),
+    notAfter: wholeSeconds(fields.notAfter),
+    ...(extensions ? { extensions } : {}),
+  };
+}
+
+export function signCertificate(fields: X509CertificateFields, privateKey: PkiPrivateKey): X509Certificate {
+  const normalized = normalizeCertificateFields(fields);
+  return { ...normalized, signature: PkiKeyPair.sign(privateKey, tbsBytesOf(normalized)) };
 }
 
 export function isSelfSigned(cert: X509Certificate): boolean {

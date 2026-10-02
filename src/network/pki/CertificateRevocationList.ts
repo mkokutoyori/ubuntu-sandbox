@@ -1,5 +1,6 @@
 import type { PkiPublicKey } from './PkiKeyPair';
 import { PkiKeyPair } from './PkiKeyPair';
+import { sameSerial } from './der/X509Der';
 
 export interface RevokedEntry {
   readonly serialNumber: string;
@@ -75,7 +76,7 @@ export class CertificateRevocationList implements CrlFields {
   }
 
   contains(serialNumber: string): boolean {
-    return this.revoked.some(r => r.serialNumber === serialNumber);
+    return this.revoked.some(r => sameSerial(r.serialNumber, serialNumber));
   }
 
   isFresh(now: number): boolean {

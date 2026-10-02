@@ -1,3 +1,4 @@
+import { curlDistinguishedName } from '@/network/pki/der/DistinguishedName';
 import { opensslAlertReason } from '@/network/tls/alerts';
 import { x509VerifyError } from '@/network/pki/x509VerifyErrors';
 import type { VerificationReason } from '@/network/pki/CertificateVerifier';
@@ -542,7 +543,7 @@ export async function performCurlRequest(
             trace.push(`* SSL connection using TLSv${session.handshake?.negotiatedVersion ?? '1.3'} / ${opensslSuiteName(session.handshake?.negotiatedCipherSuite ?? '')}`);
             if (peer) {
               trace.push('* Server certificate:');
-              trace.push(`*  subject: ${peer.subject}`);
+              trace.push(`*  subject: ${curlDistinguishedName(peer.subject)}`);
               trace.push(`*  issuer: ${peer.issuer}`);
             }
             response = result.response;

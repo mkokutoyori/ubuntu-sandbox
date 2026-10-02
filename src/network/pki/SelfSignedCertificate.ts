@@ -6,7 +6,7 @@
  * convention as the rest of `src/network/pki/`.
  */
 import { PkiKeyPair, type PkiPrivateKey, type PkiPublicKey } from './PkiKeyPair';
-import { type X509Certificate, type X509CertificateFields, tbsPayload } from './X509Certificate';
+import { type X509Certificate, type X509CertificateFields, signCertificate } from './X509Certificate';
 
 export interface SelfSignedCertificateOptions {
   readonly now: number;
@@ -33,6 +33,7 @@ export interface SelfSignedCertificateOptions {
    * checked — the same blind spot that hid the mismatched key pair above.
    */
   readonly subjectAltName?: readonly string[];
+  readonly extensions?: NonNullable<X509CertificateFields['extensions']>;
 }
 
 let serialCounter = 0x5000;
@@ -53,13 +54,24 @@ export function generateSelfSignedCertificate(
     notAfter: opts.now + (opts.validityMs ?? 365 * 24 * 3600 * 1000),
     publicKey: keys.publicKey,
     signatureAlgorithm: 'sha256WithRSAEncryption',
-    extensions: Object.freeze({
+    extensions: opts.extensions ?? Object.freeze({
       basicConstraints: Object.freeze({ cA: false }),
       keyUsage: Object.freeze(['digitalSignature', 'keyEncipherment'] as const),
       extKeyUsage: opts.extKeyUsage ? Object.freeze([...opts.extKeyUsage]) : undefined,
       subjectAltName: opts.subjectAltName ? Object.freeze([...opts.subjectAltName]) : undefined,
     }),
   };
-  const signature = PkiKeyPair.sign(keys.privateKey, tbsPayload(fields));
-  return { cert: { ...fields, signature }, privateKey: keys.privateKey };
+  return { cert: signCertificate(fields, keys.privateKey), privateKey: keys.privateKey };
+}
+
+export function selfSignedServiceCertificate(subject: string): { cert: X509Certificate; keyPair: PkiKeyPair } {
+  const keyPair = PkiKeyPair.generate('rsa');
+  const name = subject.includes('=') ? subject : `CN=${subject}`;
+  const now = Date.now();
+  const fields: X509CertificateFields = {
+    version: 3, serialNumber: '1', subject: name, issuer: name,
+    notBefore: now - 1000, notAfter: now + 365 * 24 * 3600 * 1000,
+    publicKey: keyPair.publicKey, signatureAlgorithm: 'sha256WithRSAEncryption',
+  };
+  return { cert: signCertificate(fields, keyPair.privateKey), keyPair };
 }

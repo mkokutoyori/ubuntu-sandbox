@@ -1,5 +1,5 @@
 import { PkiKeyPair, type PkiPrivateKey } from './PkiKeyPair';
-import { type X509Certificate, type X509CertificateFields, tbsPayload } from './X509Certificate';
+import { type X509Certificate, type X509CertificateFields, signCertificate } from './X509Certificate';
 import { CertificateRevocationList, type RevokedEntry } from './CertificateRevocationList';
 
 export interface IssueOptions {
@@ -71,8 +71,7 @@ export class CertificateAuthority {
         keyUsage: Object.freeze(['keyCertSign', 'cRLSign'] as const),
       }),
     };
-    const signature = PkiKeyPair.sign(keys.privateKey, tbsPayload(fields));
-    const root: X509Certificate = { ...fields, signature };
+    const root = signCertificate(fields, keys.privateKey);
     return new CertificateAuthority(root, keys.privateKey);
   }
 
@@ -108,8 +107,7 @@ export class CertificateAuthority {
         crlDistributionPoints: opts.crlDistributionPoints ? Object.freeze([...opts.crlDistributionPoints]) : undefined,
       }),
     };
-    const signature = PkiKeyPair.sign(this.rootKey, tbsPayload(fields));
-    return { cert: { ...fields, signature }, privateKey: keys.privateKey };
+    return { cert: signCertificate(fields, this.rootKey), privateKey: keys.privateKey };
   }
 
   issueSubordinateCA(opts: SubordinateOptions): CertificateAuthority {
@@ -134,8 +132,7 @@ export class CertificateAuthority {
         keyUsage: Object.freeze(['keyCertSign', 'cRLSign'] as const),
       }),
     };
-    const signature = PkiKeyPair.sign(this.rootKey, tbsPayload(fields));
-    return new CertificateAuthority({ ...fields, signature }, keys.privateKey);
+    return new CertificateAuthority(signCertificate(fields, this.rootKey), keys.privateKey);
   }
 
   revoke(serialNumber: string, revocationDate: number, reasonCode?: RevokedEntry['reasonCode']): void {

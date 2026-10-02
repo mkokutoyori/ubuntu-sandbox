@@ -1,6 +1,7 @@
 import type { X509Certificate } from './X509Certificate';
 import type { CertificateAuthority } from './CertificateAuthority';
 import { PkiKeyPair } from './PkiKeyPair';
+import { sameSerial } from './der/X509Der';
 
 export type OcspStatus = 'good' | 'revoked' | 'unknown';
 
@@ -41,7 +42,7 @@ export class OcspResponder implements IOcspResponder {
       return { serialNumber: cert.serialNumber, status: 'unknown', producedAt: now, issuer: cert.issuer };
     }
     const crl = this.ca.publishCRL(now);
-    const revokedEntry = crl.revoked.find((e) => e.serialNumber === cert.serialNumber);
+    const revokedEntry = crl.revoked.find((e) => sameSerial(e.serialNumber, cert.serialNumber));
     if (revokedEntry) {
       return {
         serialNumber: cert.serialNumber,

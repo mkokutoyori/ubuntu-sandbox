@@ -1,9 +1,6 @@
 import { PkiKeyPair, type PkiPrivateKey } from './PkiKeyPair';
 import { tbsPayload, type X509Certificate } from './X509Certificate';
 
-function withoutSignature(cert: X509Certificate): X509Certificate {
-  return { ...cert, signature: '' };
-}
 import {
   DEFAULT_OCSP_VALIDITY_MS, ocspTbsPayload, verifyOcspStaple,
   type OcspStatus, type OcspTbsResponse, type SignedOcspResponse,
@@ -101,7 +98,7 @@ export function verifyOcspResponse(
   if (delegated) {
     const trustedItself = trusted.some((c) => c.serialNumber === delegated.serialNumber && c.subject === delegated.subject);
     const issuedByTrusted = trusted.some((c) => c.subject === delegated.issuer
-      && PkiKeyPair.verify(c.publicKey, tbsPayload(withoutSignature(delegated)), delegated.signature));
+      && PkiKeyPair.verify(c.publicKey, tbsPayload(delegated), delegated.signature));
     if (trustedItself || issuedByTrusted) signer = delegated;
   }
   for (const single of response.singles) {

@@ -195,14 +195,14 @@ describe('SNI : un certificat par bloc server (ngx_http_ssl_servername)', () => 
     const srv = machine(); await lab(srv); await twoSites(srv);
     const b = await exchange(srv, {}, 'b.local');
     const a = await exchange(srv, {}, 'a.local');
-    expect(b?.client.peerCertificate?.subject).toBe('CN = b.local');
-    expect(a?.client.peerCertificate?.subject).toBe('CN = lab.local');
+    expect(b?.client.peerCertificate?.subject).toBe('CN=b.local');
+    expect(a?.client.peerCertificate?.subject).toBe('CN=lab.local');
   });
 
   it('un nom inconnu reçoit le certificat du serveur par défaut (le premier)', async () => {
     const srv = machine(); await lab(srv); await twoSites(srv);
     const x = await exchange(srv, { verifier: new CertificateVerifier({ trustAnchors: [] }), allowUntrustedPeer: true } as never, 'zz.local');
-    expect(x?.client.peerCertificate?.subject).toBe('CN = lab.local');
+    expect(x?.client.peerCertificate?.subject).toBe('CN=lab.local');
   });
 
   it('ssl_reject_handshake on dans le serveur par défaut : ni SNI ni nom inconnu → alerte unrecognized_name', async () => {
@@ -224,9 +224,9 @@ describe('SNI : un certificat par bloc server (ngx_http_ssl_servername)', () => 
     const second = SERVER().replace('server_name _;', 'server_name .wild.local;').replace('srv.crt', 'srv2.crt').replace('srv.key', 'srv2.key');
     await site(srv, `${first}\n${second}`);
     await sh(srv, 'systemctl start nginx');
-    expect((await exchange(srv, {}, 'wild.local'))?.client.peerCertificate?.subject).toBe('CN = wild.local');
-    expect((await exchange(srv, {}, 'x.wild.local'))?.client.peerCertificate?.subject).toBe('CN = wild.local');
-    expect((await exchange(srv, {}, 'main.local'))?.client.peerCertificate?.subject).toBe('CN = lab.local');
+    expect((await exchange(srv, {}, 'wild.local'))?.client.peerCertificate?.subject).toBe('CN=wild.local');
+    expect((await exchange(srv, {}, 'x.wild.local'))?.client.peerCertificate?.subject).toBe('CN=wild.local');
+    expect((await exchange(srv, {}, 'main.local'))?.client.peerCertificate?.subject).toBe('CN=lab.local');
   });
 });
 

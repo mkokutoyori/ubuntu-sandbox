@@ -125,7 +125,7 @@ export class CertificateVerifier {
     for (let depth = 0; depth <= MAX_CHAIN_DEPTH; depth++) {
       const anchor = this.trustAnchors.find((a) => a.subject === current.issuer);
       if (anchor) {
-        if (!PkiKeyPair.verify(anchor.publicKey, tbsPayload(dropSignature(current)), current.signature)) {
+        if (!PkiKeyPair.verify(anchor.publicKey, tbsPayload(current), current.signature)) {
           return { ok: false, reason: 'bad-signature' };
         }
         const chainLength = anchorIsLeaf(cert, anchor) ? 1 : used.length + 2;
@@ -134,7 +134,7 @@ export class CertificateVerifier {
       }
       const next = intermediates.find((candidate) => candidate.subject === current.issuer
         && !used.includes(candidate)
-        && PkiKeyPair.verify(candidate.publicKey, tbsPayload(dropSignature(current)), current.signature));
+        && PkiKeyPair.verify(candidate.publicKey, tbsPayload(current), current.signature));
       if (!next) {
         const forged = intermediates.some((candidate) => candidate.subject === current.issuer);
         return { ok: false, reason: forged ? 'bad-signature' : 'unknown' };
@@ -240,19 +240,4 @@ export function certificateMatchesHostname(cert: X509Certificate, hostname: stri
     if (cn) dnsIdentities.push(cn[1].trim());
   }
   return dnsIdentities.some((presented) => dnsIdentityMatches(presented, reference));
-}
-
-function dropSignature(cert: X509Certificate): X509Certificate {
-  return {
-    version: cert.version,
-    serialNumber: cert.serialNumber,
-    subject: cert.subject,
-    issuer: cert.issuer,
-    notBefore: cert.notBefore,
-    notAfter: cert.notAfter,
-    publicKey: cert.publicKey,
-    signatureAlgorithm: cert.signatureAlgorithm,
-    extensions: cert.extensions,
-    signature: '',
-  };
 }

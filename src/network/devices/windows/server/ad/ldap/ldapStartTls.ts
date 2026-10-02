@@ -10,20 +10,10 @@ import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { TlsServerSession } from '@/network/tls/TlsServerSession';
 import { TlsClientSession, type TlsClientConfig } from '@/network/tls/TlsClientSession';
 import { encodeRecords, decodeRecords } from '@/network/http/https/TlsRecordWire';
-import { PkiKeyPair } from '@/network/pki/PkiKeyPair';
-import { tbsPayload, type X509Certificate } from '@/network/pki/X509Certificate';
+import { selfSignedServiceCertificate } from '@/network/pki/SelfSignedCertificate';
 
 /** A minimal self-signed leaf certificate for a DC's own StartTLS listener — no CA chain (PRD-Windows-Server-Advanced.md §5 P11 doesn't need one; a full AD CS chain is §5 P13's job). */
-export function selfSignedLdapCert(subject: string): { cert: X509Certificate; keyPair: PkiKeyPair } {
-  const keyPair = PkiKeyPair.generate('rsa');
-  const fields = {
-    version: 3 as const, serialNumber: '1', subject, issuer: subject,
-    notBefore: Date.now() - 1000, notAfter: Date.now() + 365 * 24 * 3600 * 1000,
-    publicKey: keyPair.publicKey, signatureAlgorithm: 'sha256WithRSAEncryption' as const,
-  };
-  const signature = PkiKeyPair.sign(keyPair.privateKey, tbsPayload(fields));
-  return { cert: { ...fields, signature }, keyPair };
-}
+export const selfSignedLdapCert = selfSignedServiceCertificate;
 
 /** Feeds one incoming wire chunk into an in-progress server-side handshake and sends back any reply flight. */
 export function stepServerHandshake(tls: TlsServerSession, socket: TcpSocket, data: Uint8Array): void {

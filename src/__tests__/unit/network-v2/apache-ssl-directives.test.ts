@@ -314,8 +314,8 @@ describe('SNI : un certificat, des protocoles et un contrôle par VirtualHost (i
 
   it('b.local reçoit son certificat, lab.local celui du premier vhost', async () => {
     const srv = machine(); await lab(srv); await twoVhosts(srv);
-    expect((await exchange(srv, {}, 'b.local'))?.client.peerCertificate?.subject).toBe('CN = b.local');
-    expect((await exchange(srv, {}, 'lab.local'))?.client.peerCertificate?.subject).toBe('CN = lab.local');
+    expect((await exchange(srv, {}, 'b.local'))?.client.peerCertificate?.subject).toBe('CN=b.local');
+    expect((await exchange(srv, {}, 'lab.local'))?.client.peerCertificate?.subject).toBe('CN=lab.local');
   });
 
   it('SSLProtocol propre au vhost (protocol_set) : b.local exige TLS 1.3, lab.local accepte TLS 1.2', async () => {
@@ -332,7 +332,7 @@ describe('SNI : un certificat, des protocoles et un contrôle par VirtualHost (i
     await writeSite(srv, 'a', VHOST('', 'lab.local', 'srv'));
     await writeSite(srv, 'b', VHOST('  ServerAlias *.zone\n', 'b.local', 'srv2'));
     await sh(srv, 'systemctl start apache2');
-    expect((await exchange(srv, {}, 'x.zone'))?.client.peerCertificate?.subject).toBe('CN = b.local');
+    expect((await exchange(srv, {}, 'x.zone'))?.client.peerCertificate?.subject).toBe('CN=b.local');
   });
 
   it('SSLStrictSNIVHostCheck on : un client sans SNI sur un hôte à noms reçoit 403', async () => {
