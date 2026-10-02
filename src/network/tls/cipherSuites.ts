@@ -23,6 +23,20 @@ export const MANDATORY_CIPHER_SUITES: readonly CipherSuite[] = [
  * here, but makes the negotiated suite an observable, testable parameter
  * (PRD-TLS.md §2.1.11) rather than an inert label.
  */
+export const DEFAULT_CIPHER_SUITES: readonly CipherSuite[] = [
+  'TLS_AES_256_GCM_SHA384',
+  'TLS_CHACHA20_POLY1305_SHA256',
+  'TLS_AES_128_GCM_SHA256',
+];
+
+export function parseTls13Ciphersuites(list: string): CipherSuite[] {
+  const out: CipherSuite[] = [];
+  for (const name of list.split(':')) {
+    if ((MANDATORY_CIPHER_SUITES as readonly string[]).includes(name) && !out.includes(name as CipherSuite)) out.push(name as CipherSuite);
+  }
+  return out;
+}
+
 export const CIPHER_SUITE_TAG_LENGTH: Record<CipherSuite, number> = {
   TLS_AES_128_GCM_SHA256: 16,
   TLS_AES_256_GCM_SHA384: 16,

@@ -7,6 +7,7 @@
  */
 import { utf8ToBytes, bytesToUtf8 } from '@/crypto/encoding';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
+import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
 import type { CipherSuite } from './types';
 import { HELLO_RETRY_REQUEST_RANDOM } from './types';
 
@@ -16,10 +17,19 @@ export interface ClientHelloExtensions {
   readonly supportedGroups: readonly string[];
   readonly signatureAlgorithms: readonly string[];
   readonly serverName?: string;
+  readonly statusRequest?: boolean;
+  readonly maxFragmentLength?: number;
   readonly alpn?: readonly string[];
   readonly pskKeyExchangeModes?: readonly string[];
   readonly preSharedKey?: string;
   readonly earlyData?: boolean;
+}
+
+export interface LegacyClientExtensions {
+  readonly sessionId: string;
+  readonly extendedMasterSecret: boolean;
+  readonly renegotiationInfo: string | null;
+  readonly sessionTicket: string | null;
 }
 
 export interface ClientHello {
@@ -27,6 +37,8 @@ export interface ClientHello {
   readonly legacyVersion: string;
   readonly random: string;
   readonly cipherSuites: readonly CipherSuite[];
+  readonly legacyCipherSuites?: readonly number[];
+  readonly legacyExtensions?: LegacyClientExtensions;
   readonly extensions: ClientHelloExtensions;
 }
 
@@ -51,7 +63,7 @@ export interface HelloRetryRequest {
 
 export interface EncryptedExtensionsMessage {
   readonly kind: 'encrypted_extensions';
-  readonly extensions: { readonly alpn?: string; readonly earlyData?: boolean };
+  readonly extensions: { readonly alpn?: string; readonly earlyData?: boolean; readonly maxFragmentLength?: number };
 }
 
 export interface CertificateRequest {
@@ -63,10 +75,12 @@ export interface CertificateRequest {
 export interface CertificateMessage {
   readonly kind: 'certificate';
   readonly certificateList: readonly X509Certificate[];
+  readonly ocspStaple?: SignedOcspResponse;
 }
 
 export interface CertificateVerify {
   readonly kind: 'certificate_verify';
+  readonly signatureAlgorithm?: string;
   readonly signature: string;
 }
 

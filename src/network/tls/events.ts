@@ -14,7 +14,7 @@
  * `alert` record (see `TlsServerSession.reject`/`TlsClientSession.fail`) —
  * only the side that raises it ever "sends" one.
  */
-import type { CipherSuite } from './types';
+import type { TlsProtocolVersion } from './legacy/legacyCipherSuites';
 import type { TlsAlert } from './alerts';
 
 export type TlsSessionRole = 'client' | 'server';
@@ -27,7 +27,8 @@ export interface TlsSessionRef {
 export type TlsHandshakeStartedPayload = TlsSessionRef;
 
 export interface TlsHandshakeCompletedPayload extends TlsSessionRef {
-  readonly cipherSuite: CipherSuite;
+  readonly cipherSuite: string;
+  readonly protocolVersion: TlsProtocolVersion;
   readonly alpnProtocol: string | null;
   readonly resumed: boolean;
 }

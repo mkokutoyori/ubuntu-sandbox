@@ -119,7 +119,7 @@ export class LdapServerHandler {
       if (this.tls && this.tls.result === 'accept') {
         let messages: LdapMessage[];
         try {
-          const { plaintext, nextSeq } = decryptApplicationData(this.tls.clientApplicationTrafficSecret!, this.tlsRecvSeq, decodeRecords(data));
+          const { plaintext, nextSeq } = decryptApplicationData(this.tls.clientTraffic(), this.tlsRecvSeq, decodeRecords(data));
           this.tlsRecvSeq = nextSeq;
           messages = absorb(plaintext);
         } catch { return; }
@@ -137,7 +137,7 @@ export class LdapServerHandler {
   private reply(socket: TcpSocket, messageID: number, protocolOp: ProtocolOp, controls?: LdapControl[]): void {
     const bytes = encodeLdapMessage({ messageID, protocolOp, controls });
     if (this.replyEncrypted && this.tls && this.tls.result === 'accept') {
-      const { records, nextSeq } = encryptApplicationData(this.tls.serverApplicationTrafficSecret!, this.tlsSendSeq, bytes);
+      const { records, nextSeq } = encryptApplicationData(this.tls.serverTraffic(), this.tlsSendSeq, bytes);
       this.tlsSendSeq = nextSeq;
       socket.send(encodeRecords(records));
       return;

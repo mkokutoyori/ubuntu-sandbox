@@ -58,7 +58,7 @@ describe('TLS 1.3 (RFC 8446 §4) — nominal 1-RTT handshake', () => {
     const clientFinished = client.handle(serverFlight!);
 
     expect(client.result).toBe('failure');
-    expect(clientFinished).toBeNull();
+    expect(clientFinished?.[0].contentType).toBe('alert');
     expect(server.result).toBeNull();
   });
 
@@ -75,7 +75,7 @@ describe('TLS 1.3 (RFC 8446 §4) — nominal 1-RTT handshake', () => {
     const clientFinished = client.handle(serverFlight!);
 
     expect(client.result).toBe('failure');
-    expect(clientFinished).toBeNull();
+    expect(clientFinished?.[0].contentType).toBe('alert');
   });
 
   it('negotiates the configured cipher suite and carries it through to the client', () => {

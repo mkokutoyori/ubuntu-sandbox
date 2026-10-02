@@ -19,19 +19,35 @@ import { generateKeyExchange, sharedSecret, isImplementedGroup, type KeyExchange
 import { PkiKeyPair, type PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
-import type { CipherSuite } from './types';
+import { MAX_TLS_RECORD_LENGTH, type CipherSuite } from './types';
 import type { TlsDomainEvent } from './events';
 import {
-  type ClientHello, type ServerHello, type EncryptedExtensionsMessage,
+  type ClientHello, type ServerHello, type LegacyClientExtensions, type EncryptedExtensionsMessage,
   type CertificateRequest, type CertificateMessage, type CertificateVerify, type Finished,
   type NewSessionTicket, type KeyUpdate, type TlsHandshakeMessage,
   encodeHandshakeMessage, decodeHandshakeMessage, encodeMessages, decodeMessages, randomNonce,
 } from './messages';
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
-import { deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, ZERO_IKM } from './keySchedule';
-import { certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
-import { MANDATORY_CIPHER_SUITES } from './cipherSuites';
+import { collapseFirstClientHello, deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, expandLabel, certificateVerifyContent, ZERO_IKM } from './keySchedule';
+import { signCertificateVerify, verifyCertificateVerify, SUPPORTED_SIGNATURE_SCHEMES, schemeForKey } from './signature13';
+import { alertFromRecord, alertToRecord, certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
+import { DEFAULT_CIPHER_SUITES, parseTls13Ciphersuites } from './cipherSuites';
+import { tls13CipherPermitted } from './legacy/securityPolicy';
 import { type SessionTicket, deriveResumptionPsk } from './sessionTickets';
+import {
+  PROTOCOL_VERSION_WIRE, legacySuiteByName, permittedVersions, resolveLegacyPolicy,
+  type LegacySuiteDefinition, type ResolvedLegacyPolicy, type LegacyVersion, type TlsProtocolVersion,
+} from './legacy/legacyCipherSuites';
+import { LegacyClientHandshake, newHelloRandom } from './legacy/LegacyHandshake';
+import { decodeLegacyMessages } from './legacy/legacyMessages';
+import type { TrafficProtection } from './trafficProtection';
+import { suiteInfo } from './suite13';
+import type { Tls13Hash } from './hkdf';
+import { stapleAlert } from './ocspStapling';
+import type { SignedOcspResponse } from '@/network/pki/OcspResponder';
+import { isValidMaxFragmentLength, DEFAULT_MAX_FRAGMENT } from './maxFragment';
+import type { ResumableLegacySession } from './legacy/legacySessions';
+import { randomHex } from './legacy/LegacyHandshake';
 
 export interface TlsClientConfig {
   readonly verifier: CertificateVerifier;
@@ -47,6 +63,8 @@ export interface TlsClientConfig {
   readonly cipherSuites?: readonly CipherSuite[];
   /** Presented only if the server actually sends a CertificateRequest (mTLS). */
   readonly clientCert?: X509Certificate;
+  /** Intermediates sent after `clientCert` in the Certificate message. */
+  readonly clientChain?: readonly X509Certificate[];
   readonly clientPrivateKey?: PkiPrivateKey;
   /** Groups this client can offer a key_share for; defaults to `['x25519']`. The first entry is offered up front. */
   readonly supportedGroups?: readonly string[];
@@ -60,7 +78,42 @@ export interface TlsClientConfig {
   readonly earlyData?: Uint8Array;
   /** RFC 8446 §2.1.12 observability — publishes `tls.*` events (`events.ts`) if set. */
   readonly eventBus?: IEventBus;
+  /** Protocol versions offered; RFC 8996 removes 1.0/1.1 from the default. */
+  readonly versions?: readonly TlsProtocolVersion[];
+  /** TLS ≤ 1.2 suites (by IANA name) offered, in preference order. */
+  readonly legacyCipherSuites?: readonly string[];
+  /** OpenSSL cipher string for TLS ≤ 1.2 (`ssl/ssl_ciph.c` grammar, `@SECLEVEL=n` included). */
+  readonly cipherList?: string;
+  /** OpenSSL security level 0..5 (`ssl/ssl_cert.c`); default 1. */
+  readonly securityLevel?: number;
+  /** TLS 1.3 suites in OpenSSL's colon syntax (`SSL_CTX_set_ciphersuites`). */
+  readonly tls13Ciphersuites?: string;
+  /** RFC 7627 — offer `extended_master_secret` for TLS ≤ 1.2 (default true). */
+  readonly extendedMasterSecret?: boolean;
+  /** A session exported by `exportLegacySession()` to resume (RFC 5246 §7.3, RFC 5077). */
+  readonly legacySession?: ResumableLegacySession;
+  /** `SSL_OP_LEGACY_SERVER_CONNECT` : talk to a server lacking RFC 5746 secure renegotiation. */
+  readonly allowUnsafeLegacyRenegotiation?: boolean;
+  /** RFC 6066 §8 — send status_request and verify a stapled OCSP response. */
+  readonly requestOcspStaple?: boolean;
+  /** RFC 7633 must-staple behaviour: a missing or invalid staple fails with bad_certificate_status_response. */
+  readonly requireOcspStaple?: boolean;
+  /** Send status_request and keep the staple for the caller to judge (curl --cert-status, s_client -status) instead of aborting. */
+  readonly collectOcspStaple?: boolean;
+  /** RFC 6066 §4 — ask the server to limit records to this many bytes. */
+  readonly maxFragmentLength?: number;
+  /** RFC 8701 — inject GREASE values into the ClientHello lists. */
+  readonly grease?: boolean;
 }
+
+const GREASE_VALUE = 0x0a0a;
+const GREASE_NAME = 'grease_0a0a';
+const GREASE_CIPHER_SUITE = 'TLS_GREASE_0A0A';
+
+const MAX_TICKET_LIFETIME_SECONDS = 604800;
+const MAX_PROTECTED_FRAGMENT = MAX_TLS_RECORD_LENGTH + 2048;
+
+export const DEFAULT_CLIENT_VERSIONS: readonly TlsProtocolVersion[] = ['1.3', '1.2'];
 
 type ClientState = 'idle' | 'awaiting-server-flight' | 'done';
 
@@ -69,7 +122,8 @@ export class TlsClientSession {
   /** RFC 8446 §6 alert explaining the last failure, if any. */
   lastAlert: TlsAlert | null = null;
   /** The cipher suite the server actually chose, once ServerHello is processed. */
-  negotiatedCipherSuite: CipherSuite | null = null;
+  negotiatedCipherSuite: string | null = null;
+  negotiatedVersion: TlsProtocolVersion | null = null;
   /** RFC 7301 — the protocol the server actually chose, if any. */
   negotiatedAlpnProtocol: string | null = null;
   /** RFC 8446 §2.3 — whether the server accepted the 0-RTT data offered, if any was sent. */
@@ -77,6 +131,8 @@ export class TlsClientSession {
   /** A ticket received via `receiveSessionTicket()`, ready to resume a future session. */
   receivedTicket: SessionTicket | null = null;
   peerCertificate: X509Certificate | null = null;
+  peerCertificateChain: readonly X509Certificate[] = [];
+  receivedStaple: SignedOcspResponse | null = null;
   peerVerified = false;
   peerVerificationReason: string | null = null;
   /**
@@ -106,14 +162,83 @@ export class TlsClientSession {
   private keyExchange: KeyExchangeKeyPair | null = null;
   private resumptionMasterSecret: string | null = null;
   private readonly transcript: Uint8Array[] = [];
+  private versions: readonly TlsProtocolVersion[];
+  private suiteOverride: readonly CipherSuite[] | null = null;
+  private readonly policy: ResolvedLegacyPolicy;
+  private legacy: LegacyClientHandshake | null = null;
+  private lastClientHelloBytes: Uint8Array = new Uint8Array(0);
+  private hash: Tls13Hash = 'sha256';
+  private retried = false;
+  negotiatedMaxFragmentLength: number | null = null;
 
   constructor(private readonly config: TlsClientConfig) {
+    this.policy = resolveLegacyPolicy(config);
+    this.versions = permittedVersions(config.versions ?? DEFAULT_CLIENT_VERSIONS, this.policy.securityLevel);
     // Un vrai client n'annonce pas un groupe dont il n'a pas le code : le
     // serveur le choisirait, et il faudrait alors soit abandonner plus
     // tard, soit fabriquer un secret. Le filtre est là pour que la
     // question ne se pose jamais.
     this.supportedGroups = (config.supportedGroups ?? ['x25519']).filter(isImplementedGroup);
     this.pskInput = config.resumptionTicket ? deriveResumptionPsk(config.resumptionTicket) : ZERO_IKM;
+  }
+
+  clientTraffic(): TrafficProtection {
+    return this.legacy?.traffic?.outbound ?? { secret: this.clientApplicationTrafficSecret!, suite: this.negotiatedCipherSuite as CipherSuite, maxFragment: this.negotiatedMaxFragmentLength ?? DEFAULT_MAX_FRAGMENT };
+  }
+
+  serverTraffic(): TrafficProtection {
+    return this.legacy?.traffic?.inbound ?? { secret: this.serverApplicationTrafficSecret!, suite: this.negotiatedCipherSuite as CipherSuite, maxFragment: this.negotiatedMaxFragmentLength ?? DEFAULT_MAX_FRAGMENT };
+  }
+
+  private legacyExt: LegacyClientExtensions | null = null;
+
+  private legacyExtensions(): LegacyClientExtensions {
+    if (this.legacyExt === null) {
+      const session = this.config.legacySession ?? null;
+      const resumable = session !== null && this.legacyVersions().includes(session.state.version);
+      this.legacyExt = {
+        sessionId: resumable ? (session!.state.id !== '' ? session!.state.id : randomHex(32)) : '',
+        extendedMasterSecret: this.config.extendedMasterSecret !== false,
+        renegotiationInfo: '',
+        sessionTicket: resumable ? (session!.ticket ?? '') : '',
+      };
+    }
+    return this.legacyExt;
+  }
+
+  exportLegacySession(): ResumableLegacySession | null {
+    return this.legacy?.exportedSession ?? null;
+  }
+
+  get legacyResumed(): boolean {
+    return this.legacy?.resumed ?? false;
+  }
+
+  private withGrease<T>(values: readonly T[], grease: T): readonly T[] {
+    return this.config.grease === true ? [grease, ...values] : values;
+  }
+
+  private tls13Offer(): readonly CipherSuite[] {
+    const base = this.suiteOverride ?? this.config.cipherSuites
+      ?? (this.config.tls13Ciphersuites !== undefined ? parseTls13Ciphersuites(this.config.tls13Ciphersuites) : DEFAULT_CIPHER_SUITES);
+    return base.filter((suite) => tls13CipherPermitted(this.policy.securityLevel, suiteInfo(suite).strengthBits));
+  }
+
+  restrictToQuic(): void {
+    this.versions = ['1.3'];
+    this.suiteOverride = ['TLS_AES_128_GCM_SHA256'];
+  }
+
+  private offersTls13(): boolean {
+    return this.versions.includes('1.3');
+  }
+
+  private legacyVersions(): LegacyVersion[] {
+    return (['1.0', '1.1', '1.2'] as const).filter((version) => this.versions.includes(version));
+  }
+
+  private legacySuiteDefinitions(): readonly LegacySuiteDefinition[] {
+    return this.legacyVersions().length === 0 ? [] : this.policy.suites;
   }
 
   /** Produces the initial `ClientHello` flight, offering a key_share for the first supported group. */
@@ -124,37 +249,72 @@ export class TlsClientSession {
     // faire — elle échoue avant d'écrire, plutôt que d'ouvrir une
     // conversation qu'elle ne peut pas conclure.
     if (this.supportedGroups.length === 0) { this.fail('handshake_failure'); return []; }
-    this.clientRandom = randomNonce('cli');
+    if (this.versions.length === 0) { this.fail('protocol_version'); return []; }
+    if (this.policy.error !== null) { this.fail('handshake_failure'); return []; }
+    this.clientRandom = newHelloRandom();
     const records = this.sendClientHello(this.supportedGroups[0]);
     if (!this.config.resumptionTicket || !this.config.earlyData) return records;
     return [...records, ...fragmentAsRecords('application_data', this.config.earlyData, true)];
   }
 
   private sendClientHello(group: string): readonly TlsRecord[] {
-    this.keyExchange = generateKeyExchange(group);
-    this.clientKeyShare = this.keyExchange.share;
+    this.keyExchange = this.offersTls13() ? generateKeyExchange(group) : null;
+    this.clientKeyShare = this.keyExchange?.share ?? '';
+    const legacyOffered = this.legacyVersions();
+    const legacyCeiling: LegacyVersion = legacyOffered[legacyOffered.length - 1] ?? '1.2';
     const ticket = this.config.resumptionTicket;
     const clientHello: ClientHello = {
-      kind: 'client_hello', legacyVersion: '1.2', random: this.clientRandom,
-      cipherSuites: this.config.cipherSuites ?? MANDATORY_CIPHER_SUITES,
+      kind: 'client_hello', legacyVersion: legacyCeiling, random: this.clientRandom,
+      cipherSuites: this.offersTls13() ? this.withGrease(this.tls13Offer(), GREASE_CIPHER_SUITE as CipherSuite) : [],
+      legacyCipherSuites: this.withGrease(this.legacySuiteDefinitions().map((definition) => definition.code), GREASE_VALUE),
+      legacyExtensions: this.legacyExtensions(),
       extensions: {
-        supportedVersions: ['1.3'], keyShare: this.clientKeyShare,
-        supportedGroups: this.supportedGroups, signatureAlgorithms: ['ecdsa_secp256r1_sha256'],
-        alpn: this.config.alpn,
+        supportedVersions: this.offersTls13() ? this.withGrease(this.versions, GREASE_NAME) : [], keyShare: this.clientKeyShare,
+        supportedGroups: this.withGrease(this.supportedGroups, GREASE_NAME),
+        signatureAlgorithms: this.withGrease(SUPPORTED_SIGNATURE_SCHEMES, GREASE_NAME),
+        alpn: this.config.alpn ? this.withGrease(this.config.alpn, GREASE_NAME) : undefined,
         serverName: this.config.serverName,
+        ...(this.config.requestOcspStaple || this.config.requireOcspStaple || this.config.collectOcspStaple ? { statusRequest: true } : {}),
+        ...(isValidMaxFragmentLength(this.config.maxFragmentLength) ? { maxFragmentLength: this.config.maxFragmentLength } : {}),
         preSharedKey: ticket?.ticket,
         pskKeyExchangeModes: ticket ? ['psk_dhe_ke'] : undefined,
         earlyData: ticket && this.config.earlyData ? true : undefined,
       },
     };
     const clientHelloBytes = encodeHandshakeMessage(clientHello);
+    this.lastClientHelloBytes = clientHelloBytes;
     this.transcript.push(clientHelloBytes);
     this.state = 'awaiting-server-flight';
     return fragmentAsRecords('handshake', clientHelloBytes, false);
   }
 
   /** Feeds the server's flight in; returns the client's next flight, or null on failure. */
+  peerAlert: TlsAlert | null = null;
+
   handle(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
+    const received = incoming.length > 0 ? alertFromRecord(incoming[0]) : null;
+    if (received !== null) return this.receiveAlert(received);
+    const before = this.lastAlert;
+    const flight = incoming.some((record) => record.fragment.length > MAX_PROTECTED_FRAGMENT)
+      ? this.fail('record_overflow')
+      : this.process(incoming);
+    if (flight === null && this.result === 'failure' && this.lastAlert !== before && this.lastAlert !== null) {
+      return [alertToRecord(this.lastAlert)];
+    }
+    return flight;
+  }
+
+  private receiveAlert(alert: TlsAlert): null {
+    if (this.result !== null) return null;
+    this.peerAlert = alert;
+    this.lastAlert = alert;
+    this.state = 'done';
+    this.result = 'failure';
+    this.emit({ topic: 'tls.handshake.failed', payload: { sessionId: this.sessionId, role: 'client', alert } });
+    return null;
+  }
+
+  private process(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
     if (this.state !== 'awaiting-server-flight') return null;
     try {
       return this.handleServerMessage(incoming);
@@ -177,20 +337,80 @@ export class TlsClientSession {
   }
 
   private handleServerMessage(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
+    if (this.legacy !== null) return this.handleLegacy(incoming);
     const { leading, rest } = splitLeadingContentType(incoming, 'handshake');
     const { contentType: leadType, plaintext: leadBytes } = reassembleRecords(leading, false);
     if (leadType !== 'handshake') return this.fail('decode_error');
+    if (decodeLegacyMessages(leadBytes)[0]?.kind === 'legacy_server_hello') return this.startLegacy(incoming);
     const leadMessage = decodeHandshakeMessage(leadBytes);
 
     if (leadMessage.kind === 'hello_retry_request') {
       if (rest.length > 0) return this.fail('unexpected_message');
       if (!this.supportedGroups.includes(leadMessage.selectedGroup)) return this.fail('handshake_failure');
       this.transcript.push(leadBytes);
+      this.retried = true;
       return this.sendClientHello(leadMessage.selectedGroup);
     }
     if (leadMessage.kind !== 'server_hello') return this.fail('unexpected_message');
 
     return this.handleServerFlight(leadMessage, leadBytes, rest);
+  }
+
+  private startLegacy(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
+    const legacyOffered = this.legacyVersions();
+    if (legacyOffered.length === 0) return this.fail('protocol_version');
+    const ceiling = legacyOffered[legacyOffered.length - 1];
+    this.legacy = new LegacyClientHandshake({
+      offeredVersions: legacyOffered,
+      offeredSuites: this.legacySuiteDefinitions().map((definition) => definition.name),
+      offeredGroups: this.supportedGroups, clientHelloBytes: this.lastClientHelloBytes,
+      clientRandom: this.clientRandom, clientVersionWire: PROTOCOL_VERSION_WIRE[ceiling],
+      offersTls13: this.offersTls13(), verifier: this.config.verifier,
+      allowUntrustedPeer: this.config.allowUntrustedPeer === true, serverName: this.config.serverName,
+      clientCert: this.config.clientCert, clientChain: this.config.clientChain, clientPrivateKey: this.config.clientPrivateKey,
+      securityLevel: this.policy.securityLevel, resolveSuite: legacySuiteByName,
+      clientExtensions: this.legacyExtensions(),
+      session: this.config.legacySession ?? null,
+      allowUnsafeRenegotiation: this.config.allowUnsafeLegacyRenegotiation === true,
+      requestStatus: this.config.requestOcspStaple === true || this.config.requireOcspStaple === true || this.config.collectOcspStaple === true,
+      enforceStaple: this.config.requestOcspStaple === true || this.config.requireOcspStaple === true,
+      requireStaple: this.config.requireOcspStaple === true,
+      requestedMaxFragment: isValidMaxFragmentLength(this.config.maxFragmentLength) ? this.config.maxFragmentLength : null,
+      now: Date.now,
+    });
+    return this.handleLegacy(incoming);
+  }
+
+  private handleLegacy(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
+    const legacy = this.legacy!;
+    const flight = legacy.handle(incoming);
+    this.peerCertificate = legacy.peerCertificate;
+    this.peerCertificateChain = legacy.peerCertificateChain;
+    this.receivedStaple = legacy.receivedStaple;
+    this.peerVerified = legacy.peerVerified;
+    this.peerVerificationReason = legacy.peerVerificationReason;
+    this.negotiatedVersion = legacy.negotiatedVersion;
+    this.negotiatedCipherSuite = legacy.negotiatedSuite?.name ?? null;
+    this.negotiatedAlpnProtocol = legacy.negotiatedAlpn;
+    this.negotiatedMaxFragmentLength = legacy.negotiatedMaxFragment;
+    if (legacy.result === 'failure') {
+      this.lastAlert = legacy.lastAlert;
+      this.state = 'done';
+      this.result = 'failure';
+      this.emit({ topic: 'tls.handshake.failed', payload: { sessionId: this.sessionId, role: 'client', alert: this.lastAlert! } });
+      this.emit({ topic: 'tls.alert.sent', payload: { sessionId: this.sessionId, role: 'client', alert: this.lastAlert! } });
+    } else if (legacy.result === 'success') {
+      this.state = 'done';
+      this.result = 'success';
+      this.emit({
+        topic: 'tls.handshake.completed',
+        payload: {
+          sessionId: this.sessionId, role: 'client', cipherSuite: this.negotiatedCipherSuite!,
+          protocolVersion: this.negotiatedVersion!, alpnProtocol: this.negotiatedAlpnProtocol, resumed: legacy.resumed,
+        },
+      });
+    }
+    return flight;
   }
 
   private handleServerFlight(
@@ -209,10 +429,21 @@ export class TlsClientSession {
     const serverFinished = messages.find((m): m is Finished => m.kind === 'finished');
     if (!encryptedExtensions || !certificate || !certificateVerify || !serverFinished) return this.fail('unexpected_message');
 
-    const offeredSuites = this.config.cipherSuites ?? MANDATORY_CIPHER_SUITES;
+    const offeredSuites = this.tls13Offer();
+    if ((serverHello.cipherSuite as string) === GREASE_CIPHER_SUITE) return this.fail('illegal_parameter');
     if (!offeredSuites.includes(serverHello.cipherSuite)) return this.fail('handshake_failure');
     this.negotiatedCipherSuite = serverHello.cipherSuite;
+    this.negotiatedVersion = '1.3';
+    this.hash = suiteInfo(serverHello.cipherSuite).hash;
+    if (this.retried) collapseFirstClientHello(this.transcript, this.hash);
+    if (encryptedExtensions.extensions.alpn === GREASE_NAME) return this.fail('illegal_parameter');
     this.negotiatedAlpnProtocol = encryptedExtensions.extensions.alpn ?? null;
+    const echoedFragment = encryptedExtensions.extensions.maxFragmentLength;
+    if (echoedFragment !== undefined) {
+      if (this.config.maxFragmentLength === undefined) return this.fail('unsupported_extension');
+      if (echoedFragment !== this.config.maxFragmentLength) return this.fail('illegal_parameter');
+      this.negotiatedMaxFragmentLength = echoedFragment;
+    }
     this.earlyDataAccepted = encryptedExtensions.extensions.earlyData ?? false;
 
     // Étage 3 : un vrai X25519 sur la part du serveur, avec le scalaire
@@ -232,14 +463,11 @@ export class TlsClientSession {
     const effectivePsk = serverHello.extensions.preSharedKey ? this.pskInput : ZERO_IKM;
     // Same simplification as the server side (see TlsServerSession.ts): the
     // resumption/application secrets are derived from the CH+SH checkpoint.
-    const shTranscript = transcriptHash(this.transcript);
+    const shTranscript = transcriptHash(this.transcript, this.hash);
     const handshakePhase = deriveKeySchedule(
-      { clientHello: transcriptHash([this.transcript[0]]), serverHello: shTranscript, serverFinished: shTranscript, clientFinished: shTranscript },
-      effectivePsk, dheSharedSecret,
+      { clientHello: transcriptHash([this.transcript[0]], this.hash), serverHello: shTranscript, serverFinished: shTranscript, clientFinished: shTranscript },
+      effectivePsk, dheSharedSecret, this.hash,
     );
-    this.resumptionMasterSecret = handshakePhase.resumptionMasterSecret;
-    this.clientApplicationTrafficSecret = handshakePhase.clientApplicationTrafficSecret;
-    this.serverApplicationTrafficSecret = handshakePhase.serverApplicationTrafficSecret;
     this.clientHandshakeTrafficSecret = handshakePhase.clientHandshakeTrafficSecret;
     this.serverHandshakeTrafficSecret = handshakePhase.serverHandshakeTrafficSecret;
     const sessionResumed = Boolean(serverHello.extensions.preSharedKey);
@@ -253,7 +481,11 @@ export class TlsClientSession {
     const leafCert = certificate.certificateList[0];
     if (!leafCert) return this.fail('certificate_unknown');
     this.peerCertificate = leafCert;
-    const verification = this.config.verifier.verify(leafCert);
+    this.peerCertificateChain = certificate.certificateList;
+    this.receivedStaple = certificate.ocspStaple ?? null;
+    const verification = this.config.verifier.verify(
+      leafCert, this.config.serverName, certificate.certificateList.slice(1), 'serverAuth', this.policy.securityLevel,
+    );
     this.peerVerified = verification.ok !== false;
     if (verification.ok === false) {
       this.peerVerificationReason = verification.reason;
@@ -267,31 +499,47 @@ export class TlsClientSession {
       }
     }
 
+    const stapleProblem = stapleAlert(
+      this.config.verifier, leafCert, certificate.certificateList.slice(1), certificate.ocspStaple,
+      this.config.requireOcspStaple === true,
+    );
+    if (stapleProblem !== null && (this.config.requestOcspStaple || this.config.requireOcspStaple)) return this.fail(stapleProblem);
     this.transcript.push(encodeHandshakeMessage(encryptedExtensions));
     if (certificateRequest) this.transcript.push(encodeHandshakeMessage(certificateRequest));
     this.transcript.push(encodeHandshakeMessage(certificate));
 
-    const preVerify = transcriptHash(this.transcript);
-    if (!PkiKeyPair.verify(leafCert.publicKey, preVerify, certificateVerify.signature)) return this.fail('decrypt_error');
+    const preVerify = certificateVerifyContent('server', transcriptHash(this.transcript, this.hash));
+    if (certificateVerify.signatureAlgorithm !== schemeForKey(leafCert.publicKey.algorithm)) return this.fail('illegal_parameter');
+    if (!verifyCertificateVerify(leafCert.publicKey, preVerify, certificateVerify.signatureAlgorithm, certificateVerify.signature)) return this.fail('decrypt_error');
     this.transcript.push(encodeHandshakeMessage(certificateVerify));
 
-    const preFinished = transcriptHash(this.transcript);
-    const expectedServerFinished = computeFinished(handshakePhase.serverHandshakeTrafficSecret, preFinished);
+    const preFinished = transcriptHash(this.transcript, this.hash);
+    const expectedServerFinished = computeFinished(handshakePhase.serverHandshakeTrafficSecret, preFinished, this.hash);
     if (serverFinished.verifyData !== expectedServerFinished) return this.fail('decrypt_error');
     this.transcript.push(encodeHandshakeMessage(serverFinished));
+    const throughServerFinished = transcriptHash(this.transcript, this.hash);
+    const applicationPhase = deriveKeySchedule(
+      { clientHello: transcriptHash([this.transcript[0]], this.hash), serverHello: shTranscript, serverFinished: throughServerFinished, clientFinished: throughServerFinished },
+      effectivePsk, dheSharedSecret, this.hash,
+    );
+    this.clientApplicationTrafficSecret = applicationPhase.clientApplicationTrafficSecret;
+    this.serverApplicationTrafficSecret = applicationPhase.serverApplicationTrafficSecret;
 
     const finalBundle: TlsHandshakeMessage[] = [];
     if (certificateRequest) {
       const clientCertificate: CertificateMessage = {
-        kind: 'certificate', certificateList: this.config.clientCert ? [this.config.clientCert] : [],
+        kind: 'certificate', certificateList: this.config.clientCert ? [this.config.clientCert, ...(this.config.clientChain ?? [])] : [],
       };
       finalBundle.push(clientCertificate);
       this.transcript.push(encodeHandshakeMessage(clientCertificate));
 
       if (this.config.clientCert && this.config.clientPrivateKey) {
+        const clientSignature = signCertificateVerify(
+          this.config.clientPrivateKey, certificateVerifyContent('client', transcriptHash(this.transcript, this.hash)),
+        );
+        if (clientSignature === null) return this.fail('handshake_failure');
         const clientCertificateVerify: CertificateVerify = {
-          kind: 'certificate_verify',
-          signature: PkiKeyPair.sign(this.config.clientPrivateKey, transcriptHash(this.transcript)),
+          kind: 'certificate_verify', signatureAlgorithm: clientSignature.scheme, signature: clientSignature.signature,
         };
         finalBundle.push(clientCertificateVerify);
         this.transcript.push(encodeHandshakeMessage(clientCertificateVerify));
@@ -300,9 +548,11 @@ export class TlsClientSession {
 
     const clientFinished: Finished = {
       kind: 'finished',
-      verifyData: computeFinished(handshakePhase.clientHandshakeTrafficSecret, transcriptHash(this.transcript)),
+      verifyData: computeFinished(handshakePhase.clientHandshakeTrafficSecret, transcriptHash(this.transcript, this.hash), this.hash),
     };
     finalBundle.push(clientFinished);
+    this.transcript.push(encodeHandshakeMessage(clientFinished));
+    this.resumptionMasterSecret = expandLabel(applicationPhase.masterSecret, 'res master', transcriptHash(this.transcript, this.hash), this.hash);
 
     this.state = 'done';
     this.result = 'success';
@@ -310,7 +560,7 @@ export class TlsClientSession {
       topic: 'tls.handshake.completed',
       payload: {
         sessionId: this.sessionId, role: 'client', cipherSuite: this.negotiatedCipherSuite!,
-        alpnProtocol: this.negotiatedAlpnProtocol, resumed: sessionResumed,
+        protocolVersion: '1.3', alpnProtocol: this.negotiatedAlpnProtocol, resumed: sessionResumed,
       },
     });
     return fragmentAsRecords('handshake', encodeMessages(finalBundle), true);
@@ -328,11 +578,12 @@ export class TlsClientSession {
     if (contentType !== 'handshake') return;
     const message = decodeHandshakeMessage(plaintext) as NewSessionTicket;
     if (message.kind !== 'new_session_ticket') return;
+    if (message.ticketLifetime > MAX_TICKET_LIFETIME_SECONDS) return;
     this.receivedTicket = {
       ticket: message.ticket,
       resumptionMasterSecret: this.resumptionMasterSecret,
       ticketNonce: message.ticketNonce,
-      cipherSuite: this.negotiatedCipherSuite,
+      cipherSuite: this.negotiatedCipherSuite as CipherSuite,
       ticketLifetime: message.ticketLifetime,
       issuedAt: Date.now(),
       consumed: false,
@@ -348,7 +599,7 @@ export class TlsClientSession {
   sendKeyUpdate(requestUpdate = false): readonly TlsRecord[] {
     const keyUpdate: KeyUpdate = { kind: 'key_update', requestUpdate };
     const records = fragmentAsRecords('handshake', encodeHandshakeMessage(keyUpdate), true);
-    this.clientApplicationTrafficSecret = nextTrafficSecret(this.clientApplicationTrafficSecret!);
+    this.clientApplicationTrafficSecret = nextTrafficSecret(this.clientApplicationTrafficSecret!, this.hash);
     this.emit({
       topic: 'tls.key_update',
       payload: { sessionId: this.sessionId, role: 'client', direction: 'client-to-server', requestUpdate },
@@ -367,7 +618,7 @@ export class TlsClientSession {
     if (contentType !== 'handshake') return null;
     const message = decodeHandshakeMessage(plaintext);
     if (message.kind !== 'key_update') return null;
-    this.serverApplicationTrafficSecret = nextTrafficSecret(this.serverApplicationTrafficSecret!);
+    this.serverApplicationTrafficSecret = nextTrafficSecret(this.serverApplicationTrafficSecret!, this.hash);
     this.emit({
       topic: 'tls.key_update',
       payload: { sessionId: this.sessionId, role: 'client', direction: 'server-to-client', requestUpdate: message.requestUpdate },

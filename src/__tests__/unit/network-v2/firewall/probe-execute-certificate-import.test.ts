@@ -124,7 +124,7 @@ describe('execute vpn certificate local import', () => {
       'execute vpn certificate local import tftp signe.crt 192.168.10.10 cer'))
       .not.toMatch(/Command fail/i);
     expect(fgt.getCertificateStore().local('DEMANDE')?.certificate.subject)
-      .toContain('CN = fgt.labo.local');
+      .toContain('CN=fgt.labo.local');
   });
 
   it('la demande en attente disparait une fois signee', async () => {
@@ -171,7 +171,7 @@ describe('execute vpn certificate local import', () => {
     expect(fgt.getSslVpnPortal().isListening()).toBe(true);
 
     const trace = await srv.executeCommand('curl -vk https://192.168.10.1:10443/');
-    expect(trace).toContain('CN = fgt.labo.local');
+    expect(trace).toContain('CN=fgt.labo.local');
     expect(await srv.executeCommand('curl -sk https://192.168.10.1:10443/'))
       .toContain('SSL-VPN');
   });

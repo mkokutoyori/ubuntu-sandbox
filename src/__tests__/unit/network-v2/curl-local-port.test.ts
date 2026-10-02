@@ -41,7 +41,7 @@ async function serveHttps(srv: LinuxServer): Promise<void> {
     'systemctl stop nginx',
     'a2enmod ssl',
     'mkdir -p /etc/ssl/certs /etc/ssl/private',
-    'openssl req -x509 -newkey rsa:512 -keyout /etc/ssl/private/lab.key -out /etc/ssl/certs/lab.crt -days 365 -nodes -subj "/CN=lab.local"',
+    'openssl req -x509 -newkey rsa:1024 -keyout /etc/ssl/private/lab.key -out /etc/ssl/certs/lab.crt -days 365 -nodes -subj "/CN=lab.local"',
     `sh -c 'printf "<VirtualHost *:443>\\n\\tDocumentRoot /var/www/html\\n\\tSSLEngine on\\n\\tSSLCertificateFile /etc/ssl/certs/lab.crt\\n\\tSSLCertificateKeyFile /etc/ssl/private/lab.key\\n</VirtualHost>\\n" > /etc/apache2/sites-available/lab-ssl.conf'`,
     'ln -s ../sites-available/lab-ssl.conf /etc/apache2/sites-enabled/lab-ssl.conf',
     'systemctl start apache2',

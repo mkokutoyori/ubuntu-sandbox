@@ -94,7 +94,7 @@ export class FtpClientSession {
       return;
     }
     if (this.controlTls?.result === 'success') {
-      const { text, nextSeq } = decryptText(this.controlTls.serverApplicationTrafficSecret!, this.controlServerSeq, String(data));
+      const { text, nextSeq } = decryptText(this.controlTls.serverTraffic(), this.controlServerSeq, String(data));
       this.controlServerSeq = nextSeq;
       this.lastReply = decodeReply(text);
       return;
@@ -134,7 +134,7 @@ export class FtpClientSession {
     this.lastReply = null;
     const text = encodeCommand(cmd);
     if (this.controlTls?.result === 'success') {
-      const { wire, nextSeq } = encryptText(this.controlTls.clientApplicationTrafficSecret!, this.controlClientSeq, text);
+      const { wire, nextSeq } = encryptText(this.controlTls.clientTraffic(), this.controlClientSeq, text);
       this.controlClientSeq = nextSeq;
       this.socket.write(wire);
     } else {
@@ -236,14 +236,14 @@ export class FtpClientSession {
 
   private decryptDataChunk(dataTls: TlsClientSession | null, seqRef: { seq: number }, raw: string): string {
     if (dataTls?.result !== 'success') return raw;
-    const { text, nextSeq } = decryptText(dataTls.serverApplicationTrafficSecret!, seqRef.seq, raw);
+    const { text, nextSeq } = decryptText(dataTls.serverTraffic(), seqRef.seq, raw);
     seqRef.seq = nextSeq;
     return text;
   }
 
   private encryptForDataSocket(content: string): string {
     if (this.dataTls?.result !== 'success') return content;
-    return encryptText(this.dataTls.clientApplicationTrafficSecret!, 0, content).wire;
+    return encryptText(this.dataTls.clientTraffic(), 0, content).wire;
   }
 
   /** Downloads via `RETR`; call after `enterPassiveMode()`/`enterActiveMode()`. */

@@ -1,3 +1,9 @@
+import { curlDistinguishedName } from '@/network/pki/der/DistinguishedName';
+import { opensslAlertReason } from '@/network/tls/alerts';
+import { x509VerifyError } from '@/network/pki/x509VerifyErrors';
+import type { VerificationReason } from '@/network/pki/CertificateVerifier';
+import { resolveCipherList } from '@/network/tls/legacy/legacyCipherSuites';
+import { legacySuiteByName, type TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
 import { Http1ClientSession } from '../http1/Http1ClientSession';
 import { HttpsClientSession } from '../https/HttpsClientSession';
 import {
@@ -19,6 +25,45 @@ import { MAX_PORT, PortNumber } from '@/network/core/ports/PortNumber';
 import type { CurlHost } from './CurlHost';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { performCurlFtp } from './CurlFtp';
+import { judgeCertStatus } from './CurlCertStatus';
+import { loadCurlClientCredential } from './CurlClientCertificate';
+import { parseGroupList } from '@/network/tls/legacy/sslConf';
+
+
+function opensslSuiteName(name: string): string {
+  return legacySuiteByName(name)?.opensslName ?? name;
+}
+
+const ALL_TLS_VERSIONS: readonly TlsProtocolVersion[] = ['1.0', '1.1', '1.2', '1.3'];
+
+interface CurlTlsConfig {
+  readonly versions: readonly TlsProtocolVersion[];
+  readonly cipherList?: string;
+  readonly tls13Ciphersuites?: string;
+  readonly supportedGroups?: readonly string[];
+}
+
+function curlTlsPolicy(
+  opts: CurlOptions,
+): { ok: true; config: CurlTlsConfig } | { ok: false; message: string } {
+  const min = ALL_TLS_VERSIONS.indexOf(opts.tlsMin ?? '1.2');
+  const max = ALL_TLS_VERSIONS.indexOf(opts.tlsMax ?? '1.3');
+  const versions = ALL_TLS_VERSIONS.filter((_, index) => index >= min && index <= max);
+  const config: { -readonly [K in keyof CurlTlsConfig]: CurlTlsConfig[K] } = { versions };
+  if (opts.ciphers !== null) {
+    if (resolveCipherList(opts.ciphers).ok === false) {
+      return { ok: false, message: `curl: (59) failed setting cipher list: ${opts.ciphers}` };
+    }
+    config.cipherList = opts.ciphers;
+  }
+  if (opts.tls13Ciphers !== null) config.tls13Ciphersuites = opts.tls13Ciphers;
+  if (opts.curves !== null) {
+    const groups = parseGroupList(opts.curves);
+    if (groups.ok === false) return { ok: false, message: `curl: (59) failed setting curves list: '${opts.curves}'` };
+    config.supportedGroups = groups.groups;
+  }
+  return { ok: true, config };
+}
 
 export interface CurlUrl {
   readonly scheme: 'http' | 'https' | 'ftp';
@@ -428,11 +473,46 @@ export async function performCurlRequest(
 
       let session: HttpsClientSession | null = null;
       try {
-        session = new HttpsClientSession(host.tcpStack(), address, url.port, { verifier });
+        const clientCredential = loadCurlClientCredential(opts, (p) => host.readFile(p));
+        if (clientCredential.ok === false) {
+          return {
+            ok: false, code: 58, message: clientCredential.message,
+            url, remoteIp, method, numRedirects: redirects, trace,
+          };
+        }
+        const tlsPolicy = curlTlsPolicy(opts);
+        if (tlsPolicy.ok === false) {
+          return {
+            ok: false, code: 59, message: tlsPolicy.message,
+            url, remoteIp, method, numRedirects: redirects, trace,
+          };
+        }
+        const credential = clientCredential.credential;
+        session = new HttpsClientSession(host.tcpStack(), address, url.port, {
+          verifier, ...tlsPolicy.config, ...(opts.certStatus ? { collectOcspStaple: true } : {}),
+          ...(credential ? { clientCert: credential.cert, clientChain: credential.chain, clientPrivateKey: credential.key } : {}),
+        });
         session.adopt(porte.socket);
         const result = await session.sendAsync(request);
+        const handshake = session.handshake;
+        const peerAlert = handshake?.peerAlert ?? null;
+        const localReason = handshake?.result === 'failure' ? handshake.peerVerificationReason : null;
+        const statusProblem = opts.certStatus && result.ok
+          ? judgeCertStatus(handshake?.receivedStaple ?? null, session.peerCertificate, handshake?.peerCertificateChain ?? [], anchors, Date.now())
+          : null;
         if (!result.ok || !result.response) {
-          if (!opts.insecure) {
+          if (peerAlert !== null) {
+            failure = {
+              ok: false, code: 35, message: `curl: (35) OpenSSL/3.0.13: ${opensslAlertReason(peerAlert.description)}`,
+              url, remoteIp, method, numRedirects: redirects, trace,
+            };
+          } else if (localReason !== null && handshake?.peerCertificate) {
+            failure = {
+              ok: false, code: 60,
+              message: `curl: (60) SSL certificate problem: ${x509VerifyError(localReason as VerificationReason, handshake.peerCertificate, []).texte}`,
+              url, remoteIp, method, numRedirects: redirects, trace,
+            };
+          } else if (!opts.insecure) {
             failure = {
               ok: false, code: 60,
               message: 'curl: (60) SSL certificate problem: unable to get local issuer certificate',
@@ -445,6 +525,11 @@ export async function performCurlRequest(
               url, remoteIp, method, numRedirects: redirects, trace,
             };
           }
+        } else if (statusProblem !== null) {
+          failure = {
+            ok: false, code: 91, message: `curl: (91) ${statusProblem}`,
+            url, remoteIp, method, numRedirects: redirects, trace,
+          };
         } else {
           const peer = session.peerCertificate;
           if (peer && !opts.insecure && !certificateMatchesHostname(peer, url.host)) {
@@ -455,10 +540,10 @@ export async function performCurlRequest(
             };
           } else {
             trace.push(`* Connected to ${url.host} (${address}) port ${url.port}`);
-            trace.push('* SSL connection using TLSv1.3');
+            trace.push(`* SSL connection using TLSv${session.handshake?.negotiatedVersion ?? '1.3'} / ${opensslSuiteName(session.handshake?.negotiatedCipherSuite ?? '')}`);
             if (peer) {
               trace.push('* Server certificate:');
-              trace.push(`*  subject: ${peer.subject}`);
+              trace.push(`*  subject: ${curlDistinguishedName(peer.subject)}`);
               trace.push(`*  issuer: ${peer.issuer}`);
             }
             response = result.response;

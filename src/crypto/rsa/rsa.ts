@@ -20,16 +20,18 @@
  * 2048 bits coûte en moyenne 190 ms à fabriquer en JavaScript, et la
  * suite de tests de ce dépôt en génère plus de deux mille — six minutes
  * d'attente pour des clés dont aucun test ne regarde la taille.
- * À 512 bits la même clé coûte 9 ms. La taille demandée est donc toujours
- * honorée (`openssl genrsa 2048` fabrique un vrai module de 2048 bits) ;
- * seules les clés dont personne n'a précisé la taille prennent la petite.
+ * À 1024 bits la même clé coûte 42 ms, et 1024 est le plancher du niveau de
+ * sécurité 1 d'OpenSSL (80 bits) : en dessous, une pile TLS refuse la clé.
+ * La taille demandée est toujours honorée (`openssl genrsa 2048` fabrique
+ * un vrai module de 2048 bits) ; seules les clés dont personne n'a
+ * précisé la taille prennent la petite.
  */
 
-import { sha1, sha256 } from '@/crypto/hash';
+import { md5, sha1, sha256 } from '@/crypto/hash';
 import { bytesToHex, hexToBytes } from '@/crypto/encoding';
 
 /** Voir l'en-tête : mesuré, pas choisi par confort. */
-export const DEFAULT_MODULUS_BITS = 512;
+export const DEFAULT_MODULUS_BITS = 1024;
 
 /** Le e usuel, 2^16 + 1 (RFC 8017 §3.1 le recommande). */
 export const PUBLIC_EXPONENT = 65537n;
@@ -74,7 +76,7 @@ const SMALL_PRIMES: readonly bigint[] = [
 
 export type RandomBytes = (n: number) => Uint8Array;
 
-function defaultRandom(n: number): Uint8Array {
+export function defaultRandom(n: number): Uint8Array {
   const out = new Uint8Array(n);
   for (let i = 0; i < n; i++) out[i] = Math.floor(Math.random() * 256);
   return out;
@@ -193,18 +195,18 @@ export function bitLength(n: bigint): number {
   return n.toString(2).length;
 }
 
-function byteLength(n: bigint): number {
+export function byteLength(n: bigint): number {
   return Math.ceil(bitLength(n) / 8);
 }
 
-function bigToBe(n: bigint, length: number): Uint8Array {
+export function bigToBe(n: bigint, length: number): Uint8Array {
   const out = new Uint8Array(length);
   let v = n;
   for (let i = length - 1; i >= 0; i--) { out[i] = Number(v & 0xffn); v >>= 8n; }
   return out;
 }
 
-function beToBig(bytes: Uint8Array): bigint {
+export function beToBig(bytes: Uint8Array): bigint {
   let n = 0n;
   for (const b of bytes) n = (n << 8n) | BigInt(b);
   return n;
@@ -220,13 +222,19 @@ const SHA256_DIGEST_INFO_PREFIX = Uint8Array.from([
   0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0x04, 0x20,
 ]);
 
-export type RsaSignatureHash = 'sha1' | 'sha256';
+export type RsaSignatureHash = 'sha1' | 'sha256' | 'md5sha1';
 
 const SHA1_DIGEST_INFO_PREFIX = Uint8Array.from([
   0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14,
 ]);
 
 function digestInfoOf(message: Uint8Array, hash: RsaSignatureHash): Uint8Array {
+  if (hash === 'md5sha1') {
+    const raw = new Uint8Array(36);
+    raw.set(md5(message), 0);
+    raw.set(sha1(message), 16);
+    return raw;
+  }
   const prefix = hash === 'sha1' ? SHA1_DIGEST_INFO_PREFIX : SHA256_DIGEST_INFO_PREFIX;
   const digest = hash === 'sha1' ? sha1(message) : sha256(message);
   const t = new Uint8Array(prefix.length + digest.length);
@@ -288,6 +296,43 @@ export function rsaVerify(
   let diff = 0;
   for (let i = 0; i < k; i++) diff |= em[i] ^ attendu[i];
   return diff === 0;
+}
+
+/**
+ * `RSAES-PKCS1-V1_5-ENCRYPT` (RFC 8017 §7.2.1) : `0x00 || 0x02 || PS || 0x00 || M`,
+ * PS étant au moins huit octets non nuls tirés au hasard. C'est le chiffrement du
+ * secret pré-maître de `TLS_RSA_*` (RFC 5246 §7.4.7.1).
+ */
+export function rsaEncryptPkcs1(
+  key: RsaPublicKey, message: Uint8Array, random: RandomBytes = defaultRandom,
+): Uint8Array {
+  const k = byteLength(key.n);
+  if (message.length > k - 11) throw new RangeError('RSA: message too long');
+  const em = new Uint8Array(k);
+  em[1] = 0x02;
+  const padding = k - message.length - 3;
+  const fresh = random(padding);
+  for (let i = 0; i < padding; i++) {
+    let value = fresh[i];
+    while (value === 0) value = random(1)[0];
+    em[2 + i] = value;
+  }
+  em.set(message, k - message.length);
+  return bigToBe(modPow(beToBig(em), key.e, key.n), k);
+}
+
+/** `RSAES-PKCS1-V1_5-DECRYPT` (§7.2.2) ; `null` si le bourrage est invalide. */
+export function rsaDecryptPkcs1(key: RsaPrivateKey, ciphertext: Uint8Array): Uint8Array | null {
+  const k = byteLength(key.n);
+  if (ciphertext.length !== k) return null;
+  const c = beToBig(ciphertext);
+  if (c >= key.n) return null;
+  const em = bigToBe(modPow(c, key.d, key.n), k);
+  if (em[0] !== 0x00 || em[1] !== 0x02) return null;
+  let i = 2;
+  while (i < k && em[i] !== 0x00) i++;
+  if (i === k || i < 10) return null;
+  return em.slice(i + 1);
 }
 
 /**

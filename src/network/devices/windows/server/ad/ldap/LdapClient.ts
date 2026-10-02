@@ -64,13 +64,13 @@ export class LdapClient {
   }
 
   private encryptOutgoing(bytes: Uint8Array): Uint8Array {
-    const { records, nextSeq } = encryptApplicationData(this.tls!.clientApplicationTrafficSecret!, this.tlsSendSeq, bytes);
+    const { records, nextSeq } = encryptApplicationData(this.tls!.clientTraffic(), this.tlsSendSeq, bytes);
     this.tlsSendSeq = nextSeq;
     return encodeRecords(records);
   }
 
   private decryptIncoming(wire: Uint8Array): Uint8Array {
-    const { plaintext, nextSeq } = decryptApplicationData(this.tls!.serverApplicationTrafficSecret!, this.tlsRecvSeq, decodeRecords(wire));
+    const { plaintext, nextSeq } = decryptApplicationData(this.tls!.serverTraffic(), this.tlsRecvSeq, decodeRecords(wire));
     this.tlsRecvSeq = nextSeq;
     return plaintext;
   }

@@ -1,5 +1,5 @@
 import { PkiKeyPair, type PkiPrivateKey } from './PkiKeyPair';
-import { type X509Certificate, type X509CertificateFields, tbsPayload } from './X509Certificate';
+import { type X509Certificate, type X509CertificateFields, signCertificate } from './X509Certificate';
 import { CertificateRevocationList, type RevokedEntry } from './CertificateRevocationList';
 
 export interface IssueOptions {
@@ -12,6 +12,15 @@ export interface IssueOptions {
   readonly serialNumber?: string;
   /** RFC 5280 §4.2.1.12 Extended Key Usage — e.g. `['serverAuth']` from an AD CS certificate template. */
   readonly extKeyUsage?: readonly string[];
+  readonly keyBits?: number;
+}
+
+export interface SubordinateOptions {
+  readonly subject: string;
+  readonly notBefore: number;
+  readonly notAfter: number;
+  readonly pathLenConstraint?: number;
+  readonly keyBits?: number;
 }
 
 export interface IssuedCertificate {
@@ -23,6 +32,7 @@ export interface CertificateAuthorityOptions {
   readonly now: number;
   readonly validityMs?: number;
   readonly algorithm?: 'rsa' | 'ecdsa';
+  readonly keyBits?: number;
 }
 
 let serialCounter = 0x1000;
@@ -46,7 +56,7 @@ export class CertificateAuthority {
   }
 
   static generate(subject: string, opts: CertificateAuthorityOptions): CertificateAuthority {
-    const keys = PkiKeyPair.generate(opts.algorithm ?? 'rsa');
+    const keys = PkiKeyPair.generate(opts.algorithm ?? 'rsa', opts.keyBits);
     const fields: X509CertificateFields = {
       version: 3,
       serialNumber: nextSerial(),
@@ -57,12 +67,11 @@ export class CertificateAuthority {
       publicKey: keys.publicKey,
       signatureAlgorithm: opts.algorithm === 'ecdsa' ? 'ecdsa-with-SHA256' : 'sha256WithRSAEncryption',
       extensions: Object.freeze({
-        basicConstraints: Object.freeze({ cA: true, pathLenConstraint: 0 }),
+        basicConstraints: Object.freeze({ cA: true }),
         keyUsage: Object.freeze(['keyCertSign', 'cRLSign'] as const),
       }),
     };
-    const signature = PkiKeyPair.sign(keys.privateKey, tbsPayload(fields));
-    const root: X509Certificate = { ...fields, signature };
+    const root = signCertificate(fields, keys.privateKey);
     return new CertificateAuthority(root, keys.privateKey);
   }
 
@@ -80,7 +89,7 @@ export class CertificateAuthority {
     if (opts.notAfter <= opts.notBefore) {
       throw new Error(`notAfter (${opts.notAfter}) must be > notBefore (${opts.notBefore})`);
     }
-    const keys = PkiKeyPair.generate(this.rootCertificate.publicKey.algorithm);
+    const keys = PkiKeyPair.generate(this.rootCertificate.publicKey.algorithm, opts.keyBits);
     const fields: X509CertificateFields = {
       version: 3,
       serialNumber: opts.serialNumber ?? nextSerial(),
@@ -98,8 +107,32 @@ export class CertificateAuthority {
         crlDistributionPoints: opts.crlDistributionPoints ? Object.freeze([...opts.crlDistributionPoints]) : undefined,
       }),
     };
-    const signature = PkiKeyPair.sign(this.rootKey, tbsPayload(fields));
-    return { cert: { ...fields, signature }, privateKey: keys.privateKey };
+    return { cert: signCertificate(fields, this.rootKey), privateKey: keys.privateKey };
+  }
+
+  issueSubordinateCA(opts: SubordinateOptions): CertificateAuthority {
+    if (opts.notAfter <= opts.notBefore) {
+      throw new Error(`notAfter (${opts.notAfter}) must be > notBefore (${opts.notBefore})`);
+    }
+    const keys = PkiKeyPair.generate(this.rootCertificate.publicKey.algorithm, opts.keyBits);
+    const fields: X509CertificateFields = {
+      version: 3,
+      serialNumber: nextSerial(),
+      subject: opts.subject,
+      issuer: this.rootCertificate.subject,
+      notBefore: opts.notBefore,
+      notAfter: opts.notAfter,
+      publicKey: keys.publicKey,
+      signatureAlgorithm: this.rootCertificate.signatureAlgorithm,
+      extensions: Object.freeze({
+        basicConstraints: Object.freeze({
+          cA: true,
+          ...(opts.pathLenConstraint !== undefined ? { pathLenConstraint: opts.pathLenConstraint } : {}),
+        }),
+        keyUsage: Object.freeze(['keyCertSign', 'cRLSign'] as const),
+      }),
+    };
+    return new CertificateAuthority(signCertificate(fields, this.rootKey), keys.privateKey);
   }
 
   revoke(serialNumber: string, revocationDate: number, reasonCode?: RevokedEntry['reasonCode']): void {

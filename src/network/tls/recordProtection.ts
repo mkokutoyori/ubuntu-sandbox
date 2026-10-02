@@ -16,7 +16,11 @@
  * l'objet même d'un AEAD, et c'est ce que le XOR ne pouvait pas offrir.
  */
 
-import { aesGcmEncrypt, aesGcmDecrypt, AES_GCM_TAG_SIZE } from '@/crypto/cipher';
+import {
+  aesGcmEncrypt, aesGcmDecrypt, aesCcmEncrypt, aesCcmDecrypt,
+  chacha20Poly1305Encrypt, chacha20Poly1305Decrypt,
+} from '@/crypto/cipher';
+import { suiteInfo, type Tls13SuiteInfo } from './suite13';
 import { hkdfExpandLabel, toBytes } from './hkdf';
 import type { TlsRecord } from './recordLayer';
 import { CONTENT_TYPE_CODE } from './types';
@@ -28,6 +32,7 @@ export const RECORD_IV_LEN = 12;
 export interface RecordKeys {
   readonly key: Uint8Array;
   readonly iv: Uint8Array;
+  readonly suite: Tls13SuiteInfo;
 }
 
 /**
@@ -36,11 +41,13 @@ export interface RecordKeys {
  * du MÊME secret de trafic, et ne se confondent pas parce que
  * l'étiquette et la longueur entrent l'une et l'autre dans le calcul.
  */
-export function deriveRecordKeys(trafficSecret: string): RecordKeys {
+export function deriveRecordKeys(trafficSecret: string, suiteName?: string): RecordKeys {
+  const suite = suiteInfo(suiteName);
   const secret = toBytes(trafficSecret);
   return {
-    key: hkdfExpandLabel(secret, 'key', new Uint8Array(0), RECORD_KEY_LEN),
-    iv: hkdfExpandLabel(secret, 'iv', new Uint8Array(0), RECORD_IV_LEN),
+    key: hkdfExpandLabel(secret, 'key', new Uint8Array(0), suite.keyLength, suite.hash),
+    iv: hkdfExpandLabel(secret, 'iv', new Uint8Array(0), suite.ivLength, suite.hash),
+    suite,
   };
 }
 
@@ -82,10 +89,14 @@ export function recordAad(record: TlsRecord, ciphertextLength: number): Uint8Arr
 
 /** Chiffre le fragment d'un enregistrement et lui accole son étiquette. */
 export function sealRecord(keys: RecordKeys, seq: number, record: TlsRecord): TlsRecord {
-  const aad = recordAad(record, record.fragment.length + AES_GCM_TAG_SIZE);
-  const { ciphertext, tag } = aesGcmEncrypt(
-    keys.key, perRecordNonce(keys.iv, seq), aad, record.fragment,
-  );
+  const { suite } = keys;
+  const aad = recordAad(record, record.fragment.length + suite.tagLength);
+  const nonce = perRecordNonce(keys.iv, seq);
+  const { ciphertext, tag } = suite.aead === 'chacha20-poly1305'
+    ? chacha20Poly1305Encrypt(keys.key, nonce, aad, record.fragment)
+    : suite.aead === 'aes-ccm'
+      ? aesCcmEncrypt(keys.key, nonce, aad, record.fragment, suite.tagLength)
+      : aesGcmEncrypt(keys.key, nonce, aad, record.fragment);
   const fragment = new Uint8Array(ciphertext.length + tag.length);
   fragment.set(ciphertext, 0);
   fragment.set(tag, ciphertext.length);
@@ -98,15 +109,17 @@ export function sealRecord(keys: RecordKeys, seq: number, record: TlsRecord): Tl
  * « déchiffrait ».
  */
 export function openRecord(keys: RecordKeys, seq: number, record: TlsRecord): TlsRecord | null {
-  if (record.fragment.length < AES_GCM_TAG_SIZE) return null;
-  const coupe = record.fragment.length - AES_GCM_TAG_SIZE;
+  const { suite } = keys;
+  if (record.fragment.length < suite.tagLength) return null;
+  const coupe = record.fragment.length - suite.tagLength;
   const aad = recordAad(record, record.fragment.length);
-  const clair = aesGcmDecrypt(
-    keys.key,
-    perRecordNonce(keys.iv, seq),
-    aad,
-    record.fragment.subarray(0, coupe),
-    record.fragment.subarray(coupe),
-  );
+  const nonce = perRecordNonce(keys.iv, seq);
+  const body = record.fragment.subarray(0, coupe);
+  const tag = record.fragment.subarray(coupe);
+  const clair = suite.aead === 'chacha20-poly1305'
+    ? chacha20Poly1305Decrypt(keys.key, nonce, aad, body, tag)
+    : suite.aead === 'aes-ccm'
+      ? aesCcmDecrypt(keys.key, nonce, aad, body, tag)
+      : aesGcmDecrypt(keys.key, nonce, aad, body, tag);
   return clair === null ? null : { ...record, fragment: clair };
 }

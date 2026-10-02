@@ -1,9 +1,10 @@
 import type { TcpStack } from '@/network/tcp/TcpStack';
 import { Http1ServerSession, type Http1Peer } from '@/network/http/http1/Http1ServerSession';
 import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
-import { pemToCert, pemToPrivateKey } from '@/network/pki/pem';
-import type { X509Certificate } from '@/network/pki/X509Certificate';
-import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
+import { CertificateVerifier, type VerificationReason } from '@/network/pki/CertificateVerifier';
+import { x509VerifyError } from '@/network/pki/x509VerifyErrors';
+import type { TlsServerCredential } from '@/network/tls/TlsServerSession';
+import type { HttpsServerConfig } from '@/network/http/https/HttpsServerSession';
 import { createResponse, type HttpMessage } from '@/network/http/semantics/types';
 import { contentTypeForPath } from '@/network/http/HttpTypes';
 import type { PortSpec } from '../../../../core/ports/PortNumber';
@@ -18,8 +19,13 @@ import {
 } from './NginxConfig';
 import {
   NGINX_VERSION, NGINX_ACCESS_LOG, NGINX_ERROR_LOG,
-  notFoundPage, forbiddenPage, badGatewayPage,
+  notFoundPage, forbiddenPage, badGatewayPage, sslCertificateErrorPage, sslNoCertificatePage, misdirectedPage,
 } from './NginxFiles';
+import type { OcspWireDeps } from '@/network/http/ocsp/OcspHttpClient';
+import { loadServerTls, isTlsProblem, type ServerTls, type TlsProblem } from './NginxTls';
+import { ephemeralIdentity, resumptionConfig, credentialFor } from '@/network/http/https/ServerTlsToolkit';
+import { clientCertificateVerdict } from './NginxSsl';
+import { findServerByName, serverNameMatches, type ServerNameEntry } from './NginxServerNames';
 
 export interface NginxHostFs extends NginxFileSource {
   exists(path: string): boolean;
@@ -126,15 +132,6 @@ function matchLocation(server: NginxServerBlock, target: string): NginxLocation 
   return best;
 }
 
-function hostMatches(server: NginxServerBlock, hostHeader: string): boolean {
-  const name = hostHeader.split(':')[0].toLowerCase();
-  return server.serverNames.some((n) => {
-    if (n === '_' || n === name) return true;
-    if (n.startsWith('*.')) return name.endsWith(n.slice(1));
-    return false;
-  });
-}
-
 const NGINX_UID = 33;
 const NGINX_GID = 33;
 
@@ -174,28 +171,11 @@ export interface NginxControl {
  */
 type NginxSession = Http1ServerSession | HttpsServerSession;
 
-/** A port that asked for TLS and cannot have it, with the server's own words. */
-interface TlsProblem { readonly error: string }
-
-function isTlsProblem(v: unknown): v is TlsProblem {
-  return typeof v === 'object' && v !== null && 'error' in v;
+interface PortTls {
+  readonly servers: readonly { readonly block: NginxServerBlock; readonly tls: ServerTls }[];
+  readonly defaultTls: ServerTls;
+  readonly fingerprint: string;
 }
-
-/**
- * Identifies the material a port is currently serving, so a reload can
- * tell a renewed pair from the same one.
- *
- * The key's material is part of it on purpose: replacing only the KEY
- * file leaves the certificate's serial unchanged, and a fingerprint built
- * from the certificate alone would miss that — the server would keep
- * presenting a pair whose halves no longer match. It lives in a private
- * in-memory map, no more exposed than the key already is inside the live
- * TLS session.
- */
-function tlsFingerprint(m: { cert: X509Certificate; key: PkiPrivateKey }): string {
-  return `${m.cert.serialNumber}|${m.cert.notAfter}|${m.key.material}`;
-}
-
 
 export class LinuxNginxService implements ServiceSocketServer, NginxControl {
   private servers: NginxServerBlock[] = [];
@@ -235,6 +215,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
    * operation certbot automates, and the one moment an operator checks.
    */
   private readonly tlsInUse = new Map<number, string>();
+  private readonly portTls = new Map<number, PortTls>();
 
   constructor(private readonly host: NginxHost) {}
 
@@ -265,6 +246,14 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     return null;
   }
 
+  private reportStartupWarnings(port: PortTls): void {
+    for (const entry of port.servers) {
+      for (const warning of entry.tls.warnings) {
+        this.host.appendLog(NGINX_ERROR_LOG, `${formatErrorTime(this.host.now())} [warn] 0#0: ${warning}`);
+      }
+    }
+  }
+
   /** Le refus de démarrage part aussi dans le journal d'erreurs, comme le vrai. */
   reportStartupFailure(message: string): void {
     this.host.appendLog(NGINX_ERROR_LOG, `${formatErrorTime(this.host.now())} [emerg] 0#0: ${message.replace(/^nginx: \[emerg\] /, '')}`);
@@ -289,14 +278,14 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
 
     const tls = this.tlsMaterialFor(spec.port);
     if (isTlsProblem(tls)) { this.reportStartupFailure(tls.error); return false; }
+    if (tls !== null) this.reportStartupWarnings(tls);
 
     const session: NginxSession = tls === null
       ? new Http1ServerSession(
         this.host.tcpStack(), spec.port, (req, peer) => this.respond(spec.port, req, peer),
       )
       : new HttpsServerSession(
-        this.host.tcpStack(), spec.port,
-        { serverCert: tls.cert, serverPrivateKey: tls.key },
+        this.host.tcpStack(), spec.port, this.engineConfig(tls),
         (req, peer) => this.respond(spec.port, req, peer),
       );
     try {
@@ -305,7 +294,10 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
       return false;
     }
     this.sessions.set(spec.port, session);
-    if (tls !== null) this.tlsInUse.set(spec.port, tlsFingerprint(tls));
+    if (tls !== null) {
+      this.tlsInUse.set(spec.port, tls.fingerprint);
+      this.portTls.set(spec.port, tls);
+    }
     return true;
   }
 
@@ -319,40 +311,70 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
    * point is that it is not. The failure is written to `error.log` with
    * nginx's own wording, and the port stays shut.
    */
-  private tlsMaterialFor(port: number): { cert: X509Certificate; key: PkiPrivateKey } | null | TlsProblem {
-    const server = this.servers.find((s) => s.listen.some((l) => l.port === port && l.ssl));
-    if (!server) return null;
-    return this.tlsMaterialForServer(server, port);
+  private tlsMaterialFor(port: number): PortTls | null | TlsProblem {
+    const onPort = this.servers.filter((s) => s.listen.some((l) => l.port === port && l.ssl));
+    if (onPort.length === 0) return null;
+    return this.loadPortTls(onPort, port);
   }
 
-  private tlsMaterialForServer(
-    server: NginxServerBlock, port: number,
-  ): { cert: X509Certificate; key: PkiPrivateKey } | null | TlsProblem {
-    const fail = (message: string): TlsProblem => ({ error: `nginx: [emerg] ${message}` });
-    if (!server.sslCertificate || !server.sslCertificateKey) {
-      return fail(`no "ssl_certificate" is defined for the "listen ... ssl" directive`);
+  private wireDeps(): OcspWireDeps {
+    return { tcpStack: () => this.host.tcpStack(), resolve: (name) => this.host.resolve?.(name) ?? null, now: () => this.host.now().getTime() };
+  }
+
+  private loadPortTls(onPort: readonly NginxServerBlock[], port: number): PortTls | TlsProblem {
+    const loaded: { block: NginxServerBlock; tls: ServerTls }[] = [];
+    for (const block of onPort) {
+      const tls = loadServerTls(block, this.host.fs, this.wireDeps());
+      if (isTlsProblem(tls)) return tls;
+      loaded.push({ block, tls });
     }
-    const certPem = this.host.fs.read(server.sslCertificate);
-    if (certPem === null) {
-      return fail(`cannot load certificate "${server.sslCertificate}": `
-        + 'BIO_new_file() failed (SSL: error:80000002:system library::No such file or directory)');
+    const defaultEntry = loaded.find((e) => e.block.listen.some((l) => l.port === port && l.defaultServer)) ?? loaded[0];
+    return {
+      servers: loaded, defaultTls: defaultEntry.tls,
+      fingerprint: loaded.map((e) => `${e.block.serverNames.join(',')}#${e.tls.fingerprint}`).join('||'),
+    };
+  }
+
+  private engineConfig(port: PortTls): HttpsServerConfig {
+    const base = port.defaultTls;
+    const settings = base.settings;
+    const credentials: TlsServerCredential[] = [];
+    const entries: ServerNameEntry<{ block: NginxServerBlock; tls: ServerTls }>[] = [];
+    for (const entry of port.servers) {
+      for (const name of entry.block.serverNames) entries.push({ pattern: name, owner: entry });
     }
-    const keyPem = this.host.fs.read(server.sslCertificateKey);
-    if (keyPem === null) {
-      return fail(`cannot load certificate key "${server.sslCertificateKey}": `
-        + 'BIO_new_file() failed (SSL: error:80000002:system library::No such file or directory)');
+    const fallback = base.identity
+      ?? port.servers.find((e) => e.tls.identity !== null)?.tls.identity
+      ?? ephemeralIdentity();
+    for (const entry of port.servers) {
+      credentials.push(credentialFor(
+        entry.tls.identity ?? fallback, (name) => findServerByName(entries, name) === entry,
+        entry.tls.settings.rejectHandshake,
+      ));
     }
-    const cert = pemToCert(certPem);
-    const key = pemToPrivateKey(keyPem);
-    if (!cert) {
-      return fail(`PEM_read_bio_X509_AUX("${server.sslCertificate}") failed `
-        + '(SSL: error:0480006C:PEM routines::no start line:Expecting: TRUSTED CERTIFICATE)');
-    }
-    if (!key) {
-      return fail(`cannot load certificate key "${server.sslCertificateKey}": `
-        + 'PEM_read_bio_PrivateKey() failed (SSL: error:0480006C:PEM routines::no start line)');
-    }
-    return { cert, key };
+    const verifying = port.servers.find((e) => e.tls.settings.verifyClient !== 'off');
+    const resumption = resumptionConfig({
+      tickets: base.sessionTickets,
+      serverSideCache: settings.sessionCache.builtin === 'builtin' || settings.sessionCache.shared !== null,
+      timeoutSeconds: settings.sessionTimeout,
+      ticketKey: base.ticketKey,
+    });
+    return {
+      serverCert: fallback.cert, serverChain: fallback.chain, serverPrivateKey: fallback.key,
+      protocols: base.protocols, cipherList: base.cipherList, preferServerCiphers: base.preferServerCiphers,
+      tls13Ciphersuites: base.tls13Ciphersuites, supportedGroups: base.groups,
+      extendedMasterSecret: base.extendedMasterSecret,
+      sniCredentials: credentials, rejectHandshake: settings.rejectHandshake,
+      earlyData: settings.earlyData, sendBufferSize: settings.bufferSize,
+      ocspStaple: base.staple, dhParameters: base.dhParameters,
+      ...resumption,
+      ...(verifying
+        ? {
+          requestClientCert: true, clientCertPolicy: 'lenient' as const,
+          verifier: verifying.tls.verifier ?? new CertificateVerifier({ trustAnchors: [] }),
+        }
+        : {}),
+    };
   }
 
   close(spec: PortSpec): void {
@@ -379,12 +401,11 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     // being asked about.
     const parsed = parseNginxConfig(this.host.fs);
     if (parsed.ok === false) return null;
-    for (const server of extractServers(parsed.tree)) {
-      for (const l of server.listen) {
-        if (!l.ssl) continue;
-        const material = this.tlsMaterialForServer(server, l.port);
-        if (isTlsProblem(material)) return material.error;
-      }
+    const servers = extractServers(parsed.tree);
+    for (const port of new Set(servers.flatMap((server) => server.listen.filter((l) => l.ssl).map((l) => l.port)))) {
+      const onPort = servers.filter((server) => server.listen.some((l) => l.port === port && l.ssl));
+      const material = this.loadPortTls(onPort, port);
+      if (isTlsProblem(material)) return material.error;
     }
     return null;
   }
@@ -428,7 +449,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
       if (previous === undefined) continue;
       const fresh = this.tlsMaterialFor(port);
       if (fresh === null || isTlsProblem(fresh)) continue;
-      if (tlsFingerprint(fresh) === previous) continue;
+      if (fresh.fingerprint === previous) continue;
       // Close AND reopen here rather than closing and trusting someone
       // else to notice: this method is the only thing that knows the
       // material changed, so leaving the port shut for another step to
@@ -454,7 +475,9 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     // configuré est quand même servi, sinon l'override ouvrirait un port
     // qui ne répond rien.
     if (onPort.length === 0) return this.servers[0] ?? null;
-    const byName = onPort.find((s) => hostMatches(s, hostHeader));
+    const byName = findServerByName(
+      onPort.flatMap((s) => s.serverNames.map((pattern) => ({ pattern, owner: s }))), hostHeader,
+    );
     if (byName) return byName;
     return onPort.find((s) => s.listen.some((l) => l.port === port && l.defaultServer)) ?? onPort[0];
   }
@@ -463,11 +486,56 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     const target = (req.target ?? '/').split('?')[0];
     const hostHeader = req.headers.get('Host') ?? '';
     const server = this.selectServer(port, hostHeader);
-    const response = server
-      ? this.serve(server, target, req, peer)
-      : this.errorResponse(404, 'Not Found', notFoundPage());
+    const gated = server ? this.clientCertificateGate(server, hostHeader, peer) : null;
+    const response = gated
+      ?? (server
+        ? this.serve(server, target, req, peer)
+        : this.errorResponse(404, 'Not Found', notFoundPage()));
     this.logRequest(server, req, response, target, peer);
     return response;
+  }
+
+  private clientCertificateGate(server: NginxServerBlock, hostHeader: string, peer?: Http1Peer): HttpMessage | null {
+    const tls = peer?.tls;
+    if (!tls) return null;
+    const host = hostHeader.split(':')[0];
+    if (tls.serverName !== null && tls.serverName !== host) {
+      if (server.ssl.verifyClient !== 'off') {
+        this.host.appendLog(server.errorLog ?? NGINX_ERROR_LOG,
+          `${formatErrorTime(this.host.now())} [info] 0#0: *1 client attempted to request the server name different from the one that was negotiated, client: ${peer?.ip ?? '0.0.0.0'}`);
+        return this.errorResponse(421, 'Misdirected Request', misdirectedPage(), server);
+      }
+    }
+    const settings = server.ssl;
+    if (settings.verifyClient === 'off') return null;
+    const verifier = this.clientVerifier(server);
+    let reason: VerificationReason | null = null;
+    if (tls.clientCertificate && verifier) {
+      const outcome = verifier.verify(
+        tls.clientCertificate, undefined, tls.clientCertificateChain.slice(1), 'clientAuth',
+      );
+      if (outcome.ok === false) reason = outcome.reason;
+    } else if (tls.clientCertificate) {
+      reason = 'unknown';
+    }
+    const verdict = clientCertificateVerdict(settings.verifyClient, tls.clientCertificate !== null, reason);
+    if (verdict.outcome === 'pass') return null;
+    const failure = reason !== null && tls.clientCertificate
+      ? x509VerifyError(reason, tls.clientCertificate, [])
+      : null;
+    const detail = failure
+      ? `client SSL certificate verify error: (${failure.n}:${failure.texte})`
+      : 'client sent no required SSL certificate';
+    this.host.appendLog(server.errorLog ?? NGINX_ERROR_LOG,
+      `${formatErrorTime(this.host.now())} [info] 0#0: *1 ${detail}, client: ${peer?.ip ?? '0.0.0.0'}, server: ${server.serverNames[0] ?? '_'}`);
+    return this.errorResponse(
+      400, 'Bad Request', verdict.status === 495 ? sslCertificateErrorPage() : sslNoCertificatePage(), server,
+    );
+  }
+
+  private clientVerifier(server: NginxServerBlock): CertificateVerifier | null {
+    const tls = loadServerTls(server, this.host.fs, this.wireDeps());
+    return isTlsProblem(tls) ? null : tls.verifier;
   }
 
   private serve(

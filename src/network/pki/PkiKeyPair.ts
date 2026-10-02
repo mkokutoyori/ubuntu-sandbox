@@ -69,7 +69,7 @@ export class PkiKeyPair {
   /**
    * `bits` n'est honoré que pour RSA, et sa valeur par défaut est un
    * choix MESURÉ : une clé de 2048 bits coûte en moyenne 460 ms à
-   * fabriquer en JavaScript contre 9 ms à 512, et cette suite en génère
+   * fabriquer en JavaScript contre 42 ms à 1024, et cette suite en génère
    * plus de deux mille. La taille demandée est toujours respectée —
    * `openssl genrsa 2048` fabrique un vrai module de 2048 bits ; seules
    * les clés dont personne n'a précisé la taille prennent la petite.
@@ -90,39 +90,41 @@ export class PkiKeyPair {
     );
   }
 
-  static sign(privateKey: PkiPrivateKey, data: string): string {
+  static sign(privateKey: PkiPrivateKey, data: string | Uint8Array): string {
+    const message = typeof data === 'string' ? utf8ToBytes(data) : data;
     const cle = materialToPrivateKey(privateKey.material);
-    if (cle !== null) return `rsa:${bytesToHex(rsaSign(cle, utf8ToBytes(data)))}`;
+    if (cle !== null) return `rsa:${bytesToHex(rsaSign(cle, message))}`;
 
     const d = materialToP256Private(privateKey.material);
-    if (d !== null) return `ecdsa:${signatureToHex(p256Sign(d, utf8ToBytes(data)))}`;
+    if (d !== null) return `ecdsa:${signatureToHex(p256Sign(d, message))}`;
 
     // Une clé d'une forme que ce moteur ne connaît pas — une topologie
     // enregistrée avant l'étage 4, par exemple. Le condensé d'appoint la
     // sert encore, pour qu'un fichier ancien reste lisible.
-    return `${privateKey.algorithm}:${digest(privateKey.material + '|' + data)}`;
+    return `${privateKey.algorithm}:${digest(privateKey.material + '|' + (typeof data === 'string' ? data : bytesToHex(data)))}`;
   }
 
-  static verify(publicKey: PkiPublicKey, data: string, signature: string): boolean {
+  static verify(publicKey: PkiPublicKey, data: string | Uint8Array, signature: string): boolean {
+    const message = typeof data === 'string' ? utf8ToBytes(data) : data;
     const cle = materialToPublicKey(publicKey.material);
     if (cle !== null) {
       if (!signature.startsWith('rsa:')) return false;
       let octets: Uint8Array;
       try { octets = hexToBytes(signature.slice(4)); } catch { return false; }
-      return rsaVerify(cle, utf8ToBytes(data), octets);
+      return rsaVerify(cle, message, octets);
     }
 
     const q = materialToP256Public(publicKey.material);
     if (q !== null) {
       if (!signature.startsWith('ecdsa:')) return false;
       const sig = hexToSignature(signature.slice(6));
-      return sig !== null && p256Verify(q, utf8ToBytes(data), sig);
+      return sig !== null && p256Verify(q, message, sig);
     }
 
     // Repli pour une clé d'une forme inconnue (voir `sign`).
     const seed = publicKey.material.split(':')[1];
     if (!seed) return false;
-    const expected = `${publicKey.algorithm}:${digest('priv:' + seed + '|' + data)}`;
+    const expected = `${publicKey.algorithm}:${digest('priv:' + seed + '|' + (typeof data === 'string' ? data : bytesToHex(data)))}`;
     return signature === expected;
   }
 }

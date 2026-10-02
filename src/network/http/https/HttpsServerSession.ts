@@ -109,7 +109,7 @@ export class HttpsServerSession {
       }
 
       const { plaintext: requestBytes, nextSeq: clientNextSeq } = decryptApplicationData(
-        tls.clientApplicationTrafficSecret!, clientSeq, records,
+        tls.clientTraffic(), clientSeq, records,
       );
       clientSeq = clientNextSeq;
 
@@ -120,7 +120,7 @@ export class HttpsServerSession {
         this.applyHsts(response);
         const chunked = response.headers.get('Transfer-Encoding')?.toLowerCase() === 'chunked';
         const responseBytes = encoder.encode(encodeResponse(response, { chunked }));
-        const { records, nextSeq: serverNextSeq } = encryptApplicationData(tls.serverApplicationTrafficSecret!, serverSeq, responseBytes);
+        const { records, nextSeq: serverNextSeq } = encryptApplicationData(tls.serverTraffic(), serverSeq, responseBytes);
         serverSeq = serverNextSeq;
         socket.write(bytesToBinaryString(encodeRecords(records)));
         if (shouldClose) {
@@ -144,7 +144,15 @@ export class HttpsServerSession {
       const method = parsed.message.method ?? 'GET';
       const target = parsed.message.target ?? '';
       this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method, target } });
-      const produced = this.handler(parsed.message, { ip: socket.remoteIp, port: socket.remotePort });
+      const produced = this.handler(parsed.message, {
+        ip: socket.remoteIp, port: socket.remotePort,
+        tls: {
+          protocolVersion: tls.negotiatedVersion, cipherSuite: tls.negotiatedCipherSuite,
+          clientCertificate: tls.peerCertificate, clientCertificateChain: tls.peerCertificateChain,
+          serverName: tls.negotiatedServerName, sessionReused: tls.sessionReused, clientVerified: tls.peerVerified,
+          clientVerifyReason: tls.peerVerificationReason,
+        },
+      });
       /*
        * Un gestionnaire asynchrone ne doit pas pouvoir doubler le
        * précédent : `serverSeq` est le compteur de séquence des

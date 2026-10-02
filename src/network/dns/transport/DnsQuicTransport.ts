@@ -82,7 +82,7 @@ export function bindDnsQuicServer(
 ): void {
   const port = options.port ?? DOQ_PORT;
   const serverTls = new TlsServerSession({
-    serverCert: tlsConfig.serverCert, serverPrivateKey: tlsConfig.serverPrivateKey, alpnProtocols: [DOQ_ALPN],
+    serverCert: tlsConfig.serverCert, serverPrivateKey: tlsConfig.serverPrivateKey, alpnProtocols: [DOQ_ALPN], protocols: ['1.3'],
   });
   const conn = new QuicConnection(host, 'server', port, {
     mode: 'tls', tls: serverTls, clientDestConnectionId: FIXED_CLIENT_DEST_CONNECTION_ID,
@@ -123,7 +123,7 @@ export class DnsQuicClient {
 
   private connectIfNeeded(): boolean {
     if (this.conn && this.conn.state === 'established') return true;
-    const clientTls = new TlsClientSession({ verifier: this.tlsConfig.verifier, alpn: [DOQ_ALPN] });
+    const clientTls = new TlsClientSession({ verifier: this.tlsConfig.verifier, alpn: [DOQ_ALPN], versions: ['1.3'] });
     const conn = new QuicConnection(this.host, 'client', this.options.port ?? DOQ_PORT, {
       mode: 'tls', tls: clientTls, clientDestConnectionId: FIXED_CLIENT_DEST_CONNECTION_ID,
     });

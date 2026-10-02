@@ -24,8 +24,10 @@ import { aesCbcEncrypt, aesCbcDecrypt } from '@/crypto/cipher';
 import { pbkdf2 } from '@/crypto/kdf';
 import { SHA256 } from '@/crypto/hash';
 import type { X509Certificate } from './X509Certificate';
+import { encodeCertificate, decodeCertificate } from './der/X509Der';
 import type { PkiPrivateKey, PkiPublicKey } from './PkiKeyPair';
 import { CertificateRevocationList, type CrlFields } from './CertificateRevocationList';
+import type { OcspRequestMessage, OcspResponseMessage } from './OcspWire';
 
 export type PemLabel =
   | 'CERTIFICATE'
@@ -35,7 +37,10 @@ export type PemLabel =
   | 'ENCRYPTED PRIVATE KEY'
   | 'PUBLIC KEY'
   | 'CERTIFICATE REQUEST'
-  | 'X509 CRL';
+  | 'X509 CRL'
+  | 'OCSP REQUEST'
+  | 'OCSP RESPONSE'
+  | 'DH PARAMETERS';
 
 const LINE_WIDTH = 64;
 
@@ -80,14 +85,41 @@ function unarmour(pem: string, label: PemLabel): unknown | null {
 
 // ─── Certificats ────────────────────────────────────────────────────
 
+function armourBytes(label: PemLabel, bytes: Uint8Array): string {
+  const b64 = bytesToBase64(bytes);
+  const lines: string[] = [];
+  for (let i = 0; i < b64.length; i += LINE_WIDTH) lines.push(b64.slice(i, i + LINE_WIDTH));
+  return `-----BEGIN ${label}-----\n${lines.join('\n')}\n-----END ${label}-----\n`;
+}
+
+function unarmourBytes(pem: string, label: PemLabel): Uint8Array | null {
+  const begin = `-----BEGIN ${label}-----`;
+  const end = `-----END ${label}-----`;
+  const from = pem.indexOf(begin);
+  if (from === -1) return null;
+  const to = pem.indexOf(end, from);
+  if (to === -1) return null;
+  const body = pem.slice(from + begin.length, to).replace(/\s+/g, '');
+  if (body.length === 0) return null;
+  try { return base64ToBytes(body); } catch { return null; }
+}
+
 export function certToPem(cert: X509Certificate): string {
-  return armour('CERTIFICATE', cert);
+  return armourBytes('CERTIFICATE', encodeCertificate(cert));
 }
 
 export function pemToCert(pem: string): X509Certificate | null {
-  const o = unarmour(pem, 'CERTIFICATE') as X509Certificate | null;
-  if (!o || typeof o.subject !== 'string' || typeof o.serialNumber !== 'string') return null;
-  return o;
+  const bytes = unarmourBytes(pem, 'CERTIFICATE');
+  if (bytes === null) return null;
+  try {
+    if (bytes[0] === 0x7b) {
+      const legacy = JSON.parse(bytesToUtf8(bytes)) as X509Certificate;
+      return typeof legacy.subject === 'string' && typeof legacy.serialNumber === 'string' ? legacy : null;
+    }
+    return decodeCertificate(bytes);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -205,6 +237,11 @@ export function pemToEncryptedPrivateKey(pem: string, passphrase: string): PkiPr
 }
 
 /** Une armure de clé chiffrée est-elle présente ? */
+export function pemToPrivateKeyWithPassphrase(pem: string, passphrase: string | null): PkiPrivateKey | null {
+  if (!isEncryptedPrivateKeyPem(pem)) return pemToPrivateKey(pem);
+  return passphrase === null ? null : pemToEncryptedPrivateKey(pem, passphrase);
+}
+
 export function isEncryptedPrivateKeyPem(pem: string): boolean {
   return pem.includes('-----BEGIN ENCRYPTED PRIVATE KEY-----');
 }
@@ -256,4 +293,38 @@ export function pemToCrl(pem: string): CertificateRevocationList | null {
     signatureAlgorithm: o.signatureAlgorithm ?? 'sha256WithRSAEncryption',
     revoked: o.revoked,
   }, o.signature ?? '');
+}
+
+export function ocspResponseToPem(response: OcspResponseMessage): string {
+  return armour('OCSP RESPONSE', response);
+}
+
+export function pemToOcspResponse(pem: string): OcspResponseMessage | null {
+  const o = unarmour(pem, 'OCSP RESPONSE') as OcspResponseMessage | null;
+  if (!o || typeof o.status !== 'string' || !Array.isArray(o.singles)) return null;
+  return o;
+}
+
+export function ocspRequestToPem(request: OcspRequestMessage): string {
+  return armour('OCSP REQUEST', request);
+}
+
+export function pemToOcspRequest(pem: string): OcspRequestMessage | null {
+  const o = unarmour(pem, 'OCSP REQUEST') as OcspRequestMessage | null;
+  return o && Array.isArray(o.ids) ? o : null;
+}
+
+export interface DhParameters {
+  readonly prime: bigint;
+  readonly generator: bigint;
+}
+
+export function dhParametersToPem(parameters: DhParameters): string {
+  return armour('DH PARAMETERS', { p: parameters.prime.toString(16), g: parameters.generator.toString(16) });
+}
+
+export function pemToDhParameters(pem: string): DhParameters | null {
+  const o = unarmour(pem, 'DH PARAMETERS') as { p?: unknown; g?: unknown } | null;
+  if (!o || typeof o.p !== 'string' || typeof o.g !== 'string' || !/^[0-9a-f]+$/.test(o.p) || !/^[0-9a-f]+$/.test(o.g)) return null;
+  return { prime: BigInt(`0x${o.p}`), generator: BigInt(`0x${o.g}`) };
 }

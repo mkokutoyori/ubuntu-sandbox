@@ -16,7 +16,13 @@
 import {
   deriveRecordKeys, sealRecord, openRecord, type RecordKeys,
 } from '@/network/tls/recordProtection';
-import { fragmentAsRecords, reassembleRecords, type TlsRecord } from '@/network/tls/recordLayer';
+import { fragmentAsRecords, fragmentPlaintext, reassembleRecords, reassembleFragments, type TlsRecord } from '@/network/tls/recordLayer';
+import type { TrafficProtection } from '@/network/tls/trafficProtection';
+import type { Tls13Traffic } from '@/network/tls/suite13';
+
+function isLegacy(traffic: TrafficProtection): traffic is Exclude<TrafficProtection, string | Tls13Traffic> {
+  return typeof traffic !== 'string' && 'kind' in traffic && traffic.kind === 'legacy';
+}
 
 export interface EncryptedApplicationData {
   readonly records: TlsRecord[];
@@ -30,8 +36,8 @@ export interface EncryptedApplicationData {
  * servir l'ancien après un `KeyUpdate`. Le coût est une expansion HKDF
  * par lot, pas par octet.
  */
-function keys(trafficSecret: string): RecordKeys {
-  return deriveRecordKeys(trafficSecret);
+function keys(traffic: string | Tls13Traffic): RecordKeys {
+  return typeof traffic === 'string' ? deriveRecordKeys(traffic) : deriveRecordKeys(traffic.secret, traffic.suite);
 }
 
 /**
@@ -40,10 +46,16 @@ function keys(trafficSecret: string): RecordKeys {
  * consuming one sequence number per record.
  */
 export function encryptApplicationData(
-  trafficSecret: string, startSeq: number, plaintext: Uint8Array,
+  traffic: TrafficProtection, startSeq: number, plaintext: Uint8Array,
 ): EncryptedApplicationData {
-  const k = keys(trafficSecret);
-  const records = fragmentAsRecords('application_data', plaintext, true);
+  if (isLegacy(traffic)) {
+    let legacySeq = startSeq;
+    const sealed = fragmentPlaintext('application_data', plaintext, traffic.maxFragment).map((record): TlsRecord => traffic.seal(legacySeq++, record));
+    return { records: sealed, nextSeq: legacySeq };
+  }
+  const k = keys(traffic);
+  const limit = typeof traffic === 'string' ? undefined : traffic.maxFragment;
+  const records = fragmentAsRecords('application_data', plaintext, true, limit);
   let seq = startSeq;
   const encrypted = records.map((record): TlsRecord => sealRecord(k, seq++, record));
   return { records: encrypted, nextSeq: seq };
@@ -66,15 +78,30 @@ export interface DecryptedApplicationData {
  * du XOR mal déchiffré faisait déjà lever `reassembleRecords`, faute de
  * remorque de type valide.
  */
+export class RecordOverflowError extends Error {
+  constructor() { super('record_overflow'); this.name = 'RecordOverflowError'; }
+}
+
 export class BadRecordMacError extends Error {
   constructor() { super('bad_record_mac'); this.name = 'BadRecordMacError'; }
 }
 
 /** L'inverse d'`encryptApplicationData`. */
 export function decryptApplicationData(
-  trafficSecret: string, startSeq: number, records: readonly TlsRecord[],
+  traffic: TrafficProtection, startSeq: number, records: readonly TlsRecord[],
 ): DecryptedApplicationData {
-  const k = keys(trafficSecret);
+  if (isLegacy(traffic)) {
+    let legacySeq = startSeq;
+    const opened: TlsRecord[] = [];
+    for (const record of records) {
+      const plain = traffic.open(legacySeq++, record);
+      if (plain === null) throw new BadRecordMacError();
+      if (plain.fragment.length > traffic.maxFragment) throw new RecordOverflowError();
+      opened.push(plain);
+    }
+    return { plaintext: reassembleFragments(opened).plaintext, nextSeq: legacySeq };
+  }
+  const k = keys(traffic);
   let seq = startSeq;
   const decrypted: TlsRecord[] = [];
   for (const record of records) {
@@ -82,6 +109,9 @@ export function decryptApplicationData(
     // Refuser le lot entier plutôt que d'en livrer la moitié : c'est ce
     // que fait un vrai TLS, qui ferme la connexion.
     if (clair === null) throw new BadRecordMacError();
+    if (typeof traffic !== 'string' && traffic.maxFragment !== undefined && clair.fragment.length > traffic.maxFragment + 1) {
+      throw new RecordOverflowError();
+    }
     decrypted.push(clair);
   }
   const { plaintext } = reassembleRecords(decrypted, true);

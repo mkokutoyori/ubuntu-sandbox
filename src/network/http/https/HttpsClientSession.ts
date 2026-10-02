@@ -51,6 +51,7 @@ export type HttpsClientConfig = Omit<TlsClientConfig, 'alpn'> & { readonly alpn?
 export class HttpsClientSession {
   private socket: TcpSocket | null = null;
   private tls: TlsClientSession | null = null;
+  private lastTls: TlsClientSession | null = null;
   private clientSeq = 0;
   private serverSeq = 0;
   readonly hstsStore: HstsStore;
@@ -80,6 +81,7 @@ export class HttpsClientSession {
     if (!socket || socket.state !== 'established') return false;
 
     const tls = new TlsClientSession({ ...this.tlsConfig, alpn: this.tlsConfig.alpn ?? ['http/1.1'] });
+    this.lastTls = tls;
     runTlsHandshakeOverSocket(socket, tls);
 
     if (tls.result !== 'success') {
@@ -114,7 +116,7 @@ export class HttpsClientSession {
     const tls = this.tls;
 
     const requestBytes = encoder.encode(encodeRequest(request, opts));
-    const { records, nextSeq: clientNextSeq } = encryptApplicationData(tls.clientApplicationTrafficSecret!, this.clientSeq, requestBytes);
+    const { records, nextSeq: clientNextSeq } = encryptApplicationData(tls.clientTraffic(), this.clientSeq, requestBytes);
 
     let responseRecords: TlsRecord[] | null = null;
     const unsubscribe = socket.onData((data) => {
@@ -126,7 +128,7 @@ export class HttpsClientSession {
 
     if (!responseRecords) return fail('Empty reply from server');
 
-    const { plaintext, nextSeq: serverNextSeq } = decryptApplicationData(tls.serverApplicationTrafficSecret!, this.serverSeq, responseRecords);
+    const { plaintext, nextSeq: serverNextSeq } = decryptApplicationData(tls.serverTraffic(), this.serverSeq, responseRecords);
     this.serverSeq = serverNextSeq;
 
     const parsed = parseResponse(decoder.decode(plaintext), { suppressBody: request.method === 'HEAD' });
@@ -170,7 +172,7 @@ export class HttpsClientSession {
     const tls = this.tls;
 
     const requestBytes = encoder.encode(encodeRequest(request, opts));
-    const { records, nextSeq: clientNextSeq } = encryptApplicationData(tls.clientApplicationTrafficSecret!, this.clientSeq, requestBytes);
+    const { records, nextSeq: clientNextSeq } = encryptApplicationData(tls.clientTraffic(), this.clientSeq, requestBytes);
 
     let responseRecords: TlsRecord[] | null = null;
     const unsubscribe = socket.onData((data) => {
@@ -185,7 +187,7 @@ export class HttpsClientSession {
 
     if (!responseRecords) return fail('Empty reply from server');
 
-    const { plaintext, nextSeq: serverNextSeq } = decryptApplicationData(tls.serverApplicationTrafficSecret!, this.serverSeq, responseRecords);
+    const { plaintext, nextSeq: serverNextSeq } = decryptApplicationData(tls.serverTraffic(), this.serverSeq, responseRecords);
     this.serverSeq = serverNextSeq;
 
     const parsed = parseResponse(decoder.decode(plaintext), { suppressBody: request.method === 'HEAD' });
@@ -211,6 +213,10 @@ export class HttpsClientSession {
 
   get peerCertificate(): X509Certificate | null {
     return this.tls?.peerCertificate ?? null;
+  }
+
+  get handshake(): TlsClientSession | null {
+    return this.lastTls;
   }
 }
 

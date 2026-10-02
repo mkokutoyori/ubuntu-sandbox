@@ -1,8 +1,13 @@
 import { Http1ServerSession } from '@/network/http/http1/Http1ServerSession';
 import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
-import { pemToCert, pemToPrivateKey } from '@/network/pki/pem';
-import type { X509Certificate } from '@/network/pki/X509Certificate';
-import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
+import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+import type { TlsServerCredential } from '@/network/tls/TlsServerSession';
+import type { HttpsServerConfig } from '@/network/http/https/HttpsServerSession';
+import { credentialFor, resumptionConfig } from '@/network/http/https/ServerTlsToolkit';
+import type { Http1Peer } from '@/network/http/http1/Http1ServerSession';
+import { loadVhostTls, isApacheTlsProblem, vhostIdentifier, type ApacheVhostTls, type ApacheTlsProblem } from './ApacheTls';
+import { DEFAULT_ECDH_GROUPS } from '../nginx/NginxTls';
+import { sslCompatible } from './ApacheTls';
 import { createResponse, type HttpMessage } from '@/network/http/semantics/types';
 import { contentTypeForPath } from '@/network/http/HttpTypes';
 import type { PortSpec } from '../../../../core/ports/PortNumber';
@@ -15,8 +20,8 @@ import {
 } from './ApacheConfig';
 import {
   APACHE_VERSION, APACHE_PORTS_PATH, APACHE_SITES_ENABLED, APACHE_ENVVARS_PATH,
-  APACHE_ACCESS_LOG, APACHE_ERROR_LOG, APACHE_MODS_ENABLED,
-  apacheNotFoundPage, apacheForbiddenPage,
+  APACHE_ACCESS_LOG, APACHE_ERROR_LOG, APACHE_MODS_ENABLED, APACHE_CONF_PATH, APACHE_CONF_ENABLED,
+  apacheNotFoundPage, apacheForbiddenPage, apacheBadRequestPage, apacheMisdirectedPage,
 } from './ApacheFiles';
 
 /**
@@ -78,25 +83,28 @@ function formatAccessTime(d: Date): string {
 
 type ApacheSession = Http1ServerSession | HttpsServerSession;
 
-/** A port that asked for TLS and cannot have it, with the server's own words. */
-interface TlsProblem { readonly error: string }
-
-function isTlsProblem(v: unknown): v is TlsProblem {
-  return typeof v === 'object' && v !== null && 'error' in v;
+interface PortTls {
+  readonly vhosts: readonly { readonly vhost: ApacheVirtualHost; readonly tls: ApacheVhostTls }[];
+  readonly defaultTls: ApacheVhostTls;
+  readonly nameBased: boolean;
+  readonly fingerprint: string;
 }
 
+const APACHE_LAYOUT = { mainConf: APACHE_CONF_PATH, modsEnabled: APACHE_MODS_ENABLED, confEnabled: APACHE_CONF_ENABLED };
 
 export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
   private config: ApacheConfig = { listenPorts: [], vhosts: [] };
   private loaded = false;
   private readonly sessions = new Map<number, ApacheSession>();
+  private readonly tlsInUse = new Map<number, string>();
+  private readonly portTls = new Map<number, PortTls>();
 
   constructor(private readonly host: NginxHost) {}
 
   loadConfig(): string | null {
     const { config, error } = parseApacheConfig(
       this.host.fs, APACHE_PORTS_PATH, APACHE_SITES_ENABLED, APACHE_ENVVARS_PATH,
-      this.modules(),
+      this.modules(), APACHE_LAYOUT,
     );
     this.config = config;
     this.loaded = error === null;
@@ -154,16 +162,22 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
     if (this.sessions.has(spec.port)) return true;
 
     const tls = this.tlsMaterialFor(spec.port);
-    if (isTlsProblem(tls)) { this.reportStartupFailure(tls.error); return false; }
+    if (isApacheTlsProblem(tls)) { this.reportStartupFailure(tls.error); return false; }
+    if (tls !== null) {
+      for (const entry of tls.vhosts) {
+        for (const warning of entry.tls.warnings) {
+          this.host.appendLog(APACHE_ERROR_LOG, `${formatErrorTime(this.host.now())} [ssl:error] [pid 1] ${warning}`);
+        }
+      }
+    }
 
     const session: ApacheSession = tls === null
       ? new Http1ServerSession(
         this.host.tcpStack(), spec.port, (req) => this.respond(spec.port, req),
       )
       : new HttpsServerSession(
-        this.host.tcpStack(), spec.port,
-        { serverCert: tls.cert, serverPrivateKey: tls.key },
-        (req) => this.respond(spec.port, req),
+        this.host.tcpStack(), spec.port, this.engineConfig(tls),
+        (req, peer) => this.respond(spec.port, req, peer),
       );
     try {
       session.start(identity);
@@ -171,11 +185,15 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
       return false;
     }
     this.sessions.set(spec.port, session);
+    if (tls !== null) {
+      this.tlsInUse.set(spec.port, tls.fingerprint);
+      this.portTls.set(spec.port, tls);
+    }
     return true;
   }
 
   /**
-   * The certificate a port presents, `null` for plain HTTP, `'error'` when
+   * The certificate a port presents, `null` for plain HTTP, a problem when
    * a vhost asked for TLS and cannot have it.
    *
    * The third outcome is the whole reason this exists, and it is the same
@@ -186,38 +204,63 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
    * it is the worst possible answer, since everything downstream believes
    * 443 means encrypted.
    */
-  private tlsMaterialFor(port: number): { cert: X509Certificate; key: PkiPrivateKey } | null | TlsProblem {
-    const vhost = this.config.vhosts.find((v) => v.port === port && v.sslEngine);
-    if (!vhost) return null;
-    return this.tlsMaterialForVhost(vhost);
+  private tlsMaterialFor(port: number): PortTls | null | ApacheTlsProblem {
+    const onPort = this.config.vhosts.filter((v) => v.port === port && v.ssl.engine);
+    if (onPort.length === 0) return null;
+    return this.loadPortTls(this.config.vhosts.filter((v) => v.port === port), onPort);
   }
 
-  private tlsMaterialForVhost(
-    vhost: ApacheVirtualHost,
-  ): { cert: X509Certificate; key: PkiPrivateKey } | null | TlsProblem {
-    const port = vhost.port;
-    const fail = (message: string): TlsProblem => ({ error: message });
-    if (!vhost.sslCertificateFile || !vhost.sslCertificateKeyFile) {
-      return fail(`AH02572: Failed to configure at least one certificate and key `
-        + `for ${vhost.serverName ?? '*'}:${port}`);
+  private loadPortTls(
+    all: readonly ApacheVirtualHost[], onPort: readonly ApacheVirtualHost[],
+  ): PortTls | ApacheTlsProblem {
+    const loaded: { vhost: ApacheVirtualHost; tls: ApacheVhostTls }[] = [];
+    for (const vhost of onPort) {
+      const tls = loadVhostTls(vhost, this.host.fs, vhost.protocolSet, {
+        tcpStack: () => this.host.tcpStack(), resolve: (name) => this.host.resolve?.(name) ?? null,
+        now: () => this.host.now().getTime(),
+      });
+      if (isApacheTlsProblem(tls)) return tls;
+      loaded.push({ vhost, tls });
     }
-    const certPem = this.host.fs.read(vhost.sslCertificateFile);
-    if (certPem === null) {
-      return fail(`AH00526: Syntax error on line 1 of ${vhost.source}: `
-        + `SSLCertificateFile: file '${vhost.sslCertificateFile}' does not exist or is empty`);
-    }
-    const keyPem = this.host.fs.read(vhost.sslCertificateKeyFile);
-    if (keyPem === null) {
-      return fail(`AH00526: Syntax error on line 1 of ${vhost.source}: `
-        + `SSLCertificateKeyFile: file '${vhost.sslCertificateKeyFile}' does not exist or is empty`);
-    }
-    const cert = pemToCert(certPem);
-    const key = pemToPrivateKey(keyPem);
-    if (!cert || !key) {
-      return fail(`AH02561: Failed to configure certificate ${vhost.serverName ?? '*'}:${port}, `
-        + 'check /etc/apache2/ssl (SSL: error:0480006C:PEM routines::no start line)');
-    }
-    return { cert, key };
+    return {
+      vhosts: loaded, defaultTls: loaded[0].tls, nameBased: all.length > 1,
+      fingerprint: loaded.map((e) => `${e.vhost.serverName ?? '*'}#${e.tls.fingerprint}`).join('||'),
+    };
+  }
+
+  private engineConfig(port: PortTls): HttpsServerConfig {
+    const base = port.defaultTls;
+    const settings = base.settings;
+    const identity = base.identity;
+    const credentials: TlsServerCredential[] = port.vhosts.map((entry) => credentialFor(
+      entry.tls.identity,
+      (name) => selectVirtualHost(this.config, entry.vhost.port, name, port.vhosts.map((e) => e.vhost)) === entry.vhost,
+      false,
+      entry.tls.protocolSet ? entry.tls.protocols : undefined,
+    ));
+    const verifying = port.vhosts.find((e) => e.tls.settings.verifyClient !== 'none');
+    const resumption = resumptionConfig({
+      tickets: base.sessionTickets,
+      serverSideCache: !['none', 'nonenotnull'].includes(settings.sessionCache.toLowerCase()),
+      timeoutSeconds: settings.sessionCacheTimeout,
+      ticketKey: base.ticketKey,
+    });
+    return {
+      serverCert: identity.cert, serverChain: identity.chain, serverPrivateKey: identity.key,
+      protocols: base.protocols, cipherList: base.cipherList, preferServerCiphers: base.preferServerCiphers,
+      tls13Ciphersuites: base.tls13Ciphersuites, supportedGroups: base.groups ?? DEFAULT_ECDH_GROUPS,
+      extendedMasterSecret: base.extendedMasterSecret,
+      sniCredentials: credentials, ocspStaple: base.staple,
+      ...resumption,
+      ...(verifying
+        ? {
+          requestClientCert: true,
+          clientCertPolicy: verifying.tls.settings.verifyClient === 'require' ? 'strict' as const
+            : verifying.tls.settings.verifyClient === 'optional' ? 'optional' as const : 'optional_no_ca' as const,
+          verifier: verifying.tls.verifier ?? new CertificateVerifier({ trustAnchors: [] }),
+        }
+        : {}),
+    };
   }
 
   close(spec: PortSpec): void {
@@ -225,11 +268,15 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
     if (!session) return;
     session.stop();
     this.sessions.delete(spec.port);
+    this.tlsInUse.delete(spec.port);
+    this.portTls.delete(spec.port);
   }
 
   stopAll(): void {
     for (const session of this.sessions.values()) session.stop();
     this.sessions.clear();
+    this.tlsInUse.clear();
+    this.portTls.clear();
   }
 
   listeningPorts(): number[] {
@@ -252,12 +299,12 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
     // server's view of its own configuration.
     const { config } = parseApacheConfig(
       this.host.fs, APACHE_PORTS_PATH, APACHE_SITES_ENABLED, APACHE_ENVVARS_PATH,
-      this.modules(),
+      this.modules(), APACHE_LAYOUT,
     );
-    for (const vhost of config.vhosts) {
-      if (!vhost.sslEngine) continue;
-      const material = this.tlsMaterialForVhost(vhost);
-      if (isTlsProblem(material)) return material.error;
+    for (const port of new Set(config.vhosts.filter((v) => v.ssl.engine).map((v) => v.port))) {
+      const onPort = config.vhosts.filter((v) => v.port === port && v.ssl.engine);
+      const material = this.loadPortTls(config.vhosts.filter((v) => v.port === port), onPort);
+      if (isApacheTlsProblem(material)) return material.error;
     }
     return null;
   }
@@ -269,19 +316,70 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
     for (const port of [...this.sessions.keys()]) {
       if (!wanted.has(port)) this.close({ port, protocol: 'tcp' });
     }
+    this.reopenChangedTlsPorts();
     return null;
+  }
+
+  private reopenChangedTlsPorts(): void {
+    for (const port of [...this.sessions.keys()]) {
+      const previous = this.tlsInUse.get(port);
+      if (previous === undefined) continue;
+      const fresh = this.tlsMaterialFor(port);
+      if (fresh === null || isApacheTlsProblem(fresh)) continue;
+      if (fresh.fingerprint === previous) continue;
+      this.close({ port, protocol: 'tcp' });
+      this.open({ port, protocol: 'tcp' });
+    }
   }
 
 
   // ─── serving ──────────────────────────────────────────────────────
 
-  private respond(port: number, req: HttpMessage): HttpMessage {
+  private sniGate(port: number, req: HttpMessage, vhost: ApacheVirtualHost, peer: Http1Peer | undefined): HttpMessage | null {
+    const tls = peer?.tls;
+    if (!tls) return null;
+    const hostHeader = req.headers.get('Host');
+    const portTls = this.portTls.get(port);
+    if (tls.serverName !== null) {
+      if (!hostHeader) {
+        this.reportRequestError('AH02031', `Hostname ${tls.serverName} provided via SNI, but no hostname provided in HTTP request`, peer);
+        return this.response(400, 'Bad Request', apacheBadRequestPage());
+      }
+      const handshake = portTls
+        ? selectVirtualHost(this.config, port, tls.serverName, portTls.vhosts.map((e) => e.vhost))
+        : vhost;
+      if (handshake !== vhost && portTls && !sslCompatible(portTls, handshake, vhost)) {
+        this.reportRequestError('AH02032',
+          `Hostname ${tls.serverName} provided via SNI and hostname ${hostHeader.split(':')[0]} provided via HTTP have no compatible SSL setup`, peer);
+        return this.response(421, 'Misdirected Request', apacheMisdirectedPage(hostHeader.split(':')[0], port));
+      }
+      return null;
+    }
+    const handshakeTls = portTls?.defaultTls;
+    const strict = vhost.ssl.strictSniVhostCheck || (handshakeTls?.settings.strictSniVhostCheck ?? false);
+    if (strict && portTls?.nameBased) {
+      this.reportRequestError('AH02033', 'No hostname was provided via SNI for a name based virtual host', peer);
+      return this.response(403, 'Forbidden', apacheForbiddenPage(req.target ?? '/'));
+    }
+    return null;
+  }
+
+  private reportRequestError(code: string, message: string, peer: Http1Peer | undefined): void {
+    this.host.appendLog(
+      APACHE_ERROR_LOG,
+      `${formatErrorTime(this.host.now())} [ssl:error] [pid 1] [client ${peer?.ip ?? '127.0.0.1'}:${peer?.port ?? 0}] ${code}: ${message}`,
+    );
+  }
+
+  private respond(port: number, req: HttpMessage, peer?: Http1Peer): HttpMessage {
     const target = (req.target ?? '/').split('?')[0];
     const hostHeader = req.headers.get('Host') ?? '';
     const vhost = selectVirtualHost(this.config, port, hostHeader);
     if (!vhost) {
       return this.log(req, this.response(404, 'Not Found', apacheNotFoundPage(target)), null);
     }
+    const gated = this.sniGate(port, req, vhost, peer);
+    if (gated) return this.log(req, gated, vhost);
 
     let path = joinPath(vhost.documentRoot, decodeURIComponent(target));
     if (this.host.fs.isDirectory(path)) {

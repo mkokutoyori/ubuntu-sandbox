@@ -1,3 +1,4 @@
+import type { TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
 export interface CurlResolveEntry {
   readonly host: string;
   readonly port: number;
@@ -8,6 +9,15 @@ export interface CurlOptions {
   head: boolean;
   include: boolean;
   insecure: boolean;
+  certStatus: boolean;
+  tlsMin: TlsProtocolVersion | null;
+  tlsMax: TlsProtocolVersion | null;
+  ciphers: string | null;
+  tls13Ciphers: string | null;
+  curves: string | null;
+  cert: string | null;
+  key: string | null;
+  keyPassphrase: string | null;
   silent: boolean;
   showError: boolean;
   verbose: boolean;
@@ -65,11 +75,12 @@ export const LITTERAL = '\u0000';
 
 const SHORT_NO_ARG = 'IksSvfLOiV';
 
-const SHORT_WITH_ARG = 'owXdHuAbceDTFm';
+const SHORT_WITH_ARG = 'owXdHuAbceDTFmE';
 
 const LONG_NO_ARG: Record<string, string> = {
   head: 'I',
   insecure: 'k',
+  'cert-status': 'cert-status',
   silent: 's',
   'show-error': 'S',
   verbose: 'v',
@@ -79,6 +90,11 @@ const LONG_NO_ARG: Record<string, string> = {
   include: 'i',
   version: 'V',
   'retry-all-errors': 'retry-all-errors',
+  tlsv1: 'tlsv1.0',
+  'tlsv1.0': 'tlsv1.0',
+  'tlsv1.1': 'tlsv1.1',
+  'tlsv1.2': 'tlsv1.2',
+  'tlsv1.3': 'tlsv1.3',
 };
 
 const LONG_WITH_ARG: Record<string, string> = {
@@ -107,6 +123,13 @@ const LONG_WITH_ARG: Record<string, string> = {
   'connect-timeout': 'connect-timeout',
   'max-time': 'm',
   'local-port': 'local-port',
+  'tls-max': 'tls-max',
+  ciphers: 'ciphers',
+  'tls13-ciphers': 'tls13-ciphers',
+  curves: 'curves',
+  cert: 'E',
+  key: 'key',
+  pass: 'pass',
 };
 
 const UNSUPPORTED_SHORT: Record<string, true> = {
@@ -114,7 +137,7 @@ const UNSUPPORTED_SHORT: Record<string, true> = {
   // à témoins (`http/cookies/`), un moteur RFC 6265 complet qui
   // n'avait aucun appelant.
   x: true, C: true, '#': true,
-  E: true, y: true, Y: true, z: true, R: true, j: true, N: true, g: true,
+  y: true, Y: true, z: true, R: true, j: true, N: true, g: true,
   K: true, r: true, P: true, Q: true, p: true, U: true,
 };
 
@@ -126,14 +149,14 @@ const UNSUPPORTED_LONG: Record<string, true> = {
   proxy: true, 'retry-delay': true,
   'retry-max-time': true,
   'http0.9': true,
-  'limit-rate': true, 'continue-at': true, 'progress-bar': true, cert: true,
+  'limit-rate': true, 'continue-at': true, 'progress-bar': true,
   // `--version` a quitté la liste des INCONNUES : curl la connaît, et
   // répondre « is unknown » à l'option la plus tapée de toutes était le
   // seul message de ce fichier qui mentait.
-  key: true, capath: true, interface: true,
+  capath: true, interface: true,
   'anyauth': true, ntlm: true,
   negotiate: true, digest: true, 'proxy-user': true, socks5: true, socks4: true,
-  'tlsv1.2': true, 'tlsv1.3': true, 'ciphers': true, 'keepalive-time': true,
+  'keepalive-time': true,
   'speed-limit': true, 'speed-time': true, range: true, 'time-cond': true,
   'remote-time': true, netrc: true, 'trace': true, 'trace-ascii': true,
   config: true,
@@ -143,6 +166,29 @@ const UNSUPPORTED_LONG: Record<string, true> = {
 export interface LocalPortRange {
   readonly first: number;
   readonly count: number;
+}
+
+export function splitCertParameter(parameter: string): { name: string | null; passphrase: string | null } {
+  if (parameter.length === 0) return { name: null, passphrase: null };
+  if (parameter.toLowerCase().startsWith('pkcs11:') || !/[:\\]/.test(parameter)) {
+    return { name: parameter, passphrase: null };
+  }
+  let name = '';
+  let i = 0;
+  while (i < parameter.length) {
+    const ch = parameter[i];
+    if (ch === '\\') {
+      const next = parameter[i + 1];
+      if (next === undefined) { name += '\\'; i += 1; } else if (next === '\\' || next === ':') { name += next; i += 2; } else { name += `\\${next}`; i += 2; }
+    } else if (ch === ':') {
+      const rest = parameter.slice(i + 1);
+      return { name, passphrase: rest.length > 0 ? rest : null };
+    } else {
+      name += ch;
+      i += 1;
+    }
+  }
+  return { name, passphrase: null };
 }
 
 function parseLocalPortRange(value: string): LocalPortRange | null {
@@ -159,6 +205,15 @@ function defaults(): CurlOptions {
     head: false,
     include: false,
     insecure: false,
+    certStatus: false,
+    tlsMin: null,
+    tlsMax: null,
+    ciphers: null,
+    tls13Ciphers: null,
+    curves: null,
+    cert: null,
+    key: null,
+    keyPassphrase: null,
     silent: false,
     showError: false,
     verbose: false,
@@ -279,6 +334,24 @@ function applyValued(
       break;
     }
     case 'cacert': opts.caCert = value; break;
+    case 'tls-max': {
+      const versions: Record<string, TlsProtocolVersion> = { '1.0': '1.0', '1.1': '1.1', '1.2': '1.2', '1.3': '1.3' };
+      const version = versions[value];
+      if (!version) return usageFailure(`curl: option ${spelling}: unsupported TLS version: ${value}`);
+      opts.tlsMax = version;
+      break;
+    }
+    case 'ciphers': opts.ciphers = value; break;
+    case 'tls13-ciphers': opts.tls13Ciphers = value; break;
+    case 'curves': opts.curves = value; break;
+    case 'key': opts.key = value; break;
+    case 'pass': opts.keyPassphrase = value; break;
+    case 'E': {
+      const split = splitCertParameter(value);
+      opts.cert = split.name;
+      if (split.passphrase !== null) opts.keyPassphrase = split.passphrase;
+      break;
+    }
     case 'connect-timeout': {
       const seconds = Number(value);
       if (value.trim() === '' || !Number.isFinite(seconds) || seconds < 0) {
@@ -319,6 +392,11 @@ function applyFlag(opts: CurlOptions, letter: string): void {
     case 'V': opts.version = true; break;
     case 'retry-all-errors': opts.retryAllErrors = true; break;
     case 'k': opts.insecure = true; break;
+    case 'cert-status': opts.certStatus = true; break;
+    case 'tlsv1.0': opts.tlsMin = '1.0'; break;
+    case 'tlsv1.1': opts.tlsMin = '1.1'; break;
+    case 'tlsv1.2': opts.tlsMin = '1.2'; break;
+    case 'tlsv1.3': opts.tlsMin = '1.3'; break;
     case 's': opts.silent = true; break;
     case 'S': opts.showError = true; break;
     case 'v': opts.verbose = true; break;

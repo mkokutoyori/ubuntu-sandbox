@@ -30,7 +30,7 @@ import {
 import {
   APACHE_VERSION, APACHE_CTL, APACHE_BUILD_DATE, APACHE_PORTS_PATH,
   APACHE_SITES_ENABLED, APACHE_ENVVARS_PATH, APACHE_ERROR_LOG,
-  APACHE_MODS_ENABLED, APACHE_STATIC_MODULES,
+  APACHE_MODS_ENABLED, APACHE_STATIC_MODULES, APACHE_CONF_PATH, APACHE_CONF_ENABLED,
 } from '../../http/apache/ApacheFiles';
 
 const UNIT = 'apache2';
@@ -50,6 +50,7 @@ function readConfig(ctx: LinuxCommandContext) {
   return parseApacheConfig(
     src, APACHE_PORTS_PATH, APACHE_SITES_ENABLED, APACHE_ENVVARS_PATH,
     loadedApacheModules(src, APACHE_MODS_ENABLED),
+    { mainConf: APACHE_CONF_PATH, modsEnabled: APACHE_MODS_ENABLED, confEnabled: APACHE_CONF_ENABLED },
   );
 }
 

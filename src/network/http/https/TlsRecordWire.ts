@@ -120,6 +120,7 @@ export function attachTlsRecordPump(
 export interface TlsRecordHandler {
   handle(records: readonly TlsRecord[]): readonly TlsRecord[] | null;
   readonly result: string | null;
+  receiveSessionTicket?(records: readonly TlsRecord[]): void;
 }
 
 export interface TlsHandshakeDriver extends TlsRecordHandler {
@@ -154,7 +155,10 @@ export function pumpTlsHandshake(
   socket: TlsHandshakeSocket, tls: TlsRecordHandler,
 ): () => void {
   return attachTlsRecordPump(socket, (records) => {
-    if (tls.result !== null) return;
+    if (tls.result !== null) {
+      if (tls.result === 'success') tls.receiveSessionTicket?.(records);
+      return;
+    }
     const nextFlight = tls.handle(records);
     if (nextFlight && nextFlight.length > 0) {
       socket.write(bytesToBinaryString(encodeRecords(nextFlight)));

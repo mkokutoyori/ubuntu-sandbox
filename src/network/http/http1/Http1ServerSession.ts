@@ -1,3 +1,4 @@
+import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { TcpStack, TcpSocket, TcpListener } from '@/network/tcp/TcpStack';
 import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import { createResponse, type HttpMessage } from '../semantics/types';
@@ -12,9 +13,21 @@ import { randomRequestId } from '../events';
  * `$remote_addr` ne peut valoir qu'un espace réservé. Il est optionnel
  * pour que les gestionnaires qui l'ignorent restent inchangés.
  */
+export interface Http1PeerTls {
+  readonly protocolVersion: string | null;
+  readonly cipherSuite: string | null;
+  readonly clientCertificate: X509Certificate | null;
+  readonly clientCertificateChain: readonly X509Certificate[];
+  readonly serverName: string | null;
+  readonly sessionReused: boolean;
+  readonly clientVerified: boolean;
+  readonly clientVerifyReason: string | null;
+}
+
 export interface Http1Peer {
   readonly ip: string;
   readonly port: number;
+  readonly tls?: Http1PeerTls;
 }
 
 /**
