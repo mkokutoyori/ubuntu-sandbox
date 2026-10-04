@@ -503,6 +503,7 @@ export class SwitchSvi {
   private serveDhcpOnVlan(svi: SviInterface, pkt: DHCPPacket): void {
     const server = this.host.getDhcpServer?.();
     if (!server || !server.isEnabled() || !svi.ip) return;
+    server.setServerIdentifier(svi.ip.toString());
     const reply = buildDhcpServerReply(pkt, {
       server,
       localGatewayIP: svi.ip.toString(),

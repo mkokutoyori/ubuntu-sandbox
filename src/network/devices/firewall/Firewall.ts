@@ -152,7 +152,8 @@ import { SslDeepInspection } from './inspection/SslDeepInspection';
 import { ModeCfgPool } from './vpn/ModeCfgPool';
 import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
-import { FirewallPing, type FirewallPingEgress } from './diag/FirewallPing';
+import { FirewallPing, isPingRefusal, type FirewallPingEgress } from './diag/FirewallPing';
+import { isValidIPv4 } from '../../core/ip';
 import { PingOptions } from './diag/PingOptions';
 import { AdminSessionTable } from './mgmt/AdminSessionTable';
 import { FortiGuardDatabases } from './mgmt/FortiGuardDatabases';
@@ -369,7 +370,7 @@ export class Firewall extends Equipment {
   private readonly serverPools = new Map<string, RealServerPool>();
   private readonly poolMonitors = new Map<string, string[]>();
   private readonly ldbMonitors = new LdbMonitorTable({
-    ping: async (address) => this.ping.begin(address)?.step(1) !== null,
+    ping: async (address) => this.answersEcho(address),
     tcp: async (address, port) => {
       const destination = parseDialAddress(address);
       if (!destination || !PortNumber.isValid(port)) return false;
@@ -827,6 +828,7 @@ export class Firewall extends Equipment {
 
   private readonly ping = new FirewallPing({
     resolve: (destination) => this.resolveEgress(destination),
+    resolveName: (name) => this.resolveHostName(name),
     send: (iface, packet, gateway) => {
       this.liveState.countEchoSent();
       this.forward(iface, packet, gateway);
@@ -844,6 +846,11 @@ export class Firewall extends Equipment {
   runPing(target: string, count?: number): string { return this.ping.run(target, count); }
 
   beginPing(target: string) { return this.ping.begin(target); }
+
+  private answersEcho(address: string): boolean {
+    const run = this.ping.begin(address);
+    return !isPingRefusal(run) && run.step(1) !== null;
+  }
 
   pingRepeatCount(): number { return this.ping.defaultCount(); }
 
@@ -901,6 +908,10 @@ export class Firewall extends Equipment {
     return { iface: egress.iface, gateway: egress.nextHop, source };
   }
 
+  private resolveHostName(name: string): string | null {
+    return this.dnsClient.resolve(name).find(isValidIPv4) ?? null;
+  }
+
   private rememberUnroutable(destination: string): void {
     const context = makePacketContext({
       ingressPort: 'local',
@@ -920,6 +931,7 @@ export class Firewall extends Equipment {
 
   private readonly traceroute = new FirewallTraceroute({
     resolve: (destination) => this.resolveEgress(destination),
+    resolveName: (name) => this.resolveHostName(name),
     send: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
   });
 
@@ -2362,7 +2374,7 @@ export class Firewall extends Equipment {
 
   linkMonitorStatuses(): readonly LinkMonitorStatus[] {
     return this.linkMonitors.evaluate(
-      (server) => this.ping.begin(server)?.step(1) !== null);
+      (server) => this.answersEcho(server));
   }
 
   getFragmentReassembly(): FragmentReassembly { return this.fragments; }

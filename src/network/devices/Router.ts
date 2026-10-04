@@ -4226,9 +4226,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         .map(p => p.getIPAddress()?.toString())
         .filter((ip): ip is string => !!ip),
     );
+    const receivedOn = this.ports.get(inPort)?.getIPAddress();
+    if (receivedOn) this.dhcpServer.setServerIdentifier(receivedOn.toString());
     const reply = buildDhcpServerReply(pkt, {
       server: this.dhcpServer,
-      localGatewayIP: this.ports.get(inPort)?.getIPAddress()?.toString(),
+      localGatewayIP: receivedOn?.toString(),
       isAddressInUse: (ip) => this.isCandidateAddressInUse(new IPAddress(ip)),
     });
     if (!reply) return;
