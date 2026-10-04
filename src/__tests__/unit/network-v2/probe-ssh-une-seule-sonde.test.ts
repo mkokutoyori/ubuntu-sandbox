@@ -43,49 +43,19 @@
  *     le seul qui borne une connexion qui n'aboutira pas.
  *   - un NOM se resout toujours : NON-REGRESSION du meme groupe.
  *
- * LIMITE MESUREE ET NON FERMEE : il reste DEUX connexions la ou un vrai
- * client n'en ouvre qu'une, et la seconde est la sonde elle-meme. Sur
- * une vraie machine un demi-balayage SYN est repondu par le NOYAU seul ;
+ * SECONDE CORRECTION : la sonde n'atteint plus l'application. Sur une
+ * vraie machine un demi-balayage SYN est repondu par le NOYAU seul ;
  * l'application n'apprend la connexion qu'une fois la poignee de main
- * terminee par l'ACK du client -- c'est precisement ce qui rend ce
- * balayage « furtif ». Ici la sonde traverse jusqu'a l'application, qui
- * l'inscrit puis la voit se fermer.
- *
- * LA CORRECTION A ETE ECRITE, MESUREE, ET REPOSEE -- et ce qui l'a
- * arretee merite d'etre ecrit ici plutot que redecouvert. Ne remettre la
- * socket a l'ecouteur qu'a l'ACK tient en quatre lignes de `TcpStack' et
- * donne exactement ce qu'on attend : `nmap -sS' voit toujours le port
- * ouvert, le journal du serveur ne voit plus le balayage (1 connexion ->
- * 0), et un `ssh' retombe a UNE connexion sans fermeture fantome. Le
- * rayon d'action complet -- 632 fichiers, puis les 156 autres qui
- * touchent la pile TCP -- a rendu son verdict : six cas tombent, et
- * DEUX familles expliquent pourquoi.
- *
- * La premiere est cosmetique : `tcp-flow-control' et `tcp-options'
- * posent `s.windowSize` DANS `onAccept', en comptant sur le fait que le
- * SYN/ACK n'est pas encore parti. C'est reparable -- une vraie pile lit
- * la taille du tampon sur la socket d'ECOUTE, pas dans le rappel
- * d'acceptation, donc l'option appartient a `listen()'.
- *
- * La seconde est structurelle et bloque. `linux-dnat-port-forward' et
- * `linux-nat-redirect-output' observent la socket AU MOMENT DE
- * L'ACCEPTATION, a l'etat `syn-received', et leur propre commentaire dit
- * pourquoi : le SYN/ACK du serveur repart avec sa VRAIE adresse et non
- * l'adresse publique composee, donc le client le refuse par RST et la
- * poignee de main d'une connexion DNAT ne se termine JAMAIS. C'est la
- * limite que `CLAUDE.md' nomme -- « The iptables NAT engine has no
- * reply-leg conntrack ». Tant qu'elle tient, deplacer l'acceptation a
- * l'ACK ne rend pas le balayage furtif : il rend la redirection de port
- * INVISIBLE, l'ecouteur ne recevant plus jamais la connexion. Le lot du
- * demi-balayage attend donc le conntrack de retour, et pas l'inverse.
- *
- * Depuis le transport de la RFC 4253, la sonde se ferme AVANT tout echange
- * d'identification, et sshd 8.9 ne la journalise plus comme une fermeture
- * `[preauth]' : `kex_exchange_identification' (kex.c) leve
- * « Connection closed by remote host » puis `sshpkt_fatal' (packet.c)
- * ecrit « Connection closed by <ip> port <port> », sans suffixe, la
- * connexion n'ayant jamais atteint l'enfant privsep. Les deux cas comptent
- * donc les lignes « Connection closed by », quel que soit leur suffixe.
+ * terminee par l'ACK du client (RFC 9293 §3.10.7.4, cinquieme controle :
+ * SYN-RECEIVED n'entre dans ESTABLISHED qu'a cet ACK), et c'est
+ * precisement ce qui rend ce balayage « furtif ». `TcpStack` ne remet
+ * desormais la socket a l'ecouteur qu'a cet instant. Mesure sur
+ * 9883a6d5b, pour un seul `ssh` : DEUX `Connection from` et UNE fermeture
+ * `[preauth]` ; apres : UNE connexion et AUCUNE fermeture avant
+ * authentification. Trois cas sur huit changent de valeur attendue
+ * (`[preauth]` deux fois : 1 -> 0 ; `Connection from` : 2 -> 1) : ils
+ * epinglaient la limite, et un test qui epingle un defaut se corrige, il
+ * ne se contourne pas. Les cinq autres passent des deux cotes.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -136,25 +106,25 @@ describe('un `ssh` ne fait plus sonder le serveur deux fois', () => {
     expect(lignes(await journal(srv), 'Accepted password')).toBe(1);
   }, 30000);
 
-  it('une commande distante ne laisse qu UNE fermeture avant authentification', async () => {
+  it('une commande distante ne laisse AUCUNE fermeture avant authentification', async () => {
     const { pc, srv } = await lab();
     await pc.executeCommand(
       `sshpass -p secret123 ssh -o StrictHostKeyChecking=no alice@${SERVER_IP} whoami`);
-    expect(lignes(await journal(srv), `Connection closed by ${CLIENT_IP}`)).toBe(1);
+    expect(lignes(await journal(srv), `Connection closed by ${CLIENT_IP}`)).toBe(0);
   }, 30000);
 
-  it('une session interactive ne laisse qu UNE fermeture avant authentification', async () => {
+  it('une session interactive ne laisse AUCUNE fermeture avant authentification', async () => {
     const { pc, srv } = await lab();
     await pc.executeCommand(
       `ssh -o StrictHostKeyChecking=no alice@${SERVER_IP}`, 'secret123\nwhoami\nexit\n');
-    expect(lignes(await journal(srv), `Connection closed by ${CLIENT_IP}`)).toBe(1);
+    expect(lignes(await journal(srv), `Connection closed by ${CLIENT_IP}`)).toBe(0);
   }, 30000);
 
-  it('le serveur ne voit pas plus de DEUX connexions pour un seul `ssh`', async () => {
+  it('le serveur voit UNE connexion pour un seul `ssh`', async () => {
     const { pc, srv } = await lab();
     await pc.executeCommand(
       `sshpass -p secret123 ssh -o StrictHostKeyChecking=no alice@${SERVER_IP} whoami`);
-    expect(lignes(await journal(srv), 'Connection from')).toBe(2);
+    expect(lignes(await journal(srv), 'Connection from')).toBe(1);
   }, 30000);
 
   it('non-regression : un port ferme repond `Connection refused`', async () => {

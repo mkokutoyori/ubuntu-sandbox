@@ -165,6 +165,9 @@ function injectDataFromServer(
     payload: createIPv4Packet(
       new IPAddress(SERVER_IP), new IPAddress(CLIENT_IP), IP_PROTO_TCP, 64, seg, 20),
   } as never);
+  const sender = server.getTcpStack().listSockets()
+    .find((s) => s.localPort === socket.remotePort && s.remotePort === socket.localPort)!;
+  sender.sendNext = (sender.sendNext + payload.length) >>> 0;
 }
 
 describe('TCP delayed ACK (RFC 5681 §4.2)', () => {
@@ -277,7 +280,8 @@ describe('TCP delayed ACK (RFC 5681 §4.2)', () => {
     const { client, server } = buildPair();
     const received: string[] = [];
     server.getTcpStack().listen(7606, {
-      onAccept: (s) => { s.windowSize = 128; s.onData((d) => received.push(d as string)); },
+      receiveWindow: 128,
+      onAccept: (s) => { s.onData((d) => received.push(d as string)); },
     });
     const socket = client.getTcpStack().connect(SERVER_IP, 7606)!;
 

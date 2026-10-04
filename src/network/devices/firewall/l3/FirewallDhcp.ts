@@ -475,7 +475,7 @@ export class FirewallDhcp {
       },
       interfaceOwning: (address) => this.deps.interfaceOwning?.(address) ?? null,
       sendToServer: (server, packet) => this.deps.sendToServer?.(server, packet) ?? false,
-      broadcastReply: (iface, reply) => { this.deliver(iface, reply, { kind: 'broadcast' }); },
+      deliverReply: (iface, reply, route) => { this.deliver(iface, reply, route, reply.chaddr); },
       relayInformationOption: () => this.relayingFrom !== null && this.relayOptionInterfaces.has(this.relayingFrom),
       countForward: () => undefined,
       countReply: () => undefined,

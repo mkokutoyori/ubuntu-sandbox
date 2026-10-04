@@ -130,7 +130,8 @@ describe('TCP Nagle (RFC 9293 §3.7.4)', () => {
     let accepted: TcpSocket | null = null;
     const received: string[] = [];
     server.getTcpStack().listen(7900, {
-      onAccept: (s) => { accepted = s; s.windowSize = 0; s.onData((d) => received.push(d as string)); },
+      receiveWindow: 0,
+      onAccept: (s) => { accepted = s; s.onData((d) => received.push(d as string)); },
     });
     const socket = client.getTcpStack().connect(SERVER_IP, 7900)!;
     const sizes = dataSizesFrom(bus, CLIENT_IP);
@@ -145,7 +146,7 @@ describe('TCP Nagle (RFC 9293 §3.7.4)', () => {
 
   it('queues one coalesced entry, not a run of runts', () => {
     const { client, server } = buildPair();
-    server.getTcpStack().listen(7901, { onAccept: (s) => { s.windowSize = 0; } });
+    server.getTcpStack().listen(7901, { receiveWindow: 0, onAccept: () => undefined });
     const socket = client.getTcpStack().connect(SERVER_IP, 7901)!;
 
     for (let i = 0; i < 6; i++) socket.send('abcde');
@@ -180,7 +181,8 @@ describe('TCP Nagle (RFC 9293 §3.7.4)', () => {
     let accepted: TcpSocket | null = null;
     const lengths: number[] = [];
     server.getTcpStack().listen(7904, {
-      onAccept: (s) => { accepted = s; s.windowSize = 0; s.onData((d) => lengths.push((d as Uint8Array).length)); },
+      receiveWindow: 0,
+      onAccept: (s) => { accepted = s; s.onData((d) => lengths.push((d as Uint8Array).length)); },
     });
     const socket = client.getTcpStack().connect(SERVER_IP, 7904)!;
     const sizes = dataSizesFrom(bus, CLIENT_IP);
@@ -211,7 +213,8 @@ describe('TCP Nagle (RFC 9293 §3.7.4)', () => {
     const { client, server } = buildPair();
     const received: string[] = [];
     server.getTcpStack().listen(7906, {
-      onAccept: (s) => { s.windowSize = 128; s.onData((d) => received.push(d as string)); },
+      receiveWindow: 128,
+      onAccept: (s) => { s.onData((d) => received.push(d as string)); },
     });
     const socket = client.getTcpStack().connect(SERVER_IP, 7906)!;
 

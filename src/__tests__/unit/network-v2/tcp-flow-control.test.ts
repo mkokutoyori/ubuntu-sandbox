@@ -55,9 +55,9 @@ describe('TCP flow control (PRD-TCP.md P3)', () => {
     // 10 × 128: RFC 7323 window scale is always negotiated between two of
     // this simulator's own hosts.
     srv.getTcpStack().listen(7100, {
+      receiveWindow: 10 * 128,
       onAccept: (s) => {
         serverSocket = s;
-        s.windowSize = 10 * 128;
         s.onData((d) => received.push(d as string));
       },
     });
@@ -83,9 +83,9 @@ describe('TCP flow control (PRD-TCP.md P3)', () => {
     let serverSocket: TcpSocket | null = null;
     const received: string[] = [];
     srv.getTcpStack().listen(7101, {
+      receiveWindow: 0,
       onAccept: (s) => {
         serverSocket = s;
-        s.windowSize = 0;
         s.onData((d) => received.push(d as string));
       },
     });

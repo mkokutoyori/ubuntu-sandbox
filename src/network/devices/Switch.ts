@@ -82,7 +82,7 @@ import { UDP_PORT_HSRP } from '../hsrp/types';
 import { GlbpAgent } from '../glbp/GlbpAgent';
 import { FhrpRepository } from './inspection/config/FhrpRepository';
 import { UDP_PORT_GLBP } from '../glbp/types';
-import { IP_PROTO_UDP, createIPv4Packet } from '../core/types';
+import { IP_PROTO_UDP } from '../core/types';
 import type { UDPPacket } from '../core/types';
 import { makeSwitchVrrpHost, makeSwitchNtpHost } from './switch/SwitchVrrpAdapter';
 import { NtpAgent } from '../ntp/NtpAgent';
@@ -557,6 +557,7 @@ export abstract class Switch extends Equipment {
       .map((l) => l.ip).filter((ip): ip is IPAddress => ip !== undefined),
     deviceId: this.id,
     getHostname: () => this.getHostname(),
+    bus: () => this.getBus(),
     getBridgeMac: () => this.getBridgeMac(),
     egressOnVlan: (vlan, frame) => this.egressOnVlan(vlan, frame),
     vlanHasActivePort: (vlan) => this.vlanHasActivePort(vlan),

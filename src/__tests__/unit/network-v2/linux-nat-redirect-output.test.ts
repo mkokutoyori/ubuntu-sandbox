@@ -28,6 +28,7 @@ import { LinuxServer } from '@/network/devices/LinuxServer';
 import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { watchHalfOpen } from '../../support/tcpHalfOpen';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { Cable } from '@/network/hardware/Cable';
 
@@ -104,20 +105,14 @@ describe('PRD-Port-Forwarding.md Phase 6 — REDIRECT in PREROUTING', () => {
     new Cable('c1').connect(client.getPort('eth0')!, srv.getPort('eth0')!);
     await srv.executeCommand('iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8080');
 
-    let acceptedLocalPort: number | null = null;
-    let acceptedRemoteIp: string | null = null;
-    srv.getTcpStack().listen(8080, {
-      onAccept: (s) => { acceptedLocalPort = s.localPort; acceptedRemoteIp = s.remoteIp; },
-    });
+    srv.getTcpStack().listen(8080, { onAccept: () => undefined });
+    const halfOpen = watchHalfOpen(srv);
 
-    // The destination port changed (80 -> 8080), so the SYN-ACK's source
-    // port no longer matches what the client dialed — same reply-path
-    // asymmetry as Phase 5's DNAT case. Assertions below capture accept
-    // time, which is what actually proves the redirect took effect.
     client.getTcpStack().connect('10.0.0.2', 80);
 
-    expect(acceptedLocalPort).toBe(8080);
-    expect(acceptedRemoteIp).toBe('10.0.0.1');
+    expect(halfOpen).toHaveLength(1);
+    expect(halfOpen[0].localPort).toBe(8080);
+    expect(halfOpen[0].remoteIp).toBe('10.0.0.1');
   });
 
   it('with no matching REDIRECT rule, a SYN to an unlistened port is not accepted anywhere (no regression)', async () => {

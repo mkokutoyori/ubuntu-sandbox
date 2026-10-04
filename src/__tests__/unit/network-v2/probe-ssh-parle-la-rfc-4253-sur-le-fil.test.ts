@@ -224,7 +224,7 @@ describe('le serveur s annonce et negocie comme le vrai', () => {
     const outcome = await transport.established;
 
     expect(outcome.ok).toBe(false);
-    expect(!outcome.ok && outcome.kind).toBe('closed');
+    expect('kind' in outcome ? outcome.kind : 'established').toBe('closed');
   });
 });
 

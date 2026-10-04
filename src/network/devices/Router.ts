@@ -4184,8 +4184,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         });
         return true;
       },
-      broadcastReply: (iface, reply) => {
-        this.sendDhcpFrameOnPort(iface, reply, new IPAddress('255.255.255.255'), MACAddress.broadcast(), DHCP_CLIENT_PORT);
+      deliverReply: (iface, reply, route) => {
+        const to = dhcpLinkDestination(route, reply.chaddr);
+        this.sendDhcpFrameOnPort(iface, reply, to.address, to.mac, DHCP_CLIENT_PORT);
       },
       relayInformationOption: () => this.dhcpServer.isRelayInformationOptionEnabled(),
       countForward: () => this.dhcpServer.countRelayForward(),

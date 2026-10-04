@@ -72,12 +72,16 @@ export interface TcpListenerChangedPayload extends TcpDeviceRef {
   added: boolean;
 }
 
+export type TcpDropReason =
+  | 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled'
+  | 'bad-checksum' | 'no-ephemeral' | 'addr-in-use' | 'listen-ignores-segment';
+
 export interface TcpSegmentDroppedPayload extends TcpDeviceRef {
   sourceIp: string;
   destinationIp: string;
   sourcePort: number;
   destinationPort: number;
-  reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum' | 'no-ephemeral' | 'addr-in-use' | 'listen-ignores-segment';
+  reason: TcpDropReason;
 }
 
 /** PRD-TCP.md P1 — a segment (SYN/data/FIN) was resent by the RTO timer. */
