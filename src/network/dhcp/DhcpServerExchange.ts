@@ -114,19 +114,26 @@ function clientHostName(pkt: DHCPPacket): string | undefined {
   return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
 }
 
-export type DhcpReplyRoute =
-  | { readonly kind: 'relay'; readonly relay: string }
+export type DhcpDirectRoute =
   | { readonly kind: 'broadcast' }
   | { readonly kind: 'unicast'; readonly address: string };
 
+export type DhcpReplyRoute =
+  | { readonly kind: 'relay'; readonly relay: string }
+  | DhcpDirectRoute;
+
 const BROADCAST_FLAG = 0x8000;
+
+export function dhcpDirectRoute(reply: DHCPPacket, clientAddress: string): DhcpDirectRoute {
+  if (reply.getMessageType() === 'DHCPNAK') return { kind: 'broadcast' };
+  if (clientAddress !== '0.0.0.0') return { kind: 'unicast', address: clientAddress };
+  if ((reply.flags & BROADCAST_FLAG) !== 0 || reply.yiaddr === '0.0.0.0') return { kind: 'broadcast' };
+  return { kind: 'unicast', address: reply.yiaddr };
+}
 
 export function dhcpReplyRoute(request: DHCPPacket, reply: DHCPPacket): DhcpReplyRoute {
   if (request.giaddr !== '0.0.0.0') return { kind: 'relay', relay: request.giaddr };
-  if (reply.getMessageType() === 'DHCPNAK') return { kind: 'broadcast' };
-  if (request.ciaddr !== '0.0.0.0') return { kind: 'unicast', address: request.ciaddr };
-  if ((request.flags & BROADCAST_FLAG) !== 0 || reply.yiaddr === '0.0.0.0') return { kind: 'broadcast' };
-  return { kind: 'unicast', address: reply.yiaddr };
+  return dhcpDirectRoute(reply, request.ciaddr);
 }
 
 /**
