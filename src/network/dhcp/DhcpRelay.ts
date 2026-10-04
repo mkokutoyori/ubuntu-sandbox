@@ -2,6 +2,7 @@ import { IP_PROTO_UDP, IPAddress, createIPv4Packet, type IPv4Packet, type UDPPac
 import { DHCP_SERVER_PORT } from '../core/WellKnownPorts';
 import type { IEventBus } from '../../events/EventBus';
 import { DHCP_WIRE_BYTES, type DHCPPacket } from './DHCPPacket';
+import { dhcpDirectRoute, type DhcpDirectRoute } from './DhcpServerExchange';
 
 const MAX_RELAY_HOPS = 16;
 
@@ -12,7 +13,7 @@ export interface DhcpRelayHost {
   interfaceAddress(iface: string): IPAddress | null;
   interfaceOwning(address: string): string | null;
   sendToServer(server: IPAddress, packet: IPv4Packet): boolean;
-  broadcastReply(iface: string, reply: DHCPPacket): void;
+  deliverReply(iface: string, reply: DHCPPacket, route: DhcpDirectRoute): void;
   relayInformationOption(): boolean;
   countForward(): void;
   countReply(): void;
@@ -68,7 +69,7 @@ export function relayDhcpReply(host: DhcpRelayHost, reply: DHCPPacket): boolean 
   const iface = host.interfaceOwning(reply.giaddr);
   if (!iface) return false;
   reply.removeOption(82);
-  host.broadcastReply(iface, reply);
+  host.deliverReply(iface, reply, dhcpDirectRoute(reply, reply.ciaddr));
   host.countReply();
   host.bus().publish({
     topic: 'dhcp.relay.reply-forwarded',

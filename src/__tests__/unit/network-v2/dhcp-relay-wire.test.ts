@@ -164,7 +164,7 @@ describe('DHCP on the wire — relay agent (RFC 3046)', () => {
       interfaceAddress: () => new IPAddress('10.0.1.1'),
       interfaceOwning: () => null,
       sendToServer: () => { throw new Error('a hops-exceeded request must not be forwarded'); },
-      broadcastReply: () => undefined,
+      deliverReply: () => undefined,
       relayInformationOption: () => false,
       countForward: () => undefined, countReply: () => undefined, countDrop: () => undefined,
     };
