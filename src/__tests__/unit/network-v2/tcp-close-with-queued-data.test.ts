@@ -105,7 +105,8 @@ function closedWindowLab(port: number) {
   let accepted: TcpSocket | null = null;
   const received: string[] = [];
   lab.server.getTcpStack().listen(port, {
-    onAccept: (s) => { accepted = s; s.windowSize = 0; s.onData((d) => received.push(d as string)); },
+    receiveWindow: 0,
+    onAccept: (s) => { accepted = s; s.onData((d) => received.push(d as string)); },
   });
   const socket = lab.client.getTcpStack().connect(SERVER_IP, port)!;
   return { ...lab, socket, received, reopen: () => { accepted!.windowSize = 64240; } };

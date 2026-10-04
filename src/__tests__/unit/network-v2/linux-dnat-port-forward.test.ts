@@ -36,6 +36,7 @@ import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { Cable } from '@/network/hardware/Cable';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
+import { watchHalfOpen } from '../../support/tcpHalfOpen';
 
 beforeEach(() => {
   resetCounters();
@@ -81,29 +82,16 @@ async function buildLab(protocol: 'tcp' | 'udp'): Promise<Lab> {
 describe('PRD-Port-Forwarding.md Phase 5 — Linux iptables DNAT port forwarding (TCP)', () => {
   it('a real SYN reaches the internal server on the redirected port', async () => {
     const { outside, srv } = await buildLab('tcp');
-    let acceptedState: string | null = null;
-    let acceptedLocalPort: number | null = null;
-    let acceptedRemoteIp: string | null = null;
-    srv.getTcpStack().listen(INTERNAL_PORT, {
-      onAccept: (s) => {
-        acceptedState = s.state;
-        acceptedLocalPort = s.localPort;
-        acceptedRemoteIp = s.remoteIp;
-      },
-    });
+    const accepted: TcpSocket[] = [];
+    srv.getTcpStack().listen(INTERNAL_PORT, { onAccept: (s) => { accepted.push(s); } });
+    const halfOpen = watchHalfOpen(srv);
 
-    // The SYN-ACK the server sends back leaves with its own real address
-    // (192.168.10.10:80), not the public one the client dialed — so the
-    // client's TcpStack never recognizes it as belonging to this pending
-    // connection and (correctly, per RFC 9293 §3.10.7.1) RSTs it, tearing
-    // the server's socket back down by the time connect() returns. The
-    // assertions below capture the state at accept time, which is what
-    // actually proves the SYN was delivered and demultiplexed correctly.
     const clientSocket = outside.getTcpStack().connect(GW_OUTSIDE_IP, PUBLIC_PORT);
 
-    expect(acceptedLocalPort).toBe(INTERNAL_PORT);
-    expect(acceptedRemoteIp).toBe(OUTSIDE_IP);
-    expect(acceptedState).toBe('syn-received');
+    expect(halfOpen).toHaveLength(1);
+    expect(halfOpen[0].localPort).toBe(INTERNAL_PORT);
+    expect(halfOpen[0].remoteIp).toBe(OUTSIDE_IP);
+    expect(accepted).toHaveLength(0);
     expect(clientSocket!.state).toBe('syn-sent');
   });
 });
@@ -141,12 +129,13 @@ describe('PRD-Port-Forwarding.md Phase 5 — Linux iptables DNAT port forwarding
 describe('PRD-Port-Forwarding.md Phase 5 — external port differs from internal port', () => {
   it('the redirected port need not match the internal service port', async () => {
     const { outside, srv } = await buildLab('tcp');
-    let accepted: TcpSocket | null = null;
-    srv.getTcpStack().listen(INTERNAL_PORT, { onAccept: (s) => { accepted = s; } });
+    srv.getTcpStack().listen(INTERNAL_PORT, { onAccept: () => undefined });
+    const halfOpen = watchHalfOpen(srv);
 
     outside.getTcpStack().connect(GW_OUTSIDE_IP, PUBLIC_PORT);
 
-    expect(accepted).not.toBeNull();
+    expect(halfOpen).toHaveLength(1);
+    expect(halfOpen[0].localPort).toBe(INTERNAL_PORT);
     expect(PUBLIC_PORT).not.toBe(INTERNAL_PORT);
   });
 });

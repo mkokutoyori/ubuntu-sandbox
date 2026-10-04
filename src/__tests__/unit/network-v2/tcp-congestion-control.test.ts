@@ -68,9 +68,7 @@ describe('TCP congestion control (PRD-TCP.md P5)', () => {
     const { cli, srv } = buildPair();
     srv.getTcpStack().listen(7300, { onAccept: () => {} });
     const clientSocket = cli.getTcpStack().connect('10.0.0.2', 7300)!;
-    // The handshake's own SYN ACK already counts as 1 byte of progress
-    // (a SYN consumes one sequence number), so cwnd = IW + 1.
-    expect(clientSocket.cc.cwnd).toBe(initialCongestionWindow(clientSocket.mss) + 1);
+    expect(clientSocket.cc.cwnd).toBe(initialCongestionWindow(clientSocket.mss));
     expect(clientSocket.cc.phase).toBe('slow-start');
   });
 
@@ -107,8 +105,8 @@ describe('TCP congestion control (PRD-TCP.md P5)', () => {
     clientSocket.send('B'.repeat(12_000));
 
     expect(retransmits.length).toBeGreaterThan(0);
-    expect(flightAtRetransmit[0]).toBe(5829);
-    expect(clientSocket.cc.ssthresh).toBe(Math.max(Math.floor(5829 / 2), 2 * clientSocket.mss));
+    expect(flightAtRetransmit[0]).toBe(5828);
+    expect(clientSocket.cc.ssthresh).toBe(Math.max(Math.floor(5828 / 2), 2 * clientSocket.mss));
     expect(clientSocket.cc.ssthresh).toBe(2920);
     expect(clientSocket.cc.ssthresh).toBeLessThan(Number.MAX_SAFE_INTEGER);
   });
@@ -135,7 +133,8 @@ describe('TCP congestion control (PRD-TCP.md P5)', () => {
     let serverSocket: TcpSocket | null = null;
     const received: string[] = [];
     srv.getTcpStack().listen(7304, {
-      onAccept: (s) => { serverSocket = s; s.windowSize = 5 * 128; s.onData((d) => received.push(d as string)); },
+      receiveWindow: 5 * 128,
+      onAccept: (s) => { serverSocket = s; s.onData((d) => received.push(d as string)); },
     });
     const clientSocket = cli.getTcpStack().connect('10.0.0.2', 7304)!;
     expect(serverSocket).not.toBeNull();

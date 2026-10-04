@@ -137,13 +137,19 @@ import {
 } from '@/network/layers/internet/InternetLayer';
 import { RttEstimator, TCP_MAX_RETRANSMITS, TCP_INITIAL_RTO_MS, TCP_MAX_RTO_MS } from './RttEstimator';
 import { TcpCongestionControl } from './TcpCongestionControl';
-import { encodeOptions, decodeOptions, optionsDataOffset } from './TcpOptionsCodec';
+import { encodeOptions, decodeOptions, optionsDataOffset, type TcpOptionsSet } from './TcpOptionsCodec';
+import { ReassemblyQueue } from './ReassemblyQueue';
+import type { TcpDropReason } from './events';
+import { AckThrottle } from './AckThrottle';
 import type { ListenerIdentity, ListenerSocketSink } from './ListenerSocketSink';
 
 /** RFC 7323 §2.2 — our own advertised window-scale shift (always offered on SYN). */
 const TCP_WINDOW_SCALE_SHIFT = 7;
 /** Bound on out-of-order data buffered for reassembly (PRD-TCP.md P6) — one window's worth. */
 const TCP_REASSEMBLY_MAX_BYTES = TCP_DEFAULT_WINDOW;
+const TCP_MAX_RECEIVE_WINDOW = 2 ** 30;
+const TCP_INVALID_ACK_RATELIMIT_MS = 500;
+const TCP_TS_RECENT_VALID_MS = 24 * 24 * 60 * 60 * 1000;
 import {
   IPAddress,
   IPv6Address,
@@ -227,6 +233,8 @@ export interface TcpListenOptions {
    */
   identity?: ListenerIdentity;
   ownerUid?: number;
+  receiveWindow?: number;
+  maxSegmentSize?: number;
 }
 
 export class TcpSocket {
@@ -321,8 +329,14 @@ export class TcpSocket {
   timestampsEnabled = false;
   /** Highest timestamp value seen from the peer — echoed back, and used for PAWS (RFC 7323 §5). */
   peerLastTsVal: number | null = null;
-  /** Out-of-order segments buffered for reassembly instead of being dropped (PRD-TCP.md P6), bounded by `TCP_REASSEMBLY_MAX_BYTES`. */
-  reassemblyBuffer: Array<{ sequence: number; payload: StreamPayload; psh: boolean }> = [];
+  readonly reassemblyBuffer = new ReassemblyQueue();
+  pendingListener: TcpListener | null = null;
+  sendWl1 = 0;
+  sendWl2 = 0;
+  maxPeerWindow = 0;
+  lastAckSent = 0;
+  peerTsRecentAtMs = 0;
+  lastOutOfWindowAckAt: number | null = null;
 
   /** PRD-TCP.md P8 (RFC 9293 §3.8.4, SO_KEEPALIVE) — optional idle-probe timer, off by default. */
   keepAliveEnabled = false;
@@ -495,6 +509,8 @@ export class TcpListener {
     readonly localPort: number,
     readonly onAccept: TcpAcceptHandler,
     readonly identity: ListenerIdentity = {},
+    readonly receiveWindow: number = TCP_DEFAULT_WINDOW,
+    readonly maxSegmentSize: number = TCP_DEFAULT_MSS,
   ) {}
 
   key(): string { return makeListenerKey(this.localIp, this.localPort); }
@@ -530,6 +546,7 @@ export class TcpStack {
     return { min: this.ephemeralMin, max: this.ephemeralMax };
   }
 
+  private readonly challengeAcks = new AckThrottle();
   private readonly timers = new TimerSet(() => this.getScheduler());
 
   constructor(
@@ -587,7 +604,17 @@ export class TcpStack {
     if (boundPort < 0) {
       throw new Error(`TCP listener has no free ephemeral port on ${localIp} (EADDRINUSE)`);
     }
-    const listener = new TcpListener(localIp, boundPort, opts.onAccept, opts.identity ?? {});
+    if (opts.receiveWindow !== undefined && !Number.isInteger(opts.receiveWindow)
+      || (opts.receiveWindow ?? 0) < 0 || (opts.receiveWindow ?? 0) > TCP_MAX_RECEIVE_WINDOW) {
+      throw new Error(`TCP listener receive window out of range: ${opts.receiveWindow} (EINVAL)`);
+    }
+    if (opts.maxSegmentSize !== undefined
+      && (!Number.isInteger(opts.maxSegmentSize) || opts.maxSegmentSize < TCP_MIN_MSS)) {
+      throw new Error(`TCP listener maximum segment size out of range: ${opts.maxSegmentSize} (EINVAL)`);
+    }
+    const listener = new TcpListener(
+      localIp, boundPort, opts.onAccept, opts.identity ?? {},
+      opts.receiveWindow, opts.maxSegmentSize);
     if (this.listeners.has(listener.key())) {
       throw new Error(`TCP listener already bound on ${localIp}:${boundPort} (EADDRINUSE)`);
     }
@@ -605,7 +632,11 @@ export class TcpStack {
 
   closeListener(localPort: number, localIp = '0.0.0.0'): void {
     const key = makeListenerKey(localIp, localPort);
+    const listener = this.listeners.get(key);
     if (!this.listeners.delete(key)) return;
+    for (const pending of [...this.sockets.values()]) {
+      if (pending.pendingListener === listener) this._teardown(pending, 'shutdown');
+    }
     this.socketSink?.withdraw(localIp, localPort);
     this.getBus().publish({
       topic: 'tcp.listener.changed',
@@ -1058,7 +1089,11 @@ export class TcpStack {
       }
       const socket = new TcpSocket(this, dstIp, seg.destinationPort, senderIp, seg.sourcePort);
       socket.passive = true;
+      socket.pendingListener = listener;
+      socket.windowSize = listener.receiveWindow;
+      socket.mss = Math.min(socket.mss, listener.maxSegmentSize);
       socket.recvNext = (seg.sequence + 1) >>> 0;
+      socket.lastAckSent = socket.recvNext;
       socket.sendNext = nextIsn();
       socket.sendUnacked = socket.sendNext;
       // PRD-TCP.md P6 — negotiate against whatever the peer's SYN offered.
@@ -1069,11 +1104,10 @@ export class TcpStack {
       if (peerOpts.timestamp) {
         socket.timestampsEnabled = true;
         socket.peerLastTsVal = peerOpts.timestamp.tsVal;
+        socket.peerTsRecentAtMs = this.getScheduler().now();
       }
       this.sockets.set(socket.key(), socket);
       this._transition(socket, 'syn-received');
-      if (listener.identity.banner) socket.write(listener.identity.banner);
-      try { listener.onAccept(socket); } catch (e) { Logger.warn(this.host.id, 'tcp:accept', String(e)); }
       const flags = noFlags(); flags.syn = true; flags.ack = true;
       // Allocate the sequence BEFORE transmitting: Cable delivery is
       // synchronous, so the peer's reply can re-enter this stack and
@@ -1367,15 +1401,6 @@ export class TcpStack {
     if (socket.pendingSendQueue.length > 0) {
       const queued = socket.pendingSendQueue.slice();
       socket.pendingSendQueue.length = 0;
-      // Delegate to _sendData (now that the socket is actually established)
-      // rather than duplicating its sequence-advance/chunking logic here:
-      // this used to always advance sendNext by exactly 1 regardless of the
-      // queued payload's real length, permanently desyncing the sequence
-      // space for any socket that had data queued before the handshake
-      // completed (e.g. a server writing a greeting banner from `onAccept`,
-      // which fires while still in 'syn-received') — every segment after
-      // the first queued one would then carry a sequence number the peer's
-      // `acceptInOrder` rejects as out-of-order, silently dropping it.
       for (const data of queued) this._sendData(socket, data);
     }
     if (socket.closeAfterFlush) {
@@ -1429,17 +1454,54 @@ export class TcpStack {
     }
   }
 
-  /**
-   * RFC 9293 §3.10.7.3-4, refined by RFC 5961 §3.2 — an arriving RST is
-   * accepted only where it cannot have been guessed. In SYN-SENT the
-   * proof is the ACK field: it must acknowledge the SYN we just sent. In
-   * every other state it is the sequence number: exactly RCV.NXT resets
-   * the connection, anything else inside the window earns a challenge
-   * ACK, and anything outside it is dropped without a word.
-   */
   private _processReset(socket: TcpSocket, seg: TcpSegment): void {
-    if (socket.state === 'syn-sent') {
-      if (!seg.flags.ack || seg.acknowledgement !== socket.sendNext) {
+    if (seg.sequence === socket.recvNext) {
+      if (socket.state === 'syn-received') socket.connectRefused = true;
+      this._teardown(socket, 'rst');
+      return;
+    }
+    this.sendChallengeAck(socket);
+  }
+
+  private _processSegment(socket: TcpSocket, seg: TcpSegment, payloadSize: number): void {
+    if (socket.state === 'syn-sent') this.arriveInSynSent(socket, seg, payloadSize);
+    else this.arriveSynchronized(socket, seg, payloadSize);
+    if (socket.keepAliveEnabled && socket.state === 'established') {
+      socket.keepAliveProbesSent = 0;
+      this.rearmKeepAliveTimer(socket);
+    }
+  }
+
+  private acknowledgesOurSyn(socket: TcpSocket, ack: number): boolean {
+    return seqLt(socket.sendUnacked, ack) && !seqLt(socket.sendNext, ack);
+  }
+
+  private ourFinAcknowledged(socket: TcpSocket): boolean {
+    return !seqLt(socket.sendUnacked, socket.sendNext);
+  }
+
+  private sendAckNow(socket: TcpSocket): void {
+    const flags = noFlags(); flags.ack = true;
+    this.transmit(socket, flags, socket.sendNext, socket.recvNext, undefined);
+  }
+
+  private sendChallengeAck(socket: TcpSocket): void {
+    if (!this.challengeAcks.tryAcquire(this.getScheduler().now())) return;
+    this.sendAckNow(socket);
+  }
+
+  setChallengeAckThrottle(limit: number, windowMs: number): void {
+    this.challengeAcks.configure(limit, windowMs);
+  }
+
+  private arriveInSynSent(socket: TcpSocket, seg: TcpSegment, payloadSize: number): void {
+    const acknowledgesSyn = seg.flags.ack && this.acknowledgesOurSyn(socket, seg.acknowledgement);
+    if (seg.flags.ack && !acknowledgesSyn) {
+      if (!seg.flags.rst) this.sendRst(socket.localIp, socket.remoteIp, seg);
+      return;
+    }
+    if (seg.flags.rst) {
+      if (!acknowledgesSyn) {
         this.dropped(socket.remoteIp, socket.remotePort, 'bad-state');
         return;
       }
@@ -1447,183 +1509,251 @@ export class TcpStack {
       this._teardown(socket, 'rst');
       return;
     }
-
-    if (seg.sequence === socket.recvNext) {
-      if (socket.state === 'syn-received') socket.connectRefused = true;
-      this._teardown(socket, 'rst');
-      return;
-    }
-
-    const windowEnd = (socket.recvNext + socket.windowSize) >>> 0;
-    const inWindow = !seqLt(seg.sequence, socket.recvNext) && seqLt(seg.sequence, windowEnd);
-    if (!inWindow) {
+    if (!seg.flags.syn) {
       this.dropped(socket.remoteIp, socket.remotePort, 'bad-state');
       return;
     }
-
-    const challenge = noFlags(); challenge.ack = true;
-    this.transmit(socket, challenge, socket.sendNext, socket.recvNext, undefined);
+    const options = decodeOptions(seg.options);
+    socket.recvNext = (seg.sequence + 1) >>> 0;
+    socket.lastAckSent = socket.recvNext;
+    socket.peerWindow = seg.window;
+    socket.maxPeerWindow = Math.max(socket.maxPeerWindow, socket.peerWindow);
+    socket.sendWl1 = seg.sequence;
+    socket.sendWl2 = seg.acknowledgement;
+    if (options.mss !== undefined) socket.mss = Math.min(socket.mss, options.mss);
+    socket.peerWindowScale = options.windowScale ?? null;
+    socket.sackEnabled = options.sackPermitted === true;
+    socket.timestampsEnabled = options.timestamp !== undefined;
+    if (options.timestamp) {
+      socket.peerLastTsVal = options.timestamp.tsVal;
+      socket.peerTsRecentAtMs = this.getScheduler().now();
+    }
+    if (!acknowledgesSyn) {
+      const head = socket.unackedQueue[0];
+      if (head) head.flags = { ...head.flags, ack: true };
+      const synAckFlags = noFlags(); synAckFlags.syn = true; synAckFlags.ack = true;
+      this.transmit(socket, synAckFlags, socket.sendUnacked, socket.recvNext, undefined);
+      this._transition(socket, 'syn-received');
+      return;
+    }
+    this.pruneUnackedQueue(socket, seg.acknowledgement, options.timestamp?.tsEcr);
+    this._transition(socket, 'established');
+    this.sendAckNow(socket);
+    this.emitOpened(socket);
+    try { socket._fireOpen(); } catch (e) { Logger.warn(this.host.id, 'tcp:onOpen', String(e)); }
+    this.flushPendingSends(socket);
+    if (payloadSize > 0 || seg.flags.fin) {
+      this.processText(socket, { ...seg, sequence: socket.recvNext }, payloadSize);
+    }
   }
 
-  private _processSegment(socket: TcpSocket, seg: TcpSegment, payloadSize: number): void {
+  private arriveSynchronized(socket: TcpSocket, seg: TcpSegment, payloadSize: number): void {
+    const options = decodeOptions(seg.options);
+    const length = payloadSize + (seg.flags.syn ? 1 : 0) + (seg.flags.fin ? 1 : 0);
+
+    if (this.failsPaws(socket, seg, options)) {
+      this.sendAckNow(socket);
+      return;
+    }
+    if (!this.sequenceAcceptable(socket, seg.sequence, length)) {
+      this.answerUnacceptable(socket, seg, length);
+      return;
+    }
+    this.recordTimestamp(socket, seg, options);
     if (seg.flags.rst) {
       this._processReset(socket, seg);
       return;
     }
-    // Any ACK (whether or not it also carries data/FIN) can retire queued
-    // retransmittable segments (PRD-TCP.md P1) — checked once here rather
-    // than in each state branch below, since several of them only update
-    // `sendUnacked` in narrower sub-cases than "seg.flags.ack is set".
-    // Decode once — timestamps (PRD-TCP.md P6, RFC 7323) apply uniformly
-    // to any segment once negotiated, independent of ACK/data content.
-    const incomingOpts = decodeOptions(seg.options);
-    if (incomingOpts.timestamp
-      && (socket.peerLastTsVal === null || seqLt(socket.peerLastTsVal, incomingOpts.timestamp.tsVal))) {
-      socket.peerLastTsVal = incomingOpts.timestamp.tsVal;
+    if (seg.flags.syn) {
+      this.answerSynInSynchronizedState(socket);
+      return;
     }
-    if (seg.flags.ack) {
-      // A duplicate ACK (RFC 5681 §3.2): no new data acknowledged, this
-      // segment itself carries none either, and it's not a handshake/FIN
-      // control segment — only meaningful while we actually have
-      // something outstanding to protect.
-      const isDuplicateAck = payloadSize === 0 && !seg.flags.syn && !seg.flags.fin
-        && seg.acknowledgement === socket.sendUnacked && socket.unackedQueue.length > 0;
-      if (isDuplicateAck) {
-        const flightSize = (socket.sendNext - socket.sendUnacked) >>> 0;
-        if (socket.cc.onDuplicateAck(flightSize)) this.fastRetransmit(socket);
-      } else {
-        const ackedBytes = this.pruneUnackedQueue(socket, seg.acknowledgement, incomingOpts.timestamp?.tsEcr);
-        if (ackedBytes > 0) socket.cc.onNewAck(ackedBytes);
-      }
+    if (!seg.flags.ack) {
+      this.dropped(socket.remoteIp, socket.remotePort, 'bad-state');
+      return;
     }
-    // Every real segment carries a current window value (PRD-TCP.md P3) —
-    // a pure window-update segment (no new ACK progress, no data) is how a
-    // peer reopens a previously-advertised zero window, so this must run
-    // unconditionally, not just alongside the ack-handling above.
-    socket.peerWindow = this.decodeWindowField(socket, seg);
+    if (!this.processAckField(socket, seg, options, payloadSize)) return;
+    this.processText(socket, seg, payloadSize);
+  }
+
+  private sequenceAcceptable(socket: TcpSocket, sequence: number, length: number): boolean {
+    const window = socket.windowSize;
+    const first = (sequence - socket.recvNext) >>> 0;
+    if (length === 0) return window === 0 ? first === 0 : first < window;
+    if (window === 0) return false;
+    const last = (sequence + length - 1 - socket.recvNext) >>> 0;
+    return first < window || last < window;
+  }
+
+  private answerUnacceptable(socket: TcpSocket, seg: TcpSegment, length: number): void {
+    if (seg.flags.rst) return;
+    if (socket.state === 'time-wait' && seg.flags.fin) this.restartTimeWait(socket);
+    if (length === 0 && !this.mayAnswerPureAck(socket)) return;
+    this.sendAckNow(socket);
+  }
+
+  private mayAnswerPureAck(socket: TcpSocket): boolean {
+    const now = this.getScheduler().now();
+    if (socket.lastOutOfWindowAckAt !== null
+      && now - socket.lastOutOfWindowAckAt < TCP_INVALID_ACK_RATELIMIT_MS) return false;
+    socket.lastOutOfWindowAckAt = now;
+    return true;
+  }
+
+  private answerSynInSynchronizedState(socket: TcpSocket): void {
+    if (socket.state === 'syn-received' && socket.passive) {
+      this._teardown(socket, 'rst');
+      return;
+    }
+    this.sendChallengeAck(socket);
+  }
+
+  private failsPaws(socket: TcpSocket, seg: TcpSegment, options: TcpOptionsSet): boolean {
+    const stamp = options.timestamp;
+    if (!stamp || !socket.timestampsEnabled || seg.flags.rst) return false;
+    const recent = socket.peerLastTsVal;
+    if (recent === null) return false;
+    if (this.getScheduler().now() - socket.peerTsRecentAtMs >= TCP_TS_RECENT_VALID_MS) return false;
+    return seqLt(stamp.tsVal, recent);
+  }
+
+  private recordTimestamp(socket: TcpSocket, seg: TcpSegment, options: TcpOptionsSet): void {
+    const stamp = options.timestamp;
+    if (!stamp || !socket.timestampsEnabled) return;
+    const recent = socket.peerLastTsVal;
+    if (recent !== null && seqLt(stamp.tsVal, recent)) return;
+    if (seqLt(socket.lastAckSent, seg.sequence)) return;
+    socket.peerLastTsVal = stamp.tsVal;
+    socket.peerTsRecentAtMs = this.getScheduler().now();
+  }
+
+  private processAckField(
+    socket: TcpSocket, seg: TcpSegment, options: TcpOptionsSet, payloadSize: number,
+  ): boolean {
+    if (socket.state === 'syn-received') return this.completeHandshake(socket, seg, options);
+    const ack = seg.acknowledgement;
+    if (seqLt(socket.sendNext, ack) || seqLt(ack, (socket.sendUnacked - socket.maxPeerWindow) >>> 0)) {
+      this.sendChallengeAck(socket);
+      return false;
+    }
+    const isDuplicateAck = payloadSize === 0 && !seg.flags.fin
+      && ack === socket.sendUnacked && socket.unackedQueue.length > 0;
+    if (isDuplicateAck) {
+      const flightSize = (socket.sendNext - socket.sendUnacked) >>> 0;
+      if (socket.cc.onDuplicateAck(flightSize)) this.fastRetransmit(socket);
+    } else {
+      const ackedBytes = this.pruneUnackedQueue(socket, ack, options.timestamp?.tsEcr);
+      if (ackedBytes > 0) socket.cc.onNewAck(ackedBytes);
+    }
+    this.updateSendWindow(socket, seg);
     this.flushSendBacklog(socket);
     switch (socket.state) {
-      case 'syn-sent':
-        if (seg.flags.syn && seg.flags.ack) {
-          socket.recvNext = (seg.sequence + 1) >>> 0;
-          if (seqLt(socket.sendUnacked, seg.acknowledgement)) socket.sendUnacked = seg.acknowledgement;
-          // PRD-TCP.md P6 — finalize negotiation against what the peer's
-          // SYN-ACK actually echoed back (`incomingOpts` was already
-          // decoded above, alongside the generic peerLastTsVal update).
-          if (incomingOpts.mss !== undefined) socket.mss = Math.min(socket.mss, incomingOpts.mss);
-          socket.peerWindowScale = incomingOpts.windowScale ?? null;
-          socket.sackEnabled = incomingOpts.sackPermitted === true;
-          socket.timestampsEnabled = incomingOpts.timestamp !== undefined;
-          this._transition(socket, 'established');
-          const ackFlags = noFlags(); ackFlags.ack = true;
-          this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
-          this.emitOpened(socket);
-          try { socket._fireOpen(); } catch (e) { Logger.warn(this.host.id, 'tcp:onOpen', String(e)); }
-          this.flushPendingSends(socket);
-        } else if (seg.flags.syn && !seg.flags.ack) {
-          socket.recvNext = (seg.sequence + 1) >>> 0;
-          const synAckFlags = noFlags(); synAckFlags.syn = true; synAckFlags.ack = true;
-          this.transmit(socket, synAckFlags, socket.sendUnacked, socket.recvNext, undefined);
-          this._transition(socket, 'syn-received');
-        }
-        break;
-      case 'syn-received':
-        if (seg.flags.ack) {
-          if (seqLt(socket.sendUnacked, seg.acknowledgement)) socket.sendUnacked = seg.acknowledgement;
-          this._transition(socket, 'established');
-          this.emitOpened(socket);
-          try { socket._fireOpen(); } catch (e) { Logger.warn(this.host.id, 'tcp:onOpen', String(e)); }
-          this.flushPendingSends(socket);
-          if (payloadSize > 0) this.deliverData(socket, seg);
-          if (seg.flags.fin) this.handleIncomingFin(socket);
-        }
-        break;
-      case 'established':
-        if (payloadSize > 0) {
-          if (!this.acceptInOrder(socket, seg)) break;
-          const fillsAGap = socket.reassemblyBuffer.length > 0;
-          this.noteUrgentPoint(socket, seg);
-          this.deliverData(socket, seg);
-          this.acknowledgeReceivedData(socket, fillsAGap);
-        } else if (seg.flags.ack && !seg.flags.fin) {
-          // Guarded like `pruneUnackedQueue`'s own update (PRD-TCP.md P1):
-          // an old/reordered ACK reaching this branch after a newer one
-          // already advanced SND.UNA must not walk it backwards — that
-          // would inflate `sendNext - sendUnacked` (flow control's
-          // in-flight estimate) and can permanently stall the connection
-          // if it happens after the last real advance for a transfer.
-          if (seqLt(socket.sendUnacked, seg.acknowledgement)) socket.sendUnacked = seg.acknowledgement;
-          // RFC 9293 §3.8.4/§3.10.7.4 — a no-payload segment behind our
-          // current RCV.NXT carries no new data (this is exactly what a
-          // keepalive probe looks like: the peer deliberately resends an
-          // already-acknowledged sequence number). Real stacks still ACK
-          // an unacceptable/duplicate segment, which is what lets a
-          // keepalive probe actually confirm the peer is alive.
-          if (seqLt(seg.sequence, socket.recvNext)) {
-            const ackFlags = noFlags(); ackFlags.ack = true;
-            this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
-          }
-        }
-        if (seg.flags.fin) this.handleIncomingFin(socket);
-        break;
       case 'fin-wait-1':
-        if (seqLt(socket.sendUnacked, seg.acknowledgement)) socket.sendUnacked = seg.acknowledgement;
-        if (seg.flags.fin && seg.flags.ack) {
-          socket.recvNext = (seg.sequence + 1) >>> 0;
-          const ackFlags = noFlags(); ackFlags.ack = true;
-          this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
-          this.enterTimeWait(socket);
-        } else if (seg.flags.fin) {
-          socket.recvNext = (seg.sequence + 1) >>> 0;
-          const ackFlags = noFlags(); ackFlags.ack = true;
-          this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
-          this._transition(socket, 'closing');
-        } else if (seg.flags.ack) {
-          this._transition(socket, 'fin-wait-2');
-        }
-        break;
-      case 'fin-wait-2':
-        if (seg.flags.fin) {
-          socket.recvNext = (seg.sequence + 1) >>> 0;
-          const ackFlags = noFlags(); ackFlags.ack = true;
-          this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
-          this.enterTimeWait(socket);
-        } else if (payloadSize > 0) {
-          if (!this.acceptInOrder(socket, seg)) break;
-          this.deliverData(socket, seg);
-          const ackFlags = noFlags(); ackFlags.ack = true;
-          this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
-        }
-        break;
-      case 'close-wait':
-        break;
-      case 'last-ack':
-        if (seg.flags.ack) {
-          this._teardown(socket, 'fin');
-        }
-        break;
+        if (this.ourFinAcknowledged(socket)) this._transition(socket, 'fin-wait-2');
+        return true;
       case 'closing':
-        if (seg.flags.ack) {
-          this.enterTimeWait(socket);
-        }
-        break;
-      case 'time-wait':
-        // RFC 9293 §3.10.7 — re-ACK a retransmitted FIN; ignore the rest.
-        if (seg.flags.fin) {
-          const ackFlags = noFlags(); ackFlags.ack = true;
-          this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
-        }
-        break;
+        if (this.ourFinAcknowledged(socket)) this.enterTimeWait(socket);
+        return false;
+      case 'last-ack':
+        if (this.ourFinAcknowledged(socket)) this._teardown(socket, 'fin');
+        return false;
       default:
-        break;
+        return true;
     }
-    // PRD-TCP.md P8 — any segment from the peer is real activity: reset
-    // the idle clock (and the failed-probe count, since the peer just
-    // proved it's alive) rather than letting keepalive fire needlessly.
-    if (socket.keepAliveEnabled && socket.state === 'established') {
-      socket.keepAliveProbesSent = 0;
-      this.rearmKeepAliveTimer(socket);
+  }
+
+  private completeHandshake(socket: TcpSocket, seg: TcpSegment, options: TcpOptionsSet): boolean {
+    if (!this.acknowledgesOurSyn(socket, seg.acknowledgement)) {
+      this.sendRst(socket.localIp, socket.remoteIp, seg);
+      return false;
     }
+    this.pruneUnackedQueue(socket, seg.acknowledgement, options.timestamp?.tsEcr);
+    socket.peerWindow = this.decodeWindowField(socket, seg);
+    socket.maxPeerWindow = Math.max(socket.maxPeerWindow, socket.peerWindow);
+    socket.sendWl1 = seg.sequence;
+    socket.sendWl2 = seg.acknowledgement;
+    this._transition(socket, 'established');
+    this.emitOpened(socket);
+    this.completePassiveOpen(socket);
+    try { socket._fireOpen(); } catch (e) { Logger.warn(this.host.id, 'tcp:onOpen', String(e)); }
+    this.flushPendingSends(socket);
+    return true;
+  }
+
+  private completePassiveOpen(socket: TcpSocket): void {
+    const listener = socket.pendingListener;
+    if (!listener) return;
+    socket.pendingListener = null;
+    if (listener.identity.banner) socket.write(listener.identity.banner);
+    try { listener.onAccept(socket); } catch (e) { Logger.warn(this.host.id, 'tcp:accept', String(e)); }
+  }
+
+  private updateSendWindow(socket: TcpSocket, seg: TcpSegment): void {
+    const ack = seg.acknowledgement;
+    if (seqLt(ack, socket.sendUnacked) || seqLt(socket.sendNext, ack)) return;
+    const fresher = seqLt(socket.sendWl1, seg.sequence)
+      || (socket.sendWl1 === seg.sequence && !seqLt(ack, socket.sendWl2));
+    if (!fresher) return;
+    socket.peerWindow = this.decodeWindowField(socket, seg);
+    socket.maxPeerWindow = Math.max(socket.maxPeerWindow, socket.peerWindow);
+    socket.sendWl1 = seg.sequence;
+    socket.sendWl2 = ack;
+  }
+
+  private processText(socket: TcpSocket, seg: TcpSegment, payloadSize: number): void {
+    const state = socket.state;
+    if (state !== 'established' && state !== 'fin-wait-1' && state !== 'fin-wait-2') return;
+    const window = socket.windowSize;
+    const skip = seqLt(seg.sequence, socket.recvNext) ? (socket.recvNext - seg.sequence) >>> 0 : 0;
+    const textStart = (seg.sequence + skip) >>> 0;
+    const room = (socket.recvNext + window - textStart) >>> 0;
+    const payload = seg.payload;
+    let data: StreamPayload | undefined;
+    let opaque = false;
+    let cutAtWindowEdge = false;
+    if (payloadSize > 0) {
+      if (isStreamPayload(payload)) {
+        const wanted = payloadSize - skip;
+        const usable = Math.min(wanted, room);
+        cutAtWindowEdge = usable < wanted;
+        if (usable > 0) data = sliceStream(payload, skip, skip + usable);
+      } else {
+        opaque = skip === 0;
+      }
+    }
+    const dataLength = data !== undefined ? data.length : opaque ? OPAQUE_PAYLOAD_SEQUENCE_UNITS : 0;
+    const finSequence = (seg.sequence + payloadSize) >>> 0;
+    const finInWindow = ((finSequence - socket.recvNext) >>> 0) < window;
+    const finPresent = seg.flags.fin && !cutAtWindowEdge && finInWindow;
+    const inOrder = textStart === socket.recvNext;
+    let answered = false;
+
+    if (dataLength > 0 && inOrder) {
+      const fillsAGap = socket.reassemblyBuffer.length > 0;
+      if (skip === 0) this.noteUrgentPoint(socket, seg);
+      this.deliverText(socket, data ?? payload, dataLength, seg.flags.psh);
+      if (!finPresent) this.acknowledgeReceivedData(socket, fillsAGap);
+    } else if (dataLength > 0) {
+      if (data !== undefined) {
+        socket.reassemblyBuffer.insert(textStart, data, seg.flags.psh, TCP_REASSEMBLY_MAX_BYTES);
+      }
+      this.sendAckNow(socket);
+      answered = true;
+    }
+
+    if (finPresent && finSequence === socket.recvNext) {
+      this.processFin(socket);
+    } else if (finPresent) {
+      socket.reassemblyBuffer.holdFin(finSequence);
+      if (!answered) this.sendAckNow(socket);
+    } else {
+      this.resolveHeldFin(socket);
+    }
+  }
+
+  private resolveHeldFin(socket: TcpSocket): void {
+    const held = socket.reassemblyBuffer.finSequence;
+    if (held !== null && held === socket.recvNext) this.processFin(socket);
   }
 
   /**
@@ -1671,8 +1801,7 @@ export class TcpStack {
       this.forgetOwedAck(socket);
       return;
     }
-    const flags = noFlags(); flags.ack = true;
-    this.transmit(socket, flags, socket.sendNext, socket.recvNext, undefined);
+    this.sendAckNow(socket);
   }
 
   private forgetOwedAck(socket: TcpSocket): void {
@@ -1683,101 +1812,69 @@ export class TcpStack {
     socket.delayedAckTimer = null;
   }
 
-  /**
-   * In-order acceptance check (RFC 9293 §3.10.7.4): only a segment
-   * starting exactly at RCV.NXT is delivered immediately. A genuinely
-   * out-of-order segment (sequence ahead of RCV.NXT) is buffered for
-   * reassembly instead of being dropped once SACK is negotiated
-   * (PRD-TCP.md P6) — either way, the duplicate ACK answering it now
-   * carries real SACK blocks describing what's already buffered, so the
-   * sender knows exactly what's still missing.
-   */
-  private acceptInOrder(socket: TcpSocket, seg: TcpSegment): boolean {
-    if (seg.sequence === socket.recvNext) return true;
-    // PAWS (RFC 7323 §5) — a segment timestamped older than the highest
-    // we've already seen from this peer cannot be useful new data (it
-    // predates a legitimate wraparound-safe ordering); drop it silently,
-    // matching the rest of "old duplicate" handling.
-    if (socket.timestampsEnabled) {
-      const opts = decodeOptions(seg.options);
-      if (opts.timestamp && socket.peerLastTsVal !== null && seqLt(opts.timestamp.tsVal, socket.peerLastTsVal)) {
-        return false;
-      }
-    }
-    if (socket.sackEnabled && isStreamPayload(seg.payload) && seqLt(socket.recvNext, seg.sequence)) {
-      this.bufferOutOfOrder(socket, seg);
-    }
-    const ackFlags = noFlags(); ackFlags.ack = true;
-    this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
-    return false;
-  }
-
-  /** Buffer a genuinely out-of-order segment for reassembly (PRD-TCP.md P6), bounded by `TCP_REASSEMBLY_MAX_BYTES`. */
-  private bufferOutOfOrder(socket: TcpSocket, seg: TcpSegment): void {
-    const payload = seg.payload;
-    if (!isStreamPayload(payload)) return;
-    if (socket.reassemblyBuffer.some((e) => e.sequence === seg.sequence)) return; // already buffered
-    const bufferedBytes = socket.reassemblyBuffer.reduce((n, e) => n + e.payload.length, 0);
-    if (bufferedBytes + payload.length > TCP_REASSEMBLY_MAX_BYTES) return; // over budget — drop, same as before P6
-    socket.reassemblyBuffer.push({ sequence: seg.sequence, payload, psh: seg.flags.psh });
-  }
-
-  /** Pull any now-contiguous buffered segments into recvBuffer/RCV.NXT (PRD-TCP.md P6). Returns true if any pulled-in segment carried PSH. */
-  private drainReassemblyBuffer(socket: TcpSocket): boolean {
-    let pshSeen = false;
-    while (socket.reassemblyBuffer.length > 0) {
-      const idx = socket.reassemblyBuffer.findIndex((e) => e.sequence === socket.recvNext);
-      if (idx === -1) break;
-      const [entry] = socket.reassemblyBuffer.splice(idx, 1);
-      socket.recvBuffer = appendStream(socket.recvBuffer, entry.payload);
-      socket.recvNext = (entry.sequence + entry.payload.length) >>> 0;
-      if (entry.psh) pshSeen = true;
-    }
-    return pshSeen;
-  }
-
-  /** Hold the pair in TIME-WAIT for 2×MSL before releasing it. */
   private enterTimeWait(socket: TcpSocket): void {
     if (socket.state === 'time-wait') return;
     this._transition(socket, 'time-wait');
+    this.timers.clear(socket.rtoTimer);
+    socket.rtoTimer = null;
+    this.timers.clear(socket.persistTimer);
+    socket.persistTimer = null;
+    this.timers.clear(socket.keepAliveTimer);
+    socket.keepAliveTimer = null;
+    this.restartTimeWait(socket);
+  }
+
+  private restartTimeWait(socket: TcpSocket): void {
+    this.timers.clear(socket.timeWaitTimer);
     socket.timeWaitTimer = this.timers.setTimeout(() => {
       socket.timeWaitTimer = null;
       this._teardown(socket, 'fin');
     }, TCP_TIME_WAIT_MS);
   }
 
-  private deliverData(socket: TcpSocket, seg: TcpSegment): void {
-    const payload = seg.payload;
-    const chunkLen = isStreamPayload(payload) ? payload.length : OPAQUE_PAYLOAD_SEQUENCE_UNITS;
-    socket.recvNext = (seg.sequence + chunkLen) >>> 0;
-    if (payload === undefined) return;
-    if (isStreamPayload(payload)) {
-      socket.recvBuffer = appendStream(socket.recvBuffer, payload);
-      // PRD-TCP.md P6 — filling this gap may make previously-buffered
-      // out-of-order segments contiguous now; pull them in too before
-      // deciding whether to flush to the application.
-      const laterPsh = this.drainReassemblyBuffer(socket);
-      if (!seg.flags.psh && !laterPsh) return;
-      const full = socket.recvBuffer ?? payload;
-      socket.recvBuffer = null;
-      try { socket._fireData(full); } catch (e) { Logger.warn(this.host.id, 'tcp:onData', String(e)); }
+  private deliverText(socket: TcpSocket, payload: unknown, length: number, psh: boolean): void {
+    socket.recvNext = (socket.recvNext + length) >>> 0;
+    if (!isStreamPayload(payload)) {
+      try { socket._fireData(payload); } catch (e) { Logger.warn(this.host.id, 'tcp:onData', String(e)); }
       return;
     }
-    try { socket._fireData(payload); } catch (e) { Logger.warn(this.host.id, 'tcp:onData', String(e)); }
+    socket.recvBuffer = appendStream(socket.recvBuffer, payload);
+    const run = socket.reassemblyBuffer.takeFrom(socket.recvNext);
+    let pushed = psh;
+    if (run.payload !== null) {
+      socket.recvBuffer = appendStream(socket.recvBuffer, run.payload);
+      socket.recvNext = run.next;
+      pushed = pushed || run.psh;
+    }
+    if (pushed) this.pushToApplication(socket);
   }
 
-  private handleIncomingFin(socket: TcpSocket): void {
+  private pushToApplication(socket: TcpSocket): void {
+    const pending = socket.recvBuffer;
+    if (pending === null) return;
+    socket.recvBuffer = null;
+    try { socket._fireData(pending); } catch (e) { Logger.warn(this.host.id, 'tcp:onData', String(e)); }
+  }
+
+  private processFin(socket: TcpSocket): void {
+    socket.reassemblyBuffer.releaseFin();
+    this.pushToApplication(socket);
     socket.recvNext = (socket.recvNext + 1) >>> 0;
-    const flags = noFlags(); flags.ack = true;
-    this.transmit(socket, flags, socket.sendNext, socket.recvNext, undefined);
-    this._transition(socket, 'close-wait');
-    // Reciprocate the peer's FIN: most simulator-side applications (SSH
-    // accept loop, simple echo-style listeners) have no further data to
-    // send once the peer half-closes, so the kernel proceeds through
-    // LAST-ACK → CLOSED autonomously. Real OpenSSH does the same on
-    // SIGPIPE/EOF; without this, the server-side socket would linger in
-    // CLOSE-WAIT and appear in `ss -tan` as an orphan after every session.
-    this._initiateClose(socket);
+    this.sendAckNow(socket);
+    switch (socket.state) {
+      case 'established':
+        this._transition(socket, 'close-wait');
+        this._initiateClose(socket);
+        break;
+      case 'fin-wait-1':
+        this._transition(socket, 'closing');
+        break;
+      case 'fin-wait-2':
+        this.enterTimeWait(socket);
+        break;
+      default:
+        break;
+    }
   }
 
   private emitOpened(socket: TcpSocket): void {
@@ -1810,18 +1907,22 @@ export class TcpStack {
     socket.sndUp = null;
     socket.rcvUp = null;
     socket.sendBacklog = [];
-    socket.reassemblyBuffer = [];
+    socket.reassemblyBuffer.clear();
+    const unannounced = socket.pendingListener !== null;
+    socket.pendingListener = null;
     this._transition(socket, 'closed');
     this.sockets.delete(socket.key());
-    this.getBus().publish({
-      topic: 'tcp.connection.closed',
-      payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
-        localIp: socket.localIp, localPort: socket.localPort,
-        remoteIp: socket.remoteIp, remotePort: socket.remotePort,
-        reason, passive: socket.passive,
-      },
-    });
+    if (!unannounced) {
+      this.getBus().publish({
+        topic: 'tcp.connection.closed',
+        payload: {
+          deviceId: this.host.id, hostname: this.host.getHostname(),
+          localIp: socket.localIp, localPort: socket.localPort,
+          remoteIp: socket.remoteIp, remotePort: socket.remotePort,
+          reason, passive: socket.passive,
+        },
+      });
+    }
     try { socket._fireClose(reason); } catch (e) { Logger.warn(this.host.id, 'tcp:onClose', String(e)); }
   }
 
@@ -1953,6 +2054,7 @@ export class TcpStack {
     const egress = this.resolveEgress(socket.remoteIp);
     if (!egress) { this.dropped(socket.remoteIp, socket.remotePort, 'no-egress'); return undefined; }
     if (flags.ack && ackNum === socket.recvNext) this.forgetOwedAck(socket);
+    if (flags.ack) socket.lastAckSent = ackNum;
     const options = [...extraOptions];
     let sentTsVal: number | undefined;
     if (socket.timestampsEnabled) {
@@ -1963,7 +2065,7 @@ export class TcpStack {
       if (manualTs) sentTsVal = manualTs.tsVal;
     }
     if (socket.sackEnabled && flags.ack && socket.reassemblyBuffer.length > 0) {
-      options.push({ kind: 'sack', blocks: this.sackBlocksFor(socket) });
+      options.push({ kind: 'sack', blocks: socket.reassemblyBuffer.blocks() });
     }
     const stillUrgent = socket.sndUp !== null && seqLt(sequence, socket.sndUp);
     const urgent = stillUrgent ? (socket.sndUp! - sequence) >>> 0 : 0;
@@ -1992,22 +2094,6 @@ export class TcpStack {
   private decodeWindowField(socket: TcpSocket, seg: TcpSegment): number {
     if (seg.flags.syn || socket.peerWindowScale === null) return seg.window;
     return (seg.window << socket.peerWindowScale) >>> 0;
-  }
-
-  /** Merge buffered out-of-order ranges (PRD-TCP.md P6) into RFC 2018 SACK blocks. */
-  private sackBlocksFor(socket: TcpSocket): Array<{ start: number; end: number }> {
-    const sorted = [...socket.reassemblyBuffer].sort((a, b) => (seqLt(a.sequence, b.sequence) ? -1 : 1));
-    const blocks: Array<{ start: number; end: number }> = [];
-    for (const entry of sorted) {
-      const end = (entry.sequence + entry.payload.length) >>> 0;
-      const last = blocks[blocks.length - 1];
-      if (last && last.end === entry.sequence) {
-        last.end = end;
-      } else {
-        blocks.push({ start: entry.sequence, end });
-      }
-    }
-    return blocks;
   }
 
   /**
@@ -2270,7 +2356,7 @@ export class TcpStack {
     return inUse.size < size;
   }
 
-  private dropped(remoteIp: string, remotePort: number, reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum' | 'no-ephemeral' | 'addr-in-use' | 'listen-ignores-segment'): void {
+  private dropped(remoteIp: string, remotePort: number, reason: TcpDropReason): void {
     this.getBus().publish({
       topic: 'tcp.segment.dropped',
       payload: {
