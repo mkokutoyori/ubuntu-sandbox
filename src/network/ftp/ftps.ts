@@ -15,18 +15,9 @@ import { TlsClientSession, type TlsClientConfig } from '@/network/tls/TlsClientS
 import type { TlsRecord } from '@/network/tls/recordLayer';
 import { encodeRecords, decodeRecords, pumpTlsHandshake } from '@/network/http/https/TlsRecordWire';
 import { encryptApplicationData, decryptApplicationData } from '@/network/http/https/ApplicationDataCipher';
+import { bytesToBinaryString, binaryStringToBytes } from '@/crypto/encoding';
 
-export function bytesToBinaryString(bytes: Uint8Array): string {
-  let out = '';
-  for (const b of bytes) out += String.fromCharCode(b);
-  return out;
-}
-
-export function binaryStringToBytes(text: string): Uint8Array {
-  const bytes = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
-  return bytes;
-}
+export { bytesToBinaryString, binaryStringToBytes };
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

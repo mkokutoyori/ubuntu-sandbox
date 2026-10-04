@@ -64,7 +64,7 @@ describe('SSH server — LoginGraceTime enforcement', () => {
 
     const sock = await pc.tcpConnect('10.0.0.2', 22);
     expect(sock).toBeTruthy();
-    sock!.write(JSON.stringify({ op: 'hello', clientVersion: 'SSH-2.0-test' }));
+    sock!.write('SSH-2.0-test\r\n');
 
     scheduler.advance(15_000);
 
@@ -110,7 +110,7 @@ describe('SSH server — LoginGraceTime enforcement', () => {
 
     const sock = (await pc.tcpConnect('10.0.0.2', 22)) as TcpStream | null;
     expect(sock).toBeTruthy();
-    sock!.write(JSON.stringify({ op: 'hello', clientVersion: 'SSH-2.0-test' }));
+    sock!.write('SSH-2.0-test\r\n');
 
     scheduler.advance(60_000);
 

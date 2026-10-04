@@ -78,6 +78,14 @@
  * l'ACK ne rend pas le balayage furtif : il rend la redirection de port
  * INVISIBLE, l'ecouteur ne recevant plus jamais la connexion. Le lot du
  * demi-balayage attend donc le conntrack de retour, et pas l'inverse.
+ *
+ * Depuis le transport de la RFC 4253, la sonde se ferme AVANT tout echange
+ * d'identification, et sshd 8.9 ne la journalise plus comme une fermeture
+ * `[preauth]' : `kex_exchange_identification' (kex.c) leve
+ * « Connection closed by remote host » puis `sshpkt_fatal' (packet.c)
+ * ecrit « Connection closed by <ip> port <port> », sans suffixe, la
+ * connexion n'ayant jamais atteint l'enfant privsep. Les deux cas comptent
+ * donc les lignes « Connection closed by », quel que soit leur suffixe.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -132,14 +140,14 @@ describe('un `ssh` ne fait plus sonder le serveur deux fois', () => {
     const { pc, srv } = await lab();
     await pc.executeCommand(
       `sshpass -p secret123 ssh -o StrictHostKeyChecking=no alice@${SERVER_IP} whoami`);
-    expect(lignes(await journal(srv), '[preauth]')).toBe(1);
+    expect(lignes(await journal(srv), `Connection closed by ${CLIENT_IP}`)).toBe(1);
   }, 30000);
 
   it('une session interactive ne laisse qu UNE fermeture avant authentification', async () => {
     const { pc, srv } = await lab();
     await pc.executeCommand(
       `ssh -o StrictHostKeyChecking=no alice@${SERVER_IP}`, 'secret123\nwhoami\nexit\n');
-    expect(lignes(await journal(srv), '[preauth]')).toBe(1);
+    expect(lignes(await journal(srv), `Connection closed by ${CLIENT_IP}`)).toBe(1);
   }, 30000);
 
   it('le serveur ne voit pas plus de DEUX connexions pour un seul `ssh`', async () => {

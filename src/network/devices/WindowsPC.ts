@@ -3971,8 +3971,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       default:
         return runSshKeyscanCommand(args, {
           resolve: (target: string) => findHostByAddress(target, undefined, this)?.ip ?? null,
-          probe: (ip: string, port: number) => probeSshHostKey(this.getTcpStack().connect(ip, port)),
-        }).output;
+          probe: (ip, port, hostKeyAlgorithms) =>
+            probeSshHostKey(this.getTcpStack().connect(ip, port) as unknown as TcpStream | null, hostKeyAlgorithms),
+        }).lines.map((line) => line.text).join('\n');
     }
   }
 

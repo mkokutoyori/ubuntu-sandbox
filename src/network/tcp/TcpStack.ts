@@ -1652,6 +1652,7 @@ export class TcpStack {
   }
 
   private acknowledgeReceivedData(socket: TcpSocket, fillsAGap: boolean): void {
+    if (socket.state === 'time-wait' || socket.closed) return;
     socket.segmentsSinceAck++;
     if (fillsAGap || socket.segmentsSinceAck >= TCP_ACK_EVERY_N_SEGMENTS) {
       this.sendOwedAck(socket);
@@ -1739,6 +1740,7 @@ export class TcpStack {
   /** Hold the pair in TIME-WAIT for 2×MSL before releasing it. */
   private enterTimeWait(socket: TcpSocket): void {
     if (socket.state === 'time-wait') return;
+    this.forgetOwedAck(socket);
     this._transition(socket, 'time-wait');
     socket.timeWaitTimer = this.timers.setTimeout(() => {
       socket.timeWaitTimer = null;

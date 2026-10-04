@@ -61,6 +61,8 @@
  *    cotes : avant a vide, la vue etant une constante et rien n'etant
  *    rendu ; son voisin « la vue lit ce qui est ecrit » separe les etats.
  */
+import { upperLayerOverTransport } from './sshUpperLayerOverTransport';
+import type { TcpStream } from '@/network/tcp/types';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
@@ -161,13 +163,16 @@ async function rawConnection({ host, ip }: Lab): Promise<RawConnection> {
   expect(socket).toBeTruthy();
   const replies: Array<Record<string, unknown>> = [];
   let closed = false;
-  socket!.onData((d) => { if (d.startsWith('{')) replies.push(JSON.parse(d) as Record<string, unknown>); });
   socket!.onClose?.(() => { closed = true; });
+  const upper = await upperLayerOverTransport(socket as unknown as TcpStream);
+  expect(upper).toBeTruthy();
+  upper!.onClose?.(() => { closed = true; });
+  upper!.onData((d) => { if (d.startsWith('{')) replies.push(JSON.parse(d) as Record<string, unknown>); });
   const send = async (message: Record<string, unknown>): Promise<void> => {
-    socket!.write(JSON.stringify(message));
+    upper!.write(JSON.stringify(message));
     await settle();
   };
-  await send({ op: 'hello', clientVersion: 'SSH-2.0-probe' });
+  await send({ op: 'hello' });
   return { replies, closed: () => closed, send };
 }
 

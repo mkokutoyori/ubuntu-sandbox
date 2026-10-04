@@ -543,7 +543,7 @@ function buildLoginBanner(auth: PendingSshAuth): string[] {
   const key = `${auth.user}@${auth.host}:${auth.port}`;
   const firstTime = !auth.knownHostsTracker?.has(key);
   if (firstTime) {
-    banner.push(`Warning: Permanently added '${auth.host}' (ssh-ed25519) to the list of known hosts.`);
+    banner.push(`Warning: Permanently added '${auth.host}' (ED25519) to the list of known hosts.`);
     auth.knownHostsTracker?.add(key);
   }
   const target = auth.target as unknown as {

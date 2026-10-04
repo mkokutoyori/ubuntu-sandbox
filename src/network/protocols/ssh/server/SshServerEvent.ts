@@ -136,6 +136,7 @@ export type SshServerEvent =
       reason?: DisconnectReason;
       authenticated?: boolean;
       validUser?: boolean;
+      beforeIdentification?: boolean;
       timestamp?: number;
     };
 
