@@ -32,6 +32,7 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
+import { allowLegacyIosSsh, IOS_LEGACY_SSH_PREFERENCES } from './iosLegacySsh';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { isOk } from '@/network/protocols/ssh/Result';
@@ -66,7 +67,8 @@ async function ouvrirCanal(
     interactionHandler: new SilentSshInteractionHandler(),
   } as never);
   const opts = SshConnectOptionsBuilder.create()
-    .host(ip).user(user).password(motDePasse).strictHostKeyChecking('no').build();
+    .host(ip).user(user).password(motDePasse).strictHostKeyChecking('no')
+    .algorithms(IOS_LEGACY_SSH_PREFERENCES).build();
   const connecte = await session.connect(opts);
   if (!isOk(connecte)) throw new Error('connexion SSH refusée');
   const canal = session.openShellChannel();
@@ -398,6 +400,7 @@ describe('Scénario 9 — le terminal interactif, pas seulement le canal brut', 
   async function terminalConnecte(poste: LinuxPC): Promise<LinuxTerminalSession> {
     const term = new LinuxTerminalSession('t1', poste);
     await term.init?.();
+    allowLegacyIosSsh(poste);
     term.setInput('ssh admin@10.0.4.2');
     term.handleKey(touche('Enter'));
     for (let i = 0; i < 40 && term.currentInputMode.type !== 'password'; i++) await pause(25);

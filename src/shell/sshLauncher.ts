@@ -26,63 +26,12 @@ import { SshKnownHostsFile, type SshHostKeyType } from '@/network/protocols/ssh/
 import { readForceCommand, readMaxAuthTries } from '@/network/devices/linux/network/LinuxSshClient';
 import { receivedDisconnectLines } from '@/network/protocols/ssh/session/SshSession';
 import { sshReplyWithoutSession } from '@/network/protocols/ssh/SshClientCommandLine';
+import { parseSshCommandLine } from '@/terminal/sessions/sshArgs';
+import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 import { OPENSSH_UBUNTU_22_04, OPENSSH_WINDOWS_8_6 } from '@/network/protocols/ssh/OpenSshRelease';
 import { SSHD_MAX_AUTH_TRIES_REASON } from '@/network/protocols/ssh/server/ISshServerContext';
 export { SSH_PASSWORD_PROMPTS } from '@/network/protocols/ssh/session/SshSession';
 import { transportLiveness, establishedSessionLiveness } from '@/network/protocols/ssh/sessionLiveness';
-
-/** Tokenise an ssh command line into flags, optional value, user/host, and remaining argv. */
-interface ParsedSshLine {
-  flags: Record<string, string | true>;
-  user: string | null;
-  host: string;
-  command: string | null;
-}
-
-function parseSshLine(line: string): ParsedSshLine | null {
-  const trimmed = line.trim();
-  if (!/^ssh(\s|$)/.test(trimmed)) return null;
-  const tokens = trimmed.split(/\s+/).slice(1);
-
-  const flags: Record<string, string | true> = {};
-  let i = 0;
-  // OpenSSH short flags that consume a value.
-  const valueFlags = new Set(['p', 'i', 'l', 'o', 'b', 'c', 'D', 'E', 'F', 'I', 'J', 'L', 'R', 'S', 'W']);
-  while (i < tokens.length) {
-    const t = tokens[i];
-    if (t === '-V' || t === '-q' || t === '-v' || t === '-vv' || t === '-vvv'
-        || t === '-T' || t === '-t' || t === '-x' || t === '-X' || t === '-Y'
-        || t === '-A' || t === '-a' || t === '-C' || t === '-N' || t === '-n'
-        || t === '-f' || t === '-g' || t === '-K' || t === '-k' || t === '-M'
-        || t === '-s' || t === '-y' || t === '-4' || t === '-6') {
-      flags[t.slice(1)] = true; i++; continue;
-    }
-    if (t.startsWith('-') && t.length === 2 && valueFlags.has(t[1])) {
-      const v = tokens[i + 1] ?? '';
-      flags[t[1]] = v;
-      i += 2; continue;
-    }
-    if (t.startsWith('--')) { flags[t.slice(2)] = true; i++; continue; }
-    if (t.startsWith('-')) { i++; continue; } // unknown / multi-char short, ignore
-    break;
-  }
-
-  if (i >= tokens.length) {
-    // Only flags (e.g. `ssh -V`). No host present.
-    return { flags, user: null, host: '', command: null };
-  }
-  const target = tokens[i++];
-  let user: string | null = null;
-  let host = target;
-  if (target.includes('@')) {
-    const [u, h] = target.split('@', 2);
-    user = u; host = h;
-  }
-  if (!/^[A-Za-z0-9._-]+$/.test(host)) return null;
-
-  const remainder = tokens.slice(i).join(' ').trim();
-  return { flags, user, host, command: remainder.length > 0 ? remainder : null };
-}
 
 import type { TcpWireOutcome } from '@/network/tcp/types';
 export type { TcpWireOutcome };
@@ -136,6 +85,7 @@ export interface PendingSshAuth {
   /** Set for `ssh user@host cmd` — the command runs on the remote over
    *  its own exec channel instead of an interactive shell. */
   execCommand?: string;
+  readonly algorithms?: SshAlgorithmPreferences;
 }
 
 export type SshLaunchInterpretation =
@@ -158,7 +108,7 @@ export async function tryInterpretSshLaunch(
   line: string,
   opts: SshLaunchOptions,
 ): Promise<SshLaunchInterpretation | null> {
-  const parsed = parseSshLine(line);
+  const parsed = parseSshCommandLine(line);
   if (!parsed) return null;
 
   const release = opts.sourceDevice?.getOSType?.() === 'windows' ? OPENSSH_WINDOWS_8_6 : OPENSSH_UBUNTU_22_04;
@@ -171,8 +121,7 @@ export async function tryInterpretSshLaunch(
   }
 
   const user = parsed.user ?? opts.defaultUser;
-  const port = typeof parsed.flags['p'] === 'string'
-    ? Number.parseInt(parsed.flags['p'] as string, 10) : 22;
+  const port = parsed.port;
 
   const target = findEquipmentByIp(parsed.host) ?? findEquipmentByHostname(parsed.host);
   if (!target) {
@@ -260,6 +209,7 @@ export async function tryInterpretSshLaunch(
         sourceDevice: opts.sourceDevice,
         wireProbe: opts.wireProbe,
         execCommand: parsed.command,
+        algorithms: parsed.algorithms,
       },
     };
   }
@@ -282,6 +232,7 @@ export async function tryInterpretSshLaunch(
       sourceUser: opts.defaultUser,
       sourceDevice: opts.sourceDevice,
       wireProbe: opts.wireProbe,
+      algorithms: parsed.algorithms,
     },
   };
 }
@@ -443,6 +394,7 @@ export async function finalisePendingAuth(
     io: silentConnectIo(),
     password,
     strict: 'no',
+    algorithms: auth.algorithms,
   });
   if (outcome.kind !== 'connected') {
     if (outcome.kind === 'host-key-changed') {
@@ -503,6 +455,7 @@ async function runExecOverTheWire(
     io: silentConnectIo(),
     password,
     strict: 'no',
+    algorithms: auth.algorithms,
   });
   if (outcome.kind !== 'connected') {
     if (outcome.kind === 'host-key-changed') return { kind: 'refused', message: HOST_KEY_CHANGED_MESSAGE };
