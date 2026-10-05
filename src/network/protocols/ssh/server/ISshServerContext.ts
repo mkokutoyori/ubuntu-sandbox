@@ -193,6 +193,7 @@ export interface ISshServerContext {
    * SSH_MSG_USERAUTH_BANNER).
    */
   getBanner?(): string | null;
+  serverIdentification?(): string;
   openDirectTcpip?(request: DirectTcpipRequest): Promise<DirectTcpipOutcome>;
   rootMayLogIn?(method: 'password' | 'publickey', keyForcesCommand?: boolean): boolean;
   admittedKey?(user: string, publicKey: string, source: KeySource): AuthorizedKey | null;

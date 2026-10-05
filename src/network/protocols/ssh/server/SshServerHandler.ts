@@ -29,13 +29,11 @@ import { SshUserContext } from '../SshUserContext';
 import { SSH_SERVER_IDENTIFICATION } from '../serverIdentification';
 import { userauthSignedData, verifyUserauthSignature } from '../auth/UserauthSignature';
 import {
-  keygenBlobDigest, keygenKeyFacts, sshPublicKeyFromBlob,
+  keygenBlobDigest, keygenKeyFacts, keygenPrivateKey, sshPublicKeyFromBlob,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { base64ToBytes } from '@/crypto/encoding';
-import {
-  SshRecordLayer, sealedStream, generateEphemeralScalar,
-  ephemeralPublicKey, sharedSecretFrom, exchangeHash,
-} from '../transport/SshRecordLayer';
+import { SshTransport, legacyFrameStream, type SshServerHostKey } from '../transport/SshTransport';
+import type { SshHostKey } from '../SshHostKey';
 import type { ILinuxShell, ISshServerContext } from './ISshServerContext';
 import type { AuthorizedKeyOptions } from '../SshPureUtils';
 import type { SshInteractiveShell } from './SshInteractiveShell';
@@ -43,10 +41,6 @@ import {
   type ISshServerEventBus,
   SshServerEventBus,
 } from './SshServerEvent';
-
-interface ProtocolInfo {
-  readonly clientVersion: string;
-}
 
 interface OpenChannelInfo {
   readonly type: ChannelType;
@@ -116,7 +110,6 @@ export class SshServerHandler {
         refuse = Math.random() < p;
       }
       if (refuse) {
-        conn.write(JSON.stringify({ op: 'disconnect', reason: 'max_startups' }));
         conn.close();
         this.eventBus.emit({
           kind: 'client_disconnected',
@@ -136,9 +129,6 @@ export class SshServerHandler {
     // already carries the auth_throttled event, so the logger has written
     // an entry; here we just refuse the handshake.
     if (this.ctx.isClientBlocked?.(clientIp)) {
-      conn.write(
-        JSON.stringify({ op: 'disconnect', reason: 'throttled' }),
-      );
       conn.close();
       this.eventBus.emit({
         kind: 'client_disconnected',
@@ -153,9 +143,12 @@ export class SshServerHandler {
   }
 
   private handleConnection(rawConn: TcpConnection, clientIp: string): void {
-    const records = new SshRecordLayer();
-    const kexScalar = generateEphemeralScalar();
-    const conn = sealedStream(rawConn, records);
+    const transport = new SshTransport(rawConn, {
+      role: 'server',
+      identification: this.ctx.serverIdentification?.() ?? SSH_SERVER_IDENTIFICATION,
+      hostKeys: serverHostKeys(this.ctx.hostKey),
+    });
+    const conn = legacyFrameStream(transport, rawConn);
     const channels = new Map<number, OpenChannelInfo>();
     const sftpWireSessions = new Map<number, SftpWireSession>();
     let userCtx: SshUserContext | null = null;
@@ -170,6 +163,9 @@ export class SshServerHandler {
     let authFailures = 0;
     let authRequests = 0;
     let sessionId: Uint8Array | null = null;
+    void transport.established.then((outcome) => {
+      if ('sessionId' in outcome) sessionId = outcome.sessionId;
+    });
     let pendingInfoResponse: ((responses: readonly string[] | null) => void) | null = null;
     const askKeyboardInteractive = (challenge: KeyboardInteractiveChallenge): Promise<readonly string[] | null> =>
       new Promise((resolve) => {
@@ -269,6 +265,7 @@ export class SshServerHandler {
         ip: clientIp,
         port: this.ctx.clientPort?.(clientIp),
         authenticated: userCtx !== null,
+        ...(transport.peerIdentification === null ? { beforeIdentification: true } : {}),
         reason: reason === 'rst' ? 'reset' : 'closed',
         timestamp: Date.now(),
       });
@@ -320,35 +317,13 @@ export class SshServerHandler {
 
       switch (op) {
         case 'hello': {
-          const protocolInfo = this.negotiateProtocol(parsed);
           const preAuthBanner = this.ctx.getBanner?.() ?? null;
-          const peerKey = parsed.kexPublicKey as string | undefined;
           conn.write(
             JSON.stringify({
-              hostKey: {
-                algorithm: this.ctx.hostKey.algorithm,
-                publicKey: this.ctx.hostKey.publicKey,
-              },
-              serverVersion: SSH_SERVER_IDENTIFICATION,
-              clientVersion: protocolInfo.clientVersion,
-              ...(peerKey ? { kexPublicKey: ephemeralPublicKey(kexScalar) } : {}),
+              hello: true,
               ...(preAuthBanner ? { preAuthBanner } : {}),
             }),
           );
-          if (peerKey) {
-            const secret = sharedSecretFrom(kexScalar, peerKey);
-            if (secret) {
-              records.install(secret, 'server');
-              sessionId = exchangeHash({
-                clientVersion: protocolInfo.clientVersion,
-                serverVersion: SSH_SERVER_IDENTIFICATION,
-                hostKeyBlob: this.ctx.hostKey.publicKey,
-                clientEphemeral: peerKey,
-                serverEphemeral: ephemeralPublicKey(kexScalar),
-                sharedSecret: secret,
-              });
-            }
-          }
           break;
         }
 
@@ -844,13 +819,6 @@ export class SshServerHandler {
     });
   }
 
-  private negotiateProtocol(payload: Record<string, unknown>): ProtocolInfo {
-    return {
-      clientVersion:
-        (payload.clientVersion as string | undefined) ?? 'SSH-2.0-Unknown',
-    };
-  }
-
   private async handleAuth(
     payload: Record<string, unknown>,
     clientIp: string,
@@ -1100,4 +1068,10 @@ function keyEvidence(publicKey: string): { keyType: string; keyFingerprint: stri
 function withOriginalCommand(forced: string, asked: string): string {
   if (!asked) return forced;
   return `export SSH_ORIGINAL_COMMAND='${asked.replace(/'/g, "'\\''")}'; ${forced}`;
+}
+
+function serverHostKeys(hostKey: SshHostKey): SshServerHostKey[] {
+  const privateKey = keygenPrivateKey(hostKey.privateKeyBlob);
+  if (privateKey === null) return [];
+  return [{ publicKeyBlob: base64ToBytes(hostKey.publicKey), privateKey }];
 }

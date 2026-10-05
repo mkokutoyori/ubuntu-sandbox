@@ -27,6 +27,7 @@
  *   4. Egress: strip or add 802.1Q tag based on egress port mode
  */
 
+import { SSH_SERVER_IDENTIFICATION } from '@/network/protocols/ssh/serverIdentification';
 import { Equipment } from '../equipment/Equipment';
 import { DeviceClockStore } from '../core/time/DeviceClock';
 import {
@@ -2948,6 +2949,7 @@ export abstract class Switch extends Equipment {
   protected sshPublicKeyAdmitted?(user: string, offeredKeyMaterial: string): boolean;
   protected sshForcedCommand(_user: string): string | null { return null; }
   protected sshServerLimits(): Partial<SshServerConfig> { return {}; }
+  protected sshServerIdentification(): string { return SSH_SERVER_IDENTIFICATION; }
 
   _refreshSshAvailability(): void { this.syncManagementListeners(); }
 
@@ -3034,6 +3036,7 @@ export abstract class Switch extends Equipment {
       execTarget: () => this as unknown as SshExecTarget,
       execIdleTimeoutMs: () => null,
       banner: () => this.getBanner('login') || null,
+      identification: () => this.sshServerIdentification(),
       motd: () => this.getBanner('motd') || undefined,
       isClientBlocked: () => !this._getVtyLineConfig().incomingVerdict().accept,
       recordLogin: (user, fromIp) => this.recordSshLogin(user, fromIp, '', true),

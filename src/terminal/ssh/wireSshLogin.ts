@@ -16,6 +16,7 @@
  * connection no client kept.
  */
 
+import { opensshIdentificationFor } from '@/network/protocols/ssh/serverIdentification';
 import type { Equipment } from '@/network/equipment/Equipment';
 import type { TcpConnector } from '@/network/tcp/types';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
@@ -203,6 +204,7 @@ export async function openWireSshConnection(
     localGid: req.localGid ?? sshLocalIdentityFor(req.device, req.localUser).gid,
     knownHostsPath: knownHostsPathFor(req.device, req.localUser),
     credentialless: req.credentialless,
+    clientIdentification: opensshIdentificationFor(req.device.getOSType()),
     interactionHandler: req.credentialless
       ? new SilentSshInteractionHandler('')
       : new TerminalSshInteractionHandler(req.io),
@@ -238,6 +240,7 @@ export async function openWireSshConnection(
     if (errKind === 'CONNECTION_TIMEOUT') {
       return { kind: 'rejected', message: `ssh: connect to host ${req.host} port ${req.port}: Connection timed out` };
     }
+    if (failure?.kind === 'KEX_FAILED') return { kind: 'rejected', message: failure.message };
     if (errKind === 'HOST_KEY_CHANGED') return { kind: 'host-key-changed' };
     if (errKind === 'HOST_KEY_REJECTED') {
       return { kind: 'rejected', message: 'Host key verification failed.' };

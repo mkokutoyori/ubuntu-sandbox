@@ -5,6 +5,7 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
+import { SSH_WINDOWS_IDENTIFICATION } from '../serverIdentification';
 import type { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
 import type { WindowsUserManager } from '@/network/devices/windows/WindowsUserManager';
 import type { AuthMethodType, ISshAuthContext } from '../auth/ISshAuthMethod';
@@ -103,6 +104,10 @@ export class WindowsSshServerContext implements ISshServerContext {
 
   recordLogout(user: string, _fromIp: string): void {
     this.reportLogoff?.(user);
+  }
+
+  serverIdentification(): string {
+    return SSH_WINDOWS_IDENTIFICATION;
   }
 
   getBanner(): string | null {

@@ -161,6 +161,10 @@ export class SshSyslogger {
         if (event.authenticated) {
           return `Disconnected from user ${event.user} ${event.ip} port ${port}`;
         }
+        if (event.beforeIdentification) {
+          this.append('error: kex_exchange_identification: Connection closed by remote host');
+          return `Connection closed by ${event.ip} port ${port}`;
+        }
         const qui = event.user
           ? `${event.validUser === false ? 'invalid user' : 'authenticating user'} ${event.user} `
           : '';

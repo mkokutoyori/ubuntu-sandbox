@@ -58,14 +58,14 @@ describe('SSH server — MaxStartups pre-auth concurrency cap', () => {
     // 1st: TCP connect + send hello, leave it pending (no auth) → counter stays 1.
     const sock1 = await pc.tcpConnect('10.0.0.2', 22);
     expect(sock1).toBeTruthy();
-    sock1!.write(JSON.stringify({ op: 'hello', clientVersion: 'SSH-2.0-test' }));
+    sock1!.write('SSH-2.0-test\r\n');
 
     // 2nd: should be refused at register time. The TCP connect itself succeeds
     // (server is listening), but the handler immediately closes.
     let secondClosed = false;
     const sock2 = await pc.tcpConnect('10.0.0.2', 22);
     sock2?.onClose?.(() => { secondClosed = true; });
-    sock2?.write(JSON.stringify({ op: 'hello', clientVersion: 'SSH-2.0-test' }));
+    sock2?.write('SSH-2.0-test\r\n');
 
     expect(secondClosed || dropReasons.some((r) => r === 'too_many_failures')).toBe(true);
   });

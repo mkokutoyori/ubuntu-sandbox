@@ -134,14 +134,14 @@ class HopInteractionHandler implements ISshInteractionHandler {
     });
   }
 
-  promptHostKeyConfirmation(host: string, fingerprint: string): Promise<HostKeyResponse> {
+  promptHostKeyConfirmation(host: string, fingerprint: string, keyType: string): Promise<HostKeyResponse> {
     return new Promise((resolve) => {
       this.pendingHostKeyResolve = resolve;
       this.signal({
         kind: 'text',
         promptText:
           `The authenticity of host '${host}' can't be established.\n` +
-          `ED25519 key fingerprint is SHA256:${fingerprint}.\n` +
+          `${keyType} key fingerprint is ${fingerprint}.\n` +
           `Are you sure you want to continue connecting (yes/no/[fingerprint])?`,
       });
     });

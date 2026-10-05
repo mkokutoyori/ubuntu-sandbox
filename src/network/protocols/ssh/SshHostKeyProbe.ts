@@ -1,32 +1,35 @@
+import type { TcpStream } from '@/network/tcp/types';
+import { bytesToBase64 } from '@/crypto/encoding';
+import { sshPublicKeyFromBlob } from '@/network/devices/linux/network/SshKeygenMaterial';
+import { SshTransport } from './transport/SshTransport';
+
 export interface ProbedHostKey {
   algorithm: string;
   publicKey: string;
 }
 
-export interface HostKeyProbeConnection {
-  onData(handler: (data: unknown) => void): () => void;
-  write(data: string): void;
-  close(): void;
+export interface HostKeyProbeResult {
+  readonly serverIdentification: string | null;
+  readonly hostKey: ProbedHostKey | null;
 }
 
-const CLIENT_VERSION = 'SSH-2.0-OpenSSH_8.9';
+export const SSH_KEYSCAN_IDENTIFICATION = 'SSH-2.0-OpenSSH-keyscan';
 
-export function probeSshHostKey(conn: HostKeyProbeConnection | null): ProbedHostKey | null {
+export function probeSshHostKey(
+  conn: TcpStream | null, hostKeyAlgorithms: readonly string[],
+): HostKeyProbeResult | null {
   if (!conn) return null;
-
   let hostKey: ProbedHostKey | null = null;
-  const off = conn.onData((data) => {
-    if (typeof data !== 'string') return;
-    try {
-      const parsed = JSON.parse(data) as { hostKey?: ProbedHostKey; serverVersion?: string };
-      if (parsed.hostKey && parsed.serverVersion) hostKey = parsed.hostKey;
-    } catch {
-      return;
-    }
+  const transport = new SshTransport(conn, {
+    role: 'client',
+    identification: SSH_KEYSCAN_IDENTIFICATION,
+    hostKeyAlgorithms,
+    verifyHostKey: (_algorithm, blob) => {
+      const parsed = sshPublicKeyFromBlob(blob);
+      if (parsed !== null) hostKey = { algorithm: parsed.algorithm, publicKey: bytesToBase64(blob) };
+      return false;
+    },
   });
-
-  conn.write(JSON.stringify({ op: 'hello', clientVersion: CLIENT_VERSION }));
-  off();
-  conn.close();
-  return hostKey;
+  if (transport.settled === null) conn.close();
+  return { serverIdentification: transport.peerIdentification?.line ?? null, hostKey };
 }
