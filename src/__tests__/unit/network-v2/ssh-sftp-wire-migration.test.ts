@@ -1,23 +1,19 @@
 /**
- * SFTP-over-SSH real wire migration (PRD-FTP-SFTP.md §2.1.20/P19).
- * `SshSftpChannel.ts` now speaks the real `SSH_FXP_*` wire protocol
- * (`SftpWireCodec.ts`/`SftpWireSession.ts`) framed as a `\0`-tagged
- * binary sub-channel (`SftpChannelFraming.ts`) instead of a JSON
- * `{op, ...}` envelope, while the server's shared JSON control
- * messages (auth/shell/exec) are untouched. This file proves the new
- * encoding is genuinely on the wire — behavioral regression coverage
- * for `SftpSession`'s public surface already lives in `ssh-sftp.test.ts`
- * and stays green unmodified.
+ * SFTP-over-SSH on the real wire (PRD-FTP-SFTP.md §2.1.20/P19).
+ * `SshSftpChannel` opens a `session` channel (RFC 4254 §6.1), asks for the
+ * `sftp` subsystem (§6.5) and exchanges `SSH_FXP_*` packets
+ * (`SftpWireCodec.ts`) as the data of that channel -- no JSON envelope,
+ * no local framing. `df` is the OpenSSH `statvfs@openssh.com` extension
+ * carried by SSH_FXP_EXTENDED / SSH_FXP_EXTENDED_REPLY.
  *
- * Le transport est desormais celui de la RFC 4253 : apres l'echange
- * d'identifications et de KEXINIT, chaque paquet est scelle en
- * aes128-gcm@openssh.com sous des cles derivees de l'echange curve25519.
- * Un releve brut du flux TCP ne montre donc plus que des paquets
- * chiffres. Ce que ce fichier prouve n'a pas change -- SFTP parle bien le
- * codec binaire et non une enveloppe JSON -- mais le point d'observation
- * descend d'un cran : on lit les charges utiles que chaque extremite
- * remet a son transport (`SshTransport.send`) AVANT le chiffrement, et on
- * reassemble les fragments du message local 192 qui les porte.
+ * The transport is RFC 4253: a raw TCP capture shows only sealed packets,
+ * so the observation point is each end's `SshTransport.send` BEFORE
+ * encryption. The CHANNEL_DATA payloads of each role are reassembled into
+ * length-prefixed SFTP packets and their types recorded.
+ *
+ * Before this change the file asserted `\0`-tagged frames carried in the
+ * local message 192 and a JSON `{op:'df'}` envelope; the df case encoded
+ * that legacy premise and now asserts the EXTENDED packet instead.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { TcpConnector } from '@/network/tcp/types';
@@ -28,11 +24,10 @@ import { LinuxSshServerContext } from '@/network/protocols/ssh/server/LinuxSshSe
 import { SshServerHandler } from '@/network/protocols/ssh/server/SshServerHandler';
 import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
-import { decodeSftpChannelFrame, isSftpChannelFrame } from '@/network/protocols/ssh/channels/SftpChannelFraming';
 import { decodeSftpWirePacket } from '@/network/protocols/ssh/sftp/SftpWireCodec';
 import { SshTransport } from '@/network/protocols/ssh/transport/SshTransport';
-import { SSH_MSG_LOCAL_LEGACY_FRAME } from '@/network/protocols/ssh/transport/SshMessageNumbers';
-import { bytesToUtf8 } from '@/crypto/encoding';
+import { decodeConnectionMessage } from '@/network/protocols/ssh/connection/ConnectionMessages';
+import { SSH_MSG_CHANNEL_DATA } from '@/network/protocols/ssh/transport/SshMessageNumbers';
 
 const REMOTE_IP = '10.0.0.2';
 const LOCAL_IP = '10.0.0.1';
@@ -84,18 +79,25 @@ function buildTopology(files: Record<string, string> = {}) {
 }
 
 function observeUpperLayer(sinks: Record<'client' | 'server', string[]>): void {
-  const pending: Record<'client' | 'server', Uint8Array[]> = { client: [], server: [] };
+  const pending: Record<'client' | 'server', Uint8Array> = { client: new Uint8Array(0), server: new Uint8Array(0) };
   const send = SshTransport.prototype.send;
   vi.spyOn(SshTransport.prototype, 'send').mockImplementation(function (this: SshTransport, payload: Uint8Array) {
     const role = (this as unknown as { config: { role: 'client' | 'server' } }).config.role;
-    if (payload[0] === SSH_MSG_LOCAL_LEGACY_FRAME) {
-      pending[role].push(payload.slice(2));
-      if (payload[1] === 0) {
-        const parts = pending[role].splice(0);
-        const whole = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-        let offset = 0;
-        for (const p of parts) { whole.set(p, offset); offset += p.length; }
-        sinks[role].push(bytesToUtf8(whole));
+    if (payload[0] === SSH_MSG_CHANNEL_DATA) {
+      const message = decodeConnectionMessage(payload);
+      if (message?.kind === 'data') {
+        const merged = new Uint8Array(pending[role].length + message.data.length);
+        merged.set(pending[role]);
+        merged.set(message.data, pending[role].length);
+        pending[role] = merged;
+        while (pending[role].length >= 4) {
+          const bytes = pending[role];
+          const length = ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) >>> 0;
+          if (bytes.length < 4 + length) break;
+          const packet = decodeSftpWirePacket(bytes.subarray(0, 4 + length));
+          if (packet) sinks[role].push(packet.type);
+          pending[role] = bytes.slice(4 + length);
+        }
       }
     }
     send.call(this, payload);
@@ -104,15 +106,8 @@ function observeUpperLayer(sinks: Record<'client' | 'server', string[]>): void {
 
 afterEach(() => { vi.restoreAllMocks(); });
 
-function wirePacketTypes(payloads: readonly string[]): string[] {
-  const types: string[] = [];
-  for (const p of payloads) {
-    if (!isSftpChannelFrame(p)) continue;
-    const { wireBytes } = decodeSftpChannelFrame(p);
-    const pkt = decodeSftpWirePacket(wireBytes);
-    if (pkt) types.push(pkt.type);
-  }
-  return types;
+function wirePacketTypes(packetTypes: readonly string[]): string[] {
+  return [...packetTypes];
 }
 
 describe('SFTP-over-SSH speaks the real SSH_FXP_* wire protocol (§2.1.20/P19)', () => {
@@ -131,11 +126,6 @@ describe('SFTP-over-SSH speaks the real SSH_FXP_* wire protocol (§2.1.20/P19)',
 
     expect(wirePacketTypes(clientToServer)).toContain('INIT');
     expect(wirePacketTypes(serverToClient)).toContain('VERSION');
-    // Every message on the wire is either a real `\0`-tagged frame or valid JSON control text — never a mix.
-    for (const p of [...clientToServer, ...serverToClient]) {
-      if (isSftpChannelFrame(p)) continue;
-      expect(() => JSON.parse(p)).not.toThrow();
-    }
   });
 
   it('get() drives a real OPEN(read)/READ/CLOSE sequence on the wire', async () => {
@@ -218,15 +208,15 @@ describe('SFTP-over-SSH speaks the real SSH_FXP_* wire protocol (§2.1.20/P19)',
     expect(wirePacketTypes(clientToServer)).toHaveLength(0);
   });
 
-  it('df() deliberately keeps using the legacy JSON envelope (no real SFTP wire representation exists for it)', async () => {
-    const { session, clientToServer } = buildTopology();
+  it('df() is the statvfs@openssh.com extension: one EXTENDED request answered by one EXTENDED_REPLY', async () => {
+    const { session, clientToServer, serverToClient } = buildTopology();
     await session.connect(`alice@${REMOTE_IP}`);
     clientToServer.length = 0;
+    serverToClient.length = 0;
     const out = session.df(undefined, false);
     expect(out).toContain('Size');
 
-    expect(wirePacketTypes(clientToServer)).toHaveLength(0);
-    const jsonMessages = clientToServer.filter((p) => !isSftpChannelFrame(p));
-    expect(jsonMessages.some((p) => { try { return JSON.parse(p).op === 'df'; } catch { return false; } })).toBe(true);
+    expect(wirePacketTypes(clientToServer)).toEqual(['EXTENDED']);
+    expect(wirePacketTypes(serverToClient)).toEqual(['EXTENDED_REPLY']);
   });
 });

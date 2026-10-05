@@ -1,23 +1,11 @@
-/**
- * SshRemoteForwarder — OpenSSH `-R remotePort:localHost:localPort` scaffold.
- *
- * Mirror of `SshLocalForwarder`. Opens a listener on the **remote**
- * device (the SSH server end) at `remotePort`; every accepted connection
- * is bridged back through the SSH session to `localHost:localPort` on
- * the client side.
- *
- * The client is the end that dials `localHost:localPort`, mirroring real
- * OpenSSH: `-R` reverses which side listens, so it also reverses which
- * side opens the far leg. See `forwardRelay.ts`.
- *
- * Reference: SSH-IMPLEMENTATION-ANALYSIS.md §5 P6.
- */
-
-import { forwardFailureOf, type ForwardOpening } from './ForwardOpening';
-import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import type { EndHost } from '@/network/devices/EndHost';
-import type { SshSession } from './session/SshSession';
-import { relayThroughDialer } from './forwardRelay';
+import { PortNumber } from '@/network/core/ports/PortNumber';
+import { dialStream, parseDialAddress } from '@/network/tcp/dial';
+import { isDialFailure } from '@/network/tcp/types';
+import type { ForwardedConnection, SshSession } from './session/SshSession';
+import { SSH_OPEN_CONNECT_FAILED } from './transport/SshMessageNumbers';
+import { joinWhenReady } from './forwardRelay';
+import { isOk } from './Result';
 
 export interface RemoteForwardSpec {
   /** Port opened on the remote (SSH server) device. */
@@ -30,56 +18,62 @@ export interface RemoteForwardSpec {
   readonly sshHost: string;
 }
 
+const LOOPBACK = '127.0.0.1';
+const DEFAULT_BIND = 'localhost';
+
+const DIAL_FAILURES = {
+  refused: 'Connection refused',
+  timeout: 'Connection timed out',
+  unreachable: 'No route to host',
+} as const;
+
 export class SshRemoteForwarder {
-  private registered = false;
+  private boundPort: number | null = null;
 
   constructor(
-    private readonly remoteDevice: EndHost,
     private readonly session: SshSession | null,
+    private readonly localDevice: EndHost,
     private readonly spec: RemoteForwardSpec,
-    /**
-     * The tunnel's OTHER end — for `-R` that is the CLIENT, which dials
-     * `localHost:localPort` on the remote user's behalf.
-     */
-    private readonly dialDevice: EndHost | null = null,
+    private readonly resolveHost: (name: string) => string | null = () => null,
   ) {}
 
   getSpec(): RemoteForwardSpec {
     return this.spec;
   }
 
-  register(ownerUid?: number): ForwardOpening {
-    if (this.registered) return 'opened';
-    try {
-      this.remoteDevice.getTcpStack().listen(this.spec.remotePort, {
-        onAccept: (socket) => this.handleAccept(socket as unknown as TcpConnection),
-        ownerUid,
-      });
-    } catch (error) {
-      return forwardFailureOf(error);
-    }
-    this.registered = true;
-    return 'opened';
+  getBoundPort(): number | null {
+    return this.boundPort;
   }
 
-  /**
-   * Drop the remote-side listener. Existing in-flight tunnels keep
-   * running until they close on their own (parity with OpenSSH).
-   */
+  async register(): Promise<boolean> {
+    if (this.boundPort !== null) return true;
+    if (this.session === null) return false;
+    const bound = await this.session.requestRemoteForward(
+      DEFAULT_BIND, this.spec.remotePort, (connection) => { void this.serve(connection); });
+    if (!isOk(bound)) return false;
+    this.boundPort = bound.value;
+    return true;
+  }
+
   dispose(): void {
-    if (!this.registered) return;
-    this.remoteDevice.getTcpStack().closeListener(this.spec.remotePort);
-    this.registered = false;
+    if (this.boundPort === null) return;
+    const port = this.boundPort;
+    this.boundPort = null;
+    void this.session?.cancelRemoteForward(DEFAULT_BIND, port);
   }
 
-  // ─── private ────────────────────────────────────────────────────
-
-  private handleAccept(conn: TcpConnection): void {
-    relayThroughDialer(
-      conn,
-      this.dialDevice,
-      this.spec.localHost,
-      this.spec.localPort,
-    );
+  private async serve(connection: ForwardedConnection): Promise<void> {
+    const host = this.spec.localHost === 'localhost' ? LOOPBACK : this.spec.localHost;
+    const address = parseDialAddress(host) ?? parseDialAddress(this.resolveHost(host) ?? '');
+    if (address === null || !PortNumber.isValid(this.spec.localPort)) {
+      connection.reject(SSH_OPEN_CONNECT_FAILED, 'Name or service not known');
+      return;
+    }
+    const dialed = await dialStream(this.localDevice.getTcpStack(), address, PortNumber.of(this.spec.localPort));
+    if (isDialFailure(dialed)) {
+      connection.reject(SSH_OPEN_CONNECT_FAILED, DIAL_FAILURES[dialed.dialFailed]);
+      return;
+    }
+    joinWhenReady(dialed, Promise.resolve(connection.accept()));
   }
 }

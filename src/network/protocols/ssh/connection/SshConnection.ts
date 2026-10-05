@@ -55,12 +55,16 @@ export class ConnectionChannel {
   private localWindow: number;
   private pending: Array<{ data: Uint8Array; extended: number | null }> = [];
   private released = false;
+  private lostWithTransport = false;
   private flushing = false;
   private flushAgain = false;
   private sentEof = false;
   private sentClose = false;
   private receivedClose = false;
   private opened = false;
+  private openFailure: SshOpenFailure | null = null;
+  private readonly untilOpen: Array<() => void> = [];
+  private readonly openHandlers: Array<(failure: SshOpenFailure | null) => void> = [];
   private readonly dataHandlers: Array<(data: Uint8Array) => void> = [];
   private readonly extendedHandlers: Array<(type: number, data: Uint8Array) => void> = [];
   private readonly eofHandlers: Array<() => void> = [];
@@ -86,6 +90,28 @@ export class ConnectionChannel {
     return this.opened && !this.sentClose && !this.receivedClose;
   }
 
+  get isOpening(): boolean {
+    return !this.opened && this.openFailure === null && !this.released;
+  }
+
+  get failure(): SshOpenFailure | null {
+    return this.openFailure;
+  }
+
+  whenOpened(handler: (failure: SshOpenFailure | null) => void): void {
+    if (this.opened) handler(null);
+    else if (this.openFailure !== null) handler(this.openFailure);
+    else this.openHandlers.push(handler);
+  }
+
+  failed(failure: SshOpenFailure): void {
+    this.openFailure = failure;
+    this.untilOpen.length = 0;
+    this.released = true;
+    for (const handler of this.openHandlers.splice(0)) handler(failure);
+    for (const handler of [...this.closeHandlers]) handler();
+  }
+
   get remoteChannelId(): number {
     return this.remoteId;
   }
@@ -103,6 +129,8 @@ export class ConnectionChannel {
     this.remoteWindow = window;
     this.remoteMaxPacket = maxPacket;
     this.opened = true;
+    for (const queued of this.untilOpen.splice(0)) queued();
+    for (const handler of this.openHandlers.splice(0)) handler(null);
   }
 
   write(data: Uint8Array | string): void {
@@ -114,6 +142,10 @@ export class ConnectionChannel {
   }
 
   eof(): void {
+    if (this.isOpening) {
+      this.untilOpen.push(() => this.eof());
+      return;
+    }
     if (!this.isOpen || this.sentEof) return;
     this.flush();
     this.sentEof = true;
@@ -121,6 +153,10 @@ export class ConnectionChannel {
   }
 
   close(): void {
+    if (this.isOpening) {
+      this.untilOpen.push(() => this.close());
+      return;
+    }
     if (!this.opened || this.sentClose) return;
     this.sentClose = true;
     this.connection.emit({ kind: 'close', recipient: this.remoteId });
@@ -128,6 +164,11 @@ export class ConnectionChannel {
   }
 
   request(name: string, payload: Uint8Array = NO_PAYLOAD, wantReply = false): Promise<boolean> {
+    if (this.isOpening) {
+      return new Promise((resolve) => {
+        this.untilOpen.push(() => { void this.request(name, payload, wantReply).then(resolve); });
+      });
+    }
     if (!this.isOpen) return Promise.resolve(false);
     const outcome = new Promise<boolean>((resolve) => {
       if (wantReply) this.requestReplies.push(resolve);
@@ -239,6 +280,10 @@ export class ConnectionChannel {
   }
 
   private enqueue(data: Uint8Array, extended: number | null): void {
+    if (this.isOpening) {
+      this.untilOpen.push(() => this.enqueue(data, extended));
+      return;
+    }
     if (!this.isOpen || this.sentEof || data.length === 0) return;
     this.pending.push({ data, extended });
     this.flush();
@@ -287,9 +332,14 @@ export class ConnectionChannel {
     for (const handler of [...this.closeHandlers]) handler();
   }
 
+  get transportLost(): boolean {
+    return this.lostWithTransport;
+  }
+
   abort(): void {
     if (this.released) return;
     this.released = true;
+    this.lostWithTransport = true;
     this.receivedClose = true;
     this.sentClose = true;
     for (const handler of [...this.closeHandlers]) handler();
@@ -298,9 +348,7 @@ export class ConnectionChannel {
 
 export class SshConnection {
   private readonly channels = new Map<number, ConnectionChannel>();
-  private readonly opening = new Map<number, {
-    channel: ConnectionChannel; resolve: (c: ConnectionChannel) => void; reject: (e: SshOpenFailure) => void;
-  }>();
+  private readonly opening = new Set<number>();
   private readonly openHandlers = new Map<string, (incoming: IncomingChannel) => void>();
   private globalHandler: ((request: GlobalRequest) => void) | null = null;
   private readonly globalReplies: Array<(success: boolean, payload: Uint8Array) => void> = [];
@@ -333,27 +381,44 @@ export class SshConnection {
     this.globalHandler = handler;
   }
 
-  openChannel(channelType: string, payload: Uint8Array = NO_PAYLOAD): Promise<ConnectionChannel> {
+  beginOpen(channelType: string, payload: Uint8Array = NO_PAYLOAD): ConnectionChannel {
     const id = this.allocateId();
-    if (id === null) return Promise.reject(new SshOpenFailure(SSH_OPEN_RESOURCE_SHORTAGE, 'no free channel id'));
-    const channel = new ConnectionChannel(id, channelType, this, this.windowSize, this.maxPacket);
+    const channel = new ConnectionChannel(id ?? -1, channelType, this, this.windowSize, this.maxPacket);
+    if (id === null) {
+      channel.failed(new SshOpenFailure(SSH_OPEN_RESOURCE_SHORTAGE, 'no free channel id'));
+      return channel;
+    }
     this.channels.set(id, channel);
+    this.opening.add(id);
+    this.emit({
+      kind: 'channel-open', channelType, senderChannel: id, initialWindow: this.windowSize,
+      maxPacket: this.maxPacket, payload,
+    });
+    return channel;
+  }
+
+  openChannel(channelType: string, payload: Uint8Array = NO_PAYLOAD): Promise<ConnectionChannel> {
+    const channel = this.beginOpen(channelType, payload);
     return new Promise((resolve, reject) => {
-      this.opening.set(id, { channel, resolve, reject });
-      this.emit({
-        kind: 'channel-open', channelType, senderChannel: id, initialWindow: this.windowSize,
-        maxPacket: this.maxPacket, payload,
-      });
+      channel.whenOpened((failure) => (failure === null ? resolve(channel) : reject(failure)));
     });
   }
 
   globalRequest(name: string, payload: Uint8Array = NO_PAYLOAD, wantReply = true): Promise<Uint8Array | null> {
-    const outcome = new Promise<Uint8Array | null>((resolve) => {
-      if (wantReply) this.globalReplies.push((success, reply) => resolve(success ? reply : null));
-      else resolve(NO_PAYLOAD);
+    return new Promise<Uint8Array | null>((resolve) => {
+      if (wantReply) this.sendGlobalRequest(name, payload, (success, reply) => resolve(success ? reply : null));
+      else {
+        this.sendGlobalRequest(name, payload);
+        resolve(NO_PAYLOAD);
+      }
     });
-    this.emit({ kind: 'global-request', name, wantReply, payload });
-    return outcome;
+  }
+
+  sendGlobalRequest(
+    name: string, payload: Uint8Array = NO_PAYLOAD, onReply?: (success: boolean, payload: Uint8Array) => void,
+  ): void {
+    if (onReply !== undefined) this.globalReplies.push(onReply);
+    this.emit({ kind: 'global-request', name, wantReply: onReply !== undefined, payload });
   }
 
   closeAll(): void {
@@ -381,11 +446,11 @@ export class SshConnection {
 
   private abortAll(): void {
     this.disposed = true;
-    for (const channel of [...this.channels.values()]) channel.abort();
-    this.channels.clear();
-    for (const waiting of [...this.opening.values()]) {
-      waiting.reject(new SshOpenFailure(SSH_OPEN_CONNECT_FAILED, 'connection closed'));
+    for (const channel of [...this.channels.values()]) {
+      if (channel.isOpening) channel.failed(new SshOpenFailure(SSH_OPEN_CONNECT_FAILED, 'connection closed'));
+      else channel.abort();
     }
+    this.channels.clear();
     this.opening.clear();
   }
 
@@ -496,24 +561,21 @@ export class SshConnection {
   }
 
   private receiveConfirmation(message: Extract<ConnectionMessage, { kind: 'open-confirmation' }>): void {
-    const waiting = this.opening.get(message.recipient);
-    if (!waiting) {
+    const channel = this.channels.get(message.recipient);
+    if (!channel || !this.opening.delete(message.recipient)) {
       this.protocolError(`open confirmation referred to nonexistent channel ${message.recipient}`);
       return;
     }
-    this.opening.delete(message.recipient);
-    waiting.channel.confirmed(message.senderChannel, message.initialWindow, message.maxPacket);
-    waiting.resolve(waiting.channel);
+    channel.confirmed(message.senderChannel, message.initialWindow, message.maxPacket);
   }
 
   private receiveOpenFailure(message: Extract<ConnectionMessage, { kind: 'open-failure' }>): void {
-    const waiting = this.opening.get(message.recipient);
-    if (!waiting) {
+    const channel = this.channels.get(message.recipient);
+    if (!channel || !this.opening.delete(message.recipient)) {
       this.protocolError(`open failure referred to nonexistent channel ${message.recipient}`);
       return;
     }
-    this.opening.delete(message.recipient);
     this.channels.delete(message.recipient);
-    waiting.reject(new SshOpenFailure(message.reason, message.description));
+    channel.failed(new SshOpenFailure(message.reason, message.description));
   }
 }

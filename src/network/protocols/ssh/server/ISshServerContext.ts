@@ -205,6 +205,8 @@ export interface ISshServerContext {
   transportPolicy?(): SshTransportPolicy;
   transportEstablished?(clientIp: string, algorithms: NegotiatedAlgorithms): void;
   openDirectTcpip?(request: DirectTcpipRequest): Promise<DirectTcpipOutcome>;
+  openRemoteForward?(request: RemoteForwardRequest): RemoteForwardOutcome;
+  accountNames?(): SftpAccountNames;
   rootMayLogIn?(method: 'password' | 'publickey', keyForcesCommand?: boolean): boolean;
   admittedKey?(user: string, publicKey: string, source: KeySource): AuthorizedKey | null;
   forcedCommand?(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): string | null;
@@ -218,6 +220,22 @@ export interface DirectTcpipRequest {
   readonly host: string;
   readonly port: number;
 }
+
+import type { SftpAccountNames } from '../sftp/SftpWireSession';
+
+export interface RemoteForwardRequest {
+  readonly user: SshUserContext;
+  readonly clientIp: string;
+  readonly keyOptions: AuthorizedKeyOptions | null;
+  readonly bindAddress: string;
+  readonly port: number;
+  readonly onConnection: (stream: TcpStream) => void;
+}
+
+export type RemoteForwardOutcome =
+  | { readonly kind: 'listening'; readonly port: number; readonly stop: () => void }
+  | { readonly kind: 'prohibited' }
+  | { readonly kind: 'bind-failed' };
 
 export type DirectTcpipOutcome =
   | { readonly kind: 'open'; readonly stream: TcpStream }

@@ -21,7 +21,8 @@ export const SFTP_TYPE = {
   LSTAT: 7, FSTAT: 8, SETSTAT: 9, FSETSTAT: 10, OPENDIR: 11, READDIR: 12,
   REMOVE: 13, MKDIR: 14, RMDIR: 15, REALPATH: 16, STAT: 17, RENAME: 18,
   READLINK: 19, SYMLINK: 20, LINK: 21,
-  STATUS: 101, HANDLE: 102, DATA: 103, NAME: 104, ATTRS: 105,
+  EXTENDED: 200,
+  STATUS: 101, HANDLE: 102, DATA: 103, NAME: 104, ATTRS: 105, EXTENDED_REPLY: 201,
 } as const;
 
 const TYPE_NAME_FROM_CODE: Readonly<Record<number, keyof typeof SFTP_TYPE>> =
@@ -37,6 +38,24 @@ const ATTR_FLAG = {
   ACL: 0x00000020,
   EXTENDED: 0x00000040,
 } as const;
+
+const V3_EXTENDED_FLAG = 0x80000000;
+const V3_FIRST_EXTENDED_VERSION = 4;
+const SFTP_ATTRIBUTE_DEFAULT_VERSION = 6;
+
+export type SftpAttrLayout = 'v3' | 'extended';
+
+const MODE_TYPE_MASK = 0o170000;
+const MODE_TYPE_ENTRY: Readonly<Record<number, SftpWireEntryType>> = {
+  0o100000: 'file', 0o040000: 'directory', 0o120000: 'symlink',
+};
+
+export const entryTypeOfAttrs = (attrs: { readonly entryType?: SftpWireEntryType; readonly permissions?: number }): SftpWireEntryType =>
+  attrs.entryType ?? MODE_TYPE_ENTRY[(attrs.permissions ?? 0) & MODE_TYPE_MASK] ?? 'file';
+
+
+export const sftpAttrLayoutOf = (version: number): SftpAttrLayout =>
+  version >= V3_FIRST_EXTENDED_VERSION ? 'extended' : 'v3';
 
 /** v4-v6 explicit attribute `type` (§5) — the v3 codec had no such field. */
 export type SftpWireEntryType = 'file' | 'directory' | 'symlink' | 'special' | 'unknown';
@@ -76,7 +95,8 @@ export interface SftpWireAttrs {
 export const SFTP_RENAME_FLAG = { OVERWRITE: 0x00000001, ATOMIC: 0x00000002, NATIVE: 0x00000004 } as const;
 
 export interface SftpInitPacket { readonly type: 'INIT'; readonly version: number; }
-export interface SftpVersionPacket { readonly type: 'VERSION'; readonly version: number; }
+export interface SftpExtensionPair { readonly name: string; readonly data: string; }
+export interface SftpVersionPacket { readonly type: 'VERSION'; readonly version: number; readonly extensions?: readonly SftpExtensionPair[]; }
 
 export interface SftpOpenPacket { readonly type: 'OPEN'; readonly requestId: number; readonly filename: string; readonly pflags: number; readonly attrs: SftpWireAttrs; }
 export interface SftpClosePacket { readonly type: 'CLOSE'; readonly requestId: number; readonly handle: string; }
@@ -104,6 +124,8 @@ export interface SftpHandlePacket { readonly type: 'HANDLE'; readonly requestId:
 export interface SftpDataPacket { readonly type: 'DATA'; readonly requestId: number; readonly data: Uint8Array; }
 export interface SftpNameEntry { readonly filename: string; readonly longname: string; readonly attrs: SftpWireAttrs; }
 export interface SftpNamePacket { readonly type: 'NAME'; readonly requestId: number; readonly entries: readonly SftpNameEntry[]; }
+export interface SftpExtendedPacket { readonly type: 'EXTENDED'; readonly requestId: number; readonly name: string; readonly data: Uint8Array; }
+export interface SftpExtendedReplyPacket { readonly type: 'EXTENDED_REPLY'; readonly requestId: number; readonly data: Uint8Array; }
 export interface SftpAttrsPacket { readonly type: 'ATTRS'; readonly requestId: number; readonly attrs: SftpWireAttrs; }
 
 export type SftpWirePacket =
@@ -113,10 +135,36 @@ export type SftpWirePacket =
   | SftpOpendirPacket | SftpReaddirPacket | SftpRemovePacket | SftpMkdirPacket
   | SftpRmdirPacket | SftpRealpathPacket | SftpStatPacket | SftpRenamePacket
   | SftpReadlinkPacket | SftpSymlinkPacket | SftpLinkPacket
-  | SftpStatusPacket | SftpHandlePacket | SftpDataPacket | SftpNamePacket | SftpAttrsPacket;
+  | SftpExtendedPacket | SftpStatusPacket | SftpHandlePacket | SftpDataPacket | SftpNamePacket | SftpAttrsPacket
+  | SftpExtendedReplyPacket;
 
 class ByteWriter extends SshWriter {
+  constructor(private readonly layout: SftpAttrLayout = 'extended') { super(); }
+
   writeAttrs(attrs: SftpWireAttrs): this {
+    return this.layout === 'v3' ? this.writeV3Attrs(attrs) : this.writeExtendedAttrs(attrs);
+  }
+
+  private writeV3Attrs(attrs: SftpWireAttrs): this {
+    let flags = 0;
+    if (attrs.size !== undefined) flags |= ATTR_FLAG.SIZE;
+    if (attrs.uid !== undefined || attrs.gid !== undefined) flags |= ATTR_FLAG.UIDGID;
+    if (attrs.permissions !== undefined) flags |= ATTR_FLAG.PERMISSIONS;
+    if (attrs.atime !== undefined || attrs.mtime !== undefined) flags |= ATTR_FLAG.ACMODTIME;
+    if (attrs.extended !== undefined) flags |= V3_EXTENDED_FLAG;
+    this.writeUint32(flags >>> 0);
+    if (flags & ATTR_FLAG.SIZE) this.writeUint64(attrs.size!);
+    if (flags & ATTR_FLAG.UIDGID) this.writeUint32(attrs.uid ?? 0).writeUint32(attrs.gid ?? 0);
+    if (flags & ATTR_FLAG.PERMISSIONS) this.writeUint32(attrs.permissions!);
+    if (flags & ATTR_FLAG.ACMODTIME) this.writeUint32(attrs.atime ?? attrs.mtime ?? 0).writeUint32(attrs.mtime ?? 0);
+    if (attrs.extended !== undefined) {
+      this.writeUint32(attrs.extended.length);
+      for (const kv of attrs.extended) this.writeString(kv.name).writeString(kv.value);
+    }
+    return this;
+  }
+
+  private writeExtendedAttrs(attrs: SftpWireAttrs): this {
     let flags = 0;
     if (attrs.size !== undefined) flags |= ATTR_FLAG.SIZE;
     if (attrs.uid !== undefined || attrs.gid !== undefined) flags |= ATTR_FLAG.UIDGID;
@@ -144,7 +192,32 @@ class ByteWriter extends SshWriter {
 }
 
 class ByteReader extends SshReader {
+  constructor(bytes: Uint8Array, private readonly layout: SftpAttrLayout = 'extended') { super(bytes); }
+
   readAttrs(): SftpWireAttrs {
+    return this.layout === 'v3' ? this.readV3Attrs() : this.readExtendedAttrs();
+  }
+
+  private readV3Attrs(): SftpWireAttrs {
+    const flags = this.readUint32();
+    const attrs: {
+      size?: number; uid?: number; gid?: number; permissions?: number; atime?: number; mtime?: number;
+      extended?: SftpWireExtendedAttr[];
+    } = {};
+    if (flags & ATTR_FLAG.SIZE) attrs.size = this.readUint64();
+    if (flags & ATTR_FLAG.UIDGID) { attrs.uid = this.readUint32(); attrs.gid = this.readUint32(); }
+    if (flags & ATTR_FLAG.PERMISSIONS) attrs.permissions = this.readUint32();
+    if (flags & ATTR_FLAG.ACMODTIME) { attrs.atime = this.readUint32(); attrs.mtime = this.readUint32(); }
+    if ((flags & V3_EXTENDED_FLAG) !== 0) {
+      const count = this.readUint32();
+      const extended: SftpWireExtendedAttr[] = [];
+      for (let i = 0; i < count; i++) extended.push({ name: this.readString(), value: this.readString() });
+      attrs.extended = extended;
+    }
+    return attrs;
+  }
+
+  private readExtendedAttrs(): SftpWireAttrs {
     const flags = this.readUint32();
     const attrs: {
       size?: number; uid?: number; gid?: number; permissions?: number; atime?: number; mtime?: number;
@@ -173,13 +246,17 @@ class ByteReader extends SshReader {
   }
 }
 
-export function encodeSftpWirePacket(pkt: SftpWirePacket): Uint8Array {
-  const w = new ByteWriter();
+export function encodeSftpWirePacket(pkt: SftpWirePacket, version = SFTP_ATTRIBUTE_DEFAULT_VERSION): Uint8Array {
+  const w = new ByteWriter(sftpAttrLayoutOf(version));
   w.writeByte(SFTP_TYPE[pkt.type]);
 
   switch (pkt.type) {
-    case 'INIT': case 'VERSION':
+    case 'INIT':
       w.writeUint32(pkt.version);
+      break;
+    case 'VERSION':
+      w.writeUint32(pkt.version);
+      for (const pair of pkt.extensions ?? []) w.writeString(pair.name).writeString(pair.data);
       break;
     case 'OPEN':
       w.writeUint32(pkt.requestId).writeString(pkt.filename).writeUint32(pkt.pflags).writeAttrs(pkt.attrs);
@@ -237,26 +314,37 @@ export function encodeSftpWirePacket(pkt: SftpWirePacket): Uint8Array {
     case 'ATTRS':
       w.writeUint32(pkt.requestId).writeAttrs(pkt.attrs);
       break;
+    case 'EXTENDED':
+      w.writeUint32(pkt.requestId).writeString(pkt.name).writeRaw(pkt.data);
+      break;
+    case 'EXTENDED_REPLY':
+      w.writeUint32(pkt.requestId).writeRaw(pkt.data);
+      break;
   }
 
   const body = w.toBytes();
-  return new ByteWriter().writeUint32(body.length).writeRaw(body).toBytes();
+  return new SshWriter().writeUint32(body.length).writeRaw(body).toBytes();
 }
 
 /** `bytes` is exactly one packet, length prefix included (e.g. one `onData` payload). */
-export function decodeSftpWirePacket(bytes: Uint8Array): SftpWirePacket | null {
+export function decodeSftpWirePacket(bytes: Uint8Array, version = SFTP_ATTRIBUTE_DEFAULT_VERSION): SftpWirePacket | null {
   try {
     const outer = new ByteReader(bytes);
     const length = outer.readUint32();
     const body = outer.readRaw(length);
-    const r = new ByteReader(body);
+    const r = new ByteReader(body, sftpAttrLayoutOf(version));
     const typeCode = r.readByte();
     const typeName = TYPE_NAME_FROM_CODE[typeCode];
     if (!typeName) return null;
 
     switch (typeName) {
       case 'INIT': return { type: 'INIT', version: r.readUint32() };
-      case 'VERSION': return { type: 'VERSION', version: r.readUint32() };
+      case 'VERSION': {
+        const version = r.readUint32();
+        const extensions: SftpExtensionPair[] = [];
+        while (r.remaining > 0) extensions.push({ name: r.readString(), data: r.readString() });
+        return { type: 'VERSION', version, ...(extensions.length > 0 ? { extensions } : {}) };
+      }
       case 'OPEN': {
         const requestId = r.readUint32();
         const filename = r.readString();
@@ -321,6 +409,8 @@ export function decodeSftpWirePacket(bytes: Uint8Array): SftpWirePacket | null {
         return { type: 'NAME', requestId, entries };
       }
       case 'ATTRS': return { type: 'ATTRS', requestId: r.readUint32(), attrs: r.readAttrs() };
+      case 'EXTENDED': { const requestId = r.readUint32(); const name = r.readString(); return { type: 'EXTENDED', requestId, name, data: r.readRaw(r.remaining) }; }
+      case 'EXTENDED_REPLY': { const requestId = r.readUint32(); return { type: 'EXTENDED_REPLY', requestId, data: r.readRaw(r.remaining) }; }
     }
   } catch {
     return null;

@@ -4,8 +4,8 @@
  * Reference: DESIGN-SSH-SFTP.md section 7.
  */
 
-import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import type { ChannelType, ISshChannel } from './ISshChannel';
+import type { SshConnection } from '../connection/SshConnection';
 import { SshExecChannel } from './SshExecChannel';
 import { SshSftpChannel } from './SshSftpChannel';
 import { SshShellChannel } from './SshShellChannel';
@@ -14,20 +14,20 @@ export class SshChannelManager {
   private channels = new Map<number, ISshChannel>();
   private nextChannelId = 0;
 
-  openShell(conn: TcpConnection): SshShellChannel {
-    const channel = new SshShellChannel(conn, this.nextChannelId++);
+  openShell(connection: SshConnection): SshShellChannel {
+    const channel = new SshShellChannel(connection, this.nextChannelId++);
     this.register(channel);
     return channel;
   }
 
-  openExec(conn: TcpConnection, command: string): SshExecChannel {
-    const channel = new SshExecChannel(conn, this.nextChannelId++, command);
+  openExec(connection: SshConnection, command: string): SshExecChannel {
+    const channel = new SshExecChannel(connection, this.nextChannelId++, command);
     this.register(channel);
     return channel;
   }
 
-  openSftp(conn: TcpConnection): SshSftpChannel {
-    const channel = new SshSftpChannel(conn, this.nextChannelId++);
+  openSftp(connection: SshConnection): SshSftpChannel {
+    const channel = new SshSftpChannel(connection, this.nextChannelId++);
     this.register(channel);
     return channel;
   }

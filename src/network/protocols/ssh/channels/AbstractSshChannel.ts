@@ -4,7 +4,6 @@
  * Reference: DESIGN-SSH-SFTP.md section 7.
  */
 
-import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import type { ChannelType, ISshChannel } from './ISshChannel';
 
 export abstract class AbstractSshChannel implements ISshChannel {
@@ -12,7 +11,6 @@ export abstract class AbstractSshChannel implements ISshChannel {
   protected closeHandlers: Array<() => void> = [];
 
   protected constructor(
-    protected readonly conn: TcpConnection,
     public readonly channelId: number,
     public readonly type: ChannelType,
   ) {}
@@ -34,6 +32,12 @@ export abstract class AbstractSshChannel implements ISshChannel {
     this._isOpen = false;
     this.handleClose();
     for (const h of this.closeHandlers) h();
+  }
+
+  protected lose(): void {
+    if (!this._isOpen) return;
+    this._isOpen = false;
+    this.handleClose();
   }
 
   onClose(handler: () => void): () => void {

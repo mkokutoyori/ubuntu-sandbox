@@ -69,6 +69,7 @@ describe('SftpWireSession — real OPEN/READ/WRITE/CLOSE handle model', () => {
   const SSH_FXF_READ = 0x01;
   const SSH_FXF_WRITE = 0x02;
   const SSH_FXF_APPEND = 0x04;
+  const SSH_FXF_CREATE_TRUNCATE = 0x08 | 0x10;
 
   it('OPEN(read)+READ+CLOSE downloads a file byte-exact', () => {
     const { session } = buildSession();
@@ -96,7 +97,7 @@ describe('SftpWireSession — real OPEN/READ/WRITE/CLOSE handle model', () => {
 
   it('OPEN(write)+WRITE+CLOSE uploads a file byte-exact', () => {
     const { session, vfs } = buildSession();
-    const openReply = session.handle({ type: 'OPEN', requestId: 1, filename: 'uploaded.txt', pflags: SSH_FXF_WRITE, attrs: {} });
+    const openReply = session.handle({ type: 'OPEN', requestId: 1, filename: 'uploaded.txt', pflags: SSH_FXF_WRITE | SSH_FXF_CREATE_TRUNCATE, attrs: {} });
     expect(openReply.type).toBe('HANDLE');
     const handle = (openReply as { handle: string }).handle;
 
@@ -109,7 +110,7 @@ describe('SftpWireSession — real OPEN/READ/WRITE/CLOSE handle model', () => {
 
   it('multiple WRITE chunks at increasing offsets assemble into one file', () => {
     const { session, vfs } = buildSession();
-    const openReply = session.handle({ type: 'OPEN', requestId: 1, filename: 'chunked.txt', pflags: SSH_FXF_WRITE, attrs: {} });
+    const openReply = session.handle({ type: 'OPEN', requestId: 1, filename: 'chunked.txt', pflags: SSH_FXF_WRITE | SSH_FXF_CREATE_TRUNCATE, attrs: {} });
     const handle = (openReply as { handle: string }).handle;
 
     session.handle({ type: 'WRITE', requestId: 2, handle, offset: 0, data: stringToBytes('AAAA') });
@@ -122,7 +123,7 @@ describe('SftpWireSession — real OPEN/READ/WRITE/CLOSE handle model', () => {
 
   it('a sparse WRITE (gap beyond current length) zero-pads the gap', () => {
     const { session, vfs } = buildSession();
-    const openReply = session.handle({ type: 'OPEN', requestId: 1, filename: 'sparse.txt', pflags: SSH_FXF_WRITE, attrs: {} });
+    const openReply = session.handle({ type: 'OPEN', requestId: 1, filename: 'sparse.txt', pflags: SSH_FXF_WRITE | SSH_FXF_CREATE_TRUNCATE, attrs: {} });
     const handle = (openReply as { handle: string }).handle;
 
     session.handle({ type: 'WRITE', requestId: 2, handle, offset: 5, data: stringToBytes('END') });
@@ -148,7 +149,7 @@ describe('SftpWireSession — real OPEN/READ/WRITE/CLOSE handle model', () => {
     const { session } = buildSession();
     const content = 'ABCDEFGHIJ'.repeat(20); // 200 bytes
 
-    const writeOpen = session.handle({ type: 'OPEN', requestId: 1, filename: 'multi.txt', pflags: SSH_FXF_WRITE, attrs: {} });
+    const writeOpen = session.handle({ type: 'OPEN', requestId: 1, filename: 'multi.txt', pflags: SSH_FXF_WRITE | SSH_FXF_CREATE_TRUNCATE, attrs: {} });
     const writeHandle = (writeOpen as { handle: string }).handle;
     const chunkSize = 16;
     for (let offset = 0; offset < content.length; offset += chunkSize) {

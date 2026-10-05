@@ -17,66 +17,43 @@ import {
 import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import { TimerSet } from '@/events/TimerSet';
 import { getDefaultScheduler } from '@/events/Scheduler';
-import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
-import type { EditorSession } from '@/network/devices/linux/editors/EditorView';
-import type { ChannelType } from '../channels/ISshChannel';
 import type { AccountLifecycleVerdict, KeyboardInteractiveChallenge } from '../auth/ISshAuthMethod';
-import {
-  encodeSftpChannelFrame,
-  decodeSftpChannelFrame,
-  isSftpChannelFrame,
-} from '../channels/SftpChannelFraming';
-import { isErr, isOk } from '../Result';
 import { PermissionCheckingFSDecorator } from '../sftp/PermissionCheckingFSDecorator';
-import { SftpCommandDispatcher } from '../sftp/SftpCommandDispatcher';
-import type { SftpRequestPayload } from '../sftp/ISftpCommand';
 import { SftpWireSession } from '../sftp/SftpWireSession';
+import { ScpServerSession, parseScpServerCommand, type ScpServerCommand } from '../scp/ScpServerSession';
 import { encodeSftpWirePacket, decodeSftpWirePacket } from '../sftp/SftpWireCodec';
 import { SshUserContext } from '../SshUserContext';
 import { SSH_SERVER_IDENTIFICATION } from '../serverIdentification';
+import { SshConnection, type ConnectionChannel } from '../connection/SshConnection';
+import { channelAsStream, pipeChannelToStream } from '../connection/ChannelStream';
+import { joinWhenReady } from '../forwardRelay';
+import {
+  decodeDirectTcpip, decodeEnvRequest, decodePtyRequest, decodeStringPayload, decodeTcpipForward, encodeBoundPort,
+  encodeExitStatus, encodeForwardedTcpip, type PtyRequestPayload,
+} from '../connection/ChannelPayloads';
+import { SSH_EXTENDED_DATA_STDERR, SSH_OPEN_ADMINISTRATIVELY_PROHIBITED, SSH_OPEN_CONNECT_FAILED } from '../transport/SshMessageNumbers';
 import { signatureAlgorithmsFor, userauthSignedData, verifyUserauthSignature } from '../auth/UserauthSignature';
 import {
   keygenBlobDigest, keygenKeyFacts, keygenPrivateKey, sshPublicKeyFromBlob,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
 import {
-  SshTransport, legacyFrameStream, type SshServerHostKey, type SshTransportConfig,
+  SshTransport, transportLink, type SshServerHostKey, type SshTransportConfig,
 } from '../transport/SshTransport';
 import type { SshHostKey } from '../SshHostKey';
-import type { ILinuxShell, ISshServerContext, SshTransportPolicy } from './ISshServerContext';
+import type { ISshServerContext, SshTransportPolicy } from './ISshServerContext';
 import type { AuthorizedKeyOptions } from '../SshPureUtils';
-import type { SshInteractiveShell } from './SshInteractiveShell';
+import { SshShellSession } from './SshShellSession';
 import {
   type ISshServerEventBus,
   SshServerEventBus,
 } from './SshServerEvent';
 
-interface OpenChannelInfo {
-  readonly type: ChannelType;
-  readonly userCtx: SshUserContext;
-  cwd: string;
-  readonly openedAt: number;
-  /** Real-time job runtime (streaming ping, Ctrl+C) — shell channels only. */
-  interactiveShell?: SshInteractiveShell | null;
-  /**
-   * Persistent per-channel shell (real per-session identity/cwd — see
-   * LinuxSshServerContext.getShell()), created once at shell_open and
-   * reused for every shell_input line so cwd/su-stack/user genuinely
-   * survive across the channel's lifetime, and disposed when it closes.
-   */
-  shell?: ILinuxShell;
-  /**
-   * Detaches this channel from the shell's unprompted output stream
-   * (`debug`, `terminal monitor`). Set at shell_open for a remote that
-   * publishes one, and called once the channel or the connection goes.
-   */
-  offAsyncOutput?: () => void;
-  /**
-   * The editor currently holding this channel, if any. While it is set
-   * every keystroke goes to the engine instead of the shell
-   * (docs/PRD-SSH-Unification.md §4bis B3).
-   */
-  editor?: EditorSession;
+interface SessionChannelInfo {
+  started: boolean;
+  shellSession: SshShellSession | null;
+  pty: PtyRequestPayload | null;
+  readonly environment: Map<string, string>;
 }
 
 const PREAUTH_COUNT = new WeakMap<object, { value: number }>();
@@ -88,7 +65,6 @@ function preauthSlot(ctx: object): { value: number } {
 }
 
 export class SshServerHandler {
-  private readonly dispatcher = SftpCommandDispatcher.defaults();
 
   private readonly eventBus: ISshServerEventBus;
 
@@ -151,6 +127,52 @@ export class SshServerHandler {
     this.handleConnection(conn, clientIp);
   }
 
+  private serveScp(channel: ConnectionChannel, user: SshUserContext, command: ScpServerCommand): void {
+    const fs = new PermissionCheckingFSDecorator(this.ctx.getFilesystem(user), user);
+    const openedAt = Date.now();
+    this.eventBus.emit({ kind: 'channel_opened', user: user.username, channelType: 'exec' });
+    new ScpServerSession(channel, fs, user.homeDirectory, command, (exitCode) => {
+      void channel.request('exit-status', encodeExitStatus(exitCode));
+      channel.eof();
+      channel.close();
+      this.eventBus.emit({
+        kind: 'channel_closed', user: user.username, channelType: 'exec', durationMs: Date.now() - openedAt,
+      });
+    }).start();
+  }
+
+  private serveSftp(channel: ConnectionChannel, user: SshUserContext): void {
+    const fs = new PermissionCheckingFSDecorator(this.ctx.getFilesystem(user), user);
+    const sftp = new SftpWireSession({
+      vfs: fs, userCtx: user, rootPath: user.homeDirectory, accountNames: this.ctx.accountNames?.(),
+    });
+    const openedAt = Date.now();
+    this.eventBus.emit({ kind: 'channel_opened', user: user.username, channelType: 'sftp' });
+    let pending = new Uint8Array(0);
+    channel.onData((bytes) => {
+      const merged = new Uint8Array(pending.length + bytes.length);
+      merged.set(pending);
+      merged.set(bytes, pending.length);
+      pending = merged;
+      while (pending.length >= 4) {
+        const length = ((pending[0] << 24) | (pending[1] << 16) | (pending[2] << 8) | pending[3]) >>> 0;
+        if (pending.length < 4 + length) return;
+        const packet = decodeSftpWirePacket(pending.subarray(0, 4 + length), sftp.version);
+        pending = pending.slice(4 + length);
+        if (packet !== null) {
+          const reply = sftp.handle(packet);
+          channel.write(encodeSftpWirePacket(reply, sftp.version));
+        }
+      }
+    });
+    channel.onEof(() => { channel.eof(); channel.close(); });
+    channel.onClose(() => {
+      this.eventBus.emit({
+        kind: 'channel_closed', user: user.username, channelType: 'sftp', durationMs: Date.now() - openedAt,
+      });
+    });
+  }
+
   private handleConnection(rawConn: TcpConnection, clientIp: string): void {
     const transport = new SshTransport(rawConn, {
       role: 'server',
@@ -158,12 +180,11 @@ export class SshServerHandler {
       hostKeys: serverHostKeys(this.ctx.hostKey),
       ...transportPolicyConfig(this.ctx.transportPolicy?.()),
     });
-    const conn = legacyFrameStream(transport, rawConn);
-    const channels = new Map<number, OpenChannelInfo>();
-    const sftpWireSessions = new Map<number, SftpWireSession>();
+    const conn = transportLink(transport, rawConn);
+    const sessionChannels = new Map<number, SessionChannelInfo>();
+    const remoteForwards = new Map<string, () => void>();
+    let connection: SshConnection | null = null;
     let userCtx: SshUserContext | null = null;
-    let authenticatedKeyOptions: AuthorizedKeyOptions | null = null;
-    let forwarded: TcpConnection | null = null;
     let logoutRecorded = false;
     const recordLogoutOnce = (user: string): void => {
       if (logoutRecorded) return;
@@ -191,7 +212,6 @@ export class SshServerHandler {
     const decPreauth = () => { if (!preauthDecremented) { preauth.value = Math.max(0, preauth.value - 1); preauthDecremented = true; } };
 
     const timers = new TimerSet(() => getDefaultScheduler());
-    let keepaliveTimer: symbol | null = null;
     let graceTimer: symbol | null = null;
     let missedAcks = 0;
     const intervalSec = this.ctx.config.clientAliveInterval ?? 0;
@@ -211,7 +231,8 @@ export class SshServerHandler {
       }, graceSec * 1000);
     }
     if (intervalSec > 0 && maxMissed > 0) {
-      keepaliveTimer = timers.setInterval(() => {
+      timers.setInterval(() => {
+        if (connection === null) return;
         missedAcks += 1;
         if (missedAcks > maxMissed) {
           this.eventBus.emit({
@@ -224,8 +245,7 @@ export class SshServerHandler {
           conn.close();
           return;
         }
-        try { conn.write(JSON.stringify({ op: 'keepalive', seq: missedAcks })); }
-        catch { /* socket closed mid-tick */ }
+        connection?.sendGlobalRequest('keepalive@openssh.com', undefined, () => { missedAcks = 0; });
       }, intervalSec * 1000);
     }
 
@@ -247,29 +267,20 @@ export class SshServerHandler {
           reason: 'exec_timeout',
           timestamp: Date.now(),
         });
-        try { conn.write(JSON.stringify({ op: 'disconnect', reason: 'exec-timeout' })); }
-        catch { /* socket already gone */ }
         conn.close();
       }, ms);
     };
 
-    conn.onClose?.((reason) => {
+    conn.onClose((reason) => {
       pendingInfoResponse?.(null);
       pendingInfoResponse = null;
-      forwarded?.close();
-      forwarded = null;
       if (userCtx) recordLogoutOnce(userCtx.username);
       timers.clearAll();
       idleTimer = null;
-      keepaliveTimer = null;
       decPreauth();
-      for (const info of channels.values()) {
-        info.offAsyncOutput?.();
-        info.interactiveShell?.dispose();
-        info.shell?.dispose?.();
-      }
-      channels.clear();
-      sftpWireSessions.clear();
+      sessionChannels.clear();
+      for (const stop of remoteForwards.values()) stop();
+      remoteForwards.clear();
       this.eventBus.emit({
         kind: 'client_disconnected',
         user: userCtx?.username ?? '',
@@ -283,32 +294,198 @@ export class SshServerHandler {
       userCtx = null;
     });
 
-    // §2.1.20/P19 — real SSH_FXP_* wire frames arrive as a `\0`-tagged
-    // binary sub-channel message (SftpChannelFraming.ts), which can never
-    // collide with the JSON `{op, ...}` control messages every other case
-    // below still uses (JSON.stringify always starts with `{`). Handled
-    // first, before any JSON.parse is attempted, and short-circuits.
-    const handleSftpWireFrame = (data: string): void => {
-      const { channelId, wireBytes } = decodeSftpChannelFrame(data);
-      const pkt = decodeSftpWirePacket(wireBytes);
-      if (!pkt || !userCtx) return;
-      let session = sftpWireSessions.get(channelId);
-      if (!session) {
-        const fs = new PermissionCheckingFSDecorator(this.ctx.getFilesystem(userCtx), userCtx);
-        session = new SftpWireSession({ vfs: fs, userCtx, rootPath: userCtx.homeDirectory });
-        sftpWireSessions.set(channelId, session);
-        // A real sshd logs the subsystem request as the channel opens.
-        // This session is built on the first frame rather than by an
-        // `open_channel` message, so this is the only place that can say
-        // so — without it the REAL sftp channel was the unlogged one.
-        this.eventBus.emit({
-          kind: 'channel_opened',
-          user: userCtx.username,
-          channelType: 'sftp',
+    const serveConnection = (
+      active: SshConnection, user: SshUserContext, keyOptions: AuthorizedKeyOptions | null,
+    ): void => {
+      active.onChannelOpen('direct-tcpip', (incoming) => {
+        const target = decodeDirectTcpip(incoming.payload);
+        if (target === null || !this.ctx.openDirectTcpip) {
+          incoming.reject(SSH_OPEN_ADMINISTRATIVELY_PROHIBITED, 'open failed');
+          return;
+        }
+        void this.ctx.openDirectTcpip({ user, clientIp, keyOptions, host: target.host, port: target.port })
+          .then((outcome) => {
+            if (outcome.kind === 'prohibited') {
+              incoming.reject(SSH_OPEN_ADMINISTRATIVELY_PROHIBITED, 'open failed');
+              return;
+            }
+            if (outcome.kind !== 'open') {
+              incoming.reject(SSH_OPEN_CONNECT_FAILED, outcome.reason);
+              return;
+            }
+            pipeChannelToStream(incoming.accept(), outcome.stream);
+          });
+      });
+      active.onGlobalRequest((request) => {
+        const forward = decodeTcpipForward(request.payload);
+        if (request.name === 'cancel-tcpip-forward' && forward !== null) {
+          const key = `${forward.address}:${forward.port}`;
+          const stop = remoteForwards.get(key);
+          remoteForwards.delete(key);
+          stop?.();
+          request.reply(stop !== undefined);
+          return;
+        }
+        if (request.name !== 'tcpip-forward' || forward === null || !this.ctx.openRemoteForward) {
+          request.reply(false);
+          return;
+        }
+        if (remoteForwards.has(`${forward.address}:${forward.port}`)) {
+          request.reply(false);
+          return;
+        }
+        const outcome = this.ctx.openRemoteForward({
+          user, clientIp, keyOptions, bindAddress: forward.address, port: forward.port,
+          onConnection: (stream) => {
+            const opened = active.openChannel('forwarded-tcpip', encodeForwardedTcpip({
+              connectedAddress: forward.address, connectedPort: outcome.kind === 'listening' ? outcome.port : forward.port,
+              originatorAddress: stream.remoteIp, originatorPort: stream.remotePort,
+            })).then((channel) => channelAsStream(channel, {
+              localIp: stream.localIp, localPort: stream.localPort, remoteIp: stream.remoteIp, remotePort: stream.remotePort,
+            }), () => null);
+            joinWhenReady(stream, opened);
+          },
         });
-      }
-      const reply = session.handle(pkt);
-      conn.write(encodeSftpChannelFrame(channelId, encodeSftpWirePacket(reply)));
+        if (outcome.kind !== 'listening') {
+          request.reply(false);
+          return;
+        }
+        remoteForwards.set(`${forward.address}:${outcome.port}`, outcome.stop);
+        request.reply(true, forward.port === 0 ? encodeBoundPort(outcome.port) : undefined);
+      });
+      active.onChannelOpen('session', (incoming) => {
+        if (sessionChannels.size >= this.ctx.config.maxSessions) {
+          this.eventBus.emit({
+            kind: 'auth_failure',
+            port: this.ctx.clientPort?.(clientIp),
+            user: user.username,
+            reason: 'max_sessions',
+            ip: clientIp,
+            method: 'open_channel',
+          });
+          incoming.reject(SSH_OPEN_ADMINISTRATIVELY_PROHIBITED, 'open failed');
+          return;
+        }
+        const channel = incoming.accept();
+        const info: SessionChannelInfo = { started: false, shellSession: null, pty: null, environment: new Map() };
+        sessionChannels.set(channel.localId, info);
+        channel.onClose(() => { sessionChannels.delete(channel.localId); });
+        channel.onRequest((request) => {
+          switch (request.name) {
+            case 'env': {
+              const variable = decodeEnvRequest(request.payload);
+              const accepted = variable !== null && /^(LANG|LC_[A-Z_]+)$/.test(variable.name);
+              if (accepted) info.environment.set(variable.name, variable.value);
+              request.reply(accepted);
+              return;
+            }
+            case 'pty-req': {
+              const pty = decodePtyRequest(request.payload);
+              if (pty !== null) info.pty = pty;
+              request.reply(pty !== null);
+              return;
+            }
+            case 'exec': {
+              const asked = decodeStringPayload(request.payload);
+              if (asked === null || info.started) {
+                request.reply(false);
+                return;
+              }
+              info.started = true;
+              request.reply(true);
+              const forced = this.ctx.forcedCommand?.(user, clientIp, keyOptions) ?? null;
+              if (forced === 'internal-sftp') {
+                channel.write('This service allows sftp connections only.\n');
+                void channel.request('exit-status', encodeExitStatus(1));
+                channel.eof();
+                channel.close();
+                return;
+              }
+              const scpCommand = forced === null ? parseScpServerCommand(asked) : null;
+              if (scpCommand !== null) {
+                this.serveScp(channel, user, scpCommand);
+                return;
+              }
+              const command = forced === null ? asked : withOriginalCommand(forced, asked);
+              const shell = this.ctx.getShell(user, user.homeDirectory);
+              const sessionStart = Date.now();
+              this.eventBus.emit({ kind: 'channel_opened', user: user.username, channelType: 'exec' });
+              void shell.execute(command).then((result) => {
+                channel.write(endedLine(result.stdout));
+                channel.writeExtended(SSH_EXTENDED_DATA_STDERR, endedLine(result.stderr));
+                void channel.request('exit-status', encodeExitStatus(result.exitCode));
+                channel.eof();
+                channel.close();
+                shell.dispose?.();
+                this.eventBus.emit({
+                  kind: 'channel_closed',
+                  user: user.username,
+                  channelType: 'exec',
+                  durationMs: Date.now() - sessionStart,
+                });
+              });
+              return;
+            }
+            case 'subsystem': {
+              const subsystem = decodeStringPayload(request.payload);
+              if (info.started || subsystem !== 'sftp') {
+                request.reply(false);
+                return;
+              }
+              info.started = true;
+              request.reply(true);
+              this.serveSftp(channel, user);
+              return;
+            }
+            case 'shell': {
+              if (info.started) {
+                request.reply(false);
+                return;
+              }
+              info.started = true;
+              request.reply(true);
+              const forcedShell = this.ctx.forcedCommand?.(user, clientIp, keyOptions) ?? null;
+              if (forcedShell !== null) {
+                const runner = this.ctx.getShell(user, user.homeDirectory);
+                const forcedLine = forcedShell === 'internal-sftp'
+                  ? 'echo This service allows sftp connections only.' : forcedShell;
+                void runner.execute(forcedLine).then((result) => {
+                  runner.dispose?.();
+                  channel.write(result.stdout);
+                  void channel.request('exit-status', encodeExitStatus(result.exitCode));
+                  channel.eof();
+                  channel.close();
+                });
+                return;
+              }
+              const shell = this.ctx.getShell(user, user.homeDirectory, {
+                interactive: true,
+                clientIp,
+                clientPort: 50_000 + (user.username.length * 7 % 10_000),
+              });
+              info.shellSession = new SshShellSession(channel, info.pty, {
+                shell,
+                interactive: this.ctx.createInteractiveShell?.(user) ?? null,
+                motd: this.ctx.getMotd(),
+                user,
+                rearmIdle: rearmExecIdle,
+                opened: () => this.eventBus.emit({ kind: 'channel_opened', user: user.username, channelType: 'shell' }),
+                closed: (durationMs) => {
+                  this.eventBus.emit({
+                    kind: 'channel_closed', user: user.username, channelType: 'shell', durationMs,
+                  });
+                  recordLogoutOnce(user.username);
+                },
+              });
+              info.shellSession.start();
+              return;
+            }
+            default:
+              if (info.shellSession !== null) info.shellSession.handleRequest(request);
+              else request.reply(false);
+          }
+        });
+      });
     };
 
     let authIdentity: { readonly user: string; readonly service: string } | null = null;
@@ -369,9 +546,10 @@ export class SshServerHandler {
           }
           if (result.ok) {
             userCtx = result.userCtx;
-            authenticatedKeyOptions = result.keyOptions;
             transport.send(USERAUTH_SUCCESS);
             transport.markAuthenticated();
+            connection = new SshConnection(transport);
+            serveConnection(connection, result.userCtx, result.keyOptions);
             this.ctx.recordLogin(result.userCtx.username, clientIp);
             timers.clear(graceTimer);
             graceTimer = null;
@@ -388,448 +566,6 @@ export class SshServerHandler {
         });
     });
 
-    conn.onData((data) => {
-      if (isSftpChannelFrame(data)) {
-        handleSftpWireFrame(data);
-        return;
-      }
-      let parsed: Record<string, unknown>;
-      try {
-        parsed = JSON.parse(data) as Record<string, unknown>;
-      } catch {
-        return;
-      }
-      const op = parsed.op as string | undefined;
-      if (!op) return;
-      if (op === 'keepalive_ack') { missedAcks = 0; return; }
-
-      switch (op) {
-        case 'open_channel': {
-          if (!userCtx) {
-            conn.write(JSON.stringify({ ok: false, error: 'not authenticated' }));
-            return;
-          }
-          if (channels.size >= this.ctx.config.maxSessions) {
-            conn.write(JSON.stringify({ ok: false, error: 'open failed: administratively prohibited: too many open sessions' }));
-            this.eventBus.emit({
-              kind: 'auth_failure',
-              port: this.ctx.clientPort?.(clientIp),
-              user: userCtx.username,
-              reason: 'max_sessions',
-              ip: clientIp,
-              method: 'open_channel',
-            });
-            return;
-          }
-          const channelType = parsed.channelType as ChannelType;
-          const channelId = parsed.channelId as number;
-          channels.set(channelId, {
-            type: channelType,
-            userCtx,
-            cwd: userCtx.homeDirectory,
-            openedAt: Date.now(),
-          });
-          this.eventBus.emit({
-            kind: 'channel_opened',
-            user: userCtx.username,
-            channelType,
-          });
-          conn.write(JSON.stringify({ ok: true, channelId }));
-          break;
-        }
-
-        case 'close_channel': {
-          const channelId = parsed.channelId as number;
-          const info = channels.get(channelId);
-          if (info && userCtx) {
-            this.eventBus.emit({
-              kind: 'channel_closed',
-              user: userCtx.username,
-              channelType: info.type,
-              durationMs: Date.now() - info.openedAt,
-            });
-          }
-          info?.offAsyncOutput?.();
-          info?.interactiveShell?.dispose();
-          info?.shell?.dispose?.();
-          channels.delete(channelId);
-          sftpWireSessions.delete(channelId);
-          break;
-        }
-
-        case 'direct_tcpip': {
-          const host = String(parsed.host ?? '');
-          const port = Number(parsed.port);
-          if (!userCtx || forwarded !== null || !this.ctx.openDirectTcpip) {
-            conn.write(JSON.stringify({ op: 'direct_tcpip_reply', ok: false, reason: 'administratively prohibited: open failed' }));
-            return;
-          }
-          void this.ctx.openDirectTcpip({ user: userCtx, clientIp, keyOptions: authenticatedKeyOptions, host, port })
-            .then((outcome) => {
-              if (outcome.kind !== 'open') {
-                const reason = outcome.kind === 'prohibited'
-                  ? 'administratively prohibited: open failed'
-                  : `connect failed: ${outcome.reason}`;
-                conn.write(JSON.stringify({ op: 'direct_tcpip_reply', ok: false, reason }));
-                return;
-              }
-              forwarded = outcome.stream;
-              outcome.stream.onData((data) => conn.write(JSON.stringify({ op: 'tcpip_data', data })));
-              outcome.stream.onClose?.(() => {
-                forwarded = null;
-                conn.write(JSON.stringify({ op: 'tcpip_eof' }));
-              });
-              conn.write(JSON.stringify({ op: 'direct_tcpip_reply', ok: true }));
-            });
-          break;
-        }
-
-        case 'tcpip_data': {
-          forwarded?.write(String(parsed.data ?? ''));
-          break;
-        }
-
-        case 'tcpip_eof': {
-          forwarded?.close();
-          forwarded = null;
-          break;
-        }
-
-        case 'exec': {
-          // BRD SSH-05: non-interactive command execution. Also used by the
-          // interactive shell sub-shell, which routes one exec per line.
-          if (!userCtx) {
-            conn.write(
-              JSON.stringify({
-                stdout: '',
-                stderr: 'not authenticated',
-                exitCode: 255,
-              }),
-            );
-            return;
-          }
-          const asked = (parsed.command as string | undefined) ?? '';
-          const forced = this.ctx.forcedCommand?.(userCtx, clientIp, authenticatedKeyOptions) ?? null;
-          if (forced === 'internal-sftp') {
-            conn.write(JSON.stringify({
-              stdout: 'This service allows sftp connections only.\n', stderr: '', exitCode: 1,
-            }));
-            return;
-          }
-          const command = forced === null ? asked : withOriginalCommand(forced, asked);
-          const channelId = parsed.channelId as number | undefined;
-          const cwd =
-            (channelId !== undefined && channels.get(channelId)?.cwd) ||
-            userCtx.homeDirectory;
-          // A fresh, self-contained session per exec call (real ssh
-          // exec-mode is its own one-shot session too) — disposed right
-          // after so it doesn't leak a phantom `-bash` process-table entry.
-          const shell = this.ctx.getShell(userCtx, cwd);
-          // Real sshd treats every exec as a session: emit open/close so the
-          // syslogger produces `session opened`/`session closed` lines.
-          const sessionStart = Date.now();
-          this.eventBus.emit({
-            kind: 'channel_opened',
-            user: userCtx.username,
-            channelType: 'exec',
-          });
-          const userForClose = userCtx;
-          void shell.execute(command).then((result) => {
-            conn.write(JSON.stringify(result));
-            shell.dispose?.();
-            this.eventBus.emit({
-              kind: 'channel_closed',
-              user: userForClose.username,
-              channelType: 'exec',
-              durationMs: Date.now() - sessionStart,
-            });
-          });
-          break;
-        }
-
-        case 'shell_open': {
-          // Analysis doc §5 P4 — allocate a persistent shell session.
-          if (!userCtx) {
-            conn.write(JSON.stringify({ ok: false, error: 'not authenticated' }));
-            return;
-          }
-          const channelId = parsed.channelId as number;
-          const cwd =
-            channels.get(channelId)?.cwd ?? userCtx.homeDirectory;
-          const forcedShell = this.ctx.forcedCommand?.(userCtx, clientIp, authenticatedKeyOptions) ?? null;
-          if (forcedShell !== null) {
-            conn.write(JSON.stringify({ ok: true, channelId, posixShell: true, motd: this.ctx.getMotd() }));
-            const runner = this.ctx.getShell(userCtx, cwd);
-            void runner.execute(forcedShell === 'internal-sftp' ? 'echo This service allows sftp connections only.' : forcedShell)
-              .then((result) => {
-                runner.dispose?.();
-                conn.write(JSON.stringify({ op: 'shell_output', channelId, chunk: result.stdout }));
-                conn.close();
-              });
-            return;
-          }
-          channels.set(channelId, {
-            type: 'shell',
-            userCtx,
-            cwd,
-            openedAt: Date.now(),
-            interactiveShell: this.ctx.createInteractiveShell?.(userCtx) ?? null,
-            // One real per-channel shell (session-isolated identity/cwd),
-            // created once here and reused for every shell_input line —
-            // see LinuxSshServerContext.getShell(). `interactive: true`
-            // since this is a real pty-like session (colorized output,
-            // hung up on close), unlike a one-shot `exec`.
-            shell: this.ctx.getShell(userCtx, cwd, {
-              interactive: true,
-              clientIp,
-              clientPort: 50_000 + (userCtx.username.length * 7 % 10_000),
-            }),
-          });
-          // A router talks back without being asked: `debug` traces and,
-          // under `terminal monitor`, syslog. Pushing them as they happen
-          // is the whole point — buffering them until the next keypress
-          // is what made a `debug` over SSH look like it did nothing.
-          const opened = channels.get(channelId);
-          opened!.offAsyncOutput = opened?.shell?.subscribeAsyncOutput?.((text) => {
-            try {
-              conn.write(JSON.stringify({
-                op: 'shell_output',
-                channelId,
-                chunk: text.endsWith('\n') ? text : `${text}\n`,
-              }));
-            } catch { /* socket closed under the subscription */ }
-          });
-          this.eventBus.emit({
-            kind: 'channel_opened',
-            user: userCtx.username,
-            channelType: 'shell',
-          });
-          rearmExecIdle();
-          conn.write(JSON.stringify({
-            ok: true,
-            channelId,
-            // Capability advertised at open time: `?` is a help key on a
-            // network CLI, an ordinary glob character on a POSIX shell.
-            inlineHelp: channels.get(channelId)?.shell?.supportsInlineHelp === true,
-            // The remote's prompt before a single line has run, so a
-            // client shows `R1>` or `C:\Users\User>` from the moment it
-            // lands rather than guessing a bash shape
-            // (docs/PRD-SSH-Unification.md §4bis B4).
-            prompt: channels.get(channelId)?.shell?.getPrompt?.(),
-            posixShell: channels.get(channelId)?.shell?.posixShell !== false,
-            motd: this.ctx.getMotd(),
-          }));
-          break;
-        }
-
-        case 'shell_input': {
-          if (!userCtx) {
-            conn.write(
-              JSON.stringify({
-                stdout: '',
-                stderr: 'not authenticated',
-                exitCode: 255,
-                channelId: parsed.channelId,
-              }),
-            );
-            return;
-          }
-          const channelId = parsed.channelId as number;
-          const info = channels.get(channelId);
-          const line = (parsed.data as string | undefined) ?? '';
-          rearmExecIdle();
-
-          // Try the real-time job runtime first (e.g. `ping`): output
-          // streams over the wire as `shell_output` pushes while the job
-          // runs, and the final `shell_input` reply (empty stdout/stderr)
-          // is sent only once the job completes or is Ctrl+C-interrupted.
-          const started = info?.interactiveShell?.tryStartStreaming(line, {
-            onChunk: (text) => {
-              try {
-                conn.write(JSON.stringify({ op: 'shell_output', channelId, chunk: text }));
-              } catch { /* socket closed mid-job */ }
-            },
-            onDone: () => {
-              try {
-                conn.write(JSON.stringify({ stdout: '', stderr: '', exitCode: 0, channelId }));
-              } catch { /* socket closed mid-job */ }
-            },
-          }) ?? false;
-          if (started) break;
-
-          // Reuse the channel's own persistent shell (real per-session
-          // identity/cwd) rather than calling getShell() fresh — a fresh
-          // call would allocate a brand-new session every line, losing
-          // cwd/su-stack continuity. Falls back to a fresh one-shot shell
-          // only if shell_input somehow arrives without a prior shell_open.
-          const shell = info?.shell ?? this.ctx.getShell(userCtx, info?.cwd ?? userCtx.homeDirectory);
-          void shell.execute(line).then((result) => {
-            // Read the prompt AFTER the line ran: `cd`, `enable` and
-            // `configure terminal` all change it.
-            const prompt = shell.getPrompt?.();
-            const nested = shell.isNested?.() ?? false;
-            conn.write(JSON.stringify({ ...result, prompt, nested, channelId }));
-          });
-          break;
-        }
-
-        case 'shell_input_value': {
-          const channelId = parsed.channelId as number;
-          const info = channels.get(channelId);
-          const shell = info?.shell;
-          if (!userCtx || !shell?.provideInput) {
-            conn.write(JSON.stringify({ stdout: '', stderr: '', exitCode: 0, channelId }));
-            break;
-          }
-          void shell.provideInput(typeof parsed.data === 'string' ? parsed.data : '')
-            .then((result) => {
-              conn.write(JSON.stringify({
-                ...result,
-                prompt: shell.getPrompt?.(),
-                nested: shell.isNested?.() ?? false,
-                channelId,
-              }));
-            });
-          break;
-        }
-
-        case 'shell_complete': {
-          const channelId = parsed.channelId as number;
-          const info = channels.get(channelId);
-          if (!userCtx) {
-            conn.write(JSON.stringify({ op: 'shell_complete_result', channelId, candidates: [] }));
-            break;
-          }
-          // Answered by the channel's own shell so candidates carry its
-          // cwd / CLI mode; a channel without one simply offers nothing.
-          const line = typeof parsed.data === 'string' ? parsed.data : '';
-          const candidates = info?.shell?.getCompletions?.(line) ?? [];
-          conn.write(JSON.stringify({ op: 'shell_complete_result', channelId, candidates }));
-          break;
-        }
-
-        case 'editor_open': {
-          const channelId = parsed.channelId as number;
-          const info = channels.get(channelId);
-          const commandLine = typeof parsed.data === 'string' ? parsed.data : '';
-          const session = userCtx ? info?.shell?.openEditor?.(commandLine) ?? null : null;
-          if (info) info.editor = session ?? undefined;
-          conn.write(JSON.stringify({
-            op: 'editor_view', channelId, view: session ? session.view : null,
-          }));
-          break;
-        }
-
-        case 'editor_key': {
-          const channelId = parsed.channelId as number;
-          const info = channels.get(channelId);
-          const editor = info?.editor;
-          if (!editor) {
-            conn.write(JSON.stringify({ op: 'editor_view', channelId, view: null }));
-            break;
-          }
-          const view = editor.applyKey(parsed.key as EditorKeyInput);
-          // The buffer is gone once the engine exits: drop the session so
-          // the next line goes back to the shell.
-          if (view.exited) info.editor = undefined;
-          conn.write(JSON.stringify({ op: 'editor_view', channelId, view }));
-          break;
-        }
-
-        case 'editor_paste':
-        case 'editor_cursor': {
-          const channelId = parsed.channelId as number;
-          const editor = channels.get(channelId)?.editor;
-          const view = parsed.op === 'editor_paste'
-            ? editor?.applyPaste?.(typeof parsed.data === 'string' ? parsed.data : '')
-            : editor?.moveCursorToDisplayOffset?.(
-                typeof parsed.offset === 'number' ? parsed.offset : 0,
-              );
-          conn.write(JSON.stringify({ op: 'editor_view', channelId, view: view ?? null }));
-          break;
-        }
-
-        case 'editor_close': {
-          const channelId = parsed.channelId as number;
-          const info = channels.get(channelId);
-          info?.editor?.close();
-          if (info) info.editor = undefined;
-          break;
-        }
-
-        case 'shell_close': {
-          const channelId = parsed.channelId as number;
-          const info = channels.get(channelId);
-          if (info && userCtx) {
-            this.eventBus.emit({
-              kind: 'channel_closed',
-              user: userCtx.username,
-              channelType: info.type,
-              durationMs: Date.now() - info.openedAt,
-            });
-            // Pair with the recordLogin fired in `auth` — once the last
-            // channel closes the session is over from the user's point
-            // of view, so record the logout. Linux uses this to append
-            // wtmp; Windows turns it into a 4634 (Logoff) Security event.
-            recordLogoutOnce(userCtx.username);
-          }
-          info?.offAsyncOutput?.();
-          info?.interactiveShell?.dispose();
-          info?.shell?.dispose?.();
-          channels.delete(channelId);
-          conn.write(JSON.stringify({ ok: true, channelId }));
-          break;
-        }
-
-        case 'shell_signal': {
-          // Ctrl+C over the wire: interrupt the channel's running
-          // foreground job, if any (no-op otherwise).
-          const channelId = parsed.channelId as number;
-          channels.get(channelId)?.interactiveShell?.interruptForeground();
-          break;
-        }
-
-        case 'shell_resize': {
-          // Cosmetic — we don't model a real PTY but emit a hook event
-          // so subscribers (syslogger, tests) can see resize traffic.
-          break;
-        }
-
-        default: {
-          // Treat as SFTP command if user is authenticated.
-          if (!userCtx) {
-            conn.write(JSON.stringify({ ok: false, error: 'not authenticated' }));
-            return;
-          }
-          const channelId = (parsed.channelId as number | undefined) ?? -1;
-          let info = channels.get(channelId);
-          if (!info && channelId >= 0) {
-            info = { type: 'sftp', userCtx, cwd: userCtx.homeDirectory, openedAt: Date.now() };
-            channels.set(channelId, info);
-          }
-          const cwd = info?.cwd ?? userCtx.homeDirectory;
-          const fs = new PermissionCheckingFSDecorator(
-            this.ctx.getFilesystem(userCtx),
-            userCtx,
-          );
-          const result = this.dispatcher.dispatch(
-            op,
-            parsed as unknown as SftpRequestPayload,
-            { vfs: fs, userCtx, cwd },
-          );
-          if (isOk(result)) {
-            const payload = (result.value as object) ?? {};
-            const newCwd = (payload as { cwd?: unknown }).cwd;
-            if (info && typeof newCwd === 'string') info.cwd = newCwd;
-            conn.write(JSON.stringify({ ok: true, ...payload }));
-          } else if (isErr(result)) {
-            conn.write(
-              JSON.stringify({ ok: false, error: errorToMessage(result.error) }),
-            );
-          }
-        }
-      }
-    });
   }
 
   private async handleAuth(
@@ -1015,47 +751,6 @@ export class SshServerHandler {
   }
 }
 
-/**
- * BRD SFTP-07: normalise underlying errors into OpenSSH-style short
- * messages. The client (`SftpSession`) wraps those into the full
- * "Couldn't … : <msg>" / "remote open(\"<path>\"): <msg>" sentences.
- */
-function errorToMessage(error: unknown): string {
-  if (typeof error !== 'object' || error === null) return String(error);
-  const e = error as { kind?: string; message?: string; path?: string };
-
-  if (e.kind === 'PERMISSION_DENIED') return 'Permission denied';
-  if (e.kind === 'NOT_AUTHENTICATED') return 'not authenticated';
-  if (e.kind === 'INVALID_ARGUMENT') return e.message ?? 'invalid argument';
-  if (e.kind === 'UNKNOWN_OP') return 'Unknown SFTP op';
-
-  if (e.kind === 'IO_ERROR') {
-    const msg = (e.message ?? '').toLowerCase();
-    if (msg.includes('no such') || msg.includes('not found') || msg.includes('cannot read')) {
-      return 'No such file or directory';
-    }
-    if (msg.includes('parent') && msg.includes('does not exist')) {
-      return 'No such file or directory';
-    }
-    if (msg.includes('is a directory') || msg.includes('not a directory')) {
-      return 'Failure';
-    }
-    if (msg.includes('already exists') || msg.includes('file exists')) {
-      return 'File exists';
-    }
-    if (msg.includes('write failed') || msg.includes('permission')) {
-      return 'Permission denied';
-    }
-    if (msg.includes('rmdir failed') || msg.includes('rm failed')) {
-      return 'Failure';
-    }
-    if (msg.includes('rename')) return 'Failure';
-    return e.message ?? 'Failure';
-  }
-
-  return e.message ?? e.kind ?? 'error';
-}
-
 function signatureProvesKey(
   sessionId: Uint8Array | null, user: string, algorithm: string, publicKey: string, signature: string,
 ): boolean {
@@ -1102,6 +797,10 @@ function transportPolicyConfig(policy: SshTransportPolicy | undefined): Partial<
     ...(policy?.groupExchangeMinBits === undefined ? {} : { groupExchangeMinBits: policy.groupExchangeMinBits }),
     ...(policy?.extInfo === undefined ? {} : { extInfo: policy.extInfo }),
   };
+}
+
+function endedLine(text: string): string {
+  return text === '' || text.endsWith('\n') ? text : `${text}\n`;
 }
 
 function serverHostKeys(hostKey: SshHostKey): SshServerHostKey[] {

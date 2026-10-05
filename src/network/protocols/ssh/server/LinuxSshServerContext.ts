@@ -17,6 +17,7 @@ import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { AuthMethodType, ISshAuthContext } from '../auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import { LinuxSftpFSAdapter } from '../sftp/LinuxSftpFSAdapter';
+import type { SftpAccountNames } from '../sftp/SftpWireSession';
 import { ChrootedSftpFileSystem } from '../sftp/ChrootedSftpFileSystem';
 import { SshHostKey } from '../SshHostKey';
 import { SshUserContext } from '../SshUserContext';
@@ -39,7 +40,10 @@ import {
 } from './SshServerEvent';
 import { SshSyslogger } from '../logging/SshSyslogger';
 import { SshdServerConfig } from './SshdServerConfig';
-import type { DirectTcpipOutcome, DirectTcpipRequest } from './ISshServerContext';
+import type {
+  DirectTcpipOutcome, DirectTcpipRequest, RemoteForwardOutcome, RemoteForwardRequest, SshTransportPolicy,
+} from './ISshServerContext';
+import { parseRekeyLimit } from '../transport/RekeyLimit';
 import {
   findAdmittedKey, permitOpenAllows,
   type AuthorizedKey, type AuthorizedKeyOptions, type KeySource,
@@ -369,6 +373,42 @@ export class LinuxSshServerContext implements ISshServerContext {
     if (!isDialFailure(dialed)) return { kind: 'open', stream: socketStream(dialed) };
     const reasons = { refused: 'Connection refused', timeout: 'Connection timed out', unreachable: 'No route to host' };
     return { kind: 'connect-failed', reason: reasons[dialed.dialFailed] };
+  }
+
+  transportPolicy(): SshTransportPolicy {
+    const rekeyLimit = parseRekeyLimit(this.sshdConfig.rekeyLimit);
+    return rekeyLimit === null ? {} : { algorithms: { rekeyLimit } };
+  }
+
+  accountNames(): SftpAccountNames {
+    return {
+      user: (uid) => this.userManager.uidToName(uid),
+      group: (gid) => this.userManager.gidToName(gid),
+    };
+  }
+
+  openRemoteForward(request: RemoteForwardRequest): RemoteForwardOutcome {
+    const groups = this.userManager.getUserGroups(request.user.username).map((g) => g.name);
+    const subject = { user: request.user.username, groups, address: request.clientIp };
+    const policy = this.effectiveSshdServerConfig();
+    if (!policy.permitsRemoteForward(subject) || request.keyOptions?.noPortForwarding === true) {
+      return { kind: 'prohibited' };
+    }
+    if (!(this.device instanceof LinuxMachine)) return { kind: 'prohibited' };
+    const stack = this.device.getTcpStack();
+    try {
+      const listener = stack.listen(request.port, {
+        onAccept: (socket) => request.onConnection(socketStream(socket)),
+        ownerUid: request.user.uid,
+        identity: { pid: this.device.sshdPid(), processName: 'sshd' },
+      }, policy.remoteForwardBindAddress(subject, request.bindAddress));
+      return {
+        kind: 'listening', port: listener.localPort,
+        stop: () => stack.closeListener(listener.localPort, listener.localIp),
+      };
+    } catch {
+      return { kind: 'bind-failed' };
+    }
   }
 
   admittedKey(user: string, publicKey: string, source: KeySource): AuthorizedKey | null {
