@@ -32,6 +32,7 @@
  */
 
 import { allowLegacyIosSsh } from '@/__tests__/unit/network-v2/iosLegacySsh';
+import { enableFaillock } from '@/__tests__/unit/network-v2/faillockLab';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -73,6 +74,7 @@ describe('§1 — Linux faillock lockout is coherent across ssh/scp/sftp', () =>
     } } }).executor.userMgr;
     um.useradd('alice', { m: true, s: '/bin/bash' });
     um.setPassword('alice', 'correct-horse-battery-staple');
+    enableFaillock(srv);
     return { client, srv };
   }
 
@@ -92,8 +94,8 @@ describe('§1 — Linux faillock lockout is coherent across ssh/scp/sftp', () =>
   it('three wrong sshpass attempts trip the lockout', async () => {
     const { client, srv } = await buildPair();
     await tripLockout(client);
-    const um = (srv as unknown as { executor: { userMgr: { isAccountLockedOut(u: string): boolean } } }).executor.userMgr;
-    expect(um.isAccountLockedOut('alice')).toBe(true);
+    const report = await srv.executeCommand('faillock --user alice');
+    expect(report.split('\n').filter((line) => / V$/.test(line))).toHaveLength(3);
   });
 
   it('ssh with the CORRECT password is rejected once locked out', async () => {

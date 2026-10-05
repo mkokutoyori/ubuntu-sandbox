@@ -96,10 +96,6 @@ export class LinuxUserAccount implements UserEntry {
   readonly createdAt: number;
   /** Login accounting — mirrors `/var/log/lastlog`. Null until first login. */
   lastLoginAt: number | null = null;
-  /** Consecutive failed authentications — mirrors `pam_faillock` tally. */
-  failedLoginCount = 0;
-  /** When the tally was last incremented (ms epoch) — drives `unlock_time` auto-expiry. */
-  lastFailedLoginAt: number | null = null;
 
   constructor(init: LinuxUserAccountInit) {
     this.username = init.username;
@@ -197,17 +193,8 @@ export class LinuxUserAccount implements UserEntry {
     return today >= this.expireDate;
   }
 
-  /** Record a successful login (updates the lastlog timestamp, clears tally). */
   recordLogin(at: number = Date.now()): void {
     this.lastLoginAt = at;
-    this.failedLoginCount = 0;
-    this.lastFailedLoginAt = null;
-  }
-
-  /** Record a failed authentication attempt (faillock tally). */
-  recordFailedLogin(at: number = Date.now()): void {
-    this.failedLoginCount += 1;
-    this.lastFailedLoginAt = at;
   }
 
   // ─── Serialisation ───────────────────────────────────────────────────

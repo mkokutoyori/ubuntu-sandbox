@@ -20,7 +20,6 @@ import type {
   UserPasswordChangedPayload,
   UserLockStateChangedPayload,
   UserAgingChangedPayload,
-  UserLockedOutPayload,
   GroupCreatedPayload,
   GroupDeletedPayload,
   GroupMembershipChangedPayload,
@@ -40,7 +39,6 @@ export class IamAuthLogProjection {
       bus.subscribe('linux.iam.user.password-changed', (e) => this.onPasswordChanged(e.payload)),
       bus.subscribe('linux.iam.user.lock-state-changed', (e) => this.onLockStateChanged(e.payload)),
       bus.subscribe('linux.iam.user.aging-changed', (e) => this.onAgingChanged(e.payload)),
-      bus.subscribe('linux.iam.user.locked-out', (e) => this.onLockedOut(e.payload)),
       bus.subscribe('linux.iam.group.created', (e) => this.onGroupCreated(e.payload)),
       bus.subscribe('linux.iam.group.deleted', (e) => this.onGroupDeleted(e.payload)),
       bus.subscribe('linux.iam.group.membership-changed', (e) => this.onMembershipChanged(e.payload)),
@@ -105,15 +103,6 @@ export class IamAuthLogProjection {
     this.logManager.logAuth(
       'chage',
       `changed password aging for '${p.username}' (${p.changedFields.join(', ')})`,
-    );
-  }
-
-  private onLockedOut(p: UserLockedOutPayload): void {
-    if (p.deviceId !== this.deviceId) return;
-    this.logManager.logAuth(
-      'pam_faillock',
-      `Consecutive login failures for user ${p.username} account temporarily locked ` +
-        `(${p.failedAttempts} failures, deny=${p.deny})`,
     );
   }
 

@@ -41,6 +41,7 @@ import { LinuxLogManager, fmtSyslogTimestamp } from './LinuxLogManager';
 import { LinuxPam } from './pam/LinuxPam';
 import { PamServiceSession } from './pam/PamServiceSession';
 import type { PamDialogue } from './pam/PamDialogue';
+import { runFaillock } from './pam/FaillockTool';
 import { SudoPamSessions } from './pam/SudoPamSessions';
 import type { SuFrame } from '@/shell/ShellContext';
 import { PamReturn, pamStrError } from './pam/PamReturnCode';
@@ -63,7 +64,7 @@ import {
 } from './coreutils';
 import { cmdDiff } from './coreutils/DiffCommand';
 import { runXargs } from './coreutils/Xargs';
-import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
+import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 import {
   CommandPrivilegePolicy,
@@ -5030,7 +5031,7 @@ export class LinuxCommandExecutor {
       case 'deluser': return this.handleDeluser(args);
       case 'passwd': return this.handlePasswd(args, stdin);
       case 'chpasswd': return this.runChpasswd(stdin ?? '');
-      case 'faillock': return { output: cmdFaillock(c, args), exitCode: 0 };
+      case 'faillock': return this.runFaillock(args);
       // `batch` est le même binaire qu'`at` — seule la file change (`b`),
       // et l'heure n'est pas demandée. Les deux partagent donc le cas.
       case 'at':
@@ -6759,6 +6760,10 @@ export class LinuxCommandExecutor {
     }
     if (dialogue.code === PamReturn.SUCCESS) return { output: `${output}passwd: password updated successfully`, exitCode: 0 };
     return { output: `${output}passwd: ${pamStrError(dialogue.code)}\npasswd: password unchanged`, exitCode: 10 };
+  }
+
+  runFaillock(args: readonly string[]): { output: string; exitCode: number } {
+    return runFaillock(args, this.pam.faillockToolHost());
   }
 
   runChpasswd(input: string): { output: string; exitCode: number } {

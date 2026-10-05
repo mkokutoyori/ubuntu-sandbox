@@ -25,7 +25,7 @@ import { PamReturn } from '@/network/devices/linux/pam/PamReturnCode';
 import { recording, runPamSync } from './pamLab';
 
 interface Machine {
-  executor: { userMgr: { checkPassword(u: string, p: string): boolean; getAccount(u: string): { expireDate: number; lastChange: number } | undefined }; vfs: { readFile(p: string): string | null; writeFile(p: string, c: string, u: number, g: number, m: number): boolean } };
+  executor: { userMgr: { passwordMatches(u: string, p: string): boolean; getAccount(u: string): { expireDate: number; lastChange: number } | undefined }; vfs: { readFile(p: string): string | null; writeFile(p: string, c: string, u: number, g: number, m: number): boolean } };
 }
 
 function lab() {
@@ -41,7 +41,7 @@ describe('PAM on the Linux machine', () => {
   beforeEach(() => { machine = lab(); });
 
   it('WITNESS -- the ordinary account exists and its password checks out through the legacy path', () => {
-    expect(machine.userMgr.checkPassword('user', 'admin')).toBe(true);
+    expect(machine.userMgr.passwordMatches('user', 'admin')).toBe(true);
   });
 
   it('the Ubuntu 22.04 stacks are in /etc/pam.d', () => {
@@ -91,8 +91,8 @@ describe('PAM on the Linux machine', () => {
     const transaction = machine.pc.getPam().begin('changer', { caller: root });
     transaction.handle.user = 'user';
     expect(runPamSync(transaction.chauthtok(), recording(['fresh-secret', 'fresh-secret']).converse)).toBe(PamReturn.SUCCESS);
-    expect(machine.userMgr.checkPassword('user', 'fresh-secret')).toBe(true);
-    expect(machine.userMgr.checkPassword('user', 'admin')).toBe(false);
+    expect(machine.userMgr.passwordMatches('user', 'fresh-secret')).toBe(true);
+    expect(machine.userMgr.passwordMatches('user', 'admin')).toBe(false);
     expect(machine.vfs.readFile('/etc/shadow')).toMatch(/^user:\$6\$simulated\$fresh-secret:/m);
   });
 
@@ -108,7 +108,7 @@ describe('PAM on the Linux machine', () => {
     const conversation = recording(['second-pw', 'admin', 'admin']);
     expect(runPamSync(again.chauthtok(), conversation.converse)).toBe(PamReturn.AUTHTOK_ERR);
     expect(conversation.shown.some((entry) => entry.text === 'Password has been already used. Choose another.')).toBe(true);
-    expect(machine.userMgr.checkPassword('user', 'second-pw')).toBe(true);
+    expect(machine.userMgr.passwordMatches('user', 'second-pw')).toBe(true);
   });
 
   it('pam_faillock keeps its tally as a file in the machine\'s /var/run/faillock and locks after three failures', () => {

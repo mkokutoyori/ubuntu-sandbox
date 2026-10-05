@@ -260,14 +260,10 @@ describe('LinuxUserAccount', () => {
     expect(stale.isPasswordExpired(today)).toBe(true);
   });
 
-  it('records logins and failed attempts', () => {
+  it('records the time of a login', () => {
     const acc = new LinuxUserAccount({ ...baseInit });
-    acc.recordFailedLogin();
-    acc.recordFailedLogin();
-    expect(acc.failedLoginCount).toBe(2);
     acc.recordLogin(123);
     expect(acc.lastLoginAt).toBe(123);
-    expect(acc.failedLoginCount).toBe(0);
   });
 });
 

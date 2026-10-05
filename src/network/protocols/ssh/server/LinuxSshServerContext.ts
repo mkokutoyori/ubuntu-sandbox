@@ -876,7 +876,7 @@ export class LinuxSshServerContext implements ISshServerContext {
       if (!this.userAllowed(user, 'password')) return false;
       if (!this.config.passwordAuthentication) return false;
       const pam = this.sshdPam();
-      if (pam === null) return this.userManager.checkPassword(user, password);
+      if (pam === null) return this.userManager.passwordMatches(user, password);
       if (!pam.isPasswordAuthenticationOpen(peer)) return false;
       return pam.authenticatePassword(user, password, peer);
     };
@@ -909,7 +909,7 @@ export class LinuxSshServerContext implements ISshServerContext {
           instruction: '',
           prompts: [{ prompt: 'Password: ', echo: false }],
           verify: (user, responses) => this.userAllowed(user, 'password')
-            && this.userManager.checkPassword(user, responses[0] ?? ''),
+            && this.userManager.passwordMatches(user, responses[0] ?? ''),
         };
       },
       checkAccountLifecycle: (user, peer) => this.sshdPam()?.account(user, peer) ?? this.userManager.accountLifecycleGate(user),

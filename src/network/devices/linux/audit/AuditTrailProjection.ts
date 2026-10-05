@@ -25,7 +25,6 @@ import type {
   UserDeletedPayload,
   UserPasswordChangedPayload,
   UserLockStateChangedPayload,
-  UserLockedOutPayload,
   GroupCreatedPayload,
 } from '../iam/events';
 import type { ServiceLifecyclePayload } from '../events';
@@ -43,7 +42,6 @@ export class AuditTrailProjection {
       bus.subscribe('linux.iam.user.deleted', (e) => this.onUserDeleted(e.payload)),
       bus.subscribe('linux.iam.user.password-changed', (e) => this.onPasswordChanged(e.payload)),
       bus.subscribe('linux.iam.user.lock-state-changed', (e) => this.onLockStateChanged(e.payload)),
-      bus.subscribe('linux.iam.user.locked-out', (e) => this.onLockedOut(e.payload)),
       bus.subscribe('linux.iam.group.created', (e) => this.onGroupCreated(e.payload)),
       bus.subscribe('linux.service.started', (e) => this.onService(e.payload, 'SERVICE_START')),
       bus.subscribe('linux.service.stopped', (e) => this.onService(e.payload, 'SERVICE_STOP')),
@@ -91,15 +89,6 @@ export class AuditTrailProjection {
       pid: 0, uid: 0, auid: 0, ses: 1,
       msg: `op=${p.locked ? 'lock-account' : 'unlock-account'} id=${p.uid} exe="/usr/sbin/usermod"`,
       acct: p.username, res: 'success',
-    });
-  }
-
-  private onLockedOut(p: UserLockedOutPayload): void {
-    if (p.deviceId !== this.deviceId) return;
-    this.auditLog.record('ANOM_LOGIN_FAILURES', {
-      pid: 0, uid: p.uid, auid: p.uid,
-      msg: `op=pam_faillock acct=${p.username} failures=${p.failedAttempts}`,
-      acct: p.username, res: 'failed',
     });
   }
 

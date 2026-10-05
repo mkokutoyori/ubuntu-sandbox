@@ -10,6 +10,7 @@ import { localTimeIn } from './PamLocalTime';
 import { defaultCapabilities, defaultRlimits } from './PamRlimitDefaults';
 import type { LinuxPamHost, PamCaller, PamLoginEntry, PamRlimit, PamRlimitResource } from './PamLinuxHost';
 import { PamTransaction } from './PamTransaction';
+import type { FaillockToolHost } from './FaillockTool';
 
 export interface LinuxPamDeps {
   readonly vfs: VirtualFileSystem;
@@ -49,6 +50,14 @@ export class LinuxPam {
   private supplementaryGroupsOf(uid: number): number[] {
     const entry = this.deps.users.getUserByUid(uid);
     return entry === undefined ? [] : this.deps.users.getUserGroups(entry.username).map((group) => group.gid);
+  }
+
+  faillockToolHost(): FaillockToolHost {
+    return {
+      readFile: (path) => this.deps.vfs.readFile(path),
+      files: this.files,
+      localTime: (epochMs) => localTimeIn(this.deps.timezone(), epochMs),
+    };
   }
 
   begin(service: string, options: PamTransactionOptions): PamTransaction<LinuxPamHost> {

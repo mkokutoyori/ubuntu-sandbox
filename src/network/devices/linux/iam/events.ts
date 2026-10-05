@@ -86,18 +86,10 @@ export interface UserAgingChangedPayload extends UserRef {
   expireDate: number;
 }
 
-/** An account tripped the faillock lockout threshold. */
-export interface UserLockedOutPayload extends UserRef {
-  /** Consecutive failed authentications recorded. */
-  failedAttempts: number;
-  /** The `deny` threshold from the lockout policy. */
-  deny: number;
-}
-
 // ─── Password policy ────────────────────────────────────────────────────
 
 /** Which section of the host password policy a change touched. */
-export type PasswordPolicySectionTopic = 'quality' | 'aging' | 'lockout';
+export type PasswordPolicySectionTopic = 'quality' | 'aging';
 
 /** The host-wide password policy was reconfigured. */
 export interface PasswordPolicyChangedPayload extends LinuxIamDeviceRef {
@@ -134,7 +126,6 @@ export type LinuxIamDomainEvent =
   | { topic: 'linux.iam.user.lock-state-changed'; payload: UserLockStateChangedPayload }
   | { topic: 'linux.iam.user.gecos-changed'; payload: UserGecosChangedPayload }
   | { topic: 'linux.iam.user.aging-changed'; payload: UserAgingChangedPayload }
-  | { topic: 'linux.iam.user.locked-out'; payload: UserLockedOutPayload }
   | { topic: 'linux.iam.password-policy.changed'; payload: PasswordPolicyChangedPayload }
   | { topic: 'linux.iam.group.created'; payload: GroupCreatedPayload }
   | { topic: 'linux.iam.group.deleted'; payload: GroupDeletedPayload }
