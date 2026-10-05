@@ -4,7 +4,7 @@ import { TimerSet } from '@/events/TimerSet';
 import {
   type TcpSegment, type TcpFlags, type TcpState, type TcpCloseReason,
   type UnackedSegment, type TcpOption, type TcpWireOutcome,
-  noFlags, flagsString, nextIsn, makeSocketKey, makeListenerKey,
+  noFlags, flagsString, randomSequenceNumber, makeSocketKey, makeListenerKey,
   computeTcpChecksum, verifyTcpChecksum, seqLt,
   TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS, TCP_MIN_MSS, TCP_BASE_HEADER_BYTES,
 } from './types';
@@ -141,6 +141,7 @@ import { encodeOptions, decodeOptions, optionsDataOffset, type TcpOptionsSet } f
 import { ReassemblyQueue } from './ReassemblyQueue';
 import type { TcpDropReason } from './events';
 import { AckThrottle } from './AckThrottle';
+import { IsnGenerator } from './IsnGenerator';
 import type { ListenerIdentity, ListenerSocketSink } from './ListenerSocketSink';
 
 /** RFC 7323 §2.2 — our own advertised window-scale shift (always offered on SYN). */
@@ -547,6 +548,7 @@ export class TcpStack {
   }
 
   private readonly challengeAcks = new AckThrottle();
+  private readonly isn = new IsnGenerator();
   private readonly timers = new TimerSet(() => this.getScheduler());
 
   constructor(
@@ -721,7 +723,7 @@ export class TcpStack {
     if (opts.onData) socket.onData(opts.onData);
     if (opts.onClose) socket.onClose(opts.onClose);
     socket.passive = false;
-    socket.sendNext = nextIsn();
+    socket.sendNext = this.initialSequence(socket);
     socket.sendUnacked = socket.sendNext;
     this.sockets.set(socket.key(), socket);
     this._transition(socket, 'syn-sent');
@@ -843,7 +845,7 @@ export class TcpStack {
     const seg: TcpSegment = {
       type: 'tcp',
       sourcePort: localPort, destinationPort: remotePort,
-      sequence: shape.sequence ?? nextIsn(),
+      sequence: shape.sequence ?? randomSequenceNumber(),
       acknowledgement: shape.acknowledgement ?? 0,
       dataOffset: 5, flags, window: shape.window ?? TCP_DEFAULT_WINDOW,
       checksum: 0, urgentPointer: 0, options: [], payload: shape.payload,
@@ -1094,7 +1096,7 @@ export class TcpStack {
       socket.mss = Math.min(socket.mss, listener.maxSegmentSize);
       socket.recvNext = (seg.sequence + 1) >>> 0;
       socket.lastAckSent = socket.recvNext;
-      socket.sendNext = nextIsn();
+      socket.sendNext = this.initialSequence(socket);
       socket.sendUnacked = socket.sendNext;
       // PRD-TCP.md P6 — negotiate against whatever the peer's SYN offered.
       const peerOpts = decodeOptions(seg.options);
@@ -1470,6 +1472,11 @@ export class TcpStack {
       socket.keepAliveProbesSent = 0;
       this.rearmKeepAliveTimer(socket);
     }
+  }
+
+  private initialSequence(socket: TcpSocket): number {
+    return this.isn.next(
+      this.getScheduler().now(), socket.localIp, socket.localPort, socket.remoteIp, socket.remotePort);
   }
 
   private acknowledgesOurSyn(socket: TcpSocket, ack: number): boolean {

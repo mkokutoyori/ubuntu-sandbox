@@ -189,8 +189,8 @@ export function flagsString(f: TcpFlags): string {
   return parts.join('|') || '(none)';
 }
 
-export function nextIsn(): number {
-  return ((Date.now() & 0xffffffff) ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
+export function randomSequenceNumber(): number {
+  return Math.floor(Math.random() * 0x100000000) >>> 0;
 }
 
 export function makeSocketKey(localIp: string, localPort: number, remoteIp: string, remotePort: number): string {
