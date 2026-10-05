@@ -258,7 +258,8 @@ describe('pam_limits', () => {
     const lab = limits('bob -\n* - nofile 100\n');
     expect(open(lab, 'pam_limits.so', 'bob').code).toBe(PamReturn.SUCCESS);
     expect(lab.process.limits.get('nofile')).toEqual({ soft: 1024, hard: 1_048_576 });
-    expect(open(lab, 'pam_limits.so').transaction.host.process.limits.get('nofile')?.soft).toBe(100);
+    expect(open(lab, 'pam_limits.so').code).toBe(PamReturn.SUCCESS);
+    expect(lab.process.limits.get('nofile')?.soft).toBe(100);
   });
 
   it('uid ranges: :max, min:, min:max and a malformed range is skipped with a warning', () => {
