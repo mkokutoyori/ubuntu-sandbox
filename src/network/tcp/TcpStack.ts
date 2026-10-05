@@ -145,6 +145,7 @@ import {
   encodeOptions, decodeOptions, interpretOptions, optionsDataOffset, TCP_MAX_WINDOW_SCALE, type TcpOptionsSet,
 } from './TcpOptionsCodec';
 import { ReassemblyQueue } from './ReassemblyQueue';
+import { SackReporter, SACK_MAX_BLOCKS, SACK_MAX_BLOCKS_WITH_TIMESTAMPS } from './SackReporter';
 import { SackScoreboard } from './SackScoreboard';
 import type { TcpDropReason } from './events';
 import { AckThrottle } from './AckThrottle';
@@ -364,6 +365,8 @@ export class TcpSocket {
   /** Highest timestamp value seen from the peer — echoed back, and used for PAWS (RFC 7323 §5). */
   peerLastTsVal: number | null = null;
   readonly reassemblyBuffer = new ReassemblyQueue();
+  readonly sackReporter = new SackReporter();
+  sackTrigger: number | null = null;
   pendingListener: TcpListener | null = null;
   sendWl1 = 0;
   sendWl2 = 0;
@@ -1562,6 +1565,7 @@ export class TcpStack {
       return;
     }
     if (socket.persistTimer) return;
+    if (socket.peerWindow === 0 && socket.unackedQueue.length > 0) return;
     if (socket.peerWindow > 0) {
       socket.persistTimer = this.timers.setTimeout(() => this.onPersistFired(socket), TCP_SWS_OVERRIDE_MS);
       return;
@@ -1602,7 +1606,7 @@ export class TcpStack {
     if (next.psh && remainder.length === 0) flags.psh = true;
     const seq = socket.sendNext;
     socket.sendNext = (seq + probe.length) >>> 0;
-    this.transmitTracked(socket, flags, seq, socket.recvNext, probe, probe.length);
+    this.transmitTracked(socket, flags, seq, socket.recvNext, probe, probe.length, [], true);
     this.maybeArmPersistTimer(socket);
   }
 
@@ -1999,6 +2003,7 @@ export class TcpStack {
     } else if (dataLength > 0) {
       if (data !== undefined) {
         socket.reassemblyBuffer.insert(textStart, data, seg.flags.psh, TCP_REASSEMBLY_MAX_BYTES);
+        socket.sackTrigger = textStart;
       }
       this.sendAckNow(socket);
       answered = true;
@@ -2333,7 +2338,10 @@ export class TcpStack {
       if (manualTs) sentTsVal = manualTs.tsVal;
     }
     if (socket.sackEnabled && flags.ack && socket.reassemblyBuffer.length > 0) {
-      options.push({ kind: 'sack', blocks: socket.reassemblyBuffer.blocks() });
+      const capacity = socket.timestampsEnabled ? SACK_MAX_BLOCKS_WITH_TIMESTAMPS : SACK_MAX_BLOCKS;
+      const blocks = socket.sackReporter.report(socket.reassemblyBuffer.blocks(), socket.sackTrigger, capacity);
+      socket.sackTrigger = null;
+      if (blocks.length > 0) options.push({ kind: 'sack', blocks });
     }
     const stillUrgent = socket.sndUp !== null && seqLt(sequence, socket.sndUp);
     const urgent = stillUrgent ? (socket.sndUp! - sequence) >>> 0 : 0;
@@ -2409,7 +2417,7 @@ export class TcpStack {
    */
   private transmitTracked(
     socket: TcpSocket, flags: TcpFlags, sequence: number, ackNum: number, payload: unknown, length: number,
-    extraOptions: TcpOption[] = [],
+    extraOptions: TcpOption[] = [], windowProbe = false,
   ): void {
     // Queue BEFORE transmitting: Cable delivery is synchronous, so the
     // peer's ACK can re-enter this stack and prune the queue before
@@ -2425,6 +2433,7 @@ export class TcpStack {
       sequence, length, flags, payload, extraOptions,
       firstSentAtMs: now,
       retransmitCount: 0,
+      ...(windowProbe ? { windowProbe } : {}),
     };
     socket.unackedQueue.push(entry);
     const sentTsVal = this.transmit(socket, flags, sequence, ackNum, payload, extraOptions);
@@ -2559,9 +2568,11 @@ export class TcpStack {
     head.retransmitCount++;
     this.reportRetransmissionTrouble(socket, head);
     // RFC 5681 §3.1 — a real timeout means slow start starts over.
-    socket.cc.onRtoTimeout((socket.sendNext - socket.sendUnacked) >>> 0);
-    socket.sackScoreboard.clear();
-    socket.limitedTransmitBytes = 0;
+    if (!head.windowProbe) {
+      socket.cc.onRtoTimeout((socket.sendNext - socket.sendUnacked) >>> 0);
+      socket.sackScoreboard.clear();
+      socket.limitedTransmitBytes = 0;
+    }
     const rtoMs = socket.rtt.backoff();
     this.getBus().publish({
       topic: 'tcp.retransmit',
