@@ -578,6 +578,10 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       availableWhen: isDhcpClient,
     },
     {
+      ...enable('dns-server-override', 'Enable/disable use DNS acquired by DHCP or PPPoE.', true),
+      availableWhen: isDhcpClient,
+    },
+    {
       ...count('distance',
         'Distance for routes learned through PPPoE or DHCP, lower distance indicates preferred route.',
         1, 255, 5),
@@ -662,9 +666,10 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     context.device.applyInterface(object.key, {
       vdom: object.effective('vdom')[0],
       addressingMode: (mode ?? 'static') as 'static' | 'dhcp' | 'pppoe',
-      dhcpRoute: mode === 'dhcp' ? {
+      leasePolicy: mode === 'dhcp' ? {
         gateway: object.effective('defaultgw')[0] !== 'disable',
         distance: Number.parseInt(object.effective('distance')[0] ?? '', 10) || 5,
+        dnsServerOverride: object.effective('dns-server-override')[0] !== 'disable',
       } : undefined,
       dhcpClient: mode === 'dhcp' ? {
         identifier: object.effective('dhcp-client-identifier')[0] ?? '',

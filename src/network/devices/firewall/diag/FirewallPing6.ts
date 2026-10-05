@@ -1,7 +1,8 @@
 import { IPv6Address } from '../../../core/types';
 import type { IPv6DataPlane } from '../../router/IPv6DataPlane';
 import { ECHO_DATA_BYTES } from '../../../icmp/IcmpEcho';
-import { PING_NO_ROUTE, type PingRun } from './FirewallPing';
+import { isValidIPv6 } from '../../../core/ip';
+import { PING_NO_ROUTE, isPingRefusal, type PingRefusal, type PingRun } from './FirewallPing';
 import type { PingOptions } from './PingOptions';
 
 export interface Ipv6EchoReply {
@@ -14,12 +15,19 @@ export interface Ipv6EchoReply {
 
 interface Awaited6 { answered: boolean; hopLimit: number }
 
+export type Ipv6NameResolver = (name: string) => string | null;
+
+export function hostAddress6Of(target: string, resolveName: Ipv6NameResolver): string | null {
+  return isValidIPv6(target) ? target : resolveName(target);
+}
+
 export class FirewallPing6 {
   private readonly pending = new Map<string, Awaited6>();
   private nextIdentifier = 1;
 
   constructor(
     private readonly engine: () => IPv6DataPlane,
+    private readonly resolveName: Ipv6NameResolver,
     private readonly options?: () => PingOptions,
   ) {}
 
@@ -38,22 +46,19 @@ export class FirewallPing6 {
     waiting.hopLimit = reply.hopLimit;
   }
 
-  begin(target: string): PingRun | null {
-    let destination: IPv6Address;
-    try {
-      destination = new IPv6Address(target);
-    } catch {
-      return null;
-    }
+  begin(target: string): PingRun | PingRefusal {
+    const address = hostAddress6Of(target, this.resolveName);
+    if (address === null) return { refusal: `ping6: cannot resolve ${target}: Unknown host` };
+    const destination = new IPv6Address(address);
     const egress = this.engine().resolveEgress(destination);
-    if (!egress) return null;
+    if (!egress) return { refusal: PING_NO_ROUTE };
 
     const identifier = this.nextIdentifier++;
     const answered: Awaited6[] = [];
     const { dataSize } = this.settings();
 
     return {
-      header: `PING ${target} (${target}): ${dataSize} data bytes`,
+      header: `PING ${target} (${address}): ${dataSize} data bytes`,
       step: (sequence: number) => {
         const waiting: Awaited6 = { answered: false, hopLimit: 0 };
         answered.push(waiting);
@@ -63,7 +68,7 @@ export class FirewallPing6 {
           egress, destination, identifier, sequence, dataSize);
         this.pending.delete(key);
         if (!waiting.answered) return null;
-        return `${dataSize + 8} bytes from ${target}: `
+        return `${dataSize + 8} bytes from ${address}: `
           + `icmp_seq=${sequence} ttl=${waiting.hopLimit} time=0.0 ms`;
       },
       statistics: (sent: number) => {
@@ -82,7 +87,7 @@ export class FirewallPing6 {
 
   run(target: string, count = this.settings().repeatCount): string {
     const session = this.begin(target);
-    if (!session) return PING_NO_ROUTE;
+    if (isPingRefusal(session)) return session.refusal;
 
     const lines = [session.header];
     for (let sequence = 0; sequence < count; sequence++) {

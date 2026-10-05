@@ -4,6 +4,7 @@ import { ECHO_DATA_BYTES } from '../../../icmp/IcmpEcho';
 import {
   TRACEROUTE_MAX_HOPS, TRACEROUTE_PROBES, tracerouteHeader, tracerouteHopLine,
 } from './FirewallTraceroute';
+import { hostAddress6Of, type Ipv6NameResolver } from './FirewallPing6';
 
 export const TRACEROUTE6_NO_ROUTE = 'tracert6: unknown host';
 
@@ -13,7 +14,10 @@ export class FirewallTraceroute6 {
   private awaited: Hop6 | null = null;
   private identifier = 0xfe00;
 
-  constructor(private readonly engine: () => IPv6DataPlane) {}
+  constructor(
+    private readonly engine: () => IPv6DataPlane,
+    private readonly resolveName: Ipv6NameResolver,
+  ) {}
 
   observeReply(from: string): void {
     if (!this.awaited) return;
@@ -27,16 +31,13 @@ export class FirewallTraceroute6 {
   }
 
   run(target: string, maxHops = TRACEROUTE_MAX_HOPS): string {
-    let destination: IPv6Address;
-    try {
-      destination = new IPv6Address(target);
-    } catch {
-      return TRACEROUTE6_NO_ROUTE;
-    }
+    const address = hostAddress6Of(target, this.resolveName);
+    if (address === null) return TRACEROUTE6_NO_ROUTE;
+    const destination = new IPv6Address(address);
     const egress = this.engine().resolveEgress(destination);
     if (!egress) return TRACEROUTE6_NO_ROUTE;
 
-    const lines = [tracerouteHeader(target, maxHops, 80)];
+    const lines = [tracerouteHeader(target, maxHops, 80, address)];
     for (let limit = 1; limit <= maxHops; limit++) {
       const hop: Hop6 = { arrived: false };
       this.awaited = hop;

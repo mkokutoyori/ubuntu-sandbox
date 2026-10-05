@@ -76,12 +76,13 @@ export interface FirewallDhcpDeps {
   readonly addressInUse?: (iface: string, address: string) => boolean;
 }
 
-export interface DhcpClientRoute {
+export interface DhcpClientSettings {
   readonly gateway: boolean;
   readonly distance: number;
+  readonly dnsServerOverride: boolean;
 }
 
-const DEFAULT_CLIENT_ROUTE: DhcpClientRoute = { gateway: true, distance: 5 };
+const DEFAULT_CLIENT_SETTINGS: DhcpClientSettings = { gateway: true, distance: 5, dnsServerOverride: true };
 const POOL_USAGE_TRAP_PERCENT = 90;
 const UNLIMITED_LEASE = 0;
 const NTP_SERVERS_OPTION = 42;
@@ -201,7 +202,7 @@ export class FirewallDhcp {
     }
   }
 
-  private readonly clientInterfaces = new Map<string, DhcpClientRoute>();
+  private readonly clientInterfaces = new Map<string, DhcpClientSettings>();
 
   acquireLease(iface: string): string {
     if (this.client.getState(iface).lease === null) return this.client.requestLease(iface, {});
@@ -213,13 +214,13 @@ export class FirewallDhcp {
     if (this.client.getState(iface).lease === null) this.client.requestLease(iface, {});
   }
 
-  setClientMode(iface: string, route: DhcpClientRoute | null): void {
-    if (route === null) {
+  setClientMode(iface: string, settings: DhcpClientSettings | null): void {
+    if (settings === null) {
       if (!this.clientInterfaces.delete(iface)) return;
       this.client.abandonLease(iface);
       return;
     }
-    this.clientInterfaces.set(iface, route);
+    this.clientInterfaces.set(iface, settings);
     const lease = this.client.getState(iface).lease;
     if (lease !== null) this.installGateway(iface, lease.defaultGateway);
   }
@@ -235,8 +236,14 @@ export class FirewallDhcp {
   }
 
   private installGateway(iface: string, gateway: string | null): void {
-    const route = this.clientInterfaces.get(iface) ?? DEFAULT_CLIENT_ROUTE;
+    const route = this.clientInterfaces.get(iface) ?? DEFAULT_CLIENT_SETTINGS;
     this.deps.installLeaseRoute(iface, route.gateway ? gateway : null, route.distance);
+  }
+
+  learnedDnsServers(): string[] {
+    return [...this.clientInterfaces]
+      .filter(([, settings]) => settings.dnsServerOverride)
+      .flatMap(([iface]) => this.client.getState(iface).lease?.dnsServers ?? []);
   }
 
   isClientInterface(iface: string): boolean {
