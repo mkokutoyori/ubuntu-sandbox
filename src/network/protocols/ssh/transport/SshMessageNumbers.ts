@@ -9,6 +9,13 @@ export const SSH_MSG_KEXINIT = 20;
 export const SSH_MSG_NEWKEYS = 21;
 export const SSH_MSG_KEXDH_INIT = 30;
 export const SSH_MSG_KEXDH_REPLY = 31;
+export const SSH_MSG_USERAUTH_REQUEST = 50;
+export const SSH_MSG_USERAUTH_FAILURE = 51;
+export const SSH_MSG_USERAUTH_SUCCESS = 52;
+export const SSH_MSG_USERAUTH_BANNER = 53;
+export const SSH_MSG_USERAUTH_PK_OK = 60;
+export const SSH_MSG_USERAUTH_INFO_REQUEST = 60;
+export const SSH_MSG_USERAUTH_INFO_RESPONSE = 61;
 export const SSH_MSG_LOCAL_LEGACY_FRAME = 192;
 
 export const SSH_DISCONNECT_PROTOCOL_ERROR = 2;
@@ -20,3 +27,4 @@ export const SSH_DISCONNECT_BY_APPLICATION = 11;
 export const SSH_DISCONNECT_TOO_MANY_CONNECTIONS = 12;
 
 export const SSH_USERAUTH_SERVICE = 'ssh-userauth';
+export const SSH_CONNECTION_SERVICE = 'ssh-connection';

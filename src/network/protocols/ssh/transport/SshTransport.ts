@@ -26,7 +26,7 @@ import {
 import {
   SSH_DISCONNECT_BY_APPLICATION, SSH_DISCONNECT_HOST_KEY_NOT_VERIFIABLE, SSH_DISCONNECT_KEY_EXCHANGE_FAILED,
   SSH_DISCONNECT_PROTOCOL_ERROR, SSH_DISCONNECT_PROTOCOL_VERSION_NOT_SUPPORTED,
-  SSH_DISCONNECT_SERVICE_NOT_AVAILABLE, SSH_MSG_DEBUG, SSH_MSG_DISCONNECT, SSH_MSG_EXT_INFO, SSH_MSG_IGNORE,
+  SSH_MSG_DEBUG, SSH_MSG_DISCONNECT, SSH_MSG_EXT_INFO, SSH_MSG_IGNORE,
   SSH_MSG_KEXDH_INIT, SSH_MSG_KEXDH_REPLY, SSH_MSG_KEXINIT, SSH_MSG_LOCAL_LEGACY_FRAME,
   SSH_MSG_NEWKEYS, SSH_MSG_SERVICE_ACCEPT, SSH_MSG_SERVICE_REQUEST, SSH_MSG_UNIMPLEMENTED,
   SSH_USERAUTH_SERVICE,
@@ -117,6 +117,8 @@ export class SshTransport {
   private processing = true;
   private peerClosed: string | null = null;
   private closeNotified = false;
+  private userAuthenticated = false;
+  private receivedDisconnect: { readonly reason: number; readonly description: string } | null = null;
   private readonly handlers = new Set<(payload: Uint8Array) => void>();
   private readonly undelivered: Uint8Array[] = [];
   private readonly closeHandlers = new Set<(reason: string) => void>();
@@ -143,6 +145,10 @@ export class SshTransport {
     return this.peer;
   }
 
+  get peerDisconnect(): { readonly reason: number; readonly description: string } | null {
+    return this.receivedDisconnect;
+  }
+
   get isOpen(): boolean {
     return this.phase === 'open';
   }
@@ -161,6 +167,15 @@ export class SshTransport {
   onClose(handler: (reason: string) => void): () => void {
     this.closeHandlers.add(handler);
     return () => { this.closeHandlers.delete(handler); };
+  }
+
+  markAuthenticated(): void {
+    this.userAuthenticated = true;
+  }
+
+  close(): void {
+    if (this.phase === 'closed') return;
+    this.shutDown('closed');
   }
 
   disconnect(reason: number, description: string): void {
@@ -273,7 +288,7 @@ export class SshTransport {
       case SSH_MSG_NEWKEYS: return this.receiveNewKeys();
       case SSH_MSG_EXT_INFO: return this.receiveExtInfo(payload);
       case SSH_MSG_SERVICE_REQUEST: return this.receiveServiceRequest(payload);
-      case SSH_MSG_SERVICE_ACCEPT: return this.receiveServiceAccept();
+      case SSH_MSG_SERVICE_ACCEPT: return this.receiveServiceAccept(payload);
       default:
         if (this.phase !== 'open') {
           this.abort(SSH_DISCONNECT_PROTOCOL_ERROR, `protocol error: rcvd type ${type}`, 'protocol');
@@ -295,6 +310,7 @@ export class SshTransport {
     } catch {
       description = '';
     }
+    this.receivedDisconnect = { reason, description };
     this.conclude({
       ok: false, kind: 'disconnect', message: description, disconnect: { reason, description },
     });
@@ -526,20 +542,29 @@ export class SshTransport {
     } catch {
       service = '';
     }
-    if (this.config.role !== 'server' || this.phase !== 'service' || service !== SSH_USERAUTH_SERVICE) {
-      this.abort(SSH_DISCONNECT_SERVICE_NOT_AVAILABLE, `service ${service} not available`, 'protocol');
+    if (this.config.role !== 'server' || (this.phase !== 'service' && this.phase !== 'open')) {
+      this.abort(SSH_DISCONNECT_PROTOCOL_ERROR, 'protocol error: unexpected SERVICE_REQUEST', 'protocol');
+      return;
+    }
+    if (service !== SSH_USERAUTH_SERVICE || this.userAuthenticated) {
+      this.abort(SSH_DISCONNECT_PROTOCOL_ERROR, `bad service request ${service}`, 'protocol');
       return;
     }
     this.sendPacket(new SshWriter().writeByte(SSH_MSG_SERVICE_ACCEPT).writeString(service).toBytes());
-    this.open();
+    if (this.phase === 'service') this.open();
   }
 
-  private receiveServiceAccept(): void {
-    if (this.config.role !== 'client' || this.phase !== 'service') {
+  private receiveServiceAccept(payload: Uint8Array): void {
+    if (this.config.role !== 'client' || (this.phase !== 'service' && this.phase !== 'open')) {
       this.abort(SSH_DISCONNECT_PROTOCOL_ERROR, 'protocol error: unexpected SERVICE_ACCEPT', 'protocol');
       return;
     }
-    this.open();
+    if (this.phase === 'service') {
+      this.open();
+      return;
+    }
+    if (this.handlers.size === 0) this.undelivered.push(payload);
+    for (const handler of [...this.handlers]) handler(payload);
   }
 
   private open(): void {

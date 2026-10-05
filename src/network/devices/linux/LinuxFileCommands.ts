@@ -723,7 +723,7 @@ export function cmdTee(ctx: ShellContext, args: string[], stdin: string): string
 
   for (const f of files) {
     const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
-    ctx.vfs.writeFile(absPath, stdin + '\n', ctx.uid, ctx.gid, ctx.umask, append);
+    ctx.vfs.writeFile(absPath, stdin, ctx.uid, ctx.gid, ctx.umask, append);
   }
 
   return stdin;

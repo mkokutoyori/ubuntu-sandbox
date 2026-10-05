@@ -45,7 +45,7 @@
  *    peut s'authentifier » passent donc a vide avant ; ils gardent
  *    l'uniformite une fois la borne par connexion en place.
  */
-import { upperLayerOverTransport } from './sshUpperLayerOverTransport';
+import { userauthOverTransport, type UserauthReplyKind } from './sshUserauthOverTransport';
 import type { TcpStream } from '@/network/tcp/types';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -115,9 +115,9 @@ const sshOpens = async ({ host, ip }: Lab): Promise<boolean> =>
     `ssh admin@${ip} "show version"`, `${SECRET}\n`));
 
 interface RawConnection {
-  replies: Array<Record<string, unknown>>;
+  replies: readonly UserauthReplyKind[];
   closed: () => boolean;
-  send: (message: Record<string, unknown>) => Promise<void>;
+  send: (attempt: { user: string; password: string }) => Promise<void>;
 }
 
 async function rawConnection({ host, ip }: Lab): Promise<RawConnection> {
@@ -129,23 +129,19 @@ async function rawConnection({ host, ip }: Lab): Promise<RawConnection> {
     } | null>;
   }).tcpConnect(ip, 22);
   expect(socket).toBeTruthy();
-  const replies: Array<Record<string, unknown>> = [];
   let closed = false;
   socket!.onClose?.(() => { closed = true; });
-  const upper = await upperLayerOverTransport(socket as unknown as TcpStream);
-  expect(upper).toBeTruthy();
-  upper!.onClose?.(() => { closed = true; });
-  upper!.onData((d) => { if (d.startsWith('{')) replies.push(JSON.parse(d) as Record<string, unknown>); });
-  const send = async (message: Record<string, unknown>): Promise<void> => {
-    upper!.write(JSON.stringify(message));
+  const userauth = await userauthOverTransport(socket as unknown as TcpStream);
+  expect(userauth).toBeTruthy();
+  const send = async (attempt: { user: string; password: string }): Promise<void> => {
+    userauth!.password(attempt.user, attempt.password);
     await settle();
   };
-  await send({ op: 'hello' });
-  return { replies, closed: () => closed, send };
+  return { replies: userauth!.replies, closed: () => closed || userauth!.closed(), send };
 }
 
-const wrongPassword = { op: 'auth', method: 'password', user: 'admin', password: 'nope' };
-const rightPassword = { op: 'auth', method: 'password', user: 'admin', password: SECRET };
+const wrongPassword = { user: 'admin', password: 'nope' };
+const rightPassword = { user: 'admin', password: SECRET };
 
 async function afterIdle(target: Lab, seconds: number): Promise<RawConnection> {
   const scheduler = new VirtualTimeScheduler();
@@ -190,7 +186,7 @@ for (const kind of ['routeur', 'commutateur'] as const) {
       await connection.send(wrongPassword);
       await connection.send(wrongPassword);
 
-      expect(connection.replies.at(-1)).toMatchObject({ ok: false, ended: true });
+      expect(connection.replies.at(-1)).toBe('ended');
       expect(connection.closed()).toBe(true);
     }, 30000);
 
@@ -201,7 +197,7 @@ for (const kind of ['routeur', 'commutateur'] as const) {
       await connection.send(wrongPassword);
       await connection.send(wrongPassword);
 
-      expect(connection.replies.at(-1)).toMatchObject({ ok: false, ended: true });
+      expect(connection.replies.at(-1)).toBe('ended');
     }, 30000);
 
     it('une NOUVELLE connexion, juste apres, peut s\'authentifier', async () => {
@@ -213,7 +209,7 @@ for (const kind of ['routeur', 'commutateur'] as const) {
       const second = await rawConnection(target);
       await second.send(rightPassword);
 
-      expect(second.replies.at(-1)).toMatchObject({ ok: true });
+      expect(second.replies.at(-1)).toBe('success');
     }, 30000);
 
     it('`no ip ssh authentication-retries` ne bloque pas davantage la source', async () => {
@@ -226,7 +222,7 @@ for (const kind of ['routeur', 'commutateur'] as const) {
       const second = await rawConnection(target);
       await second.send(rightPassword);
 
-      expect(second.replies.at(-1)).toMatchObject({ ok: true });
+      expect(second.replies.at(-1)).toBe('success');
     }, 30000);
   });
 }

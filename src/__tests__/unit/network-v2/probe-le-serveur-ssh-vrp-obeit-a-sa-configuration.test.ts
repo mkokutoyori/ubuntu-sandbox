@@ -61,7 +61,7 @@
  *    cotes : avant a vide, la vue etant une constante et rien n'etant
  *    rendu ; son voisin « la vue lit ce qui est ecrit » separe les etats.
  */
-import { upperLayerOverTransport } from './sshUpperLayerOverTransport';
+import { userauthOverTransport, type UserauthReplyKind } from './sshUserauthOverTransport';
 import type { TcpStream } from '@/network/tcp/types';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
@@ -147,9 +147,9 @@ function field(view: string, label: string): string | undefined {
 }
 
 interface RawConnection {
-  replies: Array<Record<string, unknown>>;
+  replies: readonly UserauthReplyKind[];
   closed: () => boolean;
-  send: (message: Record<string, unknown>) => Promise<void>;
+  send: (attempt: { user: string; password: string }) => Promise<void>;
 }
 
 async function rawConnection({ host, ip }: Lab): Promise<RawConnection> {
@@ -161,23 +161,19 @@ async function rawConnection({ host, ip }: Lab): Promise<RawConnection> {
     } | null>;
   }).tcpConnect(ip, 22);
   expect(socket).toBeTruthy();
-  const replies: Array<Record<string, unknown>> = [];
   let closed = false;
   socket!.onClose?.(() => { closed = true; });
-  const upper = await upperLayerOverTransport(socket as unknown as TcpStream);
-  expect(upper).toBeTruthy();
-  upper!.onClose?.(() => { closed = true; });
-  upper!.onData((d) => { if (d.startsWith('{')) replies.push(JSON.parse(d) as Record<string, unknown>); });
-  const send = async (message: Record<string, unknown>): Promise<void> => {
-    upper!.write(JSON.stringify(message));
+  const userauth = await userauthOverTransport(socket as unknown as TcpStream);
+  expect(userauth).toBeTruthy();
+  const send = async (attempt: { user: string; password: string }): Promise<void> => {
+    userauth!.password(attempt.user, attempt.password);
     await settle();
   };
-  await send({ op: 'hello' });
-  return { replies, closed: () => closed, send };
+  return { replies: userauth!.replies, closed: () => closed || userauth!.closed(), send };
 }
 
-const wrongPassword = { op: 'auth', method: 'password', user: 'admin', password: 'nope' };
-const rightPassword = { op: 'auth', method: 'password', user: 'admin', password: SECRET };
+const wrongPassword = { user: 'admin', password: 'nope' };
+const rightPassword = { user: 'admin', password: SECRET };
 
 describe('le serveur STelnet est hors service tant qu\'on ne l\'active pas', () => {
   it('routeur neuf : la session est refusee', async () => {
@@ -325,7 +321,7 @@ describe('`ssh server authentication-retries` borne les essais d\'UNE connexion'
     await connection.send(wrongPassword);
     await connection.send(wrongPassword);
 
-    expect(connection.replies.at(-1)).toMatchObject({ ok: false, ended: true });
+    expect(connection.replies.at(-1)).toBe('ended');
     expect(connection.closed()).toBe(true);
   }, 30000);
 
@@ -336,7 +332,7 @@ describe('`ssh server authentication-retries` borne les essais d\'UNE connexion'
     await connection.send(wrongPassword);
     await connection.send(wrongPassword);
 
-    expect(connection.replies.at(-1)).toMatchObject({ ok: false, ended: true });
+    expect(connection.replies.at(-1)).toBe('ended');
   }, 30000);
 
   it('routeur : une NOUVELLE connexion, juste apres, peut s\'authentifier', async () => {
@@ -348,7 +344,7 @@ describe('`ssh server authentication-retries` borne les essais d\'UNE connexion'
     const second = await rawConnection(lab);
     await second.send(rightPassword);
 
-    expect(second.replies.at(-1)).toMatchObject({ ok: true });
+    expect(second.replies.at(-1)).toBe('success');
   }, 30000);
 
   it('commutateur : le deuxieme echec d\'une limite a 2 ferme la connexion', async () => {
@@ -358,6 +354,6 @@ describe('`ssh server authentication-retries` borne les essais d\'UNE connexion'
     await connection.send(wrongPassword);
     await connection.send(wrongPassword);
 
-    expect(connection.replies.at(-1)).toMatchObject({ ok: false, ended: true });
+    expect(connection.replies.at(-1)).toBe('ended');
   }, 30000);
 });

@@ -7,9 +7,7 @@ import {
   type SshPublicKey,
 } from '@/network/devices/linux/network/SshKeygenMaterial';
 import { SshReader, SshWriter } from '../wire/SshDataTypes';
-
-const SSH_MSG_USERAUTH_REQUEST = 50;
-const SSH_CONNECTION_SERVICE = 'ssh-connection';
+import { SSH_CONNECTION_SERVICE, SSH_MSG_USERAUTH_REQUEST } from '../transport/SshMessageNumbers';
 
 export function userauthSignatureAlgorithm(key: SshPublicKey): string {
   return key.algorithm === 'ssh-rsa' ? 'rsa-sha2-256' : key.algorithm;
