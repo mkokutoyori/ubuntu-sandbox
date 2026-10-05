@@ -14,7 +14,6 @@
 
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { LINUX_IPV4_KNOBS } from '../../LinuxIpv4Settings';
 
 const PROC_SYS = '/proc/sys';
 const DEFAULT_PRELOAD = '/etc/sysctl.conf';
@@ -160,68 +159,18 @@ function writeKey(ctx: LinuxCommandContext, opts: SysctlOptions, key: string, va
     return { output: '', exitCode: 1, stderr: `sysctl: setting key "${key}": Is a directory` };
   }
 
-  const writer = sysctlWriter(key);
-  if (writer) {
-    if (writer(ctx, value) === false) {
-      return { output: '', exitCode: 1, stderr: `sysctl: setting key "${key}": Invalid argument` };
-    }
-  } else if (!vfs.writeFile(path, `${value}\n`, 0, 0, 0o022) || readValue(ctx, path) !== value) {
+  const hasWriter = vfs.hasWriter(path);
+  const written = vfs.writeFile(path, `${value}\n`, 0, 0, 0o022);
+  if (hasWriter && !written) {
+    return { output: '', exitCode: 1, stderr: `sysctl: setting key "${key}": Invalid argument` };
+  }
+  if (!hasWriter && (!written || readValue(ctx, path) !== value)) {
     return { output: '', exitCode: 1, stderr: `sysctl: setting key "${key}": Operation not permitted` };
   }
 
   if (opts.quiet) return { output: '', exitCode: 0 };
   const shown = readValue(ctx, path) ?? value;
   return { output: renderLeaf(opts, key, shown) ?? '', exitCode: 0 };
-}
-
-type SysctlWriter = (ctx: LinuxCommandContext, value: string) => boolean | void;
-
-function unsignedByte(value: string): number | null {
-  const text = value.trim();
-  if (!/^\d+$/.test(text)) return null;
-  const setting = Number(text);
-  return setting <= 255 ? setting : null;
-}
-
-function sysctlWriter(key: string): SysctlWriter | null {
-  if (key === 'net.ipv4.ip_forward') {
-    return (ctx, value) => ctx.net.setIpForward(value === '1');
-  }
-  if (key === 'net.ipv4.icmp_echo_ignore_broadcasts') {
-    return (ctx, value) => {
-      const host = (ctx.executor as unknown as {
-        localDevice?: { setIgnoresBroadcastEcho?(on: boolean): void };
-      }).localDevice;
-      host?.setIgnoresBroadcastEcho?.(value === '1');
-    };
-  }
-  const knob = key.startsWith('net.ipv4.') ? LINUX_IPV4_KNOBS.find((candidate) => `net.ipv4.${candidate.name}` === key) : undefined;
-  if (knob !== undefined) {
-    return (ctx, value) => {
-      const setting = unsignedByte(value);
-      return setting !== null && ctx.net.ipv4Settings.set(knob.name, setting);
-    };
-  }
-  if (key === 'net.ipv4.tcp_tw_reuse') {
-    return (ctx, value) => {
-      const st = (ctx.executor as unknown as { socketTable?: { setTcpTwReuse(v: boolean): void } }).socketTable;
-      st?.setTcpTwReuse(value === '1');
-    };
-  }
-  if (key === 'net.ipv4.ip_local_port_range') {
-    return (ctx, value) => {
-      const parts = value.replace(/["']/g, '').split(/\s+/).filter(Boolean);
-      const min = Number(parts[0]);
-      const max = Number(parts[1] ?? parts[0]);
-      if (!ctx.executor.acceptsEphemeralRange(min, max)) return false;
-      ctx.executor.applyEphemeralRange(min, max);
-      return true;
-    };
-  }
-  if (key === 'net.ipv4.ip_unprivileged_port_start') {
-    return (ctx, value) => ctx.executor.applyUnprivilegedPortStart(Number(value.trim()));
-  }
-  return null;
 }
 
 function preload(ctx: LinuxCommandContext, opts: SysctlOptions, file: string): SysctlResult {

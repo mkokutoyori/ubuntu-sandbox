@@ -59,9 +59,9 @@ export interface INode {
   /**
    * Generated pseudo-file: when set, the content is produced by this
    * function on every read (like a real procfs entry), never stored.
-   * Writes to such a node are ignored.
    */
   generator?: () => string;
+  writer?: (content: string) => boolean;
   /**
    * A symlink whose displayed target is produced on read.
    *
@@ -639,7 +639,7 @@ export class VirtualFileSystem {
   /**
    * Register a generated pseudo-file (a procfs-style entry). Its content is
    * produced by `generator` on every read, so it never goes stale — the
-   * model behind it is the single source of truth. Writes are discarded.
+   * model behind it is the single source of truth.
    * Idempotent: re-registering swaps the generator on the existing node.
    */
   registerGeneratedFile(
@@ -656,6 +656,25 @@ export class VirtualFileSystem {
     }
     const inode = this.createFileAt(path, '', permissions, uid, gid);
     if (inode) inode.generator = generator;
+  }
+
+  registerWritableGeneratedFile(
+    path: string,
+    generator: () => string,
+    writer: (content: string) => boolean,
+    permissions = 0o644,
+    uid = 0,
+    gid = 0,
+  ): void {
+    this.registerGeneratedFile(path, generator, permissions, uid, gid);
+    const node = this.resolveInode(path);
+    if (!node || node.type !== 'file') return;
+    node.writer = writer;
+    node.permissions = permissions;
+  }
+
+  hasWriter(path: string): boolean {
+    return this.resolveInode(path)?.writer !== undefined;
   }
 
   touch(path: string, uid: number, gid: number, umask: number): boolean {
@@ -733,7 +752,7 @@ export class VirtualFileSystem {
     gids: number[] = [],
   ): boolean {
     if (uid === 0) return true;
-    if (mode === 'w' && inode.generator) return true;
+    if (mode === 'w' && inode.generator && inode.writer === undefined) return true;
     const perms = inode.permissions & 0o777;
     const bit = mode === 'r' ? 4 : mode === 'w' ? 2 : 1;
     if (inode.uid === uid) return ((perms >> 6) & bit) !== 0;
@@ -773,8 +792,12 @@ export class VirtualFileSystem {
     }
 
     if (inode?.type === 'file') {
-      // Generated pseudo-files (procfs) are read-only — writes are discarded.
-      if (inode.generator) return true;
+      if (inode.generator) {
+        const writer = inode.writer;
+        if (writer === undefined) return true;
+        if (!this.canWriteFile(inode, uid, gid)) return false;
+        return content === '' || writer(content);
+      }
       if (this.isReadOnly(path)) return false;
       if (inode.immutable) return false;
       if (!this.canWriteFile(inode, uid, gid)) return false;

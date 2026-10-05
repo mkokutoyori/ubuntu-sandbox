@@ -18,7 +18,6 @@
 
 import type { Port } from '../../hardware/Port';
 import type { TcpWireOutcome } from '../../tcp/types';
-import type { LinuxIpv4Settings } from './LinuxIpv4Settings';
 import type { PortNumber } from '../../core/ports/PortNumber';
 import type { IPAddress, IPv6Address, SubnetMask, MACAddress, IPv4Packet } from '../../core/types';
 import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, HostPolicyRule, PingResult, TraceProbeMethod, TraceSocketOptions, EchoOptions, EchoRoute, ConnectedUdpSocket, RouteException, UdpErrorReport, TcpExchangeSocketOptions, UdpConnectOptions } from '../EndHost';
@@ -266,7 +265,6 @@ export interface LinuxNetKernel {
 
   // ─── Forwarding / NAT (router-layer) ─────────────────────────────
   setIpForward(enabled: boolean): void;
-  readonly ipv4Settings: LinuxIpv4Settings;
   isIpForwardEnabled(): boolean;
   addMasqueradeInterface(iface: string): void;
   removeMasqueradeInterface(iface: string): void;

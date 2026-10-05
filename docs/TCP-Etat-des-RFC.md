@@ -161,11 +161,12 @@ violer (les options sont des objets typés, sans longueur ni alignement qui puis
 - **Linux** (`LinuxPC`, `LinuxServer`) : TTL 64 par défaut (`net.ipv4.ip_default_ttl`, 1 à 255) ; ECN en
   mode 2 (accepte, ne demande pas) ; `net.ipv4.tcp_ecn`, `tcp_ecn_fallback`, `tcp_sack`, `tcp_timestamps`,
   `tcp_window_scaling`, `tcp_slow_start_after_idle` et `ip_default_ttl` lisibles dans `/proc/sys/net/ipv4/`
-  et par `sysctl`, inscriptibles par `sysctl -w`, et évalués : le SYN ne propose que les options permises,
-  un SYN-ACK et une ouverture active ne retiennent que ce qui est permis des deux côtés, une connexion
-  inactive ne repart de la fenêtre initiale que si `tcp_slow_start_after_idle` est non nul ; `nc -M`, `-m`,
-  `-T`, `-N`, `-s` agissent sur la prise ; `tcpdump` sur `lo` décode le vrai paquet comme sur le fil,
-  `tcpdump -v` imprime l'en-tête IPv6.
+  et par `sysctl`, inscriptibles par `sysctl -w` comme par une redirection vers `/proc/sys` (un seul
+  magasin ; une valeur que le noyau refuserait l'est avec les mots de bash), et évalués : le SYN ne propose
+  que les options permises, un SYN-ACK et une ouverture active ne retiennent que ce qui est permis des deux
+  côtés, une connexion inactive ne repart de la fenêtre initiale que si `tcp_slow_start_after_idle` est non
+  nul ; `nc -M`, `-m`, `-T`, `-N`, `-s` agissent sur la prise ; `tcpdump` sur `lo` décode le vrai paquet
+  comme sur le fil, `tcpdump -v` imprime l'en-tête IPv6.
 - **Windows** : TTL 128 ; n'envoie ni n'accepte ECN (configuration par défaut) ; aucune commande
   `netsh int tcp` ni `Set-NetTCPSetting` n'existe (ni leur sortie, qu'on ne peut pas sourcer d'ici).
 - **Routeurs** : la pile de gestion (BGP, SSH, telnet) est la même ; elle ne négocie pas ECN ; elle reçoit

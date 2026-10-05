@@ -363,20 +363,39 @@ export abstract class LinuxMachine extends EndHost
     this.socketTable.setDescriptorGuard((pid) =>
       this.executor.processMgr.canOpenDescriptor(pid, this.executor.descriptorSourcesFor(pid)));
     this.executor.vfs.mkdirp('/proc/sys/net/ipv4', 0o755, 0, 0);
-    this.executor.vfs.writeFile('/proc/sys/net/ipv4/ip_local_port_range', '32768\t60999\n', 0, 0, 0o022);
-    this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/ip_forward',
-      () => `${this.ipForwardEnabled ? 1 : 0}\n`, 0o644);
+    this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/ip_local_port_range',
+      () => {
+        const { min, max } = this.tcpv2.getEphemeralRange();
+        return `${min}\t${max}\n`;
+      },
+      (text) => this.applyLocalPortRange(text));
+    this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/ip_forward',
+      () => `${this.ipForwardEnabled ? 1 : 0}\n`,
+      (text) => {
+        this.ipForwardEnabled = text.trim() === '1';
+        return true;
+      });
     this.executor.setPortBindingPolicy(this.portBindingPolicy);
-    this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/ip_unprivileged_port_start',
-      () => `${this.portBindingPolicy.unprivilegedPortStart}\n`, 0o644);
-    this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/tcp_tw_reuse',
-      () => `${this.socketTable.getTcpTwReuse() ? 1 : 0}\n`, 0o644);
+    this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/ip_unprivileged_port_start',
+      () => `${this.portBindingPolicy.unprivilegedPortStart}\n`,
+      (text) => this.executor.applyUnprivilegedPortStart(Number(text.trim())));
+    this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/tcp_tw_reuse',
+      () => `${this.socketTable.getTcpTwReuse() ? 1 : 0}\n`,
+      (text) => {
+        this.socketTable.setTcpTwReuse(text.trim() === '1');
+        return true;
+      });
     for (const knob of LINUX_IPV4_KNOBS) {
-      this.executor.vfs.registerGeneratedFile(`/proc/sys/net/ipv4/${knob.name}`,
-        () => `${this.ipv4Settings.get(knob.name)}\n`, 0o644);
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv4/${knob.name}`,
+        () => `${this.ipv4Settings.get(knob.name)}\n`,
+        (text) => this.ipv4Settings.write(knob.name, text));
     }
-    this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts',
-      () => `${this.ignoresBroadcastEcho() ? 1 : 0}\n`, 0o644);
+    this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts',
+      () => `${this.ignoresBroadcastEcho() ? 1 : 0}\n`,
+      (text) => {
+        this.setIgnoresBroadcastEcho(text.trim() === '1');
+        return true;
+      });
     this.executor.setSessionTable(this.sessionTable);
     this.executor.setSshHostKeyProbe((ip, port, hostKeyAlgorithms) =>
       probeSshHostKey(this.tcpv2.connect(ip, port) as unknown as TcpStream | null, hostKeyAlgorithms));
@@ -2602,6 +2621,15 @@ export abstract class LinuxMachine extends EndHost
     super.setHostname(hostname);
   }
 
+  private applyLocalPortRange(text: string): boolean {
+    const parts = text.split(/\s+/).filter(Boolean);
+    const min = Number(parts[0]);
+    const max = Number(parts[1] ?? parts[0]);
+    if (!this.executor.acceptsEphemeralRange(min, max)) return false;
+    this.executor.applyEphemeralRange(min, max);
+    return true;
+  }
+
   override powerOn(): void {
     const wasOn = this.getIsPoweredOn();
     super.powerOn();
@@ -4055,7 +4083,6 @@ export abstract class LinuxMachine extends EndHost
       setIpForward: (enabled: boolean): void => {
         this.ipForwardEnabled = enabled;
       },
-      ipv4Settings: this.ipv4Settings,
       isIpForwardEnabled: (): boolean => {
         return this.ipForwardEnabled;
       },

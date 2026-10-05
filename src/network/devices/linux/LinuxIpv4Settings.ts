@@ -36,6 +36,11 @@ export class LinuxIpv4Settings {
     return true;
   }
 
+  write(name: string, text: string): boolean {
+    const value = text.trim();
+    return /^\d+$/.test(value) && this.set(name, Number(value));
+  }
+
   get ecnPolicy(): TcpEcnPolicy {
     return ecnPolicyOfSetting(this.get('tcp_ecn'));
   }
