@@ -41,19 +41,26 @@
  * tant que de l'espace reste occupe ; `windowSize` devient une propriete qui
  * annonce l'espace gagne ; l'acceptation d'un segment se juge contre le bord
  * droit annonce ; la lecture (gestionnaire donne, `resume`) annonce la
- * fenetre rouverte par un ACK immediat ; l'emetteur compare la place laissee
- * par la FENETRE a celle que laisse la congestion, retient un segment
+ * fenetre rouverte par un ACK immediat quand elle gagne au moins
+ * min(MSS, windowSize / 2), et par le segment suivant sinon ; l'emetteur
+ * compare la place laissee par la FENETRE a celle que laisse la congestion,
+ * retient un segment
  * inferieur a min(MSS, Max(SND.WND) / 2) tant que la file en contient plus
  * qu'il n'en passe, et le force au bout de 500 ms par le temporisateur de
  * sonde.
  *
  * Discrimination (fichier copie sur le commit precedent, avec l'aide
- * `tcpScriptedPeer.ts`) : DIX cas sur quatorze tombent. Les QUATRE autres
+ * `tcpScriptedPeer.ts`) : ONZE cas sur dix-sept tombent. Les SIX autres
  * passent des deux cotes : le TEMOIN d'un lecteur attache (fenetre pleine),
  * la NON-REGRESSION d'un emetteur devant une fenetre reduite (plus de donnees
  * neuves, les anciennes retransmises), celle d'une fenetre nulle sondee dont
- * la reponse revele la reouverture, et le TEMOIN d'une fenetre qui a toujours
- * ete petite (utilisee, non attendue).
+ * la reponse revele la reouverture, le TEMOIN d'une fenetre qui a toujours
+ * ete petite (utilisee, non attendue), et les deux cas de la lecture d'un
+ * petit arriere : la base n'emettait aucun ACK de lecture, donc n'en
+ * emettait pas non plus de trop. Le cas de 1 459 octets tombait sur la
+ * premiere ecriture de la file de reception, ou la lecture qui vidait la file
+ * annoncait n'importe quelle augmentation : `nc -zv` vers sshd laissait une
+ * trame de plus sur le fil.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -119,6 +126,28 @@ describe('the window offered is the space left (RFC 9293 §3.8.6)', () => {
     connection.socket.onData((data) => { delivered += payloadBytes(data).length; });
     expect(delivered).toBe(FULL_WINDOW);
     expect(lettersOf(peer.last()!.flags)).toBe('A');
+    expect(peer.last()!.window).toBe(FULL_WINDOW);
+  });
+
+  it.each([[MSS - 1, 0], [MSS, 1]])(
+    'a reader that drains %s bytes earns %s acknowledgement of its own', (backlog, acknowledgements) => {
+      const peer = scriptedPeer();
+      const connection = openPassive(peer, [{ kind: 'mss', value: MSS }]);
+      dataSegment(peer, connection, 0, backlog);
+      peer.advance(TCP_DELAYED_ACK_MS);
+      peer.clear();
+      connection.socket.onData(() => undefined);
+      expect(peer.replies).toHaveLength(acknowledgements);
+    });
+
+  it('the window a small drain did not announce rides the next segment', () => {
+    const peer = scriptedPeer();
+    const connection = openPassive(peer, [{ kind: 'mss', value: MSS }]);
+    dataSegment(peer, connection, 0, 753);
+    peer.advance(TCP_DELAYED_ACK_MS);
+    peer.clear();
+    connection.socket.onData(() => undefined);
+    connection.socket.write('hi');
     expect(peer.last()!.window).toBe(FULL_WINDOW);
   });
 
