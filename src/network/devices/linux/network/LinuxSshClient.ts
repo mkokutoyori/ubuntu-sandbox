@@ -16,6 +16,7 @@
  * inbound SSH, so the client logic is shared rather than duplicated.
  */
 
+import { parseStrictHostKeyChecking, type StrictHostKeyChecking } from '../../../protocols/ssh/SshConnectOptions';
 import { findHostByAddress, isPathReachable } from './HostLookup';
 import { sshUnreachableReason, wireReachOutcome } from '@/terminal/ssh/wireSshLogin';
 import { OPENSSH_SSH, sshWireFailureLine } from '@/terminal/ssh/sshDialect';
@@ -594,7 +595,7 @@ export interface WireExecTarget {
   identities: string[];
   command: string;
   holdOnly: boolean;
-  strict: 'yes' | 'no' | 'accept-new';
+  strict: StrictHostKeyChecking;
   authentication: SshClientAuthentication;
   algorithms: SshAlgorithmPreferences;
 }
@@ -624,7 +625,7 @@ export function wireExecTarget(
     host, user, port: clientPort(flags), identities,
     command: joinRemoteCommand(positional.slice(1)),
     holdOnly: flags.includes('-N'),
-    strict: asked === 'yes' || asked === 'no' ? asked : 'accept-new',
+    strict: parseStrictHostKeyChecking(asked) ?? 'accept-new',
     authentication: sshClientAuthentication(sshOptionValues(flags)),
     algorithms: sshClientAlgorithms(sshOptionValues(flags)),
   };
@@ -1125,18 +1126,15 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     );
   }
 
-  // StrictHostKeyChecking=yes — refuse if no known_hosts entry exists
-  // for the remote IP. The default behaviour (ask/accept-new) keeps the
-  // OpenSSH-style TOFU and is handled by updateKnownHosts() below.
-  if (clientOption(flags, 'StrictHostKeyChecking') === 'yes' && opts.localVfs) {
+  const strictMode = parseStrictHostKeyChecking(clientOption(flags, 'StrictHostKeyChecking'));
+  if ((strictMode === 'yes' || strictMode === 'ask') && opts.localVfs) {
     const home = opts.sourceHome ?? '/root';
     const existing = opts.localVfs.readFile(`${home}/.ssh/known_hosts`) ?? '';
     if (!SshKnownHostsFile.parse(existing).find(host)) {
       return {
-        output:
-          `No matching host key fingerprint found in DNS.\n` +
-          `No ED25519 host key is known for ${host} and you have requested strict checking.\n` +
-          `Host key verification failed.`,
+        output: strictMode === 'yes'
+          ? `No ED25519 host key is known for ${host} and you have requested strict checking.\nHost key verification failed.`
+          : 'Host key verification failed.',
         exitCode: 255,
       };
     }
@@ -1145,8 +1143,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // Update the local ~/.ssh/known_hosts with the remote's host key (or
   // emit the OpenSSH-style identification-changed warning when the key
   // already present differs from the remote's).
-  const strictOption = clientOption(flags, 'StrictHostKeyChecking');
-  const keyChanged = updateKnownHosts(opts, machine, host, strictOption === 'no');
+  const keyChanged = updateKnownHosts(opts, machine, host, strictMode === 'no');
   if (keyChanged) {
     return {
       output:

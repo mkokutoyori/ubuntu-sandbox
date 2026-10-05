@@ -85,7 +85,7 @@ async function sshWith(
 ): Promise<LinuxTerminalSession> {
   const term = new LinuxTerminalSession('t1', client);
   await term.init?.();
-  term.setInput(`ssh ${args} alice@${SRV}`);
+  term.setInput(`ssh -o StrictHostKeyChecking=accept-new ${args} alice@${SRV}`);
   term.handleKey(key('Enter'));
   for (let i = 0; i < 40 && term.currentInputMode.type !== 'password'; i++) await tick(25);
   term.setPasswordBuf('alice');

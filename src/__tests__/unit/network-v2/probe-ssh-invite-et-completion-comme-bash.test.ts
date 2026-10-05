@@ -94,7 +94,7 @@ async function lab(): Promise<Lab> {
     pc1,
     send,
     async remote() {
-      await send('ssh user@10.0.0.2');
+      await send('ssh -o StrictHostKeyChecking=accept-new user@10.0.0.2');
       await send('admin');
       inRemote = true;
     },

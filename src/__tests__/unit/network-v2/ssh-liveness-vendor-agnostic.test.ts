@@ -157,6 +157,8 @@ function acceptedConnections(server: LinuxServer): number {
   return (log.match(/Connection from \S+ port \d+ on/g) ?? []).length;
 }
 
+const sshFor = (clientKind: string): string => (clientKind === 'linux' ? 'ssh -o StrictHostKeyChecking=accept-new' : 'ssh');
+
 const CLIENTS: readonly Vendor[] = ['linux', 'windows', 'cisco'];
 const PEER_KINDS: readonly Vendor[] = ['linux', 'windows', 'cisco', 'huawei'];
 
@@ -164,7 +166,7 @@ describe.each(CLIENTS)('an SSH session opened from a %s client', (clientKind) =>
   it('opens no further connection per command', async () => {
     const { term, server } = await labFor(clientKind, 'linux');
     const peer = PEERS.linux;
-    await line(term, `ssh ${peer.login}@10.0.70.9`);
+    await line(term, `${sshFor(clientKind)} ${peer.login}@10.0.70.9`);
     await answerPassword(term, peer.password);
     expect(term.foreground.getPrompt()).toMatch(peer.promptPattern);
 
@@ -186,14 +188,14 @@ describe.each(PAIRS)('a %s client onto a %s peer', (clientKind, peerKind) => {
 
   it('reaches the remote prompt', async () => {
     const { term, peerIp } = await labFor(clientKind, peerKind);
-    await line(term, `ssh ${peer.login}@${peerIp}`);
+    await line(term, `${sshFor(clientKind)} ${peer.login}@${peerIp}`);
     await answerPassword(term, peer.password);
     expect(term.foreground.getPrompt()).toMatch(peer.promptPattern);
   }, 40000);
 
   it('reports a broken pipe once the link is pulled', async () => {
     const { term, clientCable, peerIp } = await labFor(clientKind, peerKind);
-    await line(term, `ssh ${peer.login}@${peerIp}`);
+    await line(term, `${sshFor(clientKind)} ${peer.login}@${peerIp}`);
     await answerPassword(term, peer.password);
     await line(term, peer.commands[0]);
     clientCable.disconnect();

@@ -113,7 +113,7 @@ describe('un refus du fil vaut sur Windows aussi', () => {
     const { lin } = await lab(WIN);
     const host = new LinuxTerminalSession('hL', lin);
     await host.init?.();
-    await sshLogin(host, `ssh admin@${RTR}`, SECRET);
+    await sshLogin(host, `ssh -o StrictHostKeyChecking=accept-new admin@${RTR}`, SECRET);
 
     expect(host.foreground).toBe(host);
   }, 60_000);
@@ -122,7 +122,7 @@ describe('un refus du fil vaut sur Windows aussi', () => {
     const { win } = await lab(LIN);
     const host = new WindowsTerminalSession('hW', win);
     await host.init?.();
-    await sshLogin(host, `ssh admin@${RTR}`, SECRET);
+    await sshLogin(host, `ssh -o StrictHostKeyChecking=accept-new admin@${RTR}`, SECRET);
 
     expect(host.foreground).toBe(host);
     expect(transcript(host)).not.toContain('R1#');
@@ -132,7 +132,7 @@ describe('un refus du fil vaut sur Windows aussi', () => {
     const { win } = await lab(WIN);
     const host = new WindowsTerminalSession('hW', win);
     await host.init?.();
-    await sshLogin(host, `ssh admin@${RTR}`, SECRET);
+    await sshLogin(host, `ssh -o StrictHostKeyChecking=accept-new admin@${RTR}`, SECRET);
 
     expect(host.getPrompt()).toMatch(/^R1[>#]/);
     expect(transcript(host)).toContain('R1#');
@@ -142,7 +142,7 @@ describe('un refus du fil vaut sur Windows aussi', () => {
     const { win } = await lab(WIN);
     const host = new WindowsTerminalSession('hW', win);
     await host.init?.();
-    await sshLogin(host, `ssh admin@${RTR}`, 'wrong-one');
+    await sshLogin(host, `ssh -o StrictHostKeyChecking=accept-new admin@${RTR}`, 'wrong-one');
 
     expect(host.foreground).toBe(host);
     expect(transcript(host)).not.toContain('R1#');
@@ -160,7 +160,7 @@ describe('un refus du fil vaut sur Windows aussi', () => {
     const { win } = await lab(LIN);
     const host = new WindowsTerminalSession('hW', win);
     await host.init?.();
-    await sshLogin(host, `ssh admin@${RTR}`, SECRET);
+    await sshLogin(host, `ssh -o StrictHostKeyChecking=accept-new admin@${RTR}`, SECRET);
 
     expect(transcript(host)).toContain('Connection refused');
     expect(transcript(host)).not.toContain('No route to host');

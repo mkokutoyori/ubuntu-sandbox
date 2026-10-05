@@ -8,7 +8,7 @@
  * Reference: BRD-SSH-SFTP.md SSH-06.
  */
 
-import { type StrictHostKeyChecking } from './SshConnectOptions';
+import { parseStrictHostKeyChecking, type StrictHostKeyChecking } from './SshConnectOptions';
 
 export interface SshHostEntry {
   readonly host: string;
@@ -86,9 +86,7 @@ function buildEntry(host: string, raw: Record<string, string>): SshHostEntry {
     user: raw.user,
     port: raw.port ? Number.parseInt(raw.port, 10) : undefined,
     identityFile: raw.identityfile,
-    strictHostKeyChecking: raw.stricthostkeychecking as
-      | StrictHostKeyChecking
-      | undefined,
+    strictHostKeyChecking: parseStrictHostKeyChecking(raw.stricthostkeychecking),
     hashKnownHosts: parseYesNo(raw.hashknownhosts),
     kexAlgorithms: raw.kexalgorithms,
     hostKeyAlgorithms: raw.hostkeyalgorithms,

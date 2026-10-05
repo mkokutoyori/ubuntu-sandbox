@@ -197,7 +197,7 @@ describe('le fil dit que le pare-feu sert SSH — les TEMOINS', () => {
     const host = new LinuxTerminalSession('h', posteLinux);
     await host.init?.();
 
-    await ouvrirSsh(host, `ssh admin@${PARE_FEU}`, SECRET);
+    await ouvrirSsh(host, `ssh -o StrictHostKeyChecking=accept-new admin@${PARE_FEU}`, SECRET);
 
     expect(surLePareFeu(host)).toBe(true);
   });
@@ -218,7 +218,7 @@ describe('les clients cessent de contredire le fil', () => {
     const host = new WindowsTerminalSession('w', posteWindows as never);
     await host.init?.();
 
-    await ouvrirSsh(host, `ssh admin@${PARE_FEU}`, SECRET);
+    await ouvrirSsh(host, `ssh -o StrictHostKeyChecking=accept-new admin@${PARE_FEU}`, SECRET);
 
     expect(transcript(host), transcript(host)).not.toMatch(/Connection refused/);
     expect(surLePareFeu(host)).toBe(true);
@@ -227,7 +227,7 @@ describe('les clients cessent de contredire le fil', () => {
   it('`ssh` depuis la ligne de commande Windows ne refuse plus', async () => {
     const { posteWindows } = await laboratoire();
 
-    const sortie = await posteWindows.executeCommand(`ssh admin@${PARE_FEU}`);
+    const sortie = await posteWindows.executeCommand(`ssh -o StrictHostKeyChecking=accept-new admin@${PARE_FEU}`);
 
     expect(sortie).not.toMatch(/Connection refused/);
   });
@@ -235,7 +235,7 @@ describe('les clients cessent de contredire le fil', () => {
   it('sans mot de passe, Linux repond Permission denied et non un refus', async () => {
     const { posteLinux } = await laboratoire();
 
-    const sortie = await posteLinux.executeCommand(`ssh admin@${PARE_FEU}`);
+    const sortie = await posteLinux.executeCommand(`ssh -o StrictHostKeyChecking=accept-new admin@${PARE_FEU}`);
 
     expect(sortie).not.toMatch(/Connection refused/);
     expect(sortie).toMatch(/Permission denied/);
@@ -273,7 +273,7 @@ describe('un paquet JETE reste un silence, pas un refus', () => {
   it('`ssh` depuis la ligne de commande Windows aussi', async () => {
     const { posteWindows } = await laboratoire('ping https');
 
-    const sortie = await posteWindows.executeCommand(`ssh admin@${PARE_FEU}`);
+    const sortie = await posteWindows.executeCommand(`ssh -o StrictHostKeyChecking=accept-new admin@${PARE_FEU}`);
 
     expect(sortie).toMatch(/Connection timed out/);
     expect(sortie).not.toMatch(/Connection refused/);
@@ -284,7 +284,7 @@ describe('un paquet JETE reste un silence, pas un refus', () => {
     const host = new WindowsTerminalSession('w', posteWindows as never);
     await host.init?.();
 
-    await ouvrirSsh(host, `ssh admin@${PARE_FEU}`, SECRET);
+    await ouvrirSsh(host, `ssh -o StrictHostKeyChecking=accept-new admin@${PARE_FEU}`, SECRET);
 
     expect(transcript(host)).toMatch(/Connection timed out/);
     expect(surLePareFeu(host)).toBe(false);
@@ -297,7 +297,7 @@ describe('l\'authentification n\'est pas dispensee', () => {
     const host = new WindowsTerminalSession('w', posteWindows as never);
     await host.init?.();
 
-    await ouvrirSsh(host, `ssh admin@${PARE_FEU}`, 'MAUVAIS');
+    await ouvrirSsh(host, `ssh -o StrictHostKeyChecking=accept-new admin@${PARE_FEU}`, 'MAUVAIS');
 
     expect(surLePareFeu(host), transcript(host)).toBe(false);
   });
@@ -324,7 +324,7 @@ describe('ce que le correctif ne doit pas casser — les NON-REGRESSIONS', () =>
     const host = new WindowsTerminalSession('w', posteWindows as never);
     await host.init?.();
 
-    await ouvrirSsh(host, `ssh bob@${ROUTEUR}`, SECRET);
+    await ouvrirSsh(host, `ssh -o StrictHostKeyChecking=accept-new bob@${ROUTEUR}`, SECRET);
 
     expect(transcript(host)).not.toMatch(/Connection refused/);
   });
@@ -343,7 +343,7 @@ describe('ce que le correctif ne doit pas casser — les NON-REGRESSIONS', () =>
     const host = new WindowsTerminalSession('w', posteWindows as never);
     await host.init?.();
 
-    await ouvrirSsh(host, `ssh alice@${SERVEUR}`, SECRET);
+    await ouvrirSsh(host, `ssh -o StrictHostKeyChecking=accept-new alice@${SERVEUR}`, SECRET);
 
     expect(transcript(host)).toMatch(/Connection refused/);
   });

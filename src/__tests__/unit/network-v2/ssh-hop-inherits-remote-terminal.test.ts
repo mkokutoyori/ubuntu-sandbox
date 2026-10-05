@@ -79,38 +79,38 @@ async function hop(term: LinuxTerminalSession, cmd: string, password: string): P
 describe('an SSH hop inherits the remote terminal, whatever the vendor', () => {
   it('hop 1: linux -> linux', async () => {
     const { term } = await lab();
-    await hop(term, 'ssh user@10.0.60.2', 'admin');
+    await hop(term, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.60.2', 'admin');
     expect(term.getPrompt()).toMatch(/@PC2/);
   }, 30000);
 
   it('hop 2: from that linux frame, on to windows', async () => {
     const { term } = await lab();
-    await hop(term, 'ssh user@10.0.60.2', 'admin');
-    await hop(term, 'ssh Administrator@10.0.60.4', 'admin');
+    await hop(term, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.60.2', 'admin');
+    await hop(term, 'ssh -o StrictHostKeyChecking=accept-new Administrator@10.0.60.4', 'admin');
     expect(term.getPrompt()).toMatch(/^[A-Z]:\\/);
   }, 30000);
 
   it('hop 3: a windows frame runs its OWN outbound ssh, back to linux', async () => {
     const { term } = await lab();
-    await hop(term, 'ssh user@10.0.60.2', 'admin');
-    await hop(term, 'ssh Administrator@10.0.60.4', 'admin');
-    await hop(term, 'ssh user@10.0.60.1', 'admin');
+    await hop(term, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.60.2', 'admin');
+    await hop(term, 'ssh -o StrictHostKeyChecking=accept-new Administrator@10.0.60.4', 'admin');
+    await hop(term, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.60.1', 'admin');
     expect(term.getPrompt(), 'the third hop should land back on PC1').toMatch(/@PC1/);
   }, 30000);
 
   it('a windows frame can also reach a router', async () => {
     const { term } = await lab();
-    await hop(term, 'ssh user@10.0.60.2', 'admin');
-    await hop(term, 'ssh Administrator@10.0.60.4', 'admin');
-    await hop(term, 'ssh admin@10.0.60.6', 'Admin@123');
+    await hop(term, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.60.2', 'admin');
+    await hop(term, 'ssh -o StrictHostKeyChecking=accept-new Administrator@10.0.60.4', 'admin');
+    await hop(term, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.60.6', 'Admin@123');
     expect(term.getPrompt()).toMatch(/^R1[>#]/);
   }, 30000);
 
   it('sudo su still challenges and elevates three hops deep', async () => {
     const { term } = await lab();
-    await hop(term, 'ssh user@10.0.60.2', 'admin');
-    await hop(term, 'ssh Administrator@10.0.60.4', 'admin');
-    await hop(term, 'ssh user@10.0.60.1', 'admin');
+    await hop(term, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.60.2', 'admin');
+    await hop(term, 'ssh -o StrictHostKeyChecking=accept-new Administrator@10.0.60.4', 'admin');
+    await hop(term, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.60.1', 'admin');
 
     const before = term.lines.length;
     await line(term, 'sudo su');

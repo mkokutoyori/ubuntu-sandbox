@@ -91,7 +91,7 @@ async function connectedLab(): Promise<Lab> {
   await srv.executeCommand('sh -c "echo \'alice:secret\' | chpasswd"');
   const t = new LinuxTerminalSession('t', cli);
   await t.init();
-  t.setInput('ssh alice@10.0.0.2');
+  t.setInput('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.2');
   t.handleKey(key('Enter'));
   await flush();
   if (t.foreground.currentInputMode.type === 'password') {

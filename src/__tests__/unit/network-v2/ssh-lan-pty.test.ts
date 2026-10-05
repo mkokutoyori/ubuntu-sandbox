@@ -167,7 +167,7 @@ describe('SSH LAN — PTY shell channel (`ssh -t`)', () => {
     };
     // Kick off (without awaiting) — the reactive SSH IO will queue a
     // password prompt that we satisfy below.
-    const finished = t.executeCommand(`ssh -t user@${PC2_IP} whoami`);
+    const finished = t.executeCommand(`ssh -o StrictHostKeyChecking=accept-new -t user@${PC2_IP} whoami`);
     for (let i = 0; i < 50; i++) {
       if (t.pendingSshIO?.isWaitingForInput) {
         t.pendingSshIO.submitInput('admin');

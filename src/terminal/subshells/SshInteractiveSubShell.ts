@@ -60,7 +60,8 @@ import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import type { ISshSession } from '@/network/protocols/ssh/session/ISshSession';
 import type { ISshShellChannel } from '@/network/protocols/ssh/channels/ISshChannel';
-import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
+import { SshConnectOptionsBuilder, type StrictHostKeyChecking } from '@/network/protocols/ssh/SshConnectOptions';
+import { parseSshArgs } from '@/terminal/sessions/sshArgs';
 import { isOk } from '@/network/protocols/ssh/Result';
 import {
   type HostKeyResponse,
@@ -185,6 +186,23 @@ interface PendingHopConnect {
   readonly session: SshSession;
   /** Non-null for `ssh host cmd`: run it and stay in the current shell. */
   readonly execCommand: string | null;
+}
+
+const NESTED_HOP_OPTIONS = /^-o\s*StrictHostKeyChecking=\S+$/i;
+
+function nestedHopRequest(line: string): ReturnType<typeof parseSshArgs> {
+  const words = line.split(/\s+/);
+  if (words[0] !== 'ssh') return null;
+  const rest = words.slice(1);
+  let index = 0;
+  while (index < rest.length && rest[index].startsWith('-')) {
+    if (rest[index] === '-o' && index + 1 < rest.length && NESTED_HOP_OPTIONS.test(`-o ${rest[index + 1]}`)) index += 2;
+    else if (NESTED_HOP_OPTIONS.test(rest[index])) index += 1;
+    else if (rest[index] === '-p' && index + 1 < rest.length && /^\d+$/.test(rest[index + 1])) index += 2;
+    else return null;
+  }
+  if (index >= rest.length) return null;
+  return parseSshArgs(rest);
 }
 
 export class SshInteractiveSubShell implements ISubShell {
@@ -538,10 +556,13 @@ export class SshInteractiveSubShell implements ISubShell {
     // Bare `ssh [user@]host` — a real second hop (see class docs). Flagged
     // or exec-mode ("ssh host cmd") invocations fall through to the
     // generic passthrough below, unchanged.
-    const sshMatch = this.remoteDevice && /^ssh\s+(?:(\S+)@)?(\S+)(?:\s+(.+))?$/.exec(trimmed);
-    if (sshMatch) {
+    const hop = this.remoteDevice ? nestedHopRequest(trimmed) : null;
+    if (hop !== null) {
+      const at = hop.userAtHost.indexOf('@');
       return this.startNestedHop(
-        sshMatch[1] ?? this.remoteUser, sshMatch[2], sshMatch[3]?.trim() || null);
+        at >= 0 ? hop.userAtHost.slice(0, at) : this.remoteUser,
+        at >= 0 ? hop.userAtHost.slice(at + 1) : hop.userAtHost,
+        hop.command, hop.port, hop.strict);
     }
 
     const collected: string[] = [];
@@ -715,6 +736,7 @@ export class SshInteractiveSubShell implements ISubShell {
    */
   private async startNestedHop(
     targetUser: string, targetHost: string, execCommand: string | null = null,
+    port = 22, strict: StrictHostKeyChecking = 'ask',
   ): Promise<SubShellResult> {
     const dev = this.remoteDevice as unknown as {
       tcpConnect: (host: string, port: number) => Promise<unknown>;
@@ -739,8 +761,8 @@ export class SshInteractiveSubShell implements ISubShell {
       interactionHandler: interaction,
     });
     const opts = SshConnectOptionsBuilder.create()
-      .host(targetHost).user(targetUser).port(22)
-      .strictHostKeyChecking('accept-new')
+      .host(targetHost).user(targetUser).port(port)
+      .strictHostKeyChecking(strict)
       .build();
 
     const pending: PendingHopConnect = {

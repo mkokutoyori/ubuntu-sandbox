@@ -7,6 +7,7 @@
  */
 
 import { SshFingerprint } from './SshFingerprint';
+import { parseStrictHostKeyChecking, type StrictHostKeyChecking } from './SshConnectOptions';
 import { SshHostKey, type SshKeyAlgorithm } from './SshHostKey';
 import { hmac, SHA1, sha1, bytesToBase64, base64ToBytes, utf8ToBytes } from '@/crypto';
 
@@ -41,7 +42,7 @@ export interface SshHostConfig {
   readonly user?: string;
   readonly port?: number;
   readonly identityFile?: string;
-  readonly strictHostKeyChecking?: 'yes' | 'no' | 'accept-new';
+  readonly strictHostKeyChecking?: StrictHostKeyChecking;
 }
 
 const HOST_KEY_ALGORITHMS: readonly SshKeyAlgorithm[] = [
@@ -129,11 +130,7 @@ export function parseSshConfigBlock(block: string): SshHostConfig {
     user: cfg.user,
     port: cfg.port ? Number.parseInt(cfg.port, 10) : undefined,
     identityFile: cfg.identityfile,
-    strictHostKeyChecking: cfg.stricthostkeychecking as
-      | 'yes'
-      | 'no'
-      | 'accept-new'
-      | undefined,
+    strictHostKeyChecking: parseStrictHostKeyChecking(cfg.stricthostkeychecking),
   };
 }
 

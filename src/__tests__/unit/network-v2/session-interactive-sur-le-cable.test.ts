@@ -98,7 +98,7 @@ describe("Phase 5 — la session interactive fait voyager ses commandes", () => 
 
     const term = new LinuxTerminalSession('t1', client);
     await term.init();
-    await type(term, `ssh zoe@${SRV}`);
+    await type(term, `ssh -o StrictHostKeyChecking=accept-new zoe@${SRV}`);
     if (term.currentInputMode.type === 'password') await submitPassword(term, 'secret');
     await tick();
     expect(lastLines(term, 20).join('\n')).toMatch(/zoe@/);
@@ -127,7 +127,7 @@ describe("Phase 5 — la session interactive fait voyager ses commandes", () => 
 
     const term = new LinuxTerminalSession('t1', client);
     await term.init();
-    await type(term, `ssh zoe@${SRV}`);
+    await type(term, `ssh -o StrictHostKeyChecking=accept-new zoe@${SRV}`);
     if (term.currentInputMode.type === 'password') await submitPassword(term, 'secret');
     await tick();
 

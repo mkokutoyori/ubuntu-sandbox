@@ -133,7 +133,7 @@ describe('SSH interactive shell — real-wire streaming + Ctrl+C', () => {
     const host = new LinuxTerminalSession('term-1', lan.pc1);
     await host.init?.();
 
-    host.setInput(`ssh user@${PC2_IP}`);
+    host.setInput(`ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     host.handleKey(key('Enter'));
     for (let i = 0; i < 40 && host.currentInputMode.type !== 'password'; i++) await tick();
     expect(host.currentInputMode.type).toBe('password');
@@ -164,7 +164,7 @@ describe('SSH interactive shell — real-wire streaming + Ctrl+C', () => {
     const currentPrompt = () => activeSubShell().getPrompt();
 
     // Hop 1: pc1 -> pc2.
-    host.setInput(`ssh user@${PC2_IP}`);
+    host.setInput(`ssh -o StrictHostKeyChecking=accept-new user@${PC2_IP}`);
     host.handleKey(key('Enter'));
     for (let i = 0; i < 40 && host.currentInputMode.type !== 'password'; i++) await tick();
     host.setPasswordBuf('admin');
@@ -173,7 +173,7 @@ describe('SSH interactive shell — real-wire streaming + Ctrl+C', () => {
     await waitFor(() => currentPrompt().includes('PC2'));
 
     // Hop 2 (nested, typed INSIDE hop1): pc2 -> pc3, wrong password first.
-    host.setInputBuf(`ssh user@${PC3_IP}`);
+    host.setInputBuf(`ssh -o StrictHostKeyChecking=accept-new user@${PC3_IP}`);
     host.handleKey(key('Enter'));
     await waitFor(() => host.currentInputMode.type === 'password');
     host.setPasswordBuf('totally-wrong');

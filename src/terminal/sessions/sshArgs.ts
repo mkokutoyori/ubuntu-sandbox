@@ -16,6 +16,7 @@
 
 import {
   sshClientAlgorithms,
+  parseStrictHostKeyChecking,
   sshClientAuthentication,
   type SshClientAuthentication,
   type StrictHostKeyChecking,
@@ -23,9 +24,6 @@ import {
 import { everySshOption, firstSshOption, sshFlag } from '@/network/protocols/ssh/SshClientOptions';
 import type { SshAlgorithmPreferences } from '@/network/protocols/ssh/transport/SshTransport';
 
-const STRICT_HOST_KEY_MODES: Readonly<Record<string, StrictHostKeyChecking>> = {
-  yes: 'yes', true: 'yes', ask: 'yes', no: 'no', false: 'no', off: 'no', 'accept-new': 'accept-new',
-};
 
 export type { StrictHostKeyChecking };
 
@@ -59,7 +57,7 @@ export interface ParsedSshArgs {
   readonly userAtHost: string;
   readonly port: number;
   readonly identityFiles: readonly string[];
-  readonly strict: StrictHostKeyChecking;
+  readonly strict: StrictHostKeyChecking | undefined;
   /** Inline command (`ssh user@host whoami`). `null` for interactive. */
   readonly command: string | null;
   /** When true, persist new entries to known_hosts hashed. */
@@ -241,7 +239,7 @@ export function parseSshArgs(args: readonly string[]): ParsedSshArgs | null {
     }
   }
   if (!host) return null;
-  const strict = STRICT_HOST_KEY_MODES[firstSshOption(optionValues, 'stricthostkeychecking')?.toLowerCase() ?? ''] ?? 'accept-new';
+  const strict = parseStrictHostKeyChecking(firstSshOption(optionValues, 'stricthostkeychecking'));
   const hashValue = firstSshOption(optionValues, 'hashknownhosts');
   const hashKnownHosts = hashValue === undefined ? undefined : sshFlag(hashValue) ?? undefined;
   const proxyJump = firstSshOption(optionValues, 'proxyjump');

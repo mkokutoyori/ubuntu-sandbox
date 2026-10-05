@@ -104,6 +104,8 @@ function abandonedConnections(server: LinuxServer): number {
   return (log.match(/Connection closed by unknown user/g) ?? []).length;
 }
 
+const sshFor = (clientKind: string): string => (clientKind === 'linux' ? 'ssh -o StrictHostKeyChecking=accept-new' : 'ssh');
+
 const CLIENTS: readonly ClientKind[] = ['linux', 'windows', 'cisco'];
 
 const UNREACHABLE_WORDING: Readonly<Record<ClientKind, RegExp>> = {
@@ -115,7 +117,7 @@ const UNREACHABLE_WORDING: Readonly<Record<ClientKind, RegExp>> = {
 describe.each(CLIENTS)('one `ssh` from a %s client', (clientKind) => {
   it('opens exactly one connection, and never abandons one', async () => {
     const { term, server } = await labFor(clientKind);
-    await line(term, 'ssh alice@10.0.80.9');
+    await line(term, `${sshFor(clientKind)} alice@10.0.80.9`);
     await answerPassword(term, 'alice');
     expect(term.foreground.getPrompt()).toMatch(/alice@/);
 
@@ -132,7 +134,7 @@ describe.each(CLIENTS)('one `ssh` from a %s client', (clientKind) => {
   it('still refuses to connect once the path to the host is gone', async () => {
     const { term, server } = await labFor(clientKind);
     server.getPorts()[0].getCable()?.disconnect();
-    await line(term, 'ssh alice@10.0.80.9');
+    await line(term, `${sshFor(clientKind)} alice@10.0.80.9`);
     await flush();
 
     const text = term.lines.map((l) => l.text).join('\n');

@@ -9,6 +9,7 @@
  *   - Tab completion
  */
 
+import type { StrictHostKeyChecking } from '@/network/protocols/ssh/SshConnectOptions';
 import { Equipment, type HostCapableDevice } from '@/network';
 import { sshUnreachableReason } from '@/terminal/ssh/wireSshLogin';
 import { IPAddress } from '@/network/core/types';
@@ -2793,7 +2794,7 @@ export class LinuxTerminalSession extends TerminalSession {
       userAtHost: string;
       port: number;
       identityFiles: readonly string[];
-      strict: 'yes' | 'no' | 'accept-new';
+      strict: StrictHostKeyChecking | undefined;
       command: string | null;
       hashKnownHosts?: boolean;
       localForwards?: readonly LocalForward[];
@@ -2862,7 +2863,7 @@ export class LinuxTerminalSession extends TerminalSession {
       .host(host)
       .user(user)
       .port(meta.port)
-      .strictHostKeyChecking(meta.strict);
+      .strictHostKeyChecking(meta.strict ?? 'ask');
     // Analysis doc §1.6: forward HashKnownHosts (CLI -o or ~/.ssh/config).
     if (meta.hashKnownHosts) builder.hashKnownHosts(true);
     if (meta.authentication) builder.authentication(meta.authentication);
@@ -3135,11 +3136,7 @@ export class LinuxTerminalSession extends TerminalSession {
         : entry.identityFile
         ? [entry.identityFile]
         : parsed.identityFiles;
-    const finalStrict =
-      // accept-new is the parser default ; treat it as "unset" too.
-      parsed.strict !== 'accept-new'
-        ? parsed.strict
-        : entry.strictHostKeyChecking ?? parsed.strict;
+    const finalStrict = parsed.strict ?? entry.strictHostKeyChecking;
     return {
       userAtHost: `${finalUser}@${finalHost}`,
       port: finalPort,

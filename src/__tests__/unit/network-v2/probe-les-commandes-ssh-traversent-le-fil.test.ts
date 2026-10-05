@@ -79,7 +79,7 @@ async function framesForCommands(lab: Lab, commands: number): Promise<{
 }> {
   const host = new LinuxTerminalSession('h', lab.origin);
   await host.init?.();
-  await sshLogin(host, 'ssh user@10.0.0.3', 'admin');
+  await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.3', 'admin');
   const adoptedChild = host.foreground !== host;
   const afterLogin = lab.link.getStats().framesTransmitted;
   for (let i = 0; i < commands; i++) {

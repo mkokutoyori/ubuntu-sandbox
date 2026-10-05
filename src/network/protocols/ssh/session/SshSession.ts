@@ -410,6 +410,16 @@ export class SshSession implements ISshSession {
         }
       }
 
+      case 'refuse_unknown':
+        this.deps.interactionHandler.showWarning(
+          `No ${sshKeyTypeLabel(key.algorithm)} host key is known for ${host} and you have requested strict checking.`,
+        );
+        return err({
+          kind: 'HOST_KEY_REJECTED',
+          host,
+          fingerprint: key.fingerprint.toString(),
+        });
+
       case 'reject': {
         this.deps.interactionHandler.showWarning(decision.warningBlock);
         const known = store.get(host);

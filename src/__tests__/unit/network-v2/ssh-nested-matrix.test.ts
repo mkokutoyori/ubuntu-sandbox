@@ -106,7 +106,7 @@ describe('SSH is a transparent transport for every host vendor', () => {
       const { winA } = await buildLab();
       const host = new WindowsTerminalSession('h', winA);
       await host.init?.();
-      await sshLogin(host, 'ssh User@10.0.0.2', 'user');
+      await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.2', 'user');
       // A Windows-origin hop is driven over the wire now, so there is no
       // local vendor TerminalSession to be an instance of. What must hold
       // is that the session behaves like that vendor's terminal
@@ -121,7 +121,7 @@ describe('SSH is a transparent transport for every host vendor', () => {
       const { winA } = await buildLab();
       const host = new WindowsTerminalSession('h', winA);
       await host.init?.();
-      await sshLogin(host, 'ssh admin@10.0.0.5', 'Admin@123');
+      await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.5', 'Admin@123');
       expect((host as unknown as { activeSubShell: unknown }).activeSubShell)
         .toBeInstanceOf(SshInteractiveSubShell);
       expect(host.getPrompt()).toMatch(/[>#]\s*$/);
@@ -131,7 +131,7 @@ describe('SSH is a transparent transport for every host vendor', () => {
       const { winA } = await buildLab();
       const host = new WindowsTerminalSession('h', winA);
       await host.init?.();
-      await sshLogin(host, 'ssh admin@10.0.0.6', 'Admin@123');
+      await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.6', 'Admin@123');
       expect((host as unknown as { activeSubShell: unknown }).activeSubShell)
         .toBeInstanceOf(SshInteractiveSubShell);
       expect(host.getPrompt()).toMatch(/^</);
@@ -143,7 +143,7 @@ describe('SSH is a transparent transport for every host vendor', () => {
       const { linuxA } = await buildLab();
       const host = new LinuxTerminalSession('h', linuxA);
       await host.init?.();
-      await sshLogin(host, 'ssh user@10.0.0.4', 'admin');
+      await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.4', 'admin');
       // Linux↔Linux drives the interactive session over the real,
       // authenticated SSH channel — no child session is pushed, so
       // `foreground` stays the host itself; the sub-shell is the tell.
@@ -156,7 +156,7 @@ describe('SSH is a transparent transport for every host vendor', () => {
       const { linuxA } = await buildLab();
       const host = new LinuxTerminalSession('h', linuxA);
       await host.init?.();
-      await sshLogin(host, 'ssh user@10.0.0.4', 'admin');
+      await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new user@10.0.0.4', 'admin');
       runOnForeground(host, 'ping 10.0.0.3');
       await waitFor(host, (l) => l.some((t) => /bytes from 10\.0\.0\.3/.test(t)));
       host.handleKey(key('c', { ctrlKey: true }));
@@ -167,7 +167,7 @@ describe('SSH is a transparent transport for every host vendor', () => {
       const { linuxA } = await buildLab();
       const host = new LinuxTerminalSession('h', linuxA);
       await host.init?.();
-      await sshLogin(host, 'ssh User@10.0.0.1', 'user');
+      await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.1', 'user');
     // Asserted through the prompt rather than the class of a child
     // session: a Linux-origin hop is driven over the wire now, so there
     // is no local vendor TerminalSession to be an instance of. What must
@@ -180,7 +180,7 @@ describe('SSH is a transparent transport for every host vendor', () => {
       const { linuxA } = await buildLab();
       const host = new LinuxTerminalSession('h', linuxA);
       await host.init?.();
-      await sshLogin(host, 'ssh admin@10.0.0.5', 'Admin@123');
+      await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.5', 'Admin@123');
       // Behaviour, not class: over the wire there is no local vendor
       // TerminalSession to instantiate, so the IOS prompt is the proof.
       expect(host.foreground.getPrompt()).toMatch(/[>#]\s*$/);
@@ -190,7 +190,7 @@ describe('SSH is a transparent transport for every host vendor', () => {
       const { linuxA } = await buildLab();
       const host = new LinuxTerminalSession('h', linuxA);
       await host.init?.();
-      await sshLogin(host, 'ssh admin@10.0.0.6', 'Admin@123');
+      await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.6', 'Admin@123');
       expect(host.foreground.getPrompt()).toMatch(/^</);
     });
   });
@@ -200,7 +200,7 @@ describe('SSH is a transparent transport for every host vendor', () => {
       const { winA } = await buildLab();
       const host = new WindowsTerminalSession('h', winA);
       await host.init?.();
-      await sshLogin(host, 'ssh User@10.0.0.2', 'user');
+      await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new User@10.0.0.2', 'user');
       runOnForeground(host, 'exit');
       await tick();
       expect(host.foreground).toBe(host);
@@ -210,7 +210,7 @@ describe('SSH is a transparent transport for every host vendor', () => {
       const { linuxA } = await buildLab();
       const host = new LinuxTerminalSession('h', linuxA);
       await host.init?.();
-      await sshLogin(host, 'ssh admin@10.0.0.5', 'Admin@123');
+      await sshLogin(host, 'ssh -o StrictHostKeyChecking=accept-new admin@10.0.0.5', 'Admin@123');
       runOnForeground(host, 'logout');
       await tick();
       expect(host.foreground).toBe(host);

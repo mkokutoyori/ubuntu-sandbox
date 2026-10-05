@@ -11,7 +11,8 @@ import { isOk, type SshError } from '../../../protocols/ssh/Result';
 import type { ISshLocalFs } from '../../../protocols/ssh/ISshLocalFs';
 import type { TcpConnector } from '@/network/tcp/types';
 
-export type StrictHostKeyChecking = 'yes' | 'no' | 'accept-new';
+export type { StrictHostKeyChecking } from '../../../protocols/ssh/SshConnectOptions';
+import type { StrictHostKeyChecking } from '../../../protocols/ssh/SshConnectOptions';
 
 export interface WireSshClient {
   readonly vfs: ISshLocalFs;
@@ -44,7 +45,7 @@ export async function connectWireSsh(
   client: WireSshClient, target: WireSshTarget, connector: TcpConnector,
 ): Promise<WireSshOutcome> {
   const interaction = new SilentSshInteractionHandler(
-    target.passwordPrompt ?? target.password ?? '', target.strict !== 'yes');
+    target.passwordPrompt ?? target.password ?? '', target.strict !== 'ask');
   const session = new SshSession({
     tcpConnector: connector,
     vfs: client.vfs,

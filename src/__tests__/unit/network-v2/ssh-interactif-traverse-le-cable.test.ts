@@ -81,7 +81,7 @@ async function lab() {
 async function ouvrirSession(client: LinuxPC): Promise<TerminalSession> {
   const session = createSessionForDevice(client, 'T1')!;
   await flush();
-  await type(session, `ssh alice@${SRV}`);
+  await type(session, `ssh -o StrictHostKeyChecking=accept-new alice@${SRV}`);
   if (session.currentInputMode.type === 'password') {
     session.setPasswordBuf(MDP);
     session.handleKey(key('Enter'));

@@ -1668,6 +1668,7 @@ export class LinuxCommandExecutor {
     authentication?: SshClientAuthentication, algorithms?: SshAlgorithmPreferences,
   ): Promise<{
     session: SshSession | null; authRefused: boolean; denial?: string; notices: string[]; keyExchangeFailure?: string;
+    hostKeyRefusal?: string;
   }> {
     if (!this.tcpConnector) return { session: null, authRefused: false, notices: [] };
     const connector = this.tcpConnector;
@@ -1677,10 +1678,14 @@ export class LinuxCommandExecutor {
     const authRefused = outcome.failure?.kind === 'AUTH_FAILED';
     const denial = authRefused ? outcome.warnings.at(-1) : undefined;
     const keyExchangeFailure = outcome.failure?.kind === 'KEX_FAILED' ? outcome.failure.message : undefined;
+    const hostKeyRefusal = outcome.failure?.kind === 'HOST_KEY_REJECTED'
+      ? [...outcome.warnings, 'Host key verification failed.'].join('\n')
+      : undefined;
     return {
       session: outcome.session,
       authRefused,
       ...(keyExchangeFailure !== undefined ? { keyExchangeFailure } : {}),
+      ...(hostKeyRefusal !== undefined ? { hostKeyRefusal } : {}),
       ...(denial !== undefined ? { denial } : {}),
       notices: [...outcome.notices],
     };
@@ -1752,6 +1757,9 @@ export class LinuxCommandExecutor {
     const session = wire.session;
     if (!session && 'keyExchangeFailure' in wire && wire.keyExchangeFailure !== undefined) {
       return { output: wire.keyExchangeFailure, exitCode: 255 };
+    }
+    if (!session && 'hostKeyRefusal' in wire && wire.hostKeyRefusal !== undefined) {
+      return { output: wire.hostKeyRefusal, exitCode: 255 };
     }
     if (!session) {
       return this.finishSshClientResult(
