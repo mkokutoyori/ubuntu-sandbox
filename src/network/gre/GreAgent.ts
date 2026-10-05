@@ -6,9 +6,12 @@ import {
 } from './types';
 import {
   IPAddress,
+  computeIPv4Checksum,
   type EthernetFrame,
   type IPv4Packet,
 } from '../core/types';
+import { EcnCodepoint } from '../core/IpHeaderFields';
+import { ecnForOuterHeader, ecnOnDecapsulation } from '../core/EcnTunnel';
 import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import { Logger } from '../core/Logger';
 
@@ -134,6 +137,7 @@ export class GreAgent {
       destination: new IPAddress(t.destinationIp),
       source: new IPAddress(t.sourceIp),
       protocol: IP_PROTO_GRE, ttl: t.ttl,
+      tos: ecnForOuterHeader(EcnCodepoint.ofField(innerPacket.tos)).bits,
       payload: gre, payloadBytes: outerBytes,
       flags: 0,
     })) { this.dropped(t.sourceIp, t.destinationIp, 'no-egress'); return false; }
@@ -182,9 +186,14 @@ export class GreAgent {
       }
       tunnel.expectedRecvSeq = (gre.sequence + 1) >>> 0;
     }
+    const carried = gre.payload as IPv4Packet | undefined;
+    const inner = carried && carried.type === 'ipv4' ? this.withDecapsulatedEcn(ipPkt, carried) : carried;
+    if (inner === null) {
+      this.dropped(tunnel.sourceIp, tunnel.destinationIp, 'ecn-violation');
+      return null;
+    }
     tunnel.packetsIn++;
     tunnel.bytesIn += ipPkt.totalLength;
-    const inner = gre.payload as IPv4Packet | undefined;
     const innerSrc = inner && inner.type === 'ipv4' ? inner.sourceIP.toString() : null;
     const innerDst = inner && inner.type === 'ipv4' ? inner.destinationIP.toString() : null;
     this.getBus().publish({
@@ -202,6 +211,16 @@ export class GreAgent {
     return inner && inner.type === 'ipv4' ? inner : null;
   }
 
+  private withDecapsulatedEcn(outer: IPv4Packet, inner: IPv4Packet): IPv4Packet | null {
+    const verdict = ecnOnDecapsulation(EcnCodepoint.ofField(outer.tos), EcnCodepoint.ofField(inner.tos));
+    if (!verdict.forward) return null;
+    const tos = (inner.tos & ~EcnCodepoint.MASK) | verdict.inner.bits;
+    if (tos === inner.tos) return inner;
+    const marked: IPv4Packet = { ...inner, tos };
+    marked.headerChecksum = computeIPv4Checksum(marked);
+    return marked;
+  }
+
   private tunnelByPeer(srcIp: string, dstIp: string): GreTunnel | null {
     for (const t of this.config.tunnels.values()) {
       if (t.sourceIp === dstIp && t.destinationIp === srcIp) return t;
@@ -210,7 +229,7 @@ export class GreAgent {
   }
 
   private dropped(sourceIp: string, destinationIp: string,
-                  reason: 'no-tunnel' | 'key-mismatch' | 'no-source-ip' | 'no-egress' | 'disabled' | 'tunnel-down' | 'checksum-mismatch' | 'out-of-order'): void {
+                  reason: 'no-tunnel' | 'key-mismatch' | 'no-source-ip' | 'no-egress' | 'disabled' | 'tunnel-down' | 'checksum-mismatch' | 'out-of-order' | 'ecn-violation'): void {
     this.getBus().publish({
       topic: 'gre.packet.dropped',
       payload: {

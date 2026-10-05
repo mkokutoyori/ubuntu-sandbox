@@ -178,6 +178,10 @@ export class DiffServField {
     return new DiffServField((this.value & ~EcnCodepoint.MASK) | ecn.bits);
   }
 
+  withDscp(dscp: number): DiffServField {
+    return new DiffServField(DiffServField.fromDscp(dscp).value | (this.value & EcnCodepoint.MASK));
+  }
+
   equals(other: DiffServField): boolean {
     return this.value === other.value;
   }

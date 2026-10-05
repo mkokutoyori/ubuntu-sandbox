@@ -3,7 +3,7 @@ import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import {
-  DSCP, computeOuterTos, propagateCeOnDecap,
+  DSCP, computeOuterTos, ecnOnDecapsulatedTos,
   makeCopyConfig, makeSetConfig, makeMapConfig,
   dscpOf, ecnOf, withDscp,
 } from '@/network/ipsec/DscpTunnelMarker';
@@ -47,8 +47,8 @@ describe('Scénario 16 — DSCP et QoS à travers un tunnel IPsec', () => {
     });
 
     it('withDscp rejette une valeur hors [0,63]', () => {
-      expect(() => withDscp(0, 64)).toThrow(/out of range/i);
-      expect(() => withDscp(0, -1)).toThrow(/out of range/i);
+      expect(() => withDscp(0, 64)).toThrow(/Invalid DSCP/);
+      expect(() => withDscp(0, -1)).toThrow(/Invalid DSCP/);
     });
   });
 
@@ -126,26 +126,26 @@ describe('Scénario 16 — DSCP et QoS à travers un tunnel IPsec', () => {
       expect(ecnOf(outer)).toBe(ECN_NONE);
     });
 
-    it('propagateCeOnDecap : outer=CE ⟹ inner reçoit CE', () => {
+    it('ecnOnDecapsulatedTos : outer=CE ⟹ inner reçoit CE', () => {
       const outerTos = (DSCP.CS0 << 2) | ECN_CE;
       const innerTos = (DSCP.EF << 2) | ECN_ECT0;
-      const updated = propagateCeOnDecap(outerTos, innerTos, makeCopyConfig());
+      const updated = ecnOnDecapsulatedTos(outerTos, innerTos, makeCopyConfig())!;
       expect(ecnOf(updated)).toBe(ECN_CE);
       expect(dscpOf(updated)).toBe(DSCP.EF);
     });
 
-    it("propagateCeOnDecap : sans CE sur l'externe, l'ECN interne n'est pas modifié", () => {
+    it("ecnOnDecapsulatedTos : sans CE sur l'externe, l'ECN interne n'est pas modifié", () => {
       const outerTos = (DSCP.CS0 << 2) | ECN_ECT0;
       const innerTos = (DSCP.EF << 2) | ECN_ECT0;
-      const updated = propagateCeOnDecap(outerTos, innerTos, makeCopyConfig());
+      const updated = ecnOnDecapsulatedTos(outerTos, innerTos, makeCopyConfig());
       expect(updated).toBe(innerTos);
     });
 
-    it("propagateCeOnDecap : quand ecnEnabled=false, l'inner reste intact même si outer=CE", () => {
+    it("ecnOnDecapsulatedTos : quand ecnEnabled=false, l'inner reste intact même si outer=CE", () => {
       const outerTos = (DSCP.CS0 << 2) | ECN_CE;
       const innerTos = (DSCP.EF << 2) | ECN_ECT0;
       const cfg = { ...makeCopyConfig(), ecnEnabled: false };
-      expect(propagateCeOnDecap(outerTos, innerTos, cfg)).toBe(innerTos);
+      expect(ecnOnDecapsulatedTos(outerTos, innerTos, cfg)).toBe(innerTos);
     });
   });
 
@@ -154,7 +154,7 @@ describe('Scénario 16 — DSCP et QoS à travers un tunnel IPsec', () => {
       const innerTos = withDscp(0, DSCP.EF);
       const outerTos = computeOuterTos(innerTos, makeCopyConfig());
       expect(dscpOf(outerTos)).toBe(DSCP.EF);
-      const decapedInner = propagateCeOnDecap(outerTos, innerTos, makeCopyConfig());
+      const decapedInner = ecnOnDecapsulatedTos(outerTos, innerTos, makeCopyConfig())!;
       expect(dscpOf(decapedInner)).toBe(DSCP.EF);
     });
 
@@ -162,7 +162,7 @@ describe('Scénario 16 — DSCP et QoS à travers un tunnel IPsec', () => {
       const innerTos = withDscp(0, DSCP.EF);
       const outerTos = computeOuterTos(innerTos, makeSetConfig(0));
       expect(dscpOf(outerTos)).toBe(0);
-      const decapedInner = propagateCeOnDecap(outerTos, innerTos, makeSetConfig(0));
+      const decapedInner = ecnOnDecapsulatedTos(outerTos, innerTos, makeSetConfig(0))!;
       expect(dscpOf(decapedInner)).toBe(DSCP.EF);
     });
 
