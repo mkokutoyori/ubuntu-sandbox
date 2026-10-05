@@ -92,7 +92,9 @@ export interface TcpSegmentDroppedPayload extends TcpDeviceRef {
   reason: TcpDropReason;
 }
 
-/** PRD-TCP.md P1 — a segment (SYN/data/FIN) was resent by the RTO timer. */
+export type TcpRetransmitReason =
+  | 'timeout' | 'fast-retransmit' | 'sack-hole' | 'partial-ack' | 'rescue' | 'timeout-recovery';
+
 export interface TcpRetransmitPayload extends TcpDeviceRef {
   localIp: string;
   localPort: number;
@@ -101,6 +103,7 @@ export interface TcpRetransmitPayload extends TcpDeviceRef {
   sequence: number;
   attempt: number;
   rtoMs: number;
+  reason: TcpRetransmitReason;
 }
 
 export interface TcpErrorReportedPayload extends TcpDeviceRef {

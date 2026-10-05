@@ -22,6 +22,25 @@ export class SackScoreboard {
     return learned;
   }
 
+  get highestEnd(): number | null {
+    return this.held.length === 0 ? null : this.held[this.held.length - 1].end;
+  }
+
+  isSacked(start: number, end: number): boolean {
+    return this.covers({ start, end });
+  }
+
+  isLost(start: number, end: number, segmentBytes: number, duplicateThreshold: number): boolean {
+    let ranges = 0;
+    let bytes = 0;
+    for (const range of this.held) {
+      if (!seqLt(end, range.end)) continue;
+      ranges += 1;
+      bytes += (range.end - (seqLt(range.start, end) ? end : range.start)) >>> 0;
+    }
+    return ranges >= duplicateThreshold || bytes > (duplicateThreshold - 1) * segmentBytes;
+  }
+
   advance(sendUnacked: number): void {
     this.held = this.held
       .filter((range) => seqLt(sendUnacked, range.end))

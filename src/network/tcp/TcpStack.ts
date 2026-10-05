@@ -143,13 +143,14 @@ import {
   TCP_RTO_AFTER_SYN_RETRANSMIT_MS,
 } from './RttEstimator';
 import { TcpCongestionControl } from './TcpCongestionControl';
+import { TcpLossRecovery, DUPLICATE_ACK_THRESHOLD } from './TcpLossRecovery';
 import {
   encodeOptions, decodeOptions, interpretOptions, optionsDataOffset, TCP_MAX_WINDOW_SCALE, type TcpOptionsSet,
 } from './TcpOptionsCodec';
 import { ReassemblyQueue } from './ReassemblyQueue';
 import { SackReporter, SACK_MAX_BLOCKS, SACK_MAX_BLOCKS_WITH_TIMESTAMPS } from './SackReporter';
 import { SackScoreboard } from './SackScoreboard';
-import type { TcpDropReason } from './events';
+import type { TcpDropReason, TcpRetransmitReason } from './events';
 import { AckThrottle } from './AckThrottle';
 import { IsnGenerator } from './IsnGenerator';
 import {
@@ -228,6 +229,13 @@ interface SegmentArrival {
   readonly ttl: number;
   readonly ecn: EcnCodepoint;
   readonly header?: ReceivedIpHeader;
+}
+
+interface AckEvidence {
+  readonly ackedBytes: number;
+  readonly duplicate: boolean;
+  readonly learnedSack: boolean;
+  readonly echoesCongestion: boolean;
 }
 
 export interface TcpAcceptHandler {
@@ -387,6 +395,7 @@ export class TcpSocket {
   /** RFC 5681 congestion control (PRD-TCP.md P5) — slow start/congestion avoidance/fast recovery. */
   readonly cc: TcpCongestionControl = new TcpCongestionControl(this.mss);
   readonly sackScoreboard = new SackScoreboard();
+  readonly recovery = new TcpLossRecovery();
   lastDataSentAtMs: number | null = null;
 
   /** Our own advertised window-scale shift (PRD-TCP.md P6, RFC 7323 §2.2) — always offered on SYN. */
@@ -1533,12 +1542,13 @@ export class TcpStack {
       while (socket.sendBacklog.length > 0) {
         const inFlight = (socket.sendNext - socket.sendUnacked) >>> 0;
         const windowRoom = socket.peerWindow > inFlight ? socket.peerWindow - inFlight : 0;
-        let congestionRoom = socket.cc.cwnd > inFlight ? socket.cc.cwnd - inFlight : 0;
+        const congestionFlight = this.congestionFlight(socket, inFlight);
+        let congestionRoom = socket.cc.cwnd > congestionFlight ? socket.cc.cwnd - congestionFlight : 0;
         let spendsCredit = false;
         if (congestionRoom === 0 && socket.limitedTransmitCredits > 0) {
           const segment = this.sendMss(socket);
           const limit = socket.cc.cwnd + TCP_LIMITED_TRANSMIT_SLACK_SEGMENTS * segment;
-          congestionRoom = limit > inFlight ? Math.min(segment, limit - inFlight) : 0;
+          congestionRoom = limit > congestionFlight ? Math.min(segment, limit - congestionFlight) : 0;
           spendsCredit = congestionRoom > 0;
         }
         const available = Math.min(windowRoom, congestionRoom);
@@ -1990,25 +2000,14 @@ export class TcpStack {
     const isDuplicateAck = payloadSize === 0 && !seg.flags.fin && !seg.flags.syn
       && ack === socket.sendUnacked && socket.unackedQueue.length > 0
       && this.decodeWindowField(socket, seg) === socket.peerWindow;
-    if (isDuplicateAck) {
-      const flightSize = ((socket.sendNext - socket.sendUnacked) - socket.limitedTransmitBytes) >>> 0;
-      if (socket.cc.onDuplicateAck(flightSize)) {
-        socket.limitedTransmitBytes = 0;
-        this.fastRetransmit(socket);
-      }
-      else if (socket.cc.duplicateAcks <= TCP_LIMITED_TRANSMIT_ACKS && (!socket.sackEnabled || learnedSack)) {
-        this.limitedTransmit(socket);
-      }
-    } else {
-      const ackedBytes = this.pruneUnackedQueue(socket, ack, options.timestamp?.tsEcr);
-      if (ackedBytes > 0) {
-        if (!echoesCongestion) socket.cc.onNewAck(ackedBytes);
-        socket.limitedTransmitBytes = 0;
-        socket.sackScoreboard.advance(socket.sendUnacked);
-      }
-    }
+    const ackedBytes = isDuplicateAck ? 0 : this.pruneUnackedQueue(socket, ack, options.timestamp?.tsEcr);
+    this.reactToAck(socket, {
+      ackedBytes, echoesCongestion, learnedSack,
+      duplicate: isDuplicateAck || (socket.sackEnabled && learnedSack && socket.unackedQueue.length > 0),
+    });
     this.updateSendWindow(socket, seg);
     this.flushSendBacklog(socket);
+    this.retransmitAsLastResort(socket);
     switch (socket.state) {
       case 'fin-wait-1':
         if (this.ourFinAcknowledged(socket)) this._transition(socket, 'fin-wait-2');
@@ -2021,6 +2020,120 @@ export class TcpStack {
         return false;
       default:
         return true;
+    }
+  }
+
+  private reactToAck(socket: TcpSocket, ack: AckEvidence): void {
+    const recovery = socket.recovery;
+    if (ack.ackedBytes > 0) {
+      socket.limitedTransmitBytes = 0;
+      socket.sackScoreboard.advance(socket.sendUnacked);
+      socket.cc.resetDuplicateAcks();
+      if (recovery.active) this.advanceRecovery(socket, ack);
+      else if (!ack.echoesCongestion) socket.cc.onNewAck(ack.ackedBytes);
+    }
+    if (recovery.active) {
+      this.continueRecovery(socket, ack);
+      return;
+    }
+    if (ack.duplicate && socket.unackedQueue[0]?.windowProbe !== true) this.countDuplicateAck(socket, ack);
+  }
+
+  private countDuplicateAck(socket: TcpSocket, ack: AckEvidence): void {
+    const count = socket.cc.noteDuplicateAck();
+    const head = socket.unackedQueue[0];
+    const headLost = socket.sackEnabled && head !== undefined && socket.sackScoreboard.isLost(
+      head.sequence, (head.sequence + head.length) >>> 0, this.sendMss(socket), DUPLICATE_ACK_THRESHOLD);
+    if (count >= DUPLICATE_ACK_THRESHOLD || headLost) {
+      this.enterFastRecovery(socket);
+      return;
+    }
+    if (count <= TCP_LIMITED_TRANSMIT_ACKS && (!socket.sackEnabled || ack.learnedSack)) this.limitedTransmit(socket);
+  }
+
+  private enterFastRecovery(socket: TcpSocket): void {
+    const head = socket.unackedQueue[0];
+    if (head === undefined) return;
+    const kind = socket.sackEnabled ? 'sack' : 'newreno';
+    const flightSize = ((socket.sendNext - socket.sendUnacked) - socket.limitedTransmitBytes) >>> 0;
+    socket.cc.enterFastRecovery(flightSize, kind === 'newreno');
+    socket.limitedTransmitBytes = 0;
+    socket.recovery.enter(kind, socket.sendNext, (head.sequence + head.length) >>> 0);
+    socket.ecn.windowReduced(socket.sendNext);
+    this.retransmitEntry(socket, head, 'fast-retransmit');
+    this.retransmitHoles(socket);
+  }
+
+  private advanceRecovery(socket: TcpSocket, ack: AckEvidence): void {
+    const recovery = socket.recovery;
+    const finished = recovery.completes(socket.sendUnacked);
+    if (recovery.kind === 'timeout') {
+      if (!ack.echoesCongestion) socket.cc.onNewAck(ack.ackedBytes);
+    } else if (finished) {
+      socket.cc.leaveFastRecovery();
+    } else if (recovery.kind === 'newreno') {
+      socket.cc.onPartialAck(ack.ackedBytes);
+    }
+    if (finished) recovery.leave();
+  }
+
+  private continueRecovery(socket: TcpSocket, ack: AckEvidence): void {
+    if (socket.recovery.kind !== 'newreno') {
+      this.retransmitHoles(socket);
+      return;
+    }
+    if (ack.ackedBytes > 0) this.retransmitFirstUnacked(socket);
+    else if (ack.duplicate) socket.cc.onRecoveryDuplicateAck();
+  }
+
+  private congestionFlight(socket: TcpSocket, inFlight: number): number {
+    if (!socket.recovery.usesPipe) return inFlight;
+    return socket.recovery.pipe(socket.unackedQueue, socket.sackScoreboard, this.sendMss(socket));
+  }
+
+  private retransmitFirstUnacked(socket: TcpSocket): void {
+    const head = socket.unackedQueue[0];
+    if (head === undefined || head.windowProbe || socket.recovery.retransmittedSince(head)) return;
+    socket.recovery.noteRetransmission(head);
+    this.retransmitEntry(socket, head, 'partial-ack');
+  }
+
+  private retransmitHoles(socket: TcpSocket): void {
+    const recovery = socket.recovery;
+    if (recovery.driving) return;
+    recovery.driving = true;
+    try {
+      const segmentBytes = this.sendMss(socket);
+      while (recovery.usesPipe) {
+        if (socket.cc.cwnd - recovery.pipe(socket.unackedQueue, socket.sackScoreboard, segmentBytes) < segmentBytes) break;
+        const hole = recovery.nextHole(socket.unackedQueue, socket.sackScoreboard, segmentBytes);
+        if (hole === null) break;
+        recovery.noteRetransmission(hole);
+        this.retransmitEntry(socket, hole, recovery.kind === 'timeout' ? 'timeout-recovery' : 'sack-hole');
+      }
+    } finally {
+      recovery.driving = false;
+    }
+  }
+
+  private retransmitAsLastResort(socket: TcpSocket): void {
+    const recovery = socket.recovery;
+    if (recovery.kind !== 'sack' || recovery.driving) return;
+    const inFlight = (socket.sendNext - socket.sendUnacked) >>> 0;
+    if (socket.sendBacklog.length > 0 && socket.peerWindow > inFlight) return;
+    recovery.driving = true;
+    try {
+      const segmentBytes = this.sendMss(socket);
+      while (recovery.kind === 'sack') {
+        if (socket.cc.cwnd - recovery.pipe(socket.unackedQueue, socket.sackScoreboard, segmentBytes) < segmentBytes) break;
+        const pick = recovery.takeLastResort(socket.unackedQueue, socket.sackScoreboard, socket.sendUnacked);
+        if (pick === null) break;
+        if (!pick.rescue) recovery.noteRetransmission(pick.segment);
+        this.retransmitEntry(socket, pick.segment, pick.rescue ? 'rescue' : 'sack-hole');
+        if (pick.rescue) break;
+      }
+    } finally {
+      recovery.driving = false;
     }
   }
 
@@ -2698,53 +2811,42 @@ export class TcpStack {
       if (!head.flags.syn) socket.ecn.windowReduced(socket.sendNext);
       socket.sackScoreboard.clear();
       socket.limitedTransmitBytes = 0;
+      if (!head.flags.syn) socket.recovery.enter('timeout', socket.sendNext, (head.sequence + head.length) >>> 0);
     }
     if (head.flags.syn && !head.flags.ack && this.ecnFallsBack()) {
       head.flags = socket.ecn.withdrawFromSyn(head.flags);
     }
     const rtoMs = socket.rtt.backoff();
-    this.getBus().publish({
-      topic: 'tcp.retransmit',
-      payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
-        localIp: socket.localIp, localPort: socket.localPort,
-        remoteIp: socket.remoteIp, remotePort: socket.remotePort,
-        sequence: head.sequence, attempt: head.retransmitCount, rtoMs,
-      },
-    });
     // Resend with the segment's ORIGINAL flags (and, for a SYN, its
     // original capability offer — `extraOptions`) — a bare SYN must stay a
     // bare SYN (no ack piggybacked) or the peer stops treating it as a
     // connection request; `transmit()` already zeroes `acknowledgement`
     // itself whenever `flags.ack` is false, so `socket.recvNext` here is
     // only actually used for segments that genuinely carry an ACK.
-    const now = this.getScheduler().now();
-    const sentTsVal = this.transmit(
-      socket, head.flags, head.sequence, socket.recvNext, head.payload, head.extraOptions ?? [], 'retransmission');
-    if (sentTsVal !== undefined) { head.lastSentTsVal = sentTsVal; head.lastSentAtMs = now; }
+    this.resend(socket, head, 'timeout', rtoMs);
     socket.rtoTimer = this.timers.setTimeout(
       () => this.onRtoFired(socket), Math.min(rtoMs, this.timeUntilGiveUp(socket, head)));
   }
 
-  /** RFC 5681 §3.2 — the 3rd duplicate ACK fast-retransmits without waiting for the RTO timer. */
-  private fastRetransmit(socket: TcpSocket): void {
-    const head = socket.unackedQueue[0];
-    if (!head) return;
-    head.retransmitCount++;
+  private retransmitEntry(socket: TcpSocket, entry: UnackedSegment, reason: TcpRetransmitReason): void {
+    entry.retransmitCount++;
+    this.resend(socket, entry, reason, socket.rtt.currentRto());
+  }
+
+  private resend(socket: TcpSocket, entry: UnackedSegment, reason: TcpRetransmitReason, rtoMs: number): void {
     this.getBus().publish({
       topic: 'tcp.retransmit',
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
         localIp: socket.localIp, localPort: socket.localPort,
         remoteIp: socket.remoteIp, remotePort: socket.remotePort,
-        sequence: head.sequence, attempt: head.retransmitCount, rtoMs: socket.rtt.currentRto(),
+        sequence: entry.sequence, attempt: entry.retransmitCount, rtoMs, reason,
       },
     });
     const now = this.getScheduler().now();
-    socket.ecn.windowReduced(socket.sendNext);
     const sentTsVal = this.transmit(
-      socket, head.flags, head.sequence, socket.recvNext, head.payload, head.extraOptions ?? [], 'retransmission');
-    if (sentTsVal !== undefined) { head.lastSentTsVal = sentTsVal; head.lastSentAtMs = now; }
+      socket, entry.flags, entry.sequence, socket.recvNext, entry.payload, entry.extraOptions ?? [], 'retransmission');
+    if (sentTsVal !== undefined) { entry.lastSentTsVal = sentTsVal; entry.lastSentAtMs = now; }
   }
 
   private shipSegment(
