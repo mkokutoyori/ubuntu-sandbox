@@ -59,10 +59,7 @@
  * defaut ; sur une connexion SACK en etat Open le noyau envoie la premiere
  * retransmission a 2 x SRTT + 200 ms, un seul paquet en vol : meme instant que le
  * RTO ici, la suite differe ; les cas ci-dessous n'ont pas negocie SACK, ou le
- * noyau n'arme pas de sonde), les sondes de fenetre nulle du noyau (zero octet a
- * SND.UNA - 1, attente en `base << backoff`) : la pile envoie toujours un octet
- * de donnee et la laisse a la minuterie de retransmission, seule la premiere sonde
- * est donc mesuree ici.
+ * noyau n'arme pas de sonde).
  *
  * Discrimination (fichier copie sur le commit precedent) : QUINZE cas sur
  * dix-neuf tombent. Les quatre autres passent des deux cotes et sont des
@@ -219,16 +216,16 @@ describe('a zero window is first probed one RTO after the refusal (tcp_probe0_ba
     connection.socket.setNoDelay(true);
     peer.clear();
     connection.socket.send('hello');
-    expect(dataSegments(peer)).toEqual([]);
+    expect(peer.take()).toEqual([]);
     return peer;
   }
 
   it('the first probe leaves at 200 ms, not at one second', () => {
     const peer = refused();
     peer.advance(199);
-    expect(dataSegments(peer)).toEqual([]);
+    expect(peer.take()).toEqual([]);
     peer.advance(1);
-    expect(dataSegments(peer)).toHaveLength(1);
+    expect(peer.take()).toHaveLength(1);
   });
 });
 

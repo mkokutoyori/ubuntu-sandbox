@@ -59,7 +59,7 @@ violer (les options sont des objets typés, sans longueur ni alignement qui puis
 | MUST-1, REC-1 numéros de séquence entiers de 32 bits non signés qui bouclent | Fait | `probe-tcp-rfc9293-requirements` |
 | SHLD-14 ne pas réduire la fenêtre par la droite | Fait : le bord droit annoncé ne recule jamais | `probe-tcp-receive-window` |
 | MUST-34, SHLD-15, SHLD-16, SHLD-17 émetteur robuste à une fenêtre qui se réduit : plus de donnée neuve, anciennes retransmises, pas d'expiration pour des données au-delà du bord | Fait | `probe-tcp-receive-window` |
-| MUST-35, MUST-36, SHLD-29, SHLD-30 sonde de fenêtre nulle : première sonde une RTO après le refus, attente doublée à chaque absence de réponse ; une seule minuterie, une sonde perdue n'est pas une perte de donnée, et les ACK de fenêtre nulle qui lui répondent ne sont pas des doublons | Fait | `probe-tcp-rfc9293-requirements`, `probe-tcp-loss-recovery`, `tcp-flow-control` |
+| MUST-35, MUST-36, SHLD-29, SHLD-30 sonde de fenêtre nulle : première sonde une RTO après le refus, attente doublée à chaque absence de réponse ; une seule minuterie, une sonde perdue n'est pas une perte de donnée, et les ACK de fenêtre nulle qui lui répondent ne sont pas des doublons | Fait : un octet de la donnée en attente pour un hôte sans profil ; une machine Linux sonde par un ACK de zéro octet à SND.UNA − 1, comme `tcp_xmit_probe_skb` (la RFC 9293 §3.8.6.1 demande « at least one octet of new data (if available) », la mesure du noyau gouverne sur Linux), attend 200, 400, 800… après la première sonde et ne laisse mourir la connexion qu'après `tcp_retries2` sondes sans réponse | `probe-tcp-rfc9293-requirements`, `probe-tcp-loss-recovery`, `tcp-flow-control`, `probe-linux-tcp-zero-window-probes` |
 | MUST-37 une fenêtre qui reste nulle ne fait pas expirer la connexion tant que le pair répond | Fait | `probe-tcp-rfc9293-requirements` |
 | MUST-66 RST traité fenêtre nulle (et URG) | Fait | `probe-tcp-rfc9293-requirements` |
 | MAY-8 fenêtre du récepteur fermée indéfiniment | Fait : un lecteur suspendu (`pause`) garde la fenêtre fermée | `probe-tcp-receive-window` |
@@ -212,9 +212,9 @@ violer (les options sont des objets typés, sans longueur ni alignement qui puis
   noyau (la variance retenue est le maximum sur un RTT), l'arrondi au jiffy (4 ms à HZ = 250, d'où les
   `rto:204` de `ss -i`), la sonde de queue (`tcp_early_retrans` = 3 : pour une connexion SACK en état Open
   le noyau envoie la première retransmission à 2 × SRTT + 200 ms, un seul paquet en vol, au même instant
-  que le RTO ici, la suite diffère) et les sondes de fenêtre nulle du noyau (zéro octet à SND.UNA − 1,
-  attente en `base << backoff`) : la pile envoie un octet de donnée et laisse la suite à la minuterie de
-  retransmission.
+  que le RTO ici, la suite diffère). La sonde de fenêtre nulle d'une machine Linux est celle du noyau (ACK de zéro octet à
+  SND.UNA − 1, attente en `base << backoff`) ; ne sont pas construits la seconde sonde qu'il envoie quand un
+  pointeur urgent est dans l'intervalle et le cas d'une fenêtre qui se ferme avec des données en vol.
 - **Source route.** Voir MUST-51 à MUST-53 ci-dessus.
 - **TCP_INFO.** `ss -i` n'imprime ni `ecn`, ni `ecnseen`, ni la fenêtre de congestion.
 - **Anciens documents.** `docs/PRD-TCP.md` décrit l'état du 6 juillet ; ses lacunes (absence de RTO, de

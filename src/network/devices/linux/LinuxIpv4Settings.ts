@@ -87,6 +87,7 @@ export class LinuxIpv4Settings {
       passiveOpen: { kind: 'retransmissions', count: this.get('tcp_synack_retries') },
       established: { kind: 'elapsed', ms: timeoutOf(this.get('tcp_retries2')), atExpiry: true },
       delivery: { kind: 'elapsed', ms: timeoutOf(this.get('tcp_retries1')), atExpiry: true },
+      windowProbe: { form: 'old-sequence', unanswered: this.get('tcp_retries2') },
     };
   }
 

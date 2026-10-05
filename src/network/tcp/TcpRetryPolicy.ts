@@ -7,6 +7,10 @@ export type TcpGiveUp =
   | { readonly kind: 'retransmissions'; readonly count: number }
   | { readonly kind: 'elapsed'; readonly ms: number; readonly atExpiry?: boolean };
 
+export type TcpWindowProbe =
+  | { readonly form: 'one-byte' }
+  | { readonly form: 'old-sequence'; readonly unanswered: number };
+
 export interface TcpRetryPolicy {
   readonly initialRtoMs: number;
   readonly rtoFloor: RtoFloor;
@@ -15,6 +19,7 @@ export interface TcpRetryPolicy {
   readonly passiveOpen: TcpGiveUp;
   readonly established: TcpGiveUp;
   readonly delivery: TcpGiveUp;
+  readonly windowProbe: TcpWindowProbe;
 }
 
 export const RFC_RETRY_POLICY: TcpRetryPolicy = {
@@ -25,6 +30,7 @@ export const RFC_RETRY_POLICY: TcpRetryPolicy = {
   passiveOpen: { kind: 'elapsed', ms: TCP_SYN_R2_MS },
   established: { kind: 'elapsed', ms: TCP_DATA_R2_MS },
   delivery: { kind: 'retransmissions', count: TCP_R1_RETRANSMITS },
+  windowProbe: { form: 'one-byte' },
 };
 
 export function giveUpReached(limit: TcpGiveUp, retransmissions: number, elapsedMs: number): boolean {

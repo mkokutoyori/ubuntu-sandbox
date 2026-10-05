@@ -385,6 +385,8 @@ export class TcpSocket {
   /** Zero-window persist-probe timer (RFC 9293 §3.8.6.1). */
   persistTimer: symbol | null = null;
   persistBackoffMs = 0;
+  persistProbesOut = 0;
+  persistProbesSince: number | null = null;
   /**
    * Reentrancy guard for `flushSendBacklog` (PRD-TCP.md P3/P5) — this
    * simulator delivers frames synchronously end to end, so transmitting a
@@ -1664,6 +1666,8 @@ export class TcpStack {
       this.timers.clear(socket.persistTimer);
       socket.persistTimer = null;
       socket.persistBackoffMs = 0;
+      socket.persistProbesOut = 0;
+      socket.persistProbesSince = null;
       return;
     }
     if (socket.persistTimer) return;
@@ -1675,7 +1679,14 @@ export class TcpStack {
     socket.persistBackoffMs = socket.persistBackoffMs > 0
       ? Math.min(socket.persistBackoffMs * 2, this._retryPolicy().maxRtoMs)
       : socket.rtt.currentRto();
-    socket.persistTimer = this.timers.setTimeout(() => this.onPersistFired(socket), socket.persistBackoffMs);
+    socket.persistTimer = this.timers.setTimeout(
+      () => this.onPersistFired(socket), this.clampedToUserTimeout(socket, socket.persistBackoffMs));
+  }
+
+  private clampedToUserTimeout(socket: TcpSocket, delayMs: number): number {
+    if (socket.userTimeoutMs === null || socket.persistProbesSince === null) return delayMs;
+    const remainingMs = socket.userTimeoutMs - (this.getScheduler().now() - socket.persistProbesSince);
+    return Math.min(delayMs, Math.max(1, remainingMs));
   }
 
   /**
@@ -1696,6 +1707,11 @@ export class TcpStack {
       try { this.flushSendBacklog(socket); } finally { socket.swsOverride = false; }
       return;
     }
+    const windowProbe = this._retryPolicy().windowProbe;
+    if (windowProbe.form === 'old-sequence') {
+      this.probeWindowWithOldSequence(socket, windowProbe.unanswered);
+      return;
+    }
     const next = socket.sendBacklog[0];
     if (next.payload.length === 0) { this.maybeArmPersistTimer(socket); return; }
     const probe = sliceStream(next.payload, 0, 1);
@@ -1709,6 +1725,20 @@ export class TcpStack {
     const seq = socket.sendNext;
     socket.sendNext = (seq + probe.length) >>> 0;
     this.transmitTracked(socket, flags, seq, socket.recvNext, probe, probe.length, [], true);
+    this.maybeArmPersistTimer(socket);
+  }
+
+  private probeWindowWithOldSequence(socket: TcpSocket, unanswered: number): void {
+    const now = this.getScheduler().now();
+    if (socket.persistProbesSince === null) socket.persistProbesSince = now;
+    const userTimeoutPassed = socket.userTimeoutMs !== null && now - socket.persistProbesSince >= socket.userTimeoutMs;
+    if (userTimeoutPassed || socket.persistProbesOut >= unanswered) {
+      this._teardown(socket, 'timeout');
+      return;
+    }
+    const flags = noFlags(); flags.ack = true;
+    this.transmit(socket, flags, (socket.sendUnacked - 1) >>> 0, socket.recvNext, undefined);
+    socket.persistProbesOut++;
     this.maybeArmPersistTimer(socket);
   }
 
@@ -1783,6 +1813,7 @@ export class TcpStack {
     socket: TcpSocket, seg: TcpSegment, payloadSize: number, ecn: EcnCodepoint,
   ): void {
     socket.lastHeardAtMs = this.getScheduler().now();
+    socket.persistProbesOut = 0;
     if (socket.state === 'syn-sent') this.arriveInSynSent(socket, seg, payloadSize);
     else this.arriveSynchronized(socket, seg, payloadSize, ecn);
     if (socket.keepAliveEnabled && socket.state === 'established') {

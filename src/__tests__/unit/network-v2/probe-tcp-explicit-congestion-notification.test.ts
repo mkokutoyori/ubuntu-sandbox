@@ -364,14 +364,13 @@ describe('an ECN-capable sender marks new data only (RFC 3168 §6.1.2, §6.1.4, 
     connection.socket.write('hello');
     expect(dataSegments(peer)).toHaveLength(0);
     peer.advance(250);
-    const probe = dataSegments(peer);
+    const probe = peer.take();
     expect(probe).toHaveLength(1);
-    expect(sizeOf(probe[0])).toBe(1);
+    expect(sizeOf(probe[0])).toBe(0);
     expect(peer.ecnOf(probe[0])).toBe(EcnCodepoint.NOT_ECT);
     expect(probe[0].flags.cwr).toBe(false);
-    peer.clear();
     peer.send({
-      flags: 'A', sequence: connection.peerIsn + 1, acknowledgement: probe[0].sequence + 1, window: 65535,
+      flags: 'A', sequence: connection.peerIsn + 1, acknowledgement: connection.socket.sendUnacked, window: 65535,
     });
     expect(dataSegments(peer).map((segment) => peer.ecnOf(segment))).toEqual([EcnCodepoint.ECT_0]);
   });
