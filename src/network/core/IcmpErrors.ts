@@ -109,7 +109,7 @@ export function tcpIcmpErrorClass(
   return isHardTcpUnreachCode(code) ? 'hard' : 'soft';
 }
 
-interface SocketError {
+export interface SocketError {
   readonly errno: Errno;
   readonly fatal: boolean;
 }
@@ -137,6 +137,25 @@ export function udpSocketErrorFor(icmpType: ICMPType, code: number): SocketError
   if (icmpType === 'time-exceeded') return { errno: 'EHOSTUNREACH', fatal: false };
   if (icmpType !== 'destination-unreachable') return null;
   return UNREACH_SOCKET_ERRORS[code] ?? { errno: 'EHOSTUNREACH', fatal: false };
+}
+
+const UNREACH_SOCKET_ERRORS_V6: readonly SocketError[] = [
+  { errno: 'ENETUNREACH', fatal: false },
+  { errno: 'EACCES', fatal: true },
+  { errno: 'EHOSTUNREACH', fatal: false },
+  { errno: 'EHOSTUNREACH', fatal: false },
+  { errno: 'ECONNREFUSED', fatal: true },
+  { errno: 'EACCES', fatal: true },
+  { errno: 'EACCES', fatal: true },
+];
+
+export function udpSocketErrorForV6(icmpType: ICMPv6Type, code: number): SocketError | null {
+  switch (icmpType) {
+    case 'destination-unreachable': return UNREACH_SOCKET_ERRORS_V6[code] ?? { errno: 'EPROTO', fatal: true };
+    case 'packet-too-big': return { errno: 'EMSGSIZE', fatal: true };
+    case 'time-exceeded': return { errno: 'EHOSTUNREACH', fatal: false };
+    default: return null;
+  }
 }
 
 /** Time Exceeded (Type 11) codes */
