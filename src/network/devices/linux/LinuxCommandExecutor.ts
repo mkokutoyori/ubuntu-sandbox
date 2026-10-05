@@ -2149,8 +2149,8 @@ export class LinuxCommandExecutor {
     }
   }
 
-  private runSshKeyscan(args: string[], stdin?: string): { output: string; exitCode: number; stderr?: string } {
-    const { output, stderr, exitCode } = runSshKeyscanCommand(args, {
+  private runSshKeyscan(args: string[], stdin?: string): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
+    const { output, stderr, exitCode, lines } = runSshKeyscanCommand(args, {
       resolve: (target: string) =>
         findHostByAddress(target, undefined, this.localDevice as never)?.ip ?? null,
       probe: (ip, port, hostKeyAlgorithms) => this.sshHostKeyProbe?.(ip, port, hostKeyAlgorithms) ?? null,
@@ -2160,7 +2160,7 @@ export class LinuxCommandExecutor {
       },
       stdin,
     });
-    return { output, exitCode, ...(stderr === '' ? {} : { stderr }) };
+    return { output, exitCode, ...(stderr === '' ? {} : { stderr, interleaved: lines.map((line) => line.text).join('\n') }) };
   }
 
   private keygenHost(): SshKeygenHost {

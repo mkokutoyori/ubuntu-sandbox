@@ -2461,6 +2461,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     shell: (() => { output: string; exitCode: number } | null) | undefined;
     authRefused: boolean;
     deniedMethods?: string;
+    negotiationFailure?: string;
     close: () => void;
   } | null> {
     const outcome = await openWireSshConnection({
@@ -2473,9 +2474,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       password,
       credentialless: password === undefined,
       identityFiles: target.identities,
+      algorithms: target.algorithms,
     });
     if (outcome.kind === 'auth-failed' && password !== undefined) {
       return { exec: undefined, shell: undefined, authRefused: true, deniedMethods: outcome.methods, close: () => undefined };
+    }
+    if (outcome.kind === 'rejected' && outcome.message.startsWith('Unable to negotiate')) {
+      return { exec: undefined, shell: undefined, authRefused: false, negotiationFailure: outcome.message, close: () => undefined };
     }
     if (outcome.kind !== 'connected') return null;
     const { session } = outcome;
@@ -2512,6 +2517,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       ? undefined
       : await wireReachOutcomeRetransmitting(this, target.host, target.port);
     const wire = target && reach === 'open' ? await this.openWireSsh(target, password) : null;
+    if (wire?.negotiationFailure !== undefined) return wire.negotiationFailure;
     return runWindowsSshClient({
       args,
       wireOutcome: reach,
