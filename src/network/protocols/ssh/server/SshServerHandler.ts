@@ -474,7 +474,7 @@ export class SshServerHandler {
               info.shellSession = new SshShellSession(channel, info.pty, {
                 shell,
                 interactive: this.ctx.createInteractiveShell?.(user) ?? null,
-                motd: this.ctx.getMotd(),
+                motd: this.ctx.getMotd({ user: user.username, ip: clientIp, port: this.ctx.clientPort?.(clientIp) }),
                 user,
                 rearmIdle: rearmExecIdle,
                 opened: () => this.eventBus.emit({ kind: 'channel_opened', user: user.username, channelType: 'shell' }),

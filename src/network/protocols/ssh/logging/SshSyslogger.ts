@@ -64,9 +64,6 @@ export class SshSyslogger {
   private readonly sshdPid: number;
   private readonly port: number;
   private readonly clock: () => Date;
-  private pendingSessionUser: string | null = null;
-  private openSessionUser: string | null = null;
-  private uidLookup: ((user: string) => number) | null = null;
   private readonly logMgr: LinuxLogManager | null;
   private readonly logLevel: () => SshdLogLevel;
   private readonly unsubscribe: () => void;
@@ -116,7 +113,6 @@ export class SshSyslogger {
         return `Connection from ${event.ip} port ${event.port ?? this.port} on ${hostnameOf(this.hostnameSource)} port ${this.port} rdomain ""`;
 
       case 'auth_success': {
-        this.pendingSessionUser = event.user;
         if (event.method === 'publickey' && event.keyType && event.keyFingerprint) {
           return `Accepted publickey for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2: ${event.keyType} ${event.keyFingerprint}`;
         }
@@ -172,11 +168,7 @@ export class SshSyslogger {
         if (event.channelType === 'sftp') {
           return `subsystem request for sftp by user ${event.user}`;
         }
-        if (this.pendingSessionUser !== event.user) return null;
-        this.pendingSessionUser = null;
-        this.openSessionUser = event.user;
-        return `pam_unix(sshd:session): session opened for user ${event.user}`
-          + `(uid=${this.uidOf(event.user)}) by (uid=0)`;
+        return null;
 
       case 'channel_closed':
         return null;
@@ -210,16 +202,8 @@ export class SshSyslogger {
         : '';
       lines.push(`Connection closed by ${who}${event.ip} port ${port} [preauth]`);
     }
-    if (this.openSessionUser === event.user) {
-      this.openSessionUser = null;
-      lines.push(`pam_unix(sshd:session): session closed for user ${event.user}`);
-    }
     return lines;
   }
-
-  setUidLookup(lookup: (user: string) => number): void { this.uidLookup = lookup; }
-
-  private uidOf(user: string): number { return this.uidLookup?.(user) ?? 1000; }
 
   private append(message: string): void {
     // When wired to a LinuxLogManager the journal owns BOTH the on-disk

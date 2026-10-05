@@ -229,10 +229,6 @@ export class LinuxSshServerContext implements ISshServerContext {
           logLevel: () => this.effectiveSshdServerConfig().logLevel,
         })
       : null;
-    const userMgr = this.executor?.userMgr;
-    if (userMgr) {
-      this.syslogger?.setUidLookup((u) => userMgr.getUser(u)?.uid ?? 1000);
-    }
 
     // Fail2ban jail (sshd) — constructed before the throttler so its
     // `auth_failure` subscription (the "Found <ip>" line) observes each
@@ -619,10 +615,19 @@ export class LinuxSshServerContext implements ISshServerContext {
     };
   }
 
-  getMotd(): string {
-    if (!this.effectiveSshdServerConfig().showsMotd) return '';
+  getMotd(session?: { readonly user: string; readonly ip: string; readonly port?: number }): string {
+    const policy = this.effectiveSshdServerConfig();
+    if (session !== undefined && this.hushLogin(session.user)) return '';
+    const pam = this.sshdPam();
+    if (pam !== null && session !== undefined) return pam.sessionMessages({ ip: session.ip, port: session.port }).join('');
+    if (!policy.printMotd) return '';
     const motd = this.vfs.readFile('/etc/motd');
     return motd ?? `Welcome to ${hostnameOf(this.hostnameSource)}\n`;
+  }
+
+  private hushLogin(user: string): boolean {
+    const home = this.userManager.getUser(user)?.home ?? `/home/${user}`;
+    return this.vfs.exists(`${home}/.hushlogin`);
   }
 
   getLastLogin(user: string): string | null {
@@ -643,6 +648,7 @@ export class LinuxSshServerContext implements ISshServerContext {
   }
 
   recordLogin(user: string, fromIp: string): void {
+    this.openPamSession(user, fromIp);
     const entry: LastLoginEntry = { user, ip: fromIp, at: Date.now() };
     let entries: LastLoginEntry[] = [];
     const raw = this.vfs.readFile(LASTLOG_PATH);
@@ -705,7 +711,27 @@ export class LinuxSshServerContext implements ISshServerContext {
     return machine?.sshClientPort?.(fromIp);
   }
 
+  openPamSession(user: string, fromIp: string): void {
+    const pam = this.sshdPam();
+    const uid = this.userManager.getUser(user)?.uid;
+    if (pam === null || this.executor === null || uid === undefined) return;
+    const state = pam.openSession(user, { ip: fromIp, port: this.clientPort(fromIp) });
+    const processes = this.executor.processMgr;
+    const nofile = state.limits.get('nofile');
+    const nproc = state.limits.get('nproc');
+    const bounded = (value: number): number => (Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER);
+    if (nofile !== undefined) {
+      processes.setNofileHardLimit(uid, bounded(nofile.hard));
+      processes.setNofileLimit(uid, bounded(nofile.soft));
+    }
+    if (nproc !== undefined) {
+      processes.setNprocHardLimit(uid, bounded(nproc.hard));
+      processes.setNprocLimit(uid, bounded(nproc.soft));
+    }
+  }
+
   connectionClosed(user: string, fromIp: string): void {
+    this.pamAuth?.closeSession({ ip: fromIp, port: this.clientPort(fromIp) });
     const machine = this.device as { sshWireConnectionClosed?: (u: string, ip: string) => void } | null;
     machine?.sshWireConnectionClosed?.(user, fromIp);
   }
@@ -831,6 +857,12 @@ export class LinuxSshServerContext implements ISshServerContext {
       () => this.rootMayLogIn('password'),
     );
     return this.pamAuth;
+  }
+
+  closePamSession(fromIp: string): void {
+    const peer = { ip: fromIp, port: this.clientPort(fromIp) };
+    this.pamAuth?.closeSession(peer);
+    this.pamAuth?.end(peer);
   }
 
   connectionEnded(fromIp: string, port: number | undefined): void {

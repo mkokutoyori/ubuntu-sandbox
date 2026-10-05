@@ -2153,7 +2153,10 @@ export abstract class LinuxMachine extends EndHost
       });
       this.recordFailedSshLogin(user, fromIp);
     }
-    if (accepted) this.openSshSessionRecord(user, fromIp, fromHost);
+    if (accepted) {
+      this.getSshServerContext().openPamSession(user, fromIp);
+      this.openSshSessionRecord(user, fromIp, fromHost);
+    }
   }
 
   recordFailedSshLogin(user: string, fromIp: string): void {
@@ -2267,6 +2270,7 @@ export abstract class LinuxMachine extends EndHost
       kind: 'client_disconnected', user, ip: fromIp, port,
       authenticated: closed, reason: 'client_disconnect',
     });
+    this.getSshServerContext().closePamSession(fromIp);
     this.sshForgetPeerPort(fromIp);
   }
 

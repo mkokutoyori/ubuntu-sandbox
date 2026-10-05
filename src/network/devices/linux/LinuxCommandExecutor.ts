@@ -1799,7 +1799,7 @@ export class LinuxCommandExecutor {
     const interactif = target !== null && !target.command && !target.holdOnly;
     const relayedShell = interactif
       ? await this.relayShellOverWire(
-        session, offeredPassword === undefined && stdinPwd ? 1 : 0, !linuxPeer)
+        session, offeredPassword === undefined && stdinPwd ? 1 : 0, true)
       : null;
     try {
       return this.finishSshClientResult(runSshClient({

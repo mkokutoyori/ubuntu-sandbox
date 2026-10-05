@@ -129,6 +129,8 @@ export class IamFilesystem {
       renderCommonPassword(policy.quality),
       0o644,
     );
+    this.vfs.mkdirp('/etc/security/limits.d', 0o755, 0, 0);
+    this.vfs.mkdirp('/etc/security/access.d', 0o755, 0, 0);
     for (const file of UBUNTU_PAM_FILES) this.writeIfAbsent(file.path, file.content, file.mode);
   }
 

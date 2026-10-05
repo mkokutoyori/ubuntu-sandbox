@@ -1,7 +1,7 @@
 import type { LinuxPam, PamSyslogIdentity } from '@/network/devices/linux/pam/LinuxPam';
 import type { PamConversation } from '@/network/devices/linux/pam/PamTransaction';
 import { PamTransaction, runPamSync } from '@/network/devices/linux/pam/PamTransaction';
-import type { LinuxPamHost } from '@/network/devices/linux/pam/PamLinuxHost';
+import type { LinuxPamHost, PamProcessState } from '@/network/devices/linux/pam/PamLinuxHost';
 import { PamFlag, PamReturn, pamStrError } from '@/network/devices/linux/pam/PamReturnCode';
 import type { AccountLifecycleVerdict, KeyboardInteractiveChallenge, SshPeer } from '../auth/ISshAuthMethod';
 
@@ -13,6 +13,8 @@ class SshdPamConnection {
   readonly transaction: PamTransaction<LinuxPamHost>;
   readonly loginMessages: string[] = [];
   maxTriesReached = false;
+  sessionOpen = false;
+  sessionMessages: string[] = [];
 
   constructor(pam: LinuxPam, identity: PamSyslogIdentity, readonly user: string, ip: string) {
     this.transaction = pam.begin(SSHD_SERVICE, { caller: ROOT_CALLER, identity });
@@ -49,6 +51,24 @@ class SshdPamConnection {
 
   takeLoginMessages(): string[] {
     return this.loginMessages.splice(0);
+  }
+
+  openSession(): void {
+    const conversation = this.conversation(() => null);
+    runPamSync(this.transaction.setcred(PamFlag.ESTABLISH_CRED), conversation);
+    this.takeLoginMessages();
+    const code = runPamSync(this.transaction.openSession(0), conversation);
+    this.sessionOpen = code === PamReturn.SUCCESS;
+    this.sessionMessages = this.takeLoginMessages();
+  }
+
+  closeSession(): void {
+    if (!this.sessionOpen) return;
+    const conversation = this.conversation(() => null);
+    runPamSync(this.transaction.closeSession(0), conversation);
+    runPamSync(this.transaction.setcred(PamFlag.DELETE_CRED), conversation);
+    this.takeLoginMessages();
+    this.sessionOpen = false;
   }
 
   end(): void {
@@ -135,6 +155,20 @@ export class SshdPam {
     if (code === PamReturn.NEW_AUTHTOK_REQD) return { ok: false, kind: 'password-expired', messages };
     const expired = results.some((result) => result.code === PamReturn.ACCT_EXPIRED);
     return { ok: false, kind: expired ? 'account-expired' : 'pam-denied', messages, detail: pamStrError(code) };
+  }
+
+  openSession(user: string, peer: SshPeer): PamProcessState {
+    const connection = this.connectionFor(user, peer);
+    connection.openSession();
+    return connection.transaction.handle.host.process;
+  }
+
+  sessionMessages(peer: SshPeer): readonly string[] {
+    return this.connections.get(this.key(peer))?.sessionMessages ?? [];
+  }
+
+  closeSession(peer: SshPeer): void {
+    this.connections.get(this.key(peer))?.closeSession();
   }
 
   takeLoginMessages(peer: SshPeer): string[] {

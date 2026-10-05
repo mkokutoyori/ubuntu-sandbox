@@ -143,3 +143,47 @@ describe('sshd decided by the PAM stack', () => {
     expect(log).not.toContain('pam_unix(sshd:auth)');
   });
 });
+
+describe('the session phase is the PAM stack too', () => {
+  const interactive = (lab: Awaited<ReturnType<typeof labo>>) => lab.cli.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.1', 'secret\nwhoami\nexit\n');
+
+  it('pam_unix opens and closes the session, between sshd\'s own lines', async () => {
+    const lab = await labo();
+    await lab.login('secret');
+    const lines = sshdLines(await lab.journal());
+    const accepted = lines.findIndex((line) => /^Accepted password for alice/.test(line));
+    const opened = lines.findIndex((line) => /^pam_unix\(sshd:session\): session opened for user alice\(uid=\d+\) by \(uid=0\)$/.test(line));
+    const disconnected = lines.findIndex((line) => /^Disconnected from user alice 10\.0\.0\.2/.test(line));
+    const closed = lines.findIndex((line) => line === 'pam_unix(sshd:session): session closed for user alice');
+    expect(accepted).toBeGreaterThanOrEqual(0);
+    expect(opened).toBeGreaterThan(accepted);
+    expect(disconnected).toBeGreaterThan(opened);
+    expect(closed).toBeGreaterThan(disconnected);
+  });
+
+  it('with the session modules removed from the stack there is no pam_unix session line', async () => {
+    const lab = await labo();
+    await lab.srv.executeCommand('sudo sed -i "s/^@include common-session$/session required pam_permit.so/" /etc/pam.d/sshd');
+    await lab.login('secret');
+    expect(await lab.journal()).not.toContain('pam_unix(sshd:session)');
+  });
+
+  it('the login banner is what pam_motd prints: /etc/motd by default, nothing without the module, nothing with ~/.hushlogin', async () => {
+    const lab = await labo();
+    await lab.srv.executeCommand('echo "Maintenance tonight" | sudo tee /etc/motd');
+    expect(String(await interactive(lab))).toContain('Maintenance tonight');
+    await lab.srv.executeCommand('sudo touch /home/alice/.hushlogin');
+    expect(String(await interactive(lab))).not.toContain('Maintenance tonight');
+    await lab.srv.executeCommand('sudo rm /home/alice/.hushlogin');
+    await lab.srv.executeCommand('sudo sed -i "/pam_motd.so/d" /etc/pam.d/sshd');
+    expect(String(await interactive(lab))).not.toContain('Maintenance tonight');
+  });
+
+  it('pam_limits from limits.conf applies to the login: ulimit -n of the new session', async () => {
+    const lab = await labo();
+    await lab.srv.executeCommand('echo "alice - nofile 4096" | sudo tee -a /etc/security/limits.conf');
+    await lab.login('secret');
+    const out = String(await lab.cli.executeCommand('ssh -o StrictHostKeyChecking=accept-new alice@10.0.0.1 "ulimit -n"', 'secret\n'));
+    expect(out.split('\n')).toContain('4096');
+  });
+});

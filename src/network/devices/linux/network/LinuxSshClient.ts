@@ -1361,7 +1361,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     : bannerPath.toLowerCase() === 'none'
       ? ''
       : remoteVfs.readFile(bannerPath) ?? '';
-  const motd = remoteVfs.readFile('/etc/motd') ?? '';
+  const motd = opts.wireAuthenticated ? '' : remoteVfs.readFile('/etc/motd') ?? '';
 
   // -q / -Q (quiet) suppresses banner output (still connects). Match
   // OpenSSH: stay silent on success.
