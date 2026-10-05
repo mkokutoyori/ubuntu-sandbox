@@ -234,10 +234,10 @@ describe('reactive password-policy reconfiguration', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// Reactive event stream — aging, rejection, lockout
+// Reactive event stream — aging, lockout
 // ═══════════════════════════════════════════════════════════════════
 
-describe('IAM aging & rejection events', () => {
+describe('IAM aging events', () => {
   it('publishes user.aging-changed with the post-change shadow fields', () => {
     const { mgr, bus } = wiredManager();
     const events = capture(bus, 'linux.iam.user.aging-changed');
@@ -248,27 +248,6 @@ describe('IAM aging & rejection events', () => {
     expect(events).toHaveLength(1);
     expect(events[0].changedFields.sort()).toEqual(['maxDays', 'warnDays']);
     expect(events[0].maxDays).toBe(30);
-  });
-
-  it('publishes password.rejected for a weak password (warn-only)', () => {
-    const { mgr, bus } = wiredManager();
-    const rejected = capture(bus, 'linux.iam.password.rejected');
-
-    mgr.useradd('bob');
-    mgr.setPassword('bob', 'admin');
-
-    expect(rejected).toHaveLength(1);
-    expect(rejected[0].blocked).toBe(false);
-    expect(rejected[0].reasons.length).toBeGreaterThan(0);
-  });
-
-  it('does not publish password.rejected for a strong password', () => {
-    const { mgr, bus } = wiredManager();
-    const rejected = capture(bus, 'linux.iam.password.rejected');
-
-    mgr.useradd('bob');
-    mgr.setPassword('bob', 'Str0ng!pwxy');
-    expect(rejected).toHaveLength(0);
   });
 });
 

@@ -134,16 +134,6 @@ function push(into: string[], result: string, successLine: string): void {
   into.push(result === '' ? successLine : result);
 }
 
-export function cmdChpasswd(ctx: ShellContext, stdin: string): string {
-  // Format: username:password
-  const lines = stdin.split('\n').filter(l => l.includes(':'));
-  for (const line of lines) {
-    const [user, pass] = line.split(':');
-    ctx.userMgr.setPassword(user.trim(), pass.trim());
-  }
-  return '';
-}
-
 /**
  * `faillock` — display or reset the `pam_faillock` consecutive-failure tally.
  *

@@ -40,6 +40,7 @@ import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxLogManager, fmtSyslogTimestamp } from './LinuxLogManager';
 import { LinuxPam } from './pam/LinuxPam';
 import { PamServiceSession } from './pam/PamServiceSession';
+import type { PamDialogue } from './pam/PamDialogue';
 import { SudoPamSessions } from './pam/SudoPamSessions';
 import type { SuFrame } from '@/shell/ShellContext';
 import { PamReturn, pamStrError } from './pam/PamReturnCode';
@@ -62,7 +63,7 @@ import {
 } from './coreutils';
 import { cmdDiff } from './coreutils/DiffCommand';
 import { runXargs } from './coreutils/Xargs';
-import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
+import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 import {
   CommandPrivilegePolicy,
@@ -3992,7 +3993,11 @@ export class LinuxCommandExecutor {
         pipedPassword = (lastArg.replace(/\n+$/, '').split('\n').pop() ?? '').trim();
         cmdArgs.pop();
       }
-      const admission = this.admitSudo(cmdArgs[0], cmdArgs.slice(1), runasUser, pipedPassword);
+      const trailing = cmdArgs[cmdArgs.length - 1];
+      const carriesStdin = cmdArgs.length > 1 && trailing !== undefined
+        && (trailing === interpreterStdin || trailing.includes('\n'));
+      const audited = carriesStdin ? cmdArgs.slice(0, -1) : cmdArgs;
+      const admission = this.admitSudo(audited[0], audited.slice(1), runasUser, pipedPassword);
       if (admission.refusal !== null) return admission.refusal;
       closeSudo = admission.close;
       savedUser = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, cwd: this.cwd };
@@ -5023,8 +5028,8 @@ export class LinuxCommandExecutor {
       case 'usermod': return { output: cmdUsermod(c, args), exitCode: 0 };
       case 'userdel': return this.handleUserdel(args);
       case 'deluser': return this.handleDeluser(args);
-      case 'passwd': return this.handlePasswd(args);
-      case 'chpasswd': return { output: cmdChpasswd(c, stdin ?? ''), exitCode: 0 };
+      case 'passwd': return this.handlePasswd(args, stdin);
+      case 'chpasswd': return this.runChpasswd(stdin ?? '');
       case 'faillock': return { output: cmdFaillock(c, args), exitCode: 0 };
       // `batch` est le même binaire qu'`at` — seule la file change (`b`),
       // et l'heure n'est pas demandée. Les deux partagent donc le cas.
@@ -6714,17 +6719,58 @@ export class LinuxCommandExecutor {
 
   // ─── Improved command handlers ────────────────────────────────────
 
-  handlePasswd(args: string[]): { output: string; exitCode: number } {
-    // A bare `passwd` / `passwd <user>` is driven by the interactive flow —
-    // the Terminal applies the new secret after prompting.
-    const hasFlag = args.some((a) => a.startsWith('-'));
-    if (!hasFlag) {
-      if (args.length > 0) {
-        const user = this.userMgr.getUser(args[0]);
-        if (!user) return { output: `passwd: user '${args[0]}' does not exist`, exitCode: 1 };
-      }
-      return { output: 'passwd: password updated successfully', exitCode: 0 };
+  beginPasswordChange(target: string, elevated: boolean): PamDialogue {
+    const caller = { uid: elevated ? 0 : this.userMgr.currentUid, euid: 0, loginName: this.loginName() };
+    const pid = this.logMgr.allocatePid();
+    return new PamServiceSession(this.pam, 'passwd', { caller, identity: { tag: 'passwd', pid } }, { user: target }).changeAuthtok();
+  }
+
+  private changePasswordFromInput(requested: string | undefined, input: string | undefined): { output: string; exitCode: number } {
+    const target = requested ?? this.userMgr.currentUser;
+    if (!this.userMgr.getUser(target)) return { output: `passwd: user '${target}' does not exist`, exitCode: 1 };
+    const lines = (input ?? '').replace(/\n$/, '').split('\n');
+    const answers = input === undefined || input === '' ? [] : lines;
+    const dialogue = this.beginPasswordChange(target, false);
+    let output = '';
+    const flush = (): void => { for (const notice of dialogue.takeNotices()) output += `${notice}\n`; };
+    flush();
+    while (!dialogue.finished) {
+      output += dialogue.prompt;
+      dialogue.answer(answers.shift() ?? null);
+      flush();
     }
+    if (dialogue.code === PamReturn.SUCCESS) return { output: `${output}passwd: password updated successfully`, exitCode: 0 };
+    return { output: `${output}passwd: ${pamStrError(dialogue.code)}\npasswd: password unchanged`, exitCode: 10 };
+  }
+
+  runChpasswd(input: string): { output: string; exitCode: number } {
+    const out: string[] = [];
+    let errors = 0;
+    input.split('\n').forEach((raw, index) => {
+      if (raw.trim() === '') return;
+      const line = index + 1;
+      const colon = raw.indexOf(':');
+      if (colon < 0) { out.push(`chpasswd: line ${line}: missing new password`); errors++; return; }
+      const name = raw.slice(0, colon);
+      const password = raw.slice(colon + 1);
+      if (!this.userMgr.getUser(name)) { out.push(`chpasswd: line ${line}: user '${name}' does not exist`); errors++; return; }
+      const caller = { uid: this.userMgr.currentUid, euid: 0, loginName: this.loginName() };
+      const session = new PamServiceSession(this.pam, 'chpasswd', { caller, identity: { tag: 'chpasswd', pid: this.logMgr.allocatePid() } }, { user: name });
+      const code = session.changeAuthtokWith(() => password);
+      session.end();
+      if (code !== PamReturn.SUCCESS) {
+        out.push(`chpasswd: (user ${name}) pam_chauthtok() failed, error:\n${pamStrError(code)}`);
+        out.push(`chpasswd: (line ${line}, user ${name}) password not changed`);
+        errors++;
+      }
+    });
+    if (errors > 0) out.push('chpasswd: error detected, changes ignored');
+    return { output: out.join('\n'), exitCode: errors > 0 ? 1 : 0 };
+  }
+
+  handlePasswd(args: string[], input?: string): { output: string; exitCode: number } {
+    const hasFlag = args.some((a) => a.startsWith('-'));
+    if (!hasFlag) return this.changePasswordFromInput(args[0], input);
 
     // Flag overloads — status / lock / unlock / expire / delete / aging.
     const output = cmdPasswd(this.ctx(), args);

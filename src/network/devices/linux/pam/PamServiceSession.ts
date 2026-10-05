@@ -1,6 +1,7 @@
 import type { LinuxPam, PamTransactionOptions } from './LinuxPam';
 import type { LinuxPamHost } from './PamLinuxHost';
 import { PamFlag, PamReturn } from './PamReturnCode';
+import { PamDialogue } from './PamDialogue';
 import { PamTransaction, runPamSync, type PamConversation } from './PamTransaction';
 
 export interface PamSessionSubject {
@@ -73,6 +74,14 @@ export class PamServiceSession {
     runPamSync(this.transaction.setcred(PamFlag.DELETE_CRED), conversation);
     this.takeLoginMessages();
     this.sessionOpen = false;
+  }
+
+  changeAuthtok(flags = 0): PamDialogue {
+    return new PamDialogue(this.transaction.chauthtok(flags), () => this.end());
+  }
+
+  changeAuthtokWith(answers: () => string | null, flags = 0): number {
+    return runPamSync(this.transaction.chauthtok(flags), this.conversation(answers));
   }
 
   end(): void {

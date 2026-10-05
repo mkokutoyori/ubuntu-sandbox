@@ -795,27 +795,6 @@ export class LinuxUserManager {
     const user = this.users.get(username);
     if (!user) return `passwd: user '${username}' does not exist`;
 
-    // Evaluate the new secret against the quality policy and surface any
-    // weakness reactively. The low-level setter is warn-only (mirroring
-    // `passwd` run by root); a non-root caller blocked by an enforcing
-    // policy is gated upstream via {@link evaluatePassword}.
-    const verdict = this.passwordPolicy.quality.evaluate(password, {
-      username,
-      gecos: user.gecos,
-      oldPassword: this.passwords.get(username),
-    });
-    if (!verdict.acceptable) {
-      this.publish({
-        topic: 'linux.iam.password.rejected',
-        payload: {
-          deviceId: this.deviceId,
-          username,
-          reasons: verdict.messages,
-          blocked: false,
-        },
-      });
-    }
-
     user.password = `$6$simulated$${password}`;
     user.lastChange = this.daysSinceEpoch();
     this.passwords.set(username, password);

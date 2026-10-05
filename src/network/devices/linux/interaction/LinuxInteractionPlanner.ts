@@ -22,6 +22,8 @@ import type {
 } from '@/shell/interaction/CommandInteraction';
 import { tokenize } from '../LinuxShellParser';
 import { parseAdduserArgs } from '../iam/adduserOptions';
+import type { PamDialogue } from '../pam/PamDialogue';
+import { PamReturn, pamStrError } from '../pam/PamReturnCode';
 
 const MAX_SUDO_ATTEMPTS = 3;
 
@@ -34,7 +36,7 @@ export interface LinuxPlannerDevice {
   checkPassword?(user: string, password: string): boolean;
   authenticateSudo?(user: string, password: string): boolean;
   abandonSudoAuthentication?(attempts: number, commandLine: string): void;
-  setUserPassword?(user: string, password: string): void;
+  beginPasswordChange?(target: string, elevated: boolean): PamDialogue;
   setUserGecos?(
     user: string, fullName: string, room: string,
     workPhone: string, homePhone: string, other: string,
@@ -109,57 +111,46 @@ function suPasswordStep(): InteractionStep {
   };
 }
 
-function currentPasswordStep(device: LinuxPlannerDevice, currentUser: string): InteractionStep {
-  return {
-    kind: 'password',
-    prompt: 'Current password:',
-    storeAs: 'current_password',
-    validate: (pwd) => {
-      const valid = device.checkPassword?.(currentUser, pwd) ?? false;
-      return {
-        valid,
-        errorMessage: valid
-          ? undefined
-          : 'passwd: Authentication token manipulation error\npasswd: password unchanged',
-        maxRetries: 0,
-      };
-    },
-  };
-}
+let passwordChangeCounter = 0;
 
-function newPasswordSteps(): InteractionStep[] {
+function passwordChangeSteps(device: LinuxPlannerDevice, target: string, elevated: boolean): InteractionStep[] {
+  const ask = `password-change-${passwordChangeCounter++}`;
+  const done = `${ask}-done`;
+  let dialogue: PamDialogue | null = null;
+  const current = (): PamDialogue => {
+    dialogue ??= device.beginPasswordChange!(target, elevated);
+    return dialogue;
+  };
   return [
+    { kind: 'label', name: ask },
     {
-      kind: 'password',
-      prompt: 'New password:',
-      storeAs: 'new_password',
-      validate: (pwd) => ({
-        valid: pwd.length >= 1,
-        errorMessage: 'No password supplied',
-        maxRetries: 0,
-      }),
+      kind: 'run',
+      run: async (rt) => {
+        const notices = current().takeNotices();
+        if (notices.length > 0) rt.output(notices.join('\n'));
+      },
     },
+    { kind: 'branch', to: () => (current().finished ? done : null) },
     {
       kind: 'password',
-      prompt: 'Retype new password:',
-      storeAs: 'confirm_password',
-      validate: (pwd, values) => ({
-        valid: pwd === values.get('new_password'),
-        errorMessage: 'Sorry, passwords do not match.\npasswd: Authentication token manipulation error\npasswd: password unchanged',
-        maxRetries: 0,
-      }),
+      get prompt(): string { return current().prompt; },
+      validate: (answer) => {
+        current().answer(answer);
+        return { valid: true };
+      },
+    },
+    { kind: 'branch', to: () => ask },
+    { kind: 'label', name: done },
+    {
+      kind: 'run',
+      run: async (rt) => {
+        const code = current().code;
+        rt.output(code === PamReturn.SUCCESS
+          ? 'passwd: password updated successfully'
+          : `passwd: ${pamStrError(code)}\npasswd: password unchanged`);
+      },
     },
   ];
-}
-
-function setPasswordStep(device: LinuxPlannerDevice, targetUser: string): InteractionStep {
-  return {
-    kind: 'run',
-    run: async (rt) => {
-      const password = rt.values.get('new_password');
-      if (password) device.setUserPassword?.(targetUser, password);
-    },
-  };
 }
 
 function gecosSteps(device: LinuxPlannerDevice, targetUser: string): InteractionStep[] {
@@ -212,13 +203,7 @@ function userCreationTail(
   withPassword: boolean,
   withGecos: boolean,
 ): InteractionStep[] {
-  const passwordSteps: InteractionStep[] = withPassword
-    ? [
-        ...newPasswordSteps(),
-        setPasswordStep(device, targetUser),
-        { kind: 'output', lines: ['passwd: password updated successfully'] },
-      ]
-    : [];
+  const passwordSteps: InteractionStep[] = withPassword ? passwordChangeSteps(device, targetUser, false) : [];
   const chfnSteps = withGecos ? gecosSteps(device, targetUser) : [];
   return [...passwordSteps, ...chfnSteps];
 }
@@ -244,15 +229,17 @@ function sudoPlan(
     return { steps: [sudoStep, executeCommandStep(fullCommand)] };
   }
 
+  if (subCmd === 'passwd' && subParts.length === 1) {
+    return { steps: [sudoStep, ...passwordChangeSteps(device, 'root', true)] };
+  }
+
   // sudo passwd <user> — change another user's password.
   if (subCmd === 'passwd' && subParts.length >= 2 && !subParts[1].startsWith('-')) {
     const targetUser = subParts[subParts.length - 1];
     return {
       steps: [
         sudoStep,
-        ...newPasswordSteps(),
-        setPasswordStep(device, targetUser),
-        { kind: 'output', lines: ['passwd: password updated successfully'] },
+        ...passwordChangeSteps(device, targetUser, true),
       ],
     };
   }
@@ -299,38 +286,12 @@ function passwdPlan(
   currentUser: string,
   isRoot: boolean,
 ): CommandInteractionPlan | null {
-  // passwd (no args) — change own password.
   if (parts.length === 1) {
-    if (isRoot) {
-      return {
-        steps: [
-          ...newPasswordSteps(),
-          setPasswordStep(device, currentUser),
-          { kind: 'output', lines: ['passwd: password updated successfully'] },
-        ],
-      };
-    }
-    return {
-      steps: [
-        { kind: 'output', lines: [`Changing password for ${currentUser}.`] },
-        currentPasswordStep(device, currentUser),
-        ...newPasswordSteps(),
-        setPasswordStep(device, currentUser),
-        { kind: 'output', lines: ['passwd: password updated successfully'] },
-      ],
-    };
+    return { steps: passwordChangeSteps(device, currentUser, false) };
   }
 
-  // passwd <user> as root — change another user's password.
   if (parts.length >= 2 && !parts[1].startsWith('-') && isRoot) {
-    const targetUser = parts[parts.length - 1];
-    return {
-      steps: [
-        ...newPasswordSteps(),
-        setPasswordStep(device, targetUser),
-        { kind: 'output', lines: ['passwd: password updated successfully'] },
-      ],
-    };
+    return { steps: passwordChangeSteps(device, parts[parts.length - 1], false) };
   }
 
   return null;

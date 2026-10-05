@@ -397,6 +397,7 @@ function* chauthtok(pamh: PamHandle<LinuxPamHost>, flags: number, args: readonly
     }
     if (control.remember !== null && oldToken !== null) pamh.host.accounts.rememberPassword(name, oldToken, control.remember);
     pamh.host.accounts.setPassword(name, chosen);
+    pamh.syslog('notice', `password changed for ${name}`);
     return PamReturn.SUCCESS;
   }
   pamh.syslog('crit', 'password received unknown request');

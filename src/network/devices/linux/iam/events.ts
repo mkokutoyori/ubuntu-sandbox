@@ -106,16 +106,6 @@ export interface PasswordPolicyChangedPayload extends LinuxIamDeviceRef {
   changedFields: string[];
 }
 
-/** A candidate password failed the quality policy. */
-export interface PasswordRejectedPayload extends LinuxIamDeviceRef {
-  /** The account the password was being set for. */
-  username: string;
-  /** The faithful `pam_pwquality` messages describing each violation. */
-  reasons: string[];
-  /** True when the policy actually blocked the change (vs. warn-only). */
-  blocked: boolean;
-}
-
 // ─── Group lifecycle ────────────────────────────────────────────────────
 
 export interface GroupCreatedPayload extends GroupRef {
@@ -146,7 +136,6 @@ export type LinuxIamDomainEvent =
   | { topic: 'linux.iam.user.aging-changed'; payload: UserAgingChangedPayload }
   | { topic: 'linux.iam.user.locked-out'; payload: UserLockedOutPayload }
   | { topic: 'linux.iam.password-policy.changed'; payload: PasswordPolicyChangedPayload }
-  | { topic: 'linux.iam.password.rejected'; payload: PasswordRejectedPayload }
   | { topic: 'linux.iam.group.created'; payload: GroupCreatedPayload }
   | { topic: 'linux.iam.group.deleted'; payload: GroupDeletedPayload }
   | { topic: 'linux.iam.group.modified'; payload: GroupModifiedPayload }

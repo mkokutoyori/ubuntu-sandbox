@@ -66,7 +66,7 @@ export function toInteractiveSteps(plan: CommandInteractionPlan): InteractiveSte
       case 'text':
         out.push({
           type: 'text',
-          prompt: step.prompt,
+          get prompt(): string { return step.prompt; },
           allowEmpty: step.allowEmpty ?? false,
           defaultValue: step.defaultValue,
           storeAs: step.storeAs,
@@ -76,7 +76,7 @@ export function toInteractiveSteps(plan: CommandInteractionPlan): InteractiveSte
       case 'password':
         out.push({
           type: 'password',
-          prompt: step.prompt,
+          get prompt(): string { return step.prompt; },
           mask: 'hidden',
           storeAs: step.storeAs,
           validation: adaptValidation(step.validate),

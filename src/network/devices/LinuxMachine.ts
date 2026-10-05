@@ -221,6 +221,7 @@ import { splitShellWords } from '@/bash/runtime/ShellWords';
 import { LINUX_ICMP_ERROR_QUOTE, type IcmpErrorQuote } from '../core/IcmpErrors';
 import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
 import { buildLinuxInteractionPlan } from './linux/interaction/LinuxInteractionPlanner';
+import type { PamDialogue } from './linux/pam/PamDialogue';
 import type { CommandInteractionPlan, InteractionPlanContext } from '@/shell/interaction/CommandInteraction';
 import { SnmpClientSession } from '@/network/snmp/SnmpClientSession';
 import type { SshKeygenTerminal } from '@/network/protocols/ssh/SshKeygenCommand';
@@ -4669,6 +4670,9 @@ export abstract class LinuxMachine extends EndHost
     this.executor.setUserGecos(username, fullName, room, workPhone, homePhone, other);
   }
   canSudo(): boolean { return this.executor.canSudo(); }
+  beginPasswordChange(target: string, elevated: boolean): PamDialogue {
+    return this.executor.beginPasswordChange(target, elevated);
+  }
   authenticateSudo(user: string, password: string): boolean {
     return this.executor.authenticateSudo(user, password);
   }

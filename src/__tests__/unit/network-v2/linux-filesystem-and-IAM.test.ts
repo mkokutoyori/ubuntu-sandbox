@@ -1368,8 +1368,8 @@ describe('Group 6: Authentification et Fichiers Utilisateur', () => {
       const pc = new LinuxPC('linux-pc', 'PC1');
 
       await pc.executeCommand('sudo useradd -m alice');
-      const out = await pc.executeCommand('sudo passwd alice');
-      expect(out).toContain('passwd: password updated successfully');
+      const out = await pc.executeCommand('printf "alicepw1\\nalicepw1\\n" | sudo passwd alice');
+      expect(out).toBe('New password: Retype new password: passwd: password updated successfully');
     });
 
     it('should not show password prompts for passwd -l/-S', async () => {
