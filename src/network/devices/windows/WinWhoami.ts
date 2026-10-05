@@ -103,18 +103,29 @@ function formatGroupInfo(ctx: WhoamiContext, username: string, domain: DomainSes
         groupDisplay.padEnd(44) + 'Group'.padEnd(14) + domainSid(domain.netbiosName).padEnd(49) + 'Mandatory group, Enabled by default'
       );
     }
+    lines.push(integrityRow(ctx));
     return lines.join('\n');
   }
 
   const groups = ctx.userManager.getGroupsForUser(username);
   for (const group of groups) {
     const groupDisplay = `BUILTIN\\${group.name}`;
+    const owner = group.name.toLowerCase() === 'administrators' ? ', Enabled group, Group owner' : '';
     lines.push(
-      groupDisplay.padEnd(44) + 'Alias'.padEnd(14) + group.sid.padEnd(49) + 'Mandatory group, Enabled by default'
+      groupDisplay.padEnd(44) + 'Alias'.padEnd(14) + group.sid.padEnd(49) + `Mandatory group, Enabled by default${owner}`
     );
   }
+  lines.push(integrityRow(ctx));
 
   return lines.join('\n');
+}
+
+function integrityRow(ctx: WhoamiContext): string {
+  const high = ctx.userManager.isCurrentUserAdmin();
+  const name = high ? 'Mandatory Label\\High Mandatory Level' : 'Mandatory Label\\Medium Mandatory Level';
+  const sid = high ? 'S-1-16-12288' : 'S-1-16-8192';
+  const attributes = high ? 'Mandatory group, Enabled by default, Enabled group' : 'Mandatory group, Enabled by default';
+  return name.padEnd(44) + 'Label'.padEnd(14) + sid.padEnd(49) + attributes;
 }
 
 function formatPrivilegeInfo(ctx: WhoamiContext, username: string): string {

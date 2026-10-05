@@ -55,6 +55,7 @@ export interface WinScheduledTask {
 
 export interface WinSystemContext {
   readonly hostname: string;
+  readonly isAdmin: boolean;
   /** OS identity block (systeminfo header). */
   readonly os: { prettyName: string; version: string };
   /** Boot timestamp, when the host lifecycle reports one. */
@@ -309,6 +310,8 @@ export function cmdStart(ctx: WinSystemContext, args: string[]): string {
 
 /** `setx VAR VALUE [/M]` — persists an environment variable. */
 export function cmdSetx(ctx: WinSystemContext, args: string[]): string {
+  const machine = args.some(a => a.toUpperCase() === '/M');
+  if (machine && !ctx.isAdmin) return 'ERROR: Access to the registry path is denied.';
   const filtered = args.filter(a => a.toUpperCase() !== '/M');
   if (filtered.length < 2) {
     return 'ERROR: Invalid syntax. Type "SETX /?" for usage.';

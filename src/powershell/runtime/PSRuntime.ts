@@ -277,6 +277,12 @@ STATIC_TYPES['system.int64'] = STATIC_TYPES['int64'];
 STATIC_TYPES['long'] = STATIC_TYPES['int64'];
 STATIC_TYPES['system.double'] = STATIC_TYPES['double'];
 STATIC_TYPES['system.convert'] = STATIC_TYPES['convert'];
+STATIC_TYPES['security.principal.windowsbuiltinrole'] = {
+  administrator: 'Administrator', user: 'User', guest: 'Guest', poweruser: 'PowerUser',
+  accountoperator: 'AccountOperator', systemoperator: 'SystemOperator', printoperator: 'PrintOperator',
+  backupoperator: 'BackupOperator', replicator: 'Replicator',
+} as Record<string, PSValue>;
+STATIC_TYPES['system.security.principal.windowsbuiltinrole'] = STATIC_TYPES['security.principal.windowsbuiltinrole'];
 STATIC_TYPES['system.environment'] = STATIC_TYPES['environment'];
 
 // ─── Collection type factories ────────────────────────────────────────────────
@@ -455,7 +461,17 @@ export class PSRuntime {
     return this.historyHook?.() ?? [];
   }
 
-  private scriptPolicyRefusal(path: string): string | null {
+  private scriptRequirementRefusal(path: string, content: string): string | null {
+    if (!/^\s*#requires\b[^\r\n]*-RunAsAdministrator/im.test(content)) return null;
+    const user = this.lookupEnvironment('USERNAME');
+    if (this.providers.users?.isAdmin(user) ?? true) return null;
+    const leaf = path.replace(/^.*[\\/]/, '');
+    return `The script '${leaf}' cannot be run because it contains a "#requires" statement for running as Administrator. `
+      + 'The current Windows PowerShell session is not running as Administrator. '
+      + 'Start Windows PowerShell by using the Run as Administrator option, and then try running the script again.';
+  }
+
+  private scriptPolicyRefusal(path: string, content: string): string | null {
     const port: ProcessPolicyPort = {
       read: () => {
         const v = this.global.get(PROCESS_POLICY_VARIABLE);
@@ -466,7 +482,7 @@ export class PSRuntime {
       },
     };
     const { policy } = effectiveExecutionPolicy(this.providers, port);
-    return scriptRefusal(policy, path);
+    return scriptRefusal(policy, path) ?? this.scriptRequirementRefusal(path, content);
   }
 
   constructor(
@@ -1089,19 +1105,70 @@ export class PSRuntime {
    * delegates to the device-backed environment provider. Constructed per call
    * (cheap, just closures) so it always reflects the current provider state.
    */
-  private buildEnvironmentType(): Record<string, PSValue> {
+  private lookupEnvironment(name: string): string {
     const provider = this.providers.environment;
-    const lookup = (name: string): string => {
-      if (provider) {
-        const v = provider.get(name);
-        if (v !== undefined && v !== null) return String(v);
-      }
-      if (this.envVarHook) {
-        const v = this.envVarHook(name);
-        if (v !== null) return v;
-      }
-      return process.env[name.toUpperCase()] ?? '';
+    if (provider) {
+      const v = provider.get(name);
+      if (v !== undefined && v !== null) return String(v);
+    }
+    if (this.envVarHook) {
+      const v = this.envVarHook(name);
+      if (v !== null) return v;
+    }
+    return process.env[name.toUpperCase()] ?? '';
+  }
+
+  private currentWindowsIdentity(): Record<string, PSValue> {
+    const name = this.lookupEnvironment('USERNAME');
+    const domain = this.lookupEnvironment('USERDOMAIN');
+    const users = this.providers.users;
+    const account = users?.getUser(name) ?? null;
+    const groups = (users?.listGroups() ?? [])
+      .filter(group => group.members.some(member => member.toLowerCase() === name.toLowerCase()));
+    return {
+      Name: `${domain}\\${name}`,
+      IsAuthenticated: true,
+      IsAnonymous: false,
+      IsGuest: name.toLowerCase() === 'guest',
+      IsSystem: false,
+      AuthenticationType: 'NTLM',
+      ImpersonationLevel: 'None',
+      User: { Value: account?.sid ?? '' },
+      Groups: [{ Value: 'S-1-1-0' }, ...groups.map(group => ({ Value: group.sid }))],
+    } as unknown as Record<string, PSValue>;
+  }
+
+  private static readonly BUILTIN_ROLE_GROUPS: Readonly<Record<string, string>> = {
+    administrator: 'Administrators', user: 'Users', guest: 'Guests', poweruser: 'Power Users',
+    accountoperator: 'Account Operators', systemoperator: 'Server Operators', printoperator: 'Print Operators',
+    backupoperator: 'Backup Operators', replicator: 'Replicator',
+  };
+
+  private static readonly BUILTIN_RID_GROUPS: Readonly<Record<number, string>> = {
+    544: 'Administrators', 545: 'Users', 546: 'Guests', 547: 'Power Users', 548: 'Account Operators',
+    549: 'Server Operators', 550: 'Print Operators', 551: 'Backup Operators', 552: 'Replicator',
+  };
+
+  private windowsPrincipalOf(identity: PSValue): Record<string, PSValue> {
+    const full = String((identity as Record<string, PSValue> | null)?.['Name'] ?? '');
+    const name = full.includes('\\') ? full.slice(full.lastIndexOf('\\') + 1) : full;
+    const users = this.providers.users;
+    const isMember = (role: PSValue): boolean => {
+      const raw = typeof role === 'number'
+        ? PSRuntime.BUILTIN_RID_GROUPS[role] ?? ''
+        : String(role ?? '').replace(/^.*\\/, '');
+      const group = PSRuntime.BUILTIN_ROLE_GROUPS[raw.toLowerCase()] ?? raw;
+      if (group === '') return false;
+      if (group.toLowerCase() === 'administrators') return users?.isAdmin(name) ?? false;
+      const known = (users?.listGroups() ?? []).find(candidate => candidate.name.toLowerCase() === group.toLowerCase());
+      return known?.members.some(member => member.toLowerCase() === name.toLowerCase()) ?? false;
     };
+    return { Identity: identity, IsInRole: isMember } as unknown as Record<string, PSValue>;
+  }
+
+  private buildEnvironmentType(): Record<string, PSValue> {
+    const lookup = (name: string): string => this.lookupEnvironment(name);
+    const provider = this.providers.environment;
     // Property-style entries are eager scalars (computed at access time so the
     // freshest provider state is used). Method-style entries are functions
     // that the runtime invokes through InvocationExpression.
@@ -1596,6 +1663,9 @@ export class PSRuntime {
     if (tname === 'environment' || tname === 'system.environment') {
       const dyn = this.buildEnvironmentType();
       return this.getMember(dyn as PSValue, node.member.toLowerCase());
+    }
+    if (tname === 'security.principal.windowsidentity' || tname === 'system.security.principal.windowsidentity') {
+      return this.getMember({ getcurrent: () => this.currentWindowsIdentity() } as unknown as PSValue, node.member.toLowerCase());
     }
     const typeObj = STATIC_TYPES[tname]
       // Generic list fallback: List[T] for any T
@@ -2158,7 +2228,7 @@ export class PSRuntime {
           catch { /* no such file */ }
         }
         if (scriptContent) {
-          const refusal = this.scriptPolicyRefusal(rawName);
+          const refusal = this.scriptPolicyRefusal(rawName, scriptContent);
           if (refusal) throw new PSRuntimeError(refusal);
           const ast = this.parseCached(scriptContent);
           // Dot-source binds param() in the caller scope (no child env) so
@@ -2201,7 +2271,7 @@ export class PSRuntime {
         try { scriptContent = this.providers.filesystem.readFile(psValueToString(target ?? '')); }
         catch { scriptContent = undefined; }
         if (scriptContent) {
-          const refusal = this.scriptPolicyRefusal(rawName);
+          const refusal = this.scriptPolicyRefusal(rawName, scriptContent);
           if (refusal) throw new PSRuntimeError(refusal);
           const ast = this.parseCached(scriptContent);
           const block: PSScriptBlock = {
@@ -2231,7 +2301,7 @@ export class PSRuntime {
       try { scriptContent = this.providers.filesystem.readFile(rawName); }
       catch { scriptContent = undefined; }
       if (scriptContent) {
-        const refusal = this.scriptPolicyRefusal(rawName);
+        const refusal = this.scriptPolicyRefusal(rawName, scriptContent);
         if (refusal) throw new PSRuntimeError(refusal);
         const ast = this.parseCached(scriptContent);
         const block: PSScriptBlock = {
@@ -2713,6 +2783,7 @@ export class PSRuntime {
       listFunctions: () => [...self.functions.values()].map(f => f.declaredName),
       listHistory: () => self.listHistory(),
       getCommandParameters: (name) => self.getCommandParameters(name),
+      psCast: (val, typeName) => self.psCast(val, typeName),
     };
 
     return {
@@ -2821,6 +2892,8 @@ export class PSRuntime {
       case 'regex': case 'system.text.regularexpressions.regex':
         // [regex]"pattern" — return a regex-like object
         return { __pattern__: String(val), IsMatch: (s: PSValue) => new RegExp(String(val)).test(String(s)) } as unknown as PSValue;
+      case 'security.principal.windowsprincipal': case 'system.security.principal.windowsprincipal':
+        return this.windowsPrincipalOf(val) as unknown as PSValue;
       case 'guid': case 'system.guid':
         return String(val) as PSValue;
       case 'datetime': case 'system.datetime':
