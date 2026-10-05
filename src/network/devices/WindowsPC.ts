@@ -86,6 +86,7 @@ import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/Win
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { cmdCopy, cmdMove } from './windows/WinCopy';
 import { cmdXcopy } from './windows/WinXcopy';
+import { cmdRobocopy } from './windows/WinRobocopy';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
 import { HostsFile } from './HostsFile';
 import { LlmnrAgent } from '../llmnr/LlmnrAgent';
@@ -3212,6 +3213,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'fc':      return cmdFc(fileCtx, args);
       case 'comp':    return cmdComp(fileCtx, args);
       case 'xcopy':   return cmdXcopy(fileCtx, args);
+      case 'robocopy':
+      case 'robocopy.exe': return cmdRobocopy(fileCtx, args);
       case 'sort':    return cmdSort(fileCtx, args, stdin);
       case 'cls':     return '';
       case 'doskey':  return this.cmdDoskey(args);
@@ -3555,6 +3558,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       env: this.getEnvVars(),
       setExitCode: (code: number) => { this.commandExitStatus = code; },
       inScript: this.runningInScript,
+      timezone: this.identity.timezone,
       ask: async (prompt: string, preceding?: string) => ({
         answer: await this.readCommandInput(prompt, preceding),
         flushed: this._activeShellSession?.inputReader != null,

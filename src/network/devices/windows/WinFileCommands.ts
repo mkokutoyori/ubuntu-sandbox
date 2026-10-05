@@ -34,6 +34,7 @@ export interface WinFileCommandContext {
   setCwd(path: string): void;
   setExitCode(code: number): void;
   readonly inScript: boolean;
+  readonly timezone: string;
   ask(prompt: string, preceding?: string): Promise<{ answer: string | null; flushed: boolean }>;
 }
 
