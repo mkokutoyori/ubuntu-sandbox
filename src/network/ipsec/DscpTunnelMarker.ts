@@ -1,11 +1,12 @@
-export const DSCP = {
-  CS0: 0, CS1: 8, CS2: 16, CS3: 24, CS4: 32, CS5: 40, CS6: 48, CS7: 56,
-  AF11: 10, AF12: 12, AF13: 14,
-  AF21: 18, AF22: 20, AF23: 22,
-  AF31: 26, AF32: 28, AF33: 30,
-  AF41: 34, AF42: 36, AF43: 38,
-  EF: 46,
-} as const;
+import { DSCP_CODEPOINTS } from '../core/IpHeaderFields';
+
+type UppercaseKeys<T> = { readonly [K in keyof T as Uppercase<K & string>]: T[K] };
+
+export const DSCP = Object.fromEntries(
+  Object.entries(DSCP_CODEPOINTS)
+    .filter(([name]) => name !== 'default')
+    .map(([name, value]) => [name.toUpperCase(), value]),
+) as Omit<UppercaseKeys<typeof DSCP_CODEPOINTS>, 'DEFAULT'>;
 
 export type DscpMode = 'copy' | 'set' | 'map';
 

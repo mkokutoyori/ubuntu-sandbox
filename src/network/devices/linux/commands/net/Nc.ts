@@ -7,6 +7,9 @@ import { PortNumber } from '../../../../core/ports/PortNumber';
 import { strerror, type Errno } from '../../../../core/Errno';
 import { connectErrno } from '../../../../tcp/types';
 import { retransmitSilentSyn } from '../../../../tcp/SynRetransmission';
+import {
+  DSCP_CODEPOINTS, DiffServField, HopLimit, TimeToLive, TtlFloor,
+} from '../../../../core/IpHeaderFields';
 import { getoptDiagnostic, shortOptions } from '../Getopt';
 
 const OPTSTRING = '46C:cDde:FH:hI:i:K:klM:m:NnO:o:P:p:q:R:rSs:T:tUuV:vW:w:X:x:Z:z';
@@ -56,8 +59,8 @@ const UNBUILDABLE: Readonly<Record<string, string>> = {
   C: 'TLS (libtls)', c: 'TLS (libtls)', e: 'TLS (libtls)', H: 'TLS (libtls)', K: 'TLS (libtls)',
   o: 'TLS (libtls)', R: 'TLS (libtls)', Z: 'TLS (libtls)',
   F: 'file-descriptor passing', I: 'a TCP receive buffer size', O: 'a TCP send buffer size',
-  M: 'an outgoing TTL on its socket', m: 'a minimum incoming TTL', S: 'the TCP MD5 signature option',
-  T: 'a TOS value on its socket', U: 'UNIX-domain sockets', V: 'alternate routing tables',
+  S: 'the TCP MD5 signature option',
+  U: 'UNIX-domain sockets', V: 'alternate routing tables',
   P: 'proxy connections', x: 'proxy connections',
 };
 
@@ -100,6 +103,10 @@ interface NcOptions {
   sourceAddress?: string;
   intervalSeconds?: number;
   timeoutMs?: number;
+  ttl?: number;
+  minimumTtl?: number;
+  typeOfService?: number;
+  shutdownWrite: boolean;
   operands: string[];
 }
 
@@ -123,6 +130,58 @@ function checkedNumber(text: string, min: number, max: number, label: string): n
   return r.value;
 }
 
+function namedNumber(text: string, min: number, max: number, label: string): number {
+  const r = strtonum(text, min, max);
+  if ('error' in r) throw new NcExit([`nc: ${label} is ${r.error}`]);
+  return r.value;
+}
+
+const TLS_KEYWORDS: ReadonlySet<string> = new Set([
+  'alpn', 'ciphers', 'clientcert', 'muststaple', 'noname', 'noverify', 'protocols',
+]);
+
+const TYPE_OF_SERVICE_KEYWORDS: Readonly<Record<string, number>> = {
+  ...Object.fromEntries(
+    Object.entries(DSCP_CODEPOINTS)
+      .filter(([name]) => name !== 'default')
+      .map(([name, dscp]) => [name, dscp << DiffServField.DSCP_SHIFT])),
+  va: 0xb0,
+  critical: 0xa0, inetcontrol: 0xc0, netcontrol: 0xe0,
+  lowdelay: 0x10, reliability: 0x04, throughput: 0x08,
+};
+
+function typeOfServiceOf(text: string): number {
+  if (TLS_KEYWORDS.has(text.split('=')[0])) {
+    throw new NcExit([`nc: option -T: this simulator cannot build ${UNBUILDABLE.C}`]);
+  }
+  if (Object.prototype.hasOwnProperty.call(TYPE_OF_SERVICE_KEYWORDS, text)) return TYPE_OF_SERVICE_KEYWORDS[text];
+  const parsed = text.length > 1 && text.startsWith('0x')
+    ? { value: parseInt(/^[0-9a-fA-F]*/.exec(text.slice(2))![0] || '0', 16) }
+    : strtonum(text, 0, 255);
+  if ('error' in parsed || parsed.value > 255) throw new NcExit([`nc: illegal tos/tls value ${text}`]);
+  return parsed.value;
+}
+
+interface SocketSettings {
+  readonly ttl?: TimeToLive | HopLimit;
+  readonly diffServ?: DiffServField;
+  readonly ttlFloor?: TtlFloor;
+}
+
+function socketSettingsOf(opts: NcOptions, over6: boolean): SocketSettings {
+  let ttl: TimeToLive | HopLimit | undefined;
+  if (opts.ttl !== undefined) {
+    if (over6) ttl = HopLimit.of(opts.ttl);
+    else if (TimeToLive.isValid(opts.ttl)) ttl = TimeToLive.of(opts.ttl);
+    else throw new NcExit([`nc: set IP TTL: ${strerror('EINVAL')}`]);
+  }
+  return {
+    ...(ttl === undefined ? {} : { ttl }),
+    ...(opts.typeOfService === undefined ? {} : { diffServ: DiffServField.of(opts.typeOfService) }),
+    ...(opts.minimumTtl === undefined ? {} : { ttlFloor: TtlFloor.of(opts.minimumTtl) }),
+  };
+}
+
 function usageExit(before: string[] = []): NcExit {
   return new NcExit([...before, USAGE]);
 }
@@ -130,7 +189,7 @@ function usageExit(before: string[] = []): NcExit {
 function parseNcArgs(args: readonly string[]): NcOptions {
   const opts: NcOptions = {
     family: null, numeric: false, verbose: false, zero: false, udp: false, listen: false,
-    keep: false, detachStdin: false, randomize: false, operands: [],
+    keep: false, detachStdin: false, randomize: false, shutdownWrite: false, operands: [],
   };
   for (const token of shortOptions(args, OPTSTRING)) {
     if (token.kind === 'operand') { opts.operands.push(token.value); continue; }
@@ -139,12 +198,16 @@ function parseNcArgs(args: readonly string[]): NcOptions {
     switch (letter) {
       case '4': opts.family = 4; break;
       case '6': opts.family = 6; break;
-      case 'D': case 'N': case 't': break;
+      case 'D': case 't': break;
+      case 'N': opts.shutdownWrite = true; break;
       case 'd': opts.detachStdin = true; break;
       case 'h': throw new NcExit([HELP]);
       case 'i': opts.intervalSeconds = checkedNumber(argument!, 0, UINT_MAX, 'interval'); break;
       case 'k': opts.keep = true; break;
       case 'l': opts.listen = true; break;
+      case 'M': opts.ttl = namedNumber(argument!, 0, 255, 'ttl'); break;
+      case 'm': opts.minimumTtl = namedNumber(argument!, 0, 255, 'minttl'); break;
+      case 'T': opts.typeOfService = typeOfServiceOf(argument!); break;
       case 'n': opts.numeric = true; break;
       case 'p': opts.sourcePort = argument; break;
       case 'q': break;
@@ -276,6 +339,7 @@ async function runConnect(ctx: LinuxCommandContext, opts: NcOptions, stdin: stri
   const sourceIP = sourceAddressOf(ctx, opts.sourceAddress, target);
   const payload = opts.zero || opts.detachStdin ? '' : stdin;
   const proto = opts.udp ? 'udp' : 'tcp';
+  const settings = socketSettingsOf(opts, target instanceof IPv6Address);
   let ret = 1;
 
   for (const port of ports) {
@@ -283,6 +347,8 @@ async function runConnect(ctx: LinuxCommandContext, opts: NcOptions, stdin: stri
       const socket = ctx.net.udpConnect(target, port, {
         localPort: sourcePort?.value, source: sourceIP, processName: 'nc',
         pid: ctx.executor.currentPid(), uid: ctx.executor.userMgr.currentUid,
+        ...(settings.ttl === undefined ? {} : { ttl: settings.ttl }),
+        ...(settings.diffServ === undefined ? {} : { diffServ: settings.diffServ }),
       });
       if (socket === 'EADDRINUSE' || socket === 'EADDRNOTAVAIL' || socket === 'EACCES') throw new NcExit([`nc: bind failed: ${strerror(socket)}`]);
       if (typeof socket === 'string') {
@@ -307,7 +373,9 @@ async function runConnect(ctx: LinuxCommandContext, opts: NcOptions, stdin: stri
       continue;
     }
     const exchange = await retransmitSilentSyn(
-      () => ctx.net.tcpExchange(target, port, payload, { sourcePort, sourceIP }),
+      () => ctx.net.tcpExchange(target, port, payload, {
+        sourcePort, sourceIP, ...settings, ...(opts.shutdownWrite ? { shutdownWrite: true } : {}),
+      }),
       (attempt) => attempt.outcome === 'timeout', wait, opts.timeoutMs);
     if (exchange.outcome !== 'open') {
       if (opts.verbose) {
@@ -341,7 +409,7 @@ function runListen(ctx: LinuxCommandContext, opts: NcOptions, out: NcOutput): nu
     const denied = error instanceof Error && error.message.startsWith('EACCES');
     throw new NcExit([`nc: ${strerror(denied ? 'EACCES' : 'EADDRINUSE')}`]);
   }
-  if (!openTcpListener(ctx, port, ownerUid)) {
+  if (!openTcpListener(ctx, port, ownerUid, socketSettingsOf(opts, false))) {
     table.unbind('tcp', '0.0.0.0', port);
     throw new NcExit([`nc: ${strerror('EADDRINUSE')}`]);
   }
@@ -349,16 +417,21 @@ function runListen(ctx: LinuxCommandContext, opts: NcOptions, out: NcOutput): nu
   return 0;
 }
 
-function openTcpListener(ctx: LinuxCommandContext, port: number, ownerUid: number): boolean {
+function openTcpListener(
+  ctx: LinuxCommandContext, port: number, ownerUid: number, settings: SocketSettings,
+): boolean {
   const device = localDeviceOf(ctx) as unknown as {
     getTcpStack?: () => {
-      listen(localPort: number, opts: { onAccept: (socket: unknown) => void; ownerUid?: number }): unknown;
+      listen(
+        localPort: number,
+        opts: { onAccept: (socket: unknown) => void; ownerUid?: number } & SocketSettings,
+      ): unknown;
     };
   } | null;
   const stack = device?.getTcpStack?.();
   if (!stack) return true;
   try {
-    stack.listen(port, { onAccept: () => undefined, ownerUid });
+    stack.listen(port, { onAccept: () => undefined, ownerUid, ...settings });
     return true;
   } catch {
     return false;
@@ -386,7 +459,7 @@ export const ncCommand: LinuxCommand = {
   ownsHelpOption: true,
   readsStdin: true,
   complete: makeArgCompleter({
-    flags: ['-4', '-6', '-d', '-h', '-i', '-k', '-l', '-n', '-p', '-q', '-r', '-s', '-u', '-v', '-W', '-w', '-z'],
+    flags: ['-4', '-6', '-d', '-h', '-i', '-k', '-l', '-M', '-m', '-N', '-n', '-p', '-q', '-r', '-s', '-T', '-u', '-v', '-W', '-w', '-z'],
     hostsAtBarePosition: true,
   }),
   manSection: 1,

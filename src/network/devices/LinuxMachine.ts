@@ -24,7 +24,7 @@
 
 import { tracerouteHostOf, type TracerouteHost } from './linux/commands/net/Traceroute';
 import { pingHostOf, type PingHost, type PingTiming } from './linux/commands/net/Ping';
-import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type EchoRoute } from './EndHost';
+import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type EchoRoute, type TcpExchangeSocketOptions } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import { adOperPortKey, buildActorState } from '@/network/lacp/types';
@@ -834,7 +834,7 @@ export abstract class LinuxMachine extends EndHost
    */
   override tcpExchange(
     targetIP: IPAddress | IPv6Address, port: number, payload: string,
-    options: { sourcePort?: PortNumber; sourceIP?: IPAddress | IPv6Address } = {},
+    options: TcpExchangeSocketOptions = {},
   ): { outcome: TcpWireOutcome; received: string } {
     const exchange = super.tcpExchange(targetIP, port, payload, options);
     return { ...exchange, outcome: this.failedNeighbourIsHostUnreachable(targetIP, exchange.outcome) };

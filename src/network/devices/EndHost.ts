@@ -32,7 +32,7 @@ import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpStack } from '../tcp/TcpStack';
 import { deliverIcmpv4ErrorToTcp, deliverIcmpv6ErrorToTcp } from '../tcp/IcmpErrorDelivery';
-import type { DiffServField, HopLimit, TimeToLive } from '../core/IpHeaderFields';
+import type { DiffServField, HopLimit, TimeToLive, TtlFloor } from '../core/IpHeaderFields';
 import type { TcpSegment, TcpDialFailure, TcpWireOutcome } from '../tcp/types';
 import type { UdpChecksumInput } from '@/network/layers/transport/UdpChecksum';
 import { isDialFailure, noFlags } from '../tcp/types';
@@ -324,6 +324,15 @@ export interface UdpConnectOptions {
   uid?: number;
   ttl?: TimeToLive | HopLimit;
   diffServ?: DiffServField;
+}
+
+export interface TcpExchangeSocketOptions {
+  sourcePort?: PortNumber;
+  sourceIP?: IPAddress | IPv6Address;
+  ttl?: TimeToLive | HopLimit;
+  diffServ?: DiffServField;
+  ttlFloor?: TtlFloor;
+  shutdownWrite?: boolean;
 }
 
 export interface ConnectedUdpSocket {
@@ -4915,7 +4924,7 @@ export abstract class EndHost extends Equipment {
 
   tcpExchange(
     targetIP: IPAddress | IPv6Address, port: number, payload: string,
-    options: { sourcePort?: PortNumber; sourceIP?: IPAddress | IPv6Address } = {},
+    options: TcpExchangeSocketOptions = {},
   ): { outcome: TcpWireOutcome; received: string } {
     if (options.sourceIP !== undefined && (options.sourceIP instanceof IPv6Address) !== (targetIP instanceof IPv6Address)) {
       throw new Error('TCP exchange: the source address is of another family than the destination (EAFNOSUPPORT)');
@@ -4925,6 +4934,10 @@ export abstract class EndHost extends Equipment {
     return this.tcpv2.exchange(targetIP.toString(), port, payload, {
       localPort: options.sourcePort,
       localIp: options.sourceIP === undefined ? undefined : addressTextWithoutScope(options.sourceIP),
+      ...(options.ttl === undefined ? {} : { ttl: options.ttl }),
+      ...(options.diffServ === undefined ? {} : { diffServ: options.diffServ }),
+      ...(options.ttlFloor === undefined ? {} : { ttlFloor: options.ttlFloor }),
+      ...(options.shutdownWrite === undefined ? {} : { shutdownWrite: options.shutdownWrite }),
     });
   }
 

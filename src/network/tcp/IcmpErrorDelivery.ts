@@ -1,7 +1,9 @@
 import { isProhibitedUnreachCode, tcpIcmpErrorClass, type TcpIcmpErrorKind } from '../core/IcmpErrors';
 import type { ICMPPacket, ICMPv6Packet, IPv4Packet, IPv6Packet } from '../core/types';
 import type { TcpSegment } from './types';
-import { canonicalIpText, receivedIpHeaderOf, type TcpStack, type ReceivedIpHeader } from './TcpStack';
+import {
+  canonicalIpText, receivedIpHeaderOf, type TcpStack, type ReceivedIpHeader, type QuotedSegment,
+} from './TcpStack';
 
 export type TcpIcmpErrorSink = Pick<
   TcpStack, 'onIcmpUnreachable' | 'onIcmpSoftError' | 'noteProbeTimeExceeded' | 'onIcmpFragNeeded'
@@ -13,36 +15,39 @@ interface ReceivedTcpIcmpError {
   readonly code: number;
   readonly from: string;
   readonly mtu?: number;
-  readonly invokingDestination: string;
-  readonly segment: TcpSegment;
+  readonly quote: QuotedSegment;
   readonly receivedHeader?: ReceivedIpHeader;
 }
 
 function dispatch(sink: TcpIcmpErrorSink, error: ReceivedTcpIcmpError): void {
-  const { segment } = error;
-  const sourcePort = segment.sourcePort;
-  const destinationPort = segment.destinationPort;
-  const destination = error.invokingDestination;
+  const { quote } = error;
   switch (tcpIcmpErrorClass(error.family, error.kind, error.code)) {
     case 'path-mtu':
       if (error.mtu === undefined) return;
-      sink.onIcmpFragNeeded(sourcePort, destinationPort, destination, segment.sequence, error.mtu);
+      sink.onIcmpFragNeeded(quote, error.mtu);
       return;
     case 'hard':
       sink.onIcmpUnreachable(
-        sourcePort, destinationPort, destination, segment.sequence,
-        isProhibitedUnreachCode(error.family, error.code), error.code, error.from, error.receivedHeader);
+        quote, isProhibitedUnreachCode(error.family, error.code), error.code, error.from, error.receivedHeader);
       return;
     case 'soft':
-      sink.onIcmpSoftError(
-        sourcePort, destinationPort, destination, segment.sequence,
-        error.kind, error.code, error.from);
+      sink.onIcmpSoftError(quote, error.kind, error.code, error.from);
       if (error.kind === 'time-exceeded') {
         sink.noteProbeTimeExceeded(
-          sourcePort, destinationPort, destination, error.code, error.from, error.receivedHeader);
+          quote.sourcePort, quote.destinationPort, quote.destination, error.code, error.from, error.receivedHeader);
       }
       return;
   }
+}
+
+function quoteOf(segment: TcpSegment, destination: string, ttl: number): QuotedSegment {
+  return {
+    sourcePort: segment.sourcePort,
+    destinationPort: segment.destinationPort,
+    destination: canonicalIpText(destination),
+    sequence: segment.sequence,
+    ttl,
+  };
 }
 
 export function deliverIcmpv4ErrorToTcp(sink: TcpIcmpErrorSink, ipPkt: IPv4Packet, icmp: ICMPPacket): void {
@@ -53,8 +58,8 @@ export function deliverIcmpv4ErrorToTcp(sink: TcpIcmpErrorSink, ipPkt: IPv4Packe
   dispatch(sink, {
     family: 'ipv4', kind: icmp.icmpType, code: icmp.code, from: ipPkt.sourceIP.toString(),
     ...(icmp.mtu === undefined ? {} : { mtu: icmp.mtu }),
-    invokingDestination: canonicalIpText(original.destinationIP.toString()),
-    segment, receivedHeader: receivedIpHeaderOf(ipPkt),
+    quote: quoteOf(segment, original.destinationIP.toString(), original.ttl),
+    receivedHeader: receivedIpHeaderOf(ipPkt),
   });
 }
 
@@ -67,6 +72,6 @@ export function deliverIcmpv6ErrorToTcp(sink: TcpIcmpErrorSink, ipv6: IPv6Packet
   dispatch(sink, {
     family: 'ipv6', kind: icmpv6.icmpType, code: icmpv6.code, from: ipv6.sourceIP.toString(),
     ...(icmpv6.mtu === undefined ? {} : { mtu: icmpv6.mtu }),
-    invokingDestination: canonicalIpText(invoking.destinationIP.toString()), segment,
+    quote: quoteOf(segment, invoking.destinationIP.toString(), invoking.hopLimit),
   });
 }
