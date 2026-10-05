@@ -60,7 +60,7 @@ describe('cmd command chaining (&&, ||, &)', () => {
   });
 
   it('operators inside double quotes are literal', async () => {
-    expect(await pc().executeCmdCommand('echo "a && b"')).toBe('a && b');
+    expect(await pc().executeCmdCommand('echo "a && b"')).toBe('"a && b"');
   });
 });
 

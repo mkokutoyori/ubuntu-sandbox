@@ -194,40 +194,6 @@ export function cmdTree(ctx: WinFileCommandContext, args: string[]): string {
 
 // ─── set ───────────────────────────────────────────────────────────
 
-export function cmdSet(ctx: WinFileCommandContext, args: string[]): string {
-  if (args.length === 0) {
-    // Show all env vars
-    const lines: string[] = [];
-    const sorted = Array.from(ctx.env.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-    for (const [key, value] of sorted) {
-      lines.push(`${key}=${value}`);
-    }
-    return lines.join('\n');
-  }
-
-  const full = args.join(' ');
-  const eqIndex = full.indexOf('=');
-  if (eqIndex === -1) {
-    // Filter by prefix
-    const prefix = full.toUpperCase();
-    const lines: string[] = [];
-    const sorted = Array.from(ctx.env.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-    for (const [key, value] of sorted) {
-      if (key.toUpperCase().startsWith(prefix)) {
-        lines.push(`${key}=${value}`);
-      }
-    }
-    if (lines.length === 0) return `Environment variable ${full} not defined`;
-    return lines.join('\n');
-  }
-
-  // Set new variable
-  const name = full.substring(0, eqIndex).trim();
-  const value = full.substring(eqIndex + 1);
-  ctx.setEnv(name, value);
-  return '';
-}
-
 // ─── tasklist ──────────────────────────────────────────────────────
 
 export function cmdTasklist(ctx: WinFileCommandContext): string {

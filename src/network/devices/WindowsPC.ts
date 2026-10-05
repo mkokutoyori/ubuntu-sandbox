@@ -73,6 +73,8 @@ import { findHostByAddress } from './linux/network/HostLookup';
 import { runWindowsSftpClient } from './windows/network/WindowsSftpClient';
 import { runWindowsScpClient } from './windows/network/WindowsScpClient';
 import { splitCmdArgs, separateCommandWord } from './windows/cmdline';
+import { BatchInterpreter } from '@/cmd/interpreter/BatchInterpreter';
+import { createWindowsBatchHost } from './windows/WindowsBatchHost';
 import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy';
 import { DoskeyTable } from './windows/cli/DoskeyTable';
 import { runPowerShellShim, createShimState, type PsShimState } from './windows/PowerShellCmdShim';
@@ -240,7 +242,7 @@ import {
 } from './windows/netFirewallProfile';
 import {
   cmdCd, cmdMkdir, cmdRmdir, cmdType, cmdCopy, cmdMove,
-  cmdRen, cmdDel, cmdTree, cmdSet, cmdTasklist, cmdNetstat,
+  cmdRen, cmdDel, cmdTree, cmdTasklist, cmdNetstat,
   cmdAttrib, cmdFind, cmdFindstr, cmdWhere, cmdMore, cmdFc,
   cmdXcopy, cmdSort,
 } from './windows/WinFileCommands';
@@ -3066,57 +3068,33 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return 'STOP: C0000244 {Audit Failed}\nAn attempt to generate a security audit failed.\nAn administrator must clear the Security event log or disable CrashOnAuditFail to continue.';
     }
 
-    // Strip stderr redirects like "2>&1", "2> nul", "2>nul" – in simulation all output is stdout
-    trimmed = trimmed.replace(/\s+2>&1\s*$/i, '').replace(/\s+2>\s*(?:nul|&1)\s*$/i, '').trim();
+    return this.batchInterpreter().runLine(trimmed);
+  }
 
-    // Command chaining: `a && b` (b iff a ok), `a || b` (b iff a failed),
-    // `a & b` (b always). Real cmd.exe semantics; needed so coherence
-    // probes like `cd <dir> && cd` behave like the actual shell.
-    const chain = this.splitCmdChain(trimmed);
-    if (chain.length > 1) {
-      const outputs: string[] = [];
-      let prevFailed = false;
-      for (const link of chain) {
-        const run =
-          link.op === '&'  ? true :
-          link.op === '&&' ? !prevFailed :
-          link.op === '||' ? prevFailed :
-          true; // first segment (op === '')
-        if (!run) continue;
-        const out = await this.executeCmdCommand(link.cmd);
-        if (out !== '') outputs.push(out);
-        prevFailed = this.cmdOutputIsError(out);
-      }
-      return outputs.join('\n');
-    }
+  private batch: BatchInterpreter | null = null;
 
-    // Handle piped commands (but not inside redirects). A `|` inside double
-    // quotes is a literal, exactly as in real cmd.exe — `splitCmdChain`
-    // above already tracks quoting for `||`, and reading this one blind
-    // made `curl -w "%{http_code}|%{size_download}" URL` look like a
-    // pipeline whose right-hand side was a format string.
-    if (WindowsPC.hasUnquotedPipe(trimmed) && !trimmed.match(/[>]/)) {
-      return this.executePipedCommand(trimmed);
-    }
+  getBatchInterpreter(): BatchInterpreter { return this.batchInterpreter(); }
 
-    // Handle echo with redirect: echo text > file / echo text >> file
-    const redirectMatch = trimmed.match(/^(.+?)\s*(>>|>)\s*(.+)$/);
-    if (redirectMatch) {
-      return this.handleRedirect(redirectMatch[1].trim(), redirectMatch[2], redirectMatch[3].trim());
+  private batchInterpreter(): BatchInterpreter {
+    if (this.batch === null) {
+      this.batch = new BatchInterpreter(createWindowsBatchHost({
+        fileSystem: () => this.fs,
+        currentDirectory: () => this.cwd,
+        changeDirectory: path => this.buildFileContext().setCwd(path),
+        environment: () => this.getEnvVars(),
+        setVariable: (name, value) => this.setEnvVar(name, value),
+        removeVariable: name => this.removeEnvVar(name),
+        runSimple: line => this.executeSimpleCommand(line),
+        timeZone: () => this.identity.timezone,
+      }));
     }
+    return this.batch;
+  }
 
-    // Expand environment variables, then expand doskey macros so
-    // `ll` → `dir /a` before the dispatcher sees an unknown command.
-    const expandedEnv = this.expandEnvVars(trimmed);
-    const doskeyExpanded = this.doskey.expand(expandedEnv);
-    const expanded = doskeyExpanded !== expandedEnv
-      ? doskeyExpanded
-      : expandedEnv;
-    if (doskeyExpanded !== expandedEnv) {
-      // Recurse so the expanded form goes through the full pipeline
-      // (pipes, redirects, chains).
-      return this.executeCmdCommand(doskeyExpanded);
-    }
+  private async executeSimpleCommand(trimmed: string): Promise<string> {
+    if (WindowsPC.hasUnquotedPipe(trimmed)) return this.executePipedCommand(trimmed);
+    const expanded = this.doskey.expand(trimmed);
+    if (expanded !== trimmed) return this.executeCmdCommand(expanded);
     const parts = this.parseCommandLine(expanded);
     if (parts.length === 0) return '';
 
@@ -3159,7 +3137,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'del':
       case 'erase':   return cmdDel(fileCtx, args);
       case 'tree':    return cmdTree(fileCtx, args);
-      case 'set':     return cmdSet(fileCtx, args);
       case 'tasklist': return cmdTasklistDynamic(
         { processManager: this.procMgr, currentUser: this.userMgr.currentUser, hostname: this.hostname }, args);
       case 'taskkill': return cmdTaskkill(
@@ -3183,7 +3160,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'fc':      return cmdFc(fileCtx, args);
       case 'xcopy':   return cmdXcopy(fileCtx, args);
       case 'sort':    return cmdSort(fileCtx, args);
-      case 'echo':    return args.join(' ');
       case 'cls':     return '';
       case 'doskey':  return this.cmdDoskey(args);
       case 'powershell':
@@ -3449,89 +3425,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return false;
   }
 
-  private splitCmdChain(line: string): Array<{ op: '' | '&&' | '||' | '&'; cmd: string }> {
-    const links: Array<{ op: '' | '&&' | '||' | '&'; cmd: string }> = [];
-    let buf = '';
-    let inQuote = false;
-    let pendingOp: '' | '&&' | '||' | '&' = '';
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') { inQuote = !inQuote; buf += c; continue; }
-      if (!inQuote) {
-        if (c === '&' && line[i + 1] === '&') {
-          links.push({ op: pendingOp, cmd: buf.trim() }); pendingOp = '&&'; buf = ''; i++; continue;
-        }
-        if (c === '|' && line[i + 1] === '|') {
-          links.push({ op: pendingOp, cmd: buf.trim() }); pendingOp = '||'; buf = ''; i++; continue;
-        }
-        if (c === '&') {
-          links.push({ op: pendingOp, cmd: buf.trim() }); pendingOp = '&'; buf = ''; continue;
-        }
-      }
-      buf += c;
-    }
-    links.push({ op: pendingOp, cmd: buf.trim() });
-    // Drop empty links (e.g. trailing `&`); keep at least one.
-    const cleaned = links.filter(l => l.cmd.length > 0);
-    return cleaned.length ? cleaned : [{ op: '', cmd: line.trim() }];
-  }
-
-  /** Heuristic: did a cmd produce an error (drives `&&` / `||`)? */
-  private cmdOutputIsError(out: string): boolean {
-    const s = out.trim().toLowerCase();
-    if (!s) return false;
-    return /^error:/.test(s)
-      || s.includes('the system cannot find the path specified')
-      || s.includes('the system cannot find the file specified')
-      || s.includes('is not recognized as an internal or external command')
-      || s.includes('access is denied')
-      || s.includes('the syntax of the command is incorrect')
-      || s.includes('the network path was not found')
-      || s.includes('a duplicate name exists')
-      || s.includes('the parameter is incorrect')
-      || s.includes('the filename, directory name, or volume label syntax is incorrect')
-      || s.includes('could not find')
-      || s.includes('cannot find');
-  }
-
   // ─── Command Parsing ──────────────────────────────────────────────
 
   private parseCommandLine(line: string): string[] {
     return separateCommandWord(splitCmdArgs(line));
-  }
-
-  private expandEnvVars(text: string): string {
-    return text.replace(/%([^%]+)%/g, (match, varName) => {
-      const upper = varName.toUpperCase();
-      if (upper === 'CD') return this.cwd;
-      return this.getEnvVars().get(upper) ?? match;
-    });
-  }
-
-  // ─── Redirect Handling ────────────────────────────────────────────
-
-  private handleRedirect(cmdPart: string, op: string, filePath: string): string {
-    // Execute the command part to get its output
-    const expanded = this.expandEnvVars(cmdPart);
-    const parts = this.parseCommandLine(expanded);
-    if (parts.length === 0) return '';
-
-    const cmd = parts[0].toLowerCase();
-    let content: string;
-    if (cmd === 'echo') {
-      content = parts.slice(1).join(' ');
-    } else {
-      // For other commands, we'd need async, but echo is the main use case
-      content = parts.slice(1).join(' ');
-    }
-
-    const absPath = this.fs.normalizePath(filePath, this.cwd);
-    if (op === '>>') {
-      this.fs.appendFile(absPath, content + '\n');
-    } else {
-      this.fs.createFile(absPath, content + '\n');
-    }
-    return '';
   }
 
   // ─── Piped Commands ─────────────────────────────────────────────
