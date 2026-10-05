@@ -1512,6 +1512,8 @@ export interface INetworkProvider {
    * should fall back to executeCmdCommand or skip the call.
    */
   runSyncNativeCommand(cmd: string, args: string[]): string | null;
+  programStem(name: string): string | null;
+  nativeExitCode(output: string): number;
 }
 
 export interface IUserProvider {

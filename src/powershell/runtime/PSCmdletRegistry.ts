@@ -45,6 +45,11 @@ export class CmdletRegistry {
     return this.map.get(name.toLowerCase()) ?? this.parent?.resolve(name) ?? null;
   }
 
+  resolveProgram(stem: string): ICmdlet | null {
+    const cmdlet = this.resolve(stem);
+    return cmdlet?.nativeProgram === true ? cmdlet : null;
+  }
+
   /** All registered canonical names (sorted, for Get-Command output). */
   list(): string[] {
     return this.cmdlets().map(cmdlet => cmdlet.name).sort();

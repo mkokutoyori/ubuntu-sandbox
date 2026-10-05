@@ -232,6 +232,8 @@ import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { cmdAssoc, cmdFtype } from './windows/WinAssoc';
 import { cmdDir, fileSummaryLine } from './windows/WinDir';
 import { cmdWhere } from './windows/WinWhere';
+import { programStem } from './windows/WinPrograms';
+import { commandExitCode } from './windows/cmdExitCode';
 import { cmdComp } from './windows/WinComp';
 import { PATHPING_HELP, parseWinPathpingArgs, runPathping } from './windows/WinPathping';
 import { cmdFsutil } from './windows/Fsutil';
@@ -2731,7 +2733,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       ['LOGONSERVER', `\\\\${host}`],
       ['NUMBER_OF_PROCESSORS', '4'],
       ['OS', 'Windows_NT'],
-      ['PATH', 'C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0'],
+      ['PATH', 'C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0;C:\\Windows\\System32\\OpenSSH'],
       ['PATHEXT', '.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.PS1'],
       ['PROCESSOR_ARCHITECTURE', 'AMD64'],
       ['PROGRAMDATA', 'C:\\ProgramData'],
@@ -3077,7 +3079,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * Also used by PowerShellExecutor (via PSDeviceContext) to delegate
    * native commands (ipconfig, ping, cd, etc.) directly to cmd.
    */
-  async executeCmdCommand(trimmed: string): Promise<string> {
+  async runProgram(commandLine: string, stdin?: string): Promise<{ output: string; exitCode: number }> {
+    const output = await this.executeCmdCommand(commandLine, stdin);
+    return { output, exitCode: this.batchInterpreter().getErrorLevel() };
+  }
+
+  async executeCmdCommand(trimmed: string, stdin?: string): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
 
     trimmed = trimmed.trim();
@@ -3113,7 +3120,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return 'STOP: C0000244 {Audit Failed}\nAn attempt to generate a security audit failed.\nAn administrator must clear the Security event log or disable CrashOnAuditFail to continue.';
     }
 
-    return this.batchInterpreter().runLine(trimmed);
+    return this.batchInterpreter().runLine(trimmed, stdin);
   }
 
   private batch: BatchInterpreter | null = null;
@@ -3146,13 +3153,22 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return this.batch;
   }
 
+  programStemOf(token: string): string | null {
+    return programStem({
+      exists: path => this.fs.resolve(path)?.type === 'file',
+      normalize: path => this.fs.normalizePath(path, this.cwd),
+      searchDirectories: () => (this.getEnvVars().get('PATH') ?? '').split(';').map(entry => entry.trim()).filter(entry => entry !== ''),
+    }, token);
+  }
+
   private async executeSimpleCommand(trimmed: string, stdin?: string): Promise<string> {
     const expanded = this.doskey.expand(trimmed);
     if (expanded !== trimmed) return this.executeCmdCommand(expanded);
     const parts = this.parseCommandLine(expanded);
     if (parts.length === 0) return '';
 
-    const cmd = parts[0].toLowerCase();
+    const stem = this.programStemOf(parts[0]);
+    const cmd = stem ?? parts[0].toLowerCase();
     const args = parts.slice(1);
 
     // Bare drive letter (e.g. "D:" or "D:\\path") — change current drive
@@ -3161,7 +3177,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // its remembered cwd (terminal_gap.md §6.3).
     const driveOnly = /^([a-zA-Z]):$/.exec(parts[0]);
     const drivePath = /^([a-zA-Z]):[\\/](.*)$/.exec(parts[0]);
-    if ((driveOnly || drivePath) && args.length === 0) {
+    if (stem === null && (driveOnly || drivePath) && args.length === 0) {
       const letter = (driveOnly ? driveOnly[1] : drivePath![1]).toUpperCase();
       return this.switchActiveDrive(letter, drivePath ? parts[0] : null);
     }
@@ -3901,8 +3917,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
   }
 
+  lastNativeExitCode(output: string): number {
+    return this.commandExitStatus ?? commandExitCode(output);
+  }
+
   runSyncNativeCommand(cmd: string, args: string[]): string | null {
     const lower = cmd.toLowerCase();
+    this.commandExitStatus = null;
     if (lower === 'ssh-keygen' || lower === 'ssh-agent'
       || lower === 'ssh-add' || lower === 'ssh-keyscan') {
       return this.runOpenSshTool(lower, args);

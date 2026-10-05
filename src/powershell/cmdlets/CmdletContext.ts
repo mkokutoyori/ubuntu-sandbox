@@ -14,12 +14,15 @@
 import type { PSValue, PSEnvironment } from '@/powershell/runtime/PSEnvironment';
 import type { PSProviders } from '@/powershell/providers/PSProviders';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
+import type { NativeResult } from '@/powershell/nativeAsync';
 
 // PSRuntime is referenced here via a forward-declaration interface to avoid
 // circular imports (PSRuntime imports CmdletContext, CmdletContext imports PSRuntime).
 export interface IRuntimeRef {
   execute(code: string): string;
   executeInteractive(code: string): string;
+  acceptNativeResult(result: NativeResult): PSValue;
+  takeNativeResult(): NativeResult | null;
   /** Execute code and return the last PSValue (no stringification). Used by IEX. */
   executeForValue(code: string): PSValue;
   getVariable(name: string): PSValue;

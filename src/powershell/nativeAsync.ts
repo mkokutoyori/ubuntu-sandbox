@@ -28,19 +28,42 @@ function rejoinSwitchValues(argv: readonly string[]): string[] {
   return out;
 }
 
+export interface NativeResult {
+  readonly output: string;
+  readonly exitCode: number;
+  readonly notRecognized?: boolean;
+}
+
+const NEEDS_QUOTES = /[\s"&|<>^()%]/;
+
+export function quoteNativeArgument(argument: string): string {
+  if (argument === '') return '""';
+  return NEEDS_QUOTES.test(argument) ? `"${argument.replace(/"/g, '\\"')}"` : argument;
+}
+
 export class NativeCommandNeedsAsync extends PSRuntimeError {
   readonly command: string;
+  readonly argv: readonly string[];
+  readonly stdin: string | null;
   readonly commandLine: string;
 
-  constructor(command: string, args: readonly string[]) {
+  constructor(command: string, argv: readonly string[], stdin: string | null = null) {
     super(commandNotFoundMessage(command));
     this.name = 'NativeCommandNeedsAsync';
     this.command = command;
-    this.commandLine = [command, ...args].join(' ').trim();
+    this.argv = argv;
+    this.stdin = stdin;
+    this.commandLine = [command, ...argv.map(quoteNativeArgument)].join(' ').trim();
   }
 }
 
-const CMD_NOT_RECOGNIZED = /is not recognized as an internal or external command/;
+export function nativeOutputValue(output: string): PSValue {
+  if (output === '') return null;
+  const lines = output.split(/\r?\n/);
+  return lines.length === 1 ? lines[0] : lines;
+}
+
+export const CMD_NOT_RECOGNIZED = /is not recognized as an internal or external command/;
 
 export function translateNativeAnswer(command: string, answer: string): string {
   return CMD_NOT_RECOGNIZED.test(answer) ? commandNotFoundMessage(command) : answer;
@@ -48,9 +71,4 @@ export function translateNativeAnswer(command: string, answer: string): string {
 
 export function isNativeProgramName(name: string): boolean {
   return !/[\\/]/.test(name) && !/^[A-Za-z]:/.test(name);
-}
-
-export function nativeLineFor(failure: NativeCommandNeedsAsync, typed: string): string {
-  const head = typed.trim().split(/\s+/)[0]?.replace(/^["']|["']$/g, '') ?? '';
-  return head.toLowerCase() === failure.command.toLowerCase() ? typed.trim() : failure.commandLine;
 }

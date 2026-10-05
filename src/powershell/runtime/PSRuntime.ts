@@ -31,7 +31,7 @@ import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
 import { nullProviders } from '@/powershell/providers/NullProviders';
 import { PSRuntimeError } from './PSRuntimeError';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
-import { NativeCommandNeedsAsync, nativeArgv, isNativeProgramName } from '@/powershell/nativeAsync';
+import { NativeCommandNeedsAsync, nativeArgv, isNativeProgramName, nativeOutputValue, type NativeResult } from '@/powershell/nativeAsync';
 import { formatDefault, hasDefaultColumns, type PSObject } from '@/network/devices/windows/PSPipeline';
 import type { PSProviders } from '@/powershell/providers/PSProviders';
 import type { ParameterValueKind } from '@/powershell/cmdlets/ICmdlet';
@@ -42,7 +42,7 @@ import type {
   PSIfStatement, PSWhileStatement, PSDoWhileStatement, PSDoUntilStatement,
   PSForStatement, PSForeachStatement, PSSwitchStatement, PSTryStatement,
   PSFunctionDefinition, PSReturnStatement, PSExitStatement, PSThrowStatement,
-  PSPipeline, PSCommand,
+  PSPipeline, PSCommand, PSCommandParameter,
   PSExpression, PSLiteralExpression, PSVariableExpression,
   PSBinaryExpression, PSUnaryExpression, PSRangeExpression,
   PSArrayExpression, PSHashtableExpression, PSSubExpressionExpression,
@@ -333,6 +333,11 @@ export class PSRuntime {
   private readonly parser  = new PSParser();
   readonly global: PSEnvironment;
   private outputLines: string[] = [];
+  private nativeReplay: { results: NativeResult[]; cursor: number } | null = null;
+  private interactive: {
+    statements: PSStatement[]; traps: PSTrapStatement[];
+    index: number; mark: number; results: NativeResult[];
+  } | null = null;
 
   /** AST cache: same source code → reuse the parsed program. */
   private readonly astCache = new Map<string, PSProgram>();
@@ -732,51 +737,77 @@ export class PSRuntime {
    * writing to the pipeline (e.g. `$x`, `2+3`) are echoed to output.
    */
   executeInteractive(code: string): string {
+    this.beginInteractive(code);
+    return this.resumeInteractive();
+  }
+
+  beginInteractive(code: string): void {
     this.outputLines = [];
     const ast = this.parseCached(code);
-    // Reuse execTopLevel so trap handlers work in interactive mode too
-    this.execTopLevelInteractive(ast.body.statements, this.global);
+    const traps: PSTrapStatement[] = [];
+    const statements: PSStatement[] = [];
+    for (const statement of ast.body.statements) {
+      if (statement.type === 'TrapStatement') traps.push(statement as PSTrapStatement);
+      else statements.push(statement);
+    }
+    this.interactive = { statements, traps, index: 0, mark: 0, results: [] };
+  }
+
+  provideNativeResult(result: NativeResult): void {
+    this.interactive?.results.push(result);
+  }
+
+  resumeInteractive(): string {
+    const run = this.interactive;
+    if (run === null) return '';
+    while (run.index < run.statements.length) {
+      const statement = run.statements[run.index];
+      this.outputLines.length = run.mark;
+      this.nativeReplay = { results: run.results, cursor: 0 };
+      try {
+        this.runInteractiveStatement(statement, this.global);
+      } catch (e) {
+        if (e instanceof NativeCommandNeedsAsync) {
+          if (this.nativeReplay !== null && this.nativeReplay.cursor < run.results.length) {
+            this.interactive = null;
+            this.nativeReplay = null;
+            throw new PSRuntimeError(commandNotFoundMessage(e.command));
+          }
+          throw e;
+        }
+        if (!this.trapInteractive(run, e)) { this.interactive = null; this.nativeReplay = null; throw e; }
+        if (run.index < 0) break;
+      }
+      run.index++;
+      run.results = [];
+      run.mark = this.outputLines.length;
+    }
+    this.interactive = null;
+    this.nativeReplay = null;
     return this.outputLines.join('\n');
   }
 
-  private execTopLevelInteractive(statements: PSStatement[], env: PSEnvironment): void {
-    const traps: PSTrapStatement[] = [];
-    const stmts: PSStatement[] = [];
-    for (const s of statements) {
-      if (s.type === 'TrapStatement') traps.push(s as PSTrapStatement);
-      else stmts.push(s);
+  private runInteractiveStatement(stmt: PSStatement, env: PSEnvironment): void {
+    const wasEmpty = this.outputLines.length;
+    const result = this.execStatement(stmt, env);
+    const didOutput = this.outputLines.length > wasEmpty;
+    if (!didOutput && stmt.type !== 'AssignmentStatement' && result !== null && result !== undefined) {
+      this.renderValue(result);
     }
+  }
 
-    const runOne = (stmt: PSStatement) => {
-      const wasEmpty = this.outputLines.length;
-      const result = this.execStatement(stmt, env);
-      const didOutput = this.outputLines.length > wasEmpty;
-      if (!didOutput && stmt.type !== 'AssignmentStatement' && result !== null && result !== undefined) {
-        this.renderValue(result);
-      }
-    };
-
-    if (traps.length === 0) {
-      for (const stmt of stmts) runOne(stmt);
-      return;
+  private trapInteractive(run: NonNullable<PSRuntime['interactive']>, e: unknown): boolean {
+    if (run.traps.length === 0) return false;
+    if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) return false;
+    this.global.set('_', e instanceof Error ? e : new Error(String(e)));
+    try {
+      this.runTrapBody(run.traps[0].body, this.global);
+    } catch (trapSignal) {
+      if (trapSignal instanceof ContinueSignal && !trapSignal.label) return true;
+      if (trapSignal instanceof BreakSignal && !trapSignal.label) { run.index = -1; return true; }
+      throw trapSignal;
     }
-
-    for (const stmt of stmts) {
-      try {
-        runOne(stmt);
-      } catch (e) {
-        if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) throw e;
-        const trap = traps[0];
-        env.set('_', e instanceof Error ? e : new Error(String(e)));
-        try {
-          this.runTrapBody(trap.body, env);
-        } catch (te) {
-          if (te instanceof ContinueSignal && !te.label) continue;
-          if (te instanceof BreakSignal    && !te.label) return;
-          throw te;
-        }
-      }
-    }
+    return true;
   }
 
   /** Execute code and return the last produced PSValue (without stringification). Used by IEX. */
@@ -1733,67 +1764,94 @@ export class PSRuntime {
 
   private execIf(node: PSIfStatement, env: PSEnvironment): PSValue {
     if (this.isTruthy(this.evalExpr(node.condition, env)))
-      return this.execScriptBlock(node.thenBody, env);
+      return this.emittedBy(node.thenBody, env);
     for (const ei of node.elseifClauses) {
       if (this.isTruthy(this.evalExpr(ei.condition, env)))
-        return this.execScriptBlock(ei.body, env);
+        return this.emittedBy(ei.body, env);
     }
-    if (node.elseBody) return this.execScriptBlock(node.elseBody, env);
+    if (node.elseBody) return this.emittedBy(node.elseBody, env);
     return null;
+  }
+
+  private emittedBy(block: PSScriptBlock, env: PSEnvironment): PSValue {
+    if (block.beginBlock)   this.execStatementList(block.beginBlock,   env);
+    if (block.processBlock) this.execStatementList(block.processBlock, env);
+    if (block.endBlock)     this.execStatementList(block.endBlock,     env);
+    if (!block.body) return null;
+    return this.aggregateCaptured(this.runBlockCapture(block.body, env));
+  }
+
+  private emitLoop(run: (collected: PSValue[]) => void): PSValue {
+    const collected: PSValue[] = [];
+    try {
+      run(collected);
+    } catch (e) {
+      for (const value of collected) this.outputLines.push(psValueToString(value));
+      throw e;
+    }
+    return this.aggregateCaptured(collected);
+  }
+
+  private runLoopBody(block: PSScriptBlock, env: PSEnvironment, collected: PSValue[]): void {
+    if (block.body) this.runBlockCapture(block.body, env, collected);
   }
 
   private execWhile(node: PSWhileStatement, env: PSEnvironment): PSValue {
     const myLabel = node.label;
-    while (this.isTruthy(this.evalExpr(node.condition, env))) {
-      try { this.execScriptBlock(node.body, env); }
-      catch (e) {
-        if (e instanceof BreakSignal    && (!e.label || e.label === myLabel)) break;
-        if (e instanceof ContinueSignal && (!e.label || e.label === myLabel)) continue;
-        throw e;
+    return this.emitLoop(collected => {
+      while (this.isTruthy(this.evalExpr(node.condition, env))) {
+        try { this.runLoopBody(node.body, env, collected); }
+        catch (e) {
+          if (e instanceof BreakSignal    && (!e.label || e.label === myLabel)) break;
+          if (e instanceof ContinueSignal && (!e.label || e.label === myLabel)) continue;
+          throw e;
+        }
       }
-    }
-    return null;
+    });
   }
 
   private execDoWhile(node: PSDoWhileStatement, env: PSEnvironment): PSValue {
     const myLabel = node.label;
-    do {
-      try { this.execScriptBlock(node.body, env); }
-      catch (e) {
-        if (e instanceof BreakSignal    && (!e.label || e.label === myLabel)) break;
-        if (e instanceof ContinueSignal && (!e.label || e.label === myLabel)) continue;
-        throw e;
-      }
-    } while (this.isTruthy(this.evalExpr(node.condition, env)));
-    return null;
+    return this.emitLoop(collected => {
+      do {
+        try { this.runLoopBody(node.body, env, collected); }
+        catch (e) {
+          if (e instanceof BreakSignal    && (!e.label || e.label === myLabel)) break;
+          if (e instanceof ContinueSignal && (!e.label || e.label === myLabel)) continue;
+          throw e;
+        }
+      } while (this.isTruthy(this.evalExpr(node.condition, env)));
+    });
   }
 
   private execDoUntil(node: PSDoUntilStatement, env: PSEnvironment): PSValue {
     const myLabel = node.label;
-    do {
-      try { this.execScriptBlock(node.body, env); }
-      catch (e) {
-        if (e instanceof BreakSignal    && (!e.label || e.label === myLabel)) break;
-        if (e instanceof ContinueSignal && (!e.label || e.label === myLabel)) continue;
-        throw e;
-      }
-    } while (!this.isTruthy(this.evalExpr(node.condition, env)));
-    return null;
+    return this.emitLoop(collected => {
+      do {
+        try { this.runLoopBody(node.body, env, collected); }
+        catch (e) {
+          if (e instanceof BreakSignal    && (!e.label || e.label === myLabel)) break;
+          if (e instanceof ContinueSignal && (!e.label || e.label === myLabel)) continue;
+          throw e;
+        }
+      } while (!this.isTruthy(this.evalExpr(node.condition, env)));
+    });
   }
 
   private execFor(node: PSForStatement, env: PSEnvironment): PSValue {
     const myLabel = node.label;
     if (node.init) this.execStatement(node.init, env);
-    outer: while (!node.condition || this.isTruthy(this.evalExpr(node.condition, env))) {
-      try { this.execScriptBlock(node.body, env); }
-      catch (e) {
-        if (e instanceof BreakSignal    && (!e.label || e.label === myLabel)) break outer;
-        if (e instanceof ContinueSignal && (!e.label || e.label === myLabel)) { /* fall through */ }
-        else throw e;
+    return this.emitLoop(collected => {
+      outer: while (!node.condition || this.isTruthy(this.evalExpr(node.condition, env))) {
+        try { this.runLoopBody(node.body, env, collected); }
+        catch (e) {
+          if (e instanceof BreakSignal    && (!e.label || e.label === myLabel)) break outer;
+          if (e instanceof ContinueSignal && (!e.label || e.label === myLabel)) { /* fall through */ }
+          else throw e;
+        }
+        if (node.iterator) this.execStatement(node.iterator, env);
       }
-      if (node.iterator) this.execStatement(node.iterator, env);
-    }
-    return null;
+    });
   }
 
   private execForeach(node: PSForeachStatement, env: PSEnvironment): PSValue {
@@ -1803,16 +1861,17 @@ export class PSRuntime {
     const items: PSValue[] = Array.isArray(collection) ? collection
       : collection !== null && collection !== undefined ? [collection] : [];
 
-    for (const item of items) {
-      env.set(varName, item);
-      try { this.execScriptBlock(node.body, env); }
-      catch (e) {
-        if (e instanceof BreakSignal    && (!e.label || e.label === myLabel)) break;
-        if (e instanceof ContinueSignal && (!e.label || e.label === myLabel)) continue;
-        throw e;
+    return this.emitLoop(collected => {
+      for (const item of items) {
+        env.set(varName, item);
+        try { this.runLoopBody(node.body, env, collected); }
+        catch (e) {
+          if (e instanceof BreakSignal    && (!e.label || e.label === myLabel)) break;
+          if (e instanceof ContinueSignal && (!e.label || e.label === myLabel)) continue;
+          throw e;
+        }
       }
-    }
-    return null;
+    });
   }
 
   private execSwitch(node: PSSwitchStatement, env: PSEnvironment): PSValue {
@@ -2190,7 +2249,9 @@ export class PSRuntime {
     for (const p of node.parameters)
       named[p.name.toLowerCase()] = p.value ? this.evalExpr(p.value, env) : true;
 
+    const argumentSpans: number[] = [];
     for (const a of node.arguments) {
+      const before = positional.length;
       // Handle splatting: @varname expands a hashtable as named params or an array as positional
       if ((a as unknown as { type: string }).type === 'SplatExpression') {
         const splatName = (a as unknown as { name: string }).name;
@@ -2206,6 +2267,7 @@ export class PSRuntime {
       } else {
         positional.push(this.evalExpr(a, env));
       }
+      argumentSpans.push(positional.length - before);
     }
 
     // & (call operator) — first positional arg is the target
@@ -2286,7 +2348,7 @@ export class PSRuntime {
           return this.runScriptFile(block, named, positional, env, pipeInput);
         }
       }
-      return this.dispatchCmdlet(tname, positional, named, pipeInput, env);
+      return this.dispatchCmdlet(tname, positional, named, pipeInput, env, this.rawArguments(node, named, positional, argumentSpans, true));
     }
 
     // User-defined function
@@ -2318,7 +2380,61 @@ export class PSRuntime {
     }
 
     // Registry dispatch
-    return this.dispatchCmdlet(lname, positional, named, pipeInput, env);
+    return this.dispatchCmdlet(lname, positional, named, pipeInput, env, this.rawArguments(node, named, positional, argumentSpans));
+  }
+
+  private pipelineText(pipeInput: PSValue): string | null {
+    if (pipeInput === null || pipeInput === undefined) return null;
+    return (Array.isArray(pipeInput) ? pipeInput : [pipeInput]).map(item => psValueToString(item)).join('\n');
+  }
+
+  takeNativeResult(): NativeResult | null {
+    const replay = this.nativeReplay;
+    if (replay === null || replay.cursor >= replay.results.length) return null;
+    return replay.results[replay.cursor++];
+  }
+
+  acceptNativeResult(result: NativeResult): PSValue {
+    if (result.notRecognized === true) {
+      this.global.set('?', false);
+      throw new PSRuntimeError(result.output);
+    }
+    this.setLastExitCode(result.exitCode);
+    return nativeOutputValue(result.output);
+  }
+
+  setLastExitCode(code: number): void {
+    this.global.set('LASTEXITCODE', code);
+    this.global.set('?', code === 0);
+  }
+
+  private rawArguments(
+    node: PSCommand, named: Record<string, PSValue>, positional: readonly PSValue[], spans: readonly number[],
+    skipTarget = false,
+  ): string[] | undefined {
+    if (node.sequence === undefined) return undefined;
+    const argv: string[] = [];
+    let argumentIndex = 0;
+    let positionalIndex = 0;
+    let skipping = skipTarget;
+    for (const item of node.sequence) {
+      if (item.type === 'CommandParameter') {
+        const parameter = item as PSCommandParameter;
+        argv.push(`-${parameter.text ?? parameter.name}`);
+        if (parameter.value !== null) {
+          const value = named[parameter.name.toLowerCase()];
+          for (const element of Array.isArray(value) ? value : [value]) argv.push(psValueToString(element));
+        }
+        continue;
+      }
+      const span = spans[argumentIndex++] ?? 0;
+      if (skipping) { skipping = false; continue; }
+      for (let taken = 0; taken < span; taken++) {
+        const value = positional[positionalIndex++];
+        for (const element of Array.isArray(value) ? value : [value]) argv.push(psValueToString(element));
+      }
+    }
+    return argv;
   }
 
   /**
@@ -2634,6 +2750,7 @@ export class PSRuntime {
     named: Record<string, PSValue>,
     pipeInput: PSValue,
     env: PSEnvironment,
+    nativeArguments?: string[],
   ): PSValue {
     // Extract common parameters before dispatch
     const errorVarName     = named['errorvariable']  ? psValueToString(named['errorvariable'])  : null;
@@ -2655,7 +2772,8 @@ export class PSRuntime {
     delete cmdletNamed['confirm'];
     delete cmdletNamed['outvariable'];
 
-    const cmdlet = this.registry.resolve(name);
+    const programStem = this.providers.network?.programStem(name) ?? null;
+    const cmdlet = programStem === null ? this.registry.resolve(name) : this.registry.resolveProgram(programStem);
     if (cmdlet) {
       const declared = new Set(
         ((cmdlet.parameters ?? []) as readonly string[]).map(p => p.toLowerCase()));
@@ -2666,14 +2784,17 @@ export class PSRuntime {
       }
     }
     if (!cmdlet) {
+      const replayed = this.takeNativeResult();
+      if (replayed !== null) return this.acceptNativeResult(replayed);
       this.global.set('?', false);
       if (errorVarName) {
         const errObj = { Exception: { Message: commandNotFoundMessage(name) }, CategoryInfo: {} } as Record<string, PSValue>;
         this.global.set(errorVarName, errObj);
       }
       if (silentlyCont) return null;
-      if (!isNativeProgramName(name)) throw new PSRuntimeError(commandNotFoundMessage(name));
-      throw new NativeCommandNeedsAsync(name, nativeArgv(positional, cmdletNamed));
+      if (programStem === null && !isNativeProgramName(name)) throw new PSRuntimeError(commandNotFoundMessage(name));
+      throw new NativeCommandNeedsAsync(
+        programStem ?? name, nativeArguments ?? nativeArgv(positional, cmdletNamed), this.pipelineText(pipeInput));
     }
 
     if (named['whatif'] === true && cmdlet.supportsShouldProcess === true) {
@@ -2760,6 +2881,8 @@ export class PSRuntime {
     const runtimeRef: IRuntimeRef = {
       execute:            (code) => self.execute(code),
       executeInteractive: (code) => self.executeInteractive(code),
+      acceptNativeResult: (result) => self.acceptNativeResult(result),
+      takeNativeResult: () => self.takeNativeResult(),
       executeForValue:    (code) => self.executeForValue(code),
       getVariable:        (name) => self.getVariable(name),
       setVariable:        (name, val) => self.global.set(name, val),

@@ -2629,6 +2629,8 @@ class WindowsNetworkAdapter implements INetworkProvider {
   getWinhttpProxy(): string     { return ''; }
   setWinhttpProxy(): void       { throw notImpl('setWinhttpProxy'); }
   async executeCmdCommand(): Promise<string> { throw notImpl('executeCmdCommand'); }
+  programStem(name: string): string | null { return this.pc.programStemOf(name); }
+  nativeExitCode(output: string): number { return this.pc.lastNativeExitCode(output); }
   runSyncNativeCommand(cmd: string, args: string[]): string | null {
     const m = this.pc as unknown as { runSyncNativeCommand?: (c: string, a: string[]) => string | null };
     return m.runSyncNativeCommand ? m.runSyncNativeCommand(cmd, args) : null;

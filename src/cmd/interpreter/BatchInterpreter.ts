@@ -98,6 +98,7 @@ function compareValues(left: string, operator: string, right: string, ignoreCase
 
 export class BatchInterpreter {
   private errorLevel = 0;
+  private pendingInput: string | undefined;
   private echoOn = true;
   private delayedExpansion = false;
   private readonly locals: LocalState[] = [];
@@ -109,9 +110,14 @@ export class BatchInterpreter {
 
   setErrorLevel(value: number): void { this.errorLevel = value; }
 
-  async runLine(text: string): Promise<string> {
+  async runLine(text: string, stdin?: string): Promise<string> {
     const frame = this.buildFrame([text], null, [], false);
-    return this.execute(frame, run => this.runFrame(frame, 0, run));
+    this.pendingInput = stdin;
+    try {
+      return await this.execute(frame, run => this.runFrame(frame, 0, run));
+    } finally {
+      this.pendingInput = undefined;
+    }
   }
 
   async runScript(path: string, args: string[]): Promise<string> {
@@ -353,7 +359,8 @@ export class BatchInterpreter {
     prepared: { command: string; redirections: Redirections }, frame: Frame, run: Run, stdin: string | undefined,
   ): Promise<Produced> {
     if (prepared.command === '') return success();
-    let input = stdin;
+    let input = stdin ?? this.pendingInput;
+    this.pendingInput = undefined;
     const source = prepared.redirections.stdin;
     if (source !== null) {
       const content = this.host.fs.read(this.host.fs.normalize(source, this.host.cwd()));
@@ -433,7 +440,7 @@ export class BatchInterpreter {
       case 'path': return this.pathBuiltin(rest);
       case 'timeout': return this.timeoutBuiltin(rest);
       case 'choice': return this.choiceBuiltin(rest);
-      case 'cmd': return this.cmdBuiltin(rest);
+      case 'cmd': return this.cmdBuiltin(rest, stdin);
       default: return this.runExternal(command, frame, run, stdin);
     }
   }
@@ -639,7 +646,7 @@ export class BatchInterpreter {
     return { lines: readFromUser ? [] : [`${prompt}${letters[index]}`], exitCode: index + 1 };
   }
 
-  private async cmdBuiltin(rest: string): Promise<Produced> {
+  private async cmdBuiltin(rest: string, stdin: string | undefined): Promise<Produced> {
     const match = /^\s*((?:\/[a-z](?::\S+)?\s+)*?)\/[ck]\s*(.*)$/is.exec(rest);
     if (match === null) return success();
     let line = match[2].trim();
@@ -653,6 +660,7 @@ export class BatchInterpreter {
     this.delayedExpansion = /\/v:on/i.test(match[1]);
     const child = this.buildFrame([line], null, [], false);
     let output = '';
+    this.pendingInput = stdin;
     try {
       output = await this.execute(child, innerRun => this.runFrame(child, 0, innerRun));
     } finally {

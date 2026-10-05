@@ -11,6 +11,7 @@
 
 import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
 import { normalizeWindowsPath } from './windowsPath';
+import { WINDOWS_PROGRAMS } from './WinPrograms';
 import { HostsFile } from '../HostsFile';
 
 /**
@@ -262,7 +263,6 @@ export class WindowsFileSystem {
     // Realistic system files
     const systemFiles: Array<[string, string, number, string[]]> = [
       // [path, content, size, attributes]
-      ['C:\\Windows\\System32\\cmd.exe', '', 289792, ['archive']],
       ['C:\\Windows\\System32\\notepad.exe', '', 201216, ['archive']],
       ['C:\\Windows\\System32\\calc.exe', '', 26112, ['archive']],
       ['C:\\Windows\\System32\\mspaint.exe', '', 6656, ['archive']],
@@ -270,22 +270,6 @@ export class WindowsFileSystem {
       ['C:\\Windows\\System32\\regedit.exe', '', 360448, ['archive']],
       ['C:\\Windows\\System32\\explorer.exe', '', 4883944, ['archive']],
       ['C:\\Windows\\System32\\mmc.exe', '', 147968, ['archive']],
-      ['C:\\Windows\\System32\\net.exe', '', 62464, ['archive']],
-      ['C:\\Windows\\System32\\ping.exe', '', 22528, ['archive']],
-      ['C:\\Windows\\System32\\ipconfig.exe', '', 26624, ['archive']],
-      ['C:\\Windows\\System32\\netsh.exe', '', 96768, ['archive']],
-      ['C:\\Windows\\System32\\tracert.exe', '', 13312, ['archive']],
-      ['C:\\Windows\\System32\\nslookup.exe', '', 80896, ['archive']],
-      ['C:\\Windows\\System32\\hostname.exe', '', 11264, ['archive']],
-      ['C:\\Windows\\System32\\shutdown.exe', '', 28672, ['archive']],
-      ['C:\\Windows\\System32\\where.exe', '', 22016, ['archive']],
-      ['C:\\Windows\\System32\\findstr.exe', '', 32256, ['archive']],
-      ['C:\\Windows\\System32\\attrib.exe', '', 15872, ['archive']],
-      ['C:\\Windows\\System32\\xcopy.exe', '', 51712, ['archive']],
-      ['C:\\Windows\\System32\\sfc.exe', '', 19456, ['archive']],
-      ['C:\\Windows\\System32\\dism.exe', '', 280064, ['archive']],
-      ['C:\\Windows\\System32\\wbem\\wmic.exe', '', 47104, ['archive']],
-      ['C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', '', 452608, ['archive']],
       ['C:\\Windows\\System32\\drivers\\etc\\hosts', hostsContent, hostsContent.length, []],
       ['C:\\Windows\\System32\\drivers\\etc\\networks', '# Copyright (c) 1993-2009 Microsoft Corp.\n#\n# This file contains network name/number mappings.\n#\nloopback        127\n', 407, []],
       ['C:\\Windows\\System32\\drivers\\etc\\protocol', '# Copyright (c) 1993-2009 Microsoft Corp.\n#\nicmp    1   ICMP\ntcp     6   TCP\nudp    17   UDP\n', 1795, []],
@@ -356,11 +340,6 @@ export class WindowsFileSystem {
       ['C:\\Windows\\System32\\drivers\\tcpip.sys', 2437120],
       ['C:\\Windows\\System32\\drivers\\afd.sys', 562176],
       ['C:\\Windows\\System32\\drivers\\netbt.sys', 299008],
-      // Networking tools already present but add sc.exe, tasklist, taskkill
-      ['C:\\Windows\\System32\\sc.exe', 73728],
-      ['C:\\Windows\\System32\\tasklist.exe', 79872],
-      ['C:\\Windows\\System32\\taskkill.exe', 80384],
-      ['C:\\Windows\\System32\\net1.exe', 196608],
     ];
     for (const [binPath, binSize] of serviceBinaries) {
       const lastSep = binPath.lastIndexOf('\\');
@@ -372,6 +351,17 @@ export class WindowsFileSystem {
           entry.size = binSize;
           entry.attributes.add('archive');
         }
+      }
+    }
+
+    for (const program of WINDOWS_PROGRAMS) {
+      const programPath = `${program.directory}\\${program.file}`;
+      this.mkdirp(program.directory);
+      this.createFile(programPath, '');
+      const entry = this.resolve(programPath);
+      if (entry) {
+        entry.size = program.size;
+        entry.attributes.add('archive');
       }
     }
 

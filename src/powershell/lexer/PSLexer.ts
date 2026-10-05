@@ -515,7 +515,7 @@ export class PSLexer {
         word += this.ch(); this.advance();
       }
       if (!this.eof() && this.ch() === ':') this.advance();
-      return psToken(PSTokenType.PARAMETER, word.toLowerCase(), start);
+      return psToken(PSTokenType.PARAMETER, word.toLowerCase(), start, word);
     }
 
     // plain minus (binary/unary arithmetic)
