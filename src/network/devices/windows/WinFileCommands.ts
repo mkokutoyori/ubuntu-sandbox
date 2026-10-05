@@ -33,6 +33,7 @@ export interface WinFileCommandContext {
   setEnv(name: string, value: string): void;
   setCwd(path: string): void;
   setExitCode(code: number): void;
+  readonly inScript: boolean;
   ask(prompt: string, preceding?: string): Promise<{ answer: string | null; flushed: boolean }>;
 }
 
@@ -114,28 +115,6 @@ export function cmdType(ctx: WinFileCommandContext, args: string[]): string {
   const result = ctx.fs.readFile(absPath);
   if (!result.ok) return result.error!;
   return result.content!;
-}
-
-// ─── copy ──────────────────────────────────────────────────────────
-
-export function cmdCopy(ctx: WinFileCommandContext, args: string[]): string {
-  if (args.length < 2) return 'The syntax of the command is incorrect.';
-  const src = ctx.fs.normalizePath(args[0], ctx.cwd);
-  const dest = ctx.fs.normalizePath(args[1], ctx.cwd);
-  const result = ctx.fs.copyFile(src, dest);
-  if (!result.ok) return result.error!;
-  return '        1 file(s) copied.';
-}
-
-// ─── move ──────────────────────────────────────────────────────────
-
-export function cmdMove(ctx: WinFileCommandContext, args: string[]): string {
-  if (args.length < 2) return 'The syntax of the command is incorrect.';
-  const src = ctx.fs.normalizePath(args[0], ctx.cwd);
-  const dest = ctx.fs.normalizePath(args[1], ctx.cwd);
-  const result = ctx.fs.moveFile(src, dest);
-  if (!result.ok) return result.error!;
-  return '        1 file(s) moved.';
 }
 
 // ─── ren / rename ──────────────────────────────────────────────────

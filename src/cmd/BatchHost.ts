@@ -36,7 +36,7 @@ export interface BatchHost {
   formattedDate(): string;
   formattedTime(): string;
   random(): number;
-  runCommand(line: string, stdin?: string): Promise<CommandOutcome>;
+  runCommand(line: string, stdin?: string, inScript?: boolean): Promise<CommandOutcome>;
   readInputLine?(prompt: string): Promise<string | null>;
   inputIsInteractive?(): boolean;
 }

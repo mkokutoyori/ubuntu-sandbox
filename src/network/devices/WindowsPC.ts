@@ -84,6 +84,7 @@ import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProvid
 import type { VpnConnectionInfo } from '@/powershell/providers/PSProviders';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
+import { cmdCopy, cmdMove } from './windows/WinCopy';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
 import { HostsFile } from './HostsFile';
 import { LlmnrAgent } from '../llmnr/LlmnrAgent';
@@ -248,7 +249,7 @@ import {
   rulesApplyTo,
 } from './windows/netFirewallProfile';
 import {
-  cmdCd, cmdMkdir, cmdRmdir, cmdType, cmdCopy, cmdMove,
+  cmdCd, cmdMkdir, cmdRmdir, cmdType,
   cmdRen, cmdDel, cmdTree, cmdTasklist, cmdNetstat,
   cmdAttrib, cmdFind, cmdFindstr, cmdMore, cmdFc,
   cmdXcopy, cmdSort,
@@ -3114,6 +3115,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private batch: BatchInterpreter | null = null;
   private commandExitStatus: number | null = null;
+  private runningInScript = false;
 
   getBatchInterpreter(): BatchInterpreter { return this.batchInterpreter(); }
 
@@ -3126,9 +3128,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         environment: () => this.getEnvVars(),
         setVariable: (name, value) => this.setEnvVar(name, value),
         removeVariable: name => this.removeEnvVar(name),
-        runSimple: async (line, stdin) => {
+        runSimple: async (line, stdin, inScript) => {
           this.commandExitStatus = null;
+          this.runningInScript = inScript === true;
           const output = await this.executeSimpleCommand(line, stdin);
+          this.runningInScript = false;
           return { output, exitCode: this.commandExitStatus };
         },
         timeZone: () => this.identity.timezone,
@@ -3549,6 +3553,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       hostname: this.hostname,
       env: this.getEnvVars(),
       setExitCode: (code: number) => { this.commandExitStatus = code; },
+      inScript: this.runningInScript,
       ask: async (prompt: string, preceding?: string) => ({
         answer: await this.readCommandInput(prompt, preceding),
         flushed: this._activeShellSession?.inputReader != null,
