@@ -31,6 +31,7 @@ import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpStack, type TcpOptionPolicy } from '../tcp/TcpStack';
+import { RFC_RETRY_POLICY, type TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import type { TcpEcnPolicy } from '../tcp/TcpEcn';
 import { deliverIcmpv4ErrorToTcp, deliverIcmpv6ErrorToTcp } from '../tcp/IcmpErrorDelivery';
 import type { DiffServField, HopLimit, TimeToLive, TtlFloor } from '../core/IpHeaderFields';
@@ -627,6 +628,7 @@ export abstract class EndHost extends Equipment {
   protected get tcpEcnFallsBack(): boolean { return true; }
   protected get tcpOptionPolicy(): TcpOptionPolicy { return { sack: true, timestamps: true, windowScaling: true }; }
   protected get tcpRestartsAfterIdle(): boolean { return true; }
+  protected get tcpRetryPolicy(): TcpRetryPolicy { return RFC_RETRY_POLICY; }
 
   // ─── Reactive plumbing (Phase 5) ──────────────────────────────────
   /** Owns scheduler-driven timers (ARP aging, echo waits). */
@@ -1113,6 +1115,7 @@ export abstract class EndHost extends Equipment {
       ecnFallback: () => this.tcpEcnFallsBack,
       optionPolicy: () => this.tcpOptionPolicy,
       restartsAfterIdle: () => this.tcpRestartsAfterIdle,
+      retryPolicy: () => this.tcpRetryPolicy,
     };
     this.tcpv2 = new TcpStack(hostBase, () => this.getBus(), () => this.getScheduler());
     this.tcpv2.start();

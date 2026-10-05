@@ -16,11 +16,13 @@ const FAILURE_MARKERS = [
   'already exists',
 ];
 
-const NET_ERROR = /NET HELPMSG \d+/i;
+const NET_ERROR = /NET HELPMSG \d+|^System error \d+ has occurred\./im;
 const SERVICE_ERROR = /FAILED (\d+):/;
+const SERVICE_ACCESS_DENIED = /^\[SC\][^\n]*FAILED:\s*\n\s*\nAccess is denied\./m;
 
 export function commandExitCode(output: string): number {
   if (NET_ERROR.test(output)) return 2;
+  if (SERVICE_ACCESS_DENIED.test(output)) return 5;
   const service = SERVICE_ERROR.exec(output);
   if (service !== null) return Number(service[1]);
   const firstLine = output.split('\n').find(line => line.trim() !== '')?.trim().toLowerCase() ?? '';

@@ -139,9 +139,11 @@ import {
   connectedPrefixesOfPort, invalidSourceFor, isUnicastDestination, type ConnectedIpv4Prefix,
 } from '@/network/layers/internet/InternetLayer';
 import {
-  RttEstimator, TCP_INITIAL_RTO_MS, TCP_MAX_RTO_MS, TCP_R1_RETRANSMITS, TCP_DATA_R2_MS, TCP_SYN_R2_MS,
-  TCP_RTO_AFTER_SYN_RETRANSMIT_MS,
+  RttEstimator, TCP_INITIAL_RTO_MS, TCP_RTO_AFTER_SYN_RETRANSMIT_MS,
 } from './RttEstimator';
+import {
+  RFC_RETRY_POLICY, giveUpDeadlineMs, giveUpReached, type TcpGiveUp, type TcpRetryPolicy,
+} from './TcpRetryPolicy';
 import { TcpCongestionControl } from './TcpCongestionControl';
 import { TcpLossRecovery, DUPLICATE_ACK_THRESHOLD } from './TcpLossRecovery';
 import {
@@ -233,6 +235,7 @@ export interface TcpHost {
   ecnFallback?(): boolean;
   optionPolicy?(): TcpOptionPolicy;
   restartsAfterIdle?(): boolean;
+  retryPolicy?(): TcpRetryPolicy;
 }
 
 interface SegmentArrival {
@@ -373,7 +376,7 @@ export class TcpSocket {
   unackedQueue: UnackedSegment[] = [];
   /** Retransmission-timeout token for the head of `unackedQueue`, or null when nothing is outstanding. */
   rtoTimer: symbol | null = null;
-  readonly rtt: RttEstimator = new RttEstimator();
+  readonly rtt: RttEstimator;
 
   /** Peer's last-advertised receive window (PRD-TCP.md P3) — bounds how much unacked data we may have in flight. */
   peerWindow = TCP_DEFAULT_WINDOW;
@@ -458,6 +461,8 @@ export class TcpSocket {
     this.remoteIp = remoteIp;
     this.remotePort = remotePort;
     this.family = ipFamilyOf(remoteIp);
+    const policy = stack._retryPolicy();
+    this.rtt = new RttEstimator(policy.initialRtoMs, policy.maxRtoMs);
   }
 
   send(data: unknown): TcpUserCallResult { return this.stack._sendData(this, data); }
@@ -1670,7 +1675,7 @@ export class TcpStack {
       return;
     }
     socket.persistBackoffMs = socket.persistBackoffMs > 0
-      ? Math.min(socket.persistBackoffMs * 2, TCP_MAX_RTO_MS)
+      ? Math.min(socket.persistBackoffMs * 2, this._retryPolicy().maxRtoMs)
       : TCP_INITIAL_RTO_MS;
     socket.persistTimer = this.timers.setTimeout(() => this.onPersistFired(socket), socket.persistBackoffMs);
   }
@@ -2760,9 +2765,16 @@ export class TcpStack {
     if (!socket.closed) this.rearmRtoTimer(socket);
   }
 
-  private giveUpThresholdMs(socket: TcpSocket): number {
-    if (socket.userTimeoutMs !== null) return socket.userTimeoutMs;
-    return socket.state === 'syn-sent' || socket.state === 'syn-received' ? TCP_SYN_R2_MS : TCP_DATA_R2_MS;
+  _retryPolicy(): TcpRetryPolicy {
+    return this.host.retryPolicy?.() ?? RFC_RETRY_POLICY;
+  }
+
+  private giveUpLimit(socket: TcpSocket): TcpGiveUp {
+    if (socket.userTimeoutMs !== null) return { kind: 'elapsed', ms: socket.userTimeoutMs };
+    const policy = this._retryPolicy();
+    if (socket.state === 'syn-sent') return policy.activeOpen;
+    if (socket.state === 'syn-received') return policy.passiveOpen;
+    return policy.established;
   }
 
   private retransmissionBaselineMs(socket: TcpSocket, head: UnackedSegment): number {
@@ -2772,20 +2784,19 @@ export class TcpStack {
   }
 
   private timeUntilGiveUp(socket: TcpSocket, head: UnackedSegment): number {
-    const threshold = this.giveUpThresholdMs(socket);
-    if (!Number.isFinite(threshold)) return Number.POSITIVE_INFINITY;
     const elapsed = this.getScheduler().now() - this.retransmissionBaselineMs(socket, head);
-    return Math.max(1, threshold - elapsed);
+    return giveUpDeadlineMs(this.giveUpLimit(socket), elapsed);
   }
 
   private retransmissionGivenUp(socket: TcpSocket, head: UnackedSegment): boolean {
-    const threshold = this.giveUpThresholdMs(socket);
-    if (!Number.isFinite(threshold)) return false;
-    return this.getScheduler().now() - this.retransmissionBaselineMs(socket, head) >= threshold;
+    const elapsed = this.getScheduler().now() - this.retransmissionBaselineMs(socket, head);
+    return giveUpReached(this.giveUpLimit(socket), head.retransmitCount, elapsed);
   }
 
   private reportRetransmissionTrouble(socket: TcpSocket, head: UnackedSegment): void {
-    if (head.retransmitCount < TCP_R1_RETRANSMITS || socket.troubleReportedFor === head.sequence) return;
+    const elapsed = this.getScheduler().now() - this.retransmissionBaselineMs(socket, head);
+    if (!giveUpReached(this._retryPolicy().delivery, head.retransmitCount, elapsed)
+      || socket.troubleReportedFor === head.sequence) return;
     socket.troubleReportedFor = head.sequence;
     this.host.adviseNegative?.(this.resolveEgress(socket.remoteIp)?.nextHopIp ?? socket.remoteIp);
     this.reportError(socket, { source: 'retransmission', attempts: head.retransmitCount, sequence: head.sequence });

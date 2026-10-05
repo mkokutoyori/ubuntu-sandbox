@@ -74,6 +74,7 @@ export interface IRuntimeRef {
   listHistory(): readonly string[];
   /** A cmdlet's declared parameter names — the same list `-<Tab>` offers. */
   getCommandParameters(name: string): string[];
+  psCast(val: PSValue, typeName: string): PSValue;
 }
 
 export interface CmdletContext {

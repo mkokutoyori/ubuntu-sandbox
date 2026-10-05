@@ -1,5 +1,10 @@
 import { ecnPolicyOfSetting, type TcpEcnPolicy } from '@/network/tcp/TcpEcn';
 import type { TcpOptionPolicy } from '@/network/tcp/TcpStack';
+import { TCP_INITIAL_RTO_MS } from '@/network/tcp/RttEstimator';
+import { modelledRetransmitTimeoutMs, type TcpRetryPolicy } from '@/network/tcp/TcpRetryPolicy';
+
+const LINUX_RTO_MIN_MS = 200;
+const LINUX_RTO_MAX_MS = 120_000;
 
 export interface KernelByteKnob {
   readonly name: string;
@@ -16,6 +21,10 @@ export const LINUX_IPV4_KNOBS: readonly KernelByteKnob[] = [
   { name: 'tcp_window_scaling', initial: 1, minimum: 0, maximum: 255 },
   { name: 'tcp_slow_start_after_idle', initial: 1, minimum: 0, maximum: 255 },
   { name: 'ip_default_ttl', initial: 64, minimum: 1, maximum: 255 },
+  { name: 'tcp_syn_retries', initial: 6, minimum: 1, maximum: 127 },
+  { name: 'tcp_synack_retries', initial: 5, minimum: 0, maximum: 255 },
+  { name: 'tcp_retries1', initial: 3, minimum: 0, maximum: 255 },
+  { name: 'tcp_retries2', initial: 15, minimum: 0, maximum: 255 },
 ];
 
 export class LinuxIpv4Settings {
@@ -54,6 +63,18 @@ export class LinuxIpv4Settings {
       sack: this.get('tcp_sack') !== 0,
       timestamps: this.get('tcp_timestamps') !== 0,
       windowScaling: this.get('tcp_window_scaling') !== 0,
+    };
+  }
+
+  get retryPolicy(): TcpRetryPolicy {
+    const timeoutOf = (retries: number) => modelledRetransmitTimeoutMs(retries, LINUX_RTO_MIN_MS, LINUX_RTO_MAX_MS);
+    return {
+      initialRtoMs: TCP_INITIAL_RTO_MS,
+      maxRtoMs: LINUX_RTO_MAX_MS,
+      activeOpen: { kind: 'retransmissions', count: this.get('tcp_syn_retries') },
+      passiveOpen: { kind: 'retransmissions', count: this.get('tcp_synack_retries') },
+      established: { kind: 'elapsed', ms: timeoutOf(this.get('tcp_retries2')) },
+      delivery: { kind: 'elapsed', ms: timeoutOf(this.get('tcp_retries1')) },
     };
   }
 

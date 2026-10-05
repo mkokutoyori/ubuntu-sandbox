@@ -55,6 +55,7 @@ function shell(device: WindowsPC | WindowsServer) {
 function client(): WindowsPC {
   const pc = new WindowsPC('windows-pc', 'WIN', 0, 0);
   pc.powerOn();
+  pc.setCurrentUser('Administrator');
   return pc;
 }
 

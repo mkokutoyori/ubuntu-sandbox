@@ -677,6 +677,12 @@ export class VirtualFileSystem {
     return this.resolveInode(path)?.writer !== undefined;
   }
 
+  isVirtualTree(path: string): boolean {
+    const normalized = this.normalizePath(path);
+    return normalized === '/proc' || normalized.startsWith('/proc/')
+      || normalized === '/sys' || normalized.startsWith('/sys/');
+  }
+
   touch(path: string, uid: number, gid: number, umask: number): boolean {
     const existing = this.resolveInode(path);
     if (existing) {
@@ -684,6 +690,7 @@ export class VirtualFileSystem {
       existing.atime = Date.now();
       return true;
     }
+    if (this.isVirtualTree(path)) return false;
     const perms = 0o666 & ~umask;
     return this.createFileAt(path, '', perms, uid, gid) !== null;
   }
@@ -823,7 +830,7 @@ export class VirtualFileSystem {
     }
 
     if (!inode) {
-      if (this.isReadOnly(path)) return false;
+      if (this.isReadOnly(path) || this.isVirtualTree(path)) return false;
       const lastSlash = path.lastIndexOf('/');
       if (lastSlash > 0) {
         const parentDir = path.substring(0, lastSlash);

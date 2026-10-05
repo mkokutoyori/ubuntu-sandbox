@@ -540,7 +540,8 @@ export class RemoveItemCmdlet implements ICmdlet {
       }
       if (isRegistryPath(path)) {
         if (!ctx.providers.registry) requireRegistryProvider(path);
-        ctx.providers.registry.removeItem(path, recurse);
+        const failure = ctx.providers.registry.removeItem(path, recurse);
+        if (failure !== '') ctx.emitError(failure);
         continue;
       }
       const fs = ctx.providers.filesystem;
